@@ -246,6 +246,23 @@ discovery; the details are in [souls-and-instances.md](souls-and-instances.md).
 Change a capability's inject or skills in its repository, then spawn a new
 instance: the generated files are not a source.
 
+See what a capability ships before any instance has it:
+
+```bash
+oats capabilities show oats.okf                          # inject path and size, each skill's files, problems
+oats capabilities show oats.okf --file injects/okf.md    # one listed file's text
+oats capabilities show nw-house-style --member github.com/nw/agents --json
+```
+
+`oats capabilities show <name>` reads one row of `oats capabilities` at that
+row's commit (a package at its locked commit, after spawn's lock check): the
+inject text exactly as committed, and each skill, enumerated as a spawn
+enumerates it, with its description and files. `--file <path>` prints one
+file the show lists (the inject or a skill file), and no other file of the
+capability. Use `--member <repoKey>` or `--package <id>` when two rows share
+the name. The JSON contract is in
+[desktop-cli-api.md](desktop-cli-api.md#oats-capabilities-show).
+
 Inspect a composition before it exists:
 
 ```bash

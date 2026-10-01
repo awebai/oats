@@ -743,8 +743,8 @@ for (const [name] of palettes) test(`${name}: F7 inspector cards, teams, compact
     ['#home .teams-card .team-meta', '#home .teams-card', 'muted', 'surface'],
     ['#home .teams-card .team-badge', '#home .teams-card', 'muted', 'surface'],
     ['#home .inspector-spawned button', '#home .inspector-spawned button', 'fg', 'surface'],
-    // v4.1: the Home row's path reads as a value in the Where it works card; the Soul tab's Details path stays muted.
-    ['#context-panel .context-panel-where .context-panel-path', '#context-panel .context-panel-where', 'fg', 'surface'],
+    // Spec A: the Home row's path reads as a value in the Work card's Paths; the Soul tab's Details path stays muted.
+    ['#context-panel .context-panel-paths .context-panel-path', '#context-panel .context-panel-work', 'fg', 'surface'],
     // desktop-facts: where the model came from, under the model in the Session card.
     ['#context-panel .context-panel-session-from', '#context-panel .context-panel-session', 'muted', 'surface'],
     ['#context-panel .context-panel-detail .context-panel-path', '#context-panel', 'muted', 'surface'],
@@ -991,16 +991,17 @@ for (const [name] of palettes) test(`${name}: team model v2 cards, left entries,
   assert.ok(doc.querySelector('.ct-reach').textContent.includes('Far box'));
 });
 
-// v4.1 cleanup (boards 1 and 2): the instance panel's header chip and soul link, the Where it works band
-// and grid, the Messaging address and compact team rows, and the Git tab's cards, badges and empty state.
+// v4.1 cleanup (boards 1 and 2): the instance panel's header chip and soul link, the Work card's sentence
+// and Paths (Spec A), the Messaging & Teams parts and compact team rows, and the Git tab's cards, badges and empty state.
 for (const [name] of palettes) test(`${name}: v4.1 instance panel, compact Messaging rows and Git tab cards meet computed AA`, t => {
   const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div id="context-panel" class="context-panel"><div class="context-panel-page">
     <div class="context-panel-identity"><span class="context-panel-identity-sub"><button class="context-panel-soul-link">dev</button><span class="context-panel-drift">older build</span></span>
       <span class="context-panel-state" data-state="running"><span>Running</span><span>· 42m</span></span><span id="stopped" class="context-panel-state" data-state="stopped">Stopped</span></div>
-    <div class="context-panel-where"><div class="context-panel-mode"><span class="context-panel-mode-copy"><span class="context-panel-mode-title">Own worktree</span><span class="context-panel-mode-meaning">isolated branch</span></span></div>
-      <dl class="context-panel-facts"><div class="context-panel-fact"><dt>Branch</dt><dd class="is-mono"><span>main</span><span class="context-panel-ahead">↑3</span></dd></div></dl></div>
-    <section class="context-panel-section"><div class="context-panel-section-head"><div class="context-panel-label">Messaging</div></div><div class="context-panel-address">team/dev-1</div>
-      <section class="teams-panel is-compact"><div class="teams-card"><div class="team-row"><div class="team-main"><div class="team-name">oats<span class="team-tag">default</span></div><div class="team-meta">oats:team</div></div><span class="team-badge">Always on</span></div>
+    <div class="context-panel-work"><div class="context-panel-work-main"><span class="context-panel-mode-tile"></span><p class="context-panel-work-sentence">Works in its own worktree of <span class="context-panel-fact-code">oats</span>, on branch <span class="context-panel-fact-code">main</span>.</p></div>
+      <details class="context-panel-paths"><summary>Paths</summary><dl class="context-panel-facts"><div class="context-panel-fact"><dt>Home</dt><dd><div class="context-panel-pathline"><div class="context-panel-path">/h</div></div></dd></div></dl></details></div>
+    <section class="context-panel-section"><div class="context-panel-section-head"><div class="context-panel-label">Messaging &amp; Teams</div></div>
+      <div class="context-panel-part"><div class="context-panel-sublabel">Messaging ID</div><div class="context-panel-idline"><span class="context-panel-id">team/dev-1</span></div></div><div id="teams-sublabel" class="context-panel-sublabel">Teams</div>
+      <section class="teams-panel is-compact"><p class="teams-note teams-intro">The messaging teams this soul is allowed to join. It is always in the default team.</p><div class="teams-card"><div class="team-row"><div class="team-main"><div class="team-name">oats<span class="team-tag">default</span></div><div class="team-meta">oats:team</div></div><span class="team-badge">Always on</span></div>
         <div class="team-row"><div class="team-main"><div class="team-name">eng</div></div><button class="team-action" data-team-action="leave">Leave</button></div>
         <div class="team-row"><div class="team-main"><div class="team-name">product</div><div class="team-meta">eligible</div></div><button class="team-action" data-team-action="join">Join</button></div>
         <p class="teams-note">No other teams available to this soul.</p></div></section></section>
@@ -1020,13 +1021,17 @@ for (const [name] of palettes) test(`${name}: v4.1 instance panel, compact Messa
     ['.context-panel-drift', '.context-panel-drift', 'fg', 'tag-bg'],
     ['.context-panel-state[data-state=running]', '#context-panel', 'accent', 'surface'],
     ['#stopped', '#context-panel', 'muted', 'surface'],
-    ['.context-panel-mode-title', '.context-panel-mode', 'fg', 'surface-2'],
-    ['.context-panel-mode-meaning', '.context-panel-mode', 'muted', 'surface-2'],
-    ['.context-panel-where dt', '.context-panel-where', 'muted', 'surface'],
-    ['.context-panel-where dd', '.context-panel-where', 'fg', 'surface'],
-    ['.context-panel-ahead', '.context-panel-where', 'muted', 'surface'],
+    // Spec A: the Work card's sentence and its mono facts, the Paths disclosure, the Messaging & Teams parts.
+    ['.context-panel-work-sentence', '.context-panel-work', 'fg', 'surface'],
+    ['.context-panel-fact-code', '.context-panel-work', 'fg', 'surface'],
+    ['.context-panel-paths > summary', '.context-panel-work', 'muted', 'surface'],
+    ['.context-panel-paths dt', '.context-panel-work', 'muted', 'surface'],
+    ['.context-panel-paths dd', '.context-panel-work', 'fg', 'surface'],
     ['.context-panel-label', '#context-panel', 'muted', 'surface'],
-    ['.context-panel-address', '#context-panel', 'muted', 'surface'],
+    ['.context-panel-sublabel', '#context-panel', 'muted', 'surface'],
+    ['#teams-sublabel', '#context-panel', 'muted', 'surface'],
+    ['.context-panel-id', '#context-panel', 'fg', 'surface'],
+    ['.is-compact .teams-intro', '#context-panel', 'muted', 'surface'],
     ['.is-compact .team-name', '#context-panel', 'fg', 'surface'],
     ['.is-compact .team-tag', '.is-compact .team-tag', 'muted', 'tag-bg'],
     ['.is-compact .team-meta', '#context-panel', 'muted', 'surface'],
@@ -1107,4 +1112,71 @@ for (const [name] of palettes) test(`${name}: the remote reconnect strip and its
   button.click(); await new Promise(resolve => setImmediate(resolve));
   assert.equal(text.textContent, 'Reconnecting to Build box…');
   assert.equal(style(button).color, 'var(--fg)', 'an attempt in flight keeps the button legible'); aa('fg', 'surface', 'busy Reconnect now');
+});
+
+// Spec C: the capability page's Contents — navigation (on the card's surface; the open file on --sel, a hovered
+// row on --surface-2) and the reader (the Markdown viewer's own ground, --bg) with its header and front-matter table.
+import { createCapabilityContents, capabilityContentsCSS } from '../renderer/capability-contents.mjs';
+import { MARKDOWN_CSS } from '../renderer/views/markdown.mjs';
+for (const [name] of palettes) test(`${name}: capability Contents navigation, reader header, notes and front matter meet computed AA`, async () => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><section class="host"></section></div></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document;
+  for (const source of [css, pageCardCSS, capabilityPageCSS, capabilityContentsCSS, MARKDOWN_CSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  const commit = 'a'.repeat(40);
+  const show = { capabilityShowApi: 1, name: 'oats.aweb', kind: 'package', repoKey: null, package: 'oats.aweb', version: '1', commit, path: 'p',
+    inject: { path: 'inject.md', bytes: 300000, text: '---\nname: x\n---\n# T\n\n[a](https://example.com)\n', binary: false, truncated: true },
+    skills: [{ name: 'oats-aweb', path: 'skills/oats-aweb', description: 'The playbook. More.', files: [{ path: 'skills/oats-aweb/SKILL.md', bytes: 1 }], filesTruncated: true }],
+    problems: [{ code: 'W_X', message: 'a problem', path: 'inject.md' }] };
+  const contents = createCapabilityContents(doc, { request: () => Promise.resolve(structuredClone(show)), openExternal() {} });
+  const host = doc.querySelector('.host'); host.className = 'capability-page'; host.append(contents.element);
+  contents.update({ row: { name: 'oats.aweb', kind: 'package', package: 'oats.aweb', commit }, cli: { ok: true, features: ['capability-show'], capabilityShowApi: 1 }, deployment: '/ws' });
+  await new Promise(r => setTimeout(r, 0)); await new Promise(r => setTimeout(r, 0));
+  doc.querySelector('[data-skill] > .cap-node').click();
+  const gate = doc.createElement('p'); gate.className = 'cap-contents-gate'; gate.textContent = 'gate'; host.append(gate);
+  const notes = doc.createElement('p'); notes.className = 'cap-contents-note'; notes.textContent = 'none'; doc.querySelector('.cap-contents-nav').append(notes);
+  const line = doc.createElement('p'); line.className = 'cap-reader-line'; line.textContent = 'Binary file; not shown.'; doc.querySelector('.cap-reader-body').append(line);
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  for (const [selector, painted, fg, bg] of [
+    ['.page-section-lead', '.oats-view', 'muted', 'bg'],
+    ['.cap-contents-gate', '.oats-view', 'muted', 'bg'],
+    ['.cap-contents-group-label', '.cap-contents', 'muted', 'surface'],
+    ['.cap-contents-note', '.cap-contents', 'muted', 'surface'],
+    ['.cap-contents-problem', '.cap-contents', 'muted', 'surface'],
+    ['.cap-contents-problem .mono', '.cap-contents', 'fg', 'surface'],
+    ['[aria-selected=true] .cap-node-name', '[aria-selected=true] > .cap-node', 'fg', 'sel'],
+    ['[aria-selected=true] .cap-node-file', '[aria-selected=true] > .cap-node', 'muted', 'sel'],
+    ['[data-skill] .cap-node-name', '.cap-contents', 'fg', 'surface'],
+    ['.cap-node-desc', '.cap-contents', 'muted', 'surface'],
+    ['.cap-node-twisty', '.cap-contents', 'muted', 'surface'],
+    ['.cap-more', '.cap-contents', 'muted', 'surface'],
+    ['.cap-reader-path', '.cap-reader-head', 'fg', 'bg'],
+    ['.cap-reader-size', '.cap-reader-head', 'muted', 'bg'],
+    ['.cap-reader-flag', '.cap-reader-head', 'warn', 'bg'],
+    ['.cap-fm th', '.cap-contents-reader', 'muted', 'bg'],
+    ['.cap-fm td', '.cap-contents-reader', 'fg', 'bg'],
+    ['.cap-reader-line', '.cap-contents-reader', 'muted', 'bg'],
+    ['.cap-reader-body .mdv a', '.cap-contents-reader', 'accent', 'bg'],
+  ]) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
+    const color = dom.window.getComputedStyle(el).color;
+    assert.ok(color === `var(--${fg})` || (fg === 'fg' && ['', 'var(--fg)'].includes(color)), `${selector}: ${color}`);
+    assert.equal(dom.window.getComputedStyle(surface).background.replace(/^.*(var\(--[\w-]+\)).*$/, '$1') || 'var(--bg)', `var(--${bg})`, painted);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${name} ${selector}`);
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+  }
+  // Provides: one card, a row per kind, every name its own code chip.
+  const page = doc.createElement('section'); doc.querySelector('.oats-view').append(page);
+  renderCapabilityPage(page, { row: { name: 'oats.aweb', kind: 'package', package: 'oats.aweb', skills: ['oats-aweb'], commands: ['join'], hooks: [] }, status: null, instances: [], root: '/ws', onBack() {} });
+  for (const [selector, painted, fg, bg] of [['.provides-chip', '.provides-chip', 'fg', 'tag-bg'], ['.provides-kind', '.provides-card', 'muted', 'surface'], ['.provides-items .page-note', '.provides-card', 'muted', 'surface']]) {
+    const el = page.querySelector(selector), surface = page.querySelector(painted); assert.ok(el && surface, selector);
+    const color = dom.window.getComputedStyle(el).color;
+    assert.ok(color === `var(--${fg})` || (fg === 'fg' && ['', 'var(--fg)'].includes(color)), `${selector}: ${color}`);
+    assert.equal(dom.window.getComputedStyle(surface).background.replace(/^.*(var\(--[\w-]+\)).*$/, '$1'), `var(--${bg})`, painted);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${name} ${selector}`);
+  }
+  // The facts table drops the viewer's Markdown-table chrome: its cells sit on the reader's own ground.
+  for (const cell of doc.querySelectorAll('.cap-fm th, .cap-fm td')) assert.match(dom.window.getComputedStyle(cell).background, /none|rgba\(0, 0, 0, 0\)/, 'no tinted head');
+  // A hovered row (--surface-2) keeps its muted second line legible too.
+  assert.ok(contrast(opaqueChannels(root.getPropertyValue('--muted').trim()), opaqueChannels(root.getPropertyValue('--surface-2').trim())) >= 4.5, `${name} muted on surface-2`);
+  contents.dispose(); dom.window.close();
 });

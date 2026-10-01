@@ -4,20 +4,26 @@
  * rolledBack flag), never stderr, argv, stacks or details objects.
  *   capabilities → `oats capabilities --dir D [--max-age S] --json`  (capabilitiesApi 1)
  *   souls        → `oats souls --dir D [--max-age S] --json`         (soulsApi 1, the spawn catalog)
+ *   capability-show → `oats capabilities show NAME (--member KEY | --package ID) [--file PATH]
+ *                      --dir D [--max-age S] --json` (capabilityShowApi 1, feature capability-show:
+ *                      what one capability ships, read at the commit the catalog reports)
  *   sync         → `oats sync --dir D --json`                (syncApi 1)
  *   onboard      → `oats onboard DIR --workspace REF --json` (onboardApi 2)
  * There is no package approval (packages-no-approval): declaring a package
  * is the trust decision, so every success exits 0. `--max-age` (feature
- * observe-max-age) belongs to the two reads only and reaches argv only when
+ * observe-max-age) belongs to the three reads only and reaches argv only when
  * the probe declares the feature; cliWorkspace drops it otherwise. */
 import { execFile } from 'node:child_process';
 import { isAbsolute, resolve } from 'node:path';
 import { OBSERVE_MAX_AGE_FEATURE, validMaxAge } from './renderer/deployment-contract.mjs';
+import { capabilityShowSupported, validCapabilityName, validPackageId, validRelativePath, validRepoKey } from './renderer/capability-show-contract.mjs';
 
 export const WORKSPACE_READ_TIMEOUT = 60_000;
 export const WORKSPACE_WRITE_TIMEOUT = 300_000; // discovery reads every member remote
 export const WORKSPACE_MAX_BUFFER = 4 * 1024 * 1024;
-export const WORKSPACE_ACTIONS = Object.freeze(['capabilities', 'souls', 'sync', 'onboard']);
+export const WORKSPACE_ACTIONS = Object.freeze(['capabilities', 'souls', 'sync', 'onboard', 'capability-show']);
+/** The read-only verbs: the ones `--max-age` may reach. */
+const READS = ['capabilities', 'souls', 'capability-show'];
 /** The kernel line this Desktop drives: workspace model v2 without package approval. */
 export const WORKSPACE_FEATURES = Object.freeze(['workspace-v2', 'packages-no-approval']);
 const SCRUB = ['PI_AGENTS_ROOT', 'PI_AGENT_HOME', 'PI_AGENT_INSTANCE', 'OATS_HOME', 'OATS_INSTANCE_HOME', 'OATS_INSTANCE', 'OATS_DEPLOYMENT', 'OATS_RESOLUTION'];
@@ -38,6 +44,7 @@ export function workspaceFailure(code, message) {
     E_CLI_PROTOCOL: 'The installed OATS CLI returned an invalid workspace result.',
     E_CLI_TIMEOUT: 'The workspace command exceeded its time limit.',
     E_CLI_OUTPUT_LIMIT: 'The workspace command exceeded its size limit.',
+    E_CAPABILITY_SHOW_FEATURE: "The installed OATS CLI can't show what a capability ships. Update OATS and retry.",
   };
   const known = Object.hasOwn(messages, code) ? code : 'E_CLI_FAILED';
   return { ok: false, reason: { code: known, message: message || messages[known] } };
@@ -53,13 +60,25 @@ export function workspaceGate(cli) {
 export function workspaceArgv(options) {
   if (!record(options) || !WORKSPACE_ACTIONS.includes(options.action)) return null;
   const { action } = options;
-  const allowed = { capabilities: ['action', 'context', 'maxAge'], souls: ['action', 'context', 'maxAge'], sync: ['action', 'context'], onboard: ['action', 'dir', 'workspace'] }[action];
+  const allowed = { capabilities: ['action', 'context', 'maxAge'], souls: ['action', 'context', 'maxAge'], sync: ['action', 'context'], onboard: ['action', 'dir', 'workspace'],
+    'capability-show': ['action', 'context', 'name', 'member', 'package', 'path', 'maxAge'] }[action];
   if (Object.keys(options).some(key => !allowed.includes(key))) return null;
   if (action === 'onboard') {
     if (!absolute(options.dir) || !validWorkspaceRef(options.workspace)) return null;
     return { argv: ['onboard', options.dir, '--workspace', options.workspace, '--json'], cwd: options.dir, timeout: WORKSPACE_WRITE_TIMEOUT };
   }
   if (!absolute(options.context)) return null;
+  if (action === 'capability-show') {
+    // Exactly one selector, each value one argv token the kernel parses (never option-looking);
+    // the file path is plain, relative and inside the capability (no `..`, no leading `/` or `-`).
+    const member = Object.hasOwn(options, 'member'), pkg = Object.hasOwn(options, 'package');
+    if (!validCapabilityName(options.name) || member === pkg || !validMaxAge(options.maxAge)) return null;
+    if (member ? !validRepoKey(options.member) : !validPackageId(options.package)) return null;
+    if (Object.hasOwn(options, 'path') && !validRelativePath(options.path)) return null;
+    return { argv: ['capabilities', 'show', options.name, ...(member ? ['--member', options.member] : ['--package', options.package]),
+      ...(Object.hasOwn(options, 'path') ? ['--file', options.path] : []), '--dir', options.context,
+      ...(options.maxAge === undefined ? [] : ['--max-age', String(options.maxAge)]), '--json'], cwd: options.context, timeout: WORKSPACE_READ_TIMEOUT };
+  }
   if (action === 'capabilities' || action === 'souls') {
     if (!validMaxAge(options.maxAge)) return null;
     const maxAge = options.maxAge === undefined ? [] : ['--max-age', String(options.maxAge)];
@@ -71,13 +90,15 @@ export function workspaceArgv(options) {
 export function cliWorkspace(cli, options, io = {}) {
   const gate = workspaceGate(cli);
   if (gate) return Promise.resolve(gate);
+  // `capabilities show` is its own feature on top of the workspace line (the feature AND the API integer).
+  if (record(options) && options.action === 'capability-show' && !capabilityShowSupported(cli)) return Promise.resolve(workspaceFailure('E_CAPABILITY_SHOW_FEATURE'));
   // An invalid value is a bad request whatever the kernel. A valid one on a kernel without
   // observe-max-age names a flag that does not exist there: drop it (on a copy; the caller's
-  // request is not ours to edit) so the read runs flagless. Only the two reads take it, so the
+  // request is not ours to edit) so the read runs flagless. Only the reads take it, so the
   // drop never lets a mutating verb past workspaceArgv's allowlist.
   if (record(options) && Object.hasOwn(options, 'maxAge')) {
     if (!validMaxAge(options.maxAge)) return Promise.resolve(workspaceFailure('E_BAD_ARGS'));
-    if (!cli.features.includes(OBSERVE_MAX_AGE_FEATURE) && ['capabilities', 'souls'].includes(options.action)) { const { maxAge, ...rest } = options; options = rest; }
+    if (!cli.features.includes(OBSERVE_MAX_AGE_FEATURE) && READS.includes(options.action)) { const { maxAge, ...rest } = options; options = rest; }
   }
   const plan = workspaceArgv(options);
   if (!plan) return Promise.resolve(workspaceFailure('E_BAD_ARGS'));

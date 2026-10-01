@@ -17,6 +17,9 @@
 
  *   POST /api/instance-git?ws=<id>  { action: git|diff, selector, fileId?, revision?, indexRevision? } → qualified K1 read
  *   POST /api/workspace-sync?ws=<id> { action: read|sync, refresh? } → the held `oats capabilities` catalog / `oats sync` (workspace-v2)
+ *   POST /api/capabilities?ws=<id>  { action: inspect|run, selector, … } → `oats inspect` / provider operations (server/capabilities.mjs);
+ *                                   { action: show|file, capability, path? } → `oats capabilities show` for one held catalog row
+ *                                   (server/capability-show.mjs; local only; errors 409/400 { error, code })
  *   POST /api/models                { harness: pi|claude|codex } → advisory model catalog for the spawn modal
  *   GET  /api/cli                   CLI discovery status (bin, version, required range, tried)
  *   POST /api/cli/reprobe           re-run discovery; body { bin? } prioritizes a user-chosen binary
@@ -50,6 +53,7 @@ import { capabilityRequest } from "./capabilities.mjs";
 import { createDeploymentObserver } from "./deployment-observer.mjs";
 import { createSoulCatalog, soulCatalogKey } from "./soul-catalog.mjs";
 import { createCapabilityCatalog, capabilityCatalogKey } from "./capability-catalog.mjs";
+import { capabilityShowRequest, createCapabilityShowCache } from "./capability-show.mjs";
 import { createInspectCache } from "./inspect-cache.mjs";
 import { createRefreshLoop, REFRESH_FOCUSED_MS, REFRESH_BLURRED_MS } from "./refresh-loop.mjs";
 import { createWorkspaceSyncBoundary, syncFailure } from "./workspace-sync.mjs";
@@ -495,7 +499,7 @@ async function reprobeCli(chosen) {
   cliProbeGeneration++;
   cliState = { ...r, probedAt: Date.now() };
   // Everything held was read with the previous CLI.
-  inspectCache.clear(); capabilityCatalog.forgetAll(); admitted.clear(); spawnPreviewCache.invalidate();
+  inspectCache.clear(); capabilityCatalog.forgetAll(); capabilityShowCache.clear(); admitted.clear(); spawnPreviewCache.invalidate();
   void refreshSnapshot({ live: true }); // the deployment observation belongs to the accepted CLI
   void refreshRemoteSnapshot();
   return cliState;
@@ -528,6 +532,7 @@ function cliStatus() {
     lifecycleApi: cliState.lifecycleApi === 1 ? 1 : null,
     readinessApi: cliState.readinessApi === 2 ? 2 : null,
     automationsApi: cliState.automationsApi === 1 ? 1 : null,
+    capabilityShowApi: cliState.capabilityShowApi === 1 ? 1 : null,
     // The inspector's gate (inspect on the workspace model); absent before, so
     // the Workspace inspector could never become available.
     operationsApi: cliState.operationsApi === 2 ? 2 : null,
@@ -560,6 +565,8 @@ const LIVENESS = join(HERE, "liveness.mjs");
 const soulCatalog = createSoulCatalog();
 const capabilityCatalog = createCapabilityCatalog();
 const inspectCache = createInspectCache();
+// What a capability ships, per (deployment, row, commit[, file]): content at one commit never moves.
+const capabilityShowCache = createCapabilityShowCache();
 // The read side of /api/workspace-sync answers from the held capabilities table for an
 // observed deployment (the current workspace status is its key); a re-read happens only
 // when that key moves, at admission, or on refresh:true.
@@ -1394,6 +1401,24 @@ const server = createServer(async (req, res) => {
       const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
       try {
         const request = await readStrictBody(req);
+        if (request?.action === "show" || request?.action === "file") {
+          // What a capability ships (server/capability-show.mjs): its own gate (capability-show), not the
+          // operations API's. The selector must match a row of the held table; with none held yet for an
+          // observed deployment, the catalog read (held answer at once, else one kernel read) supplies it.
+          try {
+            const result = await capabilityShowRequest(request, { workspace, cli: cliState, cache: capabilityShowCache, maxAge: BACKGROUND_MAX_AGE,
+              catalog: async () => {
+                const d = workspace && !workspace.remote ? snapshot.byWs.get(workspace.id)?.deployment : null;
+                const entry = d?.status === "observed" ? await capabilityCatalog.read(workspace.id, cliState, d.workspaceStatus, { maxAge: BACKGROUND_MAX_AGE })
+                  : capabilityCatalog.held(workspace.id);
+                return entry?.capabilities?.capabilities ?? null;
+              } });
+            return send(res, 200, result);
+          } catch (e) {
+            const code = typeof e?.code === "string" ? e.code : "E_CLI_FAILED";
+            return send(res, code === "E_BAD_ARGS" ? 400 : 409, { error: String(e?.message || "").slice(0, 4096), code });
+          }
+        }
         // Inspections are served from the held cache (keyed by the soul catalog's key or the instance's
         // reported identity) and coalesced; `refresh: true` observes live. A run never touches the cache.
         // A soul inspection's key is the capabilities key (member/workspace commits, package rows, lock currency);

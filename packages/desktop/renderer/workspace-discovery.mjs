@@ -453,7 +453,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   return {
     setTab, updateRoster, syncCli, get tab() { return tab; },
     /** What the capability table renders with (observed facts only), for pages that reuse it. */
-    context: () => ({ status: observed(), instances, root: workspace?.id, rosterState: rosterState(), catalog: catalog?.capabilities ?? null,
+    context: () => ({ status: observed(), instances, root: workspace?.id, remote: !!(workspace?.remote || workspace?.server), rosterState: rosterState(), catalog: catalog?.capabilities ?? null,
       // The catalog's loading state for pages rendered from it (item 7): its state, observation and the last failure's text.
       catalogState: loadState.state, catalogSettled: loadState.settled, catalogBusy: loadState.busy, catalogObservedAt: loadState.observedAt, catalogFailure: failure || null }),
     /** A page's Retry: re-read the catalog live (announced on completion). */

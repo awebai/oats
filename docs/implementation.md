@@ -48,6 +48,7 @@ published to npm. Its developer docs are in
 | `workspace.mjs` | workspace, membership and soul files; discovery |
 | `resolve.mjs` | a soul's resolution: capabilities, slots, provenance |
 | `packages.mjs` | `packages:`, the catalog, `oats sync`, `oats-lock.json` |
+| `capability-show.mjs` | `oats capabilities show`: one catalog row's inject and skill files, read at its commit |
 | `materialize.mjs` | copying modules into a home and composing it |
 | `core.mjs` | spawn, retire, sessions, hooks, launch recipes, instance metadata |
 | `instruction-composition.mjs` | the generated `AGENTS.md` |
@@ -78,7 +79,11 @@ gets the plain per-call behaviour. Within a session:
   is kept, not the transfer: git reads the whole advertisement before it
   prints a ref, so a remote over budget costs its advertisement once, then
   git is killed, the remote observed again under v2 and recorded. A v0
-  timeout stays today's error (no retry) and is recorded too. The record is
+  timeout stays today's error (no retry) and is recorded too, unless the
+  session's `deadline` cut that read's timeout (the deadline, not the remote,
+  may have ended it). The
+  v0 read and its `protocol.version` check go through `sessionExec` like every
+  other git call. The record is
   `<cacheRoot>/.ls-remote/<sha256(key)>.<reason>.json`, `{ protocol: "v2",
   reason: "overflow" | "timeout", recordedAt }`, one file per reason (an
   in-flight timeout never replaces an overflow), written atomically with no lock;
@@ -121,6 +126,20 @@ gets the plain per-call behaviour. Within a session:
   command that ends normally awaits the close, so its readers are reaped
   before it exits; a `process.exit` (every refusal) ends them in the
   exit hook (`closeNow`), and the system reaps them once the process is gone;
+- a session may have a `deadline` (`READ_REMOTE_BUDGET_MS`, 12 s after it
+  starts): the CLI gives one to `status` and `workspace status` only
+  (`readBudgetMs`; `OATS_READ_REMOTE_BUDGET_MS` is a test and ops override,
+  not a contract). Every
+  remote step then gets what is left of it instead of its own default: each
+  git call's timeout (`sessionExec`: ls-remote, fetch, ls-tree, the cache's
+  plumbing; none starts once nothing is left), the git version probe
+  (`readVersion`), the batch readers' answers, the cache write lock's wait,
+  the half-initialised cache's wait and the lock-race backoff. What the
+  deadline ends is a `timeout` (a peel or version it ended is never read as a
+  missing commit or an older git), so an unread member degrades as any
+  unreadable one. A cut wait never changes what it judges: past the deadline
+  no lock is taken or reclaimed (live, stale or unreadable), and a cache
+  directory waited for less than in full is not taken for a crash's leftover;
 - every git child is ended with SIGTERM first and SIGKILL only after a
   grace (`terminateGroup`): git removes its own lock files on SIGTERM, and
   a git killed outright leaves one that blocks every later write. The

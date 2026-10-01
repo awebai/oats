@@ -10,7 +10,7 @@ import { chmodSync, existsSync, lstatSync, lutimesSync, mkdirSync, mkdtempSync, 
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import {
-  classifyRemoteFailure, contentDigest, createReadSession, fetchRemoteTree, listRemoteTree, observeRemote, parseRepoRef, readRemoteFile, runGit,
+  classifyRemoteFailure, contentDigest, createReadSession, fetchRemoteTree, listRemoteFiles, listRemoteTree, observeRemote, parseRepoRef, readRemoteFile, runGit,
   FILE_BUDGET, OATS_ALIAS_SYMLINK, PARTIAL_FETCH_GIT, SMALL_BLOB_LIMIT, gitVersion, keepsPartialCache,
 } from "../lib/remote.mjs";
 import { PARTIAL_GIT, olderGitNotice, skipPartialMechanics } from "./helpers/partial-git.mjs";
@@ -133,6 +133,104 @@ test("reading a small file costs no fetch; reading a large one fetches exactly t
       await readRemoteFile(f.bare, f.commit, "elsewhere/tools/data/model.bin", opts);
       assert.equal(fetches.length, 2, "a blob already fetched is never fetched again");
     } finally { await session?.close(); }
+  }
+});
+
+test("listRemoteFiles (capability-show): every regular file below a dir with its real size, the sizes a partial cache lacks in ONE fetch; symlinks and gitlinks omitted", { skip: skipPartialMechanics }, async () => {
+  const f = fixture();
+  write(f.work, "elsewhere/tools/data/b.txt", "bee\n");
+  write(f.work, "elsewhere/tools/data/second.bin", noise(SMALL_BLOB_LIMIT * 2, "second"));
+  symlinkSync("oats.json", join(f.work, "elsewhere/tools/link"));
+  git(f.work, "add", "-A");
+  git(f.work, "update-index", "--add", "--cacheinfo", `160000,${f.commit},elsewhere/tools/sub`);
+  git(f.work, "commit", "-q", "-m", "two"); git(f.work, "push", "-q", "origin", "HEAD:main");
+  const c2 = git(f.work, "rev-parse", "HEAD");
+  const large = [git(f.work, "rev-parse", "HEAD:elsewhere/tools/data/model.bin"), git(f.work, "rev-parse", "HEAD:elsewhere/tools/data/second.bin")];
+  for (const withSession of [false, true]) {
+    const { fetches, exec } = counting();
+    const session = withSession ? createReadSession() : undefined;
+    const opts = { cacheDir: join(f.base, `cache-${withSession}`), exec, ...(session ? { session } : {}) };
+    try {
+      const all = [
+        { path: "data/b.txt", size: 4 }, { path: "data/model.bin", size: SMALL_BLOB_LIMIT * 3 }, { path: "data/second.bin", size: SMALL_BLOB_LIMIT * 2 },
+        { path: "oats.json", size: Buffer.byteLength("{\"capability\":\"tools\"}\n") },
+      ];
+      assert.deepEqual(await listRemoteFiles(f.bare, c2, "elsewhere/tools", opts), { files: all, total: 4 }, `the symlink and the gitlink are not listed (session: ${withSession})`);
+      assert.equal(fetches.length, 2, "the commit, then ONE fetch for every size the cache lacked");
+      assert.deepEqual(fetches[1].input.trim().split("\n").sort(), [...large].sort());
+      assert.deepEqual(await listRemoteFiles(f.bare, c2, "elsewhere/tools/data", opts), { files: [
+        { path: "b.txt", size: 4 }, { path: "model.bin", size: SMALL_BLOB_LIMIT * 3 }, { path: "second.bin", size: SMALL_BLOB_LIMIT * 2 }], total: 3 });
+      assert.equal(fetches.length, 2, "blobs already fetched are never fetched again");
+      assert.deepEqual(await listRemoteFiles(f.bare, c2, "elsewhere/tools", { ...opts, limit: 2 }), { files: all.slice(0, 2), total: 4 }, "a limit lists the first files, counts them all");
+      assert.deepEqual(await listRemoteFiles(f.bare, c2, "elsewhere/tools", { ...opts, limit: 0 }), { files: [], total: 4 });
+      const none = { files: [], total: 0 };
+      assert.deepEqual(await listRemoteFiles(f.bare, c2, "nowhere", opts), none, "a missing dir lists nothing");
+      assert.deepEqual(await listRemoteFiles(f.bare, c2, "elsewhere/tools/oats.json", opts), none, "a file is not a dir");
+      assert.deepEqual(await listRemoteFiles(f.bare, c2, "elsewhere/tools/link", opts), none, "a symlink is not a dir");
+      for (const limit of [-1, 1.5, "2"]) {
+        await assert.rejects(listRemoteFiles(f.bare, c2, "elsewhere/tools", { ...opts, limit }), (e) => e.code === "E_REPO_REF", String(limit));
+      }
+    } finally { await session?.close(); }
+  }
+});
+
+test("listRemoteFiles with a limit (#409): only the first `limit` blobs by path are fetched to learn their sizes, in ONE fetch; total counts them all", { skip: skipPartialMechanics }, async () => {
+  const f = fixture();
+  const count = 203, limit = 200;
+  const names = Array.from({ length: count }, (_, i) => `f${String(i).padStart(3, "0")}.bin`);
+  for (const name of names) write(f.work, `crowded/${name}`, noise(SMALL_BLOB_LIMIT + 1, name)); // every blob above the partial filter
+  git(f.work, "add", "-A"); git(f.work, "commit", "-q", "-m", "crowded"); git(f.work, "push", "-q", "origin", "HEAD:main");
+  const c2 = git(f.work, "rev-parse", "HEAD");
+  const ids = names.map((n) => git(f.work, "rev-parse", `HEAD:crowded/${n}`));
+  for (const withSession of [false, true]) {
+    const { fetches, exec } = counting();
+    const session = withSession ? createReadSession() : undefined;
+    const opts = { cacheDir: join(f.base, `cache-cap-${withSession}`), exec, ...(session ? { session } : {}) };
+    try {
+      const listed = await listRemoteFiles(f.bare, c2, "crowded", { ...opts, limit });
+      assert.deepEqual(listed, { files: names.slice(0, limit).map((path) => ({ path, size: SMALL_BLOB_LIMIT + 1 })), total: count });
+      assert.equal(fetches.length, 2, `the commit, then ONE fetch (session: ${withSession})`);
+      assert.deepEqual(fetches[1].input.trim().split("\n").sort(), ids.slice(0, limit).sort(), "exactly the first 200 blob ids");
+      const present = (oid) => !gitInput(join(opts.cacheDir, createHash("sha256").update(parseRepoRef(f.bare).key).digest("hex")), `${oid}\n`, "cat-file", "--batch-check").endsWith(" missing");
+      assert.deepEqual(ids.slice(limit).map(present), [false, false, false], "nothing past the limit was fetched");
+    } finally { await session?.close(); }
+  }
+});
+
+test("listRemoteFiles with a limit still refuses an unsafe name past it: the scan covers every entry", async () => {
+  const f = fixture();
+  const run = (input, ...args) => execFileSync("git", args, { cwd: f.work, env: GIT_ENV, input, stdio: ["pipe", "pipe", "pipe"] }).toString("utf8").trim();
+  const blob = run("x\n", "hash-object", "-w", "--stdin");
+  const mkTree = (entries) => run(Buffer.concat(entries.map(({ mode, name, oid }) => Buffer.concat([Buffer.from(`${mode} ${name}\0`), Buffer.from(oid, "hex")]))), "hash-object", "-w", "-t", "tree", "--stdin", "--literally");
+  const bad = mkTree([{ mode: "100644", name: ".git", oid: blob }]);
+  const dir = mkTree([{ mode: "100644", name: "a.md", oid: blob }, { mode: "100644", name: "b.md", oid: blob }, { mode: "040000", name: "zzz", oid: bad }]);
+  const c = run("", "commit-tree", mkTree([{ mode: "040000", name: "skill", oid: dir }]), "-m", "unsafe past the limit");
+  git(f.work, "push", "-q", "origin", `${c}:refs/heads/unsafe-late`);
+  for (const session of [undefined, createReadSession()]) {
+    try {
+      const e = await listRemoteFiles(f.bare, c, "skill", { cacheDir: f.cacheDir, limit: 1, ...(session ? { session } : {}) }).then(() => assert.fail("expected a refusal"), (x) => x);
+      assert.deepEqual([e.code, e.details.path], ["E_REMOTE_TREE_UNSAFE", "skill/zzz/.git"]);
+    } finally { await session?.close(); }
+  }
+});
+
+test("listRemoteFiles refuses an entry name that could escape a checkout anywhere below the dir (E_REMOTE_TREE_UNSAFE)", async () => {
+  const f = fixture();
+  const run = (input, ...args) => execFileSync("git", args, { cwd: f.work, env: GIT_ENV, input, stdio: ["pipe", "pipe", "pipe"] }).toString("utf8").trim();
+  const blob = run("x\n", "hash-object", "-w", "--stdin");
+  const mkTree = (entries) => run(Buffer.concat(entries.map(({ mode, name, oid }) => Buffer.concat([Buffer.from(`${mode} ${name}\0`), Buffer.from(oid, "hex")]))), "hash-object", "-w", "-t", "tree", "--stdin", "--literally");
+  for (const bad of [".git", ".GIT", "..", "a\\b"]) {
+    const deep = mkTree([{ mode: "100644", name: bad, oid: blob }]);
+    const skill = mkTree([{ mode: "100644", name: "SKILL.md", oid: blob }, { mode: "040000", name: "deep", oid: deep }]);
+    const c = run("", "commit-tree", mkTree([{ mode: "040000", name: "skill", oid: skill }]), "-m", "unsafe");
+    git(f.work, "push", "-q", "origin", `${c}:refs/heads/unsafe-${c.slice(0, 8)}`);
+    for (const session of [undefined, createReadSession()]) {
+      try {
+        const e = await listRemoteFiles(f.bare, c, "skill", { cacheDir: f.cacheDir, ...(session ? { session } : {}) }).then(() => assert.fail(`expected a refusal of ${bad}`), (x) => x);
+        assert.equal(e.code, "E_REMOTE_TREE_UNSAFE", bad);
+        assert.deepEqual({ why: e.details.why, path: e.details.path }, { why: "path", path: `skill/deep/${bad}` });
+      } finally { await session?.close(); }
+    }
   }
 });
 

@@ -368,6 +368,40 @@ a focused Retry kept. The spawn dialog's harness, model and launch hints (`match
 `spawn-dialog.mjs`) read only a preview for the choices on screen, like the
 name and work hints.
 
+**The capability page's Contents (spec C).** What an instance gets, read through
+`oats capabilities show` (feature `capability-show` AND `capabilityShowApi: 1`;
+gated off with a line for an older CLI, a remote workspace, an external
+capability or one the catalog does not list): `capability-contents.mjs`, a
+controller `views/spawn.mjs` creates per open page (`s.capOpen.contents`) and
+whose one long-lived `element` `renderCapabilityPage` re-appends after
+Provides on every rebuild (`hold()` puts focus and both panes' scroll back),
+so a catalog repaint never touches what is open. `update()` takes the
+CATALOG row (from a soul page, the catalog's row, not the resolved one): its
+selector (`--member repoKey` / `--package id`) and commit key the subject; an
+unchanged subject reads nothing. The decoder (`capability-show-contract.mjs`,
+shared with the server) refuses a whole answer it cannot read. Every path is
+relative to the capability directory (a skill's files too; the tree shows
+them relative to the skill). The show read and each file read carry tickets
+checked on success and failure (A→B→A safe); an answer at another commit
+than the row's is never rendered (`E_CAPABILITY_MOVED`: the catalog is re-read
+through `onCatalogStale`, as on `E_CAPABILITY_UNKNOWN`). A moved commit keeps
+the open file while it is still listed. The navigation is ONE `role=tree`
+holding two labelled `role=group`s (Instructions, Skills; an empty group is a
+label and a note beside it), with a roving tab stop found again by
+`data-focus-key` (`file:<path>`, `skill:<path>`). The reader renders Markdown
+through `views/markdown.mjs` in its strict profile (front matter through
+`front-matter.mjs` as a facts table, or as YAML code when outside its subset)
+and everything else as highlighted code; links are settled after rendering
+(`settleLinks`): a listed file, `https:` through `openExternal`, `#fragment`,
+or plain text. `E_CAPABILITY_FILE_UNKNOWN` and `E_REMOTE_FILE_OVERSIZE` are
+muted lines, not failures. The reader sits on `--bg`, the viewer's own ground,
+so the viewer's checked colours hold, with a type scale kept under the page's
+own (headings below the 20px title, code at 12px). The page's *Provides* is one
+compact card (`providesSection`): a row per kind (Skills, Commands, Hooks; from
+a soul, Commands and Settings) with every name its own code chip, wrapping.
+`paintCapabilityPage` renders the page's facts and Contents from the same
+current catalog row (`contentsRow`), so a refresh moves them together.
+
 **Core capabilities and Capabilities read as one system.** Wherever the two
 sections appear (the soul page, the inspector's *Modules as spawned*, the
 spawn preview, the context panel's Soul tab), a core slot's provider (by
@@ -385,7 +419,7 @@ and why tag cannot drift; a filled core row is a `button` with
 `data-focus-key="core:<slot>"`.
 
 The terminal-side context panel's Soul tab (`instance-soul.mjs`) and its
-Messaging section (`instance-teams.mjs`): the roster-derived header is the
+Messaging & Teams section (`instance-teams.mjs`): the roster-derived header is the
 context panel's and stays put; each section owns a body under it
 (`context-panel.mjs` mounts the Soul section on `.context-panel-soul-body`;
 the Teams section appends `.instance-teams-body` to its host) where the
@@ -397,7 +431,7 @@ home, last start, running, module drift rows, soul source) changes: the soul
 as a refresh that keeps its content, the teams by refreshing the card's list
 (or inspecting again when there is no card). An inspection without the soul,
 or without a messaging provider, is an empty read: the header stands, the
-Messaging section hides. The Messaging section claims its place during the
+Messaging & Teams section hides. That section claims its place during the
 inspection only when the roster row already reports `identityAddress` (or a
 failure is on screen), never again after a no-provider answer, so nothing
 under it shifts. Every controller has a `focusFallback` (the section head or
@@ -422,7 +456,7 @@ grid's read, so nothing is left "refreshing". A catalog that failed with
 nothing held shows the failed treatment on an open capability page
 (`failedElement` / `updateFailed`, shared with the controller's own block:
 cause, Details, Retry), never silence; a Retry over it paints no skeleton
-(`catalogPending` only before the first read settles). The Messaging section
+(`catalogPending` only before the first read settles). The Messaging & Teams section
 treats a no-provider answer as a settled absence (`cancel()`, not data), so a
 later failed re-read is the failed block with Retry, never a header over an
 empty body.
@@ -673,19 +707,31 @@ panel** (`#context-panel`, `context-panel.mjs`). A selected terminal shows its
 instance in three tabs (v4.1 board 1): **Instance** (header with the soul mark,
 "instance of <soul>" linking to the Soul tab, an "older build" chip only when
 the kernel reports `soul.status`/`modules[].status` other than `current`, and
-"Running · 42m"; then Where it works, Session, Messaging, Lineage and the
-lifecycle footer), **Soul** and **Developer** (Git and GitHub). Where it works is one card: the
-work mode in plain words on a band, then Repo, Branch (Git modes only; ↑/↓
-appear once the Developer tab has observed them), Folder and Home. Folder is
+"Running · 42m"; then Work, Session, Messaging & Teams, Lineage and the
+lifecycle footer), **Soul** and **Developer** (Git and GitHub). Work is one card:
+the work mode's tile and one sentence saying what the mode means for this
+instance (`WORK_MODES` in `context-panel.mjs`: an icon and a sentence builder per
+mode). The roster row's own facts (repo, branch, parent) sit in it in the mono
+face, and an unreported fact gets the generic words ("its soul's repository",
+"its parent's tree"), never an invented name. An unknown mode hides the section.
+The sentence is rebuilt only when its words change. Ahead/behind counts are the
+Developer tab's alone. Under the sentence, a closed **Paths** disclosure holds
+Folder and Home, each with an icon Copy. It is built once and never rebuilt, so a
+repaint keeps its open state and a focused Copy. It closes when the selection
+changes. The panel's visibility check treats a closed `<details>`'s content as
+hidden, so focus inside it falls back. Folder is
 `<home>/work`, joined from the roster row's `home` with the home's own separator:
 the kernel gives every instance that folder, a real one in worktree and
 directory mode and a link to the shared tree in checkout, attached and workspace
 mode, where a muted "shared" tag follows the path (the link's target is not
 resolved; that would need a server read). Home is the instance home, where its
-own files live; without a reported `home` string there is no Folder row. Messaging's header is the
-label plus a tools slot the injected Teams section fills with its icon Refresh
-(`createTeamsPanel(…, { compact: true, refreshHost })`); the identity address
-(`identityAddress`, else the served identity) sits alone under it. Empty groups
+own files live; without a reported `home` string there is no Paths. Messaging &
+Teams' header is the label plus a tools slot the injected Teams section fills
+with its icon Refresh (`createTeamsPanel(…, { compact: true, refreshHost })`).
+Under it come two parts with sentence-case sub-labels. **Messaging ID** is the
+identity address (`identityAddress`, else the served identity) on one mono line
+with an icon Copy. **Teams** is followed by the compact card's lead line, shown
+once a teams document has been read, and the card. Empty groups
 and file/brain tabs do not inherit another terminal's context. Roster refresh
 matches the exact workspace/terminal identity and never selects or focuses a
 panel; a missing or ambiguous observation makes session state unknown.

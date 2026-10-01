@@ -236,6 +236,21 @@ test("a v0 timeout records v2 for 7 days and says so: the next command goes stra
   assert.deepEqual(recent.lsRemote.map((c) => c.protocol), [2]);
 });
 
+test("a v0 timeout the session's own deadline caused (status, workspace status) is today's timeout, cut to the budget, and records nothing", async () => {
+  const f = fixture();
+  const timeout = failure("", { code: null, killed: true, signal: "SIGTERM", timedOut: true });
+  const seen = [];
+  const t = intercepting({ v0: (args, opts) => { seen.push(opts.timeout); return new Promise((r) => setTimeout(r, 400)).then(() => timeout()); }, v2: () => assert.fail("no v2 retry") });
+  const session = createReadSession({ deadline: Date.now() + 200 });
+  const e = await caught(observeRemote(f.bare, { cacheDir: f.cacheDir, exec: t.exec, session }));
+  await session.close();
+  assert.deepEqual([e.code, e.details.reason], ["E_REMOTE_UNREADABLE", "timeout"]);
+  assert.deepEqual(t.lsRemote.map((c) => c.protocol), [0]);
+  assert.ok(seen[0] > 0 && seen[0] <= 200, `the v0 read's timeout is what is left of the budget: ${seen[0]}`);
+  assert.ok(noRecords(f), "the deadline is not the remote's fault");
+  assert.deepEqual(session.notices, []);
+});
+
 test("a timeout recorded by a command already in flight never replaces a permanent overflow record", async () => {
   const f = fixture();
   // B passes the no-record check and starts its v0 read, held there until released.

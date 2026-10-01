@@ -10,6 +10,8 @@
  *   oats package add|remove ...            edit `packages:` in the workspace file
  *   oats workspace status                  membership table, packages
  *   oats capabilities | oats souls         every visible item of the workspace
+ *   oats capabilities show <name> [--member <repoKey> | --package <id>] [--file <path>] [--json]
+ *                                          what one capability ships (inject text, skill files)
  *
  * Workspace model v2 (docs/design/2026-09-23-workspace-module-contracts.md §6):
  * nothing is installed. `oats-local.yaml` names the workspace, `oats sync`
@@ -1027,9 +1029,13 @@ async function readinessCmd() {
 let readSession = null;
 /** The validated `--max-age` seconds (checked once at dispatch: maxAgeRefusal), null when not given. */
 let maxAgeGiven = null;
+/** The remote budget of this command's reads (ms), or null: only the deployment reads `status` and `workspace
+ *  status` have one (remote.mjs READ_REMOTE_BUDGET_MS; OATS_READ_REMOTE_BUDGET_MS overrides it), so they answer
+ *  inside a caller's own limit. Spawn, sync and every other verb read with no deadline. */
+let readBudgetMs = null;
 function commandSession() {
   if (!readSession) {
-    readSession = remoteModule.createReadSession({ maxAge: maxAgeGiven ?? 0 });
+    readSession = remoteModule.createReadSession({ maxAge: maxAgeGiven ?? 0, ...(readBudgetMs !== null ? { deadline: Date.now() + readBudgetMs } : {}) });
     process.on("exit", () => { sayReadNotices(); readSession.closeNow(); });
     for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143], ["SIGHUP", 129]]) process.once(signal, () => {
       readSession.closeNow();
@@ -1046,7 +1052,7 @@ function sayReadNotices() {
 }
 /** Which kernel command forms take --max-age: THE allow-list (docs/desktop-cli-api.md "Observation reuse").
  *  → null when this form reads with observation reuse, else the E_BAD_ARGS message. `head` is argv before `--`. */
-const MAX_AGE_READS = "status, workspace status, souls, capabilities, inspect --soul|--home, spawn --preview, and the read forms of teams and soul teams";
+const MAX_AGE_READS = "status, workspace status, souls, capabilities, capabilities show, inspect --soul|--home, spawn --preview, and the read forms of teams and soul teams";
 function maxAgeRefusal(command, head) {
   const word = (i) => (head[i] !== undefined && !head[i].startsWith("--") ? head[i] : undefined);
   const refuse = (form) => `--max-age is not accepted by \`oats ${form}\`: only the read verbs reuse observations (${MAX_AGE_READS})`;
@@ -1645,14 +1651,25 @@ async function soulCmd() {
   if (doc.teams.length) printTable(["team", "id", "from", "why"], doc.teams.map((t) => [t.default ? `${t.label} (default)` : t.label, t.team ?? "(no id yet)", t.from, t.via.join(",")]));
 }
 
-/** `oats capabilities` / `oats souls` [--dir] [--json] — contract §6. */
-async function itemsCmd(kind) {
-  const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
+/** The catalog's rows of `kind` ("capabilities" | "souls") as `oats capabilities` / `oats souls` list them:
+ *  one discovery (honouring --max-age), the lock, workspaceItems. → { ctx, discovery, lock, items }. */
+async function catalogRows(kind, bail) {
   const ctx = workspaceContext(bail);
   const discovery = await discoverForCli(ctx, bail);
   let lock;
   try { lock = readLock(ctx.deploymentDir); } catch (e) { return bail(e.code || "E_LOCK_SCHEMA", e.message, e.details); }
-  const items = workspaceItems(discovery, lock, ctx.local, ctx.deploymentDir)[kind];
+  return { ctx, discovery, lock, items: workspaceItems(discovery, lock, ctx.local, ctx.deploymentDir)[kind] };
+}
+
+/** `oats capabilities` / `oats souls` [--dir] [--json] — contract §6. */
+async function itemsCmd(kind) {
+  const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
+  if (kind === "capabilities") {
+    const { words } = capabilitiesArgv();
+    if (words[0] === "show") return capabilityShowCmd(bail);
+    if (words.length) return bail("E_BAD_ARGS", `unknown capabilities subcommand ${JSON.stringify(words[0])}: \`oats capabilities\` lists the catalog, \`oats capabilities show <name>\` reads one capability`, { subcommand: words[0] });
+  }
+  const { ctx, discovery, lock, items } = await catalogRows(kind, bail);
   // One command's reads at a commit are shared: many souls resolve over the same manifests and listings.
   const remote = memoizedRemote(remoteModule);
   if (kind === "capabilities") await capabilityFacts(items, discovery, lock, ctx, remote);
@@ -1665,6 +1682,74 @@ async function itemsCmd(kind) {
   else printTable(["name", "origin", "layer"], items.map((c) => [c.private ? `${c.name} (repo-owned)` : c.name, c.origin, c.layer ?? "—"]));
   const unsynced = Object.keys(discovery.workspace?.packages || {}).filter((id) => !lock.packages[id]);
   if (kind === "capabilities" && unsynced.length) console.log(`\n  package capabilities of ${unsynced.join(", ")} appear after \`oats sync\``);
+}
+
+/** `oats capabilities` argv after the command: its words (the subcommand first) with every flag and a value
+ *  flag's value set aside, and the first flag neither form takes (`unknown`). */
+function capabilitiesArgv() {
+  const VALUE_FLAGS = new Set(["--member", "--package", "--file", "--dir", "--max-age", "--server"]);
+  const words = [];
+  let unknown;
+  for (let i = 1; i < args.length; i++) {
+    if (VALUE_FLAGS.has(args[i])) { if (args[i + 1] !== undefined && !args[i + 1].startsWith("--")) i++; continue; }
+    if (args[i].startsWith("--")) { if (args[i] !== "--json") unknown ??= args[i]; continue; }
+    words.push(args[i]);
+  }
+  return { words, unknown };
+}
+
+/** `oats capabilities show <name> [--member <repoKey> | --package <id>] [--file <path>] [--dir] [--json]`
+ *  (feature capability-show, capabilityShowApi 1; lib/capability-show.mjs): what one catalog row ships, read
+ *  at that row's commit — the rows are `oats capabilities`'s own (catalogRows). */
+async function capabilityShowCmd(bail) {
+  const S = await import("../lib/capability-show.mjs");
+  if (flag("server") !== undefined) return bail("E_BAD_ARGS", "oats capabilities show reads this machine's workspace only: --server is not accepted");
+  const { words, unknown } = capabilitiesArgv();
+  if (unknown) return bail("E_BAD_ARGS", `oats capabilities show: unknown flag ${unknown}`, { flag: unknown });
+  const positionals = words.slice(1);
+  if (positionals.length !== 1) return bail("E_BAD_ARGS", positionals.length ? `oats capabilities show takes one capability name, got ${positionals.map((p) => JSON.stringify(p)).join(" ")}` : "oats capabilities show needs a capability name (`oats capabilities` lists them)");
+  const name = positionals[0];
+  const memberArg = valueFlag("member"), packageArg = valueFlag("package"), file = valueFlag("file");
+  if (memberArg !== undefined && packageArg !== undefined) return bail("E_BAD_ARGS", "choose --member <repoKey> or --package <id>, not both");
+  if (file !== undefined && S.unsafeFilePath(file)) return bail("E_CAPABILITY_FILE_UNSAFE", `${JSON.stringify(file)} is not a relative path inside the capability`, { path: file });
+  const { ctx, discovery, lock, items } = await catalogRows("capabilities", bail);
+  // --member takes the repo key a row shows, or any ref spelling of it (compared on the canonical key).
+  let member = memberArg ?? null;
+  if (member !== null && !items.some((r) => r.repoKey === member)) { try { member = remoteModule.parseRepoRef(member).key; } catch { /* matches no row */ } }
+  const remote = memoizedRemote(remoteModule);
+  const catalog = (() => { try { return officialPackageCatalog(); } catch { return null; } })();
+  let doc;
+  try {
+    const row = S.selectCapabilityRow(items, name, { member, package: packageArg ?? null });
+    const source = await S.capabilitySource(row, { discovery, lock, catalog, remote, remoteOptions: ctx.remoteOptions });
+    doc = file === undefined ? await S.capabilityShow(source, { remote, remoteOptions: ctx.remoteOptions }) : await S.capabilityFile(source, file, { remote, remoteOptions: ctx.remoteOptions });
+  } catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details ?? e.provenance); throw e; }
+  if (JSON_MODE) { jsonOk(withObservation(doc)); return; }
+  if (file !== undefined) {
+    const f = doc.file;
+    if (f.binary) console.log(`(${f.path}: binary, ${formatBytes(f.bytes)} — not shown)`);
+    else {
+      process.stdout.write(f.text.endsWith("\n") || f.text === "" ? f.text : `${f.text}\n`);
+      if (f.truncated) console.log(`(${f.path}: truncated — ${formatBytes(f.bytes)}, the first ${formatBytes(S.TEXT_LIMIT)} shown)`);
+    }
+    return;
+  }
+  console.log(`${doc.name} — ${doc.kind === "member" ? `member ${doc.repoKey}` : `package ${doc.package} v${doc.version} (${doc.repoKey})`} @ ${short(doc.commit)}, ${doc.path}\n`);
+  const size = (bytes) => (bytes === null ? "unreadable" : formatBytes(bytes));
+  console.log(`  inject: ${doc.inject ? `${doc.inject.path ?? "(unsafe path)"} (${size(doc.inject.bytes)}${doc.inject.binary ? ", binary" : ""}${doc.inject.truncated ? ", truncated" : ""})` : "(none)"}`);
+  if (doc.skills === null) console.log("  skills: (cannot be listed — see problems)");
+  else if (!doc.skills.length) console.log("  skills: (none)");
+  else {
+    console.log("  skills:");
+    for (const skill of doc.skills) {
+      console.log(`    ${skill.name}  ${skill.path}`);
+      if (skill.files === null) console.log("      (files cannot be listed — see problems)");
+      for (const f of skill.files ?? []) console.log(`      ${f.path}  ${size(f.bytes)}`);
+      if (skill.filesTruncated) console.log(`      … more files (the first ${S.FILES_PER_SKILL} are listed)`);
+    }
+  }
+  for (const p of doc.problems) console.log(`  problem: ${p.code}${p.path ? ` ${p.path}` : ""} — ${p.message}`);
+  console.log(`\n  a file's text: oats capabilities show ${doc.name}${doc.kind === "package" ? ` --package ${doc.package}` : ""} --file <path>`);
 }
 
 /** Capability rows' manifest facts (feature desktop-facts): layer, description, and what each provides
@@ -2975,7 +3060,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-2", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2 }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-2", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capabilityShowApi: 1 }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -3378,6 +3463,10 @@ try {
     maxAgeGiven = Number(raw);
     activateLocalInputs(); // observation.localRevision: every local config read from here on is recorded
   }
+  if (kernelArgv && !head.includes("--server") && (cmd === "status" || (cmd === "workspace" && head[1] === "status"))) {
+    const override = Number(process.env.OATS_READ_REMOTE_BUDGET_MS);
+    readBudgetMs = Number.isSafeInteger(override) && override > 0 ? override : remoteModule.READ_REMOTE_BUDGET_MS;
+  }
   const inherited = ["OATS_RESOLUTION", "OATS_DEPLOYMENT"].filter((k) => process.env[k]);
   if (inherited.length && cmd !== "version") refuse(`this environment carries a captured context (${inherited.join(", ")}): the captured/portable path was removed in 0.26, and nothing is run against the current context in its place — retire the captured home and re-spawn it from the deployment`, { inherited });
   if (cmd === "inspect" && head.includes("--request")) {
@@ -3635,6 +3724,10 @@ Usage:
   oats capabilities [--dir <d>] [--json]     every capability of every confirmed member (a
       [--max-age <s>]                       private one is listed as repo-owned: usable only by
                                             its own repo's souls) + the locked packages
+  oats capabilities show <name> [--member <repoKey> | --package <id>] [--file <path>]
+      [--dir <d>] [--json] [--max-age <s>]  what one capability of that list ships, at its commit:
+                                            its inject (text) and each skill's files (sizes);
+                                            --file <path>: one listed file's text
   oats souls [--dir <d>] [--json]            every soul of every confirmed member + external souls
       [--max-age <s>]                       (souls have no private mode), with origin
                                             (member <key> @ <commit> | package <id> v<ver>) and its

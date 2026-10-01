@@ -109,6 +109,14 @@ else in `workspace status` changes it.
   past `HELD_TTL_MS` is answered at once and this request starts (or joins)
   its re-read, announced as `refreshing`. `refresh: true` forces a live read.
   An ok `sync` forgets the held table.
+- `POST /api/capabilities {action:"show"|"file"}` (`oats capabilities show`, the capability
+  page's Contents; `server/capability-show.mjs`) goes through its own LRU of 48 decoded
+  answers with in-flight coalescing. Keys: (deployment, selector, the held catalog row's
+  commit[, file path]). A capability's content at one commit never changes, so the commit is
+  the whole invalidation story: a sync or pull moves it and the next read misses. A row
+  without a commit, and an answer about another commit than the row's (the head moved
+  between the two reads), are coalesced but never held. A `file` request is answered only for
+  a path the (cached) show listing names. The cache is cleared when the CLI changes.
 - `POST /api/capabilities {action:"inspect"}` goes through a bounded LRU with
   in-flight coalescing (`server/inspect-cache.mjs`, 256 entries): two identical
   concurrent inspections are one kernel process; a repeat is a hit for at

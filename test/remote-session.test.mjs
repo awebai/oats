@@ -219,6 +219,24 @@ test("batch: no answer within the timeout rejects with reason timeout and kills 
   });
 });
 
+test("batch: a session deadline cuts the wait for an answer (its own timeout is 30 s): reason timeout, the child killed", async () => {
+  await withShim("hang", async (fx, pids) => {
+    const session = createReadSession({ deadline: Date.now() + 3_000 });
+    const started = Date.now();
+    const e = (await outcome(readRemoteFile(fx.bare, fx.commit, "README.md", { cacheDir: fx.cacheDir, session }))).error;
+    assert.ok(Date.now() - started < 10_000, "ended at the deadline, not after the batch's own timeout");
+    assert.equal(e.code, "E_REMOTE_UNREADABLE");
+    assert.equal(e.details.reason, "timeout");
+    await settle(pids);
+    assert.deepEqual(pids().filter(alive), []);
+    // Past the deadline no batch reader starts: the read is the same timeout.
+    while (!session.expired()) await new Promise((r) => setTimeout(r, 20));
+    const late = (await outcome(readRemoteFile(fx.bare, fx.commit, "souls/dev/soul.yaml", { cacheDir: fx.cacheDir, session }))).error;
+    assert.equal(late.details.reason, "timeout");
+    await session.close();
+  });
+});
+
 test("every memo is session-scoped: without a session each observation asks the remote and sees a new head", async () => {
   const fx = fixture();
   let lsRemote = 0;

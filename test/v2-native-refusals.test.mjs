@@ -50,7 +50,7 @@ test("with a 0.25 oats-config.yaml in the deployment, every command a Desktop or
   writeFileSync(join(fx.dep, "oats-config.yaml"), LEGACY);
   const noHome = { OATS_INSTANCE_HOME: "", PI_AGENT_HOME: "", OATS_HOME: "" };
   const commands = [
-    ["status"], ["doctor"], ["doctor", "--soul", "dev"], ["workspace", "status"], ["souls"], ["capabilities"], ["packages"], ["sync"],
+    ["status"], ["doctor"], ["doctor", "--soul", "dev"], ["workspace", "status"], ["souls"], ["capabilities"], ["capabilities", "show", "acme.x"], ["capabilities", "show", "acme.x", "--file", "SKILL.md"], ["packages"], ["sync"],
     ["spawn", "dev", "--preview"], ["inspect", "--soul", "dev"], ["readiness", "--soul", "dev"],
     ["launch-config", "list"], ["launch-config", "preview", "--soul", "dev"], ["launch-config", "preview", "--home", home],
     ["schedule", "list"], ["schedule", "run", "nightly"], ["schedule", "tick"],

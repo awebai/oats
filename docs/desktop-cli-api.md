@@ -38,9 +38,10 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
              "instance-events-2","schedule-history","schedule-read-2","spawn-preview-2","spawn-idempotency","spawn-idempotency-2","spawn-apply-2",
              "workspace-v2","instance-modules","spawn-provider-payload","served-identity","packages-no-approval","spawn-name","settings-origins",
              "team-model-2","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts","launch-preference",
-             "preview-composed-from","observe-max-age","spawn-preview-max-age"],
+             "preview-composed-from","observe-max-age","spawn-preview-max-age","capability-show"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
- "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2}
+ "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
+ "capabilityShowApi":1}
 ```
 
 - The Desktop accepts `desktopApi === 1` and a released `version` inside
@@ -97,6 +98,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
 | `preview-composed-from` | `composedFrom` on preview `modules[]` ([Composition](#the-preview)) | |
 | `observe-max-age` | `--max-age <s>` on the read verbs and their `observation` block ([Observation reuse](#observation-reuse-feature-observe-max-age-oats-0311)) | |
 | `spawn-preview-max-age` | `--max-age <s>` on `spawn --preview` and its `observation` block ([Observation reuse](#observation-reuse-feature-observe-max-age-oats-0311), [The preview](#the-preview)) | |
+| `capability-show` | `oats capabilities show <name>` and its `--file` form, OATS 0.34.0 ([`oats capabilities show`](#oats-capabilities-show)) | `capabilityShowApi: 1` |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -196,6 +198,7 @@ it and answer live, without the block.
 oats status | workspace status | souls | capabilities | inspect --soul|--home
      | teams | soul teams <soul>   … --max-age <seconds> --json
 oats spawn <soul> … --preview --max-age <seconds> --json    (feature spawn-preview-max-age)
+oats capabilities show <name> … --max-age <seconds> --json  (feature capability-show)
 ```
 
 - **Values:** whole seconds, `0` to `86400`. `0` is live: it reuses nothing.
@@ -253,8 +256,8 @@ oats spawn <soul> … --preview --max-age <seconds> --json    (feature spawn-pre
   invocation refuse the flag before reading or writing anything, with
   `E_BAD_ARGS` "--max-age is not accepted by \`oats <form>\`: only the read
   verbs reuse observations (status, workspace status, souls, capabilities,
-  inspect --soul|--home, spawn --preview, and the read forms of teams and soul
-  teams)" and,
+  capabilities show, inspect --soul|--home, spawn --preview, and the read
+  forms of teams and soul teams)" and,
   with `--server`, "--max-age cannot be combined with --server: observation
   reuse is local to this machine".
   A capability command's argv (`oats <namespace> …`) is its provider's: the
@@ -734,6 +737,14 @@ Read-only (it writes no lock):
 ```
 
 - `members[]` and `packages[]` are the sync rows (packages from the lock).
+- **Remote budget (0.33.1).** `oats workspace status` and `oats status` finish
+  their remote work within 12 s of their first remote read, whatever the
+  machine's load or another process holding a remote's cache. A member not
+  read by then is a `cannot-read` row whose `detail` ends `(timeout)`, and its
+  git is ended; the command still answers. The workspace definition itself
+  (the host) not read by then fails the command as any unreadable host does
+  (`E_REMOTE_UNREADABLE`, `reason: "timeout"`). Spawn, sync and every other
+  verb have no such budget.
 - `declaredPackages`: the ids in `packages:` (standalone: the kernel's
   default). `unsynced`: declared, not locked. `stale`: locked, no longer
   declared. `external[]`: `{source, soul}`.
@@ -809,6 +820,175 @@ problem`, and (feature `launch-preference`) `key` and `launch`.
 
 This document keeps `soulsApi: 1`; the probe's `soulsApi: 2` is the inspect
 soul row's.
+
+### `oats capabilities show`
+
+Feature `capability-show`, `capabilityShowApi: 1`, OATS 0.34.0.
+
+```text
+oats capabilities show <name> [--member <repoKey> | --package <id>] [--dir <d>] [--max-age <s>] --json
+oats capabilities show <name> [--member <repoKey> | --package <id>] --file <path> [--dir <d>] [--max-age <s>] --json
+```
+
+What one capability ships: its inject text and each skill's files, and one
+file's text on request. The Desktop's capability page shows them without
+reading clones or caches itself.
+
+> **Every `text` and `description` is untrusted repository content.** Render
+> it as plain text (`textContent`), or through a sanitising Markdown renderer
+> that allows no raw HTML, no scripts and no remote images.
+
+**Selection.** The rows are exactly the rows of `oats capabilities --json`
+(one discovery, honouring `--max-age`), so the answer's `commit` equals that
+row's `commit`.
+
+- `<name>` alone selects the one row with that name.
+- `--member <repoKey>` selects a member row of that repository: the key as a
+  row shows it, or any ref spelling of the same repository.
+- `--package <id>` selects that package's row.
+- No row: `E_CAPABILITY_UNKNOWN`, `details: {name}` plus `member` or
+  `package` when one was given. An unsynced package is not in the catalog, so
+  its capabilities are `E_CAPABILITY_UNKNOWN` until `oats sync`.
+- More than one row: `E_CAPABILITY_AMBIGUOUS`, `details: {name, candidates}`,
+  each candidate `{kind, repoKey, origin}` (member) or `{kind, package,
+  origin}` (package). Choose one with `--member` or `--package`.
+- `E_BAD_ARGS` for `--member` with `--package`, a missing or second name, an
+  unknown flag, and `--server` (the verb reads this machine's workspace only).
+  An unknown word after `oats capabilities` (`oats capabilities foo`) is
+  `E_BAD_ARGS` too.
+
+**Trust path.** Every read goes through the remote cache at a full commit id;
+nothing reads a working clone.
+
+- A member capability is read from its member repository at the row's commit.
+- A package capability is read at the locked commit, the same trust path
+  spawn uses. First comes spawn's lock check: when the package manifest at
+  that commit does not list the capability, or its capability list differs
+  from the lock's, the show refuses `E_PACKAGE_INTEGRITY` with spawn's
+  details. The full-tree content digest is not recomputed per show: `oats
+  sync` proved the lock's integrity over the tree of exactly that commit, and
+  the commit id content-addresses the tree.
+
+**The show:**
+
+```json
+{"capabilityShowApi":1,"name":"oats.okf","kind":"package","repoKey":"github.com/awebai/oats-okf","package":"oats.okf","version":"4.0.5",
+ "commit":"26d8216f…","path":"oats-package/capabilities/oats-okf",
+ "inject":{"path":"injects/okf.md","bytes":2422,"text":"## Knowledge: OKF\n\nYou have two kinds of knowledge. …","binary":false,"truncated":false},
+ "skills":[{"name":"okf-consultation","path":"skills/okf-consultation","description":"Consulting your soul's knowledge with the `oats okf` CLI: …",
+            "files":[{"path":"skills/okf-consultation/SKILL.md","bytes":6947},{"path":"skills/okf-consultation/references/consult.md","bytes":4465}],
+            "filesTruncated":false},
+           {"name":"okf-instance-knowledge","path":"skills/okf-instance-knowledge","description":"Keeping this instance's own knowledge …",
+            "files":[{"path":"skills/okf-instance-knowledge/SKILL.md","bytes":4787}],"filesTruncated":false}],
+ "problems":[]}
+```
+
+- `kind` is `member` or `package`. `repoKey` is set for both kinds; for a
+  package it is the repository the package is read from. `package` and
+  `version` are the package id and locked version, `null` for a member.
+- `commit` is 40 hex and equals the catalog row's `commit`. `path` is the
+  capability directory, repository-relative.
+- `inject` is `{path, bytes, text, binary, truncated}` or `null`. `skills`
+  is a list of `{name, path, description, files, filesTruncated}`, each file
+  `{path, bytes}`, or `null`. `problems` is a list of `{code, message,
+  path}`.
+- With `--max-age` (`0` included) both the show and the `--file` answer gain
+  the [`observation`](#observation-reuse-feature-observe-max-age-oats-0311)
+  block `{observedAt, reused, localRevision}`.
+
+**The `--file` answer:**
+
+```json
+{"capabilityShowApi":1,"name":"oats.okf","kind":"package","commit":"26d8216f…",
+ "file":{"path":"skills/okf-instance-knowledge/SKILL.md","bytes":4787,"text":"---\nname: okf-instance-knowledge\n…","binary":false,"truncated":false}}
+```
+
+**Rules.**
+
+- **Paths.** Every `path` in `inject`, `skills`, `file` and `problems` is
+  POSIX and relative to the capability directory, never the repository.
+  Every non-null `path` is a safe relative path: no `.`, `..` or `.git`
+  component (any case), no empty component, no `\`. A manifest's inject and
+  skill paths are reported as the module install reads them: a `\` is a
+  separator, and a leading `./` and trailing slashes are dropped
+  (`injects\guide.md` is `injects/guide.md`).
+- **The inject** is the committed file exactly: untrimmed and untemplated.
+  (Spawn composes it raw and trimmed, with no settings substitution.)
+  - `inject: null`: the manifest declares no inject.
+  - Declared but unreadable (missing, a symlink, a directory, over the read
+    budget): `inject: {path, bytes: null, text: null, binary: false,
+    truncated: false}` and a `problems[]` entry with the remote's code
+    (`E_REMOTE_PATH_MISSING`, `E_REMOTE_TREE_UNSAFE`, `E_REMOTE_FILE_OVERSIZE`,
+    …). The show still answers ok.
+  - Declared as a path that is not a safe relative path (spawn refuses it):
+    `inject: {path: null, bytes: null, text: null, binary: false, truncated:
+    false}` and a problem with spawn's code (`E_CAPABILITY_MISSING` for a
+    member, `E_PACKAGE_MANIFEST` for a package) and `path: null`. The raw
+    manifest value appears only inside `message`, JSON-quoted. So
+    `inject.path` is `null` only with a problem.
+- **Skills** are in the catalog row's order (by name, in codepoint order),
+  enumerated exactly as a spawn enumerates them. `skills` is `null` exactly
+  when the catalog row's `skills` is `null`, with a problem carrying spawn's
+  code (`E_CAPABILITY_MISSING` or `E_PACKAGE_MANIFEST`) or an `E_REMOTE_*`
+  code, and `path: null`. A skill whose path is not safe (a `.git`
+  directory) makes the skills unlistable the same way, in both answers.
+- **Files.** `files` is every regular file under the skill directory,
+  recursively (no symlinks, no submodules), sorted by path in codepoint order.
+  At most 200 per skill; beyond that `filesTruncated` is `true`. `bytes` is
+  the blob size. When a skill's files cannot be listed (an unsafe entry name
+  in the tree, an unreadable remote), `files` is `null`, `filesTruncated` is
+  `false`, and a problem's `path` is the skill's `path`: "could not list"
+  never collapses into "listed nothing".
+- **`description`** is the `description` key of SKILL.md's leading `---` YAML
+  front matter, when it is a string. It is parsed from the whole SKILL.md,
+  not from its 262144-byte text cut. It is `null` when the front matter is
+  absent or does not parse, the key is absent or not a string, or SKILL.md is
+  unreadable or binary (no problem is reported for it). It is cut to at most
+  1024 UTF-8 bytes on a code point boundary.
+- **Text.** A file is `binary: true, text: null` when it contains a NUL byte
+  or is not valid UTF-8. Only the first 262144 + 3 bytes are examined, so the
+  cut is decided on the same bytes; when the file is longer, a valid sequence
+  they end inside of is not held against it. Otherwise `text` is the content cut to at
+  most 262144 UTF-8 bytes on a code point boundary, with `truncated: true`
+  when cut. A byte order mark is kept in the text. `bytes` is always the real
+  size.
+- **Invariants** (pinned for the Desktop):
+  - `binary: true` ⇒ `text: null` and `truncated: false` (`truncated` is a
+    text-only flag).
+  - `truncated: true` ⇒ `text` is a string and `binary: false`.
+  - `bytes` is `null` only for an unreadable declared inject (with its
+    problem). In a `--file` answer it is always an integer.
+- **Large files.** A file over the read budget (4 MiB) is listed with its
+  size. `--file` refuses it with `E_REMOTE_FILE_OVERSIZE`, passed through
+  unchanged: its `details.path` is repository-relative, not
+  capability-relative.
+
+**`--file <path>`** reads one file the show lists, and nothing else.
+
+- A syntactically unsafe path is `E_CAPABILITY_FILE_UNSAFE`, `details:
+  {path}`, before anything is read: absolute, empty, a `.`, `..` or `.git`
+  component (any case), an empty component, a trailing slash, a `\` or a NUL.
+- Otherwise the path must be the inject's `path` or a path in some skill's
+  `files` as the show lists it (the 200 cap included). Anything else is
+  `E_CAPABILITY_FILE_UNKNOWN`, `details: {path, name}`. No other file of the
+  capability (`oats.json`, scripts, `bin/`) is readable through this verb.
+- A file the show does not list (beyond the 200 cap, a symlink, under a skill
+  whose files cannot be listed) is `E_CAPABILITY_FILE_UNKNOWN` by design:
+  show "not available", not an error.
+- A listed file the remote cannot read answers the remote's own code
+  (`E_REMOTE_FILE_OVERSIZE`, `E_REMOTE_PATH_MISSING`, `E_REMOTE_TREE_UNSAFE`,
+  …).
+
+**Failures.** Every failure is exactly one error envelope on stdout with a
+nonzero exit, as for every command: `E_BAD_ARGS`, `E_CAPABILITY_UNKNOWN`,
+`E_CAPABILITY_AMBIGUOUS`, `E_PACKAGE_INTEGRITY`, `E_CAPABILITY_FILE_UNSAFE`,
+`E_CAPABILITY_FILE_UNKNOWN`, an `E_REMOTE_*` code, and the workspace's own
+(`E_LOCAL_MISSING`, `E_LOCK_SCHEMA`, …).
+
+**Without `--json`** the show prints a short listing for an operator: the
+inject's path and size, each skill with its files and sizes, and the
+problems. `--file` prints the text; a binary file prints a one-line note
+instead, and a truncated file prints its text followed by a one-line note.
 
 <a id="desktop-facts-feature-desktop-facts-oats-0290"></a>
 ### Desktop facts
