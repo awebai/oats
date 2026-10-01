@@ -240,6 +240,26 @@ test('binary, truncated, missing inject, oversize and unlisted-by-design files',
   assert.equal(u.readerText(), 'Not available.', 'a muted line, not the failed state');
 });
 
+test('kernel refinements: an unlistable skill and an inject whose manifest value is not a safe path', async t => {
+  const u = setup(t, { answer: body => body.action === 'show' ? showAnswer({
+    inject: { path: null, bytes: null, text: null, binary: false, truncated: false },
+    skills: [{ name: 'broken', path: 'skills/broken', description: 'Broken.', files: null, filesTruncated: false }, ...showAnswer().skills],
+    problems: [{ code: 'E_INJECT_UNSAFE', message: 'inject "../../etc/passwd" is not a safe relative path', path: null }, { code: 'E_SKILL_UNREADABLE', message: 'cannot list', path: 'skills/broken' }] }) : fileAnswer(body.path) });
+  u.go(); await flush(); await flush();
+  assert.equal(u.calls.length, 1, 'no --file call for an inject without a path');
+  assert.equal(u.$('.cap-reader-path').textContent, 'Injected instructions');
+  assert.equal(u.readerText(), 'inject "../../etc/passwd" is not a safe relative path');
+  const inject = u.$('[data-path="/inject"]');
+  assert.equal(inject.getAttribute('aria-selected'), 'true'); assert.equal(inject.querySelector('.cap-node-file'), null);
+  const broken = u.$('[data-focus-key="skill:skills/broken"]');
+  assert.equal(broken.getAttribute('aria-disabled'), 'true'); assert.equal(broken.hasAttribute('aria-expanded'), false);
+  assert.equal(broken.querySelector('.cap-node-desc').textContent, "Its files can't be listed.");
+  inject.focus(); u.key(inject, 'ArrowDown'); assert.equal(u.doc.activeElement, broken, 'reachable');
+  u.key(broken, 'Enter'); u.key(broken, 'ArrowRight'); await flush();
+  assert.equal(u.calls.length, 1, 'opens nothing');
+  u.key(broken, 'ArrowDown'); assert.equal(u.doc.activeElement.dataset.skill, 'skills/oats-aweb');
+});
+
 test('a file read the user has left is discarded (A → B → A)', async t => {
   const pending = new Map();
   const u = setup(t, { answer: body => { if (body.action === 'show') return showAnswer(); const d = deferred(); pending.set(`${body.path}#${[...pending.keys()].length}`, d); return d; } });

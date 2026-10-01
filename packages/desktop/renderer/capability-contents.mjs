@@ -28,6 +28,7 @@ export const CONTENTS_COPY = Object.freeze({
   noSkills: 'Ships no skills.',
   skillsUnlistable: "Its skills can't be listed: a spawn of it would refuse.",
   moreFiles: 'More files not listed.',
+  skillUnlisted: "Its files can't be listed.",
   inject: 'Injected instructions',
   binary: 'Binary file; not shown.',
   truncated: 'Truncated at 256 KiB',
@@ -116,10 +117,13 @@ export function contentsSubject({ row, cli, remote = false, catalogPending = fal
   const selector = capabilitySelector(row);
   return selector ? { selector } : { gate: CONTENTS_COPY.unlisted };
 }
+/** The selection key of an inject whose manifest value is not a safe path (`inject.path: null`): it is shown (its
+ * problem says why) but never read. A leading `/` is never a listed path, nor where a link can resolve. */
+export const UNSAFE_INJECT = '/inject';
 /** The file opened first: the inject, else the first skill's SKILL.md (else its first file), else none. */
 export function defaultSelection(show) {
-  if (show?.inject) return show.inject.path;
-  const skill = (show?.skills || []).find(s => s.files.length);
+  if (show?.inject) return show.inject.path ?? UNSAFE_INJECT;
+  const skill = (show?.skills || []).find(s => s.files?.length);
   if (!skill) return null;
   const file = skill.files.find(f => isSkillMd(skill, f)) || skill.files[0];
   return skillFilePath(skill, file);
@@ -213,6 +217,7 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
 
   function applyShow(data) {
     const previous = show; show = data; files = listedFiles(data);
+    if (data.inject && data.inject.path === null) files.set(UNSAFE_INJECT, { kind: 'inject', file: data.inject });
     const short = shortCommit(data.commit); lead.textContent = short ? CONTENTS_COPY.lead(short) : ''; lead.hidden = !short;
     // Keep the open file while it is listed; else the default.
     if (!selected || !files.has(selected)) selected = defaultSelection(data);
@@ -253,8 +258,9 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
     };
     const note = (label, text) => [node('div', 'cap-contents-group-label', label), node('p', 'cap-contents-note', text)];
     if (show.inject) {
-      group(`${uid}-instructions`, 'Instructions').append(leaf(show.inject.path,
-        [node('span', 'cap-node-name', CONTENTS_COPY.inject), node('span', 'cap-node-file', show.inject.path)], { level: 1, label: `${CONTENTS_COPY.inject}, ${show.inject.path}` }));
+      const where = show.inject.path; // null: the manifest's value is not a safe path (its problem says so)
+      group(`${uid}-instructions`, 'Instructions').append(leaf(where ?? UNSAFE_INJECT,
+        [node('span', 'cap-node-name', CONTENTS_COPY.inject), ...(where ? [node('span', 'cap-node-file', where)] : [])], { level: 1, label: where ? `${CONTENTS_COPY.inject}, ${where}` : CONTENTS_COPY.inject }));
     } else navBody.append(...note('Instructions', CONTENTS_COPY.noInject));
     if (show.skills?.length) { const items = group(`${uid}-skills`, 'Skills'); for (const skill of show.skills) items.append(skillNode(skill)); }
     if (tree.childElementCount) navBody.append(tree);
@@ -272,6 +278,7 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
     return item;
   }
   function skillNode(skill) {
+    if (skill.files === null) return unlistedSkill(skill);
     const open_ = expanded.has(skill.path);
     const item = node('li'); item.setAttribute('role', 'treeitem'); item.setAttribute('aria-level', '1'); item.setAttribute('aria-expanded', String(open_));
     item.setAttribute('aria-label', skill.name); item.dataset.skill = skill.path; item.dataset.focusKey = `skill:${skill.path}`; item.tabIndex = -1;
@@ -294,6 +301,18 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
     row.addEventListener('click', () => { focusItem(item); toggle(item); });
     return item;
   }
+  /** A skill whose directory could not be listed (a problem names it): a reachable item that opens nothing. */
+  function unlistedSkill(skill) {
+    const item = node('li'); item.setAttribute('role', 'treeitem'); item.setAttribute('aria-level', '1'); item.setAttribute('aria-disabled', 'true');
+    item.setAttribute('aria-label', skill.name); item.setAttribute('aria-description', CONTENTS_COPY.skillUnlisted);
+    item.dataset.focusKey = `skill:${skill.path}`; item.tabIndex = -1;
+    const row = node('div', 'cap-node'); if (skill.description) row.title = skill.description;
+    const twisty = node('span', 'cap-node-twisty'); twisty.setAttribute('aria-hidden', 'true');
+    const copy = node('span', 'cap-node-copy'); copy.append(node('span', 'cap-node-name mono', skill.name), node('span', 'cap-node-desc', CONTENTS_COPY.skillUnlisted));
+    row.append(twisty, copy); item.append(row);
+    row.addEventListener('click', () => focusItem(item));
+    return item;
+  }
   const visibleItems = () => [...nav.querySelectorAll('[role=treeitem]')].filter(item => !item.parentElement.closest('[role=treeitem][aria-expanded=false]'));
   /** One tab stop: the focused item, else the open file's, else the first visible one. */
   function syncRoving(target = null) {
@@ -303,7 +322,7 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
   }
   function focusItem(item) { focusKey = item.dataset.focusKey; syncRoving(item); item.focus({ preventScroll: false }); }
   function setExpanded(item, value) {
-    if (!item?.dataset.skill) return;
+    if (!item?.dataset.skill || !item.hasAttribute('aria-expanded')) return;
     if (value) expanded.add(item.dataset.skill); else expanded.delete(item.dataset.skill);
     item.setAttribute('aria-expanded', String(value));
     item.querySelector(':scope > ul[role=group]').hidden = !value;
@@ -322,7 +341,7 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
       case 'End': go(items[items.length - 1]); break;
       case 'ArrowRight': if (skill && !isOpen) setExpanded(item, true); else if (skill) go(item.querySelector('[role=treeitem]')); else return; break;
       case 'ArrowLeft': if (skill && isOpen) setExpanded(item, false); else if (!skill && item.getAttribute('aria-level') === '2') go(item.parentElement.closest('[role=treeitem]')); else return; break;
-      case 'Enter': case ' ': if (skill) toggle(item); else open(item.dataset.path); break;
+      case 'Enter': case ' ': if (skill) toggle(item); else if (item.dataset.path) open(item.dataset.path); break;
       default: return;
     }
     event.preventDefault(); event.stopPropagation();
@@ -352,7 +371,7 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
     const retrying = readerPath === path && fileState.settled === 'failed';
     readerPath = path; const ticket = ++fileTicket;
     if (!retrying) { reader.scrollTop = 0; body.replaceChildren(); fileState.reset(); }
-    paintHead(path, listed.file.bytes, listed.kind === 'inject' ? listed.file.truncated : false);
+    paintHead(listed.file.path ?? CONTENTS_COPY.inject, listed.file.bytes, listed.kind === 'inject' ? listed.file.truncated : false);
     if (listed.kind === 'inject') { paintFile(listed.file); return; } // the show answer carries the inject's text: no --file call
     fileState.begin();
     request({ action: 'file', capability: selector, path }).then(result => {
@@ -374,7 +393,7 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
     body.replaceChildren();
     if (file.binary) { body.append(line(CONTENTS_COPY.binary)); return; }
     if (file.text === null) {
-      // Missing or over the kernel's budget: its problem says why, verbatim.
+      // Missing, over the kernel's budget, or not a safe path (path null): its problem says why, verbatim.
       const problem = show?.problems.find(p => p.path === file.path);
       body.append(line(problem ? problem.message : CONTENTS_COPY.notAvailable)); return;
     }

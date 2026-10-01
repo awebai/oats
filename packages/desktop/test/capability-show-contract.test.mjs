@@ -36,6 +36,16 @@ test('a good answer decodes; listed files are joined to the capability root', ()
   assert.equal(skillFilePath(data.skills[0], data.skills[0].files[1]), 'skills/oats-aweb/refs/a.md');
   assert.deepEqual([...listedFiles(data).keys()], ['inject.md', 'skills/oats-aweb/SKILL.md', 'skills/oats-aweb/refs/a.md']);
   assert.equal(capabilityShowData(show({ inject: null, skills: null }), { name: 'oats.aweb' }).skills, null);
+  // Kernel refinements: an unlistable skill (files: null, a problem names it), an unsafe inject value (path: null).
+  const odd = capabilityShowData(show({ inject: { path: null, bytes: null, text: null, binary: false, truncated: false },
+    skills: [{ name: 's', path: 'skills/s', description: null, files: null, filesTruncated: false }],
+    problems: [{ code: 'E_X', message: 'inject "../x" is not a safe path', path: null }, { code: 'E_Y', message: 'cannot list', path: 'skills/s' }] }));
+  assert.equal(odd.inject.path, null); assert.equal(odd.skills[0].files, null);
+  assert.deepEqual([...listedFiles(odd).keys()], [], 'neither is readable through --file');
+  assert.equal(capabilityShowData(show({ skills: [{ name: 's', path: 'skills/s', description: null, files: null, filesTruncated: true }] })), null);
+  assert.equal(capabilityShowData(show({ skills: [{ name: 's', path: 'skills/s', description: null, files: [], filesTruncated: false }] })), null, '[] never means unlisted');
+  assert.equal(capabilityShowData(show({ inject: { path: null, bytes: 3, text: 'abc', binary: false, truncated: false } })), null, 'no content without a path');
+  assert.ok(capabilityShowData({ ...show(), observation: { observedAt: '2026-10-01T00:00:00Z', reused: true, localRevision: 'x' } }), 'an observation block is accepted');
   const member = capabilityShowData(show({ kind: 'member', repoKey: 'github.com/awebai/oats', package: null }));
   const asked = { name: 'oats.aweb', kind: 'package', package: 'oats.aweb' };
   assert.ok(capabilityShowData(show(), { selector: asked }));
@@ -52,7 +62,7 @@ test('malformed answers refuse the whole document', () => {
     show({ inject: { path: 'a', bytes: 1, text: 'x', binary: true, truncated: false } }), // binary with text
     show({ inject: { path: 'a', bytes: 1, text: null, binary: false, truncated: true } }), // truncated without text
     show({ skills: [{ name: 's', path: 's', description: null, files: [{ path: 's/A', bytes: 1 }, { path: 's/A', bytes: 1 }], filesTruncated: false }] }), // duplicate
-    show({ skills: [{ name: 's', path: 's', description: null, files: [], filesTruncated: 'no' }] }),
+    show({ skills: [{ name: 's', path: 's', description: null, files: [{ path: 's/a', bytes: 1 }], filesTruncated: 'no' }] }),
     show({ problems: [{ code: 'has space', message: 'm', path: null }] }),
     show({ kind: 'member', repoKey: null }),
     show({ inject: { path: 'a', bytes: 1, text: null, binary: true, truncated: true } }), // binary is never truncated

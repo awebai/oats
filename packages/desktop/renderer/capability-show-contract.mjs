@@ -70,24 +70,29 @@ function bool(v) { if (typeof v !== 'boolean') refuse(); return v; }
 /** File = { path, bytes: number|null, text: string|null, binary, truncated }, the kernel's invariants: text is at
  * most 256 KiB of UTF-8 (truncated or not); a binary file has no text and is never truncated; a truncated one has
  * text. `text: null` on a text file (and `bytes: null`) happens only for an unreadable declared inject, which a
- * problem names: never in a `--file` answer (`fileAnswer`). */
-function file(v, { fileAnswer = false } = {}) {
+ * problem names: never in a `--file` answer (`fileAnswer`). An inject's `path` is null when the manifest's value
+ * is not a safe relative path (a problem with `path: null` carries the raw value); then it has no content. */
+function file(v, { fileAnswer = false, inject = false } = {}) {
   if (!record(v)) refuse();
-  const out = { path: path(v.path), bytes: bytes(v.bytes), text: nullableStr(v.text, FILE_TEXT_MAX_BYTES), binary: bool(v.binary), truncated: bool(v.truncated) };
+  const out = { path: inject && v.path === null ? null : path(v.path), bytes: bytes(v.bytes), text: nullableStr(v.text, FILE_TEXT_MAX_BYTES), binary: bool(v.binary), truncated: bool(v.truncated) };
   if (out.text !== null && byteLength(out.text) > FILE_TEXT_MAX_BYTES) refuse();
   if (out.binary && (out.text !== null || out.truncated)) refuse();
   if (out.truncated && out.text === null) refuse();
   if (fileAnswer && (out.bytes === null || (!out.binary && out.text === null))) refuse();
+  if (out.path === null && (out.text !== null || out.binary || out.bytes !== null)) refuse();
   return out;
 }
+/** A skill's `files` is null when its directory could not be listed (a problem names the skill's path; never
+ * truncated then); a listed skill always has at least its SKILL.md. */
 function skill(v) {
   if (!record(v)) refuse();
-  const files = Array.isArray(v.files) && v.files.length <= LIMITS.files ? v.files : refuse();
+  const files = v.files === null ? null : Array.isArray(v.files) && v.files.length > 0 && v.files.length <= LIMITS.files ? v.files : refuse();
   const description = nullableStr(v.description ?? null, 4 * LIMITS.description);
   if (description !== null && byteLength(description) > LIMITS.description) refuse();
   const out = { name: str(v.name, LIMITS.name), path: path(v.path), description,
-    files: files.map(f => { if (!record(f)) refuse(); return { path: path(f.path), bytes: bytes(f.bytes) }; }), filesTruncated: bool(v.filesTruncated) };
+    files: files && files.map(f => { if (!record(f)) refuse(); return { path: path(f.path), bytes: bytes(f.bytes) }; }), filesTruncated: bool(v.filesTruncated) };
   if (!out.name || CONTROL.test(out.name)) refuse();
+  if (out.files === null) { if (out.filesTruncated) refuse(); return out; }
   // Every path is relative to the capability directory: a skill's files sit under its own directory.
   if (out.files.some(f => !f.path.startsWith(`${out.path}/`))) refuse();
   if (new Set(out.files.map(f => f.path)).size !== out.files.length) refuse();
@@ -121,7 +126,7 @@ export function capabilityShowData(v, { selector, name = selector?.name } = {}) 
       capabilityShowApi: CAPABILITY_SHOW_API, name: v.name, kind: v.kind, repoKey: v.repoKey ?? null,
       package: v.kind === 'package' ? v.package : null, version: v.version === null || v.version === undefined ? null : str(v.version, 64),
       commit: v.commit, path: v.path === null || v.path === undefined ? null : str(v.path, LIMITS.path),
-      inject: v.inject === null ? null : file(v.inject), skills, problems,
+      inject: v.inject === null ? null : file(v.inject, { inject: true }), skills, problems,
     };
   } catch (error) { if (error instanceof Unreadable) return null; throw error; }
 }
@@ -140,10 +145,11 @@ export function capabilityFileData(v, { selector, name = selector?.name, path: a
 export const skillFilePath = (skill, file) => file.path;
 /** The same path relative to its skill's directory (what the navigation shows). */
 export const skillRelativePath = (skill, file) => file.path.slice(skill.path.length + 1);
-/** Every file the answer lists, by its path relative to the capability root: the inject, then each skill's files. */
+/** Every file the answer lists, by its path relative to the capability root (what `--file` may be asked for):
+ * the inject (when its path is safe), then each listed skill's files. */
 export function listedFiles(show) {
   const out = new Map();
-  if (show?.inject) out.set(show.inject.path, { kind: 'inject', file: show.inject });
-  for (const skill of show?.skills || []) for (const f of skill.files) out.set(skillFilePath(skill, f), { kind: 'skill', skill, file: f });
+  if (show?.inject?.path) out.set(show.inject.path, { kind: 'inject', file: show.inject });
+  for (const skill of show?.skills || []) for (const f of skill.files || []) out.set(skillFilePath(skill, f), { kind: 'skill', skill, file: f });
   return out;
 }

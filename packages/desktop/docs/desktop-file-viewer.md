@@ -55,6 +55,15 @@ root's `test/desktop-server.test.mjs`.
     It's removed for a picked file, which has no path authority.
   - Any other link must use an allowed external scheme, and gets `target="_blank"
     rel="noreferrer noopener"`. A raw-HTML anchor cannot keep its own target or rel.
+- **Shared with the capability page.** The pipeline is exported (`renderMarkdownHtml`,
+  `renderCodeHtml`, `isMarkdownName`, `decorateMarkdown`, `MARKDOWN_CSS`) and the capability
+  page's Contents reader renders through it, never through a copy. A capability's files are
+  untrusted repository content, so the reader asks for `strict: true`:
+  - raw HTML is shown as escaped text (a block of it as a code block), never passed through;
+  - images (any scheme) render as their alt text;
+  - the sanitizer uses the picked-file profile (no resource-loading tags or attributes) but keeps
+    local links, which the reader opens in place only when they name a file the capability lists
+    (`rootedLinks: false`: an absolute path is plain text).
 - **The main process** (`main.mjs`) opens only `http(s)` URLs externally (`shell.openExternal`).
   It denies every window-open, and every navigation away from the renderer file, so a page can
   never inherit the preload bridge.
