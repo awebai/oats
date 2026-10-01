@@ -6,9 +6,5 @@ description: Hands-on admin of this workspace's OATS setup and config — explai
 # mode forbids edits in members; `checkout` would edit the maintainers' shared tree.
 work: worktree
 capabilities:
-  oats.setup: { from: package }       # oats.core and messaging come from the workspace defaults
-  oats.developer: { from: package }   # it applies config by PR: spec, execution, the code-reviewer loop
-# A developer has no knowledge capability: its sessions carry this deployment's specifics, and what
-# it learns about the setup goes into the repository's docs by PR.
-knowledge: none
+  oats.setup: { from: package }       # oats.core, messaging and the oats.okf knowledge slot come from the workspace defaults
 launch: { harness: claude, model: claude-opus-5-5 }   # the role's preference; each machine may override it
