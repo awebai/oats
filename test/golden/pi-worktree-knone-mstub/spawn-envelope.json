@@ -7,6 +7,10 @@
     "home": "<base>/deployment/agents/dev/instances/dev-pi-worktree-knone-mstub",
     "work": "worktree",
     "branch": "agents/dev-pi-worktree-knone-mstub",
+    "base": {
+      "ref": "local/<base>/remotes/ws.git",
+      "oid": "<sha>"
+    },
     "launched": false,
     "warnings": [],
     "tmux": {

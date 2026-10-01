@@ -18,6 +18,10 @@
           "repo": "<base>/deployment/ws",
           "work": "worktree",
           "branch": "agents/dev-pi-worktree-knone-mnone",
+          "base": {
+            "ref": "local/<base>/remotes/ws.git",
+            "oid": "<sha>"
+          },
           "harness": "pi",
           "modelFrom": "harness-default",
           "launchFrom": "flag",

@@ -18,6 +18,10 @@
           "repo": "<base>/deployment/ws",
           "work": "worktree",
           "branch": "agents/dev-owner",
+          "base": {
+            "ref": "local/<base>/remotes/ws.git",
+            "oid": "<sha>"
+          },
           "harness": "pi",
           "modelFrom": "harness-default",
           "launchFrom": "flag",

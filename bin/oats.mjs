@@ -2283,7 +2283,7 @@ async function spawnCmd() {
     // Desktop CLI API v1 spawn result — a FIXED shape (see docs/desktop-cli-api.md).
     jsonOk({
       instance: r.instance, agent: r.agent, home: r.home, work: r.work,
-      branch: r.branch || null, launched: r.launched, warnings: r.warnings || [],
+      branch: r.branch || null, base: r.base ?? null, launched: r.launched, warnings: r.warnings || [],
       ...(wakeSchedule ? { wakeSchedule } : {}), ...(wakeScheduleError ? { wakeScheduleError } : {}),
       tmux: r.tmux || null, backend: "tmux", repo: r.repo || null, harness: r.harness || null,
       model: r.model || null, parent: r.parentInstance || null,
@@ -2299,6 +2299,7 @@ async function spawnCmd() {
   }
   console.log(`Spawned ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch}` : ""})${r.launched ? ` — tmux window "${r.tmux.window}"` : " — not launched"}`);
   console.log(`  home:   ${shortPath(r.home)}`);
+  if (r.base) console.log(`  base:   ${r.base.oid.slice(0, 12)} (${r.base.ref === r.workspace?.soul?.repoKey ? `observed head of ${r.base.ref}` : r.base.ref})`);
   if (wakeSchedule) console.log(`  wake:   schedule ${wakeSchedule.id} (${wakeSchedule.cron} ${wakeSchedule.tz}), next ${wakeSchedule.nextRun || "disabled"}`);
   if (wakeScheduleError) console.error(`  wake:   NOT saved — ${wakeScheduleError.message} (the instance is created and launched; add the wake by hand with oats schedule add)`);
   if (!r.launched) console.log(`  launch: oats session start --home ${shellQuote(r.home)}`);

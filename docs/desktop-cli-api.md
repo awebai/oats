@@ -1415,8 +1415,11 @@ it to a temporary copy (`soulFetched: true`).
   else `null`) are canonical: never derive paths.
 - `repo`: `--repo`, else the `clones:` entry, else `<deployment>/<member>`.
 - `branch` defaults to `agents/<instance>` (`--branch` overrides); `base` is
-  `--base` (default `HEAD`) resolved to `oid`. `E_BRANCH_EXISTS` and
-  `E_BASE_UNKNOWN` refuse preview and apply alike.
+  `--base` resolved to `oid`. Without `--base`, when `repo` is a clone of the
+  soul's repository, `base` is `{ref: <repo key>, oid: <the commit the spawn
+  observed>}`, fetched into the clone at apply (`E_REMOTE_UNREADABLE` when it
+  cannot be); otherwise `HEAD`. `E_BRANCH_EXISTS` and `E_BASE_UNKNOWN` refuse
+  preview and apply alike.
 - `subject` echoes `{soul, agentsRoot, dir}` byte-exact.
 
 **Launch.**
@@ -1534,7 +1537,8 @@ with `--expect-decision` records the key and decision in `instance.json`.
 **Result** (`oats spawn <soul> … --json`):
 
 ```json
-{"instance":"rm-api","agent":"rm","home":"/w/agents/rm/instances/rm-api","work":"worktree","branch":"agents/rm-api","launched":true,"warnings":[],
+{"instance":"rm-api","agent":"rm","home":"/w/agents/rm/instances/rm-api","work":"worktree","branch":"agents/rm-api",
+ "base":{"ref":"github.com/acme/agents","oid":"3857e7e3cd52…"},"launched":true,"warnings":[],
  "tmux":{"session":"oats-agents","window":"rm-api"},"backend":"tmux","repo":"/w/agents-repo","harness":"pi","model":null,"parent":null,"sibling":null,"relation":null,
  "spawnOrigin":"operator","attach":"tmux attach -t oats-agents","decision":{"instance":"rm-api","revision":"c557d8ec9a272ba1c1739dc3"},"replayed":false,
  "wake":{"requested":false,"saved":null,"error":null},"launchConfig":null,
@@ -1544,7 +1548,8 @@ with `--expect-decision` records the key and decision in `instance.json`.
 
 (`decision` is abridged: it is the full bound decision.)
 
-- Always present: `instance, agent, home, work, branch, launched, warnings
+- Always present: `instance, agent, home, work, branch, base ({ref, oid}
+  the new branch started at; `null` without one), launched, warnings
   (array), tmux ({session, window} | null), backend ("tmux"), repo, harness,
   model, parent,
   sibling, relation, spawnOrigin (operator | instance), attach, launchConfig,

@@ -60,7 +60,7 @@ test('K6 preview: spawn --preview decides instance/home/branch/base/harness/mode
   const p = fx.run(['spawn', 'wt', '--purpose', 'fix-login', '--launch-config', 'opus', '--preview', '--json']); assert.equal(p.status, 0, p.stdout + p.stderr);
   const pv = JSON.parse(p.stdout.trim().split('\n').pop()).result;
   assert.equal(pv.spawnPreviewApi, 2); assert.equal(pv.preview, true); assert.equal(pv.instance, 'wt-fix-login'); assert.equal(pv.branch, 'agents/wt-fix-login');
-  assert.deepEqual(pv.base, { ref: 'HEAD', oid: head }); assert.equal(pv.worktree, join(fx.root, 'wt', 'instances', 'wt-fix-login', 'work'));
+  assert.deepEqual(pv.base, { ref: fx.key, oid: head }, 'without --base, the commit the spawn observed the soul\'s repository at'); assert.equal(pv.worktree, join(fx.root, 'wt', 'instances', 'wt-fix-login', 'work'));
   assert.equal(pv.harness, 'claude'); assert.equal(pv.model, 'opus'); assert.equal(pv.policy.childSpawns.allowed, true);
   assert.deepEqual(homes(fx, 'wt'), [], 'preview created no home');
   assert.equal(git('branch', '--list', 'agents/wt-fix-login'), '', 'preview created no branch');

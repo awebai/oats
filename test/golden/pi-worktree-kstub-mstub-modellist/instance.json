@@ -7,6 +7,10 @@
   "repo": "<base>/deployment/ws",
   "work": "worktree",
   "branch": "agents/dev-pi-worktree-kstub-mstub-modellist",
+  "base": {
+    "ref": "local/<base>/remotes/ws.git",
+    "oid": "<sha>"
+  },
   "harness": "pi",
   "model": "anthropic/claude-sonnet-4-5:thinking",
   "modelFrom": "spawn",

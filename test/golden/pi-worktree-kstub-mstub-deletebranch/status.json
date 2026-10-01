@@ -26,6 +26,10 @@
           "repo": "<base>/deployment/ws",
           "work": "worktree",
           "branch": "agents/dev-pi-worktree-kstub-mstub-deletebranch",
+          "base": {
+            "ref": "local/<base>/remotes/ws.git",
+            "oid": "<sha>"
+          },
           "harness": "pi",
           "modelFrom": "harness-default",
           "launchFrom": "flag",
