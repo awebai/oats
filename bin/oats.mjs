@@ -1030,7 +1030,7 @@ let maxAgeGiven = null;
 function commandSession() {
   if (!readSession) {
     readSession = remoteModule.createReadSession({ maxAge: maxAgeGiven ?? 0 });
-    process.on("exit", () => readSession.closeNow());
+    process.on("exit", () => { sayReadNotices(); readSession.closeNow(); });
     for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143], ["SIGHUP", 129]]) process.once(signal, () => {
       readSession.closeNow();
       // Another handler (a scheduler lock's release) exits on its own after this one.
@@ -1038,6 +1038,11 @@ function commandSession() {
     });
   }
   return readSession;
+}
+/** What the read session found worth telling the operator (a remote that cannot serve partial fetches),
+ *  once, on stderr when the command ends: stdout, and so every JSON answer, is unchanged. */
+function sayReadNotices() {
+  for (const notice of readSession?.notices.splice(0) ?? []) process.stderr.write(`oats: warning: ${notice}\n`);
 }
 /** Which kernel command forms take --max-age: THE allow-list (docs/desktop-cli-api.md "Observation reuse").
  *  → null when this form reads with observation reuse, else the E_BAD_ARGS message. `head` is argv before `--`. */
@@ -3681,5 +3686,6 @@ Layers: ${LAYERS.join(", ")}. Workspace model v2: docs/design/2026-09-23-workspa
   die(e.message);
 } finally {
   // The command's read session: every `git cat-file --batch` child ends before the process does.
+  sayReadNotices();
   if (readSession) await readSession.close();
 }
