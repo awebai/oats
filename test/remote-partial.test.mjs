@@ -640,40 +640,64 @@ test("terminateGroup sends no SIGKILL to a group that closed within the grace, a
     assert.equal(terminateGroup(child, 300), true);
     await new Promise((r) => child.once("close", r));
     await new Promise((r) => setTimeout(r, 600));
-    assert.deepEqual(kills, [[child.pid, "SIGTERM"]], "the SIGKILL timer was cancelled by 'close'");
+    assert.deepEqual(kills.filter(([, sig]) => sig !== 0), [[child.pid, "SIGTERM"]], "the group was empty at close: no SIGKILL");
     assert.equal(terminateGroup(child, 300), false);
     await new Promise((r) => setTimeout(r, 400));
-    assert.deepEqual(kills, [[child.pid, "SIGTERM"]], "a closed child's group is never signalled again");
+    assert.deepEqual(kills, [[child.pid, "SIGTERM"], [child.pid, 0]], "a closed child's group is never signalled again (one probe, at its close)");
   });
 });
 
-test("terminateGroup kills a descendant that survives SIGTERM after its leader exits, while it holds the leader's pipes (an ssh or remote helper)", { timeout: 30_000 }, async () => {
-  const { terminateGroup, watchGroup } = await import("../lib/process-group.mjs");
-  const base = scratch();
-  const pidFile = join(base, "descendant.pid");
-  // The descendant ignores SIGTERM, stays in the leader's group and inherits its stdio pipes; the leader ends on SIGTERM.
-  const descendantCode = "process.on('SIGTERM', () => {}); require('node:fs').writeFileSync(process.env.PID_FILE, String(process.pid)); setInterval(() => {}, 1000);";
-  const leaderCode = `require("node:child_process").spawn(process.execPath, ["-e", ${JSON.stringify(descendantCode)}], { stdio: "inherit" }); setInterval(() => {}, 1000);`;
+/** A detached leader that starts a descendant in its group; the descendant handles SIGTERM with `onTerm` (code). The
+ *  leader ends on SIGTERM. `pipes`: the leader's stdio are pipes and the descendant inherits them (an ssh, a remote
+ *  helper); else the descendant holds none (stdio "ignore"), so the leader's 'close' comes while it still runs. */
+async function groupWithDescendant(onTerm, { pipes }) {
+  const { watchGroup } = await import("../lib/process-group.mjs");
+  const pidFile = join(scratch(), "descendant.pid");
+  const descendantCode = `process.on('SIGTERM', () => { ${onTerm} }); require('node:fs').writeFileSync(process.env.PID_FILE, String(process.pid)); setInterval(() => {}, 1000);`;
+  const leaderCode = `require("node:child_process").spawn(process.execPath, ["-e", ${JSON.stringify(descendantCode)}], { stdio: ${JSON.stringify(pipes ? "inherit" : "ignore")} }); setInterval(() => {}, 1000);`;
   const leader = watchGroup(spawn(process.execPath, ["-e", leaderCode], { detached: true, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, PID_FILE: pidFile } }));
   leader.stdout.resume(); leader.stderr.resume();
   for (let i = 0; i < 250 && !existsSync(pidFile); i++) await new Promise((r) => setTimeout(r, 20));
-  const descendant = Number(readFileSync(pidFile, "utf8"));
+  return { leader, descendant: Number(readFileSync(pidFile, "utf8")), closed: new Promise((r) => leader.once("close", r)) };
+}
+
+for (const pipes of [true, false]) {
+  test(`terminateGroup kills a descendant that survives SIGTERM after its leader exits, ${pipes ? "holding the leader's pipes (an ssh or remote helper)" : "holding none of its pipes (so the leader's close comes first)"}`, { timeout: 30_000 }, async () => {
+    const { terminateGroup } = await import("../lib/process-group.mjs");
+    const { leader, descendant, closed } = await groupWithDescendant("", { pipes });
+    try {
+      await spyGroupKills(async (kills) => {
+        assert.equal(terminateGroup(leader, 400), true);
+        await new Promise((r) => leader.once("exit", r));
+        assert.equal(leader.signalCode, "SIGTERM", "the leader ended on SIGTERM");
+        await closed;
+        // Killed, it may linger briefly as a zombie until its new parent reaps it (Linux: kill(pid, 0) still succeeds).
+        for (let i = 0; i < 100 && alive(descendant); i++) await new Promise((r) => setTimeout(r, 50));
+        assert.equal(alive(descendant), false, "the TERM-resistant descendant was killed after the grace");
+        assert.deepEqual(kills.filter(([, sig]) => sig !== 0), [[leader.pid, "SIGTERM"], [leader.pid, "SIGKILL"]]);
+      });
+    } finally { try { process.kill(descendant, "SIGKILL"); } catch { /* gone */ } }
+  });
+}
+
+test("terminateGroup sends no SIGKILL once the group is seen empty: a descendant that ends within the grace, after its leader closed", { timeout: 30_000 }, async () => {
+  const { terminateGroup } = await import("../lib/process-group.mjs");
+  const { leader, descendant, closed } = await groupWithDescendant("setTimeout(() => process.exit(0), 300);", { pipes: false });
   try {
     await spyGroupKills(async (kills) => {
-      const closed = new Promise((r) => leader.once("close", r));
-      assert.equal(terminateGroup(leader, 300), true);
-      await new Promise((r) => leader.once("exit", r));
-      assert.equal(leader.signalCode, "SIGTERM", "the leader ended on SIGTERM");
+      // The grace is long enough for the exited descendant to be reaped: a zombie is still a member of its group.
+      const grace = 6_000, end = Date.now() + grace;
+      assert.equal(terminateGroup(leader, grace), true);
       await closed;
-      assert.deepEqual(kills, [[leader.pid, "SIGTERM"], [leader.pid, "SIGKILL"]], "the group SIGKILL came while the descendant held the pipes");
-      // Killed, it may linger briefly as a zombie until its new parent reaps it (Linux: kill(pid, 0) still succeeds).
       for (let i = 0; i < 100 && alive(descendant); i++) await new Promise((r) => setTimeout(r, 50));
-      assert.equal(alive(descendant), false, "the TERM-resistant descendant was killed after the grace");
+      assert.equal(alive(descendant), false, "the descendant ended on its own");
+      await new Promise((r) => setTimeout(r, end + 500 - Date.now()));
+      assert.deepEqual(kills.filter(([, sig]) => sig !== 0), [[leader.pid, "SIGTERM"]], "the group was seen empty: no SIGKILL at the end of the grace");
     });
   } finally { try { process.kill(descendant, "SIGKILL"); } catch { /* gone */ } }
 });
 
-test("runGit's timeout reaches a descendant that survives SIGTERM and holds git's output: it is killed after the grace", { timeout: 30_000 }, async () => {
+test("runGit's kill (an abort, or its timeout: one path) reaches a descendant that survives SIGTERM and holds git's output: it is killed after the grace", { timeout: 30_000 }, async () => {
   const { TERM_GRACE_MS } = await import("../lib/process-group.mjs");
   const base = scratch();
   const dir = join(base, "shim"), pidFile = join(base, "descendant.pid");
@@ -687,14 +711,13 @@ sleep 60
   process.env.PATH = `${dir}:${saved}`;
   let descendant = null;
   try {
-    // The outcome is taken at once: the timeout may fire before the helper's pid file appears, and a rejection
-    // with no handler attached yet fails the test runner even though the test awaits it later.
-    const outcome = runGit(["fetch"], { cwd: base, timeout: 400 }).then(() => assert.fail("expected a timeout"), (x) => x);
+    const aborter = new AbortController();
+    const run = runGit(["fetch"], { cwd: base, signal: aborter.signal }).then(() => assert.fail("expected an abort"), (x) => x);
     for (let i = 0; i < 500 && !existsSync(pidFile); i++) await new Promise((r) => setTimeout(r, 20));
     for (let i = 0; i < 100 && !(descendant > 0); i++) { await new Promise((r) => setTimeout(r, 20)); descendant = Number(readFileSync(pidFile, "utf8")); }
     assert.ok(descendant > 0, "the helper started");
-    const e = await outcome;
-    assert.equal(e.timedOut, true);
+    aborter.abort();
+    assert.equal((await run).code, "ABORT_ERR");
     assert.equal(alive(descendant), true, "SIGTERM alone does not end it");
     for (let i = 0; i < (TERM_GRACE_MS + 2_000) / 50 && alive(descendant); i++) await new Promise((r) => setTimeout(r, 50));
     assert.equal(alive(descendant), false, "the group SIGKILL ended it");
