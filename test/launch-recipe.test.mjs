@@ -34,7 +34,7 @@ test("the recipe renderer reproduces the pre-recipe command bytes for every harn
   const codex = renderLaunchRecipe({ harness: "codex", executable: "/opt/homebrew/bin/codex", args: [], env: {}, model: null, yolo: true, hooks: hooks({}, {}) }, { home, instance: "n" });
   // The trust entry names the REAL path of the home (as spawn always did): on macOS /tmp is a link.
   const realHome = join(realpathSync("/tmp"), "it's home");
-  assert.equal(codex, `OATS_INSTANCE='n' OATS_INSTANCE_HOME=${shq(home)} PI_AGENT_INSTANCE='n' PI_AGENT_HOME=${shq(home)} '/opt/homebrew/bin/codex' --cd ${shq(home)} --yolo -c ${shq(`projects={${JSON.stringify(realHome)}={trust_level="trusted"}}`)} -- "$(cat TASK.md)"`);
+  assert.equal(codex, `OATS_INSTANCE='n' OATS_INSTANCE_HOME=${shq(home)} PI_AGENT_INSTANCE='n' PI_AGENT_HOME=${shq(home)} '/opt/homebrew/bin/codex' --cd ${shq(home)} -c check_for_update_on_startup=false --yolo -c ${shq(`projects={${JSON.stringify(realHome)}={trust_level="trusted"}}`)} -- "$(cat TASK.md)"`);
   const pi = renderLaunchRecipe({ harness: "pi", executable: "/opt/homebrew/bin/pi", args: [], env: {}, model: "m-1", hooks: hooks({}, {}) }, { home, instance: "n" });
   assert.equal(pi, `OATS_INSTANCE='n' OATS_INSTANCE_HOME=${shq(home)} PI_AGENT_INSTANCE='n' PI_AGENT_HOME=${shq(home)} '/opt/homebrew/bin/pi' --append-system-prompt ${shq(join(home, "AGENTS.md"))} --approve --name 'n' --model 'm-1' '@TASK.md'`);
   for (const c of [claude, codex, pi]) assert.equal(renderLaunchCommand(parseLaunchCommand(c).tokens), c, "still a shape the kernel re-renders");

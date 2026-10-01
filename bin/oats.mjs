@@ -789,7 +789,7 @@ function launchPreview(bail) {
   let plan;
   try { plan = planLaunch({ home, instance, meta, contextDir: context, agentLike, selection: sel, resolvedCfg: r, preview: true }); } catch (e) { bail(e.code || "E_BAD_ARGS", e.message); }
   const { recipe } = plan;
-  const command = renderLaunchRecipe(recipe, { home, instance, redact: true });
+  const command = renderLaunchRecipe(recipe, { home, instance, redact: true, trustHome: plan.trustHome });
   const d = describeLaunchCommand(command);
   const environment = d.environment.map((e) => e.reference && recipe.env[e.name]?.fromEnv ? { name: e.name, fromEnv: recipe.env[e.name].fromEnv } : e);
   jsonOk({ context, selected, selection: { source: plan.selectionSource, launchConfig: recipe.launchConfig, harness: sel.harness ?? null, model: sel.model ?? null, yolo: sel.yolo ?? null }, harness: plan.harness, model: recipe.model, modelSource: plan.modelSource, yolo: recipe.yolo ?? null, launchConfig: recipe.launchConfig, launchConfigSource: recipe.launchConfigSource, launchConfigDefault: recipe.launchConfigDefault === true, executable: { path: plan.executable.path, declared: plan.executable.declared ?? null, resolvedFrom: plan.executable.resolvedFrom }, argv: d.argv, environment, command, prompt: recipe.prompt, hooks: redactLaunchRecipe(recipe).hooks, preflight: plan.preflight, ok: plan.ok });

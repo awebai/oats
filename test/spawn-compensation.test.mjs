@@ -170,9 +170,9 @@ require('node:fs').writeFileSync(${JSON.stringify(captured)}, JSON.stringify({ar
   execFileSync("/bin/sh", ["-c", meta.command], { cwd: f.home, env: f.env });
   const invocation = JSON.parse(readFileSync(captured, "utf8"));
   const args = invocation.argv;
-  assert.deepEqual(args.slice(0, 5), ["--cd", f.home, "--model", "gpt-test", "--"]);
-  assert.equal(args.length, 6, "task is exactly one prompt and no policy is overridden");
-  assert.ok(args[5].includes(prompt), "task bytes reach the harness without shell evaluation");
+  assert.deepEqual(args.slice(0, 7), ["--cd", f.home, "-c", "check_for_update_on_startup=false", "--model", "gpt-test", "--"]);
+  assert.equal(args.length, 8, "task is exactly one prompt and no policy is overridden");
+  assert.ok(args[7].includes(prompt), "task bytes reach the harness without shell evaluation");
   assert.equal(invocation.home, f.home);
   assert.equal(existsSync(join(f.home, "NEVER_RUN")), false);
   assert.ok(readFileSync(join(f.home, "AGENTS.md"), "utf8").includes("Developer"));
