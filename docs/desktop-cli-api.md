@@ -2031,8 +2031,15 @@ A first retire prints the **raw receipt**, not an envelope:
 
 - `retention`: `{worktree: "retained" | "removed" | "absent", movedTo?,
   branch, detachedAt?, recordedBranch, branchDeleted?,
-  branchDeletionSkipped?: {expected, actual, reason}}`, or `null` for a
-  non-worktree mode.
+  branchDeletionSkipped?: {expected, actual, reason}}`, or `null` when no
+  worktree step ran: a non-worktree mode, or a worktree kept for the retry.
+  A retire whose hooks left cleanup outstanding keeps the worktree exactly as
+  it was (with `worktreeRemoved: false`) and says why in `rollbackIncomplete`
+  (`git worktree <path>: kept for the retry; outstanding: …`); the retry does
+  the step once nothing else is outstanding. A work directory whose git admin
+  entry is gone is never touched: it is an incomplete item (`git worktree
+  <path>: its admin entry is missing; …`), and `--force` refuses it with
+  `E_WORK_PRESERVATION_FAILED`.
 - `--discard-worktree` removes the worktree. `--delete-branch` deletes the
   worktree's verified branch (re-verified at deletion time) and implies
   discarding; a mismatch deletes nothing and reports
