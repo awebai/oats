@@ -218,26 +218,6 @@ call site passes to `memoAtCommit`, or to `atCommit` in `workspace.mjs`) and
 adding it to `test/parsed-cache.test.mjs`; `test/read-path-scale.test.mjs` pins the member
 scaling by call count.
 
-### The early harness package probe
-
-`oats spawn` verifies a soul's required Claude Code plugins with `claude
-plugin list --json`, which depends only on the executable and environment
-the launch will use. The CLI starts it as the command starts
-(`startEarlyHarnessProbe` in `bin/oats.mjs`, `startHarnessPackageProbe` in
-`core.mjs`), from local inputs: an explicit `--launch-config`, else this
-host's claude default unless a flag chose another harness. The spawn
-(`spawnBody`, at the one point it would probe) adopts the answer only for
-exactly the (bin, env) it selected, keyed by `harnessProbeKey`, and hands the
-raw stdout to `HARNESS_PACKAGE_MANAGERS.claude.list` (`opts.listed`), which
-filters it as the synchronous probe would. Anything else is today's
-synchronous probe. The early probe is bounded as that one is: 60 s, 1 MiB of
-stdout, and under a preview the shared preflight budget. A failed one answers
-`[]`. Every probe nobody adopted is killed (`abandonHarnessPackageProbes`)
-when the spawn decides and when the command ends, by any path. That includes
-the group of a probe whose leader exited but left a descendant
-(`killGroupIfPopulated` in `process-group.mjs`). In-process callers start no
-probe, so their spawn body stays synchronous.
-
 ## Tests and gates
 
 | command | what it checks |
