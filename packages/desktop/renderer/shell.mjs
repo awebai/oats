@@ -207,6 +207,9 @@ ctx.spawnJobs = spawnJobs;
 ctx.showPendingSpawn = (id) => showPendingSpawn(id);
 // Spec E: the press closed the dialog; reveal its pending row (no focus taken) and follow it to its instance.
 ctx.followSpawn = (id) => { spawnFollow.follow(id); revealPendingSpawn(id); };
+// The spawn dialog's own keys (Mod+Enter, Mod+1–7): listed and rebindable in the editor from the start;
+// only the open dialog dispatches them (spawn-dialog-keys.mjs).
+registerSpawnDialogKeys();
 spawnJobs.recover();
 window.addEventListener('pagehide', () => spawnJobs.dispose(), { once: true });
 
@@ -1987,8 +1990,6 @@ for (const [id, action, label] of [['instance.openSplit', 'open-split', 'Instanc
 }
 registerAction({ id: "app.palette", label: "Open the command palette", context: "global", run: () => { tabOpenIntents.invalidate(); palette.toggle(); } });
 registerAction({ id: "app.quickOpenSouls", label: "Quick open a soul to spawn", context: "global", run: () => { tabOpenIntents.invalidate(); quickOpen.toggle(); } });
-// The spawn dialog's own keys (Mod+Enter, Mod+1–7): listed and rebindable in the editor from the start; only the open dialog dispatches them.
-registerSpawnDialogKeys();
 registerAction({ id: "app.chooseSoul", label: "Spawn instance: choose a soul in Workspace", context: "global", run: () => openWorkspaceSouls() });
 registerAction({ id: "app.shortcuts", label: "Edit keyboard shortcuts", context: "global", run: () => openShortcutsEditor() });
 registerAction({ id: "app.connections", label: "Settings: Connections", context: "global", run: () => openConnections() });
