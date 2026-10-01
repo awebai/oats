@@ -687,11 +687,13 @@ sleep 60
   process.env.PATH = `${dir}:${saved}`;
   let descendant = null;
   try {
-    const run = runGit(["fetch"], { cwd: base, timeout: 400 });
+    // The outcome is taken at once: the timeout may fire before the helper's pid file appears, and a rejection
+    // with no handler attached yet fails the test runner even though the test awaits it later.
+    const outcome = runGit(["fetch"], { cwd: base, timeout: 400 }).then(() => assert.fail("expected a timeout"), (x) => x);
     for (let i = 0; i < 500 && !existsSync(pidFile); i++) await new Promise((r) => setTimeout(r, 20));
     for (let i = 0; i < 100 && !(descendant > 0); i++) { await new Promise((r) => setTimeout(r, 20)); descendant = Number(readFileSync(pidFile, "utf8")); }
     assert.ok(descendant > 0, "the helper started");
-    const e = await run.then(() => assert.fail("expected a timeout"), (x) => x);
+    const e = await outcome;
     assert.equal(e.timedOut, true);
     assert.equal(alive(descendant), true, "SIGTERM alone does not end it");
     for (let i = 0; i < (TERM_GRACE_MS + 2_000) / 50 && alive(descendant); i++) await new Promise((r) => setTimeout(r, 50));
