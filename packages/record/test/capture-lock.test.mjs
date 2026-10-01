@@ -12,7 +12,7 @@ import { RecordIndex } from "../lib/index-db.mjs";
 const CAPTURE = resolve(new URL("../bin/capture.mjs", import.meta.url).pathname);
 const LOCK_LIB = resolve(new URL("../lib/capture-lock.mjs", import.meta.url).pathname);
 
-test("capture lock: any existing lock refuses (live, dead, same pid, record-less); release removes only its own; nothing is ever stolen", () => {
+test("capture lock: a lock it may not reclaim refuses (live, another host's dead owner, same pid, record-less); release removes only its own", () => {
   const root = join(mkdtempSync(join(tmpdir(), "capture-lock-")), "o'dd $(echo x) `w` dir");
   try {
     const a = acquireCaptureLock(root);
@@ -28,10 +28,10 @@ test("capture lock: any existing lock refuses (live, dead, same pid, record-less
       const h = acquireCaptureLock(root);
       assert.equal(h.held?.pid, child.pid); assert.equal(h.held.liveness, "alive"); assert.match(h.held.recovery, /let it finish/);
     } finally { child.kill(); }
-    // Dead holder: STILL refused, with the actionable recovery (never stolen).
-    writeFileSync(join(captureLockPath(root), "owner.json"), JSON.stringify({ pid: 999999999, startedAt: new Date().toISOString() }));
+    // Another host's dead holder: refused, with the actionable recovery (its pid means nothing here).
+    writeFileSync(join(captureLockPath(root), "owner.json"), JSON.stringify({ pid: 999999999, startedAt: new Date().toISOString(), host: "elsewhere" }));
     const d = acquireCaptureLock(root);
-    assert.equal(d.release, undefined, "a dead holder's lock is not stolen");
+    assert.equal(d.release, undefined, "another host's lock is not reclaimed");
     assert.equal(d.held.liveness, "dead"); assert.match(d.held.recovery, /ps -p 999999999/);
     assert.ok(d.held.recovery.includes(`rm -r -- ${shellQuote(captureLockPath(root))}`), d.held.recovery);
     // The displayed removal is shell-safe for this hostile path: it removes exactly the lock and executes nothing.
@@ -39,7 +39,7 @@ test("capture lock: any existing lock refuses (live, dead, same pid, record-less
     const sh = spawnSync("sh", ["-c", cmd], { encoding: "utf8" });
     assert.equal(sh.status, 0, sh.stderr); assert.equal(existsSync(captureLockPath(root)), false, "the pasted command removed the lock");
     assert.equal(existsSync(root), true);
-    mkdirSync(captureLockPath(root)); writeFileSync(join(captureLockPath(root), "owner.json"), JSON.stringify({ pid: 999999999, startedAt: new Date().toISOString() }));
+    mkdirSync(captureLockPath(root)); writeFileSync(join(captureLockPath(root), "owner.json"), JSON.stringify({ pid: 999999999, startedAt: new Date().toISOString(), host: "elsewhere" }));
     assert.equal(existsSync(captureLockPath(root)), true);
     // Record-less lock (initializing or killed before writing): refused, unknown liveness.
     rmSync(captureLockPath(root), { recursive: true, force: true }); mkdirSync(captureLockPath(root));
@@ -77,7 +77,7 @@ test("capture lock: concurrent child processes never hold the lock at the same t
   }).finally(() => rmSync(root, { recursive: true, force: true }));
 });
 
-test("capture CLI: a locked root (live holder) skips quietly; an interrupted owner's lock skips with the recovery on stderr; neither touches the index", () => {
+test("capture CLI: a locked root (live holder) skips quietly; another host's interrupted owner's lock skips with the recovery on stderr; neither touches the index", () => {
   const root = mkdtempSync(join(tmpdir(), "capture-lock-cli-"));
   const child = spawn("sleep", ["30"]);
   try {
@@ -86,8 +86,9 @@ test("capture CLI: a locked root (live holder) skips quietly; an interrupted own
     mkdirSync(captureLockPath(root)); writeFileSync(join(captureLockPath(root), "owner.json"), JSON.stringify({ pid: child.pid, startedAt: new Date().toISOString() }));
     let r = spawnSync(process.execPath, [CAPTURE, "--sessions-only"], { encoding: "utf8", env });
     assert.equal(r.status, 0, r.stderr + r.stdout); assert.match(r.stdout, /another pass holds .*let it finish/);
-    // Interrupted owner (dead pid): the pass still skips, and the operator gets the exact recovery on stderr.
-    writeFileSync(join(captureLockPath(root), "owner.json"), JSON.stringify({ pid: 999999999, startedAt: new Date().toISOString() }));
+    // Another host's interrupted owner (dead pid there): the pass skips, and the operator gets the exact
+    // recovery on stderr. (On this host the next pass reclaims it: capture-lock-reclaim.test.mjs.)
+    writeFileSync(join(captureLockPath(root), "owner.json"), JSON.stringify({ pid: 999999999, startedAt: new Date().toISOString(), host: "elsewhere" }));
     r = spawnSync(process.execPath, [CAPTURE, "--sessions-only"], { encoding: "utf8", env });
     assert.equal(r.status, 0, r.stderr + r.stdout);
     assert.match(r.stderr, /now dead.*ps -p 999999999.*rm -r -- '.*\.capture\.lock'.*rerun/);
@@ -287,9 +288,9 @@ test("capture --home lock collision returns one JSON document with stale boundar
   const out = JSON.parse(complete.stdout);
   assert.equal(out.complete, true); assert.equal(out.skipped, false); assert.equal(out.appended, 1);
   assert.equal(out.sessions[0].turns, 2); assert.notEqual(out.sessions[0].lastTurnId, boundary);
-  // The dead-owner form is also native JSON, with actionable diagnostics.
+  // A dead owner the pass may not reclaim (another host's) is also native JSON, with actionable diagnostics.
   mkdirSync(captureLockPath(root));
-  writeFileSync(join(captureLockPath(root), "owner.json"), JSON.stringify({ pid: 999999999, startedAt: "2026-09-13T10:00:00Z" }));
+  writeFileSync(join(captureLockPath(root), "owner.json"), JSON.stringify({ pid: 999999999, startedAt: "2026-09-13T10:00:00Z", host: "elsewhere" }));
   const stale = run("--current-roots", "--home", home, "--quiet"); assert.equal(stale.status, 0);
   assert.equal(JSON.parse(stale.stdout).complete, false); assert.match(stale.stderr, /now dead.*rm -r/);
 });

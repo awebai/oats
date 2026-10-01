@@ -4,17 +4,32 @@
 // and the next pass catches up, since reconciliation is idempotent.
 //
 // The lock is a DIRECTORY: mkdir is atomic and a directory is never
-// observable half-created. The owner record (pid, start time) is written
-// inside it after the mkdir. Nothing here ever steals a lock: any existing
-// lock, live, dead, unknowable or still initializing, refuses the pass and
-// names the holder and the operator recovery. A stale lock after a killed
-// pass is removed by the operator once the pid is verified gone; the
-// message says exactly that. (A reclaim protocol was reviewed and rejected:
-// rename is not compare-and-swap, and stealing from a stalled live
-// initializer under memory pressure is the failure we are preventing.)
-import { closeSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+// observable half-created. The owner record (pid, nonce, start time, host)
+// is written inside it after the mkdir. A live, unknowable or still
+// initializing (owner-less) lock refuses the pass and names the holder and
+// the operator recovery; it is never stolen.
+//
+// A lock whose recorded owner is DEAD on this host is reclaimed (a capture
+// killed mid-pass by a hook or caller timeout runs no finally). Records
+// without host predate host recording and live under this user's home, so
+// they count as this host's (RECLAIM_HOSTLESS_RECORDS). Reclaimers
+// are serialized by a guard, `<lock>.reclaim` (exclusive create): under it
+// the owner record is read again and the lock removed only while it is still
+// that dead owner's, so a reclaimer cannot remove a lock a live pass took
+// meanwhile. A guard whose holder died is never removed (that would race
+// exactly as removing the lock does); it is named with its recovery.
+// Acquire never waits: it reclaims once or skips, and the next pass catches up.
+// There is no signal handler: a pass is synchronous, so a JS handler would
+// only run after the whole pass (turning a caller's timeout kill into a full
+// pass), and SIGKILL cannot be handled; the reclaim is the recovery.
+import { closeSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
+import { hostname } from "node:os";
 import { join } from "node:path";
+
+/** Whether an owner record that names no host is reclaimed when its pid is dead here: yes. Records without
+ *  host predate host recording and live under this user's home, so they are this host's. */
+export const RECLAIM_HOSTLESS_RECORDS = true;
 
 export function captureLockPath(root) { return join(root, ".capture.lock"); }
 
@@ -24,8 +39,38 @@ export function holderLiveness(pid) {
   try { process.kill(pid, 0); return "alive"; } catch (e) { return e.code === "EPERM" ? "unknown" : "dead"; }
 }
 
-function readOwner(dir) {
-  try { return JSON.parse(readFileSync(join(dir, "owner.json"), "utf8")); } catch { return undefined; }
+const readJson = (path) => { try { return JSON.parse(readFileSync(path, "utf8")); } catch { return undefined; } };
+const readOwner = (dir) => readJson(join(dir, "owner.json"));
+
+/** Whether `owner` is a record of this host whose process is dead: the only lock this module reclaims. */
+function deadHere(owner, { host, liveness, reclaimHostless }) {
+  if (!owner || !Number.isInteger(owner.pid)) return false;
+  const here = owner.host === undefined ? reclaimHostless : owner.host === host;
+  return here && liveness(owner.pid) === "dead";
+}
+
+/** Remove the lock `dir` held by the dead `owner`, serialized by the guard `<dir>.reclaim`. → { removed }
+ *  (true only when THIS call removed it; otherwise it is left for the next pass), or { abandoned: { guard,
+ *  pid } } when a reclaimer died holding the guard. */
+function reclaimDeadLock(dir, owner, me, opts) {
+  const guard = `${dir}.reclaim`;
+  try { writeFileSync(guard, JSON.stringify(me), { flag: "wx", mode: 0o600 }); }
+  catch (e) {
+    if (e.code !== "EEXIST") return { removed: false };
+    const g = readJson(guard);
+    return g && deadHere(g, opts) ? { abandoned: { guard, pid: g.pid } } : { removed: false };
+  }
+  const same = (o) => o && o.pid === owner.pid && o.nonce === owner.nonce && o.startedAt === owner.startedAt;
+  let removed = false;
+  try {
+    const now = readOwner(dir);
+    if (same(now) && deadHere(now, opts)) {
+      rmSync(dir, { recursive: true, force: true });
+      removed = !existsSync(dir) || !same(readOwner(dir));
+    }
+  } catch { /* the next pass */ }
+  finally { if (readJson(guard)?.nonce === me.nonce) { try { unlinkSync(guard); } catch { /* gone */ } } }
+  return { removed };
 }
 
 /** Single-quote shell escaping: safe to paste whatever the path contains. */
@@ -40,9 +85,13 @@ export function recoveryInstruction(dir, owner, liveness) {
   return `${dir} is held by ${who}; if that process is gone (ps -p ${owner.pid}), remove the lock with: ${remove}  and rerun`;
 }
 
-/** Try to take the root's capture lock. Returns { path, release } when
- *  taken, or { path, held: { pid, startedAt, liveness, recovery } } when any
- *  lock exists. Never removes a lock it did not create.
+/** Try to take the root's capture lock. Returns { path, release, reclaimed? }
+ *  when taken, or { path, held: { pid, startedAt, liveness, recovery, guard? },
+ *  reclaimed? } when a lock is held. A lock it did not create is removed only
+ *  when its recorded owner is dead on this host, under the reclaim guard (the
+ *  header); `reclaimed: { pid, startedAt }` says THIS call removed it (whether
+ *  or not it then won the lock), and `held.guard` names a guard a dead
+ *  reclaimer left. Every other lock is left alone.
  *
  *  Two failure points are reported rather than left behind. If the owner
  *  record cannot be written after THIS call created the directory (a full
@@ -59,22 +108,39 @@ export function recoveryInstruction(dir, owner, liveness) {
  *  The owner record carries a per-acquisition nonce, so a release kept from
  *  an earlier acquisition cannot erase a later one by the same pid (an
  *  operator recovery followed by a new pass in the same long-lived process).
- *  That is ownership checking; no lock is ever reclaimed.
  *
  *  `io` exists for fault injection in tests only. */
-export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, liveness = holderLiveness, io = {} } = {}) {
+export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, liveness = holderLiveness, host = hostname(), reclaimHostless = RECLAIM_HOSTLESS_RECORDS, io = {} } = {}) {
   const fs = { writeFileSync, rmSync, openSync, closeSync, lstatSync, ...io };
   const dir = captureLockPath(root);
-  mkdirSync(root, { recursive: true }); // the store creates the root lazily; the lock may come first
-  try {
-    mkdirSync(dir);
-  } catch (e) {
-    if (e.code !== "EEXIST") throw e;
-    const owner = readOwner(dir);
-    const live = owner ? (owner.pid === pid ? "alive" : liveness(owner.pid)) : "unknown";
-    return { path: dir, held: { pid: owner?.pid, startedAt: owner?.startedAt, liveness: live, recovery: recoveryInstruction(dir, owner, live) } };
-  }
   const nonce = randomBytes(8).toString("hex");
+  mkdirSync(root, { recursive: true }); // the store creates the root lazily; the lock may come first
+  let reclaimed;
+  for (let attempt = 0; ; attempt++) {
+    try { mkdirSync(dir); break; }
+    catch (e) {
+      if (e.code !== "EEXIST") throw e;
+      const owner = readOwner(dir);
+      const opts = { host, liveness, reclaimHostless };
+      if (attempt === 0 && owner?.pid !== pid && deadHere(owner, opts)) {
+        const r = reclaimDeadLock(dir, owner, { pid, nonce, host }, opts);
+        if (r.abandoned) {
+          const { guard, pid: reclaimer } = r.abandoned;
+          return { path: dir, held: { pid: owner.pid, startedAt: owner.startedAt, liveness: "dead", guard,
+            recovery: `${guard} was left by pid ${reclaimer}, which died while reclaiming ${dir}; once no capture process is running (pgrep -f capture.mjs), remove both with: rm -- ${shellQuote(guard)}; rm -r -- ${shellQuote(dir)}  and rerun` } };
+        }
+        // Gone, whoever removed it (another reclaimer may have): try the lock once more.
+        if (r.removed) reclaimed = { pid: owner.pid, startedAt: owner.startedAt };
+        if (r.removed || !existsSync(dir)) continue;
+      }
+      const now = readOwner(dir);
+      // Gone between the mkdir and this read (a release or a reclaim): try once more. A directory that
+      // exists without a record is initializing or mid-removal, and is reported so.
+      if (!now && attempt === 0 && !existsSync(dir)) continue;
+      const live = now ? (now.pid === pid ? "alive" : liveness(now.pid)) : "unknown";
+      return { path: dir, ...(reclaimed ? { reclaimed } : {}), held: { pid: now?.pid, startedAt: now?.startedAt, liveness: live, recovery: recoveryInstruction(dir, now, live) } };
+    }
+  }
   let directoryFd, identity;
   try {
     // Keep the directory alive until initialization or its cleanup finishes.
@@ -82,7 +148,7 @@ export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, li
     // a record-less replacement look like the directory we created.
     directoryFd = fs.openSync(dir, "r");
     identity = fstatSync(directoryFd);
-    fs.writeFileSync(join(dir, "owner.json"), JSON.stringify({ pid, nonce, startedAt: new Date(now()).toISOString() }));
+    fs.writeFileSync(join(dir, "owner.json"), JSON.stringify({ pid, nonce, startedAt: new Date(now()).toISOString(), host }));
   } catch (err) {
     // Ownership was proven by the mkdir, not by the moment of cleanup: the
     // directory is removed only if it is still ours (same inode) and holds
@@ -109,6 +175,7 @@ export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, li
   }
   return {
     path: dir,
+    ...(reclaimed ? { reclaimed } : {}),
     release: () => {
       if (!existsSync(dir)) return { released: false, reason: "gone" };
       const cur = readOwner(dir);

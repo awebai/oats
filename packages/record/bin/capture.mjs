@@ -183,6 +183,9 @@ function withCaptureLock(fn) {
   let lock;
   try {
     lock = acquireCaptureLock(root);
+    // Said by the pass that removed it, never quiet, whether or not it then took the lock: a pass that
+    // died holding the lock is worth knowing about.
+    if (lock.reclaimed) console.error(`capture: reclaimed ${lock.path} from pid ${lock.reclaimed.pid}, which died (started ${lock.reclaimed.startedAt || "?"})`);
   } catch (err) {
     if (err.lockCleanup) {
       const c = err.lockCleanup;
