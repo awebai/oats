@@ -197,6 +197,23 @@ Journal writes fsync; note that on macOS `fsync(2)` does not guarantee media
 durability (that would need `F_FULLFSYNC`, which Node's fs API does not
 expose) — the guarantee is OS-crash-level, not power-loss-level.
 
+**One capture pass at a time.** A pass takes the record root's
+`.capture.lock` directory, whose `owner.json` records the pid, a nonce, the
+start time and the host. A pass that finds the lock held skips (the next
+pass catches up). A pass that is killed (a hook or caller timeout) runs no
+cleanup, so the next pass reclaims a lock whose recorded owner is dead on
+this host:
+
+- Reclaimers are serialized by a guard, `.capture.lock.reclaim`, taken by
+  exclusive create. Under it the record is read again and removed only if it
+  still belongs to that dead owner.
+- A live or unknowable owner, an owner-less (initializing) lock and another
+  host's lock are never touched.
+- A guard left by a reclaimer that died is never removed. It is named, with
+  the exact recovery.
+- Records that name no host (written by earlier kernels) are left to the
+  operator: `ps -p <pid>`, then `rm -r -- <lock>`.
+
 ## Upgrading
 
 The derived index self-heals across schema changes by wiping and
