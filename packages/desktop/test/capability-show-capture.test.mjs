@@ -5,7 +5,7 @@ import { JSDOM } from 'jsdom';
 import { capabilityShowData, capabilityFileData, listedFiles } from '../renderer/capability-show-contract.mjs';
 import { createCapabilityContents } from '../renderer/capability-contents.mjs';
 
-// Real `oats capabilities show` answers (the kernel branch's verb, captured on a live deployment, 2026-10-01):
+// Real `oats capabilities show … --max-age 60 --json` answers (main @ 6cd27bf8, captured on a live deployment, 2026-10-01):
 // oats.aweb (package, with an inject) and oats.desktop-ui (member, no inject), one --file answer and one refusal.
 const capture = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/capability-show/${name}.json`, import.meta.url), 'utf8'));
 const aweb = capture('show-oats-aweb'), ui = capture('show-oats-desktop-ui'), file = capture('file-oats-desktop-ui-skill'), unknown = capture('file-unknown');
