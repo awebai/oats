@@ -240,7 +240,7 @@ test("batch: a session deadline cuts the wait for an answer (its own timeout is 
 test("every memo is session-scoped: without a session each observation asks the remote and sees a new head", async () => {
   const fx = fixture();
   let lsRemote = 0;
-  const exec = (args, opts) => { if (args[0] === "ls-remote") lsRemote++; return runGit(args, opts); };
+  const exec = (args, opts) => { if (args.includes("ls-remote")) lsRemote++; return runGit(args, opts); };
   const first = await observeRemote(fx.bare, { cacheDir: fx.cacheDir, exec });
   write(fx.work, "README.md", "# two\n");
   git(fx.work, "commit", "-q", "-am", "two");
@@ -257,9 +257,11 @@ test("every memo is session-scoped: without a session each observation asks the 
   assert.equal(b.commit, a.commit);
   // A failed observation is not kept: the next caller retries.
   let failing = true;
-  const flaky = (args, opts) => { if (args[0] === "ls-remote") { lsRemote++; if (failing) { failing = false; return Promise.reject(Object.assign(new Error("x"), { stderr: Buffer.from("fatal: unable to access: Could not resolve host") })); } } return runGit(args, opts); };
+  // Every ls-remote of the first observation fails (a v0 network failure is retried once under v2).
+  const flaky = (args, opts) => { if (args.includes("ls-remote")) { lsRemote++; if (failing) return Promise.reject(Object.assign(new Error("x"), { stderr: Buffer.from("fatal: unable to access: Could not resolve host") })); } return runGit(args, opts); };
   const fresh = createReadSession();
   assert.equal((await outcome(observeRemote(fx.bare, { cacheDir: fx.cacheDir, exec: flaky, session: fresh }))).error.details.reason, "network");
+  failing = false;
   assert.equal((await observeRemote(fx.bare, { cacheDir: fx.cacheDir, exec: flaky, session: fresh })).commit, second.commit);
   await session.close(); await fresh.close();
 });

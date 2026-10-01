@@ -126,7 +126,8 @@ test("the member prefetch (Addendum 3): souls and soul teams observe each head o
   const shim = join(base, "shim-ls");
   mkdirSync(shim, { recursive: true });
   const log = join(base, "ls-remote.log");
-  writeFileSync(join(shim, "git"), `#!/bin/bash\n[ "$1" = "ls-remote" ] && echo "$3" >> "${log}"\nexec "${REAL_GIT}" "$@"\n`, { mode: 0o755 });
+  // Logs the url of every ls-remote, whichever protocol it speaks (v0: `-c protocol.version=0 ls-remote --symref <url>`).
+  writeFileSync(join(shim, "git"), `#!/bin/bash\nls=""; prev=""; for a in "$@"; do [ "$a" = "ls-remote" ] && ls=1; [ -n "$ls" ] && [ "$prev" = "--symref" ] && echo "$a" >> "${log}"; prev="$a"; done\nexec "${REAL_GIT}" "$@"\n`, { mode: 0o755 });
   const lsRemotes = (args) => {
     writeFileSync(log, "");
     json(oats(args, { extraEnv: { PATH: `${shim}:${env.PATH}` } }));

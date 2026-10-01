@@ -34,6 +34,8 @@ const caught = (promise) => promise.then(() => assert.fail("expected a refusal")
 function hangingExec(calls) {
   return (args, opts = {}) => {
     calls.push({ args, timeout: opts.timeout });
+    // A local config read answers at once, as git's does: protocol.version unset (a HEAD observation speaks v0).
+    if (args[0] === "config") return Promise.reject(Object.assign(new Error("unset"), { code: 1, stderr: Buffer.alloc(0) }));
     return new Promise((_, reject) => setTimeout(() => reject(Object.assign(new Error(`Command failed: git ${args.join(" ")} (timed out after ${opts.timeout} ms)`),
       { code: null, killed: true, signal: "SIGTERM", timedOut: true, overflowed: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) })), opts.timeout ?? GIT_TIMEOUT_MS));
   };

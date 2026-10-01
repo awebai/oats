@@ -72,6 +72,27 @@ Every CLI command owns one read session (`createReadSession` in
 CLI closes it when the command ends). A library caller without a session
 gets the plain per-call behaviour. Within a session:
 
+- a HEAD observation speaks protocol v0 when the operator has not pinned
+  `protocol.version` (`git config --get`, read once per command): the whole
+  ref advertisement in one round trip, resolved exactly as v2's filtered
+  answer. `V0_ADVERTISEMENT_BUDGET` (4 MiB, git's `maxBuffer`) bounds what
+  is kept, not the transfer: git reads the whole advertisement before it
+  prints a ref, so a remote over budget costs its advertisement once, then
+  git is killed, the remote observed again under v2 and recorded. A v0
+  timeout stays today's error (no retry) and is recorded too, unless the
+  session's `deadline` cut that read's timeout (the deadline, not the remote,
+  may have ended it). The
+  v0 read and its `protocol.version` check go through `sessionExec` like every
+  other git call. The record is
+  `<cacheRoot>/.ls-remote/<sha256(key)>.<reason>.json`, `{ protocol: "v2",
+  reason: "overflow" | "timeout", recordedAt }`, one file per reason (an
+  in-flight timeout never replaces an overflow), written atomically with no lock;
+  `overflow` is permanent, `timeout` expires after 7 days, and an unreadable,
+  corrupt or expired record is no record (v0 is tried). Another v0 failure
+  that is not final (auth, not-found, cache, an abort) is retried once under
+  v2. Each is a session notice. The v2 argv (`lsRemoteArgs`) stays the
+  observation's identity: records and memo keys do not depend on the
+  protocol;
 - a head is observed once per (cache repo, ref), and a commit peeled once; at
   most eight observations run at once (`OBSERVE_LIMIT`), each holding its slot
   for all its git work (the `ls-remote` and the fetch of the commit it names,
@@ -107,7 +128,8 @@ gets the plain per-call behaviour. Within a session:
   exit hook (`closeNow`), and the system reaps them once the process is gone;
 - a session may have a `deadline` (`READ_REMOTE_BUDGET_MS`, 12 s after it
   starts): the CLI gives one to `status` and `workspace status` only
-  (`readBudgetMs`; `OATS_READ_REMOTE_BUDGET_MS` overrides it for tests). Every
+  (`readBudgetMs`; `OATS_READ_REMOTE_BUDGET_MS` is a test and ops override,
+  not a contract). Every
   remote step then gets what is left of it instead of its own default: each
   git call's timeout (`sessionExec`: ls-remote, fetch, ls-tree, the cache's
   plumbing; none starts once nothing is left), the git version probe

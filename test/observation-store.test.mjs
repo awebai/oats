@@ -143,7 +143,7 @@ test("a failed live observation is today's error even with an older record, and 
   await observeRemote(r.bare, { cacheDir, session: createReadSession() });
   setObservedAt(cacheDir, r, ago(3_600_000)); // too old for maxAge 60
   const before = readFileSync(recordFile(cacheDir, r), "utf8");
-  const failing = (args, opts) => (args[0] === "ls-remote" ? Promise.reject(Object.assign(new Error("x"), { stderr: Buffer.from("fatal: unable to access: Could not resolve host") })) : runGit(args, opts));
+  const failing = (args, opts) => (args.includes("ls-remote") ? Promise.reject(Object.assign(new Error("x"), { stderr: Buffer.from("fatal: unable to access: Could not resolve host") })) : runGit(args, opts));
   await assert.rejects(observeRemote(r.bare, { cacheDir, exec: failing, session: createReadSession({ maxAge: 60 }) }), (e) => e.code === "E_REMOTE_UNREADABLE" && e.details.reason === "network");
   assert.equal(readFileSync(recordFile(cacheDir, r), "utf8"), before);
 });
