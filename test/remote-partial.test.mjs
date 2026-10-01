@@ -590,6 +590,40 @@ test("two processes reclaiming one dead write lock never both write: one paused 
     "B could not take the lock while A was paused inside the reclaim, the two never fetched at once, and both released");
 });
 
+test("a reclaim guard left by a reclaimer that died is never removed: every contender refuses at once naming it, none writes; removed by hand, the cache heals", { timeout: 60_000 }, async () => {
+  const f = fixture();
+  const dead = spawn(process.execPath, ["-e", ""], { stdio: "ignore" });
+  await new Promise((r) => dead.on("close", r));
+  const lock = holdWriteLock(f, dead.pid);
+  const guard = `${lock}.reclaim`;
+  writeFileSync(guard, JSON.stringify({ pid: dead.pid, token: "g".repeat(24) }) + "\n");
+  const remoteUrl = new URL("../lib/remote.mjs", import.meta.url).href;
+  // Three processes meet the dead lock and the dead guard at once (the interleaving where removing a dead guard
+  // let two reclaimers each delete the other's live guard, then lock, and both fetch).
+  const code = `const { observeRemote } = await import(${JSON.stringify(remoteUrl)});
+    try { await observeRemote(${JSON.stringify(f.bare)}, { cacheDir: ${JSON.stringify(f.cacheDir)}, at: ${JSON.stringify(f.commit)} }); console.log(JSON.stringify({ ok: true })); }
+    catch (e) { console.log(JSON.stringify({ code: e.code, details: e.details, message: e.message })); }`;
+  const started = Date.now();
+  const outs = await Promise.all([0, 1, 2].map(() => new Promise((r) => {
+    let out = "";
+    const c = spawn(process.execPath, ["--input-type=module", "-e", code], { stdio: ["ignore", "pipe", "inherit"] });
+    c.stdout.on("data", (d) => { out += d; });
+    c.on("close", () => r(JSON.parse(out)));
+  })));
+  assert.ok(Date.now() - started < 15_000, "refused at once, not at the write deadline");
+  for (const e of outs) {
+    assert.equal(e.code, "E_REMOTE_UNREADABLE");
+    assert.deepEqual([e.details.reason, e.details.stage, e.details.guard, e.details.lock, e.details.holderPid], ["cache", "fetch", guard, lock, dead.pid]);
+    assert.ok(e.message.endsWith(`: ${guard} was left by oats process ${dead.pid}, which died while reclaiming the write lock ${lock}; it is safe to remove once no oats process is running`), e.message);
+  }
+  assert.equal(existsSync(guard), true, "no contender removes the guard");
+  assert.equal(readFileSync(lock, "utf8").includes(`"pid":${dead.pid}`), true, "nor the lock it guards");
+  assert.equal(existsSync(join(f.repoDir, "HEAD")), false, "and none wrote the cache");
+  rmSync(guard);
+  assert.equal((await observeRemote(f.bare, { cacheDir: f.cacheDir, at: f.commit })).commit, f.commit, "the dead lock is then reclaimed");
+  assert.equal(existsSync(lock), false);
+});
+
 test("terminateGroup kills a descendant that survives SIGTERM after its leader exits (an ssh or remote helper)", { timeout: 30_000 }, async () => {
   const { terminateGroup } = await import("../lib/process-group.mjs");
   const base = scratch();

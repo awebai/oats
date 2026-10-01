@@ -136,7 +136,11 @@ waited for while its holder lives (bounded by a whole fetch, then
 released only by its owner. Reclaimers take a short guard,
 `<lock>.reclaim`, and check under it that the lock is still the dead
 record before removing it, so a reclaimer that paused cannot delete a
-live process's new lock. Reads take no lock. A cache repo appears whole
+live process's new lock. A guard whose holder died is never removed
+automatically (that removal would race the same way, with nothing left to
+serialize it): every write refuses at once, `reason: "cache"` naming the
+guard (`details.guard`), until a human removes it once no oats process is
+running. Reads take no lock. A cache repo appears whole
 (`git init` into a private directory, then a rename), so processes making
 the first fetch of one remote all succeed. A git `*.lock` a write meets is
 judged under that lock (`cacheGit`): older oats kernels take no write lock,

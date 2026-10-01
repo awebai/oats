@@ -537,9 +537,10 @@ Feature `workspace-v2`, `workspaceApi: 2`. Model: [workspaces.md](workspaces.md)
   never prompting: `E_REMOTE_UNREADABLE {url, reason: "auth" | "not-found" |
   "network" | "timeout" | "cache"}`. `cache` (OATS 0.33.0) is local: the
   remote cache on this machine could not be written (a git lock still held,
-  or another oats process still writing it); `details.cacheDir` and, when
-  known, `details.lock` or `details.holderPid` say which, and the message
-  says what to do.
+  another oats process still writing it, or a lock file one left when it
+  died); `details.cacheDir` and, when known, `details.lock`,
+  `details.guard` or `details.holderPid` say which, and the message says
+  what to do.
 - There is no package approval: declaring a package is the trust decision.
   No payload carries `approvalNeeded`, `approval` or `approved`.
 - A **standalone view** is a member repository whose workspace is not read
