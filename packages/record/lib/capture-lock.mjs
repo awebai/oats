@@ -37,12 +37,8 @@ export function holderLiveness(pid) {
   try { process.kill(pid, 0); return "alive"; } catch (e) { return e.code === "EPERM" ? "unknown" : "dead"; }
 }
 
-function readOwner(dir) {
-  try { return JSON.parse(readFileSync(join(dir, "owner.json"), "utf8")); } catch { return undefined; }
-}
-function readGuard(path) {
-  try { return JSON.parse(readFileSync(path, "utf8")); } catch { return undefined; }
-}
+const readJson = (path) => { try { return JSON.parse(readFileSync(path, "utf8")); } catch { return undefined; } };
+const readOwner = (dir) => readJson(join(dir, "owner.json"));
 
 /** Whether `owner` is a record of this host whose process is dead: the only lock this module reclaims. */
 function deadHere(owner, { host, liveness, reclaimHostless }) {
@@ -51,22 +47,27 @@ function deadHere(owner, { host, liveness, reclaimHostless }) {
   return here && liveness(owner.pid) === "dead";
 }
 
-/** Remove the lock `dir` held by the dead `owner`, serialized by the guard `<dir>.reclaim`. → null when the
- *  lock was removed or is left for the next pass, or { guard, pid } when a reclaimer died holding the guard. */
+/** Remove the lock `dir` held by the dead `owner`, serialized by the guard `<dir>.reclaim`. → { removed }
+ *  (true only when THIS call removed it; otherwise it is left for the next pass), or { abandoned: { guard,
+ *  pid } } when a reclaimer died holding the guard. */
 function reclaimDeadLock(dir, owner, me, opts) {
   const guard = `${dir}.reclaim`;
   try { writeFileSync(guard, JSON.stringify(me), { flag: "wx", mode: 0o600 }); }
   catch (e) {
-    if (e.code !== "EEXIST") return null;
-    const g = readGuard(guard);
-    return g && deadHere(g, opts) ? { guard, pid: g.pid } : null;
+    if (e.code !== "EEXIST") return { removed: false };
+    const g = readJson(guard);
+    return g && deadHere(g, opts) ? { abandoned: { guard, pid: g.pid } } : { removed: false };
   }
+  let removed = false;
   try {
     const now = readOwner(dir);
-    if (now && now.pid === owner.pid && now.nonce === owner.nonce && now.startedAt === owner.startedAt && deadHere(now, opts)) rmSync(dir, { recursive: true, force: true });
+    if (now && now.pid === owner.pid && now.nonce === owner.nonce && now.startedAt === owner.startedAt && deadHere(now, opts)) {
+      rmSync(dir, { recursive: true, force: true });
+      removed = !existsSync(dir) || readOwner(dir)?.nonce !== owner.nonce;
+    }
   } catch { /* the next pass */ }
-  finally { if (readGuard(guard)?.nonce === me.nonce) { try { unlinkSync(guard); } catch { /* gone */ } } }
-  return null;
+  finally { if (readJson(guard)?.nonce === me.nonce) { try { unlinkSync(guard); } catch { /* gone */ } } }
+  return { removed };
 }
 
 /** Single-quote shell escaping: safe to paste whatever the path contains. */
@@ -81,9 +82,13 @@ export function recoveryInstruction(dir, owner, liveness) {
   return `${dir} is held by ${who}; if that process is gone (ps -p ${owner.pid}), remove the lock with: ${remove}  and rerun`;
 }
 
-/** Try to take the root's capture lock. Returns { path, release } when
- *  taken, or { path, held: { pid, startedAt, liveness, recovery } } when any
- *  lock exists. Never removes a lock it did not create.
+/** Try to take the root's capture lock. Returns { path, release, reclaimed? }
+ *  when taken, or { path, held: { pid, startedAt, liveness, recovery, guard? },
+ *  reclaimed? } when a lock is held. A lock it did not create is removed only
+ *  when its recorded owner is dead on this host, under the reclaim guard (the
+ *  header); `reclaimed: { pid, startedAt }` says THIS call removed it (whether
+ *  or not it then won the lock), and `held.guard` names a guard a dead
+ *  reclaimer left. Every other lock is left alone.
  *
  *  Two failure points are reported rather than left behind. If the owner
  *  record cannot be written after THIS call created the directory (a full
@@ -100,7 +105,6 @@ export function recoveryInstruction(dir, owner, liveness) {
  *  The owner record carries a per-acquisition nonce, so a release kept from
  *  an earlier acquisition cannot erase a later one by the same pid (an
  *  operator recovery followed by a new pass in the same long-lived process).
- *  That is ownership checking; no lock is ever reclaimed.
  *
  *  `io` exists for fault injection in tests only. */
 export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, liveness = holderLiveness, host = hostname(), reclaimHostless = RECLAIM_HOSTLESS_RECORDS, io = {} } = {}) {
@@ -116,16 +120,17 @@ export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, li
       const owner = readOwner(dir);
       const opts = { host, liveness, reclaimHostless };
       if (attempt === 0 && owner?.pid !== pid && deadHere(owner, opts)) {
-        const abandoned = reclaimDeadLock(dir, owner, { pid, nonce, host }, opts);
-        if (abandoned) {
-          return { path: dir, held: { pid: owner.pid, startedAt: owner.startedAt, liveness: "dead", guard: abandoned.guard,
-            recovery: `${abandoned.guard} was left by pid ${abandoned.pid}, which died while reclaiming ${dir}; once no capture process is running (pgrep -f capture.mjs), remove both with: rm -- ${shellQuote(abandoned.guard)}; rm -r -- ${shellQuote(dir)}  and rerun` } };
+        const r = reclaimDeadLock(dir, owner, { pid, nonce, host }, opts);
+        if (r.abandoned) {
+          const { guard, pid: reclaimer } = r.abandoned;
+          return { path: dir, held: { pid: owner.pid, startedAt: owner.startedAt, liveness: "dead", guard,
+            recovery: `${guard} was left by pid ${reclaimer}, which died while reclaiming ${dir}; once no capture process is running (pgrep -f capture.mjs), remove both with: rm -- ${shellQuote(guard)}; rm -r -- ${shellQuote(dir)}  and rerun` } };
         }
-        if (!existsSync(dir)) { reclaimed = { pid: owner.pid, startedAt: owner.startedAt }; continue; }
+        if (r.removed) { reclaimed = { pid: owner.pid, startedAt: owner.startedAt }; continue; }
       }
       const now = readOwner(dir);
       const live = now ? (now.pid === pid ? "alive" : liveness(now.pid)) : "unknown";
-      return { path: dir, held: { pid: now?.pid, startedAt: now?.startedAt, liveness: live, recovery: recoveryInstruction(dir, now, live) } };
+      return { path: dir, ...(reclaimed ? { reclaimed } : {}), held: { pid: now?.pid, startedAt: now?.startedAt, liveness: live, recovery: recoveryInstruction(dir, now, live) } };
     }
   }
   let directoryFd, identity;
