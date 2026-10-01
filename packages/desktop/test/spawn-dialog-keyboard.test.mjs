@@ -325,7 +325,9 @@ for (const [why, between, lands] of [
   assert.ok(u.dialog(), 'the dialog is open'); assert.notEqual(u.doc.activeElement, u.q('.fpurpose'), 'not yet');
   between(() => { offscreen = false; }, u); // the stage is shown
   const other = u.doc.activeElement;
-  await new Promise(r => u.dom.window.requestAnimationFrame(() => u.dom.window.requestAnimationFrame(r)));
+  // Several of jsdom's frames (16 ms each), awaited on a node timer: jsdom's own frame timers do not keep the
+  // test's event loop alive.
+  await new Promise(r => setTimeout(r, 250));
   if (lands) assert.equal(u.doc.activeElement, u.q('.fpurpose'), 'focus lands in Name');
   else assert.equal(u.doc.activeElement, other, 'the operator\'s focus is not taken');
 });

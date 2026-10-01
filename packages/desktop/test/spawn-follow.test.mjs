@@ -60,9 +60,10 @@ test('watchOperator: captured at the document before the page sees it; operator-
   const real = watchOperator(u.doc); // the shipped default: trusted events only
   key(u.el('term-input'), 'b'); fire(u.el('card'), 'paste'); fire(u.el('card'), 'pointerdown');
   assert.equal(real.input(), 0, 'an event the page dispatched itself (untrusted) is not the operator'); assert.equal(real.pointer(), 0);
+  assert.equal(u.operator.input(), 3, 'the counting fixture saw b and the paste'); assert.equal(u.operator.pointer(), 2);
   real.dispose(); u.operator.dispose();
-  key(u.el('term-input'), 'c');
-  assert.equal(u.operator.input(), 2, 'no longer counting after dispose');
+  key(u.el('term-input'), 'c'); fire(u.el('card'), 'pointerdown');
+  assert.equal(u.operator.input(), 3, 'no longer counting after dispose'); assert.equal(u.operator.pointer(), 2);
 });
 
 test('opened from a terminal, focus returned there, no input since the press: followed', async t => {
