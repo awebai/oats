@@ -28,7 +28,7 @@ import {
   LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
   officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, isCapturedHome, capturedHomeRefusal, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
-  findInstanceHome, findInstanceHomes, enclosingInstanceHome, logicalCwd, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, recordedKernelBin, launchConfigsAt, launchReportFor, explicitInstanceName, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
+  findInstanceHome, findInstanceHomes, enclosingInstanceHome, logicalCwd, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, recordedKernelBin, launchConfigsAt, startHarnessPackageProbe, abandonHarnessPackageProbes, harnessDefaultConfig, launchEffectiveEnv, resolveLaunchExecutable, launchReportFor, explicitInstanceName, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
   writeFileAtomic, LOCK_FILE, readLock, readLockIfPresent, writeLock, resolvePackages, memoizedRemote,
@@ -1921,6 +1921,34 @@ function herdrSpawnFlag() {
   if (flag("herdr-socket") !== undefined) return "--herdr-socket";
   return undefined;
 }
+/** Start the spawn's harness package probe before the remotes are read (lib/core.mjs
+ *  startHarnessPackageProbe), from local inputs only: the selection the flags and this host's launch
+ *  configurations make if claude is the harness (`--launch-config`, else the claude default unless
+ *  `--launch-config none`). Started only when claude can be the outcome; the spawn adopts it only for
+ *  the (bin, env) it then selects, and the command's exit kills it whatever happened. Never fails. */
+function startEarlyHarnessProbe(root) {
+  try {
+    const text = (v) => (typeof v === "string" && v ? v : undefined);
+    const lc = text(flag("launch-config")), h = text(flag("harness")) ?? text(flag("runtime"));
+    if (text(flag("harness")) && text(flag("runtime")) && flag("harness") !== flag("runtime")) return;
+    const configs = launchConfigsAt(root);
+    let config = null;
+    if (lc !== undefined && lc !== "none") {
+      config = Object.hasOwn(configs, lc) ? configs[lc] : null;
+      if (!config || config.harness !== "claude" || (h !== undefined && h !== "claude")) return;
+    } else {
+      if ((h ?? "claude") !== "claude") return;
+      config = lc === "none" ? null : harnessDefaultConfig(configs, "claude");
+    }
+    let bin;
+    if (config?.executable) { bin = resolveLaunchExecutable({ harness: "claude", declared: config.executable, declaringDir: config.source }).path; if (!bin) return; }
+    // The read session's signal handlers end the command through process.exit, so the exit handler
+    // below kills a probe still running on Ctrl-C or SIGTERM too.
+    commandSession();
+    process.once("exit", abandonHarnessPackageProbes);
+    startHarnessPackageProbe({ bin, env: launchEffectiveEnv({ base: process.env, configEnv: config?.env || {} }) });
+  } catch { /* no early probe: the spawn probes as before */ }
+}
 async function spawnCmd() {
   // JSON mode: contract envelope, stable error codes, stderr-only progress.
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
@@ -1962,6 +1990,7 @@ async function spawnCmd() {
   // A deployment without its agents/ root is E_NO_DEPLOYMENT, naming the remedy.
   try { root = ensureRoot(dirFlag()); }
   catch (e) { bail("E_NO_DEPLOYMENT", e.message || e); throw e; }
+  startEarlyHarnessProbe(root);
   const isPreview = args.includes("--preview");
   // --agents-root <abs>: the exact root the soul must live in (as inspect and
   // readiness take it) — the deployment's one agents root, or E_SOUL_UNKNOWN.
@@ -2144,7 +2173,7 @@ async function spawnCmd() {
       // K6c: with --idempotency-key, a retry of the SAME confirmed decision replays the recorded home instead of spawning twice.
       ...(flag("idempotency-key") !== undefined && flag("idempotency-key") !== true ? { idempotencyKey: String(flag("idempotency-key")) } : {}),
     };
-      r = await spawnInstanceAsync(root, agent, spawnOpts); }
+      try { r = await spawnInstanceAsync(root, agent, spawnOpts); } finally { abandonHarnessPackageProbes(); } }
     if (args.includes("--preview")) {
       // A workspace preview may have fetched the soul's SOURCE to a temporary copy
       // (the deployment's cache had no entry for its commit): the result says so.
