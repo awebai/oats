@@ -225,7 +225,8 @@ identical copies in both role capabilities.
   `--soul <name>` (`E_BAD_ARGS` without it). Inside an instance home, a
   `--soul` naming another soul is refused (`E_HOME_MISMATCH`). The kernel resolves the
   soul as a spawn would, fetches its module at the locked commit into
-  `<deployment>/.oats/modules/` and runs it with the soul's merged settings.
+  `<deployment>/.oats/modules/` and runs it with the soul's merged settings
+  and `OATS_SOUL`, the soul's source at that commit.
   An unlocked package is `E_PACKAGE_MISSING` until `oats sync`.
 
 ### Consult
