@@ -137,8 +137,8 @@ function lsRemoteShim(base, mode) {
   writeFileSync(join(dir, "git"), `#!/bin/bash
 ls=""; for a in "$@"; do [ "$a" = "ls-remote" ] && ls=1; done
 [ -z "$ls" ] && exec "${realGit}" "$@"
-echo "pid $$" >> "${log}"
 trap 'echo TERM >> "${log}"; ${mode === "ignore" ? ":" : "exit 143"}' TERM
+echo "pid $$" >> "${log}"
 while true; do sleep 0.05; done
 `, { mode: 0o755 });
   return { dir, log };
@@ -153,11 +153,14 @@ test("a git the deadline ends gets SIGTERM first (terminateGroup), never a bare 
     const saved = process.env.PATH;
     process.env.PATH = `${shim.dir}:${saved}`;
     try {
-      const session = createReadSession({ deadline: Date.now() + 500 });
+      // Long enough for the shim to start and trap SIGTERM on a loaded machine.
+      const session = createReadSession({ deadline: Date.now() + 2_000 });
       const e = await caught(observeRemote(f.bare, { cacheDir: f.cacheDir, session }));
       assert.deepEqual([e.code, e.details.reason], ["E_REMOTE_UNREADABLE", "timeout"], mode);
       const lines = () => readFileSync(shim.log, "utf8").split("\n").filter(Boolean);
-      const pid = Number(lines()[0].split(" ")[1]);
+      const started = lines().find((l) => l.startsWith("pid "));
+      assert.ok(started, `${mode}: the ls-remote shim started before the deadline`);
+      const pid = Number(started.split(" ")[1]);
       assert.ok(await until(() => lines().includes("TERM"), 2_000), `${mode}: the deadline's kill is a SIGTERM git can act on`);
       if (mode === "exit") assert.ok(await until(() => !alive(pid), 2_000), "a git that ends on SIGTERM is gone, before any SIGKILL");
       else {
