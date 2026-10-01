@@ -204,6 +204,37 @@ the harness's own precedence. The `CLAUDE.md → AGENTS.md` and
 `.claude/skills → ../.agents/skills` aliases are kept. OATS composes
 instructions and pins model/provider settings; it excludes nothing.
 
+### Unattended launches: folder trust
+
+Claude Code and Codex ask before they work in a folder they have not seen, and
+every instance home is new. A launch stopped at that prompt waits for a human,
+so the operator trusts the **deployment directory** (where `oats-local.yaml`
+is) once per harness. OATS only reads the harnesses' configuration; it never
+writes it.
+
+- **Claude Code** looks for an accepted entry for its folder or an ancestor, up
+  to a git root. Instance homes are not inside a git repository, so one entry
+  for the deployment covers every home under it. To add it, run `claude` in the
+  deployment once and accept the prompt. That records
+  `projects["<deployment>"].hasTrustDialogAccepted` in `~/.claude.json`
+  (`$CLAUDE_CONFIG_DIR/.claude.json` when that is set).
+- **Codex** applies only an exact entry: a trusted parent does not cover the
+  folders below it. To give the operator's consent, run `codex` in the
+  deployment once and choose "Trust and continue". That records
+  `[projects."<deployment>"] trust_level = "trusted"` in
+  `~/.codex/config.toml` (`$CODEX_HOME/config.toml`). With that entry, or one
+  for an ancestor of the deployment, each codex launch trusts its own new home
+  for that session (`-c 'projects={"<home>"={trust_level="trusted"}}'`) and
+  leaves the config file unchanged. A yolo launch always does this. The plan
+  re-reads the entry at every start.
+- Every codex launch also passes `-c check_for_update_on_startup=false`, so
+  Codex's "Update available" choice cannot block it.
+
+When a claude or codex home is not covered, the spawn says so (text and
+`--json` `warnings`): `the <harness> session will stop at its folder-trust
+prompt: trust <deployment> once (<the step>)`. `oats readiness` reports the
+same in `checks.configured` (code `harness-trust`, not required).
+
 ## Lifecycle
 
 ### Spawn
