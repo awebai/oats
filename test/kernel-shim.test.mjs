@@ -27,7 +27,8 @@ function write(p, c, mode) { mkdirSync(dirname(p), { recursive: true }); writeFi
 const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
 
 // A harness that records what the instance would see: its PATH, which `oats` that finds, and
-// what that `oats` says it is. It idles until TERM, or exits at once under PROBE_ONCE.
+// what that `oats` says it is. It idles until TERM, or exits at once under PROBE_ONCE. The idle is an
+// `exec`ed sleep, not a shell loop, so the session never reads as the fallback prompt (#415).
 const binDir = join(base, "bin");
 const probe = join(binDir, "probe");
 write(probe, `#!/bin/sh
@@ -36,9 +37,8 @@ printf '%s\\n' "$@" > "$OATS_INSTANCE_HOME/args.txt"
 command -v oats > "$OATS_INSTANCE_HOME/which-oats.txt"
 oats version --json > "$OATS_INSTANCE_HOME/version.json" 2> "$OATS_INSTANCE_HOME/version.err"
 [ -n "$PROBE_ONCE" ] && exit 0
-trap 'exit 0' TERM
 echo $$ > "$OATS_INSTANCE_HOME/pid.txt"
-while :; do sleep 0.2; done
+exec sleep 86400
 `, 0o755);
 // A second kernel on the host's PATH, as a machine with a global 0.24 and a prefix 0.30 has.
 const fakeKernel = join(binDir, "oats");
