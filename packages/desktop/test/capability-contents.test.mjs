@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { createCapabilityContents, contentsSubject, defaultSelection, firstSentence, sizeText, CONTENTS_COPY } from '../renderer/capability-contents.mjs';
+import { createCapabilityContents, contentsSubject, defaultSelection, firstSentence, sizeText, CONTENTS_COPY, capabilityContentsCSS } from '../renderer/capability-contents.mjs';
 import { renderCapabilityPage } from '../renderer/capability-page.mjs';
 
 // Spec C: the capability page's Contents — navigation (inject, skills and their files) and an in-place reader.
@@ -372,4 +372,27 @@ test('the page places Contents after Provides and before Used by; hold() keeps f
   keep();
   assert.equal(u.doc.activeElement, item);
   assert.deepEqual([...page.querySelectorAll('.page-main > .page-section')].map(s => s.dataset.section), ['Provides', 'Contents', 'Used by'], 'the soul form too');
+});
+
+test('code blocks keep a working copy button: the code to the clipboard, "copied", back to "copy"', async t => {
+  const text = '# T\n\n```js\nconst a = 1;\n```\n';
+  const u = setup(t, { answer: body => body.action === 'show' ? showAnswer({ inject: { path: 'inject.md', bytes: 9, text, binary: false, truncated: false } }) : fileAnswer(body.path) });
+  const copied = [];
+  Object.defineProperty(u.dom.window.navigator, 'clipboard', { configurable: true, value: { writeText: v => { copied.push(v); return Promise.resolve(); } } });
+  u.go(); await flush(); await flush();
+  const button = u.$('.cap-reader-body pre.md-code .md-copy');
+  button.click(); await flush();
+  assert.deepEqual(copied, ['const a = 1;']);
+  assert.equal(button.textContent, 'copied');
+  await new Promise(r => setTimeout(r, 1300));
+  assert.equal(button.textContent, 'copy');
+  Object.defineProperty(u.dom.window.navigator, 'clipboard', { configurable: true, value: { writeText: () => Promise.reject(new Error('denied')) } });
+  button.click(); await flush(); await flush();
+  assert.equal(button.textContent, 'copy failed');
+});
+
+test('the hidden attribute always wins over the section\'s own display rules (Chromium honours author display over [hidden])', () => {
+  assert.match(capabilityContentsCSS, /\.cap-contents-section \[hidden\] \{ display:none !important; \}/);
+  // Every element the controller hides lives inside the section.
+  for (const cls of ['cap-contents', 'cap-reader-head']) assert.match(capabilityContentsCSS, new RegExp(`\\.${cls} \\{[^}]*display:`), cls);
 });

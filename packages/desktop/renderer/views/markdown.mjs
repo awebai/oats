@@ -294,22 +294,7 @@ export async function mount(el, ctx) {
       return;
     }
     const copy = e.target.closest?.(".md-copy");
-    if (copy) {
-      const code = copy.parentElement.querySelector("code")?.textContent || "";
-      // Clipboard copying is explicit and read-only; never a terminal send.
-      try {
-        const writing = doc0.defaultView.navigator.clipboard?.writeText(code);
-        if (writing) Promise.resolve(writing).then(() => {
-          if (!alive()) return;
-          copy.textContent = "copied";
-          const timer = setTimeout(() => {
-            timers.delete(timer);
-            if (alive()) copy.textContent = "copy";
-          }, 1200);
-          timers.add(timer);
-        }).catch(() => { if (alive()) copy.textContent = "copy failed"; });
-      } catch { if (alive()) copy.textContent = "copy failed"; }
-    }
+    if (copy) copyCodeBlock(copy, doc0, { alive, timers });
   };
   scroll.addEventListener("click", onClick);
   const dispose = () => {
@@ -354,6 +339,26 @@ export async function mount(el, ctx) {
   }
   decorateMarkdown(root, doc);
   return dispose;
+}
+
+/** A code block's copy button (decorateMarkdown adds it): its code to the clipboard, "copied" for a moment, or
+ * "copy failed". Clipboard copying is explicit and read-only; never a terminal send. `alive`: the owner is still
+ * mounted; `timers`: the owner's Set, cleared when it disposes. Shared with the capability Contents reader. */
+export function copyCodeBlock(button, doc, { alive = () => true, timers = new Set() } = {}) {
+  const code = button.parentElement?.querySelector("code")?.textContent || "";
+  try {
+    const writing = doc.defaultView.navigator.clipboard?.writeText(code);
+    if (!writing) { button.textContent = "copy failed"; return; }
+    Promise.resolve(writing).then(() => {
+      if (!alive()) return;
+      button.textContent = "copied";
+      const timer = setTimeout(() => {
+        timers.delete(timer);
+        if (alive()) button.textContent = "copy";
+      }, 1200);
+      timers.add(timer);
+    }).catch(() => { if (alive()) button.textContent = "copy failed"; });
+  } catch { if (alive()) button.textContent = "copy failed"; }
 }
 
 /* Post-render decoration (plain DOM, after sanitize): slugged heading ids +

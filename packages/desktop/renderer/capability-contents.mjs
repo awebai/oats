@@ -13,7 +13,7 @@
  * focus never move on a background repaint: the tree is rebuilt only when the answer changed, focus is
  * found again by `data-focus-key`, and the open file stays open while it is still listed. */
 import { capabilityShowSupported, capabilitySelector, capabilityShowData, capabilityFileData, listedFiles, skillFilePath, skillRelativePath, CAPABILITY_SHOW_UNREADABLE } from './capability-show-contract.mjs';
-import { renderMarkdownHtml, renderCodeHtml, isMarkdownName, decorateMarkdown } from './views/markdown.mjs';
+import { renderMarkdownHtml, renderCodeHtml, isMarkdownName, decorateMarkdown, copyCodeBlock } from './views/markdown.mjs';
 import { splitFrontMatter } from './front-matter.mjs';
 import { createDataState, skeleton, captureFocusState } from './loading.mjs';
 
@@ -39,6 +39,8 @@ export const CONTENTS_COPY = Object.freeze({
 });
 
 export const capabilityContentsCSS = `
+/* The section's own display rules (grid, flex) would beat the HTML hidden attribute: hidden always wins here. */
+.cap-contents-section [hidden] { display:none !important; }
 .cap-contents-gate { margin:0; color:var(--muted); font-size:12.5px; }
 .cap-contents { display:grid; grid-template-columns:220px minmax(0,1fr); height:min(70vh, 720px); min-width:0; background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
 .cap-contents-nav { min-height:0; overflow:auto; padding:10px 8px 12px; border-right:1px solid var(--border); box-sizing:border-box; font-size:12px; }
@@ -437,7 +439,10 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
       a.replaceWith(...a.childNodes);
     }
   }
+  const copyTimers = new Set();
   function onReaderClick(event) {
+    const copy = event.target.closest?.('.md-copy');
+    if (copy && body.contains(copy)) { if (event.type === 'click') copyCodeBlock(copy, doc, { alive: () => alive, timers: copyTimers }); return; }
     const a = event.target.closest?.('a'); if (!a || !body.contains(a)) return;
     event.preventDefault();
     if (event.type === 'auxclick') return;
@@ -473,7 +478,7 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
       };
     },
     get selected() { return selected; },
-    dispose() { alive = false; showTicket++; fileTicket++; navState.dispose(); fileState.dispose(); body.removeEventListener('click', onReaderClick); body.removeEventListener('auxclick', onReaderClick); },
+    dispose() { alive = false; showTicket++; fileTicket++; for (const timer of copyTimers) clearTimeout(timer); copyTimers.clear(); navState.dispose(); fileState.dispose(); body.removeEventListener('click', onReaderClick); body.removeEventListener('auxclick', onReaderClick); },
   };
 }
 /** Codes after which the catalog row is re-read: the kernel no longer knows the capability, or it moved. */

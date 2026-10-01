@@ -8,6 +8,7 @@ import { createWorkspaceDiscovery, discoveryCSS, workspaceTabs } from "../worksp
 import { capabilityRow } from "../workspace-catalog.mjs";
 import { renderCapabilityPage, renderSoulCapabilities, renderSoulCore, capabilityPageCSS, pageCardCSS, soulCapabilitiesCSS, desktopFacts, catalogNotice, catalogNoticeKind, updateCatalogNotice } from "../capability-page.mjs";
 import { createCapabilityContents, capabilityContentsCSS } from "../capability-contents.mjs";
+import { capabilitySelector, sameSelector } from "../capability-show-contract.mjs";
 import { MARKDOWN_CSS } from "./markdown.mjs";
 import { runtimeState } from "../instance-presentation.mjs";
 import { deploymentUnavailableText } from "../deployment-header.mjs";
@@ -318,9 +319,21 @@ function paintCapabilityPage(s) {
       } });
     restore(); keep();
   }
-  // Its subject is the catalog row (the selector and commit `capabilities show` reads at); unchanged → nothing.
-  open.contents.update({ row: from ? facts || (row.kind === "external" ? row : null) : row, cli: cliStatus(), remote: context.remote === true, catalogPending, deployment: context.root ?? null });
+  // Its subject is the CURRENT catalog row (the selector and commit `capabilities show` reads at): a refresh that
+  // moves the commit re-reads; unchanged → nothing.
+  open.contents.update({ row: contentsRow(row, from, catalog, facts), cli: cliStatus(), remote: context.remote === true, catalogPending, deployment: context.root ?? null });
   paintCapabilityNotice(s, { state: catalogState, settled: catalogSettled, busy: catalogBusy, observedAt: catalogObservedAt, cause: catalogFailure });
+}
+/** The catalog row the page's Contents reads (spec C), from the catalog as it is NOW: the opened row (a catalog row,
+ * or a soul's resolved one, which names the same member or package) matched by its full selector, else, from a
+ * soul page, the catalog's one row of that name. The opened row while no catalog is held (catalog form); null when
+ * the catalog no longer lists it (Contents says so). An external capability has no selector: its own gate line. */
+export function contentsRow(row, from, catalog, facts = null) {
+  if (row?.kind === "external") return row;
+  if (!Array.isArray(catalog)) return from ? null : row;
+  const wanted = capabilitySelector(row);
+  const matches = wanted ? catalog.filter(r => sameSelector(capabilitySelector(r), wanted)) : [];
+  return matches.length === 1 ? matches[0] : from ? facts : null;
 }
 /** The page's age line mirrors the catalog controller (stale with Retry, or an old observation): the same
  * node is updated in place — its Retry keeps focus and wears the busy mark while the re-read runs — and
