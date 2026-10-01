@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseLaunchCommand, renderLaunchCommand, withLaunchModel, startInstanceSession, restartInstanceSession, inspectInstanceSession } from "../lib/core.mjs";
+import { parseLaunchCommand, renderLaunchCommand, withLaunchModel, withSafeTaskPrompt, startInstanceSession, restartInstanceSession, inspectInstanceSession } from "../lib/core.mjs";
 import { startRemote } from "../lib/servers.mjs";
 import { isolateSessionEnvironment, waitUntil } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
@@ -87,6 +87,7 @@ async function makeHome(name, { launched = true, withSocket = true } = {}) {
 const { existsSync, writeFileSync } = require("node:fs");
 const { join } = require("node:path");
 const home = process.env.OATS_INSTANCE_HOME;
+writeFileSync(join(home, "harness-argv.json"), JSON.stringify(process.argv.slice(2)));
 writeFileSync(join(home, "harness-ready"), String(process.pid));
 setInterval(() => { if (existsSync(join(home, "release-" + process.pid))) process.exit(0); }, 25);
 `);
@@ -169,7 +170,7 @@ test("a live harness is refused; a stopped instance starts in its recorded sessi
   const meta = readJson(join(f.home, "instance.json"));
   assert.equal(meta.launched, true);
   assert.equal(meta.model, "claude-x");
-  assert.equal(meta.command, withLaunchModel(f.command, "claude-x"));
+  assert.equal(meta.command, withSafeTaskPrompt(withLaunchModel(f.command, "claude-x"), "claude"));
   assert.equal(meta.restartCount, 1);
   assert.equal(meta.restarts.length, 1);
   const after = readJson(f.baselinePath);
@@ -236,6 +237,20 @@ test("a lost tmux server on the recorded socket is a stopped instance: the sessi
   assert.equal(r.target.socket, resolve(socket));
   assert.ok(windows().includes("reboot"));
   assert.equal(readJson(f.baselinePath).runtime.tmux.socket, resolve(socket));
+});
+
+test("a home recorded with the task's text in argv (\"$(cat TASK.md)\") starts with the safe prompt, and saves it", async () => {
+  const f = await makeHome("old-prompt", { launched: false });
+  writeFileSync(join(f.home, "TASK.md"), "SECRET-TASK-TEXT-427\n");
+  assert.match(f.command, /-- "\$\(cat TASK\.md\)"$/);
+  startInstanceSession(f.home);
+  await harnessReady(f);
+  const argv = readJson(join(f.home, "harness-argv.json"));
+  assert.deepEqual(argv.slice(-2), ["--", "@TASK.md"]);
+  assert.ok(!argv.join(" ").includes("SECRET-TASK-TEXT-427"), "the task's text is in no argument");
+  const saved = readJson(join(f.home, "instance.json")).command;
+  assert.equal(saved, f.command.replace('-- "$(cat TASK.md)"', "-- '@TASK.md'"), "the saved command carries the safe prompt");
+  releaseHarness(f.home);
 });
 
 test("a start that allocated but could not record is adopted by the next start, never duplicated", async () => {

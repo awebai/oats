@@ -106,7 +106,7 @@
     },
     "kernelBin": "<kernel>/bin/oats.mjs"
   },
-  "command": "OATS_INSTANCE='dev-claude-workspace-knone-mnone' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-claude-workspace-knone-mnone' '<base>/bin/claude' -- \"$(cat TASK.md)\"",
+  "command": "OATS_INSTANCE='dev-claude-workspace-knone-mnone' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-claude-workspace-knone-mnone' '<base>/bin/claude' -- '@TASK.md'",
   "createdAt": "<createdAt>",
   "modules": {},
   "providers": {},

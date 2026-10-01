@@ -30,7 +30,7 @@ import {
   LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
   officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, isCapturedHome, capturedHomeRefusal, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
-  findInstanceHome, findInstanceHomes, enclosingInstanceHome, logicalCwd, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, recordedKernelBin, launchConfigsAt, launchReportFor, explicitInstanceName, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
+  findInstanceHome, findInstanceHomes, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, recordedKernelBin, launchConfigsAt, launchReportFor, explicitInstanceName, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
   writeFileAtomic, LOCK_FILE, readLock, readLockIfPresent, writeLock, resolvePackages, memoizedRemote,
@@ -583,7 +583,8 @@ function legacyLayoutProblems(root) {
 }
 async function doctorWorkspaceJson(ctx, soulName, ws) {
   const composition = await doctorComposition(ctx, soulName, ws, (code, msg, details) => jsonFail(code, msg, details));
-  const problems = legacyLayoutProblems(join(dirname(ws.local.path), "agents"));
+  const agentsRoot = join(dirname(ws.local.path), "agents");
+  const problems = [...legacyLayoutProblems(agentsRoot), readableInstanceHomes(agentsRoot)].filter(Boolean);
   return {
     schemaVersion: 1, workspaceApi: 2, context: ctx,
     workspace: { file: ws.local.path, ref: ws.local.workspace },
@@ -622,7 +623,8 @@ async function doctor(dir) {
   doctorVersionSkew();
   const composition = await doctorComposition(ctx, soulName, ws, (code, msg) => die(`${msg} [${code}]`));
   printDoctorWorkspace(ws);
-  for (const p of legacyLayoutProblems(join(dirname(ws.local.path), "agents"))) console.log(`\n! ${p.code}: ${p.message}`);
+  const agentsRoot = join(dirname(ws.local.path), "agents");
+  for (const p of [...legacyLayoutProblems(agentsRoot), readableInstanceHomes(agentsRoot)].filter(Boolean)) console.log(`\n! ${p.code}: ${p.message}`);
   if (soulName) {
     const information = operationalKnowledgeNote(composition, soulName);
     if (information) console.log(`\nINFO: ${information}`);
@@ -769,11 +771,11 @@ function launchPreview(bail) {
     instance = meta.instance || basename(home);
     if (!(meta.launch && typeof meta.launch === "object") && !selectionGiven) {
       // A home that predates recipes, asked nothing: its frozen command is
-      // described as is. Under a selection the planner refuses it
-      // (E_LAUNCH_LEGACY: re-spawn it from the deployment).
-      let d;
-      try { d = describeLaunchCommand(meta.command); } catch (e) { bail(e.code || "E_LAUNCH_COMMAND_UNSUPPORTED", e.message); }
-      jsonOk({ context, selected, selection: { source: "frozen-command", launchConfig: null, harness: null, model: null, yolo: null }, harness: meta.harness, model: meta.model || null, modelSource: meta.model ? "recorded" : "native default", yolo: meta.yolo ?? null, launchConfig: null, launchConfigSource: null, launchConfigDefault: false, executable: { path: d.executable, declared: null, resolvedFrom: "recorded" }, argv: d.argv, environment: d.environment, command: redactLaunchCommand(meta.command), prompt: { kind: "task-file", file: "TASK.md" }, hooks: null, preflight: [{ check: "recipe", ok: true, detail: "frozen command; a selection is refused (E_LAUNCH_LEGACY): re-spawn it" }], ok: true });
+      // described as a start runs it (with its harness's safe task prompt). Under a
+      // selection the planner refuses it (E_LAUNCH_LEGACY: re-spawn it from the deployment).
+      let d, frozen;
+      try { frozen = withSafeTaskPrompt(meta.command, meta.harness); d = describeLaunchCommand(frozen); } catch (e) { bail(e.code || "E_LAUNCH_COMMAND_UNSUPPORTED", e.message); }
+      jsonOk({ context, selected, selection: { source: "frozen-command", launchConfig: null, harness: null, model: null, yolo: null }, harness: meta.harness, model: meta.model || null, modelSource: meta.model ? "recorded" : "native default", yolo: meta.yolo ?? null, launchConfig: null, launchConfigSource: null, launchConfigDefault: false, executable: { path: d.executable, declared: null, resolvedFrom: "recorded" }, argv: d.argv, environment: d.environment, command: redactLaunchCommand(frozen), prompt: { kind: "task-file", file: "TASK.md" }, hooks: null, preflight: [{ check: "recipe", ok: true, detail: "frozen command; a selection is refused (E_LAUNCH_LEGACY): re-spawn it" }], ok: true });
       return;
     }
     const agentsRoot = agentsRootOfHome(home);

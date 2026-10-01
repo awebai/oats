@@ -225,7 +225,7 @@
     },
     "kernelBin": "<kernel>/bin/oats.mjs"
   },
-  "command": "OATS_INSTANCE='dev-claude-workspace-knone-mstub' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-claude-workspace-knone-mstub' GOLDEN_BROKER_ENDPOINT='stub://broker/dev-claude-workspace-knone-mstub' '<base>/bin/claude' --golden-channel stub -- \"$(cat TASK.md)\"",
+  "command": "OATS_INSTANCE='dev-claude-workspace-knone-mstub' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-claude-workspace-knone-mstub' GOLDEN_BROKER_ENDPOINT='stub://broker/dev-claude-workspace-knone-mstub' '<base>/bin/claude' --golden-channel stub -- '@TASK.md'",
   "createdAt": "<createdAt>",
   "modules": {
     "golden.messaging": {
