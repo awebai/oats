@@ -7,6 +7,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { v2Deployment, git } from "./helpers/v2-deployment.mjs";
+import { cloneRemoteFor } from "../lib/instance-resolution.mjs";
+import { existsSync } from "node:fs";
 
 /** The deployment, with the remote's main one commit ahead of the member clone's local main. */
 function behind(t) {
@@ -77,4 +79,26 @@ test("the fetch never prompts: ssh runs in BatchMode and askpass is refused", (t
   const argv = readFileSync(log, "utf8");
   assert.match(argv, /-o BatchMode=yes/, argv);
   assert.match(argv, /askpass=\/usr\/bin\/false/, argv);
+});
+
+test("a remote whose name reads like an option is passed to the fetch as a name, never as an option", async (t) => {
+  const { fx, head } = behind(t);
+  const marker = join(fx.base, "upload-pack-ran"), script = join(fx.base, "upload-pack");
+  writeFileSync(script, `#!/bin/sh\ntouch '${marker}'\nexec git-upload-pack "$@"\n`, { mode: 0o755 });
+  // The only remote naming the member is called `--upload-pack=<script>`.
+  const name = `--upload-pack=${script}`;
+  git(fx.member, "config", "--unset", "remote.origin.url");
+  git(fx.member, "config", `remote.${name}.url`, fx.repo);
+  git(fx.member, "config", `remote.${name}.fetch`, `+refs/heads/*:refs/remotes/x/*`);
+  const r = await fx.spawn("dev", { instance: "dev-option-remote", work: "worktree" });
+  assert.equal(git(join(r.home, "work"), "rev-parse", "HEAD"), head, "fetched from the remote of that name");
+  assert.equal(existsSync(marker), false, "the name never became --upload-pack");
+});
+
+test("remote urls are read NUL-separated: a newline inside one url cannot forge another remote", (t) => {
+  const repo = mkdtempSync(join(tmpdir(), "oats-remotes-")); t.after(() => rmSync(repo, { recursive: true, force: true }));
+  git(repo, "init", "-q");
+  const target = join(repo, "target.git");
+  git(repo, "config", "remote.weird.url", `nothing\nremote.forged.url ${target}`);
+  assert.equal(cloneRemoteFor(repo, `local/${target}`), null, "no remote's url names the target");
 });

@@ -432,6 +432,16 @@ retained home (plus the usual quarantine marker when hooks reported incomplete
 cleanup), shows in `oats status` and the Desktop as a failed deferred
 retirement, and is retried and cleared with `oats retire <instance>`.
 
+When a retire hook reports incomplete cleanup, the home is quarantined before
+any worktree step: the worktree, its git admin entry and the branch stay
+exactly as they were, so the retry can reach the hook and the work it needs.
+The retry does the worktree step only once nothing else is outstanding:
+retain by default, remove with `--discard-worktree` or `--delete-branch`.
+`--force` removes the home regardless, so it does the worktree step first. A
+work directory whose git admin entry is gone is never removed: the hooks still
+run, the home is kept, and `--force` refuses it until you move the directory
+out or delete it by hand.
+
 Retire never deletes a branch unless you pass `--delete-branch`, and then
 only the verified branch: not on a quarantine, its retry or `--force`. A
 spawn that fails deletes the branch it created only while the branch's tip
