@@ -134,6 +134,9 @@ export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, li
         if (r.removed || !existsSync(dir)) continue;
       }
       const now = readOwner(dir);
+      // Gone between the mkdir and this read (a release or a reclaim): try once more. A directory that
+      // exists without a record is initializing or mid-removal, and is reported so.
+      if (!now && attempt === 0 && !existsSync(dir)) continue;
       const live = now ? (now.pid === pid ? "alive" : liveness(now.pid)) : "unknown";
       return { path: dir, ...(reclaimed ? { reclaimed } : {}), held: { pid: now?.pid, startedAt: now?.startedAt, liveness: live, recovery: recoveryInstruction(dir, now, live) } };
     }
