@@ -37,14 +37,14 @@
  * kernel feeds it to the retire hook to compensate partial state, and an
  * identity joined moments before the failure must still be deletable.
  */
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, chmodSync, cpSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
 import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/session-readiness.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
-import { AW_MIN, grantYamlCustodySocket, parseBindingJson } from "../lib/binding-wire.mjs";
+import { AW_MIN, grantYamlCustodySocket, parseBindingJson, readAwVersion } from "../lib/binding-wire.mjs";
 import { custodyPreflight } from "../lib/grant-custody.mjs";
 import { runtimeDeliveryFor, wakeRegistration } from "../lib/wake-receive.mjs";
 
@@ -53,15 +53,21 @@ import { runtimeDeliveryFor, wakeRegistration } from "../lib/wake-receive.mjs";
  * property of one helper staying correct forever, while argv removes the class.
  * This hook is a REQUIRED spawn hook, so it gates every spawn, which is reason
  * enough not to rely on quoting. */
+const childEnvFor = ({ env: extraEnv, unsetEnv = [] } = {}) => {
+  // An inherited AWEB_IDENTITY_HOME (every aweb instance session carries its
+  // own) is never this hook's identity: aw would act as the CALLER — refusing
+  // cwd-rooted commands such as team invite/list, or deleting the caller's
+  // workspace when a lead retires a worker. Only an explicit env sets one.
+  // AW_NO_UPDATE_CHECK: no aw child of a hook spends a GitHub round trip on
+  // an upgrade hint nobody reads.
+  const childEnv = { ...process.env, AW_NO_UPDATE_CHECK: "1", ...(extraEnv || {}) };
+  if (!extraEnv || !Object.hasOwn(extraEnv, "AWEB_IDENTITY_HOME")) delete childEnv.AWEB_IDENTITY_HOME;
+  for (const name of unsetEnv) delete childEnv[name];
+  return childEnv;
+};
 const run = (argv, cwd, timeout = 45000, { secrets = [], secretSafe = false, env: extraEnv, unsetEnv = [], input } = {}) => {
   try {
-    // An inherited AWEB_IDENTITY_HOME (every aweb instance session carries its
-    // own) is never this hook's identity: aw would act as the CALLER — refusing
-    // cwd-rooted commands such as team invite/list, or deleting the caller's
-    // workspace when a lead retires a worker. Only an explicit env sets one.
-    const childEnv = { ...process.env, ...(extraEnv || {}) };
-    if (!extraEnv || !Object.hasOwn(extraEnv, "AWEB_IDENTITY_HOME")) delete childEnv.AWEB_IDENTITY_HOME;
-    for (const name of unsetEnv) delete childEnv[name];
+    const childEnv = childEnvFor({ env: extraEnv, unsetEnv });
     return execFileSync(argv[0], argv.slice(1), { cwd, encoding: "utf8", stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"], ...(input === undefined ? {} : { input }), timeout, env: childEnv }).trim();
   } catch (e) {
     // execFileSync puts the WHOLE ARGV in e.message ("Command failed: aw team
@@ -97,24 +103,15 @@ const parseSecretJson = (text, what) => {
   try { return JSON.parse(text); }
   catch { throw new Error(`${what} returned output that is not valid JSON (withheld: this command handles credentials)`); }
 };
-/** Is a command on PATH? Resolved in-process rather than by running
- * `command -v`, which is a SHELL BUILTIN — spawning it as a program depends on
- * a /usr/bin/command binary that many systems do not ship, and its absence
- * would read as "aw is missing" on every such host. */
-/** The installed aw version from `aw version`, or undefined when it cannot be read. */
-function awVersionTriple() {
-  try { return /aw\s+v?(\d+)\.(\d+)\.(\d+)/.exec(run(["aw", "version"], undefined, 10000)); } catch { return undefined; }
-}
 function semverAtLeast(version, floor) {
   const a = version.split(".").map(Number), b = floor.split(".").map(Number);
   for (let i = 0; i < 3; i++) { if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0); }
   return true;
 }
-function awVersionLabel() {
-  const v = awVersionTriple();
-  return v ? v.slice(1, 4).join(".") : undefined;
-}
-
+/** Is a command on PATH? Resolved in-process rather than by running
+ * `command -v`, which is a SHELL BUILTIN — spawning it as a program depends on
+ * a /usr/bin/command binary that many systems do not ship, and its absence
+ * would read as "aw is missing" on every such host. */
 function onPath(cmd) {
   for (const dir of String(process.env.PATH || "").split(delimiter)) {
     if (!dir) continue;
@@ -371,9 +368,12 @@ function recordAwebRootSetting(team, rootDir, { start = process.env.OATS_WORKSPA
 }
 function perTeamRoot(base, label) { return join(resolve(base), ".aweb-roots", normalizeAwebTeamName(label)); }
 
-function awFloorProblem() {
+/** The aw floor. The version read stops at the version line instead of
+ * waiting out aw's update check; the binding check shares it
+ * (lib/binding-wire.mjs readAwVersion). */
+async function awFloorProblem() {
   if (!onPath("aw")) return `aw CLI not on PATH; install aw >= ${AW_MIN}`;
-  const version = awVersionLabel();
+  const version = await readAwVersion();
   if (!version) return `aw version could not be read; install aw >= ${AW_MIN}`;
   if (semverAtLeast(version, AW_MIN)) return undefined;
   return `aw ${version} is older than required ${AW_MIN}; install aw >= ${AW_MIN}`;
@@ -392,7 +392,7 @@ if (!onPath("aw")) {
   warn(`aw CLI not on PATH — no identity minted; ${AW_INSTALL}`);
 }
 if (isCommand || event === "spawn") {
-  const floorProblem = awFloorProblem();
+  const floorProblem = await awFloorProblem();
   if (floorProblem) {
     if (isCommand) { console.error(`oats aweb ${event}: ${floorProblem}`); process.exit(1); }
     fatal(`${floorProblem}, so no identity could be minted and this instance would not meet the messaging contract`);
@@ -428,6 +428,18 @@ function wakeRegister(instanceHome, identityHome) {
 }
 function wakeDeregister(instanceHome) {
   try { run(["aw", "wake", "deregister", "--home", instanceHome], instanceHome, 60000); return true; } catch { return false; }
+}
+/** wakeDeregister as a child that runs while the hook does other work (retire
+ *  overlaps it with the self-delete). Settles to whether it succeeded. */
+function wakeDeregisterStarted(instanceHome) {
+  return new Promise((settle) => {
+    let child;
+    try { child = spawn("aw", ["wake", "deregister", "--home", instanceHome], { cwd: instanceHome, env: childEnvFor(), stdio: "ignore" }); }
+    catch { settle(false); return; }
+    const timer = setTimeout(() => child.kill("SIGTERM"), 60000);
+    child.on("error", () => { clearTimeout(timer); settle(false); });
+    child.on("exit", (code) => { clearTimeout(timer); settle(code === 0); });
+  });
 }
 const NORMAL_GRANT_SCOPES = ["mail.read", "mail.send", "chat.read", "chat.send", "events.read", "coord.read", "coord.write", "presence.write", "contacts.read", "contacts.write"];
 const REVIEWER_GRANT_SCOPES = ["mail.read", "chat.read", "events.read", "coord.read", "presence.write"];
@@ -705,10 +717,37 @@ const workspaceAliasOf = (homeDir) => {
   try { const m = readFileSync(join(homeDir, ".aw", "workspace.yaml"), "utf8").match(/^\s*alias:\s*["']?([a-z0-9][a-z0-9_-]{0,63})["']?\s*$/mi); return m ? m[1] : undefined; }
   catch { return undefined; }
 };
+const WORKSPACE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** The workspace id a home's .aw/workspace.yaml records for the membership
+ *  whose team_id and alias are these, or undefined when the file is missing,
+ *  unreadable or has no such entry. Only the keys of each `memberships:` item
+ *  are read (the layout aw writes: a top-level list of flat mappings). */
+function workspaceIdOf(homeDir, team, alias) {
+  let text;
+  try { text = readFileSync(join(homeDir, ".aw", "workspace.yaml"), "utf8"); } catch { return undefined; }
+  const rows = [];
+  let inList = false, row, keyIndent;
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim() || line.trimStart().startsWith("#")) continue;
+    if (!/^\s/.test(line)) { inList = /^memberships:\s*(#.*)?$/.test(line); row = undefined; continue; }
+    if (!inList) continue;
+    const m = /^(\s*)(-\s+)?([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/.exec(line);
+    if (!m) continue;
+    if (m[2]) { rows.push(row = {}); keyIndent = m[1].length + m[2].length; }
+    if (!row || m[1].length + (m[2] || "").length !== keyIndent) continue;
+    const quoted = /^(["'])(.*?)\1\s*(?:#.*)?$/.exec(m[4].trim());
+    row[m[3]] = quoted ? quoted[2] : m[4].replace(/\s+#.*$/, "").trim();
+  }
+  const hit = rows.find((r) => r.team_id === team && r.alias === alias);
+  return hit && WORKSPACE_ID_RE.test(hit.workspace_id || "") ? hit.workspace_id : undefined;
+}
 /** A join that the CLI reported as failed (or that this hook killed on
  *  timeout) may still have completed server-side: the home then holds a
  *  signing key, a team certificate and a workspace binding. */
 const joinedLate = (homeDir) => existsSync(join(homeDir, ".aw", "signing.key")) && existsSync(join(homeDir, ".aw", "team-certs")) && !!workspaceAliasOf(homeDir);
+// Ambient locators, keys and role hints a caller's session may carry; the
+// minting command must not act on them.
+const MINT_UNSET_ENV = ["AWEB_URL", "AWEB_API_KEY", "AWEB_ROLE_NAME", "AWEB_ROLE"];
 const JOIN_TIMEOUT_MS = Number(process.env.OATS_AWEB_JOIN_TIMEOUT_MS) > 0 ? Number(process.env.OATS_AWEB_JOIN_TIMEOUT_MS) : 120000;
 const yamlScalar = (text, key) => {
   const m = String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`, "m"));
@@ -1256,7 +1295,7 @@ if (event === "launch") {
   let joinRows;
   try { joinRows = validateJoinLabels(requestedJoinLabels()); }
   catch (e) { fatal(e.message || e); }
-  let minted;                 // external identity, once `aw team join` succeeds
+  let minted;                 // external identity, once the mint succeeds
   let spawnMeta;              // with joined teams, once any is accepted
   try {
     // Team correctness: the kernel's default team id is the only source. ALWAYS
@@ -1267,23 +1306,26 @@ if (event === "launch") {
     const primary = resolvePrimaryTeam();
     const { team, root } = primary;
     const warnings = [...primary.warnings];
-    // Both of these carry the invite token — one mints it, the other spends it —
-    // so neither their output nor their diagnostics may reach a log.
-    const inv = parseSecretJson(run(["aw", "team", "invite", flagEq("--team-id", team), "--json"], root, 45000, { secretSafe: true }), "aw team invite");
-    if (!inv?.token || typeof inv.token !== "string") fatal("aw team invite returned no usable token, so no identity could be minted");
     let raw;
     try {
-      // 120 s: a join on a slow or flapping link is slow, not broken; a killed
-      // join that completed server-side is caught below.
-      raw = parseSecretJson(run(["aw", "team", "join", inv.token, flagEq("--name", instance), "--json"], home, JOIN_TIMEOUT_MS, { secrets: [inv.token], secretSafe: true }), "aw team join");
+      // ONE aw process mints the identity: it creates an invite from the root
+      // (--join-from; --join-team always, so aw never picks among the root's
+      // memberships), accepts it into this home and connects the workspace. The
+      // invite token never reaches this hook or any argv. It still handles a
+      // credential, so neither its output nor its diagnostics may reach a log.
+      // The service comes from the invite: no ambient locator, key or role
+      // reaches the new identity.
+      // 120 s: a mint on a slow or flapping link is slow, not broken; a killed
+      // mint that completed server-side is caught below.
+      raw = parseSecretJson(run(["aw", "init", flagEq("--join-from", root), flagEq("--join-team", team), flagEq("--name", instance), "--json", "--do-not-touch-agents-md"], home, JOIN_TIMEOUT_MS, { secretSafe: true, unsetEnv: MINT_UNSET_ENV }), "aw init --join-from");
     } catch (e) {
-      // The join may have completed after the CLI was killed or reported a
+      // The mint may have completed after the CLI was killed or reported a
       // failure: if the home now holds a bound identity, that identity EXISTS
       // and must be reported so compensation retires it instead of orphaning it.
       if (joinedLate(home)) {
         const late = workspaceAliasOf(home);
         minted = { team, alias: late };
-        fatal(`aw team join was reported failed (${e.message || e}) but the home now holds a bound identity "${late}" on ${team}; reported for compensation so it is retired, not orphaned`, minted);
+        fatal(`aw init --join-from was reported failed (${e.message || e}) but the home now holds a bound identity "${late}" on ${team}; reported for compensation so it is retired, not orphaned`, minted);
       }
       // A retired alias keeps its certificate until aweb-abim ships, so a
       // re-spawn under the same name is refused by AWID. Say that, and the
@@ -1293,14 +1335,12 @@ if (event === "launch") {
       }
       throw e;
     }
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) fatal("aw team join returned no usable result, so no identity could be minted", minted);
-    // The RESPONSE is not a safe place to take strings from. Suppressing the
-    // failure paths does nothing if a successful reply is copied into meta and
-    // the briefing verbatim: a response echoing the invite token back as the
-    // alias would print it twice, on exit 0 (reviewer-a6aa1c5). Accept a field
-    // only if it is a plausible value of its own kind and is not carrying the
-    // token; otherwise fall back to what WE asked for, which is always known.
-    const clean = (v) => (typeof v === "string" && v.trim() && !v.includes(inv.token) ? v.trim() : undefined);
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) fatal("aw init --join-from returned no usable result, so no identity could be minted", minted);
+    // The RESPONSE is not a safe place to take strings from: whatever is copied
+    // into meta and the briefing is printed on exit 0 (reviewer-a6aa1c5). Accept
+    // a field only if it is a plausible value of its own kind; otherwise fall
+    // back to what WE asked for, which is always known.
+    const clean = (v) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
     const joined = {
       alias: (() => { const a = clean(raw.alias); return a && AWEB_ALIAS_RE.test(a) ? a : instance; })(),
       // Team ids are "<name>:<domain>"; anything else is not one, and the
@@ -1310,7 +1350,6 @@ if (event === "launch") {
     // External state now exists. Record it immediately so any later failure can
     // still report it for compensation.
     minted = { team: joined.team_id, alias: joined.alias };
-    run(["aw", "init", "--do-not-touch-agents-md"], home);
     const alias = joined.alias;
     const mismatch = joined.team_id !== team
       ? ` [WARNING: joined ${joined.team_id}, expected ${team}]` : "";
@@ -1365,7 +1404,14 @@ if (event === "launch") {
   // A retained seat: release the lock and leave the identity alone. Never
   // aw workspace delete (it would soft-delete the standing identity's row)
   // and never team retire; the source .aw stays until a human removes it.
-  if (meta.delivery === "session" && (meta.retained || meta.identity?.mode !== "global")) { if (!wakeDeregister(home)) process.stderr.write("oats-aweb: aw wake deregister failed; the broker treats a retired home as inactive on its own\n"); }
+  // Session delivery: the broker registration goes in a child that runs beside
+  // the rest of retire (it is local and independent of the self-delete); every
+  // way out of this branch awaits it through finish().
+  const deregistration = meta.delivery === "session" && (meta.retained || meta.identity?.mode !== "global") ? wakeDeregisterStarted(home) : undefined;
+  const finish = async (o, code) => {
+    if (deregistration && !(await deregistration)) process.stderr.write("oats-aweb: aw wake deregister failed; the broker treats a retired home as inactive on its own\n");
+    out(o, code);
+  };
   if (meta.identity?.mode === "global" && !meta.retained) globalGrantRetire(meta);
   for (const joined of joinedTeamsOf(meta)) {
     try { meta = leaveJoinedTeam(joined.label, meta).meta; }
@@ -1379,7 +1425,7 @@ if (event === "launch") {
   if (meta.retained) {
     if (meta.lock) { try { rmSync(meta.lock, { force: true }); } catch { /* the lock may already be gone */ } }
     const retainedWarning = `released the retained identity "${meta.alias}" (lock ${meta.lock || "?"} removed); the identity itself and ${meta.source || "its source"} are untouched${meta.tookOverFrom ? `; this seat had taken over from ${meta.tookOverFrom}` : ""}`;
-    out({ meta: retiredMeta({ retired: true, retained: true, identityReleased: true, joinedTeams: joinedTeamsOf(meta), ...(meta.tookOverFrom ? { tookOverFrom: meta.tookOverFrom } : {}) }), warning: `oats-aweb: ${[...retireWarnings, retainedWarning].join(" | ")}` });
+    await finish({ meta: retiredMeta({ retired: true, retained: true, identityReleased: true, joinedTeams: joinedTeamsOf(meta), ...(meta.tookOverFrom ? { tookOverFrom: meta.tookOverFrom } : {}) }), warning: `oats-aweb: ${[...retireWarnings, retainedWarning].join(" | ")}` });
   }
   // No alias means the spawn hook never reported an identity: nothing exists to
   // undo, which is completion. An alias WITH no local `.aw` is the opposite —
@@ -1389,15 +1435,18 @@ if (event === "launch") {
   // timeout that completed anyway) still carries the alias in its workspace
   // binding: use it rather than leaving the workspace orphaned.
   if (!meta.alias) { const late = workspaceAliasOf(home); if (late) meta = { ...meta, alias: late, aliasFromHome: true }; }
-  if (!meta.alias) out({ meta: retiredMeta({ retired: false, reason: "nothing-to-delete" }) });
+  if (!meta.alias) await finish({ meta: retiredMeta({ retired: false, reason: "nothing-to-delete" }) });
   if (!existsSync(join(home, ".aw"))) {
-    out({ meta: retiredMeta({ retired: false, reason: "no-local-identity-key" }), warning: `oats-aweb: alias "${meta.alias}" was minted but ${join(home, ".aw")} is gone, so the remote record cannot be self-deleted and will linger until stale` }, 1);
+    await finish({ meta: retiredMeta({ retired: false, reason: "no-local-identity-key" }), warning: `oats-aweb: alias "${meta.alias}" was minted but ${join(home, ".aw")} is gone, so the remote record cannot be self-deleted and will linger until stale` }, 1);
   }
   try {
     // Self-delete from inside the home, authenticated by its own key — a remote
     // delete would 409 until the server marks the workspace stale. aw >= 1.36.13
     // reports whether the certificate was revoked and the alias was released.
-    const raw = run(["aw", "workspace", "delete", meta.alias, "--json"], home);
+    // By workspace id when the home records it: one request, where an alias
+    // is first resolved to an id with a workspace list call.
+    const workspaceId = workspaceIdOf(home, meta.team || meta.defaultTeam?.team || meta.identity?.team, meta.alias);
+    const raw = run(["aw", "workspace", "delete", workspaceId || meta.alias, "--json"], home);
     let doc; try { doc = JSON.parse(raw); } catch { doc = undefined; }
     const released = doc?.alias_released === true;
     const reason = typeof doc?.alias_released_reason === "string" ? doc.alias_released_reason : typeof doc?.reason === "string" ? doc.reason : (doc ? "unstated" : "no JSON answer");
@@ -1406,12 +1455,12 @@ if (event === "launch") {
       retireWarnings.push(failed.warning.replace(/^joined team default cleanup failed:/, "default identity cleanup failed:"));
       rememberControllerCleanup({ ...failed.data, label: "default" });
     }
-    out({ meta: retiredMeta({ retired: true, aliasReusable: released, aliasReason: reason, joinedTeams: joinedTeamsOf(meta) }), ...(retireWarnings.length ? { warning: `oats-aweb: ${retireWarnings.join(" | ")}` } : released ? {} : { warning: `oats-aweb: workspace "${meta.alias}" deleted but its alias was not released (${reason}); spawn successors with a different --name (kernels 0.26.0+) or a different --purpose until it is` }) });
+    await finish({ meta: retiredMeta({ retired: true, aliasReusable: released, aliasReason: reason, joinedTeams: joinedTeamsOf(meta) }), ...(retireWarnings.length ? { warning: `oats-aweb: ${retireWarnings.join(" | ")}` } : released ? {} : { warning: `oats-aweb: workspace "${meta.alias}" deleted but its alias was not released (${reason}); spawn successors with a different --name (kernels 0.26.0+) or a different --purpose until it is` }) });
   } catch (e) {
     // Exit nonzero: during a required-hook rollback this is the signal that
     // compensation did NOT complete, so the spawn is not reported as cleanly
     // rolled back while a remote identity still exists.
-    out({ meta: retiredMeta({ retired: false, reason: "self-delete-failed" }), warning: `oats-aweb: self-delete failed (the remote record will linger until stale): ${e.message || e}` }, 1);
+    await finish({ meta: retiredMeta({ retired: false, reason: "self-delete-failed" }), warning: `oats-aweb: self-delete failed (the remote record will linger until stale): ${e.message || e}` }, 1);
   }
 } else if (["teams", "join", "leave"].includes(event)) {
   try { runTeamsCommand(event); process.exit(0); }

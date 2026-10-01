@@ -242,7 +242,7 @@ test("the REAL bundled oats.aweb binding check decodes the kernel's check reques
   // (`invalid-binding` / `provider-not-qualified`).
   assert.equal(out.outcome, "result", JSON.stringify(out));
   assert.equal(out.result.problems.some((p) => ["invalid-binding", "provider-not-qualified"].includes(p.code)), false, JSON.stringify(out));
-  // What the bundled 1.17.3 answers under the 0.30 env (its actual output, recorded from this run):
+  // What the bundled 1.17.4 answers under the 0.30 env (its actual output, recorded from this run):
   // needs-configuration for the missing messaging root only. It reads the kernel's default team
   // (OATS_DEFAULT_TEAM_ID), so the 1.16 "no team" problem is gone. An `aw` version problem depends on the machine.
   assert.equal(out.result.status, "needs-configuration", JSON.stringify(out));
