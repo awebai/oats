@@ -325,7 +325,7 @@
               "file": "TASK.md"
             }
           },
-          "command": "OATS_INSTANCE='dev-claude-workspace-kstub-mstub' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-claude-workspace-kstub-mstub' GOLDEN_BROKER_ENDPOINT='<redacted>' '<base>/bin/claude' --golden-channel stub -- \"$(cat TASK.md)\"",
+          "command": "OATS_INSTANCE='dev-claude-workspace-kstub-mstub' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-claude-workspace-kstub-mstub' GOLDEN_BROKER_ENDPOINT='<redacted>' '<base>/bin/claude' --golden-channel stub -- '@TASK.md'",
           "createdAt": "<createdAt>",
           "modules": [
             {

@@ -129,7 +129,7 @@ full copy** of every capability the soul resolved to:
   .oats/modules/<capability>/      # the whole capability: oats.json, bin/, injects/, skills/ (hooks run from here)
   .oats/bin/oats → <kernel>/bin/oats.mjs  # the kernel that last launched this home: first on the harness's PATH
   work/                            # worktree, checkout symlink, attached tree, or private directory
-  TASK.md                          # briefing and task
+  TASK.md                          # briefing and task (0600; the home itself is 0700)
   instance.json                    # provenance (below); `soulDir` = the soul directory hooks get as OATS_SOUL
   STATE.md, log.md, notes/         # optional, from the knowledge capability
 ```
