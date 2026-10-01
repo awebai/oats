@@ -235,6 +235,34 @@ When a claude or codex home is not covered, the spawn says so (text and
 prompt: trust <deployment> once (<the step>)`. `oats readiness` reports the
 same in `checks.configured` (code `harness-trust`, not required).
 
+### Codex tool commands and the instance environment
+
+Codex can run tool commands under its shared app-server daemon rather than as
+children of the session OATS launched, and then they do not inherit the
+session's environment. Codex (0.157.1) runs a session that has `-c` overrides
+embedded, without the daemon, and every kernel codex launch has them. So that
+the environment does not depend on this, a codex launch also sets it for tool
+commands explicitly with `-c shell_environment_policy.set.<NAME>="<value>"`:
+
+- the instance: `OATS_INSTANCE`, `OATS_INSTANCE_HOME`, `PI_AGENT_INSTANCE`,
+  `PI_AGENT_HOME`;
+- every capability's launch environment (for example the messaging
+  provider's identity home and delivery mode);
+- the launch configuration's literal values. A reference's value never goes
+  on a command line.
+
+`PATH` comes from the launching shell, with the home's `.oats/bin` first, so
+only the execution passes it; the persisted command does not carry it. Codex
+runs tool commands through the user's login shell, and a profile that prepends
+directories puts those entries ahead of `.oats/bin`. A second `oats` in such a
+directory is found first.
+
+A capability command (`oats <namespace> …`) run with none of
+`OATS_INSTANCE_HOME`, `PI_AGENT_HOME` or `OATS_HOME` set finds its instance
+from the working directory. It uses the nearest enclosing directory laid out as
+`<agents-root>/<soul>/instances/<name>` whose `instance.json` records that
+name, and validates it like a home named by the environment.
+
 ## Lifecycle
 
 ### Spawn

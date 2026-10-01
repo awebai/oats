@@ -58,6 +58,7 @@ published to npm. Its developer docs are in
 | `tmux-config.mjs`, `session-*.mjs` | the tmux session backend and terminal input |
 | `capability-contract.mjs`, `provider-binding.mjs` | manifest validation, the hook environment rules, the readiness wire |
 | `servers.mjs` | routing commands to a registered server |
+| `harness-trust.mjs` | reading (never writing) Claude's and Codex's folder trust for a launch |
 
 The kernel is runtime-neutral: nothing in `lib/` depends on a harness or on
 a provider. Provider behaviour lives in capabilities; the kernel supplies
