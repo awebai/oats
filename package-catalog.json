@@ -8,7 +8,7 @@
     },
     "oats.aweb": {
       "url": "https://github.com/awebai/oats-aweb.git",
-      "ref": "v1.17.6",
+      "ref": "v1.17.7",
       "path": "oats-package"
     },
     "oats.jira": {

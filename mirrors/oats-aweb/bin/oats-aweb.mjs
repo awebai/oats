@@ -919,6 +919,30 @@ const joinedTeamsOf = (meta = {}) => Array.isArray(meta.joinedTeams) ? meta.join
 const leftTeamsOf = (meta = {}) => Array.isArray(meta.left) ? meta.left.filter((j) => j && typeof j === "object" && j.label && j.team && j.at && j.reason).slice(-20) : [];
 const providerStateDir = () => join(home, ".oats-aweb");
 const providerTeamsFile = () => join(providerStateDir(), "teams.json");
+const defaultRetireMarkerFile = () => join(providerStateDir(), "default-retire.json");
+function readDefaultRetireMarker() {
+  try {
+    const doc = JSON.parse(readFileSync(defaultRetireMarkerFile(), "utf8"));
+    if (doc?.schemaVersion === 1 && doc.kind === "default-workspace-delete" && doc.retired === true) return doc;
+  } catch { /* no completed default retire marker */ }
+  return undefined;
+}
+function writeDefaultRetireMarker({ meta, workspaceId, aliasReusable, aliasReason, receipt }) {
+  const doc = {
+    schemaVersion: 1,
+    kind: "default-workspace-delete",
+    retired: true,
+    alias: meta.alias,
+    ...(workspaceId ? { workspaceId } : {}),
+    ...(meta.team || meta.defaultTeam?.team || meta.identity?.team ? { team: meta.team || meta.defaultTeam?.team || meta.identity?.team } : {}),
+    aliasReusable: aliasReusable === true,
+    aliasReason: aliasReason || "unstated",
+    recordedAt: new Date().toISOString(),
+    ...(receipt?.identity_deleted === true ? { identityDeleted: true } : {}),
+  };
+  atomicWrite(defaultRetireMarkerFile(), JSON.stringify(doc, null, 2) + "\n");
+  return doc;
+}
 function readProviderTeamsState(meta = {}) {
   try {
     const doc = JSON.parse(readFileSync(providerTeamsFile(), "utf8"));
@@ -1441,6 +1465,10 @@ if (event === "launch") {
   // timeout that completed anyway) still carries the alias in its workspace
   // binding: use it rather than leaving the workspace orphaned.
   if (!meta.alias) { const late = workspaceAliasOf(home); if (late) meta = { ...meta, alias: late, aliasFromHome: true }; }
+  const completedDefaultRetire = readDefaultRetireMarker();
+  if (completedDefaultRetire && (!meta.alias || completedDefaultRetire.alias === meta.alias)) {
+    await finish({ meta: retiredMeta({ retired: true, aliasReusable: completedDefaultRetire.aliasReusable === true, aliasReason: completedDefaultRetire.aliasReason || "previously-retired", joinedTeams: joinedTeamsOf(meta) }), ...(retireWarnings.length ? { warning: `oats-aweb: ${retireWarnings.join(" | ")}` } : completedDefaultRetire.aliasReusable === true ? {} : { warning: `oats-aweb: workspace "${completedDefaultRetire.alias || meta.alias}" was already deleted but its alias was not released (${completedDefaultRetire.aliasReason || "previously-retired"}); spawn successors with a different --name (kernels 0.26.0+) or a different --purpose until it is` }) });
+  }
   if (!meta.alias) await finish({ meta: retiredMeta({ retired: false, reason: "nothing-to-delete" }) });
   if (!existsSync(join(home, ".aw"))) {
     await finish({ meta: retiredMeta({ retired: false, reason: "no-local-identity-key" }), warning: `oats-aweb: alias "${meta.alias}" was minted but ${join(home, ".aw")} is gone, so the remote record cannot be self-deleted and will linger until stale` }, 1);
@@ -1461,6 +1489,7 @@ if (event === "launch") {
       retireWarnings.push(failed.warning.replace(/^joined team default cleanup failed:/, "default identity cleanup failed:"));
       rememberControllerCleanup({ ...failed.data, label: "default" });
     }
+    writeDefaultRetireMarker({ meta, workspaceId, aliasReusable: released, aliasReason: reason, receipt: doc });
     await finish({ meta: retiredMeta({ retired: true, aliasReusable: released, aliasReason: reason, joinedTeams: joinedTeamsOf(meta) }), ...(retireWarnings.length ? { warning: `oats-aweb: ${retireWarnings.join(" | ")}` } : released ? {} : { warning: `oats-aweb: workspace "${meta.alias}" deleted but its alias was not released (${reason}); spawn successors with a different --name (kernels 0.26.0+) or a different --purpose until it is` }) });
   } catch (e) {
     // Exit nonzero: during a required-hook rollback this is the signal that
