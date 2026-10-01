@@ -122,7 +122,14 @@ own account's PR, and your host may share an account with the harvester's):
 Prose: what you checked, what you changed and why.
 ````
 
-`gh pr comment <number> --repo <repo> --body-file <file>`. The verdicts:
+`gh pr comment <number> --repo <repo> --body-file <file>`.
+
+`oats okf complete` reads this block to accept an amended merge. After an
+amend+merge, `headSha` must be the head you merge (`--match-head-commit`),
+and `pr` the PR's URL as `gh` prints it. Post the verdict from the account that
+merges, or from a member, collaborator or owner of the repository.
+
+The verdicts:
 - **merge**: every check passes.
 - **amend+merge**: fixable problems. Fix them yourself on the PR branch
   (supersession edits in other concepts of the same base, index/log entries,
