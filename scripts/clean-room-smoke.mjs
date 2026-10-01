@@ -233,7 +233,7 @@ try {
   const cliEnv = { ...env, PI_AGENTS_ROOT: agentsRoot };
   const cli = (args, { cwd = deployment, identity = false, env: extra = {}, expectExit = 0 } = {}) => {
     // Scaffold-only probes have no harness to supply the normal launch identity.
-    const id = identity ? { OATS_INSTANCE: basename(cwd), OATS_INSTANCE_HOME: cwd, PI_AGENT_INSTANCE: basename(cwd), PI_AGENT_HOME: cwd } : {};
+    const id = identity ? { OATS_INSTANCE: basename(cwd), OATS_INSTANCE_HOME: cwd } : {};
     const r = spawnSync(oats, args, { cwd, env: { ...cliEnv, ...id, ...extra }, encoding: "utf8", maxBuffer: 16 * 1024 * 1024, timeout: 120_000 });
     if (r.error) throw r.error;
     assert.equal(r.status, expectExit, `oats ${args.join(" ")} exited ${r.status}\n${r.stdout}\n${r.stderr}`);

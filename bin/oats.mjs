@@ -391,7 +391,7 @@ async function workspaceTarget(bail, { command, liveTeams = true }) {
     try { meta = JSON.parse(readFileSync(join(homeFlag, "instance.json"), "utf8")); } catch (e) { return bail("E_SESSION_UNKNOWN", `${homeFlag} is not an OATS instance home (${e.code === "ENOENT" ? "no instance.json" : e.message})`); }
     if (isCapturedHome(meta)) { const e = capturedHomeRefusal(homeFlag, "nothing was read"); return bail(e.code, e.message, e.details); }
     if (!meta || typeof meta.modules !== "object" || meta.modules === null) return bail("E_UNSUPPORTED_MODE", `${homeFlag} is not a workspace-model home (it records no modules): it was spawned by an earlier kernel — re-spawn it from the deployment`);
-    if (soulFlag && soulFlag !== meta.agent) return bail("E_HOME_MISMATCH", `--soul ${soulFlag} is not the soul of ${homeFlag} (${meta.agent})`);
+    if (soulFlag && !(await import("../lib/instance-resolution.mjs")).homeSoulMatches(soulFlag, meta)) return bail("E_HOME_MISMATCH", `--soul ${soulFlag} is not the soul of ${homeFlag} (${meta.agent})`);
     const deployment = dirname(dirname(dirname(dirname(realOrResolved(homeFlag)))));
     // A v2 home lives at <deployment>/agents/<soul>/instances/<name>: its deployment is
     // derived, so it must hold oats-local.yaml EXACTLY there (never found by walking up).
@@ -537,8 +537,9 @@ async function workspaceOperation(t, { bail, address, layer, opName }) {
   const settings = lp.settings;
   const cwd = op.context === "home" ? t.home : t.deployment;
   const env = { ...lp.env(mod.name, settings), OATS_OPERATION: address, OATS_CONTEXT: t.deployment, OATS_ROOT: t.agentsRoot, PI_AGENTS_ROOT: t.agentsRoot };
-  if (op.context === "home") Object.assign(env, { OATS_INSTANCE: t.meta.instance, OATS_INSTANCE_HOME: t.home, OATS_HOME: t.home, PI_AGENT_INSTANCE: t.meta.instance, PI_AGENT_HOME: t.home });
-  else for (const k of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "PI_AGENT_INSTANCE", "PI_AGENT_HOME"]) delete env[k];
+  // The home's identity, never one inherited from the caller (the reserved PI_AGENT_* names included).
+  for (const k of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "PI_AGENT_INSTANCE", "PI_AGENT_HOME"]) delete env[k];
+  if (op.context === "home") Object.assign(env, { OATS_INSTANCE: t.meta.instance, OATS_INSTANCE_HOME: t.home, OATS_HOME: t.home });
   await readSession?.closeBatches(); // no idle `git cat-file --batch` child held for the provider's whole run
   const r = spawnSync("node", [abs, ...rest, ...argFlags, "--json"], { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 16 * 1024 * 1024, timeout: OPERATION_TIMEOUT_MS, killSignal: "SIGTERM" });
   finishOperation({ r, bail, address, provider, op, argFlags, cwd, home: t.home, meta: t.meta, api: INSPECT_OPERATIONS_API });
@@ -2324,8 +2325,8 @@ function retireCmd() {
   }
   // The calling instance knows its own home: self-retire never needs to
   // disambiguate a same-named twin by hand.
-  if (homeFlag === undefined && process.env.OATS_INSTANCE_HOME && (process.env.PI_AGENT_INSTANCE === name || process.env.OATS_INSTANCE === name)) homeFlag = process.env.OATS_INSTANCE_HOME;
-  const isSelf = process.env.PI_AGENT_INSTANCE === name || process.env.OATS_INSTANCE === name;
+  if (homeFlag === undefined && process.env.OATS_INSTANCE_HOME && process.env.OATS_INSTANCE === name) homeFlag = process.env.OATS_INSTANCE_HOME;
+  const isSelf = process.env.OATS_INSTANCE === name;
   if (isSelf && !args.includes("--self")) die(`"${name}" is the calling instance — self-retire is irreversible; if your task is complete and you were told to retire, re-run with --self (finish your memory files FIRST; your session dies ~8s after)`);
   if (!isSelf && args.includes("--self")) die(`--self given but "${name}" is not the calling instance`);
   const root = ensureRoot(dirFlag());
@@ -2851,9 +2852,12 @@ async function capabilityCommand() {
     let activeIds;
     let context = process.cwd();
     let teamCtx, homeMeta, homeTeamCtx;
-    // OATS_INSTANCE_HOME is the canonical identity; the older names still count. With none set
-    // (a harness that strips the session env), the home enclosing the cwd.
-    const instanceHome = process.env.OATS_INSTANCE_HOME || process.env.PI_AGENT_HOME || process.env.OATS_HOME || enclosingInstanceHome(logicalCwd());
+    // OATS_INSTANCE_HOME is the identity; OATS_HOME still counts. With neither set (a harness that
+    // strips the session env), the home enclosing the cwd. What chose the home is named in every
+    // refusal about it.
+    const homeVariable = ["OATS_INSTANCE_HOME", "OATS_HOME"].find((name) => process.env[name]);
+    const instanceHome = homeVariable ? process.env[homeVariable] : enclosingInstanceHome(logicalCwd());
+    const chosenBy = homeVariable ?? "the working directory";
     const metaFile = instanceHome && join(instanceHome, "instance.json");
     // Capability-id keyed — never answer for `constructor`/`toString`. Belt and
     // braces: the ids come from instance.json, which spawn wrote from resolved
@@ -2872,11 +2876,19 @@ async function capabilityCommand() {
         if (!isWorkspaceHome(meta)) { const e = preWorkspaceHome(instanceHome, "nothing was dispatched"); bail(e.code, e.message); }
         context = meta.repo || context;
         soulDir = instanceSoulDir(instanceHome, meta);
+        const ws = meta.workspace && typeof meta.workspace === "object" ? meta.workspace : {};
+        // Inside a home the namespace is the home's, so a --soul for another soul is refused, never
+        // ignored (as inspect's --soul against --home is). The home's own soul, by any of its names, is fine.
+        const soulFlag = flag("soul");
+        if (soulFlag === true) bail("E_BAD_ARGS", "--soul needs a soul name", { flag: "--soul" });
+        if (typeof soulFlag === "string" && !(await import("../lib/instance-resolution.mjs")).homeSoulMatches(soulFlag, meta)) {
+          bail("E_HOME_MISMATCH", `--soul ${soulFlag} is not the soul of the instance home ${instanceHome} (${meta.agent}), which ${chosenBy} chose; to run "${cmd}" as a spawn of ${soulFlag} would, run it outside the instance home with OATS_INSTANCE_HOME and OATS_HOME unset`,
+            { home: instanceHome, soul: meta.agent, chosenBy, flag: "--soul" });
+        }
         // The team/workspace facts the home recorded at spawn, as its hooks got them, with the
         // recorded eligible teams (OATS_TEAMS_SOURCE=recorded). Only the home's MESSAGING module
         // gets them live (below): its team verbs (join/leave/teams) must see what the workspace
         // allows now, and no other command pays a remote read for them.
-        const ws = meta.workspace && typeof meta.workspace === "object" ? meta.workspace : {};
         const messaging = (meta.capabilities || []).find((c) => c.layer === "messaging")?.id;
         homeMeta = { meta, messaging };
         homeTeamCtx = (t) => teamEnv({ workspace: { key: ws.key, name: ws.name, deployment: ws.deployment }, teams: t.teams, defaultTeam: t.defaultTeam, teamsSource: t.source });
@@ -2894,7 +2906,7 @@ async function capabilityCommand() {
     // Workspace model: an instance's own materialized modules are the command
     // namespaces available to it (instance.json.modules → <home>/.oats/modules).
     const mans = Object.values(capabilityManifests(instanceHome)).filter((m) => m.command === cmd && m.commands);
-    if (!mans.length) return NOT_DISPATCHED;
+    if (!mans.length) bail("E_UNKNOWN_COMMAND", `oats ${cmd}: no capability of the instance home ${instanceHome} (soul ${homeMeta.meta.agent}), which ${chosenBy} chose, provides "${cmd}"`, { home: instanceHome, chosenBy, namespace: cmd });
     if (mans.length > 1) bail("E_DUPLICATE_NAMESPACE", `duplicate operational command namespace "${cmd}": ${mans.map((m) => m.capability).join(", ")}`);
     const m = mans[0];
     if (!activeIds.includes(m.capability)) bail("E_CAPABILITY_INACTIVE", `${m.capability} command namespace is not active in the current context/instance`);

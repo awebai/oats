@@ -170,7 +170,7 @@ require('node:fs').writeFileSync(${JSON.stringify(captured)}, JSON.stringify({ar
   execFileSync("/bin/sh", ["-c", meta.command], { cwd: f.home, env: f.env });
   const invocation = JSON.parse(readFileSync(captured, "utf8"));
   const args = invocation.argv;
-  const toolEnv = [["OATS_INSTANCE", "dev-probe"], ["OATS_INSTANCE_HOME", f.home], ["PI_AGENT_INSTANCE", "dev-probe"], ["PI_AGENT_HOME", f.home]]
+  const toolEnv = [["OATS_INSTANCE", "dev-probe"], ["OATS_INSTANCE_HOME", f.home]]
     .flatMap(([name, value]) => ["-c", `shell_environment_policy.set.${name}=${JSON.stringify(value)}`]);
   assert.deepEqual(args.slice(0, -1), ["--cd", f.home, "-c", "check_for_update_on_startup=false", ...toolEnv, "--model", "gpt-test", "--"]);
   assert.ok(args.at(-1).includes(prompt), "task is exactly one prompt and its bytes reach the harness without shell evaluation");

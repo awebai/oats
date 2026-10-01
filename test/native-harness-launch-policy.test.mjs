@@ -19,7 +19,7 @@ const prompt = '"$(cat TASK.md)"';
 // Every kernel codex launch turns off Codex's startup update prompt (#341).
 const CODEX_NO_UPDATE = ["-c", "check_for_update_on_startup=false"];
 // ... and hands its tool commands the instance env the launch prefix sets (#342).
-const codexToolEnv = (home, instance) => [["OATS_INSTANCE", instance], ["OATS_INSTANCE_HOME", home], ["PI_AGENT_INSTANCE", instance], ["PI_AGENT_HOME", home]]
+const codexToolEnv = (home, instance) => [["OATS_INSTANCE", instance], ["OATS_INSTANCE_HOME", home]]
   .flatMap(([name, value]) => ["-c", `shell_environment_policy.set.${name}=${JSON.stringify(value)}`]);
 function fixture(t) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "oats-native-permission-policy-")));
@@ -49,7 +49,7 @@ function assertNormal(command, harness, home) {
   const described = describeLaunchCommand(command);
   assert.equal(described.executable, process.execPath);
   assert.deepEqual(described.argv, nativeArgv(harness, home), "no automatic isolation, bypass, sandbox override or project trust");
-  assert.deepEqual(described.environment.map(row => row.name), ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "PI_AGENT_INSTANCE", "PI_AGENT_HOME"],
+  assert.deepEqual(described.environment.map(row => row.name), ["OATS_INSTANCE", "OATS_INSTANCE_HOME"],
     "no manufactured native profile/auth/settings environment");
   assert.doesNotMatch(command, /oats-pi-sdk-host|--sdk-root|--no-skills|--no-context-files|--no-prompt-templates|--append-system-prompt/);
 }

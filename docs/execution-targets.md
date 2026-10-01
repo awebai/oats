@@ -27,9 +27,9 @@ named launch configuration (`--launch-config <name>`); see
 [configuration.md](configuration.md#launch-configurations).
 `--model @native-default` uses the harness's own default model.
 
-The launch command sets `OATS_INSTANCE`, `OATS_INSTANCE_HOME`,
-`PI_AGENT_INSTANCE` and `PI_AGENT_HOME`, plus the environment that the launch
-configuration and capabilities contribute. The home's layout and what those
+The launch command sets `OATS_INSTANCE` and `OATS_INSTANCE_HOME`, plus the
+environment that the launch configuration and capabilities contribute. No
+`PI_AGENT_*` name is set, for any harness. The home's layout and what those
 variables point at are described in
 [souls-and-instances.md](souls-and-instances.md#instance-anatomy).
 
