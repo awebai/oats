@@ -109,12 +109,14 @@ gets the plain per-call behaviour. Within a session:
   (`readBudgetMs`; `OATS_READ_REMOTE_BUDGET_MS` overrides it for tests). Every
   remote step then gets what is left of it instead of its own default: each
   git call's timeout (`sessionExec`: ls-remote, fetch, ls-tree, the cache's
-  plumbing; none starts once nothing is left), the batch readers' answers, the
-  cache write lock's wait, the half-initialised cache's wait and the lock-race
-  backoff. What the deadline ends is a `timeout`, so an unread member degrades
-  as any unreadable one. A cut wait never changes what it judges: a live lock
-  holder is not stolen from, and a cache directory waited for less than in
-  full is not taken for a crash's leftover;
+  plumbing; none starts once nothing is left), the git version probe
+  (`readVersion`), the batch readers' answers, the cache write lock's wait,
+  the half-initialised cache's wait and the lock-race backoff. What the
+  deadline ends is a `timeout` (a peel or version it ended is never read as a
+  missing commit or an older git), so an unread member degrades as any
+  unreadable one. A cut wait never changes what it judges: past the deadline
+  no lock is taken or reclaimed (live, stale or unreadable), and a cache
+  directory waited for less than in full is not taken for a crash's leftover;
 - every git child is ended with SIGTERM first and SIGKILL only after a
   grace (`terminateGroup`): git removes its own lock files on SIGTERM, and
   a git killed outright leaves one that blocks every later write. The

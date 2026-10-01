@@ -184,3 +184,68 @@ test("a lock wait the deadline cuts never steals or deletes a lock: an ownerless
   assert.equal(existsSync(`${lock}.reclaim`), false, "no reclaim was attempted");
   assert.equal(existsSync(f.repoDir), false, "nothing was written");
 });
+
+test("the git version probe is bounded too: asked with what is left, waited for no longer, never taken for an older git", async () => {
+  const f = fixture();
+  await observeRemote(f.bare, { cacheDir: f.cacheDir, at: f.commit }); // a warm cache: only local plumbing remains
+  const { runGit } = await import("../lib/remote.mjs");
+  let versionOpts = null;
+  const slowVersion = async (args, opts) => {
+    if (args[0] === "--version") { versionOpts = opts; await new Promise((r) => setTimeout(r, 1_500)); }
+    return runGit(args, opts);
+  };
+  const session = createReadSession({ deadline: Date.now() + 300 });
+  const started = Date.now();
+  const e = await caught(observeRemote(f.bare, { cacheDir: f.cacheDir, at: f.commit, session, exec: slowVersion }));
+  const elapsed = Date.now() - started;
+  await session.close();
+  assert.deepEqual([e.code, e.details.reason], ["E_REMOTE_UNREADABLE", "timeout"]);
+  assert.ok(elapsed < 1_200, `ended at the deadline, not when the probe answered (${elapsed} ms)`);
+  assert.ok(versionOpts.timeout > 0 && versionOpts.timeout <= 300, "the probe got what was left");
+  assert.ok(versionOpts.signal instanceof AbortSignal, "and the session's signal");
+});
+
+test("a deadline that ends the peel of a commit just fetched is a timeout, never a missing commit", async () => {
+  const f = fixture();
+  const { runGit } = await import("../lib/remote.mjs");
+  let fetched = false;
+  const exec = async (args, opts) => {
+    if (fetched && args.includes("rev-parse")) {
+      await new Promise((r) => setTimeout(r, opts.timeout)); // the peel runs until the deadline's timeout
+      throw Object.assign(new Error("timed out"), { code: null, killed: true, signal: "SIGTERM", timedOut: true, overflowed: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) });
+    }
+    const out = await runGit(args, opts);
+    if (args.includes("fetch")) fetched = true;
+    return out;
+  };
+  const session = createReadSession({ deadline: Date.now() + 1_500 });
+  const e = await caught(observeRemote(f.bare, { cacheDir: f.cacheDir, at: f.commit, session, exec }));
+  await session.close();
+  assert.equal(fetched, true);
+  assert.deepEqual([e.code, e.details.reason, e.details.commit, e.details.stage], ["E_REMOTE_UNREADABLE", "timeout", f.commit, "fetch"]);
+});
+
+test("past the deadline no lock is taken or reclaimed: a stale one stays, whether the deadline passed before the wait or during it", async () => {
+  const f = fixture();
+  const { utimesSync } = await import("node:fs");
+  const lock = join(f.cacheDir, ".locks", `${f.repoDir.split("/").pop()}.lock`);
+  mkdirSync(join(lock, ".."), { recursive: true });
+  // Already expired, an abandoned (ownerless, old) lock in place.
+  writeFileSync(lock, "unreadable owner\n");
+  utimesSync(lock, new Date(0), new Date(0));
+  let session = createReadSession({ deadline: Date.now() - 1 });
+  let e = await caught(observeRemote(f.bare, { cacheDir: f.cacheDir, at: f.commit, session }));
+  await session.close();
+  assert.deepEqual([e.details.reason, existsSync(lock)], ["timeout", true]);
+  // A lock that turns stale while the waiter is descheduled across the deadline.
+  const now = Date.now();
+  utimesSync(lock, new Date(now - 29_800), new Date(now - 29_800));
+  session = createReadSession({ deadline: now + 200 });
+  const block = setTimeout(() => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 150); }, 150);
+  e = await caught(observeRemote(f.bare, { cacheDir: f.cacheDir, at: f.commit, session }));
+  clearTimeout(block);
+  await session.close();
+  assert.deepEqual([e.details.reason, existsSync(lock)], ["timeout", true]);
+  assert.equal(readFileSync(lock, "utf8"), "unreadable owner\n");
+  assert.equal(existsSync(`${lock}.reclaim`), false);
+});
