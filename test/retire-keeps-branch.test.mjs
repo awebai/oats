@@ -58,3 +58,37 @@ test("with --delete-branch, a quarantine retry deletes the instance's verified b
   assert.equal(w.branchTip(), null, "the operator asked: the branch is gone");
   assert.equal(forced.branchDeleted, true);
 });
+
+/** A capability whose required spawn hook fails; with `commit`, it first commits into the new worktree. */
+const failingSpawn = (commit) => ({
+  manifest: { hooks: { spawn: { command: "hook.mjs", required: true } } },
+  files: { "hook.mjs": `import { execFileSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+const work = join(process.env.OATS_INSTANCE_HOME, "work");
+if (${commit}) {
+  writeFileSync(join(work, "hook-work.txt"), "made during the spawn\\n");
+  const git = (...a) => execFileSync("git", ["-C", work, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", ...a]);
+  git("add", "hook-work.txt"); git("commit", "-qm", "hook work");
+}
+process.exit(1);
+` },
+});
+
+for (const [commit, title] of [[false, "a failed spawn's rollback deletes the branch it created, when its tip has not moved"], [true, "a failed spawn's rollback keeps its branch when the tip moved, and says so"]]) {
+  test(title, async (t) => {
+    const fx = v2Deployment({ souls: { dev: { soul: { work: "worktree", capabilities: { "test.fail": { from: "here" } } } } }, capabilities: { "test.fail": failingSpawn(commit) } });
+    t.after(fx.cleanup);
+    const hostPath = process.env.PATH; process.env.PATH = fx.env.PATH; t.after(() => { process.env.PATH = hostPath; });
+    const name = commit ? "dev-moved" : "dev-clean";
+    const e = await fx.spawn("dev", { instance: name, work: "worktree" }).then(() => null, (x) => x);
+    assert.equal(e?.code, "E_REQUIRED_HOOK_FAILED", String(e?.message));
+    const branches = execFileSync("git", ["-C", fx.member, "for-each-ref", "--format=%(refname:short)", "refs/heads/"], { encoding: "utf8" }).split("\n").filter((b) => b.includes(name));
+    if (!commit) assert.deepEqual(branches, [], "nothing was committed: the spawn's branch goes");
+    else {
+      assert.equal(branches.length, 1, "the branch with a commit on it stays");
+      assert.match(execFileSync("git", ["-C", fx.member, "log", "-1", "--format=%s", branches[0]], { encoding: "utf8" }), /hook work/);
+      assert.match(e.message, new RegExp(`git branch ${branches[0]}: kept; its tip moved from [0-9a-f]{12}, where this spawn created it`));
+    }
+  });
+}
