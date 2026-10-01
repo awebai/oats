@@ -13,7 +13,7 @@ const [mode, remoteUrl, base] = process.argv.slice(2);
 const cacheDir = join(base, "cache"), remote = join(base, "remote");
 const lock = join(cacheDir, ".locks", `${createHash("sha256").update(`local/${remote}`).digest("hex")}.lock`);
 const active = join(base, "B-active"), report = join(base, "report.json");
-let child = null, bActiveDuringPause = null;
+let bDone = Promise.resolve(), bActiveDuringPause = null;
 if (mode === "A") {
   fs.mkdirSync(join(cacheDir, ".locks"), { recursive: true });
   fs.writeFileSync(lock, JSON.stringify({ pid: 99_999_999, token: "dead".repeat(6), startedAt: "2026-01-01T00:00:00.000Z" }) + "\n");
@@ -22,7 +22,8 @@ if (mode === "A") {
   fs.unlinkSync = function (path, ...rest) {
     if (path === lock && !paused) {
       paused = true; // descheduled between the reclaim's last check and its unlink
-      child = spawn(process.execPath, [fileURLToPath(import.meta.url), "B", remoteUrl, base], { stdio: "inherit" });
+      const child = spawn(process.execPath, [fileURLToPath(import.meta.url), "B", remoteUrl, base], { stdio: "inherit" });
+      bDone = new Promise((r) => child.on("close", r)); // listen now: B may exit before A's observeRemote returns
       const until = Date.now() + 1500;
       while (!fs.existsSync(active) && Date.now() < until) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
       bActiveDuringPause = fs.existsSync(active);
@@ -49,6 +50,6 @@ const exec = async (args, options) => {
 };
 await observeRemote(remote, { at: oid, cacheDir, exec });
 if (mode === "A") {
-  await new Promise((r) => (child ? child.on("close", r) : r()));
+  await bDone;
   fs.writeFileSync(report, JSON.stringify({ bActiveDuringPause, simultaneous, lockLeft: fs.existsSync(lock) }));
 }
