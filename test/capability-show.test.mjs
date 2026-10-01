@@ -403,7 +403,9 @@ test("a skill whose files cannot be listed (an unsafe name deep in its tree): fi
   t.after(f.cleanup);
   // Graft skills/bad/deep/x/.git into the member's HEAD tree (git's transport does not fsck entry names).
   const seed = join(f.base, "seed");
-  const run = (input, ...args) => execFileSync("git", args, { cwd: seed, input, stdio: ["pipe", "pipe", "pipe"] }).toString("utf8").trim();
+  // commit-tree needs an identity: CI runners have none configured.
+  const env = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
+  const run = (input, ...args) => execFileSync("git", args, { cwd: seed, input, env, stdio: ["pipe", "pipe", "pipe"] }).toString("utf8").trim();
   const mkTree = (entries) => run(Buffer.concat(entries.sort((a, b) => Buffer.compare(Buffer.from(a.name + (a.mode === "040000" ? "/" : "")), Buffer.from(b.name + (b.mode === "040000" ? "/" : ""))))
     .map(({ mode, name, oid }) => Buffer.concat([Buffer.from(`${mode} ${name}\0`), Buffer.from(oid, "hex")]))), "hash-object", "-w", "-t", "tree", "--stdin", "--literally");
   const entries = (tree) => run("", "ls-tree", tree).split("\n").map((l) => { const [meta, name] = l.split("\t"); const [mode, , oid] = meta.split(" "); return { mode: mode === "40000" ? "040000" : mode, name, oid }; });
