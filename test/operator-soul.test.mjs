@@ -6,6 +6,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const probeCap = {
@@ -37,4 +38,22 @@ test("operator dispatch with --soul passes OATS_SOUL at the resolved commit, whe
   assert.equal(r.soul, realpathSync(join(souls, commitDir)));
   assert.equal(r.named, true);
   assert.equal(existsSync(r.soul), true);
+});
+
+test("a soul that cannot be read at the resolved commit refuses the operator command: it never runs without OATS_SOUL", async (t) => {
+  const fx = v2Deployment({ souls: { withprobe: { soul: { capabilities: { "test.probe": { from: "here" } } } } }, capabilities: { "test.probe": probeCap } });
+  t.after(fx.cleanup);
+  // A soul tree the kernel refuses to copy: a symlink other than the CLAUDE.md alias.
+  fx.commit({ "souls/withprobe/skills/evil": { symlink: "/etc" } });
+  const previews = () => readdirSync(tmpdir()).filter((n) => n.startsWith("oats-preview-soul-")).sort();
+  const before = previews();
+  const r = fx.cli(["probe", "go", "--soul", "withprobe", "--json"]);
+  assert.notEqual(r.status, 0);
+  const doc = r.json();
+  assert.equal(doc.ok, false);
+  assert.match(doc.error.code, /^E_/);
+  assert.match(doc.error.message, /^oats probe: cannot read soul withprobe at [0-9a-f]{12}, so the command would run without OATS_SOUL; nothing was run: /);
+  assert.deepEqual(r.stdout.trim().split("\n").map((l) => JSON.parse(l).ok), [false], "one envelope, the refusal: the provider never ran");
+  assert.equal(existsSync(join(fx.root, "withprobe", "souls")), false);
+  assert.deepEqual(previews(), before, "no temporary soul copy is left behind");
 });

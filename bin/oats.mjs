@@ -2923,14 +2923,14 @@ async function capabilityCommand() {
       const live = await liveTeams(instanceHome, homeMeta.meta, { remoteOptions: remoteOptionsFromEnv() });
       teamCtx = homeTeamCtx(live);
     }
-    return runManifestCommand(m, { settings: capSettings[m.capability] || {}, origins: capOrigins[m.capability] }, teamCtx, () => m._dir, soulDir);
+    return runManifestCommand(m, { settings: capSettings[m.capability] || {}, origins: capOrigins[m.capability] }, teamCtx, () => m._dir, () => ({ dir: soulDir, cleanup: () => {} }));
   }
 
   /** Help / unknown-command / spec validation / exec — shared by every context.
    *  `m` is the manifest (with `capability`; `_dir` may be absent until `ensureDir`
    *  resolves the directory holding the executable — the operator branch fetches
    *  the module tree only when a command is actually going to run). */
-  async function runManifestCommand(m, { settings, origins }, teamCtx, ensureDir, soulDir) {
+  async function runManifestCommand(m, { settings, origins }, teamCtx, ensureDir, soul) {
     const sub = args[1];
     const cmds = Object.keys(m.commands);
     // `oats <ns> --help` and `oats <ns> <cmd> --help` answer from the manifest
@@ -2964,12 +2964,11 @@ async function capabilityCommand() {
     try { abs = capabilityExecutablePath(withDir, script); }
     catch (e) { bail("E_CAPABILITY_BROKEN", e.message); }
     if (!abs) bail("E_CAPABILITY_BROKEN", `${cmd} ${sub}: script not found (${join(dir, script)})`);
-    // `soulDir` is a home's recorded soul directory, or (operator dispatch) a reader of the soul at
-    // its resolved commit, whose temporary copy is removed when this process exits.
-    if (typeof soulDir === "function") {
-      try { const read = await soulDir(); soulDir = read.dir; process.once("exit", read.cleanup); }
-      catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) bail(e.code, e.message, e.details); throw e; }
-    }
+    // The soul the command acts for → { dir, cleanup }: a home's recorded soul directory, or (operator
+    // dispatch) the soul read at its resolved commit, whose temporary copy goes when this process exits.
+    let soulDir;
+    try { const read = await soul(); soulDir = read.dir; process.once("exit", read.cleanup); }
+    catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) bail(e.code, e.message, e.details); throw e; }
     // OATS_SOUL is the recorded soul or nothing: an ambient value inherited from the
     // invoking process names some other soul (a coordinator's own), never this one.
     const { OATS_SOUL: _ambientSoul, ...inherited } = process.env;
