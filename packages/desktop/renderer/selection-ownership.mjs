@@ -6,15 +6,22 @@ export function createSelectionOwnership({ currentWorkspace, workspaceGeneration
   let focus = null;
   let applyingFocus = false;
   const invalidate = () => { serial++; focus = null; };
+  const watch = () => {
+    const token = serial;
+    const workspace = currentWorkspace();
+    const generation = workspaceGeneration();
+    return () => token === serial && workspace === currentWorkspace()
+      && generation === workspaceGeneration();
+  };
   return {
     begin() {
       invalidate();
-      const token = serial;
-      const workspace = currentWorkspace();
-      const generation = workspaceGeneration();
-      return () => token === serial && workspace === currentWorkspace()
-        && generation === workspaceGeneration();
+      return watch();
     },
+    // A ticket for "no explicit action since now" that, unlike begin(), cancels
+    // nothing already pending (Spec E: a background spawn follows its press only
+    // while the operator has not moved on).
+    watch,
     invalidate,
     focus(id, owns) {
       if (!owns()) return false;

@@ -104,7 +104,7 @@ test('a checkout soul offers a worktree instead: --work worktree, and the kernel
 test('a directory soul says where it works and offers no worktree', async t => {
   const u = await mountSpawn(t);
   await u.open('support-triager');
-  assert.equal(u.text('.spawn-work-text'), 'Works in its own directory in the instance home');
+  assert.equal(u.text('.spawn-work-text'), 'Works in its own folder, not tied to one repository: free to work across repos as its task needs');
   assert.equal(u.q('.spawn-use-worktree').hidden, true); assert.equal(u.q('.spawn-joined').hidden, true);
 });
 
@@ -141,7 +141,7 @@ for (const outcome of ['success', 'rejection']) test(`a preview settling (${outc
   if (outcome === 'success') gate.resolve(); else gate.reject(new Error('late'));
   await settle(20);
   assert.equal(u.dialog(), current); assert.equal(old.isConnected, false);
-  assert.equal(u.text('.spawn-work-text'), 'Works in its own directory in the instance home'); assert.equal(u.text('.fstatus'), 'Preview ready');
+  assert.equal(u.text('.spawn-work-text'), 'Works in its own folder, not tied to one repository: free to work across repos as its task needs'); assert.equal(u.text('.fstatus'), 'Preview ready');
 });
 
 test('Spawn is one click: prepare, then apply of the decision on screen; the terminal opens once the exact instance runs', async t => {
@@ -324,7 +324,7 @@ test('choosing another soul keeps the typed name and instruction', async t => {
   [...u.doc.querySelectorAll('.spawn-choice')].find(b => b.dataset.agent === 'support-triager').click(); await settle();
   assert.equal(u.q('.spawn-choice[aria-selected=true]').dataset.agent, 'support-triager');
   assert.equal(u.q('.fpurpose').value, 'api-v2'); assert.equal(u.q('.ftask').value, 'keep me');
-  assert.equal(u.doc.activeElement, u.q('.spawn-choice[aria-selected=true]'));
+  assert.equal(u.doc.activeElement, u.q('.fpurpose'), 'a pick goes on to Name (Spec E)');
 });
 
 test('the soul-name prefix toggle is offered only with spawn-name; off sends --name, and a name refusal shows at the field', async t => {
@@ -468,6 +468,9 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: every spawn 
     ['.spawn-seg input:not(:checked) + span', '.spawn-seg', 'muted', 'surface'],
     ['.spawn-advanced > summary', '.spawn-advanced', 'fg', 'surface-2'],
     ['.spawn-advanced > summary small', '.spawn-advanced', 'muted', 'surface-2'],
+    // Spec E: the section keys' quiet hints, on the dialog and in Developer settings' summary.
+    ['.spawn-name > label kbd.spawn-key-hint', '.spawn-dialog', 'muted', 'surface'], ['.spawn-relationship > legend kbd.spawn-key-hint', '.spawn-dialog', 'muted', 'surface'],
+    ['.spawn-advanced > summary kbd.spawn-key-hint', '.spawn-advanced', 'muted', 'surface-2'],
     ['.spawn-joined-from', '.spawn-joined-from', 'muted', 'surface-2'],
     ['.spawn-prefix-toggle', '.spawn-dialog', 'muted', 'surface'],
     ['.spawn-chooser-title', '.spawn-dialog', 'fg', 'surface'], ['.spawn-search-count', '.spawn-dialog', 'muted', 'surface'],

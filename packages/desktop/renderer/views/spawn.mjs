@@ -13,6 +13,7 @@ import { MARKDOWN_CSS } from "./markdown.mjs";
 import { runtimeState } from "../instance-presentation.mjs";
 import { deploymentUnavailableText } from "../deployment-header.mjs";
 import { createSpawnDialog, spawnDialogCSS } from "../spawn-dialog.mjs";
+import { SPAWN_DIALOG_KEYS, SPAWN_JUMPS, registerSpawnDialogKeys, ariaKeyShortcuts } from "../spawn-dialog-keys.mjs";
 import { pendingPlacement } from "../spawn-jobs.mjs";
 import { spawnProblem, catalogProblem } from "../spawn-messages.mjs";
 import { createSoulMark, createRuntimeBadge, identityCSS } from "../identity-marks.mjs";
@@ -1138,7 +1139,7 @@ function openSpawnModal(s, a, draft = {}) {
       const fresh = s.souls.agents.find(current => current.name === candidate.name && current.agentsRoot === candidate.agentsRoot && (current.server || "") === (candidate.server || ""));
       // The same dialog flow: a Quick Open return target survives choosing another soul.
       const dismissed = s.spawnReturn;
-      openSpawnModal(s, fresh, { ...next, focus: next.focus === "name" ? "name" : "soul" });
+      openSpawnModal(s, fresh, next); // a pick goes on to Name (Spec E)
       if (s.modalEl && dismissed) s.spawnReturn = dismissed;
     },
     servers: a.server ? [] : () => apiJson(s.ctx, "/api/servers").then(d => Array.isArray(d?.servers) ? d.servers : []),
@@ -1155,6 +1156,9 @@ function openSpawnModal(s, a, draft = {}) {
         placement: pendingPlacement(spec.relation, s.panelInstances || []) });
       if (!id) return false;
       closeSpawnModal(s, { restoreFocus: true });
+      // Spec E: after the dialog's own focus return, the shell reveals the pending row and follows the spawn
+      // to its instance, unless the operator moves on first.
+      s.ctx.followSpawn?.(id);
       return true;
     },
     // Spec D (#383): while a spawn of this soul is in flight here, the press stays disabled and says so;
@@ -1190,20 +1194,30 @@ function openSpawnModal(s, a, draft = {}) {
   modal.addEventListener("mousedown", (e) => { if (e.target === modal && !ui.busy()) close(); }); // backdrop
   ui.dialog.addEventListener("compositionstart", () => { composing = true; });
   ui.dialog.addEventListener("compositionend", () => { composing = false; });
+  const isMac = /mac/i.test(doc.defaultView?.navigator?.platform || "");
+  // The dialog's own chords (spawn-dialog-keys.mjs): Mod+Enter and the section keys. A plain chord never
+  // takes a key from a text field, and plain Enter stays the focused control's.
+  const dialogKey = (e) => {
+    const plain = !e.metaKey && !e.ctrlKey && !e.altKey; // Shift alone is still text input
+    const editable = ["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName) || e.target.isContentEditable;
+    return (plain && (editable || e.key === "Enter")) ? null : resolveViewKey(e, SPAWN_DIALOG_KEYS, { isMac });
+  };
   ui.dialog.addEventListener("keydown", (e) => {
     if (!ownsModal()) return;
     if (e.defaultPrevented || composing || e.isComposing || e.keyCode === 229 || e.repeat) {
       // A button's native Enter click must not bypass the launch-key guard.
       if (e.key === "Enter" && e.target.closest?.(".fspawn")) e.preventDefault();
       if (composing || e.isComposing || e.keyCode === 229) e.stopPropagation();
+      // A held section key is still the dialog's: it never reaches the shell behind the modal.
+      else if (e.repeat && !e.defaultPrevented && SPAWN_JUMPS.some(j => j.id === dialogKey(e))) { e.preventDefault(); e.stopPropagation(); }
       return;
     }
     if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); return; }
-    const plain = !e.metaKey && !e.ctrlKey && !e.altKey; // Shift alone is still text input
-    const editable = ["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName) || e.target.isContentEditable;
-    const hit = (plain && (editable || e.key === "Enter")) ? null
-      : resolveViewKey(e, [{ id: "spawn.submit" }], { isMac: /mac/i.test(doc.defaultView?.navigator?.platform || "") });
-    if (hit) { e.preventDefault(); e.stopPropagation(); ui.submit(); return; }
+    const hit = dialogKey(e);
+    if (hit === "spawn.submit") { e.preventDefault(); e.stopPropagation(); ui.submit(); return; }
+    const jump = hit && SPAWN_JUMPS.find(j => j.id === hit);
+    // Spec E: Mod+1–7 move to a section, and never switch anything behind the modal.
+    if (jump) { e.preventDefault(); e.stopPropagation(); ui.jump(jump.target); return; }
     if (e.key === "Enter" && e.target.closest?.(".fspawn")) { e.preventDefault(); ui.submit(); return; }
     if (e.key !== "Tab") return; // focus trap includes disclosure controls
     const focusable = [...ui.dialog.querySelectorAll("button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), summary")]
@@ -1216,22 +1230,23 @@ function openSpawnModal(s, a, draft = {}) {
   });
   s.modalEl = modal;
   s.el.querySelector(".souls").append(modal);
-  const releaseSubmit = registerAction({ id: "spawn.submit", label: "Spawn selected soul", context: "spawn-dialog-local", defaultChord: "Mod+Enter", run: () => {} });
+  registerSpawnDialogKeys(); // once, for the app's lifetime (the shell registers them at start)
   const updateHint = () => {
-    const mac = /mac/i.test(doc.defaultView?.navigator?.platform || "");
-    const label = formatChord(getBinding("spawn.submit", mac), mac) || "";
-    ui.spawn.dataset.chord = mac ? label.replace(/Enter$/, "↵") : label;
+    const label = formatChord(getBinding("spawn.submit", isMac), isMac) || "";
+    ui.spawn.dataset.chord = isMac ? label.replace(/Enter$/, "↵") : label;
+    ui.setShortcuts(Object.fromEntries(SPAWN_JUMPS.map(({ id, target }) => {
+      const chord = getBinding(id, isMac);
+      return [target, chord ? { label: formatChord(chord, isMac), aria: ariaKeyShortcuts(chord, isMac) } : null];
+    })));
   };
   const releaseHint = onKeymapChange(updateHint); updateHint();
   const releaseJobs = s.ctx.spawnJobs && !a.server ? s.ctx.spawnJobs.subscribe(() => { if (ownsModal()) ui.syncInFlight(); }) : () => {};
-  s.modalCleanup = () => { ui.dispose(); releaseHint(); releaseSubmit(); releaseJobs(); };
+  s.modalCleanup = () => { ui.dispose(); releaseHint(); releaseJobs(); };
   s.syncModalFacts = () => { if (ownsModal()) ui.sync(); };
   s.syncModalRelations = s.syncModalFacts;
   ui.start();
-  if (ownsModal()) {
-    const pressed = draft.focus === "soul" && ui.dialog.querySelector('.spawn-choice[aria-selected="true"]');
-    (pressed || ui.purpose).focus({ preventScroll: true });
-  }
+  // Spec E: opened for a soul, or after a pick, the dialog lands on Name (the caret after a restored draft).
+  if (ownsModal()) ui.focusName();
   return modal;
 }
 

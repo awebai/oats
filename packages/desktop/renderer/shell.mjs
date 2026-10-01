@@ -51,6 +51,9 @@ import { createInstanceGitPanel, instanceGitCSS } from "./instance-git.mjs";
 import { canAddressRemote, rowReason } from "./remote-address.mjs";
 import { createNotificationCenter, notificationCSS } from "./notifications.mjs";
 import { createSpawnJobs } from "./spawn-jobs.mjs";
+import { createSpawnFollow } from "./spawn-follow.mjs";
+import { registerSpawnDialogKeys } from "./spawn-dialog-keys.mjs";
+import { revealInScrollport } from "./reveal-in-scrollport.mjs";
 import { createRosterTip, rosterTipFacts, rosterTipCSS } from "./roster-tip.mjs";
 import { createRosterPrs, prChip, prText, rosterPrCSS } from "./roster-pr.mjs";
 import { createPanelOwner } from "./panel-owner.mjs";
@@ -149,7 +152,7 @@ let spawnRepaint = false;
 const spawnJobs = createSpawnJobs({
   post: (ws, body) => postJson(ctx, `/api/spawn?ws=${encodeURIComponent(ws)}`, body),
   notify: notifications.notify,
-  notifySpawned: (row, ws, epoch) => ctx.notifySpawn(row, ws, epoch),
+  notifySpawned: (row, ws, epoch, arrival) => spawnFollow.arrived(row, ws, epoch, arrival),
   reopen: async (job) => {
     const owns = tabOpenIntents.begin();
     let mod;
@@ -171,8 +174,26 @@ const spawnJobs = createSpawnJobs({
   onChange: () => {
     if (spawnRepaint) return;
     spawnRepaint = true;
-    queueMicrotask(() => { spawnRepaint = false; if (contextRosterEl && rosterState?.hasData) renderContextRoster(contextInstances); followSpawns(); });
+    queueMicrotask(() => { spawnRepaint = false; spawnFollow.prune(id => !!spawnJobs.get(id)); if (contextRosterEl && rosterState?.hasData) renderContextRoster(contextInstances); followSpawns(); });
   },
+});
+// Spec E: a pressed spawn takes the operator to its instance once it runs, unless they moved on, are
+// typing (a field, a terminal) or an overlay is open; then its row says New until it or its tab is first
+// opened. No toast for a success; one polite announcement either way (spawn-follow.mjs).
+const spawnFollow = createSpawnFollow({
+  watch: () => tabOpenIntents.watch(),
+  overlayOpen: () => modalOpen() || (() => { try { return !!document.querySelector("[popover]:popover-open"); } catch { return false; } })(),
+  activeElement: () => document.activeElement,
+  inTerminal: el => !!el?.closest?.(".xterm, .term-wrap") || [...tabs.values()].some(t => t.kind === "terminal" && t.paneEl.contains(el)),
+  currentWorkspace, connection: () => connectionGeneration,
+  open: (row, workspace) => {
+    const target = instanceActionTarget(workspace, row, { requireBirth: true });
+    if (!target) return false;
+    void openTerminalTab(target, { quiet: true, expected: target });
+    return true;
+  },
+  markNew: (row, workspace) => spawnJobs.markNew(workspace, row), // its change repaints the roster
+  announce: text => { if (contextRosterEl) announceSpawn(text); },
 });
 // A created instance is awaited at the dialog's former pace (700 ms), not the roster's 4 s poll.
 let spawnFollowTimer = 0;
@@ -184,6 +205,8 @@ function followSpawns() {
 }
 ctx.spawnJobs = spawnJobs;
 ctx.showPendingSpawn = (id) => showPendingSpawn(id);
+// Spec E: the press closed the dialog; reveal its pending row (no focus taken) and follow it to its instance.
+ctx.followSpawn = (id) => { spawnFollow.follow(id); revealPendingSpawn(id); };
 spawnJobs.recover();
 window.addEventListener('pagehide', () => spawnJobs.dispose(), { once: true });
 
@@ -647,7 +670,15 @@ function renderContextRoster(instances) {
           meta.textContent = ""; meta.classList.add("ctx-meta-pr"); meta.append(lead, prChip(document, pr));
           if (rest) { const tail = document.createElement("span"); tail.className = "ctx-meta-tail"; tail.textContent = rest; meta.append(tail); }
         }
-        copy.append(name, meta);
+        // Spec E: a spawn the operator was not taken to says New (text and a dot, never colour alone)
+        // until its row is opened, or its tab is (the first paint where it is the active row).
+        if (isActive) spawnJobs.seen?.(ws, i);
+        if (spawnJobs.isNew?.(ws, i)) {
+          const line = document.createElement("span"); line.className = "ctx-name-line";
+          const mark = document.createElement("span"); mark.className = "ctx-new";
+          const markDot = document.createElement("span"); markDot.className = "ctx-new-dot"; markDot.setAttribute("aria-hidden", "true");
+          mark.append(markDot, "New"); line.append(name, mark); copy.append(line, meta);
+        } else copy.append(name, meta);
         row.append(dot, copy);
         if (typeof i.harness === "string" && i.harness) {
           const runtime = createRuntimeBadge(document, i.harness);
@@ -661,7 +692,7 @@ function renderContextRoster(instances) {
         // terminal stays allowed (the maintainer's return on #322).
         const staleStart = rosterStale && !i.running;
         if (staleStart) { row.title = ROSTER_STALE_TITLE; row.setAttribute("aria-description", ROSTER_STALE_TITLE); }
-        row.addEventListener("click", () => { if (staleStart || unavailable) return; i.running ? openTerminalTab(i) : openInstanceStart(i); });
+        row.addEventListener("click", () => { if (staleStart || unavailable) return; spawnJobs.seen?.(ws, i); i.running ? openTerminalTab(i) : openInstanceStart(i); });
         // full keyboard tree operability (roving tabindex; policy in
         // roster-keys.mjs). Enter is the button's native activation.
         row.dataset.rosterChildren = hasChildren ? "1" : "0";
@@ -761,7 +792,7 @@ function renderContextRoster(instances) {
 function pendingSpawnRow(i, items, instances) {
   const p = i.pendingSpawn, unknown = p.pending !== "spawning", checking = p.pending === "checking";
   const rowWrap = document.createElement("div");
-  rowWrap.className = "ctx-tree-row ctx-spawn-row" + (unknown ? " ctx-spawn-unknown" : "");
+  rowWrap.className = "ctx-tree-row ctx-spawn-row" + (unknown ? " ctx-spawn-unknown" : "") + (p.revealed ? " ctx-spawn-revealed" : "");
   rowWrap.style.setProperty("--depth", String(i.depth || 0));
   const guides = document.createElement("span");
   guides.className = "ctx-guides";
@@ -907,26 +938,37 @@ async function showInRoster(instance) {
 
 /* "Show its row" (Spec D): focus a background spawn's pending row, revealing it like showInRoster. */
 function showPendingSpawn(id) {
+  const target = revealPendingSpawn(id, { clearFilter: true });
+  if (!target) return false;
+  tabOpenIntents.invalidate(); // an explicit navigation, not a polling restoration
+  setRovingRow(target.closest(".ctx-list"), target);
+  return true;
+}
+
+/* Spec E: after a press, the pending row is revealed and highlighted (its ancestors expanded, scrolled
+   into view) without taking focus or cancelling anything pending; an operator's filter that hides it
+   stays (clearFilter is "Show its row"'s explicit request). Returns the row, or null. */
+function revealPendingSpawn(id, { clearFilter = false } = {}) {
   const ws = currentWorkspace();
   const pending = spawnJobs.rows(ws).find(p => p.id === id);
-  if (!pending || !contextRosterEl) return false;
+  if (!pending || !contextRosterEl) return null;
   const all = [...contextInstances, { instance: pending.instance, agent: pending.agent, agentsRoot: pending.agentsRoot, home: pending.home,
     ...(pending.parentInstance ? { parentInstance: pending.parentInstance } : {}), ...(pending.siblingInstance ? { siblingInstance: pending.siblingInstance } : {}) }];
   const self = all.at(-1);
-  if (contextFilter && !instanceMatchesFilter(self, contextFilter)) {
+  if (clearFilter && contextFilter && !instanceMatchesFilter(self, contextFilter)) {
     contextFilter = "";
     const input = contextRosterEl.querySelector(".ctx-filter"); if (input) input.value = "";
   }
   for (let pid = rosterParentId(all, instanceId(self)), seen = new Set(); pid && !seen.has(pid); pid = rosterParentId(all, pid)) {
     seen.add(pid); collapsedInstances.delete(collapseKey(ws, pid));
   }
+  spawnJobs.reveal(id);
   renderContextRoster(contextInstances);
   const listEl = contextRosterEl.querySelector(".ctx-list");
   const target = listEl && [...listEl.querySelectorAll(".ctx-inst")].find(r => r.dataset.treeInstance === instanceId(self));
-  if (!target) return false;
-  tabOpenIntents.invalidate(); // an explicit navigation, not a polling restoration
-  setRovingRow(listEl, target);
-  return true;
+  if (!target) return null;
+  revealInScrollport(listEl, target.closest(".ctx-tree-row") || target);
+  return target;
 }
 
 function showTerminalContext() {
@@ -1945,6 +1987,8 @@ for (const [id, action, label] of [['instance.openSplit', 'open-split', 'Instanc
 }
 registerAction({ id: "app.palette", label: "Open the command palette", context: "global", run: () => { tabOpenIntents.invalidate(); palette.toggle(); } });
 registerAction({ id: "app.quickOpenSouls", label: "Quick open a soul to spawn", context: "global", run: () => { tabOpenIntents.invalidate(); quickOpen.toggle(); } });
+// The spawn dialog's own keys (Mod+Enter, Mod+1–7): listed and rebindable in the editor from the start; only the open dialog dispatches them.
+registerSpawnDialogKeys();
 registerAction({ id: "app.chooseSoul", label: "Spawn instance: choose a soul in Workspace", context: "global", run: () => openWorkspaceSouls() });
 registerAction({ id: "app.shortcuts", label: "Edit keyboard shortcuts", context: "global", run: () => openShortcutsEditor() });
 registerAction({ id: "app.connections", label: "Settings: Connections", context: "global", run: () => openConnections() });

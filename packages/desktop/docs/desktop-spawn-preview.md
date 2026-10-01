@@ -325,8 +325,8 @@ observations can block retry after disappearance, but no roster read closes a
 concurrent retire race. No lifetime exactly-once/no-resurrection promise.
 
 A qualified completed receipt still needs the current **exact** composite roster
-home/root/agent and running-session match before **<name> spawned** (with Open)
-is posted. Not-launched, partial, incomplete, unknown, stale or mismatched results
+home/root/agent and running-session match before the new instance is reported
+(the operator is taken to it, or its row says **New**; see Background spawn). Not-launched, partial, incomplete, unknown, stale or mismatched results
 never offer a guessed terminal.
 Existing anchored targets, linked-window viewers, locked keys and detach-only
 closure remain unchanged. A changed submitted draft can check its original result
@@ -342,6 +342,12 @@ returning where the dialog was opened from. A press still waiting for its previe
 the press cannot proceed: an invalid form, a settled refusal, or an answer that
 does not bind the ticked teams. Remote (server) spawns, and a host without a store
 (the view harness), keep the in-dialog transaction.
+
+**After the press** (Spec E): once the dialog has closed and returned focus, the
+shell reveals the pending row (its ancestors expanded, scrolled into view in the
+roster, and highlighted with the selection's fill) without taking focus or
+cancelling anything pending. An operator's roster filter that hides it stays;
+**Show its row** is the explicit request that clears it.
 
 The handoff carries the press token, the prepare input, the decision on screen,
 the relation and the draft (name, every choice, teams, opening instruction,
@@ -392,30 +398,34 @@ before apply (no `spawnRef` yet) and a record past the server's 30 minutes (read
 as **Outcome unknown**) are the other limits.
 
 **Outcomes.** Creation, roster presence and a live session are separate
-observations:
+observations. Success posts no notification; everything that needs the
+operator's attention still does:
 
-- `complete`: the row stays **Spawning…** until the roster reports the instance.
-  Once it runs with a session, the notification **<name> spawned** offers Open;
-  the terminal is never opened automatically. Not seen within 14 s: "Created
-  <name> — not yet visible as a running session. Open it from the roster when it
-  appears."
-- `partial`: the kernel's words (the wake was not saved, or its outcome is
-  unknown) with **View schedules**. `incomplete`: "<name> was created but didn't
-  finish starting. Open it from the instance list instead of spawning again."
-  Created but not launched: "Created <name> — not launched. Open its session from
-  the roster."
-- Refused or failed (nothing was created): the row goes, and a sticky
-  notification gives the reason (the `spawnProblem` text, Details behind a
-  disclosure) with **Reopen spawn** ("Reopen spawn for <name>"), which reopens the
-  dialog for that soul with the whole draft restored. Only `E_DECISION_STALE`,
-  or a prepared decision that differs from the one the operator saw, reads
-  "These values changed since you last looked. Reopen spawn to check them.";
-  `E_IDEMPOTENCY_CONFLICT`, `E_PLACEMENT_TAKEN`, `E_INSTANCE_NAME_TAKEN` and
-  every other refusal keep their own words.
-- `unknown` / `pending`: the row stays, reading **Outcome unknown**, with a
-  visible **Check result** button ("Check result for <name>") that runs the
-  recovery above. The notification says it once. The row never silently
-  disappears.
+| Outcome | What the operator gets |
+|---|---|
+| `complete` | The row stays **Spawning…** until the roster reports the instance running with a session. Then the operator is **taken to it**: its terminal tab opens and its roster row is the selected one, as clicking the row does. No toast: arriving is the confirmation. When a guard holds (below), they stay where they are and the real row, which replaced the pending one in place, says **New** (text and a dot, never colour alone; AA) until that row is opened or its tab becomes the active one. Either way the roster's polite live region says "<name> spawned" once. Not seen running within 14 s: "Created <name> — not yet visible as a running session. Open it from the roster when it appears." |
+| `partial` | The kernel's words (the wake was not saved, or its outcome is unknown) with **View schedules**. A launched one is then followed like `complete` (taken to it when no guard holds; no **New**, no second notice). |
+| `incomplete` | "<name> was created but didn't finish starting. Open it from the instance list instead of spawning again." |
+| Created, not launched | "Created <name> — not launched. Open its session from the roster." |
+| Refused or failed (nothing was created) | The row goes, and a sticky notification gives the reason (the `spawnProblem` text, Details behind a disclosure) with **Reopen spawn** ("Reopen spawn for <name>"), which reopens the dialog for that soul with the whole draft restored. Only `E_DECISION_STALE`, or a prepared decision that differs from the one the operator saw, reads "These values changed since you last looked. Reopen spawn to check them."; `E_IDEMPOTENCY_CONFLICT`, `E_PLACEMENT_TAKEN`, `E_INSTANCE_NAME_TAKEN` and every other refusal keep their own words. |
+| `unknown` / `pending` | The row stays, reading **Outcome unknown**, with a visible **Check result** button ("Check result for <name>") that runs the recovery above. The notification says it once. The row never silently disappears. |
+
+**Never a yank** (`renderer/spawn-follow.mjs`). Taking the operator to the new
+instance must never take them from something they are doing. They stay where
+they are when, at the moment it runs:
+
+- they did something explicit since the press: opened or activated another tab
+  or view, used the sidebar, switched workspace, or the connection changed. The
+  press takes a selection-ownership ticket (`watch()`: unlike `begin()` it
+  cancels nothing pending) after the dialog's own focus return, and every
+  explicit action supersedes it;
+- focus is where they type: a text field, a textarea, contentEditable, or a
+  terminal (its input or its pane);
+- a modal or an overlay is open: a dialog, the palette, Quick Open, a
+  lifecycle confirmation, the shortcuts editor, an open popover menu.
+
+Only a spawn pressed in this window is followed; one recovered after a reload is
+only marked **New**. Remote (server) spawns keep their own flow.
 
 **Where outcomes appear.** An outcome belongs to its workspace: while another
 workspace is on screen it is held, and posted on return. Failure notifications
