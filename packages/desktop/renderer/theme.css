@@ -7,6 +7,16 @@
 /* Shared rhythm (every theme): a section title to its content, and one section to
    the next. Similar components use these, so forms, inspectors and panels line up. */
 :root { --title-gap: 10px; --section-gap: 20px; }
+/* The default monospace face, bundled so it is the same on every machine
+   (Inconsolata, SIL OFL 1.1: fonts/README.md). The terminal and the UI's code,
+   paths and chord hints share it, ahead of the OS stack. `block`: text waits for
+   the face rather than painting the fallback, and theme.mjs keeps xterm from
+   measuring its cells before it has loaded. */
+@font-face {
+  font-family: "Inconsolata"; src: url("fonts/Inconsolata-VF.ttf") format("truetype");
+  font-weight: 200 900; font-stretch: 50% 200%; font-style: normal; font-display: block;
+}
+:root { --mono: "Inconsolata", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
 
 :root, [data-theme="dark"] {
   --bg: #0e1116;          /* app background */
@@ -33,8 +43,8 @@
   --term-fg: #e6edf3;
   --term-sel: #264f78;
   --term-sel-fg: #f5f9ff;
-  /* xterm typography: OS monospace by default; user overrides persist via theme.mjs */
-  --term-font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  /* xterm typography: the bundled Inconsolata, then the OS monospace stack; user overrides persist via theme.mjs */
+  --term-font-family: "Inconsolata", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --term-font-size: 13px;
   --shadow: 0 1px 3px rgb(0 0 0 / .4);
   --shadow-popover: 0 12px 32px rgb(0 0 0 / .35);

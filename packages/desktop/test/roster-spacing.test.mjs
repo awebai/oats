@@ -105,7 +105,7 @@ test("roster typography (non-layout): valid control family and supplied sidebar 
   assert.equal(u.rule(".ctx-name").fontSize, "12.5px");
   assert.equal(u.rule(".ctx-name").fontWeight, "600");
   assert.equal(u.rule(".ctx-repo-label").fontSize, "10.5px");
-  assert.match(u.rule(".ctx-repo-label").fontFamily, /monospace/, "reference metadata is mono, like the design");
+  assert.equal(u.rule(".ctx-repo-label").fontFamily, "var(--mono)", "reference metadata is mono, like the design (the shared token: Inconsolata first)");
   for (const row of u.rows) {
     const name = row.querySelector(".ctx-name"), repo = row.querySelector(".ctx-repo-label");
     assert.equal(name.nextElementSibling, repo, "both labels remain in the same vertical stack");

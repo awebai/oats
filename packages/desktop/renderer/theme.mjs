@@ -56,18 +56,46 @@ export function onThemeChange(fn) {
 
 /* tmux carries cells/colors, never the host terminal emulator's font. Keep
    desktop typography as an explicit persisted preference, seeded from
-   semantic CSS tokens (OS monospace + 13px by default). */
+   semantic CSS tokens (the bundled Inconsolata, then the OS monospace stack,
+   at 13px by default). A stored family wins; the default changes only where
+   nothing is stored. */
 export function terminalTypography(el = document.documentElement) {
   const css = getComputedStyle(el);
-  let family = css.getPropertyValue("--term-font-family").trim() || "ui-monospace, monospace";
+  let family = css.getPropertyValue("--term-font-family").trim() || `"${BUNDLED_MONO}", ui-monospace, monospace`;
   let size = Number.parseFloat(css.getPropertyValue("--term-font-size")) || 13;
   try {
     family = localStorage.getItem(TERM_FONT_KEY) || family;
     size = Number(localStorage.getItem(TERM_SIZE_KEY)) || size;
   } catch { /* storage-less */ }
+  // xterm measures its cell from the font when a terminal is created, and again
+  // only when the font option changes. Until the bundled face has loaded, hand
+  // out the rest of the stack; once it has, listeners get the full family (a
+  // real change, so every live terminal re-measures and refits).
+  if (BUNDLED_FIRST.test(family) && !bundledMonoReady(el.ownerDocument)) {
+    family = family.replace(BUNDLED_FIRST, "") || "ui-monospace, monospace";
+  }
   // No line height: xterm's default (1.0) keeps native cell geometry (a block
   // cursor one cell tall); tmux owns row spacing (060de502).
   return { fontFamily: family, fontSize: Math.min(28, Math.max(9, size)) };
+}
+
+/** The bundled default monospace face (theme.css @font-face; fonts/README.md). */
+export const BUNDLED_MONO = "Inconsolata";
+const BUNDLED_FIRST = /^\s*(["']?)Inconsolata\1\s*(,\s*|$)/i;
+let bundledMono = "unknown"; // "loading" | "ready"
+/** Whether the bundled face can be measured now. The first miss starts its load;
+ * when it settles (loaded, or failed: the stack then falls back as the browser
+ * would) every terminal typography listener hears the full family. */
+function bundledMonoReady(doc) {
+  const fonts = doc?.fonts;
+  if (bundledMono === "ready" || typeof fonts?.check !== "function") return true;
+  try { if (fonts.check(`13px "${BUNDLED_MONO}"`)) { bundledMono = "ready"; return true; } } catch { return true; }
+  if (bundledMono !== "loading") {
+    bundledMono = "loading";
+    Promise.resolve().then(() => fonts.load(`13px "${BUNDLED_MONO}"`)).catch(() => {})
+      .then(() => { bundledMono = "ready"; notifyTerminalTypography(); });
+  }
+  return false;
 }
 
 function notifyTerminalTypography() {
