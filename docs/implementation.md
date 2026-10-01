@@ -94,10 +94,21 @@ gets the plain per-call behaviour. Within a session:
 - a commit's tree is listed once (`git ls-tree -r -t -l`, bounded by
   `TREE_INDEX_BUDGET`; anything odd falls back to the per-path reads), and
   blobs come from one `git cat-file --batch` reader per cache repo (at most
-  12 open, killed through `process-group.mjs` on timeout and at close). A
+  12 open, ended through `process-group.mjs` on timeout and at close). A
   command that ends normally awaits the close, so its readers are reaped
-  before it exits; a `process.exit` (every refusal) group-kills them in the
+  before it exits; a `process.exit` (every refusal) ends them in the
   exit hook (`closeNow`), and the system reaps them once the process is gone;
+- every git child is ended with SIGTERM first and SIGKILL only after a
+  grace (`terminateGroup`): git removes its own lock files on SIGTERM, and
+  a git killed outright leaves one that blocks every later write. The
+  SIGKILL goes to the whole group even when git itself has exited, so a
+  descendant that ignores SIGTERM (ssh, a remote helper) still ends; but
+  never once the child's `close` has fired (`watchGroup`): git and every
+  descendant holding its pipes are then gone, and the group id may already
+  belong to an unrelated process. So git's pipes are drained on a kill,
+  never destroyed: `close` must keep waiting for such a descendant. The exit
+  hook cannot wait for a timer, so it waits a bounded 200 ms synchronously
+  (`reapOnExit`);
 - discovery reads members eight at a time (`DISCOVERY_CONCURRENCY`) with
   serial results: declaration order, the first failure in that order. The
   observations and the member reads are two pools, so a discovery runs at
@@ -120,6 +131,30 @@ caches need git 2.45 or later (`PARTIAL_FETCH_GIT`, the first git with
 `GIT_NO_LAZY_FETCH`): with an older git every cache fetches whole trees, a
 partial cache it meets is deleted and fetched again whole, and the same
 notice says why.
+
+Every write to a cache repo (its `git init`, config, fetches and pins) holds
+the repo's cross-process write lock, `<cache>/.locks/<repo>.lock`
+(`withCacheWriteLock`): an exclusive file holding `{pid, token, startedAt}`,
+waited for while its holder lives (bounded by a whole fetch, then
+`reason: "cache"` naming the pid), reclaimed when the holder is dead, and
+released only by its owner. Reclaimers take a short guard,
+`<lock>.reclaim`, and check under it that the lock is still the dead
+record before removing it, so a reclaimer that paused cannot delete a
+live process's new lock. A guard whose holder died is never removed
+automatically (that removal would race the same way, with nothing left to
+serialize it): every write refuses at once, `reason: "cache"` naming the
+guard (`details.guard`), until a human removes it once no oats process is
+running. Reads take no lock. A cache repo appears whole
+(`git init` into a private directory, then a rename), so processes making
+the first fetch of one remote all succeed. A git `*.lock` a write meets is
+judged under that lock (`cacheGit`): older oats kernels take no write lock,
+so it is retried briefly, then removed only when it is inside the cache
+repo, a regular file and older than the longest fetch
+(`GIT_FETCH_TIMEOUT_MS` plus a margin): a git killed mid-write. A removal
+is said once as a warning. Anything else is `reason: "cache"` naming the
+file and when it is safe to remove; so is any other local write failure
+(a `FETCH_HEAD` git cannot open, a read-only or full disk), with git's own
+words.
 
 Across commands, `memoAtCommit` keeps parsed reads under
 `<cache>/.parsed/<kernel fingerprint>/`, keyed by (repo key, full commit,
