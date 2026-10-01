@@ -80,6 +80,23 @@ Host-owned provider values (absolute paths, state roots) go under `settings:` in
 `oats-local.yaml` afterwards — never in the workspace file, whose schema refuses
 them. Do not commit `oats-local.yaml`.
 
+**Trust the deployment once, for unattended launches.** Claude Code and Codex
+ask before they work in a folder they have not seen, and every instance home is
+new: a launch that stops at that prompt waits for a human. OATS never writes
+the harnesses' configuration, so trust the deployment directory yourself, once
+per harness you use:
+
+```bash
+cd ~/acme && claude    # accept the folder-trust prompt, then quit
+cd ~/acme && codex     # choose "Trust and continue", then quit
+```
+
+One entry covers every instance home under the deployment
+([souls-and-instances.md](souls-and-instances.md#unattended-launches-folder-trust)
+says how each harness applies it). Until then, a claude or codex spawn warns
+that its session will stop at the folder-trust prompt, and so does
+`oats readiness`.
+
 ## 3. Give the deployment a team
 
 With a messaging capability in the soul's composition, every instance lives in
@@ -117,8 +134,9 @@ oats spawn backend-expert --purpose first-fix --task "Fix one small issue, run t
 oats status
 ```
 
-`--harness pi|claude|codex` picks the harness; complete any native folder
-trust or authentication prompt in the printed session. The instance home is
+`--harness pi|claude|codex` picks the harness; complete any native
+authentication prompt in the printed session (folder trust is the one-time step
+in section 2). The instance home is
 `agents/<soul>/instances/<instance>/`; `work/` is its repository view;
 `.oats/modules/<cap>/` are the copied capabilities and `.agents/skills/<skill>/` their skills;
 `instance.json` records `modules` (from, commit, digest), `providers` and

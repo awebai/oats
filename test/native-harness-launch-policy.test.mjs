@@ -16,6 +16,11 @@ const hooks = () => ({ launch: {}, env: {}, contributions: [] });
 const recipe = (harness, extra = {}) => ({ version: LAUNCH_RECIPE_VERSION, harness,
   executable: process.execPath, args: [], env: {}, model: null, hooks: hooks(), ...extra });
 const prompt = '"$(cat TASK.md)"';
+// Every kernel codex launch turns off Codex's startup update prompt (#341).
+const CODEX_NO_UPDATE = ["-c", "check_for_update_on_startup=false"];
+// ... and hands its tool commands the instance env the launch prefix sets (#342).
+const codexToolEnv = (home, instance) => [["OATS_INSTANCE", instance], ["OATS_INSTANCE_HOME", home], ["PI_AGENT_INSTANCE", instance], ["PI_AGENT_HOME", home]]
+  .flatMap(([name, value]) => ["-c", `shell_environment_policy.set.${name}=${JSON.stringify(value)}`]);
 function fixture(t) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "oats-native-permission-policy-")));
   const home = join(root, "unattended-helper"); mkdirSync(home);
@@ -37,8 +42,8 @@ function planned(f, harness, { configYolo, selectionYolo, frozen, capabilities =
   assert.deepEqual(input, before, "planner does not rewrite supplied configuration or recorded metadata");
   return result;
 }
-function nativeArgv(harness, home) {
-  return harness === "claude" ? ["--", prompt] : ["--cd", home, "--", prompt];
+function nativeArgv(harness, home, instance = "unattended-helper") {
+  return harness === "claude" ? ["--", prompt] : ["--cd", home, ...CODEX_NO_UPDATE, ...codexToolEnv(home, instance), "--", prompt];
 }
 function assertNormal(command, harness, home) {
   const described = describeLaunchCommand(command);
@@ -80,8 +85,7 @@ test("explicit request or selected configuration enables bypass, explicit false 
         assert.ok(argv.includes("--dangerously-skip-permissions")); assert.ok(!argv.includes("--yolo"));
       } else {
         assert.ok(argv.includes("--yolo"));
-        const config = argv.indexOf("-c"); assert.notEqual(config, -1);
-        assert.equal(argv[config + 1], `projects={${JSON.stringify(f.home)}={trust_level="trusted"}}`);
+        assert.ok(argv.includes(`projects={${JSON.stringify(f.home)}={trust_level="trusted"}}`), JSON.stringify(argv));
       }
     }
     for (const selectionYolo of [false, "false"]) {
@@ -97,7 +101,7 @@ test("native user-selected settings/profile/plugin arguments are preserved, not 
     const args = harness === "claude" ? ["--settings", "/fixture/native-settings.json", "--plugin-dir", "/fixture/native-plugin"] : ["--profile", "user-selected"];
     const input = recipe(harness, { args, yolo: false }), before = structuredClone(input);
     const argv = describeLaunchCommand(renderLaunchRecipe(input, f)).argv;
-    assert.deepEqual(argv, [...(harness === "codex" ? ["--cd", f.home] : []), ...args, "--", prompt]);
+    assert.deepEqual(argv, [...(harness === "codex" ? ["--cd", f.home, ...CODEX_NO_UPDATE, ...codexToolEnv(f.home, f.instance)] : []), ...args, "--", prompt]);
     assert.deepEqual(input, before, "native arguments are not stripped or rewritten");
   }
 });
@@ -213,7 +217,7 @@ test("ordinary native launch retains complete OATS homes for pi, Claude and Code
       if (harness !== "pi") assert.equal(Object.hasOwn(meta.composition.materialized.harnessPosture, "curtailed"), false);
       const argv = describeLaunchCommand(meta.command).argv;
       if (harness === "pi") assert.match(meta.command, /--append-system-prompt/);
-      else assert.deepEqual(argv, [...(harness === "codex" ? ["--cd", home] : []), "--", '"$(cat TASK.md)"']);
+      else assert.deepEqual(argv, [...(harness === "codex" ? ["--cd", home, ...CODEX_NO_UPDATE, ...codexToolEnv(home, instance)] : []), "--", '"$(cat TASK.md)"']);
       assert.doesNotMatch(meta.command, /--no-skills|--no-context-files|dangerously-skip-permissions|--yolo|trust_level|oats-pi-sdk-host/);
       const retired = retireInstance(fx.root, result.instance);
       assert.equal(existsSync(home), false); assert.equal(retired.worktreeRemoved, false);

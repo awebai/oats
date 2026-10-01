@@ -204,6 +204,70 @@ the harness's own precedence. The `CLAUDE.md → AGENTS.md` and
 `.claude/skills → ../.agents/skills` aliases are kept. OATS composes
 instructions and pins model/provider settings; it excludes nothing.
 
+### Unattended launches: folder trust
+
+Claude Code and Codex ask before they work in a folder they have not seen, and
+every instance home is new. A launch stopped at that prompt waits for a human,
+so the operator trusts the **deployment directory** (where `oats-local.yaml`
+is) once per harness. OATS only reads the harnesses' configuration; it never
+writes it.
+
+- **Claude Code** looks for an accepted entry for its folder or an ancestor, up
+  to a git root. Instance homes are not inside a git repository, so one entry
+  for the deployment covers every home under it. To add it, run `claude` in the
+  deployment once and accept the prompt. That records
+  `projects["<deployment>"].hasTrustDialogAccepted` in `~/.claude.json`
+  (`$CLAUDE_CONFIG_DIR/.claude.json` when that is set).
+- **Codex** applies only an exact entry: a trusted parent does not cover the
+  folders below it. To give the operator's consent, run `codex` in the
+  deployment once and choose "Trust and continue". That records
+  `[projects."<deployment>"] trust_level = "trusted"` in
+  `~/.codex/config.toml` (`$CODEX_HOME/config.toml`). With that entry, or one
+  for an ancestor of the deployment, each codex launch trusts its own new home
+  for that session (`-c 'projects={"<home>"={trust_level="trusted"}}'`) and
+  leaves the config file unchanged. A yolo launch always does this. The plan
+  re-reads the entry at every start.
+- Every codex launch also passes `-c check_for_update_on_startup=false`, so
+  Codex's "Update available" choice cannot block it.
+
+When a claude or codex home is not covered, the spawn says so (text and
+`--json` `warnings`): `the <harness> session will stop at its folder-trust
+prompt: trust <deployment> once (<the step>)`. `oats readiness` reports the
+same in `checks.configured` (code `harness-trust`, not required).
+
+### Codex tool commands and the instance environment
+
+Codex can run tool commands under its shared app-server daemon rather than as
+children of the session OATS launched, and then they do not inherit the
+session's environment. Codex (0.157.1) runs a session that has `-c` overrides
+embedded, without the daemon, and every kernel codex launch has them, so an
+OATS codex session does not appear in `codex agents`. So that the environment
+does not depend on this, a codex launch also sets it for tool
+commands explicitly with `-c shell_environment_policy.set.<NAME>="<value>"`:
+
+- the instance: `OATS_INSTANCE`, `OATS_INSTANCE_HOME`, `PI_AGENT_INSTANCE`,
+  `PI_AGENT_HOME`;
+- every capability's launch environment (for example the messaging
+  provider's identity home and delivery mode);
+- the launch configuration's literal values. A reference's value never goes
+  on a command line.
+
+`PATH` comes from the launching shell, with the home's `.oats/bin` first, so
+only the execution passes it; the persisted command does not carry it. Codex
+runs tool commands through the user's login shell, and a profile that prepends
+directories puts those entries ahead of `.oats/bin`. A second `oats` in such a
+directory is found first.
+
+A capability command (`oats <namespace> …`) run with none of
+`OATS_INSTANCE_HOME`, `PI_AGENT_HOME` or `OATS_HOME` set finds its instance
+from the working directory. It uses the nearest enclosing directory laid out as
+`<agents-root>/<soul>/instances/<name>` whose `instance.json` records that
+name, and validates it like a home named by the environment. The walk uses the
+directory as the shell names it (`$PWD`). That matters for an attached
+instance, whose `work/` links into its owner's tree: below it, the physical
+path is the owner's. A process that has no `$PWD` there would act as the
+owner, so an attached instance runs capability commands from its home.
+
 ## Lifecycle
 
 ### Spawn

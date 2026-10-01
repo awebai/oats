@@ -8,7 +8,9 @@
     "work": "checkout",
     "branch": "main",
     "launched": false,
-    "warnings": [],
+    "warnings": [
+      "the claude session will stop at its folder-trust prompt: trust <base>/deployment once (run `claude` in <base>/deployment and accept its folder-trust prompt; one entry covers every instance home under it)"
+    ],
     "tmux": {
       "session": "oats-golden",
       "window": "dev-claude-checkout-knone-mnone"
