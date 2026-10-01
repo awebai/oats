@@ -31,7 +31,8 @@ const warned = (r, ...sources) => {
   assert.equal(w[0].key, "runtime"); assert.equal(w[0].replacement, "harness");
   assert.match(w[0].message, /^`runtime` was renamed to `harness` in 0\.27\.0; the old name is still read here \(.+\) and a later release drops it$/);
   for (const s of sources) assert.ok(w[0].sources.some((x) => s instanceof RegExp ? s.test(x) : x.includes(s)), `${s} in ${JSON.stringify(w[0].sources)}`);
-  assert.equal(r.stderr.includes("oats: warning"), false, "delivered in the envelope, not again on stderr");
+  // Only this warning is the test's subject: another (the older-git partial-cache notice, #389) may print.
+  assert.equal(r.stderr.includes("oats: warning: `runtime` was renamed"), false, "delivered in the envelope, not again on stderr");
   return w[0];
 };
 const quiet = (r) => assert.equal(Object.hasOwn(r.json(), "warnings"), false, r.stdout);

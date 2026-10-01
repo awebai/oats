@@ -12,6 +12,11 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { v2Deployment, git } from "./helpers/v2-deployment.mjs";
 import { parseRepoRef, SMALL_BLOB_LIMIT } from "../lib/remote.mjs";
+import { PARTIAL_GIT, olderGitNotice } from "./helpers/partial-git.mjs";
+
+/** The one warning per repository a git older than PARTIAL_FETCH_GIT gives (#389): it never tries a partial fetch. */
+const olderGitWarning = (url) => `oats: warning: ${olderGitNotice(url)}`;
+const warningsOf = (stderr) => stderr.split("\n").filter((l) => l.startsWith("oats: warning")).sort();
 
 const ok = (r, what) => { assert.equal(r.status, 0, `${what}: ${r.stdout}${r.stderr}`); const j = r.json(); assert.equal(j.ok, true, `${what}: ${r.stdout}`); return j.result; };
 /** `n` bytes that do not compress, the same for the same seed. */
@@ -90,23 +95,24 @@ function runScenario({ fx }) {
   return stderr.join("");
 }
 
-test("served with partial fetches: everything works, and the cache never receives the files nothing reads", (t) => {
+test("served with partial fetches: everything works, and the cache never receives the files nothing reads (an older git: whole trees, one warning per repository)", (t) => {
   const s = fixture({ partial: true }); t.after(s.fx.cleanup);
   const stderr = runScenario(s);
-  assert.equal(stderr.includes("oats: warning"), false, stderr);
-  assert.deepEqual(s.holds(s.memberCache, ["assets/huge-1.bin", "assets/huge-2.bin", "capabilities/tools/data/model.bin"].map(s.memberBlob)), [false, false, true]);
-  assert.deepEqual(s.holds(s.pkgCache, ["media/video-1.bin", "media/video-2.bin", "oats-package/tooling/deep/acme-tool/data/weights.bin"].map(s.pkg.blob)), [false, false, true]);
-  for (const cache of [s.memberCache, s.pkgCache]) assert.equal(git(cache, "config", "--get", "oats.fetch"), "partial");
+  if (PARTIAL_GIT) assert.equal(stderr.includes("oats: warning"), false, stderr);
+  else assert.deepEqual(warningsOf(stderr), [olderGitWarning(parseRepoRef(s.fx.ref).url), olderGitWarning(parseRepoRef(s.pkg.url).url)].sort());
+  // An older git (#389) receives every file: the fallback is the assertion there.
+  const kept = PARTIAL_GIT ? [false, false, true] : [true, true, true];
+  assert.deepEqual(s.holds(s.memberCache, ["assets/huge-1.bin", "assets/huge-2.bin", "capabilities/tools/data/model.bin"].map(s.memberBlob)), kept);
+  assert.deepEqual(s.holds(s.pkgCache, ["media/video-1.bin", "media/video-2.bin", "oats-package/tooling/deep/acme-tool/data/weights.bin"].map(s.pkg.blob)), kept);
+  for (const cache of [s.memberCache, s.pkgCache]) assert.equal(git(cache, "config", "--get", "oats.fetch"), PARTIAL_GIT ? "partial" : "full");
 });
 
 test("served without partial fetches: everything works on whole trees, and each repository is reported once", (t) => {
   const s = fixture({ partial: false }); t.after(s.fx.cleanup);
   const stderr = runScenario(s);
-  const warnings = stderr.split("\n").filter((l) => l.startsWith("oats: warning"));
-  assert.deepEqual(warnings.sort(), [
-    `oats: warning: ${parseRepoRef(s.fx.ref).url} does not serve partial fetches; OATS fetches whole trees from it`,
-    `oats: warning: ${parseRepoRef(s.pkg.url).url} does not serve partial fetches; OATS fetches whole trees from it`,
-  ].sort());
+  // An older git (#389) never asks the server, so its own warning stands in for the server's.
+  const served = (url) => PARTIAL_GIT ? `oats: warning: ${url} does not serve partial fetches; OATS fetches whole trees from it` : olderGitWarning(url);
+  assert.deepEqual(warningsOf(stderr), [served(parseRepoRef(s.fx.ref).url), served(parseRepoRef(s.pkg.url).url)].sort());
   assert.deepEqual(s.holds(s.memberCache, ["assets/huge-1.bin"].map(s.memberBlob)), [true], "the whole tree came");
   for (const cache of [s.memberCache, s.pkgCache]) assert.equal(git(cache, "config", "--get", "oats.fetch"), "full");
 });
