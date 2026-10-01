@@ -102,7 +102,11 @@ gets the plain per-call behaviour. Within a session:
   grace (`terminateGroup`): git removes its own lock files on SIGTERM, and
   a git killed outright leaves one that blocks every later write. The
   SIGKILL goes to the whole group even when git itself has exited, so a
-  descendant that ignores SIGTERM (ssh, a remote helper) still ends. The exit
+  descendant that ignores SIGTERM (ssh, a remote helper) still ends; but
+  never once the child's `close` has fired (`watchGroup`): git and every
+  descendant holding its pipes are then gone, and the group id may already
+  belong to an unrelated process. So git's pipes are drained on a kill,
+  never destroyed: `close` must keep waiting for such a descendant. The exit
   hook cannot wait for a timer, so it waits a bounded 200 ms synchronously
   (`reapOnExit`);
 - discovery reads members eight at a time (`DISCOVERY_CONCURRENCY`) with
