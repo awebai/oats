@@ -293,3 +293,17 @@ test('Spec E: the dialog keys are listed in the shortcuts editor under Spawn dia
     assert.equal(findConflict('Mod+2', 'spawn-dialog-local', 'spawn.jumpName', true)?.id, 'spawn.jumpHarness', 'within the dialog, a clash is a clash');
   } finally { release(); }
 });
+
+test('Spec E: a section key from an open Harness picker closes the picker and moves on; Escape then closes the dialog as usual', async t => {
+  const u = await mountSpawn(t);
+  await u.open();
+  const trigger = u.q('.spawn-run label:first-child .spawn-choice-trigger'), menu = () => u.q('#spawn-runtime-choices');
+  trigger.focus(); key(u, trigger, 'Enter'); await settle();
+  assert.equal(menu().hidden, false, 'the picker is open');
+  const e = key(u, u.doc.activeElement, '6', { ctrlKey: true });
+  assert.equal(e.defaultPrevented, true);
+  assert.equal(menu().hidden, true, 'closed by the jump, not left behind');
+  assert.equal(u.doc.activeElement, u.q('.ftask'), 'focus moved on (not restored to the picker trigger)');
+  key(u, u.q('.ftask'), 'Escape'); await settle();
+  assert.equal(u.dialog(), null, 'no picker is open, so Escape closes the dialog');
+});

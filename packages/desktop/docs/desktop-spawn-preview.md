@@ -417,12 +417,20 @@ they are when, at the moment it runs:
 - they did something explicit since the press: opened or activated another tab
   or view, used the sidebar, switched workspace, or the connection changed. The
   press takes a selection-ownership ticket (`watch()`: unlike `begin()` it
-  cancels nothing pending) after the dialog's own focus return, and every
-  explicit action supersedes it;
+  cancels nothing pending) and the connection generation, after the dialog's
+  own focus return, and every explicit action supersedes the ticket;
 - focus is where they type: a text field, a textarea, contentEditable, or a
   terminal (its input or its pane);
 - a modal or an overlay is open: a dialog, the palette, Quick Open, a
   lifecycle confirmation, the shortcuts editor, an open popover menu.
+
+The open itself is asynchronous (the roster read, the terminal's key and
+readiness), so the same holds all through it: every step of the open, and the
+terminal's readiness focus, goes on only while the connection and workspace are
+the same, no overlay is open and focus is where it was at arrival (or nowhere,
+or in the terminal being opened). Otherwise the open stops, nothing is selected
+and the row says **New**; so does any open that does not end with that terminal
+selected (refused, superseded or failed).
 
 Only a spawn pressed in this window is followed; one recovered after a reload is
 only marked **New**. Remote (server) spawns keep their own flow.

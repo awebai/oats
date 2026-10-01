@@ -185,12 +185,16 @@ const spawnFollow = createSpawnFollow({
   overlayOpen: () => modalOpen() || (() => { try { return !!document.querySelector("[popover]:popover-open"); } catch { return false; } })(),
   activeElement: () => document.activeElement,
   inTerminal: el => !!el?.closest?.(".xterm, .term-wrap") || [...tabs.values()].some(t => t.kind === "terminal" && t.paneEl.contains(el)),
+  ownTerminal: (el, row) => [...tabs.values()].some(t => t.kind === "terminal" && t.instanceRef && instanceId(t.instanceRef) === instanceId(row) && t.paneEl.contains(el)),
   currentWorkspace, connection: () => connectionGeneration,
-  open: (row, workspace) => {
+  // Every step of the open, and its terminal's readiness focus, is gated by `valid`; true only when that
+  // terminal ended up the selected tab (a refused or superseded open leaves the row New instead).
+  open: async (row, workspace, valid) => {
     const target = instanceActionTarget(workspace, row, { requireBirth: true });
     if (!target) return false;
-    void openTerminalTab(target, { quiet: true, expected: target });
-    return true;
+    await openTerminalTab(target, { quiet: true, expected: target, valid });
+    const active = tabs.get(activeTab);
+    return active?.kind === "terminal" && !!active.instanceRef && sameInstanceActionTarget(target, active.instanceRef, workspace);
   },
   markNew: (row, workspace) => spawnJobs.markNew(workspace, row), // its change repaints the roster
   announce: text => { if (contextRosterEl) announceSpawn(text); },

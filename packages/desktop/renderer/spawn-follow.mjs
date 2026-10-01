@@ -11,10 +11,12 @@
  * Never a yank. The operator is NOT taken there when, at that moment, any of these holds:
  * - they did something explicit since the press: opened or activated another tab or view, used the
  *   sidebar, switched workspace (the shell's selection-ownership ticket, taken at the press without
- *   cancelling anything pending, `watch()`), or the connection changed;
+ *   cancelling anything pending, `watch()`), or the connection changed since the press;
  * - focus is where they type: a text field, a textarea, contentEditable, or a terminal;
  * - a modal or an overlay is open (a dialog, the palette, Quick Open, a confirmation, the shortcuts
  *   editor, an open popover menu).
+ * The open itself is asynchronous; it stops, and the row says New instead, if during it focus moves
+ * anywhere but the opening terminal, an overlay opens, the operator navigates or the connection changes.
  * Only a spawn pressed in this window is followed: a recovered one (after a reload) is only marked. */
 
 // <input> types that take no typing: focus on one of them is not "in the middle of typing".
@@ -29,39 +31,55 @@ export function typingTarget(el) {
   return el.isContentEditable === true;
 }
 
+const settledFocus = el => !el || el.tagName === 'BODY' || el.tagName === 'HTML';
+
 /**
  * @param watch()  a ticket true while nothing explicit happened since it was taken
  * @param overlayOpen()  a modal or overlay is open
  * @param activeElement()  where focus is now
  * @param inTerminal(el)  `el` is a terminal (its input or its pane)
+ * @param ownTerminal(el, row)  `el` is in the terminal of `row` (the one being opened)
  * @param currentWorkspace(), connection()  the workspace on screen and the connection generation
- * @param open(row, workspace)  open the row's terminal tab; false when it cannot be addressed
+ * @param open(row, workspace, valid)  open the row's terminal tab, asynchronously; every step of it (and its
+ *   readiness focus) is gated by valid(). Resolves true only when that terminal ended up the selected tab.
  * @param markNew(row, workspace)  the row wears "New" until it or its tab is first opened
  * @param announce(text)  the roster's polite live region
  */
 export function createSpawnFollow({ watch, overlayOpen = () => false, activeElement = () => null, inTerminal = () => false,
-  currentWorkspace = () => '', connection = () => 0, open, markNew = () => {}, announce = () => {} }) {
-  const follows = new Map(); // job id → its press's ticket
+  ownTerminal = () => false, currentWorkspace = () => '', connection = () => 0, open, markNew = () => {}, announce = () => {} }) {
+  const follows = new Map(); // job id → { owns: its press's ticket, connection: the connection at the press }
+  const overlay = () => { try { return !!overlayOpen(); } catch { return true; } };
+  const focused = () => { try { return { el: activeElement() }; } catch { return null; } };
   /** Whether the operator is busy right now (typing, in a terminal, an overlay open). */
   const busy = () => {
-    let el = null;
-    try { el = activeElement(); } catch { return true; }
-    try { if (overlayOpen()) return true; } catch { return true; }
-    return typingTarget(el) || !!inTerminal(el);
+    const at = focused();
+    return !at || overlay() || typingTarget(at.el) || !!inTerminal(at.el);
   };
+  const followed = press => !!press && !!press.owns() && press.connection === connection();
   return {
     /** The press of job `id` just closed the dialog: follow it, unless something newer happens. */
-    follow(id) { if (id) follows.set(id, watch()); },
-    /** Whether job `id` is followed (and nothing explicit happened since its press). */
-    following: id => !!follows.get(id)?.(),
+    follow(id) { if (id) follows.set(id, { owns: watch(), connection: connection() }); },
+    /** Whether job `id` is followed (nothing explicit happened and the connection held since its press). */
+    following: id => followed(follows.get(id)),
     /** The created instance of job `id` is running in the roster. `complete` false: a partial spawn, whose
-     * own notification already spoke. Returns 'opened' (the operator was taken there), 'marked' (its row
+     * own notification already spoke. Resolves 'opened' (the operator was taken there), 'marked' (its row
      * says New) or 'quiet' (a partial spawn not followed: nothing more to say). */
-    arrived(row, workspace, epoch, { id = null, complete = true } = {}) {
-      const owns = id ? follows.get(id) : null;
+    async arrived(row, workspace, epoch, { id = null, complete = true } = {}) {
+      const press = id ? follows.get(id) : null;
       if (id) follows.delete(id);
-      const go = !!owns?.() && workspace === currentWorkspace() && epoch === connection() && !busy();
-      const opened = go && open(row, workspace) === true;
+      let opened = false;
+      if (followed(press) && epoch === press.connection && workspace === currentWorkspace() && !busy()) {
+        // The open is asynchronous (the roster read, the key, the terminal's readiness): it goes on only while
+        // the moment is still the operator's: the same connection and workspace, no overlay, and focus where it
+        // was (or nowhere, or in the terminal being opened). Navigating supersedes the open's own ticket.
+        const origin = focused()?.el ?? null;
+        const valid = () => {
+          if (connection() !== press.connection || currentWorkspace() !== workspace || overlay()) return false;
+          const at = focused();
+          return !!at && (at.el === origin || settledFocus(at.el) || !!ownTerminal(at.el, row));
+        };
+        try { opened = (await open(row, workspace, valid)) === true && valid(); } catch { opened = false; }
+      }
       if (!complete) return opened ? 'opened' : 'quiet';
       if (!opened) markNew(row, workspace);
       announce(`${row.instance} spawned`);

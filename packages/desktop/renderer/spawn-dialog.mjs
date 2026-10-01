@@ -1400,6 +1400,9 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
    * False when the section is not there (Teams not offered, say): focus stays. */
   function jump(target) {
     if (!alive) return false;
+    // An open Harness or Model picker closes first (its focus is not restored: focus moves on), so Escape
+    // afterwards still closes a picker before the dialog only when one is shown.
+    models.close(); runtimePicker.close();
     if (target === 'advanced') {
       advanced.open = !advanced.open;
       const to = advanced.open ? firstAdvanced() || advancedSummary : advancedSummary;
