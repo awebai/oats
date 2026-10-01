@@ -209,7 +209,7 @@
               "file": "TASK.md"
             }
           },
-          "command": "OATS_INSTANCE='dev-claude-attached-kstub-mnone' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mnone' PI_AGENT_INSTANCE='dev-claude-attached-kstub-mnone' PI_AGENT_HOME='<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mnone' '<base>/bin/claude' -- \"$(cat TASK.md)\"",
+          "command": "OATS_INSTANCE='dev-claude-attached-kstub-mnone' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mnone' '<base>/bin/claude' -- \"$(cat TASK.md)\"",
           "createdAt": "<createdAt>",
           "modules": [
             {
@@ -461,7 +461,7 @@
               "file": "TASK.md"
             }
           },
-          "command": "OATS_INSTANCE='dev-owner' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-owner' PI_AGENT_INSTANCE='dev-owner' PI_AGENT_HOME='<base>/deployment/agents/dev/instances/dev-owner' '<base>/bin/pi' --append-system-prompt '<base>/deployment/agents/dev/instances/dev-owner/AGENTS.md' --approve --name 'dev-owner' '@TASK.md'",
+          "command": "OATS_INSTANCE='dev-owner' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-owner' '<base>/bin/pi' --append-system-prompt '<base>/deployment/agents/dev/instances/dev-owner/AGENTS.md' --approve --name 'dev-owner' '@TASK.md'",
           "createdAt": "<createdAt>",
           "modules": [
             {

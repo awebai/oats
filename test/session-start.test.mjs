@@ -16,9 +16,9 @@ const bin = join(here, "..", "bin", "oats.mjs");
 const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 
 // The shapes spawn renders today (lib/core.mjs launch command), verbatim in structure.
-const claudeCmd = (home, model) => `OATS_INSTANCE='n' OATS_INSTANCE_HOME=${shq(home)} PI_AGENT_INSTANCE='n' PI_AGENT_HOME=${shq(home)} AWEB_DELIVERY='session' '/opt/homebrew/bin/claude' --dangerously-skip-permissions${model ? ` --model ${shq(model)}` : ""} --dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace -- "$(cat TASK.md)"`;
-const codexCmd = (home) => `OATS_INSTANCE='n' OATS_INSTANCE_HOME=${shq(home)} PI_AGENT_INSTANCE='n' PI_AGENT_HOME=${shq(home)} '/opt/homebrew/bin/codex' --cd ${shq(home)} --yolo -c ${shq(`projects={${JSON.stringify(home)}={trust_level="trusted"}}`)} -- "$(cat TASK.md)"`;
-const piCmd = (home) => `OATS_INSTANCE='n' OATS_INSTANCE_HOME=${shq(home)} PI_AGENT_INSTANCE='n' PI_AGENT_HOME=${shq(home)} '/opt/homebrew/bin/pi' --no-skills --skill ${shq(join(home, ".agents", "skills"))} --no-context-files --no-prompt-templates --append-system-prompt ${shq(join(home, "AGENTS.md"))} --approve --name 'n' '@TASK.md'`;
+const claudeCmd = (home, model) => `OATS_INSTANCE='n' OATS_INSTANCE_HOME=${shq(home)} AWEB_DELIVERY='session' '/opt/homebrew/bin/claude' --dangerously-skip-permissions${model ? ` --model ${shq(model)}` : ""} --dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace -- "$(cat TASK.md)"`;
+const codexCmd = (home) => `OATS_INSTANCE='n' OATS_INSTANCE_HOME=${shq(home)} '/opt/homebrew/bin/codex' --cd ${shq(home)} --yolo -c ${shq(`projects={${JSON.stringify(home)}={trust_level="trusted"}}`)} -- "$(cat TASK.md)"`;
+const piCmd = (home) => `OATS_INSTANCE='n' OATS_INSTANCE_HOME=${shq(home)} '/opt/homebrew/bin/pi' --no-skills --skill ${shq(join(home, ".agents", "skills"))} --no-context-files --no-prompt-templates --append-system-prompt ${shq(join(home, "AGENTS.md"))} --approve --name 'n' '@TASK.md'`;
 
 test("persisted launch commands re-render with a model and keep everything else byte-identical", () => {
   const home = "/tmp/it's home";
@@ -39,7 +39,7 @@ test("persisted launch commands re-render with a model and keep everything else 
   }
   const existing = claudeCmd(home, "claude-x");
   assert.equal(withLaunchModel(existing, "claude-y"), existing.replace("'claude-x'", "'claude-y'"));
-  assert.equal(parseLaunchCommand(existing).tokens.filter((t) => t.kind === "env").length, 5);
+  assert.equal(parseLaunchCommand(existing).tokens.filter((t) => t.kind === "env").length, 3);
 });
 
 test("commands OATS did not render are refused, never rewritten by substring", () => {

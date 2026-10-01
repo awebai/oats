@@ -244,7 +244,7 @@
               "file": "TASK.md"
             }
           },
-          "command": "OATS_INSTANCE='dev-claude-attached-knone-mstub' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-claude-attached-knone-mstub' PI_AGENT_INSTANCE='dev-claude-attached-knone-mstub' PI_AGENT_HOME='<base>/deployment/agents/dev/instances/dev-claude-attached-knone-mstub' GOLDEN_BROKER_ENDPOINT='<redacted>' '<base>/bin/claude' --golden-channel stub -- \"$(cat TASK.md)\"",
+          "command": "OATS_INSTANCE='dev-claude-attached-knone-mstub' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-claude-attached-knone-mstub' GOLDEN_BROKER_ENDPOINT='<redacted>' '<base>/bin/claude' --golden-channel stub -- \"$(cat TASK.md)\"",
           "createdAt": "<createdAt>",
           "modules": [
             {
@@ -531,7 +531,7 @@
               "file": "TASK.md"
             }
           },
-          "command": "OATS_INSTANCE='dev-owner' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-owner' PI_AGENT_INSTANCE='dev-owner' PI_AGENT_HOME='<base>/deployment/agents/dev/instances/dev-owner' GOLDEN_BROKER_ENDPOINT='<redacted>' '<base>/bin/pi' --append-system-prompt '<base>/deployment/agents/dev/instances/dev-owner/AGENTS.md' --approve --name 'dev-owner' '@TASK.md' --golden-channel stub",
+          "command": "OATS_INSTANCE='dev-owner' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-owner' GOLDEN_BROKER_ENDPOINT='<redacted>' '<base>/bin/pi' --append-system-prompt '<base>/deployment/agents/dev/instances/dev-owner/AGENTS.md' --approve --name 'dev-owner' '@TASK.md' --golden-channel stub",
           "createdAt": "<createdAt>",
           "modules": [
             {

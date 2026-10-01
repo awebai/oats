@@ -12,7 +12,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 export default function (pi: ExtensionAPI) {
-  const agentHome = process.env.PI_AGENT_HOME;
+  const agentHome = process.env.OATS_INSTANCE_HOME;
   const isInstance = !!agentHome && existsSync(join(agentHome, "instance.json"));
 
   pi.on("resources_discover", async () => {

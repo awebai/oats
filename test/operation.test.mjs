@@ -102,7 +102,7 @@ test("operation run resolves the home's provider from its modules, runs the prov
   assert.equal(inv.cmd, "digest"); assert.deepEqual(inv.rest, ["--depth", "2", "--json"]); assert.equal(inv.cwd, home);
   assert.equal(inv.env.OATS_HOME, home); assert.equal(inv.env.OATS_INSTANCE, instance); assert.equal(inv.env.OATS_OPERATION, "knowledge:harvest"); assert.equal(inv.env.OATS_CAPABILITY, "oats.okf");
   assert.equal(inv.env.OATS_AGENT, "release-manager"); assert.equal(inv.env.OATS_SOUL, meta.soulDir, "the home's recorded per-commit soulDir"); assert.equal(inv.env.OATS_ROOT, agentsRoot); assert.equal(inv.env.PI_AGENTS_ROOT, agentsRoot);
-  assert.equal(inv.env.OATS_CONTEXT, dep); assert.equal(inv.env.OATS_WORKSPACE, dep); assert.equal(inv.env.OATS_EVENT, null); assert.equal(inv.env.PI_AGENT_HOME, home);
+  assert.equal(inv.env.OATS_CONTEXT, dep); assert.equal(inv.env.OATS_WORKSPACE, dep); assert.equal(inv.env.OATS_EVENT, null); assert.equal(inv.env.PI_AGENT_HOME, null, "no PI_AGENT_* names");
   for (const v of Object.values(inv.env)) assert.ok(!String(v).startsWith("/elsewhere") && v !== "other-seat" && v !== "other", `ambient identity leaked: ${v}`);
   assert.deepEqual(JSON.parse(inv.env.OATS_SETTINGS), meta.providers["oats.okf"], "the home's recorded payload");
   assert.equal(JSON.parse(inv.env.OATS_SETTINGS)["state-dir"], "/tmp/nw-state");

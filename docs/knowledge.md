@@ -220,8 +220,10 @@ identical copies in both role capabilities.
 - **From an instance home**, `oats okf …` runs the home's copy of the module
   with the settings recorded at spawn.
 - **From the deployment directory** (holding `oats-local.yaml`), in a shell
-  without another instance's `OATS_*` identity, every capability command
-  needs `--soul <name>` (`E_BAD_ARGS` without it). The kernel resolves the
+  where neither `OATS_INSTANCE_HOME` nor `OATS_HOME` is set (either one pins
+  the command to that instance home), every capability command needs
+  `--soul <name>` (`E_BAD_ARGS` without it). Inside an instance home, a
+  `--soul` naming another soul is refused (`E_HOME_MISMATCH`). The kernel resolves the
   soul as a spawn would, fetches its module at the locked commit into
   `<deployment>/.oats/modules/` and runs it with the soul's merged settings.
   An unlocked package is `E_PACKAGE_MISSING` until `oats sync`.
