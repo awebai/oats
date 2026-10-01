@@ -20,11 +20,7 @@ members:
 packages:
   oats.framework: v1.4.1
   oats.okf: v4.0.6
-<<<<<<< HEAD
   oats.aweb: v1.17.6
-=======
-  oats.aweb: v1.17.5
->>>>>>> c5fb1922 (oats.okf v4.0.6: mirror + pin (0.34.2))
   oats.jira: v1.0.1
   oats.linear: v1.0.1
   oats.authoring: v1.0.3
