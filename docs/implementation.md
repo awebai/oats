@@ -225,7 +225,7 @@ scaling by call count.
 | `npm test` | every suite under `test/` (`node --test`), through `scripts/run-tests.mjs` |
 | `npm run check` | syntax of every shipped file |
 | `npm run check:pi` | the pi adapter's TypeScript |
-| `npm run validate` | the JSON schemas, the example manifests and configs, and every local link and anchor in the public docs |
+| `npm run validate` | the JSON schemas, the example manifests and configs, every local link and anchor in the public docs, the repository's own `oats-workspace.yaml` and `package-catalog.json` read by the kernel's readers, and no unresolved merge-conflict marker in a tracked text file (`scripts/check-workspace-files.mjs`) |
 | `npm run pack:check` | an `npm pack` dry run of both packages: nothing missing, nothing leaked |
 | `npm run smoke:tarball` | installs the packed tarballs outside the checkout and exercises them |
 
