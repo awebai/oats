@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { retireInstance } from "../lib/core.mjs";
+import { listInstances, retireInstance } from "../lib/core.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 /** A deployment whose retire hook reports incomplete cleanup while `<flags>/stubborn` exists, and records each
@@ -106,10 +106,29 @@ test("(c) a work directory whose admin entry is gone is an incomplete item: the 
   assert.equal(w.runs(), 1, "the hook ran");
   assert.ok((r.rollbackIncomplete || []).some((m) => m.includes(w.work) && /admin entry is missing/.test(m)), JSON.stringify(r.rollbackIncomplete));
   assert.equal(existsSync(join(w.work, "unpushed.txt")), true, "the directory is kept");
+  const row = (await w.fx.inEnv(() => listInstances(w.fx.root, "oats-test-nosuch"))).flatMap((a) => a.instances).find((i) => i.instance === "dev-orphan");
+  assert.ok(row?.rollbackIncomplete, "status shows the home as half-retired, not as an idle instance");
   const again = await w.retire();
   assert.equal(w.runs(), 2, "a retry reaches the hook again");
   assert.ok(again.rollbackIncomplete?.length);
   assert.equal(existsSync(join(w.work, "unpushed.txt")), true);
+  // Once the operator moves the directory out, the retry completes.
+  const moved = join(w.fx.base, "rescued-work");
+  execFileSync("mv", [w.work, moved]);
+  const done = await w.retire();
+  assert.equal(done.rollbackIncomplete, undefined, JSON.stringify(done.rollbackIncomplete));
+  assert.equal(existsSync(w.home), false);
+  assert.equal(existsSync(join(moved, "unpushed.txt")), true);
+});
+
+test("(b) a quarantined worktree that is already gone is reported absent, never as kept", async (t) => {
+  const w = await stubbornInstance(t, "dev-gone");
+  await w.retire();
+  w.git("-C", w.meta.repo, "worktree", "remove", "--force", w.work);
+  const r = await w.retire();
+  assert.ok(r.rollbackIncomplete?.length, "the hook is still outstanding");
+  assert.ok(!r.rollbackIncomplete.some((m) => m.includes("kept for the retry")), JSON.stringify(r.rollbackIncomplete));
+  assert.equal(r.retention?.worktree, "absent");
 });
 
 test("--force with an incomplete hook retains the worktree before the home goes: no admin entry is left dangling", async (t) => {
