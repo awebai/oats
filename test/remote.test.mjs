@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
-  contentDigest, fetchRemoteTree, listRemoteTree, observeRemote, parseRepoRef, readRemoteFile, runGit, FILE_BUDGET, OATS_ALIAS_SYMLINK,
+  contentDigest, fetchRemoteTree, listRemoteTree, observeRemote, parseRepoRef, readRemoteFile, runGit, FILE_BUDGET, GIT_FETCH_TIMEOUT_MS, GIT_TIMEOUT_MS, OATS_ALIAS_SYMLINK,
 } from "../lib/remote.mjs";
 
 const GIT_ENV = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t",
@@ -572,6 +572,26 @@ test("M4: an annotated tag's own OID given as `at` is accepted but the PEELED co
   const treeTagOid = git(f.repo.work, "rev-parse", "refs/tags/treetag-a");
   const bad = await caughtAsync(observeRemote(f.repo.bare, { ...opts, at: treeTagOid }));
   assert.equal(bad.code, "E_REMOTE_UNREADABLE"); assert.equal(bad.details.reason, "not-found"); assert.equal(bad.details.type, "tag");
+});
+
+test("#362: the fetch of a commit gets GIT_FETCH_TIMEOUT_MS (10 minutes); ls-remote keeps GIT_TIMEOUT_MS", async () => {
+  const f = fixture();
+  const timeouts = {};
+  const exec = (args, o) => { for (const verb of ["ls-remote", "fetch"]) if (args.includes(verb)) timeouts[verb] = o?.timeout; return runGit(args, o); };
+  await observeRemote(f.repo.bare, { cacheDir: f.cacheDir, exec });
+  assert.equal(GIT_FETCH_TIMEOUT_MS, 600_000);
+  assert.deepEqual(timeouts, { "ls-remote": GIT_TIMEOUT_MS, fetch: GIT_FETCH_TIMEOUT_MS });
+});
+
+test("#362: a fetch that times out names the operation, the repo and the elapsed time", async () => {
+  const f = fixture();
+  const exec = (args, o) => runGit(args, args.includes("fetch") ? { ...o, timeout: 1 } : o);
+  const e = await caughtAsync(observeRemote(f.repo.bare, { cacheDir: f.cacheDir, exec, at: f.c1 }));
+  assert.equal(e.code, "E_REMOTE_UNREADABLE");
+  assert.equal(e.details.reason, "timeout");
+  assert.equal(e.details.operation, "fetch");
+  assert.equal(typeof e.details.elapsedMs, "number");
+  assert.match(e.message, new RegExp(`^cannot read remote ${f.repo.bare} \\(timeout\\): git fetch of ${f.c1} timed out after \\d+ s$`));
 });
 
 test("L4: a maxBuffer overflow is NOT a timeout; a timeout kill is; an unclassified ls-tree failure becomes E_REMOTE_UNREADABLE { reason: unknown }, never a raw error", async () => {
