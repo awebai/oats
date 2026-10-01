@@ -1029,9 +1029,13 @@ async function readinessCmd() {
 let readSession = null;
 /** The validated `--max-age` seconds (checked once at dispatch: maxAgeRefusal), null when not given. */
 let maxAgeGiven = null;
+/** The remote budget of this command's reads (ms), or null: only the deployment reads `status` and `workspace
+ *  status` have one (remote.mjs READ_REMOTE_BUDGET_MS; OATS_READ_REMOTE_BUDGET_MS overrides it), so they answer
+ *  inside a caller's own limit. Spawn, sync and every other verb read with no deadline. */
+let readBudgetMs = null;
 function commandSession() {
   if (!readSession) {
-    readSession = remoteModule.createReadSession({ maxAge: maxAgeGiven ?? 0 });
+    readSession = remoteModule.createReadSession({ maxAge: maxAgeGiven ?? 0, ...(readBudgetMs !== null ? { deadline: Date.now() + readBudgetMs } : {}) });
     process.on("exit", () => { sayReadNotices(); readSession.closeNow(); });
     for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143], ["SIGHUP", 129]]) process.once(signal, () => {
       readSession.closeNow();
@@ -3429,6 +3433,10 @@ try {
     if (!/^\d{1,5}$/.test(raw) || Number(raw) > remoteModule.MAX_AGE_LIMIT) cmdFail("E_BAD_ARGS", `--max-age takes whole seconds from 0 to ${remoteModule.MAX_AGE_LIMIT}, got ${JSON.stringify(raw)}`);
     maxAgeGiven = Number(raw);
     activateLocalInputs(); // observation.localRevision: every local config read from here on is recorded
+  }
+  if (kernelArgv && !head.includes("--server") && (cmd === "status" || (cmd === "workspace" && head[1] === "status"))) {
+    const override = Number(process.env.OATS_READ_REMOTE_BUDGET_MS);
+    readBudgetMs = Number.isSafeInteger(override) && override > 0 ? override : remoteModule.READ_REMOTE_BUDGET_MS;
   }
   const inherited = ["OATS_RESOLUTION", "OATS_DEPLOYMENT"].filter((k) => process.env[k]);
   if (inherited.length && cmd !== "version") refuse(`this environment carries a captured context (${inherited.join(", ")}): the captured/portable path was removed in 0.26, and nothing is run against the current context in its place — retire the captured home and re-spawn it from the deployment`, { inherited });
