@@ -92,3 +92,19 @@ for (const [commit, title] of [[false, "a failed spawn's rollback deletes the br
     }
   });
 }
+
+test("with --delete-branch only the verified branch goes, even when it is not the recorded one", async (t) => {
+  const w = await worktreeInstance(t, "dev-switched");
+  const first = await w.retire();
+  assert.equal(first.retention.worktree, "retained");
+  // The worktree back under the home on another branch, as an unquiesced launch's quarantine can leave it.
+  const work = join(w.home, "work");
+  execFileSync("git", ["-C", w.meta.repo, "worktree", "move", first.retention.movedTo, work]);
+  execFileSync("git", ["-C", work, "checkout", "-q", "-b", "feature-x"]);
+  const r = await w.retire({ force: true, deleteBranch: true });
+  assert.equal(r.retention.branchDeleted, "feature-x");
+  assert.ok(!(r.forcedIncomplete || []).some((m) => m.includes(w.meta.branch)), JSON.stringify(r.forcedIncomplete));
+  const exists = (b) => { try { execFileSync("git", ["-C", w.meta.repo, "rev-parse", "--verify", "--quiet", `refs/heads/${b}`]); return true; } catch { return false; } };
+  assert.equal(exists("feature-x"), false, "the verified branch is deleted");
+  assert.equal(w.branchTip(), w.tip, "the recorded branch, not targeted, keeps its commit");
+});
