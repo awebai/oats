@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { cliDeploymentRead, DEPLOYMENT_READ_MAX_BUFFER, DEPLOYMENT_READ_TIMEOUT } from '../deployment-read-cli.mjs';
-import { deploymentReadGate, DEPLOYMENT_FEATURES } from '../renderer/deployment-contract.mjs';
+import { deploymentReadGate, DEPLOYMENT_FEATURES, remoteFailureCause, panelErrorCause } from '../renderer/deployment-contract.mjs';
 import { deploymentStatusData, workspaceStatusData } from '../deployment-data.mjs';
 
 const file = name => new URL(`./fixtures/workspace-v2/${name}.json`, import.meta.url);
@@ -195,4 +195,32 @@ test('every package-root module the bundled server imports (transitively) is in 
   visit(new URL('server/oats-web.mjs', pkg));
   assert.ok(rootModules.has('deployment-read-cli.mjs') && rootModules.has('deployment-data.mjs'));
   for (const file of rootModules) assert.ok(config.includes(`"${file}"`), `${file} is packaged`);
+});
+
+/* Spec D: an unreadable remote's bounded cause crosses (reason, and the host of details.url); nothing else. */
+const CACHE_DETAILS = { url: 'https://github.com/awebai/oats.git', key: 'github.com/awebai/oats', reason: 'cache', stage: 'fetch',
+  cacheDir: '/Users/op/.cache/oats/remotes', lock: '/Users/op/.cache/oats/remotes/x/index.lock', holderPid: 4242, guard: '/Users/op/.cache/oats/remotes/x/.reclaim' };
+test('Spec D: E_REMOTE_UNREADABLE keeps its message and only a bounded cause { reason, host } of its details', async () => {
+  const message = 'the remote cache is locked by /Users/op/.cache/oats/remotes/x/index.lock; remove it and retry';
+  const result = await cliDeploymentRead(cli(), input('workspace-status'), { exec: reply({ schemaVersion: 1, ok: false, error: { code: 'E_REMOTE_UNREADABLE', message, details: CACHE_DETAILS } }, { code: 1 }) });
+  assert.deepEqual(result, { ok: false, reason: { code: 'E_REMOTE_UNREADABLE', message, cause: { reason: 'cache', host: 'github.com' } } });
+  assert.doesNotMatch(JSON.stringify(result.reason.cause), /Users|4242|lock|reclaim|stage|key/, 'no path, pid or other field crosses');
+  const plain = await cliDeploymentRead(cli(), input('status'), { exec: reply({ schemaVersion: 1, ok: false, error: { code: 'E_REMOTE_UNREADABLE', message } }, { code: 1 }) });
+  assert.deepEqual(plain, { ok: false, reason: { code: 'E_REMOTE_UNREADABLE', message } }, 'no details: no cause');
+  const other = await cliDeploymentRead(cli(), input('status'), { exec: reply({ schemaVersion: 1, ok: false, error: { code: 'E_WORKSPACE_SCHEMA', message, details: CACHE_DETAILS } }, { code: 1 }) });
+  assert.deepEqual(other, { ok: false, reason: { code: 'E_WORKSPACE_SCHEMA', message } }, 'only an unreadable remote carries a cause');
+});
+
+test('Spec D: remoteFailureCause bounds the reason and derives only a host', () => {
+  assert.deepEqual(remoteFailureCause({ reason: 'network', url: 'git@github.com:awebai/oats.git' }), { reason: 'network', host: 'github.com' });
+  assert.deepEqual(remoteFailureCause({ reason: 'timeout', url: 'https://user:secret@Git.Example.com:8443/x.git' }), { reason: 'timeout', host: 'git.example.com' }, 'never credentials or a port');
+  assert.deepEqual(remoteFailureCause({ reason: 'cache', url: '/local/path/repo' }), { reason: 'cache' }, 'a path has no host');
+  assert.deepEqual(remoteFailureCause({ reason: 'cache' }), { reason: 'cache' });
+  for (const details of [null, [], {}, { reason: 'Cache' }, { reason: 'x'.repeat(33) }, { reason: 'cache; rm -rf' }, { reason: 7 }]) assert.equal(remoteFailureCause(details), null, JSON.stringify(details));
+});
+
+test('Spec D: panelErrorCause re-validates the panel field with its keys exact', () => {
+  assert.deepEqual(panelErrorCause({ code: 'E_REMOTE_UNREADABLE', reason: 'cache' }), { code: 'E_REMOTE_UNREADABLE', reason: 'cache' });
+  assert.deepEqual(panelErrorCause({ code: 'E_REMOTE_UNREADABLE', reason: 'network', host: 'github.com' }), { code: 'E_REMOTE_UNREADABLE', reason: 'network', host: 'github.com' });
+  for (const v of [null, {}, { code: 'E_X', reason: 'cache', lock: '/x' }, { code: 'x', reason: 'cache' }, { code: 'E_X', reason: 'CACHE' }, { code: 'E_X', reason: 'network', host: 'a b' }]) assert.equal(panelErrorCause(v), null, JSON.stringify(v));
 });

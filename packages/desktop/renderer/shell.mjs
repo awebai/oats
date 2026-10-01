@@ -16,6 +16,7 @@ import { instanceSplitPlan, instanceSplitIdentity } from "./instance-split.mjs";
 import { createInstanceStarter } from "./start-instance.mjs";
 import { retirementSummary, runtimeState, unsupportedSession } from "./instance-presentation.mjs";
 import { deploymentUnavailableText } from "./deployment-header.mjs";
+import { panelErrorCause } from "./deployment-contract.mjs";
 import {
   initTheme, toggleTheme, setTheme, THEMES, xtermTheme, onThemeChange,
   terminalTypography, setTerminalFontSize, setTerminalFontFamily, onTerminalTypographyChange,
@@ -437,15 +438,24 @@ async function refreshContextRoster({ user = false } = {}) {
   // A failed read with no instances keeps the rows already shown for this workspace (stale), so the
   // previous list survives that reply; every other reply replaces it.
   const previousInstances = contextInstances;
-  if (!(panel.error && !(panel.instances || []).length && rosterState?.hasData)) contextInstances = panel.instances || [];
+  // The read's failure, if any: the kernel's message with its bounded cause (Spec D). A remote the kernel
+  // could not read keeps the last observation (panel.error + errorCause); a cache problem with nothing
+  // observed yet is a failed read with that message, never an empty roster.
+  const unreadable = !panel.workspace?.remote && panel.deployment?.status === "unavailable" && panel.deployment.reason?.code === "E_REMOTE_UNREADABLE"
+    ? panelErrorCause({ code: "E_REMOTE_UNREADABLE", ...(panel.deployment.reason.cause || {}) }) : null;
+  const failure = typeof panel.error === "string" && panel.error
+    ? { message: panel.error, ...(panelErrorCause(panel.errorCause) ? { code: panel.errorCause.code, cause: panelErrorCause(panel.errorCause) } : {}) }
+    : unreadable?.reason === "cache" && typeof panel.deployment.reason.message === "string"
+      ? { message: panel.deployment.reason.message, code: unreadable.code, cause: unreadable } : null;
+  if (!(failure && !(panel.instances || []).length && rosterState?.hasData)) contextInstances = panel.instances || [];
   // A deployment the kernel could not observe is not an empty one: name the
   // missing feature or keep the kernel's refusal (never an optimistic read).
   // It is its own truthful state, painted above the rows by renderContextRoster
   // on every path (module state, so a filter edit or a collapse keeps it).
-  contextDeploymentNote = panel.deployment && panel.deployment.status !== "observed" && !panel.workspace?.remote
+  contextDeploymentNote = panel.deployment && panel.deployment.status !== "observed" && !panel.workspace?.remote && !failure
     ? deploymentUnavailableText(panel.deployment) : null;
   const signature = rosterSignature(contextInstances, {
-    workspace: resolvedWs, error: panel.error || null, deploymentNote: contextDeploymentNote,
+    workspace: resolvedWs, error: failure, deploymentNote: contextDeploymentNote,
     activeKey: tabs.get(activeTab)?.key ?? null, connection: connectionGeneration,
   });
   // A panel that reports an error is the kernel's failed read, not an observed
@@ -453,14 +463,14 @@ async function refreshContextRoster({ user = false } = {}) {
   // reach, its last roster) the list is kept and goes stale; with none, it is a
   // failed read — the failed block with Retry where the skeleton stood, or the
   // previous rows of this workspace kept and marked stale. Never "No instances.".
-  if (panel.error && !contextInstances.length) {
+  if (failure && !contextInstances.length) {
     refreshPanelInstance([], resolvedWs);
-    rosterState?.fail({ message: panel.error });
+    rosterState?.fail(failure);
     if (rosterState?.hasData && !rosterStale) { rosterStale = true; renderContextRoster(previousInstances); }
     else if (rosterState && !rosterState.hasData) renderRosterCount(contextRosterEl.querySelector(".ctx-count"), [], { failed: true });
     return;
   }
-  const reportedFailure = !!panel.error;
+  const reportedFailure = !!failure;
   // Before the server's first observation the panel says deployment "pending"
   // with no instances: that is not an observed empty roster. The note is the
   // whole content (its existing copy, no skeleton), the count keeps its pill,
@@ -489,7 +499,7 @@ async function refreshContextRoster({ user = false } = {}) {
     rosterSignaturePainted = signature;
     renderContextRoster(contextInstances);
   }
-  if (reportedFailure) rosterState?.fail({ message: panel.error });
+  if (reportedFailure) rosterState?.fail(failure);
 }
 
 // Only reported context, never inferred team/membership/readiness. A local

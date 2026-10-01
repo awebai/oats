@@ -541,6 +541,17 @@ Feature `workspace-v2`, `workspaceApi: 2`. Model: [workspaces.md](workspaces.md)
   died); `details.cacheDir` and, when known, `details.lock`,
   `details.guard` or `details.holderPid` say which, and the message says
   what to do.
+- **How the Desktop reads it** (0.33.0). Of an `E_REMOTE_UNREADABLE` from
+  `status` / `workspace status`, the Desktop keeps the `message` (shown as
+  given) and only a bounded cause: `details.reason` (matching
+  `^[a-z][a-z-]{0,31}$`) and the host of `details.url`. No path, pid, lock,
+  `cacheDir` or other detail field crosses to the renderer. It keys only on
+  `code` + `details.reason`: `cache` words the roster "OATS cache
+  problem" with the message in full; `network` / `timeout` read "Couldn't
+  reach <host>"; any other reason keeps the generic wording. When the
+  deployment was observed before, the failed read keeps that observation:
+  `/api/panel` serves it with `error` (the message) and `errorCause {code,
+  reason, host?}`, and the roster shows it stale instead of empty.
 - There is no package approval: declaring a package is the trust decision.
   No payload carries `approvalNeeded`, `approval` or `approved`.
 - A **standalone view** is a member repository whose workspace is not read

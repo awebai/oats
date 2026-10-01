@@ -2,7 +2,7 @@
  * projected by the owning observer, never forwarded wholesale to a renderer. */
 import { execFile } from 'node:child_process';
 import { isAbsolute, resolve } from 'node:path';
-import { deploymentReadGate, deploymentFailure, deploymentRecord, validMaxAge, maxAgeArgv } from './renderer/deployment-contract.mjs';
+import { deploymentReadGate, deploymentFailure, deploymentRecord, validMaxAge, maxAgeArgv, remoteFailureCause } from './renderer/deployment-contract.mjs';
 
 export const DEPLOYMENT_READ_TIMEOUT = 30_000;
 export const DEPLOYMENT_READ_MAX_BUFFER = 4 * 1024 * 1024;
@@ -36,9 +36,10 @@ export function cliDeploymentRead(cli, options, io = {}) {
           const reason = document.error;
           if (!deploymentRecord(reason) || typeof reason.code !== 'string' || !/^[A-Z][A-Z0-9_]{0,63}$/.test(reason.code)
             || typeof reason.message !== 'string' || reason.message.length > 8192) return fail('E_CLI_PROTOCOL');
-          // Only the bounded kernel error envelope, never stderr, argv, stacks,
-          // details or an exec error's message. A refusal cannot become success.
-          return done({ ok: false, reason: { code: reason.code, message: reason.message } });
+          // Only the bounded kernel error envelope, never stderr, argv, stacks or an exec error's message;
+          // of `details`, only an unreadable remote's bounded cause (Spec D). A refusal cannot become success.
+          const cause = reason.code === 'E_REMOTE_UNREADABLE' ? remoteFailureCause(reason.details) : null;
+          return done({ ok: false, reason: { code: reason.code, message: reason.message, ...(cause ? { cause } : {}) } });
         }
         if (error) return fail('E_CLI_FAILED');
         if (action === 'status') {
