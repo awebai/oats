@@ -240,8 +240,9 @@ same in `checks.configured` (code `harness-trust`, not required).
 Codex can run tool commands under its shared app-server daemon rather than as
 children of the session OATS launched, and then they do not inherit the
 session's environment. Codex (0.157.1) runs a session that has `-c` overrides
-embedded, without the daemon, and every kernel codex launch has them. So that
-the environment does not depend on this, a codex launch also sets it for tool
+embedded, without the daemon, and every kernel codex launch has them, so an
+OATS codex session does not appear in `codex agents`. So that the environment
+does not depend on this, a codex launch also sets it for tool
 commands explicitly with `-c shell_environment_policy.set.<NAME>="<value>"`:
 
 - the instance: `OATS_INSTANCE`, `OATS_INSTANCE_HOME`, `PI_AGENT_INSTANCE`,
