@@ -4,11 +4,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  createReadSession, listRemoteTree, observeRemote, readRemoteFile, remoteTreeOids, runGit, FILE_BUDGET,
+  contentDigest, createReadSession, fetchRemoteTree, listRemoteTree, observeRemote, readRemoteFile, remoteTreeOids, runGit,
+  FILE_BUDGET, OATS_ALIAS_SYMLINK, TREE_BUDGET,
 } from "../lib/remote.mjs";
 
 const GIT_ENV = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t",
@@ -260,5 +261,161 @@ test("peels: a positive peel is kept per session, a negative one never; no sessi
   await readRemoteFile(fx.bare, fx.commit, "README.md", { cacheDir: fx.cacheDir, exec });
   await readRemoteFile(fx.bare, fx.commit, "README.md", { cacheDir: fx.cacheDir, exec });
   assert.equal(revParses.length, 2, "without a session every read checks the store");
+  await session.close();
+});
+
+// ---------------------------------------------------------------------------
+// fetchRemoteTree through the session's batch reader (no `cat-file blob` process per blob)
+// ---------------------------------------------------------------------------
+
+/** Every file under `dir` (relative path → { mode, content | link }), for comparing two written trees. */
+function snapshot(dir) {
+  const out = {};
+  const walk = (abs, rel) => {
+    for (const name of readdirSync(abs).sort()) {
+      const p = join(abs, name), r = rel ? `${rel}/${name}` : name, s = lstatSync(p);
+      if (s.isSymbolicLink()) out[r] = { link: readlinkSync(p) };
+      else if (s.isDirectory()) walk(p, r);
+      else out[r] = { mode: s.mode & 0o777, content: readFileSync(p).toString("base64") };
+    }
+  };
+  walk(dir, "");
+  return out;
+}
+/** What is left beside `dest` (a staging directory would be here). */
+const beside = (dest) => (existsSync(join(dest, "..")) ? readdirSync(join(dest, "..")) : []);
+
+/** A bare repo whose `mod/` holds nested files, an executable, the CLAUDE.md alias and a blob over FILE_BUDGET. */
+function treeFixture() {
+  const base = scratch();
+  const bare = join(base, "remote.git"), work = join(base, "work");
+  git(base, "init", "-q", "--bare", "-b", "main", bare);
+  git(base, "init", "-q", "-b", "main", work);
+  write(work, "mod/AGENTS.md", "# mod\n");
+  symlinkSync("AGENTS.md", join(work, "mod/CLAUDE.md"));
+  write(work, "mod/bin/run", "#!/bin/sh\necho hi\n");
+  chmodSync(join(work, "mod/bin/run"), 0o755);
+  write(work, "mod/deep/a/b/c.txt", "deep\n");
+  write(work, "mod/empty.txt", "");
+  write(work, "mod/big.bin", Buffer.alloc(FILE_BUDGET + 10, 97));
+  write(work, "other.txt", "outside\n");
+  git(work, "add", "-A");
+  git(work, "commit", "-q", "-m", "one");
+  git(work, "push", "-q", bare, "HEAD:main");
+  return { base, bare, work, commit: git(work, "rev-parse", "HEAD"), cacheDir: join(base, "cache") };
+}
+
+/** A `git` shim first on PATH that logs every invocation's arguments, then runs the real git. */
+async function withGitLog(base, fn) {
+  const dir = join(base, "log-shim"), log = join(base, "git.log");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(log, "");
+  writeFileSync(join(dir, "git"), `#!/bin/bash\necho "$*" >> "${log}"\nexec "${REAL_GIT}" "$@"\n`, { mode: 0o755 });
+  const saved = process.env.PATH;
+  process.env.PATH = `${dir}:${saved}`;
+  try { return await fn(() => readFileSync(log, "utf8").split("\n").filter(Boolean)); }
+  finally { process.env.PATH = saved; }
+}
+
+test("fetchRemoteTree in a session reads through one cat-file --batch: the same files, modes and digest, no process per blob", async () => {
+  const fx = treeFixture();
+  const opts = { cacheDir: fx.cacheDir, allowSymlinks: OATS_ALIAS_SYMLINK };
+  await withGitLog(fx.base, async (calls) => {
+    const plainDest = join(fx.base, "plain", "mod");
+    const plain = await fetchRemoteTree(fx.bare, fx.commit, "mod", plainDest, opts);
+    const perBlob = calls().filter((c) => c.includes("cat-file blob")).length;
+    assert.equal(perBlob, 6, "without a session: one cat-file blob per file and link");
+    const before = calls().length;
+    const session = createReadSession();
+    const batchDest = join(fx.base, "batch", "mod");
+    const batched = await fetchRemoteTree(fx.bare, fx.commit, "mod", batchDest, { ...opts, session });
+    const mine = calls().slice(before);
+    assert.deepEqual(mine.filter((c) => c.includes("cat-file blob")), [], "no cat-file blob process under a session");
+    assert.equal(mine.filter((c) => c.includes("cat-file --batch")).length, 1, "one batch reader for the cache repo");
+    assert.deepStrictEqual(batched, plain);
+    assert.equal(batched.digest, contentDigest(batchDest, { allowSymlinks: OATS_ALIAS_SYMLINK }));
+    assert.deepStrictEqual(snapshot(batchDest), snapshot(plainDest));
+    assert.equal(lstatSync(join(batchDest, "CLAUDE.md")).isSymbolicLink(), true, "the alias is a symlink through the batch path");
+    assert.equal(lstatSync(join(batchDest, "big.bin")).size, FILE_BUDGET + 10, "a blob over FILE_BUDGET, inside TREE_BUDGET, copies");
+    // The whole tree too.
+    const rootPlain = await fetchRemoteTree(fx.bare, fx.commit, "", join(fx.base, "plain", "root"), opts);
+    assert.deepStrictEqual(await fetchRemoteTree(fx.bare, fx.commit, "", join(fx.base, "batch", "root"), { ...opts, session }), rootPlain);
+    await session.close();
+  });
+});
+
+test("fetchRemoteTree in a session refuses an oversize tree from the listing, exactly as without one", async () => {
+  const base = scratch();
+  const bare = join(base, "r.git");
+  git(base, "init", "-q", "--bare", "-b", "main", bare);
+  const big = execFileSync("git", ["-C", bare, "hash-object", "-w", "--stdin"], { input: Buffer.alloc(FILE_BUDGET + 10, 98) }).toString().trim();
+  // One blob listed 16 times: 64 MiB + 160 bytes, without storing 64 MiB.
+  const many = execFileSync("git", ["-C", bare, "mktree"], { input: Array.from({ length: 16 }, (_, i) => `100644 blob ${big}\tf${String(i).padStart(2, "0")}`).join("\n") + "\n" }).toString().trim();
+  const root = execFileSync("git", ["-C", bare, "mktree"], { input: `040000 tree ${many}\tmod\n` }).toString().trim();
+  const commit = execFileSync("git", ["-C", bare, "commit-tree", root, "-m", "big"], { env: GIT_ENV }).toString().trim();
+  git(bare, "update-ref", "refs/heads/main", commit);
+  const cacheDir = join(base, "cache");
+  const plain = await outcome(fetchRemoteTree(bare, commit, "mod", join(base, "plain", "mod"), { cacheDir }));
+  const session = createReadSession();
+  const batched = await outcome(fetchRemoteTree(bare, commit, "mod", join(base, "batch", "mod"), { cacheDir, session }));
+  assert.equal(batched.error.code, "E_REMOTE_TREE_UNSAFE");
+  assert.equal(batched.error.details.why, "oversize");
+  assert.equal(batched.error.details.budget, TREE_BUDGET);
+  assert.deepStrictEqual(batched, plain);
+  assert.equal(session.batches.size, 0, "refused before any blob was read");
+  assert.deepEqual(beside(join(base, "batch", "mod")), []);
+  await session.close();
+});
+
+test("fetchRemoteTree: a batch reader that dies, times out or is ended mid-tree fails E_REMOTE_UNREADABLE and leaves nothing", async () => {
+  for (const [mode, reason] of [["die", "network"], ["missing", "not-found"], ["hang", "timeout"]]) {
+    await withShim(mode, async (fx, pids) => {
+      const session = createReadSession({ batchTimeoutMs: 300 });
+      const dest = join(fx.base, "out", "dev");
+      const e = (await outcome(fetchRemoteTree(fx.bare, fx.commit, "souls/dev", dest, { cacheDir: fx.cacheDir, session, allowSymlinks: OATS_ALIAS_SYMLINK }))).error;
+      assert.equal(e.code, "E_REMOTE_UNREADABLE", mode);
+      assert.equal(e.details.reason, reason, mode);
+      assert.equal(e.details.commit, fx.commit, mode);
+      assert.equal(e.details.path, "AGENTS.md", mode);
+      assert.equal(existsSync(dest), false, mode);
+      assert.deepEqual(beside(dest), [], `${mode}: no staging directory left`);
+      await session.close();
+      await settle(pids);
+      assert.deepEqual(pids().filter(alive), [], `${mode}: no batch child outlives the session`);
+    });
+  }
+  // The session ended (a signal's closeNow) while a read is waiting on the reader.
+  await withShim("hang", async (fx, pids) => {
+    const session = createReadSession();
+    const dest = join(fx.base, "out", "dev");
+    const pending = outcome(fetchRemoteTree(fx.bare, fx.commit, "souls/dev", dest, { cacheDir: fx.cacheDir, session, allowSymlinks: OATS_ALIAS_SYMLINK }));
+    for (let i = 0; i < 250 && !pids().length; i++) await new Promise((r) => setTimeout(r, 20));
+    session.closeNow();
+    const e = (await pending).error;
+    assert.equal(e.code, "E_REMOTE_UNREADABLE");
+    assert.equal(existsSync(dest), false);
+    assert.deepEqual(beside(dest), [], "no staging directory left");
+    await settle(pids);
+    assert.deepEqual(pids().filter(alive), []);
+  });
+});
+
+test("fetchRemoteTree in a session: more module repos than batch readers (BATCH_LIMIT) all copy, concurrently", async () => {
+  const base = scratch();
+  const repos = Array.from({ length: 16 }, (_, i) => {
+    const bare = join(base, `r${i}.git`), work = join(base, `w${i}`);
+    git(base, "init", "-q", "--bare", "-b", "main", bare);
+    git(base, "init", "-q", "-b", "main", work);
+    for (let f = 0; f < 5; f++) write(work, `mod/f${f}.txt`, `repo ${i} file ${f}\n`);
+    git(work, "add", "-A"); git(work, "commit", "-q", "-m", "one"); git(work, "push", "-q", bare, "HEAD:main");
+    return { bare, commit: git(work, "rev-parse", "HEAD") };
+  });
+  const cacheDir = join(base, "cache");
+  const session = createReadSession();
+  const results = await Promise.all(repos.map((r, i) => fetchRemoteTree(r.bare, r.commit, "mod", join(base, "batch", `m${i}`), { cacheDir, session })));
+  assert.ok(session.batches.size < repos.length, "evicted readers were ended, not kept");
+  for (const [i, r] of repos.entries()) {
+    assert.deepStrictEqual(results[i], await fetchRemoteTree(r.bare, r.commit, "mod", join(base, "plain", `m${i}`), { cacheDir }));
+  }
   await session.close();
 });
