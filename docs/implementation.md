@@ -98,7 +98,9 @@ gets the plain per-call behaviour. Within a session:
   `fetchRemoteTree` copies a module through it too, once `ensureBlobs` has
   fetched what was missing (git re-reads its packs on a miss, so a reader
   opened earlier finds the new blobs; one still missing answers `missing`,
-  never a fetch), with what is left of `TREE_BUDGET` as each read's bound. A
+  never a fetch), with what is left of `TREE_BUDGET` as each read's bound;
+  a blob the reader answers `missing` or over its bound is read once more
+  alone, so the error is the one a copy without a session gives. A
   command that ends normally awaits the close, so its readers are reaped
   before it exits; a `process.exit` (every refusal) ends them in the
   exit hook (`closeNow`), and the system reaps them once the process is gone;

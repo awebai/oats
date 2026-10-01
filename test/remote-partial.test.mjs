@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import {
   classifyRemoteFailure, contentDigest, createReadSession, fetchRemoteTree, listRemoteTree, observeRemote, parseRepoRef, readRemoteFile, runGit,
-  FILE_BUDGET, PARTIAL_FETCH_GIT, SMALL_BLOB_LIMIT, gitVersion, keepsPartialCache,
+  FILE_BUDGET, OATS_ALIAS_SYMLINK, PARTIAL_FETCH_GIT, SMALL_BLOB_LIMIT, gitVersion, keepsPartialCache,
 } from "../lib/remote.mjs";
 import { PARTIAL_GIT, olderGitNotice, skipPartialMechanics } from "./helpers/partial-git.mjs";
 
@@ -803,17 +803,20 @@ exec "${real}" "$@"
   finally { process.env.PATH = saved; }
 }
 
-test("a blob still missing when the batch reader reads it is E_REMOTE_UNREADABLE (not-found): never a lazy fetch, never a hang, nothing left", { skip: skipPartialMechanics }, async () => {
+test("a blob still missing when the batch reader reads it fails exactly as without a session: never a lazy fetch, never a hang, nothing left", { skip: skipPartialMechanics }, async () => {
   const f = fixture();
   await observeRemote(f.bare, { cacheDir: f.cacheDir, at: f.commit });
   assert.deepEqual(f.present("elsewhere/tools/data/model.bin"), { "elsewhere/tools/data/model.bin": false });
   await withLyingBatchCheck(f.base, async (fetches) => {
     const session = createReadSession({ batchTimeoutMs: 10_000 });
     const dest = join(f.base, "out", "tools");
+    const failure = (opts) => fetchRemoteTree(f.bare, f.commit, "elsewhere/tools", dest, { cacheDir: f.cacheDir, ...opts }).then(() => assert.fail("expected a failure"), (x) => x);
+    const shape = (x) => ({ code: x.code, reason: x.details.reason, path: x.details.path, commit: x.details.commit });
+    const plain = await failure({});
     const started = Date.now();
-    const e = await fetchRemoteTree(f.bare, f.commit, "elsewhere/tools", dest, { cacheDir: f.cacheDir, session }).then(() => assert.fail("expected a failure"), (x) => x);
+    const e = await failure({ session });
+    assert.deepEqual(shape(e), shape(plain), "the same error as without a session");
     assert.equal(e.code, "E_REMOTE_UNREADABLE");
-    assert.equal(e.details.reason, "not-found");
     assert.equal(e.details.path, "data/model.bin");
     assert.ok(Date.now() - started < 5_000, "answered at once, not by a timeout");
     assert.deepEqual(fetches(), [], "neither ensureBlobs (it was lied to) nor git (GIT_NO_LAZY_FETCH) fetched");
@@ -821,6 +824,29 @@ test("a blob still missing when the batch reader reads it is E_REMOTE_UNREADABLE
     assert.deepEqual(readdirSync(join(f.base, "out")), [], "no staging directory, no destination");
     await session.close();
   });
+});
+
+test("a symlink target over its 64 KiB cap fails exactly as without a session, whatever its id spells (an oid holding 403 is not an auth failure)", async () => {
+  const f = fixture();
+  // The reviewer's deterministic blob: 65,540 bytes, oid 8cc834859992ea403d394e514826263be431fb85.
+  const oid = execFileSync("git", ["-C", f.work, "hash-object", "-w", "--stdin"], { input: "a".repeat(65537) + "216", encoding: "utf8" }).trim();
+  assert.equal(oid, "8cc834859992ea403d394e514826263be431fb85");
+  write(f.work, "aliased/AGENTS.md", "# aliased\n");
+  git(f.work, "add", "-A");
+  git(f.work, "update-index", "--add", "--cacheinfo", `120000,${oid},aliased/CLAUDE.md`);
+  git(f.work, "commit", "-q", "-m", "long link"); git(f.work, "push", "-q", "origin", "HEAD:main");
+  const commit = git(f.work, "rev-parse", "HEAD");
+  const failure = (opts, out) => fetchRemoteTree(f.bare, commit, "aliased", join(f.base, out, "aliased"), { cacheDir: f.cacheDir, allowSymlinks: OATS_ALIAS_SYMLINK, ...opts })
+    .then(() => assert.fail("expected a failure"), (x) => x);
+  const shape = (x) => ({ code: x.code, reason: x.details?.reason, path: x.details?.path });
+  const plain = await failure({}, "plain");
+  const session = createReadSession();
+  try {
+    const batched = await failure({ session }, "batch");
+    assert.deepEqual(shape(batched), shape(plain), "the same error as without a session");
+    assert.deepEqual(shape(batched), { code: "E_REMOTE_UNREADABLE", reason: "network", path: "CLAUDE.md" });
+    assert.deepEqual(readdirSync(join(f.base, "batch")), [], "nothing left");
+  } finally { await session.close(); }
 });
 
 test("a full-mode cache (a server without filters) copies the same tree through the batch reader as without a session", async () => {

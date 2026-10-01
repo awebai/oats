@@ -367,8 +367,20 @@ test("fetchRemoteTree in a session refuses an oversize tree from the listing, ex
   await session.close();
 });
 
-test("fetchRemoteTree: a batch reader that dies, times out or is ended mid-tree fails E_REMOTE_UNREADABLE and leaves nothing", async () => {
-  for (const [mode, reason] of [["die", "network"], ["missing", "not-found"], ["hang", "timeout"]]) {
+test("fetchRemoteTree: a batch reader that dies, times out or is ended mid-tree fails E_REMOTE_UNREADABLE and leaves nothing; one that answers `missing` is checked by a read alone", async () => {
+  // A blob the reader calls missing is read once more without it, as a copy without a session reads it: here it is
+  // there, so the copy succeeds, identical.
+  await withShim("missing", async (fx, pids) => {
+    const session = createReadSession({ batchTimeoutMs: 300 });
+    const opts = { cacheDir: fx.cacheDir, allowSymlinks: OATS_ALIAS_SYMLINK };
+    const batched = await fetchRemoteTree(fx.bare, fx.commit, "souls/dev", join(fx.base, "batch", "dev"), { ...opts, session });
+    assert.ok(pids().length > 0, "the reader was asked");
+    assert.deepStrictEqual(batched, await fetchRemoteTree(fx.bare, fx.commit, "souls/dev", join(fx.base, "plain", "dev"), opts));
+    await session.close();
+    await settle(pids);
+    assert.deepEqual(pids().filter(alive), [], "missing: no batch child outlives the session");
+  });
+  for (const [mode, reason] of [["die", "network"], ["hang", "timeout"]]) {
     await withShim(mode, async (fx, pids) => {
       const session = createReadSession({ batchTimeoutMs: 300 });
       const dest = join(fx.base, "out", "dev");
