@@ -22,9 +22,12 @@ test.after(() => { try { tmux("kill-server"); } catch { /* gone */ } finally { r
 function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, c); }
 // A harness that records argv and environment, then idles; `polite` exits on TERM, `stubborn` ignores it.
 const binDir = join(base, "bin"); mkdirSync(binDir);
-// Publish readiness LAST, after output and signal handlers are installed.
-write(join(binDir, "polite"), `#!/bin/sh\nprintf '%s\\n' "$@" > "$OATS_INSTANCE_HOME/argv.txt"\nenv > "$OATS_INSTANCE_HOME/env.txt"\ntrap 'exit 0' TERM\necho $$ > "$OATS_INSTANCE_HOME/pid.txt"\nwhile :; do sleep 0.2; done\n`);
-write(join(binDir, "stubborn"), `#!/bin/sh\ntrap '' TERM\necho $$ > "$OATS_INSTANCE_HOME/pid.txt"\nwhile :; do sleep 0.2; done\n`);
+// Publish readiness LAST, after output and signal handlers are installed. Then `exec` the idle: the
+// kernel reads a pane holding only shells as the fallback prompt, so a shell loop forking short
+// sleeps reads as "shell" between forks (more often under load: #415). The exec keeps the PID and an
+// ignored TERM (`trap ''` survives exec); a default TERM ends `polite`.
+write(join(binDir, "polite"), `#!/bin/sh\nprintf '%s\\n' "$@" > "$OATS_INSTANCE_HOME/argv.txt"\nenv > "$OATS_INSTANCE_HOME/env.txt"\necho $$ > "$OATS_INSTANCE_HOME/pid.txt"\nexec sleep 86400\n`);
+write(join(binDir, "stubborn"), `#!/bin/sh\ntrap '' TERM\necho $$ > "$OATS_INSTANCE_HOME/pid.txt"\nexec sleep 86400\n`);
 for (const n of ["polite", "stubborn", "claude", "codex", "pi"]) chmodSync(join(binDir, n === "claude" || n === "codex" || n === "pi" ? "polite" : n), 0o755);
 for (const n of ["claude", "codex", "pi"]) { write(join(binDir, n), readFileSync(join(binDir, "polite"), "utf8")); chmodSync(join(binDir, n), 0o755); }
 // In-process starts resolve a harness's default binary on THIS process's PATH (`which`), not on the
