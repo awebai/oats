@@ -429,8 +429,7 @@ test('compact: one card of glyph rows — the default team tagged and always on,
   const u = card(t, captured()); await tick();
   const section = u.section();
   assert.deepEqual([...section.classList], ['teams-panel', 'is-compact']);
-  assert.equal(section.querySelector('.teams-intro'), null, 'the compact card has no intro sentence');
-  assert.equal(section.querySelector('.teams-card'), section.querySelector('.teams-status').nextElementSibling, 'status line, then the one card');
+  assert.deepEqual([...section.children].map(c => c.className), ['teams-note teams-intro', 'teams-status', 'teams-card'], 'the lead line, the status line, then the one card');
   // The default team (0.29 shape: its id, tagged default), always on as plain text.
   const home = u.row('default');
   assert.equal(home.firstElementChild.className, 'team-glyph is-on'); assert.equal(home.firstElementChild.getAttribute('aria-hidden'), 'true');
@@ -482,6 +481,24 @@ test('compact: one card of glyph rows — the default team tagged and always on,
   assert.equal(n.row('default').querySelector('.team-badge'), null);
 });
 
+test('compact: the lead line says what the list is, 12px muted outside the card, once a teams document has been read', async t => {
+  const LEAD = 'The messaging teams this soul is allowed to join. It is always in the default team.';
+  const gate = deferred(), answer = captured();
+  const u = card(t, body => gate.promise.then(() => answer(body)));
+  const lead = u.section().querySelector('.teams-intro');
+  assert.equal(lead.textContent, LEAD); assert.equal(lead.hidden, true, 'not before the read');
+  assert.equal(lead.parentElement, u.section()); assert.equal(lead.closest('.teams-card'), null, 'outside the card');
+  gate.resolve(); await tick(); await tick();
+  assert.equal(lead.hidden, false, 'once the document is read');
+  assert.equal(u.style(lead).fontSize, '12px'); assert.equal(u.style(lead).color, 'var(--muted)'); assert.equal(u.style(lead).paddingLeft, '0px', 'flush with the sub-label above it');
+  // A failed read shows no lead (nothing was read).
+  const f = card(t, () => new Error('down')); await tick(); await tick();
+  assert.equal(f.section().querySelector('.teams-intro').hidden, true);
+  // The full-size variant keeps its own words.
+  const d = card(t, captured(), { compact: false }); await tick();
+  assert.equal(d.section().querySelector('.teams-intro').textContent, "Always in the workspace's default team. It can join the teams its soul has access to.");
+});
+
 test('compact: pending, refusals, warnings, the empty line and "Recently left" stay, inside the card', async t => {
   const gate = deferred(), answer = captured();
   const u = card(t, body => body.operation === 'messaging:join' ? gate.promise.then(() => answer(body)) : answer(body)); await tick();
@@ -502,8 +519,8 @@ test('compact: pending, refusals, warnings, the empty line and "Recently left" s
   const w = card(t, () => v117); await tick();
   const box = w.section().querySelector('.teams-card > .teams-warnings .teams-warning');
   assert.equal(box.querySelector('.teams-warning-text').textContent, v117.result.warnings[0]);
-  assert.equal(w.section().querySelector('.teams-card > .teams-note').textContent, 'No other teams available to this soul.');
-  assert.doesNotMatch(w.section().textContent, /Its soul has access to no other team/);
+  assert.equal(w.section().querySelector('.teams-card > .teams-note').textContent, 'This soul may join no other team.');
+  assert.doesNotMatch(w.section().textContent, /Its soul has access to no other team|No other teams available/);
   assert.equal(w.section().querySelector('.teams-subhead').textContent, 'Recently left');
   assert.deepEqual([...w.section().querySelector('[data-team-left="reviewers"]').querySelectorAll('.team-meta')].map(m => m.textContent), ['northwind:review · Left 2026-09-27 09:00 UTC', 'The soul no longer belongs to it.']);
   const d = card(t, () => v117, { compact: false }); await tick();

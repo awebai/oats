@@ -14,14 +14,14 @@ import { teamsCSS } from '../renderer/teams-panel.mjs';
 import { instanceSoulCSS } from '../renderer/instance-soul.mjs';
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
-function fixture(t, { teams, openSoul } = {}) {
+function fixture(t, { teams, openSoul, git, fallbackFocus } = {}) {
   const dom = new JSDOM(`<!doctype html><body><div id="app"><aside id="sidebar"></aside><main id="main"></main><aside id="context-panel"></aside>
     <div id="tab-actions"><button id="panel-toggle">Panel</button></div></div></body>`);
   const document = dom.window.document, style = document.createElement('style'); style.textContent = contextPanelCSS; document.head.append(style);
   const updates = [], opened = [], hosts = [];
   const panel = createContextPanel({ document, root: document.getElementById('context-panel'),
     createTeamsSection: teams ?? ((host, { onPresence, tools }) => { hosts.push({ host, onPresence, tools }); return { update: u => updates.push(u), dispose() {} }; }),
-    openSoul: openSoul ?? (ref => opened.push(ref)) });
+    openSoul: openSoul ?? (ref => opened.push(ref)), ...(git ? { createGitPanel: git } : {}), ...(fallbackFocus ? { fallbackFocus } : {}) });
   t.after(() => { panel.dispose(); dom.window.close(); });
   const q = s => document.querySelector(s);
   const row = id => q(`#context-panel [data-row="${id}"]`);
@@ -37,7 +37,7 @@ test('only reported facts: an unreported fact hides its row (its field still say
   const u = fixture(t); u.select(instance());
   // Workspace v4 (W6): harness and model sit in the Session card; an unreported model is not shown.
   assert.equal(u.field('model').textContent, 'Not reported'); assert.equal(u.field('model').hidden, true, 'no "Not reported" is shown');
-  assert.equal(u.field('harness').closest('.context-panel-section').hidden, false); assert.equal(u.row('work').hidden, false);
+  assert.equal(u.field('harness').closest('.context-panel-section').hidden, false); assert.equal(u.q('[data-context-work]').closest('.context-panel-section').hidden, false);
   const lineage = u.row('parentInstance').closest('.context-panel-section');
   assert.equal(lineage.hidden, true, 'no parent or sibling reported: no Lineage section');
   u.select(instance({ parentInstance: 'lead-1' }));
@@ -46,59 +46,79 @@ test('only reported facts: an unreported fact hides its row (its field still say
   const page = u.q('[data-context-page="instance"]');
   assert.equal(page.querySelector('.context-panel-details'), null);
   assert.doesNotMatch(page.textContent, /Built from|Team label|Messaging address/);
-  const where = u.row('work').closest('.context-panel-section');
+  const work = u.q('[data-context-work]').closest('.context-panel-section');
   u.select(instance({ home: undefined, repoName: undefined, branch: undefined, work: undefined }));
-  assert.equal(where.hidden, true, 'nothing reported for Where it works: hidden');
+  assert.equal(work.hidden, true, 'no work mode reported: no Work section');
   assert.doesNotMatch([...u.document.querySelectorAll('#context-panel [data-row]:not([hidden])')].map(r => r.textContent).join('|'), /Not reported/);
 });
 
-test('Where it works: one card — the mode band in plain words, then Repo, Branch (Git modes), Folder and Home with an icon Copy', async t => {
+const sentenceOf = u => u.q('[data-context-work]');
+const codesOf = u => [...sentenceOf(u).querySelectorAll('.context-panel-fact-code')].map(c => c.textContent);
+test('Work: one card — the mode tile and one sentence saying what the mode means; each fact in the mono face, never invented', t => {
   const u = fixture(t); u.select(instance({ work: 'worktree', repoName: 'northwind', branch: 'feat/checkout' }));
-  const card = u.q('.context-panel-where'), band = u.row('work');
-  assert.equal(band.parentElement, card); assert.equal(band.className, 'context-panel-mode');
-  assert.equal(band.querySelector('.context-panel-mode-title').textContent, 'Own worktree');
-  assert.equal(band.querySelector('.context-panel-mode-meaning').textContent, "isolated branch in a clone of the soul's repo");
-  assert.equal(band.querySelector('.context-panel-mode-tile').getAttribute('aria-hidden'), 'true');
-  assert.deepEqual([...card.querySelectorAll('dt')].map(dt => dt.textContent), ['Repo', 'Branch', 'Folder', 'Home'], 'no Mode row, no repo-path row');
-  assert.equal(u.row('branch').hidden, false); assert.equal(u.field('branch').textContent, 'feat/checkout');
-  assert.equal(u.field('branch').title, 'feat/checkout', 'one line with ellipsis; the full name in the title');
-  assert.match(contextPanelCSS, /\.context-panel-branch-value > \[data-context-field\] \{[^}]*text-overflow:ellipsis; white-space:nowrap/);
-  const modes = { worktree: ['Own worktree', "isolated branch in a clone of the soul's repo", 'branch'], checkout: ['Shared checkout', "the repo's current branch", 'branch'],
-    directory: ['Plain folder', 'no Git', null], workspace: ['Workspace view', 'reads across member repos', null], attached: ['Attached', "works in its parent's tree", 'branch'] };
-  for (const [work, [label, meaning, branch]] of Object.entries(modes)) {
-    u.select(instance({ work, branch: 'b' }));
-    assert.equal(band.querySelector('.context-panel-mode-title').textContent, label, work);
-    assert.equal(band.querySelector('.context-panel-mode-meaning').textContent, meaning, work);
-    assert.equal(band.querySelector('.context-panel-mode-tile').dataset.work, work);
-    assert.ok(band.querySelector('.context-panel-mode-tile svg'), `${work}: an icon tile`);
-    assert.equal(u.row('branch').hidden, !branch, `${work}: Branch only for Git modes`);
+  const sentence = sentenceOf(u), section = sentence.closest('.context-panel-section'), card = u.q('.context-panel-work');
+  assert.equal(section.querySelector(':scope > .context-panel-label').textContent, 'Work');
+  assert.equal(section.parentElement.querySelector(':scope > .context-panel-section'), section, 'the first section of the Instance tab');
+  assert.deepEqual([...section.children].map(c => c.className), ['context-panel-label', 'context-panel-work'], 'one card');
+  assert.equal(sentence.closest('.context-panel-work'), card); assert.equal(sentence.tagName, 'P');
+  assert.equal(card.querySelector('.context-panel-mode-tile').getAttribute('aria-hidden'), 'true');
+  assert.ok([...card.querySelectorAll('dl')].every(dl => dl.closest('.context-panel-paths')), 'no facts grid outside Paths');
+  assert.doesNotMatch(card.textContent, /Own worktree|Shared checkout|Plain folder|Workspace view|Repo|Branch/, 'no label/meaning band, no Repo or Branch rows');
+  const modes = {
+    worktree: [{ repoName: 'northwind', branch: 'feat/checkout' }, 'Works in its own worktree of northwind, on branch feat/checkout.', ['northwind', 'feat/checkout'], 'branch'],
+    checkout: [{ repoName: 'northwind' }, 'Works in the shared checkout of northwind, alongside the other instances that use it.', ['northwind'], 'branch'],
+    attached: [{ parentInstance: 'lead-1' }, "Works in lead-1's tree, sharing its branch and changes.", ['lead-1'], 'link'],
+    directory: [{ repoName: 'northwind' }, 'Has its own folder, not tied to one repository: free to work across repos as its task needs.', [], 'folder'],
+    workspace: [{ repoName: 'northwind' }, 'Sees the whole workspace: reads across every member repository.', [], 'layers'],
+  };
+  for (const [work, [facts, words, codes]] of Object.entries(modes)) {
+    u.select(instance({ work, branch: undefined, ...facts }));
+    assert.equal(sentence.textContent, words, work); assert.deepEqual(codesOf(u), codes, `${work}: the facts in the mono face`);
+    for (const code of sentence.querySelectorAll('.context-panel-fact-code')) assert.equal(code.title, code.textContent, 'the full value in its title');
+    assert.equal(card.querySelector('.context-panel-mode-tile').dataset.work, work);
+    assert.ok(card.querySelector('.context-panel-mode-tile svg'), `${work}: an icon tile`);
   }
-  // Attached names the owner it works for (an attached instance is always the child of the tree's owner).
-  u.select(instance({ work: 'attached', parentInstance: 'lead-1' }));
-  assert.equal(band.querySelector('.context-panel-mode-meaning').textContent, "works in lead-1's tree");
-  u.select(instance({ work: 'bogus' })); assert.equal(band.hidden, true, 'an unknown mode shows no band');
-  // Home: left-truncated, the full path in the field and the title; Copy is icon-only.
-  u.select(instance({ work: 'directory' }));
-  const home = u.field('home');
-  assert.equal(home.textContent, HOME); assert.equal(home.closest('.context-panel-path').dir, 'rtl', 'clipped at the start');
-  assert.equal(home.closest('.context-panel-path').title, HOME);
-  assert.equal(u.q('[data-copy="repo"]'), null, 'no repo-path row');
-  const copy = u.q('[data-copy="home"]');
-  assert.equal(copy.getAttribute('aria-label'), 'Copy home path'); assert.equal(copy.textContent, '', 'icon only'); assert.ok(copy.querySelector('svg'));
-  const written = [];
-  Object.defineProperty(u.dom.window.navigator, 'clipboard', { value: { writeText: async text => { written.push(text); } }, configurable: true });
-  copy.click(); await tick();
-  assert.deepEqual(written, [HOME]); assert.equal(copy.getAttribute('aria-label'), 'Copied');
-  assert.equal(u.document.querySelector('#context-panel').textContent.includes('Copy'), false, 'no text Copy button');
+  // Fallbacks: an unreported fact says the generic words, never an invented name.
+  for (const [extra, words] of [
+    [{ work: 'worktree', repoName: 'northwind', branch: undefined }, 'Works in its own worktree of northwind.'],
+    [{ work: 'worktree', repoName: undefined, branch: 'feat/x' }, "Works in its own worktree of its soul's repository, on branch feat/x."],
+    [{ work: 'worktree', repoName: '', branch: '' }, "Works in its own worktree of its soul's repository."],
+    [{ work: 'checkout', repoName: undefined }, "Works in the shared checkout of its soul's repository, alongside the other instances that use it."],
+    [{ work: 'attached', parentInstance: undefined }, "Works in its parent's tree, sharing its branch and changes."],
+    [{ work: 'attached', parentInstance: 42 }, "Works in its parent's tree, sharing its branch and changes."],
+  ]) { u.select(instance({ branch: undefined, ...extra })); assert.equal(sentence.textContent, words, JSON.stringify(extra)); }
+  // An unknown or unreported mode hides the whole section.
+  for (const work of ['bogus', undefined, '__proto__', 'constructor']) { u.select(instance({ work })); assert.equal(section.hidden, true, String(work)); }
+  // The sentence wraps (a long name breaks inside only when it cannot fit a line); it is never truncated.
+  assert.match(contextPanelCSS, /\.context-panel-work-sentence \{[^}]*overflow-wrap:anywhere;/);
+  assert.doesNotMatch(contextPanelCSS.match(/\.context-panel-work-sentence \{[^}]*\}/)[0] + contextPanelCSS.match(/\.context-panel-fact-code \{[^}]*\}/)[0], /ellipsis|nowrap|overflow:hidden/);
 });
 
-test('Folder: <home>/work in every mode, an icon Copy, and "shared" exactly for the linked modes', async t => {
+test('Work: a fact arriving later rewrites the sentence in place; an unchanged repaint writes nothing', t => {
+  const u = fixture(t); u.select(instance({ work: 'worktree', repoName: 'northwind', branch: undefined }));
+  const sentence = sentenceOf(u), first = sentence.firstChild;
+  assert.equal(sentence.textContent, 'Works in its own worktree of northwind.');
+  const observer = new u.dom.window.MutationObserver(() => {}); observer.observe(sentence, { childList: true, subtree: true, characterData: true });
+  u.select(instance({ work: 'worktree', repoName: 'northwind', branch: undefined, running: false }));
+  assert.equal(observer.takeRecords().length, 0, 'the same words: no write'); assert.equal(sentence.firstChild, first);
+  u.select(instance({ work: 'worktree', repoName: 'northwind', branch: 'feat/late' }));
+  assert.equal(sentence.textContent, 'Works in its own worktree of northwind, on branch feat/late.');
+  assert.equal(sentenceOf(u), sentence, 'the same sentence element'); assert.equal(sentence.closest('.context-panel-section').hidden, false);
+  observer.disconnect();
+});
+
+test('Paths: a closed disclosure under the sentence holds Folder (shared when linked) and Home with an icon Copy; hidden without a home', async t => {
   const u = fixture(t), shared = u.q('[data-context-shared]');
   const tip = 'A link to the shared tree; changes here are visible to every instance that shares it.';
+  u.select(instance({ work: 'worktree' }));
+  const paths = u.q('.context-panel-paths');
+  assert.equal(paths.tagName, 'DETAILS'); assert.equal(paths.open, false, 'closed');
+  assert.equal(paths.querySelector(':scope > summary').textContent, 'Paths');
+  assert.equal(paths.parentElement, u.q('.context-panel-work'), 'in the Work card'); assert.equal(paths.previousElementSibling.contains(sentenceOf(u)), true, 'under the sentence');
   for (const work of ['worktree', 'directory', 'checkout', 'attached', 'workspace']) {
     u.select(instance({ work }));
-    assert.equal(u.row('workFolder').hidden, false, work);
-    assert.equal(u.row('workFolder').querySelector('dt').textContent, 'Folder');
+    assert.equal(paths.hidden, false, work);
+    assert.deepEqual([...paths.querySelectorAll('.context-panel-fact:not([hidden]) dt')].map(dt => dt.textContent), ['Folder', 'Home'], work);
     assert.equal(u.field('workFolder').textContent, `${HOME}/work`, work);
     assert.equal(u.field('workFolder').closest('.context-panel-path').title, `${HOME}/work`);
     assert.equal(u.field('workFolder').closest('.context-panel-path').dir, 'rtl', 'clipped at the start');
@@ -108,22 +128,55 @@ test('Folder: <home>/work in every mode, an icon Copy, and "shared" exactly for 
     assert.equal(shared.textContent, 'shared'); assert.equal(shared.title, tip);
     assert.equal(shared.previousElementSibling, u.field('workFolder').closest('.context-panel-path'), 'the tag follows the path');
   }
-  // Rows: Repo, Branch, Folder, Home; Folder is built from the home, with the home's own separator.
-  u.select(instance({ work: 'worktree', repoName: 'northwind' }));
-  assert.deepEqual([...u.q('.context-panel-where').querySelectorAll('.context-panel-fact:not([hidden]) dt')].map(dt => dt.textContent), ['Repo', 'Branch', 'Folder', 'Home']);
+  // Home: left-truncated, the full path in the field and the title; Copy is icon-only and copies it.
+  const home = u.field('home');
+  assert.equal(home.textContent, HOME); assert.equal(home.closest('.context-panel-path').dir, 'rtl'); assert.equal(home.closest('.context-panel-path').title, HOME);
+  const copy = u.q('[data-copy="home"]');
+  assert.equal(copy.getAttribute('aria-label'), 'Copy home path'); assert.equal(copy.textContent, ''); assert.ok(copy.querySelector('svg'));
+  const written = [];
+  Object.defineProperty(u.dom.window.navigator, 'clipboard', { value: { writeText: async text => { written.push(text); } }, configurable: true });
+  copy.click(); await tick(); u.q('[data-copy="workFolder"]').click(); await tick();
+  assert.deepEqual(written, [HOME, `${HOME}/work`]); assert.equal(copy.getAttribute('aria-label'), 'Copied');
+  assert.equal(u.document.querySelector('#context-panel').textContent.includes('Copy'), false, 'no text Copy button');
+  // Folder is built from the home, with the home's own separator.
   u.select(instance({ home: 'C:\\Users\\me\\agents\\dev\\instances\\dev-1\\' }));
   assert.equal(u.field('workFolder').textContent, 'C:\\Users\\me\\agents\\dev\\instances\\dev-1\\work');
   u.select(instance({ home: 'C:/Users/me/dev-1/' })); assert.equal(u.field('workFolder').textContent, 'C:/Users/me/dev-1/work');
-  // No home (or not a string): no Folder row, like Home.
-  for (const home of [undefined, 42, '']) {
-    u.select(instance({ home, work: 'checkout' }));
-    assert.equal(u.row('workFolder').hidden, true, `home ${JSON.stringify(home)}: no Folder row`);
+  // No home (or not a string): neither path, so no Paths; the sentence stays.
+  for (const value of [undefined, 42, '']) {
+    u.select(instance({ home: value, work: 'checkout' }));
+    assert.equal(paths.hidden, true, `home ${JSON.stringify(value)}: no Paths`); assert.equal(sentenceOf(u).closest('.context-panel-section').hidden, false);
   }
-  u.select(instance({ work: 'checkout' }));
-  const written = [];
-  Object.defineProperty(u.dom.window.navigator, 'clipboard', { value: { writeText: async text => { written.push(text); } }, configurable: true });
-  u.q('[data-copy="workFolder"]').click(); await tick();
-  assert.deepEqual(written, [`${HOME}/work`]);
+});
+
+test('Paths: a background repaint keeps the disclosure and a focused Copy inside it; another instance starts closed', t => {
+  const u = fixture(t, { fallbackFocus: () => u.q('#panel-toggle') }), other = `${HOME}-2`; u.select(instance({ work: 'worktree', repoName: 'northwind' }));
+  const paths = u.q('.context-panel-paths'); paths.open = true;
+  const copy = u.q('[data-copy="home"]'); copy.focus(); assert.equal(u.document.activeElement, copy);
+  // The same instance, repainted with a new fact: nothing rebuilt, still open, focus kept.
+  u.select(instance({ work: 'worktree', repoName: 'northwind', branch: 'feat/late', running: false }));
+  assert.equal(u.q('.context-panel-paths'), paths); assert.equal(paths.open, true); assert.equal(u.q('[data-copy="home"]'), copy);
+  assert.equal(u.document.activeElement, copy, 'focus survives a background repaint');
+  // Another instance: closed again, and focus leaves the hidden Copy for the panel's fallback, never stays on it.
+  u.select(instance({ work: 'worktree', home: other }));
+  assert.equal(paths.open, false, 'reset to closed for the new selection');
+  assert.equal(u.document.activeElement, u.q('#panel-toggle'), "focus leaves the Copy the closed disclosure hides, for the shell's fallback");
+});
+
+test('ahead/behind leave the Instance tab; the rail dot and the Developer tab thread count still follow the Git panel', t => {
+  let hooks = null;
+  const u = fixture(t, { git: (_host, h) => { hooks = h; return { update() {}, dispose() {} }; } });
+  const subject = instance({ work: 'worktree', repoName: 'northwind', branch: 'feat/checkout', createdAt: '2026-09-30T10:00:00.000Z' });
+  u.select(subject);
+  const identity = JSON.stringify(['A', HOME, HOME, subject.agent, subject.agentsRoot, null, subject.createdAt]);
+  hooks.onObservation({ identity, connection: 0, changed: true, ahead: 3, behind: 2 });
+  hooks.onPullRequest({ identity, connection: 0, unresolvedThreads: 2 });
+  const page = u.q('[data-context-page="instance"]');
+  assert.doesNotMatch(page.textContent, /[↑↓]/, 'no ↑/↓ on the Instance tab');
+  assert.equal(page.querySelector('.context-panel-ahead'), null);
+  assert.equal(u.q('.context-panel-dot').hidden, false, 'the rail dot is unchanged');
+  assert.equal(u.tab('git').querySelector('.context-panel-tab-count').textContent, '2', 'the review-thread count is unchanged');
+  assert.equal(u.tab('git').getAttribute('aria-label'), 'Developer, 2 unresolved review threads');
 });
 
 test('created reads as a relative age with the exact value in its title', t => {
@@ -195,17 +248,36 @@ test('Soul tab: the description under the name, Open soul page hands the soul id
   assert.equal(u.field('description').hidden, true);
 });
 
-test('Teams (Messaging) sits in the Instance tab under Session, injected; it is active only while the Instance tab is the visible page', t => {
-  const u = fixture(t); u.select(instance());
+test('Messaging & Teams sits in the Instance tab under Session, injected: the Messaging ID with an icon Copy, then the Teams sub-label; active only on the Instance tab', async t => {
+  const u = fixture(t); u.select(instance({ identityAddress: 'northwind/web-developer-1' }));
   const section = u.q('[data-context-section="teams"]');
   assert.equal(u.hosts.length, 1); assert.equal(u.hosts[0].host, section);
-  assert.equal(section.previousElementSibling.querySelector('.context-panel-label').textContent, 'Session', 'Workspace v4 (W6) order: Where it works, Session, Messaging');
-  // v4.1: the header is the label and a tools slot (the icon Refresh goes there); the address is its own line, not inline.
+  assert.equal(section.previousElementSibling.querySelector('.context-panel-label').textContent, 'Session', 'order: Work, Session, Messaging & Teams');
+  // The header: the label and a tools slot (the icon Refresh goes there, at its right).
   const head = section.querySelector('.context-panel-section-head');
-  assert.equal(head.querySelector('.context-panel-label').textContent, 'Messaging');
-  assert.equal(u.hosts[0].tools, head.querySelector('.context-panel-tools'));
-  assert.equal(head.querySelector('[data-context-field]'), null, 'the alias is not inline in the header');
-  assert.equal(head.nextElementSibling, u.field('identity')); assert.equal(u.field('identity').className, 'context-panel-address');
+  assert.equal(head.querySelector('.context-panel-label').textContent, 'Messaging & Teams');
+  assert.equal(u.hosts[0].tools, head.querySelector('.context-panel-tools')); assert.equal(head.lastElementChild, u.hosts[0].tools);
+  assert.equal(head.querySelector('[data-context-field]'), null, 'the ID is not inline in the header');
+  // Messaging ID: a sentence-case sub-label, then the one-line mono value (full value in its title) and its icon Copy.
+  const id = u.row('identity');
+  assert.equal(head.nextElementSibling, id); assert.equal(id.querySelector('.context-panel-sublabel').textContent, 'Messaging ID');
+  assert.equal(u.field('identity').className, 'context-panel-id'); assert.equal(u.field('identity').textContent, 'northwind/web-developer-1');
+  assert.equal(u.field('identity').title, 'northwind/web-developer-1');
+  assert.match(contextPanelCSS, /\.context-panel-id \{[^}]*overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:12px\/1\.45 ui-monospace/);
+  assert.match(contextPanelCSS, /\.context-panel-sublabel \{ font-size:11\.5px; font-weight:600; line-height:1\.45; color:var\(--muted\); \}/);
+  assert.doesNotMatch(contextPanelCSS.match(/\.context-panel-sublabel \{[^}]*\}/)[0], /uppercase/);
+  const copy = u.q('[data-copy="identity"]');
+  assert.equal(copy.parentElement, u.field('identity').parentElement, 'the Copy on the ID line');
+  assert.equal(copy.className, u.q('[data-copy="home"]').className, 'the same icon Copy the path lines use');
+  assert.equal(copy.getAttribute('aria-label'), 'Copy messaging ID'); assert.equal(copy.textContent, ''); assert.ok(copy.querySelector('svg'));
+  const written = [];
+  Object.defineProperty(u.dom.window.navigator, 'clipboard', { value: { writeText: async text => { written.push(text); } }, configurable: true });
+  copy.click(); await tick(); assert.deepEqual(written, ['northwind/web-developer-1']);
+  // Teams: its sub-label, then whatever the injected section mounts after it (the lead line and the card).
+  const teams = id.nextElementSibling;
+  assert.equal(teams.className, 'context-panel-sublabel'); assert.equal(teams.textContent, 'Teams'); assert.equal(teams.parentElement, section);
+  // An unreported ID hides its part; the Teams part stays the section's.
+  u.select(instance({ identityAddress: undefined })); assert.equal(id.hidden, true); assert.equal(teams.hidden, false);
   assert.equal(section.hidden, true, 'hidden until the section says it has something');
   u.hosts[0].onPresence(true); assert.equal(section.hidden, false);
   assert.equal(u.updates.at(-1).active, true); assert.equal(u.updates.at(-1).instance.home, HOME); assert.equal(u.updates.at(-1).workspace, 'A');
@@ -265,7 +337,7 @@ test('a stale inspection (the selection or workspace changed while it was in fli
 
 // Kernel #217 desktop facts on the instance page (views only): the last start,
 // where the model came from and the messaging address, each only when reported.
-test('desktop facts: a reported start replaces the spawn age, the model says where it came from, the messaging address sits under Messaging', t => {
+test('desktop facts: a reported start replaces the spawn age, the model says where it came from, the messaging address is the Messaging ID', t => {
   const u = fixture(t);
   const captured = JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/desktop-facts/status.json', import.meta.url), 'utf8')).agents.flatMap(a => a.instances)[0];
   const created = new Date(Date.now() - 26 * 3600e3).toISOString(), started = new Date(Date.now() - 12 * 60e3).toISOString();
@@ -275,13 +347,13 @@ test('desktop facts: a reported start replaces the spawn age, the model says whe
   assert.equal(captured.modelFrom, 'spawn'); assert.equal(captured.startedAt, null);
   assert.equal(u.field('modelFrom').textContent, 'chosen at spawn'); assert.equal(u.field('modelFrom').hidden, false);
   assert.equal(age('started').hidden, true, 'never launched: no start'); assert.equal(age('created').hidden, false);
-  assert.equal(u.field('identity').hidden, true, 'no address reported');
+  assert.equal(u.row('identity').hidden, true, 'no address reported');
   // A restarted home: the start replaces the age, the spawn time stays in its title.
   u.select(instance({ createdAt: created, model: 'claude-opus-5-5', modelFrom: 'soul', startedAt: started, identityAddress: 'northwind/web-developer-1' }));
   assert.equal(age('started').textContent, 'started 12 min ago'); assert.equal(age('created').hidden, true);
   assert.equal(u.field('startedAt').title, `${started} · created ${created}`);
   assert.equal(u.field('modelFrom').textContent, "the soul's choice");
-  assert.equal(u.field('identity').hidden, false); assert.equal(u.field('identity').textContent, 'northwind/web-developer-1');
+  assert.equal(u.row('identity').hidden, false); assert.equal(u.field('identity').textContent, 'northwind/web-developer-1');
   assert.equal(u.field('identity').closest('[data-context-section="teams"]') !== null, true);
   // 0.30 launch preferences: an inline override on this computer, for the soul or for every soul.
   for (const [from, words] of [['local', 'set for this soul on this computer'], ['local-default', "this computer's default for every soul"]]) {
@@ -298,7 +370,7 @@ test('desktop facts: a reported start replaces the spawn age, the model says whe
   for (const extra of [{}, { modelFrom: null }]) {
     u.select(instance({ createdAt: created, model: 'm', ...extra }));
     assert.equal(u.field('modelFrom').hidden, true); assert.equal(age('started').hidden, true);
-    assert.equal(age('created').textContent, 'created 1 d ago'); assert.equal(u.field('identity').hidden, true);
+    assert.equal(age('created').textContent, 'created 1 d ago'); assert.equal(u.row('identity').hidden, true);
   }
 });
 

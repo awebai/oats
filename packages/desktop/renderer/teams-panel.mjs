@@ -8,7 +8,7 @@ import { iconElement } from './shell-icons.mjs';
 
 /** One card, the same in the Workspace inspector and the context panel:
  * tokens only (computed-AA inventory in theme-contrast), no opacity.
- * `.teams-panel.is-compact` is the context panel's Messaging variant (v4.1
+ * `.teams-panel.is-compact` is the context panel's Messaging & Teams variant (v4.1
  * board): a state glyph per row, text actions, the refresh as an icon button
  * that may live outside the section (`button.teams-refresh.is-compact`). */
 export const teamsCSS = `
@@ -45,6 +45,7 @@ export const teamsCSS = `
 .teams-panel .teams-subhead { margin:0; padding:9px 12px 0; border-top:1px solid var(--border); font-size:11px; font-weight:650; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); }
 .teams-panel .teams-subhead + .team-row { border-top:0; }
 .teams-panel.is-compact .teams-card { border-radius:9px; }
+.teams-panel.is-compact > .teams-intro { padding:0; }
 .teams-panel.is-compact .teams-card > * + * { border-top:1px solid var(--border); }
 .teams-panel.is-compact .teams-card > .teams-subhead + .team-row { border-top:0; }
 .teams-panel.is-compact .team-row { display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:9px 12px; min-height:40px; }
@@ -200,7 +201,7 @@ export function receiveText(receive) {
 /** One Teams section for an instance home. `request(body)` posts to the
  * capabilities route; `owns()` is the inspector's selection lifetime (checked
  * on success AND rejection); `available()` the CLI gate. `compact` is the
- * context panel's Messaging presentation (glyph rows, text actions, an icon
+ * context panel's Messaging & Teams presentation (glyph rows, a lead line, text actions, an icon
  * Refresh that goes to `refreshHost` when given); the default renders the
  * Workspace inspector's card. `dispose()` removes the section and the refresh
  * button wherever it was appended (safe to call twice). `mutable()` false (the
@@ -220,11 +221,13 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
   if (!operations.teams.available) { section.append(node('p', operations.teams.reason || 'The provider cannot list teams here.', 'teams-status')); return { sync() {}, refresh() {}, dispose }; }
   const status = node('p', '', 'teams-status'); status.setAttribute('role', 'status');
   // What the list is: the workspace's default team, then the teams the soul has access to (unmapped labels are not shown).
-  const intro = node('p', "Always in the workspace's default team. It can join the teams its soul has access to.", 'teams-note teams-intro'); intro.hidden = true;
+  // Compact: the lead line under the context panel's "Teams" sub-label. Both show once a teams document has been read.
+  const intro = node('p', compact ? 'The messaging teams this soul is allowed to join. It is always in the default team.'
+    : "Always in the workspace's default team. It can join the teams its soul has access to.", 'teams-note teams-intro'); intro.hidden = true;
   const body = node('div', undefined, 'teams-card');
   refresh = node('button', compact ? undefined : 'Refresh teams', compact ? 'teams-refresh is-compact' : 'teams-refresh'); refresh.type = 'button'; refresh.dataset.focusKey = 'teams-refresh';
   if (compact) { refresh.append(iconElement(doc, 'refresh', { size: 13 })); refresh.setAttribute('aria-label', 'Refresh teams'); refresh.title = 'Refresh teams'; }
-  section.append(...(compact ? [] : [intro]), status, body);
+  section.append(intro, status, body);
   (refreshHost || section).append(refresh);
   // A row's state glyph (compact only): a check for a membership (the default team, a joined
   // team), a circle for a team it could join or is not in.
@@ -348,7 +351,7 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
       for (const a of warned.filter(a => a.label === row.label)) el.append(warning(a));
       body.append(el);
     }
-    if (!rows.length) body.append(node('p', compact ? 'No other teams available to this soul.' : 'Its soul has access to no other team.', 'teams-note'));
+    if (!rows.length) body.append(node('p', compact ? 'This soul may join no other team.' : 'Its soul has access to no other team.', 'teams-note'));
     // Team model v2: the teams this instance left on a live read (the soul lost them), newest first.
     const left = [...(current.left || [])].sort((a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0));
     if (left.length) {

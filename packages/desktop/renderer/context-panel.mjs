@@ -65,28 +65,31 @@ export const contextPanelCSS = `
 #context-panel .context-panel-section-head { display:flex; align-items:center; gap:8px; min-width:0; min-height:24px; }
 #context-panel .context-panel-tools { display:flex; align-items:center; gap:2px; margin-left:auto; }
 #context-panel .context-panel-tools:empty { display:none; }
-#context-panel .context-panel-address { margin-top:-4px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:11.5px ui-monospace, Menlo, monospace; color:var(--muted); }
-/* Where it works: one card; the work mode on a band, then the facts grid. */
-#context-panel .context-panel-where { min-width:0; border:1px solid var(--border); border-radius:9px; overflow:hidden; background:var(--surface); }
-#context-panel .context-panel-mode { display:flex; align-items:center; gap:10px; min-width:0; padding:10px 12px; background:var(--surface-2); }
-#context-panel .context-panel-mode + .context-panel-facts { border-top:1px solid var(--border); }
+/* Messaging & Teams: each part under a sentence-case sub-label (not the uppercase section style). */
+#context-panel .context-panel-part { display:flex; flex-direction:column; gap:4px; min-width:0; }
+#context-panel .context-panel-sublabel { font-size:11.5px; font-weight:600; line-height:1.45; color:var(--muted); }
+/* Teams' sub-label sits over the injected section's lead line at the parts' 4px, not the section's 8px gap. */
+#context-panel .context-panel-section > .context-panel-sublabel { margin-bottom:-4px; }
+/* The messaging ID: one mono line, ellipsis (the full value in its title), plus an icon Copy. */
+#context-panel .context-panel-idline { display:flex; align-items:center; gap:6px; min-width:0; }
+#context-panel .context-panel-id { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:12px/1.45 ui-monospace, Menlo, monospace; color:var(--fg); }
+/* Work: one card — the work mode's tile and one sentence (it wraps, never truncates), then the closed Paths. */
+#context-panel .context-panel-work { min-width:0; border:1px solid var(--border); border-radius:9px; overflow:hidden; background:var(--surface); }
+#context-panel .context-panel-work-main { display:flex; align-items:flex-start; gap:10px; min-width:0; padding:10px 12px; }
 #context-panel .context-panel-mode-tile { flex:none; display:grid; place-items:center; width:26px; height:26px; border-radius:7px; background:var(--soul-sage-bg); color:var(--soul-sage-fg); }
 #context-panel .context-panel-mode-tile[data-work="directory"], #context-panel .context-panel-mode-tile[data-work="workspace"] { background:var(--soul-slate-bg); color:var(--soul-slate-fg); }
-#context-panel .context-panel-mode-copy { display:flex; flex-direction:column; min-width:0; flex:1; }
-#context-panel .context-panel-mode-title { font-size:13px; font-weight:600; color:var(--fg); }
-#context-panel .context-panel-mode-meaning { font-size:11.5px; color:var(--muted); overflow-wrap:anywhere; }
-/* Facts: a label column (64px, muted) and a value column; Where it works and Lineage share it. */
+#context-panel .context-panel-work-sentence { flex:1; min-width:0; margin:0; align-self:center; font-size:12.5px; line-height:1.5; color:var(--fg); overflow-wrap:anywhere; }
+/* A fact inside the sentence (repo, branch, parent): the mono face, breaking inside only when it cannot fit a line. */
+#context-panel .context-panel-fact-code { font:12px/1.5 ui-monospace, Menlo, monospace; color:var(--fg); }
+#context-panel .context-panel-paths { min-width:0; border-top:1px solid var(--border); padding:8px 12px; }
+#context-panel .context-panel-paths > summary { cursor:pointer; font-size:11.5px; font-weight:600; color:var(--muted); }
+#context-panel .context-panel-paths[open] > summary { margin-bottom:8px; }
+/* Facts: a label column (64px, muted) and a value column; Paths and Lineage share it. */
 #context-panel .context-panel-facts { display:grid; grid-template-columns:64px minmax(0,1fr); gap:7px 10px; align-items:center; margin:0; min-width:0; font-size:12px; line-height:1.45; }
-#context-panel .context-panel-where .context-panel-facts { padding:10px 12px; }
 #context-panel .context-panel-fact { display:contents; }
 #context-panel .context-panel-facts dt { color:var(--muted); }
 #context-panel .context-panel-facts dd { margin:0; min-width:0; color:var(--fg); overflow-wrap:anywhere; }
-#context-panel .context-panel-facts .is-mono { font:12px/1.45 ui-monospace, Menlo, monospace; }
 #context-panel .context-panel-facts [data-unreported] { color:var(--muted); }
-/* Branch: one line, ellipsis (the full name in its title), then ↑/↓. */
-#context-panel .context-panel-branch-value { display:flex; align-items:baseline; min-width:0; }
-#context-panel .context-panel-branch-value > [data-context-field] { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-#context-panel .context-panel-ahead { flex:none; margin-left:6px; color:var(--muted); white-space:nowrap; }
 /* A path: one line, clipped at the start so its meaningful end shows (full value in the title), plus an icon Copy. */
 #context-panel .context-panel-pathline { display:flex; align-items:center; gap:6px; min-width:0; }
 #context-panel .context-panel-path { flex:1; min-width:0; font:12px/1.45 ui-monospace, Menlo, monospace; color:var(--fg); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; text-align:left; }
@@ -150,14 +153,18 @@ const inertPanel = () => ({
  * (`local-default`), in the soul page's words (launch-view.mjs). An unknown value says nothing. */
 const MODEL_FROM = Object.freeze({ __proto__: null, soul: "the soul's choice", spawn: 'chosen at spawn', start: 'chosen at start', 'launch-config': 'from the launch configuration', 'harness-default': "the harness's default",
   local: 'set for this soul on this computer', 'local-default': "this computer's default for every soul" });
-/** Work modes in plain words (board 1): the tile's icon, the label and its one-line meaning. */
+/** Work modes in one plain sentence (Spec A): the tile's icon and what the mode means for this
+ * instance. `sentence(facts)` returns its parts: strings, and `{ code }` for a roster row's own
+ * fact (repo, branch, parent), shown in the mono face. An unreported fact says the generic words,
+ * never an invented name. */
 const WORK_MODES = Object.freeze({ __proto__: null,
-  worktree: { icon: 'branch', label: 'Own worktree', meaning: "isolated branch in a clone of the soul's repo" },
-  checkout: { icon: 'branch', label: 'Shared checkout', meaning: "the repo's current branch" },
-  attached: { icon: 'link', label: 'Attached', meaning: null },
-  directory: { icon: 'folder', label: 'Plain folder', meaning: 'no Git' },
-  workspace: { icon: 'layers', label: 'Workspace view', meaning: 'reads across member repos' } });
-const NO_GIT = new Set(['directory', 'workspace']);
+  worktree: { icon: 'branch', sentence: ({ repo, branch }) => ['Works in its own worktree of ', ...(repo ? [{ code: repo }] : ["its soul's repository"]),
+    ...(branch ? [', on branch ', { code: branch }] : []), '.'] },
+  checkout: { icon: 'branch', sentence: ({ repo }) => ['Works in the shared checkout of ', ...(repo ? [{ code: repo }] : ["its soul's repository"]),
+    ', alongside the other instances that use it.'] },
+  attached: { icon: 'link', sentence: ({ parent }) => ['Works in ', ...(parent ? [{ code: parent }, "'s tree"] : ["its parent's tree"]), ', sharing its branch and changes.'] },
+  directory: { icon: 'folder', sentence: () => ['Has its own folder, not tied to one repository: free to work across repos as its task needs.'] },
+  workspace: { icon: 'layers', sentence: () => ['Sees the whole workspace: reads across every member repository.'] } });
 /** Modes whose <home>/work is a link to a tree other instances share (the kernel symlinks it). */
 const LINKED = new Set(['checkout', 'attached', 'workspace']);
 /** The folder an instance works in: <home>/work in every mode (a real folder for worktree and
@@ -249,6 +256,8 @@ export function createContextPanel({
     if (!el?.isConnected || el.disabled) return false;
     for (let current = el; current; current = current.parentElement) {
       if (current.hidden || current.inert) return false;
+      // A closed <details> renders only its summary (the Paths disclosure's Copy controls).
+      if (current !== el && current.localName === 'details' && !current.open && !current.querySelector(':scope > summary')?.contains(el)) return false;
       const style = document.defaultView?.getComputedStyle(current);
       if (style?.display === 'none' || style?.visibility === 'hidden') return false;
     }
@@ -320,8 +329,8 @@ export function createContextPanel({
   }
   const fields = new Map();
   // Instance page (v4.1 board 1): identity header — soul mark, name, "instance
-  // of <soul>" (+ "older build" on drift), state — then Where it works, Session,
-  // Messaging and Lineage. Every value is the roster row's own reported fact;
+  // of <soul>" (+ "older build" on drift), state — then Work, Session,
+  // Messaging & Teams and Lineage. Every value is the roster row's own reported fact;
   // an unreported fact keeps "Not reported" in its field and hides its row.
   const identityHeader = (pageId) => {
     const wrap = node('div', 'context-panel-identity'), mark = node('span', 'context-panel-mark');
@@ -379,34 +388,32 @@ export function createContextPanel({
   };
   function facts(host, entries) {
     const dl = node('dl', 'context-panel-facts');
-    for (const [id, label, mono] of entries) factRow(dl, id, label, field('dd', mono ? 'is-mono' : null, id));
+    for (const [id, label] of entries) factRow(dl, id, label, field('dd', null, id));
     host.append(dl); return dl;
   }
-  // Where it works (board 1): one card — the work mode on a band (its tile, its
-  // plain-language label and meaning), then Repo, Branch (Git modes), Folder and Home.
-  const worktree = section('instance', 'Where it works');
-  const whereCard = node('div', 'context-panel-where');
-  const mode = node('div', 'context-panel-mode'), modeTile = node('span', 'context-panel-mode-tile'), modeCopy = node('div', 'context-panel-mode-copy');
-  modeTile.setAttribute('aria-hidden', 'true'); mode.dataset.row = 'work'; rows.set('work', mode);
-  const modeTitle = node('span', 'context-panel-mode-title'), modeMeaning = node('span', 'context-panel-mode-meaning');
-  modeCopy.append(modeTitle, modeMeaning); mode.append(modeTile, modeCopy);
-  const whereFacts = node('dl', 'context-panel-facts');
-  factRow(whereFacts, 'repoName', 'Repo', field('dd', 'is-mono', 'repoName'));
-  // Branch: the reported branch, then ↑/↓ from the default branch once the Git tab has observed them.
-  const branchValue = node('dd', 'is-mono context-panel-branch-value'), ahead = node('span', 'context-panel-ahead');
-  branchValue.append(field('span', null, 'branch'), ahead);
-  const branchRow = factRow(whereFacts, 'branch', 'Branch', branchValue);
+  // Work (Spec A): one card — the work mode's tile and one sentence saying what the mode means
+  // for this instance, then Folder and Home behind a closed Paths disclosure (an operator's lookup).
+  const workSection = section('instance', 'Work');
+  const workCard = node('div', 'context-panel-work'), workMain = node('div', 'context-panel-work-main');
+  const modeTile = node('span', 'context-panel-mode-tile'), workSentence = node('p', 'context-panel-work-sentence');
+  modeTile.setAttribute('aria-hidden', 'true'); workSentence.dataset.contextWork = '';
+  workMain.append(modeTile, workSentence);
+  // Paths: built once and never rebuilt on repaint (the browser owns its open state and a focused
+  // Copy inside it); it closes when the selected instance changes.
+  const paths = node('details', 'context-panel-paths'); paths.append(node('summary', null, 'Paths'));
+  const pathFacts = node('dl', 'context-panel-facts');
   // Folder: <home>/work, where it works; "shared" when that is a link to a shared tree.
   const folderValue = node('dd'), folderLine = pathLine('workFolder', 'Copy folder path', { own: false });
   const sharedTag = node('span', 'context-panel-shared-tag', 'shared'); sharedTag.dataset.contextShared = '';
   sharedTag.title = 'A link to the shared tree; changes here are visible to every instance that shares it.';
   sharedTag.setAttribute('role', 'note'); sharedTag.setAttribute('aria-label', `shared: ${sharedTag.title}`);
   folderLine.lastChild.before(sharedTag); folderValue.append(folderLine);
-  factRow(whereFacts, 'workFolder', 'Folder', folderValue);
+  factRow(pathFacts, 'workFolder', 'Folder', folderValue);
   // Home: the instance home, where its own files live.
   const homeValue = node('dd'); homeValue.append(pathLine('home', 'Copy home path', { own: false }));
-  factRow(whereFacts, 'home', 'Home', homeValue);
-  whereCard.append(mode, whereFacts); worktree.append(whereCard);
+  factRow(pathFacts, 'home', 'Home', homeValue);
+  paths.append(pathFacts); workCard.append(workMain, paths); workSection.append(workCard);
+  let workKey = null;
   // Session: the harness (and model) it runs, its terminal session and age.
   const session = section('instance', 'Session');
   const sessionCard = node('div', 'context-panel-session');
@@ -424,14 +431,18 @@ export function createContextPanel({
   startedLine.append('started ', field('span', null, 'startedAt'));
   sessionSide.append(tmuxLine, startedLine, createdLine);
   sessionCard.append(sessionBadge, sessionCopy, sessionSide); session.append(sessionCard);
-  // Messaging (teams contract): injected like Git — this host performs no IO.
-  // Header: the label and a tools slot (the section's icon Refresh); then the
-  // identity address alone on its line; then the teams list.
+  // Messaging & Teams (teams contract): injected like Git — this host performs no IO.
+  // Header: the label and a tools slot (the section's icon Refresh); then two
+  // labelled parts: the Messaging ID (with an icon Copy), then Teams, whose lead
+  // line and card the injected section mounts after its sub-label.
   const teamsHost = node('section', 'context-panel-section'); teamsHost.dataset.contextSection = 'teams'; teamsHost.hidden = true;
   const teamsHead = node('div', 'context-panel-section-head'), teamsTools = node('div', 'context-panel-tools');
-  teamsHead.append(node('div', 'context-panel-label', 'Messaging'), teamsTools);
-  const identityLine = field('div', 'context-panel-address', 'identity');
-  teamsHost.append(teamsHead, identityLine); pages.get('instance').append(teamsHost);
+  teamsHead.append(node('div', 'context-panel-label', 'Messaging & Teams'), teamsTools);
+  const idPart = node('div', 'context-panel-part'), idLine = node('div', 'context-panel-idline');
+  idLine.append(field('span', 'context-panel-id', 'identity'), copyControl('identity', 'Copy messaging ID'));
+  idPart.append(node('div', 'context-panel-sublabel', 'Messaging ID'), idLine); idPart.dataset.row = 'identity'; rows.set('identity', idPart);
+  const teamsLabel = node('div', 'context-panel-sublabel', 'Teams'); teamsLabel.dataset.contextTeamsLabel = '';
+  teamsHost.append(teamsHead, idPart, teamsLabel); pages.get('instance').append(teamsHost);
   const teamsSection = typeof createTeamsSection === 'function' ? createTeamsSection(teamsHost, { tools: teamsTools,
     onPresence(present) { if (!disposed) teamsHost.hidden = !present; } }) : null;
   const lineage = section('instance', 'Lineage');
@@ -478,16 +489,6 @@ export function createContextPanel({
     if (said) tabs.get('git').setAttribute('aria-label', `Developer, ${said}`); else tabs.get('git').removeAttribute('aria-label');
     const label = [changed ? 'Developer — changes in the last accepted observation' : 'Developer', said].filter(Boolean).join(', ');
     railTabs.get('git').title = label; railTabs.get('git').setAttribute('aria-label', label);
-    paintAhead();
-  }
-  // The Branch row's ↑/↓ from the default branch: only from this selection's accepted Git observation.
-  function paintAhead() {
-    const current = hasGeneric() && gitSummary?.identity === contextIdentity() && gitSummary.connection === connectionGeneration();
-    const count = (n, glyph) => current && Number.isSafeInteger(n) && n > 0 ? `${glyph}${n}` : null;
-    const text = [count(gitSummary?.ahead, '↑'), count(gitSummary?.behind, '↓')].filter(Boolean).join(' ');
-    if (ahead.textContent !== text) ahead.textContent = text;
-    ahead.hidden = !text;
-    ahead.title = text ? 'Commits ahead of (↑) and behind (↓) the default branch, as last observed in the Developer tab' : '';
   }
   if (!gitPanel) pages.get('git').append(node('h2', null, 'Developer'), node('p', 'context-panel-note',
     'Integration unavailable. This host has no K1 Git reader. No changes, diffs, pull requests, or checks are reported here.'));
@@ -581,15 +582,22 @@ export function createContextPanel({
     const drifted = driftText(instance);
     drift.hidden = !drifted; drift.title = drifted || '';
     if (drifted) drift.setAttribute('aria-label', `older build: ${drifted}`); else drift.removeAttribute('aria-label');
-    // Where it works: the work mode's tile, label and meaning; Branch only for Git modes.
+    // Work: the mode's tile and its sentence, rebuilt only when its words change (a fact arriving
+    // later rewrites the sentence in place); an unknown or unreported mode hides the section.
     const work = WORK_MODES[instance.work] ? instance.work : null;
-    mode.hidden = !work;
+    workSection.hidden = !work;
     if (work && modeTile.dataset.work !== work) {
       modeTile.dataset.work = work; modeTile.replaceChildren(iconElement(document, WORK_MODES[work].icon, { size: 14 }));
     }
-    if (work) {
-      modeTitle.textContent = WORK_MODES[work].label;
-      modeMeaning.textContent = work === 'attached' ? `works in ${typeof instance.parentInstance === 'string' && instance.parentInstance ? `${instance.parentInstance}'s` : "its parent's"} tree` : WORK_MODES[work].meaning;
+    const fact = value => typeof value === 'string' && value ? value : null;
+    const parts = work ? WORK_MODES[work].sentence({ repo: fact(instance.repoName), branch: fact(instance.branch), parent: fact(instance.parentInstance) }) : [];
+    const key = JSON.stringify(parts);
+    if (workKey !== key) {
+      workKey = key;
+      workSentence.replaceChildren(...parts.map(part => {
+        if (typeof part === 'string') return part;
+        const code = node('span', 'context-panel-fact-code', part.code); code.title = part.code; return code;
+      }));
     }
     // Session card: the harness mark and name, the model, the terminal session.
     const harness = typeof instance.harness === 'string' && instance.harness ? instance.harness : null;
@@ -611,6 +619,7 @@ export function createContextPanel({
         // Where the model came from says nothing without the model beside it.
         : id === 'modelFrom' ? (reported(instance.model) !== 'Not reported' && MODEL_FROM[instance.modelFrom]) || 'Not reported'
         : id === 'workFolder' ? workFolder(instance.home) ?? 'Not reported'
+        : id === 'home' ? (typeof instance.home === 'string' && instance.home) || 'Not reported'
         : reported(instance[id]);
       const age = ['createdAt', 'startedAt'].includes(id);
       const shown = age && value !== 'Not reported' ? ageText(value) : value;
@@ -620,14 +629,11 @@ export function createContextPanel({
       else if (el.closest('.context-panel-path')) el.closest('.context-panel-path').title = value === 'Not reported' ? '' : value;
       el.toggleAttribute('data-unreported', value === 'Not reported');
       const row = rows.get(id); if (row) row.hidden = value === 'Not reported';
-      else if (['model', 'modelFrom', 'identity'].includes(id)) el.hidden = value === 'Not reported';
-      if (id === 'identity' || id === 'branch' || id === 'instance') el.title = value === 'Not reported' ? '' : value;
+      else if (['model', 'modelFrom'].includes(id)) el.hidden = value === 'Not reported';
+      if (id === 'identity' || id === 'instance') el.title = value === 'Not reported' ? '' : value;
       if (id === 'model' || id === 'modelFrom') modelLine.title = [fields.get('model')?.textContent, fields.get('modelFrom')?.textContent].filter(t => t && t !== 'Not reported').join(' · ');
     }
-    // Branch: not a fact of a plain folder or a workspace view.
-    if (NO_GIT.has(instance.work)) branchRow.hidden = true;
     sharedTag.hidden = !LINKED.has(instance.work);
-    paintAhead();
     // A reported start replaces the spawn age (startedAt is null for a home never launched).
     startedLine.hidden = fields.get('startedAt').textContent === 'Not reported';
     createdLine.hidden = !startedLine.hidden || fields.get('createdAt').textContent === 'Not reported';
@@ -640,8 +646,8 @@ export function createContextPanel({
     startControl.title = unsupported || '';
     // A section with nothing reported is not shown; the header sub-line omits an unreported description.
     soulSub.hidden = fields.get('description').textContent === 'Not reported';
-    for (const host of [worktree, lineage]) host.hidden = [...host.querySelectorAll('[data-row]')].every(r => r.hidden);
-    whereFacts.hidden = [...whereFacts.querySelectorAll('[data-row]')].every(r => r.hidden);
+    lineage.hidden = [...lineage.querySelectorAll('[data-row]')].every(r => r.hidden);
+    paths.hidden = [...paths.querySelectorAll('[data-row]')].every(r => r.hidden);
     soulDetails.hidden = [...soulDetails.querySelectorAll('[data-row]')].every(r => r.hidden);
     openSoulControl.disabled = typeof openSoul !== 'function' || typeof instance.agent !== 'string' || !instance.agent;
   }
@@ -672,6 +678,8 @@ export function createContextPanel({
         const previous = contextIdentity();
         context = { workspace, owner, instance, key };
         if (previous !== contextIdentity() || owner != null) { gitSummary = null; prSummary = null; }
+        // Paths opens per selection: another instance starts with it closed.
+        if (previous !== contextIdentity()) paths.open = false;
         projectMetadata();
       });
     },
