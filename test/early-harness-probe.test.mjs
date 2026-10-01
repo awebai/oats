@@ -17,7 +17,9 @@ const CONFIGS = { "launch-configs": { mine: { harness: "claude", env: { TEST_TOK
 /** A deployment whose `dev` soul's capability requires a claude plugin, and a fake `claude` first on PATH.
  *  The fake logs `start <pid> <token>` and `done <pid> <token>` for every `plugin list`, lists the plugin
  *  only under TEST_TOKEN `selected` or `alt`, and under a token starting with `sleep` records its pid and
- *  its sleeping child's in probe.pids and never answers. */
+ *  its sleeping child's in probe.pids and never answers. Under `bg` it leaves a child that holds none of its
+ *  pipes (recorded, with its own pid) and answers at once; under `big` it lists the plugin in valid JSON over
+ *  1 MiB; under `flood` it records its pid and prints without end. */
 function deployment(t, { souls = DEV(), local = CONFIGS, capabilities = REQUIRES } = {}) {
   const fx = v2Deployment({ souls, capabilities, local });
   t.after(() => fx.cleanup());
@@ -27,6 +29,9 @@ function deployment(t, { souls = DEV(), local = CONFIGS, capabilities = REQUIRES
 if [ "$1" = "plugin" ] && [ "$2" = "list" ]; then
   echo "start $$ \${TEST_TOKEN:-}" >> '${fx.log}'
   case "\${TEST_TOKEN:-}" in sleep*) echo $$ >> '${fx.pids}'; sleep 600 & echo $! >> '${fx.pids}'; wait; exit 0;; esac
+  case "\${TEST_TOKEN:-}" in bg) echo $$ >> '${fx.pids}'; sleep 600 </dev/null >/dev/null 2>&1 & echo $! >> '${fx.pids}'; printf '[]'; exit 0;; esac
+  case "\${TEST_TOKEN:-}" in big) printf '[{"id":"chan@acme-marketplace","scope":"user","enabled":true,"pad":"'; head -c 2100000 /dev/zero | tr '\\0' a; printf '"}]'; exit 0;; esac
+  case "\${TEST_TOKEN:-}" in flood) echo $$ >> '${fx.pids}'; yes '[' ; exit 0;; esac
   case "\${TEST_TOKEN:-}" in selected|alt) printf '[{"id":"chan@acme-marketplace","scope":"user","enabled":true}]';; *) printf '[]';; esac
   echo "done $$ \${TEST_TOKEN:-}" >> '${fx.log}'
   exit 0
@@ -145,4 +150,41 @@ test("a preview's preflight budget bounds the adopted probe: killed at the deadl
   assert.equal(optional.early.ok, true, JSON.stringify(optional.early).slice(0, 400)); assert.equal(optional.sync.ok, true);
   assert.equal(optional.sync.result.preflight.status, "timeout");
   assert.equal(optional.early.result.preflight.status, "timeout"); assert.equal(optional.early.result.preflight.budgetMs, 1500);
+});
+
+test("a probe whose leader exits but leaves a child holding none of its pipes: the child is killed with the group", async (t) => {
+  // Not adopted (the soul is pi), and adopted (the spawn then refuses: the plugin is not listed).
+  for (const [args, harness] of [[["spawn", "dev", "--name", "dev-bg-pi", "--no-launch", "--json"], "pi"], [["spawn", "dev", "--harness", "claude", "--name", "dev-bg-claude", "--no-launch", "--json"], "claude"]]) {
+    const fx = deployment(t, { local: { "launch-configs": { mine: { harness: "claude", env: { TEST_TOKEN: "bg" }, default: true } } } });
+    const r = fx.oats(args);
+    if (harness === "pi") assert.equal(r.json.ok, true, r.stdout + r.stderr);
+    else assert.equal(r.json.ok, false, "the empty listing refuses the claude spawn, as the synchronous probe does");
+    assert.deepEqual(await survivors(fx), [], `${harness}: no descendant of the probe outlives the command`);
+  }
+});
+
+test("an early probe's stdout is bounded as the synchronous probe's is: over it, failed and killed, never adopted", async (t) => {
+  const fx = deployment(t);
+  const core = await import("../lib/core.mjs");
+  const bin = join(fx.base, "fake-bin", "claude");
+  // Valid JSON over 1 MiB that lists the plugin: the synchronous probe answers nothing, and so does the early one.
+  const bigEnv = { ...fx.env, PATH: fx.path, TEST_TOKEN: "big" };
+  const sync = core.HARNESS_PACKAGE_MANAGERS.claude.list(bigEnv, { bin });
+  core.startHarnessPackageProbe({ bin, env: bigEnv });
+  const listed = await core.settleHarnessPackageProbe({ bin, env: bigEnv });
+  core.abandonHarnessPackageProbes();
+  assert.equal(listed, null, "the oversize answer is a failed probe");
+  assert.deepEqual(core.HARNESS_PACKAGE_MANAGERS.claude.list(bigEnv, { bin, listed }), sync);
+  assert.deepEqual(sync, []);
+  // A probe that prints without end is killed at the bound, not at its 60 s timeout.
+  const floodEnv = { ...fx.env, PATH: fx.path, TEST_TOKEN: "flood" };
+  const started = Date.now();
+  core.startHarnessPackageProbe({ bin, env: floodEnv });
+  assert.equal(await core.settleHarnessPackageProbe({ bin, env: floodEnv }), null);
+  core.abandonHarnessPackageProbes();
+  assert.ok(Date.now() - started < 15000, `killed at the bound (${Date.now() - started} ms)`);
+  const pids = readFileSync(fx.pids, "utf8").trim().split("\n").filter(Boolean).map(Number);
+  const deadline = Date.now() + 10000;
+  while (pids.some(alive) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+  assert.deepEqual(pids.filter(alive), [], "its group is gone");
 });
