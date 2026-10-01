@@ -398,8 +398,10 @@ test("without --json: an operator listing; --file prints the text, or a one-line
   assert.match(bad.stderr, /^oats: no capability "nope"/);
 });
 
-test("a skill whose files cannot be listed (an unsafe name deep in its tree): files null with the problem; --file under it is UNKNOWN", (t) => {
-  const f = v2Deployment({ capabilities: { "acme.hostile": { manifest: { skills: ["skills"] }, files: { "skills/ok/SKILL.md": "---\ndescription: ok\n---\n", "skills/bad/SKILL.md": "---\ndescription: bad\n---\n" } } } });
+test("a skill whose files cannot be listed (an unsafe name deep in its tree, before or past the 200 cap): files null with the problem; --file under it is UNKNOWN", (t) => {
+  const crowded = Object.fromEntries(Array.from({ length: FILES_PER_SKILL + 1 }, (_, i) => [`skills/crowded/f${String(i).padStart(3, "0")}.md`, `${i}\n`]));
+  const f = v2Deployment({ capabilities: { "acme.hostile": { manifest: { skills: ["skills"] }, files: { "skills/ok/SKILL.md": "---\ndescription: ok\n---\n", "skills/bad/SKILL.md": "---\ndescription: bad\n---\n",
+    "skills/crowded/SKILL.md": "---\ndescription: crowded\n---\n", ...crowded } } } });
   t.after(f.cleanup);
   // Graft skills/bad/deep/x/.git into the member's HEAD tree (git's transport does not fsck entry names).
   const seed = join(f.base, "seed");
@@ -418,7 +420,9 @@ test("a skill whose files cannot be listed (an unsafe name deep in its tree): fi
   };
   const blob = run("evil\n", "hash-object", "-w", "--stdin");
   const hostileLeaf = (names) => names.reduceRight((leaf, name) => ({ mode: "040000", name, oid: mkTree([leaf]) }), { mode: "100644", name: ".git", oid: blob });
-  const tree = graft(run("", "rev-parse", "HEAD^{tree}"), ["capabilities", "acme.hostile", "skills", "bad", "deep"], hostileLeaf(["x"]));
+  // skills/crowded/zzz/.git sorts after its first 200 files: the scan still covers every entry (#409).
+  const tree = graft(graft(run("", "rev-parse", "HEAD^{tree}"), ["capabilities", "acme.hostile", "skills", "bad", "deep"], hostileLeaf(["x"])),
+    ["capabilities", "acme.hostile", "skills", "crowded", "(leaf)"], hostileLeaf(["zzz"])); // graft adds the leaf beside the path's last name
   const commit = run("", "commit-tree", tree, "-p", "HEAD", "-m", "hostile");
   git(seed, "push", "-q", "origin", `${commit}:main`);
   const doc = ok(f.cli(["capabilities", "show", "acme.hostile", "--json"]));
@@ -426,7 +430,9 @@ test("a skill whose files cannot be listed (an unsafe name deep in its tree): fi
   const skill = Object.fromEntries(doc.skills.map((s) => [s.name, s]));
   assert.deepEqual([skill.bad.files, skill.bad.filesTruncated], [null, false], "could not list ≠ listed nothing");
   assert.deepEqual(skill.ok.files, [{ path: "skills/ok/SKILL.md", bytes: size("---\ndescription: ok\n---\n") }]);
-  assert.deepEqual(doc.problems.map((p) => [p.code, p.path]), [["E_REMOTE_TREE_UNSAFE", "skills/bad"]]);
+  assert.deepEqual([skill.crowded.files, skill.crowded.filesTruncated], [null, false], "a hostile name past the cap still makes the skill unlistable");
+  assert.deepEqual(doc.problems.map((p) => [p.code, p.path]), [["E_REMOTE_TREE_UNSAFE", "skills/bad"], ["E_REMOTE_TREE_UNSAFE", "skills/crowded"]]);
+  refused(f.cli(["capabilities", "show", "acme.hostile", "--file", "skills/crowded/f000.md", "--json"]), "E_CAPABILITY_FILE_UNKNOWN", "a file under a skill unlistable past the cap");
   refused(f.cli(["capabilities", "show", "acme.hostile", "--file", "skills/bad/SKILL.md", "--json"]), "E_CAPABILITY_FILE_UNKNOWN", "a file under an unlistable skill");
   assert.equal(ok(f.cli(["capabilities", "show", "acme.hostile", "--file", "skills/ok/SKILL.md", "--json"])).file.text, "---\ndescription: ok\n---\n");
 });
