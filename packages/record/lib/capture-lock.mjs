@@ -60,12 +60,13 @@ function reclaimDeadLock(dir, owner, me, opts) {
     const g = readJson(guard);
     return g && deadHere(g, opts) ? { abandoned: { guard, pid: g.pid } } : { removed: false };
   }
+  const same = (o) => o && o.pid === owner.pid && o.nonce === owner.nonce && o.startedAt === owner.startedAt;
   let removed = false;
   try {
     const now = readOwner(dir);
-    if (now && now.pid === owner.pid && now.nonce === owner.nonce && now.startedAt === owner.startedAt && deadHere(now, opts)) {
+    if (same(now) && deadHere(now, opts)) {
       rmSync(dir, { recursive: true, force: true });
-      removed = !existsSync(dir) || readOwner(dir)?.nonce !== owner.nonce;
+      removed = !existsSync(dir) || !same(readOwner(dir));
     }
   } catch { /* the next pass */ }
   finally { if (readJson(guard)?.nonce === me.nonce) { try { unlinkSync(guard); } catch { /* gone */ } } }
@@ -128,7 +129,9 @@ export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, li
           return { path: dir, held: { pid: owner.pid, startedAt: owner.startedAt, liveness: "dead", guard,
             recovery: `${guard} was left by pid ${reclaimer}, which died while reclaiming ${dir}; once no capture process is running (pgrep -f capture.mjs), remove both with: rm -- ${shellQuote(guard)}; rm -r -- ${shellQuote(dir)}  and rerun` } };
         }
-        if (r.removed) { reclaimed = { pid: owner.pid, startedAt: owner.startedAt }; continue; }
+        // Gone, whoever removed it (another reclaimer may have): try the lock once more.
+        if (r.removed) reclaimed = { pid: owner.pid, startedAt: owner.startedAt };
+        if (r.removed || !existsSync(dir)) continue;
       }
       const now = readOwner(dir);
       const live = now ? (now.pid === pid ? "alive" : liveness(now.pid)) : "unknown";
