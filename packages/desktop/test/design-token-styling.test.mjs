@@ -27,7 +27,7 @@ const markup = `<div id="app"><aside id="sidebar">
   </div></aside><button id="sidebar-restore">${icon}</button>
   <main id="main"><div id="tabstrip"><div id="tabbar-row"><div id="tabbar">
     <div class="tab active"><button class="tab-trigger">Fixture tab</button><button class="close">×</button></div>
-  </div><div id="tab-actions" hidden>${["splitRight", "splitDown", "splitClose"].map(name => `<button>${shellIcon(name)}</button>`).join("")}</div></div></div>
+  </div><div id="tab-actions" hidden>${["splitRight", "splitDown"].map(name => `<button>${shellIcon(name)}</button>`).join("")}</div></div></div>
   <div id="tabhost" class="split-row"><div class="group-cell focused-group">
     <div class="group-tabbar"></div><button class="split-empty">Open an instance in this panel</button>
   </div></div></main></div>
@@ -150,7 +150,8 @@ test("component geometry: rounded popovers, 36px fields and persistent scrollabl
   assert.equal(u.style("input.field").background, "var(--surface)");
   assert.equal(u.style("#tabbar").overflowX, "auto");
   assert.equal(u.style(".group-tabbar").overflowX, "auto");
-  assert.equal(u.style(".tab").flexShrink, "0");
+  assert.equal(u.style(".tab").flexShrink, "1", "tabs shrink evenly (spec F)");
+  assert.equal(u.style(".tab").minWidth, "var(--tab-min)", "down to a floor, then the strip scrolls");
   assert.equal(u.style(".tab .close").width, "20px");
   assert.equal(u.style(".tab .close").height, "20px");
   assert.equal(u.style("#tab-actions button").width, "28px");

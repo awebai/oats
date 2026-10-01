@@ -470,3 +470,18 @@ export function handleKeydown(e, opts = {}) {
   try { action.run(e); } catch { /* an action must not break dispatch */ }
   return true;
 }
+
+/** While a picker opened by `actionId` is open, its own chord moves the active
+ * row down (1) and Shift + that chord moves it up (-1); anything else is 0.
+ * Read from the live keymap, so a rebind follows. A chord that already holds
+ * Shift (Ctrl+Shift+P on Linux/Windows) has no Shift form: ArrowUp moves up
+ * there. An unbound action, or a plain chord (typing belongs to the input),
+ * never cycles. */
+export function pickerCycleDirection(e, actionId, isMac = defaultIsMac()) {
+  const bound = parseChord(getBinding(actionId, isMac) || "");
+  const evChord = chordFromEvent(e, isMac);
+  if (!bound || !evChord || isPlainChord(bound)) return 0;
+  if (chordMatches(bound, evChord, isMac)) return 1;
+  if (!bound.shift && chordMatches({ ...bound, shift: true }, evChord, isMac)) return -1;
+  return 0;
+}

@@ -16,6 +16,7 @@ import { reserveKey, whenKeyFree } from "../renderer/tab-keys.mjs";
 import { projectSplitDom } from "../renderer/split-dom.mjs";
 import * as layout from "../renderer/split-layout.mjs";
 import * as workspaceTabs from "../renderer/workspace-tabs.mjs";
+import { revealInStrip } from "../renderer/reveal-in-scrollport.mjs";
 
 // Live evidence 13/14 used the hover token #f0e9d2, not selected #dce7e8.
 // The driver's last click (123.5, 112.03125) remains over Souls after the
@@ -49,7 +50,7 @@ function shell(t, shellSource = source) {
     wsActiveTerminal: new Map(), workspaceTabMemory: createWorkspaceTabMemory(), brainIntents: createIntentGate(),
     currentWorkspace: () => c.workspace, workspaceGeneration: () => c.generation,
     setActiveContexts: value => contexts.splice(0, contexts.length, ...value),
-    workspaceLabel: { reset() {} }, refreshContextRoster() {}, renderContextRoster() {}, updateSplitControls() {},
+    workspaceLabel: { reset() {} }, refreshContextRoster() {}, renderContextRoster() {}, updateSplitControls() {}, revealInStrip, tabStripResize: null /* spec F: the shipped active-tab reveal runs too */,
     createSelectionOwnership, wirePaneSelection, createViewLifecycle, createTabChrome, tabKeyAction, focusAfterLastTab,
     reserveKey, whenKeyFree, prepareOwnedOpen, projectSplitDom, ...layout, ...workspaceTabs,
     loadStageView(name) { const gate = { ...deferred(), name }; loads.push(gate); return gate.promise; },
@@ -59,7 +60,7 @@ function shell(t, shellSource = source) {
     ctx: {},
   };
   const names = ["showStage", "setNavActive", "showTabLayer", "updateActiveContexts", "setSidebarMode", "updateContextTabs",
-    "addTab", "selectTab", "activateTab", "closeTab", "onTabKeydown", "renderSplit", "selectEmptyGroup", "renderWorkspaceContext", "restoreWorkspaceTabs", "showTerminalContext", "openViewTab"];
+    "addTab", "selectTab", "activateTab", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips", "onTabKeydown", "renderSplit", "selectEmptyGroup", "renderWorkspaceContext", "restoreWorkspaceTabs", "showTerminalContext", "openViewTab"];
   const functions = names.map(name => {
     const match = shellSource.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
     assert.ok(match, `execute shipped ${name}`); return match[0];

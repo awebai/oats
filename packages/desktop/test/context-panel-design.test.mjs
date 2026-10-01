@@ -16,7 +16,7 @@ import { instanceSoulCSS } from '../renderer/instance-soul.mjs';
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 function fixture(t, { teams, openSoul, git, fallbackFocus } = {}) {
   const dom = new JSDOM(`<!doctype html><body><div id="app"><aside id="sidebar"></aside><main id="main"></main><aside id="context-panel"></aside>
-    <div id="tab-actions"><button id="panel-toggle">Panel</button></div></div></body>`);
+    <div id="tab-actions"><button id="split-right">Split</button></div></div></body>`);
   const document = dom.window.document, style = document.createElement('style'); style.textContent = contextPanelCSS; document.head.append(style);
   const updates = [], opened = [], hosts = [];
   const panel = createContextPanel({ document, root: document.getElementById('context-panel'),
@@ -150,7 +150,7 @@ test('Paths: a closed disclosure under the sentence holds Folder (shared when li
 });
 
 test('Paths: a background repaint keeps the disclosure and a focused Copy inside it; another instance starts closed', t => {
-  const u = fixture(t, { fallbackFocus: () => u.q('#panel-toggle') }), other = `${HOME}-2`; u.select(instance({ work: 'worktree', repoName: 'northwind' }));
+  const u = fixture(t, { fallbackFocus: () => u.q('#split-right') }), other = `${HOME}-2`; u.select(instance({ work: 'worktree', repoName: 'northwind' }));
   const paths = u.q('.context-panel-paths'); paths.open = true;
   const copy = u.q('[data-copy="home"]'); copy.focus(); assert.equal(u.document.activeElement, copy);
   // The same instance, repainted with a new fact: nothing rebuilt, still open, focus kept.
@@ -160,7 +160,7 @@ test('Paths: a background repaint keeps the disclosure and a focused Copy inside
   // Another instance: closed again, and focus leaves the hidden Copy for the panel's fallback, never stays on it.
   u.select(instance({ work: 'worktree', home: other }));
   assert.equal(paths.open, false, 'reset to closed for the new selection');
-  assert.equal(u.document.activeElement, u.q('#panel-toggle'), "focus leaves the Copy the closed disclosure hides, for the shell's fallback");
+  assert.equal(u.document.activeElement, u.q('#split-right'), "focus leaves the Copy the closed disclosure hides, for the shell's fallback");
 });
 
 test('ahead/behind leave the Instance tab; the rail dot and the Developer tab thread count still follow the Git panel', t => {
@@ -379,6 +379,6 @@ test('the instance panel CSS leaves keyboard focus to the global rule: no per-co
     assert.doesNotMatch(source, /:focus-visible|:focus\b|outline:/, name);
     assert.doesNotMatch(source, /#[0-9a-f]{3,8}\b|color-mix|opacity/i, `${name}: tokens only`);
   }
-  // The tab bar toggle's pressed state is the brand tint (00-common rule 1).
-  assert.match(contextPanelCSS, /#tab-actions #panel-toggle\[aria-pressed="true"\] \{ background:var\(--sel\); color:var\(--accent\); \}/);
+  // Spec F: the tab bar has no panel toggle, so the panel styles nothing outside itself.
+  assert.doesNotMatch(contextPanelCSS, /#tab-actions|#panel-toggle/);
 });

@@ -99,10 +99,28 @@ for (const grouped of [false, true]) test(`${grouped ? "grouped" : "flat"} tab k
     tabs.set(id, tab);
     (grouped && id === 4 ? second : first).append(tab.tabEl);
     doc.body.append(tab.paneEl);
-    for (const control of [tab.triggerEl, tab.closeEl]) {
-      control.scrollIntoView = options => reveals.push({ control, options });
-    }
   }
+  // Geometry stand-in (jsdom has no layout): 200px strips of 120px tabs, the trigger over a
+  // tab's first 90px and Close over 95–115. Only a strip's scrollLeft may move (spec F).
+  dom.window.HTMLElement.prototype.scrollIntoView = () => assert.fail("must not scroll ancestors");
+  for (const strip of [first, second]) {
+    Object.defineProperties(strip, { clientWidth: { value: 200, configurable: true }, clientLeft: { value: 0 } });
+    strip.getBoundingClientRect = () => ({ left: 0, right: 200, width: 200 });
+  }
+  const box = (control, from, to) => {
+    const tab = control.closest(".tab"), strip = tab.parentElement;
+    const start = [...strip.children].filter(el => !el.hidden).indexOf(tab) * 120 - strip.scrollLeft;
+    return { left: start + from, right: start + to, width: to - from };
+  };
+  for (const tab of tabs.values()) {
+    tab.triggerEl.getBoundingClientRect = () => box(tab.triggerEl, 0, 90);
+    tab.closeEl.getBoundingClientRect = () => box(tab.closeEl, 95, 115);
+  }
+  const shown = control => { const r = control.getBoundingClientRect(); return r.left >= 0 && r.right <= 200; };
+  const record = () => { for (const tab of tabs.values()) for (const control of [tab.triggerEl, tab.closeEl]) {
+    control.addEventListener("focus", () => reveals.push({ control, shown: shown(control) }));
+  } };
+  record();
   const context = {
     activeTab: 1, tabLayerVisible: true, tabs, tabKeyAction, groupOfTab,
     split: grouped ? { orientation: "row", focusedGroup: 1, groups: [
@@ -131,11 +149,11 @@ for (const grouped of [false, true]) test(`${grouped ? "grouped" : "flat"} tab k
     assert.equal(event.defaultPrevented, true);
     assert.equal(context.activeTab, expected);
     assert.equal(doc.activeElement, tabs.get(expected).triggerEl, "focus stays on the strip, not the terminal");
-    assert.deepEqual(reveals.splice(0), [{ control: tabs.get(expected).triggerEl, options: { block: "nearest", inline: "nearest" } }]);
+    assert.deepEqual(reveals.splice(0), [{ control: tabs.get(expected).triggerEl, shown: true }], "revealed within its strip");
   }
   tabs.get(1).closeEl.focus();
   assert.equal(doc.activeElement, tabs.get(1).closeEl);
-  assert.deepEqual(reveals.splice(0), [{ control: tabs.get(1).closeEl, options: { block: "nearest", inline: "nearest" } }],
+  assert.deepEqual(reveals.splice(0), [{ control: tabs.get(1).closeEl, shown: true }],
     "Close is revealed independently even if its whole tab is wider than the strip");
   assert.ok([...tabs.values()].every(tab => tab.paneEl.hidden), "chrome navigation does not itself expose/focus content");
   if (grouped) {

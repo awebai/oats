@@ -2,6 +2,7 @@
 // roving-navigation behavior are covered without booting the whole shell.
 import { iconElement } from "./shell-icons.mjs";
 import { getBinding, formatChord } from "./keybindings.mjs";
+import { revealInStrip } from "./reveal-in-scrollport.mjs";
 /** Decorative icon by tab kind (the accessible name is the bare title). */
 const KIND_ICONS = Object.freeze({ file: "file", brain: "brain" });
 /** decor (all decorative; the accessible name stays the bare title):
@@ -42,11 +43,11 @@ export function createTabChrome(document, id, title, isMac = false, decor = {}) 
   closeEl.title = `Close ${title} (${chord ? `Delete or ${formatChord(chord, isMac)}` : "Delete"})`;
   tabEl.append(triggerEl, closeEl);
   // Arrow/Home/End navigation focuses the trigger; Tab can focus Close. Reveal
-  // the focused control in either scrollable strip without focusing content or
-  // scrolling on passive activation/workspace restoration. Reveal the control,
-  // not the wrapper, which may itself be wider than a very narrow group.
+  // the focused control in its strip (flat or group: the tab's parent at focus
+  // time) without focusing content; only the strip scrolls, never an ancestor.
+  // Reveal the control, not the wrapper, which may be wider than a narrow group.
   for (const control of [triggerEl, closeEl]) {
-    control.addEventListener("focus", () => control.scrollIntoView?.({ block: "nearest", inline: "nearest" }));
+    control.addEventListener("focus", () => revealInStrip(tabEl.parentElement, control));
   }
 
   const paneEl = document.createElement("div");

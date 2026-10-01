@@ -140,17 +140,18 @@ test("standard hljs scopes are styled locally, including nested meta and substit
   assert.notEqual(window.getComputedStyle(outside).color, "var(--violet)", "reader styles do not leak outside .mdv");
 });
 
-test("flat and grouped strips preserve intrinsic tab sizing and scroll instead of compressing labels", t => {
+// Spec F (2026-10-01; supersedes "strips scroll instead of compressing"): tabs fit the strip
+// like VS Code's "shrink" sizing. jsdom has no layout: this pins the shipped rules; the live
+// check (narrow and wide windows, many tabs) proves the geometry.
+test("flat and grouped strips share their width: tabs shrink evenly to a floor, then the strip scrolls", t => {
   const { doc, host, window } = fixture(t, shellCss);
   for (const grouped of [false, true]) {
     const bar = doc.createElement("div");
     if (grouped) bar.className = "group-tabbar";
     else bar.id = "tabbar";
-    // The report's 165.5px group size is a fixture constraint, not a claim that
-    // jsdom performs layout or that arbitrary tiny terminal panes are usable.
     bar.style.width = "165.5px";
-    const tabs = ["A-reviewer", "A-desktop-engineer-with-a-long-name"].map((title, i) =>
-      createTabChrome(doc, `${grouped}-${i}`, title));
+    const tabs = [["A-reviewer"], ["A-desktop-engineer-with-a-long-name", { dot: "on", detail: "feat/a-long-branch" }]].map(([title, decor], i) =>
+      createTabChrome(doc, `${grouped}-${i}`, title, false, decor));
     for (const tab of tabs) bar.append(tab.tabEl);
     const actions = doc.createElement("div");
     actions.id = "tab-actions";
@@ -159,19 +160,28 @@ test("flat and grouped strips preserve intrinsic tab sizing and scroll instead o
     actions.append(control);
     bar.append(actions);
     host.append(bar);
-    assert.equal(window.getComputedStyle(bar).overflowX, "auto");
+    assert.equal(window.getComputedStyle(bar).overflowX, "auto", "below the floor the strip scrolls");
     assert.equal(window.getComputedStyle(bar).minWidth, "0px");
     for (const { tabEl, triggerEl, closeEl } of tabs) {
       const style = window.getComputedStyle(tabEl);
-      assert.equal(style.flexShrink, "0", "tab identity cannot shrink to A-… under strip pressure");
-      assert.equal(style.flexGrow, "0");
-      assert.equal(style.flexBasis, "auto", "preserve content-based width, not equal-width slots");
-      assert.equal(style.maxWidth, "280px", "the Redesign v3 long-label cap");
+      assert.deepEqual([style.flexGrow, style.flexShrink, style.flexBasis], ["1", "1", "0px"], "equal shares from one zero basis");
+      assert.equal(style.maxWidth, "fit-content", "never wider than its natural width");
+      assert.equal(style.minWidth, "var(--tab-min)", "the floor holds in group strips too");
+      assert.equal(style.getPropertyValue("--tab-min"), "112px", "the dot and about five name characters stay visible");
+      assert.equal(style.getPropertyValue("--tab-max"), "280px", "the Redesign v3 long-label cap");
+      assert.equal(style.getPropertyValue("--tab-chrome"), "51px", "padding 14 + 8, gap 8, the 20px close and the 1px border");
       assert.equal(style.whiteSpace, "nowrap");
-      assert.equal(window.getComputedStyle(triggerEl.querySelector(".tab-label")).textOverflow, "ellipsis", "long labels ellipsize inside the cap");
+      assert.equal(window.getComputedStyle(triggerEl).maxWidth, "calc(var(--tab-max) - var(--tab-chrome))", "the cap rides on the trigger");
+      assert.equal(window.getComputedStyle(triggerEl.querySelector(".tab-label")).textOverflow, "ellipsis", "long labels ellipsize");
       assert.equal(window.getComputedStyle(triggerEl).minWidth, "0px", "the trigger yields width to its label, not to Close");
-      assert.equal(window.getComputedStyle(closeEl).flexShrink, "0", "Close remains a usable control within the cap");
+      assert.equal(window.getComputedStyle(closeEl).flexShrink, "0", "Close remains a usable control on every tab");
+      assert.equal(triggerEl.title, triggerEl.getAttribute("aria-label"), "the full name stays in title and the accessible name");
     }
+    // The branch gives way first: it grows from zero into what the name leaves, and its gap is its own.
+    const detail = window.getComputedStyle(tabs[1].triggerEl.querySelector(".tab-detail"));
+    assert.deepEqual([detail.flexGrow, detail.flexBasis, detail.minWidth], ["1", "0px", "0px"]);
+    assert.deepEqual([detail.marginLeft, detail.paddingLeft], ["-8px", "8px"], "a hidden branch takes no gap from the name");
+    assert.equal(window.getComputedStyle(tabs[1].triggerEl.querySelector(".tab-label")).flexGrow, "0", "the name never grows at the branch's expense");
     assert.equal(window.getComputedStyle(actions).flexShrink, "0", "do not remove or compress group controls");
     assert.deepEqual([...bar.children], [...tabs.map(tab => tab.tabEl), actions], "no reordering or auto-collapse");
     bar.remove();

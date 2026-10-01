@@ -53,8 +53,12 @@ function selected(doc, input) {
   assert.ok(option, "active descendant resolves to a connected node");
   assert.equal(option.getAttribute("role"), "option");
   assert.equal(option.getAttribute("aria-selected"), "true");
-  assert.equal(option.parentNode.id, input.getAttribute("aria-controls"));
-  assert.deepEqual([...option.parentNode.querySelectorAll('[aria-selected="true"]')], [option]);
+  const list = option.closest('[role="listbox"]');
+  assert.equal(list?.id, input.getAttribute("aria-controls"));
+  // An option sits in the listbox itself or in one of its named groups (the palette's relation groups).
+  assert.ok(option.parentNode === list || (option.parentNode.getAttribute("role") === "group"
+    && option.parentNode.parentNode === list && option.parentNode.getAttribute("aria-label")));
+  assert.deepEqual([...list.querySelectorAll('[aria-selected="true"]')], [option]);
   return option;
 }
 

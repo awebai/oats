@@ -212,17 +212,17 @@ test("projection preserves keyboard focus on the focused tab trigger across regr
 
 // ── clickable controls share the actions' gating ─────────────────────────
 
-test("splitControlsState mirrors the split actions' gating (terminal-only, cap, empty group, close)", () => {
+test("splitControlsState mirrors the split actions' gating (terminal-only, cap, empty group)", () => {
   assert.equal(splitControlsState(null, 1, "terminal", false).visible, false);
   assert.equal(splitControlsState(null, 1, "file", true).visible, false);
   assert.equal(splitControlsState(null, null, null, true).visible, false);
-  // flat: both splits enabled, close disabled
+  // flat: both splits enabled
   assert.deepEqual(splitControlsState(null, 1, "terminal", true),
-    { visible: true, splitRow: true, splitCol: true, close: false });
+    { visible: true, splitRow: true, splitCol: true });
   // an empty group waiting: same-orientation split disabled, re-orient enabled
   const withEmpty = requestSplit(null, "row", [1], 1).split;
   assert.deepEqual(splitControlsState(withEmpty, 1, "terminal", true),
-    { visible: true, splitRow: false, splitCol: true, close: true });
+    { visible: true, splitRow: false, splitCol: true });
   // at the cap: only re-orientation stays enabled
   let full = requestSplit(null, "row", [1], 1).split;
   for (let id = 2; full.groups.length < MAX_SPLIT_GROUPS || full.groups.some((g) => !g.tabs.length); id++) {
@@ -231,7 +231,7 @@ test("splitControlsState mirrors the split actions' gating (terminal-only, cap, 
   }
   assert.equal(full.groups.length, MAX_SPLIT_GROUPS);
   assert.deepEqual(splitControlsState(full, 1, "terminal", true),
-    { visible: true, splitRow: false, splitCol: true, close: true });
+    { visible: true, splitRow: false, splitCol: true });
 });
 
 test("runAction dispatches a registered action only in an active context (buttons = chords)", (t) => {
@@ -255,11 +255,14 @@ test("runAction dispatches a registered action only in an active context (button
 
 test("index.html ships the split buttons and shell wires the group projection through runAction", (t) => {
   const html = read("renderer/index.html");
-  for (const id of ["tab-actions", "split-right", "split-down", "split-close", "sidebar-restore", "tabstrip", "tabbar-row"]) {
+  for (const id of ["tab-actions", "split-right", "split-down", "sidebar-restore", "tabstrip", "tabbar-row"]) {
     assert.match(html, new RegExp(`id="${id}"`), `index.html has #${id}`);
   }
+  // Spec F: only the two split buttons follow the tabs; closing the split and the panel live on their chords.
+  for (const id of ["split-close", "panel-toggle"]) assert.doesNotMatch(html, new RegExp(`id="${id}"`), `#${id} is gone`);
+  assert.doesNotMatch(html, /tab-actions-sep/);
   assert.ok(!/id="pane-tabs"/.test(html), "the PR #44 pane-tabs row is gone (phantom chrome fix)");
-  for (const a of ["split.vertical", "split.horizontal", "split.close", "sidebar.toggle"]) {
+  for (const a of ["split.vertical", "split.horizontal", "sidebar.toggle"]) {
     assert.match(html, new RegExp(`data-action="${a.replace(".", "\\.")}"`), `${a} button is chord-titled`);
   }
   const src = read("renderer/shell.mjs");

@@ -392,10 +392,13 @@ export function instanceMatchesFilter(item, query) {
  * IDENTITY-aware (merged-state review @3e76616): inclusion keys by
  * instanceId and ancestors resolve through resolveLinkId over the FULL
  * roster — a same-named instance in another root never leaks into this
- * one's filter results, and an ambiguous parent edge includes nothing. */
-export function filterInstanceTree(instances, query) {
+ * one's filter results, and an ambiguous parent edge includes nothing.
+ * `matches` decides what matches (default: the sidebar's instanceMatchesFilter);
+ * the command palette passes its fuzzy matcher and shares the tree path. */
+export function filterInstanceTree(instances, query, matches = null) {
   const needle = String(query || "").trim().toLowerCase();
   if (!needle) return instances;
+  const isMatch = matches || ((item) => instanceMatchesFilter(item, needle));
   const byId = new Map(instances.map((item) => [instanceId(item), item]));
   const byName = new Map();
   for (const item of instances) {
@@ -404,7 +407,7 @@ export function filterInstanceTree(instances, query) {
   }
   const included = new Set();
   for (const item of instances) {
-    if (!instanceMatchesFilter(item, needle)) continue;
+    if (!isMatch(item)) continue;
     let cursor = item;
     const seen = new Set();
     while (cursor) {
@@ -432,9 +435,23 @@ export function visibleClusters(allInstances, visibleInstances, { links = instan
     .filter((c) => c.instances.length);
 }
 
-/** Whether an item remains visible under VS Code-style collapsed ancestors.
- * Filtering temporarily reveals matching paths without mutating the user's
- * persisted collapse state. Parent traversal is cycle-safe. */
+/** The sidebar roster's groups (Redesign v3), shared with the command palette:
+ * each multi-member relation cluster under its deterministic name, then every
+ * unrelated instance under "independent". Clusters come from the FULL roster,
+ * projected to the visible members (visibleClusters), so a group's size is
+ * what is shown. Returns [{ key, label, clusters: [{ key, instances }] }] in
+ * display order, members carrying their tree depth. A group's key is unique
+ * even when two roots share a name (other agents roots or hosts): the label is
+ * the name, the key adds its place in the order. */
+export function rosterGroups(allInstances, visibleInstances, { links = instanceLinks } = {}) {
+  const clusters = visibleClusters(allInstances, visibleInstances, { links });
+  return [
+    ...clusters.filter((c) => c.instances.length > 1).map((c, i) => ({ key: `cluster:${i}:${c.key}`, label: c.key, clusters: [c] })),
+    ...(clusters.some((c) => c.instances.length === 1)
+      ? [{ key: "independent", label: "independent", clusters: clusters.filter((c) => c.instances.length === 1) }] : []),
+  ];
+}
+
 /** Whether an item remains visible under VS Code-style collapsed ancestors.
  * Filtering temporarily reveals matching paths without mutating the user's
  * persisted collapse state. Parent traversal is cycle-safe and

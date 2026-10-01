@@ -643,7 +643,18 @@ section is the module map.
   command palette and Quick Open: one input over a listbox
   (arrows/Enter/Esc, aria option pattern), the house subsequence scorer
   (`subsequenceScore`; `null` = no match — prefix bonuses make real scores
-  negative), and the stale-load generation guard.
+  negative), and the stale-load generation guard. Rows may carry a tree shape:
+  consecutive rows sharing `group.key` sit in one named `role=group`, `depth`
+  indents, `under` is visually hidden text read with the option, and a
+  `context` row is `aria-disabled` and never active. An optional `cycleKey(e)`
+  lets the picker's own chord move the active row while open (wrapping,
+  skipping context rows); with it, `toggle()` on an open picker cycles.
+- **palette.mjs** — the command palette's rows (`paletteRows`): instances as
+  the sidebar lists them, from the sidebar's own builders (`filterInstanceTree`
+  with the fuzzy matcher as its predicate, then `rosterGroups`), every instance
+  listed, then at most `PALETTE_COMMAND_CAP` commands. The shell passes
+  `cycleKey` from `pickerCycleDirection(e, "app.palette")` (keybindings.mjs), so
+  ⌘K cycles while open (Shift: up) and follows a rebind.
 - **quick-open.mjs** — Quick Open for souls (`Mod+P`, also “Souls: quick
   open…” in the palette): fuzzy-find a soul from the Spawn view's data
   source and hand off through `views/spawn.mjs` `preselectSpawn()`: the
@@ -743,22 +754,21 @@ in-flight content; a late response cannot reclaim foreground visibility. True st
 or workspace reset ends that selection. Standalone view hosts keep the inline
 inspector fallback.
 
-There is no status bar under the editor groups. The editor tab bar's action
-cluster ends with a `panel-right` toggle (`#panel-toggle`, after the split
-controls): it runs `panel.toggle` (default **Mod+Alt+B**, not terminal-allowlisted,
-so Ctrl+Alt+B stays with the program in a Linux/Windows terminal). Its accessible
-name is the constant "Instance panel" with `aria-pressed` while the panel is
-expanded; its tooltip names the chord (the panel owns that title, so the button
-carries no `data-action`). It is disabled only with nothing to show. **Focus mode**
+There is no status bar under the editor groups. After the tabs the editor tab bar
+holds only the two split buttons (spec F). The instance panel has no tab-bar
+button: `panel.toggle` (default **Mod+Alt+B**, not terminal-allowlisted, so
+Ctrl+Alt+B stays with the program in a Linux/Windows terminal), the palette's
+"Instance panel: show / hide" and the panel's own collapse/expand controls run
+it. **Focus mode**
 (`app.focusMode`: palette and a rebindable action, no default chord) hides the
 sidebar and right panel without closing tabs or changing split weights; exit
 restores the existing sidebar/panel preferences. Focus mode always has a visible
-exit: the panel toggle stays enabled and, in focus mode, leaves it and shows the
-panel; the `#sidebar-restore` edge is shown in focus mode too (the only exit on a
-stage, where there is no tab bar) and runs `sidebar.toggle`, which leaves it.
+exit: the `#sidebar-restore` edge is shown in focus mode and runs
+`sidebar.toggle`, which leaves it; `panel.toggle` also leaves it and shows the
+panel.
 Focus that was in the hidden sidebar moves to the active tab's trigger, else to a
-stable visible control (`stableFocusTarget` in `shell.mjs`: the panel toggle, the
-sidebar toggle or the restore edge), never `<body>`; a focus-mode change made
+stable visible control (`stableFocusTarget` in `shell.mjs`: the sidebar toggle or
+the restore edge), never `<body>`; a focus-mode change made
 after focus was already lost (the palette removes its input before running the
 command) lands there too. Mod+F and Mod+B leave focus
 mode. Panel collapse and selected tab are session-local per workspace; focus mode
@@ -846,16 +856,36 @@ Reopening an instance enters that selected panel; selecting an already-open
 instance into it moves the existing tab without another attachment. Closing an
 active tab selects its adjacent group-mate, or leaves that panel empty.
 
-**Close split** explicitly joins back to the flat strip. **Split: return to terminal
+**Close split** (`split.close`: its chord and the palette; there is no button)
+explicitly joins back to the flat strip. **Split: return to terminal
 groups** in the palette restores a covered layout, including an all-empty one.
 There is no new default shortcut. Clickable controls mirror the chords with no duplicated
-logic: the split buttons and the sidebar toggles (rail-footer button + the
+logic: the split-right/down buttons and the sidebar toggles (rail-footer button + the
 thin `#sidebar-restore` edge button shown while hidden) all dispatch the
 registered actions through `runAction(id)` — context-gated exactly like
 chord dispatch — and their enablement dry-runs the same model transition
 via `split-controls.mjs` `splitControlsState`. One chrome per tab means the
 tab-a11y roving/aria/close semantics hold PER GROUP (each group strip is a
 tablist with a single selected, tabbable trigger; arrows walk the group).
+
+Tab sizing (spec F, superseding "strips scroll instead of compressing"): tabs fit
+their strip like VS Code's "shrink" mode. Each `.tab` is `flex: 1 1 0px` with
+`max-width: fit-content` (its natural width, which the trigger caps so a tab
+never passes `--tab-max`, 280px) and `min-width: --tab-min` (112px: the status
+dot and about five characters of the name next to the close button). Below the
+floor the strip scrolls. The branch detail grows from zero into what the name
+leaves, so it ellipsizes and disappears first; the full name stays in the
+trigger's `title` and accessible name. **The selected tab is always visible**:
+`revealActiveTabs()` in `shell.mjs` scrolls each strip (`#tabbar` and every
+`.group-tabbar`) to its active tab after every activation and tab close, and a
+`ResizeObserver` on the current strips (re-observed by `renderSplit`) does the
+same when one resizes (window, sidebar, panel, split). Only the strip's
+`scrollLeft` moves (`revealInStrip` in `reveal-in-scrollport.mjs`), never
+`scrollIntoView`, which would also scroll the workbench's own ancestors; keyboard
+focus on a tab's trigger or close uses the same helper. In a group strip the split
+buttons scroll with the tabs, so they are pinned to its end (`position: sticky`)
+and the strip declares their width as `scroll-padding-right`, which
+`revealInStrip` honours: a revealed tab never sits under them.
 
 ### Workspace-local tab memory
 

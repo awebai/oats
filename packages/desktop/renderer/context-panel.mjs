@@ -134,10 +134,6 @@ export const contextPanelCSS = `
 /* W6: the Developer tab's (Git and GitHub) count of unresolved review threads (design: "Developer 2"). */
 #context-panel .context-panel-tab-count { margin-left:5px; color:var(--muted); font:400 10.5px ui-monospace, Menlo, monospace; }
 #context-panel .context-panel-tab-count:empty { display:none; }
-/* The editor tab bar's instance-panel toggle (index.html #tab-actions): pressed is the brand tint,
-   after a hairline that separates it from the split controls. */
-#tab-actions .tab-actions-sep { flex:none; width:1px; height:18px; margin:0 4px; background:var(--border); }
-#tab-actions #panel-toggle[aria-pressed="true"] { background:var(--sel); color:var(--accent); }
 #context-panel .context-panel-stage.oats-view { display:flex; flex:1; flex-direction:column; width:100%; min-width:0; min-height:0; overflow:auto; background:var(--surface); }
 #context-panel .context-panel-stage > * { max-width:100%; box-sizing:border-box; }
 `;
@@ -219,7 +215,7 @@ const reported = value => typeof value === 'string' && value.length ? value
  */
 export function createContextPanel({
   document: suppliedDocument, root: suppliedRoot, onIntent = noop,
-  applyFocus = callback => callback(), onFocusModeChange = noop, fallbackFocus = () => null, shortcutHint = () => '', createGitPanel, createTeamsSection, createSoulSection, openSoul, lifecycle = null,
+  applyFocus = callback => callback(), onFocusModeChange = noop, fallbackFocus = () => null, createGitPanel, createTeamsSection, createSoulSection, openSoul, lifecycle = null,
   connectionGeneration = () => 0, subscribeConnections = () => noop,
 } = {}) {
   const document = suppliedDocument ?? suppliedRoot?.ownerDocument ?? globalThis.document;
@@ -539,17 +535,6 @@ export function createContextPanel({
       workspace: context.workspace, instance: context.instance, key: context.key });
     teamsSection?.update({ active: expanded && hasGeneric() && pref().tab === 'instance',
       workspace: context.workspace, instance: context.instance, key: context.key });
-    // The editor tab bar's toggle (index.html #panel-toggle): a constant name with aria-pressed while the
-    // panel is expanded; disabled only with nothing to show. It stays enabled in focus mode, where it is the
-    // visible exit (toggle() leaves focus mode and shows the panel). Its tooltip names the chord.
-    const toggle = document.getElementById('panel-toggle');
-    if (toggle) {
-      toggle.disabled = !present;
-      toggle.setAttribute('aria-pressed', String(expanded));
-      toggle.setAttribute('aria-controls', 'context-panel');
-      const chord = shortcutHint();
-      toggle.setAttribute('aria-label', 'Instance panel'); toggle.title = chord ? `Instance panel (${chord})` : 'Instance panel';
-    }
   }
   // Restore only when this projection hides/removes the focused container.
   // Never focus a newly selected instance or form during background polling.
@@ -714,7 +699,7 @@ export function createContextPanel({
       const slot = slots.get(owner);
       if (slot) project(() => { slots.delete(owner); slot.wrapper.remove(); });
     },
-    // In focus mode the toggle is the way out: it leaves focus mode and shows the panel.
+    // panel.toggle (Mod+Alt+B, the palette, the rail's expand) leaves focus mode and shows the panel.
     toggle() {
       if (disposed || !hasContent()) return;
       if (focusMode) project(() => { focusMode = false; app?.classList.remove('focus-mode'); pref().collapsed = false; }, () => onFocusModeChange(false));

@@ -28,7 +28,7 @@ import { createSurfaceReturn } from "./surface-return.mjs";
 import { createFocusRegions, firstTabbable, isShown } from "./focus-regions.mjs";
 import { createFileOpener } from "./open-file.mjs";
 import {
-  registerAction, setActiveContexts, getBinding, onKeymapChange, formatChord, handleKeydown, matchEvent, runAction, keymapConflicts,
+  registerAction, setActiveContexts, getBinding, onKeymapChange, formatChord, handleKeydown, matchEvent, runAction, keymapConflicts, pickerCycleDirection,
 } from "./keybindings.mjs";
 import { createKeybindingsEditor } from "./keybindings-editor.mjs";
 import { createConnections, connectionsCSS } from "./connections.mjs";
@@ -38,6 +38,7 @@ import { createViewLifecycle } from "./view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "./tab-keys.mjs";
 import { createTerminalTab, terminalOptions } from "./terminal-tab.mjs";
 import { createTabChrome, tabKeyAction, focusAfterLastTab } from "./tab-a11y.mjs";
+import { revealInStrip } from "./reveal-in-scrollport.mjs";
 import { createIntentGate, prepareOwnedOpen, runOpenFlow } from "./open-intent.mjs";
 import { createSelectionOwnership, wirePaneSelection } from "./selection-ownership.mjs";
 import { createWorkspaceSwitcher } from "./workspace-switcher.mjs";
@@ -57,7 +58,7 @@ import { createPanelOwner } from "./panel-owner.mjs";
 import {
   collapseKey, hasInstanceChildren, instanceRepoLabel, treeConnectors, filterInstanceTree, instanceMatchesFilter, instanceVisibleInTree,
   captureTreeRenderState, rosterResponseOwns, clusterSeparator, renderRosterCount,
-  instanceId, rosterParentId, terminalKey, resolveTerminalOpen, visibleClusters,
+  instanceId, rosterParentId, terminalKey, resolveTerminalOpen, rosterGroups,
   createRosterLoading, rosterSignature, markStaleControl, staleBlocked, ROSTER_STALE_TITLE,
 } from "./instance-tree.mjs";
 import {
@@ -644,16 +645,11 @@ function renderContextRoster(instances) {
   // visible members — clustering a filtered subset could forge edges from
   // globally ambiguous names (merged-state review @3e76616).
   // Agent groups (Redesign v3): each multi-member relation cluster under its
-  // deterministic name, then every unrelated instance under "independent".
-  // Clusters are computed on the FULL roster then projected to visible
-  // members — clustering a filtered subset could forge edges from globally
-  // ambiguous names (merged-state review @3e76616).
-  const clusters = visibleClusters(instances, visible);
-  const groups = [
-    ...clusters.filter((c) => c.instances.length > 1).map((c) => ({ key: `cluster:${c.key}`, label: c.key, clusters: [c] })),
-    ...(clusters.some((c) => c.instances.length === 1)
-      ? [{ key: "independent", label: "independent", clusters: clusters.filter((c) => c.instances.length === 1) }] : []),
-  ];
+  // deterministic name, then every unrelated instance under "independent"
+  // (rosterGroups, shared with the command palette). Clusters are computed on
+  // the FULL roster then projected to visible members — clustering a filtered
+  // subset could forge edges from globally ambiguous names (merged-state review @3e76616).
+  const groups = rosterGroups(instances, visible);
   for (const group of groups) {
     listEl.append(clusterSeparator(document, { label: group.label, count: group.clusters.reduce((n, c) => n + c.instances.length, 0) }));
     for (const cluster of group.clusters) {
@@ -1092,8 +1088,6 @@ const contextPanel = createContextPanel({
   onFocusModeChange: () => updateSidebarControls(),
   // Focus mode hides the sidebar: focus that was there lands on the active tab, else a stable visible control.
   fallbackFocus: () => stableFocusTarget(),
-  // (isMac is declared with the palette, after this first render: read the platform here.)
-  shortcutHint: () => { const mac = !!globalThis.navigator?.platform?.includes("Mac"); const chord = getBinding("panel.toggle", mac); return chord ? formatChord(chord, mac) : ""; },
 });
 window.addEventListener("pagehide", () => contextPanel.dispose(), { once: true });
 
@@ -1104,10 +1098,9 @@ function syncContextPanel() {
   contextPanel.setContext({ workspace: currentWorkspace(), owner: tabLayerVisible ? null : stage,
     instance: terminal ? tab.instanceRef : null, key: terminal && tab.instanceRef ? tab.key : null });
 }
-onKeymapChange(() => syncContextPanel()); // the panel toggle's tooltip names its chord
 function activeTabTrigger() { return activeTab != null ? tabs.get(activeTab)?.triggerEl ?? null : null; }
 /** Where focus goes when the control holding it disappears: the active tab's trigger when it is shown, else a
- * stable visible control (the panel toggle, the sidebar toggle, or the restore edge that focus mode and a
+ * stable visible control (the sidebar toggle, or the restore edge that focus mode and a
  * hidden sidebar show), never <body>. */
 function stableFocusTarget() {
   const shown = el => {
@@ -1117,7 +1110,7 @@ function stableFocusTarget() {
     }
     return true;
   };
-  return [activeTabTrigger(), ...["panel-toggle", "sidebar-toggle", "sidebar-restore"].map(id => document.getElementById(id))].find(shown) ?? null;
+  return [activeTabTrigger(), ...["sidebar-toggle", "sidebar-restore"].map(id => document.getElementById(id))].find(shown) ?? null;
 }
 function refreshPanelInstance(instances, workspace) {
   const tab = tabs.get(activeTab);
@@ -1171,7 +1164,30 @@ function renderSplit(splitVisible) {
     },
   }, split, splitVisible, [...tabs]));
   cells = [...tabhost.querySelectorAll(":scope > .group-cell")];
+  observeTabStrips();
 }
+
+// ── the selected tab stays visible (spec F) ──────────────────────────────
+// Whenever a tab becomes active, a tab closes, or a strip resizes (window,
+// sidebar, panel, split), each strip scrolls its active tab fully into view.
+// Only the strip's scrollLeft moves (revealInStrip): never another ancestor.
+function tabStrips() {
+  return [tabbar, ...tabhost.querySelectorAll(":scope > .group-cell > .group-tabbar")];
+}
+function revealActiveTabs() {
+  for (const strip of tabStrips()) {
+    const active = strip.querySelector(":scope > .tab.active:not([hidden])");
+    if (active) revealInStrip(strip, active);
+  }
+}
+const tabStripResize = typeof ResizeObserver === "function" ? new ResizeObserver(() => revealActiveTabs()) : null;
+/** Group strips come and go with the split: observe exactly the current ones. */
+function observeTabStrips() {
+  if (!tabStripResize) return;
+  tabStripResize.disconnect();
+  for (const strip of tabStrips()) tabStripResize.observe(strip);
+}
+observeTabStrips();
 
 /** Explicit empty-destination selection. Never leave terminal commands aimed
  * at the previously active tab; projection and native focus are separate. */
@@ -1188,7 +1204,7 @@ function selectEmptyGroup(groupId) {
 // transition the actions perform — no duplicated gating logic.
 const tabActionsEl = document.getElementById("tab-actions");
 for (const [btnId, actionId] of [
-  ["split-right", "split.vertical"], ["split-down", "split.horizontal"], ["split-close", "split.close"],
+  ["split-right", "split.vertical"], ["split-down", "split.horizontal"],
 ]) {
   document.getElementById(btnId).addEventListener("click", () => runAction(actionId));
 }
@@ -1198,7 +1214,6 @@ function updateSplitControls() {
   tabActionsEl.hidden = !s.visible;
   document.getElementById("split-right").disabled = !s.splitRow;
   document.getElementById("split-down").disabled = !s.splitCol;
-  document.getElementById("split-close").disabled = !s.close;
 }
 
 function splitPane(orientation) {
@@ -1380,6 +1395,7 @@ function activateTab(id, { keepGroupFocus = false } = {}) {
   }
   renderSplit(splitVisible);
   updateSplitControls();
+  revealActiveTabs();
   tabs.get(id)?.onShow?.();
   return true;
 }
@@ -1418,6 +1434,7 @@ function closeTab(id, restoreFocus = false, { explicit = true, confirmed = false
   t.tabEl.remove();
   t.paneEl.remove();
   tabs.delete(id);
+  revealActiveTabs(); // the remaining tabs widen: the active one may have moved out of view
   const wasSplitMember = isSplitMember(split, id);
   // Closing a tab never closes a destination. If the terminal layer is
   // visible, stay in its focused group even when it (or every group) is empty.
@@ -1761,6 +1778,8 @@ const palette = createPalette({
     return p.instances || [];
   },
   openTerminal: (name) => openTerminalTab(name),
+  // While open, ⌘K / Ctrl+Shift+P moves down and Shift + it up (live keymap); Esc closes, Enter opens.
+  cycleKey: (e) => pickerCycleDirection(e, "app.palette", isMac),
   commands: [
     // View commands derive from the nav manifest so a new rail destination
     // can never be palette-invisible (review 8441961 nit).
@@ -2044,7 +2063,6 @@ registerAction({ id: "sidebar.toggle", label: "Toggle the sidebar", context: "gl
 registerAction({ id: "panel.toggle", label: "Show or hide the instance panel", context: "global", run: () => { tabOpenIntents.invalidate(); contextPanel.toggle(); } });
 // Focus mode lives on the keyboard (rebindable, no default chord) and the palette.
 registerAction({ id: "app.focusMode", label: "Toggle focus mode (sidebar and instance panel)", context: "global", run: () => { tabOpenIntents.invalidate(); contextPanel.toggleFocusMode(); } });
-document.getElementById("panel-toggle").addEventListener("click", () => runAction("panel.toggle"));
 // splits live on the tab layer (they arrange terminal tabs); the actions
 // are terminal-allowlisted so the chords work inside xterm too.
 registerAction({ id: "split.vertical", label: "Split terminal right (side by side)", context: "tabs", run: () => splitPane("row") });

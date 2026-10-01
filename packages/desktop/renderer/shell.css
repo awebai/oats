@@ -361,7 +361,8 @@ body {
   overflow-x: auto; height: calc(var(--bar-h) - 1px); /* the strip's rule is the 48th pixel */
 }
 /* tab-strip split controls (shown while the active tab is a terminal) */
-#tab-actions { display: flex; align-items: center; gap: 2px; padding: 0 8px; flex: none; }
+#tab-actions { display: flex; align-items: center; gap: 2px; padding: 0 8px; flex: none;
+               --tab-actions-w: 74px; /* padding 8 + 8, two 28px buttons, the 2px gap */ width: var(--tab-actions-w); }
 #tab-actions[hidden] { display: none; }
 #tab-actions button { appearance: none; border: 0; border-radius: 6px; background: none; color: var(--muted);
                       display: grid; place-items: center; width: 28px; height: 28px; flex: none;
@@ -369,13 +370,21 @@ body {
 #tab-actions button:hover:not(:disabled) { color: var(--fg); background: var(--surface-2); }
 #tab-actions button:focus-visible { color: var(--fg); background: var(--sel); }
 #tab-actions button:disabled { color: var(--faint); cursor: default; }
-/* Strips scroll instead of compressing tab identity to a few characters.
-   Keep the existing long-label cap; full names remain in title/ARIA. */
-/* Strips scroll instead of compressing tab identity to a few characters
-   (earlier human decision); the long-label cap is the design's 280px. */
+/* Tabs fit the strip, like VS Code's "shrink" sizing (spec F, 2026-10-01). Every
+   tab grows from the same zero basis, so they share the strip evenly, and none
+   grows past its natural width (fit-content), which the trigger caps so a tab
+   never exceeds the design's 280px long-label cap. Under pressure they shrink
+   evenly down to --tab-min; below that the strip scrolls. The full name stays in
+   the trigger's title and accessible name.
+   --tab-min = 112px: less --tab-chrome (51px) the trigger keeps 61px, the 7px
+   status dot and its 8px gap, then 46px of name at 12.5px: about five characters
+   and the ellipsis ("oats-…", measured live), the floor the design asked for.
+   The close stays on every tab, the active one included. */
 .tab {
-  display: flex; flex: none; align-items: center; gap: 8px; min-width: 0; max-width: 280px; white-space: nowrap;
-  padding: 0 8px 0 14px; background: transparent; border-right: 1px solid var(--border);
+  --tab-min: 112px; --tab-max: 280px;
+  --tab-chrome: 51px; /* padding 14 + 8, gap 8, close 20, the 1px border: what the trigger cannot use */
+  display: flex; flex: 1 1 0px; align-items: center; gap: 8px; min-width: var(--tab-min); max-width: fit-content;
+  white-space: nowrap; padding: 0 8px 0 14px; background: transparent; border-right: 1px solid var(--border);
   color: var(--muted); font-size: 12.5px;
 }
 .tab[hidden] { display: none; }
@@ -387,13 +396,17 @@ body {
 /* dot · name · branch (Redesign v3): the name keeps priority, the branch
    takes what is left and ellipsizes first. */
 .tab-trigger { align-self: stretch; display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto;
-               overflow: hidden; padding: 0; text-align: left; }
+               max-width: calc(var(--tab-max) - var(--tab-chrome)); overflow: hidden; padding: 0; text-align: left; }
 .tab-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--accent); }
 .tab-dot.off { box-sizing: border-box; background: transparent; border: 1.5px solid var(--faint); }
 .tab-icon { flex: none; display: grid; place-items: center; color: var(--muted); }
 .tab-icon > .shell-icon { width: 14px; height: 14px; }
 .tab-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tab-detail { min-width: 0; flex: 1 1 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+/* The branch grows from zero into what the name leaves, so it ellipsizes and then
+   disappears first. Its gap is its own padding, cancelled by a negative margin:
+   a hidden branch takes no space from the name. */
+.tab-detail { min-width: 0; flex: 1 1 0px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+              margin-left: -8px; padding-left: 8px;
               font: 400 11px ui-monospace, Menlo, monospace; color: var(--faint); }
 .tab .close { display: grid; place-items: center; flex: none; width: 20px; height: 20px; color: var(--faint);
               margin: 0; padding: 0; border-radius: 4px; font-size: 13px; }
@@ -423,8 +436,11 @@ body {
    under the active tab. */
 .group-tabbar { display: flex; flex: none; box-sizing: border-box; min-width: 0; overflow-x: auto; overflow-y: hidden;
                 height: var(--bar-h); background: var(--bg); border-bottom: 1px solid var(--border); }
-.group-tabbar .tab { min-width: 0; }
-.group-tabbar > #tab-actions { margin-left: auto; }
+/* In a group strip the split buttons scroll with its tabs: they stay pinned to its
+   end, and the strip's scroll padding keeps a revealed tab clear of them
+   (revealInStrip honours it). */
+.group-tabbar > #tab-actions { margin-left: auto; position: sticky; right: 0; z-index: 1; background: var(--bg); }
+.group-tabbar:has(> #tab-actions) { scroll-padding-right: 74px; }
 .tab-pane.split-cell { position: relative; inset: auto; flex: 1 1 0; min-width: 0; min-height: 0; }
 .group-cell > .split-empty { flex: 1 1 0; min-width: 0; min-height: 0; }
 .split-empty { display: flex; align-items: center; justify-content: center;
@@ -487,8 +503,8 @@ body {
 .palette-input::placeholder { color: var(--faint); }
 .palette-list { max-height: 46vh; overflow-y: auto; padding: 6px; }
 .palette-item {
-  display: flex; align-items: center; gap: 9px; padding: 7px 8px; border-radius: 6px;
-  cursor: pointer; color: var(--fg); font-size: 13px;
+  position: relative; display: flex; align-items: center; gap: 9px; padding: 7px 8px; border-radius: 6px;
+  padding-left: calc(8px + var(--depth, 0) * 18px); cursor: pointer; color: var(--fg); font-size: 13px;
 }
 .palette-item.active { background: var(--sel); }
 .palette-item .pdot { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--faint); flex: none; }
@@ -498,6 +514,15 @@ body {
 .palette-item .pdetail { margin-left: auto; color: var(--muted); font-size: 11.5px; flex: none; max-width: 45%;
                          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .palette-empty { padding: 16px; color: var(--muted); text-align: center; font-size: 13px; }
+/* Instances as the sidebar lists them (spec F): relation groups read from the
+   sidebar's 14px gap alone (each is a named role=group for AT), rows indent
+   18px per level, and a match's ancestor shown only for its place in the tree
+   is dimmed by colour (the muted token, never opacity) and is not a target. */
+.palette-group + .palette-group, .palette-group + .palette-item { margin-top: 14px; }
+.palette-item.context { cursor: default; color: var(--muted); }
+.palette-item.context .plabel { font-weight: 400; }
+.palette-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+              clip-path: inset(50%); white-space: nowrap; }
 
 /* ── keyboard shortcuts editor (⌘,) ── */
 .kb-editor {
