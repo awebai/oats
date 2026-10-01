@@ -4,9 +4,8 @@
 // harvest-status read an unset OATS_SOUL as "harvest off").
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const probeCap = {
@@ -45,9 +44,9 @@ test("a soul that cannot be read at the resolved commit refuses the operator com
   t.after(fx.cleanup);
   // A soul tree the kernel refuses to copy: a symlink other than the CLAUDE.md alias.
   fx.commit({ "souls/withprobe/skills/evil": { symlink: "/etc" } });
-  const previews = () => readdirSync(tmpdir()).filter((n) => n.startsWith("oats-preview-soul-")).sort();
-  const before = previews();
-  const r = fx.cli(["probe", "go", "--soul", "withprobe", "--json"]);
+  // A temporary directory of the command's own, so what it leaves there is all its own.
+  const tmp = join(fx.base, "tmp"); mkdirSync(tmp);
+  const r = fx.cli(["probe", "go", "--soul", "withprobe", "--json"], { env: { TMPDIR: tmp } });
   assert.notEqual(r.status, 0);
   const doc = r.json();
   assert.equal(doc.ok, false);
@@ -55,5 +54,5 @@ test("a soul that cannot be read at the resolved commit refuses the operator com
   assert.match(doc.error.message, /^oats probe: cannot read soul withprobe at [0-9a-f]{12}, so the command would run without OATS_SOUL; nothing was run: /);
   assert.deepEqual(r.stdout.trim().split("\n").map((l) => JSON.parse(l).ok), [false], "one envelope, the refusal: the provider never ran");
   assert.equal(existsSync(join(fx.root, "withprobe", "souls")), false);
-  assert.deepEqual(previews(), before, "no temporary soul copy is left behind");
+  assert.deepEqual(readdirSync(tmp), [], "no temporary soul copy is left behind");
 });
