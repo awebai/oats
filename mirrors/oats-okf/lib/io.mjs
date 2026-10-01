@@ -66,18 +66,67 @@ export function materialize(root, files) {
   for (const [p, content] of Object.entries(files)) atomic(join(root, relPath(p)), Buffer.from(content, 'base64'));
 }
 const pause = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-/** Cooperative directory lock. `waitMs` lets a reader queue behind a live
- *  holder for a bounded time; an abandoned lock is still never reclaimed. */
-export function withLock(path, fn, { waitMs = 0 } = {}) {
+/** Cooperative directory lock. `waitMs` lets a caller queue behind a live
+ *  holder for a bounded time; a live holder is never stolen from, whatever its
+ *  age. With `reclaimDead`, a lock whose owner is provably gone (reclaimable)
+ *  is taken over; otherwise an abandoned lock waits for an explicit unlock. */
+export function withLock(path, fn, { waitMs = 0, reclaimDead = false } = {}) {
   safePath(path); fs.mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const deadline = Date.now() + waitMs;
   for (let delay = 20;; delay = Math.min(delay * 2, 250)) {
     try { fs.mkdirSync(path, { mode: 0o700 }); break; }
-    catch(e) { if(e.code !== 'EEXIST') throw e; if(Date.now() >= deadline) fail('E_LOCKED', `busy or abandoned lock: ${path}; inspect owner.json, never reclaim by age`); pause(delay); }
+    catch(e) {
+      if(e.code !== 'EEXIST') throw e;
+      if(reclaimDead && reclaim(path)) continue;
+      if(Date.now() >= deadline) {
+        const owner = lockOwner(join(path, 'owner.json'));
+        if(owner?.host === hostname() && !pidAlive(owner.pid)) fail('E_LOCKED', `abandoned lock: ${path} is held by process ${owner.pid}, which is gone; once no oats okf process is running, release it with: oats okf unlock --lock ${quote(path)} --token ${quote(owner.token)}`);
+        if(owner?.host === hostname()) fail('E_LOCKED', `busy lock: ${path} is held by running process ${owner.pid}; try again once it finishes`);
+        fail('E_LOCKED', `busy or abandoned lock: ${path}; inspect owner.json, never reclaim by age`);
+      }
+      pause(delay);
+    }
   }
   const owner = { token: randomUUID(), pid: process.pid, host: hostname() };
   save(join(path, 'owner.json'), owner);
   try { return fn(); } finally { if (readJSON(join(path, 'owner.json')).token === owner.token) { fs.rmSync(path, { recursive: true }); syncDir(dirname(path)); } }
+}
+/** A holder may die between creating a lock and writing its owner. */
+const OWNERLESS_LOCK_STALE_MS = 30000;
+export const pidAlive = pid => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
+/** A lock's owner record, or null when it has none readable. */
+function lockOwner(file) {
+  try { const o = readJSON(file); return Number.isSafeInteger(o?.pid) && typeof o?.token === 'string' && typeof o?.host === 'string' ? o : null; } catch { return null; }
+}
+/** What proves `path` (a lock directory, or a reclaim guard file) abandoned:
+ *  its owner is a pid of this host that is gone, or it has no readable owner
+ *  and is older than OWNERLESS_LOCK_STALE_MS. → that record, or null. */
+function abandoned(path, ownerFile) {
+  let stat; try { stat = fs.lstatSync(path); } catch { return null; }
+  const owner = lockOwner(ownerFile);
+  if (owner) return owner.host === hostname() && !pidAlive(owner.pid) ? { token: owner.token } : null;
+  return Date.now() - stat.mtimeMs > OWNERLESS_LOCK_STALE_MS ? { ino: stat.ino, mtimeMs: stat.mtimeMs } : null;
+}
+const same = (now, then) => now && (then.token ? now.token === then.token : now.ino === then.ino && now.mtimeMs === then.mtimeMs);
+/** Remove the lock at `path` if its owner is provably gone. Reclaimers are
+ *  serialized by the guard file `<path>.reclaim` and check the lock again under
+ *  it, so a paused reclaimer never removes a lock a live process took since. A
+ *  guard whose own holder died is never removed (that would race exactly as
+ *  removing the lock does): it is refused, naming it. → whether it was removed. */
+function reclaim(path) {
+  const stale = abandoned(path, join(path, 'owner.json'));
+  if (!stale) return false;
+  const guard = `${path}.reclaim`, me = { token: randomUUID(), pid: process.pid, host: hostname() };
+  try { fs.writeFileSync(guard, JSON.stringify(me) + '\n', { flag: 'wx', mode: 0o600 }); }
+  catch (e) {
+    if (e.code !== 'EEXIST') throw e;
+    if (abandoned(guard, guard)) fail('E_LOCKED', `${guard} was left by a process that died while reclaiming ${path}; remove it once no oats okf process is running`);
+    return false;
+  }
+  try {
+    if (!same(abandoned(path, join(path, 'owner.json')), stale)) return false;
+    fs.rmSync(path, { recursive: true }); syncDir(dirname(path)); return true;
+  } finally { if (lockOwner(guard)?.token === me.token) fs.rmSync(guard, { force: true }); }
 }
 export function unlock(path, token) {
   safePath(path); const o = readJSON(join(path, 'owner.json'));
@@ -89,8 +138,8 @@ export const identityKeys = ['OATS_INSTANCE','OATS_INSTANCE_HOME','OATS_HOME','P
 export function cleanEnv(env = process.env) {
   return Object.fromEntries(Object.entries(env).filter(([k]) => !/^(OATS_(?!HOME_DIR$|PACKAGE_CATALOG$)|PI_AGENT|GIT_)/.test(k)));
 }
-export function exec(bin, args, { cwd, env = cleanEnv(), timeout = 30000, maxBuffer = 16*1024*1024, acceptedStatus = [0] } = {}) {
-  const r = spawnSync(bin, args, { cwd, env, encoding: 'utf8', timeout, maxBuffer });
+export function exec(bin, args, { cwd, env = cleanEnv(), timeout = 30000, maxBuffer = 16*1024*1024, acceptedStatus = [0], input } = {}) {
+  const r = spawnSync(bin, args, { cwd, env, encoding: 'utf8', timeout, maxBuffer, input });
   if(r.error || !acceptedStatus.includes(r.status)) throw Object.assign(new Error(`${bin} ${args[0]} failed: ${r.error?.message || r.stderr || `exit ${r.status}`}`),{code:'E_COMMAND',stdout:r.stdout,status:r.status});
   return r.stdout.trim();
 }

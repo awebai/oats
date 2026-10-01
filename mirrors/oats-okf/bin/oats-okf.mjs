@@ -5,7 +5,7 @@ import { register, registerCaptured, loadInvocationSourceReceipt, homeSource, lo
 import { harvestStatus, setupHarvest } from '../lib/harvest-status.mjs';
 import { settings } from '../lib/config.mjs';
 import { CONSULT } from '../lib/consult.mjs';
-import { runSource, complete, retry, readRun, requireQualifiedHelper } from '../lib/worker.mjs';
+import { runSource, complete, completeInBackground, retry, readRun, requireQualifiedHelper } from '../lib/worker.mjs';
 import { initBase, migrate, deliverMigration, cutoverMigration, migrateSource, forgetMigration } from '../lib/migration.mjs';
 import { inspect, inspectConsultOnly } from '../lib/inspection.mjs';
 import { loadInvocationKnowledgeBinding } from '../lib/binding-wire.mjs';
@@ -180,7 +180,9 @@ else {
       result=sw.effective!=='on'?{status:'harvest-off',source:source.file,reason:`${sw.reason}; nothing was captured`}
         :runSource(source,{manual:!!flags.manual,noLaunch:!!flags['no-launch']});
     }
-    else if(event==='complete') {const s=src();if(captured) retainedRun(s);result=complete(s,flags.run,flags.judgment && resolve(flags.judgment));}
+    // A captured completion's private binding file need not outlive this call,
+    // so it delivers inline (and can exceed an agent's tool-call limit).
+    else if(event==='complete') {const s=src(),judgment=flags.judgment && resolve(flags.judgment);if(captured) retainedRun(s);result=captured?complete(s,flags.run,judgment):await completeInBackground(s,flags.run,judgment);}
     else if(event==='retry') {const s=src();if(captured && !flags.run && !flags.rejudge && !flags.launch && !flags['adopt-home']) retainedRun(s);result=retry(s,{run:flags.run,rejudge:!!flags.rejudge,launch:!!flags.launch,adoptHome:flags['adopt-home']});}
     else if(event==='inspect') result=consultOnly?inspectConsultOnly(consultSource(home)):inspect(src());
     else if(event==='setup' && flags.harvest!==undefined) {
