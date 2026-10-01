@@ -15,6 +15,10 @@
  * Data source: pickedFile.text(), or legacy GET /api/file?path=<abs> via ctx.api.
  * Browser picks have no absolute path: only basename/read-only provenance is
  * shown, and local file navigation is unavailable rather than guessed.
+ *
+ * The render pipeline is exported (renderMarkdownHtml, renderCodeHtml,
+ * isMarkdownName, decorateMarkdown, MARKDOWN_CSS) and shared with the
+ * capability page's Contents reader: one sanitiser, never a second copy.
  */
 import { Marked } from "marked";
 import hljs from "highlight.js";
@@ -24,6 +28,12 @@ import { escapeHtml } from "./common.mjs";
 // Mirrors server/oats-web.mjs's fileData contract; pinned by renderer tests.
 export const FILE_MAX_BYTES = 2 * 1024 * 1024;
 const MARKDOWN_EXT = new Set(["md", "markdown", "mdown", "mkd"]);
+const extOf = (name) => (String(name ?? "").split(".").pop() || "").toLowerCase();
+/** True for a Markdown file name (extension, case-insensitive). */
+export function isMarkdownName(name) {
+  const s = String(name ?? "");
+  return s.includes(".") && MARKDOWN_EXT.has(extOf(s));
+}
 
 export async function readPickedFile(pickedFile) {
   const { name, size } = pickedFile; // deliberately never inspect .path/.webkitRelativePath
@@ -37,7 +47,7 @@ export async function readPickedFile(pickedFile) {
   if (typeof content !== "string") throw new Error("The selected file is not text.");
   if (new TextEncoder().encode(content).byteLength > FILE_MAX_BYTES) throw new Error("File too large (maximum 2 MiB).");
   if (content.includes("\u0000")) throw new Error("Binary files cannot be displayed as text (NUL byte found).");
-  return { name, size, content, markdown: MARKDOWN_EXT.has((name.split(".").pop() || "").toLowerCase()) };
+  return { name, size, content, markdown: MARKDOWN_EXT.has(extOf(name)) };
 }
 
 const EXT_LANG = {
@@ -84,18 +94,21 @@ export function externalHref(href) {
  * normalized: data-open-file links become local (href="#", no target); all
  * other links must pass the external-scheme allowlist and are forced to
  * target="_blank" rel="noreferrer noopener" — raw-HTML anchors cannot keep
- * attacker-chosen target/rel (renderer navigation, tabnabbing). */
-export function sanitizeHtml(html, doc, { localFiles = true } = {}) {
+ * attacker-chosen target/rel (renderer navigation, tabnabbing).
+ * strict: the no-resource profile of localFiles:false, but data-open-file
+ * links stay local links (the capability Contents reader opens them). */
+export function sanitizeHtml(html, doc, { localFiles = true, strict = false } = {}) {
   const purify = typeof DOMPurify === "function" ? DOMPurify(doc.defaultView) : DOMPurify;
+  const lockdown = strict || !localFiles;
   const frag = purify.sanitize(html, {
     RETURN_DOM_FRAGMENT: true,
     ADD_ATTR: ["data-open-file"],
-    FORBID_TAGS: ["style", "form", "input", "button", ...(!localFiles
+    FORBID_TAGS: ["style", "form", "input", "button", ...(lockdown
       ? ["img", "picture", "video", "audio", "source", "track", "iframe", "object", "embed", "link", "svg", "math",
         "textarea", "select", "option", "optgroup", "datalist"] : [])],
     // A private picked document must not initiate resource requests (including
     // CSS URLs). External links remain explicit, sanitized user actions.
-    FORBID_ATTR: localFiles ? [] : ["style", "src", "srcset", "poster", "background", "contenteditable", "autofocus"],
+    FORBID_ATTR: lockdown ? ["style", "src", "srcset", "poster", "background", "contenteditable", "autofocus"] : [],
     ALLOWED_URI_REGEXP: /^(?:https?|mailto):|^#/i,
   });
   for (const a of frag.querySelectorAll("a")) {
@@ -125,10 +138,24 @@ export function sanitizeHtml(html, doc, { localFiles = true } = {}) {
   return div.innerHTML;
 }
 
-function makeMarked(filePath) {
+/* rootedLinks:false is for readers whose paths are relative to some root (the
+   capability Contents reader): an absolute filesystem path means nothing there,
+   so it renders as its plain label instead of a local link.
+   strict (untrusted repository text): raw HTML renders as escaped text (a
+   block as a code block, so the reader sees what the file says) and images
+   as their alt text. Text inside an inline <script>/<pre> is escaped too:
+   marked marks it pre-escaped (raw) at lex time. */
+function makeMarked(filePath, { rootedLinks = true, strict = false } = {}) {
   const marked = new Marked({
     gfm: true,
+    ...(strict ? { walkTokens(token) { if (token.type === "text" && token.escaped) token.escaped = false; } } : {}),
     renderer: {
+      ...(strict ? {
+        html: ({ text, block }) => block
+          ? `<pre class="md-code"><code>${escapeHtml(text.replace(/\n+$/, ""))}</code></pre>\n`
+          : escapeHtml(text),
+        image: ({ text }) => escapeHtml(text || ""),
+      } : {}),
       code({ text, lang }) {
         const l = (lang || "").split(/\s+/)[0];
         return `<pre class="md-code"><code class="hljs">${highlight(text, l)}</code></pre>`;
@@ -147,6 +174,7 @@ function makeMarked(filePath) {
         const clean = href.split("#")[0];
         if (!clean) return `<a href="${escapeHtml(href)}"${t}>${label}</a>`;
         if (!filePath) return label; // browser pick: local links are plain text
+        if (!rootedLinks && clean.startsWith("/")) return label;
         const abs = clean.startsWith("/") ? clean : resolveRelative(filePath, clean);
         return `<a href="#" data-open-file="${escapeHtml(abs)}"${t}>${label}</a>`;
       },
@@ -155,7 +183,21 @@ function makeMarked(filePath) {
   return marked;
 }
 
-const STYLE = `
+/** Sanitized HTML for a Markdown source, exactly as the viewer renders it.
+ * path: the file's path, which relative links resolve against (null: local
+ * links render as plain text); localFiles: see sanitizeHtml; strict: no raw
+ * HTML, no images, no resource-loading attributes (untrusted content). */
+export function renderMarkdownHtml(source, doc, { path = null, localFiles = true, rootedLinks = true, strict = false } = {}) {
+  return sanitizeHtml(makeMarked(path, { rootedLinks, strict }).parse(String(source ?? "")), doc, { localFiles, strict });
+}
+
+/** Read-only highlighted block for a non-Markdown file, language by extension. */
+export function renderCodeHtml(text, fileName) {
+  const lang = EXT_LANG[extOf(fileName)];
+  return `<pre class="md-code"><code class="hljs">${highlight(String(text ?? ""), lang)}</code></pre>`;
+}
+
+export const MARKDOWN_CSS = `
 .mdv-scroll { height: 100%; overflow-y: auto; background: var(--bg); color: var(--fg); }
 .mdv { max-width: 860px; margin: 0 auto; padding: 28px 36px 72px; font: 15px/1.7 -apple-system, "Segoe UI", sans-serif; }
 .mdv h1 { font-size: 1.7em; margin: 1.2em 0 .6em; }
@@ -227,7 +269,7 @@ export async function mount(el, ctx) {
   root.className = "mdv";
   scroll.append(root);
   const style = doc0.createElement("style");
-  style.textContent = STYLE;
+  style.textContent = MARKDOWN_CSS;
   el.append(style, scroll);
   const picked = ctx.pickedFile != null;
   const alive = () => mounts.has(dispose);
@@ -305,20 +347,19 @@ export async function mount(el, ctx) {
   const meta = `<div class="mdv-meta"><span class="crumb">${escapeHtml(picked ? file.name : file.path)}</span><span>${kb}</span>${provenance}</div>`;
   const doc = el.ownerDocument;
   if (file.markdown) {
-    root.innerHTML = meta + sanitizeHtml(makeMarked(picked ? null : file.path).parse(file.content), doc, { localFiles: !picked });
-    decorate(root, doc);
+    root.innerHTML = meta + renderMarkdownHtml(file.content, doc, { path: picked ? null : file.path, localFiles: !picked });
   } else {
     // plain/code file: read-only highlighted view
-    const lang = EXT_LANG[(file.name.split(".").pop() || "").toLowerCase()];
-    root.innerHTML = `${meta}<pre class="md-code"><code class="hljs">${highlight(file.content, lang)}</code></pre>`;
-    decorate(root, doc);
+    root.innerHTML = meta + renderCodeHtml(file.content, file.name);
   }
+  decorateMarkdown(root, doc);
   return dispose;
 }
 
 /* Post-render decoration (plain DOM, after sanitize): slugged heading ids +
-   hover anchors, and a copy button on every fenced block. */
-function decorate(root, doc) {
+   hover anchors (anchors:false skips the "#" links), and a copy button on
+   every fenced block. */
+export function decorateMarkdown(root, doc, { anchors = true } = {}) {
   const seen = new Map();
   for (const h of root.querySelectorAll("h1, h2, h3, h4")) {
     const slugBase = h.textContent.trim().toLowerCase().replace(/[^\w]+/g, "-").replace(/^-+|-+$/g, "") || "section";
@@ -326,6 +367,7 @@ function decorate(root, doc) {
     seen.set(slugBase, n + 1);
     const slug = n ? `${slugBase}-${n}` : slugBase;
     h.id = slug;
+    if (!anchors) continue;
     const a = doc.createElement("a");
     a.className = "hanchor";
     a.href = `#${slug}`;

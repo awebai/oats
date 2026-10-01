@@ -38,7 +38,8 @@ import { randomUUID } from 'node:crypto';
 const [scriptDir, log] = [process.env.FAKE_SCRIPT_DIR, process.env.FAKE_LOG];
 const config = () => JSON.parse(readFileSync(scriptDir + '/config.json', 'utf8')); // written atomically (rename) by the helper
 const a = process.argv.slice(2);
-const verb = a[0] === 'workspace' && a[1] === 'status' ? 'workspace-status' : a[0] === 'operation' ? 'operation-run' : a[0];
+const verb = a[0] === 'workspace' && a[1] === 'status' ? 'workspace-status' : a[0] === 'operation' ? 'operation-run'
+  : a[0] === 'capabilities' && a[1] === 'show' ? 'capability-show' : a[0];
 const id = randomUUID(), start = Date.now();
 const cfg = config();
 const dir = a.includes('--dir') ? a[a.indexOf('--dir') + 1] : cfg.deployment;
@@ -57,6 +58,7 @@ else if (verb === 'inspect') {
   if (a.includes('--home')) { const home = a[a.indexOf('--home') + 1]; d.result.subject.home = home; d.result.instance.home = home; }
   d.result = { ...d.result, ...observation() }; out = d;
 }
+else if (verb === 'capability-show') out = cfg.capabilityShow ?? { schemaVersion: 1, ok: false, error: { code: 'E_UNKNOWN_COMMAND', message: 'fake: no capabilityShow answer' } }; // the config's envelope, as given
 else if (verb === 'server') out = { schemaVersion: 1, ok: true, result: { groups: [], servers: [] } };
 else if (verb === 'operation-run') out = { schemaVersion: 1, ok: true, result: { operationsApi: 2, operation: a[2], ok: true } };
 else out = { schemaVersion: 1, ok: false, error: { code: 'E_UNKNOWN_COMMAND', message: 'fake: ' + a.join(' ') } };

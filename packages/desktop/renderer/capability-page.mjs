@@ -223,8 +223,9 @@ function failedFacts({ cause = null, busy = false } = {}) {
  * `catalogPending`: opened from a soul before the catalog is read — its facts (the lede, Comes from) are
  * skeletons the host fills in place when it arrives. The catalog's age line lives in `.page-notice`
  * under the bar: the host paints it (`catalogNotice` / `updateCatalogNotice`), optionally seeded here
- * with `observation` ({ state, settled, busy, observedAt, cause, onRetry }). */
-export function renderCapabilityPage(host, { row, status, instances, root, rosterState = 'ready', backLabel = 'Capabilities', onBack, openSoul = null, from = null, openExternal = null, catalogPending = false, observation = null }) {
+ * with `observation` ({ state, settled, busy, observedAt, cause, onRetry }). `contents`: the Contents section's
+ * element (createCapabilityContents), placed after Provides and before Used by. */
+export function renderCapabilityPage(host, { row, status, instances, root, rosterState = 'ready', backLabel = 'Capabilities', onBack, openSoul = null, from = null, openExternal = null, catalogPending = false, observation = null, contents = null }) {
   const doc = host.ownerDocument;
   const node = (tag, value, cls) => el(doc, tag, value, cls);
   host.replaceChildren();
@@ -270,6 +271,9 @@ export function renderCapabilityPage(host, { row, status, instances, root, roste
     if (declared.length) { const c = pageCard(doc, 'Settings', { count: declared.length }); for (const key of declared) c.card.append(node('span', key, 'page-list-item')); cards.append(c.card); }
     if (cards.childElementCount) { provides.append(cards); main.append(provides); }
   }
+  // Contents (spec C): the host's long-lived section (capability-contents.mjs), re-appended on every rebuild so
+  // what is open in its reader survives a catalog repaint. In both forms: the catalog's and a soul's.
+  if (contents) main.append(contents);
   // Used by: the souls whose instances carry it (roster module rows).
   const use = capabilityUse(instances, row.name);
   // "Used by" derives from the roster: with none carrying it, the claim needs a settled good roster read.

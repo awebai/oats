@@ -314,3 +314,11 @@ test("discovery retains remote routing capabilities for terminal preflight", asy
   assert.deepEqual(cli.remote, ["spawn", "session"]);
   assert.equal(cli.scheduleApi, 2);
 });
+
+test("discovery retains capabilityShowApi 1 only (the capability-show gate's integer), never another value", async () => {
+  const io = { persisted: () => "/bin/oats", env: {}, isExecutableFile: () => true };
+  const found = async extra => discover(io, async () => ({ stdout: JSON.stringify({ ...PROBE(), features: ["capability-show"], ...extra }) }));
+  assert.equal((await found({ capabilityShowApi: 1 })).capabilityShowApi, 1);
+  for (const value of [2, "1", true, null]) assert.equal("capabilityShowApi" in await found({ capabilityShowApi: value }), false, String(value));
+  assert.equal("capabilityShowApi" in await found({}), false);
+});

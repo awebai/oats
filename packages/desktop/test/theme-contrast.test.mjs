@@ -1113,3 +1113,58 @@ for (const [name] of palettes) test(`${name}: the remote reconnect strip and its
   assert.equal(text.textContent, 'Reconnecting to Build box…');
   assert.equal(style(button).color, 'var(--fg)', 'an attempt in flight keeps the button legible'); aa('fg', 'surface', 'busy Reconnect now');
 });
+
+// Spec C: the capability page's Contents — navigation (on the card's surface; the open file on --sel, a hovered
+// row on --surface-2) and the reader (the Markdown viewer's own ground, --bg) with its header and front-matter table.
+import { createCapabilityContents, capabilityContentsCSS } from '../renderer/capability-contents.mjs';
+import { MARKDOWN_CSS } from '../renderer/views/markdown.mjs';
+for (const [name] of palettes) test(`${name}: capability Contents navigation, reader header, notes and front matter meet computed AA`, async () => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><section class="host"></section></div></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document;
+  for (const source of [css, pageCardCSS, capabilityPageCSS, capabilityContentsCSS, MARKDOWN_CSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  const commit = 'a'.repeat(40);
+  const show = { capabilityShowApi: 1, name: 'oats.aweb', kind: 'package', repoKey: null, package: 'oats.aweb', version: '1', commit, path: 'p',
+    inject: { path: 'inject.md', bytes: 300000, text: '---\nname: x\n---\n# T\n\n[a](https://example.com)\n', binary: false, truncated: true },
+    skills: [{ name: 'oats-aweb', path: 'skills/oats-aweb', description: 'The playbook. More.', files: [{ path: 'skills/oats-aweb/SKILL.md', bytes: 1 }], filesTruncated: true }],
+    problems: [{ code: 'W_X', message: 'a problem', path: 'inject.md' }] };
+  const contents = createCapabilityContents(doc, { request: () => Promise.resolve(structuredClone(show)), openExternal() {} });
+  const host = doc.querySelector('.host'); host.className = 'capability-page'; host.append(contents.element);
+  contents.update({ row: { name: 'oats.aweb', kind: 'package', package: 'oats.aweb', commit }, cli: { ok: true, features: ['capability-show'], capabilityShowApi: 1 }, deployment: '/ws' });
+  await new Promise(r => setTimeout(r, 0)); await new Promise(r => setTimeout(r, 0));
+  doc.querySelector('[data-skill] > .cap-node').click();
+  const gate = doc.createElement('p'); gate.className = 'cap-contents-gate'; gate.textContent = 'gate'; host.append(gate);
+  const notes = doc.createElement('p'); notes.className = 'cap-contents-note'; notes.textContent = 'none'; doc.querySelector('.cap-contents-nav').append(notes);
+  const line = doc.createElement('p'); line.className = 'cap-reader-line'; line.textContent = 'Binary file; not shown.'; doc.querySelector('.cap-reader-body').append(line);
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  for (const [selector, painted, fg, bg] of [
+    ['.page-section-lead', '.oats-view', 'muted', 'bg'],
+    ['.cap-contents-gate', '.oats-view', 'muted', 'bg'],
+    ['.cap-contents-group-label', '.cap-contents', 'muted', 'surface'],
+    ['.cap-contents-note', '.cap-contents', 'muted', 'surface'],
+    ['.cap-contents-problem', '.cap-contents', 'muted', 'surface'],
+    ['.cap-contents-problem .mono', '.cap-contents', 'fg', 'surface'],
+    ['[aria-selected=true] .cap-node-name', '[aria-selected=true] > .cap-node', 'fg', 'sel'],
+    ['[aria-selected=true] .cap-node-file', '[aria-selected=true] > .cap-node', 'muted', 'sel'],
+    ['[data-skill] .cap-node-name', '.cap-contents', 'fg', 'surface'],
+    ['.cap-node-desc', '.cap-contents', 'muted', 'surface'],
+    ['.cap-node-twisty', '.cap-contents', 'muted', 'surface'],
+    ['.cap-more', '.cap-contents', 'muted', 'surface'],
+    ['.cap-reader-path', '.cap-reader-head', 'fg', 'bg'],
+    ['.cap-reader-size', '.cap-reader-head', 'muted', 'bg'],
+    ['.cap-reader-flag', '.cap-reader-head', 'warn', 'bg'],
+    ['.cap-fm th', '.cap-contents-reader', 'muted', 'bg'],
+    ['.cap-fm td', '.cap-contents-reader', 'fg', 'bg'],
+    ['.cap-reader-line', '.cap-contents-reader', 'muted', 'bg'],
+    ['.cap-reader-body .mdv a', '.cap-contents-reader', 'accent', 'bg'],
+  ]) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
+    const color = dom.window.getComputedStyle(el).color;
+    assert.ok(color === `var(--${fg})` || (fg === 'fg' && ['', 'var(--fg)'].includes(color)), `${selector}: ${color}`);
+    assert.equal(dom.window.getComputedStyle(surface).background.replace(/^.*(var\(--[\w-]+\)).*$/, '$1') || 'var(--bg)', `var(--${bg})`, painted);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${name} ${selector}`);
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+  }
+  // A hovered row (--surface-2) keeps its muted second line legible too.
+  assert.ok(contrast(opaqueChannels(root.getPropertyValue('--muted').trim()), opaqueChannels(root.getPropertyValue('--surface-2').trim())) >= 4.5, `${name} muted on surface-2`);
+  contents.dispose(); dom.window.close();
+});

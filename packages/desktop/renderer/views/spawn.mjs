@@ -7,6 +7,8 @@ import { createSoulInspector, inspectorCSS } from "../soul-inspector.mjs";
 import { createWorkspaceDiscovery, discoveryCSS, workspaceTabs } from "../workspace-discovery.mjs";
 import { capabilityRow } from "../workspace-catalog.mjs";
 import { renderCapabilityPage, renderSoulCapabilities, renderSoulCore, capabilityPageCSS, pageCardCSS, soulCapabilitiesCSS, desktopFacts, catalogNotice, catalogNoticeKind, updateCatalogNotice } from "../capability-page.mjs";
+import { createCapabilityContents, capabilityContentsCSS } from "../capability-contents.mjs";
+import { MARKDOWN_CSS } from "./markdown.mjs";
 import { runtimeState } from "../instance-presentation.mjs";
 import { deploymentUnavailableText } from "../deployment-header.mjs";
 import { createSpawnDialog, spawnDialogCSS } from "../spawn-dialog.mjs";
@@ -272,7 +274,16 @@ function openCapability(s, row, from = null, why = null) {
   if (!s.alive) return;
   // The list is hidden (display:none) while the page is open, which drops its scroll offset: keep it for Back.
   const list = s.q("workspace-discovery");
-  s.capOpen = { row, from, why: from ? why : null, gen: workspaceGeneration(), scrollTop: from ? null : list?.scrollTop ?? null, signature: null };
+  s.capOpen?.contents.dispose();
+  // Contents (spec C): one controller per open page, bound to this workspace (a switch closes the page).
+  const query = wsQuery();
+  const contents = createCapabilityContents(s.el.ownerDocument, {
+    request: body => postJson(s.ctx, `/api/capabilities${query}`, body),
+    openExternal: url => s.ctx.openExternal?.(url),
+    // The kernel no longer knows it, or it moved since the catalog was read: re-read the catalog, the page follows.
+    onCatalogStale: () => { if (s.alive && s.capOpen?.contents === contents) s.discovery.reload(); },
+  });
+  s.capOpen = { row, from, why: from ? why : null, gen: workspaceGeneration(), scrollTop: from ? null : list?.scrollTop ?? null, signature: null, contents };
   paintCapabilityPage(s);
   showPage(s, "capability");
   s.q("workspace-cap-page").querySelector(".page-back")?.focus({ preventScroll: true });
@@ -295,8 +306,8 @@ function paintCapabilityPage(s) {
   const host = s.q("workspace-cap-page");
   if (signature !== open.signature) { // an unchanged catalog never rebuilds the page under focus
     open.signature = signature; open.noticeSignature = null;
-    const restore = captureFocusState(host, { fallback: () => host.querySelector(".page-back") });
-    renderCapabilityPage(host, { row: facts ? { ...facts, ...row } : row, ...context, catalogPending,
+    const restore = captureFocusState(host, { fallback: () => host.querySelector(".page-back") }), keep = open.contents.hold();
+    renderCapabilityPage(host, { row: facts ? { ...facts, ...row } : row, ...context, catalogPending, contents: open.contents.element,
       openExternal: url => s.ctx.openExternal?.(url),
       backLabel: from ? from.name : "Capabilities", from: from ? { label: from.name, why } : null,
       onBack: () => closeCapability(s, { restoreFocus: true }),
@@ -305,8 +316,10 @@ function paintCapabilityPage(s) {
         if (matches.length !== 1) return;
         closeCapability(s); inspectSoul(s, matches[0]);
       } });
-    restore();
+    restore(); keep();
   }
+  // Its subject is the catalog row (the selector and commit `capabilities show` reads at); unchanged → nothing.
+  open.contents.update({ row: from ? facts || (row.kind === "external" ? row : null) : row, cli: cliStatus(), remote: context.remote === true, catalogPending, deployment: context.root ?? null });
   paintCapabilityNotice(s, { state: catalogState, settled: catalogSettled, busy: catalogBusy, observedAt: catalogObservedAt, cause: catalogFailure });
 }
 /** The page's age line mirrors the catalog controller (stale with Retry, or an old observation): the same
@@ -335,6 +348,7 @@ function syncCapabilityPage(s) {
 }
 function closeCapability(s, { restoreFocus = false } = {}) {
   const open = s.capOpen; s.capOpen = null;
+  open?.contents.dispose();
   const host = s.q("workspace-cap-page"); if (host) host.replaceChildren();
   if (!open) return;
   // Back to where it was opened: the soul's page (still shown) or the Capabilities table.
@@ -360,6 +374,8 @@ export function mount(el, ctx) {
 ${inspectorCSS}
 ${pageCardCSS}
 ${capabilityPageCSS}
+${capabilityContentsCSS}
+${MARKDOWN_CSS}
 ${soulCapabilitiesCSS}
 ${discoveryCSS}
 ${identityCSS}
@@ -572,7 +588,7 @@ export function unmount() {
   pendingWorkspaceTab = null;
   selectionIntent++;
   state.alive = false;
-  state.inspector.dispose(); state.page.dispose();
+  state.inspector.dispose(); state.page.dispose(); state.capOpen?.contents.dispose();
   state.presentation?.dispose();
   state.gridState?.dispose();
   state.discovery.dispose();
