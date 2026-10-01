@@ -6,9 +6,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, lutimesSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, lutimesSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import {
   classifyRemoteFailure, contentDigest, createReadSession, fetchRemoteTree, listRemoteTree, observeRemote, parseRepoRef, readRemoteFile, runGit,
   FILE_BUDGET, PARTIAL_FETCH_GIT, SMALL_BLOB_LIMIT, gitVersion, keepsPartialCache,
@@ -573,4 +573,74 @@ exec "${real}" "$@"
     for (let i = 0; i < 50 && existsSync(lock); i++) await new Promise((r) => setTimeout(r, 20));
     assert.equal(existsSync(lock), false, "git cleaned up its lock: it was sent SIGTERM, not SIGKILL");
   } finally { process.env.PATH = saved; await session.close(); }
+});
+
+// ---------------------------------------------------------------------------
+// #386 review regressions
+// ---------------------------------------------------------------------------
+
+test("two processes reclaiming one dead write lock never both write: one paused before its unlink cannot delete the other's live lock", { timeout: 120_000 }, async () => {
+  const base = scratch();
+  const script = new URL("./fixtures/remote-reclaim/reclaimer.mjs", import.meta.url).pathname;
+  const remoteUrl = new URL("../lib/remote.mjs", import.meta.url).href;
+  const code = await new Promise((r) => spawn(process.execPath, [script, "A", remoteUrl, base], { stdio: "inherit" }).on("close", r));
+  assert.equal(code, 0);
+  const report = JSON.parse(execFileSync("cat", [join(base, "report.json")], { encoding: "utf8" }));
+  assert.deepEqual(report, { bActiveDuringPause: false, simultaneous: false, lockLeft: false },
+    "B could not take the lock while A was paused inside the reclaim, the two never fetched at once, and both released");
+});
+
+test("terminateGroup kills a descendant that survives SIGTERM after its leader exits (an ssh or remote helper)", { timeout: 30_000 }, async () => {
+  const { terminateGroup } = await import("../lib/process-group.mjs");
+  const base = scratch();
+  const pidFile = join(base, "descendant.pid");
+  // The descendant ignores SIGTERM and stays in the leader's group; the leader itself ends on SIGTERM.
+  const descendantCode = "process.on('SIGTERM', () => {}); require('node:fs').writeFileSync(process.env.PID_FILE, String(process.pid)); setInterval(() => {}, 1000);";
+  const leaderCode = `require("node:child_process").spawn(process.execPath, ["-e", ${JSON.stringify(descendantCode)}], { stdio: "ignore" }); setInterval(() => {}, 1000);`;
+  const leader = spawn(process.execPath, ["-e", leaderCode], { detached: true, stdio: "ignore", env: { ...process.env, PID_FILE: pidFile } });
+  for (let i = 0; i < 250 && !existsSync(pidFile); i++) await new Promise((r) => setTimeout(r, 20));
+  const descendant = Number(readFileSync(pidFile, "utf8"));
+  const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  try {
+    assert.equal(terminateGroup(leader, 300), true);
+    await new Promise((r) => leader.on("close", r));
+    assert.equal(leader.signalCode, "SIGTERM", "the leader ended on SIGTERM");
+    for (let i = 0; i < 100 && alive(descendant); i++) await new Promise((r) => setTimeout(r, 20));
+    assert.equal(alive(descendant), false, "the TERM-resistant descendant was killed after the grace");
+  } finally { try { process.kill(descendant, "SIGKILL"); } catch { /* gone */ } }
+});
+
+test("an old config.lock (git names it relatively) is recovered; a young one is refused naming its absolute path", async () => {
+  const f = fixture();
+  initCache(f);
+  const lock = leftoverGitLock(f, "config.lock");
+  const session = createReadSession();
+  try {
+    assert.equal((await observeRemote(f.bare, { cacheDir: f.cacheDir, at: f.commit, session })).commit, f.commit);
+    assert.equal(existsSync(lock), false);
+    assert.ok(session.notices.some((n) => /^removed a stale git lock \/.*\/config\.lock /.test(n)), session.notices.join("\n"));
+  } finally { await session.close(); }
+  const g = fixture();
+  initCache(g);
+  const young = leftoverGitLock(g, "config.lock", { old: false });
+  const e = await observeRemote(g.bare, { cacheDir: g.cacheDir, at: g.commit }).then(() => assert.fail("expected a refusal"), (x) => x);
+  assert.deepEqual([e.details.reason, e.details.stage], ["cache", "config"]);
+  assert.ok(isAbsolute(e.details.lock) && e.details.lock.endsWith("/config.lock"), e.details.lock);
+  assert.ok(e.message.includes(e.details.lock));
+  assert.equal(existsSync(young), true, "never deleted");
+});
+
+test("a fetch that cannot write the local cache (FETCH_HEAD unwritable, or a directory) is reason cache with git's words — never auth or network", async () => {
+  for (const [name, spoil] of [
+    ["unwritable", (file) => { writeFileSync(file, ""); chmodSync(file, 0o444); }],
+    ["a directory", (file) => mkdirSync(file)],
+  ]) {
+    const f = fixture();
+    initCache(f);
+    spoil(join(f.repoDir, "FETCH_HEAD"));
+    const e = await observeRemote(f.bare, { cacheDir: f.cacheDir, at: f.commit }).then(() => assert.fail("expected a refusal"), (x) => x);
+    assert.equal(e.code, "E_REMOTE_UNREADABLE", name);
+    assert.deepEqual([e.details.reason, e.details.stage, e.details.cacheDir], ["cache", "fetch", f.repoDir], name);
+    assert.match(e.message, /\(cache, fetch\): .*cannot open 'FETCH_HEAD': .*; check that .* is writable by this user and its disk has room$/, name);
+  }
 });

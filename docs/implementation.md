@@ -100,7 +100,9 @@ gets the plain per-call behaviour. Within a session:
   exit hook (`closeNow`), and the system reaps them once the process is gone;
 - every git child is ended with SIGTERM first and SIGKILL only after a
   grace (`terminateGroup`): git removes its own lock files on SIGTERM, and
-  a git killed outright leaves one that blocks every later write. The exit
+  a git killed outright leaves one that blocks every later write. The
+  SIGKILL goes to the whole group even when git itself has exited, so a
+  descendant that ignores SIGTERM (ssh, a remote helper) still ends. The exit
   hook cannot wait for a timer, so it waits a bounded 200 ms synchronously
   (`reapOnExit`);
 - discovery reads members eight at a time (`DISCOVERY_CONCURRENCY`) with
@@ -131,7 +133,10 @@ the repo's cross-process write lock, `<cache>/.locks/<repo>.lock`
 (`withCacheWriteLock`): an exclusive file holding `{pid, token, startedAt}`,
 waited for while its holder lives (bounded by a whole fetch, then
 `reason: "cache"` naming the pid), reclaimed when the holder is dead, and
-released only by its owner. Reads take no lock. A cache repo appears whole
+released only by its owner. Reclaimers take a short guard,
+`<lock>.reclaim`, and check under it that the lock is still the dead
+record before removing it, so a reclaimer that paused cannot delete a
+live process's new lock. Reads take no lock. A cache repo appears whole
 (`git init` into a private directory, then a rename), so processes making
 the first fetch of one remote all succeed. A git `*.lock` a write meets is
 judged under that lock (`cacheGit`): older oats kernels take no write lock,
@@ -139,7 +144,9 @@ so it is retried briefly, then removed only when it is inside the cache
 repo, a regular file and older than the longest fetch
 (`GIT_FETCH_TIMEOUT_MS` plus a margin): a git killed mid-write. A removal
 is said once as a warning. Anything else is `reason: "cache"` naming the
-file and when it is safe to remove.
+file and when it is safe to remove; so is any other local write failure
+(a `FETCH_HEAD` git cannot open, a read-only or full disk), with git's own
+words.
 
 Across commands, `memoAtCommit` keeps parsed reads under
 `<cache>/.parsed/<kernel fingerprint>/`, keyed by (repo key, full commit,
