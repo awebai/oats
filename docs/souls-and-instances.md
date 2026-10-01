@@ -432,6 +432,12 @@ retained home (plus the usual quarantine marker when hooks reported incomplete
 cleanup), shows in `oats status` and the Desktop as a failed deferred
 retirement, and is retried and cleared with `oats retire <instance>`.
 
+Retire never deletes a branch unless you pass `--delete-branch`, and then
+only the verified branch: not on a quarantine, its retry or `--force`. A
+spawn that fails deletes the branch it created only while the branch's tip
+is still where the spawn created it. If something was committed there, the
+branch is kept and the failure says so.
+
 ## Work modes
 
 A work mode decides what `./work` points at and what discipline the agent must

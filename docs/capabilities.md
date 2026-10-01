@@ -104,7 +104,8 @@ A self-contained package has an `oats.json`:
   permanent external residue. It is marked `.oats-rollback-incomplete.json`, so
   `oats status` reports it as retained state rather than a live instance, and
   `oats retire <instance>` retries the cleanup — re-running the retire hooks and
-  the rollback-owned Git steps, and verifying both. A retry that still cannot
+  the worktree removal, verifying both, and verifying (never deleting) the
+  branch: a branch is deleted only with `--delete-branch`. A retry that still cannot
   finish keeps the home again, names what is outstanding, and exits nonzero.
 - The **escape hatch is `oats retire <instance> --force`**, for a home OATS cannot
   identify at all: no `instance.json` and no **usable** cleanup descriptor. Usable

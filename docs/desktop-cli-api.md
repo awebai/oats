@@ -2028,7 +2028,11 @@ A first retire prints the **raw receipt**, not an envelope:
 - `--discard-worktree` removes the worktree. `--delete-branch` deletes the
   worktree's verified branch (re-verified at deletion time) and implies
   discarding; a mismatch deletes nothing and reports
-  `branchDeletionSkipped`.
+  `branchDeletionSkipped`. Without `--delete-branch` no retire deletes a
+  branch, a retried or `--force`d quarantine included. A failed spawn's
+  quarantine that still owes the branch the spawn created stays incomplete
+  (`git branch <b>: kept; the failed spawn created it; pass --delete-branch to
+  delete it`).
 - `workRecovery` (or `workRecoveries[]`): `{path, classes, bytes, outputs?,
   repoCopy?}`; `outputs: {paths: [{path, bytes}], bytes}` names what was
   copied beyond tracked state, largest first.

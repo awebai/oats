@@ -213,7 +213,10 @@ this host:
   the exact recovery.
 - Records that name no host predate host recording and live under this
   user's home, so they count as this host's: a dead owner's lock is
-  reclaimed too.
+  reclaimed too. On a home shared across machines (NFS, or a synced
+  directory), such a record may belong to another host, whose pid means
+  nothing here; check that no capture runs on the other machines before the
+  first pass after upgrading.
 
 ## Upgrading
 
