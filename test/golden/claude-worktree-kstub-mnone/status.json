@@ -23,6 +23,10 @@
           "repo": "<base>/deployment/ws",
           "work": "worktree",
           "branch": "agents/dev-claude-worktree-kstub-mnone",
+          "base": {
+            "ref": "local/<base>/remotes/ws.git",
+            "oid": "<sha>"
+          },
           "harness": "claude",
           "modelFrom": "harness-default",
           "launchFrom": "flag",

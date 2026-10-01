@@ -26,6 +26,10 @@
           "repo": "<base>/deployment/ws",
           "work": "worktree",
           "branch": "agents/dev-claude-worktree-kstub-mstub-modellist",
+          "base": {
+            "ref": "local/<base>/remotes/ws.git",
+            "oid": "<sha>"
+          },
           "harness": "claude",
           "model": "claude-sonnet-4-5",
           "modelFrom": "spawn",

@@ -7,6 +7,7 @@
     "home": "<base>/deployment/agents/dev/instances/dev-pi-checkout-kstub-mnone",
     "work": "checkout",
     "branch": "main",
+    "base": null,
     "launched": false,
     "warnings": [],
     "tmux": {
