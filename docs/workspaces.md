@@ -183,7 +183,7 @@ as `confirmed` or the reason it is not:
 | `not-listed` | the workspace does not list the repo |
 | `no-backlink` | no (or invalid) `oats-membership.yaml` at the member's default branch |
 | `backlink-elsewhere` | the member names a different workspace (a case-only difference is flagged: repo paths are case-sensitive identities) |
-| `cannot-read` | the operator cannot read the member (auth / not-found / network / timeout), or this machine's remote cache could not be written (cache) |
+| `cannot-read` | the operator cannot read the member (auth / not-found / network / timeout / killed: the system killed git, e.g. out of memory), or this machine's remote cache could not be written (cache) |
 
 An unconfirmed member contributes nothing but its row: its souls are invisible,
 its capabilities unresolvable (`E_NOT_A_MEMBER` / `E_MEMBERSHIP_UNCONFIRMED`).
