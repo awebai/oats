@@ -2294,6 +2294,11 @@ if [ "$1" = "team" ] && [ "$2" = "join" ]; then echo "join rejected for token ${
     "the invite returns malformed JSON containing the token": `if [ "$1" = "team" ] && [ "$2" = "invite" ]; then echo '{"token":"${TOKEN}"'; exit 0; fi`,
     "the join returns malformed JSON containing the token": `if [ "$1" = "team" ] && [ "$2" = "invite" ]; then echo '{"token":"${TOKEN}"}'; exit 0; fi
 if [ "$1" = "team" ] && [ "$2" = "join" ]; then echo '{"alias":"probe" ${TOKEN}'; exit 0; fi`,
+    // oats.aweb 1.17.4 mints with ONE \`aw init --join-from\`: the token is created and spent inside aw,
+    // which can still print it while failing. The same disclosure paths, on the command the hook now runs.
+    "the --join-from mint fails, echoing the token": `if [ "$1" = "init" ]; then case "$*" in *--join-from=*) echo "accept rejected for token ${TOKEN}" 1>&2; exit 3;; esac; fi`,
+    "the --join-from mint prints the token on stdout, then fails": `if [ "$1" = "init" ]; then case "$*" in *--join-from=*) echo "minted ${TOKEN}"; echo "then failed" 1>&2; exit 3;; esac; fi`,
+    "the --join-from mint returns malformed JSON containing the token": `if [ "$1" = "init" ]; then case "$*" in *--join-from=*) echo '{"alias":"probe" ${TOKEN}'; exit 0;; esac; fi`,
   };
   for (const [label, script] of Object.entries(cases)) {
     const base = temp();
@@ -2318,20 +2323,28 @@ exit 0
   }
 });
 
-test("a WELL-FORMED join response cannot reflect the invite token into the output (reviewer-a6aa1c5)", () => {
+test("a WELL-FORMED mint response cannot reflect a token-shaped value into the team, and the hook holds no token (reviewer-a6aa1c5)", () => {
   const base = temp();
   const hook = resolve(new URL("../mirrors/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
   const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
   // Suppressing the FAILURE paths achieves nothing if a successful reply is
-  // copied into meta and the briefing verbatim. Here every command succeeds and
-  // the response is valid JSON — it simply echoes the invite token back as the
-  // alias, and the hook printed it twice on exit 0.
+  // copied into meta and the briefing verbatim. Before oats.aweb 1.17.4 the hook
+  // held the invite token and rejected any reply field carrying it. From 1.17.4
+  // the token is created and spent inside one \`aw init --join-from\` and never
+  // reaches the hook or any argv, so the hook has nothing to compare against:
+  // what remains is the plausibility rule. A team id that is not
+  // <name>:<domain> (a token has no colon) falls back to the requested team.
+  // (A token-shaped ALIAS would pass the alias rule; that case is recorded as an
+  // oats.aweb follow-up, not asserted here.)
   const TOKEN = "inv_SUPERSECRET_TOKEN_9f3a";
+  const log = join(base, "aw.log");
   write(join(bin, "aw"), `#!/bin/sh
+echo "$*" >> "${log}"
 if [ "$1" = "version" ]; then echo "aw 1.36.13"; exit 0; fi
 if [ "$1" = "team" ] && [ "$2" = "list" ]; then echo '{"active_team":"default:acme.aweb.ai","memberships":[{"team_id":"default:acme.aweb.ai","alias":"x"}]}'; exit 0; fi
 if [ "$1" = "team" ] && [ "$2" = "invite" ]; then echo '{"token":"${TOKEN}"}'; exit 0; fi
 if [ "$1" = "team" ] && [ "$2" = "join" ]; then echo '{"team_id":"${TOKEN}","alias":"${TOKEN}"}'; exit 0; fi
+if [ "$1" = "init" ]; then case "$*" in *--join-from=*) echo '{"team_id":"${TOKEN}","alias":"probe","status":"connected"}'; exit 0;; esac; fi
 exit 0
 `);
   execFileSync("chmod", ["+x", join(bin, "aw")]);
@@ -2342,11 +2355,16 @@ exit 0
   });
   assert.doesNotMatch(r.stdout, new RegExp(TOKEN), "no emitted field may carry the token");
   assert.doesNotMatch(r.stderr, new RegExp(TOKEN));
-  // The spawn still succeeds, using what WE asked for — the requested alias and
-  // team are always known, so a rejected field has an honest fallback.
-  assert.equal(r.status, 0, `a successful join stays successful: ${r.stderr}`);
-  assert.match(r.stdout, /"alias":"probe"/, "the requested alias stands in");
-  assert.match(r.stdout, /default:acme\.aweb\.ai/, "as does the requested team");
+  // The spawn still succeeds, using what WE asked for: the requested team is
+  // always known, so a rejected field has an honest fallback.
+  assert.equal(r.status, 0, `a successful mint stays successful: ${r.stderr}`);
+  assert.match(r.stdout, /"alias":"probe"/);
+  assert.match(r.stdout, /default:acme\.aweb\.ai/, "the requested team stands in");
+  // And the token never passed through the hook: no invite, no join, no argv carrying it.
+  const calls = readFileSync(log, "utf8");
+  assert.doesNotMatch(calls, /^team (invite|join)/m, "one mint; no separate invite or join");
+  assert.match(calls, /^init --join-from=/m);
+  assert.doesNotMatch(calls, new RegExp(TOKEN), "no aw argv carries the token");
   rmSync(base, { recursive: true, force: true });
 });
 

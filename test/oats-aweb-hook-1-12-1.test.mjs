@@ -28,6 +28,14 @@ if (s.startsWith("wake ")) process.exit(0);
 if (s.startsWith("team list")) { console.log(j({ active_team: "t:example.test", memberships: [{ team_id: "t:example.test" }] })); process.exit(0); }
 if (s.startsWith("team invite")) { console.log(j({ token: "TOK-secret" })); process.exit(0); }
 if (s.startsWith("team join")) { console.log(j({ alias: "probe", team_id: "t:example.test" })); process.exit(0); }
+if (s.startsWith("init") && a.some((x) => x.startsWith("--join-from"))) {
+  // aw >= 1.36.13 \`aw init --join-from=<root> --join-team=<team> --name=<alias> --json\`: one process mints
+  // from the root, accepts into the cwd and connects. It refuses an external identity home and an existing identity.
+  if (process.env.AWEB_IDENTITY_HOME) { console.error("aw init --join-from refuses an external identity home"); process.exit(2); }
+  for (const f of ["signing.key", "identity.yaml", "team-certs", "workspace.yaml"]) if (fs.existsSync(require("node:path").join(process.cwd(), ".aw", f))) { console.error("Error: refusing to overwrite existing .aw/" + f); process.exit(2); }
+  const name = (a.find((x) => x.startsWith("--name=")) || "--name=probe").slice("--name=".length);
+  console.log(j({ alias: name, team_id: (a.find((x) => x.startsWith("--join-team=")) || "--join-team=t:example.test").slice("--join-team=".length), workspace_id: "00000000-0000-4000-8000-000000000001", status: "connected" })); process.exit(0);
+}
 if (s.startsWith("init")) process.exit(0);
 if (s.startsWith("workspace delete")) { console.log(j({ alias_released: true, alias_released_reason: "revoked" })); process.exit(0); }
 console.error("fake aw: unexpected " + s); process.exit(2);
@@ -123,8 +131,12 @@ test("spawn uses roots[team] before root/workspace and local mode exports AWEB_I
     });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.deepEqual(r.doc.env, { AWEB_IDENTITY_HOME: join(home, ".aw") });
-    const invite = logLines(base).find((l) => l.argv.join(" ").startsWith("team invite"));
-    assert.equal(invite.cwd, realpathSync(teamRoot));
+    // 1.17.4 mints in one process from the home, naming the minting root with --join-from.
+    const mint = logLines(base).find((l) => l.argv[0] === "init" && l.argv.some((x) => x.startsWith("--join-from=")));
+    assert.ok(mint, "one aw init --join-from mint");
+    assert.equal(realpathSync(mint.argv.find((x) => x.startsWith("--join-from=")).slice("--join-from=".length)), realpathSync(teamRoot), "roots[team] is the minting root");
+    assert.equal(mint.cwd, realpathSync(home), "the mint runs in the home");
+    assert.equal(logLines(base).some((l) => /^team (invite|join)/.test(l.argv.join(" "))), false, "no separate invite or join");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
@@ -168,7 +180,7 @@ test("v2 spawn does not search above OATS_WORKSPACE when no root is declared", (
     });
     assert.notEqual(r.status, 0);
     assert.match(r.doc.warning, new RegExp(`no messaging root at ${workspace.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
-    assert.equal(existsSync(join(base, "aw.log")) && readFileSync(join(base, "aw.log"), "utf8").includes("team invite"), false);
+    assert.equal(existsSync(join(base, "aw.log")) && /team invite|--join-from/.test(readFileSync(join(base, "aw.log"), "utf8")), false);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 

@@ -13,9 +13,9 @@ const BINDING = resolve(new URL("../mirrors/oats-aweb/bin/oats-aweb-binding.mjs"
 
 function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, c); }
 
-/** A fake aw: team list/invite/join/init/workspace delete answer as the real
- *  one does, from a script the test controls (JOIN_MODE selects the join
- *  answer). */
+/** A fake aw: team list/invite/join, init --join-from (the 1.17.4 mint) and
+ *  workspace delete answer as the real one does, from a script the test
+ *  controls (JOIN_MODE selects the mint answer). */
 function fakeAw(base, joinMode = "ok") {
   const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
   write(join(bin, "aw"), `#!/usr/bin/env node
@@ -37,6 +37,20 @@ if (a.startsWith("team join")) {
     require("node:child_process").execFileSync("sleep", ["3"]); process.exit(0);
   }
   console.log(JSON.stringify({ alias: "probe", team_id: "t:example.test" })); process.exit(0);
+}
+if (a.startsWith("init --join-from") || (a.startsWith("init ") && args.some((x) => x.startsWith("--join-from")))) {
+  // aw >= 1.36.13 \`aw init --join-from=<root> --join-team=<team> --name=<alias> --json\`:
+  // mints an invite from the root, accepts it into the cwd and connects it, in one process.
+  const aw = p.join(process.cwd(), ".aw");
+  for (const f of ["signing.key", "identity.yaml", "team-certs", "workspace.yaml"]) if (fs.existsSync(p.join(aw, f))) { console.error("Error: refusing to overwrite existing " + p.join(aw, f)); process.exit(2); }
+  if (${JSON.stringify(joinMode)} === "conflict") { console.error("aweb: http 422: alias already holds an active certificate for this team (invite TOK-secret)"); process.exit(1); }
+  const bind = () => { fs.mkdirSync(p.join(aw, "team-certs"), { recursive: true }); fs.writeFileSync(p.join(aw, "signing.key"), "k"); fs.writeFileSync(p.join(aw, "workspace.yaml"), "memberships:\\n    - team_id: t:example.test\\n      alias: " + (val("--name") || "probe") + "\\n      workspace_id: 00000000-0000-4000-8000-000000000001\\n"); };
+  if (process.env.FAKE_JOIN_LATE) {
+    // The mint completes server-side (and binds the home) but the CLI hangs past the hook's timeout.
+    bind(); require("node:child_process").execFileSync("sleep", ["3"]); process.exit(0);
+  }
+  // Success answers without writing the home, as the team-join fake did: tests here reuse one home across spawns.
+  console.log(JSON.stringify({ alias: val("--name") || "probe", team_id: "t:example.test", workspace_id: "00000000-0000-4000-8000-000000000001", status: "connected" })); process.exit(0);
 }
 if (a.startsWith("init")) process.exit(0);
 if (a === "version") { console.log(process.env.FAKE_AW_VERSION || "aw 1.36.13"); process.exit(0); }
@@ -282,7 +296,8 @@ test("spawn: local aliases accept 64 characters and reject 65 before aw is calle
     const alias64 = `a${"b".repeat(63)}`;
     const ok = runHook(base, bin, "spawn", { OATS_INSTANCE: alias64, OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "pi", OATS_SETTINGS: "{}" });
     assert.equal(ok.status, 0, ok.stdout + ok.stderr);
-    assert.match(readFileSync(join(base, "aw.log"), "utf8"), new RegExp(`team join TOK-secret --name=${alias64} --json`));
+    assert.match(readFileSync(join(base, "aw.log"), "utf8"), new RegExp(`^init --join-from=\\S+ --join-team=t:example\\.test --name=${alias64} --json --do-not-touch-agents-md `, "m"));
+    assert.doesNotMatch(readFileSync(join(base, "aw.log"), "utf8"), /team invite|team join|TOK-secret/, "one mint; no invite token in any argv");
     const before = readFileSync(join(base, "aw.log"), "utf8");
     const alias65 = `a${"b".repeat(64)}`;
     const badHome = join(root, "agents", "dev", "instances", "too-long"); mkdirSync(badHome, { recursive: true });
@@ -324,7 +339,7 @@ test("retained identity: authority files copied exactly, coordination reconnecte
     for (const f of ["workspace.yaml", "context", "interaction-log.jsonl"]) assert.equal(existsSync(join(dest, f)), false, `${f} never copied`);
     const log = readFileSync(join(base, "aw.log"), "utf8");
     assert.match(log, /^workspace connect --service=https:\/\/app\.example\.test --team=t:example\.test --role=coordinator @/m, "connect with the source's service, the team, and the source's role, nothing else");
-    assert.equal(log.includes("team join"), false, "a retained seat is never minted");
+    assert.equal(/team join|--join-from/.test(log), false, "a retained seat is never minted");
     assert.equal(log.includes("SECRET-API-KEY"), false);
     assert.match(log, /workspace connect[\s\S]*check --online[\s\S]*heartbeat[\s\S]*workspace status[\s\S]*whoami --json/, "connect, check, heartbeat, status, then whoami, in that order");
     const lock = JSON.parse(readFileSync(join(base, "legacy-home", ".aw-retained-seat.json"), "utf8"));
