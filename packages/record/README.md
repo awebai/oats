@@ -211,8 +211,9 @@ this host:
   host's lock are never touched.
 - A guard left by a reclaimer that died is never removed. It is named, with
   the exact recovery.
-- Records that name no host (written by earlier kernels) are left to the
-  operator: `ps -p <pid>`, then `rm -r -- <lock>`.
+- Records that name no host predate host recording and live under this
+  user's home, so they count as this host's: a dead owner's lock is
+  reclaimed too.
 
 ## Upgrading
 

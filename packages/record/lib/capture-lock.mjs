@@ -10,7 +10,9 @@
 // the operator recovery; it is never stolen.
 //
 // A lock whose recorded owner is DEAD on this host is reclaimed (a capture
-// killed mid-pass by a hook or caller timeout runs no finally). Reclaimers
+// killed mid-pass by a hook or caller timeout runs no finally). Records
+// without host predate host recording and live under this user's home, so
+// they count as this host's (RECLAIM_HOSTLESS_RECORDS). Reclaimers
 // are serialized by a guard, `<lock>.reclaim` (exclusive create): under it
 // the owner record is read again and the lock removed only while it is still
 // that dead owner's, so a reclaimer cannot remove a lock a live pass took
@@ -25,9 +27,9 @@ import { randomBytes } from "node:crypto";
 import { hostname } from "node:os";
 import { join } from "node:path";
 
-/** Whether an owner record that names no host is reclaimed when its pid is dead here. Such records come
- *  from kernels that did not record the host; until the operator's decision, they are left to the operator. */
-export const RECLAIM_HOSTLESS_RECORDS = false;
+/** Whether an owner record that names no host is reclaimed when its pid is dead here: yes. Records without
+ *  host predate host recording and live under this user's home, so they are this host's. */
+export const RECLAIM_HOSTLESS_RECORDS = true;
 
 export function captureLockPath(root) { return join(root, ".capture.lock"); }
 

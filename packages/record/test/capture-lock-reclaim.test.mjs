@@ -50,15 +50,17 @@ test("a live owner, an owner-less lock and another host's dead owner are never t
   }
 });
 
-test("a host-less record (written before owners named their host) is reclaimed only when RECLAIM_HOSTLESS_RECORDS says so", (t) => {
+test("a host-less record (written before owners named their host) counts as this host's: a dead owner's lock is reclaimed", (t) => {
   const r = root(t);
-  assert.equal(RECLAIM_HOSTLESS_RECORDS, false, "the default leaves host-less records to the operator");
+  assert.equal(RECLAIM_HOSTLESS_RECORDS, true);
   plant(r, { pid: DEAD, nonce: "n", startedAt: "x" });
-  const kept = acquireCaptureLock(r);
+  // With the switch off, it would be left to the operator.
+  const kept = acquireCaptureLock(r, { reclaimHostless: false });
   assert.equal(kept.release, undefined);
   assert.match(kept.held.recovery, /ps -p 999999999/);
-  const taken = acquireCaptureLock(r, { reclaimHostless: true });
-  assert.ok(taken.release, "with the switch on, it is reclaimed like any dead owner on this host");
+  const taken = acquireCaptureLock(r);
+  assert.ok(taken.release, "by default it is reclaimed like any dead owner on this host");
+  assert.deepEqual(taken.reclaimed, { pid: DEAD, startedAt: "x" });
   taken.release();
 });
 
