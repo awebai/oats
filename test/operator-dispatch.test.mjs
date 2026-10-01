@@ -242,6 +242,26 @@ test("oats okf init --soul probe from the deployment (no home) provisions the ba
     const inside = spawnSync(process.execPath, [OATS, "okf", "inspect", "--json"], { env: { ...env, ...homeEnv }, cwd: r.json.result.home, encoding: "utf8" });
     assert.equal(inside.status, 0, inside.stdout + inside.stderr);
     assert.equal(JSON.parse(inside.stdout.trim().split("\n").pop()).ok, true);
+    // A harness that strips the session env (Codex's shared app-server daemon, #342): with no
+    // home variable set, the home is recognised from the cwd, the home itself or below it.
+    const stripped = spawnSync(process.execPath, [OATS, "okf", "inspect", "--json"], { env, cwd: r.json.result.home, encoding: "utf8" });
+    assert.equal(stripped.status, 0, stripped.stdout + stripped.stderr);
+    assert.equal(JSON.parse(stripped.stdout.trim().split("\n").pop()).ok, true);
+    // Below the home (its work directory) the namespace still comes from the home's modules,
+    // without --soul (okf's own commands read the cwd, so the manifest's help answers here).
+    const below = spawnSync(process.execPath, [OATS, "okf", "--help", "--json"], { env, cwd: join(r.json.result.home, "work"), encoding: "utf8" });
+    assert.equal(below.status, 0, below.stdout + below.stderr);
+    assert.equal(JSON.parse(below.stdout.trim().split("\n").pop()).result.capability, "oats.okf");
+    // An instance.json outside <agents-root>/<agent>/instances/<name> (or naming another
+    // instance) is not a home: the deployment's operator dispatch still answers, asking for --soul.
+    const notHome = join(dep, "not-a-home"); mkdirSync(notHome);
+    writeFileSync(join(notHome, "instance.json"), readFileSync(join(r.json.result.home, "instance.json")));
+    const misplaced = run(["okf", "inspect", "--json"], notHome);
+    assert.equal(misplaced.code, 1); assert.equal(misplaced.json?.error?.code, "E_BAD_ARGS", misplaced.out); assert.equal(misplaced.json.error.details.flag, "--soul");
+    const renamed = join(dep, "agents", "probe", "instances", "renamed"); mkdirSync(renamed);
+    writeFileSync(join(renamed, "instance.json"), readFileSync(join(r.json.result.home, "instance.json")));
+    const misnamed = run(["okf", "inspect", "--json"], renamed);
+    assert.equal(misnamed.code, 1); assert.equal(misnamed.json?.error?.code, "E_BAD_ARGS", misnamed.out); assert.equal(misnamed.json.error.details.flag, "--soul");
 
     // A package soul (the okf harvester, okf 4.0.0) homes under the agents root like a member
     // soul: <deployment>/agents/<package>--<soul>/instances/<name>.
