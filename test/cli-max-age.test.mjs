@@ -15,7 +15,7 @@ import { buildNorthwind, moveMember } from "./fixtures/northwind/build.mjs";
 import { inertHarnessPath } from "./helpers/runtime-stub.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
-const READS = "status, workspace status, souls, capabilities, inspect --soul|--home, spawn --preview, and the read forms of teams and soul teams";
+const READS = "status, workspace status, souls, capabilities, capabilities show, inspect --soul|--home, spawn --preview, and the read forms of teams and soul teams";
 const refusedBy = (form) => `--max-age is not accepted by \`oats ${form}\`: only the read verbs reuse observations (${READS})`;
 
 let base, fx, dep, env, home;
@@ -53,7 +53,7 @@ const catalogFile = () => env.OATS_PACKAGE_CATALOG;
 
 test("the read verbs take --max-age and add observation { observedAt, reused }; without the flag the key is absent", { timeout: 300_000 }, () => {
   const forms = { status: ["status"], workspaceStatus: ["workspace", "status"], souls: ["souls"], capabilities: ["capabilities"], inspectSoul: ["inspect", "--soul", "release-manager"],
-    inspectHome: ["inspect", "--home", home], teams: ["teams"], soulTeams: ["soul", "teams", "release-manager"] };
+    inspectHome: ["inspect", "--home", home], teams: ["teams"], soulTeams: ["soul", "teams", "release-manager"], capabilityShow: ["capabilities", "show", "oats.okf"] };
   for (const [name, args] of Object.entries(forms)) {
     const plain = json(oats([...args, "--json"]));
     assert.equal(observationOf(plain), undefined, `${name}: no observation without --max-age`);
@@ -111,6 +111,7 @@ test("structural refusal: every other command, every edit form and --server refu
     [["workspace", "validate"], refusedBy("workspace validate")],
     [["doctor"], refusedBy("doctor")],
     [["status", "--server", "http://127.0.0.1:9"], "--max-age cannot be combined with --server: observation reuse is local to this machine"],
+    [["capabilities", "show", "oats.okf", "--server", "http://127.0.0.1:9"], "--max-age cannot be combined with --server: observation reuse is local to this machine"],
     [["inspect", "--soul", "release-manager", "--server", "http://127.0.0.1:9"], "--max-age cannot be combined with --server: observation reuse is local to this machine"],
   ];
   for (const [argv, message] of cases) {

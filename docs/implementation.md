@@ -48,6 +48,7 @@ published to npm. Its developer docs are in
 | `workspace.mjs` | workspace, membership and soul files; discovery |
 | `resolve.mjs` | a soul's resolution: capabilities, slots, provenance |
 | `packages.mjs` | `packages:`, the catalog, `oats sync`, `oats-lock.json` |
+| `capability-show.mjs` | `oats capabilities show`: one catalog row's inject and skill files, read at its commit |
 | `materialize.mjs` | copying modules into a home and composing it |
 | `core.mjs` | spawn, retire, sessions, hooks, launch recipes, instance metadata |
 | `instruction-composition.mjs` | the generated `AGENTS.md` |
