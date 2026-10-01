@@ -193,7 +193,7 @@ test("claude runs this host's claude default launch configuration and hooks cont
   // as the flag's next value — claude exits with a parse error and the
   // spawn looks silently stuck (operator report, dev-coordinator-claude-
   // sessions).
-  assert.match(meta.command, /--extra-flag -- "\$\(cat TASK\.md\)"/, "prompt is separated from hook launch args by --");
+  assert.match(meta.command, /--extra-flag -- '@TASK\.md'$/, "prompt is separated from hook launch args by --");
 });
 
 test("pi task positional precedes capability-contributed launch args", async (t) => {
