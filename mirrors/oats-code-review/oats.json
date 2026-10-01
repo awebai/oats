@@ -1,6 +1,6 @@
 {
   "capability": "oats.code-review",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "compatibility": {
     "oats": ">=0.30.0"
   },
