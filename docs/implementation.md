@@ -103,10 +103,12 @@ gets the plain per-call behaviour. Within a session:
   a git killed outright leaves one that blocks every later write. The
   SIGKILL goes to the whole group even when git itself has exited, so a
   descendant that ignores SIGTERM (ssh, a remote helper) still ends; but
-  never once the child's `close` has fired (`watchGroup`): git and every
-  descendant holding its pipes are then gone, and the group id may already
-  belong to an unrelated process. So git's pipes are drained on a kill,
-  never destroyed: `close` must keep waiting for such a descendant. The exit
+  never to a group seen empty, whose id may already lead an unrelated
+  group. Until git's `close` (`watchGroup`), a member holding its pipes
+  keeps the id ours; after it, the group is probed every 50 ms through the
+  grace (no pid is allocated while it is a live group's id): empty, and it
+  is never signalled again. git's pipes are drained on a kill, never
+  destroyed, so `close` keeps waiting for a pipe-holding descendant. The exit
   hook cannot wait for a timer, so it waits a bounded 200 ms synchronously
   (`reapOnExit`);
 - discovery reads members eight at a time (`DISCOVERY_CONCURRENCY`) with
