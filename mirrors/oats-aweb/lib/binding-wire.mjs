@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { delimiter, isAbsolute, join, resolve } from 'node:path';
 import { TextDecoder } from 'node:util';
@@ -168,6 +168,30 @@ function workspaceReadinessContext(value) {
 }
 function yamlScalar(text,key){const m=String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`,'m'));return m?m[1].trim():undefined;}
 export const AW_MIN = '1.36.13';
+const AW_VERSION_RE=/aw\s+v?(\d+\.\d+\.\d+)/;
+/** The installed aw version ("x.y.z"), or undefined when it cannot be read.
+ *  `aw version` prints its version line first and then makes a blocking update
+ *  check against GitHub (aw 1.36.17 cmd/aw/root.go versionCmd, which ignores
+ *  AW_NO_UPDATE_CHECK), so the reader resolves at the first stdout match and
+ *  kills the child instead of waiting for it. The ceiling still bounds a child
+ *  that never prints; a child that exits without a match is unreadable. The
+ *  promise settles only after the child has exited, so no aw is left behind. */
+export function readAwVersion({timeout=10000,env=process.env}={}) {
+  return new Promise((settle) => {
+    const childEnv={...env,AW_NO_UPDATE_CHECK:'1'};delete childEnv.AWEB_IDENTITY_HOME;
+    let child,text='',answer,decided=false,exited=false,timer;
+    // 'exit' can precede the last stdout chunk, so only 'close' judges the
+    // output of a child that ended on its own; a decided read waits for 'exit'.
+    const decide=(value) => {if(decided) return;decided=true;answer=value;clearTimeout(timer);if(exited) settle(answer);else child.kill('SIGKILL');};
+    try {child=spawn('aw',['version'],{env:childEnv,stdio:['ignore','pipe','ignore']});} catch {settle(undefined);return;}
+    timer=setTimeout(() => decide(undefined),timeout);
+    child.on('error',() => {exited=true;decide(undefined);settle(answer);});
+    child.on('exit',() => {exited=true;if(decided) settle(answer);});
+    child.on('close',() => decide(AW_VERSION_RE.exec(text)?.[1]));
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data',(chunk) => {text=(text+chunk).slice(-4096);const m=AW_VERSION_RE.exec(text);if(m) decide(m[1]);});
+  });
+}
 const CLASSIC_REFUSAL = 'oats.aweb 1.14 needs OATS 0.26.0 or newer (workspace model); on an older kernel pin oats.aweb v1.13.x';
 function classicEnv(env=process.env) {return !!env.OATS_TEAM_SCOPE && !(env.OATS_WORKSPACE_KEY || env.OATS_WORKSPACE_NAME || env.OATS_DEFAULT_TEAM);}
 export function grantYamlCustodySocket(text) {
@@ -215,11 +239,11 @@ function parseOatsTeams(env=process.env){try{const rows=JSON.parse(env.OATS_TEAM
 function primaryTeamLabel(env=process.env){return typeof env.OATS_DEFAULT_TEAM==='string'&&env.OATS_DEFAULT_TEAM.trim()?env.OATS_DEFAULT_TEAM.trim():null;}
 function unmappedPrimary(env=process.env){return undefined;}
 function joinedTeams(home){if(!home)return[];try{const doc=JSON.parse(readFileSync(join(home,'.oats-aweb','teams.json'),'utf8'));return Array.isArray(doc.joinedTeams)?doc.joinedTeams.filter(j=>j&&typeof j==='object'&&j.label&&j.team&&j.identityHome):[];}catch{return[];}}
-function readinessDetails(settings,{deployment,env=process.env}={}) {
+async function readinessDetails(settings,{deployment,env=process.env}={}) {
   if(classicEnv(env)) return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:CLASSIC_REFUSAL}]}};
   const invalidTeam=invalidAwebTeamId(env);if(invalidTeam)return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:AWEB_TEAM_ID_MESSAGE}]}};
   const team=teamFromSettings(settings,null,{env}),candidate=rootCandidate(settings,team,{deployment,env}),problems=[],warnings=[];
-  const awProblem=awFloorProblem();if(awProblem) problems.push(awProblem);
+  const awProblem=await awFloorProblem();if(awProblem) problems.push(awProblem);
   if(!team) {
     const label=typeof env.OATS_DEFAULT_TEAM==='string'&&env.OATS_DEFAULT_TEAM.trim()?env.OATS_DEFAULT_TEAM.trim():'';
     problems.push({code:'needs-configuration',message:label?`the default team ${label} has no provider id yet: its owner runs oats aweb setup, then commits the id, or choose another default with oats teams default`:'no teams configured: run `oats aweb setup`'});
@@ -227,17 +251,16 @@ function readinessDetails(settings,{deployment,env=process.env}={}) {
   if(!candidate.root || !isAbsolute(candidate.root) || !existsSync(join(resolve(candidate.root),'.aw'))) problems.push({code:'needs-configuration',message:`no messaging root at ${candidate.root?resolve(candidate.root):process.cwd()}: run oats aweb setup there or set ${candidate.key}`});
   return {team,candidate,warnings,result:checkProblems(problems) || {status:'ready',problems:[]}};
 }
-function readinessFromSettings(settings,options) {return readinessDetails(settings,options).result;}
+async function readinessFromSettings(settings,options) {return (await readinessDetails(settings,options)).result;}
 function runAw(argv,cwd,{unsetEnv=[],timeout=60000}={}) {
   // An inherited AWEB_IDENTITY_HOME is the caller's identity, never this check's.
-  const env={...process.env};delete env.AWEB_IDENTITY_HOME;for(const name of unsetEnv) delete env[name];
+  const env={...process.env,AW_NO_UPDATE_CHECK:'1'};delete env.AWEB_IDENTITY_HOME;for(const name of unsetEnv) delete env[name];
   try {return execFileSync(argv[0],argv.slice(1),{cwd,env,encoding:'utf8',stdio:['ignore','pipe','pipe'],timeout}).trim();}
   catch(e) {throw new Error(`${argv.slice(0,3).join(' ')} failed${e.status===undefined?'':` (exit ${e.status})`}`);}
 }
 function semverLt(a,b) {const A=String(a||'0.0.0').split('.').map(n=>Number(n)||0),B=String(b).split('.').map(n=>Number(n)||0);for(let i=0;i<3;i++){if((A[i]||0)!==(B[i]||0)) return (A[i]||0)<(B[i]||0);}return false;}
 function onPath(cmd,env=process.env){for(const dir of String(env.PATH||'').split(delimiter)){if(!dir)continue;try{const st=statSync(join(dir,cmd));if(st.isFile()&&(st.mode&0o111))return true;}catch{}}return false;}
-function awVersionLabel(){try{const text=runAw(['aw','version'],process.cwd(),{timeout:10000});const m=/aw\s+v?(\d+\.\d+\.\d+)/.exec(text);return m?m[1]:undefined;}catch{return undefined;}}
-function awFloorProblem(){if(!onPath('aw'))return{code:'needs-configuration',message:`aw CLI not on PATH; install aw >= ${AW_MIN}`};const installed=awVersionLabel();if(!installed)return{code:'needs-configuration',message:`aw version could not be read; install aw >= ${AW_MIN}`};return !semverLt(installed,AW_MIN)?null:{code:'needs-configuration',message:`aw ${installed} is older than required ${AW_MIN}; install aw >= ${AW_MIN}`};}
+async function awFloorProblem(){if(!onPath('aw'))return{code:'needs-configuration',message:`aw CLI not on PATH; install aw >= ${AW_MIN}`};const installed=await readAwVersion();if(!installed)return{code:'needs-configuration',message:`aw version could not be read; install aw >= ${AW_MIN}`};return !semverLt(installed,AW_MIN)?null:{code:'needs-configuration',message:`aw ${installed} is older than required ${AW_MIN}; install aw >= ${AW_MIN}`};}
 function wakeReadiness(home,{reliedOn=false}={}) {
   if(!home || !reliedOn) return {problems:[],warnings:[]};
   try {
@@ -252,10 +275,10 @@ function wakeReadiness(home,{reliedOn=false}={}) {
     return {problems:[],warnings:[{code:'wake-daemon-version-unknown',message:`host wake daemon version is unknown; compatibility unproven; required ${AW_MIN}; upgrade aw, then restart the host wake daemon`}]};
   } catch {return {problems:[],warnings:[{code:'wake-daemon-version-unknown',message:`host wake daemon version is unknown; compatibility unproven; required ${AW_MIN}; upgrade aw, then restart the host wake daemon`}]};}
 }
-function workspaceReadinessPhase(req) {
+async function workspaceReadinessPhase(req) {
   const ctx=workspaceReadinessContext(req.input.context);
   if(!obj(req.input.action) || req.input.action.kind!=='readiness') wireError('invalid-binding');
-  const details=readinessDetails(req.settings,{deployment:ctx.deployment}),problems=[...details.result.problems],warnings=[...details.warnings];
+  const details=await readinessDetails(req.settings,{deployment:ctx.deployment}),problems=[...details.result.problems],warnings=[...details.warnings];
   const identity=obj(req.settings.identity)?req.settings.identity:{},mode=identity.mode===undefined || identity.mode===null || identity.mode===''?'local':String(identity.mode);
   if(mode==='global') {
     const grantProblem=grantAttachmentProblem(ctx.home);if(grantProblem) problems.push(grantProblem);
@@ -287,7 +310,7 @@ function workspaceReadinessPhase(req) {
   const result=checkProblems(problems) || {status:'ready',problems:[]};
   return {...result,warnings};
 }
-function checkPhase(req) {
+async function checkPhase(req) {
   keys(req.input,['binding','context','action','invocation'],['context','action']);
   if(!obj(req.input.action) || typeof req.input.action.kind!=='string') wireError('invalid-binding');
   if(!Object.hasOwn(req.input,'binding')) return workspaceReadinessPhase(req);
@@ -296,7 +319,7 @@ function checkPhase(req) {
   const invocation=Object.hasOwn(req.input,'invocation')?validateAwebInvocationContext(req.input.invocation,current,{context:req.input.context,action:req.input.action}):null;
   if(['command','hook','operation'].includes(req.input.action.kind) && (!invocation || invocation.instance===null || invocation.intent===null)) return checkResult('an admitted captured instance intent is required for execution');
   if(current.payload.privateTeam===null) return checkResult('an explicit private-team binding is required');
-  const hostReady=readinessFromSettings(req.settings);
+  const hostReady=await readinessFromSettings(req.settings);
   if(hostReady.status!=='ready') return hostReady;
   if(!invocation) return hostReady;
   // Read-only public kernel observations, not an account/grant attestation.
@@ -304,6 +327,7 @@ function checkPhase(req) {
   return assessCapturedSessionReadiness({binding:current,invocation,settings:req.settings});
 }
 
+// check answers through a promise (its aw floor read is asynchronous).
 export function handleBindingRequest(phase,value) {
   if(!phases.has(phase)) wireError('invalid-binding');
   const req=request(value,phase);
@@ -355,7 +379,7 @@ export async function runBindingWire(phase,input=process.stdin,output=process.st
   try {
     const chunks=[];let length=0;
     for await(const chunk of input) {const bytes=Buffer.from(chunk);length+=bytes.length;if(length>BINDING_WIRE_LIMITS.bytes) wireError('invalid-binding');chunks.push(bytes);}
-    const result=handleBindingRequest(phase,parseBindingJson(Buffer.concat(chunks,length)));
+    const result=await handleBindingRequest(phase,parseBindingJson(Buffer.concat(chunks,length)));
     answer=response(phase,{ok:true,result});
   } catch(error) {answer=response(phases.has(phase)?phase:'check',{ok:false,error:errorProblem(error)});}
   let bytes;

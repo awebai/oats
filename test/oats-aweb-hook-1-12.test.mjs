@@ -46,6 +46,14 @@ if (cmd[0] === "custody" && cmd[1] === "status" && cmd.includes("--json")) {
 if (s.startsWith("team list")) { console.log(j({ active_team: "t:example.test", memberships: [{ team_id: "t:example.test" }] })); process.exit(0); }
 if (s.startsWith("team invite")) { console.log(j({ token: "TOK-secret" })); process.exit(0); }
 if (s.startsWith("team join")) { console.log(j({ alias: "probe", team_id: "t:example.test" })); process.exit(0); }
+if (s.startsWith("init") && a.some((x) => x.startsWith("--join-from"))) {
+  // aw >= 1.36.13 \`aw init --join-from=<root> --join-team=<team> --name=<alias> --json\`: one process mints
+  // from the root, accepts into the cwd and connects. It refuses an external identity home and an existing identity.
+  if (process.env.AWEB_IDENTITY_HOME) { console.error("aw init --join-from refuses an external identity home"); process.exit(2); }
+  for (const f of ["signing.key", "identity.yaml", "team-certs", "workspace.yaml"]) if (fs.existsSync(require("node:path").join(process.cwd(), ".aw", f))) { console.error("Error: refusing to overwrite existing .aw/" + f); process.exit(2); }
+  const name = (a.find((x) => x.startsWith("--name=")) || "--name=probe").slice("--name=".length);
+  console.log(j({ alias: name, team_id: (a.find((x) => x.startsWith("--join-team=")) || "--join-team=t:example.test").slice("--join-team=".length), workspace_id: "00000000-0000-4000-8000-000000000001", status: "connected" })); process.exit(0);
+}
 if (s.startsWith("init")) process.exit(0);
 if (s.startsWith("workspace delete")) { console.log(j({ alias_released: true, alias_released_reason: "revoked" })); process.exit(0); }
 if (cmd[0] === "id" && cmd[1] === "grant" && cmd[2] === "mint") {
