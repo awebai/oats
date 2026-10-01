@@ -1341,8 +1341,14 @@ if (event === "launch") {
     // a field only if it is a plausible value of its own kind; otherwise fall
     // back to what WE asked for, which is always known.
     const clean = (v) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+    // The alias is always the one asked for (--name=<instance>). The invite
+    // token lives only inside aw, so the hook cannot tell a token echoed back as
+    // the alias from a real alias; a different reported alias is named in a
+    // warning that quotes nothing from the reply.
+    const reportedAlias = clean(raw.alias);
+    if (reportedAlias && reportedAlias !== instance) warnings.push(`oats-aweb: aw reported a different alias than requested; using the requested alias "${instance}"`);
     const joined = {
-      alias: (() => { const a = clean(raw.alias); return a && AWEB_ALIAS_RE.test(a) ? a : instance; })(),
+      alias: instance,
       // Team ids are "<name>:<domain>"; anything else is not one, and the
       // requested team is the honest fallback.
       team_id: (() => { const t = clean(raw.team_id); return t && /^[^\s:]+:[^\s:]+$/.test(t) ? t : team; })(),
