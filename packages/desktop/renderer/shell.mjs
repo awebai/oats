@@ -187,14 +187,19 @@ const spawnFollow = createSpawnFollow({
   inTerminal: el => !!el?.closest?.(".xterm, .term-wrap") || [...tabs.values()].some(t => t.kind === "terminal" && t.paneEl.contains(el)),
   ownTerminal: (el, row) => [...tabs.values()].some(t => t.kind === "terminal" && t.instanceRef && instanceId(t.instanceRef) === instanceId(row) && t.paneEl.contains(el)),
   currentWorkspace, connection: () => connectionGeneration,
-  // Every step of the open, and its terminal's readiness focus, is gated by `valid`; true only when that
-  // terminal ended up the selected tab (a refused or superseded open leaves the row New instead).
+  // Every step of the open, and its terminal's readiness focus, is gated by `valid`. True when the operator
+  // was taken there: its terminal is the selected tab, or this open made its tab (addTab selects it at once,
+  // before the terminal attaches) and they have moved on since. A refused or superseded open made nothing
+  // and selected nothing: the row says New instead.
   open: async (row, workspace, valid) => {
     const target = instanceActionTarget(workspace, row, { requireBirth: true });
     if (!target) return false;
+    const key = terminalKey(workspace, target);
+    const tabOf = () => { for (const [id, t] of tabs) if (t.kind === "terminal" && t.key === key) return id; return null; };
+    const before = tabOf();
     await openTerminalTab(target, { quiet: true, expected: target, valid });
-    const active = tabs.get(activeTab);
-    return active?.kind === "terminal" && !!active.instanceRef && sameInstanceActionTarget(target, active.instanceRef, workspace);
+    const after = tabOf();
+    return after !== null && (after === activeTab || after !== before);
   },
   markNew: (row, workspace) => spawnJobs.markNew(workspace, row), // its change repaints the roster
   announce: text => { if (contextRosterEl) announceSpawn(text); },

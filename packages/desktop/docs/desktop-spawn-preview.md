@@ -429,8 +429,10 @@ readiness), so the same holds all through it: every step of the open, and the
 terminal's readiness focus, goes on only while the connection and workspace are
 the same, no overlay is open and focus is where it was at arrival (or nowhere,
 or in the terminal being opened). Otherwise the open stops, nothing is selected
-and the row says **New**; so does any open that does not end with that terminal
-selected (refused, superseded or failed).
+and the row says **New**; so does any open that never selects that terminal
+(refused, superseded or failed). Its tab is selected as soon as it is made,
+before the terminal attaches: an operator who moves on while it attaches was
+already taken there, so the row is not **New** (and readiness takes no focus).
 
 Only a spawn pressed in this window is followed; one recovered after a reload is
 only marked **New**. Remote (server) spawns keep their own flow.

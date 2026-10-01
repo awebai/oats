@@ -10,7 +10,7 @@ import { JSDOM } from 'jsdom';
 import { createSpawnFollow, typingTarget } from '../renderer/spawn-follow.mjs';
 import { createSelectionOwnership } from '../renderer/selection-ownership.mjs';
 import { instanceActionTarget, sameInstanceActionTarget } from '../renderer/instance-action-target.mjs';
-import { instanceId } from '../renderer/instance-tree.mjs';
+import { instanceId, terminalKey } from '../renderer/instance-tree.mjs';
 
 const row = { instance: 'dev-x', home: '/d/agents/dev/instances/dev-x', agentsRoot: '/d/agents', agent: 'dev', running: true };
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
@@ -170,21 +170,25 @@ function shell(t) {
   const live = { ...row, createdAt: '2026-10-01T10:00:00.000Z', tmux: { session: 'dev-x' } };
   const panels = [], marked = [], said = [];
   const c = {
-    createSpawnFollow, instanceActionTarget, sameInstanceActionTarget, instanceId, document,
+    createSpawnFollow, instanceActionTarget, sameInstanceActionTarget, instanceId, terminalKey, document,
     currentWorkspace: () => 'A', workspaceGeneration: () => 0, connectionGeneration: 0,
     modalOpen: () => [...document.querySelectorAll('[aria-modal="true"]')].some(d => !d.hidden),
     tabs: new Map(), activeTab: null, pendingTerms: new Set(),
     spawnJobs: { markNew: (ws, r) => marked.push(r.instance) }, contextRosterEl: {}, announceSpawn: text => said.push(text),
     setSidebarMode() {}, setNavActive() {}, refreshContextRoster() {},
     api: () => { const gate = deferred(); panels.push(gate); return gate.promise; },
-    resolveTerminalOpen: (instances, ref, ws) => { const inst = instances.find(i => i.home === ref.home); return inst ? { inst, key: `term:${ws}:${inst.home}` } : { error: 'unknown', name: ref.instance }; },
+    resolveTerminalOpen: (instances, ref, ws) => { const inst = instances.find(i => i.home === ref.home); return inst ? { inst, key: terminalKey(ws, inst) } : { error: 'unknown', name: ref.instance }; },
     whenKeyFree: async () => {},
-    // The terminal's mount: addTab selects it (and focuses its input) only while the open still owns it.
+    // The terminal's mount: addTab makes and selects its tab at once, only while the open still owns it; its
+    // input takes focus when it is ready (`ready`), only if the open still owns it and it is still selected.
+    ready: undefined,
     openTerminalTabInner: async (inst, ws, key, owns) => {
       if (!owns()) return;
       const paneEl = document.createElement('div'); const input = document.createElement('textarea'); input.className = 'xterm-helper-textarea';
       paneEl.append(input); document.getElementById('tabhost').append(paneEl);
-      c.tabs.set(7, { kind: 'terminal', key, instanceRef: inst, paneEl }); c.activeTab = 7; input.focus();
+      c.tabs.set(7, { kind: 'terminal', key, instanceRef: inst, paneEl }); c.activeTab = 7;
+      await c.ready;
+      if (owns() && c.activeTab === 7) input.focus();
     },
   };
   c.tabOpenIntents = createSelectionOwnership(c);
@@ -230,4 +234,22 @@ test('shell: a connection change between the press and the arrival (the store de
   u.c.connectionGeneration++;
   assert.equal(await u.follow.arrived(u.live, 'A', u.c.connectionGeneration, { id: 'spawn-1' }), 'marked');
   assert.equal(u.panels.length, 0, 'no open was even started'); assert.deepEqual(u.marked, ['dev-x']);
+});
+
+test('shell: a terminal the operator was taken to and left while it attached is not New', async t => {
+  const u = shell(t);
+  const ready = deferred(); u.c.ready = ready.promise;
+  u.document.getElementById('card').focus();
+  u.follow.follow('spawn-1');
+  const arrival = u.follow.arrived(u.live, 'A', 0, { id: 'spawn-1' });
+  await u.settle(); u.panels[0].resolve(u.panel());
+  await u.settle();
+  assert.equal(u.c.activeTab, 7, 'its tab is made and selected before the terminal is ready');
+  u.c.tabOpenIntents.begin(); u.c.tabs.set(8, { kind: 'view', key: 'view:x' }); u.c.activeTab = 8; // they moved on
+  u.document.getElementById('card').focus();
+  ready.resolve();
+  assert.equal(await arrival, 'opened');
+  assert.deepEqual(u.marked, [], 'no New on a terminal already opened');
+  assert.equal(u.c.activeTab, 8); assert.equal(u.document.activeElement.id, 'card', 'readiness took no focus');
+  assert.deepEqual(u.said, ['dev-x spawned']);
 });

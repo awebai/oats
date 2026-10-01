@@ -17,6 +17,7 @@
  *   editor, an open popover menu).
  * The open itself is asynchronous; it stops, and the row says New instead, if during it focus moves
  * anywhere but the opening terminal, an overlay opens, the operator navigates or the connection changes.
+ * Once it has selected the terminal, the operator was there: leaving it while it attaches is not New.
  * Only a spawn pressed in this window is followed: a recovered one (after a reload) is only marked. */
 
 // <input> types that take no typing: focus on one of them is not "in the middle of typing".
@@ -41,7 +42,8 @@ const settledFocus = el => !el || el.tagName === 'BODY' || el.tagName === 'HTML'
  * @param ownTerminal(el, row)  `el` is in the terminal of `row` (the one being opened)
  * @param currentWorkspace(), connection()  the workspace on screen and the connection generation
  * @param open(row, workspace, valid)  open the row's terminal tab, asynchronously; every step of it (and its
- *   readiness focus) is gated by valid(). Resolves true only when that terminal ended up the selected tab.
+ *   readiness focus) is gated by valid(). Resolves true when the open selected that terminal, even if the
+ *   operator has moved on from it since (it was opened, so it is not New).
  * @param markNew(row, workspace)  the row wears "New" until it or its tab is first opened
  * @param announce(text)  the roster's polite live region
  */
@@ -78,7 +80,7 @@ export function createSpawnFollow({ watch, overlayOpen = () => false, activeElem
           const at = focused();
           return !!at && (at.el === origin || settledFocus(at.el) || !!ownTerminal(at.el, row));
         };
-        try { opened = (await open(row, workspace, valid)) === true && valid(); } catch { opened = false; }
+        try { opened = (await open(row, workspace, valid)) === true; } catch { opened = false; }
       }
       if (!complete) return opened ? 'opened' : 'quiet';
       if (!opened) markNew(row, workspace);
