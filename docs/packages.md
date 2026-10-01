@@ -44,14 +44,14 @@ whole organisation:
 
 ```yaml
 packages:
-  oats.okf: v4.0.6                                    # bare version → the official catalog
+  oats.okf: v4.0.7                                    # bare version → the official catalog
   acme.tools: git:github.com/acme/tools@v0.4.0        # direct ref: git:<repo>@<tag or full OID>
 ```
 
-- **Bare version** (`v4.0.6`, `4.0.6`, `1.0.0-rc.1`): the id is looked up in
+- **Bare version** (`v4.0.7`, `4.0.7`, `1.0.0-rc.1`): the id is looked up in
   the official catalog — `package-catalog.json` in the `oats` repo, or the file
   named by `OATS_PACKAGE_CATALOG` — which supplies the repo url, the tag
-  convention (`v4.0.6` or `oats-framework/v1.4.1`) and the payload path. An id
+  convention (`v4.0.7` or `oats-framework/v1.4.1`) and the payload path. An id
   the catalog does not know is `E_PACKAGE_MISSING` ("use `git:<repo>@<ref>` for
   a package outside the catalog"). The catalog is the reviewed official list
   ([official-catalog.md](official-catalog.md)) and the only way a
@@ -75,7 +75,7 @@ members:
   - git:github.com/acme/platform
 packages:
   oats.framework: v1.4.1
-  oats.okf: v4.0.6
+  oats.okf: v4.0.7
   oats.aweb: v1.17.6
 teams:
   platform: { team: "platform:acme.aweb.ai", description: Platform engineering }
@@ -105,7 +105,7 @@ decision recorded in the lock.
 $ oats sync
 workspace  acme  (github.com/acme/agents @ 3f2a9c1e)
 members    agents ✓↔ (@ 3f2a9c1e)   platform ✓↔ (@ 77c0a1b2)   billing ✗ (no-backlink)
-packages   acme.tools 0.4.0 ✓ (@ 47f4b816)   oats.okf 4.0.6 ✓ (@ 2a62df8e)
+packages   acme.tools 0.4.0 ✓ (@ 47f4b816)   oats.okf 4.0.7 ✓ (@ e460b29a)
 changed    acme.tools  — → 0.4.0 (@ 47f4b816)
 souls      9 discovered (6 members, 1 external, 2 package, 0 disabled here) · 0 private capabilities
 teams      platform (shared) · this deployment's: oats teams
@@ -160,8 +160,8 @@ same workspace commit hold identical locks.
       "source": "catalog:oats.okf",
       "url": "https://github.com/awebai/oats-okf.git",
       "path": "oats-package",
-      "version": "4.0.6",
-      "commit": "2a62df8eb247b58b3d89b2ce38d84c49c2d8ae23",
+      "version": "4.0.7",
+      "commit": "e460b29aaf23db5728d7c64f7b5fb63f5014546b",
       "integrity": "sha256-…",
       "capabilities": ["oats.okf", "oats.okf-harvest", "oats.okf-maintenance"]
     },
@@ -331,7 +331,7 @@ A soul that names one of the package's capabilities with
 {
   "policy": "docs/official-catalog.md",
   "packages": {
-    "oats.okf":       { "url": "https://github.com/awebai/oats-okf.git", "ref": "v4.0.6", "path": "oats-package" },
+    "oats.okf":       { "url": "https://github.com/awebai/oats-okf.git", "ref": "v4.0.7", "path": "oats-package" },
     "oats.framework": { "url": "https://github.com/awebai/oats.git", "ref": "oats-framework/v1.4.1", "path": "oats-package" }
   }
 }

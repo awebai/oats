@@ -133,7 +133,7 @@ try {
   const pinnedRef = packedCatalog.packages?.["oats.okf"]?.ref;
   const mirroredVersion = readJson(join(payload, "capabilities/oats-okf/oats.json")).version;
   assert.equal(pinnedRef, `v${mirroredVersion}`, "okf mirror and packed official catalog version drift");
-  assert.equal(mirroredVersion, "4.0.6");
+  assert.equal(mirroredVersion, "4.0.7");
   // The PACKED tarball's catalog carries this release's provider pins, each equal to the checkout's mirror of it.
   for (const [id, slug, version] of [["oats.aweb", "oats-aweb", "1.17.6"], ["oats.engineering", "oats-developer", "1.5.0"]]) {
     const mirrored = readJson(join(repo, "mirrors", slug, "oats.json")).version;
