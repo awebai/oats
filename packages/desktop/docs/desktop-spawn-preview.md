@@ -411,28 +411,41 @@ operator's attention still does:
 | `unknown` / `pending` | The row stays, reading **Outcome unknown**, with a visible **Check result** button ("Check result for <name>") that runs the recovery above. The notification says it once. The row never silently disappears. |
 
 **Never a yank** (`renderer/spawn-follow.mjs`). Taking the operator to the new
-instance must never take them from something they are doing. They stay where
+instance must never take them from something they are doing, and they are doing
+something only if they **acted since the press**. Where focus merely rests does
+not count: the dialog's close returns focus to where it was opened from, often a
+terminal (⌘N while working in an agent's terminal), and an operator who has not
+touched anything since is taken to the new instance from there. They stay where
 they are when, at the moment it runs:
 
-- they did something explicit since the press: opened or activated another tab
-  or view, used the sidebar, switched workspace, or the connection changed. The
-  press takes a selection-ownership ticket (`watch()`: unlike `begin()` it
-  cancels nothing pending) and the connection generation, after the dialog's
-  own focus return, and every explicit action supersedes the ticket;
-- focus is where they type: a text field, a textarea, contentEditable, or a
-  terminal (its input or its pane);
 - a modal or an overlay is open: a dialog, the palette, Quick Open, a
-  lifecycle confirmation, the shortcuts editor, an open popover menu.
+  lifecycle confirmation, the shortcuts editor, an open popover menu;
+- they produced input since the press: a keydown other than a lone modifier
+  (Shift, Control, Alt, Meta, Caps Lock…), `input`, `paste` or
+  `compositionstart`, anywhere in the window. The shell watches them at the
+  document in the capture phase (`watchOperator`), so a terminal that consumes
+  its keys still counts them, as an input generation recorded at the press and
+  compared later. Only operator-generated (trusted) events count; terminal
+  output is not input;
+- they moved focus since the press: it is no longer where the dialog returned
+  it, after a pointer press of theirs (Tab is already input). Focus the app moves
+  itself (the dialog's return landing after a stage switch, a terminal's
+  readiness) is not theirs;
+- they navigated since the press: opened or activated another tab or view, used
+  the sidebar, switched workspace, or the connection changed. The press takes a
+  selection-ownership ticket (`watch()`: unlike `begin()` it cancels nothing
+  pending) and the connection generation, after the dialog's own focus return,
+  and every explicit action supersedes the ticket.
 
 The open itself is asynchronous (the roster read, the terminal's key and
 readiness), so the same holds all through it: every step of the open, and the
-terminal's readiness focus, goes on only while the connection and workspace are
-the same, no overlay is open and focus is where it was at arrival (or nowhere,
-or in the terminal being opened). Otherwise the open stops, nothing is selected
-and the row says **New**; so does any open that never selects that terminal
-(refused, superseded or failed). Its tab is selected as soon as it is made,
-before the terminal attaches: an operator who moves on while it attaches was
-already taken there, so the row is not **New** (and readiness takes no focus).
+terminal's readiness focus, goes on only while the operator still has not acted,
+on the same connection and workspace. Any input during the open stops it,
+nothing is selected and the row says **New**; so does any open that never
+selects that terminal (refused, superseded or failed). Its tab is selected as
+soon as it is made, before the terminal attaches: an operator who moves on while
+it attaches was already taken there, so the row is not **New** (and readiness
+takes no focus).
 
 Only a spawn pressed in this window is followed; one recovered after a reload is
 only marked **New**. Remote (server) spawns keep their own flow.

@@ -51,7 +51,7 @@ import { createInstanceGitPanel, instanceGitCSS } from "./instance-git.mjs";
 import { canAddressRemote, rowReason } from "./remote-address.mjs";
 import { createNotificationCenter, notificationCSS } from "./notifications.mjs";
 import { createSpawnJobs } from "./spawn-jobs.mjs";
-import { createSpawnFollow } from "./spawn-follow.mjs";
+import { createSpawnFollow, watchOperator } from "./spawn-follow.mjs";
 import { registerSpawnDialogKeys } from "./spawn-dialog-keys.mjs";
 import { revealInScrollport } from "./reveal-in-scrollport.mjs";
 import { createRosterTip, rosterTipFacts, rosterTipCSS } from "./roster-tip.mjs";
@@ -177,15 +177,14 @@ const spawnJobs = createSpawnJobs({
     queueMicrotask(() => { spawnRepaint = false; spawnFollow.prune(id => !!spawnJobs.get(id)); if (contextRosterEl && rosterState?.hasData) renderContextRoster(contextInstances); followSpawns(); });
   },
 });
-// Spec E: a pressed spawn takes the operator to its instance once it runs, unless they moved on, are
-// typing (a field, a terminal) or an overlay is open; then its row says New until it or its tab is first
-// opened. No toast for a success; one polite announcement either way (spawn-follow.mjs).
+// Spec E: a pressed spawn takes the operator to its instance once it runs, unless they acted since the
+// press (input, a focus move, a navigation) or an overlay is open; then its row says New until it or its
+// tab is first opened. No toast for a success; one polite announcement either way (spawn-follow.mjs).
 const spawnFollow = createSpawnFollow({
   watch: () => tabOpenIntents.watch(),
+  operator: watchOperator(document),
   overlayOpen: () => modalOpen() || (() => { try { return !!document.querySelector("[popover]:popover-open"); } catch { return false; } })(),
   activeElement: () => document.activeElement,
-  inTerminal: el => !!el?.closest?.(".xterm, .term-wrap") || [...tabs.values()].some(t => t.kind === "terminal" && t.paneEl.contains(el)),
-  ownTerminal: (el, row) => [...tabs.values()].some(t => t.kind === "terminal" && t.instanceRef && instanceId(t.instanceRef) === instanceId(row) && t.paneEl.contains(el)),
   currentWorkspace, connection: () => connectionGeneration,
   // Every step of the open, and its terminal's readiness focus, is gated by `valid`. True when the operator
   // was taken there: its terminal is the selected tab, or this open made its tab (addTab selects it at once,

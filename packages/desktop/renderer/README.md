@@ -159,7 +159,8 @@ pending row (`shell.mjs` `pendingSpawnRow`), the outcome notifications and the
 **New** marks, and keeps the draft for **Reopen spawn** (`preselectSpawn({…, draft})`).
 After the press the shell reveals the pending row without focus (`ctx.followSpawn`)
 and, when the instance runs, `spawn-follow.mjs` takes the operator to its terminal
-unless they moved on, are typing or have an overlay open; then its row says New. See
+unless they acted since the press (input, a focus move, a navigation) or an overlay is
+open; focus merely resting where the dialog returned it does not count. Otherwise its row says New. See
 `docs/desktop-spawn-preview.md`, "Background spawn". Souls come from the kernel's spawn catalog (`oats souls --json` via
 `GET /api/agents`), never from the roster. Two layouts, switched in place
 (design board 6): **scoped** — opened from a soul card's Spawn or the soul

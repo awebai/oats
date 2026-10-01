@@ -163,8 +163,9 @@ control.
   that region's current item. If they moved on while the dialog was open (a
   workspace switch, another stage or tab), the return is not forced and the
   dialog restores focus itself. A successful spawn closes the dialog at once and,
-  when the instance runs, opens its terminal unless the operator moved on, is
-  typing or has an overlay open (`docs/desktop-spawn-preview.md`, Background spawn).
+  when the instance runs, opens its terminal unless the operator acted since the
+  press (a key other than a lone modifier, a paste, a focus move, a navigation) or
+  an overlay is open (`docs/desktop-spawn-preview.md`, Background spawn).
 - **Focus on open:** Name, whenever the dialog opens for a chosen soul (a card,
   the soul page, Quick Open, Reopen spawn), with the caret at the end of a
   restored name (never selected), without scrolling.
