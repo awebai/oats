@@ -13,16 +13,20 @@ const hooks = () => ({ launch: {}, env: {}, contributions: [] });
 const codex = (extra = {}) => ({ harness: "codex", executable: "/opt/homebrew/bin/codex", args: [], env: {}, model: null, hooks: hooks(), ...extra });
 const prompt = '"$(cat TASK.md)"';
 const trustArg = (home) => `projects={${JSON.stringify(home)}={trust_level="trusted"}}`;
+/** The instance env a codex launch hands its tool commands (shell_environment_policy.set, #342). */
+const setArgs = (pairs) => pairs.flatMap(([name, value]) => ["-c", `shell_environment_policy.set.${name}=${JSON.stringify(value)}`]);
+const instanceEnv = (home) => setArgs([["OATS_INSTANCE", "n"], ["OATS_INSTANCE_HOME", home], ["PI_AGENT_INSTANCE", "n"], ["PI_AGENT_HOME", home]]);
 
 test("codex argv: the update prompt is always off; the home is trusted only under root trust or yolo", (t) => {
   const home = realpathSync(join(process.cwd()));
+  const env = instanceEnv(home);
   for (const [extra, opts, argv] of [
-    [{}, {}, ["--cd", home, "-c", "check_for_update_on_startup=false", "--", prompt]],
-    [{}, { trustHome: false }, ["--cd", home, "-c", "check_for_update_on_startup=false", "--", prompt]],
-    [{}, { trustHome: true }, ["--cd", home, "-c", "check_for_update_on_startup=false", "-c", trustArg(home), "--", prompt]],
-    [{ yolo: true }, {}, ["--cd", home, "-c", "check_for_update_on_startup=false", "--yolo", "-c", trustArg(home), "--", prompt]],
-    [{ yolo: true }, { trustHome: true }, ["--cd", home, "-c", "check_for_update_on_startup=false", "--yolo", "-c", trustArg(home), "--", prompt]],
-    [{ model: "gpt-x" }, { trustHome: true }, ["--cd", home, "-c", "check_for_update_on_startup=false", "-c", trustArg(home), "--model", "gpt-x", "--", prompt]],
+    [{}, {}, ["--cd", home, "-c", "check_for_update_on_startup=false", ...env, "--", prompt]],
+    [{}, { trustHome: false }, ["--cd", home, "-c", "check_for_update_on_startup=false", ...env, "--", prompt]],
+    [{}, { trustHome: true }, ["--cd", home, "-c", "check_for_update_on_startup=false", "-c", trustArg(home), ...env, "--", prompt]],
+    [{ yolo: true }, {}, ["--cd", home, "-c", "check_for_update_on_startup=false", "--yolo", "-c", trustArg(home), ...env, "--", prompt]],
+    [{ yolo: true }, { trustHome: true }, ["--cd", home, "-c", "check_for_update_on_startup=false", "--yolo", "-c", trustArg(home), ...env, "--", prompt]],
+    [{ model: "gpt-x" }, { trustHome: true }, ["--cd", home, "-c", "check_for_update_on_startup=false", "-c", trustArg(home), ...env, "--model", "gpt-x", "--", prompt]],
   ]) {
     const cmd = renderLaunchRecipe(codex(extra), { home, instance: "n", ...opts });
     assert.deepEqual(describeLaunchCommand(cmd).argv, argv, JSON.stringify([extra, opts]));
@@ -33,6 +37,20 @@ test("codex argv: the update prompt is always off; the home is trusted only unde
     const r = { ...codex(), harness, executable: `/x/${harness}` };
     assert.equal(renderLaunchRecipe(r, { home, instance: "n", trustHome: true }), renderLaunchRecipe(r, { home, instance: "n" }));
   }
+});
+
+test("codex argv hands tool commands the env the launch prefix sets: the instance, the capabilities' env, literal configuration env; never a reference", () => {
+  const home = "/tmp/it's home";
+  const recipe = codex({ env: { LIT: "v \"q\" \\ $HOME", KEY: { fromEnv: "SRC" } }, hooks: { launch: { codex: "--flag" }, env: { AWEB_IDENTITY_HOME: "/h/.aw", AWEB_DELIVERY: "session" }, contributions: [] } });
+  const cmd = renderLaunchRecipe(recipe, { home, instance: "n" });
+  const tail = ["--flag", "--", prompt];
+  const expected = [...instanceEnv(home), ...setArgs([["AWEB_DELIVERY", "session"], ["AWEB_IDENTITY_HOME", "/h/.aw"], ["LIT", "v \"q\" \\ $HOME"]])];
+  assert.deepEqual(describeLaunchCommand(cmd).argv, ["--cd", home, "-c", "check_for_update_on_startup=false", ...expected, ...tail]);
+  assert.ok(!cmd.includes("shell_environment_policy.set.KEY"), "a reference's value stays out of argv");
+  assert.equal(renderLaunchCommand(parseLaunchCommand(cmd).tokens), cmd);
+  // A redacted render redacts these values exactly as it does the prefix.
+  const redacted = describeLaunchCommand(renderLaunchRecipe(recipe, { home, instance: "n", redact: true })).argv;
+  assert.deepEqual(redacted, ["--cd", home, "-c", "check_for_update_on_startup=false", ...instanceEnv(home), ...setArgs([["AWEB_DELIVERY", "<redacted>"], ["AWEB_IDENTITY_HOME", "<redacted>"], ["LIT", "<redacted>"]]), ...tail]);
 });
 
 test("spawn: codex trusts the new home only under a trusted root; claude and codex warn when the home is not covered; the operator's config is never written", async (t) => {

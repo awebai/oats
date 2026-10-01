@@ -32,6 +32,7 @@ const binDir = join(base, "bin");
 const probe = join(binDir, "probe");
 write(probe, `#!/bin/sh
 printf '%s\\n' "$PATH" > "$OATS_INSTANCE_HOME/path.txt"
+printf '%s\\n' "$@" > "$OATS_INSTANCE_HOME/args.txt"
 command -v oats > "$OATS_INSTANCE_HOME/which-oats.txt"
 oats version --json > "$OATS_INSTANCE_HOME/version.json" 2> "$OATS_INSTANCE_HOME/version.err"
 [ -n "$PROBE_ONCE" ] && exit 0
@@ -49,6 +50,7 @@ const fx = v2Deployment({
   souls: { dev: {} },
   local: { "launch-configs": {
     probe: { harness: "claude", executable: probe },
+    codexprobe: { harness: "codex", executable: probe },
     literal: { harness: "claude", executable: probe, env: { PATH: `${systemBin}:/usr/bin:/bin` } },
     ref: { harness: "claude", executable: probe, env: { PATH: { fromEnv: "SHIM_TEST_PATH" } } },
   } },
@@ -124,6 +126,22 @@ test("session start runs the harness with the shim first; restart re-points a sh
   assert.equal(readJson(join(home, "instance.json")).launch.kernelBin, KERNEL_BIN, "and records itself");
   assert.equal(readJson(join(home, "version.json")).version, OATS_VERSION);
   assert.equal(pathOf(home).split(":")[0], shimDir(home));
+});
+
+test("a codex start also sets the shim-first PATH for its tool commands; the persisted command carries no PATH", async () => {
+  const home = await spawnHome("shim-codex", "codexprobe");
+  const meta = readJson(join(home, "instance.json"));
+  assert.ok(!meta.command.includes(".oats/bin") && !meta.command.includes("shell_environment_policy.set.PATH"), meta.command);
+  startInstanceSession(home);
+  await waitUntil(() => existsSync(join(home, "pid.txt")), "the harness to start");
+  const args = readFileSync(join(home, "args.txt"), "utf8").split("\n");
+  const set = args.filter((a) => a.startsWith("shell_environment_policy.set.PATH="));
+  assert.equal(set.length, 1, args.join(" "));
+  assert.equal(args[args.indexOf(set[0]) - 1], "-c");
+  const value = JSON.parse(set[0].slice("shell_environment_policy.set.PATH=".length));
+  assert.equal(value, pathOf(home), "the PATH the session runs under, shim first");
+  assert.equal(value.split(":")[0], shimDir(home));
+  assert.ok(args.some((a) => a === `shell_environment_policy.set.OATS_INSTANCE_HOME=${JSON.stringify(home)}`), "and the instance env, from the persisted command");
 });
 
 test("a home that records only its command still gets the shim and the PATH, with nothing recorded", async () => {
