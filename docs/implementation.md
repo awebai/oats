@@ -104,6 +104,17 @@ gets the plain per-call behaviour. Within a session:
   command that ends normally awaits the close, so its readers are reaped
   before it exits; a `process.exit` (every refusal) ends them in the
   exit hook (`closeNow`), and the system reaps them once the process is gone;
+- a session may have a `deadline` (`READ_REMOTE_BUDGET_MS`, 12 s after it
+  starts): the CLI gives one to `status` and `workspace status` only
+  (`readBudgetMs`; `OATS_READ_REMOTE_BUDGET_MS` overrides it for tests). Every
+  remote step then gets what is left of it instead of its own default: each
+  git call's timeout (`sessionExec`: ls-remote, fetch, ls-tree, the cache's
+  plumbing; none starts once nothing is left), the batch readers' answers, the
+  cache write lock's wait, the half-initialised cache's wait and the lock-race
+  backoff. What the deadline ends is a `timeout`, so an unread member degrades
+  as any unreadable one. A cut wait never changes what it judges: a live lock
+  holder is not stolen from, and a cache directory waited for less than in
+  full is not taken for a crash's leftover;
 - every git child is ended with SIGTERM first and SIGKILL only after a
   grace (`terminateGroup`): git removes its own lock files on SIGTERM, and
   a git killed outright leaves one that blocks every later write. The

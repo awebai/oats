@@ -734,6 +734,14 @@ Read-only (it writes no lock):
 ```
 
 - `members[]` and `packages[]` are the sync rows (packages from the lock).
+- **Remote budget (0.33.1).** `oats workspace status` and `oats status` finish
+  their remote work within 12 s of their first remote read, whatever the
+  machine's load or another process holding a remote's cache. A member not
+  read by then is a `cannot-read` row whose `detail` ends `(timeout)`, and its
+  git is ended; the command still answers. The workspace definition itself
+  (the host) not read by then fails the command as any unreadable host does
+  (`E_REMOTE_UNREADABLE`, `reason: "timeout"`). Spawn, sync and every other
+  verb have no such budget.
 - `declaredPackages`: the ids in `packages:` (standalone: the kernel's
   default). `unsynced`: declared, not locked. `stale`: locked, no longer
   declared. `external[]`: `{source, soul}`.
