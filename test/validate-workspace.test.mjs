@@ -52,6 +52,12 @@ test("a workspace file the kernel's schema refuses fails, naming where", (t) => 
   assert.match(failures[0], /^oats-workspace\.yaml: the kernel refuses it: .*name/);
 });
 
+test("the workspace file and the catalog are required: a missing one fails", (t) => {
+  const f = fixture(t);
+  f.git("rm", "-q", "oats-workspace.yaml", "package-catalog.json");
+  assert.deepEqual(checkWorkspaceFiles(f.dir), ["oats-workspace.yaml: missing", "package-catalog.json: missing"]);
+});
+
 test("a broken package-catalog.json fails, naming the line", (t) => {
   const f = fixture(t);
   f.write("package-catalog.json", '{\n  "packages": {\n    "x": \n  }\n}\n');

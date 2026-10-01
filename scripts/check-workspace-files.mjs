@@ -14,8 +14,10 @@ const MARKER = /^(<{7} |={7}$|>{7} )/;
 /** → the failures (strings naming the file, and the line where it has one); [] when all is well. */
 export function checkWorkspaceFiles(root, { markerAllowList = CONFLICT_MARKER_ALLOW_LIST } = {}) {
   const failures = [];
+  // The repository is a workspace host and ships the catalog: neither file is optional.
   const workspaceFile = join(root, "oats-workspace.yaml");
-  if (existsSync(workspaceFile)) {
+  if (!existsSync(workspaceFile)) failures.push("oats-workspace.yaml: missing");
+  else {
     const read = readDeclaration("workspace", readFileSync(workspaceFile), { path: "oats-workspace.yaml" });
     if (read.problems) {
       const decode = read.value === undefined;
@@ -23,7 +25,8 @@ export function checkWorkspaceFiles(root, { markerAllowList = CONFLICT_MARKER_AL
     }
   }
   const catalogFile = join(root, "package-catalog.json");
-  if (existsSync(catalogFile)) {
+  if (!existsSync(catalogFile)) failures.push("package-catalog.json: missing");
+  else {
     try { parsePackageCatalog(readFileSync(catalogFile, "utf8"), "package-catalog.json"); }
     catch (e) { failures.push(`package-catalog.json: the kernel cannot read it: ${e.message}`); }
   }
@@ -31,7 +34,8 @@ export function checkWorkspaceFiles(root, { markerAllowList = CONFLICT_MARKER_AL
   for (const rel of tracked) {
     if (markerAllowList.includes(rel)) continue;
     let bytes;
-    try { bytes = readFileSync(join(root, rel)); } catch { continue; } // deleted in the work tree, or not a file
+    try { bytes = readFileSync(join(root, rel)); }
+    catch (e) { if (e.code === "ENOENT" || e.code === "EISDIR") continue; throw e; } // deleted in the work tree, or a gitlink
     if (bytes.subarray(0, 8192).includes(0)) continue; // binary
     bytes.toString("utf8").split("\n").forEach((line, i) => {
       if (MARKER.test(line.replace(/\r$/, ""))) failures.push(`${rel}:${i + 1}: unresolved merge-conflict marker`);
