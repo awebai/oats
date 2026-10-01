@@ -168,7 +168,9 @@ control.
   an overlay is open (`docs/desktop-spawn-preview.md`, Background spawn).
 - **Focus on open:** Name, whenever the dialog opens for a chosen soul (a card,
   the soul page, Quick Open, Reopen spawn), with the caret at the end of a
-  restored name (never selected), without scrolling.
+  restored name (never selected), without scrolling. Quick Open from a tab opens
+  the dialog just before the Workspace stage is shown; Name takes focus once it
+  is, unless the operator has focused something else by then.
 - **Spawn: Mod+Enter (⌘↵ / Ctrl+Enter) from any field**, the Opening
   instruction and the segmented controls included; plain Enter in Name does
   not spawn, Enter or Space on the focused Spawn button does. The button
