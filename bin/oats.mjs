@@ -391,7 +391,7 @@ async function workspaceTarget(bail, { command, liveTeams = true }) {
     try { meta = JSON.parse(readFileSync(join(homeFlag, "instance.json"), "utf8")); } catch (e) { return bail("E_SESSION_UNKNOWN", `${homeFlag} is not an OATS instance home (${e.code === "ENOENT" ? "no instance.json" : e.message})`); }
     if (isCapturedHome(meta)) { const e = capturedHomeRefusal(homeFlag, "nothing was read"); return bail(e.code, e.message, e.details); }
     if (!meta || typeof meta.modules !== "object" || meta.modules === null) return bail("E_UNSUPPORTED_MODE", `${homeFlag} is not a workspace-model home (it records no modules): it was spawned by an earlier kernel — re-spawn it from the deployment`);
-    if (soulFlag && soulFlag !== meta.agent) return bail("E_HOME_MISMATCH", `--soul ${soulFlag} is not the soul of ${homeFlag} (${meta.agent})`);
+    if (soulFlag && !(await import("../lib/instance-resolution.mjs")).homeSoulMatches(soulFlag, meta)) return bail("E_HOME_MISMATCH", `--soul ${soulFlag} is not the soul of ${homeFlag} (${meta.agent})`);
     const deployment = dirname(dirname(dirname(dirname(realOrResolved(homeFlag)))));
     // A v2 home lives at <deployment>/agents/<soul>/instances/<name>: its deployment is
     // derived, so it must hold oats-local.yaml EXACTLY there (never found by walking up).
@@ -537,7 +537,7 @@ async function workspaceOperation(t, { bail, address, layer, opName }) {
   const settings = lp.settings;
   const cwd = op.context === "home" ? t.home : t.deployment;
   const env = { ...lp.env(mod.name, settings), OATS_OPERATION: address, OATS_CONTEXT: t.deployment, OATS_ROOT: t.agentsRoot, PI_AGENTS_ROOT: t.agentsRoot };
-  // The home's identity, never one inherited from the caller (an older kernel's PI_AGENT_* names included).
+  // The home's identity, never one inherited from the caller (the reserved PI_AGENT_* names included).
   for (const k of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "PI_AGENT_INSTANCE", "PI_AGENT_HOME"]) delete env[k];
   if (op.context === "home") Object.assign(env, { OATS_INSTANCE: t.meta.instance, OATS_INSTANCE_HOME: t.home, OATS_HOME: t.home });
   await readSession?.closeBatches(); // no idle `git cat-file --batch` child held for the provider's whole run
@@ -2880,7 +2880,8 @@ async function capabilityCommand() {
         // Inside a home the namespace is the home's, so a --soul for another soul is refused, never
         // ignored (as inspect's --soul against --home is). The home's own soul, by any of its names, is fine.
         const soulFlag = flag("soul");
-        if (typeof soulFlag === "string" && ![meta.agent, ws.soul?.name, ws.soul?.qualifiedName].includes(soulFlag)) {
+        if (soulFlag === true) bail("E_BAD_ARGS", "--soul needs a soul name", { flag: "--soul" });
+        if (typeof soulFlag === "string" && !(await import("../lib/instance-resolution.mjs")).homeSoulMatches(soulFlag, meta)) {
           bail("E_HOME_MISMATCH", `--soul ${soulFlag} is not the soul of the instance home ${instanceHome} (${meta.agent}), which ${chosenBy} chose; to run "${cmd}" as a spawn of ${soulFlag} would, run it outside the instance home with OATS_INSTANCE_HOME and OATS_HOME unset`,
             { home: instanceHome, soul: meta.agent, chosenBy, flag: "--soul" });
         }
