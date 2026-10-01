@@ -371,19 +371,25 @@ observation; pending rows are not counted. While a created instance is awaited
 the shell reads the roster every 700 ms (the dialog's former pace) instead of
 every 4 s.
 
-**Window reload.** Pending rows are Desktop-local. A submitted job whose outcome is
-not known yet is kept in the window's `sessionStorage` as `{workspace, spawnRef,
-soul, selector, instance, home, placement, startedAt}`: never the opening
+**Window reload.** Pending rows are Desktop-local. A submitted job is kept in the
+window's `sessionStorage` until its outcome has been reported: while in flight or
+unknown, a failure until it is dismissed or reopened, and any other outcome until
+its notification is posted (an outcome settled while another workspace is on
+screen is held, and settling is not reporting). It is kept as `{workspace,
+spawnRef, soul, selector, instance, home, placement, startedAt}`: never the opening
 instruction, and never the idempotency key, which the renderer does not hold (the
 server keeps a `spawnRef` 30 minutes after it settles, bound to the workspace scope,
 not to a frame). After a reload the store brings each one back as a pending row and
 reads the existing `result` action (every 2 s while the server says pending, for up
 to the 65 s apply deadline, then **Outcome unknown**); the outcome is reported like
-any other and the entry dropped. A recovered failure's **Reopen spawn** restores the
+any other, held for its workspace like any other, and the entry dropped once
+reported. A recovered failure's **Reopen spawn** restores the
 soul and the exact name only. If the backend itself restarted, its records are gone:
 the job reads **Outcome unknown** with Check result, never a guess. Closing the window
 or quitting Desktop (a new session) loses the entries; a created instance still
-appears through the roster as usual, but a failure is then not reported.
+appears through the roster as usual, but a failure is then not reported. A refusal
+before apply (no `spawnRef` yet) and a record past the server's 30 minutes (read
+as **Outcome unknown**) are the other limits.
 
 **Outcomes.** Creation, roster presence and a live session are separate
 observations:

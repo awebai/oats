@@ -330,9 +330,53 @@ test('Spec D: a spawn submitted before a window reload is recovered: its pending
   await settle(6);
   assert.ok(rig.posts.filter(a => a === 'result').length >= 1); assert.equal(rig.posts.filter(a => a === 'apply').length, 1, 'never applied again');
   gate.resolve(); await settle(20);
-  assert.equal(storage.raw(), null, 'dropped once the outcome is known');
+  assert.ok(storage.raw(), 'created but not yet reported: still kept');
   after.s.observe('northwind', [realRow()]);
   assert.equal(after.spawned.length, 1, '“spawned” is posted after the reload'); assert.equal(after.s.size(), 0);
+  assert.equal(storage.raw(), null, 'dropped once the outcome is reported');
+});
+
+test('Spec D: a failure settled while another workspace is on screen survives reloads until its workspace is back, then is reported once', async () => {
+  const gate = deferred();
+  let current = 'northwind';
+  const rig = reloadRig(async () => { await gate.promise; return failure('E_BRANCH_EXISTS'); });
+  const storage = memoryStorage(), onScreen = { currentWorkspace: () => current };
+  const first = rig.window(storage, onScreen);
+  rig.submit(first.s); await settle(10);
+  current = 'other';
+  gate.resolve(); await settle(20);
+  assert.equal(first.notes.length, 0, 'held: its workspace is not on screen');
+  assert.ok(storage.raw(), 'settled but not reported: kept');
+  first.s.dispose(); // reload while still away
+  const second = rig.window(storage, onScreen);
+  assert.equal(second.s.recover(), 1); await settle(20);
+  assert.equal(second.notes.length, 0, 'still held after the reload');
+  assert.ok(storage.raw(), 'still kept: recovering it settled it again without reporting it');
+  second.s.dispose(); // and once more
+  const third = rig.window(storage, onScreen);
+  assert.equal(third.s.recover(), 1); await settle(20);
+  current = 'northwind'; third.s.observe('northwind', []);
+  assert.equal(third.notes.length, 1, 'reported once its workspace is back'); assert.match(third.notes[0].message, /Nothing was created/);
+  assert.equal(rig.posts.filter(a => a === 'apply').length, 1, 'never applied again');
+  assert.ok(storage.raw(), 'a failure stays until it is dismissed or reopened');
+  third.notes[0].options.onDismiss();
+  assert.equal(storage.raw(), null);
+});
+
+test('Spec D: a “spawned” notice held for another workspace survives a reload and is posted on return', async () => {
+  let current = 'northwind';
+  const rig = reloadRig(async () => receipt());
+  const storage = memoryStorage(), onScreen = { currentWorkspace: () => current };
+  const first = rig.window(storage, onScreen);
+  rig.submit(first.s); await settle(20);
+  current = 'other';
+  first.s.observe('northwind', [realRow()]); // a background read of its workspace
+  assert.equal(first.spawned.length, 0, 'held'); assert.ok(storage.raw(), 'kept until posted');
+  first.s.dispose();
+  const second = rig.window(storage, onScreen);
+  second.s.recover(); await settle(20);
+  current = 'northwind'; second.s.observe('northwind', [realRow()]);
+  assert.equal(second.spawned.length, 1, 'posted on return'); assert.equal(storage.raw(), null);
 });
 
 test('Spec D: a spawn that fails after a reload is reported, with Reopen restoring the exact name', async () => {

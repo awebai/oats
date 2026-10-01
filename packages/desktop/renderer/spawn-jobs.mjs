@@ -13,11 +13,13 @@
  * still the one in the store; outcomes belong to the job's workspace and are held while another
  * workspace is on screen, then posted on return. Pending rows are Desktop-local.
  *
- * Reload (Spec D, #383): with a `storage` (the shell passes sessionStorage), every submitted job whose
- * outcome is not known yet is kept as { workspace, spawnRef, soul, selector, instance, home, placement,
- * startedAt } — never its opening instruction or a key (the renderer never holds the idempotency key;
- * spawnRef is the server's opaque handle, kept 30 min after it settles). After a window reload,
- * recover() brings each back as a pending row and reads the existing `result` action until it settles. */
+ * Reload (Spec D, #383): with a `storage` (the shell passes sessionStorage), every submitted job is kept
+ * as { workspace, spawnRef, soul, selector, instance, home, placement, startedAt } until its outcome has
+ * been reported: in flight, unknown, failed (until dismissed or reopened), or settled with a notice still
+ * held for its workspace. Never its opening instruction or a key (the renderer never holds the idempotency
+ * key; spawnRef is the server's opaque handle, kept 30 min after it settles). After a window reload,
+ * recover() brings each back as a pending row and reads the existing `result` action, so settling and
+ * reporting stay separate events across a reload. */
 import { spawnApplyView, spawnApplyReason } from './spawn-apply-contract.mjs';
 import { sameSpawnDecision } from './spawn-decision.mjs';
 import { spawnProblem } from './spawn-messages.mjs';
@@ -63,10 +65,12 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
   const jobs = new Map(), tokens = new WeakSet(), listeners = new Set();
   const sameSoul = (job, workspace, soul) => job.workspace === workspace && job.soul?.name === soul?.name && job.soul?.agentsRoot === soul?.agentsRoot;
   const flightOf = (workspace, soul) => [...jobs.values()].find(j => FLIGHT.includes(j.state) && sameSoul(j, workspace, soul)) || null;
-  /** Submitted jobs whose outcome is not known yet survive a window reload (never the task text). */
+  /** Submitted jobs whose outcome has not been reported survive a window reload (never the task text):
+   * a failure until it is dismissed or reopened, any other outcome until its notice is posted. */
+  const unreported = j => ['spawning', 'checking', 'unknown', 'failed'].includes(j.state) || !j.notice?.posted;
   function save() {
     if (!alive || !storage) return;
-    const kept = [...jobs.values()].filter(j => j.spawnRef && ['spawning', 'checking', 'unknown'].includes(j.state))
+    const kept = [...jobs.values()].filter(j => j.spawnRef && unreported(j))
       .map(j => ({ workspace: j.workspace, spawnRef: j.spawnRef, soul: j.soul, selector: j.selector, instance: j.instance, home: j.home, placement: j.placement, startedAt: j.startedAt }));
     try { if (kept.length) storage.setItem(SPAWN_STORAGE_KEY, JSON.stringify(kept)); else storage.removeItem(SPAWN_STORAGE_KEY); } catch { /* storage is a convenience */ }
   }
@@ -87,7 +91,7 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
     if (n.posted) return;
     n.posted = true;
     if (n.spawned) notifySpawned(n.spawned, job.workspace, connection()); else notify(n.message, n.options);
-    if (job.state === 'done') forget(job);
+    if (job.state === 'done') forget(job); else save();
   }
   function say(job, message, options = {}, sticky = false) { job.notice = { message, options, sticky, posted: false, handle: null }; deliver(job); }
   const details = problem => problem?.detail ? { detail: problem.detail } : {};
