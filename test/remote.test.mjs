@@ -653,6 +653,8 @@ test("L4: a maxBuffer overflow is NOT a timeout; a timeout kill is; an unclassif
   assert.equal(classifyRemoteFailure({ signal: "SIGTERM", stderr: Buffer.alloc(0) }), "killed");
   assert.equal(classifyRemoteFailure({ killed: true, signal: "SIGKILL", timedOut: true, stderr: Buffer.alloc(0) }), "timeout");
   assert.equal(classifyRemoteFailure({ signal: "SIGTERM", timedOut: true, stderr: Buffer.alloc(0) }), "timeout");
+  // #386/#387: a killed git that also printed a lock error is the actionable `cache`, not `killed`.
+  assert.equal(classifyRemoteFailure({ signal: "SIGKILL", stderr: Buffer.from("fatal: Unable to create '/c/config.lock': File exists.") }), "cache");
 
   // 3. an unclassified listing failure surfaces as E_REMOTE_UNREADABLE unknown (enumerateRepo → problem row).
   const overflowLs = (args, o) => args.includes("ls-tree") ? runGit(args, { ...o, maxBuffer: 1 }) : runGit(args, o);
