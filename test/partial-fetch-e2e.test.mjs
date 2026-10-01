@@ -74,7 +74,7 @@ function fixture({ partial }) {
 }
 
 /** Every command the scenario runs, in order, through the real CLI; → their stderr, joined. */
-function runScenario({ fx, pkg }) {
+function runScenario({ fx }) {
   const stderr = [];
   const run = (args, what) => { const r = fx.cli(args); stderr.push(r.stderr); return ok(r, what); };
   run(["sync", "--json"], "sync");
@@ -87,7 +87,6 @@ function runScenario({ fx, pkg }) {
   assert.ok(readFileSync(join(dev.home, ".oats", "modules", "tools", "data", "model.bin")).equals(noise(LARGE, "member-model")));
   assert.ok(readFileSync(join(keeper.home, ".oats", "modules", "acme-tool", "data", "weights.bin")).equals(noise(LARGE, "pkg-weights")));
   assert.match(readFileSync(join(keeper.home, "AGENTS.md"), "utf8"), /# keeper/);
-  void pkg;
   return stderr.join("");
 }
 

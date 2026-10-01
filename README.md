@@ -208,7 +208,7 @@ Begin with a small team and a real piece of work:
 4. Create instances for their assignments.
 5. Verify that work, communication, learning and handoff behave as intended.
 
-On a machine with Node.js 22+, Git and tmux, and a workspace repository to point at:
+On a machine with Node.js 22+, Git (2.45+ to fetch only what OATS reads; an older git fetches whole trees) and tmux, and a workspace repository to point at:
 
 ```bash
 npm install -g @awebai/oats

@@ -4,14 +4,14 @@
  * never fetches lazily. Tests build SMALL repos inline. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   contentDigest, createReadSession, fetchRemoteTree, listRemoteTree, observeRemote, parseRepoRef, readRemoteFile, runGit,
-  FILE_BUDGET, SMALL_BLOB_LIMIT,
+  FILE_BUDGET, PARTIAL_FETCH_GIT, SMALL_BLOB_LIMIT,
 } from "../lib/remote.mjs";
 
 const GIT_ENV = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t",
@@ -232,4 +232,65 @@ test("without a session a fallback is recorded and nothing is printed", async ()
   const f = fixture("plain");
   assert.equal((await observeRemote(f.bare, { cacheDir: f.cacheDir })).commit, f.commit);
   assert.equal(git(f.repoDir, "config", "--get", "oats.fetch"), "full");
+});
+
+// ---------------------------------------------------------------------------
+// a git too old to keep a partial cache honest
+// ---------------------------------------------------------------------------
+
+/** An exec that runs real git but answers `git --version` as `version` (an older git than the one installed). */
+const olderGit = (version) => (args, o) => args.length === 1 && args[0] === "--version"
+  ? Promise.resolve({ stdout: Buffer.from(`git version ${version}\n`), stderr: Buffer.alloc(0) })
+  : runGit(args, o);
+
+test(`a git older than ${PARTIAL_FETCH_GIT.join(".")} (no GIT_NO_LAZY_FETCH) fetches whole trees, recorded per cache, said once`, async () => {
+  const f = fixture();
+  const exec = olderGit("2.43.0");
+  const session = createReadSession();
+  try {
+    const opts = { cacheDir: f.cacheDir, exec, session };
+    assert.ok((await readRemoteFile(f.bare, f.commit, "elsewhere/tools/data/model.bin", opts)).bytes.equals(noise(SMALL_BLOB_LIMIT * 3, "model")));
+    assert.deepEqual(f.present("assets/huge-1.bin"), { "assets/huge-1.bin": true }, "a whole tree, never a partial one");
+    assert.equal(git(f.repoDir, "config", "--get", "oats.fetch"), "full");
+    assert.deepEqual(session.notices, [`git 2.43.0 cannot keep a partial cache (it needs ${PARTIAL_FETCH_GIT.join(".")}); OATS fetches whole trees from ${f.bare}`]);
+  } finally { await session.close(); }
+});
+
+test("a partial cache met by an older git is rebuilt with whole trees, and reads keep working", async () => {
+  const f = fixture();
+  await observeRemote(f.bare, { cacheDir: f.cacheDir, at: f.commit });
+  assert.equal(git(f.repoDir, "config", "--get", "oats.fetch"), "partial");
+  const exec = olderGit("2.39.5");
+  const opts = { cacheDir: f.cacheDir, exec };
+  assert.ok((await readRemoteFile(f.bare, f.commit, "assets/huge-2.bin", opts)).bytes.equals(noise(SMALL_BLOB_LIMIT * 4, "huge-2")));
+  assert.equal(git(f.repoDir, "config", "--get", "oats.fetch"), "full");
+  assert.deepEqual(f.present("assets/huge-1.bin"), { "assets/huge-1.bin": true });
+  const dest = join(f.base, "out", "tools");
+  assert.equal((await fetchRemoteTree(f.bare, f.commit, "elsewhere/tools", dest, opts)).digest, contentDigest(join(f.work, "elsewhere", "tools")));
+});
+
+// ---------------------------------------------------------------------------
+// two processes on one fresh cache
+// ---------------------------------------------------------------------------
+
+test("two processes making the first fetch of one cache both succeed (git's config lock is a race, not a failure)", async () => {
+  const f = fixture();
+  mkdirSync(f.repoDir, { recursive: true });
+  git(f.base, "init", "-q", "--bare", f.repoDir); // the `git init` race one step earlier is not this test's subject
+  const script = `import { observeRemote } from ${JSON.stringify(new URL("../lib/remote.mjs", import.meta.url).href)};
+    try { const r = await observeRemote(process.argv[1], { cacheDir: process.argv[2], at: process.argv[3] }); console.log(r.commit); }
+    catch (e) { console.log(\`FAIL \${e.code} \${e.message}\`); }`;
+  const run = () => new Promise((resolve) => {
+    const child = spawn(process.execPath, ["--input-type=module", "-e", script, f.bare, f.cacheDir, f.commit], { stdio: ["ignore", "pipe", "inherit"] });
+    let out = "";
+    child.stdout.on("data", (d) => { out += d; });
+    child.on("close", () => resolve(out.trim()));
+  });
+  for (let round = 0; round < 4; round++) {
+    rmSync(f.repoDir, { recursive: true, force: true });
+    mkdirSync(f.repoDir, { recursive: true });
+    git(f.base, "init", "-q", "--bare", f.repoDir);
+    assert.deepEqual(await Promise.all([run(), run()]), [f.commit, f.commit], `round ${round}`);
+    assert.equal(git(f.repoDir, "config", "--get", "oats.fetch"), "partial");
+  }
 });
