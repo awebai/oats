@@ -51,6 +51,7 @@ const fx = v2Deployment({
   local: { "launch-configs": {
     probe: { harness: "claude", executable: probe },
     codexprobe: { harness: "codex", executable: probe },
+    codexliteral: { harness: "codex", executable: probe, env: { PATH: `${systemBin}:/usr/bin:/bin` } },
     literal: { harness: "claude", executable: probe, env: { PATH: `${systemBin}:/usr/bin:/bin` } },
     ref: { harness: "claude", executable: probe, env: { PATH: { fromEnv: "SHIM_TEST_PATH" } } },
   } },
@@ -142,6 +143,15 @@ test("a codex start also sets the shim-first PATH for its tool commands; the per
   assert.equal(value, pathOf(home), "the PATH the session runs under, shim first");
   assert.equal(value.split(":")[0], shimDir(home));
   assert.ok(args.some((a) => a === `shell_environment_policy.set.OATS_INSTANCE_HOME=${JSON.stringify(home)}`), "and the instance env, from the persisted command");
+});
+
+test("a codex configuration's literal PATH reaches tool commands behind the shim, never from the persisted command", async () => {
+  const home = await spawnHome("shim-codex-literal", "codexliteral");
+  assert.ok(!readJson(join(home, "instance.json")).command.includes("shell_environment_policy.set.PATH"));
+  startInstanceSession(home);
+  await waitUntil(() => existsSync(join(home, "pid.txt")), "the harness to start");
+  const set = readFileSync(join(home, "args.txt"), "utf8").split("\n").filter((a) => a.startsWith("shell_environment_policy.set.PATH="));
+  assert.deepEqual(set, [`shell_environment_policy.set.PATH=${JSON.stringify(`${shimDir(home)}:${systemBin}:/usr/bin:/bin`)}`]);
 });
 
 test("a home that records only its command still gets the shim and the PATH, with nothing recorded", async () => {
