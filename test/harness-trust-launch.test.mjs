@@ -101,3 +101,11 @@ test("spawn: codex trusts the new home only under a trusted root; claude and cod
   p = fx.cli(["launch-config", "preview", "--home", h1, "--json"]);
   assert.ok(!p.json().result.argv.some((a) => /trust_level/.test(a)), JSON.stringify(p.json().result.argv));
 });
+
+test("readiness of a soul whose launch configuration is yolo: the codex launch trusts its home, so no harness-trust warning", (t) => {
+  const fx = v2Deployment({ local: { "launch-configs": { cxyolo: { harness: "codex", yolo: true }, cxplain: { harness: "codex" } }, souls: { launch: { dev: "cxyolo", other: "cxplain" } } }, souls: { dev: {}, other: {} } });
+  t.after(fx.cleanup);
+  const trustItems = (soul) => { const r = fx.cli(["readiness", "--soul", soul, "--json"]); assert.equal(r.status, 0, r.stdout + r.stderr); return r.json().result.checks.configured.items.filter((i) => i.code === "harness-trust"); };
+  assert.deepEqual(trustItems("dev"), []);
+  assert.equal(trustItems("other").length, 1, "the same codex launch without yolo stops at the prompt");
+});

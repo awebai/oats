@@ -355,6 +355,11 @@ for this contract. Hyphenated vendors are also excluded because translating a
 hyphen to `_` would let `aweb-evil.*` collide with names already inside
 `aweb.*`'s `AWEB_*` namespace.
 
+Hook environment values must not be secrets. A codex launch also passes them
+to Codex as command-line arguments (`-c shell_environment_policy.set.<NAME>=…`,
+so its tool commands see them), and any local user can read those. A secret
+reaches a launch through a launch configuration's environment reference.
+
 A manifest's `settings.<key>` may carry `hostOnly: true`. Such a
 key is a fact about the machine — a custody directory, a state root — and the
 resolver accepts it only from the deployment's own `oats-local.yaml`
