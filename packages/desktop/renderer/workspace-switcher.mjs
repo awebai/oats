@@ -122,6 +122,15 @@ export function createWorkspaceSwitcher({
   const menuItems = () => [...options.querySelectorAll(".ws-option:not([hidden])")];
   const openInWindow = (id) => { closeMenu(true); openInNewWindow(id); };
   const setMenuStatus = (message = "") => { menuStatus.textContent = message; menuStatus.hidden = !message; };
+  /** A newer choice in this window (a served workspace, an add or pick from the dialog) takes the pending
+   * one-click add's say over this window away, at once: the add still completes in main, but its
+   * outcome opens nothing here and shows nothing. A choices poll is not a choice. */
+  const supersedeLocalAdd = () => {
+    if (!localAdding) return;
+    localAddGeneration++;
+    localAdding = "";
+    setMenuStatus("");
+  };
   /** The suggestions not already a served choice: a view names the deployments it holds (#482). */
   const offeredLocally = () => {
     const served = new Set(workspaces.flatMap((workspace) => [workspace.id, ...(Array.isArray(workspace.deployments) ? workspace.deployments : [])]));
@@ -139,6 +148,8 @@ export function createWorkspaceSwitcher({
     const focusedId = document.activeElement?.classList?.contains("ws-option")
       ? document.activeElement.dataset.workspaceId || "" : "";
     const focusedPath = document.activeElement?.classList?.contains("ws-local-option") ? document.activeElement.dataset.workspacePath : "";
+    // Focus on a served workspace's Open in new window action comes back to that action (#481, #521).
+    const focusedAction = document.activeElement?.classList?.contains("ws-open-window") ? document.activeElement.dataset.workspaceId : "";
     options.replaceChildren();
     const unmatched = document.createElement("div");
     unmatched.className = "ws-option-group"; unmatched.setAttribute("role", "group"); unmatched.setAttribute("aria-labelledby", unmatchedHeadingId);
@@ -202,6 +213,7 @@ export function createWorkspaceSwitcher({
       button.addEventListener("click", () => {
         if (menu.hidden || !button.isConnected || !options.contains(button)) return;
         closeMenu(true);
+        supersedeLocalAdd();
         if (workspace.id !== activeId) selectWorkspace(workspace.id);
         // A deployment no workspace matched: the Deployments page opens on its tab, where the full
         // reason and its fix are.
@@ -218,7 +230,9 @@ export function createWorkspaceSwitcher({
     empty.hidden = options.childElementCount > 0;
     empty.textContent = empty.hidden ? '' : workspaces.length || offered.length ? 'No workspaces match this filter.'
       : choosing && localLooking ? 'Looking for workspaces on this computer…' : 'No workspace choices reported.';
-    if ((focusedId || focusedPath) && !menu.hidden) {
+    if (focusedAction && !menu.hidden) {
+      ([...options.querySelectorAll(".ws-open-window")].find((button) => button.dataset.workspaceId === focusedAction) || menuSearch).focus();
+    } else if ((focusedId || focusedPath) && !menu.hidden) {
       (menuItems().find((button) => focusedId ? button.dataset.workspaceId === focusedId : button.dataset.workspacePath === focusedPath) || menuSearch).focus();
     }
   };
@@ -507,6 +521,7 @@ export function createWorkspaceSwitcher({
     : result?.reason || fallback;
   const onBrowse = async () => {
     if (adding) return;
+    supersedeLocalAdd();
     const token = ++modalGeneration;
     clearPick();
     setAdding(true);
@@ -533,6 +548,7 @@ export function createWorkspaceSwitcher({
   const onOnboard = async () => {
     const ref = refInput.value.trim();
     if (!onboarding || adding || !ref) return;
+    supersedeLocalAdd();
     const token = ++modalGeneration, offer = onboarding;
     setAdding(true);
     setStatus(`Onboarding ${offer.path}… reading the workspace over Git.`);
@@ -565,6 +581,7 @@ export function createWorkspaceSwitcher({
   // same main-validated add; `returnFocus` gets focus back when it fails.
   const runAdd = async (path, name, returnFocus) => {
     if (adding) return;
+    supersedeLocalAdd();
     const token = ++modalGeneration;
     setAdding(true);
     setStatus(`Adding ${name}…`);

@@ -165,3 +165,58 @@ test("new served choices repaint an open chooser menu in place, without looking 
   assert.equal(s.calls.discovered, 1, "choices arriving do not rescan the disk");
   s.dom.window.close();
 });
+
+test("a served workspace chosen while a one-click add is pending wins: the add, finishing first, opens nothing here", async () => {
+  const add = deferred();
+  const s = setup({ addWorkspace: () => add.promise });
+  s.controller.choose([REMOTE]); s.controller.openMenu(); await tick();
+  s.local()[2].click();
+  assert.equal(s.view().status, "Adding oats…");
+  s.document.querySelector(`.ws-option[data-workspace-id="${REMOTE.id}"]`).click(); // its claim is still pending in main
+  assert.deepEqual(s.calls.selected, [REMOTE.id]);
+  add.resolve({ ok: true, workspace: { id: "/h/Agents/oats", path: "/h/Agents/oats", name: "oats" } }); await tick();
+  assert.deepEqual(s.calls.selected, [REMOTE.id], "the newer choice stays the final one");
+  s.controller.choose([REMOTE]); s.controller.openMenu(); await tick();
+  assert.equal(s.document.querySelector(".ws-local-group").getAttribute("aria-busy"), "false", "not left busy");
+  assert.equal(s.view().status, "");
+  const failing = deferred();
+  const f = setup({ addWorkspace: () => failing.promise });
+  f.controller.choose([REMOTE]); f.controller.openMenu(); await tick();
+  f.local()[0].click();
+  f.document.querySelector(`.ws-option[data-workspace-id="${REMOTE.id}"]`).click();
+  failing.resolve({ ok: false, reason: "late failure" }); await tick();
+  f.controller.choose([REMOTE]); f.controller.openMenu(); await tick();
+  assert.equal(f.view().status, "", "a superseded add's failure is not shown either");
+  s.dom.window.close(); f.dom.window.close();
+});
+
+test("a choices poll during a one-click add does not cancel it", async () => {
+  const add = deferred();
+  const s = setup({ addWorkspace: () => add.promise });
+  s.controller.choose([]); s.controller.openMenu(); await tick();
+  s.local()[2].click();
+  s.controller.choose([REMOTE]);
+  add.resolve({ ok: true, workspace: { id: "/h/Agents/oats", path: "/h/Agents/oats", name: "oats" } }); await tick();
+  assert.deepEqual(s.calls.selected, ["/h/Agents/oats"]);
+  s.dom.window.close();
+});
+
+test("a choices poll keeps keyboard focus on a served workspace's Open in new window action; gone, focus falls back to the search", async () => {
+  const s = setup();
+  const OTHER = { id: "ws:bbbbbbbbbbbbbbbbbbbb", name: "ac", deployments: ["remote:altair:/srv/ac"], machines: ["altair"] };
+  s.controller.choose([REMOTE]); s.controller.openMenu(); await tick();
+  const action = () => s.document.querySelector(`.ws-open-window[data-workspace-id="${REMOTE.id}"]`);
+  action().focus();
+  s.controller.choose([REMOTE]);
+  assert.equal(s.document.activeElement, action(), "unchanged list: the same action, repainted");
+  s.controller.choose([OTHER, REMOTE]);
+  assert.equal(s.document.activeElement, action(), "updated list: still that workspace's action");
+  s.document.activeElement.dispatchEvent(new s.dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  s.document.activeElement.click();
+  assert.deepEqual(s.calls.opened, [REMOTE.id], "Enter (a click on the button) opens the intended workspace");
+  s.controller.choose([OTHER]); s.controller.openMenu(); await tick();
+  s.document.querySelector(`.ws-open-window[data-workspace-id="${OTHER.id}"]`).focus();
+  s.controller.choose([REMOTE]);
+  assert.equal(s.document.activeElement, s.document.getElementById("ws-menu-search"), "its workspace is gone: the search field");
+  s.dom.window.close();
+});
