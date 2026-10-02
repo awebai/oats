@@ -12,7 +12,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron";
 import { spawn, execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync, realpathSync, writeFileSync, lstatSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, writeFileSync, lstatSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -32,6 +32,7 @@ import { cliWorkspace, validWorkspaceRef } from "./workspace-cli.mjs";
 import { onboardData } from "./deployment-data.mjs";
 import { validateWorkspace, workspaceSuggestions, parseRecents, pushRecent, decideAdd, createGenerations, createAddExecutor, restoreWorkspaceDirs, saveWorkspaceDirs, matchWorkspaceDirs, createOnboardOffers, createOnboardExecutor } from "./workspace-registry.mjs";
 import { appMenuTemplate } from "./app-menu.mjs";
+import { pickerDefaultPath, workspacePickerCandidates, cliPickerCandidates } from "./picker-default-path.mjs";
 import { proxyReadiness } from './readiness-proxy.mjs';
 import { proxySpawnPreview } from './spawn-preview-proxy.mjs';
 import { proxyInstanceEvents } from './instance-events-proxy.mjs';
@@ -308,13 +309,20 @@ ipcMain.handle("workspace:add", async (e, requestedPath) => {
   return performAdd(requestedPath, false);
 });
 
+const isDirectory = (p) => { try { return statSync(p).isDirectory(); } catch { return false; } };
 ipcMain.handle("workspace:pick", async (e) => {
   guard(e);
   // Explicit separate action: native directory picker feeding the SAME
   // validation path (fromPicker bypasses only the suggestion-set provenance
   // check — canonicalization and workspace validation still apply).
   const win = BrowserWindow.fromWebContents(e.sender);
-  const r = await dialog.showOpenDialog(win, { properties: ["openDirectory"] });
+  // Opens beside the most recently added workspace (picker-default-path.mjs).
+  const defaultPath = pickerDefaultPath({
+    candidates: workspacePickerCandidates({ recents: readRecents(), open: workspaceDirs.filter((p) => !!wsValidate(p)) }),
+    exists: isDirectory,
+    home: app.getPath("home"),
+  });
+  const r = await dialog.showOpenDialog(win, { defaultPath, properties: ["openDirectory"] });
   if (r.canceled || !r.filePaths?.[0]) return { ok: false, code: "cancelled", reason: "picker cancelled" };
   return performAdd(r.filePaths[0], true);
 });
@@ -332,10 +340,22 @@ function readCliChoice() {
 function writeCliChoice(bin) {
   try { writeFileSync(CLI_CHOICE_FILE(), JSON.stringify({ bin })); } catch { /* best-effort */ }
 }
+// The CLI the backend resolved, for the picker's starting directory only.
+async function resolvedCliBin() {
+  try { const bin = (await (await fetch(`${base()}/api/cli`, { signal: AbortSignal.timeout(1500) })).json()).bin; return typeof bin === "string" ? bin : null; }
+  catch { return null; }
+}
 ipcMain.handle("cli:pick", async (e) => {
   guard(e);
   const win = BrowserWindow.fromWebContents(e.sender);
+  // Opens in the chosen or resolved CLI's directory (picker-default-path.mjs).
+  const defaultPath = pickerDefaultPath({
+    candidates: cliPickerCandidates({ chosen: readCliChoice(), resolved: await resolvedCliBin() }),
+    exists: isDirectory,
+    home: app.getPath("home"),
+  });
   const r = await dialog.showOpenDialog(win, {
+    defaultPath,
     title: "Choose the oats CLI binary",
     properties: ["openFile", "showHiddenFiles"],
     message: "Select the oats executable (e.g. from `command -v oats`)",
