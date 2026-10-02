@@ -69,11 +69,12 @@ xterm's WebGL renderer (`@xterm/addon-webgl`, `createGlyphRenderer` in
 `terminal-tab.mjs`), whose built-in glyphs draw box drawing and block elements
 (Claude Code's input box, tmux borders) as thin joined strokes whatever the font;
 the DOM renderer would take them from Inconsolata, at twice the weight. Every
-failure falls back to the DOM renderer. Where WebGL2 is unavailable (one throwaway
-probe per renderer process) the addon is never activated: addon-webgl 0.18 adds a
-canvas and listeners before it asks for the context, and its dispose cannot undo
-a constructor that threw. An activation that throws anyway is not retried for that
-terminal. A lost context (Chromium keeps about 16) disposes the addon, and showing
+failure falls back to the DOM renderer. Where WebGL2 is unavailable (a throwaway
+probe, asked again on every show until it says yes) the addon is not activated:
+addon-webgl 0.18 adds a canvas and listeners before it asks for the context, and
+its dispose cannot undo a constructor that threw. An activation that throws
+although WebGL2 was there is not retried for that terminal, which stays on the DOM
+renderer until it is reopened. A lost context (Chromium keeps about 16) disposes the addon, and showing
 the tab tries WebGL again. `fitTerminal` sizes the grid to the pane's padded box
 with no width kept for xterm's scrollbar (tmux draws in the alternate screen, so it
 never scrolls, and `shell.css` hides it) and centres the remainder across and down,

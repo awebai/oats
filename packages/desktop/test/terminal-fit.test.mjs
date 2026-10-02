@@ -8,7 +8,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
-import { fitTerminal, createGlyphRenderer } from "../renderer/terminal-tab.mjs";
+import { fitTerminal, createGlyphRenderer, webgl2Supported } from "../renderer/terminal-tab.mjs";
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -164,7 +164,22 @@ test("without WebGL2 the addon is never activated, however often the tab is show
   assert.equal(createGlyphRenderer({ term, Addon: undefined, supported: () => true }).ensure(), false, "the addon script did not load");
 });
 
-test("an activation that throws anyway is not retried for that terminal; a lost context still is", () => {
+test("the shipped WebGL2 probe asks again after a no, so a later show recovers; a yes is kept (review round 9)", () => {
+  // The only test that uses the module's own probe: every other one injects `supported`.
+  let probes = 0, answer = null, released = 0;
+  const doc = { createElement: () => ({ getContext: kind => { probes++; return kind === "webgl2" ? answer : null; } }) };
+  const { Addon, made } = webgl(), term = { ...xterm(), element: { ownerDocument: doc } };
+  const glyphs = createGlyphRenderer({ term, Addon });
+  assert.equal(glyphs.ensure(), false); assert.equal(glyphs.ensure(), false);
+  assert.deepEqual([probes, made.length], [2, 0], "unavailable: asked on every show, never activated");
+  answer = { getExtension: name => (name === "WEBGL_lose_context" ? { loseContext: () => released++ } : null) };
+  assert.equal(glyphs.ensure(), true, "available again: the next show loads WebGL");
+  assert.deepEqual([probes, released, made.length], [3, 1, 1], "the probe's own context is released at once");
+  assert.equal(webgl2Supported(doc), true);
+  assert.equal(probes, 3, "a yes is not asked again");
+});
+
+test("an activation that throws although WebGL2 was there is not retried for that terminal (it stays on DOM until reopened); a lost context still is", () => {
   for (const failing of [{ addon: { failConstruct: true }, term: {} }, { addon: {}, term: { failLoad: true } }]) {
     const { Addon, made } = webgl(failing.addon);
     let changes = 0, attempts = 0;

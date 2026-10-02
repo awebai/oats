@@ -52,18 +52,20 @@ export function fitTerminal(term, fit) {
   screen.style.margin = `${half(height - extent(rows, cell.height))}px 0 0 ${half(width - extent(cols, cell.width))}px`;
 }
 
-/** Whether this renderer process can make a WebGL2 context, asked once with a
- * throwaway canvas whose context is released at once. */
-let webgl2;
+/** Whether this renderer process can make a WebGL2 context: a throwaway
+ * canvas whose context is released at once. A yes is kept; a no is asked
+ * again next time (a GPU process restarting can refuse contexts for a while),
+ * so a later show recovers. */
+let webgl2 = false;
 export function webgl2Supported(doc) {
-  if (webgl2 === undefined && doc) {
+  if (!webgl2 && doc) {
     try {
       const gl = doc.createElement('canvas').getContext('webgl2');
       webgl2 = Boolean(gl);
       gl?.getExtension('WEBGL_lose_context')?.loseContext();
     } catch { webgl2 = false; }
   }
-  return webgl2 === true;
+  return webgl2;
 }
 
 /** xterm's WebGL renderer, so box drawing and block elements (U+2500–259F:
@@ -74,10 +76,13 @@ export function webgl2Supported(doc) {
  * where it is not loaded.
  *
  * Fallbacks, all to xterm's DOM renderer:
- * - no WebGL2 here (`supported`): the addon is never activated. Its renderer
- *   adds a canvas and listeners before asking for the context, and a throw
- *   there leaves them behind where the addon's dispose cannot reach.
- * - an activation that throws anyway: no further attempt for this terminal.
+ * - no WebGL2 here (`supported`, asked again on every show until it says
+ *   yes): the addon is not activated. Its renderer adds a canvas and listeners
+ *   before asking for the context, and a throw there leaves them behind where
+ *   the addon's dispose cannot reach.
+ * - an activation that throws although WebGL2 was there: no further attempt
+ *   for this terminal, which stays on the DOM renderer until it is reopened;
+ *   another attempt would leave another canvas and listener set behind.
  * - a lost context (Chromium keeps about 16 and drops the oldest; sleep or a
  *   GPU reset): the addon is disposed (`onChange` refits), and `ensure()`, run
  *   when the tab is shown, loads a fresh one. */
