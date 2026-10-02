@@ -17,7 +17,9 @@ they carry `--max-age <seconds>` (see
 - `oats status --dir D --json` — the roster. A raw `{root, agents, workspace}`
   object. Instance rows carry `modules[]` drift (or the recorded map when the
   workspace is unreachable), `soul` source, and `identity` only when a
-  provider reported one.
+  provider reported one. Its `workspace` object also carries the
+  deployment's workspace identity (feature `workspace-identity`), kept as
+  reported for [workspace views](#workspace-views-and-deployments).
 - `oats workspace status --dir D --json` — the workspace header: a
   `schemaVersion: 1` envelope with `workspaceStatusApi: 1`: workspace name,
   key and commit, members, packages and `unsynced`/`stale`. There is no
@@ -36,6 +38,10 @@ version number: `workspaceApi === 2`, `workspace-v2` and
 `packages-no-approval` for the header, plus `instance-modules` and
 `served-identity` for the roster. A missing feature is
 shown by name in the header and roster; nothing is invoked optimistically.
+Matching deployments into workspace views needs `workspace-identity`; without
+it each deployment keeps a view of its own under its deployment id, the switcher
+lists them as before (not under "Not matched to a workspace"), and the
+deployment list says why.
 `ACCEPT_RANGE` is `>=0.25.8 <0.37.0`: the floor admits main's kernel before
 0.26.0 was tagged, the ceiling admits 0.27 (the harness rename, gated on feature
 `harness`) through 0.30 (team model v2, gated on feature `team-model-2`; the
@@ -124,16 +130,237 @@ again. **Only an explicit remove drops a saved path**; nothing else does.
   single-use offer for that exact folder) is the secondary action "Set up a
   new deployment here…", never the default reaction.
 
+## Workspace views and deployments
+
+A **deployment** is one place a workspace runs: a local deployment directory
+the server is started with (its id is the canonical path) or a group of the
+kernel's remote roster (id `remote:<server>:<targetKey>`). A **workspace
+view** is what the switcher lists and a window shows: every deployment, on
+this Mac or on a registered server, that reports the same workspace identity.
+Views are built per request from the held observations and the remembered
+remote identities, never by a CLI read (`server/workspace-views.mjs`, the
+`OATSWEB_VIEWS` block of `server/oats-web.mjs`).
+
+A matched identity's view id is `ws:` and 20 hex characters of a hash of its
+key and default team: never a path, so it cannot collide with a deployment
+id. A deployment that cannot be matched is **unattached**: it gets a view of
+its own whose id is its deployment id, so a selection saved under that id
+still names it.
+
+### The identity
+
+- **Local:** the `workspace` object of the deployment's own `oats status
+  --json`, kept by `deployment-data.mjs`, and only when the probe declares
+  `workspace-identity`. It is always read fresh.
+- **Remote:** the group's `workspace` from `oats server roster --json`,
+  verbatim, from a reached group only. `null` means no report; an object with
+  no `key` field comes from a host before 0.36.0, which never reports one.
+
+Nothing is derived from a path, a ref or a host name, and a shape the
+contract does not allow is not matched.
+
+### Matching
+
+Matching follows the kernel's rules,
+[Matching workspaces across machines and Matching teams across machines](../../../docs/desktop-cli-api.md#workspace-identity-feature-workspace-identity-oats-0360).
+The outcomes:
+
+- Deployments share a view when each reports `keyFrom: "workspace"`, their
+  `key`s are equal and their default teams (`defaultTeam.team`) are equal.
+  `ref` is never compared.
+- An unmapped default team matches only unmapped.
+- Unattached: `keyFrom: "member"`, a `null` key, an unknown team (a `null`
+  default team with `standalone: false` and `teamsFrom: "local"`), no report,
+  and a host before 0.36.0.
+- The same key with another default team is another workspace. Both views'
+  names then say which team: its label, else its id, or `unmapped`.
+
+A view is named by its first local deployment's workspace name, else the
+key's last segment.
+
+### The primary deployment
+
+A view's **primary** deployment is its first local deployment, else its
+first. Deployment-level surfaces read and act on it: the Workspace header and
+Setup, Capabilities, Sync, Automations, Schedules, the Teams configuration,
+the soul inspector, Brain and launch configurations. In a view of two or more
+deployments each of them says which under its heading ("On This Mac ·
+~/Agents/oats"); a view of one shows no such line. The Deployments page has
+no primary: each deployment has its own tab, and nothing there is marked
+"primary".
+
+### The panel
+
+`/api/panel?ws=<view id | deployment id>` answers a view. A deployment id
+answers the view that holds it; no `?ws=` answers the first view.
+
+- `workspace` is the view (`id`, `name`, `primary`, and `key` and `teamId`
+  when it is matched). `primary` is the primary deployment's id: a route that
+  echoes the deployment it resolved (readiness, spawn preview) is sent that id,
+  never the view id. `deployment`, `error` and the stamps are the primary
+  deployment's.
+- `workspaces` is the switcher's list of views, each with its `deployments`
+  ids, `deploymentLabels`, `machines` (each machine once, in order) and
+  `notLive` (how many of its deployments aren't live, stale ones included). The switcher shows the
+  name, one muted line of machines ("This Mac · altair") and a mark when
+  `notLive` is not zero: never a path, an id or a reason. Unattached views
+  carry `unattached`, their `reason`, `short` and the `ref` they report, and
+  are listed under "Not matched to a workspace" with the machine and the short
+  reason; choosing one opens its tab on the Deployments page
+  (`requestDeploymentTab`, `renderer/deployment-tabs.mjs`). Those fields are
+  sent only when this computer's CLI has `workspace-identity`: without it
+  nothing could be matched, and the entries list as they did before views.
+- `deployments` lists every deployment of the view, even a single one:
+  `{id, machine, path, label, local, reachable, identityFrom, primary,
+  stale?, reason?, short?, fix?, note?}`. `machine` is "This Mac" or the server's label, else its
+  id. `deploymentLabel` (`renderer/deployment-label.mjs`) shows it as "This
+  Mac · ~/Agents/oats" or "altair · ~/Agents/tsm": the home directory as
+  `~` (on a remote, a `/Users/<name>` or `/home/<name>` prefix, a display
+  guess) and the last two segments of a long path. A deployment is live
+  (`reachable`), not reached (with its `reason`), remembered
+  (`identityFrom: "remembered"`, the last report, not live), or stale
+  (`stale`: this computer's deployment whose last re-read failed, its rows
+  the last observation, "Last read failed" with the kernel's message). A
+  stale deployment's rows wait for a current read, as on a stale roster:
+  Start and the actions menu in the sidebar, the overview's actions. It stays
+  `reachable`, so spawning there is not blocked. `note` is information, not a
+  failure.
+- `instances` is the union of every deployment's rows, each tagged
+  `deployment: {id, machine, path}`. The sidebar's instance list shows a
+  heading per deployment (in its group-heading style, named by
+  `machineLabels`: the machine, with the path tail when one machine holds two;
+  the machine is uppercased, a path tail never is, since a path is
+  case-sensitive) only when the view has two or more, and none for a deployment with no rows;
+  with one it has no headings. Rows never repeat the workspace name, and a
+  row's identity line keeps its host.
+
+### The Deployments page
+
+The former Active overview (stage `hierarchy`, Mod+1) shows the view's
+overview trees and nothing deployment-specific beyond them. Its tabs
+(`renderer/deployment-tabs.mjs`) are **All**, then one per deployment in
+served order, named by `machineLabels`; a view of one deployment has only
+that deployment's tab, so the machine is always named. The selected tab is
+remembered per view in localStorage (`oats.desktop.deploymentTab`, ids only,
+at most 32 views). When the tabs overflow, the strip scrolls horizontally and
+the selected or focused tab is revealed, as in the terminal tab strip. The
+header's count line counts the selected tab and sits at the right of the
+header. The page has no Spawn button (Spec E): `S` on the canvas, the
+sidebar's Spawn instance, Quick Open and the soul cards spawn.
+
+- **All** stacks one section per deployment, headed by `deploymentLabel`
+  (the full path in a tooltip) and its counts: the machine in the
+  group-label style (uppercase), the `· path` in normal case in the muted
+  secondary style, like the counts; relations never cross
+  sections, and pan, zoom and fit work over the whole canvas.
+- **A deployment's tab** shows only that deployment's tree.
+- A non-live deployment's heading carries a state chip ("not reached",
+  "remembered", "stale"; "not matched" for a reached one with a reason) and
+  its `short` reason, with **How to fix** under it: the `fix` steps when
+  there are any (they carry every fact the sentence has, a host or a
+  reference), else the full sentence (`reason`), and any `note`. On its own
+  tab, a non-live deployment with no rows shows that block as the empty
+  state.
+- A live deployment's `note` (a remote that now reports another workspace, a
+  standalone host's local teams) is said under **Details** on its heading,
+  with no chip and no mark. A view of one deployment with a note keeps that
+  heading; with no rows the note heads the usual empty message.
+
+### Scope per row
+
+- **Instance-addressed** requests go to the row's own deployment,
+  `?ws=<row.deployment.id>`: terminal resolution, session, keys, interrupt,
+  chat, start, restart, harvest, lifecycle, readiness, events, Git, the
+  instance's pull request and review threads, and capabilities, launch
+  configurations and schedules that name a home. The server resolves these
+  only by exact deployment id, so a view id there is refused, and
+  `admitInstance` resolves a row only inside its own deployment. The
+  schedule form's add and update go to the deployment its home list was read
+  from, and only while that form is open; a list action (remove, reconcile,
+  host install) goes to the view on screen, never to a deployment an earlier
+  form read.
+- **Deployment-level** requests (the agents catalog, teams and soul teams,
+  sync, automations, schedules without a home, capability show and catalog,
+  Brain, a soul's launch configurations, spawn preview and apply) may send
+  the view id: the server reads the view's primary deployment. Spawn sends
+  the chosen deployment's id, and a remote spawn's reply names the view that
+  holds the new group.
+- **View-level:** `/api/panel`, `/api/team-members` and `/api/forge-roster`
+  (the union of the view's local deployments' rows and clones).
+- "Is this still the workspace on screen?" checks are keyed by the view id.
+  Main lets a caller select every id `servedSelectors(panel.workspaces)`
+  returns (`api-url.mjs`): every view id and every deployment id, so a
+  deployment id is never rewritten.
+
+### Remembered remote identity
+
+`remote-identity.json` in the app's user data (`server/remote-identity.mjs`)
+holds the last identity each remote group reported, keyed by
+`<server>:<targetKey>`. It is written atomically (a temporary file, then
+rename) with mode 0600; a missing or malformed file is an empty memory.
+
+- Only a reached group with an identity is a report, and a fresh report
+  always wins. A group that reports another workspace moves to that view, and
+  its deployment says so for the session ("altair now reports workspace
+  tsm.").
+- An unreachable group with a remembered identity stays in its view, not
+  reached, with `identityFrom: "remembered"`.
+- Memory never attaches a local deployment.
+- A group that a roster answer no longer lists is dropped, with its memory.
+  With no roster answer at all, the remembered groups are shown not reached,
+  with no rows and the roster's failure as their reason.
+
+### Reasons
+
+Each deployment that is not live, or not matched, carries its reason in three
+parts (`deploymentReasonParts`): `short`, a few words for a heading or the
+switcher ("ssh needs a prompt", "OATS too old to report its workspace");
+`reason`, the one plain sentence; and `fix`, the plain steps (none when the
+sentence already says what happens next, as for a timeout). The sentences:
+
+- ssh needs a prompt or a host key (`E_SSH`): "altair needs ssh to connect
+  without a prompt; run `ssh altair` once in a terminal."
+- Timed out (`E_ROSTER_BUDGET`, `E_CLI_TIMEOUT`). The kernel reports an ssh
+  that timed out as `E_SSH` with ssh's own text, so a timeout is recognised
+  from that text (a known limit).
+- Any other failed read: "<machine> was not reached (<code>)."
+- The host's OATS is too old to report its workspace (the group was reached
+  but its object has no `key`), or the host reports no workspace (`null`).
+- An unresolved member reference (`keyFrom: "member"`): run `oats sync`
+  there.
+- An invalid reference (`null` key): the ref and "fix oats-local.yaml"; the
+  fix step names the ref.
+- This computer's deployment whose re-read failed (the last observation kept,
+  `E_REMOTE_UNREADABLE`): "This deployment's last read failed: <the
+  kernel's message>. It shows what was last observed." It is `stale`.
+- An unknown team: "This host hasn't observed its workspace yet; run oats
+  sync there."
+- Standalone and unmapped: "Teams are local only on this host
+  (standalone)." This is a `note`, not a failure.
+- This computer's OATS can't read other machines, or is too old to report
+  workspaces (no `workspace-identity`).
+
+### Migration
+
+- A selection saved before views (a path or a `remote:…` id) opens the view
+  that holds that deployment, and the renderer adopts the view id
+  (`staleWorkspaceSelection`).
+- Tab memory, open terminal tabs and spawn jobs kept under a deployment id
+  move to the view that holds it.
+- `servers.json`, saved routes and `workspace-open.json` are untouched: the
+  open set still lists deployment directories.
+- A group that never reports keeps a view of its own.
+
 ## A deployment the server does not serve, or does not answer for
 
 A window never waits silently on "Reading the deployment…":
 
-- **Not served.** The server answers any explicit `?ws=` it does not serve
-  (a path, a bare id, a remote it no longer has) on `/api/panel` and
-  `/api/agents` with 404 `{ error, code:
+- **Not served.** The server answers any explicit `?ws=` that is neither a
+  view id nor a deployment id it serves (a path, a bare id, a remote it no
+  longer has) on `/api/panel` and `/api/agents` with 404 `{ error, code:
   "E_WORKSPACE_NOT_SERVED", workspace }` (`workspaceNotServed` in
-  `renderer/deployment-header.mjs`) instead of the first workspace's data. No
-  `?ws=` still means the first workspace. The main process's API proxy refuses
+  `renderer/deployment-header.mjs`) instead of the first view's data. No
+  `?ws=` still means the first view. The main process's API proxy refuses
   the same reads with the same body, without fetching, for a deployment it
   knows (and that is still one) but the server does not advertise
   (`createUnservedRefusal` in `api-url.mjs`). While the server is being
@@ -159,20 +386,21 @@ A window never waits silently on "Reading the deployment…":
   "pending" answer keeps the rows as they are, never an empty roster; past
   the bound they go stale with the no-answer reason.
 - **Where.** The sidebar roster uses the shared failed state
-  (`renderer/loading.mjs`, with a second action) and the Active overview its
+  (`renderer/loading.mjs`, with a second action) and the Deployments page its
   notice: the message names the deployment path, Retry is always offered and
   **Re-add workspace** when the server does not serve a local deployment.
   Re-add sends that exact path through `workspace:add`, so it restarts the
   server with the whole set. Its outcome belongs to the selection it started
   in: after a switch it does nothing, and a refusal never replaces an
   observation that landed meanwhile. Background re-reads of a failed state
-  are not announced again. The switcher keeps offering the served workspaces.
+  are not announced again. The switcher keeps offering the served views.
 
 ## Remote rows
 
-A remote workspace is one group of the kernel's remote roster (`oats server
-roster --json`, projected by `server/remote-roster.mjs`); its rows carry
-`server`, `home`, and the kernel's `addressable` and `missingRemotely` facts.
+A remote deployment is one group of the kernel's remote roster (`oats server
+roster --json`, projected by `server/remote-roster.mjs`), shown in its
+workspace's view; its rows carry `server`, `home`, and the kernel's
+`addressable` and `missingRemotely` facts.
 
 - **One predicate.** `canAddressRemote(row)` in `renderer/remote-address.mjs`
   (re-exported by `server/instance-admission.mjs`): a local row, or a remote row
@@ -190,11 +418,11 @@ roster --json`, projected by `server/remote-roster.mjs`); its rows carry
   row's `title`, `aria-description` and the actions menu's reason. The server
   label is the registration's label, else the server id.
 - **Admission.** `admitInstance` admits a remote selector only in its own
-  remote workspace (the same server id in another group is another
-  workspace), for a row that passes `canAddressRemote`, when this machine's
+  remote deployment (the same server id in another group is another
+  deployment), for a row that passes `canAddressRemote`, when this machine's
   probe lists the operation's `remote` entry (`readiness`, `instance-events`,
   `instance-git`, `lifecycle-plans`). Otherwise it refuses and nothing is sent;
-  a local selector never resolves in a remote workspace, or the reverse.
+  a local selector never resolves in a remote deployment, or the reverse.
 - **Addressing.** Every routed command names `--server <id> --home <abs>`, runs
   from this machine's first deployment directory as its cwd, and carries no
   `--dir` (the kernel sends the registered workspace). Nothing remote is

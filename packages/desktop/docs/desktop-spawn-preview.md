@@ -382,7 +382,11 @@ window's `sessionStorage` until its outcome has been reported: while in flight o
 unknown, a failure until it is dismissed or reopened, and any other outcome until
 its notification is posted (an outcome settled while another workspace is on
 screen is held, and settling is not reporting). It is kept as `{workspace,
-spawnRef, soul, selector, instance, home, placement, startedAt}`: never the opening
+deployment, spawnRef, soul, selector, instance, home, placement, startedAt}`:
+`workspace` is the view that owns the job (its pending row, its notices) and
+`deployment` the one it spawns in, which every `/api/spawn` request and checked
+reply is addressed to (#482; an entry without it is addressed to its view, as
+before). Never the opening
 instruction, and never the idempotency key, which the renderer does not hold (the
 server keeps a `spawnRef` 30 minutes after it settles, bound to the workspace scope,
 not to a frame). After a reload the store brings each one back as a pending row and

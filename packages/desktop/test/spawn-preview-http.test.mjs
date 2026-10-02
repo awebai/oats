@@ -9,6 +9,7 @@ import { proxySpawnPreview } from '../spawn-preview-proxy.mjs';
 import { previewFailure } from '../renderer/spawn-preview-contract.mjs';
 import { spawnApplyFailure } from '../renderer/spawn-apply-contract.mjs';
 import { context, request, target, data, envelope, view, deferred } from './helpers/spawn-preview-fixture.mjs';
+import { deploymentDoubles } from './helpers/deployment-doubles.mjs';
 function http() {
   const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const start = source.indexOf('const send = (res, code, body, type'), end = source.indexOf('\nserver.on("error",');
@@ -16,7 +17,7 @@ function http() {
   const deps = { createServer: fn => fn, previewFailure, spawnAgent: assert.fail,
     spawnApplyFailure, spawnApplyRequest: assert.fail,
     spawnPreviewCachedRequest: createSpawnPreviewBoundary({ cache: createSpawnPreviewCache(), invoke: async (cli, opts) => { calls.push(opts); return envelope(data(opts.target)); } }),
-    workspaces: () => [c.workspace], cliState: c.cli, agentsData: () => ({ agents: c.agents }), snapshot: { byWs: new Map([['northwind', { instances: c.instances }]]) } };
+    ...deploymentDoubles(() => [c.workspace]), cliState: c.cli, agentsData: () => ({ agents: c.agents }), snapshot: { byWs: new Map([['northwind', { instances: c.instances }]]) } };
   const handler = new Function(...Object.keys(deps), `${source.slice(start, end)}\nreturn server;`)(...Object.values(deps));
   return { c, calls, async request({ url = '/api/workspace-spawn-preview?ws=northwind', method = 'POST', body = JSON.stringify(request()), headers = { host: 'localhost:4820', origin: 'http://localhost:4820' } } = {}) {
     const req = new EventEmitter(); Object.assign(req, { url, method, headers }); let result;

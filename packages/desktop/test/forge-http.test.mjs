@@ -9,6 +9,7 @@ import { createReviewPaste } from '../server/review-paste.mjs';
 import { forgeObservation } from '../server/forge-observation.mjs';
 import { FORGE_EPOCH_HEADER, validForgeEpoch } from '../forge-proxy.mjs';
 import { cli, oats, context, target, selector, state, envelope, output, status, pr, deferred, tick } from './helpers/forge-fixture.mjs';
+import { deploymentDoubles } from './helpers/deployment-doubles.mjs';
 function http({ remote = false, run, discover, raw = state(), transform = source => source } = {}) {
   const source = transform(readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8'));
   const start = source.indexOf('const send = (res, code, body, type'), end = source.indexOf('\nserver.on("error",');
@@ -20,8 +21,15 @@ function http({ remote = false, run, discover, raw = state(), transform = source
     run: async (bin, args, opts) => { executions++; return run ? run(bin, args, opts)
       : args[0] === 'auth' ? output(status(), 0, `ghp_${'X'.repeat(36)}`) : args[0] === 'api' ? output('operator') : output(pr()); },
   });
+  const views = deploymentDoubles(() => [{ ...context.workspace, remote }]), snapshot = { byWs: new Map([['team', { instances: context.instances }]]) };
+  // The forge roster reads the VIEW's context (#482); here every deployment is its own one-deployment view.
+  const viewForgeContext = id => {
+    const ws = views.deploymentFor(id), observed = ws && !ws.remote ? snapshot.byWs.get(ws.id) : null;
+    return ws ? { workspace: { id: ws.id, name: ws.name, remote: !!ws.remote }, cli: oats, instances: observed?.instances || [], clones: observed?.deployment?.workspaceStatus?.clones || [] }
+      : { workspace: undefined, cli: oats, instances: [], clones: [] };
+  };
   const deps = { createServer: handler => handler, forgeBoundary: service, FORGE_EPOCH_HEADER, validForgeEpoch, createReviewPaste, tmuxTarget: () => { throw new Error('no pane in the harness'); },
-    cliState: oats, workspaces: () => [{ ...context.workspace, remote }], snapshot: { byWs: new Map([['team', { instances: context.instances }]]) },
+    cliState: oats, ...views, viewForgeContext, snapshot,
     panelData: assert.fail, snapshotPanel: assert.fail, collectNow: assert.fail };
   const handler = new Function(...Object.keys(deps), `${source.slice(start, end)}\nreturn server;`)(...Object.values(deps));
   const requestBody = { selector, observationKey: forgeObservation(raw, target, oats).observationKey };

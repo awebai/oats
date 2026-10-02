@@ -18,11 +18,11 @@ const CONTEXT_LABELS = {
   global: "Global",
   tabs: "Tabs",
   roster: "Instance roster",
-  "stage:hierarchy": "Active overview",
+  "stage:hierarchy": "Deployments",
   "stage:spawn": "Soul roster",
   // view-local contexts: never activated for window dispatch — the actions
   // dispatch inside their view surface but stay editor-visible here.
-  "view:hierarchy": "Active overview",
+  "view:hierarchy": "Deployments",
   "view:spawn": "Soul roster",
   // a modal dialog's own keys: dispatched only by the open dialog (spawn-dialog-keys.mjs)
   "spawn-dialog-local": "Spawn dialog",

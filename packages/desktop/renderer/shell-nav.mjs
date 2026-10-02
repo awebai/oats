@@ -9,7 +9,8 @@
  * shell's permanent sidebar roster (below the rail), not a rail destination
  * (scope correction of PR #29 — the human rejected the extra tab/sidebar). */
 export const NAV = [
-  { name: "hierarchy", label: "Active overview", icon: "overview", title: "Active overview" },
+  // #482 (UI spec): the Active overview became Deployments: the overview trees, split by deployment, one tab each.
+  { name: "hierarchy", label: "Deployments", icon: "layers", title: "Deployments" },
   { name: "spawn", label: "Workspace", icon: "workspace", title: "Workspace" },
   // Schedules and Triggers are one destination with two subtabs (human, 2026-09-28).
   { name: "automations", label: "Automations", icon: "automations", title: "Automations" },

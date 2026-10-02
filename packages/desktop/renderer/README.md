@@ -43,7 +43,9 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
   the shell's context roster) treat it like an empty selection and silently
   `adoptWorkspace` the served id, without a generation bump. Without a
   served list nothing is guessed. A selection that IS served and gets a reply
-  for another workspace stays a refused mismatch.
+  for another workspace stays a refused mismatch. A deployment id saved before
+  workspace views (a path, `remote:<server>:<target>`) is stale once a view
+  holds it: the server answers it with that view, whose id is adopted.
 
 `theme.css` carries semantic WCAG AA tokens for **White** (default),
 **Solarized**, and **Dark**. Theme actions are available in the command palette;
@@ -98,7 +100,50 @@ package-owned declarations in reviewed package source, not locked installed
 payloads. Colors can collide and never determine selection, status or identity.
 Runtime marks show the reported runtime, not installation/authentication status.
 
-## Active overview — slice 7a, reported roster only
+## Workspace views (#482)
+
+A window shows a workspace **view**: one matched workspace identity across machines
+(`ws:…`), or one unattached deployment under its own id. `/api/panel` names the view's
+`deployments` and tags every row with its `deployment`; `view-deployments.mjs` reads them
+(validated, text only) and keeps the last deployments seen per view for surfaces that do
+not read the panel.
+
+- **Nothing above the navigation.** The sidebar lists no deployments; the Deployments
+  page and the roster headings say where things run (UI spec, after the operator rejected a
+  deployments block under the switcher).
+- **Switcher** (`workspace-switcher.mjs`): views first, then unattached views in a
+  "Not matched to a workspace" group (listbox → group → option). Each entry is its name and
+  ONE muted line: a view's machines (`choice.machines`, "This Mac · altair") with a status
+  mark (`deploymentMark`, words as its label) when `notLive > 0`; an unattached view's
+  machine and its `short` reason. Choosing an unattached entry also calls
+  `requestDeploymentTab`, so the Deployments page opens on its tab. Never an id, a path or a
+  reason sentence (paths only in tooltips); twins of one name show their key. Filtering
+  (shown text only) and Arrow/Home/End run over every shown option.
+- **Grouping by deployment** only when a view has two or more deployments: the sidebar
+  roster (`rosterSections`, a heading per deployment named by `machineLabels` in the
+  cluster-label type, a status mark when not live, none for a deployment without rows) and
+  the Deployments page (below). With one deployment both render exactly as before.
+- **The Deployments page** (the former Active overview, stage `hierarchy`): tabs from
+  `deployment-tabs.mjs` (All, then one per deployment; one deployment has only its own tab;
+  the choice remembered per view); All stacks one section per deployment, a deployment's tab
+  shows its tree alone. A non-live deployment's heading has a state chip, its `short` reason
+  and **How to fix** (the `fix` steps, else the sentence, and any note); a live deployment's
+  note shows under **Details** with no chip (`deploymentHasWords`).
+- **"On <deployment>"** (`deployment-scope-line.mjs`): deployment-level surfaces read the
+  view's primary deployment and say which in a line under their heading, only with two or
+  more deployments (Workspace header, Automations/Schedules, the soul inspector for a soul,
+  a capability page, Brain, the Sync sheet). Teams configuration, launch configurations and
+  spawn are not wired here.
+- **Re-homing** (`workspace-rehome.mjs`, shell `rehomeWorkspaceState`, on every roster
+  read): state under a deployment id (a selection, tab layout and active-terminal memory,
+  open tabs with their `term:`/view keys, collapsed rows, stored spawn jobs) moves to the view
+  that holds that deployment; a terminal follows its row's deployment when that moves to
+  another view; a selected view id that is no longer served follows its deployments when one
+  view holds them all. A group that never reports keeps its own id, so nothing moves.
+  Spawn jobs keep `deployment` (where the transaction is addressed) apart from `workspace`
+  (the owner that moves).
+
+## Deployments page (formerly the Active overview) — slice 7a, reported roster only
 
 The existing `hierarchy` stage consumes **GET `/api/panel` only**. Relation groups
 are connected components of the shared parent/sibling resolver across roots and
@@ -223,6 +268,54 @@ soul) use the host's own defaults and naming. The `spawn.submit` chord hint
 lives on `data-chord`, not `data-shortcut`, so the shell's shortcut titling
 never hides the Spawn button.
 
+**Deployment** (#482, decision Q2; `spawn-deployment-field.mjs`, wired in one
+delimited block of `spawn-dialog.mjs`). A workspace view can hold several
+deployments (`/api/panel` `deployments`). With two or more, the form shows a
+**Deployment** field first, before Name, in place of *Where to run*: the form's
+segmented control with two or three deployments, the Harness-style dropdown with
+more (never a native select). Options are named by `machineLabels` ("This Mac",
+"altair", "This Mac · oats-v2") with a state tag when not live; the preview
+column's **Runs on** row gives the chosen one's `deploymentLabel`. With one
+there is no field and the form is unchanged. Rules:
+
+- **Addressing.** Every spawn request addresses a deployment, never the view:
+  `?ws=<chosen id>` (else the only one, else `workspace.primary`) on the preview,
+  prepare/apply and the launch-configuration list. The preview and apply echo
+  that deployment.
+- **Availability** is each deployment's own catalog (`/api/agents?ws=<id>`, read
+  when the dialog starts, latest intent). The selector is the chosen deployment's
+  catalog row (`catalogSoul`: the root differs per deployment). A deployment
+  without the soul stays selectable (a deployment that isn't live is marked by
+  its state). Choosing it blocks Spawn, said once, in the footer only: "<machine>
+  isn't reachable right now." when a remote isn't live, "This Mac's deployment
+  hasn't been read yet. Try again in a moment." for a local one not read yet, else
+  "<soul> isn't available on <machine>."; nothing is read.
+- **Default.** The last used in this view if it has the soul; else the first
+  that has it, local before remote; else the last used (blocked). With nothing
+  used yet: the first local one. Until every catalog answers, an untouched field
+  holds a provisional choice and no preview is read.
+- **Last used** is `localStorage['oats.desktop.spawnDeployment']`, a
+  `{viewId: deploymentId}` map of at most 32 views. It is written on a created
+  spawn only: the dialog's own completion, a remote reply, or `spawn-jobs`
+  `created()`.
+- **Changing deployment** clears the settled preview and re-reads (Spec B's
+  prepare/apply/cache are unchanged). The choice key includes the deployment, so
+  a reply for the previous one never settles. Relation anchors are the chosen
+  deployment's rows only.
+- **A remote deployment** spawns through the execution-server path: `serverId`
+  is its server and `agentsRoot` comes from its catalog row. The reply's
+  `workspaceId` is a view, and `doSpawn` switches only when that view is not
+  the one on screen.
+- **Background jobs** (`spawn-jobs.mjs`) are owned by `workspace` (the view: pending
+  row, notices, in-flight) and addressed by `deployment` (every `post` and reply
+  check). The deployment is kept in `sessionStorage` across a reload, and a
+  created row becomes real only when its own deployment's row reports it.
+
+*Where to run* (one-deployment views) still lists the registered servers. Its
+facts come from every view holding a remote deployment (`serverFacts`, since
+`/api/team-members` is view-scoped). A chosen group's relation rows are that
+group's deployment only (`serverRows`).
+
 Problems read as one plain sentence about what happened and what to do
 (`spawn-messages.mjs`, keyed by the contract's stable code). The code and the
 technical or kernel text — paths, hashes, the `git clone` remedy — stay
@@ -329,7 +422,9 @@ Where each surface wires it: the sidebar roster in `instance-tree.mjs`
 `markStaleControl` / `staleBlocked`) and `shell.mjs` (`refreshContextRoster`;
 while stale, Start…, the actions menu and a *stopped* row's own activation are
 held — a stale `running:false` may be running by now — while a running row
-still opens its terminal); the hierarchy in `views/hierarchy.mjs` (the summary
+still opens its terminal; a row of a `stale` deployment, `rowStale` in
+`view-deployments.mjs`, is held the same way, and so are its actions in the
+overview); the hierarchy in `views/hierarchy.mjs` (the summary
 pill, its own notice keeps the stale copy with the observation's age); the soul
 inspector in `soul-inspector.mjs` (while `loading.settled === 'stale'` — the settled state, so a Retry in flight over stale content keeps the hold — every
 `[data-mutate]` control and the teams panel's join/leave — `createTeamsPanel`'s
@@ -547,7 +642,15 @@ workspace is observed through its server and never synced from here.
   *Teams* page: *Shared with the workspace* (read-only, edited by PR) and
   *Only on this computer* (add, remove, make default), one card per team with
   its address, who may join and, from the roster, the instances whose
-  identity's team is that team's id (nothing when none).
+  identity's team is that team's id (nothing when none). Those members come
+  from `/api/team-members?ws=<view>` (#482, decision Q5): the view's
+  deployments only. A card groups them by deployment (`memberGroups`), each
+  heading labelled by `deploymentLabel` ("This Mac · ~/Agents/oats · 3",
+  "altair · ~/Agents/tsm · not reached"), this Mac's first. A member's
+  `workspace` is its deployment id. Its Show and Terminal actions stay in the
+  view on screen (`teamMemberAction` never switches workspace). They wait for
+  the row of that deployment, and the open is owned by the view
+  (`instanceActionTarget(view, row)`).
 - **Sources** renders the roster observation's `oats workspace status`:
   repositories (team, confirmation status + the kernel's detail), packages
   (lock, capabilities) and external souls. No extra read.
@@ -875,6 +978,8 @@ DOM nodes before restoring the destination layout; existing terminal attachments
 are retained, not recreated. Empty layouts and their focused destinations are
 remembered too; only a workspace with neither open tabs nor a retained layout
 falls back to the stage. Restart restoration of tab layouts is not implemented yet.
+Memory is keyed by the view id; `rehome(map)` moves a deployment id's memory to its view
+(see "Workspace views").
 
 All artifact tabs (terminal, brain, file) are workspace-scoped, including their
 activation boundary and deduplication keys. A retained brain tab has a pinned

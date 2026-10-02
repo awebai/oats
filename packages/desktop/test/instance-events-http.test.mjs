@@ -10,13 +10,14 @@ import { proxyInstanceEvents, EVENTS_PROXY_TIMEOUT } from '../instance-events-pr
 import { eventsFailure } from '../renderer/instance-events-contract.mjs';
 import { eventsData } from '../renderer/instance-events-data.mjs';
 import { cli, context, target, request, data, envelope, deferred } from './helpers/instance-events-fixture.mjs';
+import { deploymentDoubles } from './helpers/deployment-doubles.mjs';
 const view = (t = target, value = data()) => ({ instanceEventsViewApi: 1, status: 'available', target: t, data: eventsData(value, t), reason: null });
 function http() {
   const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const start = source.indexOf('const send = (res, code, body, type'), end = source.indexOf('\nserver.on("error",');
   const c = context(), calls = [];
   const deps = { createServer: fn => fn, eventsFailure, instanceEventsRequest: createInstanceEventsBoundary({ invoke: async (_cli, opts) => { calls.push(opts); return envelope(); } }),
-    workspaces: () => [c.workspace], ctxs: ['/Users/me/work'], cliState: c.cli, cliProbeGeneration: 1, snapshot: { byWs: new Map([['ws', { instances: c.instances }]]) } };
+    ...deploymentDoubles(() => [c.workspace]), ctxs: ['/Users/me/work'], cliState: c.cli, cliProbeGeneration: 1, snapshot: { byWs: new Map([['ws', { instances: c.instances }]]) } };
   const handler = new Function(...Object.keys(deps), `${source.slice(start, end)}\nreturn server;`)(...Object.values(deps));
   return { c, calls, async request({ url = '/api/instance-events?ws=ws', method = 'POST', body = JSON.stringify(request()), headers = { host: 'localhost:4820', origin: 'http://localhost:4820' } } = {}) {
     const req = new EventEmitter(); Object.assign(req, { url, method, headers }); let result;

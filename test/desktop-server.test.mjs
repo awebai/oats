@@ -276,7 +276,7 @@ test("desktop server: harvestHome admits only the exact kernel-reported home ins
   const snapshot = { byWs: new Map([[scope, { instances: [
     { instance: INSTANCE, home }, { instance: "link-1", home: escaping }, { instance: "evil-1", home: evil },
   ] }]]) };
-  const harvestHome = new Function("realpathSync", "basename", "dirname", "sep", "workspaces", "snapshot", `${src}; return harvestHome;`)(
+  const harvestHome = new Function("realpathSync", "basename", "dirname", "sep", "deployments", "snapshot", `${src}; return harvestHome;`)(
     realpathSync, basename, dirname, sep, () => [{ id: scope }], snapshot);
   try {
     assert.equal(harvestHome({ instance: INSTANCE, home }), home, "the reported home is accepted");

@@ -85,6 +85,23 @@ export function apiUrl(pathname, base, wsId = null, allowedWs = undefined) {
 }
 
 /**
+ * The selectors a caller may name with ?ws= on the connected server (#482): every workspace view the
+ * switcher lists (`/api/panel` `workspaces[].id`) and every deployment those views hold
+ * (`workspaces[].deployments[]`). Rows are addressed to their deployment, so a deployment id must
+ * survive apiUrl unchanged; a view id is still refused by the server on instance-addressed routes.
+ * @param {unknown} workspaces  the panel's `workspaces` list
+ * @returns {Set<string>}
+ */
+export function servedSelectors(workspaces) {
+  const ids = new Set();
+  for (const w of Array.isArray(workspaces) ? workspaces : []) {
+    if (typeof w?.id === 'string' && w.id) ids.add(w.id);
+    for (const id of Array.isArray(w?.deployments) ? w.deployments : []) if (typeof id === 'string' && id) ids.add(id);
+  }
+  return ids;
+}
+
+/**
  * Build fetch init for a proxied api() call. Views follow the Fetch
  * contract: common.mjs::postJson already serializes the body and sets
  * content-type — string bodies and supplied headers must pass through

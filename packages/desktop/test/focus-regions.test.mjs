@@ -18,7 +18,7 @@ function shell(t, { tabs = false } = {}) {
   const doc = dom.window.document;
   const style = doc.createElement("style"); style.textContent = read("shell.css"); doc.head.append(style);
   // What the shell paints: nav items, roster rows (one roving stop), a stage and a panel with tabs.
-  doc.getElementById("nav").innerHTML = `<button class="nav-item" data-view="hierarchy">Active overview</button><button class="nav-item active" data-view="spawn" aria-current="page">Workspace</button><button class="nav-item" data-view="automations">Automations</button>`;
+  doc.getElementById("nav").innerHTML = `<button class="nav-item" data-view="hierarchy">Deployments</button><button class="nav-item active" data-view="spawn" aria-current="page">Workspace</button><button class="nav-item" data-view="automations">Automations</button>`;
   doc.querySelector("#instance-roster .ctx-list").innerHTML = `<div class="ctx-tree-row"><button class="ctx-inst" tabindex="-1" data-tree-instance="a">a</button></div><div class="ctx-tree-row active"><button class="ctx-inst active" tabindex="0" data-tree-instance="b">b</button><span class="ctx-row-tools"><button class="ctx-start">Start…</button></span></div>`;
   doc.getElementById("stagehost").innerHTML = `<div><div class="workspace-tabs"><button role="tab" aria-selected="true" tabindex="0">Souls</button></div><input class="filter"></div>`;
   const panel = doc.getElementById("context-panel"); panel.hidden = false;

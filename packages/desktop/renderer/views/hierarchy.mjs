@@ -1,5 +1,18 @@
-/* oats desktop — "Active" overview: reported runtime and relationship
-   observations, not an inferred activity feed. Agent clusters — connected
+/* oats desktop — the Deployments page (UI spec, #482; formerly the "Active"
+   overview): reported runtime and relationship observations, not an inferred
+   activity feed.
+   Tabs (deployments-page.mjs, the Workspace page's tab component): All first,
+   then one tab per deployment of the shown view, in served order; a view of one
+   deployment has only its own tab. The selected tab is remembered per view
+   (deployment-tabs.mjs) and other surfaces open one through
+   requestDeploymentTab. The header's count line counts the selected tab only.
+   All stacks one section per deployment on the one canvas, each under its
+   heading (label and counts; a deployment that is not live adds its state chip,
+   short reason and a "How to fix" disclosure) with its own tree: relations
+   never cross sections. A deployment's tab shows its heading and its tree
+   alone; with no rows and not live, the heading is the tab's empty state. A
+   view of one live deployment draws no heading: the overview as it always was.
+   Agent clusters — connected
    components of parent/child/sibling links (see clusters.mjs) — are the
    primary visual unit: each multi-member cluster renders as a card with its
    internal tidy tree (parent/child solid S-curves, bottom-centre to
@@ -40,13 +53,17 @@ import { projectActivePanel, activeSignature, activeTargetLabel, canAddressInsta
 import {
   apiJson, ensureTheme,
   currentWorkspace, setWorkspace, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange,
-  renderWorkspaceSelect, wsQuery, workspaceGeneration,
+  renderWorkspaceSelect, wsQuery, workspaceGeneration, rowDeployment,
 } from "./common.mjs";
 import { createDataState, skeleton, statusLine, observedText } from "../loading.mjs";
 import { deploymentUnavailableText, NOT_SERVED_CODE, NO_ANSWER_CODE, unservedError, createPendingWatch } from "../deployment-header.mjs";
 import { registerAction } from "../keybindings.mjs";
 import { resolveViewKey } from "../view-keys.mjs";
 import { icon } from "../shell-icons.mjs";
+import { attachDeployments, isMultiDeployment, splitByDeployment, rowStale } from "../view-deployments.mjs";
+import { deploymentLabel } from "../deployment-label.mjs";
+import { ALL_TAB, deploymentTabs, selectedDeploymentTab, rememberDeploymentTab, onDeploymentTabRequest } from "../deployment-tabs.mjs";
+import { deploymentsPageCSS, createDeploymentTabBar, deploymentHead, deploymentReasonBlock, deploymentNeedsWords, deploymentHasWords } from "../deployments-page.mjs";
 
 export const hierarchyCSS = `
 .hier { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg); color: var(--fg);
@@ -54,7 +71,9 @@ export const hierarchyCSS = `
 .hier * { box-sizing: border-box; }
 .hier-bar { display: flex; align-items: center; gap: 10px; height:48px; flex: none; padding:0 12px 0 16px;
             border-bottom: 1px solid var(--border); background: var(--surface); }
-.hier-sum { color: var(--muted); font-size: 12.5px; }
+/* The counts sit at the right of the header (never against the tabs); the tabs take what is left and
+   scroll when they overflow (deployments-page.mjs). */
+.hier-sum { flex: none; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
 .hier-sum b { color: var(--fg); font-weight: 600; }
 .hier-sum .skeleton-pill { height: 0.9em; }
 .hier-refreshing { flex: none; display: inline-flex; align-items: center; }
@@ -70,14 +89,19 @@ export const hierarchyCSS = `
 .hier-canvas.panning { cursor: grabbing; }
 .hier-stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
 .hier-group { position: absolute; }
+/* The selected tab's panel: the canvas. */
+.hier-panel { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+/* Deployment sections (#482): a zero-size wrapper at the stage origin (its groups keep stage
+   coordinates) and its heading (deployments-page.mjs) above its clusters. */
+.hier-deployment { position: absolute; left: 0; top: 0; }
 .hier-group.hier-cluster { background:var(--surface-2);
                            border: 1px solid var(--border); border-radius: 14px; }
 .hier-group.hier-solo .hnode { box-shadow: none; }
 .hier-chead { position: absolute; left: 14px; top: 9px; display: flex; align-items: baseline; gap: 8px;
               max-width: calc(100% - 24px); white-space: nowrap; pointer-events: none; }
-.hier-chead .cnm { color: var(--muted); font-size: 11px; font-weight: 650; text-transform: uppercase;
+.hier-chead .cnm, .hier-dhead .cnm { color: var(--muted); font-size: 11px; font-weight: 650; text-transform: uppercase;
                    letter-spacing: .06em; min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; }
-.hier-chead .cct { color: var(--muted); font-size: 11px; min-width: 0; flex: 0 1000 auto; overflow: hidden; text-overflow: ellipsis; }
+.hier-chead .cct, .hier-dhead .cct { color: var(--muted); font-size: 11px; min-width: 0; flex: 0 1000 auto; overflow: hidden; text-overflow: ellipsis; }
 .hier-zoom { position: absolute; right: 14px; bottom: 14px; z-index: 5; display: flex; gap: 4px;
              background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 3px; box-shadow: var(--shadow); }
 .hier-zoom button { background: none; border: none; color: var(--muted); font: 14px/1 inherit; width: 26px; height: 24px;
@@ -119,6 +143,7 @@ export const hierarchyCSS = `
 .hier-pop .pacts { display:grid; grid-template-columns:repeat(auto-fill, minmax(62px, 1fr)); gap:6px; }
 .hier-pop .pacts button { min-width:0; padding:6px 4px; font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .hier-empty-wrap { flex: 1; display: flex; align-items: center; justify-content: center; }
+${deploymentsPageCSS}
 ${instanceEventsCSS}
 `;
 
@@ -271,6 +296,51 @@ export function layoutClusters(instances) {
   return { placed, soloBlock, clusters, width: Math.max(width, NODE_W), height: Math.max(height, NODE_H) };
 }
 
+const DEP_HEAD = 30, DEP_FIX = 22, DEP_GAP = 56, HEAD_GAP = 12;
+/** The room a deployment's heading takes above its clusters: one line, and a second for the
+ * "How to fix" summary of a deployment that is not live. An open disclosure is measured on screen
+ * and pushes the sections below it down (placeSections). */
+const headRoom = (d) => (deploymentNeedsWords(d) && (d.reason || d.fix?.length) || d.note ? DEP_HEAD + DEP_FIX : DEP_HEAD);
+
+/** Stack deployment sections (#482): each entry's rows are laid out on their own (relations are
+ * recorded within one deployment) under a heading at `y`, in the given order. A deployment with no
+ * rows keeps its heading. Blocks come back in stage coordinates. */
+function stackDeployments(entries) {
+  const sections = [];
+  let top = 0, width = 0;
+  for (const { deployment, rows } of entries) {
+    const room = headRoom(deployment), dy = top + room;
+    const lay = rows.length ? layoutClusters(rows) : { placed: [], soloBlock: null, clusters: [], width: 0, height: 0 };
+    for (const p of lay.placed) p.y += dy;
+    if (lay.soloBlock) lay.soloBlock.y += dy;
+    sections.push({ deployment, rows, label: deploymentLabel(deployment), y: top, room, ...lay });
+    width = Math.max(width, lay.width);
+    top = dy + lay.height + DEP_GAP;
+  }
+  return { sections, width: Math.max(width, NODE_W), height: Math.max(top - DEP_GAP, NODE_H) };
+}
+
+/** The All tab of a view of two or more deployments: one section per deployment, in the panel's order.
+ * Null with one deployment (its tab is that deployment's). A row with no known deployment joins the
+ * primary's. */
+export function layoutByDeployment(instances, deployments) {
+  if (!isMultiDeployment(deployments)) return null;
+  const parts = splitByDeployment(deployments)(instances);
+  return stackDeployments(deployments.map(deployment => ({ deployment, rows: parts.get(deployment.id) })));
+}
+
+/** What a tab shows: `{ rows, entries }`, `entries` being the headed sections (`[{ deployment, rows }]`)
+ * or null for the unheaded overview (no deployments reported, or one live deployment). */
+function tabContent(instances, deployments, tab) {
+  const all = instances || [], list = Array.isArray(deployments) ? deployments : [];
+  if (!list.length) return { rows: all, entries: null };
+  const parts = splitByDeployment(list)(all);
+  if (tab === ALL_TAB && isMultiDeployment(list)) return { rows: all, entries: list.map(deployment => ({ deployment, rows: parts.get(deployment.id) })) };
+  const deployment = list.find(d => d.id === tab) || list[0], rows = parts.get(deployment.id);
+  if (list.length === 1 && !deploymentHasWords(deployment)) return { rows, entries: null };
+  return { rows, entries: [{ deployment, rows }] };
+}
+
 const DRAG_THRESHOLD = 5; // px before a node-drag moves its tree (else it's a click)
 const ROSTER_NOUN = 'roster';
 const SUMMARY_PILL_WIDTH = '15em'; // about the width of "2 running · 1 stopped · 1 group"
@@ -285,26 +355,35 @@ export function mount(el, ctx) {
     nodeOffsets: new Map(),        // instance -> {x,y} user-dragged box offsets
     timers: [], unsubWs: null, alive: true,
     nodeEls: new Map(), lineage: new Set(),
+    tab: null, tabView: null, shown: [], fixOpen: new Set(), // the selected tab, its view, its rows, open "How to fix"
   };
   el.innerHTML = `
     <div class="hier oats-view" style="display:flex">
       <style>${hierarchyCSS}</style>
       <div class="hier-bar">
         <select class="field wssel" aria-label="Workspace" style="display:none"></select>
+        <span class="hier-tabs-host"></span>
+        <span style="flex:1"></span>
         <span class="hier-sum"></span>
         <span class="hier-refreshing"></span>
       </div>
       <div class="hier-notice" role="note" hidden><span class="hier-notice-message"></span><button class="act hier-retry" type="button">Retry roster</button><button class="act hier-readd" type="button" hidden>Re-add workspace</button></div>
-      <div class="hier-canvas" tabindex="0" role="tree" aria-label="Active agents by cluster">
-        <div class="hier-zoom">
-          <button class="zout" title="Zoom out" aria-label="Zoom out">${icon("zoomOut", { size: 14 })}</button>
-          <button class="zin" title="Zoom in" aria-label="Zoom in">${icon("zoomIn", { size: 14 })}</button>
-          <button class="zfit" title="Fit to screen" aria-label="Fit to screen">${icon("fit", { size: 14 })}</button>
+      <div class="hier-panel">
+        <div class="hier-canvas" tabindex="0" role="tree" aria-label="Active agents by cluster">
+          <div class="hier-zoom">
+            <button class="zout" title="Zoom out" aria-label="Zoom out">${icon("zoomOut", { size: 14 })}</button>
+            <button class="zin" title="Zoom in" aria-label="Zoom in">${icon("zoomIn", { size: 14 })}</button>
+            <button class="zfit" title="Fit to screen" aria-label="Fit to screen">${icon("fit", { size: 14 })}</button>
+          </div>
         </div>
       </div>
     </div>`;
   s.q = (cls) => el.querySelector("." + cls);
   s.canvas = s.q("hier-canvas");
+  s.tabPanel = s.q("hier-panel"); s.tabPanel.id = `${s.domId}-panel`;
+  // The deployment tabs lead the bar (the Workspace page's tab component); the count line follows them.
+  s.tabs = createDeploymentTabBar(el.ownerDocument, { idPrefix: s.domId, onSelect: (tab) => selectTab(s, tab) });
+  s.q("hier-tabs-host").replaceWith(s.tabs.element);
   // The shared loading controller. The summary hosts the pending pill; the
   // view's own .hier-notice keeps the stale / failed copy, so no noticeHost.
   const doc = el.ownerDocument;
@@ -328,7 +407,7 @@ export function mount(el, ctx) {
   // canvas pan by drag (ignore drags that start on a node/popover/controls)
   s.pan = null;
   s.canvas.addEventListener("mousedown", (e) => {
-    if (!visibleOwner(s) || e.button !== 0 || e.target.closest(".hnode") || e.target.closest(".hier-pop") || e.target.closest(".hier-zoom")) return;
+    if (!visibleOwner(s) || e.button !== 0 || e.target.closest(".hnode") || e.target.closest(".hier-pop") || e.target.closest(".hier-zoom") || e.target.closest(".hier-dfix")) return;
     s.fitted = true; // an explicit camera gesture wins over a later first observation
     s.pan = { x: e.clientX - s.tx, y: e.clientY - s.ty };
     s.canvas.classList.add("panning");
@@ -396,6 +475,11 @@ export function mount(el, ctx) {
   // subject's deadline (#461), so neither waits for the old read to settle.
   const offConnections = s.ctx.subscribeConnections?.(() => { if (s.alive) void refresh(s); });
   if (typeof offConnections === 'function') s.disposers.push(offConnections);
+  // Another surface opens a deployment's tab (the switcher's "Not matched" entries): already remembered,
+  // so a view not on screen yet reads it when its panel lands; the shown view switches now.
+  s.disposers.push(onDeploymentTabRequest(({ view, tab }) => {
+    if (s.alive && dataCurrent(s) && view === s.panel.workspace?.id) selectTab(s, tab, { remember: false });
+  }));
   refresh(s);
   s.timers.push(setInterval(() => { if (!s.loading) void refresh(s); }, 4000));
 
@@ -410,6 +494,7 @@ function teardown(s) {
   s.activity?.dispose(); s.activity = null;
   s.load?.dispose(); s.load = null;
   s.pendingWatch?.dispose();
+  s.tabs?.dispose?.();
   s.win.clearTimeout(s.clickResetTimer);
   s.timers.forEach(clearInterval);
   (s.disposers || []).forEach((off) => { try { off(); } catch {} });
@@ -440,6 +525,8 @@ function dataCurrent(s) {
   return s.alive && s.dataGen === workspaceGeneration() && s.dataWorkspace === currentWorkspace();
 }
 function actionsCurrent(s) { return dataCurrent(s) && !s.stale && !s.pending; }
+/** Actions on one row also wait when its deployment is stale (#482: that deployment's last re-read failed). */
+function rowActionsCurrent(s, i) { return actionsCurrent(s) && !rowStale(i, s.panel.deployments); }
 /** The stale rule's age (" · observed 45s ago") for the kept observation, from the panel's observedAt; nothing when unreported. */
 function staleAge(s) {
   const age = observedText(s.load?.observedAt ?? null, Date.now());
@@ -492,10 +579,13 @@ function resetObservation(s) {
   // A new subject: the controller forgets its data; the summary stays blank
   // until the pending pill (150ms) or the first reply. Never counts of nothing.
   s.load?.reset();
+  s.tab = null; s.tabView = null; s.shown = []; s.fixOpen?.clear(); paintTabs(s, []);
   clearCanvas(s); s.q('hier-sum').textContent = ''; notice(s, '');
 }
+/** What a paint depends on: the observation, and (#482) the view's deployments, which head its sections. */
+const viewSignature = (panel) => `${activeSignature(panel)}\n${JSON.stringify(panel.deployments || [])}`;
 function acceptObservation(s, panel, gen) {
-  const signature = activeSignature(panel);
+  const signature = viewSignature(panel);
   const ids = new Set(panel.instances.map(instanceId));
   for (const key of s.nodeOffsets.keys()) if (!ids.has(key)) s.nodeOffsets.delete(key);
   for (const key of s.nodeIds?.keys() || []) if (!ids.has(key)) s.nodeIds.delete(key);
@@ -542,6 +632,7 @@ export async function refresh(s, { user = false } = {}) {
     const data = await apiJson(s.ctx, `/api/panel${wsQuery()}`);
     if (!owns()) return;
     const panel = projectActivePanel(data);
+    attachDeployments(panel, data, instanceId); // #482: the view's deployments and each row's, for the deployment sections
     // observedAt (spec 02, additive) labels the observation's age; never invented.
     panel.observedAt = typeof data.observedAt === 'string' && data.observedAt ? data.observedAt : null;
     if (data.deployment?.status !== 'pending') s.pendingWatch.observe(null, false); // the server answered
@@ -567,7 +658,7 @@ export async function refresh(s, { user = false } = {}) {
     const stale = staleWorkspaceSelection(requestedWorkspace, panel);
     if (requestedWorkspace && !stale && panel.workspace?.id && panel.workspace.id !== requestedWorkspace) throw Error('The roster reply belongs to a different workspace. Choose the workspace again.');
     if ((!requestedWorkspace || stale) && panel.workspace?.id) adoptWorkspace(panel.workspace.id);
-    if ((s.drag || s.pan) && activeSignature(panel) !== s.signature) {
+    if ((s.drag || s.pan) && viewSignature(panel) !== s.signature) {
       s.pending = { panel, gen: myGen, request }; updatePop(s);
       notice(s, 'Roster changed during this gesture; the latest observation will apply on release.');
       return;
@@ -612,25 +703,71 @@ function presentFailure(s, error, requestedWorkspace) {
   updatePop(s);
 }
 
+/** localStorage of the view's own window (the tab choice is a convenience: none, nothing changes). */
+function tabStorage(s) { try { return s.win?.localStorage ?? null; } catch { return null; } }
+
+/** Paint the tab bar for `tabs` with the selected tab; the panel is a tabpanel only while tabs show. */
+function paintTabs(s, tabs) {
+  if (!s.tabs) return;
+  s.tabs.paint(tabs, s.tab, s.tabPanel?.id);
+  const selected = tabs.length ? s.tabs.selected() : null;
+  if (!s.tabPanel) return;
+  if (selected) { s.tabPanel.setAttribute('role', 'tabpanel'); s.tabPanel.setAttribute('aria-labelledby', selected.id); }
+  else { s.tabPanel.removeAttribute('role'); s.tabPanel.removeAttribute('aria-labelledby'); }
+}
+
+/** The tab the shown view shows: kept while the view and the tab stand, else the remembered one (or the
+ * first) for this view. Paints the bar. */
+function resolveTab(s) {
+  const deployments = s.panel.deployments || [], view = s.panel.workspace?.id || null, tabs = deploymentTabs(deployments);
+  if (s.tabView !== view || !tabs.some(t => t.id === s.tab)) { s.tab = selectedDeploymentTab(view, deployments, tabStorage(s)); s.tabView = view; }
+  paintTabs(s, tabs);
+  return s.tab;
+}
+
+/** A tab chosen (a click, an arrow key, or another surface's request): remembered for the view, and
+ * the canvas repainted for it and fitted. Selection and popover stay while their row is still shown. */
+function selectTab(s, tab, { remember = true } = {}) {
+  if (!s.alive || !dataCurrent(s)) return;
+  const view = s.panel.workspace?.id || null;
+  if (!deploymentTabs(s.panel.deployments).some(t => t.id === tab)) return;
+  if (remember) rememberDeploymentTab(view, tab, tabStorage(s));
+  if (tab === s.tab && view === s.tabView) return;
+  s.tab = tab; s.tabView = view; s.fitted = false;
+  render(s);
+}
+
 function render(s) {
   const canvas = s.canvas;
   const prevPop = s.popFor, preservedPop = s.pop, focused = docOf(s).activeElement;
   const preserveFocus = preservedPop?.contains(focused);
   s.renderEpoch = (s.renderEpoch || 0) + 1;
   clearCanvas(s, visibleOwner(s, preservedPop) ? preservedPop : null);
-  const list = s.panel.instances || [];
+  // The selected tab's rows, and its headed sections (null: the unheaded overview). The count line
+  // counts this tab only.
+  const { rows: list, entries } = tabContent(s.panel.instances || [], s.panel.deployments, resolveTab(s));
+  s.shown = list;
   const { running, stopped, unknown } = runtimeCounts(list);
   const status = `<b>${running}</b> running · <b>${stopped}</b> stopped${unknown ? ` · <b>${unknown}</b> unknown` : ""}`;
   s.q("hier-sum").innerHTML =
     status;
-  if (!list.length) {
+  const quiet = !entries || entries.every(e => !deploymentNeedsWords(e.deployment));
+  if (!list.length && (quiet || entries.length === 1)) {
     s.q('hier-sum').innerHTML = `${status} · <b>0</b> groups`;
     s.sel = null; closePop(s);
     const w = document.createElement("div");
     w.className = "hier-empty-wrap";
     w.style.height = "100%";
-    w.innerHTML = `<div class="empty"><span class="big">${icon("overview", { size: 22 })}</span>` +
-      `No instances reported in this observation.<br>Choose a soul in Workspace or use <code>oats spawn &lt;agent&gt;</code>.</div>`;
+    if (quiet) {
+      w.innerHTML = `<div class="empty"><span class="big">${icon("overview", { size: 22 })}</span>` +
+        `No instances reported in this observation.<br>Choose a soul in Workspace or use <code>oats spawn &lt;agent&gt;</code>.</div>`;
+      // Live deployments' notes (information, not a failure) still head the empty tab, All included.
+      const noted = (entries || []).filter(e => e.deployment.note);
+      if (noted.length) w.prepend(...noted.map(e => deploymentReasonBlock(docOf(s), headOptions(s, e.deployment, e.rows))));
+    } else {
+      // A deployment that is not live, with nothing to show: why and how to fix it, never a silent empty.
+      w.append(deploymentReasonBlock(docOf(s), headOptions(s, entries[0].deployment, entries[0].rows)));
+    }
     canvas.append(w);
     return;
   }
@@ -639,14 +776,18 @@ function render(s) {
   // sibling links — are computed before any visual decoration, so a valid
   // relation crossing agent/workspace roots never turns a child into an
   // orphan. Node metadata still identifies its repo/root.
-  const { placed, soloBlock, width, height } = layoutClusters(list);
-  const nGroups = placed.length, nIndependent = soloBlock?.nodes.length || 0;
+  // Views (#482): each headed section lays out its own deployment's rows (relations never cross
+  // sections); unheaded, the single section is exactly the layout the overview always drew.
+  const byDeployment = entries ? stackDeployments(entries) : null;
+  const sections = byDeployment ? byDeployment.sections : [{ deployment: null, ...layoutClusters(list) }];
+  const { width, height } = byDeployment || sections[0];
+  const nGroups = sections.reduce((n, x) => n + x.placed.length, 0), nIndependent = sections.reduce((n, x) => n + (x.soloBlock?.nodes.length || 0), 0);
   s.q("hier-sum").innerHTML = `${status} · <b>${nGroups}</b> group${nGroups === 1 ? '' : 's'}${nIndependent ? ` · <b>${nIndependent}</b> independent` : ''}`;
   const stage = document.createElement("div");
   stage.className = "hier-stage";
 
   s.edgesByNode = new Map(); // instance -> [path els touching it]
-  s.bounds = { w: width, h: height };
+  s.bounds = { w: width, h: height, base: height };
 
   const BLEED = 2000; // edge svg overdraw so dragged boxes keep their edges
   const groupFor = (block, key, ariaLabel, cls) => {
@@ -705,30 +846,38 @@ function render(s) {
   // Agent groups (Redesign v3; supersedes the anonymous-card decision): the
   // header names the group by its deterministic key — the same name as the
   // sidebar group — then "count · reported repos".
-  for (const pc of placed) {
-    const c = pc.cluster;
-    const aria = `Agent group ${c.label}: ${c.size} agents, ${c.running} running${c.unknown ? `, ${c.unknown} unknown` : ""}`;
-    const group = groupFor(pc, c.name, aria, "hier-cluster");
-    const head = document.createElement("div");
-    head.className = "hier-chead";
-    const contexts = [...new Set(c.instances.map(i => i.repoName).filter(Boolean))];
-    head.append(node(s, 'span', c.label, 'cnm'), node(s, 'span', [String(c.size), ...contexts].join(' · '), 'cct'));
-    head.title = `${c.label} — ${c.running}/${c.size} running${c.unknown ? `, ${c.unknown} unknown` : ''}`;
-    group.prepend(head);
-    stage.append(group);
-  }
-  if (soloBlock) {
-    const group = groupFor({ ...soloBlock, sibs: [] }, "Independent",
-      `Independent agents: ${soloBlock.nodes.length}`, "hier-solo");
-    const head = document.createElement("div");
-    head.className = "hier-chead solo";
-    head.innerHTML = `<span class="cnm">Independent</span>` +
-      `<span class="cct">${soloBlock.nodes.length}</span>`;
-    group.prepend(head);
-    stage.append(group);
+  for (const { deployment, rows, y, room, placed, soloBlock } of sections) {
+    const host = deployment ? deploymentSection(s, { deployment, rows, y, room }) : stage;
+    if (host !== stage) stage.append(host);
+    for (const pc of placed) {
+      const c = pc.cluster;
+      const aria = `Agent group ${c.label}: ${c.size} agents, ${c.running} running${c.unknown ? `, ${c.unknown} unknown` : ""}`;
+      const group = groupFor(pc, c.name, aria, "hier-cluster");
+      group.dataset.top = String(pc.y);
+      const head = document.createElement("div");
+      head.className = "hier-chead";
+      const contexts = [...new Set(c.instances.map(i => i.repoName).filter(Boolean))];
+      head.append(node(s, 'span', c.label, 'cnm'), node(s, 'span', [String(c.size), ...contexts].join(' · '), 'cct'));
+      head.title = `${c.label} — ${c.running}/${c.size} running${c.unknown ? `, ${c.unknown} unknown` : ''}`;
+      group.prepend(head);
+      host.append(group);
+    }
+    if (soloBlock) {
+      // Each deployment's Independent strip is its own keyboard group.
+      const group = groupFor({ ...soloBlock, sibs: [] }, deployment ? `Independent:${deployment.id}` : "Independent",
+        `Independent agents: ${soloBlock.nodes.length}`, "hier-solo");
+      group.dataset.top = String(soloBlock.y);
+      const head = document.createElement("div");
+      head.className = "hier-chead solo";
+      head.innerHTML = `<span class="cnm">Independent</span>` +
+        `<span class="cct">${soloBlock.nodes.length}</span>`;
+      group.prepend(head);
+      host.append(group);
+    }
   }
   canvas.insertBefore(stage, preservedPop?.parentNode === canvas ? preservedPop : null);
-  // first paint (or workspace switch): fit the forest to the visible screen
+  if (byDeployment) placeSections(s);
+  // first paint (or workspace / tab switch): fit the forest to the visible screen
   if (!s.fitted) fit(s); else applyTransform(s);
   if (s.sel && !list.some((i) => instanceId(i) === s.sel)) s.sel = null;
   paintSelection(s);
@@ -739,6 +888,45 @@ function render(s) {
     // synchronous blur handler elsewhere. No request completion selects a node.
     if (preserveFocus && visibleOwner(s, focused) && docOf(s).activeElement === docOf(s).body) focused.focus({ preventScroll: true });
   } else { s.activity?.dispose(); s.activity = null; preservedPop?.remove(); s.pop = null; s.popFor = null; }
+}
+
+/** One deployment's section (#482): a group named by its heading's words, the heading (deployments-page.mjs)
+ * at `y`, and the clusters added by the caller. The heading's disclosure stays open across repaints. */
+function deploymentSection(s, { deployment, rows, y, room }) {
+  const section = node(s, 'div', undefined, 'hier-deployment');
+  section.setAttribute('role', 'group');
+  section.dataset.deployment = deployment.id;
+  const { element: head, label } = deploymentHead(docOf(s), headOptions(s, deployment, rows));
+  section.setAttribute('aria-label', label);
+  head.style.top = `${y}px`; head.dataset.top = String(y); head.dataset.room = String(room);
+  section.append(head);
+  return section;
+}
+/** A heading's facts, and its disclosure's open state kept per deployment across repaints. */
+function headOptions(s, deployment, rows) {
+  s.fixOpen ||= new Set();
+  return { deployment, rows, open: s.fixOpen.has(deployment.id), onToggle: (open) => {
+    if (!s.alive) return;
+    if (open) s.fixOpen.add(deployment.id); else s.fixOpen.delete(deployment.id);
+    placeSections(s);
+  } };
+}
+
+/** Keep each section's clusters below its heading as drawn: a heading taller than the room the layout
+ * gave it (an open "How to fix") pushes its clusters and every later section down by the difference.
+ * Idempotent (from the laid-out tops); a host without layout (no measured height) moves nothing. */
+function placeSections(s) {
+  let shift = 0;
+  for (const section of s.canvas.querySelectorAll?.('.hier-stage > .hier-deployment') || []) {
+    const head = section.querySelector(':scope > .hier-dhead');
+    if (!head) continue;
+    head.style.top = `${Number(head.dataset.top) + shift}px`;
+    const height = head.offsetHeight || 0;
+    if (height) shift += Math.max(0, height + HEAD_GAP - Number(head.dataset.room));
+    for (const group of section.querySelectorAll(':scope > .hier-group')) group.style.top = `${Number(group.dataset.top) + shift}px`;
+  }
+  if (s.bounds) s.bounds.h = s.bounds.base + shift;
+  positionPop(s);
 }
 
 function nodeEl(s, n, wsName) {
@@ -798,7 +986,7 @@ function selectedInstance(s, id) {
 }
 function invokeInstance(s, id, action) {
   const i = selectedInstance(s, id);
-  if (!actionsCurrent(s) || !visibleOwner(s) || !canAddressInstance(i)) return;
+  if (!rowActionsCurrent(s, i) || !visibleOwner(s) || !canAddressInstance(i)) return;
   const call = action === 'terminal' && i.running === true && s.ctx.openTerminal ? () => s.ctx.openTerminal({
     instance: i.instance, home: i.home || undefined, agentsRoot: i.agentsRoot || undefined, ...(i.server ? { server: i.server } : {}),
   }) : action === 'start' && i.running === false && s.ctx.startInstance ? () => s.ctx.startInstance(i)
@@ -1052,7 +1240,8 @@ function openPop(s, id, retained = null) {
 function activitySelection(s, id) {
   const i = selectedInstance(s, id);
   if (!i) return null;
-  const selection = row => ({ workspace: currentWorkspace(), selector: { instance: row.instance, agent: row.agent,
+  // Addressed to the row's own deployment (#482): the events read and its echo name that deployment.
+  const selection = row => ({ workspace: rowDeployment(row), selector: { instance: row.instance, agent: row.agent,
     agentsRoot: row.agentsRoot, server: row.server || null }, home: row.home, incarnation: row.createdAt ?? null, serverLabel: serverLabel(row) });
   const selected = selection(i);
   if (s.pending) {
@@ -1068,10 +1257,10 @@ function updatePop(s) {
   setText(pop.querySelector('.pname'), i.instance);
   const identity = pop.querySelector('.pidentity'); identity.hidden = !activeTargetLabel(i, s.panel.instances);
   setText(identity, `Host: ${i.server || (i.remote ? 'not reported' : 'local')} · Root: ${i.agentsRoot || 'not reported'} · Home: ${i.home || 'not reported'}`);
-  setText(pop.querySelector('.pstate'), `Reported state: ${runtimeState(i)}${s.stale ? ' (last observation)' : ''}`);
+  setText(pop.querySelector('.pstate'), `Reported state: ${runtimeState(i)}${s.stale || rowStale(i, s.panel.deployments) ? ' (last observation)' : ''}`);
   setText(pop.querySelector('.rt'), i.harness || 'Harness not reported');
   setText(pop.querySelector('.pbranch'), i.branch ? `Reported branch: ${i.branch}` : 'Branch not reported');
-  const allowed = actionsCurrent(s) && canAddressInstance(i);
+  const allowed = rowActionsCurrent(s, i) && canAddressInstance(i);
   const terminal = pop.querySelector('.pterm');
   setText(terminal, i.running === false ? 'Start…' : 'Terminal');
   terminal.disabled = !allowed || (i.running === true ? !s.ctx.openTerminal : i.running === false ? !s.ctx.startInstance : true);
@@ -1113,7 +1302,7 @@ function openSelBrain(s) {
    the engine keymap so shortcut-editor rebinds take effect here. */
 function onKey(s, e) {
   if (!dataCurrent(s) || !visibleOwner(s) || s.pending || e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
-  const list = s.panel.instances || [];
+  const list = s.shown || []; // the selected tab's rows: the keys walk what is drawn
   if (!list.length) return;
   if (e.key === 'Escape') { e.preventDefault(); s.sel = null; paintSelection(s); closePop(s); s.canvas.focus?.({ preventScroll: true }); return; }
   // Native popup buttons own Enter/Space; tree commands must not also open a

@@ -9,6 +9,7 @@ import { createSpawnApplyBoundary } from '../server/spawn-apply.mjs';
 import { spawnApplyFailure, spawnApplyView } from '../renderer/spawn-apply-contract.mjs';
 import { selector, target, deferred } from './helpers/spawn-preview-fixture.mjs';
 import { applyContext, applyPreview, creation, envelope } from './helpers/spawn-apply-fixture.mjs';
+import { deploymentDoubles } from './helpers/deployment-doubles.mjs';
 const ref = 'a'.repeat(64);
 const prepared = () => ({ spawnApplyViewApi: 1, status: 'prepared', target, spawnRef: ref, preview: applyPreview(target), wakeRequested: false, receipt: null, reason: null });
 const draft = () => ({ action: 'prepare', selector, choices: {}, task: 'PRIVATE task' });
@@ -21,7 +22,7 @@ function http() {
     invoke: (_cli, args) => { calls.push(args); order.push('invoke'); return { started: true, envelope: envelope(creation(applyPreview(args.target))) }; } });
   const deps = { createServer: fn => fn, spawnApplyFailure, spawnApplyRequest: broker, spawnPreviewCache: { invalidate: ws => order.push(`invalidate:${ws}`) },
     spawnAgent: async body => { serverSpawns.push(body); return { instance: 'dev-1', home: '/fixture/dev-1', agent: 'dev', launched: true }; },
-    spawnErrorPayload: () => assert.fail('unexpected execution-server error'), workspaces: () => [c.workspace], cliState: c.cli,
+    spawnErrorPayload: () => assert.fail('unexpected execution-server error'), ...deploymentDoubles(() => [c.workspace]), cliState: c.cli,
     agentsData: () => ({ agents: c.agents }), snapshot: { byWs: new Map([['northwind', { instances: c.instances }]]) } };
   const handler = new Function(...Object.keys(deps), `${source.slice(start, end)}\nreturn server;`)(...Object.values(deps));
   return { c, reads, calls, serverSpawns, order, async request({ url = '/api/spawn?ws=northwind', method = 'POST', body = draft(), headers = { host: 'localhost:4820', origin: 'http://localhost:4820' } } = {}) {

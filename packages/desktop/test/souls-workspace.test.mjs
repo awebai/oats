@@ -167,7 +167,7 @@ test("shell api errors: httpError carries the server's stable domain code (merge
   const { readFileSync } = await import("node:fs");
   const src = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
   assert.ok(/if \(!r\.ok\) throw httpError\(r, pathname\);/.test(src), "shell ctx.api throws via the shared httpError");
-  assert.ok(/httpError\s*\}?\s*from ".\/views\/common.mjs"|,\s*httpError\s*\}/.test(src), "shell imports httpError from common");
+  assert.ok(/import \{[^}]*\bhttpError\b[^}]*\} from "\.\/views\/common\.mjs"/.test(src), "shell imports httpError from common");
 });
 
 test("the terminal wait accepts a running remote row the kernel reports addressable, saved route or not; never an unaddressable one", async () => {

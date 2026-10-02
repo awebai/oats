@@ -104,6 +104,53 @@ opened, or your home directory when there is none (never ~/Downloads);
 
 Launch flags for scripted use: `--dir <workspace>` and `OATS_DESKTOP_PORT`.
 
+## One workspace, several machines
+
+The switcher lists each workspace once, however many deployments it has: the
+deployments you opened on this Mac and those your registered servers report,
+matched by the workspace each one reports (its repository key and default
+team, by the kernel's rules). It needs a CLI with the `workspace-identity`
+feature (OATS 0.36.0); without it each deployment has its own entry.
+
+- **Deployments.** The **Deployments** page (formerly the Active overview)
+  shows the workspace's overview trees. **All** stacks one section per
+  deployment, each headed by its machine and folder ("This Mac ·
+  ~/Agents/oats", "altair · ~/Agents/tsm"). Then each deployment has a tab of
+  its own, named by its machine ("altair"; "This Mac · oats-v2" when this Mac
+  holds two). A workspace with one deployment shows just that deployment's
+  tab. The tab you chose is remembered per workspace. With two or more
+  deployments, the sidebar's instance list is grouped under one heading per
+  machine; with one, it has no headings.
+- **Not shown live.** A deployment that can't be shown live says why in a few
+  words on its heading ("ssh needs a prompt", "Timed out", "OATS too old to
+  report its workspace"), and **How to fix** under it gives the full sentence
+  and the steps. Causes: ssh needs a prompt or a host key, the read timed out,
+  the host's OATS is too old to report its workspace, its workspace reference
+  needs `oats sync` or fixing in `oats-local.yaml`, or this computer's OATS
+  can't read other machines. A server that can't be reached stays under the
+  workspace it last reported, marked "remembered".
+- **The switcher.** Each workspace names its machines on one line ("This Mac ·
+  altair"), with a mark when one of them isn't live.
+- **Not matched to a workspace.** A deployment that can't be matched is
+  listed on its own under that heading in the switcher, with its machine and
+  a short reason; choosing it opens its tab on the Deployments page. When this
+  computer's OATS is too old to report workspaces, nothing can be matched:
+  each deployment is listed on its own, as before, and its heading says to
+  update OATS.
+- **Actions.** Everything you do to an instance goes to that instance's own
+  deployment. Workspace-wide pages (Setup, Capabilities, Sync, Automations,
+  Schedules, Teams configuration) act on the workspace's first deployment on
+  this Mac, else its first, and say "On <deployment>" when there are two or
+  more.
+- **Spawn.** With two or more deployments, the Spawn dialog asks first which
+  one to spawn in (and says "Runs on" in its summary), starting on the one you last used in that workspace when it
+  offers the soul, else the first that does (this Mac first). With one, it
+  asks nothing.
+
+Saved selections and tabs move to the workspace that holds their
+deployment. Details are in
+[the deployment model](../packages/desktop/docs/desktop-deployment-model.md#workspace-views-and-deployments).
+
 ## Scheduling agents and wake messages
 
 Open **Schedules** in the selected workspace to launch a new agent on a cron,

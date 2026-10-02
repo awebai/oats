@@ -6,6 +6,7 @@ import { deploymentRecord as record } from './renderer/deployment-contract.mjs';
 import { harnessOf } from './renderer/harness-names.mjs';
 import { teamRow, teamRowsOf, defaultTeamOf, TEAM_ID } from './renderer/team-rows.mjs';
 import { launchOf, REPORT_FROM } from './renderer/launch-contract.mjs';
+import { readIdentity } from './server/workspace-views.mjs';
 const text = value => typeof value === 'string' && value.length <= 8192 && !value.includes('\0');
 const absolute = value => text(value) && isAbsolute(value) && resolve(value) === value;
 const own = (value, key) => Object.hasOwn(value, key);
@@ -215,6 +216,14 @@ export function deploymentStatusData(document, deployment) {
   if (own(document, 'workspace')) {
     out.workspace = fields(document.workspace, ['code', 'reason', 'message']);
     flags(document.workspace, ['reachable'], out.workspace);
+    // Workspace identity (feature workspace-identity, #482): kept as reported for matching this deployment
+    // to its workspace across machines (server/workspace-views.mjs). A shape the contract does not allow
+    // never fails the roster: it is marked, and the deployment is shown unmatched.
+    if (own(document.workspace, 'key')) {
+      const read = readIdentity(document.workspace);
+      if (read.status === 'identity') Object.assign(out.workspace, read.identity);
+      else out.workspace.identityInvalid = true;
+    }
   }
   return out;
 }

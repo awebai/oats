@@ -54,7 +54,9 @@ test('without an earlier observation, or for another failure, the read is unavai
 });
 
 test('panelData serves error and errorCause for a local workspace only when the snapshot carries them', () => {
-  const body = fn('panelData');
+  // One deployment's panel is deploymentPanel (#482); a view's panel is its PRIMARY deployment's, spread whole.
+  assert.match(fn('panelData'), /return \{\n\s*\.\.\.primary,/);
+  const body = fn('deploymentPanel');
   assert.match(body, /typeof observed\?\.error === "string" \? \{ error: observed\.error \}/);
   assert.match(body, /observed\?\.errorCause \? \{ errorCause: observed\.errorCause \}/);
   assert.ok(body.indexOf('if (ws?.remote)') < body.indexOf('errorCause'), 'a remote panel returns before: unchanged');
