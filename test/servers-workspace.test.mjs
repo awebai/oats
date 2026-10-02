@@ -6,8 +6,8 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fakeBin } from "./helpers/fake-ssh.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
@@ -111,5 +111,63 @@ test("server list carries workspaceKey per row; --workspace-ref filters by canon
     assert.equal(r.json().error.code, "E_REPO_REF");
     r = s.oats(["server", "list", "--workspace-ref", "--json"]);
     assert.equal(r.json().error.code, "E_BAD_ARGS");
+  } finally { s.cleanup(); }
+});
+
+/** An ssh whose host answers `status --json` with a workspace key at once, except for a command naming
+ *  `held`: that one waits (after touching `waiting`) until `gate` exists. */
+function gatedSsh(bin, { held, waiting, gate, key }) {
+  writeFileSync(join(bin, "ssh"), `#!${process.execPath}
+const fs = require("node:fs");
+const cmd = process.argv.at(-1);
+const answer = () => console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { agents: [], workspace: { key: ${JSON.stringify(key)} } } }));
+if (cmd.includes(${JSON.stringify(held)})) {
+  fs.writeFileSync(${JSON.stringify(waiting)}, "");
+  const t = setInterval(() => { if (fs.existsSync(${JSON.stringify(gate)})) { clearInterval(t); answer(); } }, 10);
+} else answer();
+`);
+  chmodSync(join(bin, "ssh"), 0o755);
+}
+async function whileHeld(s, held, args, during) {
+  const waiting = join(s.base, `waiting-${held.replace(/\W/g, "")}`), gate = join(s.base, `gate-${held.replace(/\W/g, "")}`);
+  gatedSsh(s.bin, { held, waiting, gate, key: "github.com/acme/ws" });
+  const child = spawn(process.execPath, [CLI, ...args], { env: s.env, cwd: s.env.HOME, stdio: ["ignore", "pipe", "pipe"] });
+  let out = ""; child.stdout.on("data", (b) => { out += b; });
+  const done = new Promise((res) => child.on("close", res));
+  const deadline = Date.now() + 20000;
+  while (!existsSync(waiting)) { if (Date.now() > deadline) throw new Error(`${args.join(" ")} never reached its probe`); await new Promise((r) => setTimeout(r, 10)); }
+  during();
+  writeFileSync(gate, "");
+  const status = await done;
+  return { status, json: () => JSON.parse(out.trim()) };
+}
+
+test("learning a workspace key never loses or resurrects a registration written while the host was being asked", async () => {
+  const s = setup();
+  try {
+    const registry = () => JSON.parse(readFileSync(s.serversFile, "utf8")).servers;
+    // server add a, held at its probe, while b is added: both stay, a gets its key.
+    let r = await whileHeld(s, "/srv/a", ["server", "add", "a", "--ssh", "host", "--workspace", "/srv/a", "--json"], () => {
+      assert.equal(s.oats(["server", "add", "b", "--ssh", "host", "--workspace", "/srv/b", "--json"]).status, 0);
+    });
+    assert.equal(r.status, 0);
+    assert.deepEqual(registry(), { a: { sshHost: "host", workspace: "/srv/a", workspaceKey: "github.com/acme/ws" }, b: { sshHost: "host", workspace: "/srv/b", workspaceKey: "github.com/acme/ws" } });
+
+    // server add c, held, while c is removed: not resurrected, and said so.
+    r = await whileHeld(s, "/srv/c", ["server", "add", "c", "--ssh", "host", "--workspace", "/srv/c", "--json"], () => {
+      assert.equal(s.oats(["server", "remove", "c", "--json"]).status, 0);
+    });
+    assert.equal(r.status, 0);
+    assert.equal(Object.hasOwn(registry(), "c"), false, "a removed registration stays removed");
+    assert.equal(r.json().result.workspaceKey, null);
+    assert.match(r.json().result.warnings.join("\n"), /changed while the host was asked/);
+
+    // server check a (no key yet), held, while a is re-pointed: the key is never written onto the new target.
+    writeFileSync(s.serversFile, JSON.stringify({ servers: { ...registry(), a: { sshHost: "host", workspace: "/srv/a" } } }, null, 2) + "\n");
+    r = await whileHeld(s, "/srv/a", ["server", "check", "a", "--json"], () => {
+      assert.equal(s.oats(["server", "add", "a", "--ssh", "host", "--workspace", "/srv/elsewhere", "--replace", "--json"]).status, 0);
+    });
+    assert.deepEqual(registry().a, { sshHost: "host", workspace: "/srv/elsewhere", workspaceKey: "github.com/acme/ws" }, "the replacement's own key, from its own add");
+    assert.deepEqual(Object.keys(registry()).sort(), ["a", "b"]);
   } finally { s.cleanup(); }
 });

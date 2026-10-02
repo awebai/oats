@@ -6,7 +6,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFileSync as execFileSyncReal, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fakeBin } from "./helpers/fake-ssh.mjs";
@@ -284,3 +284,68 @@ test("readiness is bounded: souls the budget does not reach become one line nami
     assert.deepEqual(res.human, ["readiness not checked for 2 souls: run `oats readiness --soul <s> --server b` for c, d"]);
   } finally { rmSync(process.env.OATS_HOME_DIR, { recursive: true, force: true }); if (prev === undefined) delete process.env.OATS_HOME_DIR; else process.env.OATS_HOME_DIR = prev; }
 });
+
+test("the requested id's own target conflict comes before the same-target twin, and text mode names the id that serves", () => {
+  const s = setup();
+  try {
+    const write = (servers) => writeFileSync(s.serversFile, JSON.stringify({ servers }, null, 2) + "\n");
+    write({ box: { sshHost: "elsewhere", workspace: "/srv/other", workspaceKey: "github.com/acme/other" }, twin: { sshHost: "box-host", workspace: s.fx.dep, oatsPath: CLI, workspaceKey: s.fx.key } });
+    let r = s.oats(["server", "connect", "box", "--ssh", "box-host", "--dir", s.fx.dep, "--oats", CLI, "--json"]);
+    assert.equal(r.status, 1, r.stdout);
+    assert.equal(r.json().error.code, "E_SERVER_EXISTS", "box still routes elsewhere: never reported ready");
+    assert.equal(s.servers().box.sshHost, "elsewhere");
+
+    // A new id whose target is already registered as twin: the success line names twin, the id that exists.
+    r = s.oats(["server", "connect", "fresh", "--ssh", "box-host", "--dir", s.fx.dep, "--oats", CLI]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /twin is ready: oats spawn <soul> --server twin/);
+    assert.equal(Object.hasOwn(s.servers(), "fresh"), false);
+  } finally { s.cleanup(); }
+});
+
+/** The bounded-readiness transport: the fixed host answers of the budget test, with `readiness`
+ *  (and optionally `souls`) handed to a REAL child process under the timeout runRemote gives it. */
+function hostAnswers(souls) {
+  return (cmd) => {
+    if (cmd === "true") return "";
+    if (/ version --json$/.test(cmd)) return JSON.stringify({ schemaVersion: 1, desktopApi: 1, name: "@awebai/oats", version: "99.0.0", features: [] });
+    if (/ onboard .* --check --json$/.test(cmd)) return JSON.stringify({ schemaVersion: 1, ok: true, result: { check: true, dir: "/srv/ws", state: "deployment", workspace: { ref: "git:github.com/acme/ws", key: "github.com/acme/ws" }, remote: { readable: true, commit: "a".repeat(40) } } });
+    if (/ status --json --dir \/srv\/ws$/.test(cmd)) return JSON.stringify({ schemaVersion: 1, ok: true, result: { root: "/srv/ws/agents", agents: [], workspace: { key: "github.com/acme/ws" } } });
+    if (/ souls --json --dir \/srv\/ws$/.test(cmd)) return JSON.stringify({ schemaVersion: 1, ok: true, result: { souls: souls.map((name) => ({ name, problem: null })) } });
+    throw new Error(`unexpected remote command: ${cmd}`);
+  };
+}
+const slowChild = (opts) => execFileSyncReal(process.execPath, ["-e", "setTimeout(() => {}, 10000)"], opts);
+const isolatedHome = (fn) => {
+  const prev = process.env.OATS_HOME_DIR; process.env.OATS_HOME_DIR = mkdtempSync("/tmp/oats-scb-");
+  try { return fn(); } finally { rmSync(process.env.OATS_HOME_DIR, { recursive: true, force: true }); if (prev === undefined) delete process.env.OATS_HOME_DIR; else process.env.OATS_HOME_DIR = prev; }
+};
+const budgetOptions = { id: "b", sshHost: "b-host", workspaceRef: "git:github.com/acme/ws", dir: "/srv/ws", localVersion: "0.39.0" };
+
+test("readiness: a check the budget cuts off is not checked (needs-human), never an ssh failure; the listing gets the budget too", () => isolatedHome(() => {
+  const answer = hostAnswers(["a", "b"]);
+  let listTimeout;
+  const execFileSync = (bin, argv, opts) => {
+    const cmd = argv.at(-1);
+    if (/ souls /.test(cmd)) listTimeout = opts.timeout;
+    if (/ readiness --soul a /.test(cmd)) return slowChild(opts);
+    return answer(cmd);
+  };
+  const res = connectServer(budgetOptions, { execFileSync, readinessBudgetMs: 1500 });
+  assert.ok(listTimeout <= 1500, `the soul listing runs within the budget (got ${listTimeout})`);
+  assert.deepEqual(statuses(res), ["ok", "ok", "ok", "ok", "done", "needs-human"]);
+  assert.deepEqual(res.human, ["readiness not checked for 2 souls: run `oats readiness --soul <s> --server b` for a, b"]);
+}));
+
+test("readiness: a soul listing the budget cuts off is one human line; a real transport failure still fails", () => isolatedHome(() => {
+  const answer = hostAnswers(["a"]);
+  let res = connectServer(budgetOptions, { readinessBudgetMs: 1500, execFileSync: (bin, argv, opts) => (/ souls /.test(argv.at(-1)) ? slowChild(opts) : answer(argv.at(-1))) });
+  assert.equal(stepOf(res, "readiness").status, "needs-human");
+  assert.deepEqual(res.human, ["readiness not checked: the host did not list its souls within 2 s; run `oats readiness --soul <s> --server b` for each soul"]);
+
+  const lost = (bin, argv) => {
+    if (/ readiness /.test(argv.at(-1))) throw Object.assign(new Error("ssh failed"), { status: 255, stdout: "", stderr: "Connection reset by peer" });
+    return answer(argv.at(-1));
+  };
+  assert.throws(() => connectServer(budgetOptions, { execFileSync: lost }), (e) => e.code === "E_SSH" && e.details.steps.at(-1).step === "readiness");
+}));

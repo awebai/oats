@@ -1979,12 +1979,14 @@ An envelope, `ok: true` whenever no step failed, human steps included
 - `human` lists the remedies of the `needs-human` steps, in order. A
   `readiness` step that needs a human has one line per problem
   (`<souls>: <subject>: <reason>[ → <remedy>]`, plus `readiness not checked
-  for N souls: …` when the 60 s budget ran out); its `remedy` is those lines
-  joined by `\n`.
+  for N souls: …` when the 60 s budget ran out, or `readiness not checked: the
+  host did not list its souls within 60 s; …` when the listing itself did not
+  finish); its `remedy` is those lines joined by `\n`.
 - `ready` is `true` when no step is `needs-human` or `failed`.
 - A `failed` step ends the run: `ok: false`, `error.code` is the step's code
   (`E_SSH`, `E_REMOTE_INSTALL`, `E_SERVER_WORKSPACE_MISMATCH`,
-  `E_DIR_NOT_EMPTY`, `E_SERVER_EXISTS`, or the host's own code relayed),
+  `E_DIR_NOT_EMPTY`, `E_SERVER_EXISTS`, `E_SERVERS_BUSY`, or the host's own
+  code relayed),
   `error.details` is the step's `details` plus `steps`, the steps so far
   (the failed one last). A mismatch at `deployment` has `details: {expected,
   reported, dir}`; at `register`, `{recorded, reported}`.

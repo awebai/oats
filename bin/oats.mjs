@@ -42,7 +42,7 @@ import { parseConfigData } from "../lib/config-data.mjs";
 import * as remoteModule from "../lib/remote.mjs";
 import { activateLocalInputs, localRevision } from "../lib/local-inputs.mjs";
 import YAML from "yaml";
-import { attachArgv, checkRemote, connectServer, forgetSnapshot, getServer, inspectRemote, startRemote, restartRemote, launchConfigRemote, scheduleRemote, listSnapshots, readServers, redactArgv, reportedWorkspaceKey, rosterGroups, routeCapability, routeCommand, runRemote, serverFlagOf, targetOf, validateServer, workspaceKeyOfStatus, workspaceMismatch, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
+import { attachArgv, checkRemote, connectServer, forgetSnapshot, getServer, inspectRemote, startRemote, restartRemote, launchConfigRemote, scheduleRemote, listSnapshots, learnWorkspaceKey, readServers, redactArgv, reportedWorkspaceKey, rosterGroups, routeCapability, routeCommand, runRemote, serverFlagOf, targetOf, updateServers, validateServer, workspaceKeyOfStatus, workspaceMismatch, SERVERS_FILE } from "../lib/servers.mjs";
 import { spawnSync as spawnSyncProc } from "node:child_process";
 import { tickTriggers } from "../lib/triggers.mjs";
 import * as A from "../lib/automations.mjs";
@@ -3287,15 +3287,20 @@ function serverCmd() {
     for (const [k, f] of [["oatsPath", "oats"], ["path", "path"], ["label", "label"]]) { const v = val(f); if (v !== undefined) entry[k] = v; }
     if (!entry.sshHost || !entry.workspace) bail("E_USAGE", usage);
     try { validateServer(id, entry); } catch (e) { bail(e.code, e.message); }
-    if (servers[id] && !args.includes("--replace")) bail("E_SERVER_EXISTS", `server ${id} is already registered (pass --replace to overwrite; existing remote instances keep the route they were spawned with)`);
-    servers[id] = entry;
-    writeServers(servers);
-    // The workspace key is learned from the host, never typed: written when the host answers one.
+    try {
+      updateServers((current) => {
+        if (current[id] && !args.includes("--replace")) throw Object.assign(new Error(`server ${id} is already registered (pass --replace to overwrite; existing remote instances keep the route they were spawned with)`), { code: "E_SERVER_EXISTS" });
+        current[id] = entry;
+      });
+    } catch (e) { bail(e.code || "E_SERVERS_UNREADABLE", e.message); }
+    // The workspace key is learned from the host, never typed: recorded when the host answers one and
+    // the registration is still this one (it may change while the host is asked).
     const warnings = [];
     try {
       const { key, why } = reportedWorkspaceKey(targetOf(entry), { serverId: id, timeoutMs: 60000 });
-      if (key) { entry.workspaceKey = key; writeServers(servers); }
-      else warnings.push(`workspace key unknown: ${why}; oats server check ${id} learns it once the host answers one`);
+      if (!key) warnings.push(`workspace key unknown: ${why}; oats server check ${id} learns it once the host answers one`);
+      else if (learnWorkspaceKey(id, entry, key) === "recorded") entry.workspaceKey = key;
+      else warnings.push(`workspace key not recorded: registration ${id} changed while the host was asked; oats server check ${id} learns it`);
     } catch (e) { warnings.push(`workspace key unknown: ${e.message}; oats server check ${id} learns it once the host answers`); }
     if (JSON_MODE) { jsonOk({ id, ...entry, workspaceKey: entry.workspaceKey ?? null, file: SERVERS_FILE(), ...(warnings.length ? { warnings } : {}) }); return; }
     console.log(`Registered server ${id} → ssh ${entry.sshHost}, workspace ${entry.workspace}${entry.workspaceKey ? ` (workspace ${entry.workspaceKey})` : ""} (${shortPath(SERVERS_FILE())}). Verify it with \`oats server check ${id}\`.`);
@@ -3303,10 +3308,13 @@ function serverCmd() {
     return;
   }
   if (sub === "remove") {
-    if (!servers[id]) bail("E_SERVER_UNKNOWN", `no server registered as ${id}`);
+    try {
+      updateServers((current) => {
+        if (!current[id]) throw Object.assign(new Error(`no server registered as ${id}`), { code: "E_SERVER_UNKNOWN" });
+        delete current[id];
+      });
+    } catch (e) { bail(e.code || "E_SERVERS_UNREADABLE", e.message); }
     const snaps = listSnapshots(id);
-    delete servers[id];
-    writeServers(servers);
     if (JSON_MODE) { jsonOk({ removed: id, remoteInstancesStillTracked: snaps.map((s) => s.instance) }); return; }
     console.log(`Removed server ${id}${snaps.length ? ` — ${snaps.length} remote instance(s) spawned from it keep their snapshots and can still be retired with --server ${id}` : ""}`);
     return;
@@ -3320,8 +3328,8 @@ function serverCmd() {
     const agents = status.envelope.ok ? (status.envelope.result.agents || []).length : undefined;
     // The workspace key: a contradiction is refused (never rewritten), an absent one backfilled.
     const { key: reported } = workspaceKeyOfStatus(status.envelope);
-    if (reported && server.workspaceKey && reported !== server.workspaceKey) { const e = workspaceMismatch(id, server, reported); bail(e.code, e.message, e.details); }
-    if (reported && !server.workspaceKey) { servers[id] = { ...servers[id], workspaceKey: reported }; writeServers(servers); }
+    const learned = reported ? learnWorkspaceKey(id, server, reported) : null;
+    if (learned?.mismatch) { const e = workspaceMismatch(id, { ...server, workspaceKey: learned.mismatch }, reported); bail(e.code, e.message, e.details); }
     const workspaceKey = reported ?? server.workspaceKey ?? null;
     // Whether git on the host reads the workspace remote: the host's own read-only onboard check
     // (feature server-connect); null when the host cannot say.
@@ -3364,9 +3372,10 @@ function serverConnectCmd(bail) {
     if (!JSON_MODE && e.details?.steps) printConnectSteps(id, sshHost, e.details.steps);
     bail(e.code || "E_CONNECT", e.message, e.details);
   }
-  if (JSON_MODE) { jsonOk(res); return; }
+  const { registeredAs, ...result } = res;
+  if (JSON_MODE) { jsonOk(result); return; }
   printConnectSteps(id, sshHost, res.steps);
-  if (res.ready) console.log(`\n${id} is ready: oats spawn <soul> --server ${id}`);
+  if (res.ready) console.log(`\n${registeredAs} is ready: oats spawn <soul> --server ${registeredAs}`);
   else { console.log(`\nnot ready yet; for a human, then re-run this command:`); for (const h of res.human) console.log(`  - ${h.split("\n").join("\n    ")}`); }
 }
 function printConnectSteps(id, sshHost, steps) {

@@ -34,7 +34,12 @@ To put a workspace on a machine that has no deployment yet, use
   is ignored, never written or printed.
 - `--label` sets a display name. `--replace` overwrites an existing id.
 - Registrations live in `~/.oats/servers.json` on this machine, never in a
-  repository.
+  repository. Every change to the file (add, remove, a learned workspace key,
+  connect) is a short read-modify-write of the file as it is then, under the
+  lock directory `~/.oats/servers.lock`, so concurrent commands never lose each
+  other's registrations. A lock still held after 5 s, or left by a process
+  that died, is refused with `E_SERVERS_BUSY`, naming the directory to remove
+  once no oats process is changing the registry.
 
 **Which workspace a server serves.** A registration records `workspaceKey`:
 the canonical key of the workspace its host deployment realizes, as the
@@ -46,6 +51,10 @@ never typed:
   0.38) is registered without it, with a warning.
 - `server check` records it when the registration has none, and `server
   connect` writes it.
+- A key is recorded only on the registration that was asked: if the
+  registration is removed or pointed elsewhere while the host is being asked,
+  the answer is dropped (`server add` warns), never written onto the new
+  entry or used to bring a removed one back.
 - A host reporting a different key than the recorded one is
   `E_SERVER_WORKSPACE_MISMATCH` (`details: {recorded, reported}`) and the
   registration is not rewritten. If the host now serves another workspace,
@@ -86,8 +95,8 @@ The steps, in order:
 | `oats` | `oats version --json` there is this kernel's version or newer | with `--install-oats`: runs `npm install -g @awebai/oats@<this version>` there (`done`); without it, or with no `npm` on the host's PATH: `needs-human` with the command to run |
 | `git` | the host's Git reads the workspace remote | `needs-human` with the remedy (and the [keychain hint](#git-on-a-macos-host)) |
 | `deployment` | `--dir` holds a deployment of this workspace | an absent or empty directory is onboarded there (`done`); a deployment of another workspace is `failed` `E_SERVER_WORKSPACE_MISMATCH`; a non-empty directory without `oats-local.yaml` is `failed` `E_DIR_NOT_EMPTY` and nothing is written into it |
-| `register` | the registration exists, with its `workspaceKey` | written (`done`); an id registered for another target is `failed` `E_SERVER_EXISTS` unless `--replace`; the same host and directory under another id is reported (`ok`, naming that id) and not registered twice |
-| `readiness` | each soul of the host deployment (disabled souls skipped) passes `oats readiness` there | each failing or unknown required item becomes a `needs-human` line, once for all the souls that share it; souls not reached within 60 s become one line naming the command to check them |
+| `register` | the registration exists, with its `workspaceKey` | written (`done`); an id registered for another target is `failed` `E_SERVER_EXISTS` unless `--replace` (checked before anything else, so a requested id never reports ready while it routes elsewhere); a new id whose host and directory are already registered under another id is reported (`ok`, naming that id; the text result then names that id to spawn with) and not registered twice |
+| `readiness` | each soul of the host deployment (disabled souls skipped) passes `oats readiness` there | each failing or unknown required item becomes a `needs-human` line, once for all the souls that share it; the listing and the checks share one 60 s budget, and souls it does not reach (a check it cuts off included) become one line naming the command to check them; a broken link still fails the run (`E_SSH`) |
 
 A step is `ok` (already so), `done` (this run did it), `needs-human` (its
 `remedy` says what to run where; later steps are `skipped`, waiting for it)
