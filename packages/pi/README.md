@@ -10,6 +10,14 @@ from the same release tag). This bridge registers no operational tools. It only:
   acquisition funnel);
 - contributes the instance-local `.agents/skills` set inside a spawned
   instance;
+- holds an instance's opening task (`@TASK.md`) on pi's own path until no
+  turn another extension started is active, so pi runs it exactly once,
+  as its input processing made it, instead of refusing it. It never sends,
+  re-sends or alters a message. The exception: an extension loaded behind
+  the bridge that starts a turn (or awaits I/O while one starts) inside its
+  own input or before_agent_start handling of the opening prompt can still
+  make pi refuse it, because pi's interactive mode sends the initial
+  message with no streamingBehavior. @awebai/pi has no such handler;
 - journals compaction summaries and sends resume nudges when the active
   knowledge capability created `STATE.md`/`log.md`. Knowledge ownership,
   read/capture instructions, judgment and delivery remain capability-owned.
