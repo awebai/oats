@@ -10,8 +10,8 @@ import { runInNewContext } from "node:vm";
 import { JSDOM } from "jsdom";
 import { createSelectionOwnership, wirePaneSelection } from "../renderer/selection-ownership.mjs";
 import { createIntentGate } from "../renderer/open-intent.mjs";
-import { createTerminalTab, terminalOptions } from "../renderer/terminal-tab.mjs";
-import { createTabChrome, tabKeyAction, focusAfterLastTab } from "../renderer/tab-a11y.mjs";
+import { createTerminalTab, terminalOptions, fitTerminal, createGlyphRenderer } from "../renderer/terminal-tab.mjs";
+import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "../renderer/tab-a11y.mjs";
 import { reserveKey, whenKeyFree } from "../renderer/tab-keys.mjs";
 import { createContextPanel } from "../renderer/context-panel.mjs";
 import { createInstanceGitPanel } from "../renderer/instance-git.mjs";
@@ -27,6 +27,7 @@ import { instanceActionTarget, sameInstanceActionTarget } from '../renderer/inst
 import * as layout from "../renderer/split-layout.mjs";
 import * as workspaceTabs from "../renderer/workspace-tabs.mjs";
 import { canAddressRemote, rowReason } from "../renderer/remote-address.mjs";
+import { revealInStrip } from "../renderer/reveal-in-scrollport.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const tick = () => new Promise(setImmediate);
@@ -40,7 +41,7 @@ const instance = name => ({ instance: name, running: true, home: `/synthetic/${n
 
 function shell(t, shellSource = source) {
   const dom = new JSDOM(`<div id="app"><aside id="context-panel"></aside><span id="ws-context"></span><div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div>
-    <div id="tab-actions"><button id="split-right"></button><button id="split-down"></button><button id="split-close"></button><button id="panel-toggle"></button></div>
+    <div id="tab-actions"><button id="split-right"></button><button id="split-down"></button></div>
     </div></div><div id="tabhost"></div><aside id="roster"><input class="ctx-filter"></aside>
     <nav id="nav"><button class="nav-item active">Overview</button></nav><button id="workspace">Workspace</button></div>`);
   t.after(() => dom.window.close());
@@ -64,10 +65,10 @@ function shell(t, shellSource = source) {
     focusRoster() { c.tabOpenIntents.invalidate(); c.contextRosterEl.querySelector("input").focus(); },
     api(path) { const gate = { ...deferred(), path }; requests.push(gate); return gate.promise; },
     updateSidebarControls() {}, // chrome is exercised by shell-design.test.mjs
-    resolveTerminalOpen, terminalKey, reserveKey, whenKeyFree, wirePaneSelection, createTabChrome, tabKeyAction, focusAfterLastTab,
+    resolveTerminalOpen, terminalKey, reserveKey, whenKeyFree, wirePaneSelection, createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart,
     splitControlsState, instanceSplitPlan, instanceSplitIdentity, sameInstanceActionTarget, ...layout, ...workspaceTabs,
     projectSplitDom(els, ...args) { projections.push(els); return projectSplitDom(els, ...args); },
-    terminalOptions, terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}),
+    terminalOptions, fitTerminal, createGlyphRenderer, terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}),
     onThemeChange: () => () => {}, onTerminalTypographyChange: () => () => {}, requestAnimationFrame: fn => fn(),
     FitAddon: { FitAddon: class { fit() {} } },
     createTerminalTab: options => createTerminalTab({ ...options, observe: () => () => {} }),
@@ -87,9 +88,11 @@ function shell(t, shellSource = source) {
     registerAction: action => actions.set(action.id, action.run),
   };
   c.tabOpenIntents = createSelectionOwnership(c);
+  // Spec F: the shipped active-tab reveal runs too (jsdom has no layout or ResizeObserver).
+  c.revealInStrip = revealInStrip; c.tabStripResize = null;
   c.splitOpenState = () => ({ split: c.split, activeId: c.activeTab, tabs: c.tabs, workspace: c.workspace, visible: c.tabLayerVisible });
   const names = ["setSidebarMode", "updateContextTabs", "showTabLayer", "showStage", "renderSplit", "selectEmptyGroup", "splitPane", "closeSplit", "restoreTerminalGroups",
-    "updateSplitControls", "onTabKeydown", "addTab", "selectTab", "activateTab", "closeTab", "showTerminalContext",
+    "updateSplitControls", "onTabKeydown", "addTab", "selectTab", "activateTab", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips", "showTerminalContext",
     "openTerminalTabFlow", "openTerminalTabInner", "restoreWorkspaceTabs", "focusActiveTerminal",
     "syncContextPanel", "refreshPanelInstance"];
   const functions = names.map(name => {
@@ -210,7 +213,6 @@ test("multiple empty cells are independently focusable, resizable and controllab
   assert.equal(s.c.tabActionsEl.hidden, false);
   assert.equal(s.document.getElementById("split-right").disabled, true, "fill existing groups before adding more");
   assert.equal(s.document.getElementById("split-down").disabled, false);
-  assert.equal(s.document.getElementById("split-close").disabled, false);
   s.actions.get("split.horizontal")();
   assert.equal(s.c.split.orientation, "col"); assert.equal(s.c.split.groups[0].weight, 1.1);
   assert.deepEqual(s.cells(), cells); assert.deepEqual(cells.map(cell => cell.querySelector(".split-empty")), empties);

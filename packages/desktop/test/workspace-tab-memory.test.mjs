@@ -13,6 +13,7 @@ import { projectSplitDom } from "../renderer/split-dom.mjs";
 import {
   requestSplit, openTabInFocusedGroup, focusTab, groupOfTab, isSplitMember, resizeSplitGroups,
 } from "../renderer/split-layout.mjs";
+import { revealInStrip } from "../renderer/reveal-in-scrollport.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 function shellFunction(name) {
@@ -52,8 +53,10 @@ function shell(t) {
     isSplitMember, groupOfTab, focusTab, openTabInFocusedGroup,
   };
   context.tabOpenIntents = createSelectionOwnership(context);
+  // Spec F: the shipped active-tab reveal runs too (jsdom has no layout or ResizeObserver).
+  context.revealInStrip = revealInStrip; context.tabStripResize = null;
   const api = runInNewContext([
-    "setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "selectEmptyGroup", "activateTab", "restoreWorkspaceTabs",
+    "setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "selectEmptyGroup", "activateTab", "tabStrips", "revealActiveTabs", "observeTabStrips", "restoreWorkspaceTabs",
   ].map(shellFunction).join("\n") + "\n({ activateTab, restoreWorkspaceTabs, renderSplit });", context);
   return { ...api, context, document, tabs, switchTo(workspace) {
     context.workspace = workspace; context.generation++;

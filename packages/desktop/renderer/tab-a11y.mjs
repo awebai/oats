@@ -2,11 +2,31 @@
 // roving-navigation behavior are covered without booting the whole shell.
 import { iconElement } from "./shell-icons.mjs";
 import { getBinding, formatChord } from "./keybindings.mjs";
+import { revealInStrip } from "./reveal-in-scrollport.mjs";
 /** Decorative icon by tab kind (the accessible name is the bare title). */
 const KIND_ICONS = Object.freeze({ file: "file", brain: "brain" });
+/** How many characters a shrunk tab keeps from the end of its name. */
+export const TAB_TAIL_CHARS = 8;
+/** Where a terminal tab's name splits into a head that ellipsizes and a tail
+ * that always shows (spec F return: shrunk tabs stay distinguishable). Names
+ * share long prefixes (the soul), so end truncation would leave every shrunk
+ * tab reading "oats-…": the tail keeps the last TAB_TAIL_CHARS characters, or
+ * the part after the soul's own prefix when that is shorter, without a leading
+ * separator. null when there is nothing worth splitting. */
+export function tabNameTailStart(name, soul = "") {
+  name = String(name ?? ""); soul = typeof soul === "string" ? soul : "";
+  let start = Math.max(0, name.length - TAB_TAIL_CHARS);
+  if (soul && name.startsWith(`${soul}-`)) start = Math.max(start, soul.length + 1);
+  while (start < name.length && /[-_.\s]/.test(name[start])) start++;
+  return start > 0 && start < name.length ? start : null;
+}
+
 /** decor (all decorative; the accessible name stays the bare title):
  *  { kind } or { icon } an app icon for artifact tabs; { dot, detail } a
- *  live-state dot and the instance branch for terminal tabs (Redesign v3). */
+ *  live-state dot and the instance branch for terminal tabs (Redesign v3);
+ *  { tailAt, tailEnd } splits the title: a head that ellipsizes, the tail
+ *  [tailAt, tailEnd) that never shrinks (tabNameTailStart), then any rest of
+ *  the title (a remote tab's " · host"), which gives way before the head. */
 export function createTabChrome(document, id, title, isMac = false, decor = {}) {
   const tabEl = document.createElement("div");
   tabEl.className = "tab";
@@ -24,7 +44,19 @@ export function createTabChrome(document, id, title, isMac = false, decor = {}) 
   const icon = decor?.icon ?? KIND_ICONS[decor?.kind] ?? null;
   if (dot) { const mark = document.createElement("span"); mark.className = `tab-dot ${dot === "on" ? "on" : "off"}`; mark.setAttribute("aria-hidden", "true"); triggerEl.append(mark); }
   else if (icon) { const mark = document.createElement("span"); mark.className = "tab-icon"; mark.setAttribute("aria-hidden", "true"); mark.append(iconElement(document, icon, { size: 14 })); triggerEl.append(mark); }
-  const label = document.createElement("span"); label.className = "tab-label"; label.textContent = title; triggerEl.append(label);
+  const label = document.createElement("span"); label.className = "tab-label"; triggerEl.append(label);
+  const tailAt = decor?.tailAt;
+  const tailEnd = Number.isInteger(decor?.tailEnd) ? Math.min(decor.tailEnd, title.length) : title.length;
+  if (Number.isInteger(tailAt) && tailAt > 0 && tailAt < tailEnd) {
+    // The head ellipsizes, the tail keeps its width: "oats-…palette". Only the
+    // name's own tail is protected; whatever follows it (" · host") is metadata
+    // that shrinks first. The trigger's aria-label is the whole title, so the
+    // split is never read.
+    const span = (className, text) => { const el = document.createElement("span"); el.className = className; el.textContent = text; return el; };
+    label.classList.add("split");
+    label.append(span("tab-head", title.slice(0, tailAt)), span("tab-tail", title.slice(tailAt, tailEnd)));
+    if (tailEnd < title.length) label.append(span("tab-rest", title.slice(tailEnd)));
+  } else label.textContent = title;
   if (typeof detail === "string" && detail) {
     const extra = document.createElement("span"); extra.className = "tab-detail"; extra.setAttribute("aria-hidden", "true");
     extra.textContent = detail; triggerEl.append(extra);
@@ -42,11 +74,11 @@ export function createTabChrome(document, id, title, isMac = false, decor = {}) 
   closeEl.title = `Close ${title} (${chord ? `Delete or ${formatChord(chord, isMac)}` : "Delete"})`;
   tabEl.append(triggerEl, closeEl);
   // Arrow/Home/End navigation focuses the trigger; Tab can focus Close. Reveal
-  // the focused control in either scrollable strip without focusing content or
-  // scrolling on passive activation/workspace restoration. Reveal the control,
-  // not the wrapper, which may itself be wider than a very narrow group.
+  // the focused control in its strip (flat or group: the tab's parent at focus
+  // time) without focusing content; only the strip scrolls, never an ancestor.
+  // Reveal the control, not the wrapper, which may be wider than a narrow group.
   for (const control of [triggerEl, closeEl]) {
-    control.addEventListener("focus", () => control.scrollIntoView?.({ block: "nearest", inline: "nearest" }));
+    control.addEventListener("focus", () => revealInStrip(tabEl.parentElement, control));
   }
 
   const paneEl = document.createElement("div");

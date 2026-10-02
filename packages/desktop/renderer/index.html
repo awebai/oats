@@ -18,6 +18,7 @@
   <link rel="stylesheet" href="loading.css" />
   <script src="../node_modules/@xterm/xterm/lib/xterm.js"></script>
   <script src="../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+  <script src="../node_modules/@xterm/addon-webgl/lib/addon-webgl.js"></script>
 </head>
 <body>
   <div id="app">
@@ -59,7 +60,7 @@
           <button id="sidebar-shortcuts" class="nav-item icon-button" type="button" data-action="app.shortcuts"
                   title="Edit keyboard shortcuts" aria-label="Edit keyboard shortcuts"><span data-shell-icon="shortcuts" aria-hidden="true"></span></button>
           <button id="sidebar-settings" class="nav-item icon-button" type="button" data-action="app.connections"
-                  title="Settings: Connections" aria-label="Settings: Connections"><span data-shell-icon="settings" aria-hidden="true"></span></button>
+                  title="Settings" aria-label="Settings"><span data-shell-icon="settings" aria-hidden="true"></span></button>
           <button id="sidebar-palette" class="nav-item icon-button" type="button" data-action="app.palette"
                   title="Open the command palette" aria-label="Open the command palette"><span data-shell-icon="palette" aria-hidden="true"></span></button>
         </div>
@@ -77,11 +78,6 @@
                   title="Split terminal right (side by side)" aria-label="Split terminal right"><span data-shell-icon="splitRight" aria-hidden="true"></span></button>
           <button id="split-down" type="button" data-action="split.horizontal"
                   title="Split terminal down (stacked)" aria-label="Split terminal down"><span data-shell-icon="splitDown" aria-hidden="true"></span></button>
-          <button id="split-close" type="button" data-action="split.close"
-                  title="Close the split (back to single pane)" aria-label="Close the split"><span data-shell-icon="splitClose" aria-hidden="true"></span></button>
-          <span class="tab-actions-sep" aria-hidden="true"></span>
-          <button id="panel-toggle" type="button" title="Show instance panel" aria-label="Show instance panel"
-                  aria-controls="context-panel" aria-pressed="false" disabled><span data-shell-icon="panelRight" aria-hidden="true"></span></button>
           </div>
         </div>
       </div>

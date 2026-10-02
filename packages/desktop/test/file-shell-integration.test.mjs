@@ -14,8 +14,8 @@ import { createQuickOpen } from "../renderer/quick-open.mjs";
 import { createSelectionOwnership, wirePaneSelection } from "../renderer/selection-ownership.mjs";
 import { createIntentGate, prepareOwnedOpen } from "../renderer/open-intent.mjs";
 import { createViewLifecycle } from "../renderer/view-lifecycle.mjs";
-import { createTerminalTab, terminalOptions } from "../renderer/terminal-tab.mjs";
-import { createTabChrome, tabKeyAction, focusAfterLastTab } from "../renderer/tab-a11y.mjs";
+import { createTerminalTab, terminalOptions, fitTerminal, createGlyphRenderer } from "../renderer/terminal-tab.mjs";
+import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "../renderer/tab-a11y.mjs";
 import { reserveKey, whenKeyFree } from "../renderer/tab-keys.mjs";
 import { createWorkspaceTabMemory } from "../renderer/workspace-tab-memory.mjs";
 import { splitControlsState } from "../renderer/split-controls.mjs";
@@ -32,6 +32,7 @@ import * as tree from "../renderer/instance-tree.mjs";
 import * as layout from "../renderer/split-layout.mjs";
 import * as workspaceTabs from "../renderer/workspace-tabs.mjs";
 import * as markdown from "../renderer/views/markdown.mjs";
+import { revealInStrip } from "../renderer/reveal-in-scrollport.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const keySource = readFileSync(new URL("../renderer/keybindings.mjs", import.meta.url), "utf8");
@@ -72,7 +73,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
   </body>`, { url: "http://127.0.0.1/" });
   const document = dom.window.document, navigator = { platform };
   // A fresh copy of the actual engine gets only this JSDOM's localStorage.
-  const keys = runInNewContext(`${keySource.replace(/^export /gm, "")}\n({ registerAction, runAction, getBinding, setBinding, resetBinding, listActions, matchEvent, handleKeydown, formatChord });`,
+  const keys = runInNewContext(`${keySource.replace(/^export /gm, "")}\n({ registerAction, runAction, getBinding, setBinding, resetBinding, listActions, matchEvent, handleKeydown, formatChord, pickerCycleDirection });`,
     { navigator, localStorage: dom.window.localStorage });
   const requests = [], loads = [], chooserInputs = [], tickets = [], opens = [], attachments = [], terms = [], detached = [], notices = [], listeners = [];
   dom.window.HTMLInputElement.prototype.click = function () {
@@ -93,7 +94,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     updateActiveContexts: (on = c.tabLayerVisible) => { c.tabLayerVisible = on; },
     // Inert presenter: this fixture owns file/chooser focus, not panel layout.
     syncContextPanel() {}, contextPanel: { setFocusMode() {} },
-    updateSplitControls() {}, refreshContextRoster() {}, setNavActive() {}, setSidebarHidden() {}, stageSidebarMode: () => "souls",
+    updateSplitControls() {}, revealInStrip, tabStripResize: null /* spec F: the shipped active-tab reveal runs too */, refreshContextRoster() {}, setNavActive() {}, setSidebarHidden() {}, stageSidebarMode: () => "souls",
     workspaceLabel: { reset() {} }, NAV: [], ctx: {},
     alert: message => notices.push(message), onWorkspaceChange: listener => listeners.push(listener),
     api(path) { const request = { ...deferred(), path }; requests.push(request); return request.promise; },
@@ -114,9 +115,9 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     },
     createQuickOpen: options => createQuickOpen({ ...options, doc: document }),
     createSelectionOwnership, wirePaneSelection, prepareOwnedOpen, createViewLifecycle,
-    createTabChrome, tabKeyAction, focusAfterLastTab, reserveKey, whenKeyFree, projectSplitDom, splitControlsState,
+    createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart, reserveKey, whenKeyFree, projectSplitDom, splitControlsState,
     ...tree, ...layout, ...workspaceTabs, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge, rosterKeyAction, moveTarget,
-    terminalOptions, terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}),
+    terminalOptions, fitTerminal, createGlyphRenderer, terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}),
     onThemeChange: () => () => {}, onTerminalTypographyChange: () => () => {}, requestAnimationFrame: cb => cb(),
     FitAddon: { FitAddon: class { fit() {} } },
     createTerminalTab: options => createTerminalTab({ ...options, observe: () => () => {} }),
@@ -138,7 +139,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
   c.splitOpenState = () => ({ split: c.split, activeId: c.activeTab, tabs: c.tabs, workspace: c.workspace, visible: c.tabLayerVisible });
   c.ownsInstanceTarget = target => target?.workspace === c.workspace && c.contextInstances.filter(row => sameInstanceActionTarget(target, row, c.workspace)).length === 1;
   const names = ["applyChordTitles", "setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "selectEmptyGroup", "splitPane", "closeSplit", "restoreTerminalGroups", "onTabKeydown",
-    "addTab", "selectTab", "activateTab", "closeTab", "openViewTab", "restoreWorkspaceTabs", "showTerminalContext",
+    "addTab", "selectTab", "activateTab", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips", "openViewTab", "restoreWorkspaceTabs", "showTerminalContext",
     "initContextRoster", "renderContextRoster", "onRosterRowKey", "setRovingRow", "focusRoster", "openTerminalTabFlow", "openTerminalTabInner"];
   const functions = names.map(name => fn(shellSource, name)).join("\n")
     .replace('import(`./views/${name}.mjs`)', "loadView(name)");

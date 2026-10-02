@@ -8,6 +8,7 @@ import { renderCapabilities, renderCapabilitySections, capabilitySections, rende
 import { renderSetup, teamsBox } from "../renderer/workspace-setup.mjs";
 import { discoveryCSS } from "../renderer/workspace-discovery.mjs";
 import { createConnections, connectionsCSS } from '../renderer/connections.mjs';
+import { createTerminalSettings, settingsTerminalCSS } from '../renderer/settings-terminal.mjs';
 import { createForgePrPanel } from '../renderer/forge-pr.mjs';
 import { instanceGitCSS } from '../renderer/instance-git.mjs';
 import { createContextPanel, contextPanelCSS } from '../renderer/context-panel.mjs';
@@ -574,13 +575,13 @@ for (const [name] of palettes) test(`${name}: the "sign in needed" provider stat
 for (const [name] of palettes) test(`${name}: actual Connections and reported PR checks use computed AA surfaces`, async t => {
   const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="instance-git" style="background:var(--surface)"><section id="pr" class="git-github"></section></main></body></html>`);
   const doc = dom.window.document;
-  for (const source of [css, readFileSync(new URL('shell.css', renderer), 'utf8'), connectionsCSS, instanceGitCSS]) {
+  for (const source of [css, readFileSync(new URL('shell.css', renderer), 'utf8'), connectionsCSS, settingsTerminalCSS, instanceGitCSS]) {
     const style = doc.createElement('style'); style.textContent = source; doc.head.append(style);
   }
   const key = 'e'.repeat(64), ref = 'f'.repeat(64);
   const connections = createConnections({ doc, desk: {}, terminalFactory: assert.fail, request: async () => ({
     forgeApi: 1, status: 'connected', host: 'github.com', login: 'operator', hostRef: ref, connectionRef: ref, hosts: [{ host: 'github.com', hostRef: ref }],
-  }) });
+  }), sections: [() => createTerminalSettings({ doc, store: { read: () => 16, set() {}, reset() {}, subscribe: () => () => {} } })] });
   connections.open(); await new Promise(resolve => setImmediate(resolve));
   const raw = forgePr(); raw.statusCheckRollup = [
     { __typename: 'CheckRun', name: 'pass', status: 'COMPLETED', conclusion: 'SUCCESS' },
@@ -604,6 +605,9 @@ for (const [name] of palettes) test(`${name}: actual Connections and reported PR
   for (const [selector, painted, fg, bg] of [
     ['.forge-settings h2', '.forge-settings', 'fg', 'surface'], ['.forge-card .forge-hint', '.forge-card', 'muted', 'surface-2'],
     ['.forge-settings button', '.forge-settings button', 'fg', 'surface'], ['.forge-settings select', '.forge-settings select', 'fg', 'surface'],
+    // Settings → Terminal: the size field, the stepper and its hint, on the dialog's own pairs.
+    ['.term-size input', '.term-size input', 'fg', 'surface'], ['.term-size button', '.term-size button', 'fg', 'surface'],
+    ['.term-size label', '.forge-card', 'fg', 'surface-2'], ['#settings-terminal-hint', '.forge-card', 'muted', 'surface-2'],
     // W6 Pull request (design; replaces the .git-card pairs): marks, names and meta on the panel surface, and Open on GitHub.
     ['.forge-pass .forge-mark', 'main', 'ok', 'surface'], ['.forge-fail .forge-mark', 'main', 'danger', 'surface'],
     ['.forge-pending .forge-mark', 'main', 'warn', 'surface'], ['.forge-neutral .forge-mark', 'main', 'muted', 'surface'],

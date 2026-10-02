@@ -197,14 +197,14 @@ test("SVG split controls retain their names and context-gated registry wiring", 
   const start = source.indexOf('const tabActionsEl = document.getElementById("tab-actions");');
   const end = source.indexOf("function updateSplitControls()", start);
   runInNewContext(source.slice(start, end), s.c);
-  const buttons = ["split-right", "split-down", "split-close"].map(id => s.document.getElementById(id));
+  const buttons = ["split-right", "split-down"].map(id => s.document.getElementById(id));
   setActiveContexts(new Set(["stage:spawn"]));
   buttons.forEach(b => b.click()); assert.deepEqual(s.events, [], "icons cannot bypass context gating");
   setActiveContexts(new Set(["tabs"]));
   buttons.forEach(b => {
     assert.ok(b.getAttribute("aria-label")); assert.ok(b.title); assert.ok(b.querySelector("svg.shell-icon")); b.click();
   });
-  assert.deepEqual(s.events, [["split", "row"], ["split", "col"], ["split", "close"]]);
+  assert.deepEqual(s.events, [["split", "row"], ["split", "col"]]);
 });
 
 test("sidebar shortcuts keep Ctrl+B/F/N/P with the pty and dispatch Cmd+F/N on macOS", t => {
@@ -352,7 +352,7 @@ test('White, Solarized and Dark have explicit registry/palette choices without n
 
 test('shell icons are the pinned Lucide set: 24-unit geometry, stroke 2, decorative, brand excluded', t => {
   const dom = domFixture(t), document = dom.window.document;
-  for (const name of ['splitRight', 'splitDown', 'splitClose', 'overview', 'workspace', 'schedules', 'close', 'branch']) {
+  for (const name of ['splitRight', 'splitDown', 'overview', 'workspace', 'schedules', 'close', 'branch']) {
     const span = document.createElement('span'); span.innerHTML = shellIcon(name); const svg = span.firstElementChild;
     assert.equal(svg.getAttribute('viewBox'), '0 0 24 24', name);
     assert.equal(svg.getAttribute('stroke-width'), '2', name);
@@ -363,49 +363,39 @@ test('shell icons are the pinned Lucide set: 24-unit geometry, stroke 2, decorat
   assert.throws(() => shellIcon('oats'), TypeError, 'the brand is artwork, not a shell icon');
 });
 
-test('the bottom summary bar is gone; the tab bar\'s panel-right toggle dispatches panel.toggle and focus mode stays on the registry', t => {
+test('the bottom summary bar is gone; the tab bar keeps only the two split buttons and panel.toggle stays on the registry', t => {
   const s = shell(t), q = id => s.document.getElementById(id), panel = s.contextPanel;
   assert.equal(q('context-panel').parentElement.id, 'workbench');
   // v4.1: no status bar under the editor groups (no Details, no Focus mode, no facts strip).
   for (const id of ['context-tools', 'context-status', 'focus-mode-toggle']) assert.equal(q(id), null, id);
   assert.equal(s.document.querySelector('#main > footer'), null);
   assert.deepEqual([...q('main').children].map(el => el.id), ['tabstrip', 'stagehost', 'tabhost']);
-  // The toggle sits in the tab bar's action cluster, after the split controls and a decorative hairline.
-  const toggle = q('panel-toggle');
-  assert.equal(toggle.parentElement.id, 'tab-actions');
-  assert.deepEqual([...q('tab-actions').children].map(el => el.id || el.className), ['split-right', 'split-down', 'split-close', 'tab-actions-sep', 'panel-toggle']);
-  assert.equal(s.document.querySelector('.tab-actions-sep').getAttribute('aria-hidden'), 'true');
-  assert.ok(toggle.querySelector('svg'), 'Lucide panel-right icon'); assert.equal(toggle.textContent.trim(), '');
-  assert.equal(toggle.hasAttribute('data-action'), false, 'the panel owns its tooltip; no stale chord title');
-  assert.equal(toggle.disabled, true); assert.equal(toggle.getAttribute('aria-pressed'), 'false');
-  assert.equal(toggle.getAttribute('aria-label'), 'Instance panel');
+  // Spec F: after the tabs, only split right and split down. Closing the split and the instance panel live on
+  // their chords and the palette; the panel keeps its own collapse control.
+  assert.deepEqual([...q('tab-actions').children].map(el => el.id || el.className), ['split-right', 'split-down']);
+  for (const id of ['panel-toggle', 'split-close']) assert.equal(q(id), null, id);
+  assert.equal(s.document.querySelector('.tab-actions-sep'), null);
+  assert.doesNotMatch(source, /panel-toggle|split-close/, 'no wiring is left for the removed buttons');
   panel.setContext({ workspace: 'A', instance: { instance: 'selected', home: '/A/selected' }, key: 'exact:A:selected' });
-  assert.equal(toggle.disabled, false); assert.equal(toggle.getAttribute('aria-pressed'), 'true');
-  assert.equal(toggle.getAttribute('aria-label'), 'Instance panel', 'a constant name; aria-pressed carries the state');
-  assert.equal(toggle.title, 'Instance panel (Ctrl+Alt+B)', 'the tooltip names the chord');
-  // (the registry slice binds the shipped click listener)
-  const before = s.c.tabOpenIntents.begin(); toggle.click();
-  assert.equal(before(), false, 'the toggle supersedes pending opens');
+  const before = s.c.tabOpenIntents.begin(); runAction('panel.toggle');
+  assert.equal(before(), false, 'panel.toggle supersedes pending opens');
   assert.equal(q('context-panel').classList.contains('is-collapsed'), true);
-  assert.equal(toggle.getAttribute('aria-pressed'), 'false'); assert.equal(toggle.getAttribute('aria-label'), 'Instance panel');
-  toggle.click();
-  assert.equal(q('context-panel').classList.contains('is-collapsed'), false); assert.equal(toggle.getAttribute('aria-pressed'), 'true');
+  runAction('panel.toggle');
+  assert.equal(q('context-panel').classList.contains('is-collapsed'), false);
   // Focus mode: registry action (and palette, below) only. Focus leaving the hidden sidebar lands on the active tab.
   const trigger = s.document.createElement('button'); q('tabbar').append(trigger); s.c.activeTrigger = trigger;
   q('sidebar-toggle').focus();
   const pending = s.c.tabOpenIntents.begin(); runAction('app.focusMode');
   assert.equal(pending(), false); assert.equal(panel.isFocusMode(), true);
   assert.equal(q('context-panel').hidden, true);
-  assert.equal(toggle.disabled, false, 'the toggle is the visible exit'); assert.equal(toggle.getAttribute('aria-pressed'), 'false');
   assert.equal(s.document.activeElement, trigger, 'hidden sidebar focus lands on the active tab');
   assert.equal(s.document.defaultView.getComputedStyle(q('sidebar')).display, 'none');
   assert.equal(q('sidebar-toggle').getAttribute('aria-expanded'), 'false');
   runAction('app.focusMode');
   assert.equal(panel.isFocusMode(), false); assert.equal(q('context-panel').hidden, false);
-  assert.equal(toggle.getAttribute('aria-pressed'), 'true');
 });
 
-test('shipped panel toggle and restore edge preserve a visible exit from focus mode', t => {
+test('the restore edge preserves a visible exit from focus mode; panel.toggle leaves it and shows the panel', t => {
   const s = shell(t), q = id => s.document.getElementById(id), panel = s.contextPanel;
   const shown = el => { for (let node = el; node; node = node.parentElement) {
     if (node.hidden || node.inert || s.document.defaultView.getComputedStyle(node).display === 'none') return false; } return true; };
@@ -415,18 +405,17 @@ test('shipped panel toggle and restore edge preserve a visible exit from focus m
   q('tabbar').append(s.document.createElement('span')); q('tab-actions').hidden = false;
   q('sidebar-toggle').focus(); runAction('app.focusMode'); assert.equal(panel.isFocusMode(), true);
   // No active trigger: focus leaving the hidden sidebar lands on a stable visible control, never <body>.
-  assert.equal(s.document.activeElement, q('panel-toggle'), 'no active trigger: the panel toggle takes focus');
-  for (const id of ['panel-toggle', 'sidebar-restore']) assert.ok(shown(q(id)), `${id} and its ancestors stay visible by shipped CSS`);
-  assert.equal(q('panel-toggle').disabled, false); assert.equal(q('panel-toggle').getAttribute('aria-pressed'), 'false');
+  assert.equal(s.document.activeElement, q('sidebar-restore'), 'no active trigger: the restore edge takes focus');
+  assert.ok(shown(q('sidebar-restore')), 'the restore edge and its ancestors stay visible by shipped CSS');
   assert.equal(q('sidebar-restore').getAttribute('aria-expanded'), 'false');
-  // The toggle (click or chord: both run panel.toggle) leaves focus mode AND shows the panel, whatever its collapse preference was.
-  const pending = s.c.tabOpenIntents.begin(); q('panel-toggle').click();
+  // panel.toggle (its chord, the palette) leaves focus mode AND shows the panel, whatever its collapse preference was.
+  const pending = s.c.tabOpenIntents.begin(); runAction('panel.toggle');
   assert.equal(pending(), false); assert.equal(panel.isFocusMode(), false);
   assert.equal(q('context-panel').hidden, false); assert.equal(q('context-panel').classList.contains('is-collapsed'), false);
-  assert.equal(q('panel-toggle').getAttribute('aria-pressed'), 'true'); assert.equal(q('app').classList.contains('focus-mode'), false);
+  assert.equal(q('app').classList.contains('focus-mode'), false);
   assert.equal(q('sidebar-toggle').getAttribute('aria-expanded'), 'true', 'the sidebar is back too');
   // On a stage (no terminal tab, no panel content) the restore edge is the exit.
-  panel.setContext({ workspace: 'A' }); assert.equal(q('panel-toggle').disabled, true); q('tab-actions').hidden = true;
+  panel.setContext({ workspace: 'A' }); q('tab-actions').hidden = true;
   q('sidebar-toggle').focus(); runAction('app.focusMode'); assert.equal(panel.isFocusMode(), true);
   assert.equal(s.document.activeElement, q('sidebar-restore'), 'on a stage focus lands on the restore edge');
   assert.ok(shown(q('sidebar-restore'))); assert.equal(shown(q('sidebar')), false);
@@ -434,15 +423,14 @@ test('shipped panel toggle and restore edge preserve a visible exit from focus m
   assert.equal(panel.isFocusMode(), false); assert.ok(shown(q('sidebar'))); assert.equal(shown(q('sidebar-restore')), false);
 });
 
-test('focus fallback prefers a shown active tab, then a visible panel toggle, sidebar toggle or restore edge; never <body>', t => {
+test('focus fallback prefers a shown active tab, then the sidebar toggle or restore edge; never <body>', t => {
   const s = shell(t), q = id => s.document.getElementById(id);
   const target = runInNewContext(`${fn('stableFocusTarget')}\nstableFocusTarget`, s.c);
   const trigger = s.document.createElement('button'); q('tabbar').append(trigger);
   s.c.activeTrigger = trigger; assert.equal(target(), trigger);
-  trigger.hidden = true; assert.equal(target(), q('sidebar-toggle'), 'hidden tab, disabled panel toggle: the sidebar toggle');
+  trigger.hidden = true; assert.equal(target(), q('sidebar-toggle'), 'hidden tab: the sidebar toggle');
   s.contextPanel.setContext({ workspace: 'A', instance: { instance: 'selected', home: '/A/selected' }, key: 'exact:A:selected' });
-  assert.equal(target(), q('sidebar-toggle'), 'the tab actions are hidden (no group shown): not the panel toggle');
-  q('tab-actions').hidden = false; assert.equal(target(), q('panel-toggle'));
+  q('tab-actions').hidden = false; assert.equal(target(), q('sidebar-toggle'), 'the split buttons are never a fallback');
   s.c.activeTrigger = null; s.contextPanel.setContext({ workspace: 'A' }); s.setSidebarHidden(true);
   assert.equal(target(), q('sidebar-restore'), 'sidebar hidden: the restore edge');
 });

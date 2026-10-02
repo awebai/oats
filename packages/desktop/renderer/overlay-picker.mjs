@@ -11,6 +11,7 @@
 // and the palette's legacy `sc < 0` no-match filter silently dropped exact
 // prefix matches — fixed with this extraction.)
 import { captureFocusReturn } from "./focus-return.mjs";
+import { revealInScrollport } from "./reveal-in-scrollport.mjs";
 import { icon } from "./shell-icons.mjs";
 
 export function subsequenceScore(text, query) {
@@ -50,16 +51,26 @@ export function takePickerFocusReturn(doc) {
  *        it verbatim). A load that resolves after the picker was closed or
  *        reopened must not paint (generation-guarded here).
  * @param {(data: any, query: string) => Array<{label: string, detail?: string,
- *          dot?: boolean|null, run: Function}>} spec.computeRows
+ *          dot?: boolean|null, run?: Function, depth?: number, under?: string,
+ *          group?: {key: string, label: string}, context?: boolean}>} spec.computeRows
  *        query → result rows, already scored/sorted/sliced by the caller.
+ *        Optional tree shape (the palette's instances): consecutive rows sharing
+ *        a group.key sit in one role=group named by group.label; depth indents
+ *        (visual only); `under` is visually hidden text read with the option;
+ *        a `context` row is shown dimmed with aria-disabled="true" and is never
+ *        active, so the arrows, the cycle chord and pointer hover skip it.
  *        Async run callbacks must return their promise to carry the original
  *        cancellation opener across awaits; rejections are logged, not focused.
  *        Callbacks still own their destination's async selection/intent guards.
+ * @param {(e: KeyboardEvent) => (1|-1|0)} [spec.cycleKey] the picker's own
+ *        opening chord while it is open: 1 moves the active row down, -1 up,
+ *        both wrapping and skipping context rows; it never commits (Enter does).
+ *        With it, toggle() on an open picker cycles down instead of closing.
  * @param {Document} [spec.doc]
  * @returns {{ open: Function, close: Function, toggle: Function }} Opening
  *        replaces any other picker in this Document without returning focus.
  */
-export function createOverlayPicker({ placeholder, ariaLabel, loadItems, computeRows, doc = globalThis.document }) {
+export function createOverlayPicker({ placeholder, ariaLabel, loadItems, computeRows, cycleKey = null, doc = globalThis.document }) {
   // IDs belong to the picker, not a render or a data-derived label. Result
   // slots keep their IDs across selection updates and cannot collide with a
   // second picker (including a palette → Quick Open handoff).
@@ -69,6 +80,7 @@ export function createOverlayPicker({ placeholder, ariaLabel, loadItems, compute
   let overlay = null;
   let gen = 0; // load generation — a stale item list must not paint over a newer open
   let hide = null;
+  let cycle = null; // the open lifetime's cycle(direction), for toggle()
 
   function close() { hide?.(true); }
 
@@ -107,6 +119,7 @@ export function createOverlayPicker({ placeholder, ariaLabel, loadItems, compute
       ++gen;
       overlay = null;
       hide = null;
+      cycle = null;
       coordinator.current = null;
       doc.removeEventListener("keydown", modalKeydown, true);
       doc.removeEventListener("focusin", containFocus);
@@ -121,7 +134,12 @@ export function createOverlayPicker({ placeholder, ariaLabel, loadItems, compute
 
     function modalKeydown(e) {
       if (!owns()) return;
-      if (e.key === "Escape") {
+      // Before the keymap engine sees it: the picker's own chord cycles rows
+      // instead of reopening, closing or reaching a terminal.
+      const direction = cycleKey?.(e) || 0;
+      if (direction) {
+        e.preventDefault(); e.stopPropagation(); move(direction, true);
+      } else if (e.key === "Escape") {
         e.preventDefault(); e.stopPropagation(); dismiss(true);
       } else if (e.key === "Tab") {
         // This editable combobox is the modal's only tab stop; options use
@@ -146,8 +164,26 @@ export function createOverlayPicker({ placeholder, ariaLabel, loadItems, compute
     input.focus();
 
     let data = null;
-    let items = [];   // current result rows: { label, detail, dot, run }
+    let items = [];   // current result rows: { label, detail, dot, run, ... }
+    let options = []; // the option element of each row, in row order
     let active = 0;
+    const selectable = (i) => !!items[i] && !items[i].context;
+    /** The next selectable row from `active` in `direction`: wrapping for the
+     * cycle chord, clamped for the arrows; context rows are never landed on. */
+    const step = (direction, wrap) => {
+      for (let n = 1; n <= items.length; n++) {
+        let i = active + direction * n;
+        if (wrap) i = (i + items.length) % items.length;
+        else if (i < 0 || i >= items.length) break;
+        if (selectable(i)) return i;
+      }
+      return active;
+    };
+    function move(direction, wrap = false) {
+      if (!items.length || !selectable(active)) return;
+      active = step(direction, wrap); select();
+    }
+    cycle = (direction) => { if (owns()) move(direction, true); };
 
     const activate = (it) => {
       if (!owns()) return;
@@ -177,18 +213,20 @@ export function createOverlayPicker({ placeholder, ariaLabel, loadItems, compute
     };
     const select = () => {
       input.removeAttribute("aria-activedescendant");
-      [...list.children].forEach((row, i) => {
-        if (row.getAttribute("role") !== "option") return;
-        row.classList.toggle("active", i === active);
-        row.setAttribute("aria-selected", String(i === active));
-        if (i === active) input.setAttribute("aria-activedescendant", row.id);
+      options.forEach((row, i) => {
+        const on = i === active && selectable(i);
+        row.classList.toggle("active", on);
+        row.setAttribute("aria-selected", String(on));
+        if (on) input.setAttribute("aria-activedescendant", row.id);
       });
-      if (items.length) list.children[active]?.scrollIntoView?.({ block: "nearest" });
+      // Only the list scrolls (never the overlay or the shell behind it).
+      if (selectable(active)) revealInScrollport(list, options[active]);
     };
     const render = () => {
       if (!owns()) return;
       input.removeAttribute("aria-activedescendant");
       list.innerHTML = "";
+      options = [];
       if (!items.length) {
         const d = doc.createElement("div");
         d.className = "palette-empty";
@@ -196,6 +234,7 @@ export function createOverlayPicker({ placeholder, ariaLabel, loadItems, compute
         list.append(d);
         return;
       }
+      let group = null; // the role=group of the current run of rows sharing a group key
       items.forEach((it, i) => {
         const row = doc.createElement("div");
         row.id = `${id}-option-${i}`;
@@ -205,16 +244,35 @@ export function createOverlayPicker({ placeholder, ariaLabel, loadItems, compute
         row.innerHTML = `${dot}<span class="plabel"></span><span class="pdetail"></span>`;
         row.querySelector(".plabel").textContent = it.label;
         row.querySelector(".pdetail").textContent = it.detail || "";
+        if (Number.isInteger(it.depth) && it.depth > 0) row.style.setProperty("--depth", String(it.depth));
+        if (it.under) {
+          const under = doc.createElement("span");
+          under.className = "palette-sr"; under.textContent = `, ${it.under}`;
+          row.querySelector(".pdetail").append(under); // read as one phrase with the detail
+        }
+        // A match's ancestor, shown for its place in the tree: never active or run.
+        if (it.context) { row.classList.add("context"); row.setAttribute("aria-disabled", "true"); }
+        const inList = () => row.parentNode === list || row.parentNode?.parentNode === list;
         // Keep DOM focus in the combobox, but activate via click so keyboard/
         // assistive-technology synthesized clicks work without mousedown.
         row.addEventListener("mousedown", (e) => { e.preventDefault(); });
-        row.addEventListener("click", () => { if (row.parentNode === list) activate(it); });
+        row.addEventListener("click", () => { if (inList() && selectable(i)) activate(it); });
         row.addEventListener("mousemove", () => {
-          if (owns() && row.parentNode === list && active !== i) {
+          if (owns() && inList() && active !== i && selectable(i)) {
             active = i; select(); // do not replace the row between pointer down/up
           }
         });
-        list.append(row);
+        if (!it.group) group = null;
+        else if (group?.dataset.group !== it.group.key) {
+          group = doc.createElement("div");
+          group.className = "palette-group";
+          group.setAttribute("role", "group");
+          group.setAttribute("aria-label", it.group.label);
+          group.dataset.group = it.group.key;
+          list.append(group);
+        }
+        (group || list).append(row);
+        options.push(row);
       });
       select();
     };
@@ -222,19 +280,18 @@ export function createOverlayPicker({ placeholder, ariaLabel, loadItems, compute
     const update = () => {
       if (!owns()) return;
       items = computeRows(data, input.value);
-      active = 0;
+      active = Math.max(0, items.findIndex((it) => !it.context));
       render();
     };
 
     input.addEventListener("input", update);
     input.addEventListener("keydown", (e) => {
       if (!owns()) return;
-      if (e.key === "ArrowDown") { e.preventDefault(); active = Math.min(active + 1, items.length - 1); select(); }
-      else if (e.key === "ArrowUp") { e.preventDefault(); active = Math.max(active - 1, 0); select(); }
+      if (e.key === "ArrowDown") { e.preventDefault(); move(1); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); move(-1); }
       else if (e.key === "Enter") {
         e.preventDefault();
-        const it = items[active];
-        if (it) activate(it);
+        if (selectable(active)) activate(items[active]);
       }
     });
 
@@ -248,5 +305,7 @@ export function createOverlayPicker({ placeholder, ariaLabel, loadItems, compute
     update();
   }
 
-  return { open, close, toggle: () => (overlay ? close() : open()) };
+  // A cycling picker's chord moves its rows while open (modalKeydown consumes it
+  // first); toggle() — the same action from anywhere else — agrees.
+  return { open, close, toggle: () => (!overlay ? open() : cycleKey ? cycle?.(1) : close()) };
 }

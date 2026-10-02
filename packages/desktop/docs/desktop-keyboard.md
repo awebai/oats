@@ -10,7 +10,7 @@ Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
 `renderer/surface-return.mjs` (back to where you were), `renderer/shell.mjs`
 (action registration). Tests: `test/keymap-linux.test.mjs`,
 `test/keybindings.test.mjs`, `test/focus-regions.test.mjs`,
-`test/spawn-dialog-keyboard.test.mjs`.
+`test/spawn-dialog-keyboard.test.mjs`, `test/palette-tree.test.mjs` (the palette's rows and cycling), `test/tab-strip-reveal.test.mjs`.
 
 ## Principles
 
@@ -76,16 +76,16 @@ Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
 | Go to tab 1–8, last tab (`tabs.goto1`…`tabs.goto9`) | ⌥⌘1–⌥⌘9 | Alt+1–Alt+9 | no (readline, irssi/weechat, tmux) |
 | Split right (`split.vertical`) | ⌘\ | Ctrl+Shift+E | yes |
 | Split down (`split.horizontal`) | ⌘⇧\ | Ctrl+Shift+O | yes |
-| Close the split (`split.close`) | ⌥⌘W | Ctrl+Shift+Alt+W | yes |
+| Close the split (`split.close`; no button since spec F) | ⌥⌘W | Ctrl+Shift+Alt+W | yes |
 | Deployments / Workspace / Automations (`stage.hierarchy`, `stage.spawn`, `stage.automations`) | ⌘1 / ⌘2 / ⌘3 | Ctrl+1 / Ctrl+2 / Ctrl+3 | no |
 | Focus next / previous region (`focus.nextRegion`, `focus.prevRegion`) | F6 / ⇧F6 | F6 / Shift+F6 | no (mc, htop, nano) |
 | Leave the terminal for the next region (`focus.leaveTerminal`) | ⇧⌘F6 | Ctrl+Shift+F6 | yes |
 | Sidebar (`sidebar.toggle`) | ⌘B | Ctrl+B | no (tmux prefix) |
 | Filter instances (`sidebar.focusFilter`) | ⌘F | Ctrl+F | no |
-| Instance panel (`panel.toggle`) | ⌥⌘B | Ctrl+Alt+B | no |
+| Instance panel (`panel.toggle`; no tab-bar button since spec F, the panel keeps its own collapse) | ⌥⌘B | Ctrl+Alt+B | no |
 | Theme cycle (`app.themeToggle`) | none | none | – (the palette keeps it) |
 | Keyboard shortcuts (`app.shortcuts`) | ⌘, | Ctrl+, | no |
-| Terminal zoom (`terminal.fontBigger`, `…Smaller`, `…Reset`) | ⌘= ⌘- ⌘0 | Ctrl+= Ctrl+- Ctrl+0 | no |
+| Terminal zoom (`terminal.fontBigger`, `…Smaller`, `…Reset`; also Settings → Terminal; reset lands on 15px) | ⌘= ⌘- ⌘0 | Ctrl+= Ctrl+- Ctrl+0 | no |
 | Open a file read-only (`app.openFile`) | ⌘O | Ctrl+O | no |
 
 Changed from 0.30.1 on Linux/Windows: the palette (was Ctrl+K), close tab (was
@@ -150,6 +150,28 @@ the new tab's content when it was in content, and on the strip when it was on
 the strip. A stage switch from a chord, the palette or a nav button leaves
 focus where it was when that is still shown, else on the stage's first
 control.
+
+## The command palette (⌘K)
+
+- **⌘K / Ctrl+Shift+P** opens the palette. With an empty query it lists every
+  instance as the sidebar roster does (the same relation groups, then
+  independent; the same order; indented by depth; the sidebar's collapsed
+  state is ignored), then up to twelve commands. `>` restricts to commands.
+- With a query the instances keep tree order: each match at its depth, with
+  its non-matching ancestors shown dimmed for context. A context row is
+  `aria-disabled`: the arrows, the chord and the pointer skip it, and it opens
+  nothing.
+- **While the palette is open, its own chord cycles**: ⌘K moves the active row
+  down, ⇧⌘K up, both wrapping past the ends. Releasing commits nothing:
+  **Enter** opens the active row and **Esc** closes. The arrows move too and
+  stop at the ends. The cycle follows a rebind of `app.palette`. A chord that
+  already holds Shift (Ctrl+Shift+P, the Linux/Windows default) has no Shift
+  form, so ArrowUp moves up there. A plain-key binding never cycles: typing
+  belongs to the input. Quick Open's ⌘P is unchanged: a second ⌘P closes it.
+- For assistive technology each relation group is a named `role=group`
+  (announced once, on entry), and a nested row's option reads "…, under
+  <parent>" (visually hidden). Options carry no `aria-level`, which is not an
+  option's attribute.
 
 ## Quick Open and the spawn dialog
 
@@ -230,10 +252,10 @@ the rig). "Fixed" marks a gap this change closed.
 | Start / Restart dialog, lifecycle dialog | From the row or its menu | Esc; trapped; **focus returns to the row when its tool is hidden again (fixed: fell to `<body>`)** |
 | Sidebar footer: Spawn instance, sidebar, theme, shortcuts, settings, palette | Tab | Enter/Space run the same registered actions as the chords |
 | Sidebar restore edge | Tab, while the sidebar is hidden (hiding moves focus to it) | Enter |
-| Tab bar | One roving stop per tablist (per group when split); F6 (main) | Left/Right/Home/End select; Delete closes the focused tab, and the keymap's `tabs.close` (⌘W / Ctrl+Shift+W, rebindable; the close button's tooltip names it) closes the active one; Ctrl+Tab from anywhere in the tab layer, and Ctrl+PgDn/PgUp and go-to-tab outside a terminal (⌥⌘digit also inside one on macOS), **keeping focus in the content (fixed: fell to `<body>`)** |
+| Tab bar | One roving stop per tablist (per group when split); F6 (main). Tabs shrink to fit (spec F); the active tab is scrolled fully into view in its own strip on every activation, close and strip resize, and a focused control is revealed in its strip, never by scrolling an ancestor | Left/Right/Home/End select; Delete closes the focused tab, and the keymap's `tabs.close` (⌘W / Ctrl+Shift+W, rebindable; the close button's tooltip names it) closes the active one; Ctrl+Tab from anywhere in the tab layer, and Ctrl+PgDn/PgUp and go-to-tab outside a terminal (⌥⌘digit also inside one on macOS), **keeping focus in the content (fixed: fell to `<body>`)** |
 | Terminal | Enter on its roster row; F6 (main) | Every key reaches the program except the terminal-allowlisted chords; ⇧⌘F6 / Ctrl+Shift+F6 leaves for the next region |
 | Tab close buttons | Tab | Enter |
-| Split right / down / close, panel toggle | Tab (shown for a terminal) | Enter; their chords |
+| Split right / down (the only buttons after the tabs: closing the split and the instance panel are on their chords and the palette) | Tab (shown for a terminal) | Enter; their chords |
 | Split separator | Tab | Arrows resize, Home/End to the ends, **Enter resets to even (fixed: double-click only)** |
 | Empty split group | Tab; F6 (main) | Focus selects the group |
 | Deployments: Retry (no Spawn button: `S` on the canvas, the sidebar, ⌘N, Quick Open and the soul cards spawn) | First stops of the stage; F6 (main) | Enter; `S` on the canvas |
@@ -257,9 +279,9 @@ the rig). "Fixed" marks a gap this change closed.
 | Collapsed panel rail | F6 (pressed button); Tab | Up/Down/Home/End; a rail button expands to its page |
 | Panel sections: soul link, copy, details, Open soul page, Teams, Git, lifecycle Restart…/Start…/Stop…/Retire… | Tab | Native buttons and summaries |
 | Spawn dialog | Spawn on a card, a soul page, Quick Open | See above |
-| Command palette, Quick Open | ⌘K / Ctrl+Shift+P, ⌘P / Ctrl+P | Type, arrows, Enter, Esc; Tab stays in the input |
+| Command palette, Quick Open | ⌘K / Ctrl+Shift+P, ⌘P / Ctrl+P | Type, arrows, Enter, Esc; Tab stays in the input; in the palette its chord cycles rows (⇧ + it: up), skipping context rows (see "The command palette") |
 | Shortcuts editor | ⌘, / Ctrl+, | Trapped; Enter records, Esc cancels, Backspace unbinds |
-| Connections | Footer settings | Trapped; its terminal has an explicit Shift+Tab exit |
+| Settings (Connections, Terminal) | Footer settings | Trapped, through the Terminal size field too; the sign-in terminal has an explicit Shift+Tab exit; the font size stepper's − and + stay focusable at 9 and 28 (aria-disabled) and a typed size applies on Enter or on leaving the field |
 | Notifications | Tab (they come last in the document) | Open and Dismiss are buttons; focus moves on after dismissing |
 
 Known limits, left as they are: the overview has no keyboard pan without a

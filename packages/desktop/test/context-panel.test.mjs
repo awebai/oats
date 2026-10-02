@@ -10,7 +10,7 @@ function fixture(t) {
   const dom = new JSDOM(`<!doctype html><body><div id="app">
     <aside id="sidebar"><input id="sidebar-input"></aside>
     <button id="sidebar-restore">Restore sidebar</button>
-    <main id="main"><div id="tabbar"><button id="active-tab">dev-1</button><div id="tab-actions"><button id="panel-toggle">Panel</button></div></div>
+    <main id="main"><div id="tabbar"><button id="active-tab">dev-1</button><div id="tab-actions"><button id="split-right">Split</button></div></div>
       <div id="tabhost"><input id="terminal-input"></div></main>
     <aside id="context-panel"></aside>
   </div></body>`);
@@ -27,7 +27,7 @@ function fixture(t) {
     onIntent: event => { assert.equal(applying, false, 'projected focus cannot mint intent'); intents.push(event.type); },
     applyFocus: callback => { applying = true; focusCalls.push('apply'); try { return callback(); } finally { applying = false; } },
     onFocusModeChange: value => modeCalls.push(value),
-    fallbackFocus: () => document.getElementById('active-tab'), shortcutHint: () => '⌘⌥B',
+    fallbackFocus: () => document.getElementById('active-tab'),
   });
   t.after(() => { panel.dispose(); dom.window.close(); });
   const query = selector => document.querySelector(selector);
@@ -49,7 +49,7 @@ function fixture(t) {
 }
 const instance = (home, extra = {}) => ({ instance: 'same-name', agent: 'dev', home, harness: 'pi', running: true, ...extra });
 
-test('exact APIs, safe absent-host defaults, shell-owned root and no toggle click binding', t => {
+test('exact APIs, safe absent-host defaults, shell-owned root and no tab-bar toggle to project', t => {
   const inert = createContextPanel();
   assert.deepEqual(Object.keys(inert), panelAPI);
   assert.deepEqual(Object.keys(inert.attach()), leaseAPI);
@@ -59,20 +59,16 @@ test('exact APIs, safe absent-host defaults, shell-owned root and no toggle clic
   assert.deepEqual(Object.keys(u.panel), panelAPI);
   assert.equal(u.root.closest('#main, #tabhost'), null);
   assert.equal(u.root.hidden, true);
-  const toggle = u.query('#panel-toggle');
-  assert.equal(toggle.disabled, true);
-  assert.equal(toggle.getAttribute('aria-pressed'), 'false'); assert.equal(toggle.hasAttribute('aria-expanded'), false);
-  assert.equal(toggle.getAttribute('aria-label'), 'Instance panel'); assert.equal(toggle.title, 'Instance panel (⌘⌥B)');
-  assert.equal(toggle.getAttribute('aria-controls'), 'context-panel');
+  // Spec F: the tab bar has no panel toggle; projection touches no control outside the panel.
+  const outside = u.query('#tab-actions').outerHTML;
   u.select(instance('/A/one'));
-  toggle.click();
-  assert.equal(u.root.classList.contains('is-collapsed'), false, 'parent binds registry clicks');
+  assert.equal(u.root.hidden, false); assert.equal(u.root.classList.contains('is-collapsed'), false);
+  u.panel.toggle();
+  assert.equal(u.root.classList.contains('is-collapsed'), true, 'panel.toggle collapses to the rail');
   assert.equal(u.panel.isFocusMode(), false);
-  assert.equal(toggle.disabled, false);
-  assert.equal(toggle.getAttribute('aria-pressed'), 'true');
-  assert.equal(toggle.getAttribute('aria-label'), 'Instance panel', 'a constant name'); assert.equal(toggle.title, 'Instance panel (⌘⌥B)');
-  u.panel.setCollapsed(true);
-  assert.equal(toggle.getAttribute('aria-pressed'), 'false'); assert.equal(toggle.getAttribute('aria-label'), 'Instance panel');
+  u.panel.toggle();
+  assert.equal(u.root.classList.contains('is-collapsed'), false);
+  assert.equal(u.query('#tab-actions').outerHTML, outside);
 });
 
 test('attach never selects; replacement invalidates old leases without disposing content', t => {
@@ -115,7 +111,6 @@ test('hidden stage present changes cannot claim foreground or collapse a differe
   assert.equal(leaseA.isVisible(), true, 'hidden stage can prepare presence without selecting');
   leaseA.setPresent(false);
   assert.equal(u.root.hidden, true, 'no other live slot becomes fallback selection');
-  assert.equal(u.query('#panel-toggle').disabled, true);
   u.panel.setContext({ workspace: 'A', owner: b, instance: instance('/A/ignored'), key: 'ignored' });
   assert.equal(leaseB.isVisible(), true, 'owner selection takes precedence over terminal context');
   u.panel.setContext({ workspace: 'A', owner: {} });
@@ -143,7 +138,6 @@ test('collapsed stage retains form identity, pending completion and listeners', 
   assert.equal(u.document.activeElement, u.query('.context-panel-expand'));
   assert.equal(u.intents.length, intents, 'recovery focus is projection, not entry intent');
   assert.equal(u.focusCalls.length, 1);
-  assert.equal(u.query('#panel-toggle').getAttribute('aria-pressed'), 'false');
   finish('Saved by pending operation'); await pending;
   assert.equal(u.root.classList.contains('is-collapsed'), true, 'late presence is not auto-expand');
   u.query('#terminal-input').focus();
@@ -294,8 +288,6 @@ test('focus mode hides panel/sidebar rails, preserves preferences and stage form
   assert.equal(lease.isVisible(), false);
   assert.equal(u.query('#app').classList.contains('focus-mode'), true);
   assert.equal(u.query('#app').classList.contains('sidebar-hidden'), true, 'sidebar preference untouched');
-  assert.equal(u.query('#panel-toggle').disabled, false, 'the toggle is focus mode\'s visible exit');
-  assert.equal(u.query('#panel-toggle').getAttribute('aria-pressed'), 'false');
   assert.equal(u.document.activeElement, u.query('#active-tab'), 'the hidden form\'s focus lands on the active tab');
   assert.equal(u.intents.length, count);
   lease.setPresent(true);
@@ -350,7 +342,7 @@ test('dispose releases only component DOM and listeners; missing shell controls 
   u.root.dispatchEvent(new u.dom.window.Event('pointerdown', { bubbles: true }));
   assert.equal(lease.isVisible(), false); assert.equal(u.intents.length, count);
   assert.equal(u.root.children.length, 0);
-  u.query('#panel-toggle').remove(); u.query('#active-tab').remove();
+  u.query('#active-tab').remove();
   const minimal = createContextPanel({ root: u.root });
   minimal.setContext({ instance: instance('/minimal'), key: 'minimal' });
   minimal.setCollapsed(true); minimal.setFocusMode(true); minimal.dispose();

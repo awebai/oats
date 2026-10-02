@@ -19,7 +19,7 @@ import { deploymentUnavailableText, NOT_SERVED_CODE, NO_ANSWER_CODE, unservedErr
 import { panelErrorCause } from "./deployment-contract.mjs";
 import {
   initTheme, toggleTheme, setTheme, THEMES, xtermTheme, onThemeChange,
-  terminalTypography, setTerminalFontSize, setTerminalFontFamily, onTerminalTypographyChange,
+  terminalTypography, setTerminalFontSize, setTerminalFontFamily, resetTerminalTypography, onTerminalTypographyChange,
 } from "./theme.mjs";
 import { createPalette } from "./palette.mjs";
 import { createQuickOpen } from "./quick-open.mjs";
@@ -28,16 +28,18 @@ import { createSurfaceReturn } from "./surface-return.mjs";
 import { createFocusRegions, firstTabbable, isShown } from "./focus-regions.mjs";
 import { createFileOpener } from "./open-file.mjs";
 import {
-  registerAction, setActiveContexts, getBinding, onKeymapChange, formatChord, handleKeydown, matchEvent, runAction, keymapConflicts,
+  registerAction, setActiveContexts, getBinding, onKeymapChange, formatChord, handleKeydown, matchEvent, runAction, keymapConflicts, pickerCycleDirection,
 } from "./keybindings.mjs";
 import { createKeybindingsEditor } from "./keybindings-editor.mjs";
 import { createConnections, connectionsCSS } from "./connections.mjs";
+import { createTerminalSettings, settingsTerminalCSS } from "./settings-terminal.mjs";
 import { createLifecycleDialog, lifecycleCSS } from './lifecycle-dialog.mjs';
 import { rosterKeyAction, moveTarget } from "./roster-keys.mjs";
 import { createViewLifecycle } from "./view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "./tab-keys.mjs";
-import { createTerminalTab, terminalOptions } from "./terminal-tab.mjs";
-import { createTabChrome, tabKeyAction, focusAfterLastTab } from "./tab-a11y.mjs";
+import { createTerminalTab, terminalOptions, fitTerminal, createGlyphRenderer } from "./terminal-tab.mjs";
+import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "./tab-a11y.mjs";
+import { revealInStrip } from "./reveal-in-scrollport.mjs";
 import { createIntentGate, prepareOwnedOpen, runOpenFlow } from "./open-intent.mjs";
 import { createSelectionOwnership, wirePaneSelection } from "./selection-ownership.mjs";
 import { createWorkspaceSwitcher } from "./workspace-switcher.mjs";
@@ -81,7 +83,7 @@ const desk = window.oatsDesktop;
 initTheme();
 mountShellIcons(document);
 const identityStyle = document.createElement("style");
-identityStyle.textContent = identityCSS + contextPanelCSS + teamsCSS + instanceSoulCSS + instanceGitCSS + notificationCSS + connectionsCSS + lifecycleCSS + rosterTipCSS + rosterPrCSS; document.head.append(identityStyle);
+identityStyle.textContent = identityCSS + contextPanelCSS + teamsCSS + instanceSoulCSS + instanceGitCSS + notificationCSS + connectionsCSS + settingsTerminalCSS + lifecycleCSS + rosterTipCSS + rosterPrCSS; document.head.append(identityStyle);
 const rosterTip = createRosterTip(document);
 // The PR of each local instance's branch (forge-roster), re-read at most once a minute.
 const rosterPrs = createRosterPrs({
@@ -691,7 +693,8 @@ function renderContextRoster(instances) {
   // visible members — clustering a filtered subset could forge edges from
   // globally ambiguous names (merged-state review @3e76616).
   // Agent groups (Redesign v3): each multi-member relation cluster under its
-  // deterministic name, then every unrelated instance under "independent".
+  // deterministic name, then every unrelated instance under "independent"
+  // (rosterGroups, shared with the command palette).
   // Clusters are computed on the FULL roster then projected to visible
   // members — clustering a filtered subset could forge edges from globally
   // ambiguous names (merged-state review @3e76616).
@@ -1162,8 +1165,6 @@ const contextPanel = createContextPanel({
   onFocusModeChange: () => updateSidebarControls(),
   // Focus mode hides the sidebar: focus that was there lands on the active tab, else a stable visible control.
   fallbackFocus: () => stableFocusTarget(),
-  // (isMac is declared with the palette, after this first render: read the platform here.)
-  shortcutHint: () => { const mac = !!globalThis.navigator?.platform?.includes("Mac"); const chord = getBinding("panel.toggle", mac); return chord ? formatChord(chord, mac) : ""; },
 });
 window.addEventListener("pagehide", () => contextPanel.dispose(), { once: true });
 
@@ -1174,10 +1175,9 @@ function syncContextPanel() {
   contextPanel.setContext({ workspace: currentWorkspace(), owner: tabLayerVisible ? null : stage,
     instance: terminal ? tab.instanceRef : null, key: terminal && tab.instanceRef ? tab.key : null });
 }
-onKeymapChange(() => syncContextPanel()); // the panel toggle's tooltip names its chord
 function activeTabTrigger() { return activeTab != null ? tabs.get(activeTab)?.triggerEl ?? null : null; }
 /** Where focus goes when the control holding it disappears: the active tab's trigger when it is shown, else a
- * stable visible control (the panel toggle, the sidebar toggle, or the restore edge that focus mode and a
+ * stable visible control (the sidebar toggle, or the restore edge that focus mode and a
  * hidden sidebar show), never <body>. */
 function stableFocusTarget() {
   const shown = el => {
@@ -1187,7 +1187,7 @@ function stableFocusTarget() {
     }
     return true;
   };
-  return [activeTabTrigger(), ...["panel-toggle", "sidebar-toggle", "sidebar-restore"].map(id => document.getElementById(id))].find(shown) ?? null;
+  return [activeTabTrigger(), ...["sidebar-toggle", "sidebar-restore"].map(id => document.getElementById(id))].find(shown) ?? null;
 }
 function refreshPanelInstance(instances, workspace) {
   const tab = tabs.get(activeTab);
@@ -1241,7 +1241,30 @@ function renderSplit(splitVisible) {
     },
   }, split, splitVisible, [...tabs]));
   cells = [...tabhost.querySelectorAll(":scope > .group-cell")];
+  observeTabStrips();
 }
+
+// ── the selected tab stays visible (spec F) ──────────────────────────────
+// Whenever a tab becomes active, a tab closes, or a strip resizes (window,
+// sidebar, panel, split), each strip scrolls its active tab fully into view.
+// Only the strip's scrollLeft moves (revealInStrip): never another ancestor.
+function tabStrips() {
+  return [tabbar, ...tabhost.querySelectorAll(":scope > .group-cell > .group-tabbar")];
+}
+function revealActiveTabs() {
+  for (const strip of tabStrips()) {
+    const active = strip.querySelector(":scope > .tab.active:not([hidden])");
+    if (active) revealInStrip(strip, active);
+  }
+}
+const tabStripResize = typeof ResizeObserver === "function" ? new ResizeObserver(() => revealActiveTabs()) : null;
+/** Group strips come and go with the split: observe exactly the current ones. */
+function observeTabStrips() {
+  if (!tabStripResize) return;
+  tabStripResize.disconnect();
+  for (const strip of tabStrips()) tabStripResize.observe(strip);
+}
+observeTabStrips();
 
 /** Explicit empty-destination selection. Never leave terminal commands aimed
  * at the previously active tab; projection and native focus are separate. */
@@ -1258,7 +1281,7 @@ function selectEmptyGroup(groupId) {
 // transition the actions perform — no duplicated gating logic.
 const tabActionsEl = document.getElementById("tab-actions");
 for (const [btnId, actionId] of [
-  ["split-right", "split.vertical"], ["split-down", "split.horizontal"], ["split-close", "split.close"],
+  ["split-right", "split.vertical"], ["split-down", "split.horizontal"],
 ]) {
   document.getElementById(btnId).addEventListener("click", () => runAction(actionId));
 }
@@ -1268,7 +1291,6 @@ function updateSplitControls() {
   tabActionsEl.hidden = !s.visible;
   document.getElementById("split-right").disabled = !s.splitRow;
   document.getElementById("split-down").disabled = !s.splitCol;
-  document.getElementById("split-close").disabled = !s.close;
 }
 
 function splitPane(orientation) {
@@ -1450,6 +1472,7 @@ function activateTab(id, { keepGroupFocus = false } = {}) {
   }
   renderSplit(splitVisible);
   updateSplitControls();
+  revealActiveTabs();
   tabs.get(id)?.onShow?.();
   return true;
 }
@@ -1488,6 +1511,7 @@ function closeTab(id, restoreFocus = false, { explicit = true, confirmed = false
   t.tabEl.remove();
   t.paneEl.remove();
   tabs.delete(id);
+  revealActiveTabs(); // the remaining tabs widen: the active one may have moved out of view
   const wasSplitMember = isSplitMember(split, id);
   // Closing a tab never closes a destination. If the terminal layer is
   // visible, stay in its focused group even when it (or every group) is empty.
@@ -1712,10 +1736,13 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
   const offTypography = onTerminalTypographyChange((next) => {
     term.options.fontFamily = next.fontFamily;
     term.options.fontSize = next.fontSize;
-    requestAnimationFrame(() => { try { fit.fit(); } catch {} });
+    requestAnimationFrame(() => { try { fitTerminal(term, fit); } catch {} });
   });
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
+  // Box drawing and blocks as a native terminal draws them (WebGL, DOM fallback).
+  const glyphs = createGlyphRenderer({ term, Addon: globalThis.WebglAddon?.WebglAddon,
+    onChange: () => requestAnimationFrame(() => { try { fitTerminal(term, fit); } catch {} }) });
 
   // Composition (setup-inside-onReady, teardown symmetry) lives in
   // terminal-tab.mjs so its ordering is unit-testable (review termlc2).
@@ -1734,7 +1761,7 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
       && canActivateTab(tabs.get(made.id), currentWorkspace())
       && tabOpenIntents.ownsFocus(made.id),
     focusInput: () => tabOpenIntents.applyFocus(() => term.focus()),
-    fit: () => fit.fit(),
+    fit: () => fitTerminal(term, fit),
     // Terminal-allowlisted shortcuts (engine policy: app.palette, tabs.next/
     // prev/close, split.*, focus.leaveTerminal) must be intercepted BEFORE xterm
     // writes to the pty — its handler consumes e.g. Ctrl+Shift+P or ⌘⇧F6 and
@@ -1752,7 +1779,8 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
   const made = addTab({
     title: `${name}${inst.server ? ` · ${inst.server}` : ""}`,
     // Workspace v4 (W6): a terminal tab carries only its name and status; the branch lives in the bottom bar.
-    decor: { dot: inst.running ? "on" : "off" },
+    // A shrunk tab keeps its name's end ("oats-…palette"); a host suffix gives way first.
+    decor: { dot: inst.running ? "on" : "off", tailAt: tabNameTailStart(name, inst.agent), tailEnd: name.length },
     key,
     kind: "terminal",
     workspace: ws,
@@ -1762,7 +1790,7 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
     // belong to the retained view and are removed only on confirmed disposal.
     confirmClose: () => tab.close(),
     onClose: () => { offTheme(); offTypography(); },
-    onShow: () => { requestAnimationFrame(() => { try { fit.fit(); } catch {} }); },
+    onShow: () => { requestAnimationFrame(() => { try { glyphs.ensure(); fitTerminal(term, fit); } catch {} }); },
     // user-initiated activation → keyboard lands in the xterm textarea
     focusContent: () => tab.focus(),
     focusOnActivate: true, // addTab's own dedup here is a user jump too
@@ -1770,7 +1798,8 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
   if (!made) { offTheme(); offTypography(); term.dispose(); return; } // lost a race to an identical tab
   made.paneEl.append(wrap);
   term.open(wrap);
-  fit.fit();
+  glyphs.ensure();
+  fitTerminal(term, fit);
 
   await tab.start();
 }
@@ -1828,9 +1857,12 @@ const palette = createPalette({
   loadInstances: async () => {
     const ws = currentWorkspace();
     const p = await api(`/api/panel${ws ? `?ws=${encodeURIComponent(ws)}` : ""}`);
-    return p.instances || [];
+    // One snapshot: the palette sections and clusters by these deployments, as the sidebar does.
+    return { instances: p.instances || [], deployments: panelDeployments(p) };
   },
   openTerminal: (name) => openTerminalTab(name),
+  // While open, ⌘K / Ctrl+Shift+P moves down and Shift + it up (live keymap); Esc closes, Enter opens.
+  cycleKey: (e) => pickerCycleDirection(e, "app.palette", isMac),
   commands: [
     // View commands derive from the nav manifest so a new rail destination
     // can never be palette-invisible (review 8441961 nit).
@@ -1859,7 +1891,7 @@ const palette = createPalette({
       const next = window.prompt("Terminal font family (CSS font-family value)", current);
       if (next !== null) setTerminalFontFamily(next);
     } },
-    { label: "Terminal: reset typography", detail: chordDetail("terminal.fontReset"), run: () => { setTerminalFontFamily(""); setTerminalFontSize(13); } },
+    { label: "Terminal: reset typography", detail: chordDetail("terminal.fontReset"), run: () => resetTerminalTypography() },
   ],
 });
 
@@ -1925,6 +1957,9 @@ const connections = createConnections({ doc: document, desk,
   request: body => api('/api/forge-connections', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
   subscribe: subscribeConnections, generation: () => connectionGeneration, openShortcuts: openShortcutsEditor,
   onIntent: () => tabOpenIntents.invalidate(), applyFocus: fn => tabOpenIntents.applyFocus(fn), captureFocus: () => tabOpenIntents.begin(),
+  // Settings → Terminal: the font size stepper, on the keys' and the palette's own store.
+  sections: [() => createTerminalSettings({ doc: document, chords: {
+    bigger: chordDetail("terminal.fontBigger")(), smaller: chordDetail("terminal.fontSmaller")(), reset: chordDetail("terminal.fontReset")() } })],
   terminalFactory: mount => {
     const term = new Terminal({ ...terminalOptions({ ...terminalTypography(), theme: xtermTheme() }), scrollback: 200, allowProposedApi: false });
     const fit = new FitAddon.FitAddon(); term.loadAddon(fit); term.open(mount);
@@ -2117,7 +2152,6 @@ registerAction({ id: "sidebar.toggle", label: "Toggle the sidebar", context: "gl
 registerAction({ id: "panel.toggle", label: "Show or hide the instance panel", context: "global", run: () => { tabOpenIntents.invalidate(); contextPanel.toggle(); } });
 // Focus mode lives on the keyboard (rebindable, no default chord) and the palette.
 registerAction({ id: "app.focusMode", label: "Toggle focus mode (sidebar and instance panel)", context: "global", run: () => { tabOpenIntents.invalidate(); contextPanel.toggleFocusMode(); } });
-document.getElementById("panel-toggle").addEventListener("click", () => runAction("panel.toggle"));
 // splits live on the tab layer (they arrange terminal tabs); the actions
 // are terminal-allowlisted so the chords work inside xterm too.
 registerAction({ id: "split.vertical", label: "Split terminal right (side by side)", context: "tabs", run: () => splitPane("row") });
@@ -2129,7 +2163,7 @@ registerAction({ id: "split.restore", label: "Return to terminal groups", contex
 registerAction({ id: "terminal.focusActive", label: "Focus the active terminal input", context: "global", run: () => focusActiveTerminal() });
 registerAction({ id: "terminal.fontBigger", label: "Terminal: increase font size", context: "global", run: () => setTerminalFontSize(terminalTypography().fontSize + 1) });
 registerAction({ id: "terminal.fontSmaller", label: "Terminal: decrease font size", context: "global", run: () => setTerminalFontSize(terminalTypography().fontSize - 1) });
-registerAction({ id: "terminal.fontReset", label: "Terminal: reset typography", context: "global", run: () => { setTerminalFontFamily(""); setTerminalFontSize(13); } });
+registerAction({ id: "terminal.fontReset", label: "Terminal: reset typography", context: "global", run: () => resetTerminalTypography() });
 // tabs: cycle + close work whether or not a tab trigger has focus (the
 // tab-a11y roving arrows stay as focus keys on the strip itself). Tab switching
 // never happens under an open modal (the palette, a sheet, a dialog), as F6 doesn't.

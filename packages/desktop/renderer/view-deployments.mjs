@@ -9,7 +9,7 @@
  * Also a small session store fed by every panel the renderer reads (the shell's roster poll): the
  * last deployments seen per view, for surfaces that do not read the panel themselves (the "On …"
  * line, deployment-scope-line.mjs). */
-import { visibleClusters } from './instance-tree.mjs';
+import { rosterGroups } from './instance-tree.mjs';
 import { machineLabelParts, THIS_MACHINE } from './deployment-label.mjs';
 import { iconElement } from './shell-icons.mjs';
 
@@ -70,14 +70,7 @@ export const rowStale = (row, deployments) => {
  * only when one machine holds two (deployment-label.mjs machineLabels). Returns
  * `[{ deployment|null, label|null, groups }]`, a group being `{ key, label, clusters }` as before. */
 export function rosterSections(instances, visible, deployments) {
-  const groupsOf = (all, shown) => {
-    const clusters = visibleClusters(all, shown);
-    return [
-      ...clusters.filter(c => c.instances.length > 1).map(c => ({ key: `cluster:${c.key}`, label: c.key, clusters: [c] })),
-      ...(clusters.some(c => c.instances.length === 1)
-        ? [{ key: 'independent', label: 'independent', clusters: clusters.filter(c => c.instances.length === 1) }] : []),
-    ];
-  };
+  const groupsOf = (all, shown) => rosterGroups(all, shown); // the relation groups the palette lists too
   if (!isMultiDeployment(deployments)) return [{ deployment: null, label: null, groups: groupsOf(instances, visible) }];
   const sectionOf = splitByDeployment(deployments);
   const all = sectionOf(instances), shown = sectionOf(visible), labels = machineLabelParts(deployments);

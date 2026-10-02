@@ -13,6 +13,105 @@ export function shiftEnterAction(ev) {
   if (ev.key !== 'Enter' || !ev.shiftKey || ev.ctrlKey || ev.altKey || ev.metaKey) return { suppress: false, byte: null };
   return { suppress: true, byte: ev.type === 'keydown' ? '\n' : null };
 }
+/** Fit a tab's terminal to its pane and centre it, as a native terminal
+ * balances its window padding (the operator's review, 2026-10-02). FitAddon
+ * reserves 15px on the right for xterm's scrollbar even where scrollbars
+ * overlay (xterm's Viewport falls back to 15) and leaves the sub-cell remainder
+ * there too, so the right gutter read up to 23px wider than the left. tmux runs
+ * in xterm's alternate screen, where that scrollbar has nothing to scroll, and
+ * shell.css hides it on terminal tabs: the grid takes the whole padded box and
+ * the remainder is split evenly, across and down, in whole device pixels so the
+ * glyphs stay sharp.
+ *
+ * The grid is sized from the renderer's device cell, which does not depend on
+ * the grid: xterm's CSS cell is the rounded screen extent divided by the column
+ * count, so fitting from it could flip between two counts at a fractional pane
+ * width (review round 8). Both renderers round the screen to
+ * round(cells × device cell / dpr) CSS pixels; a count whose rounded extent
+ * would overflow the box gives way to one fewer. Without a measured cell,
+ * FitAddon fits as before. */
+export function fitTerminal(term, fit) {
+  const core = term?._core, cell = core?._renderService?.dimensions?.device?.cell;
+  const el = term?.element, screen = el?.querySelector('.xterm-screen'), parent = el?.parentElement;
+  if (!(cell?.width > 0) || !(cell?.height > 0) || !el || !screen || !parent) { fit.fit(); return; }
+  const view = el.ownerDocument.defaultView, own = view.getComputedStyle(el), box = view.getComputedStyle(parent);
+  const px = value => Number.parseFloat(value) || 0;
+  const width = px(box.width) - px(own.paddingLeft) - px(own.paddingRight);
+  const height = px(box.height) - px(own.paddingTop) - px(own.paddingBottom);
+  if (!(width > 0) || !(height > 0)) { fit.fit(); return; } // a hidden pane: FitAddon's own no-op
+  const ratio = view.devicePixelRatio || 1;
+  const extent = (count, size) => Math.round(count * size / ratio); // the screen's CSS size, as xterm rounds it
+  const count = (room, size, least) => {
+    let n = Math.max(least, Math.floor(room * ratio / size + 1e-6)); // float noise must not lose a whole cell
+    while (n > least && extent(n, size) > room) n--;
+    return n;
+  };
+  const cols = count(width, cell.width, 2), rows = count(height, cell.height, 1);
+  if (term.cols !== cols || term.rows !== rows) { core._renderService.clear?.(); term.resize(cols, rows); }
+  const half = rest => Math.max(0, Math.floor(rest / 2 * ratio) / ratio);
+  screen.style.margin = `${half(height - extent(rows, cell.height))}px 0 0 ${half(width - extent(cols, cell.width))}px`;
+}
+
+/** Whether this renderer process can make a WebGL2 context: a throwaway
+ * canvas whose context is released at once. A yes is kept; a no is asked
+ * again next time (a GPU process restarting can refuse contexts for a while),
+ * so a later show recovers. */
+let webgl2 = false;
+export function webgl2Supported(doc) {
+  if (!webgl2 && doc) {
+    try {
+      const gl = doc.createElement('canvas').getContext('webgl2');
+      webgl2 = Boolean(gl);
+      gl?.getExtension('WEBGL_lose_context')?.loseContext();
+    } catch { webgl2 = false; }
+  }
+  return webgl2;
+}
+
+/** xterm's WebGL renderer, so box drawing and block elements (U+2500–259F:
+ * Claude Code's input box, tmux borders, progress bars) are drawn the way a
+ * native terminal draws them, as thin strokes joined cell to cell whatever the
+ * font (xterm's customGlyphs). The DOM renderer takes them from the font, and
+ * Inconsolata's are twice as heavy. `Addon` is the WebglAddon class, absent
+ * where it is not loaded.
+ *
+ * Fallbacks, all to xterm's DOM renderer:
+ * - no WebGL2 here (`supported`, asked again on every show until it says
+ *   yes): the addon is not activated. Its renderer adds a canvas and listeners
+ *   before asking for the context, and a throw there leaves them behind where
+ *   the addon's dispose cannot reach.
+ * - an activation that throws although WebGL2 was there: no further attempt
+ *   for this terminal, which stays on the DOM renderer until it is reopened;
+ *   another attempt would leave another canvas and listener set behind.
+ * - a lost context (Chromium keeps about 16 and drops the oldest; sleep or a
+ *   GPU reset): the addon is disposed (`onChange` refits), and `ensure()`, run
+ *   when the tab is shown, loads a fresh one. */
+export function createGlyphRenderer({ term, Addon, onChange = () => {},
+  supported = () => webgl2Supported(term.element?.ownerDocument) }) {
+  let addon = null, failed = false;
+  function drop() {
+    const was = addon; addon = null;
+    try { was?.dispose(); } catch {}
+    if (was) onChange();
+  }
+  function ensure() {
+    if (addon || failed || typeof Addon !== 'function' || !term.element || !supported()) return Boolean(addon);
+    let next = null;
+    try {
+      next = new Addon();
+      next.onContextLoss(() => { if (addon === next) drop(); });
+      term.loadAddon(next);
+      addon = next;
+      onChange();
+    } catch {
+      // No retry (the Desktop lead's decision): a failed activation would leak another canvas and listener set.
+      failed = true; try { next?.dispose(); } catch {}
+    }
+    return Boolean(addon);
+  }
+  return { ensure, dispose: drop, get active() { return Boolean(addon); } };
+}
+
 // Native terminal geometry: no lineHeight (xterm's default 1.0), so cells and
 // the block cursor keep their natural height and tmux owns row spacing.
 export function terminalOptions({ fontSize, fontFamily, theme }) {

@@ -9,14 +9,14 @@ import { runInNewContext } from "node:vm";
 import { JSDOM } from "jsdom";
 import { createSelectionOwnership, wirePaneSelection } from "../renderer/selection-ownership.mjs";
 import { createIntentGate, prepareOwnedOpen } from "../renderer/open-intent.mjs";
-import { createTerminalTab, terminalOptions, terminalKeyDecision, RECONNECT_DELAYS_MS, RECONNECT_RETRIED, NO_ANSWER_RETRIES, LOST_LINK_EXIT } from "../renderer/terminal-tab.mjs";
+import { createTerminalTab, terminalOptions, fitTerminal, createGlyphRenderer, terminalKeyDecision, RECONNECT_DELAYS_MS, RECONNECT_RETRIED, NO_ANSWER_RETRIES, LOST_LINK_EXIT } from "../renderer/terminal-tab.mjs";
 import { createTermLifecycle } from "../renderer/term-lifecycle.mjs";
 import { opened, confirmed, ready } from './helpers/terminal-wire.mjs';
 import { terminalHandle, terminalSameHandle, terminalFailure, terminalMessage } from '../renderer/terminal-contract.mjs';
 import { wireTerminalAttachments } from '../renderer/terminal-attachments.mjs';
 import { createViewLifecycle } from "../renderer/view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "../renderer/tab-keys.mjs";
-import { createTabChrome, tabKeyAction, focusAfterLastTab } from "../renderer/tab-a11y.mjs";
+import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "../renderer/tab-a11y.mjs";
 import * as keymap from "../renderer/keybindings.mjs";
 import { createWorkspaceTabMemory } from "../renderer/workspace-tab-memory.mjs";
 import * as workspaceTabs from "../renderer/workspace-tabs.mjs";
@@ -31,11 +31,12 @@ import { runtimeState, unsupportedSession } from "../renderer/instance-presentat
 import { canAddressRemote, rowReason } from "../renderer/remote-address.mjs";
 import { createRuntimeBadge } from "../renderer/identity-marks.mjs";
 import { rosterKeyAction, moveTarget } from "../renderer/roster-keys.mjs";
+import { revealInStrip } from "../renderer/reveal-in-scrollport.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const names = [
   "setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "selectEmptyGroup", "showStage",
-  "splitPane", "closeSplit", "onTabKeydown", "addTab", "selectTab", "activateTab", "closeTab",
+  "splitPane", "closeSplit", "onTabKeydown", "addTab", "selectTab", "activateTab", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips",
   "openViewTab", "openTerminalTabFlow", "openTerminalTabInner", "focusActiveTerminal",
   "visibleTabEntries", "switchTab", "cycleTab", "gotoTab", "restoreWorkspaceTabs", "showTerminalContext",
   "initContextRoster", "renderContextRoster", "focusRoster", "onRosterRowKey", "setRovingRow", "showInRoster",
@@ -76,7 +77,7 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     updateActiveContexts: (on = c.tabLayerVisible) => { c.tabLayerVisible = on; },
     // Panel behavior is covered with the real presenter in split-empty-shell.
     syncContextPanel() {}, contextPanel: { setFocusMode() {} },
-    updateSplitControls() {}, refreshContextRoster() {}, setNavActive() {}, setSidebarHidden() {},
+    updateSplitControls() {}, revealInStrip, tabStripResize: null /* spec F: the shipped active-tab reveal runs too */, refreshContextRoster() {}, setNavActive() {}, setSidebarHidden() {},
     ...instanceTree, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge, rosterKeyAction, moveTarget,
     api: () => { const gate = deferred(); requests.push(gate); return gate.promise; },
     prepareOwnedOpen: opts => prepareOwnedOpen({ ...opts, load() {
@@ -84,8 +85,8 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     } }),
     // Keep identity resolution out of this test; keys/targets remain distinct.
     resolveTerminalOpen: (instances, ref, ws) => ({ inst: { instance: ref, running: true, tmux: { session: "synthetic", window: ref } }, key: `${ws}:${ref}` }),
-    ctx: {}, reserveKey, whenKeyFree, createViewLifecycle, createTabChrome, tabKeyAction, focusAfterLastTab,
-    createSelectionOwnership: ownership, wirePaneSelection, terminalOptions,
+    ctx: {}, reserveKey, whenKeyFree, createViewLifecycle, createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart,
+    createSelectionOwnership: ownership, wirePaneSelection, terminalOptions, fitTerminal, createGlyphRenderer,
     ...workspaceTabs, ...layout, projectSplitDom, splitControlsState,
     // tabs.close also goes into the real keymap: the strip's close chord is the keymap's, not tab-a11y's.
     registerAction: action => { actions.set(action.id, action.run); if (action.id === "tabs.close") t.after(keymap.registerAction(action)); },

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
 import { mount } from "../renderer/views/markdown.mjs";
-import { createTabChrome } from "../renderer/tab-a11y.mjs";
+import { createTabChrome, tabNameTailStart, TAB_TAIL_CHARS } from "../renderer/tab-a11y.mjs";
 
 const shellCss = readFileSync(new URL("../renderer/shell.css", import.meta.url), "utf8");
 const sample = `// Read-only supporting code
@@ -140,17 +140,18 @@ test("standard hljs scopes are styled locally, including nested meta and substit
   assert.notEqual(window.getComputedStyle(outside).color, "var(--violet)", "reader styles do not leak outside .mdv");
 });
 
-test("flat and grouped strips preserve intrinsic tab sizing and scroll instead of compressing labels", t => {
+// Spec F (2026-10-01; supersedes "strips scroll instead of compressing"): tabs fit the strip
+// like VS Code's "shrink" sizing. jsdom has no layout: this pins the shipped rules; the live
+// check (narrow and wide windows, many tabs) proves the geometry.
+test("flat and grouped strips share their width: tabs shrink evenly to a floor, then the strip scrolls", t => {
   const { doc, host, window } = fixture(t, shellCss);
   for (const grouped of [false, true]) {
     const bar = doc.createElement("div");
     if (grouped) bar.className = "group-tabbar";
     else bar.id = "tabbar";
-    // The report's 165.5px group size is a fixture constraint, not a claim that
-    // jsdom performs layout or that arbitrary tiny terminal panes are usable.
     bar.style.width = "165.5px";
-    const tabs = ["A-reviewer", "A-desktop-engineer-with-a-long-name"].map((title, i) =>
-      createTabChrome(doc, `${grouped}-${i}`, title));
+    const tabs = [["A-reviewer"], ["A-desktop-engineer-with-a-long-name", { dot: "on", detail: "feat/a-long-branch" }]].map(([title, decor], i) =>
+      createTabChrome(doc, `${grouped}-${i}`, title, false, decor));
     for (const tab of tabs) bar.append(tab.tabEl);
     const actions = doc.createElement("div");
     actions.id = "tab-actions";
@@ -159,21 +160,112 @@ test("flat and grouped strips preserve intrinsic tab sizing and scroll instead o
     actions.append(control);
     bar.append(actions);
     host.append(bar);
-    assert.equal(window.getComputedStyle(bar).overflowX, "auto");
+    assert.equal(window.getComputedStyle(bar).overflowX, "auto", "below the floor the strip scrolls");
     assert.equal(window.getComputedStyle(bar).minWidth, "0px");
     for (const { tabEl, triggerEl, closeEl } of tabs) {
       const style = window.getComputedStyle(tabEl);
-      assert.equal(style.flexShrink, "0", "tab identity cannot shrink to A-… under strip pressure");
-      assert.equal(style.flexGrow, "0");
-      assert.equal(style.flexBasis, "auto", "preserve content-based width, not equal-width slots");
-      assert.equal(style.maxWidth, "280px", "the Redesign v3 long-label cap");
+      assert.deepEqual([style.flexGrow, style.flexShrink, style.flexBasis], ["1", "1", "0px"], "equal shares from one zero basis");
+      assert.equal(style.maxWidth, "fit-content", "never wider than its natural width");
+      assert.equal(style.minWidth, "var(--tab-min)", "the floor holds in group strips too");
+      assert.equal(style.getPropertyValue("--tab-min"), "168px", "the dot, \"oats-…\" and an 8-character tail stay visible");
+      assert.equal(style.getPropertyValue("--tab-max"), "280px", "the Redesign v3 long-label cap");
+      assert.equal(style.getPropertyValue("--tab-chrome"), "51px", "padding 14 + 8, gap 8, the 20px close and the 1px border");
       assert.equal(style.whiteSpace, "nowrap");
-      assert.equal(window.getComputedStyle(triggerEl.querySelector(".tab-label")).textOverflow, "ellipsis", "long labels ellipsize inside the cap");
+      assert.equal(window.getComputedStyle(triggerEl).maxWidth, "calc(var(--tab-max) - var(--tab-chrome))", "the cap rides on the trigger");
+      assert.equal(window.getComputedStyle(triggerEl.querySelector(".tab-label")).textOverflow, "ellipsis", "long labels ellipsize");
       assert.equal(window.getComputedStyle(triggerEl).minWidth, "0px", "the trigger yields width to its label, not to Close");
-      assert.equal(window.getComputedStyle(closeEl).flexShrink, "0", "Close remains a usable control within the cap");
+      assert.equal(window.getComputedStyle(closeEl).flexShrink, "0", "Close remains a usable control on every tab");
+      assert.equal(triggerEl.title, triggerEl.getAttribute("aria-label"), "the full name stays in title and the accessible name");
     }
+    // The branch gives way first: it grows from zero into what the name leaves, and its gap is its own.
+    const detail = window.getComputedStyle(tabs[1].triggerEl.querySelector(".tab-detail"));
+    assert.deepEqual([detail.flexGrow, detail.flexBasis, detail.minWidth], ["1", "0px", "0px"]);
+    assert.deepEqual([detail.marginLeft, detail.paddingLeft], ["-8px", "8px"], "a hidden branch takes no gap from the name");
+    assert.equal(window.getComputedStyle(tabs[1].triggerEl.querySelector(".tab-label")).flexGrow, "0", "the name never grows at the branch's expense");
     assert.equal(window.getComputedStyle(actions).flexShrink, "0", "do not remove or compress group controls");
     assert.deepEqual([...bar.children], [...tabs.map(tab => tab.tabEl), actions], "no reordering or auto-collapse");
     bar.remove();
   }
+});
+
+// Spec F return: shrunk tabs stay distinguishable. Instance names share long
+// prefixes (the soul), so the head ellipsizes and the end of the name stays.
+test("tabNameTailStart keeps a name's last characters, or what follows the soul when shorter, without a leading separator", () => {
+  const split = (name, soul) => { const at = tabNameTailStart(name, soul); return at == null ? null : [name.slice(0, at), name.slice(at)]; };
+  assert.equal(TAB_TAIL_CHARS, 8);
+  assert.deepEqual(split("oats-desktop-developer-tabs-palette", "oats-desktop-developer"), ["oats-desktop-developer-tabs-", "palette"]);
+  assert.deepEqual(split("oats-desktop-developer-spawn-flow", "oats-desktop-developer"), ["oats-desktop-developer-sp", "awn-flow"]);
+  assert.deepEqual(split("oats-desktop-developer-ui", "oats-desktop-developer"), ["oats-desktop-developer-", "ui"], "the part after the soul, when shorter");
+  assert.deepEqual(split("oats-desktop-developer-tabs-palette", null), ["oats-desktop-developer-tabs-", "palette"], "no soul: the last characters");
+  assert.deepEqual(split("oats-desktop-developer-tabs-palette", { not: "a string" }), ["oats-desktop-developer-tabs-", "palette"], "a malformed soul is ignored");
+  assert.equal(tabNameTailStart("reviewer", "x"), null, "a name no longer than the tail is never split");
+  assert.equal(tabNameTailStart("--------", ""), null, "nothing but separators: nothing to keep");
+});
+
+test("two shrunk tabs whose names share a prefix still read differently: the tail never shrinks", t => {
+  const { doc, host, window } = fixture(t, shellCss);
+  const bar = doc.createElement("div");
+  bar.id = "tabbar";
+  bar.style.width = "200px"; // narrower than two floors: both tabs sit at --tab-min
+  const soul = "oats-desktop-developer";
+  const names = ["oats-desktop-developer-tabs-palette", "oats-desktop-developer-spawn-flow"];
+  const tabs = names.map((name, i) => createTabChrome(doc, `t${i}`, name, false, { dot: "on", tailAt: tabNameTailStart(name, soul) }));
+  for (const tab of tabs) bar.append(tab.tabEl);
+  host.append(bar);
+  const parts = tabs.map(({ triggerEl }) => [...triggerEl.querySelector(".tab-label.split").children]);
+  assert.deepEqual(parts.map(p => p.map(el => el.className)), [["tab-head", "tab-tail"], ["tab-head", "tab-tail"]]);
+  assert.deepEqual(parts.map(([head]) => head.textContent), ["oats-desktop-developer-tabs-", "oats-desktop-developer-sp"]);
+  assert.deepEqual(parts.map(([, tail]) => tail.textContent), ["palette", "awn-flow"], "what stays visible differs");
+  for (const [head, tail] of parts) {
+    const h = window.getComputedStyle(head), tl = window.getComputedStyle(tail);
+    assert.deepEqual([h.minWidth, h.overflow, h.textOverflow, h.whiteSpace], ["0px", "hidden", "ellipsis", "nowrap"], "the shared head gives way first");
+    assert.deepEqual([tl.flexShrink, tl.flexGrow, tl.whiteSpace], ["0", "0", "nowrap"], "the tail keeps its width at the floor");
+    assert.equal(window.getComputedStyle(head.parentElement).display, "flex");
+  }
+  tabs.forEach(({ triggerEl }, i) => {
+    assert.equal(triggerEl.querySelector(".tab-label").textContent, names[i], "a name that fits reads whole");
+    assert.equal(triggerEl.title, names[i]);
+    assert.equal(triggerEl.getAttribute("aria-label"), names[i], "the accessible name is the whole name, never the split");
+  });
+  // A short or unsplit name keeps the plain ellipsizing label.
+  const plain = createTabChrome(doc, "p", "README.md", false, { kind: "file" });
+  assert.equal(plain.triggerEl.querySelector(".tab-label").children.length, 0);
+  assert.equal(plain.triggerEl.querySelector(".tab-label").textContent, "README.md");
+  const shell = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
+  assert.match(shell, /decor: \{ dot: inst\.running \? "on" : "off", tailAt: tabNameTailStart\(name, inst\.agent\), tailEnd: name\.length \}/,
+    "terminal tabs split at the soul-aware tail, which ends with the name");
+});
+
+test("a remote tab's host follows the protected tail in its own span and gives way first", t => {
+  const { doc, host, window } = fixture(t, shellCss);
+  const name = "oats-desktop-developer-tabs-palette", title = `${name} · production-west`;
+  const { triggerEl } = createTabChrome(doc, "r", title, false, { dot: "on", tailAt: tabNameTailStart(name, "oats-desktop-developer"), tailEnd: name.length });
+  host.append(triggerEl);
+  const parts = [...triggerEl.querySelector(".tab-label.split").children];
+  assert.deepEqual(parts.map(el => [el.className, el.textContent]),
+    [["tab-head", "oats-desktop-developer-tabs-"], ["tab-tail", "palette"], ["tab-rest", " · production-west"]], "the tail stays the name's own end");
+  const rest = window.getComputedStyle(parts[2]);
+  assert.deepEqual([rest.minWidth, rest.overflow, rest.textOverflow, rest.flexShrink], ["0px", "hidden", "ellipsis", "1000"],
+    "the host is metadata: it shrinks before the head (flex-shrink is weighted 1000:1)");
+  assert.equal(window.getComputedStyle(parts[0]).flexShrink, "1");
+  assert.equal(triggerEl.getAttribute("aria-label"), title, "the accessible name keeps the host");
+  assert.equal(triggerEl.title, title);
+  // An out-of-range end never protects more than the title holds.
+  const clamp = createTabChrome(doc, "c", name, false, { tailAt: 28, tailEnd: 99 });
+  assert.deepEqual([...clamp.triggerEl.querySelector(".tab-label").children].map(el => el.textContent), ["oats-desktop-developer-tabs-", "palette"]);
+});
+
+// jsdom has no layout, so the geometry is proven live (renderer harness, Chromium,
+// the shipped system UI face at 12.5px; the hand-back records it). This pins the
+// floor's budget to those measurements, so a smaller floor or a wider chrome fails here.
+test("the tab floor budgets the chrome, the dot, the name's start and the widest real tail, all in bold", t => {
+  const { doc, host, window } = fixture(t, shellCss);
+  const { tabEl } = createTabChrome(doc, "b", "x", false, { dot: "on" });
+  host.append(tabEl);
+  const px = name => Number.parseFloat(window.getComputedStyle(tabEl).getPropertyValue(name));
+  const MEASURED_BOLD = { start: 43.7 /* "oats-…" */, tail: 56.5 /* "awn-flow", the widest real 8-character tail */ };
+  const DOT_AND_GAP = 7 + 8;
+  const need = px("--tab-chrome") + DOT_AND_GAP + MEASURED_BOLD.start + MEASURED_BOLD.tail;
+  assert.ok(px("--tab-min") >= need, `--tab-min ${px("--tab-min")}px holds ${need.toFixed(1)}px`);
+  assert.ok(px("--tab-min") - need < 4, "and no more than rounding: the strip keeps as many tabs as it can");
 });

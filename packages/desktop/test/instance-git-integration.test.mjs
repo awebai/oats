@@ -112,7 +112,7 @@ test('privileged proxy pins the new instance-addressed route and never admits fo
 });
 
 function shell(t) {
-  const dom = new JSDOM('<div id="app"><input id="terminal"><aside id="context-panel"></aside><button id="panel-toggle"></button></div>');
+  const dom = new JSDOM('<div id="app"><input id="terminal"><aside id="context-panel"></aside></div>');
   const document = dom.window.document; const style = document.createElement('style'); style.textContent = contextPanelCSS + instanceGitCSS; document.head.append(style);
   const calls = [], pending = [];
   const c = { document, window: dom.window, createContextPanel, createInstanceGitPanel, createInstanceTeamsSection, createInstanceSoulSection, workspace: '/A', gen: 0, currentWorkspace: () => c.workspace,
