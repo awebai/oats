@@ -20,7 +20,7 @@ import { tabBarCSS } from './workspace-discovery.mjs';
 
 export const deploymentsPageCSS = `
 ${tabBarCSS('.hier-tabs')}
-.hier-tabs { align-self:stretch; margin-right:12px; }
+.hier-tabs { align-self:stretch; margin-right:12px; padding:0 6px; margin-left:-6px; } /* room for the 6px focus tint at both ends */
 .hier-tabs[hidden] { display:none; }
 .hier-dhead { position:absolute; left:0; display:flex; flex-direction:column; align-items:flex-start; gap:4px; width:max-content; }
 .hier-dline { display:flex; align-items:baseline; gap:8px; white-space:nowrap; }
@@ -32,8 +32,15 @@ ${tabBarCSS('.hier-tabs')}
 .hier-dfix-body p, .hier-dfix-body ol { margin:0 0 6px; }
 .hier-dfix-body ol { padding-left:18px; }
 .hier-dfix-note { color:var(--muted); }
+.hier-dfix-code { font:inherit; font-family:var(--mono,monospace); color:var(--fg); }
 .hier-dreason .hier-dhead { position:static; }
 `;
+
+/** Text whose `backticked` spans are commands, set as code (the server's reasons quote them so). */
+function withCode(doc, host, text) {
+  String(text).split('`').forEach((part, i) => { if (part) host.append(i % 2 ? el(doc, 'code', part, 'hier-dfix-code') : doc.createTextNode(part)); });
+  return host;
+}
 
 const el = (doc, tag, text, cls) => {
   const node = doc.createElement(tag);
@@ -120,15 +127,19 @@ export function deploymentHead(doc, { deployment, rows, open = false, onToggle }
     if (deployment.short) line.append(el(doc, 'span', deployment.short, 'cct hier-dshort'));
   }
   head.append(line);
-  const sentence = live ? '' : state.detail || deployment.reason || '';
+  // With steps to follow, the steps are the explanation (the short reason above already names the
+  // cause; the full sentence would repeat step 1): only a remembered deployment's "Last report" lead
+  // stays. Without steps, the full sentence says what happens.
+  const remembered = !live && deployment.identityFrom === 'remembered' ? 'Last report, not live now.' : '';
+  const sentence = live ? '' : (deployment.fix?.length ? remembered : state.detail || deployment.reason || '');
   const steps = live ? [] : deployment.fix || [];
   const note = live ? '' : deployment.note || '';
   if (sentence || steps.length || note) {
     // "How to fix" when there are steps to follow; with only an explanation, it is details.
     const fix = el(doc, 'details', undefined, 'hier-dfix');
     const body = el(doc, 'div', undefined, 'hier-dfix-body');
-    if (sentence) body.append(el(doc, 'p', sentence, 'hier-dfix-reason'));
-    if (steps.length) { const list = el(doc, 'ol', undefined, 'hier-dfix-steps'); for (const step of steps) list.append(el(doc, 'li', step)); body.append(list); }
+    if (sentence) body.append(withCode(doc, el(doc, 'p', undefined, 'hier-dfix-reason'), sentence));
+    if (steps.length) { const list = el(doc, 'ol', undefined, 'hier-dfix-steps'); for (const step of steps) list.append(withCode(doc, el(doc, 'li'), step)); body.append(list); }
     if (note) body.append(el(doc, 'p', note, 'hier-dfix-note'));
     fix.append(el(doc, 'summary', steps.length ? 'How to fix' : 'Details'), body);
     fix.open = !!open;

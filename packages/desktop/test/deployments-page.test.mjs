@@ -22,7 +22,7 @@ const ALTAIR = { id: "remote:altair:5d1e0c9b8a7f", machine: "altair", path: "/ho
   short: "timed out", note: "altair now reports workspace tsm." };
 const VEGA = { id: "remote:vega:9f2c1a7b3e4d", machine: "vega", path: "/home/op/Agents/lab", label: "~/Agents/lab", local: false,
   reachable: false, identityFrom: null, primary: false, reason: "ssh to vega asks for a password, and Desktop never answers a prompt.",
-  short: "ssh needs a prompt", fix: ["Add your key to vega: ssh-copy-id vega", "Check that ssh vega opens without a prompt"] };
+  short: "ssh needs a prompt", fix: ["Run `ssh vega` once in a terminal and answer its prompt (a host key or a password).", "Desktop tries again on its next read."] };
 const tag = (d) => ({ id: d.id, machine: d.machine, path: d.path });
 const row = (name, d, fields = {}) => ({ instance: name, agent: "soul", agentsRoot: `${d.path}/agents`, home: `${d.path}/agents/soul/instances/${name}`,
   repoName: "repo", running: true, deployment: tag(d), ...(d.local ? {} : { server: d.machine, addressable: true }), ...fields });
@@ -130,8 +130,12 @@ test("All: one section per deployment, stacked, under the group-label heading wi
   assert.equal(heads[2].querySelector(".hier-dshort").textContent, "ssh needs a prompt");
   const fix = heads[2].querySelector("details.hier-dfix");
   assert.equal(fix.open, false); assert.equal(fix.querySelector("summary").textContent, "How to fix");
-  assert.equal(fix.querySelector(".hier-dfix-reason").textContent, VEGA.reason);
-  assert.deepEqual([...fix.querySelectorAll("ol.hier-dfix-steps > li")].map((li) => li.textContent), VEGA.fix);
+  // With steps, the steps are the explanation: the full sentence would repeat step 1 (live check, #482).
+  assert.equal(fix.querySelector(".hier-dfix-reason"), null);
+  assert.deepEqual([...fix.querySelectorAll("ol.hier-dfix-steps > li")].map((li) => li.textContent), VEGA.fix.map((step) => step.replaceAll("`", "")));
+  // A command the server quotes in backticks is set as code, never shown with its backticks.
+  const code = fix.querySelector("ol.hier-dfix-steps code.hier-dfix-code");
+  assert.ok(code, "the quoted command is code"); assert.doesNotMatch(fix.textContent, /`/);
   // Remembered without steps: the sentence and the note, under Details (no fix to follow).
   const details = heads[1].querySelector("details.hier-dfix");
   assert.equal(details.querySelector("summary").textContent, "Details");
@@ -173,7 +177,7 @@ test("a deployment that is not reached and has no rows: its tab shows why and ho
   assert.equal(block.querySelector(".hier-dstate.chip").textContent, "not reached");
   assert.equal(block.querySelector(".hier-dshort").textContent, "ssh needs a prompt");
   assert.equal(block.querySelector(".hier-dfix > summary").textContent, "How to fix");
-  assert.deepEqual([...block.querySelectorAll(".hier-dfix-steps li")].map((li) => li.textContent), VEGA.fix);
+  assert.deepEqual([...block.querySelectorAll(".hier-dfix-steps li")].map((li) => li.textContent), VEGA.fix.map((step) => step.replaceAll("`", "")));
   assert.match(u.one(".hier-sum").textContent, /^0 running · 0 stopped · 0 groups$/);
   // A live deployment with no rows keeps the overview's empty message.
   const v = await page(t, panel([LOCAL, VEGA], [row("far", VEGA)]));
@@ -244,7 +248,7 @@ for (const name of ["light", "solarized", "dark"]) test(`${name}: the tabs, depl
   const checks = [
     [u, '.hier-tabs [aria-selected="true"]', "fg"], [u, '.hier-tabs [aria-selected="false"]', "nav-fg"],
     [u, ".hier-dname", "muted"], [u, ".hier-dcount", "muted"], [u, ".hier-dshort", "muted"], [u, ".hier-dstate", "chip-fg"],
-    [u, ".hier-dfix > summary", "fg"], [u, ".hier-dfix-body", "fg"], [u, ".hier-dfix-note", "muted"],
+    [u, ".hier-dfix > summary", "fg"], [u, ".hier-dfix-body", "fg"], [u, ".hier-dfix-note", "muted"], [u, ".hier-dfix-code", "fg"],
     [empty, ".hier-dreason .hier-dname", "muted"], [empty, ".hier-dreason .hier-dshort", "muted"], [empty, ".hier-dreason .hier-dstate", "chip-fg"],
     [empty, ".hier-dreason .hier-dfix > summary", "fg"],
   ];
