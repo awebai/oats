@@ -3781,10 +3781,20 @@ Usage:
   oats server add <id> --ssh <alias>         register another machine's OATS (OpenSSH alias,
       --workspace </abs/path> [--oats <p>]   remote workspace, remote oats path; no keys stored;
       [--path <dir:dir>]                    --path = dirs prepended to the remote PATH, e.g. ~/.local/bin)
-  oats server list|remove <id>|check <id>    registry; check = reachability + version, no mutation
+  oats server list|remove <id>|check <id>    registry; check = reachability, version, workspace key
+      [--workspace-ref <ref>]               (filled in when missing) and Git readability;
+                                            list --workspace-ref = one workspace's servers
+  oats server connect <id> --ssh <alias>     put this deployment's workspace on that machine and
+      [--workspace-ref <ref>] [--dir <path>] register it: ssh, oats, git, deployment, register,
+      [--oats <p>] [--path <dir:dir>]       readiness, each re-checked every run; --install-oats
+      [--label <t>] [--install-oats]        installs this version with npm there; human steps
+      [--replace] [--json]                  come back with the exact remedy (docs/servers.md)
   oats spawn|retire|status ... --server <id> run that command on the server's installed oats
                                             (same flags, same envelope; the saved route per
                                             remote instance lives under ~/.oats/remote/)
+  oats <namespace> <command> ... --server <id>
+                                            a capability command on the server's deployment
+                                            (argv minus --server, stdin forwarded)
   oats server roster [--server <id>]         remote roster grouped by server and saved route
       [--budget <ms>] [--per-target <ms>]   target: one status pull per group within a total
       [--json]                              budget (45 s, 20 s per target); every instance the
@@ -3817,6 +3827,8 @@ Usage:
                                             and prints the
                                             next steps (clone members you work IN, spawn
                                             oats-operator-expert); creates no soul, spawns nothing
+      [--check]                             --check: write nothing; report <dir> (~ = this home),
+                                            its state and whether Git reads the workspace remote
   oats session inspect|input|attach --home <absolute-home> [--text-file <path>] [--json]
   oats schedule list|show <id>|test <id>|add <id> --file <spec.json>|update <id> --file <spec.json>
       enable|disable|run|remove|reconcile <id>   workspace-scoped, host-owned schedules (spawn,
