@@ -412,7 +412,9 @@ async function workspaceTarget(bail, { command, liveTeams = true }) {
     if (!existsSync(join(deployment, "oats-local.yaml"))) return bail("E_HOME_MISMATCH", `${homeFlag} is not at <deployment>/agents/<soul>/instances/<name>: ${deployment} has no oats-local.yaml`, { home: homeFlag, expected: join(deployment, "oats-local.yaml") });
     if (flag("dir") !== undefined) { let given = null; try { given = dirname(loadLocal(dirFlag()).path); } catch { given = dirFlag(); } if (realOrResolved(given) !== realOrResolved(deployment)) return bail("E_HOME_MISMATCH", `--dir ${dirFlag()} is not the deployment of ${homeFlag} (${deployment}); omit --dir for a home`); }
     if (rootFlag && realOrResolved(rootFlag) !== realOrResolved(join(deployment, "agents"))) return bail("E_HOME_MISMATCH", `--agents-root ${rootFlag} is not the agents root of ${homeFlag}`);
-    return homeTarget(homeFlag, meta, { remoteOptions, discover: command === "readiness", live: liveTeams });
+    // A typed refusal (the deployment's removed team keys, team model 3) answers as one, as for --soul.
+    try { return await homeTarget(homeFlag, meta, { remoteOptions, discover: command === "readiness", live: liveTeams }); }
+    catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details); throw e; }
   }
   try { if (!isWorkspaceContext(dirFlag())) return bail("E_LOCAL_MISSING", `${command} reads a workspace deployment, and none is in reach of ${dirFlag()} (no oats-local.yaml walking up; \`oats onboard\` creates one) — or pass --home <abs> of a workspace instance`); }
   catch (e) { return bail(e?.code || "E_WORKSPACE_SCHEMA", e?.message || String(e), e?.details); }
@@ -3004,7 +3006,9 @@ async function capabilityCommand() {
     if (!trust.trusted) bail("E_CAPABILITY_BLOCKED", `${m.capability} executable command is blocked: ${trust.reason}`);
     if (homeMeta && m.capability === homeMeta.messaging) {
       const { liveTeams } = await import("../lib/instance-resolution.mjs");
-      const live = await liveTeams(instanceHome, homeMeta.meta, { remoteOptions: remoteOptionsFromEnv() });
+      let live;
+      try { live = await liveTeams(instanceHome, homeMeta.meta, { remoteOptions: remoteOptionsFromEnv() }); }
+      catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details); throw e; }
       teamCtx = homeTeamCtx(live);
     }
     return runManifestCommand(m, { settings: capSettings[m.capability] || {}, origins: capOrigins[m.capability] }, teamCtx, () => m._dir, () => ({ dir: soulDir, cleanup: () => {} }));

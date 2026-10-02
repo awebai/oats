@@ -299,3 +299,27 @@ test("a package soul carrying the removed `team:` is refused (not listed), namin
   assert.equal(problems[0].code, "E_WORKSPACE_SCHEMA");
   assert.match(problems[0].message, /a soul's teams are decided by souls: in oats-workspace\.yaml \(team model 3, OATS 0\.37\.0\)/);
 });
+
+test("an existing home refuses the removed local team keys like every other reader: its messaging commands and operations, inspect --home and readiness --home answer removed-key, never the record", async (t) => {
+  const fx = fixture({ workspace: { defaultTeam: "oats" } }); t.after(fx.cleanup);
+  const { home } = await fx.spawn("dev", { instance: "dev-removed" });
+  const localFile = join(fx.dep, "oats-local.yaml");
+  const original = readFileSync(localFile, "utf8");
+  for (const [key, souls] of [["souls.default", { default: { dev: "oats" } }], ["souls.teams", { teams: { "*": ["night"] } }]]) {
+    writeFileSync(localFile, YAML.stringify({ ...YAML.parse(original), souls }));
+    const runs = [
+      ["chat teams", fx.cli(["chat", "teams", "--json"], { cwd: home, env: { OATS_INSTANCE_HOME: home } })],
+      ["inspect --home", fx.cli(["inspect", "--home", home, "--json"])],
+      ["readiness --home", fx.cli(["readiness", "--home", home, "--json"])],
+      ["operation run --home", fx.cli(["operation", "run", "messaging:teams", "--home", home, "--json"])],
+    ];
+    for (const [what, r] of runs) {
+      const e = refused(r, "E_WORKSPACE_SCHEMA", `${what} with ${key}`);
+      assert.equal(e.details.reason, "removed-key", `${what} with ${key}`);
+      assert.equal(typeof e.details.replacement, "string", `${what} with ${key}: the souls: to commit`);
+      assert.ok(e.details.problems.some((p) => p.path === `/${key.replace(".", "/")}`), `${what} names ${key}`);
+    }
+  }
+  writeFileSync(localFile, original);
+  ok(fx.cli(["chat", "teams", "--json"], { cwd: home, env: { OATS_INSTANCE_HOME: home } }), "migrated: the provider runs again");
+});

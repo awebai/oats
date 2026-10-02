@@ -1067,7 +1067,10 @@ operator guide: [workspaces.md](workspaces.md#teams).
   (`E_WORKSPACE_SCHEMA`, reason `removed-key`): the refusal names each key
   found, and `details.replacement` is the `souls:` YAML to commit instead (a
   bare soul name written `<member>/<soul>` for the operator to qualify), also
-  printed at the end of the message.
+  printed at the end of the message. Every command that reads the file
+  refuses, an instance home's messaging commands, operations, `inspect --home`
+  and `readiness --home` included: they never fall back to the home's
+  recorded teams for it.
 - **A soul's key** is its qualified name: `<package>/<soul>`, or
   `<member>/<soul>` with the member repository's name (as `souls.disabled`
   names it). A label matches `[a-z0-9][a-z0-9._-]*`.

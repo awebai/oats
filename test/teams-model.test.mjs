@@ -202,3 +202,15 @@ test("a team id must pass the kernel's safety rule in BOTH files: never '-'-led,
   const { readFileSync } = await import("node:fs");
   for (const f of ["oats-local.schema.json", "oats-workspace.schema.json"]) assert.ok(readFileSync(new URL(`../docs/${f}`, import.meta.url), "utf8").includes(JSON.stringify(TEAM_ID_RE.source).slice(1, -1)), f);
 });
+
+test("remedies point where the fix belongs: the workspace file unless local teams are allowed; a default is changed where it comes from", () => {
+  const unconfigured = (m) => teamProblems(m, { messaging: true }).find((p) => p.code === "E_TEAM_UNCONFIGURED").fix;
+  assert.equal(unconfigured(model(ws())), "run `oats aweb setup` to create a team, then commit it in oats-workspace.yaml as defaultTeam (or as a soul's default in souls:)");
+  assert.equal(unconfigured(model(ws({ localTeams: true }))), "run `oats aweb setup` to create a team, then commit it in oats-workspace.yaml as defaultTeam (or as a soul's default in souls:), or record it here with `oats teams add <label> --team <id>`");
+  assert.equal(unconfigured(model(null)), "run `oats aweb setup` (it creates the teams and sets the default), or `oats teams add <label> --team <id>`");
+  const unmapped = (workspace, local, key = "a/x") => teamProblems(model(workspace, local), { key }).find((p) => p.code === "team-unmapped" && p.default).fix;
+  const OWNER = "its owner runs `oats aweb setup`, then commits the id";
+  assert.equal(unmapped(ws({ souls: { "a/*": { default: "docs" } } })), `${OWNER}; or choose another default in the souls: entry a/* of oats-workspace.yaml`);
+  assert.equal(unmapped(ws({ defaultTeam: "docs" })), `${OWNER}; or choose another defaultTeam in oats-workspace.yaml`);
+  assert.equal(unmapped(ws({ localTeams: true }), { defaultTeam: "docs" }), `${OWNER}; or choose another default with \`oats teams default\``);
+});
