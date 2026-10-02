@@ -71,7 +71,9 @@ export const hierarchyCSS = `
 .hier * { box-sizing: border-box; }
 .hier-bar { display: flex; align-items: center; gap: 10px; height:48px; flex: none; padding:0 12px 0 16px;
             border-bottom: 1px solid var(--border); background: var(--surface); }
-.hier-sum { color: var(--muted); font-size: 12.5px; }
+/* The counts sit at the right, before Spawn (never against the tabs); the tabs take what is left and
+   scroll when they overflow (deployments-page.mjs). */
+.hier-sum { flex: none; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
 .hier-sum b { color: var(--fg); font-weight: 600; }
 .hier-sum .skeleton-pill { height: 0.9em; }
 .hier-refreshing { flex: none; display: inline-flex; align-items: center; }
@@ -362,9 +364,9 @@ export function mount(el, ctx) {
       <div class="hier-bar">
         <select class="field wssel" aria-label="Workspace" style="display:none"></select>
         <span class="hier-tabs-host"></span>
+        <span style="flex:1"></span>
         <span class="hier-sum"></span>
         <span class="hier-refreshing"></span>
-        <span style="flex:1"></span>
         <button class="act primary spawnbtn" title="Choose a soul in Workspace to spawn">${icon("plus", { size: 14 })}Spawn</button>
       </div>
       <div class="hier-notice" role="note" hidden><span class="hier-notice-message"></span><button class="act hier-retry" type="button">Retry roster</button><button class="act hier-readd" type="button" hidden>Re-add workspace</button></div>

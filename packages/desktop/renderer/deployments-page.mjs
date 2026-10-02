@@ -14,16 +14,18 @@
  * at 650) holding the full sentence, the fix steps and the note. Never an id: the full path is the
  * label's tooltip only. */
 import { deploymentState, deploymentMark } from './view-deployments.mjs';
-import { deploymentLabel } from './deployment-label.mjs';
+import { deploymentLabel, deploymentLabelParts } from './deployment-label.mjs';
 import { runtimeCounts } from './instance-presentation.mjs';
 import { tabBarCSS } from './workspace-discovery.mjs';
 
 export const deploymentsPageCSS = `
 ${tabBarCSS('.hier-tabs')}
-.hier-tabs { align-self:stretch; margin-right:12px; padding:0 6px; margin-left:-6px; } /* room for the 6px focus tint at both ends */
+.hier-tabs { align-self:stretch; flex:0 1 auto; margin-right:12px; padding:0 6px; margin-left:-6px; } /* room for the 6px focus tint at both ends; shrinks, then scrolls */
 .hier-tabs[hidden] { display:none; }
 .hier-dhead { position:absolute; left:0; display:flex; flex-direction:column; align-items:flex-start; gap:4px; width:max-content; }
 .hier-dline { display:flex; align-items:baseline; gap:8px; white-space:nowrap; }
+.hier-dname { display:inline-flex; align-items:baseline; gap:6px; min-width:0; flex:0 1 auto; overflow:hidden; }
+.hier-dhead .hier-dpath { text-transform:none; letter-spacing:normal; }
 .hier-dfix > summary { display:flex; align-items:center; gap:8px; width:max-content; cursor:pointer; list-style:none; font-size:12px; font-weight:650; color:var(--fg); }
 .hier-dfix > summary::-webkit-details-marker { display:none; }
 .hier-dfix > summary::before { content:''; flex:none; width:6px; height:6px; margin:0 2px; border-right:1.5px solid var(--muted); border-bottom:1.5px solid var(--muted); transform:rotate(-45deg); transition:transform .15s; }
@@ -64,13 +66,23 @@ export function createDeploymentTabBar(doc, { idPrefix, onSelect }) {
   const element = el(doc, 'div', undefined, 'hier-tabs');
   element.setAttribute('role', 'tablist'); element.setAttribute('aria-label', 'Deployments'); element.hidden = true;
   const buttons = new Map(); // tab id -> button
-  let order = [];
+  let order = [], shown = null;
   const choose = (id, focus) => {
     onSelect?.(id);
-    if (focus) buttons.get(id)?.focus(); // scrolled into view when the bar overflows
+    if (focus) buttons.get(id)?.focus(); // revealed by its focus listener
   };
+  // When the tabs overflow, the strip scrolls horizontally (no scrollbar) and the selected or focused tab
+  // is revealed, as in the terminal tab strip; only the strip scrolls, never the page around it.
+  function reveal(control) {
+    if (!control || !element.clientWidth) return;
+    const left = element.getBoundingClientRect().left + element.clientLeft, right = left + element.clientWidth;
+    const box = control.getBoundingClientRect();
+    if (box.left < left || box.width > element.clientWidth) element.scrollLeft += box.left - left;
+    else if (box.right > right) element.scrollLeft += box.right - right;
+  }
   function button(id) {
     const b = el(doc, 'button'); b.type = 'button'; b.setAttribute('role', 'tab');
+    b.addEventListener('focus', () => reveal(b));
     b.addEventListener('click', () => choose(id, false));
     b.addEventListener('keydown', event => {
       const at = order.indexOf(id), n = order.length;
@@ -109,8 +121,10 @@ export function createDeploymentTabBar(doc, { idPrefix, onSelect }) {
       if (element.children[i] !== b) element.insertBefore(b, element.children[i] || null);
     });
     element.hidden = !list.length;
+    // A newly selected tab (a remembered one, a request from the switcher) is brought into view once.
+    if (selected !== shown) { shown = selected; reveal(buttons.get(selected)); }
   }
-  return { element, paint, selected: () => element.querySelector('[aria-selected="true"]') };
+  return { element, paint, reveal, selected: () => element.querySelector('[aria-selected="true"]') };
 }
 
 /** Whether a deployment's heading must say something: it is not live, or it is live but carries a
@@ -134,7 +148,12 @@ export function deploymentHead(doc, { deployment, rows, open = false, onToggle }
   const chip = state.key === 'live' ? 'not matched' : state.text;
   const head = el(doc, 'div', undefined, 'hier-dhead');
   const line = el(doc, 'div', undefined, 'hier-dline'); line.setAttribute('aria-hidden', 'true');
-  const name = el(doc, 'span', label, 'cnm hier-dname');
+  // The machine in the group-label type (uppercase); the path beside it in normal case, never
+  // transformed: a path is case-sensitive.
+  const parts = deploymentLabelParts(deployment);
+  const name = el(doc, 'span', undefined, 'hier-dname');
+  name.append(el(doc, 'span', parts.machine, 'cnm hier-dmachine'));
+  if (parts.path) name.append(doc.createTextNode(' '), el(doc, 'span', `· ${parts.path}`, 'cct hier-dpath'));
   if (deployment.path) name.title = deployment.path;
   line.append(name, el(doc, 'span', counts, 'cct hier-dcount'));
   if (!live) {

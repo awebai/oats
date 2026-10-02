@@ -177,6 +177,8 @@ body {
 .ctx-deployment:first-child { margin-top: 6px; }
 .ctx-deployment + .ctx-group { height: 4px; }
 .ctx-deployment-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A path tail is case-sensitive: never uppercased or letter-spaced with the machine label. */
+.ctx-deployment-path { text-transform: none; letter-spacing: normal; }
 /* One instance row: a 48px box, 18px per level; the row (not the button)
    carries hover/selection so it spans the indent like the design. Its
    background fills 44px, clipped inside 2px transparent borders top and

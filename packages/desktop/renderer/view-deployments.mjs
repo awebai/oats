@@ -10,7 +10,7 @@
  * last deployments seen per view, for surfaces that do not read the panel themselves (the "On …"
  * line, deployment-scope-line.mjs). */
 import { visibleClusters } from './instance-tree.mjs';
-import { machineLabels, THIS_MACHINE } from './deployment-label.mjs';
+import { machineLabelParts, THIS_MACHINE } from './deployment-label.mjs';
 import { iconElement } from './shell-icons.mjs';
 
 const text = (v, max = 4096) => typeof v === 'string' && v.length > 0 && v.length <= max;
@@ -80,10 +80,11 @@ export function rosterSections(instances, visible, deployments) {
   };
   if (!isMultiDeployment(deployments)) return [{ deployment: null, label: null, groups: groupsOf(instances, visible) }];
   const sectionOf = splitByDeployment(deployments);
-  const all = sectionOf(instances), shown = sectionOf(visible), labels = machineLabels(deployments);
-  return deployments.map(d => ({ deployment: d, label: labels.get(d.id), all: all.get(d.id), shown: shown.get(d.id) }))
+  const all = sectionOf(instances), shown = sectionOf(visible), labels = machineLabelParts(deployments);
+  const label = ({ machine, tail }) => (tail ? `${machine} · ${tail}` : machine);
+  return deployments.map(d => ({ deployment: d, parts: labels.get(d.id), all: all.get(d.id), shown: shown.get(d.id) }))
     .filter(s => s.shown.length)
-    .map(s => ({ deployment: s.deployment, label: s.label, groups: groupsOf(s.all, s.shown) }));
+    .map(s => ({ deployment: s.deployment, label: label(s.parts), machine: s.parts.machine, tail: s.parts.tail, groups: groupsOf(s.all, s.shown) }));
 }
 
 /** `rows → Map<deployment id, rows>` over the given deployments; an unknown or missing deployment
@@ -113,11 +114,16 @@ export function deploymentMark(doc, words) {
 /** A deployment heading in the sidebar roster, in the roster's group-label style: its machine label
  * (the full path only as the tooltip), a status mark when it is not live, and a heading role so a
  * screen reader can move between deployments. */
-export function deploymentHeading(doc, { deployment, label, count }) {
+export function deploymentHeading(doc, { deployment, label, machine, tail, count }) {
   const head = doc.createElement('div');
   head.className = 'ctx-deployment'; head.setAttribute('role', 'heading'); head.setAttribute('aria-level', '3');
   head.dataset.deployment = deployment.id;
-  const name = doc.createElement('span'); name.className = 'ctx-deployment-label'; name.textContent = label;
+  // The machine in the group-label type (uppercase); a path tail beside it keeps its case.
+  const name = doc.createElement('span'); name.className = 'ctx-deployment-label';
+  if (machine && tail) {
+    const path = doc.createElement('span'); path.className = 'ctx-deployment-path'; path.textContent = tail;
+    name.append(doc.createTextNode(`${machine} · `), path);
+  } else name.textContent = label;
   if (deployment.path) name.title = deployment.path;
   head.append(name);
   const state = deploymentState(deployment);

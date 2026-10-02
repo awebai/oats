@@ -125,6 +125,13 @@ test("roster headings: one machine holding two deployments adds the path tail; n
   assert.deepEqual(heads.map((h) => h.querySelector(".ctx-deployment-label").textContent), ["This Mac · oats", "This Mac · oats-v2", "altair"]);
   assert.deepEqual(heads.map((h) => h.querySelector(".deployment-mark")?.getAttribute("aria-label") ?? null), [null, null, "not reached"]);
   assert.equal(heads[2].getAttribute("aria-label"), "altair, not reached, 1 instance");
+  // The machine is uppercased with the group label; a path tail is case-sensitive and keeps its case.
+  const doc = list.ownerDocument, style = doc.createElement("style"); style.textContent = css; doc.head.append(style);
+  const win = doc.defaultView;
+  assert.deepEqual(heads.map((h) => h.querySelector(".ctx-deployment-path")?.textContent ?? null), ["oats", "oats-v2", null]);
+  assert.equal(win.getComputedStyle(heads[1]).textTransform, "uppercase");
+  assert.equal(win.getComputedStyle(heads[1].querySelector(".ctx-deployment-path")).textTransform, "none");
+  assert.equal(win.getComputedStyle(heads[1].querySelector(".ctx-deployment-path")).letterSpacing, "normal");
 });
 
 test("roster: a stale deployment (its last re-read failed) is marked in words, and its held rows' Start and actions wait as on a stale roster", (t) => {

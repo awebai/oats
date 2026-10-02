@@ -227,8 +227,9 @@ answers the view that holds it; no `?ws=` answers the first view.
 - `instances` is the union of every deployment's rows, each tagged
   `deployment: {id, machine, path}`. The sidebar's instance list shows a
   heading per deployment (in its group-heading style, named by
-  `machineLabels`: the machine, with the path tail when one machine holds two)
-  only when the view has two or more, and none for a deployment with no rows;
+  `machineLabels`: the machine, with the path tail when one machine holds two;
+  the machine is uppercased, a path tail never is, since a path is
+  case-sensitive) only when the view has two or more, and none for a deployment with no rows;
   with one it has no headings. Rows never repeat the workspace name, and a
   row's identity line keeps its host.
 
@@ -240,10 +241,15 @@ overview trees and nothing deployment-specific beyond them. Its tabs
 served order, named by `machineLabels`; a view of one deployment has only
 that deployment's tab, so the machine is always named. The selected tab is
 remembered per view in localStorage (`oats.desktop.deploymentTab`, ids only,
-at most 32 views). The header's count line counts the selected tab.
+at most 32 views). When the tabs overflow, the strip scrolls horizontally and
+the selected or focused tab is revealed, as in the terminal tab strip. The
+header's count line counts the selected tab and sits at the right, before
+Spawn.
 
 - **All** stacks one section per deployment, headed by `deploymentLabel`
-  (the full path in a tooltip) and its counts; relations never cross
+  (the full path in a tooltip) and its counts: the machine in the
+  group-label style (uppercase), the `· path` in normal case in the muted
+  secondary style, like the counts; relations never cross
   sections, and pan, zoom and fit work over the whole canvas.
 - **A deployment's tab** shows only that deployment's tree.
 - A non-live deployment's heading carries a state chip ("not reached",

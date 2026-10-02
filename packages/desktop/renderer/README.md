@@ -278,8 +278,9 @@ there is no field and the form is unchanged. Rules:
   catalog row (`catalogSoul`: the root differs per deployment). A deployment
   without the soul stays selectable (a deployment that isn't live is marked by
   its state). Choosing it blocks Spawn, said once, in the footer only: "<machine>
-  isn't reachable right now." when it isn't live, else "<soul> isn't available on
-  <machine>."; nothing is read.
+  isn't reachable right now." when a remote isn't live, "This Mac's deployment
+  hasn't been read yet. Try again in a moment." for a local one not read yet, else
+  "<soul> isn't available on <machine>."; nothing is read.
 - **Default.** The last used in this view if it has the soul; else the first
   that has it, local before remote; else the last used (blocked). With nothing
   used yet: the first local one. Until every catalog answers, an untouched field

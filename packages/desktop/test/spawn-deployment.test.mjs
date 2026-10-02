@@ -458,3 +458,15 @@ test('spawn jobs: post addresses the deployment, ownership and storage keep the 
   assert.deepEqual(recovered, [['/b', 'result']]);
   assert.equal(r.rows('ws:v')[0].deployment.id, '/b');
 });
+
+test('a local deployment not read yet blocks Spawn with "hasn\'t been read yet", never "isn\'t reachable" (expert, #482)', async () => {
+  const doc = new JSDOM('<body></body>').window.document;
+  const unread = local(B, '…/other/northwind', { reachable: false, identityFrom: null });
+  const field = createSpawnDeploymentField(doc, { soul: { name: 'release-manager', agentsRoot: ROOT }, viewId: 'v', deployments: [DA, unread],
+    read: async () => [], storage: memory(), rove: roveSegment });
+  doc.body.append(field.element);
+  [...field.element.querySelectorAll('input[type=radio]')].find(r => r.value === B).click();
+  assert.equal(field.blocked(), true);
+  assert.equal(field.blockText(), "This Mac's deployment hasn't been read yet. Try again in a moment");
+  field.dispose?.();
+});

@@ -9,6 +9,7 @@ import { JSDOM } from "jsdom";
 import * as hierarchy from "../renderer/views/hierarchy.mjs";
 import { currentWorkspace, setWorkspace } from "../renderer/views/common.mjs";
 import { requestDeploymentTab, rememberDeploymentTab, rememberedDeploymentTab } from "../renderer/deployment-tabs.mjs";
+import { createDeploymentTabBar } from "../renderer/deployments-page.mjs";
 
 const theme = readFileSync(new URL("../renderer/theme.css", import.meta.url), "utf8");
 const tick = () => new Promise((resolve) => setImmediate(resolve));
@@ -116,7 +117,16 @@ test("All: one section per deployment, stacked, under the group-label heading wi
   assert.deepEqual(sections.map((s) => s.getAttribute("role")), ["group", "group", "group"]);
   const heads = u.all(".hier-dhead");
   assert.deepEqual(heads.map((h) => h.querySelector(".hier-dname").textContent), ["This Mac · ~/Agents/oats", "altair · ~/Agents/tsm", "vega · ~/Agents/lab"]);
-  assert.ok(heads.every((h) => h.querySelector(".hier-dname").classList.contains("cnm")), "the overview's group-label style");
+  assert.ok(heads.every((h) => h.querySelector(".hier-dmachine").classList.contains("cnm")), "the machine: the overview's group-label style");
+  // A path is case-sensitive: never uppercased (or letter-spaced) with the machine label.
+  const style = (el) => u.dom.window.getComputedStyle(el);
+  assert.deepEqual(heads.map((h) => h.querySelector(".hier-dmachine").textContent), ["This Mac", "altair", "vega"]);
+  assert.deepEqual(heads.map((h) => h.querySelector(".hier-dpath").textContent), ["· ~/Agents/oats", "· ~/Agents/tsm", "· ~/Agents/lab"]);
+  for (const h of heads) {
+    assert.equal(style(h.querySelector(".hier-dmachine")).textTransform, "uppercase");
+    assert.equal(style(h.querySelector(".hier-dpath")).textTransform, "none", "the path keeps its case");
+    assert.ok(h.querySelector(".hier-dpath").classList.contains("cct"), "in the muted secondary style, like the counts");
+  }
   assert.deepEqual(heads.map((h) => h.querySelector(".hier-dname").title), [LOCAL.path, ALTAIR.path, VEGA.path], "the full path is the tooltip");
   assert.deepEqual(heads.map((h) => h.querySelector(".hier-dcount").textContent), ["3 running", "1 running", "no instances"]);
   assert.doesNotMatch(u.host.textContent, /primary/); assert.equal(u.all(".hier-dtag").length, 0);
@@ -247,9 +257,9 @@ for (const name of ["light", "solarized", "dark"]) test(`${name}: the tabs, depl
   empty.doc.documentElement.dataset.theme = name;
   const checks = [
     [u, '.hier-tabs [aria-selected="true"]', "fg"], [u, '.hier-tabs [aria-selected="false"]', "nav-fg"],
-    [u, ".hier-dname", "muted"], [u, ".hier-dcount", "muted"], [u, ".hier-dshort", "muted"], [u, ".hier-dstate", "chip-fg"],
+    [u, ".hier-dmachine", "muted"], [u, ".hier-dpath", "muted"], [u, ".hier-dcount", "muted"], [u, ".hier-dshort", "muted"], [u, ".hier-dstate", "chip-fg"],
     [u, ".hier-dfix > summary", "fg"], [u, ".hier-dfix-body", "fg"], [u, ".hier-dfix-note", "muted"], [u, ".hier-dfix-code", "fg"],
-    [empty, ".hier-dreason .hier-dname", "muted"], [empty, ".hier-dreason .hier-dshort", "muted"], [empty, ".hier-dreason .hier-dstate", "chip-fg"],
+    [empty, ".hier-dreason .hier-dmachine", "muted"], [empty, ".hier-dreason .hier-dpath", "muted"], [empty, ".hier-dreason .hier-dshort", "muted"], [empty, ".hier-dreason .hier-dstate", "chip-fg"],
     [empty, ".hier-dreason .hier-dfix > summary", "fg"],
   ];
   for (const [p, selector, fg] of checks) {
@@ -325,4 +335,38 @@ test("a stale local deployment (its last re-read failed): a 'stale' chip with th
   assert.match(u.one(".pstate").textContent, /\(last observation\)$/);
   click("lead");
   assert.equal(u.one(".pterm").disabled, false, "the live deployment's rows act as before");
+});
+
+test("header: the counts sit at the right, before Spawn, never against the tabs; the tab strip shrinks and scrolls", async (t) => {
+  const u = await page(t, THREE());
+  const bar = u.one(".hier-bar"), kids = [...bar.children];
+  const at = (sel) => kids.findIndex((k) => k.matches(sel));
+  assert.ok(at(".hier-tabs") < at('[style*="flex:1"]') && at('[style*="flex:1"]') < at(".hier-sum") && at(".hier-sum") < at(".spawnbtn"),
+    kids.map((k) => k.className || k.getAttribute("style")).join(" | "));
+  const win = u.dom.window;
+  assert.equal(win.getComputedStyle(u.one(".hier-tabs")).overflowX, "auto");
+  assert.equal(win.getComputedStyle(u.one(".hier-sum")).whiteSpace, "nowrap");
+});
+
+test("tab strip overflow: a newly selected or focused tab is scrolled into the strip, and only the strip scrolls", () => {
+  const win = new JSDOM("<body></body>").window, doc = win.document;
+  const bar = createDeploymentTabBar(doc, { idPrefix: "t", onSelect() {} });
+  doc.body.append(bar.element);
+  // A 200px strip at x=100 holding five 120px tabs, laid out as a browser would (jsdom has no layout).
+  Object.defineProperty(bar.element, "clientWidth", { value: 200 });
+  bar.element.getBoundingClientRect = () => ({ left: 100, right: 300, width: 200 });
+  win.HTMLButtonElement.prototype.getBoundingClientRect = function () {
+    const left = 100 + [...this.parentElement.children].indexOf(this) * 120 - bar.element.scrollLeft;
+    return { left, right: left + 120, width: 120 };
+  };
+  const tabs = ["all", "a", "b", "c", "d"].map((id) => ({ id, label: id }));
+  bar.paint(tabs, "all");
+  assert.equal(bar.element.scrollLeft, 0, "the first tab is in view: nothing scrolls");
+  bar.paint(tabs, "d"); // the selection moved (a remembered tab, a switcher request): reveal it
+  assert.equal(bar.element.scrollLeft, 400, "the last tab's right edge meets the strip's");
+  bar.paint(tabs, "d");
+  assert.equal(bar.element.scrollLeft, 400, "a repaint of the same selection leaves the scroll alone");
+  bar.element.children[0].dispatchEvent(new win.FocusEvent("focus"));
+  assert.equal(bar.element.scrollLeft, 0, "a focused tab is revealed too");
+  win.close();
 });

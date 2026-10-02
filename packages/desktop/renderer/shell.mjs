@@ -667,8 +667,8 @@ function renderContextRoster(instances) {
     .flatMap((section) => section.groups.map((group, at) => ({ ...group, heading: at === 0 && section.deployment ? section : null })));
   for (const group of groups) {
     if (group.heading) {
-      const { deployment, label, groups: own } = group.heading;
-      listEl.append(deploymentHeading(document, { deployment, label, count: own.reduce((n, g) => n + g.clusters.reduce((m, c) => m + c.instances.length, 0), 0) }));
+      const { deployment, label, machine, tail, groups: own } = group.heading;
+      listEl.append(deploymentHeading(document, { deployment, label, machine, tail, count: own.reduce((n, g) => n + g.clusters.reduce((m, c) => m + c.instances.length, 0), 0) }));
     }
     listEl.append(clusterSeparator(document, { label: group.label, count: group.clusters.reduce((n, c) => n + c.instances.length, 0) }));
     for (const cluster of group.clusters) {

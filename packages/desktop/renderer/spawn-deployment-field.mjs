@@ -12,8 +12,9 @@
  * - Availability is the CHOSEN deployment's own spawn catalog (`/api/agents?ws=<deployment id>`;
  *   a remote deployment's catalog is its roster group's, answered by the server). A deployment
  *   without the soul, or not reached, stays selectable; choosing it blocks Spawn, and the dialog says
- *   why in its footer only (`blockText()`): "altair isn't reachable right now" when it is not reached,
- *   else "<soul> isn't available on altair". The field itself shows no message.
+ *   why in its footer only (`blockText()`): "altair isn't reachable right now" when it is not reached
+ *   ("This Mac's deployment hasn't been read yet. Try again in a moment." for a local one not yet
+ *   read), else "<soul> isn't available on altair". The field itself shows no message.
  * - The default: the deployment last used in this view, if it has the soul; else the first that has
  *   it, local before remote; else the last used (blocked, saying why); with nothing used yet, the
  *   first local deployment, else the first. Until the catalogs answer the field shows that
@@ -25,7 +26,7 @@
  *
  * The catalog reads carry a latest-intent token: a reply after dispose() or a newer read is dropped. */
 import { apiJson } from './views/common.mjs';
-import { deploymentLabel, machineLabels } from './deployment-label.mjs';
+import { deploymentLabel, machineLabels, THIS_MACHINE } from './deployment-label.mjs';
 import { deploymentState } from './view-deployments.mjs';
 import { createChoicePopup } from './choice-popup.mjs';
 
@@ -196,7 +197,10 @@ export function createSpawnDeploymentField(doc, { ctx, soul, viewId, deployments
     /** The chosen deployment does not offer the soul (or is not reached, so offers none): Spawn is blocked. */
     blocked: () => has(deployment().id) === false,
     /** Why Spawn is blocked, for the footer (the caller ends the sentence). */
-    blockText: () => deployment().reachable === false ? `${machine(deployment())} isn't reachable right now` : `${soul.name} isn't available on ${machine(deployment())}`,
+    // A local deployment is never "unreachable": it just hasn't been read yet (the dialog adds the final period).
+    blockText: () => deployment().reachable === false
+      ? (deployment().local ? `${deployment().machine || THIS_MACHINE}'s deployment hasn't been read yet. Try again in a moment` : `${machine(deployment())} isn't reachable right now`)
+      : `${soul.name} isn't available on ${machine(deployment())}`,
     /** Read every deployment's catalog (latest intent: a reply after dispose or a newer start is dropped). */
     start() {
       const ticket = ++serial;
