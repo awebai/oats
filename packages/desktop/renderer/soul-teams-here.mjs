@@ -13,8 +13,14 @@
  * on a visually hidden status line, the failed block (cause, Details, Retry → show again) when
  * it fails with no document. A `show` with a document present keeps the rows in place (their
  * buttons disabled meanwhile, as before) and restores focus after the repaint; a failure then
- * keeps the document with the problem box, as before. */
+ * keeps the document with the problem box, as before.
+ *
+ * Team model 3 (soulTeamsApi 2, OATS 0.38): which teams a soul may join, and its default, are the workspace's
+ * committed souls:, so the card is read only. It says where the default comes from (the souls: key, this
+ * deployment, the workspace), why the soul has each team (its default, its souls: entry, a local team) and
+ * where to change it, in the kernel's words; nothing is sent but `show`. */
 import { pageCard } from './capability-page.mjs';
+import { SOULS_WHERE } from './computer-teams.mjs';
 import { createDataState, skeletonBlock, statusLine, captureFocusState, observedText } from './loading.mjs';
 
 export const soulTeamsHereCSS = `
@@ -34,6 +40,7 @@ export const soulTeamsHereCSS = `
 .oats-view .soul-teams-here button.sth-act:disabled, .oats-view .soul-teams-here button.sth-act[aria-disabled="true"] { color:var(--muted); cursor:default; }
 .oats-view .soul-teams-here button.sth-act.primary:not(:disabled):not([aria-disabled="true"]) { background:var(--primary-bg); border-color:var(--primary-bg); color:var(--primary-fg); }
 .oats-view .soul-teams-here button.sth-act:not(.primary):focus-visible { background:var(--sel); }
+.soul-teams-here .sth-where { display:block; padding-top:8px; border-top:1px solid var(--tag-bg); }
 .soul-teams-here .sth-add { display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding-top:8px; border-top:1px solid var(--tag-bg); }
 .soul-teams-here .sth-add select { height:26px; min-width:0; max-width:100%; padding:0 6px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--fg); font:12px var(--mono,monospace); }
 .soul-teams-here .sth-error { grid-column:1 / -1; border-left:2px solid var(--danger); padding-left:8px; color:var(--fg); font-size:12px; line-height:1.45; }
@@ -58,6 +65,16 @@ function el(doc, tag, value, cls) {
   return node;
 }
 
+/** The kernel's own fix for an unmapped team and its message for no default (lib/teams.mjs). */
+export const UNMAPPED_FIX = 'its owner runs `oats aweb setup`, then commits the id';
+export const UNCONFIGURED = 'no teams configured: run `oats aweb setup`';
+/** Team model 3: why the soul has a team, in words: its default, its souls: entry (`match`), a local team. */
+export function viaText3(via, match) {
+  return list(via).map(v => v === 'default' ? 'its default' : v === 'workspace' ? `its souls: entry ${match ?? ''}`.trim() : v === 'local' ? 'a local team' : v).join(' · ');
+}
+/** Team model 3: where a soul's default comes from. */
+const defaultFrom3 = (home, defaultMatch) => home.from === 'soul' ? (defaultMatch ? `(souls: ${defaultMatch})` : '(its souls: entry)')
+  : home.from === 'deployment' ? "(this deployment's default)" : "(the workspace's default)";
 /** Why the soul has a team (the kernel's `via`), in words. */
 export function viaText(via, defaultFrom) {
   const words = list(via).map(v => v === 'default' ? (defaultFrom === 'soul' ? "its own default" : "the workspace's default here")
@@ -143,18 +160,22 @@ export function createSoulTeamsHere(doc, { soul, request, listTeams = null, cloc
     for (const child of [...body.children]) if (!child.dataset.loadingSkeleton && !child.classList.contains('loading-failed')) child.remove();
     // No document yet: pending shows the skeleton, a failure the failed block — both the controller's. Nothing else to say.
     if (!current) return;
+    const model3 = current.soulTeamsApi === 2;
+    const lead = card.querySelector('.page-card-lead');
+    if (lead) lead.textContent = model3 ? 'in this workspace' : 'on this computer';
     const home = current.defaultTeam;
     const line = el(doc, 'p', null, 'sth-default');
     if (home) {
       line.append('Default: ', el(doc, 'strong', home.label), ' ');
-      line.append(el(doc, 'span', home.from === 'soul' ? "(this soul's own)" : "(the workspace's default on this computer)", 'sth-why'));
-    } else line.append('No default team on this computer: run oats aweb setup.');
+      line.append(el(doc, 'span', model3 ? defaultFrom3(home, current.defaultMatch)
+        : home.from === 'soul' ? "(this soul's own)" : "(the workspace's default on this computer)", 'sth-why'));
+    } else line.append(model3 ? `No default team: ${UNCONFIGURED}.` : 'No default team on this computer: run oats aweb setup.');
     body.append(line);
     // An unmapped default blocks every spawn of this soul here: said, with what to do.
     if (home && !home.team) {
       const block = el(doc, 'div', null, 'sth-blocking'); block.setAttribute('role', 'alert');
       block.append(el(doc, 'strong', `The default team ${home.label} has no provider id yet, so ${soul} can't be spawned here.`),
-        el(doc, 'span', "Its owner runs oats aweb setup, then commits the id; or make another team this soul's default."));
+        el(doc, 'span', model3 ? `Fix: ${UNMAPPED_FIX}.` : "Its owner runs oats aweb setup, then commits the id; or make another team this soul's default."));
       body.append(block);
     }
     for (const team of list(current.teams)) {
@@ -164,7 +185,8 @@ export function createSoulTeamsHere(doc, { soul, request, listTeams = null, cloc
       if (team.default) head.append(el(doc, 'span', 'default', 'page-tag'));
       main.append(head);
       main.append(el(doc, 'span', `${team.team ?? 'no provider id yet'} · ${fromText(team.from)}`, `sth-meta${team.team ? '' : ' warn'}`));
-      main.append(el(doc, 'span', viaText(team.via, home?.from), 'sth-meta'));
+      main.append(el(doc, 'span', model3 ? viaText3(team.via, current.match) : viaText(team.via, home?.from), 'sth-meta'));
+      if (model3) { row.append(main); body.append(row); continue; } // read only: no action in team model 3
       const actions = el(doc, 'div', null, 'sth-actions');
       if (!team.default && team.team) actions.append(button('Make default', '', () => run({ action: 'default', label: team.label }, { label: team.label }), { aria: `Make ${team.label} the default team of ${soul}`, key: `default:${team.label}` }));
       if (team.default && home?.from === 'soul') actions.append(button('Use workspace default', '', () => run({ action: 'clear-default' }, { label: team.label }), { aria: `Use the workspace's default team for ${soul}`, key: 'clear-default' }));
@@ -172,6 +194,12 @@ export function createSoulTeamsHere(doc, { soul, request, listTeams = null, cloc
       row.append(main, actions);
       if (rowError?.label === team.label) row.append(problemBox(rowError));
       body.append(row);
+    }
+    // Team model 3: where its teams are changed, once, in the kernel's words; nothing to add here.
+    if (model3) {
+      body.append(el(doc, 'p', `Which teams ${current.key === '*' ? 'every soul' : current.key} may join, and its default: ${SOULS_WHERE}.`, 'sth-meta sth-where'));
+      if (cardError) body.append(problemBox(cardError));
+      return;
     }
     // Add: a team on this computer the soul is not in yet.
     const have = new Set(list(current.teams).map(t => t.label));
