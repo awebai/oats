@@ -103,7 +103,10 @@ export function createGlyphRenderer({ term, Addon, onChange = () => {},
       term.loadAddon(next);
       addon = next;
       onChange();
-    } catch { failed = true; try { next?.dispose(); } catch {} }
+    } catch {
+      // No retry (the Desktop lead's decision): a failed activation would leak another canvas and listener set.
+      failed = true; try { next?.dispose(); } catch {}
+    }
     return Boolean(addon);
   }
   return { ensure, dispose: drop, get active() { return Boolean(addon); } };
