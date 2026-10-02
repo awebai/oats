@@ -687,7 +687,8 @@ workspace is observed through its server and never synced from here.
   The **Team** and **Repo** dropdowns filter Workspace owned locally (AND);
   they name only what the rows hold (non-collapse rule: a member's
   `publishes` never absorbs its package's capabilities).
-- **Teams** (kernel feature `team-model-2`, `computer-teams.mjs`) is the
+- **Teams** (kernel feature `team-model-2` or `team-model-3`, `teamModelOf`;
+  `computer-teams.mjs`) is the
   *Teams* page: *Shared with the workspace* (read-only, edited by PR) and
   *Only on this computer* (add, remove, make default), one card per team with
   its address, who may join and, from the roster, the instances whose
@@ -700,6 +701,14 @@ workspace is observed through its server and never synced from here.
   view on screen (`teamMemberAction` never switches workspace). They wait for
   the row of that deployment, and the open is owned by the view
   (`instanceActionTarget(view, row)`).
+  Team model 3 (`teamsApi: 2`) adds *Souls in the workspace*, the committed
+  `souls:` patterns, read only; local teams take Add and Make default only
+  where `localTeams` allows them, and a local team left where they are closed
+  keeps Remove under the kernel's local-teams-closed failure. The soul page's
+  *Teams here* (`soul-teams-here.mjs`) is read only then (`soulTeamsApi: 2`).
+  Wording about where teams change is the kernel's (`LOCAL_TEAMS_CLOSED`,
+  `SOULS_WHERE`, `UNMAPPED_FIX`, `UNCONFIGURED`; tests pin them to
+  `lib/teams.mjs`).
 - **Sources** renders the roster observation's `oats workspace status`:
   repositories (team, confirmation status + the kernel's detail), packages
   (lock, capabilities) and external souls. No extra read.

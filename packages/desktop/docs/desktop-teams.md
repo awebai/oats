@@ -1,8 +1,25 @@
-# Desktop teams (team model v2, OATS 0.30)
+# Desktop teams (team model v2, OATS 0.30; team model 3, OATS 0.38)
 
-The Desktop edits this computer's team memberships through the kernel verbs `oats teams` and
-`oats soul teams` (feature `team-model-2`). The kernel is the only writer of `oats-local.yaml`;
-the Desktop server never writes that file (or `oats-workspace.yaml`) itself.
+The Desktop reads and edits a deployment's teams through the kernel verbs `oats teams` and
+`oats soul teams`, on a CLI with feature `team-model-2` (OATS 0.30–0.37) or `team-model-3` (OATS
+0.38; `teamModelOf` in `renderer/team-rows.mjs`). The kernel is the only writer of
+`oats-local.yaml`; the Desktop server never writes that file (or `oats-workspace.yaml`) itself.
+
+**Team model 3** ([design](../../../docs/design/2026-10-02-team-model-3.md), the shapes in
+[desktop-cli-api.md](../../../docs/desktop-cli-api.md#oats-teams)) commits which teams a soul may
+join, and its default, in the workspace's `souls:`. So:
+
+- `oats soul teams` is read only. Under `team-model-3` the soul-teams route admits `show` only:
+  an edit is refused with `E_BAD_ARGS` before any process runs, and the removed `--add`,
+  `--remove`, `--default` and `--clear-default` are never sent.
+- Local teams are a deployment's only where the workspace says `localTeams: true` (or in the
+  standalone view, `localTeams: null`). Where they are closed the kernel refuses `oats teams add`
+  and `default` before writing, so the Teams page offers neither; it keeps Remove for a local team
+  still in `oats-local.yaml`, which the kernel accepts there (proven against the real CLI in
+  `test/desktop-team-model-3-kernel.test.mjs` at the repository root).
+- What the Desktop says about changing teams is the kernel's own wording: `souls: in
+  oats-workspace.yaml (a PR to the workspace file)`, the local-teams-closed message and fix, the
+  unmapped fix.
 
 ## Routes
 
@@ -36,6 +53,8 @@ the connected server's view and deployment ids, 20 s deadline; the verbs run wit
 | `default` | `label` | `… --default=<label>` |
 | `clear-default` | none | `… --clear-default` |
 
+Under `team-model-3` only `show` runs; every other action is `E_BAD_ARGS`.
+
 ## Arguments
 
 - **Argv only.** No shell is involved.
@@ -53,12 +72,12 @@ the connected server's view and deployment ids, 20 s deadline; the verbs run wit
 The shape is the lead's (0.30 D2 review):
 
 - **Success:** `{status: "ok", teams}` (`/api/workspace-teams`) or `{status: "ok", soulTeams}` (`/api/workspace-soul-teams`). The value is the decoded kernel result:
-  - `teams` is `teamsData`, with `teamsApi`, `deployment`, `defaultTeam`, `teams`, `souls`, `problems`, and `changed` on a mutation. Its `deployment` must be this workspace's, or the answer is `E_DEPLOYMENT_SCOPE`.
-  - `soulTeams` is `soulTeamsData`, with `soulTeamsApi`, `soul`, `key`, `defaultTeam`, `teams` (+ `via`), `local`, `all`, and `changed`.
+  - `teams` is `teamsData`, with `teamsApi`, `deployment`, `defaultTeam`, `teams`, `souls`, `problems`, and `changed` on a mutation. Its `deployment` must be this workspace's, or the answer is `E_DEPLOYMENT_SCOPE`. With `teamsApi: 1` the `defaultTeam` is a label and `souls` is `{teams, default}` by soul key; with `teamsApi: 2` it adds `localTeams` (`true`, `false`, or `null` standalone), the `defaultTeam` is a `DefaultTeam` (`from`: `deployment` or `workspace`), and `souls` is the workspace's `souls:` as committed (`{<pattern>: {default?, teams?: [labels] | "any"}}`). A problem keeps its own keys: a `souls:` `key` (`team-soul-unknown`), the local-teams-closed `condition`, `path` and `keys`.
+  - `soulTeams` is `soulTeamsData`, with `soulTeamsApi`, `soul`, `key`, `defaultTeam`, `teams` (+ `via`) and `changed`; `soulTeamsApi: 1` adds `local` and `all` (`via`: `default`, `*`, `soul`), and `soulTeamsApi: 2` adds `match` and `defaultMatch`, the `souls:` keys its teams and default came from (`via`: `default`, `workspace`, `local`).
 - **Refusal:** `{status: "refused", reason: {code, message, details?}}`.
   - **The kernel's code and message** pass through verbatim, and a message is always present.
-  - **The team refusals** carry their bounded details: `E_TEAM_IN_USE` (`label`, `usedBy`: `defaultTeam`, `souls.teams:<key>`, `souls.default:<key>`), `E_TEAM_SHARED` (`label`, `at`), `E_TEAM_EXISTS`, `E_TEAM_UNKNOWN` and `E_TEAM_NOT_ELIGIBLE`.
-  - **The Desktop's own codes** come with a plain message: `E_TEAMS_UNAVAILABLE` (no `team-model-2`, e.g. on 0.29: a clear refusal, no kernel call), `unsupported-remote-operation`, `E_WORKSPACE_UNKNOWN`, `E_BUSY` (one mutation per deployment at a time; reads are not blocked), and `E_CLI_PROTOCOL`.
+  - **The team refusals** carry their bounded details: `E_TEAM_IN_USE` (`label`, `usedBy`: `defaultTeam`, `souls.teams:<key>`, `souls.default:<key>`), `E_TEAM_SHARED` (`label`, `at`), `E_TEAM_EXISTS`, `E_TEAM_UNKNOWN` and `E_TEAM_NOT_ELIGIBLE` (0.37 and earlier). A local-teams-closed `E_WORKSPACE_SCHEMA` keeps `reason`, `path` and `keys`.
+  - **The Desktop's own codes** come with a plain message: `E_TEAMS_UNAVAILABLE` (neither team model, e.g. on 0.29: a clear refusal, no kernel call), `unsupported-remote-operation`, `E_WORKSPACE_UNKNOWN`, `E_BUSY` (one mutation per deployment at a time; reads are not blocked), and `E_CLI_PROTOCOL`.
 - **Actions** come from a closed allow-list: each builds its own argv, and the action string is never passed through.
 
 ## Team members
@@ -140,6 +159,12 @@ Northwind build, using the Desktop's exact argv:
   preview, status, readiness).
 
 `import-capture.mjs` imports them, with provenance and hashes.
+
+`test/fixtures/team-model-3/` holds **real captures** from this repository's 0.38 kernel
+(`capture-teams-3.mjs`, the commit in `provenance.json`), on a scratch Northwind built outside any
+git tree, with the Desktop's argv: local teams closed (the default, then with local teams present)
+and allowed, the verbs and their refusals, the removed soul-teams flags, and the souls, readiness
+and preview team rows.
 
 **Awaiting oats.aweb 1.17:** the messaging provider's teams document (`operation run
 messaging:teams`). Until its capture exists, `team-model-v2-tolerance.test.mjs` reads the real
