@@ -32,6 +32,7 @@ import { cliWorkspace, validWorkspaceRef } from "./workspace-cli.mjs";
 import { onboardData } from "./deployment-data.mjs";
 import { validateWorkspace, workspaceSuggestions, parseRecents, pushRecent, decideAdd, createGenerations, createAddExecutor, restoreWorkspaceDirs, saveWorkspaceDirs, matchWorkspaceDirs, createOnboardOffers, createOnboardExecutor } from "./workspace-registry.mjs";
 import { appMenuTemplate } from "./app-menu.mjs";
+import { resolveLoginPath } from "./login-path.mjs";
 import { pickerDefaultPath, workspacePickerCandidates, cliPickerCandidates, parseLastWorkspaceParent, lastWorkspaceParentState } from "./picker-default-path.mjs";
 import { proxyReadiness } from './readiness-proxy.mjs';
 import { proxySpawnPreview } from './spawn-preview-proxy.mjs';
@@ -72,6 +73,21 @@ const WORKSPACE = resolve(argDir || process.env.OATS_DESKTOP_DIR || process.cwd(
 // repeated --dir list an app-owned server is (re)started with.
 const workspaceDirs = [WORKSPACE];
 
+// ---- the login shell's PATH (login-path.mjs, awebai/oats#468) ----------
+// Opened from Finder or the Dock, the app inherits launchd's PATH, which has
+// no Homebrew or nvm node for a `#!/usr/bin/env node` CLI (nor tmux, nor gh's
+// git). Resolved once at startup, BEFORE anything is spawned, and merged into
+// this process's own PATH, so the backend server, every oats call, the CLI
+// probe, tmux and terminals inherit it. Only PATH is taken from the shell.
+let loginPath = { source: "inherited", error: null };
+async function applyLoginPath() {
+  const r = await resolveLoginPath({ env: process.env });
+  loginPath = { source: r.source, error: r.error };
+  if (r.source !== "login-shell") { console.error(`oats-desktop: keeping the inherited PATH: ${r.error}`); return; }
+  process.env.PATH = r.path;
+  forgeEnv.PATH = r.path; // the one environment copied at module load
+}
+
 // ---- backend server management ----------------------------------------
 // Server host (server-host.mjs): owns the child lifecycle, the ownership-
 // through-transition invariant, and trust-state invalidation on replace.
@@ -85,7 +101,9 @@ const serverHost = createServerHost({
     // server's top-priority discovery candidate; the server re-probes it.
     const chosen = readCliChoice();
     const child = spawn(process.execPath, [bin, "start", "--port", String(onPort),
-      ...dirs.flatMap((d) => ["--dir", d]), ...(chosen ? ["--oats-bin", chosen] : [])], {
+      ...dirs.flatMap((d) => ["--dir", d]), ...(chosen ? ["--oats-bin", chosen] : []),
+      // Where the PATH it inherits came from, for /api/cli diagnostics.
+      "--path-source", loginPath.source, ...(loginPath.error ? ["--path-error", loginPath.error] : [])], {
       stdio: ["ignore", "pipe", "pipe"],
       cwd: WORKSPACE,
       // process.execPath is the packaged Electron executable. The backend
@@ -586,6 +604,7 @@ async function createWindow() {
 }
 
 const primaryInstance = startSingleInstance(app, () => BrowserWindow.getAllWindows(), async () => {
+  await applyLoginPath(); // first: everything below may spawn
   installAppMenu();
   sweepOrphanViewers(); // default socket now; saved sockets are swept when opened
   let saved = "[]";

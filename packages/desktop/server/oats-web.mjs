@@ -21,7 +21,7 @@
  *                                   { action: show|file, capability, path? } → `oats capabilities show` for one held catalog row
  *                                   (server/capability-show.mjs; local only; errors 409/400 { error, code })
  *   POST /api/models                { harness: pi|claude|codex } → advisory model catalog for the spawn modal
- *   GET  /api/cli                   CLI discovery status (bin, version, required range, tried)
+ *   GET  /api/cli                   CLI discovery status (bin, version, required range, tried, probePath/pathSource/pathError)
  *   POST /api/cli/reprobe           re-run discovery; body { bin? } prioritizes a user-chosen binary
  *   POST /api/window-state          { focused } → the refresh cadence backs off while the window is blurred/hidden
  *   POST /api/harvest/<instance>    the active provider’s harvest operation addressed by the exact --home; the CLI derives the recorded context
@@ -457,6 +457,11 @@ let probeSequence = 0; // orders concurrent probes; a superseded probe's result 
 // at server start) and updated by /api/cli/reprobe {bin} — top candidate on
 // every subsequent probe until replaced.
 let chosenBin = typeof flag("oats-bin") === "string" ? flag("oats-bin") : null;
+// Where this server's PATH came from (the Electron main process resolves the
+// login shell's PATH before starting it: login-path.mjs). The probe and every
+// oats call inherit process.env.PATH; a standalone server reports "inherited".
+const PATH_SOURCE = flag("path-source") === "login-shell" ? "login-shell" : "inherited";
+const PATH_ERROR = typeof flag("path-error") === "string" ? flag("path-error") : null;
 const cliIo = {
   persisted: () => chosenBin,
   env: process.env,
@@ -547,6 +552,10 @@ function cliStatus() {
     tried: cliState.tried || [],
   };
 }
+/** /api/cli as served: the probe status plus the PATH it ran with (and every
+ * oats call runs with), its source, and why the login shell's PATH could not
+ * be used when it was not. */
+const servedCliStatus = () => ({ ...cliStatus(), probePath: process.env.PATH || "", pathSource: PATH_SOURCE, pathError: PATH_ERROR });
 
 /* ── Kernel-observed roster snapshot ──
    Every local deployment fact is one bounded `oats status --json` plus one
@@ -1494,7 +1503,7 @@ const server = createServer(async (req, res) => {
       return send(res, 200, { servers: (env.result.servers || []).map((s) => ({ id: s.id, label: s.label || s.id, sshHost: s.sshHost, workspace: s.workspace })) });
     }
     if (req.method === "GET" && path === "/api/cli") {
-      return send(res, 200, cliStatus());
+      return send(res, 200, servedCliStatus());
     }
     if (req.method === "POST" && path === "/api/window-state") {
       // Window activity from the Electron main process (window-activity.mjs): the refresh cadence backs off
@@ -1513,7 +1522,7 @@ const server = createServer(async (req, res) => {
       const body = await readBody(req);
       const chosen = typeof body.bin === "string" && body.bin.startsWith("/") ? body.bin : undefined;
       await reprobeCli(chosen);
-      return send(res, 200, cliStatus());
+      return send(res, 200, servedCliStatus());
     }
     if (req.method === "POST" && path === "/api/spawn") {
       let body;
