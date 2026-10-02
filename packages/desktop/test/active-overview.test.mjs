@@ -360,3 +360,20 @@ test('keyboard: - and = zoom, 0 fits (the canvas has focus)', async t => {
   u.key('-'); u.key('-'); assert.ok(zoom() < fitted, '- zooms out');
   u.key('0'); assert.equal(zoom(), fitted, '0 fits again');
 });
+
+test('the Deployments stage in an unfocused window reads its roster at the blurred cadence (#481)', async t => {
+  const s = await setup(t);
+  const reads = () => s.calls.filter(c => c.path.startsWith('/api/panel')).length;
+  const before = reads();
+  s.poll(); await tick();
+  assert.equal(reads(), before + 1, 'focused: every 4 s tick reads');
+  s.dom.window.dispatchEvent(new s.dom.window.Event('blur'));
+  for (let n = 0; n < 6; n++) { s.poll(); await tick(); }
+  assert.equal(reads(), before + 1, 'unfocused: ticks inside the blurred interval read nothing');
+  const realNow = Date.now; Date.now = () => realNow() + 31_000;
+  try { s.poll(); await tick(); } finally { Date.now = realNow; }
+  assert.equal(reads(), before + 2, 'unfocused: one read per blurred interval');
+  s.dom.window.dispatchEvent(new s.dom.window.Event('focus'));
+  s.poll(); await tick();
+  assert.equal(reads(), before + 3, 'focused again: every tick');
+});

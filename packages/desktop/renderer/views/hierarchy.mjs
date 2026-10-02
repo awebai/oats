@@ -44,6 +44,7 @@
    hidden status line is the view's one live region: the notice is a note.
    Contract: mount(el, ctx) / unmount(); roster from GET /api/panel, explicit
    selected activity from the guarded K7 POST /api/instance-events boundary. */
+import { ROSTER_POLL_FOCUSED_MS, rosterPollDue } from "../roster-cadence.mjs";
 import { computeClusters, siblingEdges } from "./clusters.mjs";
 import { runtimeState, runtimeCounts, unsupportedSession } from "../instance-presentation.mjs";
 import { serverLabel } from "../remote-address.mjs";
@@ -481,8 +482,12 @@ export function mount(el, ctx) {
   s.disposers.push(onDeploymentTabRequest(({ view, tab }) => {
     if (s.alive && dataCurrent(s) && view === s.panel.workspace?.id) selectTab(s, tab, { remember: false });
   }));
-  refresh(s);
-  s.timers.push(setInterval(() => { if (!s.loading) void refresh(s); }, 4000));
+  refresh(s); s.polledAt = Date.now();
+  // Every 4 s while its window is focused, at the server's blurred cadence otherwise (roster-cadence.mjs, #481).
+  s.timers.push(setInterval(() => {
+    if (s.loading || !rosterPollDue({ focused: s.windowFocused !== false, last: s.polledAt, now: Date.now() })) return;
+    s.polledAt = Date.now(); void refresh(s);
+  }, ROSTER_POLL_FOCUSED_MS));
 
   return () => teardown(s);
 }
