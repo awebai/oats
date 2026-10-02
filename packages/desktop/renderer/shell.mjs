@@ -1857,7 +1857,8 @@ const palette = createPalette({
   loadInstances: async () => {
     const ws = currentWorkspace();
     const p = await api(`/api/panel${ws ? `?ws=${encodeURIComponent(ws)}` : ""}`);
-    return p.instances || [];
+    // One snapshot: the palette sections and clusters by these deployments, as the sidebar does.
+    return { instances: p.instances || [], deployments: panelDeployments(p) };
   },
   openTerminal: (name) => openTerminalTab(name),
   // While open, ⌘K / Ctrl+Shift+P moves down and Shift + it up (live keymap); Esc closes, Enter opens.

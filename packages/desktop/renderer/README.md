@@ -799,8 +799,12 @@ section is the module map.
   skipping context rows); with it, `toggle()` on an open picker cycles.
 - **palette.mjs** — the command palette's rows (`paletteRows`): instances as
   the sidebar lists them, from the sidebar's own builders (`filterInstanceTree`
-  with the fuzzy matcher as its predicate, then `rosterGroups`), every instance
-  listed, then at most `PALETTE_COMMAND_CAP` commands. The shell passes
+  with the fuzzy matcher as its predicate, then `rosterSections`, whose groups
+  are `rosterGroups`), every instance listed, then at most
+  `PALETTE_COMMAND_CAP` commands. The shell hands it one panel snapshot,
+  `{ instances, deployments }`: with several deployments each one is filtered
+  and clustered on its own, in the panel's order, and a group's key and label
+  carry its deployment, so no relation or query context crosses deployments. The shell passes
   `cycleKey` from `pickerCycleDirection(e, "app.palette")` (keybindings.mjs), so
   ⌘K cycles while open (Shift: up) and follows a rebind.
 - **settings-terminal.mjs** — Settings → Terminal: the font size stepper

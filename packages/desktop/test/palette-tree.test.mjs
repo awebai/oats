@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { paletteRows, createPalette, PALETTE_COMMAND_CAP } from "../renderer/palette.mjs";
 import { rosterGroups } from "../renderer/instance-tree.mjs";
+import { rosterSections } from "../renderer/view-deployments.mjs";
 import { pickerCycleDirection, setBinding, resetBinding, DEFAULT_KEYMAP } from "../renderer/keybindings.mjs";
 
 const at = (instance, extra = {}) => ({ instance, agent: "dev", home: `/w/${instance}`, agentsRoot: "/w", running: true, ...extra });
@@ -231,4 +232,33 @@ test("two relation groups whose roots share a name (two agents roots) stay two n
   const rendered = [...p.doc.querySelectorAll('[role="listbox"] > [role="group"]')];
   assert.deepEqual(rendered.map(g => [g.getAttribute("aria-label"), [...g.children].map(o => o.querySelector(".plabel").textContent)]),
     groups.map(g => ["lead", g.clusters[0].instances.map(i => i.instance)]), "one role=group per cluster, in the sidebar's order");
+});
+
+// #482 (the Deployments page, merged with spec F): with several deployments the sidebar
+// sections the roster by deployment, each clustered on its own. The palette lists the
+// same sections in the same order, and a relation or a query's context never crosses one.
+const D1 = { id: "/a", machine: "This Mac", path: "/a", label: "~/a", local: true, reachable: true, primary: true };
+const D2 = { id: "remote:altair:b", machine: "altair", path: "/b", label: "~/b", local: false, reachable: true, primary: false };
+const inD = (d, instance, extra = {}) => ({ instance, agent: "dev", home: `${d.path}/agents/dev/instances/${instance}`, agentsRoot: `${d.path}/agents`,
+  running: true, deployment: { id: d.id }, ...extra });
+
+test("several deployments: the palette lists the sidebar's sections in its order, each group named by its deployment (review, merge of #489)", () => {
+  const roster = { instances: [inD(D2, "alpha"), inD(D1, "zeta"), inD(D1, "lead"), inD(D1, "kid", { parentInstance: "lead" })], deployments: [D1, D2] };
+  const rows = instanceRows(paletteRows(roster, [], "", { openTerminal() {} }));
+  assert.deepEqual(rows.map(r => r.label), ["lead", "kid", "zeta", "alpha"], "D1's groups first, as the panel lists the deployments: not alphabetical across them");
+  const sidebar = rosterSections(roster.instances, roster.instances, roster.deployments)
+    .flatMap(sec => sec.groups.flatMap(g => g.clusters.flatMap(c => c.instances.map(i => [`${sec.deployment.id}|${g.key}`, `${sec.label} · ${g.label}`, i.instance, i.depth]))));
+  assert.deepEqual(rows.map(r => [r.group.key, r.group.label, r.label, r.depth]), sidebar, "the sidebar's own sections, groups and depth");
+  const independents = [...new Set(rows.filter(r => r.group.label.endsWith("independent")).map(r => r.group.key))];
+  assert.equal(independents.length, 2, "each deployment's independent group stays its own group");
+  assert.deepEqual(paletteRows({ instances: ROSTER, deployments: [D1] }, [], "", {}).map(r => [r.group.key, r.label]),
+    paletteRows(ROSTER, [], "", {}).map(r => [r.group.key, r.label]), "one deployment: exactly the single-roster rows");
+});
+
+test("several deployments: a parent name in another deployment is not a parent, and a query brings no context across", () => {
+  const roster = { instances: [inD(D1, "lead"), inD(D2, "child", { parentInstance: "lead" })], deployments: [D1, D2] };
+  const all = instanceRows(paletteRows(roster, [], "", { openTerminal() {} }));
+  assert.deepEqual(all.map(r => [r.label, r.depth, r.under || null]), [["lead", 0, null], ["child", 0, null]], "D2's child is a root, as in the sidebar");
+  const queried = instanceRows(paletteRows(roster, [], "child", { openTerminal() {} }));
+  assert.deepEqual(queried.map(r => [r.label, !!r.context]), [["child", false]], "D1's lead is not shown as context");
 });

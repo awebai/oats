@@ -2,25 +2,31 @@
    Linux/Windows; the keymap engine owns the chord and its terminal policy).
    One input, two result kinds: instances (default; jump-to-terminal) and
    commands (also matched by name — ">" prefix restricts to commands).
-   Instances are listed like the sidebar roster (spec F): the same relation
-   groups, order and depth, from the sidebar's own builders (instance-tree.mjs);
+   Instances are listed like the sidebar roster (spec F): the same deployment
+   sections, relation groups, order and depth, from the sidebar's own builders
+   (rosterSections, view-deployments.mjs; rosterGroups, instance-tree.mjs);
    a query keeps tree order, showing each match with its non-matching ancestors
    as disabled context rows. While open, the palette's own chord moves the
    active row down (Shift + the chord: up), skipping context rows.
    Overlay chrome + fuzzy machinery live in overlay-picker.mjs (shared with
    Quick Open); this module owns only the palette's row semantics. */
 import { runtimeState } from "./instance-presentation.mjs";
-import { filterInstanceTree, rosterGroups } from "./instance-tree.mjs";
+import { filterInstanceTree } from "./instance-tree.mjs";
+import { rosterSections, splitByDeployment, isMultiDeployment } from "./view-deployments.mjs";
 import { createOverlayPicker, subsequenceScore } from "./overlay-picker.mjs";
 
 /** Commands listed at most (after every instance row; the instance list scrolls). */
 export const PALETTE_COMMAND_CAP = 12;
 
-/** Pure row computation — exported for tests. `instances` is the roster,
- * `commands` the static command list, `raw` the input value. Instance rows
+/** Pure row computation — exported for tests. `roster` is the panel's
+ * `{ instances, deployments }` (one snapshot), or just the instances where
+ * there is a single deployment; `commands` the static command list, `raw` the
+ * input value. Instance rows
  * carry { depth, group: { key, label }, under? } and, for an ancestor shown
  * only as a match's context, { context: true } and no run. */
-export function paletteRows(instances, commands, raw, { openTerminal } = {}) {
+export function paletteRows(roster, commands, raw, { openTerminal } = {}) {
+  const instances = (Array.isArray(roster) ? roster : roster?.instances) || [];
+  const deployments = (Array.isArray(roster) ? null : roster?.deployments) || [];
   const cmdMode = raw.startsWith(">");
   const q = (cmdMode ? raw.slice(1) : raw).trim();
   const rows = [];
@@ -28,8 +34,16 @@ export function paletteRows(instances, commands, raw, { openTerminal } = {}) {
     // The house fuzzy matcher decides what matches; the tree path around a
     // match is the sidebar's (identity-aware filterInstanceTree).
     const matches = (inst) => !q || subsequenceScore(`${inst.instance} ${inst.agent || ""} ${inst.repoName || ""}`, q) != null;
-    const visible = filterInstanceTree(instances, q, matches);
-    for (const group of rosterGroups(instances, visible)) {
+    // Relations and a match's context rows stay inside its deployment, as in the
+    // sidebar (#482): each deployment is filtered and clustered on its own.
+    const visible = isMultiDeployment(deployments)
+      ? [...splitByDeployment(deployments)(instances).values()].flatMap(own => filterInstanceTree(own, q, matches))
+      : filterInstanceTree(instances, q, matches);
+    for (const section of rosterSections(instances, visible, deployments)) for (const each of section.groups) {
+      // A group is named, and kept apart, by its deployment where there are several.
+      const group = section.deployment
+        ? { key: `${section.deployment.id}|${each.key}`, label: `${section.label} · ${each.label}`, clusters: each.clusters }
+        : each;
       for (const cluster of group.clusters) {
         for (const inst of cluster.instances) {
           const depth = inst.depth || 0;
@@ -73,7 +87,7 @@ export function createPalette({ loadInstances, openTerminal, commands = [], cycl
     placeholder: 'Jump to an instance… (">" for commands)',
     ariaLabel: "Command palette",
     loadItems: async () => { try { return await loadInstances(); } catch { return []; } },
-    computeRows: (instances, raw) => paletteRows(instances || [], commands, raw, { openTerminal }),
+    computeRows: (roster, raw) => paletteRows(roster || [], commands, raw, { openTerminal }),
     cycleKey,
     doc, // undefined: the picker's own default (the global document)
   });
