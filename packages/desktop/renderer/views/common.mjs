@@ -1,3 +1,5 @@
+import { hashWorkspace, workspaceHash } from "../window-binding.mjs";
+
 /* oats desktop — shared helpers for renderer views.
    Plain ES module, DOM-only, no frameworks (contract). Views import from
    here; the shell provides ctx = { api(pathname, opts), openFile(path),
@@ -64,14 +66,25 @@ export function postJson(ctx, pathname, body) {
 
 /* ── workspace switching (?ws=) ──
    The backend server scopes /api/panel and /api/agents by workspace id.
-   The selected workspace is shared across views and persisted, so switching
-   in one view switches everywhere. Views subscribe to react to changes made
-   elsewhere (e.g. a shell-level switcher can call setWorkspace too). */
+   The selected workspace is shared across views, so switching in one view
+   switches everywhere in this window. Views subscribe to react to changes
+   made elsewhere (e.g. a shell-level switcher can call setWorkspace too).
+
+   One window per workspace (#481): a window's workspace is its URL's hash
+   (`#ws=<id>`, window-binding.mjs), rewritten in place with
+   history.replaceState, so a reload keeps it. The shared localStorage
+   selection is only the default of a window opened with none. Main binds
+   every switch first (window:claim-workspace): a workspace another window
+   has is refused, and that window is focused instead. */
 const WS_KEY = "oats.desktop.ws";
 const wsListeners = new Set();
-/* In-memory source of truth; localStorage is persistence only (absent in
-   node tests and storage-less shells). */
-let wsCurrent = (() => { try { return localStorage.getItem(WS_KEY) || ""; } catch { return ""; } })();
+const startHash = (() => { try { return hashWorkspace(globalThis.location?.hash ?? ""); } catch { return { ok: false }; } })();
+const boundAtStart = startHash.ok && startHash.workspace !== null;
+/* In-memory source of truth; the hash binds it to this window, localStorage
+   holds the default for a new one (both absent in node tests and storage-less
+   shells). */
+let wsCurrent = boundAtStart ? startHash.workspace
+  : (() => { try { return localStorage.getItem(WS_KEY) || ""; } catch { return ""; } })();
 /* Workspace GENERATION — bumped on every switch. Async paths capture it at
    dispatch and discard completions from an older generation: a deferred
    roster/agents response — or a finished spawn — from workspace A must
@@ -83,10 +96,14 @@ export function workspaceGeneration() { return wsGen; }
 export function currentWorkspace() {
   return wsCurrent;
 }
+/* Commit a workspace main has bound this window to (switchWorkspace), or the
+   plain selection where there is no window binding (the browser harness). */
 export function setWorkspace(id) {
   wsCurrent = id || "";
   wsGen++;                                   // invalidate all in-flight ws-scoped work
   try { localStorage.setItem(WS_KEY, wsCurrent); } catch { /* storage-less env */ }
+  writeHash(wsCurrent);
+  if (wsCurrent) setWindowState("bound");
   for (const fn of [...wsListeners]) { try { fn(wsCurrent); } catch { /* listener error must not break others */ } }
 }
 /* Adopt a server-resolved workspace id WITHOUT notifying listeners — used
@@ -98,6 +115,96 @@ export function setWorkspace(id) {
 export function adoptWorkspace(id) {
   wsCurrent = id || "";
   try { localStorage.setItem(WS_KEY, wsCurrent); } catch { /* storage-less env */ }
+  // The window is bound to what it adopted through main, without focusing anything: a window opened
+  // with no default (adopting), or a bound window whose id the server answered with its view now (a
+  // deployment id saved before views, #482). Another window having it leaves this one choosing.
+  if (!claimBridge()) { writeHash(wsCurrent); return; }
+  if (!wsCurrent) return;
+  const adopted = wsCurrent, initial = windowMode === "adopting";
+  void claim(adopted, initial ? { focus: false, initial: true } : { focus: false }).then((r) => {
+    if (wsCurrent !== adopted) return;       // switched since: that switch was bound on its own
+    if (r?.ok) { writeHash(adopted); setWindowState("bound"); }
+    else if (r?.code === "open-elsewhere" || r?.code === "choose") void chooseWorkspace(r.workspaces);
+  });
+}
+
+/* ── one window per workspace (#481) ──
+   The window's state: "bound" (to wsCurrent), "adopting" (opened with no
+   default: the first roster reply's workspace is adopted, then bound) or
+   "choosing" (no workspace: the switcher and its choices, no workspace read). */
+let windowMode = boundAtStart ? "bound" : "adopting";
+let windowChoices = [];
+const windowListeners = new Set();
+const claimBridge = () => { try { const fn = globalThis.oatsDesktop?.windowClaimWorkspace; return typeof fn === "function" ? fn : null; } catch { return null; } };
+async function claim(id, options) {
+  try { return await claimBridge()(id, options); } catch { return { ok: false, code: "failed" }; }
+}
+function writeHash(id) {
+  try {
+    const { pathname, search } = globalThis.location;
+    globalThis.history.replaceState(globalThis.history.state, "", id ? workspaceHash(id) : `${pathname}${search}`);
+  } catch { /* no window history (node tests), or an id the binding refuses */ }
+}
+function setWindowState(state) {
+  if (windowMode === state) return;
+  windowMode = state;
+  for (const fn of [...windowListeners]) { try { fn(state); } catch { /* listener error must not break others */ } }
+}
+export function windowState() { return windowMode; }
+export function onWindowState(fn) {
+  windowListeners.add(fn);
+  return () => windowListeners.delete(fn);
+}
+/* The served choices main gave a choosing window (it reads nothing itself). */
+export function choosingWorkspaces() { return windowChoices; }
+
+/* At start: a window with no hash takes the shared default only when main says no other window has
+   it (and it is not a New Window); otherwise it chooses. With no default it adopts, as before.
+   Resolves to the window's state. */
+export async function startWindow() {
+  if (windowMode !== "adopting" || !claimBridge()) return windowMode === "adopting" ? "bound" : windowMode;
+  const r = await claim(wsCurrent, { focus: false, initial: true });
+  if (r?.ok) { writeHash(wsCurrent); setWindowState("bound"); }
+  else if (r?.code === "choose" || r?.code === "open-elsewhere") enterChoosing(r.workspaces);
+  return windowMode;
+}
+
+function enterChoosing(workspaces) {
+  windowChoices = Array.isArray(workspaces) ? workspaces : [];
+  wsCurrent = "";
+  wsGen++;                                   // nothing in flight may paint a workspace into this window
+  writeHash("");
+  // The state is "choosing" while the workspace listeners run (they read nothing), and is announced
+  // after them, so the switcher's choosing presentation is the last word.
+  const changed = windowMode !== "choosing";
+  windowMode = "choosing";
+  for (const fn of [...wsListeners]) { try { fn(wsCurrent); } catch { /* listener error must not break others */ } }
+  if (changed) for (const fn of [...windowListeners]) { try { fn(windowMode); } catch { /* listener error must not break others */ } }
+}
+
+/* Leave this window with no workspace (a view moved under it to one another window has, #482): main
+   unbinds it, and it shows the switcher. The shared default is kept. */
+export async function chooseWorkspace(workspaces) {
+  if (claimBridge()) await claim(null);
+  enterChoosing(workspaces);
+}
+
+/* Switch this window to `id`. Main binds it first; a workspace another window has is refused (that
+   window is focused, unless `focus` is false) and this window does not change. Switches run one at a
+   time, so this window's state never differs from main's: a switch superseded before it is sent is
+   never sent; one main has already bound is followed even when a newer one waits behind it. */
+let switching = Promise.resolve(), switchIntent = 0;
+export function switchWorkspace(id, { focus = true } = {}) {
+  const intent = ++switchIntent;
+  const run = switching.then(async () => {
+    if (intent !== switchIntent) return { ok: false, code: "superseded" };
+    if (!claimBridge()) { setWorkspace(id); return { ok: true }; }
+    const r = await claim(id, { focus });
+    if (r?.ok) { setWorkspace(id); return { ok: true }; }
+    return r ?? { ok: false, code: "failed" };
+  });
+  switching = run.catch(() => {});
+  return run;
 }
 /* Is the selection a roster reply was requested with STALE? A persisted
    selection can name a workspace the server no longer serves (a deleted

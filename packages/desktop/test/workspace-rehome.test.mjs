@@ -8,6 +8,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
+import { withShellWindowGlobals } from './helpers/shell-window-globals.mjs';
 import { JSDOM } from "jsdom";
 import * as common from "../renderer/views/common.mjs";
 import { createViewMembership, rehomeMap, rehomeKey, rehomeTabs, rehomeActiveTerminals, rehomeCollapsed, tabTarget } from "../renderer/workspace-rehome.mjs";
@@ -117,7 +118,7 @@ const html = readFileSync(new URL("../renderer/index.html", import.meta.url), "u
 const fn = (name) => { const found = source.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`)); assert.ok(found, name); return found[0]; };
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 
-function shell(t, { tabs = new Map(), memory = new Map(), selection }) {
+function shell(t, { tabs = new Map(), memory = new Map(), selection, claim = { ok: true } }) {
   const dom = new JSDOM(html, { url: "https://fixture.invalid" }); t.after(() => dom.window.close());
   const document = dom.window.document; mountShellIcons(document);
   common.setWorkspace(selection);
@@ -129,7 +130,9 @@ function shell(t, { tabs = new Map(), memory = new Map(), selection }) {
     rosterState: null, rosterStale: false, contextDeploymentNote: null, ...viewContext(), rosterSignaturePainted: null, rosterSignature,
     rosterPendingWatch: createPendingWatch(), NOT_SERVED_CODE, NO_ANSWER_CODE, failRosterUnserved() {}, connectionGeneration: 0,
     currentWorkspace: common.currentWorkspace, adoptWorkspace: common.adoptWorkspace, staleWorkspaceSelection: common.staleWorkspaceSelection, rosterResponseOwns,
-    setWorkspace: (id) => { switched.push(id); common.setWorkspace(id); },
+    // One window per workspace (#481): the switch main binds; `claim` is main's answer.
+    switchWorkspace: async (id, options) => { switched.push(id); c.switchOptions = options; if (claim.ok) common.setWorkspace(id); return claim; },
+    chooseWorkspace: async (workspaces) => { c.chose = workspaces; },
     contextRosterEl: document.getElementById("instance-roster"),
     api(path) { const gate = { ...deferred(), path }; requests.push(gate); return gate.promise; },
     renderContextRoster() {}, refreshPanelInstance() {}, rosterPrs: { get: () => null, refresh() {} }, spawnJobs,
@@ -139,7 +142,7 @@ function shell(t, { tabs = new Map(), memory = new Map(), selection }) {
     rehomeTabs, rehomeActiveTerminals, rehomeCollapsed, removeSplitTab, updated: 0,
     updateContextTabs() { c.updated++; }, showTerminalContext() { c.contextShown = true; }, activateTab() {},
   };
-  const s = runInNewContext(`${["refreshContextRoster", "rehomeWorkspaceState"].map(fn).join("\n")}\n({ refreshContextRoster, rehomeWorkspaceState });`, c);
+  const s = runInNewContext(`${["followView", "refreshContextRoster", "rehomeWorkspaceState"].map(fn).join("\n")}\n({ refreshContextRoster, rehomeWorkspaceState });`, withShellWindowGlobals(c));
   return { c, s, requests, switched, storage, document };
 }
 
@@ -226,6 +229,23 @@ test("shell: a selected view that is no longer served follows its deployments to
   u.requests[1].resolve({ workspace: { id: VIEW, name: "oats" }, workspaces: [view(VIEW, [PATH, REMOTE])], instances: [] });
   await reading;
   assert.deepEqual(u.switched, [VIEW], "the window follows its deployments");
+  assert.deepEqual({ ...u.c.switchOptions }, { focus: false }, "through main, focusing nothing (#481)");
   assert.deepEqual([tabs.get(1).workspace, tabs.get(1).key], [VIEW, terminalKey(VIEW, "/h/far")]);
   assert.equal(u.c.tabWorkspace, VIEW, "the live layout is remembered under the view it moved to");
+});
+
+test("shell: a view that moved to a workspace another window has leaves this window choosing, its tabs kept (#481)", async (t) => {
+  const tabs = new Map([[1, { kind: "terminal", workspace: OTHER, key: terminalKey(OTHER, "/h/far"), instanceRef: { instance: "far", deployment: { id: REMOTE } } }]]);
+  const choices = [view(VIEW, [PATH, REMOTE])];
+  const u = shell(t, { tabs, selection: OTHER, claim: { ok: false, code: "open-elsewhere", workspaces: choices } });
+  u.c.viewMembership.note([view(OTHER, [REMOTE], { name: "tsm" })]);
+  const reading = u.s.refreshContextRoster();
+  u.requests[0].reject(Object.assign(new Error("not served"), { code: NOT_SERVED_CODE }));
+  await new Promise((resolve) => setImmediate(resolve));
+  u.requests[1].resolve({ workspace: { id: VIEW, name: "oats" }, workspaces: choices, instances: [] });
+  await reading; await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(u.switched, [VIEW]);
+  assert.equal(u.c.chose, choices, "this window chooses, with main's choices");
+  assert.equal(tabs.size, 1, "its tab stays in this window (never duplicated into the other)");
+  assert.equal(common.currentWorkspace(), OTHER, "nothing switched here");
 });

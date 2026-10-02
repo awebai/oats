@@ -96,6 +96,13 @@ body {
 .ws-option:hover { background: var(--surface-2); }
 .ws-option:focus-visible { background: var(--sel); }
 .ws-option[aria-selected="true"] { background: var(--sel); }
+/* One window per workspace (#481): each option and, beside it, its Open in new window button. */
+.ws-option-row { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.ws-option-row > .ws-option { flex: 1 1 auto; }
+.ws-open-window { flex: 0 0 auto; width: 28px; height: 28px; display: grid; place-items: center; padding: 0;
+                  border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
+.ws-open-window:hover { background: var(--surface-2); color: var(--fg); }
+.ws-open-window:focus-visible { background: var(--sel); color: var(--fg); }
 .ws-check { color: var(--accent); font-weight: 750; }
 .ws-option-copy { min-width: 0; }
 .ws-option .workspace-avatar { width:26px; height:26px; border-radius:7px; font-size:12px; }

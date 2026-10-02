@@ -52,7 +52,7 @@ import { instanceId, resolveLinkId } from "../instance-tree.mjs";
 import { projectActivePanel, activeSignature, activeTargetLabel, canAddressInstance, BRAIN_UNAVAILABLE } from "../active-observation.mjs";
 import {
   apiJson, ensureTheme,
-  currentWorkspace, setWorkspace, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange,
+  currentWorkspace, switchWorkspace, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange,
   renderWorkspaceSelect, wsQuery, workspaceGeneration, rowDeployment,
 } from "./common.mjs";
 import { createDataState, skeleton, statusLine, observedText } from "../loading.mjs";
@@ -399,7 +399,8 @@ export function mount(el, ctx) {
   s.q('hier-retry').addEventListener('click', () => { if (s.alive) void refresh(s, { user: true }); });
   // Re-add: a deployment this Desktop's server does not serve, through the normal add (#461).
   s.q('hier-readd').addEventListener('click', () => { if (s.alive) void reAdd(s); });
-  s.q("wssel").addEventListener("change", (e) => setWorkspace(e.target.value));
+  // Main binds the switch first; a workspace another window has is focused there instead (#481).
+  s.q("wssel").addEventListener("change", (e) => { void switchWorkspace(e.target.value).then((r) => { if (!r.ok) e.target.value = currentWorkspace(); }); });
   s.q("zin").addEventListener("click", () => zoomBy(s, 1.2));
   s.q("zout").addEventListener("click", () => zoomBy(s, 1 / 1.2));
   s.q("zfit").addEventListener("click", () => { if (visibleOwner(s)) fit(s); });

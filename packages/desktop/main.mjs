@@ -655,11 +655,13 @@ function restoreWindows(launchKey = null) {
 // A window binding itself in place (a switch, or a view that moved under it). `id` null leaves it
 // unbound. A workspace another window holds is refused: that window is focused (`focused-other`),
 // or not when `focus` is false (`open-elsewhere`). A New Window's first claim of the shared default
-// (`initial`) is refused with `choose`: it shows the switcher instead.
+// (`initial`) is refused with `choose`: it shows the switcher instead. A refusal carries the served
+// choices (the switcher's list), so a window left choosing reads no workspace to offer them.
 ipcMain.handle("window:claim-workspace", (e, id, options) => {
   if (!trustedForgeFrame(e, RENDERER_URL)) return { ok: false, code: "forbidden" };
   const win = BrowserWindow.fromWebContents(e.sender);
   if (!win || windows.keyOf(win) === undefined) return { ok: false, code: "unknown-window" };
+  if (options?.initial === true && choosers.has(win)) return { ok: false, code: "choose", workspaces: servedList };
   if (id === null) {
     windows.unbind(win);
     windowRecords?.close(win, { served: false }); // the record stays; the window no longer owns it
@@ -667,10 +669,10 @@ ipcMain.handle("window:claim-workspace", (e, id, options) => {
     return { ok: true };
   }
   if (!validWorkspaceId(id)) return { ok: false, code: "bad-workspace" };
-  if (options?.initial === true && choosers.has(win)) return { ok: false, code: "choose" };
   choosers.delete(win);
   const result = windows.claim(win, id, { focus: options?.focus !== false });
-  if (result.ok) bindWindow(win, id);
+  if (!result.ok) return { ...result, workspaces: servedList };
+  bindWindow(win, id);
   return result;
 });
 // Open in new window, and New Window (`id` null): the workspace's window is focused if it has one.
