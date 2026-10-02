@@ -36,7 +36,7 @@ import {
   writeFileAtomic, LOCK_FILE, readLock, readLockIfPresent, writeLock, resolvePackages, memoizedRemote,
   classifyPackageValue, parsePackageRequest } from "../lib/packages.mjs";
 import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, workspaceWarnings, memberRowByKey } from "../lib/workspace.mjs";
-import { migrationProblems, recordedTeams, reportRows, soulKeyOf, soulTeams, teamModel } from "../lib/teams.mjs";
+import { isTeamRefusal, localTeamsClosedProblem, recordedTeams, reportRows, soulKeyOf, soulTeams, teamKeyOf, teamModel } from "../lib/teams.mjs";
 import { launchLayers } from "../lib/launch-preference.mjs";
 import { parseConfigData } from "../lib/config-data.mjs";
 import * as remoteModule from "../lib/remote.mjs";
@@ -221,17 +221,18 @@ async function doctorComposition(ctx, soulName, ws, bail) {
   } finally { for (const c of cleanups) { try { c(); } catch { /* best effort: temporary copies only */ } } }
 }
 
-/** team-model-3-migration in doctor (0.36.x), OFFLINE like the rest of doctor: oats-local.yaml, and for its
- *  local teams the workspace file this machine's parsed cache holds (cachedWorkspace: no git process, no
- *  network). Without that file, whether local teams need `localTeams: true` is said to be unchecked
- *  (information), never guessed. The standalone view has no workspace rules. → { problems, information } */
-function doctorTeamMigration(local) {
+/** Local teams the workspace does not allow (team model 3: E_WORKSPACE_SCHEMA local-teams-closed), in
+ *  doctor, OFFLINE like the rest of doctor: oats-local.yaml, and the workspace file this machine's parsed
+ *  cache holds (cachedWorkspace: no git process, no network). Without that file, whether the local teams are
+ *  allowed is said to be unchecked (information), never guessed. The standalone view has no workspace
+ *  rules. → { problems, information } */
+function doctorLocalTeams(local) {
   const standalone = typeof local.standalone === "string" && local.standalone !== "";
   const file = standalone ? null : cachedWorkspace(local.workspace)?.file ?? null;
   const model = teamModel(file, local);
-  const unchecked = !standalone && file === null && model.migration.teamKeys.length > 0;
-  return { problems: migrationProblems(model),
-    information: unchecked ? ["team-model-3-migration: whether oats-local.yaml teams/defaultTeam need localTeams: true couldn't be checked: this deployment hasn't observed its workspace yet; run oats sync"] : [] };
+  const declared = ["teams", "defaultTeam"].some((k) => Object.hasOwn(local, k));
+  return { problems: model.closedKeys.length ? [localTeamsClosedProblem(model.closedKeys)] : [],
+    information: !standalone && file === null && declared ? ["local-teams-closed: whether oats-workspace.yaml allows oats-local.yaml teams/defaultTeam (localTeams: true) couldn't be checked: this deployment hasn't observed its workspace yet; run oats sync"] : [] };
 }
 
 /** Workspace-model v2 doctor data, OFFLINE: the deployment declaration found
@@ -597,13 +598,13 @@ function legacyLayoutProblems(root) {
 async function doctorWorkspaceJson(ctx, soulName, ws) {
   const composition = await doctorComposition(ctx, soulName, ws, (code, msg, details) => jsonFail(code, msg, details));
   const agentsRoot = join(dirname(ws.local.path), "agents");
-  const migration = doctorTeamMigration(ws.local.value);
-  const problems = [...legacyLayoutProblems(agentsRoot), readableInstanceHomes(agentsRoot), ...migration.problems].filter(Boolean);
+  const localTeams = doctorLocalTeams(ws.local.value);
+  const problems = [...legacyLayoutProblems(agentsRoot), readableInstanceHomes(agentsRoot), ...localTeams.problems].filter(Boolean);
   return {
     schemaVersion: 1, workspaceApi: 2, context: ctx,
     workspace: { file: ws.local.path, ref: ws.local.workspace },
     workspaceError: ws.localError, lockFile: ws.lockFile, packages: ws.packages, lockError: ws.lockError,
-    information: [...(operationalKnowledgeNote(composition, soulName) ? [operationalKnowledgeNote(composition, soulName)] : []), ...migration.information],
+    information: [...(operationalKnowledgeNote(composition, soulName) ? [operationalKnowledgeNote(composition, soulName)] : []), ...localTeams.information],
     composedInstructions: composition?.text, instructionBlocks: composition?.blocks,
     ...(problems.length ? { problems } : {}),
   };
@@ -638,10 +639,10 @@ async function doctor(dir) {
   const composition = await doctorComposition(ctx, soulName, ws, (code, msg) => die(`${msg} [${code}]`));
   printDoctorWorkspace(ws);
   const agentsRoot = join(dirname(ws.local.path), "agents");
-  const migration = doctorTeamMigration(ws.local.value);
+  const localTeams = doctorLocalTeams(ws.local.value);
   for (const p of [...legacyLayoutProblems(agentsRoot), readableInstanceHomes(agentsRoot)].filter(Boolean)) console.log(`\n! ${p.code}: ${p.message}`);
-  for (const p of migration.problems) console.log(`\n! ${p.code}: ${p.message} — ${p.fix}`);
-  for (const line of migration.information) console.log(`\nINFO: ${line}`);
+  for (const p of localTeams.problems) console.log(`\n! ${p.code} (${p.condition}): ${p.message}`);
+  for (const line of localTeams.information) console.log(`\nINFO: ${line}`);
   if (soulName) {
     const information = operationalKnowledgeNote(composition, soulName);
     if (information) console.log(`\nINFO: ${information}`);
@@ -1083,11 +1084,8 @@ function maxAgeRefusal(command, head) {
     case "spawn": return head.includes("--preview") ? null : refuse("spawn");
     case "workspace": return word(1) === "status" ? null : refuse(["workspace", word(1)].filter(Boolean).join(" "));
     case "teams": return word(1) === undefined ? null : refuse(`teams ${word(1)}`);
-    case "soul": {
-      if (word(1) !== "teams") return refuse(["soul", word(1)].filter(Boolean).join(" "));
-      const edit = ["--add", "--remove", "--default", "--clear-default"].find((f) => head.includes(f));
-      return edit ? refuse(`soul teams ${edit}`) : null;
-    }
+    // `soul teams` only reads (its edit flags were removed in 0.37.0, and refuse as such).
+    case "soul": return word(1) === "teams" ? null : refuse(["soul", word(1)].filter(Boolean).join(" "));
     default: {
       const sub = ["package", "schedule", "session", "trigger", "automations", "launch-config", "server", "instance", "operation", "pane"].includes(command) ? word(1) : undefined;
       return refuse([command, sub].filter(Boolean).join(" "));
@@ -1175,8 +1173,8 @@ function soulLaunchFacts(entry, local, { launchConfigs, contextDir }) {
 /** Rows of every soul and capability of confirmed members (+ external souls) + locked package
  *  capabilities. Souls have no private mode (0.26.0); a private member capability is listed with
  *  `private: true` — repo-owned: usable only by its own repo's souls (E_CAPABILITY_PRIVATE).
- *  Each soul row carries its teams HERE (team model v2: `teams`, `defaultTeam`), from the committed
- *  shared teams and `local` (oats-local.yaml); both null when its teams do not resolve (E_TEAM_*). */
+ *  Each soul row carries its teams HERE (team model 3: `teams`, `defaultTeam`), from the committed
+ *  workspace and the local teams it allows; both null when its teams do not resolve (isTeamRefusal). */
 function workspaceItems(discovery, lock, local, deploymentDir) {
   const souls = [];
   let launchConfigs = {};
@@ -1185,8 +1183,8 @@ function workspaceItems(discovery, lock, local, deploymentDir) {
   const capabilities = [];
   const model = teamModel(discovery.standalone === true ? null : discovery.workspace, local, { workspaceKey: discovery.key ?? null });
   const teamsHere = (entry) => {
-    try { const t = soulTeams(model, soulKeyOf(entry)); return { teams: reportRows(t.teams), defaultTeam: t.defaultTeam }; }
-    catch (e) { if (String(e?.code).startsWith("E_TEAM_")) return { teams: null, defaultTeam: null }; throw e; }
+    try { const t = soulTeams(model, teamKeyOf(entry)); return { teams: reportRows(t.teams), defaultTeam: t.defaultTeam }; }
+    catch (e) { if (isTeamRefusal(e)) return { teams: null, defaultTeam: null }; throw e; }
   };
   for (const m of discovery.members) {
     if (!m.confirmed && !(discovery.standalone === true && m.key === discovery.key)) continue;
@@ -1600,11 +1598,10 @@ async function teamsContext(bail) {
   }
   return { deployment: ctx.deploymentDir, localPath: ctx.localPath, local: ctx.local, workspace, workspaceKey, remoteOptions: ctx.remoteOptions };
 }
-const labelsFlag = (name) => { const v = valueFlag(name); return v === undefined ? [] : String(v).split(",").map((l) => l.trim()).filter(Boolean); };
 const positional = (i) => (args[i] !== undefined && !args[i].startsWith("--") ? args[i] : undefined);
 
 /** `oats teams [--json] | add <label> --team <id> [--description <d>] | remove <label> | default <label>` —
- *  this deployment's teams (team model v2). Config only: never a provider call. */
+ *  this deployment's teams (team model 3). Config only: never a provider call. */
 async function teamsCmd() {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   const usage = "usage: oats teams [--json] | oats teams add <label> --team <id> [--description <d>] | oats teams remove <label> | oats teams default <label>  [--dir <deployment>] [--json]";
@@ -1623,25 +1620,29 @@ async function teamsCmd() {
   const doc = V.teamsDocument(result ? { ...ctx, local: result.local } : ctx);
   if (JSON_MODE) { jsonOk(result ? { ...doc, changed: result.changed } : withObservation(doc)); return; }
   if (result) console.log(result.changed ? `${sub === "add" ? `Declared team ${label}` : sub === "remove" ? `Removed team ${label}` : `The default team is now ${label}`} in ${shortPath(ctx.localPath)}` : "Nothing to change");
-  console.log(`default   ${doc.defaultTeam ?? "(none)"}`);
+  console.log(`default   ${doc.defaultTeam ? `${doc.defaultTeam.label} (${doc.defaultTeam.from})` : "(none)"}`);
+  console.log(`local     ${doc.localTeams === null ? "allowed (standalone)" : doc.localTeams ? "allowed (localTeams: true)" : "not allowed"}`);
   if (!doc.teams.length) console.log("teams     (none: `oats aweb setup` creates them, or `oats teams add <label> --team <id>`)");
   else printTable(["team", "id", "from", ""], doc.teams.map((t) => [t.label, t.team ?? "(no id yet)", t.from, t.default ? "default" : ""]));
-  const souls = Object.entries(doc.souls.teams).map(([k, l]) => `${k}: ${l.join(",")}`);
+  const souls = Object.entries(doc.souls).map(([k, e]) => `${k}: ${[e.default ? `default ${e.default}` : null, e.teams === "any" ? "any" : Array.isArray(e.teams) ? `[${e.teams.join(",")}]` : null].filter(Boolean).join(" ") || "default only"}`);
   if (souls.length) console.log(`souls     ${souls.join(" · ")}`);
-  const defaults = Object.entries(doc.souls.default).map(([k, l]) => `${k}: ${l}`);
-  if (defaults.length) console.log(`defaults  ${defaults.join(" · ")}`);
   for (const p of doc.problems) console.log(`${p.severity === "failure" ? "problem" : "warning"}   ${p.code}  ${p.message} — ${p.fix}`);
 }
 
-/** `oats soul teams <soul>|'*' [--add a,b] [--remove a,b] [--default <label> | --clear-default] [--json]` —
- *  which teams a soul belongs to here, and why (team model v2). Config only. */
+/** The `oats soul teams` edit flags team model 3 removed (0.37.0): a soul's teams are the workspace's `souls:`. */
+const SOUL_TEAMS_REMOVED_FLAGS = ["--add", "--remove", "--default", "--clear-default"];
+const SOUL_TEAMS_REPLACEMENT = "souls: in oats-workspace.yaml (a PR to the workspace file)";
+
+/** `oats soul teams <soul>|'*' [--json]` — which teams a soul may join here, its default, and why (team
+ *  model 3: the workspace's `souls:`, and the local teams it allows). Config only, read only. */
 async function soulCmd() {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
-  const usage = "usage: oats soul teams <soul>|'*' [--add <label>[,…]] [--remove <label>[,…]] [--default <label> | --clear-default]  [--dir <deployment>] [--json]";
+  const usage = "usage: oats soul teams <soul>|'*'  [--dir <deployment>] [--max-age <s>] [--json]";
+  const removed = SOUL_TEAMS_REMOVED_FLAGS.find((f) => args.some((a) => a === f || a.startsWith(`${f}=`)));
+  if (removed) bail("E_BAD_ARGS", `oats soul teams ${removed} was removed in 0.37.0 (team model 3): which teams a soul may join, and its default, are ${SOUL_TEAMS_REPLACEMENT}`, { flag: removed, replacement: SOUL_TEAMS_REPLACEMENT });
   if (positional(1) !== "teams") bail("E_USAGE", usage);
   const name = positional(2);
-  if (name === undefined) bail("E_BAD_ARGS", `oats soul teams needs a soul (or '*' for every soul) — ${usage}`);
-  const edit = { add: labelsFlag("add"), remove: labelsFlag("remove"), setDefault: valueFlag("default") ?? null, clearDefault: args.includes("--clear-default") };
+  if (name === undefined) bail("E_BAD_ARGS", `oats soul teams needs a soul (or '*') — ${usage}`);
   const ctx = workspaceContext(bail);
   let teamsCtx, soul = "*", key = "*";
   if (name === "*") teamsCtx = await teamsContext(bail);
@@ -1655,19 +1656,16 @@ async function soulCmd() {
       discovery = await discoverOrStandalone(ctx.local, { lock, deployment: ctx.deploymentDir, remoteOptions: ctx.remoteOptions });
       entry = findSoulEntry(discovery, name);
     } catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details ?? e.provenance); throw e; }
-    soul = entry.name; key = soulKeyOf(entry);
+    soul = entry.name; key = teamKeyOf(entry);
     teamsCtx = { deployment: ctx.deploymentDir, localPath: ctx.localPath, local: ctx.local, workspace: discovery.standalone === true ? null : discovery.workspace, workspaceKey: discovery.key ?? null };
   }
   const V = await import("../lib/teams-verbs.mjs");
-  const mutating = edit.add.length || edit.remove.length || edit.setDefault !== null || edit.clearDefault;
-  let result = null, doc;
-  try {
-    if (mutating) result = V.soulTeamsEdit(teamsCtx, key, edit);
-    doc = V.soulTeamsDocument(result ? { ...teamsCtx, local: result.local } : teamsCtx, { soul, key });
-  } catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details); throw e; }
-  if (JSON_MODE) { jsonOk(result ? { ...doc, changed: result.changed } : withObservation(doc)); return; }
-  if (result) console.log(result.changed ? `Updated the teams of ${key === "*" ? "every soul" : key} in ${shortPath(teamsCtx.localPath)}` : "Nothing to change");
-  console.log(`${key === "*" ? "every soul" : key} on this computer: default ${doc.defaultTeam ? `${doc.defaultTeam.label} (${doc.defaultTeam.from})` : "(none)"}`);
+  let doc;
+  try { doc = V.soulTeamsDocument(teamsCtx, { soul, key }); }
+  catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details); throw e; }
+  if (JSON_MODE) { jsonOk(withObservation(doc)); return; }
+  console.log(`${key === "*" ? "unlisted souls (\"*\")" : key} here: default ${doc.defaultTeam ? `${doc.defaultTeam.label} (${doc.defaultTeam.from})` : "(none)"}`);
+  console.log(`souls: ${doc.match === null ? "no entry matches" : `teams from ${JSON.stringify(doc.match)}`}${doc.defaultMatch !== null ? `, default from ${JSON.stringify(doc.defaultMatch)}` : ""}`);
   if (doc.teams.length) printTable(["team", "id", "from", "why"], doc.teams.map((t) => [t.default ? `${t.label} (default)` : t.label, t.team ?? "(no id yet)", t.from, t.via.join(",")]));
 }
 
@@ -1904,8 +1902,8 @@ async function statusDrift(data) {
  *  machine's parsed cache knows: `ref` itself when the cache holds its workspace file, or the host its
  *  cached oats-membership.yaml names when `ref` is a member ("workspace"). A member whose host is not
  *  known keys as itself ("member"); a ref nothing is known of is taken as the host, as the schema
- *  defines `workspace:` ("workspace"). The team model resolves as teamModel resolves it (the default
- *  label is local; a committed team wins a collision) over the shared teams of, in order, the workspace
+ *  defines `workspace:` ("workspace"). The team model resolves as teamModel resolves it (the default is
+ *  the local one the workspace allows, else the workspace's; a committed team wins a collision) over the shared teams of, in order, the workspace
  *  file this run observed (`teamsFrom: "observed"`), the cached file ("cache": no git process), or none
  *  ("local"). `standalone` is the CONFIGURED standalone view only (oats-local.yaml `standalone:`): it
  *  reads no workspace file, so its local teams are the whole team model. A run that fell back to the
@@ -1928,10 +1926,12 @@ function workspaceIdentity(local, discovery) {
     else if (cached?.file) [shared, teamsFrom] = [cached.file, "cache"];
   }
   const model = teamModel(shared, local);
+  // A soul with no souls: default of its own lives here (team model 3: the local default the workspace allows, else the workspace's).
+  const deploymentDefault = model.localDefault ?? model.workspaceDefault;
   const labels = [...model.labels.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   return {
     key, ref, keyFrom, standalone,
-    defaultTeam: model.defaultTeam === null ? null : { label: model.defaultTeam, team: model.labels.get(model.defaultTeam)?.team ?? null },
+    defaultTeam: deploymentDefault === null ? null : { label: deploymentDefault, team: model.labels.get(deploymentDefault)?.team ?? null },
     teams: Object.fromEntries(labels.map((l) => [l, model.labels.get(l).team])),
     teamsFrom,
   };
@@ -2010,8 +2010,8 @@ async function status() {
   const verbose = args.includes("--verbose");
   const problems = legacyLayoutProblems(root);
   if (args.includes("--json")) {
-    // The soul key (feature launch-preference): what souls.teams / souls.default / souls.launch and
-    // `oats soul teams <key>` use — from the instances' records, so it needs no remote.
+    // The soul key (feature launch-preference): what souls.launch and `oats soul teams <key>` use —
+    // from the instances' records, so it needs no remote.
     for (const a of data) a.key = agentSoulKey(a);
     if (ws) for (const a of data) {
       const stamp = ws.souls.get(a.name);
@@ -3136,7 +3136,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-2", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capabilityShowApi: 1 }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capabilityShowApi: 1 }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -3810,10 +3810,10 @@ Usage:
                                             teams on this deployment
   oats teams [--json] | add <label> --team <id> [--description <d>] | remove <label>
       | default <label>  [--dir <d>]        this deployment's teams (shared + local), the
-      [--max-age <s>] (the read form only)  default; add/remove/default edit oats-local.yaml
-  oats soul teams <soul>|'*' [--add a,b] [--remove a,b] [--default <l> | --clear-default]
-      [--dir <d>] [--json]                  which teams a soul (or every soul) belongs to here
-      [--max-age <s>] (without an edit)
+      [--max-age <s>] (the read form only)  default, the workspace's souls:; add/remove/default
+                                            edit oats-local.yaml (only with localTeams: true)
+  oats soul teams <soul>|'*' [--dir <d>]    which teams a soul may join here, its default, and
+      [--max-age <s>] [--json]              why (the workspace's souls: and local teams)
   oats instance git <instance> [--home <abs>] [--dir <d>] [--json]
                                              read-only Git observation of the instance's work
                                              tree: branch, status (renames kept), ahead/behind
