@@ -16,7 +16,7 @@ function behind(t) {
   t.after(fx.cleanup);
   const hostPath = process.env.PATH; process.env.PATH = fx.env.PATH; t.after(() => { process.env.PATH = hostPath; });
   const other = mkdtempSync(join(tmpdir(), "oats-spawn-base-")); t.after(() => rmSync(other, { recursive: true, force: true }));
-  git(other, "clone", "-q", "-c", "maintenance.auto=false", fx.repo, "c"); // no background git (#451)
+  git(other, "clone", "-q", fx.repo, "c");
   writeFileSync(join(other, "c", "newer.txt"), "upstream moved on\n");
   git(join(other, "c"), "add", "-A"); git(join(other, "c"), "commit", "-qm", "upstream work"); git(join(other, "c"), "push", "-q", "origin", "HEAD:main");
   const head = git(fx.repo, "rev-parse", "main");

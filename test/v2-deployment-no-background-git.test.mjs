@@ -25,3 +25,17 @@ test("a commit in a spawned worktree starts no background maintenance", async (t
     assert.equal(execFileSync("git", ["-C", repo, "config", "--get", "maintenance.auto"], { encoding: "utf8" }).trim(), "false", repo);
   }
 });
+
+test("the kernel's remote cache starts no background maintenance when it fetches", async (t) => {
+  const fx = v2Deployment({ souls: { dev: { soul: { work: "worktree" } } } });
+  t.after(fx.cleanup);
+  const saved = { PATH: process.env.PATH, GIT_TRACE: process.env.GIT_TRACE };
+  const trace = join(fx.base, "kernel-trace.log");
+  process.env.PATH = fx.env.PATH; process.env.GIT_TRACE = trace;
+  t.after(() => { for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } });
+  await fx.spawn("dev", { instance: "dev-cache", work: "worktree" });
+  delete process.env.GIT_TRACE;
+  const text = readFileSync(trace, "utf8");
+  assert.match(text, /built-in: git fetch -q --depth 1 /, "the spawn fetched a commit into the remote cache");
+  assert.doesNotMatch(text, /maintenance run --auto/, "no auto maintenance was started");
+});

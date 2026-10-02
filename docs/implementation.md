@@ -238,12 +238,19 @@ contacts GitHub, aweb, Jira or Linear.
 Tests pin behaviour, so a change that alters behaviour changes its test in the
 same commit. Never weaken an assertion to make a change pass.
 
-A test repository never runs background git. Since Git 2.47, a commit or fetch
-starts `git maintenance run --auto --detach`, a daemon that outlives the
-command. On a loaded CI runner it can still be repacking into the repository
-while the test's cleanup removes the directory, which fails with `ENOTEMPTY`
-(awebai/oats#451). The shared fixture (`test/helpers/v2-deployment.mjs`) sets
-`maintenance.auto=false` in each repository it creates. A test that makes its
-own clone and commits in it does the same (`git clone -c
-maintenance.auto=false`). Never paper over such a race with a retry around
-the cleanup.
+Since Git 2.47, a commit or fetch starts `git maintenance run --auto
+--detach`, a daemon that outlives the command. On a loaded CI runner it can
+still be repacking into a repository while the test's cleanup removes it,
+which fails with `ENOTEMPTY` (awebai/oats#451). So:
+
+- The shared fixture's repositories (`test/helpers/v2-deployment.mjs`: the
+  bare remote, the seed and the member clone) never run it. Each sets
+  `maintenance.auto=false` in its own config, which covers every git run in
+  it, a test's raw `execFileSync("git", …)` and the kernel's included.
+- A test that runs git itself goes through the fixture's `git()` helper,
+  which disables it per command, or sets `maintenance.auto=false` in a
+  repository it creates.
+- The kernel's remote cache passes `-c maintenance.auto=false` on every git
+  it runs there.
+
+Never paper over such a race with a retry around the cleanup.
