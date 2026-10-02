@@ -81,15 +81,16 @@ export function createDeploymentTabBar(doc, { idPrefix, onSelect }) {
     return b;
   }
   function fill(b, tab) {
-    const d = tab.deployment, state = d ? deploymentState(d) : null, quiet = !state || state.key === 'live';
-    const key = JSON.stringify([tab.label, quiet ? '' : state.text, d?.path || '']);
+    const d = tab.deployment, quiet = !d || !deploymentNeedsWords(d);
+    const words = quiet ? '' : deploymentState(d).key === 'live' ? 'not matched' : deploymentState(d).text;
+    const key = JSON.stringify([tab.label, words, d?.path || '']);
     if (b.dataset.key === key) return;
     b.dataset.key = key;
     const parts = [doc.createTextNode(tab.label)];
     // Not live: the shared status mark (a shape, never colour alone), its words in the tab's name.
-    if (!quiet) parts.push(deploymentMark(doc, state.text));
+    if (!quiet) parts.push(deploymentMark(doc, words));
     b.replaceChildren(...parts);
-    const title = [d?.path || '', quiet ? '' : state.text].filter(Boolean).join(' — ');
+    const title = [d?.path || '', words].filter(Boolean).join(' — ');
     if (title) b.title = title; else b.removeAttribute('title');
   }
   function paint(tabs, selected, panelId) {
@@ -111,19 +112,27 @@ export function createDeploymentTabBar(doc, { idPrefix, onSelect }) {
   return { element, paint, selected: () => element.querySelector('[aria-selected="true"]') };
 }
 
+/** Whether a deployment's heading must say something: it is not live, or it is live but carries a
+ * reason (reached, yet not matched to a workspace: an old host, an invalid reference…). A deployment
+ * the switcher lists under "Not matched" opens here, so its why is said here too. */
+export const deploymentNeedsWords = (deployment) => deploymentState(deployment).key !== 'live' || !!deployment?.short;
+
 /** A deployment's heading: `{ element, label }`, `label` being the accessible name for the group that
  * holds it (the visible line is aria-hidden; the disclosure stays reachable). `open` and `onToggle`
  * carry the disclosure's state across repaints. */
 export function deploymentHead(doc, { deployment, rows, open = false, onToggle }) {
   const label = deploymentLabel(deployment), state = deploymentState(deployment), counts = deploymentCounts(rows);
-  const live = state.key === 'live';
+  // `live` here means "nothing to explain": a reached deployment that is not matched explains itself
+  // under a "not matched" chip.
+  const live = !deploymentNeedsWords(deployment);
+  const chip = state.key === 'live' ? 'not matched' : state.text;
   const head = el(doc, 'div', undefined, 'hier-dhead');
   const line = el(doc, 'div', undefined, 'hier-dline'); line.setAttribute('aria-hidden', 'true');
   const name = el(doc, 'span', label, 'cnm hier-dname');
   if (deployment.path) name.title = deployment.path;
   line.append(name, el(doc, 'span', counts, 'cct hier-dcount'));
   if (!live) {
-    line.append(el(doc, 'span', state.text, 'chip hier-dstate'));
+    line.append(el(doc, 'span', chip, 'chip hier-dstate'));
     if (deployment.short) line.append(el(doc, 'span', deployment.short, 'cct hier-dshort'));
   }
   head.append(line);
@@ -146,7 +155,7 @@ export function deploymentHead(doc, { deployment, rows, open = false, onToggle }
     fix.addEventListener('toggle', () => onToggle?.(fix.open));
     head.append(fix);
   }
-  return { element: head, label: [label, counts, live ? '' : state.text, live ? '' : deployment.short || ''].filter(Boolean).join(', ') };
+  return { element: head, label: [label, counts, live ? '' : chip, live ? '' : deployment.short || ''].filter(Boolean).join(', ') };
 }
 
 /** The tab's empty state for a deployment that is not live and has no rows: the same heading, in flow. */

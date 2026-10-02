@@ -60,10 +60,10 @@ import { deploymentUnavailableText, NOT_SERVED_CODE, NO_ANSWER_CODE, unservedErr
 import { registerAction } from "../keybindings.mjs";
 import { resolveViewKey } from "../view-keys.mjs";
 import { icon } from "../shell-icons.mjs";
-import { attachDeployments, isMultiDeployment, splitByDeployment, deploymentState } from "../view-deployments.mjs";
+import { attachDeployments, isMultiDeployment, splitByDeployment } from "../view-deployments.mjs";
 import { deploymentLabel } from "../deployment-label.mjs";
 import { ALL_TAB, deploymentTabs, selectedDeploymentTab, rememberDeploymentTab, onDeploymentTabRequest } from "../deployment-tabs.mjs";
-import { deploymentsPageCSS, createDeploymentTabBar, deploymentHead, deploymentReasonBlock } from "../deployments-page.mjs";
+import { deploymentsPageCSS, createDeploymentTabBar, deploymentHead, deploymentReasonBlock, deploymentNeedsWords } from "../deployments-page.mjs";
 
 export const hierarchyCSS = `
 .hier { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg); color: var(--fg);
@@ -299,7 +299,7 @@ const DEP_HEAD = 30, DEP_FIX = 22, DEP_GAP = 56, HEAD_GAP = 12;
 /** The room a deployment's heading takes above its clusters: one line, and a second for the
  * "How to fix" summary of a deployment that is not live. An open disclosure is measured on screen
  * and pushes the sections below it down (placeSections). */
-const headRoom = (d) => (deploymentState(d).key !== 'live' && (d.reason || d.fix?.length || d.note) ? DEP_HEAD + DEP_FIX : DEP_HEAD);
+const headRoom = (d) => (deploymentNeedsWords(d) && (d.reason || d.fix?.length || d.note) ? DEP_HEAD + DEP_FIX : DEP_HEAD);
 
 /** Stack deployment sections (#482): each entry's rows are laid out on their own (relations are
  * recorded within one deployment) under a heading at `y`, in the given order. A deployment with no
@@ -336,7 +336,7 @@ function tabContent(instances, deployments, tab) {
   const parts = splitByDeployment(list)(all);
   if (tab === ALL_TAB && isMultiDeployment(list)) return { rows: all, entries: list.map(deployment => ({ deployment, rows: parts.get(deployment.id) })) };
   const deployment = list.find(d => d.id === tab) || list[0], rows = parts.get(deployment.id);
-  if (list.length === 1 && deploymentState(deployment).key === 'live') return { rows, entries: null };
+  if (list.length === 1 && !deploymentNeedsWords(deployment)) return { rows, entries: null };
   return { rows, entries: [{ deployment, rows }] };
 }
 
@@ -750,7 +750,7 @@ function render(s) {
   const status = `<b>${running}</b> running · <b>${stopped}</b> stopped${unknown ? ` · <b>${unknown}</b> unknown` : ""}`;
   s.q("hier-sum").innerHTML =
     status;
-  const quiet = !entries || entries.every(e => deploymentState(e.deployment).key === 'live');
+  const quiet = !entries || entries.every(e => !deploymentNeedsWords(e.deployment));
   if (!list.length && (quiet || entries.length === 1)) {
     s.q('hier-sum').innerHTML = `${status} · <b>0</b> groups`;
     s.sel = null; closePop(s);

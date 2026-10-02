@@ -121,7 +121,8 @@ export function createWorkspaceSwitcher({
     unmatched.append(unmatchedHead);
     workspaces.forEach((workspace, index) => {
       const place = workspace.unattached
-        ? [machinesOf(workspace)[0] || "", short(workspace.short)].filter(Boolean).join(" · ")
+        // The machine, unless the entry is already named by it (a remote group is named by its server).
+        ? [machinesOf(workspace)[0] === labels[index] ? "" : machinesOf(workspace)[0] || "", short(workspace.short)].filter(Boolean).join(" · ")
         : workspaceChoicePlace(workspace);
       const notLive = !workspace.unattached && Number.isInteger(workspace.notLive) && workspace.notLive > 0 ? workspace.notLive : 0;
       const haystack = `${labels[index]} ${place}`.toLocaleLowerCase();

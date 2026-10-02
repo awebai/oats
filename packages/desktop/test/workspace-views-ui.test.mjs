@@ -218,6 +218,12 @@ test("Not matched: the machine and ONE short reason; selecting one opens the Dep
   s.sw.openMenu(); s.document.querySelector('[role="group"] .ws-option').click();
   assert.deepEqual(s.selected, [views[1].id], "selected as before");
   assert.deepEqual(s.tabRequests, [{ view: views[1].id, tab: views[1].deployments[0] }], "then its deployment's tab is requested");
+  // A remote group is named by its server: its line does not repeat the name (live check, #482).
+  const rigel = { id: "remote:rigel:cccccccccccc", name: "rigel", team: null, deployments: ["remote:rigel:cccccccccccc"], machines: ["rigel"], notLive: 0,
+    unattached: true, short: "OATS too old to report its workspace", server: "rigel", remote: true };
+  const r = switcher(t);
+  r.sw.begin()(views[0], [views[0], rigel]); r.sw.openMenu();
+  assert.equal(r.document.querySelector('[role="group"] .ws-option .ws-option-meta').textContent, "OATS too old to report its workspace");
 });
 
 test("switcher: filtering and Arrow/Home/End work across the section; a filtered-out section disappears", (t) => {

@@ -262,3 +262,22 @@ for (const name of ["light", "solarized", "dark"]) test(`${name}: the tabs, depl
     for (let e = el; e; e = e.parentElement) assert.equal(win.getComputedStyle(e).opacity, "1", `${selector}: no opacity over text`);
   }
 });
+
+test("a reached deployment that is not matched says why on its tab (the switcher's Not matched entries open here)", async (t) => {
+  const RIGEL = { id: "remote:rigel:cccccccccccc", machine: "rigel", path: "/srv/fixture", label: "/srv/fixture", local: false, reachable: true,
+    identityFrom: null, primary: true, reason: "rigel's OATS is too old to report its workspace; update OATS there.",
+    short: "OATS too old to report its workspace", fix: ["Update OATS on rigel."] };
+  const u = await page(t, panel([RIGEL], []));
+  assert.deepEqual(u.all(".hier-tabs [role=tab]").map((b) => b.textContent), ["rigel"]);
+  assert.equal(u.all(".hier-tabs [role=tab] .deployment-mark").length, 1, "its tab carries the mark");
+  assert.equal(u.one(".empty"), null, "never the plain 'no instances' message");
+  const block = u.one(".hier-empty-wrap .hier-dreason");
+  assert.ok(block);
+  assert.equal(block.querySelector(".hier-dstate.chip").textContent, "not matched");
+  assert.equal(block.querySelector(".hier-dshort").textContent, "OATS too old to report its workspace");
+  assert.equal(block.querySelector(".hier-dfix > summary").textContent, "How to fix");
+  assert.deepEqual([...block.querySelectorAll(".hier-dfix-steps li")].map((li) => li.textContent), ["Update OATS on rigel."]);
+  // A reached, matched deployment alone still draws the overview as it always was: no heading.
+  const quiet = await page(t, panel([LOCAL], [row("lead", LOCAL)]));
+  assert.equal(quiet.all(".hier-dhead").length, 0);
+});
