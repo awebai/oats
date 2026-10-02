@@ -43,8 +43,11 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
   Every switch goes through `switchWorkspace`, which main binds first
   (`window:claim-workspace`): a workspace another window has brings that
   window to the front and leaves this one unchanged. Claims run one at a
-  time, so the window never differs from main's registry; `setWorkspace` is
-  the commit after main's yes. A window with no workspace is `choosing`
+  time and a switch commits only after main's yes (`setWorkspace`). Main may
+  move a window ahead of it: a window bound to a deployment whose view is
+  observed later is registered under the view at once (main's
+  `noteServed`), and the window's next roster read follows it there. A
+  window with no workspace is `choosing`
   (`windowState`): the shell shows the switcher with main's choices and
   reads nothing.
   A persisted selection the server no longer serves is **stale**

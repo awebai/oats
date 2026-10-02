@@ -364,12 +364,22 @@ terminal owner).
 - **Requests.** The API proxy reads the sending frame's workspace. A bound
   window's implicit `?ws=` is its own workspace, never main's verified one,
   and an explicit one is never rewritten (`apiUrl`'s bound mode).
-- **Binding.** A window binds or switches only through
-  `window:claim-workspace`: main refuses a workspace another window holds
-  and brings that window to the front (or, for a view that moved under a
-  window, doesn't). The renderer runs one claim at a time and commits a
-  switch only after main's yes, so its hash and main's registry never
-  differ (`switchWorkspace` in `renderer/views/common.mjs`).
+- **Binding.** A window switches through `window:claim-workspace`: main
+  refuses a workspace another window holds and brings that window to the
+  front (or, for a view that moved under a window, doesn't); a deployment id
+  is bound as the view that holds it. The renderer runs one claim at a time
+  and commits a switch only after main's yes (`switchWorkspace` in
+  `renderer/views/common.mjs`), so a switch never leaves its hash and main's
+  registry apart.
+- **A view observed under a window.** A window bound to a deployment whose
+  identity is observed later (its view gets a `ws:` id) is moved to that view
+  in main as soon as the served list names it (`noteServed`), focusing
+  nothing, so no other window can take the workspace meanwhile. Its hash
+  still names the deployment until its next roster read follows the view
+  (the #482 rehome claim, a no-op in main by then); its requests stay
+  valid in between, the deployment id being served. If another window
+  already has the view, nothing moves, and that follow leaves this window
+  choosing.
 - **No workspace.** A New Window, or a window whose view moved to a
   workspace another window has, is *choosing*: main's refusal carries the
   served choices, and the window reads nothing until it binds.
