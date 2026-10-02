@@ -25,7 +25,7 @@ const fs = require("node:fs"); const p = require("node:path");
 const log = ${JSON.stringify(join(base, "aw.log"))};
 const val = (flag) => { const eq = args.find((x) => x.startsWith(flag + "=")); if (eq) return eq.slice(flag.length + 1); const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : undefined; };
 fs.appendFileSync(log, a + " @" + process.cwd() + "\\n");
-if (a.startsWith("wake ")) { if (process.env.FAKE_NO_WAKE) { console.error("aw: unknown command wake"); process.exit(2); } process.exit(0); }
+if (a.startsWith("wake ")) { if (process.env.FAKE_NO_WAKE) { console.error("aw: unknown command wake"); process.exit(2); } if (a.startsWith("wake status")) console.log(JSON.stringify({ instances: [] })); process.exit(0); }
 if (a.startsWith("team list")) { console.log(JSON.stringify({ active_team: "t:example.test", memberships: [{ team_id: "t:example.test" }] })); process.exit(0); }
 if (a.startsWith("team invite")) { console.log(JSON.stringify({ token: "TOK-secret" })); process.exit(0); }
 if (a.startsWith("team join")) {
@@ -227,6 +227,39 @@ test("spawn with delivery=session: AWEB_DELIVERY in the launch env, no Claude ch
     // An unknown value behaves as channel, never as session.
     const odd = runHook(base, bin, "spawn", { ...env, OATS_SETTINGS: JSON.stringify({ delivery: "broker" }) });
     assert.equal(odd.doc.meta.delivery, "channel");
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("oats.aweb 1.18: under delivery=channel each start takes the path of its runtime (Codex the broker, Claude its channel) and records it", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-110-"));
+  try {
+    const bin = fakeAw(base); const { root, home } = deployment(base);
+    mkdirSync(join(home, ".aw"), { recursive: true });
+    const meta = { alias: "probe", team: "t:example.test", delivery: "channel" };
+    const env = { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify({}), OATS_META: JSON.stringify(meta), ...defaultTeamEnv() };
+    const codex = runHook(base, bin, "launch", { ...env, OATS_RUNTIME: "codex" });
+    assert.equal(codex.status, 0, codex.stdout + codex.stderr);
+    assert.equal(codex.doc.env.AWEB_DELIVERY, "session");
+    assert.deepEqual({ delivery: codex.doc.meta.delivery, runtime: codex.doc.meta.runtime }, { delivery: "channel", runtime: "codex" });
+    assert.match(readFileSync(join(base, "aw.log"), "utf8"), /^wake register --home .* --delivery session/m, "a Codex start registers the home with the broker");
+    rmSync(join(base, "aw.log"));
+    const claude = runHook(base, bin, "launch", { ...env, OATS_RUNTIME: "claude", OATS_META: JSON.stringify(codex.doc.meta) });
+    assert.equal(claude.status, 0, claude.stdout + claude.stderr);
+    assert.equal(claude.doc.env?.AWEB_DELIVERY, undefined);
+    assert.deepEqual({ delivery: claude.doc.meta.delivery, runtime: claude.doc.meta.runtime }, { delivery: "channel", runtime: "claude" });
+    const log = readFileSync(join(base, "aw.log"), "utf8");
+    assert.match(log, /^wake deregister --home /m, "a Claude start takes the home off the broker");
+    assert.match(log, /^wake status --json/m, "and proves the broker no longer lists it");
+    assert.doesNotMatch(log, /^wake register /m);
+    // 1.18.1: under the kernel's preview flag a start changes nothing: no aw call and no meta, the real run's env.
+    rmSync(join(base, "aw.log"));
+    for (const [runtime, real] of [["codex", codex], ["claude", claude]]) {
+      const preview = runHook(base, bin, "launch", { ...env, OATS_RUNTIME: runtime, OATS_LAUNCH_PREVIEW: "1" });
+      assert.equal(preview.status, 0, preview.stdout + preview.stderr);
+      assert.deepEqual(preview.doc.env, real.doc.env, `${runtime}: the preview answers the real run's env`);
+      assert.equal(preview.doc.meta, undefined, `${runtime}: a preview records nothing`);
+    }
+    assert.equal(existsSync(join(base, "aw.log")), false, "a preview makes no aw call");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
