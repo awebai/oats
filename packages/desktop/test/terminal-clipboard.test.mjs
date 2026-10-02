@@ -10,6 +10,8 @@ test('osc52Text: tmux\'s copy (empty selection), and c/p/s/0-7 selections, decod
   assert.equal(osc52Text(`;${b64('line one')}`), 'line one');
   assert.equal(osc52Text(`c;${b64('alpha\nbravo — ✓')}`), 'alpha\nbravo — ✓');
   for (const sel of ['p', 's', '0', 'cp']) assert.equal(osc52Text(`${sel};${b64('x')}`), 'x', sel);
+  assert.equal(osc52Text(`;${b64('\ufeffhello')}`), '\ufeffhello', 'a leading U+FEFF is the copied text, not a BOM to drop');
+  assert.equal(osc52Text(`;${b64('\ufeff')}`), '\ufeff');
 });
 
 test('osc52Text: a query, a clear, a malformed or an oversized request writes nothing', () => {

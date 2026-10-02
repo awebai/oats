@@ -27,7 +27,7 @@ export function osc52Text(data) {
   let bytes;
   try { bytes = Uint8Array.from(atob(payload), c => c.charCodeAt(0)); } catch { return null; }
   if (!bytes.length || bytes.length > OSC52_MAX_BYTES) return null;
-  try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { return null; }
+  try { return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); } catch { return null; }
 }
 
 /** Handle OSC 52 on an xterm terminal: each copy is passed to `write(text)` (the clipboard); every OSC 52
