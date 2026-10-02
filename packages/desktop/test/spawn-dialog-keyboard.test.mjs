@@ -321,13 +321,13 @@ for (const [why, between, lands] of [
   let offscreen = true; // a control under a hidden stage does not take focus
   proto.focus = function (...args) { if (offscreen && this.closest?.('.spawn-dialog')) return; return focus.apply(this, args); };
   t.after(() => { proto.focus = focus; });
+  // The host collects setInterval (the view's polls), which jsdom's own frames run on: drive frames here.
+  u.dom.window.requestAnimationFrame = f => setTimeout(f, 16);
   spawn.preselectSpawn({ name: 'release-manager', agentsRoot: ROOT, onDismiss: () => true });
   assert.ok(u.dialog(), 'the dialog is open'); assert.notEqual(u.doc.activeElement, u.q('.fpurpose'), 'not yet');
   between(() => { offscreen = false; }, u); // the stage is shown
   const other = u.doc.activeElement;
-  // Several of jsdom's frames (16 ms each), awaited on a node timer: jsdom's own frame timers do not keep the
-  // test's event loop alive.
-  await new Promise(r => setTimeout(r, 250));
+  await new Promise(r => setTimeout(r, 250)); // more than the 10 frames the retry may take
   if (lands) assert.equal(u.doc.activeElement, u.q('.fpurpose'), 'focus lands in Name');
   else assert.equal(u.doc.activeElement, other, 'the operator\'s focus is not taken');
 });
