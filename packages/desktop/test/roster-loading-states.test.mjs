@@ -395,7 +395,7 @@ test('the retired wording is gone from the roster and the fixed wording is the p
   const roster = source.slice(source.indexOf('function initContextRoster'), source.indexOf('function onRosterRowKey'));
   assert.doesNotMatch(roster, /Roster unavailable|Loading agents|Loading reported roster|Reading /);
   assert.match(source, /rosterState\?\.reset\(\);[\s\S]*renderContextRoster\(\[\]\);/, 'a switch resets the subject before the list is cleared');
-  assert.match(source, /setInterval\(\(\) => refreshContextRoster\(\), 4000\)/, 'the 4s poll stays');
+  assert.match(source, /setInterval\(\(\) => \{ if \(!rosterPoll\) rosterPoll = refreshContextRoster\(\)[^\n]*\}, 4000\)/, 'the 4s poll stays (one read at a time)');
 });
 
 test('a deployment the server has not observed yet (status pending, no instances) keeps its own note: no "No instances", the count stays a pill, no skeleton; the observation then paints the rows', async t => {
