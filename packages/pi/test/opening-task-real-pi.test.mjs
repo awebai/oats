@@ -11,6 +11,7 @@ import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileS
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { SCENARIOS, assertScenario } from "./opening-scenarios.mjs";
 
 const RUNNER = fileURLToPath(new URL("./run-opening-scenario-real-pi.mjs", import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
@@ -58,45 +59,4 @@ function run(t, scenario) {
   assert.equal(r.status, 0, r.stderr);
   return JSON.parse(r.stdout);
 }
-const users = (result) => result.transcript.filter((m) => m.role === "user").map((m) => m.text);
-const at = (result, text) => result.transcript.findIndex((m) => m.text === text);
-
-function assertDeliveredOnce(result, { afterWelcome }) {
-  assert.deepEqual(users(result), ["THE TASK"], JSON.stringify(result));
-  if (afterWelcome) assert.ok(at(result, "THE TASK") > at(result, "WELCOME"), "the task runs after the welcome turn");
-}
-
-test("real pi, no race: the task is the first message, delivered once", { skip }, (t) => {
-  const result = run(t, "no-race");
-  assert.equal(result.promptError, null);
-  assert.deepEqual(result.transcript, [{ role: "user", text: "THE TASK" }, { role: "assistant", text: "reply" }]);
-});
-
-test("real pi, welcome first: the task is queued behind the running welcome turn", { skip }, (t) => {
-  assertDeliveredOnce(run(t, "welcome-first"), { afterWelcome: true });
-});
-
-test("real pi, task first, welcome during its preflight: delivered after the welcome", { skip }, (t) => {
-  const result = run(t, "welcome-in-preflight");
-  assertDeliveredOnce(result, { afterWelcome: true });
-  assert.deepEqual(result.bridgeSent, ["THE TASK", "THE TASK"], "one send, one redelivery");
-});
-
-test("real pi, task first, welcome during before_agent_start: delivered after the welcome", { skip }, (t) => {
-  const result = run(t, "welcome-in-before-agent-start");
-  assertDeliveredOnce(result, { afterWelcome: true });
-  assert.deepEqual(result.bridgeSent, ["THE TASK", "THE TASK"], "one send, one redelivery");
-});
-
-test("real pi, task started, then the welcome: no redelivery", { skip }, (t) => {
-  const result = run(t, "welcome-after-task-started");
-  assertDeliveredOnce(result, { afterWelcome: false });
-  assert.ok(at(result, "THE TASK") < at(result, "WELCOME"));
-  assert.deepEqual(result.bridgeSent, ["THE TASK"], "sent once, never redelivered");
-});
-
-test("real pi, redelivery happens at most once", { skip }, (t) => {
-  const result = run(t, "displaced-twice");
-  assert.deepEqual(result.bridgeSent, ["THE TASK", "THE TASK"], "one send, one redelivery, no more");
-  assert.deepEqual(users(result), []);
-});
+for (const scenario of SCENARIOS) test(`real pi, ${scenario.title}`, { skip }, (t) => assertScenario(run(t, scenario.name), scenario));

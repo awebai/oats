@@ -172,9 +172,9 @@ read it in the process list:
 - pi and Claude Code get `@TASK.md`, which each harness reads as the file.
   pi sends it as the session's first prompt and refuses it if another
   extension's turn (the @awebai/pi welcome) is running or starts at the same
-  moment. The pi bridge (`@awebai/oats-pi`) queues it behind that turn, so
-  the task always runs, exactly once; a pi deployment without the bridge
-  can sit idle with no task.
+  moment. The pi bridge (`@awebai/oats-pi`) holds it until that turn has
+  finished, so the task runs exactly once; a pi deployment without the
+  bridge can sit idle with no task.
 - Codex gets a fixed pointer to the file and reads it with a tool.
 - A home whose recorded command still hands over `"$(cat TASK.md)"` starts
   with its harness's safe prompt instead, and the command is saved that way.

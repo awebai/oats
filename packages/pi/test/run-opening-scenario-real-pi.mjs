@@ -10,7 +10,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const [piRoot, piAiEntry, scenario, home] = process.argv.slice(2);
+const [piRoot, piAiEntry, name, home] = process.argv.slice(2);
 process.env.OATS_INSTANCE_HOME = home;
 const pi = await import(pathToFileURL(join(piRoot, "dist", "index.js")).href);
 const ai = await import(pathToFileURL(piAiEntry).href);
@@ -23,38 +23,59 @@ const modelRuntime = await pi.ModelRuntime.create({ credentials: new ai.InMemory
 modelRuntime.registerNativeProvider(faux.provider);
 
 // @awebai/pi 0.3.10 dist/index.js:10236-10244 (sendFirstSessionWelcome).
-let fixtureApi;
-const welcome = () => fixtureApi.sendMessage({ customType: "aweb-welcome", content: "WELCOME", display: true }, { deliverAs: "followUp", triggerTurn: true });
+let behind;
+const welcome = () => behind.sendMessage({ customType: "aweb-welcome", content: "WELCOME", display: true }, { deliverAs: "followUp", triggerTurn: true });
 const times = (n, fn) => () => { if (n-- > 0) fn(); };
-// Path extensions load before inline ones (core/resource-loader.js:402-420): this
-// one's handlers run before the bridge's, the inline fixture's after.
-const before = join(home, "before-bridge.mjs");
-writeFileSync(before, "export default (pi) => pi.on(\"before_agent_start\", () => globalThis.oatsBeforeBridge?.());\n");
+// Path extensions load before inline ones (core/resource-loader.js:402-420):
+// ahead.mjs, listed before the bridge, runs its handlers ahead of the
+// bridge's; the inline fixture runs its own behind.
+const ahead = join(home, "ahead.mjs");
+writeFileSync(ahead, `export default (pi) => {
+  pi.on("input", (event) => globalThis.oatsAhead.input?.(event));
+  pi.on("agent_start", () => globalThis.oatsAhead.agentStart?.());
+  pi.on("before_agent_start", () => globalThis.oatsAhead.beforeAgentStart?.());
+};
+`);
+const hooks = globalThis.oatsAhead = {};
+const inputSources = [];
+const transformInput = () => {
+  hooks.input = (event) => { inputSources.push(event.source); return { action: "transform", text: `PREFIX ${event.text}` }; };
+};
 
+// pi has no hook inside prompt()'s preflight: a welcome there is one started
+// ahead of the bridge's before_agent_start handler, the last step of it.
 const scenarios = {
-  "no-race": () => {},
-  "welcome-first": () => welcome(),
-  // The welcome starts during the task's preflight, before the bridge sees before_agent_start.
-  "welcome-in-preflight": () => { globalThis.oatsBeforeBridge = times(1, welcome); },
-  // The welcome starts during before_agent_start, after the bridge's handler ran.
-  "welcome-in-before-agent-start": () => fixtureApi.on("before_agent_start", times(1, welcome)),
-  "welcome-after-task-started": () => fixtureApi.on("message_start", (event) => { if (event.message.role === "user") times(1, welcome)(); }),
-  "displaced-twice": () => { globalThis.oatsBeforeBridge = times(2, welcome); },
+  "no-race": {},
+  "welcome-first": { start: () => welcome() },
+  "welcome-in-preflight": { start: () => { hooks.beforeAgentStart = times(1, welcome); } },
+  "welcome-in-preflight-slow-agent-start": {
+    start: () => {
+      hooks.beforeAgentStart = times(1, welcome);
+      hooks.agentStart = () => new Promise((resolve) => setTimeout(resolve, 50));
+    },
+  },
+  "welcome-in-before-agent-start-ahead": { start: () => { hooks.beforeAgentStart = times(1, welcome); } },
+  "welcome-in-before-agent-start-behind": { start: () => behind.on("before_agent_start", times(1, welcome)) },
+  "welcome-after-task-started": { start: () => behind.on("message_start", (event) => { if (event.message.role === "user") times(1, welcome)(); }) },
+  "displaced-twice": { start: () => behind.on("before_agent_start", times(2, welcome)) },
+  "input-transform": { start: transformInput },
+  "input-transform-welcome-first": { start: () => { transformInput(); welcome(); } },
 };
 
 const loader = new pi.DefaultResourceLoader({
   cwd: home, agentDir: join(home, "agent"), noExtensions: true, noSkills: true,
-  additionalExtensionPaths: [before, BRIDGE],
-  extensionFactories: [(api) => { fixtureApi = api; }],
+  additionalExtensionPaths: [ahead, BRIDGE],
+  extensionFactories: [(api) => { behind = api; }],
 });
 await loader.reload();
 const { session } = await pi.createAgentSession({ cwd: home, agentDir: join(home, "agent"), model: faux.getModel(), modelRuntime, sessionManager: pi.SessionManager.inMemory(), resourceLoader: loader });
 await session.bindExtensions({});
-// The bridge's pi.sendUserMessage reaches AgentSession.sendUserMessage (core/agent-session.js:2020-2021).
+// The bridge's pi.sendUserMessage reaches AgentSession.sendUserMessage (core/agent-session.js:2020-2021);
+// the fixtures never call it.
 const bridgeSent = [];
 const sendUserMessage = session.sendUserMessage.bind(session);
 session.sendUserMessage = (content, options) => { bridgeSent.push(content); return sendUserMessage(content, options); };
-scenarios[scenario]();
+scenarios[name].start?.();
 
 let promptError = null;
 await session.prompt(TASK).catch((e) => { promptError = e.message; });
@@ -67,5 +88,5 @@ for (let last = "", stable = 0; stable < 5;) {
   stable = session.isIdle && now === last ? stable + 1 : 0;
   last = now;
 }
-console.log(JSON.stringify({ transcript: snapshot(), bridgeSent, promptError }));
+console.log(JSON.stringify({ transcript: snapshot(), bridgeSent, promptError, inputSources }));
 process.exit(0);

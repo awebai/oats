@@ -32,7 +32,12 @@ export class PiHost {
     };
   }
 
-  context() { return { isIdle: () => !this.sessionRunActive }; }
+  /** core/extensions/runner.js:544-555 → core/agent-session.js:2061-2063: isIdle is the session's flag, signal the agent's run. */
+  context() {
+    const host = this;
+    return { isIdle: () => !host.sessionRunActive, get signal() { return host.agentRunActive ? host.runSignal : undefined; } };
+  }
+  runSignal = new AbortController().signal;
 
   async emit(event) {
     for (const handler of this.handlers.get(event.type) || []) await handler(event, this.context());
@@ -55,7 +60,7 @@ export class PiHost {
     }
     await this.preflight();
     // core/agent-session.js:915: before_agent_start, then _runAgentPrompt (core/agent-session.js:949).
-    await this.emit({ type: "before_agent_start", prompt: text });
+    await this.emit({ type: "before_agent_start", prompt: text, images: options.images });
     await this.runAgentPrompt({ role: "user", text });
   }
 
@@ -84,7 +89,8 @@ export class PiHost {
     }
   }
 
-  /** pi-agent-core dist/agent.js:226-229: a prompt during an active run is refused; the loop drains follow-ups before agent_end. */
+  /** pi-agent-core dist/agent.js:226-229: a prompt during an active run is refused; the loop drains follow-ups before
+   *  agent_end, and the run is released after agent_end's listeners (dist/agent.js:326-347, :366-372). */
   async agentPrompt(message) {
     if (this.agentRunActive) throw new Error("Agent is already processing a prompt. Use steer() or followUp() to queue messages, or wait for completion.");
     this.agentRunActive = true;
@@ -97,8 +103,8 @@ export class PiHost {
       this.transcript.push({ role: "assistant", text: `reply to ${next.text}` });
       next = this.followUps.shift();
     }
-    this.agentRunActive = false;
     await this.emit({ type: "agent_end" });
+    this.agentRunActive = false;
   }
 
   /** Let every pending run, queue and send finish. */
