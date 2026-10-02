@@ -44,7 +44,7 @@ import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:pa
 import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
 import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/session-readiness.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
-import { AW_MIN, grantYamlCustodySocket, parseBindingJson, readAwVersion } from "../lib/binding-wire.mjs";
+import { AW_MIN, NO_TEAMS_MESSAGE, grantYamlCustodySocket, parseBindingJson, readAwVersion, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
 import { custodyPreflight } from "../lib/grant-custody.mjs";
 import { brokerDelivers, recordedRuntime, recordedStart, statusListsHome, wakeRegistration } from "../lib/wake-receive.mjs";
 
@@ -229,13 +229,15 @@ if (isClassicEnvironment() && ["spawn", "setup"].includes(event)) {
 }
 if (!["local", "global"].includes(identityMode) && ["spawn"].includes(event)) fatal(`identity.mode must be either "local" or "global" (got ${JSON.stringify(identitySettings.mode)})`);
 if (event === "spawn" && identityMode === "local" && !identitySettings.source && (!instance || !AWEB_ALIAS_RE.test(instance))) fatal(`${AWEB_ALIAS_RULE}; OATS_INSTANCE is ${instance ? "not valid" : "missing"}, so no identity could be minted`);
-const NO_TEAMS_MESSAGE = "no teams configured: run `oats aweb setup`";
-const unmappedDefaultMessage = (label = defaultTeamLabel()) => `the default team ${label} has no provider id yet: its owner runs oats aweb setup, then commits the id, or choose another default with oats teams default`;
 const defaultTeamLabel = () => typeof process.env.OATS_DEFAULT_TEAM === "string" && process.env.OATS_DEFAULT_TEAM.trim() ? process.env.OATS_DEFAULT_TEAM.trim() : undefined;
 const defaultTeamId = () => typeof process.env.OATS_DEFAULT_TEAM_ID === "string" && process.env.OATS_DEFAULT_TEAM_ID.trim() ? process.env.OATS_DEFAULT_TEAM_ID.trim() : undefined;
-const defaultTeamFromEnv = () => process.env.OATS_DEFAULT_TEAM_FROM === "soul" ? "soul" : "deployment";
+/** Where the default team came from, as the kernel says: a soul's `souls:` entry, the deployment, or
+ *  (team model 3) the workspace's fallback default. Anything else is the deployment's. */
+const DEFAULT_TEAM_ORIGINS = ["soul", "deployment", "workspace"];
+const defaultTeamOrigin = (from) => DEFAULT_TEAM_ORIGINS.includes(from) ? from : "deployment";
+const defaultTeamFromEnv = () => defaultTeamOrigin(process.env.OATS_DEFAULT_TEAM_FROM);
 const identityMeta = ({ mode = "local", alias, team, address = null, resident = null, grant }) => ({ mode, alias, team, address: address || null, resident: resident || null, ...(grant ? { grant } : {}) });
-const teamConfigRemedy = () => defaultTeamLabel() && !defaultTeamId() ? unmappedDefaultMessage() : NO_TEAMS_MESSAGE;
+const teamConfigRemedy = () => defaultTeamLabel() && !defaultTeamId() ? unmappedDefaultMessage(defaultTeamLabel()) : NO_TEAMS_MESSAGE;
 function declaredRootCandidate(team = defaultTeamId()) {
   const roots = settings.roots && typeof settings.roots === "object" && !Array.isArray(settings.roots) ? settings.roots : {};
   if (team && typeof roots[team] === "string" && roots[team].trim()) return { root: roots[team].trim(), key: `settings.oats.aweb.roots[${JSON.stringify(team)}]`, declared: true };
@@ -1080,7 +1082,7 @@ function defaultTeamObject(meta = {}) {
   const label = meta.defaultTeam?.label || defaultTeamLabel() || null;
   const team = meta.defaultTeam?.team || meta.team || meta.identity?.team || defaultTeamId() || null;
   if (!label && !team) return null;
-  const from = meta.defaultTeam?.from === "soul" ? "soul" : "deployment";
+  const from = defaultTeamOrigin(meta.defaultTeam?.from ?? process.env.OATS_DEFAULT_TEAM_FROM);
   return { label, team, from };
 }
 function teamsDocument(meta = readCapabilityMeta()) {
@@ -1459,7 +1461,7 @@ if (event === "launch") {
     for (const row of joinRows) { const result = mintJoinedTeam(row, meta); meta = result.meta; spawnMeta = meta; writeProviderTeamsState(meta); if (result.warning) warnings.push(`oats-aweb: ${result.warning}`); }
     if (joinedTeamsOf(meta).length) { const synced = syncWakeReceive(meta); meta = synced.meta; for (const w of synced.warnings) warnings.push(`oats-aweb: ${w}`); }
     writeProviderTeamsState(meta);
-    const defaultTeamBrief = meta.defaultTeam.from === "soul" ? "the default team configured for this soul" : "this deployment's default team";
+    const defaultTeamBrief = { soul: "the default team configured for this soul", workspace: "the workspace's default team" }[meta.defaultTeam.from] || "this deployment's default team";
     const joinedNow = joinedTeamsOf(meta);
     const joinedBrief = joinedNow.length ? ` Joined teams: ${joinedNow.map((j) => `${j.label} (${j.team}, receive ${j.receive}, send with \`aw --identity-home ${j.identityHome} mail|chat ...\`)`).join("; ")}.` : "";
     out({
@@ -1719,6 +1721,35 @@ if (event === "launch") {
     assertNotFlag(label, "team label");
     run([cli, "teams", "add", label, flagEq("--team", team)], process.cwd(), 60000);
   };
+  /** Whether this workspace refuses local teams, and whether it has a default team, as the kernel says:
+   *  team model 3 (OATS 0.38) refuses `oats teams add|default` unless oats-workspace.yaml has
+   *  `localTeams: true`, and `oats teams --json` reports `localTeams: false`; an older kernel has no
+   *  `localTeams` and takes local teams. Throws when the kernel cannot be asked or does not answer. */
+  const readLocalTeams = () => {
+    const cli = process.env.OATS_CLI_BIN;
+    if (!cli) throw new Error("OATS_CLI_BIN is not set");
+    const envelope = JSON.parse(String(run([cli, "teams", "--json"], process.cwd(), 60000)).trim().split("\n").pop());
+    if (envelope?.ok !== true || !envelope.result || typeof envelope.result !== "object") throw new Error(`it answered ${envelope?.error?.code || "no teams document"}`);
+    return { closed: envelope.result.localTeams === false, hasDefault: !!envelope.result.defaultTeam };
+  };
+  /** readLocalTeams, or undefined when the kernel cannot say: advice then falls back to the local verbs. */
+  const localTeamsIfKnown = () => { try { return readLocalTeams(); } catch { return undefined; } };
+  /** What to commit for a team a workspace that refuses local teams cannot record here. Values are
+   *  JSON strings, which YAML reads as strings: a label such as `01` or `true` stays that label. */
+  const printWorkspaceTeam = (label, team, { hasDefault }) => {
+    console.log("  This workspace does not allow local teams; commit the team in oats-workspace.yaml:");
+    console.log("    teams:");
+    console.log(`      ${JSON.stringify(label)}: { team: ${JSON.stringify(team)} }`);
+    if (!hasDefault) console.log(`    defaultTeam: ${JSON.stringify(label)}`);
+    console.log("  To let souls join it (rather than default to it), list it in a `souls:` entry's teams.");
+    console.log("  Or add `localTeams: true` to oats-workspace.yaml and re-run setup.");
+  };
+  /** Advice to record `team` as the deployment's default: the local verbs, or the workspace form. */
+  const adviseRecordDefault = (lead, team, tail = "") => {
+    const localTeams = localTeamsIfKnown();
+    if (localTeams?.closed) { console.log(`  ${lead}.`); printWorkspaceTeam("<label>", team, localTeams); return; }
+    console.log(`  ${lead}; record it with \`oats teams add <label> --team ${team}\` and \`oats teams default <label>\`${tail}.`);
+  };
   const setupSoulArg = () => forwardedSoulArg || "<soul>";
   const missingSharedRows = () => parseOatsTeams().filter((t) => {
     if (t.from !== "shared" || !t.label || !t.team) return false;
@@ -1744,12 +1775,12 @@ if (event === "launch") {
     if (!want) {
       console.log(`  no team: ${teamConfigRemedy()}`);
       const active = teams.active_team || teamIdsOf(teams)[0];
-      if (active) console.log(`  This root is a member of ${active}; record it with \`oats teams add <label> --team ${active}\` and \`oats teams default <label>\`.`);
+      if (active) adviseRecordDefault(`This root is a member of ${active}`, active);
       else if (defaultTeamForUsername) console.log(`  New hosted users create ${defaultTeamForUsername}; map the workspace team to that id if this is the intended team.`);
       return;
     }
     console.log(`  Workspace initialized, but no membership matching "${want}".`);
-    if (defaultTeamForUsername) console.log(`  New hosted users create ${defaultTeamForUsername}; record it with \`oats teams add <label> --team ${defaultTeamForUsername}\` and \`oats teams default <label>\`, then re-run setup.`);
+    if (defaultTeamForUsername) adviseRecordDefault(`New hosted users create ${defaultTeamForUsername}`, defaultTeamForUsername, ", then re-run setup");
     console.log("  Existing team path: ask a member for an invite token, then run `oats aweb setup --invite <token>` (uses `aw team join <token>` at the root).");
     console.log("  Team API-key path: set AWEB_API_KEY in the environment and run `oats aweb setup` (uses `aw init` at the root; the key is never printed).");
     console.log("  New hosted-account path: run `oats aweb setup --username <u>` (uses `aw init --new-account --username <u>` and creates default:<u>.aweb.ai).");
@@ -1779,12 +1810,23 @@ if (event === "launch") {
     if (createLabel) {
       const label = createLabel;
       if (!createNamespace) throw new Error(hostedCreateUnavailable());
+      // Asked before anything is created, so a workspace that refuses local teams never leaves a team
+      // created here and its recording refused half-way.
+      let localTeams;
+      try { localTeams = readLocalTeams(); }
+      catch (e) { throw new Error(`could not tell whether this workspace allows local teams (oats teams --json: ${String(e.message || e).replace(/\s+/g, " ").trim()}); nothing was created`); }
       mkdirSync(scope, { recursive: true });
       console.log(`Creating aweb team ${label} in namespace ${createNamespace} for a new per-team root.`);
       const created = createTeam(label);
       teams = readTeams();
-      recordLocalTeam(label, created.team);
-      console.log(`✓ created ${created.team}, ${created.reused ? `reused existing member root ${created.teamRoot}` : `accepted it into ${created.teamRoot}`}, recorded roots[${created.team}], and recorded local team ${label} with \`oats teams add ${label} --team ${created.team}\`.`);
+      const done = `✓ created ${created.team}, ${created.reused ? `reused existing member root ${created.teamRoot}` : `accepted it into ${created.teamRoot}`}, recorded roots[${created.team}]`;
+      if (localTeams.closed) {
+        console.log(`${done}.`);
+        printWorkspaceTeam(label, created.team, localTeams);
+      } else {
+        recordLocalTeam(label, created.team);
+        console.log(`${done}, and recorded local team ${label} with \`oats teams add ${label} --team ${created.team}\`.`);
+      }
       printVerdict(teams);
       process.exit(0);
     }

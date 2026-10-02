@@ -258,7 +258,8 @@ test("an unmapped default team is refused by binding-check and spawn, never repl
     const home = join(workspace, "agents", "dev", "instances", "probe"); mkdirSync(home, { recursive: true });
     // What the kernel's teamsEnv exports when the default label has no provider id: the label, no id, mapped rows only.
     const env = { OATS_WORKSPACE: workspace, OATS_WORKSPACE_KEY: "fixture-workspace", OATS_WORKSPACE_NAME: "Fixture Workspace", OATS_DEFAULT_TEAM: "engineering", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_TEAMS: "[]", OATS_TEAMS_SOURCE: "live" };
-    const unmapped = "the default team engineering has no provider id yet: its owner runs oats aweb setup, then commits the id, or choose another default with oats teams default";
+    // oats.aweb 1.19.0 (team model 3) also names the workspace's defaultTeam, for workspaces that don't allow local teams.
+    const unmapped = "the default team engineering has no provider id yet: its owner runs oats aweb setup, then commits the id, or choose another default: `oats teams default <label>`, or `defaultTeam:` in oats-workspace.yaml when the workspace doesn't allow local teams";
     const check = runBinding(bindingRequest({ delivery: "session" }), env);
     assert.equal(check.status, 0, check.stdout + check.stderr);
     assert.deepEqual(check.doc.result, { status: "needs-configuration", problems: [{ code: "needs-configuration", message: unmapped }] });
