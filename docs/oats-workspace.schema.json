@@ -27,6 +27,20 @@
       "additionalProperties": { "$ref": "#/$defs/team" },
       "description": "SHARED teams: <label>: { description?, team? }. `team` is the messaging provider's team id, the same for everyone; without it the team is declared but not yet created (readiness team-unmapped). Local teams, the default and which teams each soul belongs to live in the deployment's oats-local.yaml (`oats teams`, `oats soul teams`). A label never gates, restricts or partitions anything."
     },
+    "defaultTeam": {
+      "$ref": "#/$defs/label",
+      "description": "Team model 3 (0.37.0): the workspace's fallback default team, a label of teams: in this file. 0.36.x accepts and validates it without applying it."
+    },
+    "localTeams": {
+      "type": "boolean",
+      "description": "Team model 3 (0.37.0): whether deployments may declare their own teams and defaultTeam in oats-local.yaml. Absent: false. 0.36.x accepts it without applying it."
+    },
+    "souls": {
+      "type": "object",
+      "propertyNames": { "type": "string", "pattern": "^(?:\\*|[a-z0-9][a-z0-9._-]*/(?:\\*|[a-z0-9]+(?:-[a-z0-9]+)*))$" },
+      "additionalProperties": { "$ref": "#/$defs/soulTeams" },
+      "description": "Team model 3 (0.37.0): per soul pattern (\"*\", <member|package>/* or <member|package>/<soul>; the most specific key wins outright), the soul's default team and the other teams it may join. Every label is a label of teams: in this file. 0.36.x accepts and validates it without applying it."
+    },
     "defaults": { "$ref": "#/$defs/defaults" },
     "stores": {
       "type": "object",
@@ -109,6 +123,20 @@
       "properties": {
         "description": { "type": "string" },
         "team": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,255}$", "description": "The messaging provider's team id (for oats.aweb, <team>:<namespace>). Absent: declared, not yet created. The kernel's safety rule: never '-'-led, no whitespace or control characters, at most 256 characters; the provider validates its own shape." }
+      }
+    },
+    "soulTeams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "default": { "$ref": "#/$defs/label", "description": "The soul's default team: a label of teams: in this file." },
+        "teams": {
+          "anyOf": [
+            { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/label" } },
+            { "const": "any" }
+          ],
+          "description": "The other teams the soul may join: labels of teams: in this file, or \"any\" for every one. [] (or no teams) is default only."
+        }
       }
     },
     "defaults": {
