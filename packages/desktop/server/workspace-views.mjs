@@ -47,42 +47,56 @@ export function viewId(key, team) {
   return `ws:${createHash('sha256').update(JSON.stringify([key, team])).digest('hex').slice(0, 20)}`;
 }
 
-/** The kernel's own reason texts where docs/desktop-cli-api.md gives them, else the spec's. */
+/** The kernel's own reason texts where docs/desktop-cli-api.md gives them, else the spec's: the full
+ * sentence, the short label (headings, the switcher) and the fix as plain steps. `there` names where
+ * the fix runs ("there" for a remote, "in this deployment" for a local one). */
 const REASONS = {
-  member: () => 'This deployment\'s workspace reference names a member whose workspace isn\'t known yet; run oats sync there.',
-  'invalid-ref': ref => `This deployment's workspace reference${ref ? ` (${ref})` : ''} isn't valid; fix oats-local.yaml.`,
-  'unknown-team': () => 'This host hasn\'t observed its workspace yet; run oats sync there.',
-  standalone: () => 'Teams are local only on this host (standalone).',
+  member: ({ there }) => ({ short: 'Workspace not known yet', detail: 'This deployment\'s workspace reference names a member whose workspace isn\'t known yet; run oats sync there.', fix: [`Run \`oats sync\` ${there}.`] }),
+  'invalid-ref': ({ ref }) => ({ short: 'Invalid workspace reference', detail: `This deployment's workspace reference${ref ? ` (${ref})` : ''} isn't valid; fix oats-local.yaml.`, fix: ['Fix the workspace reference in its oats-local.yaml.'] }),
+  'unknown-team': ({ there }) => ({ short: 'Workspace not observed yet', detail: 'This host hasn\'t observed its workspace yet; run oats sync there.', fix: [`Run \`oats sync\` ${there}.`] }),
+  standalone: () => ({ short: 'Local teams only', detail: 'Teams are local only on this host (standalone).', fix: [] }),
 };
 
 /** True when a failed probe's message is ssh's own timeout: the kernel reports an ssh that timed out
  * as E_SSH with ssh's stderr and no code of its own, so ssh's text is the only signal (a documented limit). */
 const TIMED_OUT = /timed out|timeout/i;
 
-/** The one plain sentence for a deployment that is not live or not matched, or null.
- * `d`: `{ local, machine, sshHost?, probe?, identityStatus, attach, ref, cliReadsRemotes, unavailable? }`. */
-export function deploymentReason(d) {
+/** Why a deployment is not live or not matched, or null: `{ short, detail, fix }`. `short` is a few
+ * words for a heading or the switcher ("OATS too old to report its workspace"); `detail` the one full
+ * sentence; `fix` the plain steps (possibly none: the detail then says what happens next).
+ * `d`: `{ local, machine, sshHost?, probe?, identityStatus, attach, ref, cliReadsRemotes, rosterError?, unavailable? }`. */
+export function deploymentReasonParts(d) {
   const machine = d.machine || THIS_MACHINE;
+  const updateHere = ['Update OATS on this computer.'];
   if (d.local) {
-    if (d.unavailable) return d.unavailable;
-    if (d.identityStatus === 'feature') return 'This computer\'s OATS is too old to report its workspace; update OATS here.';
-    if (d.identityStatus === 'old' || d.identityStatus === 'none') return 'This deployment reports no workspace identity.';
+    if (d.unavailable) return { short: 'Not observed', detail: d.unavailable, fix: [] };
+    if (d.identityStatus === 'feature') return { short: 'OATS here too old to report workspaces', detail: 'This computer\'s OATS is too old to report its workspace; update OATS here.', fix: updateHere };
+    if (d.identityStatus === 'old' || d.identityStatus === 'none') return { short: 'Reports no workspace', detail: 'This deployment reports no workspace identity.', fix: [] };
   } else {
-    if (d.cliReadsRemotes === false) return 'This computer\'s OATS can\'t read other machines; update OATS here.';
-    if (d.identityStatus === 'feature' && d.probe?.ok === true) return 'This computer\'s OATS is too old to read other machines\' workspaces; update OATS here.';
-    if (d.rosterError) return `${machine} was not reached: ${d.rosterError}`;
+    if (d.cliReadsRemotes === false) return { short: 'OATS here can\'t read other machines', detail: 'This computer\'s OATS can\'t read other machines; update OATS here.', fix: updateHere };
+    if (d.identityStatus === 'feature' && d.probe?.ok === true) return { short: 'OATS here too old to read workspaces', detail: 'This computer\'s OATS is too old to read other machines\' workspaces; update OATS here.', fix: updateHere };
+    if (d.rosterError) return { short: 'Not reached', detail: `${machine} was not reached: ${d.rosterError}`, fix: [] };
     if (d.probe && d.probe.ok !== true) {
       const code = d.probe.error?.code, message = typeof d.probe.error?.message === 'string' ? d.probe.error.message : '';
-      if (code === 'E_ROSTER_BUDGET' || code === 'E_CLI_TIMEOUT' || TIMED_OUT.test(message)) return `${machine} timed out; it is tried again on the next read.`;
-      if (code === 'E_SSH') return `${machine} needs ssh to connect without a prompt; run \`ssh ${d.sshHost || machine}\` once in a terminal.`;
-      return `${machine} was not reached${code ? ` (${code})` : ''}.`;
+      if (code === 'E_ROSTER_BUDGET' || code === 'E_CLI_TIMEOUT' || TIMED_OUT.test(message)) return { short: 'Timed out', detail: `${machine} timed out; it is tried again on the next read.`, fix: [] };
+      if (code === 'E_SSH') {
+        const host = d.sshHost || machine;
+        return { short: 'ssh needs a prompt', detail: `${machine} needs ssh to connect without a prompt; run \`ssh ${host}\` once in a terminal.`,
+          fix: [`Run \`ssh ${host}\` once in a terminal and answer its prompt (a host key or a password).`, 'Desktop tries again on its next read.'] };
+      }
+      return { short: 'Not reached', detail: `${machine} was not reached${code ? ` (${code})` : ''}.`, fix: [] };
     }
-    if (d.identityStatus === 'old') return `${machine}'s OATS is too old to report its workspace; update OATS there.`;
-    if (d.identityStatus === 'none') return `${machine} reports no workspace for this deployment.`;
+    if (d.identityStatus === 'old') return { short: 'OATS too old to report its workspace', detail: `${machine}'s OATS is too old to report its workspace; update OATS there.`, fix: [`Update OATS on ${machine}.`] };
+    if (d.identityStatus === 'none') return { short: 'Reports no workspace', detail: `${machine} reports no workspace for this deployment.`, fix: [] };
   }
-  if (d.identityStatus === 'invalid') return `${machine} reported a workspace this Desktop can't read.`;
-  if (d.attach?.unattached && REASONS[d.attach.unattached]) return REASONS[d.attach.unattached](d.ref);
-  return null;
+  if (d.identityStatus === 'invalid') return { short: 'Unreadable workspace report', detail: `${machine} reported a workspace this Desktop can't read.`, fix: [] };
+  const reason = d.attach?.unattached && REASONS[d.attach.unattached];
+  return reason ? reason({ ref: d.ref, there: d.local ? 'in this deployment' : `on ${machine}` }) : null;
+}
+
+/** The one plain sentence for a deployment that is not live or not matched, or null. */
+export function deploymentReason(d) {
+  return deploymentReasonParts(d)?.detail ?? null;
 }
 
 /** The last segment of a canonical key: github.com/GreaterSkies/tsm → tsm. */

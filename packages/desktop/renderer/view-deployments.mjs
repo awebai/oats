@@ -2,7 +2,7 @@
  * their state in words, and the roster split by deployment when a view has two or more.
  *
  * The facts come only from `/api/panel`: `deployments` (`{ id, machine, path, label, local, reachable,
- * identityFrom, primary, reason?, note? }`) and each row's `deployment: { id, machine, path }`. Nothing
+ * identityFrom, primary, reason?, short?, fix?, note? }`) and each row's `deployment: { id, machine, path }`. Nothing
  * is derived from a host name or a path beyond the display label. A view with one deployment looks
  * exactly like a window before views: no deployment headings, no "On …" lines.
  *
@@ -21,7 +21,9 @@ export function panelDeployments(panel) {
     id: d.id, machine: text(d.machine, 256) ? d.machine : (d.local === false ? '' : THIS_MACHINE), path: text(d.path) ? d.path : '',
     label: text(d.label, 512) ? d.label : '', local: d.local !== false, reachable: d.reachable === true,
     identityFrom: d.identityFrom === 'reported' || d.identityFrom === 'remembered' ? d.identityFrom : null, primary: d.primary === true,
-    ...(text(d.reason) ? { reason: d.reason } : {}), ...(text(d.note) ? { note: d.note } : {}),
+    ...(text(d.reason) ? { reason: d.reason } : {}), ...(text(d.short, 256) ? { short: d.short } : {}),
+    ...(Array.isArray(d.fix) && d.fix.every(step => text(step)) && d.fix.length ? { fix: d.fix.slice(0, 8) } : {}),
+    ...(text(d.note) ? { note: d.note } : {}),
   }));
 }
 

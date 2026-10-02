@@ -2,7 +2,7 @@
 // across machines" and "Matching teams across machines"), one case per rule, and the reason sentences.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readIdentity, attachment, viewId, deploymentReason, buildViews } from '../server/workspace-views.mjs';
+import { readIdentity, attachment, viewId, deploymentReason, deploymentReasonParts, buildViews } from '../server/workspace-views.mjs';
 import { THIS_MACHINE } from '../renderer/deployment-label.mjs';
 
 const KEY = 'github.com/awebai/oats';
@@ -193,4 +193,24 @@ test('reasons: one plain sentence per case, null for a live matched deployment',
   }
   assert.equal(deploymentReason({ local: true, identityStatus: 'invalid', attach: attachment(null) }), `${THIS_MACHINE} reported a workspace this Desktop can't read.`);
   assert.equal(remoteReason({ identityStatus: 'invalid', attach: attachment(null) }), 'altair reported a workspace this Desktop can\'t read.');
+});
+
+test('reason parts: a short label for headings and the switcher, the full sentence, and the fix as plain steps (UI spec)', () => {
+  const ssh = deploymentReasonParts({ local: false, machine: 'altair', sshHost: 'altair.lan', probe: { ok: false, error: { code: 'E_SSH', message: 'Host key verification failed.' } } });
+  assert.deepEqual(ssh, { short: 'ssh needs a prompt', detail: 'altair needs ssh to connect without a prompt; run `ssh altair.lan` once in a terminal.',
+    fix: ['Run `ssh altair.lan` once in a terminal and answer its prompt (a host key or a password).', 'Desktop tries again on its next read.'] });
+  assert.deepEqual(deploymentReasonParts({ local: false, machine: 'rigel', probe: { ok: true }, identityStatus: 'old' }),
+    { short: 'OATS too old to report its workspace', detail: 'rigel\'s OATS is too old to report its workspace; update OATS there.', fix: ['Update OATS on rigel.'] });
+  assert.deepEqual(deploymentReasonParts({ local: false, machine: 'vega', probe: { ok: false, error: { code: 'E_SSH', message: 'Connection timed out' } } }).fix, [], 'a timeout has no step: its sentence says what happens next');
+  assert.deepEqual(deploymentReasonParts({ local: true, attach: { unattached: 'member' } }).fix, ['Run `oats sync` in this deployment.']);
+  assert.deepEqual(deploymentReasonParts({ local: false, machine: 'altair', probe: { ok: true }, identityStatus: 'identity', attach: { unattached: 'unknown-team' } }).fix, ['Run `oats sync` on altair.']);
+  assert.equal(deploymentReasonParts({ local: true, identityStatus: 'identity', attach: { key: 'k', team: 't' } }), null);
+  // Every reason the sentence form gives has a short label (never a heading without words).
+  for (const d of [{ local: true, unavailable: 'Reading…' }, { local: true, identityStatus: 'feature' }, { local: false, cliReadsRemotes: false },
+    { local: false, rosterError: 'boom' }, { local: false, probe: { ok: false, error: { code: 'E_X' } } }, { local: true, identityStatus: 'invalid' },
+    { local: true, attach: { unattached: 'invalid-ref' }, ref: 'git:x' }, { local: true, attach: { unattached: 'standalone' } }]) {
+    const parts = deploymentReasonParts(d);
+    assert.ok(parts.short && parts.detail && Array.isArray(parts.fix), JSON.stringify(d));
+    assert.equal(deploymentReason(d), parts.detail);
+  }
 });

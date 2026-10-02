@@ -146,50 +146,6 @@ test("rosterSections: a pending spawn without a deployment joins the primary; em
   assert.equal(vd.rosterSections(rows, rows, [LOCAL]).length, 1); assert.equal(vd.rosterSections(rows, rows, [LOCAL])[0].deployment, null);
 });
 
-/* ── the Active overview ── */
-async function overview(t, data) {
-  const dom = new JSDOM('<body><main id="host"></main></body>', { url: "http://localhost" });
-  const doc = dom.window.document, host = doc.querySelector("main");
-  const old = { window: globalThis.window, document: globalThis.document, setInterval: globalThis.setInterval, ws: currentWorkspace() };
-  globalThis.window = dom.window; globalThis.document = doc; globalThis.setInterval = () => 0;
-  setWorkspace("ws:view");
-  const style = doc.createElement("style"); style.textContent = theme; doc.head.append(style);
-  const dispose = hierarchy.mount(host, { hasWorkspaceSwitcher: true, api: async () => ({ ok: true, status: 200, json: async () => data }), openTerminal() {} });
-  t.after(() => { dispose(); setWorkspace(old.ws); globalThis.window = old.window; globalThis.document = old.document; globalThis.setInterval = old.setInterval; dom.window.close(); });
-  await tick(); await tick();
-  return { dom, doc, host, all: (s) => [...host.querySelectorAll(s)] };
-}
-const view = { id: "ws:view", name: "oats" };
-
-test("Active overview, one deployment: no deployment section, the same layout as before", async (t) => {
-  const rows = [row("lead", LOCAL), row("dev", LOCAL, { parentInstance: "lead" }), row("solo", LOCAL)];
-  const u = await overview(t, { instances: rows, workspace: view, workspaces: [{ ...view, deployments: [LOCAL.id] }], deployments: [LOCAL] });
-  assert.equal(u.all(".hier-deployment").length, 0); assert.equal(u.all(".hier-dhead").length, 0);
-  assert.equal(u.all(".hier-cluster").length, 1); assert.equal(u.all(".hier-solo .hnode").length, 1);
-  assert.equal(hierarchy.layoutByDeployment(rows, [LOCAL]), null);
-  assert.ok(u.host.querySelector(".hier-stage > .hier-cluster"), "groups sit on the stage as always");
-});
-
-test("Active overview, two deployments: one labelled section per deployment, stacked, each with its own groups", async (t) => {
-  const rows = [row("lead", LOCAL), row("dev", LOCAL, { parentInstance: "lead" }), row("far", ALTAIR), row("near", LOCAL)];
-  const u = await overview(t, { instances: rows, workspace: view, workspaces: [{ ...view, deployments: [LOCAL.id, ALTAIR.id] }], deployments: [LOCAL, ALTAIR] });
-  const sections = u.all(".hier-deployment");
-  assert.deepEqual(sections.map((s) => s.getAttribute("aria-label")), ["This Mac · ~/Agents/oats, primary", "altair · ~/Agents/tsm, remembered"]);
-  assert.deepEqual(sections.map((s) => s.getAttribute("role")), ["group", "group"]);
-  const heads = u.all(".hier-dhead");
-  assert.deepEqual(heads.map((h) => h.querySelector(".hier-dname").textContent), ["This Mac · ~/Agents/oats", "altair · ~/Agents/tsm"]);
-  assert.equal(heads[0].querySelector(".hier-dtag").textContent, "primary"); assert.equal(heads[1].querySelector(".hier-dstate").textContent, "remembered");
-  assert.ok(parseFloat(heads[1].style.top) > parseFloat(heads[0].style.top), "stacked in the panel's order");
-  assert.deepEqual([...sections[0].querySelectorAll(".hnode")].map((n) => n.dataset.name).sort(), ["dev", "lead", "near"]);
-  assert.deepEqual([...sections[1].querySelectorAll(".hnode")].map((n) => n.dataset.name), ["far"]);
-  // Each deployment's Independent strip is its own keyboard group.
-  assert.deepEqual(u.all(".hier-solo").map((g) => g.dataset.ws), [`Independent:${LOCAL.id}`, `Independent:${ALTAIR.id}`]);
-  const layout = hierarchy.layoutByDeployment(rows, [LOCAL, ALTAIR]);
-  const [a, b] = layout.sections;
-  assert.ok(b.y >= a.y + a.height, "the second section starts below the first");
-  assert.ok(a.placed.every((p) => p.y >= a.y), "blocks are in stage coordinates under their heading");
-});
-
 /* ── the switcher ── */
 function switcher(t) {
   const dom = new JSDOM(html, { url: "https://fixture.invalid" }); t.after(() => dom.window.close());

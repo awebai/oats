@@ -66,6 +66,7 @@ import {
 } from "./workspace-tabs.mjs";
 import { createWorkspaceTabMemory } from "./workspace-tab-memory.mjs";
 import { notePanel, panelDeployments, renderDeploymentList, rosterSections, deploymentHeading } from "./view-deployments.mjs";
+import { onDeploymentTabRequest } from "./deployment-tabs.mjs";
 import { createViewMembership, rehomeMap, rehomeTabs, rehomeActiveTerminals, rehomeCollapsed } from "./workspace-rehome.mjs";
 import {
   requestSplit, focusTab, openTabInFocusedGroup, removeSplitTab, isSplitMember, groupOfTab, fillEmptyGroup, resizeSplitGroups,
@@ -258,6 +259,10 @@ async function showStageFocused(name) {
   const active = document.activeElement;
   if (!active || active === document.body || !isShown(active)) focusRegions.focusRegion("main");
 }
+
+// A request to open one deployment's tab of the Deployments page (the switcher's "Not matched" entries,
+// deployment-tabs.mjs) shows that stage; the page itself reads the requested tab.
+onDeploymentTabRequest(() => { void showStageFocused("hierarchy"); });
 
 function setNavActive(name) {
   for (const b of navEl.querySelectorAll(".nav-item")) {

@@ -27,3 +27,29 @@ export function deploymentLabel(deployment) {
   const path = typeof deployment?.label === 'string' && deployment.label ? deployment.label : '';
   return path ? `${machine} · ${path}` : machine;
 }
+
+/** The last segment of a path ("/Users/juan/awebai/oats-v2" → "oats-v2"), or the last `n`. */
+export function pathTail(path, n = 1) {
+  if (typeof path !== 'string' || !path) return '';
+  return path.split('/').filter(Boolean).slice(-n).join('/');
+}
+
+/** Each deployment's short name on screen (UI spec, #482): its machine ("This Mac", "altair"); when one
+ * machine holds two or more of the deployments, the machine and its path tail ("This Mac · oats-v2"),
+ * the last two segments when the tails collide. Never an id. Returns Map<deployment id, label>. */
+export function machineLabels(deployments) {
+  const list = Array.isArray(deployments) ? deployments.filter(d => d && typeof d.id === 'string') : [];
+  const machineOf = d => (typeof d.machine === 'string' && d.machine) ? d.machine : THIS_MACHINE;
+  const byMachine = new Map();
+  for (const d of list) byMachine.set(machineOf(d), [...(byMachine.get(machineOf(d)) || []), d]);
+  const out = new Map();
+  for (const [machine, same] of byMachine) {
+    if (same.length === 1) { out.set(same[0].id, machine); continue; }
+    const tails = same.map(d => pathTail(d.path));
+    same.forEach((d, i) => {
+      const tail = tails.filter(t => t === tails[i]).length > 1 ? pathTail(d.path, 2) : tails[i];
+      out.set(d.id, tail ? `${machine} · ${tail}` : machine);
+    });
+  }
+  return out;
+}

@@ -79,7 +79,7 @@ import { canAddressRemote, unaddressableSentence } from "../renderer/remote-addr
 import { harnessFlag, HARNESSES } from "../renderer/harness-names.mjs";
 import { probeChanged } from "../renderer/cli-probe-contract.mjs";
 import { workspaceNotServed, deploymentUnavailableText } from "../renderer/deployment-header.mjs";
-import { readIdentity, attachment, buildViews, deploymentReason } from "./workspace-views.mjs";
+import { readIdentity, attachment, buildViews, deploymentReason, deploymentReasonParts } from "./workspace-views.mjs";
 import { createRemoteIdentityStore } from "./remote-identity.mjs";
 import { THIS_MACHINE, shortPath, deploymentLabel } from "../renderer/deployment-label.mjs";
 
@@ -169,7 +169,7 @@ function deploymentInfo(d) {
     return { id: d.id, local: true, machine: THIS_MACHINE, path: d.id, label: shortPath(d.id, { home: homedir() }), name: d.name,
       live, reachable: live, identityFrom: identity ? "reported" : null, identity, attach,
       teamLabel: identity?.defaultTeam?.label ?? null,
-      reason: deploymentReason({ local: true, identityStatus: read.status, attach, ref: identity?.ref, unavailable }),
+      ...reasonFields(deploymentReasonParts({ local: true, identityStatus: read.status, attach, ref: identity?.ref, unavailable })),
       note: attach.note === "standalone" ? deploymentReason({ local: true, attach: { unattached: "standalone" } }) : null };
   }
   const g = d.group, machine = g.label || g.server;
@@ -182,21 +182,26 @@ function deploymentInfo(d) {
   }
   const identity = read.status === "identity" ? read.identity : null;
   const attach = attachment(identity);
-  const reason = deploymentReason({ local: false, machine, sshHost: g.target?.sshHost, probe: g.probe, identityStatus: read.status, attach,
-    ref: identity?.ref, cliReadsRemotes: cliReadsRemotes(), rosterError: g.remembered ? rosterFailure : null });
+  const reason = reasonFields(deploymentReasonParts({ local: false, machine, sshHost: g.target?.sshHost, probe: g.probe, identityStatus: read.status, attach,
+    ref: identity?.ref, cliReadsRemotes: cliReadsRemotes(), rosterError: g.remembered ? rosterFailure : null }));
   const moved = remoteIdentities.note(g.id);
   const standalone = attach.note === "standalone" ? deploymentReason({ local: false, attach: { unattached: "standalone" } }) : null;
   return { id: d.id, local: false, machine, path: g.target?.workspace || "", label: shortPath(g.target?.workspace || ""), name: d.name,
     live: reached, reachable: reached, identityFrom, identity, attach, teamLabel: identity?.defaultTeam?.label ?? null,
-    reason, note: [moved, standalone].filter(Boolean).join(" ") || null };
+    ...reason, note: [moved, standalone].filter(Boolean).join(" ") || null };
+}
+/** A reason's parts as a deployment's fields: `reason` (the full sentence), `short` and `fix` (UI spec, #482). */
+function reasonFields(parts) {
+  return parts ? { reason: parts.detail, short: parts.short, fix: parts.fix } : { reason: null, short: null, fix: [] };
 }
 /** The views and the per-deployment facts they rest on: `{ views, infos: Map<deploymentId, info> }`. */
 function viewModel() {
   const infos = new Map(deployments().map((d) => [d.id, deploymentInfo(d)]));
   const views = buildViews([...infos.values()]).map((v) => {
     const unattachedReason = v.unattached ? infos.get(v.primary)?.reason ?? null : null;
+    const unattachedShort = v.unattached ? infos.get(v.primary)?.short ?? null : null;
     const ref = v.unattached ? infos.get(v.primary)?.identity?.ref ?? null : null;
-    return { ...v, ...(unattachedReason ? { reason: unattachedReason } : {}), ...(ref ? { ref } : {}) };
+    return { ...v, ...(unattachedReason ? { reason: unattachedReason } : {}), ...(unattachedShort ? { short: unattachedShort } : {}), ...(ref ? { ref } : {}) };
   });
   return { views, infos };
 }
@@ -261,7 +266,8 @@ const deploymentTag = (info) => ({ id: info.id, machine: info.machine, path: inf
 function deploymentEntry(info, primary) {
   return { ...deploymentTag(info), label: info.label, local: info.local, reachable: info.reachable,
     identityFrom: info.identityFrom, primary: info.id === primary,
-    ...(info.reason ? { reason: info.reason } : {}), ...(info.note ? { note: info.note } : {}) };
+    ...(info.reason ? { reason: info.reason } : {}), ...(info.short ? { short: info.short } : {}),
+    ...(info.reason && info.fix?.length ? { fix: [...info.fix] } : {}), ...(info.note ? { note: info.note } : {}) };
 }
 
 /** One deployment's own panel, as served before views. */
@@ -332,7 +338,10 @@ function workspaceChoices(model = viewModel()) {
     return { id: v.id, name: v.name, team: null, deployments: [...v.deployments],
       // The deployments' labels, in the same order, for a view that is not on screen ("This Mac · ~/Agents/oats").
       deploymentLabels: v.deployments.map((id) => deploymentLabel(model.infos.get(id))),
-      ...(v.key ? { key: v.key } : {}), ...(unmatched ? { unattached: true } : {}), ...(unmatched && v.reason ? { reason: v.reason } : {}), ...(unmatched && v.ref ? { ref: v.ref } : {}),
+      // The switcher's one-liner (UI spec, #482): the machines, in order and once each, and how many deployments aren't live.
+      machines: [...new Set(v.deployments.map((id) => model.infos.get(id)?.machine).filter(Boolean))],
+      notLive: v.deployments.filter((id) => !model.infos.get(id)?.reachable).length,
+      ...(v.key ? { key: v.key } : {}), ...(unmatched ? { unattached: true } : {}), ...(unmatched && v.reason ? { reason: v.reason } : {}), ...(unmatched && v.short ? { short: v.short } : {}), ...(unmatched && v.ref ? { ref: v.ref } : {}),
       ...(remoteOnly && primary?.remote ? { server: primary.server, remote: true } : {}) };
   });
 }

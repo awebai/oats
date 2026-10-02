@@ -37,7 +37,7 @@ test('a deployment id answers its view (a saved selection migrates); an unattach
   const loose = views.panelData(L);
   assert.deepEqual(loose.workspace, { id: L, name: 'loose', team: null, primary: L });
   assert.deepEqual(loose.deployments, [{ ...tag(L, 'This Mac', L), label: '~/loose', local: true, reachable: false, identityFrom: null, primary: true,
-    reason: 'E_CLI_FAILED: boom' }]);
+    reason: 'E_CLI_FAILED: boom', short: 'Not observed' }]);
   assert.deepEqual(loose.deployment, unavailable().deployment);
   const lab = views.panelData(V_LAB);
   assert.deepEqual(lab.workspace, { id: V_LAB, name: 'lab', scope: '/srv/lab', team: null, server: 'vega', remote: true, registrationPresent: true,
@@ -58,9 +58,10 @@ test('the switcher lists views with their deployments; unattached ones last, mar
   const choices = views.panelData(V_OATS).workspaces;
   assert.deepEqual(choices, [
     { id: V_OATS, name: 'oats', team: null, deployments: [A, B, R], key: OATS,
-      deploymentLabels: ['This Mac · ~/Agents/oats', 'This Mac · ~/awebai/oats-v2', 'altair · ~/oats'] },
-    { id: V_LAB, name: 'lab', team: null, deployments: [V], key: LAB, server: 'vega', remote: true, deploymentLabels: ['vega · /srv/lab'] },
-    { id: L, name: 'loose', team: null, deployments: [L], unattached: true, reason: 'E_CLI_FAILED: boom', deploymentLabels: ['This Mac · ~/loose'] },
+      deploymentLabels: ['This Mac · ~/Agents/oats', 'This Mac · ~/awebai/oats-v2', 'altair · ~/oats'], machines: ['This Mac', 'altair'], notLive: 0 },
+    { id: V_LAB, name: 'lab', team: null, deployments: [V], key: LAB, server: 'vega', remote: true, deploymentLabels: ['vega · /srv/lab'], machines: ['vega'], notLive: 0 },
+    { id: L, name: 'loose', team: null, deployments: [L], unattached: true, reason: 'E_CLI_FAILED: boom', short: 'Not observed', deploymentLabels: ['This Mac · ~/loose'],
+      machines: ['This Mac'], notLive: 1 },
   ]);
   assert.deepEqual(views.workspaceChoices(), choices);
 });
@@ -94,7 +95,8 @@ test('remembered identity: an unreached remote keeps its view, marked remembered
   const p = views.panelData(V_OATS);
   assert.deepEqual(p.deployments.map(d => d.id), [A, B, R], 'still in its view');
   assert.deepEqual(p.deployments[2], { ...tag(R, 'altair', '/home/juan/oats'), label: '~/oats', local: false, reachable: false, identityFrom: 'remembered',
-    primary: false, reason: 'altair needs ssh to connect without a prompt; run `ssh altair.lan` once in a terminal.' });
+    primary: false, reason: 'altair needs ssh to connect without a prompt; run `ssh altair.lan` once in a terminal.', short: 'ssh needs a prompt',
+    fix: ['Run `ssh altair.lan` once in a terminal and answer its prompt (a host key or a password).', 'Desktop tries again on its next read.'] });
   assert.equal(p.instances.find(i => i.instance === 'far-a').running, null, 'its last-known rows, state unknown');
   // Without memory, the same failure is unattached.
   const forgetful = juan({ remoteGroups: [down] }).views;
@@ -135,7 +137,8 @@ test('before any roster answer, remembered groups are not-reached deployments wi
   const p = old.panelData(V_OATS);
   assert.deepEqual(p.deployments.map(d => d.id), [A, B, R]);
   assert.deepEqual(p.deployments[2], { ...tag(R, 'altair', '/home/juan/oats'), label: '~/oats', local: false, reachable: false, identityFrom: 'remembered',
-    primary: false, reason: 'This computer\'s OATS can\'t read other machines; update OATS here.' });
+    primary: false, reason: 'This computer\'s OATS can\'t read other machines; update OATS here.', short: 'OATS here can\'t read other machines',
+    fix: ['Update OATS on this computer.'] });
   assert.deepEqual(p.instances.filter(i => i.deployment.id === R), [], 'no rows');
   assert.equal(old.isServed(R), true);
   // The roster read failed before answering: its failure is the reason.
@@ -182,7 +185,7 @@ test('a one-deployment view\'s panel is the pre-view panel plus `deployments` an
   assert.deepEqual(p.instances, rows.map(r => ({ ...r, deployment: tag(A, 'This Mac', A) })));
   assert.equal(p.deployments.length, 1);
   assert.equal(p.deployments[0].primary, true);
-  assert.deepEqual(p.workspaces, [{ id: V_OATS, name: 'oats', team: null, deployments: [A], key: OATS, deploymentLabels: ['This Mac · ~/Agents/oats'] }]);
+  assert.deepEqual(p.workspaces, [{ id: V_OATS, name: 'oats', team: null, deployments: [A], key: OATS, deploymentLabels: ['This Mac · ~/Agents/oats'], machines: ['This Mac'], notLive: 0 }]);
   assert.equal(p.team, null);
   // An unattached one (an OATS here before workspace-identity) keeps today's id and workspace shape exactly.
   const older = loadViews({ ctxs: [A], cliState: { ...CLI, features: [] },
@@ -193,7 +196,7 @@ test('a one-deployment view\'s panel is the pre-view panel plus `deployments` an
   assert.deepEqual(q.deployments[0].reason, 'This computer\'s OATS is too old to report its workspace; update OATS here.');
   // Without the feature nothing can match: the entry is listed as before views, never as "not matched"
   // (the deployment's own reason above still says why).
-  assert.deepEqual(q.workspaces, [{ id: A, name: 'oats', team: null, deployments: [A], deploymentLabels: ['This Mac · ~/Agents/oats'] }]);
+  assert.deepEqual(q.workspaces, [{ id: A, name: 'oats', team: null, deployments: [A], deploymentLabels: ['This Mac · ~/Agents/oats'], machines: ['This Mac'], notLive: 0 }]);
   // A kept error from a failed re-read travels on the primary's panel, as before.
   const kept = loadViews({ ctxs: [A], snapshot: { byWs: new Map([[A, { ...observed(A, { reachable: true, ...identity() }, rows), error: 'remote unreadable' }]]) } });
   assert.equal(kept.panelData(V_OATS).error, 'remote unreadable');
@@ -210,11 +213,11 @@ test('an unattached view carries the reported ref (view and switcher); a local d
   const bad = { ...identity(), key: null, keyFrom: null, ref: 'git:not a repo' };
   const views = loadViews({ ctxs: [A, B], snapshot: { byWs: new Map([[A, observed(A, { reachable: true, ...bad }, [])]]) } });
   const [choice, pending] = views.workspaceChoices();
-  assert.deepEqual(choice, { id: A, name: 'oats', team: null, deployments: [A], deploymentLabels: ['This Mac · ~/Agents/oats'], unattached: true, ref: 'git:not a repo',
-    reason: 'This deployment\'s workspace reference (git:not a repo) isn\'t valid; fix oats-local.yaml.' });
+  assert.deepEqual(choice, { id: A, name: 'oats', team: null, deployments: [A], deploymentLabels: ['This Mac · ~/Agents/oats'], machines: ['This Mac'], notLive: 0, unattached: true, ref: 'git:not a repo',
+    reason: 'This deployment\'s workspace reference (git:not a repo) isn\'t valid; fix oats-local.yaml.', short: 'Invalid workspace reference' });
   assert.equal(views.viewModel().views[0].ref, 'git:not a repo');
-  assert.deepEqual(pending, { id: B, name: 'oats-v2', team: null, deployments: [B], deploymentLabels: ['This Mac · ~/awebai/oats-v2'], unattached: true,
-    reason: 'Reading the deployment through the installed OATS CLI…' }, 'pending: the reading sentence, no ref');
+  assert.deepEqual(pending, { id: B, name: 'oats-v2', team: null, deployments: [B], deploymentLabels: ['This Mac · ~/awebai/oats-v2'], machines: ['This Mac'], notLive: 1, unattached: true,
+    reason: 'Reading the deployment through the installed OATS CLI…', short: 'Not observed' }, 'pending: the reading sentence, no ref');
   // An observed local deployment that reports no identity (no workspace object) says so.
   const silent = loadViews({ ctxs: [A], snapshot: { byWs: new Map([[A, observed(A, undefined, [])]]) } });
   assert.equal(silent.panelData(A).deployments[0].reason, 'This deployment reports no workspace identity.');
