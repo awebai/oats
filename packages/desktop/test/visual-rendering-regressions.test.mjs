@@ -167,7 +167,7 @@ test("flat and grouped strips share their width: tabs shrink evenly to a floor, 
       assert.deepEqual([style.flexGrow, style.flexShrink, style.flexBasis], ["1", "1", "0px"], "equal shares from one zero basis");
       assert.equal(style.maxWidth, "fit-content", "never wider than its natural width");
       assert.equal(style.minWidth, "var(--tab-min)", "the floor holds in group strips too");
-      assert.equal(style.getPropertyValue("--tab-min"), "136px", "the dot, an ellipsis and an 8-character tail stay visible");
+      assert.equal(style.getPropertyValue("--tab-min"), "168px", "the dot, \"oats-…\" and an 8-character tail stay visible");
       assert.equal(style.getPropertyValue("--tab-max"), "280px", "the Redesign v3 long-label cap");
       assert.equal(style.getPropertyValue("--tab-chrome"), "51px", "padding 14 + 8, gap 8, the 20px close and the 1px border");
       assert.equal(style.whiteSpace, "nowrap");
@@ -232,5 +232,40 @@ test("two shrunk tabs whose names share a prefix still read differently: the tai
   assert.equal(plain.triggerEl.querySelector(".tab-label").children.length, 0);
   assert.equal(plain.triggerEl.querySelector(".tab-label").textContent, "README.md");
   const shell = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
-  assert.match(shell, /decor: \{ dot: inst\.running \? "on" : "off", tailAt: tabNameTailStart\(name, inst\.agent\) \}/, "terminal tabs split at the soul-aware tail");
+  assert.match(shell, /decor: \{ dot: inst\.running \? "on" : "off", tailAt: tabNameTailStart\(name, inst\.agent\), tailEnd: name\.length \}/,
+    "terminal tabs split at the soul-aware tail, which ends with the name");
+});
+
+test("a remote tab's host follows the protected tail in its own span and gives way first", t => {
+  const { doc, host, window } = fixture(t, shellCss);
+  const name = "oats-desktop-developer-tabs-palette", title = `${name} · production-west`;
+  const { triggerEl } = createTabChrome(doc, "r", title, false, { dot: "on", tailAt: tabNameTailStart(name, "oats-desktop-developer"), tailEnd: name.length });
+  host.append(triggerEl);
+  const parts = [...triggerEl.querySelector(".tab-label.split").children];
+  assert.deepEqual(parts.map(el => [el.className, el.textContent]),
+    [["tab-head", "oats-desktop-developer-tabs-"], ["tab-tail", "palette"], ["tab-rest", " · production-west"]], "the tail stays the name's own end");
+  const rest = window.getComputedStyle(parts[2]);
+  assert.deepEqual([rest.minWidth, rest.overflow, rest.textOverflow, rest.flexShrink], ["0px", "hidden", "ellipsis", "1000"],
+    "the host is metadata: it shrinks before the head (flex-shrink is weighted 1000:1)");
+  assert.equal(window.getComputedStyle(parts[0]).flexShrink, "1");
+  assert.equal(triggerEl.getAttribute("aria-label"), title, "the accessible name keeps the host");
+  assert.equal(triggerEl.title, title);
+  // An out-of-range end never protects more than the title holds.
+  const clamp = createTabChrome(doc, "c", name, false, { tailAt: 28, tailEnd: 99 });
+  assert.deepEqual([...clamp.triggerEl.querySelector(".tab-label").children].map(el => el.textContent), ["oats-desktop-developer-tabs-", "palette"]);
+});
+
+// jsdom has no layout, so the geometry is proven live (renderer harness, Chromium,
+// the shipped system UI face at 12.5px; the hand-back records it). This pins the
+// floor's budget to those measurements, so a smaller floor or a wider chrome fails here.
+test("the tab floor budgets the chrome, the dot, the name's start and the widest real tail, all in bold", t => {
+  const { doc, host, window } = fixture(t, shellCss);
+  const { tabEl } = createTabChrome(doc, "b", "x", false, { dot: "on" });
+  host.append(tabEl);
+  const px = name => Number.parseFloat(window.getComputedStyle(tabEl).getPropertyValue(name));
+  const MEASURED_BOLD = { start: 43.7 /* "oats-…" */, tail: 56.5 /* "awn-flow", the widest real 8-character tail */ };
+  const DOT_AND_GAP = 7 + 8;
+  const need = px("--tab-chrome") + DOT_AND_GAP + MEASURED_BOLD.start + MEASURED_BOLD.tail;
+  assert.ok(px("--tab-min") >= need, `--tab-min ${px("--tab-min")}px holds ${need.toFixed(1)}px`);
+  assert.ok(px("--tab-min") - need < 4, "and no more than rounding: the strip keeps as many tabs as it can");
 });

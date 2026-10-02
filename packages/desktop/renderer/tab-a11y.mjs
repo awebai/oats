@@ -24,8 +24,9 @@ export function tabNameTailStart(name, soul = "") {
 /** decor (all decorative; the accessible name stays the bare title):
  *  { kind } or { icon } an app icon for artifact tabs; { dot, detail } a
  *  live-state dot and the instance branch for terminal tabs (Redesign v3);
- *  { tailAt } splits the title there: a shrinking head, then a tail that
- *  never shrinks (tabNameTailStart). */
+ *  { tailAt, tailEnd } splits the title: a head that ellipsizes, the tail
+ *  [tailAt, tailEnd) that never shrinks (tabNameTailStart), then any rest of
+ *  the title (a remote tab's " · host"), which gives way before the head. */
 export function createTabChrome(document, id, title, isMac = false, decor = {}) {
   const tabEl = document.createElement("div");
   tabEl.className = "tab";
@@ -45,12 +46,16 @@ export function createTabChrome(document, id, title, isMac = false, decor = {}) 
   else if (icon) { const mark = document.createElement("span"); mark.className = "tab-icon"; mark.setAttribute("aria-hidden", "true"); mark.append(iconElement(document, icon, { size: 14 })); triggerEl.append(mark); }
   const label = document.createElement("span"); label.className = "tab-label"; triggerEl.append(label);
   const tailAt = decor?.tailAt;
-  if (Number.isInteger(tailAt) && tailAt > 0 && tailAt < title.length) {
-    // The head ellipsizes, the tail keeps its width: "oats-…palette". The
-    // trigger's aria-label is the whole title, so the split is never read.
-    const head = document.createElement("span"); head.className = "tab-head"; head.textContent = title.slice(0, tailAt);
-    const tail = document.createElement("span"); tail.className = "tab-tail"; tail.textContent = title.slice(tailAt);
-    label.classList.add("split"); label.append(head, tail);
+  const tailEnd = Number.isInteger(decor?.tailEnd) ? Math.min(decor.tailEnd, title.length) : title.length;
+  if (Number.isInteger(tailAt) && tailAt > 0 && tailAt < tailEnd) {
+    // The head ellipsizes, the tail keeps its width: "oats-…palette". Only the
+    // name's own tail is protected; whatever follows it (" · host") is metadata
+    // that shrinks first. The trigger's aria-label is the whole title, so the
+    // split is never read.
+    const span = (className, text) => { const el = document.createElement("span"); el.className = className; el.textContent = text; return el; };
+    label.classList.add("split");
+    label.append(span("tab-head", title.slice(0, tailAt)), span("tab-tail", title.slice(tailAt, tailEnd)));
+    if (tailEnd < title.length) label.append(span("tab-rest", title.slice(tailEnd)));
   } else label.textContent = title;
   if (typeof detail === "string" && detail) {
     const extra = document.createElement("span"); extra.className = "tab-detail"; extra.setAttribute("aria-hidden", "true");

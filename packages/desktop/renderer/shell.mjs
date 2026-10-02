@@ -1699,8 +1699,8 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
   const made = addTab({
     title: `${name}${inst.server ? ` · ${inst.server}` : ""}`,
     // Workspace v4 (W6): a terminal tab carries only its name and status; the branch lives in the bottom bar.
-    // A shrunk tab keeps its name's end (with the host, if any): "oats-…palette".
-    decor: { dot: inst.running ? "on" : "off", tailAt: tabNameTailStart(name, inst.agent) },
+    // A shrunk tab keeps its name's end ("oats-…palette"); a host suffix gives way first.
+    decor: { dot: inst.running ? "on" : "off", tailAt: tabNameTailStart(name, inst.agent), tailEnd: name.length },
     key,
     kind: "terminal",
     workspace: ws,
