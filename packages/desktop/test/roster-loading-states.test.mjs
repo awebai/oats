@@ -9,7 +9,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { runInNewContext } from 'node:vm';
+import { runInNewContext, runInContext } from 'node:vm';
 import { JSDOM } from 'jsdom';
 import * as tree from '../renderer/instance-tree.mjs';
 import { PENDING_DELAY_MS, REFRESHING_DELAY_MS, AGE_TICK_MS } from '../renderer/loading.mjs';
@@ -146,7 +146,7 @@ function shell(t, { addResult = { ok: true, workspace: { id: 'A' } }, workspace 
     instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge, instanceActionTarget, instanceSplitPlan, iconElement, prChip, prText,
     rosterTipFacts, deploymentUnavailableText, staleWorkspaceSelection, panelErrorCause,
     // #461: the bounded wait runs on the test's clock; Re-add goes to a recorded bridge.
-    rosterPendingWatch: createPendingWatch({ now: c.now }), unservedError, NOT_SERVED_CODE, NO_ANSWER_CODE, rosterReAddLease: 0,
+    rosterPendingWatch: createPendingWatch({ now: c.now, setTimeout: c.setTimeout, clearTimeout: c.clearTimeout, onOverdue: subject => context.rosterOverdue(subject) }), unservedError, NOT_SERVED_CODE, NO_ANSWER_CODE, rosterReAddLease: 0,
     desktopBridge: { workspaceAdd: async path => { adds.push(path); return typeof addResult === 'function' ? addResult(path) : addResult; } },
     rosterTip: { bind() {}, hide() {}, sync() {} }, rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} }, ctx: {},
     connectionGeneration: 0, menuState() {}, runAction: assert.fail, getBinding: () => null, formatChord: x => x, isMac: true,
@@ -166,7 +166,7 @@ function shell(t, { addResult = { ok: true, workspace: { id: 'A' } }, workspace 
   };
   context.splitOpenState = () => ({ split: null, activeId: context.activeTab, tabs: context.tabs, workspace: context.workspace, visible: false });
   context.ownsInstanceTarget = target => context.contextInstances.filter(r => sameInstanceActionTarget(target, r, context.workspace)).length === 1;
-  const s = runInNewContext(`${['initContextRoster', 'failRosterUnserved', 'reAddRosterWorkspace', 'refreshContextRoster', 'renderContextRoster', 'renderWorkspaceContext', 'restoreWorkspaceTabs'].map(fn).join('\n')}
+  const s = runInNewContext(`${['initContextRoster', 'rosterOverdue', 'failRosterUnserved', 'reAddRosterWorkspace', 'refreshContextRoster', 'renderContextRoster', 'renderWorkspaceContext', 'restoreWorkspaceTabs'].map(fn).join('\n')}
     ({ initContextRoster, refreshContextRoster, renderContextRoster, restoreWorkspaceTabs });`, context);
   // #sidebar is not in index.html's roster section alone; initContextRoster listens on it.
   if (!doc.getElementById('sidebar')) { const aside = doc.createElement('aside'); aside.id = 'sidebar'; aside.append(rosterEl); doc.body.append(aside); }
@@ -675,4 +675,53 @@ test('pending after an observation keeps the rows, never "empty"; past the bound
 test('the 4 s roster poll is single-flight: an unanswered read is never superseded by the next poll', () => {
   assert.match(source, /let rosterPoll = null;\nsetInterval\(\(\) => \{ if \(!rosterPoll\) rosterPoll = refreshContextRoster\(\)\.finally\(\(\) => \{ rosterPoll = null; \}\); \}, 4000\);/);
   assert.doesNotMatch(source, /setInterval\(\(\) => refreshContextRoster\(\), 4000\)/);
+});
+
+/** The shipped 4 s poll, run on the test's clock: no refresh is called by hand. Time moves a second at a
+ * time and settles promises in between, as a real event loop would. */
+function shippedPoll(s) {
+  const start = source.indexOf('let rosterPoll = null;'), end = source.indexOf('}, 4000);', start) + '}, 4000);'.length;
+  assert.ok(start > 0 && end > start, 'the shipped poll');
+  s.context.setInterval = (fn, ms) => { const run = () => { s.c.setTimeout(run, ms); fn(); }; s.c.setTimeout(run, ms); };
+  runInContext(source.slice(start, end), s.context);
+  return async seconds => { for (let n = 0; n < seconds; n++) { s.c.advance(1000); await tick(); await tick(); } };
+}
+
+test('the shipped poll with a read that never answers: "No answer" at exactly the bound, no extra read, and the late answer still lands', async t => {
+  const s = shell(t), run = shippedPoll(s);
+  await run(44);
+  assert.equal(s.requests.length, 2, 'the first read and one poll; the stuck poll holds every later tick');
+  assert.equal(s.list().querySelector('.loading-failed'), null, 'still inside the bound');
+  await run(1);
+  const failed = s.list().querySelector('.loading-failed');
+  assert.ok(failed, 'said at 45 s, without a reply and without another read'); assert.equal(s.requests.length, 2);
+  assert.equal(failed.querySelector('.loading-failed-code').textContent, NO_ANSWER_CODE);
+  assert.match(s.live().textContent, /No answer from the Desktop's server for this deployment: A\./);
+  await run(15); assert.equal(s.requests.length, 2, 'still one read in flight');
+  await s.reply(1, panelOf('A', roster));
+  assert.equal(s.list().querySelector('.loading-failed'), null); assert.equal(s.rows().length, 3);
+});
+
+test('the shipped poll with the proxy\'s 20 s timeouts: the generic failure inside the bound, "No answer" at 45 s', async t => {
+  const s = shell(t);
+  s.context.api = path => new Promise((_, reject) => { s.requests.push({ path }); s.c.setTimeout(() => reject(new Error('timed out')), 20_000); });
+  s.requests.length = 0; s.context.rosterState.reset(); s.refreshContextRoster(); // the first read, now timing out
+  const run = shippedPoll(s);
+  await run(44);
+  assert.equal(s.list().querySelector('.loading-failed-message').textContent, 'timed out', 'inside the bound: the read\'s own failure');
+  await run(1);
+  assert.equal(s.list().querySelector('.loading-failed-code').textContent, NO_ANSWER_CODE, 'at the bound, by name');
+  assert.ok(s.requests.length <= 3, `no extra full read cycle was needed: ${s.requests.length}`);
+});
+
+test('the deadline belongs to its subject: an answer, a switch or a Retry cancels it', async t => {
+  const s = shell(t);
+  await s.reply(0, panelOf('A', [], { deployment: { status: 'pending' } }));
+  s.c.advance(30_000); // A has 15 s left
+  s.switchTo('B'); // a new subject; its own read is in flight
+  s.c.advance(PENDING_LIMIT_MS - 1); await tick();
+  assert.equal(s.list().querySelector('.loading-failed'), null, 'A\'s deadline does not fire for B');
+  await s.reply(s.requests.length - 1, panelOf('B', [row('b-one')], { workspaces: [{ id: 'A', name: 'A' }, { id: 'B', name: 'B' }] }));
+  s.c.advance(PENDING_LIMIT_MS * 2); await tick();
+  assert.equal(s.list().querySelector('.loading-failed'), null, 'an observation cancels it'); assert.deepEqual(s.names(), ['b-one']);
 });

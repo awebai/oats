@@ -318,3 +318,47 @@ test('a Re-add outcome belongs to its own selection: after A→B→A it reads no
   add.resolve({ ok: false, reason: 'path does not exist' }); await tick();
   assert.equal(u.notice(), '', 'no failure over the newer observation'); assert.equal(u.nodes().length, 1);
 });
+
+/** The shipped 4 s poll callback and the window clock, a second at a time; Date.now follows. No refresh by hand. */
+function shippedSchedule(u, clockNow) {
+  let elapsed = 0;
+  return async seconds => {
+    for (let n = 0; n < seconds; n++) {
+      elapsed += 1000; clockNow.value += 1000; u.c.advance(1000); await tick(); await tick();
+      if (elapsed % 4000 === 0) { u.poll(); await tick(); await tick(); }
+    }
+  };
+}
+
+test('the shipped poll with a read that never answers: "No answer" at exactly the bound, with one read in flight', async t => {
+  const clockNow = { value: 5_000_000 }; t.mock.method(Date, 'now', () => clockNow.value);
+  let reads = 0;
+  const u = await setup(t, { api: () => { reads++; return new Promise(() => {}); } }); await tick();
+  const run = shippedSchedule(u, clockNow);
+  await run(44);
+  assert.equal(reads, 1, 'the stuck read holds every poll'); assert.equal(u.notice(), '');
+  await run(1);
+  assert.match(u.notice(), /^No answer from the Desktop's server for this deployment: \/team\. .*No current observation\./);
+  assert.match(u.status(), /No answer from the Desktop's server for this deployment: \/team/);
+  assert.equal(reads, 1, 'said without another read');
+});
+
+test('the shipped poll with the proxy\'s 20 s timeouts: the generic notice inside the bound, "No answer" at 45 s', async t => {
+  const clockNow = { value: 5_000_000 }; t.mock.method(Date, 'now', () => clockNow.value);
+  let reads = 0;
+  const u = await setup(t, { api: () => { reads++; return new Promise((_, reject) => globalThis.window.setTimeout(() => reject(new Error('timed out')), 20_000)); } }); await tick();
+  const run = shippedSchedule(u, clockNow);
+  await run(44);
+  assert.match(u.notice(), /^Roster unavailable: timed out\./);
+  await run(1);
+  assert.match(u.notice(), /^No answer from the Desktop's server for this deployment: \/team\./);
+  assert.ok(reads <= 3, `no extra full read cycle was needed: ${reads}`);
+});
+
+test('the deadline is the view\'s: teardown cancels it', async t => {
+  const clockNow = { value: 5_000_000 }; t.mock.method(Date, 'now', () => clockNow.value);
+  const u = await setup(t, { api: () => new Promise(() => {}) }); await tick();
+  const line = u.one('.hier-status'), said = line.textContent; u.dispose();
+  u.c.advance(PENDING_LIMIT_MS * 2); await tick();
+  assert.equal(line.textContent, said, 'nothing fires into a torn-down view');
+});

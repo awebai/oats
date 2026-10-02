@@ -391,9 +391,18 @@ function setSidebarMode(mode) {
   if (typeof tabs !== "undefined") updateContextTabs();
 }
 
-// How long the server has kept answering "pending" for the shown deployment on this connection: past
-// PENDING_LIMIT_MS the roster says it got no answer instead of waiting silently (#461).
-const rosterPendingWatch = createPendingWatch();
+// How long the shown deployment, on this connection, has been without an observation: past
+// PENDING_LIMIT_MS the roster says it got no answer instead of waiting silently (#461). The deadline is
+// its own timer, so it fires even while a read that never answers holds the single-flight poll.
+const rosterPendingWatch = createPendingWatch({ onOverdue: (subject) => rosterOverdue(subject) });
+
+/** The bounded wait ran out for the subject still shown: said now, whatever read is in flight. A later
+ * observation of it still lands (the read in flight, or the next poll's). */
+function rosterOverdue(subject) {
+  const ws = currentWorkspace();
+  if (!contextRosterEl || subject !== `${connectionGeneration}\n${ws}`) return;
+  failRosterUnserved(NO_ANSWER_CODE, ws);
+}
 
 /** A deployment the server does not serve, or keeps answering "pending" for (#461): the failed
  * state names it, with Retry, and Re-add workspace when it is not served. No row of another
@@ -2140,7 +2149,8 @@ function restoreWorkspaceTabs() {
   refreshContextRoster();
 }
 // One background read at a time: a slow or unanswered read is not superseded every 4 s, so its outcome
-// (or the bounded wait's) is always someone's to show. A switch or a Retry reads at once, as before.
+// is always someone's to show; the bounded wait has its own timer (rosterPendingWatch). A switch or a
+// Retry reads at once, as before.
 let rosterPoll = null;
 setInterval(() => { if (!rosterPoll) rosterPoll = refreshContextRoster().finally(() => { rosterPoll = null; }); }, 4000);
 

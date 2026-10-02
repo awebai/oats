@@ -409,6 +409,7 @@ function teardown(s) {
   s.alive = false; s.request++; s.actionTicket++; s.pending = null; s.pan = null; s.drag = null;
   s.activity?.dispose(); s.activity = null;
   s.load?.dispose(); s.load = null;
+  s.pendingWatch?.dispose();
   s.win.clearTimeout(s.clickResetTimer);
   s.timers.forEach(clearInterval);
   (s.disposers || []).forEach((off) => { try { off(); } catch {} });
@@ -521,12 +522,15 @@ function applyPending(s) {
    request that still owns the view. `user`: a Retry the person asked for. */
 export async function refresh(s, { user = false } = {}) {
   if (!s.alive) return;
-  s.pendingWatch ||= createPendingWatch();
+  // The deadline is its own timer on the view's window: it fires at the bound even while an unanswered
+  // read holds the single-flight poll (s.loading), and a later owned observation still recovers.
+  s.pendingWatch ||= createPendingWatch({ onOverdue: subject => overdue(s, subject),
+    setTimeout: (fn, ms) => s.win.setTimeout(fn, ms), clearTimeout: id => s.win.clearTimeout(id) });
   if (user) s.pendingWatch.reset(); // a Retry restarts the bounded wait for an answer
   const myGen = workspaceGeneration(), requestedWorkspace = currentWorkspace();
   // The bounded wait (#461) runs from the first read of this deployment, on this connection, that brought
   // no observation: answered "pending", or not answered at all. Any other answer from the server ends it.
-  const subject = `${s.ctx.connectionGeneration?.() ?? 0}\n${requestedWorkspace}`;
+  const subject = pendingSubject(s);
   s.pendingWatch.observe(subject, true);
   const request = s.request = (s.request || 0) + 1;
   const owns = () => s.alive && request === s.request && myGen === workspaceGeneration();
@@ -575,21 +579,36 @@ export async function refresh(s, { user = false } = {}) {
     // bound (a read the proxy timed out, the bridge down) is reported as no answer, by name.
     if (error?.code === NOT_SERVED_CODE) s.pendingWatch.observe(null, false);
     else if (error?.code !== NO_ANSWER_CODE && s.pendingWatch.observe(subject, true)) error = unservedError(NO_ANSWER_CODE, requestedWorkspace);
-    s.pending = null; s.stale = true; s.actionTicket = (s.actionTicket || 0) + 1;
-    // The controller announces the failure and drops its pill; the view's
-    // notice below is the visible failure surface (no failedHost).
-    s.load?.fail(error);
-    if (s.dataGen == null) s.q('hier-sum').textContent = 'Roster unknown';
-    // A deployment the server does not serve, or does not answer for (#461), is named in full; Re-add when not served.
-    const unserved = [NOT_SERVED_CODE, NO_ANSWER_CODE].includes(error?.code);
-    const readd = s.q('hier-readd');
-    s.reAddPath = error?.code === NOT_SERVED_CODE && requestedWorkspace.startsWith('/') ? requestedWorkspace : null;
-    if (readd) readd.hidden = !(s.reAddPath && typeof s.ctx.reAddWorkspace === 'function');
-    const said = error?.code === NOT_SERVED_CODE ? unservedError(NOT_SERVED_CODE, requestedWorkspace).message
-      : String(error?.message || 'read failed').slice(0, 300);
-    notice(s, `${unserved ? said : `Roster unavailable: ${said}.`} ${s.dataGen == null ? 'No current observation.' : `Showing the last observation${staleAge(s)}, not current state; actions disabled.`}`);
-    updatePop(s);
+    presentFailure(s, error, requestedWorkspace);
   } finally { if (owns()) s.loading = false; }
+}
+
+/** The bounded wait's subject: this deployment on this connection. */
+function pendingSubject(s) { return `${s.ctx.connectionGeneration?.() ?? 0}\n${currentWorkspace()}`; }
+
+/** The bounded wait ran out for the deployment still shown (#461): no answer, said now. */
+function overdue(s, subject) {
+  if (!s.alive || subject !== pendingSubject(s)) return;
+  const ws = currentWorkspace();
+  presentFailure(s, unservedError(NO_ANSWER_CODE, ws), ws);
+}
+
+/** A read of `requestedWorkspace` failed (or got no answer in time): stale with data, failed without. */
+function presentFailure(s, error, requestedWorkspace) {
+  s.pending = null; s.stale = true; s.actionTicket = (s.actionTicket || 0) + 1;
+  // The controller announces the failure and drops its pill; the view's
+  // notice below is the visible failure surface (no failedHost).
+  s.load?.fail(error);
+  if (s.dataGen == null) s.q('hier-sum').textContent = 'Roster unknown';
+  // A deployment the server does not serve, or does not answer for (#461), is named in full; Re-add when not served.
+  const unserved = [NOT_SERVED_CODE, NO_ANSWER_CODE].includes(error?.code);
+  const readd = s.q('hier-readd');
+  s.reAddPath = error?.code === NOT_SERVED_CODE && String(requestedWorkspace || '').startsWith('/') ? requestedWorkspace : null;
+  if (readd) readd.hidden = !(s.reAddPath && typeof s.ctx.reAddWorkspace === 'function');
+  const said = error?.code === NOT_SERVED_CODE ? unservedError(NOT_SERVED_CODE, requestedWorkspace).message
+    : String(error?.message || 'read failed').slice(0, 300);
+  notice(s, `${unserved ? said : `Roster unavailable: ${said}.`} ${s.dataGen == null ? 'No current observation.' : `Showing the last observation${staleAge(s)}, not current state; actions disabled.`}`);
+  updatePop(s);
 }
 
 function render(s) {

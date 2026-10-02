@@ -226,6 +226,21 @@ test('createPendingWatch: one subject pending for the bound; any other answer or
   now += PENDING_LIMIT_MS; watch.reset(); assert.equal(watch.observe('B', true), false, 'Retry starts over');
 });
 
+test('createPendingWatch with onOverdue: a timer of the subject\'s own fires once at the bound; an answer, another subject, reset or dispose cancels it', () => {
+  const timers = new Map(); let seq = 0, now = 0;
+  const fire = () => { for (const [id, t] of [...timers]) if (t.at <= now) { timers.delete(id); t.fn(); } };
+  const fired = [];
+  const watch = createPendingWatch({ now: () => now, onOverdue: subject => fired.push(subject),
+    setTimeout: (fn, ms) => { timers.set(++seq, { fn, at: now + ms }); return seq; }, clearTimeout: id => timers.delete(id) });
+  watch.observe('A', true); watch.observe('A', true); assert.equal(timers.size, 1, 'one timer per subject');
+  now = PENDING_LIMIT_MS - 1; fire(); assert.deepEqual(fired, []);
+  now = PENDING_LIMIT_MS; fire(); assert.deepEqual(fired, ['A'], 'fired at the bound without any observe()');
+  watch.observe('B', true); watch.observe(null, false); now += PENDING_LIMIT_MS; fire(); assert.deepEqual(fired, ['A'], 'an answer cancels');
+  watch.observe('C', true); watch.observe('D', true); assert.equal(timers.size, 1, 'another subject replaces it');
+  now += PENDING_LIMIT_MS; fire(); assert.deepEqual(fired, ['A', 'D']);
+  watch.observe('E', true); watch.reset(); watch.observe('F', true); watch.dispose(); assert.equal(timers.size, 0);
+});
+
 test('the copy names the deployment and what happened', () => {
   assert.equal(unservedText(NOT_SERVED_CODE, '/d/oats-v2'), "This Desktop's server isn't serving this deployment: /d/oats-v2. Re-add the workspace, or retry.");
   assert.equal(unservedText(NO_ANSWER_CODE, '/d/oats-v2'), "No answer from the Desktop's server for this deployment: /d/oats-v2. Retry, or check the OATS CLI.");

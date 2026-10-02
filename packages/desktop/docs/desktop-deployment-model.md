@@ -131,9 +131,11 @@ A window never waits silently on "Reading the deployment…":
   The wait runs from the first read that brought none: answered "pending",
   failed in transport (the proxy's timeout, the bridge down) or not answered
   yet. Any other answer ends it, a Retry starts it over, and an observation
-  that lands later replaces the error. The roster polls one read at a time,
-  so a read that never answers is never superseded out of its outcome; past
-  the bound the next poll says it before sending its own read.
+  that lands later replaces the error. The deadline is a timer owned by its
+  subject (cancelled by an answer, another deployment or connection, a Retry
+  or the view's teardown), so it fires at 45 s even while a read that never
+  answers holds the poll: both views poll one read at a time and never
+  supersede a read in flight.
 - **With an observation on screen** (a new connection still reading), a
   "pending" answer keeps the rows as they are, never an empty roster; past
   the bound they go stale with the no-answer reason.

@@ -44,17 +44,29 @@ export function unservedError(code, path) {
   return error;
 }
 
-/** Tracks how long one subject (a deployment on one connection) has been answered "pending".
+/** Tracks how long one subject (a deployment on one connection) has been left without an observation.
  * `observe(subject, pending)` → true once the same subject has been pending for `limitMs`;
- * any other answer, or another subject, starts over. */
-export function createPendingWatch({ limitMs = PENDING_LIMIT_MS, now = () => Date.now() } = {}) {
-  let subject = null, since = 0;
+ * any other answer, or another subject, starts over. With `onOverdue`, the deadline is also a timer
+ * of its own (`setTimeout`/`clearTimeout`): it fires `onOverdue(subject)` at the bound even when no
+ * read settles and no new read is sent (a read that never answers holds the single-flight poll).
+ * The timer belongs to the subject: an answer, another subject, `reset()` or `dispose()` cancels it. */
+export function createPendingWatch({ limitMs = PENDING_LIMIT_MS, now = () => Date.now(), onOverdue = null,
+  setTimeout: schedule = (fn, ms) => globalThis.setTimeout(fn, ms), clearTimeout: cancel = id => globalThis.clearTimeout(id) } = {}) {
+  let subject = null, since = 0, timer = null;
+  const stop = () => { if (timer !== null) { cancel(timer); timer = null; } };
   return {
     observe(next, pending) {
-      if (!pending) { subject = null; return false; }
-      if (next !== subject) { subject = next; since = now(); }
+      if (!pending) { subject = null; stop(); return false; }
+      if (next !== subject) {
+        subject = next; since = now(); stop();
+        if (typeof onOverdue === 'function') {
+          const owner = next;
+          timer = schedule(() => { timer = null; if (subject === owner) onOverdue(owner); }, limitMs);
+        }
+      }
       return now() - since >= limitMs;
     },
-    reset() { subject = null; },
+    reset() { subject = null; stop(); },
+    dispose() { subject = null; stop(); },
   };
 }
