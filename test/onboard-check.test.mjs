@@ -24,7 +24,7 @@ test("a fresh directory: absent, and the workspace remote readable; nothing is w
   const res = r.json().result;
   assert.equal(res.dir, dir);
   assert.equal(res.state, "absent");
-  assert.deepEqual(res.workspace, { ref: fx.ref, key: fx.key });
+  assert.deepEqual(res.workspace, { ref: fx.ref, key: fx.key, url: fx.repo });
   assert.equal(res.remote.readable, true);
   assert.match(res.remote.commit, /^[0-9a-f]{40}$/);
   assert.equal(existsSync(join(fx.base, "fresh")), false, "read-only: nothing created");
@@ -46,7 +46,7 @@ test("a deployment: its own workspace is read when --workspace is not given", ()
   assert.equal(r.status, 0, r.stderr + r.stdout);
   const res = r.json().result;
   assert.equal(res.state, "deployment");
-  assert.deepEqual(res.workspace, { ref: fx.ref, key: fx.key });
+  assert.deepEqual(res.workspace, { ref: fx.ref, key: fx.key, url: fx.repo });
   assert.equal(res.remote.readable, true);
   // Not a deployment and no --workspace: nothing to read.
   const bad = check([join(fx.base, "nowhere")]);

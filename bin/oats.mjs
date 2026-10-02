@@ -2895,7 +2895,7 @@ async function onboardCheck(dirArg, workspaceRef, bail) {
     const d = e.details || {};
     remote = { readable: false, error: { code: e.code, message: e.message, reason: d.reason ?? null, ...(d.hint ? { hint: d.hint, remedy: d.remedy } : {}) } };
   }
-  const result = { check: true, dir, state, workspace: { ref, key: parsed.key }, remote };
+  const result = { check: true, dir, state, workspace: { ref, key: parsed.key, url: parsed.url }, remote };
   if (JSON_MODE) { jsonOk(result); return; }
   console.log(`${shortPath(dir)}: ${state}`);
   console.log(`workspace ${parsed.key}: ${remote.readable ? `readable (${short(remote.commit)})` : `NOT readable — ${remote.error.message}`}`);

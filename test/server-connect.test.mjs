@@ -77,7 +77,7 @@ test("a fresh host: no npm, then no oats, then installed, onboarded, registered 
     r = s.oats(["server", "connect", "box", "--ssh", "box-host", "--path", s.npmDir, "--json"]);
     res = r.json().result;
     assert.deepEqual(statuses(res), ["ok", "needs-human", "skipped", "skipped", "skipped", "skipped"]);
-    assert.equal(stepOf(res, "oats").remedy, `on box-host: npm install -g @awebai/oats@${VERSION} (or pass --install-oats)`);
+    assert.equal(stepOf(res, "oats").remedy, `on box-host: \`npm install -g @awebai/oats@${VERSION}\` (or pass --install-oats)`);
     assert.deepEqual(s.npmCalls(), [["--version"]], "npm was asked its version, nothing installed");
 
     // --install-oats: installed exactly this kernel's version, then the rest in the same run.
@@ -138,6 +138,7 @@ test("git cannot read the workspace remote: needs-human at git, the rest waits; 
     assert.equal(git.code, "E_REMOTE_UNREADABLE");
     assert.match(git.detail, /cannot read remote .*not-found/);
     assert.match(git.remedy, /on box-host: make .* readable by git there/);
+    assert.ok(git.remedy.includes(`\`git ls-remote ${s.fx.repo}\``), `a runnable check in backticks: ${git.remedy}`);
     for (const name of ["deployment", "register", "readiness"]) assert.equal(stepOf(res, name).detail, "waits for git");
     assert.deepEqual(res.human, [git.remedy]);
     assert.equal(existsSync(s.defaultDir), false, "nothing written on the host");
@@ -349,3 +350,17 @@ test("readiness: a soul listing the budget cuts off is one human line; a real tr
   };
   assert.throws(() => connectServer(budgetOptions, { execFileSync: lost }), (e) => e.code === "E_SSH" && e.details.steps.at(-1).step === "readiness");
 }));
+
+test("a --dir under ~ is registered as the absolute path the host resolved", () => {
+  const s = setup();
+  try {
+    const r = s.oats(["server", "connect", "box", "--ssh", "box-host", "--dir", "~/x", "--oats", CLI, "--json"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    const res = r.json().result;
+    const abs = join(s.env.HOME, "x");
+    assert.equal(res.registration.workspace, abs);
+    assert.equal(s.servers().box.workspace, abs, "stored absolute, never ~");
+    assert.equal(stepOf(res, "deployment").detail, `onboarded ${abs} into ${s.fx.key}`);
+    assert.equal(JSON.stringify(res).includes("~"), false, "no ~ anywhere in the result");
+  } finally { s.cleanup(); }
+});

@@ -1971,10 +1971,12 @@ An envelope, `ok: true` whenever no step failed, human steps included
 - `steps` is always the six steps `ssh`, `oats`, `git`, `deployment`,
   `register`, `readiness`, in that order. A step is `{step, status}` plus
   `detail` when there is something to say; `needs-human` adds `remedy` (and
-  on `git` the error's `code` and any `hint`); `failed` adds `code` and, for
+  on `git` the error's `code` and any `hint`), in which every command to run
+  is in backticks (a readiness line relays the provider's own wording); `failed` adds `code` and, for
   some codes, `details`. `skipped` steps say `waits for <step>`.
 - `registration` is the registration as written or found (`sshHost`,
-  `workspace` as the host resolved it, `workspaceKey`, and `oatsPath`, `path`,
+  `workspace`: the absolute path the host resolved for `--dir`, never `~`;
+  `workspaceKey`; and `oatsPath`, `path`,
   `label` when set), `null` until the `register` step has run.
 - `human` lists the remedies of the `needs-human` steps, in order. A
   `readiness` step that needs a human has one line per problem
@@ -1992,7 +1994,7 @@ An envelope, `ok: true` whenever no step failed, human steps included
   reported, dir}`; at `register`, `{recorded, reported}`.
 
 The host-side read it uses, `oats onboard <dir> [--workspace <ref>] --check
---json`, answers `{check: true, dir, state, workspace: {ref, key}, remote}`:
+--json`, answers `{check: true, dir, state, workspace: {ref, key, url}, remote}`:
 `state` is `absent`, `empty`, `not-empty`, `not-a-directory` or `deployment`;
 `remote` is `{readable: true, commit}` or `{readable: false, error: {code,
 message, reason, hint?, remedy?}}`. It writes nothing.
