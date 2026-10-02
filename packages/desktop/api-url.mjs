@@ -30,6 +30,38 @@ export function classifyApiRoute(pathname, base) {
   } catch { return null; }
 }
 
+/** Workspace-scoped endpoints: the roster/agents/brain reads AND the whole instance-addressed family.
+ * The server resolves instance names per workspace, and same-named instances exist across workspaces. */
+export function workspaceScoped(pathname) {
+  return pathname === "/api/panel" || pathname === "/api/agents" || pathname === '/api/spawn' || pathname === '/api/automations' || pathname === '/api/forge-roster'
+    || pathname === '/api/team-members'
+    || /^\/api\/(?:instance|workspace)-[a-z-]+$/.test(pathname) // entire body-addressed scoped families
+    || /^\/api\/(brain|session|keys|interrupt|chat)\//.test(pathname);
+}
+
+/**
+ * A window-bound request for a workspace the server does not serve (#481): the workspace id to
+ * refuse with E_WORKSPACE_NOT_SERVED, or null to proxy it. `window` is the workspace the sending
+ * window is bound to (null or undefined: an unbound window, never refused here). The request names
+ * its workspaces with ?ws=, or, with none, it is the window's own. Any of them outside `advertised`
+ * is refused, on every workspace-scoped route. With no advertised set known (startup, a restart with
+ * nothing advertised before) nothing is refused: the request passes unrewritten and the server's own
+ * refusal applies. Off-origin or malformed input is left to apiUrl, which throws.
+ * @param {string} pathname
+ * @param {string} base
+ * @param {string|null|undefined} window
+ * @param {Set<string>|null|undefined} advertised
+ * @returns {string|null}
+ */
+export function windowRefusal(pathname, base, window, advertised) {
+  if (typeof window !== 'string' || !(advertised instanceof Set) || !advertised.size || typeof pathname !== 'string' || !pathname.startsWith('/')) return null;
+  let url;
+  try { url = new URL(pathname, base); } catch { return null; }
+  if (url.origin !== new URL(base).origin || !workspaceScoped(url.pathname)) return null;
+  const asked = url.searchParams.getAll('ws');
+  return (asked.length ? asked : [window]).find((id) => !advertised.has(id)) ?? null;
+}
+
 /**
  * Build the URL the main process will fetch for a renderer api() call.
  *
@@ -48,10 +80,15 @@ export function classifyApiRoute(pathname, base) {
  * @param {Set<string>} [allowedWs] workspace ids the connected server
  *                           advertises (from /api/panel `workspaces[]`); a
  *                           caller ?ws= outside this set is overwritten
+ * @param {{ bound?: boolean }} [options] `bound`: the request comes from a
+ *                           window bound to `wsId` (#481). An omitted ?ws= is
+ *                           that window's workspace and an explicit one is
+ *                           never overwritten: main refuses an unadvertised
+ *                           one first (windowRefusal).
  * @returns {URL}
  * @throws  on off-origin or malformed input
  */
-export function apiUrl(pathname, base, wsId = null, allowedWs = undefined) {
+export function apiUrl(pathname, base, wsId = null, allowedWs = undefined, { bound = false } = {}) {
   if (typeof pathname !== "string" || !pathname.startsWith("/")) {
     throw new Error("api: pathname must start with /");
   }
@@ -60,24 +97,18 @@ export function apiUrl(pathname, base, wsId = null, allowedWs = undefined) {
   if (url.origin !== baseUrl.origin) {
     throw new Error("api: pathname resolved off-origin");
   }
-  // Workspace-scoped endpoints: the roster/agents/brain reads AND the whole
-  // instance-addressed family — the server resolves instance names per
-  // workspace, and same-named instances exist across workspaces. Pinning
-  // here makes an omitted ?ws= fail SAFE (verified workspace) even before
-  // views append it themselves.
-  const wsScoped = url.pathname === "/api/panel" || url.pathname === "/api/agents" || url.pathname === '/api/spawn' || url.pathname === '/api/automations' || url.pathname === '/api/forge-roster'
-    || url.pathname === '/api/team-members'
-    || /^\/api\/(?:instance|workspace)-[a-z-]+$/.test(url.pathname) // entire body-addressed scoped families
-    || /^\/api\/(brain|session|keys|interrupt|chat)\//.test(url.pathname);
-  if (wsId && wsScoped) {
+  // Pinning here makes an omitted ?ws= fail SAFE (the verified workspace, or
+  // a bound window's own) even before views append it themselves.
+  if (wsId && workspaceScoped(url.pathname)) {
     // Preserve duplicate selectors for the strict server boundary to REFUSE;
     // set() must not turn malformed requests into an admitted read.
     if ((url.pathname === '/api/spawn' || url.pathname === '/api/automations' || url.pathname === '/api/forge-roster' || url.pathname === '/api/team-members' || /^\/api\/(?:instance|workspace)-[a-z-]+$/.test(url.pathname)) && url.searchParams.getAll('ws').length > 1) return url;
     const asked = url.searchParams.get("ws");
     // Workspace switching is a real feature on shared multi-workspace
     // servers — but only to workspaces the server actually advertises;
-    // anything else is overwritten with the verified id.
-    if (!asked || !(allowedWs instanceof Set) || !allowedWs.has(asked)) {
+    // anything else from an unbound window is overwritten with the verified
+    // id. A bound window's unadvertised one was refused before this.
+    if (!asked || !bound && (!(allowedWs instanceof Set) || !allowedWs.has(asked))) {
       url.searchParams.set("ws", wsId);
     }
   }
