@@ -108,18 +108,26 @@ A window shows a workspace **view**: one matched workspace identity across machi
 (validated, text only) and keeps the last deployments seen per view for surfaces that do
 not read the panel.
 
-- **Under the switcher** (`#ws-deployments`, a list outside the trigger button): every
-  view lists its deployments, `deploymentLabel` ("This Mac · ~/Agents/oats"), the state in
-  words (live, remembered, not reached, not observed), the reason and note, and "primary"
-  when there are two or more.
+- **Nothing above the navigation.** The sidebar lists no deployments; the Deployments
+  page and the roster headings say where things run (UI spec, after the operator rejected a
+  deployments block under the switcher).
 - **Switcher** (`workspace-switcher.mjs`): views first, then unattached views in a
-  "Not matched to a workspace" group (listbox → group → option) with the reported `ref` and
-  the reason. Filtering and Arrow/Home/End run over every shown option. A `ws:` id is never
-  shown: the option's path line is its deployments' labels, twins of one name show their key.
+  "Not matched to a workspace" group (listbox → group → option). Each entry is its name and
+  ONE muted line: a view's machines (`choice.machines`, "This Mac · altair") with a status
+  mark (`deploymentMark`, words as its label) when `notLive > 0`; an unattached view's
+  machine and its `short` reason. Choosing an unattached entry also calls
+  `requestDeploymentTab`, so the Deployments page opens on its tab. Never an id, a path or a
+  reason sentence (paths only in tooltips); twins of one name show their key. Filtering
+  (shown text only) and Arrow/Home/End run over every shown option.
 - **Grouping by deployment** only when a view has two or more deployments: the sidebar
-  roster (`rosterSections`, a heading per deployment, its clusters under it) and the Active
-  overview (`layoutByDeployment`, one labelled section per deployment, stacked). With one
-  deployment both render exactly as before (pinned by `workspace-views-ui.test.mjs`).
+  roster (`rosterSections`, a heading per deployment named by `machineLabels` in the
+  cluster-label type, a status mark when not live, none for a deployment without rows) and
+  the Deployments page (below). With one deployment both render exactly as before.
+- **The Deployments page** (the former Active overview, stage `hierarchy`): tabs from
+  `deployment-tabs.mjs` (All, then one per deployment; one deployment has only its own tab;
+  the choice remembered per view); All stacks one section per deployment, a deployment's tab
+  shows its tree alone. A non-live deployment's heading has a state chip, its `short` reason
+  and **How to fix** (the sentence, the `fix` steps, any note).
 - **"On <deployment>"** (`deployment-scope-line.mjs`): deployment-level surfaces read the
   view's primary deployment and say which in a line under their heading, only with two or
   more deployments (Workspace header, Automations/Schedules, the soul inspector for a soul,
@@ -134,7 +142,7 @@ not read the panel.
   Spawn jobs keep `deployment` (where the transaction is addressed) apart from `workspace`
   (the owner that moves).
 
-## Active overview — slice 7a, reported roster only
+## Deployments page (formerly the Active overview) — slice 7a, reported roster only
 
 The existing `hierarchy` stage consumes **GET `/api/panel` only**. Relation groups
 are connected components of the shared parent/sibling resolver across roots and
@@ -253,9 +261,12 @@ never hides the Spawn button.
 **Deployment** (#482, decision Q2; `spawn-deployment-field.mjs`, wired in one
 delimited block of `spawn-dialog.mjs`). A workspace view can hold several
 deployments (`/api/panel` `deployments`). With two or more, the form shows a
-**Deployment** select in place of *Where to run*, its options labelled by
-`deploymentLabel` ("This Mac · ~/Agents/oats", "altair · ~/Agents/tsm"). With
-one there is no field and the form is unchanged. Rules:
+**Deployment** field first, before Name, in place of *Where to run*: the form's
+segmented control with two or three deployments, the Harness-style dropdown with
+more (never a native select). Options are named by `machineLabels` ("This Mac",
+"altair", "This Mac · oats-v2") with a state tag when not live; the preview
+column's **Runs on** row gives the chosen one's `deploymentLabel`. With one
+there is no field and the form is unchanged. Rules:
 
 - **Addressing.** Every spawn request addresses a deployment, never the view:
   `?ws=<chosen id>` (else the only one, else `workspace.primary`) on the preview,
@@ -264,9 +275,10 @@ one there is no field and the form is unchanged. Rules:
 - **Availability** is each deployment's own catalog (`/api/agents?ws=<id>`, read
   when the dialog starts, latest intent). The selector is the chosen deployment's
   catalog row (`catalogSoul`: the root differs per deployment). A deployment
-  without the soul stays selectable, marked "(no <soul> here)" or "(not reached)".
-  Choosing it blocks Spawn: "<soul> isn't available on <machine>." shows in the
-  footer, the field's hint and the preview column, and nothing is read.
+  without the soul stays selectable (a deployment that isn't live is marked by
+  its state). Choosing it blocks Spawn, said once, in the footer only: "<machine>
+  isn't reachable right now." when it isn't live, else "<soul> isn't available on
+  <machine>."; nothing is read.
 - **Default.** The last used in this view if it has the soul; else the first
   that has it, local before remote; else the last used (blocked). With nothing
   used yet: the first local one. Until every catalog answers, an untouched field
