@@ -60,7 +60,7 @@ is wrong on every other machine.
 | `members:` | repo refs (`git:github.com/<org>/<repo>`), **no `@revision`**; the host lists itself | a revision, a duplicate |
 | `packages:` | `<id>: v<version>` (official catalog) or `git:<repo>@<tag or full commit>`; see `/oats-package-pins` | a branch, an id outside the catalog in bare form |
 | `teams:` | shared teams: `<label>: { description?, team? }` (`team` is the provider team id; without it the team is unmapped) | a label referenced but declared nowhere (`E_TEAM_UNKNOWN`, see `/oats-teams`) |
-| `defaultTeam`, `localTeams`, `souls:` | team model 3 (0.37.0): the workspace's default team, whether deployments may declare their own teams, and per soul pattern `{ default?, teams?: [labels] \| any }`; 0.36.x validates them without applying them (see `/oats-teams`) | a label that is not a shared team of this file, a bare soul name as a `souls:` key |
+| `defaultTeam`, `localTeams`, `souls:` | team model 3 (0.38.0): the workspace's default team, whether deployments may declare their own teams, and per soul pattern `{ default?, teams?: [labels] \| any }`; 0.36.x and 0.37.x validate them without applying them (see `/oats-teams`) | a label that is not a shared team of this file, a bare soul name as a `souls:` key |
 | `defaults.capabilities` | `<capability>: { from: package \| <repo key> }` for every soul | `from: here` (souls only), a non-canonical repo key |
 | `defaults.knowledge` / `messaging` / `tasks` | at most one capability per slot, or `none` | two capabilities, a capability of another layer (`E_SLOT_CONFLICT`) |
 | `messaging:` | the messaging provider's payload | `byTeam` (removed in 0.30: the id is `teams.<label>.team`) |

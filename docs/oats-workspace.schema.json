@@ -29,17 +29,17 @@
     },
     "defaultTeam": {
       "$ref": "#/$defs/label",
-      "description": "Team model 3 (0.37.0): the workspace's fallback default team, a label of teams: in this file. 0.36.x accepts and validates it without applying it."
+      "description": "Team model 3 (0.38.0): the workspace's fallback default team, a label of teams: in this file. 0.36.x and 0.37.x accept and validate it without applying it."
     },
     "localTeams": {
       "type": "boolean",
-      "description": "Team model 3 (0.37.0): whether deployments may declare their own teams and defaultTeam in oats-local.yaml. Absent: false. 0.36.x accepts it without applying it."
+      "description": "Team model 3 (0.38.0): whether deployments may declare their own teams and defaultTeam in oats-local.yaml. Absent: false. 0.36.x and 0.37.x accept it without applying it."
     },
     "souls": {
       "type": "object",
       "propertyNames": { "type": "string", "pattern": "^(?:\\*|[a-z0-9][a-z0-9._-]*/(?:\\*|[a-z0-9]+(?:-[a-z0-9]+)*))$" },
       "additionalProperties": { "$ref": "#/$defs/soulTeams" },
-      "description": "Team model 3 (0.37.0): per soul pattern (\"*\", <member|package>/* or <member|package>/<soul>; the most specific key wins outright), the soul's default team and the other teams it may join. Every label is a label of teams: in this file. 0.36.x accepts and validates it without applying it."
+      "description": "Team model 3 (0.38.0): per soul pattern (\"*\", <member|package>/* or <member|package>/<soul>; the most specific key wins outright), the soul's default team and the other teams it may join. Every label is a label of teams: in this file. 0.36.x and 0.37.x accept and validate it without applying it."
     },
     "defaults": { "$ref": "#/$defs/defaults" },
     "stores": {

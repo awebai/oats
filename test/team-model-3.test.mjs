@@ -66,12 +66,12 @@ test("0.36.x accepts the keys without applying them: a soul's teams and default 
 
 const SOUL_TEAMS_MOVE = {
   code: "team-model-3-migration", severity: "warning", condition: "local-soul-teams", keys: ["souls.teams", "souls.default"],
-  message: "oats-local.yaml souls.teams, souls.default: OATS 0.37.0 refuses these keys; which teams a soul may join, and its default, move to souls: in oats-workspace.yaml",
+  message: "oats-local.yaml souls.teams, souls.default: OATS 0.38.0 refuses these keys; which teams a soul may join, and its default, move to souls: in oats-workspace.yaml",
   fix: "commit the same choices as souls: entries in oats-workspace.yaml (\"*\" or <member|package>/<soul>: { default, teams }), then remove souls.teams and souls.default from oats-local.yaml",
 };
 const closed = (keys) => ({
   code: "team-model-3-migration", severity: "warning", condition: "local-teams-closed", keys,
-  message: `oats-local.yaml declares ${keys.join(", ")}, but oats-workspace.yaml does not say localTeams: true: OATS 0.37.0 refuses local teams and a local defaultTeam unless the workspace allows them`,
+  message: `oats-local.yaml declares ${keys.join(", ")}, but oats-workspace.yaml does not say localTeams: true: OATS 0.38.0 refuses local teams and a local defaultTeam unless the workspace allows them`,
   fix: "either (a) add `localTeams: true` to oats-workspace.yaml, or (b) commit the teams and defaultTeam in oats-workspace.yaml, then remove them from oats-local.yaml",
 });
 const migration = (problems) => problems.filter((p) => p.code === "team-model-3-migration");
@@ -89,7 +89,7 @@ test("team-model-3-migration: local souls.teams/souls.default, and local teams/d
   }
   // Each key on its own names only itself.
   assert.deepEqual(migration(teamProblems(teamModel(ws({}), { souls: { default: { dev: "docs" } } }))), [{ ...SOUL_TEAMS_MOVE, keys: ["souls.default"],
-    message: "oats-local.yaml souls.default: OATS 0.37.0 refuses this key; which teams a soul may join, and its default, move to souls: in oats-workspace.yaml",
+    message: "oats-local.yaml souls.default: OATS 0.38.0 refuses this key; which teams a soul may join, and its default, move to souls: in oats-workspace.yaml",
     fix: "commit the same choices as souls: entries in oats-workspace.yaml (\"*\" or <member|package>/<soul>: { default, teams }), then remove souls.default from oats-local.yaml" }]);
   assert.deepEqual(migration(teamProblems(teamModel(ws({}), { defaultTeam: "docs" }))), [closed(["defaultTeam"])], "a local default naming a SHARED team is still local");
   assert.deepEqual(migration(teamProblems(teamModel(ws({}), { souls: { disabled: ["x"] } }))), [], "nothing to migrate");
@@ -128,14 +128,14 @@ test("doctor reports team-model-3-migration offline: from the cached workspace f
   const fx = deployment({ teams: { mine: { team: "mine:me.aweb.ai" } }, defaultTeam: "mine", souls: { teams: { "*": ["docs"] } } }); t.after(fx.cleanup);
   const UNCHECKED = "team-model-3-migration: whether oats-local.yaml teams/defaultTeam need localTeams: true couldn't be checked: this deployment hasn't observed its workspace yet; run oats sync";
   const soulTeams = { ...SOUL_TEAMS_MOVE, keys: ["souls.teams"],
-    message: "oats-local.yaml souls.teams: OATS 0.37.0 refuses this key; which teams a soul may join, and its default, move to souls: in oats-workspace.yaml",
+    message: "oats-local.yaml souls.teams: OATS 0.38.0 refuses this key; which teams a soul may join, and its default, move to souls: in oats-workspace.yaml",
     fix: "commit the same choices as souls: entries in oats-workspace.yaml (\"*\" or <member|package>/<soul>: { default, teams }), then remove souls.teams from oats-local.yaml" };
   // Nothing observed yet: the removed keys are known offline; local teams are not checked.
   let doc = JSON.parse(fx.cli(["doctor", "--json"]).stdout);
   assert.deepEqual(migration(doc.problems ?? []), [soulTeams]);
   assert.deepEqual(doc.information, [UNCHECKED]);
   let text = fx.cli(["doctor"]).stdout;
-  assert.match(text, /! team-model-3-migration: oats-local\.yaml souls\.teams: OATS 0\.37\.0 refuses this key/);
+  assert.match(text, /! team-model-3-migration: oats-local\.yaml souls\.teams: OATS 0\.38\.0 refuses this key/);
   assert.ok(text.includes(`INFO: ${UNCHECKED}`), text);
   // Any command that reads the workspace leaves it in the parsed cache: doctor then knows.
   ok(fx.cli(["teams", "--json"]), "teams observes the workspace");

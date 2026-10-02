@@ -361,10 +361,10 @@ Exact shapes: [desktop-cli-api.md](desktop-cli-api.md#team-model-v2-feature-team
 
 ### Preparing for team model 3 (0.36.x)
 
-OATS 0.37.0 commits a soul's teams in the workspace (team model 3,
+OATS 0.38.0 commits a soul's teams in the workspace (team model 3,
 awebai/oats#484): the teams an organisation's instances may join become its
 own decision, visible and reviewable in its git, so a deployment's
-`oats-local.yaml` no longer adds one by accident. 0.36.x prepares for it, so
+`oats-local.yaml` no longer adds one by accident. 0.36.x and 0.37.x prepare for it, so
 every workspace and deployment can migrate first:
 
 - **`oats-workspace.yaml` accepts the new keys** and validates them, but
@@ -385,7 +385,7 @@ every workspace and deployment can migrate first:
   the same file; anything else is `E_WORKSPACE_SCHEMA` when the file is read. A
   key naming a member or package the workspace does not have is not an error.
 - **The readiness warning `team-model-3-migration`** (never blocking) names
-  what 0.37.0 will refuse: `souls.teams` / `souls.default` in `oats-local.yaml`
+  what 0.38.0 will refuse: `souls.teams` / `souls.default` in `oats-local.yaml`
   (they move to `souls:`), and local `teams` / `defaultTeam` while the workspace
   does not say `localTeams: true` (fix: add `localTeams: true`, or commit the
   teams and `defaultTeam` in the workspace file). `oats teams`, readiness (and
