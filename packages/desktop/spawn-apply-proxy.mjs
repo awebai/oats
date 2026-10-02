@@ -25,7 +25,7 @@ export async function proxySpawnApply(event, pathname, opts, { rendererURL, conn
     if (!legacy && !(input.action === 'prepare' ? spawnPrepareInput(input) : spawnRefInput(input))) return fail('E_BAD_ARGS', 400);
     mutation = legacy || input.action === 'apply';
     start = { ...connection() }; if (start.transition) return fail('E_PLAN_CHANGED');
-    const url = apiUrl(pathname, start.base, start.wsId, start.allowedWs);
+    const url = apiUrl(pathname, start.base, start.wsId, start.allowedWs, { bound: start.bound === true });
     if (url.pathname !== '/api/spawn' || url.searchParams.getAll('ws').length > 1
       || [...url.searchParams.keys()].some(k => k !== 'ws') || !legacy && !url.searchParams.get('ws')) return fail('E_BAD_ARGS', 400);
     const timeout = mutation ? 65000 : input.action === 'prepare' ? 35000 : 10000;

@@ -643,7 +643,7 @@ for (const [name] of palettes) test(`${name}: frame10 rail, disabled menu reason
   const panel = createContextPanel({ document: doc }); panel.setContext({ workspace: 'team', key: 'key', instance: row }); panel.setCollapsed(true);
   const notifications = createNotificationCenter({ document: doc, workspace: () => 'team' });
   notifications.notify('dev-1 spawned', { descriptor: { kind: 'open-instance', target: instanceActionTarget('team', row), connectionEpoch: 0 }, activate: async () => {} });
-  const switcher = createWorkspaceSwitcher({ document: doc, selectWorkspace() {}, discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}) });
+  const switcher = createWorkspaceSwitcher({ document: doc, selectWorkspace() {}, discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}), openInNewWindow() {} });
   switcher.begin()({ id: '/team', name: 'Team', team: { name: 'Organization' } }, []); switcher.openMenu();
   const menu = instanceActions(doc, row, { extra: [{ action: 'open-split', label: 'Open in split', reason: 'Choose a terminal destination.' }], invoke: async () => {} }); doc.body.append(menu);
   t.after(() => { panel.dispose(); notifications.dispose(); dom.window.close(); });
@@ -654,6 +654,8 @@ for (const [name] of palettes) test(`${name}: frame10 rail, disabled menu reason
     ['.context-panel-tab-count', '#context-panel', 'muted', 'surface'], // W6: the Developer tab's thread count
     ['.ctx-instance-menu small', '.ctx-instance-menu button:disabled', 'muted', 'surface-2'],
     ['.ws-option-meta', '.ws-option', 'muted', 'sel'],
+    // Open in new window (#481): the icon at rest on the menu (focused, it is --fg on --sel, as an option).
+    ['.ws-open-window', '#ws-menu', 'muted', 'surface'],
     ['.app-toast-open', '.app-toast-open', 'primary-fg', 'primary-bg'],
     ['.ctx-pr[data-pr-state=open]', '.ctx-pr[data-pr-state=open]', 'fg', 'tag-bg'],
     ['.ctx-pr[data-pr-state=merged]', '.ctx-pr[data-pr-state=merged]', 'fg', 'tag-bg'],

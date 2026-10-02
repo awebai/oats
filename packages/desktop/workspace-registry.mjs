@@ -133,18 +133,21 @@ export function pickedFolderChoices(dir, io) {
  * non-deployment (with its choices, or the onboarding offer), and the transactional executor.
  * A refusal returns before any effect: the open set and the running server are untouched.
  * @param {object} io
- * @param {(path: string, fromPicker: boolean) => object} io.decide     decideAdd with the live provenance
+ * @param {(path: string, fromPicker: boolean, scope: string) => object} io.decide  decideAdd with the window's live provenance
  * @param {(p: string) => string} io.realpath
- * @param {(dir: string) => ReturnType<typeof pickedFolderChoices>} io.choices  records the offered paths
+ * @param {(dir: string, scope: string) => ReturnType<typeof pickedFolderChoices>} io.choices  records the offered paths
  * @param {(path: string) => string|null} io.offer                      onboarding offer token
  * @param {(workspace, isCurrent: () => boolean) => Promise<object>} io.execute  createAddExecutor
  * @param {ReturnType<typeof createGenerations>} io.generations
  * @param {(workspace) => void} [io.added]  a workspace was opened, or was already open
+ * `scope` names the window that asked (#481): its own add generation and provenance, so one window's
+ * add never supersedes another's; every add still runs through the one serialized executor.
  */
 export function createPerformAdd(io) {
-  return async function performAdd(requestedPath, fromPicker) {
-    const gen = io.generations.next("add");
-    const decision = io.decide(requestedPath, fromPicker);
+  return async function performAdd(requestedPath, fromPicker, scope = "") {
+    const verb = `add:${scope}`;
+    const gen = io.generations.next(verb);
+    const decision = io.decide(requestedPath, fromPicker, scope);
     if (!decision.ok) {
       if (decision.code !== "not-a-workspace") return { ok: false, code: decision.code, reason: decision.reason };
       let canonical = null;
@@ -152,7 +155,7 @@ export function createPerformAdd(io) {
       if (!canonical) return { ok: false, code: decision.code, reason: NOT_A_DEPLOYMENT_REASON };
       const answer = { ok: false, code: decision.code, reason: NOT_A_DEPLOYMENT_REASON, path: canonical, choices: [], more: 0, limited: false };
       if (!fromPicker) return answer;
-      try { Object.assign(answer, io.choices(canonical)); } catch { /* no choices */ }
+      try { Object.assign(answer, io.choices(canonical, scope)); } catch { /* no choices */ }
       // Decision 9 stays reachable, never as the default reaction: only a folder with no
       // deployment in or around it gets the single-use offer for THIS canonical path.
       if (!answer.choices.length) {
@@ -162,7 +165,7 @@ export function createPerformAdd(io) {
       return answer;
     }
     if (decision.action === "already-advertised") { io.added?.(decision.workspace); return { ok: true, workspace: decision.workspace }; }
-    const result = await io.execute(decision.workspace, () => io.generations.isCurrent("add", gen));
+    const result = await io.execute(decision.workspace, () => io.generations.isCurrent(verb, gen));
     if (result?.ok) io.added?.(decision.workspace);
     return result;
   };
@@ -175,17 +178,23 @@ export function matchWorkspaceDirs(dirs, workspaces) {
   return matches.length && matches.every(Boolean) ? matches[0] : null;
 }
 
-/** Commit the open set atomically, so interrupted writes retain the last set. */
-export function saveWorkspaceDirs(file, dirs) {
+/** Write `value` as JSON atomically (a temporary file renamed over `file`), so an interrupted
+ * write keeps the last complete file. Throws when the write fails. */
+export function writeJsonAtomic(file, value) {
   mkdirSync(dirname(file), { recursive: true });
   const temporary = `${file}.tmp`;
   try {
-    writeFileSync(temporary, JSON.stringify(dirs, null, 2), { mode: 0o600 });
+    writeFileSync(temporary, JSON.stringify(value, null, 2), { mode: 0o600 });
     renameSync(temporary, file);
   } catch (error) {
     try { rmSync(temporary, { force: true }); } catch { /* preserve original error */ }
     throw error;
   }
+}
+
+/** Commit the open set atomically, so interrupted writes retain the last set. */
+export function saveWorkspaceDirs(file, dirs) {
+  writeJsonAtomic(file, dirs);
 }
 
 /**
@@ -292,6 +301,32 @@ export function createGenerations() {
   return {
     next(verb) { const g = (gens.get(verb) || 0) + 1; gens.set(verb, g); return g; },
     isCurrent(verb, g) { return gens.get(verb) === g; },
+  };
+}
+
+/**
+ * The workspace:suggestions calls, per window (#481): each window (`scope`) has its own generation,
+ * so a newer call supersedes only that window's older one, and its own record of the paths it was
+ * last offered (the provenance its add is checked against). `forget` drops a closed window's record.
+ * @param {object} io
+ * @param {ReturnType<typeof createGenerations>} io.generations
+ * @param {() => Promise<unknown>} io.refresh   refresh the advertised set from the live server
+ * @param {() => Array<{ path: string }>} io.list  the suggestions (workspaceSuggestions)
+ */
+export function createSuggestionCalls(io) {
+  const offered = new Map();
+  return {
+    async suggest(scope) {
+      const verb = `suggestions:${scope}`;
+      const gen = io.generations.next(verb);
+      await io.refresh();
+      const suggestions = io.list();
+      if (!io.generations.isCurrent(verb, gen)) return { stale: true, suggestions: [] };
+      offered.set(scope, new Set(suggestions.map((s) => s.path)));
+      return { stale: false, suggestions };
+    },
+    offered: (scope) => offered.get(scope) ?? new Set(),
+    forget(scope) { offered.delete(scope); },
   };
 }
 
@@ -432,12 +467,12 @@ export function createOnboardOffers({ token }) {
  * @param {() => Promise<object>} io.readCli            the server's accepted CLI probe
  * @param {(cli, options) => Promise<object>} io.run    workspace-cli.mjs cliWorkspace
  * @param {(document, dir) => object} io.project        deployment-data.mjs onboardData
- * @param {(dir: string) => Promise<object>} io.add     the transactional add (fromPicker)
+ * @param {(dir: string, scope: string) => Promise<object>} io.add  the transactional add (fromPicker), for the asking window
  * @param {(ref: string) => boolean} io.validRef        workspace-cli.mjs validWorkspaceRef
  */
 export function createOnboardExecutor(io) {
   let busy = false;
-  return async function onboard(offerToken, ref) {
+  return async function onboard(offerToken, ref, scope = "") {
     if (!io.validRef(ref)) return { ok: false, code: "bad-ref", reason: "Enter the workspace repository reference (for example github.com/org/agents)." };
     if (busy) return { ok: false, code: "busy", reason: "An onboarding is already running." };
     const dir = io.take(offerToken);
@@ -463,7 +498,7 @@ export function createOnboardExecutor(io) {
       try { report = io.project(result.document, dir); } catch { return { ok: false, code: "E_CLI_PROTOCOL", reason: "The installed OATS CLI returned an invalid onboarding result.", ...retry() }; }
       // The deployment exists now; registering it is the ordinary add. An add
       // failure is reported with the onboarding result, never rolled back here.
-      const added = await io.add(dir);
+      const added = await io.add(dir, scope);
       return { ok: true, onboard: report, added };
     } finally { busy = false; }
   };

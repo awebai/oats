@@ -11,6 +11,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
+import { withWindowGlobals } from './helpers/main-window-globals.mjs';
 import { JSDOM } from 'jsdom';
 import {
   persistableDirs, stageDirs, savedWorkspacePaths, restoreWorkspaceDirs, createAddExecutor, decideAdd, createGenerations,
@@ -185,7 +186,7 @@ test('the shipped api handler answers a known unserved deployment with 404 E_WOR
     unservedRefusal: createUnservedRefusal({ base: () => base, state: () => ({ allowedWs, known }), body: workspaceNotServed }),
     serverHost: { inTransition: () => false }, base: () => base, wsId: '/d/Agents/aweb', allowedWs, guard: () => {}, AbortSignal: { timeout: ms => ({ ms }) },
     fetch: async url => { fetched.push(String(url)); return { ok: true, status: 200, text: async () => JSON.stringify({ workspace: { id: '/d/Agents/aweb' }, workspaces: [{ id: '/d/Agents/aweb' }] }) }; } };
-  runInNewContext(source.slice(start, end), context);
+  runInNewContext(source.slice(start, end), withWindowGlobals(context));
   const refused = await handler(event, `/api/panel?ws=${encodeURIComponent('/d/oats-v2')}`, {});
   assert.deepEqual(refused, { ok: false, status: 404, body: workspaceNotServed('/d/oats-v2') });
   assert.deepEqual(fetched, [], 'never fetched: no other workspace\'s data answers for it');

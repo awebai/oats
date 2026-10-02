@@ -10,6 +10,8 @@ import { createTerminalIo, readTerminalCli } from '../terminal-io.mjs';
 import { runTerminalCommand } from '../terminal-exec.mjs';
 import { prepareTerminalAttachments } from '../terminal-attachments.mjs';
 import { handle, opened, confirmed, ready } from './helpers/terminal-wire.mjs';
+import { workspaceHash, trustedRendererUrl } from '../renderer/window-binding.mjs';
+import { windowTitle, clampBounds } from '../window-records.mjs';
 const { createTerminalBridge } = createRequire(import.meta.url)('../terminal-bridge.cjs');
 const flush = () => new Promise(setImmediate);
 const cli = { ok: true, bin: '/memory/oats', version: '0.24.13', remote: ['session', 'session-upload'], features: [] };
@@ -145,18 +147,20 @@ test('actual quit wiring waits for bounded cleanup once; existing signals reente
 test('actual main composition registers owner BEFORE load and uses shared broker handlers, fixed local IO and lease bridge', async () => {
   const source = readFileSync(new URL('../main.mjs', import.meta.url), 'utf8');
   const mainBlock = source.slice(source.indexOf('const terminalContext ='), source.indexOf('const tmuxRun ='));
-  const windowBlock = source.match(/async function createWindow\(\)[^]*?\n\}/)[0];
+  const windowBlock = source.match(/function createWindow\(workspaceId, record = null\)[^]*?\n\}/)[0];
   const ipc = new EventEmitter(), invokes = new Map(), inputs = [], commands = [], native = {};
   ipc.handle = (name, fn) => invokes.set(name, fn);
   const url = 'file:///memory/renderer/index.html'; let window;
-  class FakeWindow {
+  const loads = [];
+  class FakeWindow extends EventEmitter {
     constructor() {
-      window = this; this.webContents = new EventEmitter(); const wc = this.webContents;
+      super(); window = this; this.webContents = new EventEmitter(); const wc = this.webContents; wc.id = 7;
       wc.isDestroyed = () => false; wc.mainFrame = { url: 'about:blank', send: (channel, value) => renderer.emit(channel, {}, value) };
       wc.setWindowOpenHandler = () => {};
     }
-    async loadFile() {
+    async loadFile(_file, options) {
       assert.equal(this.webContents.listenerCount('did-start-navigation'), 1, 'hooks precede initial document load');
+      loads.push(options);
       this.webContents.mainFrame.url = url; this.webContents.emit('did-finish-load');
     }
   }
@@ -171,13 +175,18 @@ test('actual main composition registers owner BEFORE load and uses shared broker
     RENDERER_URL: url, ipcMain: ipc, base: () => 'http://127.0.0.1:1111', serverEpoch: 1, serverHost: { inTransition: () => false },
     app: { getPath: () => '/memory/app' }, HERE: '/memory', join, BrowserWindow: FakeWindow,
     sweepOrphanViewers() {}, shell: {}, Menu: {}, invalidateTerminalPreparations: null,
+    // One window per workspace (#481): the window's workspace, title, records and registry.
+    workspaceHash, trustedRendererUrl, windowTitle, clampBounds, servedList: [], screen: { getAllDisplays: () => [] },
+    windows: { focused() {}, remove() {}, keyOf: () => '/memory/ws' }, windowRecords: null, quitStarted: false, served: () => true,
+    windowState: () => null, suggestionCalls: { forget() {} }, lastPickChoices: new Map(), console,
     execFileSync: (bin, args) => { commands.push([bin, args]); return args.includes('new-session') ? '@81' : ''; },
     pty: { spawn: (bin, args) => { commands.push([bin, args]); return {
       onExit: cb => { native.exit = cb; }, onData: cb => { native.data = cb; },
       write: data => inputs.push(data), resize() {}, kill: () => native.exit({ exitCode: 0 }),
     }; } },
   });
-  await vm.createWindow();
+  await vm.createWindow('/memory/ws');
+  assert.deepEqual(JSON.parse(JSON.stringify(loads)), [{ hash: workspaceHash('/memory/ws').slice(1) }], 'the window loads bound to its workspace');
   const bridge = createTerminalBridge(renderer, {}), result = await bridge.termOpen({ session: 'agents', window: 'one', socket: '/memory/socket' });
   assert.equal(result.status, 'opened'); assert.ok(invokes.has('term:close')); assert.equal(ipc.listenerCount('term:close'), 0);
   const data = []; native.data('before listeners'); bridge.onTermData(result.handle, value => data.push(value));

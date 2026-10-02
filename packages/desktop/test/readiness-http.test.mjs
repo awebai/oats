@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
+import { withWindowGlobals } from './helpers/main-window-globals.mjs';
 import { apiUrl, classifyApiRoute } from '../api-url.mjs';
 import { proxyReadiness } from '../readiness-proxy.mjs';
 import { readinessFailure } from '../renderer/readiness-contract.mjs';
@@ -61,7 +62,7 @@ test('shipped main binding actually delegates readiness to guarded proxy with cu
     forgeFailure: () => ({}), lifecycleFailure: () => ({}), guard: () => assert.fail('readiness must not fall through the generic proxy'),
     proxyReadiness: (e, path, opts, deps) => { seen = { e, path, opts, c: deps.connection() }; return 'guarded'; },
     base: () => 'http://localhost:4820', wsId: 'team', allowedWs: new Set(['team']), serverEpoch: 7, unservedRefusal: () => null, serverHost: { inTransition: () => false } };
-  runInNewContext(source.slice(start, end), deps);
+  runInNewContext(source.slice(start, end), withWindowGlobals(deps));
   for (const path of ['/api/workspace-readiness', '/api/x/../workspace-readiness', '/api' + String.fromCharCode(92) + 'workspace-readiness', '/api/%2e/workspace-readiness', '/api/workspace-\treadiness']) {
     assert.equal(await handler(f.event, path, f.opts), 'guarded', `normalized ${path} uses the dedicated frame boundary`);
     assert.equal(seen.c.epoch, 7); assert.equal(seen.c.wsId, 'team');

@@ -29,13 +29,12 @@ import { apiJson } from './views/common.mjs';
 import { deploymentLabel, machineLabels, THIS_MACHINE } from './deployment-label.mjs';
 import { deploymentState } from './view-deployments.mjs';
 import { createChoicePopup } from './choice-popup.mjs';
+import { validWorkspaceId as validId } from './workspace-id.mjs';
 
 export const SPAWN_DEPLOYMENT_KEY = 'oats.desktop.spawnDeployment';
 export const SPAWN_DEPLOYMENT_VIEWS_MAX = 32;
 /** Up to this many deployments the field is a segmented control; more get the dropdown. */
 export const SPAWN_DEPLOYMENT_SEGMENTS_MAX = 3;
-const ID_MAX = 4096;
-const validId = v => typeof v === 'string' && v.length > 0 && v.length <= ID_MAX && !/[\x00-\x1f\x7f]/.test(v);
 const text = v => typeof v === 'string' && v ? v : null;
 const defaultStorage = () => { try { return globalThis.localStorage ?? null; } catch { return null; } };
 
