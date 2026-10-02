@@ -39,7 +39,9 @@ version number: `workspaceApi === 2`, `workspace-v2` and
 `served-identity` for the roster. A missing feature is
 shown by name in the header and roster; nothing is invoked optimistically.
 Matching deployments into workspace views needs `workspace-identity`; without
-it each deployment keeps a view of its own and says why.
+it each deployment keeps a view of its own under its deployment id, the switcher
+lists them as before (not under "Not matched to a workspace"), and the
+deployment list says why.
 `ACCEPT_RANGE` is `>=0.25.8 <0.36.0`: the floor admits main's kernel before
 0.26.0 was tagged, the ceiling admits 0.27 (the harness rename, gated on feature
 `harness`) through 0.30 (team model v2, gated on feature `team-model-2`; the
@@ -189,12 +191,18 @@ deployments each of them says which under its heading ("On This Mac ·
 `/api/panel?ws=<view id | deployment id>` answers a view. A deployment id
 answers the view that holds it; no `?ws=` answers the first view.
 
-- `workspace` is the view (`id`, `name`, and `key` and `teamId` when it is
-  matched). `deployment`, `error` and the stamps are the primary
+- `workspace` is the view (`id`, `name`, `primary`, and `key` and `teamId`
+  when it is matched). `primary` is the primary deployment's id: a route that
+  echoes the deployment it resolved (readiness, spawn preview) is sent that id,
+  never the view id. `deployment`, `error` and the stamps are the primary
   deployment's.
 - `workspaces` is the switcher's list of views, each with its `deployments`
-  ids. Unattached views are listed under "Not matched to a workspace", with
-  their reason as secondary text.
+  ids and `deploymentLabels` (the same labels as the deployment list, so a view
+  not on screen is still named by machine). Unattached views carry `unattached`,
+  their `reason` and the `ref` they report, and are listed under "Not matched to
+  a workspace" with the reason as secondary text. Those three fields are sent
+  only when this computer's CLI has `workspace-identity`: without it nothing
+  could be matched, and the entries list as they did before views.
 - `deployments` lists every deployment of the view, even a single one:
   `{id, machine, path, label, local, reachable, identityFrom, primary,
   reason?, note?}`. `machine` is "This Mac" or the server's label, else its

@@ -123,7 +123,10 @@ feature (OATS 0.36.0); without it each deployment has its own entry.
   read other machines. A server that can't be reached stays under the
   workspace it last reported, marked as not reached.
 - **Not matched to a workspace.** A deployment that can't be matched is
-  listed on its own under that heading in the switcher, with its reason.
+  listed on its own under that heading in the switcher, with its reason. When
+  this computer's OATS is too old to report workspaces, nothing can be matched:
+  each deployment is listed on its own, as before, and its deployment list
+  says to update OATS.
 - **Actions.** Everything you do to an instance goes to that instance's own
   deployment. Workspace-wide pages (Setup, Capabilities, Sync, Automations,
   Schedules, Teams configuration) act on the workspace's first deployment on

@@ -115,9 +115,12 @@ The shape is the lead's (0.30 D2 review):
   barrier (an open form, a pending confirmation, or focus inside the page).
 - The card's summary is "N members" or "N members · M on other machines", and nothing for none.
 
-**Where to run** (the spawn dialog, at the form's top level just above Relationship): "This computer",
-then each registered server (`/api/servers`).
-It takes its disabled states from this route's `servers` (the current view's groups), using the
+**Where to run** (the spawn dialog, at the form's top level just above Relationship), in a view with
+one deployment: "This computer", then each registered server (`/api/servers`). In a view with two or
+more deployments the **Deployment** field replaces it (`renderer/spawn-deployment-field.mjs`; see
+[the deployment model](desktop-deployment-model.md)).
+It takes its disabled states from this route's `servers`, read for every view that holds a remote
+deployment (a server's registered group may belong to another view than the one on screen), using the
 registered group of each server: "(not registered)" when the server has groups but none is the
 registration's, or "(not reached)". A server with no group in the view (before its first answer, or
 running another workspace) stays enabled: nothing is guessed.
