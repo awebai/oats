@@ -114,13 +114,14 @@ test("a capability command gets the same team and workspace facts from a home as
     name: "northwind",
     souls: { dev: { soul: { capabilities: { "acme.env": { from: "here" } } } } },
     capabilities: { "acme.env": { manifest: { command: "envprobe", commands: { show: "show.mjs" } }, files: { "show.mjs": probe } } },
+    workspace: { localTeams: true },
     local: { teams: { mine: { team: "mine:me.aweb.ai" } }, defaultTeam: "mine" },
   });
   t.after(fx.cleanup);
-  // Team model v2: the default and the soul's teams here; the pre-0.30 names never reach it, even ambient.
+  // Team model 3: the default and the soul's teams here; the pre-0.30 names never reach it, even ambient.
   const expected = { OATS_TEAM_NAME: "", OATS_TEAM_SCOPE: fx.dep, OATS_WORKSPACE_NAME: "northwind", OATS_WORKSPACE_KEY: fx.key,
     OATS_DEFAULT_TEAM: "mine", OATS_DEFAULT_TEAM_ID: "mine:me.aweb.ai", OATS_DEFAULT_TEAM_FROM: "deployment",
-    OATS_TEAMS: JSON.stringify([{ label: "mine", team: "mine:me.aweb.ai", default: true, from: "local" }]) };
+    OATS_TEAMS: JSON.stringify([{ label: "mine", team: "mine:me.aweb.ai", default: true, from: "local", via: ["default", "local"] }]) };
   const noHome = { OATS_INSTANCE_HOME: "", PI_AGENT_HOME: "", OATS_HOME: "", OATS_TEAM_NAME: "ambient", OATS_WORKSPACE_NAME: "ambient", OATS_TEAM_ID: "ambient", OATS_TEAM_LABEL: "ambient" };
   const fromDeployment = fx.cli(["envprobe", "show", "--soul", "dev", "--json"], { env: noHome });
   assert.equal(fromDeployment.status, 0, fromDeployment.stdout + fromDeployment.stderr);

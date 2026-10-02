@@ -5,6 +5,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import YAML from "yaml";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { packageRepo } from "./helpers/package-repo.mjs";
 
@@ -70,10 +72,9 @@ test("3 + 11. oats capabilities: layer and description on every row, package row
 
 test("4. oats souls: spawnable, or the refusal a spawn would meet (resolution, souls.disabled), computed without spawning", (t) => {
   const fx = v2Deployment({
-    souls: { dev: {}, broken: { soul: { capabilities: { nope: { from: "here" } } } }, clash: {}, off: {} },
+    souls: { dev: {}, broken: { soul: { capabilities: { nope: { from: "here" } } } }, off: {} },
     capabilities: { "acme.x": { manifest: {} } },
-    // clash's default is a team it is not in here: the refusal its spawn meets (team model v2).
-    local: { souls: { disabled: ["off"], default: { clash: "a" } } },
+    local: { souls: { disabled: ["off"] } },
   });
   t.after(fx.cleanup);
   fx.commit({ "oats-workspace.yaml": { yaml: { schemaVersion: 2, name: "fixture", members: [fx.ref], teams: { global: { description: "g" }, a: { description: "a" }, b: { description: "b" } },
@@ -81,7 +82,7 @@ test("4. oats souls: spawnable, or the refusal a spawn would meet (resolution, s
   assert.equal(fx.cli(["sync", "--json"]).status, 0);
   const rows = Object.fromEntries(ok(fx.cli(["souls", "--json"])).souls.map((s) => [s.name, s]));
   assert.deepEqual([rows.dev.spawnable, rows.dev.problem], [true, null]);
-  for (const [name, code] of [["broken", "E_CAPABILITY_MISSING"], ["clash", "E_TEAM_NOT_ELIGIBLE"], ["off", "E_SOUL_DISABLED"]]) {
+  for (const [name, code] of [["broken", "E_CAPABILITY_MISSING"], ["off", "E_SOUL_DISABLED"]]) {
     assert.equal(rows[name].spawnable, false, name);
     assert.equal(rows[name].problem.code, code, `${name}: ${JSON.stringify(rows[name].problem)}`);
     assert.equal(typeof rows[name].problem.message, "string");
@@ -89,6 +90,11 @@ test("4. oats souls: spawnable, or the refusal a spawn would meet (resolution, s
     const spawn = fx.cli(["spawn", name, "--preview", "--json"]);
     assert.equal(spawn.json().error.code, code, `${name} spawn: ${spawn.stdout}`);
   }
+  // Team model 3: a team refusal is the deployment's (local teams the workspace does not allow), so it is every soul's.
+  writeFileSync(join(fx.dep, "oats-local.yaml"), YAML.stringify({ schemaVersion: 2, workspace: fx.ref, defaultTeam: "a" }));
+  const closed = ok(fx.cli(["souls", "--json"])).souls.find((x) => x.name === "dev");
+  assert.deepEqual([closed.spawnable, closed.problem.code], [false, "E_WORKSPACE_SCHEMA"]);
+  assert.equal(fx.cli(["spawn", "dev", "--preview", "--json"]).json().error.details.reason, "local-teams-closed");
 });
 
 test("5 + 6. workspace status: the workspace defaults as rows; this computer's clones (and the rule that found each), disabled souls and lock", (t) => {

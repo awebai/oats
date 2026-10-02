@@ -37,6 +37,11 @@ test.before(async () => {
   base = mkdtempSync(join(tmpdir(), "oats-max-age-"));
   if (/[\s@]/.test(base)) throw new Error(`tmpdir ${base} contains whitespace or @`);
   fx = await buildNorthwind(join(base, "fx"));
+  // Team model 3: these tests edit this deployment's local teams, which the workspace must allow.
+  await moveMember(fx, "agents", async (work, { fs, path }) => {
+    const file = path.join(work, "oats-workspace.yaml");
+    await fs.writeFile(file, `${await fs.readFile(file, "utf8")}localTeams: true\n`);
+  }, { message: "agents: allow local teams" });
   const catalogFile = join(base, "catalog.json");
   writeFileSync(catalogFile, JSON.stringify({ packages: fx.catalog }, null, 2));
   mkdirSync(join(base, "home"));
@@ -104,10 +109,6 @@ test("structural refusal: every other command, every edit form and --server refu
     [["teams", "add", "desk", "--team", "local:desk.example"], refusedBy("teams add")],
     [["teams", "remove", "desk"], refusedBy("teams remove")],
     [["teams", "default", "desk"], refusedBy("teams default")],
-    [["soul", "teams", "release-manager", "--add", "desk"], refusedBy("soul teams --add")],
-    [["soul", "teams", "release-manager", "--remove", "desk"], refusedBy("soul teams --remove")],
-    [["soul", "teams", "release-manager", "--default", "desk"], refusedBy("soul teams --default")],
-    [["soul", "teams", "release-manager", "--clear-default"], refusedBy("soul teams --clear-default")],
     [["workspace", "validate"], refusedBy("workspace validate")],
     [["doctor"], refusedBy("doctor")],
     [["status", "--server", "http://127.0.0.1:9"], "--max-age cannot be combined with --server: observation reuse is local to this machine"],
@@ -120,6 +121,18 @@ test("structural refusal: every other command, every edit form and --server refu
       assert.equal(r.status, 1, `${argv.join(" ")}: ${r.stdout}${r.stderr}`);
       assert.deepEqual(JSON.parse(r.stdout).error, { code: "E_BAD_ARGS", message }, `${argv.join(" ")} ${flagArgs.join(" ")}`);
     }
+  }
+  // The removed `soul teams` edit flags (0.37.0) answer their own refusal, before --max-age is judged.
+  const removedFlags = [
+    [["soul", "teams", "release-manager", "--add", "desk"], { code: "E_BAD_ARGS", message: `oats soul teams --add was removed in 0.37.0 (team model 3): which teams a soul may join, and its default, are souls: in oats-workspace.yaml (a PR to the workspace file)`, details: { flag: "--add", replacement: "souls: in oats-workspace.yaml (a PR to the workspace file)" } }],
+    [["soul", "teams", "release-manager", "--remove", "desk"], { code: "E_BAD_ARGS", message: `oats soul teams --remove was removed in 0.37.0 (team model 3): which teams a soul may join, and its default, are souls: in oats-workspace.yaml (a PR to the workspace file)`, details: { flag: "--remove", replacement: "souls: in oats-workspace.yaml (a PR to the workspace file)" } }],
+    [["soul", "teams", "release-manager", "--default", "desk"], { code: "E_BAD_ARGS", message: `oats soul teams --default was removed in 0.37.0 (team model 3): which teams a soul may join, and its default, are souls: in oats-workspace.yaml (a PR to the workspace file)`, details: { flag: "--default", replacement: "souls: in oats-workspace.yaml (a PR to the workspace file)" } }],
+    [["soul", "teams", "release-manager", "--clear-default"], { code: "E_BAD_ARGS", message: `oats soul teams --clear-default was removed in 0.37.0 (team model 3): which teams a soul may join, and its default, are souls: in oats-workspace.yaml (a PR to the workspace file)`, details: { flag: "--clear-default", replacement: "souls: in oats-workspace.yaml (a PR to the workspace file)" } }],
+  ];
+  for (const [argv, error] of removedFlags) {
+    const r = oats([...argv, "--max-age", "60", "--json"]);
+    assert.equal(r.status, 1, `${argv.join(" ")}: ${r.stdout}${r.stderr}`);
+    assert.deepEqual(JSON.parse(r.stdout).error, error, argv.join(" "));
   }
   // Text mode refuses the same way.
   const text = oats(["sync", "--max-age", "60"]);
@@ -193,8 +206,8 @@ test("observation.localRevision (Addendum 4): a digest of the local configuratio
     // Each input kind.
     json(oats(["teams", "add", "rev-a", "--team", "local:rev-a.example", "--json"]));
     moved("oats teams add");
-    json(oats(["soul", "teams", "release-manager", "--add", "rev-a", "--json"]));
-    moved("oats soul teams --add");
+    json(oats(["teams", "default", "global", "--json"]));
+    moved("oats teams default");
     editLocal((d) => { d.souls = { ...(d.souls ?? {}), launch: { "release-manager": { harness: "claude" } } }; });
     moved("souls.launch edit");
     editLocal((d) => { d.automations = { ...(d.automations ?? {}), trust: ["agents/nightly-report"] }; });
