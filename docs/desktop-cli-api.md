@@ -1229,9 +1229,38 @@ for a failure and `false` for a warning, plus the problem's own keys.
 | `default-team-changed` | warning | `recorded`, `current` | `--home` with live teams: the default changed since the spawn |
 | `E_TEAM_UNKNOWN` | failure | `label`, `at` | a reference to an undeclared label |
 | `E_TEAM_NOT_ELIGIBLE` | failure | `soul`, `label`, `at` | `souls.default` outside the soul's teams |
+| `team-model-3-migration` | warning | `condition`, `keys` | 0.36.x: what OATS 0.37.0 (team model 3) refuses, one item per condition (below) |
 
-The last two are also spawn, preview and inspect refusals, with the same
-details.
+The `E_TEAM_UNKNOWN` and `E_TEAM_NOT_ELIGIBLE` codes are also spawn, preview and
+inspect refusals, with the same details.
+
+`team-model-3-migration` is a deployment fact, so every soul's readiness
+carries it, and `oats teams` lists it once. Its `condition`:
+
+- `local-soul-teams`: `oats-local.yaml` has `souls.teams` and/or
+  `souls.default` (`keys`: `["souls.teams", "souls.default"]` as found). They
+  move to `souls:` in `oats-workspace.yaml`.
+- `local-teams-closed`: `oats-local.yaml` declares `teams` and/or
+  `defaultTeam` (`keys`: `["teams", "defaultTeam"]` as found) and the
+  workspace file does not say `localTeams: true`. The `fix` names both
+  remedies: add `localTeams: true` to the workspace file, or commit the teams
+  and `defaultTeam` there and remove them locally. Never raised in the
+  standalone view, which has no workspace rules.
+
+```json
+{"code":"team-model-3-migration","severity":"warning","condition":"local-teams-closed","keys":["teams","defaultTeam"],
+ "message":"oats-local.yaml declares teams, defaultTeam, but oats-workspace.yaml does not say localTeams: true: OATS 0.37.0 refuses local teams and a local defaultTeam unless the workspace allows them",
+ "fix":"either (a) add `localTeams: true` to oats-workspace.yaml, or (b) commit the teams and defaultTeam in oats-workspace.yaml, then remove them from oats-local.yaml"}
+```
+
+As a readiness item it is `{subject: "teams", status: "fail", required: false,
+producer: "team model", code, reason: <message>, remedy: <fix>, condition,
+keys}`. `oats doctor --json` lists the same problems under `problems[]`. Doctor
+stays offline: for `local-teams-closed` it reads only the workspace file this
+machine's parsed cache holds; when there is none, it adds no problem and says
+so in `information[]`: `"team-model-3-migration: whether oats-local.yaml
+teams/defaultTeam need localTeams: true couldn't be checked: this deployment
+hasn't observed its workspace yet; run oats sync"`.
 
 <a id="soul-launch-preferences-feature-launch-preference-oats-0300"></a>
 ## Launch preferences
