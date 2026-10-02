@@ -358,7 +358,7 @@ test('the shipped poll with the proxy\'s 20 s timeouts: the generic notice insid
 test('the deadline is the view\'s: teardown cancels it', async t => {
   const clockNow = { value: 5_000_000 }; t.mock.method(Date, 'now', () => clockNow.value);
   const u = await setup(t, { api: () => new Promise(() => {}) }); await tick();
-  const line = u.one('.hier-status'), said = line.textContent; u.dispose();
+  const line = u.one('.hier-status'); u.dispose(); const said = line.textContent;
   u.c.advance(PENDING_LIMIT_MS * 2); await tick();
   assert.equal(line.textContent, said, 'nothing fires into a torn-down view');
 });

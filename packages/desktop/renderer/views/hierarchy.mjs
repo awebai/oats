@@ -524,8 +524,9 @@ export async function refresh(s, { user = false } = {}) {
   if (!s.alive) return;
   // The deadline is its own timer on the view's window: it fires at the bound even while an unanswered
   // read holds the single-flight poll (s.loading), and a later owned observation still recovers.
-  s.pendingWatch ||= createPendingWatch({ onOverdue: subject => overdue(s, subject),
-    setTimeout: (fn, ms) => s.win.setTimeout(fn, ms), clearTimeout: id => s.win.clearTimeout(id) });
+  // (A view state without a window, a unit test's, keeps the check on each settled read only.)
+  s.pendingWatch ||= createPendingWatch(s.win ? { onOverdue: subject => overdue(s, subject),
+    setTimeout: (fn, ms) => s.win.setTimeout(fn, ms), clearTimeout: id => s.win.clearTimeout(id) } : {});
   if (user) s.pendingWatch.reset(); // a Retry restarts the bounded wait for an answer
   const myGen = workspaceGeneration(), requestedWorkspace = currentWorkspace();
   // The bounded wait (#461) runs from the first read of this deployment, on this connection, that brought
