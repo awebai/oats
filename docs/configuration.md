@@ -242,9 +242,11 @@ recipe is resolved again against the home's recorded context and every check
 runs first. With `--reselect-launch`, the launch preferences decide again
 (the home's recorded soul and this deployment's `souls.launch`). A capability that contributed harness-specific arguments must
 declare a `launch` hook to follow a harness change; otherwise the start is
-refused (`E_LAUNCH_PREPARATION`). The checks use the launch hooks' preview
-run (`OATS_LAUNCH_PREVIEW=1`). The hooks run for real only after every check
-has passed, so a start refused by preflight has run none of them for real (see
+refused (`E_LAUNCH_PREPARATION`). The checks use the preview run
+(`OATS_LAUNCH_PREVIEW=1`) of the launch hooks whose capabilities declare
+`launchPreview`. Those hooks run for real only after every check has passed,
+so a start refused by preflight has run none of them for real. Other launch
+hooks run once, for real, during the checks (see
 [capabilities.md](capabilities.md)). A launch hook's warnings do not stop
 the start: `session start|restart` print them (and answer them as
 `warnings` under `--json`), as spawn does, and each is kept as a
