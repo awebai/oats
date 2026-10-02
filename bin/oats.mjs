@@ -1885,11 +1885,12 @@ async function statusDrift(data) {
  *  OFFLINE: `key` as oats-local.yaml names it, and the team model resolved as teamModel resolves it
  *  (the default label is local; a committed team wins a collision) over the shared teams of, in order,
  *  the workspace file this run observed (`teamsFrom: "observed"`), this machine's parsed cache at the
- *  host's last observed commit ("cache": no git process), or none ("local"). A standalone view (its
- *  `standalone:`, or this run's fallback to it) reads no workspace file: its teams are local only, as
- *  spawn resolves them there. */
+ *  host's last observed commit ("cache": no git process), or none ("local"). `standalone` is the
+ *  CONFIGURED standalone view only (oats-local.yaml `standalone:`): it reads no workspace file, so its
+ *  local teams are the whole team model. A run that fell back to the standalone view (the host
+ *  unreadable) is not: its team model is the workspace's, read from the cache when it can be. */
 function workspaceIdentity(local, discovery) {
-  const standalone = (typeof local.standalone === "string" && local.standalone !== "") || discovery?.standalone === true;
+  const standalone = typeof local.standalone === "string" && local.standalone !== "";
   let shared = null, teamsFrom = "local";
   if (!standalone) {
     if (discovery?.workspace) { shared = discovery.workspace; teamsFrom = "observed"; }

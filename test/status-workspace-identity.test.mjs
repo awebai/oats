@@ -65,22 +65,28 @@ test("teamsFrom cache: the parsed cache at the last observed commit answers with
   } finally { fx.cleanup(); }
 });
 
+/** M: a member repository (no oats-workspace.yaml) whose oats-membership.yaml names the host; the host
+ *  lists it, and oats-local.yaml names M (as an operator without host access writes it). → { mRef, bare } */
+function memberNamed(fx, local) {
+  const bare = join(fx.base, "remotes", "m.git"), seed = join(fx.base, "m-seed");
+  const mRef = pathToFileURL(bare).href;
+  mkdirSync(bare, { recursive: true });
+  git(bare, "init", "-q", "--bare");
+  for (const k of ["uploadpack.allowFilter", "uploadpack.allowAnySHA1InWant"]) git(bare, "config", k, "true");
+  git(bare, "config", "maintenance.auto", "false");
+  git(fx.base, "clone", "-q", bare, seed);
+  writeFileSync(join(seed, "oats-membership.yaml"), YAML.stringify({ schemaVersion: 2, workspace: fx.ref }));
+  git(seed, "add", "-A"); git(seed, "commit", "-qm", "member"); git(seed, "push", "-q", "origin", "HEAD:main");
+  fx.commit({ "oats-workspace.yaml": { yaml: { schemaVersion: 2, name: "fixture", members: [fx.ref, mRef],
+    teams: { global: { description: "Fixture team" }, shared: { team: SHARED } }, defaults: { knowledge: "none", messaging: "none", tasks: "none" } } } });
+  writeFileSync(join(fx.dep, "oats-local.yaml"), YAML.stringify({ schemaVersion: 2, workspace: mRef, teams: { mine: { team: MINE } }, ...local }));
+  return { mRef, bare };
+}
+
 test("teamsFrom cache through a member's backlink: oats-local.yaml names a member, the cache holds its host's workspace file", () => {
   const fx = deployment();
   try {
-    // M: a member repository (no oats-workspace.yaml) whose oats-membership.yaml names the host.
-    const bare = join(fx.base, "remotes", "m.git"), seed = join(fx.base, "m-seed");
-    const mRef = pathToFileURL(bare).href;
-    mkdirSync(bare, { recursive: true });
-    git(bare, "init", "-q", "--bare");
-    for (const k of ["uploadpack.allowFilter", "uploadpack.allowAnySHA1InWant"]) git(bare, "config", k, "true");
-    git(bare, "config", "maintenance.auto", "false");
-    git(fx.base, "clone", "-q", bare, seed);
-    writeFileSync(join(seed, "oats-membership.yaml"), YAML.stringify({ schemaVersion: 2, workspace: fx.ref }));
-    git(seed, "add", "-A"); git(seed, "commit", "-qm", "member"); git(seed, "push", "-q", "origin", "HEAD:main");
-    fx.commit({ "oats-workspace.yaml": { yaml: { schemaVersion: 2, name: "fixture", members: [fx.ref, mRef],
-      teams: { global: { description: "Fixture team" }, shared: { team: SHARED } }, defaults: { knowledge: "none", messaging: "none", tasks: "none" } } } });
-    writeFileSync(join(fx.dep, "oats-local.yaml"), YAML.stringify({ schemaVersion: 2, workspace: mRef, teams: { mine: { team: MINE } }, defaultTeam: "shared" }));
+    const { mRef, bare } = memberNamed(fx, { defaultTeam: "shared" });
     const seen = fx.cli(["souls", "--json"]); // the member's workspace, read through its backlink
     assert.equal(seen.status, 0, seen.stdout + seen.stderr);
     unreachable(fx);
@@ -90,6 +96,23 @@ test("teamsFrom cache through a member's backlink: oats-local.yaml names a membe
     assert.deepEqual(git2.calls(), [`-C ${fx.dep} rev-parse --show-toplevel`], "status ran no git process beyond the local root probe");
     assert.deepEqual(ws, { reachable: true, key: mRef, standalone: false, defaultTeam: { label: "shared", team: SHARED },
       teams: { global: null, mine: MINE, shared: SHARED }, teamsFrom: "cache" });
+  } finally { fx.cleanup(); }
+});
+
+test("a run that falls back to the standalone view (the host unreadable) is not standalone: its teams come from the cache, else are unknown", async () => {
+  const fx = deployment();
+  try {
+    const { mRef } = memberNamed(fx, { defaultTeam: "shared" });
+    await fx.spawn("dev", { instance: "dev-1" }); // an instance: status discovers the workspace
+    const seen = fx.cli(["souls", "--json"]); // through the backlink: the cache now holds the host's file
+    assert.equal(seen.status, 0, seen.stdout + seen.stderr);
+    unreachable(fx); // the member stays readable: this run's discovery falls back to the standalone view
+    let ws = status(fx).workspace;
+    assert.deepEqual(ws, { reachable: true, key: mRef, standalone: false, defaultTeam: { label: "shared", team: SHARED },
+      teams: { global: null, mine: MINE, shared: SHARED }, teamsFrom: "cache" });
+    rmSync(join(fx.base, "cache"), { recursive: true, force: true }); // a host that has never read its workspace
+    ws = status(fx).workspace;
+    assert.deepEqual(ws, { reachable: true, key: mRef, standalone: false, defaultTeam: { label: "shared", team: null }, teams: { mine: MINE }, teamsFrom: "local" });
   } finally { fx.cleanup(); }
 });
 

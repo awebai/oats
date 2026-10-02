@@ -345,7 +345,7 @@ An instance subject, abridged:
 | Key | Meaning |
 |---|---|
 | `subject` | `{kind: "instance", instance, home, soul}` or `{kind: "soul", soul, repoKey, commit}` |
-| `workspace` | `{key, name, deployment, commit, standalone}`; for a home, `name` is the recorded name (`null` if the spawn predates it) |
+| `workspace` | `{key, name, deployment, commit, standalone}`; for a home, `name` is the recorded name (`null` if the spawn predates it). `standalone` is the view the subject resolves in (a fallback for an unreadable host included), unlike `oats status`'s configured-only [`standalone`](#workspace-identity-feature-workspace-identity-oats-0360) |
 | `souls` | exactly the subject's soul |
 | `layers` | `{knowledge, messaging, tasks}`, each `{id, from}` |
 | `capabilities`, `capabilitiesOff` | the resolved modules (by id) and the ones the soul turned off |
@@ -1729,12 +1729,12 @@ offline with no network, so it is there whether `reachable` is `true` or
 | Key | Meaning |
 |---|---|
 | `key` | the deployment's workspace reference exactly as `oats-local.yaml` names it (`workspace:`) |
-| `standalone` | `true` when the deployment is in the standalone view: `oats-local.yaml` sets `standalone:`, or this run fell back to it (the shape of `workspace.standalone` on [inspect](#oats-inspect)) |
+| `standalone` | `true` only when `oats-local.yaml` sets `standalone:` (the configured standalone view, whose local teams are its whole team model). A run that fell back to the standalone view because the host is unreadable is `false`: its teams are the workspace's, read through the sources below. Unlike `workspace.standalone` on [inspect](#oats-inspect), which is the view a home runs in |
 | `defaultTeam` | `{label, team}`: the label is `oats-local.yaml`'s `defaultTeam`, `team` its provider id from `teams` (`null` when that map gives none). `null` when `oats-local.yaml` names no default team |
 | `teams` | `{<label>: <provider team id> \| null}`: every team label the deployment maps, local and shared, by label; a label in both is the committed (shared) one, as [`oats teams`](#oats-teams) resolves it |
 | `teamsFrom` | where the shared teams came from: `"observed"`, the workspace file this run read; `"cache"`, this machine's cached copy at the host commit it last observed (no git process, no network; when `key` names a member, the host its cached `oats-membership.yaml` names); `"local"`, none: `teams` holds the local teams only |
 
-A standalone deployment reads no workspace file, so it is always
+A configured standalone deployment reads no workspace file, so it is always
 `teamsFrom: "local"`, with its local teams only (as spawn resolves them there).
 `oats status` only reads the workspace when an instance records modules or a
 workspace soul, so an empty deployment answers from the cache, or from local
