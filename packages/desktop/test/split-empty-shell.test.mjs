@@ -9,7 +9,7 @@ import { runInNewContext } from "node:vm";
 import { JSDOM } from "jsdom";
 import { createSelectionOwnership, wirePaneSelection } from "../renderer/selection-ownership.mjs";
 import { createIntentGate } from "../renderer/open-intent.mjs";
-import { createTerminalTab, terminalOptions } from "../renderer/terminal-tab.mjs";
+import { createTerminalTab, terminalOptions, fitTerminal, createGlyphRenderer } from "../renderer/terminal-tab.mjs";
 import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "../renderer/tab-a11y.mjs";
 import { reserveKey, whenKeyFree } from "../renderer/tab-keys.mjs";
 import { createContextPanel } from "../renderer/context-panel.mjs";
@@ -67,7 +67,7 @@ function shell(t, shellSource = source) {
     resolveTerminalOpen, terminalKey, reserveKey, whenKeyFree, wirePaneSelection, createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart,
     splitControlsState, instanceSplitPlan, instanceSplitIdentity, sameInstanceActionTarget, ...layout, ...workspaceTabs,
     projectSplitDom(els, ...args) { projections.push(els); return projectSplitDom(els, ...args); },
-    terminalOptions, terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}),
+    terminalOptions, fitTerminal, createGlyphRenderer, terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}),
     onThemeChange: () => () => {}, onTerminalTypographyChange: () => () => {}, requestAnimationFrame: fn => fn(),
     FitAddon: { FitAddon: class { fit() {} } },
     createTerminalTab: options => createTerminalTab({ ...options, observe: () => () => {} }),

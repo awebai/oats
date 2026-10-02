@@ -271,7 +271,7 @@ body {
 .ctx-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
 .ctx-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 600; line-height: 15px; }
 .ctx-meta { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ctx-repo-label { display: block; color: var(--muted); font-family: var(--mono); font-size: 10.5px; font-weight: 400; line-height: normal; }
+.ctx-repo-label { display: block; color: var(--muted); font-family: var(--mono); font-size: 11.5px; font-weight: 400; line-height: normal; }
 .ctx-runtime { width: 18px; height: 18px; flex: none; display: grid; place-items: center; border-radius: 5px;
                font-size: 9.5px; font-weight: 700; }
 /* A stopped instance's provider mark dims (design); AA text on the light pair. */
@@ -474,6 +474,11 @@ body {
    side (the operator's 2026-10-02 decision, from 32px): the content sits close
    to the pane's edges. */
 .term-wrap .xterm { width: 100%; height: 100%; padding: 0 12px; }
+/* tmux draws in xterm's alternate screen: the viewport's scrollbar never has
+   anything to scroll. Hidden, so fitTerminal (terminal-tab.mjs) reserves no
+   width for it and the left and right gutters match. */
+.term-wrap .xterm-viewport { scrollbar-width: none; }
+.term-wrap .xterm-viewport::-webkit-scrollbar { display: none; }
 .term-banner {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   background: var(--term-bg); color: var(--warn); font-size: 15px; z-index: 5;

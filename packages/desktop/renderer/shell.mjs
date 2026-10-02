@@ -37,7 +37,7 @@ import { createLifecycleDialog, lifecycleCSS } from './lifecycle-dialog.mjs';
 import { rosterKeyAction, moveTarget } from "./roster-keys.mjs";
 import { createViewLifecycle } from "./view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "./tab-keys.mjs";
-import { createTerminalTab, terminalOptions } from "./terminal-tab.mjs";
+import { createTerminalTab, terminalOptions, fitTerminal, createGlyphRenderer } from "./terminal-tab.mjs";
 import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "./tab-a11y.mjs";
 import { revealInStrip } from "./reveal-in-scrollport.mjs";
 import { createIntentGate, prepareOwnedOpen, runOpenFlow } from "./open-intent.mjs";
@@ -1660,10 +1660,13 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
   const offTypography = onTerminalTypographyChange((next) => {
     term.options.fontFamily = next.fontFamily;
     term.options.fontSize = next.fontSize;
-    requestAnimationFrame(() => { try { fit.fit(); } catch {} });
+    requestAnimationFrame(() => { try { fitTerminal(term, fit); } catch {} });
   });
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
+  // Box drawing and blocks as a native terminal draws them (WebGL, DOM fallback).
+  const glyphs = createGlyphRenderer({ term, Addon: globalThis.WebglAddon?.WebglAddon,
+    onChange: () => requestAnimationFrame(() => { try { fitTerminal(term, fit); } catch {} }) });
 
   // Composition (setup-inside-onReady, teardown symmetry) lives in
   // terminal-tab.mjs so its ordering is unit-testable (review termlc2).
@@ -1682,7 +1685,7 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
       && canActivateTab(tabs.get(made.id), currentWorkspace())
       && tabOpenIntents.ownsFocus(made.id),
     focusInput: () => tabOpenIntents.applyFocus(() => term.focus()),
-    fit: () => fit.fit(),
+    fit: () => fitTerminal(term, fit),
     // Terminal-allowlisted shortcuts (engine policy: app.palette, tabs.next/
     // prev/close, split.*, focus.leaveTerminal) must be intercepted BEFORE xterm
     // writes to the pty — its handler consumes e.g. Ctrl+Shift+P or ⌘⇧F6 and
@@ -1711,7 +1714,7 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
     // belong to the retained view and are removed only on confirmed disposal.
     confirmClose: () => tab.close(),
     onClose: () => { offTheme(); offTypography(); },
-    onShow: () => { requestAnimationFrame(() => { try { fit.fit(); } catch {} }); },
+    onShow: () => { requestAnimationFrame(() => { try { glyphs.ensure(); fitTerminal(term, fit); } catch {} }); },
     // user-initiated activation → keyboard lands in the xterm textarea
     focusContent: () => tab.focus(),
     focusOnActivate: true, // addTab's own dedup here is a user jump too
@@ -1719,7 +1722,8 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
   if (!made) { offTheme(); offTypography(); term.dispose(); return; } // lost a race to an identical tab
   made.paneEl.append(wrap);
   term.open(wrap);
-  fit.fit();
+  glyphs.ensure();
+  fitTerminal(term, fit);
 
   await tab.start();
 }

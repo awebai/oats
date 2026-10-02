@@ -85,7 +85,7 @@ Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
 | Instance panel (`panel.toggle`; no tab-bar button since spec F, the panel keeps its own collapse) | ⌥⌘B | Ctrl+Alt+B | no |
 | Theme cycle (`app.themeToggle`) | none | none | – (the palette keeps it) |
 | Keyboard shortcuts (`app.shortcuts`) | ⌘, | Ctrl+, | no |
-| Terminal zoom (`terminal.fontBigger`, `…Smaller`, `…Reset`; also Settings → Terminal; reset lands on 16px) | ⌘= ⌘- ⌘0 | Ctrl+= Ctrl+- Ctrl+0 | no |
+| Terminal zoom (`terminal.fontBigger`, `…Smaller`, `…Reset`; also Settings → Terminal; reset lands on 15px) | ⌘= ⌘- ⌘0 | Ctrl+= Ctrl+- Ctrl+0 | no |
 | Open a file read-only (`app.openFile`) | ⌘O | Ctrl+O | no |
 
 Changed from 0.30.1 on Linux/Windows: the palette (was Ctrl+K), close tab (was

@@ -1,5 +1,5 @@
 // Settings → Terminal (spec F, the operator's 2026-10-02 decision): the default
-// terminal size is 16px and every reset lands there; a stepper in Settings
+// terminal size is 15px and every reset lands there; a stepper in Settings
 // changes the size live, clamped to 9–28 and persisted, on the same store as
 // ⌘= / ⌘- / ⌘0 and the palette, so the keys and the control always agree.
 import test from "node:test";
@@ -44,24 +44,24 @@ function rig(t, stored = {}) {
 }
 const SIZE = "oats.desktop.terminal.fontSize";
 
-test("the default terminal size is 16px, and every reset (⌘0, the palette, Settings) lands on 16", t => {
+test("the default terminal size is 15px, and every reset (⌘0, the palette, Settings) lands on 15", t => {
   const r = rig(t, { [SIZE]: "20", "oats.desktop.terminal.fontFamily": "Menlo" });
-  assert.equal(r.theme.TERMINAL_FONT_SIZE, 16);
-  assert.equal(r.dom.window.getComputedStyle(r.doc.documentElement).getPropertyValue("--term-font-size").trim(), "16px");
+  assert.equal(r.theme.TERMINAL_FONT_SIZE, 15);
+  assert.equal(r.dom.window.getComputedStyle(r.doc.documentElement).getPropertyValue("--term-font-size").trim(), "15px");
   assert.equal(r.ui.input.value, "20", "a stored user size wins over the default");
   r.ui.reset.click();
-  assert.equal(r.theme.terminalTypography().fontSize, 16); assert.equal(r.stored[SIZE], undefined, "reset stores nothing");
+  assert.equal(r.theme.terminalTypography().fontSize, 15); assert.equal(r.stored[SIZE], undefined, "reset stores nothing");
   assert.equal(r.stored["oats.desktop.terminal.fontFamily"], "Menlo", "Settings resets the size only; the family is the palette's");
-  assert.equal(r.ui.input.value, "16");
-  assert.equal(r.ui.reset.textContent, "Reset to default (16)");
+  assert.equal(r.ui.input.value, "15");
+  assert.equal(r.ui.reset.textContent, "Reset to default (15)");
   r.theme.setTerminalFontSize(22); r.theme.resetTerminalTypography(); // ⌘0 and "Terminal: reset typography"
-  assert.equal(r.theme.terminalTypography().fontSize, 16);
-  assert.equal(r.ui.input.value, "16");
+  assert.equal(r.theme.terminalTypography().fontSize, 15);
+  assert.equal(r.ui.input.value, "15");
   assert.equal(shell.match(/run: \(\) => resetTerminalTypography\(\) \}/g)?.length, 2, "both shell resets use the forgetting reset");
 });
 
 test("the stepper changes the size live, clamps to 9–28 and persists; its bounds stay focusable", t => {
-  const r = rig(t);
+  const r = rig(t, { [SIZE]: "15" }); // a stored start: these steps do not depend on the default
   const heard = [];
   r.theme.onTerminalTypographyChange(value => heard.push(value.fontSize)); // what every open terminal listens to
   r.ui.bigger.click(); r.ui.bigger.click();
@@ -92,7 +92,7 @@ test("the stepper changes the size live, clamps to 9–28 and persists; its boun
 });
 
 test("⌘= / ⌘- and the stepper agree: either one moves the other", t => {
-  const r = rig(t);
+  const r = rig(t, { [SIZE]: "15" }); // a stored start: these steps do not depend on the default
   r.keys.bigger(); r.keys.bigger();
   assert.equal(r.ui.input.value, "17", "⌘= updates the open control");
   r.ui.smaller.click();
@@ -127,9 +127,9 @@ test("Settings mounts Terminal after Connections, traps Tab through its field, a
   const dom = new JSDOM('<!doctype html><body><button id="opener">Settings</button></body>', { pretendToBeVisual: true });
   t.after(() => dom.window.close());
   const doc = dom.window.document;
-  let size = 16, disposed = 0;
+  let size = 15, disposed = 0;
   const listeners = new Set();
-  const store = { read: () => size, set: v => { size = v; for (const fn of listeners) fn({ fontSize: v }); }, reset: () => store.set(16),
+  const store = { read: () => size, set: v => { size = v; for (const fn of listeners) fn({ fontSize: v }); }, reset: () => store.set(15),
     subscribe: fn => { listeners.add(fn); return () => { listeners.delete(fn); disposed++; }; } };
   const view = createConnections({ doc, desk: {}, terminalFactory: assert.fail,
     request: async () => ({ forgeApi: 1, status: "not-connected", host: "github.com", login: null, hostRef: "d".repeat(64), connectionRef: "f".repeat(64), hosts: [{ host: "github.com", hostRef: "d".repeat(64) }] }),
@@ -141,7 +141,7 @@ test("Settings mounts Terminal after Connections, traps Tab through its field, a
   assert.deepEqual([...dialog.querySelectorAll(":scope > h3, :scope > section > h3")].map(h => h.textContent), ["Connections", "GitHub", "Terminal"], "Terminal follows the Connections section (its GitHub card)");
   const controls = [...dialog.querySelectorAll("button,select,input")].filter(el => !el.hidden);
   const last = controls.at(-1);
-  assert.equal(last.textContent, "Reset to default (16)");
+  assert.equal(last.textContent, "Reset to default (15)");
   last.focus();
   last.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
   assert.equal(doc.activeElement, controls[0], "Tab wraps inside the dialog");

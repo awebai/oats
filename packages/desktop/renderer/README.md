@@ -56,11 +56,24 @@ source, version and checksum in `fonts/README.md`) so it is the same on every
 machine. `theme.css` declares it with `@font-face` (`font-display: block`) and puts
 it first in `--term-font-family` (the terminal) and `--mono` (the UI's code, paths
 and chord hints), ahead of the OS monospace stack. The terminal's default size is
-16px (`--term-font-size`, `TERMINAL_FONT_SIZE`; the operator's decision). A terminal
+15px (`--term-font-size`, `TERMINAL_FONT_SIZE`; the operator's decision). A terminal
 font or size the operator stored (`oats.desktop.terminal.fontFamily`, `…fontSize`)
 still wins. Reset typography (⌘0 / Ctrl+0, the palette) forgets both, and Settings →
 Terminal's "Reset to default" forgets the size, so the defaults apply again. Every
-size control clamps to 9–28 (`clampTerminalFontSize`). xterm measures its cell
+size control clamps to 9–28 (`clampTerminalFontSize`).
+
+A terminal tab shows its program the way a native terminal would. It renders with
+xterm's WebGL renderer (`@xterm/addon-webgl`, `createGlyphRenderer` in
+`terminal-tab.mjs`), whose built-in glyphs draw box drawing and block elements
+(Claude Code's input box, tmux borders) as thin joined strokes whatever the font;
+the DOM renderer would take them from Inconsolata, at twice the weight. A missing
+or lost WebGL context (Chromium keeps about 16) falls back to the DOM renderer,
+and showing the tab tries WebGL again. `fitTerminal` sizes the grid to the pane's
+padded box with no width kept for xterm's scrollbar (tmux draws in the alternate
+screen, so it never scrolls, and `shell.css` hides it) and centres the remainder
+across and down, in whole device pixels, like a native terminal's balanced padding.
+
+xterm measures its cell
 when a terminal is created and only re-measures on a font change, so
 `terminalTypography()` (`theme.mjs`) hands out the stack without Inconsolata
 until the face has loaded, then notifies the typography listeners with the full
@@ -671,7 +684,7 @@ section is the module map.
   `cycleKey` from `pickerCycleDirection(e, "app.palette")` (keybindings.mjs), so
   ⌘K cycles while open (Shift: up) and follows a rebind.
 - **settings-terminal.mjs** — Settings → Terminal: the font size stepper
-  (− / typed value / +, 9–28, "Reset to default (16)"), mounted by
+  (− / typed value / +, 9–28, "Reset to default (15)"), mounted by
   `connections.mjs` through its `sections` option after Connections and disposed
   on close. It reads and writes the same store as ⌘= / ⌘- / ⌘0 and the palette
   (`theme.mjs`: `setTerminalFontSize`, `resetTerminalFontSize`,
