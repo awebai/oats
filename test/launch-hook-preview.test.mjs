@@ -83,9 +83,11 @@ test("a launch preview runs launch hooks with OATS_LAUNCH_PREVIEW=1, and their c
 test("a real start runs launch hooks without OATS_LAUNCH_PREVIEW", async () => {
   const name = "hooked-start", home = await makeHome(name);
   tmux("new-session", "-d", "-s", session, "-n", "hq", "-c", home);
-  startInstanceSession(home, { env: env() });
+  // The flag is the kernel's to give: an ambient one (an `oats` run from inside a previewed hook) is not inherited.
+  process.env.OATS_LAUNCH_PREVIEW = "1";
+  try { startInstanceSession(home, { env: env() }); } finally { delete process.env.OATS_LAUNCH_PREVIEW; }
   assert.ok(await waitUntil(() => existsSync(join(home, "pid.txt")), "harness up"));
-  assert.deepEqual(realRuns(home), [{ preview: null, harness: "claude" }], "exactly one real run");
+  assert.deepEqual(runs(home), [{ preview: "1", harness: "claude" }, { preview: null, harness: "claude" }], "the preflight's preview run, then exactly one real run");
   assert.ok(readJson(join(home, "instance.json")).launch.hooks.contributions.some((c) => c.capability === "test.sidefx" && (c.env || []).includes("TEST_SIDEFX")), "the real run's contribution is recorded");
 });
 
