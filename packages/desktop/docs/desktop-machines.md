@@ -137,5 +137,6 @@ dialog).
 `test/fixtures/machines-517/` holds the kernel's own answers (spec A's
 fake-host runs: connect needing a human at git, ready, failed; `server list`
 with a known and an unknown key; the backfilling check), with their source in
-`provenance.json`. `oats aweb connect` is built to the interface's example
-until oats.aweb's capture exists.
+`provenance.json`, and oats.aweb's own `aweb connect` answers (spec B's
+fake-host tests: ready, needing a human at `aw`, failed with
+`E_TEAM_NOT_MEMBER`).

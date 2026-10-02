@@ -1,0 +1,32 @@
+{
+ "schemaVersion": 1,
+ "ok": true,
+ "result": {
+  "server": "altair-aweb",
+  "team": {
+   "label": "joined",
+   "team": "joined:example.invalid"
+  },
+  "ready": true,
+  "steps": [
+   {
+    "step": "aw",
+    "status": "done",
+    "detail": "installed aw 1.36.13 (was missing)"
+   },
+   {
+    "step": "invite",
+    "status": "done"
+   },
+   {
+    "step": "join",
+    "status": "done",
+    "detail": "root /private/var/folders/n3/7j3g9hm10sbd4j8hccsvr4wh0000gn/T/oats-aweb-120-UY33xo/.aweb-roots/joined"
+   },
+   {
+    "step": "readiness",
+    "status": "ok"
+   }
+  ]
+ }
+}

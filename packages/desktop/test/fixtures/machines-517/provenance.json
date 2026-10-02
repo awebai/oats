@@ -2,13 +2,14 @@
  "source": "oats-kernel-developer-servers-517, branch agents/oats-kernel-developer-servers-517 through c6a387d1 (spec A #517), relayed by oats-expert-juan on 2026-10-02 (aweb mail c60e49e2)",
  "how": "the kernel CLI run against its test fake host (ssh runs locally; the host is the same kernel); paths are temp dirs and keys are local/\u2026 instead of github.com/\u2026",
  "files": [
+  "aweb-connect-failed-not-member.json",
+  "aweb-connect-needs-human-aw.json",
+  "aweb-connect-ready.json",
   "connect-failed-dir-not-empty.json",
   "connect-needs-human-git.json",
   "connect-ready.json",
   "server-check-backfill.json",
   "server-list.json"
  ],
- "awaiting": [
-  "oats aweb connect --json (oats.aweb developer, spec B)"
- ]
+ "aweb": "oats aweb connect --json from oats-integrations-developer-aweb-connect-517 (spec B, branch head f868553e) fake-host tests (fake kernel and aw; fixture team joined:example.invalid), relayed by oats-expert-juan on 2026-10-02 (aweb mail bb9f4612)"
 }

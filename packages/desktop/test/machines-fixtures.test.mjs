@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { connectOutcome, registerReached, stepCommands } from '../renderer/machine-contract.mjs';
+import { connectOutcome, registerReached, stepCommands, AWEB_STEPS } from '../renderer/machine-contract.mjs';
 import { createMachines } from '../server/machines.mjs';
 import { openAddMachineDialog } from '../renderer/add-machine-dialog.mjs';
 
@@ -74,6 +74,41 @@ test('the dialog over the real answers: the needs-human remedy verbatim, then Ch
   assert.equal(git.querySelector('.machine-step-remedy').textContent, fixture('connect-needs-human-git').result.steps[2].remedy);
   assert.equal(git.querySelector('.machine-copy'), null);
   assert.equal(git.querySelector('.machine-step-state').textContent, 'needs you');
+  doc.querySelector('.machine-primary').click(); await settle();
+  assert.deepEqual(added, ['altair-deployment']);
+});
+
+// oats.aweb's own `aweb connect --json` (spec B's fake-host tests).
+test('aweb connect as oats.aweb answers it: ready, needs-human at aw (a backticked command to copy), failed with the step\'s remedy', () => {
+  const ready = connectOutcome(fixture('aweb-connect-ready'), AWEB_STEPS);
+  assert.equal(ready.ok, true); assert.equal(ready.ready, true); assert.equal(ready.id, 'altair-aweb');
+  assert.deepEqual(ready.steps, fixture('aweb-connect-ready').result.steps);
+  const needs = connectOutcome(fixture('aweb-connect-needs-human-aw'), AWEB_STEPS);
+  assert.equal(needs.ok, true); assert.equal(needs.ready, false);
+  assert.deepEqual(needs.steps.map(s => s.status), ['needs-human', 'skipped', 'skipped', 'skipped']);
+  assert.deepEqual(stepCommands(needs.steps[0].remedy), ['oats aweb connect altair-aweb --install-aw --soul dev']);
+  const raw = fixture('aweb-connect-failed-not-member'), failed = connectOutcome(raw, AWEB_STEPS);
+  assert.deepEqual(failed.error, { code: 'E_TEAM_NOT_MEMBER', message: raw.error.message });
+  assert.deepEqual(failed.steps.map(s => [s.step, s.status]), [['aw', 'ok'], ['invite', 'failed']]);
+  assert.deepEqual(stepCommands(failed.steps[1].remedy), ['oats aweb setup --join joined --invite-stdin --soul dev']);
+});
+
+test('the dialog over both real answers: connect ready, then messaging needing a human, with its command to copy; then both ready', async t => {
+  const dom = new JSDOM('<!doctype html><html><body></body></html>', { pretendToBeVisual: true });
+  const doc = dom.window.document, added = [], sent = [];
+  Object.defineProperty(dom.window.navigator, 'clipboard', { value: { writeText: async text => { sent.push(text); } } });
+  const answers = [fixture('connect-ready'), fixture('aweb-connect-needs-human-aw'), fixture('connect-ready'), fixture('aweb-connect-ready')];
+  const ctx = { api: async () => ({ ok: true, status: 200, json: async () => answers.shift() }) };
+  const ui = openAddMachineDialog(doc, { ctx, ws: 'ws:x', deployment: '/Users/j/Agents/deployment', aweb: true, onAdded: id => added.push(id) });
+  t.after(() => { ui.close(); dom.window.close(); });
+  const host = doc.querySelector('.machine-host'); host.value = 'altair'; host.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  const settle = async () => { for (let i = 0; i < 8; i++) await new Promise(r => setImmediate(r)); };
+  doc.querySelector('.machine-primary').click(); await settle();
+  const aw = doc.querySelector('[data-phase="aweb"] [data-step="aw"]');
+  assert.equal(aw.querySelector('.machine-step-state').textContent, 'needs you');
+  aw.querySelector('.machine-copy').click(); await settle();
+  assert.deepEqual(sent, ['oats aweb connect altair-aweb --install-aw --soul dev']);
+  assert.deepEqual(added, []);
   doc.querySelector('.machine-primary').click(); await settle();
   assert.deepEqual(added, ['altair-deployment']);
 });
