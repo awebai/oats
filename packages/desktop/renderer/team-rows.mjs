@@ -21,11 +21,12 @@ export function teamRow(t) {
   return { label: t.label, team: t.team, mapped: t.mapped };
 }
 
-/** The kernel's DefaultTeam (team model v2): `{label, team: <id>|null (unmapped), from: deployment|soul}`,
- * null when none is configured, or undefined when the value is not that shape. */
+/** The kernel's DefaultTeam: `{label, team: <id>|null (unmapped), from}`, `from` being `soul` or
+ * `deployment` (team model v2), or `workspace` too (team model 3: the workspace's defaultTeam). Null when
+ * none is configured, or undefined when the value is not that shape. */
 export function defaultTeamOf(v) {
   if (v === null) return null;
-  if (!record(v) || typeof v.label !== 'string' || !LABEL.test(v.label) || !(v.team === null || teamId(v.team)) || !['deployment', 'soul'].includes(v.from)) return undefined;
+  if (!record(v) || typeof v.label !== 'string' || !LABEL.test(v.label) || !(v.team === null || teamId(v.team)) || !['deployment', 'soul', 'workspace'].includes(v.from)) return undefined;
   return { label: v.label, team: v.team, from: v.from };
 }
 /** A list of v2 TeamRows (the default first), or undefined when any row is not one. */

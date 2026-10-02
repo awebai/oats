@@ -366,19 +366,23 @@ export function onboardData(document, dir) {
 const labels = value => { const out = array(value, 256); check(out.every(l => typeof l === 'string' && TEAM_LABEL.test(l)) && new Set(out).size === out.length); return [...out]; };
 const labelOrNull = value => { check(value === null || (typeof value === 'string' && TEAM_LABEL.test(value))); return value; };
 const changed = (data, out) => { if (own(data, 'changed')) { check(typeof data.changed === 'boolean'); out.changed = data.changed; } return out; };
+/* A team readiness item: its code, severity, the kernel's message and fix, and the problem's own keys
+   (a label, a souls: key, the local-teams-closed condition with its path and keys). */
 function teamProblems(value) {
   return array(value, 256).map(row => {
-    const out = fields(row, ['code', 'label', 'severity', 'message', 'fix']);
+    const out = fields(row, ['code', 'label', 'key', 'severity', 'message', 'fix', 'at', 'condition', 'path']);
     check(text(out.code) && (out.severity === undefined || ['failure', 'warning'].includes(out.severity)));
+    if (own(row, 'keys')) out.keys = [...strings(row.keys)];
     return flags(row, ['default'], out);
   });
 }
-/** `oats teams [add|remove|default …] --json` (teamsApi 1): this deployment's teams. */
+/** `oats teams [add|remove|default …] --json`: this deployment's teams. teamsApi 1 (team-model-2, OATS
+ * 0.30–0.37) or teamsApi 2 (team-model-3, OATS 0.38), each read in its own shape. */
 export function teamsData(document, deployment) {
   check(absolute(deployment), 'E_BAD_ARGS');
   check(record(document) && document.schemaVersion === 1 && document.ok === true);
   const data = document.result;
-  check(record(data) && data.teamsApi === 1);
+  check(record(data) && (data.teamsApi === 1 || data.teamsApi === 2));
   check(data.deployment === deployment, 'E_DEPLOYMENT_SCOPE');
   const teams = array(data.teams, 256).map(row => {
     const out = fields(row, ['label', 'team', 'description', 'from', 'at']);
@@ -386,25 +390,48 @@ export function teamsData(document, deployment) {
     out.default = row.default; return out;
   });
   check(new Set(teams.map(t => t.label)).size === teams.length && teams.filter(t => t.default).length <= 1);
+  if (data.teamsApi === 2) {
+    // Team model 3: whether local teams are allowed (null: the standalone view), the DefaultTeam a soul
+    // without a souls: default gets here, and the workspace's souls: patterns as committed.
+    check(data.localTeams === null || typeof data.localTeams === 'boolean');
+    const defaultTeam = defaultTeamOf(data.defaultTeam); check(defaultTeam !== undefined);
+    check(record(data.souls) && Object.keys(data.souls).length <= 1024);
+    const souls = Object.fromEntries(Object.entries(data.souls).map(([pattern, rule]) => {
+      check(text(pattern) && pattern.length <= 256 && record(rule));
+      const out = {};
+      if (own(rule, 'default')) { check(typeof rule.default === 'string' && TEAM_LABEL.test(rule.default)); out.default = rule.default; }
+      if (own(rule, 'teams')) out.teams = rule.teams === 'any' ? 'any' : labels(rule.teams);
+      return [pattern, out];
+    }));
+    return changed(data, { teamsApi: 2, deployment, localTeams: data.localTeams, defaultTeam, teams, souls, problems: teamProblems(data.problems) });
+  }
   check(record(data.souls) && record(data.souls.teams) && record(data.souls.default));
   const map = (value, one) => Object.fromEntries(Object.entries(value).map(([key, v]) => { check(text(key) && key.length <= 256); return [key, one ? labelOrNull(v) : labels(v)]; }));
   return changed(data, { teamsApi: 1, deployment, defaultTeam: labelOrNull(data.defaultTeam), teams,
     souls: { teams: map(data.souls.teams, false), default: map(data.souls.default, true) }, problems: teamProblems(data.problems) });
 }
-const VIA = ['default', '*', 'soul'];
-/** `oats soul teams <soul>|'*' [--add …] [--remove …] [--default …] [--clear-default] --json` (soulTeamsApi 1). */
+/* Why a soul may join a team, in the kernel's order: soulTeamsApi 1 (the deployment's souls.teams) and
+   soulTeamsApi 2 (team model 3: its default, its workspace souls: pattern, a local team). */
+const VIA = { 1: ['default', '*', 'soul'], 2: ['default', 'workspace', 'local'] };
+/** `oats soul teams <soul>|'*' … --json`. soulTeamsApi 1 (team-model-2: the reply to a show or an edit)
+ * or soulTeamsApi 2 (team-model-3: read only, with the souls: keys its teams and default came from). */
 export function soulTeamsData(document) {
   check(record(document) && document.schemaVersion === 1 && document.ok === true);
   const data = document.result;
-  check(record(data) && data.soulTeamsApi === 1 && text(data.soul) && text(data.key));
+  check(record(data) && (data.soulTeamsApi === 1 || data.soulTeamsApi === 2) && text(data.soul) && text(data.key));
   const defaultTeam = defaultTeamOf(data.defaultTeam); check(defaultTeam !== undefined);
+  const via = VIA[data.soulTeamsApi];
   const teams = array(data.teams, 128).map(row => {
     const out = teamRow(row);
-    check(out && Object.hasOwn(out, 'default') && Array.isArray(row.via) && row.via.length > 0 && row.via.every(v => VIA.includes(v))
-      && new Set(row.via).size === row.via.length && row.via.every((v, i) => i === 0 || VIA.indexOf(row.via[i - 1]) < VIA.indexOf(v)));
+    check(out && Object.hasOwn(out, 'default') && Array.isArray(row.via) && row.via.length > 0 && row.via.every(v => via.includes(v))
+      && new Set(row.via).size === row.via.length && row.via.every((v, i) => i === 0 || via.indexOf(row.via[i - 1]) < via.indexOf(v)));
     return { ...out, via: [...row.via] };
   });
   check(new Set(teams.map(t => t.label)).size === teams.length);
+  if (data.soulTeamsApi === 2) {
+    const key = v => { check(v === null || (text(v) && v.length <= 256)); return v; };
+    return changed(data, { soulTeamsApi: 2, soul: data.soul, key: data.key, match: key(data.match), defaultMatch: key(data.defaultMatch), defaultTeam, teams });
+  }
   check(record(data.local));
   return changed(data, { soulTeamsApi: 1, soul: data.soul, key: data.key, defaultTeam, teams,
     local: { teams: labels(data.local.teams), default: labelOrNull(data.local.default) }, all: labels(data.all) });

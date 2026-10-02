@@ -98,10 +98,13 @@ export function teamsOperations(inspected) {
 /** Where the provider found the workspace's default team (1.16 `defaultTeam.source`):
  * `setting` = settings.oats.aweb.team named it; `root` = the messaging root's active team. */
 const DEFAULT_SOURCE = Object.freeze({ __proto__: null, setting: 'set by the workspace or host setting', root: "the messaging root's active team" });
-/** Team model v2 (0.30): the kernel's DefaultTeam `from`, set in this computer's oats-local.yaml. */
-const DEFAULT_FROM = Object.freeze({ __proto__: null, deployment: "this workspace's default on this computer", soul: "this soul's own default on this computer" });
-/** The document's default team: 0.29 `{team, source: setting|root}`, or team model v2's kernel
- * DefaultTeam `{label, team: <id>|null (unmapped), from: deployment|soul}`, or v2 `null` (none configured). */
+/** The kernel's DefaultTeam `from`: the soul's own default (team model v2: oats-local.yaml souls.default;
+ * team model 3: its souls: entry in the workspace), this computer's default (oats-local.yaml defaultTeam),
+ * or the workspace's defaultTeam (team model 3). */
+const DEFAULT_FROM = Object.freeze({ __proto__: null, deployment: "this workspace's default on this computer", soul: "this soul's own default",
+  workspace: "the workspace's default" });
+/** The document's default team: 0.29 `{team, source: setting|root}`, or the kernel's DefaultTeam
+ * `{label, team: <id>|null (unmapped), from: deployment|soul|workspace}`, or `null` (none configured). */
 const defaultTeamOk = h => h === null
   || (exact(h, ['team', 'source']) && text(h.team) && Object.hasOwn(DEFAULT_SOURCE, h.source))
   || (exact(h, ['label', 'team', 'from']) && label(h.label) && (h.team === null || text(h.team)) && Object.hasOwn(DEFAULT_FROM, h.from));
