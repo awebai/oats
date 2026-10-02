@@ -25,7 +25,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   if (isInstance) {
-    deliverOpeningTask(pi);
+    holdOpeningTask(pi);
 
     pi.on("session_compact", async (event) => {
       if (!existsSync(join(agentHome!, "STATE.md"))) return;
@@ -61,61 +61,46 @@ export default function (pi: ExtensionAPI) {
 }
 
 /**
- * The opening task reaches the transcript exactly once. pi sends the launch's
- * `@TASK.md` as the session's first prompt with no streamingBehavior, and
- * refuses it when another extension's run (the @awebai/pi welcome) holds the
- * agent. The prompt stays on pi's own path, so input processing applies once:
- * the bridge holds it in its input handler, and again in before_agent_start
- * (a run can start during its preflight), until no run is active. A run that
- * starts after the bridge's before_agent_start handler still makes pi refuse
- * it; pi 0.85.1 then settles the refused prompt while that run holds the
- * agent. On that evidence only, and once, the bridge sends the prompt as pi
- * built it again, as a followUp, when that run has settled. Every later
- * prompt is left to pi.
+ * The opening task runs once, after any turn another extension starts, as
+ * pi's input processing made it. pi sends the launch's `@TASK.md` as the
+ * session's first prompt with no streamingBehavior (pi 0.85.1
+ * modes/interactive/interactive-mode.js:816) and refuses it while another
+ * extension's run (the @awebai/pi welcome) is active. The bridge never sends
+ * or alters a message: it holds that prompt on pi's own path, in its input
+ * handler and again in before_agent_start (a run can start during the
+ * prompt's preflight), until no run is active. A run that an extension behind
+ * the bridge starts (or that starts while one awaits) in its own input or
+ * before_agent_start handling of the prompt can still make pi refuse it, and
+ * pi says nothing an extension could act on. Every later prompt is left to pi.
  */
-function deliverOpeningTask(pi: ExtensionAPI) {
-  type Content = Parameters<ExtensionAPI["sendUserMessage"]>[0];
+function holdOpeningTask(pi: ExtensionAPI) {
   let taken = false;
-  // Until the task's user message starts: whether its prompt reached
-  // before_agent_start and what pi built, whether pi refused it, and whether
-  // it was sent again.
-  let opening: { launching: boolean; content?: Content; refused: boolean; resent: boolean } | undefined;
-  const settleWaiters: (() => void)[] = [];
+  // The opening prompt has yet to reach before_agent_start.
+  let awaitingStart = false;
+  const waiters: (() => void)[] = [];
   // pi refuses a prompt while pi-agent-core holds a run (ctx.signal is that
   // run's), and one with no streamingBehavior while the session is not idle.
   const busy = (ctx: ExtensionContext) => ctx.signal !== undefined || !ctx.isIdle();
   const untilFree = async (ctx: ExtensionContext) => {
-    while (busy(ctx)) await new Promise<void>((resolve) => settleWaiters.push(resolve));
+    while (busy(ctx)) await new Promise<void>((resolve) => waiters.push(resolve));
   };
+  // Waiters re-check on agent_settled (pi 0.80.4 and later), and one
+  // macrotask after agent_end, once pi-agent-core has released the run: a pi
+  // without agent_settled never emits it.
+  const wake = () => { for (const resume of waiters.splice(0)) resume(); };
 
   pi.on("input", async (event, ctx) => {
     if (taken || event.source !== "interactive" || event.streamingBehavior !== undefined) return { action: "continue" };
     taken = true;
-    opening = { launching: false, refused: false, resent: false };
+    awaitingStart = true;
     await untilFree(ctx);
     return { action: "continue" };
   });
-  pi.on("before_agent_start", async (event, ctx) => {
-    if (!opening || opening.launching) return;
-    opening.launching = true;
-    opening.content = event.images?.length ? [{ type: "text", text: event.prompt }, ...event.images] : event.prompt;
+  pi.on("before_agent_start", async (_event, ctx) => {
+    if (!awaitingStart) return;
+    awaitingStart = false;
     await untilFree(ctx);
   });
-  pi.on("message_start", (event) => { if (opening && event.message.role === "user") opening = undefined; });
-  // Waiters re-check on agent_settled (pi 0.80.4 and later), and one
-  // macrotask after agent_end, once pi-agent-core has released the run: a pi
-  // without agent_settled never emits it.
-  const wake = () => { for (const resume of settleWaiters.splice(0)) resume(); };
   pi.on("agent_end", () => { setTimeout(wake, 0); });
-  pi.on("agent_settled", (_event, ctx) => {
-    if (opening?.launching) {
-      if (ctx.signal !== undefined) opening.refused = true;
-      else if (opening.refused && opening.resent) opening = undefined;
-      else if (opening.refused) {
-        Object.assign(opening, { launching: false, refused: false, resent: true });
-        pi.sendUserMessage(opening.content!, { deliverAs: "followUp" });
-      }
-    }
-    wake();
-  });
+  pi.on("agent_settled", wake);
 }

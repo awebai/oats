@@ -55,9 +55,11 @@ const scenarios = {
     },
   },
   "welcome-in-before-agent-start-ahead": { start: () => { hooks.beforeAgentStart = times(1, welcome); } },
+  "welcome-after-task-started": { start: () => { const once = times(1, welcome); behind.on("message_start", (event) => { if (event.message.role === "user") once(); }); } },
+  // The exception: a welcome started behind the bridge, inside its own handling of the opening prompt.
+  "welcome-in-input-behind": { start: () => { const once = times(1, welcome); behind.on("input", async () => { once(); await new Promise((resolve) => setTimeout(resolve, 10)); }); } },
   "welcome-in-before-agent-start-behind": { start: () => behind.on("before_agent_start", times(1, welcome)) },
-  "welcome-after-task-started": { start: () => behind.on("message_start", (event) => { if (event.message.role === "user") times(1, welcome)(); }) },
-  "displaced-twice": { start: () => behind.on("before_agent_start", times(2, welcome)) },
+  "input-transform-welcome-in-before-agent-start-behind": { start: () => { transformInput(); behind.on("before_agent_start", times(1, welcome)); } },
   "input-transform": { start: transformInput },
   "input-transform-welcome-first": { start: () => { transformInput(); welcome(); } },
 };

@@ -46,12 +46,13 @@ const scenarios = {
   },
   // The welcome starts during before_agent_start, in a handler ahead of the bridge's.
   "welcome-in-before-agent-start-ahead": { before: () => before.on("before_agent_start", times(1, welcome)) },
-  // The welcome starts during before_agent_start, behind the bridge's handler.
-  "welcome-in-before-agent-start-behind": { after: () => after.on("before_agent_start", times(1, welcome)) },
   // The task is accepted and its run has started when the welcome arrives.
-  "welcome-after-task-started": { after: () => after.on("message_start", (event) => { if (event.message.role === "user") times(1, welcome)(); }) },
-  // A welcome behind the bridge's before_agent_start displaces the task, and a second one its resend.
-  "displaced-twice": { after: () => after.on("before_agent_start", times(2, welcome)) },
+  "welcome-after-task-started": { after: () => { const once = times(1, welcome); after.on("message_start", (event) => { if (event.message.role === "user") once(); }); } },
+  // The exception: a welcome started behind the bridge, inside its own handling of the opening prompt.
+  // (The welcome's run starts at once; a PiHost run is too short to outlast an await here.)
+  "welcome-in-input-behind": { after: () => { const once = times(1, welcome); after.on("input", () => { once(); }); } },
+  "welcome-in-before-agent-start-behind": { after: () => after.on("before_agent_start", times(1, welcome)) },
+  "input-transform-welcome-in-before-agent-start-behind": { before: transformInput, after: () => after.on("before_agent_start", times(1, welcome)) },
   // An input transformer ahead of the bridge, without and with a running welcome.
   "input-transform": { before: transformInput },
   "input-transform-welcome-first": { before: transformInput, start: () => welcome() },
