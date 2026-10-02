@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs';
 import { cliTeams, cliSoulTeams } from '../cli-adapter.mjs';
 import { apiUrl, classifyApiRoute } from '../api-url.mjs';
 import { createTeamsBoundary, teamsFailure } from '../server/teams.mjs';
+import { deploymentDoubles } from './helpers/deployment-doubles.mjs';
 
 const read = path => JSON.parse(readFileSync(new URL(`./fixtures/${path}.json`, import.meta.url), 'utf8'));
 const DEPLOYMENT = '/fixture/base/northwind-workspace';
@@ -27,7 +28,7 @@ function http({ reply } = {}) {
   const boundary = createTeamsBoundary({ teams: (bin, a) => cliTeams(bin, a, { exec }), soulTeams: (bin, a) => cliSoulTeams(bin, a, { exec }) });
   // A writing action drops the deployment's held inspections (inspect reports a soul's teams).
   const invalidated = [], previewsInvalidated = [];
-  const deps = { createServer: fn => fn, teamsRequest: boundary.teams, soulTeamsRequest: boundary.soulTeams, teamsFailure, cliState, workspaces: () => [workspace],
+  const deps = { createServer: fn => fn, teamsRequest: boundary.teams, soulTeamsRequest: boundary.soulTeams, teamsFailure, cliState, ...deploymentDoubles(() => [workspace]),
     inspectCache: { invalidate: ws => invalidated.push(ws) }, spawnPreviewCache: { invalidate: ws => previewsInvalidated.push(ws) },
     panelData: assert.fail, collectNow: assert.fail };
   const handler = new Function(...Object.keys(deps), `${source.slice(start, end)}\nreturn server;`)(...Object.values(deps));

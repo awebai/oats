@@ -85,7 +85,7 @@ test('status → /api/panel: startedAt, modelFrom and identityAddress travel wit
 
 test('/api/agents: spawnable + problem and file; no harness/model default', () => {
   const start = source.indexOf('function agentsData('), end = source.indexOf('/* ── Model catalog', start);
-  const agentsData = new Function('workspaceById', 'workspaces', 'snapshot', 'remote', 'dirname', 'resolve', 'normalizeSoulColor',
+  const agentsData = new Function('deploymentFor', 'deployments', 'snapshot', 'remote', 'dirname', 'resolve', 'normalizeSoulColor',
     `${source.slice(start, end)}; return agentsData;`);
   const roster = deploymentStatusData(fx('status'), DEPLOYMENT), catalog = soulsData(fx('souls'));
   const snapshot = { byWs: new Map([[DEPLOYMENT, { deployment: { status: 'observed', root: roster.root, souls: roster.agents.map(({ instances: _i, ...s }) => s),

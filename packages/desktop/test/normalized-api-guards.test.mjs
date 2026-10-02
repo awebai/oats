@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
-import { apiUrl, apiInit, classifyApiRoute } from '../api-url.mjs';
+import { apiUrl, apiInit, classifyApiRoute, servedSelectors } from '../api-url.mjs';
 import { forgeProxyOptions, trustedForgeFrame, FORGE_EPOCH_HEADER } from '../forge-proxy.mjs';
 import { forgeFailure } from '../renderer/forge-contract.mjs';
 import { lifecycleFailure } from '../renderer/lifecycle-contract.mjs';
@@ -36,7 +36,7 @@ function fixture({ classify = classifyApiRoute, fetch } = {}) {
     const body = url.pathname === '/api/workspace-readiness' ? readinessView() : { marker: 'fixture-result', workspaces: [{ id: 'team' }, { id: 'other' }] };
     return { ok: true, status: 200, text: async () => JSON.stringify(body) };
   };
-  const context = { ipcMain: { handle: (_channel, fn) => handler = fn }, apiUrl, apiInit, classifyApiRoute: classify, forgeProxyOptions,
+  const context = { ipcMain: { handle: (_channel, fn) => handler = fn }, apiUrl, apiInit, servedSelectors, classifyApiRoute: classify, forgeProxyOptions,
     trustedForgeFrame, FORGE_EPOCH_HEADER, forgeFailure, lifecycleFailure,
     proxyReadiness: (event, path, opts, deps) => proxyReadiness(event, path, opts, { ...deps, fetch: fakeFetch }),
     RENDERER_URL: renderer, serverEpoch: 0, forgeEpoch: 'fixture:0', inTransition: false,

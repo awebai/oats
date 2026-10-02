@@ -220,6 +220,7 @@ function deploymentFor(wsId) {
  * instance: only an exact deployment id resolves it, never a view id. Anything else is deployment-level. */
 const namesInstance = (request) => request?.selector?.home !== undefined || request?.spec?.home !== undefined;
 function surfaceDeployment(wsId, request) {
+  if (!wsId) return undefined; // these routes name their workspace: no selector is no workspace, never the first
   return namesInstance(request) ? deployments().find((w) => w.id === wsId) : deploymentFor(wsId);
 }
 /** The forge roster's context for a view (or a deployment id, read as its view): the union of its
