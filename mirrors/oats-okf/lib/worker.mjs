@@ -354,7 +354,14 @@ function deliverRun(source,run,opts={}) {
     } catch(e) {r.error=e.message;persist(source,run);finishStatus(source,run);throw e;}
   }
   finishStatus(source,run);
-  return {status:run.status,run:run.id,processed:run.status==='processed',receipts:run.receipts};
+  return completed(run);
+}
+/** What complete answers for a delivered run. A PR the maintainer amended on
+ *  top of the delivered commit, still open, is named at its amended head. */
+function completed(run) {
+  const amended=Object.values(run.receipts).filter(r=>r.status==='delivered' && r.pr?.state==='OPEN' && r.commit && r.pr.headRefOid!==r.commit);
+  const next=amended.map(r=>`PR ${r.pr.url} is open at ${r.pr.headRefOid}, which contains the delivered commit ${r.commit}; it settles when it merges`).join('\n');
+  return {status:run.status,run:run.id,processed:run.status==='processed',receipts:run.receipts,...(next?{next}:{})};
 }
 export function complete(source,id,judgmentFile,opts={}) {
   return withWorkerLock(source,()=>{
@@ -438,7 +445,7 @@ export async function completeInBackground(source,id,judgmentFile,{receiptWithin
   if(liveDelivery(run)) return deliveryProgress(run);
   if(delivery.state==='failed') throw Object.assign(new Error(`${delivery.error.message} (delivery log: ${delivery.log}); fix the cause, then run complete again to resume, or retry --rejudge after E_BASELINE`),{code:delivery.error.code});
   if(delivery.state!=='done') fail('E_DELIVERY',`the delivery worker (pid ${delivery.pid}) stopped at "${delivery.step || delivery.state}"; run complete again to resume (log: ${delivery.log})`);
-  return {status:run.status,run:id,processed:run.status==='processed',receipts:run.receipts};
+  return completed(run);
 }
 /** The harvester's messaging alias, from its home's recorded hook meta. */
 function harvesterAlias(run) {

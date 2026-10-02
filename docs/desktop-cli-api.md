@@ -725,7 +725,7 @@ Read-only (it writes no lock):
              "souls":["rm"],"capabilities":["nw-house-style"],"publishes":null,"url":"https://github.com/nw/agents/tree/66566512…",
              "membershipFile":{"path":"oats-membership.yaml","url":"https://github.com/nw/agents/blob/66566512…/oats-membership.yaml"}}],
  "packages":[{"id":"oats.okf","version":"3.0.0","source":"catalog:oats.okf","commit":"ab897841…","integrity":"sha256-bada35…",
-              "capabilities":["oats.okf"],"souls":[],"latest":{"version":"4.1.0","ref":"v4.1.0"}}],
+              "capabilities":["oats.okf"],"souls":[],"latest":{"version":"4.1.1","ref":"v4.1.1"}}],
  "declaredPackages":["oats.framework","oats.okf"],"unsynced":["oats.framework"],"stale":[],
  "external":[{"source":"git:github.com/oss/experts@3c606e09…","soul":"security-reviewer"}],
  "problems":[],"warnings":[],
@@ -784,8 +784,8 @@ packages' capabilities and souls, sorted by name, then origin. Both carry
     "defaultTeam":{"label":"mine","team":"mine:ana.aweb.ai","from":"deployment"},
     "private":false,"path":"souls/writer","work":"directory","description":"Drafts campaigns.","harness":"pi","model":null,"harnessFrom":"kernel-default",
     "file":{"path":"souls/writer/soul.yaml","url":null},"spawnable":true,"problem":null},
-   {"name":"knowledge-maintainer","qualifiedName":"oats.okf/knowledge-maintainer","origin":"package oats.okf v4.1.0","kind":"package","package":"oats.okf",
-    "version":"4.1.0","repoKey":"github.com/awebai/oats-okf","commit":"e331a996…","teams":null,"defaultTeam":null,"private":false,
+   {"name":"knowledge-maintainer","qualifiedName":"oats.okf/knowledge-maintainer","origin":"package oats.okf v4.1.1","kind":"package","package":"oats.okf",
+    "version":"4.1.1","repoKey":"github.com/awebai/oats-okf","commit":"e1d604f7…","teams":null,"defaultTeam":null,"private":false,
     "path":"oats-package/souls/knowledge-maintainer","work":"directory","description":"Reviews harvested knowledge.","harness":"pi","model":null,
     "harnessFrom":"kernel-default","file":{"path":"oats-package/souls/knowledge-maintainer/soul.yaml","url":null},
     "spawnable":false,"problem":{"code":"E_TEAM_UNKNOWN","message":"team \"reviewers\" is not declared (oats-local.yaml#/souls/teams/…)"}}],
@@ -874,8 +874,8 @@ nothing reads a working clone.
 **The show:**
 
 ```json
-{"capabilityShowApi":1,"name":"oats.okf","kind":"package","repoKey":"github.com/awebai/oats-okf","package":"oats.okf","version":"4.1.0",
- "commit":"e331a996…","path":"oats-package/capabilities/oats-okf",
+{"capabilityShowApi":1,"name":"oats.okf","kind":"package","repoKey":"github.com/awebai/oats-okf","package":"oats.okf","version":"4.1.1",
+ "commit":"e1d604f7…","path":"oats-package/capabilities/oats-okf",
  "inject":{"path":"injects/okf.md","bytes":2422,"text":"## Knowledge: OKF\n\nYou have two kinds of knowledge. …","binary":false,"truncated":false},
  "skills":[{"name":"okf-consultation","path":"skills/okf-consultation","description":"Consulting your soul's knowledge with the `oats okf` CLI: …",
             "files":[{"path":"skills/okf-consultation/SKILL.md","bytes":6947},{"path":"skills/okf-consultation/references/consult.md","bytes":4465}],
@@ -901,7 +901,7 @@ nothing reads a working clone.
 **The `--file` answer:**
 
 ```json
-{"capabilityShowApi":1,"name":"oats.okf","kind":"package","commit":"e331a996…",
+{"capabilityShowApi":1,"name":"oats.okf","kind":"package","commit":"e1d604f7…",
  "file":{"path":"skills/okf-instance-knowledge/SKILL.md","bytes":4787,"text":"---\nname: okf-instance-knowledge\n…","binary":false,"truncated":false}}
 ```
 

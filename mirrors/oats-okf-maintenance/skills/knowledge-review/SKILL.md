@@ -133,8 +133,10 @@ The verdicts:
 - **merge**: every check passes.
 - **amend+merge**: fixable problems. Fix them yourself on the PR branch
   (supersession edits in other concepts of the same base, index/log entries,
-  wording, a missing citation), validate the whole base, commit and push to
-  the PR branch, then merge. Never rewrite the harvester's evidence citations.
+  wording, a missing citation), validate the whole base, commit on top of
+  the PR head and push to the PR branch, then merge. Never rewrite or
+  force-push the branch: `complete` accepts only a head that contains the
+  delivered commit. Never rewrite the harvester's evidence citations.
 - **request-changes**: you need the harvester's judgment (a claim you cannot
   verify from the evidence it cites). Message it
   (`notify-harvester --state question` or `--state amend-request`), and wait
