@@ -175,7 +175,7 @@ function shellRoster(t) {
     refreshPanelInstance() {}, rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} },
     workspaceLabel: createWorkspaceSwitcher({ document, selectWorkspace: (id) => selected.push(id), discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}) }),
   };
-  const s = runInNewContext(`${fn("refreshContextRoster")}\n${fn("renderWorkspaceContext")}\n({ refreshContextRoster });`, c);
+  const s = runInNewContext(`${fn("refreshContextRoster")}\n({ refreshContextRoster });`, c);
   return { c, s, document, requests, rendered, selected };
 }
 
@@ -191,7 +191,7 @@ test("shell roster: a stale stored selection adopts the served workspace, render
   assert.equal(c.tabWorkspace, SERVED.id, "tab memory follows the adoption, as for an empty selection");
   assert.equal(common.currentWorkspace(), SERVED.id);
   assert.equal(stored(), SERVED.id, "persisted");
-  assert.equal(document.getElementById("ws-deployments").hidden, true, "a reply naming no deployments lists none (#482)");
+  assert.deepEqual(c.contextDeployments, [], "a reply naming no deployments groups by none (#482)");
   // The switcher shows the served workspace active and another choice still switches.
   document.getElementById("ws-trigger").click();
   const options = [...document.querySelectorAll(".ws-option")];

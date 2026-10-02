@@ -139,7 +139,7 @@ function shell(t, { tabs = new Map(), memory = new Map(), selection }) {
     rehomeTabs, rehomeActiveTerminals, rehomeCollapsed, removeSplitTab, updated: 0,
     updateContextTabs() { c.updated++; }, showTerminalContext() { c.contextShown = true; }, activateTab() {},
   };
-  const s = runInNewContext(`${["refreshContextRoster", "renderWorkspaceContext", "rehomeWorkspaceState"].map(fn).join("\n")}\n({ refreshContextRoster, rehomeWorkspaceState });`, c);
+  const s = runInNewContext(`${["refreshContextRoster", "rehomeWorkspaceState"].map(fn).join("\n")}\n({ refreshContextRoster, rehomeWorkspaceState });`, c);
   return { c, s, requests, switched, storage, document };
 }
 
@@ -167,7 +167,7 @@ for (const [label, saved] of [["a local path", PATH], ["a remote group id", REMO
   assert.deepEqual([...u.c.collapsedInstances], [collapseKey(VIEW, "/h/dev")]);
   assert.deepEqual(u.c.spawnJobs.rows(VIEW).map((r) => [r.instance, r.deployment?.id]), [["dev-2", saved]], "a spawn job moves, its address stays");
   assert.equal(u.c.updated, 1, "the tab strip is re-projected once");
-  assert.deepEqual([...u.document.querySelectorAll(".ws-deployment-label")].map((n) => n.textContent), ["This Mac · ~/Agents/oats", "altair · ~/tsm"]);
+  assert.deepEqual(u.c.contextDeployments.map((d) => d.id), [PATH, REMOTE], "the roster learns the view's deployments");
   assert.deepEqual(u.switched, [], "an adoption, not a switch");
 });
 

@@ -14,15 +14,13 @@ const markup = `<div id="app"><aside id="sidebar">
     <span class="ws-brand-mark">${icon}</span><span class="ws-heading-copy">
       <span id="ws-name">Workspace</span>
     </span><span class="ws-chevron">${icon}</span></button></div>
-  <ul id="ws-deployments" class="ws-deployments" role="list"><li class="ws-deployment"><span class="ws-deployment-line">
-    <span class="ws-deployment-label">This Mac · ~/fixture</span><span class="ws-deployment-tag">primary</span><span class="ws-deployment-state">live</span>
-  </span><span class="ws-deployment-detail">Teams are local only on this host (standalone).</span></li></ul>
   <div class="ws-menu" hidden><input id="ws-menu-search"><div class="ws-options">
-    <button class="ws-option" aria-selected="true"><span class="ws-check">✓</span><span class="ws-option-path">/fixture/workspace</span></button>
+    <button class="ws-option" aria-selected="true"><span class="ws-option-copy"><span class="ws-option-line"><span class="ws-option-name">fixture</span>
+      <span class="deployment-mark" role="img" aria-label="1 deployment not live">${icon}</span></span><span class="ws-option-meta">This Mac · altair</span></span><span class="ws-check">✓</span></button>
   </div></div>
   <nav id="nav"><button class="nav-item active"><span class="icon">${icon}</span>Workspace</button></nav>
   <section id="instance-roster"><div class="ctx-head">Instances</div><input class="ctx-filter">
-    <div class="ctx-list"><div class="ctx-tree-row"><button class="ctx-inst active"><span class="ctx-dot on"></span>
+    <div class="ctx-list"><div class="ctx-deployment" role="heading" aria-level="3"><span class="ctx-deployment-label">altair</span></div><div class="ctx-tree-row"><button class="ctx-inst active"><span class="ctx-dot on"></span>
       <span class="ctx-copy"><span class="ctx-name">Fixture instance</span><span class="ctx-repo-label">fixture</span></span>
     </button></div></div></section>
   <div id="nav-foot"><button id="sidebar-spawn" class="primary">${icon}Spawn instance</button>
@@ -77,18 +75,22 @@ test("visual shell geometry: 264px sidebar, aligned 48px bars, 24px brand and 16
   }
   assert.equal(u.style(".ws-heading-copy").minWidth, "0px");
   assert.equal(u.style(".ws-heading-copy").flexDirection, "column");
-  for (const selector of ["#ws-name", ".ws-deployment-label"]) {
-    assert.equal(u.style(selector).whiteSpace, "nowrap");
-    assert.equal(u.style(selector).textOverflow, "ellipsis");
+  for (const selector of ["#ws-name", ".ws-option-name", ".ws-option-meta", ".ctx-deployment-label"]) {
+    assert.equal(u.style(selector).whiteSpace, "nowrap", selector);
+    assert.equal(u.style(selector).textOverflow, "ellipsis", selector);
   }
   assert.equal(u.style("#ws-name").fontSize, "13.5px");
-  // #482: the view's deployments under the switcher, aligned with the name, at the old context line's size.
-  assert.equal(u.style(".ws-deployments").fontSize, "10.5px");
-  assert.equal(u.style(".ws-deployments").padding, "6px 12px 7px 45px", "12px head padding + 24px mark + 9px gap");
-  assert.equal(u.style(".ws-deployments").listStyle, "none");
-  for (const [selector, color] of [[".ws-deployment-label", "var(--fg)"], [".ws-deployment-state", "var(--muted)"],
-    [".ws-deployment-detail", "var(--muted)"], [".ws-deployment-tag", "var(--fg)"]]) assert.equal(u.style(selector).color, color, selector);
-  assert.equal(u.style(".ws-deployment-tag").background, "var(--tag-bg)");
+  // #482 UI spec: a switcher entry is its name (with a status mark beside it) and ONE muted line of machines.
+  assert.equal(u.style(".ws-option-line").display, "flex");
+  assert.equal(u.style(".ws-option-meta").fontSize, "10.5px"); assert.equal(u.style(".ws-option-meta").color, "var(--muted)");
+  // The mark: the warning shape in --warn at the 12px icon size the filter uses, never the 16px default.
+  assert.equal(u.style(".deployment-mark").color, "var(--warn)"); assert.equal(u.style(".deployment-mark").flexShrink, "0");
+  assert.equal(u.style(".deployment-mark > .shell-icon").width, "12px");
+  // Deployment headings in the roster's group-label type (the clusters' label on the Deployments page).
+  const heading = u.style(".ctx-deployment");
+  assert.deepEqual([heading.color, heading.fontSize, heading.fontWeight, heading.textTransform, heading.letterSpacing],
+    ["var(--muted)", "11px", "650", "uppercase", "0.06em"]);
+  assert.equal(u.get("#ws-deployments"), null);
 });
 
 test("nav/footer rhythm stays separate from the 48px roster rows", t => {

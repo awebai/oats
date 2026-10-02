@@ -60,7 +60,7 @@ function shell(t, shellSource = source) {
     ctx: {},
   };
   const names = ["showStage", "setNavActive", "showTabLayer", "updateActiveContexts", "setSidebarMode", "updateContextTabs",
-    "addTab", "selectTab", "activateTab", "closeTab", "onTabKeydown", "renderSplit", "selectEmptyGroup", "renderWorkspaceContext", "restoreWorkspaceTabs", "showTerminalContext", "openViewTab"];
+    "addTab", "selectTab", "activateTab", "closeTab", "onTabKeydown", "renderSplit", "selectEmptyGroup", "restoreWorkspaceTabs", "showTerminalContext", "openViewTab"];
   const functions = names.map(name => {
     const match = shellSource.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
     assert.ok(match, `execute shipped ${name}`); return match[0];

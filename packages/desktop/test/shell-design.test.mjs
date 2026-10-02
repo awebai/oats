@@ -105,11 +105,10 @@ test("provided workspace header structure and brand artwork are decorative; choo
   assert.equal(trigger.getAttribute("aria-controls"), "ws-menu");
   assert.equal(trigger.getAttribute("aria-expanded"), "false");
   assert.ok(trigger.querySelector(".ws-heading-copy > #ws-name"));
-  // #482: the view's deployments are a list under the switcher (never inside the button), empty until a panel names them.
   assert.equal(trigger.querySelector("#ws-context"), null, "the trigger holds the name only");
-  const deployments = document.querySelector(".side-head + #ws-deployments");
-  assert.ok(deployments, "the deployment list sits right under the switcher");
-  assert.equal(deployments.getAttribute("role"), "list"); assert.equal(deployments.hidden, true); assert.equal(deployments.textContent, "");
+  // #482 UI spec: nothing between the switcher and the navigation (no deployments block).
+  assert.equal(document.getElementById("ws-deployments"), null);
+  assert.deepEqual([...document.getElementById("sidebar").children].slice(0, 3).map(el => el.id || el.className), ["side-head", "ws-menu", "nav"]);
   const mark = trigger.querySelector(".ws-brand-mark");
   assert.equal(mark.getAttribute("aria-hidden"), "true");
   const image = mark.querySelector("img.ws-brand-image");
@@ -309,26 +308,25 @@ for (const outcome of ["resolve", "reject"]) test(`reported workspace/root/host 
     renderContextRoster() {}, refreshPanelInstance() {}, rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} }, // label-only polling fixture
     workspaceLabel: createWorkspaceSwitcher({ document, selectWorkspace() {}, discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}) }),
   };
-  const s = runInNewContext(`${fn("refreshContextRoster")}\n${fn("renderWorkspaceContext")}\n({ refreshContextRoster, renderWorkspaceContext });`, c);
+  const s = runInNewContext(`${fn("refreshContextRoster")}\n({ refreshContextRoster });`, c);
   const old = s.refreshContextRoster();
   assert.equal(requests[0].path, "/api/panel?ws=A");
-  c.workspace = "B"; c.contextRosterGen++; c.workspaceLabel.reset(); s.renderWorkspaceContext(null);
+  c.workspace = "B"; c.contextRosterGen++; c.workspaceLabel.reset();
   c.workspace = "A"; c.contextRosterGen++;
   const fresh = s.refreshContextRoster();
-  const workspace = { id: "A", name: "same name", remote: true, server: 'host<&"' };
+  const workspace = { id: "A", name: 'same <b>name</b>', remote: true, server: 'host<&"' };
   const deployment = { id: 'remote:host:t', machine: 'host<&"', path: "/srv/agents", label: "~/agents", local: false, reachable: true, identityFrom: "reported", primary: true };
   requests[1].resolve({ workspace, workspaces: [workspace], deployments: [deployment], instances: [] }); await fresh;
-  const list = document.getElementById("ws-deployments");
-  const label = () => list.querySelector(".ws-deployment-label")?.textContent ?? "";
-  assert.equal(label(), 'host<&" · ~/agents', "the reported machine as text, never markup"); assert.equal(list.querySelector(".ws-deployment-label").children.length, 0);
-  if (outcome === "resolve") requests[0].resolve({ workspace, deployments: [{ ...deployment, machine: "old-host" }], instances: [] });
+  const name = document.getElementById("ws-name");
+  const machines = () => c.contextDeployments.map(d => d.machine);
+  assert.equal(name.textContent, 'same <b>name</b>', "the reported name as text, never markup"); assert.equal(name.children.length, 0);
+  assert.deepEqual(machines(), ['host<&"'], "the reported deployments group the roster");
+  if (outcome === "resolve") requests[0].resolve({ workspace: { ...workspace, name: "old name" }, workspaces: [{ ...workspace, name: "old name" }], deployments: [{ ...deployment, machine: "old-host" }], instances: [] });
   else requests[0].reject(new Error("stale failure"));
   await old;
-  assert.equal(label(), 'host<&" · ~/agents');
+  assert.equal(name.textContent, 'same <b>name</b>'); assert.deepEqual(machines(), ['host<&"']);
   assert.equal(document.querySelector(".ctx-list").textContent, "");
-  s.renderWorkspaceContext({ id: "/reported/root", team: { name: "not a membership label" } }, [{ ...deployment, id: "/reported/root", machine: "This Mac", label: "~/root", local: true }]);
-  assert.equal(label(), "This Mac · ~/root");
-  s.renderWorkspaceContext(null); assert.equal(list.textContent, ""); assert.equal(list.hidden, true);
+  assert.equal(document.getElementById("ws-trigger").title, "Active workspace: same <b>name</b>", "a remote id is never the tooltip");
 });
 
 test('White, Solarized and Dark have explicit registry/palette choices without new default chords; cycle stays named', t => {

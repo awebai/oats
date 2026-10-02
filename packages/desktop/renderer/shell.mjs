@@ -65,7 +65,7 @@ import {
   fallbackTabForContext, restoreTerminalTab,
 } from "./workspace-tabs.mjs";
 import { createWorkspaceTabMemory } from "./workspace-tab-memory.mjs";
-import { notePanel, panelDeployments, renderDeploymentList, rosterSections, deploymentHeading } from "./view-deployments.mjs";
+import { notePanel, panelDeployments, rosterSections, deploymentHeading } from "./view-deployments.mjs";
 import { onDeploymentTabRequest } from "./deployment-tabs.mjs";
 import { createViewMembership, rehomeMap, rehomeTabs, rehomeActiveTerminals, rehomeCollapsed } from "./workspace-rehome.mjs";
 import {
@@ -496,7 +496,7 @@ async function refreshContextRoster({ user = false } = {}) {
       const moved = served && owns() ? rehomeMap(served.workspaces, viewMembership).get(ws) : null;
       if (moved) { rehomeWorkspaceState(served.workspaces); setWorkspace(moved); return; }
       const current = { id: ws, name: viewMembership.name(ws) || (ws.startsWith("ws:") ? "Workspace" : ws.split("/").filter(Boolean).at(-1) || ws), team: null };
-      if (served && owns() && commitWorkspaceLabel(current, Array.isArray(served.workspaces) ? served.workspaces : [])) renderWorkspaceContext(current);
+      if (served && owns()) commitWorkspaceLabel(current, Array.isArray(served.workspaces) ? served.workspaces : []);
       return;
     }
     // No answer past the bound (the proxy timed the read out, the bridge is down): said by name.
@@ -522,12 +522,12 @@ async function refreshContextRoster({ user = false } = {}) {
     tabWorkspace = resolvedWs;
   }
   // Views (#482): state under a deployment id (a selection saved before views, an unattached
-  // deployment that matched since) moves to the view that holds it now; the "On …" lines and the
-  // switcher learn the view's deployments.
+  // deployment that matched since) moves to the view that holds it now; the "On …" lines learn the
+  // view's deployments, and the roster groups by them.
   rehomeWorkspaceState(panel.workspaces);
   notePanel(panel);
   contextDeployments = panelDeployments(panel);
-  if (commitWorkspaceLabel(panel.workspace, panel.workspaces)) renderWorkspaceContext(panel.workspace, contextDeployments);
+  commitWorkspaceLabel(panel.workspace, panel.workspaces);
   contextWorkspace = resolvedWs;
   // A failed read with no instances keeps the rows already shown for this workspace (stale), so the
   // previous list survives that reply; every other reply replaces it.
@@ -599,14 +599,6 @@ async function refreshContextRoster({ user = false } = {}) {
     renderContextRoster(contextInstances);
   }
   if (reportedFailure) rosterState?.fail(failure);
-}
-
-// Only reported context, never inferred team/membership/readiness: the view's deployments as the
-// panel lists them (#482), under the switcher, in every view (one deployment included). Nothing
-// is listed before a panel names them.
-function renderWorkspaceContext(workspace, deployments = []) {
-  renderDeploymentList(document.getElementById("ws-deployments"), workspace ? deployments : [],
-    { workspaceName: typeof workspace?.name === "string" ? workspace.name : "" });
 }
 
 function renderContextRoster(instances) {
@@ -2146,7 +2138,6 @@ function restoreWorkspaceTabs() {
   brainIntents.invalidate();
   tabOpenIntents.invalidate();
   workspaceLabel.reset();
-  renderWorkspaceContext(null);
   workspaceTabMemory.remember(tabWorkspace, { split, activeTab, sidebarMode, tabLayerVisible });
   // Hide synchronously and park ALL nodes before replacing group identities.
   // Workspace-local group ids can overlap; deleting old cells first would

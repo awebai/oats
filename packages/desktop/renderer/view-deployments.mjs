@@ -1,5 +1,5 @@
-/** A workspace view's deployments on screen (#482): which machines and folders the window shows,
- * their state in words, and the roster split by deployment when a view has two or more.
+/** A workspace view's deployments on screen (#482): their state in words, and the roster split by
+ * deployment when a view has two or more.
  *
  * The facts come only from `/api/panel`: `deployments` (`{ id, machine, path, label, local, reachable,
  * identityFrom, primary, reason?, short?, fix?, note? }`) and each row's `deployment: { id, machine, path }`. Nothing
@@ -8,9 +8,10 @@
  *
  * Also a small session store fed by every panel the renderer reads (the shell's roster poll): the
  * last deployments seen per view, for surfaces that do not read the panel themselves (the "On …"
- * line, deployment-scope-line.mjs) and the switcher's labels for views that are not on screen. */
+ * line, deployment-scope-line.mjs). */
 import { visibleClusters } from './instance-tree.mjs';
-import { deploymentLabel, shortPath, THIS_MACHINE } from './deployment-label.mjs';
+import { machineLabels, THIS_MACHINE } from './deployment-label.mjs';
+import { iconElement } from './shell-icons.mjs';
 
 const text = (v, max = 4096) => typeof v === 'string' && v.length > 0 && v.length <= max;
 
@@ -47,32 +48,6 @@ export function deploymentState(d) {
   return { key: 'unreached', text: 'not reached', detail: d?.reason || '' };
 }
 
-/** Render the view's deployments into `listEl` (the sidebar list under the switcher): one item per
- * deployment, its label, its state in text, "primary" when there are two or more, its reason and note.
- * The list is hidden when the panel names no deployment (an older server, nothing resolved yet). */
-export function renderDeploymentList(listEl, deployments, { workspaceName = '' } = {}) {
-  if (!listEl) return;
-  const doc = listEl.ownerDocument;
-  const node = (tag, value, cls) => { const el = doc.createElement(tag); if (value !== undefined) el.textContent = value; if (cls) el.className = cls; return el; };
-  const list = Array.isArray(deployments) ? deployments : [];
-  listEl.setAttribute('role', 'list'); // list-style:none drops the list role in WebKit
-  listEl.setAttribute('aria-label', workspaceName ? `Deployments of ${workspaceName}` : 'Deployments');
-  const items = list.map(d => {
-    const state = deploymentState(d), item = node('li', undefined, 'ws-deployment');
-    item.dataset.deployment = d.id; item.dataset.state = state.key;
-    const line = node('span', undefined, 'ws-deployment-line');
-    const label = node('span', deploymentLabel(d), 'ws-deployment-label'); label.title = d.path || d.id;
-    line.append(label);
-    if (isMultiDeployment(list) && d.primary) line.append(node('span', 'primary', 'ws-deployment-tag'));
-    line.append(node('span', state.text, 'ws-deployment-state'));
-    item.append(line);
-    for (const detail of [state.detail, d.note]) if (detail) item.append(node('span', detail, 'ws-deployment-detail'));
-    return item;
-  });
-  listEl.replaceChildren(...items);
-  listEl.hidden = !items.length;
-}
-
 /** The deployment a row belongs to, by the id the panel tagged it with (null when untagged). */
 const rowDeployment = row => (text(row?.deployment?.id) ? row.deployment.id : null);
 
@@ -80,8 +55,9 @@ const rowDeployment = row => (text(row?.deployment?.id) ? row.deployment.id : nu
  * heading whose groups are exactly the relation clusters the roster always drew. Two or more: one
  * section per deployment, in the panel's order, each with its own clusters (relations are recorded
  * within one deployment); a row without a known deployment (a pending spawn) joins the primary's.
- * Sections with no visible row are left out. Returns `[{ deployment|null, label|null, groups }]`,
- * a group being `{ key, label, clusters }` as before. */
+ * Sections with no visible row are left out. Each is labelled by its machine, with the path tail
+ * only when one machine holds two (deployment-label.mjs machineLabels). Returns
+ * `[{ deployment|null, label|null, groups }]`, a group being `{ key, label, clusters }` as before. */
 export function rosterSections(instances, visible, deployments) {
   const groupsOf = (all, shown) => {
     const clusters = visibleClusters(all, shown);
@@ -93,8 +69,8 @@ export function rosterSections(instances, visible, deployments) {
   };
   if (!isMultiDeployment(deployments)) return [{ deployment: null, label: null, groups: groupsOf(instances, visible) }];
   const sectionOf = splitByDeployment(deployments);
-  const all = sectionOf(instances), shown = sectionOf(visible);
-  return deployments.map(d => ({ deployment: d, label: deploymentLabel(d), all: all.get(d.id), shown: shown.get(d.id) }))
+  const all = sectionOf(instances), shown = sectionOf(visible), labels = machineLabels(deployments);
+  return deployments.map(d => ({ deployment: d, label: labels.get(d.id), all: all.get(d.id), shown: shown.get(d.id) }))
     .filter(s => s.shown.length)
     .map(s => ({ deployment: s.deployment, label: s.label, groups: groupsOf(s.all, s.shown) }));
 }
@@ -114,18 +90,28 @@ export function splitByDeployment(deployments) {
   };
 }
 
-/** A deployment heading in the sidebar roster: its label in text, "primary" in text, and a heading
- * role so a screen reader can move between deployments. */
+/** A status mark (UI spec, #482): the warning shape (never colour alone) and its words for assistive
+ * tech and as a tooltip ("not reached", "1 deployment not live"). */
+export function deploymentMark(doc, words) {
+  const mark = doc.createElement('span');
+  mark.className = 'deployment-mark'; mark.setAttribute('role', 'img'); mark.setAttribute('aria-label', words); mark.title = words;
+  mark.append(iconElement(doc, 'warning', { size: 12 }));
+  return mark;
+}
+
+/** A deployment heading in the sidebar roster, in the roster's group-label style: its machine label
+ * (the full path only as the tooltip), a status mark when it is not live, and a heading role so a
+ * screen reader can move between deployments. */
 export function deploymentHeading(doc, { deployment, label, count }) {
   const head = doc.createElement('div');
   head.className = 'ctx-deployment'; head.setAttribute('role', 'heading'); head.setAttribute('aria-level', '3');
   head.dataset.deployment = deployment.id;
-  const name = doc.createElement('span'); name.className = 'ctx-deployment-label'; name.textContent = label; name.title = deployment.path || deployment.id;
+  const name = doc.createElement('span'); name.className = 'ctx-deployment-label'; name.textContent = label;
+  if (deployment.path) name.title = deployment.path;
   head.append(name);
-  if (deployment.primary) { const tag = doc.createElement('span'); tag.className = 'ctx-deployment-tag'; tag.textContent = 'primary'; head.append(tag); }
   const state = deploymentState(deployment);
-  if (state.key !== 'live') { const s = doc.createElement('span'); s.className = 'ctx-deployment-state'; s.textContent = state.text; head.append(s); }
-  if (Number.isInteger(count)) head.setAttribute('aria-label', `${label}${deployment.primary ? ', primary' : ''}${state.key !== 'live' ? `, ${state.text}` : ''}, ${count} ${count === 1 ? 'instance' : 'instances'}`);
+  if (state.key !== 'live') head.append(deploymentMark(doc, state.text));
+  if (Number.isInteger(count)) head.setAttribute('aria-label', `${label}${state.key !== 'live' ? `, ${state.text}` : ''}, ${count} ${count === 1 ? 'instance' : 'instances'}`);
   return head;
 }
 
@@ -142,19 +128,17 @@ export function attachDeployments(projected, raw, idOf) {
   return projected;
 }
 
-/* ── the session store: the last deployments seen per view, and labels by deployment id ── */
+/* ── the session store: the last deployments seen per view ── */
 const views = new Map();    // view id -> deployments (validated)
-const labels = new Map();   // deployment id -> its label, as a panel named it
 const listeners = new Set();
 
-/** Record a panel: its view's deployments and their labels. Called for every panel the shell reads. */
+/** Record a panel: its view's deployments. Called for every panel the shell reads. */
 export function notePanel(panel) {
   const id = panel?.workspace?.id;
   if (!text(id)) return;
   const deployments = panelDeployments(panel);
   const before = JSON.stringify(views.get(id) ?? null);
   views.set(id, deployments);
-  for (const d of deployments) labels.set(d.id, deploymentLabel(d));
   if (JSON.stringify(deployments) !== before) for (const fn of [...listeners]) { try { fn(id); } catch { /* one listener must not break another */ } }
 }
 
@@ -169,15 +153,5 @@ export function viewDeployments(id) {
 /** Listen to a view's deployments changing; returns the unsubscribe. */
 export function onViewDeployments(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 
-/** A deployment id as people read it: the label a panel gave it, else what the id itself says (a local
- * path is this computer's folder; a remote group `remote:<server>:<target>` names its server). */
-export function deploymentIdLabel(id) {
-  if (!text(id)) return '';
-  if (labels.has(id)) return labels.get(id);
-  if (id.startsWith('/')) return deploymentLabel({ machine: THIS_MACHINE, label: shortPath(id) });
-  const remote = /^remote:([^:]+):/.exec(id);
-  return remote ? deploymentLabel({ machine: remote[1] }) : id;
-}
-
 /** Test seam: forget the store. */
-export function resetViewDeployments() { views.clear(); labels.clear(); }
+export function resetViewDeployments() { views.clear(); }

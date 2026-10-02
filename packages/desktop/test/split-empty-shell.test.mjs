@@ -90,7 +90,7 @@ function shell(t, shellSource = source) {
   c.splitOpenState = () => ({ split: c.split, activeId: c.activeTab, tabs: c.tabs, workspace: c.workspace, visible: c.tabLayerVisible });
   const names = ["setSidebarMode", "updateContextTabs", "showTabLayer", "showStage", "renderSplit", "selectEmptyGroup", "splitPane", "closeSplit", "restoreTerminalGroups",
     "updateSplitControls", "onTabKeydown", "addTab", "selectTab", "activateTab", "closeTab", "showTerminalContext",
-    "openTerminalTabFlow", "openTerminalTabInner", "renderWorkspaceContext", "restoreWorkspaceTabs", "focusActiveTerminal",
+    "openTerminalTabFlow", "openTerminalTabInner", "restoreWorkspaceTabs", "focusActiveTerminal",
     "syncContextPanel", "refreshPanelInstance"];
   const functions = names.map(name => {
     const match = shellSource.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));

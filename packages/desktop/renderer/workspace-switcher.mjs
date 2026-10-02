@@ -1,34 +1,46 @@
 import { createWorkspaceMark } from "./identity-marks.mjs";
 import { iconElement } from "./shell-icons.mjs";
-import { deploymentIdLabel } from "./view-deployments.mjs";
+import { deploymentMark } from "./view-deployments.mjs";
+import { pathTail } from "./deployment-label.mjs";
+import { requestDeploymentTab } from "./deployment-tabs.mjs";
 
-/** A workspace view that matched a workspace identity (#482): its id (`ws:…`) is never shown. */
-export const isViewId = (id) => typeof id === "string" && id.startsWith("ws:");
+// A choice id that is this computer's folder (a deployment from an older server, an unattached
+// one): its path may be a tooltip. Any other id (a view's `ws:…`, a remote's `remote:…`) is never
+// shown (#482).
+const isLocalPath = (id) => typeof id === "string" && id.startsWith("/");
+const short = (value, max = 256) => typeof value === "string" && value.length > 0 && value.length <= max ? value : "";
 
-/** How a choice is told apart on screen: a view by its deployments' labels ("This Mac · ~/Agents/oats,
- * altair · ~/Agents/tsm"), anything else (a deployment, an unattached view) by its id, as before. */
+const machinesOf = (choice) => Array.isArray(choice?.machines) ? choice.machines.filter((m) => short(m)) : [];
+
+/** The machines a choice's deployments are on, as one line (UI spec, #482): "This Mac · altair", from
+ * the server's `machines`. Never a path or an id: without `machines` (an older server), nothing. */
 export function workspaceChoicePlace(choice) {
-  if (!isViewId(choice?.id)) return String(choice?.id || "");
-  const deployments = Array.isArray(choice.deployments) ? choice.deployments.filter((id) => typeof id === "string" && id) : [];
-  // The server's labels when it sends them (same order as `deployments`), else what the id says.
-  const labels = Array.isArray(choice.deploymentLabels) && choice.deploymentLabels.length === deployments.length
-    && choice.deploymentLabels.every((l) => typeof l === "string" && l && l.length <= 512) ? choice.deploymentLabels : deployments.map(deploymentIdLabel);
-  return labels.join(", ") || (typeof choice.key === "string" ? choice.key : "");
+  return machinesOf(choice).join(" · ");
 }
 
 export function workspaceChoiceLabels(choices) {
   const base = choices.map((choice) => choice.name
-    || (isViewId(choice.id) ? "" : String(choice.id || "").split("/").filter(Boolean).at(-1))
+    || (isLocalPath(choice.id) ? String(choice.id).split("/").filter(Boolean).at(-1) : "")
     || "Workspace");
   const counts = new Map();
   for (const name of base) counts.set(name, (counts.get(name) || 0) + 1);
   return choices.map((choice, index) => {
     if (counts.get(base[index]) === 1) return base[index];
-    const team = choice.team?.name ? `${choice.team.name} · ` : "";
-    // Two views of one name: their workspace keys tell them apart (never a ws: id).
-    const which = isViewId(choice.id) ? (typeof choice.key === "string" && choice.key ? choice.key : workspaceChoicePlace(choice)) : choice.id;
-    return `${base[index]} — ${team}${which}`;
+    // Two choices of one name: their workspace keys tell them apart, else a folder's last two
+    // segments or the machines; never a ws: or remote: id, never a full path.
+    const which = short(choice.key, 512) || (isLocalPath(choice.id) ? pathTail(choice.id, 2) : workspaceChoicePlace(choice));
+    const suffix = [short(choice.team?.name), which].filter(Boolean).join(" · ");
+    return suffix ? `${base[index]} — ${suffix}` : base[index];
   });
+}
+
+/** The tooltip of a choice: its deployments' labels (machine and short path) when the server sends
+ * them, else a local folder's path; never an id. */
+function choiceTooltip(choice) {
+  const deployments = Array.isArray(choice?.deployments) ? choice.deployments : [];
+  const labels = Array.isArray(choice?.deploymentLabels) && choice.deploymentLabels.length === deployments.length
+    && choice.deploymentLabels.every((l) => short(l, 512)) ? choice.deploymentLabels : [];
+  return labels.join(", ") || (isLocalPath(choice?.id) ? choice.id : "");
 }
 
 /** The section the switcher lists unattached views under (#482, expert decision Q4). */
@@ -90,8 +102,10 @@ export function createWorkspaceSwitcher({
   };
   const menuItems = () => [...options.querySelectorAll(".ws-option:not([hidden])")];
   // Views first; unattached views (a deployment no workspace identity matched) after them, in their
-  // own group under UNMATCHED_SECTION with the reason (and the reference it reported) as secondary
-  // text. Filtering and Arrow/Home/End run across both (menuItems() is every shown option).
+  // own group under UNMATCHED_SECTION. Every entry is its name and ONE muted line (UI spec, #482): a
+  // view's machines, an unattached view's machine and short reason. A view with a deployment that is
+  // not live carries a status mark. Filtering and Arrow/Home/End run across both (menuItems() is
+  // every shown option).
   const unmatchedHeadingId = `ws-unmatched-${Math.random().toString(36).slice(2, 8)}`;
   const renderOptions = () => {
     const query = menuSearch.value.trim().toLocaleLowerCase();
@@ -106,10 +120,11 @@ export function createWorkspaceSwitcher({
     unmatchedHead.textContent = UNMATCHED_SECTION;
     unmatched.append(unmatchedHead);
     workspaces.forEach((workspace, index) => {
-      const place = workspaceChoicePlace(workspace);
-      const ref = workspace.unattached && typeof workspace.ref === "string" ? workspace.ref : "";
-      const reason = workspace.unattached && typeof workspace.reason === "string" ? workspace.reason : "";
-      const haystack = `${labels[index]} ${place} ${workspace.team?.name || ""} ${workspace.server || ""} ${ref} ${reason}`.toLocaleLowerCase();
+      const place = workspace.unattached
+        ? [machinesOf(workspace)[0] || "", short(workspace.short)].filter(Boolean).join(" · ")
+        : workspaceChoicePlace(workspace);
+      const notLive = !workspace.unattached && Number.isInteger(workspace.notLive) && workspace.notLive > 0 ? workspace.notLive : 0;
+      const haystack = `${labels[index]} ${place}`.toLocaleLowerCase();
       if (query && !haystack.includes(query)) return;
       const button = document.createElement("button");
       button.type = "button";
@@ -117,34 +132,35 @@ export function createWorkspaceSwitcher({
       button.setAttribute("role", "option");
       button.setAttribute("aria-selected", String(workspace.id === activeId));
       button.dataset.workspaceId = workspace.id;
-      button.title = place;
+      const tooltip = choiceTooltip(workspace);
+      if (tooltip) button.title = tooltip;
       const check = document.createElement("span");
       check.className = "ws-check";
       check.setAttribute("aria-hidden", "true");
       check.replaceChildren(...(workspace.id === activeId ? [iconElement(document, "check", { size: 14 })] : []));
       const copy = document.createElement("span");
       copy.className = "ws-option-copy";
+      const line = document.createElement("span");
+      line.className = "ws-option-line";
       const name = document.createElement("span");
       name.className = "ws-option-name";
       name.textContent = labels[index];
-      const path = document.createElement("span");
-      path.className = "ws-option-path";
-      path.textContent = place;
-      const meta = document.createElement('span'); meta.className = 'ws-option-meta';
-      meta.textContent = [typeof workspace.team?.name === 'string' ? workspace.team.name : '',
-        typeof workspace.server === 'string' && workspace.server ? `Server: ${workspace.server}` : ''].filter(Boolean).join(' · ');
-      meta.hidden = !meta.textContent;
-      copy.append(name, meta, path);
-      if (ref || reason) {
-        const why = document.createElement("span"); why.className = "ws-option-reason";
-        why.textContent = [ref ? `Reports ${ref}.` : "", reason].filter(Boolean).join(" ");
-        copy.append(why);
-      }
+      line.append(name);
+      if (notLive) line.append(deploymentMark(document, `${notLive} ${notLive === 1 ? "deployment" : "deployments"} not live`));
+      const meta = document.createElement("span");
+      meta.className = "ws-option-meta";
+      meta.textContent = place;
+      meta.hidden = !place;
+      copy.append(line, meta);
       button.append(createWorkspaceMark(document, workspace), copy, check);
       button.addEventListener("click", () => {
         if (menu.hidden || !button.isConnected || !options.contains(button)) return;
         closeMenu(true);
         if (workspace.id !== activeId) selectWorkspace(workspace.id);
+        // A deployment no workspace matched: the Deployments page opens on its tab, where the full
+        // reason and its fix are.
+        const deployment = workspace.unattached && Array.isArray(workspace.deployments) ? workspace.deployments[0] : null;
+        if (deployment) requestDeploymentTab(workspace.id, deployment);
       });
       (workspace.unattached ? unmatched : options).append(button);
     });
@@ -450,7 +466,7 @@ export function createWorkspaceSwitcher({
     const labels = workspaceChoiceLabels(workspaces);
     const activeIndex = workspaces.findIndex((candidate) => candidate.id === activeId);
     currentName.textContent = workspace ? (labels[activeIndex] || candidateName(workspace)) : "Resolving…";
-    trigger.title = activeId ? `Active workspace: ${isViewId(activeId) ? currentName.textContent : activeId}` : "Resolving active workspace";
+    trigger.title = activeId ? `Active workspace: ${isLocalPath(activeId) ? activeId : currentName.textContent}` : "Resolving active workspace";
     renderOptions();
   };
 

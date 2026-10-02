@@ -53,7 +53,7 @@ function shell(t) {
   };
   context.tabOpenIntents = createSelectionOwnership(context);
   const api = runInNewContext([
-    "setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "selectEmptyGroup", "activateTab", "renderWorkspaceContext", "restoreWorkspaceTabs",
+    "setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "selectEmptyGroup", "activateTab", "restoreWorkspaceTabs",
   ].map(shellFunction).join("\n") + "\n({ activateTab, restoreWorkspaceTabs, renderSplit });", context);
   return { ...api, context, document, tabs, switchTo(workspace) {
     context.workspace = workspace; context.generation++;

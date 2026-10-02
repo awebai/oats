@@ -28,9 +28,9 @@ const setup = (overrides = {}) => {
 const A = { id: "/org-a/oats", path: "/org-a/oats", name: "oats", team: { name: "alpha" } };
 const B = { id: "/org-b/oats", path: "/org-b/oats", name: "oats", team: { name: "beta" } };
 
-test("workspace choice labels disambiguate duplicate names with team and canonical ID", () => {
+test("workspace choice labels disambiguate duplicate names with team and the folder's last segments, never a full path (#482)", () => {
   assert.deepEqual(workspaceChoiceLabels([A, B, { id: "/docs", name: "docs" }]), [
-    "oats — alpha · /org-a/oats", "oats — beta · /org-b/oats", "docs",
+    "oats — alpha · org-a/oats", "oats — beta · org-b/oats", "docs",
   ]);
 });
 
@@ -54,12 +54,12 @@ test("workspace switcher: deferred A completing after B cannot overwrite B", asy
 test("workspace menu is searchable, disambiguated, keyboard closable, and switches explicitly", () => {
   const { dom, document, selected, controller } = setup();
   controller.begin()(B, [A, B]);
-  assert.equal(document.getElementById("ws-name").textContent, "oats — beta · /org-b/oats");
+  assert.equal(document.getElementById("ws-name").textContent, "oats — beta · org-b/oats");
   document.getElementById("ws-trigger").click();
   assert.equal(document.getElementById("ws-trigger").getAttribute("aria-expanded"), "true");
   const options = [...document.querySelectorAll(".ws-option")];
   assert.deepEqual(options.map((option) => option.querySelector(".ws-option-name").textContent), [
-    "oats — alpha · /org-a/oats", "oats — beta · /org-b/oats",
+    "oats — alpha · org-a/oats", "oats — beta · org-b/oats",
   ]);
   assert.equal(options[1].getAttribute("aria-selected"), "true");
   options[0].focus();
