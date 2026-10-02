@@ -42,7 +42,7 @@ import { parseConfigData } from "../lib/config-data.mjs";
 import * as remoteModule from "../lib/remote.mjs";
 import { activateLocalInputs, localRevision } from "../lib/local-inputs.mjs";
 import YAML from "yaml";
-import { attachArgv, checkRemote, forgetSnapshot, getServer, inspectRemote, startRemote, restartRemote, launchConfigRemote, scheduleRemote, listSnapshots, readServers, rosterGroups, routeCommand, targetOf, validateServer, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
+import { attachArgv, checkRemote, forgetSnapshot, getServer, inspectRemote, startRemote, restartRemote, launchConfigRemote, scheduleRemote, listSnapshots, readServers, reportedWorkspaceKey, rosterGroups, routeCommand, targetOf, validateServer, workspaceKeyOfStatus, workspaceMismatch, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
 import { spawnSync as spawnSyncProc } from "node:child_process";
 import { tickTriggers } from "../lib/triggers.mjs";
 import * as A from "../lib/automations.mjs";
@@ -3226,10 +3226,21 @@ function serverCmd() {
   let servers;
   try { servers = readServers(); } catch (e) { bail(e.code || "E_SERVERS_UNREADABLE", e.message); }
   if (sub === "list") {
-    const rows = Object.entries(servers).map(([id, s]) => ({ id, ...s, target: targetOf({ id, ...s }), snapshots: listSnapshots(id).length }));
-    if (JSON_MODE) { jsonOk({ file: SERVERS_FILE(), servers: rows }); return; }
+    let rows = Object.entries(servers).map(([id, s]) => ({ id, ...s, workspaceKey: s.workspaceKey ?? null, target: targetOf({ id, ...s }), snapshots: listSnapshots(id).length }));
+    // --workspace-ref: the servers of one workspace, by canonical key, and the ids whose workspace is not known yet.
+    let unknownWorkspace;
+    if (flag("workspace-ref") !== undefined) {
+      const ref = flag("workspace-ref");
+      if (ref === true) bail("E_BAD_ARGS", "--workspace-ref needs a workspace repository reference");
+      let key;
+      try { key = remoteModule.parseRepoRef(ref).key; } catch (e) { bail(e.code || "E_REPO_REF", e.message, e.details); }
+      unknownWorkspace = rows.filter((r) => r.workspaceKey === null).map((r) => r.id);
+      rows = rows.filter((r) => r.workspaceKey === key);
+    }
+    if (JSON_MODE) { jsonOk({ file: SERVERS_FILE(), servers: rows, ...(unknownWorkspace ? { unknownWorkspace } : {}) }); return; }
+    if (unknownWorkspace?.length) console.log(`  (workspace not known yet for ${unknownWorkspace.join(", ")}: oats server check <id> learns it)`);
     if (!rows.length) { console.log(`no servers registered (${shortPath(SERVERS_FILE())}) — add one with \`oats server add <id> --ssh <alias> --workspace </path>\``); return; }
-    for (const r of rows) console.log(`  ${r.id}${r.label ? `  ${r.label}` : ""}\n      ssh ${r.sshHost}  workspace ${r.workspace}  oats ${r.target.oatsPath}${r.snapshots ? `  (${r.snapshots} remote instance${r.snapshots === 1 ? "" : "s"} spawned from here)` : ""}`);
+    for (const r of rows) console.log(`  ${r.id}${r.label ? `  ${r.label}` : ""}${r.workspaceKey ? `  [${r.workspaceKey}]` : ""}\n      ssh ${r.sshHost}  workspace ${r.workspace}  oats ${r.target.oatsPath}${r.snapshots ? `  (${r.snapshots} remote instance${r.snapshots === 1 ? "" : "s"} spawned from here)` : ""}`);
     return;
   }
   const id = args[2];
@@ -3244,8 +3255,16 @@ function serverCmd() {
     if (servers[id] && !args.includes("--replace")) bail("E_SERVER_EXISTS", `server ${id} is already registered (pass --replace to overwrite; existing remote instances keep the route they were spawned with)`);
     servers[id] = entry;
     writeServers(servers);
-    if (JSON_MODE) { jsonOk({ id, ...entry, file: SERVERS_FILE() }); return; }
-    console.log(`Registered server ${id} → ssh ${entry.sshHost}, workspace ${entry.workspace} (${shortPath(SERVERS_FILE())}). Verify it with \`oats server check ${id}\`.`);
+    // The workspace key is learned from the host, never typed: written when the host answers one.
+    const warnings = [];
+    try {
+      const { key, why } = reportedWorkspaceKey(targetOf(entry), { serverId: id, timeoutMs: 60000 });
+      if (key) { entry.workspaceKey = key; writeServers(servers); }
+      else warnings.push(`workspace key unknown: ${why}; oats server check ${id} learns it once the host answers one`);
+    } catch (e) { warnings.push(`workspace key unknown: ${e.message}; oats server check ${id} learns it once the host answers`); }
+    if (JSON_MODE) { jsonOk({ id, ...entry, workspaceKey: entry.workspaceKey ?? null, file: SERVERS_FILE(), ...(warnings.length ? { warnings } : {}) }); return; }
+    console.log(`Registered server ${id} → ssh ${entry.sshHost}, workspace ${entry.workspace}${entry.workspaceKey ? ` (workspace ${entry.workspaceKey})` : ""} (${shortPath(SERVERS_FILE())}). Verify it with \`oats server check ${id}\`.`);
+    for (const w of warnings) console.error(`oats: warning: ${w}`);
     return;
   }
   if (sub === "remove") {
@@ -3264,8 +3283,13 @@ function serverCmd() {
     const remote = checkRemote(target, { serverId: id });
     const status = routeCommand(id, "status", [], { server });
     const agents = status.envelope.ok ? (status.envelope.result.agents || []).length : undefined;
-    if (JSON_MODE) { jsonOk({ id, target, remote, workspaceReachable: !!status.envelope.ok, agents, error: status.envelope.ok ? undefined : status.envelope.error }); return; }
-    console.log(`${id}: ssh ${target.sshHost} ok, remote oats ${remote.version} (envelope v${remote.schemaVersion})`);
+    // The workspace key: a contradiction is refused (never rewritten), an absent one backfilled.
+    const { key: reported } = workspaceKeyOfStatus(status.envelope);
+    if (reported && server.workspaceKey && reported !== server.workspaceKey) { const e = workspaceMismatch(id, server, reported); bail(e.code, e.message, e.details); }
+    if (reported && !server.workspaceKey) { servers[id] = { ...servers[id], workspaceKey: reported }; writeServers(servers); }
+    const workspaceKey = reported ?? server.workspaceKey ?? null;
+    if (JSON_MODE) { jsonOk({ id, target, remote, workspaceKey, workspaceReachable: !!status.envelope.ok, agents, error: status.envelope.ok ? undefined : status.envelope.error }); return; }
+    console.log(`${id}: ssh ${target.sshHost} ok, remote oats ${remote.version} (envelope v${remote.schemaVersion})${workspaceKey ? `, workspace ${workspaceKey}` : ""}`);
     console.log(status.envelope.ok ? `  workspace ${target.workspace}: ${agents} agent(s)` : `  workspace ${target.workspace}: ${status.envelope.error?.message || "not usable"}`);
     if (!status.envelope.ok) process.exit(1);
   } catch (e) { bail(e.code || "E_SSH", e.message, e.details); }

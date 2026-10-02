@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { linkExecutables } from "./helpers/host-fixture.mjs";
+import { fakeBin } from "./helpers/fake-ssh.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { dirname, join, resolve } from "node:path";
 
@@ -30,30 +30,6 @@ test.after(() => {
 });
 
 function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, c); }
-
-/** A PATH dir with: a fake ssh that logs its argv and runs the command
- *  locally through sh -c; fake pi/claude/tmux so spawn preflight passes. */
-function fakeBin(base) {
-  const bin = join(base, "bin");
-  linkExecutables(bin, ["node", "sh", "git", "which", "ps", "sed", "sleep"]);
-  const log = join(base, "ssh.log");
-  write(join(bin, "ssh"), `#!/bin/sh
-printf '%s\\n' "$@" >> ${JSON.stringify(log)}
-printf -- '--\\n' >> ${JSON.stringify(log)}
-# drop options up to and including "--", then the host, then run the command word
-while [ "$1" != "--" ]; do shift; done
-shift; shift
-exec sh -c "$1"
-`);
-  // Harnesses live OFF the PATH the fake ssh inherits, like ~/.local/bin on a
-  // real host: only a registration --path makes the remote preflight find them.
-  const tools = join(base, "remote-tools"); mkdirSync(tools, { recursive: true });
-  for (const rt of ["pi", "claude"]) write(join(tools, rt), "#!/bin/sh\nexit 0\n");
-  write(join(bin, "tmux"), "#!/bin/sh\ncase \"$1\" in -V) echo 'tmux 3.4';; esac\nexit 0\n");
-  for (const f of ["ssh", "tmux"]) chmodSync(join(bin, f), 0o755);
-  for (const f of ["pi", "claude"]) chmodSync(join(tools, f), 0o755);
-  return { bin, log, tools };
-}
 
 /** The registered "remote" workspace: a workspace deployment (oats-local.yaml
  *  over a one-repo workspace) whose soul dev works in a checkout of the member
@@ -157,7 +133,7 @@ test("oats server + --server: registry, check, remote spawn with a hostile task,
   const base = mkdtempSync("/tmp/oats-servers-"); // short: the control socket path must fit in 104 bytes
   try {
     const { bin, log, tools } = fakeBin(base);
-    const repo = remoteWorkspace();
+    const { dep: repo, key: workspaceKey } = remoteDeployment();
     // Only enumerated tools and fake ssh/tmux, not even node's parent bin
     // directory: it may contain globally installed model harnesses.
     const env = { ...process.env, PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
@@ -171,7 +147,8 @@ test("oats server + --server: registry, check, remote spawn with a hostile task,
     r = oats(env, ["server", "add", "build", "--ssh", "build-host", "--workspace", repo, "--oats", CLI, "--label", "Build box", "--json"]);
     assert.equal(r.status, 0, r.stderr);
     const reg = JSON.parse(readFileSync(join(env.OATS_HOME_DIR, "servers.json"), "utf8"));
-    assert.deepEqual(reg.servers.build, { sshHost: "build-host", workspace: repo, oatsPath: CLI, label: "Build box" });
+    // The workspace key is the host's own answer (its status --json), learned at add.
+    assert.deepEqual(reg.servers.build, { sshHost: "build-host", workspace: repo, oatsPath: CLI, label: "Build box", workspaceKey });
     r = oats(env, ["server", "add", "build", "--ssh", "other", "--workspace", repo, "--json"]);
     assert.notEqual(r.status, 0); assert.equal(r.json().error.code, "E_SERVER_EXISTS");
     r = oats(env, ["server", "add", "bad", "--ssh", "root@x", "--workspace", repo, "--json"]);
