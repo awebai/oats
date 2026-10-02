@@ -111,27 +111,41 @@ non-following) `oats-local.yaml`; nothing else counts (`wsValidate` in
 
 A window never waits silently on "Reading the deployment…":
 
-- **Not served.** The server answers an explicit `?ws=` it does not serve on
-  `/api/panel` and `/api/agents` with 404 `{ error, code:
+- **Not served.** The server answers any explicit `?ws=` it does not serve
+  (a path, a bare id, a remote it no longer has) on `/api/panel` and
+  `/api/agents` with 404 `{ error, code:
   "E_WORKSPACE_NOT_SERVED", workspace }` (`workspaceNotServed` in
   `renderer/deployment-header.mjs`) instead of the first workspace's data. No
   `?ws=` still means the first workspace. The main process's API proxy refuses
   the same reads with the same body, without fetching, for a deployment it
   knows (and that is still one) but the server does not advertise
-  (`createUnservedRefusal` in `api-url.mjs`); an id it does not know is still
-  pinned to the verified workspace and the renderer adopts the served one
+  (`createUnservedRefusal` in `api-url.mjs`). While the server is being
+  replaced it refuses against what the outgoing server advertised, so a
+  Re-add's own reads are never rewritten to another workspace before the new
+  server advertises it. An id it does not know is still pinned to the
+  verified workspace and the renderer adopts the served one
   (`staleWorkspaceSelection`).
-- **No answer.** A deployment the server keeps answering "pending" for, on one
+- **No answer.** A deployment left without an observation, on one
   connection, for `PENDING_LIMIT_MS` (45 s: the 30 s deployment read timeout
   plus the cycle around it) is reported as no answer (`createPendingWatch`).
-  Retry starts the wait over; an observation that lands later replaces the
-  error on the next poll.
+  The wait runs from the first read that brought none: answered "pending",
+  failed in transport (the proxy's timeout, the bridge down) or not answered
+  yet. Any other answer ends it, a Retry starts it over, and an observation
+  that lands later replaces the error. The roster polls one read at a time,
+  so a read that never answers is never superseded out of its outcome; past
+  the bound the next poll says it before sending its own read.
+- **With an observation on screen** (a new connection still reading), a
+  "pending" answer keeps the rows as they are, never an empty roster; past
+  the bound they go stale with the no-answer reason.
 - **Where.** The sidebar roster uses the shared failed state
   (`renderer/loading.mjs`, with a second action) and the Active overview its
   notice: the message names the deployment path, Retry is always offered and
-  **Re-add workspace** when the server does not serve it. Re-add sends that
-  exact path through `workspace:add`, so it restarts the server with the whole
-  set. The switcher keeps offering the served workspaces.
+  **Re-add workspace** when the server does not serve a local deployment.
+  Re-add sends that exact path through `workspace:add`, so it restarts the
+  server with the whole set. Its outcome belongs to the selection it started
+  in: after a switch it does nothing, and a refusal never replaces an
+  observation that landed meanwhile. Background re-reads of a failed state
+  are not announced again. The switcher keeps offering the served workspaces.
 
 ## Remote rows
 

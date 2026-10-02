@@ -444,17 +444,21 @@ function staleAge(s) {
   const age = observedText(s.load?.observedAt ?? null, Date.now());
   return age ? ` · ${age}` : '';
 }
-/** Re-add the deployment named by the not-served notice through the normal add, then read again. */
+/** Re-add the deployment named by the not-served notice through the normal add, then read again.
+ * Latest intent: only the newest Re-add, in the same workspace selection, may act on its outcome, and a
+ * failure never replaces an observation that landed meanwhile (the add itself restarts the server). */
 async function reAdd(s) {
-  const button = s.q('hier-readd'), path = button?.dataset.workspace;
-  if (!path || typeof s.ctx.reAddWorkspace !== 'function' || button.getAttribute('aria-disabled') === 'true') return;
-  button.setAttribute('aria-disabled', 'true');
+  const button = s.q('hier-readd'), path = s.reAddPath;
+  if (!path || typeof s.ctx.reAddWorkspace !== 'function' || s.reAdding) return;
+  const lease = s.reAddLease = (s.reAddLease || 0) + 1, gen = workspaceGeneration();
+  s.reAdding = true; button?.setAttribute?.('aria-disabled', 'true');
   let result;
   try { result = await s.ctx.reAddWorkspace(path); } catch (error) { result = { ok: false, reason: error?.message }; }
-  if (!s.alive) return;
-  button.removeAttribute('aria-disabled');
-  if (currentWorkspace() !== path) return;
+  if (!s.alive || lease !== s.reAddLease) return;
+  s.reAdding = false; button?.removeAttribute?.('aria-disabled');
+  if (gen !== workspaceGeneration() || currentWorkspace() !== path) return;
   if (result?.ok) { s.pendingWatch?.reset(); void refresh(s, { user: true }); return; }
+  if (!s.stale && s.dataWorkspace === path) return; // a newer observation of this deployment stands
   notice(s, `Couldn't re-add ${path}: ${result?.reason || 'the add failed'}`);
   s.load?.say?.(`Couldn't re-add ${path}.`);
 }
@@ -520,16 +524,22 @@ export async function refresh(s, { user = false } = {}) {
   s.pendingWatch ||= createPendingWatch();
   if (user) s.pendingWatch.reset(); // a Retry restarts the bounded wait for an answer
   const myGen = workspaceGeneration(), requestedWorkspace = currentWorkspace();
+  // The bounded wait (#461) runs from the first read of this deployment, on this connection, that brought
+  // no observation: answered "pending", or not answered at all. Any other answer from the server ends it.
+  const subject = `${s.ctx.connectionGeneration?.() ?? 0}\n${requestedWorkspace}`;
+  s.pendingWatch.observe(subject, true);
   const request = s.request = (s.request || 0) + 1;
   const owns = () => s.alive && request === s.request && myGen === workspaceGeneration();
   s.loading = true;
-  s.load?.begin({ user });
+  // A background re-read of a failed roster is not announced again; a Retry, or a changed outcome, is.
+  if (user || s.load?.state !== 'failed') s.load?.begin({ user });
   try {
     const data = await apiJson(s.ctx, `/api/panel${wsQuery()}`);
     if (!owns()) return;
     const panel = projectActivePanel(data);
     // observedAt (spec 02, additive) labels the observation's age; never invented.
     panel.observedAt = typeof data.observedAt === 'string' && data.observedAt ? data.observedAt : null;
+    if (data.deployment?.status !== 'pending') s.pendingWatch.observe(null, false); // the server answered
     if (panel.error && !panel.instances.length) throw Error(panel.error); // failed absence is not an observed empty roster
     // A deployment the kernel has not observed yet (the server's first read is
     // still running) or could not observe is not an empty roster either. Pending
@@ -539,13 +549,13 @@ export async function refresh(s, { user = false } = {}) {
     if (deployment && !panel.instances.length) {
       if (deployment.status !== 'pending') throw Error(deploymentUnavailableText(deployment));
       // Pending past the bound is no answer, not a longer wait (#461); a later observation still lands.
-      const subject = requestedWorkspace || panel.workspace?.id || '';
-      if (s.pendingWatch.observe(`${s.ctx.connectionGeneration?.() ?? 0}\n${subject}`, true)) throw unservedError(NO_ANSWER_CODE, subject);
+      if (s.pendingWatch.observe(subject, true)) throw unservedError(NO_ANSWER_CODE, requestedWorkspace || panel.workspace?.id || '');
+      // With this deployment's observation on screen (a new connection still reading), it stays as it was.
+      if (s.dataGen != null) { s.load?.cancel(); return; }
       // The controller stays pending (aria-busy, the one announcement) without a pill: the copy is the summary.
       s.load?.defer(); s.q('hier-sum').textContent = deploymentUnavailableText(deployment); notice(s, '');
       return;
     }
-    s.pendingWatch.observe(null, false);
     // A stale selection (persisted, no longer served) behaves like an empty
     // one: adopt the served workspace. A served selection answered with
     // another workspace is a real mismatch and stays refused.
@@ -558,8 +568,13 @@ export async function refresh(s, { user = false } = {}) {
       return;
     }
     acceptObservation(s, panel, myGen);
-  } catch (error) {
+  } catch (caught) {
     if (!owns()) return;
+    let error = caught;
+    // Not served is an answer. Anything else that leaves this deployment without an observation past the
+    // bound (a read the proxy timed out, the bridge down) is reported as no answer, by name.
+    if (error?.code === NOT_SERVED_CODE) s.pendingWatch.observe(null, false);
+    else if (error?.code !== NO_ANSWER_CODE && s.pendingWatch.observe(subject, true)) error = unservedError(NO_ANSWER_CODE, requestedWorkspace);
     s.pending = null; s.stale = true; s.actionTicket = (s.actionTicket || 0) + 1;
     // The controller announces the failure and drops its pill; the view's
     // notice below is the visible failure surface (no failedHost).
@@ -568,7 +583,8 @@ export async function refresh(s, { user = false } = {}) {
     // A deployment the server does not serve, or does not answer for (#461), is named in full; Re-add when not served.
     const unserved = [NOT_SERVED_CODE, NO_ANSWER_CODE].includes(error?.code);
     const readd = s.q('hier-readd');
-    if (readd) { readd.hidden = !(error?.code === NOT_SERVED_CODE && typeof s.ctx.reAddWorkspace === 'function'); readd.dataset.workspace = requestedWorkspace || ''; }
+    s.reAddPath = error?.code === NOT_SERVED_CODE && requestedWorkspace.startsWith('/') ? requestedWorkspace : null;
+    if (readd) readd.hidden = !(s.reAddPath && typeof s.ctx.reAddWorkspace === 'function');
     const said = error?.code === NOT_SERVED_CODE ? unservedError(NOT_SERVED_CODE, requestedWorkspace).message
       : String(error?.message || 'read failed').slice(0, 300);
     notice(s, `${unserved ? said : `Roster unavailable: ${said}.`} ${s.dataGen == null ? 'No current observation.' : `Showing the last observation${staleAge(s)}, not current state; actions disabled.`}`);

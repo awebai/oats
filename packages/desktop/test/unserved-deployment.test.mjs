@@ -155,7 +155,7 @@ test('a non-picker add of a non-deployment carries the message and no offer; oth
 const base = 'http://127.0.0.1:4820';
 const known = path => path === '/d/oats-v2';
 test('unservedWorkspace: only a known local deployment the server does not advertise, on the roster and agents reads', () => {
-  const state = { allowedWs: new Set(['/d/Agents/aweb']), transition: false, known };
+  const state = { allowedWs: new Set(['/d/Agents/aweb']), known };
   const ws = path => `?ws=${encodeURIComponent(path)}`;
   assert.equal(unservedWorkspace(`/api/panel${ws('/d/oats-v2')}`, base, state), '/d/oats-v2');
   assert.equal(unservedWorkspace(`/api/agents${ws('/d/oats-v2')}`, base, state), '/d/oats-v2');
@@ -165,7 +165,6 @@ test('unservedWorkspace: only a known local deployment the server does not adver
   assert.equal(unservedWorkspace('/api/panel', base, state), null, 'no ws: the verified workspace');
   assert.equal(unservedWorkspace(`/api/spawn${ws('/d/oats-v2')}`, base, state), null, 'mutations keep their own guards');
   assert.equal(unservedWorkspace(`/api/panel${ws('/d/oats-v2')}&ws=x`, base, state), null, 'duplicates are the server boundary\'s to refuse');
-  assert.equal(unservedWorkspace(`/api/panel${ws('/d/oats-v2')}`, base, { ...state, transition: true }), null, 'not during a server replacement');
   assert.equal(unservedWorkspace(`/api/panel${ws('/d/oats-v2')}`, base, { ...state, allowedWs: new Set() }), null, 'not before the first answer');
   assert.equal(unservedWorkspace(`//evil.invalid/api/panel${ws('/d/oats-v2')}`, base, state), null);
   assert.equal(unservedWorkspace(`/api/panel${ws('/d/oats-v2')}`, base, { ...state, known: () => { throw Error('x'); } }), null);
@@ -183,7 +182,7 @@ test('the shipped api handler answers a known unserved deployment with 404 E_WOR
   const allowedWs = new Set(['/d/Agents/aweb']);
   const context = { ipcMain: { handle: (_name, fn) => { handler = fn; } }, apiUrl, apiInit, classifyApiRoute, forgeProxyOptions, trustedForgeFrame,
     FORGE_EPOCH_HEADER, forgeFailure, lifecycleFailure, RENDERER_URL: renderer, serverEpoch: 0, currentForgeEpoch: () => 'main:0',
-    unservedRefusal: createUnservedRefusal({ base: () => base, state: () => ({ allowedWs, transition: false, known }), body: workspaceNotServed }),
+    unservedRefusal: createUnservedRefusal({ base: () => base, state: () => ({ allowedWs, known }), body: workspaceNotServed }),
     serverHost: { inTransition: () => false }, base: () => base, wsId: '/d/Agents/aweb', allowedWs, guard: () => {}, AbortSignal: { timeout: ms => ({ ms }) },
     fetch: async url => { fetched.push(String(url)); return { ok: true, status: 200, text: async () => JSON.stringify({ workspace: { id: '/d/Agents/aweb' }, workspaces: [{ id: '/d/Agents/aweb' }] }) }; } };
   runInNewContext(source.slice(start, end), context);
@@ -192,6 +191,22 @@ test('the shipped api handler answers a known unserved deployment with 404 E_WOR
   assert.deepEqual(fetched, [], 'never fetched: no other workspace\'s data answers for it');
   const adopted = await handler(event, `/api/panel?ws=${encodeURIComponent('/d/unknown')}`, {});
   assert.equal(adopted.ok, true); assert.match(fetched[0], /ws=%2Fd%2FAgents%2Faweb/, 'an unknown id is still pinned to the verified workspace');
+});
+
+test('during a server replacement the outgoing server\'s set still refuses: a Re-add target is never rewritten to another workspace', () => {
+  const source = readFileSync(new URL('../main.mjs', import.meta.url), 'utf8');
+  // main keeps what the outgoing server advertised when it invalidates, and refuses against it until
+  // the new server answers (the add's readiness check repopulates allowedWs before it commits).
+  assert.match(source, /onInvalidate: \(\) => \{ if \(allowedWs\.size\) advertisedBefore = allowedWs; allowedWs = new Set\(\);/);
+  assert.match(source, /state: \(\) => \(\{ allowedWs: allowedWs\.size \? allowedWs : advertisedBefore, known:/);
+  let allowedWs = new Set(['/d/Agents/aweb']), advertisedBefore = new Set();
+  const refusal = createUnservedRefusal({ base: () => base, body: workspaceNotServed,
+    state: () => ({ allowedWs: allowedWs.size ? allowedWs : advertisedBefore, known }) });
+  const read = `/api/panel?ws=${encodeURIComponent('/d/oats-v2')}`;
+  advertisedBefore = allowedWs; allowedWs = new Set(); // the Re-add's restart is in flight
+  assert.equal(refusal(read)?.status, 404, 'still not served while the new server starts');
+  allowedWs = new Set(['/d/Agents/aweb', '/d/oats-v2']); // the new server advertises it
+  assert.equal(refusal(read), null, 'served: proxied');
 });
 
 /* ── the bounded wait and its copy ────────────────────────────────────────── */

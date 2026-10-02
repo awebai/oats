@@ -123,10 +123,13 @@ const serverHost = createServerHost({
   },
   // trust state belongs to the outgoing server — stale entries must never
   // validate ?ws= or decideAdd; repopulated only from the current server.
-  onInvalidate: () => { allowedWs = new Set(); serverEpoch++; invalidateForgeReads(); invalidateTerminalPreparations(); },
+  onInvalidate: () => { if (allowedWs.size) advertisedBefore = allowedWs; allowedWs = new Set(); serverEpoch++; invalidateForgeReads(); invalidateTerminalPreparations(); },
 });
 let wsId = null;        // verified workspace id on the server we use
 let allowedWs = new Set(); // workspace ids the connected server advertises
+// What the outgoing server advertised, kept only to refuse an unserved deployment's reads while a
+// restart is in flight: they never validate a ?ws=, they only stop one from being rewritten.
+let advertisedBefore = new Set();
 let serverEpoch = 0;    // prevents an outgoing server response restoring its allowlist
 
 async function panelWorkspaces() {
@@ -418,7 +421,7 @@ ipcMain.handle("cli:pick", async (e) => {
 // The roster/agents read of a deployment this Desktop knows (and that is still one) but the
 // server does not advertise: refused with E_WORKSPACE_NOT_SERVED, never fetched (api-url.mjs).
 const unservedRefusal = createUnservedRefusal({ base, body: workspaceNotServed,
-  state: () => ({ allowedWs, transition: serverHost.inTransition(), known: (path) => knownDirs.has(path) && !!wsValidate(path) }) });
+  state: () => ({ allowedWs: allowedWs.size ? allowedWs : advertisedBefore, known: (path) => knownDirs.has(path) && !!wsValidate(path) }) });
 
 // The renderer never talks to the network directly; ctx.api() lands here.
 ipcMain.handle("api", async (e, pathname, opts) => {

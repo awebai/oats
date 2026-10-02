@@ -41,9 +41,12 @@ test('an explicit ?ws= the server does not serve is 404 E_WORKSPACE_NOT_SERVED o
   const s = await startLoadPathServer();
   try {
     for (const path of ['/api/panel', '/api/agents']) {
-      const refused = await s.getStatus(`${path}?ws=${encodeURIComponent('/not/served')}`);
-      assert.equal(refused.status, 404);
-      assert.deepEqual(refused.body, { error: "This Desktop's server isn't serving this deployment.", code: 'E_WORKSPACE_NOT_SERVED', workspace: '/not/served' });
+      // A local path, a bare id, a remote id the server no longer has: every explicit unknown ?ws=.
+      for (const asked of ['/not/served', 'unknown', 'remote:gone']) {
+        const refused = await s.getStatus(`${path}?ws=${encodeURIComponent(asked)}`);
+        assert.equal(refused.status, 404, `${path} ?ws=${asked}`);
+        assert.deepEqual(refused.body, { error: "This Desktop's server isn't serving this deployment.", code: 'E_WORKSPACE_NOT_SERVED', workspace: asked });
+      }
       const served = await s.getStatus(`${path}${s.ws}`);
       assert.equal(served.status, 200); assert.equal(served.body.workspace.id, s.deployment);
       const none = await s.getStatus(path);

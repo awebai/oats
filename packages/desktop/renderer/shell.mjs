@@ -399,23 +399,35 @@ const rosterPendingWatch = createPendingWatch();
  * state names it, with Retry, and Re-add workspace when it is not served. No row of another
  * read stays: the server's answer is not about this deployment. */
 function failRosterUnserved(code, ws) {
+  if (code === NO_ANSWER_CODE && rosterState?.hasData) {
+    // The rows on screen are this deployment's last observation: kept, stale, with the reason.
+    rosterState.fail(unservedError(code, ws));
+    if (!rosterStale) { rosterStale = true; renderContextRoster(contextInstances); }
+    return;
+  }
   if (rosterState?.hasData) rosterState.reset();
   contextInstances = []; contextDeploymentNote = null; rosterStale = false; rosterSignaturePainted = null;
   refreshPanelInstance([], ws);
-  const action = code === NOT_SERVED_CODE && ws && typeof desktopBridge?.workspaceAdd === "function"
+  const action = code === NOT_SERVED_CODE && ws?.startsWith("/") && typeof desktopBridge?.workspaceAdd === "function"
     ? { label: "Re-add workspace", onActivate: () => { void reAddRosterWorkspace(ws); } } : null;
   rosterState?.fail(unservedError(code, ws), { action });
   renderContextRoster([]);
 }
 
-/** Re-add through the normal add path (main validates it and restarts the server with the whole set). */
+/** Re-add through the normal add path (main validates it and restarts the server with the whole set).
+ * Latest intent: only the newest Re-add, in the same workspace selection, acts on its outcome, and a
+ * failure never replaces an observation that landed meanwhile (the add itself restarts the server). */
+let rosterReAddLease = 0;
 async function reAddRosterWorkspace(ws) {
+  const lease = ++rosterReAddLease, generation = workspaceGeneration();
   rosterState?.begin({ user: true });
   let result;
   try { result = await desktopBridge?.workspaceAdd?.(ws); } catch (error) { result = { ok: false, reason: error?.message }; }
-  if (currentWorkspace() !== ws) return;
+  if (lease !== rosterReAddLease || generation !== workspaceGeneration() || currentWorkspace() !== ws) return;
   if (result?.ok) { rosterPendingWatch.reset(); void refreshContextRoster({ user: true }); return; }
+  if (rosterState?.hasData) return; // a newer observation of this deployment stands
   const error = new Error(`Couldn't re-add ${ws}: ${result?.reason || "the add failed"}`); error.code = NOT_SERVED_CODE;
+  contextInstances = []; rosterStale = false; rosterSignaturePainted = null;
   rosterState?.fail(error, { action: { label: "Re-add workspace", onActivate: () => { void reAddRosterWorkspace(ws); } } });
   renderContextRoster([]);
 }
@@ -440,13 +452,19 @@ async function refreshContextRoster({ user = false } = {}) {
     staleDispatch,
   });
   const listEl = contextRosterEl.querySelector(".ctx-list");
-  // pending (skeleton after 150ms) without data, refreshing (content stays) with it.
-  rosterState?.begin({ user });
+  // The bounded wait (#461) runs from the first read of this deployment, on this connection, that brought
+  // no observation: answered "pending", or not answered at all. Any other answer from the server ends it.
+  const subject = `${connectionGeneration}\n${ws}`;
+  if (rosterPendingWatch.observe(subject, true)) failRosterUnserved(NO_ANSWER_CODE, ws);
+  // pending (skeleton after 150ms) without data, refreshing (content stays) with it. A background re-read of
+  // a failed roster is not announced again; a Retry, or a changed outcome, is.
+  else if (user || rosterState?.state !== "failed") rosterState?.begin({ user });
   let panel;
   try {
     panel = await api(`/api/panel${ws ? `?ws=${encodeURIComponent(ws)}` : ""}`);
   } catch (e) {
     if (owns() && e?.code === NOT_SERVED_CODE) {
+      rosterPendingWatch.observe(null, false); // an answer: not served
       failRosterUnserved(NOT_SERVED_CODE, ws);
       // The switcher still offers what the server does serve, with this deployment named as the
       // current choice, so the window is never left without a way to another workspace.
@@ -456,6 +474,8 @@ async function refreshContextRoster({ user = false } = {}) {
       if (served && owns() && commitWorkspaceLabel(current, Array.isArray(served.workspaces) ? served.workspaces : [])) renderWorkspaceContext(current);
       return;
     }
+    // No answer past the bound (the proxy timed the read out, the bridge is down): said by name.
+    if (owns() && rosterPendingWatch.observe(subject, true)) { failRosterUnserved(NO_ANSWER_CODE, ws); return; }
     if (owns()) {
       // With data: stale — the list is kept, its actions disabled, the
       // controller paints "Couldn't refresh instances · observed <age>" + Retry.
@@ -481,6 +501,11 @@ async function refreshContextRoster({ user = false } = {}) {
   // A failed read with no instances keeps the rows already shown for this workspace (stale), so the
   // previous list survives that reply; every other reply replaces it.
   const previousInstances = contextInstances;
+  // "Still reading" is not an empty roster, with or without rows on screen; past the bound it is no answer.
+  const pendingRead = panel.deployment?.status === "pending" && !panel.workspace?.remote && !(panel.instances || []).length;
+  if (!pendingRead) rosterPendingWatch.observe(null, false); // the server answered
+  else if (rosterPendingWatch.observe(subject, true)) { failRosterUnserved(NO_ANSWER_CODE, resolvedWs); return; }
+  else if (rosterState?.hasData) { rosterState.cancel(); return; } // the rows stay, as they were
   // The read's failure, if any: the kernel's message with its bounded cause (Spec D). A remote the kernel
   // could not read keeps the last observation (panel.error + errorCause); a cache problem with nothing
   // observed yet is a failed read with that message, never an empty roster.
@@ -519,14 +544,11 @@ async function refreshContextRoster({ user = false } = {}) {
   // whole content (its existing copy, no skeleton), the count keeps its pill,
   // and the controller stays without data until an observation lands.
   if (panel.deployment?.status === "pending" && !panel.workspace?.remote && !contextInstances.length && !rosterState?.hasData) {
-    // Pending past the bound is no answer, not a longer wait (#461); a later observation still lands.
-    if (rosterPendingWatch.observe(`${connectionGeneration}\n${resolvedWs}`, true)) { failRosterUnserved(NO_ANSWER_CODE, resolvedWs); return; }
     rosterState?.defer();
     refreshPanelInstance(contextInstances, resolvedWs);
     if (signature !== rosterSignaturePainted) { rosterSignaturePainted = signature; renderContextRoster(contextInstances); }
     return;
   }
-  rosterPendingWatch.observe(null, false);
   const unchanged = !!rosterState?.hasData && signature === rosterSignaturePainted && rosterStale === reportedFailure;
   // The controller learns of the data before the paint (hasData gates the
   // empty copy). A reported failure with data already present skips
@@ -2117,7 +2139,10 @@ function restoreWorkspaceTabs() {
   updateContextTabs();
   refreshContextRoster();
 }
-setInterval(() => refreshContextRoster(), 4000);
+// One background read at a time: a slow or unanswered read is not superseded every 4 s, so its outcome
+// (or the bounded wait's) is always someone's to show. A switch or a Retry reads at once, as before.
+let rosterPoll = null;
+setInterval(() => { if (!rosterPoll) rosterPoll = refreshContextRoster().finally(() => { rosterPoll = null; }); }, 4000);
 
 // Contract re-probe triggers: launch (initial refresh) and app focus. The
 // cli-status module owns the shared state; the Spawn view (and any future

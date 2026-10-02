@@ -1258,9 +1258,9 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === "GET" && (path === "/api/panel" || path === "/api/agents")) {
       const asked = url.searchParams.get("ws") || undefined;
-      // An explicit local deployment this server does not serve is refused, never answered with
-      // another workspace's data (#461). No ?ws= still means the first workspace.
-      if (asked && !workspaces().some((w) => w.id === asked) && asked.startsWith("/")) return send(res, 404, workspaceNotServed(asked));
+      // An explicit workspace this server does not serve (a path, an id, a remote it no longer has) is
+      // refused, never answered with another workspace's data. No ?ws= still means the first workspace.
+      if (asked && !workspaces().some((w) => w.id === asked)) return send(res, 404, workspaceNotServed(asked));
       // Served from the latest kernel observation; never waits on a CLI read.
       if (path === "/api/panel") return send(res, 200, panelData(asked));
       revalidateCatalog(asked);
