@@ -1,14 +1,19 @@
-// #482 (decision Q2): the spawn dialog's Deployment field. With two or more deployments in the view the
-// dialog asks which one; availability is the chosen deployment's own catalog; the default is the last used
-// in this view if it has the soul, else the first that has it (local before remote), else the last used
-// (blocked, saying why). Every spawn request addresses the chosen deployment; jobs are owned by the view.
+// #482 (decision Q2, UI spec): the spawn dialog's Deployment field. With two or more deployments in the view
+// the dialog asks which one, first, before Name: a segmented control with two or three, the Harness-style
+// dropdown with more, never a native select; options named by machine, a non-live one marked in words.
+// Availability is the chosen deployment's own catalog; the default is the last used in this view if it has
+// the soul, else the first that has it (local before remote), else the last used (blocked). Why Spawn is
+// blocked is said once, in the footer. Every spawn request addresses the chosen deployment; jobs are owned
+// by the view.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { mountSpawn, settle, catalogAgents, deferred, DEPLOYMENT, ROOT } from './helpers/spawn-dialog-host.mjs';
 import { anchor } from './helpers/spawn-preview-fixture.mjs';
 import { createSpawnDeploymentField, defaultSpawnDeployment, catalogSoul, lastSpawnDeployment, rememberSpawnDeployment, spawnDeployments,
   SPAWN_DEPLOYMENT_KEY, SPAWN_DEPLOYMENT_VIEWS_MAX } from '../renderer/spawn-deployment-field.mjs';
+import { roveSegment } from '../renderer/spawn-dialog.mjs';
 import { createSpawnJobs } from '../renderer/spawn-jobs.mjs';
 import { currentWorkspace } from '../renderer/views/common.mjs';
 
@@ -16,13 +21,23 @@ const A = DEPLOYMENT, B = '/fixture/other/northwind', R = 'remote:altair:k1';
 const local = (id, label, extra = {}) => ({ id, machine: 'This Mac', path: id, label, local: true, reachable: true, identityFrom: 'reported', primary: false, ...extra });
 const DA = local(A, '…/base/northwind-workspace', { primary: true }), DB = local(B, '…/other/northwind');
 const DR = { id: R, machine: 'altair', path: '/Users/juan/Agents/tsm', label: '~/Agents/tsm', local: false, reachable: true, identityFrom: 'reported', primary: false };
+// Not reached: one the server remembers (its last report), one it never reached.
+const DV = { id: 'remote:vega:k2', machine: 'vega', path: '/home/ops/agents', label: '~/agents', local: false, reachable: false, identityFrom: 'remembered', primary: false, reason: 'ssh timed out' };
+const DW = { id: 'remote:wezen:k3', machine: 'wezen', path: '/srv/oats', label: '/srv/oats', local: false, reachable: false, identityFrom: null, primary: false };
 const remoteSoul = { name: 'release-manager', description: '', kind: 'persistent', work: 'worktree', agentsRoot: '/srv/agents', server: 'altair', remote: true, repoName: 'altair' };
 const memory = () => { const m = new Map(); return { getItem: k => m.has(k) ? m.get(k) : null, setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k), m }; };
 const wsOf = path => decodeURIComponent(/[?&]ws=([^&]*)/.exec(path)?.[1] ?? '');
 const previewWs = u => u.calls.filter(c => c.path.startsWith('/api/workspace-spawn-preview')).map(c => wsOf(c.path));
 const spawnWs = u => u.calls.filter(c => c.path.startsWith('/api/spawn?')).map(c => [wsOf(c.path), c.body.action]);
-const options = u => [...u.q('.fdeployment').options].map(o => o.textContent);
-async function choose(u, id) { await u.change('.fdeployment', id); await settle(); }
+// The segmented control's options, by what a screen reader reads (the machine, then a non-live state).
+const options = u => [...u.q('.fdeployment').querySelectorAll('input')].map(i => i.getAttribute('aria-label'));
+const chosen = u => u.q('.fdeployment input:checked')?.value;
+async function choose(u, id) { [...u.q('.fdeployment').querySelectorAll('input')].find(i => i.value === id).click(); await settle(); }
+const key = (target, k) => target.dispatchEvent(new target.ownerDocument.defaultView.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+/** What the "What will be created" column says, as dt → dd. */
+const facts = u => Object.fromEntries([...u.doc.querySelectorAll('.spawn-preview-facts dt')].map(dt => [dt.textContent, dt.nextElementSibling.textContent.trim()]));
+/** Every message the dialog shows outside its footer: the field, the form's hints, the preview column. */
+const elsewhere = u => [...u.dialog().querySelectorAll('.spawn-deployment, .spawn-preview-body, .spawn-hint')].map(n => n.textContent).join('\n');
 
 // ── the rules, alone ──────────────────────────────────────────────────────────────────────────────
 
@@ -65,73 +80,206 @@ test('last used: per view, deployment ids only, bounded to the most recent views
   assert.deepEqual(spawnDeployments([DA, DA, null, { id: '' }, DB]).map(d => d.id), [A, B], 'duplicates and junk are dropped');
 });
 
-test('the field: none with one deployment; options labelled by machine; marks a deployment without the soul; catalog replies follow the latest intent', async () => {
+test('the field: none with one deployment; a segmented control by machine with a state mark in words; catalog replies follow the latest intent', async () => {
   const dom = new JSDOM('<!doctype html><body></body>'), doc = dom.window.document;
   const soul = { name: 'release-manager', agentsRoot: ROOT };
   assert.equal(createSpawnDeploymentField(doc, { soul, viewId: 'v', deployments: [DA], read: async () => [] }), null, 'one deployment: no field');
   assert.equal(createSpawnDeploymentField(doc, { soul, viewId: 'v', deployments: [], read: async () => [] }), null);
   const gates = new Map(), changes = [];
   const read = id => { const d = deferred(); gates.set(id, [...(gates.get(id) || []), d]); return d.promise; };
-  const field = createSpawnDeploymentField(doc, { soul, viewId: 'v', deployments: [DR, DA, { ...DB, reachable: false }], read, storage: memory(), onChange: c => changes.push(c) });
-  const label = field.select.closest('label');
-  assert.equal(label.textContent.startsWith('Deployment'), true, 'a labelled control');
-  assert.equal(field.select.getAttribute('aria-describedby'), field.hint.id);
-  assert.equal(field.value(), A, 'provisional: the first local one');
+  const field = createSpawnDeploymentField(doc, { soul, viewId: 'v', deployments: [DR, DA, DV], read, storage: memory(), rove: roveSegment, onChange: c => changes.push(c) });
+  doc.body.append(field.element);
+  // Relationship's control: a fieldset named by its legend, a radiogroup of labelled radios; never a select.
+  assert.equal(field.element.tagName, 'FIELDSET'); assert.equal(field.element.querySelector('legend').textContent, 'Deployment');
+  const seg = field.element.querySelector('.spawn-seg.fdeployment'), radios = [...seg.querySelectorAll('input[type=radio]')];
+  assert.equal(seg.getAttribute('role'), 'radiogroup'); assert.equal(seg.getAttribute('aria-label'), 'Deployment');
+  assert.equal(field.element.querySelector('select'), null, 'never a native select');
+  assert.equal(new Set(radios.map(r => r.name)).size, 1, 'one group');
+  // Each option: its machine; a deployment that is not live says so in a tag, in words, and in its name.
+  assert.deepEqual(radios.map(r => r.getAttribute('aria-label')), ['altair', 'This Mac', 'vega, remembered']);
+  assert.deepEqual(radios.map(r => r.nextElementSibling.firstChild.textContent), ['altair', 'This Mac', 'vega']);
+  assert.deepEqual(radios.map(r => r.nextElementSibling.querySelector('.spawn-trigger-tag')?.textContent ?? null), [null, null, 'remembered']);
+  assert.deepEqual(radios.map(r => r.closest('label').title), ['altair · ~/Agents/tsm', 'This Mac · …/base/northwind-workspace', 'vega · ~/agents'], 'the full label on hover');
+  assert.doesNotMatch(field.element.textContent + radios.map(r => r.getAttribute('aria-label')).join(), /remote:/, 'never an id');
+  assert.equal(field.value(), A, 'provisional: the first local one'); assert.equal(seg.querySelector(':checked').value, A);
   assert.equal(field.pending(), true);
   field.start(); await settle();
-  gates.get(R)[0].resolve([remoteSoul]); gates.get(A)[0].resolve([]); gates.get(B)[0].resolve([]);
+  gates.get(R)[0].resolve([remoteSoul]); gates.get(A)[0].resolve([]); gates.get(DV.id)[0].resolve([]);
   await settle();
-  assert.deepEqual([...field.select.options].map(o => o.textContent),
-    ['altair · ~/Agents/tsm', 'This Mac · …/base/northwind-workspace (no release-manager here)', 'This Mac · …/other/northwind (not reached)']);
-  assert.equal(field.value(), R, 'only the remote deployment has it');
+  assert.equal(field.value(), R, 'only the remote deployment has it'); assert.equal(seg.querySelector(':checked').value, R);
   assert.deepEqual(changes, [{ moved: true, programmatic: true }]);
   assert.equal(field.server(), 'altair'); assert.deepEqual(field.selector(), { soul: 'release-manager', agentsRoot: '/srv/agents' });
-  field.select.value = A; field.select.dispatchEvent(new dom.window.Event('change'));
+  assert.equal(field.runsOn(), 'altair · ~/Agents/tsm');
+  radios[1].click();
+  assert.deepEqual(changes.at(-1), { moved: true, programmatic: false }, 'the operator chose');
   assert.equal(field.blocked(), true); assert.equal(field.blockText(), "release-manager isn't available on This Mac");
-  assert.equal(field.hint.textContent, "release-manager isn't available on This Mac."); assert.ok(field.hint.classList.contains('err'));
+  radios[2].click();
+  assert.equal(field.blocked(), true); assert.equal(field.blockText(), "vega isn't reachable right now", 'not reached: the machine, not the soul');
+  assert.equal(field.element.querySelector('.spawn-hint, [role=status], [aria-live]'), null, 'the field itself says nothing: the footer does');
+  radios[1].click();
   // A newer read supersedes an older one; after dispose nothing lands.
   field.start(); field.start(); await settle();
-  for (const id of [A, B, R]) gates.get(id)[2].resolve(id === R ? [remoteSoul] : []);
+  for (const id of [A, DV.id, R]) gates.get(id)[2].resolve(id === R ? [remoteSoul] : []);
   await settle();
   assert.equal(field.blocked(), true, 'the latest read: A has no release-manager');
   gates.get(A)[1].resolve([{ name: 'release-manager', agentsRoot: ROOT }]); await settle();
   assert.equal(field.blocked(), true, 'a superseded catalog reply never applies');
   const heard = changes.length;
   field.start(); await settle(); field.dispose();
-  for (const id of [A, B, R]) gates.get(id)[3].resolve([{ name: 'release-manager', agentsRoot: ROOT }]); await settle();
+  for (const id of [A, DV.id, R]) gates.get(id)[3].resolve([{ name: 'release-manager', agentsRoot: '/elsewhere' }]); await settle();
   assert.equal(changes.length, heard, 'nothing is heard after dispose');
-  assert.equal(field.select.options[1].textContent, 'This Mac · …/base/northwind-workspace', 'nor painted (still read as unknown)');
+  assert.equal(field.selector().agentsRoot, ROOT, 'nor applied');
+  radios[0].click(); assert.equal(changes.length, heard, 'nor a click after dispose');
   dom.window.close();
+});
+
+test('the segmented control from the keyboard: one tab stop, arrows move and choose, Home/End go to the ends (Relationship\'s rules)', async () => {
+  const dom = new JSDOM('<!doctype html><body></body>', { pretendToBeVisual: true }), doc = dom.window.document;
+  const changes = [], heard = [];
+  const field = createSpawnDeploymentField(doc, { soul: { name: 'release-manager', agentsRoot: ROOT }, viewId: 'v', deployments: [DA, DB, DR],
+    read: async () => [{ name: 'release-manager', agentsRoot: ROOT }], storage: memory(), rove: roveSegment, onChange: c => changes.push(c) });
+  doc.body.append(field.element);
+  doc.body.addEventListener('change', e => heard.push(e.target.value)); // the form hears an operator's choice as it hears its other fields
+  const radios = [...field.element.querySelectorAll('input')];
+  assert.deepEqual(radios.map(r => r.getAttribute('aria-label')), ['This Mac · northwind-workspace', 'This Mac · northwind', 'altair'], 'one machine with two: its path tail');
+  assert.deepEqual(radios.map(r => r.tabIndex), [0, -1, -1], 'the chosen one is the tab stop');
+  radios[0].focus(); key(radios[0], 'ArrowRight');
+  assert.equal(doc.activeElement, radios[1]); assert.equal(field.value(), B); assert.deepEqual(radios.map(r => r.tabIndex), [-1, 0, -1]);
+  assert.deepEqual(changes.at(-1), { moved: true, programmatic: false }); assert.deepEqual(heard, [B]);
+  key(radios[1], 'End'); assert.equal(field.value(), R); assert.equal(doc.activeElement, radios[2]);
+  key(radios[2], 'ArrowRight'); assert.equal(field.value(), A, 'wraps');
+  key(radios[0], 'ArrowLeft'); assert.equal(field.value(), R);
+  key(radios[2], 'Home'); assert.equal(field.value(), A);
+  assert.deepEqual(heard, [B, R, A, R, A]);
+  field.dispose(); dom.window.close();
+});
+
+test('four or more deployments: the Harness-style dropdown (a listbox popup), by machine with states, from the keyboard; never a select', async () => {
+  const dom = new JSDOM('<!doctype html><body><form></form></body>', { pretendToBeVisual: true }), doc = dom.window.document;
+  const changes = [], heard = [];
+  const field = createSpawnDeploymentField(doc, { soul: { name: 'release-manager', agentsRoot: ROOT }, viewId: 'v', deployments: [DA, DR, DV, DW],
+    read: async () => [{ name: 'release-manager', agentsRoot: ROOT }], storage: memory(), rove: roveSegment, onChange: c => changes.push(c) });
+  doc.body.append(field.element);
+  doc.body.addEventListener('change', e => heard.push(e.target.className));
+  assert.equal(field.element.querySelector('select'), null, 'never a native select');
+  assert.equal(field.element.querySelector('.spawn-seg'), null);
+  assert.equal(field.element.querySelector('.spawn-label-text').textContent, 'Deployment');
+  const trigger = field.element.querySelector('.spawn-choice-trigger.fdeployment');
+  assert.equal(trigger.getAttribute('aria-haspopup'), 'listbox'); assert.equal(trigger.getAttribute('aria-expanded'), 'false');
+  assert.equal(trigger.getAttribute('aria-label'), 'Deployment: This Mac'); assert.equal(trigger.textContent, 'This Mac'); assert.equal(trigger.title, 'This Mac · …/base/northwind-workspace');
+  // Open from the keyboard: the listbox, the chosen option focused.
+  trigger.focus(); key(trigger, 'ArrowDown');
+  assert.equal(trigger.getAttribute('aria-expanded'), 'true');
+  const listbox = doc.getElementById(trigger.getAttribute('aria-controls'));
+  assert.equal(listbox.getAttribute('role'), 'listbox'); assert.equal(listbox.getAttribute('aria-label'), 'Deployment choices');
+  const items = [...listbox.querySelectorAll('[role=option]')];
+  assert.deepEqual(items.map(b => b.firstChild.textContent), ['This Mac', 'altair', 'vega', 'wezen'], 'by machine');
+  assert.deepEqual(items.map(b => b.querySelector('small')?.textContent ?? null), [null, null, 'remembered', 'not reached'], 'a non-live state in words, part of the option');
+  assert.deepEqual(items.map(b => b.getAttribute('aria-selected')), ['true', 'false', 'false', 'false']);
+  assert.equal(doc.activeElement, items[0]);
+  key(items[0], 'ArrowDown'); key(doc.activeElement, 'ArrowDown');
+  assert.equal(doc.activeElement.firstChild.textContent, 'vega');
+  key(doc.activeElement, 'Enter');
+  assert.equal(field.value(), DV.id, 'an unreachable deployment is selectable'); assert.equal(trigger.getAttribute('aria-expanded'), 'false');
+  assert.equal(doc.activeElement, trigger, 'focus returns to the trigger');
+  assert.deepEqual(changes.at(-1), { moved: true, programmatic: false }); assert.equal(heard.length, 1, 'the form hears the choice');
+  // The trigger: the machine and its state tag (the Harness trigger's tag), named in words.
+  assert.equal(trigger.firstChild.textContent, 'vega'); assert.equal(trigger.querySelector('.spawn-trigger-tag').textContent, 'remembered');
+  assert.equal(trigger.getAttribute('aria-label'), 'Deployment: vega, remembered');
+  assert.equal(field.blockText(), "vega isn't reachable right now");
+  // Escape closes without choosing; picking the chosen one again is no change.
+  key(trigger, 'Enter'); assert.equal(trigger.getAttribute('aria-expanded'), 'true');
+  key(doc.activeElement, 'Escape'); assert.equal(trigger.getAttribute('aria-expanded'), 'false'); assert.equal(doc.activeElement, trigger);
+  const count = changes.length;
+  key(trigger, 'Enter'); key(doc.activeElement, 'Enter');
+  assert.equal(changes.length, count, 'the same deployment again: nothing re-read'); assert.equal(heard.length, 1);
+  field.dispose(); dom.window.close();
 });
 
 // ── the dialog ────────────────────────────────────────────────────────────────────────────────────
 
 test('one deployment: no Deployment field, nothing new on screen, and the spawn routes address that deployment (pin)', async t => {
   const u = await mountSpawn(t, { deployments: [DA] });
-  await u.open();
-  assert.equal(u.q('.fdeployment'), null, 'no field');
+  await u.open(); await settle();
+  assert.equal(u.q('.fdeployment'), null, 'no field'); assert.equal(u.q('.spawn-deployment'), null);
   assert.ok(u.q('.spawn-place'), 'Where to run stays where it was');
+  assert.equal(u.q('.spawn-form-body > .spawn-field').classList.contains('spawn-name'), true, 'Name is still the first field');
+  assert.equal(facts(u)['Runs on'], undefined, 'no Runs on row'); assert.equal(facts(u).Name, 'release-manager-1', 'the summary as before');
   assert.ok(previewWs(u).length > 0); assert.ok(previewWs(u).every(ws => ws === A), 'the deployment, never the view id');
   assert.equal(u.calls.filter(c => c.path.startsWith('/api/agents?ws=')).filter(c => wsOf(c.path) === A).length, 0, 'no catalog read per deployment');
 });
 
-test('two deployments: the field replaces Where to run, defaults to the first that has the soul, and a deployment without it blocks Spawn', async t => {
-  const u = await mountSpawn(t, { deployments: [DA, DB], catalogs: { [A]: catalogAgents(), [B]: [] } });
+test('two deployments: the field comes first, before Name, replaces Where to run, defaults to the first that has the soul; Runs on names it', async t => {
+  const u = await mountSpawn(t, { deployments: [DA, DB], catalogs: { [A]: catalogAgents(), [B]: catalogAgents() } });
   await u.open(); await settle();
   assert.ok(u.q('.fdeployment')); assert.equal(u.q('.spawn-place'), null, 'Where to run is replaced');
-  assert.deepEqual(options(u), ['This Mac · …/base/northwind-workspace', 'This Mac · …/other/northwind (no release-manager here)']);
-  assert.equal(u.q('.fdeployment').value, A);
+  const fields = [...u.q('.spawn-form-body').children].filter(n => n.classList.contains('spawn-field'));
+  assert.ok(fields[0].classList.contains('spawn-deployment'), 'Deployment is the first field'); assert.ok(fields[1].classList.contains('spawn-name'), 'then Name');
+  assert.equal(u.dialog().querySelector('select.fdeployment, .spawn-deployment select'), null, 'never a native select');
+  assert.equal(u.q('.spawn-deployment .spawn-seg').getAttribute('role'), 'radiogroup', 'two: the segmented control');
+  assert.deepEqual(options(u), ['This Mac · northwind-workspace', 'This Mac · northwind'], 'by machine; one machine with two: the path tail');
+  assert.equal(chosen(u), A);
+  // The summary's first row: where it runs, by its full label.
+  assert.deepEqual(Object.keys(facts(u)).slice(0, 2), ['Runs on', 'Name']); assert.equal(facts(u)['Runs on'], 'This Mac · …/base/northwind-workspace');
+  await choose(u, B);
+  assert.equal(facts(u)['Runs on'], 'This Mac · …/other/northwind');
+  assert.equal(previewWs(u).at(-1), B);
+});
+
+test('the chosen deployment lacks the soul: one message, in the footer only; Spawn blocked; nothing read there', async t => {
+  const u = await mountSpawn(t, { deployments: [DA, DB], catalogs: { [A]: catalogAgents(), [B]: [] } });
+  await u.open(); await settle();
+  assert.deepEqual(options(u), ['This Mac · northwind-workspace', 'This Mac · northwind'], 'no availability mark: the footer says it for the chosen one');
+  assert.equal(chosen(u), A);
   assert.equal(u.q('.fspawn').disabled, false);
   const before = previewWs(u).length;
   await choose(u, B);
   assert.equal(u.q('.fspawn').disabled, true, 'blocked');
-  assert.equal(u.text('.fstatus'), "release-manager isn't available on This Mac.");
+  assert.equal(u.text('.fstatus'), "release-manager isn't available on This Mac · northwind.");
   assert.ok(u.q('.fstatus').classList.contains('err'));
-  assert.equal(u.text('.spawn-deployment-hint'), "release-manager isn't available on This Mac.");
+  assert.doesNotMatch(elsewhere(u), /isn't available/, 'not under the field, not in the summary');
+  assert.equal(u.dialog().textContent.split("isn't available").length - 1, 1, 'said exactly once');
+  assert.equal(facts(u)['Runs on'], 'This Mac · …/other/northwind', 'the summary still says where');
   assert.equal(previewWs(u).length, before, 'nothing is read for a deployment without the soul');
   await choose(u, A);
   assert.equal(previewWs(u).at(-1), A, 'back: re-read for that deployment');
-  assert.equal(u.q('.fspawn').disabled, false);
+  assert.equal(u.q('.fspawn').disabled, false); assert.doesNotMatch(u.text('.fstatus'), /isn't available/);
+});
+
+test('the chosen deployment is not reachable: "<machine> isn\'t reachable right now." in the footer only; selectable, marked, Spawn blocked', async t => {
+  const u = await mountSpawn(t, { deployments: [DA, DW], catalogs: { [A]: catalogAgents(), [DW.id]: [] } });
+  await u.open(); await settle();
+  assert.deepEqual(options(u), ['This Mac', 'wezen, not reached']);
+  const mark = [...u.q('.fdeployment').querySelectorAll('input')].find(i => i.value === DW.id).nextElementSibling.querySelector('.spawn-trigger-tag');
+  assert.equal(mark.textContent, 'not reached', 'the state in words, not colour');
+  assert.equal(chosen(u), A, 'the default is one that has the soul');
+  await choose(u, DW.id);
+  assert.equal(chosen(u), DW.id, 'selectable');
+  assert.equal(u.q('.fspawn').disabled, true);
+  assert.equal(u.text('.fstatus'), "wezen isn't reachable right now."); assert.ok(u.q('.fstatus').classList.contains('err'));
+  assert.doesNotMatch(elsewhere(u), /reachable right now|isn't available/, 'nothing under the field or in the summary');
+  assert.equal(u.dialog().textContent.split('reachable right now').length - 1, 1, 'said exactly once');
+  assert.deepEqual(facts(u), { 'Runs on': 'wezen · /srv/oats' });
+  assert.doesNotMatch(u.dialog().textContent, /remote:/, 'never an id');
+});
+
+test('four deployments: the dropdown, first; a pick re-reads there and Runs on follows', async t => {
+  const DC = local('/fixture/third/northwind', '…/third/northwind');
+  const u = await mountSpawn(t, { deployments: [DA, DB, DC, DV], catalogs: { [A]: catalogAgents(), [B]: catalogAgents(), [DC.id]: catalogAgents(), [DV.id]: [] } });
+  await u.open(); await settle();
+  assert.equal(u.q('.spawn-deployment .spawn-seg'), null); assert.equal(u.dialog().querySelector('.spawn-deployment select'), null);
+  const trigger = u.q('.spawn-deployment .spawn-choice-trigger');
+  assert.ok(u.q('.spawn-form-body > .spawn-field').classList.contains('spawn-deployment'), 'first');
+  assert.equal(trigger.getAttribute('aria-label'), 'Deployment: This Mac · northwind-workspace');
+  trigger.click(); await settle();
+  const items = [...u.dialog().querySelectorAll('#spawn-deployment-choices [role=option]')];
+  assert.deepEqual(items.map(b => b.textContent), ['This Mac · northwind-workspace', 'This Mac · other/northwind', 'This Mac · third/northwind', 'vegaremembered'], 'tails that collide: two segments');
+  items[1].click(); await settle();
+  assert.equal(previewWs(u).at(-1), B); assert.equal(facts(u)['Runs on'], 'This Mac · …/other/northwind');
+  trigger.click(); await settle();
+  [...u.dialog().querySelectorAll('#spawn-deployment-choices [role=option]')][3].click(); await settle();
+  assert.equal(u.text('.fstatus'), "vega isn't reachable right now."); assert.equal(u.q('.fspawn').disabled, true);
+  assert.doesNotMatch(elsewhere(u), /reachable right now/);
 });
 
 test('a deployment change re-reads the preview there, and a reply for the previous deployment is discarded', async t => {
@@ -154,7 +302,7 @@ test('a deployment change re-reads the preview there, and a reply for the previo
 test('local apply goes to ?ws=<deployment>; the last used is recorded per view and becomes the default', async t => {
   const u = await mountSpawn(t, { deployments: [DA, DB], catalogs: { [A]: catalogAgents(), [B]: catalogAgents() } });
   await u.open(); await settle();
-  assert.equal(u.q('.fdeployment').value, A, 'nothing used yet: the first local one');
+  assert.equal(chosen(u), A, 'nothing used yet: the first local one');
   await choose(u, B); await u.spawn();
   assert.deepEqual(spawnWs(u), [[B, 'prepare'], [B, 'apply']]);
   assert.deepEqual(JSON.parse(u.dom.window.localStorage.getItem(SPAWN_DEPLOYMENT_KEY)), { northwind: B }, 'per view: the view id keys the deployment id');
@@ -164,7 +312,7 @@ test('the default: last used when it has the soul, else the first with it; with 
   const prime = (u, id) => u.dom.window.localStorage.setItem(SPAWN_DEPLOYMENT_KEY, JSON.stringify({ northwind: id }));
   const u = await mountSpawn(t, { deployments: [DA, DB], catalogs: { [A]: catalogAgents(), [B]: catalogAgents() } });
   prime(u, B); await u.open(); await settle();
-  assert.equal(u.q('.fdeployment').value, B);
+  assert.equal(chosen(u), B);
   assert.ok(previewWs(u).length > 0); assert.ok(previewWs(u).every(ws => ws === B), 'no read for the provisional choice before the catalogs answered');
 });
 
@@ -172,15 +320,15 @@ test('the default when the last used lacks the soul: the first that has it; when
   const u = await mountSpawn(t, { deployments: [DA, DB], catalogs: { [A]: catalogAgents(), [B]: [] } });
   u.dom.window.localStorage.setItem(SPAWN_DEPLOYMENT_KEY, JSON.stringify({ northwind: B }));
   await u.open(); await settle();
-  assert.equal(u.q('.fdeployment').value, A);
+  assert.equal(chosen(u), A);
   assert.ok(previewWs(u).length > 0);
   assert.ok(previewWs(u).every(ws => ws === A), 'the provisional choice (the last used, B) is never read before the catalogs answered');
   const v = await mountSpawn(t, { deployments: [DA, DB], catalogs: { [A]: [], [B]: [] } });
   v.dom.window.localStorage.setItem(SPAWN_DEPLOYMENT_KEY, JSON.stringify({ northwind: B }));
   await v.open(); await settle();
-  assert.equal(v.q('.fdeployment').value, B);
-  assert.equal(v.q('.fspawn').disabled, true); assert.equal(v.text('.fstatus'), "release-manager isn't available on This Mac.");
-  assert.equal(v.text('.spawn-preview-empty'), "release-manager isn't available on This Mac.");
+  assert.equal(chosen(v), B);
+  assert.equal(v.q('.fspawn').disabled, true); assert.equal(v.text('.fstatus'), "release-manager isn't available on This Mac · northwind.");
+  assert.equal(v.q('.spawn-preview-empty'), null, 'the footer says it, the summary does not');
 });
 
 test('relation anchors: the chosen deployment\'s rows only', async t => {
@@ -199,7 +347,7 @@ test('a remote deployment spawns through its server with its own catalog\'s root
   const u = await mountSpawn(t, { deployments: [DA, DR], catalogs: { [A]: catalogAgents(), [R]: [remoteSoul] },
     remote: body => { bodies.push(body); return { spawned: true, instance: 'release-manager-x', agent: 'release-manager', home: '/srv/agents/release-manager/instances/release-manager-x', server: 'altair', launched: true, workspaceId: 'northwind' }; } });
   await u.open(); await settle();
-  assert.deepEqual(options(u), ['This Mac · …/base/northwind-workspace', 'altair · ~/Agents/tsm'], 'remote ones are named by their machine');
+  assert.deepEqual(options(u), ['This Mac', 'altair'], 'named by their machine');
   const reads = previewWs(u).length;
   await choose(u, R);
   assert.equal(previewWs(u).length, reads, 'the host decides a remote spawn: no local preview');
@@ -231,6 +379,60 @@ test('background spawn: the job is owned by the view and addressed to the chosen
   u.jobs.observe('northwind', [real(A), real(B)]);
   assert.equal(u.jobs.rows('northwind').length, 0, 'its own deployment reports it');
 });
+
+// Every text the field, its footer message and the Runs on row put on screen, on the computed tokens like
+// test/theme-contrast.test.mjs: AA in every theme, no opacity; the state tag is the Harness trigger's (muted on chip-bg).
+function luminance(hex) {
+  assert.match(hex, /^#[0-9a-f]{6}$/i);
+  const c = hex.slice(1).match(/../g).map(v => parseInt(v, 16) / 255).map(v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4);
+  return c[0] * .2126 + c[1] * .7152 + c[2] * .0722;
+}
+for (const theme of ['light', 'solarized', 'dark']) for (const [kind, deployments] of [['segmented', [DA, DV]], ['dropdown', [DA, DB, DR, DV]]]) {
+  test(`${theme}, ${kind}: the Deployment field, its state tag, the footer message and Runs on meet computed-token AA with no opacity`, async t => {
+    const u = await mountSpawn(t, { deployments, catalogs: Object.fromEntries(deployments.map(d => [d.id, d === DV ? [] : catalogAgents()])) });
+    const style = u.doc.createElement('style'); style.textContent = readFileSync(new URL('../renderer/theme.css', import.meta.url), 'utf8'); u.doc.head.append(style);
+    u.doc.documentElement.dataset.theme = theme;
+    await u.open(); await settle();
+    // The footer's message for a chosen deployment that is not reachable (shown, then the default chosen back for Runs on's data row).
+    u.q('.fstatus').textContent = "vega isn't reachable right now."; u.q('.fstatus').classList.add('err');
+    const pairs = [
+      ['.fstatus.err', '.spawn-footer', 'danger', 'surface'],
+      ['.spawn-preview-facts dt', '.spawn-preview', 'muted', 'surface-2'], ['.spawn-preview-facts', '.spawn-preview', 'fg', 'surface-2'],
+    ];
+    if (kind === 'segmented') pairs.push(
+      ['.spawn-deployment > legend', '.spawn-dialog', 'muted', 'surface'],
+      ['.spawn-deployment .spawn-seg input:checked + span', '.spawn-deployment .spawn-seg input:checked + span', 'accent', 'sel'],
+      ['.spawn-deployment .spawn-seg input:not(:checked) + span', '.spawn-deployment .spawn-seg', 'muted', 'surface'],
+      ['.spawn-deployment .spawn-seg .spawn-trigger-tag', '.spawn-deployment .spawn-seg .spawn-trigger-tag', 'muted', 'chip-bg'],
+    );
+    else {
+      // The trigger shows the tag of the chosen deployment: choose vega, then open the list.
+      u.q('.spawn-deployment .spawn-choice-trigger').click(); await settle();
+      [...u.dialog().querySelectorAll('#spawn-deployment-choices [role=option]')].at(-1).click(); await settle();
+      u.q('.spawn-deployment .spawn-choice-trigger').click(); await settle();
+      [...u.dialog().querySelectorAll('#spawn-deployment-choices [role=option]')][0].focus();
+      pairs.push(
+        ['.spawn-deployment .spawn-label-text', '.spawn-dialog', 'muted', 'surface'],
+        ['.spawn-deployment .spawn-choice-trigger', '.spawn-deployment .spawn-choice-trigger', 'fg', 'surface'],
+        ['.spawn-deployment .spawn-choice-trigger .spawn-trigger-tag', '.spawn-deployment .spawn-choice-trigger .spawn-trigger-tag', 'muted', 'chip-bg'],
+        ['#spawn-deployment-choices [aria-selected=true]', '#spawn-deployment-choices [aria-selected=true]', 'fg', 'sel'],
+        ['#spawn-deployment-choices [aria-selected=true] small', '#spawn-deployment-choices [aria-selected=true]', 'muted', 'sel'],
+        ['#spawn-deployment-choices [aria-selected=false]', '#spawn-deployment-choices [aria-selected=false]', 'fg', 'surface'],
+      );
+    }
+    assert.ok(u.q('.spawn-preview-facts dt'), 'the Runs on row is on screen');
+    const view = u.dom.window, root = view.getComputedStyle(u.doc.documentElement);
+    for (const [selector, surfaceSelector, fg, bg] of pairs) {
+      const element = u.q(selector), surface = u.dialog().matches(surfaceSelector) ? u.dialog() : u.q(surfaceSelector);
+      assert.ok(element && surface, selector);
+      assert.equal(view.getComputedStyle(element).color, `var(--${fg})`, selector);
+      assert.match(view.getComputedStyle(surface).background || view.getComputedStyle(surface).backgroundColor, new RegExp(`var\\(--${bg}\\)`), surfaceSelector);
+      const f = luminance(root.getPropertyValue(`--${fg}`).trim()), b = luminance(root.getPropertyValue(`--${bg}`).trim());
+      assert.ok((Math.max(f, b) + .05) / (Math.min(f, b) + .05) >= 4.5, `${theme} ${selector}: ${fg} on ${bg}`);
+      for (let parent = element; parent; parent = parent.parentElement) assert.equal(view.getComputedStyle(parent).opacity, '1', selector);
+    }
+  });
+}
 
 // ── the store, alone ──────────────────────────────────────────────────────────────────────────────
 
