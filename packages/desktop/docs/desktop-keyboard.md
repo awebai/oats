@@ -85,7 +85,7 @@ Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
 | Instance panel (`panel.toggle`; no tab-bar button since spec F, the panel keeps its own collapse) | ⌥⌘B | Ctrl+Alt+B | no |
 | Theme cycle (`app.themeToggle`) | none | none | – (the palette keeps it) |
 | Keyboard shortcuts (`app.shortcuts`) | ⌘, | Ctrl+, | no |
-| Terminal zoom (`terminal.fontBigger`, `…Smaller`, `…Reset`) | ⌘= ⌘- ⌘0 | Ctrl+= Ctrl+- Ctrl+0 | no |
+| Terminal zoom (`terminal.fontBigger`, `…Smaller`, `…Reset`; also Settings → Terminal; reset lands on 15px) | ⌘= ⌘- ⌘0 | Ctrl+= Ctrl+- Ctrl+0 | no |
 | Open a file read-only (`app.openFile`) | ⌘O | Ctrl+O | no |
 
 Changed from 0.30.1 on Linux/Windows: the palette (was Ctrl+K), close tab (was
@@ -250,7 +250,7 @@ the rig). "Fixed" marks a gap this change closed.
 | Spawn dialog | Spawn on a card, a soul page, Quick Open | See above |
 | Command palette, Quick Open | ⌘K / Ctrl+Shift+P, ⌘P / Ctrl+P | Type, arrows, Enter, Esc; Tab stays in the input; in the palette its chord cycles rows (⇧ + it: up), skipping context rows (see "The command palette") |
 | Shortcuts editor | ⌘, / Ctrl+, | Trapped; Enter records, Esc cancels, Backspace unbinds |
-| Connections | Footer settings | Trapped; its terminal has an explicit Shift+Tab exit |
+| Settings (Connections, Terminal) | Footer settings | Trapped, through the Terminal size field too; the sign-in terminal has an explicit Shift+Tab exit; the font size stepper's − and + stay focusable at 9 and 28 (aria-disabled) and a typed size applies on Enter or on leaving the field |
 | Notifications | Tab (they come last in the document) | Open and Dismiss are buttons; focus moves on after dismissing |
 
 Known limits, left as they are: the overview has no keyboard pan without a

@@ -17,6 +17,11 @@ const listeners = new Set();
 const terminalListeners = new Set();
 const TERM_FONT_KEY = "oats.desktop.terminal.fontFamily";
 const TERM_SIZE_KEY = "oats.desktop.terminal.fontSize";
+/** The terminal's default size: Inconsolata at 15px (the operator's decision,
+ * 2026-10-02; spec F item 6). Mirrors --term-font-size. Every reset lands here. */
+export const TERMINAL_FONT_SIZE = 15;
+/** The range every size control clamps to (keys, palette, Settings). */
+export const TERMINAL_FONT_MIN = 9, TERMINAL_FONT_MAX = 28;
 
 export function currentTheme() {
   return normalizeTheme(document.documentElement.dataset.theme);
@@ -57,12 +62,12 @@ export function onThemeChange(fn) {
 /* tmux carries cells/colors, never the host terminal emulator's font. Keep
    desktop typography as an explicit persisted preference, seeded from
    semantic CSS tokens (the bundled Inconsolata, then the OS monospace stack,
-   at 13px by default). A stored family wins; the default changes only where
-   nothing is stored. */
+   at 15px by default). A stored family or size wins; the defaults apply only
+   where nothing is stored. */
 export function terminalTypography(el = document.documentElement) {
   const css = getComputedStyle(el);
   let family = css.getPropertyValue("--term-font-family").trim() || `"${BUNDLED_MONO}", ui-monospace, monospace`;
-  let size = Number.parseFloat(css.getPropertyValue("--term-font-size")) || 13;
+  let size = Number.parseFloat(css.getPropertyValue("--term-font-size")) || TERMINAL_FONT_SIZE;
   try {
     family = localStorage.getItem(TERM_FONT_KEY) || family;
     size = Number(localStorage.getItem(TERM_SIZE_KEY)) || size;
@@ -76,7 +81,7 @@ export function terminalTypography(el = document.documentElement) {
   }
   // No line height: xterm's default (1.0) keeps native cell geometry (a block
   // cursor one cell tall); tmux owns row spacing (060de502).
-  return { fontFamily: family, fontSize: Math.min(28, Math.max(9, size)) };
+  return { fontFamily: family, fontSize: clampTerminalFontSize(size) };
 }
 
 /** The bundled default monospace face (theme.css @font-face; fonts/README.md). */
@@ -102,8 +107,13 @@ function notifyTerminalTypography() {
   const value = terminalTypography();
   for (const fn of [...terminalListeners]) { try { fn(value); } catch { /* isolate listener */ } }
 }
+/** A whole pixel size within TERMINAL_FONT_MIN..MAX; anything unreadable is the default. */
+export function clampTerminalFontSize(size) {
+  const n = Math.round(Number(size));
+  return Number.isFinite(n) && n > 0 ? Math.min(TERMINAL_FONT_MAX, Math.max(TERMINAL_FONT_MIN, n)) : TERMINAL_FONT_SIZE;
+}
 export function setTerminalFontSize(size) {
-  const value = Math.min(28, Math.max(9, Number(size) || 13));
+  const value = clampTerminalFontSize(size);
   try { localStorage.setItem(TERM_SIZE_KEY, String(value)); } catch { /* storage-less */ }
   notifyTerminalTypography();
 }
@@ -113,6 +123,17 @@ export function setTerminalFontFamily(family) {
     if (value) localStorage.setItem(TERM_FONT_KEY, value);
     else localStorage.removeItem(TERM_FONT_KEY);
   } catch { /* storage-less */ }
+  notifyTerminalTypography();
+}
+/** Back to the defaults: forget the stored family and size, so the tokens
+ * (and any later change to them) apply again instead of a pinned copy. */
+export function resetTerminalTypography() {
+  try { localStorage.removeItem(TERM_FONT_KEY); localStorage.removeItem(TERM_SIZE_KEY); } catch { /* storage-less */ }
+  notifyTerminalTypography();
+}
+/** Settings' "Reset to default": the size only; a chosen family stays. */
+export function resetTerminalFontSize() {
+  try { localStorage.removeItem(TERM_SIZE_KEY); } catch { /* storage-less */ }
   notifyTerminalTypography();
 }
 export function onTerminalTypographyChange(fn) {

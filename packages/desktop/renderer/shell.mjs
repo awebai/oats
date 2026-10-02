@@ -19,7 +19,7 @@ import { deploymentUnavailableText, NOT_SERVED_CODE, NO_ANSWER_CODE, unservedErr
 import { panelErrorCause } from "./deployment-contract.mjs";
 import {
   initTheme, toggleTheme, setTheme, THEMES, xtermTheme, onThemeChange,
-  terminalTypography, setTerminalFontSize, setTerminalFontFamily, onTerminalTypographyChange,
+  terminalTypography, setTerminalFontSize, setTerminalFontFamily, resetTerminalTypography, onTerminalTypographyChange,
 } from "./theme.mjs";
 import { createPalette } from "./palette.mjs";
 import { createQuickOpen } from "./quick-open.mjs";
@@ -32,6 +32,7 @@ import {
 } from "./keybindings.mjs";
 import { createKeybindingsEditor } from "./keybindings-editor.mjs";
 import { createConnections, connectionsCSS } from "./connections.mjs";
+import { createTerminalSettings, settingsTerminalCSS } from "./settings-terminal.mjs";
 import { createLifecycleDialog, lifecycleCSS } from './lifecycle-dialog.mjs';
 import { rosterKeyAction, moveTarget } from "./roster-keys.mjs";
 import { createViewLifecycle } from "./view-lifecycle.mjs";
@@ -76,7 +77,7 @@ const desk = window.oatsDesktop;
 initTheme();
 mountShellIcons(document);
 const identityStyle = document.createElement("style");
-identityStyle.textContent = identityCSS + contextPanelCSS + teamsCSS + instanceSoulCSS + instanceGitCSS + notificationCSS + connectionsCSS + lifecycleCSS + rosterTipCSS + rosterPrCSS; document.head.append(identityStyle);
+identityStyle.textContent = identityCSS + contextPanelCSS + teamsCSS + instanceSoulCSS + instanceGitCSS + notificationCSS + connectionsCSS + settingsTerminalCSS + lifecycleCSS + rosterTipCSS + rosterPrCSS; document.head.append(identityStyle);
 const rosterTip = createRosterTip(document);
 // The PR of each local instance's branch (forge-roster), re-read at most once a minute.
 const rosterPrs = createRosterPrs({
@@ -1809,7 +1810,7 @@ const palette = createPalette({
       const next = window.prompt("Terminal font family (CSS font-family value)", current);
       if (next !== null) setTerminalFontFamily(next);
     } },
-    { label: "Terminal: reset typography", detail: chordDetail("terminal.fontReset"), run: () => { setTerminalFontFamily(""); setTerminalFontSize(13); } },
+    { label: "Terminal: reset typography", detail: chordDetail("terminal.fontReset"), run: () => resetTerminalTypography() },
   ],
 });
 
@@ -1875,6 +1876,9 @@ const connections = createConnections({ doc: document, desk,
   request: body => api('/api/forge-connections', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
   subscribe: subscribeConnections, generation: () => connectionGeneration, openShortcuts: openShortcutsEditor,
   onIntent: () => tabOpenIntents.invalidate(), applyFocus: fn => tabOpenIntents.applyFocus(fn), captureFocus: () => tabOpenIntents.begin(),
+  // Settings → Terminal: the font size stepper, on the keys' and the palette's own store.
+  sections: [() => createTerminalSettings({ doc: document, chords: {
+    bigger: chordDetail("terminal.fontBigger")(), smaller: chordDetail("terminal.fontSmaller")(), reset: chordDetail("terminal.fontReset")() } })],
   terminalFactory: mount => {
     const term = new Terminal({ ...terminalOptions({ ...terminalTypography(), theme: xtermTheme() }), scrollback: 200, allowProposedApi: false });
     const fit = new FitAddon.FitAddon(); term.loadAddon(fit); term.open(mount);
@@ -2075,7 +2079,7 @@ registerAction({ id: "split.restore", label: "Return to terminal groups", contex
 registerAction({ id: "terminal.focusActive", label: "Focus the active terminal input", context: "global", run: () => focusActiveTerminal() });
 registerAction({ id: "terminal.fontBigger", label: "Terminal: increase font size", context: "global", run: () => setTerminalFontSize(terminalTypography().fontSize + 1) });
 registerAction({ id: "terminal.fontSmaller", label: "Terminal: decrease font size", context: "global", run: () => setTerminalFontSize(terminalTypography().fontSize - 1) });
-registerAction({ id: "terminal.fontReset", label: "Terminal: reset typography", context: "global", run: () => { setTerminalFontFamily(""); setTerminalFontSize(13); } });
+registerAction({ id: "terminal.fontReset", label: "Terminal: reset typography", context: "global", run: () => resetTerminalTypography() });
 // tabs: cycle + close work whether or not a tab trigger has focus (the
 // tab-a11y roving arrows stay as focus keys on the strip itself). Tab switching
 // never happens under an open modal (the palette, a sheet, a dialog), as F6 doesn't.

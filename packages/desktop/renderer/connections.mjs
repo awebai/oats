@@ -4,7 +4,7 @@ export const connectionsCSS = `
 .forge-settings { width:min(760px,calc(100vw - 32px)); max-height:90vh; overflow:auto; padding:18px; border:1px solid var(--border); border-radius:10px; background:var(--surface); color:var(--fg); box-shadow:var(--shadow-popover); }
 .forge-settings header, .forge-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .forge-settings header h2 { flex:1; margin:0; font-size:16px; }
-.forge-settings button, .forge-settings select { font:inherit; padding:6px 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--fg); }
+.forge-settings button, .forge-settings select, .forge-settings input { font:inherit; padding:6px 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--fg); }
 .forge-settings button:focus-visible { background:var(--sel); }
 .forge-settings [aria-disabled=true] { color:var(--muted); cursor:wait; }
 .forge-settings .forge-card { margin:16px 0; padding:14px; border:1px solid var(--border); border-radius:9px; background:var(--surface-2); }
@@ -18,10 +18,13 @@ const keys = new Map([['\r', 'enter'], ['\x1b[A', 'up'], ['\x1b[B', 'down'], ['\
   ['\t', 'tab'], ['\x1b', 'escape'], ['y', 'yes'], ['Y', 'yes'], ['n', 'no'], ['N', 'no'], ['\x03', 'interrupt']]);
 export const authKeyName = bytes => keys.get(bytes) || null;
 /** Settings is machine-scoped. Auth-open ownership is deliberately separate
- * from connection generation: Connect itself increments that generation. */
+ * from connection generation: Connect itself increments that generation.
+ * `sections` are further Settings sections (Terminal), each a factory
+ * returning { element, dispose }: mounted after Connections on open,
+ * disposed on close. */
 export function createConnections({ doc, request, desk, terminalFactory, subscribe = () => () => {}, generation = () => 0,
-  openShortcuts = () => {}, onIntent = () => {}, applyFocus = fn => fn(), captureFocus = () => () => true } = {}) {
-  let overlay = null, ui = null, restoreFocus = null, alive = true, life = 0, readTicket = 0, actionTicket = 0;
+  openShortcuts = () => {}, onIntent = () => {}, applyFocus = fn => fn(), captureFocus = () => () => true, sections = [] } = {}) {
+  let overlay = null, ui = null, restoreFocus = null, alive = true, life = 0, readTicket = 0, actionTicket = 0, extras = [];
   let current = null, selectedHost = null, session = null, pending = false, pendingAuth = Promise.resolve();
   const node = (tag, text, cls) => { const n = doc.createElement(tag); if (text !== undefined) n.textContent = text; if (cls) n.className = cls; return n; };
   const button = (text, fn) => { const b = node('button', text); b.type = 'button'; b.addEventListener('click', fn); return b; };
@@ -40,6 +43,8 @@ export function createConnections({ doc, request, desk, terminalFactory, subscri
   function close({ restore = true } = {}) {
     if (!overlay) return;
     life++; readTicket++; actionTicket++; pending = false; stopSession();
+    for (const extra of extras) { try { extra.dispose?.(); } catch { /* one section must not block closing */ } }
+    extras = [];
     overlay.remove(); overlay = null; ui = null; current = null; selectedHost = null;
     if (restore) applyFocus(() => restoreFocus?.restore());
     restoreFocus = null;
@@ -161,14 +166,16 @@ export function createConnections({ doc, request, desk, terminalFactory, subscri
       const actions = node('div', undefined, 'forge-actions'); actions.append(refreshButton, connectButton, disconnectButton);
       card.append(node('h3', 'GitHub'), label, status, observed, actions);
       const auth = node('section'); auth.setAttribute('aria-label', 'GitHub CLI sign-in');
-      dialog.append(header, node('h3', 'Connections'), card, auth); overlay.append(dialog); doc.body.append(overlay);
+      dialog.append(header, node('h3', 'Connections'), card, auth);
+      extras = sections.map(make => make()).filter(extra => extra?.element);
+      dialog.append(...extras.map(extra => extra.element)); overlay.append(dialog); doc.body.append(overlay);
       ui = { host, status, observed, auth, refresh: refreshButton, connect: connectButton, disconnect: disconnectButton };
       host.addEventListener('change', () => { if (!pending && !session && host.isConnected) { onIntent(); selectedHost = host.value; void refresh(selectedHost); } });
       overlay.addEventListener('keydown', event => {
         if (session?.mount.contains(event.target)) return; // CLI keys, with explicit Shift+Tab egress
         if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); return; }
         if (event.key !== 'Tab') return;
-        const controls = [...dialog.querySelectorAll('button,select,textarea')].filter(el => !el.hidden && !el.disabled && el.tabIndex >= 0);
+        const controls = [...dialog.querySelectorAll('button,select,textarea,input')].filter(el => !el.hidden && !el.disabled && el.tabIndex >= 0);
         const first = controls[0], last = controls.at(-1);
         if (event.shiftKey && doc.activeElement === first) { event.preventDefault(); last?.focus(); }
         else if (!event.shiftKey && doc.activeElement === last) { event.preventDefault(); first?.focus(); }
