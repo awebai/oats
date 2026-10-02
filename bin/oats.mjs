@@ -1921,9 +1921,11 @@ function workspaceIdentity(local, discovery) {
 }
 /** What this machine's parsed cache knows of the workspace `ref` names (the values observeWorkspace and
  *  confirmMembership stored, each at its repo's last observed commit): { host, file } — `host` the ref
- *  of the workspace host, `file` its workspace file or null — when `ref` is the host (its file is
- *  cached) or a member whose cached oats-membership.yaml names it (discoverOrStandalone follows the same
- *  backlink); { host: null, file: null } for a member whose host is not known; null when nothing is. */
+ *  of the workspace host, `file` its workspace file or null — when `ref` is the host (its workspace file
+ *  is cached) or a member whose cached oats-membership.yaml names it (discoverOrStandalone follows the
+ *  same backlink). A member's backlink is cached whether its own workspace slot was observed (missing)
+ *  or never was (the host's discovery confirmed it). { host: null, file: null } for a ref cached as
+ *  having no workspace file and no backlink; null when nothing is known. */
 function cachedWorkspace(ref) {
   const options = remoteOptionsFromEnv();
   const cached = (r, item) => {
@@ -1933,11 +1935,11 @@ function cachedWorkspace(ref) {
   };
   const fileOf = (read) => (read && !read.missing && !read.problems && read.value && typeof read.value === "object" ? read.value : null);
   const read = cached(ref, "workspace");
-  if (!read) return null;
-  if (!read.missing) return { host: ref, file: fileOf(read) };
+  if (read && !read.missing) return { host: ref, file: fileOf(read) };
   const membership = cached(ref, "membership");
   const host = membership?.kind === "ok" && typeof membership.value?.workspace === "string" ? membership.value.workspace : null;
-  return host === null ? { host: null, file: null } : { host, file: fileOf(cached(host, "workspace")) };
+  if (host !== null) return { host, file: fileOf(cached(host, "workspace")) };
+  return read ? { host: null, file: null } : null;
 }
 /** One `modules:` line per module. */
 function driftLine(row) {

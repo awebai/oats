@@ -128,6 +128,25 @@ test("teamsFrom cache through a member's backlink: oats-local.yaml names a membe
   } finally { fx.cleanup(); }
 });
 
+test("a member's cached backlink names the host when the cache was primed through the host (no workspace slot for the member), standalone too", () => {
+  const fx = deployment();
+  try {
+    const { mRef, bare } = memberNamed(fx, { defaultTeam: "shared" });
+    writeLocal(fx, { defaultTeam: "shared" }); // oats-local.yaml names the HOST: discovery confirms M's membership, never observes M's workspace
+    const seen = fx.cli(["souls", "--json"]);
+    assert.equal(seen.status, 0, seen.stdout + seen.stderr);
+    unreachable(fx);
+    renameSync(bare, `${bare}.gone`);
+    const name = (local) => writeFileSync(join(fx.dep, "oats-local.yaml"), YAML.stringify({ schemaVersion: 2, workspace: mRef, teams: { mine: { team: MINE } }, defaultTeam: "shared", ...local }));
+    name({});
+    assert.deepEqual(status(fx).workspace, { reachable: true, key: fx.key, ref: mRef, keyFrom: "workspace", standalone: false,
+      defaultTeam: { label: "shared", team: SHARED }, teams: { global: null, mine: MINE, shared: SHARED }, teamsFrom: "cache" });
+    name({ standalone: mRef });
+    assert.deepEqual(status(fx).workspace, { reachable: true, key: fx.key, ref: mRef, keyFrom: "workspace", standalone: true,
+      defaultTeam: { label: "shared", team: null }, teams: { mine: MINE }, teamsFrom: "local" });
+  } finally { fx.cleanup(); }
+});
+
 test("a run that falls back to the standalone view (the host unreadable) is not standalone: its teams come from the cache, else are unknown", async () => {
   const fx = deployment();
   try {
