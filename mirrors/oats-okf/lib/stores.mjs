@@ -7,8 +7,12 @@ import { metadata, noGit, gitTimeoutMs } from './config.mjs';
 const validator = fileURLToPath(new URL('./okf-validate.mjs', import.meta.url));
 // Never let local replace refs reinterpret frozen OIDs, including inside Git's
 // transport subprocesses. Override even an explicitly supplied command env.
-export const gitEnv = (env = cleanEnv()) => ({...env,GIT_NO_REPLACE_OBJECTS:'1'});
-export const git = (cwd,args,opts={}) => exec('git',['--no-replace-objects','-c','core.hooksPath=/dev/null','-c','protocol.ext.allow=never','-C',cwd,...args],{cwd,...opts,env:gitEnv(opts.env)});
+// History is read from the commit objects alone: a checkout's replace refs,
+// grafts (info/grafts) or commit-graph file could otherwise rewrite parents,
+// and so ancestry, without changing a single object. The graft file is a path
+// that cannot exist: an existing one, even empty, makes Git print a warning.
+export const gitEnv = (env = cleanEnv()) => ({...env,GIT_NO_REPLACE_OBJECTS:'1',GIT_GRAFT_FILE:'/dev/null/no-grafts'});
+export const git = (cwd,args,opts={}) => exec('git',['--no-replace-objects','-c','core.hooksPath=/dev/null','-c','protocol.ext.allow=never','-c','core.commitGraph=false','-C',cwd,...args],{cwd,...opts,env:gitEnv(opts.env)});
 function baseError(code,message,base,alias,step,reason) {throw Object.assign(new Error(redactUrls(message)),{code,base:alias,repository:displayRepo(base.repository),step,reason});}
 function baseRemedy(alias) {return `fix the binding for base alias "${alias}" in the bindings file, or remove the base from the bindings`;}
 function classifyGitFailure(error) {
@@ -445,6 +449,16 @@ function acceptMerged(base,cwd,branch,receipt,pr,persist,acceptedHead) {
   Object.assign(receipt,{status:'accepted',acceptedCommit:acceptedHead,mergeCommit:merge,...(verdict?{mergedHead:pr.headRefOid,verdict}:{}),acceptedAt:new Date().toISOString()});persist();
   return receipt;
 }
+/** Whether a PR head on `branch` is the delivered commit or descends from it
+ *  (the maintainer amended on top of it), by Git ancestry on objects fetched
+ *  from the publication branch, never by message text. */
+function carriesDelivered(cwd,branch,commit,head) {
+  if(head===commit) return true;
+  if(typeof head!=='string' || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(head)) return false;
+  git(cwd,['fetch','--no-tags','--no-write-fetch-head','origin',`refs/heads/${branch}`],{timeout:gitTimeoutMs()});
+  try {git(cwd,['merge-base','--is-ancestor',commit,head]);return true;}
+  catch(e) {if(e.status===1) return false;throw e;}
+}
 export function gitPublish(base, stage, proposal, receipt, persist, {beforePublish=()=>{},prIdentity=receipt.pr,pr:presentation}={}) {
   const cwd=stage.checkout, branch=`okf/${proposal.attempt || proposal.run}-${base.id}`;
   verifyRemote(base,cwd);
@@ -463,7 +477,7 @@ export function gitPublish(base, stage, proposal, receipt, persist, {beforePubli
   if(accepted!==receipt.confirmedHead && !rootUnchanged(base,stage,cwd,accepted)) {
     // A known or uncertain previously created PR may be reconciled, but a
     // committed/pushed proposal alone does not authorize a NEW stale-base PR.
-    const prior=receipt.commit?prRows(base,branch,cwd,{identity:prIdentity}).filter(p=>p.headRefOid===receipt.commit && prMatches(p,base,branch,prIdentity)):[];
+    const prior=receipt.commit?prRows(base,branch,cwd,{identity:prIdentity}).filter(p=>prMatches(p,base,branch,prIdentity) && carriesDelivered(cwd,branch,receipt.commit,p.headRefOid)):[];
     if(prior.length!==1) fail('E_BASELINE','accepted Git head changed before verified PR delivery; explicit rejudgment required');
   }
   if(!receipt.commit) {
@@ -511,8 +525,13 @@ export function gitPublish(base, stage, proposal, receipt, persist, {beforePubli
   verifyPublicationTree(base,cwd,immutableCommit(cwd,parentHead).tree,publication.tree,proposal.after,proposal.before);
   const remoteTip=()=>git(cwd,['ls-remote','--heads','origin',`refs/heads/${branch}`],{timeout:gitTimeoutMs()}).split(/\s/)[0] || null;
   let tip=remoteTip();
-  if(tip && tip!==receipt.commit) fail('E_PR','publication branch has unexpected commit; never force push');
-  if(tip!==receipt.commit) {
+  if(tip && tip!==receipt.commit) {
+    // The branch moved past the delivered commit: only the maintainer's
+    // amendment of the known, open PR, on top of that commit, is delivered.
+    const amended=prIdentity && prRows(base,branch,cwd,{identity:prIdentity}).some(p=>p.state==='OPEN' && p.headRefOid===tip && prMatches(p,base,branch,prIdentity));
+    if(!amended || !carriesDelivered(cwd,branch,receipt.commit,tip)) fail('E_PR','publication branch has unexpected commit; never force push');
+  }
+  if(!tip) {
     beforePublish();
     receipt.status='push-intent'; persist();
     try { verifyRemote(base,cwd);git(cwd,['push','--no-follow-tags','--recurse-submodules=no','origin',`${receipt.commit}:refs/heads/${branch}`],{timeout:gitTimeoutMs()}); }
@@ -534,7 +553,7 @@ export function gitPublish(base, stage, proposal, receipt, persist, {beforePubli
     catch(e) {receipt.status='pr-unknown';receipt.error=e.message;persist();throw e;}
     rows=prRows(base,branch,cwd);
   }
-  const matching=rows.filter(p=>p.headRefOid===receipt.commit && prMatches(p,base,branch,prIdentity));
+  const matching=rows.filter(p=>prMatches(p,base,branch,prIdentity) && carriesDelivered(cwd,branch,receipt.commit,p.headRefOid));
   if(matching.length!==1 || rows.length!==1) {receipt.status='pr-unknown';persist();fail('E_PR','actual PR identity/head/base could not be uniquely verified');}
   const pr=matching[0];receipt.pr=pr;receipt.status='delivered';receipt.deliveredAt ||= new Date().toISOString();persist();
   if(pr.state==='CLOSED' && !pr.mergedAt) {receipt.status='rejected';persist();fail('E_PR','PR closed without merge; retained proposal requires operator review');}
