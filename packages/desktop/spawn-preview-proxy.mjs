@@ -12,7 +12,7 @@ export async function proxySpawnPreview(event, path, opts, { rendererURL, connec
   try {
     if (opts?.method !== 'POST') return reply('E_BAD_ARGS', 400);
     start = { ...connection() }; if (start.transition) return reply('E_TARGET_CHANGED');
-    const url = apiUrl(path, start.base, start.wsId, start.allowedWs);
+    const url = apiUrl(path, start.base, start.wsId, start.allowedWs, { bound: start.bound === true });
     if (url.pathname !== '/api/workspace-spawn-preview') return reply('E_BAD_ARGS', 400);
     const init = apiInit({ method: 'POST', body: opts.body });
     if (typeof init.body !== 'string' || Buffer.byteLength(init.body) > 16384) return reply('E_BAD_ARGS', 400);

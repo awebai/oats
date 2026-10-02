@@ -8,7 +8,8 @@
 // chrome stays a thin rail so nothing is duplicated.
 // (groupInstances is not imported here: the feature branch renders the
 // sidebar roster via clusterInstances — lineage clusters with identity keys.)
-import { currentWorkspace, workspaceGeneration, setWorkspace, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange, instanceApiPath, postJson, rowDeployment, httpError } from "./views/common.mjs";
+import { currentWorkspace, workspaceGeneration, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange, instanceApiPath, postJson, rowDeployment, httpError,
+  switchWorkspace, startWindow, windowState, onWindowState, choosingWorkspaces, chooseWorkspace } from "./views/common.mjs";
 import { instanceActions, captureInstanceActionMenu } from "./instance-actions.mjs";
 import { instanceActionTarget, sameInstanceActionTarget } from "./instance-action-target.mjs";
 import { createInstancePrAction } from "./instance-pr-action.mjs";
@@ -72,6 +73,8 @@ import {
 import { createWorkspaceTabMemory } from "./workspace-tab-memory.mjs";
 import { notePanel, panelDeployments, rosterSections, deploymentHeading, rowStale } from "./view-deployments.mjs";
 import { onDeploymentTabRequest } from "./deployment-tabs.mjs";
+import { ROSTER_POLL_FOCUSED_MS, rosterPollDue } from "./roster-cadence.mjs";
+import { scopedRequest } from "./workspace-routes.mjs";
 import { createViewMembership, rehomeMap, rehomeTabs, rehomeActiveTerminals, rehomeCollapsed } from "./workspace-rehome.mjs";
 import {
   requestSplit, focusTab, openTabInFocusedGroup, removeSplitTab, isSplitMember, groupOfTab, fillEmptyGroup, resizeSplitGroups,
@@ -80,6 +83,9 @@ import { splitControlsState } from "./split-controls.mjs";
 import { projectSplitDom } from "./split-dom.mjs";
 
 const desk = window.oatsDesktop;
+// One window per workspace (#481): settle this window's workspace (its hash, or the shared default
+// when no other window has it) before anything reads one. A window left choosing reads nothing.
+const windowStart = await startWindow();
 initTheme();
 mountShellIcons(document);
 const identityStyle = document.createElement("style");
@@ -108,6 +114,9 @@ window.addEventListener('pagehide', () => notifications.dispose(), { once: true 
 
 // ── ctx (shared by all views) ─────────────────────────────────────────────
 async function api(pathname, opts) {
+  // A window with no workspace sends no workspace-scoped request (#481): Quick Open, a view refreshing
+  // on its way out, anything. Main refuses them too; this keeps them from being sent at all.
+  if (windowState() === "choosing" && scopedRequest(pathname)) throw Object.assign(new Error("This window has no workspace yet."), { code: "E_NO_WORKSPACE" });
   const r = await desk.api(pathname, opts);
   if (!r.ok) throw httpError(r, pathname);
   return r.body;
@@ -237,13 +246,9 @@ const stageHost = document.getElementById("stagehost");
 let stage = null;           // { name, life, el }
 let stageOp = 0;            // switch generation — a slow mount must not paint over a newer switch
 
-async function showStage(name) {
-  tabOpenIntents.invalidate(); // navigating away supersedes pending tab selections
-  const v = NAV.find((x) => x.name === name);
-  setSidebarMode(stageSidebarMode(name));
-  setNavActive(name);
-  showTabLayer(false);
-  if (stage && stage.name === name) return;   // already on this surface
+/** Unmount the stage on screen. Resolves to this switch's generation, or null when a newer switch
+ * superseded it meanwhile. */
+async function closeStage() {
   const myOp = ++stageOp;
   const prev = stage;
   stage = null;
@@ -252,7 +257,20 @@ async function showStage(name) {
     try { await prev.life.close(); } catch (e) { console.error(e); }
     prev.panelOwner?.dispose(); prev.el.remove();
   }
-  if (myOp !== stageOp) return;               // superseded by a faster switch
+  return myOp === stageOp ? myOp : null;
+}
+
+async function showStage(name) {
+  // A window with no workspace shows only its choice (#481): no view may read with no workspace.
+  if (windowState() === "choosing") { void showChooser(); return; }
+  tabOpenIntents.invalidate(); // navigating away supersedes pending tab selections
+  const v = NAV.find((x) => x.name === name);
+  setSidebarMode(stageSidebarMode(name));
+  setNavActive(name);
+  showTabLayer(false);
+  if (stage && stage.name === name) return;   // already on this surface
+  const myOp = await closeStage();
+  if (myOp === null) return;                  // superseded by a faster switch
   let mod;
   try { mod = await loadStageView(name); }
   catch (e) {
@@ -284,6 +302,36 @@ async function showStage(name) {
     el.replaceChildren(notice);
   }
 }
+
+/** One window per workspace (#481): a window with no workspace (a New Window, or one whose view moved
+ * to a workspace another window has) shows the switcher over an empty state, and reads nothing. Its
+ * tabs stay, hidden, until it has a workspace again. */
+async function showChooser() {
+  tabOpenIntents.invalidate();
+  showTabLayer(false);
+  if (contextRosterEl) contextRosterEl.hidden = true;
+  if (await closeStage() === null || windowState() !== "choosing") return;
+  const el = document.createElement("div");
+  el.className = "placeholder window-chooser";
+  const heading = document.createElement("h2");
+  heading.textContent = "Choose a workspace";
+  const text = document.createElement("p");
+  text.textContent = "This window has no workspace yet.";
+  const choose = document.createElement("button");
+  choose.type = "button"; choose.className = "primary"; choose.textContent = "Choose a workspace…";
+  choose.addEventListener("click", () => workspaceLabel.openMenu());
+  el.append(heading, text, choose);
+  stageHost.replaceChildren(el);
+  workspaceLabel.choose(choosingWorkspaces());
+  workspaceLabel.openMenu();
+}
+onWindowState((state) => {
+  if (state === "choosing") { void showChooser(); return; }
+  // Bound again (a choice, or an adoption): leaving the choice shows the home surface.
+  if (!contextRosterEl?.hidden) return;
+  contextRosterEl.hidden = false;
+  void showStage("hierarchy");
+});
 
 /** A stage switch from the keyboard (a chord, the palette, a nav button) keeps focus on a
  * control: where it was when that is still shown (the nav button), else the stage's first
@@ -376,7 +424,10 @@ const desktopBridge = window.oatsDesktop;
 const unavailableWorkspaceService = () => Promise.reject(new Error("Workspace discovery is not available in this desktop service yet."));
 const workspaceLabel = createWorkspaceSwitcher({
   document,
-  selectWorkspace: setWorkspace,
+  // Main binds a switch first; a workspace another window has is focused there instead (#481).
+  selectWorkspace: (id) => { void switchWorkspace(id); },
+  openInNewWindow: typeof desktopBridge.windowOpenWorkspace === "function" ? (id) => { void desktopBridge.windowOpenWorkspace(id); } : null,
+  mac: navigator.platform.includes("Mac"),
   // Feature-detected while tui-dev lands the approved privileged contract.
   // The final adapter names are intentionally isolated to these three lines.
   discoverSuggestions: desktopBridge.workspaceSuggestions || unavailableWorkspaceService,
@@ -489,8 +540,15 @@ async function reAddRosterWorkspace(ws) {
   renderContextRoster([]);
 }
 
+/** A view that moved under this window (#482) is followed through main without focusing anything; one
+ * another window has leaves this window choosing, its tabs kept (#481). */
+async function followView(id) {
+  const result = await switchWorkspace(id, { focus: false });
+  if (!result.ok && result.code === "open-elsewhere") await chooseWorkspace(result.workspaces);
+}
+
 async function refreshContextRoster({ user = false } = {}) {
-  if (!contextRosterEl) return;
+  if (!contextRosterEl || windowState() === "choosing") return; // no workspace: nothing to read
   // A Retry restarts the bounded wait for an answer.
   if (user) rosterPendingWatch.reset();
   const myGen = ++contextRosterGen;
@@ -524,13 +582,14 @@ async function refreshContextRoster({ user = false } = {}) {
       rosterPendingWatch.observe(null, false); // an answer: not served
       failRosterUnserved(NOT_SERVED_CODE, ws);
       // The switcher still offers what the server does serve, with this deployment named as the
-      // current choice, so the window is never left without a way to another workspace.
-      let served = null;
-      try { served = await api("/api/panel"); } catch { /* the choices stay as they were */ }
+      // current choice, so the window is never left without a way to another workspace. A bound
+      // window's refusal carries those choices (#481); a window with no workspace yet reads them.
+      let served = Array.isArray(e.workspaces) ? { workspaces: e.workspaces } : null;
+      if (!served) try { served = await api("/api/panel"); } catch { /* the choices stay as they were */ }
       // A view id no longer served whose deployments another view holds now (a remote that reports
       // another workspace, #482): the window and its state follow them there.
       const moved = served && owns() ? rehomeMap(served.workspaces, viewMembership).get(ws) : null;
-      if (moved) { rehomeWorkspaceState(served.workspaces); setWorkspace(moved); return; }
+      if (moved) { rehomeWorkspaceState(served.workspaces); void followView(moved); return; }
       const current = { id: ws, name: viewMembership.name(ws) || (ws.startsWith("ws:") ? "Workspace" : ws.split("/").filter(Boolean).at(-1) || ws), team: null };
       if (served && owns()) commitWorkspaceLabel(current, Array.isArray(served.workspaces) ? served.workspaces : []);
       return;
@@ -1855,6 +1914,7 @@ const chordDetail = (id) => () => {
 };
 const palette = createPalette({
   loadInstances: async () => {
+    if (windowState() === "choosing") return { instances: [], deployments: [] }; // no workspace: nothing to read (#481)
     const ws = currentWorkspace();
     const p = await api(`/api/panel${ws ? `?ws=${encodeURIComponent(ws)}` : ""}`);
     // One snapshot: the palette sections and clusters by these deployments, as the sidebar does.
@@ -1875,6 +1935,9 @@ const palette = createPalette({
     { label: "Shortcuts: edit keyboard shortcuts…", detail: chordDetail("app.shortcuts"), run: () => openShortcutsEditor() },
     { label: "Settings: Connections…", detail: "GitHub CLI accounts on this machine", run: () => openConnections() },
     { label: "Workspace: switch…", detail: chordDetail("app.workspaces"), run: () => workspaceLabel.openMenu() },
+    // One window per workspace (#481): on macOS also File → New Window ⌘⇧N; elsewhere no default chord.
+    ...(typeof desktopBridge.windowOpenWorkspace === "function" ? [{ label: "Window: new window",
+      detail: () => chordDetail("app.newWindow")() || (isMac ? formatChord("Mod+Shift+N", true) : ""), run: () => runAction("app.newWindow") }] : []),
     { label: "Instances: focus the sidebar roster", detail: chordDetail("sidebar.focusFilter"), run: () => focusRoster() },
     { label: "Sidebar: toggle (hide/show)", detail: chordDetail("sidebar.toggle"), run: () => toggleSidebar() },
     { label: "Instance panel: show / hide", detail: chordDetail("panel.toggle"), run: () => runAction("panel.toggle") },
@@ -2133,6 +2196,10 @@ registerAction({ id: "app.quickOpenSouls", label: "Quick open a soul to spawn", 
 registerAction({ id: "app.chooseSoul", label: "Spawn instance: choose a soul in Workspace", context: "global", run: () => openWorkspaceSouls() });
 registerAction({ id: "app.shortcuts", label: "Edit keyboard shortcuts", context: "global", run: () => openShortcutsEditor() });
 registerAction({ id: "app.connections", label: "Settings: Connections", context: "global", run: () => openConnections() });
+// A window with no workspace, showing the switcher (#481). No default chord: Ctrl+Shift+N stays Choose soul.
+if (typeof desktopBridge.windowOpenWorkspace === "function") {
+  registerAction({ id: "app.newWindow", label: "Window: new window", context: "global", run: () => { void desktopBridge.windowOpenWorkspace(null); } });
+}
 const unregisterOpenFile = registerAction({ id: "app.openFile", label: "File: open read-only…", context: "global", defaultChord: "Mod+O", run: () => fileOpener.choose() });
 window.addEventListener("pagehide", () => { tabOpenIntents.invalidate(); unregisterOpenFile(); fileOpener.dispose(); }, { once: true });
 // stage-switch actions derive from the nav manifest (same rule as the
@@ -2286,11 +2353,16 @@ function rehomeWorkspaceState(workspaces) {
 // Retry reads at once, as before. A new connection replaces the poll's read at once: the old read's
 // outcome is revoked (contextRosterGen) and the new subject's deadline is armed at its dispatch, so
 // neither waits for the old read to settle; only the newest poll clears the slot.
-let rosterPoll = null;
+// An unfocused window polls at the server's blurred cadence (roster-cadence.mjs, #481); focus reads at once.
+let rosterPoll = null, rosterPolledAt = 0;
 function pollContextRoster() {
+  rosterPolledAt = Date.now();
   const poll = rosterPoll = refreshContextRoster().finally(() => { if (rosterPoll === poll) rosterPoll = null; });
 }
-setInterval(() => { if (!rosterPoll) pollContextRoster(); }, 4000);
+setInterval(() => {
+  if (!rosterPoll && rosterPollDue({ focused: document.hasFocus(), last: rosterPolledAt, now: Date.now() })) pollContextRoster();
+}, ROSTER_POLL_FOCUSED_MS);
+window.addEventListener("focus", () => { if (!rosterPoll) pollContextRoster(); });
 subscribeConnections(() => { if (contextRosterEl) pollContextRoster(); });
 
 // Contract re-probe triggers: launch (initial refresh) and app focus. The

@@ -4,6 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
+import { withShellWindowGlobals } from './helpers/shell-window-globals.mjs';
 import { JSDOM } from "jsdom";
 import { prepareOwnedOpen } from "../renderer/open-intent.mjs";
 import { createViewLifecycle } from "../renderer/view-lifecycle.mjs";
@@ -77,10 +78,10 @@ for (const kind of ["terminal", "artifact"]) {
 test("navigating to a stage cancels an older terminal open", async t => {
   const f = fixture(t, "terminal");
   const pendingTerminal = f.run("first");
-  const navigate = runInNewContext(`(${extract("showStage")})`, {
+  const navigate = runInNewContext(`${extract("closeStage")}\n(${extract("showStage")})`, withShellWindowGlobals({
     ...f.context, NAV: [{ name: "hierarchy" }], stage: { name: "hierarchy" },
     stageSidebarMode: () => "overview", showTabLayer() {},
-  });
+  }));
   await navigate("hierarchy");
   f.requests[0].resolve({ instances: ["first"] }); await pendingTerminal;
   assert.deepEqual(f.activated, []);

@@ -15,6 +15,8 @@ async function setup(t, options = {}) {
   const mod = options.module || hierarchy, dom = new JSDOM('<body><main id="host"></main></body>', { url: 'http://localhost' });
   const doc = dom.window.document, host = doc.querySelector('main'), old = { window: globalThis.window, document: globalThis.document, setInterval: globalThis.setInterval, ws: currentWorkspace() };
   const polls = []; globalThis.window = dom.window; globalThis.document = doc; globalThis.setInterval = fn => { polls.push(fn); return 0; };
+  // The window's focus as the document reports it (jsdom reports none): focused unless a test says otherwise.
+  let focused = options.focused ?? true; doc.hasFocus = () => focused;
   setWorkspace('/team');
   let read = options.api || (() => panel(options.instances));
   const calls = [], opened = [], started = [], restarted = [], brains = [], views = [];
@@ -31,7 +33,7 @@ async function setup(t, options = {}) {
   return { mod, dom, doc, host, canvas, calls, opened, started, restarted, brains, views, dispose, mouse,
     one: selector => host.querySelector(selector), all: selector => [...host.querySelectorAll(selector)],
     nodes: () => [...host.querySelectorAll('.hnode')],
-    setRead: value => { read = value; }, poll: () => polls[0](), retry: () => host.querySelector('.hier-retry').click(),
+    setRead: value => { read = value; }, poll: () => polls[0](), focus: value => { focused = value; }, retry: () => host.querySelector('.hier-retry').click(),
     key: (key, fields = {}, target = canvas) => { const event = new dom.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...fields }); target.dispatchEvent(event); return event; },
   };
 }
@@ -359,4 +361,30 @@ test('keyboard: - and = zoom, 0 fits (the canvas has focus)', async t => {
   u.key('='); assert.ok(zoom() > fitted, '= zooms in');
   u.key('-'); u.key('-'); assert.ok(zoom() < fitted, '- zooms out');
   u.key('0'); assert.equal(zoom(), fitted, '0 fits again');
+});
+
+test('the Deployments stage in an unfocused window reads its roster at the blurred cadence (#481)', async t => {
+  const s = await setup(t);
+  const reads = () => s.calls.filter(c => c.path.startsWith('/api/panel')).length;
+  const before = reads();
+  s.poll(); await tick();
+  assert.equal(reads(), before + 1, 'focused: every 4 s tick reads');
+  s.focus(false);
+  for (let n = 0; n < 6; n++) { s.poll(); await tick(); }
+  assert.equal(reads(), before + 1, 'unfocused: ticks inside the blurred interval read nothing');
+  const realNow = Date.now; Date.now = () => realNow() + 31_000;
+  try { s.poll(); await tick(); } finally { Date.now = realNow; }
+  assert.equal(reads(), before + 2, 'unfocused: one read per blurred interval');
+  s.focus(true);
+  s.poll(); await tick();
+  assert.equal(reads(), before + 3, 'focused again: every tick');
+});
+
+test('a Deployments stage mounted in a window that is already unfocused starts at the blurred cadence (#481)', async t => {
+  // A restored window can lose focus before its renderer mounts: no blur event ever reaches the stage.
+  const s = await setup(t, { focused: false });
+  const reads = () => s.calls.filter(c => c.path.startsWith('/api/panel')).length;
+  const before = reads();
+  for (let n = 0; n < 6; n++) { s.poll(); await tick(); }
+  assert.equal(reads(), before, 'no read every 4 s');
 });

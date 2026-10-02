@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
 import { runInNewContext } from 'node:vm';
+import { withWindowGlobals } from './helpers/main-window-globals.mjs';
 import { classifyApiRoute } from '../api-url.mjs';
 import { createSpawnPreviewBoundary, createSpawnPreviewCache } from '../server/spawn-preview.mjs';
 import { proxySpawnPreview } from '../spawn-preview-proxy.mjs';
@@ -70,7 +71,7 @@ test('main normalizes every preview alias into the real specialized guard; same-
     proxySpawnPreview: (e, path, opts, d) => proxySpawnPreview(e, path, opts, { ...d, fetch: f.deps.fetch }), base: () => f.connection.base,
     wsId: 'northwind', allowedWs: f.connection.allowedWs, serverEpoch: 0, unservedRefusal: () => null, serverHost: { inTransition: () => false },
     forgeFailure: () => ({}), lifecycleFailure: () => ({}), guard: () => assert.fail('preview must use specialized frame guard') };
-  runInNewContext(source.slice(start, end), deps);
+  runInNewContext(source.slice(start, end), withWindowGlobals(deps));
   for (const path of ['/api/workspace-spawn-preview', '/api/./workspace-spawn-preview', '/api/x/../workspace-spawn-preview', '/api/%2e/workspace-spawn-preview', '/api' + String.fromCharCode(92) + 'workspace-spawn-preview', '/a\tpi/workspace-spawn-preview']) {
     assert.equal((await handler({ ...f.event, senderFrame: { url: f.deps.rendererURL } }, path, f.opts)).body.reason.code, 'E_FORBIDDEN_FRAME');
     assert.equal(calls, 0);

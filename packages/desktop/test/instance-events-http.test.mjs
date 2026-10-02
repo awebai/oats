@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
 import { runInNewContext } from 'node:vm';
+import { withWindowGlobals } from './helpers/main-window-globals.mjs';
 import { classifyApiRoute } from '../api-url.mjs';
 import { discover } from '../cli-locator.mjs';
 import { createInstanceEventsBoundary } from '../server/instance-events.mjs';
@@ -62,7 +63,7 @@ test('real main classifier routes every normalized alias through the specialized
     proxyInstanceEvents: (event, path, opts, deps) => proxyInstanceEvents(event, path, opts, { ...deps, fetch: f.deps.fetch }),
     base: () => f.connection.base, wsId: 'ws', allowedWs: f.connection.allowedWs, serverEpoch: 0, unservedRefusal: () => null, serverHost: { inTransition: () => false },
     guard: () => assert.fail('events must never use generic proxy') };
-  runInNewContext(source.slice(start, end), deps);
+  runInNewContext(source.slice(start, end), withWindowGlobals(deps));
   for (const path of ['/api/instance-events', '/api/./instance-events', '/api/x/../instance-events', '/api/%2e/instance-events', '/api' + String.fromCharCode(92) + 'instance-events', '/a\tpi/instance-events']) {
     assert.equal((await handler({ ...f.event, senderFrame: { url: f.deps.rendererURL } }, path, f.opts)).body.reason.code, 'E_FORBIDDEN_FRAME');
     assert.equal(calls, 0);

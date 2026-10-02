@@ -164,6 +164,13 @@ per configured host) runs on a second `createRefreshLoop`: 10 s after
 completion while focused, 30 s while blurred, driven by the same window
 state.
 
+Each window's sidebar roster, and its Deployments page when shown, re-read
+every 4 s while that window is focused and every 30 s (the blurred cadence)
+while it is not (`renderer/roster-cadence.mjs`); focus returning reads the
+sidebar at once. The server
+observes no faster while blurred, so an unfocused window's extra reads would
+show nothing new.
+
 ## The CLI probe is compared, not trusted by identity
 
 A window focus re-probes the CLI (`POST /api/cli/reprobe`). The probe

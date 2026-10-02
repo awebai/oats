@@ -2,6 +2,7 @@
 // The composition root supplies validated target admission and bounded I/O.
 import { randomBytes } from 'node:crypto';
 import { MAX_TERMINALS } from './terminal-registry.mjs';
+import { trustedRendererUrl } from './renderer/window-binding.mjs';
 import {
   terminalFailure as fail, terminalSuccess as ok, terminalHandle, terminalGeometry,
   TERM_WRITE_BYTES, TERM_READY_BYTES, TERM_READY_MS, TERM_CLOSE_MS, TERM_PREPARE_MS, TERM_ATTACHMENTS_MAX,
@@ -29,7 +30,7 @@ export function createTerminalOwnerBroker({ rendererUrl, io, context = () => '',
   const handle = r => Object.freeze({ id: r.id, lease: r.lease });
   const timer = (fn, ms) => { const t = clock.setTimeout(fn, ms); t?.unref?.(); return t; };
   const clear = t => { if (t !== null) clock.clearTimeout(t); };
-  const trustedUrl = url => typeof url === 'string' && (url === rendererUrl || url.startsWith(`${rendererUrl}#`));
+  const trustedUrl = url => trustedRendererUrl(url, rendererUrl);
   function liveOwner(o) {
     try { return !!o && owners.has(o) && o.admitted && !stopped && !o.wc.isDestroyed()
       && o.frame === o.wc.mainFrame && !o.frame.detached && trustedUrl(o.frame.url); } catch { return false; }
