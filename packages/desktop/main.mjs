@@ -30,7 +30,7 @@ import { ensureServerOnPort, serverCompatible } from "./server-compat.mjs";
 import { createServerHost, createServerAdapter } from "./server-host.mjs";
 import { cliWorkspace, validWorkspaceRef } from "./workspace-cli.mjs";
 import { onboardData } from "./deployment-data.mjs";
-import { validateWorkspace, workspaceSuggestions, parseRecents, pushRecent, decideAdd, createGenerations, createAddExecutor, restoreWorkspaceDirs, saveWorkspaceDirs, matchWorkspaceDirs, createOnboardOffers, createOnboardExecutor,
+import { validateWorkspace, workspaceSuggestions, parseRecents, pushRecent, decideAdd, createGenerations, createAddExecutor, restoreWorkspaceDirs, saveWorkspaceDirs, commitOpenSet, startupOpenSet, matchWorkspaceDirs, createOnboardOffers, createOnboardExecutor,
   savedWorkspacePaths, persistableDirs, stageDirs, pickedFolderChoices, createPerformAdd } from "./workspace-registry.mjs";
 import { workspaceNotServed } from "./renderer/deployment-header.mjs";
 import { appMenuTemplate } from "./app-menu.mjs";
@@ -74,6 +74,9 @@ const WORKSPACE = resolve(argDir || process.env.OATS_DESKTOP_DIR || process.cwd(
 // Mutable workspace set: startup workspace plus runtime-added ones — the
 // repeated --dir list an app-owned server is (re)started with.
 const workspaceDirs = [WORKSPACE];
+// The persisted open set (workspace-open.json): the saved paths, kept even while they do not
+// validate, plus what was added. The served set above is only what validates (#472).
+let openDirs = [];
 // Every deployment path this Desktop has had open or saved this session (the saved set as read,
 // the open set, each committed add). A known deployment the server does not serve is reported
 // (E_WORKSPACE_NOT_SERVED) and may be re-added; an unknown id is adopted as before (#461).
@@ -267,9 +270,11 @@ const executeAdd = createAddExecutor({
   stage: (dirs, path) => stageDirs(dirs, path, wsValidate),
   commitDirs: (dirs) => {
     // Persistence failure leaves the old set intact; the executor restores
-    // the previous backend and reports the failed add to the user.
-    saveWorkspaceDirs(OPEN_WORKSPACES_FILE(), dirs);
-    workspaceDirs.length = 0; workspaceDirs.push(...dirs);
+    // the previous backend and reports the failed add to the user. The persisted
+    // set keeps every saved deployment, served or not (#472).
+    const next = commitOpenSet({ open: openDirs }, dirs, (open) => saveWorkspaceDirs(OPEN_WORKSPACES_FILE(), open));
+    openDirs = next.open;
+    workspaceDirs.length = 0; workspaceDirs.push(...next.served);
     knowDirs(dirs);
   },
   commitRecent: (p) => writeRecents(pushRecent(readRecents(), p)),
@@ -649,14 +654,15 @@ const primaryInstance = startSingleInstance(app, () => BrowserWindow.getAllWindo
   if (!startupIsDeployment) console.log(persistableDirs(workspaceDirs, wsValidate).length
     ? `oats-desktop: ${WORKSPACE} is not an OATS deployment (no oats-local.yaml); opened the saved workspaces instead`
     : `oats-desktop: ${WORKSPACE} is not an OATS deployment (no oats-local.yaml) and no saved workspace could be opened`);
+  // Deployments only, and never an empty set over the saved one: a launch from a parent folder
+  // must not replace the open set with that folder (#461). A saved deployment that is missing for
+  // a moment (a volume not mounted yet) stays saved, served again once it is back (#472).
+  const startupSet = startupOpenSet(saved, workspaceDirs, wsValidate);
+  openDirs = startupSet.open;
   try {
     await ensureServer();
-    // Deployments only, and never an empty set over the saved one: a launch from a parent folder
-    // must not replace the open set with that folder (#461).
-    // Written only when the launch opened a deployment the saved set lacks: a saved deployment
-    // that is missing for a moment (a volume not mounted yet) stays saved for the next launch.
-    const persist = persistableDirs(workspaceDirs, wsValidate), savedPaths = savedWorkspacePaths(saved);
-    if (serverHost.owned() && persist.some((dir) => !savedPaths.includes(dir))) saveWorkspaceDirs(OPEN_WORKSPACES_FILE(), persist);
+    // Written only when the launch opened a deployment the saved set lacks.
+    if (serverHost.owned() && startupSet.write) saveWorkspaceDirs(OPEN_WORKSPACES_FILE(), startupSet.open);
   }
   catch (e) { console.error(`oats-desktop: ${e.message}`); }
   // Window activity: visibility flips that are not focus flips, hooked on

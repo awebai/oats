@@ -69,28 +69,44 @@ cycle runs is [desktop-load-path.md](desktop-load-path.md).
 
 ## The open set and adding a workspace
 
-The Desktop's open set is the list of deployment directories its app-owned
-server is started with, one `--dir` each, persisted as `workspace-open.json` in
-the app's user data. A deployment is a directory holding a regular (lstat,
-non-following) `oats-local.yaml`; nothing else counts (`wsValidate` in
-`main.mjs`, `validateWorkspace` in `workspace-registry.mjs`).
+The Desktop keeps two sets, never confused. The **served** set is the list of
+deployment directories its app-owned server is started with, one `--dir` each:
+only deployments that validate now. The **persisted** open set is
+`workspace-open.json` in the app's user data: every saved path, whether or not
+it validates at this moment, plus what was opened since. A deployment is a
+directory holding a regular (lstat, non-following) `oats-local.yaml`; nothing
+else counts (`wsValidate` in `main.mjs`, `validateWorkspace` in
+`workspace-registry.mjs`).
+
+The persisted set can therefore hold entries that are not served: a deployment
+on a volume that is not mounted yet, or a folder that stopped being a
+deployment (the Desktop cannot tell the two apart, so it does not guess). Such
+an entry is inert: it is never served, never reported as "not served" (that
+needs a deployment that validates), and never offered by the switcher. Each
+launch re-validates the persisted set, so a deployment that came back is served
+again. **Only an explicit remove drops a saved path**; nothing else does.
 
 - **Launch.** `restoreWorkspaceDirs` opens the saved deployments plus the
   launch directory (`--dir`, `OATS_DESKTOP_DIR` or the cwd) when that is one. A
   launch from a folder that is not a deployment (a parent such as `~/Agents`)
   opens the saved set and logs that it did. Only when nothing at all is a
   deployment is the launch folder served, for the first-run picker journey.
-- **Persisting.** `persistableDirs` writes deployments only, each once, and an
-  empty result writes nothing: a non-deployment never enters the file and the
-  saved set is never overwritten with nothing. A launch writes the file only
-  when it opened a deployment the file lacks, so a saved deployment that is
-  missing for a moment stays saved.
+- **Persisting.** `persistedOpenSet` writes the saved paths as they were, in
+  order, then the served deployments they lack, each once. Only deployments are
+  ever added to it (`persistableDirs`), so a non-deployment never enters the
+  file, and it is never written empty. A launch writes it only when it opened a
+  deployment the file lacks (`startupOpenSet`); an add writes it on commit
+  (`commitOpenSet`). Neither drops a saved path that does not validate now.
 - **Adding.** Every add goes through `createPerformAdd`: `decideAdd`
   (canonical path, provenance, validation), then the transactional executor
   (`createAddExecutor`). The replacement server is started with `stageDirs`:
-  the validated open set plus the new deployment, never fewer. The set and the
-  saved file are committed only once the new server advertises the
-  deployment; any failure restarts the previous server. A refusal returns
+  the members of the served set that still validate plus the new deployment,
+  never a path that does not validate. Only the persisted set never loses an
+  entry; a served deployment that went missing during the session is not
+  served by the replacement, and stays persisted. Both sets are committed only once the new server
+  advertises the deployment, the persisted one first; any failure (a failed
+  write included) restarts the previous server and leaves both sets as they
+  were. A refusal returns
   before any effect, so the open set and the running server are untouched.
 - **Provenance.** `workspace:add` admits only a path the Desktop offered or
   knows: a suggestion, a deployment offered beside a refused pick, or one in

@@ -58,6 +58,40 @@ export function stageDirs(previous, path, validate) {
   return persistableDirs([...previous, path], (p) => p === path || validate(p));
 }
 
+/* ── The open set: what is served, and what is kept (#472) ─────────────────
+   Two sets, never confused. The SERVED set is the server's --dir list: only
+   deployments that validate now (stageDirs, restoreWorkspaceDirs), so a server
+   never starts on a non-deployment. The PERSISTED set is workspace-open.json:
+   every saved path is kept, whether or not it validates at this moment (a
+   volume not mounted yet), and the deployments served beside it are added.
+   Only an explicit remove drops a saved path; nothing here does. The next
+   launch re-validates the persisted set, so a deployment that came back is
+   served again. */
+
+/** The persisted open set after `served` is committed: `saved` as it was, in order, then the
+ * served deployments it lacks; absolute paths only, each once. Never shorter than `saved`. */
+export function persistedOpenSet(saved, served) {
+  const out = [];
+  for (const path of [...saved, ...served]) if (typeof path === "string" && path.startsWith("/") && !out.includes(path)) out.push(path);
+  return out;
+}
+
+/** An add's commit: the persisted set is saved first (a failed write leaves both sets as they were,
+ * and the add executor restores the previous server), then the served set becomes `served`. */
+export function commitOpenSet(sets, served, save) {
+  const open = persistedOpenSet(sets.open, served);
+  save(open);
+  return { open, served: [...served] };
+}
+
+/** At startup: the persisted set (the saved one plus the deployments this launch serves) and whether
+ * to write it. It is written only when the launch serves a deployment the saved set lacks, and never
+ * empty: a launch from a parent folder, or one whose saved deployments are all missing, writes nothing. */
+export function startupOpenSet(raw, served, validate) {
+  const saved = savedWorkspacePaths(raw), deployments = persistableDirs(served, validate);
+  return { open: persistedOpenSet(saved, deployments), write: deployments.some((dir) => !saved.includes(dir)) };
+}
+
 /* ── A picked folder that is not a deployment (#461) ───────────────────────
    Refused before anything changes. When it is cheap and safe to see where the
    deployment is, the answer offers it: deployments one level down (a parent
