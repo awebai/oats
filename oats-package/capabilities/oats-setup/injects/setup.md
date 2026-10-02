@@ -6,12 +6,13 @@ diffs and apply them. Day-to-day operation inside an instance (spawning,
 status, retiring) is `oats.core`.
 
 **Two kinds of fact.** *Shared* facts travel through Git and are reviewed:
-`oats-workspace.yaml` (the host repo), `oats-membership.yaml` and `souls/` (each
+`oats-workspace.yaml` (the host repo, including the teams, the default team and
+which souls may join which teams), `oats-membership.yaml` and `souls/` (each
 member), workspace automations (`oats-triggers/`, `oats-schedules/`). *Host*
 facts belong to one machine: its `oats-local.yaml` (settings, clones, launch
-configurations, disabled souls, its host name, and its teams: local `teams`,
-`defaultTeam`, and `souls.teams` for which teams each soul joins here),
-`oats-lock.json` (written by `oats sync` only) and its clones.
+configurations, disabled souls, its host name, and, only when the workspace
+says `localTeams: true`, its own `teams` and `defaultTeam`), `oats-lock.json`
+(written by `oats sync` only) and its clones.
 
 **Read before you change anything** (use `--json` when you parse):
 `oats workspace status`, `oats souls`, `oats capabilities`, `oats trigger list`,
@@ -27,7 +28,7 @@ reads) before you call it done.
 - `/oats-onboarding`: realizing a workspace on a machine, first spawn.
 - `/oats-package-pins`: adding, bumping or removing a package; the lock.
 - `/oats-workspace-config`: any field of the shared files, where a fact belongs, an `E_*` refusal.
-- `/oats-teams`: this deployment's teams (shared and local), the default, which teams each soul belongs to (`oats teams`, `oats soul teams`), joining and leaving.
+- `/oats-teams`: the teams (shared and local), the default, which teams each soul may join (`souls:` in the workspace file; `oats teams`, `oats soul teams`), joining and leaving.
 - `/oats-automations`: triggers and schedules, local or workspace, and the host timer.
 
 **Never:** hand-edit `oats-lock.json` or `instance.json`; print a credential or

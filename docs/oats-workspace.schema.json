@@ -25,21 +25,21 @@
       "type": "object",
       "propertyNames": { "$ref": "#/$defs/label" },
       "additionalProperties": { "$ref": "#/$defs/team" },
-      "description": "SHARED teams: <label>: { description?, team? }. `team` is the messaging provider's team id, the same for everyone; without it the team is declared but not yet created (readiness team-unmapped). Local teams, the default and which teams each soul belongs to live in the deployment's oats-local.yaml (`oats teams`, `oats soul teams`). A label never gates, restricts or partitions anything."
+      "description": "SHARED teams: <label>: { description?, team? }. `team` is the messaging provider's team id, the same for everyone; without it the team is declared but not yet created (readiness team-unmapped). The default team and which teams each soul may join are defaultTeam and souls: below; a deployment's local teams live in its oats-local.yaml where localTeams allows them. A label never gates, restricts or partitions anything."
     },
     "defaultTeam": {
       "$ref": "#/$defs/label",
-      "description": "Team model 3 (0.37.0): the workspace's fallback default team, a label of teams: in this file. 0.36.x accepts and validates it without applying it."
+      "description": "The workspace's fallback default team, a label of teams: in this file: a soul's souls: default wins over it, and so does a deployment's local defaultTeam where localTeams: true."
     },
     "localTeams": {
       "type": "boolean",
-      "description": "Team model 3 (0.37.0): whether deployments may declare their own teams and defaultTeam in oats-local.yaml. Absent: false. 0.36.x accepts it without applying it."
+      "description": "Whether deployments may declare their own teams and defaultTeam in oats-local.yaml (every soul may join a local team). Absent: false; then local teams and a local defaultTeam are refused (E_WORKSPACE_SCHEMA reason local-teams-closed)."
     },
     "souls": {
       "type": "object",
       "propertyNames": { "type": "string", "pattern": "^(?:\\*|[a-z0-9][a-z0-9._-]*/(?:\\*|[a-z0-9]+(?:-[a-z0-9]+)*))$" },
       "additionalProperties": { "$ref": "#/$defs/soulTeams" },
-      "description": "Team model 3 (0.37.0): per soul pattern (\"*\", <member|package>/* or <member|package>/<soul>; the most specific key wins outright), the soul's default team and the other teams it may join. Every label is a label of teams: in this file. 0.36.x accepts and validates it without applying it."
+      "description": "Per soul pattern (\"*\", <member|package>/* or <member|package>/<soul>), the soul's default team and the other teams it may join. The most specific key gives the soul's teams outright (lists never merge); the most specific key that sets a default gives its default. A soul no key matches has its default only. Every label is a label of teams: in this file."
     },
     "defaults": { "$ref": "#/$defs/defaults" },
     "stores": {

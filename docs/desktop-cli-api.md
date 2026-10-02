@@ -37,7 +37,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
              "instance-git-remote","souls-declarations","lifecycle-plans","retire-retention","readiness","spawn-preview","instance-events",
              "instance-events-2","schedule-history","schedule-read-2","spawn-preview-2","spawn-idempotency","spawn-idempotency-2","spawn-apply-2",
              "workspace-v2","instance-modules","spawn-provider-payload","served-identity","packages-no-approval","spawn-name","settings-origins",
-             "team-model-2","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts","launch-preference",
+             "team-model-3","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts","launch-preference",
              "preview-composed-from","observe-max-age","spawn-preview-max-age","capability-show","capture-file","workspace-identity"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
@@ -88,7 +88,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
 | `settings-declared` | `declares` on inspect capabilities and preview modules | |
 | `capabilities-private` | `private` on `oats capabilities` rows | |
 | `layers-from` | `layers.<slot>.from` in inspect | |
-| `team-model-2` | every team field; `oats teams`, `oats soul teams` | `teamsApi: 1`, `soulTeamsApi: 1` (payload only) |
+| `team-model-3` | every team field; `oats teams`, `oats soul teams` (0.37.0; replaces `team-model-2`) | `teamsApi: 2`, `soulTeamsApi: 2` (payload only) |
 | `harness` | the harness names ([Harness input spellings](#the-harness-rename-feature-harness-oats-0270)) | |
 | `package-souls` | package soul rows, `qualifiedName`, `packages[].souls` | |
 | `triggers` | `oats trigger …` | `triggerApi: 1` (payload only) |
@@ -253,9 +253,11 @@ oats capabilities show <name> … --max-age <seconds> --json  (feature capabilit
   commit can no longer be fetched. Each is observed live, as without the flag.
   A live observation that fails is the usual error, never an older head.
 - **Refusals:** every other command, a spawn apply (with or without
-  `--expect-decision`; the form named is `spawn`), every edit form (`teams add|remove|default`,
-  `soul teams --add|--remove|--default|--clear-default`) and any `--server`
-  invocation refuse the flag before reading or writing anything, with
+  `--expect-decision`; the form named is `spawn`), every edit form (`teams add|remove|default`)
+  and any `--server`
+  invocation refuse the flag before reading or writing anything (the removed
+  `soul teams --add|--remove|--default|--clear-default` answer their own
+  `E_BAD_ARGS` first), with
   `E_BAD_ARGS` "--max-age is not accepted by \`oats <form>\`: only the read
   verbs reuse observations (status, workspace status, souls, capabilities,
   capabilities show, inspect --soul|--home, spawn --preview, and the read
@@ -397,7 +399,8 @@ message}`.
 A soul whose resolution is refused is an inspect error with the resolver's
 code and details (`E_PACKAGE_MISSING`, `E_PACKAGE_INTEGRITY`,
 `E_CAPABILITY_MISSING`, `E_LOCK_SCHEMA`, `E_REQUIREMENT_INACTIVE`,
-`E_TEAM_UNKNOWN`, `E_TEAM_NOT_ELIGIBLE`); readiness reports the same condition
+`E_TEAM_UNKNOWN`, and `E_WORKSPACE_SCHEMA` reason `local-teams-closed`);
+readiness reports the same condition
 as an item. Soul lookup errors are those of [spawn](#spawn-errors).
 
 <a id="oats-readiness---home-----soul----dir----policy---json--readinessapi-2"></a>
@@ -595,6 +598,7 @@ A removed verb answers, before any namespace can claim it:
 | `status --team` | `E_BAD_ARGS` | `oats status` in the deployment |
 | `spawn --instance` | `E_BAD_ARGS` | `--purpose` or `--name` |
 | `spawn --ephemeral`, `--instructions-file`, `--def-file` | `E_BAD_ARGS` | a soul in a member repository |
+| `soul teams --add`, `--remove`, `--default`, `--clear-default` (0.37.0) | `E_BAD_ARGS` (`details: {flag, replacement}`) | `souls:` in `oats-workspace.yaml` |
 | `session … --native-record` | `E_BAD_ARGS` | none |
 
 `details.replacement` is the kernel's prose (shortened above): show it, do not
@@ -750,7 +754,7 @@ Read-only (it writes no lock):
 - `declaredPackages`: the ids in `packages:` (standalone: the kernel's
   default). `unsynced`: declared, not locked. `stale`: locked, no longer
   declared. `external[]`: `{source, soul}`.
-- `workspace.teams` (feature `team-model-2`): the shared teams `{label, team,
+- `workspace.teams` (feature `team-model-3`): the shared teams `{label, team,
   description}` by label; `[]` standalone.
 - `problems`, `warnings`: as in sync.
 - `automations` (feature `automations`): `{host, snapshot: {takenAt,
@@ -788,7 +792,7 @@ packages' capabilities and souls, sorted by name, then origin. Both carry
     "version":"4.1.1","repoKey":"github.com/awebai/oats-okf","commit":"e1d604f7…","teams":null,"defaultTeam":null,"private":false,
     "path":"oats-package/souls/knowledge-maintainer","work":"directory","description":"Reviews harvested knowledge.","harness":"pi","model":null,
     "harnessFrom":"kernel-default","file":{"path":"oats-package/souls/knowledge-maintainer/soul.yaml","url":null},
-    "spawnable":false,"problem":{"code":"E_TEAM_UNKNOWN","message":"team \"reviewers\" is not declared (oats-local.yaml#/souls/teams/…)"}}],
+    "spawnable":false,"problem":{"code":"E_TEAM_UNKNOWN","message":"team \"reviewers\" is not declared (oats-local.yaml#/defaultTeam): …"}}],
  "problems":[]}
 ```
 
@@ -804,13 +808,13 @@ are absent until `sync`.
 commit, teams, defaultTeam, private (always false), path, work, description`,
 plus the Desktop facts `harness, model, harnessFrom, file, spawnable,
 problem`, and (feature `launch-preference`) `key` and `launch`.
-- `key` is the soul key that `souls.teams`, `souls.default` and `souls.launch`
-  use, and that `oats soul teams <key>` takes: `qualifiedName` for a package
+- `key` is the soul key that `souls.launch` uses, and that
+  `oats soul teams <key>` takes: `qualifiedName` for a package
   soul, the bare `name` for a member or external soul. Two member souls that
   share a bare name share one entry (spawning that name is
   `E_SOUL_AMBIGUOUS`).
 - `launch` is a [Launch](#the-launch-report-launch).
-- `teams` and `defaultTeam` (feature `team-model-2`) are a
+- `teams` and `defaultTeam` (feature `team-model-3`) are a
   [TeamRow](#the-team-row-teamrow) list and a
   [DefaultTeam](#the-default-defaultteam); both `null` when the soul's teams
   do not resolve (`problem` names the `E_TEAM_*` code).
@@ -1012,7 +1016,7 @@ them. Gate each field below on it.
   v2 soul.yaml cannot). `spawnable`/`problem`: whether a spawn here would
   refuse, resolved without spawning, writing or reaching past the sync cache;
   `problem` is `{code, message}` or `null` (`E_SOUL_DISABLED`,
-  `E_TEAM_UNKNOWN`, `E_TEAM_NOT_ELIGIBLE`, `E_CAPABILITY_*`, `E_PACKAGE_*`,
+  `E_TEAM_UNKNOWN`, `E_WORKSPACE_SCHEMA` (local-teams-closed), `E_CAPABILITY_*`, `E_PACKAGE_*`,
   `E_LOCK_SCHEMA`, `E_REMOTE_*`, …). `file`: `{path, url}` of soul.yaml.
 - **Capabilities.** `layer` on every row, `null` outside the slots.
   `description` or `null`. `skills`, `commands`, `hooks`: names, sorted
@@ -1039,61 +1043,87 @@ them. Gate each field below on it.
   `…/tree/<commit>`); any other host gives `url: null` with `path` set.
   `path` is repository-relative.
 
+<a id="team-model-3-feature-team-model-3-oats-0370-replaces-feature-team-model-2"></a>
 <a id="team-model-v2-feature-team-model-2-oats-0300-replaces-feature-teams"></a>
 ## Teams
 
-Feature `team-model-2`: gate every team field and verb on it. Design:
-[team model v2](design/2026-09-27-team-model-v2.md); operator guide:
-[workspaces.md](workspaces.md).
+Feature `team-model-3` (OATS 0.37.0; it replaces `team-model-2`): gate every
+team field and verb on it. Design: [team model 3](design/2026-10-02-team-model-3.md);
+operator guide: [workspaces.md](workspaces.md#teams).
 
-- **Shared teams** live in the committed `oats-workspace.yaml`:
-  `teams.<label> = {description?, team?}`. A shared team without `team` (the
-  provider id) is **unmapped**.
-- **Local** configuration lives in `oats-local.yaml`: `teams.<label> = {team,
-  description?}`, `defaultTeam: <label>`, `souls.teams: {"*": [labels],
-  "<soul>": [labels]}` and `souls.default: {"<soul>": <label>}`. A soul key is
-  the spawn name (`<package>/<soul>` for a package soul). A label matches
-  `[a-z0-9][a-z0-9._-]*`.
+- **The workspace file** (`oats-workspace.yaml`, committed) holds the shared
+  teams `teams.<label> = {description?, team?}` (a shared team without `team`,
+  the provider id, is **unmapped**), `defaultTeam: <label>` (the workspace's
+  fallback default), `localTeams: true|false` (absent: false) and `souls:`
+  (per pattern, `{default?, teams?: [labels] | "any"}`). Every label there is
+  a shared label of that file; anything else is `E_WORKSPACE_SCHEMA` when the
+  file is read.
+- **`oats-local.yaml`** may declare local teams `teams.<label> = {team,
+  description?}` and `defaultTeam: <label>` only where the workspace says
+  `localTeams: true`, or in the standalone view (no workspace file is read).
+  Elsewhere they are refused: `E_WORKSPACE_SCHEMA` with details `{reason:
+  "local-teams-closed", path: "oats-local.yaml", keys}`, the message naming
+  both fixes. `souls.teams` and `souls.default` are removed keys
+  (`E_WORKSPACE_SCHEMA`, reason `removed-key`): the refusal names each key
+  found, and `details.replacement` is the `souls:` YAML to commit instead (a
+  bare soul name written `<member>/<soul>` for the operator to qualify), also
+  printed at the end of the message.
+- **A soul's key** is its qualified name: `<package>/<soul>`, or
+  `<member>/<soul>` with the member repository's name (as `souls.disabled`
+  names it). A label matches `[a-z0-9][a-z0-9._-]*`.
 - **Team ids.** A `team` value (in either file, and `oats teams add --team`)
   matches `^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,255}$`: the kernel's safety rule
   (never `-`-led, no whitespace or control characters, bounded). Otherwise
   `E_WORKSPACE_SCHEMA` (a file) or `E_BAD_ARGS` (the verb). The messaging
   provider validates its own id shape (oats.aweb: `<name>:<namespace>`).
-- **Resolution.** The soul's default is `souls.default[soul] ??
-  defaultTeam`; its teams are that default plus `souls.teams["*"]` plus
-  `souls.teams[soul]`. A label in both files is a `team-label-collision`
-  warning, and the shared definition wins. An undeclared label is
-  `E_TEAM_UNKNOWN`; a `souls.default` outside the soul's teams is
-  `E_TEAM_NOT_ELIGIBLE`.
+- **Resolution.** The `souls:` patterns for a soul are its key, then
+  `<member|package>/*`, then `"*"`. The most specific one that exists gives
+  the soul's teams outright (lists never merge); the most specific one that
+  sets `default` gives its default. So `a/*: {default: security}` and
+  `a/x: {teams: [docs]}` give `a/x` the default `security` and the teams
+  `[docs]` only. The default is that `default`; else the local `defaultTeam`
+  where local teams are allowed; else the workspace's `defaultTeam`; else
+  none. A soul's teams are its default, its pattern's `teams` (`any`: every
+  shared team) and, where local teams are allowed, every local team. A soul
+  no pattern matches has its default only. A label in both files is a
+  `team-label-collision` warning, and the shared definition wins. A local
+  default no file declares is `E_TEAM_UNKNOWN`.
 - **Removed keys** are `E_WORKSPACE_SCHEMA` with `reason: "removed-key"`:
+  `oats-local.yaml` `souls.teams` and `souls.default` (0.37.0);
   `messaging.byTeam`, `defaults.byTeam`, a soul.yaml `team`, an
-  oats-membership.yaml `team`, and `byTeam` in any provider payload layer.
-  Other payload keys are opaque (a `team` setting passes through).
+  oats-membership.yaml `team`, and `byTeam` in any provider payload layer
+  (0.30). Other payload keys are opaque (a `team` setting passes through).
 
 ### The team row (`TeamRow`)
 
-Exactly `{label, team, default, from}`:
+Exactly `{label, team, default, from, via}`:
 
 ```json
-[{"label":"antares","team":"antares:ana.aweb.ai","default":true,"from":"local"},
- {"label":"oats","team":"oats:oats.aweb.ai","default":false,"from":"shared"},
- {"label":"reviewers","team":null,"default":false,"from":"shared"}]
+[{"label":"security","team":"security:acme.aweb.ai","default":true,"from":"shared","via":["default"]},
+ {"label":"docs","team":null,"default":false,"from":"shared","via":["workspace"]},
+ {"label":"mine","team":"mine:ana.aweb.ai","default":false,"from":"local","via":["local"]}]
 ```
 
 `team` is `null` for an unmapped team. `default` is true on exactly the
 soul's default row; the others are teams an instance may join (offered, never
-joined automatically). `from` is `"shared"` or `"local"`. The default row
-comes first, then the rest by label (codepoint order). Reports include
-unmapped rows; `OATS_TEAMS` and `instance.json.teams` carry mapped rows only.
+joined automatically). `from` is where the label is defined: `"shared"` or
+`"local"`. `via` is why the soul may join it, an ordered non-empty subset of
+`"default"`, `"workspace"` (its `souls:` pattern) and `"local"` (a local team
+where local teams are allowed). The default row comes first, then the rest by
+label (codepoint order). Reports include unmapped rows; `OATS_TEAMS` and
+`instance.json.teams` carry mapped rows only. A home spawned before 0.37.0
+recorded rows without `via`, and they are reported as recorded.
 
 ### The default (`DefaultTeam`)
 
 ```json
-{"label":"antares","team":"antares:ana.aweb.ai","from":"deployment"}
+{"label":"security","team":"security:acme.aweb.ai","from":"soul"}
 ```
 
-`from` is `"deployment"` (`defaultTeam`) or `"soul"` (`souls.default`). It is
-`null` only when no default is configured (with messaging active, that is
+`from` is `"soul"` (the soul's `souls:` default in the workspace file; before
+0.37.0 it meant `oats-local.yaml` `souls.default`), `"deployment"` (the local
+`defaultTeam`) or `"workspace"` (the workspace's `defaultTeam`). It is `null`
+only when no default is configured (with messaging active, that is
 `E_TEAM_UNCONFIGURED`). An unmapped default is `{label, team: null, from}`,
 the blocking problem `team-unmapped`.
 
@@ -1119,9 +1149,12 @@ its spawn-time default until respawned (readiness says so with
 the teams in `OATS_DEFAULT_TEAM`, `OATS_DEFAULT_TEAM_ID`,
 `OATS_DEFAULT_TEAM_FROM`, `OATS_TEAMS` and `OATS_TEAMS_SOURCE`:
 [capabilities.md](capabilities.md#teams-in-the-provider-environment).
-`OATS_WORKSPACE_NAME` is the recorded workspace name (the discovered one for a
-soul subject), `""` when unknown.
+`OATS_TEAMS` is exactly the soul's eligible mapped rows, so a provider that
+admits joins from it refuses any other team. `OATS_WORKSPACE_NAME` is the
+recorded workspace name (the discovered one for a soul subject), `""` when
+unknown.
 
+<a id="oats-teams"></a>
 ### `oats teams`
 
 ```text
@@ -1132,66 +1165,75 @@ oats teams default <label> --json
 ```
 
 ```json
-{"teamsApi":1,"deployment":"/w","defaultTeam":"antares",
- "teams":[{"label":"antares","team":"antares:ana.aweb.ai","description":null,"from":"local","default":true,"at":"oats-local.yaml#/teams/antares"},
-          {"label":"reviewers","team":null,"description":null,"from":"shared","default":false,"at":"github.com/awebai/oats:oats-workspace.yaml#/teams/reviewers"}],
- "souls":{"teams":{"*":["oats"],"oats-expert":["reviewers"]},"default":{"oats-expert":"oats"}},
- "problems":[{"code":"team-unmapped","label":"reviewers","default":false,"severity":"warning","at":"github.com/awebai/oats:oats-workspace.yaml#/teams/reviewers",
-              "message":"shared team reviewers has no provider id yet","fix":"its owner runs `oats aweb setup`, then commits the id"}]}
+{"teamsApi":2,"deployment":"/w","localTeams":true,"defaultTeam":{"label":"mine","team":"mine:ana.aweb.ai","from":"deployment"},
+ "teams":[{"label":"mine","team":"mine:ana.aweb.ai","description":null,"from":"local","default":true,"at":"oats-local.yaml#/teams/mine"},
+          {"label":"docs","team":null,"description":null,"from":"shared","default":false,"at":"github.com/acme/agents:oats-workspace.yaml#/teams/docs"}],
+ "souls":{"*":{"teams":["docs"]},"security-souls/*":{"default":"security","teams":["engineering"]}},
+ "problems":[{"code":"team-unmapped","label":"docs","default":false,"severity":"warning","at":"github.com/acme/agents:oats-workspace.yaml#/teams/docs",
+              "message":"shared team docs has no provider id yet","fix":"its owner runs `oats aweb setup`, then commits the id"}]}
 ```
 
-- `defaultTeam` is the deployment's label (or `null`), not a `DefaultTeam`.
+- `localTeams`: the workspace's answer (`true`/`false`), `null` in the
+  standalone view. `defaultTeam` is the `DefaultTeam` a soul without a
+  `souls:` default gets here (`from` `"deployment"` or `"workspace"`), or
+  `null`.
 - `teams[]`: every declared team by label, `{label, team, description, from,
-  default, at}`; `at` is a pointer into `oats-local.yaml` or
-  `<workspace key>:oats-workspace.yaml#/teams/<label>`. A collision shows the
-  shared definition.
-- `souls`: `souls.teams` and `souls.default` as written. `problems`: the
-  deployment's [team readiness items](#team-readiness-items).
+  default, at}`; `default` marks that `defaultTeam`; `at` is a pointer into
+  `oats-local.yaml` or `<workspace key>:oats-workspace.yaml#/teams/<label>`.
+  A collision shows the shared definition.
+- `souls`: the workspace's `souls:` as committed (`{}` when none).
+  `problems`: the deployment's [team readiness items](#team-readiness-items).
+  The command discovers the workspace (every member's souls), for the
+  `team-soul-unknown` check.
 - The verbs never call a provider. They validate, rewrite `oats-local.yaml` in
   place, and answer the document plus `changed: bool`.
-- **`add`**: the first team added also becomes `defaultTeam`. A label already
-  declared is `E_TEAM_EXISTS {label, from}`; a bad label or no `--team` is
-  `E_BAD_ARGS`.
-- **`remove`**: a referenced label is `E_TEAM_IN_USE {label, usedBy}` (each
-  `"defaultTeam"`, `"souls.teams:<key>"` or `"souls.default:<key>"`); a shared
-  label is `E_TEAM_SHARED {label, at}` (a label in both files can be removed
-  locally); unknown is `E_TEAM_UNKNOWN {label}`.
+- **Where local teams are not allowed**, `add` and `default` are refused
+  before anything is written: `E_WORKSPACE_SCHEMA {reason:
+  "local-teams-closed", path, keys}` (`keys` what the verb writes). `remove`
+  still runs there: taking local teams away is the last step of committing
+  them in the workspace.
+- **`add`**: the first team added also becomes the local `defaultTeam`. A
+  label already declared is `E_TEAM_EXISTS {label, from}`; a bad label or no
+  `--team` is `E_BAD_ARGS`.
+- **`remove`**: a label the local `defaultTeam` names is `E_TEAM_IN_USE
+  {label, usedBy: ["defaultTeam"]}`; a shared label is `E_TEAM_SHARED {label,
+  at}` (a label in both files can be removed locally); unknown is
+  `E_TEAM_UNKNOWN {label}`.
 - **`default`**: any declared label, else `E_TEAM_UNKNOWN`.
-- A write that would introduce an unknown or ineligible reference is refused
-  with that code; an invalid result is `E_WORKSPACE_SCHEMA`.
-
-### `oats soul teams`
-
-```text
-oats soul teams <soul>|'*' [--add a,b] [--remove a,b] [--default <label> | --clear-default] [--dir <d>] --json
-oats soul teams <soul>|'*' [--dir <d>] [--max-age <s>] --json    (the read form only)
-```
-
-```json
-{"soulTeamsApi":1,"soul":"oats-expert","key":"oats-expert","defaultTeam":{"label":"oats","team":"oats:oats.aweb.ai","from":"soul"},
- "teams":[{"label":"oats","team":"oats:oats.aweb.ai","default":true,"from":"shared","via":["default","*"]},
-          {"label":"reviewers","team":null,"default":false,"from":"shared","via":["soul"]}],
- "local":{"teams":["reviewers"],"default":"oats"},"all":["oats"]}
-```
-
-- Rows are `TeamRow` plus `via`, a non-empty ordered subset of `"default"`,
-  `"*"` and `"soul"`. `key` is the soul's `souls.*` key; `local` its own
-  entries; `all` is `souls.teams["*"]`.
-- For `'*'`: `soul` and `key` are `"*"`, `teams` the deployment default plus
-  `souls.teams["*"]`, `local.default: null`.
-- Mutations answer the document plus `changed`. Unknown label:
-  `E_TEAM_UNKNOWN {label}`. A `--default` outside the soul's teams:
-  `E_TEAM_NOT_ELIGIBLE {soul, label, at}` (`at`: `oats-local.yaml#/souls/default/<key>`,
-  `/` written `~1`). `--default`/`--clear-default` with
-  `'*'`, or both together: `E_BAD_ARGS`. Soul lookup: `E_SOUL_UNKNOWN`,
-  `E_SOUL_AMBIGUOUS`.
-- **Writes** (`oats teams add|remove|default`, `oats soul teams`) edit
-  `oats-local.yaml` in place and touch only the entries that change: comments
-  and styles elsewhere, including inline comments on sibling entries and flow
-  lists, are kept. Each verb re-reads the file and judges its refusals on it
+- A write that would introduce an unknown reference is refused with that
+  code; an invalid result is `E_WORKSPACE_SCHEMA`.
+- **Writes** edit `oats-local.yaml` in place and touch only the entries that
+  change: comments and styles elsewhere, including inline comments on sibling
+  entries, are kept. Each verb re-reads the file and judges its refusals on it
   as it is now, and writes only if the file did not change meanwhile (else it
   redoes the edit on the new content). A file that keeps changing is
   `E_LOCAL_CHANGED {path}`; nothing was written.
+
+<a id="oats-soul-teams"></a>
+### `oats soul teams`
+
+```text
+oats soul teams <soul>|'*' [--dir <d>] [--max-age <s>] --json
+```
+
+```json
+{"soulTeamsApi":2,"soul":"incident-responder","key":"security-souls/incident-responder",
+ "match":"security-souls/incident-responder","defaultMatch":"security-souls/*",
+ "defaultTeam":{"label":"security","team":"security:acme.aweb.ai","from":"soul"},
+ "teams":[{"label":"security","team":"security:acme.aweb.ai","default":true,"from":"shared","via":["default"]},
+          {"label":"docs","team":null,"default":false,"from":"shared","via":["workspace"]},
+          {"label":"engineering","team":"engineering:acme.aweb.ai","default":false,"from":"shared","via":["workspace"]}]}
+```
+
+- Read only. `key` is the soul's key; `match` the `souls:` key its teams come
+  from and `defaultMatch` the one its default comes from (`null`: none
+  matches, or none sets a default). For `'*'`, `soul`, `key` and the only
+  pattern tried are `"*"`. Soul lookup: `E_SOUL_UNKNOWN`, `E_SOUL_AMBIGUOUS`;
+  the soul's teams: `E_WORKSPACE_SCHEMA` (local-teams-closed), `E_TEAM_UNKNOWN`.
+- The edit flags `--add`, `--remove`, `--default` and `--clear-default` were
+  removed in 0.37.0: `E_BAD_ARGS` with details `{flag, replacement: "souls: in
+  oats-workspace.yaml (a PR to the workspace file)"}`, before anything else
+  is judged.
 
 ### The messaging provider's teams document
 
@@ -1218,8 +1260,9 @@ no `primary` and no `unmapped`: unmapped teams are kernel readiness items.
 `oats teams` lists them under `problems[]` as `{code, severity: "failure" |
 "warning", message, fix, …}`. `oats readiness` lists the soul's under
 `checks.configured` with `subject` `"team <label>"` (or `"teams"`), `producer:
-"team model"`, `code`, `reason`, `remedy`, `status: "fail"`, `required: true`
-for a failure and `false` for a warning, plus the problem's own keys.
+"team model"`, `code`, `reason` (the message), `remedy` (the fix), `status:
+"fail"`, `required: true` for a failure and `false` for a warning, plus the
+problem's own keys.
 
 | Code | Severity | Keys | When |
 |---|---|---|---|
@@ -1227,40 +1270,31 @@ for a failure and `false` for a warning, plus the problem's own keys.
 | `team-unmapped` | failure if `default`, else warning | `label`, `default`, `at` | a shared team without `team` |
 | `team-label-collision` | warning | `label`, `shared`, `local` (each `{team, description, at}`) | a label in both files |
 | `default-team-changed` | warning | `recorded`, `current` | `--home` with live teams: the default changed since the spawn |
-| `E_TEAM_UNKNOWN` | failure | `label`, `at` | a reference to an undeclared label |
-| `E_TEAM_NOT_ELIGIBLE` | failure | `soul`, `label`, `at` | `souls.default` outside the soul's teams |
-| `team-model-3-migration` | warning | `condition`, `keys` | 0.36.x: what OATS 0.37.0 (team model 3) refuses, one item per condition (below) |
+| `E_TEAM_UNKNOWN` | failure | `label`, `at` | a local default no file declares |
+| `E_WORKSPACE_SCHEMA` | failure | `condition: "local-teams-closed"`, `path`, `keys` | `oats-local.yaml` declares `teams` / `defaultTeam` and the workspace does not allow local teams |
+| `team-soul-unknown` | warning | `key`, `at` | a `souls:` key that is neither `"*"` nor `<name>/*` nor a discovered soul's key (a typo guard) |
 
-The `E_TEAM_UNKNOWN` and `E_TEAM_NOT_ELIGIBLE` codes are also spawn, preview and
-inspect refusals, with the same details.
-
-`team-model-3-migration` is a deployment fact, so every soul's readiness
-carries it, and `oats teams` lists it once. Its `condition`:
-
-- `local-soul-teams`: `oats-local.yaml` has `souls.teams` and/or
-  `souls.default` (`keys`: `["souls.teams", "souls.default"]` as found). They
-  move to `souls:` in `oats-workspace.yaml`.
-- `local-teams-closed`: `oats-local.yaml` declares `teams` and/or
-  `defaultTeam` (`keys`: `["teams", "defaultTeam"]` as found) and the
-  workspace file does not say `localTeams: true`. The `fix` names both
-  remedies: add `localTeams: true` to the workspace file, or commit the teams
-  and `defaultTeam` there and remove them locally. Never raised in the
-  standalone view, which has no workspace rules.
+`E_TEAM_UNKNOWN` and local-teams-closed are also spawn, preview and inspect
+refusals (local-teams-closed as `E_WORKSPACE_SCHEMA` with details `{reason,
+path, keys}`). While local teams are closed, that one item is the soul's only
+team item. `team-soul-unknown` is reported where the souls are discovered
+(`oats teams`, readiness).
 
 ```json
-{"code":"team-model-3-migration","severity":"warning","condition":"local-teams-closed","keys":["teams","defaultTeam"],
- "message":"oats-local.yaml declares teams, defaultTeam, but oats-workspace.yaml does not say localTeams: true: OATS 0.37.0 refuses local teams and a local defaultTeam unless the workspace allows them",
+{"code":"E_WORKSPACE_SCHEMA","severity":"failure","condition":"local-teams-closed","path":"oats-local.yaml","keys":["teams","defaultTeam"],
+ "message":"oats-local.yaml declares teams, defaultTeam, but oats-workspace.yaml does not allow local teams (localTeams: true): either (a) add `localTeams: true` to oats-workspace.yaml, or (b) commit the teams and defaultTeam in oats-workspace.yaml, then remove them from oats-local.yaml",
  "fix":"either (a) add `localTeams: true` to oats-workspace.yaml, or (b) commit the teams and defaultTeam in oats-workspace.yaml, then remove them from oats-local.yaml"}
 ```
 
-As a readiness item it is `{subject: "teams", status: "fail", required: false,
-producer: "team model", code, reason: <message>, remedy: <fix>, condition,
-keys}`. `oats doctor --json` lists the same problems under `problems[]`. Doctor
-stays offline: for `local-teams-closed` it reads only the workspace file this
-machine's parsed cache holds; when there is none, it adds no problem and says
-so in `information[]`: `"team-model-3-migration: whether oats-local.yaml
-teams/defaultTeam need localTeams: true couldn't be checked: this deployment
-hasn't observed its workspace yet; run oats sync"`.
+`oats doctor --json` lists local-teams-closed under `problems[]` (text: `!
+E_WORKSPACE_SCHEMA (local-teams-closed): …`). Doctor stays offline: it reads
+only the workspace file this machine's parsed cache holds; when there is
+none, it adds no problem and says so in `information[]`:
+`"local-teams-closed: whether oats-workspace.yaml allows oats-local.yaml
+teams/defaultTeam (localTeams: true) couldn't be checked: this deployment
+hasn't observed its workspace yet; run oats sync"`. A removed key in
+`oats-local.yaml` makes doctor answer that refusal, as for any unreadable
+local file.
 
 <a id="soul-launch-preferences-feature-launch-preference-oats-0300"></a>
 ## Launch preferences
@@ -1613,7 +1647,7 @@ Feature `spawn-name`. `--name <slug>` is the exact name, with no prefix.
 | `E_SOUL_AMBIGUOUS` | `{name, repos, qualified}` | several souls answer the bare name; use one of `qualified` |
 | `E_SOUL_DISABLED` | `{name, qualifiedName, entry}` | listed in `souls.disabled` |
 | `E_UNKNOWN_AGENT` | | the resolved soul is not under the deployment's agents root |
-| `E_TEAM_UNKNOWN`, `E_TEAM_NOT_ELIGIBLE` | `{label, at}`, `{soul, label, at}` | the soul's teams do not resolve |
+| `E_TEAM_UNKNOWN`, `E_WORKSPACE_SCHEMA` (local-teams-closed) | `{label, at}`, `{reason, path, keys}` | the soul's teams do not resolve |
 | `E_NOT_A_MEMBER`, `E_MEMBERSHIP_UNCONFIRMED` | | the soul's repository is not a confirmed member |
 | `E_CAPABILITY_MISSING`, `E_CAPABILITY_PRIVATE`, `E_CAPABILITY_INCOMPATIBLE`, `E_COMPATIBILITY` | | a capability cannot be resolved |
 | `E_PACKAGE_MISSING`, `E_PACKAGE_INTEGRITY`, `E_LOCK_SCHEMA` | | the lock does not provide it (standalone: `{…, standalone: true, reason: "no-catalog", catalog}`) |

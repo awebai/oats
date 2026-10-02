@@ -21,15 +21,10 @@ settings:                                    # host-owned values per capability
   oats.okf:
     bindings-file: /Users/ana/.oats/okf-bindings.json
 
-teams:                                       # LOCAL teams: only this deployment uses them
+teams:                                       # LOCAL teams (only where the workspace says localTeams: true)
   ana-research: { team: "ana-research:acme.aweb.ai", description: Ana's research }
-defaultTeam: ana-research                    # the team every instance lives in
+defaultTeam: ana-research                    # this deployment's default team (same condition)
 souls:
-  teams:
-    "*": [ana-research]                      # every soul is in these teams here
-    data-analyst: [platform]                 # and this one also joins a shared team
-  default:
-    data-analyst: platform                   # per-soul override of defaultTeam
   disabled: [legacy-bot]                     # souls not run on this machine
 
 host:
@@ -66,10 +61,8 @@ refused (`E_WORKSPACE_SCHEMA`).
 | `standalone` | A repo ref to realize on its own: its souls and `from: here` capabilities plus `oats.core`, with no workspace lookup. For a repository whose workspace this machine cannot read ([workspaces.md](workspaces.md#the-standalone-case)). |
 | `clones` | `<repo key>: <absolute path>` for a member clone that is not at `<deployment>/<member name>/`. Only a soul whose work target needs a clone (`work: worktree \| checkout`) uses it. Lookup order: `spawn --repo`, then this map, then `<deployment>/<member name>` (a member named `agents` → `<deployment>/agents-repo`). None → `E_CLONE_MISSING`; a directory whose `origin` is another repository → `E_CLONE_MISMATCH`. |
 | `settings.<cap>.<key>` | Host-owned values a capability's manifest asks for: absolute paths, state roots, delivery modes. The workspace file refuses absolute paths; they go here. Merged into the capability's provider payload after the soul's own and before any `--provider` flag ([three homes](workspaces.md#provider-payloads-have-three-homes)). |
-| `teams.<label>` | A **local** team: `{ team: <provider team id>, description? }`. Shared teams are committed in `oats-workspace.yaml`; a label in both is refused. Written by `oats teams add <label> --team <id>` and `oats teams remove <label>`. |
-| `defaultTeam` | The team every instance of this deployment lives in: a label of a local or shared team. The first `oats teams add` sets it; `oats teams default <label>` changes it. |
-| `souls.teams` | Which teams each soul joins here: `"*"` applies to every soul; a soul's own entry (its name, or `<package>/<soul>`) adds to it. Every soul is also in its default team. Written by `oats soul teams <soul>\|'*' --add … --remove …`. |
-| `souls.default` | A per-soul override of `defaultTeam`; it must be one of that soul's teams here (`E_TEAM_NOT_ELIGIBLE`). Written by `oats soul teams <soul> --default <label>`. |
+| `teams.<label>` | A **local** team: `{ team: <provider team id>, description? }`, a team only this deployment uses; every soul may join it. Allowed only where `oats-workspace.yaml` says `localTeams: true` (or in the standalone view); otherwise refused (`E_WORKSPACE_SCHEMA`, reason `local-teams-closed`). Shared teams are committed in `oats-workspace.yaml`; a label in both is `team-label-collision` (the shared one wins). Written by `oats teams add <label> --team <id>` and `oats teams remove <label>`. |
+| `defaultTeam` | This deployment's default team: a label of a local or shared team, under the same condition as `teams`. A soul's own default in the workspace's `souls:` wins over it; it wins over the workspace's `defaultTeam`. The first `oats teams add` sets it; `oats teams default <label>` changes it. |
 | `souls.disabled` | Souls not run on this machine; a spawn is refused with `E_SOUL_DISABLED`. A bare name disables every soul of that name; `<package>/<soul>` or `<member>/<soul>` disables one. |
 | `session.tmuxSession` | The tmux session new tmux instances open their windows in (0.31). Absent: `OATS_TMUX_SESSION`, else `PI_AGENTS_TMUX_SESSION` (the pre-0.31 variable), else `oats-agents`. `session: { tmuxSession: pi-agents }` keeps the pre-0.31 layout. `oats inspect --json` reports it as `session`. |
 | `host.name` | This machine's name. A workspace trigger or schedule runs only on the host named by its `runsOn` ([schedules.md](schedules.md)). |
@@ -78,14 +71,11 @@ refused (`E_WORKSPACE_SCHEMA`).
 | `launch-configs.<name>` | A named way to start a harness on this host, chosen at spawn or session start, never by the soul. `default: true` makes it this host's baseline for its harness (0.32). See [Launch configurations](#launch-configurations). |
 | `souls.launch` | This machine's launch preference per soul (0.30): `"*"` for every soul, a soul's own entry (its name, or `<package>/<soul>`) over it. A value is a `launch-configs` name or an inline `{ harness, model? }`. It overrides the soul's own `launch:`; explicit spawn flags win over both. See [Launch preferences](#launch-preferences). |
 
-How teams are resolved, and what a messaging provider does with them, is in
-[workspaces.md](workspaces.md#teams).
-
-OATS 0.37.0 (team model 3) removes `souls.teams` and `souls.default` (they move
-to `souls:` in `oats-workspace.yaml`) and allows `teams` and `defaultTeam` here
-only when the workspace file says `localTeams: true`. 0.36.x still applies all
-four keys and warns about them (`team-model-3-migration`): see
-[Preparing for team model 3](workspaces.md#preparing-for-team-model-3-036x).
+Which teams a soul may join, and its default, are committed in the workspace's
+`souls:`, never here: `souls.teams` and `souls.default` were removed in 0.37.0
+(`E_WORKSPACE_SCHEMA`, reason `removed-key`; the refusal prints the `souls:` to
+commit instead). How teams are resolved, and what a messaging provider does
+with them, is in [workspaces.md](workspaces.md#teams).
 
 ## Launch configurations
 
@@ -327,7 +317,7 @@ is safe to delete.
 oats workspace status          # members, locked packages, external souls
 oats sync                      # confirm, resolve, lock, report the diff
 oats teams                     # shared and local teams, and the default
-oats soul teams <soul>         # the teams one soul joins here
+oats soul teams <soul>         # the teams one soul may join here, and why
 oats spawn <soul> --preview    # the exact modules, teams and provider payloads
 oats doctor                    # this deployment's files and the lock
 ```

@@ -17,7 +17,11 @@ successor, with a link to its full text.
 - [OKF knowledge operations](2026-09-26-okf-knowledge-operations.md): package
   souls, triggers and automations for harvest and maintenance.
 - [Team model v2](2026-09-27-team-model-v2.md): shared teams in the workspace,
-  local teams, the default team and membership in each deployment.
+  local teams, live teams and the provider environment (its membership and
+  default-team parts are superseded by team model 3).
+- [Team model 3](2026-10-02-team-model-3.md): the teams a soul may join, and
+  its default, are committed in the workspace; local teams only where the
+  workspace allows them.
 
 The Desktop's design brief for designers is in
 [packages/desktop/docs](../../packages/desktop/docs/design-brief.md).

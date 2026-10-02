@@ -247,8 +247,9 @@ oats-package/
   souls; otherwise `E_SOUL_AMBIGUOUS` names each qualified form
   (`details.qualified`). A member soul's qualified form is `<member name>/<soul>`.
 - **Resolved** like any soul: the workspace defaults apply, `off` and
-  `<slot>: none` work, its teams here are keyed `<package>/<soul>` in
-  `oats-local.yaml` `souls.teams`, and `from: here` means **this package** at the locked commit
+  `<slot>: none` work, its teams are keyed `<package>/<soul>` (or `<package>/*`)
+  in the workspace's `souls:` (unlisted, it joins its default only), and
+  `from: here` means **this package** at the locked commit
   (a capability it does not provide is `E_CAPABILITY_MISSING`).
 - **Spawned** at the locked commit: the soul is fetched into the per-commit
   soul cache and its digest must equal the lock's (`E_PACKAGE_INTEGRITY

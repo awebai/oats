@@ -135,18 +135,29 @@ membership.
 ## 6. Give the deployment a team (with messaging)
 
 If a messaging capability fills the messaging slot, every instance lives in a
-team, and readiness fails with `E_TEAM_UNCONFIGURED` until this deployment has
-a default team. Create the team with the messaging provider (its own skills say
-how), then record it:
+team, and readiness fails with `E_TEAM_UNCONFIGURED` until there is a default
+team. Create the team with the messaging provider (its own skills say how),
+then commit it in `oats-workspace.yaml` with its provider id, and make it the
+default:
 
-```bash
-oats teams add research --team <provider team id>   # a local team; the first one becomes the default
-oats teams
+```yaml
+teams:
+  research: { team: <provider team id> }
+defaultTeam: research
 ```
 
-A team the whole organisation uses is committed in `oats-workspace.yaml` as
-`teams.<label>` with its provider id; which souls join which team on this
-machine is `oats soul teams` (`/oats-teams`, in `oats.setup`).
+Push, then sync and check:
+
+```bash
+oats sync --dir <dir>
+oats teams --dir <dir>
+```
+
+The teams an instance may join, and its default, are the organisation's
+decision, committed in this file: by default a soul joins its default team
+only, and `souls:` entries open other teams to a soul. A deployment declares
+teams of its own (`oats teams add`) only when the workspace says
+`localTeams: true` (`/oats-teams`, in `oats.setup`).
 
 ## 7. Spawn the first soul
 
