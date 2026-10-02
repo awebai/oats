@@ -1,6 +1,6 @@
 # Selected-instance activity (K7 API 2)
 
-The Active overview reads **reported lifecycle activity** only after the user
+The Deployments page (formerly the Active overview) reads **reported lifecycle activity** only after the user
 selects an instance and presses **Load activity / Refresh activity**. Opening a
 card, polling the roster, moving the camera or changing selection never runs an
 events command. The shared shell CLI status enables the control; this view does

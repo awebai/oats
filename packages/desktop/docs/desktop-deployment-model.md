@@ -184,7 +184,9 @@ first. Deployment-level surfaces read and act on it: the Workspace header and
 Setup, Capabilities, Sync, Automations, Schedules, the Teams configuration,
 the soul inspector, Brain and launch configurations. In a view of two or more
 deployments each of them says which under its heading ("On This Mac ·
-~/Agents/oats"); a view of one shows no such line.
+~/Agents/oats"); a view of one shows no such line. The Deployments page has
+no primary: each deployment has its own tab, and nothing there is marked
+"primary".
 
 ### The panel
 
@@ -197,15 +199,19 @@ answers the view that holds it; no `?ws=` answers the first view.
   never the view id. `deployment`, `error` and the stamps are the primary
   deployment's.
 - `workspaces` is the switcher's list of views, each with its `deployments`
-  ids and `deploymentLabels` (the same labels as the deployment list, so a view
-  not on screen is still named by machine). Unattached views carry `unattached`,
-  their `reason` and the `ref` they report, and are listed under "Not matched to
-  a workspace" with the reason as secondary text. Those three fields are sent
-  only when this computer's CLI has `workspace-identity`: without it nothing
-  could be matched, and the entries list as they did before views.
+  ids, `deploymentLabels`, `machines` (each machine once, in order) and
+  `notLive` (how many of its deployments aren't live). The switcher shows the
+  name, one muted line of machines ("This Mac · altair") and a mark when
+  `notLive` is not zero: never a path, an id or a reason. Unattached views
+  carry `unattached`, their `reason`, `short` and the `ref` they report, and
+  are listed under "Not matched to a workspace" with the machine and the short
+  reason; choosing one opens its tab on the Deployments page
+  (`requestDeploymentTab`, `renderer/deployment-tabs.mjs`). Those fields are
+  sent only when this computer's CLI has `workspace-identity`: without it
+  nothing could be matched, and the entries list as they did before views.
 - `deployments` lists every deployment of the view, even a single one:
   `{id, machine, path, label, local, reachable, identityFrom, primary,
-  reason?, note?}`. `machine` is "This Mac" or the server's label, else its
+  reason?, short?, fix?, note?}`. `machine` is "This Mac" or the server's label, else its
   id. `deploymentLabel` (`renderer/deployment-label.mjs`) shows it as "This
   Mac · ~/Agents/oats" or "altair · ~/Agents/tsm": the home directory as
   `~` (on a remote, a `/Users/<name>` or `/home/<name>` prefix, a display
@@ -214,10 +220,31 @@ answers the view that holds it; no `?ws=` answers the first view.
   (`identityFrom: "remembered"`, the last report, not live). `note` is
   information, not a failure.
 - `instances` is the union of every deployment's rows, each tagged
-  `deployment: {id, machine, path}`. The instance list shows a heading per
-  deployment only when the view has two or more; with one it has no
-  headings. Rows never repeat the workspace name, and a row's identity line
-  keeps its host.
+  `deployment: {id, machine, path}`. The sidebar's instance list shows a
+  heading per deployment (in its group-heading style, named by
+  `machineLabels`: the machine, with the path tail when one machine holds two)
+  only when the view has two or more, and none for a deployment with no rows;
+  with one it has no headings. Rows never repeat the workspace name, and a
+  row's identity line keeps its host.
+
+### The Deployments page
+
+The former Active overview (stage `hierarchy`, Mod+1) shows the view's
+overview trees and nothing deployment-specific beyond them. Its tabs
+(`renderer/deployment-tabs.mjs`) are **All**, then one per deployment in
+served order, named by `machineLabels`; a view of one deployment has only
+that deployment's tab, so the machine is always named. The selected tab is
+remembered per view in localStorage (`oats.desktop.deploymentTab`, ids only,
+at most 32 views). The header's count line counts the selected tab.
+
+- **All** stacks one section per deployment, headed by `deploymentLabel`
+  (the full path in a tooltip) and its counts; relations never cross
+  sections, and pan, zoom and fit work over the whole canvas.
+- **A deployment's tab** shows only that deployment's tree.
+- A non-live deployment's heading carries a state chip ("not reached",
+  "remembered") and its `short` reason, with **How to fix** under it: the
+  full sentence (`reason`), the `fix` steps and any `note`. On its own tab, a
+  non-live deployment with no rows shows that block as the empty state.
 
 ### Scope per row
 
@@ -261,8 +288,11 @@ rename) with mode 0600; a missing or malformed file is an empty memory.
 
 ### Reasons
 
-Each deployment that is not live, or not matched, carries one plain sentence
-(`deploymentReason`):
+Each deployment that is not live, or not matched, carries its reason in three
+parts (`deploymentReasonParts`): `short`, a few words for a heading or the
+switcher ("ssh needs a prompt", "OATS too old to report its workspace");
+`reason`, the one plain sentence; and `fix`, the plain steps (none when the
+sentence already says what happens next, as for a timeout). The sentences:
 
 - ssh needs a prompt or a host key (`E_SSH`): "altair needs ssh to connect
   without a prompt; run `ssh altair` once in a terminal."
@@ -328,7 +358,7 @@ A window never waits silently on "Reading the deployment…":
   "pending" answer keeps the rows as they are, never an empty roster; past
   the bound they go stale with the no-answer reason.
 - **Where.** The sidebar roster uses the shared failed state
-  (`renderer/loading.mjs`, with a second action) and the Active overview its
+  (`renderer/loading.mjs`, with a second action) and the Deployments page its
   notice: the message names the deployment path, Retry is always offered and
   **Re-add workspace** when the server does not serve a local deployment.
   Re-add sends that exact path through `workspace:add`, so it restarts the
