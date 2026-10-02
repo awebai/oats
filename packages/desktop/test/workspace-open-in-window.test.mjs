@@ -114,3 +114,15 @@ test('a window with no workspace: the trigger asks to choose one, the choices co
   assert.deepEqual(options.map((o) => o.dataset.workspaceId), [A.id, B.id]);
   assert.ok(options.every((o) => o.getAttribute('aria-selected') === 'false'));
 });
+
+test('a window with no workspace hides its whole instance section (the shipped CSS honours [hidden])', () => {
+  const dom = new JSDOM(html, { url: 'file:///renderer/index.html' });
+  const style = dom.window.document.createElement('style');
+  style.textContent = readFileSync(new URL('../renderer/shell.css', import.meta.url), 'utf8');
+  dom.window.document.head.append(style);
+  const roster = dom.window.document.getElementById('instance-roster');
+  assert.equal(dom.window.getComputedStyle(roster).display, 'flex');
+  roster.hidden = true;
+  assert.equal(dom.window.getComputedStyle(roster).display, 'none', 'no header, count pill or filter for a workspace it does not have');
+  dom.window.close();
+});
