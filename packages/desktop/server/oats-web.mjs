@@ -550,13 +550,12 @@ function cliStatus() {
     relationsMin: locator.RELATIONS_MIN.join("."),
     probedAt: cliState.probedAt || null,
     tried: cliState.tried || [],
-    // The PATH the probe ran with (and every oats call runs with), its source,
-    // and why the login shell's PATH could not be used when it was not.
-    probePath: process.env.PATH || "",
-    pathSource: PATH_SOURCE,
-    pathError: PATH_ERROR,
   };
 }
+/** /api/cli as served: the probe status plus the PATH it ran with (and every
+ * oats call runs with), its source, and why the login shell's PATH could not
+ * be used when it was not. */
+const servedCliStatus = () => ({ ...cliStatus(), probePath: process.env.PATH || "", pathSource: PATH_SOURCE, pathError: PATH_ERROR });
 
 /* ── Kernel-observed roster snapshot ──
    Every local deployment fact is one bounded `oats status --json` plus one
@@ -1504,7 +1503,7 @@ const server = createServer(async (req, res) => {
       return send(res, 200, { servers: (env.result.servers || []).map((s) => ({ id: s.id, label: s.label || s.id, sshHost: s.sshHost, workspace: s.workspace })) });
     }
     if (req.method === "GET" && path === "/api/cli") {
-      return send(res, 200, cliStatus());
+      return send(res, 200, servedCliStatus());
     }
     if (req.method === "POST" && path === "/api/window-state") {
       // Window activity from the Electron main process (window-activity.mjs): the refresh cadence backs off
@@ -1523,7 +1522,7 @@ const server = createServer(async (req, res) => {
       const body = await readBody(req);
       const chosen = typeof body.bin === "string" && body.bin.startsWith("/") ? body.bin : undefined;
       await reprobeCli(chosen);
-      return send(res, 200, cliStatus());
+      return send(res, 200, servedCliStatus());
     }
     if (req.method === "POST" && path === "/api/spawn") {
       let body;
