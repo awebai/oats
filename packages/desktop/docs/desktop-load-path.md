@@ -10,7 +10,9 @@ asks it and *what it keeps*.
 One cycle reads every registered deployment (`observeDeployment` each),
 at most `MAX_DEPLOYMENT_OBSERVATIONS` (2) at a time, first come first served
 (`mapBounded`, `server/deployment-observer.mjs`): the bound is the observer's
-own admission, so no deployment is refused for being third. For each:
+own admission, so no deployment is refused for being third. An empty
+deployment (no souls, no instances) is an observation like any other: it is
+published as `observed` with no instances, never left `pending`. For each:
 
 1. `oats status` and `oats workspace status` run together
    (`server/deployment-observer.mjs`). On a **cold** cycle — nothing held for
