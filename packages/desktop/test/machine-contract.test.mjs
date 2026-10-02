@@ -1,0 +1,87 @@
+// #517: a workspace's own machines — the shared contract (gates, defaults, validation, step rows).
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { machinesGated, awebConnectGated, machineName, machineFolder, machineFieldProblem, connectOutcome,
+  registerReached, stepCommands, STEP_LABELS } from '../renderer/machine-contract.mjs';
+
+const CLI = { ok: true, features: ['workspace-identity', 'servers-per-workspace', 'server-connect', 'capability-route'] };
+
+test('gates: servers-per-workspace and server-connect from the probe; the aweb step also needs capability-route', () => {
+  assert.equal(machinesGated(CLI), true);
+  assert.equal(machinesGated({ ...CLI, features: ['servers-per-workspace'] }), false);
+  assert.equal(machinesGated({ ...CLI, features: ['server-connect'] }), false);
+  assert.equal(machinesGated({ ...CLI, ok: false }), false);
+  assert.equal(machinesGated(null), false);
+  assert.equal(awebConnectGated(CLI), true);
+  assert.equal(awebConnectGated({ ...CLI, features: ['servers-per-workspace', 'server-connect'] }), false);
+});
+
+test('defaults: Name is <host>-<deployment dir basename> made a valid id; Folder is ~/Agents/<basename>', () => {
+  assert.equal(machineName('altair', '/Users/juanre/Agents/aweb'), 'altair-aweb');
+  assert.equal(machineName('Altair.local', '/Users/j/My Agents_v2'), 'altair-local-my-agents-v2');
+  assert.equal(machineName('', '/Users/j/aweb'), '', 'no host yet: no name');
+  assert.equal(machineName('a'.repeat(70), '/x/y'), 'a'.repeat(64), 'bounded to the id length');
+  assert.equal(machineFolder('/Users/juanre/Agents/aweb'), '~/Agents/aweb');
+});
+
+test('field problems: the kernel\'s own rules (id, ssh host, a folder on the host)', () => {
+  const ok = { id: 'altair-aweb', host: 'altair', folder: '~/Agents/aweb' };
+  assert.equal(machineFieldProblem(ok), null);
+  assert.equal(machineFieldProblem({ ...ok, folder: '/srv/aweb' }), null);
+  assert.deepEqual(machineFieldProblem({ ...ok, host: '' }), { field: 'host', text: 'Type the machine\'s ssh host alias.' });
+  assert.equal(machineFieldProblem({ ...ok, host: 'juan@altair' }).field, 'host');
+  assert.equal(machineFieldProblem({ ...ok, host: '-oProxyCommand=x' }).field, 'host');
+  assert.equal(machineFieldProblem({ ...ok, id: 'Altair' }).field, 'id');
+  assert.equal(machineFieldProblem({ ...ok, id: '' }).field, 'id');
+  assert.equal(machineFieldProblem({ ...ok, folder: 'Agents/aweb' }).field, 'folder');
+  assert.equal(machineFieldProblem({ ...ok, folder: '~/a\nb' }).field, 'folder');
+  assert.equal(machineFieldProblem({ ...ok, folder: '~/' + 'x'.repeat(1100) }).field, 'folder');
+});
+
+const STEPS = [
+  { step: 'ssh', status: 'ok' },
+  { step: 'oats', status: 'done', detail: 'installed @awebai/oats 0.39.0 (was missing)' },
+  { step: 'git', status: 'needs-human', code: 'E_REMOTE_UNREADABLE', detail: 'altair cannot read github.com/awebai/ac',
+    remedy: 'On altair run `gh auth login`, then `gh auth setup-git`.', hint: 'keychain-non-interactive' },
+  { step: 'deployment', status: 'skipped', detail: 'waits for git' },
+  { step: 'register', status: 'skipped' },
+  { step: 'readiness', status: 'skipped' },
+];
+
+test('a connect result: its steps as the CLI sent them, ready and the registration', () => {
+  const out = connectOutcome({ ok: true, result: { id: 'altair-aweb', ready: false, registration: { sshHost: 'altair' }, steps: STEPS, human: [] } });
+  assert.equal(out.ok, true); assert.equal(out.ready, false); assert.equal(out.id, 'altair-aweb');
+  assert.deepEqual(out.steps, STEPS);
+  assert.equal(out.error, null);
+});
+
+test('a failed connect: the steps so far (error.details.steps), then the failed step; ready is false', () => {
+  const failed = { step: 'oats', status: 'failed', code: 'E_INSTALL', detail: 'npm exited 1' };
+  const out = connectOutcome({ ok: false, error: { code: 'E_INSTALL', message: 'oats install failed', details: { steps: [STEPS[0], failed] } } });
+  assert.equal(out.ok, false); assert.equal(out.ready, false);
+  assert.deepEqual(out.steps, [STEPS[0], failed]);
+  assert.deepEqual(out.error, { code: 'E_INSTALL', message: 'oats install failed' });
+});
+
+test('a refusal with no steps keeps its code and message; a shape the contract does not allow is dropped, never guessed', () => {
+  assert.deepEqual(connectOutcome({ ok: false, error: { code: 'E_SERVER_WORKSPACE_MISMATCH', message: 'altair reports another workspace' } }),
+    { ok: false, ready: false, id: null, steps: [], error: { code: 'E_SERVER_WORKSPACE_MISMATCH', message: 'altair reports another workspace' } });
+  const odd = connectOutcome({ ok: true, result: { ready: true, steps: [{ step: 'ssh', status: 'weird' }, { step: 'oats' }, 'x', { step: 'git', status: 'ok', detail: 7 }] } });
+  assert.deepEqual(odd.steps, [{ step: 'git', status: 'ok' }]);
+  assert.equal(connectOutcome(null).ok, false);
+});
+
+test('register reached: its step ok or done', () => {
+  assert.equal(registerReached(STEPS), false);
+  assert.equal(registerReached([{ step: 'register', status: 'done' }]), true);
+  assert.equal(registerReached([{ step: 'register', status: 'ok' }]), true);
+  assert.equal(registerReached([{ step: 'register', status: 'needs-human' }]), false);
+  assert.equal(registerReached([]), false);
+});
+
+test('step labels for every status, and the commands a remedy names (its backticked spans)', () => {
+  assert.deepEqual(STEP_LABELS, { ok: 'ok', done: 'done', 'needs-human': 'needs you', skipped: 'waiting', failed: 'failed' });
+  assert.deepEqual(stepCommands(STEPS[2].remedy), ['gh auth login', 'gh auth setup-git']);
+  assert.deepEqual(stepCommands('Nothing to run.'), []);
+  assert.deepEqual(stepCommands(undefined), []);
+});
