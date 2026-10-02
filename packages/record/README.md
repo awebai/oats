@@ -226,6 +226,22 @@ this package, restart any long-running `capture --watch` process — a
 daemon holding the old database file open would otherwise keep indexing
 into an orphaned inode until it restarts.
 
+## Memory
+
+A capture pass runs in bounded memory, whatever the size of the record.
+Journals are streamed, never parsed whole: the first append to a stream
+validates its journal one line at a time. Comm logs are read in chunks, and
+the aw dedupe looks up only the changed log's own turn ids, in one streamed
+read of the journal. A session's new lines are walked, never collected, and
+appended in 8 MB batches. A lost offset is rebuilt from the journal's tail.
+
+So the heap a pass needs grows with one changed comm log's entry count, not
+with the record. A host job can keep a small `--max-old-space-size`;
+`packages/record/test/capture-bounded-memory.test.mjs` captures a record four
+times its 64 MB heap. One cost is not on the heap: the new bytes of one
+session are read as one buffer, so resident memory grows with a single
+session's backlog.
+
 ## Known costs, accepted for v1
 
 - Deletion via tombstone is eventual: an offline replica retains bytes until

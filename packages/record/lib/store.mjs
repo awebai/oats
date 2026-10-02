@@ -13,6 +13,7 @@
 //   - the effective record is the id-deduplicated union across streams,
 //     minus turns hidden by valid tombstones.
 
+import { bufferLines, fileChunks } from "./file-lines.mjs";
 import {
   appendFileSync,
   closeSync,
@@ -413,32 +414,31 @@ export class RecordStore {
     let fd;
     try { fd = openSync(this.journalPath(streamId), "r"); }
     catch (e) { if (e.code === "ENOENT") return; throw e; }
-    let pieces = [], size = 0, lineStart = 0;
+    let lineStart = 0;
     try {
-      for (;;) {
-        const chunk = Buffer.allocUnsafe(65536);
-        const n = readSync(fd, chunk, 0, chunk.length, null);
-        if (n === 0) break;
-        let from = 0;
-        for (let nl = chunk.indexOf(10, from); nl >= 0 && nl < n; nl = chunk.indexOf(10, from)) {
-          pieces.push(chunk.subarray(from, nl + 1));
-          size += nl + 1 - from;
-          const line = pieces.length === 1 ? pieces[0] : Buffer.concat(pieces, size);
-          let parsed;
-          try { parsed = parseJournal(line); }
-          catch (e) {
-            if (e instanceof StoreError) throw new StoreError(`corrupt interior journal line at byte ${lineStart}`);
-            throw e;
-          }
-          lineStart += size;
-          pieces = []; size = 0; from = nl + 1;
-          yield* parsed.turns;
+      for (const line of bufferLines(fileChunks(fd, { size: 65536 }))) {
+        // A final fragment without a newline is a torn tail, even if its
+        // JSON is valid. Readers leave it for the owner's append repair.
+        if (line[line.length - 1] !== 10) return;
+        let parsed;
+        try { parsed = parseJournal(line); }
+        catch (e) {
+          if (e instanceof StoreError) throw new StoreError(`corrupt interior journal line at byte ${lineStart}`);
+          throw e;
         }
-        if (from < n) { pieces.push(chunk.subarray(from, n)); size += n - from; }
+        lineStart += line.length;
+        yield* parsed.turns;
       }
-      // A final fragment without a newline is a torn tail, even if its
-      // JSON is valid. Readers leave it for the owner's append repair.
     } finally { closeSync(fd); }
+  }
+
+  // The ids among `candidates` that the stream holds, in one streamed read of
+  // its journal: a dedupe for a few ids never builds the whole stream's set.
+  idsAmong(streamId, candidates) {
+    const found = new Set();
+    if (candidates.size === 0) return found;
+    for (const turn of this.iterateStream(streamId)) if (candidates.has(turn.id)) found.add(turn.id);
+    return found;
   }
 
   // Is this a session-content stream (`<owner>~<source>.<session-id>`)?
@@ -548,12 +548,14 @@ export class RecordStore {
     }
     const path = this.journalPath(streamId);
     this.withStreamLock(streamId, () => {
-      // First append to this stream in this instance: parse the whole
+      // First append to this stream in this instance: read the whole
       // journal, so interior corruption throws here instead of silently
       // collecting appends behind the damage. A torn tail is tolerated
-      // (parseJournal treats it as final-line-torn) and repaired below.
+      // (iterateStream leaves it, as parseJournal treats it as
+      // final-line-torn) and repaired below. Streamed, one line at a time:
+      // a journal can be far larger than the heap (awebai/oats#456).
       if (!this.validatedStreams.has(streamId) && existsSync(path)) {
-        parseJournal(readFileSync(path));
+        for (const _turn of this.iterateStream(streamId)) { /* validated as read */ }
       }
       this.validatedStreams.add(streamId);
       repairTail(path);
