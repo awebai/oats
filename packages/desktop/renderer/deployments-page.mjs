@@ -73,13 +73,22 @@ export function createDeploymentTabBar(doc, { idPrefix, onSelect }) {
   };
   // When the tabs overflow, the strip scrolls horizontally (no scrollbar) and the selected or focused tab
   // is revealed, as in the terminal tab strip; only the strip scrolls, never the page around it.
+  // True once the strip could be measured (a hidden stage has no width: nothing is revealed yet).
   function reveal(control) {
-    if (!control || !element.clientWidth) return;
+    if (!control || !element.clientWidth) return false;
     const left = element.getBoundingClientRect().left + element.clientLeft, right = left + element.clientWidth;
     const box = control.getBoundingClientRect();
     if (box.left < left || box.width > element.clientWidth) element.scrollLeft += box.left - left;
     else if (box.right > right) element.scrollLeft += box.right - right;
+    return true;
   }
+  // A selection painted while the stage was hidden (a terminal in front of it) is revealed once the strip
+  // has a width again; a repaint of a revealed selection never fights the operator's own scrolling.
+  let selection = null;
+  const revealPending = () => { if (selection !== shown && reveal(buttons.get(selection))) shown = selection; };
+  const Observer = doc.defaultView?.ResizeObserver;
+  const resizes = Observer ? new Observer(revealPending) : null;
+  resizes?.observe(element);
   function button(id) {
     const b = el(doc, 'button'); b.type = 'button'; b.setAttribute('role', 'tab');
     b.addEventListener('focus', () => reveal(b));
@@ -122,9 +131,9 @@ export function createDeploymentTabBar(doc, { idPrefix, onSelect }) {
     });
     element.hidden = !list.length;
     // A newly selected tab (a remembered one, a request from the switcher) is brought into view once.
-    if (selected !== shown) { shown = selected; reveal(buttons.get(selected)); }
+    selection = selected; revealPending();
   }
-  return { element, paint, reveal, selected: () => element.querySelector('[aria-selected="true"]') };
+  return { element, paint, reveal, selected: () => element.querySelector('[aria-selected="true"]'), dispose: () => resizes?.disconnect() };
 }
 
 /** Whether a deployment's heading must say something: it is not live, or it is live but carries a

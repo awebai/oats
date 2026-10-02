@@ -498,6 +498,7 @@ function teardown(s) {
   s.activity?.dispose(); s.activity = null;
   s.load?.dispose(); s.load = null;
   s.pendingWatch?.dispose();
+  s.tabs?.dispose?.();
   s.win.clearTimeout(s.clickResetTimer);
   s.timers.forEach(clearInterval);
   (s.disposers || []).forEach((off) => { try { off(); } catch {} });

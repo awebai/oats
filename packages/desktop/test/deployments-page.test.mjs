@@ -370,3 +370,40 @@ test("tab strip overflow: a newly selected or focused tab is scrolled into the s
   assert.equal(bar.element.scrollLeft, 0, "a focused tab is revealed too");
   win.close();
 });
+
+test("tab strip overflow: a selection painted while the stage is hidden is revealed once the strip has a width (a repaint or a resize)", () => {
+  const win = new JSDOM("<body></body>").window, doc = win.document;
+  const observers = [];
+  win.ResizeObserver = class { constructor(fn) { this.fn = fn; this.on = false; observers.push(this); } observe() { this.on = true; } disconnect() { this.on = false; } };
+  const tabs = ["all", "a", "b", "c", "d"].map((id) => ({ id, label: id }));
+  const strip = (bar) => {
+    let width = 0; // the stage is hidden (a terminal in front of it): no layout
+    Object.defineProperty(bar.element, "clientWidth", { get: () => width });
+    bar.element.getBoundingClientRect = () => ({ left: 100, right: 100 + width, width });
+    return (w) => { width = w; };
+  };
+  win.HTMLButtonElement.prototype.getBoundingClientRect = function () {
+    const left = 100 + [...this.parentElement.children].indexOf(this) * 120 - this.parentElement.scrollLeft;
+    return { left, right: left + 120, width: 120 };
+  };
+  // A repaint after the stage shows again.
+  const one = createDeploymentTabBar(doc, { idPrefix: "h1", onSelect() {} }); doc.body.append(one.element);
+  const show1 = strip(one);
+  one.paint(tabs, "d");
+  assert.equal(one.element.scrollLeft, 0, "hidden: nothing to measure, nothing scrolled");
+  show1(200); one.paint(tabs, "d");
+  assert.equal(one.element.scrollLeft, 400, "the next paint reveals it");
+  one.element.scrollLeft = 120; one.paint(tabs, "d");
+  assert.equal(one.element.scrollLeft, 120, "once revealed, a repaint leaves the operator's scrolling alone");
+  // No repaint: the strip's resize (hidden to shown) reveals it.
+  const two = createDeploymentTabBar(doc, { idPrefix: "h2", onSelect() {} }); doc.body.append(two.element);
+  const show2 = strip(two);
+  two.paint(tabs, "d");
+  const observer = observers.at(-1);
+  assert.equal(observer.on, true, "the strip is observed");
+  show2(200); observer.fn([]);
+  assert.equal(two.element.scrollLeft, 400, "revealed when the strip gets its width");
+  two.dispose();
+  assert.equal(observer.on, false, "disposed with the page");
+  win.close();
+});
