@@ -409,7 +409,12 @@ test("live tmux (#520): a plain drag through an attached client selects in copy 
     client.write("\x1b[<0;10;2m"); await sleep(800);
     const osc = /\x1b\]52;[^;]*;([A-Za-z0-9+/=]*)\x07/.exec(seen);
     assert.ok(osc, "the client received an OSC 52 copy");
-    assert.equal(Buffer.from(osc[1], "base64").toString("utf8"), "alpha one\nbravo two");
+    // The drag ends past the last character of "bravo two": tmux 3.7c (macOS) copies up to it, while the
+    // Ubuntu CI's tmux also copies that line's end. Exactly one trailing newline is that difference; the
+    // selected text itself must match exactly.
+    const copied = Buffer.from(osc[1], "base64").toString("utf8");
+    const version = spawnSync("tmux", ["-V"], { encoding: "utf8" }).stdout.trim();
+    assert.equal(copied.endsWith("\n") ? copied.slice(0, -1) : copied, "alpha one\nbravo two", `the dragged lines (${version}, copied ${JSON.stringify(copied)})`);
     assert.equal(T(["display-message", "-p", "-t", r.viewer, "#{pane_in_mode}"], true), "0", "the copy left copy mode");
     client.kill(); client = null;
     r.killViewer();
