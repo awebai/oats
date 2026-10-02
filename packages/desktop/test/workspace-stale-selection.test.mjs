@@ -7,6 +7,7 @@ import { viewContext } from "./helpers/view-context.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
+import { withShellWindowGlobals } from './helpers/shell-window-globals.mjs';
 import { JSDOM } from "jsdom";
 import { createPendingWatch, NOT_SERVED_CODE, NO_ANSWER_CODE } from "../renderer/deployment-header.mjs";
 
@@ -175,7 +176,7 @@ function shellRoster(t) {
     refreshPanelInstance() {}, rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} },
     workspaceLabel: createWorkspaceSwitcher({ document, selectWorkspace: (id) => selected.push(id), discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}) }),
   };
-  const s = runInNewContext(`${fn("refreshContextRoster")}\n({ refreshContextRoster });`, c);
+  const s = runInNewContext(`${fn("refreshContextRoster")}\n({ refreshContextRoster });`, withShellWindowGlobals(c));
   return { c, s, document, requests, rendered, selected };
 }
 

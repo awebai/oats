@@ -7,12 +7,11 @@
  * requestDeploymentTab(): it records the choice and tells the listeners (the shell shows the
  * Deployments stage; the page re-reads its tab). */
 import { machineLabels } from './deployment-label.mjs';
+import { validWorkspaceId as validId } from './workspace-id.mjs';
 
 export const DEPLOYMENT_TAB_KEY = 'oats.desktop.deploymentTab';
 export const DEPLOYMENT_TAB_VIEWS_MAX = 32;
 export const ALL_TAB = 'all';
-const ID_MAX = 4096;
-const validId = v => typeof v === 'string' && v.length > 0 && v.length <= ID_MAX && !/[\x00-\x1f\x7f]/.test(v);
 const defaultStorage = () => { try { return globalThis.localStorage ?? null; } catch { return null; } };
 
 function readMap(storage) {

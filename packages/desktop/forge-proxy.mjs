@@ -1,5 +1,6 @@
 import { apiInit } from './api-url.mjs';
 import { forgeReason } from './renderer/forge-contract.mjs';
+import { trustedRendererUrl } from './renderer/window-binding.mjs';
 export const FORGE_EPOCH_HEADER = 'x-oats-forge-epoch';
 export const validForgeEpoch = v => typeof v === 'string' && /^[a-zA-Z0-9:-]{1,96}$/.test(v);
 export function forgeProxyOptions(path, opts, epoch) {
@@ -28,6 +29,6 @@ export function trustedForgeFrame(event, rendererUrl) {
   try {
     const frame = event?.senderFrame, sender = event?.sender;
     return !!frame && !!sender && !sender.isDestroyed() && frame === sender.mainFrame
-      && (frame.url === rendererUrl || frame.url?.startsWith(`${rendererUrl}#`));
+      && trustedRendererUrl(frame.url, rendererUrl);
   } catch { return false; } // detached Electron frame accessors can throw
 }

@@ -7,6 +7,7 @@ import { opened, confirmed, ready as terminalReady } from './helpers/terminal-wi
 import { terminalFailure } from '../renderer/terminal-contract.mjs';
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
+import { withShellWindowGlobals } from './helpers/shell-window-globals.mjs';
 import { JSDOM } from "jsdom";
 import { createSelectionOwnership, wirePaneSelection } from "../renderer/selection-ownership.mjs";
 import { createIntentGate } from "../renderer/open-intent.mjs";
@@ -91,7 +92,7 @@ function shell(t, shellSource = source) {
   // Spec F: the shipped active-tab reveal runs too (jsdom has no layout or ResizeObserver).
   c.revealInStrip = revealInStrip; c.tabStripResize = null;
   c.splitOpenState = () => ({ split: c.split, activeId: c.activeTab, tabs: c.tabs, workspace: c.workspace, visible: c.tabLayerVisible });
-  const names = ["setSidebarMode", "updateContextTabs", "showTabLayer", "showStage", "renderSplit", "selectEmptyGroup", "splitPane", "closeSplit", "restoreTerminalGroups",
+  const names = ["setSidebarMode", "updateContextTabs", "showTabLayer", "closeStage", "showStage", "renderSplit", "selectEmptyGroup", "splitPane", "closeSplit", "restoreTerminalGroups",
     "updateSplitControls", "onTabKeydown", "addTab", "selectTab", "activateTab", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips", "showTerminalContext",
     "openTerminalTabFlow", "openTerminalTabInner", "restoreWorkspaceTabs", "focusActiveTerminal",
     "syncContextPanel", "refreshPanelInstance"];
@@ -103,7 +104,7 @@ function shell(t, shellSource = source) {
   // Execute the shipped panel construction as well as its projection functions:
   // pointer/focus intent must compete with opens exactly as in the real shell.
   const panelSetup = shellSource.slice(shellSource.indexOf("const contextPanel = createContextPanel"), shellSource.indexOf("/** Projection only:"));
-  const s = runInNewContext(`${functions.join("\n")}\n${panelSetup}\n${registry.join("\n")}\n({ ${names.join(", ")}, contextPanel });`, c);
+  const s = runInNewContext(`${functions.join("\n")}\n${panelSetup}\n${registry.join("\n")}\n({ ${names.join(", ")}, contextPanel });`, withShellWindowGlobals(c));
   t.after(() => s.contextPanel.dispose());
   const event = (el, type, options = {}) => el.dispatchEvent(type === "keydown"
     ? new dom.window.KeyboardEvent(type, { bubbles: true, cancelable: true, ...options })

@@ -23,7 +23,7 @@ import { memberState } from "../workspace-catalog.mjs";
 import { iconElement } from "../shell-icons.mjs";
 import {
   apiJson, postJson, ensureTheme,
-  currentWorkspace, setWorkspace, onWorkspaceChange, wsQuery, workspaceGeneration,
+  currentWorkspace, switchWorkspace, onWorkspaceChange, wsQuery, workspaceGeneration,
 } from "./common.mjs";
 import { registerAction, getBinding, formatChord, onKeymapChange } from "../keybindings.mjs";
 import { resolveViewKey } from "../view-keys.mjs";
@@ -571,7 +571,8 @@ ${spawnDialogCSS}</style>
     // resync without touching typed fields (review 5526b70)
     s.syncModalRelations?.();
   });
-  s.q("wssel").addEventListener("change", (e) => setWorkspace(e.target.value));
+  // Main binds the switch first; a workspace another window has is focused there instead (#481).
+  s.q("wssel").addEventListener("change", (e) => { void switchWorkspace(e.target.value).then((r) => { if (!r.ok) e.target.value = currentWorkspace(); }); });
   s.unsubWs = onWorkspaceChange(() => {
     // Workspace switch owns the whole surface: invalidate any A spawn modal
     // immediately, remove its DOM before B loads, and clear A's agentsRoot.
@@ -1351,7 +1352,8 @@ export async function waitForInstanceInPanel(s, ref, isCurrent, { tries = 20, de
  * when the workspace or the connection changes before that. */
 export async function handOff(s, { workspace, ref, present = false, then }) {
   const connection = s.ctx.connectionGeneration?.() ?? 0;
-  if (currentWorkspace() !== workspace) setWorkspace(workspace);
+  // A workspace another window has is shown there, and that window focused (#481): nothing to wait for here.
+  if (currentWorkspace() !== workspace && !(await switchWorkspace(workspace)).ok) return false;
   const gen = workspaceGeneration();
   const stillThere = () => gen === workspaceGeneration() && currentWorkspace() === workspace && connection === (s.ctx.connectionGeneration?.() ?? 0);
   let admitted = null;

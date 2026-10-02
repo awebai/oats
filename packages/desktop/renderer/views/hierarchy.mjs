@@ -44,6 +44,7 @@
    hidden status line is the view's one live region: the notice is a note.
    Contract: mount(el, ctx) / unmount(); roster from GET /api/panel, explicit
    selected activity from the guarded K7 POST /api/instance-events boundary. */
+import { ROSTER_POLL_FOCUSED_MS, rosterPollDue } from "../roster-cadence.mjs";
 import { computeClusters, siblingEdges } from "./clusters.mjs";
 import { runtimeState, runtimeCounts, unsupportedSession } from "../instance-presentation.mjs";
 import { serverLabel } from "../remote-address.mjs";
@@ -52,7 +53,7 @@ import { instanceId, resolveLinkId } from "../instance-tree.mjs";
 import { projectActivePanel, activeSignature, activeTargetLabel, canAddressInstance, BRAIN_UNAVAILABLE } from "../active-observation.mjs";
 import {
   apiJson, ensureTheme,
-  currentWorkspace, setWorkspace, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange,
+  currentWorkspace, switchWorkspace, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange,
   renderWorkspaceSelect, wsQuery, workspaceGeneration, rowDeployment,
 } from "./common.mjs";
 import { createDataState, skeleton, statusLine, observedText } from "../loading.mjs";
@@ -399,7 +400,8 @@ export function mount(el, ctx) {
   s.q('hier-retry').addEventListener('click', () => { if (s.alive) void refresh(s, { user: true }); });
   // Re-add: a deployment this Desktop's server does not serve, through the normal add (#461).
   s.q('hier-readd').addEventListener('click', () => { if (s.alive) void reAdd(s); });
-  s.q("wssel").addEventListener("change", (e) => setWorkspace(e.target.value));
+  // Main binds the switch first; a workspace another window has is focused there instead (#481).
+  s.q("wssel").addEventListener("change", (e) => { void switchWorkspace(e.target.value).then((r) => { if (!r.ok) e.target.value = currentWorkspace(); }); });
   s.q("zin").addEventListener("click", () => zoomBy(s, 1.2));
   s.q("zout").addEventListener("click", () => zoomBy(s, 1 / 1.2));
   s.q("zfit").addEventListener("click", () => { if (visibleOwner(s)) fit(s); });
@@ -480,8 +482,13 @@ export function mount(el, ctx) {
   s.disposers.push(onDeploymentTabRequest(({ view, tab }) => {
     if (s.alive && dataCurrent(s) && view === s.panel.workspace?.id) selectTab(s, tab, { remember: false });
   }));
-  refresh(s);
-  s.timers.push(setInterval(() => { if (!s.loading) void refresh(s); }, 4000));
+  refresh(s); s.polledAt = Date.now();
+  // Every 4 s while its window is focused, at the server's blurred cadence otherwise (roster-cadence.mjs, #481).
+  // The document's own focus, read on each tick: a window can lose focus before this stage mounts.
+  s.timers.push(setInterval(() => {
+    if (s.loading || !rosterPollDue({ focused: el.ownerDocument.hasFocus(), last: s.polledAt, now: Date.now() })) return;
+    s.polledAt = Date.now(); void refresh(s);
+  }, ROSTER_POLL_FOCUSED_MS));
 
   return () => teardown(s);
 }

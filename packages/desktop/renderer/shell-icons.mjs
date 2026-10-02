@@ -12,7 +12,7 @@ export const ICONS = Object.freeze({
   search: "search", more: "ellipsis", close: "x", check: "check", refresh: "refresh-cw", reset: "rotate-ccw",
   warning: "triangle-alert", alert: "circle-alert", info: "info", branch: "git-branch", repo: "folder-git-2", package: "package", computer: "laptop", soul: "sparkles",
   zoomIn: "plus", zoomOut: "minus", fit: "maximize-2", start: "play", stop: "square", remove: "trash-2",
-  external: "external-link", pullRequest: "git-pull-request", knowledge: "book-open", file: "file-text",
+  newWindow: "app-window", external: "external-link", pullRequest: "git-pull-request", knowledge: "book-open", file: "file-text",
   brain: "brain", terminal: "square-terminal", mail: "mail", tasks: "list-checks", home: "house",
   triggers: "zap", test: "flask-conical", automations: "workflow", users: "users",
   // v4.1 instance panel: work-mode tiles (folder, link, layers; git-branch is `branch`), the Folder row's Copy, the eligible-team circle.

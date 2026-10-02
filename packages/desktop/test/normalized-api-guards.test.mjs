@@ -5,6 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
+import { withWindowGlobals } from './helpers/main-window-globals.mjs';
 import { apiUrl, apiInit, classifyApiRoute, servedSelectors } from '../api-url.mjs';
 import { forgeProxyOptions, trustedForgeFrame, FORGE_EPOCH_HEADER } from '../forge-proxy.mjs';
 import { forgeFailure } from '../renderer/forge-contract.mjs';
@@ -45,7 +46,7 @@ function fixture({ classify = classifyApiRoute, fetch } = {}) {
     fetch: fakeFetch, AbortSignal: { timeout: ms => ({ timeout: ms }) },
     guard: event => { const url = event.senderFrame?.url || ''; if (url !== renderer && !url.startsWith(`${renderer}#`)) throw Error('forbidden generic frame'); },
   };
-  runInNewContext(callback, context);
+  runInNewContext(callback, withWindowGlobals(context));
   return { context, event, calls, call: (path, opts = { method: 'POST', body: '{}' }, eventOverride = event) => handler(eventOverride, path, opts) };
 }
 for (const [path, kind] of routes) test(`${kind} ${path}: one classifier uses the exact normalized pathname`, () => {

@@ -104,6 +104,39 @@ opened, or your home directory when there is none (never ~/Downloads);
 
 Launch flags for scripted use: `--dir <workspace>` and `OATS_DESKTOP_PORT`.
 
+### One window per workspace
+
+Each workspace has at most one window, titled with the workspace's name (a
+workspace on a server: `name — server`).
+
+- **Switching.** Choosing a workspace in the switcher shows it in the current
+  window. If that workspace already has a window, that window comes to the
+  front instead and the current one doesn't change.
+- **Open in new window.** Each workspace in the switcher has an **Open in new
+  window** button beside it. From the keyboard: Right Arrow on the workspace,
+  then Enter, or ⌘Enter on macOS / Ctrl+Enter on Linux and Windows. A
+  workspace that already has a window is brought to the front.
+- **New Window.** On macOS, **File → New Window** (⌘⇧N); everywhere,
+  **Window: new window** in the command palette. The new window has no
+  workspace yet: it opens the switcher, and shows "Choose a workspace" until
+  you pick one. It reads nothing until then.
+- **Moving between windows.** On macOS, ⌘\` cycles the app's windows, and the
+  **Window** menu lists them.
+- **Restore.** Quitting and relaunching brings every window back with its
+  size and place (moved onto a visible display if its own is gone). A window
+  whose workspace isn't served at launch doesn't come back, but it is
+  remembered until you close it while its workspace is served. With nothing
+  to restore, one window opens on the last workspace you used.
+- **Launching again.** Running the app again (`open -a "OATS Desktop" --args
+  --dir <deployment>`, or from inside a deployment) adds that deployment if
+  needed and brings its window to the front, opening one if it has none. Any
+  other launch brings the most recently used window to the front.
+- **Closing.** Closing a window leaves the other windows, and their
+  terminals, running. Closing the last window quits the app.
+- Tabs belong to their window: a workspace's terminals and tabs stay in the
+  window they were opened in, and switching that window back to the
+  workspace brings them back.
+
 ## One workspace, several machines
 
 The switcher lists each workspace once, however many deployments it has: the

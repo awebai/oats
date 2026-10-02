@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { opened, confirmed, ready as terminalReady } from './helpers/terminal-wire.mjs';
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
+import { withShellWindowGlobals } from './helpers/shell-window-globals.mjs';
 import { JSDOM } from "jsdom";
 import { createFileOpener } from "../renderer/open-file.mjs";
 import { createPalette } from "../renderer/palette.mjs";
@@ -150,7 +151,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
   const registration = shellSource.match(/const unregisterOpenFile = registerAction[^\n]+/)[0]
     + "\nconst unregisterQuickOpen = " + shellSource.match(/registerAction\(\{ id: "app\.quickOpenSouls"[^\n]+/)[0];
   const listener = shellSource.match(/window.addEventListener\("keydown", [^\n]+/)[0];
-  const s = runInNewContext(`${setup}\n${functions}\n${fileComposition}\n${pickers}\n${registration}\n${listener}\n({ ${names.join(", ")}, tabOpenIntents, fileOpener, palette, quickOpen, unregisterOpenFile, unregisterQuickOpen });`, c);
+  const s = runInNewContext(`${setup}\n${functions}\n${fileComposition}\n${pickers}\n${registration}\n${listener}\n({ ${names.join(", ")}, tabOpenIntents, fileOpener, palette, quickOpen, unregisterOpenFile, unregisterQuickOpen });`, withShellWindowGlobals(c));
   s.initContextRoster();
   t.after(() => { s.palette.close(); s.quickOpen.close(); s.fileOpener.dispose(); s.unregisterOpenFile(); s.unregisterQuickOpen(); markdown.unmount(); dom.window.close(); });
   const key = (value, modifiers = {}, target = document.activeElement) => {

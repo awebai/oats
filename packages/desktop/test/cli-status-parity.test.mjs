@@ -6,13 +6,15 @@ import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
 import { httpError } from "../renderer/views/common.mjs";
 import * as cs from "../renderer/views/cli-status.mjs";
+import { scopedRequest } from "../renderer/workspace-routes.mjs";
 
 const source = readFileSync(new URL("../renderer/views/cli-status.mjs", import.meta.url), "utf8");
 const shell = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 // Exercise the shipped shell adapter without booting the shell or its services.
 const apiSource = shell.match(/async function api\(pathname, opts\) \{[\s\S]*?\n\}/)?.[0];
 assert.ok(apiSource, "current-shell API seam is present");
-const shellApi = (desk) => new Function("desk", "httpError", `${apiSource}; return api;`)(desk, httpError);
+// A window bound to its workspace (#481): the no-workspace guard lets every request through.
+const shellApi = (desk) => new Function("desk", "httpError", "windowState", "scopedRequest", `${apiSource}; return api;`)(desk, httpError, () => "bound", scopedRequest);
 const tick = () => new Promise(resolve => setImmediate(resolve));
 function deferred() {
   let resolve, reject;
