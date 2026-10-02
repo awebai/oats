@@ -24,12 +24,15 @@ const text = value => typeof value === 'string' && value.length > 0;
 const registration = row => ({ id: row.id, label: text(row.label) ? row.label : row.id, sshHost: row.sshHost, workspace: row.workspace,
   workspaceKey: text(row.workspaceKey) ? row.workspaceKey : null });
 
-/** What a check says about a machine: reachable (its deployment answered), its OATS version, or why not. */
+/** What a check says about a machine: reachable (its deployment answered, and its workspace could be
+ * read when the check says), its OATS version, or why not (`error`, `workspaceReadError`), as the CLI words it. */
 function checkFacts(envelope) {
   if (envelope?.ok === true) {
     const r = envelope.result || {};
-    return { reachable: r.workspaceReachable === true, version: text(r.remote?.version) ? r.remote.version : null,
-      error: r.workspaceReachable === true ? null : text(r.error?.message) ? r.error.message : null };
+    const unreadable = r.workspaceReadable === false;
+    const why = unreadable && text(r.workspaceReadError?.message) ? r.workspaceReadError.message : text(r.error?.message) ? r.error.message : null;
+    const reachable = r.workspaceReachable === true && !unreadable;
+    return { reachable, version: text(r.remote?.version) ? r.remote.version : null, error: reachable ? null : why };
   }
   return { reachable: false, version: null, error: text(envelope?.error?.message) ? envelope.error.message : 'The check did not answer.' };
 }

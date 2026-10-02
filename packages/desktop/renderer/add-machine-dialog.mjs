@@ -53,7 +53,7 @@ export const addMachineCSS = `
 .machine-step-body { display:flex; flex-direction:column; gap:3px; min-width:0; }
 .machine-step-detail, .machine-step-code { color:var(--muted); }
 .machine-step-code { font-family:var(--mono,monospace); font-size:11.5px; }
-.machine-step-remedy { color:var(--fg); }
+.machine-step-remedy { color:var(--fg); white-space:pre-line; } /* a readiness remedy is its lines joined by newlines */
 .machine-commands { display:flex; flex-direction:column; gap:4px; }
 .machine-command { display:flex; align-items:center; gap:8px; min-width:0; }
 .machine-command code { min-width:0; overflow-wrap:anywhere; padding:2px 6px; border-radius:5px; background:var(--surface); color:var(--fg); font:11.5px var(--mono,monospace); }
