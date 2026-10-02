@@ -246,6 +246,21 @@ any other exit code. Closing the tab ends the reconnecting. Reconnecting
 never stops or restarts the agent on the server: only the local ssh viewer
 ends.
 
+## Copy from a terminal
+
+Drag over an agent's output to select it. When you release the mouse, the
+selection is copied to the clipboard, ready to paste anywhere. ⌘C, Edit › Copy
+and the right-click menu then copy nothing new: the text is already there. The
+selection is tmux's own (copy mode), so it can run past the visible screen
+into the scrollback, and tmux sends its copy to the Desktop, which writes it to
+the clipboard. Nothing in a terminal can read the clipboard.
+
+If the agent's program uses the mouse itself, the drag goes to it instead. Hold
+**Option** (macOS) or **Shift** while dragging to select in the terminal itself,
+then copy with ⌘C or the right-click menu. If your `~/.tmux.conf` sets
+`set-clipboard off`, tmux keeps its copies to itself: use Option-drag. ⌘V
+pastes into the agent's draft as before.
+
 ## Attach files and screenshots
 
 Drop a file onto an agent terminal to insert its path into that agent's draft.
@@ -284,7 +299,7 @@ error in the terminal. Each drop/paste accepts up to 16 files totaling 25 MB.
 | "Compatible oats CLI required" card | No CLI, or a version outside the range the card itself states. Copy the card's install command, or **Choose oats…** to point at the right binary; **Retry** re-probes. Spawn is disabled until a compatible CLI is verified. |
 | Spawn disabled, no card | The probe hasn't settled yet (transient, resolves in ms). If it persists, the backend is unreachable — restart the app. |
 | Terminals fail to open ("could not attach") | tmux missing, or no live session for that instance. Install tmux (`tmux -V`); check `tmux ls`. |
-| Can't select/copy text in a terminal tab | The terminal runs with tmux mouse handling, so a plain drag scrolls/passes through. Hold **Option** (macOS) or **Shift** while dragging to make a local selection, then copy (Cmd+C / right-click → Copy). |
+| Can't select/copy text in a terminal tab | A plain drag copies on release ([Copy from a terminal](#copy-from-a-terminal)). If nothing reaches the clipboard, the program in the pane has the mouse, or your tmux config sets `set-clipboard off`: hold **Option** (macOS) or **Shift** while dragging, then copy (Cmd+C / right-click → Copy). |
 | macOS "app is damaged / can't be opened" | Ad-hoc-signed (not notarized) build + quarantine. Right-click → Open, or clear the quarantine attribute (above). If it persists, verify the bundle: `codesign --verify --deep --strict --verbose=2 "/Applications/OATS Desktop.app"` — a non-zero exit means a broken artifact, report it. |
 | Roster empty | The opened directory isn't an OATS deployment (it needs `oats-local.yaml` and `agents/`). Use the workspace switcher → Add workspace to select the right folder. |
 

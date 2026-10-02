@@ -72,7 +72,7 @@ test("openTerm: linked-window viewer built in order, keys locked, pty attaches t
     ["tmux", "set-option", "-t", "oatsdesk-test-1", "prefix2", "None"],
     ["tmux", "set-option", "-t", "oatsdesk-test-1", "key-table", "oatsdesk-locked"],
     ["tmux", "unbind-key", "-a", "-q", "-T", "oatsdesk-locked"],              // tables are server-global: clear stale bindings first
-    ...LOCKED_TABLE_BINDINGS.map((b) => ["tmux", "bind-key", "-T", "oatsdesk-locked", ...b]), // provisioned wheel bindings
+    ...LOCKED_TABLE_BINDINGS.map((b) => ["tmux", "bind-key", "-T", "oatsdesk-locked", ...b]), // provisioned wheel and drag bindings
     ["tmux", "set-option", "-t", "oatsdesk-test-1", "mouse", "on"],            // wheel events reach tmux
     ["tmux", "set-option", "-t", "oatsdesk-test-1", "status", "off"],          // no duplicate terminal chrome
     ["spawn", "=oatsdesk-test-1", 120, 40],                                     // pty attaches to the viewer
@@ -272,13 +272,16 @@ test("locked table provisions ONLY the approved wheel bindings — no window man
   // the installed table): exactly the approved keys, and none of the
   // window-management commands can appear in any binding.
   const keys = LOCKED_TABLE_BINDINGS.map(([k]) => k);
-  assert.deepEqual(keys, ["WheelUpPane"], "exactly the approved binding keys");
+  assert.deepEqual(keys, ["WheelUpPane", "MouseDrag1Pane"], "exactly the approved binding keys");
   const flat = LOCKED_TABLE_BINDINGS.flat().join(" ");
   for (const forbidden of ["next-window", "previous-window", "last-window", "new-window", "select-window", "kill-window", "choose-", "switch-client"]) {
     assert.ok(!flat.includes(forbidden), `no ${forbidden} in the locked table`);
   }
   assert.match(flat, /copy-mode -e/, "wheel enters exit-at-bottom copy mode");
   assert.match(flat, /send-keys -M/, "mouse event forwarded");
+  // #520: a plain drag starts a tmux copy selection (its release copies, and tmux sends OSC 52), unless the app grabbed the mouse.
+  assert.deepEqual(LOCKED_TABLE_BINDINGS.find(([k]) => k === "MouseDrag1Pane"),
+    ["MouseDrag1Pane", "if-shell", "-F", "#{||:#{pane_in_mode},#{mouse_any_flag}}", "send-keys -M", "copy-mode -M"]);
 });
 
 test("live tmux: real wheel events through an attached pty client — installed binding enters copy mode and scrolls; stale table bindings are cleared", async (t) => {
@@ -360,6 +363,56 @@ test("live tmux: real wheel events through an attached pty client — installed 
     client = null;
     r.killViewer();
     assert.ok(T(["list-windows", "-t", "=src", "-F", "#{window_name}"], true).includes("instA"), "source intact");
+  } finally {
+    if (client) { try { client.kill(); } catch { /* gone */ } }
+    spawnSync("tmux", ["-S", sock, "kill-server"], { timeout: 5000 });
+    spawnSync("rm", ["-f", sock], { timeout: 5000 });
+  }
+});
+
+test("live tmux (#520): a plain drag through an attached client selects in copy mode, and its release copies and sends OSC 52 to the client", async (t) => {
+  const probe = spawnSync("tmux", ["-V"], { encoding: "utf8" });
+  if (probe.error || probe.status !== 0) return t.skip("tmux not available");
+  let ptyMod;
+  try {
+    ptyMod = createRequire(join(RENDERER_PKG, "package.json"))("node-pty");
+    const probePty = ptyMod.spawn("true", [], { name: "xterm", cols: 10, rows: 5 });
+    probePty.kill();
+  } catch (error) {
+    return t.skip(`node-pty can't spawn here (${String(error?.message || error).slice(0, 120)}): not built for this node ABI, `
+      + "or its prebuilds/<platform>/spawn-helper is not executable (chmod +x it, or npm rebuild node-pty)");
+  }
+  const sock = `/tmp/oatsdrag-${process.pid}.sock`;
+  const T = (args, out = false) => {
+    const r = spawnSync("tmux", ["-S", sock, "-f", "/dev/null", ...args], { encoding: "utf8", timeout: 5000 });
+    if (r.status !== 0) throw new Error(`tmux ${args.join(" ")} failed: ${r.stderr}`);
+    return out ? r.stdout.trim() : undefined;
+  };
+  const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
+  let client = null;
+  try {
+    T(["new-session", "-d", "-s", "src", "-n", "instA", "-x", "80", "-y", "20", "printf 'alpha one\\nbravo two\\n'; sleep 60"]);
+    await sleep(500);
+    const r = openTerm({ session: "src", window: "instA" }, {
+      preflight: (target) => T(["list-panes", "-t", target]),
+      tmux: (args) => T(args), tmuxOut: (args) => T(args, true),
+      spawnPty: (target, cols, rows) => ptyMod.spawn("tmux", ["-S", sock, "-f", "/dev/null", "attach-session", "-t", target], { name: "xterm-256color", cols, rows, env: process.env }),
+    });
+    client = r.pty;
+    let seen = "";
+    client.onData((d) => { seen += d; });
+    await sleep(1200);
+    // SGR mouse: press at the first row's first column, drag to the second row's end, release.
+    client.write("\x1b[<0;1;1M"); await sleep(150);
+    client.write("\x1b[<32;5;1M"); await sleep(150);
+    client.write("\x1b[<32;10;2M"); await sleep(150);
+    client.write("\x1b[<0;10;2m"); await sleep(800);
+    const osc = /\x1b\]52;[^;]*;([A-Za-z0-9+/=]*)\x07/.exec(seen);
+    assert.ok(osc, "the client received an OSC 52 copy");
+    assert.equal(Buffer.from(osc[1], "base64").toString("utf8"), "alpha one\nbravo two");
+    assert.equal(T(["display-message", "-p", "-t", r.viewer, "#{pane_in_mode}"], true), "0", "the copy left copy mode");
+    client.kill(); client = null;
+    r.killViewer();
   } finally {
     if (client) { try { client.kill(); } catch { /* gone */ } }
     spawnSync("tmux", ["-S", sock, "kill-server"], { timeout: 5000 });

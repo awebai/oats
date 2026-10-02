@@ -16,6 +16,7 @@ import { createSelectionOwnership, wirePaneSelection } from "../renderer/selecti
 import { createIntentGate, prepareOwnedOpen } from "../renderer/open-intent.mjs";
 import { createViewLifecycle } from "../renderer/view-lifecycle.mjs";
 import { createTerminalTab, terminalOptions, fitTerminal, createGlyphRenderer } from "../renderer/terminal-tab.mjs";
+import { attachClipboardWrite } from "../renderer/terminal-clipboard.mjs";
 import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "../renderer/tab-a11y.mjs";
 import { reserveKey, whenKeyFree } from "../renderer/tab-keys.mjs";
 import { createWorkspaceTabMemory } from "../renderer/workspace-tab-memory.mjs";
@@ -118,11 +119,12 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     createSelectionOwnership, wirePaneSelection, prepareOwnedOpen, createViewLifecycle,
     createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart, reserveKey, whenKeyFree, projectSplitDom, splitControlsState,
     ...tree, ...layout, ...workspaceTabs, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge, rosterKeyAction, moveTarget,
-    terminalOptions, fitTerminal, createGlyphRenderer, terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}),
+    terminalOptions, attachClipboardWrite, fitTerminal, createGlyphRenderer, terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}),
     onThemeChange: () => () => {}, onTerminalTypographyChange: () => () => {}, requestAnimationFrame: cb => cb(),
     FitAddon: { FitAddon: class { fit() {} } },
     createTerminalTab: options => createTerminalTab({ ...options, observe: () => () => {} }),
     Terminal: class {
+      parser = { registerOscHandler: () => ({ dispose() {} }) };
       constructor() { this.cols = 80; this.rows = 24; this.focuses = 0; this.disposed = 0; terms.push(this); }
       loadAddon() {} onData() {} onResize() {} write() {}
       open(wrap) { wrap.classList.add("xterm"); this.input = document.createElement("textarea"); wrap.append(this.input); }

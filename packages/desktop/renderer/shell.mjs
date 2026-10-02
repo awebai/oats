@@ -39,6 +39,7 @@ import { rosterKeyAction, moveTarget } from "./roster-keys.mjs";
 import { createViewLifecycle } from "./view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "./tab-keys.mjs";
 import { createTerminalTab, terminalOptions, fitTerminal, createGlyphRenderer } from "./terminal-tab.mjs";
+import { attachClipboardWrite } from "./terminal-clipboard.mjs";
 import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "./tab-a11y.mjs";
 import { revealInStrip } from "./reveal-in-scrollport.mjs";
 import { createIntentGate, prepareOwnedOpen, runOpenFlow } from "./open-intent.mjs";
@@ -1790,6 +1791,8 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
     fontFamily: type.fontFamily,
     theme: xtermTheme(),
   }));
+  // A drag in the agent's terminal is tmux's copy; tmux sends it as OSC 52 and it goes to the clipboard (write-only, #520).
+  const clipboard = attachClipboardWrite(term, text => navigator.clipboard.writeText(text));
   // live terminals follow app theme + persisted typography preferences
   const offTheme = onThemeChange(() => { term.options.theme = xtermTheme(); });
   const offTypography = onTerminalTypographyChange((next) => {
@@ -1848,13 +1851,13 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
     // Keep the pane/key while cleanup is pending or unconfirmed. Theme hooks
     // belong to the retained view and are removed only on confirmed disposal.
     confirmClose: () => tab.close(),
-    onClose: () => { offTheme(); offTypography(); },
+    onClose: () => { offTheme(); offTypography(); clipboard.dispose(); },
     onShow: () => { requestAnimationFrame(() => { try { glyphs.ensure(); fitTerminal(term, fit); } catch {} }); },
     // user-initiated activation → keyboard lands in the xterm textarea
     focusContent: () => tab.focus(),
     focusOnActivate: true, // addTab's own dedup here is a user jump too
   });
-  if (!made) { offTheme(); offTypography(); term.dispose(); return; } // lost a race to an identical tab
+  if (!made) { offTheme(); offTypography(); clipboard.dispose(); term.dispose(); return; } // lost a race to an identical tab
   made.paneEl.append(wrap);
   term.open(wrap);
   glyphs.ensure();
