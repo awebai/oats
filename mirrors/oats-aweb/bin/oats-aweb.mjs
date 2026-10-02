@@ -161,14 +161,37 @@ const warn = (m) => out({ warning: `oats-aweb: ${String(m).slice(0, 300)}` });
  * nonzero so the kernel rolls the spawn back. `meta` carries whatever external
  * state already exists (e.g. a joined identity) so retire can undo it. */
 const fatal = (m, meta) => out({ ...(meta ? { meta } : {}), warning: `oats-aweb: ${String(m).slice(0, 300)}` }, 1);
+/** The JSON object that `text` starts with, ignoring whatever follows it. */
+function leadingJsonObject(text) {
+  let depth = 0, inString = false, escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (c === "\\") escaped = true;
+      else if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') inString = true;
+    else if (c === "{") depth++;
+    else if (c === "}" && --depth === 0) return JSON.parse(text.slice(0, i + 1));
+  }
+  throw new Error("unterminated JSON object");
+}
+/** aw's JSON answer: the whole output, or the JSON from the first line that opens it when aw
+ *  prints progress before it. A top-level object (one opening at column 0) may also be followed
+ *  by notes (`aw workspace status` appends its gone-workspace checks); an indented line is never
+ *  taken for the start of the answer, since it can be an object nested inside a cut-off one. */
 const parseAwJson = (text, what) => {
   const trimmed = String(text ?? "").trim();
   if (!trimmed) throw new Error(`${what} returned no JSON result`);
-  try { return JSON.parse(trimmed); } catch { /* may have progress before JSON */ }
+  try { return JSON.parse(trimmed); } catch { /* may have progress before JSON or notes after it */ }
   const lines = trimmed.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
     if (!lines[i].trimStart().startsWith("{")) continue;
-    try { return JSON.parse(lines.slice(i).join("\n")); } catch { /* keep looking */ }
+    const rest = lines.slice(i).join("\n");
+    try { return JSON.parse(rest); } catch { /* not the whole remainder */ }
+    if (lines[i].startsWith("{")) { try { return leadingJsonObject(rest); } catch { /* keep looking */ } }
   }
   throw new Error(`${what} returned no JSON result`);
 };
@@ -1124,6 +1147,86 @@ function awebRootForTeam(team) {
   if (candidate && isAbsolute(candidate.root) && existsSync(join(resolve(candidate.root), ".aw"))) return resolve(candidate.root);
   return undefined;
 }
+/** The roster (awebai/oats-aweb#46): the union of the team's membership certificates and its
+ *  workspace presence, one entry per alias, each saying which source reported it. Neither view is
+ *  complete alone: certificates miss identities whose membership the registry does not list (a
+ *  hosted global accept, a dashboard human), and presence misses certificate holders with no
+ *  workspace record. An entry is never dropped for being offline, and a missing workspace record
+ *  is stated as a fact, never read as retired. */
+const ROSTER_PRESENCE_LIMIT = 200;
+const ROSTER_KINDS = ["global identity", "human", "instance", "hosted agent", "deployment root", "unknown"];
+/** How an inferred kind is shown: the fact it was inferred from. */
+const ROSTER_KIND_FROM_TEXT = { "workspace path": "from its workspace path", "session context": "from its session context" };
+function configuredRootPaths() {
+  const paths = new Set();
+  const roots = settings.roots && typeof settings.roots === "object" && !Array.isArray(settings.roots) ? Object.values(settings.roots) : [];
+  for (const dir of [...roots, settings.root]) if (typeof dir === "string" && isAbsolute(dir)) { paths.add(resolve(dir)); paths.add(join(resolve(dir), ".aw")); }
+  return paths;
+}
+/** What an entry is, and what that rests on. The identity scope is reported data; the other kinds
+ *  are inferred, in this order: a dashboard session is a human; a workspace at a per-team root
+ *  (`.aweb-roots/<label>/.aw`) or at a root this deployment configures is a deployment root; a
+ *  hosted MCP session is a hosted agent; an OATS instance home (`agents/<soul>/instances/<name>`)
+ *  is an instance. Anything else, a certificate with no workspace record included, is unknown. */
+function rosterKind({ scope, workspace, rootPaths }) {
+  const path = typeof workspace?.workspace_path === "string" ? workspace.workspace_path : "";
+  if (workspace?.context_kind === "dashboard_browser") return { kind: "human", kindFrom: "session context" };
+  if (/\/\.aweb-roots\/[^/]+\/\.aw\/?$/.test(path) || (path && rootPaths.has(resolve(path)))) return { kind: "deployment root", kindFrom: "workspace path" };
+  if (scope === "global") return { kind: "global identity", kindFrom: "identity scope" };
+  if (workspace?.context_kind === "hosted_mcp") return { kind: "hosted agent", kindFrom: "session context" };
+  if (/\/agents\/[^/]+\/instances\/[^/]+\/?$/.test(path)) return { kind: "instance", kindFrom: "workspace path" };
+  return { kind: "unknown", kindFrom: null };
+}
+function rosterDocument({ team, certificates, presence, problems, root }) {
+  const certificatesComplete = !!certificates;
+  const presenceComplete = !!presence && presence.team_has_more !== true && (presence.team || []).length < ROSTER_PRESENCE_LIMIT;
+  if (presence && !presenceComplete) problems.push({ source: "presence", message: `aw workspace status reports more than ${ROSTER_PRESENCE_LIMIT} workspaces; only the first ${ROSTER_PRESENCE_LIMIT} were read` });
+  const rootPaths = configuredRootPaths();
+  let rootAddress = null;
+  try { rootAddress = yamlScalar(readFileSync(join(root, ".aw", "identity.yaml"), "utf8"), "address") || null; } catch { /* a local root has no address */ }
+  const entries = new Map();
+  const entry = (alias) => { if (!entries.has(alias)) entries.set(alias, { alias }); return entries.get(alias); };
+  for (const c of certificates?.members || []) if (c?.alias) entry(c.alias).certificate = c;
+  // `team` leaves out the caller's own workspace, which is this root's identity.
+  const self = presence?.workspace?.alias ? presence.workspace : undefined;
+  for (const w of [...(self ? [self] : []), ...(presence?.team || [])]) {
+    if (!w?.alias) continue;
+    const e = entry(w.alias);
+    // One alias, several workspaces: the active one, else the most recently seen.
+    const better = !e.workspace || (w.status === "active" && e.workspace.status !== "active") || (w.status === e.workspace.status && String(w.last_seen || "") > String(e.workspace.last_seen || ""));
+    if (better) { e.workspace = w; e.self = w === self; }
+  }
+  const members = [...entries.values()].map(({ alias, certificate, workspace, self: isSelf }) => {
+    const scopes = [certificate?.identity_scope, workspace?.agent_identity_scope].filter(Boolean);
+    const identityScope = scopes.includes("global") ? "global" : scopes[0] || null;
+    return {
+      alias,
+      ...rosterKind({ scope: identityScope, workspace, rootPaths }),
+      identityScope,
+      address: certificate?.member_address || (isSelf ? rootAddress : null),
+      role: workspace?.role || null,
+      status: workspace ? (workspace.status === "active" ? "active" : "offline") : presenceComplete ? "no-workspace-record" : "presence-unknown",
+      sources: [certificate ? "certificate" : null, workspace ? "presence" : null].filter(Boolean),
+      presence: workspace ? { status: workspace.status || null, hostname: workspace.hostname || null, lastSeen: workspace.last_seen || null } : null,
+    };
+  });
+  members.sort((a, b) => ROSTER_KINDS.indexOf(a.kind) - ROSTER_KINDS.indexOf(b.kind) || a.alias.localeCompare(b.alias));
+  return { team, members, certificatesComplete, presenceComplete, problems };
+}
+function sinceText(iso) {
+  const minutes = Math.floor((Date.now() - Date.parse(iso)) / 60000);
+  if (!Number.isFinite(minutes)) return undefined;
+  if (minutes < 60) return `${Math.max(minutes, 1)}m ago`;
+  if (minutes < 48 * 60) return `${Math.floor(minutes / 60)}h ago`;
+  return `${Math.floor(minutes / (24 * 60))}d ago`;
+}
+const ROSTER_STATUS_TEXT = { "no-workspace-record": "certificate only: no workspace record", "presence-unknown": "certificate only: presence incomplete" };
+function rosterLine(m) {
+  const since = m.presence?.lastSeen ? sinceText(m.presence.lastSeen) : undefined;
+  const status = m.status === "active" ? "active" : m.status === "offline" ? (since ? `seen ${since}` : "offline") : ROSTER_STATUS_TEXT[m.status];
+  const kind = ROSTER_KIND_FROM_TEXT[m.kindFrom] ? `${m.kind} (${ROSTER_KIND_FROM_TEXT[m.kindFrom]})` : m.kind;
+  return `${[`${m.alias} — ${kind}`, status, m.presence?.hostname, m.address, m.role ? `role ${m.role}` : null].filter(Boolean).join(", ")} [${m.sources.join(", ")}]`;
+}
 let forwardedSoulArg;
 function stripForwardedSoul(argv = process.argv.slice(3)) {
   const out = [];
@@ -1467,7 +1570,7 @@ if (event === "launch") {
     out({
       meta,
       env,
-      brief: `Comms: you have an aweb identity — alias "${alias}" on team ${joined.team_id}, ${defaultTeamBrief}.${mismatch}${deliveryBrief}${joinedBrief} Load the oats-aweb skill before messaging: \`oats aweb teams --json\` shows your teams, \`oats aweb roster\` who you can reach. Coordination stays in your deployment's task layer.`,
+      brief: `Comms: you have an aweb identity — alias "${alias}" on team ${joined.team_id}, ${defaultTeamBrief}.${mismatch}${deliveryBrief}${joinedBrief} Load the oats-aweb skill before messaging: \`oats aweb teams --json\` shows your teams, \`oats aweb roster\` the team's members and workspaces, each labelled. Coordination stays in your deployment's task layer.`,
       ...(launch ? { launch } : {}),
       ...(joined.team_id !== team ? { warning: `oats-aweb: team mismatch — joined ${joined.team_id}, expected ${team}` } : warnings.length ? { warning: warnings.join(" | ") } : {}),
     });
@@ -1584,13 +1687,35 @@ if (event === "launch") {
   }
   if (!team) { console.error(`oats aweb roster: ${teamConfigRemedy()}`); process.exit(1); }
   const teamFlag = [flagEq(team.includes(":") ? "--team-id" : "--team", team)];
-  const r = JSON.parse(run(["aw", "id", "team", "members", ...teamFlag, "--json"], root, 60000));
-  if (argv.includes("--json")) { console.log(JSON.stringify(r, null, 2)); process.exit(0); }
-  console.log(`aweb team ${r.team_id || team} — member roster (cross-machine):`);
-  const members = r.members || [];
-  if (!members.length) console.log("  (no member certificates visible from this workspace)");
-  for (const m of members) console.log(`  ${m.alias || m.name || m.did || JSON.stringify(m)}`);
-  console.log(`\nAliases minted by OATS are instance names; message one with \`aw mail send --to <alias> --subject "..." --body-file <file>\`${label ? ` as this team: \`aw --identity-home <identityHome> mail send ...\` (identityHome from \`oats aweb teams --json\`)` : ""}.`);
+  // Each source is read on its own: an unreadable one is reported, never a silent partial union.
+  const problems = [];
+  const read = (source, argv, what, shaped) => {
+    let doc;
+    try { doc = parseAwJson(run(argv, root, 60000), what); }
+    catch (e) {
+      const why = e.status === undefined ? e.message : `${what} failed (exit ${e.status})${e.stderr ? `: ${e.stderr}` : ""}`;
+      problems.push({ source, message: String(why || e).replace(/\s+/g, " ").trim().slice(0, 300) });
+      return undefined;
+    }
+    if (shaped(doc)) return doc;
+    problems.push({ source, message: `${what} returned JSON without the expected fields` });
+    return undefined;
+  };
+  const certificates = read("certificates", ["aw", "id", "team", "members", ...teamFlag, "--json"], "aw id team members", (d) => Array.isArray(d?.members));
+  let presence = read("presence", ["aw", "workspace", "status", flagEq("--limit", ROSTER_PRESENCE_LIMIT), "--json"], "aw workspace status", (d) => Array.isArray(d?.team));
+  if (presence?.selected_team && presence.selected_team !== team) { problems.push({ source: "presence", message: `aw workspace status at ${root} describes ${presence.selected_team}, not ${team}` }); presence = undefined; }
+  const roster = rosterDocument({ team: certificates?.team_id || team, certificates, presence, problems, root });
+  // One synchronous write: a large roster piped to a reader must not lose its tail at exit.
+  if (argv.includes("--json")) { writeSync(1, `${JSON.stringify(roster, null, 2)}\n`); process.exit(0); }
+  const lines = [`aweb team ${roster.team} — ${roster.members.length} entries (membership certificates and workspaces):`];
+  if (!roster.members.length) lines.push("  (no member certificates or workspaces visible from this root)");
+  for (const m of roster.members) lines.push(`  ${rosterLine(m)}`);
+  lines.push("");
+  for (const problem of roster.problems) lines.push(`Incomplete: ${problem.source}: ${problem.message}.`);
+  lines.push("aw does not mark the team's coordinator (a workspace's role is its own setting): look among the global identities and ask your expert or coordinator which one coordinates.");
+  lines.push("Certificates come from `aw id team members`; `aw workspace status` is the presence view.");
+  lines.push(`Message an entry with \`aw mail send --to <alias> --subject "..." --body-file <file>\`${label ? ` as this team: \`aw --identity-home <identityHome> mail send ...\` (identityHome from \`oats aweb teams --json\`)` : ""}.`);
+  writeSync(1, `${lines.join("\n")}\n`);
   process.exit(0);
 } else if (event === "setup") {
   // Guided onboarding — idempotent, prints what it finds and can run one

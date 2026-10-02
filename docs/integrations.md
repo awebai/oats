@@ -41,7 +41,7 @@ arrives from.
 # oats-workspace.yaml: one default per slot, for every soul
 packages:
   oats.okf: v4.1.1
-  oats.aweb: v1.19.0
+  oats.aweb: v1.20.0
   oats.linear: v1.0.1
   oats.jira: v1.0.1
 defaults:
@@ -89,7 +89,10 @@ operations in full.
   `knowledge-maintainer` package soul reviews the resulting PRs.
 - **`oats.aweb`** mints a messaging identity for each instance at spawn and
   removes it at retire, contributes the aweb messaging skills, and wires the
-  channel so sessions are woken by mail. `oats aweb roster` lists the team.
+  channel so sessions are woken by mail. `oats aweb roster` lists the team:
+  its membership certificates and workspaces, one entry per alias with its
+  sources, status and kind (global identities first), and says when either
+  source is incomplete.
 - **`oats.jira`** teaches the `jira-tasks` protocol and adds an advisory spawn
   hook that names the configured site and project.
 - **`oats.linear`** provides JSON-first `oats linear` commands, the

@@ -40,17 +40,45 @@ joined team, put `--identity-home <identityHome>` before the subcommand.
 ## 2. Find who to talk to
 
 ```bash
-oats aweb roster                 # your default team's members (instances + humans), across machines
-oats aweb roster --label <label> # an eligible workspace team's members
+oats aweb roster                 # your default team: certificates and workspaces, each entry labelled
+oats aweb roster --label <label> # an eligible workspace team, the same way
 oats status                      # live OATS instances on this machine
+aw workspace status              # the presence view on its own: who has a workspace, active or when seen
 ```
 
+**What the roster shows.** One entry per alias, the union of the team's
+membership certificates (`aw id team members`) and its workspaces
+(`aw workspace status`, the presence view). Each entry ends with its sources
+(`[certificate]`, `[presence]` or both) and gives its status (`active`,
+`seen <when>`, or `certificate only: no workspace record`) and a kind:
+
+- `global identity`: from its identity scope, listed first, with its address
+  when known. Retained and resident identities, coordinators among them, are here.
+- `human` and `hosted agent` (from the session context), `instance` and
+  `deployment root` (from the workspace path): inferred, and the line says so.
+- `unknown`: nothing reliable says what it is.
+
+**What it can't tell you.**
+
+- **Who coordinates.** aw does not mark the team's coordinator, and a
+  workspace's `role` is its own setting. Look among the global identities and
+  ask your expert or coordinator which one coordinates.
+- **Whether an entry is retired.** A certificate with no workspace record may
+  belong to an instance that was retired, one that runs elsewhere, or one that
+  aw never recorded. Offline is not retired.
+- **The whole team, when it prints `Incomplete:`.** That line names the source
+  that could not be read, or says presence is past its 200-workspace cap. The
+  roster then lists what it has and claims nothing about the rest.
+
+- A `deployment root` (for example `altair-aweb`) is a machine's minting
+  identity, not an agent: don't send work to it.
 - Instances are addressed by **instance name** (the alias), e.g. `dev-2`.
-- Humans are members too; their alias is on the roster. Address them the same way.
+  Humans and global identities are addressed by their alias the same way.
 - Outside your team use a full address, `namespace/alias` (`--to-address`), only
   when you were given one.
-- A name that is not on the roster of the team you send from will not resolve:
-  pick the identity (default-team or joined) whose team holds the recipient.
+- A name resolves only in the team you send from: pick the identity
+  (default-team or joined) whose team holds the recipient. aw resolves names
+  through its service, so a name can resolve without being on the roster.
 
 ## 3. Send, reply, chat
 
@@ -218,7 +246,8 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 **Other symptoms:**
 
 - *Recipient not found:* the alias is not in the team you send from. Check
-  `oats aweb roster` (or `--label`) and send from the identity whose team holds them.
+  `oats aweb roster` (or `--label`) and `aw workspace status`, and send from the
+  identity whose team holds them.
 - *Sent from the wrong team:* you forgot or added `--identity-home`. Reply from
   the identity that received the message.
 - *A grant condition* (`grant_expired`, `grant_revoked`, …) in resident-grant
