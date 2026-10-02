@@ -281,3 +281,43 @@ test("a reached deployment that is not matched says why on its tab (the switcher
   const quiet = await page(t, panel([LOCAL], [row("lead", LOCAL)]));
   assert.equal(quiet.all(".hier-dhead").length, 0);
 });
+
+test("a live deployment's note (information, not a failure) is said under Details, with no chip and no mark, even when it is alone", async (t) => {
+  const MOVED = { ...ALTAIR, reachable: true, identityFrom: "reported", reason: undefined, short: undefined, primary: true };
+  const u = await page(t, panel([MOVED], [row("far", MOVED)]));
+  assert.equal(u.all(".hier-tabs [role=tab] .deployment-mark").length, 0, "no mark: it is live");
+  assert.deepEqual(u.all(".hier-dname").map((n) => n.textContent), ["altair · ~/Agents/tsm"], "alone, it keeps its heading for the note");
+  assert.equal(u.one(".hier-dstate"), null, "no chip: a matched live deployment is never 'not matched'");
+  assert.equal(u.one(".hier-dfix > summary").textContent, "Details");
+  assert.equal(u.one(".hier-dfix-note").textContent, "altair now reports workspace tsm.");
+  assert.deepEqual(u.names(u.one(".hier-deployment")), ["far"]);
+  // A standalone host with no rows: the note heads its empty tab, above the usual message.
+  const STANDALONE = { ...LOCAL, note: "Teams are local only on this host (standalone)." };
+  const empty = await page(t, panel([STANDALONE], []));
+  assert.ok(empty.one(".hier-empty-wrap .hier-dreason + .empty"), "the note, then the usual empty message");
+  assert.equal(empty.one(".hier-dfix-note").textContent, "Teams are local only on this host (standalone).");
+  assert.equal(empty.one(".hier-dstate"), null);
+  // In All, beside other deployments: the same Details line on its section.
+  const all = await page(t, panel([LOCAL, { ...MOVED, primary: false }], [row("lead", LOCAL), row("far", MOVED)]));
+  const section = all.all(".hier-deployment").find((s) => s.querySelector(".hier-dname").textContent.startsWith("altair"));
+  assert.equal(section.querySelector(".hier-dstate"), null);
+  assert.equal(section.querySelector(".hier-dfix-note").textContent, "altair now reports workspace tsm.");
+});
+
+test("a stale local deployment (its last re-read failed): a 'stale' chip with the kernel's message, and its held rows wait for a current read", async (t) => {
+  const OTHER = { id: "/Users/op/awebai/oats-v2", machine: "This Mac", path: "/Users/op/awebai/oats-v2", label: "~/awebai/oats-v2", local: true,
+    reachable: true, identityFrom: "reported", primary: false, stale: true, short: "Last read failed",
+    reason: "This deployment's last read failed: the cache is locked. It shows what was last observed." };
+  const u = await page(t, panel([LOCAL, OTHER], [row("lead", LOCAL), row("held", OTHER)]));
+  const section = u.all(".hier-deployment").find((s) => s.querySelector(".hier-dname").textContent.endsWith("oats-v2"));
+  assert.equal(section.querySelector(".hier-dstate").textContent, "stale");
+  assert.equal(section.querySelector(".hier-dshort").textContent, "Last read failed");
+  assert.equal(section.querySelector(".hier-dfix-reason").textContent, OTHER.reason);
+  assert.equal(u.tabs().find((b) => b.firstChild.textContent.endsWith("oats-v2")).querySelector(".deployment-mark").getAttribute("aria-label"), "stale");
+  const click = (name) => u.one(`.hnode[data-name="${name}"]`).dispatchEvent(new u.dom.window.MouseEvent("click", { bubbles: true, button: 0 }));
+  click("held");
+  assert.equal(u.one(".pterm").disabled, true, "a held row's actions wait");
+  assert.match(u.one(".pstate").textContent, /\(last observation\)$/);
+  click("lead");
+  assert.equal(u.one(".pterm").disabled, false, "the live deployment's rows act as before");
+});

@@ -127,6 +127,17 @@ test("roster headings: one machine holding two deployments adds the path tail; n
   assert.equal(heads[2].getAttribute("aria-label"), "altair, not reached, 1 instance");
 });
 
+test("roster: a stale deployment (its last re-read failed) is marked in words, and its held rows' Start and actions wait as on a stale roster", (t) => {
+  const stale = { ...LOCAL2, stale: true, short: "Last read failed", reason: "This deployment's last read failed: the cache is locked. It shows what was last observed." };
+  assert.deepEqual(vd.deploymentState(stale), { key: "stale", text: "stale", detail: stale.reason });
+  const list = roster(t, [row("a", LOCAL, { running: false }), row("b", stale, { running: false })], [LOCAL, stale]);
+  const heads = [...list.querySelectorAll(".ctx-deployment")];
+  assert.deepEqual(heads.map((h) => h.querySelector(".deployment-mark")?.getAttribute("aria-label") ?? null), [null, "stale"]);
+  const start = (name) => [...list.querySelectorAll(".ctx-tree-row")].find((r) => r.querySelector(".ctx-name")?.textContent === name).querySelector(".ctx-start");
+  assert.equal(start("b").getAttribute("aria-disabled"), "true", "the held row waits");
+  assert.equal(start("a").hasAttribute("aria-disabled"), false, "the live deployment's row acts as before");
+});
+
 test("roster headings: a deployment with no instances has no heading", (t) => {
   const list = roster(t, [row("a", LOCAL), row("b", LOCAL)], [LOCAL, ALTAIR]);
   assert.deepEqual([...list.querySelectorAll(".ctx-deployment")].map((h) => h.dataset.deployment), [LOCAL.id]);

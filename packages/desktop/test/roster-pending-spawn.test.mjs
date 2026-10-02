@@ -25,7 +25,7 @@ const roster = [instance("root"), instance("child-a", "root"), instance("solo")]
 const pending = (extra = {}) => ({ id: "spawn-1", instance: "dev-new", home: "/synthetic/dev-new", agent: "dev", agentsRoot: "/synthetic/agents",
   parentInstance: "root", pending: "spawning", ...extra });
 
-function fixture(t, rows) {
+function fixture(t, rows, extra = {}) {
   const dom = new JSDOM(html, { pretendToBeVisual: true });
   t.after(() => dom.window.close());
   const doc = dom.window.document;
@@ -42,7 +42,7 @@ function fixture(t, rows) {
     tabs: new Map(), activeTab: null, tabOpenIntents: { applyFocus: f => f() },
     // A pending row opens nothing: any navigation is a test failure.
     openTerminalTab: assert.fail, openInstanceStart: assert.fail, openLifecycleDialog: assert.fail, onRosterRowKey() {},
-    api: assert.fail, showStage: assert.fail, refreshContextRoster: assert.fail,
+    api: assert.fail, showStage: assert.fail, refreshContextRoster: assert.fail, ...extra,
   };
   context.splitOpenState = () => ({ split: null, activeId: null, tabs: context.tabs, workspace: "A", visible: false });
   context.ownsInstanceTarget = target => roster.filter(row => sameInstanceActionTarget(target, row, "A")).length === 1;
@@ -67,6 +67,18 @@ test("a pending spawn shows under its parent: “Spawning…” text and a spinn
   button.click(); // openTerminalTab / openInstanceStart would fail the test
   assert.equal(button.closest(".ctx-tree-row").querySelector(".ctx-instance-actions"), null, "no live-instance actions");
   assert.match(u.doc.querySelector(".ctx-count").textContent, /^3 running$/, "the pending row is not counted");
+});
+
+test("a background spawn into the view's second deployment sits under that deployment's heading (#482)", async t => {
+  // The row as spawnJobs.rows() hands it over: `deployment` is already `{ id }`, kept as is.
+  const deployments = [{ id: "/a", path: "/a", local: true, machine: null, status: "observed", primary: true },
+    { id: "/b", path: "/b", local: true, machine: null, status: "observed" }];
+  const onA = roster.map(r => ({ ...r, deployment: { id: "/a" } }));
+  const u = fixture(t, () => [pending({ parentInstance: undefined, deployment: { id: "/b" } })], { contextDeployments: deployments });
+  u.render([...onA, instance("dev-b", undefined, { deployment: { id: "/b" } })]);
+  const order = [...u.list.children].map(el => el.classList.contains("ctx-deployment") ? `#${el.querySelector(".ctx-deployment-label").textContent}`
+    : el.querySelector(".ctx-name")?.textContent).filter(Boolean);
+  assert.deepEqual(order, ["#This Mac · a", "root", "child-a", "solo", "#This Mac · b", "dev-b", "dev-new"]);
 });
 
 test("announced once through a polite live region", async t => {

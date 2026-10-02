@@ -98,7 +98,7 @@ test('source pin: each instance-addressed call site takes the row\'s deployment'
     ['start-instance.mjs', /deployment: rowDeployment\(instance\)/],
     ['start-instance.mjs', /instanceApiPath\(restart \? "restart" : "start", instance\)/],
     ['views/schedules.mjs', /\/api\/capabilities\$\{deploymentQuery\(\)\}/],
-    ['views/schedules.mjs', /\/api\/schedules\$\{deploymentQuery\(\)\}/],
+    ['views/schedules.mjs', /\/api\/schedules\$\{mutationQuery\(operation\)\}/],
   ];
   for (const [file, pattern] of pins) assert.match(source(file), pattern, file);
   // The context panel's three instance sections all receive the deployment, not the view.

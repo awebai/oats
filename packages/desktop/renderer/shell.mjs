@@ -65,7 +65,7 @@ import {
   fallbackTabForContext, restoreTerminalTab,
 } from "./workspace-tabs.mjs";
 import { createWorkspaceTabMemory } from "./workspace-tab-memory.mjs";
-import { notePanel, panelDeployments, rosterSections, deploymentHeading } from "./view-deployments.mjs";
+import { notePanel, panelDeployments, rosterSections, deploymentHeading, rowStale } from "./view-deployments.mjs";
 import { onDeploymentTabRequest } from "./deployment-tabs.mjs";
 import { createViewMembership, rehomeMap, rehomeTabs, rehomeActiveTerminals, rehomeCollapsed } from "./workspace-rehome.mjs";
 import {
@@ -633,7 +633,7 @@ function renderContextRoster(instances) {
     // Only what the kernel decided (name, home, soul, relation): never a guessed runtime state.
     .map((p) => ({ instance: p.instance, agent: p.agent, agentsRoot: p.agentsRoot, home: p.home,
       ...(p.parentInstance ? { parentInstance: p.parentInstance } : {}), ...(p.siblingInstance ? { siblingInstance: p.siblingInstance } : {}),
-      ...(p.deployment ? { deployment: { id: p.deployment } } : {}), pendingSpawn: p }))
+      ...(p.deployment ? { deployment: p.deployment } : {}), pendingSpawn: p }))
     .filter((p) => !reported.has(instanceId(p))) : [];
   if (spawning.length) instances = [...instances, ...spawning];
   const matching = filterInstanceTree(instances, contextFilter);
@@ -751,7 +751,9 @@ function renderContextRoster(instances) {
         // A stale roster (the last read failed) may say running:false for an instance that is running by now:
         // the row's activation (click, Enter) then starts nothing and says why; opening a running row's
         // terminal stays allowed (the maintainer's return on #322).
-        const staleStart = rosterStale && !i.running;
+        // A row of a stale deployment (#482: its last re-read failed) is held the same way.
+        const heldStale = rosterStale || rowStale(i, contextDeployments);
+        const staleStart = heldStale && !i.running;
         if (staleStart) { row.title = ROSTER_STALE_TITLE; row.setAttribute("aria-description", ROSTER_STALE_TITLE); }
         row.addEventListener("click", () => { if (staleStart || unavailable) return; i.running ? openTerminalTab(i) : openInstanceStart(i); });
         // full keyboard tree operability (roving tabindex; policy in
@@ -775,7 +777,7 @@ function renderContextRoster(instances) {
           const start = document.createElement("button"); start.className = "act ctx-start";
           start.textContent = "Start…"; start.setAttribute("aria-label", `Start ${i.instance}`);
           start.disabled = !canAddressRemote(i);
-          if (rosterStale) markStaleControl(start);
+          if (heldStale) markStaleControl(start);
           start.addEventListener("click", () => { if (!staleBlocked(start)) openInstanceStart(i); });
           tools.append(start);
         }
@@ -818,7 +820,7 @@ function renderContextRoster(instances) {
         }));
         // Stale roster: actions that need current state wait for a refresh;
         // opening an existing terminal (the row itself) stays available.
-        if (rosterStale) {
+        if (heldStale) {
           const trigger = tools.querySelector(".ctx-instance-actions");
           if (trigger) markStaleControl(trigger);
         }

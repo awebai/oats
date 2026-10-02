@@ -205,10 +205,16 @@ test('reason parts: a short label for headings and the switcher, the full senten
   assert.deepEqual(deploymentReasonParts({ local: true, attach: { unattached: 'member' } }).fix, ['Run `oats sync` in this deployment.']);
   assert.deepEqual(deploymentReasonParts({ local: false, machine: 'altair', probe: { ok: true }, identityStatus: 'identity', attach: { unattached: 'unknown-team' } }).fix, ['Run `oats sync` on altair.']);
   assert.equal(deploymentReasonParts({ local: true, identityStatus: 'identity', attach: { key: 'k', team: 't' } }), null);
+  // The steps carry every fact the sentence has (a heading with steps shows only them): the invalid reference.
+  assert.deepEqual(deploymentReasonParts({ local: true, attach: { unattached: 'invalid-ref' }, ref: 'git:x' }).fix, ['Fix the workspace reference (`git:x`) in its oats-local.yaml.']);
+  assert.deepEqual(deploymentReasonParts({ local: true, attach: { unattached: 'invalid-ref' }, ref: null }).fix, ['Fix the workspace reference in its oats-local.yaml.']);
+  // A failed re-read of this computer's deployment (the last observation kept): the kernel's message, first.
+  assert.deepEqual(deploymentReasonParts({ local: true, identityStatus: 'identity', attach: { key: 'k', team: 't' }, readError: 'the cache is locked' }),
+    { short: 'Last read failed', detail: 'This deployment\'s last read failed: the cache is locked. It shows what was last observed.', fix: [] });
   // Every reason the sentence form gives has a short label (never a heading without words).
   for (const d of [{ local: true, unavailable: 'Reading…' }, { local: true, identityStatus: 'feature' }, { local: false, cliReadsRemotes: false },
     { local: false, rosterError: 'boom' }, { local: false, probe: { ok: false, error: { code: 'E_X' } } }, { local: true, identityStatus: 'invalid' },
-    { local: true, attach: { unattached: 'invalid-ref' }, ref: 'git:x' }, { local: true, attach: { unattached: 'standalone' } }]) {
+    { local: true, attach: { unattached: 'invalid-ref' }, ref: 'git:x' }, { local: true, attach: { unattached: 'standalone' } }, { local: true, readError: 'boom' }]) {
     const parts = deploymentReasonParts(d);
     assert.ok(parts.short && parts.detail && Array.isArray(parts.fix), JSON.stringify(d));
     assert.equal(deploymentReason(d), parts.detail);

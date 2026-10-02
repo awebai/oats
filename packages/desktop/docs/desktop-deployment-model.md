@@ -200,7 +200,7 @@ answers the view that holds it; no `?ws=` answers the first view.
   deployment's.
 - `workspaces` is the switcher's list of views, each with its `deployments`
   ids, `deploymentLabels`, `machines` (each machine once, in order) and
-  `notLive` (how many of its deployments aren't live). The switcher shows the
+  `notLive` (how many of its deployments aren't live, stale ones included). The switcher shows the
   name, one muted line of machines ("This Mac · altair") and a mark when
   `notLive` is not zero: never a path, an id or a reason. Unattached views
   carry `unattached`, their `reason`, `short` and the `ref` they report, and
@@ -211,14 +211,19 @@ answers the view that holds it; no `?ws=` answers the first view.
   nothing could be matched, and the entries list as they did before views.
 - `deployments` lists every deployment of the view, even a single one:
   `{id, machine, path, label, local, reachable, identityFrom, primary,
-  reason?, short?, fix?, note?}`. `machine` is "This Mac" or the server's label, else its
+  stale?, reason?, short?, fix?, note?}`. `machine` is "This Mac" or the server's label, else its
   id. `deploymentLabel` (`renderer/deployment-label.mjs`) shows it as "This
   Mac · ~/Agents/oats" or "altair · ~/Agents/tsm": the home directory as
   `~` (on a remote, a `/Users/<name>` or `/home/<name>` prefix, a display
   guess) and the last two segments of a long path. A deployment is live
-  (`reachable`), not reached (with its `reason`), or remembered
-  (`identityFrom: "remembered"`, the last report, not live). `note` is
-  information, not a failure.
+  (`reachable`), not reached (with its `reason`), remembered
+  (`identityFrom: "remembered"`, the last report, not live), or stale
+  (`stale`: this computer's deployment whose last re-read failed, its rows
+  the last observation, "Last read failed" with the kernel's message). A
+  stale deployment's rows wait for a current read, as on a stale roster:
+  Start and the actions menu in the sidebar, the overview's actions. It stays
+  `reachable`, so spawning there is not blocked. `note` is information, not a
+  failure.
 - `instances` is the union of every deployment's rows, each tagged
   `deployment: {id, machine, path}`. The sidebar's instance list shows a
   heading per deployment (in its group-heading style, named by
@@ -242,9 +247,16 @@ at most 32 views). The header's count line counts the selected tab.
   sections, and pan, zoom and fit work over the whole canvas.
 - **A deployment's tab** shows only that deployment's tree.
 - A non-live deployment's heading carries a state chip ("not reached",
-  "remembered") and its `short` reason, with **How to fix** under it: the
-  full sentence (`reason`), the `fix` steps and any `note`. On its own tab, a
-  non-live deployment with no rows shows that block as the empty state.
+  "remembered", "stale"; "not matched" for a reached one with a reason) and
+  its `short` reason, with **How to fix** under it: the `fix` steps when
+  there are any (they carry every fact the sentence has, a host or a
+  reference), else the full sentence (`reason`), and any `note`. On its own
+  tab, a non-live deployment with no rows shows that block as the empty
+  state.
+- A live deployment's `note` (a remote that now reports another workspace, a
+  standalone host's local teams) is said under **Details** on its heading,
+  with no chip and no mark. A view of one deployment with a note keeps that
+  heading; with no rows the note heads the usual empty message.
 
 ### Scope per row
 
@@ -254,7 +266,11 @@ at most 32 views). The header's count line counts the selected tab.
   instance's pull request and review threads, and capabilities, launch
   configurations and schedules that name a home. The server resolves these
   only by exact deployment id, so a view id there is refused, and
-  `admitInstance` resolves a row only inside its own deployment.
+  `admitInstance` resolves a row only inside its own deployment. The
+  schedule form's add and update go to the deployment its home list was read
+  from, and only while that form is open; a list action (remove, reconcile,
+  host install) goes to the view on screen, never to a deployment an earlier
+  form read.
 - **Deployment-level** requests (the agents catalog, teams and soul teams,
   sync, automations, schedules without a home, capability show and catalog,
   Brain, a soul's launch configurations, spawn preview and apply) may send
@@ -304,7 +320,11 @@ sentence already says what happens next, as for a timeout). The sentences:
   but its object has no `key`), or the host reports no workspace (`null`).
 - An unresolved member reference (`keyFrom: "member"`): run `oats sync`
   there.
-- An invalid reference (`null` key): the ref and "fix oats-local.yaml".
+- An invalid reference (`null` key): the ref and "fix oats-local.yaml"; the
+  fix step names the ref.
+- This computer's deployment whose re-read failed (the last observation kept,
+  `E_REMOTE_UNREADABLE`): "This deployment's last read failed: <the
+  kernel's message>. It shows what was last observed." It is `stale`.
 - An unknown team: "This host hasn't observed its workspace yet; run oats
   sync there."
 - Standalone and unmapped: "Teams are local only on this host

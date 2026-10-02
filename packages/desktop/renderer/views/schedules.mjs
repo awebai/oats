@@ -125,16 +125,21 @@ export function createSchedulesView(el, ctx, { cli = cliStatus, subscribeCli = o
   }
   field("home").addEventListener("change", () => void loadOperations());
   function closeForm() {
-    ++formOperation; ++operationRequest; sheet.hidden = true; formReady = false;
+    ++formOperation; ++operationRequest; sheet.hidden = true; formReady = false; formDeployment = null;
     const back = opener; opener = null; if (back?.isConnected) back.focus();
   }
-  // The deployment the form's homes belong to (the view's primary, #482): a request naming a home is
-  // addressed to it, never to the view. Null before the form's targets are read (the view id then).
+  // The deployment the OPEN form's homes belong to (the view's primary, #482): the form's own requests
+  // that name a home (add, update, the home's operations) are addressed to it, never to the view. It
+  // belongs to one form: reset when a form opens or closes, and never used by list-level actions.
   let formDeployment = null;
   const deploymentQuery = () => formDeployment ? `?ws=${encodeURIComponent(formDeployment)}` : wsQuery();
+  /** Where a mutation goes: the open form's add/update to the form's deployment; anything from the list
+   * (remove, reconcile, install…) to the view on screen, which the server reads as its primary. */
+  const mutationQuery = (operation) => (operation === "add" || operation === "update") && !sheet.hidden ? deploymentQuery() : wsQuery();
   async function openForm(job, soul) {
     if (!canMutate() || busy) return;
     const token = ++formOperation, gen = workspaceGeneration(); ++operationRequest;
+    formDeployment = null; // this form's deployment is read below; never a previous form's
     opener = doc.activeElement;
     editing = job?.id || null; original = job ? structuredClone(job) : null; formReady = false; form.reset();
     q(".schedule-form-error").textContent = "";
@@ -179,7 +184,7 @@ export function createSchedulesView(el, ctx, { cli = cliStatus, subscribeCli = o
     void openForm(draft, null);
   }
   let automations = null; // the page's POST /api/automations call
-  async function mutate(operation, id, spec, send = body => postJson(ctx, `/api/schedules${deploymentQuery()}`, body)) {
+  async function mutate(operation, id, spec, send = body => postJson(ctx, `/api/schedules${mutationQuery(operation)}`, body)) {
     if (busy || !canMutate()) return;
     const op = ++mutationOperation, formToken = formOperation, gen = workspaceGeneration();
     const current = () => alive && op === mutationOperation && gen === workspaceGeneration();

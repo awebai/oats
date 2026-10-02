@@ -34,6 +34,7 @@ ${tabBarCSS('.hier-tabs')}
 .hier-dfix-note { color:var(--muted); }
 .hier-dfix-code { font:inherit; font-family:var(--mono, ui-monospace, Menlo, monospace); color:var(--fg); }
 .hier-dreason .hier-dhead { position:static; }
+.hier-empty-wrap:has(> .hier-dreason) { flex-direction:column; gap:16px; } /* a live deployment's note above its empty state */
 `;
 
 /** Text whose `backticked` spans are commands, set as code (the server's reasons quote them so). */
@@ -117,6 +118,11 @@ export function createDeploymentTabBar(doc, { idPrefix, onSelect }) {
  * the switcher lists under "Not matched" opens here, so its why is said here too. */
 export const deploymentNeedsWords = (deployment) => deploymentState(deployment).key !== 'live' || !!deployment?.short;
 
+/** Whether a deployment's heading has anything to say: words for a failure, or an informational note
+ * (a remote that now reports another workspace, a standalone host's local teams). A note is never a
+ * failure: it gets no chip and no mark, only its line under "Details". */
+export const deploymentHasWords = (deployment) => deploymentNeedsWords(deployment) || !!deployment?.note;
+
 /** A deployment's heading: `{ element, label }`, `label` being the accessible name for the group that
  * holds it (the visible line is aria-hidden; the disclosure stays reachable). `open` and `onToggle`
  * carry the disclosure's state across repaints. */
@@ -142,7 +148,8 @@ export function deploymentHead(doc, { deployment, rows, open = false, onToggle }
   const remembered = !live && deployment.identityFrom === 'remembered' ? 'Last report, not live now.' : '';
   const sentence = live ? '' : (deployment.fix?.length ? remembered : state.detail || deployment.reason || '');
   const steps = live ? [] : deployment.fix || [];
-  const note = live ? '' : deployment.note || '';
+  // A note is information, live or not: always said.
+  const note = deployment.note || '';
   if (sentence || steps.length || note) {
     // "How to fix" when there are steps to follow; with only an explanation, it is details.
     const fix = el(doc, 'details', undefined, 'hier-dfix');

@@ -127,7 +127,8 @@ not read the panel.
   `deployment-tabs.mjs` (All, then one per deployment; one deployment has only its own tab;
   the choice remembered per view); All stacks one section per deployment, a deployment's tab
   shows its tree alone. A non-live deployment's heading has a state chip, its `short` reason
-  and **How to fix** (the sentence, the `fix` steps, any note).
+  and **How to fix** (the `fix` steps, else the sentence, and any note); a live deployment's
+  note shows under **Details** with no chip (`deploymentHasWords`).
 - **"On <deployment>"** (`deployment-scope-line.mjs`): deployment-level surfaces read the
   view's primary deployment and say which in a line under their heading, only with two or
   more deployments (Workspace header, Automations/Schedules, the soul inspector for a soul,
@@ -411,7 +412,9 @@ Where each surface wires it: the sidebar roster in `instance-tree.mjs`
 `markStaleControl` / `staleBlocked`) and `shell.mjs` (`refreshContextRoster`;
 while stale, Start…, the actions menu and a *stopped* row's own activation are
 held — a stale `running:false` may be running by now — while a running row
-still opens its terminal); the hierarchy in `views/hierarchy.mjs` (the summary
+still opens its terminal; a row of a `stale` deployment, `rowStale` in
+`view-deployments.mjs`, is held the same way, and so are its actions in the
+overview); the hierarchy in `views/hierarchy.mjs` (the summary
 pill, its own notice keeps the stale copy with the observation's age); the soul
 inspector in `soul-inspector.mjs` (while `loading.settled === 'stale'` — the settled state, so a Retry in flight over stale content keeps the hold — every
 `[data-mutate]` control and the teams panel's join/leave — `createTeamsPanel`'s

@@ -2,7 +2,7 @@
  * deployment when a view has two or more.
  *
  * The facts come only from `/api/panel`: `deployments` (`{ id, machine, path, label, local, reachable,
- * identityFrom, primary, reason?, short?, fix?, note? }`) and each row's `deployment: { id, machine, path }`. Nothing
+ * identityFrom, primary, stale?, reason?, short?, fix?, note? }`) and each row's `deployment: { id, machine, path }`. Nothing
  * is derived from a host name or a path beyond the display label. A view with one deployment looks
  * exactly like a window before views: no deployment headings, no "On …" lines.
  *
@@ -22,6 +22,7 @@ export function panelDeployments(panel) {
     id: d.id, machine: text(d.machine, 256) ? d.machine : (d.local === false ? '' : THIS_MACHINE), path: text(d.path) ? d.path : '',
     label: text(d.label, 512) ? d.label : '', local: d.local !== false, reachable: d.reachable === true,
     identityFrom: d.identityFrom === 'reported' || d.identityFrom === 'remembered' ? d.identityFrom : null, primary: d.primary === true,
+    ...(d.stale === true ? { stale: true } : {}),
     ...(text(d.reason) ? { reason: d.reason } : {}), ...(text(d.short, 256) ? { short: d.short } : {}),
     ...(Array.isArray(d.fix) && d.fix.every(step => text(step)) && d.fix.length ? { fix: d.fix.slice(0, 8) } : {}),
     ...(text(d.note) ? { note: d.note } : {}),
@@ -35,9 +36,12 @@ export const isMultiDeployment = deployments => Array.isArray(deployments) && de
 export const primaryDeployment = deployments => (Array.isArray(deployments) && (deployments.find(d => d?.primary) || deployments[0])) || null;
 
 /** A deployment's state, in words (never colour alone): `{ key, text, detail }`.
- * live: reached (or, on this computer, observed) now. remembered: not reached, its workspace is the
+ * live: reached (or, on this computer, observed) now. stale: this computer's deployment whose last
+ * re-read failed (its rows are the last observation). remembered: not reached, its workspace is the
  * last report. not reached / not observed: with why. */
 export function deploymentState(d) {
+  // This computer's deployment whose last re-read failed: its rows are the last observation.
+  if (d?.stale) return { key: 'stale', text: 'stale', detail: d.reason || '' };
   if (d?.reachable) return { key: 'live', text: 'live', detail: '' };
   if (d?.identityFrom === 'remembered') {
     return { key: 'remembered', text: 'remembered', detail: ['Last report, not live now.', d.reason].filter(Boolean).join(' ') };
@@ -50,6 +54,13 @@ export function deploymentState(d) {
 
 /** The deployment a row belongs to, by the id the panel tagged it with (null when untagged). */
 const rowDeployment = row => (text(row?.deployment?.id) ? row.deployment.id : null);
+
+/** Whether a row is held from its deployment's last observation (the deployment is stale): its
+ * Start and actions wait for a current read, as for a stale roster. */
+export const rowStale = (row, deployments) => {
+  const id = rowDeployment(row);
+  return !!id && Array.isArray(deployments) && deployments.some(d => d?.id === id && d.stale);
+};
 
 /** The sidebar roster's sections. One deployment (or none reported): a single section with no
  * heading whose groups are exactly the relation clusters the roster always drew. Two or more: one

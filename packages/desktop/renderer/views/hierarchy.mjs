@@ -60,10 +60,10 @@ import { deploymentUnavailableText, NOT_SERVED_CODE, NO_ANSWER_CODE, unservedErr
 import { registerAction } from "../keybindings.mjs";
 import { resolveViewKey } from "../view-keys.mjs";
 import { icon } from "../shell-icons.mjs";
-import { attachDeployments, isMultiDeployment, splitByDeployment } from "../view-deployments.mjs";
+import { attachDeployments, isMultiDeployment, splitByDeployment, rowStale } from "../view-deployments.mjs";
 import { deploymentLabel } from "../deployment-label.mjs";
 import { ALL_TAB, deploymentTabs, selectedDeploymentTab, rememberDeploymentTab, onDeploymentTabRequest } from "../deployment-tabs.mjs";
-import { deploymentsPageCSS, createDeploymentTabBar, deploymentHead, deploymentReasonBlock, deploymentNeedsWords } from "../deployments-page.mjs";
+import { deploymentsPageCSS, createDeploymentTabBar, deploymentHead, deploymentReasonBlock, deploymentNeedsWords, deploymentHasWords } from "../deployments-page.mjs";
 
 export const hierarchyCSS = `
 .hier { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg); color: var(--fg);
@@ -299,7 +299,7 @@ const DEP_HEAD = 30, DEP_FIX = 22, DEP_GAP = 56, HEAD_GAP = 12;
 /** The room a deployment's heading takes above its clusters: one line, and a second for the
  * "How to fix" summary of a deployment that is not live. An open disclosure is measured on screen
  * and pushes the sections below it down (placeSections). */
-const headRoom = (d) => (deploymentNeedsWords(d) && (d.reason || d.fix?.length || d.note) ? DEP_HEAD + DEP_FIX : DEP_HEAD);
+const headRoom = (d) => (deploymentNeedsWords(d) && (d.reason || d.fix?.length) || d.note ? DEP_HEAD + DEP_FIX : DEP_HEAD);
 
 /** Stack deployment sections (#482): each entry's rows are laid out on their own (relations are
  * recorded within one deployment) under a heading at `y`, in the given order. A deployment with no
@@ -336,7 +336,7 @@ function tabContent(instances, deployments, tab) {
   const parts = splitByDeployment(list)(all);
   if (tab === ALL_TAB && isMultiDeployment(list)) return { rows: all, entries: list.map(deployment => ({ deployment, rows: parts.get(deployment.id) })) };
   const deployment = list.find(d => d.id === tab) || list[0], rows = parts.get(deployment.id);
-  if (list.length === 1 && !deploymentNeedsWords(deployment)) return { rows, entries: null };
+  if (list.length === 1 && !deploymentHasWords(deployment)) return { rows, entries: null };
   return { rows, entries: [{ deployment, rows }] };
 }
 
@@ -526,6 +526,8 @@ function dataCurrent(s) {
   return s.alive && s.dataGen === workspaceGeneration() && s.dataWorkspace === currentWorkspace();
 }
 function actionsCurrent(s) { return dataCurrent(s) && !s.stale && !s.pending; }
+/** Actions on one row also wait when its deployment is stale (#482: that deployment's last re-read failed). */
+function rowActionsCurrent(s, i) { return actionsCurrent(s) && !rowStale(i, s.panel.deployments); }
 /** The stale rule's age (" · observed 45s ago") for the kept observation, from the panel's observedAt; nothing when unreported. */
 function staleAge(s) {
   const age = observedText(s.load?.observedAt ?? null, Date.now());
@@ -760,6 +762,8 @@ function render(s) {
     if (quiet) {
       w.innerHTML = `<div class="empty"><span class="big">${icon("overview", { size: 22 })}</span>` +
         `No instances reported in this observation.<br>Choose a soul in Workspace or use <code>oats spawn &lt;agent&gt;</code>.</div>`;
+      // A live deployment's note (information, not a failure) still heads its empty tab.
+      if (entries?.length === 1 && entries[0].deployment.note) w.prepend(deploymentReasonBlock(docOf(s), headOptions(s, entries[0].deployment, entries[0].rows)));
     } else {
       // A deployment that is not live, with nothing to show: why and how to fix it, never a silent empty.
       w.append(deploymentReasonBlock(docOf(s), headOptions(s, entries[0].deployment, entries[0].rows)));
@@ -982,7 +986,7 @@ function selectedInstance(s, id) {
 }
 function invokeInstance(s, id, action) {
   const i = selectedInstance(s, id);
-  if (!actionsCurrent(s) || !visibleOwner(s) || !canAddressInstance(i)) return;
+  if (!rowActionsCurrent(s, i) || !visibleOwner(s) || !canAddressInstance(i)) return;
   const call = action === 'terminal' && i.running === true && s.ctx.openTerminal ? () => s.ctx.openTerminal({
     instance: i.instance, home: i.home || undefined, agentsRoot: i.agentsRoot || undefined, ...(i.server ? { server: i.server } : {}),
   }) : action === 'start' && i.running === false && s.ctx.startInstance ? () => s.ctx.startInstance(i)
@@ -1253,10 +1257,10 @@ function updatePop(s) {
   setText(pop.querySelector('.pname'), i.instance);
   const identity = pop.querySelector('.pidentity'); identity.hidden = !activeTargetLabel(i, s.panel.instances);
   setText(identity, `Host: ${i.server || (i.remote ? 'not reported' : 'local')} · Root: ${i.agentsRoot || 'not reported'} · Home: ${i.home || 'not reported'}`);
-  setText(pop.querySelector('.pstate'), `Reported state: ${runtimeState(i)}${s.stale ? ' (last observation)' : ''}`);
+  setText(pop.querySelector('.pstate'), `Reported state: ${runtimeState(i)}${s.stale || rowStale(i, s.panel.deployments) ? ' (last observation)' : ''}`);
   setText(pop.querySelector('.rt'), i.harness || 'Harness not reported');
   setText(pop.querySelector('.pbranch'), i.branch ? `Reported branch: ${i.branch}` : 'Branch not reported');
-  const allowed = actionsCurrent(s) && canAddressInstance(i);
+  const allowed = rowActionsCurrent(s, i) && canAddressInstance(i);
   const terminal = pop.querySelector('.pterm');
   setText(terminal, i.running === false ? 'Start…' : 'Terminal');
   terminal.disabled = !allowed || (i.running === true ? !s.ctx.openTerminal : i.running === false ? !s.ctx.startInstance : true);

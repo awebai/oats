@@ -158,8 +158,11 @@ const identityFeature = () => !!cliState.features?.includes("workspace-identity"
 /** One deployment's identity, attachment, machine label and reason. */
 function deploymentInfo(d) {
   if (!d.remote) {
-    const observed = snapshot.byWs.get(d.id)?.deployment;
+    const entry = snapshot.byWs.get(d.id), observed = entry?.deployment;
     const live = observed?.status === "observed";
+    // A failed re-read kept the last observation (observeDeployment): its identity still places it in its
+    // view, but it is stale, not live, and says why. Still reachable: this computer's own deployment.
+    const readError = live && typeof entry.error === "string" ? entry.error : null;
     const read = !live ? { status: "none" } : !identityFeature() ? { status: "feature" }
       : observed.reachable?.identityInvalid ? { status: "invalid" } : readIdentity(observed.reachable);
     const identity = read.status === "identity" ? read.identity : null;
@@ -167,9 +170,9 @@ function deploymentInfo(d) {
     // Not observed (yet): the reading or unavailable sentence, never a silent empty.
     const unavailable = live ? null : deploymentUnavailableText(observed || { status: "pending" });
     return { id: d.id, local: true, machine: THIS_MACHINE, path: d.id, label: shortPath(d.id, { home: homedir() }), name: d.name,
-      live, reachable: live, identityFrom: identity ? "reported" : null, identity, attach,
+      live: live && !readError, reachable: live, ...(readError ? { stale: true } : {}), identityFrom: identity ? "reported" : null, identity, attach,
       teamLabel: identity?.defaultTeam?.label ?? null,
-      ...reasonFields(deploymentReasonParts({ local: true, identityStatus: read.status, attach, ref: identity?.ref, unavailable })),
+      ...reasonFields(deploymentReasonParts({ local: true, identityStatus: read.status, attach, ref: identity?.ref, unavailable, readError })),
       note: attach.note === "standalone" ? deploymentReason({ local: true, attach: { unattached: "standalone" } }) : null };
   }
   const g = d.group, machine = g.label || g.server;
@@ -265,7 +268,7 @@ const deploymentTag = (info) => ({ id: info.id, machine: info.machine, path: inf
 /** A deployment's entry in the panel's `deployments` list. */
 function deploymentEntry(info, primary) {
   return { ...deploymentTag(info), label: info.label, local: info.local, reachable: info.reachable,
-    identityFrom: info.identityFrom, primary: info.id === primary,
+    identityFrom: info.identityFrom, primary: info.id === primary, ...(info.stale ? { stale: true } : {}),
     ...(info.reason ? { reason: info.reason } : {}), ...(info.short ? { short: info.short } : {}),
     ...(info.reason && info.fix?.length ? { fix: [...info.fix] } : {}), ...(info.note ? { note: info.note } : {}) };
 }
@@ -340,7 +343,7 @@ function workspaceChoices(model = viewModel()) {
       deploymentLabels: v.deployments.map((id) => deploymentLabel(model.infos.get(id))),
       // The switcher's one-liner (UI spec, #482): the machines, in order and once each, and how many deployments aren't live.
       machines: [...new Set(v.deployments.map((id) => model.infos.get(id)?.machine).filter(Boolean))],
-      notLive: v.deployments.filter((id) => !model.infos.get(id)?.reachable).length,
+      notLive: v.deployments.filter((id) => !model.infos.get(id)?.live).length,
       ...(v.key ? { key: v.key } : {}), ...(unmatched ? { unattached: true } : {}), ...(unmatched && v.reason ? { reason: v.reason } : {}), ...(unmatched && v.short ? { short: v.short } : {}), ...(unmatched && v.ref ? { ref: v.ref } : {}),
       ...(remoteOnly && primary?.remote ? { server: primary.server, remote: true } : {}) };
   });

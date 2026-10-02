@@ -52,7 +52,8 @@ export function viewId(key, team) {
  * the fix runs ("there" for a remote, "in this deployment" for a local one). */
 const REASONS = {
   member: ({ there }) => ({ short: 'Workspace not known yet', detail: 'This deployment\'s workspace reference names a member whose workspace isn\'t known yet; run oats sync there.', fix: [`Run \`oats sync\` ${there}.`] }),
-  'invalid-ref': ({ ref }) => ({ short: 'Invalid workspace reference', detail: `This deployment's workspace reference${ref ? ` (${ref})` : ''} isn't valid; fix oats-local.yaml.`, fix: ['Fix the workspace reference in its oats-local.yaml.'] }),
+  'invalid-ref': ({ ref }) => ({ short: 'Invalid workspace reference', detail: `This deployment's workspace reference${ref ? ` (${ref})` : ''} isn't valid; fix oats-local.yaml.`,
+    fix: [`Fix the workspace reference${ref ? ` (\`${ref}\`)` : ''} in its oats-local.yaml.`] }),
   'unknown-team': ({ there }) => ({ short: 'Workspace not observed yet', detail: 'This host hasn\'t observed its workspace yet; run oats sync there.', fix: [`Run \`oats sync\` ${there}.`] }),
   standalone: () => ({ short: 'Local teams only', detail: 'Teams are local only on this host (standalone).', fix: [] }),
 };
@@ -63,13 +64,16 @@ const TIMED_OUT = /timed out|timeout/i;
 
 /** Why a deployment is not live or not matched, or null: `{ short, detail, fix }`. `short` is a few
  * words for a heading or the switcher ("OATS too old to report its workspace"); `detail` the one full
- * sentence; `fix` the plain steps (possibly none: the detail then says what happens next).
- * `d`: `{ local, machine, sshHost?, probe?, identityStatus, attach, ref, cliReadsRemotes, rosterError?, unavailable? }`. */
+ * sentence; `fix` the plain steps (possibly none: the detail then says what happens next). The steps
+ * carry every fact the sentence has (a host, a reference): with steps, a heading shows only them.
+ * `d`: `{ local, machine, sshHost?, probe?, identityStatus, attach, ref, cliReadsRemotes, rosterError?, unavailable?, readError? }`. */
 export function deploymentReasonParts(d) {
   const machine = d.machine || THIS_MACHINE;
   const updateHere = ['Update OATS on this computer.'];
   if (d.local) {
     if (d.unavailable) return { short: 'Not observed', detail: d.unavailable, fix: [] };
+    // A re-read failed and the last observation was kept (oats-web.mjs observeDeployment): the kernel's message.
+    if (d.readError) return { short: 'Last read failed', detail: `This deployment's last read failed: ${d.readError}. It shows what was last observed.`, fix: [] };
     if (d.identityStatus === 'feature') return { short: 'OATS here too old to report workspaces', detail: 'This computer\'s OATS is too old to report its workspace; update OATS here.', fix: updateHere };
     if (d.identityStatus === 'old' || d.identityStatus === 'none') return { short: 'Reports no workspace', detail: 'This deployment reports no workspace identity.', fix: [] };
   } else {

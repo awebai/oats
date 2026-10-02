@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRemoteIdentityStore } from '../server/remote-identity.mjs';
-import { CLI, loadViews, juan, identity, row, observed, unavailable, tag, OATS, LAB, TSM, A, B, L, R, V, V_OATS, V_LAB, V_TSM } from './helpers/workspace-views-fixture.mjs';
+import { CLI, loadViews, juan, juanState, identity, row, observed, unavailable, tag, OATS, LAB, TSM, A, B, L, R, V, V_OATS, V_LAB, V_TSM } from './helpers/workspace-views-fixture.mjs';
 
 test('one workspace on three deployments: one view, the union of rows each tagged with its deployment, primary the first local', () => {
   const { views } = juan({ observing: new Set([B]) });
@@ -117,6 +117,23 @@ test('a fresh report with another identity moves the remote to that view, with t
   assert.deepEqual(tsm.deployments, [{ ...tag(R, 'altair', '/home/juan/oats'), label: '~/oats', local: false, reachable: true, identityFrom: 'reported',
     primary: true, note: 'altair now reports workspace tsm.' }]);
   assert.equal(views.panelData(R).workspace.id, V_TSM, 'its deployment id now answers the new view');
+});
+
+test('a secondary local deployment whose re-read failed keeps its view and rows: stale, not live, with the kernel\'s message', () => {
+  const { state } = juanState();
+  // observeDeployment kept the last observation, marked with the failure (Spec D).
+  state.snapshot.byWs.set(B, { ...state.snapshot.byWs.get(B), error: 'the cache is locked', errorCause: { code: 'E_REMOTE_UNREADABLE', reason: 'cache' } });
+  const views = loadViews(state), p = views.panelData(V_OATS);
+  assert.deepEqual(p.deployments[1], { ...tag(B, 'This Mac', B), label: '~/awebai/oats-v2', local: true, reachable: true, identityFrom: 'reported', primary: false,
+    stale: true, reason: 'This deployment\'s last read failed: the cache is locked. It shows what was last observed.', short: 'Last read failed' });
+  assert.deepEqual(p.instances.filter(i => i.deployment.id === B).map(i => i.instance), ['dev-b'], 'its rows are held, tagged with it');
+  assert.equal(Object.hasOwn(p, 'error'), false, 'the panel\'s error stays the primary\'s');
+  assert.equal(p.deployments[0].stale, undefined);
+  assert.equal(views.workspaceChoices()[0].notLive, 1, 'the switcher counts it not live');
+  // The same failure on the primary: stale too, and the panel's error as before.
+  state.snapshot.byWs.set(A, { ...state.snapshot.byWs.get(A), error: 'the cache is locked' });
+  const q = loadViews(state).panelData(V_OATS);
+  assert.equal(q.deployments[0].stale, true); assert.equal(q.error, 'the cache is locked');
 });
 
 test('memory never attaches a local deployment, even if its path were remembered', () => {
