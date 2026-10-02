@@ -362,3 +362,24 @@ test('the deadline is the view\'s: teardown cancels it', async t => {
   u.c.advance(PENDING_LIMIT_MS * 2); await tick();
   assert.equal(line.textContent, said, 'nothing fires into a torn-down view');
 });
+
+test('the shipped poll across a connection change with a read unresolved: a read on the new connection at once, its own 45 s, and the old read can neither paint nor cancel it', async t => {
+  const clockNow = { value: 5_000_000 }; t.mock.method(Date, 'now', () => clockNow.value);
+  let connection = 0; const listeners = new Set(), reads = [];
+  const u = await setup(t, { api: () => { const d = deferred(); reads.push(d); return d.promise; },
+    ctx: { connectionGeneration: () => connection, subscribeConnections: fn => { listeners.add(fn); return () => listeners.delete(fn); } } }); await tick();
+  const run = shippedSchedule(u, clockNow);
+  await run(10); assert.equal(reads.length, 1, 'the stuck read holds the poll');
+  connection = 1; for (const fn of [...listeners]) fn(); await tick();
+  assert.equal(reads.length, 2, 'the new connection reads at once');
+  reads[0].resolve(panel([instance('old')])); await tick(); await tick();
+  assert.equal(u.nodes().length, 0, 'the old read is revoked: it paints nothing');
+  await run(34); // t = 44 s
+  assert.equal(u.notice(), '', 'the old deadline went with its subject');
+  await run(11); // t = 55 s
+  assert.match(u.notice(), /^No answer from the Desktop's server for this deployment: \/team\./);
+  assert.equal(reads.length, 2, 'said without another read');
+  reads[1].resolve(panel([instance('a')])); await tick(); await tick();
+  assert.equal(u.notice(), ''); assert.equal(u.nodes().length, 1, 'the new connection\'s late answer lands');
+  u.dispose(); assert.equal(listeners.size, 0, 'teardown unsubscribes');
+});

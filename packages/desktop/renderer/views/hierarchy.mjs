@@ -396,6 +396,11 @@ export function mount(el, ctx) {
   }));
 
   s.unsubWs = onWorkspaceChange(() => { resetObservation(s); void refresh(s); });
+  // A new connection (backend replaced, forge auth changed): the read in flight belongs to the old one.
+  // A read on the new connection starts now; it revokes the old read's outcome and arms the new
+  // subject's deadline (#461), so neither waits for the old read to settle.
+  const offConnections = s.ctx.subscribeConnections?.(() => { if (s.alive) void refresh(s); });
+  if (typeof offConnections === 'function') s.disposers.push(offConnections);
   refresh(s);
   s.timers.push(setInterval(() => { if (!s.loading) void refresh(s); }, 4000));
 

@@ -135,7 +135,9 @@ A window never waits silently on "Reading the deployment…":
   subject (cancelled by an answer, another deployment or connection, a Retry
   or the view's teardown), so it fires at 45 s even while a read that never
   answers holds the poll: both views poll one read at a time and never
-  supersede a read in flight.
+  supersede a read in flight. A connection change is the exception: both
+  views read on the new connection at once, which revokes the old read's
+  outcome and arms the new connection's own deadline.
 - **With an observation on screen** (a new connection still reading), a
   "pending" answer keeps the rows as they are, never an empty roster; past
   the bound they go stale with the no-answer reason.

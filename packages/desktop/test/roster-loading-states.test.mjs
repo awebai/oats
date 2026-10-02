@@ -395,7 +395,7 @@ test('the retired wording is gone from the roster and the fixed wording is the p
   const roster = source.slice(source.indexOf('function initContextRoster'), source.indexOf('function onRosterRowKey'));
   assert.doesNotMatch(roster, /Roster unavailable|Loading agents|Loading reported roster|Reading /);
   assert.match(source, /rosterState\?\.reset\(\);[\s\S]*renderContextRoster\(\[\]\);/, 'a switch resets the subject before the list is cleared');
-  assert.match(source, /setInterval\(\(\) => \{ if \(!rosterPoll\) rosterPoll = refreshContextRoster\(\)[^\n]*\}, 4000\)/, 'the 4s poll stays (one read at a time)');
+  assert.match(source, /setInterval\(\(\) => \{ if \(!rosterPoll\) pollContextRoster\(\); \}, 4000\);/, 'the 4s poll stays (one read at a time)');
 });
 
 test('a deployment the server has not observed yet (status pending, no instances) keeps its own note: no "No instances", the count stays a pill, no skeleton; the observation then paints the rows', async t => {
@@ -673,16 +673,21 @@ test('pending after an observation keeps the rows, never "empty"; past the bound
 });
 
 test('the 4 s roster poll is single-flight: an unanswered read is never superseded by the next poll', () => {
-  assert.match(source, /let rosterPoll = null;\nsetInterval\(\(\) => \{ if \(!rosterPoll\) rosterPoll = refreshContextRoster\(\)\.finally\(\(\) => \{ rosterPoll = null; \}\); \}, 4000\);/);
+  assert.match(source, /const poll = rosterPoll = refreshContextRoster\(\)\.finally\(\(\) => \{ if \(rosterPoll === poll\) rosterPoll = null; \}\);/);
+  assert.match(source, /setInterval\(\(\) => \{ if \(!rosterPoll\) pollContextRoster\(\); \}, 4000\);/);
   assert.doesNotMatch(source, /setInterval\(\(\) => refreshContextRoster\(\), 4000\)/);
 });
 
 /** The shipped 4 s poll, run on the test's clock: no refresh is called by hand. Time moves a second at a
  * time and settles promises in between, as a real event loop would. */
 function shippedPoll(s) {
-  const start = source.indexOf('let rosterPoll = null;'), end = source.indexOf('}, 4000);', start) + '}, 4000);'.length;
-  assert.ok(start > 0 && end > start, 'the shipped poll');
+  const last = 'subscribeConnections(() => { if (contextRosterEl) pollContextRoster(); });';
+  const start = source.indexOf('let rosterPoll = null;'), end = source.indexOf(last, start) + last.length;
+  assert.ok(start > 0 && end > start, 'the shipped poll and its connection subscription');
   s.context.setInterval = (fn, ms) => { const run = () => { s.c.setTimeout(run, ms); fn(); }; s.c.setTimeout(run, ms); };
+  const listeners = new Set(); s.context.subscribeConnections = fn => { listeners.add(fn); return () => listeners.delete(fn); };
+  // A backend replacement or forge change, as shell.mjs's onForgeChanged does it.
+  s.changeConnection = () => { s.context.connectionGeneration++; for (const fn of [...listeners]) fn(); };
   runInContext(source.slice(start, end), s.context);
   return async seconds => { for (let n = 0; n < seconds; n++) { s.c.advance(1000); await tick(); await tick(); } };
 }
@@ -724,4 +729,24 @@ test('the deadline belongs to its subject: an answer, a switch or a Retry cancel
   await s.reply(s.requests.length - 1, panelOf('B', [row('b-one')], { workspaces: [{ id: 'A', name: 'A' }, { id: 'B', name: 'B' }] }));
   s.c.advance(PENDING_LIMIT_MS * 2); await tick();
   assert.equal(s.list().querySelector('.loading-failed'), null, 'an observation cancels it'); assert.deepEqual(s.names(), ['b-one']);
+});
+
+test('the shipped poll across a connection change with a read unresolved: the new connection reads at once and gets its own 45 s; the old read can neither paint nor cancel it', async t => {
+  const s = shell(t), run = shippedPoll(s);
+  await run(10);
+  assert.equal(s.requests.length, 2, 'the first read and the 4 s poll, both unanswered');
+  s.changeConnection();
+  assert.equal(s.requests.length, 3, 'the new connection reads at once, not held by the old read');
+  await run(10);
+  await s.reply(1, panelOf('A', roster)); // the old connection's read settles late
+  assert.equal(s.rows().length, 0, 'revoked: it paints nothing');
+  await run(24); // t = 44 s: past the old connection's deadline, inside the new one's
+  assert.equal(s.list().querySelector('.loading-failed'), null, 'the old deadline was cancelled with its subject');
+  assert.equal(s.requests.length, 3, 'the new read holds the poll');
+  await run(11); // t = 55 s: 45 s after the change
+  const failed = s.list().querySelector('.loading-failed');
+  assert.ok(failed, 'no answer on the new connection, without any reply'); assert.equal(failed.querySelector('.loading-failed-code').textContent, NO_ANSWER_CODE);
+  await s.reply(2, panelOf('A', roster));
+  assert.equal(s.list().querySelector('.loading-failed'), null, 'its late answer still lands'); assert.equal(s.rows().length, 3);
+  await run(4); assert.equal(s.requests.length, 4, 'and the poll runs again');
 });

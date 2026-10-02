@@ -2150,9 +2150,15 @@ function restoreWorkspaceTabs() {
 }
 // One background read at a time: a slow or unanswered read is not superseded every 4 s, so its outcome
 // is always someone's to show; the bounded wait has its own timer (rosterPendingWatch). A switch or a
-// Retry reads at once, as before.
+// Retry reads at once, as before. A new connection replaces the poll's read at once: the old read's
+// outcome is revoked (contextRosterGen) and the new subject's deadline is armed at its dispatch, so
+// neither waits for the old read to settle; only the newest poll clears the slot.
 let rosterPoll = null;
-setInterval(() => { if (!rosterPoll) rosterPoll = refreshContextRoster().finally(() => { rosterPoll = null; }); }, 4000);
+function pollContextRoster() {
+  const poll = rosterPoll = refreshContextRoster().finally(() => { if (rosterPoll === poll) rosterPoll = null; });
+}
+setInterval(() => { if (!rosterPoll) pollContextRoster(); }, 4000);
+subscribeConnections(() => { if (contextRosterEl) pollContextRoster(); });
 
 // Contract re-probe triggers: launch (initial refresh) and app focus. The
 // cli-status module owns the shared state; the Spawn view (and any future
