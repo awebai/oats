@@ -138,7 +138,8 @@ test("an unknown or ineligible label in oats-local.yaml refuses the spawn previe
   refused(fx.cli(["inspect", "--soul", "dev", "--json"]), "E_TEAM_UNKNOWN", "inspect --soul");
   const rd = ok(fx.cli(["readiness", "--soul", "dev", "--json"]), "readiness reports it");
   const items = rd.checks.configured.items.filter((i) => i.producer === "team model");
-  assert.deepEqual(items.map((i) => [i.subject, i.code, i.status, i.required]), [["team ghost", "E_TEAM_UNKNOWN", "fail", true]]);
+  assert.deepEqual(items.map((i) => [i.subject, i.code, i.status, i.required, i.condition]), [["team ghost", "E_TEAM_UNKNOWN", "fail", true, undefined],
+    ["teams", "team-model-3-migration", "fail", false, "local-teams-closed"]], "a local defaultTeam without localTeams: true warns (0.36.x)");
   assert.equal(rd.checks.installed.items.some((i) => i.code === "E_TEAM_UNKNOWN"), false, "reported once, as configuration");
   assert.deepEqual(Object.keys(rd.checks), ["installed", "configured", "member", "providers"], "no fifth check");
 });
@@ -155,7 +156,8 @@ test("readiness: no default with messaging is E_TEAM_UNCONFIGURED; an unmapped d
   assert.deepEqual(preview.defaultTeam, { label: "night", team: null, from: "deployment" });
   ok(fx.cli(["teams", "default", "oats", "--json"]), "a mapped default");
   ok(fx.cli(["soul", "teams", "dev", "--add", "night", "--json"]), "night as an extra");
-  assert.deepEqual(items().map((i) => [i.code, i.label, i.default, i.required]), [["team-unmapped", "night", false, false]]);
+  assert.deepEqual(items().map((i) => [i.code, i.label, i.default, i.required, i.condition]), [["team-unmapped", "night", false, false, undefined],
+    ["team-model-3-migration", undefined, undefined, false, "local-soul-teams"], ["team-model-3-migration", undefined, undefined, false, "local-teams-closed"]]);
   // A shared label also declared locally: the committed definition wins; a warning.
   ok(fx.cli(["teams", "add", "zed", "--team", "zed:me.aweb.ai", "--json"]), "a local team");
   const ws = YAML.parse(readFileSync(join(fx.base, "seed", "oats-workspace.yaml"), "utf8"));

@@ -87,6 +87,9 @@ test("the deployment's problems: collisions, unmapped shared teams (blocking whe
     ["team-unmapped", "reviewers", "failure", true],
     ["E_TEAM_UNKNOWN", "ghost", "failure", null],
     ["E_TEAM_NOT_ELIGIBLE", "oats", "failure", null],
+    // 0.36.x: this deployment's local souls.teams/souls.default and defaultTeam need migrating (team model 3).
+    ["team-model-3-migration", null, "warning", null],
+    ["team-model-3-migration", null, "warning", null],
   ]);
   const unmapped = teamProblems(m).find((p) => p.code === "team-unmapped");
   assert.equal(unmapped.message, "the default team reviewers has no provider id yet");
@@ -101,8 +104,10 @@ test("the deployment's problems: collisions, unmapped shared teams (blocking whe
 
 test("a soul's problems: only what concerns it; `default` marks ITS default", () => {
   const m = model(WS, { defaultTeam: "antares-oats", teams: { "antares-oats": { team: "a:b" } }, souls: { teams: { dev: ["reviewers"] } } });
-  assert.deepEqual(teamProblems(m, { key: "dev" }).map((p) => [p.code, p.label, p.default]), [["team-unmapped", "reviewers", false]]);
-  assert.deepEqual(teamProblems(m, { key: "other" }), [], "a soul that is not in reviewers is not told about it");
+  // The team-model-3-migration warnings are the deployment's, so every soul carries them (0.36.x).
+  const migration = [["team-model-3-migration", undefined, undefined, "local-soul-teams"], ["team-model-3-migration", undefined, undefined, "local-teams-closed"]];
+  assert.deepEqual(teamProblems(m, { key: "dev" }).map((p) => [p.code, p.label, p.default, p.condition]), [["team-unmapped", "reviewers", false, undefined], ...migration]);
+  assert.deepEqual(teamProblems(m, { key: "other" }).map((p) => [p.code, p.label, p.default, p.condition]), migration, "a soul that is not in reviewers is not told about it");
 });
 
 test("every reference to a label, as `oats teams remove` names them", () => {
