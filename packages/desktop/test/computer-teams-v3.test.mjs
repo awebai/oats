@@ -12,7 +12,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { createComputerTeams, computerTeamsCSS, LOCAL_TEAMS_CLOSED } from '../renderer/computer-teams.mjs';
+import { createComputerTeams, computerTeamsCSS, LOCAL_TEAMS_CLOSED, whoMayJoin } from '../renderer/computer-teams.mjs';
 import { setupCSS } from '../renderer/workspace-setup.mjs';
 import { teamsData } from '../deployment-data.mjs';
 
@@ -109,4 +109,20 @@ test('souls: as committed, read only, with where to change it in the kernel\'s w
 test('the closed-state wording is the kernel\'s own clause', () => {
   const kernel = readFileSync(new URL('../../../lib/teams.mjs', import.meta.url), 'utf8');
   assert.ok(kernel.includes(LOCAL_TEAMS_CLOSED), 'lib/teams.mjs says exactly this');
+});
+
+test('who may join: a "*" entry is a fallback, never "every soul" (a more specific entry overrides it outright)', () => {
+  const doc = teams('teams-closed');
+  doc.souls = { '*': { teams: ['docs'] }, 'agents/restricted': { teams: [] } };
+  doc.teams = [{ label: 'docs', team: 'docs:acme.aweb.ai', from: 'shared', default: false, description: null, at: 'x' }];
+  assert.equal(whoMayJoin(doc, 'docs'), '1 entry in souls:');
+});
+
+test('no souls: entries: a soul may join its default, and this deployment\'s local teams where they are allowed', async (t) => {
+  const open = () => { const d = teams('teams-after'); d.souls = {}; return d; };
+  const u = await mount(t, open);
+  assert.equal(u.q('[data-section=souls] .ct-empty').textContent, "No souls: entries: a soul may join its default team and this deployment's local teams.");
+  const closed = () => { const d = teams('teams-closed'); d.souls = {}; return d; };
+  const v = await mount(t, closed);
+  assert.equal(v.q('[data-section=souls] .ct-empty').textContent, 'No souls: entries: a soul may join its default team only.');
 });

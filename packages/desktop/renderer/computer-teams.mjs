@@ -167,13 +167,13 @@ function el(doc, tag, value, cls) {
   return node;
 }
 
-/** Team model 3: the souls: patterns naming a label (in teams, as its default, or `any` for a shared team),
- * split into the "*" pattern and the others. */
+/** Team model 3: how many souls: entries name a label (in teams, as its default, or `any` for a shared team).
+ * "*" counts as one entry like the others: the most specific entry gives a soul's teams outright, so "*" is a
+ * fallback, never a promise about every soul. */
 function patternsOf(document, label) {
   const shared = list(document?.teams).some(t => t.label === label && t.from === 'shared');
   const names = rule => rule.default === label || (rule.teams === 'any' ? shared : list(rule.teams).includes(label));
-  const rules = record(document?.souls) ? Object.entries(document.souls).filter(([, rule]) => record(rule) && names(rule)) : [];
-  return { every: rules.some(([key]) => key === '*'), entries: rules.filter(([key]) => key !== '*').length };
+  return record(document?.souls) ? Object.values(document.souls).filter(rule => record(rule) && names(rule)).length : 0;
 }
 /** The souls a label is declared for, as the document says: every soul (souls.teams['*']), or the
  * soul keys naming it in souls.teams and souls.default (the same soul counted once). */
@@ -206,9 +206,9 @@ export function whoMayJoin(document, label) {
   if (model3(document)) {
     // A local team where local teams are allowed: every soul may join it (via local).
     if (list(document.teams).some(t => t.label === label && t.from === 'local') && localAllowed(document)) return 'every soul';
-    const { every, entries } = patternsOf(document, label);
+    const entries = patternsOf(document, label);
     const fallback = document.defaultTeam?.label === label ? 'souls without their own default' : null;
-    return every ? 'every soul' : [fallback, entries ? `${entries} ${entries === 1 ? 'entry' : 'entries'} in souls:` : null].filter(Boolean).join(' · ') || null;
+    return [fallback, entries ? `${entries} ${entries === 1 ? 'entry' : 'entries'} in souls:` : null].filter(Boolean).join(' · ') || null;
   }
   const { every, souls } = soulsOf(document, label);
   return every ? 'every soul' : souls.size ? plural(souls.size, 'soul') : null;
@@ -489,7 +489,12 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
     const wrap = section('souls', 'Souls in the workspace', 'Shared · Git', false);
     wrap.append(el(doc, 'p', `Which teams each soul may join, and its default: ${SOULS_WHERE}.`, 'ct-lead'));
     const rules = record(current.souls) ? Object.entries(current.souls) : [];
-    if (!rules.length) { wrap.append(emptyCard('No souls: entries: every soul has the default team only.')); return wrap; }
+    if (!rules.length) {
+      // With local teams allowed, every soul may also join each of this deployment's local teams (via local).
+      const local = localAllowed(current) && list(current.teams).some(t => t.from === 'local');
+      wrap.append(emptyCard(`No souls: entries: a soul may join its default team${local ? " and this deployment's local teams" : ' only'}.`));
+      return wrap;
+    }
     const table = el(doc, 'ul', null, 'ct-soul-rules');
     for (const [key, rule] of rules) {
       const parts = [...(text(rule.default) ? [`default ${rule.default}`] : []),
