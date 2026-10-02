@@ -21,9 +21,17 @@ export function shiftEnterAction(ev) {
  * in xterm's alternate screen, where that scrollbar has nothing to scroll, and
  * shell.css hides it on terminal tabs: the grid takes the whole padded box and
  * the remainder is split evenly, across and down, in whole device pixels so the
- * glyphs stay sharp. Without xterm's measured cell, FitAddon fits as before. */
+ * glyphs stay sharp.
+ *
+ * The grid is sized from the renderer's device cell, which does not depend on
+ * the grid: xterm's CSS cell is the rounded screen extent divided by the column
+ * count, so fitting from it could flip between two counts at a fractional pane
+ * width (review round 8). Both renderers round the screen to
+ * round(cells × device cell / dpr) CSS pixels; a count whose rounded extent
+ * would overflow the box gives way to one fewer. Without a measured cell,
+ * FitAddon fits as before. */
 export function fitTerminal(term, fit) {
-  const core = term?._core, cell = core?._renderService?.dimensions?.css?.cell;
+  const core = term?._core, cell = core?._renderService?.dimensions?.device?.cell;
   const el = term?.element, screen = el?.querySelector('.xterm-screen'), parent = el?.parentElement;
   if (!(cell?.width > 0) || !(cell?.height > 0) || !el || !screen || !parent) { fit.fit(); return; }
   const view = el.ownerDocument.defaultView, own = view.getComputedStyle(el), box = view.getComputedStyle(parent);
@@ -31,29 +39,58 @@ export function fitTerminal(term, fit) {
   const width = px(box.width) - px(own.paddingLeft) - px(own.paddingRight);
   const height = px(box.height) - px(own.paddingTop) - px(own.paddingBottom);
   if (!(width > 0) || !(height > 0)) { fit.fit(); return; } // a hidden pane: FitAddon's own no-op
-  const cols = Math.max(2, Math.floor(width / cell.width)), rows = Math.max(1, Math.floor(height / cell.height));
+  const ratio = view.devicePixelRatio || 1;
+  const extent = (count, size) => Math.round(count * size / ratio); // the screen's CSS size, as xterm rounds it
+  const count = (room, size, least) => {
+    let n = Math.max(least, Math.floor(room * ratio / size + 1e-6)); // float noise must not lose a whole cell
+    while (n > least && extent(n, size) > room) n--;
+    return n;
+  };
+  const cols = count(width, cell.width, 2), rows = count(height, cell.height, 1);
   if (term.cols !== cols || term.rows !== rows) { core._renderService.clear?.(); term.resize(cols, rows); }
-  const ratio = view.devicePixelRatio || 1, half = rest => Math.floor(rest / 2 * ratio) / ratio;
-  screen.style.margin = `${half(height - rows * cell.height)}px 0 0 ${half(width - cols * cell.width)}px`;
+  const half = rest => Math.max(0, Math.floor(rest / 2 * ratio) / ratio);
+  screen.style.margin = `${half(height - extent(rows, cell.height))}px 0 0 ${half(width - extent(cols, cell.width))}px`;
+}
+
+/** Whether this renderer process can make a WebGL2 context, asked once with a
+ * throwaway canvas whose context is released at once. */
+let webgl2;
+export function webgl2Supported(doc) {
+  if (webgl2 === undefined && doc) {
+    try {
+      const gl = doc.createElement('canvas').getContext('webgl2');
+      webgl2 = Boolean(gl);
+      gl?.getExtension('WEBGL_lose_context')?.loseContext();
+    } catch { webgl2 = false; }
+  }
+  return webgl2 === true;
 }
 
 /** xterm's WebGL renderer, so box drawing and block elements (U+2500–259F:
  * Claude Code's input box, tmux borders, progress bars) are drawn the way a
  * native terminal draws them, as thin strokes joined cell to cell whatever the
  * font (xterm's customGlyphs). The DOM renderer takes them from the font, and
- * Inconsolata's are twice as heavy. Chromium keeps about 16 WebGL contexts and
- * drops the oldest past that: a lost or unavailable context falls back to the
- * DOM renderer (`onChange` refits), and `ensure()`, run when the tab is shown,
- * tries again. `Addon` is the WebglAddon class, absent where it is not loaded. */
-export function createGlyphRenderer({ term, Addon, onChange = () => {} }) {
-  let addon = null;
+ * Inconsolata's are twice as heavy. `Addon` is the WebglAddon class, absent
+ * where it is not loaded.
+ *
+ * Fallbacks, all to xterm's DOM renderer:
+ * - no WebGL2 here (`supported`): the addon is never activated. Its renderer
+ *   adds a canvas and listeners before asking for the context, and a throw
+ *   there leaves them behind where the addon's dispose cannot reach.
+ * - an activation that throws anyway: no further attempt for this terminal.
+ * - a lost context (Chromium keeps about 16 and drops the oldest; sleep or a
+ *   GPU reset): the addon is disposed (`onChange` refits), and `ensure()`, run
+ *   when the tab is shown, loads a fresh one. */
+export function createGlyphRenderer({ term, Addon, onChange = () => {},
+  supported = () => webgl2Supported(term.element?.ownerDocument) }) {
+  let addon = null, failed = false;
   function drop() {
     const was = addon; addon = null;
     try { was?.dispose(); } catch {}
     if (was) onChange();
   }
   function ensure() {
-    if (addon || typeof Addon !== 'function' || !term.element) return Boolean(addon);
+    if (addon || failed || typeof Addon !== 'function' || !term.element || !supported()) return Boolean(addon);
     let next = null;
     try {
       next = new Addon();
@@ -61,7 +98,7 @@ export function createGlyphRenderer({ term, Addon, onChange = () => {} }) {
       term.loadAddon(next);
       addon = next;
       onChange();
-    } catch { try { next?.dispose(); } catch {} }
+    } catch { failed = true; try { next?.dispose(); } catch {} }
     return Boolean(addon);
   }
   return { ensure, dispose: drop, get active() { return Boolean(addon); } };

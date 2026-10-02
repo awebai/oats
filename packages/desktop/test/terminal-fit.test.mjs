@@ -13,22 +13,37 @@ import { fitTerminal, createGlyphRenderer } from "../renderer/terminal-tab.mjs";
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
 /** A pane of `width`×`height` with the shipped 12px side gutters, holding an
- * xterm double whose renderer measured `cell` (null: not measured yet). */
-function pane(t, { width, height, cell = { width: 8, height: 17 }, ratio = 1, cols = 80, rows = 24 }) {
+ * xterm double whose renderer measured a `char` of that CSS size. Its render
+ * dimensions follow xterm 5.5's own formulas for the current grid: the DOM
+ * renderer's device cell is char × dpr, the WebGL renderer's is floored to
+ * whole device pixels, and both round the screen to CSS pixels and report the
+ * CSS cell as that extent divided by the count (DomRenderer._updateDimensions,
+ * WebglRenderer._updateDimensions). */
+function pane(t, { width, height, char = { width: 8, height: 17 }, ratio = 1, renderer = "dom", cols = 80, rows = 24 }) {
   const dom = new JSDOM(`<!doctype html><div class="term-wrap" style="width:${width}px;height:${height}px">
     <div class="xterm" style="padding:0 12px"><div class="xterm-screen"></div></div></div>`);
   t.after(() => dom.window.close());
   Object.defineProperty(dom.window, "devicePixelRatio", { value: ratio });
   const element = dom.window.document.querySelector(".xterm");
   const calls = [];
+  const device = { width: renderer === "webgl" ? Math.floor(char.width * ratio) : char.width * ratio, height: Math.ceil(char.height * ratio) };
   const term = {
     cols, rows, element,
-    _core: { _renderService: { dimensions: { css: { cell } }, clear: () => calls.push("clear") } },
+    _core: { _renderService: {
+      get dimensions() {
+        const canvas = { width: Math.round(device.width * term.cols / ratio), height: Math.round(device.height * term.rows / ratio) };
+        return { device: { cell: { ...device } }, css: { canvas, cell: { width: canvas.width / term.cols, height: canvas.height / term.rows } } };
+      },
+      clear: () => calls.push("clear"),
+    } },
     resize(c, r) { calls.push(`resize ${c}x${r}`); this.cols = c; this.rows = r; },
   };
   const fit = { fit: () => calls.push("fit") };
-  return { term, fit, calls, screen: element.querySelector(".xterm-screen") };
+  const wrap = element.parentElement;
+  return { term, fit, calls, screen: element.querySelector(".xterm-screen"), resizePane: w => { wrap.style.width = `${w}px`; } };
 }
+/** The screen's CSS width and height as xterm sizes it for the current grid. */
+const extent = term => term._core._renderService.dimensions.css.canvas;
 
 test("fitTerminal fills the padded pane with whole cells and splits the rest evenly, across and down", t => {
   const p = pane(t, { width: 796, height: 600 });
@@ -62,8 +77,32 @@ test("fitTerminal rounds the centring margin to device pixels, so glyphs stay sh
   assert.equal(p.screen.style.marginTop, "2.5px");
 });
 
+test("fitTerminal is stable at a fractional pane width: repeated fits never flip the grid or overflow (review round 8)", t => {
+  // Inconsolata 15px at 2×: a 7.5px cell. 391.5 − 24 = 367.5px across: 49 cells would round to 368px.
+  const p = pane(t, { width: 391.5, height: 600, char: { width: 7.5, height: 16 }, ratio: 2 });
+  for (let i = 0; i < 4; i++) fitTerminal(p.term, p.fit);
+  assert.deepEqual(p.calls, ["clear", "resize 48x37"], "one resize, then nothing: the count does not depend on itself");
+  assert.equal(extent(p.term).width, 360);
+  assert.equal(p.screen.style.marginLeft, "3.5px", "never negative: the rounded screen fits the box");
+  // Every quarter pixel across a split-sized range, both renderers, 1× and 2×.
+  for (const renderer of ["dom", "webgl"]) for (const ratio of [1, 2]) for (const char of [{ width: 7.5, height: 16 }, { width: 8.43, height: 16 }]) {
+    const q = pane(t, { width: 360, height: 333.5, char, ratio, renderer });
+    for (let width = 360; width <= 420; width += 0.25) { // several cell boundaries, every quarter pixel
+      q.resizePane(width);
+      fitTerminal(q.term, q.fit);
+      const grid = `${q.term.cols}x${q.term.rows}`, size = extent(q.term), cell = size.width / q.term.cols;
+      fitTerminal(q.term, q.fit); fitTerminal(q.term, q.fit);
+      const label = `${renderer} ${ratio}× ${char.width}px at ${width}px`;
+      assert.equal(`${q.term.cols}x${q.term.rows}`, grid, `${label}: refits keep the grid`);
+      assert.ok(size.width <= width - 24 && size.height <= 333.5, `${label}: the screen fits the padded box`);
+      assert.ok(width - 24 - size.width < 2 * cell, `${label}: the grid gives up less than two cells to rounding`);
+      assert.ok(Number.parseFloat(q.screen.style.marginLeft) >= 0 && Number.parseFloat(q.screen.style.marginTop) >= 0, `${label}: margins`);
+    }
+  }
+});
+
 test("fitTerminal leaves an unmeasured or hidden pane to FitAddon", t => {
-  const unmeasured = pane(t, { width: 796, height: 600, cell: { width: 0, height: 0 } });
+  const unmeasured = pane(t, { width: 796, height: 600, char: { width: 0, height: 0 } });
   fitTerminal(unmeasured.term, unmeasured.fit);
   assert.deepEqual(unmeasured.calls, ["fit"]);
   const hidden = pane(t, { width: 0, height: 0 });
@@ -92,7 +131,7 @@ function xterm({ opened = true, failLoad = false } = {}) {
 test("createGlyphRenderer loads the WebGL renderer once the terminal is open, and only once", () => {
   const { Addon, made } = webgl(), term = xterm({ opened: false });
   let changes = 0;
-  const glyphs = createGlyphRenderer({ term, Addon, onChange: () => changes++ });
+  const glyphs = createGlyphRenderer({ term, Addon, onChange: () => changes++, supported: () => true });
   assert.equal(glyphs.ensure(), false, "xterm refuses addons that need a renderer before open()");
   assert.equal(made.length, 0);
   term.element = {};
@@ -104,7 +143,7 @@ test("createGlyphRenderer loads the WebGL renderer once the terminal is open, an
 test("a lost WebGL context falls back to the DOM renderer, and showing the tab tries again", () => {
   const { Addon, made } = webgl(), term = xterm();
   let changes = 0;
-  const glyphs = createGlyphRenderer({ term, Addon, onChange: () => changes++ });
+  const glyphs = createGlyphRenderer({ term, Addon, onChange: () => changes++, supported: () => true });
   glyphs.ensure();
   made[0].lose(); // Chromium dropped the context (too many, sleep, GPU reset)
   assert.deepEqual([glyphs.active, made[0].disposed, changes], [false, 1, 2], "disposed: xterm goes back to its DOM renderer, and refits");
@@ -114,15 +153,28 @@ test("a lost WebGL context falls back to the DOM renderer, and showing the tab t
   assert.equal(made.length, 2);
 });
 
-test("without WebGL the terminal stays on the DOM renderer", () => {
-  const term = xterm();
-  assert.equal(createGlyphRenderer({ term, Addon: undefined }).ensure(), false, "the addon script did not load");
-  assert.equal(createGlyphRenderer({ term, Addon: webgl({ failConstruct: true }).Addon }).ensure(), false);
-  const { Addon, made } = webgl();
-  let changes = 0;
-  const glyphs = createGlyphRenderer({ term: xterm({ failLoad: true }), Addon, onChange: () => changes++ });
-  assert.equal(glyphs.ensure(), false);
-  assert.deepEqual([made[0].disposed, changes, glyphs.active], [1, 0, false], "a half-made addon is disposed; nothing changed");
+test("without WebGL2 the addon is never activated, however often the tab is shown (review round 8)", () => {
+  // addon-webgl 0.18 adds a link-layer canvas and listeners before it asks for
+  // the context, and a throw there escapes its dispose: no WebGL2, no attempt.
+  const { Addon, made } = webgl(), term = xterm();
+  let asked = 0;
+  const glyphs = createGlyphRenderer({ term, Addon, supported: () => { asked++; return false; } });
+  for (let i = 0; i < 5; i++) assert.equal(glyphs.ensure(), false);
+  assert.deepEqual([made.length, term.loaded.length, asked], [0, 0, 5], "nothing constructed or loaded");
+  assert.equal(createGlyphRenderer({ term, Addon: undefined, supported: () => true }).ensure(), false, "the addon script did not load");
+});
+
+test("an activation that throws anyway is not retried for that terminal; a lost context still is", () => {
+  for (const failing of [{ addon: { failConstruct: true }, term: {} }, { addon: {}, term: { failLoad: true } }]) {
+    const { Addon, made } = webgl(failing.addon);
+    let changes = 0, attempts = 0;
+    const Counted = class extends Addon { constructor() { attempts++; super(); } };
+    const glyphs = createGlyphRenderer({ term: xterm(failing.term), Addon: Counted, onChange: () => changes++, supported: () => true });
+    for (let i = 0; i < 4; i++) assert.equal(glyphs.ensure(), false);
+    assert.equal(attempts, 1, "one attempt: whatever it left behind is not multiplied by every show");
+    assert.deepEqual([changes, glyphs.active], [0, false], "the DOM renderer stays, nothing to refit");
+    if (made[0]) assert.equal(made[0].disposed, 1, "a half-made addon is disposed");
+  }
 });
 
 test("terminal tabs are wired to both: WebGL after open and on show, centred fits everywhere", () => {

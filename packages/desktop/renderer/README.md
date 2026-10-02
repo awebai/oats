@@ -66,12 +66,19 @@ A terminal tab shows its program the way a native terminal would. It renders wit
 xterm's WebGL renderer (`@xterm/addon-webgl`, `createGlyphRenderer` in
 `terminal-tab.mjs`), whose built-in glyphs draw box drawing and block elements
 (Claude Code's input box, tmux borders) as thin joined strokes whatever the font;
-the DOM renderer would take them from Inconsolata, at twice the weight. A missing
-or lost WebGL context (Chromium keeps about 16) falls back to the DOM renderer,
-and showing the tab tries WebGL again. `fitTerminal` sizes the grid to the pane's
-padded box with no width kept for xterm's scrollbar (tmux draws in the alternate
-screen, so it never scrolls, and `shell.css` hides it) and centres the remainder
-across and down, in whole device pixels, like a native terminal's balanced padding.
+the DOM renderer would take them from Inconsolata, at twice the weight. Every
+failure falls back to the DOM renderer. Where WebGL2 is unavailable (one throwaway
+probe per renderer process) the addon is never activated: addon-webgl 0.18 adds a
+canvas and listeners before it asks for the context, and its dispose cannot undo
+a constructor that threw. An activation that throws anyway is not retried for that
+terminal. A lost context (Chromium keeps about 16) disposes the addon, and showing
+the tab tries WebGL again. `fitTerminal` sizes the grid to the pane's padded box
+with no width kept for xterm's scrollbar (tmux draws in the alternate screen, so it
+never scrolls, and `shell.css` hides it) and centres the remainder across and down,
+in whole device pixels, like a native terminal's balanced padding. It counts cells
+from the renderer's device cell, never its CSS cell: xterm reports the CSS cell as
+the rounded screen extent divided by the current count, so fitting from it can
+flip between two counts at a fractional width.
 
 xterm measures its cell
 when a terminal is created and only re-measures on a font change, so
