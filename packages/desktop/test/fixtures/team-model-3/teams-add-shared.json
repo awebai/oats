@@ -1,0 +1,1 @@
+{"schemaVersion":1,"ok":false,"error":{"code":"E_TEAM_EXISTS","message":"team engineering is already declared (shared, in oats-workspace.yaml)","details":{"label":"engineering","from":"shared"}}}

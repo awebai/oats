@@ -395,7 +395,7 @@ test("v2 default row: the kernel's DefaultTeam by label, with its id and where i
   // Unmapped (K1 addendum 4 + the lead's ruling): a blocking problem, not a membership: no "Always on".
   const unmapped = await mount(t, () => v2({ label: 'oats', team: null, from: 'soul' }));
   const blocked = unmapped.row('default');
-  assert.equal(blocked.querySelector('.team-meta').textContent, "this soul's own default on this computer");
+  assert.equal(blocked.querySelector('.team-meta').textContent, "this soul's own default");
   assert.equal(blocked.querySelector('.team-badge'), null, 'no "Always on" for a team nothing can be in yet');
   assert.equal(blocked.querySelector('.teams-blocking').getAttribute('role'), 'alert');
   assert.deepEqual([...blocked.querySelectorAll('.teams-blocking p')].map(p => p.textContent), ['The default team oats has no provider id yet.',
@@ -475,7 +475,7 @@ test('compact: one card of glyph rows — the default team tagged and always on,
   assert.equal(w.row('default').querySelector('.team-name').firstChild.textContent, 'oats');
   assert.equal(w.row('default').firstElementChild.innerHTML, w.glyphOf('circle'), 'not a membership yet');
   assert.equal(w.row('default').querySelector('.team-badge'), null); assert.equal(w.row('default').querySelector('.teams-blocking').getAttribute('role'), 'alert');
-  assert.equal(w.row('default').querySelector('.team-meta').textContent, "this soul's own default on this computer");
+  assert.equal(w.row('default').querySelector('.team-meta').textContent, "this soul's own default");
   const n = card(t, () => v2(null)); await tick();
   assert.equal(n.row('default').querySelector('.team-meta').textContent, 'None configured on this computer: run oats aweb setup.');
   assert.equal(n.row('default').querySelector('.team-badge'), null);

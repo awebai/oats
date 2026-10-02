@@ -1,0 +1,1 @@
+{"schemaVersion":1,"ok":false,"error":{"code":"E_TEAM_SHARED","message":"team engineering is shared (declared in oats-workspace.yaml): it is edited by a PR to that file, never removed here","details":{"label":"engineering","at":"local/<base>/fx/remotes/agents.git:oats-workspace.yaml#/teams/engineering"}}}

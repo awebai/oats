@@ -6,6 +6,7 @@
  *     capability table.
  * Sync is the kernel's `oats sync` (workspace-sync-view.mjs); there is no
  * package approval. Souls stay the host view's own grid. */
+import { teamModelOf } from './team-rows.mjs';
 import { apiJson, postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
 import { cliStatus, cliKnownUnavailable } from './views/cli-status.mjs';
 import { deploymentUnavailableText } from './deployment-header.mjs';
@@ -181,7 +182,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   // The pinned toolbar / Teams head and its edge (sticky-top.mjs); the Souls bar sits outside its scroller.
   const stickyTop = trackStickyTop(panel), soulsEdge = trackScrolledEdge(soulsPanel);
   function teamsCard() {
-    if (!list(cliStatus()?.features).includes('team-model-2') || !workspace?.id || workspace.remote || workspace.server) return null;
+    if (!teamModelOf(cliStatus()?.features) || !workspace?.id || workspace.remote || workspace.server) return null;
     const gen = workspaceGeneration();
     if (computerTeams && computerTeamsGen === gen) return computerTeams.element;
     computerTeams?.dispose(); computerTeamsGen = gen; teamProblems = 0;
@@ -369,7 +370,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
       // on another computer keeps its teams there. Before v2: the labels the workspace declares.
       const card = teamsCard();
       if (card) body.append(card);
-      else if (list(cliStatus()?.features).includes('team-model-2')) body.append(node('p', "Teams are set on the computer that runs this workspace.", 'catalog-note'));
+      else if (teamModelOf(cliStatus()?.features)) body.append(node('p', "Teams are set on the computer that runs this workspace.", 'catalog-note'));
       else {
         for (const warning of list(s?.warnings)) if (teamWarning(warning) && typeof warning.message === 'string' && warning.message && !list(s?.workspace?.teams).includes(warning.label)) notes.append(node('p', warning.message, 'catalog-note warn'));
         body.append(teamsBox(doc, { status: s, souls }));
