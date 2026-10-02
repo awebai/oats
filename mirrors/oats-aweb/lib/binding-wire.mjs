@@ -4,7 +4,7 @@ import { delimiter, isAbsolute, join, resolve } from 'node:path';
 import { TextDecoder } from 'node:util';
 import { assessCapturedSessionReadiness } from './session-readiness.mjs';
 import { custodyPreflight } from './grant-custody.mjs';
-import { joinedReceiveModes } from './wake-receive.mjs';
+import { brokerDelivers, joinedReceiveModes, recordedRuntime, recordedStart } from './wake-receive.mjs';
 import {
   MESSAGING_CONTRACT,
   MESSAGING_CONTRACT_VERSION,
@@ -271,7 +271,7 @@ function wakeReadiness(home,{reliedOn=false}={}) {
       if(semverLt(running,AW_MIN)) return {problems:[{code:'wake-daemon-outdated',message:`host wake daemon is running ${running}; required ${AW_MIN}; upgrade aw, then restart the host wake daemon`}],warnings:[]};
       return {problems:[],warnings:[]};
     }
-    if(state==='not_running') return {problems:[{code:'wake-daemon-not-running',message:'host wake daemon is not running; session delivery relies on it'}],warnings:[]};
+    if(state==='not_running') return {problems:[{code:'wake-daemon-not-running',message:'host wake daemon is not running; this home\'s broker delivery relies on it'}],warnings:[]};
     return {problems:[],warnings:[{code:'wake-daemon-version-unknown',message:`host wake daemon version is unknown; compatibility unproven; required ${AW_MIN}; upgrade aw, then restart the host wake daemon`}]};
   } catch {return {problems:[],warnings:[{code:'wake-daemon-version-unknown',message:`host wake daemon version is unknown; compatibility unproven; required ${AW_MIN}; upgrade aw, then restart the host wake daemon`}]};}
 }
@@ -305,7 +305,13 @@ async function workspaceReadinessPhase(req) {
       else warnings.push({code:'joined-team-poll-only',message:`joined team ${mode.label} receives by polling: ${status?why[mode.reason]||mode.reason:'aw wake status is unavailable'}${mode.detail?` (${mode.detail})`:''}; check aw --identity-home ${row.identityHome} mail inbox and chat pending at task boundaries`});
     }
   }
-  const wake=String(req.settings.delivery||'channel')==='session'?wakeReadiness(ctx.home,{reliedOn:true}):{problems:[],warnings:[]};
+  // A home relies on the wake daemon when the broker delivers to it: decided
+  // from the home's own record (its delivery and the runtime of its last
+  // start), never from the runtime of whoever runs the check. Without a
+  // record only delivery: session is known to rely on it.
+  const {meta:recorded,harness}=ctx.home?recordedStart(ctx.home):{};
+  const reliedOn=typeof recorded?.delivery==='string'?brokerDelivers({delivery:recorded.delivery,runtime:recordedRuntime(recorded,harness)}):String(req.settings.delivery||'channel')==='session';
+  const wake=reliedOn?wakeReadiness(ctx.home,{reliedOn:true}):{problems:[],warnings:[]};
   problems.push(...wake.problems);warnings.push(...wake.warnings);
   const result=checkProblems(problems) || {status:'ready',problems:[]};
   return {...result,warnings};
