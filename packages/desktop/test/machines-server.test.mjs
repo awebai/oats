@@ -161,3 +161,25 @@ test('a registry that cannot be read is an answer with its error, the window\'s 
   assert.deepEqual(await machines.forScope(SCOPE), { servers: [], key: KEY, filtered: true, deployment: SCOPE.deployment, aweb: true,
     error: { code: 'E_SERVERS_UNREADABLE', message: 'servers.json is not valid JSON' } });
 });
+
+test('a list read that began while the backfill ran still says backfilling, even when it answers after the end', async () => {
+  const adapter = fakeAdapter([reg('legacy-x', null)]);
+  const openCheck = adapter.hold();
+  const machines = createMachines({ adapter, cli: () => CLI });
+  assert.equal((await machines.forScope(SCOPE)).backfilling, true, 'the first read starts it');
+  // A second read captures the registry (legacy still unknown) and answers only after the check wrote its key.
+  let releaseList; const listed = new Promise(r => { releaseList = r; });
+  const read = adapter.cliServers;
+  adapter.cliServers = async (...args) => { const snapshot = structuredClone(await read(...args)); await listed; return snapshot; };
+  const overlapping = machines.forScope(SCOPE);
+  await new Promise(r => setImmediate(r));
+  openCheck(); await machines.backfilled();
+  releaseList();
+  const answer = await overlapping;
+  assert.deepEqual(answer.servers, [], 'its rows are from before the check');
+  assert.equal(answer.backfilling, true, 'so the consumer reads again');
+  adapter.cliServers = read;
+  const settled = await machines.forScope(SCOPE);
+  assert.equal(Object.hasOwn(settled, 'backfilling'), false);
+  assert.deepEqual(settled.servers.map(s => s.id), ['legacy-x']);
+});

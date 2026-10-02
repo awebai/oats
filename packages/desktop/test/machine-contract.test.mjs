@@ -95,7 +95,7 @@ test('followBackfill: reads again while backfilling, uses each answer, stops at 
   assert.deepEqual(used, [1, 2]); assert.equal(timers.q.length, 0, 'no further read');
 });
 
-test('followBackfill: an owner that moved on uses nothing and stops; stop() cancels the pending read; reads are bounded', async () => {
+test('followBackfill: an owner that moved on uses nothing and stops; stop() cancels the pending read', async () => {
   let owned = true; const timers = manualTimers(), used = [];
   followBackfill({ read: async () => ({ backfilling: true }), use: () => used.push(1), owns: () => owned, timers });
   owned = false; await timers.run();
@@ -103,8 +103,28 @@ test('followBackfill: an owner that moved on uses nothing and stops; stop() canc
   const t2 = manualTimers(); let reads = 0;
   const stop = followBackfill({ read: async () => { reads++; return { backfilling: true }; }, use: () => {}, timers: t2 });
   stop(); await t2.run(); assert.equal(reads, 0);
-  const t3 = manualTimers(); let n = 0;
-  followBackfill({ read: async () => { n++; return { backfilling: true }; }, use: () => {}, timers: t3, polls: 3 });
-  for (let i = 0; i < 6; i++) await t3.run();
-  assert.equal(n, 3);
+});
+
+test('followBackfill: a backfill longer than any fixed budget is followed to its end, with the reads backing off to at most 15 s apart', async () => {
+  const delays = [], q = [];
+  const timers = { setTimeout: (fn, ms) => { delays.push(ms); q.push(fn); return q.length; }, clearTimeout: () => {} };
+  let reads = 0; const used = [];
+  // Eight unreachable hosts two at a time, then a reachable one: about five minutes of 60 s checks.
+  followBackfill({ read: async () => (++reads < 200 ? { backfilling: true, n: reads } : { n: reads }), use: a => used.push(a.n), timers });
+  while (q.length) await q.shift()();
+  assert.equal(reads, 200); assert.equal(used.at(-1), 200, 'the settled answer is used');
+  assert.equal(delays[0], 2000); assert.ok(delays[1] > delays[0]);
+  assert.equal(Math.max(...delays), 15_000);
+  assert.ok(delays.reduce((a, b) => a + b, 0) > 10 * 60_000, 'past any three-minute budget');
+});
+
+test('followBackfill: a failed read is retried; five in a row stop it', async () => {
+  const timers = manualTimers(); let reads = 0; const used = [];
+  followBackfill({ read: async () => { reads++; if (reads <= 2) throw new Error('down'); return reads === 3 ? { backfilling: true } : { n: 4 }; }, use: a => used.push(a.n ?? 'more'), timers });
+  for (let i = 0; i < 6; i++) await timers.run();
+  assert.equal(reads, 4); assert.deepEqual(used, ['more', 4]);
+  const t2 = manualTimers(); let n = 0;
+  followBackfill({ read: async () => { n++; throw new Error('gone'); }, use: () => {}, timers: t2 });
+  for (let i = 0; i < 10; i++) await t2.run();
+  assert.equal(n, 5);
 });

@@ -93,24 +93,30 @@ export const MACHINE_SCOPE_REASONS = Object.freeze({
   'no-local': 'This workspace has no deployment on this computer, so machines are added from one that does.',
 });
 
-/** How often, and at most how many times, a consumer reads the list again while the server's backfill runs. */
+/** How a consumer follows the server's backfill: the first re-read after BACKFILL_POLL_MS, each next one
+ * 1.5 times later, up to BACKFILL_POLL_MAX_MS apart. */
 export const BACKFILL_POLL_MS = 2000;
-export const BACKFILL_POLLS = 90;
+export const BACKFILL_POLL_MAX_MS = 15_000;
+/** Consecutive failed reads after which a consumer stops following (the server is gone or refusing). */
+export const BACKFILL_READ_FAILURES = 5;
 /** Read the list again while the server's answers say `backfilling` (server/machines.mjs): `read()` answers
  * the list, `use(answer)` takes each, `owns()` is the consumer's latest intent (false: stop, nothing used).
- * Stops at the first answer that is not backfilling, a failed read, or after `polls` reads. Returns stop(). */
-export function followBackfill({ read, use, owns = () => true, delay = BACKFILL_POLL_MS, polls = BACKFILL_POLLS, timers = globalThis }) {
-  let stopped = false, timer = null, left = polls;
+ * It follows until an answer is settled: the backfill itself is bounded (each check has its own deadline),
+ * so the follow ends with it, at most one read per BACKFILL_POLL_MAX_MS. It stops early when the owner
+ * moves on, on stop(), or after BACKFILL_READ_FAILURES failed reads in a row. Returns stop(). */
+export function followBackfill({ read, use, owns = () => true, delay = BACKFILL_POLL_MS, maxDelay = BACKFILL_POLL_MAX_MS, timers = globalThis }) {
+  let stopped = false, timer = null, wait = delay, failures = 0;
   const next = () => {
-    if (stopped || left-- <= 0) return;
+    if (stopped) return;
     timer = timers.setTimeout(async () => {
       timer = null;
       let answer;
-      try { answer = await read(); } catch { return; }
+      try { answer = await read(); failures = 0; }
+      catch { if (++failures < BACKFILL_READ_FAILURES) { wait = Math.min(maxDelay, wait * 1.5); next(); } return; }
       if (stopped || !owns()) return;
       use(answer);
-      if (answer?.backfilling === true) next();
-    }, delay);
+      if (answer?.backfilling === true) { wait = Math.min(maxDelay, wait * 1.5); next(); }
+    }, wait);
   };
   next();
   return () => { stopped = true; if (timer !== null) timers.clearTimeout(timer); timer = null; };

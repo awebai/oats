@@ -42,12 +42,15 @@ no Machines box (`machinesGated`, `awebConnectGated` in
 - **Backfill.** The first gated list read of a server process starts, in the
   background, one `oats server check <id> --json` for every registration whose
   key is unknown, two at a time (`BACKFILL_CONCURRENCY`). The check records the
-  host's key in the registry. While it runs, list answers carry
-  `backfilling: true`, and Where to run and the Machines box read the list
-  again every 2 s until an answer does not (`followBackfill`,
-  `machine-contract.mjs`; at most 90 reads, stopped when the owner moves on):
-  the registrations that turn out to be this workspace's appear without any
-  other action. It runs once per server process (a restart for a workspace add
+  host's key in the registry. A list read that began while it ran answers
+  `backfilling: true` (even when it answers after the end: its rows may be
+  from before the checks wrote their keys), and Where to run and the Machines
+  box read the list again until an answer does not (`followBackfill`,
+  `machine-contract.mjs`): first after 2 s, then 1.5 times later each time, at
+  most 15 s apart. The backfill is bounded by its checks' own deadlines, so
+  the follow ends with it; it stops early when the owner moves on, or after
+  five failed reads in a row. The registrations that turn out to be this
+  workspace's appear without any other action. It runs once per server process (a restart for a workspace add
   runs it again; by then only unreachable hosts are still unknown).
 - A registry that cannot be read is an answer, not a refusal: `servers: []`
   with `error: { code, message }` and the window's `deployment` and `aweb`

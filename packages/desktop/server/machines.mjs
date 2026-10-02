@@ -80,12 +80,15 @@ export function createMachines({ adapter, cli, concurrency = BACKFILL_CONCURRENC
       if (!scope?.key || !scope.deployment) return { servers: [], key: null, filtered: true, deployment: null, aweb: false, reason: MACHINE_SCOPE_REASONS[scope?.reason] || MACHINE_SCOPE_REASONS['no-key'] };
       // Add a machine: the deployment it runs in (its folder name gives the defaults) and whether the messaging step follows.
       const answer = { key: scope.key, filtered: true, deployment: scope.deployment, aweb: scope.messaging === AWEB && awebConnectGated(cli()) };
+      // A list read that began while the backfill ran may hold rows from before its checks wrote their keys:
+      // its answer still says backfilling, so the consumer reads again (one that began after the end is settled).
+      const runningBefore = backfilling();
       let rows;
       try { rows = await registrations(scope.deployment); }
       catch (e) { return { servers: [], ...answer, error: { code: e.code || 'E_SERVERS', message: e.message || 'The server registry could not be read' } }; }
       startBackfill(rows, scope.deployment);
       return { servers: rows.filter(r => r.workspaceKey === scope.key).map(r => ({ ...r, check: checks.get(r.id) ?? null })), ...answer,
-        ...(backfilling() ? { backfilling: true } : {}) };
+        ...(runningBefore || backfilling() ? { backfilling: true } : {}) };
     },
     /** Settles when this start's backfill has run (at once when none started). */
     backfilled: () => backfillRun ?? Promise.resolve(),
