@@ -36,7 +36,7 @@ test("groupActions groups by context in stable order with labels", (t) => {
   const groups = groupActions();
   assert.deepEqual(groups.map((g) => g.context), ["global", "tabs", "stage:hierarchy"]);
   assert.equal(groups[0].label, "Global");
-  assert.equal(groups[2].label, "Active overview");
+  assert.equal(groups[2].label, "Deployments");
 });
 
 test("editor renders an ARIA dialog listing every action with effective chords", (t) => {
