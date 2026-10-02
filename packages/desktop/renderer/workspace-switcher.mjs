@@ -10,7 +10,10 @@ export const isViewId = (id) => typeof id === "string" && id.startsWith("ws:");
 export function workspaceChoicePlace(choice) {
   if (!isViewId(choice?.id)) return String(choice?.id || "");
   const deployments = Array.isArray(choice.deployments) ? choice.deployments.filter((id) => typeof id === "string" && id) : [];
-  return deployments.map(deploymentIdLabel).join(", ") || (typeof choice.key === "string" ? choice.key : "");
+  // The server's labels when it sends them (same order as `deployments`), else what the id says.
+  const labels = Array.isArray(choice.deploymentLabels) && choice.deploymentLabels.length === deployments.length
+    && choice.deploymentLabels.every((l) => typeof l === "string" && l && l.length <= 512) ? choice.deploymentLabels : deployments.map(deploymentIdLabel);
+  return labels.join(", ") || (typeof choice.key === "string" ? choice.key : "");
 }
 
 export function workspaceChoiceLabels(choices) {

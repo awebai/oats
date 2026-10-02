@@ -81,7 +81,7 @@ import { probeChanged } from "../renderer/cli-probe-contract.mjs";
 import { workspaceNotServed, deploymentUnavailableText } from "../renderer/deployment-header.mjs";
 import { readIdentity, attachment, buildViews, deploymentReason } from "./workspace-views.mjs";
 import { createRemoteIdentityStore } from "./remote-identity.mjs";
-import { THIS_MACHINE, shortPath } from "../renderer/deployment-label.mjs";
+import { THIS_MACHINE, shortPath, deploymentLabel } from "../renderer/deployment-label.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -326,8 +326,13 @@ function workspaceChoices(model = viewModel()) {
   return model.views.map((v) => {
     const primary = deployments().find((w) => w.id === v.primary);
     const remoteOnly = v.deployments.every((id) => !model.infos.get(id)?.local);
+    // Without the CLI's workspace-identity feature nothing can match: every deployment keeps its own entry, listed as
+    // before views, not as "not matched" (each deployment's own reason still says why).
+    const unmatched = v.unattached && identityFeature();
     return { id: v.id, name: v.name, team: null, deployments: [...v.deployments],
-      ...(v.key ? { key: v.key } : {}), ...(v.unattached ? { unattached: true } : {}), ...(v.reason ? { reason: v.reason } : {}), ...(v.ref ? { ref: v.ref } : {}),
+      // The deployments' labels, in the same order, for a view that is not on screen ("This Mac · ~/Agents/oats").
+      deploymentLabels: v.deployments.map((id) => deploymentLabel(model.infos.get(id))),
+      ...(v.key ? { key: v.key } : {}), ...(unmatched ? { unattached: true } : {}), ...(unmatched && v.reason ? { reason: v.reason } : {}), ...(unmatched && v.ref ? { ref: v.ref } : {}),
       ...(remoteOnly && primary?.remote ? { server: primary.server, remote: true } : {}) };
   });
 }
