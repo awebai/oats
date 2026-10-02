@@ -1,0 +1,1 @@
+{"schemaVersion":1,"ok":false,"error":{"code":"E_TEAM_IN_USE","message":"team mine is still referenced (defaultTeam): choose another default first (`oats teams default`)","details":{"label":"mine","usedBy":["defaultTeam"]}}}

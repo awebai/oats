@@ -1,0 +1,1 @@
+{"schemaVersion":1,"ok":false,"error":{"code":"E_BAD_ARGS","message":"oats soul teams --add was removed in 0.38.0 (team model 3): which teams a soul may join, and its default, are souls: in oats-workspace.yaml (a PR to the workspace file)","details":{"flag":"--add","replacement":"souls: in oats-workspace.yaml (a PR to the workspace file)"}}}

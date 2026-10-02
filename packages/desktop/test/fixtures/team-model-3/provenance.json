@@ -1,0 +1,426 @@
+{
+  "capturedBy": "oats-desktop-developer for the Desktop team model 3 adaptation (teamsApi 2, soulTeamsApi 2)",
+  "kernelTree": "this repository @dcdf4c83e05555174c7dea4a50f41753be353f35 (bin/oats.mjs, its own node_modules)",
+  "fixture": "test/fixtures/northwind/build.mjs; the host's oats-workspace.yaml given mapped global/engineering, unmapped marketing, defaultTeam global and souls: patterns (one naming no soul), then localTeams: true; local teams mine/spare written to oats-local.yaml while closed",
+  "script": "capture-teams-3.mjs",
+  "kernel": "0.37.0",
+  "soulKey": "agents/release-manager",
+  "documents": [
+    {
+      "name": "version",
+      "argv": [
+        "oats",
+        "version",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    },
+    {
+      "name": "souls-initial",
+      "argv": [
+        "oats",
+        "souls",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    },
+    {
+      "name": "sync-2",
+      "argv": [
+        "oats",
+        "sync",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    },
+    {
+      "name": "teams-closed",
+      "argv": [
+        "oats",
+        "teams",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    },
+    {
+      "name": "teams-add-closed",
+      "argv": [
+        "oats",
+        "teams",
+        "add",
+        "mine",
+        "--team=mine:juan.aweb.ai",
+        "--description=My own team",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 1,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    },
+    {
+      "name": "teams-default-closed",
+      "argv": [
+        "oats",
+        "teams",
+        "default",
+        "global",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 1,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    },
+    {
+      "name": "soul-teams-show",
+      "argv": [
+        "oats",
+        "soul",
+        "teams",
+        "agents/release-manager",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    },
+    {
+      "name": "soul-teams-star-show",
+      "argv": [
+        "oats",
+        "soul",
+        "teams",
+        "*",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    },
+    {
+      "name": "soul-teams-add-removed",
+      "argv": [
+        "oats",
+        "soul",
+        "teams",
+        "agents/release-manager",
+        "--add=global",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 1,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    },
+    {
+      "name": "soul-teams-default-removed",
+      "argv": [
+        "oats",
+        "soul",
+        "teams",
+        "agents/release-manager",
+        "--default=global",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 1,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    },
+    {
+      "name": "soul-teams-clear-default-removed",
+      "argv": [
+        "oats",
+        "soul",
+        "teams",
+        "agents/release-manager",
+        "--clear-default",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 1,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    },
+    {
+      "name": "souls",
+      "argv": [
+        "oats",
+        "souls",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    },
+    {
+      "name": "readiness-soul",
+      "argv": [
+        "oats",
+        "readiness",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--soul",
+        "agents/release-manager",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--policy",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    },
+    {
+      "name": "preview",
+      "argv": [
+        "oats",
+        "spawn",
+        "agents/release-manager",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--purpose",
+        "teams",
+        "--preview",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    },
+    {
+      "name": "teams-closed-local",
+      "argv": [
+        "oats",
+        "teams",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    },
+    {
+      "name": "teams-remove-closed",
+      "argv": [
+        "oats",
+        "teams",
+        "remove",
+        "spare",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    },
+    {
+      "name": "soul-teams-show-closed-local",
+      "argv": [
+        "oats",
+        "soul",
+        "teams",
+        "agents/release-manager",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 1,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    },
+    {
+      "name": "sync-17",
+      "argv": [
+        "oats",
+        "sync",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    },
+    {
+      "name": "teams-open",
+      "argv": [
+        "oats",
+        "teams",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    },
+    {
+      "name": "teams-add",
+      "argv": [
+        "oats",
+        "teams",
+        "add",
+        "mine",
+        "--team=mine:juan.aweb.ai",
+        "--description=My own team",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    },
+    {
+      "name": "teams-add-exists",
+      "argv": [
+        "oats",
+        "teams",
+        "add",
+        "mine",
+        "--team=mine:juan.aweb.ai",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 1,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    },
+    {
+      "name": "teams-add-shared",
+      "argv": [
+        "oats",
+        "teams",
+        "add",
+        "engineering",
+        "--team=eng:northwind.aweb.ai",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 1,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    },
+    {
+      "name": "teams-default",
+      "argv": [
+        "oats",
+        "teams",
+        "default",
+        "mine",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    },
+    {
+      "name": "teams-remove-in-use",
+      "argv": [
+        "oats",
+        "teams",
+        "remove",
+        "mine",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 1,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    },
+    {
+      "name": "teams-remove-shared",
+      "argv": [
+        "oats",
+        "teams",
+        "remove",
+        "engineering",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 1,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    },
+    {
+      "name": "soul-teams-show-local",
+      "argv": [
+        "oats",
+        "soul",
+        "teams",
+        "agents/release-manager",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    },
+    {
+      "name": "soul-teams-star-show-local",
+      "argv": [
+        "oats",
+        "soul",
+        "teams",
+        "*",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    },
+    {
+      "name": "teams-after",
+      "argv": [
+        "oats",
+        "teams",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.37.0",
+      "commit": "dcdf4c83e05555174c7dea4a50f41753be353f35"
+    }
+  ]
+}

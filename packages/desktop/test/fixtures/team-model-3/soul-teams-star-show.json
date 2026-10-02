@@ -1,0 +1,1 @@
+{"schemaVersion":1,"ok":true,"result":{"soulTeamsApi":2,"soul":"*","key":"*","match":"*","defaultMatch":null,"defaultTeam":{"label":"global","team":"global:northwind.aweb.ai","from":"workspace"},"teams":[{"label":"global","team":"global:northwind.aweb.ai","default":true,"from":"shared","via":["default"]}]}}
