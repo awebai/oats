@@ -2,6 +2,7 @@
 // close/workspace functions and terminal lifecycle. Only IPC, xterm and module
 // loading are synthetic. No Electron, processes, sockets or operator sessions.
 import test from "node:test";
+import { viewContext } from "./helpers/view-context.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
@@ -62,7 +63,7 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     menuState() {}, getBinding: () => null, formatChord: c => c, isMac: true, applyChordTitles() {}, runAction: id => actions.get(id)?.(),
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "instances", tabLayerVisible: false,
     contextRosterGen: 0, contextInstances: [], contextFilter: "", collapsedInstances: new Set(),
-    rosterState: null, rosterStale: false, contextDeploymentNote: null, rosterSignaturePainted: null, // initContextRoster builds the real controller; tests mark it ready before rendering rows
+    rosterState: null, rosterStale: false, contextDeploymentNote: null, ...viewContext(), rosterSignaturePainted: null, // initContextRoster builds the real controller; tests mark it ready before rendering rows
     rosterTip: { bind() {}, hide() {}, sync() {} }, rosterTipFacts: () => ({}), rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} },
     wsActiveTerminal: new Map(), pendingTerms: new Set(),
     tabbar: document.getElementById("tabbar"), tabhost: document.getElementById("tabhost"),

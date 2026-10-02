@@ -23,6 +23,7 @@ import { iconElement } from '../renderer/shell-icons.mjs';
 import { createDataState, skeletonBlock, skeleton, captureFocusState } from '../renderer/loading.mjs';
 import { desktopFacts } from '../renderer/capability-page.mjs';
 import { buildState } from '../renderer/soul-inspector.mjs';
+import { createDeploymentScopeLine } from '../renderer/deployment-scope-line.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
@@ -316,7 +317,7 @@ test('focusLaunch requires effective hosted visibility; silent close/disposal pr
 test('mutation: focusLaunch test detects removal of the effective hosted visibility guard', async () => {
   const source = createSoulInspector.toString(), guard = ' || (presentation && !presentation.isVisible())';
   assert.equal(source.split(guard).length, 2);
-  const mutant = runInNewContext(`(${source.replace(guard, '')})`, { postJson, wsQuery, workspaceGeneration, runtimeState, createSoulMark, createReadinessView, cliStatus, iconElement, inspectData, inspectFacts, createDataState, skeletonBlock, skeleton, captureFocusState, desktopFacts, buildState, INSPECTION_STALE_TITLE });
+  const mutant = runInNewContext(`(${source.replace(guard, '')})`, { postJson, wsQuery, workspaceGeneration, runtimeState, createSoulMark, createReadinessView, cliStatus, iconElement, inspectData, inspectFacts, createDataState, skeletonBlock, skeleton, captureFocusState, desktopFacts, buildState, INSPECTION_STALE_TITLE, createDeploymentScopeLine });
   await assert.rejects(launchVisibility(mutant), /hidden lease refuses focusLaunch/);
 });
 

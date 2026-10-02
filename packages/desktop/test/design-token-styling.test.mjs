@@ -12,8 +12,11 @@ const icon = shellIcon("workspace");
 const markup = `<div id="app"><aside id="sidebar">
   <div class="side-head"><button id="ws-trigger" aria-expanded="false">
     <span class="ws-brand-mark">${icon}</span><span class="ws-heading-copy">
-      <span id="ws-name">Workspace</span><span id="ws-context">/fixture/workspace</span>
+      <span id="ws-name">Workspace</span>
     </span><span class="ws-chevron">${icon}</span></button></div>
+  <ul id="ws-deployments" class="ws-deployments" role="list"><li class="ws-deployment"><span class="ws-deployment-line">
+    <span class="ws-deployment-label">This Mac · ~/fixture</span><span class="ws-deployment-tag">primary</span><span class="ws-deployment-state">live</span>
+  </span><span class="ws-deployment-detail">Teams are local only on this host (standalone).</span></li></ul>
   <div class="ws-menu" hidden><input id="ws-menu-search"><div class="ws-options">
     <button class="ws-option" aria-selected="true"><span class="ws-check">✓</span><span class="ws-option-path">/fixture/workspace</span></button>
   </div></div>
@@ -74,12 +77,18 @@ test("visual shell geometry: 264px sidebar, aligned 48px bars, 24px brand and 16
   }
   assert.equal(u.style(".ws-heading-copy").minWidth, "0px");
   assert.equal(u.style(".ws-heading-copy").flexDirection, "column");
-  for (const selector of ["#ws-name", "#ws-context"]) {
+  for (const selector of ["#ws-name", ".ws-deployment-label"]) {
     assert.equal(u.style(selector).whiteSpace, "nowrap");
     assert.equal(u.style(selector).textOverflow, "ellipsis");
   }
   assert.equal(u.style("#ws-name").fontSize, "13.5px");
-  assert.equal(u.style("#ws-context").fontSize, "10.5px");
+  // #482: the view's deployments under the switcher, aligned with the name, at the old context line's size.
+  assert.equal(u.style(".ws-deployments").fontSize, "10.5px");
+  assert.equal(u.style(".ws-deployments").padding, "6px 12px 7px 45px", "12px head padding + 24px mark + 9px gap");
+  assert.equal(u.style(".ws-deployments").listStyle, "none");
+  for (const [selector, color] of [[".ws-deployment-label", "var(--fg)"], [".ws-deployment-state", "var(--muted)"],
+    [".ws-deployment-detail", "var(--muted)"], [".ws-deployment-tag", "var(--fg)"]]) assert.equal(u.style(selector).color, color, selector);
+  assert.equal(u.style(".ws-deployment-tag").background, "var(--tag-bg)");
 });
 
 test("nav/footer rhythm stays separate from the 48px roster rows", t => {

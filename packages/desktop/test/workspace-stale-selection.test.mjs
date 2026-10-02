@@ -3,6 +3,7 @@
 // served workspace, exactly like an empty selection. A served selection
 // answered with a different workspace stays a refused mismatch.
 import test from "node:test";
+import { viewContext } from "./helpers/view-context.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
@@ -49,6 +50,17 @@ test("staleWorkspaceSelection: stale only when non-empty and absent from the ser
   assert.equal(stale(GONE, { workspace: SERVED, workspaces: [] }), false, "an empty list decides nothing");
   assert.equal(stale(GONE, { workspace: SERVED }), false, "a missing list (older server) decides nothing");
   assert.equal(stale(GONE, { workspace: SERVED, workspaces: [null, { name: "no id" }] }), true, "malformed entries never match");
+});
+
+test("staleWorkspaceSelection (#482): a deployment id saved before views is stale once a view holds it, so its view is adopted", () => {
+  const stale = common.staleWorkspaceSelection;
+  const view = { id: "ws:0123456789abcdef0123", name: "oats", deployments: ["/Users/op/Agents/oats", "remote:altair:tsm-1"] };
+  const loose = { id: "remote:vega:x", name: "vega", deployments: ["remote:vega:x"], unattached: true };
+  assert.equal(stale("/Users/op/Agents/oats", { workspace: view, workspaces: [view, loose] }), true, "a local path answered with its view");
+  assert.equal(stale("remote:altair:tsm-1", { workspace: view, workspaces: [view, loose] }), true, "a remote group answered with its view");
+  assert.equal(stale(view.id, { workspace: view, workspaces: [view, loose] }), false, "the view id itself");
+  assert.equal(stale(loose.id, { workspace: loose, workspaces: [view, loose] }), false, "an unattached view's id IS its deployment id: nothing moves");
+  assert.equal(stale(loose.id, { workspace: view, workspaces: [view, loose] }), false, "a served unattached view answered with another view stays a mismatch");
 });
 
 /* ── hierarchy refresh: the shipped view mounted in JSDOM ── */
@@ -154,7 +166,7 @@ function shellRoster(t) {
   const requests = [], rendered = [], selected = [];
   const c = {
     document, contextRosterGen: 0, contextWorkspace: "", contextInstances: [], tabWorkspace: common.currentWorkspace(),
-    rosterState: null, rosterStale: false, contextDeploymentNote: null, rosterSignaturePainted: null, rosterSignature, rosterPendingWatch: createPendingWatch(), NOT_SERVED_CODE, NO_ANSWER_CODE, failRosterUnserved: assert.fail, tabs: new Map(), activeTab: null, connectionGeneration: 0,
+    rosterState: null, rosterStale: false, contextDeploymentNote: null, ...viewContext(), rosterSignaturePainted: null, rosterSignature, rosterPendingWatch: createPendingWatch(), NOT_SERVED_CODE, NO_ANSWER_CODE, failRosterUnserved: assert.fail, tabs: new Map(), activeTab: null, connectionGeneration: 0,
     currentWorkspace: common.currentWorkspace, adoptWorkspace: common.adoptWorkspace,
     staleWorkspaceSelection: common.staleWorkspaceSelection, rosterResponseOwns,
     contextRosterEl: document.getElementById("instance-roster"),
@@ -179,7 +191,7 @@ test("shell roster: a stale stored selection adopts the served workspace, render
   assert.equal(c.tabWorkspace, SERVED.id, "tab memory follows the adoption, as for an empty selection");
   assert.equal(common.currentWorkspace(), SERVED.id);
   assert.equal(stored(), SERVED.id, "persisted");
-  assert.equal(document.getElementById("ws-context").textContent, SERVED.id);
+  assert.equal(document.getElementById("ws-deployments").hidden, true, "a reply naming no deployments lists none (#482)");
   // The switcher shows the served workspace active and another choice still switches.
   document.getElementById("ws-trigger").click();
   const options = [...document.querySelectorAll(".ws-option")];

@@ -7,6 +7,7 @@
 // successful zero read. The shipped shell functions run in a vm context with
 // the real primitive, instance tree and instance actions.
 import test from 'node:test';
+import { viewContext } from './helpers/view-context.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext, runInContext } from 'node:vm';
@@ -151,7 +152,7 @@ function shell(t, { addResult = { ok: true, workspace: { id: 'A' } }, workspace 
     rosterTip: { bind() {}, hide() {}, sync() {} }, rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} }, ctx: {},
     connectionGeneration: 0, menuState() {}, runAction: assert.fail, getBinding: () => null, formatChord: x => x, isMac: true,
     contextRosterEl: null, contextRosterGen: 0, contextFilter: '', contextWorkspace: workspace, contextInstances: [], tabWorkspace: workspace,
-    rosterState: null, rosterStale: false, contextDeploymentNote: null, rosterSignaturePainted: null,
+    rosterState: null, rosterStale: false, contextDeploymentNote: null, ...viewContext(), rosterSignaturePainted: null,
     workspace, generation: 0, tabs: new Map(), activeTab: null, split: null, sidebarMode: 'instances', tabLayerVisible: false,
     stage: { name: 'hierarchy' }, collapsedInstances: new Set(),
     workspaceGeneration: () => context.generation, currentWorkspace: () => context.workspace,

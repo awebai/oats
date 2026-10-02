@@ -24,7 +24,8 @@
  * Deployments (#482): a job is OWNED by its workspace view (`workspace`: is that view on screen, where
  * its pending row and notices belong) and ADDRESSED to the deployment it spawns in (`deployment`: every
  * /api/spawn request and the reply it checks). Without a deployment the view id addresses it, as before.
- * A created spawn records its deployment as the view's last used (the spawn dialog's default). */
+ * A created spawn records its deployment as the view's last used (the spawn dialog's default).
+ * `rehome(map)` moves owners onto views (workspace-rehome.mjs); a job's address never changes. */
 import { spawnApplyView, spawnApplyReason } from './spawn-apply-contract.mjs';
 import { sameSpawnDecision } from './spawn-decision.mjs';
 import { spawnProblem } from './spawn-messages.mjs';
@@ -209,7 +210,7 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
     rows(workspace) {
       return [...jobs.values()].filter(j => j.workspace === workspace && ['spawning', 'checking', 'unknown', 'created'].includes(j.state))
         .map(j => ({ id: j.id, instance: j.instance, home: j.home, agent: j.soul?.name, agentsRoot: j.selector?.agentsRoot, ...j.placement,
-          ...(j.deployment !== j.workspace ? { deployment: { id: j.deployment } } : {}),
+          deployment: { id: j.deployment }, // the roster groups a pending row under its deployment
           pending: j.state === 'unknown' ? 'unknown' : j.state === 'checking' ? 'checking' : 'spawning' }));
     },
     /** Announce a pending row once (the roster's polite live region). */
@@ -279,6 +280,13 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
       }
       if (n) changed(); else save();
       return n;
+    },
+    /** Move job owners onto workspace views: `map` is `Map<old id, view id>` (workspace-rehome.mjs). */
+    rehome(map) {
+      let moved = 0;
+      for (const job of jobs.values()) { const to = map?.get?.(job.workspace); if (to && to !== job.workspace) { job.workspace = to; moved++; } }
+      if (moved) changed();
+      return moved;
     },
     /** A job's draft and soul, for tests and the Reopen path. */
     get(id) { const j = jobs.get(id); return j ? { id: j.id, state: j.state, instance: j.instance, workspace: j.workspace, deployment: j.deployment, draft: structuredClone(j.draft), soul: j.soul } : null; },

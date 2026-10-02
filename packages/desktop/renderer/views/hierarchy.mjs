@@ -47,6 +47,8 @@ import { deploymentUnavailableText, NOT_SERVED_CODE, NO_ANSWER_CODE, unservedErr
 import { registerAction } from "../keybindings.mjs";
 import { resolveViewKey } from "../view-keys.mjs";
 import { icon } from "../shell-icons.mjs";
+import { attachDeployments, isMultiDeployment, splitByDeployment, deploymentState } from "../view-deployments.mjs";
+import { deploymentLabel } from "../deployment-label.mjs";
 
 export const hierarchyCSS = `
 .hier { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg); color: var(--fg);
@@ -71,6 +73,13 @@ export const hierarchyCSS = `
 .hier-canvas.panning { cursor: grabbing; }
 .hier-stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
 .hier-group { position: absolute; }
+/* Deployment sections (#482), only in a view of two or more deployments: a zero-size wrapper at the
+   stage origin (its groups keep stage coordinates) and a visible heading above its clusters. */
+.hier-deployment { position: absolute; left: 0; top: 0; }
+.hier-dhead { position: absolute; left: 0; display: flex; align-items: baseline; gap: 8px; white-space: nowrap;
+              color: var(--muted); font-size: 12px; font-weight: 650; }
+.hier-dtag { padding: 0 6px; border-radius: 4px; background: var(--tag-bg); color: var(--fg); font-size: 10.5px; font-weight: 500; }
+.hier-dstate { font-weight: 500; }
 .hier-group.hier-cluster { background:var(--surface-2);
                            border: 1px solid var(--border); border-radius: 14px; }
 .hier-group.hier-solo .hnode { box-shadow: none; }
@@ -270,6 +279,29 @@ export function layoutClusters(instances) {
   for (const p of placed) { width = Math.max(width, p.x + p.w); height = Math.max(height, p.y + p.h); }
   if (soloBlock) { width = Math.max(width, soloBlock.w); height = Math.max(height, soloBlock.y + soloBlock.h); }
   return { placed, soloBlock, clusters, width: Math.max(width, NODE_W), height: Math.max(height, NODE_H) };
+}
+
+const DEP_HEAD = 30, DEP_GAP = 56;
+/** Views (#482): in a view of two or more deployments each deployment's instances are laid out on
+ * their own (relations are recorded within one deployment) and stacked, in the panel's order, under
+ * a heading at `y`. Blocks come back in stage coordinates. Null with one deployment: the overview
+ * is then exactly layoutClusters(instances). A row with no known deployment joins the primary's. */
+export function layoutByDeployment(instances, deployments) {
+  if (!isMultiDeployment(deployments)) return null;
+  const parts = splitByDeployment(deployments)(instances);
+  const sections = [];
+  let top = 0, width = 0;
+  for (const deployment of deployments) {
+    const rows = parts.get(deployment.id);
+    if (!rows.length) continue;
+    const lay = layoutClusters(rows), dy = top + DEP_HEAD;
+    for (const p of lay.placed) p.y += dy;
+    if (lay.soloBlock) lay.soloBlock.y += dy;
+    sections.push({ deployment, label: deploymentLabel(deployment), y: top, ...lay });
+    width = Math.max(width, lay.width);
+    top = dy + lay.height + DEP_GAP;
+  }
+  return { sections, width: Math.max(width, NODE_W), height: Math.max(top - DEP_GAP, NODE_H) };
 }
 
 const DRAG_THRESHOLD = 5; // px before a node-drag moves its tree (else it's a click)
@@ -499,8 +531,10 @@ function resetObservation(s) {
   s.load?.reset();
   clearCanvas(s); s.q('hier-sum').textContent = ''; notice(s, '');
 }
+/** What a paint depends on: the observation, and (#482) the view's deployments, which head its sections. */
+const viewSignature = (panel) => `${activeSignature(panel)}\n${JSON.stringify(panel.deployments || [])}`;
 function acceptObservation(s, panel, gen) {
-  const signature = activeSignature(panel);
+  const signature = viewSignature(panel);
   const ids = new Set(panel.instances.map(instanceId));
   for (const key of s.nodeOffsets.keys()) if (!ids.has(key)) s.nodeOffsets.delete(key);
   for (const key of s.nodeIds?.keys() || []) if (!ids.has(key)) s.nodeIds.delete(key);
@@ -547,6 +581,7 @@ export async function refresh(s, { user = false } = {}) {
     const data = await apiJson(s.ctx, `/api/panel${wsQuery()}`);
     if (!owns()) return;
     const panel = projectActivePanel(data);
+    attachDeployments(panel, data, instanceId); // #482: the view's deployments and each row's, for the deployment sections
     // observedAt (spec 02, additive) labels the observation's age; never invented.
     panel.observedAt = typeof data.observedAt === 'string' && data.observedAt ? data.observedAt : null;
     if (data.deployment?.status !== 'pending') s.pendingWatch.observe(null, false); // the server answered
@@ -572,7 +607,7 @@ export async function refresh(s, { user = false } = {}) {
     const stale = staleWorkspaceSelection(requestedWorkspace, panel);
     if (requestedWorkspace && !stale && panel.workspace?.id && panel.workspace.id !== requestedWorkspace) throw Error('The roster reply belongs to a different workspace. Choose the workspace again.');
     if ((!requestedWorkspace || stale) && panel.workspace?.id) adoptWorkspace(panel.workspace.id);
-    if ((s.drag || s.pan) && activeSignature(panel) !== s.signature) {
+    if ((s.drag || s.pan) && viewSignature(panel) !== s.signature) {
       s.pending = { panel, gen: myGen, request }; updatePop(s);
       notice(s, 'Roster changed during this gesture; the latest observation will apply on release.');
       return;
@@ -644,8 +679,12 @@ function render(s) {
   // sibling links — are computed before any visual decoration, so a valid
   // relation crossing agent/workspace roots never turns a child into an
   // orphan. Node metadata still identifies its repo/root.
-  const { placed, soloBlock, width, height } = layoutClusters(list);
-  const nGroups = placed.length, nIndependent = soloBlock?.nodes.length || 0;
+  // Views (#482): with two or more deployments, one section per deployment under its heading; with
+  // one, a single unheaded section that is exactly the layout the overview always drew.
+  const byDeployment = layoutByDeployment(list, s.panel.deployments);
+  const sections = byDeployment ? byDeployment.sections : [{ deployment: null, ...layoutClusters(list) }];
+  const { width, height } = byDeployment || sections[0];
+  const nGroups = sections.reduce((n, x) => n + x.placed.length, 0), nIndependent = sections.reduce((n, x) => n + (x.soloBlock?.nodes.length || 0), 0);
   s.q("hier-sum").innerHTML = `${status} · <b>${nGroups}</b> group${nGroups === 1 ? '' : 's'}${nIndependent ? ` · <b>${nIndependent}</b> independent` : ''}`;
   const stage = document.createElement("div");
   stage.className = "hier-stage";
@@ -710,27 +749,32 @@ function render(s) {
   // Agent groups (Redesign v3; supersedes the anonymous-card decision): the
   // header names the group by its deterministic key — the same name as the
   // sidebar group — then "count · reported repos".
-  for (const pc of placed) {
-    const c = pc.cluster;
-    const aria = `Agent group ${c.label}: ${c.size} agents, ${c.running} running${c.unknown ? `, ${c.unknown} unknown` : ""}`;
-    const group = groupFor(pc, c.name, aria, "hier-cluster");
-    const head = document.createElement("div");
-    head.className = "hier-chead";
-    const contexts = [...new Set(c.instances.map(i => i.repoName).filter(Boolean))];
-    head.append(node(s, 'span', c.label, 'cnm'), node(s, 'span', [String(c.size), ...contexts].join(' · '), 'cct'));
-    head.title = `${c.label} — ${c.running}/${c.size} running${c.unknown ? `, ${c.unknown} unknown` : ''}`;
-    group.prepend(head);
-    stage.append(group);
-  }
-  if (soloBlock) {
-    const group = groupFor({ ...soloBlock, sibs: [] }, "Independent",
-      `Independent agents: ${soloBlock.nodes.length}`, "hier-solo");
-    const head = document.createElement("div");
-    head.className = "hier-chead solo";
-    head.innerHTML = `<span class="cnm">Independent</span>` +
-      `<span class="cct">${soloBlock.nodes.length}</span>`;
-    group.prepend(head);
-    stage.append(group);
+  for (const { deployment, label, y, placed, soloBlock } of sections) {
+    const host = deployment ? deploymentSection(s, { deployment, label, y }) : stage;
+    if (host !== stage) stage.append(host);
+    for (const pc of placed) {
+      const c = pc.cluster;
+      const aria = `Agent group ${c.label}: ${c.size} agents, ${c.running} running${c.unknown ? `, ${c.unknown} unknown` : ""}`;
+      const group = groupFor(pc, c.name, aria, "hier-cluster");
+      const head = document.createElement("div");
+      head.className = "hier-chead";
+      const contexts = [...new Set(c.instances.map(i => i.repoName).filter(Boolean))];
+      head.append(node(s, 'span', c.label, 'cnm'), node(s, 'span', [String(c.size), ...contexts].join(' · '), 'cct'));
+      head.title = `${c.label} — ${c.running}/${c.size} running${c.unknown ? `, ${c.unknown} unknown` : ''}`;
+      group.prepend(head);
+      host.append(group);
+    }
+    if (soloBlock) {
+      // Each deployment's Independent strip is its own keyboard group.
+      const group = groupFor({ ...soloBlock, sibs: [] }, deployment ? `Independent:${deployment.id}` : "Independent",
+        `Independent agents: ${soloBlock.nodes.length}`, "hier-solo");
+      const head = document.createElement("div");
+      head.className = "hier-chead solo";
+      head.innerHTML = `<span class="cnm">Independent</span>` +
+        `<span class="cct">${soloBlock.nodes.length}</span>`;
+      group.prepend(head);
+      host.append(group);
+    }
   }
   canvas.insertBefore(stage, preservedPop?.parentNode === canvas ? preservedPop : null);
   // first paint (or workspace switch): fit the forest to the visible screen
@@ -744,6 +788,25 @@ function render(s) {
     // synchronous blur handler elsewhere. No request completion selects a node.
     if (preserveFocus && visibleOwner(s, focused) && docOf(s).activeElement === docOf(s).body) focused.focus({ preventScroll: true });
   } else { s.activity?.dispose(); s.activity = null; preservedPop?.remove(); s.pop = null; s.popFor = null; }
+}
+
+/** One deployment's section of the overview (#482): a group named by the deployment's label, with
+ * the label, "primary" and a state that is not live as visible text above its clusters. */
+function deploymentSection(s, { deployment, label, y }) {
+  const section = node(s, 'div', undefined, 'hier-deployment');
+  section.setAttribute('role', 'group');
+  const state = deploymentState(deployment);
+  section.setAttribute('aria-label', [label, deployment.primary ? 'primary' : '', state.key !== 'live' ? state.text : ''].filter(Boolean).join(', '));
+  section.dataset.deployment = deployment.id;
+  const head = node(s, 'div', undefined, 'hier-dhead');
+  head.setAttribute('aria-hidden', 'true'); // the group's name says it
+  head.style.top = `${y}px`;
+  head.append(node(s, 'span', label, 'hier-dname'));
+  if (deployment.primary) head.append(node(s, 'span', 'primary', 'hier-dtag'));
+  if (state.key !== 'live') head.append(node(s, 'span', state.text, 'hier-dstate'));
+  head.title = deployment.path || deployment.id;
+  section.append(head);
+  return section;
 }
 
 function nodeEl(s, n, wsName) {
