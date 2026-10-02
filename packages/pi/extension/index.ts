@@ -25,6 +25,8 @@ export default function (pi: ExtensionAPI) {
   });
 
   if (isInstance) {
+    deliverOpeningTask(pi);
+
     pi.on("session_compact", async (event) => {
       if (!existsSync(join(agentHome!, "STATE.md"))) return;
       try {
@@ -56,4 +58,52 @@ export default function (pi: ExtensionAPI) {
       }, { deliverAs: "steer", triggerTurn: false });
     });
   }
+}
+
+/**
+ * The opening task reaches the transcript exactly once. pi sends the launch's
+ * `@TASK.md` as the session's first prompt with no streamingBehavior, and
+ * refuses it when another extension's turn (the @awebai/pi welcome) is
+ * running or starts during its preflight. The bridge takes that prompt over
+ * and sends it as a followUp, which pi queues behind a running turn. A turn
+ * that starts during the prompt's preflight still displaces it; pi 0.85.1
+ * then settles the refused prompt while that turn is running. On that
+ * evidence only, and once, the bridge sends the task again when the turn is
+ * over. Every later prompt is left to pi.
+ */
+function deliverOpeningTask(pi: ExtensionAPI) {
+  type Content = Parameters<ExtensionAPI["sendUserMessage"]>[0];
+  let taken = false;
+  let runActive = false;
+  // Until the task's user message starts: how often it was sent, whether its
+  // prompt reached before_agent_start, and whether pi refused it there.
+  let opening: { content: Content; sends: number; launching: boolean; refused: boolean } | undefined;
+
+  const send = () => {
+    Object.assign(opening!, { sends: opening!.sends + 1, launching: false, refused: false });
+    pi.sendUserMessage(opening!.content, { deliverAs: "followUp", expandPromptTemplates: true });
+  };
+
+  pi.on("input", (event) => {
+    if (taken || event.source !== "interactive" || event.streamingBehavior !== undefined) return { action: "continue" };
+    taken = true;
+    const content: Content = event.images?.length ? [{ type: "text", text: event.text }, ...event.images] : event.text;
+    opening = { content, sends: 0, launching: false, refused: false };
+    send();
+    return { action: "handled" };
+  });
+  pi.on("before_agent_start", () => { if (opening) opening.launching = true; });
+  pi.on("message_start", (event) => { if (opening && event.message.role === "user") opening = undefined; });
+  pi.on("agent_start", () => { runActive = true; });
+  pi.on("agent_end", () => { runActive = false; });
+  pi.on("agent_settled", () => {
+    if (!opening) return;
+    if (runActive) {
+      if (opening.launching) opening.refused = true;
+      return;
+    }
+    if (!opening.refused) return;
+    if (opening.sends < 2) send();
+    else opening = undefined;
+  });
 }
