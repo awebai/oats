@@ -1229,7 +1229,7 @@ for a failure and `false` for a warning, plus the problem's own keys.
 | `default-team-changed` | warning | `recorded`, `current` | `--home` with live teams: the default changed since the spawn |
 | `E_TEAM_UNKNOWN` | failure | `label`, `at` | a reference to an undeclared label |
 | `E_TEAM_NOT_ELIGIBLE` | failure | `soul`, `label`, `at` | `souls.default` outside the soul's teams |
-| `team-model-3-migration` | warning | `condition`, `keys` | 0.36.x: what OATS 0.37.0 (team model 3) refuses, one item per condition (below) |
+| `team-model-3-migration` | warning | `condition`, `keys` | 0.36.x and 0.37.x: what OATS 0.38.0 (team model 3) refuses, one item per condition (below) |
 
 The `E_TEAM_UNKNOWN` and `E_TEAM_NOT_ELIGIBLE` codes are also spawn, preview and
 inspect refusals, with the same details.
@@ -1249,7 +1249,7 @@ carries it, and `oats teams` lists it once. Its `condition`:
 
 ```json
 {"code":"team-model-3-migration","severity":"warning","condition":"local-teams-closed","keys":["teams","defaultTeam"],
- "message":"oats-local.yaml declares teams, defaultTeam, but oats-workspace.yaml does not say localTeams: true: OATS 0.37.0 refuses local teams and a local defaultTeam unless the workspace allows them",
+ "message":"oats-local.yaml declares teams, defaultTeam, but oats-workspace.yaml does not say localTeams: true: OATS 0.38.0 refuses local teams and a local defaultTeam unless the workspace allows them",
  "fix":"either (a) add `localTeams: true` to oats-workspace.yaml, or (b) commit the teams and defaultTeam in oats-workspace.yaml, then remove them from oats-local.yaml"}
 ```
 
