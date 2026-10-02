@@ -364,3 +364,75 @@ test("a --dir under ~ is registered as the absolute path the host resolved", () 
     assert.equal(JSON.stringify(res).includes("~"), false, "no ~ anywhere in the result");
   } finally { s.cleanup(); }
 });
+
+/** The commands of a remedy as a Markdown reader copies them: a backslash-escaped backtick is text;
+ *  otherwise a run of N backticks opens a code span that the next run of exactly N closes, with one
+ *  space of padding stripped when both ends have it. */
+function codeSpans(text) {
+  const spans = [];
+  for (let i = 0; i < text.length;) {
+    if (text[i] === "\\" && text[i + 1] === "`") { i += 2; continue; }
+    if (text[i] !== "`") { i++; continue; }
+    let n = 0; while (text[i + n] === "`") n++;
+    const open = i + n;
+    let close = -1;
+    for (let j = open; j < text.length;) {
+      if (text[j] !== "`") { j++; continue; }
+      let m = 0; while (text[j + m] === "`") m++;
+      if (m === n) { close = j; break; }
+      j += m;
+    }
+    if (close < 0) { i = open; continue; }
+    let body = text.slice(open, close);
+    if (body.length > 2 && body.startsWith(" ") && body.endsWith(" ")) body = body.slice(1, -1);
+    spans.push(body);
+    i = close + n;
+  }
+  return spans;
+}
+
+test("a copyable remedy passes each dynamic value as ONE literal argument, whatever it contains", () => isolatedHome(() => {
+  const base = mkdtempSync("/tmp/oats-scq-");
+  try {
+    const marker = join(base, "MARK");
+    const hostile = join(base, `a b;touch ${marker} \`touch ${marker}\` $(touch ${marker}) it's`);
+    const record = join(base, "argv.json");
+    const bin = join(base, "bin"); mkdirSync(bin);
+    for (const tool of ["git", "oats"]) {
+      writeFileSync(join(bin, tool), `#!${process.execPath}\nrequire("node:fs").writeFileSync(${JSON.stringify(record)}, JSON.stringify(process.argv.slice(2)));\n`);
+      chmodSync(join(bin, tool), 0o755);
+    }
+    const copyAndRun = (command) => {
+      rmSync(record, { force: true });
+      const r = spawnSync("/bin/sh", ["-c", command], { env: { PATH: `${bin}:/usr/bin:/bin` }, encoding: "utf8" });
+      assert.equal(r.status, 0, r.stderr);
+      return JSON.parse(readFileSync(record, "utf8"));
+    };
+
+    // git: the workspace remote, unreadable.
+    let res = connectServer({ ...budgetOptions, workspaceRef: hostile }, { execFileSync: (bin, argv) => {
+      const cmd = argv.at(-1);
+      if (cmd === "true") return "";
+      if (/ version --json$/.test(cmd)) return JSON.stringify({ schemaVersion: 1, desktopApi: 1, version: "99.0.0" });
+      return JSON.stringify({ schemaVersion: 1, ok: true, result: { check: true, dir: "/srv/ws", state: "absent", workspace: { ref: hostile, key: `local/${hostile}`, url: hostile }, remote: { readable: false, error: { code: "E_REMOTE_UNREADABLE", reason: "not-found", message: "missing" } } } });
+    } });
+    const gitSpans = codeSpans(stepOf(res, "git").remedy);
+    assert.equal(gitSpans.length, 1, `the reference in the prose opens no code span of its own: ${stepOf(res, "git").remedy}`);
+    assert.deepEqual(copyAndRun(gitSpans[0]), ["ls-remote", hostile]);
+    assert.equal(existsSync(marker), false, "nothing but the check ran");
+
+    // readiness: the host could not list its souls in a deployment at a hostile path.
+    const answer = hostAnswers([]);
+    res = connectServer({ ...budgetOptions, dir: hostile }, { execFileSync: (bin, argv) => {
+      const cmd = argv.at(-1);
+      if (/ onboard .* --check --json$/.test(cmd)) return JSON.stringify({ schemaVersion: 1, ok: true, result: { check: true, dir: hostile, state: "deployment", workspace: { ref: "git:github.com/acme/ws", key: "github.com/acme/ws", url: "https://github.com/acme/ws" }, remote: { readable: true, commit: "a".repeat(40) } } });
+      if (/ status --json --dir /.test(cmd)) return JSON.stringify({ schemaVersion: 1, ok: true, result: { agents: [], workspace: { key: "github.com/acme/ws" } } });
+      if (/ souls --json --dir /.test(cmd)) return JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_CONFIG_BROKEN", message: `broken at ${hostile}` } });
+      return answer(cmd);
+    } });
+    const soulsSpans = codeSpans(stepOf(res, "readiness").remedy);
+    assert.equal(soulsSpans.length, 1, `the host's message opens no code span of its own: ${stepOf(res, "readiness").remedy}`);
+    assert.deepEqual(copyAndRun(soulsSpans[0]), ["souls", "--dir", hostile]);
+    assert.equal(existsSync(marker), false);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+}));
