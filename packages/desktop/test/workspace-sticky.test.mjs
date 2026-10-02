@@ -41,7 +41,7 @@ async function mountWorkspace(t) {
       if (path.startsWith('/api/panel')) return { instances: [], workspace: { id: currentWorkspace() }, workspaces: [{ id: '/fixture', name: 'Fixture' }],
         deployment: { status: 'observed', root: '/fixture/agents', workspace: observedStatus.workspace, workspaceStatus: observedStatus, reachable: { reachable: true }, withheld: [] } };
       if (path.startsWith('/api/workspace-sync')) return catalogReply();
-      if (path === '/api/servers') return { servers: [] };
+      if (path.startsWith('/api/servers')) return { servers: [] };
       throw new Error(`Unexpected fixture request: ${path}`);
     } };
   t.after(() => { spawn.unmount(); setWorkspace(saved.ws); globalThis.document = saved.document; globalThis.window = saved.window; globalThis.setInterval = saved.setInterval; dom.window.close(); });

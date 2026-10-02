@@ -47,7 +47,7 @@ async function setup(t, options = {}) {
       if (path.startsWith('/api/workspace-sync')) return options.sync ? options.sync(body)
         : { workspaceSyncApi: 1, status: 'ok', report: null, capabilities: { capabilitiesApi: 1, ...catalogFixture.result }, reason: null };
       if (path.startsWith('/api/capabilities')) return options.inspect ? options.inspect(body) : inspectData('fixture.notes', body.selector);
-      if (path === '/api/servers') return { servers: [] };
+      if (path.startsWith('/api/servers')) return { servers: [] };
       if (path === '/api/spawn' && options.spawn) return options.spawn(body);
       throw new Error(`Unexpected fixture API request: ${path}`);
     }, openBrain: name => files.push(name), openTerminal: ref => opens.push(ref) };

@@ -58,7 +58,7 @@ async function setup(t, { holdRoster = false, holdReads = false, shows } = {}) {
     if (path.startsWith('/api/workspace-sync')) { if (!holdReads) return okRead(); const r = deferred(); reads.push({ ...r, body }); return r.promise; }
     if (path.startsWith('/api/capabilities') && body?.action === 'show') return shows.answer(body);
     if (path.startsWith('/api/capabilities') && body?.action === 'inspect') return soulInspection(body.selector.soul || 'release-manager');
-    if (path === '/api/servers') return { servers: [] };
+    if (path.startsWith('/api/servers')) return { servers: [] };
     throw new Error(`Unexpected fixture API request: ${path}`);
   } };
   const doc = dom.window.document;

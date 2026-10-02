@@ -40,7 +40,7 @@ async function setup(t, { hold = false, beforeMount } = {}) {
       if (path.startsWith('/api/capabilities') && body.action === 'inspect') return inspection(body.selector);
       if (path.startsWith('/api/capabilities') && body.action === 'list') return { inventoryApi: 1,
         scope: { kind: 'classic', context: body.selector.context || currentWorkspace() }, packages: [], capabilities: [], legacy: [] };
-      if (path === '/api/servers') return { servers: [] };
+      if (path.startsWith('/api/servers')) return { servers: [] };
       throw new Error(`Unexpected fixture API: ${path}`);
     },
     openBrain: name => files.push(name), openTerminal: ref => terminals.push(ref),

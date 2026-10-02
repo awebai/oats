@@ -1,0 +1,90 @@
+// #517: Where to run lists this window's machines only, ends with "Add a machine to this workspace…",
+// and selects the machine the dialog added. Gates off: today's list, no Add entry.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mountSpawn, settle } from './helpers/spawn-dialog-host.mjs';
+
+const KEY = 'github.com/acme/northwind';
+const answer = (servers, extra = {}) => ({ servers, filtered: true, key: KEY, deployment: '/Users/j/Agents/northwind', aweb: false, ...extra });
+const ALTAIR = { id: 'altair-northwind', label: 'altair', sshHost: 'altair', workspace: '/home/j/northwind', workspaceKey: KEY, check: null };
+const READY = { schemaVersion: 1, ok: true, result: { id: 'vega-northwind', ready: true, steps: [{ step: 'register', status: 'done' }] } };
+const options = u => [...u.q('.fserver').options].map(o => [o.value, o.textContent]);
+const machineDialog = u => u.doc.querySelector('.machine-dialog');
+
+test('gated: This computer, this workspace\'s machines, then "Add a machine to this workspace…" last; the route is asked for this window', async t => {
+  const u = await mountSpawn(t, { servers: answer([ALTAIR]) });
+  await u.open();
+  assert.deepEqual(options(u), [['', 'This computer'], ['altair-northwind', 'altair (altair-northwind)'], ['+add-machine', 'Add a machine to this workspace…']]);
+  assert.ok(u.calls.some(c => c.path === '/api/servers?ws=northwind'));
+  assert.equal(u.q('.spawn-place').hidden, false);
+});
+
+test('gated with no machine yet: Where to run still shows, to offer Add a machine', async t => {
+  const u = await mountSpawn(t, { servers: answer([]) });
+  await u.open();
+  assert.deepEqual(options(u), [['', 'This computer'], ['+add-machine', 'Add a machine to this workspace…']]);
+  assert.equal(u.q('.spawn-place').hidden, false);
+});
+
+test('gates off: today\'s list, unchanged, and no Add entry', async t => {
+  const u = await mountSpawn(t, { servers: [{ id: 'altair-tsm', label: 'altair', sshHost: 'altair' }] });
+  await u.open();
+  assert.deepEqual(options(u), [['', 'This computer'], ['altair-tsm', 'altair (altair-tsm)']]);
+});
+
+test('no workspace key: no remote machine, no Add, and one line saying why', async t => {
+  const reason = 'This deployment reports no workspace key, so no other machine can be matched to it.';
+  const u = await mountSpawn(t, { servers: { servers: [], filtered: true, key: null, deployment: null, aweb: false, reason } });
+  await u.open();
+  assert.deepEqual(options(u), [['', 'This computer']]);
+  assert.equal(u.text('.spawn-server-hint'), reason);
+  assert.equal(u.q('.spawn-place').hidden, false);
+});
+
+test('choosing Add opens the dialog and Where to run keeps its choice; Cancel returns focus to Where to run', async t => {
+  const u = await mountSpawn(t, { servers: answer([ALTAIR]) });
+  await u.open();
+  const previews = u.previews().length;
+  u.q('.fserver').focus();
+  await u.change('.fserver', '+add-machine');
+  assert.ok(machineDialog(u), 'the Add a machine dialog');
+  assert.equal(u.q('.fserver').value, '', 'still This computer');
+  assert.equal(u.previews().length, previews, 'choosing the entry is not an edit');
+  u.doc.querySelector('.machine-cancel').click();
+  assert.equal(machineDialog(u), null);
+  assert.equal(u.doc.activeElement, u.q('.fserver'));
+  assert.ok(u.dialog(), 'the spawn dialog is still open');
+});
+
+test('a machine added: Where to run lists it, selects it and the form reads for it', async t => {
+  const sent = [];
+  const u = await mountSpawn(t, { servers: answer([ALTAIR]), machineApi: (body, path) => { sent.push({ body, path }); return READY; } });
+  await u.open();
+  await u.change('.fserver', '+add-machine');
+  const host = u.doc.querySelector('.machine-host'); host.value = 'vega'; host.dispatchEvent(new u.dom.window.Event('input', { bubbles: true }));
+  u.doc.querySelector('.machine-primary').click(); await settle();
+  assert.deepEqual(sent, [{ path: '/api/server-connect?ws=northwind', body: { phase: 'connect', id: 'vega-northwind', host: 'vega', folder: '~/Agents/northwind', installOats: true } }]);
+  assert.equal(machineDialog(u), null, 'closed on success');
+  assert.equal(u.q('.fserver').value, 'vega-northwind');
+  assert.deepEqual(options(u).at(-1), ['+add-machine', 'Add a machine to this workspace…'], 'Add stays last');
+  assert.equal(u.text('.spawn-server-hint'), "Runs on vega-northwind. Its teams and defaults come from that machine's workspace.");
+  assert.equal(u.doc.activeElement, u.q('.fserver'));
+});
+
+test('two or more deployments: Add a machine is a button under the Deployment field; an added machine is not selected there', async t => {
+  const deployments = [{ id: '/Users/j/Agents/northwind', machine: 'This Mac', path: '/Users/j/Agents/northwind', label: 'This Mac · ~/Agents/northwind', local: true, reachable: true, primary: true },
+    { id: 'remote:altair:a1', machine: 'altair', path: '/home/j/northwind', label: 'altair · ~/northwind', local: false, reachable: true, primary: false }];
+  const u = await mountSpawn(t, { deployments, servers: answer([ALTAIR]), machineApi: () => READY,
+    catalogs: { '/Users/j/Agents/northwind': () => import('./helpers/spawn-dialog-host.mjs').then(m => m.catalogAgents()), 'remote:altair:a1': [] } });
+  await u.open();
+  assert.equal(u.q('.spawn-place'), null, 'no Where to run');
+  const button = u.q('.spawn-add-machine-button');
+  assert.equal(button.textContent, 'Add a machine to this workspace…');
+  assert.equal(u.q('.fdeployment').closest('.spawn-field').nextElementSibling, button.closest('.spawn-add-machine'));
+  button.click();
+  const host = u.doc.querySelector('.machine-host'); host.value = 'vega'; host.dispatchEvent(new u.dom.window.Event('input', { bubbles: true }));
+  u.doc.querySelector('.machine-primary').click(); await settle();
+  assert.equal(machineDialog(u), null);
+  assert.equal(u.text('.spawn-add-machine-note'), 'vega-northwind is added. It is listed here once this computer has read it.');
+  assert.equal(u.doc.activeElement, button);
+});

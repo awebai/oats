@@ -1165,7 +1165,8 @@ function openSpawnModal(s, a, draft = {}) {
       openSpawnModal(s, fresh, next); // a pick goes on to Name (Spec E)
       if (s.modalEl && dismissed) s.spawnReturn = dismissed;
     },
-    servers: a.server ? [] : () => apiJson(s.ctx, "/api/servers").then(d => Array.isArray(d?.servers) ? d.servers : []),
+    // #517: the window's own machines when the probe has the gates (the answer, with what Add a machine needs), else the registered list.
+    servers: a.server ? [] : () => apiJson(s.ctx, `/api/servers${wsQuery()}`).then(d => d?.filtered === true && Array.isArray(d.servers) ? d : Array.isArray(d?.servers) ? d.servers : []),
     // "Where to run": each server's disabled state and, once chosen, its rows for the relation picker (held observations only).
     serverFacts: () => a.server ? [] : serverFacts(s),
     serverRows: group => serverRows(s, group),
