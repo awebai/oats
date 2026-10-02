@@ -178,17 +178,23 @@ export function matchWorkspaceDirs(dirs, workspaces) {
   return matches.length && matches.every(Boolean) ? matches[0] : null;
 }
 
-/** Commit the open set atomically, so interrupted writes retain the last set. */
-export function saveWorkspaceDirs(file, dirs) {
+/** Write `value` as JSON atomically (a temporary file renamed over `file`), so an interrupted
+ * write keeps the last complete file. Throws when the write fails. */
+export function writeJsonAtomic(file, value) {
   mkdirSync(dirname(file), { recursive: true });
   const temporary = `${file}.tmp`;
   try {
-    writeFileSync(temporary, JSON.stringify(dirs, null, 2), { mode: 0o600 });
+    writeFileSync(temporary, JSON.stringify(value, null, 2), { mode: 0o600 });
     renameSync(temporary, file);
   } catch (error) {
     try { rmSync(temporary, { force: true }); } catch { /* preserve original error */ }
     throw error;
   }
+}
+
+/** Commit the open set atomically, so interrupted writes retain the last set. */
+export function saveWorkspaceDirs(file, dirs) {
+  writeJsonAtomic(file, dirs);
 }
 
 /**
