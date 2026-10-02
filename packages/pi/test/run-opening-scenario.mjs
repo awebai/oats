@@ -58,6 +58,12 @@ const scenarios = {
   "input-transform-welcome-first": { before: transformInput, start: () => welcome() },
   // A pi without agent_settled: the welcome turn is running when the task arrives.
   "welcome-first-without-agent-settled": { before: () => { host.withoutAgentSettled = true; }, start: () => welcome() },
+  // The same, with an extension behind the bridge awaiting in agent_end: the run is released only after it.
+  "welcome-first-without-agent-settled-slow-agent-end": {
+    before: () => { host.withoutAgentSettled = true; },
+    after: () => after.on("agent_end", () => new Promise((resolve) => setTimeout(resolve, 50))),
+    start: () => welcome(),
+  },
 };
 
 const scenario = scenarios[name];

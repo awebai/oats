@@ -84,10 +84,19 @@ function holdOpeningTask(pi: ExtensionAPI) {
   const untilFree = async (ctx: ExtensionContext) => {
     while (busy(ctx)) await new Promise<void>((resolve) => waiters.push(resolve));
   };
-  // Waiters re-check on agent_settled (pi 0.80.4 and later), and one
-  // macrotask after agent_end, once pi-agent-core has released the run: a pi
-  // without agent_settled never emits it.
   const wake = () => { for (const resume of waiters.splice(0)) resume(); };
+  // Waiters re-check on agent_settled (pi 0.80.4 and later). A pi without it
+  // releases a run only once every agent_end listener has finished, which no
+  // event marks: from agent_end, waiters re-check every 25 ms until none is
+  // left waiting or another run starts.
+  let recheck: ReturnType<typeof setTimeout> | undefined;
+  const stopRechecking = () => { clearTimeout(recheck); recheck = undefined; };
+  const recheckWaiters = () => {
+    recheck = undefined;
+    if (!waiters.length) return;
+    wake();
+    recheck = setTimeout(recheckWaiters, 25);
+  };
 
   pi.on("input", async (event, ctx) => {
     if (taken || event.source !== "interactive" || event.streamingBehavior !== undefined) return { action: "continue" };
@@ -101,6 +110,7 @@ function holdOpeningTask(pi: ExtensionAPI) {
     awaitingStart = false;
     await untilFree(ctx);
   });
-  pi.on("agent_end", () => { setTimeout(wake, 0); });
-  pi.on("agent_settled", wake);
+  pi.on("agent_start", stopRechecking);
+  pi.on("agent_end", () => { stopRechecking(); recheck = setTimeout(recheckWaiters, 0); });
+  pi.on("agent_settled", () => { stopRechecking(); wake(); });
 }

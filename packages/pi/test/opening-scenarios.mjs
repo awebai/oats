@@ -14,6 +14,7 @@ export const SCENARIOS = [
   { name: "no-race", title: "no race: the task is the first message, delivered once", task: "THE TASK", first: true },
   { name: "welcome-first", title: "welcome first: the task runs after the running welcome turn", task: "THE TASK", afterWelcome: true },
   { name: "welcome-first-without-agent-settled", title: "welcome first on a pi without agent_settled: the task runs after the welcome", task: "THE TASK", afterWelcome: true, hostOnly: true },
+  { name: "welcome-first-without-agent-settled-slow-agent-end", title: "the same, with an extension behind the bridge awaiting in agent_end", task: "THE TASK", afterWelcome: true, hostOnly: true },
   { name: "welcome-in-preflight", title: "task first, welcome during its preflight: the task runs after the welcome", task: "THE TASK", afterWelcome: true },
   { name: "welcome-in-preflight-slow-agent-start", title: "the same, with an extension ahead of the bridge awaiting in agent_start", task: "THE TASK", afterWelcome: true },
   { name: "welcome-in-before-agent-start-ahead", title: "welcome during before_agent_start, ahead of the bridge: the task runs after it", task: "THE TASK", afterWelcome: true },
