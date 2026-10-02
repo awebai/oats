@@ -174,7 +174,7 @@ console.log("{}");
 `;
   const fx = v2Deployment({
     souls: { dev: { soul: { capabilities: { "acme.env": { from: "here" } } } } },
-    capabilities: { "acme.env": { manifest: { hooks: { spawn: "hook.mjs", launch: "hook.mjs" } }, files: { "hook.mjs": hook } } },
+    capabilities: { "acme.env": { manifest: { launchPreview: true, hooks: { spawn: "hook.mjs", launch: "hook.mjs" } }, files: { "hook.mjs": hook } } },
   });
   t.after(fx.cleanup);
   const spawned = ok(fx.cli(["spawn", "dev", "--harness", "pi", "--no-launch", "--json"]));

@@ -51,11 +51,11 @@ const fx = v2Deployment({
     teamed: { soul: { capabilities: { "test.teams": { from: "here" } } } },
   },
   capabilities: {
-    "test.extra": { manifest: { hooks: { launch: "bin/launch.mjs" }, environment: ["TEST_NEWVAR", "TEST_OLDVAR", "TEST_SHARED"], settings: { mode: { description: "m", default: "current" } } },
+    "test.extra": { manifest: { launchPreview: true, hooks: { launch: "bin/launch.mjs" }, environment: ["TEST_NEWVAR", "TEST_OLDVAR", "TEST_SHARED"], settings: { mode: { description: "m", default: "current" } } },
       files: { "bin/launch.mjs": answerHook(`writeFileSync(join(process.env.OATS_HOME, "hooked-settings"), process.env.OATS_SETTINGS);\n`) } },
     "test.two": { manifest: { environment: ["TEST_SHARED"] } },
     "test.renew": { manifest: { hooks: { launch: "bin/launch.mjs" }, environment: [], settings: {} }, files: { "bin/launch.mjs": answerHook() } },
-    "test.req": { manifest: { hooks: { launch: "bin/launch.mjs" }, requires: [{ harness: "claude", package: "chan@acme-marketplace", marketplace: "acme/claude-plugins", when: { mode: "on" } }], settings: { mode: { description: "m" } } },
+    "test.req": { manifest: { launchPreview: true, hooks: { launch: "bin/launch.mjs" }, requires: [{ harness: "claude", package: "chan@acme-marketplace", marketplace: "acme/claude-plugins", when: { mode: "on" } }], settings: { mode: { description: "m" } } },
       files: { "bin/launch.mjs": `process.stdout.write(JSON.stringify({ launch: { claude: "--req-hook" }, env: {} }) + "\\n");\n` } },
     // Records the teams its launch hook was given (team model v2).
     "test.teams": { manifest: { hooks: { launch: "bin/launch.mjs" }, environment: [], settings: {} },
