@@ -71,7 +71,7 @@ test("the cache heals: after a read finds the tree unreadable, the next read ref
   assert.deepEqual(again.filter((e) => e.path.endsWith("/soul.yaml")).map((e) => e.path).sort(), ["dev/soul.yaml", "reviewer/soul.yaml"]);
 });
 
-test("within one read session too: the problem is reported, nothing persisted, and a later discovery lists the souls", async (t) => {
+test("across read sessions: the finding discovery reports the problem and persists nothing; the next one lists the souls", async (t) => {
   const { fx, commit } = await cacheMissingSoulsTree(t);
   const discover = async () => {
     const session = createReadSession();
