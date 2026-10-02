@@ -92,6 +92,8 @@ export const computerTeamsCSS = `
 .oats-view .computer-teams button.ct-act:hover:not(:disabled) { background:var(--surface-2); }
 .oats-view .computer-teams button.ct-act:disabled { color:var(--muted); cursor:default; }
 .oats-view .computer-teams button.ct-act.primary:not(:disabled) { background:var(--primary-bg); border-color:var(--primary-bg); color:var(--primary-fg); }
+/* Where this deployment may not declare its own teams the head's Add is hidden: [hidden] wins over display. */
+.oats-view .computer-teams button.ct-add[hidden] { display:none; }
 .oats-view .computer-teams button.ct-add { display:inline-flex; align-items:center; gap:6px; flex:none; height:32px; min-height:32px; padding:0 12px; border-radius:7px; font-size:12.5px; }
 .oats-view .computer-teams button.ct-link { height:auto; min-height:0; padding:0 4px; border:0; border-radius:4px; background:none; color:var(--accent); font-size:12.5px; }
 .oats-view .computer-teams button.ct-link:hover:not(:disabled) { background:none; color:var(--fg); }
@@ -206,7 +208,7 @@ export function whoMayJoin(document, label) {
     if (list(document.teams).some(t => t.label === label && t.from === 'local') && localAllowed(document)) return 'every soul';
     const { every, entries } = patternsOf(document, label);
     const fallback = document.defaultTeam?.label === label ? 'souls without their own default' : null;
-    return every ? 'every soul' : [fallback, entries ? `${entries} souls: ${entries === 1 ? 'entry' : 'entries'}` : null].filter(Boolean).join(' · ') || null;
+    return every ? 'every soul' : [fallback, entries ? `${entries} ${entries === 1 ? 'entry' : 'entries'} in souls:` : null].filter(Boolean).join(' · ') || null;
   }
   const { every, souls } = soulsOf(document, label);
   return every ? 'every soul' : souls.size ? plural(souls.size, 'soul') : null;
@@ -348,7 +350,8 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
     if (failure) line.setAttribute('role', 'alert');
     if (blocking) line.append(el(doc, 'strong', `The default team ${problem.label} has no provider id yet: nothing can be spawned until it has one.`));
     line.append(el(doc, 'span', problem.message || problem.code || 'A problem was reported.'));
-    if (text(problem.fix)) line.append(el(doc, 'span', problem.fix, 'ct-fix'));
+    // A kernel message that already ends with its fix (local-teams-closed) says it once.
+    if (text(problem.fix) && !(problem.message ?? '').includes(problem.fix)) line.append(el(doc, 'span', problem.fix, 'ct-fix'));
     if (blocking) line.append(el(doc, 'span', 'Or make another team the default.', 'ct-why'));
     return line;
   }

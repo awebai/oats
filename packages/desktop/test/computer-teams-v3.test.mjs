@@ -33,7 +33,8 @@ async function mount(t, answer) {
   await tick();
   const q = (s) => card.element.querySelector(s), row = (label) => q(`[data-team="${label}"]`);
   const acts = (label) => [...row(label).querySelectorAll('.ct-actions > .ct-act')].map((b) => b.textContent);
-  const addShown = () => { const b = q('.ct-page-head button.ct-add'); return !!b && !b.hidden; };
+  // What is painted, not the attribute alone: the page's CSS must honour [hidden].
+  const addShown = () => { const b = q('.ct-page-head button.ct-add'); return !!b && doc.defaultView.getComputedStyle(b).display !== 'none'; };
   return { doc, card, calls, q, row, acts, addShown };
 }
 
@@ -64,7 +65,10 @@ test('closed but present: the local-teams-closed failure first, verbatim with it
   assert.ok(closed, 'the failure is the page\'s first block');
   assert.equal(closed.getAttribute('role'), 'alert');
   assert.match(closed.textContent, /oats-local\.yaml declares teams, but oats-workspace\.yaml does not allow local teams/);
-  assert.equal(closed.querySelector('.ct-fix').textContent, capture('teams-closed-local').result.problems.find((p) => p.condition === 'local-teams-closed').fix, 'the kernel\'s fix, not a second version');
+  const { message, fix } = capture('teams-closed-local').result.problems.find((p) => p.condition === 'local-teams-closed');
+  assert.ok(message.endsWith(fix), 'the kernel\'s message already ends with its fix');
+  assert.equal(closed.querySelector('.ct-fix'), null, 'so the fix is not said twice');
+  assert.equal(closed.textContent.split(fix).length, 2, 'the fix appears once, in the kernel\'s message');
   for (const label of ['mine', 'spare']) assert.deepEqual(u.acts(label), ['Remove'], `${label}: Remove only`);
   assert.equal(u.addShown(), false);
 });
@@ -98,7 +102,8 @@ test('souls: as committed, read only, with where to change it in the kernel\'s w
   assert.deepEqual(rows, [['*', 'no other team'], ['agents/*', 'engineering'], ['agents/release-manager', 'default engineering · marketing'], ['agents/no-such-soul', 'global']]);
   assert.match(souls.textContent, /souls: in oats-workspace\.yaml \(a PR to the workspace file\)/);
   assert.equal(souls.querySelector('button'), null, 'nothing to edit here');
-  assert.equal(u.row('engineering').querySelector('.ct-join').textContent, '2 souls: entries', 'who may join, from the patterns');
+  assert.equal(u.row('engineering').querySelector('.ct-join').textContent, '2 entries in souls:', 'who may join, from the patterns');
+  assert.equal(u.row('global').querySelector('.ct-join').textContent, 'souls without their own default · 1 entry in souls:');
 });
 
 test('the closed-state wording is the kernel\'s own clause', () => {
