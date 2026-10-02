@@ -7,7 +7,7 @@ description: >-
   joining or leaving a team at spawn or later, or diagnosing E_TEAM_UNKNOWN,
   E_TEAM_NOT_ELIGIBLE, E_TEAM_UNCONFIGURED, E_TEAM_IN_USE, E_TEAM_SHARED,
   E_TEAM_EXISTS, team-unmapped, team-label-collision, default-team-changed or
-  team-model-3-migration (preparing for 0.37.0's team model 3).
+  team-model-3-migration (preparing for 0.38.0's team model 3).
   Also when an old config still has messaging.byTeam, defaults.byTeam or a
   soul/membership `team:` (removed in 0.30), and when someone expects a team
   to restrict or grant access (it never does). Part of the setup and config of
@@ -141,10 +141,10 @@ runs only when asked, never at spawn:
 - Migrating from 0.29: move each `byTeam` id into `teams.<label>.team`, and each
   soul/membership `team:` into `oats soul teams` on each deployment.
 
-## Preparing for team model 3 (0.36.x → 0.37.0)
+## Preparing for team model 3 (0.36.x and 0.37.x → 0.38.0)
 
-OATS 0.37.0 commits which teams a soul may join, and its default, in
-`oats-workspace.yaml`, closed by default. 0.36.x accepts and validates the
+OATS 0.38.0 commits which teams a soul may join, and its default, in
+`oats-workspace.yaml`, closed by default. 0.36.x and 0.37.x accept and validate the
 new workspace keys without applying them (`defaultTeam`, `localTeams`,
 `souls:` keyed `"*"`, `<member|package>/*`, `<member|package>/<soul>`, each
 `{ default?, teams?: [labels] | any }`; every label a shared team of that
@@ -156,5 +156,5 @@ file). The warning `team-model-3-migration` (never blocking) has a `condition`:
   workspace does not say `localTeams: true`; either add `localTeams: true`, or
   commit the teams and `defaultTeam` in the workspace file.
 
-Remove the local keys only when the deployment moves to 0.37.0: until then
+Remove the local keys only when the deployment moves to 0.38.0: until then
 they are still what applies. Steps: `docs/release-notes/v0.36.1.md`.
