@@ -563,6 +563,58 @@ test("routed spawn: a success reply without a home never replaces an existing sa
   }
 });
 
+test("roster: each group relays the host's status `workspace` verbatim (an older host's reachability-only one too), or null from a host that reports none", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-servers-ws-"));
+  try {
+    const { bin, tools } = fakeBin(base);
+    const repo = remoteWorkspace(); // nothing spawned: an empty remote deployment still reports its workspace
+    const env = { ...process.env, PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
+    mkdirSync(env.HOME, { recursive: true }); mkdirSync(env.OATS_HOME_DIR, { recursive: true });
+    for (const k of Object.keys(env)) if (/^(OATS_INSTANCE|PI_AGENT)/.test(k)) delete env[k];
+    // A host whose status answer is rewritten by `edit` (a JS expression over the parsed answer `j`).
+    const hostWith = (name, edit) => {
+      const file = join(base, name);
+      write(file, `#!/bin/sh
+if [ "$1" = status ]; then
+  ${JSON.stringify(process.execPath)} ${JSON.stringify(CLI)} "$@" | ${JSON.stringify(process.execPath)} -e 'let s="";process.stdin.on("data",(d)=>s+=d).on("end",()=>{const j=JSON.parse(s);${edit};process.stdout.write(JSON.stringify(j))})'
+else exec ${JSON.stringify(process.execPath)} ${JSON.stringify(CLI)} "$@"; fi
+`);
+      chmodSync(file, 0o755);
+      return file;
+    };
+    // A host before workspace-identity answers the reachability-only object; one that reports no
+    // workspace at all (as a deployment without oats-local.yaml does) omits it.
+    const older = hostWith("older-oats", "j.workspace={reachable:j.workspace.reachable}");
+    const none = hostWith("none-oats", "delete j.workspace");
+    let r = oats(env, ["server", "add", "current", "--ssh", "current-host", "--workspace", repo, "--oats", CLI, "--path", tools, "--json"]);
+    assert.equal(r.status, 0, r.stderr);
+    r = oats(env, ["server", "add", "older", "--ssh", "older-host", "--workspace", repo, "--oats", older, "--path", tools, "--json"]);
+    assert.equal(r.status, 0, r.stderr);
+    r = oats(env, ["server", "add", "none", "--ssh", "none-host", "--workspace", repo, "--oats", none, "--path", tools, "--json"]);
+    assert.equal(r.status, 0, r.stderr);
+    r = oats(env, ["server", "add", "down", "--ssh", "down-host", "--workspace", join(base, "no-such-ws"), "--oats", CLI, "--json"]);
+    assert.equal(r.status, 0, r.stderr);
+
+    r = oats(env, ["server", "roster", "--json"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    const groups = Object.fromEntries(r.json().result.groups.map((g) => [g.server, g]));
+    // What the host itself answers, run where the fake ssh runs it.
+    const own = oats(env, ["status", "--json", "--dir", repo]);
+    assert.equal(own.status, 0, own.stderr);
+    const hostWorkspace = JSON.parse(own.stdout).workspace;
+    assert.equal(typeof hostWorkspace.key, "string", "the host reports its workspace identity");
+    assert.deepEqual(groups.current.probe, { ok: true });
+    assert.deepEqual(groups.current.workspace, hostWorkspace, "relayed verbatim");
+    assert.deepEqual(groups.current.instances, []);
+    assert.deepEqual(groups.older.probe, { ok: true });
+    assert.deepEqual(groups.older.workspace, { reachable: true }, "an older host's reachability-only object is relayed as it is");
+    assert.deepEqual(groups.none.probe, { ok: true });
+    assert.equal(groups.none.workspace, null, "a host that reports no workspace relays null");
+    assert.equal(groups.down.probe.ok, false);
+    assert.equal(groups.down.workspace, null, "an unreachable host relays null");
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
 test("roster budget: slow targets are bounded, healthy results survive, unreached targets are reported", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-servers-budget-"));
   try {

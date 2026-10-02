@@ -13,8 +13,8 @@ home. To run them on another machine, see [servers.md](servers.md).
 | Harness | `--harness` | Launched as |
 |---|---|---|
 | pi | `pi` (the default) | `pi --append-system-prompt <home>/AGENTS.md --approve --name <instance> [--model m] @TASK.md` |
-| Claude Code | `claude` | `claude [--model m] -- "$(cat TASK.md)"` |
-| Codex | `codex` | `codex --cd <home> [--model m] -- "$(cat TASK.md)"` |
+| Claude Code | `claude` | `claude [--model m] -- '@TASK.md'` |
+| Codex | `codex` | `codex --cd <home> [--model m] -- 'Read TASK.md in this directory first: it is your briefing and your task.'` |
 
 Each harness starts in the instance home with its own native settings,
 authentication and skill discovery. The command line also carries the
@@ -27,9 +27,9 @@ named launch configuration (`--launch-config <name>`); see
 [configuration.md](configuration.md#launch-configurations).
 `--model @native-default` uses the harness's own default model.
 
-The launch command sets `OATS_INSTANCE`, `OATS_INSTANCE_HOME`,
-`PI_AGENT_INSTANCE` and `PI_AGENT_HOME`, plus the environment that the launch
-configuration and capabilities contribute. The home's layout and what those
+The launch command sets `OATS_INSTANCE` and `OATS_INSTANCE_HOME`, plus the
+environment that the launch configuration and capabilities contribute. No
+`PI_AGENT_*` name is set, for any harness. The home's layout and what those
 variables point at are described in
 [souls-and-instances.md](souls-and-instances.md#instance-anatomy).
 
@@ -165,6 +165,24 @@ instructions when no task is given. Every launch, including `session start`
 and `restart`, opens a new harness conversation on `TASK.md`. The instance
 resumes its work from its own state files, as its knowledge capability
 prescribes.
+
+The task's text never travels on a command line, where any local user could
+read it in the process list:
+
+- pi and Claude Code get `@TASK.md`, which each harness reads as the file.
+  pi sends it as the session's first prompt and refuses it if another
+  extension's turn (the @awebai/pi welcome) is running or starts while it is
+  being sent. The pi bridge (`@awebai/oats-pi`) holds it on pi's own path
+  until no turn is active, so it runs exactly once, unaltered; a pi
+  deployment without the bridge can sit idle with no task. The exception is
+  in the bridge's [README](../packages/pi/README.md).
+- Codex gets a fixed pointer to the file and reads it with a tool.
+- A home whose recorded command still hands over `"$(cat TASK.md)"` starts
+  with its harness's safe prompt instead, and the command is saved that way.
+
+The home is created `0700` and `TASK.md` `0600`. `oats doctor` reports an
+instance home that other users can read (`home-readable`), with the exact
+`chmod`; it never changes a home's mode itself.
 
 ## Permissions (yolo)
 

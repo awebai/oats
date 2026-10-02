@@ -8,6 +8,7 @@
  * process; the desktop renderer is its only client):
  *   GET  /api/panel                 roster JSON (instances, task, tmux state; local Git unobserved)
  *   GET  /api/agents                available agents (souls) per workspace root
+ *                                   (both: an explicit ?ws= not served → 404 E_WORKSPACE_NOT_SERVED)
  *   POST /api/spawn?ws=<id>         { action: prepare|apply|result, … } → preview-bound spawn (server/spawn-apply.mjs);
  *                                   { agent, agentsRoot, serverId, … } → execution-server spawn only
  *                                   (mutations require the installed `oats` CLI; see cliUnavailable)
@@ -21,7 +22,7 @@
  *                                   { action: show|file, capability, path? } → `oats capabilities show` for one held catalog row
  *                                   (server/capability-show.mjs; local only; errors 409/400 { error, code })
  *   POST /api/models                { harness: pi|claude|codex } → advisory model catalog for the spawn modal
- *   GET  /api/cli                   CLI discovery status (bin, version, required range, tried)
+ *   GET  /api/cli                   CLI discovery status (bin, version, required range, tried, probePath/pathSource/pathError)
  *   POST /api/cli/reprobe           re-run discovery; body { bin? } prioritizes a user-chosen binary
  *   POST /api/window-state          { focused } → the refresh cadence backs off while the window is blurred/hidden
  *   POST /api/harvest/<instance>    the active provider’s harvest operation addressed by the exact --home; the CLI derives the recorded context
@@ -50,7 +51,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { homedir } from "node:os";
 import { scheduleRequest } from "./schedules.mjs";
 import { capabilityRequest } from "./capabilities.mjs";
-import { createDeploymentObserver } from "./deployment-observer.mjs";
+import { createDeploymentObserver, mapBounded, MAX_DEPLOYMENT_OBSERVATIONS } from "./deployment-observer.mjs";
 import { createSoulCatalog, soulCatalogKey } from "./soul-catalog.mjs";
 import { createCapabilityCatalog, capabilityCatalogKey } from "./capability-catalog.mjs";
 import { capabilityShowRequest, createCapabilityShowCache } from "./capability-show.mjs";
@@ -77,6 +78,7 @@ import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
 import { canAddressRemote, unaddressableSentence } from "../renderer/remote-address.mjs";
 import { harnessFlag, HARNESSES } from "../renderer/harness-names.mjs";
 import { probeChanged } from "../renderer/cli-probe-contract.mjs";
+import { workspaceNotServed } from "../renderer/deployment-header.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -457,6 +459,11 @@ let probeSequence = 0; // orders concurrent probes; a superseded probe's result 
 // at server start) and updated by /api/cli/reprobe {bin} — top candidate on
 // every subsequent probe until replaced.
 let chosenBin = typeof flag("oats-bin") === "string" ? flag("oats-bin") : null;
+// Where this server's PATH came from (the Electron main process resolves the
+// login shell's PATH before starting it: login-path.mjs). The probe and every
+// oats call inherit process.env.PATH; a standalone server reports "inherited".
+const PATH_SOURCE = flag("path-source") === "login-shell" ? "login-shell" : "inherited";
+const PATH_ERROR = typeof flag("path-error") === "string" ? flag("path-error") : null;
 const cliIo = {
   persisted: () => chosenBin,
   env: process.env,
@@ -547,6 +554,10 @@ function cliStatus() {
     tried: cliState.tried || [],
   };
 }
+/** /api/cli as served: the probe status plus the PATH it ran with (and every
+ * oats call runs with), its source, and why the login shell's PATH could not
+ * be used when it was not. */
+const servedCliStatus = () => ({ ...cliStatus(), probePath: process.env.PATH || "", pathSource: PATH_SOURCE, pathError: PATH_ERROR });
 
 /* ── Kernel-observed roster snapshot ──
    Every local deployment fact is one bounded `oats status --json` plus one
@@ -727,7 +738,8 @@ async function refreshRemoteSnapshot() {
 /** One observation cycle over every registered deployment; the refresh loop owns when it runs. */
 async function observeAll({ live = false } = {}) {
   try {
-    const entries = await Promise.all(ctxs.map(async (id) => [id, await observeDeployment(id, { live })]));
+    // At most as many deployments at once as the observer admits, so every one is read each cycle (#461).
+    const entries = await mapBounded(ctxs, MAX_DEPLOYMENT_OBSERVATIONS, async (id) => [id, await observeDeployment(id, { live })]);
     const byWs = new Map(entries);
     for (const [id, panel] of snapshot.byWs) if (id.startsWith("remote:")) byWs.set(id, panel);
     snapshot = { at: Date.now(), byWs: mergeRemotePanels(byWs) };
@@ -1244,11 +1256,16 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && path === "/api/version") {
       return send(res, 200, { capability: MANIFEST.capability, version: MANIFEST.version });
     }
-    if (req.method === "GET" && path === "/api/panel") {
+    if (req.method === "GET" && (path === "/api/panel" || path === "/api/agents")) {
+      const asked = url.searchParams.get("ws") || undefined;
+      // An explicit workspace this server does not serve (a path, an id, a remote it no longer has) is
+      // refused, never answered with another workspace's data. No ?ws= still means the first workspace.
+      if (asked && !workspaces().some((w) => w.id === asked)) return send(res, 404, workspaceNotServed(asked));
       // Served from the latest kernel observation; never waits on a CLI read.
-      return send(res, 200, panelData(url.searchParams.get("ws") || undefined));
+      if (path === "/api/panel") return send(res, 200, panelData(asked));
+      revalidateCatalog(asked);
+      return send(res, 200, agentsData(asked));
     }
-    if (req.method === "GET" && path === "/api/agents") { revalidateCatalog(url.searchParams.get("ws") || undefined); return send(res, 200, agentsData(url.searchParams.get("ws") || undefined)); }
     if (path === "/api/launch-configs" && req.method === "POST") {
       const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
       try {
@@ -1494,7 +1511,7 @@ const server = createServer(async (req, res) => {
       return send(res, 200, { servers: (env.result.servers || []).map((s) => ({ id: s.id, label: s.label || s.id, sshHost: s.sshHost, workspace: s.workspace })) });
     }
     if (req.method === "GET" && path === "/api/cli") {
-      return send(res, 200, cliStatus());
+      return send(res, 200, servedCliStatus());
     }
     if (req.method === "POST" && path === "/api/window-state") {
       // Window activity from the Electron main process (window-activity.mjs): the refresh cadence backs off
@@ -1513,7 +1530,7 @@ const server = createServer(async (req, res) => {
       const body = await readBody(req);
       const chosen = typeof body.bin === "string" && body.bin.startsWith("/") ? body.bin : undefined;
       await reprobeCli(chosen);
-      return send(res, 200, cliStatus());
+      return send(res, 200, servedCliStatus());
     }
     if (req.method === "POST" && path === "/api/spawn") {
       let body;

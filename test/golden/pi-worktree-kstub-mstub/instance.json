@@ -7,6 +7,10 @@
   "repo": "<base>/deployment/ws",
   "work": "worktree",
   "branch": "agents/dev-pi-worktree-kstub-mstub",
+  "base": {
+    "ref": "local/<base>/remotes/ws.git",
+    "oid": "<sha>"
+  },
   "harness": "pi",
   "modelFrom": "harness-default",
   "launchFrom": "flag",
@@ -309,7 +313,7 @@
     },
     "kernelBin": "<kernel>/bin/oats.mjs"
   },
-  "command": "OATS_INSTANCE='dev-pi-worktree-kstub-mstub' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub' PI_AGENT_INSTANCE='dev-pi-worktree-kstub-mstub' PI_AGENT_HOME='<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub' GOLDEN_BROKER_ENDPOINT='stub://broker/dev-pi-worktree-kstub-mstub' '<base>/bin/pi' --append-system-prompt '<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub/AGENTS.md' --approve --name 'dev-pi-worktree-kstub-mstub' '@TASK.md' --golden-channel stub",
+  "command": "OATS_INSTANCE='dev-pi-worktree-kstub-mstub' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub' GOLDEN_BROKER_ENDPOINT='stub://broker/dev-pi-worktree-kstub-mstub' '<base>/bin/pi' --append-system-prompt '<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub/AGENTS.md' --approve --name 'dev-pi-worktree-kstub-mstub' '@TASK.md' --golden-channel stub",
   "createdAt": "<createdAt>",
   "modules": {
     "golden.knowledge": {

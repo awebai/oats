@@ -326,7 +326,7 @@
               "file": "TASK.md"
             }
           },
-          "command": "OATS_INSTANCE='dev-claude-checkout-kstub-mstub' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-claude-checkout-kstub-mstub' PI_AGENT_INSTANCE='dev-claude-checkout-kstub-mstub' PI_AGENT_HOME='<base>/deployment/agents/dev/instances/dev-claude-checkout-kstub-mstub' GOLDEN_BROKER_ENDPOINT='<redacted>' '<base>/bin/claude' --golden-channel stub -- \"$(cat TASK.md)\"",
+          "command": "OATS_INSTANCE='dev-claude-checkout-kstub-mstub' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-claude-checkout-kstub-mstub' GOLDEN_BROKER_ENDPOINT='<redacted>' '<base>/bin/claude' --golden-channel stub -- '@TASK.md'",
           "createdAt": "<createdAt>",
           "modules": [
             {
@@ -411,6 +411,15 @@
     }
   ],
   "workspace": {
-    "reachable": true
+    "reachable": true,
+    "key": "local/<base>/remotes/ws.git",
+    "ref": "file://<base>/remotes/ws.git",
+    "keyFrom": "workspace",
+    "standalone": false,
+    "defaultTeam": null,
+    "teams": {
+      "global": null
+    },
+    "teamsFrom": "observed"
   }
 }

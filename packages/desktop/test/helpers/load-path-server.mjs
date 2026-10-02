@@ -51,7 +51,10 @@ appendFileSync(log, JSON.stringify({ id, verb, argv: a, start, phase: 'start' })
 while ((config().gated || []).includes(verb) && !existsSync(scriptDir + '/go/' + id)) await sleep(5);
 let out;
 if (verb === 'version') out = config().version;
-else if (verb === 'status') out = { ...fixture('status'), ...observation() };
+else if (verb === 'status') out = (cfg.emptyDirs || []).includes(dir)
+  // An empty deployment, as the kernel answers it: no souls, no instances, the workspace reachable.
+  ? { root: dir + '/agents', agents: [], ...observation(), workspace: { reachable: true } }
+  : { ...fixture('status'), ...observation() };
 else if (verb === 'workspace-status' || verb === 'souls' || verb === 'capabilities') { const d = fixture(verb); d.result = { ...d.result, ...observation() }; out = d; }
 else if (verb === 'inspect') {
   const d = fixture(a.includes('--home') ? 'inspect-home' : 'inspect-soul');
@@ -74,17 +77,24 @@ async function freePort() {
 }
 
 /** Boot a server for one temp deployment. `probe` mutates the fixture probe (e.g. adds a feature);
- * `gated` names the verbs whose calls block until the test releases them. */
-export async function startLoadPathServer({ probe = v => v, gated = [] } = {}) {
+ * `gated` names the verbs whose calls block until the test releases them; `extra` registers that
+ * many more deployments (`deployments`, each its own --dir, in order); `empty` lists the indexes
+ * (into `deployments`) whose `status` is an empty deployment's answer. */
+export async function startLoadPathServer({ probe = v => v, gated = [], extra = 0, empty = [] } = {}) {
   const temp = realpathSync(mkdtempSync(join(tmpdir(), 'oats-load-path-')));
   const deployment = join(temp, 'workspace'); mkdirSync(join(deployment, 'agents'), { recursive: true });
   writeFileSync(join(deployment, 'oats-local.yaml'), 'workspace: fixture\n');
   // The fixture seat's home exists on disk so privileged routes that verify it (session start) admit it.
   mkdirSync(join(deployment, 'agents', 'release-manager', 'instances', 'release-manager-facts'), { recursive: true });
+  const deployments = [deployment];
+  for (let n = 2; n <= extra + 1; n++) {
+    const dir = join(temp, `workspace-${n}`); mkdirSync(join(dir, 'agents'), { recursive: true });
+    writeFileSync(join(dir, 'oats-local.yaml'), 'workspace: fixture\n'); deployments.push(dir);
+  }
   const script = join(temp, 'script'); mkdirSync(join(script, 'go'), { recursive: true });
   for (const name of ['status', 'workspace-status', 'souls', 'capabilities', 'inspect-soul', 'inspect-home']) writeFileSync(join(script, `${name}.json`), readFileSync(join(FIXTURES, `${name}.json`)));
   const version = probe(JSON.parse(readFileSync(join(FIXTURES, 'version.json'), 'utf8')));
-  const config = { version, gated: [...gated], deployment };
+  const config = { version, gated: [...gated], deployment, emptyDirs: empty.map(index => deployments[index]) };
   // Atomic: fakes read the config at every start and every gate poll; a truncate-then-write would let one read it half-written.
   const writeConfig = () => { writeFileSync(join(script, 'config.json.tmp'), JSON.stringify(config)); renameSync(join(script, 'config.json.tmp'), join(script, 'config.json')); };
   writeConfig();
@@ -92,7 +102,7 @@ export async function startLoadPathServer({ probe = v => v, gated = [] } = {}) {
   const fake = join(temp, 'oats'); writeFileSync(fake, FAKE, { mode: 0o700 });
   writeFileSync(join(temp, 'package.json'), '{"type":"module"}'); // the extensionless fake is ESM whatever the temp path
   const port = await freePort();
-  const proc = spawn(process.execPath, [SERVER, 'start', '--port', String(port), '--dir', deployment], {
+  const proc = spawn(process.execPath, [SERVER, 'start', '--port', String(port), ...deployments.flatMap(dir => ['--dir', dir])], {
     detached: true, stdio: ['ignore', 'ignore', 'pipe'],
     env: { ...process.env, OATS_DESKTOP_OATS_BIN: fake, FAKE_SCRIPT_DIR: script, FAKE_LOG: log, PATH: '/nonexistent', SHELL: '/bin/false',
       OATS_INSTANCE_HOME: undefined, OATS_INSTANCE: undefined, OATS_DEPLOYMENT: undefined },
@@ -130,7 +140,9 @@ export async function startLoadPathServer({ probe = v => v, gated = [] } = {}) {
   const pending = verb => calls().filter(c => c.verb === verb && c.end === null);
   const release = id => writeFileSync(join(script, 'go', id), '');
   return {
-    deployment, base, ws, get, post, calls, until, config, pending, release,
+    deployment, deployments, base, ws, get, post, calls, until, config, pending, release,
+    /** The HTTP status and body of a GET, for refusals. */
+    async getStatus(path) { const response = await fetch(base + path); return { status: response.status, body: await response.json() }; },
     /** Change the fake's config for every invocation from now on. */
     reconfigure(change) { change(config); writeConfig(); },
     /** Wait until `count` calls of `verb` have STARTED (they may be waiting at their gate). */

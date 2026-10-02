@@ -26,6 +26,10 @@
           "repo": "<base>/deployment/ws",
           "work": "worktree",
           "branch": "agents/dev-claude-worktree-kstub-mstub-modellist",
+          "base": {
+            "ref": "local/<base>/remotes/ws.git",
+            "oid": "<sha>"
+          },
           "harness": "claude",
           "model": "claude-sonnet-4-5",
           "modelFrom": "spawn",
@@ -327,7 +331,7 @@
               "file": "TASK.md"
             }
           },
-          "command": "OATS_INSTANCE='dev-claude-worktree-kstub-mstub-modellist' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-claude-worktree-kstub-mstub-modellist' PI_AGENT_INSTANCE='dev-claude-worktree-kstub-mstub-modellist' PI_AGENT_HOME='<base>/deployment/agents/dev/instances/dev-claude-worktree-kstub-mstub-modellist' GOLDEN_BROKER_ENDPOINT='<redacted>' '<base>/bin/claude' --model 'claude-sonnet-4-5' --golden-channel stub -- \"$(cat TASK.md)\"",
+          "command": "OATS_INSTANCE='dev-claude-worktree-kstub-mstub-modellist' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-claude-worktree-kstub-mstub-modellist' GOLDEN_BROKER_ENDPOINT='<redacted>' '<base>/bin/claude' --model 'claude-sonnet-4-5' --golden-channel stub -- '@TASK.md'",
           "createdAt": "<createdAt>",
           "modules": [
             {
@@ -412,6 +416,15 @@
     }
   ],
   "workspace": {
-    "reachable": true
+    "reachable": true,
+    "key": "local/<base>/remotes/ws.git",
+    "ref": "file://<base>/remotes/ws.git",
+    "keyFrom": "workspace",
+    "standalone": false,
+    "defaultTeam": null,
+    "teams": {
+      "global": null
+    },
+    "teamsFrom": "observed"
   }
 }

@@ -58,7 +58,9 @@ function* wholeLines(fd, bound, path, capturedPi) {
   // Never attribute a source using a line its writer has not terminated.
 }
 
-function cwdOfLine(source, line) {
+/** The cwd a native line carries as its format's session header (cc: any record's `cwd`; pi: the `session`
+ *  record; codex: `session_meta`), else undefined. */
+export function cwdOfLine(source, line) {
   if (line === null || !line.trim()) return undefined;
   let d;
   try {

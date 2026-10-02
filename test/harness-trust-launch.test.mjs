@@ -6,16 +6,16 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { describeLaunchCommand, parseLaunchCommand, renderLaunchCommand, renderLaunchRecipe } from "../lib/core.mjs";
+import { CODEX_TASK_PROMPT, describeLaunchCommand, parseLaunchCommand, renderLaunchCommand, renderLaunchRecipe } from "../lib/core.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const hooks = () => ({ launch: {}, env: {}, contributions: [] });
 const codex = (extra = {}) => ({ harness: "codex", executable: "/opt/homebrew/bin/codex", args: [], env: {}, model: null, hooks: hooks(), ...extra });
-const prompt = '"$(cat TASK.md)"';
+const prompt = CODEX_TASK_PROMPT;
 const trustArg = (home) => `projects={${JSON.stringify(home)}={trust_level="trusted"}}`;
 /** The instance env a codex launch hands its tool commands (shell_environment_policy.set, #342). */
 const setArgs = (pairs) => pairs.flatMap(([name, value]) => ["-c", `shell_environment_policy.set.${name}=${JSON.stringify(value)}`]);
-const instanceEnv = (home) => setArgs([["OATS_INSTANCE", "n"], ["OATS_INSTANCE_HOME", home], ["PI_AGENT_INSTANCE", "n"], ["PI_AGENT_HOME", home]]);
+const instanceEnv = (home) => setArgs([["OATS_INSTANCE", "n"], ["OATS_INSTANCE_HOME", home]]);
 
 test("codex argv: the update prompt is always off; the home is trusted only under root trust or yolo", (t) => {
   const home = realpathSync(join(process.cwd()));

@@ -7,6 +7,10 @@
   "repo": "<base>/deployment/ws",
   "work": "worktree",
   "branch": "agents/dev-pi-worktree-kstub-mstub-model",
+  "base": {
+    "ref": "local/<base>/remotes/ws.git",
+    "oid": "<sha>"
+  },
   "harness": "pi",
   "model": "anthropic/claude-sonnet-4-5",
   "modelFrom": "spawn",
@@ -310,7 +314,7 @@
     },
     "kernelBin": "<kernel>/bin/oats.mjs"
   },
-  "command": "OATS_INSTANCE='dev-pi-worktree-kstub-mstub-model' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub-model' PI_AGENT_INSTANCE='dev-pi-worktree-kstub-mstub-model' PI_AGENT_HOME='<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub-model' GOLDEN_BROKER_ENDPOINT='stub://broker/dev-pi-worktree-kstub-mstub-model' '<base>/bin/pi' --append-system-prompt '<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub-model/AGENTS.md' --approve --name 'dev-pi-worktree-kstub-mstub-model' --model 'anthropic/claude-sonnet-4-5' '@TASK.md' --golden-channel stub",
+  "command": "OATS_INSTANCE='dev-pi-worktree-kstub-mstub-model' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub-model' GOLDEN_BROKER_ENDPOINT='stub://broker/dev-pi-worktree-kstub-mstub-model' '<base>/bin/pi' --append-system-prompt '<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub-model/AGENTS.md' --approve --name 'dev-pi-worktree-kstub-mstub-model' --model 'anthropic/claude-sonnet-4-5' '@TASK.md' --golden-channel stub",
   "createdAt": "<createdAt>",
   "modules": {
     "golden.knowledge": {

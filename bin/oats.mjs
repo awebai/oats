@@ -30,7 +30,7 @@ import {
   LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
   officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, isCapturedHome, capturedHomeRefusal, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
-  findInstanceHome, findInstanceHomes, enclosingInstanceHome, logicalCwd, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, recordedKernelBin, launchConfigsAt, launchReportFor, explicitInstanceName, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
+  findInstanceHome, findInstanceHomes, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, recordedKernelBin, launchConfigsAt, launchReportFor, explicitInstanceName, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
   writeFileAtomic, LOCK_FILE, readLock, readLockIfPresent, writeLock, resolvePackages, memoizedRemote,
@@ -391,7 +391,7 @@ async function workspaceTarget(bail, { command, liveTeams = true }) {
     try { meta = JSON.parse(readFileSync(join(homeFlag, "instance.json"), "utf8")); } catch (e) { return bail("E_SESSION_UNKNOWN", `${homeFlag} is not an OATS instance home (${e.code === "ENOENT" ? "no instance.json" : e.message})`); }
     if (isCapturedHome(meta)) { const e = capturedHomeRefusal(homeFlag, "nothing was read"); return bail(e.code, e.message, e.details); }
     if (!meta || typeof meta.modules !== "object" || meta.modules === null) return bail("E_UNSUPPORTED_MODE", `${homeFlag} is not a workspace-model home (it records no modules): it was spawned by an earlier kernel — re-spawn it from the deployment`);
-    if (soulFlag && soulFlag !== meta.agent) return bail("E_HOME_MISMATCH", `--soul ${soulFlag} is not the soul of ${homeFlag} (${meta.agent})`);
+    if (soulFlag && !(await import("../lib/instance-resolution.mjs")).homeSoulMatches(soulFlag, meta)) return bail("E_HOME_MISMATCH", `--soul ${soulFlag} is not the soul of ${homeFlag} (${meta.agent})`);
     const deployment = dirname(dirname(dirname(dirname(realOrResolved(homeFlag)))));
     // A v2 home lives at <deployment>/agents/<soul>/instances/<name>: its deployment is
     // derived, so it must hold oats-local.yaml EXACTLY there (never found by walking up).
@@ -537,8 +537,9 @@ async function workspaceOperation(t, { bail, address, layer, opName }) {
   const settings = lp.settings;
   const cwd = op.context === "home" ? t.home : t.deployment;
   const env = { ...lp.env(mod.name, settings), OATS_OPERATION: address, OATS_CONTEXT: t.deployment, OATS_ROOT: t.agentsRoot, PI_AGENTS_ROOT: t.agentsRoot };
-  if (op.context === "home") Object.assign(env, { OATS_INSTANCE: t.meta.instance, OATS_INSTANCE_HOME: t.home, OATS_HOME: t.home, PI_AGENT_INSTANCE: t.meta.instance, PI_AGENT_HOME: t.home });
-  else for (const k of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "PI_AGENT_INSTANCE", "PI_AGENT_HOME"]) delete env[k];
+  // The home's identity, never one inherited from the caller (the reserved PI_AGENT_* names included).
+  for (const k of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "PI_AGENT_INSTANCE", "PI_AGENT_HOME"]) delete env[k];
+  if (op.context === "home") Object.assign(env, { OATS_INSTANCE: t.meta.instance, OATS_INSTANCE_HOME: t.home, OATS_HOME: t.home });
   await readSession?.closeBatches(); // no idle `git cat-file --batch` child held for the provider's whole run
   const r = spawnSync("node", [abs, ...rest, ...argFlags, "--json"], { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 16 * 1024 * 1024, timeout: OPERATION_TIMEOUT_MS, killSignal: "SIGTERM" });
   finishOperation({ r, bail, address, provider, op, argFlags, cwd, home: t.home, meta: t.meta, api: INSPECT_OPERATIONS_API });
@@ -582,7 +583,8 @@ function legacyLayoutProblems(root) {
 }
 async function doctorWorkspaceJson(ctx, soulName, ws) {
   const composition = await doctorComposition(ctx, soulName, ws, (code, msg, details) => jsonFail(code, msg, details));
-  const problems = legacyLayoutProblems(join(dirname(ws.local.path), "agents"));
+  const agentsRoot = join(dirname(ws.local.path), "agents");
+  const problems = [...legacyLayoutProblems(agentsRoot), readableInstanceHomes(agentsRoot)].filter(Boolean);
   return {
     schemaVersion: 1, workspaceApi: 2, context: ctx,
     workspace: { file: ws.local.path, ref: ws.local.workspace },
@@ -621,7 +623,8 @@ async function doctor(dir) {
   doctorVersionSkew();
   const composition = await doctorComposition(ctx, soulName, ws, (code, msg) => die(`${msg} [${code}]`));
   printDoctorWorkspace(ws);
-  for (const p of legacyLayoutProblems(join(dirname(ws.local.path), "agents"))) console.log(`\n! ${p.code}: ${p.message}`);
+  const agentsRoot = join(dirname(ws.local.path), "agents");
+  for (const p of [...legacyLayoutProblems(agentsRoot), readableInstanceHomes(agentsRoot)].filter(Boolean)) console.log(`\n! ${p.code}: ${p.message}`);
   if (soulName) {
     const information = operationalKnowledgeNote(composition, soulName);
     if (information) console.log(`\nINFO: ${information}`);
@@ -768,11 +771,11 @@ function launchPreview(bail) {
     instance = meta.instance || basename(home);
     if (!(meta.launch && typeof meta.launch === "object") && !selectionGiven) {
       // A home that predates recipes, asked nothing: its frozen command is
-      // described as is. Under a selection the planner refuses it
-      // (E_LAUNCH_LEGACY: re-spawn it from the deployment).
-      let d;
-      try { d = describeLaunchCommand(meta.command); } catch (e) { bail(e.code || "E_LAUNCH_COMMAND_UNSUPPORTED", e.message); }
-      jsonOk({ context, selected, selection: { source: "frozen-command", launchConfig: null, harness: null, model: null, yolo: null }, harness: meta.harness, model: meta.model || null, modelSource: meta.model ? "recorded" : "native default", yolo: meta.yolo ?? null, launchConfig: null, launchConfigSource: null, launchConfigDefault: false, executable: { path: d.executable, declared: null, resolvedFrom: "recorded" }, argv: d.argv, environment: d.environment, command: redactLaunchCommand(meta.command), prompt: { kind: "task-file", file: "TASK.md" }, hooks: null, preflight: [{ check: "recipe", ok: true, detail: "frozen command; a selection is refused (E_LAUNCH_LEGACY): re-spawn it" }], ok: true });
+      // described as a start runs it (with its harness's safe task prompt). Under a
+      // selection the planner refuses it (E_LAUNCH_LEGACY: re-spawn it from the deployment).
+      let d, frozen;
+      try { frozen = withSafeTaskPrompt(meta.command, meta.harness); d = describeLaunchCommand(frozen); } catch (e) { bail(e.code || "E_LAUNCH_COMMAND_UNSUPPORTED", e.message); }
+      jsonOk({ context, selected, selection: { source: "frozen-command", launchConfig: null, harness: null, model: null, yolo: null }, harness: meta.harness, model: meta.model || null, modelSource: meta.model ? "recorded" : "native default", yolo: meta.yolo ?? null, launchConfig: null, launchConfigSource: null, launchConfigDefault: false, executable: { path: d.executable, declared: null, resolvedFrom: "recorded" }, argv: d.argv, environment: d.environment, command: redactLaunchCommand(frozen), prompt: { kind: "task-file", file: "TASK.md" }, hooks: null, preflight: [{ check: "recipe", ok: true, detail: "frozen command; a selection is refused (E_LAUNCH_LEGACY): re-spawn it" }], ok: true });
       return;
     }
     const agentsRoot = agentsRootOfHome(home);
@@ -1847,7 +1850,7 @@ async function statusDrift(data) {
     catch { /* not a workspace soul (classic, or an unreadable stamp) */ }
   }
   const anything = data.some((a) => (a.instances || []).some((i) => hasModules(i) || hasSoul(i)));
-  if (!anything) return { drift: new Map(), soul: new Map(), souls, unreachable: null };
+  if (!anything) return { drift: new Map(), soul: new Map(), souls, unreachable: null, local: ctx.local, discovery: null };
   const deploymentDir = dirname(ctx.path);
   let lock = null;
   try { lock = readLockIfPresent(deploymentDir); } catch { lock = null; }
@@ -1857,7 +1860,7 @@ async function statusDrift(data) {
   try { const { discoverOrStandalone } = await import("../lib/instance-resolution.mjs"); discovery = await discoverOrStandalone(ctx.local, { lock, remoteOptions: remoteOptionsFromEnv() }); }
   catch (e) {
     const reason = e?.details?.reason ? `${e.code}: ${e.details.reason}` : (e?.code || e?.message || "unknown");
-    return { drift: new Map(), soul: new Map(), souls, unreachable: { code: e?.code ?? null, reason, message: e?.message ?? String(e) } };
+    return { drift: new Map(), soul: new Map(), souls, unreachable: { code: e?.code ?? null, reason, message: e?.message ?? String(e) }, local: ctx.local, discovery: null };
   }
   const { driftOf, soulDriftOf } = await import("../lib/materialize.mjs");
   const drift = new Map();
@@ -1876,7 +1879,67 @@ async function statusDrift(data) {
     const member = memberRowByKey(discovery.members, stamp.repoKey);
     if (member && typeof member.commit === "string" && (member.confirmed || (discovery.standalone === true && member.key === discovery.key))) stamp.current = member.commit;
   }
-  return { drift, soul, souls, unreachable: null };
+  return { drift, soul, souls, unreachable: null, local: ctx.local, discovery };
+}
+/** The deployment's workspace identity in `oats status --json` (feature workspace-identity), read
+ *  OFFLINE. `key` is the workspace HOST's canonical repo key (parseRepoRef(...).key) and `ref` the
+ *  reference as oats-local.yaml writes it. The host is the one this run observed, else the one this
+ *  machine's parsed cache knows: `ref` itself when the cache holds its workspace file, or the host its
+ *  cached oats-membership.yaml names when `ref` is a member ("workspace"). A member whose host is not
+ *  known keys as itself ("member"); a ref nothing is known of is taken as the host, as the schema
+ *  defines `workspace:` ("workspace"). The team model resolves as teamModel resolves it (the default
+ *  label is local; a committed team wins a collision) over the shared teams of, in order, the workspace
+ *  file this run observed (`teamsFrom: "observed"`), the cached file ("cache": no git process), or none
+ *  ("local"). `standalone` is the CONFIGURED standalone view only (oats-local.yaml `standalone:`): it
+ *  reads no workspace file, so its local teams are the whole team model. A run that fell back to the
+ *  standalone view (the host unreadable) is not: its team model is the workspace's, and its
+ *  discovery is the member's, never the host's key. */
+function workspaceIdentity(local, discovery) {
+  const ref = local.workspace;
+  const standalone = typeof local.standalone === "string" && local.standalone !== "";
+  const observed = discovery && discovery.standalone !== true && discovery.workspace ? discovery : null;
+  const cached = observed ? null : cachedWorkspace(ref);
+  const keyOf = (r) => { try { return remoteModule.parseRepoRef(r).key; } catch { return null; } };
+  let key, keyFrom;
+  if (observed) [key, keyFrom] = [observed.key, "workspace"];
+  else if (cached && cached.host === null) [key, keyFrom] = [keyOf(ref), "member"];
+  else [key, keyFrom] = [keyOf(cached?.host ?? ref), "workspace"];
+  if (key === null) keyFrom = null; // a reference parseRepoRef refuses: unusable, never matched
+  let shared = null, teamsFrom = "local";
+  if (!standalone) {
+    if (observed) [shared, teamsFrom] = [observed.workspace, "observed"];
+    else if (cached?.file) [shared, teamsFrom] = [cached.file, "cache"];
+  }
+  const model = teamModel(shared, local);
+  const labels = [...model.labels.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return {
+    key, ref, keyFrom, standalone,
+    defaultTeam: model.defaultTeam === null ? null : { label: model.defaultTeam, team: model.labels.get(model.defaultTeam)?.team ?? null },
+    teams: Object.fromEntries(labels.map((l) => [l, model.labels.get(l).team])),
+    teamsFrom,
+  };
+}
+/** What this machine's parsed cache knows of the workspace `ref` names (the values observeWorkspace and
+ *  confirmMembership stored, each at its repo's last observed commit): { host, file } — `host` the ref
+ *  of the workspace host, `file` its workspace file or null — when `ref` is the host (its workspace file
+ *  is cached) or a member whose cached oats-membership.yaml names it (discoverOrStandalone follows the
+ *  same backlink). A member's backlink is cached whether its own workspace slot was observed (missing)
+ *  or never was (the host's discovery confirmed it). { host: null, file: null } for a ref cached as
+ *  having no workspace file and no backlink; null when nothing is known. */
+function cachedWorkspace(ref) {
+  const options = remoteOptionsFromEnv();
+  const cached = (r, item) => {
+    const commit = remoteModule.lastObservedCommit(r, options);
+    const value = commit ? remoteModule.peekAtCommit(r, commit, item, options) : undefined;
+    return value && typeof value === "object" ? value : null;
+  };
+  const fileOf = (read) => (read && !read.missing && !read.problems && read.value && typeof read.value === "object" ? read.value : null);
+  const read = cached(ref, "workspace");
+  if (read && !read.missing) return { host: ref, file: fileOf(read) };
+  const membership = cached(ref, "membership");
+  const host = membership?.kind === "ok" && typeof membership.value?.workspace === "string" ? membership.value.workspace : null;
+  if (host !== null) return { host, file: fileOf(cached(host, "workspace")) };
+  return read ? { host: null, file: null } : null;
 }
 /** One `modules:` line per module. */
 function driftLine(row) {
@@ -1945,7 +2008,7 @@ async function status() {
       }
     }
     const observation = maxAgeGiven === null ? {} : { observation: observationBlock() };
-    console.log(JSON.stringify({ root, agents: data, ...observation, ...(ws ? { workspace: ws.unreachable ? { reachable: false, ...ws.unreachable } : { reachable: true } } : {}), ...(problems.length ? { problems } : {}), ...envelopeWarnings() }, null, 2)); return;
+    console.log(JSON.stringify({ root, agents: data, ...observation, ...(ws ? { workspace: { ...(ws.unreachable ? { reachable: false, ...ws.unreachable } : { reachable: true }), ...workspaceIdentity(ws.local, ws.discovery) } } : {}), ...(problems.length ? { problems } : {}), ...envelopeWarnings() }, null, 2)); return;
   }
   console.log(`oats status — agents root ${shortPath(root)}\n`);
   if (ws?.unreachable) console.log(`  workspace: unreachable (${ws.unreachable.reason}) — drift unknown\n`);
@@ -2253,6 +2316,8 @@ async function spawnCmd() {
     if (e?.code === "E_REQUIREMENT_INACTIVE") { bail(e.code, e.message, { soul: e.soul, capabilities: e.capabilities, context: e.context, remedy: e.remedy }); throw e; }
     if (e?.code === "E_CHILD_SPAWNS_DISABLED") { bail(e.code, e.message, { parent: e.parent, policy: e.policy }); throw e; }
     if (["E_BRANCH_EXISTS", "E_BASE_UNKNOWN"].includes(e?.code)) { bail(e.code, e.message); throw e; }
+    // The observed base could not be fetched into the clone: the clone, the repository and the commit travel along.
+    if (e?.code === "E_REMOTE_UNREADABLE" && e.details?.commit) { bail(e.code, e.message, e.details); throw e; }
     // K6b: the confirmed decision drifted — the fresh decision travels with the refusal so a GUI re-previews.
     if (e?.code === "E_DECISION_STALE") { bail(e.code, e.message, { decision: e.decision }); throw e; }
     if (e?.code === "E_IDEMPOTENCY_CONFLICT") { bail(e.code, e.message, { instance: e.instance, home: e.home }); throw e; }
@@ -2280,7 +2345,7 @@ async function spawnCmd() {
     // Desktop CLI API v1 spawn result — a FIXED shape (see docs/desktop-cli-api.md).
     jsonOk({
       instance: r.instance, agent: r.agent, home: r.home, work: r.work,
-      branch: r.branch || null, launched: r.launched, warnings: r.warnings || [],
+      branch: r.branch || null, base: r.base ?? null, launched: r.launched, warnings: r.warnings || [],
       ...(wakeSchedule ? { wakeSchedule } : {}), ...(wakeScheduleError ? { wakeScheduleError } : {}),
       tmux: r.tmux || null, backend: "tmux", repo: r.repo || null, harness: r.harness || null,
       model: r.model || null, parent: r.parentInstance || null,
@@ -2296,6 +2361,7 @@ async function spawnCmd() {
   }
   console.log(`Spawned ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch}` : ""})${r.launched ? ` — tmux window "${r.tmux.window}"` : " — not launched"}`);
   console.log(`  home:   ${shortPath(r.home)}`);
+  if (r.base) console.log(`  base:   ${r.base.oid.slice(0, 12)} (${r.base.ref === r.workspace?.soul?.repoKey ? `observed head of ${r.base.ref}` : r.base.ref})`);
   if (wakeSchedule) console.log(`  wake:   schedule ${wakeSchedule.id} (${wakeSchedule.cron} ${wakeSchedule.tz}), next ${wakeSchedule.nextRun || "disabled"}`);
   if (wakeScheduleError) console.error(`  wake:   NOT saved — ${wakeScheduleError.message} (the instance is created and launched; add the wake by hand with oats schedule add)`);
   if (!r.launched) console.log(`  launch: oats session start --home ${shellQuote(r.home)}`);
@@ -2324,8 +2390,8 @@ function retireCmd() {
   }
   // The calling instance knows its own home: self-retire never needs to
   // disambiguate a same-named twin by hand.
-  if (homeFlag === undefined && process.env.OATS_INSTANCE_HOME && (process.env.PI_AGENT_INSTANCE === name || process.env.OATS_INSTANCE === name)) homeFlag = process.env.OATS_INSTANCE_HOME;
-  const isSelf = process.env.PI_AGENT_INSTANCE === name || process.env.OATS_INSTANCE === name;
+  if (homeFlag === undefined && process.env.OATS_INSTANCE_HOME && process.env.OATS_INSTANCE === name) homeFlag = process.env.OATS_INSTANCE_HOME;
+  const isSelf = process.env.OATS_INSTANCE === name;
   if (isSelf && !args.includes("--self")) die(`"${name}" is the calling instance — self-retire is irreversible; if your task is complete and you were told to retire, re-run with --self (finish your memory files FIRST; your session dies ~8s after)`);
   if (!isSelf && args.includes("--self")) die(`--self given but "${name}" is not the calling instance`);
   const root = ensureRoot(dirFlag());
@@ -2837,23 +2903,32 @@ async function capabilityCommand() {
     if (!hit) return NOT_DISPATCHED;
     // The same team/workspace facts a spawn hook receives (lead decision c3-7).
     const teamCtx = teamEnv(resolvedFromPrepared(hit.prepared, hit.deployment));
-    // No home, so no recorded soul: the soul's per-commit copy is OATS_SOUL when a spawn
-    // already fetched exactly this commit; otherwise the command gets none (never ambient).
-    // The agent directory is the soul entry's own (a package soul's is `<package>--<soul>`), never
-    // the bare name, which a same-named member soul's copy may occupy (as instance-inspect does).
-    const { agentDirOf } = await import("../lib/instance-resolution.mjs");
-    const entry = hit.prepared?.soulEntry;
-    const cachedSoul = entry?.commit ? join(hit.deployment, "agents", agentDirOf(entry), "souls", String(entry.commit).slice(0, 12)) : null;
-    return runManifestCommand({ capability: hit.module.name, ...hit.manifest }, { settings: hit.settings, origins: hit.resolution?.payloadOrigins?.[hit.module.name] }, teamCtx, hit.ensureTree, cachedSoul && existsSync(join(cachedSoul, "soul.yaml")) ? realpathSync(cachedSoul) : undefined);
+    // No home, so no recorded soul: OATS_SOUL is the soul's source at the resolved commit, read
+    // as a spawn preview reads it (the per-commit copy a spawn left under the agents root, else a
+    // temporary fetch removed when the command ends). Read only when the command runs (after its
+    // --help). A soul that cannot be read refuses the command: it never runs with OATS_SOUL unset.
+    const soul = async () => {
+      const { previewWorkspaceSoul } = await import("../lib/instance-resolution.mjs");
+      const entry = hit.prepared?.soulEntry;
+      try { const p = await previewWorkspaceSoul(hit.prepared, join(hit.deployment, "agents")); return { dir: p.soulDir, cleanup: p.cleanup }; }
+      catch (e) {
+        throw Object.assign(new Error(`oats ${cmd}: cannot read soul ${flag("soul")} at ${String(entry?.commit ?? "?").slice(0, 12)}, so the command would run without OATS_SOUL; nothing was run: ${e.message}`),
+          { code: typeof e?.code === "string" && e.code.startsWith("E_") ? e.code : "E_REMOTE_UNREADABLE", details: { soul: flag("soul"), repoKey: entry?.repoKey ?? null, commit: entry?.commit ?? null } });
+      }
+    };
+    return runManifestCommand({ capability: hit.module.name, ...hit.manifest }, { settings: hit.settings, origins: hit.resolution?.payloadOrigins?.[hit.module.name] }, teamCtx, hit.ensureTree, soul);
   }
 
   async function dispatch() {
     let activeIds;
     let context = process.cwd();
     let teamCtx, homeMeta, homeTeamCtx;
-    // OATS_INSTANCE_HOME is the canonical identity; the older names still count. With none set
-    // (a harness that strips the session env), the home enclosing the cwd.
-    const instanceHome = process.env.OATS_INSTANCE_HOME || process.env.PI_AGENT_HOME || process.env.OATS_HOME || enclosingInstanceHome(logicalCwd());
+    // OATS_INSTANCE_HOME is the identity; OATS_HOME still counts. With neither set (a harness that
+    // strips the session env), the home enclosing the cwd. What chose the home is named in every
+    // refusal about it.
+    const homeVariable = ["OATS_INSTANCE_HOME", "OATS_HOME"].find((name) => process.env[name]);
+    const instanceHome = homeVariable ? process.env[homeVariable] : enclosingInstanceHome(logicalCwd());
+    const chosenBy = homeVariable ?? "the working directory";
     const metaFile = instanceHome && join(instanceHome, "instance.json");
     // Capability-id keyed — never answer for `constructor`/`toString`. Belt and
     // braces: the ids come from instance.json, which spawn wrote from resolved
@@ -2872,11 +2947,19 @@ async function capabilityCommand() {
         if (!isWorkspaceHome(meta)) { const e = preWorkspaceHome(instanceHome, "nothing was dispatched"); bail(e.code, e.message); }
         context = meta.repo || context;
         soulDir = instanceSoulDir(instanceHome, meta);
+        const ws = meta.workspace && typeof meta.workspace === "object" ? meta.workspace : {};
+        // Inside a home the namespace is the home's, so a --soul for another soul is refused, never
+        // ignored (as inspect's --soul against --home is). The home's own soul, by any of its names, is fine.
+        const soulFlag = flag("soul");
+        if (soulFlag === true) bail("E_BAD_ARGS", "--soul needs a soul name", { flag: "--soul" });
+        if (typeof soulFlag === "string" && !(await import("../lib/instance-resolution.mjs")).homeSoulMatches(soulFlag, meta)) {
+          bail("E_HOME_MISMATCH", `--soul ${soulFlag} is not the soul of the instance home ${instanceHome} (${meta.agent}), which ${chosenBy} chose; to run "${cmd}" as a spawn of ${soulFlag} would, run it outside the instance home with OATS_INSTANCE_HOME and OATS_HOME unset`,
+            { home: instanceHome, soul: meta.agent, chosenBy, flag: "--soul" });
+        }
         // The team/workspace facts the home recorded at spawn, as its hooks got them, with the
         // recorded eligible teams (OATS_TEAMS_SOURCE=recorded). Only the home's MESSAGING module
         // gets them live (below): its team verbs (join/leave/teams) must see what the workspace
         // allows now, and no other command pays a remote read for them.
-        const ws = meta.workspace && typeof meta.workspace === "object" ? meta.workspace : {};
         const messaging = (meta.capabilities || []).find((c) => c.layer === "messaging")?.id;
         homeMeta = { meta, messaging };
         homeTeamCtx = (t) => teamEnv({ workspace: { key: ws.key, name: ws.name, deployment: ws.deployment }, teams: t.teams, defaultTeam: t.defaultTeam, teamsSource: t.source });
@@ -2894,7 +2977,7 @@ async function capabilityCommand() {
     // Workspace model: an instance's own materialized modules are the command
     // namespaces available to it (instance.json.modules → <home>/.oats/modules).
     const mans = Object.values(capabilityManifests(instanceHome)).filter((m) => m.command === cmd && m.commands);
-    if (!mans.length) return NOT_DISPATCHED;
+    if (!mans.length) bail("E_UNKNOWN_COMMAND", `oats ${cmd}: no capability of the instance home ${instanceHome} (soul ${homeMeta.meta.agent}), which ${chosenBy} chose, provides "${cmd}"`, { home: instanceHome, chosenBy, namespace: cmd });
     if (mans.length > 1) bail("E_DUPLICATE_NAMESPACE", `duplicate operational command namespace "${cmd}": ${mans.map((m) => m.capability).join(", ")}`);
     const m = mans[0];
     if (!activeIds.includes(m.capability)) bail("E_CAPABILITY_INACTIVE", `${m.capability} command namespace is not active in the current context/instance`);
@@ -2905,14 +2988,14 @@ async function capabilityCommand() {
       const live = await liveTeams(instanceHome, homeMeta.meta, { remoteOptions: remoteOptionsFromEnv() });
       teamCtx = homeTeamCtx(live);
     }
-    return runManifestCommand(m, { settings: capSettings[m.capability] || {}, origins: capOrigins[m.capability] }, teamCtx, () => m._dir, soulDir);
+    return runManifestCommand(m, { settings: capSettings[m.capability] || {}, origins: capOrigins[m.capability] }, teamCtx, () => m._dir, () => ({ dir: soulDir, cleanup: () => {} }));
   }
 
   /** Help / unknown-command / spec validation / exec — shared by every context.
    *  `m` is the manifest (with `capability`; `_dir` may be absent until `ensureDir`
    *  resolves the directory holding the executable — the operator branch fetches
    *  the module tree only when a command is actually going to run). */
-  async function runManifestCommand(m, { settings, origins }, teamCtx, ensureDir, soulDir) {
+  async function runManifestCommand(m, { settings, origins }, teamCtx, ensureDir, soul) {
     const sub = args[1];
     const cmds = Object.keys(m.commands);
     // `oats <ns> --help` and `oats <ns> <cmd> --help` answer from the manifest
@@ -2946,6 +3029,11 @@ async function capabilityCommand() {
     try { abs = capabilityExecutablePath(withDir, script); }
     catch (e) { bail("E_CAPABILITY_BROKEN", e.message); }
     if (!abs) bail("E_CAPABILITY_BROKEN", `${cmd} ${sub}: script not found (${join(dir, script)})`);
+    // The soul the command acts for → { dir, cleanup }: a home's recorded soul directory, or (operator
+    // dispatch) the soul read at its resolved commit, whose temporary copy goes when this process exits.
+    let soulDir;
+    try { const read = await soul(); soulDir = read.dir; process.once("exit", read.cleanup); }
+    catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) bail(e.code, e.message, e.details); throw e; }
     // OATS_SOUL is the recorded soul or nothing: an ambient value inherited from the
     // invoking process names some other soul (a coordinator's own), never this one.
     const { OATS_SOUL: _ambientSoul, ...inherited } = process.env;
@@ -3031,7 +3119,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-2", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capabilityShowApi: 1 }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-2", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capabilityShowApi: 1 }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -3750,6 +3838,9 @@ The turn record (core — every conversation captured, searchable, replicated):
   oats capture [--watch|--status]            land Claude Code/pi/codex sessions and aw
       [--owner <name>] [--root <dir>]       client logs in the record; reconciliation
                                             is the capture
+  oats capture --file <path> --format cc|pi|codex --home <instance home> [--json]
+                                            one session file (an archived session),
+                                            captured as --home capture would
   oats recall [--kind k] [--thread t]        search the whole record — mail, chat,
       [--from f] [--show id] <query>        sessions — with exact turn provenance
   oats setup [--owner <name>] [--dry-run]    install capture hooks + background watcher

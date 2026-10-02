@@ -118,7 +118,7 @@
               "file": "TASK.md"
             }
           },
-          "command": "OATS_INSTANCE='dev-claude-attached-knone-mnone' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-claude-attached-knone-mnone' PI_AGENT_INSTANCE='dev-claude-attached-knone-mnone' PI_AGENT_HOME='<base>/deployment/agents/dev/instances/dev-claude-attached-knone-mnone' '<base>/bin/claude' -- \"$(cat TASK.md)\"",
+          "command": "OATS_INSTANCE='dev-claude-attached-knone-mnone' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-claude-attached-knone-mnone' '<base>/bin/claude' -- '@TASK.md'",
           "createdAt": "<createdAt>",
           "modules": {},
           "providers": {},
@@ -162,6 +162,10 @@
           "repo": "<base>/deployment/ws",
           "work": "worktree",
           "branch": "agents/dev-owner",
+          "base": {
+            "ref": "local/<base>/remotes/ws.git",
+            "oid": "<sha>"
+          },
           "harness": "pi",
           "modelFrom": "harness-default",
           "launchFrom": "flag",
@@ -264,7 +268,7 @@
               "file": "TASK.md"
             }
           },
-          "command": "OATS_INSTANCE='dev-owner' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-owner' PI_AGENT_INSTANCE='dev-owner' PI_AGENT_HOME='<base>/deployment/agents/dev/instances/dev-owner' '<base>/bin/pi' --append-system-prompt '<base>/deployment/agents/dev/instances/dev-owner/AGENTS.md' --approve --name 'dev-owner' '@TASK.md'",
+          "command": "OATS_INSTANCE='dev-owner' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-owner' '<base>/bin/pi' --append-system-prompt '<base>/deployment/agents/dev/instances/dev-owner/AGENTS.md' --approve --name 'dev-owner' '@TASK.md'",
           "createdAt": "<createdAt>",
           "modules": {},
           "providers": {},
@@ -311,6 +315,15 @@
     }
   ],
   "workspace": {
-    "reachable": true
+    "reachable": true,
+    "key": "local/<base>/remotes/ws.git",
+    "ref": "file://<base>/remotes/ws.git",
+    "keyFrom": "workspace",
+    "standalone": false,
+    "defaultTeam": null,
+    "teams": {
+      "global": null
+    },
+    "teamsFrom": "observed"
   }
 }

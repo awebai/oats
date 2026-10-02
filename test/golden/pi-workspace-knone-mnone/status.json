@@ -119,7 +119,7 @@
               "file": "TASK.md"
             }
           },
-          "command": "OATS_INSTANCE='dev-pi-workspace-knone-mnone' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-pi-workspace-knone-mnone' PI_AGENT_INSTANCE='dev-pi-workspace-knone-mnone' PI_AGENT_HOME='<base>/deployment/agents/dev/instances/dev-pi-workspace-knone-mnone' '<base>/bin/pi' --append-system-prompt '<base>/deployment/agents/dev/instances/dev-pi-workspace-knone-mnone/AGENTS.md' --approve --name 'dev-pi-workspace-knone-mnone' '@TASK.md'",
+          "command": "OATS_INSTANCE='dev-pi-workspace-knone-mnone' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-pi-workspace-knone-mnone' '<base>/bin/pi' --append-system-prompt '<base>/deployment/agents/dev/instances/dev-pi-workspace-knone-mnone/AGENTS.md' --approve --name 'dev-pi-workspace-knone-mnone' '@TASK.md'",
           "createdAt": "<createdAt>",
           "modules": {},
           "providers": {},
@@ -166,6 +166,15 @@
     }
   ],
   "workspace": {
-    "reachable": true
+    "reachable": true,
+    "key": "local/<base>/remotes/ws.git",
+    "ref": "file://<base>/remotes/ws.git",
+    "keyFrom": "workspace",
+    "standalone": false,
+    "defaultTeam": null,
+    "teams": {
+      "global": null
+    },
+    "teamsFrom": "observed"
   }
 }

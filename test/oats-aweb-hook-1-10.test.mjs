@@ -270,6 +270,11 @@ test("retire: aliasReusable follows aw workspace delete --json (released, or not
     assert.deepEqual(r.doc.meta, { retired: true, aliasReusable: true, aliasReason: "revoked", joinedTeams: [] });
     assert.equal(r.doc.warning, undefined, "a released alias needs no warning");
     assert.match(readFileSync(join(base, "aw.log"), "utf8"), /workspace delete probe --json/);
+    // oats.aweb 1.17.7: a completed retire is recorded and a repeat answers from the record without calling aw.
+    r = runHook(base, bin, "retire", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_META: JSON.stringify(meta), FAKE_AW_VERSION: "aw 1.36.13", FAKE_ALIAS_RELEASED: "false" });
+    assert.deepEqual(r.doc.meta, { retired: true, aliasReusable: true, aliasReason: "revoked", joinedTeams: [] });
+    assert.equal(readFileSync(join(base, "aw.log"), "utf8").split("workspace delete probe --json").length - 1, 1);
+    rmSync(join(home, ".oats-aweb", "default-retire.json"));
     r = runHook(base, bin, "retire", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_META: JSON.stringify(meta), FAKE_AW_VERSION: "aw 1.36.13", FAKE_ALIAS_RELEASED: "false" });
     assert.deepEqual(r.doc.meta, { retired: true, aliasReusable: false, aliasReason: "no_workspace_credential", joinedTeams: [] });
     assert.match(r.doc.warning, /not released \(no_workspace_credential\).*different --name \(kernels 0\.26\.0\+\) or a different --purpose/);

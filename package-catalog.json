@@ -3,12 +3,12 @@
   "packages": {
     "oats.okf": {
       "url": "https://github.com/awebai/oats-okf.git",
-      "ref": "v4.0.5",
+      "ref": "v4.1.0",
       "path": "oats-package"
     },
     "oats.aweb": {
       "url": "https://github.com/awebai/oats-aweb.git",
-      "ref": "v1.17.5",
+      "ref": "v1.17.7",
       "path": "oats-package"
     },
     "oats.jira": {
@@ -28,7 +28,7 @@
     },
     "oats.engineering": {
       "url": "https://github.com/awebai/oats-engineering.git",
-      "ref": "v1.4.0",
+      "ref": "v1.5.0",
       "path": "oats-package"
     },
     "oats.framework": {

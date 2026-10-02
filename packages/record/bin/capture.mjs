@@ -12,15 +12,17 @@
 // accounts) whose sources are never captured — see lib/ignore.mjs.
 // Reconciliation is the capture; hooks and watch only decide when to run it.
 
-import { watch } from "node:fs";
+import { closeSync, constants, fstatSync, openSync, readFileSync, watch } from "node:fs";
 import { homedir, hostname } from "node:os";
-import { join } from "node:path";
+import { basename, join, resolve } from "node:path";
 import process from "node:process";
 
 import { RecordStore } from "../lib/store.mjs";
 import { captureAllSessions, captureSessions } from "../lib/capture-cc.mjs";
 import { sessionsForHome } from "../lib/sessions-for-home.mjs";
-import { SESSION_FORMATS } from "../lib/formats.mjs";
+import { jsonlLines, SESSION_FORMATS } from "../lib/formats.mjs";
+import { cwdOfLine } from "../lib/sessions-for-home.mjs";
+import { digest, readRange } from "../lib/session-snapshot.mjs";
 import { captureAwLogs, defaultCommLogDir } from "../lib/capture-aw.mjs";
 import { RecordIndex } from "../lib/index-db.mjs";
 import { IgnoreError, ignoreFilePath, loadIgnore } from "../lib/ignore.mjs";
@@ -43,7 +45,7 @@ function loadIgnoreOrExit(recordRoot) {
 // hostname-derived owner, which forked the whole record into a second owner
 // namespace: 571 duplicate journals from one typo. Parsing must refuse what
 // it does not understand before anything can be written.
-const VALUE_FLAGS = new Set(["root", "owner", "home"]);
+const VALUE_FLAGS = new Set(["root", "owner", "home", "file", "format"]);
 const BOOL_FLAGS = new Set([
   "watch",
   "status",
@@ -54,6 +56,7 @@ const BOOL_FLAGS = new Set([
   "aw-only",
   "no-index",
   "current-roots",
+  "json",
 ]);
 
 const USAGE = `capture — land sessions and aw client logs in the turn record.
@@ -81,6 +84,29 @@ const USAGE = `capture — land sessions and aw client logs in the turn record.
                                explicit observer-time inventory for standalone
                                or legacy sources lacking launch history. Not a
                                certificate of all historical source locations.
+  capture --file <path> --format cc|pi|codex --home <dir> [--json]
+                               capture ONE session file (an archived session,
+                               say) as the --home capture of <dir> would: under
+                               the capture lock, as a final pass, ignore rules
+                               applied. <dir> must be an OATS instance home and
+                               the owner explicit (--owner or TURN_RECORD_OWNER;
+                               never the hostname). The format is never sniffed.
+                               The file must be a regular file (no symlink, FIFO
+                               or directory); it is read once. The session id
+                               comes from the file NAME, as for live capture: a
+                               renamed file lands in another stream. Again with
+                               the same file and owner appends nothing.
+                               --json prints {thread, stream, firstTurnId,
+                               lastTurnId, turns, appended, ignored, sha256 (of
+                               the bytes captured), status, complete, ...};
+                               without it, one line. Lock skips, holds and
+                               incomplete tails exit 0 with complete:false.
+                               Errors print {status:"failed", complete:false,
+                               code, error}: E_USAGE (exit 2); E_FILE_UNREADABLE,
+                               E_NOT_REGULAR_FILE, E_IGNORED (an ignore rule
+                               excludes it; nothing read), E_NO_TURNS (no
+                               records), E_FORMAT (no session header of that
+                               format) and E_CAPTURE_FAILED (exit 1).
   capture --install-hint       print the Claude Code hook snippet
   capture --help               this text
   capture --quiet              suppress per-pass progress
@@ -106,6 +132,7 @@ function parseArgs(argv) {
     if (VALUE_FLAGS.has(name)) {
       const value = argv[++i];
       if (value === undefined) throw new UsageError(`${a} needs a value`);
+      if (name === "file" && args.file !== undefined) throw new UsageError("one --file per call");
       args[name] = value;
     } else if (BOOL_FLAGS.has(name)) {
       args[name] = true;
@@ -121,6 +148,11 @@ try {
   args = parseArgs(process.argv.slice(2));
 } catch (err) {
   if (!(err instanceof UsageError)) throw err;
+  // --file --json answers JSON even for a usage error: it is for programs.
+  if (process.argv.includes("--json")) {
+    console.log(JSON.stringify({ status: "failed", complete: false, code: "E_USAGE", error: err.message }, null, 2));
+    process.exit(2);
+  }
   console.error(`capture: ${err.message}\n\n${USAGE}`);
   process.exit(2);
 }
@@ -183,6 +215,9 @@ function withCaptureLock(fn) {
   let lock;
   try {
     lock = acquireCaptureLock(root);
+    // Said by the pass that removed it, never quiet, whether or not it then took the lock: a pass that
+    // died holding the lock is worth knowing about.
+    if (lock.reclaimed) console.error(`capture: reclaimed ${lock.path} from pid ${lock.reclaimed.pid}, which died (started ${lock.reclaimed.startedAt || "?"})`);
   } catch (err) {
     if (err.lockCleanup) {
       const c = err.lockCleanup;
@@ -276,6 +311,171 @@ function pass() {
   });
 }
 
+/** A final capture of exact files, one batch per format, under the lock: counts into `outcome`, issues into
+ *  `issues`, then the index unless --no-index. → withCaptureLock's answer (`outcome`, or a skip). */
+function captureUnderLock(recordStore, recordOwner, batches, ignore, outcome, issues) {
+  return withCaptureLock(() => {
+    for (const [format, files] of batches) {
+      const r = captureSessions(recordStore, { owner: recordOwner, files, format, ignore, final: true });
+      outcome.appended += r.appended;
+      outcome.held += r.held;
+      outcome.incomplete += r.incomplete;
+      outcome.ignored += r.ignored;
+      issues.push(...r.issues);
+    }
+    if (!args["no-index"]) { // an earlier append-only pass may have left unindexed turns
+      const index = new RecordIndex(recordStore);
+      try {
+        index.update();
+      } finally {
+        index.close();
+      }
+    }
+    return outcome;
+  });
+}
+
+/** A stream's turns that no tombstone hides. A tombstoned turn is hidden everywhere; a boundary naming one
+ *  would be refused by recall, so boundaries come from the visible turns only. */
+function visibleTurns(recordStore, stream, claims = recordStore.tombstoneClaims()) {
+  return recordStore.readStream(stream).filter((t) => !recordStore.claimHides(claims, t));
+}
+
+/** The outcome vocabulary: complete only with no failure, skip, hold or incomplete tail (and, for --home, no
+ *  unattributed source). */
+function statusOf(outcome, unattributed = 0) {
+  return outcome.failed ? "failed" : outcome.skipped ? "skipped" : outcome.held ? "held" : outcome.incomplete || unattributed ? "incomplete" : "complete";
+}
+
+// capture --file: ONE session file the operator attributes to an instance home (an archived session the
+// --home sweep can no longer find), captured exactly as --home capture would capture it: same stream
+// identity, same lock, final, ignore rules applied. The file is opened once and read from that descriptor;
+// the receipt's sha256 is of the bytes captured. Every outcome that binds nothing is an error code.
+const SESSION_HEADER = { cc: "a record with a cwd", pi: "a session record with a cwd", codex: "a session_meta record with a payload cwd" };
+const HEADER_HINT = { cc: "a cc record with a cwd", pi: "a pi session header", codex: "a codex session_meta header" };
+// pi and codex headers are specific; any record with a cwd reads as cc, so cc is named last.
+const HEADER_ORDER = ["pi", "codex", "cc"];
+
+/** Whether the headers `found` in a file make it a `stated` session. pi and codex need their header. cc needs a
+ *  record with a cwd and NO other format's session header anywhere in the file: a cc transcript never holds
+ *  one, so a single one is decisive (pi's session record carries a top-level cwd too). */
+function isFormat(found, stated) {
+  return stated === "cc" ? found.has("cc") && !found.has("pi") && !found.has("codex") : found.has(stated);
+}
+
+/** Records (non-blank lines, an undecodable one included) and the formats whose session header a COMPLETE
+ *  line carries. A pi or codex file is settled at its header; a cc file is judged whole. A line its writer
+ *  never terminated is no header. */
+function sessionHeaders(bytes, stated) {
+  let records = 0;
+  const found = new Set();
+  const terminated = bytes.length > 0 && bytes[bytes.length - 1] === 10;
+  const take = (text, complete) => {
+    if (text === null || text.trim() !== "") records++;
+    if (complete && text !== null) for (const source of HEADER_ORDER) if (cwdOfLine(source, text) !== undefined) found.add(source);
+  };
+  let pending;
+  for (const { text } of jsonlLines(bytes)) {
+    if (pending !== undefined) take(pending, true);
+    if (stated !== "cc" && found.has(stated)) return { records, found };
+    pending = text;
+  }
+  if (pending !== undefined) take(pending, terminated);
+  return { records, found };
+}
+
+function fileKind(stat) {
+  return stat.isDirectory() ? "a directory" : stat.isFIFO() ? "a FIFO" : stat.isSocket() ? "a socket" : stat.isCharacterDevice() || stat.isBlockDevice() ? "a device" : "not a regular file";
+}
+
+/** → the exit status. */
+function fileCapture() {
+  const json = Boolean(args.json);
+  const fail = (code, error, extra = {}) => {
+    if (json) console.log(JSON.stringify({ ...extra, status: "failed", complete: false, code, error }, null, 2));
+    else console.error(`capture --file: ${code}: ${error}`);
+    return code === "E_USAGE" ? 2 : 1;
+  };
+  if (args.file === undefined) return fail("E_USAGE", args.format !== undefined ? "--format needs --file" : "--json needs --file");
+  for (const mode of ["watch", "status", "install-hint", "sessions-only", "aw-only", "current-roots"]) {
+    if (args[mode]) return fail("E_USAGE", `--file does not combine with --${mode}`);
+  }
+  if (args.home === undefined) return fail("E_USAGE", "--file needs --home <instance home>: the instance the session belongs to");
+  let instance;
+  try {
+    const meta = JSON.parse(readFileSync(join(args.home, "instance.json"), "utf8"));
+    if (typeof meta?.instance === "string" && meta.instance) instance = meta.instance;
+  } catch { /* not an instance home: said below */ }
+  if (!instance) return fail("E_USAGE", `--home ${args.home} is not an instance home (no instance.json naming an instance)`);
+  const fileOwner = args.owner ?? process.env.TURN_RECORD_OWNER;
+  if (!fileOwner) return fail("E_USAGE", "--file needs an explicit owner: --owner <name> or TURN_RECORD_OWNER (the hostname is never assumed)");
+  if (args.format === undefined) return fail("E_USAGE", "--file needs --format cc|pi|codex (the format is never guessed)");
+  if (!Object.hasOwn(SESSION_FORMATS, args.format)) return fail("E_USAGE", `--format must be cc, pi or codex, not ${JSON.stringify(args.format)}`);
+  const fmt = SESSION_FORMATS[args.format];
+  // Absolute, as every other capture caller passes: path ignore rules, the offsets key and the receipt all
+  // read the path, and a relative spelling would slip past a path rule.
+  const path = resolve(args.file);
+  const where = { home: args.home, owner: fileOwner, file: path, format: args.format };
+
+  let ignore;
+  try { ignore = loadIgnore(root); } catch (err) { return fail("E_CAPTURE_FAILED", err.message, where); }
+  const sessionId = fmt.sessionId(path);
+  // Before the open, on the path and its keys, as every capture checks: an ignored file is never read.
+  if (ignore.ignores(path, [basename(path), sessionId, ...(fmt.ignoreKeys?.(path) ?? [])])) {
+    return fail("E_IGNORED", `a capture ignore rule (${ignoreFilePath(root)}) excludes ${path}; nothing was read`, where);
+  }
+  let fd;
+  try { fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK); }
+  catch (err) {
+    if (err.code === "ELOOP" || err.code === "EMLINK") return fail("E_NOT_REGULAR_FILE", `${path} is a symbolic link; pass the file it names`, where);
+    return fail("E_FILE_UNREADABLE", `cannot open ${path}: ${err.message}`, where);
+  }
+  let stat, bytes;
+  try {
+    stat = fstatSync(fd);
+    if (!stat.isFile()) return fail("E_NOT_REGULAR_FILE", `${path} is ${fileKind(stat)}, not a regular file`, where);
+    bytes = readRange(fd, 0, stat.size, path);
+  } catch (err) {
+    return fail("E_FILE_UNREADABLE", `cannot read ${path}: ${err.message}`, where);
+  } finally { closeSync(fd); }
+
+  const { records, found } = sessionHeaders(bytes, args.format);
+  if (!records) return fail("E_NO_TURNS", `${path} has no records${bytes.length ? " (only blank lines)" : " (it is empty)"}`, where);
+  if (!isFormat(found, args.format)) {
+    const other = HEADER_ORDER.find((f) => f !== args.format && isFormat(found, f));
+    return fail("E_FORMAT", other
+      ? `${path} is not a ${args.format} session: it has ${HEADER_HINT[other]}; pass --format ${other}`
+      : `${path} has no ${args.format} session header (${SESSION_HEADER[args.format]})`, where);
+  }
+
+  const sha256 = digest(bytes);
+  const fileStore = new RecordStore(root, { owner: fileOwner });
+  const outcome = { appended: 0, skipped: false, held: 0, incomplete: 0, failed: 0, ignored: 0 };
+  const issues = [];
+  try {
+    Object.assign(outcome, captureUnderLock(fileStore, fileOwner, [[args.format, [{ path, pinned: { bytes, stat } }]]], ignore, outcome, issues));
+  } catch (err) {
+    // A failed pass may have appended part of the file: never claim a count for it.
+    return fail("E_CAPTURE_FAILED", err.message || String(err), { ...where, sha256, appended: null });
+  }
+  if (process.exitCode) return fail("E_CAPTURE_FAILED", "capture lock release failed; see stderr for recovery", { ...where, sha256 });
+
+  const stream = `${fileOwner}~${fmt.source}.${sessionId}`;
+  const turns = visibleTurns(fileStore, stream);
+  const status = statusOf(outcome);
+  const { lock: _lock, ...counts } = outcome;
+  const receipt = {
+    ...where, instance, thread: `${fmt.source}:session:${sessionId}`, stream, sessionId,
+    turns: turns.length, firstTurnId: turns[0]?.id ?? null, lastTurnId: turns.at(-1)?.id ?? null,
+    ...counts, status, complete: status === "complete", sha256, ...(issues.length ? { issues } : {}),
+  };
+  if (json) console.log(JSON.stringify(receipt, null, 2));
+  else console.log(`capture --file: ${status}, ${receipt.turns} turns (${outcome.appended} new) in ${stream}, sha256 ${sha256}`);
+  return 0;
+}
+
+if (args.file !== undefined || args.format !== undefined || args.json) process.exit(fileCapture());
+
 if (args["install-hint"]) {
   const self = new URL(import.meta.url).pathname;
   console.log(`Add to Claude Code settings.json to capture on session stop/end:
@@ -334,31 +534,11 @@ if (args.home) {
       if (!formats.has(s.source)) formats.set(s.source, []);
       formats.get(s.source).push(s);
     }
-    Object.assign(outcome, withCaptureLock(() => {
-      for (const [format, files] of formats) {
-        const r = captureSessions(store, { owner, files, format, ignore, final: true });
-        outcome.appended += r.appended;
-        outcome.held += r.held;
-        outcome.incomplete += r.incomplete;
-        outcome.ignored += r.ignored;
-        issues.push(...r.issues);
-      }
-      if (!args["no-index"]) { // an earlier append-only pass may have left unindexed turns
-        const index = new RecordIndex(store);
-        try {
-          index.update();
-        } finally {
-          index.close();
-        }
-      }
-      return outcome;
-    }));
-    // A tombstoned turn is hidden everywhere; a boundary naming one would be
-    // refused by recall, so boundaries come from the visible turns only.
+    Object.assign(outcome, captureUnderLock(store, owner, formats, ignore, outcome, issues));
     const claims = store.tombstoneClaims();
     for (const s of found) {
       const stream = `${owner}~${s.source}.${s.sessionId}`;
-      const turns = store.readStream(stream).filter((t) => !store.claimHides(claims, t));
+      const turns = visibleTurns(store, stream, claims);
       if (!turns.length) continue; // ignored by rule, nothing capturable yet, or all hidden
       sessions.push({
         thread: s.thread,
@@ -386,7 +566,7 @@ if (args.home) {
     outcome.failed++;
     error = "capture lock release failed; see stderr for recovery";
   }
-  const status = outcome.failed ? "failed" : outcome.skipped ? "skipped" : outcome.held ? "held" : outcome.incomplete || unattributed.length ? "incomplete" : "complete";
+  const status = statusOf(outcome, unattributed.length);
   console.log(JSON.stringify({ home: args.home, owner, ...outcome, status, complete: status === "complete", sessions, sourceRoots: args["current-roots"] ? "current-env" : "launch-history",
     ...(error ? { error } : {}), ...(issues.length ? { issues } : {}), ...(unattributed.length ? { unattributed } : {}),
   }, null, 2));

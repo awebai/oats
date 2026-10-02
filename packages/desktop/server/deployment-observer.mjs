@@ -5,6 +5,19 @@ import { cliDeploymentRead } from '../deployment-read-cli.mjs';
 import { deploymentStatusData, workspaceStatusData, observationData } from '../deployment-data.mjs';
 import { deploymentReadGate, deploymentFailure, validMaxAge } from '../renderer/deployment-contract.mjs';
 export const MAX_DEPLOYMENT_OBSERVATIONS = 2; // each owns at most two CLI reads
+
+/** Run `fn` over `items` with at most `limit` calls in flight, first come first served; results keep
+ * the input order. The observation cycle reads every registered deployment through this, bounded by
+ * the observer's own admission: starting them all in one tick left the third and later deployments
+ * E_DEPLOYMENT_BUSY on every cycle, never read and shown as "pending" forever (#461). A slow
+ * deployment holds one slot while the others go through the rest. */
+export async function mapBounded(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  const worker = async () => { while (next < items.length) { const index = next++; results[index] = await fn(items[index], index); } };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker));
+  return results;
+}
 const absolute = value => typeof value === 'string' && !value.includes('\0') && isAbsolute(value) && resolve(value) === value;
 
 /** getContext(id) is the owner's registry lookup, not renderer data. revision

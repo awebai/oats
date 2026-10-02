@@ -29,6 +29,7 @@ import { jsonlLines, SESSION_FORMATS } from "./formats.mjs";
 import { loadIgnore } from "./ignore.mjs";
 import { assertIdentity, assertProtectedDescriptor, digest, identity, readRange, verifySnapshot } from "./session-snapshot.mjs";
 import { guardCapturedPath } from "./native-history.mjs";
+import { fileChunks } from "./file-lines.mjs";
 import { isDeepStrictEqual } from "node:util";
 
 export const SESSION_STREAM_SOURCE = "cc";
@@ -118,16 +119,16 @@ function readFrom(path, start, size) {
   }
 }
 
-// The journal's last captured source line, read from its tail without
-// parsing the whole file (backward scan, doubling window). 0 when the
-// journal is missing or empty.
-function lastJournalLine(store, streamId) {
+// The journal's last whole turn, read from its tail without parsing the whole
+// file (backward scan, doubling window). null when the journal is missing or
+// holds none.
+function lastJournalTurn(store, streamId) {
   const path = store.journalPath(streamId);
   let size;
   try {
     size = statSync(path).size;
   } catch (err) {
-    if (err.code === "ENOENT") return 0;
+    if (err.code === "ENOENT") return null;
     throw err;
   }
   let window = 64 * 1024;
@@ -145,12 +146,12 @@ function lastJournalLine(store, streamId) {
       // window covers the whole file).
       if (i === 0 && start > 0) break;
       try {
-        return JSON.parse(candidates[i]).provenance?.origin?.line ?? 0;
+        return JSON.parse(candidates[i]);
       } catch {
         continue; // fragment or torn line: look further back
       }
     }
-    if (start === 0) return 0;
+    if (start === 0) return null;
     window *= 2;
   }
 }
@@ -160,22 +161,81 @@ function lastJournalLine(store, streamId) {
 // Honest limit: an in-place REWRITE of already-captured lines is not
 // detected (only growth is; a shrink triggers a rescan via the size
 // check in the caller). Transcript writers are append-only in practice.
-function offsetFromJournal(store, streamId, sourcePath, final, sourceBytes) {
-  const turns = store.readStream(streamId);
-  if (turns.length === 0) return { bytes: 0, line: 0, lastTs: "" };
-  const last = turns[turns.length - 1];
+// Both are read in bounded memory: the journal's last turn from its tail, the
+// source's lines counted chunk by chunk (awebai/oats#456).
+// `last` is the journal's last turn (lastJournalTurn), null when it has none.
+function offsetFromJournal(last, sourcePath, final, sourceBytes) {
+  if (!last) return { bytes: 0, line: 0, lastTs: "" };
   const lastLine = last.provenance?.origin?.line ?? 0;
-  const bytes = sourceBytes ?? readFileSync(sourcePath);
-  let line = 0;
-  let offset = 0;
-  while (line < lastLine && offset < bytes.length) {
-    const nl = bytes.indexOf(10, offset);
-    if (nl === -1) break;
-    line++;
-    offset = nl + 1;
-  }
+  const { line, offset } = sourceBytes ? lineOffset([sourceBytes], lastLine) : lineOffsetOfFile(sourcePath, lastLine);
   if (final && line < lastLine) throw new Error(`session source is shorter than its captured journal: ${sourcePath}`);
   return { bytes: offset, line, lastTs: last.ts ?? "" };
+}
+
+// The byte offset just past the `lastLine`-th complete line of the bytes in
+// `chunks` (in order), and how many complete lines it found (fewer when the
+// source is shorter).
+function lineOffset(chunks, lastLine) {
+  let line = 0, offset = 0;
+  for (const chunk of chunks) {
+    let from = 0;
+    while (line < lastLine) {
+      const nl = chunk.indexOf(10, from);
+      if (nl === -1) break;
+      line++;
+      from = nl + 1;
+    }
+    offset += line < lastLine ? chunk.length : from;
+    if (line >= lastLine) break;
+  }
+  return { line, offset };
+}
+
+function lineOffsetOfFile(path, lastLine) {
+  const fd = openSync(path, "r");
+  try { return lineOffset(fileChunks(fd), lastLine); }
+  finally { closeSync(fd); }
+}
+
+// Source bytes of turns held before they are appended: what a pass keeps of a
+// transcript at once, whatever its size.
+const FLUSH_BYTES = 8 * 1024 * 1024;
+
+// The COMPLETE lines of `chunk`, one at a time, with their stamps:
+// { text, ts, bytes }. `walk` records where the walk ended (`scanned`, bytes)
+// and why it stopped early (`reason`): a torn tail, invalid UTF-8 (decoding
+// replacement characters would change both the verbatim line and its byte
+// offset, possibly treating a later fragment as a record) or a line beyond
+// V8's string limit.
+function* completeLines(chunk, walk) {
+  let scanned = 0;
+  walk.scanned = 0;
+  while (scanned < chunk.length) {
+    const nl = chunk.indexOf(10, scanned);
+    if (nl === -1) { walk.reason = "torn-tail"; return; }
+    const bytes = chunk.subarray(scanned, nl);
+    if (!isUtf8(bytes)) { walk.reason = "invalid-utf8"; return; }
+    let text;
+    try { text = bytes.toString("utf8"); }
+    catch (err) {
+      if (err.code !== "ERR_STRING_TOO_LONG") throw err;
+      walk.reason = "oversized-line";
+      return;
+    }
+    const lineBytes = nl - scanned + 1;
+    let ts = "";
+    if (text.trim() !== "") {
+      try {
+        const d = JSON.parse(text);
+        if (typeof d?.timestamp === "string") ts = d.timestamp;
+      } catch {
+        /* unparseable native line: captured verbatim */
+      }
+    }
+    scanned += lineBytes;
+    walk.scanned = scanned;
+    yield { text, ts, bytes: lineBytes };
+  }
 }
 
 // One reconciliation pass for one format: one turn per NEW complete line
@@ -189,6 +249,10 @@ function offsetFromJournal(store, streamId, sourcePath, final, sourceBytes) {
 // `final` also verifies unchanged offsets against journals and checks source
 // stability through the pass. The caller must quiesce writers for retirement;
 // a performed pass is a snapshot, not a promise about future writes.
+//
+// A file given as `{ path, pinned: { bytes, stat } }` is PINNED: its caller opened it once and read these bytes from
+// that descriptor (`capture --file`). It is captured from them as a final pass, never opened again, so the
+// turns are exactly those bytes; `path` keys its offsets as for any other file.
 export function captureSessions(store, { owner, roots, files, format = "cc", ignore = null, final = false }) {
   const fmt = SESSION_FORMATS[format];
   if (!fmt) throw new Error(`unknown session format ${format}`);
@@ -205,6 +269,7 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
 
   for (const file of files ?? fmt.listFiles(roots)) {
     const path = typeof file === "string" ? file : file.path;
+    const pinned = typeof file === "string" ? null : file.pinned ?? null;
     const expected = typeof file === "string" ? null : file.snapshot;
     const capturedPi = typeof file === "string" ? undefined : file.capturedPi ?? expected?.capturedPi;
     if (capturedPi && (fmt.source !== "pi" || (expected?.capturedPi && !isDeepStrictEqual(capturedPi, expected.capturedPi)))) throw new Error("protected capture proof/format differs from discovery");
@@ -215,20 +280,21 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
       ignored++;
       continue; // never opened: nothing stored, nothing remembered
     }
-    const fd = openSync(path, capturedPi ? constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK : "r");
+    const fd = pinned ? null : openSync(path, capturedPi ? constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK : "r");
     try {
     if (capturedPi) assertProtectedDescriptor(fd, path, capturedPi);
-    const stat = fstatSync(fd);
+    const stat = pinned ? pinned.stat : fstatSync(fd);
     const snapshot = { ...identity(stat), ...(capturedPi ? { capturedPi } : {}) };
     if (expected) assertIdentity(stat, expected, path); // BEFORE reading bytes
     // Final home capture stages a descriptor-pinned snapshot. All attribution
     // and stability checks precede the first append, never a post-write alarm.
-    const sourceBytes = final || expected || capturedPi ? readRange(fd, 0, stat.size, path, capturedPi) : undefined;
+    const sourceBytes = pinned ? pinned.bytes : final || expected || capturedPi ? readRange(fd, 0, stat.size, path, capturedPi) : undefined;
     if (expected && digest(sourceBytes.subarray(0, expected.size)) !== expected.hash) {
       throw new Error(`session source content changed since attribution: ${path}`);
     }
     if (sourceBytes) snapshot.hash = digest(sourceBytes);
     const verifySource = () => {
+      if (pinned) return; // the bytes are the source: nothing is read from the path again
       guardCapturedPath(path, capturedPi);
       if (sourceBytes) verifySnapshot(fd, path, snapshot);
     };
@@ -247,10 +313,12 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
     // journal is the truth; before appending anything, any disagreement
     // rebuilds the offset from it. Background passes check on growth;
     // final passes also verify unchanged files before confirming capture.
-    if (state && (final || stat.size > state.bytes) && state.line !== lastJournalLine(store, streamId)) {
+    let journalLast; // the journal's last turn, read from its tail once, when needed
+    const lastTurn = () => (journalLast === undefined ? (journalLast = lastJournalTurn(store, streamId)) : journalLast);
+    if (state && (final || stat.size > state.bytes) && state.line !== (lastTurn()?.provenance?.origin?.line ?? 0)) {
       state = null;
     }
-    if (!state) state = offsetFromJournal(store, streamId, path, final, sourceBytes);
+    if (!state) state = offsetFromJournal(lastTurn(), path, final, sourceBytes);
     if (stat.size <= state.bytes) {
       unchanged++;
       offsets[offKey] = state;
@@ -259,62 +327,38 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
     }
 
     const chunk = sourceBytes ? sourceBytes.subarray(state.bytes) : readRange(fd, state.bytes, stat.size, path, capturedPi);
-    // Phase 1: collect the COMPLETE lines of the chunk with their stamps.
-    const lines = [];
-    let scanned = 0;
-    let reason;
-    while (scanned < chunk.length) {
-      const nl = chunk.indexOf(10, scanned);
-      if (nl === -1) { reason = "torn-tail"; break; }
-      const bytes = chunk.subarray(scanned, nl);
-      // Decoding replacement characters would change both the verbatim line
-      // and its byte offset, possibly treating a later fragment as a record.
-      if (!isUtf8(bytes)) { reason = "invalid-utf8"; break; }
-      let text;
-      try { text = bytes.toString("utf8"); }
-      catch (err) {
-        if (err.code !== "ERR_STRING_TOO_LONG") throw err;
-        reason = "oversized-line";
-        break;
-      }
-      const lineBytes = nl - scanned + 1;
-      let ts = "";
-      if (text.trim() !== "") {
-        try {
-          const d = JSON.parse(text);
-          if (typeof d?.timestamp === "string") ts = d.timestamp;
-        } catch {
-          /* unparseable native line: captured verbatim below */
-        }
-      }
-      lines.push({ text, ts, bytes: lineBytes });
-      scanned += lineBytes;
-    }
-    if (reason) {
+    // Every turn needs a stamp. Leading lines before the file's first stamp
+    // carry it backward (deterministic: the file's first stamp is invariant
+    // however capture is scheduled); if the file has shown no stamp at all
+    // yet, hold everything for a later pass. The lines are walked, never
+    // collected: a first capture of a huge transcript is one file's worth of
+    // NEW lines, far more than the heap (awebai/oats#456).
+    const stopped = (walk) => {
+      if (!walk.reason) return;
       incomplete++;
-      issues.push({ source: fmt.source, path, reason, offset: state.bytes + scanned });
-    }
-    // Phase 2: every turn needs a stamp. Leading lines before the file's
-    // first stamp carry it backward (deterministic: the file's first
-    // stamp is invariant however capture is scheduled); if the file has
-    // shown no stamp at all yet, hold everything for a later pass.
+      issues.push({ source: fmt.source, path, reason: walk.reason, offset: state.bytes + walk.scanned });
+    };
     let lastTs = state.lastTs ?? "";
     if (!lastTs) {
-      const first = lines.find((l) => l.ts);
-      if (!first) {
-        if (lines.length > 0) {
+      const scan = {};
+      let any = false;
+      for (const l of completeLines(chunk, scan)) {
+        any = true;
+        if (l.ts) { lastTs = l.ts; break; }
+      }
+      if (!lastTs) {
+        stopped(scan);
+        if (any) {
           held++;
           issues.push({ source: fmt.source, path, reason: "unstamped", offset: state.bytes });
         }
         verifySource();
         continue; // do not advance; retry when a stamp exists
       }
-      lastTs = first.ts;
     }
     verifySource(); // parsing/recovery may take time; still no journal write yet
     // Turns flush to the journal in bounded batches, so memory stays flat
-    // however large the backlog (a first capture of a huge transcript is
-    // one file's worth of NEW lines). A crash between flushes cannot
+    // however large the backlog. A crash between flushes cannot
     // duplicate: this file's offset is saved only after its final flush,
     // and a lost offset rebuilds from the journal's own last line number.
     let fresh = [];
@@ -330,7 +374,8 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
     };
     let lineNo = state.line;
     let consumed = 0;
-    for (const l of lines) {
+    const walk = {};
+    for (const l of completeLines(chunk, walk)) {
       if (l.ts) lastTs = l.ts;
       lineNo++;
       consumed += l.bytes;
@@ -342,8 +387,9 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
         ),
       );
       freshBytes += l.bytes;
-      if (freshBytes >= 64 * 1024 * 1024) flush();
+      if (freshBytes >= FLUSH_BYTES) flush();
     }
+    stopped(walk);
     const grew = fresh.length > 0 || consumed > 0;
     flush();
     offsets[offKey] = { bytes: state.bytes + consumed, line: lineNo, lastTs };
@@ -354,7 +400,7 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
     // wasted append-only bytes).
     if (grew) saveOffsets(store, offsets);
     verifySource();
-    } finally { closeSync(fd); }
+    } finally { if (fd !== null) closeSync(fd); }
   }
   saveOffsets(store, offsets);
   return {

@@ -115,14 +115,27 @@ oats okf-harvest complete --source <descriptor> --run <run> --judgment /abs/work
 ```
 
 It runs the source's frozen `oats okf complete` from the source deployment,
-not from your home. That command validates ownership, baseline, the whole
-base, the changes and provenance, stores the proposal and receipt, and
-publishes:
+not from your home. That command validates ownership, the whole base, the
+changes and provenance, and persists your judgment and proposals first. It
+then checks the accepted baseline and publishes:
 - Git base: a commit, a push and one verified PR, labelled `okf-harvest`,
   whose body carries a fenced `okf-harvest` provenance block (run, input,
   source soul/instance/nodes/bases, your tasks refs, your instance). A PR is
   not accepted knowledge until it is merged.
 - Directory base: a journaled, digest-confirmed publication (no PR).
+
+Delivery runs in the background. After persisting your judgment, the command
+waits up to 30 s for delivery, then answers:
+- with the final receipt, when delivery finished in that time;
+- otherwise with `status: delivering`. Delivery continues without you. Run
+  `oats okf-harvest harvest-status --source <descriptor> --run <run>` to follow
+  it; its reason says whether delivery is in progress, failed or stopped.
+
+If delivery failed or stopped, run the same completion command again. It
+resumes from your persisted judgment, never judges again, and never pushes or
+opens a PR twice. An `E_BASELINE` failure means the accepted knowledge you
+judged against changed. Report it to your operator, who rejudges with
+`oats okf retry --rejudge`.
 
 A failed or uncertain completion is NOT success. Keep your home and work,
 report the recovery need, and stay. If it reports that the source's oats.okf

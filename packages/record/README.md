@@ -197,6 +197,27 @@ Journal writes fsync; note that on macOS `fsync(2)` does not guarantee media
 durability (that would need `F_FULLFSYNC`, which Node's fs API does not
 expose) — the guarantee is OS-crash-level, not power-loss-level.
 
+**One capture pass at a time.** A pass takes the record root's
+`.capture.lock` directory, whose `owner.json` records the pid, a nonce, the
+start time and the host. A pass that finds the lock held skips (the next
+pass catches up). A pass that is killed (a hook or caller timeout) runs no
+cleanup, so the next pass reclaims a lock whose recorded owner is dead on
+this host:
+
+- Reclaimers are serialized by a guard, `.capture.lock.reclaim`, taken by
+  exclusive create. Under it the record is read again and removed only if it
+  still belongs to that dead owner.
+- A live or unknowable owner, an owner-less (initializing) lock and another
+  host's lock are never touched.
+- A guard left by a reclaimer that died is never removed. It is named, with
+  the exact recovery.
+- Records that name no host predate host recording and live under this
+  user's home, so they count as this host's: a dead owner's lock is
+  reclaimed too. On a home shared across machines (NFS, or a synced
+  directory), such a record may belong to another host, whose pid means
+  nothing here; check that no capture runs on the other machines before the
+  first pass after upgrading.
+
 ## Upgrading
 
 The derived index self-heals across schema changes by wiping and
@@ -204,6 +225,22 @@ rebuilding (it is cache; there is no in-place migration). After upgrading
 this package, restart any long-running `capture --watch` process — a
 daemon holding the old database file open would otherwise keep indexing
 into an orphaned inode until it restarts.
+
+## Memory
+
+A capture pass runs in bounded memory, whatever the size of the record.
+Journals are streamed, never parsed whole: the first append to a stream
+validates its journal one line at a time. Comm logs are read in chunks, and
+the aw dedupe looks up only the changed log's own turn ids, in one streamed
+read of the journal. A session's new lines are walked, never collected, and
+appended in 8 MB batches. A lost offset is rebuilt from the journal's tail.
+
+So the heap a pass needs grows with one changed comm log's entry count, not
+with the record. A host job can keep a small `--max-old-space-size`;
+`packages/record/test/capture-bounded-memory.test.mjs` captures a record four
+times its 64 MB heap. One cost is not on the heap: the new bytes of one
+session are read as one buffer, so resident memory grows with a single
+session's backlog.
 
 ## Known costs, accepted for v1
 
@@ -228,3 +265,58 @@ source custody. The library alternative is `sessionsForHome(home, { roots })`:
 unspecified formats are excluded, and missing supplied roots fail. Synthetic
 standalone tests must choose one of these explicitly, not masquerade as a
 managed native launch. Background capture without `--home` is unchanged.
+
+## One session file: `capture --file`
+
+```text
+capture --file <path> --format cc|pi|codex --home <instance home> [--owner <name>] [--json]
+```
+
+Captures ONE session file, for example an archived session that the
+`--home` sweep can no longer find, exactly as `--home` capture of that
+instance would capture it. It runs under the capture lock, as a final pass,
+with the ignore rules applied. The stream is `<owner>~<source>.<session id>`,
+the same identity `--home` capture writes. So the same session captured
+either way, or again with `--file`, appends nothing.
+
+- **The owner is explicit.** It is `--owner` or `TURN_RECORD_OWNER`; the
+  hostname is never assumed. `--home` must be an OATS instance home (an
+  `instance.json` naming an instance). It is recorded in the receipt, not
+  checked against the file's recorded cwd.
+- **The format is stated, never sniffed.** The file must carry that format's
+  session header somewhere in it:
+  - `cc`: a record with a `cwd`, and no other format's session header anywhere
+    in the file (a cc transcript never holds one);
+  - `pi`: the `session` record;
+  - `codex`: `session_meta`.
+- **The session id comes from the file name**, as for live capture: the cc
+  basename, the part of a pi name after its last `_`, or a codex name's
+  trailing uuid. A renamed file lands in another stream.
+- **One regular file, read once.** It is opened with `O_NOFOLLOW` and
+  `O_NONBLOCK` and fstat'ed. A symlink, FIFO, socket, device or directory is
+  refused. The bytes read from that descriptor are the ones captured and
+  hashed.
+
+`--json` prints the receipt:
+`{home, owner, file, format, instance, thread, stream, sessionId, turns,
+firstTurnId, lastTurnId, appended, skipped, held, incomplete, failed, ignored,
+status, complete, sha256, issues?}`. `sha256` is of the bytes captured;
+`issues` (`[{source, path, reason, offset}]`, present when the result is
+incomplete or held) says why. As for
+`--home`, `complete` is true only with no hold, no incomplete tail and no
+failure. A lock skip, a hold (no timestamp yet) and an incomplete tail (torn
+or invalid UTF-8) exit 0 with `complete: false`. Without `--json`, the output
+is one line.
+
+Anything that binds nothing is an error,
+`{status: "failed", complete: false, code, error}`:
+
+| code | exit | when |
+|---|---|---|
+| `E_USAGE` | 2 | a missing or invalid flag, a non-instance `--home`, no explicit owner, a second `--file`, another mode |
+| `E_FILE_UNREADABLE` | 1 | the file cannot be opened or read |
+| `E_NOT_REGULAR_FILE` | 1 | a symlink, FIFO, socket, device or directory |
+| `E_IGNORED` | 1 | a capture ignore rule excludes the file; nothing was opened, read or written |
+| `E_NO_TURNS` | 1 | no records: an empty file, or only blank lines |
+| `E_FORMAT` | 1 | records, but no session header of the stated format; the message names the format whose header it does carry |
+| `E_CAPTURE_FAILED` | 1 | the pass failed (`appended: null`: part of the file may be in the record) |

@@ -225,7 +225,7 @@ scaling by call count.
 | `npm test` | every suite under `test/` (`node --test`), through `scripts/run-tests.mjs` |
 | `npm run check` | syntax of every shipped file |
 | `npm run check:pi` | the pi adapter's TypeScript |
-| `npm run validate` | the JSON schemas, the example manifests and configs, and every local link and anchor in the public docs |
+| `npm run validate` | the JSON schemas, the example manifests and configs, every local link and anchor in the public docs, the repository's own `oats-workspace.yaml` and `package-catalog.json` read by the kernel's readers, and no unresolved merge-conflict marker in a tracked text file (`scripts/check-workspace-files.mjs`) |
 | `npm run pack:check` | an `npm pack` dry run of both packages: nothing missing, nothing leaked |
 | `npm run smoke:tarball` | installs the packed tarballs outside the checkout and exercises them |
 
@@ -237,3 +237,20 @@ contacts GitHub, aweb, Jira or Linear.
 
 Tests pin behaviour, so a change that alters behaviour changes its test in the
 same commit. Never weaken an assertion to make a change pass.
+
+Since Git 2.47, a commit or fetch starts `git maintenance run --auto
+--detach`, a daemon that outlives the command. On a loaded CI runner it can
+still be repacking into a repository while the test's cleanup removes it,
+which fails with `ENOTEMPTY` (awebai/oats#451). So:
+
+- The shared fixture's repositories (`test/helpers/v2-deployment.mjs`: the
+  bare remote, the seed and the member clone) never run it. Each sets
+  `maintenance.auto=false` in its own config, which covers every git run in
+  it, a test's raw `execFileSync("git", …)` and the kernel's included.
+- A test that runs git itself goes through the fixture's `git()` helper,
+  which disables it per command, or sets `maintenance.auto=false` in a
+  repository it creates.
+- The kernel's remote cache passes `-c maintenance.auto=false` on every git
+  it runs there.
+
+Never paper over such a race with a retry around the cleanup.

@@ -8,18 +8,19 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  LAUNCH_RECIPE_VERSION, applicableRequirements, describeLaunchCommand, planLaunch, renderLaunchRecipe, resolveYolo, retireInstance,
+  CODEX_TASK_PROMPT, LAUNCH_RECIPE_VERSION, applicableRequirements, describeLaunchCommand, planLaunch, renderLaunchRecipe, resolveYolo, retireInstance,
 } from "../lib/core.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const hooks = () => ({ launch: {}, env: {}, contributions: [] });
 const recipe = (harness, extra = {}) => ({ version: LAUNCH_RECIPE_VERSION, harness,
   executable: process.execPath, args: [], env: {}, model: null, hooks: hooks(), ...extra });
-const prompt = '"$(cat TASK.md)"';
+// The task prompt each harness gets: the file's name, never its text (#427).
+const promptOf = (harness) => harness === "claude" ? "@TASK.md" : CODEX_TASK_PROMPT;
 // Every kernel codex launch turns off Codex's startup update prompt (#341).
 const CODEX_NO_UPDATE = ["-c", "check_for_update_on_startup=false"];
 // ... and hands its tool commands the instance env the launch prefix sets (#342).
-const codexToolEnv = (home, instance) => [["OATS_INSTANCE", instance], ["OATS_INSTANCE_HOME", home], ["PI_AGENT_INSTANCE", instance], ["PI_AGENT_HOME", home]]
+const codexToolEnv = (home, instance) => [["OATS_INSTANCE", instance], ["OATS_INSTANCE_HOME", home]]
   .flatMap(([name, value]) => ["-c", `shell_environment_policy.set.${name}=${JSON.stringify(value)}`]);
 function fixture(t) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "oats-native-permission-policy-")));
@@ -43,13 +44,13 @@ function planned(f, harness, { configYolo, selectionYolo, frozen, capabilities =
   return result;
 }
 function nativeArgv(harness, home, instance = "unattended-helper") {
-  return harness === "claude" ? ["--", prompt] : ["--cd", home, ...CODEX_NO_UPDATE, ...codexToolEnv(home, instance), "--", prompt];
+  return harness === "claude" ? ["--", promptOf(harness)] : ["--cd", home, ...CODEX_NO_UPDATE, ...codexToolEnv(home, instance), "--", promptOf(harness)];
 }
 function assertNormal(command, harness, home) {
   const described = describeLaunchCommand(command);
   assert.equal(described.executable, process.execPath);
   assert.deepEqual(described.argv, nativeArgv(harness, home), "no automatic isolation, bypass, sandbox override or project trust");
-  assert.deepEqual(described.environment.map(row => row.name), ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "PI_AGENT_INSTANCE", "PI_AGENT_HOME"],
+  assert.deepEqual(described.environment.map(row => row.name), ["OATS_INSTANCE", "OATS_INSTANCE_HOME"],
     "no manufactured native profile/auth/settings environment");
   assert.doesNotMatch(command, /oats-pi-sdk-host|--sdk-root|--no-skills|--no-context-files|--no-prompt-templates|--append-system-prompt/);
 }
@@ -101,7 +102,7 @@ test("native user-selected settings/profile/plugin arguments are preserved, not 
     const args = harness === "claude" ? ["--settings", "/fixture/native-settings.json", "--plugin-dir", "/fixture/native-plugin"] : ["--profile", "user-selected"];
     const input = recipe(harness, { args, yolo: false }), before = structuredClone(input);
     const argv = describeLaunchCommand(renderLaunchRecipe(input, f)).argv;
-    assert.deepEqual(argv, [...(harness === "codex" ? ["--cd", f.home, ...CODEX_NO_UPDATE, ...codexToolEnv(f.home, f.instance)] : []), ...args, "--", prompt]);
+    assert.deepEqual(argv, [...(harness === "codex" ? ["--cd", f.home, ...CODEX_NO_UPDATE, ...codexToolEnv(f.home, f.instance)] : []), ...args, "--", promptOf(harness)]);
     assert.deepEqual(input, before, "native arguments are not stripped or rewritten");
   }
 });
@@ -217,7 +218,7 @@ test("ordinary native launch retains complete OATS homes for pi, Claude and Code
       if (harness !== "pi") assert.equal(Object.hasOwn(meta.composition.materialized.harnessPosture, "curtailed"), false);
       const argv = describeLaunchCommand(meta.command).argv;
       if (harness === "pi") assert.match(meta.command, /--append-system-prompt/);
-      else assert.deepEqual(argv, [...(harness === "codex" ? ["--cd", home, ...CODEX_NO_UPDATE, ...codexToolEnv(home, instance)] : []), "--", '"$(cat TASK.md)"']);
+      else assert.deepEqual(argv, [...(harness === "codex" ? ["--cd", home, ...CODEX_NO_UPDATE, ...codexToolEnv(home, instance)] : []), "--", promptOf(harness)]);
       assert.doesNotMatch(meta.command, /--no-skills|--no-context-files|dangerously-skip-permissions|--yolo|trust_level|oats-pi-sdk-host/);
       const retired = retireInstance(fx.root, result.instance);
       assert.equal(existsSync(home), false); assert.equal(retired.worktreeRemoved, false);

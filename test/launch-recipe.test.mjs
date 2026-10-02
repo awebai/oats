@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { describeLaunchCommand, launchEnvRefs, parseLaunchCommand, planLaunch, redactLaunchCommand, renderLaunchCommand, renderLaunchRecipe, resolveLaunchSelection, validateLaunchConfig } from "../lib/core.mjs";
+import { CODEX_TASK_PROMPT, describeLaunchCommand, launchEnvRefs, parseLaunchCommand, planLaunch, redactLaunchCommand, renderLaunchCommand, renderLaunchRecipe, resolveLaunchSelection, validateLaunchConfig } from "../lib/core.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
@@ -30,13 +30,13 @@ const hooks = (launch, envMap) => ({ launch, env: envMap, contributions: [] });
 
 test("the recipe renderer reproduces the pre-recipe command bytes for every harness, with and without capability contributions", () => {
   const claude = renderLaunchRecipe({ harness: "claude", executable: "/opt/homebrew/bin/claude", args: [], env: {}, model: null, yolo: true, hooks: hooks({ claude: "--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace" }, { AWEB_DELIVERY: "session" }) }, { home, instance: "n" });
-  assert.equal(claude, `OATS_INSTANCE='n' OATS_INSTANCE_HOME=${shq(home)} PI_AGENT_INSTANCE='n' PI_AGENT_HOME=${shq(home)} AWEB_DELIVERY='session' '/opt/homebrew/bin/claude' --dangerously-skip-permissions --dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace -- "$(cat TASK.md)"`);
+  assert.equal(claude, `OATS_INSTANCE='n' OATS_INSTANCE_HOME=${shq(home)} AWEB_DELIVERY='session' '/opt/homebrew/bin/claude' --dangerously-skip-permissions --dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace -- '@TASK.md'`);
   const codex = renderLaunchRecipe({ harness: "codex", executable: "/opt/homebrew/bin/codex", args: [], env: {}, model: null, yolo: true, hooks: hooks({}, {}) }, { home, instance: "n" });
   // The trust entry names the REAL path of the home (as spawn always did): on macOS /tmp is a link.
   const realHome = join(realpathSync("/tmp"), "it's home");
-  assert.equal(codex, `OATS_INSTANCE='n' OATS_INSTANCE_HOME=${shq(home)} PI_AGENT_INSTANCE='n' PI_AGENT_HOME=${shq(home)} '/opt/homebrew/bin/codex' --cd ${shq(home)} -c check_for_update_on_startup=false --yolo -c ${shq(`projects={${JSON.stringify(realHome)}={trust_level="trusted"}}`)} ${[["OATS_INSTANCE", "n"], ["OATS_INSTANCE_HOME", home], ["PI_AGENT_INSTANCE", "n"], ["PI_AGENT_HOME", home]].map(([name, value]) => `-c ${shq(`shell_environment_policy.set.${name}=${JSON.stringify(value)}`)}`).join(" ")} -- "$(cat TASK.md)"`);
+  assert.equal(codex, `OATS_INSTANCE='n' OATS_INSTANCE_HOME=${shq(home)} '/opt/homebrew/bin/codex' --cd ${shq(home)} -c check_for_update_on_startup=false --yolo -c ${shq(`projects={${JSON.stringify(realHome)}={trust_level="trusted"}}`)} ${[["OATS_INSTANCE", "n"], ["OATS_INSTANCE_HOME", home]].map(([name, value]) => `-c ${shq(`shell_environment_policy.set.${name}=${JSON.stringify(value)}`)}`).join(" ")} -- ${shq(CODEX_TASK_PROMPT)}`);
   const pi = renderLaunchRecipe({ harness: "pi", executable: "/opt/homebrew/bin/pi", args: [], env: {}, model: "m-1", hooks: hooks({}, {}) }, { home, instance: "n" });
-  assert.equal(pi, `OATS_INSTANCE='n' OATS_INSTANCE_HOME=${shq(home)} PI_AGENT_INSTANCE='n' PI_AGENT_HOME=${shq(home)} '/opt/homebrew/bin/pi' --append-system-prompt ${shq(join(home, "AGENTS.md"))} --approve --name 'n' --model 'm-1' '@TASK.md'`);
+  assert.equal(pi, `OATS_INSTANCE='n' OATS_INSTANCE_HOME=${shq(home)} '/opt/homebrew/bin/pi' --append-system-prompt ${shq(join(home, "AGENTS.md"))} --approve --name 'n' --model 'm-1' '@TASK.md'`);
   for (const c of [claude, codex, pi]) assert.equal(renderLaunchCommand(parseLaunchCommand(c).tokens), c, "still a shape the kernel re-renders");
 });
 
@@ -45,7 +45,7 @@ test("configuration args and environment render literally, references by referen
   const recipe = { harness: "claude", executable: "/x/claude wrapper", args: ["--settings", hostile], env: { LIT: "v # w", KEY: { fromEnv: "SRC" } }, model: "claude-opus-5", yolo: false, hooks: hooks({ claude: "--flag" }, { AWEB_DELIVERY: "session" }) };
   const cmd = renderLaunchRecipe(recipe, { home, instance: "n" });
   // A reference never names its source in the command: the pane receives the value under a kernel-owned alias.
-  assert.equal(cmd, `OATS_INSTANCE='n' OATS_INSTANCE_HOME=${shq(home)} PI_AGENT_INSTANCE='n' PI_AGENT_HOME=${shq(home)} AWEB_DELIVERY='session' KEY="$OATS_LAUNCH_REF_KEY" LIT=${shq("v # w")} '/x/claude wrapper' --model 'claude-opus-5' '--settings' ${shq(hostile)} --flag -- "$(cat TASK.md)"`);
+  assert.equal(cmd, `OATS_INSTANCE='n' OATS_INSTANCE_HOME=${shq(home)} AWEB_DELIVERY='session' KEY="$OATS_LAUNCH_REF_KEY" LIT=${shq("v # w")} '/x/claude wrapper' --model 'claude-opus-5' '--settings' ${shq(hostile)} --flag -- '@TASK.md'`);
   const parsed = parseLaunchCommand(cmd);
   assert.equal(renderLaunchCommand(parsed.tokens), cmd);
   const ref = parsed.tokens.find((t) => t.kind === "envref"); assert.deepEqual([ref.name, ref.source], ["KEY", "OATS_LAUNCH_REF_KEY"]);
@@ -66,8 +66,8 @@ test("configuration args and environment render literally, references by referen
   assert.deepEqual(parsed.tokens.filter((t) => t.kind === "word" && t.value === hostile).length, 1, "the hostile argument is one literal token");
   const d = describeLaunchCommand(cmd);
   assert.equal(d.executable, "/x/claude wrapper");
-  assert.deepEqual(d.argv, ["--model", "claude-opus-5", "--settings", hostile, "--flag", "--", '"$(cat TASK.md)"']);
-  assert.deepEqual(d.environment, [{ name: "OATS_INSTANCE", redacted: true }, { name: "OATS_INSTANCE_HOME", redacted: true }, { name: "PI_AGENT_INSTANCE", redacted: true }, { name: "PI_AGENT_HOME", redacted: true }, { name: "AWEB_DELIVERY", redacted: true }, { name: "KEY", reference: true }, { name: "LIT", redacted: true }]);
+  assert.deepEqual(d.argv, ["--model", "claude-opus-5", "--settings", hostile, "--flag", "--", "@TASK.md"]);
+  assert.deepEqual(d.environment, [{ name: "OATS_INSTANCE", redacted: true }, { name: "OATS_INSTANCE_HOME", redacted: true }, { name: "AWEB_DELIVERY", redacted: true }, { name: "KEY", reference: true }, { name: "LIT", redacted: true }]);
   const redacted = renderLaunchRecipe(recipe, { home, instance: "n", redact: true });
   assert.ok(!redacted.includes("v # w") && !redacted.includes("session") && redacted.includes(`KEY="$OATS_LAUNCH_REF_KEY"`), redacted);
   assert.equal(redactLaunchCommand(cmd), redacted, "the public rendering of a persisted command is the redacted one");
@@ -218,7 +218,7 @@ test("spawn records the recipe: a configuration's executable, args and reference
   const legacy = join(instancesDir, "dev-legacy"); mkdirSync(legacy, { recursive: true });
   write(join(legacy, "instance.json"), JSON.stringify({ agent: "dev", instance: "dev-legacy", home: legacy, repo, harness: "claude", model: "claude-x", launched: false, command: `OATS_INSTANCE='dev-legacy' OATS_INSTANCE_HOME=${shq(legacy)} AWEB_DELIVERY='session' '/opt/homebrew/bin/claude' --model 'claude-x' -- "$(cat TASK.md)"` }));
   r = oats(["launch-config", "preview", "--home", legacy]);
-  v = r.json.result; assert.deepEqual([v.selection.source, v.executable.path, v.model, v.argv], ["frozen-command", "/opt/homebrew/bin/claude", "claude-x", ["--model", "claude-x", "--", '"$(cat TASK.md)"']]);
+  v = r.json.result; assert.deepEqual([v.selection.source, v.executable.path, v.model, v.argv], ["frozen-command", "/opt/homebrew/bin/claude", "claude-x", ["--model", "claude-x", "--", "@TASK.md"]]);
   assert.ok(v.command.includes("AWEB_DELIVERY='<redacted>'") && !v.command.includes("'session'"));
   const legacyBytes = readFileSync(join(legacy, "instance.json"), "utf8");
   r = oats(["launch-config", "preview", "--home", legacy, "--harness", "codex"]);
@@ -241,5 +241,15 @@ test("an UNNAMED frozen recipe starts exactly as recorded: its wrapper, args and
   assert.deepEqual([switched.selectionSource, switched.recipe.executable.endsWith("/codex"), switched.recipe.args, switched.recipe.env], ["config", true, [], {}], "--harness alone deliberately leaves the recorded wrapper behind (the harness's own binary, resolved in this process's PATH)");
   for (const broken of [{ ...meta.launch, version: 3 }, { ...meta.launch, harness: "bash" }, { ...meta.launch, args: "x" }, { ...meta.launch, hooks: undefined }]) {
     assert.throws(() => planLaunch({ home, meta: { ...meta, launch: broken }, contextDir: base, agentLike: { harness: "claude" }, selection: {}, launchConfigs: Object.create(null), env: {}, preview: true }), (e) => e.code === "E_LAUNCH_RECIPE_UNSUPPORTED", JSON.stringify(broken).slice(0, 80));
+  }
+});
+
+test("a launch's identity is OATS_INSTANCE and OATS_INSTANCE_HOME alone, for every harness (no PI_AGENT_* names, codex's tool env included)", () => {
+  const recipe = (harness) => ({ harness, executable: `/x/${harness}`, args: [], env: {}, model: null, hooks: hooks({}, {}) });
+  const names = (cmd) => describeLaunchCommand(cmd).environment.map((e) => e.name);
+  for (const harness of ["pi", "claude", "codex"]) {
+    const cmd = renderLaunchRecipe(recipe(harness), { home, instance: "n" });
+    assert.deepEqual(names(cmd), ["OATS_INSTANCE", "OATS_INSTANCE_HOME"], harness);
+    assert.doesNotMatch(cmd, /PI_AGENT/, harness);
   }
 });

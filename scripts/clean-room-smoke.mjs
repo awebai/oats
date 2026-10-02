@@ -133,9 +133,9 @@ try {
   const pinnedRef = packedCatalog.packages?.["oats.okf"]?.ref;
   const mirroredVersion = readJson(join(payload, "capabilities/oats-okf/oats.json")).version;
   assert.equal(pinnedRef, `v${mirroredVersion}`, "okf mirror and packed official catalog version drift");
-  assert.equal(mirroredVersion, "4.0.5");
+  assert.equal(mirroredVersion, "4.1.0");
   // The PACKED tarball's catalog carries this release's provider pins, each equal to the checkout's mirror of it.
-  for (const [id, slug, version] of [["oats.aweb", "oats-aweb", "1.17.5"], ["oats.engineering", "oats-developer", "1.4.0"]]) {
+  for (const [id, slug, version] of [["oats.aweb", "oats-aweb", "1.17.7"], ["oats.engineering", "oats-developer", "1.5.0"]]) {
     const mirrored = readJson(join(repo, "mirrors", slug, "oats.json")).version;
     assert.equal(mirrored, version, `${id}: the mirror is ${mirrored}`);
     assert.equal(packedCatalog.packages?.[id]?.ref, `v${version}`, `${id}: the packed catalog pins ${packedCatalog.packages?.[id]?.ref}`);
@@ -233,7 +233,7 @@ try {
   const cliEnv = { ...env, PI_AGENTS_ROOT: agentsRoot };
   const cli = (args, { cwd = deployment, identity = false, env: extra = {}, expectExit = 0 } = {}) => {
     // Scaffold-only probes have no harness to supply the normal launch identity.
-    const id = identity ? { OATS_INSTANCE: basename(cwd), OATS_INSTANCE_HOME: cwd, PI_AGENT_INSTANCE: basename(cwd), PI_AGENT_HOME: cwd } : {};
+    const id = identity ? { OATS_INSTANCE: basename(cwd), OATS_INSTANCE_HOME: cwd } : {};
     const r = spawnSync(oats, args, { cwd, env: { ...cliEnv, ...id, ...extra }, encoding: "utf8", maxBuffer: 16 * 1024 * 1024, timeout: 120_000 });
     if (r.error) throw r.error;
     assert.equal(r.status, expectExit, `oats ${args.join(" ")} exited ${r.status}\n${r.stdout}\n${r.stderr}`);

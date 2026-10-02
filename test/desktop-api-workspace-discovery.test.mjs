@@ -34,7 +34,8 @@ function bridge() {
     if (hold) await hold;
     return { ok, status: ok ? 200 : 503, text: async () => JSON.stringify(body) };
   };
-  const setup = 'const base = () => "http://127.0.0.1:4820"; const wsId = "/"; let allowedWs = new Set(["/"]); let serverEpoch = 0;\n'
+  const setup = 'const base = () => "http://127.0.0.1:4820"; const wsId = "/"; let allowedWs = new Set(["/"]); let advertisedBefore = new Set(); let serverEpoch = 0;\n'
+    + 'const unservedRefusal = () => null; // the unserved-deployment refusal is covered by packages/desktop/test/unserved-deployment.test.mjs\n'
     + 'const { forgeProxyOptions, trustedForgeFrame, FORGE_EPOCH_HEADER } = forge; const currentForgeEpoch = () => "fixture:0"; const RENDERER_URL = "file:///fixture/index.html";\n'
     + source.slice(apiStart, apiEnd) + '\nreturn () => {' + invalidation + '};';
   const invalidate = new Function("fetch", "apiUrl", "apiInit", "classifyApiRoute", "ipcMain", "guard", "serverHost", "forge", "forgeFailure", "invalidateForgeReads", "invalidateTerminalPreparations", setup)(

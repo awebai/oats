@@ -193,7 +193,7 @@ test("claude runs this host's claude default launch configuration and hooks cont
   // as the flag's next value — claude exits with a parse error and the
   // spawn looks silently stuck (operator report, dev-coordinator-claude-
   // sessions).
-  assert.match(meta.command, /--extra-flag -- "\$\(cat TASK\.md\)"/, "prompt is separated from hook launch args by --");
+  assert.match(meta.command, /--extra-flag -- '@TASK\.md'$/, "prompt is separated from hook launch args by --");
 });
 
 test("pi task positional precedes capability-contributed launch args", async (t) => {
@@ -518,16 +518,17 @@ test("operational commands are gated by active instance metadata; doctor exposes
   assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /pong/);
   // Inside a home, the recorded modules gate it.
   const home = (await fx.spawn("dev", { name: "dev-ops" })).home;
-  r = fx.cli(["ops", "ping"], { cwd: home, env: { PI_AGENT_HOME: home } });
+  r = fx.cli(["ops", "ping"], { cwd: home });
   assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /pong/);
   const plainHome = (await fx.spawn("plain", { name: "plain-ops" })).home;
-  r = fx.cli(["ops", "ping"], { cwd: plainHome, env: { PI_AGENT_HOME: plainHome } });
-  assert.equal(r.status, 1); assert.match(r.stderr, /unknown command "ops"/);
-  // OATS_INSTANCE_HOME, the canonical identity, is recognised on its own and wins over the older names.
+  const notHere = (h, by) => new RegExp(`no capability of the instance home ${h} \\(soul plain\\), which ${by} chose, provides "ops"`);
+  r = fx.cli(["ops", "ping"], { cwd: plainHome });
+  assert.equal(r.status, 1); assert.match(r.stderr, notHere(plainHome, "the working directory"));
+  // OATS_INSTANCE_HOME, the canonical identity, is recognised on its own and wins over OATS_HOME.
   r = fx.cli(["ops", "ping"], { cwd: fx.base, env: { OATS_INSTANCE_HOME: home } });
   assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /pong/);
-  r = fx.cli(["ops", "ping"], { cwd: fx.base, env: { OATS_INSTANCE_HOME: plainHome, PI_AGENT_HOME: home } });
-  assert.equal(r.status, 1); assert.match(r.stderr, /unknown command "ops"/);
+  r = fx.cli(["ops", "ping"], { cwd: fx.base, env: { OATS_INSTANCE_HOME: plainHome, OATS_HOME: home } });
+  assert.equal(r.status, 1); assert.match(r.stderr, notHere(plainHome, "OATS_INSTANCE_HOME"));
   assert.match(readFileSync(join(home, "AGENTS.md"), "utf8"), /Ops instructions/);
   const tree = () => spawnSync("find", [fx.dep, "-path", `${fx.member}`, "-prune", "-o", "-print"], { encoding: "utf8" }).stdout.split("\n").sort().join("\n");
   const before = tree();
@@ -1514,7 +1515,7 @@ test("a failed Git probe fails closed instead of passing as a non-Git scope (rev
   rmSync(base, { recursive: true, force: true });
 });
 
-test("OATS_INSTANCE_HOME is exported to the harness and to lifecycle hooks, aliases retained", async (t) => {
+test("OATS_INSTANCE_HOME is exported to the harness and to lifecycle hooks; no PI_AGENT_* aliases", async (t) => {
   const out = temp(); t.after(() => rmSync(out, { recursive: true, force: true }));
   // A hook that records the env it was given.
   const probe = `import {writeFileSync} from 'node:fs';
@@ -1532,10 +1533,9 @@ console.log('{}');`;
   assert.equal(seen.legacyHome, r.home, "OATS_HOME stays a compatibility alias for shipped capability hooks");
   // The package STORE root is a different concept and must never be conflated.
   assert.notEqual(seen.storeDir, r.home);
-  // Every harness gets the neutral name; the pi-branded ones remain as aliases
-  // because the separately published @awebai/oats-pi extension reads them.
+  // Every harness gets the neutral name only; the pi extension reads OATS_INSTANCE_HOME too.
   assert.match(r.command, new RegExp(`OATS_INSTANCE_HOME='${r.home}'`));
-  assert.match(r.command, new RegExp(`PI_AGENT_HOME='${r.home}'`));
+  assert.doesNotMatch(r.command, /PI_AGENT_/);
   retireInstance(fx.root, "dev-env", { tmuxSession: "oats-test-nosuch" });
 });
 
@@ -2642,7 +2642,7 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
   } finally { process.env.PATH = oldPath; }
 });
 
-test("a quarantine retry re-runs and VERIFIES the rollback-owned Git cleanup (reviewer-d6e916d)", async (t) => {
+test("a quarantine retry re-runs and VERIFIES the rollback-owned Git cleanup; the spawn's branch goes only with --delete-branch (reviewer-d6e916d, #436)", async (t) => {
   const out = temp(); t.after(() => rmSync(out, { recursive: true, force: true }));
   const allow = join(out, "cleanup-works");
   // Retire fails until the operator fixes the cause, so the spawn genuinely
@@ -2667,8 +2667,8 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
     assert.equal(existsSync(home), true, "the spawn quarantined the home");
 
     // Git residue the initial rollback left behind: a rollback-owned branch that
-    // still exists. Cleanup is NOT complete until it is gone, and the retry must
-    // delete it WITHOUT the normal-retire --delete-branch flag.
+    // still exists. Cleanup is NOT complete until it is gone, and a retire never
+    // deletes a branch the operator did not name with --delete-branch (#436).
     execFileSync("git", ["-C", fx.member, "branch", "dev-git-leftover"]);
     const markerPath = join(home, ".oats-rollback-incomplete.json");
     const marker = JSON.parse(readFileSync(markerPath, "utf8"));
@@ -2681,11 +2681,17 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
     writeFileSync(markerPath, JSON.stringify(marker, null, 2));
 
     writeFileSync(allow, "ok");                 // hooks will now succeed
-    const r = retireInstance(root, "dev-git", { tmuxSession: "oats-test-nosuch" });
-    const branches = execFileSync("git", ["-C", fx.member, "branch", "--list"], { encoding: "utf8" });
-    assert.doesNotMatch(branches, /dev-git-leftover/, "the rollback-owned branch is deleted and verified on retry");
-    // Doing it is not enough: --json consumers read branchDeleted, and this path
-    // deletes without the --delete-branch flag that normally sets it.
+    const branches = () => execFileSync("git", ["-C", fx.member, "branch", "--list"], { encoding: "utf8" });
+    // Without the flag the branch stays, and the debt is said, never silent.
+    const kept = retireInstance(root, "dev-git", { tmuxSession: "oats-test-nosuch" });
+    assert.match(branches(), /dev-git-leftover/, "a retry does not delete the branch on its own");
+    assert.deepEqual(kept.rollbackIncomplete, ["git branch dev-git-leftover: kept; the failed spawn created it; pass --delete-branch to delete it"]);
+    assert.equal(kept.branchDeleted, false);
+    assert.equal(existsSync(home), true, "the home stays while the debt does");
+    // The operator asks: the branch is deleted and verified, and the deletion is REPORTED
+    // (--json consumers read branchDeleted).
+    const r = retireInstance(root, "dev-git", { tmuxSession: "oats-test-nosuch", deleteBranch: true });
+    assert.doesNotMatch(branches(), /dev-git-leftover/, "the branch is deleted and verified on retry");
     assert.equal(r.branchDeleted, true, "and the verified deletion is REPORTED");
     assert.equal(r.rollbackIncomplete, undefined, "and cleanup then reports complete");
     assert.equal(existsSync(home), false);
@@ -3096,7 +3102,7 @@ test("the package mirrors carry the versions package-catalog.json pins", () => {
     assert.equal(catalog.capabilities[id], "oats.engineering", `${id} is supplied by the oats.engineering package`);
     assert.equal(Object.hasOwn(manifest, "agents"), false, `${id} declares no capability agent: the code-reviewer is oats.engineering's package soul`);
   }
-  assert.equal(catalog.packages["oats.engineering"].ref, "v1.4.0");
+  assert.equal(catalog.packages["oats.engineering"].ref, "v1.5.0");
   // oats.dev is retired: no package, alias or mirror remains.
   assert.equal(catalog.packages["oats.dev"], undefined, "oats.dev is no longer listed");
   for (const [alias, target] of Object.entries(catalog.capabilities)) {

@@ -5,13 +5,16 @@ import { register, registerCaptured, loadInvocationSourceReceipt, homeSource, lo
 import { harvestStatus, setupHarvest } from '../lib/harvest-status.mjs';
 import { settings } from '../lib/config.mjs';
 import { CONSULT } from '../lib/consult.mjs';
-import { runSource, complete, retry, readRun, requireQualifiedHelper } from '../lib/worker.mjs';
+import { runSource, complete, completeInBackground, retry, readRun, requireQualifiedHelper } from '../lib/worker.mjs';
 import { initBase, migrate, deliverMigration, cutoverMigration, migrateSource, forgetMigration } from '../lib/migration.mjs';
 import { inspect, inspectConsultOnly } from '../lib/inspection.mjs';
+import { harvestOnce } from '../lib/once.mjs';
 import { loadInvocationKnowledgeBinding } from '../lib/binding-wire.mjs';
 import { loadCapturedOkfInvocation, loadOkfSourceReceiptInput, assertOkfInvocationAction, requireOkfAdmittedAction, assertOkfSourceContext, assertOkfRegisteredSourceReplay } from '../lib/invocation-context.mjs';
 const HELP=`oats okf inspect [--home PATH | --source FILE] [--json]
 oats okf harvest [--home PATH] [--no-launch] [--json]
+oats okf harvest --once --home PATH --records MANIFEST [--override-opt-out] [--no-launch] [--json]
+  (operator, from the deployment with --soul: one reviewed harvest of a seat from a hash-verified manifest; registers nothing)
 oats okf run-source --source FILE [--manual] [--no-launch] [--json]
 oats okf complete --source FILE --run ID --judgment FILE [--json]
 oats okf retry --source FILE [--run ID --rejudge | --rejudge | --launch | --adopt-home PATH] [--json]
@@ -26,7 +29,7 @@ also accept --home PATH | --source FILE. PATH is /node/x.md from the base root,
 relative to --from's directory, or bare node/x.md from the root.
 oats okf setup --source FILE [--enable | --disable] [--install-host] [--json]
 oats okf setup --harvest on|off [--json]      (writes oats-local.yaml settings.oats.okf.harvest)
-oats okf harvest-status [--soul NAME] [--json]  (the effective harvest switch, why, and the registered sources)
+oats okf harvest-status [--home PATH] [--soul NAME] [--json]  (the effective harvest switch, why, and the registered sources)
 oats okf init --base ALIAS --nodes FILE [--output PATH | --confirm] [--json]
 oats okf migrate --legacy PATH --base ALIAS --node NODE --output PATH [--json]
 oats okf migrate --deliver FILE | --cutover FILE --soul-dir PATH [--json]
@@ -48,9 +51,9 @@ else {
   const event=process.env.OATS_EVENT || args[0];
   const hook=['spawn','retire','soul-scaffold'].includes(event);
   const consult=Object.hasOwn(CONSULT,event);
-  let exit=0,answer,text,textMode=consult && !args.includes('--json');
+  let exit=0,answer,text,textMode=(consult || (event==='harvest' && args.includes('--once'))) && !args.includes('--json');
   try {
-    const flags={},positionals=[]; const boolean=new Set(['json','no-launch','manual','rejudge','launch','enable','disable','install-host','confirm','fresh','all','regex','case-sensitive']);
+    const flags={},positionals=[]; const boolean=new Set(['json','no-launch','manual','rejudge','launch','enable','disable','install-host','confirm','fresh','all','regex','case-sensitive','once','override-opt-out']);
     for(let i=1;i<args.length;i++) {
       if(consult && args[i]==='--') {positionals.push(...args.slice(i+1));break;}
       if(!args[i].startsWith('--')) {if(!consult) fail('E_USAGE',`unexpected argument ${args[i]}`);positionals.push(args[i]);continue;}
@@ -60,7 +63,7 @@ else {
     }
     const accepted={
       spawn:[],retire:['home'], 'soul-scaffold':[],
-      harvest:['home','no-launch','native-request','worker-mode'],inspect:['home','source'],
+      harvest:['home','no-launch','native-request','worker-mode','once','records','override-opt-out'],inspect:['home','source'],
       'run-source':['source','manual','no-launch'],complete:['source','run','judgment'],
       retry:['source','run','rejudge','launch','adopt-home'],read:['home','source','base','path','fresh'],refresh:['home','source'],'harvest-status':['home'],
       bases:['home','source','fresh'],index:['home','source','base','fresh'],cat:['home','source','base','from','fresh'],ls:['home','source','base','fresh'],
@@ -160,7 +163,14 @@ else {
         if(sw.effective!=='on') result={meta:retireHarvestOff(s,sw),brief:`Harvest is now off (${sw.reason}): no final capture was taken; earlier inputs stay in custody.`};
         else {scheduleSource(s);const r=capture(s,{final:true});const schedule=settleRetiredSchedule(s);result={meta:{retired:r.complete===true,source:s.file,capture:r,schedule},brief:'Final input is in durable custody. Delivery remains asynchronous.'};}
       }
+    } else if(event==='harvest' && flags.once) {
+      // okf 4.1.0: the operator's one-shot harvest of one seat from a manifest.
+      if(captured || flags['native-request'] || flags['worker-mode']) fail('E_USAGE','--once is the operator\'s one-shot harvest; it takes no captured-operation flags');
+      if(!flags.records || !flags.home) fail('E_USAGE','--once needs --home <instance home> and --records <manifest>');
+      result=harvestOnce({home:resolve(flags.home),records:resolve(flags.records),overrideOptOut:!!flags['override-opt-out'],noLaunch:!!flags['no-launch']});
+      text=`one-shot harvest of ${result.source}: ${result.status}${result.run?` (run ${result.run})`:''}; inputs ${result.inputs.processed}/${result.inputs.total} processed; ${result.next}`;
     } else if(event==='harvest') {
+      if(['records','override-opt-out'].some(k=>flags[k]!==undefined)) fail('E_USAGE','--records and --override-opt-out need --once');
       if(capturedHarvest) {
         const s=src(); // existing registered descriptor ONLY; never new registration.
         result=runSource(s,{manual:true,noLaunch:!!flags['no-launch']||flags['worker-mode']==='prepare',capturedInvocation:execution.context,nativeRequest:flags['native-request']});
@@ -180,7 +190,9 @@ else {
       result=sw.effective!=='on'?{status:'harvest-off',source:source.file,reason:`${sw.reason}; nothing was captured`}
         :runSource(source,{manual:!!flags.manual,noLaunch:!!flags['no-launch']});
     }
-    else if(event==='complete') {const s=src();if(captured) retainedRun(s);result=complete(s,flags.run,flags.judgment && resolve(flags.judgment));}
+    // A captured completion's private binding file need not outlive this call,
+    // so it delivers inline (and can exceed an agent's tool-call limit).
+    else if(event==='complete') {const s=src(),judgment=flags.judgment && resolve(flags.judgment);if(captured) retainedRun(s);result=captured?complete(s,flags.run,judgment):await completeInBackground(s,flags.run,judgment);}
     else if(event==='retry') {const s=src();if(captured && !flags.run && !flags.rejudge && !flags.launch && !flags['adopt-home']) retainedRun(s);result=retry(s,{run:flags.run,rejudge:!!flags.rejudge,launch:!!flags.launch,adoptHome:flags['adopt-home']});}
     else if(event==='inspect') result=consultOnly?inspectConsultOnly(consultSource(home)):inspect(src());
     else if(event==='setup' && flags.harvest!==undefined) {

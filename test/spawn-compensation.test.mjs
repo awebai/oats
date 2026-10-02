@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { CODEX_TASK_PROMPT } from "../lib/core.mjs";
 
 const CLI = fileURLToPath(new URL("../bin/oats.mjs", import.meta.url));
 const directories = [];
@@ -170,10 +171,13 @@ require('node:fs').writeFileSync(${JSON.stringify(captured)}, JSON.stringify({ar
   execFileSync("/bin/sh", ["-c", meta.command], { cwd: f.home, env: f.env });
   const invocation = JSON.parse(readFileSync(captured, "utf8"));
   const args = invocation.argv;
-  const toolEnv = [["OATS_INSTANCE", "dev-probe"], ["OATS_INSTANCE_HOME", f.home], ["PI_AGENT_INSTANCE", "dev-probe"], ["PI_AGENT_HOME", f.home]]
+  const toolEnv = [["OATS_INSTANCE", "dev-probe"], ["OATS_INSTANCE_HOME", f.home]]
     .flatMap(([name, value]) => ["-c", `shell_environment_policy.set.${name}=${JSON.stringify(value)}`]);
   assert.deepEqual(args.slice(0, -1), ["--cd", f.home, "-c", "check_for_update_on_startup=false", ...toolEnv, "--model", "gpt-test", "--"]);
-  assert.ok(args.at(-1).includes(prompt), "task is exactly one prompt and its bytes reach the harness without shell evaluation");
+  // The task reaches the harness as TASK.md, byte for byte and never evaluated; argv names the file only (#427).
+  assert.equal(args.at(-1), CODEX_TASK_PROMPT, "the prompt is the fixed pointer to TASK.md");
+  assert.ok(!args.some((a) => a.includes("Literal task")), "the task's text is in no argument");
+  assert.ok(readFileSync(join(f.home, "TASK.md"), "utf8").includes(prompt), "TASK.md carries the task's bytes");
   assert.equal(invocation.home, f.home);
   assert.equal(existsSync(join(f.home, "NEVER_RUN")), false);
   assert.ok(readFileSync(join(f.home, "AGENTS.md"), "utf8").includes("Developer"));

@@ -38,7 +38,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
              "instance-events-2","schedule-history","schedule-read-2","spawn-preview-2","spawn-idempotency","spawn-idempotency-2","spawn-apply-2",
              "workspace-v2","instance-modules","spawn-provider-payload","served-identity","packages-no-approval","spawn-name","settings-origins",
              "team-model-2","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts","launch-preference",
-             "preview-composed-from","observe-max-age","spawn-preview-max-age","capability-show"],
+             "preview-composed-from","observe-max-age","spawn-preview-max-age","capability-show","capture-file","workspace-identity"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
@@ -99,6 +99,8 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
 | `observe-max-age` | `--max-age <s>` on the read verbs and their `observation` block ([Observation reuse](#observation-reuse-feature-observe-max-age-oats-0311)) | |
 | `spawn-preview-max-age` | `--max-age <s>` on `spawn --preview` and its `observation` block ([Observation reuse](#observation-reuse-feature-observe-max-age-oats-0311), [The preview](#the-preview)) | |
 | `capability-show` | `oats capabilities show <name>` and its `--file` form, OATS 0.34.0 ([`oats capabilities show`](#oats-capabilities-show)) | `capabilityShowApi: 1` |
+| `capture-file` | `oats capture --file <path> --format cc\|pi\|codex --home <instance home> [--json]`: one session file captured as `--home` capture would, with a receipt bound to its bytes, OATS 0.35.0 (the capture USAGE and packages/record/README.md) | |
+| `workspace-identity` | the deployment's workspace identity on `oats status --json` `workspace` (`key`, `ref`, `keyFrom`, `standalone`, `defaultTeam`, `teams`, `teamsFrom`) and each `oats server roster --json` group's relayed `workspace`, OATS 0.36.0 ([Workspace identity](#workspace-identity-feature-workspace-identity-oats-0360)) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -343,7 +345,7 @@ An instance subject, abridged:
 | Key | Meaning |
 |---|---|
 | `subject` | `{kind: "instance", instance, home, soul}` or `{kind: "soul", soul, repoKey, commit}` |
-| `workspace` | `{key, name, deployment, commit, standalone}`; for a home, `name` is the recorded name (`null` if the spawn predates it) |
+| `workspace` | `{key, name, deployment, commit, standalone}`; for a home, `name` is the recorded name (`null` if the spawn predates it). `standalone` is the view the subject resolves in (a fallback for an unreadable host included), unlike `oats status`'s configured-only [`standalone`](#workspace-identity-feature-workspace-identity-oats-0360) |
 | `souls` | exactly the subject's soul |
 | `layers` | `{knowledge, messaging, tasks}`, each `{id, from}` |
 | `capabilities`, `capabilitiesOff` | the resolved modules (by id) and the ones the soul turned off |
@@ -723,7 +725,7 @@ Read-only (it writes no lock):
              "souls":["rm"],"capabilities":["nw-house-style"],"publishes":null,"url":"https://github.com/nw/agents/tree/66566512…",
              "membershipFile":{"path":"oats-membership.yaml","url":"https://github.com/nw/agents/blob/66566512…/oats-membership.yaml"}}],
  "packages":[{"id":"oats.okf","version":"3.0.0","source":"catalog:oats.okf","commit":"ab897841…","integrity":"sha256-bada35…",
-              "capabilities":["oats.okf"],"souls":[],"latest":{"version":"4.0.5","ref":"v4.0.5"}}],
+              "capabilities":["oats.okf"],"souls":[],"latest":{"version":"4.1.0","ref":"v4.1.0"}}],
  "declaredPackages":["oats.framework","oats.okf"],"unsynced":["oats.framework"],"stale":[],
  "external":[{"source":"git:github.com/oss/experts@3c606e09…","soul":"security-reviewer"}],
  "problems":[],"warnings":[],
@@ -782,8 +784,8 @@ packages' capabilities and souls, sorted by name, then origin. Both carry
     "defaultTeam":{"label":"mine","team":"mine:ana.aweb.ai","from":"deployment"},
     "private":false,"path":"souls/writer","work":"directory","description":"Drafts campaigns.","harness":"pi","model":null,"harnessFrom":"kernel-default",
     "file":{"path":"souls/writer/soul.yaml","url":null},"spawnable":true,"problem":null},
-   {"name":"knowledge-maintainer","qualifiedName":"oats.okf/knowledge-maintainer","origin":"package oats.okf v4.0.5","kind":"package","package":"oats.okf",
-    "version":"4.0.5","repoKey":"github.com/awebai/oats-okf","commit":"26d8216f…","teams":null,"defaultTeam":null,"private":false,
+   {"name":"knowledge-maintainer","qualifiedName":"oats.okf/knowledge-maintainer","origin":"package oats.okf v4.1.0","kind":"package","package":"oats.okf",
+    "version":"4.1.0","repoKey":"github.com/awebai/oats-okf","commit":"e331a996…","teams":null,"defaultTeam":null,"private":false,
     "path":"oats-package/souls/knowledge-maintainer","work":"directory","description":"Reviews harvested knowledge.","harness":"pi","model":null,
     "harnessFrom":"kernel-default","file":{"path":"oats-package/souls/knowledge-maintainer/soul.yaml","url":null},
     "spawnable":false,"problem":{"code":"E_TEAM_UNKNOWN","message":"team \"reviewers\" is not declared (oats-local.yaml#/souls/teams/…)"}}],
@@ -872,8 +874,8 @@ nothing reads a working clone.
 **The show:**
 
 ```json
-{"capabilityShowApi":1,"name":"oats.okf","kind":"package","repoKey":"github.com/awebai/oats-okf","package":"oats.okf","version":"4.0.5",
- "commit":"26d8216f…","path":"oats-package/capabilities/oats-okf",
+{"capabilityShowApi":1,"name":"oats.okf","kind":"package","repoKey":"github.com/awebai/oats-okf","package":"oats.okf","version":"4.1.0",
+ "commit":"e331a996…","path":"oats-package/capabilities/oats-okf",
  "inject":{"path":"injects/okf.md","bytes":2422,"text":"## Knowledge: OKF\n\nYou have two kinds of knowledge. …","binary":false,"truncated":false},
  "skills":[{"name":"okf-consultation","path":"skills/okf-consultation","description":"Consulting your soul's knowledge with the `oats okf` CLI: …",
             "files":[{"path":"skills/okf-consultation/SKILL.md","bytes":6947},{"path":"skills/okf-consultation/references/consult.md","bytes":4465}],
@@ -899,7 +901,7 @@ nothing reads a working clone.
 **The `--file` answer:**
 
 ```json
-{"capabilityShowApi":1,"name":"oats.okf","kind":"package","commit":"26d8216f…",
+{"capabilityShowApi":1,"name":"oats.okf","kind":"package","commit":"e331a996…",
  "file":{"path":"skills/okf-instance-knowledge/SKILL.md","bytes":4787,"text":"---\nname: okf-instance-knowledge\n…","binary":false,"truncated":false}}
 ```
 
@@ -1394,13 +1396,13 @@ it to a temporary copy (`soulFetched: true`).
  "settingsOrigins":{"nw-tools":{},"oats.okf":{"/owns":{"kind":"soul","at":"soul.yaml#/knowledge"}}},
  "spawnPreviewApi":2,"preview":true,"agent":"rm","kind":"persistent","instance":"rm-api","home":"/w/agents/rm/instances/rm-api",
  "repo":"/w/agents-repo","work":"worktree","subject":{"soul":"rm","agentsRoot":null,"dir":"/w"},
- "decision":{"instance":"rm-api","home":"/w/agents/rm/instances/rm-api","branch":"agents/rm-api","base":{"ref":"HEAD","oid":"66566512…"},
+ "decision":{"instance":"rm-api","home":"/w/agents/rm/instances/rm-api","branch":"agents/rm-api","base":{"ref":"github.com/nw/agents","oid":"66566512…"},
              "effective":{"repo":"/w/agents-repo","work":"worktree","harness":"pi","model":null,"launchConfig":null,"yolo":null,"backend":"tmux",
                           "childSpawns":true,"relation":null,"providers":{"nw-tools":{},"oats.okf":{"owns":"rm"}}},
              "resolution":"abacbdb5a7975098d77007c8","revision":"c557d8ec9a272ba1c1739dc3"},
  "preflight":{"status":"complete","budgetMs":20000,"elapsedMs":53},"backendStatus":{"name":"tmux","installed":true,"started":false},
  "harness":"pi","model":null,"modelSource":"native default","launchConfig":null,"backend":"tmux",
- "branch":"agents/rm-api","base":{"ref":"HEAD","oid":"66566512…"},"worktree":"/w/agents/rm/instances/rm-api/work",
+ "branch":"agents/rm-api","base":{"ref":"github.com/nw/agents","oid":"66566512…"},"worktree":"/w/agents/rm/instances/rm-api/work",
  "relation":null,"parentInstance":null,"policy":{"childSpawns":{"allowed":true,"origin":{"kind":"default","detail":"no spawn option: children allowed"}}},
  "executable":"/usr/local/bin/pi",
  "capabilities":[{"name":"nw-tools","origin":"member:github.com/nw/agents@66566512…"},{"name":"oats.okf","origin":"package:oats.okf@2.1.3"}],
@@ -1415,8 +1417,11 @@ it to a temporary copy (`soulFetched: true`).
   else `null`) are canonical: never derive paths.
 - `repo`: `--repo`, else the `clones:` entry, else `<deployment>/<member>`.
 - `branch` defaults to `agents/<instance>` (`--branch` overrides); `base` is
-  `--base` (default `HEAD`) resolved to `oid`. `E_BRANCH_EXISTS` and
-  `E_BASE_UNKNOWN` refuse preview and apply alike.
+  `--base` resolved to `oid`. Without `--base`, when `repo` is a clone of the
+  soul's repository, `base` is `{ref: <repo key>, oid: <the commit the spawn
+  observed>}`, fetched into the clone at apply (`E_REMOTE_UNREADABLE` when it
+  cannot be); otherwise `HEAD`. `E_BRANCH_EXISTS` and `E_BASE_UNKNOWN` refuse
+  preview and apply alike.
 - `subject` echoes `{soul, agentsRoot, dir}` byte-exact.
 
 **Launch.**
@@ -1534,7 +1539,8 @@ with `--expect-decision` records the key and decision in `instance.json`.
 **Result** (`oats spawn <soul> … --json`):
 
 ```json
-{"instance":"rm-api","agent":"rm","home":"/w/agents/rm/instances/rm-api","work":"worktree","branch":"agents/rm-api","launched":true,"warnings":[],
+{"instance":"rm-api","agent":"rm","home":"/w/agents/rm/instances/rm-api","work":"worktree","branch":"agents/rm-api",
+ "base":{"ref":"github.com/nw/agents","oid":"66566512…"},"launched":true,"warnings":[],
  "tmux":{"session":"oats-agents","window":"rm-api"},"backend":"tmux","repo":"/w/agents-repo","harness":"pi","model":null,"parent":null,"sibling":null,"relation":null,
  "spawnOrigin":"operator","attach":"tmux attach -t oats-agents","decision":{"instance":"rm-api","revision":"c557d8ec9a272ba1c1739dc3"},"replayed":false,
  "wake":{"requested":false,"saved":null,"error":null},"launchConfig":null,
@@ -1544,7 +1550,8 @@ with `--expect-decision` records the key and decision in `instance.json`.
 
 (`decision` is abridged: it is the full bound decision.)
 
-- Always present: `instance, agent, home, work, branch, launched, warnings
+- Always present: `instance, agent, home, work, branch, base ({ref, oid}
+  the new branch started at; `null` without one), launched, warnings
   (array), tmux ({session, window} | null), backend ("tmux"), repo, harness,
   model, parent,
   sibling, relation, spawnOrigin (operator | instance), attach, launchConfig,
@@ -1608,7 +1615,8 @@ workspace-model fields (feature `instance-modules`):
 
 ```json
 {"agent":"rm","kind":"persistent","instance":"rm-api","home":"/w/agents/rm/instances/rm-api","soulDir":"/w/agents/rm/souls/66566512168e",
- "repo":"/w/agents-repo","work":"worktree","branch":"agents/rm-api","harness":"pi","modelFrom":"harness-default","spawnOrigin":"operator",
+ "repo":"/w/agents-repo","work":"worktree","branch":"agents/rm-api","base":{"ref":"github.com/nw/agents","oid":"66566512…"},
+ "harness":"pi","modelFrom":"harness-default","spawnOrigin":"operator",
  "policy":{"childSpawns":{"allowed":true,"origin":{"kind":"default","detail":"no spawn option: children allowed"}}},
  "modules":{"oats.okf":{"from":{"kind":"package","package":"oats.okf","version":"2.1.3","commit":"ab897841…","integrity":"sha256-bada35…","repoKey":"github.com/awebai/oats-okf"},
                         "commit":"ab897841…","digest":"sha256-9a0e…","materializedAt":"2026-09-28T10:08:01.100Z"}},
@@ -1635,6 +1643,8 @@ the keyed-spawn fields `decision`, `spawnIdempotencyKey`, `spawnCompleted` and
   the copy at `<home>/.oats/modules/<cap>/`. Module skills are copied flat to
   `<home>/.agents/skills/<skill>/` (homes spawned by 0.30.1 or earlier keep
   `<home>/.agents/skills/<cap>/<skill>/`).
+- `base` (a worktree instance): `{ref, oid}`, the commit its branch started
+  at, as the spawn result states it (see Placement under the spawn preview).
 - `providers.<cap>`: the merged payload (`{}` when none).
 - `workspace`: `{key, name, deployment, commit, resolution, standalone, soul,
   layers}`. `name` is recorded, and every hook, command and operation of the
@@ -1670,7 +1680,8 @@ Not an envelope: `{root, agents, observation?, workspace?, problems?, warnings?}
                           "modules":[{"name":"oats.okf","from":{"kind":"package","package":"oats.okf","version":"2.1.3","commit":"ab897841…","integrity":"sha256-bada35…","repoKey":"github.com/awebai/oats-okf"},
                                       "commit":"ab897841…","current":{"commit":"ab897841…","version":"2.1.3"},"status":"current"}],
                           "soul":{"repoKey":"github.com/nw/agents","commit":"66566512…","current":"66566512…","status":"current"}}]}],
- "workspace":{"reachable":true}}
+ "workspace":{"reachable":true,"key":"github.com/nw/agents","ref":"git:github.com/nw/agents","keyFrom":"workspace","standalone":false,"defaultTeam":{"label":"eng","team":"eng:nw.aweb.ai"},
+              "teams":{"eng":"eng:nw.aweb.ai","mine":"mine:ana.aweb.ai","ops":null},"teamsFrom":"observed"}}
 ```
 
 - **Agent rows**: the soul's recorded definition plus `dir` and `instances`,
@@ -1703,10 +1714,67 @@ Not an envelope: `{root, agents, observation?, workspace?, problems?, warnings?}
   reason?}`; a package soul adds `package`, `version`, `currentVersion`
   (`missing` reasons: `package-absent`, `soul-absent`).
 - **`workspace`**: `{reachable: true}`, or `{reachable: false, code, reason,
-  message}` (modules then stay the recorded map). Absent without
-  `oats-local.yaml`.
+  message}` (modules then stay the recorded map), plus the deployment's
+  [workspace identity](#workspace-identity-feature-workspace-identity-oats-0360)
+  either way. Absent without `oats-local.yaml`.
 - `problems`: the legacy-home rows ([dispatch errors](#dispatch-errors)).
   `warnings`: envelope warnings. `--team` is `E_BAD_ARGS` (an envelope).
+
+<a id="workspace-identity-feature-workspace-identity-oats-0360"></a>
+**Workspace identity** (feature `workspace-identity`, OATS 0.36.0). The
+`workspace` object says which workspace and teams this deployment is, read
+offline with no network, so it is there whether `reachable` is `true` or
+`false`:
+
+| Key | Meaning |
+|---|---|
+| `key` | the canonical repo key of the workspace HOST (`parseRepoRef(…).key`: every spelling of one repository gives one key, e.g. `git:github.com/nw/agents`, `https://github.com/nw/agents.git` and `git@github.com:nw/agents.git` all give `github.com/nw/agents`). When `oats-local.yaml` names a member in place of its host, it is the host's key once the member's backlink is known. `null` when `parseRepoRef` refuses the reference |
+| `ref` | the reference exactly as `oats-local.yaml` writes it (`workspace:`), for display only |
+| `keyFrom` | `"workspace"`: `key` is the host's, because this run observed it, or the cache holds the ref's workspace file, or a member's cached backlink names the host. With nothing observed or cached, the ref is taken as the host, as the schema defines `workspace:`. `"member"`: the ref names a member whose host is not known yet, so `key` is the member's own. `null` with a `null` key |
+| `standalone` | `true` only when `oats-local.yaml` sets `standalone:` (the configured standalone view, whose local teams are its whole team model). A run that fell back to the standalone view because the host is unreadable is `false`: its teams are the workspace's, read through the sources below. Unlike `workspace.standalone` on [inspect](#oats-inspect), which is the view a home runs in |
+| `defaultTeam` | `{label, team}`: the label is `oats-local.yaml`'s `defaultTeam`, `team` its provider id from `teams` (`null` when that map gives none). `null` when `oats-local.yaml` names no default team |
+| `teams` | `{<label>: <provider team id> \| null}`: every team label the deployment maps, local and shared, by label; a label in both is the committed (shared) one, as [`oats teams`](#oats-teams) resolves it |
+| `teamsFrom` | where the shared teams came from: `"observed"`, the workspace file this run read; `"cache"`, this machine's cached copy at the host commit it last observed (no git process, no network; when `key` names a member, the host its cached `oats-membership.yaml` names); `"local"`, none: `teams` holds the local teams only |
+
+A configured standalone deployment reads no workspace file, so it is always
+`teamsFrom: "local"`, with its local teams only (as spawn resolves them there).
+`oats status` only reads the workspace when an instance records modules or a
+workspace soul, so an empty deployment answers from the cache, or from local
+teams on a host that has not observed its workspace (`oats sync` and
+`oats teams` observe it). The cache is the running kernel's own: after an
+OATS upgrade it is empty until the host next observes its workspace.
+
+**Matching workspaces across machines.** Two deployments are the same
+workspace when their `key`s are equal; `ref` is never compared. The identity
+is resolved the same offline way for every deployment, standalone included,
+whatever its team view:
+
+- `keyFrom: "member"` is unresolved: never match it, and show it as
+  unresolved (the host is learned when the deployment observes its
+  workspace, e.g. `oats sync`).
+- `keyFrom: "workspace"` with nothing observed (`teamsFrom: "local"` on a
+  deployment that is not standalone) means the ref was taken as the host, as
+  the schema defines. If it is really a member, the worst case is a split
+  (one workspace shown as two until `oats sync` there), never a wrong merge.
+- A `null` key is an unusable reference and never matches. Show `ref` with
+  "this deployment's workspace reference isn't valid; fix oats-local.yaml".
+- Known limit: `parseRepoRef` lowercases the host but keeps the path's case,
+  so references that differ in owner or repository case give different keys.
+
+**Matching teams across machines.** This is the rule for comparing two
+deployments' teams (as the Desktop does to attach a remote machine to a
+workspace):
+
+- `teamsFrom` `"observed"` or `"cache"`: a `null` team is **unmapped**, and
+  unmapped matches only unmapped.
+- `standalone: true` with `teamsFrom: "local"`: the local config IS the
+  complete team model, so a `null` team is **unmapped** (matches only
+  unmapped). Reason to show: "teams are local only on this host
+  (standalone)", with no sync advice.
+- `standalone: false` with `teamsFrom: "local"`: a `null` default team is
+  **unknown** and never matches. Reason to show: "this host hasn't observed
+  its workspace yet; run oats sync there". A non-null default team (a locally
+  mapped team) matches normally.
 
 **Desktop facts** (feature `desktop-facts`): `startedAt` is the last start or
 restart, else `createdAt` for a launched home, else `null`. `modelFrom` is
@@ -1729,6 +1797,8 @@ route target:
 {"id":"build:3f2a…","server":"build","label":"Build box","registrationPresent":true,
  "target":{"sshHost":"build-host","workspace":"/srv/team","oatsPath":"oats"},
  "probe":{"ok":true},"agentsRoot":"/srv/team/agents",
+ "workspace":{"reachable":true,"key":"github.com/acme/team","ref":"git:github.com/acme/team","keyFrom":"workspace","standalone":false,"defaultTeam":{"label":"default","team":"acme:team"},
+              "teams":{"default":"acme:team"},"teamsFrom":"observed"},
  "souls":[{"name":"dev","harness":"claude","work":"worktree","agentsRoot":"/srv/team/agents"}],
  "instances":[{"server":"build","instance":"dev-a","agent":"dev","home":"/srv/team/agents/dev/instances/dev-a",
                "agentsRoot":"/srv/team/agents","harness":"claude","backend":"tmux","tmux":{"session":"oats-agents","window":"dev-a"},
@@ -1740,6 +1810,15 @@ route target:
  "retireFailures":[]}
 ```
 
+- **`workspace`** (feature `workspace-identity`, OATS 0.36.0): the host's
+  own `status --json` [`workspace` object](#workspace-identity-feature-workspace-identity-oats-0360),
+  relayed verbatim, or `null` when the host reports none (a deployment
+  without `oats-local.yaml`, or a failed or skipped probe). A host before
+  0.36.0 answers the reachability-only object (`{reachable, code?, reason?,
+  message?}`) with no identity fields, so the identity is there only when
+  the object has a `key` field (which a 0.36.0 host always sends, `null` for
+  an unusable reference). It is never derived on this side. It is on the group, not the
+  rows, so an empty remote deployment still reports it.
 - **Instance rows** relay the host's own `status --json` row: `identity`,
   `identityAddress`, `teams`, `startedAt`, `createdAt`, `model`,
   `runtimeState`, `parentInstance`, `siblingInstance`, `relation`,
@@ -2023,12 +2102,23 @@ A first retire prints the **raw receipt**, not an envelope:
 
 - `retention`: `{worktree: "retained" | "removed" | "absent", movedTo?,
   branch, detachedAt?, recordedBranch, branchDeleted?,
-  branchDeletionSkipped?: {expected, actual, reason}}`, or `null` for a
-  non-worktree mode.
+  branchDeletionSkipped?: {expected, actual, reason}}`, or `null` when no
+  worktree step ran: a non-worktree mode, or a worktree kept for the retry.
+  A retire whose hooks left cleanup outstanding keeps the worktree exactly as
+  it was (with `worktreeRemoved: false`) and says why in `rollbackIncomplete`
+  (`git worktree <path>: kept for the retry; outstanding: …`); the retry does
+  the step once nothing else is outstanding. A work directory whose git admin
+  entry is gone is never touched: it is an incomplete item (`git worktree
+  <path>: its admin entry is missing; …`), and `--force` refuses it with
+  `E_WORK_PRESERVATION_FAILED`.
 - `--discard-worktree` removes the worktree. `--delete-branch` deletes the
   worktree's verified branch (re-verified at deletion time) and implies
   discarding; a mismatch deletes nothing and reports
-  `branchDeletionSkipped`.
+  `branchDeletionSkipped`. Without `--delete-branch` no retire deletes a
+  branch, a retried or `--force`d quarantine included. A failed spawn's
+  quarantine that still owes the branch the spawn created stays incomplete
+  (`git branch <b>: kept; the failed spawn created it; pass --delete-branch to
+  delete it`).
 - `workRecovery` (or `workRecoveries[]`): `{path, classes, bytes, outputs?,
   repoCopy?}`; `outputs: {paths: [{path, bytes}], bytes}` names what was
   copied beyond tracked state, largest first.

@@ -401,3 +401,93 @@ test("keyboard: the switcher menu's search and options connect, and Tab out clos
   assert.equal(menu.hidden, true, "Tab out of the menu closes it");
   dom.window.close();
 });
+
+/* ── #461: a picked folder that is not a deployment ── */
+const REFUSAL = "This folder isn't an OATS deployment: it has no oats-local.yaml. Choose the deployment folder itself, the one that contains oats-local.yaml.";
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+test("a parent folder is refused with the explanation and its deployments as one-click adds; nothing is added until one is chosen", async () => {
+  const added = [];
+  const { dom, document, selected, controller } = setup({
+    pickWorkspace: async () => ({ ok: false, code: "not-a-workspace", reason: REFUSAL, path: "/home/Agents",
+      choices: [{ path: "/home/Agents/aweb", name: "aweb", kind: "inside" }, { path: "/home/Agents/zeta", name: "zeta", kind: "inside" }], more: 3, limited: true, scanLimit: 200 }),
+    addWorkspace: async (path) => { added.push(path); return { ok: true, workspace: { id: path, path, name: path.split("/").pop() } }; },
+    onboardWorkspace: async () => assert.fail("no onboarding for a folder with deployments in it"),
+  });
+  controller.begin()(B, [B]);
+  await controller.openModal();
+  document.getElementById("ws-browse").click();
+  await settle();
+  const status = document.getElementById("ws-dialog-status");
+  assert.equal(status.textContent, REFUSAL); assert.ok(status.classList.contains("error"));
+  assert.equal(status.getAttribute("aria-live"), "polite");
+  assert.equal(document.querySelector(".ws-pick-path").textContent, "Chosen: /home/Agents");
+  const choices = [...document.querySelectorAll(".ws-pick-choice")];
+  assert.deepEqual(choices.map((b) => b.dataset.workspacePath), ["/home/Agents/aweb", "/home/Agents/zeta"]);
+  assert.equal(choices[0].querySelector(".ws-pick-name").textContent, "Add aweb");
+  assert.equal(document.querySelector(".ws-pick-more").textContent, "and 3 more. Only the first 200 entries of this folder were checked.");
+  assert.equal(document.querySelector(".ws-pick-setup"), null, "onboarding is not offered beside deployments");
+  assert.equal(document.getElementById("ws-dialog-title").textContent, "Add workspace", "not the onboarding dialog");
+  assert.equal(document.activeElement, choices[0], "focus lands on the first choice");
+  assert.deepEqual(added, []); assert.deepEqual(selected, []);
+  choices[1].click();
+  await settle();
+  assert.deepEqual(added, ["/home/Agents/zeta"], "the choice goes through the normal add");
+  assert.deepEqual(selected, ["/home/Agents/zeta"]);
+  assert.equal(document.getElementById("ws-modal").hidden, true);
+  dom.window.close();
+});
+
+test("a folder inside a deployment offers that deployment by path", async () => {
+  const { dom, document, controller } = setup({
+    pickWorkspace: async () => ({ ok: false, code: "not-a-workspace", reason: REFUSAL, path: "/home/OATS/agents",
+      choices: [{ path: "/home/OATS", name: "OATS", kind: "ancestor" }], more: 0, limited: false }),
+  });
+  controller.begin()(B, [B]);
+  await controller.openModal();
+  document.getElementById("ws-browse").click();
+  await settle();
+  assert.equal(document.querySelector(".ws-pick-choice").textContent, "Add /home/OATS (the deployment this folder is inside)");
+  assert.equal(document.querySelector(".ws-pick-more"), null);
+  dom.window.close();
+});
+
+test("a folder with no deployment near it is refused, with onboarding only as the secondary action", async () => {
+  const { dom, document, controller } = setup({
+    pickWorkspace: async () => ({ ok: false, code: "not-a-workspace", reason: REFUSAL, path: "/home/empty", choices: [], more: 0, limited: false,
+      onboard: { token: "t1", path: "/home/empty" } }),
+    onboardWorkspace: async () => ({ ok: false, code: "bad-ref", reason: "fixture" }),
+  });
+  controller.begin()(B, [B]);
+  await controller.openModal();
+  document.getElementById("ws-browse").click();
+  await settle();
+  assert.equal(document.getElementById("ws-dialog-status").textContent, REFUSAL);
+  assert.equal(document.getElementById("ws-dialog-title").textContent, "Add workspace", "the refusal stands; onboarding is not entered on its own");
+  const setupButton = document.querySelector(".ws-pick-setup");
+  assert.equal(setupButton.textContent, "Set up a new deployment here…");
+  assert.equal(document.activeElement, setupButton);
+  setupButton.click();
+  assert.equal(document.getElementById("ws-dialog-title").textContent, "Onboard workspace");
+  assert.equal(document.querySelector(".ws-onboard-path").textContent, "/home/empty");
+  assert.equal(document.querySelector(".ws-pick").hidden, true);
+  dom.window.close();
+});
+
+test("a new Browse or reopening the dialog clears the previous refusal's choices", async () => {
+  let answer = { ok: false, code: "not-a-workspace", reason: REFUSAL, path: "/p", choices: [{ path: "/p/a", name: "a", kind: "inside" }] };
+  const { dom, document, controller } = setup({ pickWorkspace: async () => answer });
+  controller.begin()(B, [B]);
+  await controller.openModal();
+  document.getElementById("ws-browse").click(); await settle();
+  assert.equal(document.querySelectorAll(".ws-pick-choice").length, 1);
+  answer = { ok: false, code: "cancelled", reason: "cancelled" };
+  document.getElementById("ws-browse").click(); await settle();
+  assert.equal(document.querySelectorAll(".ws-pick-choice").length, 0); assert.equal(document.querySelector(".ws-pick").hidden, true);
+  answer = { ok: false, code: "not-a-workspace", reason: REFUSAL, path: "/p", choices: [{ path: "/p/a", name: "a", kind: "inside" }] };
+  document.getElementById("ws-browse").click(); await settle();
+  document.getElementById("ws-cancel").click();
+  await controller.openModal();
+  assert.equal(document.querySelectorAll(".ws-pick-choice").length, 0);
+  dom.window.close();
+});

@@ -7,7 +7,12 @@ asks it and *what it keeps*.
 
 ## The observation cycle
 
-One cycle per registered deployment (`observeDeployment`):
+One cycle reads every registered deployment (`observeDeployment` each),
+at most `MAX_DEPLOYMENT_OBSERVATIONS` (2) at a time, first come first served
+(`mapBounded`, `server/deployment-observer.mjs`): the bound is the observer's
+own admission, so no deployment is refused for being third. An empty
+deployment (no souls, no instances) is an observation like any other: it is
+published as `observed` with no instances, never left `pending`. For each:
 
 1. `oats status` and `oats workspace status` run together
    (`server/deployment-observer.mjs`). On a **cold** cycle — nothing held for
@@ -35,7 +40,7 @@ catalogs are thin wrappers over it (`soul-catalog.mjs`,
   its roster reads failed — is never bound to a state it was not read under,
   and that cycle reads under its own key at settle time. A value that landed
   unbound is still *held*, so a deployment whose roster reads keep failing
-  (a third `--dir` past the observer's two-slot bound, a status timeout) costs
+  (a status timeout) costs
   one souls/capabilities read per window, not one per cycle. A value held
   under `null` answers for no key;
 - the retry window throttles background cycles, never a user: a request that
@@ -192,6 +197,10 @@ the read's completion time.
 inspect carry `observedAt` (ISO string or null) and `refreshing` (boolean).
 A failed `/api/workspace-sync` read also carries `lastGood` (`{ capabilities,
 observedAt }` or null). Existing fields are unchanged.
+
+An explicit `?ws=` the server does not serve on `/api/panel` or `/api/agents`
+is a 404 `E_WORKSPACE_NOT_SERVED`, never the first workspace's answer
+([desktop-deployment-model.md](desktop-deployment-model.md)).
 
 ## Testing
 

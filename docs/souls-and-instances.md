@@ -129,7 +129,7 @@ full copy** of every capability the soul resolved to:
   .oats/modules/<capability>/      # the whole capability: oats.json, bin/, injects/, skills/ (hooks run from here)
   .oats/bin/oats → <kernel>/bin/oats.mjs  # the kernel that last launched this home: first on the harness's PATH
   work/                            # worktree, checkout symlink, attached tree, or private directory
-  TASK.md                          # briefing and task
+  TASK.md                          # briefing and task (0600; the home itself is 0700)
   instance.json                    # provenance (below); `soulDir` = the soul directory hooks get as OATS_SOUL
   STATE.md, log.md, notes/         # optional, from the knowledge capability
 ```
@@ -152,8 +152,8 @@ composed skills and instructions, a spawn records:
       "commit": "3f2a9c1e…", "digest": "sha256-…", "materializedAt": "2026-09-24T10:12:44.118Z"
     },
     "oats.okf": {
-      "from": { "kind": "package", "package": "oats.okf", "version": "4.0.5", "commit": "26d8216f…", "integrity": "sha256-…", "repoKey": "github.com/awebai/oats-okf" },
-      "commit": "26d8216f…", "digest": "sha256-…", "materializedAt": "2026-09-24T10:12:44.201Z"
+      "from": { "kind": "package", "package": "oats.okf", "version": "4.1.0", "commit": "e331a996…", "integrity": "sha256-…", "repoKey": "github.com/awebai/oats-okf" },
+      "commit": "e331a996…", "digest": "sha256-…", "materializedAt": "2026-09-24T10:12:44.201Z"
     }
   },
   "providers": {
@@ -245,8 +245,7 @@ OATS codex session does not appear in `codex agents`. So that the environment
 does not depend on this, a codex launch also sets it for tool
 commands explicitly with `-c shell_environment_policy.set.<NAME>="<value>"`:
 
-- the instance: `OATS_INSTANCE`, `OATS_INSTANCE_HOME`, `PI_AGENT_INSTANCE`,
-  `PI_AGENT_HOME`;
+- the instance: `OATS_INSTANCE`, `OATS_INSTANCE_HOME`;
 - every capability's launch environment (for example the messaging
   provider's identity home and delivery mode);
 - the launch configuration's literal values. A reference's value never goes
@@ -258,15 +257,22 @@ runs tool commands through the user's login shell, and a profile that prepends
 directories puts those entries ahead of `.oats/bin`. A second `oats` in such a
 directory is found first.
 
-A capability command (`oats <namespace> …`) run with none of
-`OATS_INSTANCE_HOME`, `PI_AGENT_HOME` or `OATS_HOME` set finds its instance
-from the working directory. It uses the nearest enclosing directory laid out as
+A capability command (`oats <namespace> …`) runs in the instance home that
+`OATS_INSTANCE_HOME` names, else `OATS_HOME`. With neither set, it finds its
+instance from the working directory. It uses the nearest enclosing directory laid out as
 `<agents-root>/<soul>/instances/<name>` whose `instance.json` records that
 name, and validates it like a home named by the environment. The walk uses the
 directory as the shell names it (`$PWD`). That matters for an attached
 instance, whose `work/` links into its owner's tree: below it, the physical
 path is the owner's. A process that has no `$PWD` there would act as the
 owner, so an attached instance runs capability commands from its home.
+
+Inside an instance home the namespace is that home's. A `--soul` naming
+another soul is refused (`E_HOME_MISMATCH`), and a namespace the home does
+not have is `E_UNKNOWN_COMMAND`. Both name the home and what chose it (the
+variable, or the working directory). To run a command as a spawn of another
+soul would, run it from the deployment with `OATS_INSTANCE_HOME` and
+`OATS_HOME` unset.
 
 ## Lifecycle
 
@@ -426,6 +432,22 @@ retained home (plus the usual quarantine marker when hooks reported incomplete
 cleanup), shows in `oats status` and the Desktop as a failed deferred
 retirement, and is retried and cleared with `oats retire <instance>`.
 
+When a retire hook reports incomplete cleanup, the home is quarantined before
+any worktree step: the worktree, its git admin entry and the branch stay
+exactly as they were, so the retry can reach the hook and the work it needs.
+The retry does the worktree step only once nothing else is outstanding:
+retain by default, remove with `--discard-worktree` or `--delete-branch`.
+`--force` removes the home regardless, so it does the worktree step first. A
+work directory whose git admin entry is gone is never removed: the hooks still
+run, the home is kept, and `--force` refuses it until you move the directory
+out or delete it by hand.
+
+Retire never deletes a branch unless you pass `--delete-branch`, and then
+only the verified branch: not on a quarantine, its retry or `--force`. A
+spawn that fails deletes the branch it created only while the branch's tip
+is still where the spawn created it. If something was committed there, the
+branch is kept and the failure says so.
+
 ## Work modes
 
 A work mode decides what `./work` points at and what discipline the agent must
@@ -459,6 +481,21 @@ directory is for, not a place to settle in.
 as `--repo`, then `oats-local.yaml` `clones:`, then `<deployment>/<member name>`
 (`E_CLONE_MISSING` / `E_CLONE_MISMATCH` otherwise — see
 [configuration.md](configuration.md)).
+
+The branch starts at the commit of the soul's repository that the spawn
+observed (the one it resolved the soul at), not at what the clone has checked
+out: the clone may be a human's checkout or a shared reference, far behind.
+The spawn fetches that commit by id into the clone from the remote that names
+the repository, and never moves the clone's own branches, remote-tracking refs
+or work tree. A commit that cannot be fetched refuses the spawn
+(`E_REMOTE_UNREADABLE`, naming the clone and the commit); it never falls back
+to the clone's branch. The fetch never prompts (ssh runs in BatchMode, askpass
+is refused). A server that serves only its advertised refs (protocol v0 without
+`allowAnySHA1InWant`) refuses a commit its branches have moved past; `--base`
+is then the way on. `--base <ref>` names another start point in the clone;
+a `--repo` that is not a clone of the soul's repository starts at its `HEAD`.
+The spawn result and `instance.json` record the start point as
+`base: {ref, oid}`.
 
 Use this for agents that will edit code or docs independently.
 
@@ -561,9 +598,10 @@ Every instance is told its own home as **`OATS_INSTANCE_HOME`** (absolute), and
 instructions refer to it as `<instance-home>`. The two environments differ, so
 they are stated separately:
 
-- **Runtime session**: `OATS_INSTANCE_HOME` and `PI_AGENT_HOME` (plus
-  `OATS_INSTANCE`/`PI_AGENT_INSTANCE`). The `PI_`-prefixed names are
-  compatibility aliases for the separately published pi extension.
+- **Runtime session**: `OATS_INSTANCE_HOME` and `OATS_INSTANCE`, for every
+  harness. The pi extension reads `OATS_INSTANCE_HOME` too; the `PI_AGENT_*`
+  names are not set (they stay reserved, so a launch configuration cannot set
+  them).
 - **Lifecycle hooks**: `OATS_INSTANCE_HOME` and `OATS_HOME`, alongside the rest of
   the hook contract. `OATS_HOME` predates `OATS_INSTANCE_HOME` and is kept because
   shipped capability hooks read it; it is **not** exported to harness sessions.

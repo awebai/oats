@@ -193,7 +193,7 @@
     },
     "kernelBin": "<kernel>/bin/oats.mjs"
   },
-  "command": "OATS_INSTANCE='dev-claude-checkout-kstub-mnone' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-claude-checkout-kstub-mnone' PI_AGENT_INSTANCE='dev-claude-checkout-kstub-mnone' PI_AGENT_HOME='<base>/deployment/agents/dev/instances/dev-claude-checkout-kstub-mnone' '<base>/bin/claude' -- \"$(cat TASK.md)\"",
+  "command": "OATS_INSTANCE='dev-claude-checkout-kstub-mnone' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-claude-checkout-kstub-mnone' '<base>/bin/claude' -- '@TASK.md'",
   "createdAt": "<createdAt>",
   "modules": {
     "golden.knowledge": {

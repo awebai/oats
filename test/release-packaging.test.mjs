@@ -45,10 +45,10 @@ test("release alignment rejects stale lock metadata even when all three manifest
 
 test("v2 preparation aligns standalone OKF and Git-only theory catalog pins", () => {
   for (const cap of MIRROR_PATHS) {
-    assert.equal(json(`${cap}/oats.json`).version, "4.0.5");
+    assert.equal(json(`${cap}/oats.json`).version, "4.1.0");
     assert.equal(json(`${cap}/oats.json`).compatibility.oats, ">=0.29.0", `${cap}: OKF 4.0.0 declares the 0.29.0 floor (package souls with triggers, the harvester spawn by --name)`);
   }
-  assert.equal(json("package-catalog.json").packages["oats.okf"].ref, "v4.0.5");
+  assert.equal(json("package-catalog.json").packages["oats.okf"].ref, "v4.1.0");
   const catalog = json("package-catalog.json");
   assert.equal(catalog.packages["oats.knowledge-theory"], undefined, "the theory package identity was renamed to oats.framework");
   const framework = catalog.packages["oats.framework"];

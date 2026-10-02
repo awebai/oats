@@ -117,7 +117,7 @@
               "file": "TASK.md"
             }
           },
-          "command": "OATS_INSTANCE='dev-claude-checkout-knone-mnone' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-claude-checkout-knone-mnone' PI_AGENT_INSTANCE='dev-claude-checkout-knone-mnone' PI_AGENT_HOME='<base>/deployment/agents/dev/instances/dev-claude-checkout-knone-mnone' '<base>/bin/claude' -- \"$(cat TASK.md)\"",
+          "command": "OATS_INSTANCE='dev-claude-checkout-knone-mnone' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-claude-checkout-knone-mnone' '<base>/bin/claude' -- '@TASK.md'",
           "createdAt": "<createdAt>",
           "modules": {},
           "providers": {},
@@ -164,6 +164,15 @@
     }
   ],
   "workspace": {
-    "reachable": true
+    "reachable": true,
+    "key": "local/<base>/remotes/ws.git",
+    "ref": "file://<base>/remotes/ws.git",
+    "keyFrom": "workspace",
+    "standalone": false,
+    "defaultTeam": null,
+    "teams": {
+      "global": null
+    },
+    "teamsFrom": "observed"
   }
 }
