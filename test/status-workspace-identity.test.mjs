@@ -235,3 +235,20 @@ test("the human-readable `oats status` carries none of the identity fields", asy
     }
   } finally { fx.cleanup(); }
 });
+
+test("team model 3: with no local default, the deployment's default team is the workspace's defaultTeam (observed or cached)", async () => {
+  const fx = deployment();
+  try {
+    const file = YAML.parse(readFileSync(join(fx.base, "seed", "oats-workspace.yaml"), "utf8"));
+    fx.commit({ "oats-workspace.yaml": YAML.stringify({ ...file, defaultTeam: "shared" }, { lineWidth: 0 }) }, "a workspace default");
+    await fx.spawn("dev", { instance: "dev-1" });
+    let ws = status(fx).workspace;
+    assert.deepEqual([ws.teamsFrom, ws.defaultTeam], ["observed", { label: "shared", team: SHARED }]);
+    unreachable(fx);
+    ws = status(fx).workspace;
+    assert.deepEqual([ws.teamsFrom, ws.defaultTeam], ["cache", { label: "shared", team: SHARED }]);
+    // A local default (the workspace allows local teams) wins over the workspace's.
+    writeLocal(fx, { defaultTeam: "mine" });
+    assert.deepEqual(status(fx).workspace.defaultTeam, { label: "mine", team: MINE });
+  } finally { fx.cleanup(); }
+});
