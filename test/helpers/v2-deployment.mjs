@@ -97,6 +97,11 @@ export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilit
   // Served like GitHub: partial fetches (lib/remote.mjs fetches a commit's small blobs, then what a read needs).
   git(bare, "config", "uploadpack.allowFilter", "true");
   git(bare, "config", "uploadpack.allowAnySHA1InWant", "true");
+  // No background git in a fixture repository (awebai/oats#451): a commit or fetch otherwise daemonizes
+  // `git maintenance run --auto` (Git >= 2.47), which can still be repacking into the deployment while a
+  // test's cleanup removes it. Repository config, so every git run in it, a test's or the kernel's, obeys.
+  const quiet = (repo) => git(repo, "config", "maintenance.auto", "false");
+  quiet(bare);
 
   const { defaults: extraDefaults, ...extraWorkspace } = workspace;
   const spec = {
@@ -109,10 +114,12 @@ export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilit
   for (const [id, def] of Object.entries(capabilities)) Object.assign(spec, capabilityFiles(id, def.manifest, def.files));
   const seed = join(base, "seed");
   git(base, "clone", "-q", bare, seed);
+  quiet(seed);
   writeTree(seed, spec);
   for (const [dirName, src] of Object.entries(capabilityDirs)) cpSync(src, join(seed, "capabilities", dirName), { recursive: true, verbatimSymlinks: true });
   git(seed, "add", "-A"); git(seed, "commit", "-qm", "fixture workspace"); git(seed, "push", "-q", "origin", "HEAD:main");
   git(base, "clone", "-q", bare, member);
+  quiet(member);
 
   writeFileSync(join(dep, "oats-local.yaml"), YAML.stringify({ schemaVersion: 2, workspace: ref, ...local }, { lineWidth: 0 }));
   const bin = inertHarnessDir(base);
