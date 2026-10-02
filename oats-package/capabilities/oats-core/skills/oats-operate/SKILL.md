@@ -71,7 +71,7 @@ member moving or a package being bumped affects only new spawns.
 soul asked for it) or `workspace` (a workspace default), as recorded when
 you were spawned. It also reports your `teams` and `defaultTeam` as recorded,
 and `recordedDefaultTeam` beside the live one: `default-team-changed` means
-the deployment's default moved since your spawn (respawn to follow it).
+your soul's default team moved since your spawn (respawn to follow it).
 
 ## Status and drift
 
@@ -128,12 +128,13 @@ top-level. Ask your human when the relation is unclear.
 **Naming.** `--purpose <slug>` names the instance `<soul>-<slug>`; `--name
 <slug>` gives an exact name instead. Without either the kernel numbers it.
 
-**Teams to join.** The preview's `teams` lists the soul's teams on this
-deployment (`default` first), and `defaultTeam` the one its identity starts
-in. The others are *eligible*: to join them at spawn, pass
+**Teams to join.** The preview's `teams` lists the teams the soul may join
+(`default` first, each with `via`: why), and `defaultTeam` the one its
+identity starts in. The others are *eligible*: to join them at spawn, pass
 `--provider <messaging capability> join=<label,label>`. Joining or leaving
-later is your messaging capability's skill. Which souls are in which teams is
-the operator's local config (`oats soul teams`; `/oats-teams` in `oats.setup`).
+later is your messaging capability's skill. Which teams a soul may join is
+the organisation's decision, committed in its workspace (read it with
+`oats soul teams`; `/oats-teams` in `oats.setup`).
 
 A soul with `work: worktree | checkout` needs a clone of its repository on
 this machine; the kernel finds it through `--repo <path>`, the local file's

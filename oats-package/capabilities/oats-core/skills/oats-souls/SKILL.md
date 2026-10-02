@@ -66,9 +66,10 @@ workspace's `packages:` pins versions once. Workspace defaults fill the rest;
 `oats spawn <soul> --preview` shows the exact result — modules, commits,
 skills and the merged provider settings — without creating anything.
 
-A soul file names no team. Which teams a soul is in is local to each
-deployment (`oats soul teams`, set by the operator); teams organise messaging
-and never grant or restrict anything (see `/oats-operate`, "Teams to join").
+A soul file names no team. Which teams a soul may join, and its default
+team, are the organisation's decision, committed in its workspace
+(`oats soul teams <soul>` shows the result); teams organise messaging and never grant or
+restrict anything (see `/oats-operate`, "Teams to join").
 
 ## Relations: what the new instance is to you
 

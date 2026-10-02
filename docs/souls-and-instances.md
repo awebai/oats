@@ -164,8 +164,8 @@ composed skills and instructions, a spawn records:
     "key": "github.com/acme/agents", "commit": "3f2a9c1e…", "resolution": "20ec8ec527311d71d0973086",
     "soul": { "repoKey": "github.com/acme/agents", "commit": "3f2a9c1e…" }
   },
-  "teams": [{ "label": "ana-acme", "team": "ana-acme:ana.aweb.ai", "default": true, "from": "local" },
-            { "label": "engineering", "team": "engineering:acme.aweb.ai", "default": false, "from": "shared" }],
+  "teams": [{ "label": "ana-acme", "team": "ana-acme:ana.aweb.ai", "default": true, "from": "local", "via": ["default", "local"] },
+            { "label": "engineering", "team": "engineering:acme.aweb.ai", "default": false, "from": "shared", "via": ["workspace"] }],
   "defaultTeam": { "label": "ana-acme", "team": "ana-acme:ana.aweb.ai", "from": "deployment" }
 }
 ```
@@ -183,7 +183,8 @@ composed skills and instructions, a spawn records:
   compares `workspace.soul` with the member's current commit too: `soul: <name>
   from <member> @ <c7>  [member moved since …]` (`--json`: `instances[].soul`).
 - `teams` / `defaultTeam`: the soul's teams at spawn, exactly as the providers
-  received them (mapped teams only) and its default: evidence, never rewritten.
+  received them (mapped teams only, each with `via`: why the soul may join it)
+  and its default: evidence, never rewritten.
   A running home's hooks and messaging commands read the teams live
   ([capabilities.md](capabilities.md#teams-in-the-provider-environment)).
 

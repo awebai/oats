@@ -250,7 +250,7 @@ test("happy path: release-manager = workspace defaults ⊕ soul (here + package)
   const r = await resolveSoul(d, findSoul(d, "release-manager"), opts());
   assert.equal(r.resolutionApi, 1);
   assert.deepEqual(r.soul, { name: "release-manager", repoKey: K.agents, commit: C.agents, path: "souls/release-manager" });
-  // Team model v2: no team is configured here (no oats-local.yaml teams) — none, no default.
+  // No team is configured here (no workspace defaultTeam or souls:, no oats-local.yaml teams) — none, no default.
   assert.deepEqual([r.teams, r.defaultTeam], [[], null]);
   assert.deepEqual(r.modules.map((m) => m.name), ["nw-deploy", "nw-house-style", "nw-release-tooling", "oats.core", "oats.okf"], "sorted by name");
   const byName = Object.fromEntries(r.modules.map((m) => [m.name, m]));
@@ -301,7 +301,7 @@ test("`off` removes a workspace default; `none` empties the slot instead of the 
   const r = await resolveSoul(d, findSoul(d, "support-triager"), opts());
   assert.deepEqual(r.modules.map((m) => m.name), ["oats.core"], "nw-house-style is off, knowledge none → no oats.okf");
   assert.deepEqual(r.slots, { knowledge: null, messaging: null, tasks: null });
-  assert.equal("team" in r.soul, false, "a soul carries no team (team membership is local since 0.30)");
+  assert.equal("team" in r.soul, false, "a soul carries no team (a soul's teams are the workspace's souls:)");
 });
 
 test("no team composes anything (0.30): campaign-writer gets its own nw-brand-voice; release-manager's tooling does not leak to it", async () => {
@@ -707,33 +707,36 @@ test("decision 25: standalone `oats.core: off` opts out; standalone without a lo
   assert.ok(err && /^E_PACKAGE_/.test(err.code), `a missing lock refuses with a package error, got ${err?.code}`);
 });
 
-test("team model v2: teams are never settings — the messaging payload is base ⊕ soul ⊕ host ⊕ spawn; teams/defaultTeam come from the committed teams and oats-local.yaml, outside every fingerprint", async () => {
+test("team model 3: teams are never settings — the messaging payload is base ⊕ soul ⊕ host ⊕ spawn; teams/defaultTeam come from the workspace's souls: and the local teams it allows, outside every fingerprint", async () => {
   const ws = workspaceFile();
   ws.teams = { ...ws.teams, engineering: { description: "Platform + data", team: "aweb:example.oss" } };
   ws.defaults = { ...ws.defaults, messaging: { "nw-chat": { from: K.agents } } };
   ws.messaging = { private: "per-human" };
-  const local = { schemaVersion: 2, workspace: R.agents, teams: { mine: { team: "aweb:me.default" } }, defaultTeam: "mine",
-    souls: { teams: { "*": ["engineering"], "release-manager": ["marketing"] }, default: { "release-manager": "engineering" } } };
+  ws.localTeams = true;
+  ws.souls = { "*": { teams: ["engineering"] }, "agents/release-manager": { default: "engineering", teams: ["engineering", "marketing"] } };
+  const local = { schemaVersion: 2, workspace: R.agents, teams: { mine: { team: "aweb:me.default" } }, defaultTeam: "mine" };
   const d = discovery({ workspace: ws });
   const rm = await resolveSoul(d, findSoul(d, "release-manager"), opts({ local }));
   assert.deepEqual(rm.payloads["nw-chat"], { private: "per-human", channels: ["northwind-eng"] }, "no team in the settings");
   assert.deepEqual(rm.defaultTeam, { label: "engineering", team: "aweb:example.oss", from: "soul" });
-  assert.deepEqual(rm.teams, [{ label: "engineering", team: "aweb:example.oss", default: true, from: "shared" }, { label: "marketing", team: null, default: false, from: "shared" }],
-    "default first, then by label; the unmapped shared team reported (team null); the deployment default is not this soul's");
+  assert.deepEqual(rm.teams, [{ label: "engineering", team: "aweb:example.oss", default: true, from: "shared", via: ["default", "workspace"] },
+    { label: "marketing", team: null, default: false, from: "shared", via: ["workspace"] }, { label: "mine", team: "aweb:me.default", default: false, from: "local", via: ["local"] }],
+    "default first, then by label; the unmapped shared team reported (team null); the local default is not this soul's, its team is eligible");
   const triager = await resolveSoul(d, findSoul(d, "support-triager"), opts({ local }));
   assert.deepEqual(triager.defaultTeam, { label: "mine", team: "aweb:me.default", from: "deployment" });
-  assert.deepEqual(triager.teams.map((t) => [t.label, t.from]), [["mine", "local"], ["engineering", "shared"]]);
-  // Teams are deployment-local state, not composition: no fingerprint moves with them.
+  assert.deepEqual(triager.teams.map((t) => [t.label, t.from, t.via]), [["mine", "local", ["default", "local"]], ["engineering", "shared", ["workspace"]]]);
+  // Teams are configuration, not composition: no fingerprint moves with them.
   const bare = await resolveSoul(d, findSoul(d, "support-triager"), opts());
-  assert.deepEqual([bare.teams, bare.defaultTeam], [[], null]);
+  assert.deepEqual([bare.teams.map((t) => t.label), bare.defaultTeam], [["engineering"], null]);
   assert.equal(bare.revision, triager.revision);
   // A team a HOST sets as a provider setting is an opaque setting like any other (the provider's business).
   const hostSet = await resolveSoul(d, findSoul(d, "support-triager"), opts({ local: { ...local, settings: { "nw-chat": { team: "aweb:me.other" } } } }));
   assert.equal(hostSet.payloads["nw-chat"].team, "aweb:me.other");
   assert.equal(hostSet.payloadOrigins["nw-chat"]["/team"].kind, "host");
-  // An undeclared label, or a soul default outside its teams, refuses the soul.
+  // An undeclared local default, or local teams the workspace does not allow, refuses the soul.
   await rejectsCode(resolveSoul(d, findSoul(d, "support-triager"), opts({ local: { ...local, defaultTeam: "ghost" } })), "E_TEAM_UNKNOWN", (e) => assert.deepEqual(e.details, { label: "ghost", at: "oats-local.yaml#/defaultTeam" }));
-  await rejectsCode(resolveSoul(d, findSoul(d, "support-triager"), opts({ local: { ...local, souls: { default: { "support-triager": "marketing" } } } })), "E_TEAM_NOT_ELIGIBLE", (e) => assert.deepEqual([e.details.soul, e.details.label], ["support-triager", "marketing"]));
+  const closed = discovery({ workspace: { ...ws, localTeams: false } });
+  await rejectsCode(resolveSoul(closed, findSoul(closed, "support-triager"), opts({ local })), "E_WORKSPACE_SCHEMA", (e) => assert.deepEqual(e.details, { reason: "local-teams-closed", path: "oats-local.yaml", keys: ["teams", "defaultTeam"] }));
   // A byTeam left in the workspace's messaging payload is refused where it would reach the provider (removed in 0.30).
   const bad = structuredClone(ws); bad.messaging.byTeam = { engineering: { channels: ["eng"] } };
   const d2 = discovery({ workspace: bad });
@@ -984,8 +987,10 @@ test("composition, declRevision and the payload do not move with a soul's teams 
   const { name, repoKey, commit, path } = r.soul;
   const modules = r.modules.map((m) => (m.name === "nw-release-tooling" ? { ...m, manifest: { capability: m.manifest.capability, version: m.manifest.version, description: m.manifest.description, team: "engineering", ...m.manifest } } : m));
   assert.equal(revisionOf({ resolutionApi: 1, soul: { name, repoKey, commit, team: "engineering", path }, modules, slots: r.slots, skills: r.skills, injects: r.injects }), "ce27f0e0fa837d02d037d752");
-  const local = { schemaVersion: 2, workspace: R.agents, teams: { mine: { team: "aweb:me.x" } }, defaultTeam: "mine", souls: { teams: { "release-manager": ["engineering", "cloud"] } } };
-  const withTeams = await resolveSoul(d, findSoul(d, "release-manager"), opts({ local }));
+  const local = { schemaVersion: 2, workspace: R.agents, teams: { mine: { team: "aweb:me.x" } }, defaultTeam: "mine" };
+  const dt = discovery({ workspace: { ...teamsWorkspace(), defaultTeam: "cloud", localTeams: true, souls: { "agents/release-manager": { default: "engineering", teams: ["engineering", "cloud"] } } } });
+  const withTeams = await resolveSoul(dt, findSoul(dt, "release-manager"), opts({ local }));
+  assert.deepEqual(withTeams.defaultTeam.label, "engineering");
   assert.deepEqual({ decl: withTeams.declRevision, payload: withTeams.payloadRevision, revision: withTeams.revision }, PIN_TEAMS, "teams are outside every fingerprint");
   assert.deepEqual(withTeams.modules, r.modules, "a team composes nothing");
 });
@@ -1014,31 +1019,31 @@ test("layers-from: each filled slot records where its capability came from — s
   assert.deepEqual(["soul", "defaults.knowledge", "defaults.capabilities", undefined].map(resolveLib.fromOfVia), ["soul", "workspace", "workspace", null], "no team:<label> origin since 0.30");
 });
 
-test("teams: the soul's rows here — default first, then by label; unmapped shared rows reported; a package soul keyed <package>/<soul>; standalone reads local teams only", async () => {
-  const d = discovery({ workspace: teamsWorkspace() });
-  const local = { schemaVersion: 2, workspace: R.agents, teams: { mine: { team: "aweb:me.x", description: "mine" } }, defaultTeam: "mine",
-    souls: { teams: { "*": ["cloud"], "release-manager": ["marketing", "engineering"], "nw.tools/tools-expert": ["engineering"] } } };
+test("teams: the soul's rows here — default first, then by label; unmapped shared rows reported; a member soul keyed <member>/<soul>, a package soul <package>/<soul>; standalone reads local teams only", async () => {
+  const ws = { ...teamsWorkspace(), localTeams: true, souls: { "*": { teams: ["cloud"] }, "agents/release-manager": { teams: ["cloud", "marketing", "engineering"] }, "nw.tools/tools-expert": { teams: ["cloud", "engineering"] } } };
+  const d = discovery({ workspace: ws });
+  const local = { schemaVersion: 2, workspace: R.agents, teams: { mine: { team: "aweb:me.x", description: "mine" } }, defaultTeam: "mine" };
   const r = await resolveSoul(d, findSoul(d, "release-manager"), opts({ local }));
   assert.deepEqual(r.defaultTeam, { label: "mine", team: "aweb:me.x", from: "deployment" });
   assert.deepEqual(r.teams, [
-    { label: "mine", team: "aweb:me.x", default: true, from: "local" },
-    { label: "cloud", team: "aweb:example.cloud", default: false, from: "shared" },
-    { label: "engineering", team: "aweb:example.oss", default: false, from: "shared" },
-    { label: "marketing", team: null, default: false, from: "shared" },
+    { label: "mine", team: "aweb:me.x", default: true, from: "local", via: ["default", "local"] },
+    { label: "cloud", team: "aweb:example.cloud", default: false, from: "shared", via: ["workspace"] },
+    { label: "engineering", team: "aweb:example.oss", default: false, from: "shared", via: ["workspace"] },
+    { label: "marketing", team: null, default: false, from: "shared", via: ["workspace"] },
   ]);
-  // A soul with no entry of its own: the default and "*".
+  // A soul with no entry of its own: "*".
   const t = await resolveSoul(d, findSoul(d, "support-triager"), opts({ local }));
   assert.deepEqual(t.teams.map((x) => x.label), ["mine", "cloud"]);
   // A package soul is keyed <package>/<soul> (a hand-built package entry: the key is all that matters here).
-  const { soulTeams, teamModel, soulKeyOf } = await import("../lib/teams.mjs");
-  assert.equal(soulKeyOf({ name: "tools-expert", package: "nw.tools", qualifiedName: "nw.tools/tools-expert" }), "nw.tools/tools-expert");
-  assert.deepEqual(soulTeams(teamModel(teamsWorkspace(), local), "nw.tools/tools-expert").teams.map((x) => x.label), ["mine", "cloud", "engineering"]);
+  const { soulTeams, teamModel, teamKeyOf } = await import("../lib/teams.mjs");
+  assert.equal(teamKeyOf({ name: "tools-expert", package: "nw.tools", qualifiedName: "nw.tools/tools-expert" }), "nw.tools/tools-expert");
+  assert.deepEqual(soulTeams(teamModel(ws, local), "nw.tools/tools-expert").teams.map((x) => x.label), ["mine", "cloud", "engineering"]);
   // Standalone: no committed teams are read — a label only the workspace declares is unknown there.
   const enumeration = { key: K.data, commit: C.data, membership: { schemaVersion: 2, workspace: R.agents }, souls: [soulEntry(K.data, C.data, soulDef("data-analyst", { capabilities: { "nw-warehouse-access": { from: "here" } } }))], capabilities: [capEntry(K.data, C.data, M.warehouse)], publishes: null, problems: [] };
   const sd = standaloneRepo(R.data, C.data, enumeration);
   const solo = await resolveSoul(sd, sd.members[0].souls[0], opts({ local: { schemaVersion: 2, workspace: R.agents, teams: { mine: { team: "aweb:me.x" } }, defaultTeam: "mine" } }));
-  assert.deepEqual([solo.teams, solo.defaultTeam], [[{ label: "mine", team: "aweb:me.x", default: true, from: "local" }], { label: "mine", team: "aweb:me.x", from: "deployment" }]);
-  await rejectsCode(resolveSoul(sd, sd.members[0].souls[0], opts({ local })), "E_TEAM_UNKNOWN", (e) => assert.equal(e.details.label, "cloud"));
+  assert.deepEqual([solo.teams, solo.defaultTeam], [[{ label: "mine", team: "aweb:me.x", default: true, from: "local", via: ["default", "local"] }], { label: "mine", team: "aweb:me.x", from: "deployment" }]);
+  await rejectsCode(resolveSoul(sd, sd.members[0].souls[0], opts({ local: { ...local, defaultTeam: "cloud" } })), "E_TEAM_UNKNOWN", (e) => assert.equal(e.details.label, "cloud"));
 });
 
 test("a hostOnly key in the workspace's messaging payload is refused, path named; the host layer may carry it", async () => {

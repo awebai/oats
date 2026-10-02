@@ -29,7 +29,7 @@ joined team, put `--identity-home <identityHome>` before the subcommand.
 | How mail reaches you | the `Comms:` line of `TASK.md` (see section 4) |
 
 - **Default team.** Your primary identity lives in the kernel-selected default
-  team. `defaultTeam.from` is `deployment` or `soul`; `defaultTeam.team` is the
+  team. `defaultTeam.from` is `soul`, `deployment` or `workspace`; `defaultTeam.team` is the
   provider id. There is no root-active-team fallback.
 - **Joined teams.** A wider team the workspace defines, joined explicitly. Each
   gives you a **separate identity** with the same alias in that team, kept
@@ -274,7 +274,12 @@ team selector and should not appear in any `aw` call.
   aw to return `team_id` and an invite token, accept into a per-team root, record
   `roots[team]`, and record the local mapping via `oats teams add <label> --team
   <id>`. Without `--namespace`, setup refuses hosted additional-team creation
-  until the hosted-team aweb release exists.
+  until the hosted-team aweb release exists. Where the workspace does not allow
+  local teams (OATS 0.38 without `localTeams: true` in `oats-workspace.yaml`),
+  setup records no local mapping and prints the `teams:` entry (and
+  `defaultTeam:` when there is none) to commit in `oats-workspace.yaml`; a soul
+  joins it only when a `souls:` entry lists it. If setup cannot ask the kernel,
+  it refuses before creating anything.
 - `oats aweb setup --join <label> --invite <token>` → accept an existing/shared
   team's invite into a per-team root and record `roots[team]`.
 - For an unmapped committed/shared default, plain setup creates nothing; it asks
@@ -283,9 +288,10 @@ team selector and should not appear in any `aw` call.
   printed provider id; setup never edits the committed team file.
 
 **Readiness messages:** no default is exactly `no teams configured: run \`oats
-aweb setup\``. An unmapped default is exactly `the default team <label> has no
+aweb setup\``. An unmapped default is exactly ``the default team <label> has no
 provider id yet: its owner runs oats aweb setup, then commits the id, or choose
-another default with oats teams default`. A shared team whose root is missing or
+another default: `oats teams default <label>`, or `defaultTeam:` in
+oats-workspace.yaml when the workspace doesn't allow local teams``. A shared team whose root is missing or
 not a member is an operator setup problem: ask the owner for an invite and run
 `oats aweb setup --join <label> --invite <token>`, or use `--create` if this
 host owns that team. When a joined team is removed from the live team set,
@@ -308,7 +314,8 @@ member.
 - `oats aweb setup --create <label> --namespace <domain>` creates a new local
   BYOT team, accepts it into a new per-team root under `.aweb-roots/`, records
   `settings.oats.aweb.roots` in `oats-local.yaml`, and records it with `oats
-  teams add <label> --team <id>` through the selected OATS CLI. Hosted
+  teams add <label> --team <id>` through the selected OATS CLI, or, where the
+  workspace does not allow local teams, prints what to commit instead. Hosted
   additional-team creation without `--namespace` is refused until the
   hosted-team aweb release exists. `oats aweb setup --join <label> --invite
   <token>` uses the same separate-root path for an existing/shared team; never

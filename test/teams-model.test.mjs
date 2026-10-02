@@ -1,143 +1,175 @@
-// Team model v2 (docs/design/2026-09-27-team-model-v2.md, option B), the kernel's pure half
-// (lib/teams.mjs): the committed SHARED teams and the deployment's LOCAL teams, the default, and
-// which teams each soul belongs to here — as the rows the reports, OATS_TEAMS and instance.json carry.
+// Team model 3 (docs/design/2026-10-02-team-model-3.md, awebai/oats#484), the kernel's pure half
+// (lib/teams.mjs): the committed SHARED teams, the workspace's `defaultTeam`, `localTeams` and `souls:`
+// patterns, and the deployment's LOCAL teams and default when the workspace allows them — as the rows
+// the reports, OATS_TEAMS and instance.json carry.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { soulKeyOf, soulTeams, teamModel, teamProblems, teamReferences, teamsEnv } from "../lib/teams.mjs";
+import { soulTeams, teamKeyOf, teamModel, teamProblems, teamReferences, teamsEnv } from "../lib/teams.mjs";
 
-const WS = { teams: { oats: { team: "oats:oats.aweb.ai", description: "The OATS project" }, reviewers: {} } };
-const LOCAL = {
-  teams: { "antares-oats": { team: "antares-oats:juan.aweb.ai" }, night: { team: "night:juan.aweb.ai", description: "Night shift" } },
-  defaultTeam: "antares-oats",
-  souls: { teams: { "*": ["oats"], "oats-expert": ["reviewers"], "oats.okf/harvester": ["night"] }, default: { "oats-expert": "oats" } },
-};
-const model = (ws = WS, local = LOCAL) => teamModel(ws, local, { workspaceKey: "github.com/awebai/oats" });
+const SHARED = { engineering: { team: "engineering:acme.aweb.ai" }, security: { team: "security:acme.aweb.ai" }, docs: { description: "not created yet" } };
+const ws = (extra = {}) => ({ schemaVersion: 2, name: "acme", teams: SHARED, ...extra });
+const model = (workspace, local = null) => teamModel(workspace, local, { workspaceKey: "github.com/acme/agents" });
 const code = (fn) => { try { fn(); } catch (e) { return [e.code, e.details]; } assert.fail("expected a refusal"); };
+const ENG = { label: "engineering", team: "engineering:acme.aweb.ai", from: "shared" };
+const SEC = { label: "security", team: "security:acme.aweb.ai", from: "shared" };
+const DOCS = { label: "docs", team: null, from: "shared" };
+const MINE = { label: "mine", team: "mine:me.aweb.ai", from: "local" };
+const row = (t, isDefault, via) => ({ label: t.label, team: t.team, default: isDefault, from: t.from, via });
 
-test("a soul's teams: the default (deployment's, or souls.default) ∪ souls.teams['*'] ∪ its own; default first, then by label", () => {
-  const m = model();
-  assert.deepEqual(soulTeams(m, "dev"), {
-    key: "dev",
-    defaultTeam: { label: "antares-oats", team: "antares-oats:juan.aweb.ai", from: "deployment" },
-    teams: [
-      { label: "antares-oats", team: "antares-oats:juan.aweb.ai", default: true, from: "local", via: ["default"] },
-      { label: "oats", team: "oats:oats.aweb.ai", default: false, from: "shared", via: ["*"] },
-    ],
+const PATTERNS = {
+  "*": { teams: [] },
+  "security-souls/*": { default: "security", teams: ["engineering"] },
+  "security-souls/incident-responder": { teams: ["engineering", "docs"] },
+  "oats.engineering/*": { teams: "any" },
+};
+
+test("a soul's key is its qualified name: <package>/<soul>, or <member>/<soul> (the member's repo name)", () => {
+  assert.equal(teamKeyOf({ name: "dev", repoKey: "github.com/acme/security-souls" }), "security-souls/dev");
+  assert.equal(teamKeyOf({ name: "dev", repoKey: "local//srv/repos/Tools.git" }), "Tools/dev");
+  assert.equal(teamKeyOf({ name: "harvester", package: "oats.okf", qualifiedName: "oats.okf/harvester", repoKey: "github.com/awebai/oats-okf" }), "oats.okf/harvester");
+});
+
+test("the most specific souls: key wins outright for teams; the default comes from the most specific key that sets one", () => {
+  const m = model(ws({ defaultTeam: "engineering", souls: PATTERNS }));
+  // The soul's own key: its teams only (no merging with security-souls/*), its default from security-souls/*.
+  assert.deepEqual(soulTeams(m, "security-souls/incident-responder"), {
+    key: "security-souls/incident-responder", match: "security-souls/incident-responder", defaultMatch: "security-souls/*",
+    defaultTeam: { label: "security", team: "security:acme.aweb.ai", from: "soul" },
+    teams: [row(SEC, true, ["default"]), row(DOCS, false, ["workspace"]), row(ENG, false, ["workspace"])],
   });
-  // souls.default overrides the deployment default; the deployment default is then NOT one of its teams.
-  assert.deepEqual(soulTeams(m, "oats-expert"), {
-    key: "oats-expert",
-    defaultTeam: { label: "oats", team: "oats:oats.aweb.ai", from: "soul" },
-    teams: [
-      { label: "oats", team: "oats:oats.aweb.ai", default: true, from: "shared", via: ["default", "*"] },
-      { label: "reviewers", team: null, default: false, from: "shared", via: ["soul"] },
-    ],
+  assert.deepEqual(soulTeams(m, "security-souls/scanner").teams, [row(SEC, true, ["default"]), row(ENG, false, ["workspace"])]);
+  // `any`: every shared team, unmapped included.
+  assert.deepEqual(soulTeams(m, "oats.engineering/dev"), {
+    key: "oats.engineering/dev", match: "oats.engineering/*", defaultMatch: null,
+    defaultTeam: { label: "engineering", team: "engineering:acme.aweb.ai", from: "workspace" },
+    teams: [row(ENG, true, ["default", "workspace"]), row(DOCS, false, ["workspace"]), row(SEC, false, ["workspace"])],
   });
-  assert.deepEqual(soulTeams(m, "oats.okf/harvester").teams.map((r) => r.label), ["antares-oats", "night", "oats"]);
-  // '*': the deployment default's row + souls.teams['*'].
-  assert.deepEqual(soulTeams(m, "*").teams.map((r) => [r.label, r.via]), [["antares-oats", ["default"]], ["oats", ["*"]]]);
+  // "*": unlisted souls.
+  assert.deepEqual(soulTeams(m, "platform/dev"), { key: "platform/dev", match: "*", defaultMatch: null,
+    defaultTeam: { label: "engineering", team: "engineering:acme.aweb.ai", from: "workspace" }, teams: [row(ENG, true, ["default"])] });
+  assert.deepEqual(soulTeams(m, "*").match, "*");
 });
 
-test("the soul's key: its bare name for a member or external soul, <package>/<soul> for a package soul", () => {
-  assert.equal(soulKeyOf({ name: "dev", repoKey: "github.com/a/b" }), "dev");
-  assert.equal(soulKeyOf({ name: "harvester", package: "oats.okf", qualifiedName: "oats.okf/harvester" }), "oats.okf/harvester");
+test("a soul no key matches, with no \"*\" entry, gets its default only, member and package souls alike", () => {
+  const m = model(ws({ defaultTeam: "engineering", souls: { "security-souls/*": { teams: "any" } } }));
+  for (const key of ["platform/dev", "oats.okf/harvester"]) {
+    assert.deepEqual(soulTeams(m, key), { key, match: null, defaultMatch: null, defaultTeam: { ...ENG, from: "workspace" }, teams: [row(ENG, true, ["default"])] });
+  }
+  assert.deepEqual(soulTeams(model(ws()), "platform/dev"), { key: "platform/dev", match: null, defaultMatch: null, defaultTeam: null, teams: [] });
 });
 
-test("no default configured: defaultTeam null, the soul's listed teams only; nothing at all → []", () => {
-  assert.deepEqual(soulTeams(model(WS, { souls: { teams: { dev: ["oats"] } } }), "dev"), {
-    key: "dev", defaultTeam: null, teams: [{ label: "oats", team: "oats:oats.aweb.ai", default: false, from: "shared", via: ["soul"] }],
-  });
-  assert.deepEqual(soulTeams(teamModel(null, null), "dev"), { key: "dev", defaultTeam: null, teams: [] });
+test("the default, in order: the soul's souls: default; the deployment's, only with localTeams: true; the workspace's; none", () => {
+  const local = { teams: { mine: { team: "mine:me.aweb.ai" } }, defaultTeam: "mine" };
+  const souls = { "security-souls/*": { default: "security" } };
+  const def = (workspace, l, key = "security-souls/dev") => soulTeams(model(workspace, l), key).defaultTeam;
+  // 1. the soul's own, whatever else is set.
+  assert.deepEqual(def(ws({ localTeams: true, defaultTeam: "engineering", souls }), local), { ...SEC, from: "soul" });
+  // 2. the deployment's, only when the workspace allows local teams.
+  assert.deepEqual(def(ws({ localTeams: true, defaultTeam: "engineering" }), local, "platform/dev"), { ...MINE, from: "deployment" });
+  assert.deepEqual(def(ws({ localTeams: true, defaultTeam: "engineering" }), { defaultTeam: "security" }, "platform/dev"), { ...SEC, from: "deployment" }, "a local default may name a shared team");
+  // 3. the workspace's.
+  assert.deepEqual(def(ws({ localTeams: true, defaultTeam: "engineering" }), null, "platform/dev"), { ...ENG, from: "workspace" });
+  assert.deepEqual(def(ws({ defaultTeam: "engineering" }), null, "platform/dev"), { ...ENG, from: "workspace" });
+  // 4. none.
+  assert.equal(def(ws({ localTeams: true }), null, "platform/dev"), null);
+  assert.equal(def(ws(), null, "platform/dev"), null);
 });
 
-test("an UNMAPPED default (a shared team without an id) is {label, team: null, from}", () => {
-  const t = soulTeams(model(WS, { defaultTeam: "reviewers" }), "dev");
-  assert.deepEqual(t.defaultTeam, { label: "reviewers", team: null, from: "deployment" });
-  assert.deepEqual(t.teams, [{ label: "reviewers", team: null, default: true, from: "shared", via: ["default"] }]);
+test("with localTeams: true, every local team is eligible for any soul; a local default no file declares is E_TEAM_UNKNOWN", () => {
+  const local = { teams: { mine: { team: "mine:me.aweb.ai" }, night: { team: "night:me.aweb.ai" } } };
+  const m = model(ws({ localTeams: true, defaultTeam: "engineering", souls: { "*": { teams: ["security"] } } }), local);
+  assert.deepEqual(soulTeams(m, "platform/dev").teams, [row(ENG, true, ["default"]), row(MINE, false, ["local"]),
+    row({ label: "night", team: "night:me.aweb.ai", from: "local" }, false, ["local"]), row(SEC, false, ["workspace"])]);
+  // A local default that is a local team: eligible as both.
+  assert.deepEqual(soulTeams(model(ws({ localTeams: true }), { ...local, defaultTeam: "mine" }), "platform/dev").teams[0], row(MINE, true, ["default", "local"]));
+  assert.deepEqual(code(() => soulTeams(model(ws({ localTeams: true }), { defaultTeam: "ghost" }), "platform/dev")), ["E_TEAM_UNKNOWN", { label: "ghost", at: "oats-local.yaml#/defaultTeam" }]);
 });
 
-test("a label in BOTH files: the committed definition wins (a readiness problem, never a refusal)", () => {
-  const m = model(WS, { teams: { oats: { team: "oats:mine.aweb.ai", description: "mine" } }, defaultTeam: "oats" });
-  assert.deepEqual(soulTeams(m, "dev").teams, [{ label: "oats", team: "oats:oats.aweb.ai", default: true, from: "shared", via: ["default"] }]);
-  const collision = teamProblems(m).find((p) => p.code === "team-label-collision");
-  assert.deepEqual(collision, {
-    code: "team-label-collision", label: "oats", severity: "warning",
-    shared: { team: "oats:oats.aweb.ai", description: "The OATS project", at: "github.com/awebai/oats:oats-workspace.yaml#/teams/oats" },
-    local: { team: "oats:mine.aweb.ai", description: "mine", at: "oats-local.yaml#/teams/oats" },
-    message: "team oats is declared in both oats-workspace.yaml (shared) and oats-local.yaml (local); the shared definition wins",
+test("without localTeams: true, local teams and a local defaultTeam are refused (E_WORKSPACE_SCHEMA local-teams-closed), naming both fixes", () => {
+  const FIX = "either (a) add `localTeams: true` to oats-workspace.yaml, or (b) commit the teams and defaultTeam in oats-workspace.yaml, then remove them from oats-local.yaml";
+  for (const workspace of [ws(), ws({ localTeams: false })]) {
+    const [c, details] = code(() => soulTeams(model(workspace, { teams: { mine: { team: "mine:me.aweb.ai" } }, defaultTeam: "mine" }), "platform/dev"));
+    assert.deepEqual([c, details], ["E_WORKSPACE_SCHEMA", { reason: "local-teams-closed", path: "oats-local.yaml", keys: ["teams", "defaultTeam"] }]);
+  }
+  let message;
+  try { soulTeams(model(ws(), { defaultTeam: "engineering" }), "platform/dev"); } catch (e) { message = e.message; }
+  assert.equal(message, `oats-local.yaml declares defaultTeam, but oats-workspace.yaml does not allow local teams (localTeams: true): ${FIX}`);
+  // As a problem (oats teams, readiness): a failure with the same facts.
+  assert.deepEqual(teamProblems(model(ws(), { defaultTeam: "engineering" })), [{ code: "E_WORKSPACE_SCHEMA", severity: "failure", condition: "local-teams-closed",
+    path: "oats-local.yaml", keys: ["defaultTeam"], message, fix: FIX }]);
+  assert.deepEqual(teamProblems(model(ws(), { defaultTeam: "engineering" }), { key: "platform/dev" }).map((p) => p.condition), ["local-teams-closed"]);
+});
+
+test("the standalone view (no workspace file) has no workspace rules: local teams and the local default apply", () => {
+  const m = model(null, { teams: { mine: { team: "mine:me.aweb.ai" } }, defaultTeam: "mine" });
+  assert.deepEqual(soulTeams(m, "tools/dev"), { key: "tools/dev", match: null, defaultMatch: null, defaultTeam: { ...MINE, from: "deployment" }, teams: [row(MINE, true, ["default", "local"])] });
+  assert.deepEqual(teamProblems(m), []);
+  assert.deepEqual(soulTeams(teamModel(null, null), "tools/dev"), { key: "tools/dev", match: null, defaultMatch: null, defaultTeam: null, teams: [] });
+});
+
+test("a label in BOTH files (only possible with localTeams: true): the committed definition wins, a warning", () => {
+  const m = model(ws({ localTeams: true }), { teams: { engineering: { team: "engineering:mine.aweb.ai", description: "mine" } }, defaultTeam: "engineering" });
+  assert.deepEqual(soulTeams(m, "platform/dev").teams, [row(ENG, true, ["default", "local"])], "the deployment declares it too");
+  assert.deepEqual(teamProblems(m).find((p) => p.code === "team-label-collision"), {
+    code: "team-label-collision", label: "engineering", severity: "warning",
+    shared: { team: "engineering:acme.aweb.ai", description: null, at: "github.com/acme/agents:oats-workspace.yaml#/teams/engineering" },
+    local: { team: "engineering:mine.aweb.ai", description: "mine", at: "oats-local.yaml#/teams/engineering" },
+    message: "team engineering is declared in both oats-workspace.yaml (shared) and oats-local.yaml (local); the shared definition wins",
     fix: "rename the local label in oats-local.yaml",
   });
 });
 
-test("an undeclared label the soul reaches is E_TEAM_UNKNOWN naming where it is written; souls.default outside the soul's teams is E_TEAM_NOT_ELIGIBLE", () => {
-  assert.deepEqual(code(() => soulTeams(model(WS, { defaultTeam: "ghost" }), "dev")), ["E_TEAM_UNKNOWN", { label: "ghost", at: "oats-local.yaml#/defaultTeam" }]);
-  assert.deepEqual(code(() => soulTeams(model(WS, { souls: { teams: { "*": ["oats", "ghost"] } } }), "dev")), ["E_TEAM_UNKNOWN", { label: "ghost", at: "oats-local.yaml#/souls/teams/*/1" }]);
-  assert.deepEqual(code(() => soulTeams(model(WS, { souls: { default: { dev: "ghost" } } }), "dev")), ["E_TEAM_UNKNOWN", { label: "ghost", at: "oats-local.yaml#/souls/default/dev" }]);
-  // Another soul's unknown label does not refuse this one (readiness reports it).
-  assert.equal(soulTeams(model(WS, { souls: { teams: { other: ["ghost"] } } }), "dev").teams.length, 0);
-  assert.deepEqual(code(() => soulTeams(model(WS, { defaultTeam: "oats", souls: { default: { dev: "reviewers" } } }), "dev")),
-    ["E_TEAM_NOT_ELIGIBLE", { soul: "dev", label: "reviewers", at: "oats-local.yaml#/souls/default/dev" }]);
-  // The deployment default itself is always eligible as an override.
-  assert.equal(soulTeams(model(WS, { defaultTeam: "oats", souls: { default: { dev: "oats" } } }), "dev").defaultTeam.from, "soul");
-});
-
-test("the deployment's problems: collisions, unmapped shared teams (blocking when the default), unknown references, no default with messaging", () => {
-  const m = model(WS, { defaultTeam: "reviewers", souls: { teams: { dev: ["ghost"] }, default: { x: "oats" } } });
-  assert.deepEqual(teamProblems(m, { messaging: true }).map((p) => [p.code, p.label ?? null, p.severity, p.default ?? null]), [
-    ["team-unmapped", "reviewers", "failure", true],
-    ["E_TEAM_UNKNOWN", "ghost", "failure", null],
-    ["E_TEAM_NOT_ELIGIBLE", "oats", "failure", null],
-    // 0.36.x: this deployment's local souls.teams/souls.default and defaultTeam need migrating (team model 3).
-    ["team-model-3-migration", null, "warning", null],
-    ["team-model-3-migration", null, "warning", null],
+test("the deployment's problems: unmapped shared teams (blocking when the default), an unknown local default, no default with messaging", () => {
+  assert.deepEqual(teamProblems(model(ws({ defaultTeam: "docs" })), { messaging: true }).map((p) => [p.code, p.label ?? null, p.severity, p.default ?? null]), [
+    ["team-unmapped", "docs", "failure", true],
   ]);
-  const unmapped = teamProblems(m).find((p) => p.code === "team-unmapped");
-  assert.equal(unmapped.message, "the default team reviewers has no provider id yet");
-  assert.equal(unmapped.fix, "its owner runs `oats aweb setup`, then commits the id; or choose another default with `oats teams default`");
-  const plain = teamProblems(model(WS, LOCAL)).find((p) => p.code === "team-unmapped");
-  assert.deepEqual(plain, { code: "team-unmapped", label: "reviewers", default: false, severity: "warning", at: "github.com/awebai/oats:oats-workspace.yaml#/teams/reviewers",
-    message: "shared team reviewers has no provider id yet", fix: "its owner runs `oats aweb setup`, then commits the id" });
-  assert.deepEqual(teamProblems(model(WS, {}), { messaging: true }).map((p) => [p.code, p.severity, p.message]),
-    [["team-unmapped", "warning", "shared team reviewers has no provider id yet"], ["E_TEAM_UNCONFIGURED", "failure", "no teams configured: run `oats aweb setup`"]]);
-  assert.equal(teamProblems(model(WS, {}), { messaging: false }).some((p) => p.code === "E_TEAM_UNCONFIGURED"), false, "no messaging layer: no default is fine");
+  assert.deepEqual(teamProblems(model(ws({ localTeams: true }), { defaultTeam: "ghost" }), { messaging: true }).map((p) => [p.code, p.label ?? null, p.severity]), [
+    ["E_TEAM_UNKNOWN", "ghost", "failure"], ["team-unmapped", "docs", "warning"],
+  ], "a default is configured, so not E_TEAM_UNCONFIGURED");
+  assert.deepEqual(teamProblems(model(ws()), { messaging: true }).map((p) => [p.code, p.severity]), [["team-unmapped", "warning"], ["E_TEAM_UNCONFIGURED", "failure"]]);
+  assert.equal(teamProblems(model(ws()), { messaging: false }).some((p) => p.code === "E_TEAM_UNCONFIGURED"), false, "no messaging layer: no default is fine");
 });
 
 test("a soul's problems: only what concerns it; `default` marks ITS default", () => {
-  const m = model(WS, { defaultTeam: "antares-oats", teams: { "antares-oats": { team: "a:b" } }, souls: { teams: { dev: ["reviewers"] } } });
-  // The team-model-3-migration warnings are the deployment's, so every soul carries them (0.36.x).
-  const migration = [["team-model-3-migration", undefined, undefined, "local-soul-teams"], ["team-model-3-migration", undefined, undefined, "local-teams-closed"]];
-  assert.deepEqual(teamProblems(m, { key: "dev" }).map((p) => [p.code, p.label, p.default, p.condition]), [["team-unmapped", "reviewers", false, undefined], ...migration]);
-  assert.deepEqual(teamProblems(m, { key: "other" }).map((p) => [p.code, p.label, p.default, p.condition]), migration, "a soul that is not in reviewers is not told about it");
+  const m = model(ws({ defaultTeam: "engineering", souls: { "a/dev": { teams: ["docs"] } } }));
+  assert.deepEqual(teamProblems(m, { key: "a/dev" }).map((p) => [p.code, p.label, p.default]), [["team-unmapped", "docs", false]]);
+  assert.deepEqual(teamProblems(m, { key: "a/other" }), [], "a soul that may not join docs is not told about it");
+  assert.deepEqual(teamProblems(model(ws({ souls: { "a/*": { default: "docs" } } })), { key: "a/dev", messaging: true }).map((p) => [p.code, p.default]), [["team-unmapped", true]]);
 });
 
-test("every reference to a label, as `oats teams remove` names them", () => {
-  assert.deepEqual(teamReferences(model(WS, { ...LOCAL, souls: { ...LOCAL.souls, teams: { ...LOCAL.souls.teams, dev: ["oats"] } } }), "oats"),
-    ["souls.teams:*", "souls.teams:dev", "souls.default:oats-expert"]);
-  assert.deepEqual(teamReferences(model(), "antares-oats"), ["defaultTeam"]);
-  assert.deepEqual(teamReferences(model(), "night"), ["souls.teams:oats.okf/harvester"]);
-  assert.deepEqual(teamReferences(model(), "unused"), []);
+test("every reference to a local label, as `oats teams remove` names them: the local default only", () => {
+  const m = model(ws({ localTeams: true }), { teams: { mine: { team: "mine:me.aweb.ai" }, spare: { team: "spare:me.aweb.ai" } }, defaultTeam: "mine" });
+  assert.deepEqual(teamReferences(m, "mine"), ["defaultTeam"]);
+  assert.deepEqual(teamReferences(m, "spare"), []);
 });
 
-test("the provider environment: mapped rows only; an unmapped default sets the label and FROM without the id; no default sets none", () => {
-  const env = (ws, local, key = "dev", source = "live") => teamsEnv({ ...soulTeams(model(ws, local), key), source });
-  assert.deepEqual(env(WS, LOCAL, "oats-expert"), {
-    OATS_DEFAULT_TEAM: "oats", OATS_DEFAULT_TEAM_ID: "oats:oats.aweb.ai", OATS_DEFAULT_TEAM_FROM: "soul",
-    OATS_TEAMS: JSON.stringify([{ label: "oats", team: "oats:oats.aweb.ai", default: true, from: "shared" }]),
+test("the provider environment: the eligible rows with `via` (mapped only); FROM soul|deployment|workspace; no default sets none", () => {
+  const env = (workspace, local, key, source = "live") => teamsEnv({ ...soulTeams(model(workspace, local), key), source });
+  assert.deepEqual(env(ws({ defaultTeam: "engineering", souls: PATTERNS }), null, "security-souls/incident-responder"), {
+    OATS_DEFAULT_TEAM: "security", OATS_DEFAULT_TEAM_ID: "security:acme.aweb.ai", OATS_DEFAULT_TEAM_FROM: "soul",
+    OATS_TEAMS: JSON.stringify([row(SEC, true, ["default"]), row(ENG, false, ["workspace"])]),
     OATS_TEAMS_SOURCE: "live", OATS_TEAM_LABEL: undefined, OATS_TEAM_LABELS: undefined, OATS_TEAM_ID: undefined,
   });
-  const unmapped = env(WS, { defaultTeam: "reviewers" }, "dev", "recorded");
+  assert.equal(env(ws({ defaultTeam: "engineering" }), null, "a/b").OATS_DEFAULT_TEAM_FROM, "workspace");
+  assert.equal(env(ws({ localTeams: true }), { teams: { mine: { team: "mine:me.aweb.ai" } }, defaultTeam: "mine" }, "a/b").OATS_DEFAULT_TEAM_FROM, "deployment");
+  const unmapped = env(ws({ defaultTeam: "docs" }), null, "a/b", "recorded");
   assert.deepEqual([unmapped.OATS_DEFAULT_TEAM, unmapped.OATS_DEFAULT_TEAM_ID, unmapped.OATS_DEFAULT_TEAM_FROM, unmapped.OATS_TEAMS, unmapped.OATS_TEAMS_SOURCE],
-    ["reviewers", undefined, "deployment", "[]", "recorded"]);
-  const none = env(WS, {});
+    ["docs", undefined, "workspace", "[]", "recorded"]);
+  const none = env(ws(), null, "a/b");
   assert.deepEqual([none.OATS_DEFAULT_TEAM, none.OATS_DEFAULT_TEAM_ID, none.OATS_DEFAULT_TEAM_FROM, none.OATS_TEAMS], [undefined, undefined, undefined, "[]"]);
-  // Unknown teams (no resolution, a home recorded before 0.30): every name unset, never an ambient value.
   assert.deepEqual(Object.values(teamsEnv(null)).filter((v) => v !== undefined), []);
 });
 
 test("the removed team keys are schema problems naming their replacement (no alias, no fallback)", async () => {
-  const { validateWorkspace, validateMembership, validateSoul } = await import("../lib/workspace.mjs");
-  const MOVED = "team membership is local since 0.30: `oats soul teams`";
+  const { validateWorkspace, validateMembership, validateSoul, validateLocal } = await import("../lib/workspace.mjs");
+  const MOVED = "a soul's teams are decided by souls: in oats-workspace.yaml (team model 3, OATS 0.38.0)";
   const pick = (problems) => problems.map((p) => [p.path, p.reason ?? null, p.message]);
+  // 0.38.0: oats-local.yaml souls.teams / souls.default (team model v2) moved to the workspace's souls:.
+  const local = { schemaVersion: 2, workspace: "git:github.com/a/b", souls: { teams: { "*": ["oats"] }, default: { dev: "oats" }, disabled: ["x"] } };
+  assert.deepEqual(pick(validateLocal(local)), [
+    ["/souls/teams", "removed-key", "souls.teams was removed in 0.38.0 (team model 3): which teams a soul may join is souls: in oats-workspace.yaml"],
+    ["/souls/default", "removed-key", "souls.default was removed in 0.38.0 (team model 3): a soul's default team is souls: in oats-workspace.yaml (default:)"],
+  ]);
   assert.deepEqual(pick(validateMembership({ schemaVersion: 2, workspace: "git:github.com/a/b", team: "global" })), [["/team", "removed-key", MOVED]]);
   assert.deepEqual(pick(validateSoul({ schemaVersion: 2, name: "dev", description: "d", work: "directory", team: ["a", "b"] })), [["/team", "removed-key", MOVED]]);
   const ws = { schemaVersion: 2, name: "acme", teams: { oats: { team: "oats:oats.aweb.ai" }, later: {} },
@@ -169,4 +201,16 @@ test("a team id must pass the kernel's safety rule in BOTH files: never '-'-led,
   // The schemas and the kernel's constant are one rule.
   const { readFileSync } = await import("node:fs");
   for (const f of ["oats-local.schema.json", "oats-workspace.schema.json"]) assert.ok(readFileSync(new URL(`../docs/${f}`, import.meta.url), "utf8").includes(JSON.stringify(TEAM_ID_RE.source).slice(1, -1)), f);
+});
+
+test("remedies point where the fix belongs: the workspace file unless local teams are allowed; a default is changed where it comes from", () => {
+  const unconfigured = (m) => teamProblems(m, { messaging: true }).find((p) => p.code === "E_TEAM_UNCONFIGURED").fix;
+  assert.equal(unconfigured(model(ws())), "run `oats aweb setup` to create a team, then commit it in oats-workspace.yaml as defaultTeam (or as a soul's default in souls:)");
+  assert.equal(unconfigured(model(ws({ localTeams: true }))), "run `oats aweb setup` to create a team, then commit it in oats-workspace.yaml as defaultTeam (or as a soul's default in souls:), or record it here with `oats teams add <label> --team <id>`");
+  assert.equal(unconfigured(model(null)), "run `oats aweb setup` (it creates the teams and sets the default), or `oats teams add <label> --team <id>`");
+  const unmapped = (workspace, local, key = "a/x") => teamProblems(model(workspace, local), { key }).find((p) => p.code === "team-unmapped" && p.default).fix;
+  const OWNER = "its owner runs `oats aweb setup`, then commits the id";
+  assert.equal(unmapped(ws({ souls: { "a/*": { default: "docs" } } })), `${OWNER}; or choose another default in the souls: entry a/* of oats-workspace.yaml`);
+  assert.equal(unmapped(ws({ defaultTeam: "docs" })), `${OWNER}; or choose another defaultTeam in oats-workspace.yaml`);
+  assert.equal(unmapped(ws({ localTeams: true }), { defaultTeam: "docs" }), `${OWNER}; or choose another default with \`oats teams default\``);
 });

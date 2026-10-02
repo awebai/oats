@@ -61,14 +61,15 @@ const fx = v2Deployment({
     "test.teams": { manifest: { hooks: { launch: "bin/launch.mjs" }, environment: [], settings: {} },
       files: { "bin/launch.mjs": `import { writeFileSync } from "node:fs"; import { join } from "node:path";\nwriteFileSync(join(process.env.OATS_HOME, "teams-env.json"), JSON.stringify({ old: [process.env.OATS_TEAM_LABELS ?? null, process.env.OATS_TEAM_LABEL ?? null], def: process.env.OATS_DEFAULT_TEAM ?? null, source: process.env.OATS_TEAMS_SOURCE, teams: JSON.parse(process.env.OATS_TEAMS) }));\nprocess.stdout.write("{}\\n");\n` } },
   },
-  workspace: { teams: { global: { description: "Fixture team" }, night: { description: "Night shift" } } },
+  // Team model 3: teamed may join the shared night team (not created yet); the deployment's local teams are allowed.
+  workspace: { teams: { global: { description: "Fixture team" }, night: { description: "Night shift" } }, localTeams: true, souls: { "ws/teamed": { teams: ["night"] } } },
   local: { "launch-configs": {
     polite: { harness: "claude", executable: join(binDir, "polite"), args: ["--flag", "a b c"], env: { KEY: { fromEnv: "RESTART_TEST_SRC" }, LIT: "plain" }, model: "claude-opus-5" },
     stubborn: { harness: "claude", executable: join(binDir, "stubborn") },
     codexy: { harness: "codex", executable: join(binDir, "polite") },
   },
-  // Team model v2: teamed belongs to a local team and to the shared night team (not created yet).
-  teams: { mine: { team: "aweb:fixture.mine" } }, souls: { teams: { teamed: ["mine", "night"] } } },
+  // A local team: with localTeams: true, every soul may join it.
+  teams: { mine: { team: "aweb:fixture.mine" } } },
 });
 test.after(() => fx.cleanup());
 const repo = fx.dep; // the deployment: the scope lifecycle verbs resolve from
@@ -552,12 +553,12 @@ test("session recompose is removed (0.26): E_UNKNOWN_COMMAND naming the re-spawn
   assert.ok(!oats(["version"]).json.features.includes("session-recompose"));
 });
 
-test("team model v2: a session start's launch hook gets the home's LIVE teams — a shared team created after the spawn is seen, a team the soul loses locally disappears — while modules and the spawn-time record stay frozen", async () => {
+test("team model 3: a session start's launch hook gets the home's LIVE teams — a shared team created after the spawn is seen, a team the workspace takes from the soul disappears — while modules and the spawn-time record stay frozen", async () => {
   const name = "teamed-live";
   const home = homeOf(name, "teamed");
   await makeHome(name, { soul: "teamed", command: renderFor(home, name, join(binDir, "polite")), launch: recipeFor(home, name, { executable: join(binDir, "polite") }) });
-  const MINE = { label: "mine", team: "aweb:fixture.mine", default: false, from: "local" };
-  const NIGHT = { label: "night", team: "aweb:fixture.night", default: false, from: "shared" };
+  const MINE = { label: "mine", team: "aweb:fixture.mine", default: false, from: "local", via: ["local"] };
+  const NIGHT = { label: "night", team: "aweb:fixture.night", default: false, from: "shared", via: ["workspace"] };
   const spawned = readJson(join(home, "instance.json"));
   assert.deepEqual([spawned.teams, spawned.defaultTeam], [[MINE], null], "spawn records the mapped teams as evidence (night has no id yet)");
   const seedWorkspace = join(fx.base, "seed", "oats-workspace.yaml");
@@ -579,10 +580,10 @@ test("team model v2: a session start's launch hook gets the home's LIVE teams �
   fx.commit({ "oats-workspace.yaml": stringify(ws, { lineWidth: 0 }) }, "create night");
   let seen = await restart();
   assert.deepEqual(seen, { old: [null, null], def: null, source: "live", teams: [MINE, NIGHT] }, "the launch hook may act on leaves: the list is live");
-  // …and the soul losing night on this deployment takes it away again.
-  const local = parse(readFileSync(localFile, "utf8"));
-  local.souls.teams.teamed = ["mine"];
-  writeFileSync(localFile, stringify(local, { lineWidth: 0 }));
+  // …and the workspace taking night from the soul takes it away again.
+  const ws2 = parse(readFileSync(seedWorkspace, "utf8"));
+  ws2.souls["ws/teamed"] = { teams: [] };
+  fx.commit({ "oats-workspace.yaml": stringify(ws2, { lineWidth: 0 }) }, "teamed: default only");
   seen = await restart();
   assert.deepEqual(seen.teams, [MINE]);
   const after = readJson(join(home, "instance.json"));

@@ -29,7 +29,7 @@ test("every mirrored and repo-owned capability manifest validates against docs/c
   assert.equal(validate({ ...base, operations: { "Bad Name": { command: "go" } } }), false, "bad name");
   assert.equal(validate({ ...base, operations: { run: { kind: "view" } } }), false, "command required");
   assert.equal(validate({ ...base, operations: { run: { command: "go", args: [{ flag: "--n" }] } } }), false, "arg name required");
-  // Workspace discovery reads `private` (lib/workspace.mjs); `team` was removed in 0.30 (team membership is local).
+  // Workspace discovery reads `private` (lib/workspace.mjs); `team` was removed in 0.30 (a soul's teams are the workspace's souls:).
   assert.equal(validate({ ...base, private: true }), true, "private: true");
   assert.equal(validate({ ...base, private: "yes" }), false, "private must be a boolean");
   assert.equal(validate({ ...base, team: "engineering" }), false, "team was removed in 0.30");

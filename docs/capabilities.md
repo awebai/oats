@@ -193,23 +193,27 @@ per-deployment activation or exclusion maps.
 
 ### Teams in the provider environment
 
-A soul's teams here (the committed shared teams, and the deployment's `oats-local.yaml` `teams`, `defaultTeam`, `souls.teams`,
-`souls.default` — see [workspaces.md](workspaces.md#teams)) travel **beside** a
+A soul's teams here (the workspace's shared teams, `defaultTeam` and `souls:`, and
+the deployment's `oats-local.yaml` `teams` and `defaultTeam` where the workspace
+allows them — see [workspaces.md](workspaces.md#teams)) travel **beside** a
 provider's settings, never inside them, in the environment of every hook, home
 command and provider check:
 
 - `OATS_DEFAULT_TEAM` — the soul's default label; `OATS_DEFAULT_TEAM_ID` — its
-  provider id; `OATS_DEFAULT_TEAM_FROM` — `deployment` (`defaultTeam`) or `soul`
-  (`souls.default`).
+  provider id; `OATS_DEFAULT_TEAM_FROM` — `soul` (the soul's `souls:` default in
+  the workspace file), `deployment` (the local `defaultTeam`) or `workspace` (the
+  workspace's `defaultTeam`).
 - No default configured: none of the three is set. An **unmapped** default (a
   shared team declared without an id): `OATS_DEFAULT_TEAM` and
   `OATS_DEFAULT_TEAM_FROM` are set and `OATS_DEFAULT_TEAM_ID` is not. What a
   provider does then is its own contract; a messaging provider typically
   refuses the spawn, naming the unmapped label, or saying no team is
   configured.
-- `OATS_TEAMS` — JSON `[{label, team, default, from: "shared"|"local"}]`: every
-  mapped team the soul may be in here, the default included (`default: true`),
-  default first, then by label. Eligible to join = the rows with `default: false`.
+- `OATS_TEAMS` — JSON `[{label, team, default, from: "shared"|"local", via}]`:
+  every mapped team the soul may be in here, the default included
+  (`default: true`), default first, then by label; `via` says why
+  (`default`, `workspace`, `local`). Eligible to join = the rows with
+  `default: false`, and no other team: a provider refuses a join outside them.
   Unset when a home's teams are unknown (none recorded, and unreadable now).
 - `OATS_TEAMS_SOURCE` — `live` (the workspace and `oats-local.yaml` read now, or
   a fresh resolution) or `recorded` (the spawn-time record). **A provider leaves

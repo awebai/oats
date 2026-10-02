@@ -168,6 +168,10 @@ function workspaceReadinessContext(value) {
 }
 function yamlScalar(text,key){const m=String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`,'m'));return m?m[1].trim():undefined;}
 export const AW_MIN = '1.36.13';
+export const NO_TEAMS_MESSAGE='no teams configured: run `oats aweb setup`';
+/** The default team has a label but no provider id. The remedy names both forms of a new default, since a
+ *  workspace without `localTeams: true` refuses `oats teams default` (team model 3). */
+export const unmappedDefaultMessage=(label)=>`the default team ${label} has no provider id yet: its owner runs oats aweb setup, then commits the id, or choose another default: \`oats teams default <label>\`, or \`defaultTeam:\` in oats-workspace.yaml when the workspace doesn't allow local teams`;
 const AW_VERSION_RE=/aw\s+v?(\d+\.\d+\.\d+)/;
 /** The installed aw version ("x.y.z"), or undefined when it cannot be read.
  *  `aw version` prints its version line first and then makes a blocking update
@@ -246,7 +250,7 @@ async function readinessDetails(settings,{deployment,env=process.env}={}) {
   const awProblem=await awFloorProblem();if(awProblem) problems.push(awProblem);
   if(!team) {
     const label=typeof env.OATS_DEFAULT_TEAM==='string'&&env.OATS_DEFAULT_TEAM.trim()?env.OATS_DEFAULT_TEAM.trim():'';
-    problems.push({code:'needs-configuration',message:label?`the default team ${label} has no provider id yet: its owner runs oats aweb setup, then commits the id, or choose another default with oats teams default`:'no teams configured: run `oats aweb setup`'});
+    problems.push({code:'needs-configuration',message:label?unmappedDefaultMessage(label):NO_TEAMS_MESSAGE});
   }
   if(!candidate.root || !isAbsolute(candidate.root) || !existsSync(join(resolve(candidate.root),'.aw'))) problems.push({code:'needs-configuration',message:`no messaging root at ${candidate.root?resolve(candidate.root):process.cwd()}: run oats aweb setup there or set ${candidate.key}`});
   return {team,candidate,warnings,result:checkProblems(problems) || {status:'ready',problems:[]}};

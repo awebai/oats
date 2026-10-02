@@ -102,17 +102,24 @@ that its session will stop at the folder-trust prompt, and so does
 With a messaging capability in the soul's composition, every instance lives in
 a team, and readiness fails with `E_TEAM_UNCONFIGURED` until there is a
 default. Create the team with your messaging provider (its own docs say how;
-for `oats.aweb`, see its skills), then record it here:
+for `oats.aweb`, see its skills), then commit it in `oats-workspace.yaml` as a
+**shared** team and the workspace's default:
 
-```bash
-oats teams add research --team <provider team id>   # a local team; the first one becomes the default
-oats teams                                           # shared and local teams, and the default
+```yaml
+teams:
+  research: { team: "<provider team id>" }
+defaultTeam: research
 ```
 
-A team the whole workspace uses is committed as a **shared** team in
-`oats-workspace.yaml`; which souls join which team on this machine is
-`oats soul teams` ([workspaces.md](workspaces.md#teams)). Without messaging,
-skip this step.
+```bash
+oats teams                                           # shared and local teams, the default, the workspace's souls:
+```
+
+Which other teams each soul may join is committed there too, in `souls:`
+([workspaces.md](workspaces.md#teams)). A team only this deployment uses is a
+**local** team (`oats teams add research --team <provider team id>`; the first
+one becomes this deployment's default), which the workspace must allow with
+`localTeams: true`. Without messaging, skip this step.
 
 ## 4. Look before you spawn
 

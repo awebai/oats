@@ -35,7 +35,7 @@ workspace commit. Schemas: [`oats-workspace.schema.json`](oats-workspace.schema.
 [`oats-membership.schema.json`](oats-membership.schema.json),
 [`soul.schema.json`](soul.schema.json), [`oats-local.schema.json`](oats-local.schema.json);
 the lock's format is in [packages](packages.md#lock-v3). The JSON schemas encode
-shapes; domain rules (declared teams, duplicate members, canonical `from:` keys,
+shapes; domain rules (labels that are shared teams, duplicate members, canonical `from:` keys,
 the two `packages:` value forms) live in the kernel's `validateWorkspace` /
 `validateSoul`, which are the authority.
 
@@ -61,6 +61,9 @@ packages:                                  # the ONLY versioned things
 teams:                                     # SHARED teams: the same provider team for everyone
   engineering: { description: Platform and release automation, team: "engineering:acme.aweb.ai" }
   reviewers:   { description: Code review }   # declared, not created yet (no `team` id): readiness team-unmapped
+defaultTeam: engineering                   # the workspace's default team; see Teams below
+souls:                                     # which teams each soul may join besides its default
+  platform/*: { teams: [reviewers] }
 
 defaults:
   capabilities:
@@ -146,7 +149,8 @@ its content digest.
 ### `oats-local.yaml`: the only per-machine file
 
 Which workspace this machine realizes, where member clones live, host-owned
-provider settings, this deployment's local teams and team membership, host
+provider settings, this deployment's local teams and default (where the
+workspace allows them), host
 facts for automations, and launch configurations. The full reference is
 [configuration.md](configuration.md).
 
@@ -308,89 +312,130 @@ Harnesses start normally, with their own skill discovery intact
 
 ## Teams
 
-A team is a messaging-provider team (for oats.aweb, an
-aweb team id `<team>:<namespace>`) under a **label**. Two files declare them:
+A team is a messaging-provider team (for oats.aweb, an aweb team id
+`<team>:<namespace>`) under a **label**. An instance that sits in two teams is
+a bridge between them: one process reads both inboxes and could relay anything
+from one to the other. So which teams an organisation's instances may be in is
+the organisation's decision, committed in its workspace file and closed by
+default; a deployment's `oats-local.yaml` adds a team only where the workspace
+allows it. Souls stay team-free in their own repositories: an organisation
+says how souls behave in its teams in its `oats-workspace.yaml`, and someone
+running the same souls standalone sees none of it.
 
-- **Shared teams**: the committed `oats-workspace.yaml` `teams.<label> =
-  { description?, team? }`: the same provider team for everyone, edited by a PR.
-  A shared team without `team` is declared but not created yet (readiness
-  `team-unmapped`): its owner creates it with the messaging provider, then
-  commits the id.
-- **Local teams**: the deployment's `oats-local.yaml` `teams.<label> = { team,
-  description? }`: a team only this deployment uses (a personal team). A label in
-  both files is `team-label-collision` (a warning); the **shared** definition
-  wins, and the fix is renaming the local label.
+**What this protects against, and what it does not.** The workspace's team
+rules prevent **accidental** joins in a cooperative installation, and they make
+the organisation's intended team set visible and reviewable in its git. That is
+all they claim. They do not stop an operator from bridging teams on purpose:
+whoever holds credentials for two teams can read under one identity and relay
+under the other, or copy content outside the messaging layer, and distinct keys
+do not prove distinct processes. The messaging provider's admission (for aweb,
+the team controller key signs memberships; hosted invites are mediated by the
+service) controls who holds credentials for a team, not what a process does
+with what it reads. A deployment's authority comes from the credentials it
+holds, not from its path or its name, and a team certificate carries no soul,
+workspace or home-team claim (such metadata would be self-asserted, not a
+control).
 
-`oats-local.yaml` also says which teams each soul belongs to **here**:
+### Where teams are declared
 
-- `defaultTeam: <label>`: the team every instance of this deployment lives in
-  (its default-team identity);
-- `souls.teams`: `"*"` for every soul, and a soul's own entry (its bare name, or
-  `<package>/<soul>` for a package soul) adds to it;
-- `souls.default`: a per-soul override of `defaultTeam`; it must be one of that
-  soul's teams (`E_TEAM_NOT_ELIGIBLE`).
+```yaml
+# oats-workspace.yaml (committed, edited by PR)
+teams:                                   # SHARED teams: the same provider team for everyone
+  engineering: { team: "engineering:acme.aweb.ai" }
+  security:    { team: "security:acme.aweb.ai" }
+  docs:        { description: Docs rota }       # declared, not created yet: team-unmapped
+defaultTeam: engineering                 # the workspace's fallback default team (a shared label)
+localTeams: false                        # may deployments declare their own teams? (absent: false)
+souls:                                   # per soul pattern: its default team and the other teams it may join
+  "*": { teams: [] }                     # unlisted souls: default only (also what no entry means)
+  security-souls/*: { default: security, teams: [engineering] }
+  security-souls/incident-responder: { default: security, teams: [engineering, docs] }
+  oats.engineering/*: { teams: any }     # any: every shared team of this file
+```
 
-A soul's default is `souls.default[soul] ?? defaultTeam`; its teams are that
-default ∪ `souls.teams["*"]` ∪ `souls.teams[soul]`. A label no file declares is
-`E_TEAM_UNKNOWN` (a spawn, preview or `inspect --soul` of that soul is
-refused). At spawn an instance joins its **default** only; the others are
+- **Shared teams** (`teams.<label> = { description?, team? }`): a shared team
+  without `team` is declared but not created yet (readiness `team-unmapped`):
+  its owner creates it with the messaging provider, then commits the id.
+- **`souls:` keys are patterns**: `<member>/<soul>` or `<package>/<soul>`,
+  `<member>/*` or `<package>/*`, and `"*"`, with the member and package names
+  `souls.disabled` uses (a member's name is its repository's). A bare soul name
+  is refused. A key that is neither a pattern nor a soul the workspace offers
+  is the warning `team-soul-unknown` (a typo guard).
+- **The most specific key wins outright** for a soul's teams, and lists never
+  merge: the soul's own key, then `<member|package>/*`, then `"*"`. The
+  default comes from the most specific key that sets one. So
+  `a/*: {default: security}` and `a/x: {teams: [docs]}` give `a/x` the default
+  `security` and the teams `[docs]` only.
+- **A soul no key matches** (and no `"*"`) has its default only. That applies
+  to member and package souls alike: a workspace opens a package explicitly.
+- **Every label** (`defaultTeam`, each `default`, each of `teams`) must be a
+  shared team of the same file; anything else is `E_WORKSPACE_SCHEMA` when the
+  file is read, never at a spawn on someone else's machine.
+- **Local teams** (`oats-local.yaml` `teams.<label> = { team, description? }`)
+  and a local `defaultTeam` are allowed only when the workspace says
+  `localTeams: true`. Otherwise every spawn, preview and inspect is refused with
+  `E_WORKSPACE_SCHEMA` (reason `local-teams-closed`), naming both fixes: add
+  `localTeams: true` to the workspace file, or commit the teams and the
+  default there and remove them locally. A label in both files is
+  `team-label-collision` (a warning): the **shared** definition wins, and the
+  fix is renaming the local label.
+- **The standalone view** (an explicit `standalone:`, or a fallback when the
+  workspace cannot be read) has no workspace rules: local teams and the local
+  `defaultTeam` apply there.
+- `soul.yaml` and `oats-membership.yaml` say nothing about teams.
+  `oats-local.yaml` `souls.teams` and `souls.default` were removed in 0.38.0:
+  they are refused, and the refusal prints the `souls:` to commit instead.
+
+### A soul's default team and its teams
+
+The default, in order:
+
+1. the soul's `default` from `souls:` (the most specific matching key that
+   sets one);
+2. else the deployment's `oats-local.yaml` `defaultTeam`, only when
+   `localTeams: true`;
+3. else the workspace's `defaultTeam`;
+4. else none (`E_TEAM_UNCONFIGURED` when a messaging layer is active).
+
+`defaultTeam.from` says which: `soul`, `deployment` or `workspace`.
+
+The teams a soul may join: its default, plus the `teams` of its most specific
+matching `souls:` key, plus, with `localTeams: true`, every local team the
+deployment declares. Each row says why (`via`: `default`, `workspace`,
+`local`). At spawn an instance joins its **default** only; the others are
 eligible: offered, and joined on request through the provider (`join=` at
-spawn, or its own verbs later). Nothing committed besides the shared `teams:`
-says anything about teams, and capabilities compose from the workspace defaults
-and the soul only, the same for everyone. **A label never gates, restricts,
-changes trust or partitions the knowledge store.**
+spawn, or its own verbs later), which refuses a team that is not eligible.
+A local default no file declares is `E_TEAM_UNKNOWN`. Capabilities compose
+from the workspace defaults and the soul only, the same for everyone. **A
+label never gates, restricts, changes trust or partitions the knowledge
+store.**
 
-The verbs edit `oats-local.yaml` in place; they never call a provider:
+### The verbs
+
+They never call a provider. `oats teams add` and `oats teams default` edit
+`oats-local.yaml` in place, where the workspace allows local teams; `oats teams
+remove` runs anywhere (removing local teams is how a deployment moves them into
+the workspace). A soul's teams are edited by a PR to `oats-workspace.yaml`:
+`oats soul teams` only reads them.
 
 ```
-oats teams [--json]                                  # this deployment's teams, ids, the default, problems
-oats teams add <label> --team <id> [--description d] # declare a local team (the first one becomes the default)
-oats teams remove <label>                            # refused while referenced (E_TEAM_IN_USE) or shared (E_TEAM_SHARED)
-oats teams default <label>
-oats soul teams <soul>|'*' [--add a,b] [--remove a,b] [--default <label> | --clear-default] [--json]
+oats teams [--json]                                  # the teams, ids, the default, localTeams, the workspace's souls:, problems
+oats teams add <label> --team <id> [--description d] # declare a local team (the first one becomes the local default)
+oats teams remove <label>                            # refused while it is the local default (E_TEAM_IN_USE) or shared (E_TEAM_SHARED)
+oats teams default <label>                           # the local default
+oats soul teams <soul>|'*' [--json]                  # a soul's default and teams here, and which souls: key gave them
 ```
 
-The messaging provider's own setup creates provider teams and records them with
-`oats teams add` (see the provider's documentation). The spawn preview, `inspect` and `oats souls` report a soul's
+The messaging provider's own setup creates provider teams (see the provider's
+documentation). The spawn preview, `inspect` and `oats souls` report a soul's
 `teams` and `defaultTeam`; readiness reports the team problems in
 `checks.configured` (`E_TEAM_UNCONFIGURED` when a messaging layer is active and
 there is no default; `team-unmapped`, blocking when it is the default;
-`default-team-changed` for a running instance). The provider receives them in
-its environment — see [capabilities.md](capabilities.md#teams-in-the-provider-environment).
-Exact shapes: [desktop-cli-api.md](desktop-cli-api.md#team-model-v2-feature-team-model-2-oats-0300-replaces-feature-teams).
-
-### Preparing for team model 3 (0.36.x)
-
-OATS 0.38.0 commits a soul's teams in the workspace (team model 3,
-awebai/oats#484): the teams an organisation's instances may join become its
-own decision, visible and reviewable in its git, so a deployment's
-`oats-local.yaml` no longer adds one by accident. 0.36.x and 0.37.x prepare for it, so
-every workspace and deployment can migrate first:
-
-- **`oats-workspace.yaml` accepts the new keys** and validates them, but
-  **does not apply them**: a soul's teams and default are still resolved as
-  above, from `oats-local.yaml`.
-
-  ```yaml
-  defaultTeam: engineering          # the workspace's fallback default team
-  localTeams: true                  # deployments may declare their own teams (absent: false)
-  souls:                            # per pattern: "*", <member|package>/*, <member|package>/<soul>
-    "*": { teams: [] }              # default only ({} says the same)
-    security-souls/*: { default: security, teams: [engineering] }
-    oats.engineering/*: { teams: any }   # every shared team
-  ```
-
-  `<member|package>` is the name `souls.disabled` uses. Every label (`defaultTeam`,
-  a `souls:` `default`, each of its `teams`) must be a shared team in `teams:` of
-  the same file; anything else is `E_WORKSPACE_SCHEMA` when the file is read. A
-  key naming a member or package the workspace does not have is not an error.
-- **The readiness warning `team-model-3-migration`** (never blocking) names
-  what 0.38.0 will refuse: `souls.teams` / `souls.default` in `oats-local.yaml`
-  (they move to `souls:`), and local `teams` / `defaultTeam` while the workspace
-  does not say `localTeams: true` (fix: add `localTeams: true`, or commit the
-  teams and `defaultTeam` in the workspace file). `oats teams`, readiness (and
-  so the Desktop) and `oats doctor` show it. The migration steps are in the
-  [0.36.1 release notes](release-notes/v0.36.1.md).
+local-teams-closed; `team-soul-unknown`; `default-team-changed` for a running
+instance). The provider receives them in its environment — see
+[capabilities.md](capabilities.md#teams-in-the-provider-environment). Exact
+shapes: [desktop-cli-api.md](desktop-cli-api.md#team-model-3-feature-team-model-3-oats-0370-replaces-feature-team-model-2).
+Why it is shaped this way: [team model 3](design/2026-10-02-team-model-3.md).
 
 ## Provider payloads have three homes
 

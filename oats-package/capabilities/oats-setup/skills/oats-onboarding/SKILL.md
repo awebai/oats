@@ -123,18 +123,24 @@ creates), or name it in `oats-local.yaml` `settings.oats.aweb.root`.
 *Rationale:* operator node, lesson "messaging root placement decides the
 team": read it before choosing another place.
 
-Teams are this person's, and they live in `oats-local.yaml` (`/oats-teams`).
-`oats aweb setup` is the one command that creates messaging accounts and teams,
-and it records what it creates there. It runs only when asked, never at spawn.
+Which teams exist, the default team and which souls may join which are the
+organisation's, committed in `oats-workspace.yaml` (`teams:`, `defaultTeam:`,
+`souls:`). A deployment may declare its own teams in `oats-local.yaml` only
+when the workspace says `localTeams: true` (`/oats-teams`). `oats aweb setup`
+is the one command that creates messaging accounts and teams, and it records
+what it creates in `oats-local.yaml`. It runs only when asked, never at spawn.
 Ask the operator first: it acts on the messaging service.
 
 1. **No account yet:** `oats aweb setup --username <u>` creates the hosted
    account and its first team at the root, and records that team as this
-   deployment's `defaultTeam`. (With a team API key: `AWEB_API_KEY=<key> oats
+   deployment's `defaultTeam` (that needs `localTeams: true`; otherwise commit
+   the team and `defaultTeam` to the workspace file by PR and remove them from
+   `oats-local.yaml`). (With a team API key: `AWEB_API_KEY=<key> oats
    aweb setup`. To start in an existing team: `oats aweb setup --invite
    <token>`, with an invite from one of its members.)
-2. **More teams of your own:** `oats aweb setup --create <label>` creates a new
-   team and records it as a local team (`oats teams add <label> --team <id>`).
+2. **More teams of your own** (only with `localTeams: true`):
+   `oats aweb setup --create <label>` creates a new team and records it as a
+   local team (`oats teams add <label> --team <id>`).
    An existing team you already belong to is declared directly with `oats teams
    add <label> --team <id>`.
 3. **A shared team** (declared in `oats-workspace.yaml`): if it has an id, ask
@@ -142,8 +148,9 @@ Ask the operator first: it acts on the messaging service.
    <token>`. If it has no id yet, its owner runs `oats aweb setup`, which
    creates it, and commits the printed id to `oats-workspace.yaml` by a PR.
 4. **Choose what each soul may join** (offered at spawn, never joined
-   automatically): `oats soul teams '*' --add <label>`, `oats soul teams <soul>
-   --add <label>`.
+   automatically): `souls:` entries in `oats-workspace.yaml`, by PR (a soul no
+   entry matches gets its default only). `oats soul teams <soul>` shows the
+   result.
 5. **Check:** `oats teams` shows the teams, their ids and the default, and
    `oats readiness --soul <soul>` shows no team problem in the `configured`
    check.
@@ -209,8 +216,8 @@ Show the operator what the package runs before pinning (its manifests'
 Since oats.okf 4.0.2 okf declares and joins no team of its own: the harvester
 and the maintainer live in the deployment's default team, where they talk
 (questions, amendment requests, "merged"). There is nothing to declare. To put
-them in another team, opt them in like any soul: `oats soul teams
-oats.okf/knowledge-harvester --add <label>` (and the maintainer), then join at
+them in another team, opt them in like any soul, by a `souls:` entry in
+`oats-workspace.yaml` (`oats.okf/*: { teams: [<label>] }`), then join at
 spawn (`/oats-teams`).
 
 ### 3. Declare the review trigger for ONE host that can merge

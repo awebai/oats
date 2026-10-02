@@ -126,28 +126,16 @@
           "uniqueItems": true,
           "items": { "type": "string", "pattern": "^(?:[a-z0-9][a-z0-9._-]*/)?[a-z0-9]+(?:-[a-z0-9]+)*$" }
         },
-        "teams": {
-          "description": "Which teams each soul belongs to on this deployment (`oats soul teams` writes it): \"*\" applies to every soul; a soul's own entry (its bare name, or <package>/<soul> for a package soul) adds to it. Every soul is also in its default. Eligible, never auto-joined: an instance joins its default at spawn and the others on request.",
-          "type": "object",
-          "propertyNames": { "type": "string", "pattern": "^(?:\\*|(?:[a-z0-9][a-z0-9._-]*/)?[a-z0-9]+(?:-[a-z0-9]+)*)$" },
-          "additionalProperties": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/label" } }
-        },
         "launch": {
           "description": "Launch preferences on this machine (0.30; feature launch-preference), overriding the soul's own launch: \"*\" applies to every soul; a soul's own entry (its bare name, or <package>/<soul>) wins over it. A value is a launch configuration's name (in launch-configs of this file) or an inline { harness, model? }. Explicit spawn flags win over both. A changed preference affects no existing home until --reselect-launch or a respawn.",
           "type": "object",
           "propertyNames": { "type": "string", "pattern": "^(?:\\*|(?:[a-z0-9][a-z0-9._-]*/)?[a-z0-9]+(?:-[a-z0-9]+)*)$" },
           "additionalProperties": { "oneOf": [ { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" }, { "$ref": "#/$defs/launchPreference" } ] }
-        },
-        "default": {
-          "description": "A per-soul override of defaultTeam (`oats soul teams <soul> --default <label>`); it must be one of that soul's teams here (E_TEAM_NOT_ELIGIBLE).",
-          "type": "object",
-          "propertyNames": { "type": "string", "pattern": "^(?:[a-z0-9][a-z0-9._-]*/)?[a-z0-9]+(?:-[a-z0-9]+)*$" },
-          "additionalProperties": { "$ref": "#/$defs/label" }
         }
       }
     },
     "teams": {
-      "description": "LOCAL teams (`oats teams add` writes it): <label>: { team, description? }, the messaging provider's team id for a team only this deployment uses. Shared teams are committed in oats-workspace.yaml teams:; a label in both is team-label-collision (the shared one wins).",
+      "description": "LOCAL teams (`oats teams add` writes it): <label>: { team, description? }, the messaging provider's team id for a team only this deployment uses. Allowed only when oats-workspace.yaml says localTeams: true (or in the standalone view); otherwise E_WORKSPACE_SCHEMA reason local-teams-closed. Every soul may join every local team. Shared teams are committed in oats-workspace.yaml teams:; a label in both is team-label-collision (the shared one wins). souls.teams and souls.default were removed in 0.38.0: souls: in oats-workspace.yaml.",
       "type": "object",
       "propertyNames": { "$ref": "#/$defs/label" },
       "additionalProperties": {
@@ -162,7 +150,7 @@
     },
     "defaultTeam": {
       "$ref": "#/$defs/label",
-      "description": "The team every instance of this deployment lives in (its primary identity), unless souls.default overrides it for a soul: a label of teams here or in oats-workspace.yaml (`oats teams default` writes it; the first `oats teams add` sets it)."
+      "description": "This deployment's default team (`oats teams default` writes it; the first `oats teams add` sets it): a label of teams here or in oats-workspace.yaml. Allowed only when oats-workspace.yaml says localTeams: true (or in the standalone view). A soul's souls: default in the workspace wins over it; it wins over the workspace's defaultTeam."
     }
   },
   "$defs": {

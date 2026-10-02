@@ -42,6 +42,11 @@ test.before(async () => {
   base = mkdtempSync(join(tmpdir(), "oats-read-cache-"));
   if (/[\s@]/.test(base)) throw new Error(`tmpdir ${base} contains whitespace or @`);
   fx = await buildNorthwind(join(base, "fx"));
+  // Team model 3: these tests edit this deployment's local teams, which the workspace must allow.
+  await moveMember(fx, "agents", async (work, { fs, path }) => {
+    const file = path.join(work, "oats-workspace.yaml");
+    await fs.writeFile(file, `${await fs.readFile(file, "utf8")}localTeams: true\n`);
+  }, { message: "agents: allow local teams" });
   const catalogFile = join(base, "catalog.json");
   writeFileSync(catalogFile, JSON.stringify({ packages: fx.catalog }, null, 2));
   mkdirSync(join(base, "home"));
@@ -122,7 +127,7 @@ test("no git cat-file --batch child outlives the command — after success and a
   }
 });
 
-test("the member prefetch (Addendum 3): souls and soul teams observe each head once; teams and inspect --home observe the host only", { timeout: 120_000 }, () => {
+test("the member prefetch (Addendum 3): souls, teams and soul teams observe each head once; inspect --home observes the host only", { timeout: 120_000 }, () => {
   const shim = join(base, "shim-ls");
   mkdirSync(shim, { recursive: true });
   const log = join(base, "ls-remote.log");
@@ -139,9 +144,9 @@ test("the member prefetch (Addendum 3): souls and soul teams observe each head o
   assert.equal(souls.length, 5, "the host (also a member) and the four other members");
   // `soul teams <soul>` discovers the whole workspace to find the soul (as it did before the prefetch).
   assert.deepEqual(lsRemotes(["soul", "teams", "release-manager", "--json"]).sort(), [...souls].sort(), "soul teams: each head once");
-  for (const args of [["teams", "--json"], ["inspect", "--home", home, "--json"]]) {
-    assert.deepEqual(lsRemotes(args), [fx.refs.agents], `${args.slice(0, 2).join(" ")}: the host only, no member prefetch`);
-  }
+  // `teams` discovers the workspace too: its souls: keys are checked against the souls it offers (team-soul-unknown).
+  assert.deepEqual(lsRemotes(["teams", "--json"]).sort(), [...souls].sort(), "teams: each head once");
+  assert.deepEqual(lsRemotes(["inspect", "--home", home, "--json"]), [fx.refs.agents], "inspect --home: the host only, no member prefetch");
 });
 
 test("invalidation: instances, oats-local.yaml and the lock are read afresh — --max-age 60 reflects a retire, a teams edit and a rewritten lock at once", { timeout: 300_000 }, () => {
@@ -152,11 +157,10 @@ test("invalidation: instances, oats-local.yaml and the lock are read afresh — 
   assert.ok(instances(aged(["status", "--json"])).includes(spawned.result.instance));
   json(oats(["retire", spawned.result.instance, "--json"]));
   assert.ok(!instances(aged(["status", "--json"])).includes(spawned.result.instance), "the retire shows on the next --max-age read");
-  // A teams edit in oats-local.yaml (what Desktop does through `oats teams` / `oats soul teams`).
+  // A teams edit in oats-local.yaml (what Desktop does through `oats teams`): a local team, eligible for every soul.
   const teamsOf = (doc) => doc.result.souls.find((s) => s.name === "release-manager").teams.map((t) => t.label);
   assert.ok(!teamsOf(aged(["souls", "--json"])).includes("desk"));
   json(oats(["teams", "add", "desk", "--team", "local:desk.example", "--json"]));
-  json(oats(["soul", "teams", "release-manager", "--add", "desk", "--json"]));
   assert.ok(teamsOf(aged(["souls", "--json"])).includes("desk"), "the teams edit shows on the next --max-age read");
   // A sync that rewrites the lock (here: without oats.okf).
   const lockFile = join(dep, "oats-lock.json");
