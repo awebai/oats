@@ -42,7 +42,7 @@ import { parseConfigData } from "../lib/config-data.mjs";
 import * as remoteModule from "../lib/remote.mjs";
 import { activateLocalInputs, localRevision } from "../lib/local-inputs.mjs";
 import YAML from "yaml";
-import { attachArgv, checkRemote, connectServer, forgetSnapshot, getServer, inspectRemote, startRemote, restartRemote, launchConfigRemote, scheduleRemote, listSnapshots, readServers, reportedWorkspaceKey, rosterGroups, routeCommand, runRemote, targetOf, validateServer, workspaceKeyOfStatus, workspaceMismatch, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
+import { attachArgv, checkRemote, connectServer, forgetSnapshot, getServer, inspectRemote, startRemote, restartRemote, launchConfigRemote, scheduleRemote, listSnapshots, readServers, redactArgv, reportedWorkspaceKey, rosterGroups, routeCapability, routeCommand, runRemote, serverFlagOf, targetOf, validateServer, workspaceKeyOfStatus, workspaceMismatch, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
 import { spawnSync as spawnSyncProc } from "node:child_process";
 import { tickTriggers } from "../lib/triggers.mjs";
 import * as A from "../lib/automations.mjs";
@@ -3176,7 +3176,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "servers-per-workspace"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capabilityShowApi: 1 }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capabilityShowApi: 1 }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -3372,6 +3372,24 @@ function serverConnectCmd(bail) {
 function printConnectSteps(id, sshHost, steps) {
   console.log(`oats server connect ${id} → ${sshHost}`);
   for (const s of steps) console.log(`  ${s.step.padEnd(11)} ${s.status}${s.detail ? `  ${s.detail.split("\n")[0]}` : ""}`);
+}
+
+/** `oats <namespace> <command> … --server <id>`: the capability command, as typed minus the routing
+ *  flag, on the server's registered deployment (lib/servers.mjs routeCapability). The host's output and
+ *  exit status are relayed; under --json its envelope verbatim, or one envelope here when nothing came
+ *  back. An argv is printed only with its --invite values redacted. */
+function capabilityRouteCmd() {
+  const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
+  const { id, argv } = serverFlagOf(rawArgs);
+  if (id === true) bail("E_BAD_ARGS", "--server needs a registered server id (oats server list)");
+  let server, r;
+  try { server = getServer(id); r = routeCapability(id, argv, { server, json: JSON_MODE }); } catch (e) { bail(e.code || "E_SSH", e.message); }
+  const shown = `\`oats ${redactArgv(argv).join(" ")}\``;
+  if (JSON_MODE) {
+    if (!r.stdout?.length) bail(r.status === 255 ? "E_SSH" : "E_REMOTE_ENVELOPE", r.status === 255 ? `ssh to ${server.sshHost} failed running ${shown} on server ${id}` : `${shown} on server ${id} exited ${r.status} with no envelope`, { server: id, status: r.status });
+    process.stdout.write(r.stdout);
+  } else if (r.status === 255) console.error(`oats: ${shown} on server ${id} ended with exit 255 (ssh to ${server.sshHost} failed, or the command itself exited 255)`);
+  process.exitCode = r.status;
 }
 
 /** `oats <spawn|retire|status> --server <id> ...`: run the command on the
@@ -3721,6 +3739,8 @@ else if (cmd && Object.hasOwn(REMOVED_VERBS, cmd)) {
   console.log(usageText());
   process.exit(1);
 }
+// A capability command with --server runs on the server (feature capability-route); kernel commands keep their own table above.
+else if (cmd && !cmd.startsWith("--") && !HELP_WORDS.has(cmd) && serverFlagOf(rawArgs)) capabilityRouteCmd();
 else if (cmd && !cmd.startsWith("--") && !HELP_WORDS.has(cmd) && await capabilityCommand()) { /* dispatched */ }
 // No matching kernel command or capability namespace: in --json mode the help
 // text must NOT contaminate stdout — still one envelope object, nonzero exit.
