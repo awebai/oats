@@ -249,3 +249,55 @@ source custody. The library alternative is `sessionsForHome(home, { roots })`:
 unspecified formats are excluded, and missing supplied roots fail. Synthetic
 standalone tests must choose one of these explicitly, not masquerade as a
 managed native launch. Background capture without `--home` is unchanged.
+
+## One session file: `capture --file`
+
+```text
+capture --file <path> --format cc|pi|codex --home <instance home> [--owner <name>] [--json]
+```
+
+Captures ONE session file, for example an archived session that the
+`--home` sweep can no longer find, exactly as `--home` capture of that
+instance would capture it. It runs under the capture lock, as a final pass,
+with the ignore rules applied. The stream is `<owner>~<source>.<session id>`,
+the same identity `--home` capture writes. So the same session captured
+either way, or again with `--file`, appends nothing.
+
+- **The owner is explicit.** It is `--owner` or `TURN_RECORD_OWNER`; the
+  hostname is never assumed. `--home` must be an OATS instance home (an
+  `instance.json` naming an instance). It is recorded in the receipt, not
+  checked against the file's recorded cwd.
+- **The format is stated, never sniffed.** The file must carry that format's
+  session header somewhere in it:
+  - `cc`: a record with a `cwd`;
+  - `pi`: the `session` record;
+  - `codex`: `session_meta`.
+- **The session id comes from the file name**, as for live capture: the cc
+  basename, the part of a pi name after its last `_`, or a codex name's
+  trailing uuid. A renamed file lands in another stream.
+- **One regular file, read once.** It is opened with `O_NOFOLLOW` and
+  `O_NONBLOCK` and fstat'ed. A symlink, FIFO, socket, device or directory is
+  refused. The bytes read from that descriptor are the ones captured and
+  hashed.
+
+`--json` prints the receipt:
+`{home, owner, file, format, instance, thread, stream, sessionId, turns,
+firstTurnId, lastTurnId, appended, skipped, held, incomplete, failed, ignored,
+status, complete, sha256}`. `sha256` is of the bytes captured. As for
+`--home`, `complete` is true only with no hold, no incomplete tail and no
+failure. A lock skip, a hold (no timestamp yet) and an incomplete tail (torn
+or invalid UTF-8) exit 0 with `complete: false`. Without `--json`, the output
+is one line.
+
+Anything that binds nothing is an error,
+`{status: "failed", complete: false, code, error}`:
+
+| code | exit | when |
+|---|---|---|
+| `E_USAGE` | 2 | a missing or invalid flag, a non-instance `--home`, no explicit owner, a second `--file`, another mode |
+| `E_FILE_UNREADABLE` | 1 | the file cannot be opened or read |
+| `E_NOT_REGULAR_FILE` | 1 | a symlink, FIFO, socket, device or directory |
+| `E_IGNORED` | 1 | a capture ignore rule excludes the file; nothing was opened, read or written |
+| `E_NO_TURNS` | 1 | no records: an empty file, or only blank lines |
+| `E_FORMAT` | 1 | records, but no session header of the stated format; the message names the format whose header it does carry |
+| `E_CAPTURE_FAILED` | 1 | the pass failed (`appended: null`: part of the file may be in the record) |
