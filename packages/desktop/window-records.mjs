@@ -1,9 +1,12 @@
 // One Desktop window per workspace (#481): what main remembers of its windows across launches
 // (windows.json in userData), how they come back, and what each one is titled.
 //
-// A record is `{ workspace, bounds: { x, y, width, height }, maximized, fullscreen? }`. Nothing is
-// dropped because its workspace is not served (#472's rule): a record goes only when the operator
-// closes that window while its workspace is served. Writes are atomic and debounced.
+// A record is `{ workspace, deployments, bounds: { x, y, width, height }, maximized, fullscreen? }`:
+// the view id the window is bound to, and the deployments that view held. A `ws:` view id exists
+// only once the server has observed a deployment's identity, a few seconds after it starts, so a
+// launch finds the window's view through its deployments until then. Nothing is dropped because
+// its workspace is not served (#472's rule): a record goes only when the operator closes that window
+// while its workspace is served. Writes are atomic and debounced.
 import { validWorkspaceId } from './renderer/workspace-id.mjs';
 import { writeJsonAtomic } from './workspace-registry.mjs';
 
@@ -18,9 +21,10 @@ const validBounds = (b) => !!b && typeof b === 'object' && finite(b.x) && finite
 function readRecord(v) {
   if (!v || typeof v !== 'object' || !validWorkspaceId(v.workspace) || !validBounds(v.bounds) || typeof v.maximized !== 'boolean') return null;
   if (Object.hasOwn(v, 'fullscreen') && typeof v.fullscreen !== 'boolean') return null;
+  if (Object.hasOwn(v, 'deployments') && !Array.isArray(v.deployments)) return null;
   const { x, y, width, height } = v.bounds;
-  return { workspace: v.workspace, bounds: { x, y, width, height }, maximized: v.maximized,
-    ...(Object.hasOwn(v, 'fullscreen') ? { fullscreen: v.fullscreen } : {}) };
+  return { workspace: v.workspace, ...(Object.hasOwn(v, 'deployments') ? { deployments: v.deployments.filter(validWorkspaceId) } : {}),
+    bounds: { x, y, width, height }, maximized: v.maximized, ...(Object.hasOwn(v, 'fullscreen') ? { fullscreen: v.fullscreen } : {}) };
 }
 
 /** The records of a windows.json text, in order; a malformed entry is not a record. */
@@ -38,13 +42,22 @@ export function resolveView(id, workspaces) {
   return view?.id ?? null;
 }
 
+/** The served view a record's window belongs to: its view, else (before the server has observed
+ * its deployments' identity) the view that holds one of its deployments now, else null. */
+function recordView(record, workspaces) {
+  const key = resolveView(record.workspace, workspaces);
+  if (key !== null) return key;
+  for (const id of record.deployments ?? []) { const held = resolveView(id, workspaces); if (held !== null) return held; }
+  return null;
+}
+
 /** The windows a launch restores: `[{ key, record }]`, one per served view, in record order (two
  * records that resolve to one view give one window, the first record's). A record whose workspace
  * is not served gets no window. The records themselves are never changed here. */
 export function restorePlan(records, workspaces) {
   const plan = [], keys = new Set();
   for (const record of records) {
-    const key = resolveView(record.workspace, workspaces);
+    const key = recordView(record, workspaces);
     if (key === null || keys.has(key)) continue;
     keys.add(key);
     plan.push({ key, record });
@@ -84,7 +97,8 @@ export function windowTitle(key, workspaces) {
 
 /**
  * The records, owned by their windows. `adopt` gives a restored window its record; `bind` points a
- * window's record at the workspace it is bound to now (creating one for a window that had none);
+ * window's record at the workspace it is bound to now and the deployments the served list says that
+ * view holds (creating a record for a window that had none);
  * `update` keeps its bounds and state; `close` drops the record only when the window's workspace
  * is served. Every change is written (atomically) after `delay`; `flush` writes at once.
  * @param {{ file: string, initial: object[], timers?: { setTimeout, clearTimeout }, delay?: number,
@@ -113,16 +127,19 @@ export function createWindowRecords({ file, initial, timers = globalThis, delay 
   return {
     records: () => [...records],
     adopt(win, record) { if (records.includes(record)) owned.set(win, record); },
-    bind(win, workspace, state) {
+    bind(win, workspace, state, workspaces) {
       let record = owned.get(win);
       if (!record) {
         if (!validBounds(state?.bounds)) return;
-        record = { workspace, bounds: null, maximized: false };
+        record = { workspace, deployments: [], bounds: null, maximized: false };
         records.push(record); owned.set(win, record);
       }
+      const before = JSON.stringify(record);
       record.workspace = workspace;
+      const view = (Array.isArray(workspaces) ? workspaces : []).find((w) => w?.id === workspace);
+      if (Array.isArray(view?.deployments)) record.deployments = view.deployments.filter(validWorkspaceId);
       apply(record, state);
-      schedule();
+      if (JSON.stringify(record) !== before) schedule();
     },
     update(win, state) {
       const record = owned.get(win);

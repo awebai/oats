@@ -191,3 +191,18 @@ test('the shared default is taken only while the server advertises it: otherwise
   assert.equal(b.main.windows.keyOf(win), null, 'still no workspace: it reads with the verified one and adopts');
   assert.deepEqual(await b.claim(win, A, { focus: false, initial: true }), { ok: true });
 });
+
+test('a relaunch before observation restores the window through its deployments; it follows to its ws: view once observed', async () => {
+  // Before the server has read alpha's identity, alpha is served under its own deployment id.
+  const unobserved = [{ id: '/d/oats', name: 'oats', deployments: ['/d/oats'], unattached: true }, SERVED[1]];
+  const b = boot({ records: [{ ...record(A), deployments: ['/d/oats'] }], served: unobserved });
+  b.main.restoreWindows();
+  assert.equal(FakeWindow.all.length, 1, 'restored, not lost');
+  const win = FakeWindow.all[0];
+  assert.equal(win.loaded.hash, workspaceHash('/d/oats').slice(1)); assert.equal(win.options.x, 50, 'with its bounds');
+  // Observed: the view is served under its ws: id; the renderer's rehome claims it without focusing anything.
+  b.main.setAdvertised(new Set(SERVED.map((w) => w.id)));
+  assert.deepEqual(await b.claim(win, A, { focus: false }), { ok: true });
+  assert.deepEqual(b.main.windowRecords.records().map((r) => r.workspace), [A], 'the record follows the window (rewritten, not added)');
+  assert.deepEqual(win.calls, [], 'nothing focused');
+});

@@ -91,7 +91,7 @@ test('records: binding appends or rewrites the window\'s record; moves are debou
   assert.equal(existsSync(file), false, 'debounced'); assert.equal(t.count(), 1);
   t.run();
   assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), [record('/d/gone'),
-    { workspace: A, bounds: { x: 5, y: 6, width: 7, height: 8 }, maximized: false, fullscreen: false }]);
+    { workspace: A, deployments: [], bounds: { x: 5, y: 6, width: 7, height: 8 }, maximized: false, fullscreen: false }]);
   assert.equal(existsSync(`${file}.tmp`), false, 'written through a temporary file and renamed');
 });
 
@@ -115,4 +115,31 @@ test('records: a write that fails keeps the records and the previous file', () =
   store.bind({}, A, { bounds: record(A).bounds, maximized: false });
   t.run();
   assert.equal(errors.length, 1); assert.equal(store.records().length, 1);
+});
+
+/* ── a record's deployments: restore before observation ───────────────────── */
+const UNOBSERVED = [{ id: '/d/oats', name: 'oats', deployments: ['/d/oats'], unattached: true }, { id: B, name: 'tsm', deployments: ['/d/tsm'] }];
+
+test('parse: a record keeps its deployments (valid ids only); a record without them still parses', () => {
+  const text = JSON.stringify([{ ...record(A), deployments: ['/d/oats', 'remote:altair:/srv/oats', 'bad\nid', 3] }, record(B)]);
+  assert.deepEqual(parseWindowRecords(text), [{ ...record(A), deployments: ['/d/oats', 'remote:altair:/srv/oats'] }, record(B)]);
+});
+
+test('restore before observation: a view id not served yet resolves through its deployments to the view holding one now', () => {
+  const records = [{ ...record(A), deployments: ['/d/oats'] }, record(B, 300)];
+  assert.deepEqual(restorePlan(records, UNOBSERVED).map(({ key }) => key), ['/d/oats', B]);
+  assert.deepEqual(restorePlan([{ ...record(A), deployments: ['/d/gone'] }], UNOBSERVED), [], 'none of its deployments served: no window');
+  assert.deepEqual(restorePlan([{ ...record(A), deployments: ['/d/oats'] }], SERVED).map(({ key }) => key), [A], 'served: the view itself');
+});
+
+test('records: binding keeps the view\'s deployments from the served list; an unknown view keeps the ones it had', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'oats-windows-')), file = join(dir, 'windows.json'), t = timers();
+  const store = createWindowRecords({ file, initial: [], timers: t });
+  const win = {};
+  store.bind(win, A, { bounds: record(A).bounds, maximized: false }, SERVED);
+  assert.deepEqual(store.records()[0].deployments, ['/d/oats', 'remote:altair:/srv/oats']);
+  store.bind(win, '/d/oats', undefined, UNOBSERVED);
+  assert.deepEqual(store.records()[0].deployments, ['/d/oats']);
+  store.bind(win, 'ws:cccccccccccccccccccc', undefined, UNOBSERVED);
+  assert.deepEqual(store.records()[0].deployments, ['/d/oats'], 'a view the list does not name: the deployments it had');
 });

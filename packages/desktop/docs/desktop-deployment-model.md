@@ -374,11 +374,15 @@ terminal owner).
   workspace another window has, is *choosing*: main's refusal carries the
   served choices, and the window reads nothing until it binds.
 - **Records.** `windows.json` (`window-records.mjs`) keeps each window's
-  workspace, bounds and state, written atomically after moves settle. A
-  launch restores the windows whose workspaces are served (a recorded
-  deployment id resolves to the view that holds it, as the server's
-  `viewFor` does), bounds clamped onto a visible display. A record goes only
-  when its window is closed while its workspace is served, never at quit.
+  view id, the deployments that view held, its bounds and state, written
+  atomically after moves settle. A launch restores the windows whose views
+  are served, bounds clamped onto a visible display. A `ws:` view id exists
+  only once the server has observed a deployment's identity, a few seconds
+  after it starts: until then a record resolves through its deployments, to
+  the view that holds one of them (as the server's `viewFor` does), and the
+  window follows to its `ws:` view when it is observed, by the same rehome
+  claim, focusing nothing. A record goes only when its window is closed
+  while its workspace is served, never at quit.
 - **Per window.** Suggestions, picks and adds have a generation and a
   provenance per sending window; adds still run one at a time through the
   one executor, since each replaces the shared server.

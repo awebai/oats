@@ -141,10 +141,14 @@ let allowedWs = new Set(); // workspace ids the connected server advertises
 let advertisedBefore = new Set();
 let serverEpoch = 0;    // prevents an outgoing server response restoring its allowlist
 let servedList = [];    // the served workspace views (/api/panel `workspaces`): window titles and restore
-/** The served list changed: remember it, and retitle every window from it. */
+/** The served list changed: remember it, retitle every window from it, and keep each window's record
+ * of the deployments its view holds (written only when that changed). */
 function noteServed(list) {
   servedList = list;
-  for (const [win, key] of windows.entries()) win.setTitle(windowTitle(key, servedList));
+  for (const [win, key] of windows.entries()) {
+    win.setTitle(windowTitle(key, servedList));
+    if (key !== null) windowRecords?.bind(win, key, undefined, servedList);
+  }
 }
 /** What the server advertises, or while a restart is in flight what the outgoing one did. */
 const advertisedNow = () => (allowedWs.size ? allowedWs : advertisedBefore);
@@ -630,7 +634,7 @@ const windowState = (win) => ({ bounds: win.getNormalBounds(), maximized: win.is
 const served = (key) => typeof key === "string" && advertisedNow().has(key);
 /** Bind a window to a workspace: its record and title follow (a restored record is rewritten to the view, Q6). */
 function bindWindow(win, key) {
-  windowRecords?.bind(win, key, windowState(win));
+  windowRecords?.bind(win, key, windowState(win), servedList);
   win.setTitle(windowTitle(key, servedList));
 }
 /** Open (or focus) the workspace's window; a restored record brings its bounds. */
