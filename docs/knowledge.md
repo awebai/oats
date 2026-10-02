@@ -26,7 +26,7 @@ The workspace pins the package and fills the slot for every soul by default:
 ```yaml
 # oats-workspace.yaml (excerpt)
 packages:
-  oats.okf: v4.1.0
+  oats.okf: v4.1.1
 defaults:
   knowledge: { oats.okf: { from: package } }
 stores:
