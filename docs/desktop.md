@@ -210,6 +210,25 @@ registered remote workspace the timer and definitions live on that server, so
 they do not depend on the Mac staying awake. See [Schedules](schedules.md) for
 the CLI, cron semantics, observed outcomes and recovery commands.
 
+## A workspace's machines
+
+A window offers only the machines that run its workspace: those whose
+registration reports the same workspace key as the window's deployment on this
+computer (OATS CLI with `servers-per-workspace` and `server-connect`). The
+spawn dialog's **Where to run** lists "This computer" and those machines; the
+Workspace › Setup tab lists them with their OATS version and whether they can
+be reached, with **Check** and **Remove**. Registrations whose key is not known
+yet are checked once in the background after the Desktop starts.
+
+**Add a machine to this workspace…** (the last entry of Where to run, and a
+button in Setup) takes an ssh host alias, a name, the folder on that machine
+and whether to install OATS there, and runs `oats server connect` from this
+deployment; when the workspace uses oats.aweb for messaging, it then runs `oats
+aweb connect` to join that machine to the workspace's team. Each step shows as
+a row with what OATS reported, and a step that needs you says what to run
+where, with a copy button. **Check again** re-runs both. The Desktop never asks
+for a password or key, and never runs anything over ssh itself.
+
 ## Instances on servers
 
 Every instance a registered server reports shows in its workspace's roster, whoever spawned it. You
