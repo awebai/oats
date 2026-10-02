@@ -47,7 +47,7 @@ async function setup(t, options = {}) {
       if (path.startsWith('/api/workspace-sync')) return options.sync ? options.sync(body)
         : { workspaceSyncApi: 1, status: 'ok', report: null, capabilities: { capabilitiesApi: 1, ...catalogFixture.result }, reason: null };
       if (path.startsWith('/api/capabilities')) return options.inspect ? options.inspect(body) : inspectData('fixture.notes', body.selector);
-      if (path.startsWith('/api/servers')) return { servers: [] };
+      if (path.startsWith('/api/servers')) return options.servers ? options.servers(path) : { servers: [] };
       if (path === '/api/spawn' && options.spawn) return options.spawn(body);
       throw new Error(`Unexpected fixture API request: ${path}`);
     }, openBrain: name => files.push(name), openTerminal: ref => opens.push(ref) };
@@ -340,4 +340,28 @@ test('Souls group by primary team or repository, and unconfirmed members explain
   assert.equal(u.doc.querySelector('.souls-group-by [data-group-by=team]').getAttribute('aria-pressed'), 'true');
   u.doc.querySelector('.souls-group-by [data-group-by=repo]').click();
   assert.equal(u.doc.querySelector('.souls-group-by [data-group-by=repo]').getAttribute('aria-pressed'), 'true');
+});
+
+// #517: the Setup tab lists the workspace's machines when the CLI connects machines to a workspace.
+test('Setup: the Machines box follows the gates; it is read for this window and kept across repaints', async t => {
+  const gated = { ...CLI, features: [...CLI.features, 'servers-per-workspace', 'server-connect'] };
+  const machine = { id: 'altair-team', label: 'altair', sshHost: 'altair', workspace: '/home/j/team', workspaceKey: 'github.com/acme/team', check: { reachable: true, version: '0.39.0', error: null } };
+  const u = await setup(t, { cli: gated, servers: () => ({ servers: [machine], filtered: true, key: 'github.com/acme/team', deployment: '/team', aweb: false }) });
+  u.tab('sources'); for (let i = 0; i < 6; i++) await tick();
+  const box = u.doc.querySelector('.setup .setup-machines');
+  assert.ok(box, 'the Machines box');
+  assert.deepEqual([...box.querySelectorAll('[data-machine]')].map(r => r.dataset.machine), ['altair-team']);
+  assert.ok(u.calls.some(c => c.path === `/api/servers?ws=${encodeURIComponent('/team')}`));
+  assert.equal(box.querySelector('.machines-add').textContent, 'Add a machine to this workspace…');
+  u.click('Graph'); await tick();
+  assert.equal(u.doc.querySelector('.setup .setup-machines'), box, 'the same box, in either view');
+});
+
+test('Setup: without servers-per-workspace and server-connect there is no Machines box and no Add a machine', async t => {
+  const u = await setup(t);
+  u.tab('sources'); for (let i = 0; i < 6; i++) await tick();
+  assert.ok(u.doc.querySelector('.setup'));
+  assert.equal(u.doc.querySelector('.setup-machines'), null);
+  assert.equal([...u.doc.querySelectorAll('button')].some(b => b.textContent === 'Add a machine to this workspace…'), false);
+  assert.equal(u.calls.some(c => c.path.startsWith('/api/servers?')), false);
 });

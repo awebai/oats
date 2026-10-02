@@ -1,0 +1,140 @@
+// #517: the Setup tab's Machines box — this workspace's registrations with what the last check said,
+// one background check per machine per run, Check, Remove (confirmed) and Add a machine.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { JSDOM } from 'jsdom';
+import { createWorkspaceMachines, resetMachineChecks } from '../renderer/workspace-machines.mjs';
+
+const WS = 'ws:0123456789abcdef0123', KEY = 'github.com/awebai/ac', DEPLOYMENT = '/Users/juanre/Agents/aweb';
+const machine = (id, extra = {}) => ({ id, label: id.split('-')[0], sshHost: id.split('-')[0], workspace: `/home/j/${id}`, workspaceKey: KEY, check: null, ...extra });
+const answer = (servers, extra = {}) => ({ servers, filtered: true, key: KEY, deployment: DEPLOYMENT, aweb: false, ...extra });
+const settle = async () => { for (let i = 0; i < 10; i++) await new Promise(r => setImmediate(r)); };
+
+function setup(t, routes) {
+  const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>', { pretendToBeVisual: true });
+  const doc = dom.window.document, calls = [];
+  const ctx = { api: async (path, opts = {}) => {
+    const body = opts.body ? JSON.parse(opts.body) : undefined; calls.push({ path, body });
+    const route = Object.keys(routes).find(p => path.startsWith(p));
+    assert.ok(route, `unexpected ${path}`);
+    const value = await routes[route](body, path);
+    if (value?.httpStatus) return { ok: false, status: value.httpStatus, json: async () => value.body };
+    return { ok: true, status: 200, json: async () => value };
+  } };
+  resetMachineChecks();
+  const ui = createWorkspaceMachines(doc, { ctx, ws: WS });
+  doc.getElementById('host').append(ui.element);
+  t.after(() => { ui.dispose(); dom.window.close(); });
+  const q = s => doc.querySelector(s), qa = s => [...doc.querySelectorAll(s)];
+  const row = id => q(`[data-machine="${id}"]`);
+  const cells = id => [...row(id).querySelectorAll('.machine-cell')].map(c => c.textContent);
+  return { dom, doc, ui, calls, q, qa, row, cells };
+}
+
+test('lists this workspace\'s machines (name, host, folder, OATS version, reachable) and checks each unchecked one once in the background', async t => {
+  let released;
+  const gate = new Promise(r => { released = r; });
+  const u = setup(t, {
+    '/api/servers': () => answer([machine('altair-aweb'), machine('vega-aweb', { check: { reachable: false, version: null, error: 'ssh to vega failed: timeout' } })]),
+    '/api/server-check': async body => { await gate; return { id: body.id, check: { reachable: true, version: '0.39.0', error: null } }; },
+  });
+  await settle();
+  assert.equal(u.q('.setup-box-head h3').textContent, 'Machines');
+  assert.deepEqual(u.calls.map(c => c.path), [`/api/servers?ws=${encodeURIComponent(WS)}`, `/api/server-check?ws=${encodeURIComponent(WS)}`]);
+  assert.deepEqual(u.cells('altair-aweb'), ['altair-aweb', 'altair', '/home/j/altair-aweb', '', 'checking…']);
+  assert.deepEqual(u.cells('vega-aweb'), ['vega-aweb', 'vega', '/home/j/vega-aweb', '', 'not reachable'], 'a held check is shown, not re-run');
+  assert.equal(u.row('vega-aweb').querySelector('.machine-state').title, 'ssh to vega failed: timeout');
+  released(); await settle();
+  assert.deepEqual(u.cells('altair-aweb'), ['altair-aweb', 'altair', '/home/j/altair-aweb', 'oats 0.39.0', 'reachable']);
+  u.ui.refresh(); await settle();
+  assert.equal(u.calls.filter(c => c.path.startsWith('/api/server-check')).length, 1, 'once per machine per run');
+});
+
+test('Check re-runs the check for that machine and shows what it said', async t => {
+  let n = 0;
+  const u = setup(t, {
+    '/api/servers': () => answer([machine('altair-aweb', { check: { reachable: true, version: '0.38.0', error: null } })]),
+    '/api/server-check': body => ({ id: body.id, check: ++n === 1 ? { reachable: false, version: null, error: 'ssh failed' } : null }),
+  });
+  await settle();
+  assert.equal(u.calls.length, 1, 'checked already: no background check');
+  const check = u.row('altair-aweb').querySelector('.machine-check');
+  assert.equal(check.getAttribute('aria-label'), 'Check altair-aweb');
+  check.click(); await settle();
+  assert.deepEqual(u.calls.at(-1), { path: `/api/server-check?ws=${encodeURIComponent(WS)}`, body: { id: 'altair-aweb' } });
+  assert.equal(u.cells('altair-aweb')[4], 'not reachable');
+  assert.equal(u.doc.activeElement, u.row('altair-aweb').querySelector('.machine-check'), 'focus stays on Check');
+});
+
+test('Remove asks first; Cancel keeps it; confirming removes it through the CLI and re-reads the list', async t => {
+  let servers = [machine('altair-aweb', { check: { reachable: true, version: '0.39.0', error: null } })];
+  const u = setup(t, {
+    '/api/servers': () => answer(servers),
+    '/api/server-remove': body => { servers = []; return { schemaVersion: 1, ok: true, result: { removed: body.id, remoteInstancesStillTracked: [] } }; },
+  });
+  await settle();
+  u.row('altair-aweb').querySelector('.machine-remove').click();
+  const confirm = u.row('altair-aweb').querySelector('.machine-confirm');
+  assert.equal(confirm.querySelector('p').textContent, 'Remove altair-aweb? Instances spawned there keep running and can still be retired from here.');
+  assert.equal(u.doc.activeElement, confirm.querySelector('.machine-confirm-cancel'));
+  confirm.querySelector('.machine-confirm-cancel').click();
+  assert.equal(u.row('altair-aweb').querySelector('.machine-confirm'), null);
+  assert.equal(u.doc.activeElement, u.row('altair-aweb').querySelector('.machine-remove'));
+  assert.equal(u.calls.filter(c => c.path.startsWith('/api/server-remove')).length, 0);
+  u.row('altair-aweb').querySelector('.machine-remove').click();
+  u.row('altair-aweb').querySelector('.machine-confirm-remove').click(); await settle();
+  assert.deepEqual(u.calls.find(c => c.path.startsWith('/api/server-remove')).body, { id: 'altair-aweb' });
+  assert.equal(u.row('altair-aweb'), null);
+  assert.equal(u.q('.setup-empty').textContent, 'No machine runs this workspace yet.');
+  assert.equal(u.doc.activeElement, u.q('.machines-add'));
+});
+
+test('a refused Remove is said in the row, in the CLI\'s words', async t => {
+  const u = setup(t, {
+    '/api/servers': () => answer([machine('altair-aweb', { check: { reachable: true, version: '0.39.0', error: null } })]),
+    '/api/server-remove': () => ({ schemaVersion: 1, ok: false, error: { code: 'E_SERVERS_UNREADABLE', message: 'servers.json is not valid JSON' } }),
+  });
+  await settle();
+  u.row('altair-aweb').querySelector('.machine-remove').click();
+  u.row('altair-aweb').querySelector('.machine-confirm-remove').click(); await settle();
+  assert.equal(u.row('altair-aweb').querySelector('.machine-error').textContent, 'servers.json is not valid JSON (E_SERVERS_UNREADABLE)');
+});
+
+test('Add a machine opens the dialog for this workspace; an added machine is listed', async t => {
+  let servers = [];
+  const u = setup(t, {
+    '/api/servers': () => answer(servers, { aweb: false }),
+    '/api/server-connect': body => { servers = [machine(body.id)]; return { schemaVersion: 1, ok: true, result: { id: body.id, ready: true, steps: [] } }; },
+    '/api/server-check': body => ({ id: body.id, check: { reachable: true, version: '0.39.0', error: null } }),
+  });
+  await settle();
+  assert.equal(u.q('.setup-empty').textContent, 'No machine runs this workspace yet.');
+  u.q('.machines-add').click();
+  assert.ok(u.q('.machine-dialog'));
+  assert.equal(u.q('.machine-folder').value, '~/Agents/aweb');
+  const host = u.q('.machine-host'); host.value = 'altair'; host.dispatchEvent(new u.dom.window.Event('input', { bubbles: true }));
+  u.q('.machine-primary').click(); await settle();
+  assert.equal(u.q('.machine-dialog'), null);
+  assert.ok(u.row('altair-aweb'));
+  assert.equal(u.doc.activeElement, u.q('.machines-add'));
+});
+
+test('no workspace key: the box says why and offers nothing; gates off: no box at all', async t => {
+  const reason = 'This deployment reports no workspace key, so no other machine can be matched to it.';
+  const u = setup(t, { '/api/servers': () => ({ servers: [], filtered: true, key: null, deployment: null, aweb: false, reason }) });
+  await settle();
+  assert.equal(u.q('.machines-reason').textContent, reason);
+  assert.equal(u.q('.machines-add'), null);
+  const off = setup(t, { '/api/servers': () => ({ servers: [{ id: 'altair-tsm', label: 'altair', sshHost: 'altair', workspace: '/srv' }] }) });
+  await settle();
+  assert.equal(off.ui.element.hidden, true);
+});
+
+test('a list that cannot be read says so, with Retry', async t => {
+  let fail = true;
+  const u = setup(t, { '/api/servers': () => fail ? { httpStatus: 500, body: { error: 'boom' } } : answer([]) });
+  await settle();
+  assert.match(u.q('.machines-reason').textContent, /could not be read/);
+  fail = false; u.q('.machines-retry').click(); await settle();
+  assert.equal(u.q('.setup-empty').textContent, 'No machine runs this workspace yet.');
+});

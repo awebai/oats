@@ -11,6 +11,8 @@ import { apiJson, postJson, wsQuery, workspaceGeneration } from './views/common.
 import { cliStatus, cliKnownUnavailable } from './views/cli-status.mjs';
 import { deploymentUnavailableText } from './deployment-header.mjs';
 import { setupCSS, renderSetup, teamsBox } from './workspace-setup.mjs';
+import { createWorkspaceMachines, machinesCSS } from './workspace-machines.mjs';
+import { machinesGated } from './machine-contract.mjs';
 import { computerTeamsCSS, createComputerTeams, teamsAnswer } from './computer-teams.mjs';
 import { catalogCSS, renderCapabilitySections, capabilitySections, renderFilters, filterChoices, filterCapabilities, memberNames, deploymentNotes, syncCapabilityNav } from './workspace-catalog.mjs';
 import { createWorkspaceSync, syncCSS, reasonText } from './workspace-sync-view.mjs';
@@ -35,6 +37,7 @@ ${sel} button:focus-visible { background:var(--sel); border-radius:6px; padding:
 export const discoveryCSS = `
 ${catalogCSS}
 ${setupCSS}
+${machinesCSS}
 ${computerTeamsCSS}
 ${syncCSS}
 .workspace-header { height:var(--bar-h); min-height:48px; flex:none; display:flex; align-items:stretch; flex-wrap:nowrap; gap:22px; padding:0 16px; border-bottom:1px solid var(--border); background:var(--surface); box-sizing:border-box; }
@@ -191,6 +194,16 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
       return teamsAnswer(await postJson(ctx, `/api/workspace-teams${wsQuery()}`, body), 'teams', 'The teams on this computer could not be read.');
     } });
     return computerTeams.element;
+  }
+  // #517: the Setup tab's Machines box, one per workspace (and generation), kept across renders.
+  let machines = null, machinesFor = null;
+  function machinesCard() {
+    if (!machinesGated(cliStatus()) || !workspace?.id) return null;
+    const key = JSON.stringify([workspaceGeneration(), workspace.id]);
+    if (machines && machinesFor === key) return machines.element;
+    machines?.dispose(); machinesFor = key;
+    machines = createWorkspaceMachines(doc, { ctx, ws: workspace.id });
+    return machines.element;
   }
   header.className = 'workspace-header';
   // No title in the bar (human, 2026-09-28): the sidebar already says Workspace; the tabs lead.
@@ -385,7 +398,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
         if (typeof warning.remedy === 'string' && warning.remedy) notes.append(node('p', warning.remedy, 'catalog-note catalog-remedy'));
       }
       renderSetup(body, { status: s, instances, souls, cli: cliStatus(), view: setupView, selected: setupMember,
-        onSelect: key => selectMember(key), onOpenRepo: openRepo, onOpenPackages: openPackages, openExternal: url => ctx.openExternal?.(url) }); return;
+        onSelect: key => selectMember(key), onOpenRepo: openRepo, onOpenPackages: openPackages, openExternal: url => ctx.openExternal?.(url), machines: machinesCard() }); return;
     }
     if (!catalog) return; // pending, or failed with nothing held: the controller's skeleton or failed block stands in capState
     for (const problem of list(catalog.problems)) notes.append(node('p', reasonText(problem), 'catalog-note warn'));
@@ -476,6 +489,6 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
       serial++; rosterGen = null; workspace = null; deployment = null; instances = []; catalog = null; loading = false; failure = '';
       filters = { team: null, repo: null }; sync.reset(); loadState.reset(); updateCounts('pending'); render(); onCatalog?.();
     },
-    dispose() { alive = false; serial++; sync.dispose(); computerTeams?.dispose(); loadState.dispose(); stickyTop.dispose(); soulsEdge.dispose(); scope.dispose(); scope.element.remove(); },
+    dispose() { alive = false; serial++; sync.dispose(); computerTeams?.dispose(); machines?.dispose(); loadState.dispose(); stickyTop.dispose(); soulsEdge.dispose(); scope.dispose(); scope.element.remove(); },
   };
 }
