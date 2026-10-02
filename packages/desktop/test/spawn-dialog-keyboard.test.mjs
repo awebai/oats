@@ -175,3 +175,159 @@ test('the Harness picker opens with Enter, Space or Alt+Down; Escape closes it b
   key(u, trigger, 'Escape'); await settle();
   assert.equal(u.dialog(), null, 'Escape with no picker open closes the dialog');
 });
+
+// ── Spec E: focus on open, and the section keys ──────────────────────────
+
+test('Spec E: Reopen spawn (a restored draft) lands on Name with the caret at the end, nothing selected', async t => {
+  const u = await mountSpawn(t);
+  spawn.preselectSpawn({ name: 'release-manager', agentsRoot: ROOT, draft: { layout: 'scoped', restore: { choices: { purpose: 'api-v2' } } } }); await settle();
+  const purpose = u.q('.fpurpose');
+  assert.equal(u.dialog().dataset.layout, 'scoped'); assert.equal(purpose.value, 'api-v2');
+  assert.equal(u.doc.activeElement, purpose);
+  assert.deepEqual([purpose.selectionStart, purpose.selectionEnd], [6, 6], 'the caret after the restored name, no select-all');
+});
+
+test('Spec E: Change soul keeps today\'s focus in the list; a click pick goes on to Name', async t => {
+  const u = await mountSpawn(t);
+  await u.open(); await u.type('.fpurpose', 'api-v2');
+  u.q('.spawn-change-soul').click();
+  assert.equal(u.doc.activeElement, u.q('.spawn-choice[aria-selected=true]'), 'the picker layout: the soul list, as before');
+  [...u.doc.querySelectorAll('.spawn-choice')].find(b => b.dataset.agent === 'support-triager').click(); await settle();
+  assert.equal(u.dialog().dataset.layout, 'picker');
+  assert.equal(u.doc.activeElement, u.q('.fpurpose'), 'after the pick: Name');
+});
+
+const SECTIONS = [
+  ['1', u => u.q('.fpurpose'), 'Name'],
+  ['2', u => u.q('.spawn-run label:first-child .spawn-choice-trigger'), 'Harness'],
+  ['3', u => u.q('.fmodel'), 'Model'],
+  ['4', u => u.q('.frelation input:checked'), 'Relationship'],
+  ['6', u => u.q('.ftask'), 'Opening instruction'],
+];
+for (const platform of ['mac', 'other']) {
+  test(`Spec E: Mod+1–Mod+6 jump to their section, from any field, and never reach the shell behind the modal (${platform})`, async t => {
+    const u = await mountSpawn(t);
+    if (platform === 'mac') asMac(u);
+    await u.open();
+    const mod = platform === 'mac' ? { metaKey: true } : { ctrlKey: true };
+    const behind = []; u.dom.window.addEventListener('keydown', e => behind.push(e.key));
+    for (const [digit, target, name] of SECTIONS) {
+      const from = u.q('.ftask') === target(u) ? u.q('.fpurpose') : u.q('.ftask'); from.focus();
+      const e = key(u, from, digit, mod);
+      assert.equal(e.defaultPrevented, true, `Mod+${digit} is the dialog's`);
+      assert.equal(u.doc.activeElement, target(u), `Mod+${digit} → ${name}`);
+    }
+    assert.deepEqual(behind, [], 'the section keys stop at the dialog: nothing behind the modal sees them');
+    // The other platform's modifier is not the chord here: it does nothing in the dialog.
+    u.q('.ftask').focus(); key(u, u.q('.ftask'), '1', platform === 'mac' ? { ctrlKey: true } : { metaKey: true });
+    assert.equal(u.doc.activeElement, u.q('.ftask'));
+    behind.length = 0;
+    // Teams is not offered here: Mod+5 moves nothing, and still never reaches the shell.
+    const five = key(u, u.q('.ftask'), '5', mod);
+    assert.equal(five.defaultPrevented, true); assert.equal(u.doc.activeElement, u.q('.ftask'));
+    // A held key repeats: still the dialog's, and nothing moves.
+    const held = key(u, u.q('.ftask'), '1', { ...mod, repeat: true });
+    assert.equal(held.defaultPrevented, true); assert.equal(u.doc.activeElement, u.q('.ftask'));
+    assert.deepEqual(behind, [], 'nothing propagated past the dialog');
+    assert.ok(u.dialog(), 'the dialog stays open');
+  });
+}
+
+test('Spec E: Mod+7 opens Developer settings on its first control, and again closes it back on its summary', async t => {
+  const u = await mountSpawn(t);
+  await u.open();
+  const advanced = u.q('.spawn-advanced');
+  assert.equal(advanced.open, false);
+  key(u, u.q('.fpurpose'), '7', { ctrlKey: true });
+  assert.equal(advanced.open, true);
+  const first = u.doc.activeElement;
+  assert.ok(u.q('.spawn-advanced-body').contains(first), 'focus inside Developer settings');
+  assert.ok(['INPUT', 'SELECT', 'BUTTON', 'TEXTAREA'].includes(first.tagName));
+  key(u, first, '7', { ctrlKey: true });
+  assert.equal(advanced.open, false); assert.equal(u.doc.activeElement, u.q('.spawn-advanced > summary'));
+});
+
+test('Spec E: each section shows its chord as a quiet hint (aria-hidden) and the control says aria-keyshortcuts; a rebind follows', async t => {
+  const { setBinding, resetBinding } = await import('../renderer/keybindings.mjs');
+  const u = await mountSpawn(t);
+  asMac(u);
+  await u.open();
+  const hints = [...u.dialog().querySelectorAll('kbd.spawn-key-hint')];
+  assert.equal(hints.length, 7);
+  for (const hint of hints) assert.equal(hint.getAttribute('aria-hidden'), 'true');
+  const shown = hints.filter(h => !h.closest('[hidden]')).map(h => h.textContent);
+  assert.deepEqual(shown, ['⌘1', '⌘2', '⌘3', '⌘4', '⌘6', '⌘7'], 'Teams is not offered here: its hint is in its hidden row');
+  assert.equal(u.q('label[for=spawn-purpose] kbd').textContent, '⌘1', 'beside the Name label');
+  assert.equal(u.q('.fpurpose').getAttribute('aria-keyshortcuts'), 'Meta+1');
+  assert.equal(u.q('.spawn-run label:first-child .spawn-choice-trigger').getAttribute('aria-keyshortcuts'), 'Meta+2');
+  assert.equal(u.q('.fmodel').getAttribute('aria-keyshortcuts'), 'Meta+3');
+  assert.ok([...u.dialog().querySelectorAll('.frelation input')].every(i => i.getAttribute('aria-keyshortcuts') === 'Meta+4'));
+  assert.equal(u.q('.ftask').getAttribute('aria-keyshortcuts'), 'Meta+6');
+  assert.equal(u.q('.spawn-advanced > summary').getAttribute('aria-keyshortcuts'), 'Meta+7');
+  assert.equal(u.q('label[for=spawn-purpose]').textContent.replace(u.q('label[for=spawn-purpose] kbd').textContent, ''), 'Name');
+  t.after(() => resetBinding('spawn.jumpName'));
+  setBinding('spawn.jumpName', 'Mod+Shift+N');
+  assert.equal(u.q('label[for=spawn-purpose] kbd').textContent, '⇧⌘N');
+  assert.equal(u.q('.fpurpose').getAttribute('aria-keyshortcuts'), 'Meta+Shift+N');
+  u.q('.ftask').focus(); key(u, u.q('.ftask'), 'N', { metaKey: true, shiftKey: true });
+  assert.equal(u.doc.activeElement, u.q('.fpurpose'), 'the rebound chord jumps');
+  u.q('.ftask').focus(); key(u, u.q('.ftask'), '1', { metaKey: true });
+  assert.equal(u.doc.activeElement, u.q('.ftask'), 'the old chord no longer jumps');
+  setBinding('spawn.jumpName', null);
+  assert.equal(u.q('label[for=spawn-purpose] kbd').hidden, true, 'unbound: no hint');
+  assert.equal(u.q('.fpurpose').hasAttribute('aria-keyshortcuts'), false);
+});
+
+test('Spec E: the dialog keys are listed in the shortcuts editor under Spawn dialog, and shadow no global key', async () => {
+  const { listActions, findConflict, registerAction } = await import('../renderer/keybindings.mjs');
+  const { groupActions } = await import('../renderer/keybindings-editor.mjs');
+  const { registerSpawnDialogKeys } = await import('../renderer/spawn-dialog-keys.mjs');
+  registerSpawnDialogKeys(); registerSpawnDialogKeys(); // idempotent
+  const ids = listActions().filter(a => a.context === 'spawn-dialog-local').map(a => a.id).sort();
+  assert.deepEqual(ids, ['spawn.jumpHarness', 'spawn.jumpModel', 'spawn.jumpName', 'spawn.jumpRelationship', 'spawn.jumpTask', 'spawn.jumpTeams', 'spawn.submit', 'spawn.toggleAdvanced']);
+  assert.equal(groupActions().find(g => g.context === 'spawn-dialog-local').label, 'Spawn dialog');
+  const release = registerAction({ id: 'fixture.showActive', label: 'Show Active', context: 'global', defaultChord: 'Mod+1', run: () => {} });
+  try {
+    assert.equal(findConflict('Mod+1', 'spawn-dialog-local', 'spawn.jumpName', true), null, 'the open dialog owns Mod+1; Active keeps it elsewhere');
+    assert.equal(findConflict('Mod+1', 'global', 'fixture.showActive', true), null);
+    assert.equal(findConflict('Mod+2', 'spawn-dialog-local', 'spawn.jumpName', true)?.id, 'spawn.jumpHarness', 'within the dialog, a clash is a clash');
+  } finally { release(); }
+});
+
+test('Spec E: a section key from an open Harness picker closes the picker and moves on; Escape then closes the dialog as usual', async t => {
+  const u = await mountSpawn(t);
+  await u.open();
+  const trigger = u.q('.spawn-run label:first-child .spawn-choice-trigger'), menu = () => u.q('#spawn-runtime-choices');
+  trigger.focus(); key(u, trigger, 'Enter'); await settle();
+  assert.equal(menu().hidden, false, 'the picker is open');
+  const e = key(u, u.doc.activeElement, '6', { ctrlKey: true });
+  assert.equal(e.defaultPrevented, true);
+  assert.equal(menu().hidden, true, 'closed by the jump, not left behind');
+  assert.equal(u.doc.activeElement, u.q('.ftask'), 'focus moved on (not restored to the picker trigger)');
+  key(u, u.q('.ftask'), 'Escape'); await settle();
+  assert.equal(u.dialog(), null, 'no picker is open, so Escape closes the dialog');
+});
+
+// Quick Open's pick from a terminal tab opens the dialog before the Workspace stage is on screen (the shell
+// shows it right after): focus on Name cannot land yet. It lands once the stage is shown, unless the
+// operator focused something else in between. (Seen live: the dialog opened with focus on <body>.)
+for (const [why, between, lands] of [
+  ['the stage shows a frame later: Name takes focus then', show => show(), true],
+  ['the operator focused something else first: it stays theirs', (show, u) => { const b = u.doc.createElement('button'); u.doc.body.append(b); b.focus(); show(); }, false],
+  ['the operator focused a control in the dialog first: it stays theirs', (show, u) => { show(); u.q('.ftask').focus(); }, false],
+]) test(`opened before its stage is on screen: ${why}`, async t => {
+  const u = await mountSpawn(t);
+  const proto = u.dom.window.HTMLElement.prototype, focus = proto.focus;
+  let offscreen = true; // a control under a hidden stage does not take focus
+  proto.focus = function (...args) { if (offscreen && this.closest?.('.spawn-dialog')) return; return focus.apply(this, args); };
+  t.after(() => { proto.focus = focus; });
+  // The host collects setInterval (the view's polls), which jsdom's own frames run on: drive frames here.
+  u.dom.window.requestAnimationFrame = f => setTimeout(f, 16);
+  spawn.preselectSpawn({ name: 'release-manager', agentsRoot: ROOT, onDismiss: () => true });
+  assert.ok(u.dialog(), 'the dialog is open'); assert.notEqual(u.doc.activeElement, u.q('.fpurpose'), 'not yet');
+  between(() => { offscreen = false; }, u); // the stage is shown
+  const other = u.doc.activeElement;
+  await new Promise(r => setTimeout(r, 250)); // more than the 10 frames the retry may take
+  if (lands) assert.equal(u.doc.activeElement, u.q('.fpurpose'), 'focus lands in Name');
+  else assert.equal(u.doc.activeElement, other, 'the operator\'s focus is not taken');
+});

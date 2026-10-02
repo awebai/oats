@@ -24,11 +24,13 @@ const CONTEXT_LABELS = {
   // dispatch inside their view surface but stay editor-visible here.
   "view:hierarchy": "Active overview",
   "view:spawn": "Soul roster",
+  // a modal dialog's own keys: dispatched only by the open dialog (spawn-dialog-keys.mjs)
+  "spawn-dialog-local": "Spawn dialog",
 };
 
 /** Group registered actions by context, stable order, for rendering. */
 export function groupActions(actions = listActions()) {
-  const order = ["global", "tabs", "roster", "stage:hierarchy", "view:hierarchy", "stage:spawn", "view:spawn"];
+  const order = ["global", "tabs", "roster", "stage:hierarchy", "view:hierarchy", "stage:spawn", "view:spawn", "spawn-dialog-local"];
   const groups = new Map();
   for (const a of actions) {
     if (!groups.has(a.context)) groups.set(a.context, []);

@@ -356,8 +356,16 @@ export function onKeymapChange(fn) {
 
 // ---------------------------------------------------------------- conflicts
 
+/** A modal dialog's own context (`spawn-dialog-local`): while the dialog is open
+ * its keys are its own and it stops them, so nothing behind the modal sees them;
+ * while it is closed they do nothing. Its chords collide only with each other,
+ * never with a global action (Spec E: Mod+1 jumps to Name in the spawn dialog and
+ * shows Active everywhere else). */
+const isModalContext = (context) => typeof context === "string" && context.endsWith("-dialog-local");
+
 /** First OTHER action whose effective binding collides with `chord` in a way
- * visible from `context` (same context, or either side is global), optionally
+ * visible from `context` (same context, or either side is global — except a
+ * modal dialog's own context, which only its own actions share), optionally
  * excluding one action id (the one being edited). Returns the action or null. */
 export function findConflict(chord, context, excludeId = null, isMac = defaultIsMac()) {
   const c = typeof chord === "string" ? parseChord(chord) : chord;
@@ -367,7 +375,9 @@ export function findConflict(chord, context, excludeId = null, isMac = defaultIs
     const bound = parseChord(getBinding(action.id, isMac) || "");
     if (!bound) continue;
     if (!chordMatches(bound, resolveForCompare(c, isMac), isMac)) continue;
-    if (context === "global" || action.context === "global" || action.context === context) return action;
+    if (action.context === context) return action;
+    if (isModalContext(context) || isModalContext(action.context)) continue;
+    if (context === "global" || action.context === "global") return action;
   }
   return null;
 }
