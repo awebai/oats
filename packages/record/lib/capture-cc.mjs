@@ -29,6 +29,7 @@ import { jsonlLines, SESSION_FORMATS } from "./formats.mjs";
 import { loadIgnore } from "./ignore.mjs";
 import { assertIdentity, assertProtectedDescriptor, digest, identity, readRange, verifySnapshot } from "./session-snapshot.mjs";
 import { guardCapturedPath } from "./native-history.mjs";
+import { fileChunks } from "./file-lines.mjs";
 import { isDeepStrictEqual } from "node:util";
 
 export const SESSION_STREAM_SOURCE = "cc";
@@ -118,12 +119,6 @@ function readFrom(path, start, size) {
   }
 }
 
-// The journal's last captured source line, read from its tail without
-// parsing the whole file. 0 when the journal is missing or empty.
-function lastJournalLine(store, streamId) {
-  return lastJournalTurn(store, streamId)?.provenance?.origin?.line ?? 0;
-}
-
 // The journal's last whole turn, read from its tail without parsing the whole
 // file (backward scan, doubling window). null when the journal is missing or
 // holds none.
@@ -168,8 +163,8 @@ function lastJournalTurn(store, streamId) {
 // check in the caller). Transcript writers are append-only in practice.
 // Both are read in bounded memory: the journal's last turn from its tail, the
 // source's lines counted chunk by chunk (awebai/oats#456).
-function offsetFromJournal(store, streamId, sourcePath, final, sourceBytes) {
-  const last = lastJournalTurn(store, streamId);
+// `last` is the journal's last turn (lastJournalTurn), null when it has none.
+function offsetFromJournal(last, sourcePath, final, sourceBytes) {
   if (!last) return { bytes: 0, line: 0, lastTs: "" };
   const lastLine = last.provenance?.origin?.line ?? 0;
   const { line, offset } = sourceBytes ? lineOffset([sourceBytes], lastLine) : lineOffsetOfFile(sourcePath, lastLine);
@@ -198,18 +193,8 @@ function lineOffset(chunks, lastLine) {
 
 function lineOffsetOfFile(path, lastLine) {
   const fd = openSync(path, "r");
-  try {
-    function* chunks() {
-      for (let position = 0; ; ) {
-        const chunk = Buffer.allocUnsafe(1 << 20);
-        const n = readSync(fd, chunk, 0, chunk.length, position);
-        if (n === 0) return;
-        position += n;
-        yield chunk.subarray(0, n);
-      }
-    }
-    return lineOffset(chunks(), lastLine);
-  } finally { closeSync(fd); }
+  try { return lineOffset(fileChunks(fd), lastLine); }
+  finally { closeSync(fd); }
 }
 
 // Source bytes of turns held before they are appended: what a pass keeps of a
@@ -328,10 +313,12 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
     // journal is the truth; before appending anything, any disagreement
     // rebuilds the offset from it. Background passes check on growth;
     // final passes also verify unchanged files before confirming capture.
-    if (state && (final || stat.size > state.bytes) && state.line !== lastJournalLine(store, streamId)) {
+    let journalLast; // the journal's last turn, read from its tail once, when needed
+    const lastTurn = () => (journalLast === undefined ? (journalLast = lastJournalTurn(store, streamId)) : journalLast);
+    if (state && (final || stat.size > state.bytes) && state.line !== (lastTurn()?.provenance?.origin?.line ?? 0)) {
       state = null;
     }
-    if (!state) state = offsetFromJournal(store, streamId, path, final, sourceBytes);
+    if (!state) state = offsetFromJournal(lastTurn(), path, final, sourceBytes);
     if (stat.size <= state.bytes) {
       unchanged++;
       offsets[offKey] = state;

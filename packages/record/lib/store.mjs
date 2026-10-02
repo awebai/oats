@@ -13,6 +13,7 @@
 //   - the effective record is the id-deduplicated union across streams,
 //     minus turns hidden by valid tombstones.
 
+import { bufferLines, fileChunks } from "./file-lines.mjs";
 import {
   appendFileSync,
   closeSync,
@@ -413,31 +414,21 @@ export class RecordStore {
     let fd;
     try { fd = openSync(this.journalPath(streamId), "r"); }
     catch (e) { if (e.code === "ENOENT") return; throw e; }
-    let pieces = [], size = 0, lineStart = 0;
+    let lineStart = 0;
     try {
-      for (;;) {
-        const chunk = Buffer.allocUnsafe(65536);
-        const n = readSync(fd, chunk, 0, chunk.length, null);
-        if (n === 0) break;
-        let from = 0;
-        for (let nl = chunk.indexOf(10, from); nl >= 0 && nl < n; nl = chunk.indexOf(10, from)) {
-          pieces.push(chunk.subarray(from, nl + 1));
-          size += nl + 1 - from;
-          const line = pieces.length === 1 ? pieces[0] : Buffer.concat(pieces, size);
-          let parsed;
-          try { parsed = parseJournal(line); }
-          catch (e) {
-            if (e instanceof StoreError) throw new StoreError(`corrupt interior journal line at byte ${lineStart}`);
-            throw e;
-          }
-          lineStart += size;
-          pieces = []; size = 0; from = nl + 1;
-          yield* parsed.turns;
+      for (const line of bufferLines(fileChunks(fd, { size: 65536 }))) {
+        // A final fragment without a newline is a torn tail, even if its
+        // JSON is valid. Readers leave it for the owner's append repair.
+        if (line[line.length - 1] !== 10) return;
+        let parsed;
+        try { parsed = parseJournal(line); }
+        catch (e) {
+          if (e instanceof StoreError) throw new StoreError(`corrupt interior journal line at byte ${lineStart}`);
+          throw e;
         }
-        if (from < n) { pieces.push(chunk.subarray(from, n)); size += n - from; }
+        lineStart += line.length;
+        yield* parsed.turns;
       }
-      // A final fragment without a newline is a torn tail, even if its
-      // JSON is valid. Readers leave it for the owner's append repair.
     } finally { closeSync(fd); }
   }
 

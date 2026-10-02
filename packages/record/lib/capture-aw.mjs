@@ -16,7 +16,7 @@
 // already holds is looked up for that log's ids alone, in one streamed read
 // of the journal, never as the whole stream's id set.
 
-import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { homedir } from "node:os";
 
@@ -25,6 +25,7 @@ import {
   projectInteractionLogEntry,
 } from "./project-aweb.mjs";
 import { loadIgnore } from "./ignore.mjs";
+import { bufferLines, fileChunks } from "./file-lines.mjs";
 
 export function defaultCommLogDir(home = homedir()) {
   return join(home, ".config", "aw", "logs");
@@ -48,31 +49,19 @@ export function listCommLogs(dir = defaultCommLogDir()) {
 // does not, it is a torn tail the client is still writing, never counted. An
 // interior bad line is skipped and counted (`onSkipped`), never fatal.
 function* logEntries(fd, end, onSkipped) {
-  let pieces = [], size = 0, position = 0;
-  const entryOf = (bytes, final) => {
-    const text = bytes.toString("utf8");
-    if (text.trim() === "") return undefined;
-    try { return JSON.parse(text); }
-    catch { if (!final) onSkipped(); return undefined; }
-  };
-  while (position < end) {
-    const chunk = Buffer.allocUnsafe(Math.min(1 << 20, end - position));
-    const n = readSync(fd, chunk, 0, chunk.length, position);
-    if (n === 0) break;
-    position += n;
-    let from = 0;
-    for (let nl = chunk.indexOf(10, from); nl >= 0 && nl < n; nl = chunk.indexOf(10, from)) {
-      pieces.push(chunk.subarray(from, nl));
-      size += nl - from;
-      const entry = entryOf(pieces.length === 1 ? pieces[0] : Buffer.concat(pieces, size), false);
-      pieces = []; size = 0; from = nl + 1;
-      if (entry !== undefined) yield entry;
+  for (const line of bufferLines(fileChunks(fd, { end }))) {
+    const final = line[line.length - 1] !== 10;
+    let entry;
+    try {
+      // Inside the try: a line beyond V8's string limit is a bad line like any other.
+      const text = line.toString("utf8");
+      if (text.trim() === "") continue;
+      entry = JSON.parse(text);
+    } catch {
+      if (!final) onSkipped();
+      continue;
     }
-    if (from < n) { pieces.push(chunk.subarray(from, n)); size += n - from; }
-  }
-  if (size > 0) {
-    const entry = entryOf(Buffer.concat(pieces, size), true);
-    if (entry !== undefined) yield entry;
+    yield entry;
   }
 }
 
@@ -124,7 +113,8 @@ function captureLogFile(store, { streamId, path, project, knownIds }) {
 }
 
 // Capture one comm-log file into `<owner>~aw`. The account name is the
-// filename stem. `knownIds` carries the stream's ids across files in a pass.
+// filename stem. `knownIds`, when given, is the caller's own id set, kept up to
+// date, and decides instead of a read of the journal.
 //
 // Deliberately does NOT consult the ignore list: this is an explicit
 // "capture this file" command, and the caller has named the file. The

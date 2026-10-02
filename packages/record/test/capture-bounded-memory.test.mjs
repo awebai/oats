@@ -2,8 +2,8 @@ import { fixtureEnv } from "./fixture-env.mjs";
 // A capture pass runs in bounded memory, whatever the record's size (awebai/oats#456). On a host with a
 // 2.6 GB record, every pass under --max-old-space-size=256 died within seconds: the first append to a stream
 // parsed its whole journal, the aw dedupe read the whole aw journal, and each changed comm log was read whole.
-// Here a record several times the heap is built with a large heap, a comm log and a session each grow by one
-// line, and the pass that captures them must succeed under a small one.
+// Here a record several times the heap is captured, then a comm log and a session each grow by one
+// line, and every pass, the first capture of all of it included, must succeed under a small heap.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -40,7 +40,8 @@ test(`a pass over a record several times the heap captures a grown comm log and 
   const root = join(base, "record");
   const env = { ...fixtureEnv(), HOME: home, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "host" };
   const run = (heap) => spawnSync(process.execPath, [`--max-old-space-size=${heap}`, CAPTURE, "--quiet"], { encoding: "utf8", env, maxBuffer: 16 * 1024 * 1024 });
-  const built = run(4096);
+  // The first capture of all of it (a host whose job was off) is itself under the small heap.
+  const built = run(HEAP_MB);
   assert.equal(built.status, 0, built.stderr);
   const journal = (stream) => statSync(join(root, "streams", stream, "journal.jsonl")).size;
   assert.ok(journal("host~aw") + journal("host~cc.big") > 4 * HEAP_MB * 1024 * 1024, "the record is several times the heap");
@@ -75,5 +76,5 @@ test(`a pass over a record several times the heap captures a grown comm log and 
   await writeLines(join(late, "late.jsonl"), 50000, ccLine);
   const backlog = run(HEAP_MB);
   assert.equal(backlog.status, 0, `the pass died: ${backlog.signal ?? ""} ${backlog.stderr.slice(-600)}`);
-  assert.ok(journal("host~cc.late") > 4 * HEAP_MB * 1024 * 1024 / 4, "the late session's backlog was captured");
+  assert.ok(journal("host~cc.late") > HEAP_MB * 1024 * 1024, "the late session's backlog was captured");
 });
