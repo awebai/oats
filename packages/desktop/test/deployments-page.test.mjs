@@ -337,12 +337,13 @@ test("a stale local deployment (its last re-read failed): a 'stale' chip with th
   assert.equal(u.one(".pterm").disabled, false, "the live deployment's rows act as before");
 });
 
-test("header: the counts sit at the right, before Spawn, never against the tabs; the tab strip shrinks and scrolls", async (t) => {
+test("header: the counts sit at the right, never against the tabs, and no Spawn button (Spec E); the tab strip shrinks and scrolls", async (t) => {
   const u = await page(t, THREE());
   const bar = u.one(".hier-bar"), kids = [...bar.children];
   const at = (sel) => kids.findIndex((k) => k.matches(sel));
-  assert.ok(at(".hier-tabs") < at('[style*="flex:1"]') && at('[style*="flex:1"]') < at(".hier-sum") && at(".hier-sum") < at(".spawnbtn"),
+  assert.ok(at(".hier-tabs") < at('[style*="flex:1"]') && at('[style*="flex:1"]') < at(".hier-sum"),
     kids.map((k) => k.className || k.getAttribute("style")).join(" | "));
+  assert.deepEqual(u.all(".spawnbtn, .hier button").filter((b) => /spawn/i.test(b.textContent)), [], "Spec E: no Spawn button on the page (the S key and every other way stay)");
   const win = u.dom.window;
   assert.equal(win.getComputedStyle(u.one(".hier-tabs")).overflowX, "auto");
   assert.equal(win.getComputedStyle(u.one(".hier-sum")).whiteSpace, "nowrap");

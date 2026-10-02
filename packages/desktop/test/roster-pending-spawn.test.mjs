@@ -38,11 +38,12 @@ function fixture(t, rows, extra = {}) {
     rosterState: { hasData: true, state: "ready" }, rosterStale: false, contextDeploymentNote: null, ...viewContext(),
     currentWorkspace: () => "A", workspaceGeneration: () => 0, collapsedInstances: new Set(),
     rosterTip: { bind() {}, hide() {}, sync() {} }, rosterTipFacts: () => ({}), rosterPrs: { get: () => null, refresh() {} },
-    spawnJobs: { rows: ws => ws === "A" ? rows() : [], announce: id => !announced.has(id) && !!announced.add(id), check: id => checked.push(id) },
+    spawnJobs: { rows: ws => ws === "A" ? rows() : [], announce: id => !announced.has(id) && !!announced.add(id), check: id => checked.push(id), ...(extra.jobs || {}) },
     tabs: new Map(), activeTab: null, tabOpenIntents: { applyFocus: f => f() },
     // A pending row opens nothing: any navigation is a test failure.
     openTerminalTab: assert.fail, openInstanceStart: assert.fail, openLifecycleDialog: assert.fail, onRosterRowKey() {},
-    api: assert.fail, showStage: assert.fail, refreshContextRoster: assert.fail, ...extra,
+    api: assert.fail, showStage: assert.fail, refreshContextRoster: assert.fail,
+    ...(extra.context || {}),
   };
   context.splitOpenState = () => ({ split: null, activeId: null, tabs: context.tabs, workspace: "A", visible: false });
   context.ownsInstanceTarget = target => roster.filter(row => sameInstanceActionTarget(target, row, "A")).length === 1;
@@ -74,7 +75,7 @@ test("a background spawn into the view's second deployment sits under that deplo
   const deployments = [{ id: "/a", path: "/a", local: true, machine: null, status: "observed", primary: true },
     { id: "/b", path: "/b", local: true, machine: null, status: "observed" }];
   const onA = roster.map(r => ({ ...r, deployment: { id: "/a" } }));
-  const u = fixture(t, () => [pending({ parentInstance: undefined, deployment: { id: "/b" } })], { contextDeployments: deployments });
+  const u = fixture(t, () => [pending({ parentInstance: undefined, deployment: { id: "/b" } })], { context: { contextDeployments: deployments } });
   u.render([...onA, instance("dev-b", undefined, { deployment: { id: "/b" } })]);
   const order = [...u.list.children].map(el => el.classList.contains("ctx-deployment") ? `#${el.querySelector(".ctx-deployment-label").textContent}`
     : el.querySelector(".ctx-name")?.textContent).filter(Boolean);
@@ -138,4 +139,58 @@ test("CSS: the spinner turns only without reduced motion, and the Check result t
   assert.match(css, /\.ctx-spawn-spinner \{[^}]*animation: oats-spin/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{ \.ctx-spawn-spinner \{ animation: none; \} \}/);
   assert.match(css, /\.ctx-tree-row > \.ctx-spawn-tools \{ visibility: visible; \}/);
+});
+
+// ── Spec E: the pressed spawn's pending row is highlighted; a spawn not followed says New ────────────
+
+test("Spec E: the pending row of the spawn just pressed wears the selection's fill (revealed), others do not", async t => {
+  const u = fixture(t, () => [pending({ revealed: true }), pending({ id: "spawn-2", instance: "dev-two", home: "/synthetic/dev-two", parentInstance: undefined })]);
+  u.render(roster);
+  assert.equal(u.row("dev-new").closest(".ctx-tree-row").classList.contains("ctx-spawn-revealed"), true);
+  assert.equal(u.row("dev-two").closest(".ctx-tree-row").classList.contains("ctx-spawn-revealed"), false);
+  assert.notEqual(u.doc.activeElement, u.row("dev-new"), "revealed, not focused");
+  assert.match(css, /\.ctx-tree-row\.ctx-spawn-revealed \{ --row-solid: var\(--sel\); background: var\(--sel\); \}/);
+});
+
+test("Spec E: a just-spawned row says New (text and a dot) until its row is opened, or it is the active row", async t => {
+  const fresh = new Set(["/synthetic/solo"]), opened = [];
+  const jobs = { isNew: (ws, row) => ws === "A" && fresh.has(row.home), seen: (ws, row) => fresh.delete(row.home) };
+  const u = fixture(t, () => [], { jobs, context: { openTerminalTab: row => opened.push(row.instance) } });
+  u.render(roster);
+  const mark = u.row("solo").querySelector(".ctx-new");
+  assert.ok(mark, "the mark"); assert.equal(mark.textContent, "New", "text, not colour alone");
+  assert.equal(mark.querySelector(".ctx-new-dot").getAttribute("aria-hidden"), "true");
+  assert.match(u.row("solo").textContent, /^soloNew/, "the row's name says it to assistive tech too");
+  assert.equal(u.row("root").querySelector(".ctx-new"), null, "only the new one");
+  assert.equal(u.row("solo").querySelector(".ctx-name").textContent, "solo");
+  u.row("solo").click();
+  assert.deepEqual(opened, ["solo"]); assert.equal(fresh.size, 0, "opening its row clears it");
+  u.render(roster); assert.equal(u.row("solo").querySelector(".ctx-new"), null);
+  // Opened another way (the palette, say): the first paint where it is the active row clears it.
+  fresh.add("/synthetic/root");
+  const tab = { key: tree.terminalKey("A", roster[0]) };
+  const v = fixture(t, () => [], { jobs, context: { tabs: new Map([[7, tab]]), activeTab: 7 } });
+  v.render(roster);
+  assert.equal(v.row("root").querySelector(".ctx-new"), null); assert.equal(fresh.size, 0);
+});
+
+function luminance(hex) {
+  assert.match(hex, /^#[0-9a-f]{6}$/i);
+  const c = hex.slice(1).match(/../g).map(v => parseInt(v, 16) / 255).map(v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4);
+  return c[0] * .2126 + c[1] * .7152 + c[2] * .0722;
+}
+for (const theme of ["light", "solarized", "dark"]) test(`Spec E, ${theme}: “New” is muted text that meets AA on every row fill, with no opacity`, async t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${theme}"><head></head><body><span class="ctx-new"><span class="ctx-new-dot"></span>New</span></body></html>`);
+  t.after(() => dom.window.close());
+  const doc = dom.window.document;
+  for (const source of [read("theme.css"), css]) { const style = doc.createElement("style"); style.textContent = source; doc.head.append(style); }
+  const view = dom.window, root = view.getComputedStyle(doc.documentElement), mark = doc.querySelector(".ctx-new");
+  assert.equal(view.getComputedStyle(mark).color, "var(--muted)");
+  assert.equal(view.getComputedStyle(mark).opacity, "1");
+  assert.equal(view.getComputedStyle(doc.querySelector(".ctx-new-dot")).background, "var(--accent)");
+  const fg = luminance(root.getPropertyValue("--muted").trim());
+  for (const fill of ["surface", "surface-2", "sel"]) {
+    const bg = luminance(root.getPropertyValue(`--${fill}`).trim());
+    assert.ok((Math.max(fg, bg) + .05) / (Math.min(fg, bg) + .05) >= 4.5, `${theme}: muted on ${fill}`);
+  }
 });

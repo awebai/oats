@@ -192,6 +192,8 @@ body {
                 padding-left: calc(var(--depth) * var(--tree-step)); }
 .ctx-tree-row:hover { --row-solid: var(--surface-2); background: var(--surface-2); }
 .ctx-tree-row.active { --row-solid: var(--sel); background: var(--sel); }
+/* Spec E: the pending row of the spawn just pressed, revealed without taking focus: the selection's own fill. */
+.ctx-tree-row.ctx-spawn-revealed { --row-solid: var(--sel); background: var(--sel); }
 .ctx-row-tools { position: absolute; top: 50%; right: 6px; transform: translateY(-50%); z-index: 2;
                  display: flex; align-items: center; gap: 4px; padding-left: 6px;
                  background: var(--row-solid); visibility: hidden; }
@@ -288,6 +290,11 @@ body {
 .ctx-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
 .ctx-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 600; line-height: 15px; }
 .ctx-meta { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Spec E: "New" on a just-spawned row the operator was not taken to: text and a dot, until it is first opened. */
+.ctx-name-line { max-width: 100%; min-width: 0; display: flex; align-items: center; gap: 6px; }
+.ctx-name-line > .ctx-name { min-width: 0; }
+.ctx-new { flex: none; display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 10.5px; font-weight: 600; line-height: 15px; }
+.ctx-new-dot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--accent); }
 .ctx-repo-label { display: block; color: var(--muted); font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; font-weight: 400; line-height: normal; }
 .ctx-runtime { width: 18px; height: 18px; flex: none; display: grid; place-items: center; border-radius: 5px;
                font-size: 9.5px; font-weight: 700; }

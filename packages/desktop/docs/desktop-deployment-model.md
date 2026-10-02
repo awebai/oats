@@ -243,8 +243,9 @@ that deployment's tab, so the machine is always named. The selected tab is
 remembered per view in localStorage (`oats.desktop.deploymentTab`, ids only,
 at most 32 views). When the tabs overflow, the strip scrolls horizontally and
 the selected or focused tab is revealed, as in the terminal tab strip. The
-header's count line counts the selected tab and sits at the right, before
-Spawn.
+header's count line counts the selected tab and sits at the right of the
+header. The page has no Spawn button (Spec E): `S` on the canvas, the
+sidebar's Spawn instance, Quick Open and the soul cards spawn.
 
 - **All** stacks one section per deployment, headed by `deploymentLabel`
   (the full path in a tooltip) and its counts: the machine in the

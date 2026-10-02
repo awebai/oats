@@ -162,7 +162,15 @@ control.
   focused when that is where they were), or the same stage and control, else
   that region's current item. If they moved on while the dialog was open (a
   workspace switch, another stage or tab), the return is not forced and the
-  dialog restores focus itself. A successful spawn opens the new terminal.
+  dialog restores focus itself. A successful spawn closes the dialog at once and,
+  when the instance runs, opens its terminal unless the operator acted since the
+  press (a key other than a lone modifier, a paste, a focus move, a navigation) or
+  an overlay is open (`docs/desktop-spawn-preview.md`, Background spawn).
+- **Focus on open:** Name, whenever the dialog opens for a chosen soul (a card,
+  the soul page, Quick Open, Reopen spawn), with the caret at the end of a
+  restored name (never selected), without scrolling. Quick Open from a tab opens
+  the dialog just before the Workspace stage is shown; Name takes focus once it
+  is, unless the operator has focused something else by then.
 - **Spawn: Mod+Enter (⌘↵ / Ctrl+Enter) from any field**, the Opening
   instruction and the segmented controls included; plain Enter in Name does
   not spawn, Enter or Space on the focused Spawn button does. The button
@@ -177,9 +185,31 @@ control.
 - The Harness and Model pickers open with Enter, Space or Alt+Down and close
   with Escape back on their trigger. Escape closes an open picker first; with
   none open it closes the dialog.
-- **Change soul** shows the soul list: a listbox with Arrow/Home/End. Typing on
-  the list filters it through its search; Enter in the search picks the best
-  match; Enter on a soul picks it. Either moves focus to Name.
+- **Change soul** shows the soul list, focus on the selected soul (the search
+  when the filter hides it): a listbox with Arrow/Home/End. Typing on the list
+  filters it through its search; Enter in the search picks the best match;
+  Enter, Space or a click on a soul picks it. Every pick moves focus to Name.
+- **Section keys** (Spec E), from any field of the dialog:
+
+  | Section | macOS | Linux / Windows | Lands on |
+  |---|---|---|---|
+  | Name (`spawn.jumpName`) | ⌘1 | Ctrl+1 | the Name field |
+  | Harness (`spawn.jumpHarness`) | ⌘2 | Ctrl+2 | the Harness picker |
+  | Model (`spawn.jumpModel`) | ⌘3 | Ctrl+3 | the Model field |
+  | Relationship (`spawn.jumpRelationship`) | ⌘4 | Ctrl+4 | the selected segment |
+  | Teams (`spawn.jumpTeams`) | ⌘5 | Ctrl+5 | the first team that can be ticked (nothing when Teams is not shown) |
+  | Opening instruction (`spawn.jumpTask`) | ⌘6 | Ctrl+6 | the instruction |
+  | Developer settings (`spawn.toggleAdvanced`) | ⌘7 | Ctrl+7 | opens it on its first control; again closes it back on its summary |
+
+  A closed disclosure holding the target opens first. Each chord shows as a
+  quiet hint beside its section's label (`aria-hidden`; the control carries
+  `aria-keyshortcuts`). They are actions of the `spawn-dialog-local` context
+  (`renderer/spawn-dialog-keys.mjs`, with Mod+Enter): the shortcuts editor
+  lists them under **Spawn dialog** from the start and they can be rebound,
+  but only the open dialog dispatches them. While it is open these chords are
+  the dialog's: it stops them, held or not, so ⌘1–⌘3 never switch the stage
+  behind the modal. A modal dialog's own context clashes only with itself in
+  the editor (`findConflict`), never with a global key it shadows.
 - ⌘N / Ctrl+Shift+N goes to Workspace › Souls; it never spawns.
 
 ## Keyboard audit
@@ -206,7 +236,7 @@ the rig). "Fixed" marks a gap this change closed.
 | Split right / down / close, panel toggle | Tab (shown for a terminal) | Enter; their chords |
 | Split separator | Tab | Arrows resize, Home/End to the ends, **Enter resets to even (fixed: double-click only)** |
 | Empty split group | Tab; F6 (main) | Focus selects the group |
-| Deployments: Spawn, Retry | First stops of the stage; F6 (main) | Enter; `S` on the canvas |
+| Deployments: Retry (no Spawn button: `S` on the canvas, the sidebar, ⌘N, Quick Open and the soul cards spawn) | First stops of the stage; F6 (main) | Enter; `S` on the canvas |
 | Deployments tabs (All, then one per deployment) | Tab (the selected tab) | ←/→ move and select; Home/End; the choice is remembered per workspace |
 | Overview canvas | Tab | Arrows walk the tree; **Up/Down move between rows when there is no parent/child, so every Independent node is reachable (fixed)**; `[` `]` hop groups; Enter opens the terminal (Start when stopped); `T` `B` `O`; Esc clears; **the selected node is panned into view (fixed)** |
 | Overview zoom − + fit | Tab after the canvas; **`-` `=` `0` on the canvas (fixed: `0`)**; `F` also fits | Enter |

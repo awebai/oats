@@ -6,7 +6,8 @@
  *
  * Truthfulness (the async-intent lesson): creation, roster presence and a live terminal are separate
  * observations. A pending row says "Spawning…" until the roster reports the instance; "complete"
- * posts "<name> spawned" only once the roster shows it running with a session; nothing is inferred
+ * is reported (the shell follows it there, or marks its row New; no toast) only once the roster shows
+ * it running with a session; nothing is inferred
  * from a name or a missing answer, and an unknown outcome stays pending with Check result.
  *
  * Ownership: each job is its own intent. Every completion checks the store is alive and the job is
@@ -60,7 +61,9 @@ export function pendingPlacement(relation, instances = []) {
 /**
  * @param post(deployment, body)  POST /api/spawn?ws=<deployment> → the raw reply (throws on transport failure)
  * @param notify(message, options)  the notification center's notify → a handle { dismiss(), shown } | false
- * @param notifySpawned(row, workspace, epoch)  the existing "<name> spawned" notification with Open
+ * @param notifySpawned(row, workspace, epoch, { id, complete })  the created instance is running in the roster: the shell
+ *   takes the operator to it or marks its row New, and announces it (Spec E; spawn-follow.mjs). complete false: a
+ *   launched partial spawn, whose own notice already spoke, is only followed
  * @param reopen(job)  open the spawn dialog for job.soul with job.draft restored
  * @param viewSchedules()  the existing "View schedules" destination
  * @param onChange()  the roster repaints its pending rows
@@ -72,6 +75,10 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
   rememberDeployment = rememberSpawnDeployment } = {}) {
   let alive = true, serial = 0;
   const jobs = new Map(), tokens = new WeakSet(), listeners = new Set();
+  // Spec E: rows of a complete spawn the operator was not taken to, which say New until first opened
+  // (by workspace and home: the identity a roster row keeps). Desktop-local, never stored.
+  const fresh = new Set();
+  const freshKey = (workspace, row) => JSON.stringify([workspace, row?.server || null, row?.home ?? null]);
   const sameSoul = (job, workspace, soul) => job.workspace === workspace && job.soul?.name === soul?.name && job.soul?.agentsRoot === soul?.agentsRoot;
   const flightOf = (workspace, soul) => [...jobs.values()].find(j => FLIGHT.includes(j.state) && sameSoul(j, workspace, soul)) || null;
   /** Submitted jobs whose outcome has not been reported survive a window reload (never the task text):
@@ -94,12 +101,21 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
 
   // ── notifications, held per workspace
   function deliver(job) {
+    if (!live(job) || currentWorkspace() !== job.workspace) return; // held until its workspace is on screen
+    // Spec E: a launched partial spawn is followed to its instance too, with no second notice (its own
+    // notice already said what went wrong with its wake schedule).
+    if (job.arrived) {
+      const row = job.arrived; job.arrived = null;
+      notifySpawned(row, job.workspace, connection(), { id: job.id, complete: false });
+      if (!live(job)) return;
+      if (!job.notice || job.notice.posted) { forget(job); return; }
+    }
     const n = job.notice;
-    if (!n || !live(job) || currentWorkspace() !== job.workspace) return; // held until its workspace is on screen
+    if (!n) return;
     if (n.sticky) { if (!n.handle?.shown) n.handle = notify(n.message, n.options) || null; return; }
     if (n.posted) return;
     n.posted = true;
-    if (n.spawned) notifySpawned(n.spawned, job.workspace, connection()); else notify(n.message, n.options);
+    if (n.spawned) notifySpawned(n.spawned, job.workspace, connection(), { id: job.id, complete: true }); else notify(n.message, n.options);
     if (job.state === 'done') forget(job); else save();
   }
   function say(job, message, options = {}, sticky = false) { job.notice = { message, options, sticky, posted: false, handle: null }; deliver(job); }
@@ -126,7 +142,8 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
     job.state = 'created'; job.receipt = view.receipt || null; job.createdAt = now();
     if (job.deployment !== job.workspace) { try { rememberDeployment(job.workspace, job.deployment); } catch { /* a convenience */ } }
     if (view.status === 'partial') {
-      job.wantRunning = false;
+      // Created; only its wake schedule failed. A launched one is still awaited running, to be followed to (Spec E).
+      job.wantRunning = view.receipt?.launched === true; job.quiet = true;
       say(job, view.reason?.message || `Created ${job.instance}.`, { buttons: [{ label: 'View schedules', ariaLabel: `View schedules for ${job.instance}`, activate: async () => viewSchedules() }] });
     } else if (view.status === 'incomplete') {
       job.wantRunning = false;
@@ -211,8 +228,15 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
       return [...jobs.values()].filter(j => j.workspace === workspace && ['spawning', 'checking', 'unknown', 'created'].includes(j.state))
         .map(j => ({ id: j.id, instance: j.instance, home: j.home, agent: j.soul?.name, agentsRoot: j.selector?.agentsRoot, ...j.placement,
           deployment: { id: j.deployment }, // the roster groups a pending row under its deployment
-          pending: j.state === 'unknown' ? 'unknown' : j.state === 'checking' ? 'checking' : 'spawning' }));
+          pending: j.state === 'unknown' ? 'unknown' : j.state === 'checking' ? 'checking' : 'spawning', ...(j.revealed ? { revealed: true } : {}) }));
     },
+    /** Spec E: the pending row of the spawn just pressed is highlighted (the shell reveals it). */
+    reveal(id) { const j = jobs.get(id); if (!j) return false; for (const other of jobs.values()) other.revealed = other === j; return true; },
+    /** Spec E: a complete spawn's real row says New until it or its tab is first opened. */
+    markNew(workspace, row) { if (!alive || !row?.home) return; fresh.add(freshKey(workspace, row)); changed(); },
+    isNew: (workspace, row) => fresh.has(freshKey(workspace, row)),
+    /** Its row or its tab was opened: no longer New. Silent (the caller paints the row as it is now). */
+    seen(workspace, row) { return fresh.delete(freshKey(workspace, row)); },
     /** Announce a pending row once (the roster's polite live region). */
     announce(id) { const j = jobs.get(id); if (!j || j.announced) return false; j.announced = true; return true; },
     /** Check result for an unknown outcome: the existing recovery (result; an unknown result re-applies the SAME ref). */
@@ -239,12 +263,13 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
           const ready = same.length === 1 && (!job.wantRunning || same[0].running === true && !!same[0].tmux?.session);
           if (ready) {
             job.state = 'done';
-            if (job.wantRunning) job.notice = { spawned: { ...same[0] }, posted: false };
+            if (job.wantRunning && job.quiet) job.arrived = { ...same[0] };
+            else if (job.wantRunning) job.notice = { spawned: { ...same[0] }, posted: false };
             else if (!job.notice || job.notice.posted) { forget(job); continue; }
             changed();
           } else if (now() - job.createdAt >= visibleWithinMs) {
             job.state = 'done';
-            if (job.wantRunning) job.notice = { message: `Created ${job.instance} — not yet visible as a running session. Open it from the roster when it appears.`, options: {}, posted: false };
+            if (job.wantRunning && !job.quiet) job.notice = { message: `Created ${job.instance} — not yet visible as a running session. Open it from the roster when it appears.`, options: {}, posted: false };
             else if (!job.notice || job.notice.posted) { forget(job); continue; }
             changed();
           }
@@ -291,6 +316,6 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
     /** A job's draft and soul, for tests and the Reopen path. */
     get(id) { const j = jobs.get(id); return j ? { id: j.id, state: j.state, instance: j.instance, workspace: j.workspace, deployment: j.deployment, draft: structuredClone(j.draft), soul: j.soul } : null; },
     size: () => jobs.size,
-    dispose() { alive = false; jobs.clear(); },
+    dispose() { alive = false; jobs.clear(); fresh.clear(); },
   };
 }

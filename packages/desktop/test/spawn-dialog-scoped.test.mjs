@@ -219,7 +219,7 @@ test('Core capabilities and Capabilities come from the preview\'s modules only',
   const only = composePreviewModules(doc, modules.filter(m => m.layer));
   assert.equal(only.caps[0].textContent, 'Capabilities · 0'); assert.equal(only.caps[1].textContent, 'No other capabilities: only the core ones.');
   assert.equal(moduleSourceText({ kind: 'external' }), 'external'); assert.equal(moduleSourceText(undefined), '');
-  assert.equal(worksInText('checkout'), 'shared checkout'); assert.equal(worksInText('attached'), "a parent's worktree"); assert.equal(worksInText('directory'), 'a folder');
+  assert.equal(worksInText('checkout'), 'shared checkout'); assert.equal(worksInText('attached'), "a parent's worktree"); assert.equal(worksInText('directory'), 'own folder · free to work across repos');
   assert.equal(worksInText('workspace'), 'all member repos'); assert.equal(worksInText('other'), 'other');
   dom.window.close();
 });

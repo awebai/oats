@@ -5,7 +5,7 @@ import {
   DEFAULT_KEYMAP, TERMINAL_ALLOWLIST, CONTEXTS, defaultBinding,
   registerAction, listActions, setActiveContexts,
   getBinding, setBinding, resetBinding, resetAllBindings, onKeymapChange,
-  matchEvent, handleKeydown, findConflict,
+  matchEvent, handleKeydown, findConflict, keymapConflicts,
 } from "../renderer/keybindings.mjs";
 
 // Minimal localStorage stub — the engine must survive without it too.
@@ -355,6 +355,20 @@ test("findConflict: same context and global<->context collisions, exclusion", (t
   assert.equal(findConflict("Mod+Shift+9", "global", null, true), null);
   // non-mac folding: Ctrl+J collides with Mod+J
   assert.equal(findConflict("Ctrl+J", "global", null, false)?.id, "g.one");
+});
+
+test("findConflict: a modal dialog's own context clashes only with itself, never with global (Spec E)", (t) => {
+  withActions(t, [
+    { id: "g.active", label: "Show Active", context: "global", run: () => {}, defaultChord: "Mod+1" },
+    { id: "d.name", label: "Go to Name", context: "spawn-dialog-local", run: () => {}, defaultChord: "Mod+1" },
+    { id: "d.harness", label: "Go to Harness", context: "spawn-dialog-local", run: () => {}, defaultChord: "Mod+2" },
+  ]);
+  assert.equal(findConflict("Mod+1", "spawn-dialog-local", "d.name", true), null, "the open dialog owns Mod+1 and stops it");
+  assert.equal(findConflict("Mod+1", "global", "g.active", true), null, "Show Active keeps Mod+1 everywhere else");
+  assert.equal(findConflict("Mod+2", "spawn-dialog-local", "d.name", true)?.id, "d.harness", "within the dialog a clash is a clash");
+  assert.deepEqual(keymapConflicts(true), []);
+  setBinding("d.harness", "Mod+1");
+  assert.equal(keymapConflicts(true).length, 1, "a rebind onto a sibling dialog key is reported");
 });
 
 test("registry basics: contexts constant, list/unregister", (t) => {
