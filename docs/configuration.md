@@ -81,6 +81,12 @@ refused (`E_WORKSPACE_SCHEMA`).
 How teams are resolved, and what a messaging provider does with them, is in
 [workspaces.md](workspaces.md#teams).
 
+OATS 0.37.0 (team model 3) removes `souls.teams` and `souls.default` (they move
+to `souls:` in `oats-workspace.yaml`) and allows `teams` and `defaultTeam` here
+only when the workspace file says `localTeams: true`. 0.36.x still applies all
+four keys and warns about them (`team-model-3-migration`): see
+[Preparing for team model 3](workspaces.md#preparing-for-team-model-3-036x).
+
 ## Launch configurations
 
 An entry has `harness` (`pi` \| `claude` \| `codex`, required), `executable`

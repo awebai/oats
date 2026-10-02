@@ -359,6 +359,39 @@ there is no default; `team-unmapped`, blocking when it is the default;
 its environment — see [capabilities.md](capabilities.md#teams-in-the-provider-environment).
 Exact shapes: [desktop-cli-api.md](desktop-cli-api.md#team-model-v2-feature-team-model-2-oats-0300-replaces-feature-teams).
 
+### Preparing for team model 3 (0.36.x)
+
+OATS 0.37.0 commits a soul's teams in the workspace (team model 3,
+awebai/oats#484): the teams an organisation's instances may join become its
+own decision, visible and reviewable in its git, so a deployment's
+`oats-local.yaml` no longer adds one by accident. 0.36.x prepares for it, so
+every workspace and deployment can migrate first:
+
+- **`oats-workspace.yaml` accepts the new keys** and validates them, but
+  **does not apply them**: a soul's teams and default are still resolved as
+  above, from `oats-local.yaml`.
+
+  ```yaml
+  defaultTeam: engineering          # the workspace's fallback default team
+  localTeams: true                  # deployments may declare their own teams (absent: false)
+  souls:                            # per pattern: "*", <member|package>/*, <member|package>/<soul>
+    "*": { teams: [] }              # default only ({} says the same)
+    security-souls/*: { default: security, teams: [engineering] }
+    oats.engineering/*: { teams: any }   # every shared team
+  ```
+
+  `<member|package>` is the name `souls.disabled` uses. Every label (`defaultTeam`,
+  a `souls:` `default`, each of its `teams`) must be a shared team in `teams:` of
+  the same file; anything else is `E_WORKSPACE_SCHEMA` when the file is read. A
+  key naming a member or package the workspace does not have is not an error.
+- **The readiness warning `team-model-3-migration`** (never blocking) names
+  what 0.37.0 will refuse: `souls.teams` / `souls.default` in `oats-local.yaml`
+  (they move to `souls:`), and local `teams` / `defaultTeam` while the workspace
+  does not say `localTeams: true` (fix: add `localTeams: true`, or commit the
+  teams and `defaultTeam` in the workspace file). `oats teams`, readiness (and
+  so the Desktop) and `oats doctor` show it. The migration steps are in the
+  [0.36.1 release notes](release-notes/v0.36.1.md).
+
 ## Provider payloads have three homes
 
 | What it is | Where | Example |

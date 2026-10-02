@@ -36,7 +36,7 @@ import {
   writeFileAtomic, LOCK_FILE, readLock, readLockIfPresent, writeLock, resolvePackages, memoizedRemote,
   classifyPackageValue, parsePackageRequest } from "../lib/packages.mjs";
 import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, workspaceWarnings, memberRowByKey } from "../lib/workspace.mjs";
-import { recordedTeams, reportRows, soulKeyOf, soulTeams, teamModel } from "../lib/teams.mjs";
+import { migrationProblems, recordedTeams, reportRows, soulKeyOf, soulTeams, teamModel } from "../lib/teams.mjs";
 import { launchLayers } from "../lib/launch-preference.mjs";
 import { parseConfigData } from "../lib/config-data.mjs";
 import * as remoteModule from "../lib/remote.mjs";
@@ -221,6 +221,19 @@ async function doctorComposition(ctx, soulName, ws, bail) {
   } finally { for (const c of cleanups) { try { c(); } catch { /* best effort: temporary copies only */ } } }
 }
 
+/** team-model-3-migration in doctor (0.36.x), OFFLINE like the rest of doctor: oats-local.yaml, and for its
+ *  local teams the workspace file this machine's parsed cache holds (cachedWorkspace: no git process, no
+ *  network). Without that file, whether local teams need `localTeams: true` is said to be unchecked
+ *  (information), never guessed. The standalone view has no workspace rules. → { problems, information } */
+function doctorTeamMigration(local) {
+  const standalone = typeof local.standalone === "string" && local.standalone !== "";
+  const file = standalone ? null : cachedWorkspace(local.workspace)?.file ?? null;
+  const model = teamModel(file, local);
+  const unchecked = !standalone && file === null && model.migration.teamKeys.length > 0;
+  return { problems: migrationProblems(model),
+    information: unchecked ? ["team-model-3-migration: whether oats-local.yaml teams/defaultTeam need localTeams: true couldn't be checked: this deployment hasn't observed its workspace yet; run oats sync"] : [] };
+}
+
 /** Workspace-model v2 doctor data, OFFLINE: the deployment declaration found
  * walking up from ctx (oats-local.yaml) and the lock v3 beside it. Doctor never
  * goes to the network for this view (only `--soul`, which resolves the soul like a
@@ -230,7 +243,7 @@ function doctorLockData(ctx) {
   let lockDir = ctx;
   try {
     const found = loadLocal(ctx);
-    out.local = { path: found.path, workspace: found.local.workspace };
+    out.local = { path: found.path, workspace: found.local.workspace, value: found.local };
     lockDir = dirname(found.path);
   } catch (e) {
     // An unreadable oats-local.yaml, or a 0.25 oats-config.yaml inside the deployment
@@ -584,12 +597,13 @@ function legacyLayoutProblems(root) {
 async function doctorWorkspaceJson(ctx, soulName, ws) {
   const composition = await doctorComposition(ctx, soulName, ws, (code, msg, details) => jsonFail(code, msg, details));
   const agentsRoot = join(dirname(ws.local.path), "agents");
-  const problems = [...legacyLayoutProblems(agentsRoot), readableInstanceHomes(agentsRoot)].filter(Boolean);
+  const migration = doctorTeamMigration(ws.local.value);
+  const problems = [...legacyLayoutProblems(agentsRoot), readableInstanceHomes(agentsRoot), ...migration.problems].filter(Boolean);
   return {
     schemaVersion: 1, workspaceApi: 2, context: ctx,
     workspace: { file: ws.local.path, ref: ws.local.workspace },
     workspaceError: ws.localError, lockFile: ws.lockFile, packages: ws.packages, lockError: ws.lockError,
-    information: operationalKnowledgeNote(composition, soulName) ? [operationalKnowledgeNote(composition, soulName)] : [],
+    information: [...(operationalKnowledgeNote(composition, soulName) ? [operationalKnowledgeNote(composition, soulName)] : []), ...migration.information],
     composedInstructions: composition?.text, instructionBlocks: composition?.blocks,
     ...(problems.length ? { problems } : {}),
   };
@@ -624,7 +638,10 @@ async function doctor(dir) {
   const composition = await doctorComposition(ctx, soulName, ws, (code, msg) => die(`${msg} [${code}]`));
   printDoctorWorkspace(ws);
   const agentsRoot = join(dirname(ws.local.path), "agents");
+  const migration = doctorTeamMigration(ws.local.value);
   for (const p of [...legacyLayoutProblems(agentsRoot), readableInstanceHomes(agentsRoot)].filter(Boolean)) console.log(`\n! ${p.code}: ${p.message}`);
+  for (const p of migration.problems) console.log(`\n! ${p.code}: ${p.message} — ${p.fix}`);
+  for (const line of migration.information) console.log(`\nINFO: ${line}`);
   if (soulName) {
     const information = operationalKnowledgeNote(composition, soulName);
     if (information) console.log(`\nINFO: ${information}`);
