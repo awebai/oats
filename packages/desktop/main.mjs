@@ -455,8 +455,12 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   const bound = (() => { try { return frameWorkspace(e.senderFrame?.url, RENDERER_URL); } catch { return undefined; } })();
   const windowWs = typeof bound === "string" ? bound : null;
   // A workspace the server does not serve, asked by a bound window, is refused on every
-  // workspace-scoped route — never answered with another workspace's data.
-  const notServed = windowRefusal(pathname, base(), windowWs, advertisedNow());
+  // workspace-scoped route — never answered with another workspace's data. Main learns what the
+  // server advertises from panel replies, so it re-reads that first: a view observed since (its
+  // identity is read after the server starts) is served, and a refused window would never bring the
+  // reply that says so.
+  let notServed = windowRefusal(pathname, base(), windowWs, advertisedNow());
+  if (notServed) { await panelWorkspaces(); notServed = windowRefusal(pathname, base(), windowWs, advertisedNow()); }
   if (notServed) return { ok: false, status: 404, body: workspaceNotServed(notServed) };
   // One normalized classifier owns every specialized routing decision;
   // aliases cannot bypass frame/epoch guards, deadlines or typed failures.
@@ -655,8 +659,9 @@ function restoreWindows(launchKey = null) {
 // A window binding itself in place (a switch, or a view that moved under it). `id` null leaves it
 // unbound. A workspace another window holds is refused: that window is focused (`focused-other`),
 // or not when `focus` is false (`open-elsewhere`). A New Window's first claim of the shared default
-// (`initial`) is refused with `choose`: it shows the switcher instead. A refusal carries the served
-// choices (the switcher's list), so a window left choosing reads no workspace to offer them.
+// (`initial`) is refused with `choose`: it shows the switcher instead. A default the server does not
+// serve is refused with `not-served`. A refusal carries the served choices (the switcher's list), so
+// a window left choosing reads no workspace to offer them.
 ipcMain.handle("window:claim-workspace", (e, id, options) => {
   if (!trustedForgeFrame(e, RENDERER_URL)) return { ok: false, code: "forbidden" };
   const win = BrowserWindow.fromWebContents(e.sender);
@@ -669,6 +674,9 @@ ipcMain.handle("window:claim-workspace", (e, id, options) => {
     return { ok: true };
   }
   if (!validWorkspaceId(id)) return { ok: false, code: "bad-workspace" };
+  // The shared default is taken only while the server serves it; otherwise the window reads with
+  // the verified workspace and adopts the one served, as before, then binds that.
+  if (options?.initial === true && !served(id)) return { ok: false, code: "not-served" };
   choosers.delete(win);
   const result = windows.claim(win, id, { focus: options?.focus !== false });
   if (!result.ok) return { ...result, workspaces: servedList };

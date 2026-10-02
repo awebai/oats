@@ -181,3 +181,13 @@ test('titles are main\'s: the page cannot retitle a window', () => {
   FakeWindow.all[0].emit('page-title-updated', { preventDefault: () => { prevented = true; } });
   assert.equal(prevented, true);
 });
+
+test('the shared default is taken only while the server advertises it: otherwise not-served, and the window adopts as before', async () => {
+  const b = boot();
+  b.main.restoreWindows();
+  const win = FakeWindow.all[0];
+  const refused = await b.claim(win, 'ws:gonegonegonegonegone', { focus: false, initial: true });
+  assert.equal(refused.code, 'not-served');
+  assert.equal(b.main.windows.keyOf(win), null, 'still no workspace: it reads with the verified one and adopts');
+  assert.deepEqual(await b.claim(win, A, { focus: false, initial: true }), { ok: true });
+});

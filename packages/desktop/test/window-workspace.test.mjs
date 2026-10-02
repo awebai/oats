@@ -129,3 +129,12 @@ test('without the window bridge (the browser harness) a switch is today\'s plain
   assert.deepEqual(await w.common.switchWorkspace(B), { ok: true });
   assert.equal(w.common.currentWorkspace(), B);
 });
+
+test('a shared default the server does not serve leaves the window adopting (today\'s rewrite and adoption)', async () => {
+  const w = await windowWith({ stored: 'ws:gonegonegonegonegone', claim: async () => ({ ok: false, code: 'not-served' }) });
+  assert.equal(await w.common.startWindow(), 'adopting');
+  assert.deepEqual(w.replaced, [], 'no hash for a workspace that is not served');
+  w.common.adoptWorkspace(A);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(w.common.currentWorkspace(), A);
+});

@@ -7,8 +7,8 @@ import { workspaceNotServed } from '../../renderer/deployment-header.mjs';
 
 export function withWindowGlobals(context) {
   return Object.assign(context, {
-    frameWorkspace, windowRefusal, workspaceNotServed, noteServed() {},
+    frameWorkspace, windowRefusal, workspaceNotServed, noteServed() {}, panelWorkspaces: async () => null,
     advertisedNow: () => (context.allowedWs?.size ? context.allowedWs : context.advertisedBefore ?? new Set()),
-  }, Object.fromEntries(['frameWorkspace', 'windowRefusal', 'workspaceNotServed', 'noteServed', 'advertisedNow']
+  }, Object.fromEntries(['frameWorkspace', 'windowRefusal', 'workspaceNotServed', 'noteServed', 'advertisedNow', 'panelWorkspaces']
     .filter((name) => Object.hasOwn(context, name)).map((name) => [name, context[name]])));
 }
