@@ -206,7 +206,7 @@ test('each append batch revalidates root; prior committed batch survives a later
  for(let i=0;i<64;i++)fs.appendFileSync(f.file,big);fs.appendFileSync(f.file,JSON.stringify({timestamp:ts,type:'message',message:{role:'assistant',content:'last batch'}})+'\n');
  const files=sessionsForHome(f.home);let batches=0;const append=f.store.appendBatch.bind(f.store);
  f.store.appendBatch=(...args)=>{batches++;const value=append(...args);if(batches===1)f.replace();return value;};
- assert.throws(()=>captureSessions(f.store,{owner:'fixture',files,format:'pi',final:true}));assert.equal(batches,1);assert.ok(fs.statSync(f.store.journalPath('fixture~pi.actual')).size>64*1024*1024,'actual earlier journal append was not rolled back');
+ assert.throws(()=>captureSessions(f.store,{owner:'fixture',files,format:'pi',final:true}));assert.equal(batches,1);assert.ok(fs.statSync(f.store.journalPath('fixture~pi.actual')).size>=8*1024*1024,'actual earlier journal append (one 8 MB batch) was not rolled back');
 });
 test('empty protected CLI inventory revalidates after acquiring the capture lock',t=>{
  const f=fixture(t);f.start();const cli=new URL('../bin/capture.mjs',import.meta.url).pathname,preload=join(f.base,'controlled-fault.mjs');

@@ -441,6 +441,15 @@ export class RecordStore {
     } finally { closeSync(fd); }
   }
 
+  // The ids among `candidates` that the stream holds, in one streamed read of
+  // its journal: a dedupe for a few ids never builds the whole stream's set.
+  idsAmong(streamId, candidates) {
+    const found = new Set();
+    if (candidates.size === 0) return found;
+    for (const turn of this.iterateStream(streamId)) if (candidates.has(turn.id)) found.add(turn.id);
+    return found;
+  }
+
   // Is this a session-content stream (`<owner>~<source>.<session-id>`)?
   // Their journals hold whole conversations and can be large, so bulk
   // reads exclude them unless asked; access them per-thread instead.
@@ -548,12 +557,14 @@ export class RecordStore {
     }
     const path = this.journalPath(streamId);
     this.withStreamLock(streamId, () => {
-      // First append to this stream in this instance: parse the whole
+      // First append to this stream in this instance: read the whole
       // journal, so interior corruption throws here instead of silently
       // collecting appends behind the damage. A torn tail is tolerated
-      // (parseJournal treats it as final-line-torn) and repaired below.
+      // (iterateStream leaves it, as parseJournal treats it as
+      // final-line-torn) and repaired below. Streamed, one line at a time:
+      // a journal can be far larger than the heap (awebai/oats#456).
       if (!this.validatedStreams.has(streamId) && existsSync(path)) {
-        parseJournal(readFileSync(path));
+        for (const _turn of this.iterateStream(streamId)) { /* validated as read */ }
       }
       this.validatedStreams.add(streamId);
       repairTail(path);
