@@ -1,4 +1,4 @@
-// Session-local UI memory, keyed by the resolved workspace identity. Stores
+// Session-local UI memory, keyed by the resolved workspace (view) identity. Stores
 // layout/selection only: live tabs and terminal attachments remain shell-owned.
 import { canActivateTab, fallbackTabForContext } from "./workspace-tabs.mjs";
 import { removeSplitTab } from "./split-layout.mjs";
@@ -12,6 +12,16 @@ export function createWorkspaceTabMemory() {
   return {
     remember(workspace, { split, activeTab, sidebarMode, tabLayerVisible }) {
       states.set(workspace, { split: copySplit(split), activeTab, sidebarMode, tabLayerVisible });
+    },
+    /** Views (#482, workspace-rehome.mjs): a memory under an id the map moves goes to its view,
+     * unless that view already has its own (the newer one). */
+    rehome(map) {
+      for (const [from, saved] of [...states]) {
+        const to = map.get(from);
+        if (!to) continue;
+        states.delete(from);
+        if (!states.has(to)) states.set(to, saved);
+      }
     },
     recall(workspace, entries) {
       const saved = states.get(workspace);

@@ -28,6 +28,7 @@ import { spawnProblem } from './spawn-messages.mjs';
 import { wakeScheduleFields } from './wake-schedule-fields.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { shownLaunch, launchHarnessName, launchModelText, launchFromText, preferenceText, declaredDiffers } from './launch-view.mjs';
+import { createSpawnDeploymentField, spawnDeployments } from './spawn-deployment-field.mjs';
 
 export const PREVIEW_DEBOUNCE_MS = 250;
 /** E_BUSY (the server's two-read budget) is retried inside the dialog: as soon as one of its own reads
@@ -62,6 +63,7 @@ export const spawnDialogCSS = `
 /* The preview column: what the kernel will create, re-drawn from every observation. */
 .spawn-preview { display:flex; flex-direction:column; gap:16px; min-width:0; min-height:0; overflow:auto; padding:18px 20px; box-sizing:border-box; background:var(--surface-2); border-right:1px solid var(--border); }
 .spawn-preview-section { display:flex; flex-direction:column; gap:6px; min-width:0; }
+.spawn-preview-body { display:flex; flex-direction:column; gap:8px; min-width:0; }
 .spawn-preview-title { margin:0; font-size:10.5px; font-weight:650; letter-spacing:.065em; text-transform:uppercase; color:var(--muted); }
 /* A newer preview is reading: the settled facts stay, and the title line says so in words (never fading the text: AA). */
 .spawn-preview-head { display:flex; align-items:baseline; justify-content:space-between; gap:8px; min-width:0; }
@@ -155,7 +157,7 @@ export const spawnDialogCSS = `
 /* Default is fixed, not a choice: a quiet neutral chip (its own hairline, not the accent tint). */
 .spawn-seg .spawn-team-fixed input:checked + span { background:var(--surface); color:var(--fg); font-weight:500; box-shadow:inset 0 0 0 1px var(--border); cursor:default; }
 /* Runtime picker and model field */
-.spawn-run .spawn-choice-trigger { height:38px; min-height:38px; border-radius:8px; }
+.spawn-run .spawn-choice-trigger, .spawn-deployment .spawn-choice-trigger { height:38px; min-height:38px; border-radius:8px; }
 .spawn-run .spawn-choice-trigger .runtime-badge, .spawn-choice-menu .runtime-badge { flex:none; width:20px; height:20px; border-radius:5px; display:grid; place-items:center; font-size:9.5px; font-weight:700; }
 .spawn-choice-menu button.has-mark { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .spawn-choice-menu button.has-mark small { flex-basis:100%; margin-left:30px; margin-top:-2px; }
@@ -168,7 +170,7 @@ export const spawnDialogCSS = `
 .spawn-model-field { position:relative; flex:1; min-width:0; display:flex; }
 .spawn-model-field input.field { height:38px; border-radius:8px; padding-right:80px; }
 .spawn-input-tag { position:absolute; right:10px; top:50%; transform:translateY(-50%); pointer-events:none; max-width:84px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.spawn-run .spawn-choice-trigger::after { margin-left:auto; }
+.spawn-run .spawn-choice-trigger::after, .spawn-deployment .spawn-choice-trigger::after { margin-left:auto; }
 .spawn-model-controls .spawn-choice-popover { flex:none; }
 .spawn-model-controls .spawn-choice-trigger { width:38px; height:38px; min-height:38px; padding:0 10px; border-radius:8px; }
 .spawn-model-controls .spawn-choice-trigger::after { margin-left:0; }
@@ -198,6 +200,9 @@ export const spawnDialogCSS = `
 .spawn-seg input:focus-visible + span { background:var(--sel); box-shadow:inset 0 0 0 1px var(--accent); }
 .spawn-relationship-row .frelto { flex:1 1 200px; width:auto; min-width:0; height:34px; }
 .spawn-relationship-row .frelto[hidden] { display:none; }
+/* Deployment (spawn-deployment-field.mjs): the segmented control at its own width (wrapping before it overflows); a deployment's state is the Harness trigger's tag. */
+.spawn-deployment .spawn-seg { align-self:flex-start; flex-wrap:wrap; max-width:100%; box-sizing:border-box; }
+.spawn-seg .spawn-trigger-tag { margin-left:8px; }
 .spawn-server-hint:empty { display:none; }
 .spawn-form .ftask { min-height:88px; resize:vertical; border-radius:8px; line-height:1.5; }
 /* Developer settings */
@@ -510,10 +515,13 @@ function composeChooser(doc, { soul, agents, canChoose, choose, query, note }) {
  *               spawnInFlight() — Spec D (#383): { instance, show() } while a background spawn of this soul is in
  *                 flight in this window, else null. The press stays disabled and a polite line says so, with a
  *                 link to its pending row; the host calls syncInFlight() when the store changes.
+ *               deployments() — #482: the view's deployments (/api/panel `deployments`). With two or more the
+ *                 Deployment field (spawn-deployment-field.mjs) chooses where to spawn; every spawn request
+ *                 addresses a deployment, never the view.
  */
 export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, instances, canChoose, choose, close, owns,
   draft = {}, catalogNote = '', onCreated = async () => {}, remoteSpawn = async () => {}, servers = [], serverFacts = () => [], serverRows = async () => [],
-  delay: debounce = PREVIEW_DEBOUNCE_MS, busyDelay = PREVIEW_BUSY_RETRY_MS, layout = 'picker', handoff = null, spawnInFlight = null }) {
+  delay: debounce = PREVIEW_DEBOUNCE_MS, busyDelay = PREVIEW_BUSY_RETRY_MS, layout = 'picker', handoff = null, spawnInFlight = null, deployments = () => [] }) {
   const doc = modal.ownerDocument, el = (tag, text, cls) => node(doc, tag, text, cls);
   const titleId = 'spawn-dialog-title';
   const dialog = el('section', undefined, 'spawn-dialog');
@@ -734,6 +742,31 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   form.append(body, footer); // the footer stays in view while the body scrolls
   const columns = el('div', undefined, 'spawn-columns'); columns.append(preview, chooser, form);
   dialog.append(header, columns); modal.append(dialog);
+  // ── #482 Deployment (renderer/spawn-deployment-field.mjs) ───────────────────────────────────────────
+  // With two or more deployments in the view the field replaces "Where to run" and comes first, before
+  // Name: a remote deployment spawns through its server, a local one through the preview-bound
+  // prepare/apply at ?ws=<its id>. Why Spawn is blocked there is said in the footer only; the preview
+  // column's "Runs on" row names the chosen deployment.
+  // The view's deployments as the dialog opened (a dialog belongs to one view; a newer list is the next dialog's).
+  const deploymentsAtOpen = (() => { try { return spawnDeployments(deployments()); } catch { return []; } })();
+  const deploymentField = createSpawnDeploymentField(doc, { ctx, soul, viewId: workspace()?.id, deployments: deploymentsAtOpen,
+    preferred: draft.restore?.deployment ?? null, storage: (() => { try { return doc.defaultView?.localStorage ?? null; } catch { return null; } })(), rove: roveSegment,
+    onChange: ({ moved, programmatic }) => {
+      if (!current()) return;
+      // The selector is the chosen deployment's catalog row, known once its catalog answered.
+      const asked = deploymentField.selector(), rooted = asked.agentsRoot !== selector.agentsRoot;
+      if (rooted) selector = asked;
+      // Another deployment is another catalog, its own previews and its own instances: re-read from scratch.
+      if (moved || rooted) { shown = settled = null; void fillConfigs(); void fillRelatives(); if (programmatic) dropPress(); }
+      schedule(0);
+    } });
+  if (deploymentField) { placeField.remove(); nameField.before(deploymentField.element); }
+  /** The deployment every spawn request addresses (the preview and prepare/apply echo it): the chosen one,
+   * else the view's only one, else its primary; a view id only while none is known. */
+  const address = () => deploymentField?.value() ?? (deploymentsAtOpen.length === 1 ? deploymentsAtOpen[0].id : null) ?? workspace()?.primary ?? workspace()?.id;
+  /** Relation anchors: the chosen deployment's rows only (relations never cross deployments). */
+  const deploymentRows = rows => deploymentField ? rows.filter(i => i?.deployment?.id === deploymentField.value()) : rows;
+  // ── end #482 Deployment ─────────────────────────────────────────────────────────────────────────────
   let layoutNow = 'picker';
   /** Switch layout in place: the other column goes under [hidden]; every typed value stays. */
   function setLayout(name) {
@@ -775,7 +808,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     const keep = [...relTo.options].find(o => o.value && o.value === picked[0] && o.dataset.root === picked[1]);
     if (keep) keep.selected = true;
   }
-  paintRelatives(instances() || []);
+  paintRelatives(deploymentRows(instances() || []));
 
   // ── state
   // shown: the latest read's settled answer, data or failure ({ key, value, data|failure }); settled: the
@@ -791,13 +824,13 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   let flight = null, phase = 'idle', intent = null, submitted = false, delivered = false, modelsReq = 0, configsReq = 0, remoteBusy = false, modelsFor = null;
   let notice = null; // a refusal from the last Spawn stays visible until the operator edits
   const current = () => alive && owns() && mount === workspaceGeneration();
-  const remoteTarget = () => soul.server || server.value || '';
+  const remoteTarget = () => deploymentField ? deploymentField.server() : soul.server || server.value || '';
   // Each server's registered group (where `spawn --server` goes), from the route's facts; its label for the hint.
   const serverGroups = new Map(), serverNames = new Map();
   async function fillRelatives() {
-    const target = soul.server ? '' : server.value, ticket = ++relativesReq, group = serverGroups.get(target);
+    const target = soul.server || deploymentField ? '' : server.value, ticket = ++relativesReq, group = serverGroups.get(target);
     relativesPending = !!target; syncButton();
-    let rows = instances() || [];
+    let rows = deploymentRows(instances() || []);
     if (target) { try { rows = group ? await serverRows(group.group) : []; } catch { rows = []; } }
     if (ticket !== relativesReq || !current()) return;
     relativesPending = false;
@@ -807,9 +840,9 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     const target = remoteTarget();
     serverHint.textContent = target ? `Runs on ${serverNames.get(target) || soul.repoName || target}. Its teams and defaults come from that machine's workspace.` : '';
   }
-  const local = () => !remoteTarget() && !workspace()?.remote && !workspace()?.server;
+  const local = () => !remoteTarget() && (!!deploymentField || !workspace()?.remote && !workspace()?.server);
   // The server admits the workspace against its own registry (absolute scope, local); /api/panel carries only the id.
-  const previewable = () => local() && previewSupported(cli()) && !!workspace()?.id && soul.work !== 'attached';
+  const previewable = () => local() && previewSupported(cli()) && !!address() && soul.work !== 'attached';
   const applicable = () => previewable() && spawnApplySupported(cli()) && !soul.captured;
   const busy = () => !!flight || remoteBusy || handedOff;
   const effectiveWork = () => worktree.checked && soul.work === 'checkout' ? 'worktree' : soul.work;
@@ -821,7 +854,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const joinLabels = () => teamsOffered() ? teamsNow.filter(t => joinable(t) && joinPicked.has(t.label)).map(t => t.label) : [];
   // The preview for these choices must bind exactly the ticked teams (settings echo).
   const joinBound = data => { const labels = joinLabels(); return !labels.length || data?.messaging?.join === labels.join(','); };
-  const selector = { soul: soul.name, agentsRoot: soul.agentsRoot };
+  // The chosen deployment's own catalog row (#482): the root differs per deployment.
+  let selector = deploymentField?.selector() ?? { soul: soul.name, agentsRoot: soul.agentsRoot };
   /** The facts a preview depends on from outside the form: the CLI (identity and features), the
    * workspace and the relation anchor's roster rows. sync() re-reads only when one changed: the
    * roster polls every few seconds, and a routine poll must never supersede a read in flight
@@ -829,7 +863,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const factsKey = () => {
     const c = cli(), w = workspace(), anchor = rel.value === 'unrelated' ? null : relTo.value;
     return JSON.stringify([c?.ok ?? null, c?.bin ?? null, c?.version ?? null, c?.spawnPreviewApi ?? null, c?.spawnApplyApi ?? null, c?.features ?? null,
-      w?.id ?? null, w?.remote ?? null, w?.server ?? null,
+      w?.id ?? null, w?.remote ?? null, w?.server ?? null, address() ?? null,
       anchor === null ? null : (instances() || []).filter(i => i.instance === anchor).map(i => [i.instance, i.agent, i.agentsRoot, i.home ?? null, i.remote ?? null, i.server ?? null])]);
   };
   let factsSeen = factsKey();
@@ -870,7 +904,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     const valid = previewChoices(out);
     return valid ? { value: valid } : { error: 'A value here is not a valid spawn option (no spaces or leading dashes).', field: 'option' };
   }
-  const choiceKey = value => JSON.stringify(value);
+  // The deployment is part of what a preview answers (#482): an answer for another deployment never matches.
+  const choiceKey = value => JSON.stringify([address() ?? null, value]);
   /** A read is scheduled, or the latest one is in the air: what is shown is not yet for these choices. */
   const readDue = () => !!timer || latest?.ticket === serial;
   /** Two choice values agree on these fields (absent = absent). */
@@ -978,6 +1013,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
    * shape, or why there is none. */
   function previewState() {
     const draftChoice = choices(), key = choiceKey(draftChoice.value);
+    if (deploymentField?.blocked()) return { kind: 'empty', text: '' }; // the footer says why, once
     if (!local()) return { kind: 'empty', text: `Decided on ${remoteTarget()} when it spawns.` };
     const said = answer => {
       if (answer.data) return { kind: 'data', data: answer.data, key: answer.key };
@@ -1000,20 +1036,23 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     // The Name fact is the form's own while a read is due (nameNow), so it is never a stale name.
     const name = state.kind === 'data' ? nameNow().name : null;
     // The whole (bounded) projection: a re-read for the same choices may answer different facts.
-    const signature = state.kind === 'data' ? `data:${state.key}:${name}:${JSON.stringify(data)}` : `${state.kind}:${state.text || ''}`;
+    // #482: the chosen deployment's row, first (as the field is), whatever the preview's state.
+    const runsOn = deploymentField?.runsOn() ?? null;
+    const signature = `${runsOn}:${state.kind === 'data' ? `data:${state.key}:${name}:${JSON.stringify(data)}` : `${state.kind}:${state.text || ''}`}`;
     preview.setAttribute('aria-busy', String(state.kind === 'reading' || !!state.updating));
     updatingMark.hidden = !state.updating;
     if (signature === previewDrawn) return;
     previewDrawn = signature; factsBody.replaceChildren();
+    const facts = el('dl', undefined, 'spawn-preview-facts');
+    const fact = (label, ...value) => { const dd = el('dd'); dd.append(...value); facts.append(el('dt', label), dd); };
+    if (runsOn) { fact('Runs on', runsOn); if (state.kind !== 'data') factsBody.append(facts); }
     if (state.kind === 'reading') {
       const skeleton = el('div', undefined, 'spawn-preview-skeleton'); skeleton.setAttribute('aria-hidden', 'true');
       for (let i = 0; i < 4; i++) skeleton.append(el('span'), el('span'));
       factsBody.append(skeleton, el('p', 'Reading the preview…', 'workspace-sr-only spawn-preview-reading'));
     } else if (state.kind === 'failure') factsBody.append(el('p', state.text, 'spawn-preview-failure'));
-    else if (state.kind === 'empty') factsBody.append(el('p', state.text, 'spawn-preview-empty'));
+    else if (state.kind === 'empty') { if (state.text) factsBody.append(el('p', state.text, 'spawn-preview-empty')); }
     else {
-      const facts = el('dl', undefined, 'spawn-preview-facts');
-      const fact = (label, ...value) => { const dd = el('dd'); dd.append(...value); facts.append(el('dt', label), dd); };
       const muted = text => el('span', text, 'muted');
       fact('Name', name ? el('span', name, 'mono') : muted('numbered by the kernel'));
       if (data.work) fact('Works in', worksInText(data.work));
@@ -1064,7 +1103,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     spawn.setAttribute('aria-busy', String(!!(flight || pressed)));
     const recovering = ['unknown', 'pending'].includes(phase);
     spawn.disabled = !current() || busy() || !!pressed || !!blocking || ['complete', 'partial', 'incomplete'].includes(phase)
-      || !recovering && (!!draftChoice.error || defaultBlocked() || (local() ? !applicable() || refused : false));
+      || !recovering && (!!draftChoice.error || defaultBlocked() || !!deploymentField?.blocked() || (local() ? !applicable() || refused : false));
   }
   /** A problem shows one plain sentence; its code and technical text wait behind Details. */
   function setStatus(text, error = false, problem = null, ok = false) {
@@ -1091,6 +1130,10 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   }
   async function read() {
     if (!current()) return;
+    // #482: the deployments' catalogs are still read (the default may move): the read follows when they land.
+    if (deploymentField?.pending()) return;
+    // The chosen deployment does not offer this soul: nothing to read, and Spawn says why.
+    if (deploymentField?.blocked()) { endPress(); shown = settled = null; setStatus(`${deploymentField.blockText()}.`, true); render(); return; }
     // A read that cannot answer the pressed choices ends the press: it never spawns later on its own.
     if (!local()) { endPress(); shown = settled = null; setStatus(''); render(); return; }
     if (!previewable()) {
@@ -1103,7 +1146,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     // Nothing to read until the form is valid; what settled stays on screen (the field says what to fix).
     if (draftChoice.error) { endPress(); setStatus(''); render(); return; }
     // Never queued behind a superseded read: that one's answer is discarded when it lands.
-    const ticket = serial, value = draftChoice.value, key = choiceKey(value), ws = workspace().id, owner = mount;
+    const ticket = serial, value = draftChoice.value, key = choiceKey(value), ws = address(), owner = mount, asked = selector;
     latest = { ticket, key }; inFlight++; retryOnSettle = false; factsSeen = factsKey(); // the facts this read is based on
     // Only the first read says so in the footer; afterwards the column's "Updating…" is the signal. A
     // preview failure no longer describes these choices (a Spawn refusal, the notice, stays until an edit).
@@ -1112,13 +1155,13 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     syncButton();
     let next = null;
     try {
-      const response = await postJson(ctx, `/api/workspace-spawn-preview?ws=${encodeURIComponent(ws)}`, { action: 'preview', selector, choices: value });
+      const response = await postJson(ctx, `/api/workspace-spawn-preview?ws=${encodeURIComponent(ws)}`, { action: 'preview', selector: asked, choices: value });
       if (!alive) return;
       if (response?.spawnPreviewViewApi !== 1) next = { key, value, failure: previewFailure('E_CLI_PROTOCOL').reason };
       else if (response.status !== 'available') next = { key, value, failure: reasonOf(response.reason) };
       else {
         const target = previewTarget(response.target), data = target && previewData(response.data, target);
-        next = data && target.workspace === ws && target.selector.soul === soul.name && target.selector.agentsRoot === soul.agentsRoot
+        next = data && target.workspace === ws && target.selector.soul === asked.soul && target.selector.agentsRoot === asked.agentsRoot
           ? { key, value, data } : { key, value, failure: previewFailure('E_CLI_PROTOCOL').reason };
       }
     } catch (error) { next = { key, value, failure: previewFailure(error?.code === 'E_FORBIDDEN_FRAME' ? 'E_FORBIDDEN_FRAME' : 'E_CLI_FAILED').reason }; }
@@ -1196,22 +1239,23 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       if (handoff) {
         if (handedOff) return;
         const draftNow = { purpose: purpose.value, prefixed: prefixed.checked, task: task.value, layout: 'scoped',
-          restore: { choices: structuredClone(draftChoice.value), ...(wakeValue ? { wake: structuredClone(wakeValue) } : {}) } };
+          restore: { choices: structuredClone(draftChoice.value), ...(wakeValue ? { wake: structuredClone(wakeValue) } : {}), ...(deploymentField ? { deployment: address() } : {}) } };
         handedOff = true; syncButton();
         let taken = false;
-        try { taken = handoff({ token: handoffToken, workspace: workspace().id, selector: { ...selector }, input: prepareInput, decision: structuredClone(shown.data.decision), relation: draftChoice.value.relation, draft: draftNow }) === true; }
+        // Owned by the view on screen, addressed to the chosen deployment (#482).
+        try { taken = handoff({ token: handoffToken, workspace: workspace().id, deployment: address(), selector: { ...selector }, input: prepareInput, decision: structuredClone(shown.data.decision), relation: draftChoice.value.relation, draft: draftNow }) === true; }
         catch { taken = false; }
         if (!taken && alive) { handedOff = false; showProblem(spawnApplyReason('E_BUSY'), 'spawn'); syncButton(); }
         return;
       }
     }
-    const ws = workspace().id, token = {}, connection = ctx.connectionGeneration?.() ?? 0, owner = mount;
+    const ws = address(), sel = selector, token = {}, connection = ctx.connectionGeneration?.() ?? 0, owner = mount;
     const valid = () => current() && owner === mount && flight === token && connection === (ctx.connectionGeneration?.() ?? 0);
     flight = token; phase = recovering ? 'checking' : 'preparing'; setStatus(recovering ? 'Checking the submitted spawn…' : 'Spawning…'); syncButton();
     const request = async body => {
       const raw = await postJson(ctx, `/api/spawn?ws=${encodeURIComponent(ws)}`, body);
       if (!valid()) return null;
-      const view = spawnApplyView(raw, { workspace: ws, ref: body.spawnRef, selector });
+      const view = spawnApplyView(raw, { workspace: ws, ref: body.spawnRef, selector: sel });
       if (!view || view.preview && intent && body.action !== 'prepare' && !sameSpawnDecision(view.preview.decision, intent.preview.decision)) throw Object.assign(Error(), { code: 'E_CLI_PROTOCOL' });
       return view;
     };
@@ -1241,7 +1285,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       phase = view.status;
       if (['complete', 'partial'].includes(phase)) {
         setStatus(view.reason?.message || `Created ${view.receipt.instance}${view.receipt.launched ? '' : ' — not launched'}.`, phase === 'partial');
-        if (!delivered) { delivered = true; await onCreated(view, () => current() && owner === mount); }
+        if (!delivered) { delivered = true; deploymentField?.remember(); await onCreated(view, () => current() && owner === mount); }
       } else if (phase === 'incomplete') {
         const problem = spawnProblem(view.reason, 'spawn');
         setStatus(`${view.incomplete.instance} was created but didn’t finish starting. Open it from the instance list instead of spawning again.`, true, problem);
@@ -1271,9 +1315,11 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     if (draftChoice.error) { setStatus(draftChoice.error, true); return; }
     remoteBusy = true; syncButton();
     try {
-      const outcome = await remoteSpawn({ server: remoteTarget(), purpose: purpose.value.trim(), task: task.value, harness: runtime.value, model: model.value.trim(),
+      const outcome = await remoteSpawn({ server: remoteTarget(), ...(deploymentField ? { agentsRoot: selector.agentsRoot, deployment: address() } : {}),
+        purpose: purpose.value.trim(), task: task.value, harness: runtime.value, model: model.value.trim(),
         backend: backend.value, launchConfig: config.value, yolo: yolo.value === '' ? undefined : yolo.value === 'true', wake: wakeValue,
         relation: rel.value, relativeTo: relTo.value, relativeRoot: relTo.selectedOptions[0]?.dataset.root || '', status: setStatus, button: spawn });
+      if (outcome?.created) deploymentField?.remember(); // the host created it (the dialog may already be closed)
       if (outcome?.created && alive) phase = 'complete'; // created on the host: never a second spawn
     } finally { remoteBusy = false; if (alive) syncButton(); }
   }
@@ -1325,9 +1371,10 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     fillSelect(config, [['', config.options[0]?.textContent || 'Default']]);
     if (!local() || !cli()?.features?.includes('launch-config') || !current()) return;
     try {
-      const d = await postJson(ctx, `/api/launch-configs${wsQuery()}`, { action: 'list', selector });
-      if (!current() || ticket !== configsReq) return;
-      if (d?.selected?.soul !== soul.name || d.selected.agentsRoot !== soul.agentsRoot || !Array.isArray(d.configurations)) return;
+      const asked = selector, ws = address();
+      const d = await postJson(ctx, ws ? `/api/launch-configs?ws=${encodeURIComponent(ws)}` : `/api/launch-configs${wsQuery()}`, { action: 'list', selector: asked });
+      if (!current() || ticket !== configsReq || asked !== selector) return;
+      if (d?.selected?.soul !== asked.soul || d.selected.agentsRoot !== asked.agentsRoot || !Array.isArray(d.configurations)) return;
       for (const row of d.configurations.slice(0, 200)) if (row && typeof row.name === 'string' && typeof harnessOf(row) === 'string') {
         const o = el('option', `${row.name} · ${runtimeName(harnessOf(row))}`); o.value = row.name; config.append(o);
       }
@@ -1465,7 +1512,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   setLayout(layout); render();
   return {
     /** Begin reading once the host owns the attached dialog. */
-    start() { if (!current()) return; schedule(0); void fillModels(); void fillConfigs(); },
+    start() { if (!current()) return; deploymentField?.start(); schedule(0); void fillModels(); void fillConfigs(); },
     dialog, search, purpose, spawn, status, preview, changeSoul,
     /** Spec E: focus Name (caret at the end), a section key's jump, and the chords the hints show. */
     focusName, jump, setShortcuts,
@@ -1486,7 +1533,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     },
     /** The background spawn store changed: re-read whether a spawn of this soul is in flight. */
     syncInFlight() { if (alive) syncButton(); },
-    closePopups() { models.close(); runtimePicker.close(); },
-    dispose() { alive = false; clearTimeout(timer); serial++; pressed = null; modelsReq++; configsReq++; models.dispose(); runtimePicker.dispose(); form.removeEventListener('input', onEdit); form.removeEventListener('change', onEdit); },
+    closePopups() { models.close(); runtimePicker.close(); deploymentField?.closePopup(); },
+    dispose() { alive = false; clearTimeout(timer); serial++; pressed = null; modelsReq++; configsReq++; deploymentField?.dispose(); models.dispose(); runtimePicker.dispose(); form.removeEventListener('input', onEdit); form.removeEventListener('change', onEdit); },
   };
 }

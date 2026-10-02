@@ -2,6 +2,7 @@
 // render (shell.mjs renderContextRoster + pendingSpawnRow + announceSpawn) against a stub store;
 // no shell startup, HTTP, Electron, CLI or session.
 import test from "node:test";
+import { viewContext } from "./helpers/view-context.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
@@ -34,7 +35,7 @@ function fixture(t, rows, extra = {}) {
     instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, runAction: assert.fail,
     applyChordTitles() {}, updateActiveContexts() {}, getBinding: () => null, formatChord: c => c, isMac: true,
     contextRosterEl: doc.querySelector("#instance-roster"), contextFilter: "", contextWorkspace: "A",
-    rosterState: { hasData: true, state: "ready" }, rosterStale: false, contextDeploymentNote: null,
+    rosterState: { hasData: true, state: "ready" }, rosterStale: false, contextDeploymentNote: null, ...viewContext(),
     currentWorkspace: () => "A", workspaceGeneration: () => 0, collapsedInstances: new Set(),
     rosterTip: { bind() {}, hide() {}, sync() {} }, rosterTipFacts: () => ({}), rosterPrs: { get: () => null, refresh() {} },
     spawnJobs: { rows: ws => ws === "A" ? rows() : [], announce: id => !announced.has(id) && !!announced.add(id), check: id => checked.push(id), ...(extra.jobs || {}) },
@@ -67,6 +68,18 @@ test("a pending spawn shows under its parent: “Spawning…” text and a spinn
   button.click(); // openTerminalTab / openInstanceStart would fail the test
   assert.equal(button.closest(".ctx-tree-row").querySelector(".ctx-instance-actions"), null, "no live-instance actions");
   assert.match(u.doc.querySelector(".ctx-count").textContent, /^3 running$/, "the pending row is not counted");
+});
+
+test("a background spawn into the view's second deployment sits under that deployment's heading (#482)", async t => {
+  // The row as spawnJobs.rows() hands it over: `deployment` is already `{ id }`, kept as is.
+  const deployments = [{ id: "/a", path: "/a", local: true, machine: null, status: "observed", primary: true },
+    { id: "/b", path: "/b", local: true, machine: null, status: "observed" }];
+  const onA = roster.map(r => ({ ...r, deployment: { id: "/a" } }));
+  const u = fixture(t, () => [pending({ parentInstance: undefined, deployment: { id: "/b" } })], { context: { contextDeployments: deployments } });
+  u.render([...onA, instance("dev-b", undefined, { deployment: { id: "/b" } })]);
+  const order = [...u.list.children].map(el => el.classList.contains("ctx-deployment") ? `#${el.querySelector(".ctx-deployment-label").textContent}`
+    : el.querySelector(".ctx-name")?.textContent).filter(Boolean);
+  assert.deepEqual(order, ["#This Mac · a", "root", "child-a", "solo", "#This Mac · b", "dev-b", "dev-new"]);
 });
 
 test("announced once through a polite live region", async t => {

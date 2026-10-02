@@ -16,7 +16,7 @@ import { existsSync, readFileSync, realpathSync, writeFileSync, lstatSync, statS
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { apiUrl, apiInit, classifyApiRoute, createUnservedRefusal } from "./api-url.mjs";
+import { apiUrl, apiInit, classifyApiRoute, createUnservedRefusal, servedSelectors } from "./api-url.mjs";
 import { forgeProxyOptions, FORGE_EPOCH_HEADER, installForgeAuthHandlers, trustedForgeFrame } from "./forge-proxy.mjs";
 import { createGhRunner, forgeEnvironment } from "./forge-cli.mjs";
 import { createForgeAuthBroker, verifyAuthCli } from "./forge-auth.mjs";
@@ -113,7 +113,9 @@ const serverHost = createServerHost({
     const child = spawn(process.execPath, [bin, "start", "--port", String(onPort),
       ...dirs.flatMap((d) => ["--dir", d]), ...(chosen ? ["--oats-bin", chosen] : []),
       // Where the PATH it inherits came from, for /api/cli diagnostics.
-      "--path-source", loginPath.source, ...(loginPath.error ? ["--path-error", loginPath.error] : [])], {
+      "--path-source", loginPath.source, ...(loginPath.error ? ["--path-error", loginPath.error] : []),
+      // The remembered remote workspace identities (#482): the server owns the file, written atomically.
+      "--remote-identity", REMOTE_IDENTITY_FILE()], {
       stdio: ["ignore", "pipe", "pipe"],
       cwd: WORKSPACE,
       // process.execPath is the packaged Electron executable. The backend
@@ -141,7 +143,7 @@ async function panelWorkspaces() {
     if (!r.ok) return null;
     const d = await r.json();
     const list = d.workspaces || [];
-    allowedWs = new Set(list.map((w) => w.id));
+    allowedWs = servedSelectors(list);
     return list;
   } catch { return null; }
 }
@@ -235,6 +237,8 @@ function guard(e) { if (!trustedFrame(e)) throw new Error("forbidden: untrusted 
 const wsGens = createGenerations();
 const RECENTS_FILE = () => join(app.getPath("userData"), "workspace-recents.json");
 const OPEN_WORKSPACES_FILE = () => join(app.getPath("userData"), "workspace-open.json");
+// The last workspace identity each remote roster group reported (server/remote-identity.mjs, #482).
+const REMOTE_IDENTITY_FILE = () => join(app.getPath("userData"), "remote-identity.json");
 
 // A workspace-model v2 deployment is a directory holding a regular (lstat,
 // non-following) oats-local.yaml. Existence only: never parsed here.
@@ -489,7 +493,7 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   // Remote discovery can finish after startup. Accept the same server-owned
   // choices the menu receives, without adding requests to workspace polling.
   if (epoch === serverEpoch && !serverHost.inTransition() && r.ok && route === 'panel' && Array.isArray(json?.workspaces)) {
-    allowedWs = new Set(json.workspaces.map((w) => w?.id).filter((id) => typeof id === "string"));
+    allowedWs = servedSelectors(json.workspaces);
   }
   return { ok: r.ok, status: r.status, body: json };
   } catch (error) {

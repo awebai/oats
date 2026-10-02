@@ -10,6 +10,7 @@ import { forgeFailure } from '../renderer/forge-contract.mjs';
 import { lifecycleFailure } from '../renderer/lifecycle-contract.mjs';
 import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
 import { context, request, stopPlan, retirePlan, stopReceipt, retireReceipt, envelope } from './helpers/lifecycle-fixture.mjs';
+import { deploymentDoubles } from './helpers/deployment-doubles.mjs';
 function http({ remote = false, missing = false, routed = false, entries = ['lifecycle-plans'], apply = null } = {}) {
   const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const start = source.indexOf('const send = (res, code, body, type'), end = source.indexOf('\nserver.on("error",');
@@ -24,7 +25,7 @@ function http({ remote = false, missing = false, routed = false, entries = ['lif
     return envelope(args.phase === 'plan' ? args.operation === 'stop' ? stopPlan() : retirePlan()
       : args.operation === 'stop' ? stopReceipt(args) : retireReceipt(args));
   } });
-  const deps = { createServer: fn => fn, lifecycleRequest: service, cliState: ctx.cli, workspaces: () => [ctx.workspace], ctxs: ['/Users/me/work'],
+  const deps = { createServer: fn => fn, lifecycleRequest: service, cliState: ctx.cli, ...deploymentDoubles(() => [ctx.workspace]), ctxs: ['/Users/me/work'],
     snapshot: { byWs: new Map([['team', { instances: ctx.instances }]]) }, observeMutation() { refreshed.local++; },
     remoteLoop: { request() { refreshed.remote++; } },
     resolveInstanceOr: assert.fail, panelData: assert.fail, snapshotPanel: assert.fail, collectNow: assert.fail };
@@ -125,7 +126,7 @@ test('remote lifecycle over HTTP: a row of another group of the same server is n
   const groupB = { id: 'remote:build:bbbb', name: 'Build box', scope: '/srv/b', remote: true, server: 'build' };
   const row = { ...ctx.instances[0], server: 'build', addressable: true };
   const deps = { createServer: fn => fn, lifecycleRequest: createLifecycleBoundary({ invoke: async (...args) => { calls.push(args); return envelope(stopPlan()); } }),
-    cliState: { ...ctx.cli, remote: ['lifecycle-plans'] }, workspaces: () => [groupA, groupB], ctxs: ['/Users/me/work'],
+    cliState: { ...ctx.cli, remote: ['lifecycle-plans'] }, ...deploymentDoubles(() => [groupA, groupB]), ctxs: ['/Users/me/work'],
     snapshot: { byWs: new Map([[groupA.id, { instances: [] }], [groupB.id, { instances: [row] }]]) }, observeMutation: assert.fail, remoteLoop: { request: assert.fail },
     resolveInstanceOr: assert.fail, panelData: assert.fail, snapshotPanel: assert.fail, collectNow: assert.fail };
   const handler = new Function(...Object.keys(deps), `${source.slice(start, end)}\nreturn server;`)(...Object.values(deps));

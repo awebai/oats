@@ -13,6 +13,7 @@ let nextMountId = 0;
 import { runtimeState } from "../instance-presentation.mjs";
 import { wsQuery, onWorkspaceChange, escapeHtml } from "./common.mjs";
 import { icon } from "../shell-icons.mjs";
+import { createDeploymentScopeLine } from "../deployment-scope-line.mjs";
 
 const esc = (s) => escapeHtml(s ?? ""); // the one content+attribute escaper
 
@@ -22,6 +23,7 @@ const CSS = `
 .brain-bar { display: flex; align-items: center; gap: 10px; height: var(--bar-h, 48px); flex: none; padding: 0 14px;
              border-bottom: 1px solid var(--border); background: var(--surface); }
 .brain-bar label { color: var(--muted); font-size: 12px; }
+.brain > .brain-scope { flex: none; padding: 6px 14px; border-bottom: 1px solid var(--border); background: var(--surface); }
 .brain-bar select { background: var(--surface-2); color: var(--fg); border: 1px solid var(--border); border-radius: 8px;
                     padding: 5px 8px; font: inherit; max-width: 320px; }
 .brain-bar select:hover, .brain-bar select:focus-visible { border-color: var(--accent); outline: none; }
@@ -203,7 +205,10 @@ export async function mount(el, ctx) {
   bar.append(sel, desc);
   const body = document.createElement("div");
   body.className = "brain-body";
-  root.append(style, bar, body);
+  // #482: in a view of two or more deployments, the deployment this brain is read from (the primary).
+  const scope = createDeploymentScopeLine(document, pinned ? { workspace: () => ctx.workspace } : {});
+  scope.element.classList.add("brain-scope");
+  root.append(style, bar, scope.element, body);
   el.append(root);
 
   const status = (msg, glyph) => { body.innerHTML = `<div class="brain-status" style="flex:1">${glyph ? `<span class="big">${glyph}</span>` : ""}${esc(msg)}</div>`; };
@@ -270,7 +275,7 @@ export async function mount(el, ctx) {
   const dispose = () => {
     gen++;
     rosterGen++;
-    unsubWs?.(); unsubWs = null;
+    unsubWs?.(); unsubWs = null; scope.dispose();
     root?.remove(); root = null;
     mounts.delete(dispose);
   };

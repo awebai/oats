@@ -576,7 +576,7 @@ ${spawnDialogCSS}</style>
     // Workspace switch owns the whole surface: invalidate any A spawn modal
     // immediately, remove its DOM before B loads, and clear A's agentsRoot.
     s.spawnOp++;
-    s.rosterReq++; s.rosterGen = null; s.souls = { agents: [] }; s.panelInstances = [];
+    s.rosterReq++; s.rosterGen = null; s.souls = { agents: [] }; s.panelInstances = []; s.spawnDeployments = []; s.spawnViews = [];
     s.discovery.reset();
     s.inspector.close(); closeCapability(s); s.page.close();
     closeSpawnModal(s, { repaint: false }); // the switch replaces the grid below
@@ -657,6 +657,9 @@ export async function refresh(s, { user = false } = {}) {
   s.panelInstances = panel.instances || []; // reference-instance picker source
   s.workspace = panel.workspace || null; // reported context, never derived from a display label
   s.deployment = panel.deployment || null; // kernel observation state (status/header or unavailable reason)
+  // #482: the view's deployments (the spawn dialog's Deployment field) and every view (Where to run's facts).
+  s.spawnDeployments = Array.isArray(panel.deployments) ? panel.deployments : [];
+  s.spawnViews = Array.isArray(panel.workspaces) ? panel.workspaces : [];
   s.syncModalFacts?.();
   const select = s.q("wssel");
   if (select && typeof select.replaceChildren === "function") {
@@ -1108,6 +1111,25 @@ function closeSpawnModal(s, { restoreFocus = false, repaint = true } = {}) {
   if (spawn) { for (const c of gridCards(s)) rove(c, c === card); spawn.focus(); } else card.focus();
 }
 
+/** "Where to run" (one-deployment views): every remote roster group's facts (reached, registered), whichever
+ * view holds it. /api/team-members answers one view's groups (#482), so each view with a remote deployment is
+ * read (held observations, no command); a group is kept once. Before the panel lists views, the current one. */
+export async function serverFacts(s) {
+  const views = (s.spawnViews || []).filter(v => typeof v?.id === "string" && Array.isArray(v.deployments)
+    && v.deployments.some(d => typeof d === "string" && d.startsWith("remote:"))).slice(0, 32);
+  const read = path => apiJson(s.ctx, path).then(d => Array.isArray(d?.servers) ? d.servers : [], () => []);
+  const answers = views.length ? await Promise.all(views.map(v => read(`/api/team-members?ws=${encodeURIComponent(v.id)}`))) : [await read(`/api/team-members${wsQuery()}`)];
+  const seen = new Set();
+  return answers.flat().filter(f => f && typeof f.group === "string" && !seen.has(f.group) && seen.add(f.group));
+}
+/** A remote group's rows, for the relation picker of a chosen server: `/api/panel?ws=remote:<group>` answers
+ * the VIEW holding that group (#482), so only the group's own deployment's rows (relations never cross machines). */
+export async function serverRows(s, group) {
+  const id = `remote:${group}`;
+  const d = await apiJson(s.ctx, `/api/panel?ws=${encodeURIComponent(id)}`);
+  return (Array.isArray(d?.instances) ? d.instances : []).filter(i => !i?.deployment || i.deployment.id === id);
+}
+
 /** The spawn dialog (renderer/spawn-dialog.mjs) hosted as a modal: role=dialog +
  * aria-modal, Tab focus trap, Esc/backdrop/× close, focus restored to the
  * opener. Choosing another soul in the dialog reopens it for that soul and
@@ -1144,8 +1166,10 @@ function openSpawnModal(s, a, draft = {}) {
     },
     servers: a.server ? [] : () => apiJson(s.ctx, "/api/servers").then(d => Array.isArray(d?.servers) ? d.servers : []),
     // "Where to run": each server's disabled state and, once chosen, its rows for the relation picker (held observations only).
-    serverFacts: () => a.server ? [] : apiJson(s.ctx, `/api/team-members${wsQuery()}`).then(d => Array.isArray(d?.servers) ? d.servers : []),
-    serverRows: group => apiJson(s.ctx, `/api/panel?ws=${encodeURIComponent(`remote:${group}`)}`).then(d => Array.isArray(d?.instances) ? d.instances : []),
+    serverFacts: () => a.server ? [] : serverFacts(s),
+    serverRows: group => serverRows(s, group),
+    // #482: the view's deployments; with two or more the Deployment field replaces "Where to run".
+    deployments: () => s.spawnDeployments || [],
     remoteSpawn: fields => doSpawn(s, fields),
     // Spec C: a confirmed local press is handed to the shell's spawn-jobs store and the dialog closes at
     // once; the store owns the transaction, the pending roster row, the outcome and the kept draft.
@@ -1297,8 +1321,10 @@ export async function waitForInstanceInPanel(s, ref, isCurrent, { tries = 20, de
   // the auto-open can never race the tmux registration. A remote row opens by
   // server and home: it is ready once running and addressable (tmux is the host's).
   // `present`: any row of that identity will do (a place to show, not a terminal to open).
+  // `ref.deployment` (#482): only that deployment's row (a view's panel holds every deployment's rows).
   const matches = (x) => x.instance === ref.instance
     && (x.server || "") === (ref.server || "")
+    && (!ref.deployment || !x.deployment || x.deployment.id === ref.deployment)
     && (strict ? !!ref.home && x.home === ref.home : !ref.home || !x.home || x.home === ref.home)
     && (strict ? !!ref.agentsRoot && x.agentsRoot === ref.agentsRoot : !ref.agentsRoot || !x.agentsRoot || x.agentsRoot === ref.agentsRoot)
     && (!strict || !ref.agent || x.agent === ref.agent)
@@ -1335,14 +1361,19 @@ export async function handOff(s, { workspace, ref, present = false, then }) {
   return visible;
 }
 
-/** A Teams-board member (spec 02): go to its workspace and its row, then open its terminal ('open') or
- * select the row and move keyboard focus to it ('show'). Every action lives on the roster row. */
-function teamMemberAction(s, action, member) {
-  const ref = { instance: member.instance, home: member.home, agentsRoot: member.agentsRoot, ...(member.server ? { server: member.server } : {}) };
-  return handOff(s, { workspace: member.workspace, ref, present: action === "show", then: row => {
+/** A Teams-board member (spec 02): its row in the view on screen, then open its terminal ('open') or
+ * select the row and move keyboard focus to it ('show'). Every action lives on the roster row.
+ * #482: the board lists the members of the view on screen, and `member.workspace` is the member's
+ * DEPLOYMENT id: the action stays in this view (never a switch to a deployment id) and waits for the
+ * row of that deployment; the row's own deployment addresses it, the view owns it. */
+export function teamMemberAction(s, action, member) {
+  const ref = { instance: member.instance, home: member.home, agentsRoot: member.agentsRoot, ...(member.server ? { server: member.server } : {}),
+    ...(typeof member.workspace === "string" && member.workspace ? { deployment: member.workspace } : {}) };
+  const view = currentWorkspace();
+  return handOff(s, { workspace: view, ref, present: action === "show", then: row => {
     if (!row) { s.ctx.notify?.(action === "show" ? `${member.instance} is not in the roster yet.` : `${member.instance} has no terminal to open yet.`); return; }
     if (action === "show") return s.ctx.showInRoster?.(row);
-    const expected = instanceActionTarget(member.workspace, row);
+    const expected = instanceActionTarget(view, row);
     return s.ctx.openTerminal(row, { quiet: true, ...(expected ? { expected } : {}) });
   } });
 }
@@ -1366,7 +1397,8 @@ export async function doSpawn(s, fields) {
   fields.status(`Spawning on ${fields.server}…`);
   try {
     const d = await postJson(s.ctx, "/api/spawn", {
-      agent: a.name, agentsRoot: a.agentsRoot, serverId: fields.server, task: fields.task || "",
+      // A chosen remote deployment (#482) spawns its own catalog's soul row (the root is that deployment's).
+      agent: a.name, agentsRoot: typeof fields.agentsRoot === "string" && fields.agentsRoot ? fields.agentsRoot : a.agentsRoot, serverId: fields.server, task: fields.task || "",
       purpose: fields.purpose || undefined,
       relation: relation !== "unrelated" ? relation : undefined,
       relativeTo: relation !== "unrelated" ? fields.relativeTo : undefined,
@@ -1385,7 +1417,9 @@ export async function doSpawn(s, fields) {
       fields.status(`Spawned ${d.instance} on ${d.server}, but its name already has a saved route. Manage the new home ${d.home} from the execution host. ${(d.warnings || []).join(" ")}`);
       return { created: true };
     }
-    if (d.workspaceId && d.workspaceId !== currentWorkspace()) {
+    // `workspaceId` is the VIEW holding the new instance's deployment (#482): switch only to another view;
+    // a spawn into a deployment of the view on screen (the Deployment field) waits for its row here.
+    if (d.workspaceId && d.workspaceId !== (currentWorkspace() || s.workspace?.id)) {
       const ref = { instance: d.instance, home: d.home, server: d.server };
       closeSpawnModal(s);
       await handOff(s, { workspace: d.workspaceId, ref, then: admitted => {

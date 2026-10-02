@@ -2,11 +2,14 @@ import { harnessOf, HARNESS_NAMES } from './harness-names.mjs';
 import { postJson, currentWorkspace, workspaceGeneration } from "./views/common.mjs";
 
 /** Shared launch configuration selector/editor. The kernel resolves every preview. */
-export function launchConfigFields(el, { ctx, selector, choices, owns = () => true, changed = () => {}, supportsDefault = () => false }) {
+export function launchConfigFields(el, { ctx, selector, choices, owns = () => true, changed = () => {}, supportsDefault = () => false, deployment = null }) {
   const doc = el.ownerDocument, ws = currentWorkspace(), generation = workspaceGeneration();
+  // Owned by the workspace on screen (ws); addressed to the deployment the subject lives in (#482):
+  // an instance's own deployment (rowDeployment), else the view (the server reads its primary deployment).
+  const target = typeof deployment === "string" && deployment ? deployment : ws;
   let listRequest = 0, previewRequest = 0, disposed = false, busy = false, disabled = false, loading = false, reload = false, configurations = [], context;
   const current = () => !disposed && owns() && ws === currentWorkspace() && generation === workspaceGeneration();
-  const api = body => postJson(ctx, `/api/launch-configs?ws=${encodeURIComponent(ws)}`, body);
+  const api = body => postJson(ctx, `/api/launch-configs?ws=${encodeURIComponent(target)}`, body);
   el.classList.add("launch-config-fields");
   el.innerHTML = `<label>Launch configuration<select class="field launch-config-select"><option value="">Keep the recorded launch</option></select></label>
     <p class="launch-config-source"></p>

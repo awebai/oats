@@ -16,7 +16,7 @@ import {
   persistableDirs, stageDirs, savedWorkspacePaths, restoreWorkspaceDirs, createAddExecutor, decideAdd, createGenerations,
   pickedFolderChoices, createPerformAdd, NOT_A_DEPLOYMENT_REASON, PICK_SCAN_LIMIT, PICK_CHOICE_LIMIT, PICK_ANCESTOR_LIMIT,
 } from '../workspace-registry.mjs';
-import { apiUrl, apiInit, classifyApiRoute, unservedWorkspace, createUnservedRefusal } from '../api-url.mjs';
+import { apiUrl, apiInit, classifyApiRoute, unservedWorkspace, createUnservedRefusal, servedSelectors } from '../api-url.mjs';
 import { forgeProxyOptions, trustedForgeFrame, FORGE_EPOCH_HEADER } from '../forge-proxy.mjs';
 import { forgeFailure } from '../renderer/forge-contract.mjs';
 import { lifecycleFailure } from '../renderer/lifecycle-contract.mjs';
@@ -180,7 +180,7 @@ test('the shipped api handler answers a known unserved deployment with 404 E_WOR
   const renderer = 'file:///fixture/index.html', frame = { url: renderer }, event = { sender: { mainFrame: frame, isDestroyed: () => false }, senderFrame: frame };
   const fetched = []; let handler;
   const allowedWs = new Set(['/d/Agents/aweb']);
-  const context = { ipcMain: { handle: (_name, fn) => { handler = fn; } }, apiUrl, apiInit, classifyApiRoute, forgeProxyOptions, trustedForgeFrame,
+  const context = { ipcMain: { handle: (_name, fn) => { handler = fn; } }, apiUrl, apiInit, servedSelectors, classifyApiRoute, forgeProxyOptions, trustedForgeFrame,
     FORGE_EPOCH_HEADER, forgeFailure, lifecycleFailure, RENDERER_URL: renderer, serverEpoch: 0, currentForgeEpoch: () => 'main:0',
     unservedRefusal: createUnservedRefusal({ base: () => base, state: () => ({ allowedWs, known }), body: workspaceNotServed }),
     serverHost: { inTransition: () => false }, base: () => base, wsId: '/d/Agents/aweb', allowedWs, guard: () => {}, AbortSignal: { timeout: ms => ({ ms }) },

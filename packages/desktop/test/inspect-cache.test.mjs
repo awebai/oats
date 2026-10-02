@@ -244,10 +244,10 @@ test('observeMutation (server) invalidates the inspections held under the worksp
   const start = source.indexOf('function observeMutation('), end = source.indexOf('\n}\n', start) + 3;
   assert.ok(start > 0 && end > start);
   const invalidated = [], refreshed = [];
-  const workspaces = () => [{ id: '/local', scope: '/local' }, { id: 'remote:g', scope: '/remote/member', remote: true, server: 'hetzner' }];
+  const deployments = () => [{ id: '/local', scope: '/local' }, { id: 'remote:g', scope: '/remote/member', remote: true, server: 'hetzner' }];
   const previews = [];
-  const observeMutation = new Function('workspaces', 'inspectCache', 'spawnPreviewCache', 'refreshSnapshot', `${source.slice(start, end)}\nreturn observeMutation;`)(
-    workspaces, { invalidate: scope => invalidated.push(scope) }, { invalidate: id => previews.push(id) }, options => { refreshed.push(options); return Promise.resolve(); });
+  const observeMutation = new Function('deployments', 'inspectCache', 'spawnPreviewCache', 'refreshSnapshot', `${source.slice(start, end)}\nreturn observeMutation;`)(
+    deployments, { invalidate: scope => invalidated.push(scope) }, { invalidate: id => previews.push(id) }, options => { refreshed.push(options); return Promise.resolve(); });
   await observeMutation('/local'); await observeMutation('remote:g'); await observeMutation('unknown');
   assert.deepEqual(invalidated, ['/local', '/remote/member'], 'by scope: the key inspections are stored under');
   assert.deepEqual(previews, ['/local', 'remote:g', 'unknown'], 'the held spawn previews go by workspace ID: the key they are stored under');

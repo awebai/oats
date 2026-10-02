@@ -1,5 +1,5 @@
 import { harnessOf } from './harness-names.mjs';
-import { apiJson, postJson, instanceApiPath, currentWorkspace, workspaceGeneration, onWorkspaceChange, wsQuery } from "./views/common.mjs";
+import { apiJson, postJson, instanceApiPath, currentWorkspace, workspaceGeneration, onWorkspaceChange, wsQuery, rowDeployment } from "./views/common.mjs";
 import { instanceId } from "./instance-tree.mjs";
 import { waitForInstanceInPanel } from "./views/spawn.mjs";
 import { launchConfigFields } from "./launch-config-fields.mjs";
@@ -64,6 +64,7 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
     };
     const choices = () => ({ ...(model.value.trim() ? { model: model.value.trim() } : {}), ...(hasLaunchConfig && runtime.value ? { harness: runtime.value } : {}), ...(hasLaunchConfig && yolo.value !== "" ? { yolo: yolo.value === "true" } : {}) });
     const launchFields = launchConfigFields(modal.querySelector(".start-configurations"), { ctx, selector: () => ({ home: instance.home }), choices, owns,
+      deployment: rowDeployment(instance), // the instance's own deployment, never the view
       supportsDefault: () => hasLaunchConfigDefault,
       changed: row => { chosenConfig = row; runtime.value = ""; runtime.disabled = !!row; runtime.querySelector("option").textContent = row ? `Configuration harness (${harnessOf(row)})` : `Recorded harness (${instance.runtime || "pi"})`; updateModelHelp(); void fillModels(); },
     });

@@ -9,12 +9,14 @@
  * write. A refusal (E_TEAM_IN_USE, E_TEAM_EXISTS, …) is shown verbatim with its code. The page owns
  * its state, so the Teams tab mounts it once and keeps it across re-renders; `onDocument(doc)`
  * hears each document read (the tab's attention dot counts its problems). `readMembers()` answers
- * /api/team-members (packages/desktop/docs/desktop-teams.md): every instance of this workspace and of
- * every registered server whose identity.team is a team's provider id, read on mount and at each
- * roster poll (`syncRoster`). A card lists its members by machine; `onMember('open' | 'show', member)`
- * opens one's terminal or selects its roster row. Without the route the cards say nothing about them. */
+ * /api/team-members (packages/desktop/docs/desktop-teams.md): every instance of this workspace view's
+ * deployments (#482: this Mac's and other machines') whose identity.team is a team's provider id, read on
+ * mount and at each roster poll (`syncRoster`). A card lists its members by deployment, each headed by its
+ * machine label; `onMember('open' | 'show', member)` opens one's terminal or selects its roster row
+ * (`member.workspace` is its deployment id). Without the route the cards say nothing about them. */
 import { iconElement } from './shell-icons.mjs';
 import { createSoulMark } from './identity-marks.mjs';
+import { deploymentLabel, shortPath, THIS_MACHINE } from './deployment-label.mjs';
 
 /** The Desktop's teams routes (#269, packages/desktop/docs/desktop-teams.md): `{status: 'ok',
  * teams}` (/api/workspace-teams) or `{status: 'ok', soulTeams}` (/api/workspace-soul-teams) answer
@@ -183,16 +185,23 @@ export function openBlocked(m) {
   if (m.running === true && m.addressable === true) return null;
   return text(m.reason) ?? `${m.instance} is not running.`;
 }
-/** Members by machine: this computer first, then servers by label (code points), the server id breaking ties;
- * within one, by instance name, then home. A machine is not reached when every roster group its members come
- * from failed its last read; when only some did (an edited registration keeps its old group), the heading stays
- * reached and those members' own state ("unknown") and reason carry it. */
+/** A member's deployment (#482: `{id, machine, path}`, its `workspace` is that id), or null from an older route. */
+const memberDeployment = m => m.deployment && typeof m.deployment === 'object' && text(m.deployment.id) ? m.deployment : null;
+/** Members by deployment (#482), each headed by its machine label ("This Mac · ~/Agents/oats", "altair ·
+ * ~/Agents/tsm"): this computer's first, then the other machines by label (code points), the server id, then the
+ * deployment id breaking ties; within one, by instance name, then home. An answer without deployments (an older
+ * route) groups by machine: "This computer", then each server. A group is not reached when every roster group its
+ * members come from failed its last read; when only some did (an edited registration keeps its old group), the
+ * heading stays reached and those members' own state ("unknown") and reason carry it. */
 export function memberGroups(members, servers = []) {
   const byGroup = new Map(list(servers).map(s => [`remote:${s.group}`, s]));
+  for (const s of list(servers)) if (text(s.deployment)) byGroup.set(s.deployment, s);
   const groups = new Map();
   for (const m of members) {
-    const key = m.server ?? '';
-    if (!groups.has(key)) groups.set(key, { key, server: m.server ?? null, label: m.server ? text(m.serverLabel) ?? m.server : 'This computer', reached: true, error: null, members: [], sources: new Map() });
+    const deployment = memberDeployment(m), key = deployment ? `deployment:${deployment.id}` : m.server ?? '';
+    const label = deployment ? deploymentLabel({ machine: text(deployment.machine) ?? (m.server ? text(m.serverLabel) ?? m.server : THIS_MACHINE), label: shortPath(deployment.path) })
+      : m.server ? text(m.serverLabel) ?? m.server : 'This computer';
+    if (!groups.has(key)) groups.set(key, { key, server: m.server ?? null, deployment: deployment?.id ?? null, label, reached: true, error: null, members: [], sources: new Map() });
     const group = groups.get(key), source = m.server ? byGroup.get(m.workspace) : null;
     if (source) group.sources.set(source.group, source);
     group.members.push(m);
@@ -203,7 +212,8 @@ export function memberGroups(members, servers = []) {
     delete group.sources;
   }
   for (const group of groups.values()) group.members.sort((a, b) => codePoint(a.instance, b.instance) || codePoint(a.home, b.home));
-  return [...groups.values()].sort((a, b) => (a.server === null ? -1 : b.server === null ? 1 : codePoint(a.label, b.label) || codePoint(a.server, b.server)));
+  return [...groups.values()].sort((a, b) => (a.server === null) !== (b.server === null) ? (a.server === null ? -1 : 1)
+    : codePoint(a.label, b.label) || codePoint(a.server ?? '', b.server ?? '') || codePoint(a.deployment ?? '', b.deployment ?? ''));
 }
 /** The card's summary: "N members", with "· M on other machines" when some run elsewhere; nothing for none. */
 export function memberSummary(members) {
@@ -214,8 +224,11 @@ export function memberSummary(members) {
 /** The route's answer, kept only as far as it validates (every string still enters the DOM by assignment). */
 function membersAnswer(v) {
   if (!v || typeof v !== 'object' || !Array.isArray(v.members)) return null;
+  // A member's deployment (#482), when sent, is `{id, machine, path}` of strings and its id is the member's `workspace`.
   const members = v.members.filter(m => m && typeof m === 'object' && text(m.instance) && text(m.home) && text(m.team) && text(m.workspace)
-    && (m.server === null || text(m.server)));
+    && (m.server === null || text(m.server))
+    && (m.deployment === undefined || m.deployment && typeof m.deployment === 'object' && m.deployment.id === m.workspace
+      && typeof m.deployment.machine === 'string' && typeof m.deployment.path === 'string'));
   return { members, servers: list(v.servers).filter(s => s && typeof s === 'object' && text(s.group)),
     notReached: list(v.notReached).filter(s => s && typeof s === 'object' && text(s.label)) };
 }
@@ -302,7 +315,7 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
   /** One member: its dot, its name (which shows its roster row), its soul mark, its state in words and, only
    * when it can be opened, a quiet Terminal. A member that can't be opened says why in its state word. */
   function memberRow(m) {
-    const item = el(doc, 'li', null, 'ct-member'), machine = m.server ? text(m.serverLabel) ?? m.server : 'this computer';
+    const item = el(doc, 'li', null, 'ct-member'), machine = m.server ? text(m.deployment?.machine) ?? text(m.serverLabel) ?? m.server : 'this computer';
     const dot = el(doc, 'span', null, 'ct-dot'); dot.dataset.state = memberState(m); dot.setAttribute('aria-hidden', 'true');
     const name = el(doc, 'button', m.instance, 'ct-member-name'); name.type = 'button'; name.setAttribute('aria-label', `Show ${m.instance} in the roster`);
     name.addEventListener('click', () => onMember('show', { ...m }));

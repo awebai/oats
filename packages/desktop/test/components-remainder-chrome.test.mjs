@@ -130,10 +130,11 @@ test('shipped shell mints only inert spawn Open descriptors from complete curren
 test('workspace rows show stable decorative identity and only reported metadata; Add local, no Join/Manage/count/health invention', t => {
   const html = readFileSync(new URL('../renderer/index.html', import.meta.url), 'utf8'), dom = new JSDOM(html), doc = dom.window.document; t.after(() => dom.window.close());
   const chosen = [], switcher = createWorkspaceSwitcher({ document: doc, selectWorkspace: v => chosen.push(v), discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}) });
-  const choices = [{ id: '/a/team', name: 'same', team: { name: 'Org' }, instances: 99 }, { id: '/b/team', name: 'same', server: 'peer' }];
+  const choices = [{ id: '/a/team', name: 'same', team: { name: 'Org' }, instances: 99 }, { id: '/b/team', name: 'same', server: 'peer', machines: ['peer'] }];
   switcher.begin()(choices[0], choices); switcher.openMenu();
   const first = doc.querySelector('.ws-option'), color = first.querySelector('.workspace-avatar').dataset.avatarColor;
-  assert.equal(first.querySelector('.workspace-avatar').getAttribute('aria-hidden'), 'true'); assert.match(first.textContent, /Org/); assert.match(doc.querySelectorAll('.ws-option')[1].textContent, /Server: peer/);
+  assert.equal(first.querySelector('.workspace-avatar').getAttribute('aria-hidden'), 'true'); assert.match(first.textContent, /Org/); assert.equal(doc.querySelectorAll('.ws-option')[1].querySelector('.ws-option-meta').textContent, 'peer', 'its machine, never a Server: line (#482)');
+  assert.doesNotMatch(doc.querySelector('#ws-options').textContent, /Server:|\/a\/team|\/b\/team/);
   assert.match(doc.querySelector('#ws-add-open').textContent, /Add local workspace…/); assert.doesNotMatch(doc.querySelector('#ws-menu').textContent, /Join|Manage workspaces|99|offline|online/);
   switcher.begin()(choices[0], [...choices].reverse()); assert.equal([...doc.querySelectorAll('.ws-option')].find(b => b.dataset.workspaceId === choices[0].id).querySelector('.workspace-avatar').dataset.avatarColor, color);
   first.click(); assert.deepEqual(chosen, []);

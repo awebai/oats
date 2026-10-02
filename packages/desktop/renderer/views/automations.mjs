@@ -16,12 +16,14 @@ import { iconElement } from '../shell-icons.mjs';
 import { harnessName } from '../identity-marks.mjs';
 import { postJson, ensureTheme, wsQuery, currentWorkspace, onWorkspaceChange } from './common.mjs';
 import { cliStatus, cliCard, cliKnownUnavailable, onCliChange } from './cli-status.mjs';
+import { createDeploymentScopeLine } from '../deployment-scope-line.mjs';
 
 export const automationsCSS = `
 .automations { display:flex; flex-direction:column; height:100%; min-height:0; min-width:0; background:var(--bg); color:var(--fg); container-type:inline-size; }
 .automations[hidden], .automations [hidden] { display:none !important; }
 .auto-header { flex:none; display:flex; align-items:center; gap:12px; height:48px; padding:0 16px; box-sizing:border-box; border-bottom:1px solid var(--border); background:var(--surface); }
 .auto-header h2 { display:flex; align-items:baseline; gap:8px; margin:0; font-size:14px; font-weight:700; }
+.automations > .auto-scope { flex:none; padding:6px 16px; border-bottom:1px solid var(--border); background:var(--surface); }
 .auto-count { color:var(--muted); font:10.5px var(--mono,monospace); font-weight:400; }
 /* The Automations bar, in the Workspace's tab style: Schedules | Triggers, then the page's tools. */
 .auto-header.auto-framed { align-items:stretch; gap:22px; }
@@ -154,7 +156,9 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
   if (heading) header.classList.add('auto-framed');
   header.append(heading || h2, node('span', undefined, 'auto-spacer'), scheduler, ...(headerActions ? headerActions(doc) : []), refreshButton);
   const body = node('div', undefined, 'auto-body'), page = node('div', undefined, 'auto-page'); page.hidden = true;
-  root.append(style, header, body, page); host.append(root);
+  // #482: in a view of two or more deployments, the deployment these are read from (the primary).
+  const scope = createDeploymentScopeLine(doc, { className: 'auto-scope' });
+  root.append(style, header, scope.element, body, page); host.append(root);
 
   let alive = true, serial = 0, data = null, failure = '', loading = false, origin = 'all', query = '', openId = null, busy = false, notice = '';
   const tests = new Map(), statuses = new Map();
@@ -474,7 +478,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
   const closeMenus = e => { for (const m of root.querySelectorAll('.auto-menu[open]')) if (!m.contains(e.target)) m.open = false; };
   doc.addEventListener('click', closeMenus);
   render(); void refresh();
-  return { refresh, open: openRow, setNotice(text) { notice = text || ''; render(); }, setBusy(v) { busy = !!v; render(); }, dispose() { alive = false; serial++; doc.removeEventListener('click', closeMenus); root.remove(); } };
+  return { refresh, open: openRow, setNotice(text) { notice = text || ''; render(); }, setBusy(v) { busy = !!v; render(); }, dispose() { alive = false; serial++; scope.dispose(); doc.removeEventListener('click', closeMenus); root.remove(); } };
 }
 
 /** The Desktop shows these pages only for an OATS that reports them (kernel 0.29.0). */

@@ -19,8 +19,8 @@ const PKG = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 test("NAV includes Automations (Schedules | Triggers subtabs) and keeps the instance roster in the sidebar", () => {
   assert.deepEqual(NAV.map((v) => v.name), ["hierarchy", "spawn", "automations"],
-    "rail destinations are Active overview, Workspace and Automations (human 2026-09-28: one item, Schedules and Triggers as its subtabs)");
-  assert.deepEqual(NAV.map((v) => v.label), ["Active overview", "Workspace", "Automations"],
+    "rail destinations are Deployments (formerly Active overview), Workspace and Automations (human 2026-09-28: one item, Schedules and Triggers as its subtabs)");
+  assert.deepEqual(NAV.map((v) => v.label), ["Deployments", "Workspace", "Automations"],
     "Knowledge/Tasks remain deferred; Workspace keeps the internal spawn route");
   for (const v of NAV) {
     assert.ok(v.label && v.icon && v.title, `${v.name} entry carries full rail chrome`);

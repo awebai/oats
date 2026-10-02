@@ -2,6 +2,7 @@
 // guides or capture screenshots. Execute only the shipped roster render function;
 // no shell startup, HTTP, Electron, IPC, CLI or real terminal/session operations.
 import test from "node:test";
+import { viewContext } from "./helpers/view-context.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
@@ -41,7 +42,7 @@ function fixture(t, stylesheet = css) {
     instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, runAction: assert.fail,
     applyChordTitles() {}, updateActiveContexts() {}, getBinding: () => null, formatChord: c => c, isMac: true,
     contextRosterEl: doc.querySelector("#instance-roster"), contextFilter: "", contextWorkspace: "A",
-    rosterState: { hasData: true, state: "ready" }, rosterStale: false, contextDeploymentNote: null, // loading state: a read succeeded
+    rosterState: { hasData: true, state: "ready" }, rosterStale: false, contextDeploymentNote: null, ...viewContext(), // loading state: a read succeeded
     contextInstances: roster, currentWorkspace: () => "A", workspaceGeneration: () => 0, collapsedInstances: new Set(), rosterTip: { bind() {}, hide() {}, sync() {} }, rosterTipFacts: () => ({}), rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} },
     tabs: new Map([[1, { key: tree.terminalKey("A", roster[1]) }]]), activeTab: 1,
     tabOpenIntents: { applyFocus: fn => fn() },

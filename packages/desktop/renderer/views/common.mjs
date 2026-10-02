@@ -127,7 +127,18 @@ export function wsQuery(prefix = "?") {
   return ws ? `${prefix}ws=${encodeURIComponent(ws)}` : "";
 }
 
-/* Per-instance endpoint path, ALWAYS scoped to the selected workspace.
+/* The deployment a roster row belongs to (#482): where EVERY request about that row is addressed.
+   A workspace view can hold several deployments (this computer's and other machines'), and the
+   server resolves an instance only inside its own deployment, by its exact id; a view id is refused
+   there. A row the server tagged carries `deployment.id`; an untagged row (an older server, a test
+   double) belongs to the selected workspace, which was then a deployment. Ownership checks ("is
+   this still the workspace on screen?") keep using currentWorkspace(), never this. */
+export function rowDeployment(row) {
+  const id = row && typeof row === "object" ? row.deployment?.id : null;
+  return typeof id === "string" && id ? id : currentWorkspace();
+}
+
+/* Per-instance endpoint path, ALWAYS scoped to the row's deployment (rowDeployment).
    Same-named instances exist across workspaces; an unscoped request lets
    the server resolve globally — an Interrupt viewed in workspace B could
    Ctrl-C workspace A's session, and chat could leak A's data. Every
@@ -142,9 +153,10 @@ export function instanceApiPath(kind, instance, query = "") {
   const name = typeof instance === "string" ? instance : instance.instance;
   const home = typeof instance === "object" && instance.home ? `home=${encodeURIComponent(instance.home)}` : "";
   const server = typeof instance === "object" && instance.server ? `server=${encodeURIComponent(instance.server)}` : "";
-  const extra = [query, home, server].filter(Boolean).join("&");
-  const q = extra ? `?${extra}${wsQuery("&")}` : wsQuery();
-  return `/api/${kind}/${encodeURIComponent(name)}${q}`;
+  const ws = typeof instance === "object" ? rowDeployment(instance) : currentWorkspace();
+  const scope = ws ? `ws=${encodeURIComponent(ws)}` : "";
+  const q = [query, home, server, scope].filter(Boolean).join("&");
+  return `/api/${kind}/${encodeURIComponent(name)}${q ? `?${q}` : ""}`;
 }
 
 /* Render the workspace <select> into an element; hidden when the server

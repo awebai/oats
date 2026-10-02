@@ -224,3 +224,40 @@ test('Spec D: panelErrorCause re-validates the panel field with its keys exact',
   assert.deepEqual(panelErrorCause({ code: 'E_REMOTE_UNREADABLE', reason: 'network', host: 'github.com' }), { code: 'E_REMOTE_UNREADABLE', reason: 'network', host: 'github.com' });
   for (const v of [null, {}, { code: 'E_X', reason: 'cache', lock: '/x' }, { code: 'x', reason: 'cache' }, { code: 'E_X', reason: 'CACHE' }, { code: 'E_X', reason: 'network', host: 'a b' }]) assert.equal(panelErrorCause(v), null, JSON.stringify(v));
 });
+
+// Workspace identity (feature workspace-identity, #482): the status `workspace` object's identity is kept
+// for matching this deployment to its workspace across machines; it never costs the roster.
+const IDENTITY = { key: 'github.com/nw/agents', ref: 'git:github.com/nw/agents', keyFrom: 'workspace', standalone: false,
+  defaultTeam: { label: 'default', team: 'nw:agents' }, teams: { default: 'nw:agents', ops: null }, teamsFrom: 'observed' };
+const withWorkspace = workspace => ({ ...structuredClone(status), workspace });
+test('workspace identity: every identity field is kept verbatim beside reachable/code/reason/message', () => {
+  const raw = { reachable: false, code: 'E_REMOTE_UNREADABLE', reason: 'network', message: 'host unreachable', ...structuredClone(IDENTITY) };
+  const result = deploymentStatusData(withWorkspace(raw), context);
+  assert.deepEqual(result.workspace, { code: 'E_REMOTE_UNREADABLE', reason: 'network', message: 'host unreachable', reachable: false, ...IDENTITY });
+  assert.equal(Object.hasOwn(result.workspace, 'identityInvalid'), false);
+  result.workspace.teams.default = 'mutated'; result.workspace.defaultTeam.team = 'mutated';
+  assert.deepEqual([raw.teams.default, raw.defaultTeam.team], ['nw:agents', 'nw:agents'], 'a copy, never the caller\'s object');
+  // The unusable-reference and unmapped shapes the contract allows are identities too.
+  const nullKey = { reachable: true, key: null, ref: 'not a ref', keyFrom: null, standalone: false, defaultTeam: null, teams: {}, teamsFrom: 'local' };
+  assert.deepEqual(deploymentStatusData(withWorkspace(nullKey), context).workspace, nullKey);
+  const unmapped = { reachable: true, ...IDENTITY, standalone: true, teamsFrom: 'local', defaultTeam: { label: 'default', team: null }, teams: { default: null } };
+  assert.deepEqual(deploymentStatusData(withWorkspace(unmapped), context).workspace, unmapped);
+});
+test('workspace identity: a shape the contract does not allow is marked identityInvalid and never fails the roster', () => {
+  const baseline = deploymentStatusData(status, context);
+  for (const bad of [{ keyFrom: 'bogus' }, { teamsFrom: undefined }, { teamsFrom: 'remote' }, { standalone: 'no' }, { key: 42 }, { key: '' },
+    { ref: 7 }, { defaultTeam: { team: 'x' } }, { defaultTeam: 'default' }, { teams: [] }, { teams: { default: 3 } }]) {
+    const raw = { reachable: true, ...structuredClone(IDENTITY), ...bad };
+    if (Object.hasOwn(bad, 'teamsFrom') && bad.teamsFrom === undefined) delete raw.teamsFrom;
+    let result;
+    assert.doesNotThrow(() => { result = deploymentStatusData(withWorkspace(raw), context); }, JSON.stringify(bad));
+    assert.deepEqual(result.workspace, { reachable: true, identityInvalid: true }, JSON.stringify(bad));
+    assert.deepEqual(result.agents, baseline.agents, 'the roster rows still come back');
+  }
+});
+test('workspace identity: a host before 0.36.0 (no key field) keeps only reachable/code/reason/message', () => {
+  const old = { reachable: false, code: 'E_X', reason: 'r', message: 'm', ref: 'git:github.com/nw/agents', teamsFrom: 'observed', standalone: false };
+  const result = deploymentStatusData(withWorkspace(old), context);
+  assert.deepEqual(result.workspace, { code: 'E_X', reason: 'r', message: 'm', reachable: false });
+  assert.deepEqual(deploymentStatusData(status, context).workspace, { reachable: true }, 'the real 0.35 capture: reachability only');
+});
