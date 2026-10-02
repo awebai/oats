@@ -32,7 +32,7 @@ import { cliWorkspace, validWorkspaceRef } from "./workspace-cli.mjs";
 import { onboardData } from "./deployment-data.mjs";
 import { validateWorkspace, workspaceSuggestions, parseRecents, pushRecent, decideAdd, createGenerations, createAddExecutor, restoreWorkspaceDirs, saveWorkspaceDirs, matchWorkspaceDirs, createOnboardOffers, createOnboardExecutor } from "./workspace-registry.mjs";
 import { appMenuTemplate } from "./app-menu.mjs";
-import { pickerDefaultPath, workspacePickerCandidates, cliPickerCandidates } from "./picker-default-path.mjs";
+import { pickerDefaultPath, workspacePickerCandidates, cliPickerCandidates, parseLastWorkspaceParent, lastWorkspaceParentState } from "./picker-default-path.mjs";
 import { proxyReadiness } from './readiness-proxy.mjs';
 import { proxySpawnPreview } from './spawn-preview-proxy.mjs';
 import { proxyInstanceEvents } from './instance-events-proxy.mjs';
@@ -220,6 +220,16 @@ function readRecents() {
 function writeRecents(recents) {
   try { writeFileSync(RECENTS_FILE(), JSON.stringify(recents, null, 2)); } catch { /* best-effort */ }
 }
+// Where Add workspace → Browse… opens next (picker-default-path.mjs): the
+// parent of the workspace most recently added or opened, across launches.
+const LAST_WORKSPACE_PARENT_FILE = () => join(app.getPath("userData"), "last-workspace-parent.json");
+function readLastWorkspaceParent() {
+  try { return parseLastWorkspaceParent(readFileSync(LAST_WORKSPACE_PARENT_FILE(), "utf8")); }
+  catch { return null; }
+}
+function rememberWorkspaceParent(workspacePath) {
+  try { writeFileSync(LAST_WORKSPACE_PARENT_FILE(), lastWorkspaceParentState(workspacePath)); } catch { /* best-effort */ }
+}
 
 let lastSuggested = new Set(); // canonical paths offered by the latest suggestions call
 
@@ -278,11 +288,13 @@ async function performAdd(requestedPath, fromPicker) {
     return { ok: false, code: decision.code, reason: decision.reason };
   }
   const ws = decision.workspace;
-  if (decision.action === "already-advertised") return { ok: true, workspace: ws };
+  if (decision.action === "already-advertised") { rememberWorkspaceParent(ws.path); return { ok: true, workspace: ws }; }
   // Transactional executor (workspace-registry.mjs): serialized adds, staged
   // dirs, identity-checked readiness, commit-after-ready, restore-on-failure.
   // Terminals are unaffected throughout: viewers attach to tmux, not the backend.
-  return executeAdd(ws, () => wsGens.isCurrent("add", gen));
+  const result = await executeAdd(ws, () => wsGens.isCurrent("add", gen));
+  if (result?.ok) rememberWorkspaceParent(ws.path);
+  return result;
 }
 
 const onboardOffers = createOnboardOffers({ token: () => randomBytes(16).toString("hex") });
@@ -318,7 +330,9 @@ ipcMain.handle("workspace:pick", async (e) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   // Opens beside the most recently added workspace (picker-default-path.mjs).
   const defaultPath = pickerDefaultPath({
-    candidates: workspacePickerCandidates({ recents: readRecents(), open: workspaceDirs.filter((p) => !!wsValidate(p)) }),
+    candidates: workspacePickerCandidates({
+      last: readLastWorkspaceParent(), recents: readRecents(), open: workspaceDirs.filter((p) => !!wsValidate(p)),
+    }),
     exists: isDirectory,
     home: app.getPath("home"),
   });
@@ -578,6 +592,8 @@ const primaryInstance = startSingleInstance(app, () => BrowserWindow.getAllWindo
   try { saved = readFileSync(OPEN_WORKSPACES_FILE(), "utf8"); } catch { /* first launch */ }
   workspaceDirs.splice(0, workspaceDirs.length,
     ...restoreWorkspaceDirs(WORKSPACE, saved, (p) => wsValidate(realpathSync(p))));
+  // Launching on a workspace (--dir, or a workspace cwd) is an open.
+  try { const launched = wsValidate(realpathSync(WORKSPACE)); if (launched) rememberWorkspaceParent(launched.path); } catch { /* not a workspace */ }
   try {
     await ensureServer();
     if (serverHost.owned()) saveWorkspaceDirs(OPEN_WORKSPACES_FILE(), workspaceDirs);

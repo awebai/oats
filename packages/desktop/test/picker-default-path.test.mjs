@@ -2,31 +2,49 @@
 // main.mjs passes as showOpenDialog's defaultPath.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { pickerDefaultPath, workspacePickerCandidates, cliPickerCandidates } from "../picker-default-path.mjs";
+import { pickerDefaultPath, workspacePickerCandidates, cliPickerCandidates, parseLastWorkspaceParent, lastWorkspaceParentState } from "../picker-default-path.mjs";
 
 const HOME = "/Users/juan";
 const existing = (...dirs) => (dir) => dirs.includes(dir);
 
-test("workspace picker opens in the parent of the most recently added workspace", () => {
-  const candidates = workspacePickerCandidates({
-    recents: ["/Users/juan/Agents/team-b", "/Users/juan/work/team-a"],
-    open: ["/Users/juan/work/team-a", "/Users/juan/Agents/team-b"],
-  });
+test("workspace picker opens in the remembered parent of the last added or opened workspace", () => {
+  // main.mjs writes lastWorkspaceParentState on every successful add or open
+  // and reads it back on the next pick, including after a relaunch.
+  const last = parseLastWorkspaceParent(lastWorkspaceParentState("/Users/juan/Agents/team-b"));
+  assert.equal(last, "/Users/juan/Agents");
+  const candidates = workspacePickerCandidates({ last, recents: ["/Users/juan/work/team-a"], open: ["/Users/juan/work/team-a"] });
   assert.equal(candidates[0], "/Users/juan/Agents");
   assert.equal(pickerDefaultPath({ candidates, exists: existing("/Users/juan/Agents", "/Users/juan/work"), home: HOME }),
     "/Users/juan/Agents");
 });
 
+test("a newer open beats an older add: the remembered parent outranks recents and the open set", () => {
+  // Add /prior/team-a, relaunch with --dir /new/team-b (or re-pick an already
+  // open workspace): recents still lead with team-a and the restored open set
+  // is startup-first, so only the remembered parent knows team-b is newest.
+  const candidates = workspacePickerCandidates({
+    last: parseLastWorkspaceParent(lastWorkspaceParentState("/new/team-b")),
+    recents: ["/prior/team-a"],
+    open: ["/new/team-b", "/prior/team-a"],
+  });
+  assert.equal(pickerDefaultPath({ candidates, exists: () => true, home: HOME }), "/new");
+});
+
+test("without a remembered parent, recents lead, then the open set", () => {
+  assert.deepEqual(workspacePickerCandidates({ recents: ["/a/ws", "/b/ws"], open: ["/c/ws", "/a/ws"] }), ["/a", "/b", "/c"]);
+});
+
+test("malformed remembered state is ignored", () => {
+  for (const raw of ["", "not json", "null", "[]", "{}", '{"parent":"relative"}', '{"parent":7}']) {
+    assert.equal(parseLastWorkspaceParent(raw), null, raw);
+  }
+});
+
 test("a remembered directory that no longer exists falls through to the next candidate", () => {
-  const candidates = workspacePickerCandidates({ recents: ["/Volumes/gone/team-b", "/Users/juan/work/team-a"], open: [] });
+  const candidates = workspacePickerCandidates({ last: "/Volumes/gone", recents: ["/Users/juan/work/team-a"], open: [] });
   assert.equal(pickerDefaultPath({ candidates, exists: existing("/Users/juan/work"), home: HOME }), "/Users/juan/work");
   const throwing = (dir) => { if (dir === "/Volumes/gone") throw new Error("EACCES"); return dir === "/Users/juan/work"; };
   assert.equal(pickerDefaultPath({ candidates, exists: throwing, home: HOME }), "/Users/juan/work");
-});
-
-test("without recents the open set is used, latest-opened first", () => {
-  const candidates = workspacePickerCandidates({ recents: [], open: ["/srv/first/ws", "/srv/second/ws"] });
-  assert.deepEqual(candidates, ["/srv/second", "/srv/first"]);
 });
 
 test("no history opens the home directory", () => {

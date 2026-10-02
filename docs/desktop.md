@@ -81,9 +81,9 @@ Desktop never parses the deployment: its members, lock state and header come
 from `oats workspace status`, and its instances from the deployment's one
 `agents/` root.
 Added workspaces are remembered and offered as suggestions next time.
-**Browse** opens in the folder holding the most recently added workspace, or
-your home directory before the first add; **Choose oats…** opens in the
-directory of the chosen or discovered CLI.
+**Browse** opens in the folder holding the workspace most recently added or
+opened, or your home directory when there is none (never ~/Downloads);
+**Choose oats…** opens in the directory of the chosen or discovered CLI.
 
 Launch flags for scripted use: `--dir <workspace>` and `OATS_DESKTOP_PORT`.
 

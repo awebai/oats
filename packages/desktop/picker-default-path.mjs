@@ -24,18 +24,39 @@ export function pickerDefaultPath({ candidates, exists, home }) {
 }
 
 /**
- * Add workspace → Browse… candidates: the parent of the most recently added
- * workspace first (recents are most-recent-first), then the parents of the
- * open set, latest-opened first.
+ * Add workspace → Browse… candidates: the remembered parent of the most
+ * recently added or opened workspace first, then the parents of the
+ * recents (most-recent-first) and of the open set. The open set is restored
+ * startup-first, so it is a fallback, never an order.
  * @param {object} state
- * @param {string[]} state.recents  validated workspace-recents.json entries
- * @param {string[]} state.open     validated open workspaces, in open order
+ * @param {string|null} [state.last]  parseLastWorkspaceParent(last-workspace-parent.json)
+ * @param {string[]} [state.recents]  validated workspace-recents.json entries
+ * @param {string[]} [state.open]     validated open workspaces
  * @returns {string[]}
  */
-export function workspacePickerCandidates({ recents = [], open = [] }) {
-  return [...new Set([...recents, ...[...open].reverse()]
+export function workspacePickerCandidates({ last = null, recents = [], open = [] }) {
+  const parents = [...recents, ...open]
     .filter((p) => typeof p === "string" && isAbsolute(p))
-    .map((p) => dirname(p)))];
+    .map((p) => dirname(p));
+  return [...new Set([last, ...parents].filter((p) => typeof p === "string" && isAbsolute(p)))];
+}
+
+/**
+ * The remembered parent directory, written by main.mjs whenever a workspace
+ * add or open succeeds (rememberWorkspaceParent). Malformed state is no state.
+ * @param {string} raw  file contents
+ * @returns {string|null}
+ */
+export function parseLastWorkspaceParent(raw) {
+  try {
+    const parent = JSON.parse(raw)?.parent;
+    return typeof parent === "string" && isAbsolute(parent) ? parent : null;
+  } catch { return null; }
+}
+
+/** The state to persist for a workspace that was just added or opened. */
+export function lastWorkspaceParentState(workspacePath) {
+  return JSON.stringify({ parent: dirname(workspacePath) });
 }
 
 /**
