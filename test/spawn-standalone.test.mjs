@@ -120,7 +120,8 @@ test("standalone: unreadable workspace host → sync locks only the oats.core pa
     r = oats(["status", "--dir", dep, "--json"], { base, env });
     assert.equal(r.status, 0, r.stderr);
     const st = JSON.parse(r.stdout);
-    assert.deepEqual(st.workspace, { reachable: true }, "standalone discovery is a discovery: drift is computed, not 'unreachable'");
+    // The fallback is the standalone view, so its teams are the local ones (none here).
+    assert.deepEqual(st.workspace, { reachable: true, key: fx.refs.data, standalone: true, defaultTeam: null, teams: {}, teamsFrom: "local" }, "standalone discovery is a discovery: drift is computed, not 'unreachable'");
     const inst = st.agents.flatMap((a) => a.instances).find((i) => i.instance === "data-analyst-x");
     assert.ok(Array.isArray(inst.modules), "drift rows are computed");
     assert.equal(inst.modules.find((m) => m.name === "oats.core").status, "current", "the locked package is current");
