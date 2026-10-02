@@ -143,12 +143,17 @@ let advertisedBefore = new Set();
 let serverEpoch = 0;    // prevents an outgoing server response restoring its allowlist
 let servedList = [];    // the served workspace views (/api/panel `workspaces`): window titles and restore
 /** The served list changed: remember it, retitle every window from it, and keep each window's record
- * of the deployments its view holds (written only when that changed). */
+ * of the deployments its view holds (written only when that changed). A window bound to a deployment
+ * whose view now has another id (its identity was observed) moves to that view in main at once,
+ * focusing nothing, so no other window can take the workspace before this one's next read follows it
+ * there (#482's rehome). If another window already has that view, the follow leaves this one choosing. */
 function noteServed(list) {
   servedList = list;
   for (const [win, key] of windows.entries()) {
-    win.setTitle(windowTitle(key, servedList));
-    if (key !== null) windowRecords?.bind(win, key, undefined, servedList);
+    const view = key === null ? null : viewKey(key);
+    const bound = view !== key && windows.claim(win, view, { focus: false }).ok ? view : key;
+    win.setTitle(windowTitle(bound, servedList));
+    if (bound !== null) windowRecords?.bind(win, bound, undefined, servedList);
   }
 }
 /** What the server advertises, or while a restart is in flight what the outgoing one did. */

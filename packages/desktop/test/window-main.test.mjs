@@ -21,6 +21,7 @@ const SERVED = [{ id: A, name: 'oats', deployments: ['/d/oats'] }, { id: B, name
 const source = readFileSync(new URL('../main.mjs', import.meta.url), 'utf8');
 const section = source.slice(source.indexOf('// ---- windows: one per workspace (#481)'), source.indexOf('function createWindow(workspaceId'));
 const windowBlock = source.match(/function createWindow\(workspaceId, record = null\)[^]*?\n\}/)[0];
+const noteServedBlock = source.match(/function noteServed\(list\) \{[^]*?\n\}/)[0];
 const tick = () => new Promise((r) => setImmediate(r));
 
 class FakeWindow extends EventEmitter {
@@ -54,7 +55,7 @@ function boot({ records = [], served = SERVED, displays = [{ workArea: { x: 0, y
     terminalBroker: { register() {} }, suggestionCalls: { forget() {} }, lastPickChoices: new Map(),
   };
   context.advertisedNow = () => context.allowedWs;
-  main = runInNewContext(`${section}\n${windowBlock}\n({ windows, choosers, openWorkspaceWindow, openNewWindow, restoreWindows, setRecords: (r) => { windowRecords = r; }, setAdvertised: (set) => { allowedWs = set; }, get windowRecords() { return windowRecords; } })`, context);
+  main = runInNewContext(`${section}\n${windowBlock}\n${noteServedBlock}\n({ noteServed, windows, choosers, openWorkspaceWindow, openNewWindow, restoreWindows, setRecords: (r) => { windowRecords = r; }, setAdvertised: (set) => { allowedWs = set; }, setServed: (list) => { servedList = list; }, get windowRecords() { return windowRecords; } })`, context);
   Object.defineProperty(main, 'quitStarted', { set: (v) => { context.quitStarted = v; } });
   main.setRecords(createWindowRecords({ file, initial: records, timers: { setTimeout: () => 1, clearTimeout() {} } }));
   const event = (win) => ({ sender: Object.assign(win.webContents, { isDestroyed: () => false }), senderFrame: win.webContents.mainFrame });
@@ -240,4 +241,32 @@ test('a window left with no workspace is one main knows has nothing to read', as
   assert.deepEqual(await b.claim(fresh, '/d/gone'), { ok: true, workspace: '/d/gone' }, 'a choice binds it');
   assert.equal(b.main.choosers.has(fresh), false);
   assert.equal(other.title, 'tsm');
+});
+
+test('a window keyed by a deployment moves to its view in main as soon as the served list names it, so no second window can take it', async () => {
+  const unobserved = [{ id: '/d/oats', name: 'oats', deployments: ['/d/oats'], unattached: true }, SERVED[1]];
+  const b = boot({ records: [{ ...record(A), deployments: ['/d/oats'] }, record(B)], served: unobserved });
+  b.main.restoreWindows();
+  const [win, other] = FakeWindow.all;
+  assert.equal(b.main.windows.keyOf(win), '/d/oats');
+  b.main.noteServed(SERVED); // the identity observed: the served list now names the view ws:aaaa…
+  assert.equal(b.main.windows.keyOf(win), A, 'rekeyed in main at once, before the window\'s next read');
+  assert.equal(win.title, 'oats', 'titled from its view');
+  assert.deepEqual(win.calls, [], 'nothing focused');
+  assert.deepEqual(b.main.windowRecords.records().map((r) => r.workspace), [A, B]);
+  const refused = await b.claim(other, A);
+  assert.equal(refused.code, 'focused-other', 'another window cannot take the workspace in the meantime');
+  assert.deepEqual(await b.claim(win, A, { focus: false }), { ok: true, workspace: A }, 'the window\'s own follow is a no-op');
+});
+
+test('a window keyed by a deployment whose view another window already has is left to its own follow (it will choose)', () => {
+  const unobserved = [{ id: '/d/oats', name: 'oats', deployments: ['/d/oats'], unattached: true }, SERVED[1]];
+  const b = boot({ served: unobserved });
+  const byPath = b.main.openWorkspaceWindow('/d/oats').win;
+  b.main.setServed(SERVED);
+  const byView = b.main.openWorkspaceWindow(A).win;
+  b.main.noteServed(SERVED);
+  assert.equal(b.main.windows.keyOf(byPath), '/d/oats', 'not moved onto the view another window has');
+  assert.equal(b.main.windows.keyOf(byView), A);
+  assert.deepEqual(byView.calls, [], 'the other window is not focused');
 });
