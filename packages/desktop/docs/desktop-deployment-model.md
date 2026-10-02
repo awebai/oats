@@ -100,8 +100,10 @@ again. **Only an explicit remove drops a saved path**; nothing else does.
 - **Adding.** Every add goes through `createPerformAdd`: `decideAdd`
   (canonical path, provenance, validation), then the transactional executor
   (`createAddExecutor`). The replacement server is started with `stageDirs`:
-  the served set plus the new deployment, never fewer, and never a path that
-  does not validate. Both sets are committed only once the new server
+  the members of the served set that still validate plus the new deployment,
+  never a path that does not validate. Only the persisted set never loses an
+  entry; a served deployment that went missing during the session is not
+  served by the replacement, and stays persisted. Both sets are committed only once the new server
   advertises the deployment, the persisted one first; any failure (a failed
   write included) restarts the previous server and leaves both sets as they
   were. A refusal returns
