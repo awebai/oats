@@ -38,7 +38,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
              "instance-events-2","schedule-history","schedule-read-2","spawn-preview-2","spawn-idempotency","spawn-idempotency-2","spawn-apply-2",
              "workspace-v2","instance-modules","spawn-provider-payload","served-identity","packages-no-approval","spawn-name","settings-origins",
              "team-model-2","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts","launch-preference",
-             "preview-composed-from","observe-max-age","spawn-preview-max-age","capability-show","capture-file"],
+             "preview-composed-from","observe-max-age","spawn-preview-max-age","capability-show","capture-file","workspace-identity"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
@@ -100,6 +100,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
 | `spawn-preview-max-age` | `--max-age <s>` on `spawn --preview` and its `observation` block ([Observation reuse](#observation-reuse-feature-observe-max-age-oats-0311), [The preview](#the-preview)) | |
 | `capability-show` | `oats capabilities show <name>` and its `--file` form, OATS 0.34.0 ([`oats capabilities show`](#oats-capabilities-show)) | `capabilityShowApi: 1` |
 | `capture-file` | `oats capture --file <path> --format cc\|pi\|codex --home <instance home> [--json]`: one session file captured as `--home` capture would, with a receipt bound to its bytes, OATS 0.35.0 (the capture USAGE and packages/record/README.md) | |
+| `workspace-identity` | the deployment's workspace identity on `oats status --json` `workspace` (`key`, `standalone`, `defaultTeam`, `teams`, `teamsFrom`) and each `oats server roster --json` group's relayed `workspace`, OATS 0.36.0 ([Workspace identity](#workspace-identity-feature-workspace-identity-oats-0360)) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -1679,7 +1680,8 @@ Not an envelope: `{root, agents, observation?, workspace?, problems?, warnings?}
                           "modules":[{"name":"oats.okf","from":{"kind":"package","package":"oats.okf","version":"2.1.3","commit":"ab897841…","integrity":"sha256-bada35…","repoKey":"github.com/awebai/oats-okf"},
                                       "commit":"ab897841…","current":{"commit":"ab897841…","version":"2.1.3"},"status":"current"}],
                           "soul":{"repoKey":"github.com/nw/agents","commit":"66566512…","current":"66566512…","status":"current"}}]}],
- "workspace":{"reachable":true}}
+ "workspace":{"reachable":true,"key":"git:github.com/nw/agents","standalone":false,"defaultTeam":{"label":"eng","team":"eng:nw.aweb.ai"},
+              "teams":{"eng":"eng:nw.aweb.ai","mine":"mine:ana.aweb.ai","ops":null},"teamsFrom":"observed"}}
 ```
 
 - **Agent rows**: the soul's recorded definition plus `dir` and `instances`,
@@ -1712,10 +1714,48 @@ Not an envelope: `{root, agents, observation?, workspace?, problems?, warnings?}
   reason?}`; a package soul adds `package`, `version`, `currentVersion`
   (`missing` reasons: `package-absent`, `soul-absent`).
 - **`workspace`**: `{reachable: true}`, or `{reachable: false, code, reason,
-  message}` (modules then stay the recorded map). Absent without
-  `oats-local.yaml`.
+  message}` (modules then stay the recorded map), plus the deployment's
+  [workspace identity](#workspace-identity-feature-workspace-identity-oats-0360)
+  either way. Absent without `oats-local.yaml`.
 - `problems`: the legacy-home rows ([dispatch errors](#dispatch-errors)).
   `warnings`: envelope warnings. `--team` is `E_BAD_ARGS` (an envelope).
+
+<a id="workspace-identity-feature-workspace-identity-oats-0360"></a>
+**Workspace identity** (feature `workspace-identity`, OATS 0.36.0). The
+`workspace` object says which workspace and teams this deployment is, read
+offline with no network, so it is there whether `reachable` is `true` or
+`false`:
+
+| Key | Meaning |
+|---|---|
+| `key` | the deployment's workspace reference exactly as `oats-local.yaml` names it (`workspace:`) |
+| `standalone` | `true` when the deployment is in the standalone view: `oats-local.yaml` sets `standalone:`, or this run fell back to it (the shape of `workspace.standalone` on [inspect](#oats-inspect)) |
+| `defaultTeam` | `{label, team}`: the label is `oats-local.yaml`'s `defaultTeam`, `team` its provider id from `teams` (`null` when that map gives none). `null` when `oats-local.yaml` names no default team |
+| `teams` | `{<label>: <provider team id> \| null}`: every team label the deployment maps, local and shared, by label; a label in both is the committed (shared) one, as [`oats teams`](#oats-teams) resolves it |
+| `teamsFrom` | where the shared teams came from: `"observed"`, the workspace file this run read; `"cache"`, this machine's cached copy at the host commit it last observed (no git process, no network); `"local"`, none: `teams` holds the local teams only |
+
+A standalone deployment reads no workspace file, so it is always
+`teamsFrom: "local"`, with its local teams only (as spawn resolves them there).
+`oats status` only reads the workspace when an instance records modules or a
+workspace soul, so an empty deployment answers from the cache, or from local
+teams on a host that has not observed its workspace (`oats sync` and
+`oats teams` observe it). The cache is the running kernel's own: after an
+OATS upgrade it is empty until the host next observes its workspace.
+
+**Matching teams across machines.** This is the rule for comparing two
+deployments' teams (as the Desktop does to attach a remote machine to a
+workspace):
+
+- `teamsFrom` `"observed"` or `"cache"`: a `null` team is **unmapped**, and
+  unmapped matches only unmapped.
+- `standalone: true` with `teamsFrom: "local"`: the local config IS the
+  complete team model, so a `null` team is **unmapped** (matches only
+  unmapped). Reason to show: "teams are local only on this host
+  (standalone)", with no sync advice.
+- `standalone: false` with `teamsFrom: "local"`: a `null` default team is
+  **unknown** and never matches. Reason to show: "this host hasn't observed
+  its workspace yet; run oats sync there". A non-null default team (a locally
+  mapped team) matches normally.
 
 **Desktop facts** (feature `desktop-facts`): `startedAt` is the last start or
 restart, else `createdAt` for a launched home, else `null`. `modelFrom` is
@@ -1738,6 +1778,8 @@ route target:
 {"id":"build:3f2a…","server":"build","label":"Build box","registrationPresent":true,
  "target":{"sshHost":"build-host","workspace":"/srv/team","oatsPath":"oats"},
  "probe":{"ok":true},"agentsRoot":"/srv/team/agents",
+ "workspace":{"reachable":true,"key":"git:github.com/acme/team","standalone":false,"defaultTeam":{"label":"default","team":"acme:team"},
+              "teams":{"default":"acme:team"},"teamsFrom":"observed"},
  "souls":[{"name":"dev","harness":"claude","work":"worktree","agentsRoot":"/srv/team/agents"}],
  "instances":[{"server":"build","instance":"dev-a","agent":"dev","home":"/srv/team/agents/dev/instances/dev-a",
                "agentsRoot":"/srv/team/agents","harness":"claude","backend":"tmux","tmux":{"session":"oats-agents","window":"dev-a"},
@@ -1749,6 +1791,12 @@ route target:
  "retireFailures":[]}
 ```
 
+- **`workspace`** (feature `workspace-identity`, OATS 0.36.0): the host's
+  own `status --json` [`workspace` object](#workspace-identity-feature-workspace-identity-oats-0360),
+  relayed verbatim, or `null` when the host reports none (a host before
+  0.36.0, a deployment without `oats-local.yaml`, or a failed or skipped
+  probe). It is never derived on this side. It is on the group, not the rows,
+  so an empty remote deployment still reports it.
 - **Instance rows** relay the host's own `status --json` row: `identity`,
   `identityAddress`, `teams`, `startedAt`, `createdAt`, `model`,
   `runtimeState`, `parentInstance`, `siblingInstance`, `relation`,

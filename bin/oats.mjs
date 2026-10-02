@@ -1850,7 +1850,7 @@ async function statusDrift(data) {
     catch { /* not a workspace soul (classic, or an unreadable stamp) */ }
   }
   const anything = data.some((a) => (a.instances || []).some((i) => hasModules(i) || hasSoul(i)));
-  if (!anything) return { drift: new Map(), soul: new Map(), souls, unreachable: null };
+  if (!anything) return { drift: new Map(), soul: new Map(), souls, unreachable: null, local: ctx.local, discovery: null };
   const deploymentDir = dirname(ctx.path);
   let lock = null;
   try { lock = readLockIfPresent(deploymentDir); } catch { lock = null; }
@@ -1860,7 +1860,7 @@ async function statusDrift(data) {
   try { const { discoverOrStandalone } = await import("../lib/instance-resolution.mjs"); discovery = await discoverOrStandalone(ctx.local, { lock, remoteOptions: remoteOptionsFromEnv() }); }
   catch (e) {
     const reason = e?.details?.reason ? `${e.code}: ${e.details.reason}` : (e?.code || e?.message || "unknown");
-    return { drift: new Map(), soul: new Map(), souls, unreachable: { code: e?.code ?? null, reason, message: e?.message ?? String(e) } };
+    return { drift: new Map(), soul: new Map(), souls, unreachable: { code: e?.code ?? null, reason, message: e?.message ?? String(e) }, local: ctx.local, discovery: null };
   }
   const { driftOf, soulDriftOf } = await import("../lib/materialize.mjs");
   const drift = new Map();
@@ -1879,7 +1879,39 @@ async function statusDrift(data) {
     const member = memberRowByKey(discovery.members, stamp.repoKey);
     if (member && typeof member.commit === "string" && (member.confirmed || (discovery.standalone === true && member.key === discovery.key))) stamp.current = member.commit;
   }
-  return { drift, soul, souls, unreachable: null };
+  return { drift, soul, souls, unreachable: null, local: ctx.local, discovery };
+}
+/** The deployment's workspace identity in `oats status --json` (feature workspace-identity), read
+ *  OFFLINE: `key` as oats-local.yaml names it, and the team model resolved as teamModel resolves it
+ *  (the default label is local; a committed team wins a collision) over the shared teams of, in order,
+ *  the workspace file this run observed (`teamsFrom: "observed"`), this machine's parsed cache at the
+ *  host's last observed commit ("cache": no git process), or none ("local"). A standalone view (its
+ *  `standalone:`, or this run's fallback to it) reads no workspace file: its teams are local only, as
+ *  spawn resolves them there. */
+function workspaceIdentity(local, discovery) {
+  const standalone = (typeof local.standalone === "string" && local.standalone !== "") || discovery?.standalone === true;
+  let shared = null, teamsFrom = "local";
+  if (!standalone) {
+    if (discovery?.workspace) { shared = discovery.workspace; teamsFrom = "observed"; }
+    else { const cached = cachedWorkspaceFile(local.workspace); if (cached) { shared = cached; teamsFrom = "cache"; } }
+  }
+  const model = teamModel(shared, local);
+  const labels = [...model.labels.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return {
+    key: local.workspace, standalone,
+    defaultTeam: model.defaultTeam === null ? null : { label: model.defaultTeam, team: model.labels.get(model.defaultTeam)?.team ?? null },
+    teams: Object.fromEntries(labels.map((l) => [l, model.labels.get(l).team])),
+    teamsFrom,
+  };
+}
+/** The workspace file at the host's last observed commit, as this machine's parsed cache holds it (the
+ *  value observeWorkspace stored), or null: no observation, no intact entry, or a file that failed. */
+function cachedWorkspaceFile(ref) {
+  const options = remoteOptionsFromEnv();
+  const commit = remoteModule.lastObservedCommit(ref, options);
+  if (!commit) return null;
+  const read = remoteModule.peekAtCommit(ref, commit, "workspace", options);
+  return read && typeof read === "object" && !read.missing && !read.problems && read.value && typeof read.value === "object" ? read.value : null;
 }
 /** One `modules:` line per module. */
 function driftLine(row) {
@@ -1948,7 +1980,7 @@ async function status() {
       }
     }
     const observation = maxAgeGiven === null ? {} : { observation: observationBlock() };
-    console.log(JSON.stringify({ root, agents: data, ...observation, ...(ws ? { workspace: ws.unreachable ? { reachable: false, ...ws.unreachable } : { reachable: true } } : {}), ...(problems.length ? { problems } : {}), ...envelopeWarnings() }, null, 2)); return;
+    console.log(JSON.stringify({ root, agents: data, ...observation, ...(ws ? { workspace: { ...(ws.unreachable ? { reachable: false, ...ws.unreachable } : { reachable: true }), ...workspaceIdentity(ws.local, ws.discovery) } } : {}), ...(problems.length ? { problems } : {}), ...envelopeWarnings() }, null, 2)); return;
   }
   console.log(`oats status — agents root ${shortPath(root)}\n`);
   if (ws?.unreachable) console.log(`  workspace: unreachable (${ws.unreachable.reason}) — drift unknown\n`);
@@ -3059,7 +3091,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-2", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capabilityShowApi: 1 }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-2", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capabilityShowApi: 1 }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);

@@ -156,7 +156,9 @@ oats okf harvest --server build --instance dev-fix-123   # the harvest, run in t
 
 The **roster** is what the Desktop shows: one group per server id and route
 target (host and workspace), with the registration (present or not), the
-probe result, the remote souls, the instances joined with saved routes
+probe result, the host's workspace identity (`workspace`: its own `status
+--json` `workspace` object relayed verbatim, `null` when it reports none or
+the probe failed), the remote souls, the instances joined with saved routes
 (`savedRoute`, `running` or `null` when unknown, `retirePending`,
 `rollbackIncomplete`, `missingRemotely`, `addressable`), and `retireFailures`
 (deferred self-retirements that failed there). Each instance row also relays
