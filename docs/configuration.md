@@ -244,7 +244,7 @@ runs first. With `--reselect-launch`, the launch preferences decide again
 declare a `launch` hook to follow a harness change; otherwise the start is
 refused (`E_LAUNCH_PREPARATION`). The checks use the launch hooks' preview
 run (`OATS_LAUNCH_PREVIEW=1`). The hooks run for real only after every check
-has passed, so a refused start has run none of them for real (see
+has passed, so a start refused by preflight has run none of them for real (see
 [capabilities.md](capabilities.md)). A launch hook's warnings do not stop
 the start: `session start|restart` print them (and answer them as
 `warnings` under `--json`), as spawn does, and each is kept as a
