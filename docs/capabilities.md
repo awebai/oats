@@ -341,7 +341,8 @@ Hooks receive:
 A spawn hook also gets `OATS_TASK`, `OATS_REPO`, `OATS_BRANCH`, `OATS_WORK`,
 `OATS_HARNESS`, `OATS_KIND` and, for a spawn a trigger started,
 `OATS_TRIGGER_EVENT_FILE`. A launch hook also gets `OATS_HARNESS` and
-`OATS_PREVIOUS_HARNESS`.
+`OATS_PREVIOUS_HARNESS`, and `OATS_LAUNCH_PREVIEW=1` when it runs for a
+preview (below); on a real run `OATS_LAUNCH_PREVIEW` is not set.
 
 `OATS_SETTINGS_ORIGINS` says where each leaf of
 `OATS_SETTINGS` came from: a JSON object from a JSON pointer to `{ kind, at }`,
@@ -363,6 +364,24 @@ hook later reads as `OATS_META` — so a provider that re-issues a credential at
 start (a renewed session grant, for example) leaves the CURRENT one on record. A
 launch hook that answers without `meta` keeps its previous entry; a start whose
 preparation fails changes nothing.
+
+A launch hook may do idempotent provider registration on a real start (an
+aweb home registering with the host wake broker, for example). Under
+`OATS_LAUNCH_PREVIEW=1` it must change nothing, and it must return the same
+contribution (`launch` arguments and `env`) as for a real start. A launch
+hook runs twice per start:
+
+1. **As a preview, under `OATS_LAUNCH_PREVIEW=1`.** The start's preflight uses
+   this contribution: trust, environment ownership, the harness-package
+   probe and the rendered command. `oats launch-config preview` (which
+   Desktop's start dialog uses) runs only this pass.
+2. **For real, without the flag.** This pass runs only once preflight has
+   passed, including the check that the home is not already running
+   (`E_SESSION_RUNNING`), and before a restart stops the running harness.
+
+The real run's `meta` and warnings are what the start records. If its
+contribution differs from its preview contribution, the start is refused
+with `E_LAUNCH_PREPARATION` and nothing is stopped or started.
 
 Hook environment values are strings, at most 8192 UTF-8 bytes, with no NUL or
 newlines. Names use the portable environment grammar and must belong to an
