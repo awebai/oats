@@ -119,6 +119,9 @@ export const spawnDialogCSS = `
 .spawn-label, .spawn-field > label, .spawn-name > label, .spawn-row > label > .spawn-label-text, .spawn-field > legend { display:flex; align-items:center; gap:6px; padding:0; font-size:11.5px; font-weight:650; color:var(--muted); }
 .spawn-label .shell-icon { color:var(--muted); }
 .spawn-label small { font-weight:500; }
+/* Spec E: a section's jump chord, quiet beside its label (never the only way to learn it: the editor lists it) */
+.spawn-dialog kbd.spawn-key-hint { flex:none; margin:0; padding:0; border:0; background:none; font:500 10.5px var(--mono,monospace); letter-spacing:0; text-transform:none; color:var(--muted); white-space:nowrap; }
+.spawn-dialog kbd.spawn-key-hint[hidden] { display:none; }
 .spawn-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
 .spawn-row > label { display:flex; flex-direction:column; gap:var(--title-gap); min-width:0; }
 .spawn-form .field { min-width:0; width:100%; box-sizing:border-box; }
@@ -301,7 +304,8 @@ export function workText(data, soulWork) {
     ? { lead: 'Worktree on a new branch ', code: data.branch, tail: ` from ${data.base.ref} · ${short(data.base.oid)}` }
     : { lead: 'Worktree on a new branch', code: '', tail: '' };
   if (work === 'checkout') return data?.repo ? { lead: 'Works directly in the checkout at ', code: data.repo, tail: '' } : { lead: 'Works directly in the member checkout', code: '', tail: '' };
-  if (work === 'directory') return { lead: 'Works in its own directory in the instance home', code: '', tail: '' };
+  // The instance panel's sentence (context-panel.mjs WORK_MODES.directory), so the two surfaces agree.
+  if (work === 'directory') return { lead: 'Works in its own folder, not tied to one repository: free to work across repos as its task needs', code: '', tail: '' };
   if (work === 'workspace') return { lead: 'Works in the deployment workspace', code: '', tail: '' };
   return { lead: work ? `Work mode: ${work}` : '', code: '', tail: '' };
 }
@@ -316,7 +320,7 @@ export function soulOriginText(soul) {
   return from ? `from ${from}` : '';
 }
 /** The preview's work mode in words (board 6, "Works in"); an unknown mode verbatim. */
-const WORK_PHRASES = Object.freeze({ __proto__: null, worktree: 'own worktree', checkout: 'shared checkout', attached: "a parent's worktree", directory: 'a folder', workspace: 'all member repos' });
+const WORK_PHRASES = Object.freeze({ __proto__: null, worktree: 'own worktree', checkout: 'shared checkout', attached: "a parent's worktree", directory: 'own folder · free to work across repos', workspace: 'all member repos' });
 export const worksInText = work => WORK_PHRASES[work] ?? work;
 /** A preview module's source, as the Capabilities tag says it: the package and version, the member
  * repository, or the kind verbatim. Never a reason: that is moduleWhyText's, beside it. */
@@ -432,12 +436,12 @@ function composeChooser(doc, { soul, agents, canChoose, choose, query, note }) {
       copy.append(el('strong', candidate.name), el('small', candidate.work === 'attached' ? 'Attached only — cannot launch standalone' : candidate.description || candidate.repoName || ''));
       const check = iconElement(doc, 'check', { size: 15, className: 'shell-icon spawn-choice-check' }); check.setAttribute('aria-hidden', 'true');
       row.append(createSoulMark(doc, candidate), copy, check);
+      // A pick (a click, Space or Enter) goes on to the form's Name (Spec E).
       row.addEventListener('click', () => { if (!row.disabled && row.isConnected) choose(candidate, search.value); });
-      // Enter picks it and goes on to the form's Name (a click or Space keeps the list where it was).
       row.addEventListener('keydown', event => {
         if (event.key !== 'Enter' || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.repeat || event.isComposing) return;
         event.preventDefault(); event.stopPropagation();
-        if (!row.disabled && row.isConnected) choose(candidate, search.value, 'name');
+        if (!row.disabled && row.isConnected) choose(candidate, search.value);
       });
       groupEl.append(row);
       rows.push({ row, group: groupEl, text: [candidate.name, candidate.description, candidate.repoName, candidate.team, candidate.server].join('\n').toLowerCase() });
@@ -528,7 +532,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   header.append(mark, headCopy, changeSoul, closeButton);
   // ── chooser (picker layout)
   const { chooser, search, focusTarget } = composeChooser(doc, { soul, agents, canChoose, query: draft.query || '', note: catalogNote,
-    choose: (candidate, query, focus) => { if (!busy()) choose(candidate, { query, purpose: purpose.value, task: task.value, prefixed: prefixed.checked, layout: 'picker', ...(focus ? { focus } : {}) }); } });
+    choose: (candidate, query) => { if (!busy()) choose(candidate, { query, purpose: purpose.value, task: task.value, prefixed: prefixed.checked, layout: 'picker' }); } });
   // ── preview (scoped layout): what the kernel will create, from the latest observation
   const preview = el('aside', undefined, 'spawn-preview'); preview.setAttribute('aria-label', 'Spawn preview');
   const factsSection = el('section', undefined, 'spawn-preview-section spawn-preview-created');
@@ -543,11 +547,15 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   preview.append(factsSection, coreSection, capsSection, previewNote);
   // ── form
   const form = el('div', undefined, 'spawn-form');
+  // Spec E: each section's jump chord (spawn-dialog-keys.mjs), a quiet hint beside its label, hidden from
+  // assistive tech (the control carries aria-keyshortcuts instead); filled by setShortcuts().
+  const keyHints = {};
+  const keyHint = target => { const k = el('kbd', '', 'shortcut-hint spawn-key-hint'); k.setAttribute('aria-hidden', 'true'); k.hidden = true; keyHints[target] = k; return k; };
   const selectionSummary = el('span', `Selected soul ${soul.name}${soul.server ? ` on ${soul.server}` : ''}`, 'workspace-sr-only');
   selectionSummary.id = 'spawn-selection-summary'; dialog.setAttribute('aria-describedby', selectionSummary.id);
   // Name
   const nameField = el('div', undefined, 'spawn-field spawn-name');
-  const nameLabel = el('label', 'Name'); nameLabel.htmlFor = 'spawn-purpose';
+  const nameLabel = el('label', 'Name'); nameLabel.htmlFor = 'spawn-purpose'; nameLabel.append(keyHint('name'));
   // Prefix toggle: on = --purpose <typed> (named <soul>-<typed>); off = --name <typed>
   // (exact). Offered only where the CLI advertises spawn-name.
   const prefixLabel = el('label', undefined, 'spawn-switch spawn-prefix-toggle'), prefixed = el('input', undefined, 'fprefix');
@@ -565,10 +573,10 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   nameField.append(nameLabel, nameInput, prefixLabel, nameResult);
   // Harness · Model — the harness is a picker with its badge; the select holds the value.
   const runRow = el('div', undefined, 'spawn-row spawn-run');
-  const runtimeLabel = el('label'); runtimeLabel.append(el('span', 'Harness', 'spawn-label-text'));
+  const runtimeLabel = el('label'), runtimeText = el('span', 'Harness', 'spawn-label-text'); runtimeText.append(keyHint('harness')); runtimeLabel.append(runtimeText);
   const runtime = el('select', undefined, 'field fruntime'); runtime.hidden = true; runtime.tabIndex = -1; runtime.setAttribute('aria-hidden', 'true');
   runtimeLabel.append(runtime);
-  const modelLabel = el('label'); modelLabel.append(el('span', 'Model', 'spawn-label-text'));
+  const modelLabel = el('label'), modelText_ = el('span', 'Model', 'spawn-label-text'); modelText_.append(keyHint('model')); modelLabel.append(modelText_);
   const modelControls = el('div', undefined, 'spawn-model-controls'), modelField = el('span', undefined, 'spawn-model-field');
   const model = el('input', undefined, 'field fmodel'); model.autocomplete = 'off'; model.spellcheck = false; model.setAttribute('aria-label', 'Model — empty uses the default');
   const modelTag = el('span', '', 'spawn-input-tag'); modelTag.setAttribute('aria-hidden', 'true');
@@ -601,7 +609,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   workField.append(workLabel, workText_, joined, worktreePath, worktreeLabel);
   // Relationship — shown by default.
   const relation = el('fieldset', undefined, 'spawn-field spawn-relationship');
-  relation.append(el('legend', 'Relationship'));
+  const relationLegend = el('legend', 'Relationship'); relationLegend.append(keyHint('relationship')); relation.append(relationLegend);
   const relRow = el('div', undefined, 'spawn-relationship-row'), seg = el('div', undefined, 'spawn-seg frelation'); seg.setAttribute('role', 'radiogroup'); seg.setAttribute('aria-label', 'Relationship');
   for (const [value, label] of [['unrelated', 'Independent'], ['child', 'Child of'], ['sibling', 'Sibling of'], ['parent', 'Parent of']]) {
     const option = el('label'), input = el('input'); input.type = 'radio'; input.name = `spawn-relation-${Math.floor(workspaceGeneration())}`; input.value = value; input.checked = value === 'unrelated';
@@ -615,13 +623,13 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   relation.append(relRow, relDesc);
   // Opening instruction
   const taskLabel = el('label', undefined, 'spawn-field');
-  const taskTitle = el('span', 'Opening instruction ', 'spawn-label'); taskTitle.append(el('small', '· optional')); taskLabel.append(taskTitle);
+  const taskTitle = el('span', 'Opening instruction ', 'spawn-label'); taskTitle.append(el('small', '· optional'), keyHint('task')); taskLabel.append(taskTitle);
   const task = el('textarea', undefined, 'field ftask'); task.rows = 4; task.placeholder = 'What should this instance do? Empty starts it waiting for you.'; task.value = draft.task || '';
   taskLabel.append(task);
   // Developer settings (collapsed)
   const advanced = el('details', undefined, 'spawn-advanced');
   const advancedSummary = el('summary', 'Developer settings'), advancedTopics = el('small', 'Work area · permissions · launch · session · wake-up');
-  advancedSummary.append(advancedTopics);
+  advancedSummary.append(keyHint('advanced'), advancedTopics);
   advanced.append(advancedSummary);
   const advancedBody = el('div', undefined, 'spawn-advanced-body'); advanced.append(advancedBody);
   const permRow = el('div', undefined, 'spawn-row');
@@ -650,7 +658,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const teamsList = el('div', undefined, 'spawn-seg spawn-teams-row spawn-team-list'); teamsList.setAttribute('role', 'group'); teamsList.setAttribute('aria-label', 'Teams');
   const teamsHint = el('p', '', 'spawn-hint spawn-teams-hint'); teamsHint.setAttribute('aria-live', 'polite');
   const teamsError = el('p', '', 'spawn-hint spawn-teams-error err'); teamsError.setAttribute('aria-live', 'polite');
-  teamsField.append(el('legend', 'Teams'), teamsList, teamsHint, teamsError);
+  const teamsLegend = el('legend', 'Teams'); teamsLegend.append(keyHint('teams'));
+  teamsField.append(teamsLegend, teamsList, teamsHint, teamsError);
   let teamsNow = null, joinDeclaredNow = false, teamsDrawn = '', defaultFromNow = null;
   const syncTeamsStop = roveSegment(teamsList);
   const joinPicked = new Set();
@@ -683,7 +692,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       const c = chip(`spawn-team${t.mapped ? '' : ' spawn-team-off'}`, t.label, box, t.mapped ? `Join ${t.label} (${t.team})` : `${t.label} has no provider id yet: its owner runs oats aweb setup, then commits the id.`);
       c.dataset.team = t.label;
     }
-    syncTeamsStop();
+    syncTeamsStop(); applyKeys();
     if (focusedTeam !== null) [...teamsList.querySelectorAll('[data-team]')].find(c => c.dataset.team === focusedTeam)?.querySelector('input')?.focus({ preventScroll: true });
     const open = rows.filter(joinable).length;
     // An unmapped default blocks the spawn (the kernel refuses it): say so and what to do, not the opt-ins.
@@ -1366,6 +1375,65 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   // Change soul: the picker, in place — never a reopen, so nothing typed is lost.
   changeSoul.addEventListener('click', () => { dropPress(); setLayout('picker'); focusTarget().focus({ preventScroll: true }); });
 
+  // ── Spec E: focus and the section keys
+  /** Name, with the caret at the end of what is there (a restored draft is never selected). */
+  function focusName({ preventScroll = true } = {}) {
+    purpose.focus({ preventScroll });
+    const end = purpose.value.length;
+    try { purpose.setSelectionRange(end, end); } catch { /* not a text input here */ }
+  }
+  const visibleControl = c => !!c && !c.disabled && !c.hidden && !c.closest('[hidden]');
+  /** The control each section key lands on (Relationship: its selected segment; Teams: its first box one can tick). */
+  const jumpTargets = {
+    name: () => purpose,
+    harness: () => runtimePicker.trigger,
+    model: () => model,
+    relationship: () => seg.querySelector('input:checked') || seg.querySelector('input'),
+    teams: () => [...teamsList.querySelectorAll('input')].find(visibleControl) || null,
+    task: () => task,
+  };
+  /** The first control of Developer settings, in tab order. */
+  const firstAdvanced = () => [...advancedBody.querySelectorAll('button, input, select, textarea, summary, [tabindex]')]
+    .find(c => visibleControl(c) && c.tabIndex >= 0) || null;
+  /** A section key: focus moves to that section's control; a closed disclosure holding it opens first.
+   * 'advanced' toggles Developer settings: open, focus on its first control; closed, focus on its summary.
+   * False when the section is not there (Teams not offered, say): focus stays. */
+  function jump(target) {
+    if (!alive) return false;
+    // An open Harness or Model picker closes first (its focus is not restored: focus moves on), so Escape
+    // afterwards still closes a picker before the dialog only when one is shown.
+    models.close(); runtimePicker.close();
+    if (target === 'advanced') {
+      advanced.open = !advanced.open;
+      const to = advanced.open ? firstAdvanced() || advancedSummary : advancedSummary;
+      to.focus();
+      return true;
+    }
+    const control = jumpTargets[target]?.();
+    if (!visibleControl(control)) return false;
+    const closed = control.closest('details:not([open])'); if (closed) closed.open = true;
+    if (control === purpose) focusName({ preventScroll: false }); else control.focus();
+    return true;
+  }
+  // The chords on screen, per section ({ label, aria } or null): the hint beside each label, and the
+  // control's aria-keyshortcuts (every segment of Relationship and every team box, the one focused varies).
+  let keysNow = {};
+  function applyKeys() {
+    const targets = {
+      name: [purpose], harness: [runtimePicker.trigger], model: [model], relationship: [...seg.querySelectorAll('input')],
+      teams: [...teamsList.querySelectorAll('input')].filter(c => !c.disabled), task: [task], advanced: [advancedSummary],
+    };
+    for (const [target, hint] of Object.entries(keyHints)) {
+      const key = keysNow[target];
+      if (hint.textContent !== (key?.label || '')) hint.textContent = key?.label || '';
+      hint.hidden = !key?.label;
+      for (const control of targets[target] || []) {
+        if (key?.aria) control.setAttribute('aria-keyshortcuts', key.aria); else control.removeAttribute('aria-keyshortcuts');
+      }
+    }
+  }
+  function setShortcuts(keys) { keysNow = keys && typeof keys === 'object' ? { ...keys } : {}; if (alive) applyKeys(); }
+
   /** Reopen spawn (Spec C): put back every choice an earlier press made, exactly as sent. The preview
    * then reads for them as for any edit; nothing restored bypasses validation (choices()). */
   function restoreDraft(restore) {
@@ -1399,6 +1467,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     /** Begin reading once the host owns the attached dialog. */
     start() { if (!current()) return; schedule(0); void fillModels(); void fillConfigs(); },
     dialog, search, purpose, spawn, status, preview, changeSoul,
+    /** Spec E: focus Name (caret at the end), a section key's jump, and the chords the hints show. */
+    focusName, jump, setShortcuts,
     /** 'scoped' (preview + form) or 'picker' (chooser + form); switched in place. */
     get layout() { return layoutNow; }, setLayout,
     submit: () => { if (!spawn.disabled) void run(); },

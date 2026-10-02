@@ -183,8 +183,12 @@ surface, not final K7 or native/rendered acceptance.
 focus trap, Esc/backdrop close, the `spawn.submit` binding and the handoff). In
 the shell a confirmed local press is handed to `spawn-jobs.mjs` (`ctx.spawnJobs`)
 and the dialog closes at once; the store runs the transaction, owns the roster's
-pending row (`shell.mjs` `pendingSpawnRow`) and the outcome notification, and
-keeps the draft for **Reopen spawn** (`preselectSpawn({…, draft})`). See
+pending row (`shell.mjs` `pendingSpawnRow`), the outcome notifications and the
+**New** marks, and keeps the draft for **Reopen spawn** (`preselectSpawn({…, draft})`).
+After the press the shell reveals the pending row without focus (`ctx.followSpawn`)
+and, when the instance runs, `spawn-follow.mjs` takes the operator to its terminal
+unless they acted since the press (input, a focus move, a navigation) or an overlay is
+open; focus merely resting where the dialog returned it does not count. Otherwise its row says New. See
 `docs/desktop-spawn-preview.md`, "Background spawn". Souls come from the kernel's spawn catalog (`oats souls --json` via
 `GET /api/agents`), never from the roster. Two layouts, switched in place
 (design board 6): **scoped** — opened from a soul card's Spawn or the soul
@@ -205,8 +209,13 @@ spawns from any field, plain Enter in Name never does; DOM order is Tab order
 (Name, then its Prefix switch, drawn on the label's line by CSS grid);
 Relationship and Teams are one tab stop each (`roveSegment`: arrows, Home/End);
 the soul chooser is a `listbox` of `option` buttons where typing filters,
-Enter in the search picks the best match and Enter on a soul picks it, both
-moving focus to Name.
+Enter in the search picks the best match and Enter, Space or a click on a soul
+picks it, every pick moving focus to Name. The dialog opens on Name
+(`focusName`: caret at the end, no scroll). Mod+1–Mod+7 jump to Name, Harness,
+Model, Relationship, Teams, the instruction and Developer settings
+(`spawn-dialog-keys.mjs` registers them with `spawn.submit` in the
+`spawn-dialog-local` context, once, for the editor; the host resolves and stops
+them; `jump()` and `setShortcuts()` are the dialog's).
 
 Main form, in order: **Name** (the `<soul>-` prefix plus a purpose, with the
 kernel's final name shown below; when the CLI advertises `spawn-name`, a

@@ -189,8 +189,16 @@ test('popup remains screen-sized and bounded through zoom/pan/resize; hidden vie
   u.setRead(() => panel([instance('dev', { branch: 'new while hidden' })])); u.poll(); await tick();
   assert.notEqual(u.doc.activeElement, control, 'no focus restoration into a hidden stage');
   control.dispatchEvent(new u.dom.window.Event('click')); u.mouse(u.nodes()[0], 'dblclick');
-  u.one('.spawnbtn').click(); assert.equal(u.opened.length, 0); assert.equal(u.views.length, 0);
+  u.key('S'); assert.equal(u.opened.length, 0); assert.equal(u.views.length, 0);
   u.host.hidden = false;
+});
+
+test('Spec E: the overview header has no Spawn button; its S key still opens Workspace', async t => {
+  const u = await setup(t);
+  assert.equal(u.one('.spawnbtn'), null, 'no "+ Spawn" in the Active header');
+  assert.doesNotMatch(u.one('.hier-bar').textContent, /Spawn/);
+  u.canvas.focus(); u.key('S');
+  assert.deepEqual(u.views, ['spawn'], 'hier.spawn (S) is kept');
 });
 
 test('window blur cancels a gesture and prevents hidden movement/action dispatch until focus returns', async t => {
@@ -224,7 +232,7 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: actual Activ
     ['.hier-sum', '.hier-bar', 'muted', 'surface'], ['.hier-chead .cct', '.hier-cluster', 'muted', 'surface-2'],
     ['.hier-chead .cnm', '.hier-cluster', 'muted', 'surface-2'], ['.hnode.sel .nm', '.hnode.sel', 'fg', 'surface'],
     ['.hnode.sel .hmeta', '.hnode.sel', 'muted', 'surface'], ['.pavailability', '.hier-pop', 'muted', 'surface'],
-    ['.pname', '.hier-pop', 'fg', 'surface'], ['.pidentity', '.hier-pop', 'muted', 'surface'], ['.pgit', '.pgit', 'faint', 'surface-2'], ['.spawnbtn', '.spawnbtn', 'primary-fg', 'primary-bg'],
+    ['.pname', '.hier-pop', 'fg', 'surface'], ['.pidentity', '.hier-pop', 'muted', 'surface'], ['.pgit', '.pgit', 'faint', 'surface-2'],
   ]) {
     const el = u.one(selector), painted = u.one(background); assert.ok(el && painted);
     assert.equal(u.dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);

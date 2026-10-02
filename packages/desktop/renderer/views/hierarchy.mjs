@@ -59,7 +59,6 @@ export const hierarchyCSS = `
 .hier-sum .skeleton-pill { height: 0.9em; }
 .hier-refreshing { flex: none; display: inline-flex; align-items: center; }
 .hier-refreshing:empty { display: none; }
-.hier .spawnbtn { display:inline-flex; align-items:center; gap:6px; min-height:28px; padding:0 12px; font-size:12px; font-weight:650; white-space:nowrap; }
 .hier-notice { flex:none; display:flex; align-items:center; gap:8px; padding:8px 16px; color:var(--muted); background:var(--surface); font-size:12px; overflow-wrap:anywhere; }
 .hier-notice-message { flex:1; }
 .hier-retry, .hier-readd { flex:none; }
@@ -294,8 +293,6 @@ export function mount(el, ctx) {
         <select class="field wssel" aria-label="Workspace" style="display:none"></select>
         <span class="hier-sum"></span>
         <span class="hier-refreshing"></span>
-        <span style="flex:1"></span>
-        <button class="act primary spawnbtn" title="Choose a soul in Workspace to spawn">${icon("plus", { size: 14 })}Spawn</button>
       </div>
       <div class="hier-notice" role="note" hidden><span class="hier-notice-message"></span><button class="act hier-retry" type="button">Retry roster</button><button class="act hier-readd" type="button" hidden>Re-add workspace</button></div>
       <div class="hier-canvas" tabindex="0" role="tree" aria-label="Active agents by cluster">
@@ -324,8 +321,6 @@ export function mount(el, ctx) {
   // Re-add: a deployment this Desktop's server does not serve, through the normal add (#461).
   s.q('hier-readd').addEventListener('click', () => { if (s.alive) void reAdd(s); });
   s.q("wssel").addEventListener("change", (e) => setWorkspace(e.target.value));
-  s.q("spawnbtn").addEventListener("click", () => openWorkspace(s));
-  if (!ctx.openView) { s.q("spawnbtn").disabled = true; s.q("spawnbtn").title = 'Workspace navigation is unavailable in this host'; }
   s.q("zin").addEventListener("click", () => zoomBy(s, 1.2));
   s.q("zout").addEventListener("click", () => zoomBy(s, 1 / 1.2));
   s.q("zfit").addEventListener("click", () => { if (visibleOwner(s)) fit(s); });
