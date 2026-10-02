@@ -78,7 +78,10 @@ import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
 import { canAddressRemote, unaddressableSentence } from "../renderer/remote-address.mjs";
 import { harnessFlag, HARNESSES } from "../renderer/harness-names.mjs";
 import { probeChanged } from "../renderer/cli-probe-contract.mjs";
-import { workspaceNotServed } from "../renderer/deployment-header.mjs";
+import { workspaceNotServed, deploymentUnavailableText } from "../renderer/deployment-header.mjs";
+import { readIdentity, attachment, buildViews, deploymentReason } from "./workspace-views.mjs";
+import { createRemoteIdentityStore } from "./remote-identity.mjs";
+import { THIS_MACHINE, shortPath } from "../renderer/deployment-label.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -112,6 +115,18 @@ const ctxs = [...new Set((flagAll("dir").length ? flagAll("dir") : [process.cwd(
 const port = Number(flag("port") || 4820);
 const DEBUG = flag("debug") === true || process.env.OATSWEB_DEBUG === "1";
 
+/* The remembered remote identities and the roster's answered state (server/remote-identity.mjs). */
+const remoteIdentities = createRemoteIdentityStore({ file: typeof flag("remote-identity") === "string" ? flag("remote-identity") : null });
+let rosterAnswered = false;  // a roster answer arrived under the current CLI (remembered-only groups then leave)
+let rosterFailure = null;    // the roster read's failure while no answer has arrived
+/* OATSWEB_VIEWS_BEGIN — workspace views over the served deployments, extracted by
+   test/workspace-views-server.test.mjs (deps: ctxs, snapshot, remoteGroups, remote, cliState,
+   observing, remoteCollecting, remoteIdentities, rosterAnswered, rosterFailure, homedir, basename and
+   the imported view, label and team-member helpers).
+   ── Workspace views (#482, server/workspace-views.mjs) ──
+   A view is what the switcher lists and a window shows: one per matched workspace identity, plus
+   one per unattached deployment under that deployment's own id. Built per request from the held
+   observations and the remembered remote identities; never a CLI read. */
 /** Roots come ONLY from the kernel's observed `status.root`; before (or
  * without) an observation there is nothing to act on. No layout guess. */
 function workspaceEntry(ctx) {
@@ -120,24 +135,135 @@ function workspaceEntry(ctx) {
   return { id: ctx, name: (observed && deployment.workspace?.name) || basename(ctx) || ctx, scope: ctx, team: null,
     roots: observed ? [deployment.root] : [] };
 }
-function workspaces() {
-  return [...ctxs.map(workspaceEntry), ...remoteGroups.map(remote.remoteWorkspace)];
-}
-function workspaceById(id) {
-  return workspaces().find((w) => w.id === id) || workspaces()[0];
+/** Every served deployment, in served order: the local deployments (one per --dir), then the
+ * remote roster groups, then (only while there is no roster answer at all) the remembered remote
+ * groups, which have no rows. An id here is a deployment id: every instance-addressed route
+ * resolves only these. */
+function deployments() {
+  return [...ctxs.map(workspaceEntry), ...remoteGroups.map(remote.remoteWorkspace), ...rememberedGroups().map(remote.remoteWorkspace)];
 }
 
-/** Panel data is served from the latest observation and never blocks on a
- * CLI read: the renderer and main's readiness probes stay responsive. */
-function panelData(wsId) {
-  const all = workspaces();
-  const ws = wsId ? workspaceById(wsId) : all[0];
-  if (ws?.remote) return { ...remote.remotePanel(ws.group), workspaces: workspaceChoices(all), observedAt: null, refreshing: remoteCollecting };
+/** Remembered remote groups shown only while no roster answer exists: not reached, no rows (Q3). */
+function rememberedGroups() {
+  if (rosterAnswered) return [];
+  const listed = new Set(remoteGroups.map((g) => g.id));
+  return remoteIdentities.all().filter((e) => !listed.has(e.id)).map((e) => ({
+    id: e.id, server: e.server, label: e.label, registrationPresent: true, remembered: true,
+    target: { workspace: e.path }, probe: { ok: false, error: { code: "E_REMOTE_ROSTER", message: rosterFailure || "no roster answer" } },
+    agentsRoot: undefined, workspace: null, souls: [], instances: [], retireFailures: [],
+  }));
+}
+const cliReadsRemotes = () => !!cliState.ok && !!cliState.remote?.includes("roster");
+const identityFeature = () => !!cliState.features?.includes("workspace-identity");
+/** One deployment's identity, attachment, machine label and reason. */
+function deploymentInfo(d) {
+  if (!d.remote) {
+    const observed = snapshot.byWs.get(d.id)?.deployment;
+    const live = observed?.status === "observed";
+    const read = !live ? { status: "none" } : !identityFeature() ? { status: "feature" }
+      : observed.reachable?.identityInvalid ? { status: "invalid" } : readIdentity(observed.reachable);
+    const identity = read.status === "identity" ? read.identity : null;
+    const attach = attachment(identity);
+    const unavailable = observed?.status === "unavailable" ? deploymentUnavailableText(observed) : null;
+    return { id: d.id, local: true, machine: THIS_MACHINE, path: d.id, label: shortPath(d.id, { home: homedir() }), name: d.name,
+      live, reachable: live, identityFrom: identity ? "reported" : null, identity, attach,
+      teamLabel: identity?.defaultTeam?.label ?? null,
+      reason: live || observed?.status === "unavailable" ? deploymentReason({ local: true, identityStatus: read.status, attach, ref: identity?.ref, unavailable }) : null,
+      note: attach.note === "standalone" ? deploymentReason({ local: true, attach: { unattached: "standalone" } }) : null };
+  }
+  const g = d.group, machine = g.label || g.server;
+  const reached = g.probe?.ok === true;
+  let read = reached ? (identityFeature() ? readIdentity(g.workspace) : { status: "feature" }) : { status: "none" };
+  let identityFrom = read.status === "identity" ? "reported" : null;
+  if (!reached && (g.remembered || remoteIdentities.get(g.id))) {
+    const memory = remoteIdentities.get(g.id);
+    if (memory) { read = { status: "identity", identity: memory.workspace }; identityFrom = "remembered"; }
+  }
+  const identity = read.status === "identity" ? read.identity : null;
+  const attach = attachment(identity);
+  const reason = deploymentReason({ local: false, machine, sshHost: g.target?.sshHost, probe: g.probe, identityStatus: read.status, attach,
+    ref: identity?.ref, cliReadsRemotes: cliReadsRemotes(), rosterError: g.remembered ? rosterFailure : null });
+  const moved = remoteIdentities.note(g.id);
+  const standalone = attach.note === "standalone" ? deploymentReason({ local: false, attach: { unattached: "standalone" } }) : null;
+  return { id: d.id, local: false, machine, path: g.target?.workspace || "", label: shortPath(g.target?.workspace || ""), name: d.name,
+    live: reached, reachable: reached, identityFrom, identity, attach, teamLabel: identity?.defaultTeam?.label ?? null,
+    reason, note: [moved, standalone].filter(Boolean).join(" ") || null };
+}
+/** The views and the per-deployment facts they rest on: `{ views, infos: Map<deploymentId, info> }`. */
+function viewModel() {
+  const infos = new Map(deployments().map((d) => [d.id, deploymentInfo(d)]));
+  const views = buildViews([...infos.values()]).map((v) => {
+    const unattachedReason = v.unattached ? infos.get(v.primary)?.reason ?? null : null;
+    return { ...v, ...(unattachedReason ? { reason: unattachedReason } : {}) };
+  });
+  return { views, infos };
+}
+/** The view a selector names: a view id, or a deployment id (answered with the view that holds it, so
+ * a selection saved before views opens its view). No selector means the first view. */
+function viewFor(wsId, model = viewModel()) {
+  if (!wsId) return model.views[0] || null;
+  return model.views.find((v) => v.id === wsId) || model.views.find((v) => v.deployments.includes(wsId)) || null;
+}
+/** A deployment-level surface (header, capabilities, sync, automations, schedules, teams configuration,
+ * brain, launch configurations, spawn catalog): a deployment id as itself, a view id as that view's
+ * PRIMARY deployment (its first local one, else its first). Never used for an instance-addressed route,
+ * which resolves deployment ids only (`deployments().find`), so a view id there is refused. */
+function deploymentFor(wsId) {
+  const exact = wsId ? deployments().find((w) => w.id === wsId) : null;
+  if (exact) return exact;
+  const view = viewFor(wsId);
+  return view ? deployments().find((w) => w.id === view.primary) || null : null;
+}
+/** A body that names an instance home (capabilities, launch configurations, schedules) addresses that
+ * instance: only an exact deployment id resolves it, never a view id. Anything else is deployment-level. */
+const namesInstance = (request) => request?.selector?.home !== undefined || request?.spec?.home !== undefined;
+function surfaceDeployment(wsId, request) {
+  return namesInstance(request) ? deployments().find((w) => w.id === wsId) : deploymentFor(wsId);
+}
+/** The forge roster's context for a view (or a deployment id, read as its view): the union of its
+ * local deployments' rows and clones, under the view's id. */
+function viewForgeContext(wsId) {
+  const view = viewFor(wsId);
+  if (!view) return { workspace: undefined, cli: cliState, instances: [], clones: [] };
+  const local = view.deployments.filter((id) => ctxs.includes(id));
+  const observed = local.map((id) => snapshot.byWs.get(id)).filter(Boolean);
+  return { workspace: { id: view.id, name: view.name, remote: local.length === 0 }, cli: cliState,
+    instances: observed.flatMap((o) => o.instances || []), clones: observed.flatMap((o) => o.deployment?.workspaceStatus?.clones || []) };
+}
+/** The ids main may let a caller select: every view id and every deployment id. */
+function isServed(id) {
+  const model = viewModel();
+  return model.views.some((v) => v.id === id) || model.infos.has(id);
+}
+/** /api/team-members: the members of a view's deployments only, each tagged with its deployment (Q5);
+ * null for a selector that names no view. */
+function teamMembersFor(wsId) {
+  const model = viewModel();
+  const view = viewFor(wsId, model);
+  if (!view) return null;
+  const members = view.deployments.map((id) => deployments().find((w) => w.id === id)).filter(Boolean);
+  return teamMembers({
+    deployments: members.filter((d) => !d.remote).map((d) => ({ deployment: deploymentTag(model.infos.get(d.id)), instances: snapshot.byWs.get(d.id)?.instances || [] })),
+    groups: members.filter((d) => d.remote).map((d) => ({ group: d.group, deployment: deploymentTag(model.infos.get(d.id)),
+      panel: snapshot.byWs.get(d.id) || remote.remotePanel(d.group) })) });
+}
+
+/** A deployment as the panel and the rows name it. */
+const deploymentTag = (info) => ({ id: info.id, machine: info.machine, path: info.path });
+/** A deployment's entry in the panel's `deployments` list. */
+function deploymentEntry(info, primary) {
+  return { ...deploymentTag(info), label: info.label, local: info.local, reachable: info.reachable,
+    identityFrom: info.identityFrom, primary: info.id === primary,
+    ...(info.reason ? { reason: info.reason } : {}), ...(info.note ? { note: info.note } : {}) };
+}
+
+/** One deployment's own panel, as served before views. */
+function deploymentPanel(ws) {
+  if (ws?.remote) return { ...remote.remotePanel(ws.group), observedAt: null, refreshing: remoteCollecting };
   const observed = ws ? snapshot.byWs.get(ws.id) : null;
   const instances = observed?.instances || [];
   return {
     workspace: ws ? { id: ws.id, name: ws.name, team: null } : null,
-    workspaces: workspaceChoices(all),
     team: null,
     deployment: publicDeployment(observed?.deployment),
     generatedAt: observed?.generatedAt || new Date().toISOString(),
@@ -153,6 +279,30 @@ function panelData(wsId) {
   };
 }
 
+/** Panel data is served from the latest observation and never blocks on a
+ * CLI read: the renderer and main's readiness probes stay responsive. A view's panel is its
+ * primary deployment's panel (header, error, stamps) with the union of every deployment's rows,
+ * each row tagged with its deployment, and the view's deployments listed. */
+function panelData(wsId) {
+  const model = viewModel();
+  const view = viewFor(wsId, model);
+  const choices = workspaceChoices(model);
+  if (!view) return { ...deploymentPanel(null), workspaces: choices, deployments: [] };
+  const members = view.deployments.map((id) => deployments().find((w) => w.id === id)).filter(Boolean);
+  const panels = members.map((d) => [d, deploymentPanel(d)]);
+  const [, primary] = panels.find(([d]) => d.id === view.primary) || panels[0];
+  const instances = panels.flatMap(([d, p]) => (p.instances || []).map((row) => ({ ...row, deployment: deploymentTag(model.infos.get(d.id)) })));
+  return {
+    ...primary,
+    workspace: { ...primary.workspace, id: view.id, name: view.name, ...(view.key ? { key: view.key, teamId: view.team } : {}) },
+    workspaces: choices,
+    deployments: view.deployments.map((id) => deploymentEntry(model.infos.get(id), view.primary)),
+    refreshing: panels.some(([, p]) => p.refreshing),
+    running: instances.filter((i) => i.running).length,
+    instances,
+  };
+}
+
 /** The renderer's deployment facts: the header observation, reachability and
  * any unavailable reason. The private soul rows stay server-side. */
 function publicDeployment(deployment) {
@@ -162,9 +312,18 @@ function publicDeployment(deployment) {
   return rest;
 }
 
-function workspaceChoices(all = workspaces()) {
-  return all.map((w) => ({ id: w.id, name: w.name, team: w.team, ...(w.remote ? { server: w.server, remote: true } : {}) }));
+/** The switcher's list: views, not deployments. Each names its deployments (main lets a caller
+ * select any of these ids); an unattached view keeps today's remote fields and says why. */
+function workspaceChoices(model = viewModel()) {
+  return model.views.map((v) => {
+    const primary = deployments().find((w) => w.id === v.primary);
+    const remoteOnly = v.deployments.every((id) => !model.infos.get(id)?.local);
+    return { id: v.id, name: v.name, team: null, deployments: [...v.deployments],
+      ...(v.key ? { key: v.key } : {}), ...(v.unattached ? { unattached: true } : {}), ...(v.reason ? { reason: v.reason } : {}),
+      ...(remoteOnly && primary?.remote ? { server: primary.server, remote: true } : {}) };
+  });
 }
+/* OATSWEB_VIEWS_END */
 
 /* OATSWEB_PANELPROJ_BEGIN — the /api/panel per-instance contract projection.
    Extracted by packages/desktop/test/panel-projection.test.mjs via block
@@ -214,7 +373,7 @@ function projectPanelInstance(i) {
  * souls, each with its declared work mode). Nothing is read from soul.yaml
  * here, and a soul outside the catalog is not offered for spawning. */
 function agentsData(wsId) {
-  const ws = wsId ? workspaceById(wsId) : workspaces()[0];
+  const ws = deploymentFor(wsId);
   if (ws?.remote) return { workspace: { id: ws.id, name: ws.name, server: ws.server }, agents: remote.remoteAgents(ws.group), observedAt: null, refreshing: false };
   const deployment = ws ? snapshot.byWs.get(ws.id)?.deployment : null;
   const agents = [];
@@ -369,7 +528,7 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
   const server = String(serverId);
   // agentsRoot must be one of the workspace roots this server was started for —
   // never spawn into an arbitrary caller-supplied directory.
-  const known = workspaces().flatMap((w) => w.roots);
+  const known = deployments().flatMap((w) => w.roots);
   const remoteSoul = remoteGroups.some((g) => g.server === server
     && remote.remoteAgents(g).some((a) => a.name === name && a.agentsRoot === agentsRoot));
   if (!remoteSoul && !known.some((r) => resolve(r) === root)) throw new Error(`unknown agents root "${agentsRoot}"`);
@@ -432,7 +591,9 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
   }
   const r = env.result;
   if (r.server) void refreshRemoteSnapshot();
-  const remoteWorkspaceId = remote.spawnedWorkspace(remoteGroups, r);
+  const spawnedDeployment = remote.spawnedWorkspace(remoteGroups, r);
+  // The renderer switches to the reply's workspace: the VIEW that holds the deployment, never a bare deployment id.
+  const remoteWorkspaceId = spawnedDeployment ? viewFor(spawnedDeployment)?.id ?? spawnedDeployment : undefined;
   return { instance: r.instance, agent: r.agent, home: r.home, work: r.work,
     ...(r.wakeSchedule ? { wakeSchedule: r.wakeSchedule } : {}),
     ...(r.wakeScheduleError ? { wakeScheduleError: r.wakeScheduleError } : {}),
@@ -505,6 +666,7 @@ async function reprobeCli(chosen) {
   }
   cliProbeGeneration++;
   cliState = { ...r, probedAt: Date.now() };
+  rosterAnswered = false; rosterFailure = null; // the roster belongs to the accepted CLI
   // Everything held was read with the previous CLI.
   inspectCache.clear(); capabilityCatalog.forgetAll(); capabilityShowCache.clear(); admitted.clear(); spawnPreviewCache.invalidate();
   void refreshSnapshot({ live: true }); // the deployment observation belongs to the accepted CLI
@@ -695,7 +857,7 @@ function attachCatalog(id, pending, entry = null) {
  * again. Focused with that view open, the catalog is re-read about once per TTL + read; blurred, never. */
 function revalidateCatalog(wsId) {
   if (!refreshLoop.focused()) return;
-  const ws = wsId ? workspaceById(wsId) : workspaces()[0];
+  const ws = deploymentFor(wsId);
   const published = ws && !ws.remote ? snapshot.byWs.get(ws.id) : null, d = published?.deployment;
   if (d?.status !== "observed" || !cliState.ok) return;
   const pending = soulCatalog.revalidate(ws.id, cliState, d.workspaceStatus, { maxAge: BACKGROUND_MAX_AGE });
@@ -714,7 +876,7 @@ function mergeRemotePanels(byWs) {
 async function refreshRemoteSnapshot() {
   if (remoteCollecting) return;
   if (!cliState.ok || !cliState.remote?.includes("roster")) {
-    remoteGroups = []; mergeRemotePanels(snapshot.byWs); return;
+    remoteGroups = []; rosterAnswered = false; mergeRemotePanels(snapshot.byWs); return;
   }
   remoteCollecting = true;
   const probe = cliState;
@@ -725,10 +887,13 @@ async function refreshRemoteSnapshot() {
       ? env.result.groups : remote.unavailableGroups(remoteGroups, env.error || { code: "E_REMOTE_ROSTER", message: "Remote roster unavailable" });
     incoming.forEach(remote.remotePanel); // validate before replacing the last readable roster
     remoteGroups = incoming;
+    if (env.ok) { rosterAnswered = true; rosterFailure = null; remoteIdentities.observe(incoming); }
+    else if (!rosterAnswered) rosterFailure = env.error?.message || "Remote roster unavailable";
     mergeRemotePanels(snapshot.byWs);
   } catch (e) {
     if (cliState !== probe) return;
     remoteGroups = remote.unavailableGroups(remoteGroups, { code: "E_REMOTE_ROSTER", message: `Remote roster unavailable: ${e.message}` });
+    if (!rosterAnswered) rosterFailure = `Remote roster unavailable: ${e.message}`;
     mergeRemotePanels(snapshot.byWs);
   } finally {
     remoteCollecting = false;
@@ -758,7 +923,7 @@ function refreshSnapshot(options = {}) { return refreshLoop.request(options); }
  * roster must observe the result live. Inspections are held under the workspace's SCOPE (the deployment
  * directory the kernel was pointed at), which is the id for a local deployment but not for a remote one. */
 function observeMutation(wsId) {
-  const scope = workspaces().find((w) => w.id === wsId)?.scope;
+  const scope = deployments().find((w) => w.id === wsId)?.scope;
   if (scope) inspectCache.invalidate(scope);
   // The dialog's held spawn previews are keyed by workspace id, not scope.
   if (wsId) spawnPreviewCache.invalidate(wsId);
@@ -807,7 +972,7 @@ function harvestHome(inst) {
   let real;
   try { real = realpathSync(inst.home); } catch { return null; }
   if (basename(real) !== String(inst.instance) || basename(dirname(real)) !== "instances") return null;
-  for (const w of workspaces()) {
+  for (const w of deployments()) {
     if (w.remote) continue;
     const reported = snapshot.byWs.get(w.id)?.instances || [];
     if (!reported.some((i) => !i.server && i.instance === inst.instance && i.home === inst.home)) continue;
@@ -1053,7 +1218,7 @@ function mdTree(dir) {
 }
 const mdIf = (p) => (existsSync(p) ? p : null);
 function brainData(agentName, wsId) {
-  const ws = wsId ? workspaceById(wsId) : workspaces()[0];
+  const ws = deploymentFor(wsId);
   const observed = ws && !ws.remote ? snapshot.byWs.get(ws.id) : null;
   if (observed?.deployment?.status !== "observed") return null;
   const root = observed.deployment.root;
@@ -1150,7 +1315,7 @@ const FILE_MAX_BYTES = 2 * 1024 * 1024;
 function fileRoots() {
   const roots = [];
   const admit = (p) => { try { roots.push(realpathSync(p)); } catch { /* absent — skip */ } };
-  for (const w of workspaces()) for (const r of w.roots) admit(r);
+  for (const w of deployments()) for (const r of w.roots) admit(r);
   // Every soul directory the kernel reported for an observed local deployment
   // (its souls/knowledge/instances are viewable), admitted only when its
   // canonical path stays inside the canonical deployment: a symlinked soul
@@ -1260,16 +1425,18 @@ const server = createServer(async (req, res) => {
       const asked = url.searchParams.get("ws") || undefined;
       // An explicit workspace this server does not serve (a path, an id, a remote it no longer has) is
       // refused, never answered with another workspace's data. No ?ws= still means the first workspace.
-      if (asked && !workspaces().some((w) => w.id === asked)) return send(res, 404, workspaceNotServed(asked));
+      // A view id or a deployment id (a deployment answers with its view: a selection saved before views opens it).
+      if (asked && !isServed(asked)) return send(res, 404, workspaceNotServed(asked));
       // Served from the latest kernel observation; never waits on a CLI read.
       if (path === "/api/panel") return send(res, 200, panelData(asked));
       revalidateCatalog(asked);
       return send(res, 200, agentsData(asked));
     }
     if (path === "/api/launch-configs" && req.method === "POST") {
-      const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
+      const asked = url.searchParams.get("ws");
       try {
         const request = await readBody(req);
+        const workspace = surfaceDeployment(asked, request);
         const result = await launchConfigRequest(request, {
           workspace, cli: cliState, localCwd: ctxs[0],
           agents: workspace ? agentsData(workspace.id).agents : [],
@@ -1289,12 +1456,14 @@ const server = createServer(async (req, res) => {
         }
         if (url.searchParams.getAll("ws").length !== 1 || !url.searchParams.get("ws") || [...url.searchParams.keys()].some(k => k !== "ws")) throw new Error("bad workspace query");
         const getContext = () => {
-          const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
+          const workspace = deployments().find(w => w.id === url.searchParams.get("ws"));
           const observed = workspace ? snapshot.byWs.get(workspace.id) : null;
           // clones[]: the kernel's member keys and this computer's clone paths (#217), for the roster.
           return { workspace, cli: cliState, instances: observed?.instances || [], clones: observed?.deployment?.workspaceStatus?.clones || [] };
         };
-        if (path === "/api/forge-roster") return send(res, 200, await forgeBoundary.roster(request, getContext, epoch));
+        // The pull-request roster is the VIEW's: every local deployment's rows (keyed by home) and clones.
+        // A view with no local deployment is remote, as a remote deployment was before views.
+        if (path === "/api/forge-roster") return send(res, 200, await forgeBoundary.roster(request, () => viewForgeContext(url.searchParams.get("ws")), epoch));
         if (path === "/api/instance-review-threads") {
           // The paste goes to the instance's own anchored tmux target in THIS workspace, looked up fresh.
           const find = (target) => (getContext().instances || []).find((i) => i.home === target.home && i.instance === target.instance) || null;
@@ -1311,7 +1480,7 @@ const server = createServer(async (req, res) => {
         if (url.searchParams.getAll('ws').length !== 1 || !url.searchParams.get('ws') || [...url.searchParams.keys()].some(k => k !== 'ws')) throw new Error('bad query');
         const request = await readStrictBody(req, 16384);
         const getContext = () => {
-          const workspace = workspaces().find(w => w.id === url.searchParams.get('ws'));
+          const workspace = deployments().find(w => w.id === url.searchParams.get('ws'));
           return { workspace, cli: cliState, epoch: cliProbeGeneration, localCwd: ctxs[0],
             instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
         };
@@ -1323,7 +1492,7 @@ const server = createServer(async (req, res) => {
         if (url.searchParams.getAll('ws').length !== 1 || !url.searchParams.get('ws') || [...url.searchParams.keys()].some(k => k !== 'ws')) throw new Error('bad query');
         const request = await readStrictBody(req, 16384);
         const getContext = () => {
-          const workspace = workspaces().find(w => w.id === url.searchParams.get('ws'));
+          const workspace = deploymentFor(url.searchParams.get('ws'));
           return { workspace, cli: cliState, agents: workspace && !workspace.remote && !workspace.server ? agentsData(workspace.id).agents : [],
             instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
         };
@@ -1336,7 +1505,7 @@ const server = createServer(async (req, res) => {
         if (url.searchParams.getAll('ws').length !== 1 || !url.searchParams.get('ws') || [...url.searchParams.keys()].some(k => k !== 'ws')) throw new Error('bad query');
         const request = await readStrictBody(req);
         const getContext = () => {
-          const workspace = workspaces().find(w => w.id === url.searchParams.get('ws'));
+          const workspace = deployments().find(w => w.id === url.searchParams.get('ws'));
           return { workspace, cli: cliState, agents: workspace && !workspace.remote && !workspace.server ? agentsData(workspace.id).agents : [],
             localCwd: ctxs[0], instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
         };
@@ -1349,7 +1518,7 @@ const server = createServer(async (req, res) => {
       try {
         if (url.searchParams.getAll('ws').length !== 1 || !url.searchParams.get('ws') || [...url.searchParams.keys()].some(k => k !== 'ws')) throw new Error('bad query');
         const request = await readStrictBody(req, 4096);
-        const getContext = () => ({ workspace: workspaces().find(w => w.id === url.searchParams.get('ws')), cli: cliState });
+        const getContext = () => ({ workspace: deploymentFor(url.searchParams.get('ws')), cli: cliState });
         const result = await (path === '/api/workspace-teams' ? teamsRequest : soulTeamsRequest)(request, getContext);
         // The writing actions change oats-local.yaml; inspect reports a soul's teams, so the held inspections go
         // (held under the workspace's scope, see observeMutation).
@@ -1366,7 +1535,7 @@ const server = createServer(async (req, res) => {
         if (url.searchParams.getAll('ws').length !== 1 || !url.searchParams.get('ws') || [...url.searchParams.keys()].some(k => k !== 'ws')) throw new Error('bad query');
         const request = await readStrictBody(req);
         const getContext = () => {
-          const workspace = workspaces().find(w => w.id === url.searchParams.get('ws'));
+          const workspace = deployments().find(w => w.id === url.searchParams.get('ws'));
           return { workspace, cli: cliState, localCwd: ctxs[0], instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
         };
         const result = await lifecycleRequest(request, getContext);
@@ -1387,7 +1556,7 @@ const server = createServer(async (req, res) => {
           throw Object.assign(new Error("Expected one workspace selector"), { code: "E_BAD_ARGS" });
         }
         const request = await readStrictBody(req);
-        const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
+        const workspace = deployments().find(w => w.id === url.searchParams.get("ws"));
         // Never collect Git here or fall back to another workspace.
         // An absent exact snapshot is unavailable; refreshing the roster is
         // the existing collector's job, not an authority to infer another home.
@@ -1406,7 +1575,7 @@ const server = createServer(async (req, res) => {
       try {
         if (url.searchParams.getAll("ws").length !== 1 || !url.searchParams.get("ws") || [...url.searchParams.keys()].some(k => k !== "ws")) throw new Error("bad query");
         const request = await readStrictBody(req, 16384);
-        const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
+        const workspace = deploymentFor(url.searchParams.get("ws"));
         const result = await workspaceSyncRequest(request, { workspace, cli: cliState });
         if (request?.action === "sync" && result.status === "ok") {
           try { observeMutation(workspace?.id); } catch { /* a refresh must not erase the sync report */ }
@@ -1415,9 +1584,10 @@ const server = createServer(async (req, res) => {
       } catch { return send(res, 400, syncFailure("E_BAD_ARGS")); }
     }
     if (path === "/api/capabilities" && req.method === "POST") {
-      const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
+      const asked = url.searchParams.get("ws");
       try {
         const request = await readStrictBody(req);
+        const workspace = surfaceDeployment(asked, request);
         if (request?.action === "show" || request?.action === "file") {
           // What a capability ships (server/capability-show.mjs): its own gate (capability-show), not the
           // operations API's. The selector must match a row of the held table; with none held yet for an
@@ -1457,7 +1627,7 @@ const server = createServer(async (req, res) => {
       let request;
       try { ({ body: request } = await readStrictBody(req, 4096, true)); } catch { return send(res, 400, automationsFailure('E_BAD_ARGS')); }
       if (url.searchParams.getAll('ws').length !== 1 || !url.searchParams.get('ws') || [...url.searchParams.keys()].some(k => k !== 'ws')) return send(res, 400, automationsFailure('E_BAD_ARGS'));
-      const workspace = workspaces().find(w => w.id === url.searchParams.get('ws'));
+      const workspace = deploymentFor(url.searchParams.get('ws'));
       return send(res, 200, await automationsRequest(request, { workspace, cli: cliState }));
     }
     if (path === '/api/schedules') {
@@ -1467,7 +1637,7 @@ const server = createServer(async (req, res) => {
       let request;
       try { ({ body: request } = await readStrictBody(req, 65536, true)); } catch { return send(res, 400, { error: 'Invalid schedule request', code: 'E_BAD_ARGS' }); }
       // No default workspace: a mutation names its workspace.
-      const workspace = workspaces().find(w => w.id === url.searchParams.get('ws'));
+      const workspace = surfaceDeployment(url.searchParams.get('ws'), request);
       try {
         const result = await scheduleRequest(request, {
           workspace, cli: cliState, localCwd: ctxs[0],
@@ -1479,7 +1649,7 @@ const server = createServer(async (req, res) => {
     }
     const bm = path.match(/^\/api\/brain\/([A-Za-z0-9._-]+)$/);
     if (bm && req.method === "GET") {
-      if (workspaceById(url.searchParams.get("ws"))?.remote) return send(res, 409, { error: "Remote files are available through the agent terminal", code: "E_REMOTE_FILES" });
+      if (deploymentFor(url.searchParams.get("ws"))?.remote) return send(res, 409, { error: "Remote files are available through the agent terminal", code: "E_REMOTE_FILES" });
       const d = brainData(bm[1], url.searchParams.get("ws") || undefined);
       return d ? send(res, 200, d) : send(res, 404, { error: `unknown agent "${bm[1]}"` });
     }
@@ -1494,11 +1664,9 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && path === "/api/team-members") {
       // Who is in each team, wherever it runs (spec 02): the held observations only, no command.
       if (url.searchParams.getAll("ws").length !== 1 || [...url.searchParams.keys()].some(k => k !== "ws")) return send(res, 400, { error: "Expected one workspace selector", code: "E_BAD_ARGS" });
-      const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
-      if (!workspace) return send(res, 400, { error: "Select a known workspace", code: "E_WORKSPACE_UNKNOWN" });
-      const result = teamMembers({ workspace, instances: snapshot.byWs.get(workspace.id)?.instances || [],
-        groups: remoteGroups.map(group => ({ group, panel: snapshot.byWs.get(`remote:${group.id}`) || remote.remotePanel(group) })) });
-      if (result.error) return send(res, 409, { error: "The Teams board is local; a remote workspace's teams are read on that machine", code: result.error });
+      // The VIEW's members (#482): its deployments only, each member tagged with its deployment and machine.
+      const result = teamMembersFor(url.searchParams.get("ws"));
+      if (!result) return send(res, 400, { error: "Select a known workspace", code: "E_WORKSPACE_UNKNOWN" });
       return send(res, 200, result);
     }
     if (req.method === "GET" && path === "/api/servers") {
@@ -1541,7 +1709,7 @@ const server = createServer(async (req, res) => {
           const failure = spawnApplyFailure('E_BAD_ARGS'); return send(res, 400, { ...failure, code: failure.reason.code, error: failure.reason.message });
         }
         const getContext = () => {
-          const workspace = workspaces().find(w => w.id === url.searchParams.get('ws'));
+          const workspace = deploymentFor(url.searchParams.get('ws'));
           return { workspace, cli: cliState, agents: workspace && !workspace.remote && !workspace.server ? agentsData(workspace.id).agents : [],
             instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
         };
@@ -1601,7 +1769,7 @@ const server = createServer(async (req, res) => {
         return env.ok ? send(res, 200, env.result) : send(res, env.error.code === "E_BAD_ARGS" ? 400 : 409, { error: env.error.message, code: env.error.code });
       }
       /* OATSWEB_START_END */
-      const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
+      const workspace = deployments().find(w => w.id === url.searchParams.get("ws"));
       const result = await capabilityRequest({ action: "run", selector: { home: inst.home }, operation: "knowledge:harvest" }, {
         workspace, cli: cliState, localCwd: ctxs[0],
         agents: workspace ? agentsData(workspace.id).agents : [],
@@ -1667,7 +1835,7 @@ server.on("error", (e) => {
 });
 server.listen(port, "127.0.0.1", () => {
   const addr = `http://127.0.0.1:${port}`;
-  console.log(`oats-desktop server — API at ${addr}  (workspaces: ${workspaces().map((w) => w.name).join(", ") || "none"})`);
+  console.log(`oats-desktop server — API at ${addr}  (workspaces: ${deployments().map((w) => w.name).join(", ") || "none"})`);
   console.log("Bound to 127.0.0.1 only. This process can type into your agent terminals — do not expose it.");
 });
 void refreshLoop.start();                // the first cycle publishes "pending" until the CLI probe settles
