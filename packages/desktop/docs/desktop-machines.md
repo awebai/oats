@@ -83,8 +83,10 @@ and is not selected.
   there if it's missing** (on). It never asks for or shows a secret.
 - Each phase (connect, then messaging) is a box of rows, one per step the CLI
   sent: the step, its status in words (ok, done, needs you, waiting, failed),
-  and the CLI's own `detail`, `remedy` and code. Each command a remedy names
-  in backticks gets a copy button. No wording of the Desktop's replaces the
+  and the CLI's own `detail`, `remedy` (its lines kept: a readiness remedy is
+  several lines joined by newlines) and code. Each command a remedy names in
+  backticks gets a copy button; a remedy that names none (the kernel's git
+  remedy says what to make readable, where) has none. No wording of the Desktop's replaces the
   CLI's. A failed run shows `error.details.steps` and the CLI's message and
   code.
 - The messaging phase runs only when the deployment uses oats.aweb and connect
@@ -100,9 +102,19 @@ and is not selected.
 ## The Machines box (`renderer/workspace-machines.mjs`)
 
 On the Setup tab, in either view: each machine's name, host, folder, OATS
-version and reachable or not, from its last check this run, with **Check** and
+version and reachable or not, from its last check this run (reachable: the
+check reached its deployment, and `workspaceReadable` is not `false`; the
+kernel's `workspaceReadError` or error message is the state's title), with **Check** and
 **Remove**. A machine not checked yet this run is checked once in the
 background (two at a time). Remove asks first, in the row ("Remove <id>?
 Instances spawned there keep running and can still be retired from here."),
 and a refusal is said in the row in the CLI's words. The box is mounted once
 per workspace and kept across the tab's re-renders.
+
+## Fixtures
+
+`test/fixtures/machines-517/` holds the kernel's own answers (spec A's
+fake-host runs: connect needing a human at git, ready, failed; `server list`
+with a known and an unknown key; the backfilling check), with their source in
+`provenance.json`. `oats aweb connect` is built to the interface's example
+until oats.aweb's capture exists.
