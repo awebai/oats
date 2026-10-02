@@ -79,7 +79,7 @@ test('the main form shows the Teams row — one line like Relationship: the defa
   const field = u.q('.spawn-teams');
   assert.equal(field.hidden, false); assert.equal(field.tagName, 'FIELDSET');
   assert.equal(field.closest('.spawn-advanced'), null, 'the main form, not Developer settings');
-  assert.equal(field.querySelector('legend').textContent, 'Teams');
+  assert.equal(field.querySelector('legend').firstChild.textContent, 'Teams', 'its jump chord is a separate, aria-hidden hint (Spec E)');
   assert.equal(u.text('.spawn-teams-hint'), "By default it's only in the workspace's default team. These are the teams release-manager has access to — tick the ones it should also join.");
   assert.deepEqual(rows(u), [['Default', "The workspace's default team — always. Every instance is in it.", true, true],
     ['engineering', 'Join engineering (northwind:eng)', false, false]], 'global is not mapped: not shown');
@@ -88,6 +88,20 @@ test('the main form shows the Teams row — one line like Relationship: the defa
   assert.equal(row.querySelectorAll('.spawn-team').length, 2); assert.equal(row.parentElement, field);
   assert.ok(u.previews().every(p => !Object.hasOwn(p.choices, 'join')), 'by default nothing is sent');
   assert.equal(u.q('.fspawn').disabled, false);
+});
+
+test('Spec E: Mod+5 jumps to the first team one can tick; every opt-in box says its aria-keyshortcuts', async t => {
+  const u = await dialog(t);
+  const box = u.q('.fteam[value="engineering"]');
+  assert.equal(box.getAttribute('aria-keyshortcuts'), 'Control+5');
+  assert.equal(u.q('.spawn-teams legend kbd.spawn-key-hint').textContent, 'Ctrl+5');
+  assert.equal(u.q('.spawn-teams legend kbd.spawn-key-hint').getAttribute('aria-hidden'), 'true');
+  u.q('.ftask').focus();
+  const e = new u.dom.window.KeyboardEvent('keydown', { key: '5', ctrlKey: true, bubbles: true, cancelable: true });
+  u.q('.ftask').dispatchEvent(e);
+  assert.equal(e.defaultPrevented, true); assert.equal(u.doc.activeElement, box, 'not the fixed default (it cannot be ticked)');
+  await u.change('.fteam[value="engineering"]', true); await settle();
+  assert.equal(u.q('.fteam[value="engineering"]').getAttribute('aria-keyshortcuts'), 'Control+5', 'kept across the redraw');
 });
 
 test('ticking a team previews it, the kernel binds it, and the apply sends it by value', async t => {

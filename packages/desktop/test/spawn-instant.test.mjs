@@ -25,6 +25,7 @@ test('a valid press with a settled preview closes the dialog at once; the pendin
   u.q('.fspawn').click();
   assert.equal(u.dialog(), null, 'closed in the same task as the press (no await before the handoff)');
   const [row] = u.jobs.rows('northwind');
+  assert.deepEqual(u.followed, [row.id], 'Spec E: after the dialog closed, the shell reveals its pending row and follows it');
   assert.equal(row.instance, created().decision.instance); assert.equal(row.home, created().decision.home);
   assert.equal(row.pending, 'spawning'); assert.equal(row.agent, 'release-manager'); assert.equal(row.agentsRoot, ROOT);
   await settle(20);
@@ -33,8 +34,10 @@ test('a valid press with a settled preview closes the dialog at once; the pendin
   assert.equal(u.jobs.rows('northwind').length, 1, 'created but not yet in the roster: still “Spawning…”');
   u.jobs.observe('northwind', [realRow()]);
   assert.equal(u.jobs.rows('northwind').length, 0, 'the roster reports it: the real row replaces the pending one');
-  assert.equal(u.notified.length, 1, '“<name> spawned” with Open'); assert.equal(u.notified[0].row.instance, created().decision.instance);
-  assert.deepEqual(u.opens, [], 'no terminal is auto-opened'); assert.equal(u.jobs.size(), 0);
+  assert.equal(u.notified.length, 1, 'handed to the shell (spawn-follow.mjs: taken there, or its row says New)');
+  assert.equal(u.notified[0].row.instance, created().decision.instance);
+  assert.deepEqual(u.notified[0].arrival, { id: row.id, complete: true }, 'the press it belongs to, and a complete spawn');
+  assert.deepEqual(u.opens, [], 'the view opens nothing itself'); assert.equal(u.jobs.size(), 0);
 });
 
 test('Cmd-Enter hands off the same way; two presses in one task start one spawn', async t => {
@@ -235,6 +238,29 @@ test('store: partial (the wake was not saved) posts the kernel’s words with Vi
   s.observe('northwind', [realRow()]); assert.equal(s.size(), 0);
 });
 
+test('Spec E: a launched partial spawn is followed to its instance once it runs, with no second notice', async () => {
+  const arrivals = [];
+  const { s, id, notes } = brokerStore({ notifySpawned: (row, ws, epoch, arrival) => arrivals.push({ row, ws, arrival }),
+    wake: { cron: '0 * * * *', tz: 'UTC', message: 'wake', enabled: false },
+    apply: () => receipt(created(), { wake: { requested: true, saved: false, error: { code: 'E_SCHEDULE', message: 'x' } } }) });
+  await settle(10);
+  assert.equal(notes.length, 1, 'its own notice (what did not finish)');
+  s.observe('northwind', [realRow(created(), { running: false, tmux: null })]);
+  assert.equal(arrivals.length, 0, 'present but not running: nothing to open yet'); assert.equal(s.size(), 1);
+  s.observe('northwind', [realRow()]);
+  assert.equal(arrivals.length, 1); assert.deepEqual(arrivals[0].arrival, { id, complete: false });
+  assert.equal(notes.length, 1, 'no second notice'); assert.equal(s.size(), 0);
+});
+
+test('Spec E: a partial spawn that was not launched is never followed (no terminal to open)', async () => {
+  const arrivals = [];
+  const { s } = brokerStore({ notifySpawned: (...a) => arrivals.push(a), wake: { cron: '0 * * * *', tz: 'UTC', message: 'wake', enabled: false },
+    apply: () => receipt(created(), { launched: false, wake: { requested: true, saved: false, error: { code: 'E_SCHEDULE', message: 'x' } } }) });
+  await settle(10);
+  s.observe('northwind', [realRow(created(), { running: false, tmux: null })]);
+  assert.equal(arrivals.length, 0); assert.equal(s.size(), 0);
+});
+
 test('store: incomplete keeps the existing wording (open it from the instance list)', async () => {
   const d = created().decision;
   const { s, notes } = brokerStore({ apply: () => ({ started: true, envelope: { schemaVersion: 1, ok: false,
@@ -242,6 +268,21 @@ test('store: incomplete keeps the existing wording (open it from the instance li
   await settle(10);
   assert.equal(notes[0].message, `${d.instance} was created but didn’t finish starting. Open it from the instance list instead of spawning again.`);
   assert.equal(s.rows('northwind').length, 1);
+});
+
+test('Spec E: the store highlights the pressed spawn\'s pending row, and keeps which real rows say New until seen', async () => {
+  let changes = 0;
+  const { s } = store({ post: () => new Promise(() => {}), onChange: () => { changes++; } });
+  const a = s.submit(spec()), b = s.submit(spec({ soul: { name: 'other', agentsRoot: '/d/agents' } }));
+  assert.equal(s.reveal(a), true);
+  assert.deepEqual(s.rows('A').map(r => [r.id, !!r.revealed]), [[a, true], [b, false]]);
+  s.reveal(b); assert.deepEqual(s.rows('A').map(r => [r.id, !!r.revealed]), [[a, false], [b, true]], 'one at a time: the latest press');
+  assert.equal(s.reveal('spawn-gone'), false);
+  const row = { instance: 'dev-x', home: decision.home };
+  const before = changes; s.markNew('A', row);
+  assert.ok(changes > before, 'the roster repaints'); assert.equal(s.isNew('A', row), true);
+  assert.equal(s.isNew('B', row), false, 'by workspace'); assert.equal(s.isNew('A', { ...row, server: 'srv' }), false, 'and by server and home');
+  assert.equal(s.seen('A', row), true); assert.equal(s.isNew('A', row), false); assert.equal(s.seen('A', row), false);
 });
 
 test('pendingPlacement: the row sits where the roster will place the real one', () => {
