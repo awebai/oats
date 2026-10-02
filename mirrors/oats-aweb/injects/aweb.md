@@ -27,6 +27,13 @@ aw --identity-home <identityHome> mail|chat ...            # act as a joined tea
 Always use `--body-file` for anything longer than a sentence. `aw chat send`
 only continues an existing session (`--session-id`); it has no `--to`.
 
+**How mail reaches you** depends on your runtime, and your `Comms:` line names
+it. Under the default `delivery: channel`, Claude Code is woken by the aweb
+channel plugin and pi by its aweb extension, both pushing into the session;
+Codex, which has no aweb channel, is woken by the host wake broker
+(`Notification delivery: external`). Under `delivery: session` the host wake
+broker wakes every runtime. One path per session, never both.
+
 **When woken**, read what the broker or channel presents first: it may be a
 line naming what is waiting, or the full mail/chat event with body. aw 1.36.21+
 mail events are headed `aweb mail event received.` and include metadata

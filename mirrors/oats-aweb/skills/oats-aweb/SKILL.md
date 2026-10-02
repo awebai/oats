@@ -105,13 +105,18 @@ the sender body, a `Use the aw CLI...` reminder, and a Recovery line such as
 `aw --identity-home '<home>' mail show --message-id <id>`. Handle what is
 presented; do not assume either form.
 
+Which path wakes you follows your runtime. Under the default `delivery:
+channel`, Claude Code takes mail through the aweb channel plugin and pi through
+its aweb extension, which push into the session; Codex (and any runtime without
+an aweb channel) is woken by the host wake broker. Under `delivery: session`
+the host wake broker wakes every runtime. A session is on one path, never both.
+
 | Your `Comms:` line / teams doc says | What wakes you |
 |---|---|
-| (no "Notification delivery" note), Claude or Pi | the aweb channel plugin / Pi extension pushes the event; you saw `✓ aweb connected` at start |
+| `Notification delivery: the aweb channel plugin` (Claude Code) or `the aweb pi extension` (pi) | the channel plugin / pi extension pushes the event; you saw `✓ aweb connected` at start |
 | `Notification delivery: external` | the host wake broker presents incoming mail/chat in your terminal, either as a waiting-items line or as the full event |
 | joined team with `receive: native` | the host wake broker presents that identity's mail/chat, either as a line with `aw --identity-home <path> …` commands or as the full event |
 | joined team with `receive: poll` | nothing: check that team's inbox and pending chat at task boundaries |
-| Codex / no channel | nothing: check `aw mail inbox` and `aw chat pending` at task boundaries |
 
 **When woken:**
 
@@ -129,8 +134,8 @@ presented; do not assume either form.
    unless the message says so and your coordinator agrees.
 
 **Never sleep, poll or busy-wait for a reply.** Send, finish your turn, and let
-the wake bring the answer. With `receive: poll` or no channel, check at natural
-task boundaries only; there, an empty `aw mail inbox` means no *unread* mail.
+the wake bring the answer. For a joined team with `receive: poll`, check at
+natural task boundaries only; there, an empty `aw mail inbox` means no *unread* mail.
 For `Notification delivery: external`, delivery may mark mail read, so a
 presented mail may no longer appear in unread `aw mail inbox`. Recovery after
 an uncertain crash, compaction or restart reconciles STATE and task records
@@ -231,8 +236,10 @@ teams; it does not have a provider `team` setting.
 
 **Settings under `settings.oats.aweb`:**
 
-- `delivery`: `channel` (default) or `session`; `session` uses the host wake
-  broker and sets `AWEB_DELIVERY=session`.
+- `delivery`: `channel` (default) or `session`. `channel` wakes Claude Code
+  through its channel plugin and pi through its extension, and sends Codex and
+  any other runtime through the host wake broker; `session` sends every runtime
+  through the broker. The broker path sets `AWEB_DELIVERY=session`.
 - `root`: absolute directory whose `.aw` is the default team's minting root.
 - `roots`: `{ <team id>: <absolute dir> }`; `roots[team]` wins over `root` and
   is how one deployment mints into several aweb teams.
