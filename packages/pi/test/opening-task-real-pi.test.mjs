@@ -59,4 +59,4 @@ function run(t, scenario) {
   assert.equal(r.status, 0, r.stderr);
   return JSON.parse(r.stdout);
 }
-for (const scenario of SCENARIOS) test(`real pi, ${scenario.title}`, { skip }, (t) => assertScenario(run(t, scenario.name), scenario));
+for (const scenario of SCENARIOS.filter((s) => !s.hostOnly)) test(`real pi, ${scenario.title}`, { skip }, (t) => assertScenario(run(t, scenario.name), scenario));

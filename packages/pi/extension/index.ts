@@ -102,6 +102,11 @@ function deliverOpeningTask(pi: ExtensionAPI) {
     await untilFree(ctx);
   });
   pi.on("message_start", (event) => { if (opening && event.message.role === "user") opening = undefined; });
+  // Waiters re-check on agent_settled (pi 0.80.4 and later), and one
+  // macrotask after agent_end, once pi-agent-core has released the run: a pi
+  // without agent_settled never emits it.
+  const wake = () => { for (const resume of settleWaiters.splice(0)) resume(); };
+  pi.on("agent_end", () => { setTimeout(wake, 0); });
   pi.on("agent_settled", (_event, ctx) => {
     if (opening?.launching) {
       if (ctx.signal !== undefined) opening.refused = true;
@@ -111,6 +116,6 @@ function deliverOpeningTask(pi: ExtensionAPI) {
         pi.sendUserMessage(opening.content!, { deliverAs: "followUp" });
       }
     }
-    for (const wake of settleWaiters.splice(0)) wake();
+    wake();
   });
 }

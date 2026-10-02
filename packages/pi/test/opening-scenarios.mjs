@@ -18,6 +18,7 @@ export const SCENARIOS = [
   { name: "welcome-after-task-started", title: "task started, then the welcome: nothing is sent again", task: "THE TASK", afterWelcome: false },
   { name: "displaced-twice", title: "the task is sent again at most once", task: null, resent: true },
   { name: "input-transform", title: "an input transformer ahead of the bridge applies once", task: "PREFIX THE TASK", first: true, inputOnce: true },
+  { name: "welcome-first-without-agent-settled", title: "welcome first on a pi without agent_settled: the task runs after the welcome", task: "THE TASK", afterWelcome: true, hostOnly: true },
   { name: "input-transform-welcome-first", title: "an input transformer ahead of the bridge applies once when the task waits for the welcome", task: "PREFIX THE TASK", afterWelcome: true, inputOnce: true },
 ];
 

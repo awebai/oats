@@ -55,6 +55,8 @@ const scenarios = {
   // An input transformer ahead of the bridge, without and with a running welcome.
   "input-transform": { before: transformInput },
   "input-transform-welcome-first": { before: transformInput, start: () => welcome() },
+  // A pi without agent_settled: the welcome turn is running when the task arrives.
+  "welcome-first-without-agent-settled": { before: () => { host.withoutAgentSettled = true; }, start: () => welcome() },
 };
 
 const scenario = scenarios[name];

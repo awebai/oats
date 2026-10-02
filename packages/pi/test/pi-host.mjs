@@ -21,6 +21,10 @@ export class PiHost {
   /** pi-agent-core Agent.activeRun. */
   agentRunActive = false;
   followUps = [];
+  /** A pi before 0.80.4: no agent_settled, and isStreaming/isIdle read the agent's own flag
+   *  (pi 0.80.3 core/agent-session.js:533-534, :685-696, :1814). */
+  withoutAgentSettled = false;
+  get streaming() { return this.withoutAgentSettled ? this.agentRunActive : this.sessionRunActive; }
 
   /** The ExtensionAPI subset the bridge and the race fixtures use. */
   api() {
@@ -35,7 +39,7 @@ export class PiHost {
   /** core/extensions/runner.js:544-555 → core/agent-session.js:2061-2063: isIdle is the session's flag, signal the agent's run. */
   context() {
     const host = this;
-    return { isIdle: () => !host.sessionRunActive, get signal() { return host.agentRunActive ? host.runSignal : undefined; } };
+    return { isIdle: () => !host.streaming, get signal() { return host.agentRunActive ? host.runSignal : undefined; } };
   }
   runSignal = new AbortController().signal;
 
@@ -48,12 +52,12 @@ export class PiHost {
     const source = options.source ?? "interactive";
     // core/agent-session.js:842-852: input handlers see streamingBehavior only while streaming; the first "handled" wins.
     for (const handler of this.handlers.get("input") || []) {
-      const result = await handler({ type: "input", text, images: options.images, source, streamingBehavior: this.sessionRunActive ? options.streamingBehavior : undefined }, this.context());
+      const result = await handler({ type: "input", text, images: options.images, source, streamingBehavior: this.streaming ? options.streamingBehavior : undefined }, this.context());
       if (result?.action === "handled") return;
       if (result?.action === "transform") text = result.text;
     }
     // core/agent-session.js:860-870: while streaming, queue by streamingBehavior or refuse.
-    if (this.sessionRunActive) {
+    if (this.streaming) {
       if (!options.streamingBehavior) throw new Error("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.");
       this.followUps.push({ role: "user", text });
       return;
@@ -73,13 +77,14 @@ export class PiHost {
   /** core/agent-session.js:1099-1133: a triggerTurn custom message queues while streaming, else starts a run at once. */
   sendCustomMessage(message, options = {}) {
     const entry = { role: "custom", text: message.content };
-    if (this.sessionRunActive && options.triggerTurn !== false) { this.followUps.push(entry); return; }
+    if (this.streaming && options.triggerTurn !== false) { this.followUps.push(entry); return; }
     if (options.triggerTurn) { this.runAgentPrompt(entry); return; }
     this.transcript.push(entry);
   }
 
   /** core/agent-session.js:772-786 and :347-356: the run flag is set first and cleared, with agent_settled, in finally. */
   async runAgentPrompt(message) {
+    if (this.withoutAgentSettled) return this.agentPrompt(message);
     this.sessionRunActive = true;
     try {
       await this.agentPrompt(message);

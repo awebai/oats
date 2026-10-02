@@ -20,7 +20,7 @@ function run(t, scenario) {
   writeFileSync(join(home, "instance.json"), "{}\n");
   const env = { ...process.env, OATS_PKG_ROOT: REPO_ROOT };
   delete env.NODE_TEST_CONTEXT;
-  const r = spawnSync(process.execPath, ["--experimental-strip-types", "--no-warnings", RUNNER, scenario, home], { env, encoding: "utf8" });
+  const r = spawnSync(process.execPath, ["--experimental-strip-types", "--no-warnings", RUNNER, scenario, home], { env, encoding: "utf8", timeout: 60000 });
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stderr, "");
   return JSON.parse(r.stdout);
