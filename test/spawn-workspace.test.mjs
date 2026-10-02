@@ -181,7 +181,7 @@ test("workspace spawn chain over Northwind: sync → spawn materializes whole mo
     assert.equal(meta.providers["oats.okf"]["harvest-runtime"], "pi", "the provider receives the manifest default it was previewed with");
     assert.equal(meta.providers["oats.okf"].owns, "release-manager", "…merged over the soul's own payload");
     assert.match(meta.workspace.resolution, /^[0-9a-f]{24}$/, "the resolution revision is recorded");
-    assert.equal(meta.workspace.soul.repoKey, fx.keys.agents); assert.equal("team" in meta.workspace.soul, false, "team membership is local since 0.30");
+    assert.equal(meta.workspace.soul.repoKey, fx.keys.agents); assert.equal("team" in meta.workspace.soul, false, "a soul's teams are the workspace's souls:, never the soul's");
     assert.deepEqual([meta.teams, meta.defaultTeam], [[], null], "this deployment declares no teams");
     // M5/3a: the workspace's name and the deployment directory are recorded at spawn.
     assert.equal(meta.workspace.name, "northwind"); assert.equal(meta.workspace.deployment, dep);

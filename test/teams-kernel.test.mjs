@@ -283,5 +283,5 @@ test("a package soul carrying the removed `team:` is refused (not listed), namin
   assert.deepEqual(souls, []);
   assert.equal(problems.length, 1);
   assert.equal(problems[0].code, "E_WORKSPACE_SCHEMA");
-  assert.match(problems[0].message, /team membership is local since 0\.30: `oats soul teams`/);
+  assert.match(problems[0].message, /a soul's teams are decided by souls: in oats-workspace\.yaml \(team model 3, OATS 0\.37\.0\)/);
 });

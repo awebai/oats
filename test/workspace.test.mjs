@@ -202,7 +202,7 @@ test("workspace schema refusals each name the offending path", () => {
   refuse({ external: [{ source: `${R.experts}@9c4e1f2a`, soul: "souls/x" }] }, "/external/0/source", /does not match/);
   refuse({ external: [{ source: R.experts, soul: "souls/x" }] }, "/external/0/source");
   refuse({ external: [{ source: `${R.experts}@${C.experts}`, soul: "../escape" }] }, "/external/0/soul");
-  refuse({ external: [{ source: `${R.experts}@${C.experts}`, soul: "souls/x", team: "engineering" }] }, "/external/0/team", /team membership is local since 0\.30: `oats soul teams`/);
+  refuse({ external: [{ source: `${R.experts}@${C.experts}`, soul: "souls/x", team: "engineering" }] }, "/external/0/team", /a soul's teams are decided by souls: in oats-workspace\.yaml \(team model 3, OATS 0\.37\.0\)/);
   refuse({ defaults: { knowledge: { a: { from: "package" }, b: { from: "package" } } } }, "/defaults/knowledge", /at most 1/);
   refuse({ defaults: { knowledge: { a: "off" } } }, "/defaults/knowledge/a");
   refuse({ defaults: { capabilities: { x: { from: "package", version: "1" } } } }, "/defaults/capabilities/x/version", /unknown property/);
@@ -236,9 +236,9 @@ test("workspace schema hint names schemaVersion 2 when a v1 file sits at the v2 
 
 test("membership, soul and local schemas", () => {
   assert.deepEqual(validateMembership({ schemaVersion: 2, workspace: WS }), []);
-  // 0.30: team membership is local; the removed key names where it went.
-  assert.deepEqual(validateMembership({ schemaVersion: 2, workspace: WS, team: "global" }), [{ path: "/team", reason: "removed-key", message: "team membership is local since 0.30: `oats soul teams`" }]);
-  assert.deepEqual(validateSoul(soul("s", { team: ["a", "b"] })), [{ path: "/team", reason: "removed-key", message: "team membership is local since 0.30: `oats soul teams`" }]);
+  // 0.30 removed a soul's or membership's `team`; the removed key names where a soul's teams live now (souls: in the workspace).
+  assert.deepEqual(validateMembership({ schemaVersion: 2, workspace: WS, team: "global" }), [{ path: "/team", reason: "removed-key", message: "a soul's teams are decided by souls: in oats-workspace.yaml (team model 3, OATS 0.37.0)" }]);
+  assert.deepEqual(validateSoul(soul("s", { team: ["a", "b"] })), [{ path: "/team", reason: "removed-key", message: "a soul's teams are decided by souls: in oats-workspace.yaml (team model 3, OATS 0.37.0)" }]);
   assert.equal(validateMembership({ schemaVersion: 2, workspace: WS, exports: {} })[0].path, "/exports");
   assert.equal(validateMembership({ schemaVersion: 2, workspace: `${WS}@main` })[0].path, "/workspace");
   assert.equal(validateMembership({ schemaVersion: 1, exports: {} }).length, 3);
@@ -257,11 +257,12 @@ test("membership, soul and local schemas", () => {
   assert.equal(validateLocal({ schemaVersion: 2, workspace: WS, souls: { disabled: ["Data Analyst"] } })[0].path, "/souls/disabled/0");
   assert.equal(validateLocal({ schemaVersion: 2, workspace: WS, capabilities: {} })[0].path, "/capabilities");
   assert.equal(validateLocal({ schemaVersion: 2 })[0].message, 'missing required property "workspace"');
-  // Team model v2: local teams, the default and which teams each soul belongs to here.
-  assert.deepEqual(validateLocal({ schemaVersion: 2, workspace: WS, teams: { mine: { team: "mine:me.aweb.ai", description: "d" } }, defaultTeam: "mine",
-    souls: { teams: { "*": ["mine"], "data-analyst": ["engineering"], "oats.okf/harvester": ["mine"] }, default: { "data-analyst": "engineering" } } }), []);
+  // Team model 3: local teams and the local default (applied where the workspace allows them); a soul's
+  // teams and default are the workspace's souls:, so souls.teams / souls.default are removed keys.
+  assert.deepEqual(validateLocal({ schemaVersion: 2, workspace: WS, teams: { mine: { team: "mine:me.aweb.ai", description: "d" } }, defaultTeam: "mine" }), []);
   assert.equal(validateLocal({ schemaVersion: 2, workspace: WS, teams: { mine: {} } })[0].path, "/teams/mine");
-  assert.equal(validateLocal({ schemaVersion: 2, workspace: WS, souls: { teams: { "**": ["x"] } } })[0].path, "/souls/teams/**");
+  assert.deepEqual(validateLocal({ schemaVersion: 2, workspace: WS, souls: { teams: { "**": ["x"] }, default: { dev: "x" } } }).map((p) => [p.path, p.reason]),
+    [["/souls/teams", "removed-key"], ["/souls/default", "removed-key"]]);
 });
 
 /* ───────────────────────────── observe + confirm ──────────────────────── */
@@ -285,7 +286,7 @@ test("observeWorkspace with `at` reads at that commit and E_REMOTE_UNREADABLE pr
   await assert.rejects(observeWorkspace(R.platform, { remote }), (e) => e.code === "E_WORKSPACE_SCHEMA" && e.details.cause === "E_REMOTE_PATH_MISSING" && /not a workspace host/.test(e.message));
 });
 
-test("confirmMembership: confirmed (same key across ref spellings) carries its commit (team membership is local since 0.30)", async () => {
+test("confirmMembership: confirmed (same key across ref spellings) carries its commit (a soul's teams are the workspace's souls:)", async () => {
   const remote = northwind();
   const ws = await observeWorkspace(WS, { remote });
   const platform = await confirmMembership(ws, R.platform, { remote });
@@ -357,7 +358,7 @@ test("discoverWorkspace: the whole picture — rows, souls, capabilities, privat
   assert.equal(rows[K.vault].reason, "cannot-read"); assert.equal(rows[K.vault].commit, null);
   assert.equal(rows[K.fork].reason, "backlink-elsewhere");
 
-  // agents: rows, souls and capabilities carry no team (team membership is local since 0.30)
+  // agents: rows, souls and capabilities carry no team (a soul's teams are the workspace's souls:)
   const agents = rows[K.agents];
   assert.equal(agents.confirmed, true); assert.equal("team" in agents || "labels" in agents, false);
   const rm = agents.souls.find((s) => s.name === "release-manager");
@@ -396,7 +397,7 @@ test("discoverWorkspace: the whole picture — rows, souls, capabilities, privat
   // problems: collected, not thrown
   const codes = d.problems.map((p) => [p.code, p.repoKey, p.path]);
   const moved = d.problems.find((p) => p.path === "souls/growth-hacker/soul.yaml#/team");
-  assert.deepEqual([moved?.code, moved?.repoKey, moved?.message], ["E_WORKSPACE_SCHEMA", K.data, "team membership is local since 0.30: `oats soul teams`"], JSON.stringify(codes));
+  assert.deepEqual([moved?.code, moved?.repoKey, moved?.message], ["E_WORKSPACE_SCHEMA", K.data, "a soul's teams are decided by souls: in oats-workspace.yaml (team model 3, OATS 0.37.0)"], JSON.stringify(codes));
   assert.ok(!codes.some(([c]) => c === "E_TEAM_UNKNOWN"), "discovery checks no team label any more");
   assert.ok(codes.some(([c, k, p]) => c === "E_WORKSPACE_SCHEMA" && k === K.data && p === "souls/broken/soul.yaml#/name"));
   assert.ok(codes.some(([c, k, p]) => c === "E_WORKSPACE_SCHEMA" && k === K.data && p === "souls/broken/soul.yaml#/work"));
@@ -423,7 +424,7 @@ test("discoverWorkspace: a membership still carrying the removed `team:` is an u
   const d = await discoverWorkspace(WS, { remote });
   const row = d.members.find((m) => m.key === K.platform);
   assert.deepEqual([row.confirmed, row.reason, row.souls], [false, "no-backlink", []]);
-  assert.match(row.detail, /oats-membership\.yaml is invalid: \/team: team membership is local since 0\.30: `oats soul teams`/);
+  assert.match(row.detail, /oats-membership\.yaml is invalid: \/team: a soul's teams are decided by souls: in oats-workspace\.yaml \(team model 3, OATS 0\.37\.0\)/);
   const bad = northwind({ workspace: workspaceFile({ members: [`${R.platform}@v1`] }) });
   await assert.rejects(discoverWorkspace(WS, { remote: bad }), (e) => e.code === "E_WORKSPACE_SCHEMA" && e.details.problems[0].path === "/members/0");
 });
@@ -451,7 +452,7 @@ test("standaloneRepo: from:here only; other froms become problems; workspace def
   const other = standaloneRepo(R.data, C.data, { ...repo, souls: [{ ...analyst, definition: { ...analyst.definition, capabilities: { "nw-lint": { from: "package" } } } }] }, { remote });
   assert.ok(other.problems.some((p) => p.code === "E_PACKAGE_MISSING" && p.path.endsWith("/capabilities/nw-lint")));
   assert.deepEqual(other.members[0].souls[0].capabilities, { "oats.core": { from: "package" } }, "the kernel default is added when the soul does not mention oats.core");
-  // discovery checks no team label (team membership is local since 0.30)
+  // discovery checks no team label (a soul's teams are the workspace's souls:)
   assert.ok(!s.problems.some((p) => p.code === "E_TEAM_UNKNOWN"));
   // also accepts a full discovery as input, and refuses a mismatched commit
   const full = await discoverWorkspace(WS, { remote: northwind() });
@@ -738,7 +739,7 @@ test("soul.yaml and oats-membership.yaml refuse any `team:` — a label, a list,
   assert.ok(!names.includes("release-manager") && !names.includes("support-triager"), "a soul carrying `team:` is not listed");
   for (const soulName of ["release-manager", "support-triager"]) {
     const p = d.problems.find((x) => x.path === `souls/${soulName}/soul.yaml#/team`);
-    assert.deepEqual([p?.code, p?.message], ["E_WORKSPACE_SCHEMA", "team membership is local since 0.30: `oats soul teams`"], JSON.stringify(d.problems.map((x) => x.path)));
+    assert.deepEqual([p?.code, p?.message], ["E_WORKSPACE_SCHEMA", "a soul's teams are decided by souls: in oats-workspace.yaml (team model 3, OATS 0.37.0)"], JSON.stringify(d.problems.map((x) => x.path)));
   }
   const m = northwind({ mutate: (repos) => { repos[K.platform].files["oats-membership.yaml"].team = []; } });
   const d2 = await discoverWorkspace(WS, { remote: m });
@@ -748,7 +749,8 @@ test("soul.yaml and oats-membership.yaml refuse any `team:` — a label, a list,
 
 test("live teams of a home read ONE repository (the host) and the deployment's oats-local.yaml, never a discovery; keyed by the soul (a package soul by <package>/<soul>)", async () => {
   const { liveTeams } = await import("../lib/instance-resolution.mjs");
-  const ws = workspaceFile({ teams: { engineering: { team: "engineering:northwind.aweb.ai" }, global: {} } });
+  const ws = workspaceFile({ teams: { engineering: { team: "engineering:northwind.aweb.ai" }, global: {} }, localTeams: true,
+    souls: { "platform/platform-engineer": { teams: ["engineering"] }, "oats.okf/harvester": { teams: ["global"] } } });
   const inner = northwind({ workspace: ws });
   const calls = [];
   const remote = { ...inner };
@@ -757,17 +759,16 @@ test("live teams of a home read ONE repository (the host) and the deployment's o
   try {
     const dep = join(base, "dep"), home = join(dep, "agents", "platform-engineer", "instances", "pe-1");
     mkdirSync(home, { recursive: true });
-    writeFileSync(join(dep, "oats-local.yaml"), YAML.stringify({ schemaVersion: 2, workspace: WS, teams: { mine: { team: "mine:me.aweb.ai" } }, defaultTeam: "mine",
-      souls: { teams: { "platform-engineer": ["engineering"], "oats.okf/harvester": ["global"] } } }));
-    const MINE = { label: "mine", team: "mine:me.aweb.ai", default: true, from: "local" };
+    writeFileSync(join(dep, "oats-local.yaml"), YAML.stringify({ schemaVersion: 2, workspace: WS, teams: { mine: { team: "mine:me.aweb.ai" } }, defaultTeam: "mine" }));
+    const MINE = { label: "mine", team: "mine:me.aweb.ai", default: true, from: "local", via: ["default", "local"] };
     const meta = { agent: "platform-engineer", workspace: { soul: { repoKey: K.platform } }, teams: [MINE], defaultTeam: { label: "mine", team: "mine:me.aweb.ai", from: "deployment" } };
     const live = await liveTeams(home, meta, { remote });
-    assert.deepEqual(live, { teams: [MINE, { label: "engineering", team: "engineering:northwind.aweb.ai", default: false, from: "shared" }],
+    assert.deepEqual(live, { teams: [MINE, { label: "engineering", team: "engineering:northwind.aweb.ai", default: false, from: "shared", via: ["workspace"] }],
       defaultTeam: { label: "mine", team: "mine:me.aweb.ai", from: "deployment" }, source: "live" });
     assert.deepEqual(calls.filter(([fn]) => fn === "observeRemote").map(([, key]) => key), [K.agents], "exactly one repository observed: the host");
     assert.equal(calls.some(([fn]) => fn === "listRemoteTree"), false, "no tree listing: no discovery");
     assert.deepEqual(calls.filter(([fn]) => fn === "readRemoteFile").map(([, key, path]) => `${key === K.agents ? "host" : key}:${path}`), ["host:oats-workspace.yaml"]);
-    // A package soul is keyed by <package>/<soul>.
+    // A member soul is keyed by <member>/<soul>, a package soul by <package>/<soul>.
     const pkg = await liveTeams(home, { agent: "harvester", workspace: { soul: { repoKey: "github.com/awebai/oats-okf", qualifiedName: "oats.okf/harvester", package: { id: "oats.okf" } } } }, { remote });
     assert.deepEqual(pkg.teams.map((r) => [r.label, r.team]), [["mine", "mine:me.aweb.ai"], ["global", null]]);
     // The host unreadable → the spawn record, marked recorded; a pre-0.30 record (old rows) is unknown, never guessed.
@@ -788,19 +789,19 @@ test("live teams of a STANDALONE deployment come from its oats-local.yaml alone:
     const dep = join(base, "dep"), home = join(dep, "agents", "dev", "instances", "dev-1");
     mkdirSync(home, { recursive: true });
     const local = { schemaVersion: 2, workspace: WS, standalone: "git:github.com/acme/tools", teams: { mine: { team: "mine:me.aweb.ai" }, ops: { team: "ops:me.aweb.ai" } },
-      defaultTeam: "mine", souls: { teams: { "*": ["ops"] } } };
+      defaultTeam: "mine" };
     writeFileSync(join(dep, "oats-local.yaml"), YAML.stringify(local));
     const meta = { agent: "dev", workspace: { soul: { repoKey: "github.com/acme/tools" } }, teams: [], defaultTeam: null };
-    const MINE = { label: "mine", team: "mine:me.aweb.ai", default: true, from: "local" };
-    const OPS = { label: "ops", team: "ops:me.aweb.ai", default: false, from: "local" };
+    const MINE = { label: "mine", team: "mine:me.aweb.ai", default: true, from: "local", via: ["default", "local"] };
+    const OPS = { label: "ops", team: "ops:me.aweb.ai", default: false, from: "local", via: ["local"] };
     assert.deepEqual(await liveTeams(home, meta, { remote }), { teams: [MINE, OPS], defaultTeam: { label: "mine", team: "mine:me.aweb.ai", from: "deployment" }, source: "live" });
     assert.deepEqual(touched, [], "no remote call at all");
     // …and live means live: the local file changes, the answer follows (the spawn record does not matter).
-    writeFileSync(join(dep, "oats-local.yaml"), YAML.stringify({ ...local, souls: { default: { dev: "ops" }, teams: { dev: ["ops"] } } }));
+    writeFileSync(join(dep, "oats-local.yaml"), YAML.stringify({ ...local, defaultTeam: "ops" }));
     const next = await liveTeams(home, meta, { remote });
-    assert.deepEqual([next.defaultTeam, next.teams.map((r) => [r.label, r.default])], [{ label: "ops", team: "ops:me.aweb.ai", from: "soul" }, [["ops", true]]]);
-    // A shared label cannot exist standalone: a reference to one is an invalid local file, and the record answers.
-    writeFileSync(join(dep, "oats-local.yaml"), YAML.stringify({ ...local, souls: { teams: { dev: ["engineering"] } } }));
+    assert.deepEqual([next.defaultTeam, next.teams.map((r) => [r.label, r.default])], [{ label: "ops", team: "ops:me.aweb.ai", from: "deployment" }, [["ops", true], ["mine", false]]]);
+    // A shared label cannot exist standalone: a reference to one is an unknown team, and the record answers.
+    writeFileSync(join(dep, "oats-local.yaml"), YAML.stringify({ ...local, defaultTeam: "engineering" }));
     const bad = await liveTeams(home, meta, { remote });
     assert.deepEqual([bad.source, bad.reason, bad.error.code], ["recorded", "invalid-teams", "E_TEAM_UNKNOWN"]);
   } finally { rmSync(base, { recursive: true, force: true }); }

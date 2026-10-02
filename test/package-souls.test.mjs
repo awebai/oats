@@ -147,7 +147,7 @@ test("a package soul still carrying `team:` (removed in 0.30) is refused, naming
   ok(fx.cli(["sync", "--json"]), "sync");
   const souls = ok(fx.cli(["souls", "--json"]), "souls");
   const stale = souls.problems.find((p) => p.package === "acme.pkg" && p.path.includes("souls/stale/soul.yaml"));
-  assert.deepEqual([stale?.code, stale?.message], ["E_WORKSPACE_SCHEMA", "team membership is local since 0.30: `oats soul teams`"], JSON.stringify(souls.problems));
+  assert.deepEqual([stale?.code, stale?.message], ["E_WORKSPACE_SCHEMA", "a soul's teams are decided by souls: in oats-workspace.yaml (team model 3, OATS 0.37.0)"], JSON.stringify(souls.problems));
   assert.equal(souls.souls.some((s) => s.name === "stale"), false, "not listed");
   const modules = (name) => ok(fx.cli(["spawn", name, "--preview", "--json"]), `preview ${name}`).modules.map((m) => m.name).sort();
   assert.deepEqual(modules("acme.pkg/loner"), ["acme-tool"], "house: off drops the workspace default");

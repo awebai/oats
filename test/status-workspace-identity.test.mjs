@@ -15,11 +15,11 @@ import { pathToFileURL } from "node:url";
 import { CLI, git, v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const SHARED = "shared:fixture.aweb.ai", MINE = "mine:fixture.aweb.ai";
-/** A deployment whose workspace commits `global` (no id yet) and `shared`, and whose oats-local.yaml
- *  maps `mine` locally; `defaultTeam` as given. */
+/** A deployment whose workspace commits `global` (no id yet) and `shared` and allows local teams
+ *  (team model 3: `localTeams: true`), and whose oats-local.yaml maps `mine` locally; `defaultTeam` as given. */
 function deployment(local = {}) {
   return v2Deployment({
-    workspace: { teams: { global: { description: "Fixture team" }, shared: { team: SHARED } } },
+    workspace: { teams: { global: { description: "Fixture team" }, shared: { team: SHARED } }, localTeams: true },
     local: { teams: { mine: { team: MINE } }, ...local },
   });
 }
@@ -107,7 +107,7 @@ function memberNamed(fx, local) {
   writeFileSync(join(seed, "oats-membership.yaml"), YAML.stringify({ schemaVersion: 2, workspace: fx.ref }));
   git(seed, "add", "-A"); git(seed, "commit", "-qm", "member"); git(seed, "push", "-q", "origin", "HEAD:main");
   fx.commit({ "oats-workspace.yaml": { yaml: { schemaVersion: 2, name: "fixture", members: [fx.ref, mRef],
-    teams: { global: { description: "Fixture team" }, shared: { team: SHARED } }, defaults: { knowledge: "none", messaging: "none", tasks: "none" } } } });
+    teams: { global: { description: "Fixture team" }, shared: { team: SHARED } }, localTeams: true, defaults: { knowledge: "none", messaging: "none", tasks: "none" } } } });
   writeFileSync(join(fx.dep, "oats-local.yaml"), YAML.stringify({ schemaVersion: 2, workspace: mRef, teams: { mine: { team: MINE } }, ...local }));
   return { mRef, bare };
 }
