@@ -71,10 +71,12 @@ export function createMachines({ adapter, cli, concurrency = BACKFILL_CONCURRENC
     /** Where to run and the Setup tab: this window's machines, or null when the gates are off. */
     async forScope(scope) {
       if (!machinesGated(cli())) return null;
-      if (!scope?.key || !scope.deployment) return { servers: [], key: null, filtered: true, reason: MACHINE_SCOPE_REASONS[scope?.reason] || MACHINE_SCOPE_REASONS['no-key'] };
+      if (!scope?.key || !scope.deployment) return { servers: [], key: null, filtered: true, deployment: null, aweb: false, reason: MACHINE_SCOPE_REASONS[scope?.reason] || MACHINE_SCOPE_REASONS['no-key'] };
       const rows = await registrations(scope.deployment);
       startBackfill(rows, scope.deployment);
-      return { servers: rows.filter(r => r.workspaceKey === scope.key).map(r => ({ ...r, check: checks.get(r.id) ?? null })), key: scope.key, filtered: true };
+      return { servers: rows.filter(r => r.workspaceKey === scope.key).map(r => ({ ...r, check: checks.get(r.id) ?? null })), key: scope.key, filtered: true,
+        // Add a machine: the deployment it runs in (its folder name gives the defaults) and whether the messaging step follows.
+        deployment: scope.deployment, aweb: scope.messaging === AWEB && awebConnectGated(cli()) };
     },
     /** Settles when this start's backfill has run (at once when none started). */
     backfilled: () => backfillRun ?? Promise.resolve(),

@@ -14,7 +14,7 @@ export const between = (begin, end) => SOURCE.slice(SOURCE.indexOf(begin), SOURC
 export const VIEWS_BLOCK = between('/* OATSWEB_VIEWS_BEGIN', '/* OATSWEB_VIEWS_END */');
 /** The block's functions a test reads. */
 export const VIEW_FUNCTIONS = ['deployments', 'viewModel', 'viewFor', 'deploymentFor', 'surfaceDeployment', 'viewForgeContext', 'isServed',
-  'teamMembersFor', 'panelData', 'workspaceChoices', 'deploymentRows'];
+  'teamMembersFor', 'panelData', 'workspaceChoices', 'deploymentRows', 'machineScope'];
 export const CLI = { ok: true, bin: '/oats', features: ['workspace-identity'], remote: ['roster'] };
 
 /** The block's dependencies, real by default. */

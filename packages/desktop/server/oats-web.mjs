@@ -52,6 +52,8 @@ import { homedir } from "node:os";
 import { scheduleRequest } from "./schedules.mjs";
 import { capabilityRequest } from "./capabilities.mjs";
 import { createDeploymentObserver, mapBounded, MAX_DEPLOYMENT_OBSERVATIONS } from "./deployment-observer.mjs";
+import { createMachines } from "./machines.mjs";
+import { machinesGated } from "../renderer/machine-contract.mjs";
 import { createSoulCatalog, soulCatalogKey } from "./soul-catalog.mjs";
 import { createCapabilityCatalog, capabilityCatalogKey } from "./capability-catalog.mjs";
 import { capabilityShowRequest, createCapabilityShowCache } from "./capability-show.mjs";
@@ -261,6 +263,22 @@ function teamMembersFor(wsId) {
     deployments: members.filter((d) => !d.remote).map((d) => ({ deployment: deploymentTag(model.infos.get(d.id)), instances: snapshot.byWs.get(d.id)?.instances || [] })),
     groups: members.filter((d) => d.remote).map((d) => ({ group: d.group, deployment: deploymentTag(model.infos.get(d.id)),
       panel: snapshot.byWs.get(d.id) || remote.remotePanel(d.group) })) });
+}
+
+/** A workspace's own machines (#517, server/machines.mjs): the window's key, the deployment every
+ * machine call runs in and its messaging slot. The key is the one the view's primary local deployment
+ * reports (keyFrom "workspace" only; a matched view's deployments all share it); without one, or with no
+ * local deployment, `key` is null and `reason` says which. null for a selector that names no view. */
+function machineScope(wsId) {
+  const model = viewModel();
+  const view = viewFor(wsId, model);
+  if (!view) return null;
+  const local = view.deployments.map((id) => model.infos.get(id)).find((info) => info?.local);
+  if (!local) return { key: null, deployment: null, messaging: null, reason: "no-local" };
+  const identity = local.identity;
+  const messaging = snapshot.byWs.get(local.id)?.deployment?.workspaceStatus?.defaults?.slots?.messaging?.name ?? null;
+  if (identity?.keyFrom !== "workspace" || typeof identity.key !== "string" || !identity.key) return { key: null, deployment: local.id, messaging, reason: "no-key" };
+  return { key: identity.key, deployment: local.id, messaging };
 }
 
 /** A deployment as the panel and the rows name it. */
@@ -942,6 +960,8 @@ async function observeAll({ live = false } = {}) {
 const refreshLoop = createRefreshLoop({ run: observeAll, focusedMs: REFRESH_FOCUSED_MS, blurredMs: REFRESH_BLURRED_MS });
 // The remote roster (`server roster`, one bounded CLI read) follows the same shape: 10 s focused, the same 30 s blurred.
 const remoteLoop = createRefreshLoop({ run: () => refreshRemoteSnapshot(), focusedMs: 10_000, blurredMs: REFRESH_BLURRED_MS });
+/* A workspace's own machines (#517): Where to run, the Setup tab's Machines, Add a machine. */
+const machines = createMachines({ adapter, cli: () => cliState });
 /** Observe now (or right after the cycle in flight); `live` makes the kernel observe the remotes afresh. */
 function refreshSnapshot(options = {}) { return refreshLoop.request(options); }
 /** A mutation this backend performed for a workspace: what inspect reported may have changed, and the
@@ -1699,9 +1719,35 @@ const server = createServer(async (req, res) => {
       // holds no registry of its own). Without a compatible CLI there are
       // no servers to offer, which the renderer renders as "local only".
       if (!cliState.ok) return send(res, 200, { servers: [], reason: "cli-unavailable" });
+      // #517: with servers-per-workspace and server-connect, only the window's own machines (server/machines.mjs).
+      if (machinesGated(cliState)) {
+        if (url.searchParams.getAll("ws").length > 1 || [...url.searchParams.keys()].some((k) => k !== "ws")) return send(res, 400, { error: "Expected one workspace selector", code: "E_BAD_ARGS" });
+        const scope = machineScope(url.searchParams.get("ws"));
+        if (!scope) return send(res, 400, { error: "Select a known workspace", code: "E_WORKSPACE_UNKNOWN" });
+        try { return send(res, 200, await machines.forScope(scope)); }
+        catch (e) { return send(res, 200, { servers: [], key: scope.key, filtered: true, error: e.code || "E_SERVERS" }); }
+      }
       const env = await adapter.cliServers(cliState.bin);
       if (!env.ok) return send(res, 200, { servers: [], reason: env.error?.code || "E_SERVERS" });
       return send(res, 200, { servers: (env.result.servers || []).map((s) => ({ id: s.id, label: s.label || s.id, sshHost: s.sshHost, workspace: s.workspace })) });
+    }
+    if (req.method === "POST" && ["/api/server-check", "/api/server-remove", "/api/server-connect"].includes(path)) {
+      // #517: Check, Remove and Add a machine for the window's workspace (server/machines.mjs admits each id
+      // by its workspace key). Fixed argv through the CLI; its envelope is relayed, never its stderr.
+      if (url.searchParams.getAll("ws").length !== 1 || [...url.searchParams.keys()].some((k) => k !== "ws")) return send(res, 400, { error: "Expected one workspace selector", code: "E_BAD_ARGS" });
+      let body;
+      try { body = await readStrictBody(req, 4096); } catch (e) { return send(res, 400, { error: e.message, code: "E_BAD_ARGS" }); }
+      const scope = machineScope(url.searchParams.get("ws"));
+      if (!scope) return send(res, 400, { error: "Select a known workspace", code: "E_WORKSPACE_UNKNOWN" });
+      try {
+        if (path === "/api/server-check") return send(res, 200, await machines.check(scope, body.id));
+        const envelope = path === "/api/server-remove" ? await machines.remove(scope, body.id) : await machines.connect(scope, body);
+        // A registration changed: the remote roster reads it now, so the view gains (or loses) that deployment.
+        if (envelope?.ok) void remoteLoop.request();
+        return send(res, 200, envelope);
+      } catch (e) {
+        return send(res, e.code === "E_BUSY" || e.code === "E_FEATURE" ? 409 : 400, { error: e.message, code: e.code || "E_BAD_ARGS" });
+      }
     }
     if (req.method === "GET" && path === "/api/cli") {
       return send(res, 200, servedCliStatus());

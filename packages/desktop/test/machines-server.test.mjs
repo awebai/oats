@@ -40,6 +40,8 @@ test('Where to run lists only the registrations whose key is the window\'s: anot
   assert.deepEqual(listed.servers.map(s => s.id), ['altair-aweb']);
   assert.deepEqual(listed.servers[0], { id: 'altair-aweb', label: 'altair', sshHost: 'altair', workspace: '/srv/altair-aweb', workspaceKey: KEY, check: null });
   assert.equal(listed.key, KEY); assert.equal(listed.filtered, true);
+  assert.equal(listed.deployment, SCOPE.deployment); assert.equal(listed.aweb, true, 'oats.aweb messaging and capability-route');
+  assert.equal((await machines.forScope({ ...SCOPE, messaging: 'other.mail' })).aweb, false);
   assert.equal(adapter.calls[0][1], SCOPE.deployment, 'read in the deployment\'s scope');
 });
 
@@ -47,7 +49,7 @@ test('without a key the window offers no remote machine, and says why', async ()
   const adapter = fakeAdapter([reg('altair-aweb', KEY)]);
   const machines = createMachines({ adapter, cli: () => CLI });
   const listed = await machines.forScope({ key: null, deployment: '/w', reason: 'no-key' });
-  assert.deepEqual(listed.servers, []);
+  assert.deepEqual(listed.servers, []); assert.equal(listed.deployment, null); assert.equal(listed.aweb, false);
   assert.equal(listed.reason, 'This deployment reports no workspace key, so no other machine can be matched to it.');
   const remoteOnly = await machines.forScope({ key: null, deployment: null, reason: 'no-local' });
   assert.equal(remoteOnly.reason, 'This workspace has no deployment on this computer, so machines are added from one that does.');
