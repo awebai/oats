@@ -39,7 +39,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
              "workspace-v2","instance-modules","spawn-provider-payload","served-identity","packages-no-approval","spawn-name","settings-origins",
              "team-model-3","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts","launch-preference",
              "preview-composed-from","observe-max-age","spawn-preview-max-age","capability-show","capture-file","workspace-identity",
-             "server-connect","capability-route","servers-per-workspace"],
+             "server-connect","capability-route","servers-per-workspace","operator-default-soul"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
@@ -105,6 +105,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
 | `servers-per-workspace` | `workspaceKey` on registrations and `oats server list --json` rows; `oats server list --workspace-ref <ref>` and its `unknownWorkspace`; `workspaceKey` on `oats server check --json`, OATS 0.39.0 ([Servers per workspace](#servers-per-workspace)) | |
 | `server-connect` | `oats server connect`; `oats onboard --check`; `workspaceReadable` on `oats server check --json`, OATS 0.39.0 ([`oats server connect`](#oats-server-connect)) | |
 | `capability-route` | `oats <namespace> <command> … --server <id>` runs the capability command on the server, OATS 0.39.0 ([Capability commands on a server](#capability-commands-on-a-server)) | |
+| `operator-default-soul` | a capability command from a deployment without `--soul` runs as the first soul that provides its namespace (named on stderr); none is `E_BAD_ARGS`, OATS 0.39.0 ([capabilities.md](capabilities.md)) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
