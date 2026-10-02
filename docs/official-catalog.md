@@ -9,7 +9,7 @@ or workspace membership alone does not make a package official.
 
 | package | release | capabilities | package souls |
 |---|---|---|---|
-| `oats.framework` | `oats-framework/v1.4.2` (this repository) | `oats.core`, `oats.setup`, `oats.knowledge-theory` | `knowledge-theory-expert` |
+| `oats.framework` | `oats-framework/v1.4.3` (this repository) | `oats.core`, `oats.setup`, `oats.knowledge-theory` | `knowledge-theory-expert` |
 | `oats.okf` | `v4.1.1` | `oats.okf` (knowledge), `oats.okf-harvest`, `oats.okf-maintenance` | `knowledge-harvester`, `knowledge-maintainer` |
 | `oats.aweb` | `v1.18.1` | `oats.aweb` (messaging) | |
 | `oats.engineering` | `v1.5.0` | `oats.engineering-expert`, `oats.developer`, `oats.code-review` | `code-reviewer` |
