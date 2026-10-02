@@ -1,7 +1,9 @@
-/** Team model v2 (feature team-model-2): the deployment's teams and a soul's teams, through the
- * kernel verbs `oats teams` and `oats soul teams`. The kernel is the only writer of
- * oats-local.yaml; this boundary validates the request, runs the verb (argv only), decodes the
- * document, and passes kernel refusals through with their details. Local workspaces only. */
+/** The deployment's teams and a soul's teams, through the kernel verbs `oats teams` and `oats soul
+ * teams`: team model v2 (feature team-model-2, OATS 0.30–0.37) or team model 3 (feature team-model-3,
+ * OATS 0.38), where a soul's teams are committed in the workspace's souls: and `oats soul teams` is read
+ * only. The kernel is the only writer of oats-local.yaml; this boundary validates the request, runs the
+ * verb (argv only), decodes the document, and passes kernel refusals through with their details. Local
+ * workspaces only. */
 import { isAbsolute } from 'node:path';
 import { cliTeams, cliSoulTeams } from '../cli-adapter.mjs';
 import { teamsData, soulTeamsData } from '../deployment-data.mjs';
@@ -9,7 +11,7 @@ import { teamsData, soulTeamsData } from '../deployment-data.mjs';
 // The answer shape is the lead's (0.30 D2 review): {status: 'ok', teams | soulTeams: <the decoded
 // kernel result>}; a refusal is {status: 'refused', reason: {code, message, details?}}, the
 // kernel's code and message verbatim, and the Desktop's own codes with a plain message.
-const MESSAGES = { E_BAD_ARGS: 'Invalid teams request', E_TEAMS_UNAVAILABLE: 'This OATS CLI has no team model v2 (feature team-model-2, OATS 0.30)',
+const MESSAGES = { E_BAD_ARGS: 'Invalid teams request', E_TEAMS_UNAVAILABLE: 'This OATS CLI has no team model (feature team-model-2, OATS 0.30, or team-model-3, OATS 0.38)',
   'unsupported-remote-operation': 'Teams are edited on the computer that runs the workspace', E_WORKSPACE_UNKNOWN: 'Select a known workspace',
   E_BUSY: 'Another team change is in progress; try again', E_CLI_PROTOCOL: 'The OATS CLI answered in an unexpected shape',
   E_DEPLOYMENT_SCOPE: 'The OATS CLI answered for another deployment', E_CLI_FAILED: 'The OATS CLI failed' };
@@ -19,8 +21,11 @@ const CODE = /^(?:E_[A-Z0-9_]{1,62}|[a-z][a-z0-9-]{1,63})$/, LABEL = /^[A-Za-z0-
 const record = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const text = (v, max) => typeof v === 'string' && v.length > 0 && v.length <= max && !/[\x00-\x1f\x7f]/.test(v);
 
-/** A kernel team refusal's details, bounded and closed: the label, where it is used/defined. */
+/** A kernel team refusal's details, bounded and closed: the label, where it is used/defined; for local
+ * teams a workspace does not allow (team model 3), the reason, the file and the keys it would write. */
 function refusalDetails(code, d) {
+  if (code === 'E_WORKSPACE_SCHEMA' && record(d) && d.reason === 'local-teams-closed' && text(d.path, 512)
+    && Array.isArray(d.keys) && d.keys.length <= 16 && d.keys.every(k => text(k, 64))) return { reason: d.reason, path: d.path, keys: [...d.keys] };
   if (!TEAM_CODES.has(code) || !record(d)) return undefined;
   const out = {};
   if (LABEL.test(d.label ?? '')) out.label = d.label;
@@ -36,9 +41,13 @@ export function teamsFailure(code, message, details) {
 function admit({ workspace: w, cli } = {}) {
   if (!w || typeof w.id !== 'string' || !w.id || typeof w.scope !== 'string' || !isAbsolute(w.scope)) return 'E_WORKSPACE_UNKNOWN';
   if (w.remote || w.server) return 'unsupported-remote-operation';
-  if (!cli?.bin || !Array.isArray(cli.features) || !cli.features.includes('team-model-2')) return 'E_TEAMS_UNAVAILABLE';
+  if (!cli?.bin || !Array.isArray(cli.features) || !(teamModel3(cli) || cli.features.includes('team-model-2'))) return 'E_TEAMS_UNAVAILABLE';
   return null;
 }
+const teamModel3 = cli => Array.isArray(cli?.features) && cli.features.includes('team-model-3');
+/** Team model 3: which teams a soul may join, and its default, are committed in the workspace; the
+ * kernel removed `oats soul teams`'s edit flags. Its own wording, for an edit asked of this boundary. */
+const SOUL_TEAMS_READ_ONLY = 'oats soul teams is read only in team model 3 (OATS 0.38): which teams a soul may join, and its default, are souls: in oats-workspace.yaml (a PR to the workspace file)';
 const keysOnly = (v, allowed) => Object.keys(v).every(k => allowed.includes(k));
 /** { action: list|add|remove|default, label?, team?, description? } → cliTeams arguments. */
 function teamsArgs(r) {
@@ -58,12 +67,13 @@ function soulTeamsArgs(r) {
 
 export function createTeamsBoundary({ teams = cliTeams, soulTeams = cliSoulTeams } = {}) {
   const writing = new Set(); // one mutation per deployment at a time; the kernel serializes the file
-  const run = async (request, getContext, { args, invoke, decode, read, key }) => {
+  const run = async (request, getContext, { args, invoke, decode, read, key, readOnly }) => {
     try {
       const parsed = args(request);
       if (!parsed) return teamsFailure('E_BAD_ARGS');
       const context = getContext(), refused = admit(context);
       if (refused) return teamsFailure(refused);
+      if (readOnly?.(context.cli) && !read(request)) return teamsFailure('E_BAD_ARGS', readOnly(context.cli));
       const { workspace, cli } = context, mutation = !read(request);
       if (mutation && writing.has(workspace.id)) return teamsFailure('E_BUSY');
       if (mutation) writing.add(workspace.id);
@@ -78,7 +88,8 @@ export function createTeamsBoundary({ teams = cliTeams, soulTeams = cliSoulTeams
   };
   return {
     teams: (request, getContext) => run(request, getContext, { args: teamsArgs, invoke: teams, decode: (e, dir) => teamsData(e, dir), read: r => r.action === 'list', key: 'teams' }),
-    soulTeams: (request, getContext) => run(request, getContext, { args: soulTeamsArgs, invoke: soulTeams, decode: e => soulTeamsData(e), read: r => r.action === 'show', key: 'soulTeams' }),
+    soulTeams: (request, getContext) => run(request, getContext, { args: soulTeamsArgs, invoke: soulTeams, decode: e => soulTeamsData(e), read: r => r.action === 'show', key: 'soulTeams',
+      readOnly: cli => (teamModel3(cli) ? SOUL_TEAMS_READ_ONLY : null) }),
   };
 }
 const boundary = createTeamsBoundary();

@@ -128,7 +128,7 @@ test('kernel refusals pass through verbatim with their bounded details; unknown 
 
 test('gates: team-model-2, local workspaces, known ws; a malformed document is E_CLI_PROTOCOL; one mutation per deployment', async () => {
   const h = http();
-  h.cliState.features = ['teams']; assert.deepEqual((await h.request()).body, { status: 'refused', reason: { code: 'E_TEAMS_UNAVAILABLE', message: 'This OATS CLI has no team model v2 (feature team-model-2, OATS 0.30)' } }, 'on 0.29: a clear refusal, no kernel call');
+  h.cliState.features = ['teams']; assert.deepEqual((await h.request()).body, { status: 'refused', reason: { code: 'E_TEAMS_UNAVAILABLE', message: 'This OATS CLI has no team model (feature team-model-2, OATS 0.30, or team-model-3, OATS 0.38)' } }, 'on 0.29: a clear refusal, no kernel call');
   h.cliState.features = ['team-model-2']; h.workspace.remote = true; assert.equal((await h.request()).body.reason.code, 'unsupported-remote-operation');
   h.workspace.remote = false; assert.equal((await h.request({ url: '/api/workspace-teams?ws=other' })).body.reason.code, 'E_WORKSPACE_UNKNOWN');
   assert.equal(h.calls.length, 0);

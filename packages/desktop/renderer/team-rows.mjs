@@ -37,3 +37,9 @@ export function teamRowsOf(v, { v2 = true } = {}) {
   return rows;
 }
 export const TEAM_LABEL_PATTERN = LABEL;
+/** The team model a CLI's features report: 3 (feature team-model-3, OATS 0.38: a soul's teams are
+ * committed in the workspace), 2 (team-model-2, OATS 0.30–0.37), or null (before: the 0.29 views). */
+export function teamModelOf(features) {
+  const list = Array.isArray(features) ? features : [];
+  return list.includes('team-model-3') ? 3 : list.includes('team-model-2') ? 2 : null;
+}

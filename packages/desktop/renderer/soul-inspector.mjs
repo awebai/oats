@@ -16,6 +16,7 @@
  * `inspect` instead of after it. Focus across a repaint: actionable controls carry
  * `data-focus-key` and are re-found by key only (loading.mjs captureFocusState);
  * a control that vanished hands focus to Refresh. */
+import { teamModelOf } from './team-rows.mjs';
 import { harnessOf } from './harness-names.mjs';
 import { postJson, wsQuery, workspaceGeneration, rowDeployment } from './views/common.mjs';
 import { runtimeState } from './instance-presentation.mjs';
@@ -676,13 +677,14 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     // Beside: its teams (joining is per instance) and its knowledge nodes. Team model v2
     // (kernel feature team-model-2): "Teams here", this computer's membership, editable — created
     // with the frame so its read ran beside `inspect`; ensured here for a CLI probe that settled since.
-    const { teamModel2, soulKey } = teamsHereConditions();
-    if (teamsHere && !teamModel2) { teamsHere.element.remove(); teamsHere.dispose(); teamsHere = null; } // the CLI lost the feature since the frame
-    if (teamModel2 && !soulKey) {
+    const { teamModel, soulKey } = teamsHereConditions();
+    if (teamsHere && !teamModel) { teamsHere.element.remove(); teamsHere.dispose(); teamsHere = null; } // the CLI lost the feature since the frame
+    if (teamModel && !soulKey) {
       const { card: note } = pageCard(doc, 'Teams here', { lead: 'on this computer' });
-      note.append(node('p', "Set this soul's teams with the CLI (oats soul teams): this Desktop's server does not report the soul's key.", 'page-note'));
+      note.append(node('p', teamModel === 3 ? "This Desktop's server does not report the soul's key: oats soul teams shows its teams."
+        : "Set this soul's teams with the CLI (oats soul teams): this Desktop's server does not report the soul's key.", 'page-note'));
       side.append(note);
-    } else if (teamModel2) ensureTeamsHere();
+    } else if (teamModel) ensureTeamsHere();
     else if (teams) {
       const card = pageCard(doc, 'Teams', { lead: 'organise · add defaults · never restrict' });
       if (!mapped.length) card.card.append(node('p', 'Default team only: this soul has access to no other team.', 'page-note'));
@@ -711,15 +713,15 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
   // bare name for a member or external soul, <package>/<soul> for a package soul. A row without one
   // (a Desktop server from before #275) gets no card: the CLI says it, and nothing is sent.
   function teamsHereConditions() {
-    return { teamModel2: (cliStatus()?.features || []).includes('team-model-2'),
+    return { teamModel: teamModelOf(cliStatus()?.features),
       soulKey: typeof selection?.agent?.key === 'string' && selection.agent.key ? selection.agent.key : null };
   }
   /** The page's "Teams here" card, once per subject, first in the side column; its `oats soul teams`
    * read starts when it is created (with the frame), not after `inspect` answers. */
   function ensureTeamsHere() {
     if (teamsHere || !side) return teamsHere;
-    const { teamModel2, soulKey } = teamsHereConditions();
-    if (!teamModel2 || !soulKey) return null;
+    const { teamModel, soulKey } = teamsHereConditions();
+    if (!teamModel || !soulKey) return null;
     const soulTeamsRoute = async body => teamsAnswer(await postJson(ctx, `/api/workspace-soul-teams${wsQuery()}`, body), 'soulTeams', 'The teams of this soul could not be read.');
     const teamsRoute = async () => teamsAnswer(await postJson(ctx, `/api/workspace-teams${wsQuery()}`, { action: 'list' }), 'teams', 'The teams on this computer could not be read.');
     teamsHere = createSoulTeamsHere(doc, { soul: soulKey, request: soulTeamsRoute, listTeams: teamsRoute, clock: timers });
