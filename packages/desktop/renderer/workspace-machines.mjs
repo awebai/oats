@@ -31,6 +31,7 @@ export const machinesCSS = `
 .oats-view .setup button.machine-act:disabled { color:var(--muted); cursor:default; text-decoration:none; }
 .oats-view .setup button.machine-act:focus-visible, .oats-view .setup button.machines-add:focus-visible, .oats-view .setup button.machines-retry:focus-visible { background:var(--sel); border-radius:4px; padding:2px 4px; margin:0 -4px; }
 .oats-view .setup .setup-box-head button.machines-add { margin-left:auto; }
+.setup-machines .setup-box-head .setup-scope { margin-left:12px; } /* after Add, which takes the free space */
 .machine-confirm, .machine-error { grid-column:1 / -1; margin:0 0 10px; }
 .machine-confirm { display:flex; flex-direction:column; gap:8px; padding:8px 10px; border:1px solid var(--border); border-radius:7px; background:var(--surface-2); }
 .machine-confirm p { margin:0; color:var(--fg); font-size:12px; line-height:1.45; }
@@ -88,7 +89,7 @@ export function createWorkspaceMachines(doc, { ctx, ws }) {
       line.append(retry); body.append(line); return;
     }
     if (!answer.deployment) { add?.remove(); body.append(el('p', answer.reason || '', 'machines-reason')); return; }
-    if (!add?.isConnected) head.append(addButton());
+    if (!add?.isConnected) head.querySelector('.setup-scope').before(addButton());
     if (!answer.servers.length) { body.append(el('p', 'No machine runs this workspace yet.', 'setup-empty')); return; }
     for (const m of answer.servers) {
       const row = el('div', undefined, 'machines-row'); row.dataset.machine = m.id;
