@@ -365,13 +365,15 @@ test("a --dir under ~ is registered as the absolute path the host resolved", () 
   } finally { s.cleanup(); }
 });
 
-/** The commands of a remedy as a Markdown reader copies them: a backslash-escaped backtick is text;
+/** The commands of a remedy as a Markdown reader copies them: outside a span a backslash escapes the
+ *  ASCII punctuation character after it (another backslash included, so `\\` then a backtick is a
+ *  literal backslash and an ACTIVE backtick);
  *  otherwise a run of N backticks opens a code span that the next run of exactly N closes, with one
  *  space of padding stripped when both ends have it. */
 function codeSpans(text) {
   const spans = [];
   for (let i = 0; i < text.length;) {
-    if (text[i] === "\\" && text[i + 1] === "`") { i += 2; continue; }
+    if (text[i] === "\\" && /[!-/:-@[-`{-~]/.test(text[i + 1] ?? "")) { i += 2; continue; }
     if (text[i] !== "`") { i++; continue; }
     let n = 0; while (text[i + n] === "`") n++;
     const open = i + n;
@@ -395,9 +397,13 @@ test("a copyable remedy passes each dynamic value as ONE literal argument, whate
   const base = mkdtempSync("/tmp/oats-scq-");
   try {
     const marker = join(base, "MARK");
-    const hostile = join(base, `a b;touch ${marker} \`touch ${marker}\` $(touch ${marker}) it's`);
+    // Odd and even runs of backslashes before a backtick: an even run leaves the backtick active once
+    // Markdown has read the backslashes as escaped backslashes.
+    for (const slashes of ["", "\\", "\\\\", "\\\\\\"]) {
+    rmSync(join(process.env.OATS_HOME_DIR, "servers.json"), { force: true }); // each pass registers b afresh
+    const hostile = join(base, `a b;touch ${marker} ${slashes}\`touch ${marker} # \` $(touch ${marker}) it's`);
     const record = join(base, "argv.json");
-    const bin = join(base, "bin"); mkdirSync(bin);
+    const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
     for (const tool of ["git", "oats"]) {
       writeFileSync(join(bin, tool), `#!${process.execPath}\nrequire("node:fs").writeFileSync(${JSON.stringify(record)}, JSON.stringify(process.argv.slice(2)));\n`);
       chmodSync(join(bin, tool), 0o755);
@@ -434,5 +440,6 @@ test("a copyable remedy passes each dynamic value as ONE literal argument, whate
     assert.equal(soulsSpans.length, 1, `the host's message opens no code span of its own: ${stepOf(res, "readiness").remedy}`);
     assert.deepEqual(copyAndRun(soulsSpans[0]), ["souls", "--dir", hostile]);
     assert.equal(existsSync(marker), false);
+    }
   } finally { rmSync(base, { recursive: true, force: true }); }
 }));

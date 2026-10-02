@@ -1975,8 +1975,8 @@ An envelope, `ok: true` whenever no step failed, human steps included
   on `git` the error's `code` and any `hint`), in which every command to run
   is a Markdown code span with each argument quoted for a POSIX shell (a
   value from a reference or a host path is always one literal argument), and
-  a backtick in surrounding text is escaped (`` \` ``), so the code spans are
-  exactly the commands (a readiness line relays the provider's own wording); `failed` adds `code` and, for
+  a value in the surrounding text has its backslashes and backticks escaped
+  (`` \\ ``, `` \` ``), so the code spans are exactly the commands (a readiness line relays the provider's own wording); `failed` adds `code` and, for
   some codes, `details`. `skipped` steps say `waits for <step>`.
 - `registration` is the registration as written or found (`sshHost`,
   `workspace`: the absolute path the host resolved for `--dir`, never `~`;
