@@ -1,7 +1,7 @@
 // Native terminal geometry (060de502; the human's 2026-09-29 direction over
 // the Redesign v3 "transcript rhythm"): xterm's default line height,
-// horizontal-only 32px gutters. Spec F item 6 made the face the bundled
-// Inconsolata, at 15px by the operator's decision (2026-10-02). Isolated renderer module + CSSOM;
+// horizontal-only 12px gutters. Spec F item 6 made the face the bundled
+// Inconsolata, at 16px by the operator's decision (2026-10-02). Isolated renderer module + CSSOM;
 // no browser layout, Electron, storage or live app.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -40,26 +40,26 @@ function fixture(t, { stored = {}, noStorage = false, palette, fonts } = {}) {
 }
 
 for (const palette of ["light", "solarized", "dark"]) {
-  test(`fresh Desktop (${palette}): terminal typography is 15px Inconsolata, then the OS monospace stack, with no line height`, t => {
+  test(`fresh Desktop (${palette}): terminal typography is 16px Inconsolata, then the OS monospace stack, with no line height`, t => {
     const u = fixture(t, { palette });
     const type = u.theme.terminalTypography();
-    assert.equal(type.fontSize, 15, "Inconsolata at 15px, the operator's default");
+    assert.equal(type.fontSize, 16, "Inconsolata at 16px, the operator's default");
     assert.match(stack(type.fontFamily), /^"Inconsolata", ui-monospace,/, "the bundled face first, then the OS stack (--term-font-family)");
     assert.equal("lineHeight" in type, false, "typography carries no line height; xterm's default 1.0 applies");
     assert.deepEqual(Object.keys(type).sort(), ["fontFamily", "fontSize"]);
   });
 }
 
-test("theme.css seeds --term-font-size: 15px (the JS default agrees) and defines no --term-line-height token", t => {
+test("theme.css seeds --term-font-size: 16px (the JS default agrees) and defines no --term-line-height token", t => {
   const u = fixture(t);
   const root = u.doc.defaultView.getComputedStyle(u.doc.documentElement);
-  assert.equal(root.getPropertyValue("--term-font-size").trim(), "15px");
-  assert.equal(u.theme.TERMINAL_FONT_SIZE, 15, "the storage- and token-less fallback is the same size");
+  assert.equal(root.getPropertyValue("--term-font-size").trim(), "16px");
+  assert.equal(u.theme.TERMINAL_FONT_SIZE, 16, "the storage- and token-less fallback is the same size");
   assert.equal(root.getPropertyValue("--term-line-height").trim(), "", "no --term-line-height token");
   assert.doesNotMatch(themeCSS, /--term-line-height/, "the token must not come back under another rule");
 });
 
-test("a persisted user size is respected, not migrated (12 and 13 stay); reset forgets it and lands on 15", t => {
+test("a persisted user size is respected, not migrated (12 and 13 stay); reset forgets it and lands on 16", t => {
   const stored = { "oats.desktop.terminal.fontSize": "12", "oats.desktop.terminal.fontFamily": "Menlo" };
   const u = fixture(t, { stored });
   const type = u.theme.terminalTypography();
@@ -73,23 +73,23 @@ test("a persisted user size is respected, not migrated (12 and 13 stay); reset f
   u.theme.resetTerminalTypography();
   assert.deepEqual(Object.keys(stored), [], "reset stores nothing: later default changes reach the user");
   assert.equal(heard.length, 1, "live terminals hear the reset");
-  assert.equal(heard[0].fontSize, 15);
+  assert.equal(heard[0].fontSize, 16);
   assert.match(stack(heard[0].fontFamily), /^"Inconsolata",/);
   const fresh = fixture(t, { noStorage: true }).theme.terminalTypography();
-  assert.equal(fresh.fontSize, 15, "storage-less falls back to the 15px token");
+  assert.equal(fresh.fontSize, 16, "storage-less falls back to the 16px token");
   u.theme.setTerminalFontSize("nonsense");
-  assert.equal(stored["oats.desktop.terminal.fontSize"], "15", "an unreadable size falls back to the default");
-  for (const [value, expected] of [[0, "9"], [-3, "9"], [0.4, "9"], ["0", "9"], [99, "28"], [12.5, "13"], [null, "15"], ["  ", "15"], [undefined, "15"], [NaN, "15"]]) {
+  assert.equal(stored["oats.desktop.terminal.fontSize"], "16", "an unreadable size falls back to the default");
+  for (const [value, expected] of [[0, "9"], [-3, "9"], [0.4, "9"], ["0", "9"], [99, "28"], [12.5, "13"], [null, "16"], ["  ", "16"], [undefined, "16"], [NaN, "16"]]) {
     u.theme.setTerminalFontSize(value);
     assert.equal(stored["oats.desktop.terminal.fontSize"], expected, `${String(value)}: numbers clamp to 9–28, only unreadable values give the default`);
   }
 });
 
-test("terminal gutters: .term-wrap .xterm has 32px horizontal padding only, and .term-wrap none", t => {
+test("terminal gutters: .term-wrap .xterm has 12px horizontal padding only, and .term-wrap none", t => {
   const u = fixture(t);
   const xterm = u.rule(".term-wrap .xterm");
   assert.ok(xterm, ".term-wrap .xterm rule present");
-  assert.equal(xterm.paddingLeft, "32px"); assert.equal(xterm.paddingRight, "32px");
+  assert.equal(xterm.paddingLeft, "12px"); assert.equal(xterm.paddingRight, "12px");
   assert.equal(xterm.paddingTop, "0px", "no vertical inset: tmux owns row geometry");
   assert.equal(xterm.paddingBottom, "0px");
   assert.equal(xterm.width, "100%"); assert.equal(xterm.height, "100%");

@@ -1,5 +1,5 @@
 // Settings → Terminal: the visible way to change the terminal font size (spec F,
-// the operator's 2026-10-02 decision). A stepper (− [15] +, or a typed value)
+// the operator's 2026-10-02 decision). A stepper (− [16] +, or a typed value)
 // over the same typography store the keys and the palette use (theme.mjs), so
 // ⌘= / ⌘- / ⌘0 and this control always agree. The font family stays on the
 // palette's prompt. Built from the Settings dialog's own components (.forge-*).

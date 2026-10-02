@@ -581,7 +581,7 @@ for (const [name] of palettes) test(`${name}: actual Connections and reported PR
   const key = 'e'.repeat(64), ref = 'f'.repeat(64);
   const connections = createConnections({ doc, desk: {}, terminalFactory: assert.fail, request: async () => ({
     forgeApi: 1, status: 'connected', host: 'github.com', login: 'operator', hostRef: ref, connectionRef: ref, hosts: [{ host: 'github.com', hostRef: ref }],
-  }), sections: [() => createTerminalSettings({ doc, store: { read: () => 15, set() {}, reset() {}, subscribe: () => () => {} } })] });
+  }), sections: [() => createTerminalSettings({ doc, store: { read: () => 16, set() {}, reset() {}, subscribe: () => () => {} } })] });
   connections.open(); await new Promise(resolve => setImmediate(resolve));
   const raw = forgePr(); raw.statusCheckRollup = [
     { __typename: 'CheckRun', name: 'pass', status: 'COMPLETED', conclusion: 'SUCCESS' },

@@ -56,7 +56,7 @@ source, version and checksum in `fonts/README.md`) so it is the same on every
 machine. `theme.css` declares it with `@font-face` (`font-display: block`) and puts
 it first in `--term-font-family` (the terminal) and `--mono` (the UI's code, paths
 and chord hints), ahead of the OS monospace stack. The terminal's default size is
-15px (`--term-font-size`, `TERMINAL_FONT_SIZE`; the operator's decision). A terminal
+16px (`--term-font-size`, `TERMINAL_FONT_SIZE`; the operator's decision). A terminal
 font or size the operator stored (`oats.desktop.terminal.fontFamily`, `…fontSize`)
 still wins. Reset typography (⌘0 / Ctrl+0, the palette) forgets both, and Settings →
 Terminal's "Reset to default" forgets the size, so the defaults apply again. Every
@@ -671,7 +671,7 @@ section is the module map.
   `cycleKey` from `pickerCycleDirection(e, "app.palette")` (keybindings.mjs), so
   ⌘K cycles while open (Shift: up) and follows a rebind.
 - **settings-terminal.mjs** — Settings → Terminal: the font size stepper
-  (− / typed value / +, 9–28, "Reset to default (15)"), mounted by
+  (− / typed value / +, 9–28, "Reset to default (16)"), mounted by
   `connections.mjs` through its `sections` option after Connections and disposed
   on close. It reads and writes the same store as ⌘= / ⌘- / ⌘0 and the palette
   (`theme.mjs`: `setTerminalFontSize`, `resetTerminalFontSize`,

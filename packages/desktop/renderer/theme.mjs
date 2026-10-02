@@ -17,9 +17,9 @@ const listeners = new Set();
 const terminalListeners = new Set();
 const TERM_FONT_KEY = "oats.desktop.terminal.fontFamily";
 const TERM_SIZE_KEY = "oats.desktop.terminal.fontSize";
-/** The terminal's default size: Inconsolata at 15px (the operator's decision,
+/** The terminal's default size: Inconsolata at 16px (the operator's decision,
  * 2026-10-02; spec F item 6). Mirrors --term-font-size. Every reset lands here. */
-export const TERMINAL_FONT_SIZE = 15;
+export const TERMINAL_FONT_SIZE = 16;
 /** The range every size control clamps to (keys, palette, Settings). */
 export const TERMINAL_FONT_MIN = 9, TERMINAL_FONT_MAX = 28;
 
@@ -62,7 +62,7 @@ export function onThemeChange(fn) {
 /* tmux carries cells/colors, never the host terminal emulator's font. Keep
    desktop typography as an explicit persisted preference, seeded from
    semantic CSS tokens (the bundled Inconsolata, then the OS monospace stack,
-   at 15px by default). A stored family or size wins; the defaults apply only
+   at 16px by default). A stored family or size wins; the defaults apply only
    where nothing is stored. */
 export function terminalTypography(el = document.documentElement) {
   const css = getComputedStyle(el);
