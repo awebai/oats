@@ -94,7 +94,7 @@ test("oats teams: the deployment's teams, the workspace's souls:; add (the first
   assert.equal(ok(fx.cli(["teams", "default", "oats", "--json"]), "the same again").changed, false);
 });
 
-test("oats soul teams: a soul's teams here and why (read only); its edit flags were removed in 0.37.0", (t) => {
+test("oats soul teams: a soul's teams here and why (read only); its edit flags were removed in 0.38.0", (t) => {
   const fx = fixture({ local: { teams: { mine: { team: "mine:me.aweb.ai" } }, defaultTeam: "mine" },
     workspace: { souls: { "*": { teams: ["night"] }, "ws/*": { default: "oats" }, "ws/dev": { teams: ["oats"] } } } }); t.after(fx.cleanup);
   let doc = ok(fx.cli(["soul", "teams", "dev", "--json"]), "soul teams");
@@ -297,7 +297,7 @@ test("a package soul carrying the removed `team:` is refused (not listed), namin
   assert.deepEqual(souls, []);
   assert.equal(problems.length, 1);
   assert.equal(problems[0].code, "E_WORKSPACE_SCHEMA");
-  assert.match(problems[0].message, /a soul's teams are decided by souls: in oats-workspace\.yaml \(team model 3, OATS 0\.37\.0\)/);
+  assert.match(problems[0].message, /a soul's teams are decided by souls: in oats-workspace\.yaml \(team model 3, OATS 0\.38\.0\)/);
 });
 
 test("an existing home refuses the removed local team keys like every other reader: its messaging commands and operations, inspect --home and readiness --home answer removed-key, never the record", async (t) => {

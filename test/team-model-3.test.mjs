@@ -54,7 +54,7 @@ test("souls: keys are \"*\", <member|package>/* or <member|package>/<soul>; entr
   assert.ok(validateWorkspace(ws({ localTeams: "yes" })).some((p) => p.path === "/localTeams"));
 });
 
-/* ───────────── 0.37.0: the removed local keys, and local teams the workspace does not allow ───────────── */
+/* ───────────── 0.38.0: the removed local keys, and local teams the workspace does not allow ───────────── */
 
 const { v2Deployment } = await import("./helpers/v2-deployment.mjs");
 const YAML = (await import("yaml")).default;
@@ -80,8 +80,8 @@ test("oats-local.yaml souls.teams / souls.default are refused naming each key, w
     "oats.okf/harvester": { teams: ["engineering", "okf"] },
     "<member>/reviewer": { default: "docs", teams: ["engineering"] },
   } });
-  assert.ok(e.message.includes("/souls/teams: souls.teams was removed in 0.37.0 (team model 3): which teams a soul may join is souls: in oats-workspace.yaml"), e.message);
-  assert.ok(e.message.includes("/souls/default: souls.default was removed in 0.37.0 (team model 3): a soul's default team is souls: in oats-workspace.yaml (default:)"), e.message);
+  assert.ok(e.message.includes("/souls/teams: souls.teams was removed in 0.38.0 (team model 3): which teams a soul may join is souls: in oats-workspace.yaml"), e.message);
+  assert.ok(e.message.includes("/souls/default: souls.default was removed in 0.38.0 (team model 3): a soul's default team is souls: in oats-workspace.yaml (default:)"), e.message);
   assert.ok(e.message.endsWith(`commit this in oats-workspace.yaml (<member> is the soul's member repository name, as souls.disabled names it), then remove souls.teams and souls.default from oats-local.yaml:\n${e.details.replacement}`), e.message);
 });
 

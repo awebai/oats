@@ -88,7 +88,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
 | `settings-declared` | `declares` on inspect capabilities and preview modules | |
 | `capabilities-private` | `private` on `oats capabilities` rows | |
 | `layers-from` | `layers.<slot>.from` in inspect | |
-| `team-model-3` | every team field; `oats teams`, `oats soul teams` (0.37.0; replaces `team-model-2`) | `teamsApi: 2`, `soulTeamsApi: 2` (payload only) |
+| `team-model-3` | every team field; `oats teams`, `oats soul teams` (0.38.0; replaces `team-model-2`) | `teamsApi: 2`, `soulTeamsApi: 2` (payload only) |
 | `harness` | the harness names ([Harness input spellings](#the-harness-rename-feature-harness-oats-0270)) | |
 | `package-souls` | package soul rows, `qualifiedName`, `packages[].souls` | |
 | `triggers` | `oats trigger …` | `triggerApi: 1` (payload only) |
@@ -598,7 +598,7 @@ A removed verb answers, before any namespace can claim it:
 | `status --team` | `E_BAD_ARGS` | `oats status` in the deployment |
 | `spawn --instance` | `E_BAD_ARGS` | `--purpose` or `--name` |
 | `spawn --ephemeral`, `--instructions-file`, `--def-file` | `E_BAD_ARGS` | a soul in a member repository |
-| `soul teams --add`, `--remove`, `--default`, `--clear-default` (0.37.0) | `E_BAD_ARGS` (`details: {flag, replacement}`) | `souls:` in `oats-workspace.yaml` |
+| `soul teams --add`, `--remove`, `--default`, `--clear-default` (0.38.0) | `E_BAD_ARGS` (`details: {flag, replacement}`) | `souls:` in `oats-workspace.yaml` |
 | `session … --native-record` | `E_BAD_ARGS` | none |
 
 `details.replacement` is the kernel's prose (shortened above): show it, do not
@@ -1047,7 +1047,7 @@ them. Gate each field below on it.
 <a id="team-model-v2-feature-team-model-2-oats-0300-replaces-feature-teams"></a>
 ## Teams
 
-Feature `team-model-3` (OATS 0.37.0; it replaces `team-model-2`): gate every
+Feature `team-model-3` (OATS 0.38.0; it replaces `team-model-2`): gate every
 team field and verb on it. Design: [team model 3](design/2026-10-02-team-model-3.md);
 operator guide: [workspaces.md](workspaces.md#teams).
 
@@ -1093,7 +1093,7 @@ operator guide: [workspaces.md](workspaces.md#teams).
   `team-label-collision` warning, and the shared definition wins. A local
   default no file declares is `E_TEAM_UNKNOWN`.
 - **Removed keys** are `E_WORKSPACE_SCHEMA` with `reason: "removed-key"`:
-  `oats-local.yaml` `souls.teams` and `souls.default` (0.37.0);
+  `oats-local.yaml` `souls.teams` and `souls.default` (0.38.0);
   `messaging.byTeam`, `defaults.byTeam`, a soul.yaml `team`, an
   oats-membership.yaml `team`, and `byTeam` in any provider payload layer
   (0.30). Other payload keys are opaque (a `team` setting passes through).
@@ -1115,7 +1115,7 @@ joined automatically). `from` is where the label is defined: `"shared"` or
 `"default"`, `"workspace"` (its `souls:` pattern) and `"local"` (a local team
 where local teams are allowed). The default row comes first, then the rest by
 label (codepoint order). Reports include unmapped rows; `OATS_TEAMS` and
-`instance.json.teams` carry mapped rows only. A home spawned before 0.37.0
+`instance.json.teams` carry mapped rows only. A home spawned before 0.38.0
 recorded rows without `via`, and they are reported as recorded.
 
 ### The default (`DefaultTeam`)
@@ -1125,7 +1125,7 @@ recorded rows without `via`, and they are reported as recorded.
 ```
 
 `from` is `"soul"` (the soul's `souls:` default in the workspace file; before
-0.37.0 it meant `oats-local.yaml` `souls.default`), `"deployment"` (the local
+0.38.0 it meant `oats-local.yaml` `souls.default`), `"deployment"` (the local
 `defaultTeam`) or `"workspace"` (the workspace's `defaultTeam`). It is `null`
 only when no default is configured (with messaging active, that is
 `E_TEAM_UNCONFIGURED`). An unmapped default is `{label, team: null, from}`,
@@ -1235,7 +1235,7 @@ oats soul teams <soul>|'*' [--dir <d>] [--max-age <s>] --json
   pattern tried are `"*"`. Soul lookup: `E_SOUL_UNKNOWN`, `E_SOUL_AMBIGUOUS`;
   the soul's teams: `E_WORKSPACE_SCHEMA` (local-teams-closed), `E_TEAM_UNKNOWN`.
 - The edit flags `--add`, `--remove`, `--default` and `--clear-default` were
-  removed in 0.37.0: `E_BAD_ARGS` with details `{flag, replacement: "souls: in
+  removed in 0.38.0: `E_BAD_ARGS` with details `{flag, replacement: "souls: in
   oats-workspace.yaml (a PR to the workspace file)"}`, before anything else
   is judged.
 

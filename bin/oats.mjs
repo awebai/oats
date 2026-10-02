@@ -1086,7 +1086,7 @@ function maxAgeRefusal(command, head) {
     case "spawn": return head.includes("--preview") ? null : refuse("spawn");
     case "workspace": return word(1) === "status" ? null : refuse(["workspace", word(1)].filter(Boolean).join(" "));
     case "teams": return word(1) === undefined ? null : refuse(`teams ${word(1)}`);
-    // `soul teams` only reads (its edit flags were removed in 0.37.0, and refuse as such).
+    // `soul teams` only reads (its edit flags were removed in 0.38.0, and refuse as such).
     case "soul": return word(1) === "teams" ? null : refuse(["soul", word(1)].filter(Boolean).join(" "));
     default: {
       const sub = ["package", "schedule", "session", "trigger", "automations", "launch-config", "server", "instance", "operation", "pane"].includes(command) ? word(1) : undefined;
@@ -1633,7 +1633,7 @@ async function teamsCmd() {
   for (const p of doc.problems) console.log(`${p.severity === "failure" ? "problem" : "warning"}   ${p.code}  ${p.message} — ${p.fix}`);
 }
 
-/** The `oats soul teams` edit flags team model 3 removed (0.37.0): a soul's teams are the workspace's `souls:`. */
+/** The `oats soul teams` edit flags team model 3 removed (0.38.0): a soul's teams are the workspace's `souls:`. */
 const SOUL_TEAMS_REMOVED_FLAGS = ["--add", "--remove", "--default", "--clear-default"];
 const SOUL_TEAMS_REPLACEMENT = "souls: in oats-workspace.yaml (a PR to the workspace file)";
 
@@ -1643,7 +1643,7 @@ async function soulCmd() {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   const usage = "usage: oats soul teams <soul>|'*'  [--dir <deployment>] [--max-age <s>] [--json]";
   const removed = SOUL_TEAMS_REMOVED_FLAGS.find((f) => args.some((a) => a === f || a.startsWith(`${f}=`)));
-  if (removed) bail("E_BAD_ARGS", `oats soul teams ${removed} was removed in 0.37.0 (team model 3): which teams a soul may join, and its default, are ${SOUL_TEAMS_REPLACEMENT}`, { flag: removed, replacement: SOUL_TEAMS_REPLACEMENT });
+  if (removed) bail("E_BAD_ARGS", `oats soul teams ${removed} was removed in 0.38.0 (team model 3): which teams a soul may join, and its default, are ${SOUL_TEAMS_REPLACEMENT}`, { flag: removed, replacement: SOUL_TEAMS_REPLACEMENT });
   if (positional(1) !== "teams") bail("E_USAGE", usage);
   const name = positional(2);
   if (name === undefined) bail("E_BAD_ARGS", `oats soul teams needs a soul (or '*') — ${usage}`);

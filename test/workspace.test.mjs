@@ -202,7 +202,7 @@ test("workspace schema refusals each name the offending path", () => {
   refuse({ external: [{ source: `${R.experts}@9c4e1f2a`, soul: "souls/x" }] }, "/external/0/source", /does not match/);
   refuse({ external: [{ source: R.experts, soul: "souls/x" }] }, "/external/0/source");
   refuse({ external: [{ source: `${R.experts}@${C.experts}`, soul: "../escape" }] }, "/external/0/soul");
-  refuse({ external: [{ source: `${R.experts}@${C.experts}`, soul: "souls/x", team: "engineering" }] }, "/external/0/team", /a soul's teams are decided by souls: in oats-workspace\.yaml \(team model 3, OATS 0\.37\.0\)/);
+  refuse({ external: [{ source: `${R.experts}@${C.experts}`, soul: "souls/x", team: "engineering" }] }, "/external/0/team", /a soul's teams are decided by souls: in oats-workspace\.yaml \(team model 3, OATS 0\.38\.0\)/);
   refuse({ defaults: { knowledge: { a: { from: "package" }, b: { from: "package" } } } }, "/defaults/knowledge", /at most 1/);
   refuse({ defaults: { knowledge: { a: "off" } } }, "/defaults/knowledge/a");
   refuse({ defaults: { capabilities: { x: { from: "package", version: "1" } } } }, "/defaults/capabilities/x/version", /unknown property/);
@@ -237,8 +237,8 @@ test("workspace schema hint names schemaVersion 2 when a v1 file sits at the v2 
 test("membership, soul and local schemas", () => {
   assert.deepEqual(validateMembership({ schemaVersion: 2, workspace: WS }), []);
   // 0.30 removed a soul's or membership's `team`; the removed key names where a soul's teams live now (souls: in the workspace).
-  assert.deepEqual(validateMembership({ schemaVersion: 2, workspace: WS, team: "global" }), [{ path: "/team", reason: "removed-key", message: "a soul's teams are decided by souls: in oats-workspace.yaml (team model 3, OATS 0.37.0)" }]);
-  assert.deepEqual(validateSoul(soul("s", { team: ["a", "b"] })), [{ path: "/team", reason: "removed-key", message: "a soul's teams are decided by souls: in oats-workspace.yaml (team model 3, OATS 0.37.0)" }]);
+  assert.deepEqual(validateMembership({ schemaVersion: 2, workspace: WS, team: "global" }), [{ path: "/team", reason: "removed-key", message: "a soul's teams are decided by souls: in oats-workspace.yaml (team model 3, OATS 0.38.0)" }]);
+  assert.deepEqual(validateSoul(soul("s", { team: ["a", "b"] })), [{ path: "/team", reason: "removed-key", message: "a soul's teams are decided by souls: in oats-workspace.yaml (team model 3, OATS 0.38.0)" }]);
   assert.equal(validateMembership({ schemaVersion: 2, workspace: WS, exports: {} })[0].path, "/exports");
   assert.equal(validateMembership({ schemaVersion: 2, workspace: `${WS}@main` })[0].path, "/workspace");
   assert.equal(validateMembership({ schemaVersion: 1, exports: {} }).length, 3);
@@ -397,7 +397,7 @@ test("discoverWorkspace: the whole picture — rows, souls, capabilities, privat
   // problems: collected, not thrown
   const codes = d.problems.map((p) => [p.code, p.repoKey, p.path]);
   const moved = d.problems.find((p) => p.path === "souls/growth-hacker/soul.yaml#/team");
-  assert.deepEqual([moved?.code, moved?.repoKey, moved?.message], ["E_WORKSPACE_SCHEMA", K.data, "a soul's teams are decided by souls: in oats-workspace.yaml (team model 3, OATS 0.37.0)"], JSON.stringify(codes));
+  assert.deepEqual([moved?.code, moved?.repoKey, moved?.message], ["E_WORKSPACE_SCHEMA", K.data, "a soul's teams are decided by souls: in oats-workspace.yaml (team model 3, OATS 0.38.0)"], JSON.stringify(codes));
   assert.ok(!codes.some(([c]) => c === "E_TEAM_UNKNOWN"), "discovery checks no team label any more");
   assert.ok(codes.some(([c, k, p]) => c === "E_WORKSPACE_SCHEMA" && k === K.data && p === "souls/broken/soul.yaml#/name"));
   assert.ok(codes.some(([c, k, p]) => c === "E_WORKSPACE_SCHEMA" && k === K.data && p === "souls/broken/soul.yaml#/work"));
@@ -424,7 +424,7 @@ test("discoverWorkspace: a membership still carrying the removed `team:` is an u
   const d = await discoverWorkspace(WS, { remote });
   const row = d.members.find((m) => m.key === K.platform);
   assert.deepEqual([row.confirmed, row.reason, row.souls], [false, "no-backlink", []]);
-  assert.match(row.detail, /oats-membership\.yaml is invalid: \/team: a soul's teams are decided by souls: in oats-workspace\.yaml \(team model 3, OATS 0\.37\.0\)/);
+  assert.match(row.detail, /oats-membership\.yaml is invalid: \/team: a soul's teams are decided by souls: in oats-workspace\.yaml \(team model 3, OATS 0\.38\.0\)/);
   const bad = northwind({ workspace: workspaceFile({ members: [`${R.platform}@v1`] }) });
   await assert.rejects(discoverWorkspace(WS, { remote: bad }), (e) => e.code === "E_WORKSPACE_SCHEMA" && e.details.problems[0].path === "/members/0");
 });
@@ -739,7 +739,7 @@ test("soul.yaml and oats-membership.yaml refuse any `team:` — a label, a list,
   assert.ok(!names.includes("release-manager") && !names.includes("support-triager"), "a soul carrying `team:` is not listed");
   for (const soulName of ["release-manager", "support-triager"]) {
     const p = d.problems.find((x) => x.path === `souls/${soulName}/soul.yaml#/team`);
-    assert.deepEqual([p?.code, p?.message], ["E_WORKSPACE_SCHEMA", "a soul's teams are decided by souls: in oats-workspace.yaml (team model 3, OATS 0.37.0)"], JSON.stringify(d.problems.map((x) => x.path)));
+    assert.deepEqual([p?.code, p?.message], ["E_WORKSPACE_SCHEMA", "a soul's teams are decided by souls: in oats-workspace.yaml (team model 3, OATS 0.38.0)"], JSON.stringify(d.problems.map((x) => x.path)));
   }
   const m = northwind({ mutate: (repos) => { repos[K.platform].files["oats-membership.yaml"].team = []; } });
   const d2 = await discoverWorkspace(WS, { remote: m });

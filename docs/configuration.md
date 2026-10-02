@@ -72,7 +72,7 @@ refused (`E_WORKSPACE_SCHEMA`).
 | `souls.launch` | This machine's launch preference per soul (0.30): `"*"` for every soul, a soul's own entry (its name, or `<package>/<soul>`) over it. A value is a `launch-configs` name or an inline `{ harness, model? }`. It overrides the soul's own `launch:`; explicit spawn flags win over both. See [Launch preferences](#launch-preferences). |
 
 Which teams a soul may join, and its default, are committed in the workspace's
-`souls:`, never here: `souls.teams` and `souls.default` were removed in 0.37.0
+`souls:`, never here: `souls.teams` and `souls.default` were removed in 0.38.0
 (`E_WORKSPACE_SCHEMA`, reason `removed-key`; the refusal prints the `souls:` to
 commit instead). How teams are resolved, and what a messaging provider does
 with them, is in [workspaces.md](workspaces.md#teams).

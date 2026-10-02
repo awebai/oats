@@ -383,7 +383,7 @@ souls:                                   # per soul pattern: its default team an
   workspace cannot be read) has no workspace rules: local teams and the local
   `defaultTeam` apply there.
 - `soul.yaml` and `oats-membership.yaml` say nothing about teams.
-  `oats-local.yaml` `souls.teams` and `souls.default` were removed in 0.37.0:
+  `oats-local.yaml` `souls.teams` and `souls.default` were removed in 0.38.0:
   they are refused, and the refusal prints the `souls:` to commit instead.
 
 ### A soul's default team and its teams

@@ -135,7 +135,7 @@
       }
     },
     "teams": {
-      "description": "LOCAL teams (`oats teams add` writes it): <label>: { team, description? }, the messaging provider's team id for a team only this deployment uses. Allowed only when oats-workspace.yaml says localTeams: true (or in the standalone view); otherwise E_WORKSPACE_SCHEMA reason local-teams-closed. Every soul may join every local team. Shared teams are committed in oats-workspace.yaml teams:; a label in both is team-label-collision (the shared one wins). souls.teams and souls.default were removed in 0.37.0: souls: in oats-workspace.yaml.",
+      "description": "LOCAL teams (`oats teams add` writes it): <label>: { team, description? }, the messaging provider's team id for a team only this deployment uses. Allowed only when oats-workspace.yaml says localTeams: true (or in the standalone view); otherwise E_WORKSPACE_SCHEMA reason local-teams-closed. Every soul may join every local team. Shared teams are committed in oats-workspace.yaml teams:; a label in both is team-label-collision (the shared one wins). souls.teams and souls.default were removed in 0.38.0: souls: in oats-workspace.yaml.",
       "type": "object",
       "propertyNames": { "$ref": "#/$defs/label" },
       "additionalProperties": {

@@ -162,13 +162,13 @@ test("the provider environment: the eligible rows with `via` (mapped only); FROM
 
 test("the removed team keys are schema problems naming their replacement (no alias, no fallback)", async () => {
   const { validateWorkspace, validateMembership, validateSoul, validateLocal } = await import("../lib/workspace.mjs");
-  const MOVED = "a soul's teams are decided by souls: in oats-workspace.yaml (team model 3, OATS 0.37.0)";
+  const MOVED = "a soul's teams are decided by souls: in oats-workspace.yaml (team model 3, OATS 0.38.0)";
   const pick = (problems) => problems.map((p) => [p.path, p.reason ?? null, p.message]);
-  // 0.37.0: oats-local.yaml souls.teams / souls.default (team model v2) moved to the workspace's souls:.
+  // 0.38.0: oats-local.yaml souls.teams / souls.default (team model v2) moved to the workspace's souls:.
   const local = { schemaVersion: 2, workspace: "git:github.com/a/b", souls: { teams: { "*": ["oats"] }, default: { dev: "oats" }, disabled: ["x"] } };
   assert.deepEqual(pick(validateLocal(local)), [
-    ["/souls/teams", "removed-key", "souls.teams was removed in 0.37.0 (team model 3): which teams a soul may join is souls: in oats-workspace.yaml"],
-    ["/souls/default", "removed-key", "souls.default was removed in 0.37.0 (team model 3): a soul's default team is souls: in oats-workspace.yaml (default:)"],
+    ["/souls/teams", "removed-key", "souls.teams was removed in 0.38.0 (team model 3): which teams a soul may join is souls: in oats-workspace.yaml"],
+    ["/souls/default", "removed-key", "souls.default was removed in 0.38.0 (team model 3): a soul's default team is souls: in oats-workspace.yaml (default:)"],
   ]);
   assert.deepEqual(pick(validateMembership({ schemaVersion: 2, workspace: "git:github.com/a/b", team: "global" })), [["/team", "removed-key", MOVED]]);
   assert.deepEqual(pick(validateSoul({ schemaVersion: 2, name: "dev", description: "d", work: "directory", team: ["a", "b"] })), [["/team", "removed-key", MOVED]]);

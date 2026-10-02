@@ -17,7 +17,7 @@ description: >-
   day-to-day operation inside an instance is oats.core.
 ---
 
-# Teams (team model 3, OATS 0.37.0)
+# Teams (team model 3, OATS 0.38.0)
 
 The contract is `docs/workspaces.md` ("Teams") and `docs/capabilities.md`
 ("Teams in the provider environment") in the installed kernel. A **team** is a
@@ -210,7 +210,7 @@ runs only when asked, never at spawn:
 
 ## Upgrading from 0.36
 
-0.37.0 refuses `souls.teams` and `souls.default` in `oats-local.yaml`
+0.38.0 refuses `souls.teams` and `souls.default` in `oats-local.yaml`
 (`E_WORKSPACE_SCHEMA` reason `removed-key`; `oats doctor` reports the same).
 The error names each key and prints the `souls:` snippet to commit; bare soul
 names appear as `<member>/<soul>` for you to qualify. Per workspace: commit
@@ -218,4 +218,4 @@ names appear as `<member>/<soul>` for you to qualify. Per workspace: commit
 soul's entry lists `"*"`'s teams too), and `defaultTeam:` when the deployment
 default is a shared team; for personal local teams add `localTeams: true` or
 commit them; then remove the old keys from each `oats-local.yaml`. Steps:
-`docs/release-notes/v0.37.0.md`.
+`docs/release-notes/v0.38.0.md`.
