@@ -43,7 +43,7 @@ import {
   renderWorkspaceSelect, wsQuery, workspaceGeneration,
 } from "./common.mjs";
 import { createDataState, skeleton, statusLine, observedText } from "../loading.mjs";
-import { deploymentUnavailableText } from "../deployment-header.mjs";
+import { deploymentUnavailableText, NOT_SERVED_CODE, NO_ANSWER_CODE, unservedError, createPendingWatch } from "../deployment-header.mjs";
 import { registerAction } from "../keybindings.mjs";
 import { resolveViewKey } from "../view-keys.mjs";
 import { icon } from "../shell-icons.mjs";
@@ -62,7 +62,8 @@ export const hierarchyCSS = `
 .hier .spawnbtn { display:inline-flex; align-items:center; gap:6px; min-height:28px; padding:0 12px; font-size:12px; font-weight:650; white-space:nowrap; }
 .hier-notice { flex:none; display:flex; align-items:center; gap:8px; padding:8px 16px; color:var(--muted); background:var(--surface); font-size:12px; overflow-wrap:anywhere; }
 .hier-notice-message { flex:1; }
-.hier-retry { flex:none; }
+.hier-retry, .hier-readd { flex:none; }
+.hier-readd[hidden] { display:none; }
 .hier-notice[hidden] { display:none; }
 /* The canvas is a large focusable panel: the global 1px edge only (its base rule clears the outline). */
 .hier-canvas:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
@@ -296,7 +297,7 @@ export function mount(el, ctx) {
         <span style="flex:1"></span>
         <button class="act primary spawnbtn" title="Choose a soul in Workspace to spawn">${icon("plus", { size: 14 })}Spawn</button>
       </div>
-      <div class="hier-notice" role="note" hidden><span class="hier-notice-message"></span><button class="act hier-retry" type="button">Retry roster</button></div>
+      <div class="hier-notice" role="note" hidden><span class="hier-notice-message"></span><button class="act hier-retry" type="button">Retry roster</button><button class="act hier-readd" type="button" hidden>Re-add workspace</button></div>
       <div class="hier-canvas" tabindex="0" role="tree" aria-label="Active agents by cluster">
         <div class="hier-zoom">
           <button class="zout" title="Zoom out" aria-label="Zoom out">${icon("zoomOut", { size: 14 })}</button>
@@ -320,6 +321,8 @@ export function mount(el, ctx) {
   // request (the ownership race tests pin this), so it is not bound through
   // the controller's busy gate.
   s.q('hier-retry').addEventListener('click', () => { if (s.alive) void refresh(s, { user: true }); });
+  // Re-add: a deployment this Desktop's server does not serve, through the normal add (#461).
+  s.q('hier-readd').addEventListener('click', () => { if (s.alive) void reAdd(s); });
   s.q("wssel").addEventListener("change", (e) => setWorkspace(e.target.value));
   s.q("spawnbtn").addEventListener("click", () => openWorkspace(s));
   if (!ctx.openView) { s.q("spawnbtn").disabled = true; s.q("spawnbtn").title = 'Workspace navigation is unavailable in this host'; }
@@ -393,6 +396,11 @@ export function mount(el, ctx) {
   }));
 
   s.unsubWs = onWorkspaceChange(() => { resetObservation(s); void refresh(s); });
+  // A new connection (backend replaced, forge auth changed): the read in flight belongs to the old one.
+  // A read on the new connection starts now; it revokes the old read's outcome and arms the new
+  // subject's deadline (#461), so neither waits for the old read to settle.
+  const offConnections = s.ctx.subscribeConnections?.(() => { if (s.alive) void refresh(s); });
+  if (typeof offConnections === 'function') s.disposers.push(offConnections);
   refresh(s);
   s.timers.push(setInterval(() => { if (!s.loading) void refresh(s); }, 4000));
 
@@ -406,6 +414,7 @@ function teardown(s) {
   s.alive = false; s.request++; s.actionTicket++; s.pending = null; s.pan = null; s.drag = null;
   s.activity?.dispose(); s.activity = null;
   s.load?.dispose(); s.load = null;
+  s.pendingWatch?.dispose();
   s.win.clearTimeout(s.clickResetTimer);
   s.timers.forEach(clearInterval);
   (s.disposers || []).forEach((off) => { try { off(); } catch {} });
@@ -440,6 +449,24 @@ function actionsCurrent(s) { return dataCurrent(s) && !s.stale && !s.pending; }
 function staleAge(s) {
   const age = observedText(s.load?.observedAt ?? null, Date.now());
   return age ? ` · ${age}` : '';
+}
+/** Re-add the deployment named by the not-served notice through the normal add, then read again.
+ * Latest intent: only the newest Re-add, in the same workspace selection, may act on its outcome, and a
+ * failure never replaces an observation that landed meanwhile (the add itself restarts the server). */
+async function reAdd(s) {
+  const button = s.q('hier-readd'), path = s.reAddPath;
+  if (!path || typeof s.ctx.reAddWorkspace !== 'function' || s.reAdding) return;
+  const lease = s.reAddLease = (s.reAddLease || 0) + 1, gen = workspaceGeneration();
+  s.reAdding = true; button?.setAttribute?.('aria-disabled', 'true');
+  let result;
+  try { result = await s.ctx.reAddWorkspace(path); } catch (error) { result = { ok: false, reason: error?.message }; }
+  if (!s.alive || lease !== s.reAddLease) return;
+  s.reAdding = false; button?.removeAttribute?.('aria-disabled');
+  if (gen !== workspaceGeneration() || currentWorkspace() !== path) return;
+  if (result?.ok) { s.pendingWatch?.reset(); void refresh(s, { user: true }); return; }
+  if (!s.stale && s.dataWorkspace === path) return; // a newer observation of this deployment stands
+  notice(s, `Couldn't re-add ${path}: ${result?.reason || 'the add failed'}`);
+  s.load?.say?.(`Couldn't re-add ${path}.`);
 }
 function notice(s, message) {
   const el = s.q('hier-notice'); if (!el) return;
@@ -500,17 +527,29 @@ function applyPending(s) {
    request that still owns the view. `user`: a Retry the person asked for. */
 export async function refresh(s, { user = false } = {}) {
   if (!s.alive) return;
+  // The deadline is its own timer on the view's window: it fires at the bound even while an unanswered
+  // read holds the single-flight poll (s.loading), and a later owned observation still recovers.
+  // (A view state without a window, a unit test's, keeps the check on each settled read only.)
+  s.pendingWatch ||= createPendingWatch(s.win ? { onOverdue: subject => overdue(s, subject),
+    setTimeout: (fn, ms) => s.win.setTimeout(fn, ms), clearTimeout: id => s.win.clearTimeout(id) } : {});
+  if (user) s.pendingWatch.reset(); // a Retry restarts the bounded wait for an answer
   const myGen = workspaceGeneration(), requestedWorkspace = currentWorkspace();
+  // The bounded wait (#461) runs from the first read of this deployment, on this connection, that brought
+  // no observation: answered "pending", or not answered at all. Any other answer from the server ends it.
+  const subject = pendingSubject(s);
+  s.pendingWatch.observe(subject, true);
   const request = s.request = (s.request || 0) + 1;
   const owns = () => s.alive && request === s.request && myGen === workspaceGeneration();
   s.loading = true;
-  s.load?.begin({ user });
+  // A background re-read of a failed roster is not announced again; a Retry, or a changed outcome, is.
+  if (user || s.load?.state !== 'failed') s.load?.begin({ user });
   try {
     const data = await apiJson(s.ctx, `/api/panel${wsQuery()}`);
     if (!owns()) return;
     const panel = projectActivePanel(data);
     // observedAt (spec 02, additive) labels the observation's age; never invented.
     panel.observedAt = typeof data.observedAt === 'string' && data.observedAt ? data.observedAt : null;
+    if (data.deployment?.status !== 'pending') s.pendingWatch.observe(null, false); // the server answered
     if (panel.error && !panel.instances.length) throw Error(panel.error); // failed absence is not an observed empty roster
     // A deployment the kernel has not observed yet (the server's first read is
     // still running) or could not observe is not an empty roster either. Pending
@@ -519,8 +558,12 @@ export async function refresh(s, { user = false } = {}) {
     const deployment = !panel.workspace?.remote && data.deployment && typeof data.deployment === 'object' && data.deployment.status !== 'observed' ? data.deployment : null;
     if (deployment && !panel.instances.length) {
       if (deployment.status !== 'pending') throw Error(deploymentUnavailableText(deployment));
+      // Pending past the bound is no answer, not a longer wait (#461); a later observation still lands.
+      if (s.pendingWatch.observe(subject, true)) throw unservedError(NO_ANSWER_CODE, requestedWorkspace || panel.workspace?.id || '');
+      // With this deployment's observation on screen (a new connection still reading), it stays as it was.
+      if (s.dataGen != null) { s.load?.cancel(); return; }
       // The controller stays pending (aria-busy, the one announcement) without a pill: the copy is the summary.
-      s.load?.defer(); s.q('hier-sum').textContent = deploymentUnavailableText(deployment);
+      s.load?.defer(); s.q('hier-sum').textContent = deploymentUnavailableText(deployment); notice(s, '');
       return;
     }
     // A stale selection (persisted, no longer served) behaves like an empty
@@ -535,16 +578,43 @@ export async function refresh(s, { user = false } = {}) {
       return;
     }
     acceptObservation(s, panel, myGen);
-  } catch (error) {
+  } catch (caught) {
     if (!owns()) return;
-    s.pending = null; s.stale = true; s.actionTicket = (s.actionTicket || 0) + 1;
-    // The controller announces the failure and drops its pill; the view's
-    // notice below is the visible failure surface (no failedHost).
-    s.load?.fail(error);
-    if (s.dataGen == null) s.q('hier-sum').textContent = 'Roster unknown';
-    notice(s, `Roster unavailable: ${String(error?.message || 'read failed').slice(0, 300)}. ${s.dataGen == null ? 'No current observation.' : `Showing the last observation${staleAge(s)}, not current state; actions disabled.`}`);
-    updatePop(s);
+    let error = caught;
+    // Not served is an answer. Anything else that leaves this deployment without an observation past the
+    // bound (a read the proxy timed out, the bridge down) is reported as no answer, by name.
+    if (error?.code === NOT_SERVED_CODE) s.pendingWatch.observe(null, false);
+    else if (error?.code !== NO_ANSWER_CODE && s.pendingWatch.observe(subject, true)) error = unservedError(NO_ANSWER_CODE, requestedWorkspace);
+    presentFailure(s, error, requestedWorkspace);
   } finally { if (owns()) s.loading = false; }
+}
+
+/** The bounded wait's subject: this deployment on this connection. */
+function pendingSubject(s) { return `${s.ctx.connectionGeneration?.() ?? 0}\n${currentWorkspace()}`; }
+
+/** The bounded wait ran out for the deployment still shown (#461): no answer, said now. */
+function overdue(s, subject) {
+  if (!s.alive || subject !== pendingSubject(s)) return;
+  const ws = currentWorkspace();
+  presentFailure(s, unservedError(NO_ANSWER_CODE, ws), ws);
+}
+
+/** A read of `requestedWorkspace` failed (or got no answer in time): stale with data, failed without. */
+function presentFailure(s, error, requestedWorkspace) {
+  s.pending = null; s.stale = true; s.actionTicket = (s.actionTicket || 0) + 1;
+  // The controller announces the failure and drops its pill; the view's
+  // notice below is the visible failure surface (no failedHost).
+  s.load?.fail(error);
+  if (s.dataGen == null) s.q('hier-sum').textContent = 'Roster unknown';
+  // A deployment the server does not serve, or does not answer for (#461), is named in full; Re-add when not served.
+  const unserved = [NOT_SERVED_CODE, NO_ANSWER_CODE].includes(error?.code);
+  const readd = s.q('hier-readd');
+  s.reAddPath = error?.code === NOT_SERVED_CODE && String(requestedWorkspace || '').startsWith('/') ? requestedWorkspace : null;
+  if (readd) readd.hidden = !(s.reAddPath && typeof s.ctx.reAddWorkspace === 'function');
+  const said = error?.code === NOT_SERVED_CODE ? unservedError(NOT_SERVED_CODE, requestedWorkspace).message
+    : String(error?.message || 'read failed').slice(0, 300);
+  notice(s, `${unserved ? said : `Roster unavailable: ${said}.`} ${s.dataGen == null ? 'No current observation.' : `Showing the last observation${staleAge(s)}, not current state; actions disabled.`}`);
+  updatePop(s);
 }
 
 function render(s) {

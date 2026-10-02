@@ -40,7 +40,7 @@ function fixture({ classify = classifyApiRoute, fetch } = {}) {
     trustedForgeFrame, FORGE_EPOCH_HEADER, forgeFailure, lifecycleFailure,
     proxyReadiness: (event, path, opts, deps) => proxyReadiness(event, path, opts, { ...deps, fetch: fakeFetch }),
     RENDERER_URL: renderer, serverEpoch: 0, forgeEpoch: 'fixture:0', inTransition: false,
-    serverHost: { inTransition: () => context.inTransition }, currentForgeEpoch: () => context.forgeEpoch,
+    unservedRefusal: () => null, serverHost: { inTransition: () => context.inTransition }, currentForgeEpoch: () => context.forgeEpoch,
     base: () => base, wsId: 'team', allowedWs: new Set(['team', 'other']), Set,
     fetch: fakeFetch, AbortSignal: { timeout: ms => ({ timeout: ms }) },
     guard: event => { const url = event.senderFrame?.url || ''; if (url !== renderer && !url.startsWith(`${renderer}#`)) throw Error('forbidden generic frame'); },

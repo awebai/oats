@@ -16,6 +16,7 @@ import { createSelectionOwnership } from "../renderer/selection-ownership.mjs";
 import { createWorkspaceSwitcher } from "../renderer/workspace-switcher.mjs";
 import { rosterResponseOwns, rosterSignature } from "../renderer/instance-tree.mjs";
 import { staleWorkspaceSelection } from "../renderer/views/common.mjs";
+import { createPendingWatch, NOT_SERVED_CODE, NO_ANSWER_CODE } from "../renderer/deployment-header.mjs";
 import { DEFAULT_KEYMAP, TERMINAL_ALLOWLIST, registerAction, runAction, getBinding, formatChord, setActiveContexts, matchEvent, setBinding, resetBinding, onKeymapChange } from "../renderer/keybindings.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
@@ -296,7 +297,7 @@ for (const outcome of ["resolve", "reject"]) test(`reported workspace/root/host 
   const dom = domFixture(t), document = dom.window.document, requests = [];
   const c = {
     document, workspace: "A", contextRosterGen: 0,
-    rosterState: null, rosterStale: false, contextDeploymentNote: null, rosterSignaturePainted: null, rosterSignature, contextInstances: [], tabs: new Map(), activeTab: null, connectionGeneration: 0,
+    rosterState: null, rosterStale: false, contextDeploymentNote: null, rosterSignaturePainted: null, rosterSignature, rosterPendingWatch: createPendingWatch(), NOT_SERVED_CODE, NO_ANSWER_CODE, failRosterUnserved: assert.fail, contextInstances: [], tabs: new Map(), activeTab: null, connectionGeneration: 0,
     currentWorkspace: () => c.workspace, rosterResponseOwns, staleWorkspaceSelection,
     contextRosterEl: document.getElementById("instance-roster"),
     api(path) { const gate = { ...deferred(), path }; requests.push(gate); return gate.promise; },

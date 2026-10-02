@@ -12,11 +12,11 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron";
 import { spawn, execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync, realpathSync, writeFileSync, lstatSync, statSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, writeFileSync, lstatSync, statSync, opendirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { apiUrl, apiInit, classifyApiRoute } from "./api-url.mjs";
+import { apiUrl, apiInit, classifyApiRoute, createUnservedRefusal } from "./api-url.mjs";
 import { forgeProxyOptions, FORGE_EPOCH_HEADER, installForgeAuthHandlers, trustedForgeFrame } from "./forge-proxy.mjs";
 import { createGhRunner, forgeEnvironment } from "./forge-cli.mjs";
 import { createForgeAuthBroker, verifyAuthCli } from "./forge-auth.mjs";
@@ -30,7 +30,9 @@ import { ensureServerOnPort, serverCompatible } from "./server-compat.mjs";
 import { createServerHost, createServerAdapter } from "./server-host.mjs";
 import { cliWorkspace, validWorkspaceRef } from "./workspace-cli.mjs";
 import { onboardData } from "./deployment-data.mjs";
-import { validateWorkspace, workspaceSuggestions, parseRecents, pushRecent, decideAdd, createGenerations, createAddExecutor, restoreWorkspaceDirs, saveWorkspaceDirs, matchWorkspaceDirs, createOnboardOffers, createOnboardExecutor } from "./workspace-registry.mjs";
+import { validateWorkspace, workspaceSuggestions, parseRecents, pushRecent, decideAdd, createGenerations, createAddExecutor, restoreWorkspaceDirs, saveWorkspaceDirs, matchWorkspaceDirs, createOnboardOffers, createOnboardExecutor,
+  savedWorkspacePaths, persistableDirs, stageDirs, pickedFolderChoices, createPerformAdd } from "./workspace-registry.mjs";
+import { workspaceNotServed } from "./renderer/deployment-header.mjs";
 import { appMenuTemplate } from "./app-menu.mjs";
 import { resolveLoginPath } from "./login-path.mjs";
 import { pickerDefaultPath, workspacePickerCandidates, cliPickerCandidates, parseLastWorkspaceParent, lastWorkspaceParentState } from "./picker-default-path.mjs";
@@ -72,6 +74,11 @@ const WORKSPACE = resolve(argDir || process.env.OATS_DESKTOP_DIR || process.cwd(
 // Mutable workspace set: startup workspace plus runtime-added ones — the
 // repeated --dir list an app-owned server is (re)started with.
 const workspaceDirs = [WORKSPACE];
+// Every deployment path this Desktop has had open or saved this session (the saved set as read,
+// the open set, each committed add). A known deployment the server does not serve is reported
+// (E_WORKSPACE_NOT_SERVED) and may be re-added; an unknown id is adopted as before (#461).
+const knownDirs = new Set();
+const knowDirs = (dirs) => { for (const d of dirs) if (typeof d === "string" && d.startsWith("/")) knownDirs.add(d); };
 
 // ---- the login shell's PATH (login-path.mjs, awebai/oats#468) ----------
 // Opened from Finder or the Dock, the app inherits launchd's PATH, which has
@@ -116,10 +123,13 @@ const serverHost = createServerHost({
   },
   // trust state belongs to the outgoing server — stale entries must never
   // validate ?ws= or decideAdd; repopulated only from the current server.
-  onInvalidate: () => { allowedWs = new Set(); serverEpoch++; invalidateForgeReads(); invalidateTerminalPreparations(); },
+  onInvalidate: () => { if (allowedWs.size) advertisedBefore = allowedWs; allowedWs = new Set(); serverEpoch++; invalidateForgeReads(); invalidateTerminalPreparations(); },
 });
 let wsId = null;        // verified workspace id on the server we use
 let allowedWs = new Set(); // workspace ids the connected server advertises
+// What the outgoing server advertised, kept only to refuse an unserved deployment's reads while a
+// restart is in flight: they never validate a ?ws=, they only stop one from being rewritten.
+let advertisedBefore = new Set();
 let serverEpoch = 0;    // prevents an outgoing server response restoring its allowlist
 
 async function panelWorkspaces() {
@@ -250,14 +260,17 @@ function rememberWorkspaceParent(workspacePath) {
 }
 
 let lastSuggested = new Set(); // canonical paths offered by the latest suggestions call
+let lastPickChoices = new Set(); // deployments offered beside the latest refused pick (#461)
 
 const executeAdd = createAddExecutor({
   getDirs: () => [...workspaceDirs],
+  stage: (dirs, path) => stageDirs(dirs, path, wsValidate),
   commitDirs: (dirs) => {
     // Persistence failure leaves the old set intact; the executor restores
     // the previous backend and reports the failed add to the user.
     saveWorkspaceDirs(OPEN_WORKSPACES_FILE(), dirs);
     workspaceDirs.length = 0; workspaceDirs.push(...dirs);
+    knowDirs(dirs);
   },
   commitRecent: (p) => writeRecents(pushRecent(readRecents(), p)),
   replaceServer,
@@ -283,36 +296,43 @@ ipcMain.handle("workspace:suggestions", async (e) => {
   return { stale: false, suggestions: list };
 });
 
-async function performAdd(requestedPath, fromPicker) {
-  const gen = wsGens.next("add");
-  const decision = decideAdd(requestedPath, {
+// The entry point of every add (workspace-registry.mjs createPerformAdd): a refusal returns before
+// any effect, a non-deployment pick is answered with where the deployment is (or, with none near,
+// the onboarding offer), and an accepted add runs the transactional executor (serialized adds,
+// staged dirs, identity-checked readiness, commit-after-ready, restore-on-failure). Terminals are
+// unaffected throughout: viewers attach to tmux, not the backend.
+const performAdd = createPerformAdd({
+  generations: wsGens,
+  decide: (requestedPath, fromPicker) => decideAdd(requestedPath, {
     realpath: (p) => realpathSync(p),
     validate: wsValidate,
-    suggestedPaths: lastSuggested,
+    // Provenance: a suggestion, a deployment offered beside a refused pick, or one this Desktop
+    // knows (Re-add of a deployment the server stopped serving). Never an arbitrary path.
+    suggestedPaths: new Set([...lastSuggested, ...lastPickChoices, ...knownDirs]),
     fromPicker,
     serverOwned: serverHost.owned(),
     advertised: allowedWs,
-  });
-  if (!decision.ok) {
-    // A picked folder without oats-local.yaml can be onboarded (decision 9):
-    // the renderer gets a single-use offer for THIS canonical path, never a
-    // way to name another directory.
-    if (fromPicker && decision.code === "not-a-workspace") {
-      let canonical = null;
-      try { canonical = realpathSync(requestedPath); } catch { /* reported as not-a-workspace */ }
-      const token = canonical ? onboardOffers.offer(canonical) : null;
-      if (token) return { ok: false, code: decision.code, reason: decision.reason, onboard: { token, path: canonical } };
-    }
-    return { ok: false, code: decision.code, reason: decision.reason };
-  }
-  const ws = decision.workspace;
-  if (decision.action === "already-advertised") { rememberWorkspaceParent(ws.path); return { ok: true, workspace: ws }; }
-  // Transactional executor (workspace-registry.mjs): serialized adds, staged
-  // dirs, identity-checked readiness, commit-after-ready, restore-on-failure.
-  // Terminals are unaffected throughout: viewers attach to tmux, not the backend.
-  const result = await executeAdd(ws, () => wsGens.isCurrent("add", gen));
-  if (result?.ok) rememberWorkspaceParent(ws.path);
-  return result;
+  }),
+  realpath: (p) => realpathSync(p),
+  choices: (dir) => {
+    const found = pickedFolderChoices(dir, { list: listEntries, isDeployment: (p) => !!wsValidate(p) });
+    lastPickChoices = new Set(found.choices.map((c) => c.path));
+    return found;
+  },
+  offer: (path) => onboardOffers.offer(path),
+  execute: (ws, isCurrent) => executeAdd(ws, isCurrent),
+  // An add that opened a workspace (or found it already open) remembers its parent for the picker (#460).
+  added: (ws) => rememberWorkspaceParent(ws.path),
+});
+
+/** At most `limit` entries of `dir`, typed by the entry itself (a link is not a directory). */
+function listEntries(dir, limit) {
+  const handle = opendirSync(dir);
+  const entries = [];
+  try {
+    for (let entry; entries.length < limit && (entry = handle.readSync());) entries.push({ name: entry.name, isDirectory: entry.isDirectory() });
+    return { entries, limited: entries.length >= limit && handle.readSync() !== null };
+  } finally { handle.closeSync(); }
 }
 
 const onboardOffers = createOnboardOffers({ token: () => randomBytes(16).toString("hex") });
@@ -398,6 +418,11 @@ ipcMain.handle("cli:pick", async (e) => {
 });
 
 // ---- IPC: API proxy -----------------------------------------------------
+// The roster/agents read of a deployment this Desktop knows (and that is still one) but the
+// server does not advertise: refused with E_WORKSPACE_NOT_SERVED, never fetched (api-url.mjs).
+const unservedRefusal = createUnservedRefusal({ base, body: workspaceNotServed,
+  state: () => ({ allowedWs: allowedWs.size ? allowedWs : advertisedBefore, known: (path) => knownDirs.has(path) && !!wsValidate(path) }) });
+
 // The renderer never talks to the network directly; ctx.api() lands here.
 ipcMain.handle("api", async (e, pathname, opts) => {
   // One normalized classifier owns every specialized routing decision;
@@ -428,6 +453,10 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   const ownsForgeFrame = () => trustedForgeFrame(e, RENDERER_URL) && e.sender.mainFrame === forgeFrame;
   try {
   guard(e);
+  // A deployment this Desktop knows (and that is still one) but the server does not serve is
+  // refused by name, never answered with another workspace's data (#461).
+  const refusal = unservedRefusal(pathname);
+  if (refusal) return refusal;
   // apiUrl rejects off-origin resolution (e.g. "//attacker/x"), and pins
   // the verified workspace on scoped endpoints unless the caller selects a
   // workspace this server actually advertises (the views' ws switcher).
@@ -613,9 +642,21 @@ const primaryInstance = startSingleInstance(app, () => BrowserWindow.getAllWindo
     ...restoreWorkspaceDirs(WORKSPACE, saved, (p) => wsValidate(realpathSync(p))));
   // Launching on a workspace (--dir, or a workspace cwd) is an open.
   try { const launched = wsValidate(realpathSync(WORKSPACE)); if (launched) rememberWorkspaceParent(launched.path); } catch { /* not a workspace */ }
+  knowDirs([...savedWorkspacePaths(saved), ...workspaceDirs]);
+  // A launch from a folder that is not a deployment (a parent such as ~/Agents as the cwd or
+  // --dir) opens the saved set and nothing else, and says so (#461).
+  const startupIsDeployment = (() => { try { return !!wsValidate(realpathSync(WORKSPACE)); } catch { return false; } })();
+  if (!startupIsDeployment) console.log(persistableDirs(workspaceDirs, wsValidate).length
+    ? `oats-desktop: ${WORKSPACE} is not an OATS deployment (no oats-local.yaml); opened the saved workspaces instead`
+    : `oats-desktop: ${WORKSPACE} is not an OATS deployment (no oats-local.yaml) and no saved workspace could be opened`);
   try {
     await ensureServer();
-    if (serverHost.owned()) saveWorkspaceDirs(OPEN_WORKSPACES_FILE(), workspaceDirs);
+    // Deployments only, and never an empty set over the saved one: a launch from a parent folder
+    // must not replace the open set with that folder (#461).
+    // Written only when the launch opened a deployment the saved set lacks: a saved deployment
+    // that is missing for a moment (a volume not mounted yet) stays saved for the next launch.
+    const persist = persistableDirs(workspaceDirs, wsValidate), savedPaths = savedWorkspacePaths(saved);
+    if (serverHost.owned() && persist.some((dir) => !savedPaths.includes(dir))) saveWorkspaceDirs(OPEN_WORKSPACES_FILE(), persist);
   }
   catch (e) { console.error(`oats-desktop: ${e.message}`); }
   // Window activity: visibility flips that are not focus flips, hooked on
