@@ -882,9 +882,13 @@ tablist with a single selected, tabbable trigger; arrows walk the group).
 Tab sizing (spec F, superseding "strips scroll instead of compressing"): tabs fit
 their strip like VS Code's "shrink" mode. Each `.tab` is `flex: 1 1 0px` with
 `max-width: fit-content` (its natural width, which the trigger caps so a tab
-never passes `--tab-max`, 280px) and `min-width: --tab-min` (112px: the status
-dot and about five characters of the name next to the close button). Below the
-floor the strip scrolls. The branch detail grows from zero into what the name
+never passes `--tab-max`, 280px) and `min-width: --tab-min` (136px: the status
+dot, an ellipsis and the name's last eight characters next to the close button).
+Below the floor the strip scrolls. Names share long prefixes (the soul), so a
+terminal tab truncates in the middle: `tabNameTailStart()` (`tab-a11y.mjs`)
+picks a tail (the last eight characters, or what follows the soul when that is
+shorter) that never shrinks, and the head before it ellipsizes, so shrunk tabs
+read "oats-…palette" / "…awn-flow" rather than seven "oats-…". The branch detail grows from zero into what the name
 leaves, so it ellipsizes and disappears first; the full name stays in the
 trigger's `title` and accessible name. **The selected tab is always visible**:
 `revealActiveTabs()` in `shell.mjs` scrolls each strip (`#tabbar` and every

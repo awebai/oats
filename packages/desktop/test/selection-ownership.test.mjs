@@ -15,7 +15,7 @@ import { terminalHandle, terminalSameHandle, terminalFailure, terminalMessage } 
 import { wireTerminalAttachments } from '../renderer/terminal-attachments.mjs';
 import { createViewLifecycle } from "../renderer/view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "../renderer/tab-keys.mjs";
-import { createTabChrome, tabKeyAction, focusAfterLastTab } from "../renderer/tab-a11y.mjs";
+import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "../renderer/tab-a11y.mjs";
 import * as keymap from "../renderer/keybindings.mjs";
 import { createWorkspaceTabMemory } from "../renderer/workspace-tab-memory.mjs";
 import * as workspaceTabs from "../renderer/workspace-tabs.mjs";
@@ -84,7 +84,7 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     } }),
     // Keep identity resolution out of this test; keys/targets remain distinct.
     resolveTerminalOpen: (instances, ref, ws) => ({ inst: { instance: ref, running: true, tmux: { session: "synthetic", window: ref } }, key: `${ws}:${ref}` }),
-    ctx: {}, reserveKey, whenKeyFree, createViewLifecycle, createTabChrome, tabKeyAction, focusAfterLastTab,
+    ctx: {}, reserveKey, whenKeyFree, createViewLifecycle, createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart,
     createSelectionOwnership: ownership, wirePaneSelection, terminalOptions,
     ...workspaceTabs, ...layout, projectSplitDom, splitControlsState,
     // tabs.close also goes into the real keymap: the strip's close chord is the keymap's, not tab-a11y's.

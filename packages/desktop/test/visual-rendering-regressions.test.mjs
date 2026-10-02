@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
 import { mount } from "../renderer/views/markdown.mjs";
-import { createTabChrome } from "../renderer/tab-a11y.mjs";
+import { createTabChrome, tabNameTailStart, TAB_TAIL_CHARS } from "../renderer/tab-a11y.mjs";
 
 const shellCss = readFileSync(new URL("../renderer/shell.css", import.meta.url), "utf8");
 const sample = `// Read-only supporting code
@@ -167,7 +167,7 @@ test("flat and grouped strips share their width: tabs shrink evenly to a floor, 
       assert.deepEqual([style.flexGrow, style.flexShrink, style.flexBasis], ["1", "1", "0px"], "equal shares from one zero basis");
       assert.equal(style.maxWidth, "fit-content", "never wider than its natural width");
       assert.equal(style.minWidth, "var(--tab-min)", "the floor holds in group strips too");
-      assert.equal(style.getPropertyValue("--tab-min"), "112px", "the dot and about five name characters stay visible");
+      assert.equal(style.getPropertyValue("--tab-min"), "136px", "the dot, an ellipsis and an 8-character tail stay visible");
       assert.equal(style.getPropertyValue("--tab-max"), "280px", "the Redesign v3 long-label cap");
       assert.equal(style.getPropertyValue("--tab-chrome"), "51px", "padding 14 + 8, gap 8, the 20px close and the 1px border");
       assert.equal(style.whiteSpace, "nowrap");
@@ -186,4 +186,51 @@ test("flat and grouped strips share their width: tabs shrink evenly to a floor, 
     assert.deepEqual([...bar.children], [...tabs.map(tab => tab.tabEl), actions], "no reordering or auto-collapse");
     bar.remove();
   }
+});
+
+// Spec F return: shrunk tabs stay distinguishable. Instance names share long
+// prefixes (the soul), so the head ellipsizes and the end of the name stays.
+test("tabNameTailStart keeps a name's last characters, or what follows the soul when shorter, without a leading separator", () => {
+  const split = (name, soul) => { const at = tabNameTailStart(name, soul); return at == null ? null : [name.slice(0, at), name.slice(at)]; };
+  assert.equal(TAB_TAIL_CHARS, 8);
+  assert.deepEqual(split("oats-desktop-developer-tabs-palette", "oats-desktop-developer"), ["oats-desktop-developer-tabs-", "palette"]);
+  assert.deepEqual(split("oats-desktop-developer-spawn-flow", "oats-desktop-developer"), ["oats-desktop-developer-sp", "awn-flow"]);
+  assert.deepEqual(split("oats-desktop-developer-ui", "oats-desktop-developer"), ["oats-desktop-developer-", "ui"], "the part after the soul, when shorter");
+  assert.deepEqual(split("oats-desktop-developer-tabs-palette", null), ["oats-desktop-developer-tabs-", "palette"], "no soul: the last characters");
+  assert.deepEqual(split("oats-desktop-developer-tabs-palette", { not: "a string" }), ["oats-desktop-developer-tabs-", "palette"], "a malformed soul is ignored");
+  assert.equal(tabNameTailStart("reviewer", "x"), null, "a name no longer than the tail is never split");
+  assert.equal(tabNameTailStart("--------", ""), null, "nothing but separators: nothing to keep");
+});
+
+test("two shrunk tabs whose names share a prefix still read differently: the tail never shrinks", t => {
+  const { doc, host, window } = fixture(t, shellCss);
+  const bar = doc.createElement("div");
+  bar.id = "tabbar";
+  bar.style.width = "200px"; // narrower than two floors: both tabs sit at --tab-min
+  const soul = "oats-desktop-developer";
+  const names = ["oats-desktop-developer-tabs-palette", "oats-desktop-developer-spawn-flow"];
+  const tabs = names.map((name, i) => createTabChrome(doc, `t${i}`, name, false, { dot: "on", tailAt: tabNameTailStart(name, soul) }));
+  for (const tab of tabs) bar.append(tab.tabEl);
+  host.append(bar);
+  const parts = tabs.map(({ triggerEl }) => [...triggerEl.querySelector(".tab-label.split").children]);
+  assert.deepEqual(parts.map(p => p.map(el => el.className)), [["tab-head", "tab-tail"], ["tab-head", "tab-tail"]]);
+  assert.deepEqual(parts.map(([head]) => head.textContent), ["oats-desktop-developer-tabs-", "oats-desktop-developer-sp"]);
+  assert.deepEqual(parts.map(([, tail]) => tail.textContent), ["palette", "awn-flow"], "what stays visible differs");
+  for (const [head, tail] of parts) {
+    const h = window.getComputedStyle(head), tl = window.getComputedStyle(tail);
+    assert.deepEqual([h.minWidth, h.overflow, h.textOverflow, h.whiteSpace], ["0px", "hidden", "ellipsis", "nowrap"], "the shared head gives way first");
+    assert.deepEqual([tl.flexShrink, tl.flexGrow, tl.whiteSpace], ["0", "0", "nowrap"], "the tail keeps its width at the floor");
+    assert.equal(window.getComputedStyle(head.parentElement).display, "flex");
+  }
+  tabs.forEach(({ triggerEl }, i) => {
+    assert.equal(triggerEl.querySelector(".tab-label").textContent, names[i], "a name that fits reads whole");
+    assert.equal(triggerEl.title, names[i]);
+    assert.equal(triggerEl.getAttribute("aria-label"), names[i], "the accessible name is the whole name, never the split");
+  });
+  // A short or unsplit name keeps the plain ellipsizing label.
+  const plain = createTabChrome(doc, "p", "README.md", false, { kind: "file" });
+  assert.equal(plain.triggerEl.querySelector(".tab-label").children.length, 0);
+  assert.equal(plain.triggerEl.querySelector(".tab-label").textContent, "README.md");
+  const shell = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
+  assert.match(shell, /decor: \{ dot: inst\.running \? "on" : "off", tailAt: tabNameTailStart\(name, inst\.agent\) \}/, "terminal tabs split at the soul-aware tail");
 });

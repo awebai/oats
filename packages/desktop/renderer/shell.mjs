@@ -37,7 +37,7 @@ import { rosterKeyAction, moveTarget } from "./roster-keys.mjs";
 import { createViewLifecycle } from "./view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "./tab-keys.mjs";
 import { createTerminalTab, terminalOptions } from "./terminal-tab.mjs";
-import { createTabChrome, tabKeyAction, focusAfterLastTab } from "./tab-a11y.mjs";
+import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "./tab-a11y.mjs";
 import { revealInStrip } from "./reveal-in-scrollport.mjs";
 import { createIntentGate, prepareOwnedOpen, runOpenFlow } from "./open-intent.mjs";
 import { createSelectionOwnership, wirePaneSelection } from "./selection-ownership.mjs";
@@ -1699,7 +1699,8 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
   const made = addTab({
     title: `${name}${inst.server ? ` · ${inst.server}` : ""}`,
     // Workspace v4 (W6): a terminal tab carries only its name and status; the branch lives in the bottom bar.
-    decor: { dot: inst.running ? "on" : "off" },
+    // A shrunk tab keeps its name's end (with the host, if any): "oats-…palette".
+    decor: { dot: inst.running ? "on" : "off", tailAt: tabNameTailStart(name, inst.agent) },
     key,
     kind: "terminal",
     workspace: ws,

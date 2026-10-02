@@ -376,12 +376,13 @@ body {
    never exceeds the design's 280px long-label cap. Under pressure they shrink
    evenly down to --tab-min; below that the strip scrolls. The full name stays in
    the trigger's title and accessible name.
-   --tab-min = 112px: less --tab-chrome (51px) the trigger keeps 61px, the 7px
-   status dot and its 8px gap, then 46px of name at 12.5px: about five characters
-   and the ellipsis ("oats-…", measured live), the floor the design asked for.
+   --tab-min = 136px, measured live at 12.5px: less --tab-chrome (51px) the
+   trigger keeps 85px, the 7px status dot and its 8px gap, then 70px of name:
+   the ellipsis (11px bold) and an 8-character tail (the widest real one, bold,
+   is 57px), so a shrunk tab reads "…palette" and grows to "oats-…palette".
    The close stays on every tab, the active one included. */
 .tab {
-  --tab-min: 112px; --tab-max: 280px;
+  --tab-min: 136px; --tab-max: 280px;
   --tab-chrome: 51px; /* padding 14 + 8, gap 8, close 20, the 1px border: what the trigger cannot use */
   display: flex; flex: 1 1 0px; align-items: center; gap: 8px; min-width: var(--tab-min); max-width: fit-content;
   white-space: nowrap; padding: 0 8px 0 14px; background: transparent; border-right: 1px solid var(--border);
@@ -402,6 +403,11 @@ body {
 .tab-icon { flex: none; display: grid; place-items: center; color: var(--muted); }
 .tab-icon > .shell-icon { width: 14px; height: 14px; }
 .tab-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Middle truncation: names share long prefixes (the soul), so the head gives way
+   and the end of the name stays ("oats-…palette"); a name that fits shows whole. */
+.tab-label.split { display: flex; }
+.tab-head { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-tail { flex: none; white-space: nowrap; }
 /* The branch grows from zero into what the name leaves, so it ellipsizes and then
    disappears first. Its gap is its own padding, cancelled by a negative margin:
    a hidden branch takes no space from the name. */
