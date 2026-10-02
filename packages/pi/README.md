@@ -10,6 +10,9 @@ from the same release tag). This bridge registers no operational tools. It only:
   acquisition funnel);
 - contributes the instance-local `.agents/skills` set inside a spawned
   instance;
+- delivers an instance's opening task (`@TASK.md`) exactly once: queued
+  behind a turn another extension is running when it arrives, and sent
+  again, once, if a turn starting at the same moment made pi refuse it;
 - journals compaction summaries and sends resume nudges when the active
   knowledge capability created `STATE.md`/`log.md`. Knowledge ownership,
   read/capture instructions, judgment and delivery remain capability-owned.
