@@ -4,6 +4,9 @@ import { readFileSync } from "node:fs";
 import { apiUrl, apiInit, classifyApiRoute, servedSelectors } from "../packages/desktop/api-url.mjs";
 import * as forge from '../packages/desktop/forge-proxy.mjs';
 import { forgeFailure } from '../packages/desktop/renderer/forge-contract.mjs';
+import { frameWorkspace } from '../packages/desktop/renderer/window-binding.mjs';
+import { windowRefusal } from '../packages/desktop/api-url.mjs';
+import { workspaceNotServed } from '../packages/desktop/renderer/deployment-header.mjs';
 
 const source = readFileSync(new URL("../packages/desktop/main.mjs", import.meta.url), "utf8");
 const apiStart = source.indexOf('ipcMain.handle("api",');
@@ -37,10 +40,13 @@ function bridge() {
   const setup = 'const base = () => "http://127.0.0.1:4820"; const wsId = "/"; let allowedWs = new Set(["/"]); let advertisedBefore = new Set(); let serverEpoch = 0;\n'
     + 'const unservedRefusal = () => null; // the unserved-deployment refusal is covered by packages/desktop/test/unserved-deployment.test.mjs\n'
     + 'const { forgeProxyOptions, trustedForgeFrame, FORGE_EPOCH_HEADER } = forge; const currentForgeEpoch = () => "fixture:0"; const RENDERER_URL = "file:///fixture/index.html";\n'
+    // One window per workspace (#481): these requests come from no bound window (no sender frame), as main's.
+    + 'const { frameWorkspace, windowRefusal, workspaceNotServed } = windowGlobals; const advertisedNow = () => (allowedWs.size ? allowedWs : advertisedBefore); const noteServed = () => {};\n'
     + source.slice(apiStart, apiEnd) + '\nreturn () => {' + invalidation + '};';
-  const invalidate = new Function("fetch", "apiUrl", "apiInit", "classifyApiRoute", "servedSelectors", "ipcMain", "guard", "serverHost", "forge", "forgeFailure", "invalidateForgeReads", "invalidateTerminalPreparations", setup)(
+  const invalidate = new Function("fetch", "apiUrl", "apiInit", "classifyApiRoute", "servedSelectors", "ipcMain", "guard", "serverHost", "forge", "forgeFailure", "invalidateForgeReads", "invalidateTerminalPreparations", "windowGlobals", setup)(
     fetch, apiUrl, apiInit, classifyApiRoute, servedSelectors, { handle: (name, fn) => { assert.equal(name, "api"); handler = fn; } }, () => {},
     { inTransition: () => inTransition }, forge, forgeFailure, () => { forgeInvalidations++; }, () => { terminalInvalidations++; },
+    { frameWorkspace, windowRefusal, workspaceNotServed },
   );
   return {
     call: (path, opts) => handler({}, path, opts),

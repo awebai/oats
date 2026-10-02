@@ -35,8 +35,18 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
   re-probe triggers: launch, app focus, Retry, choose (contract).
 - **common.mjs** — shared helpers: escaping, mini-markdown, ctx.api JSON
   wrappers, roster grouping, and workspace switching (`?ws=`) — the selected
-  workspace is shared across views via `setWorkspace`/`onWorkspaceChange`
-  (persisted in localStorage), so a shell-level switcher can drive it too.
+  workspace is shared across this window's views via `onWorkspaceChange`, so a
+  shell-level switcher can drive it too. One window per workspace: the
+  window's workspace is its URL's hash (`#ws=<id>`, window-binding.mjs),
+  rewritten with `history.replaceState`; localStorage only holds the default
+  a new window takes when main says no other window has it (`startWindow`).
+  Every switch goes through `switchWorkspace`, which main binds first
+  (`window:claim-workspace`): a workspace another window has brings that
+  window to the front and leaves this one unchanged. Claims run one at a
+  time, so the window never differs from main's registry; `setWorkspace` is
+  the commit after main's yes. A window with no workspace is `choosing`
+  (`windowState`): the shell shows the switcher with main's choices and
+  reads nothing.
   A persisted selection the server no longer serves is **stale**
   (`staleWorkspaceSelection`: non-empty and absent from the reply's
   `workspaces` plus `workspace`); both roster paths (hierarchy refresh and
