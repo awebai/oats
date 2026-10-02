@@ -9,14 +9,14 @@
 //   * integrated terminal: node-pty running `tmux attach-session` per
 //     terminal tab, bytes streamed to xterm.js over IPC. Closing a tab kills
 //     the pty ONLY — the tmux session is the durable host and must survive.
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, screen, shell } from "electron";
 import { spawn, execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, writeFileSync, lstatSync, statSync, opendirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { apiUrl, apiInit, classifyApiRoute, createUnservedRefusal, servedSelectors } from "./api-url.mjs";
+import { apiUrl, apiInit, classifyApiRoute, createUnservedRefusal, servedSelectors, windowRefusal } from "./api-url.mjs";
 import { forgeProxyOptions, FORGE_EPOCH_HEADER, installForgeAuthHandlers, trustedForgeFrame } from "./forge-proxy.mjs";
 import { createGhRunner, forgeEnvironment } from "./forge-cli.mjs";
 import { createForgeAuthBroker, verifyAuthCli } from "./forge-auth.mjs";
@@ -31,7 +31,7 @@ import { createServerHost, createServerAdapter } from "./server-host.mjs";
 import { cliWorkspace, validWorkspaceRef } from "./workspace-cli.mjs";
 import { onboardData } from "./deployment-data.mjs";
 import { validateWorkspace, workspaceSuggestions, parseRecents, pushRecent, decideAdd, createGenerations, createAddExecutor, restoreWorkspaceDirs, saveWorkspaceDirs, commitOpenSet, startupOpenSet, matchWorkspaceDirs, createOnboardOffers, createOnboardExecutor,
-  savedWorkspacePaths, persistableDirs, stageDirs, pickedFolderChoices, createPerformAdd } from "./workspace-registry.mjs";
+  savedWorkspacePaths, persistableDirs, stageDirs, pickedFolderChoices, createPerformAdd, createSuggestionCalls } from "./workspace-registry.mjs";
 import { workspaceNotServed } from "./renderer/deployment-header.mjs";
 import { appMenuTemplate } from "./app-menu.mjs";
 import { resolveLoginPath } from "./login-path.mjs";
@@ -40,8 +40,12 @@ import { proxyReadiness } from './readiness-proxy.mjs';
 import { proxySpawnPreview } from './spawn-preview-proxy.mjs';
 import { proxyInstanceEvents } from './instance-events-proxy.mjs';
 import { proxySpawnApply } from './spawn-apply-proxy.mjs';
-import { startSingleInstance } from "./single-instance.mjs";
+import { startSingleInstance, launchDirectory, createLaunchOpener } from "./single-instance.mjs";
 import { createActivityNotifier } from "./window-activity.mjs";
+import { frameWorkspace, trustedRendererUrl, workspaceHash } from "./renderer/window-binding.mjs";
+import { validWorkspaceId } from "./renderer/workspace-id.mjs";
+import { createWindowSet } from "./window-set.mjs";
+import { parseWindowRecords, resolveView, restorePlan, clampBounds, windowTitle, createWindowRecords } from "./window-records.mjs";
 
 const require = createRequire(import.meta.url);
 const pty = require("node-pty");
@@ -136,6 +140,14 @@ let allowedWs = new Set(); // workspace ids the connected server advertises
 // restart is in flight: they never validate a ?ws=, they only stop one from being rewritten.
 let advertisedBefore = new Set();
 let serverEpoch = 0;    // prevents an outgoing server response restoring its allowlist
+let servedList = [];    // the served workspace views (/api/panel `workspaces`): window titles and restore
+/** The served list changed: remember it, and retitle every window from it. */
+function noteServed(list) {
+  servedList = list;
+  for (const [win, key] of windows.entries()) win.setTitle(windowTitle(key, servedList));
+}
+/** What the server advertises, or while a restart is in flight what the outgoing one did. */
+const advertisedNow = () => (allowedWs.size ? allowedWs : advertisedBefore);
 
 async function panelWorkspaces() {
   try {
@@ -144,6 +156,7 @@ async function panelWorkspaces() {
     const d = await r.json();
     const list = d.workspaces || [];
     allowedWs = servedSelectors(list);
+    noteServed(list);
     return list;
   } catch { return null; }
 }
@@ -218,13 +231,13 @@ async function ensureServer() {
 }
 
 // ---- IPC hardening -------------------------------------------------------
-// Privileged channels answer ONLY the app's own renderer file. Should any
-// navigation slip through (or a compromised page end up in the window), a
-// foreign frame gets nothing — not the API proxy, not the terminals.
+// Privileged channels answer ONLY the app's own renderer file, with no hash
+// or the #ws= that binds its window (renderer/window-binding.mjs, #481).
+// Should any navigation slip through (or a compromised page end up in the
+// window), a foreign frame gets nothing — not the API proxy, not the terminals.
 const RENDERER_URL = `${pathToFileURL(join(HERE, "renderer", "index.html"))}`;
 function trustedFrame(e) {
-  const url = e.senderFrame?.url || "";
-  return url === RENDERER_URL || url.startsWith(`${RENDERER_URL}#`);
+  return trustedRendererUrl(e.senderFrame?.url, RENDERER_URL);
 }
 function guard(e) { if (!trustedFrame(e)) throw new Error("forbidden: untrusted frame"); }
 
@@ -235,6 +248,8 @@ function guard(e) { if (!trustedFrame(e)) throw new Error("forbidden: untrusted 
 // workspace:add only ever replaces an app-OWNED server; foreign servers fail
 // closed.
 const wsGens = createGenerations();
+/** The window a privileged workspace call comes from (#481): its own generations and provenance. */
+const windowScope = (e) => String(e.sender.id);
 const RECENTS_FILE = () => join(app.getPath("userData"), "workspace-recents.json");
 const OPEN_WORKSPACES_FILE = () => join(app.getPath("userData"), "workspace-open.json");
 // The last workspace identity each remote roster group reported (server/remote-identity.mjs, #482).
@@ -266,8 +281,8 @@ function rememberWorkspaceParent(workspacePath) {
   try { writeFileSync(LAST_WORKSPACE_PARENT_FILE(), lastWorkspaceParentState(workspacePath)); } catch { /* best-effort */ }
 }
 
-let lastSuggested = new Set(); // canonical paths offered by the latest suggestions call
-let lastPickChoices = new Set(); // deployments offered beside the latest refused pick (#461)
+// Per window: the deployments offered beside its latest refused pick (#461).
+const lastPickChoices = new Map();
 
 const executeAdd = createAddExecutor({
   getDirs: () => [...workspaceDirs],
@@ -290,19 +305,20 @@ const executeAdd = createAddExecutor({
   advertises: async (id) => { await panelWorkspaces(); return allowedWs.has(id); },
 });
 
-ipcMain.handle("workspace:suggestions", async (e) => {
-  guard(e);
-  const gen = wsGens.next("suggestions");
-  await panelWorkspaces(); // refresh allowedWs from the live server
-  const list = workspaceSuggestions({
+// Each window's latest call, and the canonical paths it offered (createSuggestionCalls).
+const suggestionCalls = createSuggestionCalls({
+  generations: wsGens,
+  refresh: () => panelWorkspaces(), // refresh allowedWs from the live server
+  list: () => workspaceSuggestions({
     knownPaths: [...workspaceDirs],
     recents: readRecents(),
     advertised: allowedWs,
     validate: wsValidate,
-  });
-  if (!wsGens.isCurrent("suggestions", gen)) return { stale: true, suggestions: [] };
-  lastSuggested = new Set(list.map((s) => s.path));
-  return { stale: false, suggestions: list };
+  }),
+});
+ipcMain.handle("workspace:suggestions", async (e) => {
+  guard(e);
+  return suggestionCalls.suggest(windowScope(e));
 });
 
 // The entry point of every add (workspace-registry.mjs createPerformAdd): a refusal returns before
@@ -312,20 +328,20 @@ ipcMain.handle("workspace:suggestions", async (e) => {
 // unaffected throughout: viewers attach to tmux, not the backend.
 const performAdd = createPerformAdd({
   generations: wsGens,
-  decide: (requestedPath, fromPicker) => decideAdd(requestedPath, {
+  decide: (requestedPath, fromPicker, scope) => decideAdd(requestedPath, {
     realpath: (p) => realpathSync(p),
     validate: wsValidate,
-    // Provenance: a suggestion, a deployment offered beside a refused pick, or one this Desktop
-    // knows (Re-add of a deployment the server stopped serving). Never an arbitrary path.
-    suggestedPaths: new Set([...lastSuggested, ...lastPickChoices, ...knownDirs]),
+    // Provenance: a suggestion or a deployment offered beside a refused pick in the asking window, or
+    // one this Desktop knows (Re-add of a deployment the server stopped serving). Never an arbitrary path.
+    suggestedPaths: new Set([...suggestionCalls.offered(scope), ...(lastPickChoices.get(scope) || []), ...knownDirs]),
     fromPicker,
     serverOwned: serverHost.owned(),
     advertised: allowedWs,
   }),
   realpath: (p) => realpathSync(p),
-  choices: (dir) => {
+  choices: (dir, scope) => {
     const found = pickedFolderChoices(dir, { list: listEntries, isDeployment: (p) => !!wsValidate(p) });
-    lastPickChoices = new Set(found.choices.map((c) => c.path));
+    lastPickChoices.set(scope, new Set(found.choices.map((c) => c.path)));
     return found;
   },
   offer: (path) => onboardOffers.offer(path),
@@ -354,18 +370,18 @@ const onboardExecutor = createOnboardExecutor({
   readCli: async () => (await fetch(`${base()}/api/cli`, { signal: AbortSignal.timeout(10_000) })).json(),
   run: (cli, options) => cliWorkspace(cli, options),
   project: onboardData,
-  add: (dir) => performAdd(dir, true),
+  add: (dir, scope) => performAdd(dir, true, scope),
   validRef: validWorkspaceRef,
 });
 ipcMain.handle("workspace:onboard", async (e, token, ref) => {
   guard(e);
-  return onboardExecutor(token, ref);
+  return onboardExecutor(token, ref, windowScope(e));
 });
 
 ipcMain.handle("workspace:add", async (e, requestedPath) => {
   guard(e);
   if (typeof requestedPath !== "string" || !requestedPath.startsWith("/")) return { ok: false, code: "bad-path", reason: "path must be an absolute string" };
-  return performAdd(requestedPath, false);
+  return performAdd(requestedPath, false, windowScope(e));
 });
 
 const isDirectory = (p) => { try { return statSync(p).isDirectory(); } catch { return false; } };
@@ -385,7 +401,7 @@ ipcMain.handle("workspace:pick", async (e) => {
   });
   const r = await dialog.showOpenDialog(win, { defaultPath, properties: ["openDirectory"] });
   if (r.canceled || !r.filePaths?.[0]) return { ok: false, code: "cancelled", reason: "picker cancelled" };
-  return performAdd(r.filePaths[0], true);
+  return performAdd(r.filePaths[0], true, windowScope(e));
 });
 
 // ---- IPC: CLI binary picker (Choose oats…) --------------------------------
@@ -434,25 +450,22 @@ const unservedRefusal = createUnservedRefusal({ base, body: workspaceNotServed,
 
 // The renderer never talks to the network directly; ctx.api() lands here.
 ipcMain.handle("api", async (e, pathname, opts) => {
+  // The workspace the sending window is bound to (#481): a request from it carries that workspace,
+  // never another's. An unbound window keeps the verified workspace and its rewrite (#461 adoption).
+  const bound = (() => { try { return frameWorkspace(e.senderFrame?.url, RENDERER_URL); } catch { return undefined; } })();
+  const windowWs = typeof bound === "string" ? bound : null;
+  // A workspace the server does not serve, asked by a bound window, is refused on every
+  // workspace-scoped route — never answered with another workspace's data.
+  const notServed = windowRefusal(pathname, base(), windowWs, advertisedNow());
+  if (notServed) return { ok: false, status: 404, body: workspaceNotServed(notServed) };
   // One normalized classifier owns every specialized routing decision;
   // aliases cannot bypass frame/epoch guards, deadlines or typed failures.
   const route = classifyApiRoute(pathname, base());
-  if (route === 'spawn-apply') {
-    return proxySpawnApply(e, pathname, opts, { rendererURL: RENDERER_URL,
-      connection: () => ({ base: base(), wsId, allowedWs, epoch: serverEpoch, transition: serverHost.inTransition() }) });
-  }
-  if (route === 'spawn-preview') {
-    return proxySpawnPreview(e, pathname, opts, { rendererURL: RENDERER_URL,
-      connection: () => ({ base: base(), wsId, allowedWs, epoch: serverEpoch, transition: serverHost.inTransition() }) });
-  }
-  if (route === 'instance-events') {
-    return proxyInstanceEvents(e, pathname, opts, { rendererURL: RENDERER_URL,
-      connection: () => ({ base: base(), wsId, allowedWs, epoch: serverEpoch, transition: serverHost.inTransition() }) });
-  }
-  if (route === 'readiness') {
-    return proxyReadiness(e, pathname, opts, { rendererURL: RENDERER_URL,
-      connection: () => ({ base: base(), wsId, allowedWs, epoch: serverEpoch, transition: serverHost.inTransition() }) });
-  }
+  const connection = () => ({ base: base(), wsId: windowWs ?? wsId, allowedWs, bound: windowWs !== null, epoch: serverEpoch, transition: serverHost.inTransition() });
+  if (route === 'spawn-apply') return proxySpawnApply(e, pathname, opts, { rendererURL: RENDERER_URL, connection });
+  if (route === 'spawn-preview') return proxySpawnPreview(e, pathname, opts, { rendererURL: RENDERER_URL, connection });
+  if (route === 'instance-events') return proxyInstanceEvents(e, pathname, opts, { rendererURL: RENDERER_URL, connection });
+  if (route === 'readiness') return proxyReadiness(e, pathname, opts, { rendererURL: RENDERER_URL, connection });
   const lifecycle = route === 'lifecycle';
   const forgeRequest = lifecycle || route === 'forge';
   const failure = lifecycle ? lifecycleFailure : forgeFailure;
@@ -463,13 +476,15 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   try {
   guard(e);
   // A deployment this Desktop knows (and that is still one) but the server does not serve is
-  // refused by name, never answered with another workspace's data (#461).
-  const refusal = unservedRefusal(pathname);
+  // refused by name, never answered with another workspace's data (#461). A bound window's were
+  // refused above.
+  const refusal = windowWs === null ? unservedRefusal(pathname) : null;
   if (refusal) return refusal;
   // apiUrl rejects off-origin resolution (e.g. "//attacker/x"), and pins
-  // the verified workspace on scoped endpoints unless the caller selects a
-  // workspace this server actually advertises (the views' ws switcher).
-  const url = apiUrl(pathname, base(), wsId, allowedWs);
+  // the window's workspace (else the verified one) on scoped endpoints
+  // unless the caller selects a workspace this server actually advertises
+  // (the views' ws switcher).
+  const url = apiUrl(pathname, base(), windowWs ?? wsId, allowedWs, { bound: windowWs !== null });
   const epoch = serverHost.inTransition() ? null : serverEpoch;
   // apiInit forwards pre-serialized (string) bodies and headers unchanged —
   // views serialize once in common.mjs::postJson — and serializes object
@@ -494,6 +509,7 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   // choices the menu receives, without adding requests to workspace polling.
   if (epoch === serverEpoch && !serverHost.inTransition() && r.ok && route === 'panel' && Array.isArray(json?.workspaces)) {
     allowedWs = servedSelectors(json.workspaces);
+    noteServed(json.workspaces);
   }
   return { ok: r.ok, status: r.status, body: json };
   } catch (error) {
@@ -592,15 +608,85 @@ function sweepOrphanViewers(socket) {
 // Ctrl accelerators that steal xterm's terminal control keys (review
 // befe75b important 1), and Chromium handles clipboard shortcuts natively.
 function installAppMenu() {
-  const template = appMenuTemplate(process.platform);
+  const template = appMenuTemplate(process.platform, { newWindow: () => openNewWindow() });
   Menu.setApplicationMenu(template ? Menu.buildFromTemplate(template) : null);
 }
 
-async function createWindow() {
+// ---- windows: one per workspace (#481) ----------------------------------
+// window-set.mjs holds at most one window per workspace view id; a window's
+// workspace is its renderer URL's #ws= (renderer/window-binding.mjs).
+// windows.json (window-records.mjs) brings them back at the next launch.
+const WINDOWS_FILE = () => join(app.getPath("userData"), "windows.json");
+const windows = createWindowSet({ create: (key, record) => createWindow(key, record) });
+let windowRecords = null; // created at startup, once userData is known
+// Windows opened by New Window: their first claim never takes the shared default (they show the switcher).
+const choosers = new WeakSet();
+/** A window's bounds and state, as a record keeps them. */
+const windowState = (win) => ({ bounds: win.getNormalBounds(), maximized: win.isMaximized(), fullscreen: win.isFullScreen() });
+const served = (key) => typeof key === "string" && advertisedNow().has(key);
+/** Bind a window to a workspace: its record and title follow (a restored record is rewritten to the view, Q6). */
+function bindWindow(win, key) {
+  windowRecords?.bind(win, key, windowState(win));
+  win.setTitle(windowTitle(key, servedList));
+}
+/** Open (or focus) the workspace's window; a restored record brings its bounds. */
+function openWorkspaceWindow(key, record = null) {
+  const result = windows.open(key, record);
+  if (result.opened) {
+    if (record) windowRecords?.adopt(result.win, record);
+    bindWindow(result.win, key);
+  }
+  return result;
+}
+/** File → New Window, the palette's New Window: a window with no workspace, showing the switcher. */
+function openNewWindow() {
+  const win = windows.openUnbound();
+  choosers.add(win);
+  return win;
+}
+/** Launch and macOS `activate`: every recorded window whose workspace is served, plus the launch's own
+ * deployment; with none, one window that takes the shared default, as before. */
+function restoreWindows(launchKey = null) {
+  for (const { key, record } of restorePlan(windowRecords?.records() ?? [], servedList)) openWorkspaceWindow(key, record);
+  if (launchKey) openWorkspaceWindow(launchKey);
+  if (!windows.entries().length) windows.openUnbound();
+}
+
+// A window binding itself in place (a switch, or a view that moved under it). `id` null leaves it
+// unbound. A workspace another window holds is refused: that window is focused (`focused-other`),
+// or not when `focus` is false (`open-elsewhere`). A New Window's first claim of the shared default
+// (`initial`) is refused with `choose`: it shows the switcher instead.
+ipcMain.handle("window:claim-workspace", (e, id, options) => {
+  if (!trustedForgeFrame(e, RENDERER_URL)) return { ok: false, code: "forbidden" };
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (!win || windows.keyOf(win) === undefined) return { ok: false, code: "unknown-window" };
+  if (id === null) {
+    windows.unbind(win);
+    windowRecords?.close(win, { served: false }); // the record stays; the window no longer owns it
+    win.setTitle(windowTitle(null, servedList));
+    return { ok: true };
+  }
+  if (!validWorkspaceId(id)) return { ok: false, code: "bad-workspace" };
+  if (options?.initial === true && choosers.has(win)) return { ok: false, code: "choose" };
+  choosers.delete(win);
+  const result = windows.claim(win, id, { focus: options?.focus !== false });
+  if (result.ok) bindWindow(win, id);
+  return result;
+});
+// Open in new window, and New Window (`id` null): the workspace's window is focused if it has one.
+ipcMain.handle("window:open-workspace", (e, id) => {
+  if (!trustedForgeFrame(e, RENDERER_URL)) return { ok: false, code: "forbidden" };
+  if (id === null) { openNewWindow(); return { ok: true, opened: true }; }
+  if (!validWorkspaceId(id)) return { ok: false, code: "bad-workspace" };
+  const result = openWorkspaceWindow(id);
+  return { ok: true, ...(result.opened ? { opened: true } : { focused: true }) };
+});
+
+function createWindow(workspaceId, record = null) {
+  const bounds = record ? clampBounds(record.bounds, screen.getAllDisplays()) : null;
   const win = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    title: "OATS Desktop",
+    ...(bounds ?? { width: 1400, height: 900 }),
+    title: windowTitle(workspaceId, servedList),
     backgroundColor: "#16161e",
     webPreferences: {
       preload: join(HERE, "preload.cjs"),
@@ -611,6 +697,19 @@ async function createWindow() {
   });
   // Register hooks before loadFile or any terminal request/preparation.
   terminalBroker.register(win.webContents);
+  if (record?.maximized) win.maximize();
+  if (record?.fullscreen) win.setFullScreen(true);
+  // Titles are main's, from the served list (window-records.mjs windowTitle), never the page's.
+  win.on("page-title-updated", (event) => event.preventDefault());
+  win.on("focus", () => windows.focused(win));
+  for (const ev of ["move", "resize", "maximize", "unmaximize", "enter-full-screen", "leave-full-screen"]) {
+    win.on(ev, () => windowRecords?.update(win, windowState(win)));
+  }
+  // The operator closing a window whose workspace is served forgets it; quitting forgets nothing, and
+  // neither does closing a window whose workspace isn't served (#472).
+  win.on("close", () => { if (!quitStarted) windowRecords?.close(win, { served: served(windows.keyOf(win)) }); });
+  const scope = String(win.webContents.id);
+  win.on("closed", () => { windows.remove(win); suggestionCalls.forget(scope); lastPickChoices.delete(scope); });
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: "deny" };
@@ -619,11 +718,12 @@ async function createWindow() {
   // in future views (markdown, chat) open externally; everything else is
   // denied — a navigated-to page would otherwise inherit the preload bridge.
   win.webContents.on("will-navigate", (event, url) => {
-    if (url === RENDERER_URL || url.startsWith(`${RENDERER_URL}#`)) return;
+    if (trustedRendererUrl(url, RENDERER_URL)) return;
     event.preventDefault();
     if (/^https?:/.test(url)) shell.openExternal(url);
   });
-  await win.loadFile(join(HERE, "renderer", "index.html"));
+  win.loadFile(join(HERE, "renderer", "index.html"), workspaceId ? { hash: workspaceHash(workspaceId).slice(1) } : {})
+    .catch((error) => console.error(`oats-desktop: window did not load: ${error.message}`));
   // Right-click copy for selected transcript/view text (and standard edit
   // actions in editable fields). Menu items come from Electron's editFlags —
   // nothing shows when nothing is applicable.
@@ -639,11 +739,29 @@ async function createWindow() {
     }
     if (items.length) Menu.buildFromTemplate(items).popup({ window: win });
   });
+  return win;
 }
 
-const primaryInstance = startSingleInstance(app, () => BrowserWindow.getAllWindows(), async () => {
+// A repeated launch (single-instance.mjs): its --dir, or a working directory that is a deployment, is
+// admitted through the validated add path and its workspace's window opened or focused.
+const openLaunch = createLaunchOpener({
+  isDeployment: (dir) => !!wsValidate(realpathSync(dir)),
+  admit: async (dir) => {
+    const result = await performAdd(dir, true, "launch");
+    if (!result?.ok) return null;
+    return resolveView(result.workspace.id, (await panelWorkspaces()) ?? servedList);
+  },
+  open: (key) => { openWorkspaceWindow(key); },
+  focusRecent: () => { windows.focusRecent(); },
+});
+
+const primaryInstance = startSingleInstance(app, (argv, workingDirectory) => openLaunch(launchDirectory(argv, workingDirectory)), async () => {
   await applyLoginPath(); // first: everything below may spawn
   installAppMenu();
+  let savedWindows = "[]";
+  try { savedWindows = readFileSync(WINDOWS_FILE(), "utf8"); } catch { /* first launch */ }
+  windowRecords = createWindowRecords({ file: WINDOWS_FILE(), initial: parseWindowRecords(savedWindows) });
+  app.on("will-quit", () => windowRecords.flush());
   sweepOrphanViewers(); // default socket now; saved sockets are swept when opened
   let saved = "[]";
   try { saved = readFileSync(OPEN_WORKSPACES_FILE(), "utf8"); } catch { /* first launch */ }
@@ -674,7 +792,11 @@ const primaryInstance = startSingleInstance(app, () => BrowserWindow.getAllWindo
   app.on("browser-window-created", (_event, win) => {
     for (const ev of ["show", "hide", "minimize", "restore"]) win.on(ev, noteWindowActivity);
   });
-  await createWindow();
+  // The launch's own deployment (--dir, or a cwd that is one) gets its window beside the restored ones.
+  const servedViews = (await panelWorkspaces()) ?? [];
+  let launchKey = null;
+  try { if (startupIsDeployment) launchKey = resolveView(realpathSync(WORKSPACE), servedViews); } catch { /* gone since */ }
+  restoreWindows(launchKey);
   // Contract re-probe trigger "app focus": notify the renderer, which calls
   // POST /api/cli/reprobe (the server owns probe state and rate semantics).
   app.on("browser-window-focus", () => {
@@ -684,7 +806,7 @@ const primaryInstance = startSingleInstance(app, () => BrowserWindow.getAllWindo
     noteWindowActivity();
   });
   app.on("browser-window-blur", noteWindowActivity);
-  app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+  app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) restoreWindows(); });
 });
 
 if (primaryInstance) app.on("window-all-closed", () => { app.quit(); });

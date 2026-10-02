@@ -102,3 +102,61 @@ test('every specialized proxy pins a bound window\'s workspace and never rewrite
     }
   }
 });
+
+/* ── the shipped api handler ───────────────────────────────────────────────── */
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
+import { withWindowGlobals } from './helpers/main-window-globals.mjs';
+import { apiInit, classifyApiRoute, servedSelectors } from '../api-url.mjs';
+import { workspaceHash } from '../renderer/window-binding.mjs';
+import { forgeProxyOptions, trustedForgeFrame, FORGE_EPOCH_HEADER } from '../forge-proxy.mjs';
+import { forgeFailure } from '../renderer/forge-contract.mjs';
+import { lifecycleFailure } from '../renderer/lifecycle-contract.mjs';
+import { NOT_SERVED_CODE } from '../renderer/deployment-header.mjs';
+
+const RENDERER = 'file:///fixture/renderer/index.html';
+function shippedApi({ window: bound }) {
+  const source = readFileSync(new URL('../main.mjs', import.meta.url), 'utf8');
+  const start = source.indexOf('ipcMain.handle("api",'), end = source.indexOf('// ---- IPC: workstation forge auth', start);
+  let handler; const fetched = [];
+  const fetch = async (url) => { fetched.push(new URL(url)); return { ok: true, status: 200, text: async () => JSON.stringify({ workspaces: [] }) }; };
+  const proxy = (path) => { fetched.push(new URL(path, BASE)); return { ok: true, status: 200, body: {} }; };
+  runInNewContext(source.slice(start, end), withWindowGlobals({
+    ipcMain: { handle: (_name, fn) => { handler = fn; } }, apiUrl, apiInit, classifyApiRoute, servedSelectors, forgeProxyOptions, trustedForgeFrame,
+    FORGE_EPOCH_HEADER, forgeFailure, lifecycleFailure, RENDERER_URL: RENDERER, serverEpoch: 0, unservedRefusal: () => null,
+    serverHost: { inTransition: () => false }, currentForgeEpoch: () => 'fixture:0', base: () => BASE, wsId: VERIFIED, allowedWs: ADVERTISED,
+    proxyReadiness: proxy, proxySpawnPreview: proxy, proxyInstanceEvents: proxy, proxySpawnApply: proxy,
+    fetch, AbortSignal: { timeout: () => null }, Set, URL, JSON,
+    guard: () => {},
+  }));
+  const frame = { url: bound ? `${RENDERER}${workspaceHash(bound)}` : RENDERER };
+  const event = { senderFrame: frame, sender: { mainFrame: frame, isDestroyed: () => false } };
+  return { fetched, call: (path) => handler(event, path, { method: 'POST', body: '{}' }) };
+}
+
+test('shipped api: a bound window\'s read for an unserved workspace is 404 E_WORKSPACE_NOT_SERVED on every route, never fetched', async () => {
+  for (const path of SCOPED) {
+    const api = shippedApi({ window: '/d/gone' });
+    const reply = await api.call(path);
+    assert.equal(reply.status, 404, path); assert.equal(reply.body.code, NOT_SERVED_CODE, path); assert.equal(reply.body.workspace, '/d/gone');
+    assert.deepEqual(api.fetched, [], `${path}: no other workspace's data`);
+    const explicit = await shippedApi({ window: WINDOW }).call(`${path}?ws=${encodeURIComponent('/d/gone')}`);
+    assert.equal(explicit.status, 404, `${path} explicit`);
+  }
+});
+
+test('shipped api: a bound window\'s implicit read is its own workspace; an unbound window\'s is the verified one', async () => {
+  // The four specialized proxies pin through their connection (tested above); here, every other route.
+  const proxied = ['readiness', 'spawn-preview', 'instance-events', 'spawn-apply'];
+  for (const path of SCOPED.filter((p) => !proxied.includes(classifyApiRoute(p, BASE)))) {
+    const bound = shippedApi({ window: WINDOW });
+    await bound.call(path);
+    assert.deepEqual(bound.fetched.map((u) => u.searchParams.get('ws')), [WINDOW], path);
+    const unbound = shippedApi({ window: null });
+    await unbound.call(path);
+    assert.equal(unbound.fetched.length, 1, path);
+  }
+  const unbound = shippedApi({ window: null });
+  await unbound.call('/api/panel');
+  assert.equal(unbound.fetched[0].searchParams.get('ws'), VERIFIED);
+});

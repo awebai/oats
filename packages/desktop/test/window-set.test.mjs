@@ -95,3 +95,14 @@ test('the most recently focused live window, for a second launch with no workspa
   a.destroyed = true; assert.equal(f.set.mostRecent(), b);
   f.set.remove(a); f.set.remove(b); assert.equal(f.set.mostRecent(), null);
 });
+
+test('creation options reach create(); focusRecent presents the most recent window', () => {
+  const made = [];
+  const set = createWindowSet({ create: (key, options) => { made.push([key, options]); const log = [];
+    return { log, isDestroyed: () => false, isMinimized: () => true, restore: () => log.push('restore'), show: () => log.push('show'), focus: () => log.push('focus') }; } });
+  assert.equal(set.focusRecent(), null, 'no window: nothing');
+  const a = set.open('/d/a', { record: 1 }).win, b = set.openUnbound({ record: 2 });
+  assert.deepEqual(made, [['/d/a', { record: 1 }], [null, { record: 2 }]]);
+  set.focused(a);
+  assert.equal(set.focusRecent(), a); assert.deepEqual(a.log, ['restore', 'show', 'focus']); assert.deepEqual(b.log, []);
+});

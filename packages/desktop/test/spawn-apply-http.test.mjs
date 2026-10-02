@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
 import { runInNewContext } from 'node:vm';
+import { withWindowGlobals } from './helpers/main-window-globals.mjs';
 import { apiUrl, classifyApiRoute } from '../api-url.mjs';
 import { proxySpawnApply } from '../spawn-apply-proxy.mjs';
 import { createSpawnApplyBoundary } from '../server/spawn-apply.mjs';
@@ -76,7 +77,7 @@ test('main composition normalizes all spawn aliases to specialized guard, includ
     proxySpawnApply: (e, path, opts, d) => proxySpawnApply(e, path, opts, { ...d, fetch: f.deps.fetch }), base: () => f.connection.base,
     wsId: 'northwind', allowedWs: f.connection.allowedWs, serverEpoch: 0, unservedRefusal: () => null, serverHost: { inTransition: () => false },
     forgeFailure: () => ({}), lifecycleFailure: () => ({}), guard: () => assert.fail('spawn must use specialized guard') };
-  runInNewContext(source.slice(start, end), deps);
+  runInNewContext(source.slice(start, end), withWindowGlobals(deps));
   for (const pathname of aliases) {
     assert.equal(classifyApiRoute(pathname, f.connection.base), 'spawn-apply');
     for (const body of [draft(), { agent: 'dev', agentsRoot: '/team/agents' }]) assert.equal((await handler({ ...f.event, senderFrame: { url: f.deps.rendererURL } }, pathname, { method: 'POST', body })).body.reason.code, 'E_FORBIDDEN_FRAME');

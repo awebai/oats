@@ -1,5 +1,5 @@
 // One Desktop window per workspace (#481): the registry of open windows, in main. Pure over the
-// windows it is given: `create(key)` makes a window (a BrowserWindow in main), which only needs
+// windows it is given: `create(key, options)` makes a window (a BrowserWindow in main), which only needs
 // isDestroyed, isMinimized, restore, show and focus here.
 //
 // A window's key is the workspace view id it is bound to, or null while it has none (a New Window
@@ -26,18 +26,22 @@ export function createWindowSet({ create }) {
     if (key != null) holders.set(key, win);
   };
   const add = (win, key) => { bind(win, key); order.push(win); return win; };
+  const mostRecent = () => {
+    for (let i = order.length - 1; i >= 0; i--) if (live(order[i])) return order[i];
+    return null;
+  };
 
   return {
     /** The workspace's window: `{ focused: true, win }` after presenting the one that holds it,
      * else `{ opened: true, win }` for a window created for it. */
-    open(key) {
+    open(key, options) {
       const held = holder(key);
       if (held) { present(held); return { focused: true, win: held }; }
-      return { opened: true, win: add(create(key), key) };
+      return { opened: true, win: add(create(key, options), key) };
     },
     /** A window bound to no workspace yet. */
-    openUnbound() {
-      return add(create(null), null);
+    openUnbound(options) {
+      return add(create(null, options), null);
     },
     /** Bind `win` to `key` in place. A key another live window holds is refused: that window is
      * presented (`focused-other`) unless `focus` is false (`open-elsewhere`). */
@@ -71,9 +75,12 @@ export function createWindowSet({ create }) {
     keyOf: (win) => keys.get(win),
     windowOf: (key) => holder(key),
     /** The most recently focused live window, or null. */
-    mostRecent() {
-      for (let i = order.length - 1; i >= 0; i--) if (live(order[i])) return order[i];
-      return null;
+    mostRecent,
+    /** Present the most recently focused live window; it, or null. */
+    focusRecent() {
+      const win = mostRecent();
+      if (win) present(win);
+      return win;
     },
     /** Every live registered window with its key. */
     entries: () => [...keys].filter(([win]) => live(win)),
