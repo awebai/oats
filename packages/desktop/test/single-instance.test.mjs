@@ -6,7 +6,7 @@ import { startSingleInstance, launchDirectory, createLaunchOpener } from "../sin
 function fixture(lock) {
   const app = new EventEmitter();
   const calls = [];
-  app.requestSingleInstanceLock = () => { calls.push("lock"); return lock; };
+  app.requestSingleInstanceLock = (data) => { calls.push("lock"); app.lockData = data; return lock; };
   app.quit = () => calls.push("quit");
   app.whenReady = () => { calls.push("ready"); return Promise.resolve(); };
   return { app, calls };
@@ -38,6 +38,55 @@ test("a repeated launch during startup waits for it, then is handed its argv and
   app.emit("second-instance", {}, [], "/"); await tick();
   assert.equal(calls.filter((x) => x === "start").length, 1, "one startup, one server");
   assert.equal(launches.length, 2);
+});
+
+// Chromium reorders a second instance's command line (switches first, loose arguments last), so the
+// argv the running instance is handed can put another switch after --dir. The second instance sends its
+// own argv and working directory with the lock request instead, and those are what a launch reads.
+const REORDERED = ["/x/Electron", "--user-data-dir=/u", "--dir", "--allow-file-access-from-files", "--enable-avfoundation", "/app", "/d/beta"];
+
+test("a second instance sends its own argv and working directory with the lock request", () => {
+  const { app } = fixture(false);
+  startSingleInstance(app, () => {}, () => {}, { argv: ["/x/Electron", "/app", "--dir", "/d/beta"], workingDirectory: "/Users/juan" });
+  assert.deepEqual(app.lockData, { argv: ["/x/Electron", "/app", "--dir", "/d/beta"], workingDirectory: "/Users/juan" });
+});
+
+test("the running instance reads the launch's own argv, not Chromium's reordered one", async () => {
+  const { app } = fixture(true);
+  const launches = [];
+  startSingleInstance(app, (argv, cwd) => launches.push([argv, cwd]), async () => {});
+  await tick();
+  app.emit("second-instance", {}, REORDERED, "/", { argv: ["/x/Electron", "/app", "--dir", "/d/beta"], workingDirectory: "/Users/juan" });
+  await tick();
+  assert.deepEqual(launches, [[["/x/Electron", "/app", "--dir", "/d/beta"], "/Users/juan"]]);
+});
+
+test("launch data of the wrong shape is not used: the event's own argv and directory are", async () => {
+  for (const data of [undefined, null, "x", { argv: "nope" }, { argv: [1, 2] }, { argv: ["a"], workingDirectory: 7 }, { argv: Array(1001).fill("a") }]) {
+    const { app } = fixture(true);
+    const launches = [];
+    startSingleInstance(app, (argv, cwd) => launches.push([argv, cwd]), async () => {});
+    await tick();
+    app.emit("second-instance", {}, ["/x/Electron"], "/w", data);
+    await tick();
+    assert.deepEqual(launches, [[["/x/Electron"], "/w"]], JSON.stringify(data));
+  }
+});
+
+test("a launch whose handler fails is reported, never swallowed", async () => {
+  const { app } = fixture(true);
+  const logged = [];
+  const original = console.error; console.error = (m) => logged.push(String(m));
+  try {
+    startSingleInstance(app, () => { throw new Error("boom"); }, async () => {});
+    await tick();
+    app.emit("second-instance", {}, [], "/"); await tick(); await tick();
+  } finally { console.error = original; }
+  assert.equal(logged.length, 1); assert.match(logged[0], /second launch.*boom/);
+});
+
+test("launchDirectory: a --dir followed by another switch (a reordered argv) is no --dir", () => {
+  assert.equal(launchDirectory(REORDERED, "/w"), "/w");
 });
 
 test("launchDirectory: --dir (relative to the launch's working directory), else that directory", () => {
