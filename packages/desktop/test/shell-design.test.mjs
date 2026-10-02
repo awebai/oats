@@ -1,6 +1,7 @@
 // Supplied shell structure exercised with the shipped composition and inert
 // DOM/API/module-loader fixtures. No Electron, browser, server or live mutations.
 import test from "node:test";
+import { viewContext } from "./helpers/view-context.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
@@ -104,7 +105,10 @@ test("provided workspace header structure and brand artwork are decorative; choo
   assert.equal(trigger.getAttribute("aria-controls"), "ws-menu");
   assert.equal(trigger.getAttribute("aria-expanded"), "false");
   assert.ok(trigger.querySelector(".ws-heading-copy > #ws-name"));
-  assert.equal(trigger.querySelector("#ws-context").textContent, "", "unknown context starts empty");
+  assert.equal(trigger.querySelector("#ws-context"), null, "the trigger holds the name only");
+  // #482 UI spec: nothing between the switcher and the navigation (no deployments block).
+  assert.equal(document.getElementById("ws-deployments"), null);
+  assert.deepEqual([...document.getElementById("sidebar").children].slice(0, 3).map(el => el.id || el.className), ["side-head", "ws-menu", "nav"]);
   const mark = trigger.querySelector(".ws-brand-mark");
   assert.equal(mark.getAttribute("aria-hidden"), "true");
   const image = mark.querySelector("img.ws-brand-image");
@@ -124,7 +128,7 @@ test("provided workspace header structure and brand artwork are decorative; choo
 
 test("only current destinations render, dispatch unchanged stage ids, and project aria-current", t => {
   const s = shell(t), buttons = [...s.document.querySelectorAll("#nav button")];
-  assert.deepEqual(buttons.map(b => b.textContent), ["Active overview", "Workspace", "Automations"]);
+  assert.deepEqual(buttons.map(b => b.textContent), ["Deployments", "Workspace", "Automations"]);
   assert.deepEqual(buttons.map(b => b.dataset.action), ["stage.hierarchy", "stage.spawn", "stage.automations"]);
   for (const button of buttons) {
     assert.equal(button.type, "button"); assert.ok(button.title); assert.ok(button.querySelector("svg"));
@@ -297,31 +301,32 @@ for (const outcome of ["resolve", "reject"]) test(`reported workspace/root/host 
   const dom = domFixture(t), document = dom.window.document, requests = [];
   const c = {
     document, workspace: "A", contextRosterGen: 0,
-    rosterState: null, rosterStale: false, contextDeploymentNote: null, rosterSignaturePainted: null, rosterSignature, rosterPendingWatch: createPendingWatch(), NOT_SERVED_CODE, NO_ANSWER_CODE, failRosterUnserved: assert.fail, contextInstances: [], tabs: new Map(), activeTab: null, connectionGeneration: 0,
+    rosterState: null, rosterStale: false, contextDeploymentNote: null, ...viewContext(), rosterSignaturePainted: null, rosterSignature, rosterPendingWatch: createPendingWatch(), NOT_SERVED_CODE, NO_ANSWER_CODE, failRosterUnserved: assert.fail, contextInstances: [], tabs: new Map(), activeTab: null, connectionGeneration: 0,
     currentWorkspace: () => c.workspace, rosterResponseOwns, staleWorkspaceSelection,
     contextRosterEl: document.getElementById("instance-roster"),
     api(path) { const gate = { ...deferred(), path }; requests.push(gate); return gate.promise; },
     renderContextRoster() {}, refreshPanelInstance() {}, rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} }, // label-only polling fixture
     workspaceLabel: createWorkspaceSwitcher({ document, selectWorkspace() {}, discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}) }),
   };
-  const s = runInNewContext(`${fn("refreshContextRoster")}\n${fn("renderWorkspaceContext")}\n({ refreshContextRoster, renderWorkspaceContext });`, c);
+  const s = runInNewContext(`${fn("refreshContextRoster")}\n({ refreshContextRoster });`, c);
   const old = s.refreshContextRoster();
   assert.equal(requests[0].path, "/api/panel?ws=A");
-  c.workspace = "B"; c.contextRosterGen++; c.workspaceLabel.reset(); s.renderWorkspaceContext(null);
+  c.workspace = "B"; c.contextRosterGen++; c.workspaceLabel.reset();
   c.workspace = "A"; c.contextRosterGen++;
   const fresh = s.refreshContextRoster();
-  const workspace = { id: "A", name: "same name", remote: true, server: 'host<&"' };
-  requests[1].resolve({ workspace, workspaces: [workspace], instances: [] }); await fresh;
-  const label = document.getElementById("ws-context");
-  assert.equal(label.textContent, 'Remote deployment · host<&"'); assert.equal(label.children.length, 0);
-  if (outcome === "resolve") requests[0].resolve({ workspace: { ...workspace, server: "old-host" }, instances: [] });
+  const workspace = { id: "A", name: 'same <b>name</b>', remote: true, server: 'host<&"' };
+  const deployment = { id: 'remote:host:t', machine: 'host<&"', path: "/srv/agents", label: "~/agents", local: false, reachable: true, identityFrom: "reported", primary: true };
+  requests[1].resolve({ workspace, workspaces: [workspace], deployments: [deployment], instances: [] }); await fresh;
+  const name = document.getElementById("ws-name");
+  const machines = () => c.contextDeployments.map(d => d.machine);
+  assert.equal(name.textContent, 'same <b>name</b>', "the reported name as text, never markup"); assert.equal(name.children.length, 0);
+  assert.deepEqual(machines(), ['host<&"'], "the reported deployments group the roster");
+  if (outcome === "resolve") requests[0].resolve({ workspace: { ...workspace, name: "old name" }, workspaces: [{ ...workspace, name: "old name" }], deployments: [{ ...deployment, machine: "old-host" }], instances: [] });
   else requests[0].reject(new Error("stale failure"));
   await old;
-  assert.equal(label.textContent, 'Remote deployment · host<&"');
+  assert.equal(name.textContent, 'same <b>name</b>'); assert.deepEqual(machines(), ['host<&"']);
   assert.equal(document.querySelector(".ctx-list").textContent, "");
-  s.renderWorkspaceContext({ id: "/reported/root", team: { name: "not a membership label" } });
-  assert.equal(label.textContent, "/reported/root");
-  s.renderWorkspaceContext(null); assert.equal(label.textContent, "");
+  assert.equal(document.getElementById("ws-trigger").title, "Active workspace: same <b>name</b>", "a remote id is never the tooltip");
 });
 
 test('White, Solarized and Dark have explicit registry/palette choices without new default chords; cycle stays named', t => {

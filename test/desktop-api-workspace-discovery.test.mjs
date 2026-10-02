@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { apiUrl, apiInit, classifyApiRoute } from "../packages/desktop/api-url.mjs";
+import { apiUrl, apiInit, classifyApiRoute, servedSelectors } from "../packages/desktop/api-url.mjs";
 import * as forge from '../packages/desktop/forge-proxy.mjs';
 import { forgeFailure } from '../packages/desktop/renderer/forge-contract.mjs';
 
@@ -38,8 +38,8 @@ function bridge() {
     + 'const unservedRefusal = () => null; // the unserved-deployment refusal is covered by packages/desktop/test/unserved-deployment.test.mjs\n'
     + 'const { forgeProxyOptions, trustedForgeFrame, FORGE_EPOCH_HEADER } = forge; const currentForgeEpoch = () => "fixture:0"; const RENDERER_URL = "file:///fixture/index.html";\n'
     + source.slice(apiStart, apiEnd) + '\nreturn () => {' + invalidation + '};';
-  const invalidate = new Function("fetch", "apiUrl", "apiInit", "classifyApiRoute", "ipcMain", "guard", "serverHost", "forge", "forgeFailure", "invalidateForgeReads", "invalidateTerminalPreparations", setup)(
-    fetch, apiUrl, apiInit, classifyApiRoute, { handle: (name, fn) => { assert.equal(name, "api"); handler = fn; } }, () => {},
+  const invalidate = new Function("fetch", "apiUrl", "apiInit", "classifyApiRoute", "servedSelectors", "ipcMain", "guard", "serverHost", "forge", "forgeFailure", "invalidateForgeReads", "invalidateTerminalPreparations", setup)(
+    fetch, apiUrl, apiInit, classifyApiRoute, servedSelectors, { handle: (name, fn) => { assert.equal(name, "api"); handler = fn; } }, () => {},
     { inTransition: () => inTransition }, forge, forgeFailure, () => { forgeInvalidations++; }, () => { terminalInvalidations++; },
   );
   return {

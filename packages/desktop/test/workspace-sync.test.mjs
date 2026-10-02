@@ -11,6 +11,7 @@ import { EventEmitter } from 'node:events';
 import { cliWorkspace, workspaceArgv, validWorkspaceRef, WORKSPACE_READ_TIMEOUT, WORKSPACE_WRITE_TIMEOUT, WORKSPACE_MAX_BUFFER, WORKSPACE_ACTIONS } from '../workspace-cli.mjs';
 import { syncData, capabilitiesData, onboardData } from '../deployment-data.mjs';
 import { createWorkspaceSyncBoundary } from '../server/workspace-sync.mjs';
+import { deploymentDoubles } from './helpers/deployment-doubles.mjs';
 
 const file = name => new URL(`./fixtures/workspace-v2/f2/${name}.json`, import.meta.url);
 const raw = name => JSON.parse(readFileSync(file(name), 'utf8'));
@@ -189,7 +190,7 @@ function httpHarness(workspaceSyncRequest) {
   let refreshes = 0;
   const dependencies = {
     createServer: callback => callback, workspaceSyncRequest, syncFailure, observeMutation: () => { refreshes++; },
-    cliState: cli(), ctxs: [deployment], workspaces: () => [workspace],
+    cliState: cli(), ctxs: [deployment], ...deploymentDoubles(() => [workspace]),
   };
   const handler = new Function(...Object.keys(dependencies), `${source.slice(errorStart, errorEnd)}\n${source.slice(start, end)}\nreturn server;`)(...Object.values(dependencies));
   return {

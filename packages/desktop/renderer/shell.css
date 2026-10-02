@@ -77,8 +77,6 @@ body {
 .ws-brand-image { width: 24px; height: 24px; display: block; }
 .ws-heading-copy { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 #ws-name { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#ws-context { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-              color: var(--muted); font-size: 10.5px; line-height: 1.2; font-weight: 400; }
 .ws-chevron { flex: none; margin-left: auto; color: var(--muted); font-size: 12px; transform-origin: center; transition: transform 120ms ease; }
 #ws-trigger[aria-expanded="true"] .ws-chevron { transform: rotate(180deg); }
 .ws-menu { position: absolute; z-index: 40; top: calc(var(--bar-h) - 1px); left: 8px; width: min(300px, calc(100vw - 16px)); padding: 6px;
@@ -103,8 +101,17 @@ body {
 .ws-option .workspace-avatar { width:26px; height:26px; border-radius:7px; font-size:12px; }
 .ws-option-meta { display:block; font-size:10.5px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .ws-option-meta[hidden] { display:none; }
-.ws-option-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 650; }
-.ws-option-path { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 10.5px; }
+.ws-option-name { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 650; }
+/* The name and, when a deployment is not live, its status mark (#482); the muted line below is the
+   machines (.ws-option-meta), one line, never a path. */
+.ws-option-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+/* Unattached views (#482): their own section; each entry's line is its machine and one short reason. */
+.ws-option-section { margin: 6px 8px 2px; padding-top: 7px; border-top: 1px solid var(--border); color: var(--muted);
+                     font-size: 10.5px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+/* A deployment status mark (#482, view-deployments.mjs deploymentMark): the warning shape in --warn,
+   its words for assistive tech and as the tooltip, so the state is never colour alone. */
+.deployment-mark { flex: none; display: inline-flex; color: var(--warn); }
+.deployment-mark > .shell-icon { width: 12px; height: 12px; }
 .ws-add-open { width: 100%; padding: 8px 7px 6px; border: solid var(--border); border-width: 1px 0 0; background: transparent;
                color: var(--accent); font-family: inherit; font-size: 12px; line-height: 1.3; font-weight: 650;
                text-align: left; cursor: pointer; }
@@ -162,6 +169,16 @@ body {
    The first one sits just under the filter, so it is shorter (human, 2026-09-29). */
 .ctx-group { height: 14px; }
 .ctx-group:first-child { height: 7px; }
+/* Deployment headings (#482), only in a view of two or more deployments: the machine label in the
+   roster's group-label type (the agent clusters' "independent" / cluster-name label: muted 11px 650
+   uppercase), a status mark beside it when not live, then the deployment's agent groups as before. */
+.ctx-deployment { display: flex; align-items: center; gap: 6px; min-width: 0; margin: 12px 6px 0; color: var(--muted);
+                  font-size: 11px; line-height: 1.3; font-weight: 650; text-transform: uppercase; letter-spacing: .06em; }
+.ctx-deployment:first-child { margin-top: 6px; }
+.ctx-deployment + .ctx-group { height: 4px; }
+.ctx-deployment-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A path tail is case-sensitive: never uppercased or letter-spaced with the machine label. */
+.ctx-deployment-path { text-transform: none; letter-spacing: normal; }
 /* One instance row: a 48px box, 18px per level; the row (not the button)
    carries hover/selection so it spans the indent like the design. Its
    background fills 44px, clipped inside 2px transparent borders top and
