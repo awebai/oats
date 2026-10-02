@@ -189,6 +189,10 @@ function offsetFromJournal(store, streamId, sourcePath, final, sourceBytes) {
 // `final` also verifies unchanged offsets against journals and checks source
 // stability through the pass. The caller must quiesce writers for retirement;
 // a performed pass is a snapshot, not a promise about future writes.
+//
+// A file given as `{ path, pinned: { bytes, stat } }` is PINNED: its caller opened it once and read these bytes from
+// that descriptor (`capture --file`). It is captured from them as a final pass, never opened again, so the
+// turns are exactly those bytes; `path` keys its offsets as for any other file.
 export function captureSessions(store, { owner, roots, files, format = "cc", ignore = null, final = false }) {
   const fmt = SESSION_FORMATS[format];
   if (!fmt) throw new Error(`unknown session format ${format}`);
@@ -205,6 +209,7 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
 
   for (const file of files ?? fmt.listFiles(roots)) {
     const path = typeof file === "string" ? file : file.path;
+    const pinned = typeof file === "string" ? null : file.pinned ?? null;
     const expected = typeof file === "string" ? null : file.snapshot;
     const capturedPi = typeof file === "string" ? undefined : file.capturedPi ?? expected?.capturedPi;
     if (capturedPi && (fmt.source !== "pi" || (expected?.capturedPi && !isDeepStrictEqual(capturedPi, expected.capturedPi)))) throw new Error("protected capture proof/format differs from discovery");
@@ -215,20 +220,21 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
       ignored++;
       continue; // never opened: nothing stored, nothing remembered
     }
-    const fd = openSync(path, capturedPi ? constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK : "r");
+    const fd = pinned ? null : openSync(path, capturedPi ? constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK : "r");
     try {
     if (capturedPi) assertProtectedDescriptor(fd, path, capturedPi);
-    const stat = fstatSync(fd);
+    const stat = pinned ? pinned.stat : fstatSync(fd);
     const snapshot = { ...identity(stat), ...(capturedPi ? { capturedPi } : {}) };
     if (expected) assertIdentity(stat, expected, path); // BEFORE reading bytes
     // Final home capture stages a descriptor-pinned snapshot. All attribution
     // and stability checks precede the first append, never a post-write alarm.
-    const sourceBytes = final || expected || capturedPi ? readRange(fd, 0, stat.size, path, capturedPi) : undefined;
+    const sourceBytes = pinned ? pinned.bytes : final || expected || capturedPi ? readRange(fd, 0, stat.size, path, capturedPi) : undefined;
     if (expected && digest(sourceBytes.subarray(0, expected.size)) !== expected.hash) {
       throw new Error(`session source content changed since attribution: ${path}`);
     }
     if (sourceBytes) snapshot.hash = digest(sourceBytes);
     const verifySource = () => {
+      if (pinned) return; // the bytes are the source: nothing is read from the path again
       guardCapturedPath(path, capturedPi);
       if (sourceBytes) verifySnapshot(fd, path, snapshot);
     };
@@ -354,7 +360,7 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
     // wasted append-only bytes).
     if (grew) saveOffsets(store, offsets);
     verifySource();
-    } finally { closeSync(fd); }
+    } finally { if (fd !== null) closeSync(fd); }
   }
   saveOffsets(store, offsets);
   return {
