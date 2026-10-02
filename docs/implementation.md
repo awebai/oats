@@ -237,3 +237,13 @@ contacts GitHub, aweb, Jira or Linear.
 
 Tests pin behaviour, so a change that alters behaviour changes its test in the
 same commit. Never weaken an assertion to make a change pass.
+
+A test repository never runs background git. Since Git 2.47, a commit or fetch
+starts `git maintenance run --auto --detach`, a daemon that outlives the
+command. On a loaded CI runner it can still be repacking into the repository
+while the test's cleanup removes the directory, which fails with `ENOTEMPTY`
+(awebai/oats#451). The shared fixture (`test/helpers/v2-deployment.mjs`) sets
+`maintenance.auto=false` in each repository it creates. A test that makes its
+own clone and commits in it does the same (`git clone -c
+maintenance.auto=false`). Never paper over such a race with a retry around
+the cleanup.
