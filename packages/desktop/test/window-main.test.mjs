@@ -50,7 +50,7 @@ function boot({ records = [], served = SERVED, displays = [{ workArea: { x: 0, y
     BrowserWindow: Object.assign(FakeWindow, { fromWebContents: (wc) => FakeWindow.all.find((w) => w.webContents === wc) }),
     screen: { getAllDisplays: () => displays }, RENDERER_URL: RENDERER, servedList: served, allowedWs: new Set(served.map((w) => w.id)),
     advertisedBefore: new Set(), quitStarted: false, console, Menu: {}, shell: {},
-    createWindowSet, restorePlan, clampBounds, windowTitle, trustedForgeFrame, validWorkspaceId, workspaceHash, trustedRendererUrl,
+    createWindowSet, restorePlan, resolveView, clampBounds, windowTitle, trustedForgeFrame, validWorkspaceId, workspaceHash, trustedRendererUrl,
     terminalBroker: { register() {} }, suggestionCalls: { forget() {} }, lastPickChoices: new Map(),
   };
   context.advertisedNow = () => context.allowedWs;
@@ -118,11 +118,11 @@ test('an in-place switch rebinds the window: its title and its record follow', a
   const b = boot({ records: [record(A)] });
   b.main.restoreWindows();
   const win = FakeWindow.all[0];
-  assert.deepEqual(await b.claim(win, B), { ok: true });
+  assert.deepEqual(await b.claim(win, B), { ok: true, workspace: B });
   assert.equal(win.title, 'tsm', 'the title follows the switch');
   assert.equal(b.main.windows.windowOf(B), win); assert.equal(b.main.windows.windowOf(A), null);
   assert.deepEqual(b.main.windowRecords.records().map((r) => r.workspace), [B], 'the window\'s record follows it');
-  assert.deepEqual(await b.claim(win, 'remote:rigel:/x'), { ok: true });
+  assert.deepEqual(await b.claim(win, 'remote:rigel:/x'), { ok: true, workspace: 'remote:rigel:/x' });
   assert.equal(win.title, 'x — rigel', 'a remote workspace is titled with its server');
 });
 
@@ -142,7 +142,7 @@ test('a New Window chooses: its first claim of the shared default is refused; it
   const win = b.main.openNewWindow();
   const refused = await b.claim(win, A, { focus: false, initial: true });
   assert.equal(refused.code, 'choose'); assert.equal(refused.workspaces.length, SERVED.length);
-  assert.deepEqual(await b.claim(win, A), { ok: true });
+  assert.deepEqual(await b.claim(win, A), { ok: true, workspace: A });
   assert.equal(win.title, 'oats');
 });
 
@@ -189,7 +189,7 @@ test('the shared default is taken only while the server advertises it: otherwise
   const refused = await b.claim(win, 'ws:gonegonegonegonegone', { focus: false, initial: true });
   assert.equal(refused.code, 'not-served');
   assert.equal(b.main.windows.keyOf(win), null, 'still no workspace: it reads with the verified one and adopts');
-  assert.deepEqual(await b.claim(win, A, { focus: false, initial: true }), { ok: true });
+  assert.deepEqual(await b.claim(win, A, { focus: false, initial: true }), { ok: true, workspace: A });
 });
 
 test('a relaunch before observation restores the window through its deployments; it follows to its ws: view once observed', async () => {
@@ -202,7 +202,28 @@ test('a relaunch before observation restores the window through its deployments;
   assert.equal(win.loaded.hash, workspaceHash('/d/oats').slice(1)); assert.equal(win.options.x, 50, 'with its bounds');
   // Observed: the view is served under its ws: id; the renderer's rehome claims it without focusing anything.
   b.main.setAdvertised(new Set(SERVED.map((w) => w.id)));
-  assert.deepEqual(await b.claim(win, A, { focus: false }), { ok: true });
+  assert.deepEqual(await b.claim(win, A, { focus: false }), { ok: true, workspace: A });
   assert.deepEqual(b.main.windowRecords.records().map((r) => r.workspace), [A], 'the record follows the window (rewritten, not added)');
   assert.deepEqual(win.calls, [], 'nothing focused');
+});
+
+test('a claim or open naming a deployment id is resolved to the view that holds it: an open view keeps its window', async () => {
+  const b = boot({ records: [record(A), record(B)] });
+  b.main.restoreWindows();
+  const [a, other] = FakeWindow.all;
+  // Browse… to the folder of a workspace another window has: that window is focused; this one is unchanged.
+  const refused = await b.claim(other, '/d/oats');
+  assert.equal(refused.code, 'focused-other');
+  assert.deepEqual(a.calls, ['show', 'focus']); assert.equal(b.main.windows.keyOf(other), B);
+  assert.equal(b.main.windows.windowOf('/d/oats'), null, 'never a second key for the same workspace');
+  // Open in new window by deployment id: the view's window.
+  assert.deepEqual(await b.open(other, '/d/tsm'), { ok: true, focused: true });
+  assert.equal(FakeWindow.all.length, 2);
+});
+
+test('a claim of a deployment id whose view has no window binds the view, and says so', async () => {
+  const b = boot();
+  const win = b.main.openNewWindow();
+  assert.deepEqual(await b.claim(win, '/d/tsm'), { ok: true, workspace: B });
+  assert.equal(b.main.windows.keyOf(win), B); assert.equal(win.title, 'tsm');
 });

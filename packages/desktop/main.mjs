@@ -632,6 +632,9 @@ const choosers = new WeakSet();
 /** A window's bounds and state, as a record keeps them. */
 const windowState = (win) => ({ bounds: win.getNormalBounds(), maximized: win.isMaximized(), fullscreen: win.isFullScreen() });
 const served = (key) => typeof key === "string" && advertisedNow().has(key);
+/** The view a served selector names (a deployment id is answered with the view that holds it, as the
+ * server's viewFor does): the one key a workspace's window is registered under. */
+const viewKey = (id) => resolveView(id, servedList) ?? id;
 /** Bind a window to a workspace: its record and title follow (a restored record is rewritten to the view, Q6). */
 function bindWindow(win, key) {
   windowRecords?.bind(win, key, windowState(win), servedList);
@@ -660,7 +663,8 @@ function restoreWindows(launchKey = null) {
   if (!windows.entries().length) windows.openUnbound();
 }
 
-// A window binding itself in place (a switch, or a view that moved under it). `id` null leaves it
+// A window binding itself in place (a switch, or a view that moved under it). A deployment id binds
+// the view that holds it, and a success names the workspace bound (`workspace`). `id` null leaves it
 // unbound. A workspace another window holds is refused: that window is focused (`focused-other`),
 // or not when `focus` is false (`open-elsewhere`). A New Window's first claim of the shared default
 // (`initial`) is refused with `choose`: it shows the switcher instead. A default the server does not
@@ -681,18 +685,19 @@ ipcMain.handle("window:claim-workspace", (e, id, options) => {
   // The shared default is taken only while the server serves it; otherwise the window reads with
   // the verified workspace and adopts the one served, as before, then binds that.
   if (options?.initial === true && !served(id)) return { ok: false, code: "not-served" };
-  choosers.delete(win);
-  const result = windows.claim(win, id, { focus: options?.focus !== false });
+  const key = viewKey(id);
+  const result = windows.claim(win, key, { focus: options?.focus !== false });
   if (!result.ok) return { ...result, workspaces: servedList };
-  bindWindow(win, id);
-  return result;
+  choosers.delete(win);
+  bindWindow(win, key);
+  return { ok: true, workspace: key };
 });
 // Open in new window, and New Window (`id` null): the workspace's window is focused if it has one.
 ipcMain.handle("window:open-workspace", (e, id) => {
   if (!trustedForgeFrame(e, RENDERER_URL)) return { ok: false, code: "forbidden" };
   if (id === null) { openNewWindow(); return { ok: true, opened: true }; }
   if (!validWorkspaceId(id)) return { ok: false, code: "bad-workspace" };
-  const result = openWorkspaceWindow(id);
+  const result = openWorkspaceWindow(viewKey(id));
   return { ok: true, ...(result.opened ? { opened: true } : { focused: true }) };
 });
 

@@ -90,7 +90,7 @@ test("mutation: dropping quote escaping is caught by the attribute round-trip", 
   const from = `\n    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");`;
   assert.equal(source.split(from).length, 2, "mutate exactly the quote-escaping step");
   // A data: module resolves no relative import: common.mjs's own imports point at their files.
-  const resolved = source.replace('"../window-binding.mjs"', JSON.stringify(new URL("../renderer/window-binding.mjs", import.meta.url).href));
+  const resolved = source.replace(/from "\.\.\/([a-z-]+\.mjs)"/g, (_m, file) => `from ${JSON.stringify(new URL(`../renderer/${file}`, import.meta.url).href)}`);
   const mutant = await import(`data:text/javascript;base64,${Buffer.from(resolved.replace(from, ";")).toString("base64")}`);
   const doc = new JSDOM("<!doctype html><body>").window.document;
   const el = attributesOf(`<a title="${mutant.escapeHtml(HOSTILE[0])}">x</a>`, doc);

@@ -1,4 +1,5 @@
 import { hashWorkspace, workspaceHash } from "../window-binding.mjs";
+import { validWorkspaceId } from "../workspace-id.mjs";
 
 /* oats desktop — shared helpers for renderer views.
    Plain ES module, DOM-only, no frameworks (contract). Views import from
@@ -123,7 +124,7 @@ export function adoptWorkspace(id) {
   const adopted = wsCurrent, initial = windowMode === "adopting";
   void claim(adopted, initial ? { focus: false, initial: true } : { focus: false }).then((r) => {
     if (wsCurrent !== adopted) return;       // switched since: that switch was bound on its own
-    if (r?.ok) { writeHash(adopted); setWindowState("bound"); }
+    if (r?.ok) { wsCurrent = boundTo(r, adopted); writeHash(wsCurrent); setWindowState("bound"); }
     else if (r?.code === "open-elsewhere" || r?.code === "choose") void chooseWorkspace(r.workspaces);
   });
 }
@@ -139,6 +140,8 @@ const claimBridge = () => { try { const fn = globalThis.oatsDesktop?.windowClaim
 async function claim(id, options) {
   try { return await claimBridge()(id, options); } catch { return { ok: false, code: "failed" }; }
 }
+/* The workspace main bound a claim to: a deployment id is bound as the view that holds it. */
+const boundTo = (r, id) => (validWorkspaceId(r?.workspace) ? r.workspace : id);
 function writeHash(id) {
   try {
     const { pathname, search } = globalThis.location;
@@ -164,7 +167,7 @@ export function choosingWorkspaces() { return windowChoices; }
 export async function startWindow() {
   if (windowMode !== "adopting" || !claimBridge()) return windowMode === "adopting" ? "bound" : windowMode;
   const r = await claim(wsCurrent, { focus: false, initial: true });
-  if (r?.ok) { writeHash(wsCurrent); setWindowState("bound"); }
+  if (r?.ok) { wsCurrent = boundTo(r, wsCurrent); writeHash(wsCurrent); setWindowState("bound"); }
   else if (r?.code === "choose" || r?.code === "open-elsewhere") enterChoosing(r.workspaces);
   return windowMode;
 }
@@ -200,7 +203,7 @@ export function switchWorkspace(id, { focus = true } = {}) {
     if (intent !== switchIntent) return { ok: false, code: "superseded" };
     if (!claimBridge()) { setWorkspace(id); return { ok: true }; }
     const r = await claim(id, { focus });
-    if (r?.ok) { setWorkspace(id); return { ok: true }; }
+    if (r?.ok) { setWorkspace(boundTo(r, id)); return { ok: true }; }
     return r ?? { ok: false, code: "failed" };
   });
   switching = run.catch(() => {});

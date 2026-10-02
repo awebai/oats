@@ -138,3 +138,17 @@ test('a shared default the server does not serve leaves the window adopting (tod
   await new Promise((r) => setImmediate(r));
   assert.equal(w.common.currentWorkspace(), A);
 });
+
+test('a switch, a start or an adoption binds the workspace main bound (a deployment id\'s view), so hash and registry agree', async () => {
+  const resolve = async (id) => ({ ok: true, workspace: id === C ? B : id });
+  const w = await windowWith({ hash: workspaceHash(A), claim: resolve });
+  assert.deepEqual(await w.common.switchWorkspace(C), { ok: true });
+  assert.equal(w.common.currentWorkspace(), B); assert.deepEqual(w.replaced, [workspaceHash(B)]);
+  const start = await windowWith({ stored: C, claim: resolve });
+  assert.equal(await start.common.startWindow(), 'bound');
+  assert.equal(start.common.currentWorkspace(), B); assert.deepEqual(start.replaced, [workspaceHash(B)]);
+  const adopt = await windowWith({ hash: workspaceHash(A), claim: resolve });
+  adopt.common.adoptWorkspace(C);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(adopt.common.currentWorkspace(), B); assert.deepEqual(adopt.replaced, [workspaceHash(B)]);
+});
