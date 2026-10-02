@@ -70,6 +70,23 @@ what is required, **Choose oats…** (pick the binary yourself — the choice
 persists), **Retry**, a docs link, and the copyable install command. The
 app never installs the CLI itself.
 
+### Launched from Finder: the login shell's PATH
+
+Opened from Finder or the Dock, an app inherits launchd's PATH
+(`/usr/bin:/bin:/usr/sbin:/sbin`), which has no Homebrew or nvm `node` for
+the CLI's `#!/usr/bin/env node`. At startup the Desktop therefore runs your
+login shell once (`$SHELL -ilc`, 3 s timeout) and puts its PATH in front of
+the inherited one, so the CLI probe, every `oats` call, a CLI picked with
+**Choose oats…**, and the tmux server and terminals the Desktop starts all run
+with your shell's PATH. Only PATH is taken from the shell, never the rest of
+its environment. If the shell fails, times out or prints no PATH, the
+inherited PATH stays: the backend's `/api/cli` reports `pathSource`
+(`login-shell` or `inherited`), `pathError` (why, or `null`) and
+`probePath` (the PATH the probe used), and the reason is logged at startup.
+A tmux server that was already running keeps its own environment; restart it
+(`tmux kill-server`, which ends its sessions) if its sessions should get the
+new PATH.
+
 ## Opening a workspace
 
 The app starts on the directory it was launched with (its own folder by
