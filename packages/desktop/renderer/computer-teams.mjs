@@ -13,7 +13,16 @@
  * deployments (#482: this Mac's and other machines') whose identity.team is a team's provider id, read on
  * mount and at each roster poll (`syncRoster`). A card lists its members by deployment, each headed by its
  * machine label; `onMember('open' | 'show', member)` opens one's terminal or selects its roster row
- * (`member.workspace` is its deployment id). Without the route the cards say nothing about them. */
+ * (`member.workspace` is its deployment id). Without the route the cards say nothing about them.
+ *
+ * Team model 3 (teamsApi 2, OATS 0.38; docs/design/2026-10-02-team-model-3.md): which teams a soul may join,
+ * and its default, are the workspace's committed souls:, shown read only in their own section. Local teams
+ * are this deployment's only where the workspace allows them (localTeams: true, or null in the standalone
+ * view): then Add, Make default and Remove work as before. Where they are closed the kernel refuses add and
+ * default before writing, so neither is offered; local teams still in oats-local.yaml keep Remove (the
+ * kernel accepts it: the last step of committing them in the workspace), and the kernel's local-teams-closed
+ * failure leads the page in its own words. The default says where it comes from (this deployment, or the
+ * workspace's defaultTeam). */
 import { iconElement } from './shell-icons.mjs';
 import { createSoulMark } from './identity-marks.mjs';
 import { deploymentLabel, shortPath, THIS_MACHINE } from './deployment-label.mjs';
@@ -109,6 +118,12 @@ export const computerTeamsCSS = `
 .computer-teams .ct-hint code { color:var(--fg); font:11px var(--mono,monospace); }
 .computer-teams .ct-status { margin:0; color:var(--muted); font-size:12px; }
 .computer-teams .ct-status:empty { display:none; }
+/* Team model 3's souls: patterns, one row each: the pattern (monospace) and what it gives. */
+.computer-teams .ct-soul-rules { display:flex; flex-direction:column; gap:0; margin:0; padding:4px 0; list-style:none; background:var(--surface); border:1px solid var(--border); border-radius:10px; min-width:0; }
+.computer-teams .ct-soul-rule { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.4fr); gap:12px; padding:7px 18px; min-width:0; }
+.computer-teams .ct-soul-rule + .ct-soul-rule { border-top:1px solid var(--border); }
+.computer-teams .ct-soul-key { color:var(--fg); font:12px var(--mono,monospace); overflow-wrap:anywhere; }
+.computer-teams .ct-soul-teams { color:var(--fg); font-size:12.5px; line-height:1.45; overflow-wrap:anywhere; }
 /* The members (spec 02): grouped by machine, one row per instance with its state in words and two buttons. */
 .computer-teams .ct-reach { margin:0; color:var(--muted); font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
 .computer-teams .ct-reach:empty { display:none; }
@@ -132,6 +147,16 @@ export const computerTeamsCSS = `
 
 const text = v => typeof v === 'string' && v ? v : null;
 const list = v => Array.isArray(v) ? v : [];
+const record = v => !!v && typeof v === 'object' && !Array.isArray(v);
+/** The kernel's own clause for a workspace that closes local teams (lib/teams.mjs), and where a soul's teams
+ * are changed in team model 3 (its removed-flag replacement): said in its words, never a second version. */
+export const LOCAL_TEAMS_CLOSED = 'oats-workspace.yaml does not allow local teams (localTeams: true)';
+export const SOULS_WHERE = 'souls: in oats-workspace.yaml (a PR to the workspace file)';
+/** Team model 3's document (teamsApi 2). */
+const model3 = d => d?.teamsApi === 2;
+/** May this deployment declare its own teams? Always before team model 3; then where the workspace says so,
+ * or in the standalone view (localTeams null). */
+const localAllowed = d => !model3(d) || d.localTeams !== false;
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 function el(doc, tag, value, cls) {
   const node = doc.createElement(tag);
@@ -140,6 +165,14 @@ function el(doc, tag, value, cls) {
   return node;
 }
 
+/** Team model 3: the souls: patterns naming a label (in teams, as its default, or `any` for a shared team),
+ * split into the "*" pattern and the others. */
+function patternsOf(document, label) {
+  const shared = list(document?.teams).some(t => t.label === label && t.from === 'shared');
+  const names = rule => rule.default === label || (rule.teams === 'any' ? shared : list(rule.teams).includes(label));
+  const rules = record(document?.souls) ? Object.entries(document.souls).filter(([, rule]) => record(rule) && names(rule)) : [];
+  return { every: rules.some(([key]) => key === '*'), entries: rules.filter(([key]) => key !== '*').length };
+}
 /** The souls a label is declared for, as the document says: every soul (souls.teams['*']), or the
  * soul keys naming it in souls.teams and souls.default (the same soul counted once). */
 function soulsOf(document, label) {
@@ -155,6 +188,10 @@ function soulsOf(document, label) {
  * the reason Remove is off, in words. The kernel's own refusal (E_TEAM_IN_USE) stays the authority. */
 export function teamInUse(document, label) {
   const reasons = [];
+  // Team model 3: only this deployment's own default (oats-local.yaml defaultTeam) keeps a local team;
+  // souls: name shared labels only.
+  if (model3(document)) return document.defaultTeam?.from === 'deployment' && document.defaultTeam.label === label
+    ? "Can't remove: it is the default team. Change that first." : null;
   if (document?.defaultTeam === label) reasons.push('it is the default team');
   const { every, souls } = soulsOf(document, label);
   if (every) reasons.push('every soul may join it');
@@ -164,6 +201,13 @@ export function teamInUse(document, label) {
 
 /** A card's "Who may join" value: 'every soul', 'N souls', or null when no soul is declared for it yet. */
 export function whoMayJoin(document, label) {
+  if (model3(document)) {
+    // A local team where local teams are allowed: every soul may join it (via local).
+    if (list(document.teams).some(t => t.label === label && t.from === 'local') && localAllowed(document)) return 'every soul';
+    const { every, entries } = patternsOf(document, label);
+    const fallback = document.defaultTeam?.label === label ? 'souls without their own default' : null;
+    return every ? 'every soul' : [fallback, entries ? `${entries} souls: ${entries === 1 ? 'entry' : 'entries'}` : null].filter(Boolean).join(' · ') || null;
+  }
   const { every, souls } = soulsOf(document, label);
   return every ? 'every soul' : souls.size ? plural(souls.size, 'soul') : null;
 }
@@ -298,9 +342,11 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
   }
   function kernelProblem(problem) {
     // The default team's problem blocks every spawn here (the kernel's `default: true`): said as such.
-    const blocking = problem.default === true && text(problem.label);
-    const line = el(doc, 'div', null, blocking ? 'ct-blocking' : 'ct-warn'); line.dataset.problem = problem.code || '';
-    if (blocking) { line.setAttribute('role', 'alert'); line.append(el(doc, 'strong', `The default team ${problem.label} has no provider id yet: nothing can be spawned until it has one.`)); }
+    // Any other failure (team model 3's local-teams-closed) is the kernel's words, as an alert.
+    const blocking = problem.default === true && text(problem.label), failure = blocking || problem.severity === 'failure';
+    const line = el(doc, 'div', null, failure ? 'ct-blocking' : 'ct-warn'); line.dataset.problem = problem.code || '';
+    if (failure) line.setAttribute('role', 'alert');
+    if (blocking) line.append(el(doc, 'strong', `The default team ${problem.label} has no provider id yet: nothing can be spawned until it has one.`));
     line.append(el(doc, 'span', problem.message || problem.code || 'A problem was reported.'));
     if (text(problem.fix)) line.append(el(doc, 'span', problem.fix, 'ct-fix'));
     if (blocking) line.append(el(doc, 'span', 'Or make another team the default.', 'ct-why'));
@@ -352,7 +398,8 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
     tile.append(iconElement(doc, 'users', { size: 18 }));
     const main = el(doc, 'div', null, 'ct-main'), head = el(doc, 'div', null, 'ct-head');
     head.append(el(doc, 'span', team.label, 'ct-label'));
-    if (team.default) head.append(el(doc, 'span', 'Default on this computer', 'ct-pill'));
+    if (team.default) head.append(el(doc, 'span', !model3(current) ? 'Default on this computer'
+      : current.defaultTeam?.from === 'workspace' ? "Default · the workspace's" : 'Default · this deployment', 'ct-pill'));
     main.append(head);
     if (text(team.description)) main.append(el(doc, 'span', team.description, 'ct-desc'));
     const facts = el(doc, 'div', null, 'ct-facts');
@@ -362,7 +409,8 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
     facts.append(address, join); main.append(facts);
     for (const problem of list(current.problems).filter(p => p?.label === team.label)) main.append(kernelProblem(problem));
     const actions = el(doc, 'div', null, 'ct-actions');
-    if (!team.default) actions.append(button('Make default', '', () => { confirming = team.label; render(); focusIn(`[data-team="${team.label}"] .ct-confirm .primary`); },
+    // Make default writes oats-local.yaml's defaultTeam: only where this deployment may declare it.
+    if (!team.default && localAllowed(current)) actions.append(button('Make default', '', () => { confirming = team.label; render(); focusIn(`[data-team="${team.label}"] .ct-confirm .primary`); },
       { disabled: !team.team, title: team.team ? '' : 'A team with no provider id yet cannot be the default.', aria: `Make ${team.label} the default team` }));
     if (team.from === 'local') {
       const why = teamInUse(current, team.label);
@@ -432,6 +480,24 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
     return wrap;
   }
   function emptyCard(message) { const card = el(doc, 'div', null, 'ct-empty'); card.append(el(doc, 'span', message)); return card; }
+  /** Team model 3: the workspace's souls: patterns as committed, read only: each pattern's default and the
+   * other teams its souls may join (`any`: every shared team). */
+  function soulsSection() {
+    const wrap = section('souls', 'Souls in the workspace', 'Shared · Git', false);
+    wrap.append(el(doc, 'p', `Which teams each soul may join, and its default: ${SOULS_WHERE}.`, 'ct-lead'));
+    const rules = record(current.souls) ? Object.entries(current.souls) : [];
+    if (!rules.length) { wrap.append(emptyCard('No souls: entries: every soul has the default team only.')); return wrap; }
+    const table = el(doc, 'ul', null, 'ct-soul-rules');
+    for (const [key, rule] of rules) {
+      const parts = [...(text(rule.default) ? [`default ${rule.default}`] : []),
+        ...(rule.teams === 'any' ? ['any shared team'] : list(rule.teams).length ? [list(rule.teams).join(', ')] : [])];
+      const row = el(doc, 'li', null, 'ct-soul-rule');
+      row.append(el(doc, 'span', key, 'ct-soul-key'), el(doc, 'span', parts.join(' · ') || 'no other team', 'ct-soul-teams'));
+      table.append(row);
+    }
+    wrap.append(table);
+    return wrap;
+  }
 
   // Who is in each team, as drawn: a roster poll that changes it redraws the cards (syncRoster).
   let rosterDrawn = '';
@@ -441,8 +507,11 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
     if (disposed) return;
     body.replaceChildren();
     addButton.disabled = pending; addButton.setAttribute('aria-expanded', String(adding));
+    addButton.hidden = !!current && !localAllowed(current);
     if (!current) { status.textContent = pending ? 'Reading the teams on this computer (oats teams)…' : status.textContent; if (cardError) body.append(problemBox(cardError)); return; }
-    for (const problem of list(current.problems).filter(p => !text(p?.label) || !list(current.teams).some(t => t.label === p.label))) {
+    // The page's own problems (no team card holds them), failures first: team model 3's local-teams-closed leads.
+    const pageProblems = list(current.problems).filter(p => !text(p?.label) || !list(current.teams).some(t => t.label === p.label));
+    for (const problem of [...pageProblems.filter(p => p.severity === 'failure'), ...pageProblems.filter(p => p.severity !== 'failure')]) {
       const wrap = el(doc, 'div', null, 'ct-problem'); wrap.append(kernelProblem(problem)); body.append(wrap);
     }
     const teams = list(current.teams), shared = teams.filter(t => t.from === 'shared'), local = teams.filter(t => t.from !== 'shared');
@@ -451,14 +520,17 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
     if (!shared.length) sharedSection.append(emptyCard("No shared teams. A shared team is declared in the workspace's oats-workspace.yaml and committed, so every computer running the workspace has it."));
     const localSection = section('local', 'Only on this computer', 'Not shared', true);
     for (const team of local) localSection.append(teamCard(team));
-    if (!local.length && !adding) {
+    if (!local.length && !adding && !localAllowed(current)) localSection.append(emptyCard(`No local teams: ${LOCAL_TEAMS_CLOSED}.`));
+    else if (!local.length && !adding) {
       const empty = emptyCard("No local teams. A local team lives in this computer's oats-local.yaml and is visible only here.");
       empty.append(button('Add a local team', 'ct-link', () => openAdd('link')));
       localSection.append(empty);
     }
     if (cardError) localSection.append(problemBox(cardError));
-    if (adding) localSection.append(addForm());
+    if (adding && localAllowed(current)) localSection.append(addForm());
     body.append(sharedSection, localSection);
+    // Team model 3: the workspace's souls: (none in the standalone view, where no workspace file is read).
+    if (model3(current) && current.localTeams !== null) body.append(soulsSection());
     rosterDrawn = rosterKey();
   }
   /** The members changed: redraw only when who is in a team (or their state) changed, and never under an
