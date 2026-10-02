@@ -92,7 +92,7 @@ The steps, in order:
 | Step | Checks | When something is missing |
 |---|---|---|
 | `ssh` | the host answers a non-interactive ssh | `failed` `E_SSH` |
-| `oats` | `oats version --json` there is this kernel's version or newer | with `--install-oats`: runs `npm install -g @awebai/oats@<this version>` there (`done`); without it, or with no `npm` on the host's PATH: `needs-human` with the command to run |
+| `oats` | `oats version --json` there is this kernel's version or newer and advertises `server-connect` (a build of the same version without it is not enough) | with `--install-oats`: runs `npm install -g @awebai/oats@<this version>` there (`done`); without it, or with no `npm` on the host's PATH: `needs-human` with the command to run |
 | `git` | the host's Git reads the workspace remote | `needs-human` with the remedy (and the [keychain hint](#git-on-a-macos-host)) |
 | `deployment` | `--dir` holds a deployment of this workspace | an absent or empty directory is onboarded there (`done`); a deployment of another workspace is `failed` `E_SERVER_WORKSPACE_MISMATCH`; a non-empty directory without `oats-local.yaml` is `failed` `E_DIR_NOT_EMPTY` and nothing is written into it |
 | `register` | the registration exists, with its `workspaceKey` | written (`done`); an id registered for another target is `failed` `E_SERVER_EXISTS` unless `--replace` (checked before anything else, so a requested id never reports ready while it routes elsewhere); a new id whose host and directory are already registered under another id is reported (`ok`, naming that id; the text result then names that id to spawn with) and not registered twice |

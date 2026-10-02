@@ -269,7 +269,7 @@ test("readiness is bounded: souls the budget does not reach become one line nami
   const souls = ["a", "b", "c", "d"].map((name) => ({ name, problem: null }));
   const answer = (cmd) => {
     if (cmd === "true") return "";
-    if (/ version --json$/.test(cmd)) return JSON.stringify({ schemaVersion: 1, desktopApi: 1, name: "@awebai/oats", version: "99.0.0", features: [] });
+    if (/ version --json$/.test(cmd)) return JSON.stringify({ schemaVersion: 1, desktopApi: 1, name: "@awebai/oats", version: "99.0.0", features: ["server-connect"] });
     if (/ onboard .* --check --json$/.test(cmd)) return JSON.stringify({ schemaVersion: 1, ok: true, result: { check: true, dir: "/srv/ws", state: "deployment", workspace: { ref: "git:github.com/acme/ws", key: "github.com/acme/ws" }, remote: { readable: true, commit: "a".repeat(40) } } });
     if (/ status --json --dir \/srv\/ws$/.test(cmd)) return JSON.stringify({ schemaVersion: 1, ok: true, result: { root: "/srv/ws/agents", agents: [], workspace: { key: "github.com/acme/ws" } } });
     if (/ souls --json --dir \/srv\/ws$/.test(cmd)) return JSON.stringify({ schemaVersion: 1, ok: true, result: { souls } });
@@ -309,7 +309,7 @@ test("the requested id's own target conflict comes before the same-target twin, 
 function hostAnswers(souls) {
   return (cmd) => {
     if (cmd === "true") return "";
-    if (/ version --json$/.test(cmd)) return JSON.stringify({ schemaVersion: 1, desktopApi: 1, name: "@awebai/oats", version: "99.0.0", features: [] });
+    if (/ version --json$/.test(cmd)) return JSON.stringify({ schemaVersion: 1, desktopApi: 1, name: "@awebai/oats", version: "99.0.0", features: ["server-connect"] });
     if (/ onboard .* --check --json$/.test(cmd)) return JSON.stringify({ schemaVersion: 1, ok: true, result: { check: true, dir: "/srv/ws", state: "deployment", workspace: { ref: "git:github.com/acme/ws", key: "github.com/acme/ws" }, remote: { readable: true, commit: "a".repeat(40) } } });
     if (/ status --json --dir \/srv\/ws$/.test(cmd)) return JSON.stringify({ schemaVersion: 1, ok: true, result: { root: "/srv/ws/agents", agents: [], workspace: { key: "github.com/acme/ws" } } });
     if (/ souls --json --dir \/srv\/ws$/.test(cmd)) return JSON.stringify({ schemaVersion: 1, ok: true, result: { souls: souls.map((name) => ({ name, problem: null })) } });
@@ -419,7 +419,7 @@ test("a copyable remedy passes each dynamic value as ONE literal argument, whate
     let res = connectServer({ ...budgetOptions, workspaceRef: hostile }, { execFileSync: (bin, argv) => {
       const cmd = argv.at(-1);
       if (cmd === "true") return "";
-      if (/ version --json$/.test(cmd)) return JSON.stringify({ schemaVersion: 1, desktopApi: 1, version: "99.0.0" });
+      if (/ version --json$/.test(cmd)) return JSON.stringify({ schemaVersion: 1, desktopApi: 1, version: "99.0.0", features: ["server-connect"] });
       return JSON.stringify({ schemaVersion: 1, ok: true, result: { check: true, dir: "/srv/ws", state: "absent", workspace: { ref: hostile, key: `local/${hostile}`, url: hostile }, remote: { readable: false, error: { code: "E_REMOTE_UNREADABLE", reason: "not-found", message: "missing" } } } });
     } });
     const gitSpans = codeSpans(stepOf(res, "git").remedy);
@@ -442,4 +442,30 @@ test("a copyable remedy passes each dynamic value as ONE literal argument, whate
     assert.equal(existsSync(marker), false);
     }
   } finally { rmSync(base, { recursive: true, force: true }); }
+}));
+
+test("a host kernel of this version that does not advertise server-connect is not taken for one that does", () => isolatedHome(() => {
+  // A release build of the same version (or a development kernel) without the commands connect runs there.
+  let installed = false;
+  const npmCalls = [];
+  const execFileSync = (bin, argv) => {
+    const cmd = argv.at(-1);
+    if (cmd === "true") return "";
+    if (/ version --json$/.test(cmd)) return JSON.stringify({ schemaVersion: 1, desktopApi: 1, version: "0.39.0", features: installed ? ["server-connect"] : ["workspace-identity"] });
+    if (/^npm --version$/.test(cmd)) { npmCalls.push("version"); return "10.9.0\n"; }
+    if (/^npm install -g @awebai\/oats@0\.39\.0$/.test(cmd)) { npmCalls.push("install"); installed = true; return "added 1 package\n"; }
+    return hostAnswers([])(cmd);
+  };
+  let res = connectServer(budgetOptions, { execFileSync });
+  assert.deepEqual(statuses(res), ["ok", "needs-human", "skipped", "skipped", "skipped", "skipped"]);
+  assert.equal(stepOf(res, "oats").detail, "oats 0.39.0 at oats on b-host does not advertise server-connect, which connect needs there");
+  assert.equal(stepOf(res, "oats").remedy, "on b-host: `npm install -g @awebai/oats@0.39.0` (or pass --install-oats)");
+  assert.deepEqual(npmCalls, ["version"]);
+  res = connectServer({ ...budgetOptions, installOats: true }, { execFileSync });
+  assert.equal(stepOf(res, "oats").status, "done");
+  assert.equal(stepOf(res, "oats").detail, "installed @awebai/oats 0.39.0 (was 0.39.0 without server-connect)");
+  // An install that leaves the feature missing fails, naming it.
+  installed = false;
+  const stuck = (bin, argv) => (/^npm install /.test(argv.at(-1)) ? "added 0 packages\n" : execFileSync(bin, argv));
+  assert.throws(() => connectServer({ ...budgetOptions, installOats: true }, { execFileSync: stuck }), (e) => e.code === "E_REMOTE_INSTALL" && /does not advertise server-connect/.test(e.message));
 }));
