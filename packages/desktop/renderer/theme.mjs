@@ -17,9 +17,6 @@ const listeners = new Set();
 const terminalListeners = new Set();
 const TERM_FONT_KEY = "oats.desktop.terminal.fontFamily";
 const TERM_SIZE_KEY = "oats.desktop.terminal.fontSize";
-/** The terminal's default size with Inconsolata: 14px keeps the old 13px
- * stack's 15px cell height (spec F item 6). Mirrors --term-font-size. */
-export const TERMINAL_FONT_SIZE = 14;
 
 export function currentTheme() {
   return normalizeTheme(document.documentElement.dataset.theme);
@@ -60,12 +57,12 @@ export function onThemeChange(fn) {
 /* tmux carries cells/colors, never the host terminal emulator's font. Keep
    desktop typography as an explicit persisted preference, seeded from
    semantic CSS tokens (the bundled Inconsolata, then the OS monospace stack,
-   at 14px by default). A stored family or size wins; the defaults apply only
-   where nothing is stored. */
+   at 13px by default). A stored family wins; the default changes only where
+   nothing is stored. */
 export function terminalTypography(el = document.documentElement) {
   const css = getComputedStyle(el);
   let family = css.getPropertyValue("--term-font-family").trim() || `"${BUNDLED_MONO}", ui-monospace, monospace`;
-  let size = Number.parseFloat(css.getPropertyValue("--term-font-size")) || TERMINAL_FONT_SIZE;
+  let size = Number.parseFloat(css.getPropertyValue("--term-font-size")) || 13;
   try {
     family = localStorage.getItem(TERM_FONT_KEY) || family;
     size = Number(localStorage.getItem(TERM_SIZE_KEY)) || size;
@@ -106,7 +103,7 @@ function notifyTerminalTypography() {
   for (const fn of [...terminalListeners]) { try { fn(value); } catch { /* isolate listener */ } }
 }
 export function setTerminalFontSize(size) {
-  const value = Math.min(28, Math.max(9, Number(size) || TERMINAL_FONT_SIZE));
+  const value = Math.min(28, Math.max(9, Number(size) || 13));
   try { localStorage.setItem(TERM_SIZE_KEY, String(value)); } catch { /* storage-less */ }
   notifyTerminalTypography();
 }
@@ -116,12 +113,6 @@ export function setTerminalFontFamily(family) {
     if (value) localStorage.setItem(TERM_FONT_KEY, value);
     else localStorage.removeItem(TERM_FONT_KEY);
   } catch { /* storage-less */ }
-  notifyTerminalTypography();
-}
-/** Back to the defaults: forget the stored family and size, so the tokens
- * (and any later change to them) apply again instead of a pinned copy. */
-export function resetTerminalTypography() {
-  try { localStorage.removeItem(TERM_FONT_KEY); localStorage.removeItem(TERM_SIZE_KEY); } catch { /* storage-less */ }
   notifyTerminalTypography();
 }
 export function onTerminalTypographyChange(fn) {

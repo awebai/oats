@@ -19,7 +19,7 @@ import { deploymentUnavailableText, NOT_SERVED_CODE, NO_ANSWER_CODE, unservedErr
 import { panelErrorCause } from "./deployment-contract.mjs";
 import {
   initTheme, toggleTheme, setTheme, THEMES, xtermTheme, onThemeChange,
-  terminalTypography, setTerminalFontSize, setTerminalFontFamily, resetTerminalTypography, onTerminalTypographyChange,
+  terminalTypography, setTerminalFontSize, setTerminalFontFamily, onTerminalTypographyChange,
 } from "./theme.mjs";
 import { createPalette } from "./palette.mjs";
 import { createQuickOpen } from "./quick-open.mjs";
@@ -1809,7 +1809,7 @@ const palette = createPalette({
       const next = window.prompt("Terminal font family (CSS font-family value)", current);
       if (next !== null) setTerminalFontFamily(next);
     } },
-    { label: "Terminal: reset typography", detail: chordDetail("terminal.fontReset"), run: () => resetTerminalTypography() },
+    { label: "Terminal: reset typography", detail: chordDetail("terminal.fontReset"), run: () => { setTerminalFontFamily(""); setTerminalFontSize(13); } },
   ],
 });
 
@@ -2075,7 +2075,7 @@ registerAction({ id: "split.restore", label: "Return to terminal groups", contex
 registerAction({ id: "terminal.focusActive", label: "Focus the active terminal input", context: "global", run: () => focusActiveTerminal() });
 registerAction({ id: "terminal.fontBigger", label: "Terminal: increase font size", context: "global", run: () => setTerminalFontSize(terminalTypography().fontSize + 1) });
 registerAction({ id: "terminal.fontSmaller", label: "Terminal: decrease font size", context: "global", run: () => setTerminalFontSize(terminalTypography().fontSize - 1) });
-registerAction({ id: "terminal.fontReset", label: "Terminal: reset typography", context: "global", run: () => resetTerminalTypography() });
+registerAction({ id: "terminal.fontReset", label: "Terminal: reset typography", context: "global", run: () => { setTerminalFontFamily(""); setTerminalFontSize(13); } });
 // tabs: cycle + close work whether or not a tab trigger has focus (the
 // tab-a11y roving arrows stay as focus keys on the strip itself). Tab switching
 // never happens under an open modal (the palette, a sheet, a dialog), as F6 doesn't.

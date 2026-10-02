@@ -55,11 +55,8 @@ The default monospace face is **Inconsolata**, bundled (`fonts/`, SIL OFL 1.1;
 source, version and checksum in `fonts/README.md`) so it is the same on every
 machine. `theme.css` declares it with `@font-face` (`font-display: block`) and puts
 it first in `--term-font-family` (the terminal) and `--mono` (the UI's code, paths
-and chord hints), ahead of the OS monospace stack. The terminal's default size is
-14px (`--term-font-size`, `TERMINAL_FONT_SIZE`): Inconsolata is narrower than the
-old stack, and 14px keeps its 15px cell height. A terminal font or size the
-operator stored (`oats.desktop.terminal.fontFamily`, `…fontSize`) still wins;
-Reset typography (⌘0 / Ctrl+0) forgets both, so the defaults apply again. xterm measures its cell
+and chord hints), ahead of the OS monospace stack. A terminal font the operator
+stored (`oats.desktop.terminal.fontFamily`) still wins. xterm measures its cell
 when a terminal is created and only re-measures on a font change, so
 `terminalTypography()` (`theme.mjs`) hands out the stack without Inconsolata
 until the face has loaded, then notifies the typography listeners with the full
