@@ -297,6 +297,11 @@ test("a live deployment's note (information, not a failure) is said under Detail
   assert.ok(empty.one(".hier-empty-wrap .hier-dreason + .empty"), "the note, then the usual empty message");
   assert.equal(empty.one(".hier-dfix-note").textContent, "Teams are local only on this host (standalone).");
   assert.equal(empty.one(".hier-dstate"), null);
+  // All, every deployment live and none with rows: the notes still head the empty state.
+  const bare = await page(t, panel([LOCAL, { ...MOVED, primary: false }], []));
+  assert.equal(bare.tabs().find((b) => b.getAttribute("aria-selected") === "true").firstChild.textContent, "All");
+  assert.deepEqual(bare.all(".hier-empty-wrap .hier-dfix-note").map((n) => n.textContent), ["altair now reports workspace tsm."]);
+  assert.ok(bare.one(".hier-empty-wrap > .empty"), "then the usual empty message");
   // In All, beside other deployments: the same Details line on its section.
   const all = await page(t, panel([LOCAL, { ...MOVED, primary: false }], [row("lead", LOCAL), row("far", MOVED)]));
   const section = all.all(".hier-deployment").find((s) => s.querySelector(".hier-dname").textContent.startsWith("altair"));

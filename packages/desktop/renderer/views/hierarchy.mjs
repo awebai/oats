@@ -762,8 +762,9 @@ function render(s) {
     if (quiet) {
       w.innerHTML = `<div class="empty"><span class="big">${icon("overview", { size: 22 })}</span>` +
         `No instances reported in this observation.<br>Choose a soul in Workspace or use <code>oats spawn &lt;agent&gt;</code>.</div>`;
-      // A live deployment's note (information, not a failure) still heads its empty tab.
-      if (entries?.length === 1 && entries[0].deployment.note) w.prepend(deploymentReasonBlock(docOf(s), headOptions(s, entries[0].deployment, entries[0].rows)));
+      // Live deployments' notes (information, not a failure) still head the empty tab, All included.
+      const noted = (entries || []).filter(e => e.deployment.note);
+      if (noted.length) w.prepend(...noted.map(e => deploymentReasonBlock(docOf(s), headOptions(s, e.deployment, e.rows))));
     } else {
       // A deployment that is not live, with nothing to show: why and how to fix it, never a silent empty.
       w.append(deploymentReasonBlock(docOf(s), headOptions(s, entries[0].deployment, entries[0].rows)));
