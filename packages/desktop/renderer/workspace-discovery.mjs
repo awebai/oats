@@ -22,6 +22,15 @@ export const workspaceTabs = ['teams', 'souls', 'capabilities', 'sources'];
 // What a person reads (the ids stay stable): Teams is who can work together (human, 2026-09-28: first,
 // before Souls); Setup is what the workspace is built from (repos, packages, external souls).
 const TAB_LABELS = { teams: 'Teams', souls: 'Souls', capabilities: 'Capabilities', sources: 'Setup' };
+/** The Workspace page's tab bar rules for a selector: plain-text tabs, the selected one at 650 over a 2px
+ * --live underline. Shared with the Deployments page's tabs (deployments-page.mjs), so the two never drift. */
+export const tabBarCSS = (sel) => `${sel} { display:flex; flex-wrap:nowrap; overflow-x:auto; gap:22px; min-width:0; scrollbar-width:none; }
+/* Unselected tabs read like the sidebar's items (human, 2026-09-28): its ink and size, not muted grey. */
+${sel} button { flex:none; display:inline-flex; align-items:center; gap:6px; padding:0; border:0; border-radius:0; background:none; color:var(--nav-fg); font:500 13px var(--sans,system-ui); cursor:pointer; }
+${sel} button:hover { color:var(--fg); }
+${sel} button[aria-selected=true] { color:var(--fg); font-weight:650; box-shadow:inset 0 -2px 0 var(--live); }
+/* Keyboard focus: the tint gets a layout-neutral 6px inset so it does not hug the label. */
+${sel} button:focus-visible { background:var(--sel); border-radius:6px; padding:0 6px; margin:0 -6px; }`;
 export const discoveryCSS = `
 ${catalogCSS}
 ${setupCSS}
@@ -32,13 +41,7 @@ ${syncCSS}
 .workspace-header[hidden] + .deployment-scope { display:none; } /* a soul or capability page shows its own line */
 .workspace-header + .deployment-scope { flex:none; padding:6px 16px 6px; border-bottom:1px solid var(--border); background:var(--surface); }
 .oats-view .workspace-header .field { min-height:28px; height:28px; padding:4px 8px; font-size:12px; }
-.workspace-tabs { display:flex; flex-wrap:nowrap; overflow-x:auto; gap:22px; min-width:0; scrollbar-width:none; }
-/* Unselected tabs read like the sidebar's items (human, 2026-09-28): its ink and size, not muted grey. */
-.workspace-tabs button { flex:none; display:inline-flex; align-items:center; gap:6px; padding:0; border:0; border-radius:0; background:none; color:var(--nav-fg); font:500 13px var(--sans,system-ui); cursor:pointer; }
-.workspace-tabs button:hover { color:var(--fg); }
-.workspace-tabs button[aria-selected=true] { color:var(--fg); font-weight:650; box-shadow:inset 0 -2px 0 var(--live); }
-/* Keyboard focus: the tint gets a layout-neutral 6px inset so it does not hug the label. */
-.workspace-tabs button:focus-visible { background:var(--sel); border-radius:6px; padding:0 6px; margin:0 -6px; }
+${tabBarCSS('.workspace-tabs')}
 .workspace-count { color:var(--muted); font:10.5px var(--mono,monospace); }
 .workspace-count:empty { display:none; }
 /* Visually hidden, announced; anchored at its containing block's origin so it can never stretch a scroller or the document (spec G). */
