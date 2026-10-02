@@ -79,6 +79,10 @@ test("a persisted user size is respected, not migrated (12 and 13 stay); reset f
   assert.equal(fresh.fontSize, 15, "storage-less falls back to the 15px token");
   u.theme.setTerminalFontSize("nonsense");
   assert.equal(stored["oats.desktop.terminal.fontSize"], "15", "an unreadable size falls back to the default");
+  for (const [value, expected] of [[0, "9"], [-3, "9"], [0.4, "9"], ["0", "9"], [99, "28"], [12.5, "13"], [null, "15"], ["  ", "15"], [undefined, "15"], [NaN, "15"]]) {
+    u.theme.setTerminalFontSize(value);
+    assert.equal(stored["oats.desktop.terminal.fontSize"], expected, `${String(value)}: numbers clamp to 9–28, only unreadable values give the default`);
+  }
 });
 
 test("terminal gutters: .term-wrap .xterm has 32px horizontal padding only, and .term-wrap none", t => {

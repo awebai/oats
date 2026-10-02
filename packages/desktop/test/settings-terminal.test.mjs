@@ -77,6 +77,10 @@ test("the stepper changes the size live, clamps to 9–28 and persists; its boun
   assert.equal(r.ui.input.value, "9"); assert.equal(r.stored[SIZE], "9");
   assert.equal(r.ui.smaller.getAttribute("aria-disabled"), "true"); assert.equal(r.ui.bigger.getAttribute("aria-disabled"), "false");
   r.ui.smaller.click(); assert.equal(r.stored[SIZE], "9");
+  for (const below of ["0", "-3", "0.4"]) {
+    r.type("20"); r.type(below);
+    assert.deepEqual([r.ui.input.value, r.stored[SIZE]], ["9", "9"], `${below} is a number below the range: it clamps to 9, never resets`);
+  }
   r.type("12.6"); assert.equal(r.stored[SIZE], "13", "whole pixels");
   for (const junk of ["", "abc", "  "]) { r.type(junk); assert.equal(r.ui.input.value, "13", `"${junk}" restores the size, never applies`); }
   assert.equal(r.stored[SIZE], "13");

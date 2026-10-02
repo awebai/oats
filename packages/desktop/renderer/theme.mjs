@@ -107,10 +107,13 @@ function notifyTerminalTypography() {
   const value = terminalTypography();
   for (const fn of [...terminalListeners]) { try { fn(value); } catch { /* isolate listener */ } }
 }
-/** A whole pixel size within TERMINAL_FONT_MIN..MAX; anything unreadable is the default. */
+/** A whole pixel size within TERMINAL_FONT_MIN..MAX. Any finite number is
+ * rounded and clamped (0, -3 and 0.4 all give the minimum); only an unreadable
+ * value (missing, blank, not a number) falls back to the default. */
 export function clampTerminalFontSize(size) {
-  const n = Math.round(Number(size));
-  return Number.isFinite(n) && n > 0 ? Math.min(TERMINAL_FONT_MAX, Math.max(TERMINAL_FONT_MIN, n)) : TERMINAL_FONT_SIZE;
+  const n = typeof size === "number" ? size : typeof size === "string" && size.trim() !== "" ? Number(size) : NaN;
+  if (!Number.isFinite(n)) return TERMINAL_FONT_SIZE;
+  return Math.min(TERMINAL_FONT_MAX, Math.max(TERMINAL_FONT_MIN, Math.round(n)));
 }
 export function setTerminalFontSize(size) {
   const value = clampTerminalFontSize(size);
