@@ -94,9 +94,10 @@ launched with (`--dir`, or the folder it was started from) when that is an
 OATS deployment — the directory (the operator's choice) holding
 `oats-local.yaml` and `agents/`. A folder that is not a deployment is never
 opened: started from Finder, with nothing open to restore, the window shows
-the workspace switcher instead. Choose **Add local workspace…** there: it
-suggests the deployments directly inside `~/Agents`, and **Browse** points
-it at any other deployment.
+the workspace switcher instead. It lists the deployments on this computer
+under **On this computer** (those directly inside `~/Agents`, and a saved
+one that is not open); click one to open it in this window. **Add local
+workspace… → Browse** points it at any other deployment.
 A picked folder without `oats-local.yaml` is offered onboarding instead. The
 Desktop never parses the deployment: its members, lock state and header come
 from `oats workspace status`, and its instances from the deployment's one

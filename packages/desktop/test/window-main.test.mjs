@@ -28,7 +28,7 @@ const FakeWindow = fakeWindowClass(RENDERER);
 FakeWindow.onClose = (quitting) => { main.quitStarted = quitting; };
 let main;
 
-function boot({ records = [], served = SERVED, dirs = ['/d/oats', '/d/tsm'], displays = [{ workArea: { x: 0, y: 25, width: 1440, height: 875 } }] } = {}) {
+function boot({ records = [], served = SERVED, reread = null, dirs = ['/d/oats', '/d/tsm'], displays = [{ workArea: { x: 0, y: 25, width: 1440, height: 875 } }] } = {}) {
   FakeWindow.all = [];
   const handlers = new Map(), file = join(mkdtempSync(join(tmpdir(), 'oats-win-')), 'windows.json');
   const context = {
@@ -40,6 +40,8 @@ function boot({ records = [], served = SERVED, dirs = ['/d/oats', '/d/tsm'], dis
     terminalBroker: { register() {} }, suggestionCalls: { forget() {} }, lastPickChoices: new Map(), workspaceDirs: dirs,
   };
   context.advertisedNow = () => context.allowedWs;
+  // The server's answer to main's re-read of /api/panel: `reread`, else what it served before.
+  context.panelWorkspaces = async () => { context.rereads = (context.rereads ?? 0) + 1; if (reread) { context.servedList = reread; context.allowedWs = new Set(reread.map((w) => w.id)); } return context.servedList; };
   main = runInNewContext(`${section}\n${windowBlock}\n${noteServedBlock}\n({ noteServed, windows, choosers, openWorkspaceWindow, openNewWindow, restoreWindows, setRecords: (r) => { windowRecords = r; }, setAdvertised: (set) => { allowedWs = set; }, setServed: (list) => { servedList = list; }, get windowRecords() { return windowRecords; } })`, context);
   Object.defineProperty(main, 'quitStarted', { set: (v) => { context.quitStarted = v; } });
   main.setRecords(createWindowRecords({ file, initial: records, timers: { setTimeout: () => 1, clearTimeout() {} } }));
@@ -47,7 +49,8 @@ function boot({ records = [], served = SERVED, dirs = ['/d/oats', '/d/tsm'], dis
   // Replies built in the vm are compared by value (their prototypes are the vm's).
   const plain = (value) => JSON.parse(JSON.stringify(value));
   return { main, handlers, event, file, claim: async (win, id, options) => plain(await handlers.get('window:claim-workspace')(event(win), id, options)),
-    open: async (win, id) => plain(await handlers.get('window:open-workspace')(event(win), id)) };
+    open: async (win, id) => plain(await handlers.get('window:open-workspace')(event(win), id)),
+    choices: async (win, e = event(win)) => plain(await handlers.get('window:choices')(e)), rereads: () => context.rereads ?? 0 };
 }
 const record = (workspace, x = 50) => ({ workspace, bounds: { x, y: 60, width: 900, height: 700 }, maximized: false });
 
@@ -273,4 +276,20 @@ test('a window keyed by a deployment whose view another window already has is le
   assert.equal(b.main.windows.keyOf(byPath), '/d/oats', 'not moved onto the view another window has');
   assert.equal(b.main.windows.keyOf(byView), A);
   assert.deepEqual(byView.calls, [], 'the other window is not focused');
+});
+
+test('window:choices: a window main knows gets the served list as re-read now; a foreign frame or unknown window gets nothing (#521)', async () => {
+  const later = [...SERVED, { id: 'remote:vega:/y', name: 'y', deployments: ['remote:vega:/y'], machines: ['vega'], remote: true }];
+  const b = boot({ served: [], reread: later, dirs: [] });
+  b.main.restoreWindows();
+  const [win] = FakeWindow.all;
+  assert.equal((await b.claim(win, '', { focus: false, initial: true })).code, 'choose');
+  assert.deepEqual(await b.choices(win), { ok: true, workspaces: later });
+  assert.equal(b.rereads(), 1, 'main re-reads the served list for it');
+  assert.equal(b.main.windows.keyOf(win), null, 'asking binds nothing');
+  const foreign = { sender: Object.assign(win.webContents, { isDestroyed: () => false }), senderFrame: { url: 'https://evil.example/' } };
+  assert.deepEqual(await b.choices(win, foreign), { ok: false, code: 'forbidden' });
+  const stranger = new FakeWindow({ width: 10, height: 10 });
+  assert.deepEqual(await b.choices(stranger), { ok: false, code: 'unknown-window' });
+  assert.equal(b.rereads(), 1, 'a refusal reads nothing');
 });

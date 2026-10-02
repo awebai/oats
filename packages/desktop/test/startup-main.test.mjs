@@ -4,13 +4,13 @@
 // window it opens and what is written to workspace-open.json and windows.json are asserted.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, existsSync, realpathSync, lstatSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, existsSync, realpathSync, lstatSync, rmSync, opendirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, basename } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { createWindowSet } from '../window-set.mjs';
 import { parseWindowRecords, resolveView, restorePlan, clampBounds, windowTitle, createWindowRecords } from '../window-records.mjs';
-import { validateWorkspace, restoreWorkspaceDirs, savedWorkspacePaths, persistableDirs, startupOpenSet, saveWorkspaceDirs } from '../workspace-registry.mjs';
+import { validateWorkspace, restoreWorkspaceDirs, savedWorkspacePaths, persistableDirs, startupOpenSet, saveWorkspaceDirs, workspaceSuggestions, deploymentsInside } from '../workspace-registry.mjs';
 import { trustedForgeFrame } from '../forge-proxy.mjs';
 import { validWorkspaceId } from '../renderer/workspace-id.mjs';
 import { workspaceHash, trustedRendererUrl } from '../renderer/window-binding.mjs';
@@ -25,6 +25,9 @@ const windowBlock = source.match(/function createWindow\(workspaceId, record = n
 const noteServedBlock = source.match(/function noteServed\(list\) \{[^]*?\n\}/)[0];
 const wsValidateBlock = source.match(/const wsValidate = \(p\) => validateWorkspace\(p, \{[^]*?\n\}\);/)[0];
 const spawnChildBlock = source.match(/spawnChild: (\(dirs, onPort\) => \{[^]*?\n {2}\}),/)[1];
+const knownDirsBlock = source.match(/const knownDirs = new Set\(\);\nconst knowDirs = [^\n]*/)[0];
+const listEntriesBlock = source.match(/function listEntries\(dir, limit\) \{[^]*?\n\}/)[0];
+const suggestionListBlock = source.match(/list: (\(\) => workspaceSuggestions\(\{[^]*?\}\)),/)[1];
 const startupBody = (() => {
   const head = 'const primaryInstance = startSingleInstance(app, (argv, workingDirectory) => openLaunch(launchDirectory(argv, workingDirectory)), async () => {';
   return between(head, '\n});\n\nif (primaryInstance)').slice(head.length);
@@ -62,12 +65,16 @@ async function launch(m, { launch: WORKSPACE = '/', openSet, windowsFile } = {})
     createWindowSet, restorePlan, resolveView, clampBounds, windowTitle, trustedForgeFrame, validWorkspaceId, workspaceHash, trustedRendererUrl,
     WINDOWS_FILE: () => join(m.userData, 'windows.json'), OPEN_WORKSPACES_FILE: () => join(m.userData, 'workspace-open.json'),
     RENDERER_URL: RENDERER, servedList: [], allowedWs: new Set(), advertisedBefore: new Set(), quitStarted: false,
-    applyLoginPath: async () => {}, installAppMenu: () => {}, sweepOrphanViewers: () => {}, rememberWorkspaceParent: () => {}, knowDirs: () => {},
+    applyLoginPath: async () => {}, installAppMenu: () => {}, sweepOrphanViewers: () => {}, rememberWorkspaceParent: () => {},
+    workspaceSuggestions, deploymentsInside, opendirSync, readRecents: () => [],
     noteWindowActivity: () => {}, terminalBroker: { register() {} }, suggestionCalls: { forget() {} }, lastPickChoices: new Map(),
     serverHost: { owned: () => true },
   };
   context.advertisedNow = () => context.allowedWs;
   const main = runInNewContext(`${wsValidateBlock}
+${knownDirsBlock}
+${listEntriesBlock}
+const suggestions = ${suggestionListBlock};
 const spawnChild = ${spawnChildBlock};
 ${windowSection}
 ${windowBlock}
@@ -79,7 +86,7 @@ async function panelWorkspaces() {
   const list = serving.map((dir) => ({ id: dir, name: dir.split('/').pop(), deployments: [dir] }));
   allowedWs = new Set(list.map((w) => w.id)); noteServed(list); return list;
 }
-({ windows, choosers, start: async () => {${startupBody}} })`, context);
+({ windows, choosers, suggestions, start: async () => {${startupBody}} })`, context);
   await main.start();
   appEvents.get('will-quit')?.(); // windows.json is written as it is at quit
   const read = (name) => { try { return JSON.parse(readFileSync(join(m.userData, name), 'utf8')); } catch { return undefined; } };
@@ -141,5 +148,20 @@ test('a launch on a deployment (--dir, or a deployment cwd) serves it and opens 
     assert.deepEqual(r.windows.map((w) => [w.title, w.loaded.hash]), [['oats', workspaceHash(m.deployment).slice(1)]]);
     assert.deepEqual(r.openFile, [m.deployment]);
     assert.equal(basename(r.windowsFile[0].workspace), 'oats');
+  } finally { rmSync(m.root, { recursive: true, force: true }); }
+});
+
+test('the switcher suggests this computer\'s deployments not served: those in ~/Agents, and a saved one that came back (#518)', async () => {
+  const m = machine();
+  try {
+    // Saved, but its volume was not mounted at launch: kept, not served (#472).
+    const later = join(m.root, 'Volumes', 'work', 'tsm');
+    mkdirSync(join(m.home, 'Agents', 'jro'), { recursive: true }); writeFileSync(join(m.home, 'Agents', 'jro', 'oats-local.yaml'), '');
+    const r = await launch(m, { openSet: [m.deployment, later] });
+    assert.deepEqual(r.spawned[0].args.filter((_, i, a) => a[i - 1] === '--dir'), [m.deployment]);
+    mkdirSync(later, { recursive: true }); writeFileSync(join(later, 'oats-local.yaml'), ''); // mounted now
+    const offered = r.main.suggestions().map((s) => [s.path, s.reason]);
+    assert.deepEqual(offered, [[later, 'known workspace'], [join(m.home, 'Agents', 'jro'), 'found in ~/Agents']],
+      'the served oats is not offered; a plain folder never is');
   } finally { rmSync(m.root, { recursive: true, force: true }); }
 });

@@ -326,7 +326,9 @@ const suggestionCalls = createSuggestionCalls({
   generations: wsGens,
   refresh: () => panelWorkspaces(), // refresh allowedWs from the live server
   list: () => workspaceSuggestions({
-    knownPaths: [...workspaceDirs],
+    // Every deployment this Desktop knows (the saved set as read included): a saved one that is not
+    // served, such as one whose volume was mounted after launch, is offered again (#472, #518).
+    knownPaths: [...knownDirs],
     recents: readRecents(),
     discovered: deploymentsInside(join(homedir(), "Agents"), { list: listEntries, isDeployment: (p) => !!wsValidate(p) }).paths,
     advertised: allowedWs,
@@ -720,6 +722,16 @@ ipcMain.handle("window:claim-workspace", (e, id, options) => {
   choosers.delete(win);
   bindWindow(win, key);
   return { ok: true, workspace: key };
+});
+// The served choices, re-read now, for a window with no workspace (#521): its list follows the
+// workspaces served after its first claim (remote views arrive seconds after launch), while it reads no
+// workspace's data itself. Read-only: it binds nothing.
+ipcMain.handle("window:choices", async (e) => {
+  if (!trustedForgeFrame(e, RENDERER_URL)) return { ok: false, code: "forbidden" };
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (!win || windows.keyOf(win) === undefined) return { ok: false, code: "unknown-window" };
+  await panelWorkspaces();
+  return { ok: true, workspaces: servedList };
 });
 // Open in new window, and New Window (`id` null): the workspace's window is focused if it has one.
 ipcMain.handle("window:open-workspace", (e, id) => {

@@ -125,8 +125,9 @@ again. **Only an explicit remove drops a saved path**; nothing else does.
   knows: a suggestion, a deployment offered beside a refused pick, or one in
   the session's known set (the saved file as read, the open set, every
   committed add). The native picker (`workspace:pick`) is its own provenance.
-  Suggestions are the known deployments, the validated recents, and the
-  deployments directly inside `~/Agents` (`deploymentsInside`: at most
+  Suggestions are the deployments in the known set that are not served (a
+  saved one whose volume was mounted after launch), the validated recents,
+  and the deployments directly inside `~/Agents` (`deploymentsInside`: at most
   `PICK_SCAN_LIMIT` entries, links not followed, nothing parsed), so a fresh
   machine needs no Browse.
 - **A picked folder that is not a deployment** is refused with "This folder
@@ -393,7 +394,13 @@ terminal owner).
 - **No workspace.** A New Window, a window whose view moved to a
   workspace another window has, or the first window of a launch with no
   local deployment to serve, is *choosing*: main's refusal carries the
-  served choices, and the window reads nothing until it binds.
+  served choices, and the window reads nothing until it binds. Its choices
+  follow what is served: its roster poll asks main (`window:choices`, which
+  re-reads `/api/panel` and binds nothing), so the remote views served a few
+  seconds after launch appear. Its switcher menu also lists the suggestions
+  under **On this computer**, looked up each time the menu opens; one click
+  runs the normal add and opens the deployment in this window. Only with
+  nothing served and nothing suggested does it say no choices are reported.
 - **Records.** `windows.json` (`window-records.mjs`) keeps each window's
   view id, the deployments that view held, its bounds and state, written
   atomically after moves settle. A launch restores the windows whose views
