@@ -87,6 +87,8 @@ Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
 | Keyboard shortcuts (`app.shortcuts`) | ⌘, | Ctrl+, | no |
 | Terminal zoom (`terminal.fontBigger`, `…Smaller`, `…Reset`; also Settings → Terminal; reset lands on 15px) | ⌘= ⌘- ⌘0 | Ctrl+= Ctrl+- Ctrl+0 | no |
 | Open a file read-only (`app.openFile`) | ⌘O | Ctrl+O | no |
+| New window, with no workspace (`app.newWindow`) | ⌘⇧N (File → New Window, the menu's accelerator) | none (the palette's **Window: new window**) | – |
+| Cycle the app's windows | ⌘\` (macOS's own, Window menu) | none (the window manager's) | – |
 
 Changed from 0.30.1 on Linux/Windows: the palette (was Ctrl+K), close tab (was
 Ctrl+W), the splits (were Ctrl+\ and Ctrl+Shift+\, Ctrl+Alt+W), and Spawn
@@ -109,8 +111,12 @@ Emoji).
 F1 was considered as a second palette chord and left out: in a terminal F1
 belongs to programs such as htop and mc.
 
+Ctrl+Shift+N stays Spawn instance on Linux/Windows: New Window has no default
+chord there, and the app installs no menu there, so it takes no Ctrl
+accelerator from the terminal.
+
 Actions without a default (bind them in the shortcuts editor): the workspace
-switcher, Connections, focus mode, focus the active terminal, return to
+switcher, New window (Linux/Windows), Connections, focus mode, focus the active terminal, return to
 terminal groups, explicit themes, and the instance menu's Open in split / Open
 pull request.
 
@@ -243,6 +249,7 @@ the rig). "Fixed" marks a gap this change closed.
 |---|---|---|
 | Workspace switcher (`#ws-trigger`) | Tab (first stop of the sidebar); F6 lands next to it on the nav | Enter/Space/Down open the menu; Esc closes it back on the trigger |
 | Switcher menu: search, workspaces, Add | Focus starts in the search; Down enters the options, **Up from the first returns to the search (fixed)** | Enter/Space select; Home/End; **Tab out closes the menu (fixed)**; Home/End in the search move its caret (fixed) |
+| A workspace's **Open in new window** button (beside each option, not inside it) | Right Arrow from its option (not a Tab stop); Left Arrow or Esc returns to the option, menu still open; Up/Down move between options as from the option | Enter/Space open the workspace in its own window (or bring that window to the front). On the option itself, ⌘Enter (macOS) / Ctrl+Enter (Linux/Windows) does the same; the option's description says so |
 | Add / onboard workspace dialog | From the menu's Add | Radio-style suggestions with arrows; Esc; trapped; returns to the trigger |
 | Sidebar nav (Deployments, Workspace, Automations) | F6 (current item); Tab; ⌘1/⌘2/⌘3 | Enter/Space |
 | Roster filter | Tab; ⌘F / Ctrl+F; **Down from it enters the rows (fixed): while filtering, at the first match, never a parent kept only to show its tree path** | Typing filters |

@@ -351,6 +351,52 @@ sentence already says what happens next, as for a timeout). The sentences:
   open set still lists deployment directories.
 - A group that never reports keeps a view of its own.
 
+## One window per workspace
+
+Main keeps at most one window per workspace view id (`window-set.mjs`). A
+window is bound to its workspace by its renderer URL's hash, exactly
+`#ws=<encodeURIComponent(id)>` (`renderer/window-binding.mjs`); no hash is a
+window with no workspace yet. Every privileged frame check accepts the
+renderer file with no hash or that hash and nothing else: another hash or any
+query is refused (`trustedRendererUrl`, shared by main, the proxies and the
+terminal owner).
+
+- **Requests.** The API proxy reads the sending frame's workspace. A bound
+  window's implicit `?ws=` is its own workspace, never main's verified one,
+  and an explicit one is never rewritten (`apiUrl`'s bound mode).
+- **Binding.** A window switches through `window:claim-workspace`: main
+  refuses a workspace another window holds and brings that window to the
+  front (or, for a view that moved under a window, doesn't); a deployment id
+  is bound as the view that holds it. The renderer runs one claim at a time
+  and commits a switch only after main's yes (`switchWorkspace` in
+  `renderer/views/common.mjs`), so a switch never leaves its hash and main's
+  registry apart.
+- **A view observed under a window.** A window bound to a deployment whose
+  identity is observed later (its view gets a `ws:` id) is moved to that view
+  in main as soon as the served list names it (`noteServed`), focusing
+  nothing, so no other window can take the workspace meanwhile. Its hash
+  still names the deployment until its next roster read follows the view
+  (the #482 rehome claim, a no-op in main by then); its requests stay
+  valid in between, the deployment id being served. If another window
+  already has the view, nothing moves, and that follow leaves this window
+  choosing.
+- **No workspace.** A New Window, or a window whose view moved to a
+  workspace another window has, is *choosing*: main's refusal carries the
+  served choices, and the window reads nothing until it binds.
+- **Records.** `windows.json` (`window-records.mjs`) keeps each window's
+  view id, the deployments that view held, its bounds and state, written
+  atomically after moves settle. A launch restores the windows whose views
+  are served, bounds clamped onto a visible display. A `ws:` view id exists
+  only once the server has observed a deployment's identity, a few seconds
+  after it starts: until then a record resolves through its deployments, to
+  the view that holds one of them (as the server's `viewFor` does), and the
+  window follows to its `ws:` view when it is observed, by the same rehome
+  claim, focusing nothing. A record goes only when its window is closed
+  while its workspace is served, never at quit.
+- **Per window.** Suggestions, picks and adds have a generation and a
+  provenance per sending window; adds still run one at a time through the
+  one executor, since each replaces the shared server.
+
 ## A deployment the server does not serve, or does not answer for
 
 A window never waits silently on "Reading the deployment…":
@@ -366,9 +412,12 @@ A window never waits silently on "Reading the deployment…":
   (`createUnservedRefusal` in `api-url.mjs`). While the server is being
   replaced it refuses against what the outgoing server advertised, so a
   Re-add's own reads are never rewritten to another workspace before the new
-  server advertises it. An id it does not know is still pinned to the
-  verified workspace and the renderer adopts the served one
-  (`staleWorkspaceSelection`).
+  server advertises it. From a window with no workspace yet, an id it does
+  not know is still pinned to the verified workspace and the renderer adopts
+  the served one (`staleWorkspaceSelection`). A window bound to a workspace
+  (below) is never rewritten: any workspace-scoped request of its own whose
+  workspace (its `?ws=`, else the window's) is not advertised gets the same
+  404 on every workspace-scoped route (`windowRefusal` in `api-url.mjs`).
 - **No answer.** A deployment left without an observation, on one
   connection, for `PENDING_LIMIT_MS` (45 s: the 30 s deployment read timeout
   plus the cycle around it) is reported as no answer (`createPendingWatch`).

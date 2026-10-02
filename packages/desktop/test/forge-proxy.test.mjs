@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
+import { withWindowGlobals } from './helpers/main-window-globals.mjs';
 import { forgeProxyOptions, installForgeAuthHandlers, trustedForgeFrame, FORGE_EPOCH_HEADER } from '../forge-proxy.mjs';
 import { apiUrl, apiInit, classifyApiRoute } from '../api-url.mjs';
 import { forgeFailure } from '../renderer/forge-contract.mjs';
@@ -42,7 +43,7 @@ function realApi(fetch) {
     currentForgeEpoch: () => context.forgeEpoch, unservedRefusal: () => null, serverHost: { inTransition: () => false }, base: () => 'http://127.0.0.1:4820',
     wsId: 'team', allowedWs: new Set(['team']), fetch, AbortSignal,
     guard: event => { assert.ok(trustedForgeFrame(event, url)); } };
-  runInNewContext(source.slice(start, end), context);
+  runInNewContext(source.slice(start, end), withWindowGlobals(context));
   return { handler, context };
 }
 test('shipped forge API IPC resolves transport/protocol failures and guards late backend/auth/frame completions', async () => {

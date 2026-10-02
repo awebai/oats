@@ -36,6 +36,8 @@ async function setup(t, { api, instances, ctx: extra = {} } = {}) {
   const doc = dom.window.document, host = doc.querySelector('main');
   const old = { window: globalThis.window, document: globalThis.document, setInterval: globalThis.setInterval, ws: currentWorkspace() };
   const polls = []; globalThis.window = dom.window; globalThis.document = doc; globalThis.setInterval = fn => { polls.push(fn); return 0; };
+  // A focused window (#481): the roster poll reads every tick (jsdom's document reports no focus).
+  doc.hasFocus = () => true;
   const c = clock(dom.window);
   setWorkspace('/team');
   let read = api || (() => panel(instances));

@@ -6,6 +6,7 @@ import { viewContext } from "./helpers/view-context.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
+import { withShellWindowGlobals } from './helpers/shell-window-globals.mjs';
 import { JSDOM } from "jsdom";
 import { NAV, stageSidebarMode } from "../renderer/shell-nav.mjs";
 import { createSelectionOwnership, wirePaneSelection } from "../renderer/selection-ownership.mjs";
@@ -60,14 +61,14 @@ function shell(t, shellSource = source) {
     createPanelOwner: () => ({ dispose() {} }),
     ctx: {},
   };
-  const names = ["showStage", "setNavActive", "showTabLayer", "updateActiveContexts", "setSidebarMode", "updateContextTabs",
+  const names = ["closeStage", "showStage", "setNavActive", "showTabLayer", "updateActiveContexts", "setSidebarMode", "updateContextTabs",
     "addTab", "selectTab", "activateTab", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips", "onTabKeydown", "renderSplit", "selectEmptyGroup", "restoreWorkspaceTabs", "showTerminalContext", "openViewTab"];
   const functions = names.map(name => {
     const match = shellSource.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
     assert.ok(match, `execute shipped ${name}`); return match[0];
   }).join("\n").replace('import(`./views/${name}.mjs`)', "loadStageView(name)");
   const setup = shellSource.match(/const tabOpenIntents = [^\n]+/)[0];
-  const s = runInNewContext(`${setup}\n${functions}\n({ ${names.join(", ")}, tabOpenIntents });`, c);
+  const s = runInNewContext(`${setup}\n${functions}\n({ ${names.join(", ")}, tabOpenIntents });`, withShellWindowGlobals(c));
   // Trace actual class writes, not a fake setNavActive implementation. Useful
   // when a synchronous focus restoration re-enters the shell during projection.
   for (const b of navEl.children) {

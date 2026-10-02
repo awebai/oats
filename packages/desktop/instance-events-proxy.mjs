@@ -37,7 +37,7 @@ export async function proxyInstanceEvents(event, path, opts, { rendererURL, conn
     start = { ...connection() }; if (start.transition) return reply('E_TARGET_CHANGED');
     let url, input, init;
     try {
-      url = apiUrl(path, start.base, start.wsId, start.allowedWs);
+      url = apiUrl(path, start.base, start.wsId, start.allowedWs, { bound: start.bound === true });
       if (url.pathname !== '/api/instance-events' || url.searchParams.getAll('ws').length !== 1 || !url.searchParams.get('ws')
         || [...url.searchParams.keys()].some(k => k !== 'ws')) return reply('E_BAD_ARGS', 400);
       init = apiInit({ method: 'POST', body: opts.body });

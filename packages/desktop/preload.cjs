@@ -37,6 +37,12 @@ contextBridge.exposeInMainWorld("oatsDesktop", {
   /** Onboard the folder behind a picker offer (single-use token) — kernel `oats onboard`. */
   workspaceOnboard: (token, ref) => ipcRenderer.invoke("workspace:onboard", token, ref),
 
+  /** One window per workspace (#481). Bind this window to a workspace in place (null: to none); a
+   * workspace another window holds is refused, and that window focused unless `focus` is false. */
+  windowClaimWorkspace: (id, options) => ipcRenderer.invoke("window:claim-workspace", id, options),
+  /** Open a workspace's window, or focus the one it has; null opens a New Window (the switcher). */
+  windowOpenWorkspace: (id) => ipcRenderer.invoke("window:open-workspace", id),
+
   /** CLI degradation affordances: native binary picker (Choose oats…) and
    * focus-triggered re-probe notifications (contract re-probe triggers). */
   cliPickBinary: () => ipcRenderer.invoke("cli:pick"),

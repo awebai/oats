@@ -52,8 +52,15 @@ const candidateName = (candidate) => candidate?.name
   || candidateId(candidate).split("/").filter(Boolean).at(-1)
   || "Workspace";
 
+/** The keyboard route to a workspace's Open in new window action (#481), said once for every option. */
+export function openInNewWindowHint(mac) {
+  return `Press ${mac ? "⌘Enter" : "Ctrl+Enter"}, or Right Arrow then Enter, to open this workspace in a new window.`;
+}
+
 export function createWorkspaceSwitcher({
   document, selectWorkspace, discoverSuggestions, addWorkspace, pickWorkspace, onboardWorkspace = null, onboarded = null,
+  // One window per workspace (#481): opens (or focuses) a workspace's own window. Absent, no action.
+  openInNewWindow = null, mac = false,
 }) {
   const q = (id) => document.getElementById(id);
   const trigger = q("ws-trigger"), currentName = q("ws-name"), menu = q("ws-menu");
@@ -61,6 +68,9 @@ export function createWorkspaceSwitcher({
   addOpen.replaceChildren(iconElement(document, 'plus', { size: 13 }), document.createTextNode('Add local workspace…')); addOpen.setAttribute('aria-label', 'Add local workspace…');
   const empty = document.createElement('p'); empty.className = 'ws-menu-empty'; empty.setAttribute('role', 'status'); empty.hidden = true;
   options.after(empty);
+  // The options' description: how to reach Open in new window from the keyboard (one hidden element).
+  const hint = document.createElement('p'); hint.id = 'ws-open-window-hint'; hint.hidden = true; hint.textContent = openInNewWindowHint(mac);
+  if (openInNewWindow) empty.after(hint);
   const modal = q("ws-modal"), dialog = modal.querySelector(".ws-dialog");
   const modalSearch = q("ws-suggestion-search"), suggestionsEl = q("ws-suggestions");
   const status = q("ws-dialog-status"), confirm = q("ws-confirm"), browse = q("ws-browse");
@@ -88,7 +98,7 @@ export function createWorkspaceSwitcher({
   status.after(pickEl);
   let pickOffer = null; // the refused pick's onboarding offer, entered only on request
   let generation = 0, modalGeneration = 0, discoveryGeneration = 0;
-  let activeId = "", workspaces = [], suggestions = [], selected = null;
+  let activeId = "", workspaces = [], suggestions = [], selected = null, choosing = false;
   let adding = false, discoveryState = { message: "", error: false };
 
   const setStatus = (message = "", error = false) => {
@@ -101,6 +111,7 @@ export function createWorkspaceSwitcher({
     if (restore) trigger.focus();
   };
   const menuItems = () => [...options.querySelectorAll(".ws-option:not([hidden])")];
+  const openInWindow = (id) => { closeMenu(true); openInNewWindow(id); };
   // Views first; unattached views (a deployment no workspace identity matched) after them, in their
   // own group under UNMATCHED_SECTION. Every entry is its name and ONE muted line (UI spec, #482): a
   // view's machines, an unattached view's machine and short reason. A view with a deployment that is
@@ -154,6 +165,24 @@ export function createWorkspaceSwitcher({
       meta.hidden = !place;
       copy.append(line, meta);
       button.append(createWorkspaceMark(document, workspace), copy, check);
+      // Open in new window (#481): a trailing button beside the option, never inside it.
+      const row = document.createElement("div");
+      row.className = "ws-option-row"; row.setAttribute("role", "none");
+      row.append(button);
+      if (openInNewWindow) {
+        button.setAttribute("aria-describedby", hint.id);
+        const open = document.createElement("button");
+        open.type = "button"; open.className = "ws-open-window"; open.tabIndex = -1;
+        open.dataset.workspaceId = workspace.id;
+        open.setAttribute("aria-label", `Open ${labels[index]} in a new window`);
+        open.title = `Open ${labels[index]} in a new window`;
+        open.append(iconElement(document, "newWindow", { size: 14 }));
+        open.addEventListener("click", () => {
+          if (menu.hidden || !open.isConnected || !options.contains(open)) return;
+          openInWindow(workspace.id);
+        });
+        row.append(open);
+      }
       button.addEventListener("click", () => {
         if (menu.hidden || !button.isConnected || !options.contains(button)) return;
         closeMenu(true);
@@ -163,7 +192,7 @@ export function createWorkspaceSwitcher({
         const deployment = workspace.unattached && Array.isArray(workspace.deployments) ? workspace.deployments[0] : null;
         if (deployment) requestDeploymentTab(workspace.id, deployment);
       });
-      (workspace.unattached ? unmatched : options).append(button);
+      (workspace.unattached ? unmatched : options).append(row);
     });
     if (unmatched.querySelector(".ws-option")) options.append(unmatched);
     empty.hidden = options.childElementCount > 0;
@@ -466,8 +495,10 @@ export function createWorkspaceSwitcher({
     if (workspace && !workspaces.some((candidate) => candidate.id === activeId)) workspaces.unshift(workspace);
     const labels = workspaceChoiceLabels(workspaces);
     const activeIndex = workspaces.findIndex((candidate) => candidate.id === activeId);
-    currentName.textContent = workspace ? (labels[activeIndex] || candidateName(workspace)) : "Resolving…";
-    trigger.title = activeId ? `Active workspace: ${isLocalPath(activeId) ? activeId : currentName.textContent}` : "Resolving active workspace";
+    // A window with no workspace (#481) asks for one; otherwise, before the first answer, it is resolving.
+    currentName.textContent = workspace ? (labels[activeIndex] || candidateName(workspace)) : choosing ? "Choose a workspace" : "Resolving…";
+    trigger.title = activeId ? `Active workspace: ${isLocalPath(activeId) ? activeId : currentName.textContent}`
+      : choosing ? "This window has no workspace yet" : "Resolving active workspace";
     renderOptions();
   };
 
@@ -476,6 +507,19 @@ export function createWorkspaceSwitcher({
     if (!menu.hidden && !menu.contains(event.target) && !trigger.contains(event.target)) closeMenu();
   };
   const onMenuKey = (event) => {
+    // Open in new window (#481): the button beside an option is reached with ArrowRight and left with
+    // ArrowLeft or Escape; ⌘Enter (macOS) / Ctrl+Enter on the option opens it directly.
+    const action = event.target?.closest?.(".ws-open-window");
+    const optionOf = (el) => el?.parentElement?.querySelector(":scope > .ws-option");
+    if (openInNewWindow && action && ["ArrowLeft", "Escape"].includes(event.key)) { event.preventDefault(); optionOf(action)?.focus(); return; }
+    const focusedOption = event.target?.classList?.contains("ws-option") ? event.target : null;
+    if (openInNewWindow && focusedOption && event.key === "ArrowRight") {
+      event.preventDefault(); focusedOption.parentElement.querySelector(":scope > .ws-open-window")?.focus(); return;
+    }
+    if (openInNewWindow && focusedOption && event.key === "Enter" && !event.shiftKey && !event.altKey
+      && (mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey)) {
+      event.preventDefault(); openInWindow(focusedOption.dataset.workspaceId); return;
+    }
     if (event.key === "Escape") { event.preventDefault(); closeMenu(true); return; }
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
     // Home/End in the search field move its caret.
@@ -483,7 +527,7 @@ export function createWorkspaceSwitcher({
     const items = menuItems();
     if (!items.length) return;
     event.preventDefault();
-    const index = items.indexOf(document.activeElement);
+    const index = items.indexOf(action ? optionOf(action) : document.activeElement);
     // Up from the first option goes back to the search field (spec F).
     if (event.key === "ArrowUp" && index === 0) { menuSearch.focus(); return; }
     const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1
@@ -550,7 +594,9 @@ export function createWorkspaceSwitcher({
         return true;
       };
     },
-    reset() { generation++; render(null); },
+    reset() { generation++; choosing = false; render(null); },
+    /** This window has no workspace (#481): the served choices main gave it, none selected. */
+    choose(list) { generation++; choosing = true; render(null, list); },
     openMenu,
     openModal,
   };

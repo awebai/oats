@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
+import { withWindowGlobals } from './helpers/main-window-globals.mjs';
 import { apiUrl, apiInit, classifyApiRoute } from '../api-url.mjs';
 import { forgeProxyOptions, trustedForgeFrame, FORGE_EPOCH_HEADER } from '../forge-proxy.mjs';
 import { forgeFailure } from '../renderer/forge-contract.mjs';
@@ -48,7 +49,7 @@ test('shipped IPC bounds plan/apply separately and classifies lost mutation tran
       currentForgeEpoch: () => 'main:0', unservedRefusal: () => null, serverHost: { inTransition: () => false }, base: () => 'http://127.0.0.1:4820',
       wsId: 'team', allowedWs: new Set(['team']), guard: () => {}, AbortSignal: { timeout: ms => ({ ms }) },
       fetch: async (url, opts) => { seen = { url, opts }; if (fail) throw new Error('PRIVATE transport'); return { ok: true, status: 200, text: async () => '{"lifecycleApi":1}' }; } };
-    runInNewContext(source.slice(start, end), c);
+    runInNewContext(source.slice(start, end), withWindowGlobals(c));
     const response = await handler({ sender: owner, senderFrame: frame }, '/api/instance-lifecycle?ws=team', { method: 'POST', body: JSON.stringify({ action: phase }) });
     assert.equal(seen.opts.signal.ms, phase === 'apply' ? 610000 : 50000);
     if (fail) { assert.equal(response.body.status, phase === 'apply' ? 'unknown' : 'unavailable'); assert.doesNotMatch(JSON.stringify(response), /PRIVATE/); }

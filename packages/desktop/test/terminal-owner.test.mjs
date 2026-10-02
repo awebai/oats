@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { createTerminalOwnerBroker, installTerminalHandlers } from '../terminal-owner.mjs';
 import { admitTerminalTarget } from '../terminal-target.mjs';
+import { workspaceHash } from '../renderer/window-binding.mjs';
 import { TERM_READY_MS, TERM_READY_BYTES, TERM_CLOSE_MS, HERDR_REMOVED, terminalHandle, terminalFailure } from '../renderer/terminal-contract.mjs';
 
 const url = 'file:///memory/renderer/index.html';
@@ -142,10 +143,15 @@ test('hooks exist before FIRST remote await: same-url navigation rejects old com
   assert.equal((await f.open(a)).ok, true);
 });
 
-test('same-url old frame and crashed owner cannot write; child/hash navigation does not revoke the current document', async () => {
+test('same-url old frame and crashed owner cannot write; child/in-place workspace navigation does not revoke the current document', async () => {
   const f = fixture(), a = f.owner(), h = await f.attached(a), oldEvent = f.event(a);
   a.emit('did-start-navigation', { url, isSameDocument: false, isMainFrame: false });
-  a.mainFrame.url = `${url}#section`; a.emit('did-start-navigation', { url: a.mainFrame.url, isSameDocument: true, isMainFrame: true });
+  // An in-place workspace switch (#481) rewrites the hash: the document, and its terminals, stay.
+  a.mainFrame.url = `${url}${workspaceHash('/w')}`; a.emit('did-start-navigation', { url: a.mainFrame.url, isSameDocument: true, isMainFrame: true });
+  // Any other hash is not the app's renderer: refused, not ignored, while it is shown.
+  const bound = a.mainFrame.url; a.mainFrame.url = `${url}#section`;
+  assert.equal(f.broker.write(f.event(a), h, 'foreign hash').ok, false);
+  a.mainFrame.url = bound;
   assert.equal(f.broker.write(f.event(a), h, 'still owner').ok, true);
   f.navigate(a); assert.equal(f.broker.write(oldEvent, h, 'stale').ok, false);
   assert.equal(f.broker.write(f.event(a), h, 'same WC new epoch').ok, false);

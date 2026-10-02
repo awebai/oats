@@ -11,6 +11,8 @@ import { viewContext } from './helpers/view-context.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext, runInContext } from 'node:vm';
+import { rosterPollDue, ROSTER_POLL_FOCUSED_MS } from '../renderer/roster-cadence.mjs';
+import { withShellWindowGlobals } from './helpers/shell-window-globals.mjs';
 import { JSDOM } from 'jsdom';
 import * as tree from '../renderer/instance-tree.mjs';
 import { PENDING_DELAY_MS, REFRESHING_DELAY_MS, AGE_TICK_MS } from '../renderer/loading.mjs';
@@ -168,7 +170,7 @@ function shell(t, { addResult = { ok: true, workspace: { id: 'A' } }, workspace 
   context.splitOpenState = () => ({ split: null, activeId: context.activeTab, tabs: context.tabs, workspace: context.workspace, visible: false });
   context.ownsInstanceTarget = target => context.contextInstances.filter(r => sameInstanceActionTarget(target, r, context.workspace)).length === 1;
   const s = runInNewContext(`${['initContextRoster', 'rosterOverdue', 'failRosterUnserved', 'reAddRosterWorkspace', 'refreshContextRoster', 'renderContextRoster', 'restoreWorkspaceTabs'].map(fn).join('\n')}
-    ({ initContextRoster, refreshContextRoster, renderContextRoster, restoreWorkspaceTabs });`, context);
+    ({ initContextRoster, refreshContextRoster, renderContextRoster, restoreWorkspaceTabs });`, withShellWindowGlobals(context));
   // #sidebar is not in index.html's roster section alone; initContextRoster listens on it.
   if (!doc.getElementById('sidebar')) { const aside = doc.createElement('aside'); aside.id = 'sidebar'; aside.append(rosterEl); doc.body.append(aside); }
   s.initContextRoster();
@@ -396,7 +398,8 @@ test('the retired wording is gone from the roster and the fixed wording is the p
   const roster = source.slice(source.indexOf('function initContextRoster'), source.indexOf('function onRosterRowKey'));
   assert.doesNotMatch(roster, /Roster unavailable|Loading agents|Loading reported roster|Reading /);
   assert.match(source, /rosterState\?\.reset\(\);[\s\S]*renderContextRoster\(\[\]\);/, 'a switch resets the subject before the list is cleared');
-  assert.match(source, /setInterval\(\(\) => \{ if \(!rosterPoll\) pollContextRoster\(\); \}, 4000\);/, 'the 4s poll stays (one read at a time)');
+  // One read at a time, every 4 s while focused, at the blurred cadence otherwise (roster-cadence.mjs, #481).
+  assert.match(source, /setInterval\(\(\) => \{\n  if \(!rosterPoll && rosterPollDue\(/, 'the poll stays single-flight');
 });
 
 test('a deployment the server has not observed yet (status pending, no instances) keeps its own note: no "No instances", the count stays a pill, no skeleton; the observation then paints the rows', async t => {
@@ -675,7 +678,8 @@ test('pending after an observation keeps the rows, never "empty"; past the bound
 
 test('the 4 s roster poll is single-flight: an unanswered read is never superseded by the next poll', () => {
   assert.match(source, /const poll = rosterPoll = refreshContextRoster\(\)\.finally\(\(\) => \{ if \(rosterPoll === poll\) rosterPoll = null; \}\);/);
-  assert.match(source, /setInterval\(\(\) => \{ if \(!rosterPoll\) pollContextRoster\(\); \}, 4000\);/);
+  // Every 4 s tick (ROSTER_POLL_FOCUSED_MS), only with no read in flight; an unfocused window's ticks are spaced (#481).
+  assert.match(source, /setInterval\(\(\) => \{\n  if \(!rosterPoll && rosterPollDue\([^\n]*\)\) pollContextRoster\(\);\n\}, ROSTER_POLL_FOCUSED_MS\);/);
   assert.doesNotMatch(source, /setInterval\(\(\) => refreshContextRoster\(\), 4000\)/);
 });
 
@@ -683,9 +687,12 @@ test('the 4 s roster poll is single-flight: an unanswered read is never supersed
  * time and settles promises in between, as a real event loop would. */
 function shippedPoll(s) {
   const last = 'subscribeConnections(() => { if (contextRosterEl) pollContextRoster(); });';
-  const start = source.indexOf('let rosterPoll = null;'), end = source.indexOf(last, start) + last.length;
+  const start = source.indexOf('let rosterPoll = null'), end = source.indexOf(last, start) + last.length;
   assert.ok(start > 0 && end > start, 'the shipped poll and its connection subscription');
   s.context.setInterval = (fn, ms) => { const run = () => { s.c.setTimeout(run, ms); fn(); }; s.c.setTimeout(run, ms); };
+  // A focused window (#481): its poll runs every 4 s; the blurred cadence is roster-cadence.mjs's own test.
+  Object.assign(s.context, { rosterPollDue, ROSTER_POLL_FOCUSED_MS, Date: { now: () => 0 }, window: { addEventListener() {} } });
+  s.context.document.hasFocus = () => true;
   const listeners = new Set(); s.context.subscribeConnections = fn => { listeners.add(fn); return () => listeners.delete(fn); };
   // A backend replacement or forge change, as shell.mjs's onForgeChanged does it.
   s.changeConnection = () => { s.context.connectionGeneration++; for (const fn of [...listeners]) fn(); };

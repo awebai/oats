@@ -15,7 +15,7 @@ export async function proxyReadiness(event, path, opts, { rendererURL, connectio
     if (opts?.method !== 'POST') return reply('E_BAD_ARGS', 400);
     start = connection();
     if (start.transition) return reply('E_TARGET_CHANGED');
-    const url = apiUrl(path, start.base, start.wsId, start.allowedWs);
+    const url = apiUrl(path, start.base, start.wsId, start.allowedWs, { bound: start.bound === true });
     if (url.pathname !== '/api/workspace-readiness') return reply('E_BAD_ARGS', 400);
     const response = await fetcher(url, { ...apiInit({ method: 'POST', body: opts.body }), signal: AbortSignal.timeout(READINESS_PROXY_TIMEOUT) });
     const raw = await response.text();

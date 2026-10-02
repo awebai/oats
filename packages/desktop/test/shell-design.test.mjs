@@ -5,6 +5,7 @@ import { viewContext } from "./helpers/view-context.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
+import { withShellWindowGlobals } from './helpers/shell-window-globals.mjs';
 import { JSDOM } from "jsdom";
 import { createContextPanel, contextPanelCSS } from "../renderer/context-panel.mjs";
 import { createInstanceGitPanel } from "../renderer/instance-git.mjs";
@@ -78,7 +79,7 @@ function shell(t, shellSource = source) {
   const titleCode = shellSource.slice(shellSource.indexOf("const baseTitles ="), shellSource.indexOf("onKeymapChange(() => applyChordTitles"));
   const functions = ["setNavActive", "sidebarHidden", "setSidebarHidden", "updateSidebarControls", "toggleSidebar", "focusRoster", "openShortcutsEditor", "openConnections", "stableFocusTarget"].map(name => fn(name, shellSource));
   const panelSetup = shellSource.slice(shellSource.indexOf("const contextPanel = createContextPanel"), shellSource.indexOf("/** Projection only:"));
-  const s = runInNewContext(`${panelSetup}\n${navigation}\nconst SIDEBAR_HIDDEN_KEY = "oats-desktop-sidebar-hidden";\n${functions.join("\n")}\n${registry}\n${titleCode}\napplyChordTitles();\n({ openWorkspaceSouls, setNavActive, setSidebarHidden, applyChordTitles, contextPanel });`, c);
+  const s = runInNewContext(`${panelSetup}\n${navigation}\nconst SIDEBAR_HIDDEN_KEY = "oats-desktop-sidebar-hidden";\n${functions.join("\n")}\n${registry}\n${titleCode}\napplyChordTitles();\n({ openWorkspaceSouls, setNavActive, setSidebarHidden, applyChordTitles, contextPanel });`, withShellWindowGlobals(c));
   offs.push(onKeymapChange(s.applyChordTitles));
   t.after(() => s.contextPanel.dispose());
   // Execute the production restore-button binding too.
@@ -308,7 +309,7 @@ for (const outcome of ["resolve", "reject"]) test(`reported workspace/root/host 
     renderContextRoster() {}, refreshPanelInstance() {}, rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} }, // label-only polling fixture
     workspaceLabel: createWorkspaceSwitcher({ document, selectWorkspace() {}, discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}) }),
   };
-  const s = runInNewContext(`${fn("refreshContextRoster")}\n({ refreshContextRoster });`, c);
+  const s = runInNewContext(`${fn("refreshContextRoster")}\n({ refreshContextRoster });`, withShellWindowGlobals(c));
   const old = s.refreshContextRoster();
   assert.equal(requests[0].path, "/api/panel?ws=A");
   c.workspace = "B"; c.contextRosterGen++; c.workspaceLabel.reset();
@@ -512,5 +513,25 @@ test('panel.toggle defaults to Mod+Alt+B (no conflict), focus mode has no defaul
     assert.equal(matchEvent({ key, ctrlKey: true }, { isMac: false, insideTerminal: true }), null);
     assert.equal(matchEvent({ key, ctrlKey: true }, { isMac: false, insideTerminal: false }), id);
     assert.equal(matchEvent({ key, metaKey: true }, { isMac: true, insideTerminal: true }), id);
+  }
+});
+
+test('the shell sends no workspace-scoped request while its window chooses (Quick Open, a view refreshing on its way out)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { runInNewContext } = await import('node:vm');
+  const { scopedRequest } = await import('../renderer/workspace-routes.mjs');
+  const { httpError } = await import('../renderer/views/common.mjs');
+  const shellSource = readFileSync(new URL('../renderer/shell.mjs', import.meta.url), 'utf8');
+  const fnSource = shellSource.match(/async function api\(pathname, opts\)[^]*?\n\}/)[0];
+  for (const state of ['choosing', 'bound']) {
+    const sent = [];
+    const api = runInNewContext(`(${fnSource})`, { windowState: () => state, scopedRequest, httpError, Object, Error,
+      desk: { api: async (path) => { sent.push(path); return { ok: true, status: 200, body: {} }; } } });
+    for (const path of ['/api/agents', '/api/panel?ws=x', '/api/instance-git']) {
+      if (state === 'choosing') await assert.rejects(api(path), (e) => e.code === 'E_NO_WORKSPACE', path);
+      else await api(path);
+    }
+    await api('/api/cli');
+    assert.deepEqual(sent, state === 'choosing' ? ['/api/cli'] : ['/api/agents', '/api/panel?ws=x', '/api/instance-git', '/api/cli'], state);
   }
 });

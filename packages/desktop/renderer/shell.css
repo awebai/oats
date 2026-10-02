@@ -96,6 +96,13 @@ body {
 .ws-option:hover { background: var(--surface-2); }
 .ws-option:focus-visible { background: var(--sel); }
 .ws-option[aria-selected="true"] { background: var(--sel); }
+/* One window per workspace (#481): each option and, beside it, its Open in new window button. */
+.ws-option-row { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.ws-option-row > .ws-option { flex: 1 1 auto; }
+.ws-open-window { flex: 0 0 auto; width: 28px; height: 28px; display: grid; place-items: center; padding: 0;
+                  border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
+.ws-open-window:hover { background: var(--surface-2); color: var(--fg); }
+.ws-open-window:focus-visible { background: var(--sel); color: var(--fg); }
 .ws-check { color: var(--accent); font-weight: 750; }
 .ws-option-copy { min-width: 0; }
 .ws-option .workspace-avatar { width:26px; height:26px; border-radius:7px; font-size:12px; }
@@ -134,6 +141,8 @@ body {
 
 /* ── persistent instance tree (the same shell sidebar, never a second) ── */
 #instance-roster { flex: 1; min-height: 0; display: flex; flex-direction: column; border-top: 1px solid var(--border); }
+/* A window with no workspace has no instances to list (#481, shell.mjs showChooser). */
+#instance-roster[hidden] { display: none; }
 .ctx-head { height: 36px; flex: none; padding: 6px 12px 0 17px; display: flex; align-items: center; gap: 6px;
             color: var(--nav-fg); font-size: 13px; font-weight: 500; }
 /* The head reads like the nav items above it (human, 2026-09-26); "● 4 running" only, the full breakdown in its title. */
@@ -362,12 +371,13 @@ body {
 .ws-dialog-foot { flex: none; display: flex; align-items: center; gap: 8px; padding: 12px 18px 16px;
                   border-top: 1px solid var(--border); }
 .ws-dialog-spacer { flex: 1; }
-.ws-dialog-foot button { min-height: 32px; padding: 0 13px; border: 1px solid var(--border); border-radius: 7px;
+/* The dialog's buttons, and the one in a window with no workspace (#481, shell.mjs showChooser). */
+.ws-dialog-foot button, .window-chooser button { min-height: 32px; padding: 0 13px; border: 1px solid var(--border); border-radius: 7px;
                          font-family: inherit; font-size: 12px; line-height: 1; font-weight: 650; cursor: pointer; }
 .ws-dialog-foot .secondary { background: var(--surface); color: var(--fg); }
 .ws-dialog-foot .secondary:hover { background: var(--surface-2); }
 .ws-dialog-foot .secondary:focus-visible { background: var(--sel); }
-.ws-dialog-foot .primary { border-color: var(--primary-bg); background: var(--primary-bg); color: var(--primary-fg); }
+.ws-dialog-foot .primary, .window-chooser .primary { border-color: var(--primary-bg); background: var(--primary-bg); color: var(--primary-fg); }
 .ws-dialog-foot button:disabled { cursor: default; border-color: var(--border); background: var(--surface-2); color: var(--faint); }
 
 /* ── main / tabs ── */
