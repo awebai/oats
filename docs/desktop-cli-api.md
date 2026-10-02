@@ -1070,7 +1070,8 @@ operator guide: [workspaces.md](workspaces.md#teams).
   printed at the end of the message. Every command that reads the file
   refuses, an instance home's messaging commands, operations, `inspect --home`
   and `readiness --home` included: they never fall back to the home's
-  recorded teams for it.
+  recorded teams for it. A home's other capability commands read only the
+  home's own record, as always.
 - **A soul's key** is its qualified name: `<package>/<soul>`, or
   `<member>/<soul>` with the member repository's name (as `souls.disabled`
   names it). A label matches `[a-z0-9][a-z0-9._-]*`.

@@ -312,6 +312,8 @@ test("an existing home refuses the removed local team keys like every other read
       ["inspect --home", fx.cli(["inspect", "--home", home, "--json"])],
       ["readiness --home", fx.cli(["readiness", "--home", home, "--json"])],
       ["operation run --home", fx.cli(["operation", "run", "messaging:teams", "--home", home, "--json"])],
+      // A non-messaging operation reads no teams, and still refuses before its provider runs.
+      ["operation run knowledge:show --home", fx.cli(["operation", "run", "knowledge:show", "--home", home, "--json"])],
     ];
     for (const [what, r] of runs) {
       const e = refused(r, "E_WORKSPACE_SCHEMA", `${what} with ${key}`);
@@ -319,6 +321,9 @@ test("an existing home refuses the removed local team keys like every other read
       assert.equal(typeof e.details.replacement, "string", `${what} with ${key}: the souls: to commit`);
       assert.ok(e.details.problems.some((p) => p.path === `/${key.replace(".", "/")}`), `${what} names ${key}`);
     }
+    // A non-messaging command reads no oats-local.yaml: it runs from the home's frozen record, as always.
+    const recorded = ok(fx.cli(["envprobe", "show", "--json"], { cwd: home, env: { OATS_INSTANCE_HOME: home } }), `envprobe show with ${key}`);
+    assert.equal(recorded.source, "recorded");
   }
   writeFileSync(localFile, original);
   ok(fx.cli(["chat", "teams", "--json"], { cwd: home, env: { OATS_INSTANCE_HOME: home } }), "migrated: the provider runs again");
