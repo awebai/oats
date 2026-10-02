@@ -38,6 +38,8 @@ async function page(t, data, { before } = {}) {
   const old = ORIGINAL; // several pages in one test: every one restores the globals the file started with
   globalThis.window = dom.window; globalThis.document = doc;
   const polls = []; globalThis.setInterval = (fn) => { polls.push(fn); return 0; };
+  // A focused window (#481): the roster poll reads every tick (jsdom's document reports no focus).
+  doc.hasFocus = () => true;
   setWorkspace("ws:view");
   const style = doc.createElement("style"); style.textContent = theme; doc.head.append(style);
   before?.(dom.window);

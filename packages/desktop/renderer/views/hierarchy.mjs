@@ -484,8 +484,9 @@ export function mount(el, ctx) {
   }));
   refresh(s); s.polledAt = Date.now();
   // Every 4 s while its window is focused, at the server's blurred cadence otherwise (roster-cadence.mjs, #481).
+  // The document's own focus, read on each tick: a window can lose focus before this stage mounts.
   s.timers.push(setInterval(() => {
-    if (s.loading || !rosterPollDue({ focused: s.windowFocused !== false, last: s.polledAt, now: Date.now() })) return;
+    if (s.loading || !rosterPollDue({ focused: el.ownerDocument.hasFocus(), last: s.polledAt, now: Date.now() })) return;
     s.polledAt = Date.now(); void refresh(s);
   }, ROSTER_POLL_FOCUSED_MS));
 
