@@ -113,10 +113,10 @@
 
 /* Retry: styled here because the sidebar sits outside .oats-view (where button.act lives).
    aria-disabled, never disabled: the control keeps focus while its read is in flight. */
-button.loading-retry { appearance: none; flex: none; min-height: 28px; padding: 3px 12px; border: 1px solid var(--border); border-radius: 7px;
+button.loading-retry, button.loading-action { appearance: none; flex: none; min-height: 28px; padding: 3px 12px; border: 1px solid var(--border); border-radius: 7px;
   background: var(--surface); color: var(--fg); font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
-button.loading-retry:hover:not([aria-disabled="true"]) { border-color: var(--accent); color: var(--accent); }
-button.loading-retry[aria-disabled="true"] { color: var(--muted); cursor: default; }
+button.loading-retry:hover:not([aria-disabled="true"]), button.loading-action:hover:not([aria-disabled="true"]) { border-color: var(--accent); color: var(--accent); }
+button.loading-retry[aria-disabled="true"], button.loading-action[aria-disabled="true"] { color: var(--muted); cursor: default; }
 /* Focus: the global :focus-visible rule (theme.css) — no per-component ring. */
 
 /* ── reduced motion: no animation at all (theme.css only shortens durations) ── */

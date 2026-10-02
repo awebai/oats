@@ -15,7 +15,7 @@ import { createInstancePrAction } from "./instance-pr-action.mjs";
 import { instanceSplitPlan, instanceSplitIdentity } from "./instance-split.mjs";
 import { createInstanceStarter } from "./start-instance.mjs";
 import { retirementSummary, runtimeState, unsupportedSession } from "./instance-presentation.mjs";
-import { deploymentUnavailableText } from "./deployment-header.mjs";
+import { deploymentUnavailableText, NOT_SERVED_CODE, NO_ANSWER_CODE, unservedError, createPendingWatch } from "./deployment-header.mjs";
 import { panelErrorCause } from "./deployment-contract.mjs";
 import {
   initTheme, toggleTheme, setTheme, THEMES, xtermTheme, onThemeChange,
@@ -107,6 +107,8 @@ async function api(pathname, opts) {
 
 const ctx = {
   api,
+  // Re-add a deployment the server stopped serving, through the normal (main-validated) add (#461).
+  reAddWorkspace: typeof window.oatsDesktop?.workspaceAdd === "function" ? (path) => window.oatsDesktop.workspaceAdd(path) : null,
   // Existing broker invalidation covers backend replacement as well as forge
   // account changes. Read views may revoke observations; no new IPC authority.
   connectionGeneration: () => connectionGeneration,
@@ -389,8 +391,39 @@ function setSidebarMode(mode) {
   if (typeof tabs !== "undefined") updateContextTabs();
 }
 
+// How long the server has kept answering "pending" for the shown deployment on this connection: past
+// PENDING_LIMIT_MS the roster says it got no answer instead of waiting silently (#461).
+const rosterPendingWatch = createPendingWatch();
+
+/** A deployment the server does not serve, or keeps answering "pending" for (#461): the failed
+ * state names it, with Retry, and Re-add workspace when it is not served. No row of another
+ * read stays: the server's answer is not about this deployment. */
+function failRosterUnserved(code, ws) {
+  if (rosterState?.hasData) rosterState.reset();
+  contextInstances = []; contextDeploymentNote = null; rosterStale = false; rosterSignaturePainted = null;
+  refreshPanelInstance([], ws);
+  const action = code === NOT_SERVED_CODE && ws && typeof desktopBridge?.workspaceAdd === "function"
+    ? { label: "Re-add workspace", onActivate: () => { void reAddRosterWorkspace(ws); } } : null;
+  rosterState?.fail(unservedError(code, ws), { action });
+  renderContextRoster([]);
+}
+
+/** Re-add through the normal add path (main validates it and restarts the server with the whole set). */
+async function reAddRosterWorkspace(ws) {
+  rosterState?.begin({ user: true });
+  let result;
+  try { result = await desktopBridge?.workspaceAdd?.(ws); } catch (error) { result = { ok: false, reason: error?.message }; }
+  if (currentWorkspace() !== ws) return;
+  if (result?.ok) { rosterPendingWatch.reset(); void refreshContextRoster({ user: true }); return; }
+  const error = new Error(`Couldn't re-add ${ws}: ${result?.reason || "the add failed"}`); error.code = NOT_SERVED_CODE;
+  rosterState?.fail(error, { action: { label: "Re-add workspace", onActivate: () => { void reAddRosterWorkspace(ws); } } });
+  renderContextRoster([]);
+}
+
 async function refreshContextRoster({ user = false } = {}) {
   if (!contextRosterEl) return;
+  // A Retry restarts the bounded wait for an answer.
+  if (user) rosterPendingWatch.reset();
   const myGen = ++contextRosterGen;
   const commitWorkspaceLabel = workspaceLabel.begin();
   const ws = currentWorkspace();
@@ -413,6 +446,16 @@ async function refreshContextRoster({ user = false } = {}) {
   try {
     panel = await api(`/api/panel${ws ? `?ws=${encodeURIComponent(ws)}` : ""}`);
   } catch (e) {
+    if (owns() && e?.code === NOT_SERVED_CODE) {
+      failRosterUnserved(NOT_SERVED_CODE, ws);
+      // The switcher still offers what the server does serve, with this deployment named as the
+      // current choice, so the window is never left without a way to another workspace.
+      let served = null;
+      try { served = await api("/api/panel"); } catch { /* the choices stay as they were */ }
+      const current = { id: ws, name: ws.split("/").filter(Boolean).at(-1) || ws, team: null };
+      if (served && owns() && commitWorkspaceLabel(current, Array.isArray(served.workspaces) ? served.workspaces : [])) renderWorkspaceContext(current);
+      return;
+    }
     if (owns()) {
       // With data: stale — the list is kept, its actions disabled, the
       // controller paints "Couldn't refresh instances · observed <age>" + Retry.
@@ -476,11 +519,14 @@ async function refreshContextRoster({ user = false } = {}) {
   // whole content (its existing copy, no skeleton), the count keeps its pill,
   // and the controller stays without data until an observation lands.
   if (panel.deployment?.status === "pending" && !panel.workspace?.remote && !contextInstances.length && !rosterState?.hasData) {
+    // Pending past the bound is no answer, not a longer wait (#461); a later observation still lands.
+    if (rosterPendingWatch.observe(`${connectionGeneration}\n${resolvedWs}`, true)) { failRosterUnserved(NO_ANSWER_CODE, resolvedWs); return; }
     rosterState?.defer();
     refreshPanelInstance(contextInstances, resolvedWs);
     if (signature !== rosterSignaturePainted) { rosterSignaturePainted = signature; renderContextRoster(contextInstances); }
     return;
   }
+  rosterPendingWatch.observe(null, false);
   const unchanged = !!rosterState?.hasData && signature === rosterSignaturePainted && rosterStale === reportedFailure;
   // The controller learns of the data before the paint (hasData gates the
   // empty copy). A reported failure with data already present skips

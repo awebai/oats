@@ -43,7 +43,7 @@ import {
   renderWorkspaceSelect, wsQuery, workspaceGeneration,
 } from "./common.mjs";
 import { createDataState, skeleton, statusLine, observedText } from "../loading.mjs";
-import { deploymentUnavailableText } from "../deployment-header.mjs";
+import { deploymentUnavailableText, NOT_SERVED_CODE, NO_ANSWER_CODE, unservedError, createPendingWatch } from "../deployment-header.mjs";
 import { registerAction } from "../keybindings.mjs";
 import { resolveViewKey } from "../view-keys.mjs";
 import { icon } from "../shell-icons.mjs";
@@ -62,7 +62,8 @@ export const hierarchyCSS = `
 .hier .spawnbtn { display:inline-flex; align-items:center; gap:6px; min-height:28px; padding:0 12px; font-size:12px; font-weight:650; white-space:nowrap; }
 .hier-notice { flex:none; display:flex; align-items:center; gap:8px; padding:8px 16px; color:var(--muted); background:var(--surface); font-size:12px; overflow-wrap:anywhere; }
 .hier-notice-message { flex:1; }
-.hier-retry { flex:none; }
+.hier-retry, .hier-readd { flex:none; }
+.hier-readd[hidden] { display:none; }
 .hier-notice[hidden] { display:none; }
 /* The canvas is a large focusable panel: the global 1px edge only (its base rule clears the outline). */
 .hier-canvas:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
@@ -296,7 +297,7 @@ export function mount(el, ctx) {
         <span style="flex:1"></span>
         <button class="act primary spawnbtn" title="Choose a soul in Workspace to spawn">${icon("plus", { size: 14 })}Spawn</button>
       </div>
-      <div class="hier-notice" role="note" hidden><span class="hier-notice-message"></span><button class="act hier-retry" type="button">Retry roster</button></div>
+      <div class="hier-notice" role="note" hidden><span class="hier-notice-message"></span><button class="act hier-retry" type="button">Retry roster</button><button class="act hier-readd" type="button" hidden>Re-add workspace</button></div>
       <div class="hier-canvas" tabindex="0" role="tree" aria-label="Active agents by cluster">
         <div class="hier-zoom">
           <button class="zout" title="Zoom out" aria-label="Zoom out">${icon("zoomOut", { size: 14 })}</button>
@@ -320,6 +321,8 @@ export function mount(el, ctx) {
   // request (the ownership race tests pin this), so it is not bound through
   // the controller's busy gate.
   s.q('hier-retry').addEventListener('click', () => { if (s.alive) void refresh(s, { user: true }); });
+  // Re-add: a deployment this Desktop's server does not serve, through the normal add (#461).
+  s.q('hier-readd').addEventListener('click', () => { if (s.alive) void reAdd(s); });
   s.q("wssel").addEventListener("change", (e) => setWorkspace(e.target.value));
   s.q("spawnbtn").addEventListener("click", () => openWorkspace(s));
   if (!ctx.openView) { s.q("spawnbtn").disabled = true; s.q("spawnbtn").title = 'Workspace navigation is unavailable in this host'; }
@@ -441,6 +444,20 @@ function staleAge(s) {
   const age = observedText(s.load?.observedAt ?? null, Date.now());
   return age ? ` · ${age}` : '';
 }
+/** Re-add the deployment named by the not-served notice through the normal add, then read again. */
+async function reAdd(s) {
+  const button = s.q('hier-readd'), path = button?.dataset.workspace;
+  if (!path || typeof s.ctx.reAddWorkspace !== 'function' || button.getAttribute('aria-disabled') === 'true') return;
+  button.setAttribute('aria-disabled', 'true');
+  let result;
+  try { result = await s.ctx.reAddWorkspace(path); } catch (error) { result = { ok: false, reason: error?.message }; }
+  if (!s.alive) return;
+  button.removeAttribute('aria-disabled');
+  if (currentWorkspace() !== path) return;
+  if (result?.ok) { s.pendingWatch?.reset(); void refresh(s, { user: true }); return; }
+  notice(s, `Couldn't re-add ${path}: ${result?.reason || 'the add failed'}`);
+  s.load?.say?.(`Couldn't re-add ${path}.`);
+}
 function notice(s, message) {
   const el = s.q('hier-notice'); if (!el) return;
   const text = el.querySelector?.('.hier-notice-message');
@@ -500,6 +517,8 @@ function applyPending(s) {
    request that still owns the view. `user`: a Retry the person asked for. */
 export async function refresh(s, { user = false } = {}) {
   if (!s.alive) return;
+  s.pendingWatch ||= createPendingWatch();
+  if (user) s.pendingWatch.reset(); // a Retry restarts the bounded wait for an answer
   const myGen = workspaceGeneration(), requestedWorkspace = currentWorkspace();
   const request = s.request = (s.request || 0) + 1;
   const owns = () => s.alive && request === s.request && myGen === workspaceGeneration();
@@ -519,10 +538,14 @@ export async function refresh(s, { user = false } = {}) {
     const deployment = !panel.workspace?.remote && data.deployment && typeof data.deployment === 'object' && data.deployment.status !== 'observed' ? data.deployment : null;
     if (deployment && !panel.instances.length) {
       if (deployment.status !== 'pending') throw Error(deploymentUnavailableText(deployment));
+      // Pending past the bound is no answer, not a longer wait (#461); a later observation still lands.
+      const subject = requestedWorkspace || panel.workspace?.id || '';
+      if (s.pendingWatch.observe(`${s.ctx.connectionGeneration?.() ?? 0}\n${subject}`, true)) throw unservedError(NO_ANSWER_CODE, subject);
       // The controller stays pending (aria-busy, the one announcement) without a pill: the copy is the summary.
-      s.load?.defer(); s.q('hier-sum').textContent = deploymentUnavailableText(deployment);
+      s.load?.defer(); s.q('hier-sum').textContent = deploymentUnavailableText(deployment); notice(s, '');
       return;
     }
+    s.pendingWatch.observe(null, false);
     // A stale selection (persisted, no longer served) behaves like an empty
     // one: adopt the served workspace. A served selection answered with
     // another workspace is a real mismatch and stays refused.
@@ -542,7 +565,13 @@ export async function refresh(s, { user = false } = {}) {
     // notice below is the visible failure surface (no failedHost).
     s.load?.fail(error);
     if (s.dataGen == null) s.q('hier-sum').textContent = 'Roster unknown';
-    notice(s, `Roster unavailable: ${String(error?.message || 'read failed').slice(0, 300)}. ${s.dataGen == null ? 'No current observation.' : `Showing the last observation${staleAge(s)}, not current state; actions disabled.`}`);
+    // A deployment the server does not serve, or does not answer for (#461), is named in full; Re-add when not served.
+    const unserved = [NOT_SERVED_CODE, NO_ANSWER_CODE].includes(error?.code);
+    const readd = s.q('hier-readd');
+    if (readd) { readd.hidden = !(error?.code === NOT_SERVED_CODE && typeof s.ctx.reAddWorkspace === 'function'); readd.dataset.workspace = requestedWorkspace || ''; }
+    const said = error?.code === NOT_SERVED_CODE ? unservedError(NOT_SERVED_CODE, requestedWorkspace).message
+      : String(error?.message || 'read failed').slice(0, 300);
+    notice(s, `${unserved ? said : `Roster unavailable: ${said}.`} ${s.dataGen == null ? 'No current observation.' : `Showing the last observation${staleAge(s)}, not current state; actions disabled.`}`);
     updatePop(s);
   } finally { if (owns()) s.loading = false; }
 }

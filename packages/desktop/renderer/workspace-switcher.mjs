@@ -49,6 +49,12 @@ export function createWorkspaceSwitcher({
   onboardEl.append(onboardPath, refLabel, onboardNote);
   status.before(onboardEl);
   let onboarding = null; // { token, path } — the current single-use offer
+  // A picked folder that is not a deployment (#461): refused before anything changes. Main says
+  // where the deployment is when it can (one level down, or the deployment the folder is inside);
+  // each choice goes through the normal add. With none, onboarding is the secondary action.
+  const pickEl = document.createElement("div"); pickEl.className = "ws-pick"; pickEl.hidden = true;
+  status.after(pickEl);
+  let pickOffer = null; // the refused pick's onboarding offer, entered only on request
   let generation = 0, modalGeneration = 0, discoveryGeneration = 0;
   let activeId = "", workspaces = [], suggestions = [], selected = null;
   let adding = false, discoveryState = { message: "", error: false };
@@ -182,6 +188,47 @@ export function createWorkspaceSwitcher({
     renderSuggestions();
   };
 
+  const clearPick = () => { pickOffer = null; pickEl.hidden = true; pickEl.replaceChildren(); };
+  const renderPick = (result) => {
+    pickEl.replaceChildren();
+    pickOffer = result?.onboard?.token ? { token: result.onboard.token, path: result.onboard.path } : null;
+    if (typeof result?.path === "string" && result.path) {
+      const picked = document.createElement("p"); picked.className = "ws-pick-path"; picked.textContent = `Chosen: ${result.path}`;
+      pickEl.append(picked);
+    }
+    const choices = Array.isArray(result?.choices) ? result.choices.filter((c) => typeof c?.path === "string" && c.path) : [];
+    if (choices.length) {
+      const list = document.createElement("div"); list.className = "ws-pick-choices";
+      list.setAttribute("role", "group"); list.setAttribute("aria-label", "OATS deployments to add instead");
+      for (const choice of choices) {
+        const button = document.createElement("button"); button.type = "button"; button.className = "ws-pick-choice secondary";
+        button.dataset.workspacePath = choice.path; button.disabled = adding; button.title = choice.path;
+        if (choice.kind === "ancestor") button.textContent = `Add ${choice.path} (the deployment this folder is inside)`;
+        else {
+          const name = document.createElement("span"); name.className = "ws-pick-name"; name.textContent = `Add ${choice.name || choice.path}`;
+          const path = document.createElement("span"); path.className = "ws-pick-meta"; path.textContent = choice.path;
+          button.append(name, path);
+        }
+        button.addEventListener("click", () => { void runAdd(choice.path, choice.name || choice.path, button); });
+        list.append(button);
+      }
+      pickEl.append(list);
+    }
+    const notes = [];
+    if (result?.more > 0) notes.push(`and ${result.more} more`);
+    if (result?.limited) notes.push(Number.isInteger(result.scanLimit) ? `Only the first ${result.scanLimit} entries of this folder were checked` : "Only the first entries of this folder were checked");
+    if (notes.length) { const more = document.createElement("p"); more.className = "ws-pick-more"; more.textContent = `${notes.join(". ")}.`; pickEl.append(more); }
+    if (pickOffer && typeof onboardWorkspace === "function") {
+      const setup = document.createElement("button"); setup.type = "button"; setup.className = "ws-pick-setup secondary";
+      setup.textContent = "Set up a new deployment here…"; setup.disabled = adding;
+      setup.addEventListener("click", () => {
+        if (adding || !pickOffer) return;
+        const offer = pickOffer; clearPick(); setStatus(""); enterOnboarding(offer);
+      });
+      pickEl.append(setup);
+    }
+    pickEl.hidden = !pickEl.childElementCount;
+  };
   const setAdding = (value) => {
     adding = value;
     dialog.setAttribute("aria-busy", String(value));
@@ -191,6 +238,7 @@ export function createWorkspaceSwitcher({
     modalSearch.disabled = value;
     refInput.disabled = value;
     for (const suggestion of suggestionsEl.querySelectorAll(".ws-suggestion")) suggestion.disabled = value;
+    for (const button of pickEl.querySelectorAll("button")) button.disabled = value;
     confirm.disabled = value || (onboarding ? !refInput.value.trim() : !selected);
     if (value) status.focus();
   };
@@ -212,7 +260,7 @@ export function createWorkspaceSwitcher({
   };
   const closeModal = (restore = true) => {
     if (adding) return false;
-    leaveOnboarding();
+    leaveOnboarding(); clearPick();
     modalGeneration++;
     discoveryGeneration++;
     modal.hidden = true;
@@ -228,7 +276,7 @@ export function createWorkspaceSwitcher({
     const discoveryToken = ++discoveryGeneration;
     modal.hidden = false;
     modalSearch.value = "";
-    leaveOnboarding();
+    leaveOnboarding(); clearPick();
     suggestions = [];
     selected = null;
     discoveryState = { message: "Finding OATS workspaces…", error: false };
@@ -275,6 +323,7 @@ export function createWorkspaceSwitcher({
   const onBrowse = async () => {
     if (adding) return;
     const token = ++modalGeneration;
+    clearPick();
     setAdding(true);
     setStatus("Choose an OATS workspace folder…");
     try {
@@ -283,12 +332,11 @@ export function createWorkspaceSwitcher({
       setAdding(false);
       if (result?.code === "cancelled") { paintDiscoveryState(); browse.focus(); return; }
       if (resolvedMutation(result)) return;
-      if (result?.onboard?.token && typeof onboardWorkspace === "function") {
-        discoveryGeneration++; setStatus(""); enterOnboarding(result.onboard); return;
-      }
       discoveryGeneration++;
       setStatus(mutationFailureMessage(result, "Could not use that folder."), true);
-      browse.focus();
+      // Nothing changed: the refusal says what was expected and, below it, where the deployment is.
+      if (result?.code === "not-a-workspace") renderPick(result);
+      (pickEl.querySelector("button") || browse).focus();
     } catch (error) {
       if (token !== modalGeneration) return;
       setAdding(false);
@@ -328,26 +376,31 @@ export function createWorkspaceSwitcher({
       browse.focus();
     }
   };
-  const onConfirm = async () => {
-    if (onboarding) return onOnboard();
-    if (!selected || adding) return;
+  // Every add from the dialog (a suggestion, a deployment offered beside a refused pick) is the
+  // same main-validated add; `returnFocus` gets focus back when it fails.
+  const runAdd = async (path, name, returnFocus) => {
+    if (adding) return;
     const token = ++modalGeneration;
-    const choice = selected;
     setAdding(true);
-    setStatus(`Adding ${candidateName(choice)}…`);
+    setStatus(`Adding ${name}…`);
     try {
-      const result = await addWorkspace(choice.path);
+      const result = await addWorkspace(path);
       if (token !== modalGeneration) return;
       setAdding(false);
       if (resolvedMutation(result)) return;
       setStatus(mutationFailureMessage(result, "Could not add that workspace."), true);
-      confirm.focus();
+      (returnFocus?.isConnected ? returnFocus : confirm).focus();
     } catch (error) {
       if (token !== modalGeneration) return;
       setAdding(false);
       setStatus(error?.message || "Could not add that workspace.", true);
-      confirm.focus();
+      (returnFocus?.isConnected ? returnFocus : confirm).focus();
     }
+  };
+  const onConfirm = async () => {
+    if (onboarding) return onOnboard();
+    if (!selected || adding) return;
+    return runAdd(selected.path, candidateName(selected), confirm);
   };
 
   const render = (workspace, list = []) => {

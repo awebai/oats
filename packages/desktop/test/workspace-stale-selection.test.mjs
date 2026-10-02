@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { JSDOM } from "jsdom";
+import { createPendingWatch, NOT_SERVED_CODE, NO_ANSWER_CODE } from "../renderer/deployment-header.mjs";
 
 // The stored selection is read once at module load: seed persistence BEFORE
 // the first import of common.mjs so the stale id is the initial selection and
@@ -153,7 +154,7 @@ function shellRoster(t) {
   const requests = [], rendered = [], selected = [];
   const c = {
     document, contextRosterGen: 0, contextWorkspace: "", contextInstances: [], tabWorkspace: common.currentWorkspace(),
-    rosterState: null, rosterStale: false, contextDeploymentNote: null, rosterSignaturePainted: null, rosterSignature, tabs: new Map(), activeTab: null, connectionGeneration: 0,
+    rosterState: null, rosterStale: false, contextDeploymentNote: null, rosterSignaturePainted: null, rosterSignature, rosterPendingWatch: createPendingWatch(), NOT_SERVED_CODE, NO_ANSWER_CODE, failRosterUnserved: assert.fail, tabs: new Map(), activeTab: null, connectionGeneration: 0,
     currentWorkspace: common.currentWorkspace, adoptWorkspace: common.adoptWorkspace,
     staleWorkspaceSelection: common.staleWorkspaceSelection, rosterResponseOwns,
     contextRosterEl: document.getElementById("instance-roster"),

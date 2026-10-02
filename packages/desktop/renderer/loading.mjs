@@ -239,8 +239,9 @@ export function updateNotice(el, { noun, observedAt = null, cause = null, busy =
 }
 
 /** Build the failed block (the read failed with nothing to show): the cause, the code behind a Details disclosure,
- * Retry. Shared by the controller and pages that mirror a controller's state; update in place with `updateFailed()`. */
-export function failedElement(doc, { message = null, code = null, noun = 'data', busy = false, onRetry = null } = {}) {
+ * Retry, and an optional second action `{ label, onActivate }` beside it (Re-add workspace, #461).
+ * Shared by the controller and pages that mirror a controller's state; update in place with `updateFailed()`. */
+export function failedElement(doc, { message = null, code = null, noun = 'data', busy = false, onRetry = null, action = null } = {}) {
   const el = element(doc, 'div', 'loading-failed');
   el.append(element(doc, 'p', 'loading-failed-message'));
   const more = element(doc, 'details', 'loading-failed-details');
@@ -250,15 +251,26 @@ export function failedElement(doc, { message = null, code = null, noun = 'data',
   retry.addEventListener('click', () => { if (retry.getAttribute('aria-disabled') === 'true') return; onRetry?.(); });
   if (typeof onRetry !== 'function') retry.hidden = true;
   el.append(more, retry);
-  updateFailed(el, { message, code, noun, busy });
+  updateFailed(el, { message, code, noun, busy, action });
   return el;
 }
-export function updateFailed(el, { message = null, code = null, noun = 'data', busy = false } = {}) {
+export function updateFailed(el, { message = null, code = null, noun = 'data', busy = false, action = null } = {}) {
   el.querySelector('.loading-failed-message').textContent = typeof message === 'string' && message ? message : `${wording.couldNotRefresh(noun)}.`;
   const more = el.querySelector('.loading-failed-details'), shown = typeof code === 'string' && code ? code : null;
   more.hidden = !shown; more.querySelector('.loading-failed-code').textContent = shown || '';
   const retry = el.querySelector('.loading-retry');
   if (retry) { if (busy) retry.setAttribute('aria-disabled', 'true'); else retry.removeAttribute('aria-disabled'); }
+  // The second action is kept in place across updates (it may hold focus); only its label and handler change.
+  let second = el.querySelector('.loading-action');
+  if (!action || typeof action.label !== 'string' || typeof action.onActivate !== 'function') { second?.remove(); return; }
+  if (!second) {
+    second = element(el.ownerDocument, 'button', 'act loading-action'); second.type = 'button'; second.dataset.focusKey = 'action';
+    second.addEventListener('click', () => { if (second.getAttribute('aria-disabled') === 'true') return; second.onActivate?.(); });
+    el.append(second);
+  }
+  if (second.textContent !== action.label) second.textContent = action.label;
+  second.onActivate = action.onActivate;
+  if (busy) second.setAttribute('aria-disabled', 'true'); else second.removeAttribute('aria-disabled');
 }
 
 /* ── the data-state controller ───────────────────────────────────────────── */
@@ -287,6 +299,7 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
   let observedAt = null, announced = null, inFlight = null;
   let pendingTimer = null, refreshingTimer = null, ageTimer = null;
   let skeletonEl = null, failedEl = null, indicatorEl = null, noticeEl = null, noticeVariantNow = null, noticeMessage = null;
+  let failedAction = null; // the failed block's second action, if the failing read named one
   const refreshControls = new Set();
 
   const clearTimer = id => { if (id !== null) cancel(id); return null; };
@@ -316,7 +329,7 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
   function setBusyControls() {
     const mark = el => busy ? el.setAttribute('aria-disabled', 'true') : el.removeAttribute('aria-disabled');
     refreshControls.forEach(mark);
-    for (const host of [noticeEl, failedEl]) { const retry = host?.querySelector('.loading-retry'); if (retry) mark(retry); }
+    for (const host of [noticeEl, failedEl]) for (const button of host?.querySelectorAll('.loading-retry, .loading-action') || []) mark(button);
   }
   function retryButton() {
     const b = element(doc, 'button', 'act loading-retry'); b.type = 'button'; b.textContent = wording.retry;
@@ -356,7 +369,8 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
   function showFailed(error) {
     removeSkeleton();
     if (!failedHost) return;
-    const facts = { message: error?.message, code: codeLine(error), noun, busy };
+    const action = failedAction && { label: failedAction.label, onActivate: () => { if (!disposed && !busy) failedAction?.onActivate(); } };
+    const facts = { message: error?.message, code: codeLine(error), noun, busy, action };
     if (!failedEl) { failedEl = failedElement(doc, { ...facts, onRetry: () => { if (!disposed && !busy) onRetry?.(); } }); failedHost.append(failedEl); }
     else updateFailed(failedEl, facts);
   }
@@ -422,8 +436,10 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
      * kept data comes from, when the failed reply still names it (a held / last-good table) — it dates
      * the stale line. A surface with data on screen calls fail() alone (never succeed() first: that
      * would rebuild the line under a focused Retry and announce twice). */
-    fail(error = null, { observedAt: at } = {}) {
+    fail(error = null, { observedAt: at, action = null } = {}) {
       if (disposed) return;
+      // `action`: a second action for the failed block ({ label, onActivate }), e.g. Re-add workspace.
+      failedAction = action && typeof action.label === 'string' && typeof action.onActivate === 'function' ? action : null;
       pendingTimer = clearTimer(pendingTimer); refreshingTimer = clearTimer(refreshingTimer);
       removeSkeleton(); removeIndicator();
       user = false; busy = false;

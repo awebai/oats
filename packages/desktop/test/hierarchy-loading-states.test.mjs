@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import * as hierarchy from '../renderer/views/hierarchy.mjs';
 import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
+import { NOT_SERVED_CODE, NO_ANSWER_CODE, PENDING_LIMIT_MS } from '../renderer/deployment-header.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 /** A fake clock on the JSDOM window: timers fire in order when advanced. */
@@ -30,7 +31,7 @@ const deferred = () => { let resolve, reject; const promise = new Promise((yes, 
 const instance = (name = 'dev', fields = {}) => ({ instance: name, agent: 'soul', agentsRoot: '/team/agents', home: `/team/agents/soul/instances/${name}`, running: true, repoName: 'reported-repo', runtime: 'pi', branch: 'reported-branch', ...fields });
 const panel = (instances = [instance()], id = currentWorkspace(), extra = {}) => ({ instances, workspace: { id }, workspaces: [{ id: '/team', name: 'Team' }, { id: '/other', name: 'Other' }], generatedAt: 'observation-time', ...extra });
 
-async function setup(t, { api, instances } = {}) {
+async function setup(t, { api, instances, ctx: extra = {} } = {}) {
   const dom = new JSDOM('<body><main id="host"></main></body>', { url: 'http://localhost' });
   const doc = dom.window.document, host = doc.querySelector('main');
   const old = { window: globalThis.window, document: globalThis.document, setInterval: globalThis.setInterval, ws: currentWorkspace() };
@@ -38,7 +39,7 @@ async function setup(t, { api, instances } = {}) {
   const c = clock(dom.window);
   setWorkspace('/team');
   let read = api || (() => panel(instances));
-  const ctx = { hasWorkspaceSwitcher: true, api: path => read(path), openTerminal() {}, startInstance() {}, restartInstance() {}, openView() {} };
+  const ctx = { hasWorkspaceSwitcher: true, api: path => read(path), openTerminal() {}, startInstance() {}, restartInstance() {}, openView() {}, ...extra };
   // Every skeleton that ever enters the summary is recorded, so "never" is provable for fast replies.
   const skeletons = [];
   const observer = new dom.window.MutationObserver(records => { for (const r of records) for (const n of r.addedNodes) if (n.dataset?.skeleton) skeletons.push(n); });
@@ -220,4 +221,48 @@ test('a Herdr-recorded instance: the popover disables Terminal and Restart with 
   const terminal = u.one('.pterm'), restart = u.one('.prestart');
   assert.equal(terminal.disabled, true); assert.equal(terminal.title, reason);
   assert.equal(restart.disabled, true); assert.equal(restart.title, reason);
+});
+
+/* ── #461: a deployment the server does not serve, or does not answer for ── */
+const notServed = () => Promise.reject(Object.assign(new Error("This Desktop's server isn't serving this deployment."), { code: NOT_SERVED_CODE, status: 404 }));
+
+test('not served: the notice names the deployment, offers Retry and Re-add, and the status line says it once', async t => {
+  const added = [];
+  const u = await setup(t, { api: notServed, ctx: { reAddWorkspace: async path => { added.push(path); return { ok: true, workspace: { id: path } }; } } }); await tick();
+  assert.match(u.notice(), /^This Desktop's server isn't serving this deployment: \/team\. Re-add the workspace, or retry\. No current observation\.$/);
+  assert.equal(u.one('.hier-readd').hidden, false); assert.equal(u.one('.hier-retry').hidden, false);
+  assert.match(u.status(), /^Couldn't refresh roster\./); assert.equal(u.sum().textContent, 'Roster unknown');
+  assert.doesNotMatch(u.host.textContent, /Reading the deployment/);
+  // Re-add: that exact path through the normal add, then a read of the now-served deployment.
+  u.setRead(() => panel([instance('a')]));
+  u.one('.hier-readd').click(); await tick(); await tick();
+  assert.deepEqual(added, ['/team']);
+  assert.equal(u.notice(), ''); assert.equal(u.nodes().length, 1);
+});
+
+test('not served without an add bridge (a hosted view) offers Retry only', async t => {
+  const u = await setup(t, { api: notServed }); await tick();
+  assert.match(u.notice(), /isn't serving this deployment: \/team/);
+  assert.equal(u.one('.hier-readd').hidden, true);
+});
+
+test('a refused Re-add says why and keeps the notice', async t => {
+  const u = await setup(t, { api: notServed, ctx: { reAddWorkspace: async () => ({ ok: false, reason: 'path does not exist' }) } }); await tick();
+  u.one('.hier-readd').click(); await tick();
+  assert.equal(u.notice(), "Couldn't re-add /team: path does not exist");
+});
+
+test('pending past the bound is "No answer" (no Re-add); Retry restarts the wait', async t => {
+  let now = 5_000_000; t.mock.method(Date, 'now', () => now);
+  const pending = () => panel([], currentWorkspace(), { deployment: { status: 'pending' } });
+  const u = await setup(t, { api: pending, ctx: { reAddWorkspace: async () => ({ ok: true }) } }); await tick();
+  assert.equal(u.sum().textContent, 'Reading the deployment through the installed OATS CLI…');
+  now += PENDING_LIMIT_MS - 1; await u.poll(); await tick(); assert.equal(u.notice(), '', 'inside the bound');
+  now += 1; await u.poll(); await tick();
+  assert.match(u.notice(), /^No answer from the Desktop's server for this deployment: \/team\./);
+  assert.equal(u.one('.hier-readd').hidden, true, 'served, only slow: no Re-add');
+  assert.equal(u.root().hasAttribute('aria-busy'), false, 'an answer, not a wait');
+  u.retry(); await tick();
+  assert.equal(u.notice(), '', 'Retry restarts the bounded wait');
+  assert.equal(u.sum().textContent, 'Reading the deployment through the installed OATS CLI…');
 });

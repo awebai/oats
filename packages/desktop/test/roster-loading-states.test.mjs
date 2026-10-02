@@ -22,7 +22,7 @@ import { createRuntimeBadge } from '../renderer/identity-marks.mjs';
 import { iconElement, mountShellIcons } from '../renderer/shell-icons.mjs';
 import { rosterTipFacts } from '../renderer/roster-tip.mjs';
 import { prChip, prText } from '../renderer/roster-pr.mjs';
-import { deploymentUnavailableText } from '../renderer/deployment-header.mjs';
+import { deploymentUnavailableText, createPendingWatch, unservedError, NOT_SERVED_CODE, NO_ANSWER_CODE, PENDING_LIMIT_MS } from '../renderer/deployment-header.mjs';
 import { panelErrorCause } from '../renderer/deployment-contract.mjs';
 import { staleWorkspaceSelection } from '../renderer/views/common.mjs';
 import { createWorkspaceTabMemory } from '../renderer/workspace-tab-memory.mjs';
@@ -135,16 +135,19 @@ test('rosterSignature: identical instances and facts agree; any painted fact cha
 });
 
 /* ── the shipped shell: initContextRoster + refreshContextRoster + renderContextRoster (+ restoreWorkspaceTabs) ── */
-function shell(t) {
+function shell(t, { addResult = { ok: true, workspace: { id: 'A' } } } = {}) {
   const { dom, doc, rosterEl } = rosterDom(t);
   mountShellIcons(doc);
-  const c = clock(), requests = [], listeners = [];
+  const c = clock(), requests = [], listeners = [], adds = [];
   const context = {
     ...tree, document: doc, console,
     // The controller is built by the shipped initContextRoster; the clock is the test's.
     createRosterLoading: (d, el, options) => tree.createRosterLoading(d, el, { ...options, now: c.now, setTimeout: c.setTimeout, clearTimeout: c.clearTimeout }),
     instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge, instanceActionTarget, instanceSplitPlan, iconElement, prChip, prText,
     rosterTipFacts, deploymentUnavailableText, staleWorkspaceSelection, panelErrorCause,
+    // #461: the bounded wait runs on the test's clock; Re-add goes to a recorded bridge.
+    rosterPendingWatch: createPendingWatch({ now: c.now }), unservedError, NOT_SERVED_CODE, NO_ANSWER_CODE,
+    desktopBridge: { workspaceAdd: async path => { adds.push(path); return addResult; } },
     rosterTip: { bind() {}, hide() {}, sync() {} }, rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} }, ctx: {},
     connectionGeneration: 0, menuState() {}, runAction: assert.fail, getBinding: () => null, formatChord: x => x, isMac: true,
     contextRosterEl: null, contextRosterGen: 0, contextFilter: '', contextWorkspace: 'A', contextInstances: [], tabWorkspace: 'A',
@@ -163,14 +166,14 @@ function shell(t) {
   };
   context.splitOpenState = () => ({ split: null, activeId: context.activeTab, tabs: context.tabs, workspace: context.workspace, visible: false });
   context.ownsInstanceTarget = target => context.contextInstances.filter(r => sameInstanceActionTarget(target, r, context.workspace)).length === 1;
-  const s = runInNewContext(`${['initContextRoster', 'refreshContextRoster', 'renderContextRoster', 'renderWorkspaceContext', 'restoreWorkspaceTabs'].map(fn).join('\n')}
+  const s = runInNewContext(`${['initContextRoster', 'failRosterUnserved', 'reAddRosterWorkspace', 'refreshContextRoster', 'renderContextRoster', 'renderWorkspaceContext', 'restoreWorkspaceTabs'].map(fn).join('\n')}
     ({ initContextRoster, refreshContextRoster, renderContextRoster, restoreWorkspaceTabs });`, context);
   // #sidebar is not in index.html's roster section alone; initContextRoster listens on it.
   if (!doc.getElementById('sidebar')) { const aside = doc.createElement('aside'); aside.id = 'sidebar'; aside.append(rosterEl); doc.body.append(aside); }
   s.initContextRoster();
   const list = () => rosterEl.querySelector('.ctx-list');
   return {
-    ...s, c, context, doc, dom, rosterEl, requests, list,
+    ...s, c, context, doc, dom, rosterEl, requests, list, adds,
     count: () => rosterEl.querySelector('.ctx-count'), status: () => rosterEl.querySelector('.ctx-status'), live: () => rosterEl.querySelector('[role="status"].loading-sr'),
     rows: () => [...list().querySelectorAll('.ctx-tree-row:not(.skeleton-roster-row)')], /* the skeleton wears the row class too */ names: () => [...list().querySelectorAll('.ctx-name')].map(n => n.textContent),
     text: () => list().textContent,
@@ -524,4 +527,73 @@ test('Spec D: a remote (server) panel without the cause renders exactly as befor
   await s.reply(0, panelOf('A', roster, { workspace: { id: 'A', name: 'A', remote: true }, error: 'Server is unreachable' }));
   const notice = s.status().querySelector('.loading-notice[data-kind="stale"]');
   assert.equal(notice.title, 'Server is unreachable'); assert.match(notice.textContent, /^Couldn't refresh instances/);
+});
+
+/* ── #461: a deployment the server does not serve, or does not answer for ── */
+const notServedError = () => { const e = new Error("This Desktop's server isn't serving this deployment."); e.code = NOT_SERVED_CODE; e.status = 404; return e; };
+
+test('a deployment the server does not serve reaches the failed state by name, with Retry and Re-add, announced once', async t => {
+  const s = shell(t);
+  await s.fail(0, notServedError());
+  const failed = s.list().querySelector('.loading-failed');
+  assert.match(failed.querySelector('.loading-failed-message').textContent, /^This Desktop's server isn't serving this deployment: A\./);
+  assert.equal(failed.querySelector('.loading-failed-code').textContent, NOT_SERVED_CODE);
+  assert.deepEqual([...failed.querySelectorAll('button')].map(b => b.textContent), ['Retry', 'Re-add workspace']);
+  assert.match(s.live().textContent, /^Couldn't refresh instances\. This Desktop's server isn't serving this deployment: A\./);
+  assert.doesNotMatch(s.text(), /Reading the deployment|No instances/);
+  // The switcher still gets the served choices: one plain read without ?ws=.
+  assert.equal(s.requests[1].path, '/api/panel'); await s.reply(1, panelOf('B', []));
+  // A repeated poll says the same thing: the polite line is not announced again.
+  const said = s.live().textContent; s.refreshContextRoster(); await s.fail(2, notServedError());
+  assert.equal(s.live().textContent, said); assert.equal(s.list().querySelectorAll('.loading-failed').length, 1, 'updated in place');
+  await s.reply(3, panelOf('B', []));
+  // Retry re-reads as a user read.
+  failed.querySelector('.loading-retry').click(); assert.equal(s.requests.length, 5); assert.equal(s.requests[4].path, '/api/panel?ws=A');
+});
+
+test('Re-add goes through the normal add for that exact path, then reads the roster again', async t => {
+  const s = shell(t);
+  await s.fail(0, notServedError()); await s.reply(1, panelOf('B', []));
+  s.list().querySelector('.loading-action').click(); await tick();
+  assert.deepEqual(s.adds, ['A'], 'the workspace path, through workspace:add');
+  assert.equal(s.requests.at(-1).path, '/api/panel?ws=A', 'served now: read again');
+  await s.reply(s.requests.length - 1, panelOf('A', roster));
+  assert.equal(s.list().querySelector('.loading-failed'), null); assert.deepEqual(s.names(), ['alpha', 'gamma', 'beta']);
+});
+
+test('a refused Re-add keeps the failed state with its reason and Re-add', async t => {
+  const s = shell(t, { addResult: { ok: false, code: 'not-a-workspace', reason: 'no oats-local.yaml' } });
+  await s.fail(0, notServedError()); await s.reply(1, panelOf('B', []));
+  s.list().querySelector('.loading-action').click(); await tick();
+  const failed = s.list().querySelector('.loading-failed');
+  assert.equal(failed.querySelector('.loading-failed-message').textContent, "Couldn't re-add A: no oats-local.yaml");
+  assert.ok(failed.querySelector('.loading-action'), 'Re-add stays offered');
+});
+
+test('rows of an earlier read do not stay under a not-served answer', async t => {
+  const s = shell(t);
+  await s.reply(0, panelOf('A', roster)); assert.equal(s.rows().length, 3);
+  s.refreshContextRoster(); await s.fail(1, notServedError());
+  assert.equal(s.rows().length, 0); assert.ok(s.list().querySelector('.loading-failed .loading-action'));
+});
+
+test('pending past the bound is "No answer" with Retry (no Re-add); Retry restarts the wait; an observation still lands', async t => {
+  const s = shell(t);
+  const pending = () => panelOf('A', [], { deployment: { status: 'pending' } });
+  await s.reply(0, pending());
+  assert.match(s.text(), /Reading the deployment/); assert.equal(s.list().querySelector('.loading-failed'), null);
+  s.c.advance(PENDING_LIMIT_MS - 1); s.refreshContextRoster(); await s.reply(1, pending());
+  assert.equal(s.list().querySelector('.loading-failed'), null, 'still inside the bound');
+  s.c.advance(1); s.refreshContextRoster(); await s.reply(2, pending());
+  const failed = s.list().querySelector('.loading-failed');
+  assert.match(failed.querySelector('.loading-failed-message').textContent, /^No answer from the Desktop's server for this deployment: A\./);
+  assert.equal(failed.querySelector('.loading-failed-code').textContent, NO_ANSWER_CODE);
+  assert.equal(failed.querySelector('.loading-action'), null, 'served, only slow: no Re-add');
+  assert.doesNotMatch(s.text(), /Reading the deployment/);
+  failed.querySelector('.loading-retry').click(); await s.reply(3, pending());
+  assert.equal(s.list().querySelector('.loading-failed'), null, 'Retry restarts the bounded wait');
+  s.c.advance(PENDING_LIMIT_MS); s.refreshContextRoster(); await s.reply(4, pending());
+  assert.ok(s.list().querySelector('.loading-failed'));
+  s.refreshContextRoster(); await s.reply(5, panelOf('A', roster));
+  assert.equal(s.list().querySelector('.loading-failed'), null); assert.equal(s.rows().length, 3);
 });

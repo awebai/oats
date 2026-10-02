@@ -3,14 +3,15 @@
 //
 // Discovery is BOUNDED and deterministic — never arbitrary filesystem
 // scanning: (a) deployments the app already knows, (b) a persisted
-// recently-added list. Every candidate must still be a workspace-model v2
+// recently-added list. (A folder the operator picked that is not a deployment
+// gets one bounded look around it: pickedFolderChoices.) Every candidate must still be a workspace-model v2
 // deployment directory AT SUGGESTION TIME; `reason` says why it is offered.
 // The deployment's content is the kernel's to read (`oats workspace status`);
 // the registry never parses it and knows no team scope. workspace:add canonicalizes, re-validates, persists to a recents
 // store (path-validated on read-back — never trusted blindly), and the
 // caller replaces only an app-OWNED backend server.
 import { mkdirSync, writeFileSync, renameSync, rmSync } from "node:fs";
-import { dirname } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 /** Restore explicitly opened workspaces, independently of recent suggestions.
  * Re-validate on startup: moved/deleted deployments are skipped and
@@ -28,6 +29,109 @@ export function restoreWorkspaceDirs(startup, raw, validate) {
   }
   // Keep the existing empty-workspace/picker journey on first launch.
   return dirs.size ? [...dirs] : [startup];
+}
+
+/** The absolute paths a saved open set names, as written (unvalidated): the deployments this Desktop
+ * knows, so a known one the server stops serving is reported instead of silently replaced (#461). */
+export function savedWorkspacePaths(raw) {
+  let saved;
+  try { saved = JSON.parse(raw); } catch { return []; }
+  return Array.isArray(saved) ? saved.filter((path) => typeof path === "string" && path.startsWith("/")) : [];
+}
+
+/** What may be written as the open set: deployments only, each once. A non-deployment (a parent
+ * folder the app was launched from, a deployment that moved) is never persisted, and an empty
+ * result means "write nothing": the saved set is never overwritten with nothing (#461). */
+export function persistableDirs(dirs, validate) {
+  const out = [];
+  for (const path of dirs) {
+    let ok = false;
+    try { ok = !!validate(path); } catch { /* not a deployment now */ }
+    if (ok && !out.includes(path)) out.push(path);
+  }
+  return out;
+}
+
+/** The --dir set a server is restarted with to add `path`: the validated open set plus `path`,
+ * every deployment kept and none twice (#461). */
+export function stageDirs(previous, path, validate) {
+  return persistableDirs([...previous, path], (p) => p === path || validate(p));
+}
+
+/* ── A picked folder that is not a deployment (#461) ───────────────────────
+   Refused before anything changes. When it is cheap and safe to see where the
+   deployment is, the answer offers it: deployments one level down (a parent
+   such as ~/Agents), or the deployment the folder is inside (a member repo,
+   agents/). Directory entries are read without following links, at most
+   PICK_SCAN_LIMIT of them; nothing is parsed. Only with no choice is the
+   onboarding offer (decision 9) made, as a secondary action. */
+export const NOT_A_DEPLOYMENT_REASON = "This folder isn't an OATS deployment: it has no oats-local.yaml. Choose the deployment folder itself, the one that contains oats-local.yaml.";
+export const PICK_SCAN_LIMIT = 200;
+export const PICK_CHOICE_LIMIT = 20;
+export const PICK_ANCESTOR_LIMIT = 8;
+
+/**
+ * @param {string} dir  canonical picked folder (not a deployment)
+ * @param {object} io
+ * @param {(dir: string, limit: number) => { entries: Array<{ name: string, isDirectory: boolean }>, limited: boolean }} io.list
+ *        at most `limit` entries, `isDirectory` from the entry itself (a link is not a directory)
+ * @param {(p: string) => boolean} io.isDeployment  a regular oats-local.yaml (lstat)
+ * @returns {{ choices: Array<{ path, name, kind: "inside"|"ancestor" }>, more: number, limited: boolean }}
+ */
+export function pickedFolderChoices(dir, io) {
+  const is = (p) => { try { return io.isDeployment(p) === true; } catch { return false; } };
+  let listed = { entries: [], limited: false };
+  try { listed = io.list(dir, PICK_SCAN_LIMIT) || listed; } catch { /* unreadable: no children offered */ }
+  const found = listed.entries.filter((e) => e?.isDirectory && typeof e.name === "string" && !e.name.includes("/"))
+    .map((e) => e.name).sort((a, b) => a.localeCompare(b)).map((name) => join(dir, name)).filter(is);
+  const choices = found.slice(0, PICK_CHOICE_LIMIT).map((path) => ({ path, name: basename(path), kind: "inside" }));
+  for (let path = dir, n = 0; n < PICK_ANCESTOR_LIMIT; n++) {
+    const up = dirname(path);
+    if (up === path) break;
+    path = up;
+    if (is(path)) { choices.push({ path, name: basename(path) || path, kind: "ancestor" }); break; }
+  }
+  return { choices, more: Math.max(0, found.length - PICK_CHOICE_LIMIT), limited: !!listed.limited, ...(listed.limited ? { scanLimit: PICK_SCAN_LIMIT } : {}) };
+}
+
+/**
+ * The add entry point behind workspace:add and workspace:pick: the decision, the refusal of a
+ * non-deployment (with its choices, or the onboarding offer), and the transactional executor.
+ * A refusal returns before any effect: the open set and the running server are untouched.
+ * @param {object} io
+ * @param {(path: string, fromPicker: boolean) => object} io.decide     decideAdd with the live provenance
+ * @param {(p: string) => string} io.realpath
+ * @param {(dir: string) => ReturnType<typeof pickedFolderChoices>} io.choices  records the offered paths
+ * @param {(path: string) => string|null} io.offer                      onboarding offer token
+ * @param {(workspace, isCurrent: () => boolean) => Promise<object>} io.execute  createAddExecutor
+ * @param {ReturnType<typeof createGenerations>} io.generations
+ * @param {(workspace) => void} [io.added]  a workspace was opened, or was already open
+ */
+export function createPerformAdd(io) {
+  return async function performAdd(requestedPath, fromPicker) {
+    const gen = io.generations.next("add");
+    const decision = io.decide(requestedPath, fromPicker);
+    if (!decision.ok) {
+      if (decision.code !== "not-a-workspace") return { ok: false, code: decision.code, reason: decision.reason };
+      let canonical = null;
+      try { canonical = io.realpath(requestedPath); } catch { /* reported without a path */ }
+      if (!canonical) return { ok: false, code: decision.code, reason: NOT_A_DEPLOYMENT_REASON };
+      const answer = { ok: false, code: decision.code, reason: NOT_A_DEPLOYMENT_REASON, path: canonical, choices: [], more: 0, limited: false };
+      if (!fromPicker) return answer;
+      try { Object.assign(answer, io.choices(canonical)); } catch { /* no choices */ }
+      // Decision 9 stays reachable, never as the default reaction: only a folder with no
+      // deployment in or around it gets the single-use offer for THIS canonical path.
+      if (!answer.choices.length) {
+        const token = io.offer(canonical);
+        if (token) answer.onboard = { token, path: canonical };
+      }
+      return answer;
+    }
+    if (decision.action === "already-advertised") { io.added?.(decision.workspace); return { ok: true, workspace: decision.workspace }; }
+    const result = await io.execute(decision.workspace, () => io.generations.isCurrent("add", gen));
+    if (result?.ok) io.added?.(decision.workspace);
+    return result;
+  };
 }
 
 /** Reuse a backend only when it covers the whole restored open set. */
@@ -176,6 +280,7 @@ export function createGenerations() {
  *
  * @param {object} io
  * @param {() => string[]} io.getDirs            current committed dir list
+ * @param {(dirs: string[], path: string) => string[]} [io.stage]  the --dir set to start with (stageDirs)
  * @param {(dirs: string[]) => void} io.commitDirs
  * @param {(path: string) => void} io.commitRecent
  * @param {(dirs: string[]) => Promise<void>} io.replaceServer  stop owned server
@@ -203,7 +308,8 @@ export function createAddExecutor(io) {
   async function run(workspace, isCurrent) {
     if (!isCurrent()) return { ok: false, code: "superseded", reason: "superseded by a newer request" };
     const previousDirs = io.getDirs();
-    const stagedDirs = [...previousDirs, workspace.path];
+    // The validated open set plus the new deployment (stageDirs): a restart never drops one.
+    const stagedDirs = io.stage ? io.stage(previousDirs, workspace.path) : [...previousDirs, workspace.path];
     // The WHOLE effectful lifecycle — including the staging replacement
     // itself — runs inside the guarded transaction (round-3 finished-product
     // review: replaceServer(stagedDirs) threw AFTER the previous child was

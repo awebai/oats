@@ -59,7 +59,7 @@ test('real main classifier routes every normalized alias through the specialized
   const f = proxy(async () => { calls++; return new Response(JSON.stringify(view())); });
   const deps = { ipcMain: { handle: (_name, fn) => handler = fn }, classifyApiRoute, RENDERER_URL: f.deps.rendererURL,
     proxyInstanceEvents: (event, path, opts, deps) => proxyInstanceEvents(event, path, opts, { ...deps, fetch: f.deps.fetch }),
-    base: () => f.connection.base, wsId: 'ws', allowedWs: f.connection.allowedWs, serverEpoch: 0, serverHost: { inTransition: () => false },
+    base: () => f.connection.base, wsId: 'ws', allowedWs: f.connection.allowedWs, serverEpoch: 0, unservedRefusal: () => null, serverHost: { inTransition: () => false },
     guard: () => assert.fail('events must never use generic proxy') };
   runInNewContext(source.slice(start, end), deps);
   for (const path of ['/api/instance-events', '/api/./instance-events', '/api/x/../instance-events', '/api/%2e/instance-events', '/api' + String.fromCharCode(92) + 'instance-events', '/a\tpi/instance-events']) {
