@@ -152,8 +152,8 @@ composed skills and instructions, a spawn records:
       "commit": "3f2a9c1e…", "digest": "sha256-…", "materializedAt": "2026-09-24T10:12:44.118Z"
     },
     "oats.okf": {
-      "from": { "kind": "package", "package": "oats.okf", "version": "4.0.7", "commit": "e460b29a…", "integrity": "sha256-…", "repoKey": "github.com/awebai/oats-okf" },
-      "commit": "e460b29a…", "digest": "sha256-…", "materializedAt": "2026-09-24T10:12:44.201Z"
+      "from": { "kind": "package", "package": "oats.okf", "version": "4.1.0", "commit": "e331a996…", "integrity": "sha256-…", "repoKey": "github.com/awebai/oats-okf" },
+      "commit": "e331a996…", "digest": "sha256-…", "materializedAt": "2026-09-24T10:12:44.201Z"
     }
   },
   "providers": {

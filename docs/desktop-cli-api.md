@@ -38,7 +38,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
              "instance-events-2","schedule-history","schedule-read-2","spawn-preview-2","spawn-idempotency","spawn-idempotency-2","spawn-apply-2",
              "workspace-v2","instance-modules","spawn-provider-payload","served-identity","packages-no-approval","spawn-name","settings-origins",
              "team-model-2","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts","launch-preference",
-             "preview-composed-from","observe-max-age","spawn-preview-max-age","capability-show"],
+             "preview-composed-from","observe-max-age","spawn-preview-max-age","capability-show","capture-file"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
@@ -99,6 +99,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
 | `observe-max-age` | `--max-age <s>` on the read verbs and their `observation` block ([Observation reuse](#observation-reuse-feature-observe-max-age-oats-0311)) | |
 | `spawn-preview-max-age` | `--max-age <s>` on `spawn --preview` and its `observation` block ([Observation reuse](#observation-reuse-feature-observe-max-age-oats-0311), [The preview](#the-preview)) | |
 | `capability-show` | `oats capabilities show <name>` and its `--file` form, OATS 0.34.0 ([`oats capabilities show`](#oats-capabilities-show)) | `capabilityShowApi: 1` |
+| `capture-file` | `oats capture --file <path> --format cc\|pi\|codex --home <instance home> [--json]`: one session file captured as `--home` capture would, with a receipt bound to its bytes, OATS 0.35.0 (the capture USAGE and packages/record/README.md) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -723,7 +724,7 @@ Read-only (it writes no lock):
              "souls":["rm"],"capabilities":["nw-house-style"],"publishes":null,"url":"https://github.com/nw/agents/tree/66566512…",
              "membershipFile":{"path":"oats-membership.yaml","url":"https://github.com/nw/agents/blob/66566512…/oats-membership.yaml"}}],
  "packages":[{"id":"oats.okf","version":"3.0.0","source":"catalog:oats.okf","commit":"ab897841…","integrity":"sha256-bada35…",
-              "capabilities":["oats.okf"],"souls":[],"latest":{"version":"4.0.7","ref":"v4.0.7"}}],
+              "capabilities":["oats.okf"],"souls":[],"latest":{"version":"4.1.0","ref":"v4.1.0"}}],
  "declaredPackages":["oats.framework","oats.okf"],"unsynced":["oats.framework"],"stale":[],
  "external":[{"source":"git:github.com/oss/experts@3c606e09…","soul":"security-reviewer"}],
  "problems":[],"warnings":[],
@@ -782,8 +783,8 @@ packages' capabilities and souls, sorted by name, then origin. Both carry
     "defaultTeam":{"label":"mine","team":"mine:ana.aweb.ai","from":"deployment"},
     "private":false,"path":"souls/writer","work":"directory","description":"Drafts campaigns.","harness":"pi","model":null,"harnessFrom":"kernel-default",
     "file":{"path":"souls/writer/soul.yaml","url":null},"spawnable":true,"problem":null},
-   {"name":"knowledge-maintainer","qualifiedName":"oats.okf/knowledge-maintainer","origin":"package oats.okf v4.0.7","kind":"package","package":"oats.okf",
-    "version":"4.0.7","repoKey":"github.com/awebai/oats-okf","commit":"e460b29a…","teams":null,"defaultTeam":null,"private":false,
+   {"name":"knowledge-maintainer","qualifiedName":"oats.okf/knowledge-maintainer","origin":"package oats.okf v4.1.0","kind":"package","package":"oats.okf",
+    "version":"4.1.0","repoKey":"github.com/awebai/oats-okf","commit":"e331a996…","teams":null,"defaultTeam":null,"private":false,
     "path":"oats-package/souls/knowledge-maintainer","work":"directory","description":"Reviews harvested knowledge.","harness":"pi","model":null,
     "harnessFrom":"kernel-default","file":{"path":"oats-package/souls/knowledge-maintainer/soul.yaml","url":null},
     "spawnable":false,"problem":{"code":"E_TEAM_UNKNOWN","message":"team \"reviewers\" is not declared (oats-local.yaml#/souls/teams/…)"}}],
@@ -872,8 +873,8 @@ nothing reads a working clone.
 **The show:**
 
 ```json
-{"capabilityShowApi":1,"name":"oats.okf","kind":"package","repoKey":"github.com/awebai/oats-okf","package":"oats.okf","version":"4.0.7",
- "commit":"e460b29a…","path":"oats-package/capabilities/oats-okf",
+{"capabilityShowApi":1,"name":"oats.okf","kind":"package","repoKey":"github.com/awebai/oats-okf","package":"oats.okf","version":"4.1.0",
+ "commit":"e331a996…","path":"oats-package/capabilities/oats-okf",
  "inject":{"path":"injects/okf.md","bytes":2422,"text":"## Knowledge: OKF\n\nYou have two kinds of knowledge. …","binary":false,"truncated":false},
  "skills":[{"name":"okf-consultation","path":"skills/okf-consultation","description":"Consulting your soul's knowledge with the `oats okf` CLI: …",
             "files":[{"path":"skills/okf-consultation/SKILL.md","bytes":6947},{"path":"skills/okf-consultation/references/consult.md","bytes":4465}],
@@ -899,7 +900,7 @@ nothing reads a working clone.
 **The `--file` answer:**
 
 ```json
-{"capabilityShowApi":1,"name":"oats.okf","kind":"package","commit":"e460b29a…",
+{"capabilityShowApi":1,"name":"oats.okf","kind":"package","commit":"e331a996…",
  "file":{"path":"skills/okf-instance-knowledge/SKILL.md","bytes":4787,"text":"---\nname: okf-instance-knowledge\n…","binary":false,"truncated":false}}
 ```
 

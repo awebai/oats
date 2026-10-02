@@ -238,6 +238,18 @@ export function register(home) {
   if(service(home)) return {skipped:'service'};
   if(fs.existsSync(markerPath(home))) return finishRegistration(homeSource(home));
   if(['.okf-harvest-record.json','.okf-harvest-record.next.json'].some(p=>fs.existsSync(join(home,p))) && !fs.existsSync(join(home,'.okf-v1-migration.json'))) fail('E_MIGRATION','legacy source watermarks require explicit oats okf migrate --source-home PATH before v2 registration; no cursor is silently trusted');
+  const seat=describeSeat(home);
+  const sw=harvestSwitch({settings:settings(),soulDir:seat.soul});
+  if(sw.effective!=='on') {const priming=primeGitBases(seat.bindings,seat.decl);validateHarvestOffRefs(seat.bindings,seat.decl,priming.primed);return harvestOff(home,{...sw,warnings:[...sw.warnings,...priming.warnings]},{decl:seat.decl});}
+  const source=sourceFor(randomUUID(),seat);
+  installSource(source,{marker:true});
+  return finishRegistration(source);
+}
+/** What a source descriptor freezes about the seat at `home`, with the soul
+ *  the kernel names (OATS_SOUL). The instance and agent come from the
+ *  environment of the seat's own hooks, else (`fromHome`, an operator acting
+ *  on a seat) from the home's instance.json only. */
+export function describeSeat(home,{fromHome=false}={}) {
   const meta=fs.existsSync(join(home,'instance.json'))?readJSON(join(home,'instance.json')):{};
   if(!process.env.OATS_SOUL) fail('E_OATS_SOUL_MISSING','OATS_SOUL is not set; oats.okf hooks and commands run only under the OATS kernel');
   const soul=fs.realpathSync(process.env.OATS_SOUL);
@@ -245,38 +257,46 @@ export function register(home) {
   const decl=declaration(soul);
   const soulId=process.env.OATS_SOUL_ID || null;
   const bindings=loadBindings(undefined,{sourceHome:home,sourceWork:work});
-  const context=fs.realpathSync(process.env.OATS_CONTEXT || meta.repo || fail('E_CONFIG','source requires durable config context'));
+  const context=fs.realpathSync((fromHome?null:process.env.OATS_CONTEXT) || meta.repo || fail('E_CONFIG','source requires durable config context'));
   if(overlaps(home,context) && context.startsWith(home)) fail('E_PATH','config context cannot be in disposable home');
-  const agent=process.env.OATS_AGENT || meta.agent;
-  const instance=process.env.OATS_INSTANCE || meta.instance;
+  const agent=fromHome?meta.agent:process.env.OATS_AGENT || meta.agent;
+  const instance=fromHome?meta.instance:process.env.OATS_INSTANCE || meta.instance;
   if(!agent || !instance) fail('E_SOURCE','source instance/agent required');
-  const sw=harvestSwitch({settings:settings(),soulDir:soul});
-  if(sw.effective!=='on') {const priming=primeGitBases(bindings,decl);validateHarvestOffRefs(bindings,decl,priming.primed);return harvestOff(home,{...sw,warnings:[...sw.warnings,...priming.warnings]},{decl});}
-  fs.mkdirSync(bindings.stateDir,{recursive:true,mode:0o700});
-  const ownersFile=join(bindings.stateDir,'owners.json');
-  const id=randomUUID(); const dir=join(bindings.stateDir,'sources',id);
+  return {home,meta,soul,work,decl,soulId,bindings,context,agent,instance};
+}
+/** A source descriptor (not yet installed) for a described seat. */
+export function sourceFor(id,seat,extra={}) {
   // Copy only the role document, never instance.json wholesale, launch recipes,
   // environment, credentials, source worktree, or third-party message stores.
-  const roleFile=safePath(join(soul,'AGENTS.md'));
+  const roleFile=safePath(join(seat.soul,'AGENTS.md'));
   const role=fs.existsSync(roleFile)?fs.readFileSync(roleFile,'utf8'):'';
   if(Buffer.byteLength(role)>128*1024) fail('E_SOURCE','role document exceeds 128KiB; provide a concise role before registering');
-  const source={version:1,id,home,work,context,agent,instance,owner:decl.owner,soulDir:soul,decl,role,bindings,bindingFingerprint:bindingFingerprint(bindings),execution:{runtime:settings()['harvest-runtime']||'pi',model:settings()['harvest-model']||null},soulId,tasksProvider:tasksProvider(meta),created:new Date().toISOString()};
-  const file=join(dir,'source.json');
+  const {bindings,decl}=seat;
+  const source={version:1,id,home:seat.home,work:seat.work,context:seat.context,agent:seat.agent,instance:seat.instance,owner:decl.owner,soulDir:seat.soul,decl,role,bindings,bindingFingerprint:bindingFingerprint(bindings),execution:{runtime:settings()['harvest-runtime']||'pi',model:settings()['harvest-model']||null},soulId:seat.soulId,tasksProvider:tasksProvider(seat.meta),created:new Date().toISOString(),...extra};
+  return {...source,file:join(bindings.stateDir,'sources',id,'source.json')};
+}
+/** Write a source's custody: its owner pin, descriptor and status, and (a
+ *  registered source only) the home's pointer. Nothing is left behind if any
+ *  of it fails before the pointer is durable. */
+export function installSource(source,{marker,status={}}) {
+  const {file,...descriptor}=source,dir=dirname(file);
+  fs.mkdirSync(source.bindings.stateDir,{recursive:true,mode:0o700});
   fs.mkdirSync(dir,{recursive:true,mode:0o700});
   try {
-    source.acceptedView=acceptedResolution(bindings,decl);
-    pinOwner(ownersFile,decl.owner,{id:soulId,soulName:agent,path:soul});
-    source.acceptedNodes=acceptedNodes(source.acceptedView);
-    save(file,source);
-    save(join(dir,'status.json'),{version:1,captured:{notes:[],threads:{},inputs:[]},processed:[],delivered:{},accepted:{},retired:false,auto:true,activeRun:null});
-    save(markerPath(home),{version:1,id,source:file});
+    descriptor.acceptedView=acceptedResolution(source.bindings,source.decl);
+    pinOwner(join(source.bindings.stateDir,'owners.json'),source.decl.owner,{id:source.soulId,soulName:source.agent,path:source.soulDir});
+    descriptor.acceptedNodes=acceptedNodes(descriptor.acceptedView);
+    save(file,descriptor);
+    save(join(dir,'status.json'),{version:1,captured:{notes:[],threads:{},inputs:[]},processed:[],delivered:{},accepted:{},retired:false,auto:true,activeRun:null,...status});
+    if(marker) save(markerPath(source.home),{version:1,id:source.id,source:file});
   } catch(e) {
     // Until the pointer is durable no capture or schedule can reference these
     // files. Leave an installed pointer's state intact even if fsync failed.
-    if(!fs.existsSync(markerPath(home))) fs.rmSync(dir,{recursive:true,force:true});
+    if(!marker || !fs.existsSync(markerPath(source.home))) fs.rmSync(dir,{recursive:true,force:true});
     throw e;
   }
-  return finishRegistration({...source,file});
+  Object.assign(source,{acceptedView:descriptor.acceptedView,acceptedNodes:descriptor.acceptedNodes});
+  return source;
 }
 /** Pin a stable owner id to the soul it identifies. The kernel names a soul by
  *  identity (OATS_SOUL_ID: repository key plus soul name) so the pin survives
@@ -301,6 +321,11 @@ function enqueue(source,status,payload) {
   if(!fs.existsSync(path)) save(path,payload);
   if(!status.captured.inputs.includes(id)) status.captured.inputs.push(id);
   return id;
+}
+/** How many of a source's captured inputs its runs have processed. */
+export function inputCounts(status) {
+  const total=status.captured.inputs.length,processed=status.captured.inputs.filter(i=>status.processed.includes(i)).length;
+  return {total,processed,remaining:total-processed};
 }
 export function input(source,id) {
   if(!/^[0-9a-f]{64}$/.test(id)) fail('E_INPUT','bad input identity');
