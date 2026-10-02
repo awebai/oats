@@ -164,11 +164,12 @@ function deploymentInfo(d) {
       : observed.reachable?.identityInvalid ? { status: "invalid" } : readIdentity(observed.reachable);
     const identity = read.status === "identity" ? read.identity : null;
     const attach = attachment(identity);
-    const unavailable = observed?.status === "unavailable" ? deploymentUnavailableText(observed) : null;
+    // Not observed (yet): the reading or unavailable sentence, never a silent empty.
+    const unavailable = live ? null : deploymentUnavailableText(observed || { status: "pending" });
     return { id: d.id, local: true, machine: THIS_MACHINE, path: d.id, label: shortPath(d.id, { home: homedir() }), name: d.name,
       live, reachable: live, identityFrom: identity ? "reported" : null, identity, attach,
       teamLabel: identity?.defaultTeam?.label ?? null,
-      reason: live || observed?.status === "unavailable" ? deploymentReason({ local: true, identityStatus: read.status, attach, ref: identity?.ref, unavailable }) : null,
+      reason: deploymentReason({ local: true, identityStatus: read.status, attach, ref: identity?.ref, unavailable }),
       note: attach.note === "standalone" ? deploymentReason({ local: true, attach: { unattached: "standalone" } }) : null };
   }
   const g = d.group, machine = g.label || g.server;
@@ -194,7 +195,8 @@ function viewModel() {
   const infos = new Map(deployments().map((d) => [d.id, deploymentInfo(d)]));
   const views = buildViews([...infos.values()]).map((v) => {
     const unattachedReason = v.unattached ? infos.get(v.primary)?.reason ?? null : null;
-    return { ...v, ...(unattachedReason ? { reason: unattachedReason } : {}) };
+    const ref = v.unattached ? infos.get(v.primary)?.identity?.ref ?? null : null;
+    return { ...v, ...(unattachedReason ? { reason: unattachedReason } : {}), ...(ref ? { ref } : {}) };
   });
   return { views, infos };
 }
@@ -229,6 +231,10 @@ function viewForgeContext(wsId) {
   const observed = local.map((id) => snapshot.byWs.get(id)).filter(Boolean);
   return { workspace: { id: view.id, name: view.name, remote: local.length === 0 }, cli: cliState,
     instances: observed.flatMap((o) => o.instances || []), clones: observed.flatMap((o) => o.deployment?.workspaceStatus?.clones || []) };
+}
+/** One deployment's own rows (never its view's union): what an instance-addressed request may admit. */
+function deploymentRows(ws) {
+  return deploymentPanel(ws).instances || [];
 }
 /** The ids main may let a caller select: every view id and every deployment id. */
 function isServed(id) {
@@ -294,7 +300,8 @@ function panelData(wsId) {
   const instances = panels.flatMap(([d, p]) => (p.instances || []).map((row) => ({ ...row, deployment: deploymentTag(model.infos.get(d.id)) })));
   return {
     ...primary,
-    workspace: { ...primary.workspace, id: view.id, name: view.name, ...(view.key ? { key: view.key, teamId: view.team } : {}) },
+    // `primary`: the deployment a deployment-level request is addressed to (it echoes that deployment back).
+    workspace: { ...primary.workspace, id: view.id, name: view.name, primary: view.primary, ...(view.key ? { key: view.key, teamId: view.team } : {}) },
     workspaces: choices,
     deployments: view.deployments.map((id) => deploymentEntry(model.infos.get(id), view.primary)),
     refreshing: panels.some(([, p]) => p.refreshing),
@@ -319,7 +326,7 @@ function workspaceChoices(model = viewModel()) {
     const primary = deployments().find((w) => w.id === v.primary);
     const remoteOnly = v.deployments.every((id) => !model.infos.get(id)?.local);
     return { id: v.id, name: v.name, team: null, deployments: [...v.deployments],
-      ...(v.key ? { key: v.key } : {}), ...(v.unattached ? { unattached: true } : {}), ...(v.reason ? { reason: v.reason } : {}),
+      ...(v.key ? { key: v.key } : {}), ...(v.unattached ? { unattached: true } : {}), ...(v.reason ? { reason: v.reason } : {}), ...(v.ref ? { ref: v.ref } : {}),
       ...(remoteOnly && primary?.remote ? { server: primary.server, remote: true } : {}) };
   });
 }
@@ -1440,7 +1447,7 @@ const server = createServer(async (req, res) => {
         const result = await launchConfigRequest(request, {
           workspace, cli: cliState, localCwd: ctxs[0],
           agents: workspace ? agentsData(workspace.id).agents : [],
-          instances: workspace ? panelData(workspace.id).instances : [],
+          instances: workspace ? deploymentRows(workspace) : [],
         }).finally(() => { if (workspace && ['set', 'remove'].includes(request?.action)) spawnPreviewCache.invalidate(workspace.id); }); // the default launch a preview reports
         return send(res, 200, result);
       } catch (e) { const { status, body } = spawnErrorPayload(e); return send(res, status, body); }
@@ -1614,7 +1621,7 @@ const server = createServer(async (req, res) => {
         const result = await capabilityRequest(request, {
           workspace, cli: cliState, localCwd: ctxs[0],
           agents: workspace ? agentsData(workspace.id).agents : [],
-          instances: workspace ? panelData(workspace.id).instances : [],
+          instances: workspace ? deploymentRows(workspace) : [],
           cache: inspectCache, maxAge: BACKGROUND_MAX_AGE,
           catalogKey: observed?.status === "observed" ? capabilityCatalogKey(cliState, observed.workspaceStatus) : null,
         }).finally(() => { if (workspace && request?.action === "run") spawnPreviewCache.invalidate(workspace.id); }); // an operation can change what a spawn preview reads
@@ -1642,7 +1649,7 @@ const server = createServer(async (req, res) => {
         const result = await scheduleRequest(request, {
           workspace, cli: cliState, localCwd: ctxs[0],
           agents: workspace ? agentsData(workspace.id).agents : [],
-          instances: workspace ? panelData(workspace.id).instances : [],
+          instances: workspace ? deploymentRows(workspace) : [],
         });
         return send(res, 200, result);
       } catch (e) { const { status, body } = spawnErrorPayload(e); return send(res, status, body); }
@@ -1773,7 +1780,7 @@ const server = createServer(async (req, res) => {
       const result = await capabilityRequest({ action: "run", selector: { home: inst.home }, operation: "knowledge:harvest" }, {
         workspace, cli: cliState, localCwd: ctxs[0],
         agents: workspace ? agentsData(workspace.id).agents : [],
-        instances: workspace ? panelData(workspace.id).instances : [],
+        instances: workspace ? deploymentRows(workspace) : [],
         cache: inspectCache, // a run invalidates the deployment's held inspections
       }).finally(() => { if (workspace) spawnPreviewCache.invalidate(workspace.id); });
       return send(res, 200, result);

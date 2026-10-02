@@ -17,7 +17,7 @@
  * `data-focus-key` and are re-found by key only (loading.mjs captureFocusState);
  * a control that vanished hands focus to Refresh. */
 import { harnessOf } from './harness-names.mjs';
-import { postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
+import { postJson, wsQuery, workspaceGeneration, rowDeployment } from './views/common.mjs';
 import { runtimeState } from './instance-presentation.mjs';
 import { createSoulMark, createRuntimeBadge } from './identity-marks.mjs';
 import { createReadinessView, readinessCSS } from './readiness-view.mjs';
@@ -231,7 +231,10 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     if (stale()) { control.setAttribute('aria-disabled', 'true'); control.title = INSPECTION_STALE_TITLE; control.setAttribute('aria-description', INSPECTION_STALE_TITLE); }
     else if (control.getAttribute('aria-description') === INSPECTION_STALE_TITLE) { control.removeAttribute('aria-disabled'); control.removeAttribute('title'); control.removeAttribute('aria-description'); }
   };
-  const request = (body, query = wsQuery()) => postJson(ctx, `/api/capabilities${query}`, body);
+  // An instance subject is inspected (and its operations run) in its own deployment (#482); a soul in the view's
+  // primary deployment, which the server resolves from the view id.
+  const scopeQuery = () => selection?.instance ? `?ws=${encodeURIComponent(rowDeployment(selection.instance))}` : wsQuery();
+  const request = (body, query = scopeQuery()) => postJson(ctx, `/api/capabilities${query}`, body);
   const valid = (id, gen) => alive && id === serial && gen === workspaceGeneration();
   const ownsSubject = (id, gen) => id === subject && valid(serial, gen);
   let status, content, summary, readiness, headActions = null, facts$ = null, side = null, notice = null;
@@ -269,7 +272,9 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     const ref = selection?.instance;
     const selector = ref ? { kind: 'instance', instance: ref.instance, agent: ref.agent, agentsRoot: ref.agentsRoot, server: ref.server ?? null }
       : selection?.agent ? { kind: 'soul', soul: selection.agent.name, agentsRoot: selection.agent.agentsRoot } : null;
-    readiness?.update({ active: !!selection && selectionGen === workspaceGeneration(), workspace: w, selector, cli: cliStatus(), identity: ref?.createdAt });
+    // Readiness echoes the deployment it read (#482): an instance's own deployment, a soul's the view's primary one.
+    const scoped = w && { ...w, id: ref ? rowDeployment(ref) : w.primary || w.id, ...(ref?.server ? { name: ref.repoName || ref.server } : {}) };
+    readiness?.update({ active: !!selection && selectionGen === workspaceGeneration(), workspace: scoped, selector, cli: cliStatus(), identity: ref?.createdAt });
   }
   function message(text, error = false) {
     if (!status) return;

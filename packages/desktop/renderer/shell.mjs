@@ -8,7 +8,7 @@
 // chrome stays a thin rail so nothing is duplicated.
 // (groupInstances is not imported here: the feature branch renders the
 // sidebar roster via clusterInstances — lineage clusters with identity keys.)
-import { currentWorkspace, workspaceGeneration, setWorkspace, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange, instanceApiPath, postJson, httpError } from "./views/common.mjs";
+import { currentWorkspace, workspaceGeneration, setWorkspace, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange, instanceApiPath, postJson, rowDeployment, httpError } from "./views/common.mjs";
 import { instanceActions, captureInstanceActionMenu } from "./instance-actions.mjs";
 import { instanceActionTarget, sameInstanceActionTarget } from "./instance-action-target.mjs";
 import { createInstancePrAction } from "./instance-pr-action.mjs";
@@ -1893,7 +1893,10 @@ const lifecycleDialog = createLifecycleDialog({ doc: document,
 });
 function openLifecycleDialog(operation, instance, workspace) {
   connections.close(); shortcutsEditor.close();
-  lifecycleDialog.open({ operation, instance, workspace });
+  // The callers check the workspace on screen (`workspace`); the plan and apply are addressed to the
+  // row's own deployment (#482), which the server's echoed target names too.
+  void workspace;
+  lifecycleDialog.open({ operation, instance, workspace: rowDeployment(instance) });
 }
 window.addEventListener('pagehide', () => lifecycleDialog.dispose(), { once: true });
 

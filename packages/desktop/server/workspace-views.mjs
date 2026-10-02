@@ -66,6 +66,7 @@ export function deploymentReason(d) {
   if (d.local) {
     if (d.unavailable) return d.unavailable;
     if (d.identityStatus === 'feature') return 'This computer\'s OATS is too old to report its workspace; update OATS here.';
+    if (d.identityStatus === 'old' || d.identityStatus === 'none') return 'This deployment reports no workspace identity.';
   } else {
     if (d.cliReadsRemotes === false) return 'This computer\'s OATS can\'t read other machines; update OATS here.';
     if (d.identityStatus === 'feature' && d.probe?.ok === true) return 'This computer\'s OATS is too old to read other machines\' workspaces; update OATS here.';

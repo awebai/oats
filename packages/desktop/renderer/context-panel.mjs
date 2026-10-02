@@ -217,6 +217,13 @@ const reported = value => typeof value === 'string' && value.length ? value
  * cannot revive presence or dispose the renewed lease. Callers must guard their
  * own asynchronous content writes; this module owns visibility, not their forms.
  */
+/** The deployment the panel's instance belongs to (#482): its roster row's `deployment.id`, else the
+ * workspace (a row served before views belonged to the selected workspace, then a deployment). */
+export function instanceDeployment(context) {
+  const id = context?.instance?.deployment?.id;
+  return typeof id === 'string' && id ? id : context?.workspace ?? null;
+}
+
 export function createContextPanel({
   document: suppliedDocument, root: suppliedRoot, onIntent = noop,
   applyFocus = callback => callback(), onFocusModeChange = noop, fallbackFocus = () => null, shortcutHint = () => '', createGitPanel, createTeamsSection, createSoulSection, openSoul, lifecycle = null,
@@ -533,12 +540,15 @@ export function createContextPanel({
       pages.get(id).hidden = !selected;
     }
     footer.hidden = !expanded || !hasGeneric() || pref().tab !== 'instance' || !context.instance || !lifecycle;
+    // The sections read and act on ONE instance: they are addressed to its own deployment (#482), never
+    // the workspace view (context.workspace stays the panel's owner and preference key).
+    const deployment = instanceDeployment(context);
     gitPanel?.update({ active: expanded && hasGeneric() && pref().tab === 'git',
-      workspace: context.workspace, instance: context.instance, key: context.key });
+      workspace: deployment, instance: context.instance, key: context.key });
     soulSection?.update({ active: expanded && hasGeneric() && pref().tab === 'soul',
-      workspace: context.workspace, instance: context.instance, key: context.key });
+      workspace: deployment, instance: context.instance, key: context.key });
     teamsSection?.update({ active: expanded && hasGeneric() && pref().tab === 'instance',
-      workspace: context.workspace, instance: context.instance, key: context.key });
+      workspace: deployment, instance: context.instance, key: context.key });
     // The editor tab bar's toggle (index.html #panel-toggle): a constant name with aria-pressed while the
     // panel is expanded; disabled only with nothing to show. It stays enabled in focus mode, where it is the
     // visible exit (toggle() leaves focus mode and shows the panel). Its tooltip names the chord.

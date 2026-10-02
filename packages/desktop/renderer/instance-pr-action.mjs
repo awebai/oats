@@ -15,9 +15,10 @@ export function createInstancePrAction({ ctx, beginIntent, currentTarget, genera
       if (!target || !owns()) return;
       if (target.server) { report('Remote pull-request inspection is unavailable; no local fallback was used.'); return; }
       const selector = { instance: target.instance, agent: target.agent, agentsRoot: target.agentsRoot, server: target.server };
-      const expected = gitTarget(target);
+      const expected = gitTarget({ ...target, workspace: target.deployment }); // the server echoes the deployment it resolved
       if (!expected) { report('Choose one current, qualified instance.'); return; }
-      const request = (route, body) => postJson(ctx, `${route}?ws=${encodeURIComponent(target.workspace)}`, body);
+      // Owned by the workspace on screen (target.workspace); addressed to the row's own deployment (#482).
+      const request = (route, body) => postJson(ctx, `${route}?ws=${encodeURIComponent(target.deployment)}`, body);
       try {
         const git = await request('/api/instance-git', { action: 'git', selector });
         if (!owns()) return;

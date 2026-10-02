@@ -112,7 +112,7 @@ export function createSchedulesView(el, ctx, { cli = cliStatus, subscribeCli = o
     field("providerOperation").replaceChildren();
     q(".schedule-provider-note").textContent = "Loading operations for this home…";
     try {
-      const inspection = await postJson(ctx, `/api/capabilities${wsQuery()}`, { action: "inspect", selector: { home: field("home").value } });
+      const inspection = await postJson(ctx, `/api/capabilities${deploymentQuery()}`, { action: "inspect", selector: { home: field("home").value } });
       if (token !== operationRequest || !owns(formToken, gen) || sheet.hidden) return;
       const operations = (inspection.capabilities || []).filter(cap => cap.layer).flatMap(cap =>
         (cap.operations || []).filter(op => op.kind === "action" && op.available && !op.args?.some(arg => arg.required)).map(op => ({ address: `${cap.layer}:${op.name}`, label: `${cap.layer}: ${op.name} — ${op.description || cap.id}` })));
@@ -128,6 +128,10 @@ export function createSchedulesView(el, ctx, { cli = cliStatus, subscribeCli = o
     ++formOperation; ++operationRequest; sheet.hidden = true; formReady = false;
     const back = opener; opener = null; if (back?.isConnected) back.focus();
   }
+  // The deployment the form's homes belong to (the view's primary, #482): a request naming a home is
+  // addressed to it, never to the view. Null before the form's targets are read (the view id then).
+  let formDeployment = null;
+  const deploymentQuery = () => formDeployment ? `?ws=${encodeURIComponent(formDeployment)}` : wsQuery();
   async function openForm(job, soul) {
     if (!canMutate() || busy) return;
     const token = ++formOperation, gen = workspaceGeneration(); ++operationRequest;
@@ -154,7 +158,10 @@ export function createSchedulesView(el, ctx, { cli = cliStatus, subscribeCli = o
       const suffix = wsQuery();
       const [roster, panel] = await Promise.all([apiJson(ctx, `/api/agents${suffix}`), apiJson(ctx, `/api/panel${suffix}`)]);
       if (!owns(token, gen) || sheet.hidden) return;
-      agents = roster.agents || []; instances = panel.instances || [];
+      // Schedules belong to the view's primary deployment (#482): its souls (/api/agents reads it) and its homes only.
+      formDeployment = panel.workspace?.primary || null;
+      agents = roster.agents || [];
+      instances = (panel.instances || []).filter(i => !formDeployment || !i.deployment || i.deployment.id === formDeployment);
       fill(field("agent"), agents.filter(a => a.work !== "attached"), a => `${a.name} · ${a.agentsRoot}`, a => JSON.stringify([a.name, a.repo || null, a.agentsRoot]));
       fill(field("home"), instances, i => `${i.instance} · ${i.home}`, i => i.home);
       if (job?.agent || soul) field("agent").value = JSON.stringify([job?.agent || soul.name, job?.repo || soul?.repo || null, job?.agentsRoot || soul?.agentsRoot]);
@@ -172,7 +179,7 @@ export function createSchedulesView(el, ctx, { cli = cliStatus, subscribeCli = o
     void openForm(draft, null);
   }
   let automations = null; // the page's POST /api/automations call
-  async function mutate(operation, id, spec, send = body => postJson(ctx, `/api/schedules${wsQuery()}`, body)) {
+  async function mutate(operation, id, spec, send = body => postJson(ctx, `/api/schedules${deploymentQuery()}`, body)) {
     if (busy || !canMutate()) return;
     const op = ++mutationOperation, formToken = formOperation, gen = workspaceGeneration();
     const current = () => alive && op === mutationOperation && gen === workspaceGeneration();

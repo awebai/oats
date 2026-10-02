@@ -40,7 +40,7 @@ import { projectActivePanel, activeSignature, activeTargetLabel, canAddressInsta
 import {
   apiJson, ensureTheme,
   currentWorkspace, setWorkspace, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange,
-  renderWorkspaceSelect, wsQuery, workspaceGeneration,
+  renderWorkspaceSelect, wsQuery, workspaceGeneration, rowDeployment,
 } from "./common.mjs";
 import { createDataState, skeleton, statusLine, observedText } from "../loading.mjs";
 import { deploymentUnavailableText, NOT_SERVED_CODE, NO_ANSWER_CODE, unservedError, createPendingWatch } from "../deployment-header.mjs";
@@ -1057,7 +1057,8 @@ function openPop(s, id, retained = null) {
 function activitySelection(s, id) {
   const i = selectedInstance(s, id);
   if (!i) return null;
-  const selection = row => ({ workspace: currentWorkspace(), selector: { instance: row.instance, agent: row.agent,
+  // Addressed to the row's own deployment (#482): the events read and its echo name that deployment.
+  const selection = row => ({ workspace: rowDeployment(row), selector: { instance: row.instance, agent: row.agent,
     agentsRoot: row.agentsRoot, server: row.server || null }, home: row.home, incarnation: row.createdAt ?? null, serverLabel: serverLabel(row) });
   const selected = selection(i);
   if (s.pending) {
