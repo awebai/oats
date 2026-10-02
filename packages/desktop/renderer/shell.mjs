@@ -57,7 +57,7 @@ import { createPanelOwner } from "./panel-owner.mjs";
 import {
   collapseKey, hasInstanceChildren, instanceRepoLabel, treeConnectors, filterInstanceTree, instanceMatchesFilter, instanceVisibleInTree,
   captureTreeRenderState, rosterResponseOwns, clusterSeparator, renderRosterCount,
-  instanceId, rosterParentId, terminalKey, resolveTerminalOpen, visibleClusters,
+  instanceId, rosterParentId, terminalKey, resolveTerminalOpen,
   createRosterLoading, rosterSignature, markStaleControl, staleBlocked, ROSTER_STALE_TITLE,
 } from "./instance-tree.mjs";
 import {
@@ -65,6 +65,8 @@ import {
   fallbackTabForContext, restoreTerminalTab,
 } from "./workspace-tabs.mjs";
 import { createWorkspaceTabMemory } from "./workspace-tab-memory.mjs";
+import { notePanel, panelDeployments, renderDeploymentList, rosterSections, deploymentHeading } from "./view-deployments.mjs";
+import { createViewMembership, rehomeMap, rehomeTabs, rehomeActiveTerminals, rehomeCollapsed } from "./workspace-rehome.mjs";
 import {
   requestSplit, focusTab, openTabInFocusedGroup, removeSplitTab, isSplitMember, groupOfTab, fillEmptyGroup, resizeSplitGroups,
 } from "./split-layout.mjs";
@@ -313,6 +315,11 @@ let rosterStale = false;
 let rosterSignaturePainted = null;
 // The deployment note ("Reading the deployment…", a kernel refusal): its own truthful state above the rows.
 let contextDeploymentNote = null;
+// The shown view's deployments (#482, panel.deployments): two or more group the roster by deployment.
+let contextDeployments = [];
+// Which deployments each served view held, so state under a view id that stops being served can follow
+// its deployments to the view that holds them now (workspace-rehome.mjs).
+const viewMembership = createViewMembership();
 let activeInstanceMenu = null;
 const splitOpenState = () => ({ split, activeId: activeTab, tabs, workspace: currentWorkspace(), visible: tabLayerVisible });
 const ownsInstanceTarget = target => target?.workspace === currentWorkspace() && contextWorkspace === currentWorkspace()
@@ -479,7 +486,11 @@ async function refreshContextRoster({ user = false } = {}) {
       // current choice, so the window is never left without a way to another workspace.
       let served = null;
       try { served = await api("/api/panel"); } catch { /* the choices stay as they were */ }
-      const current = { id: ws, name: ws.split("/").filter(Boolean).at(-1) || ws, team: null };
+      // A view id no longer served whose deployments another view holds now (a remote that reports
+      // another workspace, #482): the window and its state follow them there.
+      const moved = served && owns() ? rehomeMap(served.workspaces, viewMembership).get(ws) : null;
+      if (moved) { rehomeWorkspaceState(served.workspaces); setWorkspace(moved); return; }
+      const current = { id: ws, name: viewMembership.name(ws) || (ws.startsWith("ws:") ? "Workspace" : ws.split("/").filter(Boolean).at(-1) || ws), team: null };
       if (served && owns() && commitWorkspaceLabel(current, Array.isArray(served.workspaces) ? served.workspaces : [])) renderWorkspaceContext(current);
       return;
     }
@@ -505,7 +516,13 @@ async function refreshContextRoster({ user = false } = {}) {
     adoptWorkspace(resolvedWs);
     tabWorkspace = resolvedWs;
   }
-  if (commitWorkspaceLabel(panel.workspace, panel.workspaces)) renderWorkspaceContext(panel.workspace);
+  // Views (#482): state under a deployment id (a selection saved before views, an unattached
+  // deployment that matched since) moves to the view that holds it now; the "On …" lines and the
+  // switcher learn the view's deployments.
+  rehomeWorkspaceState(panel.workspaces);
+  notePanel(panel);
+  contextDeployments = panelDeployments(panel);
+  if (commitWorkspaceLabel(panel.workspace, panel.workspaces)) renderWorkspaceContext(panel.workspace, contextDeployments);
   contextWorkspace = resolvedWs;
   // A failed read with no instances keeps the rows already shown for this workspace (stale), so the
   // previous list survives that reply; every other reply replaces it.
@@ -532,7 +549,7 @@ async function refreshContextRoster({ user = false } = {}) {
   contextDeploymentNote = panel.deployment && panel.deployment.status !== "observed" && !panel.workspace?.remote && !failure
     ? deploymentUnavailableText(panel.deployment) : null;
   const signature = rosterSignature(contextInstances, {
-    workspace: resolvedWs, error: failure, deploymentNote: contextDeploymentNote,
+    workspace: resolvedWs, error: failure, deploymentNote: contextDeploymentNote, deployments: contextDeployments,
     activeKey: tabs.get(activeTab)?.key ?? null, connection: connectionGeneration,
   });
   // A panel that reports an error is the kernel's failed read, not an observed
@@ -579,14 +596,12 @@ async function refreshContextRoster({ user = false } = {}) {
   if (reportedFailure) rosterState?.fail(failure);
 }
 
-// Only reported context, never inferred team/membership/readiness. A local
-// deployment's reported id is its scope path; remote panels explicitly say so.
-function renderWorkspaceContext(workspace) {
-  const label = document.getElementById("ws-context");
-  label.textContent = workspace?.remote === true
-    ? (workspace.server ? `Remote deployment · ${workspace.server}` : "Remote deployment")
-    : String(workspace?.id || "");
-  label.title = label.textContent;
+// Only reported context, never inferred team/membership/readiness: the view's deployments as the
+// panel lists them (#482), under the switcher, in every view (one deployment included). Nothing
+// is listed before a panel names them.
+function renderWorkspaceContext(workspace, deployments = []) {
+  renderDeploymentList(document.getElementById("ws-deployments"), workspace ? deployments : [],
+    { workspaceName: typeof workspace?.name === "string" ? workspace.name : "" });
 }
 
 function renderContextRoster(instances) {
@@ -620,7 +635,8 @@ function renderContextRoster(instances) {
   const spawning = ws && ws === currentWorkspace() ? spawnJobs.rows(ws)
     // Only what the kernel decided (name, home, soul, relation): never a guessed runtime state.
     .map((p) => ({ instance: p.instance, agent: p.agent, agentsRoot: p.agentsRoot, home: p.home,
-      ...(p.parentInstance ? { parentInstance: p.parentInstance } : {}), ...(p.siblingInstance ? { siblingInstance: p.siblingInstance } : {}), pendingSpawn: p }))
+      ...(p.parentInstance ? { parentInstance: p.parentInstance } : {}), ...(p.siblingInstance ? { siblingInstance: p.siblingInstance } : {}),
+      ...(p.deployment ? { deployment: { id: p.deployment } } : {}), pendingSpawn: p }))
     .filter((p) => !reported.has(instanceId(p))) : [];
   if (spawning.length) instances = [...instances, ...spawning];
   const matching = filterInstanceTree(instances, contextFilter);
@@ -648,13 +664,15 @@ function renderContextRoster(instances) {
   // Clusters are computed on the FULL roster then projected to visible
   // members — clustering a filtered subset could forge edges from globally
   // ambiguous names (merged-state review @3e76616).
-  const clusters = visibleClusters(instances, visible);
-  const groups = [
-    ...clusters.filter((c) => c.instances.length > 1).map((c) => ({ key: `cluster:${c.key}`, label: c.key, clusters: [c] })),
-    ...(clusters.some((c) => c.instances.length === 1)
-      ? [{ key: "independent", label: "independent", clusters: clusters.filter((c) => c.instances.length === 1) }] : []),
-  ];
+  // Views (#482): with two or more deployments, each deployment's agent groups sit under its heading
+  // (rosterSections); with one, the groups are exactly these clusters and no heading is drawn.
+  const groups = rosterSections(instances, visible, contextDeployments)
+    .flatMap((section) => section.groups.map((group, at) => ({ ...group, heading: at === 0 && section.deployment ? section : null })));
   for (const group of groups) {
+    if (group.heading) {
+      const { deployment, label, groups: own } = group.heading;
+      listEl.append(deploymentHeading(document, { deployment, label, count: own.reduce((n, g) => n + g.clusters.reduce((m, c) => m + c.instances.length, 0), 0) }));
+    }
     listEl.append(clusterSeparator(document, { label: group.label, count: group.clusters.reduce((n, c) => n + c.instances.length, 0) }));
     for (const cluster of group.clusters) {
       const items = cluster.instances;
@@ -2136,7 +2154,7 @@ function restoreWorkspaceTabs() {
   // The list clears into pending (a skeleton pill for the count); the rows of
   // the new workspace arrive with the refresh below, never "No instances".
   rosterState?.reset();
-  rosterStale = false; rosterSignaturePainted = null; contextDeploymentNote = null;
+  rosterStale = false; rosterSignaturePainted = null; contextDeploymentNote = null; contextDeployments = [];
   renderContextRoster([]);
   if (restored.tabLayerVisible) {
     setSidebarMode(restored.sidebarMode);
@@ -2147,6 +2165,33 @@ function restoreWorkspaceTabs() {
   }
   updateContextTabs();
   refreshContextRoster();
+}
+/** Workspace views (#482): per-workspace state saved under a deployment id — a selection from before
+ * views, an unattached deployment that has matched a workspace since — or under a view id the server
+ * no longer serves moves to the view that holds that deployment now, and an open terminal follows its
+ * instance's deployment (a remote that reports another workspace). Open tabs (workspace and key), the
+ * active-terminal and layout memories, collapsed rows and spawn jobs move together; nothing is
+ * dropped (workspace-rehome.mjs). Runs for every served list a roster read brings. */
+function rehomeWorkspaceState(workspaces) {
+  if (!Array.isArray(workspaces) || !workspaces.length) return;
+  const map = rehomeMap(workspaces, viewMembership);
+  viewMembership.note(workspaces);
+  const moves = rehomeTabs(tabs, map, workspaces);
+  if (!map.size && !moves.length) return;
+  rehomeActiveTerminals(wsActiveTerminal, map, moves);
+  workspaceTabMemory.rehome(map);
+  rehomeCollapsed(collapsedInstances, map);
+  spawnJobs.rehome(map);
+  if (map.has(tabWorkspace)) tabWorkspace = map.get(tabWorkspace);
+  if (map.has(contextWorkspace)) contextWorkspace = map.get(contextWorkspace);
+  if (!moves.length) return;
+  // A terminal whose deployment moved to another view leaves this window's layout (it opens there).
+  const shown = currentWorkspace(), leaving = moves.filter((m) => m.from === shown && m.to !== shown);
+  for (const { id } of leaving) split = removeSplitTab(split, id).split;
+  updateContextTabs();
+  if (!leaving.length || !tabLayerVisible) return;
+  if (leaving.some((m) => m.id === activeTab)) showTerminalContext();
+  else if (activeTab != null) activateTab(activeTab, { keepGroupFocus: true });
 }
 // One background read at a time: a slow or unanswered read is not superseded every 4 s, so its outcome
 // is always someone's to show; the bounded wait has its own timer (rosterPendingWatch). A switch or a

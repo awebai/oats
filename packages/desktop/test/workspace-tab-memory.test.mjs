@@ -1,4 +1,5 @@
 import test from "node:test";
+import { viewContext } from "./helpers/view-context.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
@@ -38,7 +39,7 @@ function shell(t) {
     tabActionsEl: document.getElementById("tab-actions"),
     workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A",
     split: null, activeTab: null, sidebarMode: "overview", tabLayerVisible: false,
-    contextRosterGen: 0, contextInstances: [], rosterState: null, rosterStale: false, contextDeploymentNote: null, rosterSignaturePainted: null,
+    contextRosterGen: 0, contextInstances: [], rosterState: null, rosterStale: false, contextDeploymentNote: null, ...viewContext(), rosterSignaturePainted: null,
     workspaceTabMemory: createWorkspaceTabMemory(), wsActiveTerminal: new Map(),
     brainIntents: createIntentGate(),
     workspaceLabel: { reset() {} }, stageSidebarMode: () => "overview",

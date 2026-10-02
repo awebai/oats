@@ -19,7 +19,12 @@
  * held for its workspace. Never its opening instruction or a key (the renderer never holds the idempotency
  * key; spawnRef is the server's opaque handle, kept 30 min after it settles). After a window reload,
  * recover() brings each back as a pending row and reads the existing `result` action, so settling and
- * reporting stay separate events across a reload. */
+ * reporting stay separate events across a reload.
+ *
+ * Views (#482): `workspace` is the job's OWNER, the workspace (view) whose roster shows its row and
+ * whose screen gets its notices; `deployment` is where its transaction is addressed (the id it was
+ * posted to; a job stored before views has only `workspace`, which was both). `rehome(map)` moves
+ * owners onto views (workspace-rehome.mjs); a job's address never changes. */
 import { spawnApplyView, spawnApplyReason } from './spawn-apply-contract.mjs';
 import { sameSpawnDecision } from './spawn-decision.mjs';
 import { spawnProblem } from './spawn-messages.mjs';
@@ -71,7 +76,7 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
   function save() {
     if (!alive || !storage) return;
     const kept = [...jobs.values()].filter(j => j.spawnRef && unreported(j))
-      .map(j => ({ workspace: j.workspace, spawnRef: j.spawnRef, soul: j.soul, selector: j.selector, instance: j.instance, home: j.home, placement: j.placement, startedAt: j.startedAt }));
+      .map(j => ({ workspace: j.workspace, deployment: j.deployment, spawnRef: j.spawnRef, soul: j.soul, selector: j.selector, instance: j.instance, home: j.home, placement: j.placement, startedAt: j.startedAt }));
     try { if (kept.length) storage.setItem(SPAWN_STORAGE_KEY, JSON.stringify(kept)); else storage.removeItem(SPAWN_STORAGE_KEY); } catch { /* storage is a convenience */ }
   }
   const changed = () => {
@@ -143,9 +148,9 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
 
   // ── the transaction (the dialog's former run(), unchanged in substance)
   async function request(job, body) {
-    const raw = await post(job.workspace, body);
+    const raw = await post(job.deployment, body);
     if (!live(job)) return null;
-    const view = spawnApplyView(raw, { workspace: job.workspace, ref: body.spawnRef, selector: job.selector });
+    const view = spawnApplyView(raw, { workspace: job.deployment, ref: body.spawnRef, selector: job.selector });
     if (!view || view.preview && job.prepared && body.action !== 'prepare' && !sameSpawnDecision(view.preview.decision, job.prepared.preview.decision)) throw Object.assign(Error(), { code: 'E_CLI_PROTOCOL' });
     return view;
   }
@@ -189,7 +194,7 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
       // Single-flight per soul (Spec D): while a spawn of this soul is in flight here, no second one starts.
       if (flightOf(spec.workspace, spec.soul)) return null;
       tokens.add(spec.token);
-      const job = { id: `spawn-${++serial}`, workspace: spec.workspace, soul: spec.soul, selector: spec.selector, input: structuredClone(spec.input),
+      const job = { id: `spawn-${++serial}`, workspace: spec.workspace, deployment: text(spec.deployment) ? spec.deployment : spec.workspace, soul: spec.soul, selector: spec.selector, input: structuredClone(spec.input),
         decision: structuredClone(spec.decision), instance: spec.decision.instance, home: spec.decision.home, placement: { ...(spec.placement || {}) },
         draft: structuredClone(spec.draft ?? {}), state: 'spawning', submitted: false, spawnRef: null, prepared: null, notice: null, announced: false, startedAt: now() };
       jobs.set(job.id, job); changed();
@@ -199,7 +204,7 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
     /** The pending rows of one workspace, for the roster: what the kernel decided, never a guessed state. */
     rows(workspace) {
       return [...jobs.values()].filter(j => j.workspace === workspace && ['spawning', 'checking', 'unknown', 'created'].includes(j.state))
-        .map(j => ({ id: j.id, instance: j.instance, home: j.home, agent: j.soul?.name, agentsRoot: j.selector?.agentsRoot, ...j.placement,
+        .map(j => ({ id: j.id, deployment: j.deployment, instance: j.instance, home: j.home, agent: j.soul?.name, agentsRoot: j.selector?.agentsRoot, ...j.placement,
           pending: j.state === 'unknown' ? 'unknown' : j.state === 'checking' ? 'checking' : 'spawning' }));
     },
     /** Announce a pending row once (the roster's polite live region). */
@@ -258,7 +263,7 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
           || !text(e.selector?.soul, 256) || [...jobs.values()].some(j => j.spawnRef === e.spawnRef)) continue;
         const placement = {};
         for (const k of ['parentInstance', 'siblingInstance']) if (text(e.placement?.[k], 256)) placement[k] = e.placement[k];
-        const job = { id: `spawn-${++serial}`, workspace: e.workspace, soul: { name: e.soul.name, agentsRoot: e.soul.agentsRoot },
+        const job = { id: `spawn-${++serial}`, workspace: e.workspace, deployment: text(e.deployment) ? e.deployment : e.workspace, soul: { name: e.soul.name, agentsRoot: e.soul.agentsRoot },
           selector: { soul: e.selector.soul, agentsRoot: e.selector.agentsRoot }, input: null, decision: null, instance: e.instance, home: e.home, placement,
           // Reopen after a reload restores the soul and the exact name; the opening instruction is never stored.
           draft: { layout: 'scoped', restore: { choices: { name: e.instance } } }, state: 'spawning', submitted: true, spawnRef: e.spawnRef,
@@ -269,8 +274,15 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
       if (n) changed(); else save();
       return n;
     },
+    /** Move job owners onto workspace views: `map` is `Map<old id, view id>` (workspace-rehome.mjs). */
+    rehome(map) {
+      let moved = 0;
+      for (const job of jobs.values()) { const to = map?.get?.(job.workspace); if (to && to !== job.workspace) { job.workspace = to; moved++; } }
+      if (moved) changed();
+      return moved;
+    },
     /** A job's draft and soul, for tests and the Reopen path. */
-    get(id) { const j = jobs.get(id); return j ? { id: j.id, state: j.state, instance: j.instance, workspace: j.workspace, draft: structuredClone(j.draft), soul: j.soul } : null; },
+    get(id) { const j = jobs.get(id); return j ? { id: j.id, state: j.state, instance: j.instance, workspace: j.workspace, deployment: j.deployment, draft: structuredClone(j.draft), soul: j.soul } : null; },
     size: () => jobs.size,
     dispose() { alive = false; jobs.clear(); },
   };

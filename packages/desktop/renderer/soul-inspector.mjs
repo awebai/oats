@@ -32,6 +32,7 @@ import { pageBar, pageCard, pageSection, isCoreCapability, compositionEntries, c
 import { layerLabel } from './workspace-catalog.mjs';
 import { shownLaunch, launchHarnessName, launchModelText, launchFromText, launchAtText, declaredText, preferenceText, declaredDiffers } from './launch-view.mjs';
 import { createDataState, skeletonBlock, skeleton, captureFocusState } from './loading.mjs';
+import { createDeploymentScopeLine } from './deployment-scope-line.mjs';
 
 
 const HARNESS_NAMES = { pi: 'Pi', claude: 'Claude Code', codex: 'Codex' };
@@ -209,7 +210,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
   // stay valid across a refresh of the same subject, which no longer rebuilds them.
   let alive = true, serial = 0, subject = 0, operationSerial = 0, selectionGen = null, selection, data, teamsPanel = null, teamsHere = null;
   // The loading controller of the shown subject (loading.mjs), and the signature of what the content paints.
-  let loading = null, painted = null;
+  let loading = null, painted = null, scopeLine = null; // scopeLine: "On <primary deployment>" (#482)
   // The controller's clock (tests inject one); createDataState's defaults apply on undefined.
   const timers = { now: clock.now, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout };
   const pendingOperations = new WeakMap();
@@ -281,7 +282,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     container.hidden = false;
     if (presentation) presentation.setPresent(true);
     else if (layout !== 'page') container.parentElement?.classList.add('inspecting'); // the page replaces the list; no side column
-    subject++; readiness?.dispose(); readiness = null; loading?.dispose(); loading = null; painted = null; teamsHere?.dispose(); teamsHere = null;
+    subject++; scopeLine?.dispose(); scopeLine = createDeploymentScopeLine(doc, { inline: layout === 'page' }); readiness?.dispose(); readiness = null; loading?.dispose(); loading = null; painted = null; teamsHere?.dispose(); teamsHere = null;
     container.replaceChildren();
     const head = node('div', undefined, 'inspector-head');
     container.classList.toggle('soul-page', layout === 'page');
@@ -305,7 +306,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       const copy = node('div', undefined, 'page-identity-copy');
       facts$ = node('div', undefined, 'page-facts-row');
       if (selection.agent) head.append(createSoulMark(doc, selection.agent));
-      copy.append(heading, facts$); head.append(copy); summary.append(head);
+      copy.append(heading, ...(selection.agent ? [scopeLine.element] : []), facts$); head.append(copy); summary.append(head);
       side = node('div', undefined, 'soul-page-side');
       const body = node('div', undefined, 'page-body'), main = node('div', undefined, 'page-main'), column = node('div', undefined, 'page-side');
       main.append(summary, status, notice, content); column.append(side); body.append(main, column);
@@ -333,7 +334,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     const readinessHost = node('div', undefined, 'inspector-content inspector-readiness');
     // Readiness belongs to an instance; a soul's page shows what a person needs (human, F7).
     const withReadiness = !selection.agent;
-    container.append(head, notice, summary, status, ...(withReadiness ? [readinessHost] : []), content);
+    container.append(head, notice, ...(selection.agent ? [scopeLine.element] : []), summary, status, ...(withReadiness ? [readinessHost] : []), content);
     loading = createLoading(refreshing); loading.bindRefresh(refresh, () => { void show(selection, { user: true }); });
     readiness = withReadiness ? createReadinessView(readinessHost, { ctx, compact: true }) : null; syncReadiness();
     rosterColumn = null;
@@ -345,7 +346,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     if (alive) reset(restoreFocus);
   }
   function reset(restoreFocus = false) {
-    serial++; subject++; selection = null; selectionGen = null; data = null; teamsPanel = null; teamsHere?.dispose(); teamsHere = null; container.hidden = true;
+    serial++; subject++; scopeLine?.dispose(); scopeLine = null; selection = null; selectionGen = null; data = null; teamsPanel = null; teamsHere?.dispose(); teamsHere = null; container.hidden = true;
     readiness?.dispose(); readiness = null; loading?.dispose(); loading = null; painted = null;
     container.replaceChildren();
     if (presentation) presentation.setPresent(false);

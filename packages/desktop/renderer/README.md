@@ -43,7 +43,9 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
   the shell's context roster) treat it like an empty selection and silently
   `adoptWorkspace` the served id, without a generation bump. Without a
   served list nothing is guessed. A selection that IS served and gets a reply
-  for another workspace stays a refused mismatch.
+  for another workspace stays a refused mismatch. A deployment id saved before
+  workspace views (a path, `remote:<server>:<target>`) is stale once a view
+  holds it: the server answers it with that view, whose id is adopted.
 
 `theme.css` carries semantic WCAG AA tokens for **White** (default),
 **Solarized**, and **Dark**. Theme actions are available in the command palette;
@@ -97,6 +99,40 @@ rosters do not report this field, so remote marks use the fallback. Change
 package-owned declarations in reviewed package source, not locked installed
 payloads. Colors can collide and never determine selection, status or identity.
 Runtime marks show the reported runtime, not installation/authentication status.
+
+## Workspace views (#482)
+
+A window shows a workspace **view**: one matched workspace identity across machines
+(`ws:…`), or one unattached deployment under its own id. `/api/panel` names the view's
+`deployments` and tags every row with its `deployment`; `view-deployments.mjs` reads them
+(validated, text only) and keeps the last deployments seen per view for surfaces that do
+not read the panel.
+
+- **Under the switcher** (`#ws-deployments`, a list outside the trigger button): every
+  view lists its deployments, `deploymentLabel` ("This Mac · ~/Agents/oats"), the state in
+  words (live, remembered, not reached, not observed), the reason and note, and "primary"
+  when there are two or more.
+- **Switcher** (`workspace-switcher.mjs`): views first, then unattached views in a
+  "Not matched to a workspace" group (listbox → group → option) with the reported `ref` and
+  the reason. Filtering and Arrow/Home/End run over every shown option. A `ws:` id is never
+  shown: the option's path line is its deployments' labels, twins of one name show their key.
+- **Grouping by deployment** only when a view has two or more deployments: the sidebar
+  roster (`rosterSections`, a heading per deployment, its clusters under it) and the Active
+  overview (`layoutByDeployment`, one labelled section per deployment, stacked). With one
+  deployment both render exactly as before (pinned by `workspace-views-ui.test.mjs`).
+- **"On <deployment>"** (`deployment-scope-line.mjs`): deployment-level surfaces read the
+  view's primary deployment and say which in a line under their heading, only with two or
+  more deployments (Workspace header, Automations/Schedules, the soul inspector for a soul,
+  a capability page, Brain, the Sync sheet). Teams configuration, launch configurations and
+  spawn are not wired here.
+- **Re-homing** (`workspace-rehome.mjs`, shell `rehomeWorkspaceState`, on every roster
+  read): state under a deployment id (a selection, tab layout and active-terminal memory,
+  open tabs with their `term:`/view keys, collapsed rows, stored spawn jobs) moves to the view
+  that holds that deployment; a terminal follows its row's deployment when that moves to
+  another view; a selected view id that is no longer served follows its deployments when one
+  view holds them all. A group that never reports keeps its own id, so nothing moves.
+  Spawn jobs keep `deployment` (where the transaction is addressed) apart from `workspace`
+  (the owner that moves).
 
 ## Active overview — slice 7a, reported roster only
 
@@ -866,6 +902,8 @@ DOM nodes before restoring the destination layout; existing terminal attachments
 are retained, not recreated. Empty layouts and their focused destinations are
 remembered too; only a workspace with neither open tabs nor a retained layout
 falls back to the stage. Restart restoration of tab layouts is not implemented yet.
+Memory is keyed by the view id; `rehome(map)` moves a deployment id's memory to its view
+(see "Workspace views").
 
 All artifact tabs (terminal, brain, file) are workspace-scoped, including their
 activation boundary and deduplication keys. A retained brain tab has a pinned

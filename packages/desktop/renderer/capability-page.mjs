@@ -8,6 +8,10 @@ import { createSoulMark } from './identity-marks.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { capabilitySource, capabilityUse, capabilityRow, memberNames, layerLabel, sourceChip } from './workspace-catalog.mjs';
 import { skeleton, noticeElement, updateNotice, failedElement, updateFailed, isOldObservation, ROSTER_STALE_TITLE } from './loading.mjs';
+import { createDeploymentScopeLine } from './deployment-scope-line.mjs';
+
+/** Each host's "On <deployment>" line (#482): a re-render replaces it. */
+const scopeLines = new WeakMap();
 
 /** The shared page chrome: bar, columns, section titles and side cards. */
 export const pageCardCSS = `
@@ -249,6 +253,10 @@ export function renderCapabilityPage(host, { row, status, instances, root, roste
   const title = node('h2', undefined, 'page-title mono'); title.append(node('span', row.name));
   if (text(row.layer)) title.append(node('span', `Core · ${layerLabel(row.layer)}`, 'page-tag'));
   copy.append(title);
+  // #482: in a view of two or more deployments, the deployment this page reads (the primary).
+  scopeLines.get(host)?.dispose();
+  const scope = createDeploymentScopeLine(doc, { inline: true }); scopeLines.set(host, scope);
+  copy.append(scope.element);
   // Kernel #217: the manifest's description (a line-sized skeleton while the catalog is still being read).
   if (text(row.description)) copy.append(node('p', row.description, 'page-lede'));
   else if (catalogPending) { const lede = skeleton(doc, 'line', { width: '55%' }); lede.classList.add('page-lede'); copy.append(lede); }

@@ -17,6 +17,7 @@ import { createDataState, skeletonBlock, skeleton, captureFocusState } from '../
 import { desktopFacts, coreEntries, coreNote, whyElement, isCoreCapability } from '../renderer/capability-page.mjs';
 import { layerLabel } from '../renderer/workspace-catalog.mjs';
 import { buildState } from '../renderer/soul-inspector.mjs';
+import { createDeploymentScopeLine } from '../renderer/deployment-scope-line.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => {
@@ -133,7 +134,7 @@ for (const outcome of ['resolve', 'reject']) {
 function mutant(from, to) {
   const source = createSoulInspector.toString();
   assert.equal(source.split(from).length, 2, 'mutation targets exactly one production guard');
-  return runInNewContext(`(${source.replace(from, to)})`, { postJson, wsQuery, workspaceGeneration, runtimeState, createSoulMark, createReadinessView, cliStatus, iconElement, originText, createTeamsPanel, teamsOperations, soulTeams, ageText, inspectData, inspectFacts, createDataState, skeletonBlock, skeleton, captureFocusState, desktopFacts, coreEntries, coreNote, whyElement, isCoreCapability, layerLabel, buildState, INSPECTION_STALE_TITLE });
+  return runInNewContext(`(${source.replace(from, to)})`, { postJson, wsQuery, workspaceGeneration, runtimeState, createSoulMark, createReadinessView, cliStatus, iconElement, originText, createTeamsPanel, teamsOperations, soulTeams, ageText, inspectData, inspectFacts, createDataState, skeletonBlock, skeleton, captureFocusState, desktopFacts, coreEntries, coreNote, whyElement, isCoreCapability, layerLabel, buildState, INSPECTION_STALE_TITLE, createDeploymentScopeLine });
 }
 test('mutation: pending ownership is essential during availability sync', async () => {
   const factory = mutant('pendingOperations.has(control) || !available()', '!available()');

@@ -6,6 +6,7 @@
  * kernel's own code and message stay behind Details. */
 import { postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
 import { iconElement } from './shell-icons.mjs';
+import { createDeploymentScopeLine } from './deployment-scope-line.mjs';
 
 export const syncCSS = `
 .ws-sync { display:flex; align-items:center; gap:10px; min-width:0; flex:none; }
@@ -18,6 +19,7 @@ export const syncCSS = `
 .ws-sync-dialog { width:min(560px,100%); max-height:88vh; display:flex; flex-direction:column; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--fg); box-shadow:var(--shadow-modal); }
 .ws-sync-head { display:flex; align-items:center; gap:10px; min-height:52px; padding:0 16px 0 20px; border-bottom:1px solid var(--border); }
 .ws-sync-head h2 { flex:1; margin:0; font-size:15px; font-weight:700; }
+.ws-sync-dialog > .ws-sync-scope { padding:8px 20px 0; }
 .ws-sync-body { overflow:auto; padding:16px 20px; display:grid; gap:10px; }
 .ws-sync-body > p { margin:0; color:var(--muted); font-size:12.5px; line-height:1.55; overflow-wrap:break-word; }
 .ws-sync-body > p.ws-sync-lead { color:var(--fg); font-size:13px; }
@@ -87,7 +89,9 @@ export function createWorkspaceSync(host, { ctx, onSynced }) {
   const foot = node('footer', null, 'ws-sync-foot');
   const done = node('button', 'Close', 'act'); done.type = 'button';
   foot.append(node('span', null, 'spacer'), done);
-  dialog.append(head, body, foot); sheet.append(dialog);
+  // #482: in a view of two or more deployments, the deployment a sync runs on (the primary).
+  const scope = createDeploymentScopeLine(doc, { className: 'ws-sync-scope' });
+  dialog.append(head, scope.element, body, foot); sheet.append(dialog);
   (host.closest('.oats-view') || doc.body).append(sheet);
 
   const owns = (id, gen) => alive && id === serial && gen === workspaceGeneration();
@@ -160,6 +164,6 @@ export function createWorkspaceSync(host, { ctx, onSynced }) {
     update({ status: next = null, canSync = false } = {}) { status = next; available = !!canSync; paint(); },
     reset() { serial++; busy = false; status = null; available = false; closeSheet(false); paint(); },
     get busy() { return busy; },
-    dispose() { alive = false; serial++; sheet.remove(); },
+    dispose() { alive = false; serial++; scope.dispose(); sheet.remove(); },
   };
 }

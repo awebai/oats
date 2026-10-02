@@ -1,18 +1,35 @@
 import { createWorkspaceMark } from "./identity-marks.mjs";
 import { iconElement } from "./shell-icons.mjs";
+import { deploymentIdLabel } from "./view-deployments.mjs";
+
+/** A workspace view that matched a workspace identity (#482): its id (`ws:…`) is never shown. */
+export const isViewId = (id) => typeof id === "string" && id.startsWith("ws:");
+
+/** How a choice is told apart on screen: a view by its deployments' labels ("This Mac · ~/Agents/oats,
+ * altair · ~/Agents/tsm"), anything else (a deployment, an unattached view) by its id, as before. */
+export function workspaceChoicePlace(choice) {
+  if (!isViewId(choice?.id)) return String(choice?.id || "");
+  const deployments = Array.isArray(choice.deployments) ? choice.deployments.filter((id) => typeof id === "string" && id) : [];
+  return deployments.map(deploymentIdLabel).join(", ") || (typeof choice.key === "string" ? choice.key : "");
+}
 
 export function workspaceChoiceLabels(choices) {
   const base = choices.map((choice) => choice.name
-    || String(choice.id || "").split("/").filter(Boolean).at(-1)
+    || (isViewId(choice.id) ? "" : String(choice.id || "").split("/").filter(Boolean).at(-1))
     || "Workspace");
   const counts = new Map();
   for (const name of base) counts.set(name, (counts.get(name) || 0) + 1);
   return choices.map((choice, index) => {
     if (counts.get(base[index]) === 1) return base[index];
     const team = choice.team?.name ? `${choice.team.name} · ` : "";
-    return `${base[index]} — ${team}${choice.id}`;
+    // Two views of one name: their workspace keys tell them apart (never a ws: id).
+    const which = isViewId(choice.id) ? (typeof choice.key === "string" && choice.key ? choice.key : workspaceChoicePlace(choice)) : choice.id;
+    return `${base[index]} — ${team}${which}`;
   });
 }
+
+/** The section the switcher lists unattached views under (#482, expert decision Q4). */
+export const UNMATCHED_SECTION = "Not matched to a workspace";
 
 const text = (value) => String(value || "");
 const candidateId = (candidate) => text(candidate?.id || candidate?.path);
@@ -69,14 +86,27 @@ export function createWorkspaceSwitcher({
     if (restore) trigger.focus();
   };
   const menuItems = () => [...options.querySelectorAll(".ws-option:not([hidden])")];
+  // Views first; unattached views (a deployment no workspace identity matched) after them, in their
+  // own group under UNMATCHED_SECTION with the reason (and the reference it reported) as secondary
+  // text. Filtering and Arrow/Home/End run across both (menuItems() is every shown option).
+  const unmatchedHeadingId = `ws-unmatched-${Math.random().toString(36).slice(2, 8)}`;
   const renderOptions = () => {
     const query = menuSearch.value.trim().toLocaleLowerCase();
     const labels = workspaceChoiceLabels(workspaces);
     const focusedId = document.activeElement?.classList?.contains("ws-option")
       ? document.activeElement.dataset.workspaceId : "";
     options.replaceChildren();
+    const unmatched = document.createElement("div");
+    unmatched.className = "ws-option-group"; unmatched.setAttribute("role", "group"); unmatched.setAttribute("aria-labelledby", unmatchedHeadingId);
+    const unmatchedHead = document.createElement("div");
+    unmatchedHead.className = "ws-option-section"; unmatchedHead.id = unmatchedHeadingId; unmatchedHead.setAttribute("role", "presentation");
+    unmatchedHead.textContent = UNMATCHED_SECTION;
+    unmatched.append(unmatchedHead);
     workspaces.forEach((workspace, index) => {
-      const haystack = `${labels[index]} ${workspace.id} ${workspace.team?.name || ""} ${workspace.server || ""}`.toLocaleLowerCase();
+      const place = workspaceChoicePlace(workspace);
+      const ref = workspace.unattached && typeof workspace.ref === "string" ? workspace.ref : "";
+      const reason = workspace.unattached && typeof workspace.reason === "string" ? workspace.reason : "";
+      const haystack = `${labels[index]} ${place} ${workspace.team?.name || ""} ${workspace.server || ""} ${ref} ${reason}`.toLocaleLowerCase();
       if (query && !haystack.includes(query)) return;
       const button = document.createElement("button");
       button.type = "button";
@@ -84,7 +114,7 @@ export function createWorkspaceSwitcher({
       button.setAttribute("role", "option");
       button.setAttribute("aria-selected", String(workspace.id === activeId));
       button.dataset.workspaceId = workspace.id;
-      button.title = workspace.id;
+      button.title = place;
       const check = document.createElement("span");
       check.className = "ws-check";
       check.setAttribute("aria-hidden", "true");
@@ -96,24 +126,30 @@ export function createWorkspaceSwitcher({
       name.textContent = labels[index];
       const path = document.createElement("span");
       path.className = "ws-option-path";
-      path.textContent = workspace.id;
+      path.textContent = place;
       const meta = document.createElement('span'); meta.className = 'ws-option-meta';
       meta.textContent = [typeof workspace.team?.name === 'string' ? workspace.team.name : '',
         typeof workspace.server === 'string' && workspace.server ? `Server: ${workspace.server}` : ''].filter(Boolean).join(' · ');
       meta.hidden = !meta.textContent;
       copy.append(name, meta, path);
+      if (ref || reason) {
+        const why = document.createElement("span"); why.className = "ws-option-reason";
+        why.textContent = [ref ? `Reports ${ref}.` : "", reason].filter(Boolean).join(" ");
+        copy.append(why);
+      }
       button.append(createWorkspaceMark(document, workspace), copy, check);
       button.addEventListener("click", () => {
         if (menu.hidden || !button.isConnected || !options.contains(button)) return;
         closeMenu(true);
         if (workspace.id !== activeId) selectWorkspace(workspace.id);
       });
-      options.append(button);
+      (workspace.unattached ? unmatched : options).append(button);
     });
+    if (unmatched.querySelector(".ws-option")) options.append(unmatched);
     empty.hidden = options.childElementCount > 0;
     empty.textContent = empty.hidden ? '' : workspaces.length ? 'No workspaces match this filter.' : 'No workspace choices reported.';
     if (focusedId && !menu.hidden) {
-      ([...options.querySelectorAll(".ws-option")].find((button) => button.dataset.workspaceId === focusedId) || menuSearch).focus();
+      (menuItems().find((button) => button.dataset.workspaceId === focusedId) || menuSearch).focus();
     }
   };
   const openMenu = () => {
@@ -290,7 +326,8 @@ export function createWorkspaceSwitcher({
         discoveryState = { message: "No current workspace suggestions.", error: false };
       } else {
         const found = Array.isArray(result) ? result : (result?.suggestions || []);
-        const added = new Set(workspaces.map((workspace) => workspace.id));
+        // A deployment a view already holds is added too (#482): views name their deployments.
+        const added = new Set(workspaces.flatMap((workspace) => [workspace.id, ...(Array.isArray(workspace.deployments) ? workspace.deployments : [])]));
         suggestions = found.filter((candidate) => candidateId(candidate) && !added.has(candidateId(candidate)));
         discoveryState = {
           message: suggestions.length ? `${suggestions.length} suggested workspace${suggestions.length === 1 ? "" : "s"}` : "No additional OATS workspaces were discovered.",
@@ -410,7 +447,7 @@ export function createWorkspaceSwitcher({
     const labels = workspaceChoiceLabels(workspaces);
     const activeIndex = workspaces.findIndex((candidate) => candidate.id === activeId);
     currentName.textContent = workspace ? (labels[activeIndex] || candidateName(workspace)) : "Resolving…";
-    trigger.title = activeId ? `Active workspace: ${activeId}` : "Resolving active workspace";
+    trigger.title = activeId ? `Active workspace: ${isViewId(activeId) ? currentName.textContent : activeId}` : "Resolving active workspace";
     renderOptions();
   };
 
