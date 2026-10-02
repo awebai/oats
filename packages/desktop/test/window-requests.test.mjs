@@ -160,3 +160,17 @@ test('shipped api: the refusal carries the served choices, so a window can find 
   assert.equal(reply.status, 404); assert.equal(reply.body.code, NOT_SERVED_CODE);
   assert.deepEqual(JSON.parse(JSON.stringify(reply.body.workspaces)), served);
 });
+
+test('shipped api: a window with no workspace to read (choosing) gets no default workspace on any scoped route', async () => {
+  for (const path of SCOPED) {
+    const api = shippedApi({ window: null, chooser: true });
+    const reply = await api.call(path);
+    assert.equal(reply.status, 409, path); assert.equal(reply.body.code, 'E_NO_WORKSPACE', path);
+    assert.deepEqual(api.fetched, [], `${path}: never main's verified default`);
+  }
+  const outside = shippedApi({ window: null, chooser: true });
+  assert.equal((await outside.call('/api/cli')).status, 200, 'routes outside the workspace scope still answer');
+  const adopting = shippedApi({ window: null });
+  await adopting.call('/api/agents');
+  assert.equal(adopting.fetched[0].searchParams.get('ws'), VERIFIED, 'a window still adopting its first workspace keeps the verified one');
+});

@@ -3,12 +3,15 @@
 // handler reassigns it), else its advertisedBefore, as main does.
 import { frameWorkspace } from '../../renderer/window-binding.mjs';
 import { windowRefusal } from '../../api-url.mjs';
+import { scopedRequest } from '../../renderer/workspace-routes.mjs';
 import { workspaceNotServed } from '../../renderer/deployment-header.mjs';
 
 export function withWindowGlobals(context) {
   return Object.assign(context, {
-    frameWorkspace, windowRefusal, workspaceNotServed, noteServed() {}, panelWorkspaces: async () => null, servedList: [],
+    frameWorkspace, windowRefusal, scopedRequest, workspaceNotServed, noteServed() {}, panelWorkspaces: async () => null, servedList: [],
+    // No window is one main knows has no workspace (a chooser) unless a test says so.
+    choosers: new Set(), BrowserWindow: { fromWebContents: () => null },
     advertisedNow: () => (context.allowedWs?.size ? context.allowedWs : context.advertisedBefore ?? new Set()),
-  }, Object.fromEntries(['frameWorkspace', 'windowRefusal', 'workspaceNotServed', 'noteServed', 'advertisedNow', 'panelWorkspaces', 'servedList']
+  }, Object.fromEntries(['frameWorkspace', 'windowRefusal', 'workspaceNotServed', 'noteServed', 'advertisedNow', 'panelWorkspaces', 'servedList', 'choosers', 'BrowserWindow', 'scopedRequest']
     .filter((name) => Object.hasOwn(context, name)).map((name) => [name, context[name]])));
 }

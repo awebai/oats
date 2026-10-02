@@ -17,6 +17,7 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { apiUrl, apiInit, classifyApiRoute, createUnservedRefusal, servedSelectors, windowRefusal } from "./api-url.mjs";
+import { scopedRequest } from "./renderer/workspace-routes.mjs";
 import { forgeProxyOptions, FORGE_EPOCH_HEADER, installForgeAuthHandlers, trustedForgeFrame } from "./forge-proxy.mjs";
 import { createGhRunner, forgeEnvironment } from "./forge-cli.mjs";
 import { createForgeAuthBroker, verifyAuthCli } from "./forge-auth.mjs";
@@ -458,6 +459,11 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   // never another's. An unbound window keeps the verified workspace and its rewrite (#461 adoption).
   const bound = (() => { try { return frameWorkspace(e.senderFrame?.url, RENDERER_URL); } catch { return undefined; } })();
   const windowWs = typeof bound === "string" ? bound : null;
+  // A window with no workspace to read (a New Window, a window left choosing) reads none: the verified
+  // workspace below is only for a window still adopting its first one.
+  if (windowWs === null && scopedRequest(pathname) && choosers.has(BrowserWindow.fromWebContents(e.sender))) {
+    return { ok: false, status: 409, body: { error: "This window has no workspace yet.", code: "E_NO_WORKSPACE" } };
+  }
   // A workspace the server does not serve, asked by a bound window, is refused on every
   // workspace-scoped route — never answered with another workspace's data. Main learns what the
   // server advertises from panel replies, so it re-reads that first: a view observed since (its
@@ -629,7 +635,8 @@ function installAppMenu() {
 const WINDOWS_FILE = () => join(app.getPath("userData"), "windows.json");
 const windows = createWindowSet({ create: (key, record) => createWindow(key, record) });
 let windowRecords = null; // created at startup, once userData is known
-// Windows opened by New Window: their first claim never takes the shared default (they show the switcher).
+// Windows with no workspace to read: a New Window, or a window left choosing. Their first claim never
+// takes the shared default (they show the switcher), and they get no workspace's data until they bind.
 const choosers = new WeakSet();
 /** A window's bounds and state, as a record keeps them. */
 const windowState = (win) => ({ bounds: win.getNormalBounds(), maximized: win.isMaximized(), fullscreen: win.isFullScreen() });
@@ -679,6 +686,7 @@ ipcMain.handle("window:claim-workspace", (e, id, options) => {
   if (options?.initial === true && choosers.has(win)) return { ok: false, code: "choose", workspaces: servedList };
   if (id === null) {
     windows.unbind(win);
+    choosers.add(win); // it has nothing to read until it binds again
     windowRecords?.close(win, { served: false }); // the record stays; the window no longer owns it
     win.setTitle(windowTitle(null, servedList));
     return { ok: true };
@@ -689,7 +697,11 @@ ipcMain.handle("window:claim-workspace", (e, id, options) => {
   if (options?.initial === true && !served(id)) return { ok: false, code: "not-served" };
   const key = viewKey(id);
   const result = windows.claim(win, key, { focus: options?.focus !== false });
-  if (!result.ok) return { ...result, workspaces: servedList };
+  if (!result.ok) {
+    // A first claim refused because another window has the default: this window chooses from now on.
+    if (options?.initial === true) choosers.add(win);
+    return { ...result, workspaces: servedList };
+  }
   choosers.delete(win);
   bindWindow(win, key);
   return { ok: true, workspace: key };

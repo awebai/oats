@@ -152,3 +152,11 @@ test('a switch, a start or an adoption binds the workspace main bound (a deploym
   await new Promise((r) => setImmediate(r));
   assert.equal(adopt.common.currentWorkspace(), B); assert.deepEqual(adopt.replaced, [workspaceHash(B)]);
 });
+
+test('entering the choosing state: the workspace listeners already see it, so a view refreshing then sends nothing', async () => {
+  const w = await windowWith({ hash: workspaceHash(C), claim: async (id) => (id === null ? { ok: true } : { ok: false, code: 'open-elsewhere', workspaces: CHOICES }) });
+  const seen = []; w.common.onWorkspaceChange(() => seen.push([w.common.windowState(), w.common.currentWorkspace()]));
+  w.common.adoptWorkspace(A);
+  await new Promise((r) => setImmediate(r)); await new Promise((r) => setImmediate(r));
+  assert.deepEqual(seen, [['choosing', '']]);
+});

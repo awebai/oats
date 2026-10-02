@@ -1,6 +1,9 @@
 // Pure request-URL shaping for the desktop app's privileged API proxy.
 // Kept dependency-free and separate from main.mjs so the root `node --test`
 // suite can cover it without loading Electron.
+import { workspaceScoped } from "./renderer/workspace-routes.mjs";
+
+export { workspaceScoped };
 
 /** Classify specialized behavior from the pathname the backend will see.
  * This is NOT authorization: apiUrl must still enforce input/origin/workspace
@@ -28,15 +31,6 @@ export function classifyApiRoute(pathname, base) {
       default: return null;
     }
   } catch { return null; }
-}
-
-/** Workspace-scoped endpoints: the roster/agents/brain reads AND the whole instance-addressed family.
- * The server resolves instance names per workspace, and same-named instances exist across workspaces. */
-export function workspaceScoped(pathname) {
-  return pathname === "/api/panel" || pathname === "/api/agents" || pathname === '/api/spawn' || pathname === '/api/automations' || pathname === '/api/forge-roster'
-    || pathname === '/api/team-members'
-    || /^\/api\/(?:instance|workspace)-[a-z-]+$/.test(pathname) // entire body-addressed scoped families
-    || /^\/api\/(brain|session|keys|interrupt|chat)\//.test(pathname);
 }
 
 /**

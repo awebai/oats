@@ -54,7 +54,7 @@ function boot({ records = [], served = SERVED, displays = [{ workArea: { x: 0, y
     terminalBroker: { register() {} }, suggestionCalls: { forget() {} }, lastPickChoices: new Map(),
   };
   context.advertisedNow = () => context.allowedWs;
-  main = runInNewContext(`${section}\n${windowBlock}\n({ windows, openWorkspaceWindow, openNewWindow, restoreWindows, setRecords: (r) => { windowRecords = r; }, setAdvertised: (set) => { allowedWs = set; }, get windowRecords() { return windowRecords; } })`, context);
+  main = runInNewContext(`${section}\n${windowBlock}\n({ windows, choosers, openWorkspaceWindow, openNewWindow, restoreWindows, setRecords: (r) => { windowRecords = r; }, setAdvertised: (set) => { allowedWs = set; }, get windowRecords() { return windowRecords; } })`, context);
   Object.defineProperty(main, 'quitStarted', { set: (v) => { context.quitStarted = v; } });
   main.setRecords(createWindowRecords({ file, initial: records, timers: { setTimeout: () => 1, clearTimeout() {} } }));
   const event = (win) => ({ sender: Object.assign(win.webContents, { isDestroyed: () => false }), senderFrame: win.webContents.mainFrame });
@@ -226,4 +226,18 @@ test('a claim of a deployment id whose view has no window binds the view, and sa
   const win = b.main.openNewWindow();
   assert.deepEqual(await b.claim(win, '/d/tsm'), { ok: true, workspace: B });
   assert.equal(b.main.windows.keyOf(win), B); assert.equal(win.title, 'tsm');
+});
+
+test('a window left with no workspace is one main knows has nothing to read', async () => {
+  const b = boot({ records: [record(A), record(B)] });
+  b.main.restoreWindows();
+  const [a, other] = FakeWindow.all;
+  await b.claim(a, null);
+  assert.equal((await b.claim(a, B, { focus: false, initial: true })).code, 'choose', 'left choosing: never the shared default');
+  const fresh = b.main.openNewWindow(); b.main.choosers.delete(fresh); // a window opened with no workspace, adopting
+  assert.equal((await b.claim(fresh, B, { focus: false, initial: true })).code, 'open-elsewhere');
+  assert.equal((await b.claim(fresh, A, { focus: false, initial: true })).code, 'choose', 'its default open elsewhere: it chooses from then on');
+  assert.deepEqual(await b.claim(fresh, '/d/gone'), { ok: true, workspace: '/d/gone' }, 'a choice binds it');
+  assert.equal(b.main.choosers.has(fresh), false);
+  assert.equal(other.title, 'tsm');
 });

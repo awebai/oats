@@ -515,3 +515,23 @@ test('panel.toggle defaults to Mod+Alt+B (no conflict), focus mode has no defaul
     assert.equal(matchEvent({ key, metaKey: true }, { isMac: true, insideTerminal: true }), id);
   }
 });
+
+test('the shell sends no workspace-scoped request while its window chooses (Quick Open, a view refreshing on its way out)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { runInNewContext } = await import('node:vm');
+  const { scopedRequest } = await import('../renderer/workspace-routes.mjs');
+  const { httpError } = await import('../renderer/views/common.mjs');
+  const shellSource = readFileSync(new URL('../renderer/shell.mjs', import.meta.url), 'utf8');
+  const fnSource = shellSource.match(/async function api\(pathname, opts\)[^]*?\n\}/)[0];
+  for (const state of ['choosing', 'bound']) {
+    const sent = [];
+    const api = runInNewContext(`(${fnSource})`, { windowState: () => state, scopedRequest, httpError, Object, Error,
+      desk: { api: async (path) => { sent.push(path); return { ok: true, status: 200, body: {} }; } } });
+    for (const path of ['/api/agents', '/api/panel?ws=x', '/api/instance-git']) {
+      if (state === 'choosing') await assert.rejects(api(path), (e) => e.code === 'E_NO_WORKSPACE', path);
+      else await api(path);
+    }
+    await api('/api/cli');
+    assert.deepEqual(sent, state === 'choosing' ? ['/api/cli'] : ['/api/agents', '/api/panel?ws=x', '/api/instance-git', '/api/cli'], state);
+  }
+});

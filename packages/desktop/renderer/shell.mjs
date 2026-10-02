@@ -74,6 +74,7 @@ import { createWorkspaceTabMemory } from "./workspace-tab-memory.mjs";
 import { notePanel, panelDeployments, rosterSections, deploymentHeading, rowStale } from "./view-deployments.mjs";
 import { onDeploymentTabRequest } from "./deployment-tabs.mjs";
 import { ROSTER_POLL_FOCUSED_MS, rosterPollDue } from "./roster-cadence.mjs";
+import { scopedRequest } from "./workspace-routes.mjs";
 import { createViewMembership, rehomeMap, rehomeTabs, rehomeActiveTerminals, rehomeCollapsed } from "./workspace-rehome.mjs";
 import {
   requestSplit, focusTab, openTabInFocusedGroup, removeSplitTab, isSplitMember, groupOfTab, fillEmptyGroup, resizeSplitGroups,
@@ -113,6 +114,9 @@ window.addEventListener('pagehide', () => notifications.dispose(), { once: true 
 
 // ── ctx (shared by all views) ─────────────────────────────────────────────
 async function api(pathname, opts) {
+  // A window with no workspace sends no workspace-scoped request (#481): Quick Open, a view refreshing
+  // on its way out, anything. Main refuses them too; this keeps them from being sent at all.
+  if (windowState() === "choosing" && scopedRequest(pathname)) throw Object.assign(new Error("This window has no workspace yet."), { code: "E_NO_WORKSPACE" });
   const r = await desk.api(pathname, opts);
   if (!r.ok) throw httpError(r, pathname);
   return r.body;
