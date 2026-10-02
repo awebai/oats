@@ -42,7 +42,7 @@ import { parseConfigData } from "../lib/config-data.mjs";
 import * as remoteModule from "../lib/remote.mjs";
 import { activateLocalInputs, localRevision } from "../lib/local-inputs.mjs";
 import YAML from "yaml";
-import { attachArgv, checkRemote, forgetSnapshot, getServer, inspectRemote, startRemote, restartRemote, launchConfigRemote, scheduleRemote, listSnapshots, readServers, reportedWorkspaceKey, rosterGroups, routeCommand, targetOf, validateServer, workspaceKeyOfStatus, workspaceMismatch, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
+import { attachArgv, checkRemote, connectServer, forgetSnapshot, getServer, inspectRemote, startRemote, restartRemote, launchConfigRemote, scheduleRemote, listSnapshots, readServers, reportedWorkspaceKey, rosterGroups, routeCommand, runRemote, targetOf, validateServer, workspaceKeyOfStatus, workspaceMismatch, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
 import { spawnSync as spawnSyncProc } from "node:child_process";
 import { tickTriggers } from "../lib/triggers.mjs";
 import * as A from "../lib/automations.mjs";
@@ -58,7 +58,7 @@ import { readEvents } from "../lib/instance-events.mjs";
 
 const rawArgs = process.argv.slice(2);
 /** The kernel's switches: a value never rides one (`--yolo=false` must not turn yolo on). */
-const KERNEL_SWITCHES = new Set(["allow-child-spawns", "apply", "check", "clear", "delete-branch", "discard-worktree", "dry-run", "ephemeral", "force", "help", "host", "json", "keep-dir", "keep-env", "no-child-spawns", "no-launch", "no-recursive", "no-yolo", "plan", "policy", "preview", "print", "replace", "self", "verbose", "yes", "yolo"]);
+const KERNEL_SWITCHES = new Set(["allow-child-spawns", "apply", "check", "clear", "delete-branch", "discard-worktree", "dry-run", "ephemeral", "force", "help", "host", "install-oats", "json", "keep-dir", "keep-env", "no-child-spawns", "no-launch", "no-recursive", "no-yolo", "plan", "policy", "preview", "print", "replace", "self", "verbose", "yes", "yolo"]);
 /** `--flag=value` is `--flag value`: every kernel reader (flag(), valueFlag(), the onboard and
  *  routed-command loops) then applies the spaced form's validation to it. `problem` is an empty
  *  `--flag=`, a switch given a value, or a value that is itself an option (`--model=--yolo`):
@@ -3176,7 +3176,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capabilityShowApi: 1 }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "servers-per-workspace"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capabilityShowApi: 1 }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -3222,8 +3222,9 @@ async function experimentalCmd() {
 function serverCmd() {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   const sub = args[1];
-  const usage = "usage: oats server add <id> --ssh <host-alias> --workspace </abs/path> [--oats <path>] [--path <dir:dir>] [--label <text>] [--replace] | list | remove <id> | check <id> | roster [--server <id>] | forget <id> --instance <name>  [--json]";
-  if (!["add", "list", "remove", "check", "roster", "forget"].includes(sub)) bail("E_USAGE", usage);
+  const usage = "usage: oats server add <id> --ssh <host-alias> --workspace </abs/path> [--oats <path>] [--path <dir:dir>] [--label <text>] [--replace] | connect <id> --ssh <host-alias> [--workspace-ref <ref>] [--dir </abs/path or ~/path on the host>] [--oats <path>] [--path <dir:dir>] [--label <text>] [--install-oats] [--replace] | list [--workspace-ref <ref>] | remove <id> | check <id> | roster [--server <id>] | forget <id> --instance <name>  [--json]";
+  if (!["add", "connect", "list", "remove", "check", "roster", "forget"].includes(sub)) bail("E_USAGE", usage);
+  if (sub === "connect") return serverConnectCmd(bail);
   if (sub === "forget") {
     // A saved route whose remote instance is gone can be dropped only by
     // the operator: nothing routed can do it, and the changed-registration
@@ -3322,11 +3323,55 @@ function serverCmd() {
     if (reported && server.workspaceKey && reported !== server.workspaceKey) { const e = workspaceMismatch(id, server, reported); bail(e.code, e.message, e.details); }
     if (reported && !server.workspaceKey) { servers[id] = { ...servers[id], workspaceKey: reported }; writeServers(servers); }
     const workspaceKey = reported ?? server.workspaceKey ?? null;
-    if (JSON_MODE) { jsonOk({ id, target, remote, workspaceKey, workspaceReachable: !!status.envelope.ok, agents, error: status.envelope.ok ? undefined : status.envelope.error }); return; }
+    // Whether git on the host reads the workspace remote: the host's own read-only onboard check
+    // (feature server-connect); null when the host cannot say.
+    let workspaceReadable = null, workspaceReadError;
+    if (status.envelope.ok && remote.features.includes("server-connect")) {
+      const probe = runRemote(target, ["onboard", target.workspace, "--check", "--json"], { serverId: id }).envelope;
+      if (probe.ok && probe.result?.remote) {
+        workspaceReadable = probe.result.remote.readable === true;
+        if (!workspaceReadable) { const { code, message, reason, hint } = probe.result.remote.error || {}; workspaceReadError = { code, message, reason, ...(hint ? { hint } : {}) }; }
+      }
+    }
+    if (JSON_MODE) { jsonOk({ id, target, remote, workspaceKey, workspaceReachable: !!status.envelope.ok, workspaceReadable, ...(workspaceReadError ? { workspaceReadError } : {}), agents, error: status.envelope.ok ? undefined : status.envelope.error }); return; }
     console.log(`${id}: ssh ${target.sshHost} ok, remote oats ${remote.version} (envelope v${remote.schemaVersion})${workspaceKey ? `, workspace ${workspaceKey}` : ""}`);
+    if (workspaceReadable === false) console.log(`  the host's git cannot read the workspace remote: ${workspaceReadError.message}`);
     console.log(status.envelope.ok ? `  workspace ${target.workspace}: ${agents} agent(s)` : `  workspace ${target.workspace}: ${status.envelope.error?.message || "not usable"}`);
     if (!status.envelope.ok) process.exit(1);
   } catch (e) { bail(e.code || "E_SSH", e.message, e.details); }
+}
+
+/** `oats server connect <id> --ssh <host>`: this deployment's workspace on a host, registered
+ *  (lib/servers.mjs connectServer). Defaults come from the deployment it runs in: its workspace
+ *  ref, and ~/Agents/<its directory's name> on the host. */
+function serverConnectCmd(bail) {
+  const id = args[2];
+  if (!id || id.startsWith("--")) bail("E_USAGE", "usage: oats server connect <id> --ssh <host-alias> [--workspace-ref <ref>] [--dir </abs/path or ~/path on the host>] [--oats <path>] [--path <dir:dir>] [--label <text>] [--install-oats] [--replace] [--json]");
+  const val = (name) => { const v = flag(name); return v === true ? bail("E_BAD_ARGS", `--${name} needs a value`) : v; };
+  const sshHost = val("ssh");
+  if (!sshHost) bail("E_BAD_ARGS", "--ssh <host-alias> is required: the OpenSSH host alias of the machine to connect");
+  let local = null;
+  try { local = loadLocal(process.cwd()); } catch (e) { if (e?.code !== "E_LOCAL_MISSING") bail(e.code || "E_CONFIG_BROKEN", e.message, e.details); }
+  const workspaceRef = val("workspace-ref") ?? local?.local.workspace;
+  if (!workspaceRef) bail("E_BAD_ARGS", "--workspace-ref <ref> is required outside a deployment (inside one it defaults to oats-local.yaml workspace:)");
+  try { remoteModule.parseRepoRef(workspaceRef); } catch (e) { bail(e.code || "E_REPO_REF", e.message, e.details); }
+  const dir = val("dir") ?? (local ? `~/Agents/${basename(dirname(local.path))}` : undefined);
+  if (!dir) bail("E_BAD_ARGS", "--dir <path on the host> is required outside a deployment (inside one it defaults to ~/Agents/<the deployment's directory name>)");
+  let res;
+  try {
+    res = connectServer({ id, sshHost, workspaceRef, dir, oatsPath: val("oats"), path: val("path"), label: val("label"), installOats: args.includes("--install-oats"), replace: args.includes("--replace"), localVersion: OATS_VERSION });
+  } catch (e) {
+    if (!JSON_MODE && e.details?.steps) printConnectSteps(id, sshHost, e.details.steps);
+    bail(e.code || "E_CONNECT", e.message, e.details);
+  }
+  if (JSON_MODE) { jsonOk(res); return; }
+  printConnectSteps(id, sshHost, res.steps);
+  if (res.ready) console.log(`\n${id} is ready: oats spawn <soul> --server ${id}`);
+  else { console.log(`\nnot ready yet; for a human, then re-run this command:`); for (const h of res.human) console.log(`  - ${h.split("\n").join("\n    ")}`); }
+}
+function printConnectSteps(id, sshHost, steps) {
+  console.log(`oats server connect ${id} → ${sshHost}`);
+  for (const s of steps) console.log(`  ${s.step.padEnd(11)} ${s.status}${s.detail ? `  ${s.detail.split("\n")[0]}` : ""}`);
 }
 
 /** `oats <spawn|retire|status> --server <id> ...`: run the command on the
