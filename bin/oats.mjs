@@ -1882,34 +1882,49 @@ async function statusDrift(data) {
   return { drift, soul, souls, unreachable: null, local: ctx.local, discovery };
 }
 /** The deployment's workspace identity in `oats status --json` (feature workspace-identity), read
- *  OFFLINE: `key` as oats-local.yaml names it, and the team model resolved as teamModel resolves it
- *  (the default label is local; a committed team wins a collision) over the shared teams of, in order,
- *  the workspace file this run observed (`teamsFrom: "observed"`), this machine's parsed cache at the
- *  host's last observed commit ("cache": no git process), or none ("local"). `standalone` is the
- *  CONFIGURED standalone view only (oats-local.yaml `standalone:`): it reads no workspace file, so its
- *  local teams are the whole team model. A run that fell back to the standalone view (the host
- *  unreadable) is not: its team model is the workspace's, read from the cache when it can be. */
+ *  OFFLINE. `key` is the workspace HOST's canonical repo key (parseRepoRef(...).key) and `ref` the
+ *  reference as oats-local.yaml writes it. The host is the one this run observed, else the one this
+ *  machine's parsed cache knows: `ref` itself when the cache holds its workspace file, or the host its
+ *  cached oats-membership.yaml names when `ref` is a member ("workspace"). A member whose host is not
+ *  known keys as itself ("member"); a ref nothing is known of is taken as the host, as the schema
+ *  defines `workspace:` ("workspace"). The team model resolves as teamModel resolves it (the default
+ *  label is local; a committed team wins a collision) over the shared teams of, in order, the workspace
+ *  file this run observed (`teamsFrom: "observed"`), the cached file ("cache": no git process), or none
+ *  ("local"). `standalone` is the CONFIGURED standalone view only (oats-local.yaml `standalone:`): it
+ *  reads no workspace file, so its local teams are the whole team model. A run that fell back to the
+ *  standalone view (the host unreadable) is not: its team model is the workspace's, and its
+ *  discovery is the member's, never the host's key. */
 function workspaceIdentity(local, discovery) {
+  const ref = local.workspace;
   const standalone = typeof local.standalone === "string" && local.standalone !== "";
+  const observed = discovery && discovery.standalone !== true && discovery.workspace ? discovery : null;
+  const cached = observed ? null : cachedWorkspace(ref);
+  const keyOf = (r) => { try { return remoteModule.parseRepoRef(r).key; } catch { return null; } };
+  let key, keyFrom;
+  if (observed) [key, keyFrom] = [observed.key, "workspace"];
+  else if (cached && cached.host === null) [key, keyFrom] = [keyOf(ref), "member"];
+  else [key, keyFrom] = [keyOf(cached?.host ?? ref), "workspace"];
+  if (key === null) keyFrom = null; // a reference parseRepoRef refuses: unusable, never matched
   let shared = null, teamsFrom = "local";
   if (!standalone) {
-    if (discovery?.workspace) { shared = discovery.workspace; teamsFrom = "observed"; }
-    else { const cached = cachedWorkspaceFile(local.workspace); if (cached) { shared = cached; teamsFrom = "cache"; } }
+    if (observed) [shared, teamsFrom] = [observed.workspace, "observed"];
+    else if (cached?.file) [shared, teamsFrom] = [cached.file, "cache"];
   }
   const model = teamModel(shared, local);
   const labels = [...model.labels.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   return {
-    key: local.workspace, standalone,
+    key, ref, keyFrom, standalone,
     defaultTeam: model.defaultTeam === null ? null : { label: model.defaultTeam, team: model.labels.get(model.defaultTeam)?.team ?? null },
     teams: Object.fromEntries(labels.map((l) => [l, model.labels.get(l).team])),
     teamsFrom,
   };
 }
-/** The workspace file at the host's last observed commit, as this machine's parsed cache holds it (the
- *  value observeWorkspace stored), or null: no observation, no intact entry, or a file that failed. A
- *  `ref` cached as having no workspace file is a member named in place of its host (discoverOrStandalone
- *  follows the same backlink): its cached oats-membership.yaml names the host whose file is read. */
-function cachedWorkspaceFile(ref) {
+/** What this machine's parsed cache knows of the workspace `ref` names (the values observeWorkspace and
+ *  confirmMembership stored, each at its repo's last observed commit): { host, file } — `host` the ref
+ *  of the workspace host, `file` its workspace file or null — when `ref` is the host (its file is
+ *  cached) or a member whose cached oats-membership.yaml names it (discoverOrStandalone follows the same
+ *  backlink); { host: null, file: null } for a member whose host is not known; null when nothing is. */
+function cachedWorkspace(ref) {
   const options = remoteOptionsFromEnv();
   const cached = (r, item) => {
     const commit = remoteModule.lastObservedCommit(r, options);
@@ -1918,10 +1933,11 @@ function cachedWorkspaceFile(ref) {
   };
   const fileOf = (read) => (read && !read.missing && !read.problems && read.value && typeof read.value === "object" ? read.value : null);
   const read = cached(ref, "workspace");
-  if (!read?.missing) return fileOf(read);
+  if (!read) return null;
+  if (!read.missing) return { host: ref, file: fileOf(read) };
   const membership = cached(ref, "membership");
-  const host = membership?.kind === "ok" ? membership.value?.workspace : null;
-  return typeof host === "string" ? fileOf(cached(host, "workspace")) : null;
+  const host = membership?.kind === "ok" && typeof membership.value?.workspace === "string" ? membership.value.workspace : null;
+  return host === null ? { host: null, file: null } : { host, file: fileOf(cached(host, "workspace")) };
 }
 /** One `modules:` line per module. */
 function driftLine(row) {

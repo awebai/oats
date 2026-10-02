@@ -44,7 +44,36 @@ test("teamsFrom local: a host with no cache reports local teams only, and a shar
   const fx = deployment({ defaultTeam: "shared" });
   try {
     const ws = status(fx).workspace;
-    assert.deepEqual(ws, { reachable: true, key: fx.ref, standalone: false, defaultTeam: { label: "shared", team: null }, teams: { mine: MINE }, teamsFrom: "local" });
+    assert.deepEqual(ws, { reachable: true, key: fx.key, ref: fx.ref, keyFrom: "workspace", standalone: false, defaultTeam: { label: "shared", team: null }, teams: { mine: MINE }, teamsFrom: "local" });
+  } finally { fx.cleanup(); }
+});
+
+test("key is the host's canonical key whatever the spelling, ref is as written; a fresh host's ref is taken as the host", () => {
+  const fx = deployment();
+  try {
+    for (const ref of ["git:github.com/awebai/oats", "https://github.com/awebai/oats.git", "git@github.com:awebai/oats.git"]) {
+      writeFileSync(join(fx.dep, "oats-local.yaml"), YAML.stringify({ schemaVersion: 2, workspace: ref, teams: { mine: { team: MINE } }, defaultTeam: "mine" }));
+      const ws = status(fx).workspace; // no instance, nothing cached: nothing is read, and nothing is known of the ref
+      assert.deepEqual(ws, { reachable: true, key: "github.com/awebai/oats", ref, keyFrom: "workspace", standalone: false,
+        defaultTeam: { label: "mine", team: MINE }, teams: { mine: MINE }, teamsFrom: "local" }, ref);
+    }
+  } finally { fx.cleanup(); }
+});
+
+test("a workspace reference parseRepoRef refuses: key and keyFrom null, ref as written, with and without instances", async () => {
+  const fx = deployment({ defaultTeam: "mine" });
+  try {
+    const bad = () => writeFileSync(join(fx.dep, "oats-local.yaml"), YAML.stringify({ schemaVersion: 2, workspace: "foo/bar", teams: { mine: { team: MINE } }, defaultTeam: "mine" }));
+    const identity = { key: null, ref: "foo/bar", keyFrom: null, standalone: false, defaultTeam: { label: "mine", team: MINE }, teams: { mine: MINE }, teamsFrom: "local" };
+    bad();
+    assert.deepEqual(status(fx).workspace, { reachable: true, ...identity }, "no instance: nothing is read");
+    writeLocal(fx, { defaultTeam: "mine" });
+    await fx.spawn("dev", { instance: "dev-1" });
+    bad();
+    const ws = status(fx).workspace;
+    assert.equal(ws.reachable, false); assert.equal(ws.code, "E_REPO_REF");
+    assert.deepEqual({ ...ws, reachable: undefined, code: undefined, reason: undefined, message: undefined },
+      { reachable: undefined, code: undefined, reason: undefined, message: undefined, ...identity }, "an instance: discovery refuses the ref");
   } finally { fx.cleanup(); }
 });
 
@@ -60,7 +89,7 @@ test("teamsFrom cache: the parsed cache at the last observed commit answers with
     // deployment checkout (lib/core.mjs canonicalDeploymentPath); the teams read adds none, and nothing
     // reaches the remote.
     assert.deepEqual(git.calls(), [`-C ${fx.dep} rev-parse --show-toplevel`], "status ran no git process beyond the local root probe");
-    assert.deepEqual(ws, { reachable: true, key: fx.ref, standalone: false, defaultTeam: { label: "shared", team: SHARED },
+    assert.deepEqual(ws, { reachable: true, key: fx.key, ref: fx.ref, keyFrom: "workspace", standalone: false, defaultTeam: { label: "shared", team: SHARED },
       teams: { global: null, mine: MINE, shared: SHARED }, teamsFrom: "cache" });
   } finally { fx.cleanup(); }
 });
@@ -94,7 +123,7 @@ test("teamsFrom cache through a member's backlink: oats-local.yaml names a membe
     const git2 = loggingGit(fx);
     const ws = status(fx, git2.env).workspace;
     assert.deepEqual(git2.calls(), [`-C ${fx.dep} rev-parse --show-toplevel`], "status ran no git process beyond the local root probe");
-    assert.deepEqual(ws, { reachable: true, key: mRef, standalone: false, defaultTeam: { label: "shared", team: SHARED },
+    assert.deepEqual(ws, { reachable: true, key: fx.key, ref: mRef, keyFrom: "workspace", standalone: false, defaultTeam: { label: "shared", team: SHARED },
       teams: { global: null, mine: MINE, shared: SHARED }, teamsFrom: "cache" });
   } finally { fx.cleanup(); }
 });
@@ -102,17 +131,18 @@ test("teamsFrom cache through a member's backlink: oats-local.yaml names a membe
 test("a run that falls back to the standalone view (the host unreadable) is not standalone: its teams come from the cache, else are unknown", async () => {
   const fx = deployment();
   try {
-    const { mRef } = memberNamed(fx, { defaultTeam: "shared" });
+    const { mRef, bare } = memberNamed(fx, { defaultTeam: "shared" });
     await fx.spawn("dev", { instance: "dev-1" }); // an instance: status discovers the workspace
     const seen = fx.cli(["souls", "--json"]); // through the backlink: the cache now holds the host's file
     assert.equal(seen.status, 0, seen.stdout + seen.stderr);
     unreachable(fx); // the member stays readable: this run's discovery falls back to the standalone view
     let ws = status(fx).workspace;
-    assert.deepEqual(ws, { reachable: true, key: mRef, standalone: false, defaultTeam: { label: "shared", team: SHARED },
+    assert.deepEqual(ws, { reachable: true, key: fx.key, ref: mRef, keyFrom: "workspace", standalone: false, defaultTeam: { label: "shared", team: SHARED },
       teams: { global: null, mine: MINE, shared: SHARED }, teamsFrom: "cache" });
     rmSync(join(fx.base, "cache"), { recursive: true, force: true }); // a host that has never read its workspace
     ws = status(fx).workspace;
-    assert.deepEqual(ws, { reachable: true, key: mRef, standalone: false, defaultTeam: { label: "shared", team: null }, teams: { mine: MINE }, teamsFrom: "local" });
+    // The host is not known here (no cached backlink): the key is the member's own, unresolved.
+    assert.deepEqual(ws, { reachable: true, key: `local/${bare}`, ref: mRef, keyFrom: "member", standalone: false, defaultTeam: { label: "shared", team: null }, teams: { mine: MINE }, teamsFrom: "local" });
   } finally { fx.cleanup(); }
 });
 
@@ -122,14 +152,14 @@ test("teamsFrom observed when this run read the workspace file; unreachable fall
     await fx.spawn("dev", { instance: "dev-1" }); // a workspace soul: status discovers the workspace
     let ws = status(fx).workspace;
     const teams = { global: null, mine: MINE, shared: SHARED };
-    assert.deepEqual(ws, { reachable: true, key: fx.ref, standalone: false, defaultTeam: { label: "mine", team: MINE }, teams, teamsFrom: "observed" });
+    assert.deepEqual(ws, { reachable: true, key: fx.key, ref: fx.ref, keyFrom: "workspace", standalone: false, defaultTeam: { label: "mine", team: MINE }, teams, teamsFrom: "observed" });
 
     unreachable(fx);
     ws = status(fx).workspace;
     assert.equal(ws.reachable, false);
     for (const k of ["code", "reason", "message"]) assert.equal(typeof ws[k], "string", `unreachable keeps ${k}`);
     assert.deepEqual({ ...ws, code: undefined, reason: undefined, message: undefined },
-      { reachable: false, code: undefined, reason: undefined, message: undefined, key: fx.ref, standalone: false, defaultTeam: { label: "mine", team: MINE }, teams, teamsFrom: "cache" });
+      { reachable: false, code: undefined, reason: undefined, message: undefined, key: fx.key, ref: fx.ref, keyFrom: "workspace", standalone: false, defaultTeam: { label: "mine", team: MINE }, teams, teamsFrom: "cache" });
 
     // A label the workspace declares without an id: genuinely unmapped (the cache read the shared file).
     writeLocal(fx, { defaultTeam: "global" });
@@ -150,7 +180,7 @@ test("a standalone deployment reports standalone true and its local teams only",
     assert.equal(seen.status, 0, seen.stdout + seen.stderr);
     writeLocal(fx, { standalone: fx.ref, defaultTeam: "mine" });
     const ws = status(fx).workspace;
-    assert.deepEqual(ws, { reachable: true, key: fx.ref, standalone: true, defaultTeam: { label: "mine", team: MINE }, teams: { mine: MINE }, teamsFrom: "local" });
+    assert.deepEqual(ws, { reachable: true, key: fx.key, ref: fx.ref, keyFrom: "workspace", standalone: true, defaultTeam: { label: "mine", team: MINE }, teams: { mine: MINE }, teamsFrom: "local" });
   } finally { fx.cleanup(); }
 });
 

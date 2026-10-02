@@ -252,7 +252,7 @@ test("workspace spawn chain over Northwind: sync → spawn materializes whole mo
     r = oats(["status", "--dir", dep, "--json"], { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     let st = JSON.parse(r.stdout);
-    assert.deepEqual(st.workspace, { reachable: true, key: fx.refs.agents, standalone: false, defaultTeam: null,
+    assert.deepEqual(st.workspace, { reachable: true, key: fx.keys.agents, ref: fx.refs.agents, keyFrom: "workspace", standalone: false, defaultTeam: null,
       teams: { engineering: null, global: null, marketing: null }, teamsFrom: "observed" });
     const instanceOf = (payload, name) => payload.agents.flatMap((a) => a.instances).find((i) => i.instance === name);
     let rm = instanceOf(st, "release-manager-h2");

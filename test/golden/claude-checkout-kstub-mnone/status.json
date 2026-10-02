@@ -276,7 +276,9 @@
   ],
   "workspace": {
     "reachable": true,
-    "key": "file://<base>/remotes/ws.git",
+    "key": "local/<base>/remotes/ws.git",
+    "ref": "file://<base>/remotes/ws.git",
+    "keyFrom": "workspace",
     "standalone": false,
     "defaultTeam": null,
     "teams": {
