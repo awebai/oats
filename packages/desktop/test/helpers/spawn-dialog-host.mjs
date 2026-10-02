@@ -56,7 +56,11 @@ export async function mountSpawn(t, options = {}) {
   let cli = structuredClone(options.cli ?? CLI), agents = options.agents ?? catalogAgents();
   let instances = options.instances ?? [{ ...anchor, home: anchorHome, running: true, createdAt: 'first', tmux: { session: 's', window: 'w' } }];
   const calls = [], opens = [], notified = [], applied = [];
-  const context = () => ({ workspace: { id: 'northwind', scope: DEPLOYMENT }, cli, agents, instances });
+  // options.deployments (#482): the view's deployments as /api/panel lists them; the preview and spawn routes then
+  // answer for the deployment their ?ws= names (the server echoes it), and options.catalogs[<id>] is that
+  // deployment's /api/agents catalog (an array, or a function returning one or a promise of one).
+  const wsOf = path => { const m = /[?&]ws=([^&]*)/.exec(path); return m ? decodeURIComponent(m[1]) : null; };
+  const context = (ws = null) => ({ workspace: { id: options.deployments && ws ? ws : 'northwind', scope: DEPLOYMENT }, cli, agents, instances });
   const kernelInvoke = options.kernel ?? ((_cli, { target, choices }) => kernel(options.previewName?.(target.selector.soul, choices) ?? kernelPreviewName(target.selector.soul, choices)));
   const previewBoundary = createSpawnPreviewBoundary({ invoke: async (c, args) => kernelInvoke(c, args) });
   let ids = 0;
@@ -68,21 +72,26 @@ export async function mountSpawn(t, options = {}) {
       return { started: true, envelope: { schemaVersion: 1, ok: true, result: creation(preview) } };
     } });
   // The workspace exactly as /api/panel sends it: id and name, no scope.
-  const panel = () => ({ workspace: { id: 'northwind', name: 'northwind', team: null }, workspaces: [], instances,
+  const panel = () => ({ workspace: { id: 'northwind', name: 'northwind', team: null }, workspaces: options.workspaces ?? [], instances,
+    ...(options.deployments ? { deployments: options.deployments } : {}),
     deployment: { status: 'observed', root: `${northwindDir}/agents`, workspace: workspaceStatusData(northwind, northwindDir).workspace,
       workspaceStatus: workspaceStatusData(northwind, northwindDir), reachable: { reachable: true } } });
   const ctx = { hasWorkspaceSwitcher: true, spawnTiming: { previewDelay: options.previewDelay ?? 0, busyDelay: options.busyDelay ?? 0, wait: { tries: 3, delayMs: 0, sleep: options.sleep ?? (async () => {}) } },
     api: async (path, opts = {}) => {
       const body = opts.body ? JSON.parse(opts.body) : undefined; calls.push({ path, body, method: opts.method || 'GET' });
       if (path === '/api/cli') return cli;
+      if (path.startsWith('/api/agents') && options.catalogs && Object.hasOwn(options.catalogs, wsOf(path) ?? '')) {
+        const c = options.catalogs[wsOf(path)];
+        return { workspace: { id: wsOf(path) }, agents: await (typeof c === 'function' ? c() : c) };
+      }
       if (path.startsWith('/api/agents')) return { workspace: { id: 'northwind', name: 'northwind' }, agents, ...(options.catalog ? { catalog: options.catalog } : {}) };
       // A remote workspace's panel (the relation picker for a chosen server): options.serverPanels[<ws id>] rows.
       if (path.startsWith('/api/panel?ws=remote')) await options.serverPanelGate;
       if (path.startsWith('/api/panel?ws=remote')) return { workspace: { id: decodeURIComponent(path.split('ws=')[1]), remote: true }, instances: options.serverPanels?.[decodeURIComponent(path.split('ws=')[1])] ?? [] };
       if (path.startsWith('/api/panel')) return panel();
       if (path.startsWith('/api/team-members')) return options.teamMembers ?? { members: [], servers: [], notReached: [] };
-      if (path.startsWith('/api/workspace-spawn-preview')) { await options.previewGate?.(body); return previewBoundary(body, context); }
-      if (path.startsWith('/api/spawn?')) { await options.spawnGate?.(body); return broker(body, context); }
+      if (path.startsWith('/api/workspace-spawn-preview')) { await options.previewGate?.(body, wsOf(path)); return previewBoundary(body, () => context(wsOf(path))); }
+      if (path.startsWith('/api/spawn?')) { await options.spawnGate?.(body); return broker(body, () => context(wsOf(path))); }
       if (path === '/api/spawn') return options.remote ? options.remote(body) : assert.fail('no unguarded spawn in these tests');
       if (path === '/api/models') return options.models ? options.models(body) : { models: [] };
       if (path.startsWith('/api/launch-configs')) return options.configs ? options.configs(body) : { selected: body.selector, configurations: [] };

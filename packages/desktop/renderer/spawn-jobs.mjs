@@ -14,15 +14,21 @@
  * workspace is on screen, then posted on return. Pending rows are Desktop-local.
  *
  * Reload (Spec D, #383): with a `storage` (the shell passes sessionStorage), every submitted job is kept
- * as { workspace, spawnRef, soul, selector, instance, home, placement, startedAt } until its outcome has
+ * as { workspace, deployment, spawnRef, soul, selector, instance, home, placement, startedAt } until its outcome has
  * been reported: in flight, unknown, failed (until dismissed or reopened), or settled with a notice still
  * held for its workspace. Never its opening instruction or a key (the renderer never holds the idempotency
  * key; spawnRef is the server's opaque handle, kept 30 min after it settles). After a window reload,
  * recover() brings each back as a pending row and reads the existing `result` action, so settling and
- * reporting stay separate events across a reload. */
+ * reporting stay separate events across a reload.
+ *
+ * Deployments (#482): a job is OWNED by its workspace view (`workspace`: is that view on screen, where
+ * its pending row and notices belong) and ADDRESSED to the deployment it spawns in (`deployment`: every
+ * /api/spawn request and the reply it checks). Without a deployment the view id addresses it, as before.
+ * A created spawn records its deployment as the view's last used (the spawn dialog's default). */
 import { spawnApplyView, spawnApplyReason } from './spawn-apply-contract.mjs';
 import { sameSpawnDecision } from './spawn-decision.mjs';
 import { spawnProblem } from './spawn-messages.mjs';
+import { rememberSpawnDeployment } from './spawn-deployment-field.mjs';
 
 /** How long a created instance may take to appear in the roster before the row goes and the
  * notification says so (the dialog's former wait: 20 reads 700 ms apart). */
@@ -51,16 +57,18 @@ export function pendingPlacement(relation, instances = []) {
 }
 
 /**
- * @param post(workspace, body)  POST /api/spawn?ws=<workspace> → the raw reply (throws on transport failure)
+ * @param post(deployment, body)  POST /api/spawn?ws=<deployment> → the raw reply (throws on transport failure)
  * @param notify(message, options)  the notification center's notify → a handle { dismiss(), shown } | false
  * @param notifySpawned(row, workspace, epoch)  the existing "<name> spawned" notification with Open
  * @param reopen(job)  open the spawn dialog for job.soul with job.draft restored
  * @param viewSchedules()  the existing "View schedules" destination
  * @param onChange()  the roster repaints its pending rows
+ * @param rememberDeployment(view, deployment)  a created spawn's deployment becomes the view's last used
  */
 export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen = () => {}, viewSchedules = () => {},
   currentWorkspace = () => '', connection = () => 0, onChange = () => {}, now = () => Date.now(), visibleWithinMs = SPAWN_VISIBLE_WITHIN_MS,
-  storage = null, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), pollMs = RECOVER_POLL_MS, recoverWithinMs = RECOVER_WITHIN_MS } = {}) {
+  storage = null, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), pollMs = RECOVER_POLL_MS, recoverWithinMs = RECOVER_WITHIN_MS,
+  rememberDeployment = rememberSpawnDeployment } = {}) {
   let alive = true, serial = 0;
   const jobs = new Map(), tokens = new WeakSet(), listeners = new Set();
   const sameSoul = (job, workspace, soul) => job.workspace === workspace && job.soul?.name === soul?.name && job.soul?.agentsRoot === soul?.agentsRoot;
@@ -71,7 +79,7 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
   function save() {
     if (!alive || !storage) return;
     const kept = [...jobs.values()].filter(j => j.spawnRef && unreported(j))
-      .map(j => ({ workspace: j.workspace, spawnRef: j.spawnRef, soul: j.soul, selector: j.selector, instance: j.instance, home: j.home, placement: j.placement, startedAt: j.startedAt }));
+      .map(j => ({ workspace: j.workspace, deployment: j.deployment, spawnRef: j.spawnRef, soul: j.soul, selector: j.selector, instance: j.instance, home: j.home, placement: j.placement, startedAt: j.startedAt }));
     try { if (kept.length) storage.setItem(SPAWN_STORAGE_KEY, JSON.stringify(kept)); else storage.removeItem(SPAWN_STORAGE_KEY); } catch { /* storage is a convenience */ }
   }
   const changed = () => {
@@ -115,6 +123,7 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
   /** Created (complete, partial or incomplete): the row stays "Spawning…" until the roster reports it. */
   function created(job, view) {
     job.state = 'created'; job.receipt = view.receipt || null; job.createdAt = now();
+    if (job.deployment !== job.workspace) { try { rememberDeployment(job.workspace, job.deployment); } catch { /* a convenience */ } }
     if (view.status === 'partial') {
       job.wantRunning = false;
       say(job, view.reason?.message || `Created ${job.instance}.`, { buttons: [{ label: 'View schedules', ariaLabel: `View schedules for ${job.instance}`, activate: async () => viewSchedules() }] });
@@ -143,9 +152,9 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
 
   // ── the transaction (the dialog's former run(), unchanged in substance)
   async function request(job, body) {
-    const raw = await post(job.workspace, body);
+    const raw = await post(job.deployment, body);
     if (!live(job)) return null;
-    const view = spawnApplyView(raw, { workspace: job.workspace, ref: body.spawnRef, selector: job.selector });
+    const view = spawnApplyView(raw, { workspace: job.deployment, ref: body.spawnRef, selector: job.selector });
     if (!view || view.preview && job.prepared && body.action !== 'prepare' && !sameSpawnDecision(view.preview.decision, job.prepared.preview.decision)) throw Object.assign(Error(), { code: 'E_CLI_PROTOCOL' });
     return view;
   }
@@ -182,14 +191,14 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
   const text = (v, max = 4096) => typeof v === 'string' && v.length > 0 && v.length <= max;
 
   return {
-    /** Take a confirmed press over: { token, workspace, soul, selector, input, decision, placement, draft }.
+    /** Take a confirmed press over: { token, workspace (the view), deployment?, soul, selector, input, decision, placement, draft }.
      * Single-flight per dialog press (token): the same press never starts two spawns. Returns the job id or null. */
     submit(spec) {
       if (!alive || !spec?.token || tokens.has(spec.token) || typeof spec.workspace !== 'string' || !spec.input || !spec.decision) return null;
       // Single-flight per soul (Spec D): while a spawn of this soul is in flight here, no second one starts.
       if (flightOf(spec.workspace, spec.soul)) return null;
       tokens.add(spec.token);
-      const job = { id: `spawn-${++serial}`, workspace: spec.workspace, soul: spec.soul, selector: spec.selector, input: structuredClone(spec.input),
+      const job = { id: `spawn-${++serial}`, workspace: spec.workspace, deployment: text(spec.deployment) ? spec.deployment : spec.workspace, soul: spec.soul, selector: spec.selector, input: structuredClone(spec.input),
         decision: structuredClone(spec.decision), instance: spec.decision.instance, home: spec.decision.home, placement: { ...(spec.placement || {}) },
         draft: structuredClone(spec.draft ?? {}), state: 'spawning', submitted: false, spawnRef: null, prepared: null, notice: null, announced: false, startedAt: now() };
       jobs.set(job.id, job); changed();
@@ -200,6 +209,7 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
     rows(workspace) {
       return [...jobs.values()].filter(j => j.workspace === workspace && ['spawning', 'checking', 'unknown', 'created'].includes(j.state))
         .map(j => ({ id: j.id, instance: j.instance, home: j.home, agent: j.soul?.name, agentsRoot: j.selector?.agentsRoot, ...j.placement,
+          ...(j.deployment !== j.workspace ? { deployment: { id: j.deployment } } : {}),
           pending: j.state === 'unknown' ? 'unknown' : j.state === 'checking' ? 'checking' : 'spawning' }));
     },
     /** Announce a pending row once (the roster's polite live region). */
@@ -223,7 +233,8 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
       for (const job of [...jobs.values()]) {
         if (job.workspace !== workspace) continue;
         if (job.state === 'created') {
-          const same = instances.filter(i => i.instance === job.instance && i.home === job.home && i.agentsRoot === job.selector?.agentsRoot && i.agent === job.soul?.name && !i.server);
+          const same = instances.filter(i => i.instance === job.instance && i.home === job.home && i.agentsRoot === job.selector?.agentsRoot && i.agent === job.soul?.name && !i.server
+            && (!i.deployment || i.deployment.id === job.deployment));
           const ready = same.length === 1 && (!job.wantRunning || same[0].running === true && !!same[0].tmux?.session);
           if (ready) {
             job.state = 'done';
@@ -258,7 +269,7 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
           || !text(e.selector?.soul, 256) || [...jobs.values()].some(j => j.spawnRef === e.spawnRef)) continue;
         const placement = {};
         for (const k of ['parentInstance', 'siblingInstance']) if (text(e.placement?.[k], 256)) placement[k] = e.placement[k];
-        const job = { id: `spawn-${++serial}`, workspace: e.workspace, soul: { name: e.soul.name, agentsRoot: e.soul.agentsRoot },
+        const job = { id: `spawn-${++serial}`, workspace: e.workspace, deployment: text(e.deployment) ? e.deployment : e.workspace, soul: { name: e.soul.name, agentsRoot: e.soul.agentsRoot },
           selector: { soul: e.selector.soul, agentsRoot: e.selector.agentsRoot }, input: null, decision: null, instance: e.instance, home: e.home, placement,
           // Reopen after a reload restores the soul and the exact name; the opening instruction is never stored.
           draft: { layout: 'scoped', restore: { choices: { name: e.instance } } }, state: 'spawning', submitted: true, spawnRef: e.spawnRef,
@@ -270,7 +281,7 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
       return n;
     },
     /** A job's draft and soul, for tests and the Reopen path. */
-    get(id) { const j = jobs.get(id); return j ? { id: j.id, state: j.state, instance: j.instance, workspace: j.workspace, draft: structuredClone(j.draft), soul: j.soul } : null; },
+    get(id) { const j = jobs.get(id); return j ? { id: j.id, state: j.state, instance: j.instance, workspace: j.workspace, deployment: j.deployment, draft: structuredClone(j.draft), soul: j.soul } : null; },
     size: () => jobs.size,
     dispose() { alive = false; jobs.clear(); },
   };

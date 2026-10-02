@@ -214,6 +214,49 @@ soul) use the host's own defaults and naming. The `spawn.submit` chord hint
 lives on `data-chord`, not `data-shortcut`, so the shell's shortcut titling
 never hides the Spawn button.
 
+**Deployment** (#482, decision Q2; `spawn-deployment-field.mjs`, wired in one
+delimited block of `spawn-dialog.mjs`). A workspace view can hold several
+deployments (`/api/panel` `deployments`). With two or more, the form shows a
+**Deployment** select in place of *Where to run*, its options labelled by
+`deploymentLabel` ("This Mac · ~/Agents/oats", "altair · ~/Agents/tsm"). With
+one there is no field and the form is unchanged. Rules:
+
+- **Addressing.** Every spawn request addresses a deployment, never the view:
+  `?ws=<chosen id>` (else the only one, else `workspace.primary`) on the preview,
+  prepare/apply and the launch-configuration list. The preview and apply echo
+  that deployment.
+- **Availability** is each deployment's own catalog (`/api/agents?ws=<id>`, read
+  when the dialog starts, latest intent). The selector is the chosen deployment's
+  catalog row (`catalogSoul`: the root differs per deployment). A deployment
+  without the soul stays selectable, marked "(no <soul> here)" or "(not reached)".
+  Choosing it blocks Spawn: "<soul> isn't available on <machine>." shows in the
+  footer, the field's hint and the preview column, and nothing is read.
+- **Default.** The last used in this view if it has the soul; else the first
+  that has it, local before remote; else the last used (blocked). With nothing
+  used yet: the first local one. Until every catalog answers, an untouched field
+  holds a provisional choice and no preview is read.
+- **Last used** is `localStorage['oats.desktop.spawnDeployment']`, a
+  `{viewId: deploymentId}` map of at most 32 views. It is written on a created
+  spawn only: the dialog's own completion, a remote reply, or `spawn-jobs`
+  `created()`.
+- **Changing deployment** clears the settled preview and re-reads (Spec B's
+  prepare/apply/cache are unchanged). The choice key includes the deployment, so
+  a reply for the previous one never settles. Relation anchors are the chosen
+  deployment's rows only.
+- **A remote deployment** spawns through the execution-server path: `serverId`
+  is its server and `agentsRoot` comes from its catalog row. The reply's
+  `workspaceId` is a view, and `doSpawn` switches only when that view is not
+  the one on screen.
+- **Background jobs** (`spawn-jobs.mjs`) are owned by `workspace` (the view: pending
+  row, notices, in-flight) and addressed by `deployment` (every `post` and reply
+  check). The deployment is kept in `sessionStorage` across a reload, and a
+  created row becomes real only when its own deployment's row reports it.
+
+*Where to run* (one-deployment views) still lists the registered servers. Its
+facts come from every view holding a remote deployment (`serverFacts`, since
+`/api/team-members` is view-scoped). A chosen group's relation rows are that
+group's deployment only (`serverRows`).
+
 Problems read as one plain sentence about what happened and what to do
 (`spawn-messages.mjs`, keyed by the contract's stable code). The code and the
 technical or kernel text — paths, hashes, the `git clone` remedy — stay
@@ -538,7 +581,15 @@ workspace is observed through its server and never synced from here.
   *Teams* page: *Shared with the workspace* (read-only, edited by PR) and
   *Only on this computer* (add, remove, make default), one card per team with
   its address, who may join and, from the roster, the instances whose
-  identity's team is that team's id (nothing when none).
+  identity's team is that team's id (nothing when none). Those members come
+  from `/api/team-members?ws=<view>` (#482, decision Q5): the view's
+  deployments only. A card groups them by deployment (`memberGroups`), each
+  heading labelled by `deploymentLabel` ("This Mac · ~/Agents/oats · 3",
+  "altair · ~/Agents/tsm · not reached"), this Mac's first. A member's
+  `workspace` is its deployment id. Its Show and Terminal actions stay in the
+  view on screen (`teamMemberAction` never switches workspace). They wait for
+  the row of that deployment, and the open is owned by the view
+  (`instanceActionTarget(view, row)`).
 - **Sources** renders the roster observation's `oats workspace status`:
   repositories (team, confirmation status + the kernel's detail), packages
   (lock, capabilities) and external souls. No extra read.
