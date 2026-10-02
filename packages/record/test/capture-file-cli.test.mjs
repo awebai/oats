@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { acquireCaptureLock } from "../lib/capture-lock.mjs";
+import { CODEX_LINES, CODEX_UUID, PI_LINES, PI_UUID } from "./format-fixtures.mjs";
 
 const CAPTURE = new URL("../bin/capture.mjs", import.meta.url).pathname;
 
@@ -31,8 +32,8 @@ function fixture(t) {
   writeFileSync(file, ccLine(home, "s1", "user", "first", "2026-09-05T10:00:00Z") + ccLine(home, "s1", "assistant", "second", "2026-09-05T10:00:01Z"));
   const root = join(base, "record");
   const env = { ...fixtureEnv(), HOME: fakeHome, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "mac" };
-  const run = (args, extraEnv = env) => {
-    const r = spawnSync(process.execPath, [CAPTURE, ...args], { encoding: "utf8", env: extraEnv });
+  const run = (args, extraEnv = env, cwd = undefined) => {
+    const r = spawnSync(process.execPath, [CAPTURE, ...args], { encoding: "utf8", env: extraEnv, ...(cwd ? { cwd } : {}) });
     return { ...r, json: () => JSON.parse(r.stdout) };
   };
   return { base, fakeHome, home, archive, file, root, env, run };
@@ -173,6 +174,15 @@ test("a file without the stated format's session header is E_FORMAT, and the mes
   let j = r.json();
   assert.equal(j.code, "E_FORMAT"); assert.equal(j.complete, false);
   assert.match(j.error, /codex session_meta header; pass --format codex/);
+  // A pi file passed as cc: its session record carries a top-level cwd, but no cc transcript ever holds
+  // another format's session header, so the whole file is judged and refused.
+  const pi = join(f.archive, `2026-08-03T07-18-03-078Z_${PI_UUID}.jsonl`);
+  writeFileSync(pi, PI_LINES.map((l) => JSON.stringify({ ...l, ...(l.type === "message" ? { cwd: f.home } : {}) })).join("\n") + "\n");
+  r = f.run(["--file", pi, "--format", "cc", "--home", f.home, "--json"]);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  j = r.json();
+  assert.equal(j.code, "E_FORMAT");
+  assert.match(j.error, /pi session header; pass --format pi/);
   const prose = join(f.archive, "notes.jsonl");
   writeFileSync(prose, "not a session\n");
   r = f.run(["--file", prose, "--format", "cc", "--home", f.home, "--json"]);
@@ -193,4 +203,72 @@ test("an ignored file is refused with E_IGNORED: never opened, nothing written",
   assert.equal(j.code, "E_IGNORED"); assert.equal(j.complete, false); assert.equal(j.file, f.file);
   assert.match(j.error, /ignore rule.*nothing was read/);
   assert.equal(f.run(["--status"]).stdout.includes("~"), false, "no stream");
+});
+
+test("a relative --file is resolved before the ignore check: a path rule excludes it as it excludes the absolute path", (t) => {
+  const f = fixture(t);
+  mkdirSync(f.root, { recursive: true });
+  writeFileSync(join(f.root, "ignore"), `${f.archive}/**\n`);
+  const r = f.run(["--file", "archive/s1.jsonl", "--format", "cc", "--home", f.home, "--json"], f.env, f.base);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  const j = r.json();
+  assert.equal(j.code, "E_IGNORED");
+  assert.equal(j.file, f.file, "the receipt names the absolute path");
+  assert.equal(f.run(["--status"]).stdout.includes("~"), false, "nothing written");
+});
+
+test("with a header, the --home outcomes: a torn tail or invalid UTF-8 is incomplete, no timestamp is held; exit 0, complete false", (t) => {
+  const f = fixture(t);
+  const header = ccLine(f.home, "x", "user", "first", "2026-09-05T10:00:00Z");
+  const cases = [
+    ["torn.jsonl", Buffer.from(header + '{"type":"user","cwd":"' + f.home + '"'), "incomplete", "torn-tail"],
+    ["utf8.jsonl", Buffer.concat([Buffer.from(header), Buffer.from([0xff, 0xfe, 0x0a])]), "incomplete", "invalid-utf8"],
+    ["nostamp.jsonl", Buffer.from(JSON.stringify({ type: "user", cwd: f.home }) + "\n"), "held", "unstamped"],
+  ];
+  for (const [name, bytes, status, reason] of cases) {
+    const path = join(f.archive, name); writeFileSync(path, bytes);
+    const r = f.run(["--file", path, "--format", "cc", "--home", f.home, "--json"]);
+    assert.equal(r.status, 0, `${name}: ${r.stdout}${r.stderr}`);
+    const j = r.json();
+    assert.equal(j.status, status, name); assert.equal(j.complete, false, name);
+    assert.ok(j.issues?.some((i) => i.reason === reason), `${name}: ${JSON.stringify(j.issues)}`);
+    if (status === "held") { assert.equal(j.turns, 0); assert.equal(j.firstTurnId, null); }
+    else assert.equal(j.turns, 1, name);
+  }
+});
+
+test("pi and codex files are captured as their format, in the streams their names give", (t) => {
+  const f = fixture(t);
+  const jsonl = (lines) => lines.map((l) => JSON.stringify(l)).join("\n") + "\n";
+  const pi = join(f.archive, `2026-08-03T07-18-03-078Z_${PI_UUID}.jsonl`); writeFileSync(pi, jsonl(PI_LINES));
+  const codex = join(f.archive, `rollout-2025-11-28T08-11-23-${CODEX_UUID}.jsonl`); writeFileSync(codex, jsonl(CODEX_LINES));
+  for (const [path, format, lines] of [[pi, "pi", PI_LINES], [codex, "codex", CODEX_LINES]]) {
+    const r = f.run(["--file", path, "--format", format, "--home", f.home, "--json"]);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const j = r.json();
+    assert.equal(j.status, "complete", format);
+    assert.equal(j.stream, `mac~${format}.${format === "pi" ? PI_UUID : CODEX_UUID}`);
+    assert.equal(j.thread, `${format}:session:${format === "pi" ? PI_UUID : CODEX_UUID}`);
+    assert.equal(j.turns, lines.length);
+    assert.equal(j.sha256, sha256(path));
+  }
+});
+
+test("an archived COPY of a live-captured session appends 0; the copy grown by one line appends 1", (t) => {
+  const f = fixture(t);
+  const proj = join(f.fakeHome, ".claude", "projects", "-dev-1");
+  mkdirSync(proj, { recursive: true });
+  const live = join(proj, "s1.jsonl");
+  writeFileSync(live, readFileSync(f.file));
+  const viaHome = JSON.parse(execFileSync(process.execPath, [CAPTURE, "--current-roots", "--home", f.home, "--quiet"], { encoding: "utf8", env: f.env })).sessions[0];
+  // f.file is a copy at another path: same name, same bytes.
+  let j = f.run(["--file", f.file, "--format", "cc", "--home", f.home, "--json"]).json();
+  assert.equal(j.appended, 0, JSON.stringify(j));
+  assert.equal(j.firstTurnId, viaHome.firstTurnId);
+  assert.equal(j.lastTurnId, viaHome.lastTurnId);
+  writeFileSync(f.file, Buffer.concat([readFileSync(f.file), Buffer.from(ccLine(f.home, "s1", "user", "third", "2026-09-05T10:00:02Z"))]));
+  j = f.run(["--file", f.file, "--format", "cc", "--home", f.home, "--json"]).json();
+  assert.equal(j.appended, 1, JSON.stringify(j));
+  assert.equal(j.turns, 3);
+  assert.equal(j.firstTurnId, viaHome.firstTurnId);
 });

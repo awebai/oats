@@ -269,7 +269,8 @@ either way, or again with `--file`, appends nothing.
   checked against the file's recorded cwd.
 - **The format is stated, never sniffed.** The file must carry that format's
   session header somewhere in it:
-  - `cc`: a record with a `cwd`;
+  - `cc`: a record with a `cwd`, and no other format's session header anywhere
+    in the file (a cc transcript never holds one);
   - `pi`: the `session` record;
   - `codex`: `session_meta`.
 - **The session id comes from the file name**, as for live capture: the cc
@@ -283,7 +284,9 @@ either way, or again with `--file`, appends nothing.
 `--json` prints the receipt:
 `{home, owner, file, format, instance, thread, stream, sessionId, turns,
 firstTurnId, lastTurnId, appended, skipped, held, incomplete, failed, ignored,
-status, complete, sha256}`. `sha256` is of the bytes captured. As for
+status, complete, sha256, issues?}`. `sha256` is of the bytes captured;
+`issues` (`[{source, path, reason, offset}]`, present when the result is
+incomplete or held) says why. As for
 `--home`, `complete` is true only with no hold, no incomplete tail and no
 failure. A lock skip, a hold (no timestamp yet) and an incomplete tail (torn
 or invalid UTF-8) exit 0 with `complete: false`. Without `--json`, the output

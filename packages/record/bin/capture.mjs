@@ -14,7 +14,7 @@
 
 import { closeSync, constants, fstatSync, openSync, readFileSync, watch } from "node:fs";
 import { homedir, hostname } from "node:os";
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
 import process from "node:process";
 
 import { RecordStore } from "../lib/store.mjs";
@@ -311,16 +311,61 @@ function pass() {
   });
 }
 
+/** A final capture of exact files, one batch per format, under the lock: counts into `outcome`, issues into
+ *  `issues`, then the index unless --no-index. → withCaptureLock's answer (`outcome`, or a skip). */
+function captureUnderLock(recordStore, recordOwner, batches, ignore, outcome, issues) {
+  return withCaptureLock(() => {
+    for (const [format, files] of batches) {
+      const r = captureSessions(recordStore, { owner: recordOwner, files, format, ignore, final: true });
+      outcome.appended += r.appended;
+      outcome.held += r.held;
+      outcome.incomplete += r.incomplete;
+      outcome.ignored += r.ignored;
+      issues.push(...r.issues);
+    }
+    if (!args["no-index"]) { // an earlier append-only pass may have left unindexed turns
+      const index = new RecordIndex(recordStore);
+      try {
+        index.update();
+      } finally {
+        index.close();
+      }
+    }
+    return outcome;
+  });
+}
+
+/** A stream's turns that no tombstone hides. A tombstoned turn is hidden everywhere; a boundary naming one
+ *  would be refused by recall, so boundaries come from the visible turns only. */
+function visibleTurns(recordStore, stream, claims = recordStore.tombstoneClaims()) {
+  return recordStore.readStream(stream).filter((t) => !recordStore.claimHides(claims, t));
+}
+
+/** The outcome vocabulary: complete only with no failure, skip, hold or incomplete tail (and, for --home, no
+ *  unattributed source). */
+function statusOf(outcome, unattributed = 0) {
+  return outcome.failed ? "failed" : outcome.skipped ? "skipped" : outcome.held ? "held" : outcome.incomplete || unattributed ? "incomplete" : "complete";
+}
+
 // capture --file: ONE session file the operator attributes to an instance home (an archived session the
 // --home sweep can no longer find), captured exactly as --home capture would capture it: same stream
 // identity, same lock, final, ignore rules applied. The file is opened once and read from that descriptor;
 // the receipt's sha256 is of the bytes captured. Every outcome that binds nothing is an error code.
-const SESSION_HEADER = { cc: "record with a cwd", pi: "session record", codex: "session_meta" };
-// pi and codex headers are specific; any record with a cwd reads as cc, so cc is tried last.
+const SESSION_HEADER = { cc: "a record with a cwd", pi: "a session record with a cwd", codex: "a session_meta record with a payload cwd" };
+const HEADER_HINT = { cc: "a cc record with a cwd", pi: "a pi session header", codex: "a codex session_meta header" };
+// pi and codex headers are specific; any record with a cwd reads as cc, so cc is named last.
 const HEADER_ORDER = ["pi", "codex", "cc"];
 
+/** Whether the headers `found` in a file make it a `stated` session. pi and codex need their header. cc needs a
+ *  record with a cwd and NO other format's session header anywhere in the file: a cc transcript never holds
+ *  one, so a single one is decisive (pi's session record carries a top-level cwd too). */
+function isFormat(found, stated) {
+  return stated === "cc" ? found.has("cc") && !found.has("pi") && !found.has("codex") : found.has(stated);
+}
+
 /** Records (non-blank lines, an undecodable one included) and the formats whose session header a COMPLETE
- *  line carries, stopping at the stated format's. A line its writer never terminated is no header. */
+ *  line carries. A pi or codex file is settled at its header; a cc file is judged whole. A line its writer
+ *  never terminated is no header. */
 function sessionHeaders(bytes, stated) {
   let records = 0;
   const found = new Set();
@@ -332,7 +377,7 @@ function sessionHeaders(bytes, stated) {
   let pending;
   for (const { text } of jsonlLines(bytes)) {
     if (pending !== undefined) take(pending, true);
-    if (found.has(stated)) return { records, found };
+    if (stated !== "cc" && found.has(stated)) return { records, found };
     pending = text;
   }
   if (pending !== undefined) take(pending, terminated);
@@ -367,7 +412,9 @@ function fileCapture() {
   if (args.format === undefined) return fail("E_USAGE", "--file needs --format cc|pi|codex (the format is never guessed)");
   if (!Object.hasOwn(SESSION_FORMATS, args.format)) return fail("E_USAGE", `--format must be cc, pi or codex, not ${JSON.stringify(args.format)}`);
   const fmt = SESSION_FORMATS[args.format];
-  const path = args.file;
+  // Absolute, as every other capture caller passes: path ignore rules, the offsets key and the receipt all
+  // read the path, and a relative spelling would slip past a path rule.
+  const path = resolve(args.file);
   const where = { home: args.home, owner: fileOwner, file: path, format: args.format };
 
   let ignore;
@@ -394,9 +441,11 @@ function fileCapture() {
 
   const { records, found } = sessionHeaders(bytes, args.format);
   if (!records) return fail("E_NO_TURNS", `${path} has no records${bytes.length ? " (only blank lines)" : " (it is empty)"}`, where);
-  if (!found.has(args.format)) {
-    const other = HEADER_ORDER.find((f) => found.has(f));
-    return fail("E_FORMAT", `${path} has no ${args.format} session header (a ${SESSION_HEADER[args.format]})${other ? `; it has a ${other} ${SESSION_HEADER[other]} header; pass --format ${other}` : ""}`, where);
+  if (!isFormat(found, args.format)) {
+    const other = HEADER_ORDER.find((f) => f !== args.format && isFormat(found, f));
+    return fail("E_FORMAT", other
+      ? `${path} is not a ${args.format} session: it has ${HEADER_HINT[other]}; pass --format ${other}`
+      : `${path} has no ${args.format} session header (${SESSION_HEADER[args.format]})`, where);
   }
 
   const sha256 = digest(bytes);
@@ -404,19 +453,7 @@ function fileCapture() {
   const outcome = { appended: 0, skipped: false, held: 0, incomplete: 0, failed: 0, ignored: 0 };
   const issues = [];
   try {
-    Object.assign(outcome, withCaptureLock(() => {
-      const r = captureSessions(fileStore, { owner: fileOwner, files: [{ path, pinned: { bytes, stat } }], format: args.format, ignore, final: true });
-      outcome.appended += r.appended;
-      outcome.held += r.held;
-      outcome.incomplete += r.incomplete;
-      outcome.ignored += r.ignored;
-      issues.push(...r.issues);
-      if (!args["no-index"]) {
-        const index = new RecordIndex(fileStore);
-        try { index.update(); } finally { index.close(); }
-      }
-      return outcome;
-    }));
+    Object.assign(outcome, captureUnderLock(fileStore, fileOwner, [[args.format, [{ path, pinned: { bytes, stat } }]]], ignore, outcome, issues));
   } catch (err) {
     // A failed pass may have appended part of the file: never claim a count for it.
     return fail("E_CAPTURE_FAILED", err.message || String(err), { ...where, sha256, appended: null });
@@ -424,9 +461,8 @@ function fileCapture() {
   if (process.exitCode) return fail("E_CAPTURE_FAILED", "capture lock release failed; see stderr for recovery", { ...where, sha256 });
 
   const stream = `${fileOwner}~${fmt.source}.${sessionId}`;
-  const claims = fileStore.tombstoneClaims();
-  const turns = fileStore.readStream(stream).filter((t) => !fileStore.claimHides(claims, t));
-  const status = outcome.skipped ? "skipped" : outcome.held ? "held" : outcome.incomplete ? "incomplete" : "complete";
+  const turns = visibleTurns(fileStore, stream);
+  const status = statusOf(outcome);
   const { lock: _lock, ...counts } = outcome;
   const receipt = {
     ...where, instance, thread: `${fmt.source}:session:${sessionId}`, stream, sessionId,
@@ -498,31 +534,11 @@ if (args.home) {
       if (!formats.has(s.source)) formats.set(s.source, []);
       formats.get(s.source).push(s);
     }
-    Object.assign(outcome, withCaptureLock(() => {
-      for (const [format, files] of formats) {
-        const r = captureSessions(store, { owner, files, format, ignore, final: true });
-        outcome.appended += r.appended;
-        outcome.held += r.held;
-        outcome.incomplete += r.incomplete;
-        outcome.ignored += r.ignored;
-        issues.push(...r.issues);
-      }
-      if (!args["no-index"]) { // an earlier append-only pass may have left unindexed turns
-        const index = new RecordIndex(store);
-        try {
-          index.update();
-        } finally {
-          index.close();
-        }
-      }
-      return outcome;
-    }));
-    // A tombstoned turn is hidden everywhere; a boundary naming one would be
-    // refused by recall, so boundaries come from the visible turns only.
+    Object.assign(outcome, captureUnderLock(store, owner, formats, ignore, outcome, issues));
     const claims = store.tombstoneClaims();
     for (const s of found) {
       const stream = `${owner}~${s.source}.${s.sessionId}`;
-      const turns = store.readStream(stream).filter((t) => !store.claimHides(claims, t));
+      const turns = visibleTurns(store, stream, claims);
       if (!turns.length) continue; // ignored by rule, nothing capturable yet, or all hidden
       sessions.push({
         thread: s.thread,
@@ -550,7 +566,7 @@ if (args.home) {
     outcome.failed++;
     error = "capture lock release failed; see stderr for recovery";
   }
-  const status = outcome.failed ? "failed" : outcome.skipped ? "skipped" : outcome.held ? "held" : outcome.incomplete || unattributed.length ? "incomplete" : "complete";
+  const status = statusOf(outcome, unattributed.length);
   console.log(JSON.stringify({ home: args.home, owner, ...outcome, status, complete: status === "complete", sessions, sourceRoots: args["current-roots"] ? "current-env" : "launch-history",
     ...(error ? { error } : {}), ...(issues.length ? { issues } : {}), ...(unattributed.length ? { unattributed } : {}),
   }, null, 2));
