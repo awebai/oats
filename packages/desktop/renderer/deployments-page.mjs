@@ -32,7 +32,7 @@ ${tabBarCSS('.hier-tabs')}
 .hier-dfix-body p, .hier-dfix-body ol { margin:0 0 6px; }
 .hier-dfix-body ol { padding-left:18px; }
 .hier-dfix-note { color:var(--muted); }
-.hier-dfix-code { font:inherit; font-family:var(--mono,monospace); color:var(--fg); }
+.hier-dfix-code { font:inherit; font-family:var(--mono, ui-monospace, Menlo, monospace); color:var(--fg); }
 .hier-dreason .hier-dhead { position:static; }
 `;
 
