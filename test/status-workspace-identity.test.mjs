@@ -11,7 +11,8 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import YAML from "yaml";
-import { CLI, v2Deployment } from "./helpers/v2-deployment.mjs";
+import { pathToFileURL } from "node:url";
+import { CLI, git, v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const SHARED = "shared:fixture.aweb.ai", MINE = "mine:fixture.aweb.ai";
 /** A deployment whose workspace commits `global` (no id yet) and `shared`, and whose oats-local.yaml
@@ -60,6 +61,34 @@ test("teamsFrom cache: the parsed cache at the last observed commit answers with
     // reaches the remote.
     assert.deepEqual(git.calls(), [`-C ${fx.dep} rev-parse --show-toplevel`], "status ran no git process beyond the local root probe");
     assert.deepEqual(ws, { reachable: true, key: fx.ref, standalone: false, defaultTeam: { label: "shared", team: SHARED },
+      teams: { global: null, mine: MINE, shared: SHARED }, teamsFrom: "cache" });
+  } finally { fx.cleanup(); }
+});
+
+test("teamsFrom cache through a member's backlink: oats-local.yaml names a member, the cache holds its host's workspace file", () => {
+  const fx = deployment();
+  try {
+    // M: a member repository (no oats-workspace.yaml) whose oats-membership.yaml names the host.
+    const bare = join(fx.base, "remotes", "m.git"), seed = join(fx.base, "m-seed");
+    const mRef = pathToFileURL(bare).href;
+    mkdirSync(bare, { recursive: true });
+    git(bare, "init", "-q", "--bare");
+    for (const k of ["uploadpack.allowFilter", "uploadpack.allowAnySHA1InWant"]) git(bare, "config", k, "true");
+    git(bare, "config", "maintenance.auto", "false");
+    git(fx.base, "clone", "-q", bare, seed);
+    writeFileSync(join(seed, "oats-membership.yaml"), YAML.stringify({ schemaVersion: 2, workspace: fx.ref }));
+    git(seed, "add", "-A"); git(seed, "commit", "-qm", "member"); git(seed, "push", "-q", "origin", "HEAD:main");
+    fx.commit({ "oats-workspace.yaml": { yaml: { schemaVersion: 2, name: "fixture", members: [fx.ref, mRef],
+      teams: { global: { description: "Fixture team" }, shared: { team: SHARED } }, defaults: { knowledge: "none", messaging: "none", tasks: "none" } } } });
+    writeFileSync(join(fx.dep, "oats-local.yaml"), YAML.stringify({ schemaVersion: 2, workspace: mRef, teams: { mine: { team: MINE } }, defaultTeam: "shared" }));
+    const seen = fx.cli(["souls", "--json"]); // the member's workspace, read through its backlink
+    assert.equal(seen.status, 0, seen.stdout + seen.stderr);
+    unreachable(fx);
+    renameSync(bare, `${bare}.gone`);
+    const git2 = loggingGit(fx);
+    const ws = status(fx, git2.env).workspace;
+    assert.deepEqual(git2.calls(), [`-C ${fx.dep} rev-parse --show-toplevel`], "status ran no git process beyond the local root probe");
+    assert.deepEqual(ws, { reachable: true, key: mRef, standalone: false, defaultTeam: { label: "shared", team: SHARED },
       teams: { global: null, mine: MINE, shared: SHARED }, teamsFrom: "cache" });
   } finally { fx.cleanup(); }
 });

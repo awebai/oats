@@ -1905,13 +1905,22 @@ function workspaceIdentity(local, discovery) {
   };
 }
 /** The workspace file at the host's last observed commit, as this machine's parsed cache holds it (the
- *  value observeWorkspace stored), or null: no observation, no intact entry, or a file that failed. */
+ *  value observeWorkspace stored), or null: no observation, no intact entry, or a file that failed. A
+ *  `ref` cached as having no workspace file is a member named in place of its host (discoverOrStandalone
+ *  follows the same backlink): its cached oats-membership.yaml names the host whose file is read. */
 function cachedWorkspaceFile(ref) {
   const options = remoteOptionsFromEnv();
-  const commit = remoteModule.lastObservedCommit(ref, options);
-  if (!commit) return null;
-  const read = remoteModule.peekAtCommit(ref, commit, "workspace", options);
-  return read && typeof read === "object" && !read.missing && !read.problems && read.value && typeof read.value === "object" ? read.value : null;
+  const cached = (r, item) => {
+    const commit = remoteModule.lastObservedCommit(r, options);
+    const value = commit ? remoteModule.peekAtCommit(r, commit, item, options) : undefined;
+    return value && typeof value === "object" ? value : null;
+  };
+  const fileOf = (read) => (read && !read.missing && !read.problems && read.value && typeof read.value === "object" ? read.value : null);
+  const read = cached(ref, "workspace");
+  if (!read?.missing) return fileOf(read);
+  const membership = cached(ref, "membership");
+  const host = membership?.kind === "ok" ? membership.value?.workspace : null;
+  return typeof host === "string" ? fileOf(cached(host, "workspace")) : null;
 }
 /** One `modules:` line per module. */
 function driftLine(row) {

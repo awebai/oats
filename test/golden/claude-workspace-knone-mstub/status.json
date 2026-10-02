@@ -309,6 +309,13 @@
     }
   ],
   "workspace": {
-    "reachable": true
+    "reachable": true,
+    "key": "file://<base>/remotes/ws.git",
+    "standalone": false,
+    "defaultTeam": null,
+    "teams": {
+      "global": null
+    },
+    "teamsFrom": "observed"
   }
 }

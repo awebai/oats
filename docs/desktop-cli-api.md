@@ -1732,7 +1732,7 @@ offline with no network, so it is there whether `reachable` is `true` or
 | `standalone` | `true` when the deployment is in the standalone view: `oats-local.yaml` sets `standalone:`, or this run fell back to it (the shape of `workspace.standalone` on [inspect](#oats-inspect)) |
 | `defaultTeam` | `{label, team}`: the label is `oats-local.yaml`'s `defaultTeam`, `team` its provider id from `teams` (`null` when that map gives none). `null` when `oats-local.yaml` names no default team |
 | `teams` | `{<label>: <provider team id> \| null}`: every team label the deployment maps, local and shared, by label; a label in both is the committed (shared) one, as [`oats teams`](#oats-teams) resolves it |
-| `teamsFrom` | where the shared teams came from: `"observed"`, the workspace file this run read; `"cache"`, this machine's cached copy at the host commit it last observed (no git process, no network); `"local"`, none: `teams` holds the local teams only |
+| `teamsFrom` | where the shared teams came from: `"observed"`, the workspace file this run read; `"cache"`, this machine's cached copy at the host commit it last observed (no git process, no network; when `key` names a member, the host its cached `oats-membership.yaml` names); `"local"`, none: `teams` holds the local teams only |
 
 A standalone deployment reads no workspace file, so it is always
 `teamsFrom: "local"`, with its local teams only (as spawn resolves them there).
@@ -1793,10 +1793,12 @@ route target:
 
 - **`workspace`** (feature `workspace-identity`, OATS 0.36.0): the host's
   own `status --json` [`workspace` object](#workspace-identity-feature-workspace-identity-oats-0360),
-  relayed verbatim, or `null` when the host reports none (a host before
-  0.36.0, a deployment without `oats-local.yaml`, or a failed or skipped
-  probe). It is never derived on this side. It is on the group, not the rows,
-  so an empty remote deployment still reports it.
+  relayed verbatim, or `null` when the host reports none (a deployment
+  without `oats-local.yaml`, or a failed or skipped probe). A host before
+  0.36.0 answers the reachability-only object (`{reachable, code?, reason?,
+  message?}`) with no identity fields, so the identity is there only when
+  `key` is. It is never derived on this side. It is on the group, not the
+  rows, so an empty remote deployment still reports it.
 - **Instance rows** relay the host's own `status --json` row: `identity`,
   `identityAddress`, `teams`, `startedAt`, `createdAt`, `model`,
   `runtimeState`, `parentInstance`, `siblingInstance`, `relation`,
