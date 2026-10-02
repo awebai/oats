@@ -750,3 +750,14 @@ test('the shipped poll across a connection change with a read unresolved: the ne
   assert.equal(s.list().querySelector('.loading-failed'), null, 'its late answer still lands'); assert.equal(s.rows().length, 3);
   await run(4); assert.equal(s.requests.length, 4, 'and the poll runs again');
 });
+
+test('an empty deployment\'s observed answer, as the server sends it, settles to the empty roster (never "Reading the deployment…")', async t => {
+  const s = shell(t);
+  // /api/panel for an observed deployment with no souls and no instances (unserved-deployment-server.test.mjs).
+  await s.reply(0, panelOf('A', [], { deployment: { status: 'observed', root: '/d/A/agents', workspace: { name: 'tsm', key: 'k' }, reachable: { reachable: true }, withheld: [],
+    catalog: { souls: [], ambiguous: [], reason: null, observedAt: null, refreshing: false }, catalogKey: undefined }, observedAt: '2026-10-02T00:00:00.000Z', refreshing: false, running: 0 }));
+  assert.equal(s.text(), 'No instances.'); assert.equal(s.context.rosterState.state, 'empty');
+  assert.equal(s.list().getAttribute('aria-busy'), null); assert.doesNotMatch(s.text(), /Reading the deployment/);
+  s.refreshContextRoster(); await s.reply(1, panelOf('A', roster));
+  assert.equal(s.rows().length, 3, 'refresh still works');
+});

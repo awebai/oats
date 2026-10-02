@@ -383,3 +383,13 @@ test('the shipped poll across a connection change with a read unresolved: a read
   assert.equal(u.notice(), ''); assert.equal(u.nodes().length, 1, 'the new connection\'s late answer lands');
   u.dispose(); assert.equal(listeners.size, 0, 'teardown unsubscribes');
 });
+
+test('an empty deployment\'s observed answer, as the server sends it, is the empty overview (never "Reading the deployment…"); refresh still works', async t => {
+  const empty = panel([], currentWorkspace(), { deployment: { status: 'observed', root: '/team/agents', workspace: { name: 'tsm', key: 'k' }, reachable: { reachable: true }, withheld: [],
+    catalog: { souls: [], ambiguous: [], reason: null, observedAt: null, refreshing: false } }, observedAt: '2026-10-02T00:00:00.000Z', refreshing: false, running: 0 });
+  const u = await setup(t, { api: () => empty }); await tick();
+  assert.ok(u.one('.empty'), 'the empty copy'); assert.equal(u.notice(), '');
+  assert.doesNotMatch(u.host.textContent, /Reading the deployment/); assert.equal(u.root().hasAttribute('aria-busy'), false);
+  u.setRead(() => panel([instance('a')])); await u.poll(); await tick();
+  assert.equal(u.nodes().length, 1);
+});

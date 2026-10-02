@@ -54,3 +54,31 @@ test('an explicit ?ws= the server does not serve is 404 E_WORKSPACE_NOT_SERVED o
     }
   } finally { await s.stop(); }
 });
+
+test('an empty deployment (no souls, no instances) among three settles to observed-empty in the first cycle; the others are unchanged', async () => {
+  // Juan's second repro: three deployments, the empty one listed last. Before the pool it was the one the
+  // observer's two slots never admitted, so it stayed { status: "pending", observedAt: null, refreshing: false }
+  // forever with no kernel read; an empty answer itself always settled.
+  const s = await startLoadPathServer({ extra: 2, empty: [2] });
+  try {
+    const [full, other, empty] = s.deployments;
+    const panelOf = dir => s.get(`/api/panel?ws=${encodeURIComponent(dir)}`);
+    const observed = await s.until(async () => {
+      const panels = await Promise.all([full, other, empty].map(panelOf));
+      return panels.every(p => p.deployment?.status === 'observed') ? panels : null;
+    });
+    const [a, b, e] = observed;
+    assert.equal(e.workspace.id, empty);
+    assert.deepEqual(e.instances, [], 'observed and empty: not pending, not an error');
+    assert.equal(e.running, 0); assert.equal(typeof e.observedAt, 'string', 'an observation was recorded');
+    assert.equal(e.error, undefined); assert.equal(e.deployment.reason, undefined);
+    assert.equal(e.deployment.root, `${empty}/agents`);
+    const statusDirs = s.calls().filter(c => c.verb === 'status').map(c => c.argv[c.argv.indexOf('--dir') + 1]);
+    assert.ok(statusDirs.includes(empty), 'the empty deployment was read by the kernel');
+    // The non-empty deployments are unchanged: their rosters are the fixture's.
+    for (const p of [a, b]) { assert.ok(p.instances.length > 0); assert.equal(p.instances[0].instance, 'release-manager-facts'); }
+    // The agents read answers for it as observed (the catalog is the workspace's offer, not this roster).
+    const agents = await s.getStatus(`/api/agents?ws=${encodeURIComponent(empty)}`);
+    assert.equal(agents.status, 200); assert.ok(Array.isArray(agents.body.agents)); assert.ok(agents.body.catalog, 'observed: the catalog projection is present');
+  } finally { await s.stop(); }
+});
