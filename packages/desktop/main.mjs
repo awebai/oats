@@ -465,7 +465,9 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   // reply that says so.
   let notServed = windowRefusal(pathname, base(), windowWs, advertisedNow());
   if (notServed) { await panelWorkspaces(); notServed = windowRefusal(pathname, base(), windowWs, advertisedNow()); }
-  if (notServed) return { ok: false, status: 404, body: workspaceNotServed(notServed) };
+  // The served choices go with it: the window finds the view that holds its deployments now (#482's
+  // rehome) without another read, which would name the same unserved workspace.
+  if (notServed) return { ok: false, status: 404, body: { ...workspaceNotServed(notServed), workspaces: servedList } };
   // One normalized classifier owns every specialized routing decision;
   // aliases cannot bypass frame/epoch guards, deadlines or typed failures.
   const route = classifyApiRoute(pathname, base());

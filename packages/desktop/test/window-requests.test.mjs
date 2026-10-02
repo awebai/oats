@@ -104,38 +104,12 @@ test('every specialized proxy pins a bound window\'s workspace and never rewrite
 });
 
 /* ── the shipped api handler ───────────────────────────────────────────────── */
-import { readFileSync } from 'node:fs';
-import { runInNewContext } from 'node:vm';
-import { withWindowGlobals } from './helpers/main-window-globals.mjs';
-import { apiInit, classifyApiRoute, servedSelectors } from '../api-url.mjs';
-import { workspaceHash } from '../renderer/window-binding.mjs';
-import { forgeProxyOptions, trustedForgeFrame, FORGE_EPOCH_HEADER } from '../forge-proxy.mjs';
-import { forgeFailure } from '../renderer/forge-contract.mjs';
-import { lifecycleFailure } from '../renderer/lifecycle-contract.mjs';
+import { shippedMainApi } from './helpers/shipped-main-api.mjs';
+import { classifyApiRoute } from '../api-url.mjs';
 import { NOT_SERVED_CODE } from '../renderer/deployment-header.mjs';
 
-const RENDERER = 'file:///fixture/renderer/index.html';
-function shippedApi({ window: bound, advertised = ADVERTISED, reread = null }) {
-  const source = readFileSync(new URL('../main.mjs', import.meta.url), 'utf8');
-  const start = source.indexOf('ipcMain.handle("api",'), end = source.indexOf('// ---- IPC: workstation forge auth', start);
-  let handler; const fetched = [], calls = { rereads: 0 };
-  const fetch = async (url) => { fetched.push(new URL(url)); return { ok: true, status: 200, text: async () => JSON.stringify({ workspaces: [] }) }; };
-  const proxy = (path) => { fetched.push(new URL(path, BASE)); return { ok: true, status: 200, body: {} }; };
-  const context = withWindowGlobals({
-    ipcMain: { handle: (_name, fn) => { handler = fn; } }, apiUrl, apiInit, classifyApiRoute, servedSelectors, forgeProxyOptions, trustedForgeFrame,
-    FORGE_EPOCH_HEADER, forgeFailure, lifecycleFailure, RENDERER_URL: RENDERER, serverEpoch: 0, unservedRefusal: () => null,
-    serverHost: { inTransition: () => false }, currentForgeEpoch: () => 'fixture:0', base: () => BASE, wsId: VERIFIED, allowedWs: advertised,
-    // The re-read of the advertised set (main's panelWorkspaces): `reread` is what the server advertises now.
-    panelWorkspaces: async () => { calls.rereads++; if (reread) context.allowedWs = reread; return []; },
-    proxyReadiness: proxy, proxySpawnPreview: proxy, proxyInstanceEvents: proxy, proxySpawnApply: proxy,
-    fetch, AbortSignal: { timeout: () => null }, Set, URL, JSON,
-    guard: () => {},
-  });
-  runInNewContext(source.slice(start, end), context);
-  const frame = { url: bound ? `${RENDERER}${workspaceHash(bound)}` : RENDERER };
-  const event = { senderFrame: frame, sender: { mainFrame: frame, isDestroyed: () => false } };
-  return { fetched, calls, call: (path) => handler(event, path, { method: 'POST', body: '{}' }) };
-}
+const shippedApi = ({ window, advertised = ADVERTISED, reread = null, served = [], chooser = false }) =>
+  shippedMainApi({ window, chooser, base: BASE, wsId: VERIFIED, advertised, reread, served });
 
 test('shipped api: a bound window\'s read for an unserved workspace is 404 E_WORKSPACE_NOT_SERVED on every route, never fetched', async () => {
   for (const path of SCOPED) {
@@ -178,4 +152,11 @@ test('shipped api: main re-reads what the server advertises before refusing, so 
   const served = shippedApi({ window: WINDOW });
   await served.call('/api/panel');
   assert.equal(served.calls.rereads, 0, 'an advertised workspace costs no re-read');
+});
+
+test('shipped api: the refusal carries the served choices, so a window can find the view that holds its deployments now', async () => {
+  const served = [{ id: WINDOW, name: 'oats', deployments: ['/d/second'] }];
+  const reply = await shippedApi({ window: 'ws:goneeeeeeeeeeeeeeeee', served }).call('/api/panel');
+  assert.equal(reply.status, 404); assert.equal(reply.body.code, NOT_SERVED_CODE);
+  assert.deepEqual(JSON.parse(JSON.stringify(reply.body.workspaces)), served);
 });

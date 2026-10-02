@@ -578,9 +578,10 @@ async function refreshContextRoster({ user = false } = {}) {
       rosterPendingWatch.observe(null, false); // an answer: not served
       failRosterUnserved(NOT_SERVED_CODE, ws);
       // The switcher still offers what the server does serve, with this deployment named as the
-      // current choice, so the window is never left without a way to another workspace.
-      let served = null;
-      try { served = await api("/api/panel"); } catch { /* the choices stay as they were */ }
+      // current choice, so the window is never left without a way to another workspace. A bound
+      // window's refusal carries those choices (#481); a window with no workspace yet reads them.
+      let served = Array.isArray(e.workspaces) ? { workspaces: e.workspaces } : null;
+      if (!served) try { served = await api("/api/panel"); } catch { /* the choices stay as they were */ }
       // A view id no longer served whose deployments another view holds now (a remote that reports
       // another workspace, #482): the window and its state follow them there.
       const moved = served && owns() ? rehomeMap(served.workspaces, viewMembership).get(ws) : null;

@@ -55,6 +55,8 @@ export function httpError(r, pathname) {
   if (r.body?.code) err.code = r.body.code;
   if (r.body?.result) err.result = r.body.result;
   if (Array.isArray(r.body?.labels)) err.labels = r.body.labels;
+  // A window's refusal for a workspace not served carries the served choices (#481).
+  if (Array.isArray(r.body?.workspaces)) err.workspaces = r.body.workspaces;
   return err;
 }
 export function postJson(ctx, pathname, body) {

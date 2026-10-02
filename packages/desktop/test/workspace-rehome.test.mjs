@@ -249,3 +249,27 @@ test("shell: a view that moved to a workspace another window has leaves this win
   assert.equal(tabs.size, 1, "its tab stays in this window (never duplicated into the other)");
   assert.equal(common.currentWorkspace(), OTHER, "nothing switched here");
 });
+
+/* ── composed with main's shipped api handler (#481, review F1) ── */
+import { shippedMainApi } from "./helpers/shipped-main-api.mjs";
+import { httpError } from "../renderer/views/common.mjs";
+
+for (const [label, claim] of [["the destination is free", { ok: true, workspace: VIEW }],
+  ["the destination is open in another window", { ok: false, code: "open-elsewhere", workspaces: [view(VIEW, [PATH, REMOTE])] }]]) {
+  test(`shell + main: a bound view the server dropped finds the view holding its deployments (${label})`, async (t) => {
+    const served = [view(VIEW, [PATH, REMOTE])];
+    // Main: this window is bound to OTHER, which the server no longer serves; VIEW holds its deployment now.
+    const main = shippedMainApi({ window: OTHER, advertised: new Set([VIEW, PATH, REMOTE]), reread: new Set([VIEW, PATH, REMOTE]), served });
+    const tabs = new Map([[1, { kind: "terminal", workspace: OTHER, key: terminalKey(OTHER, "/h/far"), instanceRef: { instance: "far", deployment: { id: REMOTE } } }]]);
+    const u = shell(t, { tabs, selection: OTHER, claim });
+    u.c.api = async (path) => { const r = await main.call(path); if (!r.ok) throw httpError(r, path); return r.body; };
+    u.c.viewMembership.note([view(OTHER, [REMOTE], { name: "tsm" })]);
+    await u.s.refreshContextRoster();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(main.fetched, [], "main refused the read: nothing about another workspace was fetched");
+    assert.deepEqual(u.switched, [VIEW], "the window claims the view that holds its deployment, from the refusal's choices");
+    assert.deepEqual({ ...u.c.switchOptions }, { focus: false });
+    if (claim.ok) assert.equal(tabs.get(1).workspace, VIEW, "its tabs move with it");
+    else { assert.ok(u.c.chose, "open elsewhere: this window chooses"); assert.equal(tabs.size, 1, "its tab stays here"); }
+  });
+}
