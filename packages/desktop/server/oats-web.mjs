@@ -8,6 +8,7 @@
  * process; the desktop renderer is its only client):
  *   GET  /api/panel                 roster JSON (instances, task, tmux state; local Git unobserved)
  *   GET  /api/agents                available agents (souls) per workspace root
+ *                                   (both: an explicit ?ws= not served → 404 E_WORKSPACE_NOT_SERVED)
  *   POST /api/spawn?ws=<id>         { action: prepare|apply|result, … } → preview-bound spawn (server/spawn-apply.mjs);
  *                                   { agent, agentsRoot, serverId, … } → execution-server spawn only
  *                                   (mutations require the installed `oats` CLI; see cliUnavailable)
@@ -50,7 +51,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { homedir } from "node:os";
 import { scheduleRequest } from "./schedules.mjs";
 import { capabilityRequest } from "./capabilities.mjs";
-import { createDeploymentObserver } from "./deployment-observer.mjs";
+import { createDeploymentObserver, mapBounded, MAX_DEPLOYMENT_OBSERVATIONS } from "./deployment-observer.mjs";
 import { createSoulCatalog, soulCatalogKey } from "./soul-catalog.mjs";
 import { createCapabilityCatalog, capabilityCatalogKey } from "./capability-catalog.mjs";
 import { capabilityShowRequest, createCapabilityShowCache } from "./capability-show.mjs";
@@ -77,6 +78,7 @@ import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
 import { canAddressRemote, unaddressableSentence } from "../renderer/remote-address.mjs";
 import { harnessFlag, HARNESSES } from "../renderer/harness-names.mjs";
 import { probeChanged } from "../renderer/cli-probe-contract.mjs";
+import { workspaceNotServed } from "../renderer/deployment-header.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -736,7 +738,8 @@ async function refreshRemoteSnapshot() {
 /** One observation cycle over every registered deployment; the refresh loop owns when it runs. */
 async function observeAll({ live = false } = {}) {
   try {
-    const entries = await Promise.all(ctxs.map(async (id) => [id, await observeDeployment(id, { live })]));
+    // At most as many deployments at once as the observer admits, so every one is read each cycle (#461).
+    const entries = await mapBounded(ctxs, MAX_DEPLOYMENT_OBSERVATIONS, async (id) => [id, await observeDeployment(id, { live })]);
     const byWs = new Map(entries);
     for (const [id, panel] of snapshot.byWs) if (id.startsWith("remote:")) byWs.set(id, panel);
     snapshot = { at: Date.now(), byWs: mergeRemotePanels(byWs) };
@@ -1253,11 +1256,16 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && path === "/api/version") {
       return send(res, 200, { capability: MANIFEST.capability, version: MANIFEST.version });
     }
-    if (req.method === "GET" && path === "/api/panel") {
+    if (req.method === "GET" && (path === "/api/panel" || path === "/api/agents")) {
+      const asked = url.searchParams.get("ws") || undefined;
+      // An explicit workspace this server does not serve (a path, an id, a remote it no longer has) is
+      // refused, never answered with another workspace's data. No ?ws= still means the first workspace.
+      if (asked && !workspaces().some((w) => w.id === asked)) return send(res, 404, workspaceNotServed(asked));
       // Served from the latest kernel observation; never waits on a CLI read.
-      return send(res, 200, panelData(url.searchParams.get("ws") || undefined));
+      if (path === "/api/panel") return send(res, 200, panelData(asked));
+      revalidateCatalog(asked);
+      return send(res, 200, agentsData(asked));
     }
-    if (req.method === "GET" && path === "/api/agents") { revalidateCatalog(url.searchParams.get("ws") || undefined); return send(res, 200, agentsData(url.searchParams.get("ws") || undefined)); }
     if (path === "/api/launch-configs" && req.method === "POST") {
       const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
       try {

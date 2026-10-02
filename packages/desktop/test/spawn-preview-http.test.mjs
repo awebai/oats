@@ -67,7 +67,7 @@ test('main normalizes every preview alias into the real specialized guard; same-
   let handler, calls = 0; const f = proxy(async () => { calls++; return { ok: true, status: 200, text: async () => JSON.stringify(view()) }; });
   const deps = { ipcMain: { handle: (_n, fn) => handler = fn }, classifyApiRoute, RENDERER_URL: f.deps.rendererURL,
     proxySpawnPreview: (e, path, opts, d) => proxySpawnPreview(e, path, opts, { ...d, fetch: f.deps.fetch }), base: () => f.connection.base,
-    wsId: 'northwind', allowedWs: f.connection.allowedWs, serverEpoch: 0, serverHost: { inTransition: () => false },
+    wsId: 'northwind', allowedWs: f.connection.allowedWs, serverEpoch: 0, unservedRefusal: () => null, serverHost: { inTransition: () => false },
     forgeFailure: () => ({}), lifecycleFailure: () => ({}), guard: () => assert.fail('preview must use specialized frame guard') };
   runInNewContext(source.slice(start, end), deps);
   for (const path of ['/api/workspace-spawn-preview', '/api/./workspace-spawn-preview', '/api/x/../workspace-spawn-preview', '/api/%2e/workspace-spawn-preview', '/api' + String.fromCharCode(92) + 'workspace-spawn-preview', '/a\tpi/workspace-spawn-preview']) {

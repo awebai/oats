@@ -106,3 +106,40 @@ export function apiInit(opts) {
   }
   return init;
 }
+
+/**
+ * A read of a deployment this Desktop knows but its server does not advertise (#461): the
+ * workspace id to refuse with E_WORKSPACE_NOT_SERVED, or null to proxy as usual. Only the roster
+ * and agents reads, only a local deployment (an absolute path), only once an advertised set is
+ * known (during a server replacement, the outgoing server's: the deployment is not served until the
+ * new server advertises it, and its read must not be rewritten to another), and only for a path the
+ * Desktop itself knows (`known`, checked before anything touches the filesystem). An unknown id
+ * keeps today's rewrite to the verified workspace, which the renderer adopts.
+ * @param {string} pathname
+ * @param {string} base
+ * @param {{ allowedWs: Set<string>, known: (path: string) => boolean }} state
+ * @returns {string|null}
+ */
+export function unservedWorkspace(pathname, base, { allowedWs, known }) {
+  if (!(allowedWs instanceof Set) || !allowedWs.size || typeof pathname !== 'string') return null;
+  let url;
+  try { url = new URL(pathname, base); } catch { return null; }
+  if (url.origin !== new URL(base).origin || !['/api/panel', '/api/agents'].includes(url.pathname)) return null;
+  const asked = url.searchParams.getAll('ws');
+  if (asked.length !== 1 || !asked[0].startsWith('/') || allowedWs.has(asked[0])) return null;
+  try { return known(asked[0]) === true ? asked[0] : null; } catch { return null; }
+}
+
+/**
+ * The proxy's refusal for an unserved deployment, as main wires it: `state()` reads the live
+ * connection facts at call time. Returns the `{ ok, status, body }` the api channel resolves
+ * with (404 E_WORKSPACE_NOT_SERVED, `body(workspace)`), or null to proxy as usual.
+ * @param {{ base: () => string, state: () => { allowedWs: Set<string>, known: (path: string) => boolean },
+ *           body: (workspace: string) => object }} io
+ */
+export function createUnservedRefusal({ base, state, body }) {
+  return (pathname) => {
+    const workspace = unservedWorkspace(pathname, base(), state());
+    return workspace ? { ok: false, status: 404, body: body(workspace) } : null;
+  };
+}

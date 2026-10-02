@@ -73,7 +73,7 @@ test('main composition normalizes all spawn aliases to specialized guard, includ
   const f = proxy(async () => { calls++; return { ok: true, status: 200, text: async () => JSON.stringify(prepared()) }; });
   const deps = { ipcMain: { handle: (_n, fn) => handler = fn }, classifyApiRoute, RENDERER_URL: f.deps.rendererURL,
     proxySpawnApply: (e, path, opts, d) => proxySpawnApply(e, path, opts, { ...d, fetch: f.deps.fetch }), base: () => f.connection.base,
-    wsId: 'northwind', allowedWs: f.connection.allowedWs, serverEpoch: 0, serverHost: { inTransition: () => false },
+    wsId: 'northwind', allowedWs: f.connection.allowedWs, serverEpoch: 0, unservedRefusal: () => null, serverHost: { inTransition: () => false },
     forgeFailure: () => ({}), lifecycleFailure: () => ({}), guard: () => assert.fail('spawn must use specialized guard') };
   runInNewContext(source.slice(start, end), deps);
   for (const pathname of aliases) {

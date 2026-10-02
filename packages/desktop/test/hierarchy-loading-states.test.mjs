@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import * as hierarchy from '../renderer/views/hierarchy.mjs';
 import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
+import { NOT_SERVED_CODE, NO_ANSWER_CODE, PENDING_LIMIT_MS } from '../renderer/deployment-header.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 /** A fake clock on the JSDOM window: timers fire in order when advanced. */
@@ -30,7 +31,7 @@ const deferred = () => { let resolve, reject; const promise = new Promise((yes, 
 const instance = (name = 'dev', fields = {}) => ({ instance: name, agent: 'soul', agentsRoot: '/team/agents', home: `/team/agents/soul/instances/${name}`, running: true, repoName: 'reported-repo', runtime: 'pi', branch: 'reported-branch', ...fields });
 const panel = (instances = [instance()], id = currentWorkspace(), extra = {}) => ({ instances, workspace: { id }, workspaces: [{ id: '/team', name: 'Team' }, { id: '/other', name: 'Other' }], generatedAt: 'observation-time', ...extra });
 
-async function setup(t, { api, instances } = {}) {
+async function setup(t, { api, instances, ctx: extra = {} } = {}) {
   const dom = new JSDOM('<body><main id="host"></main></body>', { url: 'http://localhost' });
   const doc = dom.window.document, host = doc.querySelector('main');
   const old = { window: globalThis.window, document: globalThis.document, setInterval: globalThis.setInterval, ws: currentWorkspace() };
@@ -38,7 +39,7 @@ async function setup(t, { api, instances } = {}) {
   const c = clock(dom.window);
   setWorkspace('/team');
   let read = api || (() => panel(instances));
-  const ctx = { hasWorkspaceSwitcher: true, api: path => read(path), openTerminal() {}, startInstance() {}, restartInstance() {}, openView() {} };
+  const ctx = { hasWorkspaceSwitcher: true, api: path => read(path), openTerminal() {}, startInstance() {}, restartInstance() {}, openView() {}, ...extra };
   // Every skeleton that ever enters the summary is recorded, so "never" is provable for fast replies.
   const skeletons = [];
   const observer = new dom.window.MutationObserver(records => { for (const r of records) for (const n of r.addedNodes) if (n.dataset?.skeleton) skeletons.push(n); });
@@ -220,4 +221,175 @@ test('a Herdr-recorded instance: the popover disables Terminal and Restart with 
   const terminal = u.one('.pterm'), restart = u.one('.prestart');
   assert.equal(terminal.disabled, true); assert.equal(terminal.title, reason);
   assert.equal(restart.disabled, true); assert.equal(restart.title, reason);
+});
+
+/* ── #461: a deployment the server does not serve, or does not answer for ── */
+const notServed = () => Promise.reject(Object.assign(new Error("This Desktop's server isn't serving this deployment."), { code: NOT_SERVED_CODE, status: 404 }));
+
+test('not served: the notice names the deployment, offers Retry and Re-add, and the status line says it once', async t => {
+  const added = [];
+  const u = await setup(t, { api: notServed, ctx: { reAddWorkspace: async path => { added.push(path); return { ok: true, workspace: { id: path } }; } } }); await tick();
+  assert.match(u.notice(), /^This Desktop's server isn't serving this deployment: \/team\. Re-add the workspace, or retry\. No current observation\.$/);
+  assert.equal(u.one('.hier-readd').hidden, false); assert.equal(u.one('.hier-retry').hidden, false);
+  assert.match(u.status(), /^Couldn't refresh roster\./); assert.equal(u.sum().textContent, 'Roster unknown');
+  assert.doesNotMatch(u.host.textContent, /Reading the deployment/);
+  // Re-add: that exact path through the normal add, then a read of the now-served deployment.
+  u.setRead(() => panel([instance('a')]));
+  u.one('.hier-readd').click(); await tick(); await tick();
+  assert.deepEqual(added, ['/team']);
+  assert.equal(u.notice(), ''); assert.equal(u.nodes().length, 1);
+});
+
+test('not served without an add bridge (a hosted view) offers Retry only', async t => {
+  const u = await setup(t, { api: notServed }); await tick();
+  assert.match(u.notice(), /isn't serving this deployment: \/team/);
+  assert.equal(u.one('.hier-readd').hidden, true);
+});
+
+test('a refused Re-add says why and keeps the notice', async t => {
+  const u = await setup(t, { api: notServed, ctx: { reAddWorkspace: async () => ({ ok: false, reason: 'path does not exist' }) } }); await tick();
+  u.one('.hier-readd').click(); await tick();
+  assert.equal(u.notice(), "Couldn't re-add /team: path does not exist");
+});
+
+test('pending past the bound is "No answer" (no Re-add); Retry restarts the wait', async t => {
+  let now = 5_000_000; t.mock.method(Date, 'now', () => now);
+  const pending = () => panel([], currentWorkspace(), { deployment: { status: 'pending' } });
+  const u = await setup(t, { api: pending, ctx: { reAddWorkspace: async () => ({ ok: true }) } }); await tick();
+  assert.equal(u.sum().textContent, 'Reading the deployment through the installed OATS CLI…');
+  now += PENDING_LIMIT_MS - 1; await u.poll(); await tick(); assert.equal(u.notice(), '', 'inside the bound');
+  now += 1; await u.poll(); await tick();
+  assert.match(u.notice(), /^No answer from the Desktop's server for this deployment: \/team\./);
+  assert.equal(u.one('.hier-readd').hidden, true, 'served, only slow: no Re-add');
+  assert.equal(u.root().hasAttribute('aria-busy'), false, 'an answer, not a wait');
+  u.retry(); await tick();
+  assert.equal(u.notice(), '', 'Retry restarts the bounded wait');
+  assert.equal(u.sum().textContent, 'Reading the deployment through the installed OATS CLI…');
+});
+
+/** Every text the polite status line took, in order. */
+function statusHistory(u) {
+  const el = u.one('.hier-status'), seen = [];
+  const record = () => { if (seen.at(-1) !== el.textContent) seen.push(el.textContent); };
+  new u.dom.window.MutationObserver(record).observe(el, { childList: true, characterData: true, subtree: true });
+  return { seen, flush: async () => { await tick(); record(); } };
+}
+
+test('background re-reads of a failed overview are not announced again: no "Loading…" between failures', async t => {
+  const u = await setup(t, { api: notServed }); await tick();
+  const said = u.status(), history = statusHistory(u);
+  await u.poll(); await tick(); await u.poll(); await tick(); await history.flush();
+  assert.deepEqual(history.seen.filter(text => text !== said), [], JSON.stringify(history.seen));
+});
+
+test('a transport failure past the bound is "No answer" by name; inside it, the generic notice', async t => {
+  let now = 5_000_000; t.mock.method(Date, 'now', () => now);
+  const u = await setup(t, { api: () => Promise.reject(new Error('timed out')) }); await tick();
+  assert.match(u.notice(), /^Roster unavailable: timed out\./);
+  now += PENDING_LIMIT_MS; await u.poll(); await tick();
+  assert.match(u.notice(), /^No answer from the Desktop's server for this deployment: \/team\./);
+  assert.equal(u.one('.hier-readd').hidden, true);
+});
+
+test('pending after an observation keeps it (no pending copy, no notice); past the bound it is stale with "No answer"', async t => {
+  let now = 5_000_000, connection = 0; t.mock.method(Date, 'now', () => now);
+  const u = await setup(t, { instances: [instance('a'), instance('b')], ctx: { connectionGeneration: () => connection } }); await tick();
+  assert.equal(u.nodes().length, 2); const summary = u.sum().textContent;
+  connection = 1; u.setRead(() => panel([], currentWorkspace(), { deployment: { status: 'pending' } }));
+  await u.poll(); await tick();
+  assert.equal(u.nodes().length, 2); assert.equal(u.sum().textContent, summary); assert.equal(u.notice(), '');
+  assert.equal(u.root().hasAttribute('aria-busy'), false);
+  now += PENDING_LIMIT_MS; await u.poll(); await tick();
+  assert.equal(u.nodes().length, 2, 'the last observation stays');
+  assert.match(u.notice(), /^No answer from the Desktop's server for this deployment: \/team\. .*Showing the last observation/);
+});
+
+test('a Re-add outcome belongs to its own selection: after A→B→A it reads nothing; a refusal never replaces a newer observation', async t => {
+  let add = deferred(), reads = 0, answer = notServed;
+  const u = await setup(t, { api: () => { reads++; return answer(); }, ctx: { reAddWorkspace: () => add.promise } }); await tick();
+  u.one('.hier-readd').click(); await tick();
+  setWorkspace('/other'); await tick(); setWorkspace('/team'); await tick();
+  const before = reads; add.resolve({ ok: true }); await tick(); await tick();
+  assert.equal(reads, before, 'the superseded Re-add starts no read');
+  // A refusal that arrives after a poll observed the deployment: the observation stands.
+  add = deferred(); u.one('.hier-readd').click(); await tick();
+  answer = () => panel([instance('a')]); await u.poll(); await tick();
+  assert.equal(u.nodes().length, 1); assert.equal(u.notice(), '');
+  add.resolve({ ok: false, reason: 'path does not exist' }); await tick();
+  assert.equal(u.notice(), '', 'no failure over the newer observation'); assert.equal(u.nodes().length, 1);
+});
+
+/** The shipped 4 s poll callback and the window clock, a second at a time; Date.now follows. No refresh by hand. */
+function shippedSchedule(u, clockNow) {
+  let elapsed = 0;
+  return async seconds => {
+    for (let n = 0; n < seconds; n++) {
+      elapsed += 1000; clockNow.value += 1000; u.c.advance(1000); await tick(); await tick();
+      if (elapsed % 4000 === 0) { u.poll(); await tick(); await tick(); }
+    }
+  };
+}
+
+test('the shipped poll with a read that never answers: "No answer" at exactly the bound, with one read in flight', async t => {
+  const clockNow = { value: 5_000_000 }; t.mock.method(Date, 'now', () => clockNow.value);
+  let reads = 0;
+  const u = await setup(t, { api: () => { reads++; return new Promise(() => {}); } }); await tick();
+  const run = shippedSchedule(u, clockNow);
+  await run(44);
+  assert.equal(reads, 1, 'the stuck read holds every poll'); assert.equal(u.notice(), '');
+  await run(1);
+  assert.match(u.notice(), /^No answer from the Desktop's server for this deployment: \/team\. .*No current observation\./);
+  assert.match(u.status(), /No answer from the Desktop's server for this deployment: \/team/);
+  assert.equal(reads, 1, 'said without another read');
+});
+
+test('the shipped poll with the proxy\'s 20 s timeouts: the generic notice inside the bound, "No answer" at 45 s', async t => {
+  const clockNow = { value: 5_000_000 }; t.mock.method(Date, 'now', () => clockNow.value);
+  let reads = 0;
+  const u = await setup(t, { api: () => { reads++; return new Promise((_, reject) => globalThis.window.setTimeout(() => reject(new Error('timed out')), 20_000)); } }); await tick();
+  const run = shippedSchedule(u, clockNow);
+  await run(44);
+  assert.match(u.notice(), /^Roster unavailable: timed out\./);
+  await run(1);
+  assert.match(u.notice(), /^No answer from the Desktop's server for this deployment: \/team\./);
+  assert.ok(reads <= 3, `no extra full read cycle was needed: ${reads}`);
+});
+
+test('the deadline is the view\'s: teardown cancels it', async t => {
+  const clockNow = { value: 5_000_000 }; t.mock.method(Date, 'now', () => clockNow.value);
+  const u = await setup(t, { api: () => new Promise(() => {}) }); await tick();
+  const line = u.one('.hier-status'); u.dispose(); const said = line.textContent;
+  u.c.advance(PENDING_LIMIT_MS * 2); await tick();
+  assert.equal(line.textContent, said, 'nothing fires into a torn-down view');
+});
+
+test('the shipped poll across a connection change with a read unresolved: a read on the new connection at once, its own 45 s, and the old read can neither paint nor cancel it', async t => {
+  const clockNow = { value: 5_000_000 }; t.mock.method(Date, 'now', () => clockNow.value);
+  let connection = 0; const listeners = new Set(), reads = [];
+  const u = await setup(t, { api: () => { const d = deferred(); reads.push(d); return d.promise; },
+    ctx: { connectionGeneration: () => connection, subscribeConnections: fn => { listeners.add(fn); return () => listeners.delete(fn); } } }); await tick();
+  const run = shippedSchedule(u, clockNow);
+  await run(10); assert.equal(reads.length, 1, 'the stuck read holds the poll');
+  connection = 1; for (const fn of [...listeners]) fn(); await tick();
+  assert.equal(reads.length, 2, 'the new connection reads at once');
+  reads[0].resolve(panel([instance('old')])); await tick(); await tick();
+  assert.equal(u.nodes().length, 0, 'the old read is revoked: it paints nothing');
+  await run(34); // t = 44 s
+  assert.equal(u.notice(), '', 'the old deadline went with its subject');
+  await run(11); // t = 55 s
+  assert.match(u.notice(), /^No answer from the Desktop's server for this deployment: \/team\./);
+  assert.equal(reads.length, 2, 'said without another read');
+  reads[1].resolve(panel([instance('a')])); await tick(); await tick();
+  assert.equal(u.notice(), ''); assert.equal(u.nodes().length, 1, 'the new connection\'s late answer lands');
+  u.dispose(); assert.equal(listeners.size, 0, 'teardown unsubscribes');
+});
+
+test('an empty deployment\'s observed answer, as the server sends it, is the empty overview (never "Reading the deployment…"); refresh still works', async t => {
+  const empty = panel([], currentWorkspace(), { deployment: { status: 'observed', root: '/team/agents', workspace: { name: 'tsm', key: 'k' }, reachable: { reachable: true }, withheld: [],
+    catalog: { souls: [], ambiguous: [], reason: null, observedAt: null, refreshing: false } }, observedAt: '2026-10-02T00:00:00.000Z', refreshing: false, running: 0 });
+  const u = await setup(t, { api: () => empty }); await tick();
+  assert.ok(u.one('.empty'), 'the empty copy'); assert.equal(u.notice(), '');
+  assert.doesNotMatch(u.host.textContent, /Reading the deployment/); assert.equal(u.root().hasAttribute('aria-busy'), false);
+  u.setRead(() => panel([instance('a')])); await u.poll(); await tick();
+  assert.equal(u.nodes().length, 1);
 });

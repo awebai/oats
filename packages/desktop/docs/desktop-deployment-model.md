@@ -55,7 +55,10 @@ home is not `<soul dir>/instances/<instance>`, or that repeats another row's
 home, is **withheld** and counted in the header — never published, addressed
 or silently dropped.
 
-The observer reserves its bounded slots synchronously, admits on the current
+The observer admits at most two deployments at once, and the cycle reads the
+registered deployments through a pool of that size (`mapBounded`), first come
+first served: every deployment is read each cycle, and a slow one holds one
+slot while the others go through the other. The observer reserves its bounded slots synchronously, admits on the current
 deployment/CLI revision before each invocation and on completion, releases a
 reservation only after both reads settle, coalesces in flight only, and copies
 results per waiter. `/api/panel` serves the latest observation and never waits
@@ -63,6 +66,90 @@ on a CLI read, so readiness probes stay responsive. The spawn catalog
 (`oats souls`) and the capabilities table (`oats capabilities`) are read in the
 same cycle but never block the roster; when they run, what is held and when a
 cycle runs is [desktop-load-path.md](desktop-load-path.md).
+
+## The open set and adding a workspace
+
+The Desktop's open set is the list of deployment directories its app-owned
+server is started with, one `--dir` each, persisted as `workspace-open.json` in
+the app's user data. A deployment is a directory holding a regular (lstat,
+non-following) `oats-local.yaml`; nothing else counts (`wsValidate` in
+`main.mjs`, `validateWorkspace` in `workspace-registry.mjs`).
+
+- **Launch.** `restoreWorkspaceDirs` opens the saved deployments plus the
+  launch directory (`--dir`, `OATS_DESKTOP_DIR` or the cwd) when that is one. A
+  launch from a folder that is not a deployment (a parent such as `~/Agents`)
+  opens the saved set and logs that it did. Only when nothing at all is a
+  deployment is the launch folder served, for the first-run picker journey.
+- **Persisting.** `persistableDirs` writes deployments only, each once, and an
+  empty result writes nothing: a non-deployment never enters the file and the
+  saved set is never overwritten with nothing. A launch writes the file only
+  when it opened a deployment the file lacks, so a saved deployment that is
+  missing for a moment stays saved.
+- **Adding.** Every add goes through `createPerformAdd`: `decideAdd`
+  (canonical path, provenance, validation), then the transactional executor
+  (`createAddExecutor`). The replacement server is started with `stageDirs`:
+  the validated open set plus the new deployment, never fewer. The set and the
+  saved file are committed only once the new server advertises the
+  deployment; any failure restarts the previous server. A refusal returns
+  before any effect, so the open set and the running server are untouched.
+- **Provenance.** `workspace:add` admits only a path the Desktop offered or
+  knows: a suggestion, a deployment offered beside a refused pick, or one in
+  the session's known set (the saved file as read, the open set, every
+  committed add). The native picker (`workspace:pick`) is its own provenance.
+- **A picked folder that is not a deployment** is refused with "This folder
+  isn't an OATS deployment: it has no oats-local.yaml. Choose the deployment
+  folder itself, the one that contains oats-local.yaml." `pickedFolderChoices`
+  says where the deployment is, without parsing anything: the deployments one
+  level down (at most 200 entries read, typed by the entry so links are not
+  followed, sorted by name, 20 listed and "and N more"), or the deployment the
+  folder is inside (up to 8 levels up). Each choice is one click through the
+  normal add. With no choice, onboarding (`oats onboard`, through a
+  single-use offer for that exact folder) is the secondary action "Set up a
+  new deployment here…", never the default reaction.
+
+## A deployment the server does not serve, or does not answer for
+
+A window never waits silently on "Reading the deployment…":
+
+- **Not served.** The server answers any explicit `?ws=` it does not serve
+  (a path, a bare id, a remote it no longer has) on `/api/panel` and
+  `/api/agents` with 404 `{ error, code:
+  "E_WORKSPACE_NOT_SERVED", workspace }` (`workspaceNotServed` in
+  `renderer/deployment-header.mjs`) instead of the first workspace's data. No
+  `?ws=` still means the first workspace. The main process's API proxy refuses
+  the same reads with the same body, without fetching, for a deployment it
+  knows (and that is still one) but the server does not advertise
+  (`createUnservedRefusal` in `api-url.mjs`). While the server is being
+  replaced it refuses against what the outgoing server advertised, so a
+  Re-add's own reads are never rewritten to another workspace before the new
+  server advertises it. An id it does not know is still pinned to the
+  verified workspace and the renderer adopts the served one
+  (`staleWorkspaceSelection`).
+- **No answer.** A deployment left without an observation, on one
+  connection, for `PENDING_LIMIT_MS` (45 s: the 30 s deployment read timeout
+  plus the cycle around it) is reported as no answer (`createPendingWatch`).
+  The wait runs from the first read that brought none: answered "pending",
+  failed in transport (the proxy's timeout, the bridge down) or not answered
+  yet. Any other answer ends it, a Retry starts it over, and an observation
+  that lands later replaces the error. The deadline is a timer owned by its
+  subject (cancelled by an answer, another deployment or connection, a Retry
+  or the view's teardown), so it fires at 45 s even while a read that never
+  answers holds the poll: both views poll one read at a time and never
+  supersede a read in flight. A connection change is the exception: both
+  views read on the new connection at once, which revokes the old read's
+  outcome and arms the new connection's own deadline.
+- **With an observation on screen** (a new connection still reading), a
+  "pending" answer keeps the rows as they are, never an empty roster; past
+  the bound they go stale with the no-answer reason.
+- **Where.** The sidebar roster uses the shared failed state
+  (`renderer/loading.mjs`, with a second action) and the Active overview its
+  notice: the message names the deployment path, Retry is always offered and
+  **Re-add workspace** when the server does not serve a local deployment.
+  Re-add sends that exact path through `workspace:add`, so it restarts the
+  server with the whole set. Its outcome belongs to the selection it started
+  in: after a switch it does nothing, and a refusal never replaces an
+  observation that landed meanwhile. Background re-reads of a failed state
+  are not announced again. The switcher keeps offering the served workspaces.
 
 ## Remote rows
 
