@@ -67,8 +67,8 @@ workspace's `packages:` pins versions once. Workspace defaults fill the rest;
 skills and the merged provider settings — without creating anything.
 
 A soul file names no team. Which teams a soul may join, and its default
-team, are decided by `souls:` in `oats-workspace.yaml` (`oats soul teams
-<soul>` shows the result); teams organise messaging and never grant or
+team, are the organisation's decision, committed in its workspace
+(`oats soul teams <soul>` shows the result); teams organise messaging and never grant or
 restrict anything (see `/oats-operate`, "Teams to join").
 
 ## Relations: what the new instance is to you

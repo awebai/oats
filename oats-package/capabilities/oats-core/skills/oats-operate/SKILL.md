@@ -133,8 +133,8 @@ top-level. Ask your human when the relation is unclear.
 identity starts in. The others are *eligible*: to join them at spawn, pass
 `--provider <messaging capability> join=<label,label>`. Joining or leaving
 later is your messaging capability's skill. Which teams a soul may join is
-the organisation's decision, committed in `oats-workspace.yaml` (`souls:`;
-read it with `oats soul teams`; `/oats-teams` in `oats.setup`).
+the organisation's decision, committed in its workspace (read it with
+`oats soul teams`; `/oats-teams` in `oats.setup`).
 
 A soul with `work: worktree | checkout` needs a clone of its repository on
 this machine; the kernel finds it through `--repo <path>`, the local file's
