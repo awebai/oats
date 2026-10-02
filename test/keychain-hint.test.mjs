@@ -54,8 +54,8 @@ test("E_REMOTE_UNREADABLE (auth) carries the hint and the remedies exactly when 
   try {
     process.env.PATH = authFailingGit(base);
     process.env.SSH_CONNECTION = "10.0.0.2 51000 10.0.0.3 22";
-    const cacheRoot = join(base, "cache"); mkdirSync(cacheRoot);
-    const e = await observeRemote("https://github.com/acme/private-workspace", { cacheRoot }).then(() => null, (err) => err);
+    const cacheDir = join(base, "cache"); mkdirSync(cacheDir);
+    const e = await observeRemote("https://github.com/acme/private-workspace", { cacheDir }).then(() => null, (err) => err);
     assert.ok(e, "the read fails");
     assert.equal(e.code, "E_REMOTE_UNREADABLE");
     assert.equal(e.details.reason, "auth");

@@ -19,7 +19,7 @@
  * `init` / `use` / `install` / `restore` / `list` / `catalog` / `remove` /
  * `migrate` / `trust` / `inject` are gone with the installed-capability tier.
  */
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readSync, realpathSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readSync, readdirSync, realpathSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { constants as osConstants, homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
@@ -2746,9 +2746,10 @@ async function onboardCmd() {
   const bail = (code, message, details) => (JSON_MODE ? jsonFail(code, message, details) : die(message));
   const usage = "usage: oats onboard [<dir>] --workspace <repo ref> [--json]   (or --dir <dir>)";
   let positional, workspaceRef, dirValue;
+  const checkOnly = args.includes("--check");
   for (let i = 1; i < args.length; i++) {
     const arg = args[i];
-    if (arg === "--json") continue;
+    if (arg === "--json" || arg === "--check") continue;
     if (arg === "--dir" || arg === "--workspace") {
       const value = args[i + 1];
       if (value === undefined || value.startsWith("--")) return bail("E_BAD_ARGS", `--${arg.slice(2)} needs a value\n${usage}`);
@@ -2761,6 +2762,7 @@ async function onboardCmd() {
     positional = arg;
   }
   if (positional !== undefined && dirValue !== undefined) return bail("E_BAD_ARGS", `give the deployment directory once, as <dir> or --dir\n${usage}`);
+  if (checkOnly) return onboardCheck(positional ?? dirValue, workspaceRef, bail);
   if (!workspaceRef || !workspaceRef.trim()) return bail("E_BAD_ARGS", `--workspace <repo ref> is required (the repository hosting oats-workspace.yaml)\n${usage}`);
   workspaceRef = workspaceRef.trim();
   // The ref must be one lib/remote.mjs understands BEFORE anything is written.
@@ -2865,6 +2867,38 @@ Next:
      a public member; public contributors then get the standalone case (from: here + oats.core).
   3. ${setupExpert ? "Spawn the operator expert to guide the rest (souls, teams, provider settings):" : "No soul named oats-operator-expert is listed here —"}
        ${spawnHint ?? anySoulHint}`);
+}
+
+/** `oats onboard <dir> [--workspace <ref>] --check`: what onboarding <dir> here would meet, read-only (the
+ *  question `oats server connect` asks a host before onboarding there, and `oats server check` asks of a
+ *  registered deployment). A leading ~ is this machine's home. `state` is absent | empty | not-empty |
+ *  not-a-directory | deployment (oats-local.yaml there; its own workspace is read when --workspace is not
+ *  given). `remote` is whether this machine's git reads the workspace remote: an unreadable one is part of
+ *  the answer (readable false, with the error, its reason and any hint), never a failure of the check. */
+async function onboardCheck(dirArg, workspaceRef, bail) {
+  const raw = dirArg ?? process.cwd();
+  const dir = raw === "~" ? homedir() : raw.startsWith("~/") ? join(homedir(), raw.slice(2)) : resolve(raw);
+  let stat = null;
+  try { stat = lstatSync(dir); } catch (e) { if (e.code !== "ENOENT") return bail("E_ONBOARD_FAILED", `cannot inspect ${dir}: ${e.message}`, { dir }); }
+  const state = !stat ? "absent" : !stat.isDirectory() ? "not-a-directory" : existsSync(join(dir, "oats-local.yaml")) ? "deployment" : readdirSync(dir).length ? "not-empty" : "empty";
+  let ref = workspaceRef?.trim();
+  if (!ref && state === "deployment") {
+    try { ref = loadLocal(dir).local.workspace; } catch (e) { return bail(e.code || "E_CONFIG_BROKEN", e.message, e.details); }
+  }
+  if (!ref) return bail("E_BAD_ARGS", `--workspace <repo ref> is required: ${dir} is not a deployment whose workspace could be read instead`, { dir, state });
+  let parsed;
+  try { parsed = remoteModule.parseRepoRef(ref); } catch (e) { return bail(e.code || "E_REPO_REF", e.message, e.details ?? e.provenance); }
+  let remote;
+  try { remote = { readable: true, commit: (await remoteModule.observeRemote(ref, remoteOptionsFromEnv())).commit }; }
+  catch (e) {
+    if (e?.code !== "E_REMOTE_UNREADABLE") throw e;
+    const d = e.details || {};
+    remote = { readable: false, error: { code: e.code, message: e.message, reason: d.reason ?? null, ...(d.hint ? { hint: d.hint, remedy: d.remedy } : {}) } };
+  }
+  const result = { check: true, dir, state, workspace: { ref, key: parsed.key }, remote };
+  if (JSON_MODE) { jsonOk(result); return; }
+  console.log(`${shortPath(dir)}: ${state}`);
+  console.log(`workspace ${parsed.key}: ${remote.readable ? `readable (${short(remote.commit)})` : `NOT readable — ${remote.error.message}`}`);
 }
 
 /** The clone URL of a member row: what the remote observed (from the workspace's members: refs;
