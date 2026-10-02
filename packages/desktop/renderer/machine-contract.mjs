@@ -92,3 +92,26 @@ export const MACHINE_SCOPE_REASONS = Object.freeze({
   'no-key': 'This deployment reports no workspace key, so no other machine can be matched to it.',
   'no-local': 'This workspace has no deployment on this computer, so machines are added from one that does.',
 });
+
+/** How often, and at most how many times, a consumer reads the list again while the server's backfill runs. */
+export const BACKFILL_POLL_MS = 2000;
+export const BACKFILL_POLLS = 90;
+/** Read the list again while the server's answers say `backfilling` (server/machines.mjs): `read()` answers
+ * the list, `use(answer)` takes each, `owns()` is the consumer's latest intent (false: stop, nothing used).
+ * Stops at the first answer that is not backfilling, a failed read, or after `polls` reads. Returns stop(). */
+export function followBackfill({ read, use, owns = () => true, delay = BACKFILL_POLL_MS, polls = BACKFILL_POLLS, timers = globalThis }) {
+  let stopped = false, timer = null, left = polls;
+  const next = () => {
+    if (stopped || left-- <= 0) return;
+    timer = timers.setTimeout(async () => {
+      timer = null;
+      let answer;
+      try { answer = await read(); } catch { return; }
+      if (stopped || !owns()) return;
+      use(answer);
+      if (answer?.backfilling === true) next();
+    }, delay);
+  };
+  next();
+  return () => { stopped = true; if (timer !== null) timers.clearTimeout(timer); timer = null; };
+}

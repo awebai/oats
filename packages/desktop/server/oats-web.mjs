@@ -1725,7 +1725,7 @@ const server = createServer(async (req, res) => {
         const scope = machineScope(url.searchParams.get("ws"));
         if (!scope) return send(res, 400, { error: "Select a known workspace", code: "E_WORKSPACE_UNKNOWN" });
         try { return send(res, 200, await machines.forScope(scope)); }
-        catch (e) { return send(res, 200, { servers: [], key: scope.key, filtered: true, error: e.code || "E_SERVERS" }); }
+        catch (e) { return send(res, 200, { servers: [], key: scope.key, filtered: true, deployment: null, aweb: false, error: { code: e.code || "E_SERVERS", message: e.message || "The server registry could not be read" } }); }
       }
       const env = await adapter.cliServers(cliState.bin);
       if (!env.ok) return send(res, 200, { servers: [], reason: env.error?.code || "E_SERVERS" });

@@ -81,8 +81,9 @@ function ensureCSS(doc) {
 
 /** Open the dialog. `ctx` is the view's (its `api`), `ws` the window's view id, `deployment` the local
  * deployment directory the CLI runs in (its folder name gives the defaults), `aweb` whether the messaging
- * step follows. Returns `{ close }`. */
-export function openAddMachineDialog(doc, { ctx, ws, deployment, aweb = false, onAdded = () => {}, onClose = () => {} }) {
+ * step follows, `owns()` the opener's latest intent (its workspace and its own life): once it is false
+ * the dialog closes at the next answer and starts nothing more. Returns `{ close }`. */
+export function openAddMachineDialog(doc, { ctx, ws, deployment, aweb = false, owns = () => true, onAdded = () => {}, onClose = () => {} }) {
   ensureCSS(doc);
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined && text !== null) el.textContent = text; if (cls) el.className = cls; return el; };
   const returnTo = doc.activeElement;
@@ -189,6 +190,7 @@ export function openAddMachineDialog(doc, { ctx, ws, deployment, aweb = false, o
   }
 
   async function run() {
+    if (alive && !owns()) { close({ restoreFocus: false }); return; }
     if (!alive || running) return;
     clearProblem();
     const v = values(), bad = machineFieldProblem(v);
@@ -197,7 +199,11 @@ export function openAddMachineDialog(doc, { ctx, ws, deployment, aweb = false, o
       problem.textContent = bad.text; input.setAttribute('aria-invalid', 'true'); input.setAttribute('aria-describedby', problem.id); input.focus();
       return;
     }
-    const mine = (t => () => alive && t === ticket)(++ticket);
+    // This run's answers count only while it is the latest run of an open dialog whose opener still owns it.
+    const mine = (t => () => {
+      if (alive && !owns()) close({ restoreFocus: false });
+      return alive && t === ticket;
+    })(++ticket);
     running = true; ran = true; lock();
     status.textContent = `Connecting ${v.id}… This can take a few minutes when OATS is installed there.`;
     status.focus();
@@ -216,7 +222,7 @@ export function openAddMachineDialog(doc, { ctx, ws, deployment, aweb = false, o
       renderSteps('aweb', messaging.steps);
       if (!messaging.ok) { settle(`${messaging.error.message} (${messaging.error.code})`); return; }
     }
-    if (connect.ready && (!aweb || messaging?.ready)) { close({ restoreFocus: false }); onAdded(v.id); return; }
+    if (connect.ready && (!aweb || messaging?.ready)) { close({ restoreFocus: false }); if (owns()) onAdded(v.id); return; }
     settle('Some steps need you: do what each one says, then Check again.');
   }
 

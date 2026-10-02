@@ -42,10 +42,16 @@ no Machines box (`machinesGated`, `awebConnectGated` in
 - **Backfill.** The first gated list read of a server process starts, in the
   background, one `oats server check <id> --json` for every registration whose
   key is unknown, two at a time (`BACKFILL_CONCURRENCY`). The check records the
-  host's key in the registry, and every list read is fresh, so the next read
-  lists those that match. It runs once per server process (a restart for a
-  workspace add runs it again; by then only unreachable hosts are still
-  unknown).
+  host's key in the registry. While it runs, list answers carry
+  `backfilling: true`, and Where to run and the Machines box read the list
+  again every 2 s until an answer does not (`followBackfill`,
+  `machine-contract.mjs`; at most 90 reads, stopped when the owner moves on):
+  the registrations that turn out to be this workspace's appear without any
+  other action. It runs once per server process (a restart for a workspace add
+  runs it again; by then only unreachable hosts are still unknown).
+- A registry that cannot be read is an answer, not a refusal: `servers: []`
+  with `error: { code, message }` and the window's `deployment` and `aweb`
+  kept, so the Machines box says why with Retry and Add stays offered.
 - **`POST /api/server-check?ws=`** `{ id }`: an id whose key is the window's or
   is unknown. **`POST /api/server-remove?ws=`** `{ id }`: the window's key
   only. Both admit the id against a fresh `server list`
@@ -62,7 +68,9 @@ no Machines box (`machinesGated`, `awebConnectGated` in
   (`machineFieldProblem`: the registration id, the ssh host alias, a folder
   starting with `/` or `~/`). Calls are argv only, never a shell, and nothing
   runs over ssh from the Desktop: only the CLI does. Timeouts: connect 15
-  minutes, aweb connect 5, check 60 s.
+  minutes, aweb connect 5, check 60 s. Main's api proxy (`classifyApiRoute`,
+  routes `machine-connect` and `machines`) waits 980 s for a connect and 130 s
+  for a check, a remove or the list, so each reports itself.
 
 ## Where to run
 
@@ -98,6 +106,11 @@ and is not selected.
 - While a phase runs, the fields and the action are locked, a spinner marks
   the phase, and focus waits on the status line. Close and Escape always work:
   the CLI finishes on its own and a late answer changes nothing.
+- The dialog belongs to its opener (`owns()`): the spawn dialog, or the
+  Machines box of one workspace generation. When the opener goes (the spawn
+  dialog closes, the window changes workspace), the dialog closes, and an
+  answer that arrives later neither renders, takes focus nor starts the
+  messaging step.
 
 ## The Machines box (`renderer/workspace-machines.mjs`)
 
@@ -108,8 +121,11 @@ kernel's `workspaceReadError` or error message is the state's title), with **Che
 **Remove**. A machine not checked yet this run is checked once in the
 background (two at a time). Remove asks first, in the row ("Remove <id>?
 Instances spawned there keep running and can still be retired from here."),
-and a refusal is said in the row in the CLI's words. The box is mounted once
-per workspace and kept across the tab's re-renders.
+and a refusal is said in the row in the CLI's words. A late Check or Remove
+moves focus back to its row only when no newer press or key in the box came
+since and focus is not elsewhere. The box is mounted once per workspace and
+kept across the tab's re-renders; a workspace change disposes it (and its
+dialog).
 
 ## Fixtures
 

@@ -14,6 +14,7 @@
 import { apiJson, postJson } from './views/common.mjs';
 import { box } from './workspace-setup.mjs';
 import { openAddMachineDialog } from './add-machine-dialog.mjs';
+import { followBackfill, BACKFILL_POLL_MS } from './machine-contract.mjs';
 
 export const machinesCSS = `
 .machines-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,.8fr) minmax(0,1.3fr) 92px 104px auto; gap:10px; align-items:center; min-height:42px; padding:0 16px; box-sizing:border-box; border-top:1px solid var(--tag-bg); }
@@ -50,24 +51,34 @@ export function resetMachineChecks() { checkedThisRun.clear(); }
 const BACKGROUND_CHECKS = 2;
 const text = value => typeof value === 'string' && value.length > 0;
 
-export function createWorkspaceMachines(doc, { ctx, ws }) {
+/** `owns()` is the owner's latest intent (its workspace generation): once false, no answer renders, takes
+ * focus or starts the next step, and the owner disposes the box. */
+export function createWorkspaceMachines(doc, { ctx, ws, owns = () => true, backfillDelay = BACKFILL_POLL_MS }) {
   const el = (tag, value, cls) => { const n = doc.createElement(tag); if (value !== undefined && value !== null) n.textContent = value; if (cls) n.className = cls; return n; };
   const query = () => `?ws=${encodeURIComponent(ws)}`;
   const element = box(doc, 'Machines', 'that run this workspace', 'Not shared', { local: true, icon: 'computer' });
   element.classList.add('setup-machines'); element.hidden = true;
   const head = element.querySelector('.setup-box-head');
   const body = el('div', undefined, 'machines-body'); element.append(body);
-  let alive = true, ticket = 0, answer = null, failure = null, confirming = null;
+  let alive = true, ticket = 0, answer = null, failure = null, confirming = null, stopFollow = null;
   const checking = new Set(), rowErrors = new Map(), dialog = { current: null };
-  const owns = t => alive && t === ticket;
+  const live = () => alive && owns();
+  const current = t => live() && t === ticket;
+  // Each press or key in the box is a newer interaction: an older operation's answer never moves focus
+  // away from it, nor from a control outside the box.
+  let intent = 0;
+  for (const type of ['click', 'keydown']) element.addEventListener(type, () => { intent++; }, true);
+  const mayFocus = since => live() && since === intent
+    && (!doc.activeElement || doc.activeElement === doc.body || element.contains(doc.activeElement));
 
   let add = null;
   function addButton() {
     if (add) return add;
     add = el('button', 'Add a machine to this workspace…', 'machines-add'); add.type = 'button';
     add.addEventListener('click', () => {
-      if (!alive || !answer?.deployment) return;
-      dialog.current = openAddMachineDialog(doc, { ctx, ws, deployment: answer.deployment, aweb: answer.aweb === true,
+      if (!live() || !answer?.deployment) return;
+      dialog.current?.close({ restoreFocus: false });
+      dialog.current = openAddMachineDialog(doc, { ctx, ws, deployment: answer.deployment, aweb: answer.aweb === true, owns: live,
         onAdded: () => { dialog.current = null; void load({ focus: 'add' }); }, onClose: () => { dialog.current = null; } });
     });
     return add;
@@ -83,13 +94,15 @@ export function createWorkspaceMachines(doc, { ctx, ws }) {
     const focusedClass = doc.activeElement?.className;
     body.replaceChildren();
     if (!answer && !failure) return;
-    if (failure) {
-      const line = el('p', 'The machines of this workspace could not be read.', 'machines-reason');
+    if (answer?.deployment) { if (!add?.isConnected) head.querySelector('.setup-scope').before(addButton()); }
+    else add?.remove();
+    if (failure || answer?.error) {
+      const why = answer?.error?.message || failure;
+      const line = el('p', `The machines of this workspace could not be read${typeof why === 'string' && why ? `: ${why}` : '.'}`, 'machines-reason');
       const retry = el('button', 'Retry', 'machines-retry'); retry.type = 'button'; retry.addEventListener('click', () => void load({ focus: 'retry' }));
       line.append(retry); body.append(line); return;
     }
-    if (!answer.deployment) { add?.remove(); body.append(el('p', answer.reason || '', 'machines-reason')); return; }
-    if (!add?.isConnected) head.querySelector('.setup-scope').before(addButton());
+    if (!answer.deployment) { body.append(el('p', answer.reason || '', 'machines-reason')); return; }
     if (!answer.servers.length) { body.append(el('p', 'No machine runs this workspace yet.', 'setup-empty')); return; }
     for (const m of answer.servers) {
       const row = el('div', undefined, 'machines-row'); row.dataset.machine = m.id;
@@ -123,22 +136,33 @@ export function createWorkspaceMachines(doc, { ctx, ws }) {
     if (focusedId && focusedClass) body.querySelector(`[data-machine="${focusedId}"] .${String(focusedClass).split(' ').pop()}`)?.focus();
   }
 
+  /** Take a list answer: gates off (no filtered answer) hides the box. */
+  function take(d) {
+    failure = null;
+    if (d?.filtered !== true || !Array.isArray(d.servers)) { answer = null; element.hidden = true; return false; }
+    answer = d; element.hidden = false;
+    if (confirming && !d.servers.some(m => m.id === confirming)) confirming = null;
+    return true;
+  }
   async function load({ focus = null } = {}) {
-    const t = ++ticket;
+    const t = ++ticket, since = intent;
+    stopFollow?.(); stopFollow = null;
     try {
       const d = await apiJson(ctx, `/api/servers${query()}`);
-      if (!owns(t)) return;
-      failure = null;
-      if (d?.filtered !== true || !Array.isArray(d.servers)) { answer = null; element.hidden = true; return; }
-      answer = d; element.hidden = false;
-      if (confirming && !d.servers.some(m => m.id === confirming)) confirming = null;
-    } catch {
-      if (!owns(t)) return;
-      failure = true; element.hidden = false;
+      if (!current(t)) return;
+      if (!take(d)) return;
+      // The server is still learning unknown keys: read again until it is done (machine-contract.mjs).
+      if (d.backfilling === true) stopFollow = followBackfill({ read: () => apiJson(ctx, `/api/servers${query()}`), owns: () => current(t), delay: backfillDelay,
+        use: next => { if (take(next)) { render(); backgroundChecks(); } if (next?.backfilling !== true) stopFollow = null; } });
+    } catch (error) {
+      if (!current(t)) return;
+      failure = error?.message || true; element.hidden = false;
     }
     render();
-    if (focus === 'add') add?.focus();
-    if (focus === 'retry') (body.querySelector('.machines-retry') || add || body.querySelector('button'))?.focus();
+    if (focus && mayFocus(since)) {
+      if (focus === 'add') add?.focus();
+      if (focus === 'retry') (body.querySelector('.machines-retry') || add || body.querySelector('button'))?.focus();
+    }
     backgroundChecks();
   }
   function backgroundChecks() {
@@ -147,39 +171,41 @@ export function createWorkspaceMachines(doc, { ctx, ws }) {
     if (!due.length) return;
     render();
     let next = 0;
-    const worker = async () => { while (alive && next < due.length) await runCheck(due[next++].id); };
+    const worker = async () => { while (live() && next < due.length) await runCheck(due[next++].id); };
     for (let i = 0; i < Math.min(BACKGROUND_CHECKS, due.length); i++) void worker();
   }
   async function runCheck(id, { focus = false } = {}) {
-    if (!alive) return;
+    if (!live()) return;
+    const since = intent;
     checkedThisRun.add(id); checking.add(id); rowErrors.delete(id); render();
     let result = null, error = null;
     try { result = await postJson(ctx, `/api/server-check${query()}`, { id }); } catch (e) { error = e?.message || 'The check could not run.'; }
-    if (!alive) return;
+    if (!live()) return;
     checking.delete(id);
     const m = answer?.servers.find(row => row.id === id);
     if (m && result?.id === id) m.check = result.check ?? null;
     if (error) rowErrors.set(id, error);
     render();
-    if (focus) body.querySelector(`[data-machine="${id}"] .machine-check`)?.focus();
+    if (focus && mayFocus(since)) body.querySelector(`[data-machine="${id}"] .machine-check`)?.focus();
   }
   async function runRemove(id) {
-    if (!alive) return;
+    if (!live()) return;
+    const since = intent;
     let envelope = null, error = null;
     try { envelope = await postJson(ctx, `/api/server-remove${query()}`, { id }); } catch (e) { error = e?.message || 'The machine could not be removed.'; }
-    if (!alive) return;
-    confirming = null;
-    if (envelope?.ok) { rowErrors.delete(id); await load({ focus: 'add' }); return; }
+    if (!live()) return;
+    if (confirming === id) confirming = null;
+    if (envelope?.ok) { rowErrors.delete(id); await load({ focus: mayFocus(since) ? 'add' : null }); return; }
     rowErrors.set(id, error || `${envelope?.error?.message || 'The machine could not be removed.'}${envelope?.error?.code ? ` (${envelope.error.code})` : ''}`);
     render();
-    body.querySelector(`[data-machine="${id}"] .machine-remove`)?.focus();
+    if (mayFocus(since)) body.querySelector(`[data-machine="${id}"] .machine-remove`)?.focus();
   }
 
   void load();
   return {
     element,
     /** Read the list again (a machine added or removed elsewhere). */
-    refresh() { if (alive) void load(); },
-    dispose() { alive = false; ticket++; dialog.current?.close({ restoreFocus: false }); element.remove(); },
+    refresh() { if (live()) void load(); },
+    dispose() { alive = false; ticket++; stopFollow?.(); dialog.current?.close({ restoreFocus: false }); element.remove(); },
   };
 }

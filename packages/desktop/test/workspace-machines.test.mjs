@@ -10,7 +10,7 @@ const machine = (id, extra = {}) => ({ id, label: id.split('-')[0], sshHost: id.
 const answer = (servers, extra = {}) => ({ servers, filtered: true, key: KEY, deployment: DEPLOYMENT, aweb: false, ...extra });
 const settle = async () => { for (let i = 0; i < 10; i++) await new Promise(r => setImmediate(r)); };
 
-function setup(t, routes) {
+function setup(t, routes, options = {}) {
   const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>', { pretendToBeVisual: true });
   const doc = dom.window.document, calls = [];
   const ctx = { api: async (path, opts = {}) => {
@@ -22,7 +22,7 @@ function setup(t, routes) {
     return { ok: true, status: 200, json: async () => value };
   } };
   resetMachineChecks();
-  const ui = createWorkspaceMachines(doc, { ctx, ws: WS });
+  const ui = createWorkspaceMachines(doc, { ctx, ws: WS, ...options });
   doc.getElementById('host').append(ui.element);
   t.after(() => { ui.dispose(); dom.window.close(); });
   const q = s => doc.querySelector(s), qa = s => [...doc.querySelectorAll(s)];
@@ -137,4 +137,54 @@ test('a list that cannot be read says so, with Retry', async t => {
   assert.match(u.q('.machines-reason').textContent, /could not be read/);
   fail = false; u.q('.machines-retry').click(); await settle();
   assert.equal(u.q('.setup-empty').textContent, 'No machine runs this workspace yet.');
+});
+
+// Review round 1.
+test('the registry could not be read (the route\'s own answer): the CLI\'s words, Retry, and Add still offered', async t => {
+  let fail = true;
+  const u = setup(t, { '/api/servers': () => fail ? answer([], { error: { code: 'E_SERVERS_UNREADABLE', message: 'servers.json is not valid JSON' } }) : answer([]) });
+  await settle();
+  assert.equal(u.ui.element.hidden, false);
+  assert.match(u.q('.machines-reason').textContent, /could not be read: servers\.json is not valid JSON/);
+  assert.ok(u.q('.machines-add'));
+  fail = false; u.q('.machines-retry').click(); await settle();
+  assert.equal(u.q('.setup-empty').textContent, 'No machine runs this workspace yet.');
+});
+
+test('while the server learns unknown keys the box reads again, and shows the machines it found', async t => {
+  const answers = [answer([machine('altair-aweb', { check: { reachable: true, version: '0.39.0', error: null } })], { backfilling: true }),
+    answer([machine('altair-aweb', { check: { reachable: true, version: '0.39.0', error: null } }), machine('legacy', { check: { reachable: true, version: '0.38.0', error: null } })])];
+  const u = setup(t, { '/api/servers': () => answers.length > 1 ? answers.shift() : answers[0] }, { backfillDelay: 0 });
+  for (let i = 0; i < 4; i++) { await settle(); await new Promise(r => setTimeout(r, 0)); }
+  assert.deepEqual(u.qa('[data-machine]').map(r => r.dataset.machine), ['altair-aweb', 'legacy']);
+  assert.equal(u.calls.filter(c => c.path.startsWith('/api/servers')).length, 2);
+});
+
+test('a Check that answers late leaves focus where a newer press put it', async t => {
+  let release;
+  const u = setup(t, {
+    '/api/servers': () => answer([machine('altair-aweb', { check: { reachable: true, version: '0.39.0', error: null } })]),
+    '/api/server-check': () => new Promise(r => { release = () => r({ id: 'altair-aweb', check: { reachable: true, version: '0.39.0', error: null } }); }),
+  });
+  await settle();
+  u.row('altair-aweb').querySelector('.machine-check').click(); await settle();
+  u.row('altair-aweb').querySelector('.machine-remove').click();
+  assert.equal(u.doc.activeElement.className, 'machine-confirm-cancel');
+  release(); await settle();
+  assert.equal(u.doc.activeElement.className, 'machine-confirm-cancel');
+});
+
+test('an owner that moved on: no answer renders or starts the next step, and the Add dialog closes', async t => {
+  let owned = true, release;
+  const u = setup(t, {
+    '/api/servers': () => answer([], { aweb: true }),
+    '/api/server-connect': body => body.phase === 'connect' ? new Promise(r => { release = () => r({ schemaVersion: 1, ok: true, result: { id: 'altair-aweb', ready: true, steps: [{ step: 'register', status: 'done' }] } }); }) : assert.fail('no messaging step'),
+  }, { owns: () => owned });
+  await settle();
+  u.q('.machines-add').click();
+  const host = u.q('.machine-host'); host.value = 'altair'; host.dispatchEvent(new u.dom.window.Event('input', { bubbles: true }));
+  u.q('.machine-primary').click(); await settle();
+  owned = false; release(); await settle();
+  assert.equal(u.q('.machine-dialog'), null);
+  assert.deepEqual(u.calls.map(c => c.path.split('?')[0]), ['/api/servers', '/api/server-connect'], 'no messaging step, no list read');
 });

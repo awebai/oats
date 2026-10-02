@@ -63,23 +63,29 @@ export function createMachines({ adapter, cli, concurrency = BACKFILL_CONCURRENC
     return facts;
   }
   /** Once per start, in the background: check every registration whose key is unknown (the check
-   * records the host's key), a bounded few at a time. Every list read is fresh, so the next one sees them. */
+   * records the host's key), a bounded few at a time. While it runs, list answers say `backfilling`, and
+   * a consumer reads the list again until one does not (`followBackfill`, machine-contract.mjs). */
+  let backfillDone = false;
   function startBackfill(rows, cwd) {
     if (!backfill || backfillRun) return;
     const unknown = rows.filter(r => r.workspaceKey === null).map(r => r.id);
-    backfillRun = mapBounded(unknown, concurrency, id => runCheck(id, cwd).catch(() => null)).then(() => undefined);
+    backfillRun = mapBounded(unknown, concurrency, id => runCheck(id, cwd).catch(() => null)).then(() => { backfillDone = true; });
   }
+  const backfilling = () => !!backfillRun && !backfillDone;
 
   return {
     /** Where to run and the Setup tab: this window's machines, or null when the gates are off. */
     async forScope(scope) {
       if (!machinesGated(cli())) return null;
       if (!scope?.key || !scope.deployment) return { servers: [], key: null, filtered: true, deployment: null, aweb: false, reason: MACHINE_SCOPE_REASONS[scope?.reason] || MACHINE_SCOPE_REASONS['no-key'] };
-      const rows = await registrations(scope.deployment);
+      // Add a machine: the deployment it runs in (its folder name gives the defaults) and whether the messaging step follows.
+      const answer = { key: scope.key, filtered: true, deployment: scope.deployment, aweb: scope.messaging === AWEB && awebConnectGated(cli()) };
+      let rows;
+      try { rows = await registrations(scope.deployment); }
+      catch (e) { return { servers: [], ...answer, error: { code: e.code || 'E_SERVERS', message: e.message || 'The server registry could not be read' } }; }
       startBackfill(rows, scope.deployment);
-      return { servers: rows.filter(r => r.workspaceKey === scope.key).map(r => ({ ...r, check: checks.get(r.id) ?? null })), key: scope.key, filtered: true,
-        // Add a machine: the deployment it runs in (its folder name gives the defaults) and whether the messaging step follows.
-        deployment: scope.deployment, aweb: scope.messaging === AWEB && awebConnectGated(cli()) };
+      return { servers: rows.filter(r => r.workspaceKey === scope.key).map(r => ({ ...r, check: checks.get(r.id) ?? null })), ...answer,
+        ...(backfilling() ? { backfilling: true } : {}) };
     },
     /** Settles when this start's backfill has run (at once when none started). */
     backfilled: () => backfillRun ?? Promise.resolve(),

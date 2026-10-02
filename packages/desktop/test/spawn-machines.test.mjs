@@ -3,6 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mountSpawn, settle } from './helpers/spawn-dialog-host.mjs';
+import { setWorkspace } from '../renderer/views/common.mjs';
 
 const KEY = 'github.com/acme/northwind';
 const answer = (servers, extra = {}) => ({ servers, filtered: true, key: KEY, deployment: '/Users/j/Agents/northwind', aweb: false, ...extra });
@@ -87,4 +88,34 @@ test('two or more deployments: Add a machine is a button under the Deployment fi
   assert.equal(machineDialog(u), null);
   assert.equal(u.text('.spawn-add-machine-note'), 'vega-northwind is added. It is listed here once this computer has read it.');
   assert.equal(u.doc.activeElement, button);
+});
+
+// Review round 1: ownership and the backfill.
+const NEEDS = { schemaVersion: 1, ok: true, result: { id: 'vega-northwind', ready: false, steps: [{ step: 'register', status: 'done' }, { step: 'readiness', status: 'needs-human', remedy: 'x' }] } };
+
+test('leaving the workspace while connect runs: the Add dialog goes with the spawn dialog, and the messaging step never starts', async t => {
+  let release; const held = new Promise(r => { release = r; });
+  const sent = [];
+  const u = await mountSpawn(t, { servers: answer([ALTAIR], { aweb: true }), machineApi: async body => { sent.push(body.phase); if (body.phase === 'connect') await held; return body.phase === 'connect' ? NEEDS : READY; } });
+  await u.open();
+  await u.change('.fserver', '+add-machine');
+  const host = u.doc.querySelector('.machine-host'); host.value = 'vega'; host.dispatchEvent(new u.dom.window.Event('input', { bubbles: true }));
+  u.doc.querySelector('.machine-primary').click(); await settle();
+  setWorkspace('another-workspace'); await settle();
+  assert.equal(u.dialog(), null, 'the spawn dialog closed');
+  assert.equal(machineDialog(u), null, 'the Add dialog with it');
+  release(); await settle();
+  assert.deepEqual(sent, ['connect'], 'nothing after connect');
+  assert.equal(machineDialog(u), null);
+  setWorkspace('northwind'); await settle();
+  assert.equal(machineDialog(u), null, 'coming back does not revive it');
+});
+
+test('while the server learns unknown keys, Where to run reads again and adds the machines it found, keeping the choice', async t => {
+  const answers = [answer([ALTAIR], { backfilling: true }), answer([ALTAIR], { backfilling: true }),
+    answer([ALTAIR, { ...ALTAIR, id: 'rigel-northwind', label: 'rigel' }])];
+  const u = await mountSpawn(t, { servers: () => answers.length > 1 ? answers.shift() : answers[0] });
+  await u.open(); await settle(30);
+  assert.deepEqual(options(u).map(o => o[0]), ['', 'altair-northwind', 'rigel-northwind', '+add-machine']);
+  assert.equal(u.calls.filter(c => c.path.startsWith('/api/servers')).length, 3, 'no read after the settled answer');
 });

@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { machinesGated, awebConnectGated, machineName, machineFolder, machineFieldProblem, connectOutcome,
-  registerReached, stepCommands, STEP_LABELS } from '../renderer/machine-contract.mjs';
+  registerReached, stepCommands, STEP_LABELS, followBackfill } from '../renderer/machine-contract.mjs';
 
 const CLI = { ok: true, features: ['workspace-identity', 'servers-per-workspace', 'server-connect', 'capability-route'] };
 
@@ -84,4 +84,27 @@ test('step labels for every status, and the commands a remedy names (its backtic
   assert.deepEqual(stepCommands(STEPS[2].remedy), ['gh auth login', 'gh auth setup-git']);
   assert.deepEqual(stepCommands('Nothing to run.'), []);
   assert.deepEqual(stepCommands(undefined), []);
+});
+
+const manualTimers = () => { const q = []; return { q, setTimeout: fn => { q.push(fn); return q.length; }, clearTimeout: id => { q[id - 1] = null; }, run: async () => { const fn = q.shift(); await fn?.(); } }; };
+
+test('followBackfill: reads again while backfilling, uses each answer, stops at the first settled one', async () => {
+  const timers = manualTimers(), answers = [{ backfilling: true, n: 1 }, { n: 2 }], used = [];
+  followBackfill({ read: async () => answers.shift(), use: a => used.push(a.n), timers });
+  await timers.run(); await timers.run();
+  assert.deepEqual(used, [1, 2]); assert.equal(timers.q.length, 0, 'no further read');
+});
+
+test('followBackfill: an owner that moved on uses nothing and stops; stop() cancels the pending read; reads are bounded', async () => {
+  let owned = true; const timers = manualTimers(), used = [];
+  followBackfill({ read: async () => ({ backfilling: true }), use: () => used.push(1), owns: () => owned, timers });
+  owned = false; await timers.run();
+  assert.deepEqual(used, []); assert.equal(timers.q.length, 0);
+  const t2 = manualTimers(); let reads = 0;
+  const stop = followBackfill({ read: async () => { reads++; return { backfilling: true }; }, use: () => {}, timers: t2 });
+  stop(); await t2.run(); assert.equal(reads, 0);
+  const t3 = manualTimers(); let n = 0;
+  followBackfill({ read: async () => { n++; return { backfilling: true }; }, use: () => {}, timers: t3, polls: 3 });
+  for (let i = 0; i < 6; i++) await t3.run();
+  assert.equal(n, 3);
 });

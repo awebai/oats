@@ -1157,6 +1157,7 @@ function openSpawnModal(s, a, draft = {}) {
     layout: draft.layout === "picker" ? "picker" : "scoped",
     ...(Number.isInteger(s.ctx.spawnTiming?.previewDelay) ? { delay: s.ctx.spawnTiming.previewDelay } : {}),
     ...(Number.isInteger(s.ctx.spawnTiming?.busyDelay) ? { busyDelay: s.ctx.spawnTiming.busyDelay } : {}),
+    ...(Number.isInteger(s.ctx.spawnTiming?.backfillDelay) ? { backfillDelay: s.ctx.spawnTiming.backfillDelay } : {}),
     choose: (candidate, next) => {
       if (!ownsModal() || !canLaunchSoul(s, candidate)) return;
       const fresh = s.souls.agents.find(current => current.name === candidate.name && current.agentsRoot === candidate.agentsRoot && (current.server || "") === (candidate.server || ""));

@@ -30,6 +30,7 @@ import { iconElement } from './shell-icons.mjs';
 import { shownLaunch, launchHarnessName, launchModelText, launchFromText, preferenceText, declaredDiffers } from './launch-view.mjs';
 import { createSpawnDeploymentField, spawnDeployments } from './spawn-deployment-field.mjs';
 import { openAddMachineDialog } from './add-machine-dialog.mjs';
+import { followBackfill, BACKFILL_POLL_MS } from './machine-contract.mjs';
 
 export const PREVIEW_DEBOUNCE_MS = 250;
 /** Where to run's last entry: opens Add a machine (never a registration id, which is [a-z0-9-]). */
@@ -524,13 +525,14 @@ function composeChooser(doc, { soul, agents, canChoose, choose, query, note }) {
  *               spawnInFlight() — Spec D (#383): { instance, show() } while a background spawn of this soul is in
  *                 flight in this window, else null. The press stays disabled and a polite line says so, with a
  *                 link to its pending row; the host calls syncInFlight() when the store changes.
+ *               backfillDelay — #517: ms between list reads while the server learns unknown keys (BACKFILL_POLL_MS).
  *               deployments() — #482: the view's deployments (/api/panel `deployments`). With two or more the
  *                 Deployment field (spawn-deployment-field.mjs) chooses where to spawn; every spawn request
  *                 addresses a deployment, never the view.
  */
 export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, instances, canChoose, choose, close, owns,
   draft = {}, catalogNote = '', onCreated = async () => {}, remoteSpawn = async () => {}, servers = [], serverFacts = () => [], serverRows = async () => [],
-  delay: debounce = PREVIEW_DEBOUNCE_MS, busyDelay = PREVIEW_BUSY_RETRY_MS, layout = 'picker', handoff = null, spawnInFlight = null, deployments = () => [] }) {
+  delay: debounce = PREVIEW_DEBOUNCE_MS, busyDelay = PREVIEW_BUSY_RETRY_MS, backfillDelay = BACKFILL_POLL_MS, layout = 'picker', handoff = null, spawnInFlight = null, deployments = () => [] }) {
   const doc = modal.ownerDocument, el = (tag, text, cls) => node(doc, tag, text, cls);
   const titleId = 'spawn-dialog-title';
   const dialog = el('section', undefined, 'spawn-dialog');
@@ -866,7 +868,9 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   }
   function openAddMachine({ select }) {
     if (!current() || !machines?.deployment) return;
-    openAddMachineDialog(doc, { ctx, ws: workspace()?.id, deployment: machines.deployment, aweb: machines.aweb === true,
+    addMachineDialog?.close({ restoreFocus: false });
+    addMachineDialog = openAddMachineDialog(doc, { ctx, ws: workspace()?.id, deployment: machines.deployment, aweb: machines.aweb === true, owns: current,
+      onClose: () => { addMachineDialog = null; },
       onAdded: id => {
         if (!current()) return;
         if (!select) { addedNote.textContent = `${id} is added. It is listed here once this computer has read it.`; addedButton.focus(); return; }
@@ -875,7 +879,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
         server.dispatchEvent(new doc.defaultView.Event('change', { bubbles: true }));
       } });
   }
-  let addedButton = null, addedNote = null;
+  let addedButton = null, addedNote = null, addMachineDialog = null, stopBackfill = null;
   /** Two or more deployments: the Deployment field replaces Where to run, so Add a machine is a button under it. */
   function addMachineRow() {
     const row = el('div', undefined, 'spawn-field spawn-add-machine');
@@ -1451,6 +1455,9 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     machines = !Array.isArray(answer) && answer.filtered === true ? answer : null;
     facts = Array.isArray(facts) ? facts : [];
     for (const srv of list) addServerOption(srv, facts);
+    // The server is still learning unknown keys: read again until it is done, adding the machines it found.
+    if (machines?.backfilling === true && typeof servers === 'function') stopBackfill = followBackfill({ read: servers, owns: current, delay: backfillDelay,
+      use: next => { for (const srv of Array.isArray(next?.servers) ? next.servers : []) if (!serverNames.has(srv.id)) addServerOption(srv, facts); } });
     if (machines?.deployment) {
       if (deploymentField) deploymentField.element.after(addMachineRow());
       else { const o = el('option', 'Add a machine to this workspace…'); o.value = ADD_MACHINE; server.append(o); }
@@ -1591,6 +1598,6 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     /** The background spawn store changed: re-read whether a spawn of this soul is in flight. */
     syncInFlight() { if (alive) syncButton(); },
     closePopups() { models.close(); runtimePicker.close(); deploymentField?.closePopup(); },
-    dispose() { alive = false; clearTimeout(timer); serial++; pressed = null; modelsReq++; configsReq++; deploymentField?.dispose(); models.dispose(); runtimePicker.dispose(); form.removeEventListener('input', onEdit); form.removeEventListener('change', onEdit); },
+    dispose() { alive = false; addMachineDialog?.close({ restoreFocus: false }); stopBackfill?.(); clearTimeout(timer); serial++; pressed = null; modelsReq++; configsReq++; deploymentField?.dispose(); models.dispose(); runtimePicker.dispose(); form.removeEventListener('input', onEdit); form.removeEventListener('change', onEdit); },
   };
 }

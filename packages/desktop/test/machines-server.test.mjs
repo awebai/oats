@@ -141,3 +141,23 @@ test('gates off: check, remove and connect are refused before anything runs', as
   await assert.rejects(machines.connect(SCOPE, { phase: 'connect', id: 'a', host: 'a', folder: '~/a' }), { code: 'E_FEATURE' });
   assert.deepEqual(adapter.calls, []);
 });
+
+test('while the backfill runs the list says so; the first answer after it does not, and lists the upgraded rows', async () => {
+  const adapter = fakeAdapter([reg('altair-aweb', KEY), reg('b1-x', null)]);
+  const open = adapter.hold();
+  const machines = createMachines({ adapter, cli: () => CLI });
+  assert.equal((await machines.forScope(SCOPE)).backfilling, true);
+  assert.equal((await machines.forScope(SCOPE)).backfilling, true, 'still running');
+  open(); await machines.backfilled();
+  const after = await machines.forScope(SCOPE);
+  assert.equal(Object.hasOwn(after, 'backfilling'), false);
+  assert.deepEqual(after.servers.map(s => s.id), ['altair-aweb', 'b1-x']);
+});
+
+test('a registry that cannot be read is an answer with its error, the window\'s scope kept (Add stays possible)', async () => {
+  const adapter = fakeAdapter([]);
+  adapter.cliServers = async () => fail('E_SERVERS_UNREADABLE', 'servers.json is not valid JSON');
+  const machines = createMachines({ adapter, cli: () => CLI, backfill: false });
+  assert.deepEqual(await machines.forScope(SCOPE), { servers: [], key: KEY, filtered: true, deployment: SCOPE.deployment, aweb: true,
+    error: { code: 'E_SERVERS_UNREADABLE', message: 'servers.json is not valid JSON' } });
+});

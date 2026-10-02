@@ -202,7 +202,8 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     const key = JSON.stringify([workspaceGeneration(), workspace.id]);
     if (machines && machinesFor === key) return machines.element;
     machines?.dispose(); machinesFor = key;
-    machines = createWorkspaceMachines(doc, { ctx, ws: workspace.id });
+    const gen = workspaceGeneration();
+    machines = createWorkspaceMachines(doc, { ctx, ws: workspace.id, owns: () => alive && workspaceGeneration() === gen });
     return machines.element;
   }
   header.className = 'workspace-header';
@@ -486,6 +487,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     /** The host's roster read failed with nothing to show: the Souls count is nothing, still (not a pill). */
     rosterUnavailable() { if (soulsCount === 'pending') updateCounts(null); },
     reset() {
+      machines?.dispose(); machines = null; machinesFor = null; // another workspace: its dialog and reads go with it
       serial++; rosterGen = null; workspace = null; deployment = null; instances = []; catalog = null; loading = false; failure = '';
       filters = { team: null, repo: null }; sync.reset(); loadState.reset(); updateCounts('pending'); render(); onCatalog?.();
     },
