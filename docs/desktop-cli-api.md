@@ -38,7 +38,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
              "instance-events-2","schedule-history","schedule-read-2","spawn-preview-2","spawn-idempotency","spawn-idempotency-2","spawn-apply-2",
              "workspace-v2","instance-modules","spawn-provider-payload","served-identity","packages-no-approval","spawn-name","settings-origins",
              "team-model-2","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts","launch-preference",
-             "preview-composed-from","observe-max-age","spawn-preview-max-age","capability-show","capture-file"],
+             "preview-composed-from","observe-max-age","spawn-preview-max-age","capability-show","capture-file","workspace-identity"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
@@ -100,6 +100,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
 | `spawn-preview-max-age` | `--max-age <s>` on `spawn --preview` and its `observation` block ([Observation reuse](#observation-reuse-feature-observe-max-age-oats-0311), [The preview](#the-preview)) | |
 | `capability-show` | `oats capabilities show <name>` and its `--file` form, OATS 0.34.0 ([`oats capabilities show`](#oats-capabilities-show)) | `capabilityShowApi: 1` |
 | `capture-file` | `oats capture --file <path> --format cc\|pi\|codex --home <instance home> [--json]`: one session file captured as `--home` capture would, with a receipt bound to its bytes, OATS 0.35.0 (the capture USAGE and packages/record/README.md) | |
+| `workspace-identity` | the deployment's workspace identity on `oats status --json` `workspace` (`key`, `ref`, `keyFrom`, `standalone`, `defaultTeam`, `teams`, `teamsFrom`) and each `oats server roster --json` group's relayed `workspace`, OATS 0.36.0 ([Workspace identity](#workspace-identity-feature-workspace-identity-oats-0360)) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -344,7 +345,7 @@ An instance subject, abridged:
 | Key | Meaning |
 |---|---|
 | `subject` | `{kind: "instance", instance, home, soul}` or `{kind: "soul", soul, repoKey, commit}` |
-| `workspace` | `{key, name, deployment, commit, standalone}`; for a home, `name` is the recorded name (`null` if the spawn predates it) |
+| `workspace` | `{key, name, deployment, commit, standalone}`; for a home, `name` is the recorded name (`null` if the spawn predates it). `standalone` is the view the subject resolves in (a fallback for an unreadable host included), unlike `oats status`'s configured-only [`standalone`](#workspace-identity-feature-workspace-identity-oats-0360) |
 | `souls` | exactly the subject's soul |
 | `layers` | `{knowledge, messaging, tasks}`, each `{id, from}` |
 | `capabilities`, `capabilitiesOff` | the resolved modules (by id) and the ones the soul turned off |
@@ -1679,7 +1680,8 @@ Not an envelope: `{root, agents, observation?, workspace?, problems?, warnings?}
                           "modules":[{"name":"oats.okf","from":{"kind":"package","package":"oats.okf","version":"2.1.3","commit":"ab897841…","integrity":"sha256-bada35…","repoKey":"github.com/awebai/oats-okf"},
                                       "commit":"ab897841…","current":{"commit":"ab897841…","version":"2.1.3"},"status":"current"}],
                           "soul":{"repoKey":"github.com/nw/agents","commit":"66566512…","current":"66566512…","status":"current"}}]}],
- "workspace":{"reachable":true}}
+ "workspace":{"reachable":true,"key":"github.com/nw/agents","ref":"git:github.com/nw/agents","keyFrom":"workspace","standalone":false,"defaultTeam":{"label":"eng","team":"eng:nw.aweb.ai"},
+              "teams":{"eng":"eng:nw.aweb.ai","mine":"mine:ana.aweb.ai","ops":null},"teamsFrom":"observed"}}
 ```
 
 - **Agent rows**: the soul's recorded definition plus `dir` and `instances`,
@@ -1712,10 +1714,67 @@ Not an envelope: `{root, agents, observation?, workspace?, problems?, warnings?}
   reason?}`; a package soul adds `package`, `version`, `currentVersion`
   (`missing` reasons: `package-absent`, `soul-absent`).
 - **`workspace`**: `{reachable: true}`, or `{reachable: false, code, reason,
-  message}` (modules then stay the recorded map). Absent without
-  `oats-local.yaml`.
+  message}` (modules then stay the recorded map), plus the deployment's
+  [workspace identity](#workspace-identity-feature-workspace-identity-oats-0360)
+  either way. Absent without `oats-local.yaml`.
 - `problems`: the legacy-home rows ([dispatch errors](#dispatch-errors)).
   `warnings`: envelope warnings. `--team` is `E_BAD_ARGS` (an envelope).
+
+<a id="workspace-identity-feature-workspace-identity-oats-0360"></a>
+**Workspace identity** (feature `workspace-identity`, OATS 0.36.0). The
+`workspace` object says which workspace and teams this deployment is, read
+offline with no network, so it is there whether `reachable` is `true` or
+`false`:
+
+| Key | Meaning |
+|---|---|
+| `key` | the canonical repo key of the workspace HOST (`parseRepoRef(…).key`: every spelling of one repository gives one key, e.g. `git:github.com/nw/agents`, `https://github.com/nw/agents.git` and `git@github.com:nw/agents.git` all give `github.com/nw/agents`). When `oats-local.yaml` names a member in place of its host, it is the host's key once the member's backlink is known. `null` when `parseRepoRef` refuses the reference |
+| `ref` | the reference exactly as `oats-local.yaml` writes it (`workspace:`), for display only |
+| `keyFrom` | `"workspace"`: `key` is the host's, because this run observed it, or the cache holds the ref's workspace file, or a member's cached backlink names the host. With nothing observed or cached, the ref is taken as the host, as the schema defines `workspace:`. `"member"`: the ref names a member whose host is not known yet, so `key` is the member's own. `null` with a `null` key |
+| `standalone` | `true` only when `oats-local.yaml` sets `standalone:` (the configured standalone view, whose local teams are its whole team model). A run that fell back to the standalone view because the host is unreadable is `false`: its teams are the workspace's, read through the sources below. Unlike `workspace.standalone` on [inspect](#oats-inspect), which is the view a home runs in |
+| `defaultTeam` | `{label, team}`: the label is `oats-local.yaml`'s `defaultTeam`, `team` its provider id from `teams` (`null` when that map gives none). `null` when `oats-local.yaml` names no default team |
+| `teams` | `{<label>: <provider team id> \| null}`: every team label the deployment maps, local and shared, by label; a label in both is the committed (shared) one, as [`oats teams`](#oats-teams) resolves it |
+| `teamsFrom` | where the shared teams came from: `"observed"`, the workspace file this run read; `"cache"`, this machine's cached copy at the host commit it last observed (no git process, no network; when `key` names a member, the host its cached `oats-membership.yaml` names); `"local"`, none: `teams` holds the local teams only |
+
+A configured standalone deployment reads no workspace file, so it is always
+`teamsFrom: "local"`, with its local teams only (as spawn resolves them there).
+`oats status` only reads the workspace when an instance records modules or a
+workspace soul, so an empty deployment answers from the cache, or from local
+teams on a host that has not observed its workspace (`oats sync` and
+`oats teams` observe it). The cache is the running kernel's own: after an
+OATS upgrade it is empty until the host next observes its workspace.
+
+**Matching workspaces across machines.** Two deployments are the same
+workspace when their `key`s are equal; `ref` is never compared. The identity
+is resolved the same offline way for every deployment, standalone included,
+whatever its team view:
+
+- `keyFrom: "member"` is unresolved: never match it, and show it as
+  unresolved (the host is learned when the deployment observes its
+  workspace, e.g. `oats sync`).
+- `keyFrom: "workspace"` with nothing observed (`teamsFrom: "local"` on a
+  deployment that is not standalone) means the ref was taken as the host, as
+  the schema defines. If it is really a member, the worst case is a split
+  (one workspace shown as two until `oats sync` there), never a wrong merge.
+- A `null` key is an unusable reference and never matches. Show `ref` with
+  "this deployment's workspace reference isn't valid; fix oats-local.yaml".
+- Known limit: `parseRepoRef` lowercases the host but keeps the path's case,
+  so references that differ in owner or repository case give different keys.
+
+**Matching teams across machines.** This is the rule for comparing two
+deployments' teams (as the Desktop does to attach a remote machine to a
+workspace):
+
+- `teamsFrom` `"observed"` or `"cache"`: a `null` team is **unmapped**, and
+  unmapped matches only unmapped.
+- `standalone: true` with `teamsFrom: "local"`: the local config IS the
+  complete team model, so a `null` team is **unmapped** (matches only
+  unmapped). Reason to show: "teams are local only on this host
+  (standalone)", with no sync advice.
+- `standalone: false` with `teamsFrom: "local"`: a `null` default team is
+  **unknown** and never matches. Reason to show: "this host hasn't observed
+  its workspace yet; run oats sync there". A non-null default team (a locally
+  mapped team) matches normally.
 
 **Desktop facts** (feature `desktop-facts`): `startedAt` is the last start or
 restart, else `createdAt` for a launched home, else `null`. `modelFrom` is
@@ -1738,6 +1797,8 @@ route target:
 {"id":"build:3f2a…","server":"build","label":"Build box","registrationPresent":true,
  "target":{"sshHost":"build-host","workspace":"/srv/team","oatsPath":"oats"},
  "probe":{"ok":true},"agentsRoot":"/srv/team/agents",
+ "workspace":{"reachable":true,"key":"github.com/acme/team","ref":"git:github.com/acme/team","keyFrom":"workspace","standalone":false,"defaultTeam":{"label":"default","team":"acme:team"},
+              "teams":{"default":"acme:team"},"teamsFrom":"observed"},
  "souls":[{"name":"dev","harness":"claude","work":"worktree","agentsRoot":"/srv/team/agents"}],
  "instances":[{"server":"build","instance":"dev-a","agent":"dev","home":"/srv/team/agents/dev/instances/dev-a",
                "agentsRoot":"/srv/team/agents","harness":"claude","backend":"tmux","tmux":{"session":"oats-agents","window":"dev-a"},
@@ -1749,6 +1810,15 @@ route target:
  "retireFailures":[]}
 ```
 
+- **`workspace`** (feature `workspace-identity`, OATS 0.36.0): the host's
+  own `status --json` [`workspace` object](#workspace-identity-feature-workspace-identity-oats-0360),
+  relayed verbatim, or `null` when the host reports none (a deployment
+  without `oats-local.yaml`, or a failed or skipped probe). A host before
+  0.36.0 answers the reachability-only object (`{reachable, code?, reason?,
+  message?}`) with no identity fields, so the identity is there only when
+  the object has a `key` field (which a 0.36.0 host always sends, `null` for
+  an unusable reference). It is never derived on this side. It is on the group, not the
+  rows, so an empty remote deployment still reports it.
 - **Instance rows** relay the host's own `status --json` row: `identity`,
   `identityAddress`, `teams`, `startedAt`, `createdAt`, `model`,
   `runtimeState`, `parentInstance`, `siblingInstance`, `relation`,
