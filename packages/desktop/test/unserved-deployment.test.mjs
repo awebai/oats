@@ -42,9 +42,8 @@ test('persistableDirs: deployments only, each once; a parent folder is never wri
 test('the restore after a launch from a parent folder opens the saved set and nothing else', () => {
   const saved = JSON.stringify(['/d/oats-v2', '/d/Agents/aweb']);
   assert.deepEqual(restoreWorkspaceDirs('/d/Agents', saved, validate), ['/d/oats-v2', '/d/Agents/aweb']);
-  // Nothing saved validates: the startup folder is served (the picker journey) but is not persistable.
-  const dirs = restoreWorkspaceDirs('/d/Agents', 'not json', validate);
-  assert.deepEqual(dirs, ['/d/Agents']); assert.deepEqual(persistableDirs(dirs, validate), []);
+  // Nothing saved validates: nothing is served, never the startup folder; the window chooses (#518).
+  assert.deepEqual(restoreWorkspaceDirs('/d/Agents', 'not json', validate), []);
   assert.deepEqual(savedWorkspacePaths(saved), ['/d/oats-v2', '/d/Agents/aweb']);
   assert.deepEqual(savedWorkspacePaths('{"x":1}'), []); assert.deepEqual(savedWorkspacePaths('["relative", 3, "/abs"]'), ['/abs']);
 });

@@ -43,7 +43,7 @@ class FakeWindow extends EventEmitter {
 FakeWindow.next = 1; FakeWindow.all = [];
 let main;
 
-function boot({ records = [], served = SERVED, displays = [{ workArea: { x: 0, y: 25, width: 1440, height: 875 } }] } = {}) {
+function boot({ records = [], served = SERVED, dirs = ['/d/oats', '/d/tsm'], displays = [{ workArea: { x: 0, y: 25, width: 1440, height: 875 } }] } = {}) {
   FakeWindow.all = [];
   const handlers = new Map(), file = join(mkdtempSync(join(tmpdir(), 'oats-win-')), 'windows.json');
   const context = {
@@ -52,7 +52,7 @@ function boot({ records = [], served = SERVED, displays = [{ workArea: { x: 0, y
     screen: { getAllDisplays: () => displays }, RENDERER_URL: RENDERER, servedList: served, allowedWs: new Set(served.map((w) => w.id)),
     advertisedBefore: new Set(), quitStarted: false, console, Menu: {}, shell: {},
     createWindowSet, restorePlan, resolveView, clampBounds, windowTitle, trustedForgeFrame, validWorkspaceId, workspaceHash, trustedRendererUrl,
-    terminalBroker: { register() {} }, suggestionCalls: { forget() {} }, lastPickChoices: new Map(),
+    terminalBroker: { register() {} }, suggestionCalls: { forget() {} }, lastPickChoices: new Map(), workspaceDirs: dirs,
   };
   context.advertisedNow = () => context.allowedWs;
   main = runInNewContext(`${section}\n${windowBlock}\n${noteServedBlock}\n({ noteServed, windows, choosers, openWorkspaceWindow, openNewWindow, restoreWindows, setRecords: (r) => { windowRecords = r; }, setAdvertised: (set) => { allowedWs = set; }, setServed: (list) => { servedList = list; }, get windowRecords() { return windowRecords; } })`, context);
@@ -93,6 +93,25 @@ test('with nothing to restore (the first launch after the update), one window th
   assert.equal(FakeWindow.all.length, 1);
   assert.deepEqual({ ...FakeWindow.all[0].loaded }, {}, 'no hash: the renderer takes the localStorage selection when main lets it');
   assert.equal(FakeWindow.all[0].title, 'OATS Desktop');
+});
+
+test('a Finder launch serving no local deployment opens one unbound window that chooses, never one on / (#518)', async () => {
+  for (const served of [[], SERVED.filter((w) => w.remote)]) {
+    // (a) nothing saved, (b) a saved set of non-deployments, (c) a windows.json record bound to '/': none is served.
+    const b = boot({ records: [{ ...record('/'), deployments: ['/'] }], served, dirs: [] });
+    b.main.restoreWindows();
+    assert.equal(FakeWindow.all.length, 1);
+    const win = FakeWindow.all[0];
+    assert.deepEqual({ ...win.loaded }, {}, 'no #ws=: bound to nothing');
+    assert.equal(win.title, 'OATS Desktop');
+    for (const id of ['', '/']) {
+      const refused = await b.claim(win, id, { focus: false, initial: true });
+      assert.equal(refused.code, 'choose', 'the shared default (even a stale "/") is never taken: the switcher opens');
+      assert.deepEqual(refused.workspaces, served);
+    }
+    assert.equal(b.main.windows.keyOf(win), null);
+    assert.deepEqual(b.main.windowRecords.records().map((r) => r.workspace), ['/'], 'restore binds nothing to "/" (startup cleans the stale record: forgetNonDeployments)');
+  }
 });
 
 test('the launch\'s own deployment gets its window beside the restored ones, or focuses the one it has', () => {
