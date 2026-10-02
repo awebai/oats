@@ -61,6 +61,10 @@
       "type": "boolean",
       "description": "Workspace discovery: true makes this member capability repo-owned — listed (private: true) but usable only by souls of its own repository (E_CAPABILITY_PRIVATE elsewhere)."
     },
+    "launchPreview": {
+      "type": "boolean",
+      "description": "true declares the launch hook preview-aware: it changes nothing under OATS_LAUNCH_PREVIEW=1 and returns the same contribution (apart from its preview answer's volatileEnv values), so a start runs it as a preview during preflight and for real after it, and a launch preview runs it. Without it the hook runs once per start, for real, during preflight, and never for a launch preview. Top-level so that older kernels ignore it."
+    },
     "layer": {
       "enum": [
         "knowledge",

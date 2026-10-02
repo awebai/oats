@@ -346,7 +346,8 @@ A spawn hook also gets `OATS_TASK`, `OATS_REPO`, `OATS_BRANCH`, `OATS_WORK`,
 `OATS_HARNESS`, `OATS_KIND` and, for a spawn a trigger started,
 `OATS_TRIGGER_EVENT_FILE`. A launch hook also gets `OATS_HARNESS` and
 `OATS_PREVIOUS_HARNESS`, and `OATS_LAUNCH_PREVIEW=1` when it runs for a
-preview (below); on a real run `OATS_LAUNCH_PREVIEW` is not set.
+preview (only a preview-aware hook does, below); on a real run
+`OATS_LAUNCH_PREVIEW` is not set.
 
 `OATS_SETTINGS_ORIGINS` says where each leaf of
 `OATS_SETTINGS` came from: a JSON object from a JSON pointer to `{ kind, at }`,
@@ -355,7 +356,8 @@ preview (below); on a real run `OATS_LAUNCH_PREVIEW` is not set.
 `{"/harvest":{"kind":"soul","at":"soul.yaml#/knowledge"}}`. A provider tells a
 soul-set value from a host-set one there, and never reads `soul.yaml` for it;
 a home with none recorded gives `{}`. A final JSON line may return `meta`,
-`brief`, `warning`, or harness-specific `launch` arguments. A **spawn or
+`brief`, `warning`, or harness-specific `launch` arguments; a preview-aware
+launch hook's preview answer may add `volatileEnv` (below). A **spawn or
 launch hook** may also return an `env` object for the launched process;
 returning `env` from a retire hook is an explicit contract error.
 
@@ -370,10 +372,15 @@ launch hook that answers without `meta` keeps its previous entry; a start whose
 preparation fails changes nothing.
 
 A launch hook may do idempotent provider registration on a real start (an
-aweb home registering with the host wake broker, for example). Under
-`OATS_LAUNCH_PREVIEW=1` it must change nothing, and it must return the same
-contribution (`launch` arguments and `env`) as for a real start. A launch
-hook runs twice per start:
+aweb home registering with the host wake broker, for example). How the
+kernel runs it depends on whether its capability declares **preview
+awareness**: `"launchPreview": true` at the top level of its manifest. The
+kernel reads the declaration from the home's own module copy, so a home keeps
+the behaviour of the module it was spawned with.
+
+**A preview-aware hook** must change nothing under `OATS_LAUNCH_PREVIEW=1`,
+and must return the same contribution (`launch` arguments and `env`) as for
+a real start. It runs twice per start:
 
 1. **As a preview, under `OATS_LAUNCH_PREVIEW=1`.** The start's preflight uses
    this contribution: trust, environment ownership, the harness-package
@@ -386,6 +393,31 @@ hook runs twice per start:
 The real run's `meta` and warnings are what the start records. If its
 contribution differs from its preview contribution, the start is refused
 with `E_LAUNCH_PREPARATION` and nothing is stopped or started.
+
+Some values only a real run can know, such as a credential minted at start.
+A preview answer may list those names in `volatileEnv` (for example
+`"volatileEnv": ["AWEB_IDENTITY_HOME"]`, beside `env`). For those names:
+
+- The start takes the values from the real run, records them, and renders
+  the launch command again with them.
+- The comparison leaves those values out. Everything else must still be
+  identical.
+
+Each name must be one the same hook returned in `env`. Preflight sees only
+the preview's value, so a volatile name must not affect how the harness
+resolves its packages. The kernel refuses (`E_LAUNCH_PREPARATION`) a volatile
+`CLAUDE_CONFIG_DIR`, `CODEX_HOME` or `PI_CODING_AGENT_DIR`. It reads
+`volatileEnv` only from a preview answer and never records it.
+
+**A hook that does not declare preview awareness** runs once per start, for
+real, during preflight, before the checks that use its contribution. A
+refused start may therefore already have run it. `oats launch-config preview`
+never runs it. The preview shows that capability's recorded contribution, and
+its `capabilities` check says the hook was not run.
+
+`launchPreview` is a top-level key so that a kernel older than 0.37 ignores
+it and runs the hook once, as it always did. A key inside the hook's
+declaration would make such a kernel refuse the whole package.
 
 Hook environment values are strings, at most 8192 UTF-8 bytes, with no NUL or
 newlines. Names use the portable environment grammar and must belong to an

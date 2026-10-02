@@ -116,7 +116,8 @@ test("local mode keeps existing behaviour and adds messaging-layer meta.identity
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-112-"));
   try {
     const bin = fakeAw(base); const { root, home } = deployment(base);
-    const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify({}) });
+    // A Claude spawn takes the channel path (oats.aweb 1.18), so the env carries no AWEB_DELIVERY.
+    const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "claude", OATS_SETTINGS: JSON.stringify({}) });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.equal(r.doc.meta.alias, "probe");
     assert.equal(r.doc.meta.team, "t:example.test");

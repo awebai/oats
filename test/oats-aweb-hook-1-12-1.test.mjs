@@ -127,6 +127,8 @@ test("spawn uses roots[team] before root/workspace and local mode exports AWEB_I
       OATS_WORKSPACE: workspace,
       OATS_CONTEXT: workspace,
       OATS_SETTINGS: JSON.stringify({ root: declaredRoot, roots: { "t:example.test": teamRoot } }),
+      // A Claude spawn takes the channel path (oats.aweb 1.18), so the env carries no AWEB_DELIVERY.
+      OATS_RUNTIME: "claude",
       ...defaultTeamEnv(),
     });
     assert.equal(r.status, 0, r.stdout + r.stderr);

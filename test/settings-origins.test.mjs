@@ -25,7 +25,7 @@ console.log("{}");
   const fx = v2Deployment({
     souls: { dev: { soul: { capabilities: { "acme.kb": { from: "here" } }, knowledge: { harvest: "on" } } } },
     capabilities: { "acme.kb": {
-      manifest: { layer: "knowledge", command: "kbx", commands: { show: "show.mjs" }, settings: { depth: { default: 2 } }, hooks: { spawn: "hook.mjs", launch: "hook.mjs" } },
+      manifest: { layer: "knowledge", command: "kbx", commands: { show: "show.mjs" }, settings: { depth: { default: 2 } }, launchPreview: true, hooks: { spawn: "hook.mjs", launch: "hook.mjs" } },
       files: { "hook.mjs": hook, "show.mjs": show },
     } },
     local: { settings: { "acme.kb": { store: "/srv/kb" } } },
