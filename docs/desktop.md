@@ -89,10 +89,14 @@ new PATH.
 
 ## Opening a workspace
 
-The app starts on the directory it was launched with (its own folder by
-default). To view a deployment, open the workspace switcher in the sidebar
-and choose **Add workspace → Browse**, then point it at an OATS deployment —
-the directory (the operator's choice) holding `oats-local.yaml` and `agents/`.
+The app opens the workspaces you had open, plus the directory it was
+launched with (`--dir`, or the folder it was started from) when that is an
+OATS deployment — the directory (the operator's choice) holding
+`oats-local.yaml` and `agents/`. A folder that is not a deployment is never
+opened: started from Finder, with nothing open to restore, the window shows
+the workspace switcher instead. Choose **Add local workspace…** there: it
+suggests the deployments directly inside `~/Agents`, and **Browse** points
+it at any other deployment.
 A picked folder without `oats-local.yaml` is offered onboarding instead. The
 Desktop never parses the deployment: its members, lock state and header come
 from `oats workspace status`, and its instances from the deployment's one

@@ -3,12 +3,12 @@
 // channels (claim in place, open, New Window), restore at launch, titles, and closing.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { EventEmitter } from 'node:events';
 import { readFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { createWindowSet } from '../window-set.mjs';
+import { fakeWindowClass } from './helpers/fake-window.mjs';
 import { parseWindowRecords, resolveView, restorePlan, clampBounds, windowTitle, createWindowRecords } from '../window-records.mjs';
 import { trustedForgeFrame } from '../forge-proxy.mjs';
 import { validWorkspaceId } from '../renderer/workspace-id.mjs';
@@ -24,23 +24,8 @@ const windowBlock = source.match(/function createWindow\(workspaceId, record = n
 const noteServedBlock = source.match(/function noteServed\(list\) \{[^]*?\n\}/)[0];
 const tick = () => new Promise((r) => setImmediate(r));
 
-class FakeWindow extends EventEmitter {
-  constructor(options) {
-    super(); this.options = options; this.title = options.title; this.destroyed = false; this.minimized = false; this.calls = [];
-    this.bounds = { x: options.x ?? 100, y: options.y ?? 100, width: options.width, height: options.height };
-    this.webContents = Object.assign(new EventEmitter(), { id: FakeWindow.next++, setWindowOpenHandler() {} });
-    this.webContents.mainFrame = { url: RENDERER };
-    FakeWindow.all.push(this);
-  }
-  setTitle(title) { this.title = title; }
-  isDestroyed() { return this.destroyed; } isMinimized() { return this.minimized; }
-  restore() { this.calls.push('restore'); } show() { this.calls.push('show'); } focus() { this.calls.push('focus'); }
-  maximize() { this.calls.push('maximize'); } setFullScreen(on) { this.calls.push(`fullscreen:${on}`); }
-  getNormalBounds() { return this.bounds; } isMaximized() { return false; } isFullScreen() { return false; }
-  async loadFile(_file, options) { this.loaded = options; if (options.hash) this.webContents.mainFrame.url = `${RENDERER}#${options.hash}`; }
-  close({ quitting = false } = {}) { main.quitStarted = quitting; this.emit('close'); this.destroyed = true; this.emit('closed'); }
-}
-FakeWindow.next = 1; FakeWindow.all = [];
+const FakeWindow = fakeWindowClass(RENDERER);
+FakeWindow.onClose = (quitting) => { main.quitStarted = quitting; };
 let main;
 
 function boot({ records = [], served = SERVED, dirs = ['/d/oats', '/d/tsm'], displays = [{ workArea: { x: 0, y: 25, width: 1440, height: 875 } }] } = {}) {
