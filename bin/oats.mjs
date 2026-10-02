@@ -36,7 +36,7 @@ import {
   writeFileAtomic, LOCK_FILE, readLock, readLockIfPresent, writeLock, resolvePackages, memoizedRemote,
   classifyPackageValue, parsePackageRequest } from "../lib/packages.mjs";
 import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, workspaceWarnings, memberRowByKey } from "../lib/workspace.mjs";
-import { isTeamRefusal, localTeamsClosedProblem, recordedTeams, reportRows, soulKeyOf, soulTeams, teamKeyOf, teamModel } from "../lib/teams.mjs";
+import { discoveredTeamKeys, isTeamRefusal, localTeamsClosedProblem, recordedTeams, reportRows, soulKeyOf, soulTeams, teamKeyOf, teamModel } from "../lib/teams.mjs";
 import { launchLayers } from "../lib/launch-preference.mjs";
 import { parseConfigData } from "../lib/config-data.mjs";
 import * as remoteModule from "../lib/remote.mjs";
@@ -1587,16 +1587,18 @@ async function workspaceStatusFacts(result, discovery, lock, ctx) {
   }
 }
 
-/** The deployment's team facts for the team verbs: oats-local.yaml and the committed shared teams
- *  (the workspace host read now; none in a standalone view). */
+/** The deployment's team facts for the team verbs: oats-local.yaml, the committed workspace file and the
+ *  souls it offers (the workspace discovered now; none in a standalone view). */
 async function teamsContext(bail) {
   const ctx = workspaceContext(bail);
-  let workspace = null, workspaceKey = null;
-  if (!(typeof ctx.local.standalone === "string" && ctx.local.standalone)) {
-    try { const { observeWorkspace } = await import("../lib/workspace.mjs"); const obs = await observeWorkspace(ctx.local.workspace, { remoteOptions: ctx.remoteOptions }); workspace = obs.workspace; workspaceKey = obs.key; }
-    catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details ?? e.provenance); throw e; }
-  }
-  return { deployment: ctx.deploymentDir, localPath: ctx.localPath, local: ctx.local, workspace, workspaceKey, remoteOptions: ctx.remoteOptions };
+  let discovery;
+  try {
+    const { discoverOrStandalone } = await import("../lib/instance-resolution.mjs");
+    discovery = await discoverOrStandalone(ctx.local, { lock: readLockIfPresent(ctx.deploymentDir), deployment: ctx.deploymentDir, remoteOptions: ctx.remoteOptions });
+  } catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details ?? e.provenance); throw e; }
+  const standalone = discovery.standalone === true;
+  return { deployment: ctx.deploymentDir, localPath: ctx.localPath, local: ctx.local, workspace: standalone ? null : discovery.workspace, workspaceKey: standalone ? null : discovery.key ?? null,
+    soulKeys: discoveredTeamKeys(discovery), remoteOptions: ctx.remoteOptions };
 }
 const positional = (i) => (args[i] !== undefined && !args[i].startsWith("--") ? args[i] : undefined);
 
