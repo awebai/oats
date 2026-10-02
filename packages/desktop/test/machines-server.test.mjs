@@ -183,3 +183,26 @@ test('a list read that began while the backfill ran still says backfilling, even
   assert.equal(Object.hasOwn(settled, 'backfilling'), false);
   assert.deepEqual(settled.servers.map(s => s.id), ['legacy-x']);
 });
+
+test('two first reads that both began before the backfill started: the slower one, answering after the end, still says backfilling', async () => {
+  const adapter = fakeAdapter([reg('legacy-x', null)]);
+  const openCheck = adapter.hold();
+  const read = adapter.cliServers, gates = [];
+  adapter.cliServers = async (...args) => { const snapshot = structuredClone(await read(...args)); await new Promise(r => gates.push(r)); return snapshot; };
+  const machines = createMachines({ adapter, cli: () => CLI });
+  const first = machines.forScope(SCOPE), second = machines.forScope(SCOPE);
+  await new Promise(r => setImmediate(r));
+  assert.equal(gates.length, 2, 'both reads took their snapshot');
+  gates[0](); assert.equal((await first).backfilling, true, 'the first starts the backfill');
+  openCheck(); await machines.backfilled();
+  gates[1]();
+  const late = await second;
+  assert.deepEqual(late.servers, []); assert.equal(late.backfilling, true);
+  adapter.cliServers = read;
+  assert.equal(Object.hasOwn(await machines.forScope(SCOPE), 'backfilling'), false, 'a read begun after the end is settled');
+});
+
+test('with no backfill (disabled) every answer is settled', async () => {
+  const machines = createMachines({ adapter: fakeAdapter([reg('altair-aweb', KEY)]), cli: () => CLI, backfill: false });
+  assert.equal(Object.hasOwn(await machines.forScope(SCOPE), 'backfilling'), false);
+});

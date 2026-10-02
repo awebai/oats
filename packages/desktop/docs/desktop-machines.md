@@ -42,9 +42,11 @@ no Machines box (`machinesGated`, `awebConnectGated` in
 - **Backfill.** The first gated list read of a server process starts, in the
   background, one `oats server check <id> --json` for every registration whose
   key is unknown, two at a time (`BACKFILL_CONCURRENCY`). The check records the
-  host's key in the registry. A list read that began while it ran answers
-  `backfilling: true` (even when it answers after the end: its rows may be
-  from before the checks wrote their keys), and Where to run and the Machines
+  host's key in the registry. Only a list read that began after the backfill
+  completed is settled: any read that began before (while it ran, or before it
+  started, as a concurrent first read) answers `backfilling: true`, even when
+  it answers after the end, since its rows may be from before the checks
+  wrote their keys. Where to run and the Machines
   box read the list again until an answer does not (`followBackfill`,
   `machine-contract.mjs`): first after 2 s, then 1.5 times later each time, at
   most 15 s apart. The backfill is bounded by its checks' own deadlines, so
