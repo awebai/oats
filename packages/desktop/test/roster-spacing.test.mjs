@@ -95,6 +95,20 @@ test("roster spacing (non-layout): 48px rows with a 4px gap, padded controls and
   assert.equal(u.computed(filter.parentElement.nextElementSibling).overflowY, "auto", "longer rosters still scroll");
 });
 
+test("roster spacing (non-layout): a selected or hovered row keeps its 4px gap (human, 2026-10-03)", t => {
+  // The background shorthand resets background-clip to border-box, painting the transparent borders,
+  // so a selected row and a hovered neighbour touched. State rules may set only the colour.
+  const u = fixture(t);
+  const active = u.rows.filter(row => row.classList.contains("active"));
+  assert.equal(active.length, 1, "the fixture renders one selected row");
+  assert.equal(u.computed(active[0]).backgroundClip, "padding-box", "the selected fill stops short of the gap");
+  for (const selector of [".ctx-tree-row:hover", ".ctx-tree-row.active", ".ctx-tree-row.ctx-spawn-revealed"]) {
+    assert.ok(u.rule(selector).backgroundColor, `${selector} paints a fill`);
+    assert.equal(u.rule(selector).background, "", `${selector} sets no background shorthand`);
+    assert.equal(u.rule(selector).backgroundClip, "", `${selector} leaves the row's padding-box clip alone`);
+  }
+});
+
 test("roster typography (non-layout): valid control family and supplied sidebar label scale", t => {
   const u = fixture(t);
   assert.equal(u.rule(".ctx-filter").getPropertyValue("font"), "", "no invalid 'size/line-height inherit' shorthand");
@@ -180,7 +194,7 @@ test("roster DOM contract: named group separators, identity, active state, hidde
   assert.equal(u.doc.activeElement.dataset.treeInstance, tree.instanceId(roster[1]), "poll retains logical focus");
   assert.equal(u.doc.activeElement.classList.contains("active"), true);
   assert.equal(u.rule(".ctx-inst").color, "var(--fg)");
-  assert.equal(u.rule(".ctx-tree-row.active").background, "var(--sel)");
+  assert.equal(u.rule(".ctx-tree-row.active").backgroundColor, "var(--sel)");
   assert.equal(u.rule(".ctx-repo-label").color, "var(--muted)");
   assert.equal(u.rule(".ctx-repo-label").background, "", "reference metadata is a plain subline, not a repository pill");
 });

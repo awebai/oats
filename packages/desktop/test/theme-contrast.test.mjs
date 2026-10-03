@@ -665,7 +665,9 @@ for (const [name] of palettes) test(`${name}: frame10 rail, disabled menu reason
     ['.ctx-pr-open', '.ctx-pr-open', 'accent', 'surface'],
   ]) {
     const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
-    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector); assert.equal(dom.window.getComputedStyle(surface).background, `var(--${bg})`, painted);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    // A row's state fill is background-color (the shorthand would reset its padding-box clip): read either form.
+    const fill = dom.window.getComputedStyle(surface); assert.equal(fill.background || fill.backgroundColor, `var(--${bg})`, painted);
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
   }

@@ -149,7 +149,7 @@ test("Spec E: the pending row of the spawn just pressed wears the selection's fi
   assert.equal(u.row("dev-new").closest(".ctx-tree-row").classList.contains("ctx-spawn-revealed"), true);
   assert.equal(u.row("dev-two").closest(".ctx-tree-row").classList.contains("ctx-spawn-revealed"), false);
   assert.notEqual(u.doc.activeElement, u.row("dev-new"), "revealed, not focused");
-  assert.match(css, /\.ctx-tree-row\.ctx-spawn-revealed \{ --row-solid: var\(--sel\); background: var\(--sel\); \}/);
+  assert.match(css, /\.ctx-tree-row\.ctx-spawn-revealed \{ --row-solid: var\(--sel\); background-color: var\(--sel\); \}/);
 });
 
 test("Spec E: a just-spawned row says New (text and a dot) until its row is opened, or it is the active row", async t => {

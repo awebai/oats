@@ -145,7 +145,7 @@ test("running indicators use accent, while success stays distinct", t => {
   assert.equal(u.rule(".palette-item .pdot.on").background, "var(--accent)");
   assert.equal(u.rule(".palette-item .pdot.on").borderColor, "var(--accent)");
   assert.equal(u.rule(".tab.active").boxShadow, "inset 0 2px 0 var(--accent)");
-  assert.equal(u.rule(".ctx-tree-row.active").background, "var(--sel)");
+  assert.equal(u.rule(".ctx-tree-row.active").backgroundColor, "var(--sel)");
 });
 
 test("component geometry: rounded popovers, 36px fields and persistent scrollable groups", t => {
