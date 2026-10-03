@@ -43,6 +43,17 @@ export function recordedRuntime(meta, harness) {
   return typeof meta?.runtime === 'string' ? meta.runtime : harness;
 }
 
+/** Claude Code loads aweb-channel only with
+ *  --dangerously-load-development-channels, because the plugin is not on
+ *  Claude Code's approved channel list (the Anthropic default list, or a
+ *  Team/Enterprise organization's managed allowedChannelPlugins). Before every
+ *  session that flag starts, Claude Code shows a confirmation that waits for a
+ *  human answer in the terminal; nothing may answer it for them. */
+export const CHANNEL_DEV_CONFIRMATION = {
+  code: 'channel-dev-confirmation',
+  message: 'Claude Code stops at its development-channels confirmation ("Loading development channels") before the session starts, and waits until someone answers it in the instance\'s terminal: aweb-channel is not on Claude Code\'s approved channel list, so it is loaded with --dangerously-load-development-channels',
+};
+
 /** external-session | native-channel | native-pi. */
 export function runtimeDeliveryFor({delivery, runtime}) {
   if (brokerDelivers({delivery, runtime})) return 'external-session';

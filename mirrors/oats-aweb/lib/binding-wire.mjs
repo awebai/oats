@@ -4,7 +4,7 @@ import { delimiter, isAbsolute, join, resolve } from 'node:path';
 import { TextDecoder } from 'node:util';
 import { assessCapturedSessionReadiness } from './session-readiness.mjs';
 import { custodyPreflight } from './grant-custody.mjs';
-import { brokerDelivers, joinedReceiveModes, recordedRuntime, recordedStart } from './wake-receive.mjs';
+import { CHANNEL_DEV_CONFIRMATION, brokerDelivers, joinedReceiveModes, recordedRuntime, recordedStart, runtimeDeliveryFor } from './wake-receive.mjs';
 import {
   MESSAGING_CONTRACT,
   MESSAGING_CONTRACT_VERSION,
@@ -317,6 +317,9 @@ async function workspaceReadinessPhase(req) {
   const reliedOn=typeof recorded?.delivery==='string'?brokerDelivers({delivery:recorded.delivery,runtime:recordedRuntime(recorded,harness)}):String(req.settings.delivery||'channel')==='session';
   const wake=reliedOn?wakeReadiness(ctx.home,{reliedOn:true}):{problems:[],warnings:[]};
   problems.push(...wake.problems);warnings.push(...wake.warnings);
+  // The same record says whether the home's starts load the Claude channel
+  // plugin, and so wait at Claude Code's development-channels confirmation.
+  if(typeof recorded?.delivery==='string' && runtimeDeliveryFor({delivery:recorded.delivery,runtime:recordedRuntime(recorded,harness)})==='native-channel') warnings.push({...CHANNEL_DEV_CONFIRMATION});
   const result=checkProblems(problems) || {status:'ready',problems:[]};
   return {...result,warnings};
 }
