@@ -109,7 +109,10 @@ validates the field and never synthesizes it.
   nearest visible ancestor as "N below" (`waitingRollup` in
   `renderer/instance-tree.mjs`, beside `instanceVisibleInTree`, which it mirrors), following the parent relation only
   (never across a remote server), and never outside the deployment section the
-  waiting row is painted in. The card's `Below` fact names up to three of
+  waiting row is painted in. A collapse hides only rows of its own section
+  (`instanceVisibleInTree` with the same `section`), so a row whose parent name
+  resolves to a collapsed instance in another section stays painted and shows its
+  own mark. The card's `Below` fact names up to three of
   them. The roll-up is derived on every paint, so it goes as soon as the parent
   is expanded. Filtering collapses nothing, so it shows no roll-up.
 - **The terminal tab.** An open terminal tab of that instance, in any editor

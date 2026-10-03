@@ -276,6 +276,29 @@ test("a roll-up stays inside its deployment section: a unique parent name in ano
   assert.equal(u.list.querySelectorAll(".ctx-attn.rollup").length, 1, "and nothing else rolls up");
 });
 
+test("a collapse hides only rows of its own section: another deployment's child of it stays painted, with its own mark (#551's symptom)", async t => {
+  const deployment = id => ({ id, path: id, machine: "This Mac", local: true, reachable: true, primary: id === "/d1" });
+  const at = (name, dep, parent, extra = {}) => instance(name, parent, { home: `${dep}/agents/dev/instances/${name}`, agentsRoot: `${dep}/agents`, deployment: deployment(dep), ...extra });
+  // /d2's own "lead" is gone: its children's parent name resolves to /d1's lead, painted (and collapsed) in /d1's section.
+  const lead = at("lead", "/d1"), own = at("own-child", "/d1", "lead", { waitingOnYou: claim() }),
+    waiting = at("waiting-d2", "/d2", "lead", { waitingOnYou: claim() }), quiet = at("quiet-d2", "/d2", "lead");
+  const rows = [lead, own, waiting, quiet], collapsed = new Set();
+  const u = fixture(t, { context: { contextDeployments: [deployment("/d1"), deployment("/d2")], collapsedInstances: collapsed } });
+  const guides = name => [...u.row(name).querySelectorAll(".ctx-guide")].map(g => g.className).join("|");
+  u.render(rows);
+  const open = { waiting: guides("waiting-d2"), quiet: guides("quiet-d2") };
+  collapsed.add(tree.collapseKey("A", tree.instanceId(lead)));
+  u.render(rows);
+  assert.equal(u.row("own-child"), undefined, "the collapse still hides its own section's child");
+  assert.equal(u.marks("lead")[0].textContent, "1 below need input", "and rolls it up");
+  assert.ok(u.row("waiting-d2"), "/d2's child is not hidden by /d1's collapse");
+  assert.ok(u.row("quiet-d2"), "nor is a child that is not waiting");
+  const [mark] = u.marks("waiting-d2");
+  assert.equal(mark.className, "ctx-attn", "it shows its own mark, not a roll-up");
+  assert.equal(u.marks("waiting-d2").length, 1);
+  assert.deepEqual({ waiting: guides("waiting-d2"), quiet: guides("quiet-d2") }, open, "its guides are the same as with /d1's lead expanded");
+});
+
 const tabCue = tab => tab.triggerEl.querySelector(":scope > .tab-attn");
 
 test("every roster paint re-syncs the open terminal tabs: an overdue read's stale paint clears a lit tab (#558)", async t => {

@@ -458,8 +458,12 @@ export function rosterGroups(allInstances, visibleInstances, { links = instanceL
  * persisted collapse state. Parent traversal is cycle-safe and
  * IDENTITY-aware: collapse keys are minted from instanceId, and parent
  * names resolve through resolveLinkId so a collapsed duplicate name in
- * another agents root can never hide this root's subtree (review 46f3fdc). */
-export function instanceVisibleInTree(instance, allInstances, collapsed, workspace, filtering = false) {
+ * another agents root can never hide this root's subtree (review 46f3fdc).
+ * `section(row)` (optional): the roster section (deployment) a row is painted in. A collapse hides only
+ * rows of its own section: the walk stops at the first ancestor painted in another section, which does
+ * not hide the row (#551's visible symptom: resolveLinkId accepts a unique name from another agents root,
+ * and that parent is painted, and collapsed, in another section). Without it, sections are ignored. */
+export function instanceVisibleInTree(instance, allInstances, collapsed, workspace, filtering = false, { section } = {}) {
   if (filtering) return true;
   const byId = new Map(allInstances.map((item) => [instanceId(item), item]));
   const byName = new Map();
@@ -472,9 +476,11 @@ export function instanceVisibleInTree(instance, allInstances, collapsed, workspa
   while (cursor?.parentInstance) {
     const pid = resolveLinkId(cursor, cursor.parentInstance, byName);
     if (!pid || seen.has(pid)) break;
+    const parent = byId.get(pid);
+    if (section && parent && section(parent) !== section(instance)) break;
     if (collapsed.has(collapseKey(workspace, pid))) return false;
     seen.add(pid);
-    cursor = byId.get(pid);
+    cursor = parent;
   }
   return true;
 }
@@ -484,7 +490,8 @@ export function instanceVisibleInTree(instance, allInstances, collapsed, workspa
  * parent relation only (resolveLinkId: never across a remote server), cycle-safe; a missing or cyclic
  * parent chain degrades to no roll-up. `section(row)`: the roster section (deployment) a row is painted
  * in; a chain that leaves the waiting row's section rolls up nowhere (resolveLinkId accepts a unique name
- * from another agents root). Filtering on → nothing is collapsed → empty. `stale(row)`: the caller's
+ * from another agents root), and a collapse in another section does not hide it (instanceVisibleInTree,
+ * given the same `section`). Filtering on → nothing is collapsed → empty. `stale(row)`: the caller's
  * held-stale test; a stale row contributes nothing. */
 export function waitingRollup(instances, collapsed, workspace, { filtering = false, stale = () => false, section = () => null } = {}) {
   const out = new Map();
@@ -493,7 +500,7 @@ export function waitingRollup(instances, collapsed, workspace, { filtering = fal
   const byName = new Map();
   for (const i of instances) { if (!byName.has(i.instance)) byName.set(i.instance, []); byName.get(i.instance).push(i); }
   for (const i of instances) {
-    if (!waitingClaim(i, { stale: stale(i) }) || instanceVisibleInTree(i, instances, collapsed, workspace)) continue;
+    if (!waitingClaim(i, { stale: stale(i) }) || instanceVisibleInTree(i, instances, collapsed, workspace, false, { section })) continue;
     const seen = new Set([instanceId(i)]);
     let cursor = i, owner = null;
     while (cursor?.parentInstance) {
@@ -501,7 +508,7 @@ export function waitingRollup(instances, collapsed, workspace, { filtering = fal
       if (!pid || seen.has(pid)) break;
       seen.add(pid); cursor = byId.get(pid);
       if (!cursor || section(cursor) !== section(i)) break;
-      if (instanceVisibleInTree(cursor, instances, collapsed, workspace)) { owner = pid; break; }
+      if (instanceVisibleInTree(cursor, instances, collapsed, workspace, false, { section })) { owner = pid; break; }
     }
     if (owner === null) continue;
     if (!out.has(owner)) out.set(owner, []);

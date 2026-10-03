@@ -759,17 +759,19 @@ function renderContextRoster(instances) {
   const matching = filterInstanceTree(instances, contextFilter);
   const rosterGeneration = workspaceGeneration();
   const filtering = !!contextFilter.trim();
+  // The deployment section each row is painted in (rosterSections' split). A collapse hides, and rolls up,
+  // only rows of its own section.
+  const sectionOf = new Map();
+  for (const [id, rows] of splitByDeployment(contextDeployments)(instances)) for (const row of rows) sectionOf.set(row, id);
+  const rowSection = (row) => sectionOf.get(row) ?? null;
   const visible = matching.filter((i) => instanceVisibleInTree(
-    i, instances, collapsedInstances, ws, filtering,
+    i, instances, collapsedInstances, ws, filtering, { section: rowSection },
   ));
   // A row the roster holds stale (the last read failed, or its deployment's re-read did) carries last-known facts.
   const rowHeldStale = (row) => rosterStale || rowStale(row, contextDeployments);
   // Needs input (Spec D): waiting rows a collapse hides, on their nearest visible ancestor. Derived on every
   // paint over the full roster, so expanding the parent drops it and the children show their own marks.
-  // It stays inside the deployment section a row is painted in (rosterSections' split).
-  const sectionOf = new Map();
-  for (const [id, rows] of splitByDeployment(contextDeployments)(instances)) for (const row of rows) sectionOf.set(row, id);
-  const waitingBelow = waitingRollup(instances, collapsedInstances, ws, { filtering, stale: rowHeldStale, section: (row) => sectionOf.get(row) ?? null });
+  const waitingBelow = waitingRollup(instances, collapsedInstances, ws, { filtering, stale: rowHeldStale, section: rowSection });
   if (!visible.length) {
     listEl.innerHTML = `<div class="ctx-empty">${instances.length ? "Nothing matches." : "No instances."}</div>`;
     paintNote();
