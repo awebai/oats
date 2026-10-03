@@ -544,6 +544,18 @@ runs `bin/claude-waiting.sh` from the home's module copy, which calls
 | `PostToolUseFailure` | `*` | clear, unless a subagent made the call |
 | `UserPromptSubmit`, `Stop`, `SessionEnd` | none | clear, not debounced (a turn boundary) |
 
+**One home per settings file.** The launch hook bakes the home it writes the
+settings for into every command, as its real path (oats.core 2.4.1). The
+script acts only when the session's `$OATS_INSTANCE_HOME` names that same
+home, through any spelling (a symlinked deployment resolves to the same
+path). A Claude process that loads one home's settings while carrying
+another instance's environment (a nested `claude -p`, a `claude -p` started
+with its working directory in another home, a pane that inherited the
+variables) does nothing at all: no CLI call and no marker write, for either
+home. Before 2.4.1 it set and cleared the claim of the home its environment
+named, and its `Stop` and `SessionEnd` clears could erase that instance's
+real claim.
+
 Claude Code shows an AskUserQuestion through its permission dialog, so that
 dialog's own `permission_prompt` follows the question's set: the script keeps
 the current reason in its marker, and a permission prompt never relabels an
@@ -597,7 +609,8 @@ clears it.
   after the hook began, the worst case is about 4 s, well under Claude's 5 s
   hook timeout.
 - **Debounce.** The script keeps private state outside the home, in a file
-  per home: `<dir>/<first 16 hex of sha256(home)>.claude`, where `<dir>`
+  per home: `<dir>/<first 16 hex of sha256(home)>.claude` (the home's real
+  path, so each spelling of a home has the same file), where `<dir>`
   is per user: `$XDG_RUNTIME_DIR/oats-waiting` when that is set and
   absolute, else `$TMPDIR/oats-waiting-<uid>` when `TMPDIR` is absolute,
   else `/tmp/oats-waiting-<uid>`. The spawn and launch

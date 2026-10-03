@@ -4062,7 +4062,7 @@ Usage:
                                              typed lifecycle events (spawned, launched, stopped,
                                              restarted, retired, worktree-retained…) written by
                                              the action that made them true; nothing inferred
-  oats instance waiting <set|clear> --producer <id> [--reason permission|question|attention] [--message <text>] [--home <abs>] [--json]
+  oats instance waiting <set|clear> --producer <id> [--reason permission|question|attention] [--message <text>] [--home <abs>] [--dir <d>] [--json]
                                              a producer's claim that the instance needs input
                                              from a human; appended only on change; display only
   oats instance attention [--message <text>] [--clear] [--json]

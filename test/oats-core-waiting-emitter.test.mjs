@@ -11,6 +11,7 @@ import { appendFileSync, chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { liveWaiting } from "../lib/instance-events.mjs";
 import { claudeWaitingSettings, markerDir, markerDirPath, markerPath, mergeSettings, shq, waitingCommand } from "../oats-package/capabilities/oats-core/bin/oats-core.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -120,20 +121,23 @@ function runHook(event, env) {
   const last = r.stdout.trim().split("\n").filter(Boolean).pop();
   return JSON.parse(last);
 }
-// The marker argument the launch hook passes: the home's marker under TMPDIR's per-user
-// directory (created 0700 when absent, as markerDir does). An explicit one is kept.
-function withMarker(args, env = {}) {
+// The two arguments the launch hook bakes after node and CLI: the home's marker under
+// TMPDIR's per-user directory (created 0700 when absent, as markerDir does), then the home
+// the settings were written for. Explicit ones are kept. `own` is that baked home: the
+// session's own by default.
+function withMarker(args, env = {}, own = env.OATS_INSTANCE_HOME) {
   const want = args[0] === "set" ? 5 : 4;
-  if (!["set", "clear", "clear-tool"].includes(args[0]) || args.length >= want || !env.OATS_INSTANCE_HOME) return args;
+  if (!["set", "clear", "clear-tool"].includes(args[0]) || args.length > want || !own) return args;
+  if (args.length === want) return [...args, own];
   const tmp = env.TMPDIR ?? TMP, dir = join(tmp, WDIR);
   let present = true; try { lstatSync(dir); } catch { present = false; }
   if (!present) { mkdirSync(dir, { recursive: true, mode: 0o700 }); chmodSync(dir, 0o700); }
-  return [...args, markerOf(env.OATS_INSTANCE_HOME, tmp)];
+  return [...args, markerOf(own, tmp), own];
 }
-function runScript(args, env) {
+function runScript(args, env, own) {
   const started = Date.now();
   // TMPDIR is the test's own: the debounce marker lives under it, never in a real temp dir.
-  const r = spawnSync("/bin/sh", [SCRIPT, ...withMarker(args, env)], { encoding: "utf8", timeout: 15000, env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env }) });
+  const r = spawnSync("/bin/sh", [SCRIPT, ...withMarker(args, env, own)], { encoding: "utf8", timeout: 15000, env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env }) });
   return { ...r, ms: Date.now() - started };
 }
 const settingsOf = (h) => join(h, ".claude", "settings.json");
@@ -187,7 +191,7 @@ test("the real pass writes settings.json 0600 with absolute, single-quoted comma
     assert.equal(e.timeout, 5);
     assert.match(e.command, /; exit 0$/);
     assert.ok(e.command.startsWith(`/bin/sh ${shq(SCRIPT)} `), e.command);
-    assert.ok(e.command.endsWith(` ${shq(node)} ${shq(FAKE_CLI_ABS)} ${shq(markerOf(h))} >/dev/null 2>&1; exit 0`), e.command);
+    assert.ok(e.command.endsWith(` ${shq(node)} ${shq(FAKE_CLI_ABS)} ${shq(markerOf(h))} ${shq(h)} >/dev/null 2>&1; exit 0`), e.command);
     assert.ok(!/\bagent\b/.test(e.command), "no command names producer agent");
   }
   // The JS regex Claude Code compiles for the catch-all PreToolUse matcher skips only AskUserQuestion.
@@ -318,9 +322,16 @@ test("PINNED: claude-waiting.sh exits 0 with empty stdout, in bounded time, what
     ["unknown reason", ["set", "bogus", node, FAKE_CLI], { OATS_INSTANCE_HOME: h }],
     ["unknown action", ["frob"], { OATS_INSTANCE_HOME: h }],
     ["no arguments", [], { OATS_INSTANCE_HOME: h }],
+    // The home the command was written for, against the environment it runs in.
+    ["home unset, a baked home", ["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: undefined }, h],
+    ["home relative, a baked home", ["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: "relative" }, h],
+    ["home nonexistent, a baked home", ["clear", node, FAKE_CLI], { OATS_INSTANCE_HOME: "/nonexistent" }, h],
+    ["a baked home that is relative", ["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h }, "relative"],
+    ["a baked home that is gone", ["clear", node, FAKE_CLI], { OATS_INSTANCE_HOME: h }, "/nonexistent"],
+    ["no baked home (a command from before it existed)", ["set", "permission", node, FAKE_CLI, ""], { OATS_INSTANCE_HOME: h }, ""],
   ];
-  for (const [what, args, env] of cases) {
-    const r = runScript(args, env);
+  for (const [what, args, env, own] of cases) {
+    const r = runScript(args, env, own);
     assert.equal(r.status, 0, `${what}: exit ${r.status} ${r.signal || ""}`);
     assert.equal(r.stdout, "", `${what}: stdout must be empty`);
     assert.equal(r.stderr, "", `${what}: stderr is discarded`);
@@ -418,7 +429,7 @@ test("markerDir vets the per-user directory once (at spawn or launch): created 0
   // The hook bakes '' (no debounce) when the directory is refused.
   const h = home(), bad = join(base, `vet-hook-${n}`); mkdirSync(uidDir(bad), { recursive: true }); chmodSync(uidDir(bad), 0o777);
   runHook("spawn", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI_ABS, TMPDIR: bad });
-  for (const e of allEntries(readJson(settingsOf(h)))) assert.ok(e.command.endsWith(` '' >/dev/null 2>&1; exit 0`), e.command);
+  for (const e of allEntries(readJson(settingsOf(h)))) assert.ok(e.command.endsWith(` '' ${shq(h)} >/dev/null 2>&1; exit 0`), e.command);
 });
 
 test("markerDirPath: XDG_RUNTIME_DIR or TMPDIR only when absolute, else /tmp; never relative to the hook's cwd", () => {
@@ -900,6 +911,101 @@ test("end to end: a command the hook wrote, run as Claude Code runs it, reaches 
   const r = spawnSync("/bin/sh", ["-c", set], { encoding: "utf8", env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, OATS_INSTANCE_HOME: h, FAKE_LOG: log }) });
   assert.equal(r.status, 0); assert.equal(r.stdout, "");
   assert.deepEqual(JSON.parse(readFileSync(log, "utf8").trim()), ["instance", "waiting", "set", "--producer", "oats.core", "--reason", "permission", "--home", h, "--json"]);
+});
+
+// ---- the emitter and the kernel meet (awebai/oats#584): the commands the launch hook wrote,
+// run as Claude Code runs them, with the REAL script and the REAL CLI. The clock and sleep shims
+// take the 2 s budget and the watchdog out of it, so a slow machine cannot change the outcome.
+const REAL_CLI = join(ROOT, "bin", "oats.mjs");
+/** A deployment with two instance homes the real CLI accepts, their settings written by the launch hook. */
+function realHomes() {
+  const dep = mkdtempSync(join(base, "dep-")), root = join(dep, "agents");
+  mkdirSync(join(root, "dev", "soul"), { recursive: true }); writeFileSync(join(root, "dev", "soul", "soul.yaml"), "name: dev\n");
+  const make = (name) => {
+    const h = join(root, "dev", "instances", name); mkdirSync(h, { recursive: true });
+    writeFileSync(join(h, "instance.json"), JSON.stringify({ agent: "dev", instance: name, createdAt: "2026-10-01T00:00:00.000Z" }));
+    assert.deepEqual(runHook("launch", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: REAL_CLI }), {});
+    return h;
+  };
+  const clock = join(dep, "clock"); writeFileSync(clock, "1000\n");
+  /** Run the command home `h`'s settings hold for a Claude Code event, in a session carrying `env`. */
+  const fire = (h, event, index, env) => {
+    const command = readJson(settingsOf(h)).hooks[event][index].hooks[0].command;
+    const r = spawnSync("/bin/sh", ["-c", command], { encoding: "utf8", timeout: 60000, input: '{"session_id":"s","hook_event_name":"x"}', cwd: base,
+      env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, FAKE_CLOCK: clock, PATH: `${SHIMS}:${process.env.PATH}`, OATS_INSTANCE: undefined, OATS_HOME: undefined, OATS_ROOT: undefined, PI_AGENTS_ROOT: undefined, TMUX: undefined, ...env }) });
+    assert.equal(r.status, 0, `${event}[${index}]: ${r.stderr}`); assert.equal(r.stdout, "", `${event}[${index}]`);
+  };
+  return { dep, a: make("dev-a"), b: make("dev-b"), fire };
+}
+const EVERY_HOOK = [["Notification", 0], ["Notification", 1], ["PreToolUse", 0], ["PreToolUse", 1], ["PostToolUse", 0], ["PostToolUseFailure", 0], ["UserPromptSubmit", 0], ["Stop", 0], ["SessionEnd", 0]];
+const logOf = (h) => { try { return readFileSync(join(h, ".oats-events.jsonl"), "utf8"); } catch { return null; } };
+const claimOf = (h) => { const w = liveWaiting(h); return w ? { producer: w.producer, reason: w.reason, message: w.message } : null; };
+// Everything the emitter keeps for a home in the marker directory, by name and content.
+const markerState = (h) => Object.fromEntries(readdirSync(join(TMP, WDIR)).filter((f) => f.startsWith(markerOf(h).split("/").pop())).sort()
+  .map((f) => [f, statSync(join(TMP, WDIR, f)).isDirectory() ? readdirSync(join(TMP, WDIR, f)) : readFileSync(join(TMP, WDIR, f), "utf8")]));
+
+test("real script, real CLI: in its own home's session the emitter sets the claim the kernel reads, and clears it", { timeout: 120000 }, () => {
+  const { a, fire } = realHomes();
+  fire(a, "Notification", 0, { OATS_INSTANCE_HOME: a });
+  assert.deepEqual(claimOf(a), { producer: "oats.core", reason: "permission", message: null });
+  assert.equal(intentOf(a), "permission"); assert.equal(appliedOf(a), "permission");
+  fire(a, "PreToolUse", 0, { OATS_INSTANCE_HOME: a });
+  assert.deepEqual(claimOf(a), { producer: "oats.core", reason: "question", message: null });
+  fire(a, "Stop", 0, { OATS_INSTANCE_HOME: a });
+  assert.equal(claimOf(a), null);
+  assert.equal(appliedOf(a), "clear");
+  const rows = logOf(a).trim().split("\n").map((l) => JSON.parse(l));
+  assert.deepEqual(rows.map((r) => [r.kind, r.producer, r.home, r.data.waitingOnYou, r.data.reason ?? null]),
+    [["waiting", "oats.core", a, true, "permission"], ["waiting", "oats.core", a, true, "question"], ["waiting", "oats.core", a, false, null]]);
+});
+
+test("real script, real CLI: a Claude process that loads home B's settings under home A's environment writes nothing for either home and leaves both markers as they were", { timeout: 120000 }, () => {
+  const { dep, a, b, fire } = realHomes();
+  // A really waits on a permission prompt.
+  fire(a, "Notification", 0, { OATS_INSTANCE_HOME: a });
+  assert.equal(claimOf(a)?.reason, "permission");
+  const before = { log: logOf(a), a: markerState(a), b: markerState(b) };
+  assert.deepEqual(before.b, {}, "the launch hook left B no marker state");
+  // Every hook B's settings hold, in a process that carries A's environment (a nested
+  // `claude -p`, a `claude -p` started with its cwd in B, a pane that inherited A's variables).
+  for (const [event, index] of EVERY_HOOK) fire(b, event, index, { OATS_INSTANCE_HOME: a });
+  assert.equal(logOf(a), before.log, "A's log is untouched: its claim was neither set again nor cleared");
+  assert.deepEqual(claimOf(a), { producer: "oats.core", reason: "permission", message: null }, "B's Stop and SessionEnd did not erase A's real claim");
+  assert.equal(logOf(b), null, "nothing was written for B either: it is not the home that process runs for");
+  assert.equal(existsSync(join(dep, ".agents", "events", "dev--dev-b.jsonl")), false);
+  assert.deepEqual(markerState(a), before.a, "A's marker is untouched");
+  assert.deepEqual(markerState(b), {}, "B's marker is untouched");
+  // No environment at all, or one that names no home: nothing.
+  for (const home of [undefined, "", "relative/home", join(dep, "agents", "dev", "instances", "dev-none")]) {
+    for (const [event, index] of EVERY_HOOK) fire(b, event, index, { OATS_INSTANCE_HOME: home });
+  }
+  assert.equal(logOf(a), before.log); assert.equal(logOf(b), null); assert.deepEqual(markerState(b), {});
+  // B's commands do work, in B's own session.
+  fire(b, "Notification", 1, { OATS_INSTANCE_HOME: b });
+  assert.deepEqual(claimOf(b), { producer: "oats.core", reason: "question", message: null });
+  assert.equal(logOf(a), before.log);
+});
+
+test("real script, real CLI: the home through a symlink spelling is the same home; the launch hook bakes the real path whatever spelling it was given", { timeout: 120000 }, () => {
+  const { dep, a, fire } = realHomes();
+  const sym = `${dep}-sym`; symlinkSync(dep, sym);
+  const lexical = join(sym, "agents", "dev", "instances", "dev-a");
+  assert.notEqual(lexical, a); assert.equal(realpathSync(lexical), a);
+  // A session whose environment spells the home through the symlink (a spawn renders it lexically).
+  fire(a, "Notification", 1, { OATS_INSTANCE_HOME: lexical });
+  assert.deepEqual(claimOf(a), { producer: "oats.core", reason: "question", message: null });
+  assert.equal(JSON.parse(logOf(a).trim()).home, a, "the row records the real path");
+  assert.equal(intentOf(a), "question", "one marker, keyed by the real path");
+  fire(a, "SessionEnd", 0, { OATS_INSTANCE_HOME: lexical });
+  assert.equal(claimOf(a), null);
+  // The launch hook, given the lexical spelling: the same settings file, the real path baked, the same marker.
+  assert.deepEqual(runHook("launch", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: lexical, OATS_CLI_BIN: REAL_CLI }), {});
+  for (const e of allEntries(readJson(settingsOf(a)))) assert.ok(e.command.endsWith(` ${shq(REAL_CLI)} ${shq(markerOf(a))} ${shq(a)} >/dev/null 2>&1; exit 0`), e.command);
+  assert.equal(intentOf(a), null, "and it reset that marker");
+  fire(a, "Notification", 0, { OATS_INSTANCE_HOME: a });
+  assert.equal(claimOf(a)?.reason, "permission");
+  // A home that cannot be resolved is a warning, and nothing is written.
+  assert.match(runHook("launch", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: join(dep, "agents", "dev", "instances", "dev-none"), OATS_CLI_BIN: REAL_CLI }).warning, /OATS_INSTANCE_HOME .*cannot be resolved/);
 });
 
 test("packaging: the capability ships bin/oats-core.mjs and bin/claude-waiting.sh as regular files, wired as spawn and launch hooks", () => {

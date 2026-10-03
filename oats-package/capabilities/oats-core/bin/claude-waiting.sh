@@ -1,9 +1,11 @@
 #!/bin/sh
 # oats.core: Claude Code waiting emitter.
-#   claude-waiting.sh set <permission|question> <node> <cli> <marker>
-#   claude-waiting.sh clear <node> <cli> <marker>        (a turn boundary: UserPromptSubmit, Stop, SessionEnd; not debounced)
-#   claude-waiting.sh clear-tool <node> <cli> <marker>   (a PreToolUse/PostToolUse clear: debounced; skipped for a subagent's tool call)
+#   claude-waiting.sh set <permission|question> <node> <cli> <marker> <home>
+#   claude-waiting.sh clear <node> <cli> <marker> <home>        (a turn boundary: UserPromptSubmit, Stop, SessionEnd; not debounced)
+#   claude-waiting.sh clear-tool <node> <cli> <marker> <home>   (a PreToolUse/PostToolUse clear: debounced; skipped for a subagent's tool call)
 # <marker> is the debounce marker's path, from the launch hook, or '' for none.
+# <home> is the instance home these hooks were written for, as its real path, from the
+# launch hook too: the script acts for that home and no other.
 # Run by the Claude Code hooks oats-core.mjs writes into <home>/.claude/settings.json.
 # It reports through `oats instance waiting set|clear --producer oats.core` that the
 # session waits on the human, and never touches producer `agent` (the agent's own claim).
@@ -53,23 +55,33 @@ exec </dev/null
 action=$1
 case "$action" in
   set)
-    reason=$2; node=$3; cli=$4; marker=${5:-}
+    reason=$2; node=$3; cli=$4; marker=${5:-}; home=${6:-}
     case "$reason" in permission|question) ;; *) exit 0 ;; esac
     ;;
   clear|clear-tool)
-    node=$2; cli=$3; marker=${4:-}
+    node=$2; cli=$3; marker=${4:-}; home=${5:-}
     ;;
   *) exit 0 ;;
 esac
 
-home=$OATS_INSTANCE_HOME
+# Whose claim this is. The settings.json that runs this script belongs to ONE home, the
+# one the launch hook baked into the command; the environment is ambient and only
+# confirms it. A Claude process can load this home's settings while carrying another
+# instance's environment (a nested `claude -p`, a `claude -p` started with its cwd here, a
+# pane that inherited the variables): acting on $OATS_INSTANCE_HOME there would set and
+# clear the OTHER instance's claim, and its Stop and SessionEnd clears would erase a real
+# one. So unless $OATS_INSTANCE_HOME names the baked home, nothing is done at all: no CLI
+# call, no marker write. Any spelling of the home counts (a symlinked deployment): cd -P
+# leaves its real path in PWD, which is what the launch hook baked. That cd also means
+# the CLI resolves nothing from the cwd Claude ran the hook in.
 case "$home" in /*) ;; *) exit 0 ;; esac
+case "${OATS_INSTANCE_HOME:-}" in /*) ;; *) exit 0 ;; esac
+cd -P "$OATS_INSTANCE_HOME" || exit 0
+[ "$PWD" = "$home" ] || exit 0
 [ -f "$home/instance.json" ] && [ ! -L "$home/instance.json" ] || exit 0
 case "$node" in /*) ;; *) exit 0 ;; esac
 case "$cli" in /*) ;; *) exit 0 ;; esac
 [ -x "$node" ] && [ -f "$cli" ] || exit 0
-# The CLI resolves nothing from the cwd Claude ran the hook in.
-cd "$home" || exit 0
 
 # Emitter-private debounce marker, outside the home (it is not the instance's state): a
 # per-user temp file keyed by the home holding the latest intent (permission, question or
