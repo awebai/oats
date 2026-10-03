@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, mkdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { restoreWorkspaceDirs, saveWorkspaceDirs, matchWorkspaceDirs, createAddExecutor } from "../workspace-registry.mjs";
+import { restoreWorkspaceDirs, saveWorkspaceDirs, matchWorkspaceDirs, createAddExecutor, startupOpenSet } from "../workspace-registry.mjs";
 
 const validate = (p) => {
   if (p === "/missing") throw new Error("ENOENT");
@@ -18,8 +18,17 @@ test("restart restores only valid opened scopes, deduplicates aliases, and retai
   assert.deepEqual(restoreWorkspaceDirs("/", saved, validate), ["/second", "/team"]);
   for (const raw of ["invalid", "{}", "null", "[]"]) {
     assert.deepEqual(restoreWorkspaceDirs("/team", raw, validate), ["/team"]);
-    assert.deepEqual(restoreWorkspaceDirs("/", raw, validate), ["/"]);
+    assert.deepEqual(restoreWorkspaceDirs("/", raw, validate), []);
   }
+});
+
+test("a Finder launch (cwd /) whose saved set holds no deployment serves nothing, never / (#518)", () => {
+  const stale = JSON.stringify(["/repo/cjr", "/repo/oats", "/missing"]);
+  assert.deepEqual(restoreWorkspaceDirs("/", stale, validate), []);
+  assert.deepEqual(restoreWorkspaceDirs("/", stale, () => null), []);
+  assert.deepEqual(startupOpenSet(stale, restoreWorkspaceDirs("/", stale, validate), validate),
+    { open: ["/repo/cjr", "/repo/oats", "/missing"], write: false }, "workspace-open.json is not written, and never gains /");
+  assert.deepEqual(startupOpenSet("[]", [], validate), { open: [], write: false }, "a fresh install writes nothing");
 });
 
 test("a compatible backend serving only the launch workspace cannot hide restored workspaces", () => {

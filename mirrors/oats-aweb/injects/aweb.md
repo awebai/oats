@@ -15,7 +15,7 @@ Quick crib (run from your instance home, never from `./work`):
 
 ```bash
 oats aweb teams --json                                     # defaultTeam, eligible, joined teams
-oats aweb roster                                           # who you can reach
+oats aweb roster                                           # the team's members and workspaces, each labelled
 aw mail inbox                                              # UNREAD mail only (recovery: show --message-id or --show-all --json)
 aw mail send --to <alias> --subject "..." --body-file <f>  # recipient needs --to
 aw mail reply <message-id> --body-file <f>                 # stay in the thread

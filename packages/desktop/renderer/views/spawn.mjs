@@ -1325,9 +1325,11 @@ export async function waitForInstanceInPanel(s, ref, isCurrent, { tries = 20, de
   // server and home: it is ready once running and addressable (tmux is the host's).
   // `present`: any row of that identity will do (a place to show, not a terminal to open).
   // `ref.deployment` (#482): only that deployment's row (a view's panel holds every deployment's rows).
+  // `ref.deployment` is a deployment id, or a roster row's deployment object (Start…/Restart pass the row, #525).
+  const refDeployment = typeof ref.deployment === "string" ? ref.deployment : ref.deployment?.id;
   const matches = (x) => x.instance === ref.instance
     && (x.server || "") === (ref.server || "")
-    && (!ref.deployment || !x.deployment || x.deployment.id === ref.deployment)
+    && (!refDeployment || !x.deployment || x.deployment.id === refDeployment)
     && (strict ? !!ref.home && x.home === ref.home : !ref.home || !x.home || x.home === ref.home)
     && (strict ? !!ref.agentsRoot && x.agentsRoot === ref.agentsRoot : !ref.agentsRoot || !x.agentsRoot || x.agentsRoot === ref.agentsRoot)
     && (!strict || !ref.agent || x.agent === ref.agent)

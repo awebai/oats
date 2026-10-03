@@ -14,6 +14,7 @@ import { spawn, execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, writeFileSync, lstatSync, statSync, opendirSync } from "node:fs";
 import { createRequire } from "node:module";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { apiUrl, apiInit, classifyApiRoute, createUnservedRefusal, servedSelectors, windowRefusal } from "./api-url.mjs";
@@ -32,7 +33,7 @@ import { createServerHost, createServerAdapter } from "./server-host.mjs";
 import { cliWorkspace, validWorkspaceRef } from "./workspace-cli.mjs";
 import { onboardData } from "./deployment-data.mjs";
 import { validateWorkspace, workspaceSuggestions, parseRecents, pushRecent, decideAdd, createGenerations, createAddExecutor, restoreWorkspaceDirs, saveWorkspaceDirs, commitOpenSet, startupOpenSet, matchWorkspaceDirs, createOnboardOffers, createOnboardExecutor,
-  savedWorkspacePaths, persistableDirs, stageDirs, pickedFolderChoices, createPerformAdd, createSuggestionCalls } from "./workspace-registry.mjs";
+  savedWorkspacePaths, persistableDirs, stageDirs, pickedFolderChoices, deploymentsInside, createPerformAdd, createSuggestionCalls } from "./workspace-registry.mjs";
 import { workspaceNotServed } from "./renderer/deployment-header.mjs";
 import { appMenuTemplate } from "./app-menu.mjs";
 import { resolveLoginPath } from "./login-path.mjs";
@@ -68,17 +69,19 @@ const activity = createActivityNotifier({
   }),
 });
 const noteWindowActivity = () => { activity.update(BrowserWindow.getAllWindows()); };
-// Workspace the panel shows: --dir <path> or OATS_DESKTOP_DIR or the cwd the
-// app was launched from. The packaged app never infers a framework repo root
-// — with no OATS deployment in view the renderer shows the workspace picker.
+// The launch folder: --dir <path> or OATS_DESKTOP_DIR or the cwd the app was
+// launched from (`/` from Finder). It is served only when it is a deployment;
+// the packaged app never infers a framework repo root. With no deployment to
+// serve, the window chooses: the switcher, with Add local workspace… (#518).
 const argDir = (() => {
   const i = process.argv.indexOf("--dir");
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : undefined;
 })();
 const WORKSPACE = resolve(argDir || process.env.OATS_DESKTOP_DIR || process.cwd());
-// Mutable workspace set: startup workspace plus runtime-added ones — the
-// repeated --dir list an app-owned server is (re)started with.
-const workspaceDirs = [WORKSPACE];
+// Mutable workspace set: the served deployments, set at startup and by runtime
+// adds — the repeated --dir list an app-owned server is (re)started with. Empty
+// when nothing validates: the server then serves no local deployment.
+const workspaceDirs = [];
 // The persisted open set (workspace-open.json): the saved paths, kept even while they do not
 // validate, plus what was added. The served set above is only what validates (#472).
 let openDirs = [];
@@ -122,7 +125,8 @@ const serverHost = createServerHost({
       // The remembered remote workspace identities (#482): the server owns the file, written atomically.
       "--remote-identity", REMOTE_IDENTITY_FILE()], {
       stdio: ["ignore", "pipe", "pipe"],
-      cwd: WORKSPACE,
+      // Never the launch folder (`/` from Finder): it is not a deployment unless it is served.
+      cwd: dirs[0] ?? homedir(),
       // process.execPath is the packaged Electron executable. The backend
       // and its collector children must run as Node, not relaunch the app.
       env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
@@ -230,6 +234,8 @@ async function ensureServer() {
   for (let i = 0; i < 40; i++) {
     const ws = await panelWorkspaces();
     if (ws) {
+      // With no deployment to serve there is nothing to cover: the window chooses (#518).
+      if (!workspaceDirs.length) return { spawned: true };
       const id = matchWorkspace(ws);
       if (!id) throw new Error(`spawned backend serves ${ws.map((w) => w.id).join(", ")} — does not cover ${workspaceDirs.join(", ")}`);
       wsId = id;
@@ -320,8 +326,11 @@ const suggestionCalls = createSuggestionCalls({
   generations: wsGens,
   refresh: () => panelWorkspaces(), // refresh allowedWs from the live server
   list: () => workspaceSuggestions({
-    knownPaths: [...workspaceDirs],
+    // Every deployment this Desktop knows (the saved set as read included): a saved one that is not
+    // served, such as one whose volume was mounted after launch, is offered again (#472, #518).
+    knownPaths: [...knownDirs],
     recents: readRecents(),
+    discovered: deploymentsInside(join(homedir(), "Agents"), { list: listEntries, isDeployment: (p) => !!wsValidate(p) }).paths,
     advertised: allowedWs,
     validate: wsValidate,
   }),
@@ -672,11 +681,14 @@ function openNewWindow() {
   return win;
 }
 /** Launch and macOS `activate`: every recorded window whose workspace is served, plus the launch's own
- * deployment; with none, one window that takes the shared default, as before. */
+ * deployment; with none, one window that takes the shared default, as before. With no local deployment
+ * served that window chooses from the start (#518): it never adopts or binds what the server answers. */
 function restoreWindows(launchKey = null) {
   for (const { key, record } of restorePlan(windowRecords?.records() ?? [], servedList)) openWorkspaceWindow(key, record);
   if (launchKey) openWorkspaceWindow(launchKey);
-  if (!windows.entries().length) windows.openUnbound();
+  if (windows.entries().length) return;
+  if (workspaceDirs.length) windows.openUnbound();
+  else openNewWindow();
 }
 
 // A window binding itself in place (a switch, or a view that moved under it). A deployment id binds
@@ -712,6 +724,16 @@ ipcMain.handle("window:claim-workspace", (e, id, options) => {
   choosers.delete(win);
   bindWindow(win, key);
   return { ok: true, workspace: key };
+});
+// The served choices, re-read now, for a window with no workspace (#521): its list follows the
+// workspaces served after its first claim (remote views arrive seconds after launch), while it reads no
+// workspace's data itself. Read-only: it binds nothing.
+ipcMain.handle("window:choices", async (e) => {
+  if (!trustedForgeFrame(e, RENDERER_URL)) return { ok: false, code: "forbidden" };
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (!win || windows.keyOf(win) === undefined) return { ok: false, code: "unknown-window" };
+  await panelWorkspaces();
+  return { ok: true, workspaces: servedList };
 });
 // Open in new window, and New Window (`id` null): the workspace's window is focused if it has one.
 ipcMain.handle("window:open-workspace", (e, id) => {
@@ -801,6 +823,9 @@ const primaryInstance = startSingleInstance(app, (argv, workingDirectory) => ope
   let savedWindows = "[]";
   try { savedWindows = readFileSync(WINDOWS_FILE(), "utf8"); } catch { /* first launch */ }
   windowRecords = createWindowRecords({ file: WINDOWS_FILE(), initial: parseWindowRecords(savedWindows) });
+  // A record naming only folders that are not deployments (a window bound to `/`) is dropped: such a
+  // folder is never served, so its window could never come back (#518).
+  windowRecords.forgetNonDeployments((path) => { try { return existsSync(path) && !wsValidate(realpathSync(path)); } catch { return false; } });
   app.on("will-quit", () => windowRecords.flush());
   sweepOrphanViewers(); // default socket now; saved sockets are swept when opened
   let saved = "[]";

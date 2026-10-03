@@ -110,10 +110,11 @@ const remote = await import(pathToFileURL(join(HERE, "remote-roster.mjs")).href)
 let remoteGroups = [];
 let remoteCollecting = false;
 
-/** Deployments in view. Each --dir registers one (repeatable); no --dir means
- * the cwd. A deployment is identified by its canonical directory, exactly as
- * given to `oats --dir`; the kernel decides whether it is one. */
-const ctxs = [...new Set((flagAll("dir").length ? flagAll("dir") : [process.cwd()]).map((d) => resolve(String(d))))];
+/** Deployments in view. Each --dir registers one (repeatable); no --dir serves
+ * no local deployment, never the cwd (#518). A deployment is identified by its
+ * canonical directory, exactly as given to `oats --dir`; the kernel decides
+ * whether it is one. */
+const ctxs = [...new Set(flagAll("dir").map((d) => resolve(String(d))))];
 const port = Number(flag("port") || 4820);
 const DEBUG = flag("debug") === true || process.env.OATSWEB_DEBUG === "1";
 
@@ -607,7 +608,7 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
   // values resolve as stable E_BAD_ARGS envelopes, never reach the CLI.
   const env = await adapter.cliSpawn(cliState.bin, {
     agent: name,
-    workspaceDir: ctxs[0], // SSH routes choose their own remote cwd
+    workspaceDir: ctxs[0] ?? homedir(), // SSH routes choose their own remote cwd
     task: task ? String(task) : "",
     purpose: purpose ? String(purpose) : undefined,
     relation: relation ? String(relation) : undefined,
@@ -1483,7 +1484,7 @@ const server = createServer(async (req, res) => {
         const request = await readBody(req);
         const workspace = surfaceDeployment(asked, request);
         const result = await launchConfigRequest(request, {
-          workspace, cli: cliState, localCwd: ctxs[0],
+          workspace, cli: cliState, localCwd: ctxs[0] ?? homedir(),
           agents: workspace ? agentsData(workspace.id).agents : [],
           instances: workspace ? deploymentRows(workspace) : [],
         }).finally(() => { if (workspace && ['set', 'remove'].includes(request?.action)) spawnPreviewCache.invalidate(workspace.id); }); // the default launch a preview reports
@@ -1526,7 +1527,7 @@ const server = createServer(async (req, res) => {
         const request = await readStrictBody(req, 16384);
         const getContext = () => {
           const workspace = deployments().find(w => w.id === url.searchParams.get('ws'));
-          return { workspace, cli: cliState, epoch: cliProbeGeneration, localCwd: ctxs[0],
+          return { workspace, cli: cliState, epoch: cliProbeGeneration, localCwd: ctxs[0] ?? homedir(),
             instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
         };
         return send(res, 200, await instanceEventsRequest(request, getContext));
@@ -1552,7 +1553,7 @@ const server = createServer(async (req, res) => {
         const getContext = () => {
           const workspace = deployments().find(w => w.id === url.searchParams.get('ws'));
           return { workspace, cli: cliState, agents: workspace && !workspace.remote && !workspace.server ? agentsData(workspace.id).agents : [],
-            localCwd: ctxs[0], instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
+            localCwd: ctxs[0] ?? homedir(), instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
         };
         return send(res, 200, await readinessRequest(request, getContext));
       } catch { return send(res, 400, readinessFailure('E_BAD_ARGS')); }
@@ -1581,7 +1582,7 @@ const server = createServer(async (req, res) => {
         const request = await readStrictBody(req);
         const getContext = () => {
           const workspace = deployments().find(w => w.id === url.searchParams.get('ws'));
-          return { workspace, cli: cliState, localCwd: ctxs[0], instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
+          return { workspace, cli: cliState, localCwd: ctxs[0] ?? homedir(), instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
         };
         const result = await lifecycleRequest(request, getContext);
         if (request.action === 'apply' && ['complete', 'partial', 'refused', 'unknown'].includes(result.status)) {
@@ -1605,7 +1606,7 @@ const server = createServer(async (req, res) => {
         // Never collect Git here or fall back to another workspace.
         // An absent exact snapshot is unavailable; refreshing the roster is
         // the existing collector's job, not an authority to infer another home.
-        const result = await instanceGitRequest(request, { workspace, cli: cliState, localCwd: ctxs[0],
+        const result = await instanceGitRequest(request, { workspace, cli: cliState, localCwd: ctxs[0] ?? homedir(),
           instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] });
         return send(res, 200, result);
       } catch (error) {
@@ -1657,7 +1658,7 @@ const server = createServer(async (req, res) => {
         // what no key can see (local configuration edited outside Desktop) is bounded by the cache TTL.
         const observed = workspace && !workspace.remote ? snapshot.byWs.get(workspace.id)?.deployment : null;
         const result = await capabilityRequest(request, {
-          workspace, cli: cliState, localCwd: ctxs[0],
+          workspace, cli: cliState, localCwd: ctxs[0] ?? homedir(),
           agents: workspace ? agentsData(workspace.id).agents : [],
           instances: workspace ? deploymentRows(workspace) : [],
           cache: inspectCache, maxAge: BACKGROUND_MAX_AGE,
@@ -1685,7 +1686,7 @@ const server = createServer(async (req, res) => {
       const workspace = surfaceDeployment(url.searchParams.get('ws'), request);
       try {
         const result = await scheduleRequest(request, {
-          workspace, cli: cliState, localCwd: ctxs[0],
+          workspace, cli: cliState, localCwd: ctxs[0] ?? homedir(),
           agents: workspace ? agentsData(workspace.id).agents : [],
           instances: workspace ? deploymentRows(workspace) : [],
         });
@@ -1835,14 +1836,14 @@ const server = createServer(async (req, res) => {
         if (restart && inst.server) locator.requireRemoteSupport(cliState, "session-restart");
         const env = await adapter.cliStart(cliState.bin, { home: inst.home, model: body.model,
           launchConfig: body.launchConfig, harness: body.harness, harnessFlag: harnessFlag(cliState), yolo: body.yolo, restart,
-          workspaceDir: inst.server ? ctxs[0] : dirname(inst.agentsRoot), server: inst.server });
+          workspaceDir: inst.server ? ctxs[0] ?? homedir() : dirname(inst.agentsRoot), server: inst.server });
         observeMutation(url.searchParams.get("ws")); void refreshRemoteSnapshot();
         return env.ok ? send(res, 200, env.result) : send(res, env.error.code === "E_BAD_ARGS" ? 400 : 409, { error: env.error.message, code: env.error.code });
       }
       /* OATSWEB_START_END */
       const workspace = deployments().find(w => w.id === url.searchParams.get("ws"));
       const result = await capabilityRequest({ action: "run", selector: { home: inst.home }, operation: "knowledge:harvest" }, {
-        workspace, cli: cliState, localCwd: ctxs[0],
+        workspace, cli: cliState, localCwd: ctxs[0] ?? homedir(),
         agents: workspace ? agentsData(workspace.id).agents : [],
         instances: workspace ? deploymentRows(workspace) : [],
         cache: inspectCache, // a run invalidates the deployment's held inspections

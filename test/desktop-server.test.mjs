@@ -497,3 +497,27 @@ test("desktop server: hostile Host header is rejected on GET file APIs (DNS rebi
     assert.equal((await fetch(`http://127.0.0.1:${port}/api/panel`)).status, 200, "loopback host still serves");
   } finally { proc.kill(); }
 });
+
+test("desktop server: started with no --dir it serves no local deployment, never its cwd (#518)", async () => {
+  const tools = mkdtempSync(join(tmpdir(), "oatsweb-fake-cli-"));
+  const bin = join(tools, "oats");
+  writeFileSync(bin, `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(FAKE)} "$@"\n`);
+  chmodSync(bin, 0o755);
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "oatsweb-not-a-deployment-")));
+  const port = await freePort();
+  const proc = spawn(process.execPath, [SRV, "start", "--port", String(port)], {
+    cwd, stdio: "ignore", env: { ...process.env, OATS_DESKTOP_OATS_BIN: bin },
+  });
+  try {
+    let panel = null;
+    for (let i = 0; i < 100 && !panel; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      try { panel = await (await fetch(`http://127.0.0.1:${port}/api/panel`)).json(); } catch { /* not up yet */ }
+    }
+    assert.ok(panel, "server came up");
+    const local = (panel.workspaces || []).filter((w) => w.id.startsWith("/"));
+    assert.deepEqual(local, [], `no local workspace is served: ${JSON.stringify(panel.workspaces)}`);
+    assert.ok(!(panel.workspaces || []).some((w) => w.id === cwd || w.id === "/"), "never the cwd, never /");
+    assert.equal((await fetch(`http://127.0.0.1:${port}/api/cli`)).ok, true, "the CLI probe still answers");
+  } finally { proc.kill(); rmSync(cwd, { recursive: true, force: true }); rmSync(tools, { recursive: true, force: true }); }
+});

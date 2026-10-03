@@ -77,6 +77,16 @@ still wins. Reset typography (⌘0 / Ctrl+0, the palette) forgets both, and Sett
 Terminal's "Reset to default" forgets the size, so the defaults apply again. Every
 size control clamps to 9–28 (`clampTerminalFontSize`).
 
+**Copying (#520).** A terminal tab is a tmux client with tmux's mouse on, so a plain
+drag is tmux's: the viewer's locked key table (`tmux-target.mjs`
+`LOCKED_TABLE_BINDINGS`; the kernel's remote viewer, `lib/session-viewer.mjs`, binds
+the same) starts copy mode on `MouseDrag1Pane` unless the pane is in a mode or its
+program grabbed the mouse. On release copy mode copies, and tmux (with its default
+`set-clipboard external`) sends the text as OSC 52, which `terminal-clipboard.mjs`
+writes to the clipboard: write-only, a query is never answered, at most 1 MiB, valid
+UTF-8 only. Option-drag (`macOptionClickForcesSelection`) is still xterm's own
+selection, copied by ⌘C and the right-click menu.
+
 A terminal tab shows its program the way a native terminal would. It renders with
 xterm's WebGL renderer (`@xterm/addon-webgl`, `createGlyphRenderer` in
 `terminal-tab.mjs`), whose built-in glyphs draw box drawing and block elements

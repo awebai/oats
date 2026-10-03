@@ -3,12 +3,12 @@
 // channels (claim in place, open, New Window), restore at launch, titles, and closing.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { EventEmitter } from 'node:events';
 import { readFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { createWindowSet } from '../window-set.mjs';
+import { fakeWindowClass } from './helpers/fake-window.mjs';
 import { parseWindowRecords, resolveView, restorePlan, clampBounds, windowTitle, createWindowRecords } from '../window-records.mjs';
 import { trustedForgeFrame } from '../forge-proxy.mjs';
 import { validWorkspaceId } from '../renderer/workspace-id.mjs';
@@ -24,26 +24,11 @@ const windowBlock = source.match(/function createWindow\(workspaceId, record = n
 const noteServedBlock = source.match(/function noteServed\(list\) \{[^]*?\n\}/)[0];
 const tick = () => new Promise((r) => setImmediate(r));
 
-class FakeWindow extends EventEmitter {
-  constructor(options) {
-    super(); this.options = options; this.title = options.title; this.destroyed = false; this.minimized = false; this.calls = [];
-    this.bounds = { x: options.x ?? 100, y: options.y ?? 100, width: options.width, height: options.height };
-    this.webContents = Object.assign(new EventEmitter(), { id: FakeWindow.next++, setWindowOpenHandler() {} });
-    this.webContents.mainFrame = { url: RENDERER };
-    FakeWindow.all.push(this);
-  }
-  setTitle(title) { this.title = title; }
-  isDestroyed() { return this.destroyed; } isMinimized() { return this.minimized; }
-  restore() { this.calls.push('restore'); } show() { this.calls.push('show'); } focus() { this.calls.push('focus'); }
-  maximize() { this.calls.push('maximize'); } setFullScreen(on) { this.calls.push(`fullscreen:${on}`); }
-  getNormalBounds() { return this.bounds; } isMaximized() { return false; } isFullScreen() { return false; }
-  async loadFile(_file, options) { this.loaded = options; if (options.hash) this.webContents.mainFrame.url = `${RENDERER}#${options.hash}`; }
-  close({ quitting = false } = {}) { main.quitStarted = quitting; this.emit('close'); this.destroyed = true; this.emit('closed'); }
-}
-FakeWindow.next = 1; FakeWindow.all = [];
+const FakeWindow = fakeWindowClass(RENDERER);
+FakeWindow.onClose = (quitting) => { main.quitStarted = quitting; };
 let main;
 
-function boot({ records = [], served = SERVED, displays = [{ workArea: { x: 0, y: 25, width: 1440, height: 875 } }] } = {}) {
+function boot({ records = [], served = SERVED, reread = null, dirs = ['/d/oats', '/d/tsm'], displays = [{ workArea: { x: 0, y: 25, width: 1440, height: 875 } }] } = {}) {
   FakeWindow.all = [];
   const handlers = new Map(), file = join(mkdtempSync(join(tmpdir(), 'oats-win-')), 'windows.json');
   const context = {
@@ -52,9 +37,11 @@ function boot({ records = [], served = SERVED, displays = [{ workArea: { x: 0, y
     screen: { getAllDisplays: () => displays }, RENDERER_URL: RENDERER, servedList: served, allowedWs: new Set(served.map((w) => w.id)),
     advertisedBefore: new Set(), quitStarted: false, console, Menu: {}, shell: {},
     createWindowSet, restorePlan, resolveView, clampBounds, windowTitle, trustedForgeFrame, validWorkspaceId, workspaceHash, trustedRendererUrl,
-    terminalBroker: { register() {} }, suggestionCalls: { forget() {} }, lastPickChoices: new Map(),
+    terminalBroker: { register() {} }, suggestionCalls: { forget() {} }, lastPickChoices: new Map(), workspaceDirs: dirs,
   };
   context.advertisedNow = () => context.allowedWs;
+  // The server's answer to main's re-read of /api/panel: `reread`, else what it served before.
+  context.panelWorkspaces = async () => { context.rereads = (context.rereads ?? 0) + 1; if (reread) { context.servedList = reread; context.allowedWs = new Set(reread.map((w) => w.id)); } return context.servedList; };
   main = runInNewContext(`${section}\n${windowBlock}\n${noteServedBlock}\n({ noteServed, windows, choosers, openWorkspaceWindow, openNewWindow, restoreWindows, setRecords: (r) => { windowRecords = r; }, setAdvertised: (set) => { allowedWs = set; }, setServed: (list) => { servedList = list; }, get windowRecords() { return windowRecords; } })`, context);
   Object.defineProperty(main, 'quitStarted', { set: (v) => { context.quitStarted = v; } });
   main.setRecords(createWindowRecords({ file, initial: records, timers: { setTimeout: () => 1, clearTimeout() {} } }));
@@ -62,7 +49,8 @@ function boot({ records = [], served = SERVED, displays = [{ workArea: { x: 0, y
   // Replies built in the vm are compared by value (their prototypes are the vm's).
   const plain = (value) => JSON.parse(JSON.stringify(value));
   return { main, handlers, event, file, claim: async (win, id, options) => plain(await handlers.get('window:claim-workspace')(event(win), id, options)),
-    open: async (win, id) => plain(await handlers.get('window:open-workspace')(event(win), id)) };
+    open: async (win, id) => plain(await handlers.get('window:open-workspace')(event(win), id)),
+    choices: async (win, e = event(win)) => plain(await handlers.get('window:choices')(e)), rereads: () => context.rereads ?? 0 };
 }
 const record = (workspace, x = 50) => ({ workspace, bounds: { x, y: 60, width: 900, height: 700 }, maximized: false });
 
@@ -93,6 +81,25 @@ test('with nothing to restore (the first launch after the update), one window th
   assert.equal(FakeWindow.all.length, 1);
   assert.deepEqual({ ...FakeWindow.all[0].loaded }, {}, 'no hash: the renderer takes the localStorage selection when main lets it');
   assert.equal(FakeWindow.all[0].title, 'OATS Desktop');
+});
+
+test('a Finder launch serving no local deployment opens one unbound window that chooses, never one on / (#518)', async () => {
+  for (const served of [[], SERVED.filter((w) => w.remote)]) {
+    // (a) nothing saved, (b) a saved set of non-deployments, (c) a windows.json record bound to '/': none is served.
+    const b = boot({ records: [{ ...record('/'), deployments: ['/'] }], served, dirs: [] });
+    b.main.restoreWindows();
+    assert.equal(FakeWindow.all.length, 1);
+    const win = FakeWindow.all[0];
+    assert.deepEqual({ ...win.loaded }, {}, 'no #ws=: bound to nothing');
+    assert.equal(win.title, 'OATS Desktop');
+    for (const id of ['', '/']) {
+      const refused = await b.claim(win, id, { focus: false, initial: true });
+      assert.equal(refused.code, 'choose', 'the shared default (even a stale "/") is never taken: the switcher opens');
+      assert.deepEqual(refused.workspaces, served);
+    }
+    assert.equal(b.main.windows.keyOf(win), null);
+    assert.deepEqual(b.main.windowRecords.records().map((r) => r.workspace), ['/'], 'restore binds nothing to "/" (startup cleans the stale record: forgetNonDeployments)');
+  }
 });
 
 test('the launch\'s own deployment gets its window beside the restored ones, or focuses the one it has', () => {
@@ -269,4 +276,20 @@ test('a window keyed by a deployment whose view another window already has is le
   assert.equal(b.main.windows.keyOf(byPath), '/d/oats', 'not moved onto the view another window has');
   assert.equal(b.main.windows.keyOf(byView), A);
   assert.deepEqual(byView.calls, [], 'the other window is not focused');
+});
+
+test('window:choices: a window main knows gets the served list as re-read now; a foreign frame or unknown window gets nothing (#521)', async () => {
+  const later = [...SERVED, { id: 'remote:vega:/y', name: 'y', deployments: ['remote:vega:/y'], machines: ['vega'], remote: true }];
+  const b = boot({ served: [], reread: later, dirs: [] });
+  b.main.restoreWindows();
+  const [win] = FakeWindow.all;
+  assert.equal((await b.claim(win, '', { focus: false, initial: true })).code, 'choose');
+  assert.deepEqual(await b.choices(win), { ok: true, workspaces: later });
+  assert.equal(b.rereads(), 1, 'main re-reads the served list for it');
+  assert.equal(b.main.windows.keyOf(win), null, 'asking binds nothing');
+  const foreign = { sender: Object.assign(win.webContents, { isDestroyed: () => false }), senderFrame: { url: 'https://evil.example/' } };
+  assert.deepEqual(await b.choices(win, foreign), { ok: false, code: 'forbidden' });
+  const stranger = new FakeWindow({ width: 10, height: 10 });
+  assert.deepEqual(await b.choices(stranger), { ok: false, code: 'unknown-window' });
+  assert.equal(b.rereads(), 1, 'a refusal reads nothing');
 });

@@ -17,14 +17,20 @@ Enter a model or leave the field blank to use the selected launch's default.
 An old harness's model is not carried to a different harness. Available local model
 suggestions are advisory; a model ID can also be typed. Start uses the saved
 briefing and state in a new harness conversation; it does not resume an old
-harness conversation ID. After the launch appears in the roster, Desktop
-opens the instance's terminal.
+harness conversation ID. Once the kernel accepts the start or restart, the
+dialog closes and Desktop opens the instance's terminal as soon as its row is
+running with a terminal session, so whatever the harness shows first (a
+confirmation such as Claude Code's development-channels prompt, an error, the
+session) is visible there. If the terminal is not ready within the wait, a
+notice says so and the instance's row opens it later. A refused launch keeps
+the dialog open with the kernel's error.
 
 If an ordinary Start dialog finds the instance already running, its action becomes
 **Open terminal**. A failed or timed-out start requires **Refresh status** before
 another attempt, because the launch may have succeeded before the reply was
 lost. Changing workspaces dismisses the dialog and prevents a delayed launch
-reply from opening a terminal in the wrong workspace.
+reply, or a terminal that becomes ready later, from opening in the wrong
+workspace.
 
 **Restart with…** is explicit: after validating the new configuration, the
 kernel stops the current harness and starts the selected one. It does not
