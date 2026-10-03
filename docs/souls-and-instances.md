@@ -387,6 +387,30 @@ If the workspace has a messaging capability such as aweb, spawned instances
 can also receive identities and coordinate with each other automatically. The
 tasks capability can provide shared work state while messaging provides conversation.
 
+### Cloning an instance
+
+A clone is a new instance of an existing instance's soul that starts from a
+curated brief of what that instance knows, for a new goal. It is not a copy of
+the source's home. Cloning is the official
+[`oats.cloning`](https://github.com/awebai/oats-cloning) package, not a kernel
+verb; a soul that may request clones composes it
+(`oats.cloning: { from: package }`). An instance with the capability runs:
+
+```bash
+oats cloning request <source> --goal-file goal.md --relation independent|child|sibling|parent \
+  [--relative-to <instance>] [--name <slug>] [--transcript exclude] [--base source|default|<ref>]
+```
+
+From the deployment directory the operator adds `--soul oats.cloning/cloner`.
+The relation is required and is the kernel's spawn relation of the clone to the
+anchor (`--relative-to`, the source by default); `independent` is the kernel's
+`unrelated` and takes no anchor. The request spawns a short-lived
+`oats.cloning/cloner`, which reads the source (its home files, work state and,
+unless excluded, its transcript), writes the brief, spawns the clone with its
+own identity, reports and retires itself. Only instances on this host can be
+cloned. [Reusing working understanding](knowledge-theory.md#reusing-working-understanding-context-handoffs-and-cloning)
+says what a clone carries and what it does not.
+
 ### Retire
 
 Retirement runs active capability retire hooks in reverse spawn order before the home disappears. The aweb
