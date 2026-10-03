@@ -50,6 +50,9 @@ function fixture(t, extra = {}) {
   };
   context.splitOpenState = () => ({ split: null, activeId: null, tabs: context.tabs, workspace: "A", visible: false });
   context.ownsInstanceTarget = () => true;
+  // The shell's paint time (Date.now() in shell.mjs) reads this realm's Date at each access, so a test's
+  // mock.timers clock reaches the VM too (a VM has its own Date otherwise).
+  Object.defineProperty(context, "Date", { get: () => Date, enumerable: true });
   const render = runInNewContext(`${source}\nrenderContextRoster`, context);
   const list = doc.querySelector(".ctx-list");
   const row = name => [...list.querySelectorAll(".ctx-inst")].find(b => b.querySelector(".ctx-name")?.textContent === name);
@@ -143,6 +146,7 @@ test("the card shows the reason, the message and the age, computed when shown", 
   assert.equal(u.fact("dev-b", "Message"), undefined, "no message, no row");
   t.mock.timers.setTime(Date.parse(SINCE) + 2 * 86400e3 + 5);
   assert.equal(u.fact("dev-a", "Waiting"), `Waiting for a tool approval · 2 d (since ${waitingClock(SINCE)})`, "not frozen at paint");
+  assert.match(u.fact("dev-a", "Waiting"), /\(since Oct \d{1,2}, \d\d:\d\d\)$/, "two days later the start carries its date (#559)");
 });
 
 test("the card renders the message as text: markup is shown literally, never parsed", async t => {
@@ -231,6 +235,7 @@ test("an unavailable row (no card) says it in its title and description: message
   const rows = [remote("dev-a", undefined, { waitingOnYou: claim({ message: "Proceed?" }) }), remote("dev-b", undefined, { waitingOnYou: claim({ reason: "question" }) }),
     remote("root"), remote("kid", "root", { waitingOnYou: claim() })];
   const u = fixture(t, { context: { collapsedInstances: new Set([tree.collapseKey("A", tree.instanceId(rows[2]))]) } });
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse(SINCE) + 60e3 }); // painted a minute later: the same local day
   u.render(rows);
   const a = u.row("dev-a"), b = u.row("dev-b"), root = u.row("root");
   assert.equal(a.getAttribute("aria-disabled"), "true");
@@ -240,6 +245,12 @@ test("an unavailable row (no card) says it in its title and description: message
   assert.equal(u.marks("dev-a")[0].textContent, "Needs input");
   assert.equal(u.marks("root")[0].textContent, "1 below need input");
   assert.match(root.getAttribute("aria-description"), / · 1 below need input: kid$/);
+  // Painted two days later, the sentence carries the start's date (#559), from the paint time.
+  t.mock.timers.setTime(Date.parse(SINCE) + 2 * 86400e3);
+  u.render(rows);
+  const dated = u.row("dev-a").getAttribute("aria-description");
+  assert.ok(dated.endsWith(` · Needs input: Proceed? since ${waitingClock(SINCE, Date.now())}`), dated);
+  assert.match(dated, / since Oct \d{1,2}, \d\d:\d\d$/);
 });
 
 test("a roll-up stays inside its deployment section: a unique parent name in another deployment collects nothing", async t => {

@@ -37,7 +37,7 @@ export function rosterTipFacts(instance, why = '', pr = null, { below = [], now 
       ['Branch', text(instance.branch), 'mono'],
       ['Harness', text(instance.harness) ? { harness: instance.harness, model: text(instance.model) } : null],
       ['Status', [state === 'unknown' ? 'status unknown' : state, text(instance.runtimeError)].filter(Boolean).join(' · ')],
-      ['Waiting', claim ? `${waitingLabel(claim)} · ${waitedText(claim.since, now)} (since ${waitingClock(claim.since)})` : null],
+      ['Waiting', claim ? `${waitingLabel(claim)} · ${waitedText(claim.since, now)} (since ${waitingClock(claim.since, now)})` : null],
       // Text only (the card sets textContent): never parsed, never linkified.
       ['Message', claim?.message ?? null],
       ['Below', below.length ? waitingBelowText(below) : null],

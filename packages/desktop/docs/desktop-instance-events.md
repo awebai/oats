@@ -100,7 +100,11 @@ validates the field and never synthesizes it.
 - **The card** (hover or keyboard focus) adds `Waiting` (the reason in words,
   how long, and the local start time) and `Message`. The age is computed when
   the card is shown. A row that has no card (an unavailable remote row) appends
-  the message or label and the start time to its title and description.
+  the message or label and the start time to its title and description. The
+  start time (`waitingClock`) is "14:03" on the current local day, "Oct 2,
+  14:03" on another day and "2025-10-02 14:03" in another year (an English
+  month table, like the rest of the copy), judged against the show or paint
+  time.
 - **Collapsed parents.** A waiting row hidden by a collapse is counted on its
   nearest visible ancestor as "N below" (`waitingRollup` in
   `renderer/instance-tree.mjs`, beside `instanceVisibleInTree`, which it mirrors), following the parent relation only

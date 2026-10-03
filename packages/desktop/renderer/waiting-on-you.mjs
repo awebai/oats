@@ -53,10 +53,17 @@ export function waitedText(since, now = Date.now()) {
   return `${Math.floor(h / 24)} d`;
 }
 
-/** The claim's start as local HH:MM. */
-export function waitingClock(since) {
-  const at = new Date(since);
-  return Number.isFinite(at.getTime()) ? `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}` : '';
+// The app's copy is English; a fixed table keeps the date deterministic (no locale lookup).
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const pad = n => String(n).padStart(2, '0');
+/** The claim's start in local time, as precise as it needs to be next to `now`: "14:03" on now's local
+ * calendar day, "Oct 2, 14:03" on another day of the same year, "2025-10-02 14:03" in another year. */
+export function waitingClock(since, now = Date.now()) {
+  const at = new Date(since), today = new Date(now);
+  if (!Number.isFinite(at.getTime())) return '';
+  const time = `${pad(at.getHours())}:${pad(at.getMinutes())}`;
+  if (at.getFullYear() !== today.getFullYear()) return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${time}`;
+  return at.getMonth() === today.getMonth() && at.getDate() === today.getDate() ? time : `${MONTHS[at.getMonth()]} ${at.getDate()}, ${time}`;
 }
 
 /** "dev-a, dev-b" — up to 3 names, then "and N more". */
@@ -69,10 +76,10 @@ export function waitingNames(rows) {
 export const waitingBelowText = rows => `${rows.length} ${rows.length === 1 ? 'needs' : 'need'} input: ${waitingNames(rows)}`;
 
 /** What an unavailable row (no card) appends to its title/aria-description sentence. Absolute time only:
- * the sentence is painted once. */
-export function waitingSentence(claim, below = []) {
+ * the sentence is painted once; `now` is the paint time (it decides whether the start needs a date). */
+export function waitingSentence(claim, below = [], now = Date.now()) {
   const parts = [];
-  if (claim) parts.push(`Needs input: ${claim.message ?? waitingLabel(claim)} since ${waitingClock(claim.since)}`);
+  if (claim) parts.push(`Needs input: ${claim.message ?? waitingLabel(claim)} since ${waitingClock(claim.since, now)}`);
   if (below.length) parts.push(`${below.length} below need input: ${waitingNames(below)}`);
   return parts.map(p => ` · ${p}`).join('');
 }

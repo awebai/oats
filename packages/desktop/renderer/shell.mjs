@@ -848,7 +848,7 @@ function renderContextRoster(instances) {
         const heldStale = rowHeldStale(i);
         // Needs input: this row's own claim (waitingClaim is the only gate), and the waiting rows hidden under it.
         const claim = waitingClaim(i, { stale: heldStale }), below = waitingBelow.get(instanceId(i)) || [];
-        if (unavailable) { const said = why + waitingSentence(claim, below); row.title = said; row.setAttribute("aria-description", said); }
+        if (unavailable) { const said = why + waitingSentence(claim, below, Date.now()); row.title = said; row.setAttribute("aria-description", said); }
         else rosterTip.bind(row, () => rosterTipFacts(i, why, pr, { below, stale: heldStale }));
         const dot = document.createElement("span");
         dot.className = `ctx-dot ${state === "running" ? "on" : state === "stopped" ? "off" : "unknown"}`;

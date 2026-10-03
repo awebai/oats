@@ -94,11 +94,18 @@ test('waitedText floors into under a minute / min / h / d buckets; a future sinc
   assert.equal(waitedText('not a date', at), 'under a minute');
 });
 
-test('waitingClock is the claim start in local HH:MM', () => {
-  const local = new Date(since);
-  const expected = `${String(local.getHours()).padStart(2, '0')}:${String(local.getMinutes()).padStart(2, '0')}`;
-  assert.equal(waitingClock(since), expected);
-  assert.match(waitingClock(since), /^\d{2}:\d{2}$/);
+// Built from LOCAL calendar fields, so these hold in any time zone (#559).
+const localAt = (y, mo, d, h, mi) => new Date(y, mo, d, h, mi).getTime();
+test('waitingClock: HH:MM on now\'s local day, "Mon D, HH:MM" on another day, "YYYY-MM-DD HH:MM" in another year', () => {
+  const now = localAt(2026, 9, 3, 15, 0);
+  assert.equal(waitingClock(new Date(localAt(2026, 9, 3, 14, 3)).toISOString(), now), '14:03', 'same day');
+  assert.equal(waitingClock(new Date(localAt(2026, 9, 3, 0, 0)).toISOString(), now), '00:00', 'local midnight is the same day');
+  assert.equal(waitingClock(new Date(localAt(2026, 9, 2, 14, 3)).toISOString(), now), 'Oct 2, 14:03', 'yesterday');
+  assert.equal(waitingClock(new Date(localAt(2026, 0, 31, 9, 5)).toISOString(), now), 'Jan 31, 09:05', 'earlier this year');
+  assert.equal(waitingClock(new Date(localAt(2025, 9, 2, 14, 3)).toISOString(), now), '2025-10-02 14:03', 'another year');
+  assert.equal(waitingClock(new Date(localAt(2025, 11, 31, 23, 59)).toISOString(), localAt(2026, 0, 1, 0, 1)), '2025-12-31 23:59', 'across New Year');
+  assert.equal(waitingClock(new Date(localAt(2026, 9, 4, 0, 1)).toISOString(), now), 'Oct 4, 00:01', 'a future start (clock skew) on another day says so');
+  assert.equal(waitingClock('not a time', now), '');
 });
 
 test('waitingNames lists up to three names, then "and N more"', () => {
@@ -110,10 +117,13 @@ test('waitingNames lists up to three names, then "and N more"', () => {
   assert.equal(waitingBelowText(rows(['a'])), '1 needs input: a');
 });
 
-test('waitingSentence (unavailable rows) names the message or label and an absolute time', () => {
-  const at = waitingClock(since);
-  assert.equal(waitingSentence(waitingOnYouData(claim())), ` · Needs input: Allow Bash(rm -rf build)? since ${at}`);
-  assert.equal(waitingSentence(waitingOnYouData(claim({ message: null, reason: 'question' }))), ` · Needs input: Asked you a question since ${at}`);
+test('waitingSentence (unavailable rows) names the message or label and an absolute time, dated against the paint time', () => {
+  const sameDay = Date.parse(since) + 60000, at = waitingClock(since, sameDay);
+  assert.equal(waitingSentence(waitingOnYouData(claim()), [], sameDay), ` · Needs input: Allow Bash(rm -rf build)? since ${at}`);
+  assert.equal(waitingSentence(waitingOnYouData(claim({ message: null, reason: 'question' })), [], sameDay), ` · Needs input: Asked you a question since ${at}`);
+  // A start built from LOCAL fields, so its local date is known in any time zone.
+  const lastYear = waitingOnYouData(claim({ since: new Date(localAt(2026, 9, 3, 10, 0)).toISOString() }));
+  assert.equal(waitingSentence(lastYear, [], localAt(2027, 0, 5, 12, 0)), ' · Needs input: Allow Bash(rm -rf build)? since 2026-10-03 10:00', 'a claim from another year carries its date');
   assert.equal(waitingSentence(null, [{ instance: 'dev-a' }, { instance: 'dev-b' }]), ' · 2 below need input: dev-a, dev-b');
   assert.equal(waitingSentence(null, []), '');
 });
