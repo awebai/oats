@@ -40,7 +40,7 @@ const names = [
   "splitPane", "closeSplit", "onTabKeydown", "addTab", "selectTab", "activateTab", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips",
   "openViewTab", "openTerminalTabFlow", "openTerminalTabInner", "focusActiveTerminal",
   "visibleTabEntries", "switchTab", "cycleTab", "gotoTab", "restoreWorkspaceTabs", "showTerminalContext",
-  "initContextRoster", "renderContextRoster", "focusRoster", "onRosterRowKey", "setRovingRow", "showInRoster",
+  "initContextRoster", "renderContextRoster", "focusRoster", "onRosterRowKey", "setRovingRow", "showInRoster", "syncTabNeedsInput",
 ];
 function deferred() {
   let resolve, reject;

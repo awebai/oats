@@ -1,5 +1,6 @@
 import { harnessOf } from "../renderer/harness-names.mjs";
 import { unsupportedSession } from "../renderer/instance-presentation.mjs";
+import { waitingOnYouData } from "../renderer/waiting-on-you.mjs";
 /** Projection of the installed CLI's remote roster. Never reads remote paths locally. */
 export function remoteWorkspace(group) {
   return {
@@ -24,6 +25,8 @@ export function remotePanel(group) {
       running: group.probe.ok ? i.running : null,
       runtimeError: group.probe.ok ? i.runtimeError : group.probe.error?.message || "Server is unreachable",
       tmux: i.tmux || null, git: i.git || null, task: i.task || "", next: i.next || "",
+      // Needs input: only a remote kernel with the feature reports it — validated, never synthesized when absent.
+      ...(Object.hasOwn(i, "waitingOnYou") ? { waitingOnYou: waitingOnYouData(i.waitingOnYou) } : {}),
       ...(unsupported ? { running: null, runtimeState: "unsupported", runtimeError: unsupported } : {}),
     };
   });

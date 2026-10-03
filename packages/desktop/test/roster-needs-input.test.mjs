@@ -1,0 +1,335 @@
+// Spec D: "Needs input" on the sidebar roster. Executes the shipped roster render (shell.mjs
+// renderContextRoster + needsInputMark) and the shipped card (roster-tip.mjs) against a stub store;
+// no shell startup, HTTP, Electron, CLI or session.
+import test from "node:test";
+import { viewContext } from "./helpers/view-context.mjs";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
+import { JSDOM } from "jsdom";
+import * as tree from "../renderer/instance-tree.mjs";
+import { instanceActions, captureInstanceActionMenu } from "../renderer/instance-actions.mjs";
+import { instanceActionTarget, sameInstanceActionTarget } from "../renderer/instance-action-target.mjs";
+import { instanceSplitPlan } from "../renderer/instance-split.mjs";
+import { runtimeState, unsupportedSession } from "../renderer/instance-presentation.mjs";
+import { canAddressRemote, rowReason } from "../renderer/remote-address.mjs";
+import { createRuntimeBadge } from "../renderer/identity-marks.mjs";
+import { iconElement } from "../renderer/shell-icons.mjs";
+import { createRosterTip, rosterTipFacts } from "../renderer/roster-tip.mjs";
+import { waitingClock } from "../renderer/waiting-on-you.mjs";
+import { createTabChrome } from "../renderer/tab-a11y.mjs";
+import { NO_ANSWER_CODE, unservedError } from "../renderer/deployment-header.mjs";
+
+const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), "utf8");
+const css = read("shell.css"), html = read("index.html"), shell = read("shell.mjs");
+const fn = name => shell.match(new RegExp(`function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}`))?.[0];
+// The shipped tab sync and overdue-read path too (#558): a roster paint re-syncs the open terminal tabs.
+const source = ["renderContextRoster", "needsInputMark", "syncTabNeedsInput", "failRosterUnserved"].map(name => { const s = fn(name); assert.ok(s, name); return s; }).join("\n");
+
+const SINCE = "2026-10-03T09:00:00.000Z";
+const claim = (extra = {}) => ({ since: SINCE, producer: "claude-hooks", reason: "permission", message: null, ...extra });
+const instance = (name, parentInstance, extra = {}) => ({ instance: name, parentInstance, agent: "dev",
+  home: `/synthetic/${name}`, agentsRoot: "/synthetic/agents", repoName: "desktop-repo", running: true, runtimeState: "running", ...extra });
+
+function fixture(t, extra = {}) {
+  const dom = new JSDOM(html, { pretendToBeVisual: true });
+  t.after(() => dom.window.close());
+  const doc = dom.window.document;
+  const tips = new Map();
+  const context = {
+    ...tree, document: doc, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge,
+    iconElement, NO_ANSWER_CODE, unservedError, instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, runAction: assert.fail,
+    applyChordTitles() {}, updateActiveContexts() {}, getBinding: () => null, formatChord: c => c, isMac: true,
+    contextRosterEl: doc.querySelector("#instance-roster"), contextFilter: "", contextWorkspace: "A",
+    rosterState: { hasData: true, state: "ready" }, rosterStale: false, contextDeploymentNote: null, ...viewContext(),
+    currentWorkspace: () => "A", workspaceGeneration: () => 0, collapsedInstances: new Set(),
+    rosterTip: { bind(el, facts) { tips.set(el.dataset.treeInstance, facts); }, hide() {}, sync() {} }, rosterTipFacts,
+    rosterPrs: { get: () => null, refresh() {} },
+    spawnJobs: { rows: () => [], announce: () => false, check() {}, ...(extra.jobs || {}) },
+    tabs: new Map(), activeTab: null, tabOpenIntents: { applyFocus: f => f() },
+    openTerminalTab() {}, openInstanceStart() {}, openLifecycleDialog: assert.fail, onRosterRowKey() {},
+    api: assert.fail, showStage: assert.fail, refreshContextRoster: assert.fail,
+    ...(extra.context || {}),
+  };
+  context.splitOpenState = () => ({ split: null, activeId: null, tabs: context.tabs, workspace: "A", visible: false });
+  context.ownsInstanceTarget = () => true;
+  // The shell's paint time (Date.now() in shell.mjs) reads this realm's Date at each access, so a test's
+  // mock.timers clock reaches the VM too (a VM has its own Date otherwise).
+  Object.defineProperty(context, "Date", { get: () => Date, enumerable: true });
+  const { render, failRosterUnserved } = runInNewContext(`${source}\n({ render: renderContextRoster, failRosterUnserved })`, context);
+  const list = doc.querySelector(".ctx-list");
+  const row = name => [...list.querySelectorAll(".ctx-inst")].find(b => b.querySelector(".ctx-name")?.textContent === name);
+  const marks = name => [...(row(name)?.querySelectorAll(".ctx-attn") || [])];
+  const facts = name => tips.get(`/synthetic/${name}`)?.();
+  const fact = (name, key) => facts(name)?.rows.find(([k]) => k === key)?.[1];
+  // A terminal tab as openTerminalTabInner draws it, in workspace "A" unless given.
+  const openTab = (inst, workspace = "A") => {
+    const id = context.tabs.size + 1, chrome = createTabChrome(doc, id, inst.instance, true, { dot: "on" });
+    doc.body.append(chrome.tabEl);
+    const tab = { ...chrome, key: tree.terminalKey(workspace, inst), kind: "terminal", workspace };
+    context.tabs.set(id, tab);
+    return tab;
+  };
+  return { doc, dom, context, render, failRosterUnserved, openTab, list, row, marks, facts, fact };
+}
+
+test("a running, waiting row shows “Needs input” on its name line: an icon and text, part of the row's accessible name", async t => {
+  const u = fixture(t);
+  u.render([instance("dev-a", undefined, { waitingOnYou: claim() }), instance("dev-b")]);
+  const [mark] = u.marks("dev-a");
+  assert.ok(mark, "the mark is painted");
+  assert.equal(mark.textContent, "Needs input");
+  assert.equal(mark.className, "ctx-attn");
+  assert.equal(mark.querySelector("svg").getAttribute("aria-hidden"), "true", "the text carries the state; the icon is decoration");
+  assert.equal(mark.parentElement.className, "ctx-name-line");
+  assert.equal(mark.previousElementSibling.className, "ctx-name", "after the name");
+  assert.match(u.row("dev-a").textContent, /^dev-aNeeds input/, "in the row button's name");
+  assert.ok(u.row("dev-a").querySelector(".ctx-dot.on"), "the dot stays liveness");
+  assert.equal(u.marks("dev-b").length, 0);
+  assert.equal(u.row("dev-b").querySelector(".ctx-name-line"), null, "a row without marks keeps its plain name");
+});
+
+test("never on a row whose Desktop liveness is not running, whose server was not reached, or that the roster holds stale", async t => {
+  const waiting = { waitingOnYou: claim() };
+  const rows = [
+    instance("shell", undefined, { ...waiting, running: false, runtimeState: "shell" }),
+    instance("stopped", undefined, { ...waiting, running: false, runtimeState: "stopped" }),
+    instance("unreachable", undefined, { ...waiting, running: null, runtimeState: "unreachable" }),
+    instance("unsupported", undefined, { ...waiting, running: null, runtimeState: "unsupported" }),
+    instance("kernel-running", undefined, { ...waiting, runtimeState: "shell" }), // the kernel said running; tmux says shell
+    instance("unreached", undefined, { ...waiting, server: "s1", addressable: true, serverUnreached: true }),
+  ];
+  const u = fixture(t);
+  u.render(rows);
+  for (const r of rows) assert.equal(u.marks(r.instance).length, 0, r.instance);
+  for (const r of rows) assert.equal(u.fact(r.instance, "Waiting"), undefined, `${r.instance}: no card row either`);
+  const stale = fixture(t, { context: { rosterStale: true } });
+  stale.render([instance("dev-a", undefined, waiting)]);
+  assert.equal(stale.marks("dev-a").length, 0, "a held-stale row's claim is last-known: unknown");
+  assert.equal(stale.fact("dev-a", "Waiting"), undefined);
+});
+
+test("an invalid claim is dropped and the roster still renders", async t => {
+  const u = fixture(t);
+  u.render([instance("dev-a", undefined, { waitingOnYou: { since: "yesterday", producer: "x" } }),
+    instance("dev-b", undefined, { waitingOnYou: claim({ producer: "https://evil.example/x" }) }), instance("dev-c")]);
+  assert.equal(u.list.querySelectorAll(".ctx-inst").length, 3);
+  assert.equal(u.list.querySelectorAll(".ctx-attn").length, 0);
+});
+
+test("the mark disappears on the first repaint after the claim clears", async t => {
+  const u = fixture(t);
+  u.render([instance("dev-a", undefined, { waitingOnYou: claim() })]);
+  assert.equal(u.marks("dev-a").length, 1);
+  u.render([instance("dev-a", undefined, { waitingOnYou: null })]);
+  assert.equal(u.marks("dev-a").length, 0);
+  u.render([instance("dev-a")]);
+  assert.equal(u.marks("dev-a").length, 0, "absent is unknown, never a mark");
+});
+
+test("with New: Needs input first, then New, both on the name line", async t => {
+  const u = fixture(t, { jobs: { isNew: (_ws, i) => i.instance === "dev-a" } });
+  u.render([instance("dev-a", undefined, { waitingOnYou: claim() })]);
+  const line = u.row("dev-a").querySelector(".ctx-name-line");
+  assert.deepEqual([...line.children].map(el => el.className), ["ctx-name", "ctx-attn", "ctx-new"]);
+});
+
+test("CSS: the pill keeps its size, paints its own opaque surface with background-color, and never animates", () => {
+  const rule = css.match(/\.ctx-attn \{([^}]*)\}/)?.[1];
+  assert.ok(rule, ".ctx-attn rule");
+  for (const decl of ["flex: none", "display: inline-flex", "background-color: var(--attn-bg)", "color: var(--warn)",
+    "border: 1px solid var(--attn-border)", "font-size: 10.5px", "font-weight: 600", "line-height: 15px"]) assert.ok(rule.includes(decl), decl);
+  assert.doesNotMatch(rule, /background:|opacity|animation|transition/);
+  assert.match(css, /\.ctx-name-line > \.ctx-name \{ min-width: 0; \}/, "the name is what ellipsizes");
+  assert.doesNotMatch(css, /\.ctx-attn[^{]*\{[^}]*animation/);
+});
+
+test("the card shows the reason, the message and the age, computed when shown", async t => {
+  const u = fixture(t);
+  u.render([instance("dev-a", undefined, { waitingOnYou: claim({ message: "Allow Bash(rm -rf build)?" }) }),
+    instance("dev-b", undefined, { waitingOnYou: claim({ reason: "approval" }) })]);
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse(SINCE) + 3 * 3600e3 + 59 * 60e3 });
+  assert.equal(u.fact("dev-a", "Waiting"), `Waiting for a tool approval · 3 h (since ${waitingClock(SINCE)})`);
+  assert.equal(u.fact("dev-a", "Message"), "Allow Bash(rm -rf build)?");
+  const keys = u.facts("dev-a").rows.map(([k]) => k);
+  assert.equal(keys.indexOf("Waiting"), keys.indexOf("Status") + 1, "after Status");
+  assert.equal(u.fact("dev-b", "Waiting"), `Needs input · 3 h (since ${waitingClock(SINCE)})`, "an unknown reason is never shown raw");
+  assert.equal(u.fact("dev-b", "Message"), undefined, "no message, no row");
+  t.mock.timers.setTime(Date.parse(SINCE) + 2 * 86400e3 + 5);
+  assert.equal(u.fact("dev-a", "Waiting"), `Waiting for a tool approval · 2 d (since ${waitingClock(SINCE)})`, "not frozen at paint");
+  assert.match(u.fact("dev-a", "Waiting"), /\(since Oct \d{1,2}, \d\d:\d\d\)$/, "two days later the start carries its date (#559)");
+});
+
+test("the card renders the message as text: markup is shown literally, never parsed", async t => {
+  const dom = new JSDOM("<!doctype html><body></body>", { pretendToBeVisual: true });
+  t.after(() => dom.window.close());
+  const doc = dom.window.document, tip = createRosterTip(doc);
+  const row = doc.createElement("button"); row.dataset.treeInstance = "/synthetic/dev-a"; doc.body.append(row);
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  tip.bind(row, () => rosterTipFacts(instance("dev-a", undefined, { waitingOnYou: claim({ message: "<b>bold</b><script>x()</script>" }) }), "Open dev-a terminal"));
+  row.dispatchEvent(new dom.window.Event("mouseenter"));
+  t.mock.timers.tick(400);
+  const card = doc.querySelector(".ctx-tip");
+  assert.equal(card.hidden, false);
+  const message = [...card.querySelectorAll(".ctx-tip-fact")].find(f => f.querySelector("dt").textContent === "Message");
+  assert.equal(message.querySelector("dd").textContent, "<b>bold</b><script>x()</script>");
+  assert.equal(card.querySelector("b, script"), null, "no element created from the message");
+});
+
+test("a collapsed parent surfaces waiting rows its collapse hides; expanding it hands the marks back", async t => {
+  const rows = [instance("root"), instance("dev-a", "root", { waitingOnYou: claim() }), instance("dev-b", "root", { waitingOnYou: claim({ reason: "question" }) }),
+    instance("dev-c", "root"), instance("solo")];
+  const collapsed = new Set([tree.collapseKey("A", "/synthetic/root")]);
+  const u = fixture(t, { context: { collapsedInstances: collapsed } });
+  u.render(rows);
+  assert.equal(u.row("dev-a"), undefined, "the children are hidden");
+  const [mark] = u.marks("root");
+  assert.equal(mark.className, "ctx-attn rollup");
+  assert.equal(mark.textContent, "2 below need input", "the visible “2 below” plus the visually hidden rest");
+  assert.equal(mark.querySelector(".sr-only").textContent, " need input");
+  assert.match(u.row("root").textContent, /2 below need input/, "the row's accessible name says it");
+  assert.equal(u.fact("root", "Below"), "2 need input: dev-a, dev-b");
+  assert.equal(u.fact("root", "Waiting"), undefined, "root itself is not waiting");
+  assert.equal(u.marks("solo").length, 0);
+  collapsed.clear();
+  u.render(rows);
+  assert.equal(u.marks("root").length, 0, "the roll-up is derived on every paint");
+  assert.equal(u.marks("dev-a")[0].textContent, "Needs input");
+  assert.equal(u.marks("dev-b")[0].textContent, "Needs input");
+  assert.equal(u.fact("root", "Below"), undefined);
+});
+
+test("a waiting, collapsed parent shows “Needs input” only; its card names the rest", async t => {
+  const rows = [instance("root", undefined, { waitingOnYou: claim() }), instance("dev-a", "root", { waitingOnYou: claim() })];
+  const u = fixture(t, { context: { collapsedInstances: new Set([tree.collapseKey("A", "/synthetic/root")]) } });
+  u.render(rows);
+  assert.deepEqual(u.marks("root").map(m => m.textContent), ["Needs input"]);
+  assert.ok(u.fact("root", "Waiting"));
+  assert.equal(u.fact("root", "Below"), "1 needs input: dev-a");
+});
+
+test("names up to three, then “and N more”; nested collapses attribute to the nearest visible ancestor", async t => {
+  const kids = ["k1", "k2", "k3", "k4", "k5"].map(n => instance(n, "mid", { waitingOnYou: claim() }));
+  const rows = [instance("root"), instance("mid", "root"), ...kids];
+  const u = fixture(t, { context: { collapsedInstances: new Set([tree.collapseKey("A", "/synthetic/mid"), tree.collapseKey("A", "/synthetic/root")]) } });
+  u.render(rows);
+  assert.equal(u.row("mid"), undefined);
+  assert.equal(u.marks("root")[0].textContent, "5 below need input");
+  assert.equal(u.fact("root", "Below"), "5 need input: k1, k2, k3 and 2 more");
+});
+
+test("no roll-up while filtering, and none from a stale or non-running row", async t => {
+  const rows = [instance("root"), instance("dev-a", "root", { waitingOnYou: claim() }), instance("dev-b", "root", { waitingOnYou: claim(), running: false, runtimeState: "shell" })];
+  const collapsed = new Set([tree.collapseKey("A", "/synthetic/root")]);
+  const filtering = fixture(t, { context: { collapsedInstances: collapsed, contextFilter: "dev" } });
+  filtering.render(rows);
+  assert.equal(filtering.list.querySelector(".ctx-attn.rollup"), null, "nothing is collapsed while filtering");
+  assert.equal(filtering.marks("dev-a")[0].textContent, "Needs input");
+  const only = fixture(t, { context: { collapsedInstances: collapsed } });
+  only.render(rows);
+  assert.equal(only.marks("root")[0].textContent, "1 below need input", "the shell row is not counted");
+  const stale = fixture(t, { context: { collapsedInstances: collapsed, rosterStale: true } });
+  stale.render(rows);
+  assert.equal(stale.list.querySelector(".ctx-attn"), null);
+});
+
+test("a parent cycle or a missing parent degrades to no roll-up", async t => {
+  const rows = [instance("a", "b", { waitingOnYou: claim() }), instance("b", "a"), instance("orphan", "gone", { waitingOnYou: claim() })];
+  const u = fixture(t, { context: { collapsedInstances: new Set([tree.collapseKey("A", "/synthetic/a"), tree.collapseKey("A", "/synthetic/b")]) } });
+  u.render(rows);
+  assert.equal(u.list.querySelector(".ctx-attn.rollup"), null);
+  assert.equal(u.marks("orphan")[0].textContent, "Needs input");
+});
+
+test("an unavailable row (no card) says it in its title and description: message or label, absolute time", async t => {
+  const remote = (name, parentInstance, extra = {}) => instance(name, parentInstance, { server: "s1", addressable: false, home: `/remote/${name}`, ...extra });
+  const rows = [remote("dev-a", undefined, { waitingOnYou: claim({ message: "Proceed?" }) }), remote("dev-b", undefined, { waitingOnYou: claim({ reason: "question" }) }),
+    remote("root"), remote("kid", "root", { waitingOnYou: claim() })];
+  const u = fixture(t, { context: { collapsedInstances: new Set([tree.collapseKey("A", tree.instanceId(rows[2]))]) } });
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse(SINCE) + 60e3 }); // painted a minute later: the same local day
+  u.render(rows);
+  const a = u.row("dev-a"), b = u.row("dev-b"), root = u.row("root");
+  assert.equal(a.getAttribute("aria-disabled"), "true");
+  assert.match(a.getAttribute("aria-description"), new RegExp(` · Needs input: Proceed\\? since ${waitingClock(SINCE)}$`));
+  assert.equal(a.title, a.getAttribute("aria-description"));
+  assert.match(b.getAttribute("aria-description"), / · Needs input: Asked you a question since \d\d:\d\d$/);
+  assert.equal(u.marks("dev-a")[0].textContent, "Needs input");
+  assert.equal(u.marks("root")[0].textContent, "1 below need input");
+  assert.match(root.getAttribute("aria-description"), / · 1 below need input: kid$/);
+  // Painted two days later, the sentence carries the start's date (#559), from the paint time.
+  t.mock.timers.setTime(Date.parse(SINCE) + 2 * 86400e3);
+  u.render(rows);
+  const dated = u.row("dev-a").getAttribute("aria-description");
+  assert.ok(dated.endsWith(` · Needs input: Proceed? since ${waitingClock(SINCE, Date.now())}`), dated);
+  assert.match(dated, / since Oct \d{1,2}, \d\d:\d\d$/);
+});
+
+test("a roll-up stays inside its deployment section: a unique parent name in another deployment collects nothing", async t => {
+  const deployment = id => ({ id, path: id, machine: "This Mac", local: true, reachable: true, primary: id === "/d1" });
+  const at = (name, dep, parent, extra = {}) => instance(name, parent, { home: `${dep}/agents/dev/instances/${name}`, agentsRoot: `${dep}/agents`, deployment: deployment(dep), ...extra });
+  // /d2's own "lead" is gone (retired): its child's parent name resolves to /d1's lead, the only one left.
+  const lead = at("lead", "/d1"), own = at("own-child", "/d1", "lead", { waitingOnYou: claim() }), orphan = at("waiting-d2", "/d2", "lead", { waitingOnYou: claim() });
+  const u = fixture(t, { context: { contextDeployments: [deployment("/d1"), deployment("/d2")], collapsedInstances: new Set([tree.collapseKey("A", tree.instanceId(lead))]) } });
+  u.render([lead, own, orphan]);
+  const [mark] = u.marks("lead");
+  assert.equal(mark.textContent, "1 below need input", "only /d1's own child is counted");
+  assert.equal(u.list.querySelectorAll(".ctx-attn.rollup").length, 1, "and nothing else rolls up");
+});
+
+test("a collapse hides only rows of its own section: another deployment's child of it stays painted, with its own mark (#551's symptom)", async t => {
+  const deployment = id => ({ id, path: id, machine: "This Mac", local: true, reachable: true, primary: id === "/d1" });
+  const at = (name, dep, parent, extra = {}) => instance(name, parent, { home: `${dep}/agents/dev/instances/${name}`, agentsRoot: `${dep}/agents`, deployment: deployment(dep), ...extra });
+  // /d2's own "lead" is gone: its children's parent name resolves to /d1's lead, painted (and collapsed) in /d1's section.
+  const lead = at("lead", "/d1"), own = at("own-child", "/d1", "lead", { waitingOnYou: claim() }),
+    waiting = at("waiting-d2", "/d2", "lead", { waitingOnYou: claim() }), quiet = at("quiet-d2", "/d2", "lead");
+  const rows = [lead, own, waiting, quiet], collapsed = new Set();
+  const u = fixture(t, { context: { contextDeployments: [deployment("/d1"), deployment("/d2")], collapsedInstances: collapsed } });
+  const guides = name => [...u.row(name).querySelectorAll(".ctx-guide")].map(g => g.className).join("|");
+  u.render(rows);
+  const open = { waiting: guides("waiting-d2"), quiet: guides("quiet-d2") };
+  collapsed.add(tree.collapseKey("A", tree.instanceId(lead)));
+  u.render(rows);
+  assert.equal(u.row("own-child"), undefined, "the collapse still hides its own section's child");
+  assert.equal(u.marks("lead")[0].textContent, "1 below need input", "and rolls it up");
+  assert.ok(u.row("waiting-d2"), "/d2's child is not hidden by /d1's collapse");
+  assert.ok(u.row("quiet-d2"), "nor is a child that is not waiting");
+  const [mark] = u.marks("waiting-d2");
+  assert.equal(mark.className, "ctx-attn", "it shows its own mark, not a roll-up");
+  assert.equal(u.marks("waiting-d2").length, 1);
+  assert.deepEqual({ waiting: guides("waiting-d2"), quiet: guides("quiet-d2") }, open, "its guides are the same as with /d1's lead expanded");
+});
+
+const tabCue = tab => tab.triggerEl.querySelector(":scope > .tab-attn");
+
+test("every roster paint re-syncs the open terminal tabs: an overdue read's stale paint clears a lit tab (#558)", async t => {
+  const rows = [instance("dev-a", undefined, { waitingOnYou: claim() })];
+  const fails = [];
+  const u = fixture(t, { context: { rosterState: { hasData: true, state: "ready", fail: e => fails.push(e.code) } } });
+  const tab = u.openTab(rows[0]);
+  u.context.contextInstances = rows;
+  u.render(rows);
+  assert.ok(tabCue(tab), "the paint lights the tab");
+  assert.equal(tab.triggerEl.getAttribute("aria-label"), "dev-a, needs input");
+  u.failRosterUnserved(NO_ANSWER_CODE, "A"); // what rosterOverdue runs when the pending watch expires
+  assert.deepEqual(fails, [NO_ANSWER_CODE]);
+  assert.equal(u.context.rosterStale, true, "the rows are kept, held stale");
+  assert.equal(u.marks("dev-a").length, 0, "the row's mark goes");
+  assert.equal(tabCue(tab), null, "and so does the tab's, in the same paint");
+  assert.equal(tab.triggerEl.getAttribute("aria-label"), "dev-a");
+  assert.equal(tab.triggerEl.title, "dev-a");
+});
+
+test("a reset subject's pending paint clears the tabs and the last-painted roster before a tab is restored (#558)", async t => {
+  const rows = [instance("dev-a", undefined, { waitingOnYou: claim() })];
+  const u = fixture(t);
+  const tab = u.openTab(rows[0]);
+  u.render(rows);
+  assert.ok(tabCue(tab));
+  assert.equal(u.context.tabNeedsInputRoster.instances, rows);
+  // restoreWorkspaceTabs: a new subject, no data yet, the roster painted pending with no rows.
+  u.context.contextInstances = []; u.context.rosterState = { hasData: false, state: "loading" };
+  u.render([]);
+  assert.equal(tabCue(tab), null, "no observation: unknown, so no cue");
+  const cached = u.context.tabNeedsInputRoster; // the VM's own objects: compared by fields, not prototypes
+  assert.equal(cached.instances.length, 0, "a restored tab syncs against no rows"); assert.equal(cached.workspace, "A");
+});

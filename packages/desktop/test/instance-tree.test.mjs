@@ -423,6 +423,24 @@ test("collapse state keys by identity: collapsing one duplicate never hides the 
   assert.equal(vis(roster[2]), true, "the ws2 parent itself stays visible");
 });
 
+test("instanceVisibleInTree with sections: a collapse hides only rows of its own section (#551's symptom); without them, unchanged", async () => {
+  const m = await import("../renderer/instance-tree.mjs");
+  // /d2's own lead is gone: kid2's parent name resolves cross-root to /d1's lead, painted in /d1's section.
+  const lead = { instance: "lead", agentsRoot: "/d1/agents", home: "/d1/lead" };
+  const kid = { instance: "kid", agentsRoot: "/d1/agents", home: "/d1/kid", parentInstance: "lead" };
+  const kid2 = { instance: "kid2", agentsRoot: "/d2/agents", home: "/d2/kid2", parentInstance: "lead" };
+  const grand2 = { instance: "grand2", agentsRoot: "/d2/agents", home: "/d2/grand2", parentInstance: "kid2" };
+  const roster = [lead, kid, kid2, grand2], section = r => r.agentsRoot;
+  const vis = (i, collapsedRows, opts) => m.instanceVisibleInTree(i, roster, new Set(collapsedRows.map(r => m.collapseKey("w", m.instanceId(r)))), "w", false, opts);
+  assert.equal(vis(kid2, [lead]), false, "without sections: the cross-root collapse hides it, as before");
+  assert.equal(vis(grand2, [lead]), false);
+  assert.equal(vis(kid2, [lead], { section }), true, "with sections: /d1's collapse does not hide /d2's child");
+  assert.equal(vis(grand2, [lead], { section }), true, "nor its subtree");
+  assert.equal(vis(kid, [lead], { section }), false, "a same-section collapse still hides");
+  assert.equal(vis(grand2, [kid2], { section }), false, "including within /d2");
+  assert.equal(vis(kid2, [lead], { section: () => null }), false, "one section for all: unchanged");
+});
+
 test("distinguishingRootTags: colliding single-segment tags grow to a unique suffix (review cbd5bb3)", async () => {
   const { distinguishingRootTags } = await import("../renderer/instance-tree.mjs");
   // the naive one-segment tag would be "project" for BOTH

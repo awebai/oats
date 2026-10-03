@@ -53,6 +53,84 @@ bounded and credential/URL-redacted. Raw notes, task/environment/recipe/command
 payloads and PID arrays are not forwarded. Paths and past plan revisions are
 provenance text, not file links, terminal targets or executable confirmations.
 
+A claim may carry a `message`: 1 to 200 code points (not UTF-16 units), with
+none of an exact refused set: control characters (C0, DEL, C1), U+2028/U+2029,
+the bidi embeddings, overrides and isolates (U+202A–202E, U+2066–2069), the
+zero-width space, word joiner and BOM (U+200B, U+2060, U+FEFF) and the tag
+characters (U+E0000–E007F). Every other format character is text: ZWJ emoji,
+ZWNJ, LRM, RLM and ALM are kept. It is optional:
+a kernel without it omits the key, which reads as `null`. An invalid or empty message is `null` and the claim is kept. When
+either `waitingOnYou` or the newest positive claim owns `message`, the raw values
+must be equal (a missing key counts as `null`), as for producer, since and
+reason. The summary shows it after the producer and time, as plain text.
+
+The kernel also writes each claim change as a lifecycle event of kind `waiting`
+(producer-attributed). The list titles it "Waiting claim", a neutral title,
+because the activity view speaks in claims and a cleared row must not read as
+waiting; the sidebar's operator-facing mark stays "Needs input". Its `waitingOnYou`
+fact reads "claimed" or "cleared", with the reported reason and, on a claimed
+row, the note (`message`, by the same rule, as plain text).
+
+## Needs input on the sidebar roster
+
+The roster shows the same kind of claim without a read: `oats status --json`
+rows carry `waitingOnYou: {since, producer, reason, message} | null`, under
+probe feature `waiting-on-you`. Desktop gates on that feature, never the
+version. Without it, `observeDeployment` drops the field from every local row.
+A remote row carries it only when the remote kernel reported it. Desktop
+validates the field and never synthesizes it.
+
+- **Validation** (`renderer/waiting-on-you.mjs`, `waitingOnYouData`) never
+  throws and never fails the roster. Only an invalid `since` or `producer`
+  drops a claim, which then reads as `null` (unknown). A missing or malformed
+  `reason` becomes `null`, because the raw reason is never rendered. A
+  malformed `message` becomes `null`, and an unsafe one becomes `[Detail withheld]`.
+  `deployment-data.mjs` and `remotePanel` both validate through it. The
+  module is the claim contract only: the server imports it, so it imports
+  contract modules and nothing else (a test pins its imports). The tree
+  roll-up lives in `renderer/instance-tree.mjs`.
+- **One gate.** Every surface reads a claim through `waitingClaim(row,
+  {stale})`. It returns the claim only when the Desktop's own liveness says
+  running (`running === true`, with `runtimeState` absent or `running`), the
+  remote server answered this read (`serverUnreached` is not true), and the
+  roster does not hold the row stale. A tmux shell, a stopped, unreachable or
+  unsupported session, or a last-known roster never shows it, whatever the
+  kernel said.
+- **The mark.** A "Needs input" pill (an alert icon and text, never colour
+  alone) sits on the row's name line, before "New". It becomes part of the
+  row's accessible name. The dot stays liveness. Rows are not reordered, and
+  nothing animates.
+- **The card** (hover or keyboard focus) adds `Waiting` (the reason in words,
+  how long, and the local start time) and `Message`. The age is computed when
+  the card is shown. A row that has no card (an unavailable remote row) appends
+  the message or label and the start time to its title and description. The
+  start time (`waitingClock`) is "14:03" on the current local day, "Oct 2,
+  14:03" on another day and "2025-10-02 14:03" in another year (an English
+  month table, like the rest of the copy), judged against the show or paint
+  time.
+- **Collapsed parents.** A waiting row hidden by a collapse is counted on its
+  nearest visible ancestor as "N below" (`waitingRollup` in
+  `renderer/instance-tree.mjs`, beside `instanceVisibleInTree`, which it mirrors), following the parent relation only
+  (never across a remote server), and never outside the deployment section the
+  waiting row is painted in. A collapse hides only rows of its own section
+  (`instanceVisibleInTree` with the same `section`), so a row whose parent name
+  resolves to a collapsed instance in another section stays painted and shows its
+  own mark. The card's `Below` fact names up to three of
+  them. The roll-up is derived on every paint, so it goes as soon as the parent
+  is expanded. Filtering collapses nothing, so it shows no roll-up.
+- **The terminal tab.** An open terminal tab of that instance, in any editor
+  group, follows every roster paint (`syncTabNeedsInput`, through the same
+  gate and held-stale rule): an alert glyph in `--warn` takes the dot's slot
+  without moving the label, the trigger's accessible name gains ", needs
+  input", and its title the message or label and the start. Only the mark,
+  name and title are mutated (focus, an open tab menu or a drag survive the
+  poll); cleared, the tab gets back the dot, name and title it was drawn with.
+  The tab is matched by its qualified key (`terminalKey`), never a bare name.
+- **Display only.** Nothing in Desktop acts on a claim.
+
+The waited age is never painted into the row, so the roster signature changes
+only when a claim appears, clears or changes.
+
 ## Renderer ownership and retention
 
 Each explicit read mints a new event ticket, independent of roster/action

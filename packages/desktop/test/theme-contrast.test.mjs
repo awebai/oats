@@ -628,7 +628,7 @@ for (const [name] of palettes) test(`${name}: actual Connections and reported PR
   }
 });
 
-for (const [name] of palettes) test(`${name}: frame10 rail, disabled menu reasons, workspace metadata and explicit Open toast meet computed AA`, async t => {
+for (const [name] of palettes) test(`${name}: frame10 rail, disabled menu reasons, workspace metadata, explicit Open toast and the Needs input pill meet computed AA`, async t => {
   const dom = new JSDOM(readFileSync(new URL('index.html', renderer), 'utf8'), { pretendToBeVisual: true }), doc = dom.window.document;
   doc.documentElement.dataset.theme = name;
   for (const source of [css, readFileSync(new URL('shell.css', renderer), 'utf8'), identityCSS, contextPanelCSS, notificationCSS, rosterPrCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
@@ -640,6 +640,12 @@ for (const [name] of palettes) test(`${name}: frame10 rail, disabled menu reason
     wrap.append(prChip(doc, { home: '/h', number: 1, state, isDraft: extra, url: null })); list.append(wrap);
   }
   const prOpen = doc.createElement('button'); prOpen.className = 'act ctx-pr-open'; list.append(prOpen);
+  // Spec D: the Needs input pill (and its "N below" roll-up) paints its own surface, on an idle and a selected row.
+  for (const [active, rollup] of [[false, false], [true, true]]) {
+    const wrap = doc.createElement('div'); wrap.className = `ctx-tree-row${active ? ' active' : ''}`;
+    const pill = doc.createElement('span'); pill.className = `ctx-attn${rollup ? ' rollup' : ''}`; pill.textContent = rollup ? '2 below' : 'Needs input';
+    wrap.append(pill); list.append(wrap);
+  }
   const panel = createContextPanel({ document: doc }); panel.setContext({ workspace: 'team', key: 'key', instance: row }); panel.setCollapsed(true);
   const notifications = createNotificationCenter({ document: doc, workspace: () => 'team' });
   notifications.notify('dev-1 spawned', { descriptor: { kind: 'open-instance', target: instanceActionTarget('team', row), connectionEpoch: 0 }, activate: async () => {} });
@@ -663,6 +669,8 @@ for (const [name] of palettes) test(`${name}: frame10 rail, disabled menu reason
     ['.ctx-tree-row:not(.active) .ctx-pr[data-pr-state=draft]', '#sidebar', 'muted', 'surface'],
     ['.ctx-tree-row.active .ctx-pr[data-pr-state=draft]', '.ctx-tree-row.active', 'muted', 'sel'],
     ['.ctx-pr-open', '.ctx-pr-open', 'accent', 'surface'],
+    ['.ctx-tree-row:not(.active) .ctx-attn', '.ctx-tree-row:not(.active) .ctx-attn', 'warn', 'attn-bg'],
+    ['.ctx-tree-row.active .ctx-attn.rollup', '.ctx-tree-row.active .ctx-attn.rollup', 'warn', 'attn-bg'],
   ]) {
     const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
     assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
@@ -1238,4 +1246,33 @@ for (const [name] of palettes) test(`${name}: Add a machine and the Machines box
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${name} ${selector}`);
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1', selector);
   }
+});
+
+// #558: the terminal tab's Needs input glyph is a non-text graphic (the trigger's name says it): --warn
+// must hold 3:1 against every background a tab paints — the strip at rest (--bg, also a split group's
+// strip), the active tab (--surface) and a keyboard-focused trigger (--sel) — in every palette.
+for (const [name] of palettes) test(`${name}: the terminal tab's Needs input glyph meets 3:1 on every tab background`, async t => {
+  const dom = new JSDOM(readFileSync(new URL('index.html', renderer), 'utf8'), { pretendToBeVisual: true }), doc = dom.window.document;
+  t.after(() => dom.window.close());
+  doc.documentElement.dataset.theme = name;
+  const shellCss = readFileSync(new URL('shell.css', renderer), 'utf8');
+  for (const source of [css, shellCss]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  const bar = doc.querySelector('#tabbar');
+  for (const active of [false, true]) {
+    const tab = doc.createElement('div'); tab.className = `tab${active ? ' active' : ''}`;
+    const trigger = doc.createElement('button'); trigger.className = 'tab-trigger';
+    const attn = doc.createElement('span'); attn.className = 'tab-attn'; trigger.append(attn); tab.append(trigger); bar.append(tab);
+  }
+  const root = dom.window.getComputedStyle(doc.documentElement), view = dom.window;
+  const fill = el => { const s = view.getComputedStyle(el); return s.background || s.backgroundColor; };
+  for (const glyph of doc.querySelectorAll('.tab-attn')) assert.equal(view.getComputedStyle(glyph).color, 'var(--warn)');
+  assert.equal(fill(doc.querySelector('#tabstrip')), 'var(--bg)', 'a tab at rest shows the strip');
+  assert.equal(fill(doc.querySelector('.tab.active')), 'var(--surface)');
+  assert.match(shellCss, /\.tab-trigger:focus-visible \{ background: var\(--sel\); \}/);
+  assert.match(shellCss, /\.group-tabbar \{[^}]*background: var\(--bg\)/, 'a split group strip paints --bg too');
+  for (const bg of ['bg', 'surface', 'sel']) {
+    const ratio = contrast(opaqueChannels(root.getPropertyValue('--warn').trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim()));
+    assert.ok(ratio >= 3, `--warn on --${bg}: ${ratio.toFixed(2)}`);
+  }
+  for (let parent = doc.querySelector('.tab-attn'); parent; parent = parent.parentElement) assert.equal(view.getComputedStyle(parent).opacity, '1');
 });

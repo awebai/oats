@@ -156,7 +156,7 @@ export function createTerminalTab({ desk, term, tmux, remote, serverLabel, wrap,
   // Only state changes are written here; the visible countdown stays outside it.
   const announce = text => {
     if (!liveEl) {
-      liveEl = doc.createElement('div'); liveEl.className = 'term-live term-sr-only';
+      liveEl = doc.createElement('div'); liveEl.className = 'term-live sr-only';
       liveEl.setAttribute('role', 'status'); liveEl.setAttribute('aria-live', 'polite'); wrap.append(liveEl);
     }
     liveEl.textContent = text;

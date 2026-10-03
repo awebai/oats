@@ -43,6 +43,15 @@ test("/api/panel projection: absent relation metadata is stable null, never unde
   }
 });
 
+test("/api/panel projection: waitingOnYou (Needs input) is forwarded when present (a claim or null), never added when absent", () => {
+  const project = projection();
+  const claim = { since: "2026-10-03T10:00:00.000Z", producer: "claude-hook", reason: "question", message: null };
+  assert.deepEqual(project({ instance: "dev-a", agentsRoot: "/ws/agents", running: true, runtimeState: "running", waitingOnYou: claim }).waitingOnYou, claim);
+  const unknown = project({ instance: "dev-a", agentsRoot: "/ws/agents", waitingOnYou: null });
+  assert.ok(Object.hasOwn(unknown, "waitingOnYou") && unknown.waitingOnYou === null, "null (unknown) is forwarded as reported");
+  assert.equal(Object.hasOwn(project({ instance: "dev-a", agentsRoot: "/ws/agents" }), "waitingOnYou"), false, "absent stays absent");
+});
+
 /* ── /api/spawn error shaping (review f1e3211) ── */
 
 function spawnError() {
