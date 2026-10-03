@@ -317,7 +317,9 @@ try {
   // The init itself, without --soul: the default soul's run is the real one.
   const defaultInit = cliRun(["okf", "init", "--base", "project", "--nodes", nodes, "--confirm", "--json"]);
   assert.match(defaultInit.stderr, /no --soul given; running as soul [\w.-]+\/probe,/, defaultInit.stderr);
-  const okfInitAnswer = JSON.parse(defaultInit.stdout).result;
+  const initEnvelope = JSON.parse(defaultInit.stdout);
+  assert.equal(initEnvelope.schemaVersion, 1, defaultInit.stdout); assert.equal(initEnvelope.ok, true, defaultInit.stdout);
+  const okfInitAnswer = initEnvelope.result;
   assert.equal(okfInitAnswer.status, "accepted", defaultInit.stdout);
   // A second init is the provider's own refusal: knowledge is never overwritten.
   assert.equal(JSON.parse(cli(["okf", "init", "--base", "project", "--nodes", nodes, "--confirm", "--soul", "probe", "--json"], { expectExit: 1 })).error.code, "E_BASE");
