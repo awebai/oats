@@ -175,7 +175,7 @@ test("a collapsed parent surfaces waiting rows its collapse hides; expanding it 
   const [mark] = u.marks("root");
   assert.equal(mark.className, "ctx-attn rollup");
   assert.equal(mark.textContent, "2 below need input", "the visible “2 below” plus the visually hidden rest");
-  assert.equal(mark.querySelector(".ctx-attn-said").textContent, " need input");
+  assert.equal(mark.querySelector(".sr-only").textContent, " need input");
   assert.match(u.row("root").textContent, /2 below need input/, "the row's accessible name says it");
   assert.equal(u.fact("root", "Below"), "2 need input: dev-a, dev-b");
   assert.equal(u.fact("root", "Waiting"), undefined, "root itself is not waiting");

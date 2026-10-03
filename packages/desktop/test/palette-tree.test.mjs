@@ -184,7 +184,7 @@ test("each relation group is one named role=group in the listbox; depth is inden
   assert.deepEqual(commands.map(o => o.querySelector(".plabel").textContent), ["Theme: toggle", "Split: terminal right"], "commands follow, ungrouped");
   const grandchild = [...list.querySelectorAll('[role="option"]')].find(o => o.querySelector(".plabel").textContent === "grandchild");
   assert.equal(grandchild.style.getPropertyValue("--depth"), "2");
-  assert.equal(grandchild.querySelector(".palette-sr").textContent, ", under child-a", "read with the option, visually hidden");
+  assert.equal(grandchild.querySelector(".sr-only").textContent, ", under child-a", "read with the option, visually hidden");
   assert.equal(grandchild.hasAttribute("aria-level"), false, "aria-level is not an option's attribute");
   assert.equal(list.querySelector('[aria-level]'), null);
   const ids = [...list.querySelectorAll('[role="option"]')].map(o => o.id);

@@ -714,7 +714,7 @@ async function refreshContextRoster({ user = false } = {}) {
 function needsInputMark(below = 0) {
   const mark = document.createElement("span"); mark.className = below ? "ctx-attn rollup" : "ctx-attn";
   mark.append(iconElement(document, "alert", { size: 11 }), below ? `${below} below` : "Needs input");
-  if (below) { const said = document.createElement("span"); said.className = "ctx-attn-said"; said.textContent = " need input"; mark.append(said); }
+  if (below) { const said = document.createElement("span"); said.className = "sr-only"; said.textContent = " need input"; mark.append(said); }
   return mark;
 }
 
