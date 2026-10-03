@@ -1,6 +1,8 @@
 # OATS browser access and Windows support decision proposal
 
-Status: **Draft for maintainer review. No implementation or platform commitment approved.**
+Status: **Draft under amendment after maintainer review. No funding, spike,
+implementation, merge or platform commitment approved.** Audience, service
+operator, credential route and budget remain unconfirmed.
 
 Prepared for the human and `oats-expert-juan`. This document compares a hosted,
 multitenant browser product with Windows desktop options. It specifies a proposed
@@ -31,7 +33,8 @@ Provisional recommendation: if users must arrive with only a browser and receive
 managed execution, pursue the hosted browser MVP after a bounded feasibility gate.
 If the actual audience already has SSH access to managed Linux deployments and
 only needs a Windows interface, evaluate a remote-only Windows client first. If
-local execution and customer custody are required, evaluate Windows plus WSL.
+local execution and customer custody are required, assess the existing Linux app
+inside WSLg before considering a native Windows UI with a new WSL adapter.
 Do not make fully native Windows execution the first route to this narrower need.
 
 Reuse one renderer across approved platforms. Do not fund a UI rewrite or a
@@ -96,7 +99,8 @@ closing the viewer must not stop the agent. This is the behavior to preserve.
 | --- | --- | --- | --- | --- |
 | A Hosted web | Browser | Service-managed Linux environment per tenant | Account and approved repository/model access | Account service, isolation, runner operations, web transport, ongoing hosting |
 | B Windows remote client | Installed Electron app | Existing customer/operator Linux server | Windows installation, server access and credentials | Windows port, remote onboarding, CLI/SSH compatibility, signed distribution |
-| C Windows with WSL | Installed Electron app with WSL adapter | Linux inside WSL on the user's Windows computer | Permission and resources to install/run WSL | WSL provisioning, process/path bridge, lifecycle and local integration qualification |
+| C0 Existing Linux app in WSLg | Existing Linux Electron app displayed through WSLg | Linux inside WSL, or existing Linux servers through its current remote facilities | Compatible Windows/WSLg, installation permission and Linux prerequisites | Compatibility and policy assessment first; no new native bridge assumed |
+| C Windows with WSL adapter | Native Windows Electron app with a new WSL adapter | Linux inside WSL on the user's Windows computer | Permission and resources to install/run WSL | WSL provisioning, process/path bridge, lifecycle and local integration qualification |
 | D Fully native Windows | Installed Electron app | Windows processes without WSL | Windows installation and native toolchain | Kernel/session backend and capability portability, then Desktop support |
 
 | Criterion | A Hosted web | B Windows remote | C Windows with WSL | D Native execution |
@@ -114,6 +118,11 @@ These are qualitative judgments, not benchmark scores. If option B connects to
 our managed hosting, it inherits option A's tenant and operations work and adds
 Windows distribution. It is then an additional client, not a cheaper substitute
 for the service.
+
+C0 shares C's local custody, installation requirements and laptop-lifetime limits,
+but runs the existing Linux UI and CLI together. It is a separate, potentially
+lower-cost compatibility route, not an established supported configuration or a
+commitment to the adapter development budget. No OATS WSLg test has been run.
 
 ## Shared interface design
 
@@ -204,7 +213,11 @@ tenant environments to hosts. Do not move a running tmux session between machine
 
 Keep the current Desktop backend zero-dependency and loopback-only. Reuse pure
 decoders and CLI adapters in a private runner component; a narrow local proxy to
-selected existing routes is an implementation option after endpoint review. Never
+selected existing routes is an implementation option after endpoint review. That
+proxy must authenticate and authorize each closed call itself, derive its target
+from trusted runner scope, and validate requests/results. Rewriting Host/Origin to
+loopback is not authorization and must not launder an arbitrary browser request
+into the backend's trusted local surface. Never
 expose the entire existing route tree. Authentication, database and WebSocket
 dependencies belong to a new private hosted package or repository, not the root
 kernel package. Final package placement needs maintainer approval.
@@ -275,6 +288,13 @@ Initial roles:
 | Configure credential references and tenant limits | No | No | Yes, within platform limits |
 | Delete/export tenant | No | No | Yes, with fresh authentication |
 
+These role restrictions govern service/control-plane administration. An operator
+who can spawn code or control a terminal effectively controls workload files and
+workload credentials, including credentials configured by an owner. Owner-only
+credential settings do not promise secret confidentiality from operators. The
+supervisor management identity, platform secrets and tenant membership controls
+must remain outside workload authority regardless of what the UI displays.
+
 In the pilot, one owner per tenant is sufficient, but all requests still pass
 membership enforcement. Later membership invites are expiring, single-use and
 bound to the intended identity. Prevent removal of the final owner without an
@@ -283,8 +303,11 @@ access; exceptional access is time-limited and audited under a separate policy.
 
 Revocation increments membership/session authority, blocks new operations and
 closes active terminal access. Proposed acceptance target: within five seconds
-in a healthy system; on loss of authority validation, the terminal gateway fails
-closed within the same lease freshness bound. An already-started CLI effect may
+in a healthy system. The final runner dispatch/write boundary must enforce this
+bound using a bounded authority lease, not just gateway socket closure. On a
+gateway-runner partition, no fresh authority means no new CLI dispatch or terminal
+write after lease expiry, including previously buffered input. This is a proposed
+acceptance requirement, not a currently qualified guarantee. An already-started CLI effect may
 finish and must be recorded; do not represent revocation as rollback.
 
 OATS/aweb teams remain agent identity and messaging constructs. A website tenant
@@ -306,9 +329,9 @@ a second writable model of kernel state.
 | Membership | Tenant/user pair, role, revision, active/revoked state; unique pair |
 | Environment | Tenant ID, opaque ID, generation, runner identity, image version, health and volume references |
 | Workspace registration | Tenant/environment IDs, public ID, runner-owned CLI scope reference; no browser-authoritative absolute path |
-| Instance observation | Tenant/workspace IDs, opaque ID, kernel identity/incarnation binding, observed status/time; replaceable cache, not lifecycle authority |
-| Operation | Tenant, actor, membership revision, kind, target incarnation, immutable request digest, idempotency key, CLI decision/plan, state and bounded receipt |
-| Terminal lease | Tenant, actor, browser connection, instance incarnation, runner generation, control fencing number, expiry and cleanup status |
+| Instance observation | Tenant/workspace IDs, opaque ID, exact kernel selector and available creation/session evidence, observed status/time; replaceable cache, not lifecycle authority |
+| Operation | Tenant, actor, membership revision, kind, target evidence, immutable request digest, idempotency key, CLI decision/plan, admission/retry expiry, state and bounded receipt |
+| Terminal lease | Tenant, actor, browser connection, source target evidence, service runner generation, control fencing number, runner-enforced expiry and cleanup status |
 | Credential reference | Tenant, provider, secret-store reference, scope and rotation status; no plaintext secret in ordinary rows |
 | Audit event | Actor, tenant, action, target ID, request/operation ID, time and result code; no terminal bytes or credentials |
 | Artifact | Tenant, owner operation/instance, storage key, size/hash/type, retention state |
@@ -316,7 +339,35 @@ a second writable model of kernel state.
 Kernel paths stay internal to runner mappings. Public IDs are not authorization
 tokens. Jobs retain the authenticated actor for attribution but recheck current
 permission before dispatch. Restored environments receive new generations and
-invalidate terminal leases and pending plans from the prior incarnation.
+invalidate terminal leases and pending plans from the prior service generation.
+
+### Service generations and kernel identity evidence
+
+Service environment generations, browser epochs and writer fencing numbers name
+service-owned resources. They are not kernel instance/session generations. Neither
+a random public ID nor a reused home/name gives a compare-and-act runtime identity.
+`createdAt`, `startedAt`, `restartCount` and event `incarnation` provide observations
+with specific meanings; copying one into a service record does not make every CLI
+verb enforce it atomically.
+
+| Action | Existing evidence and checks at the baseline | Limit requiring explicit treatment |
+| --- | --- | --- |
+| Spawn | Capability-gated `--expect-decision`, placement reservation and `--idempotency-key`; receipt decision, instance/home and launch result; key recorded in surviving home | Decision describes creation; it is not a universal later-session fencing token. No replay safety after home/key evidence is lost |
+| Stop | Exact admitted instance/home, CLI `--plan-revision` and key; fresh-plan check; receipt binds key/revision, target rows and per-target stop results | Scope is the facts and endpoint checks the kernel includes in its plan. No assumed generic `expectedIncarnation` field |
+| Retire | Exact home, fresh plan revision and idempotency key; first raw receipt and replay envelope; receipt persists beside instances and may outlive home | Retention/partial cleanup is not total deletion. Receipt lifetime and replay do not establish all desired hosted expiry semantics |
+| Start/restart | Exact home, advertised verb, kernel lock/recovery and result `target`, `startedAt`, `restartCount`, `reused`, optional restart stop receipt | No general caller idempotency key or expected-session-generation precondition in this public contract; lost response is not permission to repeat |
+| Terminal attach | Local validated socket/session/window and exact anchored viewer target; remote CLI `session inspect --home` followed by `session attach --home`, with saved route and kernel target checks | Inspect then attach alone is not proof of an atomic expected session generation; source replacement races need qualification against the actual attach contract |
+| Observation/events | Roster `createdAt`/`startedAt`; events API has home `incarnation` and session boundary events | These are evidence for detecting changes, not proof that a subsequent effect was fenced by that value |
+
+Sources: [CLI lifecycle and session contracts](../../../../docs/desktop-cli-api.md),
+[instance admission](../../server/instance-admission.mjs),
+[lifecycle boundary](../../server/instance-lifecycle.mjs),
+[lifecycle receipt decoder](../../renderer/lifecycle-contract.mjs), and the terminal
+adapters linked above. Before implementing any hosted stale-target guarantee,
+record which actual kernel checks enforce it and test the replacement race. Where
+the existing contract is insufficient, refuse the affected operation or request a
+kernel-owned contract decision; do not simulate an atomic guarantee with an extra
+roster read. No new kernel fields or ledger are requested by this document.
 
 ## Proposed public management contract
 
@@ -333,7 +384,7 @@ disclosing another tenant's existence.
 | `POST .../workspaces/{w}/spawn-previews` | Validate allowed choices and obtain kernel-bound preview |
 | `POST .../workspaces/{w}/spawn-operations` | Confirm one preview and submit a durable operation |
 | `GET .../operations/{o}` | Inspect exact outcome; never implicitly retry |
-| `POST .../instances/{i}/lifecycle-plans` | Obtain stop/retire plan for current incarnation |
+| `POST .../instances/{i}/lifecycle-plans` | Obtain stop/retire plan for the exact admitted target and available identity evidence |
 | `POST .../instances/{i}/lifecycle-operations` | Confirm and apply the exact plan |
 | `POST .../instances/{i}/terminal-leases` | Request a connection-owned terminal capability |
 | `POST .../instances/{i}/attachments` | Later: bounded upload into an approved attachment location |
@@ -368,6 +419,8 @@ Spawn sequence:
 4. On confirmation, reauthorize and transactionally reserve quota and an operation
    record. The same client intent/digest reuses the same record; a changed digest
    under that key is a conflict. Persist the CLI idempotency key before dispatch.
+   Service-issued intents have immutable admission/retry deadlines; arbitrary
+   previously unseen client keys never turn an expired submission into a fresh one.
 5. The runner records operation custody before invoking the fixed CLI argv. It
    rechecks the exact decision and target; CLI drift refusal requests a fresh
    preview, never silent substitution.
@@ -385,7 +438,34 @@ key. Runner recovery uses only the current CLI's supported exact receipt and
 idempotency semantics. The existing kernel key lifetime is tied to its surviving
 home; do not promise forever-exactly-once creation or replay after retirement.
 If recovery cannot establish what happened, mark unknown and require reconciliation
-against exact identity/incarnation. Never infer success from a same-named instance.
+against the available exact target and kernel evidence. Never infer success from
+a same-named instance or claim an enforced incarnation check that the verb lacks.
+
+Operation retention is part of authority, not merely a log-cleanup preference.
+Proposed policy: service-issued submission/retry authority expires no later than
+30 days from original admission, and may expire sooner when target evidence or
+the kernel's replay guarantee is lost. Expired, missing or compacted intents are
+explicitly refused; they are never treated as fresh submissions. A new deliberate
+user intent requires a new preview/confirmation. It cannot bypass an unresolved
+operation hold on the affected target or quota.
+
+Unresolved `running`, `partial` or `unknown` operations do not age into no-effect
+or successful outcomes. Retain minimal identity, request digest, decision/key,
+dispatch evidence, authority expiry and quota/reconciliation custody until an
+explicit disposition is established. Payload text may be purged separately. After
+a confirmed terminal outcome and retry expiry, detailed receipts may be compacted
+only if the service can still reject old authority; the bounded token/epoch and
+tombstone design must be specified before implementation. This is not an
+unconditional duplicate-prevention or exactly-once guarantee.
+
+For tenant deletion, revoke all admission, fence the runner, and reconcile or
+explicitly terminate unknown effects before releasing infrastructure reservations.
+If evidence must be erased before resolution, permanently refuse the old tenant
+and operation namespace rather than recreate it as eligible. Backup rollback must
+not roll back the authority epoch: revoke old runner credentials and intent epochs
+using control-plane authority outside the restored snapshot, then quarantine
+uncertain operations. If that independent authority/evidence cannot be recovered,
+keep mutation admission closed. Missing files or records are never no-effect proof.
 
 Stop and retire preserve the existing plan/confirm/apply contract and retention
 warnings. Retire is not synonymous with deleting every worktree or retained file.
@@ -404,10 +484,12 @@ sender-frame checks into a web principal model.
 
 Proposed attachment flow:
 
-1. A management request resolves an authorized public instance ID and incarnation.
+1. A management request resolves an authorized public instance ID and the available
+   kernel target evidence described above; insufficient enforced identity is a
+   contract gap, not an assumed incarnation check.
    Reserve a bounded terminal slot and acquire the instance's writer lease.
 2. Issue a short-lived, single-use opaque ticket bound to user session, tenant,
-   instance, browser tab nonce and environment generation. Keep it in memory. Do
+   instance evidence, browser tab nonce and service environment generation. Keep it in memory. Do
    not put it in URLs or logs. Connect to a fixed same-origin WSS endpoint, then
    authenticate with a bounded first message while the connection has no PTY or
    data privileges. Limit and promptly expire unauthenticated sockets.
@@ -421,6 +503,17 @@ Proposed attachment flow:
    The durable source survives browser closure. Uncertain viewer cleanup remains
    accounted for and is reconciled by an exact owned-viewer sweep.
 
+The runner, immediately before every PTY write/resize and CLI dispatch, validates
+the current service environment generation, owner/fencing number and unexpired
+authority lease. It checks again after asynchronous preparation and while draining
+buffers. Revocation discards queued input; an old gateway cannot refresh a fenced
+writer. Lease refresh must derive from current authenticated control-plane
+membership, not gateway connectivity alone. Runner monotonic deadlines and a
+bounded refresh validity policy must account for delay/reordering; a partition
+expires authority within the specified bound. Gateway-side socket closure is
+helpful cleanup but not the enforcing boundary. Already-written bytes cannot be
+recalled, and an already-dispatched CLI process can have effects after revocation.
+
 TLS, explicit Origin checks, session expiration/revocation and authorization beyond
 the initial connection are required; WebSockets do not supply them automatically.
 [OWASP WebSocket security](https://cheatsheetseries.owasp.org/cheatsheets/WebSocket_Security_Cheat_Sheet.html)
@@ -431,11 +524,54 @@ A later explicit takeover must revoke and fence the old writer before enabling t
 new one. Shared read-only viewers are deferred because independent tmux clients can
 also influence sizing and resource use. A reader stream must not resize or write.
 
-Keep network input semantics honest: an input acknowledgement can mean accepted
-into the current PTY, not that the agent processed it. Do not retry keystrokes after
+Keep network input semantics precise: the proposed `input-ack` means that the
+runner validated current authority and its PTY write call accepted those bytes.
+It does not mean the terminal application read them, a draft was submitted, a
+message was inserted, or the model processed it. Output acknowledgements separately
+mean xterm's write callback completed. Neither is a model-acceptance receipt.
+Do not retry keystrokes after
 an uncertain disconnect. On reconnect, obtain a fresh terminal repaint; full
 scrollback/transcript restoration is not promised. Browser sleep and background
 timer throttling must not cause reconnect storms.
+
+### Harness acceptance remains outside the terminal transport contract
+
+The maintainer supplied bounded internal evidence about current aweb terminal and
+Pi delivery behavior. It is attributed evidence, not an independently repeated
+audit here or a new OATS API. Internal labels ABMA and ABNV refer to unresolved
+input/retry design discussions, not released capabilities. Their essential limit:
+after an input invocation may have run, a timeout, malformed receipt or negative
+submission report does not prove that no paste or Enter effect occurred. Proven
+pre-invocation failure is a different case. Terminal success, `submitted: true`,
+verification flags and screen movement do not prove exact message consumption.
+
+The reported producer audit did not establish an enforced pending-input ID,
+live-session generation or atomic same-draft Enter-only completion operation.
+External inspect followed by paste/Enter cannot safely complete an uncertain draft
+by assumption. Reported ABNV offline retry/recovery characterization included repeat
+pastes; smaller per-item suppression is only a proposal, not shipped protection or
+completion of a previously pasted draft. Hosting/WSS supplies no additional proof.
+
+The reported Pi wrapper returns void and catches asynchronous errors internally;
+callback completion does not prove insertion or durable queue admission. The
+maintainer reported three semantic failures in offline doubled tests, with three
+controls passing, not full live AgentSession/crash-durability qualification. A
+future exact request/message and intended-session insertion receipt, a documented
+persistence boundary, proven pre-insertion refusal and unknown-resolution behavior
+need separate upstream specification/approval. Unknown never authorizes blind
+replay, and a later execution error does not undo an insertion.
+
+Evidence provenance supplied by oats-expert-juan, not independently reproduced:
+OATS `c746ad7ef9b90d6cb0f53b2ed666d7156ac86693` (`lib/session-input.mjs` and
+`lib/core.mjs`); aweb `78c1070855fdc80f8dabf20aeca4afcf2ed923e3`
+(`channel-core/src/terminal.ts` and channel acceptance/retry paths); Pi extension
+0.3.12 at aweb `5f5c1a07cdfd0e65a41017f5595403040ee73652`
+(`pi-extension/src/wake.ts`, `channel-core/src/channel.ts`), and Pi 1.0.1 upstream
+`a7229ddc21810d6245105978033b7df645ecc2f7`
+(`packages/coding-agent/src/core/agent-session.ts`). These pins identify the reported
+evidence scope; they do not establish that every installed version behaves alike.
+No retained internal test archives or coordination messages are normative contracts
+for this service. No new audit, install or outreach follows from this caveat.
 
 Backpressure is required in both directions. Use bounded gateway/runner queues,
 output sequence acknowledgements tied to xterm write completion, and explicit
@@ -510,7 +646,9 @@ within one working day, explicitly not a production SLA. Test restore into an
 isolated environment without duplicate messaging identities sending concurrently.
 
 Initial proposed retention policy for review: no central terminal-content logs;
-service audit metadata 90 days; operation metadata/receipts 30 days; encrypted
+service audit metadata 90 days; completed operation detail ordinarily 30 days,
+subject to the stricter intent-expiry, unresolved-custody and compaction policy in
+the spawn/lifecycle section; encrypted
 backups 30 days; deleted tenant data purged from active storage after a seven-day
 owner recovery window and from backups as they expire. Customer-specific retention,
 regional restrictions and legal obligations must be resolved before onboarding.
@@ -518,7 +656,8 @@ Local agent transcripts may still exist on tenant storage and must be included i
 the disclosed retention/export policy.
 
 Offboarding disables login/runner admission, revokes sockets and credentials,
-stops jobs under an explicit policy, offers an authorized export, and tracks active
+stops jobs under an explicit policy, applies the unresolved-operation disposition
+above, offers an authorized export, and tracks active
 volume and backup deletion separately. Export never includes platform identities.
 Suspension for nonpayment is a later policy; it must not silently destroy work.
 
@@ -552,6 +691,29 @@ demo, not this MVP. Conversely, native integration parity is not required to pro
 the specified user journeys.
 
 ## Windows architecture choices
+
+### Existing Linux Desktop entirely inside WSLg
+
+Option C0 uses the existing Linux Desktop build, installed CLI, tmux and harnesses
+inside a WSL2 distribution, with WSLg displaying the Linux GUI on Windows. It adds
+no native Windows-to-Linux management adapter initially. Current upstream WSLg
+supports X11/Wayland GUI applications on eligible Windows versions; Microsoft
+states this does not provide a complete Linux desktop environment.
+[Microsoft WSL GUI application guidance](https://learn.microsoft.com/en-us/windows/wsl/tutorials/gui-apps)
+
+This is an unqualified compatibility/policy assessment route. The existing OATS
+Linux package has not been tested here under WSLg. Before offering it, an approved
+assessment would need to check Electron sandbox/native dependencies, graphics and
+xterm fallback, clipboard/IME, file dialogs, launcher behavior, Linux prerequisites,
+credentials, local/remote lifecycle and exact viewer cleanup. No such assessment is
+started by this document. Do not disable sandboxing just to make a demo launch.
+
+Users still need permission to install/run WSL, a supported device/graphics setup,
+Linux package maintenance and enough local resources. UI, paths and credential
+stores remain Linux-side; Windows integrations may be limited. Local agents stop
+with WSL shutdown/host loss, whereas agents on a separate Linux server can continue.
+If C0 meets the audience's needs, a native Windows UI and new WSL bridge may not be
+worth funding. If it fails, document the actual limitation before selecting C.
 
 ### Remote-only Windows client
 
@@ -670,22 +832,30 @@ evidence that the existing OATS lifecycle contract works natively.
 
 ## Delivery plan and decision gates
 
-Do not begin production implementation solely on this proposal. The requested
-review decides which time-boxed spikes and owners to fund.
+No spike or implementation is funded by this proposal or its draft review. The
+maintainer's current mandate is assessment-only. Gate 0 requires a separate human
+decision before any runtime test, installation, provisioning or implementation.
+Choose the smallest relevant route; the following branches are alternatives, not
+one cumulative program.
 
 | Gate | Work | Evidence required | Stop condition |
 | --- | --- | --- | --- |
-| 0 Audience and ownership | Confirm managed hosting vs existing servers vs local custody, target devices, credential model and service operator | Written choice and budget owner | No operator/budget for hosted service, or audience requires unsupported local custody |
-| 1 Shared renderer | Load real shell through a browser adapter against a private single-tenant runner; retain Desktop adapter | Same roster/spawn/terminal UI, no Electron globals leaking into browser path, Desktop regressions pass | Extraction needs uncontrolled UI fork or cannot preserve identity semantics |
-| 2 Windows spike | Run B on actual clean Windows; separately test C if local execution matters | Full target user journey and failure/cleanup evidence | Missing CLI/remote contracts or unacceptable WSL install policy |
-| 3 Hosted isolation spike | Two tenant VMs, authorized gateways, durable spawn and WSS lease ownership | Cross-tenant denial, revocation, crash/retry and resource-limit tests | Any uncontrolled access across tenants or into infrastructure |
-| 4 Comparative review | Update measured effort, latency, onboarding friction and monthly model | Human and maintainer select product path | Cost/support burden outweighs audience benefit |
-| 5 Pilot | Small invite-only cohort on selected option | All MVP acceptance criteria and named support owner | No reliable recovery, secret handling or operating capacity |
-| 6 General release | Harden operations/distribution, capacity and documentation | Security review and platform acceptance; explicit launch decision | Pilot reliability/economics do not meet agreed targets |
+| 0 Audience and authority | Confirm existing Linux execution vs managed browser-only execution vs local custody, install/WSL policy and budget owner | Human selects a route and separately authorizes bounded work | Audience/custody policy unconfirmed; no assumed all-route funding |
+| B Windows remote | On clean Windows prove safe installed-CLI invocation, trusted first-run workspace/bootstrap, remote identity and target journey | Standard-user packaged client works without an accidental WSL/Git Bash dependency | Requires unscoped kernel bootstrap/contract changes; re-estimate before proceeding |
+| C0 WSLg assessment | Assess policy and, only if separately authorized, existing Linux app/CLI in WSLg | Document actual install, graphics, terminal, lifecycle and integration results | WSL disallowed or unacceptable behavior; do not assume a new bridge fixes policy |
+| C WSL adapter | Only if C0 fails a required integration need and WSL is allowed, prove explicit distro/user/path/process adapter | Correct lifetime and identity across the Windows/WSL boundary | Unsafe process/identity mapping or support burden; no automatic progression from C0 |
+| D Native platform design | Only if native local execution without WSL is essential, commission separate kernel/provider feasibility | Maintainer-owned session and portability scope | No approved kernel program; no Desktop-only estimate |
+| A0 Hosted prerequisites | Name operator/security owner, budget and supported credential route | Human authorization before real customer credentials or paid provisioning; use inert fixtures until then | Operator, budget or credential feasibility absent |
+| A1 Browser renderer | After A0 authorization, prove real shell through web adapter and retain Desktop behavior | Same essential UI; no Electron global leakage or identity regression | Uncontrolled UI fork or missing kernel authority |
+| A2 Hosted isolation | After explicit authorization, two isolated tenants, durable operations and runner-enforced WSS leases | Cross-tenant denial, partition fencing, expiry/rollback and resource-limit evidence | Uncontrolled access or unresolvable duplicate/identity semantics |
+| Route review | Review only the selected route's evidence and updated estimates | Human decides stop, further evidence or selected pilot | Benefit does not justify cost/support burden |
+| Selected pilot | Separately authorized small cohort on the selected route | Applicable acceptance criteria and named support owner | No reliable recovery, secret handling or operating capacity |
+| General release | Further explicit release decision after pilot | Security/QA/operations acceptance and distribution qualification | Pilot reliability/economics below agreed targets |
 
-Shared renderer work is useful across options, but avoid prematurely extracting
-every Desktop module into a public library. First prove one complete feature and
-terminal lifecycle through both adapters. Preserve versioned interfaces and contract
+Browser extraction is required for A, not for B, C0 or C. Windows Electron can
+reuse the existing renderer without a browser adapter. Avoid prematurely extracting
+every Desktop module into a public library. On the hosted route, first prove one
+complete feature and terminal lifecycle through both adapters. Preserve versioned interfaces and contract
 fixtures. Roll out behind an explicit platform entry point, leaving the current
 Desktop launcher default intact. Rollback disables hosted admission and retains
 tenant work; it must not delete workspaces.
@@ -702,13 +872,18 @@ Hosted acceptance:
 
 1. Two unrelated tenants complete spawn/attach/manage without seeing each other's
    list, file, output, job, preview, ticket, cache or export data, including guessed IDs.
-2. A revoked user cannot retain a writer socket, reuse a ticket or dispatch a queued
-   mutation. An expired invitation/session cannot acquire fresh authority.
-3. Browser reload, tab close, gateway crash and lost acknowledgements never create
-   a second instance from the same accepted intent or kill the durable source viewer
-   was attached to. Unknown outcomes remain explicit where proof is unavailable.
+2. A revoked user cannot reuse a ticket or dispatch a queued mutation. Test delayed
+   buffers and gateway-runner partition at the final runner write boundary, proving
+   the lease expiry/fencing bound, not merely gateway socket closure.
+3. Within the documented authority/replay window, browser reload, gateway crash and
+   lost acknowledgements recover the same operation without blind creation retry.
+   Expired/missing intents refuse. Unknown effects retain custody across ordinary
+   retention, deletion and backup rollback; absence is not no-effect proof. Browser
+   detach preserves the exact durable source.
 4. Same-named instances, retired/recreated homes, workspace switches and environment
-   replacement cannot retarget a stale operation or lease.
+   replacement cannot retarget a stale operation or lease. Map each guarantee to
+   an enforced kernel or runner check; if absent, fail closed and record the open
+   contract before claiming acceptance. No model-consumption guarantee is inferred.
 5. Huge output, slow clients, malformed frames, invalid UTF-8/control messages,
    excess terminals, process floods and full disk stay within quotas and bounded
    queues. Unicode terminal input and valid control bytes remain correct.
@@ -716,8 +891,10 @@ Hosted acceptance:
    keyboard navigation and focus behavior work in the supported browser matrix.
 7. Restore proves file recovery and identity isolation; UI explicitly distinguishes
    restored files from restarted processes and resumed harness conversations.
-8. No provider or platform credentials appear in browser payloads, public URLs,
-   logs, audit metadata or another tenant's environment.
+8. The service never serializes stored provider or platform secrets into management
+   responses, URLs, logs, audit metadata or another tenant's environment. Workload
+   operators can deliberately print workload secrets into their own terminal;
+   this is part of their authority, not a confidentiality guarantee of the UI.
 
 Proposed first browser matrix: current Chrome and Edge on Windows, plus Firefox
 and Safari desktop qualification before claiming general browser support. Publish
@@ -744,19 +921,41 @@ required; none was used in this assessment.
 
 These are low-confidence planning allowances, not delivery quotes. One engineer-
 week means a full-time experienced engineer with necessary reviewers and test
-machines available. Workstreams overlap; person-time does not translate directly
-to calendar time. Update all estimates after gates 1–3.
+machines available. Allowances include developer investigation, implementation,
+tests, documentation and ordinary review remediation. They exclude independent
+reviewer/product time, dedicated QA/security assessment, operations staffing,
+provider/credential approval work, signing fees and infrastructure cost. Those are
+additional budget lines, not assumed free or already staffed. Person-time does not
+translate directly to calendar time. Re-estimate after the selected route's gate.
 
 | Work | Initial allowance | Major uncertainty |
 | --- | --- | --- |
-| Shared renderer feasibility | 1–2 engineer-weeks | Shell globals, identity DTOs, terminal lifecycle coupling |
-| Windows remote feasibility | 1–2 engineer-weeks | CLI execution and remote spawn parity |
-| WSL feasibility if required | 1–2 additional engineer-weeks | Provisioning policy, process and path bridge |
+| Browser renderer feasibility A1 | 1–2 engineer-weeks, A only | Shell globals, identity DTOs, terminal lifecycle coupling; optional for Windows |
+| Windows remote feasibility B | 1–2 engineer-weeks, B only | Safe CLI execution, first-run local workspace/bootstrap and remote spawn parity |
+| Existing Linux app WSLg assessment C0 | 0.5–1 engineer-week if authorized | Compatibility/policy qualification only; no new native adapter or promise of support |
+| Native Windows WSL adapter feasibility C | 1–2 engineer-weeks after route selection | Provisioning policy, process and path bridge; independent of browser extraction |
 | Hosted two-tenant feasibility | 2–4 engineer-weeks | Runner authority, operation recovery and WSS fencing |
 | Windows remote pilot after a successful spike | 4–8 additional engineer-weeks | Onboarding, signing and installed-app qualification; excludes new kernel contracts |
 | WSL local pilot after a successful spike | 6–12 additional engineer-weeks | Local setup/support and recovery |
 | Hosted invite-only pilot after successful spikes | 10–18 additional engineer-weeks | Auth, isolation, credentials, durable jobs, provisioning, recovery and operations |
 | Fully native Windows execution | Not responsibly estimated yet | Requires a separate kernel/provider portability design and spike |
+
+Engineering allowance totals per selected route, before excluded staffing/costs:
+
+| Route | Dependency and arithmetic | What the total does not buy |
+| --- | --- | --- |
+| A Hosted invite-only pilot | A0 prerequisite decisions, then A1 1–2 + A2 2–4 + pilot 10–18 = **13–24 engineer-weeks** | Public launch, independent security/QA and sustained operations; new kernel contracts invalidate this allowance |
+| B Windows remote pilot | B feasibility 1–2 + pilot 4–8 = **5–10 engineer-weeks** | Browser extraction, hosting and new kernel bootstrap/session contracts; such dependencies require a new estimate |
+| C0 Linux app through WSLg | **0.5–1 engineer-week assessment only** | A supported release or a remediation budget; failures must be assessed before estimating changes |
+| C Native Windows WSL adapter pilot | C feasibility 1–2 + pilot 6–12 = **7–14 engineer-weeks**, or **7.5–15** if C0 assessment precedes it | Browser extraction, fully native execution and excluded independent review/security/QA/support labor |
+| D Fully native Windows | **Unscoped** | No 8–12-week or other delivery commitment is supported |
+
+The maintainer described an earlier 3–5-week Windows estimate as a narrow rough
+allowance. B's 5–10 engineer-week range includes broader onboarding, signing and
+remote-parity qualification. Neither is a measured estimate or a contradiction
+resolved by choosing a midpoint; scope and the Windows bootstrap findings determine
+the next estimate. Shared work is counted only where the route requires it. Do not
+sum every feasibility row into a mandatory program.
 
 A public hosted release needs additional security and operational hardening after
 the pilot; no estimate is defensible before pilot findings. The service requires
@@ -793,7 +992,7 @@ without going through the web gateway.
 
 Compare cost per active user and per completed task, not just per registered user.
 Windows B externalizes compute cost only when the customer supplies the server.
-Windows C/D externalize it to the customer's hardware and IT support. Neither is
+Windows C0/C/D externalize it to the customer's hardware and IT support. Neither is
 free from the customer's perspective.
 
 ## Risks unresolved decisions and owners
@@ -816,10 +1015,12 @@ free from the customer's perspective.
 
 ## Requested review
 
-Ask `oats-expert-juan` to review the four-option framing, factual code evidence,
+Ask `oats-expert-juan` to review the option framing including C0 WSLg, factual code evidence,
 shared-renderer approach, hosted authority boundaries, Windows scope, effort ranges
-and staged decision gates. The desired verdict is one of: fund specified spikes,
-select an option with amendments, request missing evidence, or decline the project.
+and branching decision gates. Its assessment verdict can recommend an option or
+specific future evidence, request amendments, or recommend declining the project.
+The human must separately authorize funding/work; this review does not commission
+spikes or give implementation GO.
 
 Specific review questions:
 
@@ -830,7 +1031,14 @@ Specific review questions:
 3. Is the proposed runner/CLI separation acceptable without weakening Desktop's
    loopback boundary or moving kernel behavior into the service?
 4. Which credential model, service operator and monthly budget should be assumed?
-5. Which spikes should run, who owns them, and what evidence changes the decision?
+5. Which route's evidence should be proposed to the human, and what would change
+   the decision? No role is spawned or commissioned by answering this question.
+
+After the human selects the audience and authorizes work, proposed ownership is
+Desktop expert for shared UI/Windows client, kernel expert for CLI/session
+contracts, integrations expert for harness/repository/model credential feasibility,
+and a named operations/security owner before hosted work. These are assignments
+for a future decision, not requests to start work.
 
 This proposal is intentionally not entered into the repository's decided design
 record index. No endpoints, kernel contracts, signing policy, release or hosting
