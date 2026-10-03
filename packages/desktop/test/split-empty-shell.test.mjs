@@ -70,7 +70,7 @@ function shell(t, shellSource = source) {
     resolveTerminalOpen, terminalKey, reserveKey, whenKeyFree, wirePaneSelection, createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart,
     splitControlsState, instanceSplitPlan, instanceSplitIdentity, sameInstanceActionTarget, ...layout, ...workspaceTabs,
     projectSplitDom(els, ...args) { projections.push(els); return projectSplitDom(els, ...args); },
-    terminalOptions, attachClipboardWrite, fitTerminal, createGlyphRenderer, terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}),
+    terminalOptions, attachClipboardWrite, fitTerminal, createGlyphRenderer, terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}), terminalFontWeight: () => 400,
     onThemeChange: () => () => {}, onTerminalTypographyChange: () => () => {}, requestAnimationFrame: fn => fn(),
     FitAddon: { FitAddon: class { fit() {} } },
     createTerminalTab: options => createTerminalTab({ ...options, observe: () => () => {} }),

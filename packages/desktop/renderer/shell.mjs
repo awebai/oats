@@ -19,7 +19,7 @@ import { retirementSummary, runtimeState, unsupportedSession } from "./instance-
 import { deploymentUnavailableText, NOT_SERVED_CODE, NO_ANSWER_CODE, unservedError, createPendingWatch } from "./deployment-header.mjs";
 import { panelErrorCause } from "./deployment-contract.mjs";
 import {
-  initTheme, toggleTheme, setTheme, THEMES, xtermTheme, onThemeChange,
+  initTheme, toggleTheme, setTheme, THEMES, xtermTheme, terminalFontWeight, onThemeChange,
   terminalTypography, setTerminalFontSize, setTerminalFontFamily, resetTerminalTypography, onTerminalTypographyChange,
 } from "./theme.mjs";
 import { createPalette } from "./palette.mjs";
@@ -1799,12 +1799,13 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
   const term = new Terminal(terminalOptions({
     fontSize: type.fontSize,
     fontFamily: type.fontFamily,
+    fontWeight: terminalFontWeight(),
     theme: xtermTheme(),
   }));
   // A drag in the agent's terminal is tmux's copy; tmux sends it as OSC 52 and it goes to the clipboard (write-only, #520).
   const clipboard = attachClipboardWrite(term, text => navigator.clipboard.writeText(text));
-  // live terminals follow app theme + persisted typography preferences
-  const offTheme = onThemeChange(() => { term.options.theme = xtermTheme(); });
+  // live terminals follow app theme (colours and text weight) + persisted typography preferences
+  const offTheme = onThemeChange(() => { term.options.theme = xtermTheme(); term.options.fontWeight = terminalFontWeight(); });
   const offTypography = onTerminalTypographyChange((next) => {
     term.options.fontFamily = next.fontFamily;
     term.options.fontSize = next.fontSize;
@@ -2037,9 +2038,9 @@ const connections = createConnections({ doc: document, desk,
   sections: [() => createTerminalSettings({ doc: document, chords: {
     bigger: chordDetail("terminal.fontBigger")(), smaller: chordDetail("terminal.fontSmaller")(), reset: chordDetail("terminal.fontReset")() } })],
   terminalFactory: mount => {
-    const term = new Terminal({ ...terminalOptions({ ...terminalTypography(), theme: xtermTheme() }), scrollback: 200, allowProposedApi: false });
+    const term = new Terminal({ ...terminalOptions({ ...terminalTypography(), fontWeight: terminalFontWeight(), theme: xtermTheme() }), scrollback: 200, allowProposedApi: false });
     const fit = new FitAddon.FitAddon(); term.loadAddon(fit); term.open(mount);
-    const offTheme = onThemeChange(() => { term.options.theme = xtermTheme(); });
+    const offTheme = onThemeChange(() => { term.options.theme = xtermTheme(); term.options.fontWeight = terminalFontWeight(); });
     const offType = onTerminalTypographyChange(value => { term.options.fontSize = value.fontSize; term.options.fontFamily = value.fontFamily; });
     const observers = new Set();
     return {

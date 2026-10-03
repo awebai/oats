@@ -169,3 +169,12 @@ export function xtermTheme(el = document.documentElement) {
   }
   return t;
 }
+
+/** xterm's `normal`: the weight when the theme names none, or an unusable one. */
+export const TERMINAL_FONT_WEIGHT = 400;
+/** The terminal's text weight: the theme's --term-font-weight, not a typography
+ * preference (why: renderer/README.md, the typography paragraph). */
+export function terminalFontWeight(el = document.documentElement) {
+  const weight = Number(getComputedStyle(el).getPropertyValue("--term-font-weight"));
+  return Number.isFinite(weight) && weight >= 1 && weight <= 1000 ? weight : TERMINAL_FONT_WEIGHT;
+}

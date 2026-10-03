@@ -77,6 +77,17 @@ still wins. Reset typography (⌘0 / Ctrl+0, the palette) forgets both, and Sett
 Terminal's "Reset to default" forgets the size, so the defaults apply again. Every
 size control clamps to 9–28 (`clampTerminalFontSize`).
 
+The terminal's text weight belongs to the theme, not to typography: each palette sets
+`--term-font-weight` (White 475, Solarized 450, Dark 400), which `terminalFontWeight()`
+(`theme.mjs`) reads into xterm's `fontWeight` when a terminal is created and again on
+every theme change, at both creation sites in `shell.mjs` (the terminal tab and the
+Settings preview). Chromium renders dark-on-light text lighter than light-on-dark, while
+a native macOS terminal with font smoothing (Ghostty with `font-thicken`, measured at
+Inconsolata 15) inks the same in every scheme, so one fixed weight cannot match all
+three palettes. A missing or unusable token means 400 (xterm's `normal`). Bold stays
+xterm's 700 (`fontWeightBold` is not set), and weight never changes the cell, so
+`terminalTypography()` stays `{ fontFamily, fontSize }` and no weight is stored.
+
 **Copying (#520).** A terminal tab is a tmux client with tmux's mouse on, so a plain
 drag is tmux's: the viewer's locked key table (`tmux-target.mjs`
 `LOCKED_TABLE_BINDINGS`; the kernel's remote viewer, `lib/session-viewer.mjs`, binds

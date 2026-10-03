@@ -119,7 +119,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     createSelectionOwnership, wirePaneSelection, prepareOwnedOpen, createViewLifecycle,
     createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart, reserveKey, whenKeyFree, projectSplitDom, splitControlsState,
     ...tree, ...layout, ...workspaceTabs, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge, rosterKeyAction, moveTarget,
-    terminalOptions, attachClipboardWrite, fitTerminal, createGlyphRenderer, terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}),
+    terminalOptions, attachClipboardWrite, fitTerminal, createGlyphRenderer, terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}), terminalFontWeight: () => 400,
     onThemeChange: () => () => {}, onTerminalTypographyChange: () => () => {}, requestAnimationFrame: cb => cb(),
     FitAddon: { FitAddon: class { fit() {} } },
     createTerminalTab: options => createTerminalTab({ ...options, observe: () => () => {} }),

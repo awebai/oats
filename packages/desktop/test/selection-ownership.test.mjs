@@ -91,7 +91,7 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     ...workspaceTabs, ...layout, projectSplitDom, splitControlsState,
     // tabs.close also goes into the real keymap: the strip's close chord is the keymap's, not tab-a11y's.
     registerAction: action => { actions.set(action.id, action.run); if (action.id === "tabs.close") t.after(keymap.registerAction(action)); },
-    terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}),
+    terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}), terminalFontWeight: () => 400,
     onThemeChange: () => () => {}, onTerminalTypographyChange: () => () => {},
     requestAnimationFrame: fn => fn(),
     FitAddon: { FitAddon: class { fit() {} } },
