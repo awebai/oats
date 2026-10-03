@@ -68,7 +68,19 @@ A self-contained package has an `oats.json`:
   as `aweb.identity`, because that prefix owns the corresponding `AWEB_*`
   namespace.
 - `command` is an optional, unique CLI namespace. The example exposes
-  `oats team-chat auth`.
+  `oats team-chat auth`. Inside an instance home it runs the home's copy of
+  the capability. From a deployment directory (an **operator command**) it
+  resolves as a spawn of a soul would: the soul named by `--soul <name>`, or,
+  without `--soul`, the first soul of the deployment by name, not disabled
+  there, whose resolution provides the namespace (souls whose resolution is
+  refused are skipped). The chosen soul is named on stderr (`oats <namespace>:
+  no --soul given; running as soul <member>/<soul>, …`), so the command's
+  stdout, its `--json` envelope included, is the provider's alone. When no
+  soul provides the namespace, the command is refused with `E_BAD_ARGS` (`no
+  soul of this deployment provides the <namespace> namespace; pass --soul
+  <name>`, with any skipped souls and their codes in `details.skipped`).
+  `--soul` without a name is `E_BAD_ARGS`. With `--server <id>` the same
+  command runs on that server's deployment ([servers.md](servers.md#run-there)).
 - `compatibility.oats` is the kernel range the capability runs on. The kernel
   refuses to compose a capability whose range does not admit it
   (`E_CAPABILITY_INCOMPATIBLE`, naming capability, range and kernel) wherever a

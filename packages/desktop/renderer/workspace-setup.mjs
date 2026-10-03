@@ -217,13 +217,15 @@ export function box(doc, title, lead, scopeLabel, { local = false, icon = null }
 }
 
 /** The whole Setup tab. view: 'list' | 'graph'; selected: a member key (graph panel). */
-export function renderSetup(host, { status, instances = [], souls = [], cli = null, view = 'list', selected = null, onSelect = () => {}, onOpenRepo = null, onOpenPackages = null, openExternal = null }) {
+/** `machines`: the Machines box (workspace-machines.mjs), owned by the tab and kept across renders; it follows either view. */
+export function renderSetup(host, { status, instances = [], souls = [], cli = null, view = 'list', selected = null, onSelect = () => {}, onOpenRepo = null, onOpenPackages = null, openExternal = null, machines = null }) {
   const doc = host.ownerDocument;
   host.replaceChildren();
   const root = el(doc, 'div', null, 'setup'); root.dataset.view = view;
   root.append(lede(doc, status, openExternal));
   if (view === 'graph') root.append(graph(doc, { status, instances, selected, onSelect, onOpenRepo, onOpenPackages, openExternal }));
   else root.append(columns(doc, { status, instances, souls, cli, onSelect, onOpenRepo, onOpenPackages }));
+  if (machines) root.append(machines);
   host.append(root);
   return root;
 }

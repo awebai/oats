@@ -1186,3 +1186,54 @@ for (const [name] of palettes) test(`${name}: capability Contents navigation, re
   assert.ok(contrast(opaqueChannels(root.getPropertyValue('--muted').trim()), opaqueChannels(root.getPropertyValue('--surface-2').trim())) >= 4.5, `${name} muted on surface-2`);
   contents.dispose(); dom.window.close();
 });
+
+// #517: Add a machine (every step status) and the Setup tab's Machines box (a row, its states and the Remove confirmation).
+import { openAddMachineDialog } from '../renderer/add-machine-dialog.mjs';
+import { createWorkspaceMachines, machinesCSS, resetMachineChecks } from '../renderer/workspace-machines.mjs';
+for (const [name] of palettes) test(`${name}: Add a machine and the Machines box meet computed AA without opacity`, async t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><div class="setup" id="setup"></div></div></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document;
+  for (const source of [css, readFileSync(new URL('shell.css', renderer), 'utf8'), setupCSS, machinesCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  const steps = [{ step: 'ssh', status: 'ok' }, { step: 'oats', status: 'done', detail: 'installed' },
+    { step: 'git', status: 'needs-human', code: 'E_REMOTE_UNREADABLE', detail: 'cannot read', remedy: 'Run `gh auth login` there.' },
+    { step: 'deployment', status: 'failed', code: 'E_DEPLOYMENT', detail: 'failed' }, { step: 'register', status: 'skipped', detail: 'waits for git' }];
+  const machine = (id, check) => ({ id, label: id, sshHost: id, workspace: `/srv/${id}`, workspaceKey: 'k', check });
+  const ctx = { api: async path => ({ ok: true, status: 200, json: async () => path.startsWith('/api/servers')
+    ? { servers: [machine('up', { reachable: true, version: '0.39.0', error: null }), machine('down', { reachable: false, version: null, error: 'ssh failed' })], filtered: true, key: 'k', deployment: '/Users/j/Agents/k', aweb: false }
+    : { schemaVersion: 1, ok: true, result: { id: 'altair-k', ready: false, steps } } }) };
+  resetMachineChecks();
+  const box = createWorkspaceMachines(doc, { ctx, ws: 'ws:x' }); doc.getElementById('setup').append(box.element);
+  const dialog = openAddMachineDialog(doc, { ctx, ws: 'ws:x', deployment: '/Users/j/Agents/k' });
+  t.after(() => { dialog.close(); box.dispose(); dom.window.close(); });
+  const host = doc.querySelector('.machine-host'); host.value = 'altair'; host.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  doc.querySelector('.machine-primary').click();
+  for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve));
+  doc.querySelector('[data-machine="down"] .machine-remove').click();
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  for (const [selector, painted, fg, bg] of [
+    ['.machine-dialog h2', '.machine-dialog', 'fg', 'surface'], ['.machine-lede', '.machine-dialog', 'muted', 'surface'],
+    ['.machine-field span', '.machine-dialog', 'muted', 'surface'], ['.machine-install-row span', '.machine-dialog', 'fg', 'surface'],
+    ['.machine-phase-head', '.machine-phase', 'fg', 'surface-2'], ['.machine-step-name', '.machine-phase', 'fg', 'surface-2'],
+    ['[data-status=ok] .machine-step-state', '[data-status=ok] .machine-step-state', 'fg', 'tag-bg'],
+    ['[data-status=done] .machine-step-state', '[data-status=done] .machine-step-state', 'fg', 'tag-bg'],
+    ['[data-status=skipped] .machine-step-state', '[data-status=skipped] .machine-step-state', 'fg', 'tag-bg'],
+    ['[data-status=needs-human] .machine-step-state', '[data-status=needs-human] .machine-step-state', 'warn', 'attn-bg'],
+    ['[data-status=failed] .machine-step-state', '[data-status=failed] .machine-step-state', 'danger', 'surface'],
+    ['.machine-step-detail', '.machine-phase', 'muted', 'surface-2'], ['.machine-step-remedy', '.machine-phase', 'fg', 'surface-2'],
+    ['.machine-step-code', '.machine-phase', 'muted', 'surface-2'], ['.machine-command code', '.machine-command code', 'fg', 'surface'],
+    ['.machine-status', '.machine-dialog', 'muted', 'surface'], ['.machine-copy', '.machine-copy', 'fg', 'surface'],
+    ['.machine-primary', '.machine-primary', 'primary-fg', 'primary-bg'], ['.machine-cancel', '.machine-cancel', 'fg', 'surface'],
+    ['[data-machine="up"] .machine-cell.name', '.setup-machines', 'fg', 'surface-2'], ['[data-machine="up"] .machine-cell.muted', '.setup-machines', 'muted', 'surface-2'],
+    ['[data-machine="up"] .machine-state', '[data-machine="up"] .machine-state', 'muted', 'tag-bg'],
+    ['[data-machine="down"] .machine-state', '[data-machine="down"] .machine-state', 'warn', 'attn-bg'],
+    ['[data-machine="up"] .machine-check', '.setup-machines', 'accent', 'surface-2'], ['.machines-add', '.setup-machines', 'accent', 'surface-2'],
+    ['.machine-confirm p', '.machine-confirm', 'fg', 'surface-2'], ['.machine-confirm-cancel', '.machine-confirm-cancel', 'fg', 'surface'],
+    ['.machine-confirm-remove', '.machine-confirm-remove', 'primary-fg', 'danger'],
+  ]) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background.replace(/^.*(var\(--[\w-]+\)).*$/, '$1'), `var(--${bg})`, painted);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${name} ${selector}`);
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1', selector);
+  }
+});

@@ -221,8 +221,9 @@ identical copies in both role capabilities.
   with the settings recorded at spawn.
 - **From the deployment directory** (holding `oats-local.yaml`), in a shell
   where neither `OATS_INSTANCE_HOME` nor `OATS_HOME` is set (either one pins
-  the command to that instance home), every capability command needs
-  `--soul <name>` (`E_BAD_ARGS` without it). Inside an instance home, a
+  the command to that instance home), a capability command runs as the soul
+  `--soul <name>` names, or without it as the first soul that provides the
+  namespace ([capabilities.md](capabilities.md), `command`). Inside an instance home, a
   `--soul` naming another soul is refused (`E_HOME_MISMATCH`). The kernel resolves the
   soul as a spawn would, fetches its module at the locked commit into
   `<deployment>/.oats/modules/` and runs it with the soul's merged settings

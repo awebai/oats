@@ -370,8 +370,12 @@ there is no field and the form is unchanged. Rules:
   check). The deployment is kept in `sessionStorage` across a reload, and a
   created row becomes real only when its own deployment's row reports it.
 
-*Where to run* (one-deployment views) still lists the registered servers. Its
-facts come from every view holding a remote deployment (`serverFacts`, since
+*Where to run* (one-deployment views) lists the registered servers, or, with
+`servers-per-workspace` and `server-connect`, only the window's machines
+(`/api/servers?ws=`) followed by *Add a machine to this workspace…*
+(`add-machine-dialog.mjs`; a button under the Deployment field in views of two
+or more deployments). See `../docs/desktop-machines.md`. Its disabled states
+come from every view holding a remote deployment (`serverFacts`, since
 `/api/team-members` is view-scoped). A chosen group's relation rows are that
 group's deployment only (`serverRows`).
 
@@ -721,7 +725,11 @@ workspace is observed through its server and never synced from here.
   `lib/teams.mjs`).
 - **Sources** renders the roster observation's `oats workspace status`:
   repositories (team, confirmation status + the kernel's detail), packages
-  (lock, capabilities) and external souls. No extra read.
+  (lock, capabilities) and external souls. No extra read. With
+  `servers-per-workspace` and `server-connect` it also holds the **Machines**
+  box (`workspace-machines.mjs`, `../docs/desktop-machines.md`): this
+  workspace's machines with Check, Remove and Add a machine, mounted once per
+  workspace and passed to `renderSetup` as `machines`.
 - **Notes** keep the F1 guards visible: an unreachable workspace (module drift
   not current), withheld instance rows, unsynced/stale declarations and
   workspace problems, each in the kernel's own terms.

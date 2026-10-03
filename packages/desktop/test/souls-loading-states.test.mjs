@@ -46,7 +46,7 @@ async function setup(t, { panel = {} } = {}) {
       if (path === '/api/cli') return CLI;
       if (path.startsWith('/api/agents')) { const request = deferred(); rosters.push(request); return request.promise; }
       if (path.startsWith('/api/panel')) return panelData;
-      if (path === '/api/servers') return { servers: [] };
+      if (path.startsWith('/api/servers')) return { servers: [] };
       const body = opts.body ? JSON.parse(opts.body) : {};
       if (path.startsWith('/api/workspace-sync')) return { status: 'unavailable', reason: { code: 'E_TEST', message: 'no catalog in this fixture' } };
       throw new Error(`Unexpected fixture API: ${path} ${JSON.stringify(body)}`);

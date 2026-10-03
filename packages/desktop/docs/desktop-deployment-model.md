@@ -247,6 +247,13 @@ answers the view that holds it; no `?ws=` answers the first view.
   with one it has no headings. Rows never repeat the workspace name, and a
   row's identity line keeps its host.
 
+### A workspace's own machines
+
+The view's key (its primary local deployment's, `keyFrom: "workspace"` only)
+also chooses which registered servers the window offers: Where to run, the
+Setup tab's Machines box and Add a machine list only the registrations that
+report that key. See [desktop-machines.md](desktop-machines.md).
+
 ### The Deployments page
 
 The former Active overview (stage `hierarchy`, Mod+1) shows the view's

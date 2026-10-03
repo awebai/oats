@@ -46,7 +46,7 @@ async function setup(t, { status = 'workspace-status', cli = CLI, sync, teams, w
     if (path.startsWith('/api/panel')) return panel();
     if (path.startsWith('/api/workspace-sync')) return sync ? sync(body, calls) : catalog('capabilities');
     if (teams && path.startsWith('/api/workspace-teams')) return teams(body, calls);
-    if (path === '/api/servers') return { servers: [] };
+    if (path.startsWith('/api/servers')) return { servers: [] };
     throw new Error(`Unexpected fixture API request: ${path}`);
   } };
   t.after(() => { spawn.unmount(); setWorkspace(previous.ws); globalThis.document = previous.document; globalThis.window = previous.window; globalThis.setInterval = previous.setInterval; dom.window.close(); });

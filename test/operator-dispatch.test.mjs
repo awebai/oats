@@ -127,11 +127,13 @@ test("ensureModuleTree verifies the resolution's content digest: a drifted store
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test("resolveOperatorDispatch: --soul required; namespace matched against the soul's Resolution; duplicates refused; payload is the settings", async () => {
+test("resolveOperatorDispatch: a --soul without a name refused; namespace matched against the soul's Resolution; duplicates refused; payload is the settings", async () => {
   const base = realpathSync(mkdtempSync(join(tmpdir(), "opd-")));
   try {
     writeFileSync(join(base, "oats-local.yaml"), "schemaVersion: 2\nworkspace: git:example.com/org/ws\n");
-    for (const soul of [undefined, true, "", "  "]) {
+    // An absent --soul is the default-soul path (test/operator-default-soul.test.mjs); a --soul given
+    // without a name is refused before any soul is prepared.
+    for (const soul of [true, "", "  "]) {
       await assert.rejects(resolveOperatorDispatch(base, "okf", soul, { prepare: async () => { throw new Error("must not be called"); } }), (e) => e.code === "E_BAD_ARGS" && /--soul/.test(e.message) && e.details.flag === "--soul");
     }
     const modules = [
@@ -193,17 +195,19 @@ test("oats okf init --soul probe from the deployment (no home) provisions the ba
     const lockPath = join(dep, "oats-lock.json"); const lock = JSON.parse(readFileSync(lockPath, "utf8"));
     const nodes = join(room, "nodes.json"); writeFileSync(nodes, JSON.stringify({ expert: { path: "expert", owner: "opd-owner" } }));
 
-    // Without --soul: E_BAD_ARGS naming --soul (in both modes).
-    r = run(["okf", "init", "--json"]);
-    assert.equal(r.code, 1); assert.equal(r.json?.error?.code, "E_BAD_ARGS", r.out); assert.match(r.json.error.message, /--soul/); assert.equal(r.json.error.details.flag, "--soul");
-    r = run(["okf", "init"]);
-    assert.equal(r.code, 1); assert.match(r.err, /--soul/); assert.equal(r.out, "");
-
     // --help answers from the manifest without fetching or running anything.
     r = run(["okf", "--help", "--soul", "probe", "--json"]);
     assert.equal(r.code, 0, r.out + r.err); assert.equal(r.json.result.capability, "oats.okf"); assert.equal(r.json.result.namespace, "okf");
     assert.ok(r.json.result.commands.includes("init") && r.json.result.commands.includes("migrate") && r.json.result.commands.includes("run-source"));
     assert.ok(!existsSync(join(dep, MODULES_DIR)), "help does not fetch the module tree");
+
+    // Without --soul: the deployment's first okf-providing soul (its only one, probe) runs it, said on
+    // stderr in both modes; the provider then answers for itself (no base was named).
+    r = run(["okf", "init", "--json"]);
+    assert.match(r.err, /oats okf: no --soul given; running as soul [\w.-]+\/probe,/, r.err);
+    assert.notEqual(r.json?.error?.details?.flag, "--soul", "not the kernel's --soul refusal");
+    r = run(["okf", "init"]);
+    assert.match(r.err, /no --soul given; running as soul [\w.-]+\/probe,/);
 
     // A namespace no module of the soul's resolution provides → E_UNKNOWN_COMMAND.
     r = run(["zzz", "init", "--soul", "probe", "--json"]);
@@ -253,15 +257,15 @@ test("oats okf init --soul probe from the deployment (no home) provisions the ba
     assert.equal(below.status, 0, below.stdout + below.stderr);
     assert.equal(JSON.parse(below.stdout.trim().split("\n").pop()).result.capability, "oats.okf");
     // An instance.json outside <agents-root>/<agent>/instances/<name> (or naming another
-    // instance) is not a home: the deployment's operator dispatch still answers, asking for --soul.
+    // instance) is not a home: the deployment's operator dispatch still answers, as its default soul.
     const notHome = join(dep, "not-a-home"); mkdirSync(notHome);
     writeFileSync(join(notHome, "instance.json"), readFileSync(join(r.json.result.home, "instance.json")));
     const misplaced = run(["okf", "inspect", "--json"], notHome);
-    assert.equal(misplaced.code, 1); assert.equal(misplaced.json?.error?.code, "E_BAD_ARGS", misplaced.out); assert.equal(misplaced.json.error.details.flag, "--soul");
+    assert.match(misplaced.err, /no --soul given; running as soul [\w.-]+\/probe,/, misplaced.out + misplaced.err);
     const renamed = join(dep, "agents", "probe", "instances", "renamed"); mkdirSync(renamed);
     writeFileSync(join(renamed, "instance.json"), readFileSync(join(r.json.result.home, "instance.json")));
     const misnamed = run(["okf", "inspect", "--json"], renamed);
-    assert.equal(misnamed.code, 1); assert.equal(misnamed.json?.error?.code, "E_BAD_ARGS", misnamed.out); assert.equal(misnamed.json.error.details.flag, "--soul");
+    assert.match(misnamed.err, /no --soul given; running as soul [\w.-]+\/probe,/, misnamed.out + misnamed.err);
 
     // A package soul (the okf harvester, okf 4.0.0) homes under the agents root like a member
     // soul: <deployment>/agents/<package>--<soul>/instances/<name>.

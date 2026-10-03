@@ -76,7 +76,7 @@ export async function mountSpawn(t, options = {}) {
     ...(options.deployments ? { deployments: options.deployments } : {}),
     deployment: { status: 'observed', root: `${northwindDir}/agents`, workspace: workspaceStatusData(northwind, northwindDir).workspace,
       workspaceStatus: workspaceStatusData(northwind, northwindDir), reachable: { reachable: true } } });
-  const ctx = { hasWorkspaceSwitcher: true, spawnTiming: { previewDelay: options.previewDelay ?? 0, busyDelay: options.busyDelay ?? 0, wait: { tries: 3, delayMs: 0, sleep: options.sleep ?? (async () => {}) } },
+  const ctx = { hasWorkspaceSwitcher: true, spawnTiming: { previewDelay: options.previewDelay ?? 0, busyDelay: options.busyDelay ?? 0, backfillDelay: 0, wait: { tries: 3, delayMs: 0, sleep: options.sleep ?? (async () => {}) } },
     api: async (path, opts = {}) => {
       const body = opts.body ? JSON.parse(opts.body) : undefined; calls.push({ path, body, method: opts.method || 'GET' });
       if (path === '/api/cli') return cli;
@@ -95,7 +95,9 @@ export async function mountSpawn(t, options = {}) {
       if (path === '/api/spawn') return options.remote ? options.remote(body) : assert.fail('no unguarded spawn in these tests');
       if (path === '/api/models') return options.models ? options.models(body) : { models: [] };
       if (path.startsWith('/api/launch-configs')) return options.configs ? options.configs(body) : { selected: body.selector, configurations: [] };
-      if (path === '/api/servers') return { servers: options.servers ?? [] };
+      // #517: options.servers is the registered list (gates off) or the filtered answer object.
+      if (path.startsWith('/api/servers')) return typeof options.servers === 'function' ? options.servers(path) : Array.isArray(options.servers) || options.servers === undefined ? { servers: options.servers ?? [] } : options.servers;
+      if (path.startsWith('/api/server-connect')) return options.machineApi ? options.machineApi(body, path) : assert.fail('no machine connect in this test');
       if (path.startsWith('/api/capabilities')) return { operationsApi: 1, selected: { source: 'config' }, souls: [], capabilities: [], problems: [] };
       if (path.startsWith('/api/workspace-sync')) return { workspaceSyncApi: 1, status: 'ok', report: null, capabilities: null, reason: null };
       if (path.startsWith('/api/workspace-readiness')) return { readinessViewApi: 1, status: 'unavailable', reason: { code: 'E_UNSUPPORTED', message: 'x' } };

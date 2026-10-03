@@ -1,0 +1,35 @@
+{
+ "schemaVersion": 1,
+ "ok": true,
+ "result": {
+  "server": "altair-aweb",
+  "team": {
+   "label": "joined",
+   "team": "joined:example.invalid"
+  },
+  "ready": false,
+  "steps": [
+   {
+    "step": "aw",
+    "status": "needs-human",
+    "detail": "aw CLI not on PATH; install aw >= 1.36.13",
+    "remedy": "`oats aweb connect altair-aweb --install-aw --soul dev`"
+   },
+   {
+    "step": "invite",
+    "status": "skipped",
+    "detail": "waits for aw"
+   },
+   {
+    "step": "join",
+    "status": "skipped",
+    "detail": "waits for aw"
+   },
+   {
+    "step": "readiness",
+    "status": "skipped",
+    "detail": "waits for aw"
+   }
+  ]
+ }
+}

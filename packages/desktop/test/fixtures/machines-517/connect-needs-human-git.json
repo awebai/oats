@@ -1,0 +1,45 @@
+{
+ "schemaVersion": 1,
+ "ok": true,
+ "result": {
+  "id": "altair-deployment",
+  "ready": false,
+  "registration": null,
+  "steps": [
+   {
+    "step": "ssh",
+    "status": "ok"
+   },
+   {
+    "step": "oats",
+    "status": "ok",
+    "detail": "oats 0.38.0"
+   },
+   {
+    "step": "git",
+    "status": "needs-human",
+    "code": "E_REMOTE_UNREADABLE",
+    "detail": "cannot read remote /private/var/folders/n3/7j3g9hm10sbd4j8hccsvr4wh0000gn/T/oats-v2-Pm3wHQ/remotes/ws.git (not-found)",
+    "remedy": "on altair: make file:///private/var/folders/n3/7j3g9hm10sbd4j8hccsvr4wh0000gn/T/oats-v2-Pm3wHQ/remotes/ws.git readable by git there (check the reference; give git there credentials or an SSH key for it)"
+   },
+   {
+    "step": "deployment",
+    "status": "skipped",
+    "detail": "waits for git"
+   },
+   {
+    "step": "register",
+    "status": "skipped",
+    "detail": "waits for git"
+   },
+   {
+    "step": "readiness",
+    "status": "skipped",
+    "detail": "waits for git"
+   }
+  ],
+  "human": [
+   "on altair: make file:///private/var/folders/n3/7j3g9hm10sbd4j8hccsvr4wh0000gn/T/oats-v2-Pm3wHQ/remotes/ws.git readable by git there (check the reference; give git there credentials or an SSH key for it)"
+  ]
+ }
+}
