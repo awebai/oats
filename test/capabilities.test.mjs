@@ -3113,7 +3113,7 @@ test("the package mirrors carry the versions package-catalog.json pins", () => {
   }
   assert.equal(catalog.packages["oats.engineering"].ref, "v1.5.0");
   // oats.cloning exports one capability under the package's own id: no alias; the cloner is a package soul.
-  assert.equal(catalog.packages["oats.cloning"].ref, "v1.0.0");
+  assert.equal(catalog.packages["oats.cloning"].ref, "v1.0.1");
   assert.equal(catalog.capabilities["oats.cloning"], undefined, "an identity mapping needs no alias");
   // oats.dev is retired: no package, alias or mirror remains.
   assert.equal(catalog.packages["oats.dev"], undefined, "oats.dev is no longer listed");
