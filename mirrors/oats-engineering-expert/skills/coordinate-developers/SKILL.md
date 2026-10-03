@@ -27,6 +27,8 @@ description: Launch and drive developers to build what you specified, one per su
 - Watch the interfaces. When two developers disagree about a shared shape, you decide.
 
 ## When work comes back
+- A developer reports when its review loop has converged, not before: the final verdict,
+  its rounds and the head. Don't act on intermediate heads.
 - It must come with: what was done, how it was verified (tests, real runs), the
   adversarial review's final verdict, and anything deliberately not done.
 - Verify it (`/verify-developer-work`). Return it with specific reasons, or

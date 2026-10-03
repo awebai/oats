@@ -76,6 +76,10 @@ findings and your position on each to your expert, who decides.
   then send the SAME reviewer the delta and the return's reasons, and hand back again only
   after it approves: every change on the branch is reviewed before a PR exists.
 - Retire the reviewer once your expert accepts.
-- Hand the reviewed branch to your expert. In your handback, include: the branch, the final
+- Fixes requested on the PR come back to you as a delta: take them through a reviewer (the
+  same one, or a new one if it was retired) and report again when it converges, before
+  your expert hands over the new head.
+- Hand the reviewed branch to your expert when the loop has converged, not before; don't
+  send intermediate heads. In your handback, include: the branch and its head, the final
   verdict, the number of rounds, and any finding you disputed and how it was resolved.
 - Don't open the PR: your expert reviews the branch first, then opens it (or asks you to).

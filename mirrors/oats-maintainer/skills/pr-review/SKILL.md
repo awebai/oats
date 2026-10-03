@@ -5,15 +5,26 @@ description: Review a pull request at an exact head through four gates (directio
 
 # Review the exact change
 
+**Review only what its owner hands over.** Start on a PR only when its owner (the expert
+landing it) hands it to you, saying three things: the developer's review loop converged
+(its final verdict and rounds, where the project runs one), the exact head, and CI green
+on that head. Until then, don't review it, don't run reviewers or subagents on it, and
+don't send findings: a head that is still moving isn't reviewable. If the head moves after
+the hand-over, stop and wait for the owner's next hand-over; then review only the delta,
+and re-bind your verdict to the new head. A PR with no owning expert (a human's, an outside
+contributor's, a peer's release-prep PR) is ready when its author marks it ready for review
+(not a draft) or asks for review at a named head, with CI green on it; for a fork, the
+workflow and secrets check below comes first, so that CI can run.
+
 Pin the base and head SHAs before you read a line. Read
 [references/reviewed-delivery.md](references/reviewed-delivery.md) when the head moved, a
 hold applies, or you are about to merge.
 
 Ask for the author's evidence first: what the change was verified with, and, where the
 project uses them, the verdict and rounds of its pre-PR code review and the owning expert's
-acceptance. Check that they were given **at this head**; if the head moved since, review the
-delta they didn't see. Those reviews inform yours and don't replace it: the four gates
-below are your judgement.
+acceptance. Check that they were given **at this head**; if not, the hand-over isn't
+complete: ask its owner for one at this head. Those reviews inform yours and don't replace
+it: the four gates below are your judgement.
 
 **Read the PR as a whole first.** Does the description's claim match the diff? Is the
 scope what was asked, or did unrelated changes ride along? Are the issue, the spec and the
