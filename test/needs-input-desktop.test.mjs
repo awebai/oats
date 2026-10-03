@@ -117,13 +117,16 @@ test("end to end: the Desktop's remote panel carries the claim rosterGroups rela
   for (const name of ["dev-b", "dev-old", "dev-bad", "dev-gone"]) assert.equal(waitingClaim(rows[name]), null, name);
 });
 
-// The gate's half is the Desktop's fix (spec D2, awebai/oats#582): a remote row's `runtimeState`
-// is null unless the host said "unreachable" or "unsupported", and the gate must read null as
-// "not reported". Held as a todo until D2 is on main; then it is an ordinary test.
-test("end to end: the Desktop shows the relayed claim on a running remote row (waitingClaim)", { todo: "needs the Desktop's D2 fix on main" }, () => {
+// The gate's half is the Desktop's (awebai/oats#582, #587): a remote row's `runtimeState` is null
+// unless the host said "unreachable" or "unsupported", and the gate reads null as "not reported".
+test("end to end: the Desktop shows the relayed claim on a running remote row (waitingClaim)", () => {
   const rows = panelRows([hostRow("dev-a", { waitingOnYou: CLAIM }), hostRow("dev-stopped", { running: false, waitingOnYou: CLAIM })]);
+  assert.equal(rows["dev-a"].runtimeState, null, "the kernel's remote row reports no runtime state");
   assert.deepEqual(waitingClaim(rows["dev-a"]), CLAIM);
   assert.equal(waitingClaim(rows["dev-stopped"]), null, "a row that is not running shows none");
+  // A host that says the session is unreachable: the claim is relayed, and the gate hides it.
+  const unreachable = panelRows([hostRow("dev-u", { running: null, runtimeState: "unreachable", runtimeError: "tmux", waitingOnYou: CLAIM })])["dev-u"];
+  assert.deepEqual(unreachable.waitingOnYou, CLAIM); assert.equal(waitingClaim(unreachable), null);
 });
 
 // ---- #583: the events read, addressed through a symlink, through the Desktop's reader ----
