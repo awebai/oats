@@ -81,7 +81,7 @@ test("message validation: 200 characters OK, 201 refused; newline, tab, ESC, DEL
   assert.equal(w.rows().length, 0, "a refused message appends nothing");
 });
 
-test("the reader re-validates a stored message: an invalid one (a hand-edited log) reads as null and the claim still counts", (t) => {
+test("the reader re-validates a stored message and reason: an invalid one (a hand-edited log) reads as null and the claim still counts", (t) => {
   const w = bare(t);
   const row = (data, at) => appendFileSync(join(w.home, ".oats-events.jsonl"), JSON.stringify({ eventsApi: 2, at, instance: "dev-1", home: w.home, incarnation: "2026-01-01T00:00:00.000Z", producer: "agent", kind: "waiting", data }) + "\n");
   row({ waitingOnYou: true, reason: "attention", message: "line one\nline two" }, "2026-01-01T00:00:01.000Z");
@@ -89,6 +89,8 @@ test("the reader re-validates a stored message: an invalid one (a hand-edited lo
   assert.equal(readEvents(w.home).waitingClaims[0].message, null);
   row({ waitingOnYou: true, reason: "attention\u001b[2J", message: "x".repeat(201) }, "2026-01-01T00:00:02.000Z");
   assert.deepEqual(liveWaiting(w.home), { since: "2026-01-01T00:00:02.000Z", producer: "agent", reason: null, message: null }, "a reason that would print a control character reads as null too");
+  row({ waitingOnYou: true, reason: "review requested" }, "2026-01-01T00:00:03.000Z");
+  assert.equal(liveWaiting(w.home).reason, null, "a reason outside permission | question | attention reads as null");
 });
 
 test("boundary rule: a claim older than the incarnation's latest kernel launched | restarted | stopped row is not live; a producer's own 'launched' row is not a boundary", (t) => {
@@ -236,7 +238,7 @@ async function recordedHome(name) {
   writeFileSync(baselinePath, JSON.stringify({ ...baseline, runtime: { launched: true, tmux: tmuxRec } }, null, 2) + "\n", { mode: 0o600 });
   return home;
 }
-const cli = (args, env = {}) => { const r = fx.cli(args, { env: { TMUX: undefined, OATS_INSTANCE_HOME: undefined, OATS_HOME: undefined, ...env } }); return { ...r, doc: (() => { try { return JSON.parse(r.stdout.trim().split("\n").pop()); } catch { return null; } })() }; };
+const cli = (args, env = {}, cwd) => { const r = fx.cli(args, { ...(cwd ? { cwd } : {}), env: { TMUX: undefined, OATS_INSTANCE_HOME: undefined, OATS_HOME: undefined, ...env } }); return { ...r, doc: (() => { try { return JSON.parse(r.stdout.trim().split("\n").pop()); } catch { return null; } })() }; };
 const statusRows = () => Object.fromEntries(JSON.parse(cli(["status", "--json"]).stdout).agents.flatMap((a) => a.instances).map((i) => [i.instance, i]));
 
 test("CLI: waiting set/clear answer and idempotency; status rows carry waitingOnYou only while running; session inspect carries it beside an unchanged state; plain status shows the marker; attention is the agent's sugar", async () => {
@@ -299,6 +301,19 @@ test("a running row whose harness is gone (a crash's fallback shell, a retained 
     assert.equal(inspected.state, state); assert.equal(inspected.waitingOnYou, null);
   }
   assert.doesNotMatch(cli(["status"]).stdout, /old session question/);
+});
+
+test("both verbs work from a cwd outside the deployment: the scope is the agents root the home sits in, unless --dir names one", async () => {
+  const home = await recordedHome("w-out");
+  const outside = join(base, "outside"); mkdirSync(outside);
+  const set = cli(["instance", "waiting", "set", "--producer", "oats.core", "--reason", "permission", "--home", home, "--json"], {}, outside);
+  assert.equal(set.doc?.ok, true, set.stdout + set.stderr); assert.equal(set.doc.result.changed, true);
+  const att = cli(["instance", "attention", "--message", "from outside", "--json"], { OATS_INSTANCE_HOME: home }, outside);
+  assert.equal(att.doc?.ok, true, att.stdout + att.stderr); assert.equal(att.doc.result.waitingOnYou.message, "from outside");
+  const clr = cli(["instance", "waiting", "clear", "--producer", "oats.core", "--home", home, "--dir", fx.dep, "--json"], {}, outside);
+  assert.equal(clr.doc?.ok, true, clr.stdout + clr.stderr); assert.equal(clr.doc.result.changed, true, "an explicit --dir still scopes it");
+  const wrong = cli(["instance", "waiting", "clear", "--producer", "agent", "--home", home, "--dir", outside, "--json"], {}, outside);
+  assert.equal(wrong.doc?.ok, false, "a --dir that is not a deployment is refused");
 });
 
 test("CLI refusals: attention needs $OATS_INSTANCE_HOME to be a home and has no --home; waiting validates its flags and its home; nothing routes to a server", async () => {

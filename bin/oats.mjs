@@ -957,7 +957,7 @@ function instanceWaitingCmd(sub, bail) {
     if (incarnationOf(home) === null) return bail("E_SESSION_UNKNOWN", `${home} is not an instance home (no readable instance.json)`);
     // The home must be a home of its own name under the scope: --dir when
     // given, else the agents root the home sits in.
-    const root = dirFlag() !== undefined ? ensureRoot(dirFlag()) : agentsRootOfHome(home);
+    const root = flag("dir") !== undefined ? ensureRoot(dirFlag()) : agentsRootOfHome(home);
     const { resolveInstance } = await_import_lifecycle();
     try { resolveInstance(dirFlag(), root, basename(home), { home }); }
     catch (e) { if (sub === "attention") return bail("E_USAGE", `$OATS_INSTANCE_HOME (${home}) is not an instance home under ${root}: ${e.message}`); throw e; }

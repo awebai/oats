@@ -498,8 +498,8 @@ test("K7 events: stop/restart/retire write producer-attributed events to the hom
   assert.equal(ev.waitingOnYou, null); assert.equal(ev.lastEvent.kind, "stopped");
   assert.ok(existsSync(join(home, ".oats-events.jsonl")) && existsSync(join(repo, ".agents", "events", `dev--${name}.jsonl`)), "both logs");
   // A producer claim is the only way waitingOnYou becomes non-null.
-  appendEvent(home, { kind: "launched", producer: "test.provider", data: { waitingOnYou: true, reason: "review requested" } });
-  const ev2 = readEvents(home); assert.deepEqual(ev2.waitingOnYou, { since: ev2.events.at(-1).at, producer: "test.provider", reason: "review requested", message: null });
+  appendEvent(home, { kind: "launched", producer: "test.provider", data: { waitingOnYou: true, reason: "question" } });
+  const ev2 = readEvents(home); assert.deepEqual(ev2.waitingOnYou, { since: ev2.events.at(-1).at, producer: "test.provider", reason: "question", message: null });
   assert.equal(appendEvent(home, { kind: "made-up" }).ok, false, "unknown kinds are refused, never recorded");
   assert.equal(readEvents(home, { limit: 1 }).returned, 1); assert.equal(readEvents(home, { limit: 1 }).truncated, true);
   // Retire: 'retired' is written; the workspace log outlives the home.

@@ -29,22 +29,31 @@ case "$home" in /*) ;; *) exit 0 ;; esac
 case "$node" in /*) ;; *) exit 0 ;; esac
 case "$cli" in /*) ;; *) exit 0 ;; esac
 [ -x "$node" ] && [ -f "$cli" ] || exit 0
+# The CLI resolves nothing from the cwd Claude ran the hook in.
+cd "$home" || exit 0
 
 # Emitter-private debounce marker, outside the home (it is not the instance's state): a
 # per-user temp file keyed by the home, present while oats.core's claim is set, so a clear
 # on every tool call starts no node process unless there is a claim to clear. Its
-# directory must be a real directory we own with mode 0700; a symlink is never followed. An unusable
-# marker means "no debounce": set and clear then always call the CLI (it is idempotent).
-# Losing it (reboot, tmp cleanup) is harmless: the session boundary voids the claim.
+# directory is per user ($XDG_RUNTIME_DIR/oats-waiting, else ${TMPDIR:-/tmp}/oats-waiting-<uid>)
+# and must be a real directory we own with mode 0700; a symlink is never followed. An
+# unusable marker means "no debounce": set and clear then always call the CLI (it is
+# idempotent). Losing it (reboot, tmp cleanup) is harmless: the session boundary voids
+# the claim.
 marker=
-dir=${TMPDIR:-/tmp}
-dir=${dir%/}/oats-waiting
-[ -e "$dir" ] || [ -L "$dir" ] || mkdir -m 700 "$dir"
+case "${XDG_RUNTIME_DIR:-}" in
+  /*) dir=${XDG_RUNTIME_DIR%/}/oats-waiting ;;
+  *)
+    uid=$(id -u) || uid=
+    case "$uid" in ''|*[!0-9]*) dir= ;; *) dir=${TMPDIR:-/tmp}; dir=${dir%/}/oats-waiting-$uid ;; esac
+    ;;
+esac
+[ -z "$dir" ] || [ -e "$dir" ] || [ -L "$dir" ] || mkdir -m 700 "$dir"
 # test -O (owned by us) is not in POSIX but every sh we run under has it (dash, bash, ash,
 # zsh); where it is missing the test fails and the marker is simply not used.
 usable=
 # shellcheck disable=SC3067
-if [ -d "$dir" ] && [ ! -L "$dir" ] && [ -O "$dir" ]; then
+if [ -n "$dir" ] && [ -d "$dir" ] && [ ! -L "$dir" ] && [ -O "$dir" ]; then
   # Mode exactly 0700 and no ACL (an existing directory is never repaired): a directory
   # others can write could hold a planted marker. "+" (an ACL) is refused and "." (an
   # SELinux context) accepted. macOS shows "@" (xattrs) INSTEAD of "+" when both are
@@ -64,32 +73,59 @@ fi
 # A marker path that exists as anything but a regular file is unusable too.
 if [ -n "$marker" ] && { [ -L "$marker" ] || { [ -e "$marker" ] && [ ! -f "$marker" ]; }; }; then marker=; fi
 
-# Run the CLI in the background with a watchdog (macOS has no timeout(1)).
+# Run the CLI in the background with a watchdog (macOS has no timeout(1)). Its status is
+# the CLI's: non-zero when it failed or the watchdog killed it.
 run_cli() {
   "$node" "$cli" instance waiting "$@" --home "$home" --json &
   pid=$!
   ( sleep 3; kill -9 "$pid" ) &
   watchdog=$!
   wait "$pid"
+  status=$?
   kill "$watchdog"
+  return "$status"
 }
 
+# The marker's one line is its writer's token: "<reason> <pid>" for a set, "clear <pid>"
+# for a clear under way. A set and a clear that run at once (parallel tool calls) can
+# then tell that the other touched it, whatever order their CLI calls land in.
+token() { line=; [ -f "$marker" ] && IFS= read -r line < "$marker"; printf '%s' "$line"; }
+
+if [ -z "$marker" ]; then
+  if [ "$action" = set ]; then
+    run_cli set --producer oats.core --reason "$reason"
+  else
+    run_cli clear --producer oats.core
+  fi
+  exit 0
+fi
+
 if [ "$action" = set ]; then
-  if [ -n "$marker" ]; then
-    # An open AskUserQuestion is shown through Claude's permission dialog, so its own
-    # permission_prompt follows the question's set: the marker holds the current reason,
-    # and a permission prompt never relabels an open question.
-    current=
-    [ -f "$marker" ] && IFS= read -r current < "$marker"
-    [ "$reason" = permission ] && [ "$current" = question ] && exit 0
-    printf '%s\n' "$reason" > "$marker"
-  fi
+  # An open AskUserQuestion is shown through Claude's permission dialog, so its own
+  # permission_prompt follows the question's set: a permission prompt never relabels an
+  # open question.
+  current=$(token)
+  [ "$reason" = permission ] && [ "${current%% *}" = question ] && exit 0
+  mine="$reason $$"
+  printf '%s\n' "$mine" > "$marker"
   run_cli set --producer oats.core --reason "$reason"
+  # A clear ran while this set's CLI did (it rewrote or removed the marker), and its
+  # clear may have landed before this set: clear again rather than leave a stale claim.
+  [ "$(token)" = "$mine" ] || run_cli clear --producer oats.core
 else
-  if [ -n "$marker" ]; then
-    [ -e "$marker" ] || exit 0
-    rm -f "$marker"
+  [ -e "$marker" ] || exit 0
+  mine="clear $$"
+  printf '%s\n' "$mine" > "$marker"
+  # The marker goes only once the clear is recorded: a failed or killed clear keeps it,
+  # so the next clear retries. A set that came in meanwhile keeps it too, and is
+  # recorded again in case this clear landed after it.
+  if run_cli clear --producer oats.core; then
+    now=$(token)
+    if [ "$now" = "$mine" ]; then
+      rm -f "$marker"
+    else
+      case "${now%% *}" in permission|question) run_cli set --producer oats.core --reason "${now%% *}" ;; esac
+    fi
   fi
-  run_cli clear --producer oats.core
 fi
 exit 0

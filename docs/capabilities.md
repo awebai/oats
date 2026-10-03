@@ -570,8 +570,10 @@ clears it.
   hook timeout. The script itself detaches every stream first, always exits
   0, and kills the CLI after about 3 s.
 - **Debounce.** The script keeps a private marker outside the home while its
-  claim is set: `${TMPDIR:-/tmp}/oats-waiting/<first 16 hex of sha256(home)>.claude`,
-  in a directory that must be a real directory the user owns with mode
+  claim is set: `<dir>/<first 16 hex of sha256(home)>.claude`, where `<dir>`
+  is per user: `$XDG_RUNTIME_DIR/oats-waiting` when that is set and
+  absolute, else `${TMPDIR:-/tmp}/oats-waiting-<uid>`. It must be a real
+  directory the user owns with mode
   exactly 0700. The script creates it 0700 and never changes an existing
   one: a directory others can write (0777, group-writable, any ACL, also one
   macOS shows only as `@`) is not used. A
@@ -581,7 +583,15 @@ clears it.
   debounce, and
   set and clear then always call the (idempotent) CLI. Losing the marker (a
   reboot, a temp cleanup) is harmless: the session ends with the reboot, and
-  the next start voids the claim.
+  the next start voids the claim. The script runs the CLI from the home, so
+  its cwd never matters.
+- **Retry and races.** The marker goes only once a clear is recorded: a
+  clear that fails, or that the watchdog kills, keeps it, so the next clear
+  retries. The marker holds its writer's token (`<reason> <pid>` for a set,
+  `clear <pid>` for a clear under way), so a set and a clear that run at once
+  (parallel tool calls) see each other: a set whose marker a clear touched
+  meanwhile follows with a clear, and a clear that a set overtook records
+  that set again, so neither order leaves a stale claim.
 - **It never touches the agent's claim.** The script only ever passes
   `--producer oats.core`.
 - **Not "unknown work" at retirement.** Harness project settings in the home
@@ -607,6 +617,11 @@ again" permission rules there.
 - If the marker and the claim disagree (someone deleted the marker by hand,
   say), one stale claim can remain until the next set or clear or the next
   session boundary.
+- Tool calls made by background or parallel subagents in the same session
+  fire the same PreToolUse and PostToolUse clears, so a live permission
+  claim can be cleared while the human is still blocked on the prompt. The
+  field then reads `null` (a false "not known to be waiting"; claims are
+  display-only) until the next prompt sets it again.
 - A Claude instance spawned before the upgrade gets the emitter only when
   it is respawned. Its launch hook comes from its recorded module copy.
 
