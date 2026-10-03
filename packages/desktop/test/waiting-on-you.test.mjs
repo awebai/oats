@@ -48,16 +48,25 @@ test('a 64-char unknown reason is kept verbatim for mapping', () => {
 for (const [label, message] of [['absent', undefined], ['null', null], ['empty', ''], ['a newline', 'line one\nline two'],
   ['a carriage return', 'a\rb'], ['a tab', 'a\tb'], ['a control char', 'a\x1bb'], ['DEL', 'a\x7fb'], ['201 chars', 'm'.repeat(201)],
   ['a number', 42], ['an object', { text: 'x' }],
-  // The kernel's rule (#553/#555): code points, and no C1, line/paragraph separator or format (Cf) character.
+  // The exact refused set (maintainer decision on #553): code points; Cc, U+2028–2029, U+202A–202E,
+  // U+2066–2069, U+200B, U+2060, U+FEFF and U+E0000–E007F, each range at both ends.
   ['201 code points (emoji)', '\u{1F600}'.repeat(201)], ['a C1 control (U+0085)', 'a\u0085b'], ['a line separator (U+2028)', 'a\u2028b'],
-  ['a paragraph separator (U+2029)', 'a\u2029b'], ['a bidi override (U+202E)', 'a\u202Eb'], ['a zero-width space (U+200B)', 'a\u200Bb'],
-  ['a BOM (U+FEFF)', '\uFEFFab'], ['a ZWJ emoji sequence (U+200D is Cf, refused exactly as the kernel does)', '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}']]) {
+  ['a paragraph separator (U+2029)', 'a\u2029b'], ['a bidi embedding (U+202A)', 'a\u202Ab'], ['a bidi override (U+202E)', 'a\u202Eb'],
+  ['a bidi isolate (U+2066)', 'a\u2066b'], ['a pop directional isolate (U+2069)', 'a\u2069b'], ['a zero-width space (U+200B)', 'a\u200Bb'],
+  ['a word joiner (U+2060)', 'a\u2060b'], ['a BOM (U+FEFF)', '\uFEFFab'], ['a tag character (U+E0041)', 'a\u{E0041}b'],
+  ['the first tag code point (U+E0000)', 'a\u{E0000}b'], ['the last tag code point (U+E007F)', 'a\u{E007F}b']]) {
   test(`a message that is ${label} reads null and the claim is kept`, () => {
     const value = claim(); if (message === undefined) delete value.message; else value.message = message;
     const out = waitingOnYouData(value);
     assert.ok(out); assert.equal(out.message, null); assert.equal(out.since, since);
   });
 }
+test('format characters outside the refused set are text: ZWJ emoji, ZWNJ, LRM, RLM, ALM and the soft hyphen are kept', () => {
+  for (const text of ['\u{1F469}\u200D\u{1F4BB}', '\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645' /* می‌خواهم */,
+    'a\u200Eb', '\u05D0\u200Fb', '\u0627\u061Cb', 'co\u00ADop', 'a\u2065b', 'a\u202Fb', 'a\u{E0080}b']) {
+    assert.equal(waitingMessage(text), text, JSON.stringify(text));
+  }
+});
 test('a 200-char message is kept; markup is kept verbatim (rendered as text by the caller)', () => {
   assert.equal(waitingMessage('m'.repeat(200)), 'm'.repeat(200));
   // 101 emoji: 202 UTF-16 units, 101 code points — valid; the rule counts code points, as the kernel does.

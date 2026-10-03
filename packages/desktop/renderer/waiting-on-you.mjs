@@ -7,10 +7,12 @@
 import { record } from './readiness-contract.mjs';
 import { eventsTimestamp, eventsId, eventsUnsafe } from './instance-events-contract.mjs';
 
-/** Not text a one-line note may hold — the kernel's class (validWaitingMessage, lib/instance-events.mjs),
- * exactly: control characters (Cc: C0, DEL, C1), format characters (Cf: bidi controls, zero-width
- * characters, the BOM, soft hyphen) and the line and paragraph separators. */
-const NOT_NOTE_TEXT = /[\p{Cc}\p{Cf}\u2028\u2029]/u;
+/** Not text a one-line note may hold, an exact set (the maintainer's decision for the kernel's
+ * validWaitingMessage): control characters (Cc: C0, DEL, C1), the line and paragraph separators, the bidi
+ * embeddings and overrides (U+202A–202E) and isolates (U+2066–2069), the zero-width space, the word
+ * joiner, the BOM and the tag characters (U+E0000–E007F). Every other format character is text: ZWJ
+ * (emoji sequences), ZWNJ (Persian, Urdu), LRM, RLM and ALM (Hebrew, Arabic), the soft hyphen. */
+const NOT_NOTE_TEXT = /[\p{Cc}\u2028\u2029\u202A-\u202E\u2066-\u2069\u200B\u2060\uFEFF\u{E0000}-\u{E007F}]/u;
 
 /** A claim's note: a non-empty string of at most 200 code points (not UTF-16 units: 101 emoji is a valid
  * note), with none of NOT_NOTE_TEXT; unsafe text is withheld (the activity view's house rule). Anything
