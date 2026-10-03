@@ -3644,27 +3644,35 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
   } finally { process.env.PATH = oldPath; if (oldInst === undefined) delete process.env.OATS_INSTANCE; else process.env.OATS_INSTANCE = oldInst; }
 });
 
-for (const harness of ["pi", "claude"]) test(`${harness} missing-package remedy preserves selected executable, resource directory and shell quoting without installing during preflight`, async (t) => {
+for (const [harness, selectorKind] of [["pi", "absolute"], ["pi", "tilde"], ["pi", "home"], ["pi", "relative"], ["claude", "absolute"]]) test(`${harness} missing-package remedy preserves ${selectorKind} resource directory, selected executable and shell quoting without installing during preflight`, async (t) => {
   const spec = harness === "pi" ? "npm:@awebai/pi@0.3.10" : "chan@acme-marketplace";
   const fx = v2Dev(t, { "acme.chan": cap({ requires: [{ harness, package: spec, ...(harness === "claude" ? { marketplace: "acme/claude-plugins" } : {}), why: "channel" }] }) });
   process.env.PATH = fakeHarnesses(fx.base);
   const wrapper = join(fx.base, "selected harness's bin", `${harness} wrapper`);
-  const resourceDir = join(fx.base, "resource dir's $(literal)"), log = join(fx.base, "manager-calls.jsonl");
+  const launchHome = join(fx.base, "launch home's $(literal)");
+  const resourceDir = selectorKind === "tilde" ? "~/resource dir's $(literal)" : selectorKind === "home" ? "~" : selectorKind === "relative" ? "relative resource dir's $(literal)" : join(fx.base, "resource dir's $(literal)");
+  const expectedDir = selectorKind === "tilde" ? join(launchHome, resourceDir.slice(2)) : selectorKind === "home" ? launchHome : resolve(resourceDir);
+  const log = join(fx.base, "manager-calls.jsonl");
   const selector = harness === "pi" ? "PI_CODING_AGENT_DIR" : "CLAUDE_CONFIG_DIR";
   write(wrapper, `#!${process.execPath}
 const fs = require('node:fs');
-fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd(), resource: process.env[${JSON.stringify(selector)}] }) + '\\n');
+const path = require('node:path');
+const selector = process.env[${JSON.stringify(selector)}];
+const resource = path.resolve(selector === '~' ? process.env.HOME : selector.startsWith('~/') ? path.join(process.env.HOME, selector.slice(2)) : selector);
+fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd(), resource }) + '\\n');
 if (process.argv[2] === 'plugin' && process.argv[3] === 'list') process.stdout.write('[]');
 `);
   execFileSync("chmod", ["+x", wrapper]);
   const localFile = join(fx.dep, "oats-local.yaml");
-  write(localFile, readFileSync(localFile, "utf8") + `\nlaunch-configs:\n  remedy:\n    harness: ${harness}\n    executable: ${JSON.stringify(wrapper)}\n    env:\n      ${selector}: ${JSON.stringify(resourceDir)}\n`);
+  write(localFile, readFileSync(localFile, "utf8") + `\nlaunch-configs:\n  remedy:\n    harness: ${harness}\n    executable: ${JSON.stringify(wrapper)}\n    env:\n      HOME: ${JSON.stringify(launchHome)}\n      ${selector}: ${JSON.stringify(resourceDir)}\n`);
   let message;
   await assert.rejects(fx.spawn("dev", { instance: `dev-remedy-${harness}`, launchConfig: "remedy" }), (e) => {
     assert.equal(e.code, "E_HARNESS_RESOURCE_MISSING"); message = e.message; return true;
   });
   const calls = () => readFileSync(log, "utf8").trim().split("\n").map(JSON.parse);
   assert.ok(calls().every((r) => !r.args.includes("install") && !r.args.includes("marketplace")), "preflight probes only, never installs");
+  assert.ok(calls().length > 0, "selected wrapper was probed");
+  for (const r of calls()) assert.equal(r.resource, expectedDir, "probe uses launch-config HOME and original working directory");
   assert.doesNotMatch(message, /oats install|--accept-requirement/);
   const command = /operator to run `([^`]+)`/.exec(message)?.[1];
   assert.ok(command, message);
@@ -3673,6 +3681,6 @@ if (process.argv[2] === 'plugin' && process.argv[3] === 'list') process.stdout.w
   // executable shell text even when executable/config paths contain quotes.
   execFileSync("/bin/sh", ["-c", command], { cwd: fx.base, env: { ...process.env, [selector]: "/wrong-resource-dir" } });
   assert.deepEqual(calls().map((r) => r.args), harness === "pi" ? [["install", spec]] : [["plugin", "marketplace", "add", "acme/claude-plugins"], ["plugin", "install", spec]]);
-  for (const r of calls()) { assert.equal(r.resource, resourceDir); assert.equal(r.cwd, fx.dep); }
+  for (const r of calls()) { assert.equal(r.resource, expectedDir); assert.equal(r.cwd, fx.dep); }
   assert.equal(existsSync(join(fx.root, "dev", "instances", `dev-remedy-${harness}`)), false);
 });
