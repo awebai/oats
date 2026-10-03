@@ -756,10 +756,12 @@ A provider's own `ok: false` is relayed with its code and full envelope. When
 the provider sets `error.details.unconfirmed: true` (the boolean), the operation
 wrapper also sets its outer `error.details.unconfirmed: true`. Providers should
 set that marker when dispatched effects or their compensation cannot be
-confirmed, and preserve it through wrappers. Ordinary refusals and fully
-compensated failures do not acquire a marker merely because they name a home
-or retained evidence. Existing message-based compatibility checks remain during
-this additive migration, including for copied providers in older homes.
+confirmed, and preserve it through wrappers. Producers should leave ordinary
+refusals and fully compensated failures unmarked: naming a home or retained
+evidence is not itself uncertainty. The operation wrapper and scheduler still
+apply their existing message-based compatibility checks during this additive
+migration, including for copied providers in older homes; their text-based
+false positives are not removed by this change.
 
 The kernel marks incomplete keyed spawns (`E_SPAWN_INCOMPLETE`) and spawn
 failures whose rollback cannot finish with the same field, through the CLI.
