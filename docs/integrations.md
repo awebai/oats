@@ -94,8 +94,9 @@ operations in full.
   sources, status and kind (global identities first), and says when either
   source is incomplete. After `oats server connect`, `oats aweb connect
   <server-id>` gives the server's deployment membership in its default team
-  through the `--server` capability route, with the invite token only on
-  stdin.
+  through the `--server` capability route, passing the invite token on stdin
+  (on the host, `aw id team accept-invite` takes it as an argument for the
+  call's duration).
 - **`oats.jira`** teaches the `jira-tasks` protocol and adds an advisory spawn
   hook that names the configured site and project.
 - **`oats.linear`** provides JSON-first `oats linear` commands, the
