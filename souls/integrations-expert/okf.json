@@ -5,6 +5,7 @@
     "oats/integrations-expert"
   ],
   "reads": [
+    "oats/oats-maintainer",
     "oats/oats-expert",
     "oats/oats-kernel-expert",
     "oats/oats-operator-expert"

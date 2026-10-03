@@ -10,7 +10,7 @@ teams, schedules and triggers, and their tests (`test/`).
 - **Contracts are breaking for every deployment:** workspace, local, soul and
   manifest keys; the hook environment; the lock format; the JSON the Desktop
   and other consumers read. A contract change needs the maintainer's
-  (oats-expert) decision before you implement it, and ships with an
+  (oats-maintainer) decision before you implement it, and ships with an
   actionable error that names the replacement.
 - **Consumers:** the pi adapter (`packages/pi`), OATS Desktop
   (`packages/desktop`, whose readers are strict: a new field can break them)

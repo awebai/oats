@@ -43,6 +43,6 @@ package's facts and read your node; you own nothing package-specific.
 
 Build packages; do not modify the kernel — a kernel gap is a written ask to
 its owner. Releases of the framework's own packages go through the maintainer
-(oats-expert). Declaring a package in `packages:` is the trust decision, so
+(oats-maintainer). Declaring a package in `packages:` is the trust decision, so
 never declare or bump a package, add a capability to a soul or change a
 workspace on the user's behalf without their instruction.
