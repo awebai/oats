@@ -2169,7 +2169,9 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
 
 - **Sources.** `home` is `<home>/.oats-events.jsonl`; `workspace` is
   `<deployment>/.agents/events/<agent>--<instance>.jsonl` (it survives the
-  home). Each is `{path, status: "ok" | "absent" | "refused" | "tail",
+  home). The deployment is the one the home's spawn recorded, when that
+  directory really holds the home at `agents/<agent>/instances/<instance>`;
+  otherwise it is the fourth ancestor of the home as it was addressed. Each is `{path, status: "ok" | "absent" | "refused" | "tail",
   bytes}`. Only a regular file is opened (no symlinks, same device and inode
   after open), and at most its last 4 MiB is read (`"tail"`).
 - **Kinds:** `spawned`, `launched`, `restarted`, `stopped`, `stop-refused`,
@@ -2191,7 +2193,11 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   `null` for old rows); the top-level `incarnation` is the current home's (or
   `null`). Earlier incarnations are returned as this address's history.
 - **Address.** `--home` must be a home of `<instance>` (`E_HOME_MISMATCH`).
-  Rows for another address are dropped and counted in
+  A home has ONE address, its real path (since 0.40.2): the top-level `home`
+  and every row's `home` are the real path, whatever spelling the caller used
+  (a deployment reached through a symlink, a symlinked agents root), and
+  every writer and reader resolves the home first. A status row's `home`
+  stays as the deployment was addressed. Rows for another address are dropped and counted in
   `integrity.foreignRows`; torn or invalid lines are counted in
   `integrity.unreadableRows`. A row present in both logs is returned once;
   identical rows repeated within one log (a set, a clear and the same set in
@@ -2260,14 +2266,15 @@ oats instance attention [--message <text>] [--clear] --json
   message (a hand-edited log) reads as `null`, and the claim still counts.
   A stored `reason` outside `permission`, `question`, `attention` reads as
   `null` too, and a row whose `producer` is neither `kernel` nor a valid
-  producer id is no claim at all.
+  producer id, or whose `at` is not a date, is no claim at all.
 - **Idempotent.** The verb reads the producer's live claim first and appends
   only on a change: a `set` whose reason or message differs from the live
   positive claim appends (`changed: true`), an identical one does not; a
   `clear` appends only over a live positive claim. The answer is
   `{eventsApi, instance, home, producer, changed, waitingOnYou}`, where
   `waitingOnYou` is that producer's resulting claim (`null` when it holds
-  none). Concurrent writers append whole lines; the latest row decides.
+  none) and `home` is the home's real path, as in the events read: a set
+  and a clear through different spellings of one home meet. Concurrent writers append whole lines; the latest row decides.
   Each log is judged on its own, and success means both took the row: a
   write either log refused is `E_EVENTS_FAILED` naming it, and the next call
   (a retry) appends again to repair it.
