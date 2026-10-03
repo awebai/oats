@@ -2278,6 +2278,11 @@ oats instance attention [--message <text>] [--clear] --json
   --json` (beside `state`, whose enum is unchanged; `null` unless the harness
   is running). Plain `oats status` prints `! needs input (<reason>):
   <message>` under a running instance's row while it holds a claim.
+- **Cost.** To compute the field, `oats status` reads the home log of each
+  running row (the workspace log only when the home log is absent), with
+  the same bounded read as the events read: at most the last 4 MiB, so a
+  claim older than the last 4 MiB of a very busy log is not seen. Stopped
+  rows read nothing.
 - **Local only.** Neither verb routes with `--server`: producers run on the
   instance's own host.
 - Errors: `E_BAD_ARGS`, `E_USAGE` (attention), `E_SESSION_UNKNOWN` (no
