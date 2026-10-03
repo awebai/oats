@@ -439,6 +439,34 @@ test("remote host cap options require explicit support before forwarding, includ
   assert.deepEqual(capsOnly.mutations, [], "the schedule feature remains required too");
 });
 
+test("remote cap installs give actionable compatibility errors for unknown probes without masking transport errors", () => {
+  const server = { sshHost: "caps-host", workspace: "/remote/workspace" };
+  const unknown = { schemaVersion: 1, desktopApi: 2, version: "0.40.0", features: ["schedule"] };
+  for (const [payload, originalCode] of [
+    [JSON.stringify(unknown), "E_REMOTE_ENVELOPE"],
+    [JSON.stringify({ schemaVersion: 1, ok: true, result: unknown }), "E_REMOTE_INCOMPATIBLE"],
+    ["not JSON", "E_REMOTE_ENVELOPE"],
+  ]) {
+    for (const options of [["--max-concurrent", "default"], ["--triggers-max-concurrent=none"]]) {
+      const calls = [];
+      const io = { server, execFileSync: (_bin, argv) => { calls.push(argv.at(-1)); return payload; } };
+      assert.throws(() => scheduleRemote("caps", ["host", "install", ...options], io), (e) =>
+        e.code === "E_REMOTE_INCOMPATIBLE" && /caps-host/.test(e.message) && /schedule-host-caps/.test(e.message) && /upgrade/i.test(e.message));
+      assert.deepEqual(calls, ["oats version --json"]);
+      calls.length = 0;
+      assert.throws(() => scheduleRemote("caps", ["host", "install"], io), (e) => e.code === originalCode, "no-cap probe refusals retain their original contract");
+      assert.deepEqual(calls, ["oats version --json"]);
+    }
+  }
+  const calls = [];
+  const io = { server, execFileSync: (_bin, argv) => {
+    calls.push(argv.at(-1));
+    throw Object.assign(new Error("offline"), { status: 255, stderr: "connection refused" });
+  } };
+  assert.throws(() => scheduleRemote("caps", ["host", "install", "--max-concurrent=1"], io), (e) => e.code === "E_SSH" && /connection refused/.test(e.message));
+  assert.deepEqual(calls, ["oats version --json"]);
+});
+
 test("a cold wake needs a launch slot; a delivery to a running home does not; a started harness keeps its slot until the home ends", () => {
   const ws = workspace();
   const h1 = home(ws, "dev-one"), h2 = home(ws, "dev-two"), h3 = home(ws, "dev-running");
