@@ -62,7 +62,15 @@ run_cli() {
 }
 
 if [ "$action" = set ]; then
-  [ -z "$marker" ] || : > "$marker"
+  if [ -n "$marker" ]; then
+    # An open AskUserQuestion is shown through Claude's permission dialog, so its own
+    # permission_prompt follows the question's set: the marker holds the current reason,
+    # and a permission prompt never relabels an open question.
+    current=
+    [ -f "$marker" ] && IFS= read -r current < "$marker"
+    [ "$reason" = permission ] && [ "$current" = question ] && exit 0
+    printf '%s\n' "$reason" > "$marker"
+  fi
   run_cli set --producer oats.core --reason "$reason"
 else
   if [ -n "$marker" ]; then

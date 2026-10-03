@@ -1794,6 +1794,10 @@ Not an envelope: `{root, agents, observation?, workspace?, problems?, warnings?}
   waiting"). Its rules are the events read's ([Waiting on you](#waiting-on-you)):
   one bounded read of the home's log per running row. A remote roster row
   carries what the remote kernel reports; an older kernel omits the field.
+  `running` is the window's presence, which a crashed harness's fallback
+  shell or a retained dead pane keeps, so a row with a claim is checked
+  against its session (as `oats session inspect` observes it) and reads
+  `null` unless a harness runs there.
 - **`modules`** becomes drift rows `{name, from, commit, current, status,
   reason?}` when the workspace was read. `status` is `current`, `moved` or
   `missing` (`reason`: `capability-absent`, `package-absent`, or the member's
@@ -2163,9 +2167,12 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   `recomposed` (from earlier kernels), `waiting` (0.40: a producer's claim,
   [Waiting on you](#waiting-on-you)). `producer` is `kernel`, a capability id,
   or another producer id (`agent`). Older rows may carry `eventsApi: 1`.
-  `launched` is written by spawn and, since 0.40, by every successful
-  `oats session start` and `restart` (`data: {harness, backend, launchConfig,
-  phase: "start" | "restart"}`; spawn's row has no `phase`).
+  `launched` is written by spawn and, since 0.40, once per session start or
+  restart, as soon as the session exists (`data: {harness, backend,
+  launchConfig, phase, startId}`; spawn's row has neither `phase` nor
+  `startId`). `phase` is `start` or `restart`, or `recovered` when a later
+  start adopted an interrupted start's receipt that had no boundary; that row
+  is dated at the receipt's launch time.
 - **Incarnation.** Each row carries the writing home's `createdAt` (or
   `null` for old rows); the top-level `incarnation` is the current home's (or
   `null`). Earlier incarnations are returned as this address's history.
@@ -2232,6 +2239,9 @@ oats instance attention [--message <text>] [--clear] --json
   `{eventsApi, instance, home, producer, changed, waitingOnYou}`, where
   `waitingOnYou` is that producer's resulting claim (`null` when it holds
   none). Concurrent writers append whole lines; the latest row decides.
+  Each log is judged on its own, and success means both took the row: a
+  write either log refused is `E_EVENTS_FAILED` naming it, and the next call
+  (a retry) appends again to repair it.
 - **Session boundary.** A claim written before the incarnation's latest
   kernel `launched`, `restarted` or `stopped` row (in time order; rows of the
   same millisecond in append order) is not live: it belongs to an ended
@@ -2443,9 +2453,11 @@ selection flags. See [the start workflow](desktop-instance-start.md).
   instance's events as a `launch-warning` row, `data: {message}`. They are
   advisory: the start went ahead. Earlier kernels omit the field; read a
   missing `warnings` as `[]`.
-- A successful start or restart appends a `launched` event (0.40, `phase:
-  "start"` or `"restart"`), the session boundary that voids earlier waiting
-  claims ([Waiting on you](#waiting-on-you)).
+- A start or restart appends a `launched` event as soon as its session
+  exists (0.40, `phase: "start"` or `"restart"`, `startId`), the session
+  boundary that voids earlier waiting claims ([Waiting on you](#waiting-on-you)).
+  A start whose metadata write failed has it already, so its adoption adds
+  none.
 - Restart is one command: the kernel validates the new selection before
   stopping, and owns the stop, lock, launch recovery and metadata. Never
   restart by retiring and spawning.

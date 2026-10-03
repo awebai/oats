@@ -116,6 +116,26 @@ test("boundary rule: a claim older than the incarnation's latest kernel launched
   assert.ok(liveWaiting(w.home));
 });
 
+test("a write either log refuses is E_EVENTS_FAILED naming it, and the next call repairs that log rather than trusting the other", (t) => {
+  for (const which of ["home", "workspace"]) {
+    const w = bare(t);
+    const file = which === "home" ? join(w.home, ".oats-events.jsonl") : w.wsLog;
+    const blocked = (fn) => { const saved = readFileSync(file); rmSync(file); mkdirSync(file); try { fn(); } finally { rmSync(file, { recursive: true }); writeFileSync(file, saved); } };
+    setWaiting(w.home, { producer: "agent", waiting: true, reason: "attention", message: "need a token" });
+    // A clear that reaches only the other log.
+    blocked(() => assert.throws(() => setWaiting(w.home, { producer: "agent", waiting: false }), (e) => e.code === "E_EVENTS_FAILED" && e.message.includes(file), which));
+    const retry = setWaiting(w.home, { producer: "agent", waiting: false });
+    assert.equal(retry.changed, true, `${which}: the retry repairs the log that missed the clear`);
+    assert.equal(liveWaiting(w.home), null, which); assert.equal(readEvents(w.home).waitingOnYou, null, which);
+    assert.equal(setWaiting(w.home, { producer: "agent", waiting: false }).changed, false, `${which}: then it is idempotent again`);
+    // A set that reaches only the other log.
+    blocked(() => assert.throws(() => setWaiting(w.home, { producer: "agent", waiting: true, reason: "attention", message: "again" }), (e) => e.code === "E_EVENTS_FAILED", which));
+    assert.equal(setWaiting(w.home, { producer: "agent", waiting: true, reason: "attention", message: "again" }).changed, true, `${which}: the retry repairs the set`);
+    assert.equal(liveWaiting(w.home)?.message, "again", which); assert.equal(readEvents(w.home).waitingOnYou?.message, "again", which);
+    assert.equal(setWaiting(w.home, { producer: "agent", waiting: true, reason: "attention", message: "again" }).changed, false, which);
+  }
+});
+
 test("liveWaiting reads the home log, and the workspace log only when the home log is absent; a home with no instance.json is null", (t) => {
   const w = bare(t);
   setWaiting(w.home, { producer: "oats.core", waiting: true, reason: "permission" });
@@ -207,6 +227,23 @@ test("CLI: waiting set/clear answer and idempotency; status rows carry waitingOn
   // A kernel session boundary voids the claim on the status row.
   appendEvent(run, { kind: "launched", data: { harness: "claude", backend: "tmux", launchConfig: null, phase: "start" } });
   assert.equal(statusRows()["w-run"].waitingOnYou, null);
+});
+
+test("a running row whose harness is gone (a crash's fallback shell, a retained dead pane) shows no claim, as session inspect does", async () => {
+  tmux("new-window", "-d", "-t", "oats-agents:", "-n", "w-shell", "sh");
+  tmux("set-option", "-g", "remain-on-exit", "on");
+  tmux("new-window", "-d", "-t", "oats-agents:", "-n", "w-dead", "true");
+  const shell = await recordedHome("w-shell"), dead = await recordedHome("w-dead");
+  tmux("set-option", "-g", "remain-on-exit", "off");
+  for (const home of [shell, dead]) setWaiting(home, { producer: "agent", waiting: true, reason: "attention", message: "old session question" });
+  const rows = statusRows();
+  for (const [name, home, state] of [["w-shell", shell, "shell"], ["w-dead", dead, "stopped"]]) {
+    assert.equal(rows[name].running, true, `${name}: the window is there`);
+    assert.equal(rows[name].waitingOnYou, null, `${name}: no harness, no claim`);
+    const inspected = cli(["session", "inspect", "--home", home, "--json"]).doc.result;
+    assert.equal(inspected.state, state); assert.equal(inspected.waitingOnYou, null);
+  }
+  assert.doesNotMatch(cli(["status"]).stdout, /old session question/);
 });
 
 test("CLI refusals: attention needs $OATS_INSTANCE_HOME to be a home and has no --home; waiting validates its flags and its home; nothing routes to a server", async () => {

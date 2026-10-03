@@ -534,7 +534,14 @@ runs `bin/claude-waiting.sh` from the home's module copy, which calls
 | `PreToolUse` | `AskUserQuestion` | set `question` |
 | `PreToolUse` | `^(?!AskUserQuestion$).*` (every other tool) | clear |
 | `PostToolUse` | `*` | clear |
+| `PostToolUseFailure` | `*` | clear |
 | `UserPromptSubmit`, `Stop`, `SessionEnd` | none | clear |
+
+Claude Code shows an AskUserQuestion through its permission dialog, so that
+dialog's own `permission_prompt` follows the question's set: the script keeps
+the current reason in its marker, and a permission prompt never relabels an
+open question. Refusing a tool at the permission prompt interrupts the turn
+(no `PostToolUse`, no `Stop`), which is why `PostToolUseFailure` clears too.
 
 - **Its own entries only.** oats.core marks its entries by the absolute
   path of its `claude-waiting.sh`. Each run removes only the entries that

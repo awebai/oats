@@ -90,7 +90,7 @@ test("the real pass writes settings.json 0600 with absolute, single-quoted comma
   assert.equal(statSync(settingsOf(h)).mode & 0o777, 0o600);
   const settings = readJson(settingsOf(h));
   assert.deepEqual(Object.keys(settings), ["hooks"]);
-  assert.deepEqual(Object.keys(settings.hooks), ["Notification", "PreToolUse", "PostToolUse", "UserPromptSubmit", "Stop", "SessionEnd"]);
+  assert.deepEqual(Object.keys(settings.hooks), ["Notification", "PreToolUse", "PostToolUse", "PostToolUseFailure", "UserPromptSubmit", "Stop", "SessionEnd"]);
   const map = Object.entries(settings.hooks).flatMap(([event, groups]) => groups.map((g) => [event, g.matcher ?? null, g.hooks.map((e) => e.command.match(/claude-waiting\.sh' ((?:set \w+)|clear) /)[1])]));
   assert.deepEqual(map, [
     ["Notification", "permission_prompt", ["set permission"]],
@@ -98,6 +98,7 @@ test("the real pass writes settings.json 0600 with absolute, single-quoted comma
     ["PreToolUse", "AskUserQuestion", ["set question"]],
     ["PreToolUse", "^(?!AskUserQuestion$).*", ["clear"]],
     ["PostToolUse", "*", ["clear"]],
+    ["PostToolUseFailure", "*", ["clear"]],
     ["UserPromptSubmit", null, ["clear"]],
     ["Stop", null, ["clear"]],
     ["SessionEnd", null, ["clear"]],
@@ -152,12 +153,12 @@ test("merge by marker: unrelated keys and hooks stay, in order; a second run is 
   assert.equal(merged.model, "opus");
   assert.deepEqual(merged.permissions, existing.permissions);
   assert.deepEqual(merged.env, existing.env);
-  assert.deepEqual(Object.keys(merged.hooks), ["PreToolUse", "PostCompact", "Notification", "PostToolUse", "UserPromptSubmit", "Stop", "SessionEnd"], "existing events keep their slots; Stop, emptied by the removal, is dropped and comes back with ours, appended");
+  assert.deepEqual(Object.keys(merged.hooks), ["PreToolUse", "PostCompact", "Notification", "PostToolUse", "PostToolUseFailure", "UserPromptSubmit", "Stop", "SessionEnd"], "existing events keep their slots; Stop, emptied by the removal, is dropped and comes back with ours, appended");
   // The foreign groups survive in order; the group emptied of our stale entry is gone; a mixed group keeps its foreign entry.
   assert.deepEqual(merged.hooks.PreToolUse.slice(0, 2), [{ matcher: "Bash", hooks: [foreign] }, { matcher: "Edit", hooks: [foreign] }]);
   assert.deepEqual(merged.hooks.PostCompact, [], "an event array that was already empty is not ours to drop");
   const ours = allEntries(merged).filter((e) => e.command.includes(SCRIPT));
-  assert.equal(ours.length, 8, "exactly our eight entries, no stale one left");
+  assert.equal(ours.length, 9, "exactly our nine entries, no stale one left");
   assert.ok(!JSON.stringify(merged).includes("/old/node"));
   // Second run: no write at all.
   const before = readFileSync(settingsOf(h), "utf8");
@@ -277,6 +278,21 @@ test("set touches the marker and calls the CLI with the exact argv; clear withou
   assert.ok(!existsSync(join(h, ".oats-waiting-claude")), "nothing of the emitter's is kept in the home");
 });
 
+test("an open question is not relabelled by its own permission prompt: the marker holds the reason; any clear ends the question", () => {
+  const h = home(), node = process.execPath;
+  const log = join(base, `argv-question-${n}.log`);
+  const calls = () => existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
+  runScript(["set", "question", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
+  assert.equal(readFileSync(markerOf(h), "utf8"), "question\n");
+  const r = runScript(["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
+  assert.equal(r.status, 0); assert.equal(r.stdout, "");
+  assert.deepEqual(calls().map((c) => c[6]), ["question"], "the permission prompt of an open question starts no CLI");
+  runScript(["clear", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
+  runScript(["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
+  assert.deepEqual(calls().map((c) => c[2] === "clear" ? "clear" : c[6]), ["question", "clear", "permission"], "after a clear, a permission prompt sets permission");
+  assert.equal(readFileSync(markerOf(h), "utf8"), "permission\n");
+});
+
 test("an unusable marker means no debounce, never a skipped claim: a symlinked marker directory or a marker path that is not a regular file is not followed, and set and clear always call the CLI", () => {
   const node = process.execPath;
   // (a) the marker directory is a symlink: never followed, nothing written through it.
@@ -303,7 +319,7 @@ test("end to end: a command the hook wrote, run as Claude Code runs it, reaches 
   assert.deepEqual(runHook("launch", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI }), {});
   const settings = readJson(settingsOf(h));
   const set = settings.hooks.Notification[0].hooks[0].command;
-  const r = spawnSync("/bin/sh", ["-c", set], { encoding: "utf8", env: cleanEnv({ OATS_INSTANCE_HOME: h, FAKE_LOG: log }) });
+  const r = spawnSync("/bin/sh", ["-c", set], { encoding: "utf8", env: cleanEnv({ TMPDIR: TMP, OATS_INSTANCE_HOME: h, FAKE_LOG: log }) });
   assert.equal(r.status, 0); assert.equal(r.stdout, "");
   assert.deepEqual(JSON.parse(readFileSync(log, "utf8").trim()), ["instance", "waiting", "set", "--producer", "oats.core", "--reason", "permission", "--home", h, "--json"]);
 });
