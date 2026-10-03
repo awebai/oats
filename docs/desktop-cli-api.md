@@ -2220,10 +2220,11 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   spawn's rows, and the claims of a session that was spawned and never
   restarted) is foreign after the upgrade, and counted in
   `integrity.foreignRows`. What that means for a claim:
-  - A claim that was live under the lexical spelling stops showing. It shows
-    again when the session next makes it (the next permission prompt or
-    question, the agent's next `oats instance attention`), or after a
-    restart.
+  - A claim that was live under the lexical spelling stops showing. Nothing
+    brings that row back: the claim shows again only when a producer makes it
+    anew (the next permission prompt or question, the agent's next
+    `oats instance attention`). A restart starts a new session with no
+    claim, as always.
   - A claim that stayed set because the restart that should have voided it
     was recorded under the real path (#583) is gone.
   - The rows a started or restarted session wrote under the real path, which
