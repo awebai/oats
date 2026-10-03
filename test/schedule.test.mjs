@@ -170,8 +170,11 @@ test("a due spawn job launches once, holds its lock while the instance lives, an
   assert.equal(runs.lastRun.scheduledFor, "2026-09-07T13:15:00.000Z");
 });
 
-test("host concurrency bounds launches across jobs and run-now shares the same lock", () => {
+test("host concurrency bounds launches across jobs and run-now shares the same lock", (t) => {
   const ws = workspace();
+  const before = S.readRegistry();
+  t.after(() => S.writeRegistry(before));
+  S.registerWorkspace(ws, { maxConcurrent: 1 });
   const io = { spawn: fakeSpawn(ws), inspect: () => ({ present: true, state: "unknown" }) };
   S.addSchedule(ws, { id: "a", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "a" });
   S.addSchedule(ws, { id: "b", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "b" });
@@ -405,7 +408,7 @@ test("a cold wake needs a launch slot; a delivery to a running home does not; a 
   S.addSchedule(ws, { id: "one", cron: "* * * * *", tz: "UTC", kind: "wake", home: h1, message: "m1" });
   S.addSchedule(ws, { id: "two", cron: "* * * * *", tz: "UTC", kind: "wake", home: h2, message: "m2" });
   S.addSchedule(ws, { id: "run", cron: "* * * * *", tz: "UTC", kind: "wake", home: h3, message: "m3" });
-  const reg = S.readRegistry();
+  const reg = { ...S.readRegistry(), maxConcurrent: 1 };
   let c = S.tickWorkspace(ws, { now: at("2026-09-07T15:00:00Z"), io, reg });
   const by = Object.fromEntries(c.map((x) => [x.id, x]));
   assert.equal(by.one.action, "started"); assert.equal(by.two.action, "skipped"); assert.match(by.two.reason, /host busy/); assert.equal(by.two.pending, true);
@@ -431,7 +434,7 @@ test("a running wake delivers beside a long scheduled spawn that holds the only 
   const io = { spawn: fakeSpawn(ws), inspect: () => ({ present: true, state: "unknown" }), input: (hh, t) => { inputs.push(t); return { submitted: true }; } };
   S.addSchedule(ws, { id: "long", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "long" });
   S.addSchedule(ws, { id: "ping", cron: "* * * * *", tz: "UTC", kind: "wake", home: h, message: "ping" });
-  const reg = S.readRegistry();
+  const reg = { ...S.readRegistry(), maxConcurrent: 1 };
   let c = S.tickWorkspace(ws, { now: at("2026-09-07T16:00:00Z"), io, reg });
   assert.deepEqual(c.map((x) => [x.id, x.action]), [["long", "launched"], ["ping", "delivered"]]);
   c = S.tickWorkspace(ws, { now: at("2026-09-07T16:01:00Z"), io, reg });
@@ -836,7 +839,7 @@ test("the schedule scope is the deployment (oats-local.yaml walking up), never a
   S.addSchedule(ws, { id: "a", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "a" });
   S.addSchedule(ws, { id: "b", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "b" });
   const defs = S.readDefinitions(ws); defs.jobs.broken = { ...defs.jobs.a, id: "broken", cron: "99 99 * * *" }; S.writeDefinitions(ws, defs);
-  const reg = S.readRegistry();
+  const reg = { ...S.readRegistry(), maxConcurrent: 1 };
   let c = S.tickWorkspace(ws, { now: at("2026-09-07T20:00:00Z"), io, reg });
   const by = Object.fromEntries(c.map((x) => [x.id, x.action]));
   assert.equal(by.broken, "invalid"); assert.equal(by.a, "launched"); assert.equal(by.b, "skipped");

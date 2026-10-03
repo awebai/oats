@@ -2748,8 +2748,9 @@ Details: [schedules.md](schedules.md#workspace-triggers-and-schedules).
 null}}` (this machine's `host.name` and its `gh` logins, compared with a
 row's `owner`), `snapshot: {takenAt, problems (a count)} | null` (the last
 `oats sync` snapshot), and `scheduler: {installed, active, registered,
-lastTick, maxConcurrent, …}` (nothing runs unless installed, active and
-registered).
+lastTick, maxConcurrent, triggersMaxConcurrent, …}` (nothing runs unless installed, active and
+registered). `maxConcurrent` is the effective scheduled-job cap (default 5);
+`triggersMaxConcurrent` is the separate trigger cap, or `null` for no host cap.
 
 **Every row** carries:
 - `id` (a local schedule keeps its bare id; a workspace item is

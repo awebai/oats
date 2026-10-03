@@ -64,6 +64,13 @@ published to npm. Its developer docs are in
 | `servers.mjs` | routing commands to a registered server |
 | `harness-trust.mjs` | reading (never writing) Claude's and Codex's folder trust for a launch |
 
+The schedule registry stores explicit concurrency caps, leaving the schedule
+cap absent for its effective default of five. Reads migrate legacy stored one
+to absent once, under `registry.lock`, and record `capsVersion: 2`. Registration
+and cap updates use that same short lock; later explicit one stays explicit.
+`readRegistry()` returns stored choices; scheduling and status apply the default
+without writing it back. The trigger cap is independent and absent means no cap.
+
 The kernel is runtime-neutral: nothing in `lib/` depends on a harness or on
 a provider. Provider behaviour lives in capabilities; the kernel supplies
 their contracts ([layers](layers.md)).
