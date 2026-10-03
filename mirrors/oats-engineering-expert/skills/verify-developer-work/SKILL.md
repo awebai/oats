@@ -11,9 +11,11 @@ branch, before any PR exists: a PR is opened only after you accept it. Yours is 
 does this belong in the system, the way it was built?
 
 ## 0. Check the handover is complete
-Pin the branch head the handover names, and verify at that head; if the branch moves while
-you verify, start again from the new head. Read your knowledge's recorded decisions and
-coherence rules for this area before you judge. The handover needs:
+Verify only once the developer reports that its review loop converged, at a named head;
+don't verify a branch the developer is still changing. Pin that head and verify at it; if
+the branch moves while you verify, stop and wait for the developer's next report. Read
+your knowledge's recorded decisions and coherence rules for this area before you judge.
+The handover needs:
 - what was done, against the spec's "done when";
 - how it was verified (tests run, real runs, with results);
 - **the adversarial review's final verdict**, and the rounds it took;
