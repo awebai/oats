@@ -123,13 +123,13 @@ test('a kept saved entry that is not a deployment stays inert: never served, nev
   assert.deepEqual(workspaceSuggestions({ knownPaths: served, recents: [parent], advertised: new Set(), validate: d.validate }).map(s => s.path), [A]);
 });
 
-test('main.mjs wires the two sets: the add commits through commitOpenSet, startup through startupOpenSet; the switcher and the refusal read the served set', () => {
+test('main.mjs wires the two sets: the add commits through commitOpenSet, startup through startupOpenSet; the switcher and the refusal read the known set, validated', () => {
   const source = readFileSync(new URL('../main.mjs', import.meta.url), 'utf8');
   assert.match(source, /const next = commitOpenSet\(\{ open: openDirs \}, dirs, \(open\) => saveWorkspaceDirs\(OPEN_WORKSPACES_FILE\(\), open\)\);\n\s*openDirs = next\.open;\n\s*workspaceDirs\.length = 0; workspaceDirs\.push\(\.\.\.next\.served\);/);
   assert.match(source, /const startupSet = startupOpenSet\(saved, workspaceDirs, wsValidate\);\n\s*openDirs = startupSet\.open;/);
   assert.match(source, /if \(serverHost\.owned\(\) && startupSet\.write\) saveWorkspaceDirs\(OPEN_WORKSPACES_FILE\(\), startupSet\.open\);/);
   assert.equal(source.match(/saveWorkspaceDirs\(/g).length, 2, 'no other writer of the open set');
   assert.match(source, /stage: \(dirs, path\) => stageDirs\(dirs, path, wsValidate\)/, 'the served set is staged from validated deployments only');
-  assert.match(source, /knownPaths: \[\.\.\.workspaceDirs\]/, 'suggestions read the served set');
+  assert.match(source, /knownPaths: \[\.\.\.knownDirs\]/, 'suggestions read every known path (a saved one not served included); workspaceSuggestions offers only those that validate (#518)');
   assert.match(source, /known: \(path\) => knownDirs\.has\(path\) && !!wsValidate\(path\)/, 'the refusal needs a deployment that validates');
 });

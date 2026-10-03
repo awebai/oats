@@ -6,7 +6,8 @@
 // only once the server has observed a deployment's identity, a few seconds after it starts, so a
 // launch finds the window's view through its deployments until then. Nothing is dropped because
 // its workspace is not served (#472's rule): a record goes only when the operator closes that window
-// while its workspace is served. Writes are atomic and debounced.
+// while its workspace is served, or at launch when everything it names is a folder that exists but
+// is not a deployment (`/` from a Finder launch, #518). Writes are atomic and debounced.
 import { validWorkspaceId } from './renderer/workspace-id.mjs';
 import { writeJsonAtomic } from './workspace-registry.mjs';
 
@@ -100,7 +101,9 @@ export function windowTitle(key, workspaces) {
  * window's record at the workspace it is bound to now and the deployments the served list says that
  * view holds (creating a record for a window that had none);
  * `update` keeps its bounds and state; `close` drops the record only when the window's workspace
- * is served. Every change is written (atomically) after `delay`; `flush` writes at once.
+ * is served; `forgetNonDeployments` drops every record whose workspace and deployments are all local
+ * paths `notADeployment` names (an existing folder with no deployment), never one naming a missing
+ * path (a volume not mounted yet, #472) or a view id. Every change is written (atomically) after `delay`; `flush` writes at once.
  * @param {{ file: string, initial: object[], timers?: { setTimeout, clearTimeout }, delay?: number,
  *           onError?: (error: Error) => void }} io
  */
@@ -152,6 +155,13 @@ export function createWindowRecords({ file, initial, timers = globalThis, delay 
       owned.delete(win);
       if (!record || !served) return;
       records.splice(records.indexOf(record), 1);
+      schedule();
+    },
+    forgetNonDeployments(notADeployment) {
+      const stray = (id) => id.startsWith('/') && notADeployment(id) === true;
+      const kept = records.filter((r) => ![r.workspace, ...(r.deployments ?? [])].every(stray));
+      if (kept.length === records.length) return;
+      records.splice(0, records.length, ...kept);
       schedule();
     },
     flush() {

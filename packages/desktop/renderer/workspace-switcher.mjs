@@ -45,6 +45,8 @@ function choiceTooltip(choice) {
 
 /** The section the switcher lists unattached views under (#482, expert decision Q4). */
 export const UNMATCHED_SECTION = "Not matched to a workspace";
+/** The section a window with no workspace lists this computer's deployments under, to add with one click (#518). */
+export const LOCAL_SECTION = "On this computer";
 
 const text = (value) => String(value || "");
 const candidateId = (candidate) => text(candidate?.id || candidate?.path);
@@ -68,6 +70,10 @@ export function createWorkspaceSwitcher({
   addOpen.replaceChildren(iconElement(document, 'plus', { size: 13 }), document.createTextNode('Add local workspace…')); addOpen.setAttribute('aria-label', 'Add local workspace…');
   const empty = document.createElement('p'); empty.className = 'ws-menu-empty'; empty.setAttribute('role', 'status'); empty.hidden = true;
   options.after(empty);
+  // What a one-click add from the menu is doing, or why it failed (#518).
+  const menuStatus = document.createElement('p'); menuStatus.className = 'ws-menu-status'; menuStatus.setAttribute('role', 'status'); menuStatus.tabIndex = -1;
+  menuStatus.hidden = true;
+  empty.after(menuStatus);
   // The options' description: how to reach Open in new window from the keyboard (one hidden element).
   const hint = document.createElement('p'); hint.id = 'ws-open-window-hint'; hint.hidden = true; hint.textContent = openInNewWindowHint(mac);
   if (openInNewWindow) empty.after(hint);
@@ -100,6 +106,9 @@ export function createWorkspaceSwitcher({
   let generation = 0, modalGeneration = 0, discoveryGeneration = 0;
   let activeId = "", workspaces = [], suggestions = [], selected = null, choosing = false;
   let adding = false, discoveryState = { message: "", error: false };
+  // A window with no workspace: the deployments main suggests (found in ~/Agents, saved and not served),
+  // looked up each time its menu opens; `localAdding` is the path a one-click add is adding (#518).
+  let local = [], localLooking = false, localGeneration = 0, localAdding = "", localAddGeneration = 0;
 
   const setStatus = (message = "", error = false) => {
     status.textContent = message;
@@ -112,6 +121,21 @@ export function createWorkspaceSwitcher({
   };
   const menuItems = () => [...options.querySelectorAll(".ws-option:not([hidden])")];
   const openInWindow = (id) => { closeMenu(true); openInNewWindow(id); };
+  const setMenuStatus = (message = "") => { menuStatus.textContent = message; menuStatus.hidden = !message; };
+  /** A newer choice in this window (a served workspace, an add or pick from the dialog) takes the pending
+   * one-click add's say over this window away, at once: the add still completes in main, but its
+   * outcome opens nothing here and shows nothing. A choices poll is not a choice. */
+  const supersedeLocalAdd = () => {
+    if (!localAdding) return;
+    localAddGeneration++;
+    localAdding = "";
+    setMenuStatus("");
+  };
+  /** The suggestions not already a served choice: a view names the deployments it holds (#482). */
+  const offeredLocally = () => {
+    const served = new Set(workspaces.flatMap((workspace) => [workspace.id, ...(Array.isArray(workspace.deployments) ? workspace.deployments : [])]));
+    return local.filter((candidate) => candidateId(candidate) && !served.has(candidateId(candidate)));
+  };
   // Views first; unattached views (a deployment no workspace identity matched) after them, in their
   // own group under UNMATCHED_SECTION. Every entry is its name and ONE muted line (UI spec, #482): a
   // view's machines, an unattached view's machine and short reason. A view with a deployment that is
@@ -122,7 +146,10 @@ export function createWorkspaceSwitcher({
     const query = menuSearch.value.trim().toLocaleLowerCase();
     const labels = workspaceChoiceLabels(workspaces);
     const focusedId = document.activeElement?.classList?.contains("ws-option")
-      ? document.activeElement.dataset.workspaceId : "";
+      ? document.activeElement.dataset.workspaceId || "" : "";
+    const focusedPath = document.activeElement?.classList?.contains("ws-local-option") ? document.activeElement.dataset.workspacePath : "";
+    // Focus on a served workspace's Open in new window action comes back to that action (#481, #521).
+    const focusedAction = document.activeElement?.classList?.contains("ws-open-window") ? document.activeElement.dataset.workspaceId : "";
     options.replaceChildren();
     const unmatched = document.createElement("div");
     unmatched.className = "ws-option-group"; unmatched.setAttribute("role", "group"); unmatched.setAttribute("aria-labelledby", unmatchedHeadingId);
@@ -186,6 +213,7 @@ export function createWorkspaceSwitcher({
       button.addEventListener("click", () => {
         if (menu.hidden || !button.isConnected || !options.contains(button)) return;
         closeMenu(true);
+        supersedeLocalAdd();
         if (workspace.id !== activeId) selectWorkspace(workspace.id);
         // A deployment no workspace matched: the Deployments page opens on its tab, where the full
         // reason and its fix are.
@@ -195,16 +223,101 @@ export function createWorkspaceSwitcher({
       (workspace.unattached ? unmatched : options).append(row);
     });
     if (unmatched.querySelector(".ws-option")) options.append(unmatched);
+    const offered = choosing ? offeredLocally() : [];
+    const localGroup = renderLocalGroup(offered.filter((candidate) => !query
+      || `${candidateName(candidate)} ${pathTail(candidateId(candidate), 2)}`.toLocaleLowerCase().includes(query)));
+    if (localGroup) options.append(localGroup);
     empty.hidden = options.childElementCount > 0;
-    empty.textContent = empty.hidden ? '' : workspaces.length ? 'No workspaces match this filter.' : 'No workspace choices reported.';
-    if (focusedId && !menu.hidden) {
-      (menuItems().find((button) => button.dataset.workspaceId === focusedId) || menuSearch).focus();
+    empty.textContent = empty.hidden ? '' : workspaces.length || offered.length ? 'No workspaces match this filter.'
+      : choosing && localLooking ? 'Looking for workspaces on this computer…' : 'No workspace choices reported.';
+    if (focusedAction && !menu.hidden) {
+      ([...options.querySelectorAll(".ws-open-window")].find((button) => button.dataset.workspaceId === focusedAction) || menuSearch).focus();
+    } else if ((focusedId || focusedPath) && !menu.hidden) {
+      (menuItems().find((button) => focusedId ? button.dataset.workspaceId === focusedId : button.dataset.workspacePath === focusedPath) || menuSearch).focus();
     }
+  };
+  // This computer's deployments, for a window with no workspace: each option adds its deployment and
+  // opens it in this window (the Add dialog's add, from the menu). Null when there is none to show.
+  const localHeadingId = `ws-local-${Math.random().toString(36).slice(2, 8)}`;
+  const renderLocalGroup = (candidates) => {
+    if (!candidates.length) return null;
+    const group = document.createElement("div");
+    group.className = "ws-option-group ws-local-group"; group.setAttribute("role", "group"); group.setAttribute("aria-labelledby", localHeadingId);
+    group.setAttribute("aria-busy", String(!!localAdding));
+    const head = document.createElement("div");
+    head.className = "ws-option-section"; head.id = localHeadingId; head.setAttribute("role", "presentation");
+    head.textContent = LOCAL_SECTION;
+    group.append(head);
+    for (const candidate of candidates) {
+      const path = candidateId(candidate), label = candidateName(candidate);
+      const button = document.createElement("button");
+      button.type = "button"; button.className = "ws-option ws-local-option";
+      button.setAttribute("role", "option"); button.setAttribute("aria-selected", "false");
+      if (localAdding) button.setAttribute("aria-disabled", "true");
+      button.dataset.workspacePath = path; button.title = path;
+      const check = document.createElement("span"); check.className = "ws-check"; check.setAttribute("aria-hidden", "true");
+      const copy = document.createElement("span"); copy.className = "ws-option-copy";
+      const line = document.createElement("span"); line.className = "ws-option-line";
+      const name = document.createElement("span"); name.className = "ws-option-name"; name.textContent = label;
+      line.append(name);
+      const meta = document.createElement("span"); meta.className = "ws-option-meta"; meta.textContent = pathTail(path, 2);
+      copy.append(line, meta);
+      button.append(createWorkspaceMark(document, { id: path, name: label }), copy, check);
+      button.addEventListener("click", () => {
+        if (menu.hidden || !button.isConnected || !options.contains(button)) return;
+        void addFromMenu(path, label);
+      });
+      const row = document.createElement("div"); row.className = "ws-option-row"; row.setAttribute("role", "none");
+      row.append(button);
+      group.append(row);
+    }
+    return group;
+  };
+  /** Look up this computer's deployments for the chooser menu; only the latest lookup paints. */
+  const lookLocally = async () => {
+    const token = ++localGeneration;
+    localLooking = true;
+    let found = [];
+    try {
+      const result = await discoverSuggestions();
+      found = result?.stale ? [] : Array.isArray(result) ? result : (result?.suggestions || []);
+    } catch { /* nothing found: the menu still offers Add local workspace… */ }
+    if (token !== localGeneration) return;
+    localLooking = false;
+    local = found.filter((candidate) => candidateId(candidate));
+    renderOptions();
+  };
+  /** One click: add the deployment (main validates and serves it) and open it in this window. A failure
+   * stays in the menu, with focus back on the same deployment; an add superseded by a choice made
+   * meanwhile (the window bound, or no longer choosing) opens nothing here. */
+  const addFromMenu = async (path, label) => {
+    if (localAdding || adding) return;
+    const token = ++localAddGeneration;
+    localAdding = path;
+    setMenuStatus(`Adding ${label}…`);
+    renderOptions();
+    let result;
+    try { result = await addWorkspace(path); }
+    catch (error) { result = { ok: false, reason: error?.message || "Could not add that workspace." }; }
+    if (token !== localAddGeneration) return;
+    localAdding = "";
+    if (!choosing) { setMenuStatus(""); renderOptions(); return; }
+    if (result?.ok && result.workspace) {
+      setMenuStatus("");
+      closeMenu(true);
+      reconcileAddedWorkspace(result.workspace);
+      return;
+    }
+    setMenuStatus(result?.code === "superseded" ? "" : mutationFailureMessage(result, "Could not add that workspace."));
+    renderOptions();
+    if (!menu.hidden) (menuItems().find((button) => button.dataset.workspacePath === path) || menuSearch).focus();
   };
   const openMenu = () => {
     menu.hidden = false;
     trigger.setAttribute("aria-expanded", "true");
     menuSearch.value = "";
+    if (!localAdding) setMenuStatus("");
+    if (choosing) void lookLocally();
     renderOptions();
     menuSearch.focus();
   };
@@ -408,6 +521,7 @@ export function createWorkspaceSwitcher({
     : result?.reason || fallback;
   const onBrowse = async () => {
     if (adding) return;
+    supersedeLocalAdd();
     const token = ++modalGeneration;
     clearPick();
     setAdding(true);
@@ -434,6 +548,7 @@ export function createWorkspaceSwitcher({
   const onOnboard = async () => {
     const ref = refInput.value.trim();
     if (!onboarding || adding || !ref) return;
+    supersedeLocalAdd();
     const token = ++modalGeneration, offer = onboarding;
     setAdding(true);
     setStatus(`Onboarding ${offer.path}… reading the workspace over Git.`);
@@ -466,6 +581,7 @@ export function createWorkspaceSwitcher({
   // same main-validated add; `returnFocus` gets focus back when it fails.
   const runAdd = async (path, name, returnFocus) => {
     if (adding) return;
+    supersedeLocalAdd();
     const token = ++modalGeneration;
     setAdding(true);
     setStatus(`Adding ${name}…`);
@@ -491,6 +607,7 @@ export function createWorkspaceSwitcher({
 
   const render = (workspace, list = []) => {
     activeId = workspace?.id || "";
+    if (workspace) choosing = false; // a window showing a workspace is not choosing one
     workspaces = Array.isArray(list) ? [...list] : [];
     if (workspace && !workspaces.some((candidate) => candidate.id === activeId)) workspaces.unshift(workspace);
     const labels = workspaceChoiceLabels(workspaces);
@@ -516,7 +633,7 @@ export function createWorkspaceSwitcher({
     if (openInNewWindow && focusedOption && event.key === "ArrowRight") {
       event.preventDefault(); focusedOption.parentElement.querySelector(":scope > .ws-open-window")?.focus(); return;
     }
-    if (openInNewWindow && focusedOption && event.key === "Enter" && !event.shiftKey && !event.altKey
+    if (openInNewWindow && focusedOption?.dataset.workspaceId && event.key === "Enter" && !event.shiftKey && !event.altKey
       && (mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey)) {
       event.preventDefault(); openInWindow(focusedOption.dataset.workspaceId); return;
     }
@@ -595,7 +712,8 @@ export function createWorkspaceSwitcher({
       };
     },
     reset() { generation++; choosing = false; render(null); },
-    /** This window has no workspace (#481): the served choices main gave it, none selected. */
+    /** This window has no workspace (#481): the served choices main gave it, none selected. Called again
+     * as main serves more (#521), it repaints the open menu in place. */
     choose(list) { generation++; choosing = true; render(null, list); },
     openMenu,
     openModal,
