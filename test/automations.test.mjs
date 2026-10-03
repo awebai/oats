@@ -9,6 +9,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, sy
 import { join } from "node:path";
 import YAML from "yaml";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { validateLocal } from "../lib/workspace.mjs";
 
 const A = await import("../lib/automations.mjs");
 const T = await import("../lib/triggers.mjs");
@@ -307,6 +308,72 @@ test("each kind keeps its own opt-out: trigger disable writes triggers.disabled,
   fails(fx.cli(["schedule", "update", "ws/nightly", "--spec-json", JSON.stringify(schedule), "--json"]), "E_AUTOMATION_WORKSPACE", "update a Git-defined schedule");
   fails(fx.cli(["trigger", "show", "ws/nope", "--json"]), "E_TRIGGER_UNKNOWN", "unknown");
   fails(fx.cli(["schedule", "show", "../x", "--json"]), "E_BAD_ARGS", "malformed");
+});
+
+for (const length of [41, 100]) {
+  test(`qualified schedule ID length ${length} persists through CLI opt-out and named trust placement`, (t) => {
+    const id = "s".repeat(length), qid = `ws/${id}`;
+    const fx = fixture({ files: { "oats-schedules/long.yaml": { yaml: { ...schedule, id, purpose: "digest" } } } });
+    t.after(() => fx.cleanup());
+    ok(fx.cli(["sync", "--json"]), "discover committed long schedule");
+    const localPath = join(fx.dep, "oats-local.yaml");
+    const local = () => YAML.parse(readFileSync(localPath, "utf8"));
+    const row = () => ok(fx.cli(["schedule", "show", qid, "--json"]), "show long schedule").schedule;
+    assert.equal(row().runsHere, true, JSON.stringify(row()));
+    const disabled = ok(fx.cli(["schedule", "disable", qid, "--json"]), "disable long schedule").schedule;
+    assert.deepEqual([disabled.enabledHere, disabled.runsHere], [false, false]);
+    assert.deepEqual(local().schedules.disabled, [qid]);
+    assert.deepEqual(validateLocal(local()), [], "CLI persists valid host config");
+    const enabled = ok(fx.cli(["schedule", "enable", qid, "--json"]), "enable long schedule").schedule;
+    assert.deepEqual([enabled.enabledHere, enabled.runsHere], [true, true]);
+    assert.equal(local().schedules, undefined);
+
+    fx.setLocal({ host: { name: "kb-host" } });
+    assert.deepEqual([row().runsHere, row().reason], [false, "untrusted"]);
+    fx.setLocal({ host: { name: "kb-host" }, automations: { trust: [qid] } });
+    assert.deepEqual(validateLocal(local()), [], "named trust loads through the actual schema");
+    assert.equal(row().runsHere, true, "discovered definition, owner and named trust produce real placement");
+    ok(fx.cli(["schedule", "disable", qid, "--json"]), "disable while specifically trusted");
+    assert.deepEqual(local().automations.trust, [qid], "opt-out preserves the named trust entry");
+    assert.equal(row().runsHere, false);
+    assert.equal(ok(fx.cli(["schedule", "enable", qid, "--json"]), "restore named placement").schedule.runsHere, true);
+  });
+}
+
+test("qualified host-list schema retains schedule 101 and trigger 41 refusals, syntax and uniqueness", (t) => {
+  const id = "t".repeat(40), qid = `ws/${id}`;
+  const fx = fixture({ files: { "oats-triggers/long.yaml": { yaml: { ...trigger, id } } } });
+  t.after(() => fx.cleanup());
+  ok(fx.cli(["sync", "--json"]), "discover maximum trigger");
+  const localPath = join(fx.dep, "oats-local.yaml");
+  ok(fx.cli(["trigger", "disable", qid, "--json"]), "disable maximum trigger");
+  assert.deepEqual(YAML.parse(readFileSync(localPath, "utf8")).triggers.disabled, [qid]);
+  assert.equal(ok(fx.cli(["trigger", "enable", qid, "--json"]), "enable maximum trigger").trigger.runsHere, true);
+  const before = readFileSync(localPath, "utf8");
+  const tooLong = `ws/${"s".repeat(101)}`;
+  for (const verb of ["disable", "enable"]) {
+    fails(fx.cli(["schedule", verb, tooLong, "--json"]), "E_BAD_ARGS", "schedule 101 before mutation");
+    assert.equal(readFileSync(localPath, "utf8"), before);
+  }
+  for (const [kind, invalid] of [["schedule", tooLong], ["trigger", `ws/${"t".repeat(41)}`]]) {
+    assert.throws(() => A.setDisabledHere(localPath, kind, invalid, true, { validate: validateLocal }), { code: "E_WORKSPACE_SCHEMA" });
+    assert.equal(readFileSync(localPath, "utf8"), before, "schema refuses before the shared writer mutates config");
+  }
+  const config = (section, list) => ({ schemaVersion: 2, workspace: fx.ref, [section]: { [section === "automations" ? "trust" : "disabled"]: list } });
+  for (const section of ["schedules", "automations", "triggers"]) {
+    const max = section === "triggers" ? 40 : 100;
+    assert.deepEqual(validateLocal(config(section, [`Member_1.repo/a-${"1".repeat(max - 2)}`])), []);
+    for (const bad of [tooLong, "/a", "../a", "ws/a/b", "ws/Upper", "ws/a_1", "ws/", "ws/a b"]) {
+      assert.ok(validateLocal(config(section, [bad])).length, `${section} refuses ${bad}`);
+    }
+    assert.ok(validateLocal(config(section, ["ws/a", "ws/a"])).length, `${section} still requires uniqueness`);
+  }
+  // Trust is shared by both kinds; allowing a long trust string cannot widen
+  // the separate trigger definition parser or its disabled-ID schema.
+  assert.deepEqual(validateLocal(config("automations", [`ws/${"t".repeat(41)}`])), []);
+  assert.ok(validateLocal(config("triggers", [`ws/${"t".repeat(41)}`])).length);
+  const parsed = A.parseAutomationFile(T.triggerKind(), { stem: "t".repeat(41), path: "oats-triggers/too-long.yaml", member: "ws", repoKey: REPO, commit: "c".repeat(40), bytes: Buffer.from(YAML.stringify(trigger)) });
+  assert.equal(parsed.problem.code, "E_AUTOMATION_SCHEMA");
 });
 
 test("the tick runs what this host runs: a workspace trigger fires under its qualified id; a workspace schedule launches at its minute; another host's are left alone", async (t) => {
