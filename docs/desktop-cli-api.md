@@ -473,9 +473,12 @@ through membership ([the non-collapse rule](workspaces.md#member-tier-vs-package
 its item is `package <package>/<soul>` (producer `workspace lock`,
 `evidence: {repoKey, workspace, commit, version, integrity, from}` with
 `from.kind: "package"`). It passes when the package is declared and locked
-and ships the soul at the locked commit, and the soul's copy matches the
-locked digest; it fails otherwise (`code: "E_PACKAGE_INTEGRITY"` on a
-digest mismatch), with `oats sync` in the remedy.
+and ships the soul at the locked commit, and the soul's copy is intact: for
+`--soul`, the copy a spawn would link matches the locked digest; for
+`--home`, the home's copy matches the digest it recorded, and a lock still
+at that commit records the same digest. The copy is digested on every read.
+It fails otherwise, with `code: "E_PACKAGE_INTEGRITY"` on a digest mismatch
+and the remedy naming `oats sync` or a fresh spawn.
 
 **`providers`** (producer `provider binding check`): for each module whose
 manifest declares `binding`, the kernel runs its `binding.check` and relays

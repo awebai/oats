@@ -335,13 +335,51 @@ test("readiness: a package soul's member check is its package (locked, integrity
   ws.packages = pinned;
   fx.commit({ "oats-workspace.yaml": YAML.stringify(ws) }, "declare acme.pkg again");
 
-  // Integrity: the locked soul digest does not match the soul at the locked commit.
-  rmSync(join(fx.root, "acme-pkg--keeper", "souls"), { recursive: true, force: true });
+  // Integrity: every failure is E_PACKAGE_INTEGRITY on both selectors, whether the soul is fetched or
+  // already copied (the per-commit copy a home links is reused, never refetched).
+  const integrityFails = (rd, what) => {
+    const [i] = rd.checks.member.items;
+    assert.deepEqual([i.subject, i.status, i.code], ["package acme.pkg/keeper", "fail", "E_PACKAGE_INTEGRITY"], `${what}: ${JSON.stringify(i)}`);
+    assert.match(i.remedy, /oats sync|spawn/, what);
+    assert.equal(rd.summary.ready, false, what);
+    return i;
+  };
+  const lockFile = join(fx.dep, "oats-lock.json"), goodLock = readFileSync(lockFile, "utf8");
   const edited = lockOf(fx);
   edited.packages["acme.pkg"].souls[0].digest = `sha256-${"0".repeat(64)}`;
-  writeFileSync(join(fx.dep, "oats-lock.json"), JSON.stringify(edited, null, 2) + "\n");
-  rd = ok(fx.cli(["readiness", "--soul", "acme.pkg/keeper", "--json"]), "readiness --soul (edited soul digest)");
-  it = rd.checks.member.items[0];
-  assert.deepEqual([it.subject, it.status, it.code], ["package acme.pkg/keeper", "fail", "E_PACKAGE_INTEGRITY"], JSON.stringify(it));
+  writeFileSync(lockFile, JSON.stringify(edited, null, 2) + "\n");
+  // The lock's digest edited, the copy intact: the copy does not match the lock (--soul), and the lock no
+  // longer matches what the home recorded at the same commit (--home).
+  it = integrityFails(ok(fx.cli(["readiness", "--soul", "acme.pkg/keeper", "--json"]), "readiness --soul"), "edited lock, cached copy");
+  assert.match(it.reason, new RegExp(`copy .* digests ${digest}, not the locked sha256-0{64}`));
+  it = integrityFails(ok(fx.cli(["readiness", "--home", home, "--json"]), "readiness --home"), "edited lock, home");
+  assert.match(it.reason, /the lock records .* for the same commit/);
+  // The lock intact, the copy's bytes changed under it.
+  writeFileSync(lockFile, goodLock);
+  const copy = join(fx.root, "acme-pkg--keeper", "souls", fx.pkg.commit1.slice(0, 12));
+  writeFileSync(join(copy, "AGENTS.md"), "changed bytes\n");
+  it = integrityFails(ok(fx.cli(["readiness", "--soul", "acme.pkg/keeper", "--json"]), "readiness --soul"), "changed copy, --soul");
+  assert.match(it.reason, /copy .* digests sha256-[0-9a-f]{64}, not the locked/);
+  it = integrityFails(ok(fx.cli(["readiness", "--home", home, "--json"]), "readiness --home"), "changed copy, --home");
+  assert.match(it.reason, /copy .* digests sha256-[0-9a-f]{64}, not the recorded/);
+  // No copy yet: the fetch itself is verified against the lock.
+  rmSync(join(fx.root, "acme-pkg--keeper", "souls"), { recursive: true, force: true });
+  writeFileSync(lockFile, JSON.stringify(edited, null, 2) + "\n");
+  it = integrityFails(ok(fx.cli(["readiness", "--soul", "acme.pkg/keeper", "--json"]), "readiness --soul"), "edited lock, fetched");
   assert.match(it.reason, /does not match the locked/);
+});
+
+test("readiness: a package soul whose source carries its own CLAUDE.md → AGENTS.md alias: the copy digests as the lock's", (t) => {
+  const fx = fixture(); t.after(fx.cleanup);
+  symlinkSync("AGENTS.md", join(fx.pkg.seed, "oats-package/souls/keeper/CLAUDE.md"));
+  git(fx.pkg.seed, "add", "-A"); git(fx.pkg.seed, "commit", "-qm", "alias"); git(fx.pkg.seed, "tag", "v1.0.1"); git(fx.pkg.seed, "push", "-q", "origin", "HEAD:main", "v1.0.1");
+  const ws = YAML.parse(readFileSync(join(fx.member, "oats-workspace.yaml"), "utf8"));
+  ws.packages["acme.pkg"] = `${fx.pkg.ref}@v1.0.1`;
+  fx.commit({ "oats-workspace.yaml": YAML.stringify(ws) }, "pin the alias");
+  ok(fx.cli(["sync", "--json"]), "sync");
+  const { home } = ok(fx.cli(["spawn", "acme.pkg/keeper", "--purpose", "a", "--no-launch", "--json"]), "spawn");
+  for (const args of [["--soul", "acme.pkg/keeper"], ["--home", home]]) {
+    const [it] = ok(fx.cli(["readiness", ...args, "--json"]), `readiness ${args[0]}`).checks.member.items;
+    assert.deepEqual([it.subject, it.status, it.reason], ["package acme.pkg/keeper", "pass", null], `${args[0]}: ${JSON.stringify(it)}`);
+  }
 });
