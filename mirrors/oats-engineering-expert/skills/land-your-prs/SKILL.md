@@ -19,7 +19,8 @@ and even when another expert coordinates the wider effort.
 
 ## Monitor
 Keep watching until it merges: CI checks, bot reviewers, and review comments from other
-agents and from humans. Use your harness's or messaging layer's notifications where they
+agents and from humans. Keep each open PR in your instance state at its exact head, with
+its checks, reviews and what it waits on. Use your harness's or messaging layer's notifications where they
 exist; otherwise check at each task boundary.
 
 ## Triage each comment

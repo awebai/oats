@@ -3096,22 +3096,23 @@ test("the package mirrors carry the versions package-catalog.json pins", () => {
   // each capability; a capability a package exports under another identity is
   // mapped, not assumed.
   const expected = { "oats-okf": "oats.okf", "oats-aweb": "oats.aweb", "oats-jira": "oats.jira", "oats-linear": "oats.linear", "oats-authoring": "oats.authoring",
-    "oats-engineering-expert": "oats.engineering", "oats-developer": "oats.engineering", "oats-code-review": "oats.engineering", "oats-cloning": "oats.cloning" };
+    "oats-engineering-expert": "oats.engineering", "oats-developer": "oats.engineering", "oats-code-review": "oats.engineering", "oats-maintainer": "oats.engineering",
+    "oats-cloning": "oats.cloning" };
   for (const [slug, pkg] of Object.entries(expected)) {
     const ref = catalog.packages[pkg]?.ref;
     assert.ok(ref, `package-catalog.json pins no ref for ${pkg}`);
     const manifest = JSON.parse(readFileSync(join(pkgRoot, "mirrors", slug, "oats.json"), "utf8"));
     assert.equal(manifest.version, String(ref).replace(/^v/, ""), `mirrors/${slug} must carry the version ${pkg} is pinned at`);
   }
-  // oats.engineering exports three capabilities under their own ids; the
+  // oats.engineering exports four capabilities under their own ids; the
   // catalog aliases each to the package, and the reviewer is a package soul.
-  for (const [slug, id] of [["oats-engineering-expert", "oats.engineering-expert"], ["oats-developer", "oats.developer"], ["oats-code-review", "oats.code-review"]]) {
+  for (const [slug, id] of [["oats-engineering-expert", "oats.engineering-expert"], ["oats-developer", "oats.developer"], ["oats-code-review", "oats.code-review"], ["oats-maintainer", "oats.maintainer"]]) {
     const manifest = JSON.parse(readFileSync(join(pkgRoot, "mirrors", slug, "oats.json"), "utf8"));
     assert.equal(manifest.capability, id);
     assert.equal(catalog.capabilities[id], "oats.engineering", `${id} is supplied by the oats.engineering package`);
     assert.equal(Object.hasOwn(manifest, "agents"), false, `${id} declares no capability agent: the code-reviewer is oats.engineering's package soul`);
   }
-  assert.equal(catalog.packages["oats.engineering"].ref, "v1.5.0");
+  assert.equal(catalog.packages["oats.engineering"].ref, "v1.8.0");
   // oats.cloning exports one capability under the package's own id: no alias; the cloner is a package soul.
   assert.equal(catalog.packages["oats.cloning"].ref, "v1.0.1");
   assert.equal(catalog.capabilities["oats.cloning"], undefined, "an identity mapping needs no alias");
@@ -3154,7 +3155,7 @@ test("the independently targetable oats.engineering capabilities assume no knowl
   // properties. Provider neutrality as a whole is not machine-decidable from
   // prose: when these surfaces change, it needs semantic review by the
   // maintainer, which the PR process already provides.
-  for (const slug of ["oats-engineering-expert", "oats-developer", "oats-code-review"]) {
+  for (const slug of ["oats-engineering-expert", "oats-developer", "oats-code-review", "oats-maintainer"]) {
     const dir = resolve(new URL(`../mirrors/${slug}`, import.meta.url).pathname);
     const manifest = JSON.parse(readFileSync(join(dir, "oats.json"), "utf8"));
     for (const r of manifest.requires || []) {

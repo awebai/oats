@@ -17,6 +17,7 @@ description: Launch and drive developers to build what you specified, one per su
   target, and who else is working next to it.
 - Tell a developer about the developers it shares an interface with, so they can talk
   directly instead of through you.
+- Record each one in your instance state: its instance name, surface, spec and branch.
 
 ## While they work
 - Answer questions quickly: a blocked developer is the most expensive thing in the

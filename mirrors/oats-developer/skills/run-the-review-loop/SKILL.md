@@ -29,13 +29,21 @@ it your child. It must not edit the tree.
 ## Pick a different model
 A reviewer on the same model as you tends to share your blind spots. Before spawning:
 1. **Your model:** your own launch record (`instance.json` → `launch.runtime` (the harness) and `launch.model`).
-2. **The reviewer's default:** `oats spawn code-reviewer --preview --json` → its harness and
-   model.
-3. **If they're the same model**, spawn the reviewer on another state-of-the-art model, on
-   another harness when you can: currently **Codex with Astra, Claude Code with Opus 5.5,
-   Fable, or the latest Grok**. Use a launch configuration this host defines
-   (`oats launch-config list`), or `--harness`/`--model`. If none is available, use the
-   default and say so in your handback.
+2. **What the reviewer will actually run on:** `oats spawn code-reviewer --preview --json`
+   → `launch`. Read both parts:
+   - `launch.declared`: the soul's default (the package's preference);
+   - `launch.effective`: what this machine will launch. When `launch.from` is `local`, the
+     machine's `oats-local.yaml` overrides the default (`souls.launch`; `launch.at` names
+     the entry). The operator set it, often because the default's harness isn't installed
+     or isn't wanted here.
+3. **Prefer the machine's override when it's another harness than yours.** Spawn without
+   `--harness`/`--model`, so the override applies; don't force the soul's default over it.
+4. **If the effective reviewer would run on your harness and model** (the override or the
+   default), spawn it on another state-of-the-art model, on another harness when you can:
+   currently **Codex with Astra, Claude Code with Opus 5.5, Fable, or the latest Grok**. Use
+   a launch configuration this host defines (`oats launch-config list`), or
+   `--harness`/`--model`. If none is available, use the effective one and say so in your
+   handback.
 
 ## Brief it: context, not conclusions
 The brief (`review-brief.md`) contains **exactly**:
