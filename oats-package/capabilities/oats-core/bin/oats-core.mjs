@@ -35,7 +35,7 @@ import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const WAITING_SCRIPT = "claude-waiting.sh";
-/** Claude Code's per-hook timeout, in seconds. The script bounds the CLI at ~3 s. */
+/** Claude Code's per-hook timeout, in seconds. The script bounds each CLI call at 2 s. */
 export const HOOK_TIMEOUT_SECONDS = 5;
 /** Claude Code's matcher for every tool. */
 const ALL_TOOLS = "*";

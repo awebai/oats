@@ -45,16 +45,21 @@ const FAKE_CLI = join(base, "fake-cli.mjs");
 // only clears misbehave ("die" ends it by SIGKILL, as the watchdog does; "partial" records
 // the claim, then fails); FAKE_CWD_LOG
 // records the cwd the CLI ran in. FAKE_GATE (a directory) orders calls by construction: call
-// k writes started.<k> (its argv) and waits for the test to create go.<k>.
-writeFileSync(FAKE_CLI, `import { appendFileSync, existsSync, openSync, writeSync, closeSync } from "node:fs";
+// k claims its number with claim.<k>, publishes started.<k> (its argv) whole, by rename, and
+// waits for the test to create go.<k>; a gate never opened ends it after 60 s, so a failed
+// test cannot leave it hanging.
+writeFileSync(FAKE_CLI, `import { appendFileSync, closeSync, existsSync, openSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 const delay = Number((process.argv[4] === "set" ? process.env.FAKE_SET_DELAY_MS : process.env.FAKE_CLEAR_DELAY_MS) || 0);
 let go = (then) => then();
 if (process.env.FAKE_GATE) {
-  let k = 1, fd;
-  for (;; k++) { try { fd = openSync(join(process.env.FAKE_GATE, "started." + k), "wx"); break; } catch {} }
-  writeSync(fd, JSON.stringify(process.argv.slice(4))); closeSync(fd);
-  go = (then) => { const t = setInterval(() => { if (existsSync(join(process.env.FAKE_GATE, "go." + k))) { clearInterval(t); then(); } }, 5); };
+  const gate = process.env.FAKE_GATE;
+  let k = 1;
+  for (;; k++) { try { closeSync(openSync(join(gate, "claim." + k), "wx")); break; } catch {} }
+  writeFileSync(join(gate, "started." + k + ".tmp"), JSON.stringify(process.argv.slice(4)));
+  renameSync(join(gate, "started." + k + ".tmp"), join(gate, "started." + k));
+  const giveUp = setTimeout(() => process.exit(3), 60000);
+  go = (then) => { const t = setInterval(() => { if (existsSync(join(gate, "go." + k))) { clearInterval(t); clearTimeout(giveUp); then(); } }, 5); };
 }
 go(() => setTimeout(() => {
   if (process.env.FAKE_LOG) appendFileSync(process.env.FAKE_LOG, JSON.stringify(process.argv.slice(2)) + "\\n");
@@ -79,13 +84,17 @@ writeFileSync(join(SHIMS, "date"), '#!/bin/sh\nif [ -n "$FAKE_CLOCK" ] && [ "$1"
 writeFileSync(join(SHIMS, "rm"), '#!/bin/sh\nif [ -n "$FAKE_RM_GATE" ] && mkdir "$FAKE_RM_GATE/once" 2>/dev/null; then\n  : > "$FAKE_RM_GATE/started"\n  while [ ! -e "$FAKE_RM_GATE/go" ]; do /bin/sleep 0.01; done\nfi\nexec /bin/rm "$@"\n', { mode: 0o755 });
 writeFileSync(join(SHIMS, "sleep"), '#!/bin/sh\nif [ "$1" = 2 ]; then exec /bin/sleep 600; fi\nexec /bin/sleep "$@"\n', { mode: 0o755 });
 /** An ordered run: a gate for the fake CLI's calls and a clock file, in home h's env. */
+// Every hook an ordered test starts; any still running when the file ends is killed.
+const kids = new Set();
+test.after(() => { for (const c of kids) { try { c.kill("SIGKILL"); } catch { /* gone */ } } });
 function ordered(h, extra = {}) {
   const dir = mkdtempSync(join(base, "gate-")), clock = join(dir, "clock");
   writeFileSync(clock, "1000\n");
   const env = { OATS_INSTANCE_HOME: h, FAKE_GATE: dir, FAKE_CLOCK: clock, PATH: `${SHIMS}:${process.env.PATH}`, ...extra };
   const run = (args, more = {}) => new Promise((done) => {
     const child = spawn("/bin/sh", [SCRIPT, ...withMarker([...args, process.execPath, FAKE_CLI], env)], { env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env, ...more }), stdio: "ignore" });
-    child.on("exit", (code) => done(code));
+    kids.add(child);
+    child.on("exit", (code) => { kids.delete(child); done(code); });
   });
   const started = (k) => existsSync(join(dir, `started.${k}`));
   return {
