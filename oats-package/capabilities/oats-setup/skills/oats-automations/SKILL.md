@@ -167,7 +167,9 @@ unproven effects by hand. Doctor also reads saved workspace definitions
 offline and checks other deployments registered with this host.
 
 An unknown command or operation frees its host slot only after the kernel
-observes its process exit. Its own job stays blocked until reconcile. Spawn,
+observes its process exit. Scheduler command/operation and workspace-spawn
+children receive SIGTERM at five minutes and SIGKILL after a two-second
+cleanup grace if needed. Its own job stays blocked until reconcile. Spawn,
 wake and legacy attempts without observed exits retain their slot rules.
 
 ## Gotchas

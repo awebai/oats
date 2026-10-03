@@ -54,6 +54,7 @@ published to npm. Its developer docs are in
 | `instruction-composition.mjs` | the generated `AGENTS.md` |
 | `teams.mjs`, `teams-verbs.mjs` | the team model and the `oats teams` verbs |
 | `schedule.mjs`, `schedule-host.mjs`, `triggers.mjs`, `automations.mjs` | schedules, triggers and the host timer |
+| `schedule-command.mjs`, `schedule-command-child.mjs` | synchronous scheduler adapter and asynchronous child supervisor: bounded output, TERM/KILL escalation and observed exit; no changes to synchronous tick/lock callbacks |
 | `operator-dispatch.mjs` | capability commands run from a deployment, and its module store |
 | `instance-*.mjs` | inspection, lifecycle, events and Git views of an instance |
 | `tmux-config.mjs`, `session-*.mjs` | the tmux session backend and terminal input |

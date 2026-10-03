@@ -81,7 +81,13 @@ jobs) sets it so that its command jobs can be told apart.
   no shell; `oats schedule` itself is refused) in `cwd`, an existing directory
   inside the deployment. The runner tracks any instance the command's
   envelope names, including an independent worker it reports, until its home
-  is gone. A command's return is not task completion.
+  is gone. A command's return is not task completion. Command/operation runs and
+  workspace-spawn launches have a five-minute child timeout. The supervisor
+  sends SIGTERM to the child's process group, allows two seconds for cleanup,
+  then sends SIGKILL if the group remains. It observes the direct child's exit
+  before returning; inherited output pipes cannot hold the tick indefinitely.
+  A timeout leaves effects unconfirmed even if the child printed an envelope.
+  Spawn previews use the same bounded runner.
 - **wake** `{…, home, message}` — every due minute inspects the instance at
   `home`. Running: `message` is delivered once as terminal input (bracketed
   paste plus Enter), never an interrupt. Not running: the home is started with
