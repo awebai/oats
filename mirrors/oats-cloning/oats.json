@@ -1,0 +1,22 @@
+{
+  "capability": "oats.cloning",
+  "command": "cloning",
+  "version": "1.0.0",
+  "compatibility": { "oats": ">=0.34.0" },
+  "description": "Clone an OATS instance for a new goal: a cloner reads the source's home, work state and (when the requester includes it) transcript, decides what the clone carries, and spawns it as an independent or related instance with its own identity.",
+  "requires": [
+    { "command": "git", "why": "read the source's work state (read-only)" },
+    { "command": "aw", "why": "check that the clone's aweb identity is its own, not the source's" }
+  ],
+  "settings": {
+    "cloner": { "default": "oats.cloning/cloner", "description": "The soul `oats cloning request` spawns to carry out a clone." },
+    "brief-max-bytes": { "default": 49152, "description": "Largest brief body the cloner may hand to a clone (the generated preamble is extra)." }
+  },
+  "skills": ["skills"],
+  "inject": "injects/cloning.md",
+  "commands": {
+    "request": "bin/oats-cloning.mjs request",
+    "dossier": "bin/oats-cloning.mjs dossier",
+    "spawn": "bin/oats-cloning.mjs spawn"
+  }
+}

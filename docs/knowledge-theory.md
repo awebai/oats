@@ -230,13 +230,15 @@ Directory bases use their own recoverable publication mechanism. Receipts state 
 
 ## Reusing working understanding: context handoffs and cloning
 
-Harvesting preserves individual lessons, not the combined working picture that makes a long-running instance effective; a handoff or clone could carry selected references, verified observations and labeled provisional reasoning, but that is not a knowledge store and copying it promotes nothing. A clone would need its own identity, credentials and ownership, and no protocol for selecting and sharing such context is defined.
+Harvesting preserves individual lessons, not the combined working picture that makes a long-running instance effective. A handoff or clone carries selected references, verified observations and labeled provisional reasoning; that is not a knowledge store, and copying it promotes nothing.
+
+Cloning exists as the official `oats.cloning` package ([souls and instances](souls-and-instances.md#cloning-an-instance)). A clone is a new instance of the source's soul with its own identity, credentials and ownership. What it carries is a curated brief written by a short-lived cloner for the new goal: what was re-verified, with its evidence; decisions and their reasons; working understanding marked provisional; open threads and who owns them; and where to look, with transcript turn ids as citations. The cloner leaves secrets out of the brief, a pattern-based redaction pass catches the common forms that slip through, and the brief is attached to the clone as a 0600 file, never placed in its task text. A clone does not carry the raw transcript, the source's `notes/`, the content of its work tree or its uncommitted changes (a worktree clone starts from the source's committed branch, the soul's default or a requested ref), or its commitments: those stay with the source unless the brief says they were handed over. Inherited material is not new evidence; the clone records it in its own notes only after re-verifying it.
 
 ## Implementation boundaries
 
 The model's settled positions are those above: short- and long-running instances are both legitimate; the default is centralized, per-soul knowledge open to reviewed structural evolution; capabilities own their model and runtime behavior; the doctrine preserves expertise, not code descriptions or task residue; and structural change preserves provenance and running work. These are not CLI flags or configuration schemas.
 
-The default OKF capability implements consultation, capture, independent harvest and maintainer review; it does not provide automatic per-soul provisioning, a co-located profile, automatic speciation, redirects or context cloning. Proving the kernel's flexibility needs a genuinely different organization and learning model, not only Git and directory storage within OKF. Updating this document does not migrate existing deployments.
+The default OKF capability implements consultation, capture, independent harvest and maintainer review; it does not provide automatic per-soul provisioning, a co-located profile, automatic speciation, redirects or context cloning. Context cloning is a separate package, `oats.cloning`, not part of the knowledge capability. Proving the kernel's flexibility needs a genuinely different organization and learning model, not only Git and directory storage within OKF. Updating this document does not migrate existing deployments.
 
 ## Related documentation
 

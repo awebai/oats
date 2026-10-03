@@ -31,6 +31,11 @@
       "ref": "v1.5.0",
       "path": "oats-package"
     },
+    "oats.cloning": {
+      "url": "https://github.com/awebai/oats-cloning.git",
+      "ref": "v1.0.0",
+      "path": "oats-package"
+    },
     "oats.framework": {
       "url": "https://github.com/awebai/oats.git",
       "ref": "oats-framework/v1.5.0",

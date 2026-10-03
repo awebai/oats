@@ -13,6 +13,7 @@ members:
   - git:github.com/awebai/oats-authoring
   - git:github.com/awebai/oats-jira
   - git:github.com/awebai/oats-linear
+  - git:github.com/awebai/oats-cloning
 
 # The only versioned things. Bare versions resolve through the official catalog
 # (package-catalog.json in this repository). Declaring a package here is the
@@ -25,6 +26,7 @@ packages:
   oats.linear: v1.0.1
   oats.authoring: v1.0.3
   oats.engineering: v1.5.0
+  oats.cloning: git:github.com/awebai/oats-cloning@v1.0.0   # bare version once every deployment's CLI carries the catalog entry
 
 # Shared teams: the same provider team for everyone.
 teams:
