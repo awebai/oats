@@ -86,8 +86,19 @@ jobs) sets it so that its command jobs can be told apart.
   sends SIGTERM to the child's process group, allows two seconds for cleanup,
   then sends SIGKILL if the group remains. It observes the direct child's exit
   before returning; inherited output pipes cannot hold the tick indefinitely.
-  A timeout leaves effects unconfirmed even if the child printed an envelope.
-  Spawn previews use the same bounded runner.
+  SIGINT, SIGTERM or SIGHUP received by the supervisor enters that same cleanup
+  once; repeated signals do not bypass it. A timeout or interrupted supervisor
+  leaves effects unconfirmed even if the child printed an envelope. Spawn
+  previews use the same bounded runner.
+
+  Cleanup covers the owned process group. A descendant that creates its own
+  session can escape it; inherited pipes are bounded but that escaped process
+  is not terminated by this group cleanup. The supervisor checks the group when
+  the leader exits and never signals it after observing it empty. This reduces
+  the group-ID reuse window; it does not eliminate PID reuse races. SIGKILL,
+  OOM and other unrecoverable supervisor deaths cannot run JavaScript handlers:
+  cleanup is not guaranteed then. Without a private supervisor receipt, the
+  scheduler keeps the unknown attempt and its slot until reconciliation.
 - **wake** `{…, home, message}` — every due minute inspects the instance at
   `home`. Running: `message` is delivered once as terminal input (bracketed
   paste plus Enter), never an interrupt. Not running: the home is started with
