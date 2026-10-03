@@ -50,9 +50,12 @@ export function shq(value) {
 /** One hook command: the script through /bin/sh (its executable bit is never relied on),
  *  stdout and stderr detached, and `exit 0` whatever happens. Stdin (Claude's JSON input)
  *  reaches the script, which reads it only for a tool clear, bounded. `marker` is the
- *  debounce marker's path ('' for none). */
-export function waitingCommand({ script, node, cli, marker = "" }, args) {
-  return `/bin/sh ${shq(script)} ${args.join(" ")} ${shq(node)} ${shq(cli)} ${shq(marker || "")} >/dev/null 2>&1; exit 0`;
+ *  debounce marker's path ('' for none). `home` is the instance home the settings are
+ *  written for, as its real path: the script acts only when $OATS_INSTANCE_HOME names
+ *  that home, so a Claude process that loads these settings under another instance's
+ *  environment never speaks for either home (with no `home` the script does nothing). */
+export function waitingCommand({ script, node, cli, marker = "", home = "" }, args) {
+  return `/bin/sh ${shq(script)} ${args.join(" ")} ${shq(node)} ${shq(cli)} ${shq(marker || "")} ${shq(home || "")} >/dev/null 2>&1; exit 0`;
 }
 
 /** Where the emitter's per-user debounce directory goes: `$XDG_RUNTIME_DIR/oats-waiting`
@@ -93,7 +96,8 @@ function hasAcl(dir) {
   } catch { return true; }
 }
 
-/** A home's marker in a vetted directory: the first 16 hex of sha256(home). */
+/** A home's marker in a vetted directory: the first 16 hex of sha256(home), the home's
+ *  real path, so every spelling of a home has one marker. */
 export const markerPath = (home, dir) => join(dir, `${createHash("sha256").update(home).digest("hex").slice(0, 16)}.claude`);
 
 /** A new session starts with no claim (the kernel's session boundary voids them), so the
@@ -104,8 +108,8 @@ export function resetMarker(marker) {
 }
 
 /** oats.core's Claude Code settings: only `hooks`, keyed by Claude Code event. */
-export function claudeWaitingSettings({ script, node, cli, marker = "" }) {
-  const entry = (...args) => ({ type: "command", command: waitingCommand({ script, node, cli, marker }, args), timeout: HOOK_TIMEOUT_SECONDS });
+export function claudeWaitingSettings({ script, node, cli, marker = "", home = "" }) {
+  const entry = (...args) => ({ type: "command", command: waitingCommand({ script, node, cli, marker, home }, args), timeout: HOOK_TIMEOUT_SECONDS });
   const group = (matcher, ...args) => ({ ...(matcher === undefined ? {} : { matcher }), hooks: [entry(...args)] });
   return {
     hooks: {
@@ -171,7 +175,8 @@ function removeStaleTemps(claudeDir) {
   }
 }
 
-/** The real pass: bring <home>/.claude/settings.json to the merged state. Returns a warning or null. */
+/** The real pass: bring <home>/.claude/settings.json to the merged state, its commands
+ *  baked for `home` (the real path). Returns a warning or null. */
 export function writeClaudeSettings({ home, script, node, cli, marker = "" }) {
   const lose = "this Claude session will not report when it waits for input";
   const claudeDir = join(home, ".claude");
@@ -195,7 +200,7 @@ export function writeClaudeSettings({ home, script, node, cli, marker = "" }) {
     try { existing = JSON.parse(text); } catch { return `oats.core: ${file} is not valid JSON; left it alone, so ${lose}`; }
     before = existing;
   }
-  const merged = mergeSettings(existing, claudeWaitingSettings({ script, node, cli, marker }), script);
+  const merged = mergeSettings(existing, claudeWaitingSettings({ script, node, cli, marker, home }), script);
   if (!merged.ok) return `oats.core: ${file} ${merged.problem}; left it alone, so ${lose}`;
   const content = serialize(merged.settings);
   if (before !== null && content === serialize(before)) return null;
@@ -224,10 +229,16 @@ export function runHook(event, env = process.env) {
   try { script = realpathSync(join(dirname(realpathSync(fileURLToPath(import.meta.url))), WAITING_SCRIPT)); } catch (e) {
     return { warning: `oats.core: ${WAITING_SCRIPT} is missing from the module copy (${e.code || e.message}); the Claude Code waiting hooks were not written` };
   }
+  // One spelling from here on, the real path: it is what the commands carry, what the
+  // script compares $OATS_INSTANCE_HOME against, and what keys the marker.
+  let real;
+  try { real = realpathSync(home); } catch (e) {
+    return { warning: `oats.core: OATS_INSTANCE_HOME (${home}) cannot be resolved (${e.code || e.message}); the Claude Code waiting hooks were not written` };
+  }
   const dir = markerDir(env);
-  const marker = dir ? markerPath(home, dir) : "";
+  const marker = dir ? markerPath(real, dir) : "";
   if (marker) resetMarker(marker);
-  const warning = writeClaudeSettings({ home, script, node: process.execPath, cli, marker });
+  const warning = writeClaudeSettings({ home: real, script, node: process.execPath, cli, marker });
   return warning ? { warning } : {};
 }
 

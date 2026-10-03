@@ -298,7 +298,9 @@ the host's own facts from its `status --json`: `identity`,
 `identityAddress`, `teams`, `startedAt`, `createdAt`, `model`,
 `runtimeState`, `parentInstance`, `siblingInstance`, `relation`,
 `relativeTo` and `spawnOrigin`. A fact the host does not supply is `null`
-(an older host, or a saved route the host no longer lists). A removed or edited registration keeps
+(an older host, or a saved route the host no longer lists). A row also
+carries `waitingOnYou` (needs input) when the host's kernel reports it, and
+only then: an older host's row has no such key. A removed or edited registration keeps
 its group from the saved routes. State is pulled on every call within
 `--per-target` (default 20 s) of a total `--budget` (default 45 s); a group
 not reached is reported with `E_ROSTER_BUDGET`. `--server <id>` narrows it.

@@ -1,7 +1,7 @@
 // K7b — `instance-events-2`: the event read is bounded, addressed, incarnation-aware, and its integrity is reported independently of the window.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, symlinkSync, rmSync, openSync, writeSync, closeSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, symlinkSync, realpathSync, rmSync, openSync, writeSync, closeSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
@@ -10,7 +10,7 @@ import { readEvents, appendEvent, EVENTS_API } from "../lib/instance-events.mjs"
 
 const CLI = fileURLToPath(new URL("../bin/oats.mjs", import.meta.url));
 function ws(t) {
-  const base = mkdtempSync(join(tmpdir(), "k7b-")); t.after(() => rmSync(base, { recursive: true, force: true }));
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "k7b-"))); t.after(() => rmSync(base, { recursive: true, force: true }));
   const root = join(base, "agents"); const home = join(root, "dev", "instances", "dev-1");
   mkdirSync(join(root, "dev", "soul"), { recursive: true }); writeFileSync(join(root, "dev", "soul", "soul.yaml"), "name: dev\n");
   const incarnate = (createdAt) => { mkdirSync(home, { recursive: true }); writeFileSync(join(home, "instance.json"), JSON.stringify({ agent: "dev", instance: "dev-1", createdAt })); };
