@@ -139,6 +139,10 @@ oats session attach --home /abs/home
   harness, `shell` for a fallback shell,
   `stopped` for an absent or dead terminal, or `not-launched`. An unavailable
   backend is an error (`E_SESSION_UNAVAILABLE`), never a stopped result.
+  Beside `state`, `waitingOnYou` (feature `waiting-on-you`) is a producer's
+  live claim that the instance needs input from a human, `{since, producer,
+  reason, message}`, or `null`; it is non-null only for a running harness
+  (docs/desktop-cli-api.md, "Waiting on you").
 - **input** submits UTF-8 text (stdin or `--text-file`, at most 256 KiB, no
   NUL) followed by Enter, as a bracketed paste. The text is never run by a
   shell. A fallback shell, a stopped session or a split

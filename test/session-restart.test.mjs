@@ -494,12 +494,12 @@ test("K7 events: stop/restart/retire write producer-attributed events to the hom
   startInstanceSession(home, { env: env() }); assert.ok(await waitFor(() => runningPid(home) !== null));
   const one = stopInstanceSession(home, { graceMs: 5000 }); assert.equal(one.stopped, true);
   const ev = readEvents(home);
-  assert.equal(ev.eventsApi, 2); assert.deepEqual(ev.events.map((e) => e.kind), ["spawned", "stopped"], "the spawn's event, then the stop"); assert.equal(ev.events[1].producer, "kernel"); assert.equal(ev.events[1].data.signal, "SIGTERM");
+  assert.equal(ev.eventsApi, 2); assert.deepEqual(ev.events.map((e) => e.kind), ["spawned", "launched", "stopped"], "the spawn's event, the start's launch, then the stop"); assert.equal(ev.events[1].data.phase, "start"); assert.equal(ev.events[1].data.backend, "tmux"); assert.equal(ev.events[2].producer, "kernel"); assert.equal(ev.events[2].data.signal, "SIGTERM");
   assert.equal(ev.waitingOnYou, null); assert.equal(ev.lastEvent.kind, "stopped");
   assert.ok(existsSync(join(home, ".oats-events.jsonl")) && existsSync(join(repo, ".agents", "events", `dev--${name}.jsonl`)), "both logs");
   // A producer claim is the only way waitingOnYou becomes non-null.
   appendEvent(home, { kind: "launched", producer: "test.provider", data: { waitingOnYou: true, reason: "review requested" } });
-  const ev2 = readEvents(home); assert.deepEqual(ev2.waitingOnYou, { since: ev2.events.at(-1).at, producer: "test.provider", reason: "review requested" });
+  const ev2 = readEvents(home); assert.deepEqual(ev2.waitingOnYou, { since: ev2.events.at(-1).at, producer: "test.provider", reason: "review requested", message: null });
   assert.equal(appendEvent(home, { kind: "made-up" }).ok, false, "unknown kinds are refused, never recorded");
   assert.equal(readEvents(home, { limit: 1 }).returned, 1); assert.equal(readEvents(home, { limit: 1 }).truncated, true);
   // Retire: 'retired' is written; the workspace log outlives the home.

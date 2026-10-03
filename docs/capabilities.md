@@ -504,6 +504,89 @@ carrying its expert soul. The framework's own souls say
 `oats.okf: { from: package }`: membership never turns a package into a
 latest-state capability.
 
+### oats.core: needs input
+
+oats.core (2.4.0 and later, kernel 0.40.0 and later) tells the deployment
+when an instance is blocked on a human, in two independent ways. Each shows
+on `oats status` and in `oats instance events`. The verbs' contract
+(`oats instance waiting`, `oats instance attention`, the `waiting` event) is
+in [desktop-cli-api.md](desktop-cli-api.md#waiting-on-you). Claims are
+display-only: nothing in the kernel acts on them.
+
+**The agent's own claim.** The oats.core inject and `/oats-operate` teach
+every instance this protocol. When it has asked a human something and cannot
+continue without the answer, it runs
+`oats instance attention --message "<one line>"` from its home and ends its
+turn. Once it has the answer, it runs `oats instance attention --clear`. The
+claim belongs to producer `agent`. Only `--clear` or the next session start,
+restart or stop clears it.
+
+**The Claude Code emitter.** For a Claude instance, oats.core's spawn and
+launch hooks (`bin/oats-core.mjs`, preview-aware) write Claude Code hooks
+into the home's project settings, `<home>/.claude/settings.json`. Each one
+runs `bin/claude-waiting.sh` from the home's module copy, which calls
+`oats instance waiting set|clear --producer oats.core`:
+
+| Claude Code event | Matcher | Action |
+| --- | --- | --- |
+| `Notification` | `permission_prompt` | set `permission` |
+| `Notification` | `elicitation_dialog` | set `question` |
+| `PreToolUse` | `AskUserQuestion` | set `question` |
+| `PreToolUse` | `^(?!AskUserQuestion$).*` (every other tool) | clear |
+| `PostToolUse` | `*` | clear |
+| `UserPromptSubmit`, `Stop`, `SessionEnd` | none | clear |
+
+- **Its own entries only.** oats.core marks its entries by the absolute
+  path of its `claude-waiting.sh`. Each run removes only the entries that
+  name that path (and any matcher group or event array the removal
+  empties), then appends its current ones. Every other key and entry stays
+  as it was, in order. The file is written atomically, mode 0600, and only
+  when its content changes. If the file is a symlink, not a regular file,
+  not valid JSON, or not a JSON object with a well-formed `hooks` map,
+  oats.core leaves it alone and warns. The same applies when `.claude` is a
+  symlink or not a directory.
+- **When it writes.** It writes at spawn, because `oats spawn` runs no
+  launch hook, and at every `oats session start|restart`, so the node and
+  CLI paths it bakes in follow the current kernel. A launch preview writes
+  nothing. Every pass answers `{}`: no launch arguments and no env. Codex
+  and pi homes get nothing.
+- **It never hurts the session.** Claude Code reads a hook's stdout and exit
+  code as decisions. So every command runs the script through `/bin/sh`
+  with all streams on `/dev/null` and ends in `; exit 0`, under a 5 s Claude
+  hook timeout. The script itself detaches every stream first, always exits
+  0, and kills the CLI after about 3 s.
+- **Debounce.** The script keeps a private marker,
+  `<home>/.oats-waiting-claude`, while its claim is set. A clear with no
+  marker does nothing and starts no node process, so the hooks that fire on
+  every tool call cost a `/bin/sh` and a file test.
+- **It never touches the agent's claim.** The script only ever passes
+  `--producer oats.core`.
+- **Not "unknown work" at retirement.** The retirement fingerprint of a home
+  ignores exactly these two paths, `.claude/settings.json` and
+  `.oats-waiting-claude`: they are configuration and transient state that
+  change while the session runs, not the instance's work.
+
+**Why the project settings file, not `--settings`.** On Claude Code
+2.1.288, Claude honours only the last `--settings` flag on a command line:
+that file replaces earlier ones wholesale, even one with no hooks. The
+project `.claude/settings.json` composes with the user's settings (under any
+`CLAUDE_CONFIG_DIR`) and with a `--settings`. So any capability that needs
+Claude settings uses the same managed `<home>/.claude/settings.json` with
+its own marker, never `--settings`. oats.core leaves
+`.claude/settings.local.json` to Claude Code, which writes its "don't ask
+again" permission rules there.
+
+**Limits.**
+
+- If the user's Claude configuration sets `disableAllHooks` or
+  `allowManagedHooksOnly`, the emitter's hooks never run, so there is no
+  claim: the waiting state reads null, not "not waiting".
+- If the marker and the claim disagree (someone deleted the marker by hand,
+  say), one stale claim can remain until the next set or clear or the next
+  session boundary.
+- A Claude instance spawned before the upgrade gets the emitter only when
+  it is respawned. Its launch hook comes from its recorded module copy.
+
 ## Operations a capability declares
 
 A manifest may declare `operations`: named actions or views that a GUI, a

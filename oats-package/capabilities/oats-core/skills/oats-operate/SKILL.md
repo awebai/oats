@@ -4,8 +4,9 @@ description: >-
   Use when operating OATS from inside an instance: your home and work
   directories, what a module is, reading `oats status` (modules, soul source,
   drift), spawning with preview then apply, relations, stopping or retiring
-  instances you spawned, being spawned by a trigger, lifecycle events and
-  doctor. oats.core is day-to-day OATS operation, working with OATS from
+  instances you spawned, asking a human for input you are blocked on
+  (`oats instance attention`), being spawned by a trigger, lifecycle events
+  and doctor. oats.core is day-to-day OATS operation, working with OATS from
   inside an instance; which souls exist is `/oats-souls`, and the setup and
   config of an OATS workspace is oats.setup.
 ---
@@ -30,6 +31,7 @@ is not shown here, read `oats help`; never invent one.
 ├── CLAUDE.md → AGENTS.md
 ├── .agents/skills/<skill>/                          every skill you were given, copied, flat
 ├── .claude/skills → ../.agents/skills
+├── .claude/settings.json                            Claude only: oats.core's waiting hooks (managed; leave its entries alone)
 ├── .oats/modules/<capability>/                      each capability, copied whole
 ├── instance.json        what you were given and from where
 ├── TASK.md              this task
@@ -154,6 +156,30 @@ These act on **other** instances — typically children you spawned — and only
 when your task or your human says so. Retirement runs every module's retire
 hook (identities, scheduled jobs) and retains a worktree with work in it
 unless told to discard.
+
+## Asking for a human's attention
+
+When you have asked a human something and cannot continue without the
+answer (a decision, a credential, an approval), say so, then end your turn:
+
+```bash
+oats instance attention --message "<what you need, one line>"   # from your home
+oats instance attention --clear                                  # once you have the answer
+```
+
+- The message is one line, at most 200 characters, with no control
+  characters. Name what you need, not the whole story.
+- `oats status` shows the claim on your row as
+  `! needs input (attention): <message>`.
+- Only `--clear` or the next session start, restart or stop clears it.
+  Clear it yourself as soon as you are unblocked.
+- Not for FYIs, progress or "done" reports: those go through your task's
+  usual channel.
+
+The Claude Code emitter is separate and automatic. In a Claude instance,
+oats.core's hooks report a pending permission prompt or question themselves
+(producer `oats.core`) and clear it when the session moves on. Your
+attention claim is yours alone, and the emitter never clears it.
 
 ## Spawned by a trigger
 
