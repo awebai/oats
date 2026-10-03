@@ -1,7 +1,7 @@
 #!/bin/sh
 # oats.core: Claude Code waiting emitter.
 #   claude-waiting.sh set <permission|question> <node> <cli> <marker>
-#   claude-waiting.sh clear <node> <cli> <marker>        (a turn boundary: UserPromptSubmit, Stop, SessionEnd; always calls the CLI)
+#   claude-waiting.sh clear <node> <cli> <marker>        (a turn boundary: UserPromptSubmit, Stop, SessionEnd; not debounced)
 #   claude-waiting.sh clear-tool <node> <cli> <marker>   (a PreToolUse/PostToolUse clear: debounced; skipped for a subagent's tool call)
 # <marker> is the debounce marker's path, from the launch hook, or '' for none.
 # Run by the Claude Code hooks oats-core.mjs writes into <home>/.claude/settings.json.
@@ -41,7 +41,8 @@
 # The kernel write itself is not fenced (issue #568), so a holder suspended past 5 s, or a
 # reaper killed at a precise instant, can leave the claim wrong while intent and applied
 # agree. The forced call at every turn boundary bounds that: a wrongly shown claim lasts
-# until the turn ends at the latest, a hidden question until the human answers it.
+# until the end of the turn, or, if the turn's last hook found a reconciliation out of
+# time, until the next event; a hidden question lasts until the human answers it.
 exec >/dev/null 2>&1
 # A closed stdin is never redirected from (a failed redirection ends sh itself); without
 # /dev/fd the input reads as empty, which means the main thread.
@@ -282,8 +283,9 @@ elif [ "$action" = clear-tool ]; then
   from_subagent && exit 0
   printf 'clear\n' > "$marker"
 else
-  # A turn boundary always calls the CLI, whatever the cache says: it repairs a claim a
-  # late write left wrong. If another hook holds the lock, the flag makes the holder call.
+  # A turn boundary gets a CLI call whatever the cache says, to repair a claim a late
+  # write left wrong: from this hook or, if another hook holds the lock, from that holder
+  # if it still has time (the flag); otherwise from the next event.
   began=$(date +%s)
   printf 'clear\n' > "$marker"
   : > "$force"

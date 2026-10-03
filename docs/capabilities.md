@@ -539,7 +539,7 @@ runs `bin/claude-waiting.sh` from the home's module copy, which calls
 | `PreToolUse` | `^(?!AskUserQuestion$).*` (every other tool) | clear, unless a subagent made the call |
 | `PostToolUse` | `*` | clear, unless a subagent made the call |
 | `PostToolUseFailure` | `*` | clear, unless a subagent made the call |
-| `UserPromptSubmit`, `Stop`, `SessionEnd` | none | clear, always calling the CLI (a turn boundary) |
+| `UserPromptSubmit`, `Stop`, `SessionEnd` | none | clear, not debounced (a turn boundary) |
 
 Claude Code shows an AskUserQuestion through its permission dialog, so that
 dialog's own `permission_prompt` follows the question's set: the script keeps
@@ -609,8 +609,8 @@ clears it.
   (and no forced call is due) does nothing and starts no node process, so
   the hooks that fire on every tool call cost a `/bin/sh` and a few file
   reads. The turn-boundary clears (`UserPromptSubmit`, `Stop`,
-  `SessionEnd`) are not debounced: each calls the CLI, a node process per
-  prompt and per stop. A symlink is never followed. An
+  `SessionEnd`) are not debounced: each gets a CLI call (see Order and
+  retry), a node process per prompt and per stop. A symlink is never followed. An
   unusable marker (a refused, missing or replaced directory, a state path
   that is not a regular file, a lock path that is not a directory) means no
   debounce: set and clear then always call the (idempotent) CLI. The launch
@@ -639,11 +639,11 @@ clears it.
   while the lock still holds its token. A failed call, or a reconciliation
   the time budget stops (no call starts 2 s after the hook began), leaves
   the recorded claim and the intent apart, and the next event finishes it.
-  A turn-boundary clear writes `<marker>.force` beside its intent: whoever
-  reconciles next, this hook or the holder it found, then calls the CLI even
-  where intent and applied agree, and that call consumes it; one the budget
-  stops stays due for the next event. The state files are only ever deleted
-  by the launch hook.
+  A turn-boundary clear writes `<marker>.force` beside its intent; the call
+  that next applies the intent consumes it. A turn-boundary clear gets a CLI
+  call: from that hook, or, if another hook holds the lock, from that holder
+  if it still has time; otherwise from the next event. The state files are
+  only ever deleted by the launch hook.
 - **It never touches the agent's claim.** The script only ever passes
   `--producer oats.core`.
 - **Not "unknown work" at retirement.** Harness project settings in the home
@@ -673,11 +673,14 @@ again" permission rules there.
   machine slept, the process was stopped) has its lock broken, and its call
   can land after its successor's. (2) A reaper killed at a precise instant
   can leave a reap lock that two later hooks remove at once, letting two
-  reconcilers run. Either can show a claim when nothing waits, which lasts
-  until the turn ends at the latest (its `Stop` calls the CLI), or hide a
-  question, which lasts until the human answers it (their prompt or the
-  answer's tool event clears it). If a turn boundary finds another hook's
-  reconciliation out of time, the forced call waits for the next event.
+  reconcilers run. Either can show a claim when nothing waits, or hide a
+  question. A turn-boundary clear gets a CLI call: from that hook, or, if
+  another hook holds the lock, from that holder if it still has time;
+  otherwise from the next event. So a wrongly shown claim lasts until the
+  end of the turn, or, if the turn's last hook found a reconciliation out
+  of time, until the next event (the human's next prompt). A hidden
+  question lasts until the human answers it (their prompt or the answer's
+  tool event clears it).
 - If the marker and the claim disagree (someone deleted the marker by hand,
   say), a stale claim can remain until the turn ends, or the next set or
   clear or session boundary.
