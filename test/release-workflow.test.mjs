@@ -156,7 +156,8 @@ test("bump PR covers all three package manifests", () => {
 test("the workflow token may open the bump PR it creates", () => {
   // The step runs `gh pr create` with github.token. An explicit `permissions`
   // block grants only what it lists, so pull-requests: write must be listed:
-  // v0.39.1 through v0.40.1 published and then failed at createPullRequest.
+  // every release run that reached this step failed at createPullRequest
+  // (v0.40.1 and many before it), after npm and the Release were published.
   const prBlock = yml.slice(yml.indexOf("Open the version-bump PR"));
   assert.match(prBlock, /gh pr create /, "the bump step opens a pull request");
   assert.match(prBlock, /GH_TOKEN: \$\{\{ github\.token \}\}/, "with the workflow token");
