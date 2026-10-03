@@ -590,7 +590,9 @@ clears it.
   Claude hook timeout. Stdin, Claude's JSON input, reaches the script, which
   moves it to a private descriptor and detaches its own stdin, stdout and
   stderr first. It reads the input only for a tool clear, bounded as above,
-  always exits 0, and kills the CLI after about 3 s.
+  always exits 0, and kills the CLI after 2 s: with no call starting 2 s
+  after the hook began, the worst case is about 4 s, well under Claude's 5 s
+  hook timeout.
 - **Debounce.** The script keeps private state outside the home, in a file
   per home: `<dir>/<first 16 hex of sha256(home)>.claude`, where `<dir>`
   is per user: `$XDG_RUNTIME_DIR/oats-waiting` when that is set and

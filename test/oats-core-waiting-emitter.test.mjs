@@ -70,14 +70,14 @@ go(() => setTimeout(() => {
 }, delay));
 `);
 // Shims for the ordered tests, first on PATH: \`date +%s\` reads FAKE_CLOCK (a file) so the
-// time budget and lock age are the test's to set, and the 3 s watchdog never fires on a call
+// time budget and lock age are the test's to set, and the 2 s watchdog never fires on a call
 // the test holds at its gate. Everything else is the real command.
 const SHIMS = join(base, "shims"); mkdirSync(SHIMS);
 writeFileSync(join(SHIMS, "date"), '#!/bin/sh\nif [ -n "$FAKE_CLOCK" ] && [ "$1" = +%s ]; then cat "$FAKE_CLOCK"; else exec /bin/date "$@"; fi\n', { mode: 0o755 });
 // `rm` holds the first call in a process run with FAKE_RM_GATE (a reaper's removal of the
 // stale lock's pid file) until the test creates go in that directory.
 writeFileSync(join(SHIMS, "rm"), '#!/bin/sh\nif [ -n "$FAKE_RM_GATE" ] && mkdir "$FAKE_RM_GATE/once" 2>/dev/null; then\n  : > "$FAKE_RM_GATE/started"\n  while [ ! -e "$FAKE_RM_GATE/go" ]; do /bin/sleep 0.01; done\nfi\nexec /bin/rm "$@"\n', { mode: 0o755 });
-writeFileSync(join(SHIMS, "sleep"), '#!/bin/sh\nif [ "$1" = 3 ]; then exec /bin/sleep 600; fi\nexec /bin/sleep "$@"\n', { mode: 0o755 });
+writeFileSync(join(SHIMS, "sleep"), '#!/bin/sh\nif [ "$1" = 2 ]; then exec /bin/sleep 600; fi\nexec /bin/sleep "$@"\n', { mode: 0o755 });
 /** An ordered run: a gate for the fake CLI's calls and a clock file, in home h's env. */
 function ordered(h, extra = {}) {
   const dir = mkdtempSync(join(base, "gate-")), clock = join(dir, "clock");
@@ -589,23 +589,28 @@ test("a lock whose holder is gone (pid dead, or taken over 5 s ago) is broken; a
   lockAs(process.pid, 994);
   await settle(["set", "question"], 3);
   assert.equal(appliedOf(h), "question"); assert.ok(!held(h));
+  // A lock taken "in the future" (the clock was set back): broken, not held until the clock catches up.
+  lockAs(process.pid, 1010);
+  await settle(["clear"], 4);
+  assert.equal(appliedOf(h), "clear"); assert.ok(!held(h));
+  await settle(["set", "question"], 5);
   // A live holder 5 s in, or one that has not written its pid yet: left alone.
   for (const [label, make] of [["5 s old", () => lockAs(process.pid, 995)], ["no pid yet", () => mkdirSync(lock)]]) {
     make();
     assert.equal(await o.run(["clear-tool"]), 0, `${label}: the hook exits`);
-    assert.ok(!o.started(4), `${label}: and calls nothing`);
+    assert.ok(!o.started(6), `${label}: and calls nothing`);
     assert.equal(intentOf(h), "clear", `${label}: its intent is recorded`); assert.equal(appliedOf(h), "question", `${label}: not applied`);
     assert.ok(held(h), `${label}: the live lock is untouched`);
     rmSync(lock, { recursive: true });
     assert.equal(await o.run(["set", "question"]), 0); // back to intent = applied = question: no call
-    assert.ok(!o.started(4));
+    assert.ok(!o.started(6));
   }
   // A pidless lock a minute old (a holder killed in its first instant): broken.
   mkdirSync(lock); const old = new Date(Date.now() - 120000); utimesSync(lock, old, old);
-  await settle(["clear"], 4);
+  await settle(["clear"], 6);
   assert.equal(appliedOf(h), "clear"); assert.ok(!held(h));
   // The launch hook starts a new session with no marker state.
-  lockAs(process.pid, 1000); mkdirSync(`${lock}.reap`); writeFileSync(`${markerOf(h)}.force`, "");
+  lockAs(process.pid, 1000); mkdirSync(`${lock}.reap`); writeFileSync(join(`${lock}.reap`, "pid"), "1 1000\n"); writeFileSync(`${markerOf(h)}.force`, "");
   runHook("launch", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI_ABS });
   for (const f of [markerOf(h), `${markerOf(h)}.applied`, `${markerOf(h)}.force`, lock, `${lock}.reap`]) assert.ok(!existsSync(f), `${f} reset at launch`);
 });
@@ -734,6 +739,35 @@ test("a turn boundary that finds the lock held leaves its forced call to the hol
   o.go(5); assert.equal(await tool, 0);
   assert.ok(!existsSync(force));
   assert.equal(await o.run(["clear-tool"]), 0); assert.ok(!o.started(6), "and then the debounce holds again");
+});
+
+test("a lock whose token cannot be written is removed at once, never left token-less for a minute", { timeout: 60000 }, async () => {
+  const h = home(), o = ordered(h), lock = `${markerOf(h)}.lock`;
+  // umask 277: the lock directory the hook makes is read-only, so its pid file can't be written.
+  const r = spawnSync("/bin/sh", ["-c", 'umask 277; exec /bin/sh "$@"', "sh", SCRIPT, ...withMarker(["set", "permission", process.execPath, FAKE_CLI], o.env)], { encoding: "utf8", timeout: 15000, env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...o.env }) });
+  assert.equal(r.status, 0); assert.equal(r.stdout, "");
+  assert.ok(!held(h), "no token-less lock is left");
+  assert.ok(!o.started(1), "and nothing was called without the lock");
+  const next = o.run(["clear-tool"]); // the next event takes the lock at once
+  assert.equal(what(await o.call(1)), "set permission", "and applies the intent left behind");
+  o.go(1); assert.equal(await next, 0);
+  assert.equal(appliedOf(h), "permission"); assert.ok(!held(h));
+});
+
+test("a reaper lets go only of its own reap lock: one replaced under it (a minute-old removal by another hook) is left alone", { timeout: 60000 }, async () => {
+  const h = home(), o = ordered(h), lock = `${markerOf(h)}.lock`, reaper = `${lock}.reap`;
+  const s1 = o.run(["set", "permission"]); await o.call(1); o.go(1); assert.equal(await s1, 0);
+  const dead = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" }).stdout;
+  mkdirSync(lock); writeFileSync(join(lock, "pid"), `${dead} 1000\n`);
+  const rmGate = mkdtempSync(join(base, "rm-gate-"));
+  const a = o.run(["clear-tool"], { FAKE_RM_GATE: rmGate });
+  await until(() => existsSync(join(rmGate, "started"))); // A holds the reap lock, at its removal of the stale lock
+  writeFileSync(join(reaper, "pid"), `${process.pid} 1000\n`); // another hook's reap lock now
+  writeFileSync(join(rmGate, "go"), "");
+  assert.equal(what(await o.call(2)), "clear", "A still broke the stale lock and reconciles");
+  o.go(2); assert.equal(await a, 0);
+  assert.equal(readFileSync(join(reaper, "pid"), "utf8"), `${process.pid} 1000\n`, "the other hook's reap lock is untouched");
+  assert.ok(!held(h), "A released its own lock");
 });
 
 test("the CLI runs in the home", () => {

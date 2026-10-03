@@ -10,9 +10,10 @@
 #
 # It can NEVER hurt the Claude session: Claude reads a hook's stdout and exit code as
 # decisions, so this script writes nothing anywhere visible, always exits 0, never waits
-# for another hook, and stays under Claude's 5 s hook timeout: no CLI call starts once ~2 s
-# have passed since it began its work (an input read counts), and each call is killed at
-# ~3 s. The hook's JSON input stays on fd 3 for the one bounded read that needs it
+# for another hook, and stays well under Claude's 5 s hook timeout: no CLI call starts once
+# 2 s have passed since it began its work (an input read counts), and each call is killed
+# at 2 s, so the worst case is about 4 s. The hook's JSON input stays on fd 3 for the one
+# bounded read that needs it
 # (from_subagent); nothing else reads stdin.
 #
 # The protocol (with a marker; without one every event just calls the CLI):
@@ -134,12 +135,12 @@ from_subagent() {
   return 1
 }
 
-# Run the CLI in the background under a 3 s watchdog. Its status is the CLI's: non-zero
+# Run the CLI in the background under a 2 s watchdog. Its status is the CLI's: non-zero
 # when it failed or the watchdog killed it.
 run_cli() {
   "$node" "$cli" instance waiting "$@" --home "$home" --json &
   pid=$!
-  start_watchdog "$pid" 3
+  start_watchdog "$pid" 2
   wait "$pid"
   status=$?
   kill "$watchdog"
@@ -173,10 +174,29 @@ owns() {
 # Take the reconciler's lock if it is free, or held by a holder that is gone; never wait.
 take_lock() {
   if mkdir "$lock" 2>/dev/null; then
-    printf '%s\n' "$token" > "$lock/pid"
-    return 0
+    stamp "$lock" && return 0
+    return 1
   fi
   reap
+}
+
+# Write this hook's token into a lock directory it just made. If the write fails, the
+# directory is removed again, never left token-less (that would hold everyone off for a
+# minute).
+stamp() {
+  printf '%s\n' "$token" > "$1/pid" && return 0
+  rm -f "$1/pid"
+  rmdir "$1" 2>/dev/null
+  return 1
+}
+
+# Remove a lock directory only while it holds this hook's token.
+release() {
+  line=
+  [ -f "$1/pid" ] && IFS= read -r line < "$1/pid"
+  [ "$line" = "$token" ] || return 0
+  rm -f "$1/pid"
+  rmdir "$1" 2>/dev/null
 }
 
 # Break a stale lock and take it. Reapers take turns under the reap lock (one that finds it
@@ -187,24 +207,25 @@ take_lock() {
 reap() {
   if ! mkdir "$reaper" 2>/dev/null; then
     [ -n "$(find "$reaper" -prune -mmin +1 2>/dev/null)" ] || return 1
+    rm -f "$reaper/pid"
     rmdir "$reaper" 2>/dev/null
     mkdir "$reaper" 2>/dev/null || return 1
   fi
+  stamp "$reaper" || return 1
   took=''
   if stale_lock; then
     rm -f "$lock/pid"
     rmdir "$lock" 2>/dev/null
-    if mkdir "$lock" 2>/dev/null; then
-      printf '%s\n' "$token" > "$lock/pid"
-      took=1
-    fi
+    if mkdir "$lock" 2>/dev/null && stamp "$lock"; then took=1; fi
   fi
-  rmdir "$reaper"
+  # Only our own reap lock: one a minute-old removal replaced is another reaper's.
+  release "$reaper"
   [ -n "$took" ]
 }
 
 # Whether the lock's holder is gone: its pid is dead, or it took the lock over 5 s ago
-# (Claude has killed it by then, or the machine slept; a reused pid looks alive). A lock
+# (Claude has killed it by then, or the machine slept; a reused pid looks alive), or "in
+# the future" (the clock was set back, which would otherwise hold the lock that long). A lock
 # with no readable pid file yet is its holder's first instant, unless it is a minute old (a
 # holder killed in that instant).
 stale_lock() {
@@ -214,12 +235,13 @@ stale_lock() {
     ''|*[!0-9]*) [ -n "$(find "$lock" -prune -mmin +1 2>/dev/null)" ]; return ;;
   esac
   kill -0 "$holder" 2>/dev/null || return 0
-  [ $(( $(date +%s) - since )) -gt 5 ]
+  age=$(( $(date +%s) - since ))
+  [ "$age" -gt 5 ] || [ "$age" -lt 0 ]
 }
 
 # Bring the recorded claim to the latest intent, under the lock (see the protocol above).
 # At most 3 calls, and none once 2 s (whole seconds, so under 2 s in fact) have passed since
-# $began: the worst case stays under 5 s.
+# $began; each is killed at 2 s: the worst case is about 4 s.
 reconcile() {
   token="$$ $began"
   calls=0
@@ -247,8 +269,7 @@ reconcile() {
       printf '%s\n' "$want" > "$applied"
     done
     owns || return 0
-    rm -f "$lock/pid"
-    rmdir "$lock"
+    release "$lock"
     # A hook that found the lock held between our last read and here left its intent to us.
     [ -n "$settled" ] && { [ -e "$force" ] || [ "$(state_of "$marker")" != "$(applied_of)" ]; } || return 0
   done
