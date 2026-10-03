@@ -354,6 +354,19 @@ test("CLI refusals: attention needs $OATS_INSTANCE_HOME to be a home and has no 
   assert.equal(existsSync(join(home, ".oats-events.jsonl")) ? readFileSync(join(home, ".oats-events.jsonl"), "utf8").includes('"waiting"') : false, false, "no refusal wrote a claim");
 });
 
+test("a message may start with --: --message=<text> carries it (and is never read as a flag); the spaced form says so", async () => {
+  const home = await recordedHome("w-dash");
+  const set = cli(["instance", "attention", "--message=--deploy failed, need a hand", "--json"], { OATS_INSTANCE_HOME: home });
+  assert.equal(set.doc?.ok, true, set.stdout + set.stderr); assert.equal(set.doc.result.waitingOnYou.message, "--deploy failed, need a hand");
+  const notClear = cli(["instance", "attention", "--message=--clear", "--json"], { OATS_INSTANCE_HOME: home });
+  assert.equal(notClear.doc.result.waitingOnYou?.message, "--clear", "the value is a message, not the --clear switch");
+  const waiting = cli(["instance", "waiting", "set", "--producer", "oats.core", "--reason", "question", "--message=--which branch?", "--home", home, "--json"]);
+  assert.equal(waiting.doc.result.waitingOnYou.message, "--which branch?");
+  const spaced = cli(["instance", "attention", "--message", "--deploy", "--json"], { OATS_INSTANCE_HOME: home });
+  assert.equal(spaced.doc?.error?.code, "E_BAD_ARGS"); assert.match(spaced.doc.error.message, /--message=<text>/);
+  assert.equal(cli(["status", "--model=--yolo", "--json"]).doc?.ok, false, "other flags still refuse an inline value that is an option");
+});
+
 test("version --json advertises waiting-on-you", () => {
   const r = cli(["version", "--json"]);
   assert.ok(JSON.parse(r.stdout.trim().split("\n").pop()).features.includes("waiting-on-you"));

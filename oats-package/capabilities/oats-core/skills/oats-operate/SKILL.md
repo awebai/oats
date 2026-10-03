@@ -169,7 +169,8 @@ oats instance attention --clear                                  # once you have
 
 - The message is one line, at most 200 characters, with no control or
   invisible formatting characters (no bidi controls, no zero-width
-  characters). Name what you need, not the whole story.
+  characters). Name what you need, not the whole story. A message that
+  starts with `--` goes as `--message=--<rest>`.
 - `oats status` shows the claim on your row as
   `! needs input (attention): <message>`.
 - Only `--clear` or the next session start, restart or stop clears it.

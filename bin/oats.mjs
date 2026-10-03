@@ -63,19 +63,25 @@ const KERNEL_SWITCHES = new Set(["allow-child-spawns", "apply", "check", "clear"
  *  routed-command loops) then applies the spaced form's validation to it. `problem` is an empty
  *  `--flag=`, a switch given a value, or a value that is itself an option (`--model=--yolo`):
  *  expanded, it would be a flag token every reader sees, which the spaced form can never carry. */
+/** Free-text flags whose inline value may start with `--` (`--message=--deploy failed`). Such a
+ *  value is kept out of argv, where it would read as a flag (`--message=--clear` must not
+ *  clear), and flag() answers it from `inline`. */
+const INLINE_TEXT_FLAGS = new Set(["message"]);
 function expandInlineValues(argv) {
   const out = [];
+  const inline = new Map();
   let problem;
   for (const a of argv) {
     const eq = a.indexOf("=");
     if (!a.startsWith("--") || eq <= 2) { out.push(a); continue; }
     const name = a.slice(2, eq), value = a.slice(eq + 1);
+    if (INLINE_TEXT_FLAGS.has(name) && value.startsWith("--")) { inline.set(name, value); out.push(`--${name}`); continue; }
     problem ??= KERNEL_SWITCHES.has(name) ? `--${name} takes no value (got ${a})` : value === "" ? `--${name}= needs a value` : value.startsWith("--") ? `--${name}= takes a value, not an option (got ${a})` : undefined;
     out.push(`--${name}`, value);
   }
-  return { argv: out, problem };
+  return { argv: out, problem, inline };
 }
-const { argv: args, problem: argvProblem } = expandInlineValues(rawArgs);
+const { argv: args, problem: argvProblem, inline: inlineValues } = expandInlineValues(rawArgs);
 let cmd = args[0];
 const HELP_WORDS = new Set(["help", "--help", "-h"]);
 const KERNEL_COMMANDS = new Set(["automations", "trigger", "capture", "capabilities", "doctor", "inspect", "instance", "operation", "package", "readiness", "souls", "soul", "teams", "launch-config", "experimental", "onboard", "pane", "recall", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "sync", "update", "version", "workspace"]);
@@ -85,6 +91,7 @@ const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental"]
 const ROUTED_COMMANDS = new Set(["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "launch-config", "readiness", "instance"]);
 const flag = (name) => {
   const i = args.indexOf(`--${name}`);
+  if (i >= 0 && inlineValues.has(name)) return inlineValues.get(name);
   return i >= 0 ? (args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : true) : undefined;
 };
 function yoloFlag() {
@@ -930,7 +937,7 @@ function instanceWaitingCmd(sub, bail) {
   const usage = sub === "attention"
     ? "usage: oats instance attention [--message <text>] [--clear] [--json]"
     : "usage: oats instance waiting <set|clear> --producer <id> [--reason permission|question|attention] [--message <text>] [--home <abs>] [--dir <d>] [--json]";
-  const value = (name) => { const v = flag(name); if (v === true) throw Object.assign(new Error(`--${name} needs a value`), { code: "E_BAD_ARGS" }); return v; };
+  const value = (name) => { const v = flag(name); if (v === true) throw Object.assign(new Error(`--${name} needs a value${name === "message" ? " (a message that starts with -- goes as --message=<text>)" : ""}`), { code: "E_BAD_ARGS" }); return v; };
   let home, producer, waiting, reason, message;
   try {
     message = value("message");

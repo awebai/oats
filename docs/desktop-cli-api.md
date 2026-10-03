@@ -149,7 +149,9 @@ stdout (progress goes to stderr):
 A kernel command reads `--flag=value` exactly as `--flag value` (the value is
 everything after the first `=`). `E_BAD_ARGS` for an empty `--flag=`, a value
 on a switch (`--yolo=false` never turns yolo on) and a value that is itself an
-option (`--model=--yolo`). A capability command's own flags are forwarded as
+option (`--model=--yolo`). The one exception is the free-text `--message`
+(`oats instance waiting`, `oats instance attention`): `--message=--text` is
+accepted, and its value is only ever the message. A capability command's own flags are forwarded as
 typed; the kernel reads only its dispatch flag (`--soul`). There is no feature
 string for this: to support older kernels, use the spaced form.
 
@@ -2235,7 +2237,11 @@ oats instance attention [--message <text>] [--clear] --json
   (`\p{Cc}`: C0, DEL, C1; so no newline, tab or ESC), no format character
   (`\p{Cf}`: the bidi controls U+202A–202E and U+2066–2069, zero-width
   characters, the BOM, soft hyphen) and no Unicode line or paragraph
-  separator; otherwise `E_BAD_ARGS` naming `--message`. It is stored as given, only on a
+  separator; otherwise `E_BAD_ARGS` naming `--message`. A message that
+  starts with `--` goes inline, `--message=--deploy failed`: that value is
+  only ever the message, never a flag (`--message=--clear` sets the message
+  "--clear"). The spaced form `--message --deploy` reads `--deploy` as a
+  flag and is `E_BAD_ARGS`. It is stored as given, only on a
   positive claim. The reader applies the same rule again: an invalid stored
   message (a hand-edited log) reads as `null`, and the claim still counts.
   A stored `reason` outside `permission`, `question`, `attention` reads as
