@@ -12,13 +12,17 @@ export function scheduleDraft(v) {
   if (!record(v) || policyKeys.some(k => Object.hasOwn(v, k)) || !scheduleId(v.id)
     || !['spawn', 'wake', 'operation'].includes(v.kind) || !draftString(v.cron) || !v.cron.trim()
     || !draftString(v.tz) || !v.tz.trim() || typeof v.enabled !== 'boolean') return null;
-  const common = ['id', 'kind', 'cron', 'tz', 'enabled', 'createdAt', 'updatedAt', 'scope', 'scheduleApi', 'scheduleHistoryApi',
+  const common = ['id', 'kind', 'cron', 'tz', 'enabled', 'description', 'createdAt', 'updatedAt', 'scope', 'scheduleApi', 'scheduleHistoryApi',
     'executionStatus', 'nextRun', 'lastRun', 'history', 'recentRuns', 'running', 'attempt', 'pendingWake'];
   // A stored job's harness is `harness` (0.27) or a released kernel's `runtime`; the draft speaks harness.
   const fields = v.kind === 'spawn' ? ['agent', 'agentsRoot', 'repo', 'task', 'harness', 'runtime', 'model', 'backend', 'purpose', 'yolo', 'wake']
     : v.kind === 'wake' ? ['home', 'message'] : ['home', 'operation'];
   if (Object.keys(v).some(k => !common.includes(k) && !fields.includes(k))) return null;
   const out = { id: v.id, kind: v.kind, cron: v.cron, tz: v.tz, enabled: v.enabled };
+  if (Object.hasOwn(v, 'description')) {
+    if (typeof v.description !== 'string' || !v.description.length || [...v.description].length > 200 || /[\p{Cc}\u2028\u2029]/u.test(v.description)) return null;
+    out.description = v.description;
+  }
   const required = v.kind === 'spawn' ? ['agent', 'agentsRoot', 'task'] : v.kind === 'wake' ? ['home', 'message'] : ['home', 'operation'];
   if (required.some(k => !draftString(v[k]) || !v[k].trim())) return null;
   for (const k of required) out[k] = v[k];

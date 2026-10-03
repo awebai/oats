@@ -16,6 +16,15 @@ test('a stored spawn definition drafts byte for byte', () => {
     wake: { cron: '0 9 * * *', tz: 'UTC', message: '  Wake\r\nbytes  ' } });
 });
 
+test('a description is retained exactly, including Unicode and boundary whitespace', () => {
+  for (const description of ['  Harvest — dev  ', '🙂'.repeat(200)]) {
+    assert.equal(scheduleDraft(entry({ description })).description, description);
+  }
+  for (const description of [null, 3, '', 'x'.repeat(201), 'line\nbreak', 'a\tb', 'a\u0085b', 'a\u2028b', 'a\u2029b']) {
+    assert.equal(scheduleDraft(entry({ description })), null, JSON.stringify(description));
+  }
+});
+
 for (const key of ['definitionVersion', 'recurrencePolicy', 'execution', 'preparation', 'executionBinding', 'responsibleHuman']) test(`${key} blocks an editable draft even when null`, () => {
   assert.equal(scheduleDraft(entry({ [key]: null })), null);
 });

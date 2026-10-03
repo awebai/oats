@@ -165,7 +165,7 @@ test("a schedule of kind operation resolves the provider when it runs and tracks
   assert.equal(listed.operation, "knowledge:harvest");
 });
 
-test("an unconfirmed operation outcome carries what was observed in error.details, and a scheduled operation keeps its slot as unknown and reconciles by the answered name", () => {
+test("an unconfirmed operation outcome carries what was observed in error.details, and a scheduled operation stays unknown without a slot once its process exited, and reconciles by the answered name", () => {
   const { home } = provider("s3");
   const e = oats(["operation", "run", "knowledge:liarnamed", "--home", home, "--json"]).json().error;
   assert.equal(e.code, "E_OPERATION_RESULT"); assert.equal(e.details.unconfirmed, true); assert.equal(e.details.exit, 1); assert.equal(e.details.envelope.result.instance, "notes-harvester-9");
@@ -175,10 +175,11 @@ test("an unconfirmed operation outcome carries what was observed in error.detail
   const c = S.tickWorkspace(ws, { now: new Date("2026-09-08T12:00:00Z"), io, reg: { maxConcurrent: 8 }, only: "u" });
   assert.equal(c[0].action, "unknown", "not a confirmed failure"); assert.match(c[0].error, /unconfirmed/);
   const d = S.describe(ws, "u", io);
-  assert.equal(d.running, true, "the slot is kept"); assert.ok(d.attempt); assert.equal(d.lastRun.instance, "notes-harvester-9", "the answered name is kept for reconcile");
+  assert.equal(d.running, false, "the exited process holds no slot"); assert.ok(d.attempt); assert.equal(d.attempt.exited, true); assert.equal(d.attempt.exitStatus, 1); assert.equal(d.lastRun.instance, "notes-harvester-9", "the answered name is kept for reconcile");
   write(join(home, "..", "notes-harvester-9", "instance.json"), JSON.stringify({ instance: "notes-harvester-9", agent: "release-manager" }));
   const r = S.reconcile(ws, "u", { io });
   assert.equal(r.reconciled, "adopted"); assert.equal(r.schedule.lastRun.instance, "notes-harvester-9");
+  assert.equal(r.schedule.running, true, "the adopted live instance takes the slot again");
 });
 
 test("a provider whose manifest requires a command missing from PATH is reported unavailable by inspect and refused by operation run", () => {
@@ -203,7 +204,7 @@ test("a provider's ordinary ok:false answer with a partial receipt keeps that re
   const io = { inspect: () => ({ present: true, state: "unknown" }) };
   const c = S.tickWorkspace(ws, { now: new Date("2026-09-08T14:00:00Z"), io, reg: { maxConcurrent: 8 }, only: "r" });
   assert.equal(c[0].action, "unknown");
-  const d = S.describe(ws, "r", io); assert.equal(d.running, true); assert.equal(d.lastRun.instance, "notes-harvester-3");
+  const d = S.describe(ws, "r", io); assert.equal(d.running, false); assert.equal(d.attempt.exited, true); assert.equal(d.lastRun.instance, "notes-harvester-3");
   write(join(home, "..", "notes-harvester-3", "instance.json"), JSON.stringify({ instance: "notes-harvester-3", agent: "release-manager" }));
   const rec = S.reconcile(ws, "r", { io }); assert.equal(rec.reconciled, "adopted"); assert.equal(rec.schedule.lastRun.instance, "notes-harvester-3");
 });
