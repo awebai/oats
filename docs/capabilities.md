@@ -504,6 +504,217 @@ carrying its expert soul. The framework's own souls say
 `oats.okf: { from: package }`: membership never turns a package into a
 latest-state capability.
 
+### oats.core: needs input
+
+oats.core (2.4.0 and later, kernel 0.40.0 and later) tells the deployment
+when an instance is blocked on a human, in two independent ways. Each shows
+on `oats status` and in `oats instance events`. The verbs' contract
+(`oats instance waiting`, `oats instance attention`, the `waiting` event) is
+in [desktop-cli-api.md](desktop-cli-api.md#waiting-on-you). Claims are
+display-only: nothing in the kernel acts on them.
+
+**The agent's own claim.** The oats.core inject and `/oats-operate` teach
+every instance this protocol. When it has asked a human something and cannot
+continue without the answer, it runs
+`oats instance attention --message "<one line>"` from its home and ends its
+turn. Once it has the answer, it runs `oats instance attention --clear`. The
+claim belongs to producer `agent`. Only `--clear` or the next session start,
+restart or stop clears it. The message is one line of at most 200
+characters; control characters, the Unicode line and paragraph separators,
+bidi controls (U+202A–202E, U+2066–2069), U+200B, U+2060, U+FEFF and tag
+characters (U+E0000–E007F) are refused, and everything else (emoji ZWJ
+sequences, ZWNJ, LRM, RLM, ALM) is allowed.
+
+**The Claude Code emitter.** For a Claude instance, oats.core's spawn and
+launch hooks (`bin/oats-core.mjs`, preview-aware) write Claude Code hooks
+into the home's project settings, `<home>/.claude/settings.json`. Each one
+runs `bin/claude-waiting.sh` from the home's module copy, which calls
+`oats instance waiting set|clear --producer oats.core`:
+
+| Claude Code event | Matcher | Action |
+| --- | --- | --- |
+| `Notification` | `permission_prompt` | set `permission` |
+| `Notification` | `elicitation_dialog` | set `question` |
+| `PreToolUse` | `AskUserQuestion` | set `question` |
+| `PreToolUse` | `^(?!AskUserQuestion$).*` (every other tool) | clear, unless a subagent made the call |
+| `PostToolUse` | `*` | clear, unless a subagent made the call |
+| `PostToolUseFailure` | `*` | clear, unless a subagent made the call |
+| `UserPromptSubmit`, `Stop`, `SessionEnd` | none | clear, not debounced (a turn boundary) |
+
+Claude Code shows an AskUserQuestion through its permission dialog, so that
+dialog's own `permission_prompt` follows the question's set: the script keeps
+the current reason in its marker, and a permission prompt never relabels an
+open question. A granted tool that fails fires `PostToolUseFailure`, not
+`PostToolUse`, so that clears too.
+
+**Subagents' tool calls do not clear.** Background and parallel subagents
+in the same session fire the same tool hooks, so the main thread's prompt
+could be cleared while the human is still on it. On Claude Code 2.1.288 a
+subagent's tool event carries a top-level `agent_id` (main-thread events
+have none), so a tool clear reads the hook's JSON input and skips the clear
+when it finds one. The read happens only when there is a claim to clear,
+takes at most 64 KiB and 1 s, and looks only at the text before
+the first `"hook_event_name"`: a string value escapes its quotes, so that
+text holds top-level keys only. Anything else (no key, an input cut short,
+another key order, nothing read) means the main thread, and the clear goes
+ahead. A permission `Notification` carries no `agent_id` and no tool id,
+even when a subagent asked, so a claim never knows who set it.
+
+**A refused permission prompt is not observable.** On Claude Code 2.1.288,
+answering "No" at a permission prompt interrupts the turn and fires no hook
+(no `PostToolUse`, `PostToolUseFailure`, `PostToolBatch` or `Stop`; probed).
+Claude then waits for the human ("What should Claude do instead?"), and the
+claim stays, still labelled `permission`, until the human's next prompt
+clears it.
+
+- **Its own entries only.** oats.core marks its entries by the absolute
+  path of its `claude-waiting.sh`. Each run removes only the entries that
+  name that path (and any matcher group or event array the removal
+  empties), then appends its current ones. Every other key and entry stays
+  as it was, in order. The file is written atomically, mode 0600, and only
+  when its content changes. A temp file an interrupted write left behind
+  (`.claude/.settings.json.oats-core-<pid>-<ms>.tmp`) is removed by the next
+  spawn or start once its writer is gone, so it needs no retirement
+  exclusion. If the file is a symlink, not a regular file,
+  not valid JSON, or not a JSON object with a well-formed `hooks` map,
+  oats.core leaves it alone and warns. The same applies when `.claude` is a
+  symlink or not a directory.
+- **When it writes.** It writes at spawn, because `oats spawn` runs no
+  launch hook, and at every `oats session start|restart`, so the node and
+  CLI paths it bakes in follow the current kernel. A launch preview writes
+  nothing. Every pass answers `{}`: no launch arguments and no env. Codex
+  and pi homes get nothing.
+- **It never hurts the session.** Claude Code reads a hook's stdout and exit
+  code as decisions. So every command runs the script through `/bin/sh`
+  with stdout and stderr on `/dev/null` and ends in `; exit 0`, under a 5 s
+  Claude hook timeout. Stdin, Claude's JSON input, reaches the script, which
+  moves it to a private descriptor and detaches its own stdin, stdout and
+  stderr first. It reads the input only for a tool clear, bounded as above,
+  always exits 0, and kills the CLI after 2 s: with no call starting 2 s
+  after the hook began, the worst case is about 4 s, well under Claude's 5 s
+  hook timeout.
+- **Debounce.** The script keeps private state outside the home, in a file
+  per home: `<dir>/<first 16 hex of sha256(home)>.claude`, where `<dir>`
+  is per user: `$XDG_RUNTIME_DIR/oats-waiting` when that is set and
+  absolute, else `$TMPDIR/oats-waiting-<uid>` when `TMPDIR` is absolute,
+  else `/tmp/oats-waiting-<uid>`. The spawn and launch
+  hook computes that path and vets the directory once: it creates it 0700
+  and uses it only when it is a real directory the user owns, mode exactly
+  0700, with no ACL (also one macOS shows only as `@`). An existing directory
+  is never changed. The hook passes the marker path to every command (or
+  `''` when the directory is refused), so the script, which runs on every
+  tool call, needs no `ls` or hash: it only re-checks that the directory is
+  still a real directory the user owns (only the user could have changed its
+  mode since). The marker holds the latest intent (`permission`, `question`
+  or `clear`), `<marker>.applied` what the CLI last recorded, and
+  `<marker>.lock` is the reconciler's lock. A tool clear when both say clear
+  (and no forced call is due) does nothing and starts no node process, so
+  the hooks that fire on every tool call cost a `/bin/sh` and a few file
+  reads. The turn-boundary clears (`UserPromptSubmit`, `Stop`,
+  `SessionEnd`) are not debounced: each gets a CLI call (see Order and
+  retry), a node process per prompt and per stop. A symlink is never followed. An
+  unusable marker (a refused, missing or replaced directory, a state path
+  that is not a regular file, a lock path that is not a directory) means no
+  debounce: set and clear then always call the (idempotent) CLI. The launch
+  hook resets the state at every spawn and start, as the kernel's session
+  boundary voids the claims. The script runs the CLI from the home, so its
+  cwd never matters.
+- **Order and retry.** Each event writes its intent to the marker at once,
+  so the marker is always the latest intent. Then, if the lock is free, it
+  reconciles: one process at a time brings the recorded claim to the latest
+  intent, re-reading it after each CLI call (at most 3), so the calls land
+  in the order the events came, whatever their speed. Before each call it
+  records the claim as `unknown`, and records the intent only once the call
+  succeeds: a call that fails or is killed may still have written the claim
+  (the kernel writes the home log before the workspace log), so the next
+  event always calls the CLI after one. An event that finds the lock held
+  never waits: it exits, and the holder applies its intent on its next
+  read, or on the read it makes after letting the lock go. The lock is a
+  directory holding its holder's token (pid and start time); one whose
+  holder is gone (pid dead, or taken over 5 s ago, past Claude's hook
+  timeout, which also covers a reused pid and a machine that slept) is
+  broken by the next event, as is one a minute old with no pid yet.
+  Reapers take turns under a second lock, `<marker>.lock.reap`, and judge
+  the lock again there, so a stale judgement never removes the lock another
+  reaper has just taken; a reap lock a minute old (a reaper killed in its
+  instant) is removed. A holder records a call and lets the lock go only
+  while the lock still holds its token. A failed call, or a reconciliation
+  the time budget stops (no call starts 2 s after the hook began), leaves
+  the recorded claim and the intent apart, and the next event finishes it.
+  A turn-boundary clear writes `<marker>.force` beside its intent; the call
+  that next applies the intent consumes it. A turn-boundary clear gets a CLI
+  call: from that hook, or, if another hook holds the lock, from that holder
+  if it still has time; otherwise from the next event. The state files are
+  only ever deleted by the launch hook.
+- **It never touches the agent's claim.** The script only ever passes
+  `--producer oats.core`.
+- **Not "unknown work" at retirement.** Harness project settings in the home
+  are configuration, not work: the retirement fingerprint of a home ignores
+  exactly `.claude/settings.json`. oats.core writes it at spawn before the
+  retirement baseline is taken, and again at every start.
+
+**Why the project settings file, not `--settings`.** On Claude Code
+2.1.288, Claude honours only the last `--settings` flag on a command line:
+that file replaces earlier ones wholesale, even one with no hooks. The
+project `.claude/settings.json` composes with the user's settings (under any
+`CLAUDE_CONFIG_DIR`) and with a `--settings`. So any capability that needs
+Claude settings uses the same managed `<home>/.claude/settings.json` with
+its own marker, never `--settings`. oats.core leaves
+`.claude/settings.local.json` to Claude Code, which writes its "don't ask
+again" permission rules there.
+
+**Limits.**
+
+- If the user's Claude configuration sets `disableAllHooks` or
+  `allowManagedHooksOnly`, the emitter's hooks never run, so there is no
+  claim: the waiting state reads null, not "not waiting".
+- The kernel's write is not fenced against an obsolete writer
+  ([#568](https://github.com/awebai/oats/issues/568)), so two rare paths can
+  leave the claim wrong while the emitter's state says it is right; the next
+  tool clear then skips it. (1) A hook suspended past 5 s mid-call (the
+  machine slept, the process was stopped) has its lock broken, and its call
+  can land after its successor's. (2) A reaper killed at a precise instant
+  can leave a reap lock that two later hooks remove at once, letting two
+  reconcilers run. Either can show a claim when nothing waits, or hide a
+  question. A turn-boundary clear gets a CLI call: from that hook, or, if
+  another hook holds the lock, from that holder if it still has time;
+  otherwise from the next event. So a wrongly shown claim lasts until the
+  end of the turn, or, if the turn's last hook found a reconciliation out
+  of time, until the next event (the human's next prompt). A hidden
+  question lasts until the human answers it (their prompt or the answer's
+  tool event clears it).
+- **A permission prompt can stay hidden until it is answered**, with no
+  suspension or crash: when the prompt opens while another hook's
+  reconciliation is under way and that hook then runs out of time (a slow
+  clear on a loaded machine: the turn's forced `Stop` clear, or a
+  `PostToolUse` clear while a background subagent's prompt opens), the
+  prompt's hook has already exited, leaving its intent to the holder, and
+  the holder stops without applying it. The next event applies it, and
+  while the prompt is open that is usually the answer itself.
+- Parallel tool calls in the main thread **may** clear a claim early: if one
+  waits at a permission prompt while a parallel one finishes after the
+  prompt's notification, that one's `PostToolUse` is a main-thread clear.
+  The notification carries no tool id, so there is no cheap fix. Not
+  observed on Claude Code 2.1.288: a parallel `Read` and a backgrounded
+  `Agent` call each finished before the notification (which came several
+  seconds after the dialog appeared), and the claim stayed.
+- If the marker and the claim disagree (someone deleted the marker by hand,
+  say), a stale claim can remain until the turn ends, or the next set or
+  clear or session boundary.
+- When a subagent asks for permission and the human approves, the
+  subagent's own tool events are skipped too, so the claim stays until the
+  next main-thread event: the main thread's next tool call, the subagent's
+  completion (Claude submits it as a `<task-notification>` prompt), a
+  `Stop` or the human's prompt. A foreground subagent holds the main thread
+  until it finishes, so after its prompt is approved the claim can last the
+  whole subagent run. That shows "needs input" too long, never hides a real
+  block.
+- A `Stop` or `UserPromptSubmit` always clears, even one the main thread
+  produces while a subagent's prompt is open (a background subagent's
+  completion is submitted as a prompt).
+- A Claude instance spawned before the upgrade gets the emitter only when
+  it is respawned. Its launch hook comes from its recorded module copy.
+
 ## Operations a capability declares
 
 A manifest may declare `operations`: named actions or views that a GUI, a

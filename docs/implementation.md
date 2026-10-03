@@ -16,6 +16,8 @@ reference pages ([workspaces](workspaces.md), [souls and instances](souls-and-in
 - **`oats.framework`** (`oats-package/`): the `oats.core`, `oats.setup` and
   `oats.knowledge-theory` capabilities and the `knowledge-theory-expert` soul,
   released as a package under its own `oats-framework/v<version>` tags.
+  `oats.core` is the one with executables: its spawn and launch hook and the
+  Claude Code waiting emitter (`capabilities/oats-core/bin/`).
 
 The OATS Desktop (`packages/desktop/`) is an Electron app with a bundled,
 dependency-free localhost server; it is released with the kernel but not

@@ -39,7 +39,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
              "workspace-v2","instance-modules","spawn-provider-payload","served-identity","packages-no-approval","spawn-name","settings-origins",
              "team-model-3","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts","launch-preference",
              "preview-composed-from","observe-max-age","spawn-preview-max-age","capability-show","capture-file","workspace-identity",
-             "server-connect","capability-route","servers-per-workspace","operator-default-soul"],
+             "server-connect","capability-route","servers-per-workspace","operator-default-soul","waiting-on-you"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
@@ -106,6 +106,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
 | `server-connect` | `oats server connect`; `oats onboard --check`; `workspaceReadable` on `oats server check --json`, OATS 0.39.0 ([`oats server connect`](#oats-server-connect)) | |
 | `capability-route` | `oats <namespace> <command> … --server <id>` runs the capability command on the server, OATS 0.39.0 ([Capability commands on a server](#capability-commands-on-a-server)) | |
 | `operator-default-soul` | a capability command from a deployment without `--soul` runs as the first soul that provides its namespace (named on stderr); none is `E_BAD_ARGS`, OATS 0.39.0 ([capabilities.md](capabilities.md)) | |
+| `waiting-on-you` | the `waiting` event kind and the session boundary rule; `oats instance waiting` and `oats instance attention`; `waitingOnYou` (with `message`) on `oats status --json` instance rows, on `oats session inspect --json` and in the events read, OATS 0.40.0 ([Waiting on you](#waiting-on-you)) | `eventsApi: 2` |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -148,7 +149,9 @@ stdout (progress goes to stderr):
 A kernel command reads `--flag=value` exactly as `--flag value` (the value is
 everything after the first `=`). `E_BAD_ARGS` for an empty `--flag=`, a value
 on a switch (`--yolo=false` never turns yolo on) and a value that is itself an
-option (`--model=--yolo`). A capability command's own flags are forwarded as
+option (`--model=--yolo`). The one exception is the free-text `--message`
+(`oats instance waiting`, `oats instance attention`): `--message=--text` is
+accepted, and its value is only ever the message. A capability command's own flags are forwarded as
 typed; the kernel reads only its dispatch flag (`--soul`). There is no feature
 string for this: to support older kernels, use the spaced form.
 
@@ -1787,6 +1790,16 @@ Not an envelope: `{root, agents, observation?, workspace?, problems?, warnings?}
   in the row),
   `identity` when a provider recorded one, `rollbackIncomplete` and
   `retirePending` when present, and the Desktop facts below.
+- **`waitingOnYou`** (feature `waiting-on-you`): `{since, producer, reason,
+  message}` when the row is `running: true` and a producer holds a live claim
+  that the instance needs input from a human, else `null` (unknown, not "not
+  waiting"). Its rules are the events read's ([Waiting on you](#waiting-on-you)):
+  one bounded read of the home's log per running row. A remote roster row
+  carries what the remote kernel reports; an older kernel omits the field.
+  `running` is the window's presence, which a crashed harness's fallback
+  shell or a retained dead pane keeps, so a row with a claim is checked
+  against its session (as `oats session inspect` observes it) and reads
+  `null` unless a harness runs there.
 - **`modules`** becomes drift rows `{name, from, commit, current, status,
   reason?}` when the workspace was read. `status` is `current`, `moved` or
   `missing` (`reason`: `capability-absent`, `package-absent`, or the member's
@@ -2153,26 +2166,133 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   `retire-planned`, `retired`, `worktree-retained`, `worktree-removed`,
   `branch-deleted`, `child-spawn-refused`, `launch-warning` (0.30: a
   `launch` hook's warning at session start/restart, `data: {message}`),
-  `recomposed` (from earlier kernels). `producer` is `kernel` or a capability id. Older rows may carry
-  `eventsApi: 1`.
+  `recomposed` (from earlier kernels), `waiting` (0.40: a producer's claim,
+  [Waiting on you](#waiting-on-you)). `producer` is `kernel`, a capability id,
+  or another producer id (`agent`). Older rows may carry `eventsApi: 1`.
+  `launched` is written by spawn and, since 0.40, once per session start or
+  restart, as soon as the session exists (`data: {harness, backend,
+  launchConfig, phase, startId}`; spawn's row has neither `phase` nor
+  `startId`). `phase` is `start` or `restart`, or `recovered` when a later
+  start adopted an interrupted start's receipt that had no boundary; that row
+  is dated at the receipt's launch time. The boundary is complete per log: a
+  log that missed it gets a copy of the same row (same time and data), never
+  a second one.
 - **Incarnation.** Each row carries the writing home's `createdAt` (or
   `null` for old rows); the top-level `incarnation` is the current home's (or
   `null`). Earlier incarnations are returned as this address's history.
 - **Address.** `--home` must be a home of `<instance>` (`E_HOME_MISMATCH`).
   Rows for another address are dropped and counted in
   `integrity.foreignRows`; torn or invalid lines are counted in
-  `integrity.unreadableRows`. Duplicates are removed.
+  `integrity.unreadableRows`. A row present in both logs is returned once;
+  identical rows repeated within one log (a set, a clear and the same set in
+  one millisecond) are all returned, as many as the log holding the most
+  copies has.
 - **Window.** `count` is the rows after `--since`; `returned` the window
   (`--limit`, default 200, 1–2000); `truncated` means rows were cut or a
   source was a tail. `lastEvent` is `{kind, at, producer, incarnation}` of
   the last returned row, or `null`.
-- **Waiting.** `waitingClaims[]` is `{producer, waiting, since, reason}` per
-  producer with a claim in the current incarnation (cleared ones included).
-  A producer's latest row with `data.waitingOnYou` decides. `waitingOnYou` is
-  `{since, producer, reason}` of the newest positive claim, or `null`
-  (unknown, not "not waiting"). No kernel path claims waiting today.
+- **Waiting.** `waitingClaims[]` is `{producer, waiting, since, reason,
+  message}` per producer with a live claim in the current incarnation
+  (cleared ones included). A producer's latest row with `data.waitingOnYou`
+  decides. `waitingOnYou` is `{since, producer, reason, message}` of the
+  newest positive claim, or `null` (unknown, not "not waiting"). See
+  [Waiting on you](#waiting-on-you) for the producers and the rules.
 - Errors: `E_SESSION_UNKNOWN`, `E_AMBIGUOUS_INSTANCE`, `E_HOME_MISMATCH`,
   `E_BAD_ARGS`, `E_EVENTS_FAILED`.
+
+### Waiting on you
+
+Feature `waiting-on-you` (OATS 0.40.0): an instance blocked on a human (a
+permission prompt, a question, an agent asking for an answer) says so through
+a producer's claim. **Claims are display-only:** nothing in the kernel acts
+on `waitingOnYou`. In particular `oats session input` behaves exactly as
+before whether or not a claim is set.
+
+```text
+oats instance waiting <set|clear> --producer <id> [--reason permission|question|attention] [--message <text>] [--home <abs>] [--dir <d>] --json
+oats instance attention [--message <text>] [--clear] --json
+```
+
+```json
+{"eventsApi":2,"instance":"dev-1","home":"/w/agents/dev/instances/dev-1","producer":"oats.core","changed":true,
+ "waitingOnYou":{"since":"2026-10-03T12:00:00.000Z","producer":"oats.core","reason":"permission","message":null}}
+```
+
+- **The row.** A claim is a `waiting` event, `data: {waitingOnYou: true,
+  reason, message?}` or `{waitingOnYou: false}`, appended to both logs, with
+  `producer` the caller's `--producer`.
+- **`waiting`.** `--producer` matches `^[a-z0-9][a-z0-9._/-]{0,63}$` and is
+  not `kernel`. `set` needs `--reason`, one of `permission`, `question`,
+  `attention` (closed). `clear` refuses `--reason` and `--message`. The home
+  is `--home`, else `$OATS_INSTANCE_HOME`, else the instance home enclosing
+  the working directory; it must be a home of its own name under the scope
+  (`--dir`, else the agents root the home sits in).
+- **`attention`** is the agent's own claim, run by the instance from its
+  home: sugar for `waiting set --producer agent --reason attention
+  [--message]`, and `--clear` for `waiting clear --producer agent`. Its home
+  comes only from `$OATS_INSTANCE_HOME`: it has no `--home` or `--dir` and
+  never targets another instance. Unset, or not an instance home (no readable
+  `instance.json`), is `E_USAGE`. `--clear` with `--message` is `E_BAD_ARGS`.
+- **`--message`**: one line of 1 to 200 characters (code points). Refused,
+  as `E_BAD_ARGS` naming `--message`: control characters (`\p{Cc}`: C0, DEL,
+  C1; so no newline, tab or ESC), the line and paragraph separators U+2028
+  and U+2029, the bidi embeddings, overrides and isolates U+202A–202E and
+  U+2066–2069, the invisible U+200B (zero width space), U+2060 (word
+  joiner) and U+FEFF (BOM), and the tag characters U+E0000–E007F. Everything
+  else is allowed, including ZWJ and ZWNJ (U+200C, U+200D: emoji sequences
+  such as 👩‍💻, Persian and Indic text), the marks LRM, RLM and ALM (U+200E,
+  U+200F, U+061C) and the soft hyphen. A message that
+  starts with `--` goes inline, `--message=--deploy failed`: that value is
+  only ever the message, never a flag (`--message=--clear` sets the message
+  "--clear"). The spaced form `--message --deploy` reads `--deploy` as a
+  flag and is `E_BAD_ARGS`. It is stored as given, only on a
+  positive claim. The reader applies the same rule again: an invalid stored
+  message (a hand-edited log) reads as `null`, and the claim still counts.
+  A stored `reason` outside `permission`, `question`, `attention` reads as
+  `null` too, and a row whose `producer` is neither `kernel` nor a valid
+  producer id is no claim at all.
+- **Idempotent.** The verb reads the producer's live claim first and appends
+  only on a change: a `set` whose reason or message differs from the live
+  positive claim appends (`changed: true`), an identical one does not; a
+  `clear` appends only over a live positive claim. The answer is
+  `{eventsApi, instance, home, producer, changed, waitingOnYou}`, where
+  `waitingOnYou` is that producer's resulting claim (`null` when it holds
+  none). Concurrent writers append whole lines; the latest row decides.
+  Each log is judged on its own, and success means both took the row: a
+  write either log refused is `E_EVENTS_FAILED` naming it, and the next call
+  (a retry) appends again to repair it.
+- **Session boundary.** A claim written before the incarnation's latest
+  kernel `launched`, `restarted` or `stopped` row (in time order; rows of the
+  same millisecond in append order) is not live: it belongs to an ended
+  session and is not listed in `waitingClaims`. A crash
+  while waiting reads `null` on the roster (not running), and the next start
+  writes `launched`, which voids the claim.
+- **Producers.**
+  - `oats.core`: the Claude Code emitter oats.core installs in a Claude
+    instance's `<home>/.claude/settings.json` (`permission` on a permission
+    prompt, `question` on AskUserQuestion or an MCP elicitation, cleared when
+    the session moves on). See [capabilities.md](capabilities.md), "oats.core:
+    needs input".
+  - `agent`: the instance itself, through `oats instance attention`, and
+    only through it: `oats instance waiting --producer agent` is
+    `E_BAD_ARGS`. **Agent claims are cleared only by the agent (`--clear`)
+    or a session boundary**; no hook clears them (a wake broker's paste is
+    also a prompt submit).
+- **Where it shows.** `waitingOnYou` on the events read, on `oats status
+  --json` instance rows (running rows only) and on `oats session inspect
+  --json` (beside `state`, whose enum is unchanged; `null` unless the harness
+  is running). Plain `oats status` prints `! needs input (<reason>):
+  <message>` under a running instance's row while it holds a claim.
+- **Cost.** To compute the field, `oats status` reads the home log of each
+  running row (the workspace log only when the home log is absent), with
+  the same bounded read as the events read: at most the last 4 MiB, so a
+  claim older than the last 4 MiB of a very busy log is not seen. Stopped
+  rows read nothing.
+- **Local only.** Neither verb routes with `--server`: producers run on the
+  instance's own host.
+- Errors: `E_BAD_ARGS`, `E_USAGE` (attention), `E_SESSION_UNKNOWN` (no
+  readable `instance.json`), `E_HOME_MISMATCH`, `E_EVENTS_FAILED` (the write
+  failed; nothing else is affected).
 
 ## Lifecycle: stop and retire
 
@@ -2359,6 +2479,11 @@ selection flags. See [the start workflow](desktop-instance-start.md).
   instance's events as a `launch-warning` row, `data: {message}`. They are
   advisory: the start went ahead. Earlier kernels omit the field; read a
   missing `warnings` as `[]`.
+- A start or restart appends a `launched` event as soon as its session
+  exists (0.40, `phase: "start"` or `"restart"`, `startId`), the session
+  boundary that voids earlier waiting claims ([Waiting on you](#waiting-on-you)).
+  A start whose metadata write failed has it already, so its adoption adds
+  none to a log that holds it and copies it into a log that does not.
 - Restart is one command: the kernel validates the new selection before
   stopping, and owns the stop, lock, launch recovery and metadata. Never
   restart by retiring and spawning.
