@@ -181,6 +181,16 @@ children receive SIGTERM at five minutes and SIGKILL after a two-second
 cleanup grace if needed. Its own job stays blocked until reconcile. Spawn,
 wake and legacy attempts without observed exits retain their slot rules.
 
+### Structural uncertainty during provider migration
+
+A provider that cannot confirm dispatched effects or compensation sets
+`error.details.unconfirmed: true` (a boolean). The operation wrapper promotes
+that marker without dropping its nested receipt. Kernel incomplete-spawn and
+rollback failures carry it too; completed compensation remains unmarked.
+Existing text-based checks still protect older providers and copied homes.
+Do not assume those copies were upgraded or retry a marked attempt without
+reconciliation; the marker does not change host-slot release rules.
+
 ## Gotchas
 
 - `oats trigger test` proves only the host it runs on. Run it where the

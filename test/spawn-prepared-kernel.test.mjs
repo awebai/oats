@@ -17,6 +17,8 @@
 // Uses prepareInstance/ensureWorkspaceSoul from lib/instance-resolution.mjs exactly as bin does,
 // then spawnInstanceAsync directly. Never bare `oats setup`; HOME and the remote cache are isolated.
 import test from "node:test";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -169,9 +171,35 @@ test("M1: materialize → launch is one rollback — a failure after the home is
     let landed = null;
     await assert.rejects(spawnInstanceAsync(d.root, agent, { prepared, purpose: "m1", work: "directory", repo: d.dep, launch: false,
       materialize: async (p, home) => { await materializePrepared(p, home); landed = readdirSync(join(home, ".oats", "modules")).sort(); throw Object.assign(new Error("boom after copy"), { code: "E_TEST_AFTER_COPY" }); } }),
-      (e) => e.code === "E_TEST_AFTER_COPY");
+      (e) => e.code === "E_TEST_AFTER_COPY" && e.details?.unconfirmed === undefined);
     assert.deepEqual(landed, EXPECTED_MODULES, "the home WAS populated before the failure");
     assert.deepEqual(left(), [], "M1: the populated home is removed whole (recursive), not left behind");
+
+    // A failed cleanup after the same materialization failure is structurally
+    // different, preserving the original error and its diagnostic context.
+    const keptHome = join(instancesDir, "release-manager-kept"), remove = fs.rmSync;
+    try {
+      fs.rmSync = (path, options) => {
+        if (path === keptHome) throw Object.assign(new Error("fixture cleanup refusal"), { code: "EACCES" });
+        return remove(path, options);
+      };
+      syncBuiltinESMExports();
+      await assert.rejects(spawnInstanceAsync(d.root, agent, { prepared, purpose: "kept", work: "directory", repo: d.dep, launch: false,
+        materialize: async (p, home) => {
+          await materializePrepared(p, home);
+          throw Object.assign(new Error("copy failed"), { code: "E_TEST_AFTER_COPY", details: { phase: "copy", receipt: 7 } });
+        } }), (e) => {
+          assert.equal(e.code, "E_TEST_AFTER_COPY");
+          assert.deepEqual(e.details, { phase: "copy", receipt: 7, unconfirmed: true });
+          assert.match(e.message, /copy failed.*rollback INCOMPLETE/);
+          return true;
+        });
+      assert.ok(existsSync(keptHome));
+    } finally {
+      fs.rmSync = remove;
+      syncBuiltinESMExports();
+      rmSync(keptHome, { recursive: true, force: true });
+    }
 
     // (b) the retry is not auto-suffixed: it gets the very same name and runs with rows.
     const ok = await spawnInstanceAsync(d.root, agent, { prepared, purpose: "m1", work: "directory", repo: d.dep, launch: false });
