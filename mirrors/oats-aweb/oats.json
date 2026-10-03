@@ -1,7 +1,7 @@
 {
   "capability": "oats.aweb",
   "command": "aweb",
-  "version": "1.20.0",
+  "version": "1.21.0",
   "compatibility": {
     "oats": ">=0.30.0"
   },
@@ -67,6 +67,7 @@
   "commands": {
     "roster": "bin/oats-aweb.mjs roster",
     "setup": "bin/oats-aweb.mjs setup",
+    "connect": "bin/oats-aweb.mjs connect",
     "binding-normalize": "bin/oats-aweb-binding.mjs normalize",
     "binding-bind": "bin/oats-aweb-binding.mjs bind",
     "binding-check": "bin/oats-aweb-binding.mjs check",

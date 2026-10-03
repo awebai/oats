@@ -311,6 +311,27 @@ team selector and should not appear in any `aw` call.
   it refuses before creating anything.
 - `oats aweb setup --join <label> --invite <token>` → accept an existing/shared
   team's invite into a per-team root and record `roots[team]`.
+- `oats aweb setup --join <label> --invite-stdin` → the same, with the token
+  read from stdin (first line, trimmed); never combined with `--invite`.
+- `oats aweb setup --install-aw [--aw-version <v>]` → where aw is missing or
+  below the floor, `npm install -g @awebai/aw@<v>` (default `^1.36.13`), then
+  re-check the floor and continue.
+- `oats aweb setup --check-only --json` → one JSON line: `{aw, defaultTeam,
+  member, root}` (whether the default team's root is a member).
+
+**Connecting a deployment on another machine.** After `oats server connect`,
+the human runs, from the local deployment, `oats aweb connect <server-id>
+--soul <soul> [--install-aw] [--name <alias>] [--json]`. Through the kernel's
+`--server` capability route it checks or installs aw on the host (`aw`). It
+mints an invite from this deployment's root for the host's default team, or
+mints nothing when the host is already a member (`invite`). It runs `setup
+--join <label> --invite-stdin` there with the token on stdin (`join`), then
+checks again (`readiness`). This deployment not being a member is
+`E_TEAM_NOT_MEMBER`; a non-hosted (BYOT local-controller) team is
+`needs-human`. The token is never in argv, a file, a log or output on this side;
+on the host, `aw id team accept-invite` shows it in the process list while it
+runs. Never paste an invite token into a message or a command line when
+`--invite-stdin` or `connect` can carry it.
 - For an unmapped committed/shared default, plain setup creates nothing; it asks
   for the owner-provided provider id or invite. The owner explicitly runs
   `oats aweb setup --create <label> --namespace <domain>`, then commits the
