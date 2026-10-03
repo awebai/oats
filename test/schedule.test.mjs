@@ -60,6 +60,43 @@ test("definitions are validated field by field, with croner and IANA zones", () 
   assert.deepEqual(ok, { id: "nightly", enabled: true, cron: "0 3 * * *", tz: "Europe/Madrid", kind: "spawn", agent: "dev", task: "do it", yolo: true, backend: "tmux" });
 });
 
+test("a description is optional, one line of 1 to 200 characters without control characters, and stored as given", () => {
+  const ws = workspace();
+  const job = { id: "a", cron: "* * * * *", tz: "UTC", kind: "command", cwd: ws, argv: ["oats", "status"] };
+  for (const description of [7, null, "", "x".repeat(201), "a\nb", "a\rb", "a\tb", "a\0b", "a\x1bb", "a\x7fb", "a\u0085b", "a b", "a b"]) {
+    assert.throws(() => S.validateDefinition(ws, { ...job, description }), (e) => e.code === "E_SCHEDULE_INVALID" && e.field === "description" && /description/.test(e.message), JSON.stringify(description));
+  }
+  assert.equal(S.validateDefinition(ws, { ...job, description: "x".repeat(200) }).description, "x".repeat(200));
+  assert.equal(S.validateDefinition(ws, { ...job, description: "🙂".repeat(200) }).description, "🙂".repeat(200), "characters, not UTF-16 units");
+  assert.equal(S.validateDefinition(ws, { ...job, description: "  Harvest — soul dev  " }).description, "  Harvest — soul dev  ", "stored as given");
+  assert.equal("description" in S.validateDefinition(ws, job), false, "absent stays absent");
+  S.addSchedule(ws, { ...job, id: "labelled", description: "Knowledge harvest for dev-1 (soul dev)" });
+  S.addSchedule(ws, { ...job, id: "plain" });
+  const rows = Object.fromEntries(S.listSchedules(ws).schedules.map((r) => [r.id, r]));
+  assert.equal(rows.labelled.description, "Knowledge harvest for dev-1 (soul dev)");
+  assert.equal(rows.plain.description, null);
+  assert.equal(S.describe(ws, "labelled").description, "Knowledge harvest for dev-1 (soul dev)");
+  assert.equal(S.updateSchedule(ws, "labelled", { ...job, description: "Renamed" }).description, "Renamed");
+  assert.equal(S.updateSchedule(ws, "labelled", job).description, null, "an update without one drops it");
+});
+
+test("a description is informational: it never reaches argv, the spawn options, the launch or the run record", () => {
+  const runOf = (description) => {
+    const ws = workspace();
+    const src = home(ws, "dev-src");
+    const cmds = [], spawns = [];
+    const io = { command: (c) => { cmds.push(c); return { ok: true, result: {} }; }, spawn: (root, agent, opts) => { spawns.push({ agent: agent.name, opts }); return fakeSpawn(ws)(root, agent, opts); }, inspect: () => ({ present: true, state: "unknown" }) };
+    const extra = description === undefined ? {} : { description };
+    S.addSchedule(ws, { id: "cmd", cron: "0 * * * *", tz: "UTC", kind: "command", cwd: src, argv: ["oats", "okf", "harvest"], ...extra });
+    S.addSchedule(ws, { id: "nightly", cron: "0 * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t", ...extra });
+    const considered = S.tickWorkspace(ws, { now: at("2026-09-07T10:00:00Z"), io, reg: { ...S.readRegistry(), maxConcurrent: 5 } });
+    const st = S.readState(ws);
+    const strip = (v) => JSON.parse(JSON.stringify(v).replaceAll(ws, "<ws>").replace(/"(startedAt|wallClock|lastLaunchedAt|at|runId|recordedAt)":"[^"]*"/g, `"$1":"<t>"`));
+    return strip({ cmds, spawns, considered, state: st });
+  };
+  assert.deepEqual(runOf("Knowledge harvest for dev-1 (soul dev)"), runOf(undefined));
+});
+
 test("cron evaluation follows the zone through DST and is due exactly on the minute", () => {
   const def = { cron: "0 3 * * *", tz: "Europe/Madrid" };
   // 2026-03-29: Madrid springs forward at 02:00 -> 03:00 local; 03:00 local is 01:00Z.
@@ -246,10 +283,13 @@ test("the CLI answers the envelope for add, list, show, update, enable, disable,
   const env = { ...process.env, OATS_HOME_DIR: process.env.OATS_HOME_DIR };
   const run = (...a) => { const r = execFileSync(process.execPath, [bin, "schedule", ...a, "--dir", ws, "--json"], { encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] }); return JSON.parse(r.trim().split("\n").pop()); };
   const spec = join(base, "spec.json");
-  writeFileSync(spec, JSON.stringify({ id: "nightly", cron: "0 3 * * *", tz: "Europe/Madrid", kind: "spawn", agent: "dev", task: "Nightly sweep.", harness: "claude", yolo: true }));
+  writeFileSync(spec, JSON.stringify({ id: "nightly", cron: "0 3 * * *", tz: "Europe/Madrid", kind: "spawn", agent: "dev", task: "Nightly sweep.", harness: "claude", yolo: true, description: "Sweeps the release branch every night" }));
   let out = run("add", "nightly", "--file", spec);
   assert.equal(out.ok, true); assert.equal(out.result.schedule.id, "nightly"); assert.ok(out.result.schedule.nextRun);
+  assert.equal(out.result.schedule.description, "Sweeps the release branch every night");
+  assert.match(execFileSync(process.execPath, [bin, "schedule", "show", "nightly", "--dir", ws], { encoding: "utf8", env }), /"description": "Sweeps the release branch every night"/, "human show prints it");
   out = run("list");
+  assert.equal(out.result.schedules[0].description, "Sweeps the release branch every night");
   assert.deepEqual(Object.keys(out.result), ["scope", "scheduleApi", "scheduleHistoryApi", "integrity", "host", "schedules", "triggers", "snapshot", "scheduler"]); // K8b: scope echo + integrity; 0.28: the triggers pointer; 0.29: host + the workspace snapshot
   assert.equal(out.result.schedules[0].id, "nightly");
   for (const k of ["installed", "active", "lastTick", "maxConcurrent"]) assert.ok(k in out.result.scheduler, k);

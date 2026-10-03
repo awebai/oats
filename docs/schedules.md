@@ -50,6 +50,15 @@ Every definition carries `id`, `enabled`, `cron`, `tz` and `kind`. `cron` has
 five fields (minute hour day month weekday) and `tz` is a required IANA zone;
 both are evaluated by the croner library.
 
+Any kind may carry `description`: what the job is for, in words, for the
+people reading `oats schedule list`, `show` and the Desktop. It is one line of
+1 to 200 characters with no control characters (no CR, LF, TAB or any other
+C0 or C1 character, nor a Unicode line or paragraph separator); anything else
+is `E_SCHEDULE_INVALID` with `field: "description"`. It is stored as given and
+is informational only: it never reaches a run's argv, environment, task or
+reconcile. A capability that registers jobs (knowledge harvest's `run-source`
+jobs) sets it so that its command jobs can be told apart.
+
 - **spawn** `{…, agent, agentsRoot?, repo?, backend?, purpose?, task,
   launchConfig?, harness?, model?, yolo?, wake?}` — every due minute launches
   one disposable instance of `agent` with the options `oats spawn` takes.
@@ -311,9 +320,9 @@ run on that registered server.
 ```
 
 Each row is the stored definition plus `id` (bare for a local schedule,
-`<member>/<id>` for a workspace one), `qualifiedId`, `origin`, `owner`,
-`runsOn`, `runsHere`, `reason`, `enabledHere`, `soul`, `nextDue`, `lastRun`,
-`recentRuns` and `running`; an unreadable row carries `unreadable: { code,
+`<member>/<id>` for a workspace one), `qualifiedId`, `description` (`null`
+when there is none), `origin`, `owner`, `runsOn`, `runsHere`, `reason`,
+`enabledHere`, `soul`, `nextDue`, `lastRun`, `recentRuns` and `running`; an unreadable row carries `unreadable: { code,
 message }` instead of failing the list. `scheduler.active` is what the OS
 reports about the timer. `oats trigger list --json` carries the same
 `scheduler`. The field-level contract is in
@@ -344,7 +353,7 @@ continues.
 
 **Changing a job.** `disable` never stops anything. `update` never touches a
 running instance, and while a job holds a slot or has an unresolved attempt
-only `cron`, `tz` and `enabled` can change. `remove` refuses while the job's
+only `cron`, `tz`, `enabled` and `description` can change. `remove` refuses while the job's
 instance is tracked or its effects are unresolved (`--force` forgets the job
 without stopping anything). Retiring an instance removes the wake jobs bound
 to its home.

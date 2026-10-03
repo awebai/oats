@@ -2498,6 +2498,13 @@ oats schedule show <id> --json
   [shared row fields](#automations-shared-rows).
   `executionStatus` is `{kind: "legacy" | "invalid", capture: "unknown",
   migrationRequired: true, reason?, intent?}`; only `legacy` runs.
+- **`description`** (0.39.3): the shared row field is the local definition's
+  `description` when it has one, else `null` (a workspace schedule's comes
+  from its file header). It is one line of at most 200 characters with no
+  control characters; show it in place of the argv when present. Like `task`,
+  it is untrusted text: render it as text. A kernel before 0.39.3 sends
+  `null` for every local schedule, and drops a `description` given to `oats
+  schedule add` without refusing it.
 - **An unreadable row** (`list` only): `{id, scope, scheduleApi,
   scheduleHistoryApi, unreadable: {code, message}, history: {status:
   "corrupt", stored: null, truncated: false}, recentRuns: []}`. One bad job
