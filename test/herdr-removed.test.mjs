@@ -65,7 +65,7 @@ test("server add refuses --herdr; a registration or saved route that records her
   const list = fx.cli(["server", "list", "--json"]);
   assert.equal(list.status, 0, list.stdout + list.stderr);
   const [row] = list.json().result.servers;
-  assert.deepEqual({ ...row, snapshots: undefined }, { id: "old", sshHost: "host", workspace: "/srv/ws", target: { sshHost: "host", workspace: "/srv/ws", oatsPath: "oats" }, snapshots: undefined });
+  assert.deepEqual({ ...row, snapshots: undefined }, { id: "old", sshHost: "host", workspace: "/srv/ws", workspaceKey: null, target: { sshHost: "host", workspace: "/srv/ws", oatsPath: "oats" }, snapshots: undefined });
   assert.equal(row.snapshots, 1);
   assert.equal(fx.cli(["server", "list"]).stdout.includes("herdr"), false, "the text listing never prints it");
   // A re-registration writes the file again: the ignored field is not carried.
@@ -86,6 +86,7 @@ test("a routed spawn with Herdr is refused locally, before ssh, even when the re
   chmodSync(join(bin, "ssh"), 0o755);
   const env = { PATH: `${bin}:${fx.env.PATH}` };
   assert.equal(fx.cli(["server", "add", "routed", "--ssh", "host", "--workspace", "/srv/ws", "--json"], { env }).status, 0);
+  rmSync(marker, { force: true }); // server add asks the host for its workspace key; the spawns below must never reach it
   for (const [args, what] of [[["--backend", "herdr"], "--backend herdr was given"], [["--herdr-socket", "/s"], "--herdr-socket was given"]]) {
     const r = fx.cli(["spawn", "dev", "--server", "routed", "--purpose", "x", ...args, "--json"], { env });
     assert.equal(r.status, 1);

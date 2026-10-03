@@ -10,10 +10,13 @@ keeps a saved route per remote instance.
 
 ```bash
 oats server add build --ssh build-host --workspace /srv/team --oats /usr/local/bin/oats
-oats server check build      # ssh reachability, remote version, workspace roster; changes nothing
-oats server list
+oats server check build      # ssh reachability, remote version, workspace roster and Git readability
+oats server list [--workspace-ref <ref>]
 oats server remove build
 ```
+
+To put a workspace on a machine that has no deployment yet, use
+[`oats server connect`](#connect-a-machine) instead of `server add`.
 
 - `--ssh` is an OpenSSH host alias or host name, never `user@host` or an
   option. Users, keys and host verification belong in `~/.ssh/config`.
@@ -31,7 +34,117 @@ oats server remove build
   is ignored, never written or printed.
 - `--label` sets a display name. `--replace` overwrites an existing id.
 - Registrations live in `~/.oats/servers.json` on this machine, never in a
-  repository.
+  repository. Every change to the file (add, remove, a learned workspace key,
+  connect) is a short read-modify-write of the file as it is then, under the
+  lock directory `~/.oats/servers.lock`, so concurrent commands never lose each
+  other's registrations. A lock still held after 5 s, or left by a process
+  that died, is refused with `E_SERVERS_BUSY`, naming the directory to remove
+  once no oats process is changing the registry.
+
+**Which workspace a server serves.** A registration records `workspaceKey`:
+the canonical key of the workspace its host deployment realizes, as the
+host's own `oats status --json` reports it (`workspace.key`). It is learned,
+never typed:
+
+- `server add` asks the host after writing the registration. A host that does
+  not answer one (unreachable, no deployment at `--workspace`, a kernel before
+  0.38) is registered without it, with a warning.
+- `server check` records it when the registration has none, and `server
+  connect` writes it.
+- A key is recorded only on the registration that was asked: if the
+  registration is removed or pointed elsewhere while the host is being asked,
+  the answer is dropped (`server add` warns), never written onto the new
+  entry or used to bring a removed one back.
+- A host reporting a different key than the recorded one is
+  `E_SERVER_WORKSPACE_MISMATCH` (`details: {recorded, reported}`) and the
+  registration is not rewritten. If the host now serves another workspace,
+  register it again with `server add <id> --replace`.
+- `server list --workspace-ref <ref>` lists the servers whose key is the
+  canonical key of `<ref>` (any spelling of the same repository matches), and
+  `unknownWorkspace` names the ids whose key is not known yet. One host can
+  carry several registrations, one per deployment.
+
+`server check` also asks the host whether its Git reads the workspace remote
+(`workspaceReadable`; the host's [`onboard --check`](#what-connect-runs-on-the-host)),
+which is where a [macOS keychain](#git-on-a-macos-host) problem shows up.
+
+## Connect a machine
+
+```bash
+oats server connect altair-aweb --ssh altair --path /opt/homebrew/bin --install-oats
+```
+
+Run from a deployment, `server connect` puts that deployment's workspace on
+the machine behind `--ssh` and registers it, from a host with nothing but
+ssh access and Node.js. Every run re-checks every step and does only what is
+missing, so after a human step you run the same command again.
+
+| Option | Default |
+|---|---|
+| `--workspace-ref <ref>` | this deployment's `oats-local.yaml` `workspace:` |
+| `--dir <path>` | `~/Agents/<this deployment's directory name>`; absolute or `~/…`, resolved by the host |
+| `--oats <path>`, `--path <dirs>`, `--label <text>` | as for `server add`; `--path` is where the host finds `npm`, `oats` and the harnesses |
+| `--install-oats` | off: a missing or older OATS is a human step |
+| `--replace` | off: an id registered for another host or directory is refused |
+
+The steps, in order:
+
+| Step | Checks | When something is missing |
+|---|---|---|
+| `ssh` | the host answers a non-interactive ssh | `failed` `E_SSH` |
+| `oats` | `oats version --json` there is this kernel's version or newer and advertises `server-connect` (a build of the same version without it is not enough) | with `--install-oats`: runs `npm install -g @awebai/oats@<this version>` there (`done`); without it, or with no `npm` on the host's PATH: `needs-human` with the command to run |
+| `git` | the host's Git reads the workspace remote | `needs-human` with the remedy (and the [keychain hint](#git-on-a-macos-host)) |
+| `deployment` | `--dir` holds a deployment of this workspace | an absent or empty directory is onboarded there (`done`); a deployment of another workspace is `failed` `E_SERVER_WORKSPACE_MISMATCH`; a non-empty directory without `oats-local.yaml` is `failed` `E_DIR_NOT_EMPTY` and nothing is written into it |
+| `register` | the registration exists, with its `workspaceKey` | written (`done`); an id registered for another target is `failed` `E_SERVER_EXISTS` unless `--replace` (checked before anything else, so a requested id never reports ready while it routes elsewhere); a new id whose host and directory are already registered under another id is reported (`ok`, naming that id; the text result then names that id to spawn with) and not registered twice |
+| `readiness` | each soul of the host deployment (disabled souls skipped) passes `oats readiness` there | each failing or unknown required item becomes a `needs-human` line, once for all the souls that share it; the listing and the checks share one 60 s budget, and souls it does not reach (a check it cuts off included) become one line naming the command to check them; a broken link still fails the run (`E_SSH`) |
+
+A step is `ok` (already so), `done` (this run did it), `needs-human` (its
+`remedy` says what to run where; later steps are `skipped`, waiting for it)
+or `failed` (the run ends). The result is `ready` when no step needs a
+human. Connect never handles credentials: what Git on the host cannot read
+is always a human step there. The `--json` shape is in
+[desktop-cli-api.md](desktop-cli-api.md#oats-server-connect).
+
+### What connect runs on the host
+
+Besides `version --json`, `status --json`, `souls --json` and `readiness
+--json`, connect runs two commands there:
+
+- `oats onboard <dir> --workspace <ref> --check --json`, read-only: where
+  `<dir>` is (a leading `~` is the host's home), whether it is absent, empty,
+  not empty, not a directory or a deployment, and whether the host's Git
+  reads the workspace remote. An unreadable remote is part of the answer
+  (`remote.readable: false` with the error), not a failure. Without
+  `--workspace`, a deployment's own workspace is read.
+- `oats onboard <dir> --workspace <ref> --json`, only when the directory is
+  absent or empty. This is the only way connect onboards on a host; `onboard`
+  itself is not routed with `--server`.
+
+### Git on a macOS host
+
+Git on macOS usually keeps the forge token in the login keychain, through
+its credential helper. A session without a terminal (an ssh command, which is
+how every routed command runs, or a background job) cannot open that
+keychain, so reading a private remote fails as `auth` even though the same
+command works in a terminal on that Mac.
+
+When a remote read fails as `auth` on macOS in a session with no terminal on
+stdin or with `SSH_CONNECTION` set, `E_REMOTE_UNREADABLE` carries
+`details.hint: "keychain-non-interactive"` and `details.remedy`, and the
+message names the two ways out, run once on that Mac:
+
+```bash
+gh auth login --insecure-storage   # keep the token in gh's own file, not the keychain
+gh auth setup-git                  # let Git use gh's token
+```
+
+or read the remote with an SSH key the session can reach. A key with a
+passphrase fails in the same sessions for the same reason: an ssh session has
+no `SSH_AUTH_SOCK` of its own, so it cannot reach the desktop login's
+ssh-agent. Use a key without a passphrase, or point `SSH_AUTH_SOCK` at the
+login agent in the shell's startup file (for zsh, `~/.zshenv`, which
+non-interactive sessions read). OATS never reads or changes credentials
+itself; the hint is about where Git ran, not a probe of the keychain.
 
 ## Connections
 
@@ -138,6 +251,25 @@ server, whoever spawned it, by `--home </remote/home>` or by name
 explicit `--dir` names a directory on the server and travels as is. Every
 other routed command refuses `--dir`; its scope comes from the
 registration.
+
+**Capability commands.** Any capability command routes with `--server`:
+
+```bash
+oats aweb setup --join aweb --invite-stdin --soul dev --server altair-aweb < invite.txt
+```
+
+The host runs the same argv, minus `--server <id>` (or `--server=<id>`;
+after a `--` the argv is the provider's and is never read), as `oats <namespace>
+<command> …` from the registered workspace directory: the kernel's
+capability dispatch finds the deployment from its working directory, so no
+`--dir` is added to the provider's argv. `--soul` and every other flag go
+through untouched. Stdin is forwarded as is and never read or logged here;
+when stdin is a terminal nothing is forwarded and the host's stdin is
+closed. The host's stdout, stderr and exit status are relayed; with
+`--json` its envelope is relayed verbatim, and when nothing comes back this
+side answers one envelope (`E_SSH`, or `E_REMOTE_ENVELOPE`). Wherever this
+side prints the argv, `--invite` values are replaced by `<redacted>`.
+Kernel commands keep the table above.
 
 **Not routed.** `session input` runs on the execution host, where schedules
 and messaging capabilities call it. `session restart --stop-grace` is refused

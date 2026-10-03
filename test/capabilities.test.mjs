@@ -509,9 +509,11 @@ test("operational commands are gated by active instance metadata; doctor exposes
     souls: { dev: { soul: { capabilities: here("acme.ops") }, agents: "# Canonical dev\n\nNever mutate me.\n" }, plain: {} },
     capabilities: { "acme.ops": cap({ command: "ops", commands: { ping: "ping.mjs" }, inject: "inject.md" }, { "ping.mjs": "console.log('pong')\n", "inject.md": "## Ops instructions" }) },
   });
-  // Outside an instance home a capability command needs the soul whose resolution provides it.
+  // Outside an instance home a capability command resolves as the soul whose resolution provides it:
+  // --soul's, or without it the first soul that provides the namespace (named on stderr).
   let r = fx.cli(["ops", "ping"]);
-  assert.equal(r.status, 1); assert.match(r.stderr, /pass --soul <name>/);
+  assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /pong/);
+  assert.match(r.stderr, /oats ops: no --soul given; running as soul [\w.-]+\/dev,/);
   r = fx.cli(["ops", "ping", "--soul", "plain"]);
   assert.equal(r.status, 1); assert.match(r.stderr, /unknown command "ops"/);
   r = fx.cli(["ops", "ping", "--soul", "dev"]);
