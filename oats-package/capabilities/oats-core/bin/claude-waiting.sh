@@ -79,6 +79,21 @@ fi
 # A marker path that exists as anything but a regular file is unusable too.
 if [ -n "$marker" ] && { [ -L "$marker" ] || { [ -e "$marker" ] && [ ! -f "$marker" ]; }; }; then marker=; fi
 
+# Kill process $1 after $2 seconds (macOS has no timeout(1)), unless this watchdog is
+# killed first: its TERM trap then ends its sleep too, so nothing is left behind. A TERM
+# that lands before the sleep's pid is known is caught by `killed`. Sets $watchdog.
+start_watchdog() {
+  (
+    timer='' killed=''
+    trap 'killed=1; [ -z "$timer" ] || kill "$timer"' TERM
+    sleep "$2" &
+    timer=$!
+    [ -z "$killed" ] || { kill "$timer"; exit 0; }
+    wait "$timer" && kill -9 "$1"
+  ) >/dev/null &
+  watchdog=$!
+}
+
 # Whether this hook's input is a subagent's tool event (a background or parallel subagent
 # in the same session), from Claude Code 2.1.288's payload: compact one-line JSON whose
 # top-level keys put "agent_id" (subagents only) before "hook_event_name". Only the text
@@ -90,9 +105,9 @@ from_subagent() {
   input=$(
     head -c 65536 <&3 &
     reader=$!
-    ( sleep 1; kill -9 "$reader" ) >/dev/null &
+    start_watchdog "$reader" 1
     wait "$reader"
-    kill "$!"
+    kill "$watchdog"
   )
   prefix=${input%%\"hook_event_name\"*}
   [ "$prefix" != "$input" ] || return 1
@@ -109,13 +124,12 @@ if [ "$action" = clear-tool ]; then
   action=clear
 fi
 
-# Run the CLI in the background with a watchdog (macOS has no timeout(1)). Its status is
-# the CLI's: non-zero when it failed or the watchdog killed it.
+# Run the CLI in the background under a 3 s watchdog. Its status is the CLI's: non-zero
+# when it failed or the watchdog killed it.
 run_cli() {
   "$node" "$cli" instance waiting "$@" --home "$home" --json &
   pid=$!
-  ( sleep 3; kill -9 "$pid" ) &
-  watchdog=$!
+  start_watchdog "$pid" 3
   wait "$pid"
   status=$?
   kill "$watchdog"

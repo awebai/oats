@@ -483,6 +483,25 @@ test("clear-tool: a stdin that never ends is read for at most ~1 s, then means t
   assert.ok(existsSync(log), "an input cut short before hook_event_name means the main thread: it clears");
 });
 
+test("no watchdog sleep outlives the script: every sleep it starts is gone when it exits, on the CLI path and the input read alike", { timeout: 60000 }, async () => {
+  const node = process.execPath;
+  // A `sleep` first on PATH that records its pid, then becomes the real sleep.
+  const bin = join(base, `fake-bin-${n}`), sleepLog = join(base, `sleeps-${n}.log`);
+  mkdirSync(bin); writeFileSync(join(bin, "sleep"), `#!/bin/sh\necho $$ >> '${sleepLog}'\nexec /bin/sleep "$@"\n`, { mode: 0o755 });
+  const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  // Each call is slow enough (800 ms) for the sleep under it to have logged its pid; one
+  // killed before it could log is gone anyway.
+  const h = home(), env = { OATS_INSTANCE_HOME: h, PATH: `${bin}:${process.env.PATH}`, FAKE_SET_DELAY_MS: "800", FAKE_CLEAR_DELAY_MS: "800" };
+  runScript(["set", "permission", node, FAKE_CLI], env);
+  const child = spawn("/bin/sh", [SCRIPT, "clear-tool", node, FAKE_CLI], { stdio: ["pipe", "ignore", "ignore"], env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env }) });
+  setTimeout(() => child.stdin.end(`{"session_id":"s","hook_event_name":"PostToolUse","tool_name":"Bash","tool_use_id":"t"}`), 800);
+  assert.equal(await new Promise((done) => child.on("exit", done)), 0);
+  const pids = readFileSync(sleepLog, "utf8").trim().split("\n").map(Number);
+  assert.ok(pids.length >= 2, `watchdogs ran under the set's CLI, the input read and the clear's CLI (${pids.length} logged)`);
+  await new Promise((r) => setTimeout(r, 200));
+  assert.deepEqual(pids.filter(alive), [], "none of them is still sleeping");
+});
+
 test("end to end: a command the hook wrote, run as Claude Code runs it, reaches the CLI", () => {
   const h = home();
   const log = join(base, `e2e-${n}.log`);
