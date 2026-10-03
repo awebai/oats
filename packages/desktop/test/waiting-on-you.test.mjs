@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { waitingOnYouData, waitingMessage, waitingClaim, waitingLabel, waitedText, waitingClock, waitingNames,
   waitingBelowText, waitingSentence } from '../renderer/waiting-on-you.mjs';
+import { EVENTS_WITHHELD, eventsDetail } from '../renderer/instance-events-contract.mjs';
 import { collapseKey, instanceId, waitingRollup } from '../renderer/instance-tree.mjs';
 
 const since = '2026-10-03T10:00:00.000Z';
@@ -80,10 +81,30 @@ test('the message rule never throws, whatever the value (no length-throwing help
     assert.doesNotThrow(() => waitingMessage(v)); assert.equal(waitingMessage(v), null);
   }
 });
-test('an unsafe message (a URL, a token assignment) is withheld, never shown', () => {
-  assert.equal(waitingMessage('open https://private.example/secret'), '[Detail withheld]');
-  assert.equal(waitingMessage('password: hunter2'), '[Detail withheld]');
-  assert.equal(waitingOnYouData(claim({ message: 'api_key=abc123' })).message, '[Detail withheld]');
+// What eventsUnsafe refuses in a note (#584 finding 12): the reviewer's three ordinary notes, and the
+// kind of text the rule is for.
+const WITHHELD_NOTES = ['See https://github.com/awebai/oats/pull/552', 'Which token: A or B?', 'api key: rotate now?',
+  'open https://private.example/secret', 'password: hunter2', 'api_key=abc123'];
+test('an unsafe message (a URL, a token assignment) is withheld by the validator: the marker, still a valid note', () => {
+  assert.equal(EVENTS_WITHHELD, '[Detail withheld]');
+  for (const note of WITHHELD_NOTES) assert.equal(waitingMessage(note), EVENTS_WITHHELD, note);
+  assert.equal(eventsDetail('Which token: A or B?'), EVENTS_WITHHELD, 'the same marker as an event detail');
+});
+test('the sidebar\'s claim never carries the withheld marker: a withheld note reads null and the claim is kept (#584)', () => {
+  for (const note of WITHHELD_NOTES) {
+    const out = waitingOnYouData(claim({ message: note }));
+    assert.deepEqual(out, { since, producer: 'claude-hook', reason: 'permission', message: null }, note);
+    assert.deepEqual(waitingOnYouData(out), out, 'validated again (server, then renderer): the same');
+    assert.equal(waitingClaim({ running: true, runtimeState: 'running', waitingOnYou: claim({ message: note }) }).message, null, note);
+  }
+  // The marker itself, as a note (an older Desktop server, or an agent that typed it): no note either.
+  assert.equal(waitingOnYouData(claim({ message: EVENTS_WITHHELD })).message, null);
+  assert.equal(waitingOnYouData(claim({ message: 'Allow Bash(rm -rf build)?' })).message, 'Allow Bash(rm -rf build)?', 'a safe note is kept');
+});
+test('the withheld marker is one literal: the contract exports it, the claim module only imports it', () => {
+  const source = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), 'utf8');
+  assert.equal(source('instance-events-contract.mjs').split(EVENTS_WITHHELD).length - 1, 1);
+  assert.equal(source('waiting-on-you.mjs').includes(EVENTS_WITHHELD), false);
 });
 
 test('reasons map to fixed words; an unknown or null reason reads "Needs input" and the raw value is never returned', () => {
@@ -130,6 +151,11 @@ test('waitingSentence (unavailable rows) names the message or label and an absol
   const sameDay = Date.parse(since) + 60000, at = waitingClock(since, sameDay);
   assert.equal(waitingSentence(waitingOnYouData(claim()), [], sameDay), ` · Needs input: Allow Bash(rm -rf build)? since ${at}`);
   assert.equal(waitingSentence(waitingOnYouData(claim({ message: null, reason: 'question' })), [], sameDay), ` · Needs input: Asked you a question since ${at}`);
+  // A withheld note reads as the reason in words, never "[Detail withheld]" (#584 finding 12).
+  for (const [note, reason, label] of [['See https://github.com/awebai/oats/pull/552', 'attention', 'Asked for your attention'],
+    ['Which token: A or B?', 'question', 'Asked you a question'], ['api key: rotate now?', 'approval', 'Needs input']]) {
+    assert.equal(waitingSentence(waitingOnYouData(claim({ message: note, reason })), [], sameDay), ` · Needs input: ${label} since ${at}`, note);
+  }
   // A start built from LOCAL fields, so its local date is known in any time zone.
   const lastYear = waitingOnYouData(claim({ since: new Date(localAt(2026, 9, 3, 10, 0)).toISOString() }));
   assert.equal(waitingSentence(lastYear, [], localAt(2027, 0, 5, 12, 0)), ' · Needs input: Allow Bash(rm -rf build)? since 2026-10-03 10:00', 'a claim from another year carries its date');
@@ -137,22 +163,39 @@ test('waitingSentence (unavailable rows) names the message or label and an absol
   assert.equal(waitingSentence(null, []), '');
 });
 
-// The gate: Desktop liveness decides, whatever the kernel said.
+// The gate: liveness decides, whatever the kernel said about the claim.
 const row = (extra = {}) => ({ instance: 'dev-1', running: true, runtimeState: 'running', waitingOnYou: claim(), ...extra });
+// A remote row as the kernel's roster sends it and remotePanel projects it: `runtimeState: null` (#582).
+const remoteRow = (extra = {}) => row({ server: 's1', runtimeState: null, serverUnreached: false, ...extra });
 test('waitingClaim: a running row (Desktop liveness running, or runtimeState absent) shows its claim', () => {
   assert.deepEqual(waitingClaim(row()), waitingOnYouData(claim()));
   const { runtimeState: _absent, ...noState } = row();
   assert.ok(waitingClaim(noState));
 });
+test('waitingClaim: a null runtimeState is "not reported", not "not running" — a kernel-shaped remote row shows its claim (#582)', () => {
+  assert.deepEqual(waitingClaim(remoteRow()), waitingOnYouData(claim()));
+  assert.deepEqual(waitingClaim(row({ runtimeState: null })), waitingOnYouData(claim()), 'one rule for every row, not a remote-only branch');
+});
 for (const [label, extra, options] of [
   ['tmux says shell', { running: false, runtimeState: 'shell' }], ['shell even if running were true', { runtimeState: 'shell' }],
   ['stopped', { running: false, runtimeState: 'stopped' }], ['unreachable', { running: null, runtimeState: 'unreachable' }],
   ['unsupported', { running: null, runtimeState: 'unsupported' }], ['running false', { running: false, runtimeState: undefined }],
+  ['unreachable even if running were true', { runtimeState: 'unreachable' }], ['unsupported even if running were true', { runtimeState: 'unsupported' }],
+  ['stopped even if running were true', { runtimeState: 'stopped' }], ['an unknown reported state', { runtimeState: 'paused' }],
   ['running null', { running: null, runtimeState: undefined }], ['running "true" (string)', { running: 'true' }],
-  ['server unreached', { serverUnreached: true }], ['held stale', {}, { stale: true }],
+  ['held stale', {}, { stale: true }],
   ['no claim', { waitingOnYou: null }], ['an absent claim', { waitingOnYou: undefined }], ['a malformed claim', { waitingOnYou: { since: 'now', producer: 'x' } }],
 ]) test(`waitingClaim: ${label} → null`, () => {
   assert.equal(waitingClaim(row(extra), options), null);
+});
+// Each hides a remote row that shows its claim without it (the positive case above).
+for (const [label, extra, options] of [
+  ['not running by its host', { running: false }], ['state unknown', { running: null }],
+  ['reported unreachable', { running: null, runtimeState: 'unreachable' }], ['reported unsupported', { running: null, runtimeState: 'unsupported' }],
+  ['server unreached', { serverUnreached: true }], ['server unreached, last-known rows', { running: null, serverUnreached: true }],
+  ['held stale', {}, { stale: true }], ['no claim', { waitingOnYou: null }],
+]) test(`waitingClaim: a remote row (runtimeState null), ${label} → null`, () => {
+  assert.equal(waitingClaim(remoteRow(extra), options), null);
 });
 test('waitingClaim never throws on a non-record row', () => {
   for (const value of [null, undefined, 'row', 3, []]) assert.equal(waitingClaim(value), null);
@@ -197,8 +240,12 @@ test('a parent cycle or a missing parent degrades to no roll-up, never a crash',
   assert.deepEqual(rollup([orphan, other], collapsedOf(other)), {});
 });
 test('a roll-up never crosses a remote server boundary', () => {
-  const local = inst('root'), remote = waiting('dev-r', 'root', { server: 's1', home: '/r/agents/dev/instances/dev-r', agentsRoot: '/r/agents' });
+  const local = inst('root'), remote = waiting('dev-r', 'root', { server: 's1', runtimeState: null, home: '/r/agents/dev/instances/dev-r', agentsRoot: '/r/agents' });
+  assert.ok(waitingClaim(remote), 'the remote row is waiting (kernel shape: runtimeState null)');
   assert.deepEqual(rollup([local, remote], collapsedOf(local)), {});
+  // The same row rolls up under a collapsed parent on its own server: the boundary is what stopped it above.
+  const remoteRoot = inst('root', undefined, { server: 's1', runtimeState: null, home: '/r/agents/dev/instances/root', agentsRoot: '/r/agents' });
+  assert.deepEqual(rollup([remoteRoot, remote], collapsedOf(remoteRoot)), { [instanceId(remoteRoot)]: ['dev-r'] });
 });
 
 test('waitingRollup: a chain that leaves the waiting row\'s section (deployment) rolls up nowhere', () => {

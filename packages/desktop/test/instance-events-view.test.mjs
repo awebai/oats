@@ -175,6 +175,15 @@ test('a waiting claim with a message adds it to the summary as literal text', as
   assert.match(u.summary.textContent, new RegExp(`Reported waiting: provider\\.b since ${birth.replace(/\./g, '\\.')} — Pick <b>one</b>\\?$`));
   assert.equal(u.summary.querySelector('b'), null);
 });
+test('a withheld note still reads "[Detail withheld]" in the summary: the activity view rule (the sidebar shows the reason label)', async t => {
+  for (const message of ['See https://github.com/awebai/oats/pull/552', 'Which token: A or B?', 'api key: rotate now?']) {
+    const value = data([event()]);
+    value.waitingClaims = [{ producer: 'provider.b', waiting: true, since: birth, reason: 'question', message }];
+    value.waitingOnYou = { producer: 'provider.b', since: birth, reason: 'question', message };
+    const u = setup(t, async () => view(value)); await u.controller.read();
+    assert.ok(u.summary.textContent.endsWith(`Reported waiting: provider.b since ${birth} — [Detail withheld]`), `${message}: ${u.summary.textContent}`);
+  }
+});
 test('a waiting claim without a message keeps the summary unchanged', async t => {
   const value = data([event()]);
   value.waitingClaims = [{ producer: 'provider.b', waiting: true, since: birth, reason: null }];
