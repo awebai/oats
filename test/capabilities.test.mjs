@@ -1732,7 +1732,7 @@ test("harness requirements may be conditional on capability settings (when) and 
   process.env.PATH = fakePiWithPackages(base, [{ source: "npm:@awebai/pi", dir: pkgDir("0.3.9") }]);
   await assert.rejects(
     spawn("dev-old", "session"),
-    (e) => e.code === "E_HARNESS_RESOURCE_MISSING" && /at 0\.3\.10 or later; 0\.3\.9 is installed/.test(e.message) && /--accept-requirement/.test(e.message),
+    (e) => e.code === "E_HARNESS_RESOURCE_MISSING" && /at 0\.3\.10 or later; 0\.3\.9 is installed/.test(e.message) && /'pi' 'install' 'npm:@awebai\/pi'/.test(e.message) && !/oats install|--accept-requirement/.test(e.message),
   );
   // session + current extension: passes
   process.env.PATH = fakePiWithPackages(base, [{ source: "npm:@awebai/pi", dir: pkgDir("0.3.10") }]);
@@ -1828,8 +1828,8 @@ test("spawn fails closed when a capability's harness package is missing, even af
       fx.spawn("dev", { instance: "dev-pi", harness: "pi" }),
       (e) => e.code === "E_HARNESS_RESOURCE_MISSING"
         && /acme\.chan requires the pi package npm:@awebai\/pi/.test(e.message)
-        && /--accept-requirement pi:npm:@awebai\/pi/.test(e.message),
-      "spawn names the exact separately-consentable remedy",
+        && /'pi' 'install' 'npm:@awebai\/pi'/.test(e.message) && !/oats install|--accept-requirement/.test(e.message),
+      "spawn names the direct operator-run remedy",
     );
     assert.equal(existsSync(join(root, "dev", "instances", "dev-pi")), false, "no scaffold left behind");
   } finally { process.env.PATH = oldPath; process.env.HOME = oldHome; }
@@ -2463,20 +2463,20 @@ test("a Claude capability plugin is verified at spawn, never installed there", a
   } finally { process.env.PATH = oldPath; }
 });
 
-test("a missing or DISABLED Claude plugin fails the spawn with the consent remedy", async (t) => {
+test("a missing or DISABLED Claude plugin fails the spawn with the operator remedy", async (t) => {
   const fx = v2Dev(t, { "acme.chan": cap({
     requires: [{ harness: "claude", package: "chan@acme-marketplace", marketplace: "acme/claude-plugins", why: "push events" }],
   }) });
   const { base, root } = fx;
   const oldPath = process.env.PATH;
   try {
-    // Absent entirely: the remedy names the consent command AND both install steps.
+    // Absent entirely: the remedy names both direct install steps, in order.
     process.env.PATH = fakeClaudeWithPlugins(base, []);
     await assert.rejects(
       fx.spawn("dev", { instance: "dev-miss", harness: "claude" }),
       (e) => e.code === "E_HARNESS_RESOURCE_MISSING"
-        && /--accept-requirement claude:chan@acme-marketplace/.test(e.message)
-        && /claude plugin marketplace add acme\/claude-plugins && claude plugin install chan@acme-marketplace/.test(e.message),
+        && !/oats install|--accept-requirement/.test(e.message)
+        && /'claude' 'plugin' 'marketplace' 'add' 'acme\/claude-plugins' && 'claude' 'plugin' 'install' 'chan@acme-marketplace'/.test(e.message),
     );
     // Installed but switched off will not load, so it does not satisfy the requirement.
     process.env.PATH = fakeClaudeWithPlugins(base, [{ name: "chan@acme-marketplace", disabled: true }]);
@@ -3642,4 +3642,37 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
     assert.equal(existsSync(join(root, "dev", "instances", ".oats-retirement", "recovery")), false, "and preserved nothing, since the caller changed no home bytes");
     assert.equal(listInstances(root, "oats-test-nosuch").find((a) => a.name === "dev").retireFailures, undefined, "a success is not a failure to surface");
   } finally { process.env.PATH = oldPath; if (oldInst === undefined) delete process.env.OATS_INSTANCE; else process.env.OATS_INSTANCE = oldInst; }
+});
+
+for (const harness of ["pi", "claude"]) test(`${harness} missing-package remedy preserves selected executable, resource directory and shell quoting without installing during preflight`, async (t) => {
+  const spec = harness === "pi" ? "npm:@awebai/pi@0.3.10" : "chan@acme-marketplace";
+  const fx = v2Dev(t, { "acme.chan": cap({ requires: [{ harness, package: spec, ...(harness === "claude" ? { marketplace: "acme/claude-plugins" } : {}), why: "channel" }] }) });
+  process.env.PATH = fakeHarnesses(fx.base);
+  const wrapper = join(fx.base, "selected harness's bin", `${harness} wrapper`);
+  const resourceDir = join(fx.base, "resource dir's $(literal)"), log = join(fx.base, "manager-calls.jsonl");
+  const selector = harness === "pi" ? "PI_CODING_AGENT_DIR" : "CLAUDE_CONFIG_DIR";
+  write(wrapper, `#!${process.execPath}
+const fs = require('node:fs');
+fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd(), resource: process.env[${JSON.stringify(selector)}] }) + '\\n');
+if (process.argv[2] === 'plugin' && process.argv[3] === 'list') process.stdout.write('[]');
+`);
+  execFileSync("chmod", ["+x", wrapper]);
+  const localFile = join(fx.dep, "oats-local.yaml");
+  write(localFile, readFileSync(localFile, "utf8") + `\nlaunch-configs:\n  remedy:\n    harness: ${harness}\n    executable: ${JSON.stringify(wrapper)}\n    env:\n      ${selector}: ${JSON.stringify(resourceDir)}\n`);
+  let message;
+  await assert.rejects(fx.spawn("dev", { instance: `dev-remedy-${harness}`, launchConfig: "remedy" }), (e) => {
+    assert.equal(e.code, "E_HARNESS_RESOURCE_MISSING"); message = e.message; return true;
+  });
+  const calls = () => readFileSync(log, "utf8").trim().split("\n").map(JSON.parse);
+  assert.ok(calls().every((r) => !r.args.includes("install") && !r.args.includes("marketplace")), "preflight probes only, never installs");
+  assert.doesNotMatch(message, /oats install|--accept-requirement/);
+  const command = /operator to run `([^`]+)`/.exec(message)?.[1];
+  assert.ok(command, message);
+  writeFileSync(log, "");
+  // Only the fixture's inert package-manager stub runs: prove the guidance is
+  // executable shell text even when executable/config paths contain quotes.
+  execFileSync("/bin/sh", ["-c", command], { cwd: fx.base, env: { ...process.env, [selector]: "/wrong-resource-dir" } });
+  assert.deepEqual(calls().map((r) => r.args), harness === "pi" ? [["install", spec]] : [["plugin", "marketplace", "add", "acme/claude-plugins"], ["plugin", "install", spec]]);
+  for (const r of calls()) { assert.equal(r.resource, resourceDir); assert.equal(r.cwd, fx.dep); }
+  assert.equal(existsSync(join(fx.root, "dev", "instances", `dev-remedy-${harness}`)), false);
 });

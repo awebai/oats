@@ -158,7 +158,10 @@ A self-contained package has an `oats.json`:
   A harness package is **verified at spawn, never installed there**: installing
   would mutate the operator's harness configuration without asking, in the
   middle of a spawn. A missing, uninstalled or disabled package fails the spawn
-  with the consent command that fixes it.
+  with direct package-manager guidance for the operator. The command uses the
+  selected harness executable and resource directory, with Claude marketplace
+  registration before plugin installation. Run it in the indicated context
+  with the same launch environment; spawn and restart never install packages.
 - OATS never installs a host requirement silently. A missing host command is
   the operator's to install; `oats doctor` reports it. Consent to install is
   separate from declaring the package.
