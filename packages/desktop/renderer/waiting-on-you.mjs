@@ -5,13 +5,19 @@
  * The claim contract only: the server imports it (deployment-data, remote-roster), so it imports
  * contract modules and nothing else — no tree traversal, no loading UI. */
 import { record } from './readiness-contract.mjs';
-import { eventsTimestamp, eventsId, eventsDetail } from './instance-events-contract.mjs';
+import { eventsTimestamp, eventsId, eventsUnsafe } from './instance-events-contract.mjs';
 
-/** A claim's note: one line ≤ 200 chars, no control characters; unsafe text is withheld (the activity
- * view's house rule). Absent, empty or malformed → null: the claim itself is kept. */
+/** Not text a one-line note may hold — the kernel's class (validWaitingMessage, lib/instance-events.mjs),
+ * exactly: control characters (Cc: C0, DEL, C1), format characters (Cf: bidi controls, zero-width
+ * characters, the BOM, soft hyphen) and the line and paragraph separators. */
+const NOT_NOTE_TEXT = /[\p{Cc}\p{Cf}\u2028\u2029]/u;
+
+/** A claim's note: a non-empty string of at most 200 code points (not UTF-16 units: 101 emoji is a valid
+ * note), with none of NOT_NOTE_TEXT; unsafe text is withheld (the activity view's house rule). Anything
+ * else → null: the claim itself is kept. Never throws (no length-throwing detail helper on this path). */
 export function waitingMessage(v) {
-  if (typeof v !== 'string' || !v || v.length > 200 || /[\x00-\x1f\x7f]/.test(v)) return null;
-  return eventsDetail(v, 200);
+  if (typeof v !== 'string' || !v || [...v].length > 200 || NOT_NOTE_TEXT.test(v)) return null;
+  return eventsUnsafe.test(v) ? '[Detail withheld]' : v;
 }
 
 /** `{ since, producer, reason, message }` or null. Only `since` and `producer` can drop a claim: a

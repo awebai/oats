@@ -47,7 +47,11 @@ test('a 64-char unknown reason is kept verbatim for mapping', () => {
 
 for (const [label, message] of [['absent', undefined], ['null', null], ['empty', ''], ['a newline', 'line one\nline two'],
   ['a carriage return', 'a\rb'], ['a tab', 'a\tb'], ['a control char', 'a\x1bb'], ['DEL', 'a\x7fb'], ['201 chars', 'm'.repeat(201)],
-  ['a number', 42], ['an object', { text: 'x' }]]) {
+  ['a number', 42], ['an object', { text: 'x' }],
+  // The kernel's rule (#553/#555): code points, and no C1, line/paragraph separator or format (Cf) character.
+  ['201 code points (emoji)', '\u{1F600}'.repeat(201)], ['a C1 control (U+0085)', 'a\u0085b'], ['a line separator (U+2028)', 'a\u2028b'],
+  ['a paragraph separator (U+2029)', 'a\u2029b'], ['a bidi override (U+202E)', 'a\u202Eb'], ['a zero-width space (U+200B)', 'a\u200Bb'],
+  ['a BOM (U+FEFF)', '\uFEFFab'], ['a ZWJ emoji sequence (U+200D is Cf, refused exactly as the kernel does)', '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}']]) {
   test(`a message that is ${label} reads null and the claim is kept`, () => {
     const value = claim(); if (message === undefined) delete value.message; else value.message = message;
     const out = waitingOnYouData(value);
@@ -56,7 +60,16 @@ for (const [label, message] of [['absent', undefined], ['null', null], ['empty',
 }
 test('a 200-char message is kept; markup is kept verbatim (rendered as text by the caller)', () => {
   assert.equal(waitingMessage('m'.repeat(200)), 'm'.repeat(200));
+  // 101 emoji: 202 UTF-16 units, 101 code points — valid; the rule counts code points, as the kernel does.
+  const emoji = '\u{1F600}'.repeat(101);
+  assert.equal(emoji.length, 202); assert.equal(waitingMessage(emoji), emoji);
+  assert.equal(waitingMessage('\u{1F600}'.repeat(200)), '\u{1F600}'.repeat(200), '200 code points is the limit');
   assert.equal(waitingMessage('<b>x</b><script>alert(1)</script>'), '<b>x</b><script>alert(1)</script>');
+});
+test('the message rule never throws, whatever the value (no length-throwing helper on this path)', () => {
+  for (const v of ['\u{1F600}'.repeat(5000), 'x'.repeat(5000), 'https://x.example/' + 'a'.repeat(3000), Symbol('s'), 10n, () => 1, ['a']]) {
+    assert.doesNotThrow(() => waitingMessage(v)); assert.equal(waitingMessage(v), null);
+  }
 });
 test('an unsafe message (a URL, a token assignment) is withheld, never shown', () => {
   assert.equal(waitingMessage('open https://private.example/secret'), '[Detail withheld]');

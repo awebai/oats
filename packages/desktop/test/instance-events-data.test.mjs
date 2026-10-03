@@ -172,3 +172,12 @@ test('a message on any other event kind is not projected', () => {
   const out = eventsData(data([event({ kind: 'launched', data: { backend: 'tmux', message: 'not a claim note' } })]), target);
   assert.ok(out); assert.equal(Object.hasOwn(out.events[0].data, 'message'), false);
 });
+
+test('a 101-emoji message (202 UTF-16 units, 101 code points) on both waitingOnYou and its claim is accepted and kept', () => {
+  const message = '\u{1F600}'.repeat(101), value = data([event()]);
+  value.waitingClaims = [{ producer: 'provider.b', waiting: true, since: birth, reason: 'attention', message }];
+  value.waitingOnYou = { producer: 'provider.b', since: birth, reason: 'attention', message };
+  const out = eventsData(value, target);
+  assert.ok(out, 'the read is accepted');
+  assert.equal(out.waitingOnYou.message, message); assert.equal(out.waitingClaims[0].message, message);
+});

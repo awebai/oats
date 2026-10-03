@@ -53,9 +53,10 @@ bounded and credential/URL-redacted. Raw notes, task/environment/recipe/command
 payloads and PID arrays are not forwarded. Paths and past plan revisions are
 provenance text, not file links, terminal targets or executable confirmations.
 
-A claim may carry a `message` (one line, at most 200 characters, no control
-characters). It is optional: a kernel without it omits the key, which reads as
-`null`. An invalid or empty message is `null` and the claim is kept. When
+A claim may carry a `message`: at most 200 code points (not UTF-16 units), no
+control or format characters (C0, DEL, C1, U+2028/U+2029, and Unicode Cf such as
+bidi controls, ZWJ, ZWSP and BOM), the kernel's rule exactly. It is optional:
+a kernel without it omits the key, which reads as `null`. An invalid or empty message is `null` and the claim is kept. When
 either `waitingOnYou` or the newest positive claim owns `message`, the raw values
 must be equal (a missing key counts as `null`), as for producer, since and
 reason. The summary shows it after the producer and time, as plain text.
