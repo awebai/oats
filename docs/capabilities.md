@@ -540,8 +540,15 @@ runs `bin/claude-waiting.sh` from the home's module copy, which calls
 Claude Code shows an AskUserQuestion through its permission dialog, so that
 dialog's own `permission_prompt` follows the question's set: the script keeps
 the current reason in its marker, and a permission prompt never relabels an
-open question. Refusing a tool at the permission prompt interrupts the turn
-(no `PostToolUse`, no `Stop`), which is why `PostToolUseFailure` clears too.
+open question. A granted tool that fails fires `PostToolUseFailure`, not
+`PostToolUse`, so that clears too.
+
+**A refused permission prompt is not observable.** On Claude Code 2.1.288,
+answering "No" at a permission prompt interrupts the turn and fires no hook
+(no `PostToolUse`, `PostToolUseFailure`, `PostToolBatch` or `Stop`; probed).
+Claude then waits for the human ("What should Claude do instead?"), and the
+claim stays, still labelled `permission`, until the human's next prompt
+clears it.
 
 - **Its own entries only.** oats.core marks its entries by the absolute
   path of its `claude-waiting.sh`. Each run removes only the entries that

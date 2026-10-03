@@ -60,8 +60,8 @@ export function claudeWaitingSettings({ script, node, cli }) {
       Notification: [group("permission_prompt", "set", "permission"), group("elicitation_dialog", "set", "question")],
       PreToolUse: [group("AskUserQuestion", "set", "question"), group("^(?!AskUserQuestion$).*", "clear")],
       PostToolUse: [group(ALL_TOOLS, "clear")],
-      // A failed tool, and a tool call the human refused at the permission prompt (Claude
-      // Code 2.1.288 then interrupts the turn: no PostToolUse and no Stop follow).
+      // A granted tool that failed: no PostToolUse follows it. (A tool the human refused at
+      // the prompt fires no hook at all in Claude Code 2.1.288; the next prompt clears.)
       PostToolUseFailure: [group(ALL_TOOLS, "clear")],
       UserPromptSubmit: [group(undefined, "clear")],
       Stop: [group(undefined, "clear")],
