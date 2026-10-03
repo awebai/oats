@@ -1931,6 +1931,15 @@ route target:
   `relativeTo` and `spawnOrigin` are always present, `null` when the host
   does not supply them (a host before 0.31, a fact it never recorded, or a
   saved route the host no longer lists). Nothing is derived on this side.
+- **`waitingOnYou`** (0.40.2, [Waiting on you](#waiting-on-you)) is on a row
+  only when the host's kernel reports it: a row from a host before 0.40.0,
+  and a saved route the host did not list, have no such key. Absent means
+  "not reported", which is not `null` ("no claim"). When present it is `null`
+  or `{since, producer, reason, message}`, passed through the kernel's read
+  rule again on this side: a value that is not a claim (no valid `since` or
+  `producer`) is `null`, and an unknown `reason` or an invalid `message` is
+  `null` inside a claim that still counts. As on a local row, the host
+  reports a claim only for a running instance.
 - **`addressable`** (0.31): `true` for every row the host reports. Routed
   session and lifecycle commands reach it by `--home`, or by name when the
   name is unique on the host ([addressing](servers.md#run-there); a shared
