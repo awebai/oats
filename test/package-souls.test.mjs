@@ -290,3 +290,58 @@ test("a package soul's launch preference (feature launch-preference): its own la
   const preview = ok(fx.cli(["spawn", "acme.pkg/keeper", "--preview", "--json"]), "preview");
   assert.deepEqual([preview.harness, preview.model, preview.launch.from], ["claude", "claude-opus-5-5", "local"]);
 });
+
+// #533: a package soul is trusted through the workspace's `packages:` pin (lock commit + integrity),
+// never through membership (docs/workspaces.md, the non-collapse rule). Its repository (here a
+// bare package repo the workspace does not list in members:) is not a member, and must not need to be.
+test("readiness: a package soul's member check is its package (locked, integrity, soul at the locked commit), never membership; a member soul keeps the membership check", (t) => {
+  const fx = fixture(); t.after(fx.cleanup);
+  ok(fx.cli(["sync", "--json"]), "sync");
+  const digest = lockOf(fx).packages["acme.pkg"].souls[0].digest;
+  const packageItem = (rd, what) => {
+    assert.equal(rd.checks.member.items.length, 1, `${what}: ${JSON.stringify(rd.checks.member)}`);
+    const [it] = rd.checks.member.items;
+    assert.equal(it.subject, "package acme.pkg/keeper", what);
+    assert.equal(it.producer, "workspace lock", what);
+    assert.deepEqual(it.evidence.from, { kind: "package", package: "acme.pkg", version: "1.0.0", commit: fx.pkg.commit1, integrity: digest }, what);
+    return it;
+  };
+
+  let rd = ok(fx.cli(["readiness", "--soul", "acme.pkg/keeper", "--json"]), "readiness --soul (package)");
+  let it = packageItem(rd, "readiness --soul");
+  assert.deepEqual([it.status, it.required, it.reason, it.remedy], ["pass", true, null, null], JSON.stringify(it));
+  assert.equal(rd.checks.member.status, "pass");
+  assert.doesNotMatch(JSON.stringify(rd), /not a member/);
+
+  const { home } = ok(fx.cli(["spawn", "acme.pkg/keeper", "--purpose", "r", "--no-launch", "--json"]), "spawn");
+  rd = ok(fx.cli(["readiness", "--home", home, "--json"]), "readiness --home (package)");
+  it = packageItem(rd, "readiness --home");
+  assert.deepEqual([it.status, it.reason], ["pass", null], JSON.stringify(it));
+
+  // A member soul is unchanged: its member repository, confirmed in the workspace.
+  rd = ok(fx.cli(["readiness", "--soul", "dev", "--json"]), "readiness --soul (member)");
+  assert.deepEqual(rd.checks.member.items.map((i) => [i.subject, i.status, i.producer]), [[`member ${fx.key}`, "pass", "workspace discovery"]]);
+
+  // The package no longer declared in packages: — the spawned home's soul has no package behind it.
+  const ws = YAML.parse(readFileSync(join(fx.member, "oats-workspace.yaml"), "utf8"));
+  const pinned = ws.packages;
+  delete ws.packages;
+  fx.commit({ "oats-workspace.yaml": YAML.stringify(ws) }, "undeclare acme.pkg");
+  rd = ok(fx.cli(["readiness", "--home", home, "--json"]), "readiness --home (package undeclared)");
+  it = rd.checks.member.items[0];
+  assert.deepEqual([it.subject, it.status], ["package acme.pkg/keeper", "fail"], JSON.stringify(it));
+  assert.match(it.reason, /acme\.pkg is not locked in this workspace's packages:/);
+  assert.match(it.remedy, /packages:.*oats sync/);
+  ws.packages = pinned;
+  fx.commit({ "oats-workspace.yaml": YAML.stringify(ws) }, "declare acme.pkg again");
+
+  // Integrity: the locked soul digest does not match the soul at the locked commit.
+  rmSync(join(fx.root, "acme-pkg--keeper", "souls"), { recursive: true, force: true });
+  const edited = lockOf(fx);
+  edited.packages["acme.pkg"].souls[0].digest = `sha256-${"0".repeat(64)}`;
+  writeFileSync(join(fx.dep, "oats-lock.json"), JSON.stringify(edited, null, 2) + "\n");
+  rd = ok(fx.cli(["readiness", "--soul", "acme.pkg/keeper", "--json"]), "readiness --soul (edited soul digest)");
+  it = rd.checks.member.items[0];
+  assert.deepEqual([it.subject, it.status, it.code], ["package acme.pkg/keeper", "fail", "E_PACKAGE_INTEGRITY"], JSON.stringify(it));
+  assert.match(it.reason, /does not match the locked/);
+});

@@ -468,6 +468,14 @@ confirmed member (`evidence: {repoKey, workspace, commit}`); `fail` when not
 (the remedy names `oats-membership.yaml`); `unknown` when the workspace could
 not be read. External souls and standalone views are `not-applicable`,
 `required: false` (a standalone item carries `evidence.standaloneReason`).
+A package soul is trusted through the workspace's `packages:` pin, never
+through membership ([the non-collapse rule](workspaces.md#member-tier-vs-package-tier-the-non-collapse-rule)):
+its item is `package <package>/<soul>` (producer `workspace lock`,
+`evidence: {repoKey, workspace, commit, version, integrity, from}` with
+`from.kind: "package"`). It passes when the package is declared and locked
+and ships the soul at the locked commit, and the soul's copy matches the
+locked digest; it fails otherwise (`code: "E_PACKAGE_INTEGRITY"` on a
+digest mismatch), with `oats sync` in the remedy.
 
 **`providers`** (producer `provider binding check`): for each module whose
 manifest declares `binding`, the kernel runs its `binding.check` and relays
