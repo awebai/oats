@@ -236,7 +236,7 @@ test('K6d (spawn-apply-2): the decision binds EFFECTIVE launch facts (a changed 
   assert.ok(JSON.parse(fx.run(['version', '--json']).stdout).features.includes('spawn-apply-2'));
 });
 
-test('K6e replay custody: key recovery runs BEFORE placement/branch checks (an explicit-branch spawn replays instead of E_BRANCH_EXISTS); a home whose spawn did not complete replays E_SPAWN_INCOMPLETE, never success; wake outcome is recorded and returned on replay (saved:null when not recorded)', t => {
+test('K6e replay custody: key recovery runs BEFORE placement/branch checks (an explicit-branch spawn replays instead of E_BRANCH_EXISTS); a home whose spawn did not complete replays E_SPAWN_INCOMPLETE, never success; wake outcome is recorded and returned on replay (saved:null when not recorded)', async t => {
   const fx = deployment(t, { souls: WORKTREE });
   const spawn = (...args) => fx.last(['spawn', 'wt', '--purpose', 'b', '--branch', 'feat/explicit', ...args, '--json']);
   // Explicit branch: after the first spawn the branch EXISTS; the same-key retry must replay, not E_BRANCH_EXISTS.
@@ -254,6 +254,30 @@ test('K6e replay custody: key recovery runs BEFORE placement/branch checks (an e
   m.spawnCompleted = false; delete m.wake; writeFileSync(join(home, 'instance.json'), JSON.stringify(m, null, 2));
   const inc = spawn('--expect-decision', rev, '--idempotency-key', 'kb', '--no-launch');
   assert.equal(inc.error.code, 'E_SPAWN_INCOMPLETE'); assert.equal(inc.error.details.home, home); assert.match(inc.error.message, /do not spawn again/);
+  assert.equal(inc.ok, false);
+  assert.equal(inc.error.details.unconfirmed, true);
+  assert.equal(inc.error.details.instance, 'wt-b');
+  assert.equal(inc.error.details.launched, false);
+  // The kernel producer carries the marker before CLI serialization, preserving
+  // the existing recovery context for both pre-launch and possibly launched homes.
+  for (const launched of [false, true]) {
+    m.launched = launched; writeFileSync(join(home, 'instance.json'), JSON.stringify(m, null, 2));
+    await assert.rejects(fx.spawn('wt', { purpose: 'b', branch: 'feat/explicit', expectDecision: rev, idempotencyKey: 'kb' }), (error) => {
+      assert.equal(error.code, 'E_SPAWN_INCOMPLETE');
+      assert.equal(error.details?.unconfirmed, true);
+      assert.equal(error.instance, 'wt-b');
+      assert.equal(error.home, home);
+      assert.equal(error.launched, launched ? 'unknown' : false);
+      return true;
+    });
+    const replay = spawn('--expect-decision', rev, '--idempotency-key', 'kb', '--no-launch');
+    assert.equal(replay.error.code, 'E_SPAWN_INCOMPLETE');
+    assert.equal(replay.error.details.unconfirmed, true);
+    assert.equal(replay.error.details.instance, 'wt-b');
+    assert.equal(replay.error.details.home, home);
+    assert.equal(replay.error.details.launched, launched ? 'unknown' : false);
+  }
+  m.launched = false;
   assert.deepEqual(homes(fx, 'wt'), ['wt-b'], 'nothing else created');
   // Wake not recorded (crash in the interval): replay says saved:null, never true/false.
   m.spawnCompleted = true; writeFileSync(join(home, 'instance.json'), JSON.stringify(m, null, 2));

@@ -54,7 +54,7 @@ function provider(purpose) {
   const okf = join(home, ".oats", "modules", "oats.okf");
   const manifestPath = join(okf, "oats.json");
   const m = JSON.parse(readFileSync(manifestPath, "utf8"));
-  for (const c of ["digest", "memory", "badview", "fail", "sweep", "liar", "noisy", "liarnamed", "retained"]) m.commands[c] = `bin/notes.mjs ${c}`;
+  for (const c of ["digest", "memory", "badview", "fail", "sweep", "liar", "noisy", "liarnamed", "retained", "marked", "unmarked", "falsemarker", "stringmarker"]) m.commands[c] = `bin/notes.mjs ${c}`;
   Object.assign(m.operations, {
     harvest: { kind: "action", command: "digest", context: "home", description: "Digest MEMORY.md", args: [{ name: "depth", required: true, description: "how deep" }, { name: "dry" }] },
     memory: { kind: "view", command: "memory", context: "home" },
@@ -64,6 +64,10 @@ function provider(purpose) {
     liar: { command: "liar", context: "home" },
     liarnamed: { command: "liarnamed", context: "home" },
     retained: { command: "retained", context: "home" },
+    marked: { command: "marked", context: "home" },
+    unmarked: { command: "unmarked", context: "home" },
+    falsemarker: { command: "falsemarker", context: "home" },
+    stringmarker: { command: "stringmarker", context: "home" },
     noisy: { command: "noisy", context: "home" },
   });
   writeFileSync(manifestPath, JSON.stringify(m, null, 2));
@@ -82,6 +86,11 @@ else if (cmd === "sweep") console.log(JSON.stringify({ schemaVersion: 1, ok: tru
 else if (cmd === "liar") { console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { done: true } })); process.exit(1); }
 else if (cmd === "liarnamed") { console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { instance: "notes-harvester-9" } })); process.exit(1); }
 else if (cmd === "retained") { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_SPAWN_FAILED", message: "harvester pane could not be stopped; rollback INCOMPLETE, home retained" }, result: { instance: "notes-harvester-3", home: join(process.cwd(), "..", "notes-harvester-3") } })); process.exit(1); }
+else if (["marked", "unmarked", "falsemarker", "stringmarker"].includes(cmd)) {
+  const markers = { marked: true, falsemarker: false, stringmarker: "true" };
+  console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_NOTES_RESULT", message: "provider action failed", details: { ...(cmd in markers ? { unconfirmed: markers[cmd] } : {}), context: { phase: "publish", resources: ["notes-index"] } } }, result: { instance: "notes-harvester-" + cmd, home: join(process.cwd(), "..", "notes-harvester-" + cmd), progress: { completed: 2 } } }));
+  process.exit(1);
+}
 else if (cmd === "noisy") { console.log("progress 1/2"); console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { done: true } })); }
 `);
   write(join(home, "MEMORY.md"), "# remembered\n");
@@ -208,6 +217,50 @@ test("a provider's ordinary ok:false answer with a partial receipt keeps that re
   write(join(home, "..", "notes-harvester-3", "instance.json"), JSON.stringify({ instance: "notes-harvester-3", agent: "release-manager" }));
   const rec = S.reconcile(ws, "r", { io }); assert.equal(rec.reconciled, "adopted"); assert.equal(rec.schedule.lastRun.instance, "notes-harvester-3");
 });
+
+for (const [command, marker] of [["marked", true], ["unmarked", undefined], ["falsemarker", false], ["stringmarker", "true"]]) {
+  test(`operation provider marker ${command} preserves the envelope and only literal true leaves the schedule unresolved`, () => {
+    const { home } = provider(command);
+    const operation = `knowledge:${command}`;
+    const target = { instance: `notes-harvester-${command}`, home: join(home, "..", `notes-harvester-${command}`), progress: { completed: 2 } };
+    const r = oats(["operation", "run", operation, "--home", home, "--json"]);
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    const e = r.json().error;
+    assert.equal(e.code, "E_NOTES_RESULT", "provider codes need no special classification");
+    assert.equal(e.message, `${operation}: provider action failed`, "the message carries no legacy retained-effects wording");
+    assert.equal(e.details.exit, 1);
+    assert.deepEqual(e.details.envelope, {
+      schemaVersion: 1, ok: false,
+      error: { code: "E_NOTES_RESULT", message: "provider action failed", details: { ...(marker !== undefined ? { unconfirmed: marker } : {}), context: { phase: "publish", resources: ["notes-index"] } } },
+      result: target,
+    }, "the complete provider answer and nested diagnostic context survive wrapping");
+    assert.equal(e.details.unconfirmed, marker === true ? true : undefined);
+
+    const id = `marker-${command}`;
+    S.addSchedule(dep, { id, cron: "0 * * * *", tz: "UTC", kind: "operation", operation, home });
+    const io = { inspect: () => ({ present: true, state: "unknown" }) };
+    const tick = (hour) => S.tickWorkspace(dep, { now: new Date(`2026-09-08T${hour}:00:00Z`), io, reg: { maxConcurrent: 8 }, only: id });
+    const c = tick("15");
+    assert.equal(c[0].action, marker === true ? "unknown" : "launch-failed", JSON.stringify(c[0]));
+    const d = S.describe(dep, id, io);
+    assert.equal(d.running, false, "the exited operation holds no host slot");
+    if (marker === true) {
+      assert.equal(d.attempt.exited, true); assert.equal(d.attempt.exitStatus, 1);
+      assert.equal(d.lastRun.instance, target.instance);
+      rmSync(join(home, "notes-invocation.json"));
+      const next = tick("16");
+      assert.equal(next[0].action, "skipped"); assert.match(next[0].reason, /reconcile/);
+      assert.equal(existsSync(join(home, "notes-invocation.json")), false, "an unresolved outcome is not retried");
+      write(join(target.home, "instance.json"), JSON.stringify({ instance: target.instance, agent: "release-manager" }));
+      const rec = S.reconcile(dep, id, { io });
+      assert.equal(rec.reconciled, "adopted"); assert.equal(rec.schedule.lastRun.instance, target.instance);
+    } else {
+      assert.ok(!d.attempt, "ordinary provider failures leave no unresolved attempt");
+      assert.equal(d.lastRun.outcome, "launch-failed");
+      assert.equal(tick("16")[0].action, "launch-failed", "a confirmed failure permits the next scheduled run");
+    }
+  });
+}
 
 test("operation run relays a provider's view whole when it exceeds a pipe buffer (generic runner, any provider)", () => {
   const { home } = provider("bigview");

@@ -71,6 +71,13 @@ and cap updates use that same short lock; later explicit one stays explicit.
 `readRegistry()` returns stored choices; scheduling and status apply the default
 without writing it back. The trigger cap is independent and absent means no cap.
 
+Spawn compensation returns its diagnostic and a structural uncertainty flag;
+only an incomplete result marks the original error's `details.unconfirmed`.
+CLI wrappers preserve that field, and the operation runner promotes a provider's
+literal true marker while retaining the nested envelope. Message-based consumers
+remain during the additive producer migration; do not replace stage evidence
+with a substring check or infer uncertainty from a retained home alone.
+
 The kernel is runtime-neutral: nothing in `lib/` depends on a harness or on
 a provider. Provider behaviour lives in capabilities; the kernel supplies
 their contracts ([layers](layers.md)).
