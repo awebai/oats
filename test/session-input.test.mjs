@@ -2,9 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { inputSessionTarget, inspectSessionTarget } from "../lib/session-input.mjs";
 const target = { backend: "tmux", socket: "/tmp/original.sock", session: "oats", window: "agent" };
-// The fake tmux answers capture-pane from `screen({ enters, captures })`
-// (a throw is an unreadable pane) and runs on a fake clock: no real sleeps.
-// By default the screen changes once an Enter has been sent: a clean submit.
+// The fake tmux answers each look at the pane (pane size, capture-pane, pane
+// size, in one call) from `screen({ enters, captures })`: a string at 80x24,
+// or { size, sizeAfter, text }. A throw is an unreadable pane. It runs on a
+// fake clock: no real sleeps. By default the screen changes once an Enter has
+// been sent: a clean submit.
 function fixture(output = "%12\t0\tcodex\t123\n", processes = "123 1 zsh\n", { screen = ({ enters }) => enters ? "submitted" : "pasted" } = {}) {
   const calls = [], sleeps = [];
   let clock = 0, enters = 0, captures = 0;
@@ -18,7 +20,11 @@ function fixture(output = "%12\t0\tcodex\t123\n", processes = "123 1 zsh\n", { s
       calls.push({ args: args.slice(3), input: opts.input, at: clock });
       if (args[3] === "list-panes") return output;
       if (args[3] === "send-keys") enters++;
-      if (args[3] === "capture-pane") return screen({ enters, captures: ++captures });
+      if (args.includes("capture-pane")) {
+        const look = screen({ enters, captures: ++captures });
+        const { size = "80x24", sizeAfter = size, text } = typeof look === "string" ? { text: look } : look;
+        return `${size}\n${text}\n${sizeAfter}\n`;
+      }
       return "";
     } };
 }
@@ -35,7 +41,10 @@ test("tmux submits literal multiline input using bracketed paste and one verifie
   assert.deepEqual(io.calls[2].args.slice(0, 2), ["paste-buffer", "-p"]);
   assert.equal(io.calls[3].args[0], "delete-buffer");
   assert.deepEqual(named(io, "send-keys").map((c) => c.args), [["send-keys", "-t", "%12", "Enter"]]);
-  assert.deepEqual(named(io, "capture-pane")[0].args, ["capture-pane", "-p", "-J", "-t", "%12"]);
+  assert.deepEqual(io.calls.find((c) => c.args.includes("capture-pane")).args, [
+    "display-message", "-p", "-t", "%12", "#{pane_width}x#{pane_height}", ";",
+    "capture-pane", "-p", "-J", "-t", "%12", "-S", "-200", ";",
+    "display-message", "-p", "-t", "%12", "#{pane_width}x#{pane_height}"]);
 });
 test("tmux refuses fallback shells, dead panes and ambiguous split windows", () => {
   for (const out of ["%1\t0\tzsh\t123", "%1\t1\tcodex", "%1\t0\tcodex\n%2\t0\tpi"]) {
@@ -104,7 +113,7 @@ test("tmux waits for the pane to settle on two identical captures before Enter",
   const io = fixture(undefined, undefined, { screen: ({ enters, captures }) => enters ? "taken" : frames[captures - 1] });
   inputSessionTarget(target, "wake", io);
   const enterAt = io.calls.findIndex((c) => c.args[0] === "send-keys");
-  assert.equal(io.calls.slice(0, enterAt).filter((c) => c.args[0] === "capture-pane").length, 4);
+  assert.equal(io.calls.slice(0, enterAt).filter((c) => c.args.includes("capture-pane")).length, 4);
   assert.deepEqual(io.sleeps.slice(0, 4), [203, 100, 100, 100], "a floor for a 1 KiB paste, then 100 ms polls");
 });
 test("tmux gives up settling at the cap and scales the floor with paste size", () => {
@@ -132,7 +141,7 @@ test("tmux losing its server at Enter is an error, with no retry", () => {
   assert.throws(() => inputSessionTarget(target, "wake", io), /no server/);
   assert.equal(io.enters, 1);
 });
-test("tmux reads a reflow at another width as no change, so a swallowed Enter is still resent", () => {
+test("tmux reads a reflow on a pane seen to change size as no change, so a swallowed Enter is still resent", () => {
   // The same content redrawn narrower and wider: rules change length, lines
   // rewrap, and the region's top cut moves. None of that is an Enter.
   const at = (width) => {
@@ -143,7 +152,7 @@ test("tmux reads a reflow at another width as no change, so a swallowed Enter is
   };
   // Settled at 80 columns; each Enter is followed by a redraw at a new width.
   const widths = [80, 30, 120, 50];
-  const io = fixture(undefined, undefined, { screen: ({ enters }) => at(widths[enters]) });
+  const io = fixture(undefined, undefined, { screen: ({ enters }) => ({ size: `${widths[enters]}x24`, text: at(widths[enters]) }) });
   assert.notEqual(at(30), at(80));
   assert.ok(at(30).split("\n").length > 15, "the narrow redraw moves the region's top cut");
   const result = inputSessionTarget(target, "wake", io);
@@ -155,4 +164,44 @@ test("tmux reads a cleared input row as taken even when nothing else moved", () 
   const result = inputSessionTarget(target, "wake", io);
   assert.deepEqual([result.submitted, result.verified], [true, true]);
   assert.equal(io.enters, 1);
+});
+test("tmux reads content that appeared above the input as taken, on a pane of the same size", () => {
+  const io = fixture(undefined, undefined, { screen: ({ enters }) => (enters ? "Confirm queued request?\n" : "") + "❯ wake\nstatus" });
+  const result = inputSessionTarget(target, "wake", io);
+  assert.deepEqual([result.submitted, result.verified], [true, true]);
+  assert.equal(io.enters, 1);
+});
+test("tmux reads a cleared box-drawing input as taken, on a pane of the same size", () => {
+  const io = fixture(undefined, undefined, { screen: ({ enters }) => `header\n${enters ? "❯" : "❯ ─"}\nstatus` });
+  const result = inputSessionTarget(target, "─", io);
+  assert.deepEqual([result.submitted, result.verified], [true, true]);
+  assert.equal(io.enters, 1);
+});
+test("tmux still reads new or removed content as taken when the pane also changed size", () => {
+  const rule = (w) => "─".repeat(w);
+  for (const after of [`Confirm queued request?\n${rule(60)}\n❯ wake\n${rule(60)}\nstatus`, `header\n${rule(60)}\n❯\n${rule(60)}\nstatus`]) {
+    const io = fixture(undefined, undefined, { screen: ({ enters }) => enters
+      ? { size: "60x24", text: after }
+      : { size: "80x24", text: `header\n${rule(80)}\n❯ wake\n${rule(80)}\nstatus` } });
+    const result = inputSessionTarget(target, "wake", io);
+    assert.deepEqual([result.submitted, result.verified], [true, true]);
+    assert.equal(io.enters, 1);
+  }
+});
+test("tmux treats a size that moved during one capture as a size change", () => {
+  // Same content, its size seen moving mid-capture: a reflow, not an Enter.
+  const io = fixture(undefined, undefined, { screen: ({ enters }) => enters
+    ? { size: "80x24", sizeAfter: "100x24", text: "header\n" + "─".repeat(100) + "\n❯ wake\nstatus" }
+    : "header\n" + "─".repeat(80) + "\n❯ wake\nstatus" });
+  assert.equal(inputSessionTarget(target, "wake", io).reason, "enter-not-taken");
+});
+test("tmux sends no further Enter once a capture fails after a resend", () => {
+  const io = fixture(undefined, undefined, { screen: ({ enters }) => { if (enters >= 2) throw new Error("pane gone"); return "pasted"; } });
+  const result = inputSessionTarget(target, "wake", io);
+  assert.deepEqual([result.submitted, result.verified], [true, false]);
+  assert.equal(io.enters, 2);
+});
+test("tmux ignores trailing spaces a redraw pads differently, on a pane of the same size", () => {
+  const io = fixture(undefined, undefined, { screen: ({ enters }) => enters ? "reply   \n❯ [Pasted text #1 +9 lines]\nstatus" : "reply\n❯ [Pasted text #1 +9 lines]      \nstatus  " });
+  assert.equal(inputSessionTarget(target, "wake", io).reason, "enter-not-taken");
 });

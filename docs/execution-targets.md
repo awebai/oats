@@ -145,17 +145,21 @@ oats session attach --home /abs/home
   tmux window is refused. The text is pasted once. Enter waits for the pane to
   settle (two identical captures, at least about 200 ms, longer for a larger
   paste, at most 2 s), and is judged by whether it changed the bottom 15 lines
-  of the pane. The comparison is of bytes only, with whitespace and box-drawing
-  rules ignored so a redraw at another width is not a change. The pane's text
-  is never interpreted. An Enter that changed nothing was swallowed, and is
-  resent after a backoff, at most 3 Enters in total. The answer adds:
+  of the pane. The comparison is of bytes only, and the pane's text is never
+  interpreted. Trailing spaces are ignored. When the pane was seen to change
+  size (a resize, or a second client attaching), a reflow of the same content
+  is not a change either: each side's content must already be on the other
+  side's screen or in its history, so content that appeared or disappeared
+  still counts. An Enter that changed nothing was swallowed, and is resent
+  after a backoff, at most 3 Enters in total. The answer adds:
   - `submitted: true, verified: true`: an Enter was taken.
   - `submitted: false, verified: true, reason: "enter-not-taken"`: none of the
     3 Enters changed the pane. The text stays in the agent's input box; it is
     not pasted again.
-  - `submitted: true, verified: false`: the pane could not be captured, so
-    only the first Enter was sent and nothing was judged. As before, this
-    means the terminal accepted the keys.
+  - `submitted: true, verified: false`: a capture failed, so no further Enter
+    was sent and the last one was not judged. As before, this means the
+    terminal accepted the keys. When the pane cannot be read before the first
+    resend, exactly one Enter was sent.
 
   `submitted` never means the agent processed the text. A pane that changes
   for another reason after Enter (a spinner, a clock, a human typing) reads as
