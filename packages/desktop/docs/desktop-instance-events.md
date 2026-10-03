@@ -84,25 +84,44 @@ validates the field and never synthesizes it.
   throws and never fails the roster. Only an invalid `since` or `producer`
   drops a claim, which then reads as `null` (unknown). A missing or malformed
   `reason` becomes `null`, because the raw reason is never rendered. A
-  malformed `message` becomes `null`, and an unsafe one becomes `[Detail withheld]`.
+  malformed `message` becomes `null`. So does a note the unsafe-text rule
+  withholds (it holds a URL, or token-like text such as `token: …`): the
+  row, the card and the tab then show the reason in words and never
+  `[Detail withheld]`. The activity view keeps that marker for the same
+  note. `waitingMessage` is the validator both share: it returns the marker
+  (`EVENTS_WITHHELD`, its one literal, in `instance-events-contract.mjs`),
+  and "not null" is the kernel's validity answer, which a test pins.
   `deployment-data.mjs` and `remotePanel` both validate through it. The
   module is the claim contract only: the server imports it, so it imports
   contract modules and nothing else (a test pins its imports). The tree
   roll-up lives in `renderer/instance-tree.mjs`.
 - **One gate.** Every surface reads a claim through `waitingClaim(row,
-  {stale})`. It returns the claim only when the Desktop's own liveness says
-  running (`running === true`, with `runtimeState` absent or `running`), the
-  remote server answered this read (`serverUnreached` is not true), and the
-  roster does not hold the row stale. A tmux shell, a stopped, unreachable or
-  unsupported session, or a last-known roster never shows it, whatever the
-  kernel said.
+  {stale})`. It returns the claim only when the row is running (`running ===
+  true`, and `runtimeState` is `running` or not reported), the remote server
+  answered this read (`serverUnreached` is not true), and the roster does not
+  hold the row stale. A `runtimeState` that is `null` or absent means "not
+  reported", never "not running"; any reported state other than `running`
+  hides the claim.
+  - A local row always carries the state Desktop's own liveness observed, so
+    a tmux shell, a stopped, unreachable or unsupported session never shows
+    it, whatever the kernel said.
+  - A remote row has no Desktop liveness. The kernel's remote roster relays
+    `runtimeState` as the host reported it, which is `null` on every row
+    except an `unreachable` or `unsupported` one, so the row is gated on the
+    `running` its host reported. The host's kernel is what tells a harness
+    from a fallback shell there: it reports a claim only while a harness
+    runs in the session
+    ([the status row](../../../docs/desktop-cli-api.md#the-roster-oats-status---json)).
+  - A last-known roster (an unreached server, a held-stale row) never shows
+    it.
 - **The mark.** A "Needs input" pill (an alert icon and text, never colour
   alone) sits on the row's name line, before "New". It becomes part of the
   row's accessible name. The dot stays liveness. Rows are not reordered, and
   nothing animates.
 - **The card** (hover or keyboard focus) adds `Waiting` (the reason in words,
-  how long, and the local start time) and `Message`. The age is computed when
-  the card is shown. A row that has no card (an unavailable remote row) appends
+  how long, and the local start time) and `Message`. A claim without a note
+  (none, malformed or withheld) has no `Message` row: `Waiting` already says
+  the reason. The age is computed when the card is shown. A row that has no card (an unavailable remote row) appends
   the message or label and the start time to its title and description. The
   start time (`waitingClock`) is "14:03" on the current local day, "Oct 2,
   14:03" on another day and "2025-10-02 14:03" in another year (an English

@@ -13,10 +13,13 @@ export const eventsTimestamp = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}
 export const eventsUnsafe = /[\x00-\x08\x0b-\x1f\x7f]|[a-z][a-z0-9+.-]*:\/\/\S+|(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{16,}|(?:token|authorization|password|secret|api[_ -]?key)\s*[:=]\s*\S+/i;
 /** A producer or kind id: non-empty, ≤ 256, no control characters, nothing unsafe. */
 export const eventsId = v => typeof v === 'string' && !!v && v.length <= 256 && !/[\x00-\x1f\x7f]/.test(v) && !eventsUnsafe.test(v);
+/** What stands in for text eventsUnsafe refuses. The one literal: eventsDetail and waitingMessage return it,
+ * and the sidebar's claim (waitingOnYouData) reads it as "no note". */
+export const EVENTS_WITHHELD = '[Detail withheld]';
 /** A free-text detail: a string ≤ max (throws otherwise); unsafe text is withheld, never shown. */
 export function eventsDetail(v, max = 2048) {
   if (typeof v !== 'string' || v.length > max) throw Error('invalid event detail');
-  return eventsUnsafe.test(v) ? '[Detail withheld]' : v;
+  return eventsUnsafe.test(v) ? EVENTS_WITHHELD : v;
 }
 export const eventsLimit = v => EVENTS_LIMITS.includes(v) ? v : null;
 export const eventsSupported = cli => cli?.ok === true && absolute(cli.bin) && cli.eventsApi === 2
