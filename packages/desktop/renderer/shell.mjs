@@ -59,7 +59,7 @@ import { createSpawnFollow, watchOperator } from "./spawn-follow.mjs";
 import { registerSpawnDialogKeys } from "./spawn-dialog-keys.mjs";
 import { revealInScrollport } from "./reveal-in-scrollport.mjs";
 import { createRosterTip, rosterTipFacts, rosterTipCSS } from "./roster-tip.mjs";
-import { waitingClaim, waitingSentence } from "./waiting-on-you.mjs";
+import { waitingClaim, waitingSentence, waitingLabel, waitingClock } from "./waiting-on-you.mjs";
 import { createRosterPrs, prChip, prText, rosterPrCSS } from "./roster-pr.mjs";
 import { createPanelOwner } from "./panel-owner.mjs";
 import {
@@ -727,6 +727,10 @@ function renderContextRoster(instances) {
   // pill. Rows of the previous subject go; the empty copy is never painted.
   const pending = !!rosterState && !rosterState.hasData, failed = pending && rosterState.state === "failed";
   renderRosterCount(contextRosterEl.querySelector(".ctx-count"), instances, { pending: pending && !failed, failed, stale: rosterStale });
+  const ws = contextWorkspace || currentWorkspace();
+  // #558: every paint re-syncs the open terminal tabs through the row's own gate, before any early return:
+  // a stale paint (an overdue read) or a pending one (a reset subject: no rows yet) clears their cues too.
+  syncTabNeedsInput(pending ? [] : instances, ws);
   // The deployment note is painted on every path (poll, filter, collapse, PR change), first in the list.
   const paintNote = () => {
     if (contextDeploymentNote === null) return;
@@ -741,7 +745,6 @@ function renderContextRoster(instances) {
     return;
   }
   listEl.innerHTML = "";
-  const ws = contextWorkspace || currentWorkspace();
   // Background spawns (Spec C): this workspace's pending rows join the layout where the real row will
   // stand (its relation), so the real row replaces them in place. A row the roster already reports is
   // the real one. The count above stays the kernel's observation only.
@@ -1290,6 +1293,7 @@ function stableFocusTarget() {
   return [activeTabTrigger(), ...["sidebar-toggle", "sidebar-restore"].map(id => document.getElementById(id))].find(shown) ?? null;
 }
 function refreshPanelInstance(instances, workspace) {
+  syncTabNeedsInput(instances, workspace); // also on a poll whose roster signature is unchanged (no repaint)
   const tab = tabs.get(activeTab);
   if (!tabLayerVisible || tab?.kind !== "terminal" || tab.workspace !== workspace) return;
   const matches = instances.filter(instance => terminalKey(workspace, instance) === tab.key);
@@ -1298,6 +1302,41 @@ function refreshPanelInstance(instances, workspace) {
   if (matches.length === 1) tab.instanceRef = matches[0];
   else if (tab.instanceRef) tab.instanceRef = { ...tab.instanceRef, running: null };
   syncContextPanel();
+}
+/** Needs input on an open terminal tab (#558). Every roster paint calls this with the painted roster
+ * (refreshPanelInstance): each terminal tab of that workspace, in whichever editor group holds it, finds
+ * its row by its qualified key (terminalKey: a home, never a bare name) and reads it through the one
+ * gate (waitingClaim, with the sidebar's held-stale rule). It MUTATES only the trigger's mark,
+ * aria-label and title — never rebuilds the trigger or the tab — so strip focus, an open tab menu or a
+ * drag survive the poll. Cleared (or unknown), the tab gets back exactly the mark, label and title it
+ * was drawn with. */
+let tabNeedsInputRoster = { instances: [], workspace: null };
+function syncTabNeedsInput(instances, workspace) {
+  tabNeedsInputRoster = { instances, workspace };
+  const now = Date.now();
+  for (const tab of tabs.values()) {
+    if (tab.kind !== "terminal" || tab.workspace !== workspace) continue;
+    const trigger = tab.triggerEl;
+    const rows = instances.filter((i) => terminalKey(workspace, i) === tab.key);
+    const row = rows.length === 1 ? rows[0] : null;
+    const claim = row ? waitingClaim(row, { stale: rosterStale || rowStale(row, contextDeployments) }) : null;
+    const drawn = tab.needsInputDrawn ??= { mark: trigger.querySelector(":scope > .tab-dot"), label: trigger.getAttribute("aria-label"), title: trigger.title };
+    let attn = trigger.querySelector(":scope > .tab-attn");
+    let label = drawn.label, title = drawn.title;
+    if (claim) {
+      if (!attn) {
+        attn = document.createElement("span"); attn.className = "tab-attn"; attn.setAttribute("aria-hidden", "true");
+        attn.append(iconElement(document, "alert", { size: 12 }));
+        if (drawn.mark?.parentNode === trigger) drawn.mark.replaceWith(attn); else trigger.prepend(attn);
+      }
+      label = `${drawn.label}, needs input`;
+      title = `${drawn.title}\nNeeds input: ${claim.message ?? waitingLabel(claim)} since ${waitingClock(claim.since, now)}`;
+    } else if (attn) {
+      if (drawn.mark) attn.replaceWith(drawn.mark); else attn.remove();
+    }
+    if (trigger.getAttribute("aria-label") !== label) trigger.setAttribute("aria-label", label);
+    if (trigger.title !== title) trigger.title = title;
+  }
 }
 const workspaceTabMemory = createWorkspaceTabMemory();
 let tabWorkspace = currentWorkspace();
@@ -1899,6 +1938,8 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
     focusOnActivate: true, // addTab's own dedup here is a user jump too
   });
   if (!made) { offTheme(); offTypography(); clipboard.dispose(); term.dispose(); return; } // lost a race to an identical tab
+  // A tab opened on a waiting instance shows it at once, from the last painted roster (#558).
+  syncTabNeedsInput(tabNeedsInputRoster.instances, tabNeedsInputRoster.workspace);
   made.paneEl.append(wrap);
   term.open(wrap);
   glyphs.ensure();

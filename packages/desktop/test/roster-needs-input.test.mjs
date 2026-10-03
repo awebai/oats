@@ -17,11 +17,14 @@ import { createRuntimeBadge } from "../renderer/identity-marks.mjs";
 import { iconElement } from "../renderer/shell-icons.mjs";
 import { createRosterTip, rosterTipFacts } from "../renderer/roster-tip.mjs";
 import { waitingClock } from "../renderer/waiting-on-you.mjs";
+import { createTabChrome } from "../renderer/tab-a11y.mjs";
+import { NO_ANSWER_CODE, unservedError } from "../renderer/deployment-header.mjs";
 
 const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), "utf8");
 const css = read("shell.css"), html = read("index.html"), shell = read("shell.mjs");
 const fn = name => shell.match(new RegExp(`function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}`))?.[0];
-const source = ["renderContextRoster", "needsInputMark"].map(name => { const s = fn(name); assert.ok(s, name); return s; }).join("\n");
+// The shipped tab sync and overdue-read path too (#558): a roster paint re-syncs the open terminal tabs.
+const source = ["renderContextRoster", "needsInputMark", "syncTabNeedsInput", "failRosterUnserved"].map(name => { const s = fn(name); assert.ok(s, name); return s; }).join("\n");
 
 const SINCE = "2026-10-03T09:00:00.000Z";
 const claim = (extra = {}) => ({ since: SINCE, producer: "claude-hooks", reason: "permission", message: null, ...extra });
@@ -35,7 +38,7 @@ function fixture(t, extra = {}) {
   const tips = new Map();
   const context = {
     ...tree, document: doc, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge,
-    iconElement, instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, runAction: assert.fail,
+    iconElement, NO_ANSWER_CODE, unservedError, instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, runAction: assert.fail,
     applyChordTitles() {}, updateActiveContexts() {}, getBinding: () => null, formatChord: c => c, isMac: true,
     contextRosterEl: doc.querySelector("#instance-roster"), contextFilter: "", contextWorkspace: "A",
     rosterState: { hasData: true, state: "ready" }, rosterStale: false, contextDeploymentNote: null, ...viewContext(),
@@ -53,13 +56,21 @@ function fixture(t, extra = {}) {
   // The shell's paint time (Date.now() in shell.mjs) reads this realm's Date at each access, so a test's
   // mock.timers clock reaches the VM too (a VM has its own Date otherwise).
   Object.defineProperty(context, "Date", { get: () => Date, enumerable: true });
-  const render = runInNewContext(`${source}\nrenderContextRoster`, context);
+  const { render, failRosterUnserved } = runInNewContext(`${source}\n({ render: renderContextRoster, failRosterUnserved })`, context);
   const list = doc.querySelector(".ctx-list");
   const row = name => [...list.querySelectorAll(".ctx-inst")].find(b => b.querySelector(".ctx-name")?.textContent === name);
   const marks = name => [...(row(name)?.querySelectorAll(".ctx-attn") || [])];
   const facts = name => tips.get(`/synthetic/${name}`)?.();
   const fact = (name, key) => facts(name)?.rows.find(([k]) => k === key)?.[1];
-  return { doc, dom, context, render, list, row, marks, facts, fact };
+  // A terminal tab as openTerminalTabInner draws it, in workspace "A" unless given.
+  const openTab = (inst, workspace = "A") => {
+    const id = context.tabs.size + 1, chrome = createTabChrome(doc, id, inst.instance, true, { dot: "on" });
+    doc.body.append(chrome.tabEl);
+    const tab = { ...chrome, key: tree.terminalKey(workspace, inst), kind: "terminal", workspace };
+    context.tabs.set(id, tab);
+    return tab;
+  };
+  return { doc, dom, context, render, failRosterUnserved, openTab, list, row, marks, facts, fact };
 }
 
 test("a running, waiting row shows “Needs input” on its name line: an icon and text, part of the row's accessible name", async t => {
@@ -263,4 +274,39 @@ test("a roll-up stays inside its deployment section: a unique parent name in ano
   const [mark] = u.marks("lead");
   assert.equal(mark.textContent, "1 below need input", "only /d1's own child is counted");
   assert.equal(u.list.querySelectorAll(".ctx-attn.rollup").length, 1, "and nothing else rolls up");
+});
+
+const tabCue = tab => tab.triggerEl.querySelector(":scope > .tab-attn");
+
+test("every roster paint re-syncs the open terminal tabs: an overdue read's stale paint clears a lit tab (#558)", async t => {
+  const rows = [instance("dev-a", undefined, { waitingOnYou: claim() })];
+  const fails = [];
+  const u = fixture(t, { context: { rosterState: { hasData: true, state: "ready", fail: e => fails.push(e.code) } } });
+  const tab = u.openTab(rows[0]);
+  u.context.contextInstances = rows;
+  u.render(rows);
+  assert.ok(tabCue(tab), "the paint lights the tab");
+  assert.equal(tab.triggerEl.getAttribute("aria-label"), "dev-a, needs input");
+  u.failRosterUnserved(NO_ANSWER_CODE, "A"); // what rosterOverdue runs when the pending watch expires
+  assert.deepEqual(fails, [NO_ANSWER_CODE]);
+  assert.equal(u.context.rosterStale, true, "the rows are kept, held stale");
+  assert.equal(u.marks("dev-a").length, 0, "the row's mark goes");
+  assert.equal(tabCue(tab), null, "and so does the tab's, in the same paint");
+  assert.equal(tab.triggerEl.getAttribute("aria-label"), "dev-a");
+  assert.equal(tab.triggerEl.title, "dev-a");
+});
+
+test("a reset subject's pending paint clears the tabs and the last-painted roster before a tab is restored (#558)", async t => {
+  const rows = [instance("dev-a", undefined, { waitingOnYou: claim() })];
+  const u = fixture(t);
+  const tab = u.openTab(rows[0]);
+  u.render(rows);
+  assert.ok(tabCue(tab));
+  assert.equal(u.context.tabNeedsInputRoster.instances, rows);
+  // restoreWorkspaceTabs: a new subject, no data yet, the roster painted pending with no rows.
+  u.context.contextInstances = []; u.context.rosterState = { hasData: false, state: "loading" };
+  u.render([]);
+  assert.equal(tabCue(tab), null, "no observation: unknown, so no cue");
+  const cached = u.context.tabNeedsInputRoster; // the VM's own objects: compared by fields, not prototypes
+  assert.equal(cached.instances.length, 0, "a restored tab syncs against no rows"); assert.equal(cached.workspace, "A");
 });

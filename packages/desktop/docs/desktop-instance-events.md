@@ -112,8 +112,15 @@ validates the field and never synthesizes it.
   waiting row is painted in. The card's `Below` fact names up to three of
   them. The roll-up is derived on every paint, so it goes as soon as the parent
   is expanded. Filtering collapses nothing, so it shows no roll-up.
-- **Display only.** Nothing in Desktop acts on a claim. The terminal tab dot
-  does not follow it.
+- **The terminal tab.** An open terminal tab of that instance, in any editor
+  group, follows every roster paint (`syncTabNeedsInput`, through the same
+  gate and held-stale rule): an alert glyph in `--warn` takes the dot's slot
+  without moving the label, the trigger's accessible name gains ", needs
+  input", and its title the message or label and the start. Only the mark,
+  name and title are mutated (focus, an open tab menu or a drag survive the
+  poll); cleared, the tab gets back the dot, name and title it was drawn with.
+  The tab is matched by its qualified key (`terminalKey`), never a bare name.
+- **Display only.** Nothing in Desktop acts on a claim.
 
 The waited age is never painted into the row, so the roster signature changes
 only when a claim appears, clears or changes.

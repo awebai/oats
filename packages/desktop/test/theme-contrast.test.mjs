@@ -1247,3 +1247,32 @@ for (const [name] of palettes) test(`${name}: Add a machine and the Machines box
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1', selector);
   }
 });
+
+// #558: the terminal tab's Needs input glyph is a non-text graphic (the trigger's name says it): --warn
+// must hold 3:1 against every background a tab paints — the strip at rest (--bg, also a split group's
+// strip), the active tab (--surface) and a keyboard-focused trigger (--sel) — in every palette.
+for (const [name] of palettes) test(`${name}: the terminal tab's Needs input glyph meets 3:1 on every tab background`, async t => {
+  const dom = new JSDOM(readFileSync(new URL('index.html', renderer), 'utf8'), { pretendToBeVisual: true }), doc = dom.window.document;
+  t.after(() => dom.window.close());
+  doc.documentElement.dataset.theme = name;
+  const shellCss = readFileSync(new URL('shell.css', renderer), 'utf8');
+  for (const source of [css, shellCss]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  const bar = doc.querySelector('#tabbar');
+  for (const active of [false, true]) {
+    const tab = doc.createElement('div'); tab.className = `tab${active ? ' active' : ''}`;
+    const trigger = doc.createElement('button'); trigger.className = 'tab-trigger';
+    const attn = doc.createElement('span'); attn.className = 'tab-attn'; trigger.append(attn); tab.append(trigger); bar.append(tab);
+  }
+  const root = dom.window.getComputedStyle(doc.documentElement), view = dom.window;
+  const fill = el => { const s = view.getComputedStyle(el); return s.background || s.backgroundColor; };
+  for (const glyph of doc.querySelectorAll('.tab-attn')) assert.equal(view.getComputedStyle(glyph).color, 'var(--warn)');
+  assert.equal(fill(doc.querySelector('#tabstrip')), 'var(--bg)', 'a tab at rest shows the strip');
+  assert.equal(fill(doc.querySelector('.tab.active')), 'var(--surface)');
+  assert.match(shellCss, /\.tab-trigger:focus-visible \{ background: var\(--sel\); \}/);
+  assert.match(shellCss, /\.group-tabbar \{[^}]*background: var\(--bg\)/, 'a split group strip paints --bg too');
+  for (const bg of ['bg', 'surface', 'sel']) {
+    const ratio = contrast(opaqueChannels(root.getPropertyValue('--warn').trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim()));
+    assert.ok(ratio >= 3, `--warn on --${bg}: ${ratio.toFixed(2)}`);
+  }
+  for (let parent = doc.querySelector('.tab-attn'); parent; parent = parent.parentElement) assert.equal(view.getComputedStyle(parent).opacity, '1');
+});
