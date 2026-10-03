@@ -519,7 +519,11 @@ continue without the answer, it runs
 `oats instance attention --message "<one line>"` from its home and ends its
 turn. Once it has the answer, it runs `oats instance attention --clear`. The
 claim belongs to producer `agent`. Only `--clear` or the next session start,
-restart or stop clears it.
+restart or stop clears it. The message is one line of at most 200
+characters; control characters, the Unicode line and paragraph separators,
+bidi controls (U+202A–202E, U+2066–2069), U+200B, U+2060, U+FEFF and tag
+characters (U+E0000–E007F) are refused, and everything else (emoji ZWJ
+sequences, ZWNJ, LRM, RLM, ALM) is allowed.
 
 **The Claude Code emitter.** For a Claude instance, oats.core's spawn and
 launch hooks (`bin/oats-core.mjs`, preview-aware) write Claude Code hooks

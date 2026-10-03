@@ -69,23 +69,30 @@ test("the writer's refusals: producer grammar and kernel reserved, the closed re
   assert.throws(() => setWaiting(join(w.base, "nowhere"), { producer: "p", waiting: true, reason: "question" }), code("E_SESSION_UNKNOWN"));
 });
 
-test("message validation: 200 characters OK, 201 refused; newline, tab, ESC, DEL, C1, format characters (bidi controls, zero-width, BOM), line separators and non-strings refused", (t) => {
+test("message validation: 200 characters OK, 201 refused; control characters, line separators, bidi controls, U+200B, U+2060, U+FEFF, tag characters and non-strings refused; ZWJ, ZWNJ, LRM, RLM, ALM and soft hyphen allowed", (t) => {
   const w = bare(t);
   assert.equal(validWaitingMessage("x".repeat(200)), true);
   assert.equal(validWaitingMessage("é".repeat(200)), true, "characters, not bytes");
+  assert.equal(validWaitingMessage("👩‍💻".repeat(66)), true, "code points: 66 ZWJ sequences of 3 are 198");
   assert.equal(validWaitingMessage("x".repeat(201)), false);
-  for (const bad of ["", "a\nb", "a\rb", "a\tb", "a\u001b[31mb", "a\u007fb", "a\u0085b", "a\u009bb", "a b", 42, null, {}, ["x"]]) {
+  for (const bad of ["", "a\nb", "a\rb", "a\tb", "a\u001b[31mb", "a\u007fb", "a\u0085b", "a\u009bb", "a\u2028b", "a\u2029b", 42, null, {}, ["x"]]) {
     assert.equal(validWaitingMessage(bad), false, JSON.stringify(bad));
     if (typeof bad === "string" || bad === 42) assert.throws(() => setWaiting(w.home, { producer: "agent", waiting: true, reason: "attention", message: bad }), code("E_BAD_ARGS"), JSON.stringify(bad));
   }
-  // Format characters (\p{Cf}): every bidi control, zero-width characters, the BOM, soft hyphen.
-  for (const cp of [0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069, 0x200b, 0x200e, 0x200f, 0x2060, 0xfeff, 0x00ad, 0x061c]) {
+  // The maintainer's refused set: every bidi embedding, override and isolate, the
+  // invisible hiders, and the tag characters (first, a letter, last).
+  for (const cp of [0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069, 0x200b, 0x2060, 0xfeff, 0xe0000, 0xe0041, 0xe007f]) {
     const c = String.fromCodePoint(cp), bad = `pay ${c}evil${c} now`;
     assert.equal(validWaitingMessage(bad), false, `U+${cp.toString(16).toUpperCase()}`);
     assert.throws(() => setWaiting(w.home, { producer: "agent", waiting: true, reason: "attention", message: bad }), (e) => e.code === "E_BAD_ARGS" && /--message/.test(e.message), `U+${cp.toString(16)}`);
   }
-  for (const ok of ["need the npm token from Pepe", "¿listo? ✓ — 日本語 🚀", "שלום world"]) assert.equal(validWaitingMessage(ok), true, ok);
+  // Everything else is allowed: ZWJ and ZWNJ (emoji sequences, Persian), LRM, RLM, ALM,
+  // the soft hyphen, and characters just outside the refused ranges.
+  const allowed = ["need the npm token from Pepe", "¿listo? ✓ — 日本語 🚀", "שלום world", "👩‍💻 review needed", "می‌خواهم", "a\u200cb", "a\u200db", "a\u200eb", "a\u200fb", "a\u061cb", "a\u00adb", "a\u2065b", "a\u206ab", "a\u{e0080}b"];
+  for (const ok of allowed) assert.equal(validWaitingMessage(ok), true, JSON.stringify(ok));
   assert.equal(w.rows().length, 0, "a refused message appends nothing");
+  setWaiting(w.home, { producer: "agent", waiting: true, reason: "attention", message: "👩‍💻 می‌خواهم" });
+  assert.equal(liveWaiting(w.home).message, "👩‍💻 می‌خواهم", "a ZWJ and a ZWNJ message is stored and read back");
 });
 
 test("the reader re-validates a stored message and reason: an invalid one (a hand-edited log) reads as null and the claim still counts", (t) => {
@@ -99,6 +106,13 @@ test("the reader re-validates a stored message and reason: an invalid one (a han
   row({ waitingOnYou: true, reason: "attention", message: "pay \u202eexe.txt" }, "2026-01-01T00:00:03.000Z");
   assert.deepEqual(liveWaiting(w.home), { since: "2026-01-01T00:00:03.000Z", producer: "agent", reason: "attention", message: null }, "a stored bidi control reads as null");
   assert.equal(readEvents(w.home).waitingClaims[0].message, null);
+  for (const [i, bad] of ["hid\u200Bden", "tag\u{E0041}ged"].entries()) {
+    const at = `2026-01-01T00:00:03.${100 + i}Z`;
+    row({ waitingOnYou: true, reason: "attention", message: bad }, at);
+    assert.deepEqual(liveWaiting(w.home), { since: at, producer: "agent", reason: "attention", message: null }, `a stored ${JSON.stringify(bad)} reads as null`);
+  }
+  row({ waitingOnYou: true, reason: "attention", message: "zw\u200Cnj \u200Fmark" }, "2026-01-01T00:00:03.500Z");
+  assert.equal(liveWaiting(w.home).message, "zw\u200Cnj \u200Fmark", "a stored ZWNJ and RLM read as given");
   row({ waitingOnYou: true, reason: "review requested" }, "2026-01-01T00:00:04.000Z");
   assert.equal(liveWaiting(w.home).reason, null, "a reason outside permission | question | attention reads as null");
 });

@@ -2233,11 +2233,15 @@ oats instance attention [--message <text>] [--clear] --json
   comes only from `$OATS_INSTANCE_HOME`: it has no `--home` or `--dir` and
   never targets another instance. Unset, or not an instance home (no readable
   `instance.json`), is `E_USAGE`. `--clear` with `--message` is `E_BAD_ARGS`.
-- **`--message`**: one line of 1 to 200 characters with no control character
-  (`\p{Cc}`: C0, DEL, C1; so no newline, tab or ESC), no format character
-  (`\p{Cf}`: the bidi controls U+202A–202E and U+2066–2069, zero-width
-  characters, the BOM, soft hyphen) and no Unicode line or paragraph
-  separator; otherwise `E_BAD_ARGS` naming `--message`. A message that
+- **`--message`**: one line of 1 to 200 characters (code points). Refused,
+  as `E_BAD_ARGS` naming `--message`: control characters (`\p{Cc}`: C0, DEL,
+  C1; so no newline, tab or ESC), the line and paragraph separators U+2028
+  and U+2029, the bidi embeddings, overrides and isolates U+202A–202E and
+  U+2066–2069, the invisible U+200B (zero width space), U+2060 (word
+  joiner) and U+FEFF (BOM), and the tag characters U+E0000–E007F. Everything
+  else is allowed, including ZWJ and ZWNJ (U+200C, U+200D: emoji sequences
+  such as 👩‍💻, Persian and Indic text), the marks LRM, RLM and ALM (U+200E,
+  U+200F, U+061C) and the soft hyphen. A message that
   starts with `--` goes inline, `--message=--deploy failed`: that value is
   only ever the message, never a flag (`--message=--clear` sets the message
   "--clear"). The spaced form `--message --deploy` reads `--deploy` as a

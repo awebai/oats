@@ -167,9 +167,11 @@ oats instance attention --message "<what you need, one line>"   # from your home
 oats instance attention --clear                                  # once you have the answer
 ```
 
-- The message is one line, at most 200 characters, with no control or
-  invisible formatting characters (no bidi controls, no zero-width
-  characters). Name what you need, not the whole story. A message that
+- The message is one line, at most 200 characters. Refused: control
+  characters (newline, tab, ESC), the Unicode line and paragraph separators,
+  bidi controls (U+202A–202E, U+2066–2069), U+200B, U+2060, U+FEFF and tag
+  characters (U+E0000–E007F). Emoji (ZWJ sequences), ZWNJ and the LRM, RLM
+  and ALM marks are fine. Name what you need, not the whole story. A message that
   starts with `--` goes as `--message=--<rest>`.
 - `oats status` shows the claim on your row as
   `! needs input (attention): <message>`.
