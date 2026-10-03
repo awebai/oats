@@ -343,6 +343,30 @@ test("a marker directory that is not mode 0700 is never used and never repaired:
   assert.equal(readFileSync(markerOf(h, tmp), "utf8"), "permission\n", "a 0700 directory holds the marker");
 });
 
+test("macOS: an ACL hidden behind the xattr indicator (`drwx------@`) makes the marker directory unusable, left as it is", { skip: process.platform !== "darwin" && "macOS ACLs" }, () => {
+  const node = process.execPath;
+  const tmp = join(base, `tmp-acl-${n}`), dir = join(tmp, "oats-waiting");
+  mkdirSync(dir, { recursive: true, mode: 0o700 }); chmodSync(dir, 0o700);
+  spawnSync("chmod", ["+a", "everyone allow list,search,add_file,add_subdirectory,delete_child", dir]);
+  spawnSync("xattr", ["-w", "oats.test", "x", dir]);
+  const listing = spawnSync("ls", ["-lde", dir], { encoding: "utf8" }).stdout;
+  assert.match(listing.split("\n")[0], /^drwx------@ /, "the ACL is concealed by the @ indicator");
+  assert.match(listing, /everyone allow/);
+  const h = home(), marker = markerOf(h, tmp), log = join(base, `argv-acl-${n}.log`);
+  writeFileSync(marker, "question\n");
+  const before = spawnSync("ls", ["-lde", dir], { encoding: "utf8" }).stdout;
+  const r = runScript(["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log, TMPDIR: tmp });
+  assert.equal(r.status, 0); assert.equal(r.stdout, "");
+  assert.equal(existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").length : 0, 1, "the planted marker suppresses no set");
+  assert.equal(readFileSync(marker, "utf8"), "question\n", "the marker is neither read nor written");
+  assert.equal(spawnSync("ls", ["-lde", dir], { encoding: "utf8" }).stdout, before, "the directory is left untouched");
+  // The same directory without the ACL, xattr still present, is used.
+  spawnSync("chmod", ["-N", dir]); rmSync(marker);
+  runScript(["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log, TMPDIR: tmp });
+  assert.match(spawnSync("ls", ["-ld", dir], { encoding: "utf8" }).stdout, /^drwx------@ /);
+  assert.equal(readFileSync(marker, "utf8"), "permission\n", "an xattr alone does not disable the marker");
+});
+
 test("end to end: a command the hook wrote, run as Claude Code runs it, reaches the CLI", () => {
   const h = home();
   const log = join(base, `e2e-${n}.log`);

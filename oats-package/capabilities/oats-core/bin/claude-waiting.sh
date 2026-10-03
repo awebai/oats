@@ -45,11 +45,16 @@ dir=${dir%/}/oats-waiting
 usable=
 # shellcheck disable=SC3067
 if [ -d "$dir" ] && [ ! -L "$dir" ] && [ -O "$dir" ]; then
-  # Mode exactly 0700 (an existing directory is never repaired): a directory others can
-  # write could hold a planted marker. A trailing "@" (macOS xattrs) or "." (an SELinux
-  # context) is accepted; "+" (an ACL) is not.
+  # Mode exactly 0700 and no ACL (an existing directory is never repaired): a directory
+  # others can write could hold a planted marker. "+" (an ACL) is refused and "." (an
+  # SELinux context) accepted. macOS shows "@" (xattrs) INSTEAD of "+" when both are
+  # present, so an "@" directory is used only when `ls -lde` lists no ACL entry under it.
   perms=$(ls -ld "$dir")
-  case "${perms%% *}" in drwx------|drwx------@|drwx------.) usable=yes ;; esac
+  # shellcheck disable=SC2012
+  case "${perms%% *}" in
+    drwx------|drwx------.) usable=yes ;;
+    drwx------@) [ "$(ls -lde "$dir" | wc -l)" -eq 1 ] && usable=yes ;;
+  esac
 fi
 if [ -n "$usable" ]; then
   sum=$(printf '%s' "$home" | { shasum -a 256 || sha256sum || cksum; })

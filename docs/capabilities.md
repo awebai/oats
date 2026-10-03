@@ -573,8 +573,8 @@ clears it.
   claim is set: `${TMPDIR:-/tmp}/oats-waiting/<first 16 hex of sha256(home)>.claude`,
   in a directory that must be a real directory the user owns with mode
   exactly 0700. The script creates it 0700 and never changes an existing
-  one: a directory others can write (0777, group-writable, an ACL) is not
-  used. A
+  one: a directory others can write (0777, group-writable, any ACL, also one
+  macOS shows only as `@`) is not used. A
   clear with no marker does nothing and starts no node process, so the hooks
   that fire on every tool call cost a `/bin/sh` and a few file tests. A
   symlink is never followed: an unusable directory or marker path means no
