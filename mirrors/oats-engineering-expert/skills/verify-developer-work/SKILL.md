@@ -11,7 +11,9 @@ branch, before any PR exists: a PR is opened only after you accept it. Yours is 
 does this belong in the system, the way it was built?
 
 ## 0. Check the handover is complete
-It needs:
+Pin the branch head the handover names, and verify at that head; if the branch moves while
+you verify, start again from the new head. Read your knowledge's recorded decisions and
+coherence rules for this area before you judge. The handover needs:
 - what was done, against the spec's "done when";
 - how it was verified (tests run, real runs, with results);
 - **the adversarial review's final verdict**, and the rounds it took;
@@ -29,6 +31,8 @@ you don't do the reviewer's job for it.
   order.
 
 ## 2. Coherence and fit
+- Does it keep the recorded decisions and coherence rules? If it breaks one, either the
+  work changes or the decision does, explicitly.
 - Does it follow the system's existing patterns and names, or invent a parallel way?
 - Does it duplicate something that exists?
 - Will the next change in this area be easier or harder because of it?
@@ -42,6 +46,8 @@ you don't do the reviewer's job for it.
 - Read the main path and the failure paths once, as a user would hit them. You are
   looking for what's obviously wrong, not auditing every line.
 - Check that the tests prove the "done when" items, not just that the code runs.
+- Where the spec asks for a real run (a deployment, a live call, a UI flow), check its
+  evidence: what was run, where, and what it showed. "Tests pass" doesn't replace it.
 
 ## Verdict
 - **Accept**: then, and only then, the work becomes a PR (`/land-your-prs`).

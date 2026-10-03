@@ -21,8 +21,8 @@ Read the code it touches before deciding the spec is right: specs are written fr
 of the code, and the model can be wrong.
 
 **Questions** go to your expert, batched, each with your proposed answer:
-> "The spec doesn't say what happens when the label is already a shared team. I propose
-> refusing with E_TEAM_SHARED, as `remove` does. OK?"
+> "The spec doesn't say what happens when the key is already revoked. I propose
+> refusing with 409 `key_revoked`, as `rotate` does. OK?"
 
 Don't start on the parts a question affects until it's answered. Other parts can go ahead.
 
