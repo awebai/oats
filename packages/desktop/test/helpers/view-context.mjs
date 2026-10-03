@@ -5,7 +5,8 @@
 // pure and shared the same way.
 import { rosterSections, deploymentHeading, notePanel, panelDeployments, rowStale, splitByDeployment } from "../../renderer/view-deployments.mjs";
 import { createViewMembership, rehomeMap } from "../../renderer/workspace-rehome.mjs";
-import { waitingClaim, waitingRollup, waitingSentence } from "../../renderer/waiting-on-you.mjs";
+import { waitingClaim, waitingSentence } from "../../renderer/waiting-on-you.mjs";
+import { waitingRollup } from "../../renderer/instance-tree.mjs";
 
 export const viewContext = () => ({
   contextDeployments: [], rosterSections, deploymentHeading, notePanel, panelDeployments, rowStale,

@@ -1,10 +1,11 @@
 /** "Needs input" (Spec D): the kernel's `waitingOnYou` claim on an `oats status --json` row, validated
  * once here and read through one liveness gate by every surface (row mark, card, description, collapsed
- * roll-up). Pure, no DOM, never throws. `null` (or absent) means unknown, never "not waiting".
- * Display-only: nothing in Desktop acts on a claim. */
+ * roll-up: instance-tree.mjs's waitingRollup). Pure, no DOM, never throws. `null` (or absent) means
+ * unknown, never "not waiting". Display-only: nothing in Desktop acts on a claim.
+ * The claim contract only: the server imports it (deployment-data, remote-roster), so it imports
+ * contract modules and nothing else — no tree traversal, no loading UI. */
 import { record } from './readiness-contract.mjs';
 import { eventsTimestamp, eventsId, eventsDetail } from './instance-events-contract.mjs';
-import { instanceId, instanceVisibleInTree, resolveLinkId } from './instance-tree.mjs';
 
 /** A claim's note: one line ≤ 200 chars, no control characters; unsafe text is withheld (the activity
  * view's house rule). Absent, empty or malformed → null: the claim itself is kept. */
@@ -68,35 +69,4 @@ export function waitingSentence(claim, below = []) {
   if (claim) parts.push(`Needs input: ${claim.message ?? waitingLabel(claim)} since ${waitingClock(claim.since)}`);
   if (below.length) parts.push(`${below.length} below need input: ${waitingNames(below)}`);
   return parts.map(p => ` · ${p}`).join('');
-}
-
-/** Waiting instances hidden by a collapse, attributed to their nearest visible ancestor:
- * Map(instanceId(ancestor) → [waiting rows]). Computed over the full roster (as clustering is) by the
- * parent relation only (resolveLinkId: never across a remote server), cycle-safe; a missing or cyclic
- * parent chain degrades to no roll-up. `section(row)`: the roster section (deployment) a row is painted
- * in; a chain that leaves the waiting row's section rolls up nowhere (resolveLinkId accepts a unique name
- * from another agents root). Filtering on → nothing is collapsed → empty. `stale(row)`: the caller's
- * held-stale test; a stale row contributes nothing. */
-export function waitingRollup(instances, collapsed, workspace, { filtering = false, stale = () => false, section = () => null } = {}) {
-  const out = new Map();
-  if (filtering || !collapsed?.size) return out;
-  const byId = new Map(instances.map(i => [instanceId(i), i]));
-  const byName = new Map();
-  for (const i of instances) { if (!byName.has(i.instance)) byName.set(i.instance, []); byName.get(i.instance).push(i); }
-  for (const i of instances) {
-    if (!waitingClaim(i, { stale: stale(i) }) || instanceVisibleInTree(i, instances, collapsed, workspace)) continue;
-    const seen = new Set([instanceId(i)]);
-    let cursor = i, owner = null;
-    while (cursor?.parentInstance) {
-      const pid = resolveLinkId(cursor, cursor.parentInstance, byName);
-      if (!pid || seen.has(pid)) break;
-      seen.add(pid); cursor = byId.get(pid);
-      if (!cursor || section(cursor) !== section(i)) break;
-      if (instanceVisibleInTree(cursor, instances, collapsed, workspace)) { owner = pid; break; }
-    }
-    if (owner === null) continue;
-    if (!out.has(owner)) out.set(owner, []);
-    out.get(owner).push(i);
-  }
-  return out;
 }

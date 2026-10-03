@@ -74,7 +74,10 @@ validates the field and never synthesizes it.
   drops a claim, which then reads as `null` (unknown). A missing or malformed
   `reason` becomes `null`, because the raw reason is never rendered. A
   malformed `message` becomes `null`, and an unsafe one becomes `[Detail withheld]`.
-  `deployment-data.mjs` and `remotePanel` both validate through it.
+  `deployment-data.mjs` and `remotePanel` both validate through it. The
+  module is the claim contract only: the server imports it, so it imports
+  contract modules and nothing else (a test pins its imports). The tree
+  roll-up lives in `renderer/instance-tree.mjs`.
 - **One gate.** Every surface reads a claim through `waitingClaim(row,
   {stale})`. It returns the claim only when the Desktop's own liveness says
   running (`running === true`, with `runtimeState` absent or `running`), the
@@ -91,7 +94,8 @@ validates the field and never synthesizes it.
   the card is shown. A row that has no card (an unavailable remote row) appends
   the message or label and the start time to its title and description.
 - **Collapsed parents.** A waiting row hidden by a collapse is counted on its
-  nearest visible ancestor as "N below", following the parent relation only
+  nearest visible ancestor as "N below" (`waitingRollup` in
+  `renderer/instance-tree.mjs`, beside `instanceVisibleInTree`, which it mirrors), following the parent relation only
   (never across a remote server), and never outside the deployment section the
   waiting row is painted in. The card's `Below` fact names up to three of
   them. The roll-up is derived on every paint, so it goes as soon as the parent

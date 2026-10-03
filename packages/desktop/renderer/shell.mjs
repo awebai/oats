@@ -59,11 +59,11 @@ import { createSpawnFollow, watchOperator } from "./spawn-follow.mjs";
 import { registerSpawnDialogKeys } from "./spawn-dialog-keys.mjs";
 import { revealInScrollport } from "./reveal-in-scrollport.mjs";
 import { createRosterTip, rosterTipFacts, rosterTipCSS } from "./roster-tip.mjs";
-import { waitingClaim, waitingRollup, waitingSentence } from "./waiting-on-you.mjs";
+import { waitingClaim, waitingSentence } from "./waiting-on-you.mjs";
 import { createRosterPrs, prChip, prText, rosterPrCSS } from "./roster-pr.mjs";
 import { createPanelOwner } from "./panel-owner.mjs";
 import {
-  collapseKey, hasInstanceChildren, instanceRepoLabel, treeConnectors, filterInstanceTree, instanceMatchesFilter, instanceVisibleInTree,
+  collapseKey, hasInstanceChildren, instanceRepoLabel, treeConnectors, filterInstanceTree, instanceMatchesFilter, instanceVisibleInTree, waitingRollup,
   captureTreeRenderState, rosterResponseOwns, clusterSeparator, renderRosterCount,
   instanceId, rosterParentId, terminalKey, resolveTerminalOpen,
   createRosterLoading, rosterSignature, markStaleControl, staleBlocked, ROSTER_STALE_TITLE,

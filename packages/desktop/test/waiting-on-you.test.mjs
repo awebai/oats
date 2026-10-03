@@ -2,9 +2,10 @@
 // Pure module: no DOM, no server.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { waitingOnYouData, waitingMessage, waitingClaim, waitingLabel, waitedText, waitingClock, waitingNames,
-  waitingBelowText, waitingSentence, waitingRollup } from '../renderer/waiting-on-you.mjs';
-import { collapseKey, instanceId } from '../renderer/instance-tree.mjs';
+  waitingBelowText, waitingSentence } from '../renderer/waiting-on-you.mjs';
+import { collapseKey, instanceId, waitingRollup } from '../renderer/instance-tree.mjs';
 
 const since = '2026-10-03T10:00:00.000Z';
 const claim = (extra = {}) => ({ since, producer: 'claude-hook', reason: 'permission', message: 'Allow Bash(rm -rf build)?', ...extra });
@@ -177,4 +178,11 @@ test('waitingRollup: a chain that leaves the waiting row\'s section (deployment)
   const section = r => r.agentsRoot;
   assert.deepEqual([...waitingRollup(all, collapsed, 'A', { section }).get(instanceId(lead))].map(r => r.instance), ['own']);
   assert.deepEqual([...waitingRollup(all, collapsed, 'A').get(instanceId(lead))].map(r => r.instance), ['own', 'orphan'], 'without sections: one section');
+});
+
+test('layering: the claim contract imports only contract modules (the server loads it; the tree roll-up lives in instance-tree.mjs)', () => {
+  const source = readFileSync(new URL('../renderer/waiting-on-you.mjs', import.meta.url), 'utf8');
+  const imports = [...source.matchAll(/^import\b[^;]*?from\s+['"]([^'"]+)['"]/gm)].map(m => m[1]).sort();
+  assert.deepEqual(imports, ['./instance-events-contract.mjs', './readiness-contract.mjs']);
+  assert.doesNotMatch(source, /from\s+['"][^'"]*instance-tree|import\s*\(/, 'no tree import, static or dynamic');
 });
