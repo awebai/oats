@@ -36,14 +36,16 @@ function home() {
 // A fake kernel CLI that records its argv; FAKE_MODE selects how it misbehaves.
 const FAKE_CLI = join(base, "fake-cli.mjs");
 // FAKE_SET_DELAY_MS / FAKE_CLEAR_DELAY_MS delay that action's record (a slow call the other
-// overtakes); FAKE_CWD_LOG
+// overtakes); FAKE_CLEAR_MODE makes only clears misbehave; FAKE_CWD_LOG
 // records the cwd the CLI ran in.
 writeFileSync(FAKE_CLI, `import { appendFileSync } from "node:fs";
 const delay = Number((process.argv[4] === "set" ? process.env.FAKE_SET_DELAY_MS : process.env.FAKE_CLEAR_DELAY_MS) || 0);
 setTimeout(() => {
   if (process.env.FAKE_LOG) appendFileSync(process.env.FAKE_LOG, JSON.stringify(process.argv.slice(2)) + "\\n");
   if (process.env.FAKE_CWD_LOG) appendFileSync(process.env.FAKE_CWD_LOG, process.cwd() + "\\n");
-  const mode = process.env.FAKE_MODE || "ok";
+  const mode = (process.argv[4] === "clear" && process.env.FAKE_CLEAR_MODE) || process.env.FAKE_MODE || "ok";
+  // FAKE_STATE: the claim as the successful calls leave it ("set <reason>" or "clear").
+  if (mode === "ok" && process.env.FAKE_STATE) appendFileSync(process.env.FAKE_STATE, (process.argv[4] === "set" ? "set " + process.argv[8] : "clear") + "\\n");
   if (mode === "fail") { process.stdout.write('{"decision":"block","reason":"from stdout"}\\n'); process.stderr.write("boom on stderr\\n"); process.exit(1); }
   if (mode === "hang") setTimeout(() => {}, 30000);
   if (mode === "ok") process.stdout.write('{"ok":true}\\n');
@@ -429,6 +431,40 @@ test("a clear racing a set ends cleared: a slow set that lands after the clear i
   assert.equal(await slowClear, 0);
   assert.deepEqual(readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l)).map((a) => a[2] === "set" ? a[6] : a[2]), ["question", "permission", "clear", "permission"], "the clear landed last, so the set is recorded again");
   assert.match(readFileSync(markerOf(h), "utf8"), /^permission \d+\n$/, "and the marker stays with it");
+});
+
+test("overlapping calls end in the right claim: a slow set overtaken by a newer set takes the newer reason; a corrective clear that fails or is killed is retried by the next clear", { timeout: 60000 }, async () => {
+  const node = process.execPath;
+  const run = (args, env) => new Promise((done) => {
+    const child = spawn("/bin/sh", [SCRIPT, ...withMarker([...args, node, FAKE_CLI], env)], { env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env }), stdio: "ignore" });
+    child.on("exit", (code) => done(code));
+  });
+  const lastState = (f) => readFileSync(f, "utf8").trim().split("\n").pop();
+  const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+  // (a) set permission (slow) then set question (fast): the question is the latest intent.
+  for (const [first, second] of [["permission", "question"], ["question", "permission"]]) {
+    const h = home(), state = join(base, `state-ss-${n}.log`);
+    const slow = run(["set", first], { OATS_INSTANCE_HOME: h, FAKE_STATE: state, FAKE_SET_DELAY_MS: "800" });
+    await pause(250);
+    assert.equal(await run(["set", second], { OATS_INSTANCE_HOME: h, FAKE_STATE: state }), 0);
+    assert.equal(await slow, 0);
+    const want = second === "permission" && first === "question" ? "question" : second; // a permission prompt never relabels an open question
+    assert.equal(lastState(state), `set ${want}`, `${first} then ${second}`);
+    assert.match(readFileSync(markerOf(h), "utf8"), new RegExp(`^${want} \\d+\\n$`));
+  }
+  // (b) a slow set overtaken by a clear: its corrective clear fails (or is killed); the next clear retries it.
+  for (const clearMode of ["fail", "hang"]) {
+    const h = home(), state = join(base, `state-cc-${n}.log`);
+    const slow = run(["set", "permission"], { OATS_INSTANCE_HOME: h, FAKE_STATE: state, FAKE_SET_DELAY_MS: "800", FAKE_CLEAR_MODE: clearMode });
+    await pause(250);
+    assert.equal(await run(["clear"], { OATS_INSTANCE_HOME: h, FAKE_STATE: state }), 0);
+    assert.equal(await slow, 0);
+    assert.equal(lastState(state), "set permission", `${clearMode}: the claim is stale for now`);
+    assert.ok(existsSync(markerOf(h)), `${clearMode}: but the marker is kept for a retry`);
+    assert.equal(await run(["clear"], { OATS_INSTANCE_HOME: h, FAKE_STATE: state }), 0);
+    assert.equal(lastState(state), "clear", `${clearMode}: the next clear retried it`);
+    assert.ok(!existsSync(markerOf(h)));
+  }
 });
 
 test("the CLI runs in the home", () => {

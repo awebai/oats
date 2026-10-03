@@ -126,6 +126,23 @@ if [ -z "$marker" ]; then
   exit 0
 fi
 
+# The clear protocol. The marker carries "clear <pid>" while the clear runs and goes only
+# once the clear is recorded and no set has taken the marker since: a failed or killed
+# clear keeps it, so the next clear retries. A set that took the marker meanwhile is
+# recorded again, in case this clear landed after it.
+clear_claim() {
+  mine="clear $$"
+  printf '%s\n' "$mine" > "$marker"
+  if run_cli clear --producer oats.core; then
+    now=$(token)
+    if [ "$now" = "$mine" ]; then
+      rm -f "$marker"
+    else
+      case "${now%% *}" in permission|question) run_cli set --producer oats.core --reason "${now%% *}" ;; esac
+    fi
+  fi
+}
+
 if [ "$action" = set ]; then
   # An open AskUserQuestion is shown through Claude's permission dialog, so its own
   # permission_prompt follows the question's set: a permission prompt never relabels an
@@ -135,23 +152,18 @@ if [ "$action" = set ]; then
   mine="$reason $$"
   printf '%s\n' "$mine" > "$marker"
   run_cli set --producer oats.core --reason "$reason"
-  # A clear ran while this set's CLI did (it rewrote or removed the marker), and its
-  # clear may have landed before this set: clear again rather than leave a stale claim.
-  [ "$(token)" = "$mine" ] || run_cli clear --producer oats.core
+  # Someone touched the marker while this set's CLI ran, and may have landed before it.
+  # A newer set (its token is a reason) is the latest intent: record its reason again. A
+  # clear (it rewrote or removed the marker) is redone through the clear protocol, so a
+  # corrective clear that fails is retried by the next clear too.
+  now=$(token)
+  [ "$now" = "$mine" ] && exit 0
+  case "${now%% *}" in
+    permission|question) run_cli set --producer oats.core --reason "${now%% *}" ;;
+    *) clear_claim ;;
+  esac
 else
   [ -e "$marker" ] || exit 0
-  mine="clear $$"
-  printf '%s\n' "$mine" > "$marker"
-  # The marker goes only once the clear is recorded: a failed or killed clear keeps it,
-  # so the next clear retries. A set that came in meanwhile keeps it too, and is
-  # recorded again in case this clear landed after it.
-  if run_cli clear --producer oats.core; then
-    now=$(token)
-    if [ "$now" = "$mine" ]; then
-      rm -f "$marker"
-    else
-      case "${now%% *}" in permission|question) run_cli set --producer oats.core --reason "${now%% *}" ;; esac
-    fi
-  fi
+  clear_claim
 fi
 exit 0

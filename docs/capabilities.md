@@ -610,10 +610,12 @@ clears it.
 - **Retry and races.** The marker goes only once a clear is recorded: a
   clear that fails, or that the watchdog kills, keeps it, so the next clear
   retries. The marker holds its writer's token (`<reason> <pid>` for a set,
-  `clear <pid>` for a clear under way), so a set and a clear that run at once
-  (parallel tool calls) see each other: a set whose marker a clear touched
-  meanwhile follows with a clear, and a clear that a set overtook records
-  that set again, so neither order leaves a stale claim.
+  `clear <pid>` for a clear under way), so calls that run at once (parallel
+  tool calls, overlapping prompts) see each other, whatever order their CLI
+  calls land in. A set whose marker a newer set took meanwhile records that
+  newer reason again; a set whose marker a clear touched redoes the clear
+  through the same retryable protocol; a clear that a set overtook records
+  that set again. A failed set is retried by the next set event.
 - **It never touches the agent's claim.** The script only ever passes
   `--producer oats.core`.
 - **Not "unknown work" at retirement.** Harness project settings in the home
