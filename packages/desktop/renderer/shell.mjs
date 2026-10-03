@@ -9,7 +9,7 @@
 // (groupInstances is not imported here: the feature branch renders the
 // sidebar roster via clusterInstances — lineage clusters with identity keys.)
 import { currentWorkspace, workspaceGeneration, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange, instanceApiPath, postJson, rowDeployment, httpError,
-  switchWorkspace, startWindow, windowState, onWindowState, choosingWorkspaces, chooseWorkspace } from "./views/common.mjs";
+  switchWorkspace, startWindow, windowState, onWindowState, choosingWorkspaces, chooseWorkspace, refreshChoices } from "./views/common.mjs";
 import { instanceActions, captureInstanceActionMenu } from "./instance-actions.mjs";
 import { instanceActionTarget, sameInstanceActionTarget } from "./instance-action-target.mjs";
 import { createInstancePrAction } from "./instance-pr-action.mjs";
@@ -547,8 +547,15 @@ async function followView(id) {
   if (!result.ok && result.code === "open-elsewhere") await chooseWorkspace(result.workspaces);
 }
 
+/** A window with no workspace reads nothing; its switcher's choices follow what main serves (#521). */
+async function refreshChooserChoices() {
+  const list = await refreshChoices();
+  if (list && windowState() === "choosing") workspaceLabel.choose(list);
+}
+
 async function refreshContextRoster({ user = false } = {}) {
-  if (!contextRosterEl || windowState() === "choosing") return; // no workspace: nothing to read
+  if (!contextRosterEl) return;
+  if (windowState() === "choosing") return refreshChooserChoices(); // no workspace: nothing to read
   // A Retry restarts the bounded wait for an answer.
   if (user) rosterPendingWatch.reset();
   const myGen = ++contextRosterGen;
