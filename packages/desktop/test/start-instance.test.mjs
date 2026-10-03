@@ -10,7 +10,7 @@ function setup({ running = false, cli = { ok: true, features: ["session-start"],
   const dom = new JSDOM("<body><button id='opener'>Start</button></body>");
   setWorkspace("/workspace");
   const instance = { instance: "accountant-minerva", home: "/workspace/agents/accountant/instances/accountant-minerva", runtime: "claude", model: "sonnet", running, ...(server ? { server, addressable: true } : {}) };
-  const calls = [], opened = [];
+  const calls = [], opened = [], notified = [];
   const ctx = { api: async (path, opts) => {
     calls.push({ path, opts });
     if (path === "/api/cli") return cli;
@@ -19,13 +19,13 @@ function setup({ running = false, cli = { ok: true, features: ["session-start"],
     if (path.startsWith("/api/launch-configs")) return { context: "/workspace", configurations: [{ name: "personal", runtime: "codex", source: "/workspace" }] };
     if (path.startsWith("/api/start/") || path.startsWith("/api/restart/")) return start ? start() : { instance: instance.instance, home: instance.home };
     assert.fail(path);
-  }, openTerminal: async (ref) => opened.push(ref) };
+  }, openTerminal: async (ref) => opened.push(ref), notify: (message) => notified.push(message) };
   const opener = dom.window.document.querySelector("#opener"); opener.focus();
-  const open = createInstanceStarter(dom.window.document, ctx, { waitForReady: async () => ready });
+  const open = createInstanceStarter(dom.window.document, ctx, { waitForReady: typeof ready === "function" ? ready : async () => ready });
   const modal = open(instance, { restart });
   const submit = () => modal.querySelector("form").dispatchEvent(new dom.window.Event("submit", { cancelable: true }));
   const cleanup = () => { setWorkspace("/finished"); dom.window.close(); };
-  return { dom, instance, calls, opened, modal, submit, cleanup, open };
+  return { dom, instance, calls, opened, notified, modal, submit, cleanup, open };
 }
 
 test("Start chooses a model for the exact existing home then opens its terminal", async () => {
@@ -136,16 +136,52 @@ test("start adapter preserves saved home/server and treats the model as one argv
   }
 });
 
-test("an accepted launch that exits permits recovery after a fresh status check", async () => {
+test("an accepted launch whose terminal never becomes ready closes the dialog and says so without a modal (#525)", async () => {
   const s = setup({ ready: false });
   try {
-    await tick(); s.submit(); await tick();
+    await tick(); s.submit(); await tick(); await tick();
+    assert.equal(s.modal.isConnected, false, "accepted: the dialog does not wait on the harness");
     assert.equal(s.opened.length, 0);
-    assert.match(s.modal.querySelector(".start-status").textContent, /may have exited/);
-    assert.equal(s.modal.querySelector(".start-submit").disabled, true);
-    assert.equal(s.modal.querySelector(".start-retry").disabled, false);
-    s.modal.querySelector(".start-retry").click(); await tick();
-    assert.equal(s.modal.querySelector(".start-submit").disabled, false);
+    assert.deepEqual(s.notified, ["accountant-minerva was started, but its terminal isn't ready yet. Open it from its row when it is."]);
+    assert.equal(s.dom.window.document.activeElement.id, "opener");
+  } finally { s.cleanup(); }
+});
+
+test("accepted, the dialog closes at once; the terminal opens when the row is ready, whatever the harness shows (#525)", async () => {
+  for (const restart of [false, true]) {
+    let ready;
+    const s = setup({ running: restart, restart, cli: { ok: true, features: ["session-start", "session-restart"] },
+      ready: () => new Promise((r) => { ready = r; }) });
+    try {
+      await tick(); s.submit(); await tick(); await tick();
+      assert.equal(s.modal.isConnected, false, `${restart ? "restart" : "start"} accepted: the dialog closed before readiness`);
+      assert.equal(s.dom.window.document.activeElement.id, "opener");
+      assert.equal(s.opened.length, 0, "not ready yet");
+      ready(true); await tick(); await tick();
+      assert.deepEqual(s.opened, [s.instance], "its terminal opens: a confirmation or an error there is visible");
+      assert.deepEqual(s.notified, []);
+    } finally { s.cleanup(); }
+  }
+});
+
+test("a workspace switch while the started terminal is getting ready opens nothing and says nothing (#525)", async () => {
+  let ready;
+  const s = setup({ ready: (_s, _ref, stillHere) => new Promise((r) => { ready = () => r(stillHere()); }) });
+  try {
+    await tick(); s.submit(); await tick(); await tick();
+    assert.equal(s.modal.isConnected, false);
+    setWorkspace("/elsewhere"); ready(); await tick(); await tick();
+    assert.deepEqual(s.opened, []); assert.deepEqual(s.notified, []);
+  } finally { s.cleanup(); }
+});
+
+test("a refused launch keeps the dialog with the error (#525)", async () => {
+  const s = setup({ start: () => { throw Object.assign(new Error("E_LAUNCH_REFUSED: the harness is not installed"), { code: "E_LAUNCH_REFUSED" }); } });
+  try {
+    await tick(); s.submit(); await tick();
+    assert.equal(s.modal.isConnected, true);
+    assert.match(s.modal.querySelector(".start-status").textContent, /not installed/);
+    assert.deepEqual(s.opened, []); assert.deepEqual(s.notified, []);
   } finally { s.cleanup(); }
 });
 
