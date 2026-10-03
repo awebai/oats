@@ -1961,12 +1961,12 @@ An envelope, `ok: true` whenever no step failed, human steps included
           {"step":"oats","status":"done","detail":"installed @awebai/oats 0.39.0 (was missing)"},
           {"step":"git","status":"needs-human","code":"E_REMOTE_UNREADABLE",
            "detail":"cannot read remote https://github.com/awebai/ac (auth): on macOS a session without a terminal …",
-           "remedy":"on altair: on macOS a session without a terminal … (`gh auth login --insecure-storage`, then `gh auth setup-git`) or read this remote with an SSH key",
+           "remedy":"on altair: on macOS a session without a terminal … (`gh auth login --insecure-storage`, then `gh auth setup-git`), or use an SSH key the session can reach: …",
            "hint":"keychain-non-interactive"},
           {"step":"deployment","status":"skipped","detail":"waits for git"},
           {"step":"register","status":"skipped","detail":"waits for git"},
           {"step":"readiness","status":"skipped","detail":"waits for git"}],
- "human":["on altair: on macOS a session without a terminal … or read this remote with an SSH key"]}
+ "human":["on altair: on macOS a session without a terminal … or the desktop login's ssh-agent (point SSH_AUTH_SOCK at it in the shell's startup file)"]}
 ```
 
 - `steps` is always the six steps `ssh`, `oats`, `git`, `deployment`,

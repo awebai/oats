@@ -33,6 +33,11 @@ test("KEYCHAIN_REMEDY names both ways out and no secret", () => {
   assert.match(KEYCHAIN_REMEDY, /gh auth login --insecure-storage/);
   assert.match(KEYCHAIN_REMEDY, /gh auth setup-git/);
   assert.match(KEYCHAIN_REMEDY, /SSH key/);
+  // An SSH key is no way out by itself in the same sessions: a passphrase-protected key needs an agent the
+  // session can reach (an sshd session has no SSH_AUTH_SOCK of its own).
+  assert.match(KEYCHAIN_REMEDY, /without a passphrase/);
+  assert.match(KEYCHAIN_REMEDY, /ssh-agent/);
+  assert.match(KEYCHAIN_REMEDY, /SSH_AUTH_SOCK/);
 });
 
 /** A PATH with a git that fails every network read as a forge does when no credential reaches it. */

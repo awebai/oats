@@ -138,7 +138,12 @@ gh auth login --insecure-storage   # keep the token in gh's own file, not the ke
 gh auth setup-git                  # let Git use gh's token
 ```
 
-or read the remote with an SSH key. OATS never reads or changes credentials
+or read the remote with an SSH key the session can reach. A key with a
+passphrase fails in the same sessions for the same reason: an ssh session has
+no `SSH_AUTH_SOCK` of its own, so it cannot reach the desktop login's
+ssh-agent. Use a key without a passphrase, or point `SSH_AUTH_SOCK` at the
+login agent in the shell's startup file (for zsh, `~/.zshenv`, which
+non-interactive sessions read). OATS never reads or changes credentials
 itself; the hint is about where Git ran, not a probe of the keychain.
 
 ## Connections
