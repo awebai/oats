@@ -39,9 +39,15 @@ oats schedule tick --dry-run   # what would run this minute, launching nothing
 The default cap is five running scheduled jobs. The two install flags set
 independent positive-integer caps; `default` restores the schedule default and
 `none` removes the trigger cap. Omitted flags keep existing choices. Use these
-CLI flags, never hand-edit the registry. Upgrading migrates the old implicit
-cap of one to the default once; explicitly set `--max-concurrent 1` after
-upgrade if the operator needs one. `host status` reports both effective caps.
+CLI flags, never hand-edit the registry. Reads take no registry lock and write
+nothing; they interpret the old implicit cap of one as five. The next registry
+mutation persists that migration and emits a stderr notice; a pre-migration
+hand-set one is indistinguishable, so explicitly set `--max-concurrent 1` if the
+operator needs one. Older binaries can reintroduce one while retaining the new
+marker: stop mixed-version writes and set the desired cap with the CLI. Invalid
+stored caps are refused, not replaced with five; an explicit `--max-concurrent
+N|default` repairs an invalid schedule cap. `host status` reports both effective
+caps.
 
 **Credentials reach the tick through the timer, not your shell.** The timer's
 environment sets only `PATH` and `OATS_HOME_DIR`. `gh` logged in through the

@@ -65,11 +65,24 @@ published to npm. Its developer docs are in
 | `harness-trust.mjs` | reading (never writing) Claude's and Codex's folder trust for a launch |
 
 The schedule registry stores explicit concurrency caps, leaving the schedule
-cap absent for its effective default of five. Reads migrate legacy stored one
-to absent once, under `registry.lock`, and record `capsVersion: 2`. Registration
-and cap updates use that same short lock; later explicit one stays explicit.
-`readRegistry()` returns stored choices; scheduling and status apply the default
-without writing it back. The trigger cap is independent and absent means no cap.
+cap absent for its effective default of five. `readRegistry()` is a pure,
+bounded atomic-file snapshot: it takes no lock and writes nothing, projecting
+legacy implicit one to absent and `capsVersion: 2` only in memory. Its no-follow
+regular-file descriptor accepts an atomic rename between stat and open, so it
+returns a complete old or new snapshot; other bounded readers retain their
+identity check. Invalid present schedule or trigger caps are refused.
+Registration, unregistration and cap updates reread under `registry.lock` and
+compare against the raw snapshot, so even unchanged membership persists the
+migration. A successful write removing legacy one emits a stderr notice naming
+the one-slot restoration command. `writeRegistry()` remains a raw atomic writer;
+read-modify-write callers must supply the lock and reread. Later explicit one
+stays explicit, including one reintroduced by an older writer: the stored
+marker cannot distinguish its provenance. The trigger cap stays independent.
+
+The shared mkdir lock retries every occupied-directory window within the
+caller's retry deadline, including owner-file publication and removal. It never
+removes a contender's lock or steals from a live, dead or unreadable owner;
+persistent contention ends in the caller's existing busy error.
 
 Spawn compensation returns its diagnostic and a structural uncertainty flag;
 only an incomplete result marks the original error's `details.unconfirmed`.
