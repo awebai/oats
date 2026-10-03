@@ -31,7 +31,7 @@ function workspace() {
 }
 function child(source, args = []) {
   const proc = spawn(process.execPath, ["--input-type=module", "-e", `import * as S from ${JSON.stringify(scheduleModule)}; ${source}`, ...args], {
-    env: { ...process.env }, stdio: ["ignore", "pipe", "pipe", "ipc"],
+    env: { ...process.env }, stdio: ["ignore", "pipe", "pipe", "ipc"], timeout: 6000, killSignal: "SIGKILL",
   });
   let stderr = "";
   proc.stderr.on("data", (data) => { stderr += data; });
@@ -66,7 +66,10 @@ test("fresh registry leaves the default absent while status reports five and no 
 test("legacy one migrates once, preserving registry data and a later deliberate one", () => {
   const ws = workspace();
   seedRegistry({ maxConcurrent: 1, triggersMaxConcurrent: 3, workspaces: [ws], extension: { keep: true } });
+  const before = readFileSync(registryPath(), "utf8");
   const migrated = S.readRegistry();
+  assert.equal(readFileSync(registryPath(), "utf8"), before, "reads only project migration");
+  S.registerWorkspace(ws); // Even unchanged membership must persist migration.
   assert.equal(Object.hasOwn(migrated, "maxConcurrent"), false);
   assert.deepEqual(diskRegistry(), { version: 1, capsVersion: 2, tickIntervalSec: 120, triggersMaxConcurrent: 3, workspaces: [ws], extension: { keep: true } });
   assert.equal(S.schedulerStatus(ws).maxConcurrent, 5);
@@ -80,7 +83,7 @@ test("legacy one migrates once, preserving registry data and a later deliberate 
 test("migration keeps other explicit caps and does not materialize an absent default", () => {
   for (const extra of [{}, { maxConcurrent: 5 }, { maxConcurrent: 9 }]) {
     seedRegistry({ ...extra, triggersMaxConcurrent: 2 });
-    S.readRegistry();
+    S.registerWorkspace(workspace());
     const reg = diskRegistry();
     assert.equal(reg.maxConcurrent, extra.maxConcurrent);
     assert.equal(Object.hasOwn(reg, "maxConcurrent"), Object.hasOwn(extra, "maxConcurrent"));
@@ -135,7 +138,7 @@ test("migration waits for the registry lock and reads the winner's current value
   const lock = join(S.hostScheduleDir(), "registry.lock");
   mkdirSync(lock);
   writeFileSync(join(lock, "owner.json"), JSON.stringify({ pid: process.pid }));
-  const reader = child('process.send("ready"); const reg = S.readRegistry(); if (reg.maxConcurrent !== 7 || reg.triggersMaxConcurrent !== 2) process.exitCode = 1; process.disconnect();');
+  const reader = child('process.send("ready"); const reg = S.registerWorkspace(process.argv[1]); if (reg.maxConcurrent !== 7 || reg.triggersMaxConcurrent !== 2) process.exitCode = 1; process.disconnect();', [workspace()]);
   t.after(() => { reader.proc.kill(); rmSync(lock, { recursive: true, force: true }); });
   await reader.ready;
   await delay(100);
@@ -153,13 +156,7 @@ test("concurrent process registrations retain every workspace and an explicit ca
   const scopes = Array.from({ length: 6 }, workspace);
   const children = scopes.map((ws, i) => child(`
     process.once("message", async () => {
-      for (let attempt = 0; ; attempt++) {
-        try { S.registerWorkspace(process.argv[1], ${i === 0 ? '{ maxConcurrent: 1, triggersMaxConcurrent: 3 }' : '{}'}); break; }
-        catch (e) {
-          if (e.code !== "E_SCHEDULER_BUSY" || attempt >= 5) throw e;
-          await new Promise((resolve) => setTimeout(resolve, 20));
-        }
-      }
+      S.registerWorkspace(process.argv[1], ${i === 0 ? '{ maxConcurrent: 1, triggersMaxConcurrent: 3 }' : '{}'});
       process.disconnect();
     });
     process.send("ready");`, [ws]));
@@ -269,5 +266,51 @@ test("CLI rejects invalid and missing cap values before migration or host servic
     assert.equal(result.output.error.code, "E_BAD_ARGS", args.join(" "));
     assert.equal(readFileSync(cli.path, "utf8"), before);
     assert.equal(existsSync(cli.serviceLog), false, "bad arguments must not contact the service manager");
+  }
+});
+
+
+test("unregister persists legacy migration even when membership is unchanged", () => {
+  const ws = workspace();
+  seedRegistry({ maxConcurrent: 1, triggersMaxConcurrent: 2 });
+  S.unregisterWorkspace(ws);
+  assert.equal(diskRegistry().capsVersion, 2);
+  assert.equal(Object.hasOwn(diskRegistry(), "maxConcurrent"), false);
+  assert.equal(diskRegistry().triggersMaxConcurrent, 2);
+});
+
+test("persisted legacy-one migration warns once on stderr and preserves JSON stdout", () => {
+  const cli = isolatedCLI(), ws = workspace();
+  mkdirSync(dirname(cli.path), { recursive: true });
+  writeFileSync(cli.path, JSON.stringify({ version: 1, maxConcurrent: 1, workspaces: [ws] }));
+  let result = cli.run(ws);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.output.result.scheduler.maxConcurrent, 5);
+  assert.match(result.stderr, /legacy.*maxConcurrent.*1/i);
+  assert.match(result.stderr, /oats schedule host install --max-concurrent 1/);
+  result = cli.run(ws);
+  assert.equal(result.status, 0, result.stderr);
+  assert.doesNotMatch(result.stderr, /legacy.*maxConcurrent/i);
+  result = cli.run(ws, "--max-concurrent", "1");
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.output.result.scheduler.maxConcurrent, 1);
+});
+
+test("invalid stored schedule caps refuse unchanged and explicit CLI correction repairs under lock", () => {
+  const cli = isolatedCLI(), ws = workspace();
+  mkdirSync(dirname(cli.path), { recursive: true });
+  for (const repair of ["3", "default"]) {
+    const before = JSON.stringify({ version: 1, capsVersion: 2, maxConcurrent: "broken", triggersMaxConcurrent: 2, workspaces: [ws] });
+    writeFileSync(cli.path, before);
+    let result = cli.run(ws);
+    assert.notEqual(result.status, 0);
+    assert.equal(result.output.error.code, "E_SCHEDULE_INVALID");
+    assert.match(result.output.error.message, /maxConcurrent/);
+    assert.match(result.output.error.message, /--max-concurrent/);
+    assert.equal(readFileSync(cli.path, "utf8"), before);
+    result = cli.run(ws, "--max-concurrent", repair);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.output.result.scheduler.maxConcurrent, repair === "default" ? 5 : 3);
+    assert.equal(result.output.result.scheduler.triggersMaxConcurrent, 2);
   }
 });

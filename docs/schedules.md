@@ -329,12 +329,27 @@ current choices. Invalid values fail with `E_BAD_ARGS` before registration or
 timer changes. `host status` reports the effective `maxConcurrent` and
 `triggersMaxConcurrent` (`null` when uncapped).
 
-The registry stores explicit choices only. On the first registry read after
-upgrade, a legacy stored `maxConcurrent: 1` without the new choice marker is
-migrated to the default under the registry lock; other explicit values survive.
-If you need a cap of one, run `oats schedule host install --max-concurrent 1`
-after upgrading. That explicit choice survives later reads and reinstalls.
-Set these values through the CLI; do not edit the registry by hand.
+The registry stores explicit choices only. Reading status or the registry takes
+no registry lock and creates or rewrites no files or directories. A reader
+interprets a pre-migration stored `maxConcurrent: 1` as the default of five in
+memory. Registration, unregistration and cap updates persist that migration
+once, under the registry lock, even if the workspace membership is unchanged.
+Other explicit values and the independent trigger cap survive.
+
+A pre-migration hand-set one is indistinguishable from the old implicit one;
+both follow that compatibility choice. When a write migrates one to the default,
+it prints a notice on stderr with `oats schedule host install --max-concurrent 1`
+to restore one if needed. Pure reads stay silent and JSON stdout is unchanged.
+A later explicit one survives writes by current kernels. Older binaries sharing
+the registry can write one back while preserving `capsVersion: 2`; there is no
+provenance to distinguish that from a new explicit one. Stop mixed-version
+writes and explicitly set the desired cap with the supported CLI.
+
+A present invalid `maxConcurrent` is `E_SCHEDULE_INVALID`, not a fallback to
+five. Correct it with `oats schedule host install --max-concurrent N` (or
+`--max-concurrent default`) from the deployment, or with `--dir <deployment>`.
+An absent value still means five. Set caps through the CLI; do not edit the
+registry by hand.
 
 `oats schedule list --json` answers:
 
