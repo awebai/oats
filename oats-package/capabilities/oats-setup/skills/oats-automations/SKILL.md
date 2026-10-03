@@ -154,7 +154,9 @@ or `run: command`, `cron`, `tz`, `agent`, `task`, plus `runsOn` and `owner`).
 - **Opting a host out** without a commit: `oats trigger disable <member>/<id>`
   writes `triggers.disabled`, and `oats schedule disable <member>/<id>` writes
   `schedules.disabled`, in that host's `oats-local.yaml`; `enable` removes
-  the entry. A workspace definition is never edited or removed from a host
+  the entry. Qualified schedule names accept up to 100 characters in opt-outs
+  and named `automations.trust` entries; trigger definitions and opt-outs stay
+  limited to 40. A workspace definition is never edited or removed from a host
   (`E_AUTOMATION_WORKSPACE`): change the file in Git.
 - **Refresh.** `oats sync` takes a snapshot of the members' automations; the
   host tick refreshes it when it is more than ten minutes old

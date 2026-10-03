@@ -273,9 +273,12 @@ add` / `oats schedule add` definitions need no trust.
 
 **Opting out on one host.** `oats trigger disable <member>/<id>` writes
 `triggers.disabled`, and `oats schedule disable <member>/<id>` writes
-`schedules.disabled`, in `oats-local.yaml`; `enable` removes the entry. A
-workspace definition is never edited or removed from the CLI (`update` and
-`remove` answer `E_AUTOMATION_WORKSPACE`): change the file in Git.
+`schedules.disabled`, in `oats-local.yaml`; `enable` removes the entry. The
+schedule part of a qualified ID accepts up to 100 characters in both
+`schedules.disabled` and named `automations.trust` entries. Trigger definitions
+and `triggers.disabled` keep their 40-character limit; the shared trust list
+does not widen trigger IDs. A workspace definition is never edited or removed
+from the CLI (`update` and `remove` answer `E_AUTOMATION_WORKSPACE`): change the file in Git.
 
 **Refresh.**
 
