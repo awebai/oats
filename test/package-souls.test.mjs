@@ -362,6 +362,8 @@ test("readiness: a package soul's member check is its package (locked, integrity
   assert.match(it.reason, /copy .* digests sha256-[0-9a-f]{64}, not the locked/);
   it = integrityFails(ok(fx.cli(["readiness", "--home", home, "--json"]), "readiness --home"), "changed copy, --home");
   assert.match(it.reason, /copy .* digests sha256-[0-9a-f]{64}, not the recorded/);
+  // A spawn reuses a complete copy, so the remedy moves the changed one aside first.
+  assert.ok(it.remedy.includes(`move ${realpathSync(copy)} aside, then spawn a new instance of acme.pkg/keeper`), it.remedy);
   // No copy yet: the fetch itself is verified against the lock.
   rmSync(join(fx.root, "acme-pkg--keeper", "souls"), { recursive: true, force: true });
   writeFileSync(lockFile, JSON.stringify(edited, null, 2) + "\n");
