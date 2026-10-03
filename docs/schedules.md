@@ -337,12 +337,27 @@ you), `launch-failed`, `unknown`, and for wake jobs `delivered`, `started` or
 `skipped`. The kernel never claims a task succeeded.
 
 `unknown` means the launch's side effects are unconfirmed: a command timed out
-or answered no envelope, or an attempt was never recorded. The job keeps its
-slot and is skipped until `oats schedule reconcile <id>`, which adopts only an
-attributable receipt (a spawn job's instance, named for its minute, or the
-instance a command's answer named). When nothing is attributable, check the
-roster and the host by hand, then `reconcile <id> --clear` records
-`launch-failed` and frees the slot.
+or answered no envelope, or an attempt was never recorded. The job is skipped
+until `oats schedule reconcile <id>`, which adopts only an attributable
+receipt (a spawn job's instance, named for its minute, or the instance a
+command's answer named). When nothing is attributable, check the roster and
+the host by hand, then `reconcile <id> --clear` records `launch-failed` and
+frees the slot. The unresolved attempt shows in `show` as `attempt:
+{scheduledFor, startedAt, error?, exited?, exitStatus?, exitSignal?}`;
+`error` is the first run's cause, which later skipped ticks keep in `lastRun`.
+`oats doctor` reports each unresolved attempt (`schedule-unresolved`).
+
+Whether an `unknown` job keeps its host slot depends on what is still running:
+
+- A `command` or `operation` job whose process exit the kernel observed (it
+  returned, or was stopped at the five-minute timeout) holds no slot: the
+  process runs nothing any more, and an instance it spawned has its own
+  lifecycle. Its attempt shows `exited: true` with the exit status or
+  signal, and other jobs keep running.
+- A `spawn` job keeps its slot, which stands for the instance it may have
+  launched. So does a command whose exit was not observed (the runner threw,
+  the process never started) and an attempt recorded before 0.39.3 (no
+  `exited`), until reconcile.
 
 **Slots.** A wake job that starts a stopped home holds a launch slot until the
 harness is proven stopped or the home is gone; delivering to a running home

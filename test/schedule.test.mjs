@@ -410,7 +410,78 @@ test("a running wake delivers beside a long scheduled spawn that holds the only 
   assert.equal(inputs.length, 2);
 });
 
-test("a command that creates a home and then times out stays unknown with its slot held until reconcile adopts it", () => {
+test("an unknown command whose process exited frees the host slot for other jobs, but its own job waits for reconcile and keeps its first error", () => {
+  const ws = workspace();
+  const src = home(ws, "dev-src");
+  const reg = { ...S.readRegistry(), maxConcurrent: 1 };
+  const commands = [], spawns = [];
+  const io = { command: (c) => { commands.push(c); return "not an envelope"; }, spawn: fakeSpawn(ws, spawns), inspect: () => ({ present: true, state: "unknown" }) };
+  S.addSchedule(ws, { id: "wedge", cron: "0 * * * *", tz: "UTC", kind: "command", cwd: src, argv: ["oats", "okf", "run-source"] });
+  S.addSchedule(ws, { id: "other", cron: "1 * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t" });
+  let c = S.tickWorkspace(ws, { now: at("2026-09-07T10:00:00Z"), io, reg });
+  assert.equal(c[0].action, "unknown"); assert.match(c[0].error, /no valid envelope/);
+  let d = S.describe(ws, "wedge", io);
+  assert.equal(d.lastRun.outcome, "unknown");
+  assert.equal(d.running, false, "nothing runs: the command's process has exited");
+  assert.equal(S.jobLockInfo(ws, "wedge"), null, "no slot is held");
+  assert.equal(d.attempt.exited, true, "the exit was observed (the io.command seam counts as exited)");
+  assert.match(d.attempt.error, /no valid envelope/, "the first error is kept on the attempt");
+  // The starvation case: with maxConcurrent 1, another due job runs.
+  c = S.tickWorkspace(ws, { now: at("2026-09-07T10:01:00Z"), io, reg });
+  assert.equal(c.find((x) => x.id === "other").action, "launched", "the unknown command does not hold the only slot");
+  // The unknown job itself is never run again until reconcile, and its cause survives later ticks.
+  c = S.tickWorkspace(ws, { now: at("2026-09-07T11:00:00Z"), io, reg });
+  const w = c.find((x) => x.id === "wedge");
+  assert.equal(w.action, "skipped"); assert.match(w.reason, /reconcile/);
+  assert.equal(commands.length, 1, "the command ran once");
+  d = S.describe(ws, "wedge", io);
+  assert.match(d.lastRun.error, /no valid envelope/, "a later tick does not overwrite the cause");
+  assert.match(d.recentRuns[0].error, /no valid envelope/);
+  assert.match(d.attempt.error, /no valid envelope/);
+  assert.throws(() => S.runNow(ws, "wedge", { io }), (e) => e.code === "E_SCHEDULE_UNRESOLVED");
+  assert.throws(() => S.removeSchedule(ws, "wedge"), (e) => e.code === "E_SCHEDULE_RUNNING");
+  let r = S.reconcile(ws, "wedge", { io });
+  assert.equal(r.reconciled, "unknown"); assert.match(r.remedy, /--clear/);
+  r = S.reconcile(ws, "wedge", { io, clear: true });
+  assert.equal(r.reconciled, "cleared"); assert.equal(r.schedule.attempt, undefined); assert.equal(S.jobLockInfo(ws, "wedge"), null);
+});
+
+test("an unknown operation run frees its slot like a command; a command that threw, a spawn and an attempt recorded without an exit keep theirs", () => {
+  const reg = { ...S.readRegistry(), maxConcurrent: 1 };
+  const inspect = () => ({ present: true, state: "unknown" });
+  // An operation: the same command path, so the same release.
+  let ws = workspace();
+  const target = home(ws, "dev-target");
+  S.addSchedule(ws, { id: "op", cron: "0 * * * *", tz: "UTC", kind: "operation", operation: "knowledge:harvest", home: target });
+  let c = S.tickWorkspace(ws, { now: at("2026-09-07T10:00:00Z"), io: { command: () => ({ ok: false, error: { code: "E_OPERATION_TIMEOUT", message: "the provider timed out" } }), inspect }, reg });
+  assert.equal(c[0].action, "unknown");
+  assert.equal(S.jobLockInfo(ws, "op"), null); assert.equal(S.describe(ws, "op").attempt.exited, true);
+  assert.match(S.describe(ws, "op").attempt.error, /the provider timed out/);
+  // A command that threw: no exit was observed, so the slot is kept.
+  ws = workspace();
+  const src = home(ws, "dev-src");
+  S.addSchedule(ws, { id: "threw", cron: "0 * * * *", tz: "UTC", kind: "command", cwd: src, argv: ["oats", "okf", "harvest"] });
+  S.addSchedule(ws, { id: "next", cron: "1 * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t" });
+  const io = { command: () => { throw new Error("boom"); }, spawn: fakeSpawn(ws), inspect };
+  c = S.tickWorkspace(ws, { now: at("2026-09-07T10:00:00Z"), io, reg });
+  assert.equal(c[0].action, "unknown");
+  assert.ok(S.jobLockInfo(ws, "threw"), "the slot is held"); assert.equal(S.describe(ws, "threw").attempt.exited, undefined);
+  assert.match(S.describe(ws, "threw").attempt.error, /boom/);
+  c = S.tickWorkspace(ws, { now: at("2026-09-07T10:01:00Z"), io, reg });
+  assert.equal(c.find((x) => x.id === "next").reason, "host busy");
+  // An attempt written before the exit was recorded (an earlier kernel, or a crashed tick) keeps its slot.
+  ws = workspace();
+  S.addSchedule(ws, { id: "old", cron: "0 * * * *", tz: "UTC", kind: "command", cwd: home(ws, "dev-src"), argv: ["oats", "okf", "harvest"] });
+  S.addSchedule(ws, { id: "next", cron: "1 * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t" });
+  const st = S.readState(ws);
+  st.jobs.old = { attempt: { scheduledFor: "2026-09-07T09:00:00.000Z", startedAt: "2026-09-07T09:00:00.000Z" }, lastRun: { scheduledFor: "2026-09-07T09:00:00.000Z", startedAt: "2026-09-07T09:00:00.000Z", kind: "command", launched: false, outcome: "unknown", error: "command timed out; its side effects are unconfirmed" } };
+  S.writeState(ws, st); S.acquireJobLock(ws, "old", { scheduledFor: "2026-09-07T09:00:00.000Z" });
+  c = S.tickWorkspace(ws, { now: at("2026-09-07T10:01:00Z"), io: { spawn: fakeSpawn(ws), inspect }, reg });
+  assert.equal(c.find((x) => x.id === "next").reason, "host busy");
+  assert.ok(S.jobLockInfo(ws, "old"));
+});
+
+test("a command that creates a home and then times out stays unknown, frees its slot once its process exited, and waits for reconcile", () => {
   const ws = workspace();
   const src = home(ws, "dev-src");
   // A dummy oats binary: creates an instance home like a harvester spawn would, prints nothing, then sleeps past the timeout.
@@ -424,7 +495,9 @@ await new Promise((r) => setTimeout(r, 5000));\n`);
   const c = S.tickWorkspace(ws, { now: at("2026-09-07T17:00:00Z"), io, reg });
   assert.equal(c[0].action, "unknown"); assert.match(c[0].error, /timed out/);
   let d = S.describe(ws, "late", io);
-  assert.equal(d.lastRun.outcome, "unknown"); assert.ok(d.attempt, "the attempt is retained"); assert.equal(d.running, true, "the slot is held");
+  assert.equal(d.lastRun.outcome, "unknown"); assert.ok(d.attempt, "the attempt is retained"); assert.equal(d.running, false, "the killed process holds no slot");
+  assert.equal(d.attempt.exited, true); assert.equal(d.attempt.exitStatus, null); assert.equal(d.attempt.exitSignal, "SIGTERM", "killed at the timeout, its exit observed");
+  assert.match(d.attempt.error, /timed out/);
   // The next minute must not launch again.
   const c2 = S.tickWorkspace(ws, { now: at("2026-09-07T17:01:00Z"), io, reg });
   assert.equal(c2[0].action, "skipped"); assert.match(c2[0].reason, /reconcile/);
@@ -434,7 +507,7 @@ await new Promise((r) => setTimeout(r, 5000));\n`);
   // operator has checked by hand and clears it explicitly.
   let r = S.reconcile(ws, "late", { io });
   assert.equal(r.reconciled, "unknown"); assert.match(r.remedy, /--clear/);
-  assert.ok(S.describe(ws, "late", io).attempt, "the attempt is still retained"); assert.equal(S.describe(ws, "late", io).running, true);
+  assert.ok(S.describe(ws, "late", io).attempt, "the attempt is still retained"); assert.match(S.describe(ws, "late", io).lastRun.error, /timed out/, "the cause survives the skipped tick");
   r = S.reconcile(ws, "late", { io, clear: true });
   assert.equal(r.reconciled, "cleared"); assert.equal(r.schedule.lastRun.outcome, "launch-failed"); assert.equal(r.schedule.running, false);
   assert.equal(S.describe(ws, "late", io).attempt, undefined);
@@ -453,17 +526,18 @@ process.stdout.write("spawned dev-harvest-text\\n");\n`);
   const reg = S.readRegistry();
   const c = S.tickWorkspace(ws, { now: at("2026-09-07T18:00:00Z"), io, reg });
   assert.equal(c[0].action, "unknown"); assert.match(c[0].error, /no valid envelope/);
-  assert.equal(S.describe(ws, "text", io).running, true, "the slot is held: a home may exist");
+  assert.equal(S.describe(ws, "text", io).running, false, "the exited process holds no slot; the home it may have made has its own lifecycle");
+  assert.equal(S.describe(ws, "text", io).attempt.exitStatus, 0, "the attempt is kept until reconcile");
   // An envelope that is JSON but not an envelope is no receipt either.
   const io2 = { command: () => ({ spawned: true }), inspect: io.inspect };
   S.addSchedule(ws, { id: "shape", cron: "* * * * *", tz: "UTC", kind: "command", cwd: src, argv: ["oats", "status"] });
   const c2 = S.tickWorkspace(ws, { now: at("2026-09-07T18:01:00Z"), io: io2, reg: { maxConcurrent: 4 } });
   assert.equal(c2.find((x) => x.id === "shape").action, "unknown");
-  // A valid ok:false envelope that reports an INCOMPLETE rollback keeps its slot as unknown.
+  // A valid ok:false envelope that reports an INCOMPLETE rollback stays unknown; its process has exited.
   const io2b = { command: () => ({ ok: false, error: { code: "E_SPAWN_FAILED", message: "harvest spawn failed; rollback INCOMPLETE: pane could not be stopped, home quarantined" } }), inspect: io.inspect };
   S.addSchedule(ws, { id: "rollback", cron: "* * * * *", tz: "UTC", kind: "command", cwd: src, argv: ["oats", "okf", "harvest"] });
   const c2b = S.tickWorkspace(ws, { now: at("2026-09-07T18:01:30Z"), io: io2b, reg: { maxConcurrent: 4 } });
-  assert.equal(c2b.find((x) => x.id === "rollback").action, "unknown"); assert.equal(S.describe(ws, "rollback", io).running, true);
+  assert.equal(c2b.find((x) => x.id === "rollback").action, "unknown"); assert.equal(S.describe(ws, "rollback", io).running, false); assert.ok(S.describe(ws, "rollback", io).attempt);
   // A spawn whose compensation reports an INCOMPLETE rollback keeps its slot as unknown.
   const io3 = { spawn: () => { throw Object.assign(new Error("spawn failed: pane could not be stopped; rollback INCOMPLETE, home quarantined"), { code: "E_SPAWN_FAILED" }); }, inspect: io.inspect };
   S.addSchedule(ws, { id: "incomplete", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t" });

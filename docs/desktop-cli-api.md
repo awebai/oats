@@ -2498,6 +2498,12 @@ oats schedule show <id> --json
   [shared row fields](#automations-shared-rows).
   `executionStatus` is `{kind: "legacy" | "invalid", capture: "unknown",
   migrationRequired: true, reason?, intent?}`; only `legacy` runs.
+- **`attempt`** (present while a launch has no recorded result; reconcile
+  resolves it): `{scheduledFor, startedAt, wallClock, error?, exited?,
+  exitStatus?, exitSignal?}`. `error` (0.39.3) is the first run's cause. A
+  `command` or `operation` attempt with `exited: true` (0.39.3) holds no host
+  slot (`running: false`) but still blocks its own job; show it as needing
+  `oats schedule reconcile <id>` (or `--clear`) either way.
 - **`description`** (0.39.3): the shared row field is the local definition's
   `description` when it has one, else `null` (a workspace schedule's comes
   from its file header). It is one line of at most 200 characters with no
