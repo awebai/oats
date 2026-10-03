@@ -7,7 +7,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -319,16 +319,16 @@ test("PINNED: claude-waiting.sh exits 0 with empty stdout, in bounded time, what
   }
 });
 
-test("set touches the marker and calls the CLI with the exact argv; clear without a marker starts no CLI; clear with one removes it and clears", () => {
+test("set touches the marker and calls the CLI with the exact argv; a tool clear with nothing to clear starts no CLI; a turn-boundary clear always calls it", () => {
   const h = home();
   const log = join(base, `argv-${n}.log`);
   const marker = markerOf(h);
   const node = process.execPath;
   const calls = () => existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
 
-  let r = runScript(["clear", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
+  let r = runScript(["clear-tool", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
   assert.equal(r.status, 0); assert.equal(r.stdout, "");
-  assert.deepEqual(calls(), [], "no marker: clear starts no node process");
+  assert.deepEqual(calls(), [], "nothing recorded: a tool clear starts no node process");
 
   r = runScript(["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
   assert.equal(r.status, 0); assert.equal(r.stdout, "");
@@ -341,8 +341,13 @@ test("set touches the marker and calls the CLI with the exact argv; clear withou
   assert.equal(readFileSync(marker, "utf8"), "clear\n", "the intent is clear");
   assert.deepEqual(calls()[1], ["instance", "waiting", "clear", "--producer", "oats.core", "--home", h, "--json"]);
 
+  assert.ok(!existsSync(`${marker}.force`), "the forced call is consumed");
+  r = runScript(["clear-tool", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
+  assert.equal(calls().length, 2, "a tool clear after it is a no-op");
   r = runScript(["clear", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
-  assert.equal(calls().length, 2, "a second clear is a no-op");
+  assert.equal(r.status, 0); assert.equal(r.stdout, "");
+  assert.deepEqual(calls()[2], ["instance", "waiting", "clear", "--producer", "oats.core", "--home", h, "--json"], "a turn-boundary clear calls the CLI even with nothing recorded to clear");
+  assert.equal(appliedOf(h), "clear"); assert.equal(readFileSync(marker, "utf8"), "clear\n");
   assert.equal(statSync(join(TMP, WDIR)).mode & 0o777, 0o700, "the marker directory is private");
   assert.ok(!existsSync(join(h, ".oats-waiting-claude")), "nothing of the emitter's is kept in the home");
 });
@@ -587,7 +592,7 @@ test("a lock whose holder is gone (pid dead, or taken over 5 s ago) is broken; a
   // A live holder 5 s in, or one that has not written its pid yet: left alone.
   for (const [label, make] of [["5 s old", () => lockAs(process.pid, 995)], ["no pid yet", () => mkdirSync(lock)]]) {
     make();
-    assert.equal(await o.run(["clear"]), 0, `${label}: the hook exits`);
+    assert.equal(await o.run(["clear-tool"]), 0, `${label}: the hook exits`);
     assert.ok(!o.started(4), `${label}: and calls nothing`);
     assert.equal(intentOf(h), "clear", `${label}: its intent is recorded`); assert.equal(appliedOf(h), "question", `${label}: not applied`);
     assert.ok(held(h), `${label}: the live lock is untouched`);
@@ -600,9 +605,9 @@ test("a lock whose holder is gone (pid dead, or taken over 5 s ago) is broken; a
   await settle(["clear"], 4);
   assert.equal(appliedOf(h), "clear"); assert.ok(!held(h));
   // The launch hook starts a new session with no marker state.
-  lockAs(process.pid, 1000); mkdirSync(`${lock}.reap`);
+  lockAs(process.pid, 1000); mkdirSync(`${lock}.reap`); writeFileSync(`${markerOf(h)}.force`, "");
   runHook("launch", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI_ABS });
-  for (const f of [markerOf(h), `${markerOf(h)}.applied`, lock, `${lock}.reap`]) assert.ok(!existsSync(f), `${f} reset at launch`);
+  for (const f of [markerOf(h), `${markerOf(h)}.applied`, `${markerOf(h)}.force`, lock, `${lock}.reap`]) assert.ok(!existsSync(f), `${f} reset at launch`);
 });
 
 test("a call that wrote the claim and then failed (or died) leaves applied unknown: the next event calls the CLI, even one whose intent matches what was recorded before", { timeout: 60000 }, async () => {
@@ -662,6 +667,73 @@ test("reapers of a stale lock take turns and judge it again: a second reaper exi
   assert.equal(what(await o.call(4)), "set question");
   o.go(4); assert.equal(await next, 0);
   assert.equal(appliedOf(h), "question"); assert.equal(lastState(), "set question");
+});
+
+// The residuals of an unfenced kernel write (issue #568), bounded by the turn: every
+// turn-boundary clear (UserPromptSubmit, Stop, SessionEnd) calls the CLI, whatever the cache says.
+test("residual: a holder suspended past 5 s lands its set after its successor's clear; tool clears skip it, and the turn's end repairs it", { timeout: 60000 }, async () => {
+  const h = home(), state = join(base, `state-late-${n}.log`), o = ordered(h, { FAKE_STATE: state });
+  const lastState = () => readFileSync(state, "utf8").trim().split("\n").pop();
+  const a = o.run(["set", "permission"]);
+  assert.equal(what(await o.call(1)), "set permission");
+  o.clock(1006); // A is suspended (the machine slept) past 5 s, its call not yet landed
+  const b = o.run(["clear-tool"]);
+  assert.equal(what(await o.call(2)), "clear", "the successor broke A's lock and clears");
+  o.go(2); assert.equal(await b, 0);
+  o.go(1); assert.equal(await a, 0); // A wakes: its set lands last
+  assert.equal(lastState(), "set permission", "the claim is wrongly shown");
+  assert.equal(intentOf(h), "clear"); assert.equal(appliedOf(h), "clear", "while the cache says clear");
+  assert.equal(await o.run(["clear-tool"]), 0);
+  assert.ok(!o.started(3), "a tool clear skips it (the residual)");
+  const stop = o.run(["clear"]); // Stop: the turn ends
+  assert.equal(what(await o.call(3)), "clear", "the turn boundary calls the CLI anyway");
+  o.go(3); assert.equal(await stop, 0);
+  assert.equal(lastState(), "clear", "repaired"); assert.equal(intentOf(h), "clear"); assert.equal(appliedOf(h), "clear");
+  assert.ok(!existsSync(`${markerOf(h)}.force`));
+});
+
+test("residual: a hidden question (the claim cleared by an obsolete write while the cache says question) is not re-set by a repeat; the next UserPromptSubmit repairs the cache", { timeout: 60000 }, async () => {
+  const h = home(), state = join(base, `state-hidden-${n}.log`), o = ordered(h, { FAKE_STATE: state });
+  const lastState = () => readFileSync(state, "utf8").trim().split("\n").pop();
+  const q = o.run(["set", "question"]); await o.call(1); o.go(1); assert.equal(await q, 0);
+  appendFileSync(state, "clear\n"); // an obsolete clear lands after the set (a reaper race)
+  assert.equal(await o.run(["set", "question"]), 0);
+  assert.ok(!o.started(2), "the cache says question: a repeat set starts nothing (the question stays hidden)");
+  const prompt = o.run(["clear"]); // the human answers: UserPromptSubmit
+  assert.equal(what(await o.call(2)), "clear");
+  o.go(2); assert.equal(await prompt, 0);
+  assert.equal(intentOf(h), "clear"); assert.equal(appliedOf(h), "clear", "the cache is the truth again");
+  const next = o.run(["set", "question"]);
+  assert.equal(what(await o.call(3)), "set question", "so the next question is set");
+  o.go(3); assert.equal(await next, 0); assert.equal(lastState(), "set question");
+});
+
+test("a turn boundary that finds the lock held leaves its forced call to the holder; one the time budget stops stays due, and the next event makes it", { timeout: 60000 }, async () => {
+  const h = home(), o = ordered(h), force = `${markerOf(h)}.force`;
+  const s1 = o.run(["set", "permission"]); await o.call(1); o.go(1); assert.equal(await s1, 0);
+  // The holder clears; a Stop comes in while its call is under way.
+  const holder = o.run(["clear"]);
+  assert.equal(what(await o.call(2)), "clear");
+  assert.equal(await o.run(["clear"]), 0, "the Stop exits at once");
+  assert.ok(!o.started(3) && existsSync(force), "and leaves its forced call due");
+  o.go(2);
+  assert.equal(what(await o.call(3)), "clear", "the holder makes it, though intent and applied already agree");
+  o.go(3); assert.equal(await holder, 0);
+  assert.ok(!existsSync(force)); assert.equal(appliedOf(h), "clear");
+  // The same, with the holder out of time: the forced call stays due for the next event.
+  const late = o.run(["clear"]);
+  await o.call(4);
+  assert.equal(await o.run(["clear"]), 0);
+  o.clock(1002);
+  o.go(4); assert.equal(await late, 0);
+  assert.ok(!o.started(5) && existsSync(force), "no call past the budget; the flag stays");
+  assert.equal(intentOf(h), "clear"); assert.equal(appliedOf(h), "clear");
+  o.clock(1003);
+  const tool = o.run(["clear-tool"]);
+  assert.equal(what(await o.call(5)), "clear", "even a tool clear makes a forced call that is due");
+  o.go(5); assert.equal(await tool, 0);
+  assert.ok(!existsSync(force));
+  assert.equal(await o.run(["clear-tool"]), 0); assert.ok(!o.started(6), "and then the debounce holds again");
 });
 
 test("the CLI runs in the home", () => {

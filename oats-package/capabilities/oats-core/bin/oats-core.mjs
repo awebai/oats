@@ -99,7 +99,7 @@ export const markerPath = (home, dir) => join(dir, `${createHash("sha256").updat
 /** A new session starts with no claim (the kernel's session boundary voids them), so the
  *  marker state an earlier session left (intent, applied, a lock) is forgotten. */
 export function resetMarker(marker) {
-  for (const f of [marker, `${marker}.applied`, join(`${marker}.lock`, "pid")]) { try { unlinkSync(f); } catch { /* absent */ } }
+  for (const f of [marker, `${marker}.applied`, `${marker}.force`, join(`${marker}.lock`, "pid")]) { try { unlinkSync(f); } catch { /* absent */ } }
   for (const d of [`${marker}.lock`, `${marker}.lock.reap`]) { try { rmdirSync(d); } catch { /* absent */ } }
 }
 

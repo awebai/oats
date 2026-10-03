@@ -539,7 +539,7 @@ runs `bin/claude-waiting.sh` from the home's module copy, which calls
 | `PreToolUse` | `^(?!AskUserQuestion$).*` (every other tool) | clear, unless a subagent made the call |
 | `PostToolUse` | `*` | clear, unless a subagent made the call |
 | `PostToolUseFailure` | `*` | clear, unless a subagent made the call |
-| `UserPromptSubmit`, `Stop`, `SessionEnd` | none | clear |
+| `UserPromptSubmit`, `Stop`, `SessionEnd` | none | clear, always calling the CLI (a turn boundary) |
 
 Claude Code shows an AskUserQuestion through its permission dialog, so that
 dialog's own `permission_prompt` follows the question's set: the script keeps
@@ -605,9 +605,12 @@ clears it.
   still a real directory the user owns (only the user could have changed its
   mode since). The marker holds the latest intent (`permission`, `question`
   or `clear`), `<marker>.applied` what the CLI last recorded, and
-  `<marker>.lock` is the reconciler's lock. A clear when both say clear does
-  nothing and starts no node process, so the hooks that fire on every tool
-  call cost a `/bin/sh` and a few file reads. A symlink is never followed. An
+  `<marker>.lock` is the reconciler's lock. A tool clear when both say clear
+  (and no forced call is due) does nothing and starts no node process, so
+  the hooks that fire on every tool call cost a `/bin/sh` and a few file
+  reads. The turn-boundary clears (`UserPromptSubmit`, `Stop`,
+  `SessionEnd`) are not debounced: each calls the CLI, a node process per
+  prompt and per stop. A symlink is never followed. An
   unusable marker (a refused, missing or replaced directory, a state path
   that is not a regular file, a lock path that is not a directory) means no
   debounce: set and clear then always call the (idempotent) CLI. The launch
@@ -636,7 +639,11 @@ clears it.
   while the lock still holds its token. A failed call, or a reconciliation
   the time budget stops (no call starts 2 s after the hook began), leaves
   the recorded claim and the intent apart, and the next event finishes it.
-  The state files are only ever deleted by the launch hook.
+  A turn-boundary clear writes `<marker>.force` beside its intent: whoever
+  reconciles next, this hook or the holder it found, then calls the CLI even
+  where intent and applied agree, and that call consumes it; one the budget
+  stops stays due for the next event. The state files are only ever deleted
+  by the launch hook.
 - **It never touches the agent's claim.** The script only ever passes
   `--producer oats.core`.
 - **Not "unknown work" at retirement.** Harness project settings in the home
@@ -659,9 +666,21 @@ again" permission rules there.
 - If the user's Claude configuration sets `disableAllHooks` or
   `allowManagedHooksOnly`, the emitter's hooks never run, so there is no
   claim: the waiting state reads null, not "not waiting".
+- The kernel's write is not fenced against an obsolete writer
+  ([#568](https://github.com/awebai/oats/issues/568)), so two rare paths can
+  leave the claim wrong while the emitter's state says it is right; the next
+  tool clear then skips it. (1) A hook suspended past 5 s mid-call (the
+  machine slept, the process was stopped) has its lock broken, and its call
+  can land after its successor's. (2) A reaper killed at a precise instant
+  can leave a reap lock that two later hooks remove at once, letting two
+  reconcilers run. Either can show a claim when nothing waits, which lasts
+  until the turn ends at the latest (its `Stop` calls the CLI), or hide a
+  question, which lasts until the human answers it (their prompt or the
+  answer's tool event clears it). If a turn boundary finds another hook's
+  reconciliation out of time, the forced call waits for the next event.
 - If the marker and the claim disagree (someone deleted the marker by hand,
-  say), one stale claim can remain until the next set or clear or the next
-  session boundary.
+  say), a stale claim can remain until the turn ends, or the next set or
+  clear or session boundary.
 - When a subagent asks for permission and the human approves, the
   subagent's own tool events are skipped too, so the claim stays until the
   next main-thread event: the main thread's next tool call, the subagent's

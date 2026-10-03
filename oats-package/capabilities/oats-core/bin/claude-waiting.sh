@@ -1,8 +1,8 @@
 #!/bin/sh
 # oats.core: Claude Code waiting emitter.
 #   claude-waiting.sh set <permission|question> <node> <cli> <marker>
-#   claude-waiting.sh clear <node> <cli> <marker>
-#   claude-waiting.sh clear-tool <node> <cli> <marker>   (a PreToolUse/PostToolUse clear: skipped for a subagent's tool call)
+#   claude-waiting.sh clear <node> <cli> <marker>        (a turn boundary: UserPromptSubmit, Stop, SessionEnd; always calls the CLI)
+#   claude-waiting.sh clear-tool <node> <cli> <marker>   (a PreToolUse/PostToolUse clear: debounced; skipped for a subagent's tool call)
 # <marker> is the debounce marker's path, from the launch hook, or '' for none.
 # Run by the Claude Code hooks oats-core.mjs writes into <home>/.claude/settings.json.
 # It reports through `oats instance waiting set|clear --producer oats.core` that the
@@ -25,6 +25,9 @@
 #   <marker>.lock     a directory: one RECONCILER at a time, its pid file the holder's
 #                     token "<pid> <began>".
 #   <marker>.lock.reap  a directory: one REAPER of a stale lock at a time.
+#   <marker>.force    present: the next reconciliation calls the CLI even where intent and
+#                     applied agree. Every turn boundary (`clear`) writes it, and the call
+#                     that applies the intent consumes it.
 # A hook writes its intent, then takes the lock if it is free (never waiting) and
 # reconciles: while intent and applied differ, it records applied as unknown, calls the CLI
 # for the intent and, on success, records the intent as applied, re-reading the intent
@@ -35,6 +38,10 @@
 # over 5 s ago, past Claude's timeout) is broken by a reaper, which judges it again under
 # the reap lock first. A holder acknowledges a call and releases the lock only while the
 # lock still holds its token.
+# The kernel write itself is not fenced (issue #568), so a holder suspended past 5 s, or a
+# reaper killed at a precise instant, can leave the claim wrong while intent and applied
+# agree. The forced call at every turn boundary bounds that: a wrongly shown claim lasts
+# until the turn ends at the latest, a hidden question until the human answers it.
 exec >/dev/null 2>&1
 # A closed stdin is never redirected from (a failed redirection ends sh itself); without
 # /dev/fd the input reads as empty, which means the main thread.
@@ -82,7 +89,8 @@ if [ -n "$marker" ] && ! { [ -d "${marker%/*}" ] && [ ! -L "${marker%/*}" ] && [
 applied=$marker.applied
 lock=$marker.lock
 reaper=$marker.lock.reap
-for f in "$marker" "$applied"; do
+force=$marker.force
+for f in "$marker" "$applied" "$force"; do
   if [ -n "$marker" ] && { [ -L "$f" ] || { [ -e "$f" ] && [ ! -f "$f" ]; }; }; then marker=; fi
 done
 for d in "$lock" "$reaper"; do
@@ -218,8 +226,11 @@ reconcile() {
     settled=''
     while :; do
       want=$(state_of "$marker")
-      if [ "$want" = "$(applied_of)" ]; then settled=1; break; fi
+      if [ ! -e "$force" ] && [ "$want" = "$(applied_of)" ]; then settled=1; break; fi
       [ "$calls" -lt 3 ] && [ $(( $(date +%s) - began )) -lt 2 ] || break
+      # This call applies the latest intent, so it answers every forced call asked so far;
+      # one asked during it leaves the flag again for the next round.
+      rm -f "$force"
       # Until the call is known to have landed, the recorded claim is unknown: one that
       # fails or is killed may still have written it.
       printf 'unknown\n' > "$applied"
@@ -238,7 +249,7 @@ reconcile() {
     rm -f "$lock/pid"
     rmdir "$lock"
     # A hook that found the lock held between our last read and here left its intent to us.
-    [ -n "$settled" ] && [ "$(state_of "$marker")" != "$(applied_of)" ] || return 0
+    [ -n "$settled" ] && { [ -e "$force" ] || [ "$(state_of "$marker")" != "$(applied_of)" ]; } || return 0
   done
 }
 
@@ -263,12 +274,19 @@ if [ "$action" = set ]; then
   [ "$reason" = permission ] && [ "$intent" = question ] && exit 0
   began=$(date +%s)
   printf '%s\n' "$reason" > "$marker"
-else
-  # Nothing to clear (cleared and recorded so): no node process, no input read.
-  [ "$intent" = clear ] && [ "$(applied_of)" = clear ] && exit 0
+elif [ "$action" = clear-tool ]; then
+  # Nothing to clear (cleared and recorded so, no forced call due): no node process, no
+  # input read. This is the hot path: every tool call runs it twice.
+  [ "$intent" = clear ] && [ "$(applied_of)" = clear ] && [ ! -e "$force" ] && exit 0
   began=$(date +%s)
-  [ "$action" = clear-tool ] && from_subagent && exit 0
+  from_subagent && exit 0
   printf 'clear\n' > "$marker"
+else
+  # A turn boundary always calls the CLI, whatever the cache says: it repairs a claim a
+  # late write left wrong. If another hook holds the lock, the flag makes the holder call.
+  began=$(date +%s)
+  printf 'clear\n' > "$marker"
+  : > "$force"
 fi
 reconcile
 exit 0
