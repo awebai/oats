@@ -32,8 +32,8 @@ case "$cli" in /*) ;; *) exit 0 ;; esac
 
 # Emitter-private debounce marker, outside the home (it is not the instance's state): a
 # per-user temp file keyed by the home, present while oats.core's claim is set, so a clear
-# on every tool call starts no node process unless there is a claim to clear. Its 0700
-# directory must be a real directory we own; a symlink is never followed. An unusable
+# on every tool call starts no node process unless there is a claim to clear. Its
+# directory must be a real directory we own with mode 0700; a symlink is never followed. An unusable
 # marker means "no debounce": set and clear then always call the CLI (it is idempotent).
 # Losing it (reboot, tmp cleanup) is harmless: the session boundary voids the claim.
 marker=
@@ -42,8 +42,16 @@ dir=${dir%/}/oats-waiting
 [ -e "$dir" ] || [ -L "$dir" ] || mkdir -m 700 "$dir"
 # test -O (owned by us) is not in POSIX but every sh we run under has it (dash, bash, ash,
 # zsh); where it is missing the test fails and the marker is simply not used.
+usable=
 # shellcheck disable=SC3067
 if [ -d "$dir" ] && [ ! -L "$dir" ] && [ -O "$dir" ]; then
+  # Mode exactly 0700 (an existing directory is never repaired): a directory others can
+  # write could hold a planted marker. A trailing "@" (macOS xattrs) or "." (an SELinux
+  # context) is accepted; "+" (an ACL) is not.
+  perms=$(ls -ld "$dir")
+  case "${perms%% *}" in drwx------|drwx------@|drwx------.) usable=yes ;; esac
+fi
+if [ -n "$usable" ]; then
   sum=$(printf '%s' "$home" | { shasum -a 256 || sha256sum || cksum; })
   key=$(printf '%.16s' "${sum%% *}")
   case "$key" in ''|*[!0-9a-f]*) ;; *) marker=$dir/$key.claude ;; esac

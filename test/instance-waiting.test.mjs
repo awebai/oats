@@ -9,7 +9,7 @@ import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { appendEvent, liveWaiting, readEvents, setWaiting, validWaitingMessage, EVENT_KINDS } from "../lib/instance-events.mjs";
+import { appendEvent, liveWaiting, readEvents, recordStartBoundary, setWaiting, validWaitingMessage, EVENT_KINDS } from "../lib/instance-events.mjs";
 import { fingerprintTree } from "../lib/core.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
@@ -133,6 +133,41 @@ test("a write either log refuses is E_EVENTS_FAILED naming it, and the next call
     assert.equal(setWaiting(w.home, { producer: "agent", waiting: true, reason: "attention", message: "again" }).changed, true, `${which}: the retry repairs the set`);
     assert.equal(liveWaiting(w.home)?.message, "again", which); assert.equal(readEvents(w.home).waitingOnYou?.message, "again", which);
     assert.equal(setWaiting(w.home, { producer: "agent", waiting: true, reason: "attention", message: "again" }).changed, false, which);
+  }
+});
+
+test("a start boundary either log refuses is reported incomplete; the next call copies the SAME row (time, data) into that log only, without duplicating it in the other or voiding a newer claim", (t) => {
+  for (const which of ["home", "workspace"]) {
+    const w = bare(t);
+    const file = which === "home" ? join(w.home, ".oats-events.jsonl") : w.wsLog;
+    const other = which === "home" ? w.wsLog : join(w.home, ".oats-events.jsonl");
+    // The ended session's claim, in both logs, before the start.
+    appendEvent(w.home, { kind: "waiting", producer: "oats.core", data: { waitingOnYou: true, reason: "permission" } }, { at: "2026-01-02T00:00:00.000Z" });
+    const startedAt = "2026-01-03T00:00:00.000Z";
+    const receipt = { startId: "s-1", startedAt, harness: "claude", backend: "tmux", launchConfig: null, phase: "start" };
+    const boundaries = (f) => w.rows(f).filter((r) => r.kind === "launched" && r.data?.startId === "s-1");
+    const saved = readFileSync(file); rmSync(file); mkdirSync(file);
+    const partial = recordStartBoundary(w.home, receipt);
+    assert.equal(partial.ok, false, `${which}: partial evidence is not reported complete`);
+    assert.equal(partial.existed, undefined, which);
+    rmSync(file, { recursive: true }); writeFileSync(file, saved);
+    assert.equal(boundaries(file).length, 0, which); assert.equal(boundaries(other).length, 1, which);
+    // The new session claims before the start is recovered.
+    setWaiting(w.home, { producer: "agent", waiting: true, reason: "attention", message: "newer" });
+    const repaired = recordStartBoundary(w.home, { ...receipt, phase: "recovered" });
+    assert.equal(repaired.ok, true, which); assert.equal(repaired.repaired, true, which);
+    assert.deepEqual(boundaries(file), boundaries(other), `${which}: the copy is the original row`);
+    assert.equal(boundaries(file)[0].at, startedAt, which); assert.equal(boundaries(file)[0].data.phase, "start", which);
+    assert.equal(boundaries(other).length, 1, `${which}: the complete log gets no duplicate`);
+    for (const view of [liveWaiting(w.home), readEvents(w.home).waitingOnYou]) assert.equal(view?.message, "newer", `${which}: the older claim is voided, the newer one kept`);
+    const homeLog = readFileSync(join(w.home, ".oats-events.jsonl"));
+    rmSync(join(w.home, ".oats-events.jsonl"));
+    assert.equal(liveWaiting(w.home)?.message, "newer", `${which}: the workspace log alone says the same`);
+    writeFileSync(join(w.home, ".oats-events.jsonl"), homeLog);
+    const counts = () => [w.rows().length, w.rows(w.wsLog).length];
+    const before = counts();
+    assert.deepEqual(recordStartBoundary(w.home, receipt), { ok: true, existed: true }, `${which}: then it is complete`);
+    assert.deepEqual(counts(), before, which);
   }
 });
 

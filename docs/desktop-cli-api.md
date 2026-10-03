@@ -2172,7 +2172,9 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   launchConfig, phase, startId}`; spawn's row has neither `phase` nor
   `startId`). `phase` is `start` or `restart`, or `recovered` when a later
   start adopted an interrupted start's receipt that had no boundary; that row
-  is dated at the receipt's launch time.
+  is dated at the receipt's launch time. The boundary is complete per log: a
+  log that missed it gets a copy of the same row (same time and data), never
+  a second one.
 - **Incarnation.** Each row carries the writing home's `createdAt` (or
   `null` for old rows); the top-level `incarnation` is the current home's (or
   `null`). Earlier incarnations are returned as this address's history.
@@ -2457,7 +2459,7 @@ selection flags. See [the start workflow](desktop-instance-start.md).
   exists (0.40, `phase: "start"` or `"restart"`, `startId`), the session
   boundary that voids earlier waiting claims ([Waiting on you](#waiting-on-you)).
   A start whose metadata write failed has it already, so its adoption adds
-  none.
+  none to a log that holds it and copies it into a log that does not.
 - Restart is one command: the kernel validates the new selection before
   stopping, and owns the stop, lock, launch recovery and metadata. Never
   restart by retiring and spawning.

@@ -7,7 +7,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -300,7 +300,7 @@ test("an unusable marker means no debounce, never a skipped claim: a symlinked m
   mkdirSync(tmpA); mkdirSync(elsewhere); symlinkSync(elsewhere, join(tmpA, "oats-waiting"));
   // (b) the marker path exists as a directory.
   const tmpB = join(base, `tmp-dir-${n}`);
-  for (const [tmp, prepare] of [[tmpA, () => {}], [tmpB, (h) => mkdirSync(markerOf(h, tmpB), { recursive: true })]]) {
+  for (const [tmp, prepare] of [[tmpA, () => {}], [tmpB, (h) => { mkdirSync(markerOf(h, tmpB), { recursive: true }); chmodSync(join(tmpB, "oats-waiting"), 0o700); }]]) {
     const h = home(); prepare(h);
     const log = join(base, `argv-unusable-${n}.log`);
     const calls = () => existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).length : 0;
@@ -311,6 +311,36 @@ test("an unusable marker means no debounce, never a skipped claim: a symlinked m
     assert.equal(r.status, 0); assert.equal(calls(), 2, "set still reports the claim");
   }
   assert.deepEqual(readdirSync(elsewhere), [], "nothing was written through the symlink");
+});
+
+test("a marker directory that is not mode 0700 is never used and never repaired: in a 0777 or group-writable one, neither a planted marker nor its absence suppresses a CLI call", () => {
+  const node = process.execPath;
+  for (const dirMode of [0o777, 0o770, 0o750]) {
+    const tmp = join(base, `tmp-mode-${dirMode.toString(8)}-${n}`), dir = join(tmp, "oats-waiting");
+    mkdirSync(dir, { recursive: true }); chmodSync(dir, dirMode);
+    const h = home(), marker = markerOf(h, tmp);
+    const log = join(base, `argv-mode-${dirMode.toString(8)}-${n}.log`);
+    const calls = () => existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
+    const run = (...args) => { const r = runScript([...args, node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log, TMPDIR: tmp }); assert.equal(r.status, 0); assert.equal(r.stdout, ""); };
+    const octal = dirMode.toString(8);
+    // Absent marker: a clear still calls the CLI (no debounce).
+    run("clear"); assert.equal(calls().length, 1, `${octal}: a clear with no marker calls the CLI`);
+    // A planted "question" marker does not swallow a permission prompt.
+    writeFileSync(marker, "question\n");
+    run("set", "permission"); assert.deepEqual(calls()[1].slice(2, 7), ["set", "--producer", "oats.core", "--reason", "permission"], `${octal}: a planted marker suppresses no set`);
+    assert.equal(readFileSync(marker, "utf8"), "question\n", `${octal}: the marker is neither read nor written`);
+    rmSync(marker);
+    run("set", "question"); assert.equal(calls().length, 3, octal);
+    assert.ok(!existsSync(marker), `${octal}: no marker is created there`);
+    run("clear"); assert.equal(calls().length, 4, `${octal}: the clear still calls the CLI`);
+    assert.equal(statSync(dir).mode & 0o777, dirMode, `${octal}: the directory's mode is left alone`);
+  }
+  // A directory the script creates is 0700 and is used.
+  const tmp = join(base, `tmp-fresh-${n}`); mkdirSync(tmp);
+  const h = home(), log = join(base, `argv-fresh-${n}.log`);
+  runScript(["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log, TMPDIR: tmp });
+  assert.equal(statSync(join(tmp, "oats-waiting")).mode & 0o777, 0o700);
+  assert.equal(readFileSync(markerOf(h, tmp), "utf8"), "permission\n", "a 0700 directory holds the marker");
 });
 
 test("end to end: a command the hook wrote, run as Claude Code runs it, reaches the CLI", () => {
