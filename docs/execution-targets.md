@@ -142,9 +142,27 @@ oats session attach --home /abs/home
 - **input** submits UTF-8 text (stdin or `--text-file`, at most 256 KiB, no
   NUL) followed by Enter, as a bracketed paste. The text is never run by a
   shell. A fallback shell, a stopped session or a split
-  tmux window is refused. `submitted: true` means the terminal accepted the
-  text, not that the agent processed it. Wake schedules and messaging
-  capabilities use this command ([schedules.md](schedules.md)).
+  tmux window is refused. The text is pasted once. Enter waits for the pane to
+  settle (two identical captures, at least about 200 ms, longer for a larger
+  paste, at most 2 s), and is judged by whether it changed the bottom 15 lines
+  of the pane. The comparison is of bytes only, with whitespace and box-drawing
+  rules ignored so a redraw at another width is not a change. The pane's text
+  is never interpreted. An Enter that changed nothing was swallowed, and is
+  resent after a backoff, at most 3 Enters in total. The answer adds:
+  - `submitted: true, verified: true`: an Enter was taken.
+  - `submitted: false, verified: true, reason: "enter-not-taken"`: none of the
+    3 Enters changed the pane. The text stays in the agent's input box; it is
+    not pasted again.
+  - `submitted: true, verified: false`: the pane could not be captured, so
+    only the first Enter was sent and nothing was judged. As before, this
+    means the terminal accepted the keys.
+
+  `submitted` never means the agent processed the text. A pane that changes
+  for another reason after Enter (a spinner, a clock, a human typing) reads as
+  taken. A call takes at most about 4 s plus its tmux calls. A failed paste or
+  key send is `E_SESSION_INPUT_FAILED`, with no retry. Wake schedules and
+  messaging capabilities use this command ([schedules.md](schedules.md)); a
+  wake schedule records any answer as delivered.
 - **attach** is interactive and takes no `--json`. It opens a temporary tmux
   session linked to the agent's window alone.
   Closing the viewer leaves the agent running.
