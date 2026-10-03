@@ -43,7 +43,7 @@ const CSS = `
 const FORM = `
   <form class="schedule-form" role="dialog" aria-modal="true" aria-labelledby="schedule-form-title">
     <h3 class="schedule-form-title" id="schedule-form-title">New schedule</h3>
-    <label>Name<input class="field" name="id" required pattern="[a-z0-9][a-z0-9-]{0,39}" placeholder="daily-review"></label>
+    <label>Name<input class="field" name="id" required pattern="[a-z0-9][a-z0-9\\-]{0,99}" placeholder="daily-review"></label>
     <label>Action<select class="field" name="kind"><option value="wake">Wake an existing agent</option><option value="spawn">Launch a new agent</option><option value="operation">Run a provider operation</option></select></label>
     <label class="schedule-agent-field">Soul<select class="field" name="agent"></select></label>
     <label class="schedule-home-field">Agent home<select class="field" name="home"></select></label>
@@ -215,6 +215,8 @@ export function createSchedulesView(el, ctx, { cli = cliStatus, subscribeCli = o
     event.preventDefault(); if (busy || !formReady || !canMutate() || sheet.hidden) return;
     const kind = field("kind").value;
     const spec = { kind, cron: preserve("cron"), tz: preserve("tz"), enabled: field("enabled").checked };
+    // The form does not edit this label, but a replacement definition must retain it.
+    if (original && Object.hasOwn(original, "description")) spec.description = original.description;
     if (kind === "spawn") {
       const [agent, repo, agentsRoot] = JSON.parse(field("agent").value || "[]"); Object.assign(spec, { agent, repo, agentsRoot, task: preserve("task", "task") });
       if (field("purpose").value) spec.purpose = preserve("purpose");

@@ -48,7 +48,9 @@ directory to remove.
 
 Every definition carries `id`, `enabled`, `cron`, `tz` and `kind`. `cron` has
 five fields (minute hour day month weekday) and `tz` is a required IANA zone;
-both are evaluated by the croner library.
+both are evaluated by the croner library. Schedule IDs use lowercase letters,
+digits and dashes, from 1 to 100 characters. Spawn schedules with a long ID
+need an explicit shorter `purpose` to fit the instance-name limit below.
 
 Any kind may carry `description`: what the job is for, in words, for the
 people reading `oats schedule list`, `show` and the Desktop. It is one line of
@@ -229,7 +231,8 @@ owner: github.com/ana
   is an `E_AUTOMATION_SCHEMA` problem, never silently skipped.
 - **The id** is `id:`, else the filename stem. The same id twice in one member
   for one kind is `E_AUTOMATION_DUPLICATE`, naming both paths; the second file
-  is not listed. A trigger and a schedule may share an id. A member named
+  is not listed. Schedule IDs allow 1 to 100 lowercase letters, digits and dashes; trigger
+  IDs allow 1 to 40. A trigger and a schedule may share an id. A member named
   `local` is refused, because `local/<id>` names this host's own definitions.
 - **A workspace schedule is `run: spawn` or `run: command`.** A command's
   `cwd` is relative to the deployment and must stay inside it. `wake` and
@@ -359,7 +362,9 @@ is `! schedule-unresolved: …`; in `--json` it is a `problems[]` item:
 `oats schedule reconcile <id>`, with `--clear` for a command or operation
 whose effects no named home proves (check the roster and the host by hand
 first), and with `--dir <scope>` for another deployment. A warning never
-changes doctor's exit status.
+changes doctor's exit status. Workspace command kinds come from the last
+saved automations snapshot, without a refresh or an account lookup. Unresolved
+workspace state is reported even if its definition is no longer available.
 
 Whether an `unknown` job keeps its host slot depends on what is still running:
 
@@ -370,8 +375,7 @@ Whether an `unknown` job keeps its host slot depends on what is still running:
   signal, and other jobs keep running.
 - A `spawn` job keeps its slot, which stands for the instance it may have
   launched. So does a command whose exit was not observed (the runner threw,
-  the process never started) and an attempt recorded before 0.39.3 (no
-  `exited`), until reconcile.
+  the process never started) and a legacy attempt without exit evidence (no `exited`), until reconcile.
 
 **Slots.** A wake job that starts a stopped home holds a launch slot until the
 harness is proven stopped or the home is gone; delivering to a running home

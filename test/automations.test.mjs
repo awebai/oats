@@ -90,6 +90,27 @@ test("the file contract: where a trigger or schedule file is, its self-describin
   assert.match(problem("schedule", { ...schedule, run: "wake" }, "run").message, /declare it locally/);
 });
 
+test("workspace schedule IDs accept 100 characters in the header, expansion and qualified lookup", () => {
+  const fx = fixture();
+  try {
+    const desc = S.scheduleKind({ dep: fx.dep });
+    const parse = (id, kind = "schedule", explicit = true) => A.parseAutomationFile(kind === "schedule" ? desc : T.triggerKind(), {
+      stem: id, path: `oats-${kind}s/${id}.yaml`, member: "kb", repoKey: REPO, commit: "c".repeat(40),
+      bytes: Buffer.from(YAML.stringify({ ...(kind === "schedule" ? { ...schedule, run: "command", agent: undefined, task: undefined, argv: ["oats", "status"] } : trigger), ...(explicit ? { id } : {}) })),
+    });
+    for (const explicit of [true, false]) {
+      const id = "s".repeat(100), entry = parse(id, "schedule", explicit).entry;
+      assert.ok(entry);
+      entry.definition = S.validateWorkspaceSchedule(fx.dep, entry);
+      entry.placement = { runsHere: true };
+      assert.equal(S.describe(fx.dep, `kb/${id}`, {}, { ctx: { schedules: [entry] } }).id, `kb/${id}`);
+      assert.equal(parse("s".repeat(101), "schedule", explicit).problem.code, "E_AUTOMATION_SCHEMA");
+    }
+    assert.ok(parse("t".repeat(40), "trigger").entry, "trigger contract unchanged");
+    assert.equal(parse("t".repeat(41), "trigger").problem.code, "E_AUTOMATION_SCHEMA");
+  } finally { fx.cleanup(); }
+});
+
 test("oats sync discovers a member's triggers and schedules into one snapshot, kept per kind; the problems are named", async (t) => {
   const fx = fixture({ files: {
     "oats-triggers/broken.yaml": { yaml: schedule },

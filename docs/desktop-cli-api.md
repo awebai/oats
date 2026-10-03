@@ -2500,15 +2500,19 @@ oats schedule show <id> --json
   migrationRequired: true, reason?, intent?}`; only `legacy` runs.
 - **`attempt`** (present while a launch has no recorded result; reconcile
   resolves it): `{scheduledFor, startedAt, wallClock, error?, exited?,
-  exitStatus?, exitSignal?}`. `error` (0.39.3) is the first run's cause. A
-  `command` or `operation` attempt with `exited: true` (0.39.3) holds no host
+  exitStatus?, exitSignal?}`. `error` (0.40.0) is the first run's cause. A
+  `command` or `operation` attempt with `exited: true` (0.40.0) holds no host
   slot (`running: false`) but still blocks its own job; show it as needing
   `oats schedule reconcile <id>` (or `--clear`) either way.
-- **`description`** (0.39.3): the shared row field is the local definition's
+- **Schedule IDs**: local and workspace schedule definition names permit 1–100
+  lowercase letters, digits and dashes; trigger names retain their 40-character
+  limit. A spawn's derived instance name still has a 64-character limit.
+- **`description`** (0.40.0): the shared row field is the local definition's
   `description` when it has one, else `null` (a workspace schedule's comes
   from its file header). It is one line of at most 200 characters with no
   control characters; show it in place of the argv when present. Like `task`,
-  it is untrusted text: render it as text. A kernel before 0.39.3 sends
+  it is untrusted text: render it as text. Desktop preserves it unchanged
+  through edits to timing and other fields. A kernel before 0.40.0 sends
   `null` for every local schedule, and drops a `description` given to `oats
   schedule add` without refusing it.
 - **An unreadable row** (`list` only): `{id, scope, scheduleApi,
