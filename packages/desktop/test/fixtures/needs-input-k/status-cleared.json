@@ -1,0 +1,23 @@
+{
+ "root": "/ws/agents",
+ "agents": [
+  {
+   "name": "oats-desktop-developer",
+   "dir": "/ws/agents/oats-desktop-developer",
+   "instances": [
+    {
+     "instance": "oats-desktop-developer-needs-input",
+     "agent": "oats-desktop-developer",
+     "home": "/ws/agents/oats-desktop-developer/instances/oats-desktop-developer-needs-input",
+     "running": true,
+     "tmux": {
+      "session": "oats-agents",
+      "window": "oats-desktop-developer-needs-input",
+      "socket": "/ws/tmux/default"
+     },
+     "waitingOnYou": null
+    }
+   ]
+  }
+ ]
+}

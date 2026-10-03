@@ -1,0 +1,73 @@
+{
+ "schemaVersion": 1,
+ "ok": true,
+ "result": {
+  "eventsApi": 2,
+  "instance": "oats-desktop-developer-needs-input",
+  "home": "/ws/agents/oats-desktop-developer/instances/oats-desktop-developer-needs-input",
+  "incarnation": "2026-10-03T11:52:49.140Z",
+  "count": 1,
+  "returned": 1,
+  "truncated": false,
+  "integrity": {
+   "unreadableRows": 0,
+   "foreignRows": 0,
+   "sources": [
+    {
+     "path": "home",
+     "status": "ok",
+     "bytes": 1312
+    },
+    {
+     "path": "workspace",
+     "status": "ok",
+     "bytes": 1312
+    }
+   ]
+  },
+  "events": [
+   {
+    "eventsApi": 2,
+    "at": "2026-10-03T12:43:21.896Z",
+    "instance": "oats-desktop-developer-needs-input",
+    "home": "/ws/agents/oats-desktop-developer/instances/oats-desktop-developer-needs-input",
+    "incarnation": "2026-10-03T11:52:49.140Z",
+    "producer": "agent",
+    "kind": "waiting",
+    "data": {
+     "waitingOnYou": true,
+     "reason": "attention",
+     "message": "e2e: needs input check"
+    }
+   }
+  ],
+  "lastEvent": {
+   "kind": "waiting",
+   "at": "2026-10-03T12:43:21.896Z",
+   "producer": "agent",
+   "incarnation": "2026-10-03T11:52:49.140Z"
+  },
+  "waitingOnYou": {
+   "since": "2026-10-03T12:43:21.896Z",
+   "producer": "agent",
+   "reason": "attention",
+   "message": "e2e: needs input check"
+  },
+  "waitingClaims": [
+   {
+    "producer": "agent",
+    "waiting": true,
+    "since": "2026-10-03T12:43:21.896Z",
+    "reason": "attention",
+    "message": "e2e: needs input check"
+   }
+  ],
+  "notes": [
+   "events are producer-attributed facts written by the kernel action that made them true; nothing is inferred from transcripts or task files",
+   "this is the ADDRESS's history: rows tagged with an earlier incarnation belong to a previous instance at this address",
+   "waitingOnYou is null unless a producer reported it for the current incarnation \u2014 null means unknown, not 'not waiting'; an explicit false clears that producer's claim; an unknown current incarnation (null) admits no claim at all",
+   "a claim older than the incarnation's latest kernel launched, restarted or stopped row belongs to an ended session and is not counted",
+   "integrity counts torn and foreign rows and names each source's status; truncated is true when the window cut rows or a source was read as a tail"
+  ]
+ }
+}
