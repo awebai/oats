@@ -7,7 +7,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,6 +26,10 @@ const TMP = join(base, "tmp"); mkdirSync(TMP);
 const WDIR = `oats-waiting-${process.getuid()}`;
 // What the CLI last recorded for a home ("permission", "question" or "clear"), or null.
 const appliedOf = (h, tmp = TMP) => { try { return readFileSync(`${markerOf(h, tmp)}.applied`, "utf8").trim(); } catch { return null; } };
+// Wait for a condition (an event under way), never for a fixed time.
+const until = async (cond, ms = 15000) => { const end = Date.now() + ms; while (!cond()) { if (Date.now() > end) throw new Error("timed out waiting for the race to be set up"); await new Promise((r) => setTimeout(r, 10)); } };
+const held = (h, tmp = TMP) => existsSync(`${markerOf(h, tmp)}.lock`);
+const intentOf = (h, tmp = TMP) => { try { return readFileSync(markerOf(h, tmp), "utf8").trim(); } catch { return null; } };
 const markerOf = (h, tmp = TMP) => join(tmp, WDIR, `${createHash("sha256").update(h).digest("hex").slice(0, 16)}.claude`);
 let n = 0;
 /** A fresh instance home: a directory with an instance.json. */
@@ -37,12 +41,21 @@ function home() {
 }
 // A fake kernel CLI that records its argv; FAKE_MODE selects how it misbehaves.
 const FAKE_CLI = join(base, "fake-cli.mjs");
-// FAKE_SET_DELAY_MS / FAKE_CLEAR_DELAY_MS delay that action's record (a slow call the other
-// overtakes); FAKE_CLEAR_MODE makes only clears misbehave; FAKE_CWD_LOG
-// records the cwd the CLI ran in.
-writeFileSync(FAKE_CLI, `import { appendFileSync } from "node:fs";
+// FAKE_SET_DELAY_MS / FAKE_CLEAR_DELAY_MS delay that action's record; FAKE_CLEAR_MODE makes
+// only clears misbehave ("die" ends it by SIGKILL, as the watchdog does); FAKE_CWD_LOG
+// records the cwd the CLI ran in. FAKE_GATE (a directory) orders calls by construction: call
+// k writes started.<k> (its argv) and waits for the test to create go.<k>.
+writeFileSync(FAKE_CLI, `import { appendFileSync, existsSync, openSync, writeSync, closeSync } from "node:fs";
+import { join } from "node:path";
 const delay = Number((process.argv[4] === "set" ? process.env.FAKE_SET_DELAY_MS : process.env.FAKE_CLEAR_DELAY_MS) || 0);
-setTimeout(() => {
+let go = (then) => then();
+if (process.env.FAKE_GATE) {
+  let k = 1, fd;
+  for (;; k++) { try { fd = openSync(join(process.env.FAKE_GATE, "started." + k), "wx"); break; } catch {} }
+  writeSync(fd, JSON.stringify(process.argv.slice(4))); closeSync(fd);
+  go = (then) => { const t = setInterval(() => { if (existsSync(join(process.env.FAKE_GATE, "go." + k))) { clearInterval(t); then(); } }, 5); };
+}
+go(() => setTimeout(() => {
   if (process.env.FAKE_LOG) appendFileSync(process.env.FAKE_LOG, JSON.stringify(process.argv.slice(2)) + "\\n");
   if (process.env.FAKE_CWD_LOG) appendFileSync(process.env.FAKE_CWD_LOG, process.cwd() + "\\n");
   const mode = (process.argv[4] === "clear" && process.env.FAKE_CLEAR_MODE) || process.env.FAKE_MODE || "ok";
@@ -50,9 +63,36 @@ setTimeout(() => {
   if (mode === "ok" && process.env.FAKE_STATE) appendFileSync(process.env.FAKE_STATE, (process.argv[4] === "set" ? "set " + process.argv[8] : "clear") + "\\n");
   if (mode === "fail") { process.stdout.write('{"decision":"block","reason":"from stdout"}\\n'); process.stderr.write("boom on stderr\\n"); process.exit(1); }
   if (mode === "hang") setTimeout(() => {}, 30000);
+  if (mode === "die") process.kill(process.pid, "SIGKILL");
   if (mode === "ok") process.stdout.write('{"ok":true}\\n');
-}, delay);
+}, delay));
 `);
+// Shims for the ordered tests, first on PATH: \`date +%s\` reads FAKE_CLOCK (a file) so the
+// time budget and lock age are the test's to set, and the 3 s watchdog never fires on a call
+// the test holds at its gate. Everything else is the real command.
+const SHIMS = join(base, "shims"); mkdirSync(SHIMS);
+writeFileSync(join(SHIMS, "date"), '#!/bin/sh\nif [ -n "$FAKE_CLOCK" ] && [ "$1" = +%s ]; then cat "$FAKE_CLOCK"; else exec /bin/date "$@"; fi\n', { mode: 0o755 });
+writeFileSync(join(SHIMS, "sleep"), '#!/bin/sh\nif [ "$1" = 3 ]; then exec /bin/sleep 600; fi\nexec /bin/sleep "$@"\n', { mode: 0o755 });
+/** An ordered run: a gate for the fake CLI's calls and a clock file, in home h's env. */
+function ordered(h, extra = {}) {
+  const dir = mkdtempSync(join(base, "gate-")), clock = join(dir, "clock");
+  writeFileSync(clock, "1000\n");
+  const env = { OATS_INSTANCE_HOME: h, FAKE_GATE: dir, FAKE_CLOCK: clock, PATH: `${SHIMS}:${process.env.PATH}`, ...extra };
+  const run = (args, more = {}) => new Promise((done) => {
+    const child = spawn("/bin/sh", [SCRIPT, ...withMarker([...args, process.execPath, FAKE_CLI], env)], { env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env, ...more }), stdio: "ignore" });
+    child.on("exit", (code) => done(code));
+  });
+  const started = (k) => existsSync(join(dir, `started.${k}`));
+  return {
+    env, run, started,
+    // Wait (on a file, not a clock) until call k is under way; answer its argv, e.g. ["set", ..., "permission"].
+    call: async (k) => { await until(() => started(k)); return JSON.parse(readFileSync(join(dir, `started.${k}`), "utf8")); },
+    go: (k) => writeFileSync(join(dir, `go.${k}`), ""),
+    clock: (t) => writeFileSync(clock, `${t}\n`),
+  };
+}
+// A call's argv as the gate records it, shortened: "set permission", "clear".
+const what = (argv) => argv[0] === "set" ? `set ${argv[4]}` : argv[0];
 const FAKE_CLI_ABS = "/fake/oats/bin/oats.mjs"; // the CLI path the hook bakes; never run
 
 function cleanEnv(extra) {
@@ -411,111 +451,144 @@ test("a clear the watchdog kills, or that fails, keeps the marker, so the next c
   assert.deepEqual(calls(), ["set", "clear", "clear", "clear"], "each clear after the failed ones retried");
 });
 
-test("a clear racing a set ends cleared: a slow set that lands after the clear is followed by a clear; a set that comes in during a clear is recorded again", async () => {
-  const node = process.execPath;
-  const run = (args, env) => new Promise((done) => {
-    const child = spawn("/bin/sh", [SCRIPT, ...withMarker([...args, node, FAKE_CLI], env)], { env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env }), stdio: "ignore" });
-    child.on("exit", (code) => done(code));
-  });
-  const actions = (log) => readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l)[2]);
-  // (a) The set's CLI is slow; a clear starts and lands while it runs.
-  let h = home(), log = join(base, `argv-race-a-${n}.log`);
-  const slowSet = run(["set", "permission"], { OATS_INSTANCE_HOME: h, FAKE_LOG: log, FAKE_SET_DELAY_MS: "800" });
-  await new Promise((r) => setTimeout(r, 300));
-  assert.equal(await run(["clear"], { OATS_INSTANCE_HOME: h, FAKE_LOG: log }), 0);
-  assert.equal(await slowSet, 0);
-  assert.deepEqual(actions(log), ["set", "clear"], "the calls land in intent order: the slow set, then the clear");
-  // (b) A clear's CLI is slow; a set starts and lands while it runs, so the clear lands last.
-  h = home(); log = join(base, `argv-race-b-${n}.log`);
-  assert.equal(await run(["set", "question"], { OATS_INSTANCE_HOME: h, FAKE_LOG: log }), 0);
-  const slowClear = run(["clear"], { OATS_INSTANCE_HOME: h, FAKE_LOG: log, FAKE_CLEAR_DELAY_MS: "800" });
-  await new Promise((r) => setTimeout(r, 300));
-  assert.equal(await run(["set", "permission"], { OATS_INSTANCE_HOME: h, FAKE_LOG: log }), 0);
-  assert.equal(await slowClear, 0);
-  assert.deepEqual(readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l)).map((a) => a[2] === "set" ? a[6] : a[2]), ["question", "clear", "permission"], "the calls land in intent order: the slow clear, then the set");
-  assert.equal(readFileSync(markerOf(h), "utf8"), "permission\n", "the intent is the set");
-  assert.equal(appliedOf(h), "permission");
+// The race tests below run in a fixed order: the fake CLI's gate holds call k until go(k),
+// and a hook that finds the lock held exits before the test goes on (it never waits).
+test("a clear racing a set ends cleared: the hook that finds the lock held leaves its intent and exits; the holder applies it, in event order", { timeout: 60000 }, async () => {
+  // (a) A set's call is under way when a clear comes in.
+  let h = home(), o = ordered(h);
+  const set = o.run(["set", "permission"]);
+  assert.equal(what(await o.call(1)), "set permission");
+  assert.equal(await o.run(["clear"]), 0, "the clear exits at once, under the set's lock");
+  assert.ok(!o.started(2), "and calls nothing itself");
+  assert.equal(intentOf(h), "clear");
+  o.go(1);
+  assert.equal(what(await o.call(2)), "clear", "the holder applies the clear after its set");
+  o.go(2);
+  assert.equal(await set, 0);
+  assert.equal(appliedOf(h), "clear"); assert.ok(!held(h), "the lock is released");
+  // (b) A clear's call is under way when a set comes in: the set lands last.
+  h = home(); o = ordered(h);
+  const q = o.run(["set", "question"]); await o.call(1); o.go(1); assert.equal(await q, 0);
+  const clear = o.run(["clear"]);
+  assert.equal(what(await o.call(2)), "clear");
+  assert.equal(await o.run(["set", "permission"]), 0);
+  o.go(2);
+  assert.equal(what(await o.call(3)), "set permission");
+  o.go(3);
+  assert.equal(await clear, 0);
+  assert.equal(intentOf(h), "permission"); assert.equal(appliedOf(h), "permission");
 });
 
-test("overlapping calls end in the right claim: a slow set overtaken by a newer set takes the newer reason; a corrective clear that fails or is killed is retried by the next clear", { timeout: 60000 }, async () => {
-  const node = process.execPath;
-  const run = (args, env) => new Promise((done) => {
-    const child = spawn("/bin/sh", [SCRIPT, ...withMarker([...args, node, FAKE_CLI], env)], { env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env }), stdio: "ignore" });
-    child.on("exit", (code) => done(code));
-  });
-  const lastState = (f) => readFileSync(f, "utf8").trim().split("\n").pop();
-  const pause = (ms) => new Promise((r) => setTimeout(r, ms));
-  // (a) set permission (slow) then set question (fast): the question is the latest intent.
+test("overlapping calls end in the right claim: set/set takes the newer reason, set/clear/set the last set, set/set/clear the clear; a failed or killed corrective clear is retried by the next event", { timeout: 60000 }, async () => {
+  // (a) set then set, both ways; a permission prompt never relabels an open question.
   for (const [first, second] of [["permission", "question"], ["question", "permission"]]) {
-    const h = home(), state = join(base, `state-ss-${n}.log`);
-    const slow = run(["set", first], { OATS_INSTANCE_HOME: h, FAKE_STATE: state, FAKE_SET_DELAY_MS: "800" });
-    await pause(250);
-    assert.equal(await run(["set", second], { OATS_INSTANCE_HOME: h, FAKE_STATE: state }), 0);
-    assert.equal(await slow, 0);
-    const want = second === "permission" && first === "question" ? "question" : second; // a permission prompt never relabels an open question
-    assert.equal(lastState(state), `set ${want}`, `${first} then ${second}`);
-    assert.equal(readFileSync(markerOf(h), "utf8"), `${want}\n`); assert.equal(appliedOf(h), want);
+    const h = home(), o = ordered(h);
+    const holder = o.run(["set", first]);
+    assert.equal(what(await o.call(1)), `set ${first}`);
+    assert.equal(await o.run(["set", second]), 0);
+    o.go(1);
+    const want = first === "question" ? "question" : second;
+    if (want !== first) { assert.equal(what(await o.call(2)), `set ${want}`); o.go(2); }
+    assert.equal(await holder, 0);
+    assert.ok(!o.started(want !== first ? 3 : 2), `${first} then ${second}: no extra call`);
+    assert.equal(intentOf(h), want); assert.equal(appliedOf(h), want);
   }
-  // (b) a slow set overtaken by a clear, while clears fail (or hang to the watchdog): the
-  // claim stays set but is not recorded as cleared, and the next working clear retries it.
-  for (const clearMode of ["fail", "hang"]) {
-    const h = home(), state = join(base, `state-cc-${n}.log`);
-    const slow = run(["set", "permission"], { OATS_INSTANCE_HOME: h, FAKE_STATE: state, FAKE_SET_DELAY_MS: "800", FAKE_CLEAR_MODE: clearMode });
-    await pause(250);
-    assert.equal(await run(["clear"], { OATS_INSTANCE_HOME: h, FAKE_STATE: state, FAKE_CLEAR_MODE: clearMode }), 0);
-    assert.equal(await slow, 0);
-    assert.equal(lastState(state), "set permission", `${clearMode}: the claim is stale for now`);
-    assert.equal(appliedOf(h), "permission", `${clearMode}: not recorded as cleared, so it is retried`);
-    assert.equal(await run(["clear"], { OATS_INSTANCE_HOME: h, FAKE_STATE: state }), 0);
-    assert.equal(lastState(state), "clear", `${clearMode}: the next clear retried it`);
-    assert.equal(appliedOf(h), "clear");
+  // (b) set, then a clear whose call fails (or is killed): applied stays apart from the
+  // intent, and the next event retries it.
+  for (const clearMode of ["fail", "die"]) {
+    const h = home(), o = ordered(h, { FAKE_CLEAR_MODE: clearMode });
+    const holder = o.run(["set", "permission"]);
+    await o.call(1);
+    assert.equal(await o.run(["clear"]), 0);
+    o.go(1);
+    assert.equal(what(await o.call(2)), "clear");
+    o.go(2);
+    assert.equal(await holder, 0);
+    assert.ok(!o.started(3), `${clearMode}: a failed call ends the run`);
+    assert.equal(intentOf(h), "clear"); assert.equal(appliedOf(h), "permission", `${clearMode}: not recorded as cleared`);
+    const next = o.run(["clear"], { FAKE_CLEAR_MODE: "ok" });
+    assert.equal(what(await o.call(3)), "clear", `${clearMode}: the next clear retries`);
+    o.go(3);
+    assert.equal(await next, 0); assert.equal(appliedOf(h), "clear");
   }
-  // (c) three-way: a slow set, then a clear, then a newer set while the first still runs: the newest set wins.
+  // (c) set, clear, set while the first call is under way: the newest set wins.
   {
-    const h = home(), state = join(base, `state-scs-${n}.log`);
-    const slow = run(["set", "permission"], { OATS_INSTANCE_HOME: h, FAKE_STATE: state, FAKE_SET_DELAY_MS: "800" });
-    await pause(200);
-    const clear = run(["clear"], { OATS_INSTANCE_HOME: h, FAKE_STATE: state });
-    await pause(200);
-    const newer = run(["set", "question"], { OATS_INSTANCE_HOME: h, FAKE_STATE: state });
-    assert.deepEqual(await Promise.all([slow, clear, newer]), [0, 0, 0]);
-    assert.equal(lastState(state), "set question", "set, clear, set: the human is on the last prompt");
-    assert.equal(appliedOf(h), "question");
+    const h = home(), o = ordered(h);
+    const holder = o.run(["set", "permission"]);
+    await o.call(1);
+    assert.equal(await o.run(["clear"]), 0);
+    assert.equal(await o.run(["set", "question"]), 0);
+    o.go(1);
+    assert.equal(what(await o.call(2)), "set question");
+    o.go(2);
+    assert.equal(await holder, 0);
+    assert.equal(appliedOf(h), "question", "set, clear, set: the human is on the last prompt");
   }
-  // (d) three-way: a slow set overtaken by a newer set, and a clear while that correction is in flight: cleared.
+  // (d) set, set, and a clear while the correction is under way: cleared.
   {
-    const h = home(), state = join(base, `state-ssc-${n}.log`);
-    const slow = run(["set", "permission"], { OATS_INSTANCE_HOME: h, FAKE_STATE: state, FAKE_SET_DELAY_MS: "800" });
-    await pause(250);
-    const newer = run(["set", "question"], { OATS_INSTANCE_HOME: h, FAKE_STATE: state });
-    await pause(800);
-    const clear = run(["clear"], { OATS_INSTANCE_HOME: h, FAKE_STATE: state });
-    assert.deepEqual(await Promise.all([slow, newer, clear]), [0, 0, 0]);
-    assert.equal(lastState(state), "clear", "set, set, clear: the human answered");
-    assert.equal(appliedOf(h), "clear");
-    assert.equal(await run(["clear"], { OATS_INSTANCE_HOME: h, FAKE_STATE: state }), 0);
-    assert.equal(lastState(state), "clear");
+    const h = home(), o = ordered(h);
+    const holder = o.run(["set", "permission"]);
+    await o.call(1);
+    assert.equal(await o.run(["set", "question"]), 0);
+    o.go(1);
+    assert.equal(what(await o.call(2)), "set question");
+    assert.equal(await o.run(["clear"]), 0);
+    o.go(2);
+    assert.equal(what(await o.call(3)), "clear");
+    o.go(3);
+    assert.equal(await holder, 0);
+    assert.equal(appliedOf(h), "clear", "set, set, clear: the human answered");
   }
 });
 
-test("a lock left by a reconciler that is gone is broken; the launch hook forgets an earlier session's marker state", () => {
-  const node = process.execPath, h = home(), log = join(base, `argv-lock-${n}.log`);
-  runScript(["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
-  const lock = `${markerOf(h)}.lock`;
+test("the time budget: no CLI call starts once 2 s have passed since the hook began, so a run stays under Claude's 5 s; what is left waits for the next event", { timeout: 60000 }, async () => {
+  const h = home(), o = ordered(h);
+  const holder = o.run(["set", "permission"]);
+  await o.call(1);
+  assert.equal(await o.run(["set", "question"]), 0);
+  o.clock(1002); // the first call took 2 s
+  o.go(1);
+  assert.equal(await holder, 0);
+  assert.ok(!o.started(2), "no call started past the budget");
+  assert.equal(intentOf(h), "question"); assert.equal(appliedOf(h), "permission", "intent and applied left apart");
+  assert.ok(!held(h), "and the lock released");
+  const next = o.run(["clear"]); // a new hook, with its own budget
+  assert.equal(what(await o.call(2)), "clear");
+  o.go(2);
+  assert.equal(await next, 0); assert.equal(appliedOf(h), "clear");
+});
+
+test("a lock whose holder is gone (pid dead, or taken over 5 s ago) is broken; a live one is left alone, the hook exiting at once; the launch hook forgets an earlier session's marker state", { timeout: 60000 }, async () => {
+  const h = home(), o = ordered(h), lock = `${markerOf(h)}.lock`;
+  const settle = async (args, k) => { const p = o.run(args); await o.call(k); o.go(k); assert.equal(await p, 0); };
+  await settle(["set", "permission"], 1);
   const dead = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" }).stdout;
-  mkdirSync(lock); writeFileSync(join(lock, "pid"), `${dead}\n`);
-  const started = Date.now();
-  runScript(["clear", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
-  assert.ok(Date.now() - started < 3000, "no long wait on a dead holder's lock");
-  assert.equal(appliedOf(h), "clear", "the clear went through");
-  assert.ok(!existsSync(lock), "and released the lock");
-  // A live holder's lock is respected: the waiter gives up, leaving its intent for the holder or the next event.
-  mkdirSync(lock); writeFileSync(join(lock, "pid"), `${process.pid}\n`);
-  runScript(["set", "question", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
-  assert.equal(readFileSync(markerOf(h), "utf8"), "question\n", "the intent is recorded");
-  assert.equal(appliedOf(h), "clear", "but not applied under someone else's lock");
-  assert.ok(existsSync(lock), "and the live lock is untouched");
+  const lockAs = (pid, since) => { mkdirSync(lock); writeFileSync(join(lock, "pid"), `${pid} ${since}\n`); };
+  // A dead holder: broken.
+  lockAs(dead, 1000);
+  await settle(["clear"], 2);
+  assert.equal(appliedOf(h), "clear"); assert.ok(!held(h), "broken, then released");
+  // A live pid that took the lock 6 s ago (a reused pid, or a holder past Claude's timeout): broken.
+  lockAs(process.pid, 994);
+  await settle(["set", "question"], 3);
+  assert.equal(appliedOf(h), "question"); assert.ok(!held(h));
+  // A live holder 5 s in, or one that has not written its pid yet: left alone.
+  for (const [label, make] of [["5 s old", () => lockAs(process.pid, 995)], ["no pid yet", () => mkdirSync(lock)]]) {
+    make();
+    assert.equal(await o.run(["clear"]), 0, `${label}: the hook exits`);
+    assert.ok(!o.started(4), `${label}: and calls nothing`);
+    assert.equal(intentOf(h), "clear", `${label}: its intent is recorded`); assert.equal(appliedOf(h), "question", `${label}: not applied`);
+    assert.ok(held(h), `${label}: the live lock is untouched`);
+    rmSync(lock, { recursive: true });
+    assert.equal(await o.run(["set", "question"]), 0); // back to intent = applied = question: no call
+    assert.ok(!o.started(4));
+  }
+  // A pidless lock a minute old (a holder killed in its first instant): broken.
+  mkdirSync(lock); const old = new Date(Date.now() - 120000); utimesSync(lock, old, old);
+  await settle(["clear"], 4);
+  assert.equal(appliedOf(h), "clear"); assert.ok(!held(h));
   // The launch hook starts a new session with no marker state.
+  lockAs(process.pid, 1000);
   runHook("launch", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI_ABS });
   for (const f of [markerOf(h), `${markerOf(h)}.applied`, lock]) assert.ok(!existsSync(f), `${f} reset at launch`);
 });
@@ -562,42 +635,57 @@ test("clear-tool: a subagent's tool event (top-level agent_id before hook_event_
     assert.equal(existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").length : 0, 1, "closed stdin: clears");
   }
   // No claim (no marker): a tool clear reads nothing and starts no CLI, even for a stdin that never ends.
-  const h = home(), log = join(base, `argv-tool-none-${n}.log`), started = Date.now();
-  const r = spawnSync("/bin/sh", [SCRIPT, ...withMarker(["clear-tool", node, FAKE_CLI], { OATS_INSTANCE_HOME: h })], { stdio: ["pipe", "pipe", "pipe"], encoding: "utf8", timeout: 15000, env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, OATS_INSTANCE_HOME: h, FAKE_LOG: log }) });
-  assert.equal(r.status, 0); assert.ok(Date.now() - started < 900, "no read without a claim"); assert.ok(!existsSync(log));
+  // A read would start its watchdog's sleep: a `sleep` first on PATH records any.
+  const h = home(), log = join(base, `argv-tool-none-${n}.log`), bin = join(base, `fake-bin-none-${n}`), sleepLog = join(base, `sleeps-none-${n}.log`);
+  mkdirSync(bin); writeFileSync(join(bin, "sleep"), `#!/bin/sh\necho $$ >> '${sleepLog}'\nexec /bin/sleep "$@"\n`, { mode: 0o755 });
+  const r = spawnSync("/bin/sh", [SCRIPT, ...withMarker(["clear-tool", node, FAKE_CLI], { OATS_INSTANCE_HOME: h })], { stdio: ["pipe", "pipe", "pipe"], encoding: "utf8", timeout: 15000, env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, OATS_INSTANCE_HOME: h, FAKE_LOG: log, PATH: `${bin}:${process.env.PATH}` }) });
+  assert.equal(r.status, 0); assert.ok(!existsSync(sleepLog), "no read without a claim"); assert.ok(!existsSync(log));
 });
 
 test("clear-tool: a stdin that never ends is read for at most ~1 s, then means the main thread", { timeout: 30000 }, async () => {
   const node = process.execPath, h = home(), log = join(base, `argv-tool-open-${n}.log`);
   runScript(["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h });
+  // The clock stands still: the time budget is not what this tests (a second spent on the
+  // read can otherwise use it up, depending on where in a second the hook began).
+  const clock = join(base, `clock-open-${n}`); writeFileSync(clock, "1000\n");
   const started = Date.now();
-  const child = spawn("/bin/sh", [SCRIPT, ...withMarker(["clear-tool", node, FAKE_CLI], { OATS_INSTANCE_HOME: h })], { stdio: ["pipe", "pipe", "pipe"], env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, OATS_INSTANCE_HOME: h, FAKE_LOG: log }) });
+  const child = spawn("/bin/sh", [SCRIPT, ...withMarker(["clear-tool", node, FAKE_CLI], { OATS_INSTANCE_HOME: h })], { stdio: ["pipe", "pipe", "pipe"], env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, OATS_INSTANCE_HOME: h, FAKE_LOG: log, FAKE_CLOCK: clock, PATH: `${SHIMS}:${process.env.PATH}` }) });
   child.stdin.write('{"session_id":"s","agent_id":"a1"'); // a subagent's start, never finished, never closed
   let out = ""; child.stdout.on("data", (d) => { out += d; });
   const code = await new Promise((done) => child.on("exit", done));
   child.stdin.destroy();
   assert.equal(code, 0); assert.equal(out, "");
-  assert.ok(Date.now() - started < 6000, `bounded (${Date.now() - started} ms)`);
+  assert.ok(Date.now() - started < 10000, `bounded (${Date.now() - started} ms)`);
   assert.ok(existsSync(log), "an input cut short before hook_event_name means the main thread: it clears");
 });
 
 test("no watchdog sleep outlives the script: every sleep it starts is gone when it exits, on the CLI path and the input read alike", { timeout: 60000 }, async () => {
   const node = process.execPath;
-  // A `sleep` first on PATH that records its pid, then becomes the real sleep.
-  const bin = join(base, `fake-bin-${n}`), sleepLog = join(base, `sleeps-${n}.log`);
-  mkdirSync(bin); writeFileSync(join(bin, "sleep"), `#!/bin/sh\necho $$ >> '${sleepLog}'\nexec /bin/sleep "$@"\n`, { mode: 0o755 });
+  // A `sleep` first on PATH that records its pid and sleeps for 10 minutes: one left behind
+  // would still be there. The CLI's gate holds each call until its watchdog has logged.
+  const bin = join(base, `fake-bin-${n}`), sleepLog = join(base, `sleeps-${n}.log`), gate = mkdtempSync(join(base, "gate-"));
+  mkdirSync(bin); writeFileSync(join(bin, "sleep"), `#!/bin/sh\necho $$ >> '${sleepLog}'\nexec /bin/sleep 600\n`, { mode: 0o755 });
   const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
-  // Each call is slow enough (800 ms) for the sleep under it to have logged its pid; one
-  // killed before it could log is gone anyway.
-  const h = home(), env = { OATS_INSTANCE_HOME: h, PATH: `${bin}:${process.env.PATH}`, FAKE_SET_DELAY_MS: "800", FAKE_CLEAR_DELAY_MS: "800" };
-  runScript(["set", "permission", node, FAKE_CLI], env);
-  const child = spawn("/bin/sh", [SCRIPT, ...withMarker(["clear-tool", node, FAKE_CLI], env)], { stdio: ["pipe", "ignore", "ignore"], env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env }) });
-  setTimeout(() => child.stdin.end(`{"session_id":"s","hook_event_name":"PostToolUse","tool_name":"Bash","tool_use_id":"t"}`), 800);
-  assert.equal(await new Promise((done) => child.on("exit", done)), 0);
-  const pids = readFileSync(sleepLog, "utf8").trim().split("\n").map(Number);
-  assert.ok(pids.length >= 2, `watchdogs ran under the set's CLI, the input read and the clear's CLI (${pids.length} logged)`);
-  await new Promise((r) => setTimeout(r, 200));
-  assert.deepEqual(pids.filter(alive), [], "none of them is still sleeping");
+  const logged = () => existsSync(sleepLog) ? readFileSync(sleepLog, "utf8").trim().split("\n").filter(Boolean).map(Number) : [];
+  const h = home(), env = { OATS_INSTANCE_HOME: h, PATH: `${bin}:${process.env.PATH}`, FAKE_GATE: gate };
+  const start = (args, stdin) => {
+    const child = spawn("/bin/sh", [SCRIPT, ...withMarker([...args, node, FAKE_CLI], env)], { stdio: [stdin, "ignore", "ignore"], env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env }) });
+    return { child, exit: new Promise((done) => child.on("exit", done)) };
+  };
+  const set = start(["set", "permission"], "ignore");
+  await until(() => existsSync(join(gate, "started.1")) && logged().length >= 1);
+  writeFileSync(join(gate, "go.1"), "");
+  assert.equal(await set.exit, 0);
+  const clear = start(["clear-tool"], "pipe");
+  await until(() => logged().length >= 2); // the input read's watchdog
+  clear.child.stdin.end(`{"session_id":"s","hook_event_name":"PostToolUse","tool_name":"Bash","tool_use_id":"t"}`);
+  await until(() => existsSync(join(gate, "started.2")) && logged().length >= 3);
+  writeFileSync(join(gate, "go.2"), "");
+  assert.equal(await clear.exit, 0);
+  assert.equal(appliedOf(h), "clear");
+  const pids = logged();
+  assert.equal(pids.length, 3, "a watchdog under the set's CLI, the input read and the clear's CLI");
+  await until(() => !pids.some(alive), 10000);
 });
 
 test("a temp file an interrupted write left in .claude is removed by the next pass (even an unchanged one); a live writer's, and anything else, is left alone", () => {

@@ -9,9 +9,24 @@
 # session waits on the human, and never touches producer `agent` (the agent's own claim).
 #
 # It can NEVER hurt the Claude session: Claude reads a hook's stdout and exit code as
-# decisions, so this script writes nothing anywhere visible, always exits 0, and bounds
-# the CLI at ~3 s (Claude's own hook timeout is 5 s). The hook's JSON input stays on fd 3
-# for the one bounded read that needs it (from_subagent); nothing else reads stdin.
+# decisions, so this script writes nothing anywhere visible, always exits 0, never waits
+# for another hook, and stays under Claude's 5 s hook timeout: no CLI call starts once ~2 s
+# have passed since it began its work (an input read counts), and each call is killed at
+# ~3 s. The hook's JSON input stays on fd 3 for the one bounded read that needs it
+# (from_subagent); nothing else reads stdin.
+#
+# The protocol (with a marker; without one every event just calls the CLI):
+#   <marker>          the INTENT: the latest event's wish, "permission", "question" or
+#                     "clear". Every hook writes it first.
+#   <marker>.applied  what the CLI last RECORDED. Only the lock holder writes it.
+#   <marker>.lock     a directory: one RECONCILER at a time, its pid file "<pid> <began>".
+# A hook writes its intent, then takes the lock if it is free (never waiting) and
+# reconciles: while intent and applied differ, it calls the CLI for the intent and records
+# it as applied, re-reading the intent after each call. A hook that finds the lock held
+# just exits: the holder re-reads the intent after each call, and once more after letting
+# go of the lock, so a newer intent is applied by it, in event order. A failed call, the
+# call cap or the time budget leaves the two apart, for the next event to finish. A lock
+# whose holder is gone (pid dead, or taken over 5 s ago, past Claude's timeout) is broken.
 exec >/dev/null 2>&1
 # A closed stdin is never redirected from (a failed redirection ends sh itself); without
 # /dev/fd the input reads as empty, which means the main thread.
@@ -118,49 +133,55 @@ state_of() {
   case "$line" in permission|question) printf '%s' "$line" ;; *) printf clear ;; esac
 }
 
-# The reconciler's lock: a directory holding its holder's pid. One left by a holder that is
-# gone (its pid dead, or the lock a minute old: a holder is bounded far below that) is
-# removed. Waits up to ~1 s: a holder re-reads the intent after each call, so an intent
-# written while it holds the lock is applied by it, or by its writer once it is free.
+# Take the reconciler's lock if it is free, or held by a holder that is gone; never wait.
 take_lock() {
-  tries=0
-  while ! mkdir "$lock" 2>/dev/null; do
-    tries=$((tries + 1))
-    [ "$tries" -le 10 ] || return 1
-    holder=
-    [ -f "$lock/pid" ] && IFS= read -r holder < "$lock/pid"
-    if { [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; } || [ -n "$(find "$lock" -prune -mmin +1 2>/dev/null)" ]; then
-      rm -f "$lock/pid"
-      rmdir "$lock" 2>/dev/null
-      continue
-    fi
-    sleep 0.1 || sleep 1
-  done
-  printf '%s\n' "$$" > "$lock/pid"
+  if ! mkdir "$lock" 2>/dev/null; then
+    stale_lock || return 1
+    rm -f "$lock/pid"
+    rmdir "$lock" 2>/dev/null
+    mkdir "$lock" 2>/dev/null || return 1
+  fi
+  printf '%s %s\n' "$$" "$began" > "$lock/pid"
 }
 
-# Bring the recorded claim to the latest intent, under the lock, so CLI calls never land
-# out of order: apply the intent, record it as applied, re-read it, until they agree. A
-# failed or killed call stops it with the two still apart, which is what the next event
-# retries. At most 3 calls, none started after ~2 s.
+# Whether the lock's holder is gone: its pid is dead, or it took the lock over 5 s ago
+# (Claude has killed it by then, or the machine slept; a reused pid looks alive). A lock
+# with no readable pid file yet is its holder's first instant, unless it is a minute old (a
+# holder killed in that instant).
+stale_lock() {
+  holder='' since=''
+  [ -f "$lock/pid" ] && read -r holder since < "$lock/pid"
+  case "$holder$since" in
+    ''|*[!0-9]*) [ -n "$(find "$lock" -prune -mmin +1 2>/dev/null)" ]; return ;;
+  esac
+  kill -0 "$holder" 2>/dev/null || return 0
+  [ $(( $(date +%s) - since )) -gt 5 ]
+}
+
+# Bring the recorded claim to the latest intent, under the lock (see the protocol above).
+# At most 3 calls, and none once 2 s (whole seconds, so under 2 s in fact) have passed since
+# $began: the worst case stays under 5 s.
 reconcile() {
-  take_lock || return 0
   calls=0
-  started=$(date +%s)
-  while [ "$calls" -lt 3 ]; do
-    want=$(state_of "$marker")
-    [ "$want" = "$(state_of "$applied")" ] && break
-    if [ "$want" = clear ]; then
-      run_cli clear --producer oats.core || break
-    else
-      run_cli set --producer oats.core --reason "$want" || break
-    fi
-    printf '%s\n' "$want" > "$applied"
-    calls=$((calls + 1))
-    [ $(( $(date +%s) - started )) -lt 2 ] || break
+  while take_lock; do
+    settled=''
+    while :; do
+      want=$(state_of "$marker")
+      if [ "$want" = "$(state_of "$applied")" ]; then settled=1; break; fi
+      [ "$calls" -lt 3 ] && [ $(( $(date +%s) - began )) -lt 2 ] || break
+      if [ "$want" = clear ]; then
+        run_cli clear --producer oats.core || break
+      else
+        run_cli set --producer oats.core --reason "$want" || break
+      fi
+      printf '%s\n' "$want" > "$applied"
+      calls=$((calls + 1))
+    done
+    rm -f "$lock/pid"
+    rmdir "$lock"
+    # A hook that found the lock held between our last read and here left its intent to us.
+    [ -n "$settled" ] && [ "$(state_of "$marker")" != "$(state_of "$applied")" ] || return 0
   done
-  rm -f "$lock/pid"
-  rmdir "$lock"
 }
 
 # A subagent's tool call resolves nothing the human was asked by the main thread, so a
@@ -182,10 +203,12 @@ if [ "$action" = set ]; then
   # permission_prompt follows the question's set: a permission prompt never relabels an
   # open question.
   [ "$reason" = permission ] && [ "$intent" = question ] && exit 0
+  began=$(date +%s)
   printf '%s\n' "$reason" > "$marker"
 else
   # Nothing to clear (cleared and recorded so): no node process, no input read.
   [ "$intent" = clear ] && [ "$(state_of "$applied")" = clear ] && exit 0
+  began=$(date +%s)
   [ "$action" = clear-tool ] && from_subagent && exit 0
   printf 'clear\n' > "$marker"
 fi

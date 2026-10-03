@@ -610,17 +610,20 @@ clears it.
   boundary voids the claims. The script runs the CLI from the home, so its
   cwd never matters.
 - **Order and retry.** Each event writes its intent to the marker at once,
-  so the marker is always the latest intent, then reconciles under a lock
-  (a directory holding its holder's pid; one whose holder is gone, or a
-  minute old, is removed): one process at a time brings the recorded claim
-  to the latest intent, re-reading it after each CLI call, so the calls
-  land in the order the events came, whatever their speed. An event that
-  finds the lock busy for more than about a second leaves its intent to
-  the holder, which picks it up on its next read. A call that fails or
-  is killed, or a reconciliation the time budget stops, leaves the
-  recorded claim and the intent apart, and the next event finishes it. The
-  state files are only ever deleted by the launch hook, so no intent is
-  lost to a race.
+  so the marker is always the latest intent. Then, if the lock is free, it
+  reconciles: one process at a time brings the recorded claim to the latest
+  intent, re-reading it after each CLI call (at most 3), so the calls land
+  in the order the events came, whatever their speed. An event that finds
+  the lock held never waits: it exits, and the holder applies its intent on
+  its next read, or on the read it makes after letting the lock go. The
+  lock is a directory holding its holder's pid and start time; one whose
+  holder is gone (pid dead, or taken over 5 s ago, past Claude's hook
+  timeout, which also covers a reused pid and a machine that slept) is
+  broken by the next event, as is one a minute old with no pid yet. A call
+  that fails or is killed, or a reconciliation the time budget stops (no
+  call starts 2 s after the hook began), leaves the recorded claim and the
+  intent apart, and the next event finishes it. The state files are only
+  ever deleted by the launch hook, so no intent is lost to a race.
 - **It never touches the agent's claim.** The script only ever passes
   `--producer oats.core`.
 - **Not "unknown work" at retirement.** Harness project settings in the home
