@@ -752,7 +752,20 @@ with no provider or a home operation without `--home`
 The provider must exit 0 with exactly one JSON envelope on stdout. Otherwise
 the outcome is **unconfirmed**: `E_OPERATION_TIMEOUT` (after 240 s) or
 `E_OPERATION_RESULT`, with `error.details { unconfirmed: true, exit, envelope?, stderr? }`.
-A provider's own `ok: false` is relayed with its code. A schedule of kind
+A provider's own `ok: false` is relayed with its code and full envelope. When
+the provider sets `error.details.unconfirmed: true` (the boolean), the operation
+wrapper also sets its outer `error.details.unconfirmed: true`. Providers should
+set that marker when dispatched effects or their compensation cannot be
+confirmed, and preserve it through wrappers. Ordinary refusals and fully
+compensated failures do not acquire a marker merely because they name a home
+or retained evidence. Existing message-based compatibility checks remain during
+this additive migration, including for copied providers in older homes.
+
+The kernel marks incomplete keyed spawns (`E_SPAWN_INCOMPLETE`) and spawn
+failures whose rollback cannot finish with the same field, through the CLI.
+A completed rollback remains an unmarked failure. This adds structural evidence;
+it does not remove text fallbacks or change scheduler slot and retry rules.
+A schedule of kind
 `operation` runs the same command ([schedules.md](schedules.md)). The JSON
 shapes are in [desktop-cli-api.md](desktop-cli-api.md#inspect-readiness-and-operation-run-on-the-workspace-model-operationsapi-2-soulsapi-2-readinessapi-2-oats-0260).
 

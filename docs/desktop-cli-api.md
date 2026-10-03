@@ -543,7 +543,10 @@ oats operation run <layer>:<name> (--home <abs> | --soul <name> [--dir <d>]) [--
   home operation without `--home`), `E_CAPABILITY_REQUIRES`, `E_BAD_ARGS`
   (undeclared or missing `--arg`), `E_CAPABILITY_BROKEN`. A provider's `ok:
   false` is relayed with its code and `details: {exit, envelope,
-  unconfirmed?}`. `E_OPERATION_TIMEOUT` (240 s) and `E_OPERATION_RESULT` are
+  unconfirmed?}`. A literal provider `error.details.unconfirmed: true` is
+  promoted to the outer details while its full envelope stays nested. Existing
+  retained-effect text checks remain for compatibility during migration.
+  `E_OPERATION_TIMEOUT` (240 s) and `E_OPERATION_RESULT` are
   unconfirmed outcomes: `details: {exit, signal, unconfirmed: true,
   envelope?, stderr?, cleanup?}`.
 
@@ -1617,7 +1620,7 @@ with `--expect-decision` records the key and decision in `instance.json`.
   `E_IDEMPOTENCY_CONFLICT {instance, home}`.
 - `spawnCompleted` is `false` until launch, lineage and events are done; a
   retry of an unfinished spawn is `E_SPAWN_INCOMPLETE {instance, home,
-  launched}` (recover through the session surface).
+  launched, unconfirmed: true}` (recover through the session surface).
 - The key lives in the home. Mint it on the first confirmation and keep it
   for that intent's retries.
 - `wake: {requested, saved, error}` is recorded and replayed; `saved: null`
@@ -1686,11 +1689,17 @@ Feature `spawn-name`. `--name <slug>` is the exact name, with no prefix.
 | `E_INSTANCE_NAME_INVALID`, `E_INSTANCE_NAME_TAKEN` | see above | |
 | `E_DECISION_STALE` | `{decision}` | |
 | `E_PLACEMENT_TAKEN`, `E_IDEMPOTENCY_CONFLICT` | `{instance, home}` | |
-| `E_SPAWN_INCOMPLETE` | `{instance, home, launched}` | |
+| `E_SPAWN_INCOMPLETE` | `{instance, home, launched, unconfirmed: true}` | |
 | `E_LAUNCH_*`, `E_MODEL_UNKNOWN`, `E_UNSUPPORTED_HARNESS` | | the launch selection is refused |
 | `E_LAUNCH_SHIM` | | the home's `oats` (`<home>/.oats/bin/oats`) cannot be written; the spawn is rolled back |
 | `E_SCHEDULE_INVALID` | | a bad wake (`--wake-json`, `--wake-file`, `--wake-*`) |
-| `E_SPAWN_FAILED` | | anything else |
+| `E_SPAWN_FAILED` | `{unconfirmed: true}` when compensation cannot finish | anything else |
+
+Spawn failure envelopes carry `error.details.unconfirmed: true` when an existing
+keyed spawn is incomplete (`E_SPAWN_INCOMPLETE`) or compensation cannot confirm
+cleanup. The keyed-spawn details retain `instance`, `home` and `launched`.
+Confirmed completed compensation does not set this marker. This is an additive
+producer migration; existing text-based compatibility checks remain.
 
 ## `instance.json` and the roster
 
