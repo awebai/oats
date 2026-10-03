@@ -628,7 +628,7 @@ for (const [name] of palettes) test(`${name}: actual Connections and reported PR
   }
 });
 
-for (const [name] of palettes) test(`${name}: frame10 rail, disabled menu reasons, workspace metadata and explicit Open toast meet computed AA`, async t => {
+for (const [name] of palettes) test(`${name}: frame10 rail, disabled menu reasons, workspace metadata, explicit Open toast and the Needs input pill meet computed AA`, async t => {
   const dom = new JSDOM(readFileSync(new URL('index.html', renderer), 'utf8'), { pretendToBeVisual: true }), doc = dom.window.document;
   doc.documentElement.dataset.theme = name;
   for (const source of [css, readFileSync(new URL('shell.css', renderer), 'utf8'), identityCSS, contextPanelCSS, notificationCSS, rosterPrCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
@@ -640,6 +640,12 @@ for (const [name] of palettes) test(`${name}: frame10 rail, disabled menu reason
     wrap.append(prChip(doc, { home: '/h', number: 1, state, isDraft: extra, url: null })); list.append(wrap);
   }
   const prOpen = doc.createElement('button'); prOpen.className = 'act ctx-pr-open'; list.append(prOpen);
+  // Spec D: the Needs input pill (and its "N below" roll-up) paints its own surface, on an idle and a selected row.
+  for (const [active, rollup] of [[false, false], [true, true]]) {
+    const wrap = doc.createElement('div'); wrap.className = `ctx-tree-row${active ? ' active' : ''}`;
+    const pill = doc.createElement('span'); pill.className = `ctx-attn${rollup ? ' rollup' : ''}`; pill.textContent = rollup ? '2 below' : 'Needs input';
+    wrap.append(pill); list.append(wrap);
+  }
   const panel = createContextPanel({ document: doc }); panel.setContext({ workspace: 'team', key: 'key', instance: row }); panel.setCollapsed(true);
   const notifications = createNotificationCenter({ document: doc, workspace: () => 'team' });
   notifications.notify('dev-1 spawned', { descriptor: { kind: 'open-instance', target: instanceActionTarget('team', row), connectionEpoch: 0 }, activate: async () => {} });
@@ -663,6 +669,8 @@ for (const [name] of palettes) test(`${name}: frame10 rail, disabled menu reason
     ['.ctx-tree-row:not(.active) .ctx-pr[data-pr-state=draft]', '#sidebar', 'muted', 'surface'],
     ['.ctx-tree-row.active .ctx-pr[data-pr-state=draft]', '.ctx-tree-row.active', 'muted', 'sel'],
     ['.ctx-pr-open', '.ctx-pr-open', 'accent', 'surface'],
+    ['.ctx-tree-row:not(.active) .ctx-attn', '.ctx-tree-row:not(.active) .ctx-attn', 'warn', 'attn-bg'],
+    ['.ctx-tree-row.active .ctx-attn.rollup', '.ctx-tree-row.active .ctx-attn.rollup', 'warn', 'attn-bg'],
   ]) {
     const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
     assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);

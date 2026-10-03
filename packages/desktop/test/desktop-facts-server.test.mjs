@@ -6,6 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 import { dirname, resolve } from 'node:path';
 import * as remote from '../server/remote-roster.mjs';
 import { normalizeSoulColor } from '../renderer/soul-colors.mjs';
@@ -101,4 +102,44 @@ test('/api/agents: spawnable + problem and file; no harness/model default', () =
   const snap2 = { byWs: new Map([[DEPLOYMENT, { deployment: { ...snapshot.byWs.get(DEPLOYMENT).deployment, catalog: { souls: older, ambiguous: [], reason: null } } }]]) };
   const legacy = agentsData(() => ws, () => [ws], snap2, remote, dirname, resolve, normalizeSoulColor)().agents[0];
   for (const key of ['spawnable', 'problem', 'file']) assert.equal(Object.hasOwn(legacy, key), false, key);
+});
+
+/* Needs input (Spec D, PR K): `waitingOnYou` on a status row is validated, never fatal, and reaches /api/panel
+   only when the local CLI advertises waiting-on-you. */
+const claim = { since: '2026-10-03T10:00:00.000Z', producer: 'claude-hook', reason: 'permission', message: 'Allow Bash?' };
+const withClaim = value => { const doc = structuredClone(fx('status')); doc.agents.find(a => a.instances.length).instances[0].waitingOnYou = value; return doc; };
+const firstRow = doc => deploymentStatusData(doc, DEPLOYMENT).agents.flatMap(a => a.instances)[0];
+
+test('status: a valid waitingOnYou passes validated, an invalid one becomes null without failing the roster, absence stays absent', () => {
+  assert.deepEqual(firstRow(withClaim({ ...claim, extra: 'ignored' })).waitingOnYou, claim);
+  for (const bad of [{ ...claim, since: 'yesterday' }, { ...claim, producer: 'https://evil.example/x' }, { ...claim, producer: '' }, 'waiting', 7, [claim]]) {
+    assert.equal(firstRow(withClaim(bad)).waitingOnYou, null, JSON.stringify(bad));
+  }
+  assert.equal(firstRow(withClaim(null)).waitingOnYou, null, 'null stays null (unknown)');
+  assert.equal(firstRow(withClaim({ ...claim, message: 'two\nlines' })).waitingOnYou.message, null, 'a malformed note keeps the claim');
+  assert.equal(Object.hasOwn(firstRow(fx('status')), 'waitingOnYou'), false, 'a status without the field adds nothing');
+});
+
+function observeWith(features, instance) {
+  const fn = name => { const found = source.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`)); assert.ok(found, name); return found[0]; };
+  const m = source.match(/\/\* OATSWEB_PANELPROJ_BEGIN[^*]*\*\/([\s\S]*?)\/\* OATSWEB_PANELPROJ_END \*\//);
+  const roster = { root: '/d/agents', agents: [{ name: 'dev', description: '', team: null, instances: [instance] }], withheld: [] };
+  const context = {
+    snapshot: { byWs: new Map() }, cliState: { probedAt: 1, features }, admitted: new Set(['/d']), BACKGROUND_MAX_AGE: 60, observing: new Set(),
+    soulCatalog: { prefetch() {}, settle: () => ({ entry: null, pending: null }) }, capabilityCatalog: { prefetch() {}, ensure() {} },
+    deploymentObserver: { observe: async () => ({ ok: true, roster, workspaceStatus: { workspace: {} }, observedAt: '2026-10-03T10:00:00.000Z' }) },
+    soulCatalogKey: () => null, catalogProjection: () => null, attachCatalog() {}, dirname,
+    observeLivenessRows: async rows => rows.map(() => ({ running: true, runtimeState: 'running', tmux: null })), Date, String,
+  };
+  const run = runInNewContext(`${m[1]}\n${fn('observeDeployment')}\nobserveDeployment`, context);
+  return run('/d').then(entry => JSON.parse(JSON.stringify(entry)).instances[0]);
+}
+
+test('observeDeployment keeps waitingOnYou only when the CLI advertises waiting-on-you (feature, never version)', async () => {
+  const instance = { instance: 'dev-a', agent: 'dev', home: '/d/agents/dev/instances/dev-a', waitingOnYou: claim };
+  assert.deepEqual((await observeWith(['desktop-facts', 'waiting-on-you'], instance)).waitingOnYou, claim);
+  assert.equal(Object.hasOwn(await observeWith(['desktop-facts'], instance), 'waitingOnYou'), false, 'pre-feature kernel: dropped');
+  assert.equal(Object.hasOwn(await observeWith(undefined, instance), 'waitingOnYou'), false, 'no feature list: dropped');
+  const { waitingOnYou: _w, ...bare } = instance;
+  assert.equal(Object.hasOwn(await observeWith(['waiting-on-you'], bare), 'waitingOnYou'), false, 'absent is never synthesized');
 });

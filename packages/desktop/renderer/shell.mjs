@@ -59,6 +59,7 @@ import { createSpawnFollow, watchOperator } from "./spawn-follow.mjs";
 import { registerSpawnDialogKeys } from "./spawn-dialog-keys.mjs";
 import { revealInScrollport } from "./reveal-in-scrollport.mjs";
 import { createRosterTip, rosterTipFacts, rosterTipCSS } from "./roster-tip.mjs";
+import { waitingClaim, waitingRollup, waitingSentence } from "./waiting-on-you.mjs";
 import { createRosterPrs, prChip, prText, rosterPrCSS } from "./roster-pr.mjs";
 import { createPanelOwner } from "./panel-owner.mjs";
 import {
@@ -707,6 +708,16 @@ async function refreshContextRoster({ user = false } = {}) {
   if (reportedFailure) rosterState?.fail(failure);
 }
 
+/** Spec D's row mark: a shape plus text, never colour alone. "Needs input" on a waiting row (its reason and
+ * age live in the card); "N below" on a row whose collapse hides N waiting rows, with a visually hidden
+ * " need input" so the row's accessible name says what the short text means. */
+function needsInputMark(below = 0) {
+  const mark = document.createElement("span"); mark.className = below ? "ctx-attn rollup" : "ctx-attn";
+  mark.append(iconElement(document, "alert", { size: 11 }), below ? `${below} below` : "Needs input");
+  if (below) { const said = document.createElement("span"); said.className = "ctx-attn-said"; said.textContent = " need input"; mark.append(said); }
+  return mark;
+}
+
 function renderContextRoster(instances) {
   const listEl = contextRosterEl.querySelector(".ctx-list");
   const restoreTreeState = captureTreeRenderState(listEl);
@@ -748,6 +759,11 @@ function renderContextRoster(instances) {
   const visible = matching.filter((i) => instanceVisibleInTree(
     i, instances, collapsedInstances, ws, filtering,
   ));
+  // A row the roster holds stale (the last read failed, or its deployment's re-read did) carries last-known facts.
+  const rowHeldStale = (row) => rosterStale || rowStale(row, contextDeployments);
+  // Needs input (Spec D): waiting rows a collapse hides, on their nearest visible ancestor. Derived on every
+  // paint over the full roster, so expanding the parent drops it and the children show their own marks.
+  const waitingBelow = waitingRollup(instances, collapsedInstances, ws, { filtering, stale: rowHeldStale });
   if (!visible.length) {
     listEl.innerHTML = `<div class="ctx-empty">${instances.length ? "Nothing matches." : "No instances."}</div>`;
     paintNote();
@@ -826,7 +842,11 @@ function renderContextRoster(instances) {
         const why = reason?.sentence || i.runtimeError || (i.running ? `Open ${i.instance} terminal` : `Start ${i.instance}`);
         // Workspace v4: an enabled row explains itself in the hover/focus card; an unavailable one keeps its reason as a title.
         const pr = i.server || i.remote ? null : rosterPrs.get(i.home);
-        if (unavailable) { row.title = why; row.setAttribute("aria-description", why); } else rosterTip.bind(row, () => rosterTipFacts(i, why, pr));
+        const heldStale = rowHeldStale(i);
+        // Needs input: this row's own claim (waitingClaim is the only gate), and the waiting rows hidden under it.
+        const claim = waitingClaim(i, { stale: heldStale }), below = waitingBelow.get(instanceId(i)) || [];
+        if (unavailable) { const said = why + waitingSentence(claim, below); row.title = said; row.setAttribute("aria-description", said); }
+        else rosterTip.bind(row, () => rosterTipFacts(i, why, pr, { below, stale: heldStale }));
         const dot = document.createElement("span");
         dot.className = `ctx-dot ${state === "running" ? "on" : state === "stopped" ? "off" : "unknown"}`;
         const copy = document.createElement("span");
@@ -849,11 +869,19 @@ function renderContextRoster(instances) {
         // Spec E: a spawn the operator was not taken to says New (text and a dot, never colour alone)
         // until its row is opened, or its tab is (the first paint where it is the active row).
         if (isActive) spawnJobs.seen?.(ws, i);
-        if (spawnJobs.isNew?.(ws, i)) {
+        // Spec D: Needs input before New on the same line; the marks keep their size, the name ellipsizes.
+        const attn = claim ? needsInputMark() : below.length ? needsInputMark(below.length) : null;
+        const isNew = !!spawnJobs.isNew?.(ws, i);
+        if (attn || isNew) {
           const line = document.createElement("span"); line.className = "ctx-name-line";
-          const mark = document.createElement("span"); mark.className = "ctx-new";
-          const markDot = document.createElement("span"); markDot.className = "ctx-new-dot"; markDot.setAttribute("aria-hidden", "true");
-          mark.append(markDot, "New"); line.append(name, mark); copy.append(line, meta);
+          line.append(name);
+          if (attn) line.append(attn);
+          if (isNew) {
+            const mark = document.createElement("span"); mark.className = "ctx-new";
+            const markDot = document.createElement("span"); markDot.className = "ctx-new-dot"; markDot.setAttribute("aria-hidden", "true");
+            mark.append(markDot, "New"); line.append(mark);
+          }
+          copy.append(line, meta);
         } else copy.append(name, meta);
         row.append(dot, copy);
         if (typeof i.harness === "string" && i.harness) {
@@ -867,7 +895,6 @@ function renderContextRoster(instances) {
         // the row's activation (click, Enter) then starts nothing and says why; opening a running row's
         // terminal stays allowed (the maintainer's return on #322).
         // A row of a stale deployment (#482: its last re-read failed) is held the same way.
-        const heldStale = rosterStale || rowStale(i, contextDeployments);
         const staleStart = heldStale && !i.running;
         if (staleStart) { row.title = ROSTER_STALE_TITLE; row.setAttribute("aria-description", ROSTER_STALE_TITLE); }
         row.addEventListener("click", () => { if (staleStart || unavailable) return; spawnJobs.seen?.(ws, i); i.running ? openTerminalTab(i) : openInstanceStart(i); });

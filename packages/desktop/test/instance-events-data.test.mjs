@@ -106,3 +106,42 @@ test('projection owns copied data and does not mutate producer rows, claims or i
   assert.deepEqual(raw, before); out.events[0].data.agent = 'changed'; out.integrity.sources[0].bytes = 0;
   assert.deepEqual(raw, before);
 });
+
+// Spec D (waiting-on-you): a claim's optional `message`, validated like the status row's.
+const claimed = (claimMessage, topMessage) => {
+  const value = data();
+  const claim = { producer: 'provider.a', waiting: true, since: birth, reason: 'permission' };
+  const top = { producer: 'provider.a', since: birth, reason: 'permission' };
+  if (claimMessage !== undefined) claim.message = claimMessage;
+  if (topMessage !== undefined) top.message = topMessage;
+  value.waitingClaims = [claim]; value.waitingOnYou = top;
+  return value;
+};
+test('a claim message is passed through on the claim and on waitingOnYou, as text', () => {
+  const out = eventsData(claimed('Allow <b>rm</b>?', 'Allow <b>rm</b>?'), target); assert.ok(out);
+  assert.equal(out.waitingOnYou.message, 'Allow <b>rm</b>?'); assert.equal(out.waitingClaims[0].message, 'Allow <b>rm</b>?');
+  assert.deepEqual(eventsData(out, target, 100, { publicView: true }), out);
+});
+test('a kernel without messages (key absent on both sides) passes, and message reads null', () => {
+  const out = eventsData(claimed(undefined, undefined), target); assert.ok(out);
+  assert.equal(out.waitingOnYou.message, null); assert.equal(out.waitingClaims[0].message, null);
+  assert.deepEqual(eventsData(out, target, 100, { publicView: true }), out);
+  const cleared = data(); cleared.waitingClaims = [{ producer: 'provider.a', waiting: false, since: birth, reason: null }];
+  assert.equal(eventsData(cleared, target).waitingClaims[0].message, null);
+});
+for (const [label, claimMessage, topMessage] of [
+  ['mismatched', 'Allow rm?', 'Allow ls?'], ['top-only', undefined, 'Allow rm?'], ['claim-only', 'Allow rm?', undefined],
+  ['null against text', null, 'Allow rm?'],
+]) test(`a ${label} waiting message refuses the read (waitingOnYou must be the newest positive claim)`, () => {
+  assert.equal(eventsData(claimed(claimMessage, topMessage), target), null);
+});
+for (const [label, message] of [['newline', 'a\nb'], ['control character', 'a\x07b'], ['over 200 chars', 'x'.repeat(201)], ['empty', ''], ['non-string', 42]]) {
+  test(`an invalid (${label}) claim message is null and the claim is kept`, () => {
+    const out = eventsData(claimed(message, message), target); assert.ok(out);
+    assert.equal(out.waitingOnYou.producer, 'provider.a'); assert.equal(out.waitingOnYou.message, null); assert.equal(out.waitingClaims[0].message, null);
+  });
+}
+test('an unsafe claim message is withheld, never shown', () => {
+  const out = eventsData(claimed('see https://private.example/x', 'see https://private.example/x'), target); assert.ok(out);
+  assert.equal(out.waitingOnYou.message, '[Detail withheld]'); assert.equal(out.waitingClaims[0].message, '[Detail withheld]');
+});

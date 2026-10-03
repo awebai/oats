@@ -69,7 +69,7 @@ export function createInstanceEventsView(host, { ctx, selection, owner = () => t
     if (!summary) return;
     if (!value) return setText(summary, UNKNOWN);
     const last = value.lastEvent, waiting = value.waitingOnYou;
-    return setText(summary, `${stale ? 'Last observation — ' : ''}${last ? `${title(last.kind)} · ${last.at} · ${incarnationLabel(last, value)}` : 'No recorded lifecycle events in this observed window.'} · ${waiting ? `Reported waiting: ${waiting.producer} since ${waiting.since}` : 'Waiting on you: unknown'}`);
+    return setText(summary, `${stale ? 'Last observation — ' : ''}${last ? `${title(last.kind)} · ${last.at} · ${incarnationLabel(last, value)}` : 'No recorded lifecycle events in this observed window.'} · ${waiting ? `Reported waiting: ${waiting.producer} since ${waiting.since}${waiting.message ? ` — ${waiting.message}` : ''}` : 'Waiting on you: unknown'}`);
   }
   function controls() {
     const supported = eventsSupported(cli()), valid = validTarget();

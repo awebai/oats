@@ -407,6 +407,9 @@ function projectPanelInstance(i) {
     ...(i.retirePending ? { retirePending: true } : {}),
     ...(i.rollbackIncomplete ? { rollbackIncomplete: true } : {}),
     ...(i.captured ? { captured: true } : {}),
+    // Needs input (PR K): the validated claim (or null, unknown) as status reported it; absent stays absent.
+    // Desktop liveness is merged before projection, so running/runtimeState beside it are Desktop's.
+    ...(i.waitingOnYou !== undefined ? { waitingOnYou: i.waitingOnYou } : {}),
     team: i.team || null,
   };
 }
@@ -861,8 +864,12 @@ async function observeDeployment(id, { live = false } = {}) {
     // revalidateCatalog), so an idle app costs nothing and no deployment file is ever named to find out.
     const { entry: catalogEntry, pending } = soulCatalog.settle(id, cli, workspaceStatus, { maxAge });
     capabilityCatalog.ensure(id, cli, workspaceStatus, { maxAge });
-    const rows = roster.agents.flatMap((agent) => agent.instances.map((instance) => ({
-      ...instance, agent: instance.agent || agent.name, description: agent.description || "",
+    // Needs input: a row keeps the kernel's waitingOnYou only when this CLI advertises waiting-on-you.
+    // Gate on the feature, never the version: a pre-feature kernel emitting the field is dropped.
+    const waitingFeature = !!cli.features?.includes("waiting-on-you");
+    const rows = roster.agents.flatMap((agent) => agent.instances.map(({ waitingOnYou, ...instance }) => ({
+      ...instance, ...(waitingFeature && waitingOnYou !== undefined ? { waitingOnYou } : {}),
+      agent: instance.agent || agent.name, description: agent.description || "",
       team: agent.team || null, agentsRoot: roster.root,
     })));
     const liveness = await observeLivenessRows(rows.map((i) => ({ instance: i.instance, tmux: i.tmux, sessionTarget: i.sessionTarget,
