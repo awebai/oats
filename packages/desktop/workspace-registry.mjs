@@ -3,7 +3,8 @@
 //
 // Discovery is BOUNDED and deterministic — never arbitrary filesystem
 // scanning: (a) deployments the app already knows, (b) a persisted
-// recently-added list. (A folder the operator picked that is not a deployment
+// recently-added list, (c) the deployments directly inside ~/Agents
+// (deploymentsInside). (A folder the operator picked that is not a deployment
 // gets one bounded look around it: pickedFolderChoices.) Every candidate must still be a workspace-model v2
 // deployment directory AT SUGGESTION TIME; `reason` says why it is offered.
 // The deployment's content is the kernel's to read (`oats workspace status`);
@@ -15,7 +16,9 @@ import { basename, dirname, join } from "node:path";
 
 /** Restore explicitly opened workspaces, independently of recent suggestions.
  * Re-validate on startup: moved/deleted deployments are skipped and
- * symlinks resolving to the same canonical deployment open only once. */
+ * symlinks resolving to the same canonical deployment open only once. With no
+ * deployment the result is empty: the startup folder (`/` from Finder) is never
+ * served in its place, and the window chooses (#518). */
 export function restoreWorkspaceDirs(startup, raw, validate) {
   let saved;
   try { saved = JSON.parse(raw); } catch { saved = []; }
@@ -27,8 +30,7 @@ export function restoreWorkspaceDirs(startup, raw, validate) {
       if (workspace) dirs.add(workspace.path);
     } catch { /* missing or no longer a workspace */ }
   }
-  // Keep the existing empty-workspace/picker journey on first launch.
-  return dirs.size ? [...dirs] : [startup];
+  return [...dirs];
 }
 
 /** The absolute paths a saved open set names, as written (unvalidated): the deployments this Desktop
@@ -113,11 +115,8 @@ export const PICK_ANCESTOR_LIMIT = 8;
  * @returns {{ choices: Array<{ path, name, kind: "inside"|"ancestor" }>, more: number, limited: boolean }}
  */
 export function pickedFolderChoices(dir, io) {
-  const is = (p) => { try { return io.isDeployment(p) === true; } catch { return false; } };
-  let listed = { entries: [], limited: false };
-  try { listed = io.list(dir, PICK_SCAN_LIMIT) || listed; } catch { /* unreadable: no children offered */ }
-  const found = listed.entries.filter((e) => e?.isDirectory && typeof e.name === "string" && !e.name.includes("/"))
-    .map((e) => e.name).sort((a, b) => a.localeCompare(b)).map((name) => join(dir, name)).filter(is);
+  const is = deploymentCheck(io);
+  const { paths: found, limited } = deploymentsInside(dir, io);
   const choices = found.slice(0, PICK_CHOICE_LIMIT).map((path) => ({ path, name: basename(path), kind: "inside" }));
   for (let path = dir, n = 0; n < PICK_ANCESTOR_LIMIT; n++) {
     const up = dirname(path);
@@ -125,7 +124,23 @@ export function pickedFolderChoices(dir, io) {
     path = up;
     if (is(path)) { choices.push({ path, name: basename(path) || path, kind: "ancestor" }); break; }
   }
-  return { choices, more: Math.max(0, found.length - PICK_CHOICE_LIMIT), limited: !!listed.limited, ...(listed.limited ? { scanLimit: PICK_SCAN_LIMIT } : {}) };
+  return { choices, more: Math.max(0, found.length - PICK_CHOICE_LIMIT), limited, ...(limited ? { scanLimit: PICK_SCAN_LIMIT } : {}) };
+}
+
+const deploymentCheck = (io) => (p) => { try { return io.isDeployment(p) === true; } catch { return false; } };
+
+/** The deployments directly inside `dir`, sorted by name: at most PICK_SCAN_LIMIT entries read, a
+ * link never followed, nothing parsed. An unreadable or missing `dir` holds none. Used for a picked
+ * parent folder, and for ~/Agents, whose deployments the switcher offers unasked (#518).
+ * @param {string} dir
+ * @param {object} io  `list` and `isDeployment`, as pickedFolderChoices takes them
+ * @returns {{ paths: string[], limited: boolean }} */
+export function deploymentsInside(dir, io) {
+  let listed = { entries: [], limited: false };
+  try { listed = io.list(dir, PICK_SCAN_LIMIT) || listed; } catch { /* unreadable: no children offered */ }
+  const paths = listed.entries.filter((e) => e?.isDirectory && typeof e.name === "string" && !e.name.includes("/"))
+    .map((e) => e.name).sort((a, b) => a.localeCompare(b)).map((name) => join(dir, name)).filter(deploymentCheck(io));
+  return { paths, limited: !!listed.limited };
 }
 
 /**
@@ -219,6 +234,7 @@ export function validateWorkspace(path, io) {
  * @param {object} io
  * @param {string[]} io.knownPaths      deployment paths the app already knows (startup --dir set)
  * @param {string[]} io.recents         persisted recently-added paths (validated on read)
+ * @param {string[]} [io.discovered]    deployments found in ~/Agents (deploymentsInside)
  * @param {Set<string>} io.advertised   workspace ids the current server advertises
  * @param {(p: string) => ReturnType<typeof validateWorkspace>} io.validate
  * @returns {Array<{ id, name, team, path, reason }>}
@@ -233,6 +249,7 @@ export function workspaceSuggestions(io) {
   };
   for (const p of io.knownPaths) consider(p, "known workspace");
   for (const p of io.recents) consider(p, "recently used");
+  for (const p of io.discovered ?? []) consider(p, "found in ~/Agents");
   return [...out.values()];
 }
 

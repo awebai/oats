@@ -93,7 +93,7 @@ export function viewerPrefix(pid) {
  */
 let viewerSeq = 0;
 
-/** The locked key table's COMPLETE binding set — wheel scrollback only.
+/** The locked key table's COMPLETE binding set — wheel scrollback and drag-to-select only.
  * An inert (nonexistent) table blocked window escape but also killed wheel
  * handling entirely: pi runs on the alternate screen, so scrollback history
  * belongs to tmux and the renderer cannot recover it — scrolling died.
@@ -109,6 +109,10 @@ let viewerSeq = 0;
 export const LOCKED_TABLE_BINDINGS = [
   // argv tail for: tmux bind-key -T oatsdesk-locked <key> <command...>
   ["WheelUpPane", "if-shell", "-F", "#{||:#{pane_in_mode},#{mouse_any_flag}}", "send-keys -M", "copy-mode -e; send-keys -M"],
+  // A plain drag selects agent output (#520): tmux's root behavior, so copy mode's own drag-end binding copies the
+  // selection and tmux sends it to the terminal as OSC 52 (set-clipboard external, its default), which the
+  // renderer writes to the clipboard (terminal-clipboard.mjs). An app that grabbed the mouse gets the drag.
+  ["MouseDrag1Pane", "if-shell", "-F", "#{||:#{pane_in_mode},#{mouse_any_flag}}", "send-keys -M", "copy-mode -M"],
 ];
 
 export function openTerm(spec, io) {

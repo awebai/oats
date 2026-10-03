@@ -76,6 +76,20 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
       opener.restore();
     };
     const offWorkspace = onWorkspaceChange(close);
+    // After the dialog closed: the started instance's terminal, while this window still shows the
+    // workspace it was started from and the operator has chosen nothing since (`chosen`, the shell's
+    // selection watch). The open's own selection ticket supersedes the watch from then on.
+    const openWhenReady = async (chosen) => {
+      const ours = () => ws === currentWorkspace() && generation === workspaceGeneration() && chosen();
+      try {
+        const ready = await waitForReady({ ctx }, instance, ours);
+        if (!ours()) return;
+        if (ready) await ctx.openTerminal(instance, { quiet: true });
+        else ctx.notify?.(`${instance.instance} was started, but its terminal isn't ready yet. Open it from its row when it is.`);
+      } catch (error) {
+        if (ours()) ctx.notify?.(`${instance.instance} was started, but its terminal could not open: ${error.message}`);
+      }
+    };
     active = { focus: () => model.focus() };
     const refresh = async () => {
       if (starting || started) return;
@@ -134,19 +148,16 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
         await postJson(ctx, path, body);
         started = true;
         if (!owns()) return;
-        status.textContent = "Started. Waiting for the terminal…";
-        const ready = await waitForReady({ ctx }, instance, owns);
-        if (!owns()) return;
-        if (ready) { close(); await ctx.openTerminal(instance, { quiet: true }); }
-        else {
-          // Launch acceptance is not proof that the harness stayed alive.
-          // Permit another attempt only after a fresh status check.
-          started = false; canStart = false;
-          status.textContent = "The launch returned, but no running harness was observed. It may have exited. Refresh status before retrying.";
-        }
+        // Accepted. The harness may stop at something only its terminal shows (Claude Code's channels
+        // confirmation, an error), so the dialog never waits on it (#525): it closes, and the terminal
+        // opens as soon as the row is ready. Readiness is reported there, or by a notice, never by a modal.
+        close();
+        // Taken after the focus return: any explicit choice from now on (another terminal, tab, view or
+        // the sidebar) keeps the foreground, and this terminal does not take it later.
+        void openWhenReady(ctx.watchSelection?.() ?? (() => true));
       } catch (error) {
         if (!owns()) return;
-        status.textContent = started ? `Started, but the terminal could not open: ${error.message}` : error.message;
+        status.textContent = error.message;
         // A timeout may have happened after launch. Recheck before offering another start.
         canStart = false;
       } finally {

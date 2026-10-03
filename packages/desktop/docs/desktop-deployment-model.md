@@ -99,8 +99,11 @@ again. **Only an explicit remove drops a saved path**; nothing else does.
 - **Launch.** `restoreWorkspaceDirs` opens the saved deployments plus the
   launch directory (`--dir`, `OATS_DESKTOP_DIR` or the cwd) when that is one. A
   launch from a folder that is not a deployment (a parent such as `~/Agents`)
-  opens the saved set and logs that it did. Only when nothing at all is a
-  deployment is the launch folder served, for the first-run picker journey.
+  opens the saved set and logs that it did. A folder that is not a deployment
+  is never served, whatever the launch (`/` from Finder included): when nothing
+  is a deployment the server starts with no `--dir` (it serves no local
+  deployment, never its cwd; main starts it in the first served deployment,
+  else the home directory), and the first window is *choosing*.
 - **Persisting.** `persistedOpenSet` writes the saved paths as they were, in
   order, then the served deployments they lack, each once. Only deployments are
   ever added to it (`persistableDirs`), so a non-deployment never enters the
@@ -122,6 +125,11 @@ again. **Only an explicit remove drops a saved path**; nothing else does.
   knows: a suggestion, a deployment offered beside a refused pick, or one in
   the session's known set (the saved file as read, the open set, every
   committed add). The native picker (`workspace:pick`) is its own provenance.
+  Suggestions are the deployments in the known set that are not served (a
+  saved one whose volume was mounted after launch), the validated recents,
+  and the deployments directly inside `~/Agents` (`deploymentsInside`: at most
+  `PICK_SCAN_LIMIT` entries, links not followed, nothing parsed), so a fresh
+  machine needs no Browse.
 - **A picked folder that is not a deployment** is refused with "This folder
   isn't an OATS deployment: it has no oats-local.yaml. Choose the deployment
   folder itself, the one that contains oats-local.yaml." `pickedFolderChoices`
@@ -383,9 +391,16 @@ terminal owner).
   valid in between, the deployment id being served. If another window
   already has the view, nothing moves, and that follow leaves this window
   choosing.
-- **No workspace.** A New Window, or a window whose view moved to a
-  workspace another window has, is *choosing*: main's refusal carries the
-  served choices, and the window reads nothing until it binds.
+- **No workspace.** A New Window, a window whose view moved to a
+  workspace another window has, or the first window of a launch with no
+  local deployment to serve, is *choosing*: main's refusal carries the
+  served choices, and the window reads nothing until it binds. Its choices
+  follow what is served: its roster poll asks main (`window:choices`, which
+  re-reads `/api/panel` and binds nothing), so the remote views served a few
+  seconds after launch appear. Its switcher menu also lists the suggestions
+  under **On this computer**, looked up each time the menu opens; one click
+  runs the normal add and opens the deployment in this window. Only with
+  nothing served and nothing suggested does it say no choices are reported.
 - **Records.** `windows.json` (`window-records.mjs`) keeps each window's
   view id, the deployments that view held, its bounds and state, written
   atomically after moves settle. A launch restores the windows whose views
@@ -395,7 +410,11 @@ terminal owner).
   the view that holds one of them (as the server's `viewFor` does), and the
   window follows to its `ws:` view when it is observed, by the same rehome
   claim, focusing nothing. A record goes only when its window is closed
-  while its workspace is served, never at quit.
+  while its workspace is served, never at quit, or at launch when its view
+  and every deployment it names are folders that exist but are not
+  deployments (a window once bound to `/`): such a folder is never served.
+  A record naming a missing path stays, like a saved deployment on a volume
+  not mounted yet.
 - **Per window.** Suggestions, picks and adds have a generation and a
   provenance per sending window; adds still run one at a time through the
   one executor, since each replaces the shared server.
@@ -476,7 +495,8 @@ workspace's view; its rows carry `server`, `home`, and the kernel's
   `instance-git`, `lifecycle-plans`). Otherwise it refuses and nothing is sent;
   a local selector never resolves in a remote deployment, or the reverse.
 - **Addressing.** Every routed command names `--server <id> --home <abs>`, runs
-  from this machine's first deployment directory as its cwd, and carries no
+  from this machine's first deployment directory (else the home directory)
+  as its cwd, and carries no
   `--dir` (the kernel sends the registered workspace). Nothing remote is
   addressed by a bare `--instance`. A remote terminal is keyed
   `["remote", server, home]`.

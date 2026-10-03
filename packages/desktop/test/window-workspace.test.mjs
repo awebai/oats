@@ -14,13 +14,14 @@ const deferred = () => { let resolve; const promise = new Promise((r) => { resol
 let loads = 0;
 
 /** A fresh common.mjs for one window: its hash, the shared storage and main's claim answers. */
-async function windowWith({ hash = '', stored = null, claim = async () => ({ ok: true }), bridge = true } = {}) {
+async function windowWith({ hash = '', stored = null, claim = async () => ({ ok: true }), choices = null, bridge = true } = {}) {
   const store = new Map(stored === null ? [] : [[WS_KEY, stored]]);
   const replaced = [], claims = [];
   globalThis.localStorage = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) };
   globalThis.location = { hash, pathname: '/app/renderer/index.html', search: '' };
   globalThis.history = { state: null, replaceState: (_state, _title, url) => { replaced.push(url); globalThis.location.hash = url.startsWith('#') ? url : ''; } };
-  globalThis.oatsDesktop = bridge ? { windowClaimWorkspace: (id, options) => { claims.push([id, options]); return claim(id, options); } } : {};
+  globalThis.oatsDesktop = bridge ? { windowClaimWorkspace: (id, options) => { claims.push([id, options]); return claim(id, options); },
+    ...(choices ? { windowChoices: () => choices() } : {}) } : {};
   const common = await import(`../renderer/views/common.mjs?window=${++loads}`);
   return { common, store, replaced, claims };
 }
@@ -159,4 +160,48 @@ test('entering the choosing state: the workspace listeners already see it, so a 
   w.common.adoptWorkspace(A);
   await new Promise((r) => setImmediate(r)); await new Promise((r) => setImmediate(r));
   assert.deepEqual(seen, [['choosing', '']]);
+});
+
+test('a choosing window refreshes its choices from main as they are served; a bound window asks nothing (#521)', async () => {
+  const REMOTE = [...CHOICES, { id: 'ws:cccccccccccccccccccc', name: 'c' }];
+  let asked = 0;
+  const w = await windowWith({ stored: B, claim: async () => ({ ok: false, code: 'choose', workspaces: [] }),
+    choices: async () => { asked++; return { ok: true, workspaces: REMOTE }; } });
+  assert.equal(await w.common.startWindow(), 'choosing');
+  assert.deepEqual(w.common.choosingWorkspaces(), []);
+  assert.deepEqual(await w.common.refreshChoices(), REMOTE);
+  assert.deepEqual(w.common.choosingWorkspaces(), REMOTE, 'the remote views that arrived later are now choices');
+  const bound = await windowWith({ hash: workspaceHash(A), choices: async () => { asked++; return { ok: true, workspaces: REMOTE }; } });
+  const before = asked;
+  assert.equal(await bound.common.refreshChoices(), null);
+  assert.equal(asked, before, 'a bound window reads its own workspace instead');
+});
+
+test('a refresh answered after the window bound, or after a newer refresh, changes nothing; a refusal keeps the choices (#521)', async () => {
+  const late = deferred(), newer = deferred();
+  let n = 0;
+  const w = await windowWith({ stored: B, claim: async (id, options) => (options?.initial ? { ok: false, code: 'choose', workspaces: CHOICES } : { ok: true }),
+    choices: () => (++n === 1 ? late.promise : newer.promise) });
+  await w.common.startWindow();
+  const first = w.common.refreshChoices(), second = w.common.refreshChoices();
+  newer.resolve({ ok: true, workspaces: [CHOICES[0]] });
+  assert.deepEqual(await second, [CHOICES[0]]);
+  late.resolve({ ok: true, workspaces: [] });
+  assert.equal(await first, null, 'superseded by the newer refresh');
+  assert.deepEqual(w.common.choosingWorkspaces(), [CHOICES[0]]);
+  const binding = deferred();
+  const v = await windowWith({ stored: B, claim: async (id, options) => (options?.initial ? { ok: false, code: 'choose', workspaces: CHOICES } : { ok: true }),
+    choices: () => binding.promise });
+  await v.common.startWindow();
+  const pending = v.common.refreshChoices();
+  await v.common.switchWorkspace(A);
+  binding.resolve({ ok: true, workspaces: [] });
+  assert.equal(await pending, null, 'bound meanwhile: nothing to choose');
+  const refused = await windowWith({ stored: B, claim: async () => ({ ok: false, code: 'choose', workspaces: CHOICES }), choices: async () => ({ ok: false, code: 'forbidden' }) });
+  await refused.common.startWindow();
+  assert.equal(await refused.common.refreshChoices(), null);
+  assert.deepEqual(refused.common.choosingWorkspaces(), CHOICES);
+  const thrown = await windowWith({ stored: B, claim: async () => ({ ok: false, code: 'choose', workspaces: CHOICES }), choices: async () => { throw new Error('gone'); } });
+  await thrown.common.startWindow();
+  assert.equal(await thrown.common.refreshChoices(), null, 'a rejection is a refusal, never an error out of the poll');
 });

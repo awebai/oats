@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld("oatsDesktop", {
   /** One window per workspace (#481). Bind this window to a workspace in place (null: to none); a
    * workspace another window holds is refused, and that window focused unless `focus` is false. */
   windowClaimWorkspace: (id, options) => ipcRenderer.invoke("window:claim-workspace", id, options),
+  /** A window with no workspace: the served choices, re-read now (#521). */
+  windowChoices: () => ipcRenderer.invoke("window:choices"),
   /** Open a workspace's window, or focus the one it has; null opens a New Window (the switcher). */
   windowOpenWorkspace: (id) => ipcRenderer.invoke("window:open-workspace", id),
 

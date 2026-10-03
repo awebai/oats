@@ -47,7 +47,8 @@ this is an algorithmic-shape measurement, not a native latency benchmark.
 - Established direct viewers survive app-backend replacement; dependent pending
   preparation is invalidated. No fallback target resolution or alternate source.
 - tmux component validation/anchors, saved socket, linked-window-only viewer,
-  source-death isolation and provisioned locked wheel key table are unchanged.
+  source-death isolation and the provisioned locked key table (wheel scrollback
+  and drag-to-select) are unchanged.
   Cleanup targets only the exact owned viewer, never the durable source.
 - PTY exit and confirmed viewer cleanup are both necessary to release a slot.
   A successful exact-name inventory can confirm an already-absent viewer;

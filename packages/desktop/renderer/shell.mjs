@@ -9,7 +9,7 @@
 // (groupInstances is not imported here: the feature branch renders the
 // sidebar roster via clusterInstances — lineage clusters with identity keys.)
 import { currentWorkspace, workspaceGeneration, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange, instanceApiPath, postJson, rowDeployment, httpError,
-  switchWorkspace, startWindow, windowState, onWindowState, choosingWorkspaces, chooseWorkspace } from "./views/common.mjs";
+  switchWorkspace, startWindow, windowState, onWindowState, choosingWorkspaces, chooseWorkspace, refreshChoices } from "./views/common.mjs";
 import { instanceActions, captureInstanceActionMenu } from "./instance-actions.mjs";
 import { instanceActionTarget, sameInstanceActionTarget } from "./instance-action-target.mjs";
 import { createInstancePrAction } from "./instance-pr-action.mjs";
@@ -39,6 +39,7 @@ import { rosterKeyAction, moveTarget } from "./roster-keys.mjs";
 import { createViewLifecycle } from "./view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "./tab-keys.mjs";
 import { createTerminalTab, terminalOptions, fitTerminal, createGlyphRenderer } from "./terminal-tab.mjs";
+import { attachClipboardWrite } from "./terminal-clipboard.mjs";
 import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "./tab-a11y.mjs";
 import { revealInStrip } from "./reveal-in-scrollport.mjs";
 import { createIntentGate, prepareOwnedOpen, runOpenFlow } from "./open-intent.mjs";
@@ -133,6 +134,9 @@ const ctx = {
   hasWorkspaceSwitcher: true,
   // Workspace selections compete with pending shell chooser/tab opens too.
   onSelectionIntent: () => tabOpenIntents.invalidate(),
+  // A ticket true while no explicit choice happened since it was taken: an accepted Start/Restart opens
+  // its terminal later only while it holds (#525), as a followed spawn does.
+  watchSelection: () => tabOpenIntents.watch(),
   notify: notifications.notify,
   notifySpawn: (instance, workspace, epoch) => {
     const target = instanceActionTarget(workspace, instance, { requireBirth: true });
@@ -547,8 +551,15 @@ async function followView(id) {
   if (!result.ok && result.code === "open-elsewhere") await chooseWorkspace(result.workspaces);
 }
 
+/** A window with no workspace reads nothing; its switcher's choices follow what main serves (#521). */
+async function refreshChooserChoices() {
+  const list = await refreshChoices();
+  if (list && windowState() === "choosing") workspaceLabel.choose(list);
+}
+
 async function refreshContextRoster({ user = false } = {}) {
-  if (!contextRosterEl || windowState() === "choosing") return; // no workspace: nothing to read
+  if (!contextRosterEl) return;
+  if (windowState() === "choosing") return refreshChooserChoices(); // no workspace: nothing to read
   // A Retry restarts the bounded wait for an answer.
   if (user) rosterPendingWatch.reset();
   const myGen = ++contextRosterGen;
@@ -1790,6 +1801,8 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
     fontFamily: type.fontFamily,
     theme: xtermTheme(),
   }));
+  // A drag in the agent's terminal is tmux's copy; tmux sends it as OSC 52 and it goes to the clipboard (write-only, #520).
+  const clipboard = attachClipboardWrite(term, text => navigator.clipboard.writeText(text));
   // live terminals follow app theme + persisted typography preferences
   const offTheme = onThemeChange(() => { term.options.theme = xtermTheme(); });
   const offTypography = onTerminalTypographyChange((next) => {
@@ -1848,13 +1861,13 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
     // Keep the pane/key while cleanup is pending or unconfirmed. Theme hooks
     // belong to the retained view and are removed only on confirmed disposal.
     confirmClose: () => tab.close(),
-    onClose: () => { offTheme(); offTypography(); },
+    onClose: () => { offTheme(); offTypography(); clipboard.dispose(); },
     onShow: () => { requestAnimationFrame(() => { try { glyphs.ensure(); fitTerminal(term, fit); } catch {} }); },
     // user-initiated activation → keyboard lands in the xterm textarea
     focusContent: () => tab.focus(),
     focusOnActivate: true, // addTab's own dedup here is a user jump too
   });
-  if (!made) { offTheme(); offTypography(); term.dispose(); return; } // lost a race to an identical tab
+  if (!made) { offTheme(); offTypography(); clipboard.dispose(); term.dispose(); return; } // lost a race to an identical tab
   made.paneEl.append(wrap);
   term.open(wrap);
   glyphs.ensure();
