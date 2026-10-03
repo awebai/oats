@@ -2506,7 +2506,9 @@ oats schedule show <id> --json
   `oats schedule reconcile <id>` (or `--clear`) either way.
 - **Schedule IDs**: local and workspace schedule definition names permit 1–100
   lowercase letters, digits and dashes; trigger names retain their 40-character
-  limit. A spawn's derived instance name still has a 64-character limit.
+  limit. Desktop accepts these schedule names for creation, editing and row
+  actions (enable, disable, test, run and reconcile), including qualified IDs.
+  A spawn's derived instance name still has a 64-character limit.
 - **`description`** (0.40.0): the shared row field is the local definition's
   `description` when it has one, else `null` (a workspace schedule's comes
   from its file header). It is one line of at most 200 characters with no

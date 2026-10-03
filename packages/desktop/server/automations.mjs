@@ -5,7 +5,7 @@
  * re-derives placement. Domain results resolve (never reject) with stable codes; a
  * kernel refusal (E_AUTOMATION_WORKSPACE, E_AUTOMATION_NOT_HERE, …) keeps its own code
  * and a bounded message. */
-import { cliAutomation, AUTOMATION_VERBS, AUTOMATION_ID } from "../cli-adapter.mjs";
+import { cliAutomation, AUTOMATION_VERBS, automationIdValid } from "../cli-adapter.mjs";
 
 export const AUTOMATIONS_VIEW_API = 1;
 const KERNEL_CODE = /^E_[A-Z0-9_]{1,63}$/;
@@ -39,7 +39,7 @@ export async function automationsRequest(request, { workspace, cli, invoke = cli
   const keyed = Object.hasOwn(request ?? {}, "key");
   if (!record(request) || Object.keys(request).some(k => !["kind", "action", "key"].includes(k))
     || !Object.hasOwn(AUTOMATION_VERBS, kind) || !AUTOMATION_VERBS[kind].includes(action)
-    || (action === "list" ? keyed : !keyed ? action !== "status" : typeof request.key !== "string" || !AUTOMATION_ID.test(request.key))) return automationsFailure("E_BAD_ARGS");
+    || (action === "list" ? keyed : !keyed ? action !== "status" : !automationIdValid(kind, request.key))) return automationsFailure("E_BAD_ARGS");
   if (!automationsSupported(cli)) return automationsFailure("E_AUTOMATIONS_UNAVAILABLE", kind, action);
   if (!workspace) return automationsFailure("E_WORKSPACE_UNKNOWN", kind, action);
   if (workspace.remote || workspace.server) return automationsFailure("E_UNSUPPORTED_REMOTE", kind, action);

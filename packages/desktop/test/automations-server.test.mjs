@@ -108,3 +108,33 @@ test('the renderer adapter reads the real kernel shapes the boundary serves (a c
   assert.match(testResult(doc('schedule-test-elsewhere').result, 'schedule').problems[0], /assigned-elsewhere/);
   assert.deepEqual(triggerStatus(doc('trigger-status').result, 'agents/pr-review'), { fired: [], firedTotal: 0, live: [], liveCount: 0, max: 1, pending: [], lastPoll: null, lastError: null });
 });
+
+test('schedule actions carry 100-character names through server and CLI, preserving trigger and option guards', async () => {
+  const actions = { schedule: ['enable', 'disable', 'test', 'run', 'reconcile'], trigger: ['enable', 'disable', 'test'] };
+  for (const kind of ['schedule', 'trigger']) {
+    const limit = kind === 'schedule' ? 100 : 64; // Existing trigger action admission remains unchanged; the kernel validates definitions.
+    for (const action of actions[kind]) {
+      for (const prefix of ['', 'local/', 'repo/']) {
+        for (const [name, valid] of [['s'.repeat(64), true], ['s'.repeat(65), kind === 'schedule'], ['s'.repeat(limit), true], ['s'.repeat(limit + 1), false], ['--dir', false], ['-x', false], ['a/b/c', false], ['a b', false], ['a\0b', false], ['', false]]) {
+          const id = prefix + name, calls = [];
+          const io = { exec: (bin, argv, options, done) => {
+            calls.push(argv); assert.equal(options.shell, false);
+            done(null, JSON.stringify({ schemaVersion: 1, ok: true, result: {} }));
+          } };
+          const invoke = (bin, opts) => cliAutomation(bin, opts, io);
+          const out = await automationsRequest({ kind, action, key: id }, { workspace, cli, invoke });
+          const label = `${kind} ${action} ${JSON.stringify(id)}`;
+          assert.equal(out.status, valid ? 'ok' : 'unavailable', label);
+          if (valid) assert.deepEqual(calls, [[kind, action, id, '--dir', DEPLOYMENT, '--json']], label);
+          else {
+            assert.equal(out.reason.code, 'E_BAD_ARGS', label);
+            assert.deepEqual(calls, [], label);
+            const direct = await cliAutomation(cli.bin, { kind, action, id, workspaceDir: DEPLOYMENT }, io);
+            assert.equal(direct.error.code, 'E_BAD_ARGS', label);
+            assert.deepEqual(calls, [], label);
+          }
+        }
+      }
+    }
+  }
+});
