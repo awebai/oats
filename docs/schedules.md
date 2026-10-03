@@ -315,7 +315,11 @@ oats spawn <agent> ... --wake-every 15 --wake-message "Anything new?"   # or --w
 `<id>` is `local/<id>` (or the bare id) or `<member>/<id>`. `host uninstall`
 unregisters the deployment and removes the timer once none is registered.
 Every `oats schedule` subcommand takes `--server <id>` instead of `--dir` to
-run on that registered server.
+run on that registered server. Setting or resetting host caps remotely requires
+the destination to advertise both `schedule` and `schedule-host-caps`; an older
+or unknown peer is refused with `E_REMOTE_INCOMPATIBLE` before host install is
+forwarded. Upgrade OATS on the destination to use these options. A remote
+install without cap options retains its existing behavior.
 
 The host allows five running scheduled jobs by default. Use `host install
 --max-concurrent N` to choose a positive integer, or `--max-concurrent default`

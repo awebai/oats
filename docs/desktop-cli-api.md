@@ -33,7 +33,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
  "harnesses":["pi","claude","codex"],"sessionBackends":["tmux"],"launchOptions":["yolo"],
  "remote":["spawn","retire","status","session","session-start","session-restart","launch-config","roster","harvest","schedule","session-upload","operations",
            "readiness","instance-events","instance-git","lifecycle-plans"],
- "features":["retire-home","session-start","session-restart","launch-config","schedule","session-upload","operations","instance-git",
+ "features":["retire-home","session-start","session-restart","launch-config","schedule","schedule-host-caps","session-upload","operations","instance-git",
              "instance-git-remote","souls-declarations","lifecycle-plans","retire-retention","readiness","spawn-preview","instance-events",
              "instance-events-2","schedule-history","schedule-read-2","spawn-preview-2","spawn-idempotency","spawn-idempotency-2","spawn-apply-2",
              "workspace-v2","instance-modules","spawn-provider-payload","served-identity","packages-no-approval","spawn-name","settings-origins",
@@ -68,6 +68,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
 | `session-start`, `session-restart` | `oats session start/restart --home` | |
 | `launch-config` | `oats launch-config …`; the selection flags on start and restart | |
 | `schedule` | `oats schedule …` | `scheduleApi: 2` |
+| `schedule-host-caps` | both host-install cap options, their `default` / `none` reset semantics, and cap status reporting; no promise about a particular stored cap value | |
 | `session-upload` | `oats session upload` (and the host's `session receive`) | |
 | `operations` | `oats operation run`; `operations[]` in inspect | `operationsApi: 2` |
 | `instance-git`, `instance-git-remote` | `oats instance git/diff`; the observation's `remote` | `instanceGitApi: 1` |

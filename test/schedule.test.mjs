@@ -344,7 +344,7 @@ test("the CLI answers the envelope for add, list, show, update, enable, disable,
   assert.ok(failed, "an unknown id exits non-zero");
   assert.equal(JSON.parse(String(failed.stdout).trim()).error.code, "E_SCHEDULE_UNKNOWN");
   const probe = JSON.parse(execFileSync(process.execPath, [bin, "version", "--json"], { encoding: "utf8" }));
-  assert.equal(probe.scheduleApi, 2); assert.ok(probe.features.includes("schedule")); assert.ok(probe.remote.includes("schedule"));
+  assert.equal(probe.scheduleApi, 2); assert.ok(probe.features.includes("schedule")); assert.ok(probe.features.includes("schedule-host-caps")); assert.ok(probe.remote.includes("schedule"));
 });
 
 test("host units render the single tick and status reports what the OS says", () => {
@@ -397,6 +397,46 @@ test("remote schedules route to the server workspace only when the host advertis
   // Captured (versioned) schedules were removed in 0.26: refused whatever the host advertises, never forwarded.
   for (const api of [1, 2]) assert.throws(() => scheduleRemote("s", captured, io(["schedule"], api)), (e) => e.code === "E_SCHEDULE_INVALID" && /definitionVersion, recurrencePolicy: captured schedules are refused \(the captured\/portable path was removed in 0\.26\)/.test(e.message));
   assert.equal(calls.filter(c => c.includes("schedule add pinned")).length, before, "no host receives a captured mutation");
+});
+
+test("remote host cap options require explicit support before forwarding, including resets and equals forms", () => {
+  const server = { sshHost: "caps-host", workspace: "/remote/workspace" };
+  const result = { scheduler: { maxConcurrent: 7, triggersMaxConcurrent: null } };
+  const peer = (features) => {
+    const mutations = [];
+    return { mutations, server, execFileSync: (_bin, argv) => {
+      const command = argv.at(-1);
+      if (command.includes("version --json")) return JSON.stringify({ schemaVersion: 1, desktopApi: 1, version: "0.39.4", features });
+      mutations.push(command);
+      return JSON.stringify({ schemaVersion: 1, ok: true, result });
+    } };
+  };
+  const options = [
+    ["--max-concurrent", "2"], ["--max-concurrent", "default"],
+    ["--triggers-max-concurrent", "3"], ["--triggers-max-concurrent", "none"],
+    ["--max-concurrent=2"], ["--max-concurrent=default"],
+    ["--triggers-max-concurrent=3"], ["--triggers-max-concurrent=none"],
+    ["--max-concurrent", "1", "--triggers-max-concurrent", "none"],
+  ];
+  for (const flags of options) {
+    for (const features of [undefined, [], ["schedule"], ["schedule", "future-feature"]]) {
+      const io = peer(features);
+      assert.throws(() => scheduleRemote("caps", ["host", "install", ...flags], io), (e) =>
+        e.code === "E_REMOTE_INCOMPATIBLE" && /caps-host/.test(e.message) && /upgrade/i.test(e.message)
+        && (!features?.includes("schedule") || /schedule-host-caps/.test(e.message)), flags.join(" "));
+      assert.deepEqual(io.mutations, [], "no install reaches an unsupported peer");
+    }
+    const io = peer(["schedule", "schedule-host-caps"]);
+    const out = scheduleRemote("caps", ["host", "install", ...flags], io);
+    assert.deepEqual(out.envelope.result, { ...result, server: "caps" });
+    assert.deepEqual(io.mutations, [`oats schedule host install ${flags.join(" ")} --dir /remote/workspace --json`]);
+  }
+  const old = peer(["schedule"]);
+  assert.equal(scheduleRemote("caps", ["host", "install"], old).envelope.ok, true);
+  assert.equal(old.mutations.length, 1, "old peer still installs when no cap change is requested");
+  const capsOnly = peer(["schedule-host-caps"]);
+  assert.throws(() => scheduleRemote("caps", ["host", "install", "--max-concurrent", "default"], capsOnly), (e) => e.code === "E_REMOTE_INCOMPATIBLE");
+  assert.deepEqual(capsOnly.mutations, [], "the schedule feature remains required too");
 });
 
 test("a cold wake needs a launch slot; a delivery to a running home does not; a started harness keeps its slot until the home ends", () => {
