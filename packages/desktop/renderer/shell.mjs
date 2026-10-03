@@ -73,7 +73,7 @@ import {
   fallbackTabForContext, restoreTerminalTab,
 } from "./workspace-tabs.mjs";
 import { createWorkspaceTabMemory } from "./workspace-tab-memory.mjs";
-import { notePanel, panelDeployments, rosterSections, deploymentHeading, rowStale } from "./view-deployments.mjs";
+import { notePanel, panelDeployments, rosterSections, deploymentHeading, rowStale, splitByDeployment } from "./view-deployments.mjs";
 import { onDeploymentTabRequest } from "./deployment-tabs.mjs";
 import { ROSTER_POLL_FOCUSED_MS, rosterPollDue } from "./roster-cadence.mjs";
 import { scopedRequest } from "./workspace-routes.mjs";
@@ -763,7 +763,10 @@ function renderContextRoster(instances) {
   const rowHeldStale = (row) => rosterStale || rowStale(row, contextDeployments);
   // Needs input (Spec D): waiting rows a collapse hides, on their nearest visible ancestor. Derived on every
   // paint over the full roster, so expanding the parent drops it and the children show their own marks.
-  const waitingBelow = waitingRollup(instances, collapsedInstances, ws, { filtering, stale: rowHeldStale });
+  // It stays inside the deployment section a row is painted in (rosterSections' split).
+  const sectionOf = new Map();
+  for (const [id, rows] of splitByDeployment(contextDeployments)(instances)) for (const row of rows) sectionOf.set(row, id);
+  const waitingBelow = waitingRollup(instances, collapsedInstances, ws, { filtering, stale: rowHeldStale, section: (row) => sectionOf.get(row) ?? null });
   if (!visible.length) {
     listEl.innerHTML = `<div class="ctx-empty">${instances.length ? "Nothing matches." : "No instances."}</div>`;
     paintNote();

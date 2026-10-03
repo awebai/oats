@@ -92,7 +92,8 @@ validates the field and never synthesizes it.
   the message or label and the start time to its title and description.
 - **Collapsed parents.** A waiting row hidden by a collapse is counted on its
   nearest visible ancestor as "N below", following the parent relation only
-  (never across a remote server). The card's `Below` fact names up to three of
+  (never across a remote server), and never outside the deployment section the
+  waiting row is painted in. The card's `Below` fact names up to three of
   them. The roll-up is derived on every paint, so it goes as soon as the parent
   is expanded. Filtering collapses nothing, so it shows no roll-up.
 - **Display only.** Nothing in Desktop acts on a claim. The terminal tab dot

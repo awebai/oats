@@ -167,3 +167,14 @@ test('a roll-up never crosses a remote server boundary', () => {
   const local = inst('root'), remote = waiting('dev-r', 'root', { server: 's1', home: '/r/agents/dev/instances/dev-r', agentsRoot: '/r/agents' });
   assert.deepEqual(rollup([local, remote], collapsedOf(local)), {});
 });
+
+test('waitingRollup: a chain that leaves the waiting row\'s section (deployment) rolls up nowhere', () => {
+  const row = (name, root, parentInstance, extra = {}) => ({ instance: name, parentInstance, home: `${root}/agents/dev/instances/${name}`, agentsRoot: `${root}/agents`,
+    running: true, runtimeState: 'running', ...extra });
+  const lead = row('lead', '/d1'), own = row('own', '/d1', 'lead', { waitingOnYou: { since, producer: 'p' } }),
+    orphan = row('orphan', '/d2', 'lead', { waitingOnYou: { since, producer: 'p' } });
+  const all = [lead, own, orphan], collapsed = new Set([collapseKey('A', instanceId(lead))]);
+  const section = r => r.agentsRoot;
+  assert.deepEqual([...waitingRollup(all, collapsed, 'A', { section }).get(instanceId(lead))].map(r => r.instance), ['own']);
+  assert.deepEqual([...waitingRollup(all, collapsed, 'A').get(instanceId(lead))].map(r => r.instance), ['own', 'orphan'], 'without sections: one section');
+});

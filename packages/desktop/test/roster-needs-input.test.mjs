@@ -241,3 +241,15 @@ test("an unavailable row (no card) says it in its title and description: message
   assert.equal(u.marks("root")[0].textContent, "1 below need input");
   assert.match(root.getAttribute("aria-description"), / · 1 below need input: kid$/);
 });
+
+test("a roll-up stays inside its deployment section: a unique parent name in another deployment collects nothing", async t => {
+  const deployment = id => ({ id, path: id, machine: "This Mac", local: true, reachable: true, primary: id === "/d1" });
+  const at = (name, dep, parent, extra = {}) => instance(name, parent, { home: `${dep}/agents/dev/instances/${name}`, agentsRoot: `${dep}/agents`, deployment: deployment(dep), ...extra });
+  // /d2's own "lead" is gone (retired): its child's parent name resolves to /d1's lead, the only one left.
+  const lead = at("lead", "/d1"), own = at("own-child", "/d1", "lead", { waitingOnYou: claim() }), orphan = at("waiting-d2", "/d2", "lead", { waitingOnYou: claim() });
+  const u = fixture(t, { context: { contextDeployments: [deployment("/d1"), deployment("/d2")], collapsedInstances: new Set([tree.collapseKey("A", tree.instanceId(lead))]) } });
+  u.render([lead, own, orphan]);
+  const [mark] = u.marks("lead");
+  assert.equal(mark.textContent, "1 below need input", "only /d1's own child is counted");
+  assert.equal(u.list.querySelectorAll(".ctx-attn.rollup").length, 1, "and nothing else rolls up");
+});
