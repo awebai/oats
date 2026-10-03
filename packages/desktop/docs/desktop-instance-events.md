@@ -61,7 +61,9 @@ must be equal (a missing key counts as `null`), as for producer, since and
 reason. The summary shows it after the producer and time, as plain text.
 
 The kernel also writes each claim change as a lifecycle event of kind `waiting`
-(producer-attributed). The list titles it "Waiting on you". Its `waitingOnYou`
+(producer-attributed). The list titles it "Waiting claim", a neutral title,
+because the activity view speaks in claims and a cleared row must not read as
+waiting; the sidebar's operator-facing mark stays "Needs input". Its `waitingOnYou`
 fact reads "claimed" or "cleared", with the reported reason and, on a claimed
 row, the note (`message`, by the same rule, as plain text).
 

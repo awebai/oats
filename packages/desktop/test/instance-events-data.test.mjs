@@ -152,8 +152,8 @@ const kSet = (data = {}) => event({ producer: 'agent', kind: 'waiting', at: '202
   data: { waitingOnYou: true, reason: 'attention', message: 'e2e: needs input check', ...data } });
 const kCleared = () => event({ producer: 'agent', kind: 'waiting', at: '2026-09-22T01:00:14.607Z', data: { waitingOnYou: false } });
 
-test('K waiting rows: titled "Waiting on you"; the set row projects waitingOnYou, reason and message; the cleared row only false', () => {
-  assert.equal(EVENT_TITLES.waiting, 'Waiting on you');
+test('K waiting rows: titled "Waiting claim"; the set row projects waitingOnYou, reason and message; the cleared row only false', () => {
+  assert.equal(EVENT_TITLES.waiting, 'Waiting claim');
   const out = eventsData(data([kSet(), kCleared()]), target);
   assert.ok(out);
   assert.deepEqual(out.events.map(e => e.data), [{ waitingOnYou: true, reason: 'attention', message: 'e2e: needs input check' }, { waitingOnYou: false }]);
