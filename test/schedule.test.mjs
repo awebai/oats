@@ -481,6 +481,44 @@ test("an unknown operation run frees its slot like a command; a command that thr
   assert.ok(S.jobLockInfo(ws, "old"));
 });
 
+test("oats doctor warns about every unresolved attempt in the deployment and the host's other scopes, with its age, its slot and the reconcile remedy", () => {
+  const env = { ...process.env, OATS_HOME_DIR: process.env.OATS_HOME_DIR };
+  const doctor = (ws, ...a) => execFileSync(process.execPath, [bin, "doctor", ws, ...a], { encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] });
+  const clean = workspace();
+  assert.equal(JSON.parse(doctor(clean, "--json")).problems, undefined, "nothing unresolved, nothing reported");
+  const ws = workspace();
+  const src = home(ws, "dev-src");
+  const reg = { ...S.readRegistry(), maxConcurrent: 4 };
+  S.addSchedule(ws, { id: "wedge", cron: "0 * * * *", tz: "UTC", kind: "command", cwd: src, argv: ["oats", "okf", "run-source"] });
+  S.addSchedule(ws, { id: "stuck", cron: "0 * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t" });
+  S.tickWorkspace(ws, { now: at("2026-09-07T10:00:00Z"), reg, io: { command: () => "no envelope", spawn: () => { throw new Error("spawn failed; rollback INCOMPLETE, home quarantined"); }, inspect: () => ({ present: true, state: "unknown" }) } });
+  // Another scope this host ticks, with an attempt recorded before exits were (it holds its slot).
+  const other = workspace();
+  S.addSchedule(other, { id: "old", cron: "0 * * * *", tz: "UTC", kind: "command", cwd: home(other, "dev-src"), argv: ["oats", "okf", "harvest"] });
+  const st = S.readState(other);
+  st.jobs.old = { attempt: { scheduledFor: "2026-09-07T09:00:00.000Z", startedAt: "2026-09-07T09:00:01.000Z" }, lastRun: { scheduledFor: "2026-09-07T09:00:00.000Z", startedAt: "2026-09-07T09:00:01.000Z", kind: "command", launched: false, outcome: "unknown", error: "launch attempt without a recorded result" } };
+  S.writeState(other, st); S.acquireJobLock(other, "old", { scheduledFor: "2026-09-07T09:00:00.000Z" });
+  S.registerWorkspace(other);
+  try {
+    const out = JSON.parse(doctor(ws, "--json"));
+    const items = Object.fromEntries(out.problems.filter((p) => p.code === "schedule-unresolved").map((p) => [p.id, p]));
+    assert.deepEqual(Object.keys(items).sort(), ["old", "stuck", "wedge"]);
+    const wedge = items.wedge;
+    assert.equal(wedge.severity, "warning"); assert.equal(wedge.scope, ws); assert.equal(wedge.kind, "command");
+    assert.equal(wedge.scheduledFor, "2026-09-07T10:00:00.000Z"); assert.equal(wedge.startedAt, "2026-09-07T10:00:00.000Z");
+    assert.ok(Number.isInteger(wedge.ageSeconds) && wedge.ageSeconds > 0);
+    assert.equal(wedge.holdsSlot, false); assert.equal(wedge.exited, true); assert.match(wedge.error, /no valid envelope/);
+    assert.equal(wedge.remedy, "oats schedule reconcile wedge --clear", "a command whose effects can't be proven needs --clear after a check by hand");
+    assert.match(wedge.message, /wedge/); assert.match(wedge.message, /oats schedule reconcile wedge --clear/);
+    assert.equal(items.stuck.holdsSlot, true); assert.equal(items.stuck.exited, false); assert.equal(items.stuck.remedy, "oats schedule reconcile stuck");
+    assert.equal(items.old.scope, other); assert.equal(items.old.holdsSlot, true); assert.equal(items.old.startedAt, "2026-09-07T09:00:01.000Z");
+    assert.equal(items.old.remedy, `oats schedule reconcile old --clear --dir ${other}`, "another scope's remedy names it");
+    const text = doctor(ws);
+    assert.match(text, /! schedule-unresolved: .*wedge.*oats schedule reconcile wedge --clear/);
+    assert.match(text, /! schedule-unresolved: .*stuck.*holds a host slot/);
+  } finally { S.unregisterWorkspace(other); S.releaseJobLock(other, "old"); }
+});
+
 test("a command that creates a home and then times out stays unknown, frees its slot once its process exited, and waits for reconcile", () => {
   const ws = workspace();
   const src = home(ws, "dev-src");

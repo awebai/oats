@@ -345,7 +345,21 @@ the host by hand, then `reconcile <id> --clear` records `launch-failed` and
 frees the slot. The unresolved attempt shows in `show` as `attempt:
 {scheduledFor, startedAt, error?, exited?, exitStatus?, exitSignal?}`;
 `error` is the first run's cause, which later skipped ticks keep in `lastRun`.
-`oats doctor` reports each unresolved attempt (`schedule-unresolved`).
+
+`oats doctor` warns about each unresolved attempt, in this deployment and in
+the other deployments this host ticks (they share its slots). The text form
+is `! schedule-unresolved: …`; in `--json` it is a `problems[]` item:
+
+```text
+{ code: "schedule-unresolved", severity: "warning", scope, id, kind,
+  scheduledFor, startedAt, ageSeconds, holdsSlot, exited, error, remedy, message }
+```
+
+`holdsSlot` says whether the job counts against `maxConcurrent`. `remedy` is
+`oats schedule reconcile <id>`, with `--clear` for a command or operation
+whose effects no named home proves (check the roster and the host by hand
+first), and with `--dir <scope>` for another deployment. A warning never
+changes doctor's exit status.
 
 Whether an `unknown` job keeps its host slot depends on what is still running:
 
