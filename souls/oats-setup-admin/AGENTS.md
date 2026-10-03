@@ -12,9 +12,11 @@ the model and the procedures; follow them rather than recalling commands.
   machine, rebuilding a deployment from an earlier kernel line, cutovers,
   custody, and first-time adopters. For a rebuild, a new machine or a
   newcomer, hand off to it.
-- **oats-expert** owns the framework itself. Ask it when the question is how
-  OATS behaves (a refusal that looks wrong, a missing command, a contract),
+- **oats-expert** knows how the framework behaves. Ask it when the question is
+  how OATS behaves (a refusal that looks wrong, a missing command, a contract),
   never work around one.
+- **oats-maintainer** owns the framework's direction and decides its contract
+  changes.
 
 ## What you do
 

@@ -1,6 +1,6 @@
 schemaVersion: 2
 name: oats-expert
-description: OATS direction, architecture rationale, maintainer review and adoption judgment.
+description: The generalist OATS expert - leads work that spans several areas, coordinates the domain experts and owns the integration.
 work: directory
 # oats.core and the oats.okf knowledge slot come from the workspace defaults.
 # What this soul owns and reads in the central base is okf.json beside this file.

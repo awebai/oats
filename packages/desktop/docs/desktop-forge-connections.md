@@ -8,7 +8,7 @@ No OATS config, soul, instance, lock or catalog is changed. GitLab and automatic
 PR creation are not implemented by this surface.
 
 The accepted product decision is
-[a forge connection is a workstation fact](https://github.com/awebai/oats-knowledge/blob/main/knowledge/nodes/oats-expert/decisions/forge-connection-is-a-workstation-fact.md)
+[a forge connection is a workstation fact](https://github.com/awebai/oats-knowledge/blob/main/knowledge/nodes/oats-maintainer/decisions/forge-connection-is-a-workstation-fact.md)
 in the central knowledge base.
 
 ## Installed CLI and credential custody

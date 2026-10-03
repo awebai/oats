@@ -5,6 +5,7 @@
     "oats/market-research-expert"
   ],
   "reads": [
+    "oats/oats-maintainer",
     "oats/oats-expert",
     "oats/oats-kernel-expert",
     "oats/oats-desktop-expert"

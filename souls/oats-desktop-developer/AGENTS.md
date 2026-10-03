@@ -22,7 +22,7 @@ the tasks they cover.
   or Desktop dependencies, and `packages/desktop` stays private.
 - Product and design decisions belong to oats-desktop-expert: propose, don't
   drift. Security posture (new endpoints, IPC surface, guards), contract
-  changes and release signing go to the maintainer (oats-expert) first.
+  changes and release signing go to the maintainer (oats-maintainer) first.
 - Read the Desktop docs (`packages/desktop/docs/`, `docs/desktop*.md`) before
   changing an established decision, and ask `oats-desktop-expert` when the
   rationale is not written down: the terminal identity chain and the transactional
