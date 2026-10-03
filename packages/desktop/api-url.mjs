@@ -28,6 +28,11 @@ export function classifyApiRoute(pathname, base) {
       case '/api/capabilities': return 'capabilities';
       case '/api/workspace-sync': return 'workspace-sync';
       case '/api/panel': return 'panel';
+      // #517: a machine connect may install OATS and clone on the host; check, remove and the list wait on ssh.
+      case '/api/server-connect': return 'machine-connect';
+      case '/api/servers':
+      case '/api/server-check':
+      case '/api/server-remove': return 'machines';
       default: return null;
     }
   } catch { return null; }

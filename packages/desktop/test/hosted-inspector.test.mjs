@@ -91,7 +91,7 @@ async function workspace(t, { hosted = true, createHost = controlledHost, api = 
       if (path.startsWith('/api/agents')) return { agents: [soul('a'), soul('b')] };
       if (path.startsWith('/api/panel')) return { workspace: { id: currentWorkspace() }, workspaces: [], instances: [inst('a'), inst('b')] };
       if (path.startsWith('/api/capabilities')) return api(body);
-      if (path === '/api/servers') return { servers: [] };
+      if (path.startsWith('/api/servers')) return { servers: [] };
       throw new Error(`Unexpected inert API: ${path}`);
     },
   };

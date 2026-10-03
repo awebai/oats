@@ -524,8 +524,10 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   const forge = route === 'forge' ? forgeProxyOptions(url.pathname, opts, currentForgeEpoch()) : null;
   // automations: `trigger test` polls the forge (the adapter allows the CLI 60 s).
   // A plan or an instance Git read may be routed to a server (a 45 s CLI deadline): 50 s lets it report itself.
+  // A machine connect: the CLI's 15 minutes (5 for the messaging step) after the registry read (60 s); a check,
+  // remove or the list: a registry read and a 60 s check (server/machines.mjs, cli-adapter.mjs).
   const timeout = lifecycle ? mutation ? 610_000 : 50_000 : forge?.timeout ?? (route === 'capabilities' || route === 'workspace-sync' ? 310_000
-    : route === 'automations' ? 90_000 : route === 'instance-git' ? 50_000 : 20_000);
+    : route === 'automations' ? 90_000 : route === 'instance-git' ? 50_000 : route === 'machine-connect' ? 980_000 : route === 'machines' ? 130_000 : 20_000);
   const init = { ...(forge?.init ?? apiInit(opts)), signal: AbortSignal.timeout(timeout) };
   const r = await fetch(url, init);
   const text = await r.text();

@@ -1,0 +1,36 @@
+{
+ "schemaVersion": 1,
+ "ok": true,
+ "result": {
+  "file": "/tmp/oats-smp-Hmipbh/oats-home/servers.json",
+  "servers": [
+   {
+    "id": "altair-deployment",
+    "sshHost": "altair",
+    "workspace": "/tmp/oats-smp-Hmipbh/home/Agents/deployment",
+    "oatsPath": "/Users/juanre/Agents/oats/agents/oats-kernel-developer/instances/oats-kernel-developer-servers-517/work/bin/oats.mjs",
+    "label": "altair",
+    "workspaceKey": "local//private/var/folders/n3/7j3g9hm10sbd4j8hccsvr4wh0000gn/T/oats-v2-Pm3wHQ/remotes/ws.git",
+    "target": {
+     "sshHost": "altair",
+     "workspace": "/tmp/oats-smp-Hmipbh/home/Agents/deployment",
+     "oatsPath": "/Users/juanre/Agents/oats/agents/oats-kernel-developer/instances/oats-kernel-developer-servers-517/work/bin/oats.mjs"
+    },
+    "snapshots": 0
+   },
+   {
+    "id": "legacy",
+    "sshHost": "altair",
+    "workspace": "/private/var/folders/n3/7j3g9hm10sbd4j8hccsvr4wh0000gn/T/oats-v2-Pm3wHQ/deployment",
+    "oatsPath": "/Users/juanre/Agents/oats/agents/oats-kernel-developer/instances/oats-kernel-developer-servers-517/work/bin/oats.mjs",
+    "workspaceKey": null,
+    "target": {
+     "sshHost": "altair",
+     "workspace": "/private/var/folders/n3/7j3g9hm10sbd4j8hccsvr4wh0000gn/T/oats-v2-Pm3wHQ/deployment",
+     "oatsPath": "/Users/juanre/Agents/oats/agents/oats-kernel-developer/instances/oats-kernel-developer-servers-517/work/bin/oats.mjs"
+    },
+    "snapshots": 0
+   }
+  ]
+ }
+}

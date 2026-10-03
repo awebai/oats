@@ -29,8 +29,12 @@ import { wakeScheduleFields } from './wake-schedule-fields.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { shownLaunch, launchHarnessName, launchModelText, launchFromText, preferenceText, declaredDiffers } from './launch-view.mjs';
 import { createSpawnDeploymentField, spawnDeployments } from './spawn-deployment-field.mjs';
+import { openAddMachineDialog } from './add-machine-dialog.mjs';
+import { followBackfill, BACKFILL_POLL_MS } from './machine-contract.mjs';
 
 export const PREVIEW_DEBOUNCE_MS = 250;
+/** Where to run's last entry: opens Add a machine (never a registration id, which is [a-z0-9-]). */
+const ADD_MACHINE = '+add-machine';
 /** E_BUSY (the server's two-read budget) is retried inside the dialog: as soon as one of its own reads
  * lands, else after this delay, for about the CLI's 30 s timeout before it shows as a failure. */
 export const PREVIEW_BUSY_RETRY_MS = 400;
@@ -57,6 +61,12 @@ export const spawnDialogCSS = `
 /* A link, not a button: the soul is the dialog's subject, changing it is a side path. */
 .spawn-change-soul { flex:none; border:0; background:none; padding:0; font:600 12px var(--sans,system-ui); color:var(--accent); cursor:pointer; }
 .spawn-change-soul:hover { text-decoration:underline; text-underline-offset:2px; }
+/* Add a machine under the Deployment field (two or more deployments): a side path, a link. */
+.spawn-add-machine { gap:4px; }
+.spawn-add-machine-button { align-self:flex-start; border:0; background:none; padding:0; font:600 12px var(--sans,system-ui); color:var(--accent); cursor:pointer; }
+.spawn-add-machine-button:hover { text-decoration:underline; text-underline-offset:2px; }
+.spawn-add-machine-button:focus-visible { outline:none; background:var(--sel); border-radius:4px; }
+.spawn-add-machine-note:empty { display:none; }
 .spawn-dialog .close-act { flex:none; margin-left:auto; display:grid; place-items:center; }
 .spawn-columns { display:grid; grid-template-columns:300px minmax(0,1fr); height:calc(100vh - 100px); max-height:700px; min-height:0; overflow:hidden; }
 .spawn-dialog[data-layout=scoped] .spawn-columns { grid-template-columns:360px minmax(0,1fr); }
@@ -515,13 +525,14 @@ function composeChooser(doc, { soul, agents, canChoose, choose, query, note }) {
  *               spawnInFlight() — Spec D (#383): { instance, show() } while a background spawn of this soul is in
  *                 flight in this window, else null. The press stays disabled and a polite line says so, with a
  *                 link to its pending row; the host calls syncInFlight() when the store changes.
+ *               backfillDelay — #517: ms between list reads while the server learns unknown keys (BACKFILL_POLL_MS).
  *               deployments() — #482: the view's deployments (/api/panel `deployments`). With two or more the
  *                 Deployment field (spawn-deployment-field.mjs) chooses where to spawn; every spawn request
  *                 addresses a deployment, never the view.
  */
 export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, instances, canChoose, choose, close, owns,
   draft = {}, catalogNote = '', onCreated = async () => {}, remoteSpawn = async () => {}, servers = [], serverFacts = () => [], serverRows = async () => [],
-  delay: debounce = PREVIEW_DEBOUNCE_MS, busyDelay = PREVIEW_BUSY_RETRY_MS, layout = 'picker', handoff = null, spawnInFlight = null, deployments = () => [] }) {
+  delay: debounce = PREVIEW_DEBOUNCE_MS, busyDelay = PREVIEW_BUSY_RETRY_MS, backfillDelay = BACKFILL_POLL_MS, layout = 'picker', handoff = null, spawnInFlight = null, deployments = () => [] }) {
   const doc = modal.ownerDocument, el = (tag, text, cls) => node(doc, tag, text, cls);
   const titleId = 'spawn-dialog-title';
   const dialog = el('section', undefined, 'spawn-dialog');
@@ -838,8 +849,53 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   }
   function paintServerHint() {
     const target = remoteTarget();
-    serverHint.textContent = target ? `Runs on ${serverNames.get(target) || soul.repoName || target}. Its teams and defaults come from that machine's workspace.` : '';
+    serverHint.textContent = target ? `Runs on ${serverNames.get(target) || soul.repoName || target}. Its teams and defaults come from that machine's workspace.`
+      : machines?.reason || '';
   }
+  // ── #517: a workspace's own machines (renderer/add-machine-dialog.mjs)
+  let machines = null; // the filtered /api/servers answer, or null (gates off: today's list)
+  /** One machine in Where to run: disabled with why from its roster group, as before. */
+  function addServerOption(srv, facts = []) {
+    const groups = facts.filter(f => f.server === srv.id), group = groups.find(f => f.registered === true);
+    const why = !groups.length ? null : !group ? 'not registered' : !group.reached ? 'not reached' : null;
+    const label = srv.label || srv.id;
+    const o = el('option', why ? `${label} (${why})` : label !== srv.id ? `${label} (${srv.id})` : label);
+    o.value = srv.id; o.disabled = !!why;
+    const add = [...server.options].find(option => option.value === ADD_MACHINE);
+    if (add) add.before(o); else server.append(o);
+    if (group) serverGroups.set(srv.id, group);
+    serverNames.set(srv.id, label);
+  }
+  function openAddMachine({ select }) {
+    if (!current() || !machines?.deployment) return;
+    addMachineDialog?.close({ restoreFocus: false });
+    addMachineDialog = openAddMachineDialog(doc, { ctx, ws: workspace()?.id, deployment: machines.deployment, aweb: machines.aweb === true, owns: current,
+      onClose: () => { addMachineDialog = null; },
+      onAdded: id => {
+        if (!current()) return;
+        if (!select) { addedNote.textContent = `${id} is added. It is listed here once this computer has read it.`; addedButton.focus(); return; }
+        if (![...server.options].some(o => o.value === id)) addServerOption({ id, label: id });
+        server.value = id; server.focus();
+        server.dispatchEvent(new doc.defaultView.Event('change', { bubbles: true }));
+      } });
+  }
+  let addedButton = null, addedNote = null, addMachineDialog = null, stopBackfill = null;
+  /** Two or more deployments: the Deployment field replaces Where to run, so Add a machine is a button under it. */
+  function addMachineRow() {
+    const row = el('div', undefined, 'spawn-field spawn-add-machine');
+    addedButton = el('button', 'Add a machine to this workspace…', 'spawn-add-machine-button'); addedButton.type = 'button';
+    addedNote = el('p', '', 'spawn-hint spawn-add-machine-note'); addedNote.setAttribute('aria-live', 'polite');
+    addedButton.addEventListener('click', () => openAddMachine({ select: false }));
+    row.append(addedButton, addedNote);
+    return row;
+  }
+  let serverChosen = server.value;
+  server.addEventListener('change', event => {
+    if (server.value !== ADD_MACHINE) { serverChosen = server.value; return; }
+    // The entry opens the dialog; Where to run keeps its choice until a machine is added.
+    event.stopPropagation(); server.value = serverChosen;
+    openAddMachine({ select: true });
+  });
   const local = () => !remoteTarget() && (!!deploymentField || !workspace()?.remote && !workspace()?.server);
   // The server admits the workspace against its own registry (absolute scope, local); /api/panel carries only the id.
   const previewable = () => local() && previewSupported(cli()) && !!address() && soul.work !== 'attached';
@@ -1387,19 +1443,27 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   // registration's. Before the roster answers nothing is known: nothing is guessed. A group's souls are only
   // those spawned there before, not the ones its workspace offers, so they never disable a server: the kernel
   // refuses a soul the host doesn't offer, in its own words.
+  // #517: with servers-per-workspace and server-connect the route answers this window's machines only
+  // (`{ servers, filtered, key, deployment, aweb, reason? }`); without them it answers the registered list.
+  // "Add a machine to this workspace…" is offered when the window has a key and a local deployment: the
+  // last entry here, or (two or more deployments, no Where to run) a button under the Deployment field.
   Promise.all([Promise.resolve(typeof servers === 'function' ? servers() : servers),
-    Promise.resolve().then(() => serverFacts()).catch(() => [])]).then(([list, facts]) => {
-    if (!current() || soul.server || !Array.isArray(list)) return;
+    Promise.resolve().then(() => serverFacts()).catch(() => [])]).then(([answer, facts]) => {
+    if (!current() || soul.server) return;
+    const list = Array.isArray(answer) ? answer : Array.isArray(answer?.servers) ? answer.servers : null;
+    if (!list) return;
+    machines = !Array.isArray(answer) && answer.filtered === true ? answer : null;
     facts = Array.isArray(facts) ? facts : [];
-    for (const srv of list) {
-      const groups = facts.filter(f => f.server === srv.id), group = groups.find(f => f.registered === true);
-      const why = !groups.length ? null : !group ? 'not registered' : !group.reached ? 'not reached' : null;
-      const o = el('option', why ? `${srv.label} (${why})` : srv.label !== srv.id ? `${srv.label} (${srv.id})` : srv.label);
-      o.value = srv.id; o.disabled = !!why; server.append(o);
-      if (group) serverGroups.set(srv.id, group);
-      serverNames.set(srv.id, srv.label);
+    for (const srv of list) addServerOption(srv, facts);
+    // The server is still learning unknown keys: read again until it is done, adding the machines it found.
+    if (machines?.backfilling === true && typeof servers === 'function') stopBackfill = followBackfill({ read: servers, owns: current, delay: backfillDelay,
+      use: next => { for (const srv of Array.isArray(next?.servers) ? next.servers : []) if (!serverNames.has(srv.id)) addServerOption(srv, facts); } });
+    if (machines?.deployment) {
+      if (deploymentField) deploymentField.element.after(addMachineRow());
+      else { const o = el('option', 'Add a machine to this workspace…'); o.value = ADD_MACHINE; server.append(o); }
     }
-    placeField.hidden = !list.length;
+    placeField.hidden = !list.length && !machines?.deployment && !machines?.reason;
+    paintServerHint();
   }).catch(() => {});
   placeField.hidden = !soul.server;
   paintServerHint();
@@ -1534,6 +1598,6 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     /** The background spawn store changed: re-read whether a spawn of this soul is in flight. */
     syncInFlight() { if (alive) syncButton(); },
     closePopups() { models.close(); runtimePicker.close(); deploymentField?.closePopup(); },
-    dispose() { alive = false; clearTimeout(timer); serial++; pressed = null; modelsReq++; configsReq++; deploymentField?.dispose(); models.dispose(); runtimePicker.dispose(); form.removeEventListener('input', onEdit); form.removeEventListener('change', onEdit); },
+    dispose() { alive = false; addMachineDialog?.close({ restoreFocus: false }); stopBackfill?.(); clearTimeout(timer); serial++; pressed = null; modelsReq++; configsReq++; deploymentField?.dispose(); models.dispose(); runtimePicker.dispose(); form.removeEventListener('input', onEdit); form.removeEventListener('change', onEdit); },
   };
 }

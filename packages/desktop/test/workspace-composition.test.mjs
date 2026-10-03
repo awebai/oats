@@ -42,7 +42,7 @@ async function fixture(t, { cli = CLI, inspect = () => inspection, agents = [sou
         ...(sync ? { deployment: { status: 'observed', root: '/fixture/agents', workspace: observedStatus.workspace, workspaceStatus: observedStatus, reachable: { reachable: true }, withheld: [] } } : {}) };
       if (path.startsWith('/api/workspace-sync') && sync) return sync(body);
       if (path.startsWith('/api/capabilities')) return inspect(body);
-      if (path === '/api/servers') return { servers: [] };
+      if (path.startsWith('/api/servers')) return { servers: [] };
       throw new Error(`Unexpected fixture request: ${path}`);
     } };
   t.after(() => { spawn.unmount(); setWorkspace(saved.ws); globalThis.document = saved.document; globalThis.window = saved.window; globalThis.setInterval = saved.setInterval; dom.window.close(); });

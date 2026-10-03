@@ -1157,6 +1157,7 @@ function openSpawnModal(s, a, draft = {}) {
     layout: draft.layout === "picker" ? "picker" : "scoped",
     ...(Number.isInteger(s.ctx.spawnTiming?.previewDelay) ? { delay: s.ctx.spawnTiming.previewDelay } : {}),
     ...(Number.isInteger(s.ctx.spawnTiming?.busyDelay) ? { busyDelay: s.ctx.spawnTiming.busyDelay } : {}),
+    ...(Number.isInteger(s.ctx.spawnTiming?.backfillDelay) ? { backfillDelay: s.ctx.spawnTiming.backfillDelay } : {}),
     choose: (candidate, next) => {
       if (!ownsModal() || !canLaunchSoul(s, candidate)) return;
       const fresh = s.souls.agents.find(current => current.name === candidate.name && current.agentsRoot === candidate.agentsRoot && (current.server || "") === (candidate.server || ""));
@@ -1165,7 +1166,8 @@ function openSpawnModal(s, a, draft = {}) {
       openSpawnModal(s, fresh, next); // a pick goes on to Name (Spec E)
       if (s.modalEl && dismissed) s.spawnReturn = dismissed;
     },
-    servers: a.server ? [] : () => apiJson(s.ctx, "/api/servers").then(d => Array.isArray(d?.servers) ? d.servers : []),
+    // #517: the window's own machines when the probe has the gates (the answer, with what Add a machine needs), else the registered list.
+    servers: a.server ? [] : () => apiJson(s.ctx, `/api/servers${wsQuery()}`).then(d => d?.filtered === true && Array.isArray(d.servers) ? d : Array.isArray(d?.servers) ? d.servers : []),
     // "Where to run": each server's disabled state and, once chosen, its rows for the relation picker (held observations only).
     serverFacts: () => a.server ? [] : serverFacts(s),
     serverRows: group => serverRows(s, group),

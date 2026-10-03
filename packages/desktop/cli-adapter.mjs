@@ -28,6 +28,7 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { gitFileId, gitRevision, gitIndexRevision, gitObservation } from './renderer/instance-git-contract.mjs';
 import { validMaxAge, maxAgeArgv } from './renderer/deployment-contract.mjs';
+import { MACHINE_ID, machineFieldProblem } from './renderer/machine-contract.mjs';
 
 const ENVELOPE_TIMEOUT_MS = 60_000;
 
@@ -268,6 +269,35 @@ export async function cliSpawn(bin, { agent, workspaceDir, task, ...opts }, io =
 /** Registered servers, from the CLI's registry (`oats server list --json`). */
 export function cliServers(bin, io = {}) {
   return runJson(bin, ["server", "list", "--json"], { cwd: io.cwd || process.cwd(), exec: io.exec, timeout: io.timeout });
+}
+
+/* A workspace's own machines (#517): check, remove, connect and the messaging step, argv only.
+ * Every value is held to the kernel's own rules first; nothing option-shaped reaches the CLI. */
+const MACHINE_CHECK_TIMEOUT_MS = 60_000;
+const SERVER_CONNECT_TIMEOUT_MS = 15 * 60_000; // may install OATS and clone on the host
+const AWEB_CONNECT_TIMEOUT_MS = 5 * 60_000;
+const badMachineArgs = () => ({ schemaVersion: 1, ok: false, error: { code: "E_BAD_ARGS", message: "Invalid machine arguments" } });
+
+/** `oats server check <id> --json`: reachability, the host's version and (servers-per-workspace) its key. */
+export function cliServerCheck(bin, id, io = {}) {
+  if (typeof id !== "string" || !MACHINE_ID.test(id)) return Promise.resolve(badMachineArgs());
+  return runJson(bin, ["server", "check", id, "--json"], { cwd: io.cwd || process.cwd(), exec: io.exec, timeout: io.timeout || MACHINE_CHECK_TIMEOUT_MS });
+}
+/** `oats server remove <id> --json`. */
+export function cliServerRemove(bin, id, io = {}) {
+  if (typeof id !== "string" || !MACHINE_ID.test(id)) return Promise.resolve(badMachineArgs());
+  return runJson(bin, ["server", "remove", id, "--json"], { cwd: io.cwd || process.cwd(), exec: io.exec, timeout: io.timeout });
+}
+/** `oats server connect <id> --ssh <host> --dir <folder on the host> [--install-oats] --json`, in the deployment's scope. */
+export function cliServerConnect(bin, { id, host, folder, installOats, workspaceDir }, io = {}) {
+  if (machineFieldProblem({ id, host, folder }) || !absoluteReadPath(workspaceDir)) return Promise.resolve(badMachineArgs());
+  const argv = ["server", "connect", id, "--ssh", host, "--dir", folder, ...(installOats === true ? ["--install-oats"] : []), "--json"];
+  return runJson(bin, argv, { cwd: workspaceDir, exec: io.exec, timeout: io.timeout || SERVER_CONNECT_TIMEOUT_MS });
+}
+/** `oats aweb connect <id> --install-aw --json` (oats.aweb), in the deployment's scope. */
+export function cliAwebConnect(bin, { id, workspaceDir }, io = {}) {
+  if (typeof id !== "string" || !MACHINE_ID.test(id) || !absoluteReadPath(workspaceDir)) return Promise.resolve(badMachineArgs());
+  return runJson(bin, ["aweb", "connect", id, "--install-aw", "--json"], { cwd: workspaceDir, exec: io.exec, timeout: io.timeout || AWEB_CONNECT_TIMEOUT_MS });
 }
 
 /** Schedule definitions travel as private JSON files, never shell text. */

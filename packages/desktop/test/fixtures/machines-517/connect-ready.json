@@ -1,0 +1,47 @@
+{
+ "schemaVersion": 1,
+ "ok": true,
+ "result": {
+  "id": "altair-deployment",
+  "ready": true,
+  "registration": {
+   "sshHost": "altair",
+   "workspace": "/tmp/oats-smp-Hmipbh/home/Agents/deployment",
+   "oatsPath": "/Users/juanre/Agents/oats/agents/oats-kernel-developer/instances/oats-kernel-developer-servers-517/work/bin/oats.mjs",
+   "label": "altair",
+   "workspaceKey": "local//private/var/folders/n3/7j3g9hm10sbd4j8hccsvr4wh0000gn/T/oats-v2-Pm3wHQ/remotes/ws.git"
+  },
+  "steps": [
+   {
+    "step": "ssh",
+    "status": "ok"
+   },
+   {
+    "step": "oats",
+    "status": "ok",
+    "detail": "oats 0.38.0"
+   },
+   {
+    "step": "git",
+    "status": "ok",
+    "detail": "local//private/var/folders/n3/7j3g9hm10sbd4j8hccsvr4wh0000gn/T/oats-v2-Pm3wHQ/remotes/ws.git readable at 34ce0054fd12"
+   },
+   {
+    "step": "deployment",
+    "status": "done",
+    "detail": "onboarded /tmp/oats-smp-Hmipbh/home/Agents/deployment into local//private/var/folders/n3/7j3g9hm10sbd4j8hccsvr4wh0000gn/T/oats-v2-Pm3wHQ/remotes/ws.git"
+   },
+   {
+    "step": "register",
+    "status": "done",
+    "detail": "registered altair-deployment"
+   },
+   {
+    "step": "readiness",
+    "status": "ok",
+    "detail": "1 soul ready"
+   }
+  ],
+  "human": []
+ }
+}
