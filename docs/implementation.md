@@ -16,6 +16,8 @@ reference pages ([workspaces](workspaces.md), [souls and instances](souls-and-in
 - **`oats.framework`** (`oats-package/`): the `oats.core`, `oats.setup` and
   `oats.knowledge-theory` capabilities and the `knowledge-theory-expert` soul,
   released as a package under its own `oats-framework/v<version>` tags.
+  `oats.core` is the one with executables: its spawn and launch hook and the
+  Claude Code waiting emitter (`capabilities/oats-core/bin/`).
 
 The OATS Desktop (`packages/desktop/`) is an Electron app with a bundled,
 dependency-free localhost server; it is released with the kernel but not
@@ -54,12 +56,20 @@ published to npm. Its developer docs are in
 | `instruction-composition.mjs` | the generated `AGENTS.md` |
 | `teams.mjs`, `teams-verbs.mjs` | the team model and the `oats teams` verbs |
 | `schedule.mjs`, `schedule-host.mjs`, `triggers.mjs`, `automations.mjs` | schedules, triggers and the host timer |
+| `schedule-command.mjs`, `schedule-command-child.mjs` | synchronous scheduler adapter and asynchronous child supervisor: bounded output, TERM/KILL escalation and observed exit; no changes to synchronous tick/lock callbacks |
 | `operator-dispatch.mjs` | capability commands run from a deployment, and its module store |
 | `instance-*.mjs` | inspection, lifecycle, events and Git views of an instance |
 | `tmux-config.mjs`, `session-*.mjs` | the tmux session backend and terminal input |
 | `capability-contract.mjs`, `provider-binding.mjs` | manifest validation, the hook environment rules, the readiness wire |
 | `servers.mjs` | routing commands to a registered server |
 | `harness-trust.mjs` | reading (never writing) Claude's and Codex's folder trust for a launch |
+
+The schedule registry stores explicit concurrency caps, leaving the schedule
+cap absent for its effective default of five. Reads migrate legacy stored one
+to absent once, under `registry.lock`, and record `capsVersion: 2`. Registration
+and cap updates use that same short lock; later explicit one stays explicit.
+`readRegistry()` returns stored choices; scheduling and status apply the default
+without writing it back. The trigger cap is independent and absent means no cap.
 
 The kernel is runtime-neutral: nothing in `lib/` depends on a harness or on
 a provider. Provider behaviour lives in capabilities; the kernel supplies

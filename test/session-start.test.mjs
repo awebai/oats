@@ -8,6 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseLaunchCommand, renderLaunchCommand, withLaunchModel, withSafeTaskPrompt, startInstanceSession, restartInstanceSession, inspectInstanceSession } from "../lib/core.mjs";
 import { startRemote } from "../lib/servers.mjs";
+import { liveWaiting, readEvents, setWaiting } from "../lib/instance-events.mjs";
 import { isolateSessionEnvironment, waitUntil } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
@@ -289,6 +290,41 @@ test("an injected metadata write failure after allocation is recovered by the ne
   assert.equal(existsSync(join(f.home, ".oats-start-pending.json")), true, "the launch receipt is retained until command exit or target disappearance");
   assert.equal(readJson(join(f.home, "instance.json")).restartCount, 1);
   assert.equal(inspectInstanceSession(f.home).present, true);
+});
+
+test("waiting-on-you: a start records its session boundary once the session exists; recovering an interrupted start adds no later boundary (a claim the new session made survives); a receipt without one gets it at its launch time", async () => {
+  const boundaries = (home) => readEvents(home).events.filter((e) => e.producer === "kernel" && e.kind === "launched" && e.data?.startId);
+  const f = await makeHome("bound");
+  setWaiting(f.home, { producer: "agent", waiting: true, reason: "attention", message: "old session question" });
+  let injected;
+  try { startInstanceSession(f.home, { io: { failBeforeMetadataWrite: true } }); } catch (e) { injected = e; }
+  assert.equal(injected?.code, "E_SESSION_START_INCOMPLETE");
+  assert.equal(boundaries(f.home).length, 1, "the boundary is written before the metadata");
+  assert.equal(boundaries(f.home)[0].data.phase, "start");
+  assert.equal(liveWaiting(f.home), null, "the replaced session's claim is void");
+  await harnessReady(f);
+  setWaiting(f.home, { producer: "agent", waiting: true, reason: "attention", message: "new session question" });
+  assert.equal(startInstanceSession(f.home).reused, "adopted");
+  assert.equal(boundaries(f.home).length, 1, "adoption adds no second boundary");
+  assert.equal(liveWaiting(f.home)?.message, "new session question");
+  assert.equal(inspectInstanceSession(f.home).waitingOnYou?.message, "new session question");
+  releaseHarness(f.home);
+
+  // A receipt left by a start that recorded no boundary (an earlier kernel): adoption writes it at the receipt's startedAt.
+  const g = await makeHome("bound-old");
+  await heldWindow(g);
+  const incarnation = readJson(join(g.home, "instance.json")).createdAt, t = Date.now();
+  const row = (at, message) => writeFileSync(join(g.home, ".oats-events.jsonl"), JSON.stringify({ eventsApi: 2, at: new Date(at).toISOString(), instance: "bound-old", home: g.home, incarnation, producer: "agent", kind: "waiting", data: { waitingOnYou: true, reason: "attention", message } }) + "\n", { flag: "a" });
+  row(t - 5000, "before the launch");
+  writeFileSync(join(g.home, ".oats-start-pending.json"), JSON.stringify(pendingFor(g, { backend: "tmux", session, window: "bound-old", socket }, { startedAt: new Date(t).toISOString() })));
+  row(t + 5000, "after the launch");
+  assert.equal(startInstanceSession(g.home).reused, "adopted");
+  const b = boundaries(g.home);
+  assert.equal(b.length, 1); assert.equal(b[0].at, new Date(t).toISOString(), "dated at the launch, not at the adoption"); assert.equal(b[0].data.phase, "recovered");
+  assert.equal(liveWaiting(g.home)?.message, "after the launch", "the new session's claim is kept");
+  assert.throws(() => startInstanceSession(g.home), (e) => e.code === "E_SESSION_RUNNING", "a further start of the running session is refused");
+  assert.equal(boundaries(g.home).length, 1, "and adds no boundary");
+  releaseHarness(g.home);
 });
 
 test("a recorded pending target that differs from the metadata is reconciled before the equality gate", async () => {

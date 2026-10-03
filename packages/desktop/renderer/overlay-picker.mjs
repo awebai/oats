@@ -247,7 +247,7 @@ export function createOverlayPicker({ placeholder, ariaLabel, loadItems, compute
         if (Number.isInteger(it.depth) && it.depth > 0) row.style.setProperty("--depth", String(it.depth));
         if (it.under) {
           const under = doc.createElement("span");
-          under.className = "palette-sr"; under.textContent = `, ${it.under}`;
+          under.className = "sr-only"; under.textContent = `, ${it.under}`;
           row.querySelector(".pdetail").append(under); // read as one phrase with the detail
         }
         // A match's ancestor, shown for its place in the tree: never active or run.

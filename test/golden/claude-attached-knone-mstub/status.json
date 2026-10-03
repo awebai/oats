@@ -292,6 +292,7 @@
           "startedAt": null,
           "identityAddress": null,
           "running": false,
+          "waitingOnYou": null,
           "soul": {
             "repoKey": "local/<base>/remotes/ws.git",
             "commit": "<sha>",
@@ -583,6 +584,7 @@
           "startedAt": null,
           "identityAddress": null,
           "running": false,
+          "waitingOnYou": null,
           "soul": {
             "repoKey": "local/<base>/remotes/ws.git",
             "commit": "<sha>",

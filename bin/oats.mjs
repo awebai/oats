@@ -54,7 +54,7 @@ import { observeInstanceGit, diffInstanceFile } from "../lib/instance-git.mjs";
 import { planStop, applyStop, planRetire, resolveInstance as resolveInstanceForCli } from "../lib/instance-lifecycle.mjs";
 const await_import_lifecycle = () => ({ resolveInstance: resolveInstanceForCli });
 import { homeTarget, soulTarget, isWorkspaceContext, inspectDocument, readinessDocument, policyOf, policySoul, manifestMissingRequires, INSPECT_OPERATIONS_API } from "../lib/instance-inspect.mjs";
-import { readEvents } from "../lib/instance-events.mjs";
+import { readEvents, setWaiting, incarnationOf } from "../lib/instance-events.mjs";
 
 const rawArgs = process.argv.slice(2);
 /** The kernel's switches: a value never rides one (`--yolo=false` must not turn yolo on). */
@@ -63,19 +63,25 @@ const KERNEL_SWITCHES = new Set(["allow-child-spawns", "apply", "check", "clear"
  *  routed-command loops) then applies the spaced form's validation to it. `problem` is an empty
  *  `--flag=`, a switch given a value, or a value that is itself an option (`--model=--yolo`):
  *  expanded, it would be a flag token every reader sees, which the spaced form can never carry. */
+/** Free-text flags whose inline value may start with `--` (`--message=--deploy failed`). Such a
+ *  value is kept out of argv, where it would read as a flag (`--message=--clear` must not
+ *  clear), and flag() answers it from `inline`. */
+const INLINE_TEXT_FLAGS = new Set(["message"]);
 function expandInlineValues(argv) {
   const out = [];
+  const inline = new Map();
   let problem;
   for (const a of argv) {
     const eq = a.indexOf("=");
     if (!a.startsWith("--") || eq <= 2) { out.push(a); continue; }
     const name = a.slice(2, eq), value = a.slice(eq + 1);
+    if (INLINE_TEXT_FLAGS.has(name) && value.startsWith("--")) { inline.set(name, value); out.push(`--${name}`); continue; }
     problem ??= KERNEL_SWITCHES.has(name) ? `--${name} takes no value (got ${a})` : value === "" ? `--${name}= needs a value` : value.startsWith("--") ? `--${name}= takes a value, not an option (got ${a})` : undefined;
     out.push(`--${name}`, value);
   }
-  return { argv: out, problem };
+  return { argv: out, problem, inline };
 }
-const { argv: args, problem: argvProblem } = expandInlineValues(rawArgs);
+const { argv: args, problem: argvProblem, inline: inlineValues } = expandInlineValues(rawArgs);
 let cmd = args[0];
 const HELP_WORDS = new Set(["help", "--help", "-h"]);
 const KERNEL_COMMANDS = new Set(["automations", "trigger", "capture", "capabilities", "doctor", "inspect", "instance", "operation", "package", "readiness", "souls", "soul", "teams", "launch-config", "experimental", "onboard", "pane", "recall", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "sync", "update", "version", "workspace"]);
@@ -85,6 +91,7 @@ const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental"]
 const ROUTED_COMMANDS = new Set(["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "launch-config", "readiness", "instance"]);
 const flag = (name) => {
   const i = args.indexOf(`--${name}`);
+  if (i >= 0 && inlineValues.has(name)) return inlineValues.get(name);
   return i >= 0 ? (args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : true) : undefined;
 };
 function yoloFlag() {
@@ -916,6 +923,60 @@ async function launchConfigCmd() {
 }
 
 
+/** `oats instance waiting <set|clear>` and `oats instance attention` (feature
+ *  waiting-on-you): a producer's claim that an instance is blocked on a human,
+ *  recorded as a `waiting` event only when the producer's live claim changes
+ *  (lib/instance-events.mjs setWaiting). `waiting` addresses a home like
+ *  `instance events` (--home, else $OATS_INSTANCE_HOME, else the home enclosing
+ *  the cwd; it must be a home of its name under the scope); `attention` is the
+ *  agent's own sugar for `waiting --producer agent --reason attention` and acts
+ *  only on $OATS_INSTANCE_HOME. Local only (no --server route). A claim is
+ *  display-only evidence: nothing in the kernel acts on it. */
+function instanceWaitingCmd(sub, bail) {
+  dropAmbientRoot();
+  const usage = sub === "attention"
+    ? "usage: oats instance attention [--message <text>] [--clear] [--json]"
+    : "usage: oats instance waiting <set|clear> --producer <id> [--reason permission|question|attention] [--message <text>] [--home <abs>] [--dir <d>] [--json]";
+  const value = (name) => { const v = flag(name); if (v === true) throw Object.assign(new Error(`--${name} needs a value${name === "message" ? " (a message that starts with -- goes as --message=<text>)" : ""}`), { code: "E_BAD_ARGS" }); return v; };
+  let home, producer, waiting, reason, message;
+  try {
+    message = value("message");
+    if (sub === "attention") {
+      if (args[2] && !args[2].startsWith("--")) return bail("E_BAD_ARGS", usage);
+      for (const f of ["home", "dir", "producer", "reason"]) if (args.includes(`--${f}`)) return bail("E_BAD_ARGS", `oats instance attention has no --${f}: it records the agent's own claim on the instance it runs in ($OATS_INSTANCE_HOME); ${usage}`);
+      home = process.env.OATS_INSTANCE_HOME;
+      if (!home || !isAbsolute(home) || incarnationOf(home) === null) return bail("E_USAGE", `oats instance attention runs inside an instance session: $OATS_INSTANCE_HOME is ${home ? `${home}, which is not an instance home (no readable instance.json)` : "unset"}`);
+      producer = "agent"; waiting = !args.includes("--clear");
+      if (waiting) reason = "attention";
+    } else {
+      const verb = args[2];
+      if (!["set", "clear"].includes(verb)) return bail("E_BAD_ARGS", usage);
+      waiting = verb === "set";
+      producer = value("producer"); reason = value("reason");
+      if (producer === undefined) return bail("E_BAD_ARGS", `--producer is required; ${usage}`);
+      // Producer `agent` is the agent's own claim: only `attention` writes it.
+      if (producer === "agent") return bail("E_BAD_ARGS", "--producer agent is reserved for the agent's own claim: use `oats instance attention [--message <text>]` or `oats instance attention --clear` from its session");
+      const homeOpt = flag("home");
+      if (homeOpt === true || (homeOpt !== undefined && !isAbsolute(homeOpt))) return bail("E_BAD_ARGS", "--home needs an absolute instance home");
+      home = homeOpt ?? (process.env.OATS_INSTANCE_HOME || enclosingInstanceHome(logicalCwd()));
+      if (!home) return bail("E_BAD_ARGS", `no instance home: pass --home <abs>, or run it inside an instance; ${usage}`);
+      if (!isAbsolute(home)) return bail("E_BAD_ARGS", `$OATS_INSTANCE_HOME must be an absolute instance home (${home})`);
+    }
+    if (sub === "attention" && !waiting && message !== undefined) return bail("E_BAD_ARGS", "--message is for setting attention, not --clear");
+    if (incarnationOf(home) === null) return bail("E_SESSION_UNKNOWN", `${home} is not an instance home (no readable instance.json)`);
+    // The home must be a home of its own name under the scope: --dir when
+    // given, else the agents root the home sits in.
+    const root = flag("dir") !== undefined ? ensureRoot(dirFlag()) : agentsRootOfHome(home);
+    const { resolveInstance } = await_import_lifecycle();
+    try { resolveInstance(dirFlag(), root, basename(home), { home }); }
+    catch (e) { if (sub === "attention") return bail("E_USAGE", `$OATS_INSTANCE_HOME (${home}) is not an instance home under ${root}: ${e.message}`); throw e; }
+    const r = setWaiting(home, { producer, waiting, ...(reason !== undefined ? { reason } : {}), ...(message !== undefined ? { message } : {}) });
+    if (JSON_MODE) { jsonOk(r); return; }
+    const w = r.waitingOnYou;
+    console.log(`${r.instance}: ${r.changed ? "recorded" : "unchanged"} — ${r.producer} ${w ? `needs input (${w.reason})${w.message ? `: ${w.message}` : ""}` : "not waiting"}`);
+  } catch (e) { return bail(e.code || "E_EVENTS_FAILED", e.message, e.candidates ? { candidates: e.candidates } : undefined); }
+}
+
 /** `oats instance <git|diff> <instance>` — K1: read-only Git observation of one
  *  instance's work tree. The instance is addressed qualified: an explicit
  *  --home, or a name under the --dir scope (team roots included) that resolves
@@ -923,7 +984,8 @@ async function launchConfigCmd() {
 function instanceCmd() {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   const sub = args[1], name = args[2];
-  const usage = "usage: oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--dir <d>] [--json] | oats instance git <instance> [--home <abs>] [--dir <d>] [--json] | oats instance diff <instance> --file <id> --revision <rev> [--index-revision <rev>] [--home <abs>] [--dir <d>] [--json] | oats instance stop <instance> (--plan | --apply --plan-revision <rev> --idempotency-key <key>) [--no-recursive] [--grace-ms <n>] [--home <abs>] [--dir <d>] [--json]";
+  if (sub === "waiting" || sub === "attention") return instanceWaitingCmd(sub, bail);
+  const usage = "usage: oats instance waiting <set|clear> --producer <id> [--reason permission|question|attention] [--message <text>] [--home <abs>] [--dir <d>] [--json] | oats instance attention [--message <text>] [--clear] [--json] | oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--dir <d>] [--json] | oats instance git <instance> [--home <abs>] [--dir <d>] [--json] | oats instance diff <instance> --file <id> --revision <rev> [--index-revision <rev>] [--home <abs>] [--dir <d>] [--json] | oats instance stop <instance> (--plan | --apply --plan-revision <rev> --idempotency-key <key>) [--no-recursive] [--grace-ms <n>] [--home <abs>] [--dir <d>] [--json]";
   if (!["git", "diff", "stop", "events"].includes(sub) || !name || name.startsWith("--")) return bail("E_BAD_ARGS", usage);
   dropAmbientRoot();
   if (sub === "events") {
@@ -2043,6 +2105,9 @@ async function status() {
     if (a.description) console.log(`      ${a.description}`);
     for (const i of a.instances) {
       console.log(`      • ${i.instance}  ${i.retirePending ? "RETIRING" : livenessWord(i)}  (branch ${i.branch || "?"}, ${i.work || "?"})${i.runtimeError ? `  ${i.runtimeError}` : ""}`);
+      // Feature waiting-on-you: non-null only on a running row; the reader has
+      // already validated the message (one line, no control characters).
+      if (i.running === true && i.waitingOnYou) console.log(`          ! needs input (${i.waitingOnYou.reason ?? "unknown"})${i.waitingOnYou.message ? `: ${i.waitingOnYou.message}` : ""}`);
       const key = i.home ?? `${a.name}/${i.instance}`;
       if (i.identity) console.log(`          identity: ${servedIdentityLine(i.identity)}`);
       // The kernel the home's plain `oats` runs (its last launch's), when it is not this one.
@@ -2564,12 +2629,27 @@ async function scheduleCmd() {
       }
       case "host": {
         const op = args[2];
-        if (op === "install") { registerWorkspace(ws()); installHostUnit(); return out({ scheduler: schedulerStatus(ws(), io) }); }
+        if (op === "install") {
+          const cap = (name, reset) => {
+            const occurrences = args.filter((arg) => arg === `--${name}`);
+            if (occurrences.length > 1) throw scheduleError("E_BAD_ARGS", `use --${name} <N|${reset}> once`);
+            const value = flag(name);
+            if (value === undefined || value === reset) return value;
+            if (typeof value !== "string" || !/^[0-9]+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < 1) {
+              throw scheduleError("E_BAD_ARGS", `--${name} requires a positive safe integer or ${reset}`);
+            }
+            return Number(value);
+          };
+          const caps = { maxConcurrent: cap("max-concurrent", "default"), triggersMaxConcurrent: cap("triggers-max-concurrent", "none") };
+          registerWorkspace(ws(), caps);
+          installHostUnit();
+          return out({ scheduler: schedulerStatus(ws(), io) });
+        }
         if (op === "uninstall") { unregisterWorkspace(ws()); if (!readRegistry().workspaces.length) uninstallHostUnit(); return out({ scheduler: schedulerStatus(ws(), io) }); }
         if (op === "status") return out({ scheduler: schedulerStatus(ws(), io) });
         throw scheduleError("E_BAD_ARGS", "oats schedule host install|uninstall|status");
       }
-      default: throw scheduleError("E_BAD_ARGS", "usage: oats schedule list|show <id>|test <id>|add <id> --file <spec.json> [--workspace <member> --runs-on <host> --owner <host>/<login>]|update <id> --file <spec.json>|enable <id>|disable <id>|run <id> [--force]|remove <id> [--force]|reconcile <id> [--clear]|tick [--dry-run] [--host]|host install|uninstall|status [--dir <workspace>|--server <id>] [--json]");
+      default: throw scheduleError("E_BAD_ARGS", "usage: oats schedule list|show <id>|test <id>|add <id> --file <spec.json> [--workspace <member> --runs-on <host> --owner <host>/<login>]|update <id> --file <spec.json>|enable <id>|disable <id>|run <id> [--force]|remove <id> [--force]|reconcile <id> [--clear]|tick [--dry-run] [--host]|host install [--max-concurrent <N|default>] [--triggers-max-concurrent <N|none>]|uninstall|status [--dir <workspace>|--server <id>] [--json]");
     }
   } catch (e) {
     // K8b: typed refusal details travel (identity mismatch: key/declared; a refused file: its integrity source).
@@ -3182,7 +3262,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capabilityShowApi: 1 }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capabilityShowApi: 1 }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -3850,6 +3930,7 @@ Usage:
       tick [--dry-run] [--host]                  command or wake jobs on a five-field cron with an
       host install|uninstall|status              explicit IANA tz; see docs/schedules.md); --server
                                                 routes to that host's workspace
+        install [--max-concurrent N|default] [--triggers-max-concurrent N|none]
   oats trigger add (--file <json> | --from <package>:<template> [--set k=v]) | list | show | enable
       | disable | remove <id> | test <id> | status [<id>]   event-driven spawns (github.pull_request
                                                 polled with the host's gh by the schedule tick;
@@ -3981,6 +4062,12 @@ Usage:
                                              typed lifecycle events (spawned, launched, stopped,
                                              restarted, retired, worktree-retained…) written by
                                              the action that made them true; nothing inferred
+  oats instance waiting <set|clear> --producer <id> [--reason permission|question|attention] [--message <text>] [--home <abs>] [--json]
+                                             a producer's claim that the instance needs input
+                                             from a human; appended only on change; display only
+  oats instance attention [--message <text>] [--clear] [--json]
+                                             run by the agent from its home: "I need a human's
+                                             answer" (waiting --producer agent --reason attention)
   oats instance stop <instance> --plan [--no-recursive] [--json]
                                              what Stop would touch: session state, recorded
                                              children, dirty work; a planRevision to apply

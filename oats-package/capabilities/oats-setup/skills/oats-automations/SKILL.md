@@ -31,8 +31,17 @@ and exits. Missed minutes are skipped, never replayed.
 ```bash
 oats schedule host status      # is the timer installed and active on this machine?
 oats schedule host install     # install it (a host change: ask the operator first)
+oats schedule host install --max-concurrent 3 --triggers-max-concurrent 2
+oats schedule host install --max-concurrent default --triggers-max-concurrent none
 oats schedule tick --dry-run   # what would run this minute, launching nothing
 ```
+
+The default cap is five running scheduled jobs. The two install flags set
+independent positive-integer caps; `default` restores the schedule default and
+`none` removes the trigger cap. Omitted flags keep existing choices. Use these
+CLI flags, never hand-edit the registry. Upgrading migrates the old implicit
+cap of one to the default once; explicitly set `--max-concurrent 1` after
+upgrade if the operator needs one. `host status` reports both effective caps.
 
 **Credentials reach the tick through the timer, not your shell.** The timer's
 environment sets only `PATH` and `OATS_HOME_DIR`. `gh` logged in through the
@@ -167,7 +176,9 @@ unproven effects by hand. Doctor also reads saved workspace definitions
 offline and checks other deployments registered with this host.
 
 An unknown command or operation frees its host slot only after the kernel
-observes its process exit. Its own job stays blocked until reconcile. Spawn,
+observes its process exit. Scheduler command/operation and workspace-spawn
+children receive SIGTERM at five minutes and SIGKILL after a two-second
+cleanup grace if needed. Its own job stays blocked until reconcile. Spawn,
 wake and legacy attempts without observed exits retain their slot rules.
 
 ## Gotchas

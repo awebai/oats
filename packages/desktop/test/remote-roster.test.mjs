@@ -62,3 +62,17 @@ test("a remote Herdr row is unsupported with the kernel's reason, from a 0.31 or
   assert.equal(tmux.running, true); assert.equal(tmux.runtimeError, undefined);
   assert.equal(panel.running, 1);
 });
+
+test("Needs input: a remote row's waitingOnYou is validated (malformed → null), passed through when valid, never synthesized", () => {
+  const claim = { since: "2026-10-03T10:00:00.000Z", producer: "pi-extension", reason: "attention", message: "Review <b>this</b>" };
+  const row = waitingOnYou => remotePanel({ ...group, instances: [{ ...group.instances[0], waitingOnYou }] }).instances[0];
+  assert.deepEqual(row({ ...claim, extra: 1 }).waitingOnYou, claim);
+  assert.equal(row({ ...claim, since: "now" }).waitingOnYou, null);
+  assert.equal(row({ ...claim, producer: "token=abc123" }).waitingOnYou, null);
+  assert.equal(row("yes").waitingOnYou, null);
+  assert.equal(row({ ...claim, message: "x".repeat(201) }).waitingOnYou.message, null, "an oversized note keeps the claim");
+  assert.equal(Object.hasOwn(remotePanel(group).instances[0], "waitingOnYou"), false, "a remote kernel without the feature: absent stays absent");
+  // An unreached server keeps last-known rows: the field rides along, and the renderer's gate (serverUnreached) hides it.
+  const unreached = remotePanel({ ...group, probe: { ok: false }, instances: [{ ...group.instances[0], waitingOnYou: claim }] }).instances[0];
+  assert.deepEqual([unreached.serverUnreached, unreached.running], [true, null]);
+});

@@ -60,7 +60,7 @@ test("B — address history: foreign rows are dropped and counted; --home must b
 test("C — waitingOnYou is a producer STATE for the current incarnation: an explicit false clears, a later row without the field does not, an earlier incarnation's positive never counts, and it is computed over the full read (a window cannot hide a clear)", (t) => {
   const w = ws(t); w.incarnate("2026-01-01T00:00:00.000Z");
   appendEvent(w.home, { kind: "launched", producer: "provider.a", data: { waitingOnYou: true, reason: "review requested" } });
-  let r = readEvents(w.home); assert.equal(r.waitingOnYou.producer, "provider.a"); assert.equal(r.waitingOnYou.reason, "review requested");
+  let r = readEvents(w.home); assert.equal(r.waitingOnYou.producer, "provider.a"); assert.equal(r.waitingOnYou.reason, null, "a reason outside the closed set reads as null; the claim still counts");
   appendEvent(w.home, { kind: "recomposed", producer: "provider.a", data: {} });
   r = readEvents(w.home); assert.ok(r.waitingOnYou, "a row without the field does not clear");
   appendEvent(w.home, { kind: "launched", producer: "provider.b", data: { waitingOnYou: true, reason: "b wants you" } });

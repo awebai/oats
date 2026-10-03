@@ -6,6 +6,7 @@ import { prText } from './roster-pr.mjs';
 import { createRuntimeBadge, harnessName } from './identity-marks.mjs';
 import { runtimeState } from './instance-presentation.mjs';
 import { instanceRepoLabel } from './instance-tree.mjs';
+import { waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText } from './waiting-on-you.mjs';
 
 export const rosterTipCSS = `
 .ctx-tip { position:fixed; z-index:60; width:320px; max-width:calc(100vw - 24px); box-sizing:border-box; display:flex; flex-direction:column; gap:8px;
@@ -21,10 +22,13 @@ export const rosterTipCSS = `
 .ctx-tip-fact .runtime-badge { width:16px; height:16px; border-radius:4px; font-size:9px; }
 `;
 
-/** The facts the card shows, from the roster row only (absent facts stay absent). */
-export function rosterTipFacts(instance, why = '', pr = null) {
+/** The facts the card shows, from the roster row only (absent facts stay absent).
+ * Needs input (Spec D): `stale` is the roster's held-stale verdict for the row (waitingClaim's gate),
+ * `below` the waiting rows a collapse hides under it, `now` the show time (the card is built when
+ * shown, so the age is fresh). */
+export function rosterTipFacts(instance, why = '', pr = null, { below = [], now = Date.now(), stale = false } = {}) {
   const text = v => typeof v === 'string' && v ? v : null;
-  const state = runtimeState(instance);
+  const state = runtimeState(instance), claim = waitingClaim(instance, { stale });
   return {
     name: instance.instance,
     rows: [
@@ -33,6 +37,10 @@ export function rosterTipFacts(instance, why = '', pr = null) {
       ['Branch', text(instance.branch), 'mono'],
       ['Harness', text(instance.harness) ? { harness: instance.harness, model: text(instance.model) } : null],
       ['Status', [state === 'unknown' ? 'status unknown' : state, text(instance.runtimeError)].filter(Boolean).join(' · ')],
+      ['Waiting', claim ? `${waitingLabel(claim)} · ${waitedText(claim.since, now)} (since ${waitingClock(claim.since, now)})` : null],
+      // Text only (the card sets textContent): never parsed, never linkified.
+      ['Message', claim?.message ?? null],
+      ['Below', below.length ? waitingBelowText(below) : null],
       // forge-roster: the pull request of its branch, when it has one.
       ['Pull request', pr ? prText(pr) : null, 'mono'],
     ].filter(([, value]) => value),

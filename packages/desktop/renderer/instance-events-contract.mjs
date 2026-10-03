@@ -8,6 +8,16 @@ export const EVENTS_LIMITS = Object.freeze([50, 100, 200]);
 export const EVENTS_DEFAULT_LIMIT = 100;
 export const eventsTimestamp = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(v)
   && Number.isFinite(Date.parse(v)) && new Date(v).toISOString() === v;
+/** Text the activity view and the roster may show: no control characters, no URL, no token-looking
+ * assignment. Shared by instance-events-data.mjs and waiting-on-you.mjs. */
+export const eventsUnsafe = /[\x00-\x08\x0b-\x1f\x7f]|[a-z][a-z0-9+.-]*:\/\/\S+|(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{16,}|(?:token|authorization|password|secret|api[_ -]?key)\s*[:=]\s*\S+/i;
+/** A producer or kind id: non-empty, ≤ 256, no control characters, nothing unsafe. */
+export const eventsId = v => typeof v === 'string' && !!v && v.length <= 256 && !/[\x00-\x1f\x7f]/.test(v) && !eventsUnsafe.test(v);
+/** A free-text detail: a string ≤ max (throws otherwise); unsafe text is withheld, never shown. */
+export function eventsDetail(v, max = 2048) {
+  if (typeof v !== 'string' || v.length > max) throw Error('invalid event detail');
+  return eventsUnsafe.test(v) ? '[Detail withheld]' : v;
+}
 export const eventsLimit = v => EVENTS_LIMITS.includes(v) ? v : null;
 export const eventsSupported = cli => cli?.ok === true && absolute(cli.bin) && cli.eventsApi === 2
   && Array.isArray(cli.features) && cli.features.includes('instance-events-2');

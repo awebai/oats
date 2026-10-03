@@ -2,20 +2,16 @@
  * Counts/integrity/claims come from the producer, not reconstructed from prose. */
 import { harnessOf } from './harness-names.mjs';
 import { record } from './readiness-contract.mjs';
-import { eventsTarget, eventsLimit, eventsTimestamp } from './instance-events-contract.mjs';
+import { eventsTarget, eventsLimit, eventsTimestamp, eventsId, eventsDetail } from './instance-events-contract.mjs';
+import { waitingMessage } from './waiting-on-you.mjs';
 const count = v => Number.isSafeInteger(v) && v >= 0;
 const birth = v => v === null || eventsTimestamp(v);
-const unsafe = /[\x00-\x08\x0b-\x1f\x7f]|[a-z][a-z0-9+.-]*:\/\/\S+|(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{16,}|(?:token|authorization|password|secret|api[_ -]?key)\s*[:=]\s*\S+/i;
-const id = v => typeof v === 'string' && !!v && v.length <= 256 && !/[\x00-\x1f\x7f]/.test(v) && !unsafe.test(v);
-function detail(v, max = 2048) {
-  if (typeof v !== 'string' || v.length > max) throw Error('invalid event detail');
-  return unsafe.test(v) ? '[Detail withheld]' : v;
-}
+const id = eventsId, detail = eventsDetail;
 const nullableDetail = (v, max) => v === null ? null : detail(v, max);
 export const EVENT_TITLES = Object.freeze({ spawned: 'Spawned', launched: 'Launched', restarted: 'Restarted', stopped: 'Stopped',
   'stop-refused': 'Stop refused', 'retire-planned': 'Retirement planned', retired: 'Retired',
   'worktree-retained': 'Worktree retained', 'worktree-removed': 'Worktree removed', 'branch-deleted': 'Branch deleted',
-  'child-spawn-refused': 'Child spawn refused', recomposed: 'Instructions recomposed' });
+  'child-spawn-refused': 'Child spawn refused', recomposed: 'Instructions recomposed', waiting: 'Waiting claim' });
 const strings = {
   spawned: ['agent', 'work', 'branch', 'model', 'parentInstance', 'relation'], launched: ['backend', 'launchConfig'],
   restarted: ['phase', 'signal'], stopped: ['signal', 'state'], 'stop-refused': ['phase', 'signal', 'state'],
@@ -41,6 +37,8 @@ function facts(kind, v, publicView) {
     out[key] = v[key];
   }
   if (Object.hasOwn(v, 'reason')) out.reason = nullableDetail(v.reason);
+  // A waiting claim's note (K's `waiting` rows): the claim rule — absent stays absent, malformed is null.
+  if (kind === 'waiting' && Object.hasOwn(v, 'message')) out.message = waitingMessage(v.message);
   if (['stopped', 'stop-refused', 'restarted'].includes(kind)) {
     if (publicView && Object.hasOwn(v, 'stillRunningCount')) {
       if (!count(v.stillRunningCount) || v.stillRunningCount > 128) throw Error('invalid target count');
@@ -95,7 +93,8 @@ export function eventsData(v, expected, limit = 100, { publicView = false } = {}
     for (const c of v.waitingClaims) {
       if (!record(c) || !id(c.producer) || claims.some(p => p.producer === c.producer) || typeof c.waiting !== 'boolean'
         || !eventsTimestamp(c.since) || !c.waiting && c.reason !== null) return null;
-      claims.push({ producer: c.producer, waiting: c.waiting, since: c.since, reason: nullableDetail(c.reason) });
+      // `message` is optional (kernels before waiting-on-you omit it): absent or malformed → null, the claim kept.
+      claims.push({ producer: c.producer, waiting: c.waiting, since: c.since, reason: nullableDetail(c.reason), message: waitingMessage(c.message) });
     }
     // Unknown incarnation cannot license ANY current-incarnation claim. Do not
     // repeat the PR89 producer's null-incarnation/all-history fallback.
@@ -103,8 +102,11 @@ export function eventsData(v, expected, limit = 100, { publicView = false } = {}
     const positive = v.waitingClaims.filter(c => c.waiting).sort((a, b) => a.since.localeCompare(b.since)).at(-1);
     let waitingOnYou = null;
     if (positive) {
-      if (!record(v.waitingOnYou) || ['producer', 'since', 'reason'].some(k => v.waitingOnYou[k] !== positive[k])) return null;
-      waitingOnYou = { producer: positive.producer, since: positive.since, reason: nullableDetail(positive.reason) };
+      // The message is compared raw when either side owns it (a missing key is null): one-sided is a mismatch.
+      const message = side => Object.hasOwn(side, 'message') ? side.message : null;
+      if (!record(v.waitingOnYou) || ['producer', 'since', 'reason'].some(k => v.waitingOnYou[k] !== positive[k])
+        || message(v.waitingOnYou) !== message(positive)) return null;
+      waitingOnYou = { producer: positive.producer, since: positive.since, reason: nullableDetail(positive.reason), message: waitingMessage(v.waitingOnYou.message) };
     } else if (v.waitingOnYou !== null) return null;
     if (!integrity.sources.some(s => ['ok', 'tail'].includes(s.status)) && (v.count || integrity.unreadableRows || integrity.foreignRows || claims.length)) return null;
     return { eventsApi: 2, instance: v.instance, home: v.home, incarnation: v.incarnation,

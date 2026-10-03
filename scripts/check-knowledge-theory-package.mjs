@@ -127,25 +127,40 @@ export function syncKnowledgeTheoryReferences(repoRoot = REPO_ROOT) {
   }
 }
 
-// Keep the moved capabilities narrowly resource-only. Use the kernel's actual
+// Keep the operational capabilities narrow. oats.setup is resource-only; oats.core
+// adds exactly one executable surface, its Claude Code waiting emitter: the spawn
+// and launch hooks of bin/oats-core.mjs (preview-aware) and the bin/claude-waiting.sh
+// they wire into a Claude instance's settings. Any other executable surface, key or
+// file is a boundary change, not unnoticed manifest growth. Use the kernel's actual
 // schema, not a copied validator; files must survive acquiring each own root.
+const OPERATIONAL_CAPABILITIES = [
+  {
+    slug: "oats-core", names: ["oats-operate", "oats-souls"], injection: "injects/oats.md",
+    // 0.40.0: `oats instance waiting`, which the emitter calls, and `oats instance attention`, which the skills teach.
+    compatibility: ">=0.40.0",
+    executable: { hooks: { spawn: "bin/oats-core.mjs spawn", launch: "bin/oats-core.mjs launch" }, launchPreview: true, files: ["bin/claude-waiting.sh", "bin/oats-core.mjs"] },
+  },
+  { slug: "oats-setup", names: ["oats-setup-model", "oats-onboarding", "oats-workspace-config", "oats-teams", "oats-package-pins", "oats-automations"], injection: "injects/setup.md", compatibility: ">=0.30.0" },
+];
 export function checkOperationalCapabilities(packageRoot) {
-  for (const [slug, names, injection] of [
-    ["oats-core", ["oats-operate", "oats-souls"], "injects/oats.md"],
-    ["oats-setup", ["oats-setup-model", "oats-onboarding", "oats-workspace-config", "oats-teams", "oats-package-pins", "oats-automations"], "injects/setup.md"],
-  ]) {
+  for (const { slug, names, injection, compatibility, executable } of OPERATIONAL_CAPABILITIES) {
     const root = join(packageRoot, "capabilities", slug);
     const cap = JSON.parse(readFileSync(join(root, "oats.json"), "utf8"));
     assert.ok(validateCapability(cap), `${slug}: ${JSON.stringify(validateCapability.errors)}`);
     // helperInjection may be present and is ignored since 0.26 (it served the removed
     // captured path's helper composition); nothing else is optional.
-    assert.deepEqual(Object.keys(cap).filter((key) => key !== "helperInjection").sort(), ["capability", "version", "description", "compatibility", "requires", "skills", ...(injection ? ["inject"] : [])].sort());
+    assert.deepEqual(Object.keys(cap).filter((key) => key !== "helperInjection").sort(), ["capability", "version", "description", "compatibility", "requires", "skills", ...(injection ? ["inject"] : []), ...(executable ? ["hooks", "launchPreview"] : [])].sort());
     assert.equal(cap.capability, slug.replace("oats-", "oats."));
     assert.match(cap.version, /^\d+\.\d+\.\d+$/);
-    assert.deepEqual(cap.compatibility, { oats: ">=0.30.0" }); // the team model v2 and launch-preference surface these skills teach
+    assert.deepEqual(cap.compatibility, { oats: compatibility }); // the kernel surface these skills (and oats.core's emitter) use
     assert.deepEqual(cap.requires, []);
     assert.deepEqual(cap.skills, names.map(name => `skills/${name}`));
-    assert.deepEqual(treeFiles(root), ["oats.json", ...names.map(name => `skills/${name}/SKILL.md`), ...(injection ? [injection] : [])].sort());
+    if (executable) {
+      assert.deepEqual(cap.hooks, executable.hooks, `${slug}: exactly the emitter's spawn and launch hooks, advisory (string form)`);
+      assert.equal(cap.launchPreview, executable.launchPreview, `${slug}: the launch hook is preview-aware`);
+      for (const file of executable.files) assert.ok(lstatSync(join(root, file)).isFile(), `${slug}: ${file} must be a contained regular file`);
+    }
+    assert.deepEqual(treeFiles(root), ["oats.json", ...names.map(name => `skills/${name}/SKILL.md`), ...(injection ? [injection] : []), ...(executable ? executable.files : [])].sort());
     for (const name of names) {
       const file = join(root, "skills", name, "SKILL.md"), text = readFileSync(file, "utf8");
       assert.ok(lstatSync(file).isFile(), `skill must be a contained regular file: ${name}`);

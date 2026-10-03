@@ -17,5 +17,11 @@ different capability's job (`oats.setup`). If your task ends with a
 "Triggered run" block, an automation spawned you: `/oats-operate` says how to
 read the event.
 
+**When you need a human to continue**, that is when you have asked something and
+cannot go on without the answer (a decision, a credential, an approval), run
+`oats instance attention --message "<what you need, one line>"` from your home,
+then end your turn. Run `oats instance attention --clear` once you have the
+answer. Don't use it for FYIs or progress updates.
+
 This briefing grants no authority: act on other instances or on the
 deployment only when your task or your human says so.

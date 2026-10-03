@@ -199,10 +199,11 @@ test('narrow: the Workspace keeps its fixed header and one scroller per tab; onl
 });
 
 test('every visually-hidden utility is anchored at its containing block, so it cannot stretch a scroller', () => {
-  const sources = { 'views/spawn.mjs': read('../renderer/views/spawn.mjs'), 'workspace-discovery.mjs': read('../renderer/workspace-discovery.mjs'), 'loading.css': loadingCss };
+  const sources = { 'views/spawn.mjs': read('../renderer/views/spawn.mjs'), 'workspace-discovery.mjs': read('../renderer/workspace-discovery.mjs'), 'loading.css': loadingCss,
+    'shell.css': read('../renderer/shell.css') };
   const rules = [];
   for (const [file, text] of Object.entries(sources)) for (const [, rule, body] of text.matchAll(/(\.[\w-]*(?:sr-only|-sr))\s*\{([^}]*)\}/g)) rules.push({ file, rule, body });
-  assert.deepEqual(rules.map(r => `${r.file} ${r.rule}`).sort(), ['loading.css .loading-sr', 'views/spawn.mjs .workspace-sr-only', 'workspace-discovery.mjs .workspace-sr-only']);
+  assert.deepEqual(rules.map(r => `${r.file} ${r.rule}`).sort(), ['loading.css .loading-sr', 'shell.css .sr-only', 'views/spawn.mjs .workspace-sr-only', 'workspace-discovery.mjs .workspace-sr-only']);
   for (const { file, rule, body } of rules) {
     for (const decl of [/position:\s*absolute/, /top:\s*0/, /left:\s*0/, /width:\s*1px/, /height:\s*1px/, /overflow:\s*hidden/, /clip-path:\s*inset\(50%\)/, /white-space:\s*nowrap/, /margin:\s*-1px/]) {
       assert.match(body, decl, `${file} ${rule} has ${decl}`);

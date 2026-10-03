@@ -32,7 +32,7 @@ const labels = { agent: 'Soul', work: 'Work mode', branch: 'Branch', harness: 'H
   waitedMs: 'Waited (ms)', stillRunningCount: 'Targets still running', planRevision: 'Plan revision', children: 'Children', dirty: 'Changed work count',
   keepDir: 'Home retained', self: 'Self retirement', quarantine: 'Quarantine', workRecovery: 'Recovery path', movedTo: 'Retained path',
   recordedBranch: 'Recorded branch', child: 'Child', previous: 'Previous composition path', soulDir: 'Soul path', blocks: 'Blocks',
-  waitingOnYou: 'Waiting claim', reason: 'Reported reason' };
+  waitingOnYou: 'Waiting claim', reason: 'Reported reason', message: 'Note' };
 
 export function createInstanceEventsView(host, { ctx, selection, owner = () => true, summary, layout = () => {},
   cli = cliStatus, subscribeCli = onCliChange, generation = workspaceGeneration,
@@ -69,7 +69,7 @@ export function createInstanceEventsView(host, { ctx, selection, owner = () => t
     if (!summary) return;
     if (!value) return setText(summary, UNKNOWN);
     const last = value.lastEvent, waiting = value.waitingOnYou;
-    return setText(summary, `${stale ? 'Last observation — ' : ''}${last ? `${title(last.kind)} · ${last.at} · ${incarnationLabel(last, value)}` : 'No recorded lifecycle events in this observed window.'} · ${waiting ? `Reported waiting: ${waiting.producer} since ${waiting.since}` : 'Waiting on you: unknown'}`);
+    return setText(summary, `${stale ? 'Last observation — ' : ''}${last ? `${title(last.kind)} · ${last.at} · ${incarnationLabel(last, value)}` : 'No recorded lifecycle events in this observed window.'} · ${waiting ? `Reported waiting: ${waiting.producer} since ${waiting.since}${waiting.message ? ` — ${waiting.message}` : ''}` : 'Waiting on you: unknown'}`);
   }
   function controls() {
     const supported = eventsSupported(cli()), valid = validTarget();
@@ -118,7 +118,9 @@ export function createInstanceEventsView(host, { ctx, selection, owner = () => t
       for (const [name, fact] of Object.entries(row.data)) {
         if (name === 'policy') { facts.append(node('dt', 'Reported child policy'), node('dd', `${fact.allowed ? 'allowed' : 'not allowed'} · ${fact.origin.kind}`)); continue; }
         if (!Object.hasOwn(labels, name)) continue;
-        facts.append(node('dt', labels[name]), node('dd', fact === null ? 'not reported' : String(fact)));
+        // A waiting claim set (true) or cleared (false), in words.
+        const text = fact === null ? 'not reported' : name === 'waitingOnYou' ? (fact ? 'claimed' : 'cleared') : String(fact);
+        facts.append(node('dt', labels[name]), node('dd', text));
       }
       item.append(facts); rows.append(item);
     }

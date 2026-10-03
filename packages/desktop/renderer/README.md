@@ -783,7 +783,7 @@ block restacks only `.souls-body.inspecting` (the side inspector under the
 list, scrolling together); without it the view keeps the layout above.
 
 Why the containment matters: an absolutely positioned element with no
-positioned ancestor (the `*-sr-only` / `loading-sr` words) escapes a scroller's
+positioned ancestor (the shell's one `.sr-only` and the views' `workspace-sr-only` / `loading-sr` words) escapes a scroller's
 clip and stretches the document; wheel chaining, `scrollIntoView` and End then
 scroll the whole app, headers included. The sr-only utilities are anchored
 (`top:0; left:0`) and the shell's `body` is positioned and clipped, so the

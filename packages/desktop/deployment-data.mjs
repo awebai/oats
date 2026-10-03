@@ -7,6 +7,7 @@ import { harnessOf } from './renderer/harness-names.mjs';
 import { teamRow, teamRowsOf, defaultTeamOf, TEAM_ID } from './renderer/team-rows.mjs';
 import { launchOf, REPORT_FROM } from './renderer/launch-contract.mjs';
 import { readIdentity } from './server/workspace-views.mjs';
+import { waitingOnYouData } from './renderer/waiting-on-you.mjs';
 const text = value => typeof value === 'string' && value.length <= 8192 && !value.includes('\0');
 const absolute = value => text(value) && isAbsolute(value) && resolve(value) === value;
 const own = (value, key) => Object.hasOwn(value, key);
@@ -208,6 +209,9 @@ export function deploymentStatusData(document, deployment) {
       // Missing identity is the producer's absent fact, not a fabricated null
       // principal or a name/address guessed from the instance/soul.
       if (own(instance, 'identity')) row.identity = servedIdentity(instance.identity);
+      // Needs input (PR K): validated, never check()ed — an invalid claim is null (unknown), never an E_* that
+      // fails the roster. Absent stays absent.
+      if (own(instance, 'waitingOnYou')) row.waitingOnYou = waitingOnYouData(instance.waitingOnYou);
       return [row];
     });
     return out;

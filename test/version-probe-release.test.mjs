@@ -20,6 +20,7 @@ test("release probe rejects the wrong release or missing required capabilities",
     delete missing[key];
     assert.throws(() => checkVersionProbe(missing, version), /probe mismatch/);
   }
+  assert.throws(() => checkVersionProbe({ ...probe, features: probe.features.filter((f) => f !== "schedule-host-caps") }, version), /features.schedule-host-caps/);
   assert.throws(() => checkVersionProbe({ ...probe, harnesses: ["pi", "claude"] }, version), /harnesses.codex/);
   assert.throws(() => checkVersionProbe({ ...probe, features: probe.features.filter((f) => f !== "harness") }, version), /features.harness/, "0.26.0: the Desktop gates the harness names on this feature");
 });

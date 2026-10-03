@@ -38,7 +38,7 @@ The design is in the
 | `<deployment>/oats-schedules.json` | This machine's local definitions, `{version: 1, jobs: {<id>: …}}`, local triggers included (`kind: "trigger"`). |
 | `<deployment>/.agents/automations/snapshot.json` | The workspace definitions discovered from the members. |
 | `<deployment>/.agents/schedules/` | Run state: `state.json` (last minute and recent runs per job), `triggers.json` (polls, pending events, fired keys) and one lock directory per running job. |
-| `~/.oats/schedules/registry.json` | The deployments this host ticks, `maxConcurrent` (default 1: running scheduled jobs) and `triggersMaxConcurrent` (absent: no host cap on trigger-spawned live instances). The two caps are separate. |
+| `~/.oats/schedules/registry.json` | The deployments this host ticks, `maxConcurrent` (absent: default 5 running scheduled jobs) and `triggersMaxConcurrent` (absent: no host cap on trigger-spawned live instances). The two caps are separate. |
 
 One host lock serializes ticks, run-now, reconcile and remove. It is never
 reclaimed by another process: a lock whose owner is gone is reported with the
@@ -81,7 +81,13 @@ jobs) sets it so that its command jobs can be told apart.
   no shell; `oats schedule` itself is refused) in `cwd`, an existing directory
   inside the deployment. The runner tracks any instance the command's
   envelope names, including an independent worker it reports, until its home
-  is gone. A command's return is not task completion.
+  is gone. A command's return is not task completion. Command/operation runs and
+  workspace-spawn launches have a five-minute child timeout. The supervisor
+  sends SIGTERM to the child's process group, allows two seconds for cleanup,
+  then sends SIGKILL if the group remains. It observes the direct child's exit
+  before returning; inherited output pipes cannot hold the tick indefinitely.
+  A timeout leaves effects unconfirmed even if the child printed an envelope.
+  Spawn previews use the same bounded runner.
 - **wake** `{…, home, message}` — every due minute inspects the instance at
   `home`. Running: `message` is delivered once as terminal input (bracketed
   paste plus Enter), never an interrupt. Not running: the home is started with
@@ -300,6 +306,8 @@ oats schedule test <id>           # dry run: where it runs, whether its soul res
 oats schedule tick [--dry-run]    # evaluate this deployment now; --dry-run launches nothing
 oats schedule reconcile <id> [--clear]   # resolve an attempt whose result was never recorded
 oats schedule host install        # register this deployment and install the one host timer (idempotent)
+oats schedule host install --max-concurrent 3 --triggers-max-concurrent 2
+oats schedule host install --max-concurrent default --triggers-max-concurrent none
 oats schedule host status | uninstall
 oats spawn <agent> ... --wake-every 15 --wake-message "Anything new?"   # or --wake-file spec.json
 ```
@@ -307,7 +315,26 @@ oats spawn <agent> ... --wake-every 15 --wake-message "Anything new?"   # or --w
 `<id>` is `local/<id>` (or the bare id) or `<member>/<id>`. `host uninstall`
 unregisters the deployment and removes the timer once none is registered.
 Every `oats schedule` subcommand takes `--server <id>` instead of `--dir` to
-run on that registered server.
+run on that registered server. Setting or resetting host caps remotely requires
+the destination to advertise both `schedule` and `schedule-host-caps`; an older
+or unknown peer is refused with `E_REMOTE_INCOMPATIBLE` before host install is
+forwarded. Upgrade OATS on the destination to use these options. A remote
+install without cap options retains its existing behavior.
+
+The host allows five running scheduled jobs by default. Use `host install
+--max-concurrent N` to choose a positive integer, or `--max-concurrent default`
+to restore the default. `--triggers-max-concurrent N` independently limits live
+trigger-spawned instances; `none` removes that cap. Omitted flags preserve the
+current choices. Invalid values fail with `E_BAD_ARGS` before registration or
+timer changes. `host status` reports the effective `maxConcurrent` and
+`triggersMaxConcurrent` (`null` when uncapped).
+
+The registry stores explicit choices only. On the first registry read after
+upgrade, a legacy stored `maxConcurrent: 1` without the new choice marker is
+migrated to the default under the registry lock; other explicit values survive.
+If you need a cap of one, run `oats schedule host install --max-concurrent 1`
+after upgrading. That explicit choice survives later reads and reinstalls.
+Set these values through the CLI; do not edit the registry by hand.
 
 `oats schedule list --json` answers:
 
@@ -318,7 +345,7 @@ run on that registered server.
   schedules: [ <row> ],
   triggers: { count, command: "oats trigger list" },
   snapshot: { takenAt, problems } | null,
-  scheduler: { installed, active, unit?, lastTick, maxConcurrent, tickIntervalSec,
+  scheduler: { installed, active, unit?, lastTick, maxConcurrent, triggersMaxConcurrent, tickIntervalSec,
                workspace, registered, workspaces, live } }
 ```
 
