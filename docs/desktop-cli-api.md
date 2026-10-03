@@ -2510,13 +2510,14 @@ stderr, not envelopes.
 ### Input
 
 ```text
-oats session input --home <abs> [--text-file <path>] [--server <id>] --json
+oats session input --home <abs> [--text-file <path>] --json
 ```
 
 Input bytes come from stdin or the named file. The existing version-1 success
 answer is `{schemaVersion: 1, ok: true, result: {home, backend: "tmux",
-present: true, state, paneId, submitted: true, verified}}` locally. Remote
-routing keeps its existing wrapper fields. The adapter sends one literal
+present: true, state, paneId, submitted: true, verified}}`. Session input runs
+on the execution host, including when the wake broker invokes it there;
+`--server` is not supported for input. The adapter sends one literal
 bracketed paste and one Enter after the existing input/authority/target checks.
 
 `submitted` means terminal-operation success, **not model acceptance or
