@@ -117,6 +117,20 @@ test("the reader re-validates a stored message and reason: an invalid one (a han
   assert.equal(liveWaiting(w.home).reason, null, "a reason outside permission | question | attention reads as null");
 });
 
+test("the reader admits a claim only from `kernel` or a valid producer id: a hand-edited producer is no claim at all", (t) => {
+  const w = bare(t);
+  const row = (producer, data, at) => appendFileSync(join(w.home, ".oats-events.jsonl"), JSON.stringify({ eventsApi: 2, at, instance: "dev-1", home: w.home, incarnation: "2026-01-01T00:00:00.000Z", producer, kind: "waiting", data }) + "\n");
+  const claim = { waitingOnYou: true, reason: "attention", message: "x" };
+  ["Bad Producer!", "evil\u001b[2J", "agent\nkernel", "", "-dash", "x".repeat(65), 42, ["agent"], { id: "agent" }].forEach((p, i) => row(p, claim, `2026-01-01T00:00:0${i}.000Z`));
+  assert.equal(liveWaiting(w.home), null, "none of them is a claim");
+  assert.deepEqual(readEvents(w.home).waitingClaims, []);
+  row("oats.core", { waitingOnYou: true, reason: "permission" }, "2026-01-01T00:00:10.000Z");
+  assert.deepEqual(liveWaiting(w.home), { since: "2026-01-01T00:00:10.000Z", producer: "oats.core", reason: "permission", message: null }, "a valid producer's claim counts");
+  // A bad producer's clear does not clear anyone either.
+  row("Bad Producer!", { waitingOnYou: false }, "2026-01-01T00:00:11.000Z");
+  assert.equal(liveWaiting(w.home).producer, "oats.core");
+});
+
 test("boundary rule: a claim older than the incarnation's latest kernel launched | restarted | stopped row is not live; a producer's own 'launched' row is not a boundary", (t) => {
   for (const kind of ["launched", "restarted", "stopped"]) {
     const w = bare(t);

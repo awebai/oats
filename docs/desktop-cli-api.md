@@ -2249,7 +2249,8 @@ oats instance attention [--message <text>] [--clear] --json
   positive claim. The reader applies the same rule again: an invalid stored
   message (a hand-edited log) reads as `null`, and the claim still counts.
   A stored `reason` outside `permission`, `question`, `attention` reads as
-  `null` too.
+  `null` too, and a row whose `producer` is neither `kernel` nor a valid
+  producer id is no claim at all.
 - **Idempotent.** The verb reads the producer's live claim first and appends
   only on a change: a `set` whose reason or message differs from the live
   positive claim appends (`changed: true`), an identical one does not; a
