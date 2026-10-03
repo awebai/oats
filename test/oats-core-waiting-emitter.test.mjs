@@ -511,6 +511,23 @@ test("no watchdog sleep outlives the script: every sleep it starts is gone when 
   assert.deepEqual(pids.filter(alive), [], "none of them is still sleeping");
 });
 
+test("a temp file an interrupted write left in .claude is removed by the next pass (even an unchanged one); a live writer's, and anything else, is left alone", () => {
+  const h = home(), env = { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI_ABS };
+  runHook("spawn", env);
+  const dead = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" }).stdout;
+  const claude = join(h, ".claude");
+  const stale = join(claude, `.settings.json.oats-core-${dead}-1700000000000.tmp`);
+  const live = join(claude, `.settings.json.oats-core-${process.pid}-1700000000001.tmp`);
+  const other = join(claude, ".settings.json.someone-else.tmp");
+  for (const f of [stale, live, other]) writeFileSync(f, "{}");
+  const before = readFileSync(settingsOf(h), "utf8");
+  assert.deepEqual(runHook("launch", env), {});
+  assert.equal(readFileSync(settingsOf(h), "utf8"), before, "nothing else changed");
+  assert.ok(!existsSync(stale), "the dead writer's temp file is gone");
+  assert.ok(existsSync(live), "a live writer's is kept");
+  assert.ok(existsSync(other), "a name not ours is kept");
+});
+
 test("end to end: a command the hook wrote, run as Claude Code runs it, reaches the CLI", () => {
   const h = home();
   const log = join(base, `e2e-${n}.log`);

@@ -30,7 +30,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -139,6 +139,23 @@ export function mergeSettings(existing, ours, scriptPath) {
 
 export const serialize = (settings) => `${JSON.stringify(settings, null, 2)}\n`;
 
+/** The temp file of an atomic write: `.settings.json.oats-core-<pid>-<ms>.tmp`. */
+const TMP_RE = /^\.settings\.json\.oats-core-(\d+)-\d+\.tmp$/;
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; } };
+
+/** Remove what an interrupted write left in `.claude`: our temp files whose writer is gone
+ *  (a live writer's is left alone). Only names of our own pattern; unlink never follows a
+ *  symlink. Best effort: a failure is not a warning. */
+function removeStaleTemps(claudeDir) {
+  let names;
+  try { names = readdirSync(claudeDir); } catch { return; }
+  for (const name of names) {
+    const m = TMP_RE.exec(name);
+    if (!m || alive(Number(m[1]))) continue;
+    try { unlinkSync(join(claudeDir, name)); } catch { /* gone, or not ours to remove */ }
+  }
+}
+
 /** The real pass: bring <home>/.claude/settings.json to the merged state. Returns a warning or null. */
 export function writeClaudeSettings({ home, script, node, cli, marker = "" }) {
   const lose = "this Claude session will not report when it waits for input";
@@ -151,6 +168,7 @@ export function writeClaudeSettings({ home, script, node, cli, marker = "" }) {
   } else if (!dirStat.isDirectory() || dirStat.isSymbolicLink()) {
     return `oats.core: ${claudeDir} is not a directory (a symlink or a file); left it alone, so ${lose}`;
   }
+  removeStaleTemps(claudeDir);
   let existing = {};
   let before = null;
   let fileStat;

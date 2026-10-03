@@ -568,7 +568,10 @@ clears it.
   name that path (and any matcher group or event array the removal
   empties), then appends its current ones. Every other key and entry stays
   as it was, in order. The file is written atomically, mode 0600, and only
-  when its content changes. If the file is a symlink, not a regular file,
+  when its content changes. A temp file an interrupted write left behind
+  (`.claude/.settings.json.oats-core-<pid>-<ms>.tmp`) is removed by the next
+  spawn or start once its writer is gone, so it needs no retirement
+  exclusion. If the file is a symlink, not a regular file,
   not valid JSON, or not a JSON object with a well-formed `hooks` map,
   oats.core leaves it alone and warns. The same applies when `.claude` is a
   symlink or not a directory.
