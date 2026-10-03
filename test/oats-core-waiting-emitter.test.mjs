@@ -11,7 +11,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { claudeWaitingSettings, markerDir, markerPath, mergeSettings, shq, waitingCommand } from "../oats-package/capabilities/oats-core/bin/oats-core.mjs";
+import { claudeWaitingSettings, markerDir, markerDirPath, markerPath, mergeSettings, shq, waitingCommand } from "../oats-package/capabilities/oats-core/bin/oats-core.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const CAP = join(ROOT, "oats-package", "capabilities", "oats-core");
@@ -400,6 +400,13 @@ test("markerDir vets the per-user directory once (at spawn or launch): created 0
   const h = home(), bad = join(base, `vet-hook-${n}`); mkdirSync(uidDir(bad), { recursive: true }); chmodSync(uidDir(bad), 0o777);
   runHook("spawn", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI_ABS, TMPDIR: bad });
   for (const e of allEntries(readJson(settingsOf(h)))) assert.ok(e.command.endsWith(` '' >/dev/null 2>&1; exit 0`), e.command);
+});
+
+test("markerDirPath: XDG_RUNTIME_DIR or TMPDIR only when absolute, else /tmp; never relative to the hook's cwd", () => {
+  assert.equal(markerDirPath({ XDG_RUNTIME_DIR: "/run/user/7", TMPDIR: "/t" }, 7), "/run/user/7/oats-waiting");
+  assert.equal(markerDirPath({ XDG_RUNTIME_DIR: "run/user/7", TMPDIR: "/t" }, 7), "/t/oats-waiting-7");
+  assert.equal(markerDirPath({ TMPDIR: "/var/folders/x/T/" }, 7), "/var/folders/x/T/oats-waiting-7");
+  for (const tmp of ["relative/tmp", "./tmp", "", undefined]) assert.equal(markerDirPath({ TMPDIR: tmp }, 7), "/tmp/oats-waiting-7", JSON.stringify(tmp));
 });
 
 test("macOS: markerDir refuses a directory whose ACL hides behind the xattr indicator (`drwx------@`), and accepts xattrs alone", { skip: process.platform !== "darwin" && "macOS ACLs" }, () => {

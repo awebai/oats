@@ -55,8 +55,17 @@ export function waitingCommand({ script, node, cli, marker = "" }, args) {
   return `/bin/sh ${shq(script)} ${args.join(" ")} ${shq(node)} ${shq(cli)} ${shq(marker || "")} >/dev/null 2>&1; exit 0`;
 }
 
-/** The emitter's debounce directory, per user: `$XDG_RUNTIME_DIR/oats-waiting` when that is
- *  set and absolute, else `${TMPDIR:-/tmp}/oats-waiting-<uid>`. Vetted here, at spawn and
+/** Where the emitter's per-user debounce directory goes: `$XDG_RUNTIME_DIR/oats-waiting`
+ *  when that is set and absolute, else `$TMPDIR/oats-waiting-<uid>` when TMPDIR is
+ *  absolute, else `/tmp/oats-waiting-<uid>`. A relative value never resolves against the
+ *  hook's cwd. */
+export function markerDirPath(env, uid) {
+  const xdg = env.XDG_RUNTIME_DIR, tmp = env.TMPDIR;
+  if (typeof xdg === "string" && isAbsolute(xdg)) return join(xdg, "oats-waiting");
+  return join(typeof tmp === "string" && isAbsolute(tmp) ? tmp : "/tmp", `oats-waiting-${uid}`);
+}
+
+/** The emitter's debounce directory (markerDirPath), vetted here, at spawn and
  *  launch, so the hot path (claude-waiting.sh, on every tool call) needs no `ls` or hash:
  *  created 0700 when missing, and used only when it is a real directory (not a symlink)
  *  owned by this user, mode exactly 0700, with no ACL. Returns the directory, or null for
@@ -64,8 +73,7 @@ export function waitingCommand({ script, node, cli, marker = "" }, args) {
 export function markerDir(env = process.env) {
   if (typeof process.getuid !== "function") return null;
   const uid = process.getuid();
-  const xdg = env.XDG_RUNTIME_DIR;
-  const dir = typeof xdg === "string" && isAbsolute(xdg) ? join(xdg, "oats-waiting") : join(env.TMPDIR || "/tmp", `oats-waiting-${uid}`);
+  const dir = markerDirPath(env, uid);
   try { mkdirSync(dir, { mode: 0o700 }); } catch (e) { if (e.code !== "EEXIST") return null; }
   let st;
   try { st = lstatSync(dir); } catch { return null; }

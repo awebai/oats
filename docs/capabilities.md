@@ -594,7 +594,8 @@ clears it.
 - **Debounce.** The script keeps private state outside the home, in a file
   per home: `<dir>/<first 16 hex of sha256(home)>.claude`, where `<dir>`
   is per user: `$XDG_RUNTIME_DIR/oats-waiting` when that is set and
-  absolute, else `${TMPDIR:-/tmp}/oats-waiting-<uid>`. The spawn and launch
+  absolute, else `$TMPDIR/oats-waiting-<uid>` when `TMPDIR` is absolute,
+  else `/tmp/oats-waiting-<uid>`. The spawn and launch
   hook computes that path and vets the directory once: it creates it 0700
   and uses it only when it is a real directory the user owns, mode exactly
   0700, with no ACL (also one macOS shows only as `@`). An existing directory
