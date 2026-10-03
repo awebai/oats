@@ -231,14 +231,16 @@ try {
   write(join(deployment, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${hostRef}\nsettings:\n  oats.okf:\n    bindings-file: ${bindings}\n    harvest: "on"\n`);
 
   const cliEnv = { ...env, PI_AGENTS_ROOT: agentsRoot };
-  const cli = (args, { cwd = deployment, identity = false, env: extra = {}, expectExit = 0 } = {}) => {
+  /** One packed-CLI run, its exit status asserted → the whole result (stdout and stderr). */
+  const cliRun = (args, { cwd = deployment, identity = false, env: extra = {}, expectExit = 0 } = {}) => {
     // Scaffold-only probes have no harness to supply the normal launch identity.
     const id = identity ? { OATS_INSTANCE: basename(cwd), OATS_INSTANCE_HOME: cwd } : {};
     const r = spawnSync(oats, args, { cwd, env: { ...cliEnv, ...id, ...extra }, encoding: "utf8", maxBuffer: 16 * 1024 * 1024, timeout: 120_000 });
     if (r.error) throw r.error;
     assert.equal(r.status, expectExit, `oats ${args.join(" ")} exited ${r.status}\n${r.stdout}\n${r.stderr}`);
-    return r.stdout;
+    return r;
   };
+  const cli = (args, options) => cliRun(args, options).stdout;
   const boundary = (args, options = {}) => {
     const text = cli(args, options);
     const answer = JSON.parse(text);
@@ -301,12 +303,26 @@ try {
   // exactly as `oats spawn probe` would, fetches oats.okf into the deployment's
   // module store <deployment>/.oats/modules/oats.okf@<commit12>/ and runs THAT
   // copy with the soul's merged oats.okf payload (bindings-file) as OATS_SETTINGS.
-  // Without --soul there is no resolution to answer from: E_BAD_ARGS naming it.
-  const noSoul = JSON.parse(cli(["okf", "init", "--base", "project", "--nodes", nodes, "--confirm", "--json"], { expectExit: 1 }));
-  assert.equal(noSoul.ok, false); assert.equal(noSoul.error.code, "E_BAD_ARGS", JSON.stringify(noSoul)); assert.match(noSoul.error.message, /--soul/);
+  // Without --soul it resolves as the first soul that provides the namespace
+  // (feature operator-default-soul), named on stderr; a namespace no soul
+  // provides is E_BAD_ARGS naming --soul, and a refused dispatch fetches nothing.
+  const noProvider = JSON.parse(cli(["nothing", "init", "--json"], { expectExit: 1 }));
+  assert.equal(noProvider.ok, false); assert.equal(noProvider.error.code, "E_BAD_ARGS", JSON.stringify(noProvider));
+  assert.equal(noProvider.error.message, "no soul of this deployment provides the nothing namespace; pass --soul <name>");
   assert.ok(!existsSync(join(deployment, ".oats", "modules")), "a refused dispatch fetches nothing");
-  const okfInitAnswer = boundary(["okf", "init", "--base", "project", "--nodes", nodes, "--confirm", "--soul", "probe", "--json"]);
-  assert.equal(okfInitAnswer.status, "accepted", JSON.stringify(okfInitAnswer));
+  // The same soul answers with and without --soul (read-only: okf init refuses to run twice).
+  const helpDefault = cliRun(["okf", "--help", "--json"]);
+  assert.match(helpDefault.stderr, /oats okf: no --soul given; running as soul [\w.-]+\/probe, the first soul of this deployment that provides "okf"/, helpDefault.stderr);
+  assert.deepEqual(JSON.parse(helpDefault.stdout), JSON.parse(cli(["okf", "--help", "--soul", "probe", "--json"])), "without --soul the dispatch resolves as --soul probe");
+  // The init itself, without --soul: the default soul's run is the real one.
+  const defaultInit = cliRun(["okf", "init", "--base", "project", "--nodes", nodes, "--confirm", "--json"]);
+  assert.match(defaultInit.stderr, /no --soul given; running as soul [\w.-]+\/probe,/, defaultInit.stderr);
+  const initEnvelope = JSON.parse(defaultInit.stdout);
+  assert.equal(initEnvelope.schemaVersion, 1, defaultInit.stdout); assert.equal(initEnvelope.ok, true, defaultInit.stdout);
+  const okfInitAnswer = initEnvelope.result;
+  assert.equal(okfInitAnswer.status, "accepted", defaultInit.stdout);
+  // A second init is the provider's own refusal: knowledge is never overwritten.
+  assert.equal(JSON.parse(cli(["okf", "init", "--base", "project", "--nodes", nodes, "--confirm", "--soul", "probe", "--json"], { expectExit: 1 })).error.code, "E_BASE");
   assert.ok(existsSync(join(accepted, "okf-base.json")), "okf init wrote the accepted base");
   const storeEntries = readdirSync(join(deployment, ".oats", "modules")).filter((n) => !n.startsWith("."));
   assert.deepEqual(storeEntries.map((n) => n.replace(/@[0-9a-f]{12}$/, "@<commit12>")), ["oats.okf@<commit12>"], `module store: ${storeEntries.join(", ")}`);

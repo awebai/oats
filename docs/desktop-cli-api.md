@@ -38,7 +38,8 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
              "instance-events-2","schedule-history","schedule-read-2","spawn-preview-2","spawn-idempotency","spawn-idempotency-2","spawn-apply-2",
              "workspace-v2","instance-modules","spawn-provider-payload","served-identity","packages-no-approval","spawn-name","settings-origins",
              "team-model-3","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts","launch-preference",
-             "preview-composed-from","observe-max-age","spawn-preview-max-age","capability-show","capture-file","workspace-identity"],
+             "preview-composed-from","observe-max-age","spawn-preview-max-age","capability-show","capture-file","workspace-identity",
+             "server-connect","capability-route","servers-per-workspace","operator-default-soul"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
@@ -101,6 +102,10 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
 | `capability-show` | `oats capabilities show <name>` and its `--file` form, OATS 0.34.0 ([`oats capabilities show`](#oats-capabilities-show)) | `capabilityShowApi: 1` |
 | `capture-file` | `oats capture --file <path> --format cc\|pi\|codex --home <instance home> [--json]`: one session file captured as `--home` capture would, with a receipt bound to its bytes, OATS 0.35.0 (the capture USAGE and packages/record/README.md) | |
 | `workspace-identity` | the deployment's workspace identity on `oats status --json` `workspace` (`key`, `ref`, `keyFrom`, `standalone`, `defaultTeam`, `teams`, `teamsFrom`) and each `oats server roster --json` group's relayed `workspace`, OATS 0.36.0 ([Workspace identity](#workspace-identity-feature-workspace-identity-oats-0360)) | |
+| `servers-per-workspace` | `workspaceKey` on registrations and `oats server list --json` rows; `oats server list --workspace-ref <ref>` and its `unknownWorkspace`; `workspaceKey` on `oats server check --json`, OATS 0.39.0 ([Servers per workspace](#servers-per-workspace)) | |
+| `server-connect` | `oats server connect`; `oats onboard --check`; `workspaceReadable` on `oats server check --json`, OATS 0.39.0 ([`oats server connect`](#oats-server-connect)) | |
+| `capability-route` | `oats <namespace> <command> … --server <id>` runs the capability command on the server, OATS 0.39.0 ([Capability commands on a server](#capability-commands-on-a-server)) | |
+| `operator-default-soul` | a capability command from a deployment without `--soul` runs as the first soul that provides its namespace (named on stderr); none is `E_BAD_ARGS`, OATS 0.39.0 ([capabilities.md](capabilities.md)) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -1903,6 +1908,113 @@ route target:
 - `running` is `null` when unknown; `backend` is `tmux` for a row with a tmux
   target, else `null`; `tmux`, `sessionTarget` (the recorded target of a home
   a Herdr-era kernel opened) and `runtimeError` are as the host reports them.
+
+<a id="servers-per-workspace"></a>
+### Servers per workspace (feature `servers-per-workspace`)
+
+```text
+oats server list [--workspace-ref <ref>] --json
+oats server check <id> --json
+```
+
+`server list` is an envelope whose `result` is `{file, servers}`; each row is
+the registration (`id`, `sshHost`, `workspace`, and `oatsPath`, `path`,
+`label` when set) plus `workspaceKey` (`null` when not known yet), `target`
+and `snapshots`. With `--workspace-ref <ref>`, `servers` holds only the rows
+whose `workspaceKey` is the canonical key of `<ref>` (`parseRepoRef`; any
+spelling of the repository), and `result.unknownWorkspace` lists the ids
+whose key is not known; an unparsable ref is `E_REPO_REF`.
+
+```json
+{"file":"/Users/me/.oats/servers.json",
+ "servers":[{"id":"altair-aweb","sshHost":"altair","workspace":"/Users/me/Agents/aweb","path":"/opt/homebrew/bin","label":"altair",
+             "workspaceKey":"github.com/awebai/ac",
+             "target":{"sshHost":"altair","workspace":"/Users/me/Agents/aweb","oatsPath":"oats","path":"/opt/homebrew/bin"},"snapshots":0}],
+ "unknownWorkspace":["build"]}
+```
+
+`server check` adds `workspaceKey` (the host's answer, else the recorded one,
+else `null`), `workspaceReadable` (`true`, `false`, or `null` when the host
+does not advertise `server-connect` or cannot say) and, when it is `false`,
+`workspaceReadError: {code, message, reason, hint?}` beside `id`, `target`,
+`remote`, `workspaceReachable`, `agents` and `error`. A recorded key the host
+contradicts fails the check with `E_SERVER_WORKSPACE_MISMATCH`, `details:
+{recorded, reported}`, and the registration is not rewritten. `server add
+--json` answers the registration with `workspaceKey` (`null`, and a
+`warnings` entry, when the host answered none).
+
+<a id="oats-server-connect"></a>
+### `oats server connect` (feature `server-connect`)
+
+```text
+oats server connect <id> --ssh <host> [--workspace-ref <ref>] [--dir </abs/path or ~/path on the host>]
+                    [--oats <path>] [--path <dirs>] [--label <text>] [--install-oats] [--replace] --json
+```
+
+An envelope, `ok: true` whenever no step failed, human steps included
+([servers.md](servers.md#connect-a-machine) has what each step does):
+
+```json
+{"id":"altair-aweb","ready":false,
+ "registration":null,
+ "steps":[{"step":"ssh","status":"ok"},
+          {"step":"oats","status":"done","detail":"installed @awebai/oats 0.39.0 (was missing)"},
+          {"step":"git","status":"needs-human","code":"E_REMOTE_UNREADABLE",
+           "detail":"cannot read remote https://github.com/awebai/ac (auth): on macOS a session without a terminal …",
+           "remedy":"on altair: on macOS a session without a terminal … (`gh auth login --insecure-storage`, then `gh auth setup-git`), or use an SSH key the session can reach: …",
+           "hint":"keychain-non-interactive"},
+          {"step":"deployment","status":"skipped","detail":"waits for git"},
+          {"step":"register","status":"skipped","detail":"waits for git"},
+          {"step":"readiness","status":"skipped","detail":"waits for git"}],
+ "human":["on altair: on macOS a session without a terminal … or the desktop login's ssh-agent (point SSH_AUTH_SOCK at it in the shell's startup file)"]}
+```
+
+- `steps` is always the six steps `ssh`, `oats`, `git`, `deployment`,
+  `register`, `readiness`, in that order. A step is `{step, status}` plus
+  `detail` when there is something to say; `needs-human` adds `remedy` (and
+  on `git` the error's `code` and any `hint`), in which every command to run
+  is a Markdown code span with each argument quoted for a POSIX shell (a
+  value from a reference or a host path is always one literal argument), and
+  a value in the surrounding text has its backslashes and backticks escaped
+  (`` \\ ``, `` \` ``), so the code spans are exactly the commands (a readiness line relays the provider's own wording); `failed` adds `code` and, for
+  some codes, `details`. `skipped` steps say `waits for <step>`.
+- `registration` is the registration as written or found (`sshHost`,
+  `workspace`: the absolute path the host resolved for `--dir`, never `~`;
+  `workspaceKey`; and `oatsPath`, `path`,
+  `label` when set), `null` until the `register` step has run.
+- `human` lists the remedies of the `needs-human` steps, in order. A
+  `readiness` step that needs a human has one line per problem
+  (`<souls>: <subject>: <reason>[ → <remedy>]`, plus `readiness not checked
+  for N souls: …` when the 60 s budget ran out, or `readiness not checked: the
+  host did not list its souls within 60 s; …` when the listing itself did not
+  finish); its `remedy` is those lines joined by `\n`.
+- `ready` is `true` when no step is `needs-human` or `failed`.
+- A `failed` step ends the run: `ok: false`, `error.code` is the step's code
+  (`E_SSH`, `E_REMOTE_INSTALL`, `E_SERVER_WORKSPACE_MISMATCH`,
+  `E_DIR_NOT_EMPTY`, `E_SERVER_EXISTS`, `E_SERVERS_BUSY`, or the host's own
+  code relayed),
+  `error.details` is the step's `details` plus `steps`, the steps so far
+  (the failed one last). A mismatch at `deployment` has `details: {expected,
+  reported, dir}`; at `register`, `{recorded, reported}`.
+
+The host-side read it uses, `oats onboard <dir> [--workspace <ref>] --check
+--json`, answers `{check: true, dir, state, workspace: {ref, key, url}, remote}`:
+`state` is `absent`, `empty`, `not-empty`, `not-a-directory` or `deployment`;
+`remote` is `{readable: true, commit}` or `{readable: false, error: {code,
+message, reason, hint?, remedy?}}`. It writes nothing.
+
+<a id="capability-commands-on-a-server"></a>
+### Capability commands on a server (feature `capability-route`)
+
+`oats <namespace> <command> … --server <id>` runs `oats <namespace>
+<command> …`, the argv as typed minus `--server <id>`, from the registered
+workspace directory on the server. With `--json` the host's stdout (its
+envelope) is relayed verbatim and the exit status is the host's. When the
+host gave no output this side answers one envelope: `E_SSH` (`ssh to <host>
+failed running \`oats …\` on server <id>`) or `E_REMOTE_ENVELOPE`, with
+`details: {server, status}`; any `--invite` value in the printed argv is
+`<redacted>`. `--server` with no value is `E_BAD_ARGS`, an unknown id
+`E_SERVER_UNKNOWN`. Stdin is forwarded untouched unless it is a terminal.
 
 <a id="routed-reads-and-plans"></a>
 ### Routed reads and plans (`--server`, 0.31)
