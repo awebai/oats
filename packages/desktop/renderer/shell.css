@@ -195,16 +195,19 @@ body {
    background fills 44px, clipped inside 2px transparent borders top and
    bottom, so neighbouring backgrounds never touch (human, 2026-09-29) while
    the connectors, which span the whole box, stay continuous. The vertical
-   radius adds the border so the painted corners stay 7px round. */
+   radius adds the border so the painted corners stay 7px round. State rules
+   set background-color only: the background shorthand resets the clip to
+   border-box, which painted the gap and made a selected row and a hovered
+   neighbour touch (human, 2026-10-03). */
 .ctx-tree-row { --tree-step: 18px; --row-gap: 2px; --row-solid: var(--surface); position: relative; width: 100%; min-height: 48px;
                 box-sizing: border-box; display: flex; align-items: center;
                 border-top: var(--row-gap) solid transparent; border-bottom: var(--row-gap) solid transparent;
                 background-clip: padding-box; border-radius: 7px / 9px;
                 padding-left: calc(var(--depth) * var(--tree-step)); }
-.ctx-tree-row:hover { --row-solid: var(--surface-2); background: var(--surface-2); }
-.ctx-tree-row.active { --row-solid: var(--sel); background: var(--sel); }
+.ctx-tree-row:hover { --row-solid: var(--surface-2); background-color: var(--surface-2); }
+.ctx-tree-row.active { --row-solid: var(--sel); background-color: var(--sel); }
 /* Spec E: the pending row of the spawn just pressed, revealed without taking focus: the selection's own fill. */
-.ctx-tree-row.ctx-spawn-revealed { --row-solid: var(--sel); background: var(--sel); }
+.ctx-tree-row.ctx-spawn-revealed { --row-solid: var(--sel); background-color: var(--sel); }
 .ctx-row-tools { position: absolute; top: 50%; right: 6px; transform: translateY(-50%); z-index: 2;
                  display: flex; align-items: center; gap: 4px; padding-left: 6px;
                  background: var(--row-solid); visibility: hidden; }
