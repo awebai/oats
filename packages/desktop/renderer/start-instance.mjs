@@ -77,16 +77,17 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
     };
     const offWorkspace = onWorkspaceChange(close);
     // After the dialog closed: the started instance's terminal, while this window still shows the
-    // workspace it was started from.
-    const stillHere = () => ws === currentWorkspace() && generation === workspaceGeneration();
-    const openWhenReady = async () => {
+    // workspace it was started from and the operator has chosen nothing since (`chosen`, the shell's
+    // selection watch). The open's own selection ticket supersedes the watch from then on.
+    const openWhenReady = async (chosen) => {
+      const ours = () => ws === currentWorkspace() && generation === workspaceGeneration() && chosen();
       try {
-        const ready = await waitForReady({ ctx }, instance, stillHere);
-        if (!stillHere()) return;
+        const ready = await waitForReady({ ctx }, instance, ours);
+        if (!ours()) return;
         if (ready) await ctx.openTerminal(instance, { quiet: true });
         else ctx.notify?.(`${instance.instance} was started, but its terminal isn't ready yet. Open it from its row when it is.`);
       } catch (error) {
-        if (stillHere()) ctx.notify?.(`${instance.instance} was started, but its terminal could not open: ${error.message}`);
+        if (ours()) ctx.notify?.(`${instance.instance} was started, but its terminal could not open: ${error.message}`);
       }
     };
     active = { focus: () => model.focus() };
@@ -151,7 +152,9 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
         // confirmation, an error), so the dialog never waits on it (#525): it closes, and the terminal
         // opens as soon as the row is ready. Readiness is reported there, or by a notice, never by a modal.
         close();
-        void openWhenReady();
+        // Taken after the focus return: any explicit choice from now on (another terminal, tab, view or
+        // the sidebar) keeps the foreground, and this terminal does not take it later.
+        void openWhenReady(ctx.watchSelection?.() ?? (() => true));
       } catch (error) {
         if (!owns()) return;
         status.textContent = error.message;

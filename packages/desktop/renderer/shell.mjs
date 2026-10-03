@@ -133,6 +133,9 @@ const ctx = {
   hasWorkspaceSwitcher: true,
   // Workspace selections compete with pending shell chooser/tab opens too.
   onSelectionIntent: () => tabOpenIntents.invalidate(),
+  // A ticket true while no explicit choice happened since it was taken: an accepted Start/Restart opens
+  // its terminal later only while it holds (#525), as a followed spawn does.
+  watchSelection: () => tabOpenIntents.watch(),
   notify: notifications.notify,
   notifySpawn: (instance, workspace, epoch) => {
     const target = instanceActionTarget(workspace, instance, { requireBirth: true });
