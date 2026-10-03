@@ -49,10 +49,12 @@ and ownership, and copying it promotes nothing to shared knowledge.
    host's own record is never written, so a source the host chose not to capture stays uncaptured.
 7. **Security requirements, each tested.**
    - *Redaction, not refusal.* Before the clone can see anything, `spawn` redacts the whole assembled
-     brief, preamble included: PEM private keys, provider tokens and keys, JWTs, Bearer tokens,
-     credentials in URLs and `secret=…` assignments become `[redacted:<pattern>]`. The receipt and
-     the answer list `{line, pattern}`, never the value. Redaction errs toward over-redacting, never
-     toward a leak. The `/plan-clone` exclusions stay the policy; redaction is the seatbelt.
+     brief, preamble included, with a fixed set of patterns: PEM private keys, provider tokens and
+     keys, JWTs, Bearer tokens, credentials in URLs, and uppercase assignments such as
+     `API_TOKEN=…` or `PASSWORD: …`. Each match becomes `[redacted:<pattern>]`; the receipt and the
+     answer list `{line, pattern}`, never the value. Where a pattern's boundary is ambiguous it
+     redacts more rather than less. Redaction is pattern-limited: a form no pattern recognises
+     survives it, so the `/plan-clone` exclusions stay the policy and redaction is the seatbelt.
    - *The brief lives only in the clone's home, mode 0600.* `claude` and `codex` launches pass
      `TASK.md` as an argument, visible to other local users. So the clone is spawned `--no-launch`
      with only the preamble and a pointer in its task, the brief is attached with
