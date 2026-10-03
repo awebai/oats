@@ -683,6 +683,21 @@ again" permission rules there.
   of time, until the next event (the human's next prompt). A hidden
   question lasts until the human answers it (their prompt or the answer's
   tool event clears it).
+- **A permission prompt can stay hidden until it is answered**, with no
+  suspension or crash: when the prompt opens while another hook's
+  reconciliation is under way and that hook then runs out of time (a slow
+  clear on a loaded machine: the turn's forced `Stop` clear, or a
+  `PostToolUse` clear while a background subagent's prompt opens), the
+  prompt's hook has already exited, leaving its intent to the holder, and
+  the holder stops without applying it. The next event applies it, and
+  while the prompt is open that is usually the answer itself.
+- Parallel tool calls in the main thread **may** clear a claim early: if one
+  waits at a permission prompt while a parallel one finishes after the
+  prompt's notification, that one's `PostToolUse` is a main-thread clear.
+  The notification carries no tool id, so there is no cheap fix. Not
+  observed on Claude Code 2.1.288: a parallel `Read` and a backgrounded
+  `Agent` call each finished before the notification (which came several
+  seconds after the dialog appeared), and the claim stayed.
 - If the marker and the claim disagree (someone deleted the marker by hand,
   say), a stale claim can remain until the turn ends, or the next set or
   clear or session boundary.
