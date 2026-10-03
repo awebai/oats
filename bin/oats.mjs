@@ -947,6 +947,8 @@ function instanceWaitingCmd(sub, bail) {
       waiting = verb === "set";
       producer = value("producer"); reason = value("reason");
       if (producer === undefined) return bail("E_BAD_ARGS", `--producer is required; ${usage}`);
+      // Producer `agent` is the agent's own claim: only `attention` writes it.
+      if (producer === "agent") return bail("E_BAD_ARGS", "--producer agent is reserved for the agent's own claim: use `oats instance attention [--message <text>]` or `oats instance attention --clear` from its session");
       const homeOpt = flag("home");
       if (homeOpt === true || (homeOpt !== undefined && !isAbsolute(homeOpt))) return bail("E_BAD_ARGS", "--home needs an absolute instance home");
       home = homeOpt ?? (process.env.OATS_INSTANCE_HOME || enclosingInstanceHome(logicalCwd()));

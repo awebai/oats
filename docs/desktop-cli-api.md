@@ -2262,9 +2262,11 @@ oats instance attention [--message <text>] [--clear] --json
     prompt, `question` on AskUserQuestion or an MCP elicitation, cleared when
     the session moves on). See [capabilities.md](capabilities.md), "oats.core:
     needs input".
-  - `agent`: the instance itself, through `oats instance attention`. **Agent
-    claims are cleared only by the agent (`--clear`) or a session boundary**;
-    no hook clears them (a wake broker's paste is also a prompt submit).
+  - `agent`: the instance itself, through `oats instance attention`, and
+    only through it: `oats instance waiting --producer agent` is
+    `E_BAD_ARGS`. **Agent claims are cleared only by the agent (`--clear`)
+    or a session boundary**; no hook clears them (a wake broker's paste is
+    also a prompt submit).
 - **Where it shows.** `waitingOnYou` on the events read, on `oats status
   --json` instance rows (running rows only) and on `oats session inspect
   --json` (beside `state`, whose enum is unchanged; `null` unless the harness

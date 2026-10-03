@@ -322,7 +322,7 @@ test("both verbs work from a cwd outside the deployment: the scope is the agents
   assert.equal(att.doc?.ok, true, att.stdout + att.stderr); assert.equal(att.doc.result.waitingOnYou.message, "from outside");
   const clr = cli(["instance", "waiting", "clear", "--producer", "oats.core", "--home", home, "--dir", fx.dep, "--json"], {}, outside);
   assert.equal(clr.doc?.ok, true, clr.stdout + clr.stderr); assert.equal(clr.doc.result.changed, true, "an explicit --dir still scopes it");
-  const wrong = cli(["instance", "waiting", "clear", "--producer", "agent", "--home", home, "--dir", outside, "--json"], {}, outside);
+  const wrong = cli(["instance", "waiting", "clear", "--producer", "oats.core", "--home", home, "--dir", outside, "--json"], {}, outside);
   assert.equal(wrong.doc?.ok, false, "a --dir that is not a deployment is refused");
 });
 
@@ -338,6 +338,10 @@ test("CLI refusals: attention needs $OATS_INSTANCE_HOME to be a home and has no 
   assert.match(cli(["instance", "attention", "--message", "x".repeat(201), "--json"], { OATS_INSTANCE_HOME: home }).doc.error.message, /--message/);
   const w = (...a) => err(cli(["instance", "waiting", ...a, "--json"]));
   assert.equal(w("set", "--producer", "kernel", "--reason", "permission", "--home", home), "E_BAD_ARGS");
+  for (const verb of [["set", "--reason", "attention"], ["clear"]]) {
+    const r = cli(["instance", "waiting", verb[0], "--producer", "agent", ...verb.slice(1), "--home", home, "--json"]);
+    assert.equal(err(r), "E_BAD_ARGS", `waiting ${verb[0]} --producer agent`); assert.match(r.doc.error.message, /oats instance attention/);
+  }
   assert.equal(w("set", "--producer", "oats.core", "--home", home), "E_BAD_ARGS", "--reason is required for set");
   assert.equal(w("set", "--producer", "oats.core", "--reason", "idle", "--home", home), "E_BAD_ARGS");
   assert.equal(w("clear", "--producer", "oats.core", "--reason", "permission", "--home", home), "E_BAD_ARGS");
