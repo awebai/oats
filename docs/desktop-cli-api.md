@@ -2232,8 +2232,10 @@ oats instance attention [--message <text>] [--clear] --json
   never targets another instance. Unset, or not an instance home (no readable
   `instance.json`), is `E_USAGE`. `--clear` with `--message` is `E_BAD_ARGS`.
 - **`--message`**: one line of 1 to 200 characters with no control character
-  (C0, DEL, C1; so no newline, tab or ESC) and no Unicode line separator;
-  otherwise `E_BAD_ARGS` naming `--message`. It is stored as given, only on a
+  (`\p{Cc}`: C0, DEL, C1; so no newline, tab or ESC), no format character
+  (`\p{Cf}`: the bidi controls U+202A–202E and U+2066–2069, zero-width
+  characters, the BOM, soft hyphen) and no Unicode line or paragraph
+  separator; otherwise `E_BAD_ARGS` naming `--message`. It is stored as given, only on a
   positive claim. The reader applies the same rule again: an invalid stored
   message (a hand-edited log) reads as `null`, and the claim still counts.
   A stored `reason` outside `permission`, `question`, `attention` reads as

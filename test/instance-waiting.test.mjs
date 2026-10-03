@@ -69,7 +69,7 @@ test("the writer's refusals: producer grammar and kernel reserved, the closed re
   assert.throws(() => setWaiting(join(w.base, "nowhere"), { producer: "p", waiting: true, reason: "question" }), code("E_SESSION_UNKNOWN"));
 });
 
-test("message validation: 200 characters OK, 201 refused; newline, tab, ESC, DEL, C1, line separators and non-strings refused", (t) => {
+test("message validation: 200 characters OK, 201 refused; newline, tab, ESC, DEL, C1, format characters (bidi controls, zero-width, BOM), line separators and non-strings refused", (t) => {
   const w = bare(t);
   assert.equal(validWaitingMessage("x".repeat(200)), true);
   assert.equal(validWaitingMessage("é".repeat(200)), true, "characters, not bytes");
@@ -78,6 +78,13 @@ test("message validation: 200 characters OK, 201 refused; newline, tab, ESC, DEL
     assert.equal(validWaitingMessage(bad), false, JSON.stringify(bad));
     if (typeof bad === "string" || bad === 42) assert.throws(() => setWaiting(w.home, { producer: "agent", waiting: true, reason: "attention", message: bad }), code("E_BAD_ARGS"), JSON.stringify(bad));
   }
+  // Format characters (\p{Cf}): every bidi control, zero-width characters, the BOM, soft hyphen.
+  for (const cp of [0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069, 0x200b, 0x200e, 0x200f, 0x2060, 0xfeff, 0x00ad, 0x061c]) {
+    const c = String.fromCodePoint(cp), bad = `pay ${c}evil${c} now`;
+    assert.equal(validWaitingMessage(bad), false, `U+${cp.toString(16).toUpperCase()}`);
+    assert.throws(() => setWaiting(w.home, { producer: "agent", waiting: true, reason: "attention", message: bad }), (e) => e.code === "E_BAD_ARGS" && /--message/.test(e.message), `U+${cp.toString(16)}`);
+  }
+  for (const ok of ["need the npm token from Pepe", "¿listo? ✓ — 日本語 🚀", "שלום world"]) assert.equal(validWaitingMessage(ok), true, ok);
   assert.equal(w.rows().length, 0, "a refused message appends nothing");
 });
 
@@ -89,7 +96,10 @@ test("the reader re-validates a stored message and reason: an invalid one (a han
   assert.equal(readEvents(w.home).waitingClaims[0].message, null);
   row({ waitingOnYou: true, reason: "attention\u001b[2J", message: "x".repeat(201) }, "2026-01-01T00:00:02.000Z");
   assert.deepEqual(liveWaiting(w.home), { since: "2026-01-01T00:00:02.000Z", producer: "agent", reason: null, message: null }, "a reason that would print a control character reads as null too");
-  row({ waitingOnYou: true, reason: "review requested" }, "2026-01-01T00:00:03.000Z");
+  row({ waitingOnYou: true, reason: "attention", message: "pay \u202eexe.txt" }, "2026-01-01T00:00:03.000Z");
+  assert.deepEqual(liveWaiting(w.home), { since: "2026-01-01T00:00:03.000Z", producer: "agent", reason: "attention", message: null }, "a stored bidi control reads as null");
+  assert.equal(readEvents(w.home).waitingClaims[0].message, null);
+  row({ waitingOnYou: true, reason: "review requested" }, "2026-01-01T00:00:04.000Z");
   assert.equal(liveWaiting(w.home).reason, null, "a reason outside permission | question | attention reads as null");
 });
 
