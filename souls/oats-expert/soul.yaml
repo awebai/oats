@@ -1,11 +1,10 @@
 schemaVersion: 2
 name: oats-expert
-description: OATS direction, architecture rationale, maintainer review and adoption judgment.
+description: The OATS maintainer - direction, architecture rationale, launching work, review, merge, releases and adoption questions.
 work: directory
 # oats.core and the oats.okf knowledge slot come from the workspace defaults.
 # What this soul owns and reads in the central base is okf.json beside this file.
 capabilities:
-  oats.engineering-expert: { from: package }   # plan, spec, coordinate developers and experts, verify, land
-  oats.workspace-experts: { from: here }       # this repository's surfaces, developers and delivery
-  oats.cloning: { from: package }   # request a clone of an instance for a new goal
+  oats.maintainer: { from: package }           # the maintainer role: overview, launching work, direction gate, review and merge, releases, peers, knowledge
+  oats.cloning: { from: package }              # request a clone of an instance for a new goal
 launch: { harness: claude, model: claude-opus-5-5 }   # the role's preference; each machine may override it

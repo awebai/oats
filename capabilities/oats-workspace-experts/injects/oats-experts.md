@@ -23,3 +23,5 @@ the adversarial review loop. Launching a developer is still the default.
 **Delivery.** Every change reaches main by a PR. The owning expert lands it (opens it,
 answers reviews, gets it merged). In this repository, merges are done by the maintainer
 (`oats-expert`), so getting its approval is part of landing.
+
+**The maintainer to tell** when a human starts you directly on OATS work is `oats-expert`.
