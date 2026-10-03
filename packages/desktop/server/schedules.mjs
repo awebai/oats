@@ -25,6 +25,10 @@ export async function scheduleRequest(request, { workspace, cli, agents = [], in
     const { cron, tz, enabled } = value;
     if (typeof cron !== "string" || typeof tz !== "string" || typeof enabled !== "boolean") fail("Specify cron, time zone, and enabled state");
     spec = { cron, tz, enabled };
+    if (Object.hasOwn(value, "description")) {
+      if (typeof value.description !== "string") fail("Invalid description");
+      spec.description = value.description;
+    }
     if (value.kind === "spawn") {
       const matches = agents.filter(a => a.name === value.agent && a.agentsRoot === value.agentsRoot && (!value.repo || a.repo === value.repo));
       if (matches.length !== 1 || matches[0].work === "attached") fail("Select one standalone soul in this workspace");

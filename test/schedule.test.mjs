@@ -13,6 +13,7 @@ process.env.OATS_HOME_DIR = join(base, "oats-home");
 delete process.env.OATS_INSTANCE; delete process.env.OATS_INSTANCE_HOME; delete process.env.PI_AGENTS_ROOT;
 const S = await import("../lib/schedule.mjs");
 const H = await import("../lib/schedule-host.mjs");
+const A = await import("../lib/automations.mjs");
 const { scheduleRemote } = await import("../lib/servers.mjs");
 test.after(() => rmSync(base, { recursive: true, force: true }));
 
@@ -58,6 +59,71 @@ test("definitions are validated field by field, with croner and IANA zones", () 
   assert.equal(S.validateDefinition(ws, { id: "a", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "a".repeat(10), purpose: "p".repeat(40), task: "t" }, { checkAgent: false }).purpose, "p".repeat(40), "10 + 1 + 40 + 1 + 12 = 64 fits");
   const ok = S.validateDefinition(ws, { id: "nightly", cron: " 0 3 * * * ", tz: "Europe/Madrid", kind: "spawn", agent: "dev", task: "do it", yolo: true, backend: "tmux" });
   assert.deepEqual(ok, { id: "nightly", enabled: true, cron: "0 3 * * *", tz: "Europe/Madrid", kind: "spawn", agent: "dev", task: "do it", yolo: true, backend: "tmux" });
+});
+
+test("schedule IDs accept 100 characters through storage and execution, while spawn names stay bounded", () => {
+  const ws = workspace(), id = "a".repeat(100);
+  const command = { id, cron: "* * * * *", tz: "UTC", kind: "command", cwd: ws, argv: ["oats", "status"] };
+  assert.equal(S.addSchedule(ws, command).id, id);
+  assert.equal(S.describe(ws, id).id, id);
+  assert.equal(S.describe(ws, `local/${id}`).id, id);
+  S.updateSchedule(ws, id, { ...command, cron: "0 * * * *" });
+  assert.equal(S.describe(ws, id).cron, "0 * * * *");
+  const result = S.runNow(ws, id, { now: at("2026-09-07T10:00:00Z"), io: { command: () => ({ ok: true, result: {} }) } });
+  assert.equal(result.schedule.id, id);
+  S.removeSchedule(ws, id);
+  assert.throws(() => S.validateDefinition(ws, { ...command, id: "a".repeat(101) }), (e) => e.code === "E_SCHEDULE_INVALID" && e.field === "id");
+  const spawn = { id, kind: "spawn", agent: "dev", task: "t", cron: "* * * * *", tz: "UTC" };
+  assert.throws(() => S.validateDefinition(ws, spawn), (e) => e.field === "id" && /at most 64/.test(e.message));
+  assert.equal(S.validateDefinition(ws, { ...spawn, purpose: "short" }).id, id);
+});
+
+test("automatic wake IDs retain distinct long instance names", () => {
+  const ws = workspace(), prefix = "dev-" + "x".repeat(50);
+  const wake = { cron: "* * * * *", tz: "UTC", message: "check" };
+  for (const suffix of ["a", "b"]) {
+    const instance = prefix + suffix, h = home(ws, instance);
+    const saved = S.saveWakeForHome(ws, { instance, home: h, wake });
+    assert.equal(saved.id, `wake-${instance}`);
+    assert.deepEqual(S.removeWakeForHome(ws, h), [`wake-${instance}`]);
+  }
+});
+
+test("a description is optional, one line of 1 to 200 characters without control characters, and stored as given", () => {
+  const ws = workspace();
+  const job = { id: "a", cron: "* * * * *", tz: "UTC", kind: "command", cwd: ws, argv: ["oats", "status"] };
+  for (const description of [7, null, "", "x".repeat(201), "a\nb", "a\rb", "a\tb", "a\0b", "a\x1bb", "a\x7fb", "a\u0085b", "a b", "a b"]) {
+    assert.throws(() => S.validateDefinition(ws, { ...job, description }), (e) => e.code === "E_SCHEDULE_INVALID" && e.field === "description" && /description/.test(e.message), JSON.stringify(description));
+  }
+  assert.equal(S.validateDefinition(ws, { ...job, description: "x".repeat(200) }).description, "x".repeat(200));
+  assert.equal(S.validateDefinition(ws, { ...job, description: "🙂".repeat(200) }).description, "🙂".repeat(200), "characters, not UTF-16 units");
+  assert.equal(S.validateDefinition(ws, { ...job, description: "  Harvest — soul dev  " }).description, "  Harvest — soul dev  ", "stored as given");
+  assert.equal("description" in S.validateDefinition(ws, job), false, "absent stays absent");
+  S.addSchedule(ws, { ...job, id: "labelled", description: "Knowledge harvest for dev-1 (soul dev)" });
+  S.addSchedule(ws, { ...job, id: "plain" });
+  const rows = Object.fromEntries(S.listSchedules(ws).schedules.map((r) => [r.id, r]));
+  assert.equal(rows.labelled.description, "Knowledge harvest for dev-1 (soul dev)");
+  assert.equal(rows.plain.description, null);
+  assert.equal(S.describe(ws, "labelled").description, "Knowledge harvest for dev-1 (soul dev)");
+  assert.equal(S.updateSchedule(ws, "labelled", { ...job, description: "Renamed" }).description, "Renamed");
+  assert.equal(S.updateSchedule(ws, "labelled", job).description, null, "an update without one drops it");
+});
+
+test("a description is informational: it never reaches argv, the spawn options, the launch or the run record", () => {
+  const runOf = (description) => {
+    const ws = workspace();
+    const src = home(ws, "dev-src");
+    const cmds = [], spawns = [];
+    const io = { command: (c) => { cmds.push(c); return { ok: true, result: {} }; }, spawn: (root, agent, opts) => { spawns.push({ agent: agent.name, opts }); return fakeSpawn(ws)(root, agent, opts); }, inspect: () => ({ present: true, state: "unknown" }) };
+    const extra = description === undefined ? {} : { description };
+    S.addSchedule(ws, { id: "cmd", cron: "0 * * * *", tz: "UTC", kind: "command", cwd: src, argv: ["oats", "okf", "harvest"], ...extra });
+    S.addSchedule(ws, { id: "nightly", cron: "0 * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t", ...extra });
+    const considered = S.tickWorkspace(ws, { now: at("2026-09-07T10:00:00Z"), io, reg: { ...S.readRegistry(), maxConcurrent: 5 } });
+    const st = S.readState(ws);
+    const strip = (v) => JSON.parse(JSON.stringify(v).replaceAll(ws, "<ws>").replace(/"(startedAt|wallClock|lastLaunchedAt|at|runId|recordedAt)":"[^"]*"/g, `"$1":"<t>"`));
+    return strip({ cmds, spawns, considered, state: st });
+  };
+  assert.deepEqual(runOf("Knowledge harvest for dev-1 (soul dev)"), runOf(undefined));
 });
 
 test("cron evaluation follows the zone through DST and is due exactly on the minute", () => {
@@ -246,10 +312,13 @@ test("the CLI answers the envelope for add, list, show, update, enable, disable,
   const env = { ...process.env, OATS_HOME_DIR: process.env.OATS_HOME_DIR };
   const run = (...a) => { const r = execFileSync(process.execPath, [bin, "schedule", ...a, "--dir", ws, "--json"], { encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] }); return JSON.parse(r.trim().split("\n").pop()); };
   const spec = join(base, "spec.json");
-  writeFileSync(spec, JSON.stringify({ id: "nightly", cron: "0 3 * * *", tz: "Europe/Madrid", kind: "spawn", agent: "dev", task: "Nightly sweep.", harness: "claude", yolo: true }));
+  writeFileSync(spec, JSON.stringify({ id: "nightly", cron: "0 3 * * *", tz: "Europe/Madrid", kind: "spawn", agent: "dev", task: "Nightly sweep.", harness: "claude", yolo: true, description: "Sweeps the release branch every night" }));
   let out = run("add", "nightly", "--file", spec);
   assert.equal(out.ok, true); assert.equal(out.result.schedule.id, "nightly"); assert.ok(out.result.schedule.nextRun);
+  assert.equal(out.result.schedule.description, "Sweeps the release branch every night");
+  assert.match(execFileSync(process.execPath, [bin, "schedule", "show", "nightly", "--dir", ws], { encoding: "utf8", env }), /"description": "Sweeps the release branch every night"/, "human show prints it");
   out = run("list");
+  assert.equal(out.result.schedules[0].description, "Sweeps the release branch every night");
   assert.deepEqual(Object.keys(out.result), ["scope", "scheduleApi", "scheduleHistoryApi", "integrity", "host", "schedules", "triggers", "snapshot", "scheduler"]); // K8b: scope echo + integrity; 0.28: the triggers pointer; 0.29: host + the workspace snapshot
   assert.equal(out.result.schedules[0].id, "nightly");
   for (const k of ["installed", "active", "lastTick", "maxConcurrent"]) assert.ok(k in out.result.scheduler, k);
@@ -370,7 +439,162 @@ test("a running wake delivers beside a long scheduled spawn that holds the only 
   assert.equal(inputs.length, 2);
 });
 
-test("a command that creates a home and then times out stays unknown with its slot held until reconcile adopts it", () => {
+test("an unknown command whose process exited frees the host slot for other jobs, but its own job waits for reconcile and keeps its first error", () => {
+  const ws = workspace();
+  const src = home(ws, "dev-src");
+  const reg = { ...S.readRegistry(), maxConcurrent: 1 };
+  const commands = [], spawns = [];
+  const io = { command: (c) => { commands.push(c); return "not an envelope"; }, spawn: fakeSpawn(ws, spawns), inspect: () => ({ present: true, state: "unknown" }) };
+  S.addSchedule(ws, { id: "wedge", cron: "0 * * * *", tz: "UTC", kind: "command", cwd: src, argv: ["oats", "okf", "run-source"] });
+  S.addSchedule(ws, { id: "other", cron: "1 * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t" });
+  let c = S.tickWorkspace(ws, { now: at("2026-09-07T10:00:00Z"), io, reg });
+  assert.equal(c[0].action, "unknown"); assert.match(c[0].error, /no valid envelope/);
+  let d = S.describe(ws, "wedge", io);
+  assert.equal(d.lastRun.outcome, "unknown");
+  assert.equal(d.running, false, "nothing runs: the command's process has exited");
+  assert.equal(S.jobLockInfo(ws, "wedge"), null, "no slot is held");
+  assert.equal(d.attempt.exited, true, "the exit was observed (the io.command seam counts as exited)");
+  assert.match(d.attempt.error, /no valid envelope/, "the first error is kept on the attempt");
+  // The starvation case: with maxConcurrent 1, another due job runs.
+  c = S.tickWorkspace(ws, { now: at("2026-09-07T10:01:00Z"), io, reg });
+  assert.equal(c.find((x) => x.id === "other").action, "launched", "the unknown command does not hold the only slot");
+  // The unknown job itself is never run again until reconcile, and its cause survives later ticks.
+  c = S.tickWorkspace(ws, { now: at("2026-09-07T11:00:00Z"), io, reg });
+  const w = c.find((x) => x.id === "wedge");
+  assert.equal(w.action, "skipped"); assert.match(w.reason, /reconcile/);
+  assert.equal(commands.length, 1, "the command ran once");
+  d = S.describe(ws, "wedge", io);
+  assert.match(d.lastRun.error, /no valid envelope/, "a later tick does not overwrite the cause");
+  assert.match(d.recentRuns[0].error, /no valid envelope/);
+  assert.match(d.attempt.error, /no valid envelope/);
+  assert.throws(() => S.runNow(ws, "wedge", { io }), (e) => e.code === "E_SCHEDULE_UNRESOLVED");
+  assert.throws(() => S.removeSchedule(ws, "wedge"), (e) => e.code === "E_SCHEDULE_RUNNING");
+  let r = S.reconcile(ws, "wedge", { io });
+  assert.equal(r.reconciled, "unknown"); assert.match(r.remedy, /--clear/);
+  r = S.reconcile(ws, "wedge", { io, clear: true });
+  assert.equal(r.reconciled, "cleared"); assert.equal(r.schedule.attempt, undefined); assert.equal(S.jobLockInfo(ws, "wedge"), null);
+});
+
+test("an unknown operation run frees its slot like a command; a command that threw, a spawn and an attempt recorded without an exit keep theirs", () => {
+  const reg = { ...S.readRegistry(), maxConcurrent: 1 };
+  const inspect = () => ({ present: true, state: "unknown" });
+  // An operation: the same command path, so the same release.
+  let ws = workspace();
+  const target = home(ws, "dev-target");
+  S.addSchedule(ws, { id: "op", cron: "0 * * * *", tz: "UTC", kind: "operation", operation: "knowledge:harvest", home: target });
+  let c = S.tickWorkspace(ws, { now: at("2026-09-07T10:00:00Z"), io: { command: () => ({ ok: false, error: { code: "E_OPERATION_TIMEOUT", message: "the provider timed out" } }), inspect }, reg });
+  assert.equal(c[0].action, "unknown");
+  assert.equal(S.jobLockInfo(ws, "op"), null); assert.equal(S.describe(ws, "op").attempt.exited, true);
+  assert.match(S.describe(ws, "op").attempt.error, /the provider timed out/);
+  // A command that threw: no exit was observed, so the slot is kept.
+  ws = workspace();
+  const src = home(ws, "dev-src");
+  S.addSchedule(ws, { id: "threw", cron: "0 * * * *", tz: "UTC", kind: "command", cwd: src, argv: ["oats", "okf", "harvest"] });
+  S.addSchedule(ws, { id: "next", cron: "1 * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t" });
+  const io = { command: () => { throw new Error("boom"); }, spawn: fakeSpawn(ws), inspect };
+  c = S.tickWorkspace(ws, { now: at("2026-09-07T10:00:00Z"), io, reg });
+  assert.equal(c[0].action, "unknown");
+  assert.ok(S.jobLockInfo(ws, "threw"), "the slot is held"); assert.equal(S.describe(ws, "threw").attempt.exited, undefined);
+  assert.match(S.describe(ws, "threw").attempt.error, /boom/);
+  c = S.tickWorkspace(ws, { now: at("2026-09-07T10:01:00Z"), io, reg });
+  assert.equal(c.find((x) => x.id === "next").reason, "host busy");
+  // An attempt written before the exit was recorded (an earlier kernel, or a crashed tick) keeps its slot.
+  ws = workspace();
+  S.addSchedule(ws, { id: "old", cron: "0 * * * *", tz: "UTC", kind: "command", cwd: home(ws, "dev-src"), argv: ["oats", "okf", "harvest"] });
+  S.addSchedule(ws, { id: "next", cron: "1 * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t" });
+  const st = S.readState(ws);
+  st.jobs.old = { attempt: { scheduledFor: "2026-09-07T09:00:00.000Z", startedAt: "2026-09-07T09:00:00.000Z" }, lastRun: { scheduledFor: "2026-09-07T09:00:00.000Z", startedAt: "2026-09-07T09:00:00.000Z", kind: "command", launched: false, outcome: "unknown", error: "command timed out; its side effects are unconfirmed" } };
+  S.writeState(ws, st); S.acquireJobLock(ws, "old", { scheduledFor: "2026-09-07T09:00:00.000Z" });
+  c = S.tickWorkspace(ws, { now: at("2026-09-07T10:01:00Z"), io: { spawn: fakeSpawn(ws), inspect }, reg });
+  assert.equal(c.find((x) => x.id === "next").reason, "host busy");
+  assert.ok(S.jobLockInfo(ws, "old"));
+});
+
+test("later ticks retain a legacy unresolved error only when it belongs to the attempt", () => {
+  for (const matching of [true, false]) {
+    const ws = workspace();
+    const cause = "command timed out; its side effects are unconfirmed";
+    const scheduledFor = "2026-09-07T09:00:00.000Z", startedAt = "2026-09-07T09:00:01.000Z";
+    S.addSchedule(ws, { id: "legacy", cron: "0 * * * *", tz: "UTC", kind: "command", cwd: ws, argv: ["oats", "status"] });
+    S.writeState(ws, { jobs: { legacy: {
+      attempt: { scheduledFor, startedAt },
+      lastRun: { kind: "command", outcome: "unknown", error: cause, scheduledFor: matching ? scheduledFor : "2026-09-07T08:00:00.000Z", startedAt },
+    } } });
+    S.acquireJobLock(ws, "legacy", { scheduledFor });
+    const io = { command: () => assert.fail("unresolved attempt must not run") };
+    for (const hour of [10, 11]) S.tickWorkspace(ws, { now: at(`2026-09-07T${hour}:00:00Z`), io });
+    const d = S.describe(ws, "legacy", io);
+    const expected = matching ? cause : "launch attempt without a recorded result";
+    assert.equal(d.attempt.error, expected);
+    assert.equal(d.lastRun.error, expected);
+    assert.equal(d.lastRun.startedAt, startedAt);
+    assert.equal(d.recentRuns[0].error, expected);
+    assert.equal(S.unresolvedScheduleAttempts(ws).problems[0].error, expected);
+    assert.ok(S.jobLockInfo(ws, "legacy"), "legacy attempts retain their slot");
+  }
+});
+
+test("doctor reads workspace command kinds offline for attempt-only and orphaned state", () => {
+  const ws = workspace();
+  const scheduledFor = "2026-09-07T09:00:00.000Z", startedAt = "2026-09-07T09:00:01.000Z";
+  const entry = { id: "repo/job", name: "job", member: "repo", kind: "schedule", runsOn: "offline-host", owner: "github.com/offline", definition: { kind: "command", cron: "* * * * *", tz: "UTC", cwd: ws, argv: ["oats", "status"] } };
+  A.writeSnapshot(ws, { schedules: [entry], triggers: [], takenAt: "2020-01-01T00:00:00Z" });
+  S.writeState(ws, { jobs: { "repo~job": { attempt: { scheduledFor, startedAt } }, "gone~job": { attempt: { scheduledFor, startedAt } } } });
+  S.acquireJobLock(ws, "repo~job", { scheduledFor });
+  const before = readFileSync(A.snapshotPath(ws), "utf8");
+  const items = S.unresolvedScheduleAttempts(ws, { now: at("2026-09-07T10:00:01Z") }).problems;
+  const job = items.find((p) => p.id === "repo/job");
+  assert.equal(job.kind, "command");
+  assert.equal(job.ageSeconds, 3600);
+  assert.equal(job.holdsSlot, true);
+  assert.equal(job.remedy, "oats schedule reconcile repo/job --clear");
+  assert.ok(items.some((p) => p.id === "gone/job"), "missing definitions do not hide unresolved workspace state");
+  assert.equal(readFileSync(A.snapshotPath(ws), "utf8"), before, "doctor never refreshes the snapshot");
+  assert.equal(existsSync(join(ws, ".agents", "automations", "last-refresh-attempt")), false);
+  const result = S.reconcile(ws, "repo/job", { ctx: { schedules: [{ ...entry, placement: { runsHere: true } }] } });
+  assert.equal(result.reconciled, "unknown");
+  assert.match(result.remedy, /--clear/);
+});
+
+test("oats doctor warns about every unresolved attempt in the deployment and the host's other scopes, with its age, its slot and the reconcile remedy", () => {
+  const env = { ...process.env, OATS_HOME_DIR: process.env.OATS_HOME_DIR };
+  const doctor = (ws, ...a) => execFileSync(process.execPath, [bin, "doctor", ws, ...a], { encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] });
+  const clean = workspace();
+  assert.equal(JSON.parse(doctor(clean, "--json")).problems, undefined, "nothing unresolved, nothing reported");
+  const ws = workspace();
+  const src = home(ws, "dev-src");
+  const reg = { ...S.readRegistry(), maxConcurrent: 4 };
+  S.addSchedule(ws, { id: "wedge", cron: "0 * * * *", tz: "UTC", kind: "command", cwd: src, argv: ["oats", "okf", "run-source"] });
+  S.addSchedule(ws, { id: "stuck", cron: "0 * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t" });
+  S.tickWorkspace(ws, { now: at("2026-09-07T10:00:00Z"), reg, io: { command: () => "no envelope", spawn: () => { throw new Error("spawn failed; rollback INCOMPLETE, home quarantined"); }, inspect: () => ({ present: true, state: "unknown" }) } });
+  // Another scope this host ticks, with an attempt recorded before exits were (it holds its slot).
+  const other = workspace();
+  S.addSchedule(other, { id: "old", cron: "0 * * * *", tz: "UTC", kind: "command", cwd: home(other, "dev-src"), argv: ["oats", "okf", "harvest"] });
+  const st = S.readState(other);
+  st.jobs.old = { attempt: { scheduledFor: "2026-09-07T09:00:00.000Z", startedAt: "2026-09-07T09:00:01.000Z" }, lastRun: { scheduledFor: "2026-09-07T09:00:00.000Z", startedAt: "2026-09-07T09:00:01.000Z", kind: "command", launched: false, outcome: "unknown", error: "launch attempt without a recorded result" } };
+  S.writeState(other, st); S.acquireJobLock(other, "old", { scheduledFor: "2026-09-07T09:00:00.000Z" });
+  S.registerWorkspace(other);
+  try {
+    const out = JSON.parse(doctor(ws, "--json"));
+    const items = Object.fromEntries(out.problems.filter((p) => p.code === "schedule-unresolved").map((p) => [p.id, p]));
+    assert.deepEqual(Object.keys(items).sort(), ["old", "stuck", "wedge"]);
+    const wedge = items.wedge;
+    assert.equal(wedge.severity, "warning"); assert.equal(wedge.scope, ws); assert.equal(wedge.kind, "command");
+    assert.equal(wedge.scheduledFor, "2026-09-07T10:00:00.000Z"); assert.equal(wedge.startedAt, "2026-09-07T10:00:00.000Z");
+    assert.ok(Number.isInteger(wedge.ageSeconds) && wedge.ageSeconds > 0);
+    assert.equal(wedge.holdsSlot, false); assert.equal(wedge.exited, true); assert.match(wedge.error, /no valid envelope/);
+    assert.equal(wedge.remedy, "oats schedule reconcile wedge --clear", "a command whose effects can't be proven needs --clear after a check by hand");
+    assert.match(wedge.message, /wedge/); assert.match(wedge.message, /oats schedule reconcile wedge --clear/);
+    assert.equal(items.stuck.holdsSlot, true); assert.equal(items.stuck.exited, false); assert.equal(items.stuck.remedy, "oats schedule reconcile stuck");
+    assert.equal(items.old.scope, other); assert.equal(items.old.holdsSlot, true); assert.equal(items.old.startedAt, "2026-09-07T09:00:01.000Z");
+    assert.equal(items.old.remedy, `oats schedule reconcile old --clear --dir ${other}`, "another scope's remedy names it");
+    const text = doctor(ws);
+    assert.match(text, /! schedule-unresolved: .*wedge.*oats schedule reconcile wedge --clear/);
+    assert.match(text, /! schedule-unresolved: .*stuck.*holds a host slot/);
+  } finally { S.unregisterWorkspace(other); S.releaseJobLock(other, "old"); }
+});
+
+test("a command that creates a home and then times out stays unknown, frees its slot once its process exited, and waits for reconcile", () => {
   const ws = workspace();
   const src = home(ws, "dev-src");
   // A dummy oats binary: creates an instance home like a harvester spawn would, prints nothing, then sleeps past the timeout.
@@ -384,7 +608,9 @@ await new Promise((r) => setTimeout(r, 5000));\n`);
   const c = S.tickWorkspace(ws, { now: at("2026-09-07T17:00:00Z"), io, reg });
   assert.equal(c[0].action, "unknown"); assert.match(c[0].error, /timed out/);
   let d = S.describe(ws, "late", io);
-  assert.equal(d.lastRun.outcome, "unknown"); assert.ok(d.attempt, "the attempt is retained"); assert.equal(d.running, true, "the slot is held");
+  assert.equal(d.lastRun.outcome, "unknown"); assert.ok(d.attempt, "the attempt is retained"); assert.equal(d.running, false, "the killed process holds no slot");
+  assert.equal(d.attempt.exited, true); assert.equal(d.attempt.exitStatus, null); assert.equal(d.attempt.exitSignal, "SIGTERM", "killed at the timeout, its exit observed");
+  assert.match(d.attempt.error, /timed out/);
   // The next minute must not launch again.
   const c2 = S.tickWorkspace(ws, { now: at("2026-09-07T17:01:00Z"), io, reg });
   assert.equal(c2[0].action, "skipped"); assert.match(c2[0].reason, /reconcile/);
@@ -394,7 +620,7 @@ await new Promise((r) => setTimeout(r, 5000));\n`);
   // operator has checked by hand and clears it explicitly.
   let r = S.reconcile(ws, "late", { io });
   assert.equal(r.reconciled, "unknown"); assert.match(r.remedy, /--clear/);
-  assert.ok(S.describe(ws, "late", io).attempt, "the attempt is still retained"); assert.equal(S.describe(ws, "late", io).running, true);
+  assert.ok(S.describe(ws, "late", io).attempt, "the attempt is still retained"); assert.match(S.describe(ws, "late", io).lastRun.error, /timed out/, "the cause survives the skipped tick");
   r = S.reconcile(ws, "late", { io, clear: true });
   assert.equal(r.reconciled, "cleared"); assert.equal(r.schedule.lastRun.outcome, "launch-failed"); assert.equal(r.schedule.running, false);
   assert.equal(S.describe(ws, "late", io).attempt, undefined);
@@ -413,17 +639,18 @@ process.stdout.write("spawned dev-harvest-text\\n");\n`);
   const reg = S.readRegistry();
   const c = S.tickWorkspace(ws, { now: at("2026-09-07T18:00:00Z"), io, reg });
   assert.equal(c[0].action, "unknown"); assert.match(c[0].error, /no valid envelope/);
-  assert.equal(S.describe(ws, "text", io).running, true, "the slot is held: a home may exist");
+  assert.equal(S.describe(ws, "text", io).running, false, "the exited process holds no slot; the home it may have made has its own lifecycle");
+  assert.equal(S.describe(ws, "text", io).attempt.exitStatus, 0, "the attempt is kept until reconcile");
   // An envelope that is JSON but not an envelope is no receipt either.
   const io2 = { command: () => ({ spawned: true }), inspect: io.inspect };
   S.addSchedule(ws, { id: "shape", cron: "* * * * *", tz: "UTC", kind: "command", cwd: src, argv: ["oats", "status"] });
   const c2 = S.tickWorkspace(ws, { now: at("2026-09-07T18:01:00Z"), io: io2, reg: { maxConcurrent: 4 } });
   assert.equal(c2.find((x) => x.id === "shape").action, "unknown");
-  // A valid ok:false envelope that reports an INCOMPLETE rollback keeps its slot as unknown.
+  // A valid ok:false envelope that reports an INCOMPLETE rollback stays unknown; its process has exited.
   const io2b = { command: () => ({ ok: false, error: { code: "E_SPAWN_FAILED", message: "harvest spawn failed; rollback INCOMPLETE: pane could not be stopped, home quarantined" } }), inspect: io.inspect };
   S.addSchedule(ws, { id: "rollback", cron: "* * * * *", tz: "UTC", kind: "command", cwd: src, argv: ["oats", "okf", "harvest"] });
   const c2b = S.tickWorkspace(ws, { now: at("2026-09-07T18:01:30Z"), io: io2b, reg: { maxConcurrent: 4 } });
-  assert.equal(c2b.find((x) => x.id === "rollback").action, "unknown"); assert.equal(S.describe(ws, "rollback", io).running, true);
+  assert.equal(c2b.find((x) => x.id === "rollback").action, "unknown"); assert.equal(S.describe(ws, "rollback", io).running, false); assert.ok(S.describe(ws, "rollback", io).attempt);
   // A spawn whose compensation reports an INCOMPLETE rollback keeps its slot as unknown.
   const io3 = { spawn: () => { throw Object.assign(new Error("spawn failed: pane could not be stopped; rollback INCOMPLETE, home quarantined"), { code: "E_SPAWN_FAILED" }); }, inspect: io.inspect };
   S.addSchedule(ws, { id: "incomplete", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t" });

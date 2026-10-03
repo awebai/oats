@@ -44,7 +44,12 @@ and warns when the timer cannot reach it.
 
 Stored in the deployment's `oats-schedules.json`, run by this host with its
 own credentials, visible to no other machine. Use them for personal or
-experimental jobs.
+experimental jobs. Schedule IDs allow 1–100 lowercase letters, digits and
+dashes; trigger IDs allow 1–40. Use a short explicit `purpose` for a spawn
+schedule with a long ID, so its derived instance name fits the 64-character
+limit. Local schedules may carry an informational `description`: 1–200
+characters on one line without control characters. It appears in list/show
+and the Desktop; it never changes what runs.
 
 ```bash
 oats schedule add <id> --file spec.json      # spawn | command | wake (the shapes: docs/schedules.md "Kinds")
@@ -152,6 +157,18 @@ or `run: command`, `cron`, `tz`, `agent`, `task`, plus `runsOn` and `owner`).
   ```
 
   Commit it by PR to that member (oats-workspace-config).
+
+## Unresolved schedule attempts
+
+`oats doctor` reports `schedule-unresolved` warnings with the job ID, attempt
+age, original error and whether the job holds a host slot. Follow its
+`oats schedule reconcile <id>` remedy; use `--clear` only after checking
+unproven effects by hand. Doctor also reads saved workspace definitions
+offline and checks other deployments registered with this host.
+
+An unknown command or operation frees its host slot only after the kernel
+observes its process exit. Its own job stays blocked until reconcile. Spawn,
+wake and legacy attempts without observed exits retain their slot rules.
 
 ## Gotchas
 

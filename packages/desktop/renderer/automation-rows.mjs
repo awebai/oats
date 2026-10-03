@@ -227,8 +227,8 @@ export function triggerStatus(json, id) {
 }
 
 /** The fields a list row adds to a stored schedule definition (the automations contract). */
-const ROW_ONLY = ['qualifiedId', 'name', 'origin', 'description', 'owner', 'runsOn', 'runsHere', 'reason', 'reasonDetail', 'enabledHere', 'soul', 'teams', 'concurrency', 'nextDue', 'invalid'];
-const ROW_NULLABLE = ['task', 'harness', 'model', 'launchConfig'];
+const ROW_ONLY = ['qualifiedId', 'name', 'origin', 'owner', 'runsOn', 'runsHere', 'reason', 'reasonDetail', 'enabledHere', 'soul', 'teams', 'concurrency', 'nextDue', 'invalid'];
+const ROW_NULLABLE = ['description', 'task', 'harness', 'model', 'launchConfig'];
 /** A local schedule row → its stored definition (for scheduleDraft); null for any other row. */
 export function localScheduleDefinition(row) {
   if (row?.kind !== 'schedule' || row.origin?.kind !== 'local' || !record(row.raw)) return null;

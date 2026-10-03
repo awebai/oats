@@ -48,7 +48,18 @@ directory to remove.
 
 Every definition carries `id`, `enabled`, `cron`, `tz` and `kind`. `cron` has
 five fields (minute hour day month weekday) and `tz` is a required IANA zone;
-both are evaluated by the croner library.
+both are evaluated by the croner library. Schedule IDs use lowercase letters,
+digits and dashes, from 1 to 100 characters. Spawn schedules with a long ID
+need an explicit shorter `purpose` to fit the instance-name limit below.
+
+Any kind may carry `description`: what the job is for, in words, for the
+people reading `oats schedule list`, `show` and the Desktop. It is one line of
+1 to 200 characters with no control characters (no CR, LF, TAB or any other
+C0 or C1 character, nor a Unicode line or paragraph separator); anything else
+is `E_SCHEDULE_INVALID` with `field: "description"`. It is stored as given and
+is informational only: it never reaches a run's argv, environment, task or
+reconcile. A capability that registers jobs (knowledge harvest's `run-source`
+jobs) sets it so that its command jobs can be told apart.
 
 - **spawn** `{…, agent, agentsRoot?, repo?, backend?, purpose?, task,
   launchConfig?, harness?, model?, yolo?, wake?}` — every due minute launches
@@ -220,7 +231,8 @@ owner: github.com/ana
   is an `E_AUTOMATION_SCHEMA` problem, never silently skipped.
 - **The id** is `id:`, else the filename stem. The same id twice in one member
   for one kind is `E_AUTOMATION_DUPLICATE`, naming both paths; the second file
-  is not listed. A trigger and a schedule may share an id. A member named
+  is not listed. Schedule IDs allow 1 to 100 lowercase letters, digits and dashes; trigger
+  IDs allow 1 to 40. A trigger and a schedule may share an id. A member named
   `local` is refused, because `local/<id>` names this host's own definitions.
 - **A workspace schedule is `run: spawn` or `run: command`.** A command's
   `cwd` is relative to the deployment and must stay inside it. `wake` and
@@ -311,9 +323,9 @@ run on that registered server.
 ```
 
 Each row is the stored definition plus `id` (bare for a local schedule,
-`<member>/<id>` for a workspace one), `qualifiedId`, `origin`, `owner`,
-`runsOn`, `runsHere`, `reason`, `enabledHere`, `soul`, `nextDue`, `lastRun`,
-`recentRuns` and `running`; an unreadable row carries `unreadable: { code,
+`<member>/<id>` for a workspace one), `qualifiedId`, `description` (`null`
+when there is none), `origin`, `owner`, `runsOn`, `runsHere`, `reason`,
+`enabledHere`, `soul`, `nextDue`, `lastRun`, `recentRuns` and `running`; an unreadable row carries `unreadable: { code,
 message }` instead of failing the list. `scheduler.active` is what the OS
 reports about the timer. `oats trigger list --json` carries the same
 `scheduler`. The field-level contract is in
@@ -328,12 +340,42 @@ you), `launch-failed`, `unknown`, and for wake jobs `delivered`, `started` or
 `skipped`. The kernel never claims a task succeeded.
 
 `unknown` means the launch's side effects are unconfirmed: a command timed out
-or answered no envelope, or an attempt was never recorded. The job keeps its
-slot and is skipped until `oats schedule reconcile <id>`, which adopts only an
-attributable receipt (a spawn job's instance, named for its minute, or the
-instance a command's answer named). When nothing is attributable, check the
-roster and the host by hand, then `reconcile <id> --clear` records
-`launch-failed` and frees the slot.
+or answered no envelope, or an attempt was never recorded. The job is skipped
+until `oats schedule reconcile <id>`, which adopts only an attributable
+receipt (a spawn job's instance, named for its minute, or the instance a
+command's answer named). When nothing is attributable, check the roster and
+the host by hand, then `reconcile <id> --clear` records `launch-failed` and
+frees the slot. The unresolved attempt shows in `show` as `attempt:
+{scheduledFor, startedAt, error?, exited?, exitStatus?, exitSignal?}`;
+`error` is the first run's cause, which later skipped ticks keep in `lastRun`.
+
+`oats doctor` warns about each unresolved attempt, in this deployment and in
+the other deployments this host ticks (they share its slots). The text form
+is `! schedule-unresolved: …`; in `--json` it is a `problems[]` item:
+
+```text
+{ code: "schedule-unresolved", severity: "warning", scope, id, kind,
+  scheduledFor, startedAt, ageSeconds, holdsSlot, exited, error, remedy, message }
+```
+
+`holdsSlot` says whether the job counts against `maxConcurrent`. `remedy` is
+`oats schedule reconcile <id>`, with `--clear` for a command or operation
+whose effects no named home proves (check the roster and the host by hand
+first), and with `--dir <scope>` for another deployment. A warning never
+changes doctor's exit status. Workspace command kinds come from the last
+saved automations snapshot, without a refresh or an account lookup. Unresolved
+workspace state is reported even if its definition is no longer available.
+
+Whether an `unknown` job keeps its host slot depends on what is still running:
+
+- A `command` or `operation` job whose process exit the kernel observed (it
+  returned, or was stopped at the five-minute timeout) holds no slot: the
+  process runs nothing any more, and an instance it spawned has its own
+  lifecycle. Its attempt shows `exited: true` with the exit status or
+  signal, and other jobs keep running.
+- A `spawn` job keeps its slot, which stands for the instance it may have
+  launched. So does a command whose exit was not observed (the runner threw,
+  the process never started) and a legacy attempt without exit evidence (no `exited`), until reconcile.
 
 **Slots.** A wake job that starts a stopped home holds a launch slot until the
 harness is proven stopped or the home is gone; delivering to a running home
@@ -344,7 +386,7 @@ continues.
 
 **Changing a job.** `disable` never stops anything. `update` never touches a
 running instance, and while a job holds a slot or has an unresolved attempt
-only `cron`, `tz` and `enabled` can change. `remove` refuses while the job's
+only `cron`, `tz`, `enabled` and `description` can change. `remove` refuses while the job's
 instance is tracked or its effects are unresolved (`--force` forgets the job
 without stopping anything). Retiring an instance removes the wake jobs bound
 to its home.

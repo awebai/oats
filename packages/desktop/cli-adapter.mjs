@@ -306,7 +306,7 @@ export async function cliSchedule(bin, { operation, id, spec, workspaceDir, serv
   const actions = new Set(["add", "update", "remove", "reconcile", "host-install", "host-uninstall", "host-status"]);
   const writes = operation === "add" || operation === "update";
   const needsId = actions.has(operation) && !operation.startsWith("host-");
-  if (!actions.has(operation) || (needsId && (typeof id !== "string" || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(id)))
+  if (!actions.has(operation) || (needsId && (typeof id !== "string" || !/^[a-z0-9][a-z0-9-]{0,99}$/.test(id)))
     || (server !== undefined && (typeof server !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(server)))
     || typeof workspaceDir !== "string" || !workspaceDir.startsWith("/") || workspaceDir.includes("\0")
     || (writes && (!spec || typeof spec !== "object" || Array.isArray(spec)))) {
@@ -328,9 +328,12 @@ export async function cliSchedule(bin, { operation, id, spec, workspaceDir, serv
 export const AUTOMATION_VERBS = Object.freeze({ trigger: ["list", "status", "enable", "disable", "test"], schedule: ["list", "enable", "disable", "test", "run", "reconcile"] });
 const ID_OPTIONAL = new Set(["status"]);
 export const AUTOMATION_ID = /^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,63}\/)?[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+// The member component and trigger admission retain their existing bounds.
+const SCHEDULE_AUTOMATION_ID = /^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,63}\/)?[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+export const automationIdValid = (kind, id) => typeof id === "string" && (kind === "schedule" ? SCHEDULE_AUTOMATION_ID : AUTOMATION_ID).test(id);
 export function cliAutomation(bin, { kind, action, id, workspaceDir }, io = {}) {
   if (!Object.hasOwn(AUTOMATION_VERBS, kind) || !AUTOMATION_VERBS[kind].includes(action)
-    || (action === "list" ? id !== undefined : id === undefined ? !ID_OPTIONAL.has(action) : typeof id !== "string" || !AUTOMATION_ID.test(id))
+    || (action === "list" ? id !== undefined : id === undefined ? !ID_OPTIONAL.has(action) : !automationIdValid(kind, id))
     || typeof workspaceDir !== "string" || !isAbsolute(workspaceDir) || workspaceDir.includes("\0")) {
     return Promise.resolve({ schemaVersion: 1, ok: false, error: { code: "E_BAD_ARGS", message: "Invalid automation request" } });
   }
