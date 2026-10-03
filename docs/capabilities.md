@@ -658,8 +658,10 @@ again" permission rules there.
   subagent's own tool events are skipped too, so the claim stays until the
   next main-thread event: the main thread's next tool call, the subagent's
   completion (Claude submits it as a `<task-notification>` prompt), a
-  `Stop` or the human's prompt. That shows "needs input" a while too long,
-  never hides a real block.
+  `Stop` or the human's prompt. A foreground subagent holds the main thread
+  until it finishes, so after its prompt is approved the claim can last the
+  whole subagent run. That shows "needs input" too long, never hides a real
+  block.
 - A `Stop` or `UserPromptSubmit` always clears, even one the main thread
   produces while a subagent's prompt is open (a background subagent's
   completion is submitted as a prompt).
