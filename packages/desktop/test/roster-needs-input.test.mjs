@@ -19,6 +19,8 @@ import { createRosterTip, rosterTipFacts } from "../renderer/roster-tip.mjs";
 import { waitingClock } from "../renderer/waiting-on-you.mjs";
 import { createTabChrome } from "../renderer/tab-a11y.mjs";
 import { NO_ANSWER_CODE, unservedError } from "../renderer/deployment-header.mjs";
+import { remotePanel, unavailableGroups } from "../server/remote-roster.mjs";
+import { kernelRemoteRow, kernelRemoteGroup, remoteRows } from "./helpers/kernel-remote-row.mjs";
 
 const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), "utf8");
 const css = read("shell.css"), html = read("index.html"), shell = read("shell.mjs");
@@ -60,7 +62,7 @@ function fixture(t, extra = {}) {
   const list = doc.querySelector(".ctx-list");
   const row = name => [...list.querySelectorAll(".ctx-inst")].find(b => b.querySelector(".ctx-name")?.textContent === name);
   const marks = name => [...(row(name)?.querySelectorAll(".ctx-attn") || [])];
-  const facts = name => tips.get(`/synthetic/${name}`)?.();
+  const facts = name => tips.get(row(name)?.dataset.treeInstance)?.();
   const fact = (name, key) => facts(name)?.rows.find(([k]) => k === key)?.[1];
   // A terminal tab as openTerminalTabInner draws it, in workspace "A" unless given.
   const openTab = (inst, workspace = "A") => {
@@ -97,8 +99,14 @@ test("never on a row whose Desktop liveness is not running, whose server was not
     instance("unreachable", undefined, { ...waiting, running: null, runtimeState: "unreachable" }),
     instance("unsupported", undefined, { ...waiting, running: null, runtimeState: "unsupported" }),
     instance("kernel-running", undefined, { ...waiting, runtimeState: "shell" }), // the kernel said running; tmux says shell
-    instance("unreached", undefined, { ...waiting, server: "s1", addressable: true, serverUnreached: true }),
+    // A remote server that did not answer: its last-known kernel rows, as remotePanel projects them.
+    ...unavailableGroups([kernelRemoteGroup([kernelRemoteRow("unreached", waiting)])], { code: "E_SSH", message: "Connection refused" })
+      .flatMap(group => remotePanel(group).instances),
+    ...remoteRows([kernelRemoteRow("remote-stopped", { ...waiting, running: false, tmux: undefined }),
+      kernelRemoteRow("remote-unreachable", { ...waiting, running: null, runtimeState: "unreachable", runtimeError: "tmux is unavailable" })]),
   ];
+  assert.deepEqual(rows.slice(-3).map(r => [r.instance, r.runtimeState, r.serverUnreached]),
+    [["unreached", null, true], ["remote-stopped", null, false], ["remote-unreachable", "unreachable", false]]);
   const u = fixture(t);
   u.render(rows);
   for (const r of rows) assert.equal(u.marks(r.instance).length, 0, r.instance);
@@ -107,6 +115,26 @@ test("never on a row whose Desktop liveness is not running, whose server was not
   stale.render([instance("dev-a", undefined, waiting)]);
   assert.equal(stale.marks("dev-a").length, 0, "a held-stale row's claim is last-known: unknown");
   assert.equal(stale.fact("dev-a", "Waiting"), undefined);
+});
+
+test("a remote row in the kernel's shape (runtimeState null: not reported) shows the mark, the card and its tab's cue (#582)", async t => {
+  // What the renderer receives for a kernel roster row: every relayed fact null unless the host reported it.
+  const [waitingRow, quiet] = remoteRows([kernelRemoteRow("dev-r", { waitingOnYou: claim({ reason: "question", message: "Which branch?" }) }), kernelRemoteRow("dev-q")]);
+  assert.deepEqual([waitingRow.running, waitingRow.runtimeState, waitingRow.serverUnreached], [true, null, false]);
+  const u = fixture(t), tab = u.openTab(waitingRow);
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse(SINCE) + 5 * 60e3 });
+  u.render([waitingRow, quiet]);
+  assert.equal(u.marks("dev-r")[0]?.textContent, "Needs input");
+  assert.equal(u.marks("dev-q").length, 0);
+  assert.equal(u.fact("dev-r", "Waiting"), `Asked you a question · 5 min (since ${waitingClock(SINCE)})`);
+  assert.equal(u.fact("dev-r", "Message"), "Which branch?");
+  assert.ok(tabCue(tab), "its open terminal tab is lit");
+  assert.equal(tab.triggerEl.title, `dev-r\nNeeds input: Which branch? since ${waitingClock(SINCE)}`);
+  // The same row once its server stops answering: last-known, so nothing is shown.
+  const [group] = unavailableGroups([kernelRemoteGroup([kernelRemoteRow("dev-r", { waitingOnYou: waitingRow.waitingOnYou })])], { code: "E_SSH", message: "Connection refused" });
+  u.render(remotePanel(group).instances);
+  assert.equal(u.marks("dev-r").length, 0);
+  assert.equal(tabCue(tab), null);
 });
 
 test("an invalid claim is dropped and the roster still renders", async t => {
@@ -242,7 +270,10 @@ test("a parent cycle or a missing parent degrades to no roll-up", async t => {
 });
 
 test("an unavailable row (no card) says it in its title and description: message or label, absolute time", async t => {
-  const remote = (name, parentInstance, extra = {}) => instance(name, parentInstance, { server: "s1", addressable: false, home: `/remote/${name}`, ...extra });
+  // Remote rows in the kernel's shape (runtimeState null), made unavailable by `addressable: false`: the only
+  // way a row is both running (so its claim shows) and without a card. Today's kernel reports every row its
+  // host lists as addressable, so this pins the sentence for a row that cannot open, not a shape it emits.
+  const remote = (name, parentInstance, extra = {}) => remoteRows([kernelRemoteRow(name, { parentInstance: parentInstance ?? null, addressable: false, ...extra })])[0];
   const rows = [remote("dev-a", undefined, { waitingOnYou: claim({ message: "Proceed?" }) }), remote("dev-b", undefined, { waitingOnYou: claim({ reason: "question" }) }),
     remote("root"), remote("kid", "root", { waitingOnYou: claim() })];
   const u = fixture(t, { context: { collapsedInstances: new Set([tree.collapseKey("A", tree.instanceId(rows[2]))]) } });

@@ -137,22 +137,39 @@ test('waitingSentence (unavailable rows) names the message or label and an absol
   assert.equal(waitingSentence(null, []), '');
 });
 
-// The gate: Desktop liveness decides, whatever the kernel said.
+// The gate: liveness decides, whatever the kernel said about the claim.
 const row = (extra = {}) => ({ instance: 'dev-1', running: true, runtimeState: 'running', waitingOnYou: claim(), ...extra });
+// A remote row as the kernel's roster sends it and remotePanel projects it: `runtimeState: null` (#582).
+const remoteRow = (extra = {}) => row({ server: 's1', runtimeState: null, serverUnreached: false, ...extra });
 test('waitingClaim: a running row (Desktop liveness running, or runtimeState absent) shows its claim', () => {
   assert.deepEqual(waitingClaim(row()), waitingOnYouData(claim()));
   const { runtimeState: _absent, ...noState } = row();
   assert.ok(waitingClaim(noState));
 });
+test('waitingClaim: a null runtimeState is "not reported", not "not running" — a kernel-shaped remote row shows its claim (#582)', () => {
+  assert.deepEqual(waitingClaim(remoteRow()), waitingOnYouData(claim()));
+  assert.deepEqual(waitingClaim(row({ runtimeState: null })), waitingOnYouData(claim()), 'one rule for every row, not a remote-only branch');
+});
 for (const [label, extra, options] of [
   ['tmux says shell', { running: false, runtimeState: 'shell' }], ['shell even if running were true', { runtimeState: 'shell' }],
   ['stopped', { running: false, runtimeState: 'stopped' }], ['unreachable', { running: null, runtimeState: 'unreachable' }],
   ['unsupported', { running: null, runtimeState: 'unsupported' }], ['running false', { running: false, runtimeState: undefined }],
+  ['unreachable even if running were true', { runtimeState: 'unreachable' }], ['unsupported even if running were true', { runtimeState: 'unsupported' }],
+  ['stopped even if running were true', { runtimeState: 'stopped' }], ['an unknown reported state', { runtimeState: 'paused' }],
   ['running null', { running: null, runtimeState: undefined }], ['running "true" (string)', { running: 'true' }],
-  ['server unreached', { serverUnreached: true }], ['held stale', {}, { stale: true }],
+  ['held stale', {}, { stale: true }],
   ['no claim', { waitingOnYou: null }], ['an absent claim', { waitingOnYou: undefined }], ['a malformed claim', { waitingOnYou: { since: 'now', producer: 'x' } }],
 ]) test(`waitingClaim: ${label} → null`, () => {
   assert.equal(waitingClaim(row(extra), options), null);
+});
+// Each hides a remote row that shows its claim without it (the positive case above).
+for (const [label, extra, options] of [
+  ['not running by its host', { running: false }], ['state unknown', { running: null }],
+  ['reported unreachable', { running: null, runtimeState: 'unreachable' }], ['reported unsupported', { running: null, runtimeState: 'unsupported' }],
+  ['server unreached', { serverUnreached: true }], ['server unreached, last-known rows', { running: null, serverUnreached: true }],
+  ['held stale', {}, { stale: true }], ['no claim', { waitingOnYou: null }],
+]) test(`waitingClaim: a remote row (runtimeState null), ${label} → null`, () => {
+  assert.equal(waitingClaim(remoteRow(extra), options), null);
 });
 test('waitingClaim never throws on a non-record row', () => {
   for (const value of [null, undefined, 'row', 3, []]) assert.equal(waitingClaim(value), null);
@@ -197,8 +214,12 @@ test('a parent cycle or a missing parent degrades to no roll-up, never a crash',
   assert.deepEqual(rollup([orphan, other], collapsedOf(other)), {});
 });
 test('a roll-up never crosses a remote server boundary', () => {
-  const local = inst('root'), remote = waiting('dev-r', 'root', { server: 's1', home: '/r/agents/dev/instances/dev-r', agentsRoot: '/r/agents' });
+  const local = inst('root'), remote = waiting('dev-r', 'root', { server: 's1', runtimeState: null, home: '/r/agents/dev/instances/dev-r', agentsRoot: '/r/agents' });
+  assert.ok(waitingClaim(remote), 'the remote row is waiting (kernel shape: runtimeState null)');
   assert.deepEqual(rollup([local, remote], collapsedOf(local)), {});
+  // The same row rolls up under a collapsed parent on its own server: the boundary is what stopped it above.
+  const remoteRoot = inst('root', undefined, { server: 's1', runtimeState: null, home: '/r/agents/dev/instances/root', agentsRoot: '/r/agents' });
+  assert.deepEqual(rollup([remoteRoot, remote], collapsedOf(remoteRoot)), { [instanceId(remoteRoot)]: ['dev-r'] });
 });
 
 test('waitingRollup: a chain that leaves the waiting row\'s section (deployment) rolls up nowhere', () => {

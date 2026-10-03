@@ -90,12 +90,24 @@ validates the field and never synthesizes it.
   contract modules and nothing else (a test pins its imports). The tree
   roll-up lives in `renderer/instance-tree.mjs`.
 - **One gate.** Every surface reads a claim through `waitingClaim(row,
-  {stale})`. It returns the claim only when the Desktop's own liveness says
-  running (`running === true`, with `runtimeState` absent or `running`), the
-  remote server answered this read (`serverUnreached` is not true), and the
-  roster does not hold the row stale. A tmux shell, a stopped, unreachable or
-  unsupported session, or a last-known roster never shows it, whatever the
-  kernel said.
+  {stale})`. It returns the claim only when the row is running (`running ===
+  true`, and `runtimeState` is `running` or not reported), the remote server
+  answered this read (`serverUnreached` is not true), and the roster does not
+  hold the row stale. A `runtimeState` that is `null` or absent means "not
+  reported", never "not running"; any reported state other than `running`
+  hides the claim.
+  - A local row always carries the state Desktop's own liveness observed, so
+    a tmux shell, a stopped, unreachable or unsupported session never shows
+    it, whatever the kernel said.
+  - A remote row has no Desktop liveness. The kernel's remote roster relays
+    `runtimeState` as the host reported it, which is `null` on every row
+    except an `unreachable` or `unsupported` one, so the row is gated on the
+    `running` its host reported. The host's kernel is what tells a harness
+    from a fallback shell there: it reports a claim only while a harness
+    runs in the session
+    ([the status row](../../../docs/desktop-cli-api.md#the-roster-oats-status---json)).
+  - A last-known roster (an unreached server, a held-stale row) never shows
+    it.
 - **The mark.** A "Needs input" pill (an alert icon and text, never colour
   alone) sits on the row's name line, before "New". It becomes part of the
   row's accessible name. The dot stays liveness. Rows are not reordered, and

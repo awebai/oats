@@ -10,6 +10,8 @@ import { terminalKey } from "../renderer/instance-tree.mjs";
 import { iconElement } from "../renderer/shell-icons.mjs";
 import { waitingClaim, waitingLabel, waitingClock } from "../renderer/waiting-on-you.mjs";
 import { rowStale } from "../renderer/view-deployments.mjs";
+import { remotePanel, unavailableGroups } from "../server/remote-roster.mjs";
+import { kernelRemoteRow, kernelRemoteGroup, remoteRows } from "./helpers/kernel-remote-row.mjs";
 
 const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), "utf8");
 const shell = read("shell.mjs"), css = read("shell.css");
@@ -101,10 +103,30 @@ test("a same-named instance in another root, or the same home in another workspa
 
 test("a stale, non-running or unreachable row never lights a tab, and a held-stale roster clears a lit one", async t => {
   const u = fixture(t), tab = u.open(row("dev-a"));
+  // A positive control each time (#584): the same row lights this tab without the condition, so the
+  // cleared cue is the gate's doing, never a row that stopped matching the tab.
   for (const extra of [{ running: false, runtimeState: "shell" }, { running: false, runtimeState: "stopped" }, { running: null, runtimeState: "unreachable" },
-    { server: "s1", serverUnreached: true }]) {
+    { running: null, runtimeState: "unsupported" }]) {
+    u.sync([row("dev-a", { waitingOnYou: claim() })], "A");
+    assert.ok(cue(tab), `lit without ${JSON.stringify(extra)}`);
     u.sync([row("dev-a", { waitingOnYou: claim(), ...extra })], "A");
     assert.equal(cue(tab), null, JSON.stringify(extra));
+  }
+  // A remote row's tab is keyed by its server, so it is opened from the remote row. The row is what
+  // remotePanel makes of a kernel roster row: runtimeState null, "not reported" (#582).
+  const [reached] = remoteRows([kernelRemoteRow("dev-r", { waitingOnYou: claim() })]);
+  const [group] = unavailableGroups([kernelRemoteGroup([kernelRemoteRow("dev-r", { waitingOnYou: claim() })])], { code: "E_SSH", message: "Connection refused" });
+  const [lastKnown] = remotePanel(group).instances;
+  assert.deepEqual([reached.runtimeState, reached.serverUnreached, lastKnown.serverUnreached], [null, false, true]);
+  const remoteTab = u.open(reached);
+  assert.equal(remoteTab.key, terminalKey("A", lastKnown), "the unreached row is the same tab's row");
+  assert.notEqual(remoteTab.key, tab.key);
+  for (const unreached of [{ ...reached, serverUnreached: true }, lastKnown]) {
+    u.sync([reached], "A");
+    assert.ok(cue(remoteTab), "a reached remote row lights its tab");
+    assert.equal(cue(tab), null, "and no other tab");
+    u.sync([unreached], "A");
+    assert.equal(cue(remoteTab), null, "its server was not reached: last-known is unknown");
   }
   u.sync([row("dev-a", { waitingOnYou: claim() })], "A");
   assert.ok(cue(tab));

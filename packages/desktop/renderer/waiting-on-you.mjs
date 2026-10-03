@@ -31,13 +31,16 @@ export function waitingOnYouData(v) {
   return { since: v.since, producer: v.producer, reason, message: waitingMessage(v.message) };
 }
 
-/** The claim a row may show, or null. The only gate: the Desktop's own liveness says running (a tmux
- * `shell`, a stopped pane, an unreachable or unsupported session never shows it), and the row is
- * current: a remote row whose server was not reached, or a row the roster holds stale (`stale`: its
- * last re-read failed), carries a last-known claim, which is unknown. */
+/** The claim a row may show, or null. The only gate: liveness says running (`running === true`, and no
+ * reported `runtimeState` other than `running`: a tmux `shell`, a stopped pane, an unreachable or
+ * unsupported session never shows it), and the row is current: a remote row whose server was not reached,
+ * or a row the roster holds stale (`stale`: its last re-read failed), carries a last-known claim, which is
+ * unknown. A null or absent `runtimeState` is "not reported", never "not running" (#582): the kernel's
+ * remote roster sends null on every row, so a remote row is gated on the `running` its host reported; a
+ * local row always carries the concrete state Desktop liveness observed. */
 export function waitingClaim(row, { stale = false } = {}) {
   if (stale || !record(row) || row.running !== true || row.serverUnreached === true) return null;
-  if (row.runtimeState !== undefined && row.runtimeState !== 'running') return null;
+  if (row.runtimeState != null && row.runtimeState !== 'running') return null;
   return waitingOnYouData(row.waitingOnYou);
 }
 
