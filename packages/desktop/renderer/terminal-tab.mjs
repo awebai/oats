@@ -114,9 +114,10 @@ export function createGlyphRenderer({ term, Addon, onChange = () => {},
 
 // Native terminal geometry: no lineHeight (xterm's default 1.0), so cells and
 // the block cursor keep their natural height and tmux owns row spacing.
-export function terminalOptions({ fontSize, fontFamily, theme }) {
+export function terminalOptions({ fontSize, fontFamily, fontWeight, theme }) {
   // tmux mouse capture must not defeat Option-drag local copy selection on macOS.
-  return { fontSize, fontFamily, theme, scrollback: 5000, macOptionClickForcesSelection: true };
+  // fontWeight is the theme's (terminalFontWeight); fontWeightBold stays xterm's bold.
+  return { fontSize, fontFamily, fontWeight, theme, scrollback: 5000, macOptionClickForcesSelection: true };
 }
 export function terminalKeyDecision(ev, interceptKey) {
   const { suppress, byte } = shiftEnterAction(ev);

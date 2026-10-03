@@ -169,3 +169,16 @@ export function xtermTheme(el = document.documentElement) {
   }
   return t;
 }
+
+/** xterm's `normal`: the weight when the theme names none, or an unusable one. */
+export const TERMINAL_FONT_WEIGHT = 400;
+/* The terminal's text weight is the theme's (--term-font-weight), not a
+   typography preference: Chromium draws dark-on-light text lighter than
+   light-on-dark, so each palette sets the weight that matches a native macOS
+   terminal's smoothed stroke. Weight never changes xterm's cell. Bold stays
+   xterm's own (700). */
+export function terminalFontWeight(el = document.documentElement) {
+  const raw = (getComputedStyle(el).getPropertyValue("--term-font-weight") || "").trim();
+  const weight = raw === "" ? NaN : Number(raw);
+  return Number.isFinite(weight) && weight >= 1 && weight <= 1000 ? weight : TERMINAL_FONT_WEIGHT;
+}
