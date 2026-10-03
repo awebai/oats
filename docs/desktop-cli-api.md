@@ -2507,6 +2507,41 @@ stderr, not envelopes.
 
 ## Sessions and launch configurations
 
+### Input
+
+```text
+oats session input --home <abs> [--text-file <path>] [--server <id>] --json
+```
+
+Input bytes come from stdin or the named file. The existing version-1 success
+answer is `{schemaVersion: 1, ok: true, result: {home, backend: "tmux",
+present: true, state, paneId, submitted: true, verified}}` locally. Remote
+routing keeps its existing wrapper fields. The adapter sends one literal
+bracketed paste and one Enter after the existing input/authority/target checks.
+
+`submitted` means terminal-operation success, **not model acceptance or
+processing**. `verified` is display observation only: `true` means a bounded
+look changed, possibly because of unrelated output or a dialog; `false` means
+unchanged, unreadable or exhausted observation. False never authorizes retry
+and is not proof of a pending draft or absence of effects. No `reason` is
+emitted; the `enter-not-taken` result from 0.39.4 is removed.
+
+Read-only settling before Enter shares one monotonic 2-second budget starting
+when paste returns; up to two post-Enter looks share a 1-second budget. Probe
+timeouts and sleeps use the remaining budget. Observation failures produce
+`verified: false`, not input errors or extra keys. The original paste/key
+command timeouts and `E_SESSION_INPUT_FAILED` errors remain; the observation
+budgets do not bound those commands, failed buffer cleanup or OS scheduling.
+No busy-pane submission or exactly-once guarantee is provided. Generic command
+errors can still be uncertain after partial effects.
+
+The Desktop terminal's authorized PTY writes are a separate stream; they do not
+consume this `verified` field. The Pi bridge does not interpret this result.
+Scheduler wake still records a nonthrowing input operation as delivered without
+adding acceptance/history fields. Actual broker acknowledgement and retry
+policy require their own consumer qualification; this result is not a native
+harness receipt. See [execution targets](execution-targets.md).
+
 ### Start and restart
 
 ```text

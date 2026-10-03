@@ -103,6 +103,17 @@ prove away PID reuse. Escaped sessions are outside the owned group, and
 SIGKILL/OOM or unrecoverable supervisor death cannot be cleaned up by handlers;
 a missing receipt supplies no child-exit evidence and cannot release a slot.
 
+Session input keeps terminal operations separate from display observation.
+The pre-Enter budget starts at paste completion, before best-effort buffer
+cleanup; post-Enter observation starts after the single key command returns.
+Both use a monotonic clock, clip sleeps and read-only capture subprocess
+budgets, and stop observing on failure or exhaustion. Capture subprocesses use
+SIGKILL on timeout so an ignored TERM cannot extend a probe; terminal command
+timeouts/errors are unchanged. Screen comparison can set only the observational
+`verified` boolean, never send another key or report terminal failure. Tests
+use inert command runners and clocks; they do not qualify broker delivery or
+harness acceptance.
+
 The kernel is runtime-neutral: nothing in `lib/` depends on a harness or on
 a provider. Provider behaviour lives in capabilities; the kernel supplies
 their contracts ([layers](layers.md)).
