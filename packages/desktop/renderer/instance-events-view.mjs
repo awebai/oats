@@ -32,7 +32,7 @@ const labels = { agent: 'Soul', work: 'Work mode', branch: 'Branch', harness: 'H
   waitedMs: 'Waited (ms)', stillRunningCount: 'Targets still running', planRevision: 'Plan revision', children: 'Children', dirty: 'Changed work count',
   keepDir: 'Home retained', self: 'Self retirement', quarantine: 'Quarantine', workRecovery: 'Recovery path', movedTo: 'Retained path',
   recordedBranch: 'Recorded branch', child: 'Child', previous: 'Previous composition path', soulDir: 'Soul path', blocks: 'Blocks',
-  waitingOnYou: 'Waiting claim', reason: 'Reported reason' };
+  waitingOnYou: 'Waiting claim', reason: 'Reported reason', message: 'Note' };
 
 export function createInstanceEventsView(host, { ctx, selection, owner = () => true, summary, layout = () => {},
   cli = cliStatus, subscribeCli = onCliChange, generation = workspaceGeneration,
@@ -118,7 +118,9 @@ export function createInstanceEventsView(host, { ctx, selection, owner = () => t
       for (const [name, fact] of Object.entries(row.data)) {
         if (name === 'policy') { facts.append(node('dt', 'Reported child policy'), node('dd', `${fact.allowed ? 'allowed' : 'not allowed'} · ${fact.origin.kind}`)); continue; }
         if (!Object.hasOwn(labels, name)) continue;
-        facts.append(node('dt', labels[name]), node('dd', fact === null ? 'not reported' : String(fact)));
+        // A waiting claim set (true) or cleared (false), in words.
+        const text = fact === null ? 'not reported' : name === 'waitingOnYou' ? (fact ? 'claimed' : 'cleared') : String(fact);
+        facts.append(node('dt', labels[name]), node('dd', text));
       }
       item.append(facts); rows.append(item);
     }

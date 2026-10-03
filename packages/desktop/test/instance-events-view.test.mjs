@@ -182,3 +182,17 @@ test('a waiting claim without a message keeps the summary unchanged', async t =>
   const u = setup(t, async () => view(value)); await u.controller.read();
   assert.match(u.summary.textContent, new RegExp(`Reported waiting: provider\\.b since ${birth.replace(/\./g, '\\.')}$`));
 });
+
+test('K waiting rows read "Waiting on you": the claim in words (claimed, cleared) and its note as literal text', async t => {
+  const set = event({ producer: 'agent', kind: 'waiting', at: '2026-09-22T01:00:00.000Z',
+    data: { waitingOnYou: true, reason: 'attention', message: 'Pick <b>one</b>?' } });
+  const cleared = event({ producer: 'agent', kind: 'waiting', at: '2026-09-22T01:00:14.607Z', data: { waitingOnYou: false } });
+  const u = setup(t, async () => view(data([set, cleared]))); await u.controller.read();
+  const rows = [...u.host.querySelectorAll('.events-rows > li')];
+  assert.deepEqual(rows.map(r => r.querySelector('strong').textContent), ['Waiting on you', 'Waiting on you'], 'never a raw "waiting"');
+  const facts = r => Object.fromEntries([...r.querySelectorAll('.events-facts dt')].map(dt => [dt.textContent, dt.nextElementSibling.textContent]));
+  // Newest first: the cleared row, then the set row.
+  assert.deepEqual(facts(rows[0]), { 'Waiting claim': 'cleared' });
+  assert.deepEqual(facts(rows[1]), { 'Waiting claim': 'claimed', 'Reported reason': 'attention', Note: 'Pick <b>one</b>?' });
+  assert.equal(u.host.querySelector('.events-rows b'), null, 'no element made from the note');
+});

@@ -60,6 +60,11 @@ either `waitingOnYou` or the newest positive claim owns `message`, the raw value
 must be equal (a missing key counts as `null`), as for producer, since and
 reason. The summary shows it after the producer and time, as plain text.
 
+The kernel also writes each claim change as a lifecycle event of kind `waiting`
+(producer-attributed). The list titles it "Waiting on you". Its `waitingOnYou`
+fact reads "claimed" or "cleared", with the reported reason and, on a claimed
+row, the note (`message`, by the same rule, as plain text).
+
 ## Needs input on the sidebar roster
 
 The roster shows the same kind of claim without a read: `oats status --json`

@@ -11,7 +11,7 @@ const nullableDetail = (v, max) => v === null ? null : detail(v, max);
 export const EVENT_TITLES = Object.freeze({ spawned: 'Spawned', launched: 'Launched', restarted: 'Restarted', stopped: 'Stopped',
   'stop-refused': 'Stop refused', 'retire-planned': 'Retirement planned', retired: 'Retired',
   'worktree-retained': 'Worktree retained', 'worktree-removed': 'Worktree removed', 'branch-deleted': 'Branch deleted',
-  'child-spawn-refused': 'Child spawn refused', recomposed: 'Instructions recomposed' });
+  'child-spawn-refused': 'Child spawn refused', recomposed: 'Instructions recomposed', waiting: 'Waiting on you' });
 const strings = {
   spawned: ['agent', 'work', 'branch', 'model', 'parentInstance', 'relation'], launched: ['backend', 'launchConfig'],
   restarted: ['phase', 'signal'], stopped: ['signal', 'state'], 'stop-refused': ['phase', 'signal', 'state'],
@@ -37,6 +37,8 @@ function facts(kind, v, publicView) {
     out[key] = v[key];
   }
   if (Object.hasOwn(v, 'reason')) out.reason = nullableDetail(v.reason);
+  // A waiting claim's note (K's `waiting` rows): the claim rule — absent stays absent, malformed is null.
+  if (kind === 'waiting' && Object.hasOwn(v, 'message')) out.message = waitingMessage(v.message);
   if (['stopped', 'stop-refused', 'restarted'].includes(kind)) {
     if (publicView && Object.hasOwn(v, 'stillRunningCount')) {
       if (!count(v.stillRunningCount) || v.stillRunningCount > 128) throw Error('invalid target count');

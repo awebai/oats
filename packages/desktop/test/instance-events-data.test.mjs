@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { eventsData, eventsIncomplete, eventIncarnation } from '../renderer/instance-events-data.mjs';
+import { eventsData, eventsIncomplete, eventIncarnation, EVENT_TITLES } from '../renderer/instance-events-data.mjs';
 import { target, birth, event, data } from './helpers/instance-events-fixture.mjs';
 
 test('address history preserves earlier/current/unknown incarnations without runtime inference', () => {
@@ -144,4 +144,31 @@ for (const [label, message] of [['newline', 'a\nb'], ['control character', 'a\x0
 test('an unsafe claim message is withheld, never shown', () => {
   const out = eventsData(claimed('see https://private.example/x', 'see https://private.example/x'), target); assert.ok(out);
   assert.equal(out.waitingOnYou.message, '[Detail withheld]'); assert.equal(out.waitingClaims[0].message, '[Detail withheld]');
+});
+
+// Kernel PR K's `waiting` lifecycle rows, in the shape K writes them (captured from K @ e85ff4ec): a set row
+// carries waitingOnYou true, reason and message; a cleared row carries waitingOnYou false only.
+const kSet = (data = {}) => event({ producer: 'agent', kind: 'waiting', at: '2026-09-22T01:00:00.000Z',
+  data: { waitingOnYou: true, reason: 'attention', message: 'e2e: needs input check', ...data } });
+const kCleared = () => event({ producer: 'agent', kind: 'waiting', at: '2026-09-22T01:00:14.607Z', data: { waitingOnYou: false } });
+
+test('K waiting rows: titled "Waiting on you"; the set row projects waitingOnYou, reason and message; the cleared row only false', () => {
+  assert.equal(EVENT_TITLES.waiting, 'Waiting on you');
+  const out = eventsData(data([kSet(), kCleared()]), target);
+  assert.ok(out);
+  assert.deepEqual(out.events.map(e => e.data), [{ waitingOnYou: true, reason: 'attention', message: 'e2e: needs input check' }, { waitingOnYou: false }]);
+});
+
+test('K waiting rows: a malformed note is null and the read stays valid; an unsafe one is withheld', () => {
+  for (const message of ['two\nlines', 'x'.repeat(201), '', 7]) {
+    const out = eventsData(data([kSet({ message })]), target);
+    assert.ok(out, JSON.stringify(message)); assert.equal(out.events[0].data.message, null);
+  }
+  assert.equal(eventsData(data([kSet({ message: 'see https://evil.example/x' })]), target).events[0].data.message, '[Detail withheld]');
+  assert.equal(eventsData(data([kSet({ message: '<b>bold</b>' })]), target).events[0].data.message, '<b>bold</b>', 'kept verbatim; the view sets text');
+});
+
+test('a message on any other event kind is not projected', () => {
+  const out = eventsData(data([event({ kind: 'launched', data: { backend: 'tmux', message: 'not a claim note' } })]), target);
+  assert.ok(out); assert.equal(Object.hasOwn(out.events[0].data, 'message'), false);
 });
