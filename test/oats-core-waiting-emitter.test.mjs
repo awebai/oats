@@ -100,14 +100,14 @@ test("the real pass writes settings.json 0600 with absolute, single-quoted comma
   const settings = readJson(settingsOf(h));
   assert.deepEqual(Object.keys(settings), ["hooks"]);
   assert.deepEqual(Object.keys(settings.hooks), ["Notification", "PreToolUse", "PostToolUse", "PostToolUseFailure", "UserPromptSubmit", "Stop", "SessionEnd"]);
-  const map = Object.entries(settings.hooks).flatMap(([event, groups]) => groups.map((g) => [event, g.matcher ?? null, g.hooks.map((e) => e.command.match(/claude-waiting\.sh' ((?:set \w+)|clear) /)[1])]));
+  const map = Object.entries(settings.hooks).flatMap(([event, groups]) => groups.map((g) => [event, g.matcher ?? null, g.hooks.map((e) => e.command.match(/claude-waiting\.sh' ((?:set \w+)|clear(?:-tool)?) /)[1])]));
   assert.deepEqual(map, [
     ["Notification", "permission_prompt", ["set permission"]],
     ["Notification", "elicitation_dialog", ["set question"]],
     ["PreToolUse", "AskUserQuestion", ["set question"]],
-    ["PreToolUse", "^(?!AskUserQuestion$).*", ["clear"]],
-    ["PostToolUse", "*", ["clear"]],
-    ["PostToolUseFailure", "*", ["clear"]],
+    ["PreToolUse", "^(?!AskUserQuestion$).*", ["clear-tool"]],
+    ["PostToolUse", "*", ["clear-tool"]],
+    ["PostToolUseFailure", "*", ["clear-tool"]],
     ["UserPromptSubmit", null, ["clear"]],
     ["Stop", null, ["clear"]],
     ["SessionEnd", null, ["clear"]],
@@ -119,7 +119,7 @@ test("the real pass writes settings.json 0600 with absolute, single-quoted comma
     assert.equal(e.timeout, 5);
     assert.match(e.command, /; exit 0$/);
     assert.ok(e.command.startsWith(`/bin/sh ${shq(SCRIPT)} `), e.command);
-    assert.ok(e.command.endsWith(` ${shq(node)} ${shq(FAKE_CLI_ABS)} >/dev/null 2>&1 </dev/null; exit 0`), e.command);
+    assert.ok(e.command.endsWith(` ${shq(node)} ${shq(FAKE_CLI_ABS)} >/dev/null 2>&1; exit 0`), e.command);
     assert.ok(!/\bagent\b/.test(e.command), "no command names producer agent");
   }
   // The JS regex Claude Code compiles for the catch-all PreToolUse matcher skips only AskUserQuestion.
@@ -428,6 +428,61 @@ test("the CLI runs in the home, and $XDG_RUNTIME_DIR (when absolute) holds the m
   assert.ok(existsSync(markerOf(h2, tmp)), "a relative XDG_RUNTIME_DIR falls back to the per-uid TMPDIR directory");
 });
 
+test("clear-tool: a subagent's tool event (top-level agent_id before hook_event_name) skips the clear; any other input clears; never a hang, never output", { timeout: 60000 }, () => {
+  const node = process.execPath;
+  const head = (extra) => `{"session_id":"s","transcript_path":"/t.jsonl","cwd":"/c","prompt_id":"p","permission_mode":"default",${extra}"hook_event_name":"PostToolUse","tool_name":"Bash"`;
+  const sub = `${head('"agent_id":"a506d4183b984bb54","agent_type":"general-purpose",')},"tool_input":{"command":"ls"},"tool_use_id":"toolu_1"}`;
+  const cases = [
+    ["a main-thread tool event", `${head("")},"tool_input":{"command":"ls"},"tool_use_id":"toolu_1"}`, true],
+    ["a subagent's tool event", sub, false],
+    ["agent_id escaped inside a string value", `${head("")},"tool_input":{"command":"echo {\\"agent_id\\":\\"x1\\"}"},"tool_use_id":"toolu_1"}`, true],
+    ["agent_id escaped inside a top-level string before hook_event_name", `{"session_id":"s","cwd":"/c/\\"agent_id\\":\\"x1\\"",${head("").slice(1)},"tool_use_id":"toolu_1"}`, true],
+    ["agent_id as a key inside tool_input, after hook_event_name", `${head("")},"tool_input":{"agent_id":"x1"},"tool_use_id":"toolu_1"}`, true],
+    ["an empty agent_id", `${head('"agent_id":"",')},"tool_use_id":"toolu_1"}`, true],
+    ["a main-thread payload over 64 KiB", `${head("")},"tool_response":"${"x".repeat(100000)}","tool_use_id":"toolu_1"}`, true],
+    ["a subagent payload over 64 KiB (the id is in the first 64 KiB)", `${head('"agent_id":"a1",')},"tool_response":"${"x".repeat(100000)}","tool_use_id":"toolu_1"}`, false],
+    ["empty stdin", "", true],
+    ["not JSON", "garbage \u0000\n\n", true],
+    ["agent_id with no hook_event_name after it (truncated)", '{"session_id":"s","agent_id":"a1","agent_type":"x"', true],
+  ];
+  for (const [label, input, clears] of cases) {
+    const h = home(), log = join(base, `argv-tool-${n}.log`);
+    runScript(["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h });
+    const started = Date.now();
+    const r = spawnSync("/bin/sh", [SCRIPT, "clear-tool", node, FAKE_CLI], { input, encoding: "utf8", timeout: 15000, env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, OATS_INSTANCE_HOME: h, FAKE_LOG: log }) });
+    assert.equal(r.status, 0, label); assert.equal(r.stdout, "", label); assert.ok(Date.now() - started < 5000, `${label}: bounded`);
+    const calls = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").length : 0;
+    assert.equal(calls, clears ? 1 : 0, `${label}: ${clears ? "clears" : "skips the clear"}`);
+    assert.equal(existsSync(markerOf(h)), !clears, `${label}: the marker ${clears ? "goes" : "stays"}`);
+  }
+  // A closed stdin means the main thread.
+  {
+    const h = home(), log = join(base, `argv-tool-closed-${n}.log`);
+    runScript(["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h });
+    const r = spawnSync("/bin/sh", ["-c", `exec /bin/sh "$0" "$@" <&-`, SCRIPT, "clear-tool", node, FAKE_CLI], { encoding: "utf8", timeout: 15000, env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, OATS_INSTANCE_HOME: h, FAKE_LOG: log }) });
+    assert.equal(r.status, 0, "closed stdin"); assert.equal(r.stdout, "");
+    assert.equal(existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").length : 0, 1, "closed stdin: clears");
+  }
+  // No claim (no marker): a tool clear reads nothing and starts no CLI, even for a stdin that never ends.
+  const h = home(), log = join(base, `argv-tool-none-${n}.log`), started = Date.now();
+  const r = spawnSync("/bin/sh", [SCRIPT, "clear-tool", node, FAKE_CLI], { stdio: ["pipe", "pipe", "pipe"], encoding: "utf8", timeout: 15000, env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, OATS_INSTANCE_HOME: h, FAKE_LOG: log }) });
+  assert.equal(r.status, 0); assert.ok(Date.now() - started < 900, "no read without a claim"); assert.ok(!existsSync(log));
+});
+
+test("clear-tool: a stdin that never ends is read for at most ~1 s, then means the main thread", { timeout: 30000 }, async () => {
+  const node = process.execPath, h = home(), log = join(base, `argv-tool-open-${n}.log`);
+  runScript(["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h });
+  const started = Date.now();
+  const child = spawn("/bin/sh", [SCRIPT, "clear-tool", node, FAKE_CLI], { stdio: ["pipe", "pipe", "pipe"], env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, OATS_INSTANCE_HOME: h, FAKE_LOG: log }) });
+  child.stdin.write('{"session_id":"s","agent_id":"a1"'); // a subagent's start, never finished, never closed
+  let out = ""; child.stdout.on("data", (d) => { out += d; });
+  const code = await new Promise((done) => child.on("exit", done));
+  child.stdin.destroy();
+  assert.equal(code, 0); assert.equal(out, "");
+  assert.ok(Date.now() - started < 6000, `bounded (${Date.now() - started} ms)`);
+  assert.ok(existsSync(log), "an input cut short before hook_event_name means the main thread: it clears");
+});
+
 test("end to end: a command the hook wrote, run as Claude Code runs it, reaches the CLI", () => {
   const h = home();
   const log = join(base, `e2e-${n}.log`);
@@ -444,5 +499,5 @@ test("packaging: the capability ships bin/oats-core.mjs and bin/claude-waiting.s
   const manifest = readJson(join(CAP, "oats.json"));
   assert.deepEqual(manifest.hooks, { spawn: "bin/oats-core.mjs spawn", launch: "bin/oats-core.mjs launch" });
   assert.equal(manifest.launchPreview, true);
-  assert.match(readFileSync(SCRIPT, "utf8"), /^#!\/bin\/sh\n(?:#.*\n)*exec >\/dev\/null 2>&1 <\/dev\/null\n/, "the script detaches every stream first");
+  assert.match(readFileSync(SCRIPT, "utf8"), /^#!\/bin\/sh\n(?:#.*\n)*exec >\/dev\/null 2>&1\n(?:#.*\n)*if \[ -e \/dev\/fd\/0 \]; then exec 3<&0; else exec 3<\/dev\/null; fi\nexec <\/dev\/null\n/, "the script detaches stdout and stderr first, keeps the input on fd 3 and detaches stdin");
 });

@@ -532,9 +532,9 @@ runs `bin/claude-waiting.sh` from the home's module copy, which calls
 | `Notification` | `permission_prompt` | set `permission` |
 | `Notification` | `elicitation_dialog` | set `question` |
 | `PreToolUse` | `AskUserQuestion` | set `question` |
-| `PreToolUse` | `^(?!AskUserQuestion$).*` (every other tool) | clear |
-| `PostToolUse` | `*` | clear |
-| `PostToolUseFailure` | `*` | clear |
+| `PreToolUse` | `^(?!AskUserQuestion$).*` (every other tool) | clear, unless a subagent made the call |
+| `PostToolUse` | `*` | clear, unless a subagent made the call |
+| `PostToolUseFailure` | `*` | clear, unless a subagent made the call |
 | `UserPromptSubmit`, `Stop`, `SessionEnd` | none | clear |
 
 Claude Code shows an AskUserQuestion through its permission dialog, so that
@@ -542,6 +542,19 @@ dialog's own `permission_prompt` follows the question's set: the script keeps
 the current reason in its marker, and a permission prompt never relabels an
 open question. A granted tool that fails fires `PostToolUseFailure`, not
 `PostToolUse`, so that clears too.
+
+**Subagents' tool calls do not clear.** Background and parallel subagents
+in the same session fire the same tool hooks, so the main thread's prompt
+could be cleared while the human is still on it. On Claude Code 2.1.288 a
+subagent's tool event carries a top-level `agent_id` (main-thread events
+have none), so a tool clear reads the hook's JSON input and skips the clear
+when it finds one. The read happens only while a claim is set (the marker
+exists), takes at most 64 KiB and 1 s, and looks only at the text before
+the first `"hook_event_name"`: a string value escapes its quotes, so that
+text holds top-level keys only. Anything else (no key, an input cut short,
+another key order, nothing read) means the main thread, and the clear goes
+ahead. A permission `Notification` carries no `agent_id` and no tool id,
+even when a subagent asked, so a claim never knows who set it.
 
 **A refused permission prompt is not observable.** On Claude Code 2.1.288,
 answering "No" at a permission prompt interrupts the turn and fires no hook
@@ -566,9 +579,11 @@ clears it.
   and pi homes get nothing.
 - **It never hurts the session.** Claude Code reads a hook's stdout and exit
   code as decisions. So every command runs the script through `/bin/sh`
-  with all streams on `/dev/null` and ends in `; exit 0`, under a 5 s Claude
-  hook timeout. The script itself detaches every stream first, always exits
-  0, and kills the CLI after about 3 s.
+  with stdout and stderr on `/dev/null` and ends in `; exit 0`, under a 5 s
+  Claude hook timeout. Stdin, Claude's JSON input, reaches the script, which
+  moves it to a private descriptor and detaches its own stdin, stdout and
+  stderr first. It reads the input only for a tool clear, bounded as above,
+  always exits 0, and kills the CLI after about 3 s.
 - **Debounce.** The script keeps a private marker outside the home while its
   claim is set: `<dir>/<first 16 hex of sha256(home)>.claude`, where `<dir>`
   is per user: `$XDG_RUNTIME_DIR/oats-waiting` when that is set and
@@ -617,11 +632,15 @@ again" permission rules there.
 - If the marker and the claim disagree (someone deleted the marker by hand,
   say), one stale claim can remain until the next set or clear or the next
   session boundary.
-- Tool calls made by background or parallel subagents in the same session
-  fire the same PreToolUse and PostToolUse clears, so a live permission
-  claim can be cleared while the human is still blocked on the prompt. The
-  field then reads `null` (a false "not known to be waiting"; claims are
-  display-only) until the next prompt sets it again.
+- When a subagent asks for permission and the human approves, the
+  subagent's own tool events are skipped too, so the claim stays until the
+  next main-thread event: the main thread's next tool call, the subagent's
+  completion (Claude submits it as a `<task-notification>` prompt), a
+  `Stop` or the human's prompt. That shows "needs input" a while too long,
+  never hides a real block.
+- A `Stop` or `UserPromptSubmit` always clears, even one the main thread
+  produces while a subagent's prompt is open (a background subagent's
+  completion is submitted as a prompt).
 - A Claude instance spawned before the upgrade gets the emitter only when
   it is respawned. Its launch hook comes from its recorded module copy.
 

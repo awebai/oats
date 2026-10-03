@@ -46,9 +46,10 @@ export function shq(value) {
 }
 
 /** One hook command: the script through /bin/sh (its executable bit is never relied on),
- *  every stream detached, and `exit 0` whatever happens. */
+ *  stdout and stderr detached, and `exit 0` whatever happens. Stdin (Claude's JSON input)
+ *  reaches the script, which reads it only for a tool clear, bounded. */
 export function waitingCommand({ script, node, cli }, args) {
-  return `/bin/sh ${shq(script)} ${args.join(" ")} ${shq(node)} ${shq(cli)} >/dev/null 2>&1 </dev/null; exit 0`;
+  return `/bin/sh ${shq(script)} ${args.join(" ")} ${shq(node)} ${shq(cli)} >/dev/null 2>&1; exit 0`;
 }
 
 /** oats.core's Claude Code settings: only `hooks`, keyed by Claude Code event. */
@@ -58,11 +59,12 @@ export function claudeWaitingSettings({ script, node, cli }) {
   return {
     hooks: {
       Notification: [group("permission_prompt", "set", "permission"), group("elicitation_dialog", "set", "question")],
-      PreToolUse: [group("AskUserQuestion", "set", "question"), group("^(?!AskUserQuestion$).*", "clear")],
-      PostToolUse: [group(ALL_TOOLS, "clear")],
+      // Tool clears are `clear-tool`: skipped when a subagent made the call.
+      PreToolUse: [group("AskUserQuestion", "set", "question"), group("^(?!AskUserQuestion$).*", "clear-tool")],
+      PostToolUse: [group(ALL_TOOLS, "clear-tool")],
       // A granted tool that failed: no PostToolUse follows it. (A tool the human refused at
       // the prompt fires no hook at all in Claude Code 2.1.288; the next prompt clears.)
-      PostToolUseFailure: [group(ALL_TOOLS, "clear")],
+      PostToolUseFailure: [group(ALL_TOOLS, "clear-tool")],
       UserPromptSubmit: [group(undefined, "clear")],
       Stop: [group(undefined, "clear")],
       SessionEnd: [group(undefined, "clear")],

@@ -2,14 +2,20 @@
 # oats.core: Claude Code waiting emitter.
 #   claude-waiting.sh set <permission|question> <node> <cli>
 #   claude-waiting.sh clear <node> <cli>
+#   claude-waiting.sh clear-tool <node> <cli>   (a PreToolUse/PostToolUse clear: skipped for a subagent's tool call)
 # Run by the Claude Code hooks oats-core.mjs writes into <home>/.claude/settings.json.
 # It reports through `oats instance waiting set|clear --producer oats.core` that the
 # session waits on the human, and never touches producer `agent` (the agent's own claim).
 #
 # It can NEVER hurt the Claude session: Claude reads a hook's stdout and exit code as
 # decisions, so this script writes nothing anywhere visible, always exits 0, and bounds
-# the CLI at ~3 s (Claude's own hook timeout is 5 s).
-exec >/dev/null 2>&1 </dev/null
+# the CLI at ~3 s (Claude's own hook timeout is 5 s). The hook's JSON input stays on fd 3
+# for the one bounded read that needs it (from_subagent); nothing else reads stdin.
+exec >/dev/null 2>&1
+# A closed stdin is never redirected from (a failed redirection ends sh itself); without
+# /dev/fd the input reads as empty, which means the main thread.
+if [ -e /dev/fd/0 ]; then exec 3<&0; else exec 3</dev/null; fi
+exec </dev/null
 
 action=$1
 case "$action" in
@@ -17,7 +23,7 @@ case "$action" in
     reason=$2; node=$3; cli=$4
     case "$reason" in permission|question) ;; *) exit 0 ;; esac
     ;;
-  clear)
+  clear|clear-tool)
     node=$2; cli=$3
     ;;
   *) exit 0 ;;
@@ -72,6 +78,36 @@ if [ -n "$usable" ]; then
 fi
 # A marker path that exists as anything but a regular file is unusable too.
 if [ -n "$marker" ] && { [ -L "$marker" ] || { [ -e "$marker" ] && [ ! -f "$marker" ]; }; }; then marker=; fi
+
+# Whether this hook's input is a subagent's tool event (a background or parallel subagent
+# in the same session), from Claude Code 2.1.288's payload: compact one-line JSON whose
+# top-level keys put "agent_id" (subagents only) before "hook_event_name". Only the text
+# before the first "hook_event_name" is looked at: a string value escapes its quotes, so
+# that text holds top-level keys only. Read at most 64 KiB, for at most 1 s. No match
+# (no key, another order, an input cut short before "hook_event_name", nothing read)
+# means the main thread: the clear goes ahead.
+from_subagent() {
+  input=$(
+    head -c 65536 <&3 &
+    reader=$!
+    ( sleep 1; kill -9 "$reader" ) >/dev/null &
+    wait "$reader"
+    kill "$!"
+  )
+  prefix=${input%%\"hook_event_name\"*}
+  [ "$prefix" != "$input" ] || return 1
+  case "$prefix" in *'"agent_id":"'[A-Za-z0-9_-]*|*'"agent_id": "'[A-Za-z0-9_-]*) return 0 ;; esac
+  return 1
+}
+
+# A subagent's tool call resolves nothing the human was asked by the main thread, so its
+# clear is skipped (a permission Notification never says who asked: see docs). With a
+# usable marker and no claim there is nothing to clear, and stdin is not even read.
+if [ "$action" = clear-tool ]; then
+  [ -n "$marker" ] && [ ! -e "$marker" ] && exit 0
+  from_subagent && exit 0
+  action=clear
+fi
 
 # Run the CLI in the background with a watchdog (macOS has no timeout(1)). Its status is
 # the CLI's: non-zero when it failed or the watchdog killed it.
