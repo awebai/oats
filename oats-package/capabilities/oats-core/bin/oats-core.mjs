@@ -100,7 +100,7 @@ export const markerPath = (home, dir) => join(dir, `${createHash("sha256").updat
  *  marker state an earlier session left (intent, applied, a lock) is forgotten. */
 export function resetMarker(marker) {
   for (const f of [marker, `${marker}.applied`, join(`${marker}.lock`, "pid")]) { try { unlinkSync(f); } catch { /* absent */ } }
-  try { rmdirSync(`${marker}.lock`); } catch { /* absent */ }
+  for (const d of [`${marker}.lock`, `${marker}.lock.reap`]) { try { rmdirSync(d); } catch { /* absent */ } }
 }
 
 /** oats.core's Claude Code settings: only `hooks`, keyed by Claude Code event. */

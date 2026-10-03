@@ -618,17 +618,25 @@ clears it.
   so the marker is always the latest intent. Then, if the lock is free, it
   reconciles: one process at a time brings the recorded claim to the latest
   intent, re-reading it after each CLI call (at most 3), so the calls land
-  in the order the events came, whatever their speed. An event that finds
-  the lock held never waits: it exits, and the holder applies its intent on
-  its next read, or on the read it makes after letting the lock go. The
-  lock is a directory holding its holder's pid and start time; one whose
+  in the order the events came, whatever their speed. Before each call it
+  records the claim as `unknown`, and records the intent only once the call
+  succeeds: a call that fails or is killed may still have written the claim
+  (the kernel writes the home log before the workspace log), so the next
+  event always calls the CLI after one. An event that finds the lock held
+  never waits: it exits, and the holder applies its intent on its next
+  read, or on the read it makes after letting the lock go. The lock is a
+  directory holding its holder's token (pid and start time); one whose
   holder is gone (pid dead, or taken over 5 s ago, past Claude's hook
   timeout, which also covers a reused pid and a machine that slept) is
-  broken by the next event, as is one a minute old with no pid yet. A call
-  that fails or is killed, or a reconciliation the time budget stops (no
-  call starts 2 s after the hook began), leaves the recorded claim and the
-  intent apart, and the next event finishes it. The state files are only
-  ever deleted by the launch hook, so no intent is lost to a race.
+  broken by the next event, as is one a minute old with no pid yet.
+  Reapers take turns under a second lock, `<marker>.lock.reap`, and judge
+  the lock again there, so a stale judgement never removes the lock another
+  reaper has just taken; a reap lock a minute old (a reaper killed in its
+  instant) is removed. A holder records a call and lets the lock go only
+  while the lock still holds its token. A failed call, or a reconciliation
+  the time budget stops (no call starts 2 s after the hook began), leaves
+  the recorded claim and the intent apart, and the next event finishes it.
+  The state files are only ever deleted by the launch hook.
 - **It never touches the agent's claim.** The script only ever passes
   `--producer oats.core`.
 - **Not "unknown work" at retirement.** Harness project settings in the home

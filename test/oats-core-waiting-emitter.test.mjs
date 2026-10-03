@@ -42,7 +42,8 @@ function home() {
 // A fake kernel CLI that records its argv; FAKE_MODE selects how it misbehaves.
 const FAKE_CLI = join(base, "fake-cli.mjs");
 // FAKE_SET_DELAY_MS / FAKE_CLEAR_DELAY_MS delay that action's record; FAKE_CLEAR_MODE makes
-// only clears misbehave ("die" ends it by SIGKILL, as the watchdog does); FAKE_CWD_LOG
+// only clears misbehave ("die" ends it by SIGKILL, as the watchdog does; "partial" records
+// the claim, then fails); FAKE_CWD_LOG
 // records the cwd the CLI ran in. FAKE_GATE (a directory) orders calls by construction: call
 // k writes started.<k> (its argv) and waits for the test to create go.<k>.
 writeFileSync(FAKE_CLI, `import { appendFileSync, existsSync, openSync, writeSync, closeSync } from "node:fs";
@@ -60,10 +61,11 @@ go(() => setTimeout(() => {
   if (process.env.FAKE_CWD_LOG) appendFileSync(process.env.FAKE_CWD_LOG, process.cwd() + "\\n");
   const mode = (process.argv[4] === "clear" && process.env.FAKE_CLEAR_MODE) || process.env.FAKE_MODE || "ok";
   // FAKE_STATE: the claim as the successful calls leave it ("set <reason>" or "clear").
-  if (mode === "ok" && process.env.FAKE_STATE) appendFileSync(process.env.FAKE_STATE, (process.argv[4] === "set" ? "set " + process.argv[8] : "clear") + "\\n");
+  if ((mode === "ok" || mode === "partial") && process.env.FAKE_STATE) appendFileSync(process.env.FAKE_STATE, (process.argv[4] === "set" ? "set " + process.argv[8] : "clear") + "\\n");
   if (mode === "fail") { process.stdout.write('{"decision":"block","reason":"from stdout"}\\n'); process.stderr.write("boom on stderr\\n"); process.exit(1); }
   if (mode === "hang") setTimeout(() => {}, 30000);
   if (mode === "die") process.kill(process.pid, "SIGKILL");
+  if (mode === "partial") process.exit(1); // wrote the claim, then failed (E_EVENTS_FAILED on the other log)
   if (mode === "ok") process.stdout.write('{"ok":true}\\n');
 }, delay));
 `);
@@ -72,6 +74,9 @@ go(() => setTimeout(() => {
 // the test holds at its gate. Everything else is the real command.
 const SHIMS = join(base, "shims"); mkdirSync(SHIMS);
 writeFileSync(join(SHIMS, "date"), '#!/bin/sh\nif [ -n "$FAKE_CLOCK" ] && [ "$1" = +%s ]; then cat "$FAKE_CLOCK"; else exec /bin/date "$@"; fi\n', { mode: 0o755 });
+// `rm` holds the first call in a process run with FAKE_RM_GATE (a reaper's removal of the
+// stale lock's pid file) until the test creates go in that directory.
+writeFileSync(join(SHIMS, "rm"), '#!/bin/sh\nif [ -n "$FAKE_RM_GATE" ] && mkdir "$FAKE_RM_GATE/once" 2>/dev/null; then\n  : > "$FAKE_RM_GATE/started"\n  while [ ! -e "$FAKE_RM_GATE/go" ]; do /bin/sleep 0.01; done\nfi\nexec /bin/rm "$@"\n', { mode: 0o755 });
 writeFileSync(join(SHIMS, "sleep"), '#!/bin/sh\nif [ "$1" = 3 ]; then exec /bin/sleep 600; fi\nexec /bin/sleep "$@"\n', { mode: 0o755 });
 /** An ordered run: a gate for the fake CLI's calls and a clock file, in home h's env. */
 function ordered(h, extra = {}) {
@@ -451,7 +456,7 @@ test("a clear the watchdog kills, or that fails, keeps the marker, so the next c
   for (const mode of ["hang", "fail"]) {
     const r = runScript(["clear", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log, FAKE_MODE: mode });
     assert.equal(r.status, 0); assert.equal(r.stdout, "");
-    assert.equal(appliedOf(h), "permission", `${mode}: the claim is not recorded as cleared, so the next clear retries`);
+    assert.equal(appliedOf(h), "unknown", `${mode}: the claim is recorded as unknown (the call may have landed), so the next clear retries`);
   }
   runScript(["clear", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
   assert.equal(appliedOf(h), "clear", "a clear that is recorded is applied");
@@ -512,7 +517,7 @@ test("overlapping calls end in the right claim: set/set takes the newer reason, 
     o.go(2);
     assert.equal(await holder, 0);
     assert.ok(!o.started(3), `${clearMode}: a failed call ends the run`);
-    assert.equal(intentOf(h), "clear"); assert.equal(appliedOf(h), "permission", `${clearMode}: not recorded as cleared`);
+    assert.equal(intentOf(h), "clear"); assert.equal(appliedOf(h), "unknown", `${clearMode}: not recorded as cleared`);
     const next = o.run(["clear"], { FAKE_CLEAR_MODE: "ok" });
     assert.equal(what(await o.call(3)), "clear", `${clearMode}: the next clear retries`);
     o.go(3);
@@ -595,9 +600,68 @@ test("a lock whose holder is gone (pid dead, or taken over 5 s ago) is broken; a
   await settle(["clear"], 4);
   assert.equal(appliedOf(h), "clear"); assert.ok(!held(h));
   // The launch hook starts a new session with no marker state.
-  lockAs(process.pid, 1000);
+  lockAs(process.pid, 1000); mkdirSync(`${lock}.reap`);
   runHook("launch", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI_ABS });
-  for (const f of [markerOf(h), `${markerOf(h)}.applied`, lock]) assert.ok(!existsSync(f), `${f} reset at launch`);
+  for (const f of [markerOf(h), `${markerOf(h)}.applied`, lock, `${lock}.reap`]) assert.ok(!existsSync(f), `${f} reset at launch`);
+});
+
+test("a call that wrote the claim and then failed (or died) leaves applied unknown: the next event calls the CLI, even one whose intent matches what was recorded before", { timeout: 60000 }, async () => {
+  const lastState = (f) => readFileSync(f, "utf8").trim().split("\n").pop();
+  for (const mode of ["partial", "die"]) {
+    // set that wrote and failed, then clear: the clear is not skipped.
+    let h = home(), state = join(base, `state-partial-${n}.log`), o = ordered(h, { FAKE_STATE: state });
+    const set = o.run(["set", "permission"], { FAKE_MODE: mode }); await o.call(1); o.go(1); assert.equal(await set, 0);
+    assert.equal(appliedOf(h), "unknown", `${mode}: a set whose outcome is unknown`);
+    if (mode === "partial") assert.equal(lastState(state), "set permission", "the claim was written");
+    const clear = o.run(["clear"]);
+    assert.equal(what(await o.call(2)), "clear", `${mode}: the clear calls the CLI`);
+    o.go(2); assert.equal(await clear, 0);
+    assert.equal(appliedOf(h), "clear"); assert.equal(lastState(state), "clear");
+    // The symmetric case: a recorded set, a clear that wrote and failed, then the same set again.
+    h = home(); state = join(base, `state-partial-sym-${n}.log`); o = ordered(h, { FAKE_STATE: state });
+    const s1 = o.run(["set", "permission"]); await o.call(1); o.go(1); assert.equal(await s1, 0);
+    const c1 = o.run(["clear"], { FAKE_MODE: mode }); await o.call(2); o.go(2); assert.equal(await c1, 0);
+    assert.equal(appliedOf(h), "unknown");
+    const s2 = o.run(["set", "permission"]);
+    assert.equal(what(await o.call(3)), "set permission", `${mode}: the set is not skipped as already applied`);
+    o.go(3); assert.equal(await s2, 0);
+    assert.equal(appliedOf(h), "permission"); assert.equal(lastState(state), "set permission");
+  }
+});
+
+test("reapers of a stale lock take turns and judge it again: a second reaper exits while the first works, and a holder whose lock was broken under it acknowledges nothing and leaves the new lock alone", { timeout: 60000 }, async () => {
+  const h = home(), state = join(base, `state-reap-${n}.log`), o = ordered(h, { FAKE_STATE: state }), lock = `${markerOf(h)}.lock`;
+  const lastState = () => readFileSync(state, "utf8").trim().split("\n").pop();
+  const s1 = o.run(["set", "permission"]); await o.call(1); o.go(1); assert.equal(await s1, 0);
+  const dead = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" }).stdout;
+  mkdirSync(lock); writeFileSync(join(lock, "pid"), `${dead} 1000\n`);
+  // Reaper A holds the reap lock, its removal of the stale lock held at the gate.
+  const rmGate = mkdtempSync(join(base, "rm-gate-"));
+  const a = o.run(["clear"], { FAKE_RM_GATE: rmGate });
+  await until(() => existsSync(join(rmGate, "started")));
+  // B comes in: the lock is stale, but A is reaping: B leaves its intent and exits.
+  assert.equal(await o.run(["set", "question"]), 0);
+  assert.ok(!o.started(2), "B calls nothing");
+  assert.equal(readFileSync(join(lock, "pid"), "utf8"), `${dead} 1000\n`, "B removed nothing");
+  writeFileSync(join(rmGate, "go"), "");
+  assert.equal(what(await o.call(2)), "set question", "A broke the lock and applies the latest intent, B's");
+  o.go(2); assert.equal(await a, 0);
+  assert.equal(appliedOf(h), "question"); assert.equal(lastState(), "set question");
+  assert.ok(!held(h) && !existsSync(`${lock}.reap`), "both locks released");
+  // A holder whose lock is broken under it (here: replaced) while its call is under way.
+  const c = o.run(["clear"]);
+  await o.call(3);
+  rmSync(lock, { recursive: true }); mkdirSync(lock); writeFileSync(join(lock, "pid"), `${process.pid} 1000\n`);
+  o.go(3); assert.equal(await c, 0);
+  assert.equal(lastState(), "clear", "its call landed");
+  assert.equal(appliedOf(h), "unknown", "but it acknowledged nothing");
+  assert.equal(readFileSync(join(lock, "pid"), "utf8"), `${process.pid} 1000\n`, "and left the new lock alone");
+  // Once that holder lets go, the next event brings applied back in line with the claim.
+  rmSync(lock, { recursive: true });
+  const next = o.run(["set", "question"]);
+  assert.equal(what(await o.call(4)), "set question");
+  o.go(4); assert.equal(await next, 0);
+  assert.equal(appliedOf(h), "question"); assert.equal(lastState(), "set question");
 });
 
 test("the CLI runs in the home", () => {

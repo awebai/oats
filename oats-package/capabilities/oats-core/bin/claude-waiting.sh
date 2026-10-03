@@ -18,15 +18,23 @@
 # The protocol (with a marker; without one every event just calls the CLI):
 #   <marker>          the INTENT: the latest event's wish, "permission", "question" or
 #                     "clear". Every hook writes it first.
-#   <marker>.applied  what the CLI last RECORDED. Only the lock holder writes it.
-#   <marker>.lock     a directory: one RECONCILER at a time, its pid file "<pid> <began>".
+#   <marker>.applied  what the CLI last RECORDED: also "unknown" while a call is under way
+#                     or after one failed (it may have written the claim). Absent is clear
+#                     (the launch hook removes it with the session's claims). Only the lock
+#                     holder writes it.
+#   <marker>.lock     a directory: one RECONCILER at a time, its pid file the holder's
+#                     token "<pid> <began>".
+#   <marker>.lock.reap  a directory: one REAPER of a stale lock at a time.
 # A hook writes its intent, then takes the lock if it is free (never waiting) and
-# reconciles: while intent and applied differ, it calls the CLI for the intent and records
-# it as applied, re-reading the intent after each call. A hook that finds the lock held
-# just exits: the holder re-reads the intent after each call, and once more after letting
-# go of the lock, so a newer intent is applied by it, in event order. A failed call, the
-# call cap or the time budget leaves the two apart, for the next event to finish. A lock
-# whose holder is gone (pid dead, or taken over 5 s ago, past Claude's timeout) is broken.
+# reconciles: while intent and applied differ, it records applied as unknown, calls the CLI
+# for the intent and, on success, records the intent as applied, re-reading the intent
+# after each call. A hook that finds the lock held just exits: the holder re-reads the
+# intent after each call, and once more after letting go of the lock, so a newer intent is
+# applied by it, in event order. A failed call, the call cap or the time budget leaves the
+# two apart, for the next event to finish. A lock whose holder is gone (pid dead, or taken
+# over 5 s ago, past Claude's timeout) is broken by a reaper, which judges it again under
+# the reap lock first. A holder acknowledges a call and releases the lock only while the
+# lock still holds its token.
 exec >/dev/null 2>&1
 # A closed stdin is never redirected from (a failed redirection ends sh itself); without
 # /dev/fd the input reads as empty, which means the main thread.
@@ -73,10 +81,13 @@ if [ -n "$marker" ] && ! { [ -d "${marker%/*}" ] && [ ! -L "${marker%/*}" ] && [
 # else (a symlink, a file where the lock goes) makes the marker unusable too.
 applied=$marker.applied
 lock=$marker.lock
+reaper=$marker.lock.reap
 for f in "$marker" "$applied"; do
   if [ -n "$marker" ] && { [ -L "$f" ] || { [ -e "$f" ] && [ ! -f "$f" ]; }; }; then marker=; fi
 done
-if [ -n "$marker" ] && { [ -L "$lock" ] || { [ -e "$lock" ] && [ ! -d "$lock" ]; }; }; then marker=; fi
+for d in "$lock" "$reaper"; do
+  if [ -n "$marker" ] && { [ -L "$d" ] || { [ -e "$d" ] && [ ! -d "$d" ]; }; }; then marker=; fi
+done
 
 # Kill process $1 after $2 seconds (macOS has no timeout(1)), unless this watchdog is
 # killed first: its TERM trap then ends its sleep too, so nothing is left behind. A TERM
@@ -126,22 +137,61 @@ run_cli() {
   return "$status"
 }
 
-# One state file: "permission", "question" or "clear"; absent or anything else is clear.
+# The intent: "permission", "question" or "clear"; absent or anything else is clear.
 state_of() {
   line=
   [ -f "$1" ] && IFS= read -r line < "$1"
   case "$line" in permission|question) printf '%s' "$line" ;; *) printf clear ;; esac
 }
 
+# What the CLI last recorded: absent is clear (nothing recorded this session); anything
+# but "permission", "question" or "clear" (an "unknown", a torn write) is unknown, which
+# matches no intent, so the next event calls the CLI.
+applied_of() {
+  [ -e "$applied" ] || { printf clear; return; }
+  line=
+  IFS= read -r line < "$applied"
+  case "$line" in permission|question|clear) printf '%s' "$line" ;; *) printf unknown ;; esac
+}
+
+# Whether the lock still holds this hook's token.
+owns() {
+  line=
+  [ -f "$lock/pid" ] && IFS= read -r line < "$lock/pid"
+  [ "$line" = "$token" ]
+}
+
 # Take the reconciler's lock if it is free, or held by a holder that is gone; never wait.
 take_lock() {
-  if ! mkdir "$lock" 2>/dev/null; then
-    stale_lock || return 1
+  if mkdir "$lock" 2>/dev/null; then
+    printf '%s\n' "$token" > "$lock/pid"
+    return 0
+  fi
+  reap
+}
+
+# Break a stale lock and take it. Reapers take turns under the reap lock (one that finds it
+# held exits), and each judges the lock again there: a judgement made before can never
+# remove the lock a faster reaper has just taken. The new lock gets its token before the
+# reap lock is let go. A reap lock left by a reaper killed in that instant is removed once
+# it is a minute old.
+reap() {
+  if ! mkdir "$reaper" 2>/dev/null; then
+    [ -n "$(find "$reaper" -prune -mmin +1 2>/dev/null)" ] || return 1
+    rmdir "$reaper" 2>/dev/null
+    mkdir "$reaper" 2>/dev/null || return 1
+  fi
+  took=''
+  if stale_lock; then
     rm -f "$lock/pid"
     rmdir "$lock" 2>/dev/null
-    mkdir "$lock" 2>/dev/null || return 1
+    if mkdir "$lock" 2>/dev/null; then
+      printf '%s\n' "$token" > "$lock/pid"
+      took=1
+    fi
   fi
-  printf '%s %s\n' "$$" "$began" > "$lock/pid"
+  rmdir "$reaper"
+  [ -n "$took" ]
 }
 
 # Whether the lock's holder is gone: its pid is dead, or it took the lock over 5 s ago
@@ -162,25 +212,33 @@ stale_lock() {
 # At most 3 calls, and none once 2 s (whole seconds, so under 2 s in fact) have passed since
 # $began: the worst case stays under 5 s.
 reconcile() {
+  token="$$ $began"
   calls=0
   while take_lock; do
     settled=''
     while :; do
       want=$(state_of "$marker")
-      if [ "$want" = "$(state_of "$applied")" ]; then settled=1; break; fi
+      if [ "$want" = "$(applied_of)" ]; then settled=1; break; fi
       [ "$calls" -lt 3 ] && [ $(( $(date +%s) - began )) -lt 2 ] || break
+      # Until the call is known to have landed, the recorded claim is unknown: one that
+      # fails or is killed may still have written it.
+      printf 'unknown\n' > "$applied"
+      calls=$((calls + 1))
       if [ "$want" = clear ]; then
         run_cli clear --producer oats.core || break
       else
         run_cli set --producer oats.core --reason "$want" || break
       fi
+      # A holder whose lock was broken under it (it ran past 5 s: the machine slept)
+      # acknowledges nothing and leaves the successor's lock alone.
+      owns || return 0
       printf '%s\n' "$want" > "$applied"
-      calls=$((calls + 1))
     done
+    owns || return 0
     rm -f "$lock/pid"
     rmdir "$lock"
     # A hook that found the lock held between our last read and here left its intent to us.
-    [ -n "$settled" ] && [ "$(state_of "$marker")" != "$(state_of "$applied")" ] || return 0
+    [ -n "$settled" ] && [ "$(state_of "$marker")" != "$(applied_of)" ] || return 0
   done
 }
 
@@ -207,7 +265,7 @@ if [ "$action" = set ]; then
   printf '%s\n' "$reason" > "$marker"
 else
   # Nothing to clear (cleared and recorded so): no node process, no input read.
-  [ "$intent" = clear ] && [ "$(state_of "$applied")" = clear ] && exit 0
+  [ "$intent" = clear ] && [ "$(applied_of)" = clear ] && exit 0
   began=$(date +%s)
   [ "$action" = clear-tool ] && from_subagent && exit 0
   printf 'clear\n' > "$marker"
