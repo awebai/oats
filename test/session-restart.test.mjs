@@ -442,7 +442,10 @@ test("K3 stop: plan reports real session/work facts and recorded children deepes
   assert.equal(receipt.ok, true); assert.equal(receipt.replayed, false);
   assert.deepEqual(receipt.results.map((r) => [r.instance, r.stopped]), [["k3-grandchild", true], ["k3-child", true], ["k3-parent", true]], "children first");
   assert.deepEqual(receipt.retained, ["home", "work", "transcript", "launch"]);
-  for (const h of [parent.home, child.home, grandchild.home]) { await waitFor(() => runningPid(h) === null, "harness gone"); assert.ok(existsSync(join(h, "instance.json")) && existsSync(join(h, "TASK.md")), "home retained"); assert.equal(existsSync(join(h, ".oats-stop-pending.json")), false, "marker released"); }
+  // applyStop returns only once stopHarness has seen every signalled pid gone, so a harness still running here was
+  // never signalled: the timeout names the pid, its process and the stop receipt (awebai/oats#526).
+  const stopEvidence = (h) => { const pid = runningPid(h); let ps = null; try { ps = execFileSync("ps", ["-o", "pid=,ppid=,stat=,comm=", "-p", String(pid)], { encoding: "utf8" }).trim(); } catch { /* gone */ } let stop = null; try { stop = readJson(join(h, ".oats-stop.json")).stop; } catch { /* none */ } return JSON.stringify({ pid, ps, requested: stop?.requested?.map((r) => r.pid) ?? null, waitedMs: stop?.waitedMs ?? null, state: stop?.state ?? null }); };
+  for (const h of [parent.home, child.home, grandchild.home]) { try { await waitFor(() => runningPid(h) === null, "harness gone"); } catch (e) { e.message += ` ${stopEvidence(h)}`; throw e; } assert.ok(existsSync(join(h, "instance.json")) && existsSync(join(h, "TASK.md")), "home retained"); assert.equal(existsSync(join(h, ".oats-stop-pending.json")), false, "marker released"); }
   // Retry with the same key replays the receipt; a new plan says everything is idle.
   const replay = applyStop(repo, root, "k3-parent", { planRevision: "whatever", idempotencyKey: "k3-once" });
   assert.equal(replay.replayed, true); assert.deepEqual(replay.results, receipt.results);
