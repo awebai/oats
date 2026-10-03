@@ -41,7 +41,7 @@ arrives from.
 # oats-workspace.yaml: one default per slot, for every soul
 packages:
   oats.okf: v4.1.1
-  oats.aweb: v1.21.0
+  oats.aweb: v1.21.1
   oats.linear: v1.0.1
   oats.jira: v1.0.1
 defaults:
@@ -89,7 +89,12 @@ operations in full.
   `knowledge-maintainer` package soul reviews the resulting PRs.
 - **`oats.aweb`** mints a messaging identity for each instance at spawn and
   removes it at retire, contributes the aweb messaging skills, and wires the
-  channel so sessions are woken by mail. `oats aweb roster` lists the team:
+  channel so sessions are woken by mail. Claude Code loads the channel plugin
+  with `--dangerously-load-development-channels`, since `aweb-channel` is not
+  on its approved channel list, so every Claude start waits at Claude Code's
+  development-channels confirmation until someone answers it in the
+  instance's terminal; the start's warnings and readiness say so
+  (`channel-dev-confirmation`). `oats aweb roster` lists the team:
   its membership certificates and workspaces, one entry per alias with its
   sources, status and kind (global identities first), and says when either
   source is incomplete. After `oats server connect`, `oats aweb connect
