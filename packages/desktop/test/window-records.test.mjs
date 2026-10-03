@@ -143,3 +143,20 @@ test('records: binding keeps the view\'s deployments from the served list; an un
   store.bind(win, 'ws:cccccccccccccccccccc', undefined, UNOBSERVED);
   assert.deepEqual(store.records()[0].deployments, ['/d/oats'], 'a view the list does not name: the deployments it had');
 });
+
+test('records: a record naming only folders that exist but are not deployments is dropped and written; missing paths and views are kept (#518)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'oats-windows-')), file = join(dir, 'windows.json'), t = timers();
+  // '/' and '/Users/me' exist without an oats-local.yaml; '/Volumes/off/oats' is missing (a volume not mounted, #472).
+  const folders = new Set(['/', '/Users/me']);
+  const initial = [record('/', 10, { deployments: ['/'] }), record(A, 20, { deployments: ['/d/oats'] }), record('/Volumes/off/oats'),
+    record('/Users/me'), record('/', 30, { deployments: ['/', '/d/tsm'] }), record('remote:rigel:/srv/x')];
+  const store = createWindowRecords({ file, initial, timers: t });
+  store.forgetNonDeployments((path) => folders.has(path));
+  assert.deepEqual(store.records().map((r) => r.bounds.x === 30 ? '/+tsm' : r.workspace), [A, '/Volumes/off/oats', '/+tsm', 'remote:rigel:/srv/x']);
+  t.run();
+  assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')).map((r) => r.workspace), [A, '/Volumes/off/oats', '/', 'remote:rigel:/srv/x'], 'the cleaned records are written');
+  const quiet = timers();
+  const clean = createWindowRecords({ file: join(dir, 'clean.json'), initial: [record(A)], timers: quiet });
+  clean.forgetNonDeployments(() => true);
+  assert.equal(quiet.count(), 0, 'nothing dropped: nothing written');
+});

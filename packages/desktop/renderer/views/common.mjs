@@ -162,6 +162,21 @@ export function onWindowState(fn) {
 }
 /* The served choices main gave a choosing window (it reads nothing itself). */
 export function choosingWorkspaces() { return windowChoices; }
+/* A choosing window's choices follow what main serves (#521): workspaces served after its first claim
+   (remote views arrive seconds after launch) become choices. Resolves to the new list, or null when
+   this window is not choosing, main refused, or a newer refresh or a bind superseded this one. */
+let choicesIntent = 0;
+const choicesBridge = () => { try { const fn = globalThis.oatsDesktop?.windowChoices; return typeof fn === "function" ? fn : null; } catch { return null; } };
+export async function refreshChoices() {
+  const bridge = choicesBridge();
+  if (windowMode !== "choosing" || !bridge) return null;
+  const intent = ++choicesIntent;
+  let r = null;
+  try { r = await bridge(); } catch { r = null; }
+  if (intent !== choicesIntent || windowMode !== "choosing" || !r?.ok || !Array.isArray(r.workspaces)) return null;
+  windowChoices = r.workspaces;
+  return windowChoices;
+}
 
 /* At start: a window with no hash takes the shared default only when main says no other window has
    it (and it is not a New Window); otherwise it chooses. With no default it adopts, as before.
