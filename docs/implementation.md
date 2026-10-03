@@ -245,6 +245,15 @@ runs the full suite (sharded), `check`, `validate`, `pack:check` and the smoke
 test, and is the gate. Tests use local bare repositories and fakes; none
 contacts GitHub, aweb, Jira or Linear.
 
+Desktop's standalone tests (`cd packages/desktop && npm ci && npm test`) must
+load with only Desktop dependencies installed. Cross-package tests that import
+both the kernel and Desktop belong under root `test/`; install dependencies at
+the root and in `packages/desktop` before running those tests. The schedule
+round-trip case is `node --test test/desktop-schedule-roundtrip.integration.mjs`.
+The root runner includes this file with its existing Desktop dependency group.
+With only root dependencies installed, it omits both Desktop suites and this
+integration case and reports that coverage gap before and after the run.
+
 Tests pin behaviour, so a change that alters behaviour changes its test in the
 same commit. Never weaken an assertion to make a change pass.
 

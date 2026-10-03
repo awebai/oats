@@ -2,14 +2,16 @@
 // Root test runner for `npm test`.
 //
 // The suite is still `node --test` over the same globs; the only thing this
-// adds is a decision about packages/desktop. Its ~40 suites need jsdom, marked,
+// adds is a decision about Desktop suites and root/Desktop integration. They need jsdom, marked,
 // dompurify and highlight.js, which are packages/desktop's dependencies and not
 // the root's. Handing them to node --test on a checkout that has only run root
 // `npm ci` produced 17 ERR_MODULE_NOT_FOUND failures — the state of every fresh
 // clone — which made a red root suite the normal, and therefore ignored, result.
 //
 // So: run them when they can load, and when they cannot, say so loudly and run
-// the rest. Absence of an optional package's node_modules is a property of the
+// the rest. The root/Desktop integration file is explicitly included in the
+// same group; its .integration.mjs suffix keeps it out of the root-only globs.
+// Absence of an optional package's node_modules is a property of the
 // checkout, not a defect in the code under test, so this exits 0 in that case;
 // nothing is skipped silently. Both CI lanes (.github/workflows/pull-request.yml
 // and release.yml) install the desktop dependencies before `npm test`, and
@@ -44,10 +46,14 @@ const packageGlobs = desktopReady
       .filter((e) => e.isDirectory() && e.name !== "desktop")
       .map((e) => `packages/${e.name}/**/*.test.mjs`);
 
+const DESKTOP_INTEGRATION = "test/desktop-schedule-roundtrip.integration.mjs";
+const desktopIntegration = desktopReady ? [DESKTOP_INTEGRATION] : [];
+
 const RULE = "=".repeat(78);
 const notice = [
   RULE,
-  "NOTICE: packages/desktop test suites were SKIPPED — this run does NOT cover them.",
+  "NOTICE: Desktop suites and root/Desktop integration coverage were SKIPPED — this run does NOT cover them.",
+  `Root integration omitted: ${DESKTOP_INTEGRATION}`,
   `Reason: packages/desktop dependencies are not installed (missing: ${missing.join(", ")}).`,
   `To run them: ${DESKTOP_TEST_DEPS_INSTALL}`,
   RULE,
@@ -61,7 +67,7 @@ if (!desktopReady) console.log(`\n${notice}\n`);
 // only narrow, alongside the default globs).
 const extra = process.argv.slice(2);
 const flags = extra.filter((a) => a.startsWith("-")), files = extra.filter((a) => !a.startsWith("-"));
-const args = ["--test", ...flags, ...KERNEL_GLOBS, ...packageGlobs, ...files];
+const args = ["--test", ...flags, ...KERNEL_GLOBS, ...packageGlobs, ...desktopIntegration, ...files];
 const run = spawnSync(process.execPath, args, { cwd: REPO_ROOT, stdio: "inherit" });
 
 if (run.error) throw run.error;
