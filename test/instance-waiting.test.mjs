@@ -116,6 +116,26 @@ test("boundary rule: a claim older than the incarnation's latest kernel launched
   assert.ok(liveWaiting(w.home));
 });
 
+test("rows that repeat within one log all count, even in the same millisecond; the same row in both logs counts once (a multiset union)", (t) => {
+  const T = "2026-02-01T00:00:00.000Z";
+  const set = { kind: "waiting", producer: "oats.core", data: { waitingOnYou: true, reason: "permission" } };
+  const clear = { kind: "waiting", producer: "oats.core", data: { waitingOnYou: false } };
+  const waitingRows = (ev) => ev.events.filter((e) => e.kind === "waiting").map((e) => e.data.waitingOnYou);
+  // set, clear, set at one instant, written to both logs: three rows, and the claim is live.
+  const w = bare(t);
+  for (const e of [set, clear, set]) appendEvent(w.home, e, { at: T });
+  assert.deepEqual(waitingRows(readEvents(w.home)), [true, false, true], "both logs hold all three: each counts once, in order");
+  assert.equal(liveWaiting(w.home)?.since, T, "the repeated set is not mistaken for a copy of the first");
+  assert.equal(readEvents(w.home).waitingOnYou?.producer, "oats.core");
+  // One log holds a row twice and the other once: it counts twice. A row only in the other log counts once.
+  const v = bare(t);
+  const line = (e) => JSON.stringify({ eventsApi: 2, at: T, instance: "dev-1", home: v.home, incarnation: "2026-01-01T00:00:00.000Z", producer: e.producer, kind: e.kind, data: e.data }) + "\n";
+  mkdirSync(dirname(v.wsLog), { recursive: true });
+  writeFileSync(join(v.home, ".oats-events.jsonl"), line(set) + line(set));
+  writeFileSync(v.wsLog, line(set) + line(clear));
+  assert.deepEqual(waitingRows(readEvents(v.home)), [true, true, false], "max(2, 1) copies of the set, and the clear the home log lacks");
+});
+
 test("a write either log refuses is E_EVENTS_FAILED naming it, and the next call repairs that log rather than trusting the other", (t) => {
   for (const which of ["home", "workspace"]) {
     const w = bare(t);

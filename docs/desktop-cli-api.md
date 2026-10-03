@@ -2181,7 +2181,10 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
 - **Address.** `--home` must be a home of `<instance>` (`E_HOME_MISMATCH`).
   Rows for another address are dropped and counted in
   `integrity.foreignRows`; torn or invalid lines are counted in
-  `integrity.unreadableRows`. Duplicates are removed.
+  `integrity.unreadableRows`. A row present in both logs is returned once;
+  identical rows repeated within one log (a set, a clear and the same set in
+  one millisecond) are all returned, as many as the log holding the most
+  copies has.
 - **Window.** `count` is the rows after `--since`; `returned` the window
   (`--limit`, default 200, 1–2000); `truncated` means rows were cut or a
   source was a tail. `lastEvent` is `{kind, at, producer, incarnation}` of
