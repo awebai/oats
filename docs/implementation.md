@@ -94,8 +94,9 @@ with a substring check or infer uncertainty from a retained home alone.
 The schedule child supervisor installs SIGINT/SIGTERM/SIGHUP handlers before
 launch and removes them on settlement. All catchable shutdown signals share
 its idempotent TERM/KILL path; the first stop cause is retained. The private
-receipt records interruption separately from the direct child's observed exit,
-and schedule consumers keep interrupted envelopes unconfirmed. Group probes
+receipt records interruption independently of both the first stop cause and
+the direct child's observed exit, so a signal during overflow cleanup still
+keeps an otherwise valid envelope unconfirmed. Group probes
 start at leader exit; an observed-empty group is permanently excluded from
 later probes/signals. Polling cannot eliminate the gap before observation or
 prove away PID reuse. Escaped sessions are outside the owned group, and

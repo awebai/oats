@@ -25,7 +25,7 @@ function recordedProcesses(dir) {
   return JSON.parse(readFileSync(path, "utf8"));
 }
 
-async function scenario(kind, interruption) {
+async function scenario(kind, interruption, { overflowFirst = false } = {}) {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "oats-supervisor-receipt-")));
   const childFile = join(dir, "child.mjs"), runnerFile = join(dir, "runner.mjs");
   // This is the real oatsBin subprocess boundary. No fabricated command
@@ -41,12 +41,20 @@ if (process.argv.includes("--fixture-next")) {
 writeFileSync(dir + "/processes.json", JSON.stringify({ child: process.pid, supervisor: process.ppid }));
 process.on("SIGTERM", () => {
   writeFileSync(dir + "/child.term", "observed TERM\\n");
-  process.exit(0);
+  if (${JSON.stringify(overflowFirst)}) {
+    // ENOBUFS starts cleanup first. A catchable shutdown that arrives during
+    // that cleanup must still be represented in the private receipt.
+    process.kill(process.ppid, ${JSON.stringify(interruption)});
+    writeFileSync(dir + "/child.interrupted", ${JSON.stringify(interruption)});
+    setTimeout(() => process.exit(0), 25);
+  } else process.exit(0);
 });
 setInterval(() => {}, 1000);
 // A complete success envelope must not override a subsequent interruption.
 process.stdout.write(JSON.stringify({ ok: true, result: { instance: "dev-receipt", home: dir + "/receipt-home", launched: true } }) + "\\n", () => {
-  setTimeout(() => process.kill(process.ppid, ${JSON.stringify(interruption)}), 50);
+  if (${JSON.stringify(overflowFirst)}) {
+    setTimeout(() => process.stderr.write(Buffer.alloc(17 * 1024 * 1024, "x")), 50);
+  } else setTimeout(() => process.kill(process.ppid, ${JSON.stringify(interruption)}), 50);
 });
 `);
   writeFileSync(runnerFile, `
@@ -124,6 +132,7 @@ process.stdout.write(JSON.stringify({ elapsedMs: Date.now() - started }));
     } else {
       assert.equal(running(recorded.child), false, "catchable interruption must stop the owned child");
       assert.equal(readFileSync(join(dir, "child.term"), "utf8"), "observed TERM\n");
+      if (overflowFirst) assert.equal(readFileSync(join(dir, "child.interrupted"), "utf8"), interruption);
     }
   } finally {
     clearTimeout(timer);
@@ -147,4 +156,8 @@ for (const kind of ["command", "operation"]) {
 }
 for (const kind of ["command", "operation", "spawn", "preview"]) {
   test(`${kind} success envelope stays unknown after catchable supervisor interruption and zero-exit cleanup`, { skip: process.platform === "win32" }, () => scenario(kind, "SIGTERM"));
+}
+
+for (const kind of ["command", "operation", "spawn", "preview"]) {
+  test(`${kind} success envelope stays unknown when overflow cleanup precedes supervisor interruption`, { skip: process.platform === "win32" }, () => scenario(kind, "SIGINT", { overflowFirst: true }));
 }

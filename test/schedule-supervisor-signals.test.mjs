@@ -43,8 +43,13 @@ const name = grandchild ? 'descendant' : 'child';
 process.on('SIGTERM', () => {
   appendFileSync(dir + '/' + name + '.terms', 'TERM\\n');
   if (!grandchild && ${JSON.stringify(mode)} === 'graceful') process.exit(0);
+  if (!grandchild && ${JSON.stringify(mode)}.startsWith('overflow')) {
+    if (${JSON.stringify(mode)} === 'overflow-interrupted') process.kill(process.ppid, 'SIGINT');
+    setTimeout(() => process.stdout.write(JSON.stringify({ ok: true, result: { completed: true } }), () => process.exit(0)), 40);
+  }
 });
 writeFileSync(dir + '/' + name + '.pid', String(process.pid));
+if (!grandchild && ${JSON.stringify(mode)}.startsWith('overflow')) setTimeout(() => process.stderr.write('x'.repeat(5000)), 10);
 if (!grandchild && ${descendant}) {
   const child = spawn(process.execPath, [${JSON.stringify(actor)}, 'descendant'], {
     detached: ${escaped}, stdio: ${JSON.stringify(pipes ? ["ignore", "inherit", "inherit"] : "ignore")}
@@ -165,6 +170,21 @@ test("a signal during timeout cleanup preserves ETIMEDOUT and completes escalati
   assert.equal(result.signal, "SIGKILL");
   await f.assertActorsExited();
 });
+
+for (const interrupted of [true, false]) {
+  test(`overflow cleanup ${interrupted ? "records a subsequent supervisor interruption" : "without a signal stays unmarked"}`, posix, async (t) => {
+    const f = fixture(t, { mode: interrupted ? "overflow-interrupted" : "overflow-only" });
+    const result = await f.result();
+    assert.equal(result.error?.code, "ENOBUFS", "the first cleanup cause survives");
+    assert.equal(result.status, 0, "the direct child's graceful exit remains observed");
+    assert.equal(result.signal, null);
+    assert.deepEqual(JSON.parse(result.stdout), { ok: true, result: { completed: true } });
+    if (interrupted) assert.equal(result.interrupted, true, "signal during existing overflow cleanup remains structurally visible");
+    else assert.equal(Object.hasOwn(result, "interrupted"), false, "overflow alone must not gain interruption semantics");
+    assert.equal(readFileSync(f.path("child.terms"), "utf8"), "TERM\n", "cleanup is not restarted by interruption");
+    await f.assertActorsExited();
+  });
+}
 
 test("a signal during spawn assignment still cleans up the newly owned child", posix, async (t) => {
   const f = fixture(t, { preload: `
