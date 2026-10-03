@@ -47,8 +47,8 @@ override; report the risk you accepted). It never touches the checkout it
 runs from: it exports the SHA into a detached worktree under the system
 temporary directory (recorded in `MANIFEST.json`, `--export <dir>` overrides)
 and runs every build step there. The bumped manifests exist only in that
-export; the version-bump commit to `main` remains the workflow's job, or a
-manual PR.
+export; the version-bump commit reaches `main` through the pull request the
+workflow opens (or a manual one), merged by a maintainer.
 
 `publish-npm` and `release-github` print their plan and refuse without
 `--yes`. `tag` creates the local tag without `--yes` but pushes only with
@@ -117,8 +117,12 @@ Everything after `build` reads `MANIFEST.json` and the files already staged:
   runs `release.yml`, whose steps are idempotent: it skips the live npm
   versions, re-uploads the same assets, and attaches the attestations. That
   later pass is the way to add provenance; nothing is republished.
-- **The version-bump PR.** The workflow's final step; open it by hand if the
-  workflow does not run.
+- **The version-bump PR.** The workflow's final step opens it and stops: the
+  run never merges into `main`. A maintainer reviews that the diff is the
+  version lines only and merges it. The PR is opened with the workflow token,
+  so no checks run on it by themselves; close and reopen it to run them, and
+  do not read missing checks as green. Open the PR by hand if the workflow
+  does not run.
 - **Legs for hosts you do not have.** The Linux AppImage/DEB need a Linux
   host; the lane says so and `stage` lists what is missing.
 

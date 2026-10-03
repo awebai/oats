@@ -153,6 +153,29 @@ test("bump PR covers all three package manifests", () => {
   assert.match(prBlock, /gh pr create --base main/);
 });
 
+test("the workflow token may open the bump PR it creates", () => {
+  // The step runs `gh pr create` with github.token. An explicit `permissions`
+  // block grants only what it lists, so pull-requests: write must be listed:
+  // every release run that reached this step failed at createPullRequest
+  // (v0.40.1 and many before it), after npm and the Release were published.
+  const prBlock = yml.slice(yml.indexOf("Open the version-bump PR"));
+  assert.match(prBlock, /gh pr create /, "the bump step opens a pull request");
+  assert.match(prBlock, /GH_TOKEN: \$\{\{ github\.token \}\}/, "with the workflow token");
+  const top = yml.slice(yml.indexOf("\npermissions:"), yml.indexOf("\nconcurrency:"));
+  assert.match(top, /^\s+pull-requests: write$/m, "workflow permissions list pull-requests: write");
+});
+
+test("the release run opens the bump PR and never merges it", () => {
+  // The run tested the bumped tree at the tagged commit, not a later main, and
+  // a PR opened with github.token gets no checks. Merging is a maintainer's act.
+  assert.doesNotMatch(yml, /gh pr merge/, "no automatic merge anywhere in the release workflow");
+  assert.doesNotMatch(yml, /git push origin [^\n]*refs\/heads\/main/, "no direct push to main");
+  // [skip ci] on the bump commit would also suppress the checks a maintainer
+  // starts by closing and reopening the PR.
+  const prBlock = yml.slice(yml.indexOf("Open the version-bump PR"));
+  assert.doesNotMatch(prBlock, /git commit -m "[^"]*\[skip ci\]/, "the bump commit carries no [skip ci]");
+});
+
 test("bump-PR branch push uses a fully-qualified destination ref (detached-HEAD safe)", () => {
   // The publish job checks out the exact tag SHA (ref: github.sha) → detached
   // HEAD. `git push origin HEAD:<name>` cannot infer refs/heads/ from a
