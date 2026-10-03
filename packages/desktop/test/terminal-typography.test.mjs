@@ -8,10 +8,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { JSDOM } from "jsdom";
+import { terminalOptions } from "../renderer/terminal-tab.mjs";
 
 const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), "utf8");
 const themeSource = read("theme.mjs"), html = read("index.html");
-const themeCSS = read("theme.css"), shellCSS = read("shell.css");
+const themeCSS = read("theme.css"), shellCSS = read("shell.css"), shellSource = read("shell.mjs");
 // Font stacks compared as lists: jsdom drops the space after a comma in custom properties.
 const stack = value => String(value).trim().replace(/\s*,\s*/g, ", ");
 
@@ -29,7 +30,8 @@ function fixture(t, { stored = {}, noStorage = false, palette, fonts } = {}) {
     window: { matchMedia: () => ({ matches: false, addEventListener() {} }) },
   };
   if (!noStorage) context.localStorage = { getItem: key => stored[key] ?? null, setItem: (key, value) => { stored[key] = String(value); }, removeItem: key => { delete stored[key]; } };
-  const theme = runInNewContext(`${themeSource.replace(/\bexport /g, "")}\n({ terminalTypography, onTerminalTypographyChange, setTerminalFontFamily, setTerminalFontSize, resetTerminalTypography, BUNDLED_MONO, TERMINAL_FONT_SIZE })`, context);
+  const theme = runInNewContext(`${themeSource.replace(/\bexport /g, "")}\n({ terminalTypography, onTerminalTypographyChange, setTerminalFontFamily, setTerminalFontSize, resetTerminalTypography, BUNDLED_MONO, TERMINAL_FONT_SIZE,
+    terminalFontWeight, TERMINAL_FONT_WEIGHT, xtermTheme, applyTheme, onThemeChange })`, context);
   const rule = selector => {
     for (const sheet of dom.window.document.styleSheets) {
       for (const r of sheet.cssRules) if (r.selectorText === selector) return r.style;
@@ -164,3 +166,80 @@ test("the shell's reset (⌘0 and the palette) forgets the stored typography ins
   assert.equal(shell.match(/Terminal: reset typography"[^\n]*run: \(\) => resetTerminalTypography\(\) \}/g)?.length, 2, "the action and the palette command");
   assert.doesNotMatch(shell, /setTerminalFontSize\(1[34]\)/, "no hard-coded default size in the shell");
 });
+
+// Text weight follows the theme, not typography: Chromium draws dark-on-light
+// text lighter than light-on-dark, so each palette carries the weight that
+// matches a native macOS terminal with font smoothing (Ghostty font-thicken,
+// measured at Inconsolata 15). Weight is not cell geometry; bold stays 700.
+const WEIGHTS = { light: 475, solarized: 450, dark: 400 };
+
+for (const [palette, weight] of Object.entries(WEIGHTS)) {
+  test(`${palette}: --term-font-weight resolves to ${weight} and terminalFontWeight() returns it`, t => {
+    const u = fixture(t, { palette });
+    const root = u.doc.defaultView.getComputedStyle(u.doc.documentElement);
+    assert.equal(root.getPropertyValue("--term-font-weight").trim(), String(weight));
+    assert.equal(u.theme.terminalFontWeight(), weight);
+    assert.deepEqual(Object.keys(u.theme.terminalTypography()).sort(), ["fontFamily", "fontSize"], "weight is not a typography preference");
+  });
+}
+
+test("a missing or unusable --term-font-weight falls back to 400 (xterm's normal)", t => {
+  const u = fixture(t, { palette: "light" });
+  assert.equal(u.theme.TERMINAL_FONT_WEIGHT, 400);
+  const el = u.doc.documentElement;
+  for (const value of ["bold", "475px", "0", "1001", "-5", "NaN", "Infinity"]) {
+    el.style.setProperty("--term-font-weight", value);
+    assert.equal(u.theme.terminalFontWeight(), 400, `${value} is not a usable weight`);
+  }
+  el.style.setProperty("--term-font-weight", "1000");
+  assert.equal(u.theme.terminalFontWeight(), 1000, "the CSS range's edge is usable");
+  el.style.removeProperty("--term-font-weight");
+  assert.equal(u.theme.terminalFontWeight(), 475, "the palette's token applies again");
+  // No stylesheet at all: no token.
+  const bare = new JSDOM("<!doctype html><html></html>"); t.after(() => bare.window.close());
+  assert.equal(u.theme.terminalFontWeight(bare.window.document.documentElement), 400);
+});
+
+// Both creation sites in shell.mjs, executed from the shipped source against the
+// real theme module: the terminal tab and the Settings preview terminal.
+function slice(from, to) {
+  const start = shellSource.indexOf(from);
+  assert.ok(start >= 0, `shell.mjs has ${from}`);
+  const end = shellSource.indexOf(to, start);
+  assert.ok(end > start, `shell.mjs has ${JSON.stringify(to)} after ${from}`);
+  return shellSource.slice(start, end + to.length);
+}
+function sites(theme) {
+  const made = [];
+  const Terminal = class {
+    constructor(options) { this.created = { ...options }; this.options = { ...options }; made.push(this); }
+    loadAddon() {} open() {} dispose() {} onData() {} attachCustomKeyEventHandler() {}
+  };
+  const context = { ...theme, terminalOptions, Terminal, FitAddon: { FitAddon: class { fit() {} } },
+    onTerminalTypographyChange: () => () => {}, attachClipboardWrite: () => ({ dispose() {} }),
+    navigator: { clipboard: { writeText() {} } }, ResizeObserver: class { observe() {} disconnect() {} } };
+  // The tab: from its typography read to its theme listener (openTerminalTabInner).
+  const tab = runInNewContext(`(() => {\n${slice("  const type = terminalTypography();\n  const term = new Terminal(terminalOptions({", "\n  const offTheme = onThemeChange(")}${slice("() => { term.options.theme = xtermTheme();", "});\n")}\nreturn offTheme;\n})()`, context);
+  const preview = runInNewContext(`({ ${slice("terminalFactory: mount => {", "\n  },\n")} })`, context).terminalFactory({});
+  assert.equal(made.length, 2, "one terminal per site");
+  return { terms: [["terminal tab", made[0]], ["Settings preview", made[1]]], dispose: () => { tab(); preview.dispose(); } };
+}
+
+for (const [palette, weight] of Object.entries(WEIGHTS)) {
+  test(`${palette}: both shell terminals are created at weight ${weight}, bold left to xterm, and follow every theme change`, t => {
+    const u = fixture(t, { palette });
+    const { terms, dispose } = sites(u.theme);
+    t.after(dispose);
+    for (const [site, term] of terms) {
+      assert.equal(term.created.fontWeight, weight, `${site}: created at the theme's weight`);
+      assert.ok(!("fontWeightBold" in term.created) || term.created.fontWeightBold === "bold", `${site}: bold stays xterm's (700)`);
+    }
+    for (const next of ["light", "solarized", "dark", palette]) {
+      u.theme.applyTheme(next);
+      for (const [site, term] of terms) {
+        assert.equal(term.options.fontWeight, WEIGHTS[next], `${site}: a theme change to ${next} updates the live terminal's weight`);
+        assert.equal(term.options.theme.background, u.theme.xtermTheme().background, `${site}: colours follow too`);
+      }
+    }
+  });
+}

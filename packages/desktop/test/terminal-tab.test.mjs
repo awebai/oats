@@ -280,11 +280,13 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 test("terminalOptions: forces Option+drag local selection and carries typography/theme", () => {
-  const o = terminalOptions({ fontSize: 13, fontFamily: "mono", theme: { background: "#000" } });
+  const o = terminalOptions({ fontSize: 13, fontFamily: "mono", fontWeight: 475, theme: { background: "#000" } });
   assert.equal(o.macOptionClickForcesSelection, true, "Option+drag must force a LOCAL xterm selection (tmux mouse-on eats plain drags)");
   assert.equal(o.scrollback, 5000);
   assert.equal(o.fontSize, 13);
   assert.equal(o.fontFamily, "mono");
+  assert.equal(o.fontWeight, 475, "the theme's text weight (terminalFontWeight)");
+  assert.equal("fontWeightBold" in o, false, "bold stays xterm's own (700)");
   assert.deepEqual(o.theme, { background: "#000" });
 });
 
@@ -296,7 +298,7 @@ test("terminalOptions: native geometry — no lineHeight, no customGlyphs, OAS o
   const o = terminalOptions({ fontSize: 13, fontFamily: "mono", theme: {}, lineHeight: 1.7 });
   assert.equal("lineHeight" in o, false, "xterm must run at its default line height");
   assert.equal("customGlyphs" in o, false, "xterm's default glyph handling; customGlyphs only justified the tall cells");
-  assert.deepEqual(Object.keys(o).sort(), ["fontFamily", "fontSize", "macOptionClickForcesSelection", "scrollback", "theme"]);
+  assert.deepEqual(Object.keys(o).sort(), ["fontFamily", "fontSize", "fontWeight", "macOptionClickForcesSelection", "scrollback", "theme"]);
 });
 
 test("shell.mjs constructs its Terminal through terminalOptions", () => {
