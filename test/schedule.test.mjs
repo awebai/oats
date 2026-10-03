@@ -170,8 +170,11 @@ test("a due spawn job launches once, holds its lock while the instance lives, an
   assert.equal(runs.lastRun.scheduledFor, "2026-09-07T13:15:00.000Z");
 });
 
-test("host concurrency bounds launches across jobs and run-now shares the same lock", () => {
+test("host concurrency bounds launches across jobs and run-now shares the same lock", (t) => {
   const ws = workspace();
+  const before = S.readRegistry();
+  t.after(() => S.writeRegistry(before));
+  S.registerWorkspace(ws, { maxConcurrent: 1 });
   const io = { spawn: fakeSpawn(ws), inspect: () => ({ present: true, state: "unknown" }) };
   S.addSchedule(ws, { id: "a", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "a" });
   S.addSchedule(ws, { id: "b", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "b" });
@@ -341,7 +344,7 @@ test("the CLI answers the envelope for add, list, show, update, enable, disable,
   assert.ok(failed, "an unknown id exits non-zero");
   assert.equal(JSON.parse(String(failed.stdout).trim()).error.code, "E_SCHEDULE_UNKNOWN");
   const probe = JSON.parse(execFileSync(process.execPath, [bin, "version", "--json"], { encoding: "utf8" }));
-  assert.equal(probe.scheduleApi, 2); assert.ok(probe.features.includes("schedule")); assert.ok(probe.remote.includes("schedule"));
+  assert.equal(probe.scheduleApi, 2); assert.ok(probe.features.includes("schedule")); assert.ok(probe.features.includes("schedule-host-caps")); assert.ok(probe.remote.includes("schedule"));
 });
 
 test("host units render the single tick and status reports what the OS says", () => {
@@ -396,6 +399,74 @@ test("remote schedules route to the server workspace only when the host advertis
   assert.equal(calls.filter(c => c.includes("schedule add pinned")).length, before, "no host receives a captured mutation");
 });
 
+test("remote host cap options require explicit support before forwarding, including resets and equals forms", () => {
+  const server = { sshHost: "caps-host", workspace: "/remote/workspace" };
+  const result = { scheduler: { maxConcurrent: 7, triggersMaxConcurrent: null } };
+  const peer = (features) => {
+    const mutations = [];
+    return { mutations, server, execFileSync: (_bin, argv) => {
+      const command = argv.at(-1);
+      if (command.includes("version --json")) return JSON.stringify({ schemaVersion: 1, desktopApi: 1, version: "0.39.4", features });
+      mutations.push(command);
+      return JSON.stringify({ schemaVersion: 1, ok: true, result });
+    } };
+  };
+  const options = [
+    ["--max-concurrent", "2"], ["--max-concurrent", "default"],
+    ["--triggers-max-concurrent", "3"], ["--triggers-max-concurrent", "none"],
+    ["--max-concurrent=2"], ["--max-concurrent=default"],
+    ["--triggers-max-concurrent=3"], ["--triggers-max-concurrent=none"],
+    ["--max-concurrent", "1", "--triggers-max-concurrent", "none"],
+  ];
+  for (const flags of options) {
+    for (const features of [undefined, [], ["schedule"], ["schedule", "future-feature"]]) {
+      const io = peer(features);
+      assert.throws(() => scheduleRemote("caps", ["host", "install", ...flags], io), (e) =>
+        e.code === "E_REMOTE_INCOMPATIBLE" && /caps-host/.test(e.message) && /upgrade/i.test(e.message)
+        && (!features?.includes("schedule") || /schedule-host-caps/.test(e.message)), flags.join(" "));
+      assert.deepEqual(io.mutations, [], "no install reaches an unsupported peer");
+    }
+    const io = peer(["schedule", "schedule-host-caps"]);
+    const out = scheduleRemote("caps", ["host", "install", ...flags], io);
+    assert.deepEqual(out.envelope.result, { ...result, server: "caps" });
+    assert.deepEqual(io.mutations, [`oats schedule host install ${flags.join(" ")} --dir /remote/workspace --json`]);
+  }
+  const old = peer(["schedule"]);
+  assert.equal(scheduleRemote("caps", ["host", "install"], old).envelope.ok, true);
+  assert.equal(old.mutations.length, 1, "old peer still installs when no cap change is requested");
+  const capsOnly = peer(["schedule-host-caps"]);
+  assert.throws(() => scheduleRemote("caps", ["host", "install", "--max-concurrent", "default"], capsOnly), (e) => e.code === "E_REMOTE_INCOMPATIBLE");
+  assert.deepEqual(capsOnly.mutations, [], "the schedule feature remains required too");
+});
+
+test("remote cap installs give actionable compatibility errors for unknown probes without masking transport errors", () => {
+  const server = { sshHost: "caps-host", workspace: "/remote/workspace" };
+  const unknown = { schemaVersion: 1, desktopApi: 2, version: "0.40.0", features: ["schedule"] };
+  for (const [payload, originalCode] of [
+    [JSON.stringify(unknown), "E_REMOTE_ENVELOPE"],
+    [JSON.stringify({ schemaVersion: 1, ok: true, result: unknown }), "E_REMOTE_INCOMPATIBLE"],
+    ["not JSON", "E_REMOTE_ENVELOPE"],
+  ]) {
+    for (const options of [["--max-concurrent", "default"], ["--triggers-max-concurrent=none"]]) {
+      const calls = [];
+      const io = { server, execFileSync: (_bin, argv) => { calls.push(argv.at(-1)); return payload; } };
+      assert.throws(() => scheduleRemote("caps", ["host", "install", ...options], io), (e) =>
+        e.code === "E_REMOTE_INCOMPATIBLE" && /caps-host/.test(e.message) && /schedule-host-caps/.test(e.message) && /upgrade/i.test(e.message));
+      assert.deepEqual(calls, ["oats version --json"]);
+      calls.length = 0;
+      assert.throws(() => scheduleRemote("caps", ["host", "install"], io), (e) => e.code === originalCode, "no-cap probe refusals retain their original contract");
+      assert.deepEqual(calls, ["oats version --json"]);
+    }
+  }
+  const calls = [];
+  const io = { server, execFileSync: (_bin, argv) => {
+    calls.push(argv.at(-1));
+    throw Object.assign(new Error("offline"), { status: 255, stderr: "connection refused" });
+  } };
+  assert.throws(() => scheduleRemote("caps", ["host", "install", "--max-concurrent=1"], io), (e) => e.code === "E_SSH" && /connection refused/.test(e.message));
+  assert.deepEqual(calls, ["oats version --json"]);
+});
+
 test("a cold wake needs a launch slot; a delivery to a running home does not; a started harness keeps its slot until the home ends", () => {
   const ws = workspace();
   const h1 = home(ws, "dev-one"), h2 = home(ws, "dev-two"), h3 = home(ws, "dev-running");
@@ -405,7 +476,7 @@ test("a cold wake needs a launch slot; a delivery to a running home does not; a 
   S.addSchedule(ws, { id: "one", cron: "* * * * *", tz: "UTC", kind: "wake", home: h1, message: "m1" });
   S.addSchedule(ws, { id: "two", cron: "* * * * *", tz: "UTC", kind: "wake", home: h2, message: "m2" });
   S.addSchedule(ws, { id: "run", cron: "* * * * *", tz: "UTC", kind: "wake", home: h3, message: "m3" });
-  const reg = S.readRegistry();
+  const reg = { ...S.readRegistry(), maxConcurrent: 1 };
   let c = S.tickWorkspace(ws, { now: at("2026-09-07T15:00:00Z"), io, reg });
   const by = Object.fromEntries(c.map((x) => [x.id, x]));
   assert.equal(by.one.action, "started"); assert.equal(by.two.action, "skipped"); assert.match(by.two.reason, /host busy/); assert.equal(by.two.pending, true);
@@ -431,7 +502,7 @@ test("a running wake delivers beside a long scheduled spawn that holds the only 
   const io = { spawn: fakeSpawn(ws), inspect: () => ({ present: true, state: "unknown" }), input: (hh, t) => { inputs.push(t); return { submitted: true }; } };
   S.addSchedule(ws, { id: "long", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "long" });
   S.addSchedule(ws, { id: "ping", cron: "* * * * *", tz: "UTC", kind: "wake", home: h, message: "ping" });
-  const reg = S.readRegistry();
+  const reg = { ...S.readRegistry(), maxConcurrent: 1 };
   let c = S.tickWorkspace(ws, { now: at("2026-09-07T16:00:00Z"), io, reg });
   assert.deepEqual(c.map((x) => [x.id, x.action]), [["long", "launched"], ["ping", "delivered"]]);
   c = S.tickWorkspace(ws, { now: at("2026-09-07T16:01:00Z"), io, reg });
@@ -836,7 +907,7 @@ test("the schedule scope is the deployment (oats-local.yaml walking up), never a
   S.addSchedule(ws, { id: "a", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "a" });
   S.addSchedule(ws, { id: "b", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "b" });
   const defs = S.readDefinitions(ws); defs.jobs.broken = { ...defs.jobs.a, id: "broken", cron: "99 99 * * *" }; S.writeDefinitions(ws, defs);
-  const reg = S.readRegistry();
+  const reg = { ...S.readRegistry(), maxConcurrent: 1 };
   let c = S.tickWorkspace(ws, { now: at("2026-09-07T20:00:00Z"), io, reg });
   const by = Object.fromEntries(c.map((x) => [x.id, x.action]));
   assert.equal(by.broken, "invalid"); assert.equal(by.a, "launched"); assert.equal(by.b, "skipped");
