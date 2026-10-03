@@ -555,16 +555,21 @@ runs `bin/claude-waiting.sh` from the home's module copy, which calls
   with all streams on `/dev/null` and ends in `; exit 0`, under a 5 s Claude
   hook timeout. The script itself detaches every stream first, always exits
   0, and kills the CLI after about 3 s.
-- **Debounce.** The script keeps a private marker,
-  `<home>/.oats-waiting-claude`, while its claim is set. A clear with no
-  marker does nothing and starts no node process, so the hooks that fire on
-  every tool call cost a `/bin/sh` and a file test.
+- **Debounce.** The script keeps a private marker outside the home while its
+  claim is set: `${TMPDIR:-/tmp}/oats-waiting/<first 16 hex of sha256(home)>.claude`,
+  in a directory of mode 0700 that must be a real directory the user owns. A
+  clear with no marker does nothing and starts no node process, so the hooks
+  that fire on every tool call cost a `/bin/sh` and a few file tests. A
+  symlink is never followed: an unusable marker path means no debounce, and
+  set and clear then always call the (idempotent) CLI. Losing the marker (a
+  reboot, a temp cleanup) is harmless: the session ends with the reboot, and
+  the next start voids the claim.
 - **It never touches the agent's claim.** The script only ever passes
   `--producer oats.core`.
-- **Not "unknown work" at retirement.** The retirement fingerprint of a home
-  ignores exactly these two paths, `.claude/settings.json` and
-  `.oats-waiting-claude`: they are configuration and transient state that
-  change while the session runs, not the instance's work.
+- **Not "unknown work" at retirement.** Harness project settings in the home
+  are configuration, not work: the retirement fingerprint of a home ignores
+  exactly `.claude/settings.json`. oats.core writes it at spawn before the
+  retirement baseline is taken, and again at every start.
 
 **Why the project settings file, not `--settings`.** On Claude Code
 2.1.288, Claude honours only the last `--settings` flag on a command line:

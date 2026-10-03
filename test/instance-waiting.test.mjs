@@ -125,20 +125,22 @@ test("liveWaiting reads the home log, and the workspace log only when the home l
   assert.equal(liveWaiting(w.home), null);
 });
 
-test("retirement fingerprint: an instance home ignores exactly oats.core's .claude/settings.json and .oats-waiting-claude; any other change, or the same paths in another tree, still counts", (t) => {
+test("retirement fingerprint: an instance home ignores exactly its .claude/settings.json (harness project settings are configuration, not work); any other change, or the same path in another tree, still counts", (t) => {
   const w = bare(t);
   mkdirSync(join(w.home, ".claude"));
   const fp = (tree = w.home, instanceHome = true) => fingerprintTree(tree, { excludeRoot: new Set(["work"]), instanceHome });
   const before = fp(), plainBefore = fp(w.home, false);
   writeFileSync(join(w.home, ".claude", "settings.json"), "{}\n");
-  writeFileSync(join(w.home, ".oats-waiting-claude"), "");
-  assert.equal(fp(), before, "the emitter's two paths are not the instance's work");
+  assert.equal(fp(), before, "the home's harness project settings are not the instance's work");
   assert.notEqual(fp(w.home, false), plainBefore, "outside an instance-home fingerprint they are bytes like any other");
   writeFileSync(join(w.home, ".claude", "settings.local.json"), "{}\n");
   assert.notEqual(fp(), before, "a sibling file in .claude counts");
   rmSync(join(w.home, ".claude", "settings.local.json"));
-  mkdirSync(join(w.home, "sub", ".claude"), { recursive: true }); writeFileSync(join(w.home, "sub", ".oats-waiting-claude"), "");
-  assert.notEqual(fp(), before, "only the home-relative paths are excluded");
+  writeFileSync(join(w.home, ".oats-waiting-claude"), "");
+  assert.notEqual(fp(), before, "no capability's private file is excluded");
+  rmSync(join(w.home, ".oats-waiting-claude"));
+  mkdirSync(join(w.home, "sub", ".claude"), { recursive: true }); writeFileSync(join(w.home, "sub", ".claude", "settings.json"), "{}\n");
+  assert.notEqual(fp(), before, "only the home-relative path is excluded");
 });
 
 // ---- the CLI, status rows and session inspect, on a deployment with real tmux ----

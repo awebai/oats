@@ -6,7 +6,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,6 +20,9 @@ const SCRIPT = realpathSync(join(CAP, "bin", "claude-waiting.sh"));
 const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-core-waiting-")));
 test.after(() => rmSync(base, { recursive: true, force: true }));
 
+const TMP = join(base, "tmp"); mkdirSync(TMP);
+/** Where claude-waiting.sh keeps the debounce marker of home `h` under temp dir `tmp`. */
+const markerOf = (h, tmp = TMP) => join(tmp, "oats-waiting", `${createHash("sha256").update(h).digest("hex").slice(0, 16)}.claude`);
 let n = 0;
 /** A fresh instance home: a directory with an instance.json. */
 function home() {
@@ -51,7 +55,8 @@ function runHook(event, env) {
 }
 function runScript(args, env) {
   const started = Date.now();
-  const r = spawnSync("/bin/sh", [SCRIPT, ...args], { encoding: "utf8", timeout: 15000, env: cleanEnv(env) });
+  // TMPDIR is the test's own: the debounce marker lives under it, never in a real temp dir.
+  const r = spawnSync("/bin/sh", [SCRIPT, ...args], { encoding: "utf8", timeout: 15000, env: cleanEnv({ TMPDIR: TMP, ...env }) });
   return { ...r, ms: Date.now() - started };
 }
 const settingsOf = (h) => join(h, ".claude", "settings.json");
@@ -248,7 +253,7 @@ test("PINNED: claude-waiting.sh exits 0 with empty stdout, in bounded time, what
 test("set touches the marker and calls the CLI with the exact argv; clear without a marker starts no CLI; clear with one removes it and clears", () => {
   const h = home();
   const log = join(base, `argv-${n}.log`);
-  const marker = join(h, ".oats-waiting-claude");
+  const marker = markerOf(h);
   const node = process.execPath;
   const calls = () => existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
 
@@ -268,6 +273,28 @@ test("set touches the marker and calls the CLI with the exact argv; clear withou
 
   r = runScript(["clear", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
   assert.equal(calls().length, 2, "a second clear is a no-op");
+  assert.equal(statSync(join(TMP, "oats-waiting")).mode & 0o777, 0o700, "the marker directory is private");
+  assert.ok(!existsSync(join(h, ".oats-waiting-claude")), "nothing of the emitter's is kept in the home");
+});
+
+test("an unusable marker means no debounce, never a skipped claim: a symlinked marker directory or a marker path that is not a regular file is not followed, and set and clear always call the CLI", () => {
+  const node = process.execPath;
+  // (a) the marker directory is a symlink: never followed, nothing written through it.
+  const tmpA = join(base, `tmp-link-${n}`), elsewhere = join(base, `elsewhere-${n}`);
+  mkdirSync(tmpA); mkdirSync(elsewhere); symlinkSync(elsewhere, join(tmpA, "oats-waiting"));
+  // (b) the marker path exists as a directory.
+  const tmpB = join(base, `tmp-dir-${n}`);
+  for (const [tmp, prepare] of [[tmpA, () => {}], [tmpB, (h) => mkdirSync(markerOf(h, tmpB), { recursive: true })]]) {
+    const h = home(); prepare(h);
+    const log = join(base, `argv-unusable-${n}.log`);
+    const calls = () => existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).length : 0;
+    let r = runScript(["clear", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log, TMPDIR: tmp });
+    assert.equal(r.status, 0); assert.equal(r.stdout, "");
+    assert.equal(calls(), 1, "no usable marker: a clear calls the (idempotent) CLI");
+    r = runScript(["set", "question", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log, TMPDIR: tmp });
+    assert.equal(r.status, 0); assert.equal(calls(), 2, "set still reports the claim");
+  }
+  assert.deepEqual(readdirSync(elsewhere), [], "nothing was written through the symlink");
 });
 
 test("end to end: a command the hook wrote, run as Claude Code runs it, reaches the CLI", () => {

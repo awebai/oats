@@ -30,9 +30,26 @@ case "$node" in /*) ;; *) exit 0 ;; esac
 case "$cli" in /*) ;; *) exit 0 ;; esac
 [ -x "$node" ] && [ -f "$cli" ] || exit 0
 
-# Emitter-private debounce marker: present while oats.core's claim is set, so a clear on
-# every tool call starts no node process unless there is a claim to clear.
-marker=$home/.oats-waiting-claude
+# Emitter-private debounce marker, outside the home (it is not the instance's state): a
+# per-user temp file keyed by the home, present while oats.core's claim is set, so a clear
+# on every tool call starts no node process unless there is a claim to clear. Its 0700
+# directory must be a real directory we own; a symlink is never followed. An unusable
+# marker means "no debounce": set and clear then always call the CLI (it is idempotent).
+# Losing it (reboot, tmp cleanup) is harmless: the session boundary voids the claim.
+marker=
+dir=${TMPDIR:-/tmp}
+dir=${dir%/}/oats-waiting
+[ -e "$dir" ] || [ -L "$dir" ] || mkdir -m 700 "$dir"
+# test -O (owned by us) is not in POSIX but every sh we run under has it (dash, bash, ash,
+# zsh); where it is missing the test fails and the marker is simply not used.
+# shellcheck disable=SC3067
+if [ -d "$dir" ] && [ ! -L "$dir" ] && [ -O "$dir" ]; then
+  sum=$(printf '%s' "$home" | { shasum -a 256 || sha256sum || cksum; })
+  key=$(printf '%.16s' "${sum%% *}")
+  case "$key" in ''|*[!0-9a-f]*) ;; *) marker=$dir/$key.claude ;; esac
+fi
+# A marker path that exists as anything but a regular file is unusable too.
+if [ -n "$marker" ] && { [ -L "$marker" ] || { [ -e "$marker" ] && [ ! -f "$marker" ]; }; }; then marker=; fi
 
 # Run the CLI in the background with a watchdog (macOS has no timeout(1)).
 run_cli() {
@@ -45,11 +62,13 @@ run_cli() {
 }
 
 if [ "$action" = set ]; then
-  : > "$marker" || exit 0
+  [ -z "$marker" ] || : > "$marker"
   run_cli set --producer oats.core --reason "$reason"
 else
-  [ -e "$marker" ] || exit 0
-  rm -f "$marker"
+  if [ -n "$marker" ]; then
+    [ -e "$marker" ] || exit 0
+    rm -f "$marker"
+  fi
   run_cli clear --producer oats.core
 fi
 exit 0
