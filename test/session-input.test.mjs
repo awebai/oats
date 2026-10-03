@@ -188,6 +188,15 @@ test("tmux still reads new or removed content as taken when the pane also change
     assert.equal(io.enters, 1);
   }
 });
+test("tmux reads a cleared box-drawing input as taken when the pane also changed size", () => {
+  const rule = (w) => "─".repeat(w);
+  const io = fixture(undefined, undefined, { screen: ({ enters }) => enters
+    ? { size: "60x24", text: `header\n${rule(60)}\n❯\n${rule(60)}\nstatus` }
+    : { size: "80x24", text: `header\n${rule(80)}\n❯ ─\n${rule(80)}\nstatus` } });
+  const result = inputSessionTarget(target, "─", io);
+  assert.deepEqual([result.submitted, result.verified], [true, true]);
+  assert.equal(io.enters, 1);
+});
 test("tmux treats a size that moved during one capture as a size change", () => {
   // Same content, its size seen moving mid-capture: a reflow, not an Enter.
   const io = fixture(undefined, undefined, { screen: ({ enters }) => enters
