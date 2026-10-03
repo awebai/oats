@@ -618,7 +618,8 @@ test("doctor reads workspace command kinds offline for attempt-only and orphaned
   assert.equal(job.kind, "command");
   assert.equal(job.ageSeconds, 3600);
   assert.equal(job.holdsSlot, true);
-  assert.equal(job.remedy, "oats schedule reconcile repo/job --clear");
+  assert.doesNotMatch(job.remedy, /oats schedule reconcile/);
+  assert.match(job.remedy, /[Pp]reserve.*state/);
   assert.ok(items.some((p) => p.id === "gone/job"), "missing definitions do not hide unresolved workspace state");
   assert.equal(readFileSync(A.snapshotPath(ws), "utf8"), before, "doctor never refreshes the snapshot");
   assert.equal(existsSync(join(ws, ".agents", "automations", "last-refresh-attempt")), false);
