@@ -6,4 +6,5 @@ capabilities:
   oats.setup: { from: package }   # oats.core and the oats.okf knowledge slot come from the workspace defaults
   oats.engineering-expert: { from: package }   # plan, spec, coordinate developers and experts, verify, land
   oats.workspace-experts: { from: here }       # this repository's surfaces, developers and delivery
+  oats.cloning: { from: package }   # request a clone of an instance for a new goal
 launch: { harness: claude, model: claude-opus-5-5 }   # the role's preference; each machine may override it

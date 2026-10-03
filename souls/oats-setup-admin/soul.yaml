@@ -7,4 +7,5 @@ description: Hands-on admin of this workspace's OATS setup and config — explai
 work: worktree
 capabilities:
   oats.setup: { from: package }       # oats.core, messaging and the oats.okf knowledge slot come from the workspace defaults
+  oats.cloning: { from: package }   # request a clone of an instance for a new goal
 launch: { harness: claude, model: claude-opus-5-5 }   # the role's preference; each machine may override it

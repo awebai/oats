@@ -8,4 +8,5 @@ capabilities:
   oats.engineering-expert: { from: package }   # plan, spec, coordinate developers and experts, verify, land
   oats.workspace-experts: { from: here }       # this repository's surfaces, developers and delivery
   oats.desktop-ui: { from: here }              # accessible Desktop interactions and live Electron verification
+  oats.cloning: { from: package }   # request a clone of an instance for a new goal
 launch: { harness: claude, model: claude-opus-5-5 }   # the role's preference; each machine may override it
