@@ -11,7 +11,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { claudeWaitingSettings, mergeSettings, shq, waitingCommand } from "../oats-package/capabilities/oats-core/bin/oats-core.mjs";
+import { claudeWaitingSettings, markerDir, markerPath, mergeSettings, shq, waitingCommand } from "../oats-package/capabilities/oats-core/bin/oats-core.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const CAP = join(ROOT, "oats-package", "capabilities", "oats-core");
@@ -57,15 +57,25 @@ function cleanEnv(extra) {
   return env;
 }
 function runHook(event, env) {
-  const r = spawnSync(process.execPath, [HOOK, event], { cwd: base, encoding: "utf8", timeout: 20000, env: cleanEnv({ OATS_EVENT: event, OATS_LAUNCH_PREVIEW: undefined, ...env }) });
+  const r = spawnSync(process.execPath, [HOOK, event], { cwd: base, encoding: "utf8", timeout: 20000, env: cleanEnv({ OATS_EVENT: event, OATS_LAUNCH_PREVIEW: undefined, TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env }) });
   assert.equal(r.status, 0, r.stderr);
   const last = r.stdout.trim().split("\n").filter(Boolean).pop();
   return JSON.parse(last);
 }
+// The marker argument the launch hook passes: the home's marker under TMPDIR's per-user
+// directory (created 0700 when absent, as markerDir does). An explicit one is kept.
+function withMarker(args, env = {}) {
+  const want = args[0] === "set" ? 5 : 4;
+  if (!["set", "clear", "clear-tool"].includes(args[0]) || args.length >= want || !env.OATS_INSTANCE_HOME) return args;
+  const tmp = env.TMPDIR ?? TMP, dir = join(tmp, WDIR);
+  let present = true; try { lstatSync(dir); } catch { present = false; }
+  if (!present) { mkdirSync(dir, { recursive: true, mode: 0o700 }); chmodSync(dir, 0o700); }
+  return [...args, markerOf(env.OATS_INSTANCE_HOME, tmp)];
+}
 function runScript(args, env) {
   const started = Date.now();
   // TMPDIR is the test's own: the debounce marker lives under it, never in a real temp dir.
-  const r = spawnSync("/bin/sh", [SCRIPT, ...args], { encoding: "utf8", timeout: 15000, env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env }) });
+  const r = spawnSync("/bin/sh", [SCRIPT, ...withMarker(args, env)], { encoding: "utf8", timeout: 15000, env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env }) });
   return { ...r, ms: Date.now() - started };
 }
 const settingsOf = (h) => join(h, ".claude", "settings.json");
@@ -119,7 +129,7 @@ test("the real pass writes settings.json 0600 with absolute, single-quoted comma
     assert.equal(e.timeout, 5);
     assert.match(e.command, /; exit 0$/);
     assert.ok(e.command.startsWith(`/bin/sh ${shq(SCRIPT)} `), e.command);
-    assert.ok(e.command.endsWith(` ${shq(node)} ${shq(FAKE_CLI_ABS)} >/dev/null 2>&1; exit 0`), e.command);
+    assert.ok(e.command.endsWith(` ${shq(node)} ${shq(FAKE_CLI_ABS)} ${shq(markerOf(h))} >/dev/null 2>&1; exit 0`), e.command);
     assert.ok(!/\bagent\b/.test(e.command), "no command names producer agent");
   }
   // The JS regex Claude Code compiles for the catch-all PreToolUse matcher skips only AskUserQuestion.
@@ -322,58 +332,64 @@ test("an unusable marker means no debounce, never a skipped claim: a symlinked m
   assert.deepEqual(readdirSync(elsewhere), [], "nothing was written through the symlink");
 });
 
-test("a marker directory that is not mode 0700 is never used and never repaired: in a 0777 or group-writable one, neither a planted marker nor its absence suppresses a CLI call", () => {
-  const node = process.execPath;
-  for (const dirMode of [0o777, 0o770, 0o750]) {
-    const tmp = join(base, `tmp-mode-${dirMode.toString(8)}-${n}`), dir = join(tmp, WDIR);
-    mkdirSync(dir, { recursive: true }); chmodSync(dir, dirMode);
-    const h = home(), marker = markerOf(h, tmp);
-    const log = join(base, `argv-mode-${dirMode.toString(8)}-${n}.log`);
-    const calls = () => existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
-    const run = (...args) => { const r = runScript([...args, node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log, TMPDIR: tmp }); assert.equal(r.status, 0); assert.equal(r.stdout, ""); };
-    const octal = dirMode.toString(8);
-    // Absent marker: a clear still calls the CLI (no debounce).
-    run("clear"); assert.equal(calls().length, 1, `${octal}: a clear with no marker calls the CLI`);
-    // A planted "question" marker does not swallow a permission prompt.
-    writeFileSync(marker, "question\n");
-    run("set", "permission"); assert.deepEqual(calls()[1].slice(2, 7), ["set", "--producer", "oats.core", "--reason", "permission"], `${octal}: a planted marker suppresses no set`);
-    assert.equal(readFileSync(marker, "utf8"), "question\n", `${octal}: the marker is neither read nor written`);
-    rmSync(marker);
-    run("set", "question"); assert.equal(calls().length, 3, octal);
-    assert.ok(!existsSync(marker), `${octal}: no marker is created there`);
-    run("clear"); assert.equal(calls().length, 4, `${octal}: the clear still calls the CLI`);
-    assert.equal(statSync(dir).mode & 0o777, dirMode, `${octal}: the directory's mode is left alone`);
+test("markerDir vets the per-user directory once (at spawn or launch): created 0700; a 0777, group- or other-accessible, symlinked or non-directory one is refused and left as it is", () => {
+  const uidDir = (tmp) => join(tmp, WDIR);
+  const fresh = join(base, `vet-fresh-${n}`); mkdirSync(fresh);
+  assert.equal(markerDir({ TMPDIR: fresh }), uidDir(fresh));
+  assert.equal(statSync(uidDir(fresh)).mode & 0o7777, 0o700, "created 0700");
+  assert.equal(markerDir({ TMPDIR: fresh }), uidDir(fresh), "an existing 0700 directory is used");
+  for (const mode of [0o777, 0o770, 0o750, 0o701, 0o1700]) {
+    const tmp = join(base, `vet-${mode.toString(8)}-${n}`); mkdirSync(uidDir(tmp), { recursive: true }); chmodSync(uidDir(tmp), mode);
+    assert.equal(markerDir({ TMPDIR: tmp }), null, mode.toString(8));
+    assert.equal(statSync(uidDir(tmp)).mode & 0o7777, mode, `${mode.toString(8)}: never repaired`);
   }
-  // A directory the script creates is 0700 and is used.
-  const tmp = join(base, `tmp-fresh-${n}`); mkdirSync(tmp);
-  const h = home(), log = join(base, `argv-fresh-${n}.log`);
-  runScript(["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log, TMPDIR: tmp });
-  assert.equal(statSync(join(tmp, WDIR)).mode & 0o777, 0o700);
-  assert.match(readFileSync(markerOf(h, tmp), "utf8"), /^permission \d+\n$/, "a 0700 directory holds the marker");
+  const linked = join(base, `vet-link-${n}`), target = join(base, `vet-target-${n}`); mkdirSync(linked); mkdirSync(target, { mode: 0o700 }); symlinkSync(target, uidDir(linked));
+  assert.equal(markerDir({ TMPDIR: linked }), null, "a symlink is never followed");
+  const file = join(base, `vet-file-${n}`); mkdirSync(file); writeFileSync(uidDir(file), "x");
+  assert.equal(markerDir({ TMPDIR: file }), null, "a file is not a directory");
+  const xdg = join(base, `vet-xdg-${n}`); mkdirSync(xdg, { mode: 0o700 });
+  assert.equal(markerDir({ XDG_RUNTIME_DIR: xdg, TMPDIR: fresh }), join(xdg, "oats-waiting"), "an absolute XDG_RUNTIME_DIR holds it");
+  assert.equal(markerDir({ XDG_RUNTIME_DIR: "relative/run", TMPDIR: fresh }), uidDir(fresh), "a relative one is ignored");
+  assert.equal(markerPath("/h/dev-1", "/d"), `/d/${createHash("sha256").update("/h/dev-1").digest("hex").slice(0, 16)}.claude`);
+  // The hook bakes '' (no debounce) when the directory is refused.
+  const h = home(), bad = join(base, `vet-hook-${n}`); mkdirSync(uidDir(bad), { recursive: true }); chmodSync(uidDir(bad), 0o777);
+  runHook("spawn", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI_ABS, TMPDIR: bad });
+  for (const e of allEntries(readJson(settingsOf(h)))) assert.ok(e.command.endsWith(` '' >/dev/null 2>&1; exit 0`), e.command);
 });
 
-test("macOS: an ACL hidden behind the xattr indicator (`drwx------@`) makes the marker directory unusable, left as it is", { skip: process.platform !== "darwin" && "macOS ACLs" }, () => {
-  const node = process.execPath;
-  const tmp = join(base, `tmp-acl-${n}`), dir = join(tmp, WDIR);
+test("macOS: markerDir refuses a directory whose ACL hides behind the xattr indicator (`drwx------@`), and accepts xattrs alone", { skip: process.platform !== "darwin" && "macOS ACLs" }, () => {
+  const tmp = join(base, `vet-acl-${n}`), dir = join(tmp, WDIR);
   mkdirSync(dir, { recursive: true, mode: 0o700 }); chmodSync(dir, 0o700);
   spawnSync("chmod", ["+a", "everyone allow list,search,add_file,add_subdirectory,delete_child", dir]);
   spawnSync("xattr", ["-w", "oats.test", "x", dir]);
   const listing = spawnSync("ls", ["-lde", dir], { encoding: "utf8" }).stdout;
   assert.match(listing.split("\n")[0], /^drwx------@ /, "the ACL is concealed by the @ indicator");
   assert.match(listing, /everyone allow/);
-  const h = home(), marker = markerOf(h, tmp), log = join(base, `argv-acl-${n}.log`);
-  writeFileSync(marker, "question\n");
-  const before = spawnSync("ls", ["-lde", dir], { encoding: "utf8" }).stdout;
-  const r = runScript(["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log, TMPDIR: tmp });
-  assert.equal(r.status, 0); assert.equal(r.stdout, "");
-  assert.equal(existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").length : 0, 1, "the planted marker suppresses no set");
-  assert.equal(readFileSync(marker, "utf8"), "question\n", "the marker is neither read nor written");
-  assert.equal(spawnSync("ls", ["-lde", dir], { encoding: "utf8" }).stdout, before, "the directory is left untouched");
-  // The same directory without the ACL, xattr still present, is used.
-  spawnSync("chmod", ["-N", dir]); rmSync(marker);
-  runScript(["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log, TMPDIR: tmp });
+  assert.equal(markerDir({ TMPDIR: tmp }), null);
+  assert.equal(spawnSync("ls", ["-lde", dir], { encoding: "utf8" }).stdout, listing, "left untouched");
+  spawnSync("chmod", ["-N", dir]);
   assert.match(spawnSync("ls", ["-ld", dir], { encoding: "utf8" }).stdout, /^drwx------@ /);
-  assert.match(readFileSync(marker, "utf8"), /^permission \d+\n$/, "an xattr alone does not disable the marker");
+  assert.equal(markerDir({ TMPDIR: tmp }), dir, "an xattr alone does not refuse it");
+});
+
+test("the hot path runs no ls, hash or id; an unusable marker argument (empty, relative, under a missing directory) means no debounce and creates nothing", () => {
+  const node = process.execPath;
+  const bin = join(base, `hot-bin-${n}`), toolLog = join(base, `hot-tools-${n}.log`); mkdirSync(bin);
+  for (const tool of ["ls", "shasum", "sha256sum", "cksum", "id", "mkdir"]) writeFileSync(join(bin, tool), `#!/bin/sh\necho ${tool} >> '${toolLog}'\nexit 1\n`, { mode: 0o755 });
+  const h = home(), env = { OATS_INSTANCE_HOME: h, PATH: `${bin}:${process.env.PATH}` };
+  runScript(["set", "permission", node, FAKE_CLI], env);
+  spawnSync("/bin/sh", [SCRIPT, ...withMarker(["clear-tool", node, FAKE_CLI], env)], { input: '{"session_id":"s","hook_event_name":"PostToolUse"}', encoding: "utf8", timeout: 15000, env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env }) });
+  runScript(["clear", node, FAKE_CLI], env);
+  assert.ok(!existsSync(toolLog), existsSync(toolLog) ? readFileSync(toolLog, "utf8") : "");
+  const missing = join(base, `hot-missing-${n}`, "oats-waiting", "k.claude");
+  for (const marker of ["", "relative/k.claude", missing]) {
+    const h2 = home(), log = join(base, `argv-hot-${n}.log`), e2 = { OATS_INSTANCE_HOME: h2, FAKE_LOG: log };
+    runScript(["set", "permission", node, FAKE_CLI, marker], e2);
+    runScript(["clear", node, FAKE_CLI, marker], e2);
+    runScript(["clear", node, FAKE_CLI, marker], e2);
+    assert.equal(readFileSync(log, "utf8").trim().split("\n").length, 3, `${JSON.stringify(marker)}: every call reaches the CLI`);
+  }
+  assert.ok(!existsSync(join(base, `hot-missing-${n}`)), "a missing directory is not created on the hot path");
 });
 
 test("a clear the watchdog kills, or that fails, keeps the marker, so the next clear retries", { timeout: 60000 }, () => {
@@ -393,7 +409,7 @@ test("a clear the watchdog kills, or that fails, keeps the marker, so the next c
 test("a clear racing a set ends cleared: a slow set that lands after the clear is followed by a clear; a set that comes in during a clear is recorded again", async () => {
   const node = process.execPath;
   const run = (args, env) => new Promise((done) => {
-    const child = spawn("/bin/sh", [SCRIPT, ...args, node, FAKE_CLI], { env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env }), stdio: "ignore" });
+    const child = spawn("/bin/sh", [SCRIPT, ...withMarker([...args, node, FAKE_CLI], env)], { env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env }), stdio: "ignore" });
     child.on("exit", (code) => done(code));
   });
   const actions = (log) => readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l)[2]);
@@ -415,17 +431,10 @@ test("a clear racing a set ends cleared: a slow set that lands after the clear i
   assert.match(readFileSync(markerOf(h), "utf8"), /^permission \d+\n$/, "and the marker stays with it");
 });
 
-test("the CLI runs in the home, and $XDG_RUNTIME_DIR (when absolute) holds the marker directory; a relative one is ignored", () => {
+test("the CLI runs in the home", () => {
   const h = home(), node = process.execPath, cwdLog = join(base, `cwd-${n}.log`);
-  const xdg = join(base, `xdg-${n}`); mkdirSync(xdg, { mode: 0o700 }); chmodSync(xdg, 0o700);
-  runScript(["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_CWD_LOG: cwdLog, XDG_RUNTIME_DIR: xdg });
+  runScript(["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_CWD_LOG: cwdLog });
   assert.equal(realpathSync(readFileSync(cwdLog, "utf8").trim()), realpathSync(h), "cd into the home before the CLI");
-  const key = `${createHash("sha256").update(h).digest("hex").slice(0, 16)}.claude`;
-  assert.ok(existsSync(join(xdg, "oats-waiting", key)), "the marker lives under $XDG_RUNTIME_DIR/oats-waiting");
-  assert.equal(statSync(join(xdg, "oats-waiting")).mode & 0o777, 0o700);
-  const h2 = home(), tmp = join(base, `tmp-relxdg-${n}`); mkdirSync(tmp);
-  runScript(["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h2, XDG_RUNTIME_DIR: "relative/run", TMPDIR: tmp });
-  assert.ok(existsSync(markerOf(h2, tmp)), "a relative XDG_RUNTIME_DIR falls back to the per-uid TMPDIR directory");
 });
 
 test("clear-tool: a subagent's tool event (top-level agent_id before hook_event_name) skips the clear; any other input clears; never a hang, never output", { timeout: 60000 }, () => {
@@ -449,7 +458,7 @@ test("clear-tool: a subagent's tool event (top-level agent_id before hook_event_
     const h = home(), log = join(base, `argv-tool-${n}.log`);
     runScript(["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h });
     const started = Date.now();
-    const r = spawnSync("/bin/sh", [SCRIPT, "clear-tool", node, FAKE_CLI], { input, encoding: "utf8", timeout: 15000, env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, OATS_INSTANCE_HOME: h, FAKE_LOG: log }) });
+    const r = spawnSync("/bin/sh", [SCRIPT, ...withMarker(["clear-tool", node, FAKE_CLI], { OATS_INSTANCE_HOME: h })], { input, encoding: "utf8", timeout: 15000, env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, OATS_INSTANCE_HOME: h, FAKE_LOG: log }) });
     assert.equal(r.status, 0, label); assert.equal(r.stdout, "", label); assert.ok(Date.now() - started < 5000, `${label}: bounded`);
     const calls = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").length : 0;
     assert.equal(calls, clears ? 1 : 0, `${label}: ${clears ? "clears" : "skips the clear"}`);
@@ -459,13 +468,13 @@ test("clear-tool: a subagent's tool event (top-level agent_id before hook_event_
   {
     const h = home(), log = join(base, `argv-tool-closed-${n}.log`);
     runScript(["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h });
-    const r = spawnSync("/bin/sh", ["-c", `exec /bin/sh "$0" "$@" <&-`, SCRIPT, "clear-tool", node, FAKE_CLI], { encoding: "utf8", timeout: 15000, env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, OATS_INSTANCE_HOME: h, FAKE_LOG: log }) });
+    const r = spawnSync("/bin/sh", ["-c", `exec /bin/sh "$0" "$@" <&-`, SCRIPT, ...withMarker(["clear-tool", node, FAKE_CLI], { OATS_INSTANCE_HOME: h })], { encoding: "utf8", timeout: 15000, env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, OATS_INSTANCE_HOME: h, FAKE_LOG: log }) });
     assert.equal(r.status, 0, "closed stdin"); assert.equal(r.stdout, "");
     assert.equal(existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").length : 0, 1, "closed stdin: clears");
   }
   // No claim (no marker): a tool clear reads nothing and starts no CLI, even for a stdin that never ends.
   const h = home(), log = join(base, `argv-tool-none-${n}.log`), started = Date.now();
-  const r = spawnSync("/bin/sh", [SCRIPT, "clear-tool", node, FAKE_CLI], { stdio: ["pipe", "pipe", "pipe"], encoding: "utf8", timeout: 15000, env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, OATS_INSTANCE_HOME: h, FAKE_LOG: log }) });
+  const r = spawnSync("/bin/sh", [SCRIPT, ...withMarker(["clear-tool", node, FAKE_CLI], { OATS_INSTANCE_HOME: h })], { stdio: ["pipe", "pipe", "pipe"], encoding: "utf8", timeout: 15000, env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, OATS_INSTANCE_HOME: h, FAKE_LOG: log }) });
   assert.equal(r.status, 0); assert.ok(Date.now() - started < 900, "no read without a claim"); assert.ok(!existsSync(log));
 });
 
@@ -473,7 +482,7 @@ test("clear-tool: a stdin that never ends is read for at most ~1 s, then means t
   const node = process.execPath, h = home(), log = join(base, `argv-tool-open-${n}.log`);
   runScript(["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h });
   const started = Date.now();
-  const child = spawn("/bin/sh", [SCRIPT, "clear-tool", node, FAKE_CLI], { stdio: ["pipe", "pipe", "pipe"], env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, OATS_INSTANCE_HOME: h, FAKE_LOG: log }) });
+  const child = spawn("/bin/sh", [SCRIPT, ...withMarker(["clear-tool", node, FAKE_CLI], { OATS_INSTANCE_HOME: h })], { stdio: ["pipe", "pipe", "pipe"], env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, OATS_INSTANCE_HOME: h, FAKE_LOG: log }) });
   child.stdin.write('{"session_id":"s","agent_id":"a1"'); // a subagent's start, never finished, never closed
   let out = ""; child.stdout.on("data", (d) => { out += d; });
   const code = await new Promise((done) => child.on("exit", done));
@@ -493,7 +502,7 @@ test("no watchdog sleep outlives the script: every sleep it starts is gone when 
   // killed before it could log is gone anyway.
   const h = home(), env = { OATS_INSTANCE_HOME: h, PATH: `${bin}:${process.env.PATH}`, FAKE_SET_DELAY_MS: "800", FAKE_CLEAR_DELAY_MS: "800" };
   runScript(["set", "permission", node, FAKE_CLI], env);
-  const child = spawn("/bin/sh", [SCRIPT, "clear-tool", node, FAKE_CLI], { stdio: ["pipe", "ignore", "ignore"], env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env }) });
+  const child = spawn("/bin/sh", [SCRIPT, ...withMarker(["clear-tool", node, FAKE_CLI], env)], { stdio: ["pipe", "ignore", "ignore"], env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env }) });
   setTimeout(() => child.stdin.end(`{"session_id":"s","hook_event_name":"PostToolUse","tool_name":"Bash","tool_use_id":"t"}`), 800);
   assert.equal(await new Promise((done) => child.on("exit", done)), 0);
   const pids = readFileSync(sleepLog, "utf8").trim().split("\n").map(Number);

@@ -587,19 +587,23 @@ clears it.
 - **Debounce.** The script keeps a private marker outside the home while its
   claim is set: `<dir>/<first 16 hex of sha256(home)>.claude`, where `<dir>`
   is per user: `$XDG_RUNTIME_DIR/oats-waiting` when that is set and
-  absolute, else `${TMPDIR:-/tmp}/oats-waiting-<uid>`. It must be a real
-  directory the user owns with mode
-  exactly 0700. The script creates it 0700 and never changes an existing
-  one: a directory others can write (0777, group-writable, any ACL, also one
-  macOS shows only as `@`) is not used. A
-  clear with no marker does nothing and starts no node process, so the hooks
-  that fire on every tool call cost a `/bin/sh` and a few file tests. A
-  symlink is never followed: an unusable directory or marker path means no
-  debounce, and
-  set and clear then always call the (idempotent) CLI. Losing the marker (a
-  reboot, a temp cleanup) is harmless: the session ends with the reboot, and
-  the next start voids the claim. The script runs the CLI from the home, so
-  its cwd never matters.
+  absolute, else `${TMPDIR:-/tmp}/oats-waiting-<uid>`. The spawn and launch
+  hook computes that path and vets the directory once: it creates it 0700
+  and uses it only when it is a real directory the user owns, mode exactly
+  0700, with no ACL (also one macOS shows only as `@`). An existing directory
+  is never changed. The hook passes the marker path to every command (or
+  `''` when the directory is refused), so the script, which runs on every
+  tool call, needs no `ls`, hash or `mkdir`: it only re-checks that the
+  directory is still a real directory the user owns (only the user could
+  have changed its mode since). A clear with no marker does nothing and
+  starts no node process, so the hooks that fire on every tool call cost a
+  `/bin/sh` and a few file tests. A symlink is never followed. An unusable
+  marker (a refused, missing or replaced directory, a marker path that is
+  not a regular file) means no debounce: set and clear then always call the
+  (idempotent) CLI, until the next start vets the directory again. Losing
+  the marker (a reboot, a temp cleanup) is harmless: the session ends with
+  the reboot, and the next start voids the claim. The script runs the CLI
+  from the home, so its cwd never matters.
 - **Retry and races.** The marker goes only once a clear is recorded: a
   clear that fails, or that the watchdog kills, keeps it, so the next clear
   retries. The marker holds its writer's token (`<reason> <pid>` for a set,

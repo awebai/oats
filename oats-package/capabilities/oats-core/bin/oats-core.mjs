@@ -28,6 +28,8 @@
  * the launch hook rewrites it at every `oats session start|restart`, so the
  * baked node and CLI paths follow the kernel the home now runs with.
  */
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { chmodSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -47,14 +49,48 @@ export function shq(value) {
 
 /** One hook command: the script through /bin/sh (its executable bit is never relied on),
  *  stdout and stderr detached, and `exit 0` whatever happens. Stdin (Claude's JSON input)
- *  reaches the script, which reads it only for a tool clear, bounded. */
-export function waitingCommand({ script, node, cli }, args) {
-  return `/bin/sh ${shq(script)} ${args.join(" ")} ${shq(node)} ${shq(cli)} >/dev/null 2>&1; exit 0`;
+ *  reaches the script, which reads it only for a tool clear, bounded. `marker` is the
+ *  debounce marker's path ('' for none). */
+export function waitingCommand({ script, node, cli, marker = "" }, args) {
+  return `/bin/sh ${shq(script)} ${args.join(" ")} ${shq(node)} ${shq(cli)} ${shq(marker || "")} >/dev/null 2>&1; exit 0`;
 }
 
+/** The emitter's debounce directory, per user: `$XDG_RUNTIME_DIR/oats-waiting` when that is
+ *  set and absolute, else `${TMPDIR:-/tmp}/oats-waiting-<uid>`. Vetted here, at spawn and
+ *  launch, so the hot path (claude-waiting.sh, on every tool call) needs no `ls` or hash:
+ *  created 0700 when missing, and used only when it is a real directory (not a symlink)
+ *  owned by this user, mode exactly 0700, with no ACL. Returns the directory, or null for
+ *  "no debounce". An existing directory is never changed. */
+export function markerDir(env = process.env) {
+  if (typeof process.getuid !== "function") return null;
+  const uid = process.getuid();
+  const xdg = env.XDG_RUNTIME_DIR;
+  const dir = typeof xdg === "string" && isAbsolute(xdg) ? join(xdg, "oats-waiting") : join(env.TMPDIR || "/tmp", `oats-waiting-${uid}`);
+  try { mkdirSync(dir, { mode: 0o700 }); } catch (e) { if (e.code !== "EEXIST") return null; }
+  let st;
+  try { st = lstatSync(dir); } catch { return null; }
+  if (!st.isDirectory() || st.isSymbolicLink() || st.uid !== uid || (st.mode & 0o7777) !== 0o700) return null;
+  return hasAcl(dir) ? null : dir;
+}
+
+/** Whether `ls` shows an ACL on a directory (true when it cannot tell). "+" marks an ACL
+ *  and "." an SELinux context; macOS shows "@" (xattrs) INSTEAD of "+" when both are
+ *  present, so an "@" directory counts as ACL-free only when `ls -lde` lists no entry. */
+function hasAcl(dir) {
+  try {
+    const mode = execFileSync("ls", ["-ld", dir], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).split(" ")[0];
+    if (mode === "drwx------" || mode === "drwx------.") return false;
+    if (mode === "drwx------@") return execFileSync("ls", ["-lde", dir], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().split("\n").length !== 1;
+    return true;
+  } catch { return true; }
+}
+
+/** A home's marker in a vetted directory: the first 16 hex of sha256(home). */
+export const markerPath = (home, dir) => join(dir, `${createHash("sha256").update(home).digest("hex").slice(0, 16)}.claude`);
+
 /** oats.core's Claude Code settings: only `hooks`, keyed by Claude Code event. */
-export function claudeWaitingSettings({ script, node, cli }) {
-  const entry = (...args) => ({ type: "command", command: waitingCommand({ script, node, cli }, args), timeout: HOOK_TIMEOUT_SECONDS });
+export function claudeWaitingSettings({ script, node, cli, marker = "" }) {
+  const entry = (...args) => ({ type: "command", command: waitingCommand({ script, node, cli, marker }, args), timeout: HOOK_TIMEOUT_SECONDS });
   const group = (matcher, ...args) => ({ ...(matcher === undefined ? {} : { matcher }), hooks: [entry(...args)] });
   return {
     hooks: {
@@ -104,7 +140,7 @@ export function mergeSettings(existing, ours, scriptPath) {
 export const serialize = (settings) => `${JSON.stringify(settings, null, 2)}\n`;
 
 /** The real pass: bring <home>/.claude/settings.json to the merged state. Returns a warning or null. */
-export function writeClaudeSettings({ home, script, node, cli }) {
+export function writeClaudeSettings({ home, script, node, cli, marker = "" }) {
   const lose = "this Claude session will not report when it waits for input";
   const claudeDir = join(home, ".claude");
   const file = join(claudeDir, "settings.json");
@@ -126,7 +162,7 @@ export function writeClaudeSettings({ home, script, node, cli }) {
     try { existing = JSON.parse(text); } catch { return `oats.core: ${file} is not valid JSON; left it alone, so ${lose}`; }
     before = existing;
   }
-  const merged = mergeSettings(existing, claudeWaitingSettings({ script, node, cli }), script);
+  const merged = mergeSettings(existing, claudeWaitingSettings({ script, node, cli, marker }), script);
   if (!merged.ok) return `oats.core: ${file} ${merged.problem}; left it alone, so ${lose}`;
   const content = serialize(merged.settings);
   if (before !== null && content === serialize(before)) return null;
@@ -155,7 +191,8 @@ export function runHook(event, env = process.env) {
   try { script = realpathSync(join(dirname(realpathSync(fileURLToPath(import.meta.url))), WAITING_SCRIPT)); } catch (e) {
     return { warning: `oats.core: ${WAITING_SCRIPT} is missing from the module copy (${e.code || e.message}); the Claude Code waiting hooks were not written` };
   }
-  const warning = writeClaudeSettings({ home, script, node: process.execPath, cli });
+  const dir = markerDir(env);
+  const warning = writeClaudeSettings({ home, script, node: process.execPath, cli, marker: dir ? markerPath(home, dir) : "" });
   return warning ? { warning } : {};
 }
 
