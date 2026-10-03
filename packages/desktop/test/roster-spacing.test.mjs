@@ -104,6 +104,7 @@ test("roster spacing (non-layout): a selected or hovered row keeps its 4px gap (
   assert.equal(u.computed(active[0]).backgroundClip, "padding-box", "the selected fill stops short of the gap");
   for (const selector of [".ctx-tree-row:hover", ".ctx-tree-row.active", ".ctx-tree-row.ctx-spawn-revealed"]) {
     assert.ok(u.rule(selector).backgroundColor, `${selector} paints a fill`);
+    assert.equal(u.rule(selector).background, "", `${selector} sets no background shorthand`);
     assert.equal(u.rule(selector).backgroundClip, "", `${selector} leaves the row's padding-box clip alone`);
   }
 });
