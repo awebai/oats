@@ -3,7 +3,8 @@
 // REAL one, which a session start renders into $OATS_INSTANCE_HOME and writes its boundary
 // rows under. Event rows are keyed by the home string, so every writer and reader must agree
 // on one spelling (the real path) and on one workspace log (the deployment's own
-// .agents/events), whichever spelling the caller passed.
+// .agents/events), whichever spelling the caller passed. That is storage and matching: an
+// answer names the home the way the caller did.
 //
 // Unlike every other test deployment, these are NOT realpath'd: the symlink is the point.
 // The CLI finds no deployment whose own agents/ is a symlink (findRoot), so the symlinked
@@ -58,7 +59,8 @@ for (const variant of ["deployment", "agents-root"]) {
     assert.deepEqual(claim(liveWaiting(s.real)), PERMISSION);
     for (const home of [s.sym, s.real]) {
       const ev = readEvents(home);
-      assert.equal(ev.home, s.real, "the answer names the canonical home");
+      assert.equal(ev.home, home, "the answer names the home as the caller spelled it");
+      assert.deepEqual(ev.events.map((e) => e.home), [home], "and so does each row, stored under the real path");
       assert.deepEqual(claim(ev.waitingOnYou), PERMISSION);
       assert.equal(ev.integrity.foreignRows, 0, "no spelling's rows are foreign to the other");
       assert.deepEqual(ev.integrity.sources.map((x) => x.status), ["ok", "ok"], "both logs are found from either spelling");
@@ -89,7 +91,7 @@ for (const variant of ["deployment", "agents-root"]) {
       assert.equal(setWaiting(setHome, { producer: "agent", waiting: true, reason: "attention" }).changed, true);
       const cleared = setWaiting(clearHome, { producer: "agent", waiting: false });
       assert.equal(cleared.changed, true, "the clear finds the claim");
-      assert.equal(cleared.home, s.real);
+      assert.equal(cleared.home, clearHome, "the answer echoes the caller's spelling");
       assert.equal(liveWaiting(s.sym), null); assert.equal(liveWaiting(s.real), null);
     }
   });
@@ -103,6 +105,13 @@ for (const variant of ["deployment", "agents-root"]) {
     assert.equal(home.length, 3);
     assert.deepEqual(workspace, home, "the workspace log holds the same rows");
     for (const r of home) assert.equal(r.home, s.real, `${r.kind} by ${r.producer} records the real path`);
+    // The answer: every row, whichever spelling wrote it, in the spelling that asked.
+    for (const asked of [s.sym, s.real]) {
+      const ev = readEvents(asked);
+      assert.equal(ev.home, asked); assert.equal(ev.count, 3); assert.equal(ev.integrity.foreignRows, 0);
+      assert.deepEqual(ev.events.map((e) => e.home), [asked, asked, asked]);
+      assert.deepEqual(ev.events.map((e) => ({ ...e, home: s.real })), home, "nothing else about a row changes");
+    }
     assert.deepEqual(readdirSync(dirname(s.workspaceLog)), [LOG]);
     if (s.outside) assert.equal(existsSync(s.outside), false, "nothing is written outside the deployment, beside the real agents root");
   });
@@ -178,9 +187,15 @@ for (const variant of ["deployment", "agents-root"]) {
     assert.equal(att.doc.result.changed, true);
     assert.deepEqual(claim(row().waitingOnYou), { producer: "agent", reason: "attention", message: "x" }, "status through the symlink shows it");
     assert.deepEqual(claim(cli(["session", "inspect", "--home", lexical, "--json"]).doc.result.waitingOnYou), { producer: "agent", reason: "attention", message: "x" });
+    // Events answer in the spelling they were asked in: the home under --dir (events drops
+    // PI_AGENTS_ROOT), or an explicit --home.
+    const underDir = join(dir, "agents", "dev", "instances", name);
     const events = cli(["instance", "events", name, "--dir", dir, "--json"]).doc.result;
-    assert.equal(events.home, real, "events answers the canonical home"); assert.equal(events.integrity.foreignRows, 0);
-    assert.ok(events.events.length >= 2 && events.events.every((e) => e.home === real), "the spawn's rows and the session's are one history");
+    assert.equal(events.home, underDir); assert.equal(events.integrity.foreignRows, 0);
+    assert.ok(events.events.length >= 2 && events.events.every((e) => e.home === underDir), "the spawn's rows and the session's are one history");
+    if (variant === "deployment") assert.equal(underDir, row().home, "the same string the status row carries");
+    assert.ok(readFileSync(join(real, ".oats-events.jsonl"), "utf8").trim().split("\n").every((l) => JSON.parse(l).home === real), "stored under the real path");
+    assert.equal(att.doc.result.home, real, "attention answers $OATS_INSTANCE_HOME as given");
 
     // A restart's boundary, as the kernel records it: under the real path.
     assert.equal(recordStartBoundary(real, { startId: "start-1", startedAt: new Date().toISOString(), harness: "claude", backend: "tmux", launchConfig: null, phase: "restart" }).ok, true);
@@ -189,7 +204,7 @@ for (const variant of ["deployment", "agents-root"]) {
     // A new claim, set through the lexical home (an operator's --home), cleared from the session.
     const set = cli(["instance", "waiting", "set", "--producer", "oats.core", "--reason", "question", "--home", lexical, "--json"]);
     assert.equal(set.status, 0, set.stdout + set.stderr);
-    assert.equal(set.doc.result.home, real);
+    assert.equal(set.doc.result.home, lexical);
     assert.equal(claim(row().waitingOnYou)?.producer, "oats.core");
     const clr = cli(["instance", "waiting", "clear", "--producer", "oats.core", "--json"], { OATS_INSTANCE_HOME: real });
     assert.equal(clr.status, 0, clr.stdout + clr.stderr);

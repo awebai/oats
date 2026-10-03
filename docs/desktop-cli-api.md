@@ -2202,16 +2202,34 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   `null` for old rows); the top-level `incarnation` is the current home's (or
   `null`). Earlier incarnations are returned as this address's history.
 - **Address.** `--home` must be a home of `<instance>` (`E_HOME_MISMATCH`).
-  A home has ONE address, its real path (since 0.40.2): the top-level `home`
-  and every row's `home` are the real path, whatever spelling the caller used
-  (a deployment reached through a symlink, a symlinked agents root), and
-  every writer and reader resolves the home first. A status row's `home`
-  stays as the deployment was addressed. Rows for another address are dropped and counted in
+  A home has one address in storage, its real path (since 0.40.2): rows are
+  written and matched under it, whatever spelling a writer or reader used (a
+  deployment reached through a symlink, a symlinked agents root). The answer
+  keeps the spelling it was asked in: the top-level `home` and every
+  returned row's `home` are the home as the caller addressed it (`--home`,
+  or the home found under `--dir`), the same string a status row carries.
+  Rows for another address are dropped and counted in
   `integrity.foreignRows`; torn or invalid lines are counted in
   `integrity.unreadableRows`. A row present in both logs is returned once;
   identical rows repeated within one log (a set, a clear and the same set in
   one millisecond) are all returned, as many as the log holding the most
   copies has.
+- **Rows from before 0.40.2**, in a deployment addressed through a symlink
+  only. A stored `home` is never rewritten, and never matched under another
+  spelling. A row an earlier kernel wrote under the lexical spelling (a
+  spawn's rows, and the claims of a session that was spawned and never
+  restarted) is foreign after the upgrade, and counted in
+  `integrity.foreignRows`. What that means for a claim:
+  - A claim that was live under the lexical spelling stops showing. It shows
+    again when the session next makes it (the next permission prompt or
+    question, the agent's next `oats instance attention`), or after a
+    restart.
+  - A claim that stayed set because the restart that should have voided it
+    was recorded under the real path (#583) is gone.
+  - The rows a started or restarted session wrote under the real path, which
+    `oats status --dir <symlink>` could not see, are read now. They cannot
+    surface a stale claim: such a session wrote its clears and its session
+    boundaries under the real path too, so that history is complete.
 - **Window.** `count` is the rows after `--since`; `returned` the window
   (`--limit`, default 200, 1–2000); `truncated` means rows were cut or a
   source was a tail. `lastEvent` is `{kind, at, producer, incarnation}` of
@@ -2282,8 +2300,10 @@ oats instance attention [--message <text>] [--clear] --json
   `clear` appends only over a live positive claim. The answer is
   `{eventsApi, instance, home, producer, changed, waitingOnYou}`, where
   `waitingOnYou` is that producer's resulting claim (`null` when it holds
-  none) and `home` is the home's real path, as in the events read: a set
-  and a clear through different spellings of one home meet. Concurrent writers append whole lines; the latest row decides.
+  none) and `home` is the home as the caller addressed it (`--home`,
+  `$OATS_INSTANCE_HOME` or the enclosing home); the row is stored under the
+  real path, so a set and a clear through different spellings of one home
+  meet. Concurrent writers append whole lines; the latest row decides.
   Each log is judged on its own, and success means both took the row: a
   write either log refused is `E_EVENTS_FAILED` naming it, and the next call
   (a retry) appends again to repair it.
