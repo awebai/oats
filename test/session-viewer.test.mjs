@@ -35,3 +35,11 @@ test("failed viewer allocation cleans its placeholder without touching source", 
   assert.equal(io.calls.at(-1)[0], "kill-session");
   assert.match(io.calls.at(-1)[2], /^=oatsview-/);
 });
+test("the viewer's locked table lets a drag start a tmux copy selection (#520), passing it through when the app grabbed the mouse", () => {
+  const io = fixture();
+  prepareSessionViewer(target, io);
+  const binds = io.calls.filter((c) => c[0] === "bind-key" && c[2] === "oatsview-locked").map((c) => c[3]);
+  assert.deepEqual(binds, ["WheelUpPane", "MouseDrag1Pane"]);
+  assert.deepEqual(io.calls.find((c) => c[0] === "bind-key" && c[3] === "MouseDrag1Pane"),
+    ["bind-key", "-T", "oatsview-locked", "MouseDrag1Pane", "if-shell", "-F", "#{||:#{pane_in_mode},#{mouse_any_flag}}", "send-keys -M", "copy-mode -M"]);
+});
