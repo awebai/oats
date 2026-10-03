@@ -70,6 +70,20 @@ test("the cue appears with the claim and clears on the next poll, giving back th
   assert.equal(trigger.firstElementChild, dot, "absent is unknown: no cue, the drawn dot");
 });
 
+test("a withheld note: the tab's title reads the reason in words, never “[Detail withheld]” (#584 finding 12)", async t => {
+  const u = fixture(t), tab = u.open(row("dev-a")), trigger = tab.triggerEl;
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse(SINCE) + 60e3 });
+  for (const [message, reason, label] of [["See https://github.com/awebai/oats/pull/552", "attention", "Asked for your attention"],
+    ["Which token: A or B?", "question", "Asked you a question"], ["api key: rotate now?", "approval", "Needs input"]]) {
+    u.sync([row("dev-a", { waitingOnYou: claim({ message, reason }) })], "A");
+    assert.ok(cue(tab), "the claim is kept");
+    assert.equal(trigger.getAttribute("aria-label"), "dev-a, needs input");
+    assert.equal(trigger.title, `dev-a\nNeeds input: ${label} since ${waitingClock(SINCE, Date.now())}`, message);
+  }
+  u.sync([row("dev-a", { waitingOnYou: claim({ message: "Pick one?" }) })], "A");
+  assert.match(trigger.title, /\nNeeds input: Pick one\? since /, "a safe note is still shown");
+});
+
 test("focus on a tab trigger survives a poll that toggles the cue; the trigger and tab are never rebuilt", async t => {
   const u = fixture(t), tab = u.open(row("dev-a")), { tabEl, triggerEl } = tab;
   triggerEl.focus();

@@ -84,7 +84,13 @@ validates the field and never synthesizes it.
   throws and never fails the roster. Only an invalid `since` or `producer`
   drops a claim, which then reads as `null` (unknown). A missing or malformed
   `reason` becomes `null`, because the raw reason is never rendered. A
-  malformed `message` becomes `null`, and an unsafe one becomes `[Detail withheld]`.
+  malformed `message` becomes `null`. So does a note the unsafe-text rule
+  withholds (it holds a URL, or token-like text such as `token: …`): the
+  row, the card and the tab then show the reason in words and never
+  `[Detail withheld]`. The activity view keeps that marker for the same
+  note. `waitingMessage` is the validator both share: it returns the marker
+  (`EVENTS_WITHHELD`, its one literal, in `instance-events-contract.mjs`),
+  and "not null" is the kernel's validity answer, which a test pins.
   `deployment-data.mjs` and `remotePanel` both validate through it. The
   module is the claim contract only: the server imports it, so it imports
   contract modules and nothing else (a test pins its imports). The tree
@@ -113,8 +119,9 @@ validates the field and never synthesizes it.
   row's accessible name. The dot stays liveness. Rows are not reordered, and
   nothing animates.
 - **The card** (hover or keyboard focus) adds `Waiting` (the reason in words,
-  how long, and the local start time) and `Message`. The age is computed when
-  the card is shown. A row that has no card (an unavailable remote row) appends
+  how long, and the local start time) and `Message`. A claim without a note
+  (none, malformed or withheld) has no `Message` row: `Waiting` already says
+  the reason. The age is computed when the card is shown. A row that has no card (an unavailable remote row) appends
   the message or label and the start time to its title and description. The
   start time (`waitingClock`) is "14:03" on the current local day, "Oct 2,
   14:03" on another day and "2025-10-02 14:03" in another year (an English

@@ -188,6 +188,24 @@ test("the card shows the reason, the message and the age, computed when shown", 
   assert.match(u.fact("dev-a", "Waiting"), /\(since Oct \d{1,2}, \d\d:\d\d\)$/, "two days later the start carries its date (#559)");
 });
 
+// #584 finding 12: the notes eventsUnsafe withholds (a link, a "token: x") read as the reason in words.
+const WITHHELD = [["See https://github.com/awebai/oats/pull/552", "attention", "Asked for your attention"],
+  ["Which token: A or B?", "question", "Asked you a question"], ["api key: rotate now?", "approval", "Needs input"]];
+
+test("a withheld note: the card shows the reason in Waiting and no Message row, never “[Detail withheld]” (#584)", async t => {
+  const u = fixture(t);
+  const rows = WITHHELD.map(([message, reason], n) => instance(`dev-${n}`, undefined, { waitingOnYou: claim({ message, reason }) }));
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse(SINCE) + 5 * 60e3 });
+  u.render([...rows, instance("dev-safe", undefined, { waitingOnYou: claim({ message: "Proceed?", reason: "question" }) })]);
+  WITHHELD.forEach(([message, , label], n) => {
+    assert.equal(u.marks(`dev-${n}`)[0]?.textContent, "Needs input", "the claim is kept");
+    assert.equal(u.fact(`dev-${n}`, "Waiting"), `${label} · 5 min (since ${waitingClock(SINCE)})`, message);
+    assert.equal(u.fact(`dev-${n}`, "Message"), undefined, "the Waiting row already says it");
+    assert.doesNotMatch(JSON.stringify(u.facts(`dev-${n}`)), /withheld/i);
+  });
+  assert.equal(u.fact("dev-safe", "Message"), "Proceed?", "a safe note still has its row");
+});
+
 test("the card renders the message as text: markup is shown literally, never parsed", async t => {
   const dom = new JSDOM("<!doctype html><body></body>", { pretendToBeVisual: true });
   t.after(() => dom.window.close());
@@ -287,6 +305,15 @@ test("an unavailable row (no card) says it in its title and description: message
   assert.equal(u.marks("dev-a")[0].textContent, "Needs input");
   assert.equal(u.marks("root")[0].textContent, "1 below need input");
   assert.match(root.getAttribute("aria-description"), / · 1 below need input: kid$/);
+  // A withheld note reads as the reason in words in the row's sentence (#584 finding 12).
+  const withheld = WITHHELD.map(([message, reason], n) => remote(`held-${n}`, undefined, { waitingOnYou: claim({ message, reason }) }));
+  u.render(withheld);
+  WITHHELD.forEach(([message, , label], n) => {
+    const said = u.row(`held-${n}`).getAttribute("aria-description");
+    assert.ok(said.endsWith(` · Needs input: ${label} since ${waitingClock(SINCE)}`), `${message}: ${said}`);
+    assert.equal(u.row(`held-${n}`).title, said);
+    assert.doesNotMatch(said, /withheld/i);
+  });
   // Painted two days later, the sentence carries the start's date (#559), from the paint time.
   t.mock.timers.setTime(Date.parse(SINCE) + 2 * 86400e3);
   u.render(rows);
