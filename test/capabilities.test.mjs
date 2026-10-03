@@ -24,6 +24,17 @@ function jsonResult(r) {
 }
 function temp() { return mkdtempSync(join(tmpdir(), "oats-cap-test-")); }
 function write(path, content) { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content); }
+
+/** A fake `aw` at <bin>/aw that the shipped oats.aweb hook can run. The hook reads `aw version` under a
+ *  10 s ceiling (readAwVersion), and the first exec of a freshly written executable can stall for longer
+ *  than that while the OS checks it (macOS assesses each new executable once, serially, so a busy suite
+ *  queues behind it): the hook would then take its version-floor path, not the path under test. One
+ *  untimed exec here takes that cost. */
+function fakeAw(bin, script) {
+  write(join(bin, "aw"), script);
+  execFileSync("chmod", ["+x", join(bin, "aw")]);
+  execFileSync(join(bin, "aw"), ["version"]);
+}
 function gitRepo(dir) {
   mkdirSync(dir, { recursive: true });
   execFileSync("git", ["init", "-q", dir]);
@@ -2145,8 +2156,7 @@ test("the SHIPPED aweb spawn hook exits nonzero when it cannot mint an identity"
   // A floor-satisfying `aw` that answers only `version`, so the hook deterministically reaches the root
   // check whatever aw the host has (1.16's no-root and no-aw refusals shared one phrase; 1.17's differ).
   const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
-  write(join(bin, "aw"), `#!/bin/sh\nif [ "$1" = "version" ]; then echo "aw 1.36.13"; exit 0; fi\necho "unexpected aw $*" 1>&2; exit 2\n`);
-  execFileSync("chmod", ["+x", join(bin, "aw")]);
+  fakeAw(bin, `#!/bin/sh\nif [ "$1" = "version" ]; then echo "aw 1.36.13"; exit 0; fi\necho "unexpected aw $*" 1>&2; exit 2\n`);
   const r = spawnSync(process.execPath, [hook, "spawn"], {
     encoding: "utf8",
     env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: "spawn", OATS_INSTANCE: "probe", OATS_HOME: join(base, "no-such-home"), OATS_WORKSPACE: base, OATS_CONTEXT: base, OATS_TEAM_SCOPE: base, ...AWEB_V2_ENV },
@@ -2180,8 +2190,7 @@ test("the SHIPPED aweb hook is fatal on every terminal pre-mint path (reviewer-5
   const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
   // CURRENT aw shape: memberships, not teams. Using the stale key here is what
   // let a real field drift pass review (reviewer-602627c).
-  write(join(bin, "aw"), `#!/bin/sh\nif [ "$1" = "version" ]; then echo "aw 1.36.13"; exit 0; fi\nif [ "$1" = "team" ] && [ "$2" = "list" ]; then echo '{"memberships":[],"active_team":null}'; exit 0; fi\nexit 0\n`);
-  execFileSync("chmod", ["+x", join(bin, "aw")]);
+  fakeAw(bin, `#!/bin/sh\nif [ "$1" = "version" ]; then echo "aw 1.36.13"; exit 0; fi\nif [ "$1" = "team" ] && [ "$2" = "list" ]; then echo '{"memberships":[],"active_team":null}'; exit 0; fi\nexit 0\n`);
   const root = join(base, "awroot"); mkdirSync(join(root, ".aw"), { recursive: true });
   const run = (env) => spawnSync(process.execPath, [hook, "spawn"], {
     encoding: "utf8",
@@ -2305,13 +2314,12 @@ if [ "$1" = "team" ] && [ "$2" = "join" ]; then echo '{"alias":"probe" ${TOKEN}'
   for (const [label, script] of Object.entries(cases)) {
     const base = temp();
     const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
-    write(join(bin, "aw"), `#!/bin/sh
+    fakeAw(bin, `#!/bin/sh
 if [ "$1" = "version" ]; then echo "aw 1.36.13"; exit 0; fi
 if [ "$1" = "team" ] && [ "$2" = "list" ]; then echo '{"active_team":"default:acme.aweb.ai","memberships":[{"team_id":"default:acme.aweb.ai","alias":"x"}]}'; exit 0; fi
 ${script}
 exit 0
 `);
-    execFileSync("chmod", ["+x", join(bin, "aw")]);
     const root = join(base, "awroot"); mkdirSync(join(root, ".aw"), { recursive: true });
     const r = spawnSync(process.execPath, [hook, "spawn"], {
       encoding: "utf8",
@@ -2340,7 +2348,7 @@ test("a WELL-FORMED mint response cannot reflect a token-shaped value into the a
   // reported alias is named by a warning that quotes nothing from the reply.
   const TOKEN = "inv_SUPERSECRET_TOKEN_9f3a";
   const log = join(base, "aw.log");
-  write(join(bin, "aw"), `#!/bin/sh
+  fakeAw(bin, `#!/bin/sh
 echo "$*" >> "${log}"
 if [ "$1" = "version" ]; then echo "aw 1.36.13"; exit 0; fi
 if [ "$1" = "team" ] && [ "$2" = "list" ]; then echo '{"active_team":"default:acme.aweb.ai","memberships":[{"team_id":"default:acme.aweb.ai","alias":"x"}]}'; exit 0; fi
@@ -2349,7 +2357,6 @@ if [ "$1" = "team" ] && [ "$2" = "join" ]; then echo '{"team_id":"${TOKEN}","ali
 if [ "$1" = "init" ]; then case "$*" in *--join-from=*) echo '{"team_id":"${TOKEN}","alias":"${TOKEN}","status":"connected"}'; exit 0;; esac; fi
 exit 0
 `);
-  execFileSync("chmod", ["+x", join(bin, "aw")]);
   const root = join(base, "awroot"); mkdirSync(join(root, ".aw"), { recursive: true });
   const r = spawnSync(process.execPath, [hook, "spawn"], {
     encoding: "utf8",
