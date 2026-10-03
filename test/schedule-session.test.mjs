@@ -47,9 +47,11 @@ test("scheduled wakes deliver literal text once and give the next cold home the 
       // The harness announces itself once it reads stdin. Session start runs
       // other processes first (the native-start recorder, `cat TASK.md`), so a
       // non-shell pane alone does not prove the harness is the one running.
+      // Like every real harness it visibly reacts to a submitted line: session
+      // input judges an Enter by whether it changed the pane.
       writeFileSync(harness, `#!${process.execPath}\nimport {appendFileSync,writeFileSync} from 'node:fs';
-process.stdin.setEncoding('utf8'); let input='';
-process.stdin.on('data',data=>{appendFileSync(${JSON.stringify(log)},JSON.stringify(data)+'\\n');input+=data;if(input.includes('STOP-FIXTURE'))process.exit(0);});
+process.stdin.setEncoding('utf8'); let input='', lines=0;
+process.stdin.on('data',data=>{appendFileSync(${JSON.stringify(log)},JSON.stringify(data)+'\\n');input+=data;if(data.includes('\\n'))process.stdout.write('fixture: line '+(++lines)+' received\\n');if(input.includes('STOP-FIXTURE'))process.exit(0);});
 writeFileSync(${JSON.stringify(ready)},String(process.pid));
 setTimeout(()=>process.exit(0),30000);\n`);
       chmodSync(harness, 0o755);

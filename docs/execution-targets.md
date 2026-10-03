@@ -163,7 +163,8 @@ oats session attach --home /abs/home
 
   `submitted` never means the agent processed the text. A pane that changes
   for another reason after Enter (a spinner, a clock, a human typing) reads as
-  taken. A call takes at most about 4 s plus its tmux calls. A failed paste or
+  taken. A harness that shows no visible reaction to Enter receives up to two
+  extra Enters; real harnesses (claude, codex, pi) redraw on submit. A call takes at most about 4 s plus its tmux calls. A failed paste or
   key send is `E_SESSION_INPUT_FAILED`, with no retry. Wake schedules and
   messaging capabilities use this command ([schedules.md](schedules.md)); a
   wake schedule records any answer as delivered.
