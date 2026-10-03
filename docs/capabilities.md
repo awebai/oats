@@ -548,8 +548,8 @@ in the same session fire the same tool hooks, so the main thread's prompt
 could be cleared while the human is still on it. On Claude Code 2.1.288 a
 subagent's tool event carries a top-level `agent_id` (main-thread events
 have none), so a tool clear reads the hook's JSON input and skips the clear
-when it finds one. The read happens only while a claim is set (the marker
-exists), takes at most 64 KiB and 1 s, and looks only at the text before
+when it finds one. The read happens only when there is a claim to clear,
+takes at most 64 KiB and 1 s, and looks only at the text before
 the first `"hook_event_name"`: a string value escapes its quotes, so that
 text holds top-level keys only. Anything else (no key, an input cut short,
 another key order, nothing read) means the main thread, and the clear goes
@@ -587,8 +587,8 @@ clears it.
   moves it to a private descriptor and detaches its own stdin, stdout and
   stderr first. It reads the input only for a tool clear, bounded as above,
   always exits 0, and kills the CLI after about 3 s.
-- **Debounce.** The script keeps a private marker outside the home while its
-  claim is set: `<dir>/<first 16 hex of sha256(home)>.claude`, where `<dir>`
+- **Debounce.** The script keeps private state outside the home, in a file
+  per home: `<dir>/<first 16 hex of sha256(home)>.claude`, where `<dir>`
   is per user: `$XDG_RUNTIME_DIR/oats-waiting` when that is set and
   absolute, else `${TMPDIR:-/tmp}/oats-waiting-<uid>`. The spawn and launch
   hook computes that path and vets the directory once: it creates it 0700
@@ -596,26 +596,31 @@ clears it.
   0700, with no ACL (also one macOS shows only as `@`). An existing directory
   is never changed. The hook passes the marker path to every command (or
   `''` when the directory is refused), so the script, which runs on every
-  tool call, needs no `ls`, hash or `mkdir`: it only re-checks that the
-  directory is still a real directory the user owns (only the user could
-  have changed its mode since). A clear with no marker does nothing and
-  starts no node process, so the hooks that fire on every tool call cost a
-  `/bin/sh` and a few file tests. A symlink is never followed. An unusable
-  marker (a refused, missing or replaced directory, a marker path that is
-  not a regular file) means no debounce: set and clear then always call the
-  (idempotent) CLI, until the next start vets the directory again. Losing
-  the marker (a reboot, a temp cleanup) is harmless: the session ends with
-  the reboot, and the next start voids the claim. The script runs the CLI
-  from the home, so its cwd never matters.
-- **Retry and races.** The marker goes only once a clear is recorded: a
-  clear that fails, or that the watchdog kills, keeps it, so the next clear
-  retries. The marker holds its writer's token (`<reason> <pid>` for a set,
-  `clear <pid>` for a clear under way), so calls that run at once (parallel
-  tool calls, overlapping prompts) see each other, whatever order their CLI
-  calls land in. A set whose marker a newer set took meanwhile records that
-  newer reason again; a set whose marker a clear touched redoes the clear
-  through the same retryable protocol; a clear that a set overtook records
-  that set again. A failed set is retried by the next set event.
+  tool call, needs no `ls` or hash: it only re-checks that the directory is
+  still a real directory the user owns (only the user could have changed its
+  mode since). The marker holds the latest intent (`permission`, `question`
+  or `clear`), `<marker>.applied` what the CLI last recorded, and
+  `<marker>.lock` is the reconciler's lock. A clear when both say clear does
+  nothing and starts no node process, so the hooks that fire on every tool
+  call cost a `/bin/sh` and a few file reads. A symlink is never followed. An
+  unusable marker (a refused, missing or replaced directory, a state path
+  that is not a regular file, a lock path that is not a directory) means no
+  debounce: set and clear then always call the (idempotent) CLI. The launch
+  hook resets the state at every spawn and start, as the kernel's session
+  boundary voids the claims. The script runs the CLI from the home, so its
+  cwd never matters.
+- **Order and retry.** Each event writes its intent to the marker at once,
+  so the marker is always the latest intent, then reconciles under a lock
+  (a directory holding its holder's pid; one whose holder is gone, or a
+  minute old, is removed): one process at a time brings the recorded claim
+  to the latest intent, re-reading it after each CLI call, so the calls
+  land in the order the events came, whatever their speed. An event that
+  finds the lock busy for more than about a second leaves its intent to
+  the holder, which picks it up on its next read. A call that fails or
+  is killed, or a reconciliation the time budget stops, leaves the
+  recorded claim and the intent apart, and the next event finishes it. The
+  state files are only ever deleted by the launch hook, so no intent is
+  lost to a race.
 - **It never touches the agent's claim.** The script only ever passes
   `--producer oats.core`.
 - **Not "unknown work" at retirement.** Harness project settings in the home

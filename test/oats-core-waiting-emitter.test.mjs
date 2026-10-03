@@ -24,6 +24,8 @@ const TMP = join(base, "tmp"); mkdirSync(TMP);
 /** Where claude-waiting.sh keeps the debounce marker of home `h` under temp dir `tmp`. */
 // The per-user marker directory under TMPDIR (XDG_RUNTIME_DIR is unset in these runs).
 const WDIR = `oats-waiting-${process.getuid()}`;
+// What the CLI last recorded for a home ("permission", "question" or "clear"), or null.
+const appliedOf = (h, tmp = TMP) => { try { return readFileSync(`${markerOf(h, tmp)}.applied`, "utf8").trim(); } catch { return null; } };
 const markerOf = (h, tmp = TMP) => join(tmp, WDIR, `${createHash("sha256").update(h).digest("hex").slice(0, 16)}.claude`);
 let n = 0;
 /** A fresh instance home: a directory with an instance.json. */
@@ -290,7 +292,8 @@ test("set touches the marker and calls the CLI with the exact argv; clear withou
 
   r = runScript(["clear", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
   assert.equal(r.status, 0); assert.equal(r.stdout, "");
-  assert.ok(!existsSync(marker), "clear removes the marker");
+  assert.equal(appliedOf(h), "clear", "the clear is recorded as applied");
+  assert.equal(readFileSync(marker, "utf8"), "clear\n", "the intent is clear");
   assert.deepEqual(calls()[1], ["instance", "waiting", "clear", "--producer", "oats.core", "--home", h, "--json"]);
 
   r = runScript(["clear", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
@@ -304,14 +307,14 @@ test("an open question is not relabelled by its own permission prompt: the marke
   const log = join(base, `argv-question-${n}.log`);
   const calls = () => existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
   runScript(["set", "question", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
-  assert.match(readFileSync(markerOf(h), "utf8"), /^question \d+\n$/, "the marker holds the reason and its writer");
+  assert.equal(readFileSync(markerOf(h), "utf8"), "question\n", "the marker holds the intent");
   const r = runScript(["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
   assert.equal(r.status, 0); assert.equal(r.stdout, "");
   assert.deepEqual(calls().map((c) => c[6]), ["question"], "the permission prompt of an open question starts no CLI");
   runScript(["clear", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
   runScript(["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
   assert.deepEqual(calls().map((c) => c[2] === "clear" ? "clear" : c[6]), ["question", "clear", "permission"], "after a clear, a permission prompt sets permission");
-  assert.match(readFileSync(markerOf(h), "utf8"), /^permission \d+\n$/);
+  assert.equal(readFileSync(markerOf(h), "utf8"), "permission\n");
 });
 
 test("an unusable marker means no debounce, never a skipped claim: a symlinked marker directory or a marker path that is not a regular file is not followed, and set and clear always call the CLI", () => {
@@ -377,7 +380,7 @@ test("macOS: markerDir refuses a directory whose ACL hides behind the xattr indi
 test("the hot path runs no ls, hash or id; an unusable marker argument (empty, relative, under a missing directory) means no debounce and creates nothing", () => {
   const node = process.execPath;
   const bin = join(base, `hot-bin-${n}`), toolLog = join(base, `hot-tools-${n}.log`); mkdirSync(bin);
-  for (const tool of ["ls", "shasum", "sha256sum", "cksum", "id", "mkdir"]) writeFileSync(join(bin, tool), `#!/bin/sh\necho ${tool} >> '${toolLog}'\nexit 1\n`, { mode: 0o755 });
+  for (const tool of ["ls", "shasum", "sha256sum", "cksum", "id"]) writeFileSync(join(bin, tool), `#!/bin/sh\necho ${tool} >> '${toolLog}'\nexit 1\n`, { mode: 0o755 });
   const h = home(), env = { OATS_INSTANCE_HOME: h, PATH: `${bin}:${process.env.PATH}` };
   runScript(["set", "permission", node, FAKE_CLI], env);
   spawnSync("/bin/sh", [SCRIPT, ...withMarker(["clear-tool", node, FAKE_CLI], env)], { input: '{"session_id":"s","hook_event_name":"PostToolUse"}', encoding: "utf8", timeout: 15000, env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env }) });
@@ -401,10 +404,10 @@ test("a clear the watchdog kills, or that fails, keeps the marker, so the next c
   for (const mode of ["hang", "fail"]) {
     const r = runScript(["clear", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log, FAKE_MODE: mode });
     assert.equal(r.status, 0); assert.equal(r.stdout, "");
-    assert.ok(existsSync(markerOf(h)), `${mode}: the marker is kept`);
+    assert.equal(appliedOf(h), "permission", `${mode}: the claim is not recorded as cleared, so the next clear retries`);
   }
   runScript(["clear", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
-  assert.ok(!existsSync(markerOf(h)), "a clear that is recorded removes it");
+  assert.equal(appliedOf(h), "clear", "a clear that is recorded is applied");
   assert.deepEqual(calls(), ["set", "clear", "clear", "clear"], "each clear after the failed ones retried");
 });
 
@@ -421,7 +424,7 @@ test("a clear racing a set ends cleared: a slow set that lands after the clear i
   await new Promise((r) => setTimeout(r, 300));
   assert.equal(await run(["clear"], { OATS_INSTANCE_HOME: h, FAKE_LOG: log }), 0);
   assert.equal(await slowSet, 0);
-  assert.deepEqual(actions(log), ["clear", "set", "clear"], "the set landed last, so it clears again");
+  assert.deepEqual(actions(log), ["set", "clear"], "the calls land in intent order: the slow set, then the clear");
   // (b) A clear's CLI is slow; a set starts and lands while it runs, so the clear lands last.
   h = home(); log = join(base, `argv-race-b-${n}.log`);
   assert.equal(await run(["set", "question"], { OATS_INSTANCE_HOME: h, FAKE_LOG: log }), 0);
@@ -429,8 +432,9 @@ test("a clear racing a set ends cleared: a slow set that lands after the clear i
   await new Promise((r) => setTimeout(r, 300));
   assert.equal(await run(["set", "permission"], { OATS_INSTANCE_HOME: h, FAKE_LOG: log }), 0);
   assert.equal(await slowClear, 0);
-  assert.deepEqual(readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l)).map((a) => a[2] === "set" ? a[6] : a[2]), ["question", "permission", "clear", "permission"], "the clear landed last, so the set is recorded again");
-  assert.match(readFileSync(markerOf(h), "utf8"), /^permission \d+\n$/, "and the marker stays with it");
+  assert.deepEqual(readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l)).map((a) => a[2] === "set" ? a[6] : a[2]), ["question", "clear", "permission"], "the calls land in intent order: the slow clear, then the set");
+  assert.equal(readFileSync(markerOf(h), "utf8"), "permission\n", "the intent is the set");
+  assert.equal(appliedOf(h), "permission");
 });
 
 test("overlapping calls end in the right claim: a slow set overtaken by a newer set takes the newer reason; a corrective clear that fails or is killed is retried by the next clear", { timeout: 60000 }, async () => {
@@ -450,21 +454,70 @@ test("overlapping calls end in the right claim: a slow set overtaken by a newer 
     assert.equal(await slow, 0);
     const want = second === "permission" && first === "question" ? "question" : second; // a permission prompt never relabels an open question
     assert.equal(lastState(state), `set ${want}`, `${first} then ${second}`);
-    assert.match(readFileSync(markerOf(h), "utf8"), new RegExp(`^${want} \\d+\\n$`));
+    assert.equal(readFileSync(markerOf(h), "utf8"), `${want}\n`); assert.equal(appliedOf(h), want);
   }
-  // (b) a slow set overtaken by a clear: its corrective clear fails (or is killed); the next clear retries it.
+  // (b) a slow set overtaken by a clear, while clears fail (or hang to the watchdog): the
+  // claim stays set but is not recorded as cleared, and the next working clear retries it.
   for (const clearMode of ["fail", "hang"]) {
     const h = home(), state = join(base, `state-cc-${n}.log`);
     const slow = run(["set", "permission"], { OATS_INSTANCE_HOME: h, FAKE_STATE: state, FAKE_SET_DELAY_MS: "800", FAKE_CLEAR_MODE: clearMode });
     await pause(250);
-    assert.equal(await run(["clear"], { OATS_INSTANCE_HOME: h, FAKE_STATE: state }), 0);
+    assert.equal(await run(["clear"], { OATS_INSTANCE_HOME: h, FAKE_STATE: state, FAKE_CLEAR_MODE: clearMode }), 0);
     assert.equal(await slow, 0);
     assert.equal(lastState(state), "set permission", `${clearMode}: the claim is stale for now`);
-    assert.ok(existsSync(markerOf(h)), `${clearMode}: but the marker is kept for a retry`);
+    assert.equal(appliedOf(h), "permission", `${clearMode}: not recorded as cleared, so it is retried`);
     assert.equal(await run(["clear"], { OATS_INSTANCE_HOME: h, FAKE_STATE: state }), 0);
     assert.equal(lastState(state), "clear", `${clearMode}: the next clear retried it`);
-    assert.ok(!existsSync(markerOf(h)));
+    assert.equal(appliedOf(h), "clear");
   }
+  // (c) three-way: a slow set, then a clear, then a newer set while the first still runs: the newest set wins.
+  {
+    const h = home(), state = join(base, `state-scs-${n}.log`);
+    const slow = run(["set", "permission"], { OATS_INSTANCE_HOME: h, FAKE_STATE: state, FAKE_SET_DELAY_MS: "800" });
+    await pause(200);
+    const clear = run(["clear"], { OATS_INSTANCE_HOME: h, FAKE_STATE: state });
+    await pause(200);
+    const newer = run(["set", "question"], { OATS_INSTANCE_HOME: h, FAKE_STATE: state });
+    assert.deepEqual(await Promise.all([slow, clear, newer]), [0, 0, 0]);
+    assert.equal(lastState(state), "set question", "set, clear, set: the human is on the last prompt");
+    assert.equal(appliedOf(h), "question");
+  }
+  // (d) three-way: a slow set overtaken by a newer set, and a clear while that correction is in flight: cleared.
+  {
+    const h = home(), state = join(base, `state-ssc-${n}.log`);
+    const slow = run(["set", "permission"], { OATS_INSTANCE_HOME: h, FAKE_STATE: state, FAKE_SET_DELAY_MS: "800" });
+    await pause(250);
+    const newer = run(["set", "question"], { OATS_INSTANCE_HOME: h, FAKE_STATE: state });
+    await pause(800);
+    const clear = run(["clear"], { OATS_INSTANCE_HOME: h, FAKE_STATE: state });
+    assert.deepEqual(await Promise.all([slow, newer, clear]), [0, 0, 0]);
+    assert.equal(lastState(state), "clear", "set, set, clear: the human answered");
+    assert.equal(appliedOf(h), "clear");
+    assert.equal(await run(["clear"], { OATS_INSTANCE_HOME: h, FAKE_STATE: state }), 0);
+    assert.equal(lastState(state), "clear");
+  }
+});
+
+test("a lock left by a reconciler that is gone is broken; the launch hook forgets an earlier session's marker state", () => {
+  const node = process.execPath, h = home(), log = join(base, `argv-lock-${n}.log`);
+  runScript(["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
+  const lock = `${markerOf(h)}.lock`;
+  const dead = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" }).stdout;
+  mkdirSync(lock); writeFileSync(join(lock, "pid"), `${dead}\n`);
+  const started = Date.now();
+  runScript(["clear", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
+  assert.ok(Date.now() - started < 3000, "no long wait on a dead holder's lock");
+  assert.equal(appliedOf(h), "clear", "the clear went through");
+  assert.ok(!existsSync(lock), "and released the lock");
+  // A live holder's lock is respected: the waiter gives up, leaving its intent for the holder or the next event.
+  mkdirSync(lock); writeFileSync(join(lock, "pid"), `${process.pid}\n`);
+  runScript(["set", "question", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
+  assert.equal(readFileSync(markerOf(h), "utf8"), "question\n", "the intent is recorded");
+  assert.equal(appliedOf(h), "clear", "but not applied under someone else's lock");
+  assert.ok(existsSync(lock), "and the live lock is untouched");
+  // The launch hook starts a new session with no marker state.
+  runHook("launch", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI_ABS });
+  for (const f of [markerOf(h), `${markerOf(h)}.applied`, lock]) assert.ok(!existsSync(f), `${f} reset at launch`);
 });
 
 test("the CLI runs in the home", () => {
@@ -498,7 +551,7 @@ test("clear-tool: a subagent's tool event (top-level agent_id before hook_event_
     assert.equal(r.status, 0, label); assert.equal(r.stdout, "", label); assert.ok(Date.now() - started < 5000, `${label}: bounded`);
     const calls = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").length : 0;
     assert.equal(calls, clears ? 1 : 0, `${label}: ${clears ? "clears" : "skips the clear"}`);
-    assert.equal(existsSync(markerOf(h)), !clears, `${label}: the marker ${clears ? "goes" : "stays"}`);
+    assert.equal(appliedOf(h), clears ? "clear" : "permission", `${label}: ${clears ? "recorded as cleared" : "the claim stays"}`);
   }
   // A closed stdin means the main thread.
   {

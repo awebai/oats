@@ -40,8 +40,9 @@ case "$cli" in /*) ;; *) exit 0 ;; esac
 cd "$home" || exit 0
 
 # Emitter-private debounce marker, outside the home (it is not the instance's state): a
-# per-user temp file keyed by the home, present while oats.core's claim is set, so a clear
-# on every tool call starts no node process unless there is a claim to clear. The launch
+# per-user temp file keyed by the home holding the latest intent (permission, question or
+# clear), beside what the CLI last recorded, so a clear on every tool call starts no node
+# process unless there is a claim to clear. The launch
 # hook computed its path and vetted its directory once (per user, created 0700, owned by
 # us, mode exactly 0700, not a symlink, no ACL); the hot path only re-checks that the
 # directory is still a real directory we own, which only we could have changed. Anything
@@ -52,8 +53,15 @@ case "$marker" in /*/*.claude) ;; *) marker= ;; esac
 # zsh); where it is missing the test fails and the marker is simply not used.
 # shellcheck disable=SC3067
 if [ -n "$marker" ] && ! { [ -d "${marker%/*}" ] && [ ! -L "${marker%/*}" ] && [ -O "${marker%/*}" ]; }; then marker=; fi
-# A marker path that exists as anything but a regular file is unusable too.
-if [ -n "$marker" ] && { [ -L "$marker" ] || { [ -e "$marker" ] && [ ! -f "$marker" ]; }; }; then marker=; fi
+# Beside the marker (the intent): <marker>.applied (what the CLI last recorded) and
+# <marker>.lock (a directory: one reconciler at a time). A path that exists as anything
+# else (a symlink, a file where the lock goes) makes the marker unusable too.
+applied=$marker.applied
+lock=$marker.lock
+for f in "$marker" "$applied"; do
+  if [ -n "$marker" ] && { [ -L "$f" ] || { [ -e "$f" ] && [ ! -f "$f" ]; }; }; then marker=; fi
+done
+if [ -n "$marker" ] && { [ -L "$lock" ] || { [ -e "$lock" ] && [ ! -d "$lock" ]; }; }; then marker=; fi
 
 # Kill process $1 after $2 seconds (macOS has no timeout(1)), unless this watchdog is
 # killed first: its TERM trap then ends its sleep too, so nothing is left behind. A TERM
@@ -91,15 +99,6 @@ from_subagent() {
   return 1
 }
 
-# A subagent's tool call resolves nothing the human was asked by the main thread, so its
-# clear is skipped (a permission Notification never says who asked: see docs). With a
-# usable marker and no claim there is nothing to clear, and stdin is not even read.
-if [ "$action" = clear-tool ]; then
-  [ -n "$marker" ] && [ ! -e "$marker" ] && exit 0
-  from_subagent && exit 0
-  action=clear
-fi
-
 # Run the CLI in the background under a 3 s watchdog. Its status is the CLI's: non-zero
 # when it failed or the watchdog killed it.
 run_cli() {
@@ -112,58 +111,83 @@ run_cli() {
   return "$status"
 }
 
-# The marker's one line is its writer's token: "<reason> <pid>" for a set, "clear <pid>"
-# for a clear under way. A set and a clear that run at once (parallel tool calls) can
-# then tell that the other touched it, whatever order their CLI calls land in.
-token() { line=; [ -f "$marker" ] && IFS= read -r line < "$marker"; printf '%s' "$line"; }
+# One state file: "permission", "question" or "clear"; absent or anything else is clear.
+state_of() {
+  line=
+  [ -f "$1" ] && IFS= read -r line < "$1"
+  case "$line" in permission|question) printf '%s' "$line" ;; *) printf clear ;; esac
+}
 
+# The reconciler's lock: a directory holding its holder's pid. One left by a holder that is
+# gone (its pid dead, or the lock a minute old: a holder is bounded far below that) is
+# removed. Waits up to ~1 s: a holder re-reads the intent after each call, so an intent
+# written while it holds the lock is applied by it, or by its writer once it is free.
+take_lock() {
+  tries=0
+  while ! mkdir "$lock" 2>/dev/null; do
+    tries=$((tries + 1))
+    [ "$tries" -le 10 ] || return 1
+    holder=
+    [ -f "$lock/pid" ] && IFS= read -r holder < "$lock/pid"
+    if { [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; } || [ -n "$(find "$lock" -prune -mmin +1 2>/dev/null)" ]; then
+      rm -f "$lock/pid"
+      rmdir "$lock" 2>/dev/null
+      continue
+    fi
+    sleep 0.1 || sleep 1
+  done
+  printf '%s\n' "$$" > "$lock/pid"
+}
+
+# Bring the recorded claim to the latest intent, under the lock, so CLI calls never land
+# out of order: apply the intent, record it as applied, re-read it, until they agree. A
+# failed or killed call stops it with the two still apart, which is what the next event
+# retries. At most 3 calls, none started after ~2 s.
+reconcile() {
+  take_lock || return 0
+  calls=0
+  started=$(date +%s)
+  while [ "$calls" -lt 3 ]; do
+    want=$(state_of "$marker")
+    [ "$want" = "$(state_of "$applied")" ] && break
+    if [ "$want" = clear ]; then
+      run_cli clear --producer oats.core || break
+    else
+      run_cli set --producer oats.core --reason "$want" || break
+    fi
+    printf '%s\n' "$want" > "$applied"
+    calls=$((calls + 1))
+    [ $(( $(date +%s) - started )) -lt 2 ] || break
+  done
+  rm -f "$lock/pid"
+  rmdir "$lock"
+}
+
+# A subagent's tool call resolves nothing the human was asked by the main thread, so a
+# tool clear (clear-tool) from one is skipped (a permission Notification never says who
+# asked: see docs). It reads the input only when there is a claim to clear.
 if [ -z "$marker" ]; then
   if [ "$action" = set ]; then
     run_cli set --producer oats.core --reason "$reason"
   else
+    [ "$action" = clear-tool ] && from_subagent && exit 0
     run_cli clear --producer oats.core
   fi
   exit 0
 fi
 
-# The clear protocol. The marker carries "clear <pid>" while the clear runs and goes only
-# once the clear is recorded and no set has taken the marker since: a failed or killed
-# clear keeps it, so the next clear retries. A set that took the marker meanwhile is
-# recorded again, in case this clear landed after it.
-clear_claim() {
-  mine="clear $$"
-  printf '%s\n' "$mine" > "$marker"
-  if run_cli clear --producer oats.core; then
-    now=$(token)
-    if [ "$now" = "$mine" ]; then
-      rm -f "$marker"
-    else
-      case "${now%% *}" in permission|question) run_cli set --producer oats.core --reason "${now%% *}" ;; esac
-    fi
-  fi
-}
-
+intent=$(state_of "$marker")
 if [ "$action" = set ]; then
   # An open AskUserQuestion is shown through Claude's permission dialog, so its own
   # permission_prompt follows the question's set: a permission prompt never relabels an
   # open question.
-  current=$(token)
-  [ "$reason" = permission ] && [ "${current%% *}" = question ] && exit 0
-  mine="$reason $$"
-  printf '%s\n' "$mine" > "$marker"
-  run_cli set --producer oats.core --reason "$reason"
-  # Someone touched the marker while this set's CLI ran, and may have landed before it.
-  # A newer set (its token is a reason) is the latest intent: record its reason again. A
-  # clear (it rewrote or removed the marker) is redone through the clear protocol, so a
-  # corrective clear that fails is retried by the next clear too.
-  now=$(token)
-  [ "$now" = "$mine" ] && exit 0
-  case "${now%% *}" in
-    permission|question) run_cli set --producer oats.core --reason "${now%% *}" ;;
-    *) clear_claim ;;
-  esac
+  [ "$reason" = permission ] && [ "$intent" = question ] && exit 0
+  printf '%s\n' "$reason" > "$marker"
 else
-  [ -e "$marker" ] || exit 0
-  clear_claim
+  # Nothing to clear (cleared and recorded so): no node process, no input read.
+  [ "$intent" = clear ] && [ "$(state_of "$applied")" = clear ] && exit 0
+  [ "$action" = clear-tool ] && from_subagent && exit 0
+  printf 'clear\n' > "$marker"
 fi
+reconcile
 exit 0

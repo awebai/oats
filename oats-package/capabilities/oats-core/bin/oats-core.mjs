@@ -30,7 +30,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -87,6 +87,13 @@ function hasAcl(dir) {
 
 /** A home's marker in a vetted directory: the first 16 hex of sha256(home). */
 export const markerPath = (home, dir) => join(dir, `${createHash("sha256").update(home).digest("hex").slice(0, 16)}.claude`);
+
+/** A new session starts with no claim (the kernel's session boundary voids them), so the
+ *  marker state an earlier session left (intent, applied, a lock) is forgotten. */
+export function resetMarker(marker) {
+  for (const f of [marker, `${marker}.applied`, join(`${marker}.lock`, "pid")]) { try { unlinkSync(f); } catch { /* absent */ } }
+  try { rmdirSync(`${marker}.lock`); } catch { /* absent */ }
+}
 
 /** oats.core's Claude Code settings: only `hooks`, keyed by Claude Code event. */
 export function claudeWaitingSettings({ script, node, cli, marker = "" }) {
@@ -210,7 +217,9 @@ export function runHook(event, env = process.env) {
     return { warning: `oats.core: ${WAITING_SCRIPT} is missing from the module copy (${e.code || e.message}); the Claude Code waiting hooks were not written` };
   }
   const dir = markerDir(env);
-  const warning = writeClaudeSettings({ home, script, node: process.execPath, cli, marker: dir ? markerPath(home, dir) : "" });
+  const marker = dir ? markerPath(home, dir) : "";
+  if (marker) resetMarker(marker);
+  const warning = writeClaudeSettings({ home, script, node: process.execPath, cli, marker });
   return warning ? { warning } : {};
 }
 
