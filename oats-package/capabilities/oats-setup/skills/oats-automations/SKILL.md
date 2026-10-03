@@ -184,7 +184,12 @@ offline and checks other deployments registered with this host.
 An unknown command or operation frees its host slot only after the kernel
 observes its process exit. Scheduler command/operation and workspace-spawn
 children receive SIGTERM at five minutes and SIGKILL after a two-second
-cleanup grace if needed. Its own job stays blocked until reconcile. Spawn,
+cleanup grace if needed. Catchable SIGINT/SIGTERM/SIGHUP to the supervisor uses
+the same cleanup; interruption stays unconfirmed even with a printed envelope.
+SIGKILL/OOM or an unrecoverable supervisor death cannot guarantee child cleanup:
+without its receipt, the unknown attempt retains its slot. Descendants that
+start their own sessions are outside the owned group. Its own job stays blocked
+until reconcile. Spawn,
 wake and legacy attempts without observed exits retain their slot rules.
 
 ### Structural uncertainty during provider migration

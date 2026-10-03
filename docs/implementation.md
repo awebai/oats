@@ -91,6 +91,17 @@ literal true marker while retaining the nested envelope. Message-based consumers
 remain during the additive producer migration; do not replace stage evidence
 with a substring check or infer uncertainty from a retained home alone.
 
+The schedule child supervisor installs SIGINT/SIGTERM/SIGHUP handlers before
+launch and removes them on settlement. All catchable shutdown signals share
+its idempotent TERM/KILL path; the first stop cause is retained. The private
+receipt records interruption separately from the direct child's observed exit,
+and schedule consumers keep interrupted envelopes unconfirmed. Group probes
+start at leader exit; an observed-empty group is permanently excluded from
+later probes/signals. Polling cannot eliminate the gap before observation or
+prove away PID reuse. Escaped sessions are outside the owned group, and
+SIGKILL/OOM or unrecoverable supervisor death cannot be cleaned up by handlers;
+a missing receipt supplies no child-exit evidence and cannot release a slot.
+
 The kernel is runtime-neutral: nothing in `lib/` depends on a harness or on
 a provider. Provider behaviour lives in capabilities; the kernel supplies
 their contracts ([layers](layers.md)).
