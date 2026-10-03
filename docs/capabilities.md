@@ -728,6 +728,11 @@ again" permission rules there.
 - A `Stop` or `UserPromptSubmit` always clears, even one the main thread
   produces while a subagent's prompt is open (a background subagent's
   completion is submitted as a prompt).
+- The one-home rule separates homes, not two sessions of one home: a second
+  Claude process started inside the same home with that home's own
+  `$OATS_INSTANCE_HOME` (a `claude -p` the agent runs there) still matches,
+  so its `Stop` and `SessionEnd` clears can erase the home's own live
+  `oats.core` claim ([#557](https://github.com/awebai/oats/issues/557)).
 - A Claude instance spawned before the upgrade gets the emitter only when
   it is respawned. Its launch hook comes from its recorded module copy.
 
