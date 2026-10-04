@@ -880,16 +880,17 @@ test("the tmux that creates the session is the one the creating process's own PA
   } finally { process.env.PATH = ambient; rmSync(here, { force: true }); }
 });
 
-test("the stage of a start's refusal, pinning the existing order: a launch hook that does not declare launchPreview has already run, a preview-aware one has run only as a preview, and nothing is stopped, written or created", async () => {
+test("the stage of a start's refusal, pinning the existing order: a launch hook that does not declare launchPreview has already run and its warning is already an event, a preview-aware one has run only as a preview, and nothing is stopped, no launch state is written and nothing is created", async () => {
   const seen = join(base, "hook-order.jsonl");
-  const hook = (kind) => `import { appendFileSync } from "node:fs";
+  const hook = (kind, answer = {}) => `import { appendFileSync } from "node:fs";
 appendFileSync(${JSON.stringify(seen)}, JSON.stringify({ kind: ${JSON.stringify(kind)}, event: process.env.OATS_EVENT, preview: process.env.OATS_LAUNCH_PREVIEW ?? null }) + "\\n");
-console.log("{}");
+console.log(${JSON.stringify(JSON.stringify(answer))});
 `;
+  const WARNING = "order fixture: the provider says so";
   const dep = v2Deployment({
     souls: { dev: { soul: { capabilities: { "test.unaware": { from: "here" }, "test.aware": { from: "here" } } } } },
     capabilities: {
-      "test.unaware": { manifest: { hooks: { launch: "launch.mjs" } }, files: { "launch.mjs": hook("unaware") } },
+      "test.unaware": { manifest: { hooks: { launch: "launch.mjs" } }, files: { "launch.mjs": hook("unaware", { warning: WARNING }) } },
       "test.aware": { manifest: { launchPreview: true, hooks: { launch: "launch.mjs" } }, files: { "launch.mjs": hook("aware") } },
     },
   });
@@ -912,7 +913,9 @@ console.log("{}");
     assert.ok(unaware.length >= 1 && unaware.every((e) => e.preview === null), `the hook that is not preview-aware ran for real during the start's planning: ${JSON.stringify(ran)}`);
     // Fails if the real run of a preview-aware hook moves before the check.
     assert.ok(aware.length >= 1 && aware.every((e) => e.preview === "1"), `the preview-aware hook ran as a preview only: ${JSON.stringify(ran)}`);
-    // Fails if a stop or a write moves before the check.
+    // What that hook returned as a warning is already an event of the home: the planning's own write.
+    assert.ok(readEvents(home).events.some((e) => e.kind === "launch-warning" && e.data.message === WARNING), "the hook's warning is an event");
+    // Fails if a stop or a write of the home's launch state moves before the check.
     assert.deepEqual(readEvents(home).events.filter((e) => /stop/.test(e.kind)), [], "nothing was stopped");
     assert.equal(existsSync(join(home, ".oats-start-pending.json")), false, "no pending receipt");
     assert.equal(readFileSync(join(home, "instance.json"), "utf8"), record, "the home's record is unchanged");

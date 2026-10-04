@@ -235,8 +235,10 @@ that triggered it), and `oats schedule run-now` typed inside an instance.
 - **When the refusal comes.** In `oats spawn`: before any scaffold, work
   tree, identity or hook. In `oats session start`: after the start's
   preflights and its planning, and before the real run of preview-aware
-  launch hooks, a stop and any write. A launch hook that does not declare
-  `launchPreview` has already run by then, as it has before any other late
+  launch hooks, a stop and any write of the home's launch state (its record,
+  its receipt, a pending start). A launch hook that does not declare
+  `launchPreview` has already run by then, and a warning it returned is
+  already a `launch-warning` event of the home, as before any other late
   refusal of a start (`E_SESSION_RUNNING`, `E_LAUNCH_ENV_MISSING`). Nothing
   undoes what that hook did, and there is nothing to clean up: a launch hook
   may do idempotent provider registration on a real start and no more
