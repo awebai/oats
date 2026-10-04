@@ -1773,6 +1773,117 @@ test("a clean worktree with a committed file whose name is not UTF-8, and only a
   assert.equal(existsSync(spawned.home), false, "the home is removed");
 });
 
+// The home's instance.json. The spawn baseline compares it without the two fields the kernel writes
+// later, through a parse. The proof that the hooks left the home as it was compares its bytes.
+
+/** Where the test's own field of instance.json has its one byte: right after this, in a JSON string. */
+const PAYLOAD_MARKER = '"reviewPayload": "t';
+const payloadByteIn = (file) => { const bytes = readFileSync(file); return bytes[bytes.indexOf(PAYLOAD_MARKER) + PAYLOAD_MARKER.length]; };
+/** Give a home's instance.json a field that is not the kernel's, whose string holds the byte 0x80:
+ *  not UTF-8. Read as text it is U+FFFD, so the file is still JSON every reader of the kernel accepts. */
+function writePayloadByte(home) {
+  const file = join(home, "instance.json");
+  const bytes = Buffer.from(`${JSON.stringify({ ...readJson(file), reviewPayload: "tX" }, null, 2)}\n`);
+  bytes[bytes.indexOf(PAYLOAD_MARKER) + PAYLOAD_MARKER.length] = 0x80;
+  writeFileSync(file, bytes);
+  assert.equal(payloadByteIn(file), 0x80, "fixture premise: the file holds the byte");
+  assert.equal(readJson(file).reviewPayload, "t�", "fixture premise: read as text the field holds the replacement character, and the file is JSON");
+}
+/** quietHook body: change that byte to 0x81, and nothing else of the file. */
+const CHANGES_PAYLOAD_BYTE = `import { readFileSync } from 'node:fs';
+const file = join(home, 'instance.json');
+const bytes = readFileSync(file);
+const at = bytes.indexOf(${JSON.stringify(PAYLOAD_MARKER)}) + ${PAYLOAD_MARKER.length};
+seen.byteBefore = bytes[at];
+bytes[at] = 0x81;
+writeFileSync(file, bytes);`;
+/** quietHook body: rewrite an untracked file of the worktree. Its status row stays `?? scratch.txt`. */
+const SCRATCH_REWRITTEN = "rewritten by the retire hook\n";
+const REWRITES_SCRATCH = `writeFileSync(join(work, 'scratch.txt'), ${JSON.stringify(SCRATCH_REWRITTEN)});`;
+
+test("a retire hook that changes one byte that is not UTF-8 in a field of the home's instance.json that is not the kernel's, and also rewrites a file in the work: the home is copied again with the work, and the file under after-hooks/home/ holds the hook's byte", () => {
+  // The hook writes no note in the home: the only thing it changes there is that byte.
+  const f = fixture({ capabilities: hookCapability(quietHook(`${CHANGES_PAYLOAD_BYTE}\n${REWRITES_SCRATCH}`, { home: false })) });
+  const spawned = spawn(f, "hook-instance-byte-work");
+  const work = join(spawned.home, "work");
+  writePayloadByte(spawned.home);
+  write(join(work, "scratch.txt"), "written before the retire\n");
+  const statusBefore = porcelain(work);
+  assert.deepEqual(statusRowsIn(statusBefore), ["?? scratch.txt"]);
+
+  const { recovery, seen, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore, { home: false });
+  assert.equal(seen.byteBefore, 0x80, "fixture premise: the retire left the byte as it was until the hook ran");
+  assert.equal(readFileSync(join(afterRepo, "scratch.txt"), "utf8"), SCRATCH_REWRITTEN, "fixture premise: the work moved and is copied again");
+  assert.equal(payloadByteIn(join(recovery.path, "home", "instance.json")), 0x80, "the snapshot taken before the hooks holds the file as it was then");
+  const after = join(recovery.path, "after-hooks", "home", "instance.json");
+  assert.equal(existsSync(after), true, "the home is copied again under after-hooks/home/: the hook changed a byte of instance.json that text does not tell apart");
+  assert.equal(payloadByteIn(after), 0x81, "the file copied after the hooks has the byte the hook gave it");
+  assertBothCopiedAgain(recovery);
+});
+
+test("a retire hook that changes only that byte of the home's instance.json: the home is copied again, and the file under after-hooks/home/ holds the hook's byte", () => {
+  const f = fixture({ capabilities: hookCapability(quietHook(CHANGES_PAYLOAD_BYTE, { home: false })) });
+  const spawned = spawn(f, "hook-instance-byte");
+  const work = join(spawned.home, "work");
+  writePayloadByte(spawned.home);
+  const statusBefore = porcelain(work);
+  assert.equal(statusBefore, "", "fixture premise: the worktree is clean");
+
+  const { recovery, seen } = retireAfterQuietHook(f, spawned, statusBefore, { home: false });
+  assert.equal(seen.byteBefore, 0x80, "fixture premise: the retire left the byte as it was until the hook ran");
+  assert.deepEqual(recovery.classes, ["changed instance-home bytes"]);
+  assert.equal(payloadByteIn(join(recovery.path, "home", "instance.json")), 0x80, "the snapshot taken before the hooks holds the file as it was then");
+  const after = join(recovery.path, "after-hooks", "home", "instance.json");
+  assert.equal(existsSync(after), true, "the home is copied again under after-hooks/home/: the hook changed a byte of instance.json that text does not tell apart");
+  assert.equal(payloadByteIn(after), 0x81, "the file copied after the hooks has the byte the hook gave it");
+  assert.deepEqual(recovery.afterHooks, { home: true, work: false }, "the home moved; the clean worktree did not");
+  assert.deepEqual(readJson(join(recovery.path, "recovery.json")).afterHooks, { home: true, work: false });
+});
+
+test("a retire hook that rewrites the home's instance.json to the same value in other bytes (other white space), and also rewrites a file in the work: the home is copied again, and the file under after-hooks/home/ holds the hook's bytes", () => {
+  // All of it valid UTF-8, and JSON that parses to what it was: only the bytes differ.
+  const retire = quietHook(`import { readFileSync } from 'node:fs';
+const file = join(home, 'instance.json');
+seen.jsonBefore = readFileSync(file, 'utf8');
+seen.jsonAfter = JSON.stringify(JSON.parse(seen.jsonBefore));
+writeFileSync(file, seen.jsonAfter);
+${REWRITES_SCRATCH}`, { home: false });
+  const f = fixture({ capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "hook-instance-space");
+  const work = join(spawned.home, "work");
+  const atRetire = readFileSync(join(spawned.home, "instance.json"), "utf8");
+  write(join(work, "scratch.txt"), "written before the retire\n");
+  const statusBefore = porcelain(work);
+  assert.deepEqual(statusRowsIn(statusBefore), ["?? scratch.txt"]);
+
+  const { recovery, seen, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore, { home: false });
+  assert.equal(seen.jsonBefore, atRetire, "fixture premise: the retire left the file as it was until the hook ran");
+  assert.notEqual(seen.jsonAfter, seen.jsonBefore, "fixture premise: the hook wrote other bytes");
+  assert.deepEqual(JSON.parse(seen.jsonAfter), JSON.parse(seen.jsonBefore), "fixture premise: the two files parse to the same value");
+  assert.equal(readFileSync(join(afterRepo, "scratch.txt"), "utf8"), SCRATCH_REWRITTEN, "fixture premise: the work moved and is copied again");
+  assert.equal(readFileSync(join(recovery.path, "home", "instance.json"), "utf8"), atRetire, "the snapshot taken before the hooks holds the file as it was then");
+  const after = join(recovery.path, "after-hooks", "home", "instance.json");
+  assert.equal(existsSync(after), true, "the home is copied again under after-hooks/home/: the hook rewrote instance.json, and a parse does not tell the two files apart");
+  assert.equal(readFileSync(after, "utf8"), seen.jsonAfter, "the file copied after the hooks has the bytes the hook wrote");
+  assertBothCopiedAgain(recovery);
+});
+
+test("fingerprintTree of an instance home tells apart two instance.json files that differ in one byte that is not UTF-8, and still leaves the kernel's own fields out of a file that is valid", () => {
+  const root = mkdtempSync(join(tmpdir(), "oats-fingerprint-home-"));
+  temporaryDirectories.push(root);
+  const file = join(root, "instance.json");
+  const withByte = (byte, fields) => {
+    const bytes = Buffer.from(JSON.stringify({ instance: "dev-1", reviewPayload: "tX", ...fields }));
+    bytes[bytes.indexOf('"reviewPayload":"t') + '"reviewPayload":"t'.length] = byte;
+    writeFileSync(file, bytes);
+    return fingerprintTree(root, { instanceHome: true });
+  };
+  assert.notEqual(withByte(0x80), withByte(0x81), "two files that differ in a byte that is not UTF-8 have two digests");
+  // 0x58 is the X the field was written with: a file that is valid UTF-8.
+  assert.equal(withByte(0x58, { spawnCompleted: false, wake: null }), withByte(0x58, { spawnCompleted: true, wake: { saved: true } }), "a valid file is compared without the fields the kernel writes after spawn, as before");
+  assert.notEqual(withByte(0x58), withByte(0x59), "and with every other byte of it");
+});
+
 test("fingerprintTree's digest of a tree whose names are all valid UTF-8 is the one it has always been: a file, a directory with a file, a symbolic link and a name that is not ASCII", () => {
   // A spawn baseline written by an earlier kernel holds such digests, and a retire compares with them.
   // The expected value is the SHA-256 of this byte stream, written out by hand from the algorithm
