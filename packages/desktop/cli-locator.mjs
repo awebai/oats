@@ -50,6 +50,11 @@ export const DESKTOP_API = 1;
 // it. The REAL gate is the positive `packages-no-approval` feature fence
 // (workspace-cli WORKSPACE_FEATURES, deployment-contract DEPLOYMENT_FEATURES):
 // released 0.25.x kernels lack it and get the "update OATS" state.
+// Widened through 0.41.x for the 0.41.0 release: retirement deletes no branch
+// (`retire --delete-branch` is refused) and the Desktop no longer offers it;
+// new sessions run on the OATS tmux server, named by the socket each row
+// already records, which the Desktop reads. The Desktop v1 surface is
+// otherwise unchanged.
 export const ACCEPT_RANGE = { min: [0, 25, 8], maxExclusive: [0, 42, 0] };
 /** The band as humans read it — derived, never hand-spelled, so the probe
  * rejection reason, the backend's /api status and the degradation card can

@@ -48,6 +48,6 @@ test('the version band alone never decides: 0.26.x without the feature is refuse
   assert.equal(acceptProbe(probe('0.38.0', [...released.features, 'packages-no-approval', 'team-model-3'])).ok, true, '0.38 (team model 3) is inside the band');
   assert.equal(acceptProbe(probe('0.39.0', [...released.features, 'packages-no-approval', 'team-model-3'])).ok, true, '0.39 (server connect, capability route) is inside the band');
   assert.equal(acceptProbe(probe('0.40.0', [...released.features, 'packages-no-approval', 'team-model-3'])).ok, true, '0.40 (needs input) is inside the band');
-  assert.equal(acceptProbe(probe('0.41.0', [...released.features, 'packages-no-approval', 'team-model-3'])).ok, true, '0.41 (one recovery per retire) is inside the band');
+  assert.equal(acceptProbe(probe('0.41.0', [...released.features, 'packages-no-approval', 'team-model-3'])).ok, true, '0.41 (retirement deletes no branch) is inside the band');
   assert.equal(acceptProbe(probe('0.42.0', [...released.features, 'packages-no-approval'])).ok, false);
 });
