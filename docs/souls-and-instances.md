@@ -443,6 +443,18 @@ cannot run, retire refuses with
 `E_RUNTIME_ENDPOINT_UNKNOWN`, even with `--force`: stop that session yourself,
 then retire again. `oats retire <instance> --plan` says which case applies.
 
+With a receipt, if the recorded window is still running, or its tmux server
+cannot be read, retire refuses with `E_RUNTIME_QUIESCE_FAILED` and keeps the
+home. When the recorded server cannot be reached because its socket file is
+missing (after a reboot), retire proceeds only when no process on this host
+works in the home (any process whose working directory is in the home, not
+only the harness); a tmux server that lost its socket file still runs, and
+recreates the socket when its process is sent `SIGUSR1`. That check needs
+`lsof`: on a host without it, a retire whose recorded socket file is missing
+is refused, and the message says that `lsof` is missing; install it, then
+retire. A scan that does not complete (a timeout, for example) refuses the
+same way, also for a home without its receipt.
+
 `oats retire <instance> --self` lets an instance retire itself when the human
 or briefing says it is done. A live harness cannot give a stable final
 inspection of its own work, so the calling process inspects, runs, and removes
