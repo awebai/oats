@@ -195,7 +195,7 @@ test('every package-root module the bundled server imports (transitively) is in 
   };
   visit(new URL('server/oats-web.mjs', pkg));
   // The collector's entry module is started by a path, not imported: the walk above cannot reach it.
-  assert.match(readFileSync(new URL('server/oats-web.mjs', pkg), 'utf8'), /^const LIVENESS = join\(HERE, "liveness-main\.mjs"\);$/m);
+  assert.ok(/^const LIVENESS = join\(HERE, "liveness-main\.mjs"\);$/m.test(readFileSync(new URL('server/oats-web.mjs', pkg), 'utf8')), 'the backend starts server/liveness-main.mjs');
   visit(new URL('server/liveness-main.mjs', pkg));
   assert.ok(rootModules.has('deployment-read-cli.mjs') && rootModules.has('deployment-data.mjs') && rootModules.has('cli-environment.mjs'));
   for (const file of rootModules) assert.ok(config.includes(`"${file}"`), `${file} is packaged`);

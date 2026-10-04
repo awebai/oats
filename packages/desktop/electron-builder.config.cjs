@@ -32,6 +32,7 @@ module.exports = {
     "window-set.mjs", "window-records.mjs",
     "cli-adapter.mjs",
     "cli-locator.mjs",
+    "cli-environment.mjs",
     "forge-cli.mjs", "forge-auth.mjs", "forge-auth-output.mjs", "forge-proxy.mjs",
     "lifecycle-cli.mjs",
     "instance-events-cli.mjs", "instance-events-proxy.mjs",

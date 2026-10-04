@@ -185,8 +185,9 @@ test("scan 4: the launch environment goes to the collector and to nothing else",
   assert.deepEqual(holders.sort(), ["server/oats-web.mjs", "server/own-environment.mjs"]);
   const backend = read("server/oats-web.mjs");
   assert.equal(backend.match(/\blaunchEnvironment\b/g).length, 2, "in the backend: its import and one use");
-  assert.match(backend, /execFile\(process\.execPath, \[LIVENESS\], \{[^{}]*\benv: launchEnvironment\b[^{}]*\}/, "the one use is the collector's env");
-  assert.match(backend, /^const LIVENESS = join\(HERE, "liveness-main\.mjs"\);$/m, "the collector is the entry module");
+  // assert.ok, not assert.match: a failure must not print the whole server source.
+  assert.ok(/execFile\(process\.execPath, \[LIVENESS\], \{[^{}]*\benv: launchEnvironment\b[^{}]*\}/.test(backend), "the one use is the collector's env");
+  assert.ok(/^const LIVENESS = join\(HERE, "liveness-main\.mjs"\);$/m.test(backend), "the collector is the entry module");
 });
 
 test("scan 5: liveness.mjs is a library: it has no program block", () => {

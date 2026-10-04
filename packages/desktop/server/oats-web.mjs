@@ -43,6 +43,10 @@
  * Interaction model: terminal-direct (tmux send-keys / capture-pane) — the
  * feel of sitting at the agent's terminal; identical for pi and claude runs.
  */
+// FIRST, above every other import: this process drops what the Desktop and its packaging added
+// to its environment (own-environment.mjs), so each module below, and every program this
+// process starts, sees the user's. Nothing here passes the cleaning function to a child.
+import { launchEnvironment } from "./own-environment.mjs";
 import { createServer } from "node:http";
 import { execFile, execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync, realpathSync, accessSync, constants as fsConstants } from "node:fs";
@@ -96,7 +100,7 @@ const flag = (name) => {
 const flagAll = (name) => args.flatMap((a, i) => (a === `--${name}` && args[i + 1] && !args[i + 1].startsWith("--") ? [args[i + 1]] : []));
 
 // "collect" is retired: the kernel owns roster collection and the CLI read is
-// asynchronous. Terminal liveness runs in server/liveness.mjs children.
+// asynchronous. Terminal liveness runs in server/liveness-main.mjs children.
 if (sub !== "start") {
   console.error("usage: oats-web.mjs start [--port <n>] [--dir <deployment>]...  (repeat --dir for multiple deployments)");
   process.exit(1);
@@ -772,7 +776,7 @@ const servedCliStatus = () => ({ ...cliStatus(), probePath: process.env.PATH || 
    Every local deployment fact is one bounded `oats status --json` plus one
    `oats workspace status --json` (deployment-observer.mjs). Terminal liveness for
    the kernel-reported targets is observed in a separate short-lived child
-   (server/liveness.mjs) so tmux latency cannot stall key/echo handling.
+   (server/liveness-main.mjs) so tmux latency cannot stall key/echo handling.
    Local roster Git is null; only the on-demand K1 route observes Git.
 
    Observation reuse (kernel feature observe-max-age): a background cycle lets the kernel reuse
@@ -781,7 +785,7 @@ const servedCliStatus = () => ({ ...cliStatus(), probePath: process.env.PATH || 
    pass no flag at all to a kernel that does not declare the feature. */
 let snapshot = { at: 0, byWs: new Map() };   // wsId -> { deployment, instances, generatedAt, observedAt } | remote panel
 const BACKGROUND_MAX_AGE = 60;
-const LIVENESS = join(HERE, "liveness.mjs");
+const LIVENESS = join(HERE, "liveness-main.mjs");
 const soulCatalog = createSoulCatalog();
 const capabilityCatalog = createCapabilityCatalog();
 const inspectCache = createInspectCache();
@@ -805,7 +809,9 @@ function observeLivenessRows(rows) {
     const unknown = () => done(rows.map(() => ({ running: null, runtimeState: "unreachable", runtimeError: "Terminal status is unavailable" })));
     let child;
     try {
-      child = execFile(process.execPath, [LIVENESS], { encoding: "utf8", timeout: 30000, maxBuffer: 16 * 1024 * 1024 }, (err, stdout) => {
+      // The collector is this executable as Node too: it gets the environment this process was
+      // started with (the Node-mode flag is in it) and cleans its own. No other child gets it.
+      child = execFile(process.execPath, [LIVENESS], { encoding: "utf8", timeout: 30000, maxBuffer: 16 * 1024 * 1024, env: launchEnvironment }, (err, stdout) => {
         if (err) return unknown();
         try {
           const parsed = JSON.parse(stdout);
