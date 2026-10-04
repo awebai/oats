@@ -208,7 +208,9 @@ function fakeHost(dir, { probe = PROBE, answers = {} } = {}) {
   const bin = join(dir, "bin"); mkdirSync(bin, { recursive: true });
   const log = join(dir, "ssh.log");
   writeFileSync(join(bin, "ssh"), `#!/bin/sh\nprintf '%s ' "$@" >> ${JSON.stringify(log)}\nprintf '\\n' >> ${JSON.stringify(log)}\nwhile [ "$1" != "--" ]; do shift; done\nshift; shift\nexec sh -c "$1"\n`);
-  const cases = Object.entries(answers).map(([pattern, { stdout = "", exit = 0 }]) => `  *${JSON.stringify(pattern)}*) printf '%s' ${JSON.stringify(stdout)}; exit ${exit};;`).join("\n");
+  // An answer is printed as it is: single-quoted, so the host's shell expands nothing in it.
+  const literal = (text) => `'${String(text).replace(/'/g, `'\\''`)}'`;
+  const cases = Object.entries(answers).map(([pattern, { stdout = "", exit = 0 }]) => `  *${JSON.stringify(pattern)}*) printf '%s' ${literal(stdout)}; exit ${exit};;`).join("\n");
   const oatsPath = join(dir, "remote-oats");
   writeFileSync(oatsPath, `#!/bin/sh\ncase "$*" in\n  "version --json") printf '%s' ${JSON.stringify(JSON.stringify(probe))};;\n${cases}\n  *) echo "unexpected: $*" >&2; exit 2;;\nesac\n`);
   chmodSync(join(bin, "ssh"), 0o755); chmodSync(oatsPath, 0o755);
