@@ -154,7 +154,7 @@ ending, decides that ambient environment:
 | an operator's shell | that shell's |
 | the Desktop | the Desktop's, with the login-shell `PATH` it puts in front ([desktop.md](desktop.md)) |
 | a schedule runner or a trigger | the service's |
-| an OATS instance that creates an agents' session | the global environment of the tmux server that instance's home records, not the instance's own |
+| an OATS instance that creates an agents' session | the global environment of the tmux server that instance's home records, reduced as described below; not the instance's own |
 
 The first creator that succeeds determines it; when two start it at the same
 moment, tmux starts one server and nothing says which of the two it is.
@@ -194,9 +194,10 @@ that triggered it), and `oats schedule run-now` typed inside an instance.
   environment of the server its home records (`tmux -S <recorded socket>
   show-environment -g -s`, the endpoint of the home's receipt, checked
   against `instance.json` as every session command checks it) and creates
-  the session with that. It is read strictly and never run by a shell;
-  text that cannot be read to its end is a failed read. Not carried from
-  the recorded server:
+  the session with that. What the new session gets is a reduction of that
+  environment, not an exact copy. It is read strictly and never run by a
+  shell; text that cannot be read to its end is a failed read. Not carried
+  from the recorded server:
   - a hidden or removed variable;
   - a variable whose value holds a line break;
   - a variable whose value holds a `$`: tmux versions print it differently,
@@ -208,7 +209,11 @@ that triggered it), and `oats schedule run-now` typed inside an instance.
     read.
 
   Such a variable is absent in the panes of the new server unless the pane's
-  own shell start-up files set it.
+  own shell start-up files set it; it is never filled in from the instance's
+  own environment. When the variable left out is one that decides which
+  configuration a tmux server loads or which programs it runs (`HOME`,
+  `XDG_CONFIG_HOME`, `PATH`, `SHELL`), the creation is refused instead, with
+  the same remedy as below.
 - When it creates a window in a session that exists, the tmux client that
   creates it runs with `PATH`, without any instance's `oats` shim directory,
   and with `LANG`, `LC_ALL` and `LC_CTYPE`, which that client needs to start

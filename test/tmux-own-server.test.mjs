@@ -531,6 +531,16 @@ test("tmux's shell-format environment is read strictly and never executed: the w
   assert.deepEqual(read(printed(0)), carried, "as the shell format alone writes it");
   assert.deepEqual(read(printed(1)), carried, "as tmux 3.4 writes it");
   assert.deepEqual(read('A="a$b"; export A;\nKEPT="1"; export KEPT;\n'), { KEPT: "1" }, "a `$` with no backslash before it: not carried either");
+  // A value with a `$` whose second line imitates an assignment: framed whole to its own closing
+  // quote, then left out; the imitation is never read as a variable. Fixture strings for both forms.
+  for (const [form, dollar] of [["the shell format alone", "\\$"], ["tmux 3.4", "\\\\$"]]) {
+    const left = [];
+    assert.deepEqual(parseTmuxShellEnvironment(Buffer.from(`M="first ${dollar}x\nFAKE=\\"${dollar}x\\"; export FAKE;"; export M;\nKEPT="1"; export KEPT;\n`), left), { KEPT: "1" }, form);
+    assert.deepEqual(left, ["M"], `${form}: the reader names what it left out, and only that`);
+  }
+  // Left out only when framed whole: the same value cut short is a failed read, not an omission.
+  assert.equal(read('M="first \\$x\nFAKE=\\"\\$x\\"; export FAKE;\nKEPT="1"; export KEPT;\n'), null, "a `$` value with no closing quote of its own");
+  assert.equal(read('E="a\\033b; export E;\n'), null, "an encoded value with no closing quote");
   // tmux 3.4 and 3.5 write a control character or a byte that is not UTF-8 as an escape.
   assert.deepEqual(read('E="a\\033b"; export E;\nF="a\\rb"; export F;\nG="a\\303\\050b"; export G;\nKEPT="1"; export KEPT;\n'), { KEPT: "1" }, "a value tmux wrote encoded is left out whole");
   assert.deepEqual(read('BASH_FUNC_x%%="() { :; }"; export BASH_FUNC_x%%;\nKEPT="1"; export KEPT;\n'), { KEPT: "1" }, "a name that is no plain identifier is not carried");
@@ -564,7 +574,7 @@ test("the environment OATS creates a tmux session and a window with: an instance
   // name it stands for, a harness's marker, a variable update-environment names, its terminal.
   const SECRETS = ["FIXTURE_SECRET", "OATS_LAUNCH_REF_FIXTURE_TOKEN", "FIXTURE_TOKEN", "CLAUDECODE"];
   const KERNEL = ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_ROOT", "PI_AGENTS_ROOT", "TMUX", "TMUX_PANE", "COLORFGBG"];
-  const NOT_CARRIED = ["OATS_FIXTURE_MULTI_RESERVED", "OATS_FIXTURE_MULTI_PLAIN", "FIXTURE_INJECTED", "OATS_FIXTURE_HIDDEN", "OATS_FIXTURE_REMOVED", "OATS_FIXTURE_DOLLAR"];
+  const NOT_CARRIED = ["OATS_FIXTURE_MULTI_RESERVED", "OATS_FIXTURE_MULTI_PLAIN", "FIXTURE_INJECTED", "OATS_FIXTURE_HIDDEN", "OATS_FIXTURE_REMOVED", "OATS_FIXTURE_DOLLAR", "OATS_FIXTURE_MULTI_DOLLAR", "FAKE"];
   const agent = { FIXTURE_SECRET: "s3cret", OATS_LAUNCH_REF_FIXTURE_TOKEN: "s3cret", FIXTURE_TOKEN: "s3cret", CLAUDECODE: "1", FIXTURE_IDENTITY: "creator", TMUX: `${OTHER},1,0`, TMUX_PANE: "%1", COLORFGBG: "15;0" };
   const operator = { FIXTURE_OPERATOR: "kept", FIXTURE_IDENTITY: "operator", PI_AGENTS_ROOT: "/fixture/operator/agents", OATS_LAUNCH_REF_FIXTURE_TOKEN: "s3cret", FIXTURE_TOKEN: "s3cret", TMUX: `${OTHER},1,0`, COLORFGBG: "15;0" };
   const absent = (env, names, what) => { for (const name of names) assert.equal(name in env, false, `${what} holds no ${name}`); };
@@ -586,6 +596,9 @@ test("the environment OATS creates a tmux session and a window with: an instance
   source("OATS_FIXTURE_EMPTY", "");
   source("OATS_FIXTURE_CONTROL", CONTROL);
   source("OATS_FIXTURE_DOLLAR", DOLLAR);
+  // A `$` value whose second line imitates an assignment. (tmux reads the final `\;` of an argument as `;`.)
+  source("OATS_FIXTURE_MULTI_DOLLAR", "first $x\nFAKE=\"$x\"; export FAKE\\;");
+  assert.match(tmuxOn(OTHER, "show-environment", "-g"), /^FAKE=".*x"; export FAKE;$/m, "the recorded server holds the imitation as the second line of a value");
   source("OATS_FIXTURE_MULTI_RESERVED", "first line\nOATS_INSTANCE_HOME=/smuggled");
   source("OATS_FIXTURE_MULTI_PLAIN", "first line\nFIXTURE_INJECTED=1");
   source("-h", "OATS_FIXTURE_HIDDEN", "hidden");
@@ -633,6 +646,19 @@ test("the environment OATS creates a tmux session and a window with: an instance
   refused = refusal(ensureIn("envs", { env: { ...agent, PI_AGENT_HOME: "" } }));
   assert.equal(refused.code, "E_RUNTIME_ENDPOINT_UNKNOWN");
   assert.match(refused.message, /this process carries an instance's identity \(PI_AGENT_HOME\) and neither OATS_INSTANCE_HOME nor the working directory names its home/);
+  // A recorded server whose HOME cannot be carried: a server is not started without the variable
+  // that decides which configuration it loads, and the caller's own is no substitute.
+  const dollarHome = join(base, "env-dollar-home.sock");
+  tmuxOn(dollarHome, "new-session", "-d", "-s", SESSION, "-n", "hq", "-c", base);
+  try {
+    tmuxOn(dollarHome, "set-environment", "-g", "HOME", "/fixture/ho$me");
+    const undecided = await makeHome("env-dollar-home", { on: dollarHome });
+    refused = refusal(ensureIn("envs", { env: as(undecided) }));
+    assert.equal(refused.code, "E_RUNTIME_ENDPOINT_UNKNOWN");
+    assert.match(refused.message, /the tmux server that env-dollar-home is recorded on has a HOME that cannot be carried over/);
+    assert.match(refused.message, /Create it from your own shell/);
+    assert.doesNotMatch(refused.message, /ho\$me|fixture\/ho/, "the variable is named, its value is not");
+  } finally { tmuxOn(dollarHome, "kill-server"); }
   assert.deepEqual(sessionsOf(OATS), [], "no refusal started a server");
 
   // Another creator (an operator's shell, a runner): its own environment, without the names the
