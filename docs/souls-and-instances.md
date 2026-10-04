@@ -588,6 +588,24 @@ hooks, such an entry anywhere in the worktree refuses the retire:
 A worktree that cannot be proven unchanged is copied without the read, so
 there the refusal comes from the copy, as `E_WORK_PRESERVATION_FAILED`.
 
+**A file in the worktree that cannot be read.** The same read refuses a file
+it cannot read: one without read permission, or one over 2 GiB, which a
+single read cannot take. Where the file is makes no difference. A directory
+Git ignores and a work root that a capability declared disposable
+(`retirement.disposable.work`) do not count as something to preserve, and
+they are read all the same. So a retire that has only the home to preserve
+refuses for such a file, with `E_WORK_INSPECTION_FAILED`, before any retire
+hook runs, with or without `--force`: no recovery was written and nothing
+was deleted. As for a socket or a FIFO, the retire has already stopped the
+session of a launched instance by then, the instance is not retired, and its
+home is kept. The message is `could not read the worktree at <work>:
+<reason>`. For a file without read permission the reason names the file. For
+a file over 2 GiB it gives the size, and
+`find <work> -type f -size +2147483647c` finds the file. To continue, move
+the file out of the worktree or make it readable, then run
+`oats retire <instance>` again. With nothing to preserve, the files are not
+read and the retire goes through.
+
 The home is not copied again because the work is. Some entries of a home are
 the kernel's own records and do not count as changes to it:
 `.oats-events.jsonl`, `.oats-stop.json`, `.oats-stop-receipt.json` and
