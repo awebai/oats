@@ -6,8 +6,9 @@ import { admitInstance, instanceSelector } from './instance-admission.mjs';
 import { cliLifecycle } from '../lifecycle-cli.mjs';
 import { gitTargetKey } from '../renderer/instance-git-contract.mjs';
 import { hostReason } from '../renderer/remote-address.mjs';
+import { displayLine } from '../renderer/display-text.mjs';
 import { object, lifecycleOptions, lifecyclePlan, lifecycleReceipt, stoppedTargets, planReference, lifecycleChoicesApplicable,
-  lifecycleFailure, lifecycleReason } from '../renderer/lifecycle-contract.mjs';
+  lifecycleFailure, lifecycleReason, lifecycleDetailCode } from '../renderer/lifecycle-contract.mjs';
 const clone = value => structuredClone(value);
 const cliIdentity = cli => JSON.stringify([cli?.bin, cli?.version, cli?.lifecycleApi,
   Array.isArray(cli?.features) ? [...cli.features].sort() : null]);
@@ -21,8 +22,16 @@ export function supportsLifecycle(cli, operation, apply = false) {
 // sending, and the host's own resolution refuses them (and E_HOME_MISMATCH) before any effect.
 const beforeEffect = new Set(['E_BAD_ARGS', 'E_PLAN_STALE', 'E_INSTANCE_RETIRING', 'E_LIFECYCLE_BUSY',
   'E_HOME_MISMATCH', 'E_SESSION_UNKNOWN', 'E_AMBIGUOUS_INSTANCE', 'E_REMOTE_INCOMPATIBLE', 'E_AMBIGUOUS', 'E_SNAPSHOT_UNKNOWN']);
-/** A remote command's failure: the host's code and message under its headline; a local one: the fixed sentence. */
-const failureReason = (error, remote) => remote && hostReason(error, remote.label, lifecycleReason(error?.code).message) || lifecycleReason(error?.code);
+/** A failed command's reason. Remote: the host's code and message under its headline. Local: the fixed
+ * sentence for `code`, and the CLI's own message beside it as `detail`, through the display filter, only
+ * when the installed CLI answered with an error envelope and the code may show one (lifecycleDetailCode:
+ * it has its own sentence and is not one Desktop raises). Otherwise the reason is `{code, message}` alone. */
+function failureReason(envelope, remote, code = envelope?.error?.code) {
+  const reason = lifecycleReason(code);
+  if (remote) return hostReason({ ...envelope?.error, code }, remote.label, reason.message) || reason;
+  const detail = envelope?.schemaVersion === 1 && envelope.ok === false && lifecycleDetailCode(code) ? displayLine(envelope.error?.message) : null;
+  return detail ? { ...reason, detail } : reason;
+}
 export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => performance.now(), mint = () => randomBytes(32).toString('hex') } = {}) {
   const plans = new Map(), actions = new Map(), reads = new Map();
   let reservedPlans = 0, activeApply = null;
@@ -69,7 +78,7 @@ export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => per
     if (!same(selected, current)) return denied('E_PLAN_CHANGED', selected.target);
     if (envelope?.schemaVersion !== 1 || envelope.ok !== true) {
       const code = envelope?.error?.code || 'E_CLI_PROTOCOL';
-      return denied(code, selected.target, { reason: failureReason({ ...envelope?.error, code }, selected.remote) });
+      return denied(code, selected.target, { reason: failureReason(envelope, selected.remote, code) });
     }
     const data = lifecyclePlan(envelope.result, selected.target, request.operation, choices);
     if (!data) return denied('E_CLI_PROTOCOL', selected.target);
@@ -103,8 +112,8 @@ export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => per
       // children have already stopped. The user must explicitly read a new plan.
       return failure(code, 'refused', { plan: fresh, childrenStopped });
     }
-    if (beforeEffect.has(code)) return failure(code, 'refused', { reason: failureReason(envelope.error, entry.remote) });
-    return failure('E_OUTCOME_UNKNOWN', 'unknown', { cause: failureReason(envelope.error, entry.remote) });
+    if (beforeEffect.has(code)) return failure(code, 'refused', { reason: failureReason(envelope, entry.remote) });
+    return failure('E_OUTCOME_UNKNOWN', 'unknown', { cause: failureReason(envelope, entry.remote) });
   }
   function apply(request, getContext, ws) {
     if (Object.keys(request).some(k => !['action', 'planRef'].includes(k)) || !planReference(request.planRef)) return Promise.resolve(denied('E_BAD_ARGS'));

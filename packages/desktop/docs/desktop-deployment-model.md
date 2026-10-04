@@ -516,10 +516,32 @@ workspace's view; its rows carry `server`, `home`, and the kernel's
 - **Refusals.** A host refusal is relayed as `{code, message, detail, remote:
   true}` (`hostReason`): the kernel's code, a headline naming the server
   (`remoteHeadline`, the view's own sentence for codes outside its table), and
-  the kernel's message as the detail, bounded and withheld when it looks like a
-  credential. Every hop re-validates it (`remoteReason`); views show the
-  headline with the code and detail behind Details. A missing `remote` entry is
+  the kernel's message as the detail, through the display filter. Every hop
+  re-validates it (`remoteReason`: the headline and the detail must each
+  already be a display line); views show the headline with the code and detail
+  behind Details. A missing `remote` entry is
   "This computer's OATS can't route this to `<server>`. Update OATS here."
+- **The display filter** (`renderer/display-text.mjs`, `displayLine`) is the
+  one way a refusal's `detail` reaches a view. Text that looks like a credential,
+  or holds DEL or a C0 control character other than tab and line feed, is
+  withheld whole (`[Detail withheld]`), tested on the text as given. Otherwise it becomes one
+  line: tab, line feed and the Unicode line and paragraph separators become a
+  space, runs of spaces collapse, the ends are trimmed, each remaining
+  character of the waiting note's refused set (control, bidirectional
+  embedding, override and isolate, zero-width space, word joiner, BOM, tag
+  characters) becomes U+FFFD, and the line is bounded to 2048. The set has one
+  definition, in that module. The result is lossy and for display only: two
+  texts can become the same line, so it is never compared, selected by,
+  sent in a request or used as a path, a command or a name. It is for free
+  text, not for a name that identifies something.
+  - A view sets the detail as text, alone inside a `<bdi>`
+    (`codeLineNodes`); the code and Desktop's own words stay outside it.
+  - A refusal's detail never goes into an attribute: the stale line's `title`
+    holds the read's message and the code, the code only in the kernel's code
+    shape. The detail stays in Details.
+  - A headline shows the server's label as a display line too (a label with
+    nothing to show reads "the server"); routing, comparison and requests keep
+    the label and the server id as the roster reports them.
 - **Views.** A remote read in flight says "Reading from `<server>`…". A remote
   row's pull request stays unavailable: the forge reads this machine's clones.
 - **Lifecycle.** A remote apply that times out or loses its link is an unknown

@@ -5,7 +5,9 @@ import { JSDOM } from 'jsdom';
 import { createInstanceEventsView, instanceEventsCSS } from '../renderer/instance-events-view.mjs';
 import { eventsData } from '../renderer/instance-events-data.mjs';
 import { eventsFailure } from '../renderer/instance-events-contract.mjs';
+import { hostReason } from '../renderer/remote-address.mjs';
 import { cli, target, birth, data, event, deferred, tick } from './helpers/instance-events-fixture.mjs';
+import { assertIsolatedDetail, MESSY, MESSY_LINE } from './helpers/detail-line.mjs';
 const view = (value = data(), t = target) => ({ instanceEventsViewApi: 1, status: 'available', target: structuredClone(t), data: eventsData(value, t), reason: null });
 function setup(t, invoke = async () => view()) {
   const dom = new JSDOM('<body><main class="oats-view"><div class="pop"><p class="summary"></p></div></main></body>');
@@ -131,6 +133,21 @@ test('a remote selection is read on its own machine ("Reading from <server>…")
   gate.resolve(eventsFailure('E_SSH', null, { code: 'E_SSH', message: "Couldn't reach Build box.", detail: 'ssh: connect to host build-host port 22: Connection refused', remote: true }));
   await pending;
   assert.equal(u.one('.events-status').textContent, "Couldn't reach Build box. (E_SSH: ssh: connect to host build-host port 22: Connection refused)");
+});
+test("a remote refusal's status line: the host's message is one line, alone in its <bdi>; the headline, the code and the brackets are outside it", async t => {
+  let reply = eventsFailure('E_SSH', null, hostReason({ code: 'E_SSH', message: MESSY }, 'Build box', 'The view says this.'));
+  const u = setup(t, async () => reply);
+  u.state.target = { ...u.state.target, selector: { ...target.selector, server: 'build' }, serverLabel: 'Build box' }; u.controller.sync();
+  await u.controller.read();
+  const status = u.one('.events-status');
+  assertIsolatedDetail(status, { before: "Couldn't reach Build box. (E_SSH: ", detail: MESSY_LINE, after: ')' });
+  const field = status.querySelector('bdi');
+  for (let n = 0; n < 3; n++) u.controller.sync();
+  assert.equal(status.querySelector('bdi'), field, 'an unchanged line is not rebuilt');
+  // No host message: the code alone, no field.
+  reply = eventsFailure('E_SSH', null, { code: 'E_SSH', message: "Couldn't reach Build box.", detail: null, remote: true });
+  await u.controller.read();
+  assert.equal(status.textContent, "Couldn't reach Build box. (E_SSH)"); assert.equal(status.querySelector('bdi'), null);
 });
 test('unqualified selections remain observation-only; no CLI read or local fallback', async t => {
   const u = setup(t);

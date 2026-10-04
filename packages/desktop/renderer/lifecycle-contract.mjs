@@ -39,6 +39,15 @@ const messages = {
   E_FORBIDDEN_FRAME: 'This window cannot request a lifecycle operation.',
 };
 export const lifecycleReason = code => ({ code: Object.hasOwn(messages, code) ? code : 'E_CLI_FAILED', message: messages[code] || messages.E_CLI_FAILED });
+/** Codes only Desktop raises (its CLI adapter, its lifecycle boundary, main): the kernel never answers with
+ * one. A new entry of `messages` that the kernel does not raise is listed here too. */
+const desktopCodes = new Set(['E_WORKSPACE_UNKNOWN', 'cli-unavailable', 'E_LIFECYCLE_UNAVAILABLE', 'unsupported-remote-operation',
+  'E_PLAN_REQUIRED', 'E_PLAN_EXPIRED', 'E_PLAN_CHANGED', 'E_OPTION_UNAVAILABLE', 'E_PLAN_LIMIT',
+  'E_CLI_TIMEOUT', 'E_CLI_OUTPUT_LIMIT', 'E_CLI_PROTOCOL', 'E_CLI_FAILED', 'E_OUTCOME_UNKNOWN', 'E_FORBIDDEN_FRAME']);
+/** A code whose local failure may show the CLI's own message as a detail beside the fixed sentence: the
+ * code has its own sentence and the kernel raises it. Never one of Desktop's own, whatever came with it;
+ * a code without a sentence shows no CLI text either. */
+export const lifecycleDetailCode = code => Object.hasOwn(messages, code) && !desktopCodes.has(code);
 export function lifecycleFailure(code, extra = {}) {
   return { lifecycleApi: LIFECYCLE_API, status: 'unavailable', target: null, planRef: null, plan: null, receipt: null,
     reason: lifecycleReason(code), ...extra };
