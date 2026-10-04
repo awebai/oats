@@ -513,11 +513,15 @@ hooks, such an entry anywhere in the worktree refuses the retire:
   is retried. The message names the entry and says what to do: safely stop
   the process or resource that owns it, or move the entry elsewhere, then
   retry. The entry may be a live endpoint, so deleting it is not the advice.
-  The session of a launched instance has been stopped by then (except when
-  the instance retires itself with `--self`): the instance is stopped, not
-  retired, and its home is kept. To continue, deal with the entry and run
-  `oats retire <instance>` again, or start the session again in the same
-  home with `oats session start --home <abs>`;
+  The session of a launched instance has been stopped by then: the instance
+  is stopped, not retired, and its home is kept. To continue, deal with the
+  entry and run `oats retire <instance>` again, or start the session again
+  in the same home with `oats session start --home <abs>`. A self-retire
+  (`--self`) is completed by its detached completion, which stops the
+  session and refuses in the same way; the refusal is recorded beside the
+  home, as described below, and the same two commands continue. Only
+  `--self --keep-dir`, which stays in the calling process, refuses with the
+  session still running;
 - **after the hooks**, when a retire hook left the entry behind: the hooks
   have run, and the home, the work and the recovery written before the hooks
   are all kept. The code is `E_WORK_INSPECTION_FAILED` when the Git state is
