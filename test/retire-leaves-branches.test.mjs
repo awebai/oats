@@ -356,3 +356,22 @@ test("oats retire --delete-branch is refused with E_BAD_ARGS before anything hap
   assert.equal(existsSync(join(dirname(parent.home), ".oats-retire-receipt.k-1.json")), false, "no receipt was written");
   assert.equal(existsSync(recoveryRootOf(parent.home)), false, "and no recovery");
 });
+
+// ---- The plan's name for a HEAD that is not on a branch OATS can name ----
+
+test("the plan of a worktree whose HEAD names a ref outside refs/heads/: branch null, and not detached", () => {
+  const f = fixture();
+  const spawned = spawn(f, "head-on-a-tag");
+  const work = join(spawned.home, "work");
+  git(work, "tag", "v1");
+  writeFileSync(resolve(work, git(work, "rev-parse", "--git-path", "HEAD")), "ref: refs/tags/v1\n");
+  assert.equal(headRefHex(work), refHex("refs/tags/v1"), "fixture premise: Git gives the tag's ref for HEAD");
+
+  const planned = cli(f, ["retire", basename(spawned.home), "--plan", "--json"]);
+  assert.equal(planned.status, 0, `${planned.stderr}\n${planned.stdout}`);
+  const facts = JSON.parse(planned.stdout).result.facts.work;
+  assert.equal(facts.branch, null, "a ref outside refs/heads/ is not a branch name");
+  assert.equal(facts.detached, false);
+  const text = cli(f, ["retire", basename(spawned.home), "--plan"]);
+  assert.match(text.stdout, / untracked on a branch OATS carries no name for;/, "the plan's text does not call it detached");
+});

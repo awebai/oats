@@ -2471,7 +2471,7 @@ function retireCmd() {
       const plan = planRetire(dirFlag(), root, name, { home: homeFlag });
       if (args.includes("--json")) { jsonOk(plan); return; }
       console.log(`retire ${name} — plan ${plan.planRevision}`);
-      console.log(`  session ${plan.facts.session.state}; work ${plan.facts.work.observed ? `${plan.facts.work.changed} changed / ${plan.facts.work.untracked} untracked on ${plan.facts.work.branch ?? "detached"}` : `not observed (${plan.facts.work.reason})`}; children ${plan.facts.children.length}; pull request ${plan.facts.pullRequest}`);
+      console.log(`  session ${plan.facts.session.state}; work ${plan.facts.work.observed ? `${plan.facts.work.changed} changed / ${plan.facts.work.untracked} untracked on ${plan.facts.work.branch ?? (plan.facts.work.detached ? "detached" : "a branch OATS carries no name for")}` : `not observed (${plan.facts.work.reason})`}; children ${plan.facts.children.length}; pull request ${plan.facts.pullRequest}`);
       console.log(`  defaults: retain worktree ${plan.defaults.retainWorktree}, delete branch ${plan.defaults.deleteBranch}, stop children ${plan.defaults.stopChildren}`);
       for (const n of plan.notes) console.log(`  note: ${n}`);
       return;
