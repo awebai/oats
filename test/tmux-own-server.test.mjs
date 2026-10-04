@@ -37,7 +37,7 @@ const OATS = oatsSocket();
 const OTHER = join(base, "default.sock");
 const DEFAULT = join(dirname(OATS), "default"); // the default server of the same private TMUX_TMPDIR
 const SESSION = "own";
-writeFileSync(join(process.env.HOME, ".tmux.conf"), [
+const USER_TMUX_CONF = [
   "bind-key -T prefix F9 display-message oats-fixture-binding",
   "set-option -g default-shell /bin/sh",
   "set-option -g window-style fg=red,bg=blue",
@@ -45,7 +45,8 @@ writeFileSync(join(process.env.HOME, ".tmux.conf"), [
   "set-option -g cursor-colour red",
   "set-option -g window-size smallest",
   "",
-].join("\n"));
+].join("\n");
+writeFileSync(join(process.env.HOME, ".tmux.conf"), USER_TMUX_CONF);
 
 const tmuxOn = (socket, ...args) => execFileSync("tmux", ["-u", "-S", socket, ...args], { encoding: "utf8", timeout: 10000, stdio: ["ignore", "pipe", "pipe"] }).trim();
 const lines = (text) => text.split("\n").filter(Boolean);
@@ -85,6 +86,7 @@ const probe = join(probeBin, "claude");
 writeFileSync(probe, `#!/bin/sh\nenv > "$OATS_INSTANCE_HOME/pane-env.txt"\necho $$ > "$OATS_INSTANCE_HOME/harness-ready"\nexec sleep 600\n`);
 chmodSync(probe, 0o755);
 const fx = v2Deployment();
+writeFileSync(join(fx.env.HOME, ".tmux.conf"), USER_TMUX_CONF); // the CLI runs with the deployment fixture's HOME
 const spawnPath = `${probeBin}:${fx.env.PATH}`;
 const harnessPid = (home) => {
   try {
@@ -213,7 +215,7 @@ test("a server named oats that already runs: a never-launched home's first start
   tmuxOn(OATS, "set-environment", "-g", "COLORFGBG", "0;15");
   const before = { state: serverState(OATS), sized: localOptions(OATS, sized), plain: localOptions(OATS, plainWindow) };
   assert.match(before.state.environment, /^COLORFGBG=0;15$/m);
-  assert.equal(before.plain, "");
+  assert.deepEqual(ownOptions(OATS, plainWindow), UNSET, "the plain foreign window overrides none of these options");
 
   const h = await makeHome("first");
   const r = startInstanceSession(h.home);
@@ -426,7 +428,7 @@ test("option commands tmux refuses: an unknown cursor-colour is no error; a refu
   r = fx.cli(["spawn", "dev", "--name", "style-spawn", "--harness", "claude", "--json"], { env: { PATH: `${noStyle}:${spawnPath}`, OATS_TMUX_SESSION: SESSION, PI_AGENTS_TMUX_SESSION: SESSION } });
   assert.notEqual(r.status, 0, r.stdout);
   const error = r.json().error;
-  assert.equal(error.code, "E_SPAWN_LAUNCH_FAILED");
+  assert.equal(error.code, "E_SPAWN_FAILED", "the CLI's code for a spawn that failed; the kernel's E_SPAWN_LAUNCH_FAILED text follows");
   assert.match(error.message, /tmux set-option failed for style-spawn/);
   assert.ok(error.message.includes(`run tmux -S ${OATS} list-windows -t ${SESSION} to inspect`), `the hint names the socket and the session: ${error.message}`);
   assert.match(error.message, /spawn rolled back/);

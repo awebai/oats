@@ -121,10 +121,10 @@ options and environment, are left exactly as they were.
   latest viewer's.
 - The two sizing commands are each attempted on their own, and a refused one
   is ignored: the launch goes on. Nothing else is tolerated: a refused
-  `window-style` or `window-active-style` is a launch failure
-  (`E_SPAWN_LAUNCH_FAILED`, `E_SESSION_START_FAILED`). Before 0.41 a start
-  whose recorded tmux server was gone failed when a sizing command was
-  refused; it no longer does.
+  `window-style` or `window-active-style` is a launch failure (the spawn is
+  rolled back and fails; a start fails with `E_SESSION_START_FAILED`). Before
+  0.41 a start whose recorded tmux server was gone failed when a sizing
+  command was refused; it no longer does.
 
 <a id="existing-instances"></a>
 #### Existing instances
@@ -158,6 +158,10 @@ The socket and the session are the `tmux.socket` and `tmux.session` of the
 instance's row in `oats status --json`. The stop leaves a fallback shell in the
 window, which a start would reuse in place; closing the window is what makes
 the start create a new one.
+
+Do not end the agents' session by hand (`tmux kill-session`): a window that a
+viewer still links would live on in that viewer, and the next start would
+create a second window for the same home.
 
 ### Herdr (removed in 0.31.0)
 
