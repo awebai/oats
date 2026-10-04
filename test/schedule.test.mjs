@@ -961,3 +961,31 @@ test("K8 recentRuns: every settled lastRun is recorded once (newest first, bound
   assert.ok(d.recentRuns.some((r) => r.outcome === "blocked"), "outcomes are kept as the producer wrote them");
   rmSync(ws, { recursive: true, force: true });
 });
+
+test("wake records terminal-operation success without re-pasting an unverified adapter observation", async () => {
+  const { inputSessionTarget } = await import("../lib/session-input.mjs");
+  const ws = workspace(), h = home(ws, "dev-observation"), calls = [];
+  let clock = 0;
+  const target = { backend: "tmux", socket: "/inert/fixture.sock", session: "fixture", window: "agent" };
+  const terminal = { now: () => clock, sleep: (ms) => { clock += ms; }, exec: (bin, args) => {
+    assert.equal(bin, "tmux");
+    calls.push(args.slice(3));
+    if (args[3] === "list-panes") return "%12\t0\tcodex\t123\n";
+    if (args.includes("capture-pane")) return "80x24\nsame display\n80x24\n";
+    return "";
+  } };
+  const io = { inspect: () => ({ present: true, state: "unknown" }), input: (_home, text) => {
+    const receipt = inputSessionTarget(target, text, terminal);
+    assert.equal(receipt.submitted, true);
+    assert.equal(receipt.verified, false);
+    assert.equal("reason" in receipt, false);
+    return receipt;
+  } };
+  S.addSchedule(ws, { id: "observed-wake", cron: "* * * * *", tz: "UTC", kind: "wake", home: h, message: "literal wake" });
+  const reg = { maxConcurrent: 5, workspaces: [ws] }, now = at("2026-09-07T12:00:00Z");
+  assert.equal(S.tickWorkspace(ws, { now, io, reg })[0].action, "delivered");
+  assert.equal(S.describe(ws, "observed-wake", io).pendingWake, undefined);
+  assert.deepEqual(S.tickWorkspace(ws, { now: at("2026-09-07T12:00:30Z"), io, reg }), []);
+  assert.equal(calls.filter(a => a[0] === "paste-buffer").length, 1);
+  assert.equal(calls.filter(a => a[0] === "send-keys").length, 1);
+});

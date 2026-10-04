@@ -15,7 +15,8 @@ import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 // ---- unit: the writer, the reader and the boundary rule, on a bare home ----
 function bare(t) {
-  const base = mkdtempSync(join(tmpdir(), "oats-waiting-")); t.after(() => rmSync(base, { recursive: true, force: true }));
+  // The real path: rows are keyed by it (the symlink spellings are test/instance-waiting-symlink.test.mjs).
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-waiting-"))); t.after(() => rmSync(base, { recursive: true, force: true }));
   const root = join(base, "agents"), home = join(root, "dev", "instances", "dev-1");
   mkdirSync(home, { recursive: true });
   writeFileSync(join(home, "instance.json"), JSON.stringify({ agent: "dev", instance: "dev-1", createdAt: "2026-01-01T00:00:00.000Z" }));
@@ -129,6 +130,21 @@ test("the reader admits a claim only from `kernel` or a valid producer id: a han
   // A bad producer's clear does not clear anyone either.
   row("Bad Producer!", { waitingOnYou: false }, "2026-01-01T00:00:11.000Z");
   assert.equal(liveWaiting(w.home).producer, "oats.core");
+});
+
+test("the reader validates a claim's time too: a waiting row whose `at` is not a date (a hand-edited log) is no claim, and its clear clears nothing", (t) => {
+  const w = bare(t);
+  const row = (producer, data, at) => appendFileSync(join(w.home, ".oats-events.jsonl"), JSON.stringify({ eventsApi: 2, at, instance: "dev-1", home: w.home, incarnation: "2026-01-01T00:00:00.000Z", producer, kind: "waiting", data }) + "\n");
+  // Each sorts after every real time, so it would be the latest claim if it counted.
+  for (const at of ["not a date", "soon", "2026-13-45T99:00:00.000Z", "\u001b[2J"]) row("agent", { waitingOnYou: true, reason: "attention", message: "x" }, at);
+  assert.equal(liveWaiting(w.home), null, "none of them is a claim");
+  assert.deepEqual(readEvents(w.home).waitingClaims, []);
+  assert.equal(readEvents(w.home).waitingOnYou, null);
+  assert.equal(setWaiting(w.home, { producer: "agent", waiting: true, reason: "attention" }).changed, true, "the writer sees no live claim, and records one");
+  const since = liveWaiting(w.home).since;
+  assert.ok(Number.isFinite(Date.parse(since)));
+  row("agent", { waitingOnYou: false }, "zzz");
+  assert.deepEqual(liveWaiting(w.home), { since, producer: "agent", reason: "attention", message: null }, "a clear with no valid time clears nothing");
 });
 
 test("boundary rule: a claim older than the incarnation's latest kernel launched | restarted | stopped row is not live; a producer's own 'launched' row is not a boundary", (t) => {

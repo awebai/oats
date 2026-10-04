@@ -86,8 +86,19 @@ jobs) sets it so that its command jobs can be told apart.
   sends SIGTERM to the child's process group, allows two seconds for cleanup,
   then sends SIGKILL if the group remains. It observes the direct child's exit
   before returning; inherited output pipes cannot hold the tick indefinitely.
-  A timeout leaves effects unconfirmed even if the child printed an envelope.
-  Spawn previews use the same bounded runner.
+  SIGINT, SIGTERM or SIGHUP received by the supervisor enters that same cleanup
+  once; repeated signals do not bypass it. A timeout or interrupted supervisor
+  leaves effects unconfirmed even if the child printed an envelope. Spawn
+  previews use the same bounded runner.
+
+  Cleanup covers the owned process group. A descendant that creates its own
+  session can escape it; inherited pipes are bounded but that escaped process
+  is not terminated by this group cleanup. The supervisor checks the group when
+  the leader exits and never signals it after observing it empty. This reduces
+  the group-ID reuse window; it does not eliminate PID reuse races. SIGKILL,
+  OOM and other unrecoverable supervisor deaths cannot run JavaScript handlers:
+  cleanup is not guaranteed then. Without a private supervisor receipt, the
+  scheduler keeps the unknown attempt and its slot until reconciliation.
 - **wake** `{…, home, message}` — every due minute inspects the instance at
   `home`. Running: `message` is delivered once as terminal input (bracketed
   paste plus Enter), never an interrupt. Not running: the home is started with
@@ -273,9 +284,12 @@ add` / `oats schedule add` definitions need no trust.
 
 **Opting out on one host.** `oats trigger disable <member>/<id>` writes
 `triggers.disabled`, and `oats schedule disable <member>/<id>` writes
-`schedules.disabled`, in `oats-local.yaml`; `enable` removes the entry. A
-workspace definition is never edited or removed from the CLI (`update` and
-`remove` answer `E_AUTOMATION_WORKSPACE`): change the file in Git.
+`schedules.disabled`, in `oats-local.yaml`; `enable` removes the entry. The
+schedule part of a qualified ID accepts up to 100 characters in both
+`schedules.disabled` and named `automations.trust` entries. Trigger definitions
+and `triggers.disabled` keep their 40-character limit; the shared trust list
+does not widen trigger IDs. A workspace definition is never edited or removed
+from the CLI (`update` and `remove` answer `E_AUTOMATION_WORKSPACE`): change the file in Git.
 
 **Refresh.**
 
@@ -329,12 +343,27 @@ current choices. Invalid values fail with `E_BAD_ARGS` before registration or
 timer changes. `host status` reports the effective `maxConcurrent` and
 `triggersMaxConcurrent` (`null` when uncapped).
 
-The registry stores explicit choices only. On the first registry read after
-upgrade, a legacy stored `maxConcurrent: 1` without the new choice marker is
-migrated to the default under the registry lock; other explicit values survive.
-If you need a cap of one, run `oats schedule host install --max-concurrent 1`
-after upgrading. That explicit choice survives later reads and reinstalls.
-Set these values through the CLI; do not edit the registry by hand.
+The registry stores explicit choices only. Reading status or the registry takes
+no registry lock and creates or rewrites no files or directories. A reader
+interprets a pre-migration stored `maxConcurrent: 1` as the default of five in
+memory. Registration, unregistration and cap updates persist that migration
+once, under the registry lock, even if the workspace membership is unchanged.
+Other explicit values and the independent trigger cap survive.
+
+A pre-migration hand-set one is indistinguishable from the old implicit one;
+both follow that compatibility choice. When a write migrates one to the default,
+it prints a notice on stderr with `oats schedule host install --max-concurrent 1`
+to restore one if needed. Pure reads stay silent and JSON stdout is unchanged.
+A later explicit one survives writes by current kernels. Older binaries sharing
+the registry can write one back while preserving `capsVersion: 2`; there is no
+provenance to distinguish that from a new explicit one. Stop mixed-version
+writes and explicitly set the desired cap with the supported CLI.
+
+A present invalid `maxConcurrent` is `E_SCHEDULE_INVALID`, not a fallback to
+five. Correct it with `oats schedule host install --max-concurrent N` (or
+`--max-concurrent default`) from the deployment, or with `--dir <deployment>`.
+An absent value still means five. Set caps through the CLI; do not edit the
+registry by hand.
 
 `oats schedule list --json` answers:
 

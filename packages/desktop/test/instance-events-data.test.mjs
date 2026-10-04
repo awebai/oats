@@ -141,9 +141,14 @@ for (const [label, message] of [['newline', 'a\nb'], ['control character', 'a\x0
     assert.equal(out.waitingOnYou.producer, 'provider.a'); assert.equal(out.waitingOnYou.message, null); assert.equal(out.waitingClaims[0].message, null);
   });
 }
+// The activity view keeps its house rule: the sidebar shows the reason label for these notes (#584 finding
+// 12, waitingOnYouData), this read still says the detail was withheld.
+const WITHHELD_NOTES = ['see https://private.example/x', 'See https://github.com/awebai/oats/pull/552', 'Which token: A or B?', 'api key: rotate now?'];
 test('an unsafe claim message is withheld, never shown', () => {
-  const out = eventsData(claimed('see https://private.example/x', 'see https://private.example/x'), target); assert.ok(out);
-  assert.equal(out.waitingOnYou.message, '[Detail withheld]'); assert.equal(out.waitingClaims[0].message, '[Detail withheld]');
+  for (const note of WITHHELD_NOTES) {
+    const out = eventsData(claimed(note, note), target); assert.ok(out, note);
+    assert.equal(out.waitingOnYou.message, '[Detail withheld]', note); assert.equal(out.waitingClaims[0].message, '[Detail withheld]', note);
+  }
 });
 
 // Kernel PR K's `waiting` lifecycle rows, in the shape K writes them (captured from K @ e85ff4ec): a set row
@@ -164,7 +169,9 @@ test('K waiting rows: a malformed note is null and the read stays valid; an unsa
     const out = eventsData(data([kSet({ message })]), target);
     assert.ok(out, JSON.stringify(message)); assert.equal(out.events[0].data.message, null);
   }
-  assert.equal(eventsData(data([kSet({ message: 'see https://evil.example/x' })]), target).events[0].data.message, '[Detail withheld]');
+  for (const message of ['see https://evil.example/x', ...WITHHELD_NOTES]) {
+    assert.equal(eventsData(data([kSet({ message })]), target).events[0].data.message, '[Detail withheld]', message);
+  }
   assert.equal(eventsData(data([kSet({ message: '<b>bold</b>' })]), target).events[0].data.message, '<b>bold</b>', 'kept verbatim; the view sets text');
 });
 
