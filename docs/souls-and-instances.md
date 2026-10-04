@@ -450,8 +450,7 @@ moved when its bytes did. The work is copied again unless it is proven
 unchanged. A Git status with the same rows is not that proof: a hook can
 rewrite a file that was already modified, and the row stays the same. In
 directory mode the work state is the bytes of `work/`. In worktree mode it
-is what a work copy holds, for the worktree and for each nested repository
-alike:
+is what a work copy holds, for the worktree and for each nested repository:
 
 - its Git status, its branch and commit, its index entries (what
   `git ls-files -s` lists, with the skip-worktree and assume-unchanged
@@ -460,6 +459,7 @@ alike:
 - the state of an operation in progress (a merge, a rebase, a cherry-pick, a
   revert, a bisect);
 - its tags and its stash;
+- for a nested repository, every other ref it has (see below);
 - its exclude rules (`core.excludesFile` with the file it names, and
   `info/exclude`) and the settings that change what `git status` reports
   (`core.fileMode`, `core.ignoreCase`, `core.precomposeUnicode`,
@@ -469,10 +469,26 @@ alike:
 A worktree's tags, stash, exclude rules and settings are kept by the
 repository it belongs to. They are part of the state because a work copy
 carries them, so a tag or a stash made in that repository while the retire
-hooks run causes one more work copy. A repository's other branches are not
-part of the state: a recovery does not hold them. The one exception is a
-worktree whose `HEAD` is detached: its copy holds the branch that repository
-has checked out, so that branch is part of the state.
+hooks run causes one more work copy. That repository's other branches are
+not part of the state: they outlive the worktree, and a recovery does not
+hold them. The one exception is a worktree whose `HEAD` is detached: its copy
+holds the branch that repository has checked out, so that branch is part of
+the state.
+
+A nested repository is removed with the worktree, and every ref with it. So
+all its refs are part of the state, and a hook that moves or makes one causes
+one more work copy. What the copy of a nested repository holds of each kind:
+
+| Ref of the nested repository | The copy holds |
+|---|---|
+| the branch `HEAD` is on | the branch and its commits |
+| every other branch | its commits, without the branch name: `git fsck --unreachable` in the copy lists them |
+| tags | the tags and what they name |
+| the stash | the stash and its log |
+| remote-tracking refs, notes, any other namespace | nothing beyond what a branch or a tag reaches |
+
+A ref the copy holds nothing of is part of the state all the same: it can
+cause one more work copy, and never skips one.
 
 **A worktree that cannot be proven unchanged.** Two things make a worktree
 not provable:
