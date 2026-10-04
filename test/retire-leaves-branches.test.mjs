@@ -210,7 +210,8 @@ test("--discard-worktree on a clean worktree whose HEAD is detached at a commit 
   assert.equal(git(f.repo, "for-each-ref", "--contains", commit, "--format=%(refname)"), "", "fixture premise: no ref of the repository reaches the commit");
   // The removal of the worktree is where the order shows: a stand-in `git` first on PATH passes every
   // call to the real Git, and when it is asked to remove a worktree it first records the HEAD of each
-  // recovery the retire has completed by then (a recovery is renamed into place only when it is whole).
+  // recovery the retire has completed by then: one in place under its own name, with its recovery.json
+  // (a recovery is written under a staging name and renamed into place only when it is whole).
   const recoveries = recoveryRootOf(spawned.home);
   const atRemoval = join(f.base, "recoveries-at-removal");
   write(join(f.base, "bin", "git"), `#!/bin/sh
@@ -218,7 +219,7 @@ real=${shq(realGit())}
 case " $* " in *" worktree remove "*)
   : >> ${shq(atRemoval)}
   for recovery in ${shq(recoveries)}/${shq(basename(spawned.home))}-*; do
-    if [ -d "$recovery/repo" ]; then "$real" -C "$recovery/repo" rev-parse HEAD >> ${shq(atRemoval)}; fi
+    if [ -f "$recovery/recovery.json" ] && [ -d "$recovery/repo" ]; then "$real" -C "$recovery/repo" rev-parse HEAD >> ${shq(atRemoval)}; fi
   done ;;
 esac
 exec "$real" "$@"
