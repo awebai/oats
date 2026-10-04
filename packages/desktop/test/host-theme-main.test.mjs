@@ -204,8 +204,11 @@ test("key order: first valid #rrggbb wins, left to right, for every colour Deskt
   const named = resolve(`${ansi}\nbg = "#a00000"\nfg = "#a00001"\npurple = "#a00002"\nbright_purple = "#a00003"\ndark_fg = "#a00004"\nbright_fg = "#a00005"\nselection_background = "#a00006"\ndark_bg = "#a00007"`);
   assert.equal(named.colors.background, "#a00000", "bg before color0");
   assert.equal(named.colors.foreground, "#a00001", "fg before color7");
-  assert.equal(named.colors.ansi[5], "#a00002", "purple before color5");
-  assert.equal(named.colors.ansi[13], "#a00003", "bright_purple before color13");
+  assert.equal(named.colors.ansi[5], "#050505", "color5 before purple");
+  assert.equal(named.colors.ansi[13], "#131313", "color13 before bright_purple");
+  const aliased = resolve(`${ansi.split("\n").filter(line => !/^color(5|13) =/.test(line)).join("\n")}\npurple = "#a00002"\nbright_purple = "#a00003"`);
+  assert.deepEqual([aliased.colors.ansi[5], aliased.colors.ansi[13]], ["#a00002", "#a00003"],
+    "purple and bright_purple are the last names tried: read when neither magenta nor colorN names the colour");
   assert.equal(named.colors.ansi[8], "#080808", "color8 before dark_fg for muted");
   assert.equal(named.colors.brightForeground, "#a00005", "bright_fg before color15");
   assert.equal(named.colors.ansi[15], "#a00005");

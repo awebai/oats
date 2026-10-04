@@ -48,9 +48,12 @@ export function parseColorsToml(text) {
   return entries;
 }
 
-/** The palette Desktop uses, resolved the way Omarchy resolves its own (first
- * valid `#rrggbb` wins, left to right), or null when the background, the
- * foreground or one of the six normal colours is missing. */
+/** The palette Desktop uses, or null when the background, the foreground or
+ * one of the six normal colours is missing. Its rules: each colour is the
+ * first valid `#rrggbb` among its keys, tried in the order each `pick` below
+ * lists them (magenta: `magenta`, `color5`, `purple`, the order Omarchy applies
+ * those aliases); the mode is the `mode` key or the `theme_type` key, else the
+ * background's luminance. Omarchy's `light.mode` marker file is not read. */
 export function resolveHostPalette(entries) {
   const pick = (...keys) => {
     for (const key of keys) { const value = entries.get(key); if (typeof value === "string" && HEX.test(value)) return value.toLowerCase(); }
@@ -58,9 +61,9 @@ export function resolveHostPalette(entries) {
   };
   const background = pick("background", "bg", "color0");
   const foreground = pick("foreground", "fg", "color7");
-  const normal = NAMES.map((name, i) => pick(name, ...(name === "magenta" ? ["purple"] : []), `color${i + 1}`));
+  const normal = NAMES.map((name, i) => pick(name, `color${i + 1}`, ...(name === "magenta" ? ["purple"] : [])));
   if (!background || !foreground || normal.some(value => !value)) return null;
-  const bright = NAMES.map((name, i) => pick(`bright_${name}`, ...(name === "magenta" ? ["bright_purple"] : []), `color${i + 9}`)
+  const bright = NAMES.map((name, i) => pick(`bright_${name}`, `color${i + 9}`, ...(name === "magenta" ? ["bright_purple"] : []))
     ?? mixHex(normal[i], "#ffffff", 0.2));
   const declared = [entries.get("mode"), entries.get("theme_type")].find(value => value === "dark" || value === "light");
   // Omarchy's own rule for a palette that names no polarity.
