@@ -159,9 +159,11 @@ test('opened from the palette: the palette and its focus trap are gone, and clos
   assert.equal(f.doc.querySelectorAll('[aria-modal="true"]').length, 1, 'one modal: the picker');
   assert.equal(f.doc.activeElement, f.rows()[2]);
   f.doc.getElementById('field').focus();
-  assert.equal(f.doc.activeElement.id, 'field', 'no palette focus trap pulls focus back');
-  f.rows()[2].focus(); f.key('Escape');
+  assert.equal(f.doc.activeElement, f.rows()[2], 'focus stays in the open picker');
+  f.key('Escape');
   assert.equal(f.overlays().length, 0); assert.equal(f.doc.activeElement, f.opener, 'focus back on what had it before the palette');
+  f.doc.getElementById('field').focus();
+  assert.equal(f.doc.activeElement.id, 'field', 'once closed, no picker or palette trap is left behind');
 });
 
 test('the painted text and focus pairs are inventoried tokens (held to AA in every theme by theme-contrast.test.mjs)', t => {
