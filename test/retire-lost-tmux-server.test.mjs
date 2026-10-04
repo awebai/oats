@@ -2,8 +2,10 @@
 // copies or removes anything: it kills the window, then lists the session's windows on the socket
 // the spawn recorded. A recorded server that is lost has no window, whether it was killed and left
 // its socket file, or its socket file or the socket's directory is gone (a reboot clears tmux's
-// socket directory) (#620). A window that is still there, or a server that cannot be read for
-// another reason, keeps the retirement refused. Real tmux servers on private sockets.
+// socket directory) (#620). A server outlives its socket file, so a missing file counts as a lost
+// server only when no process works in the instance's home. A window that is still there, or a
+// server that cannot be read for another reason, keeps the retirement refused. Real tmux servers on
+// private sockets.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -11,7 +13,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
-import { waitUntil } from "./helpers/host-fixture.mjs";
+import { linkExecutables, waitUntil } from "./helpers/host-fixture.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const SESSION = "oats-agents";
@@ -58,13 +60,16 @@ function launchedHome(f, purpose, socket) {
   write(baselinePath, JSON.stringify({ ...JSON.parse(readFileSync(baselinePath, "utf8")), runtime: { launched: true, tmux: endpoint } }, null, 2) + "\n", { mode: 0o600 });
   return { home, instance };
 }
-/** Start a server on `socket` whose session holds a keeper window and the instance's window. */
-function startServer(socket, instance) {
+/** Start a server on `socket` whose session holds a keeper window and the instance's window, which
+ *  runs `command` (a shell command), in `cwd` when one is given. Returns the server's process id. */
+function startServer(socket, instance, { cwd, command = "sleep 600" } = {}) {
   mkdirSync(dirname(socket), { recursive: true });
   tmux(socket, "new-session", "-d", "-s", SESSION, "-n", "keeper", "sleep 600");
-  servers.push({ socket, pid: Number(tmux(socket, "display-message", "-p", "#{pid}")) });
-  tmux(socket, "new-window", "-d", "-t", `${SESSION}:`, "-n", instance, "sleep 600");
+  const pid = Number(tmux(socket, "display-message", "-p", "#{pid}"));
+  servers.push({ socket, pid });
+  tmux(socket, "new-window", "-d", "-t", `${SESSION}:`, "-n", instance, ...(cwd ? ["-c", cwd] : []), command);
   assert.ok(windows(socket).includes(instance), "the instance's window runs");
+  return pid;
 }
 const windows = (socket) => tmux(socket, "list-windows", "-t", `=${SESSION}`, "-F", "#{window_name}").split("\n").filter(Boolean);
 /** Kill the server on `socket` and wait until its process is gone, so that what a later tmux
@@ -89,6 +94,7 @@ function refused(f, { home, instance }, message) {
   assert.match(error.message, message);
   assert.equal(hookRan(home), false, "no retire hook ran");
   assert.equal(existsSync(home), true, "the home is kept");
+  return error;
 }
 
 test.afterEach(() => {
@@ -153,4 +159,29 @@ test("retire of a launched instance is refused when the recorded server cannot b
   writeFileSync(notADirectory, "x");
   const launched = launchedHome(f, "server-unreadable", join(notADirectory, "tmux.sock"));
   refused(f, launched, /could not establish that .* stopped on .*: .*Not a directory/);
+});
+
+test("retire of a launched instance is refused when the socket file is gone but its server still runs the instance's window in the home", () => {
+  const f = fixture();
+  const socket = join(f.base, "tmux.sock");
+  const launched = launchedHome(f, "server-outlives-socket", socket);
+  // A shell that stays (it has a second command to run) and carries an argument, with its sleep.
+  const argument = "fixture-process-argument";
+  const server = startServer(socket, launched.instance, { cwd: launched.home, command: `sh -c 'sleep 600; :' ${argument}` });
+  // A tmux server keeps running when its socket file is removed: no client reaches it, and tmux
+  // answers as it does after a reboot. The processes in the instance's window still work in the home.
+  rmSync(socket);
+  const error = refused(f, launched, /No such file or directory\); a process still works in this home \(pid \d+ /);
+  assert.equal(error.message.includes(argument), false, "the message names a process by its pid and program, never by its arguments");
+  assert.ok(alive(server), "the server still runs");
+});
+
+test("retire of a launched instance is refused when the socket file is gone and the process scan cannot run", () => {
+  const f = fixture();
+  const launched = launchedHome(f, "scan-cannot-run", join(f.base, "tmux.sock"));
+  // tmux and what retire itself runs, without lsof: whether a process works in the home is unknown, never none.
+  const bin = join(f.base, "no-lsof-bin");
+  linkExecutables(bin, ["node", "git", "tmux"]);
+  f.env = { ...f.env, PATH: bin };
+  refused(f, launched, /No such file or directory\); whether a process still works in this home could not be established \(lsof is not on PATH\)/);
 });
