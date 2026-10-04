@@ -6,8 +6,9 @@
 //
 // Desktop gives xterm a minimum contrast ratio (TERMINAL_MINIMUM_CONTRAST,
 // renderer/terminal-tab.mjs), so text must stay readable in every cell, on
-// its own background; only the box drawing in the last row may be faint.
-// Needs nothing but Node and writes only to stdout.
+// its own background. Two things may be faint, by design: the dim row (xterm
+// asks dim text for half the ratio and draws it at half strength) and the box
+// drawing in the last row. Needs nothing but Node and writes only to stdout.
 // test/terminal-contrast.test.mjs holds the screen to the groups below.
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -52,7 +53,8 @@ export function terminalColorScreen() {
   const section = (title, ...body) => lines.push("", title, ...body);
 
   lines.push("OATS Desktop terminal colours. Look at this screen in White, Solarized and Dark:",
-    "text must stay readable in every cell. Only the box drawing in the last row may be faint.");
+    "text must stay readable in every cell. Only the dim row (half strength, by design)",
+    "and the box drawing in the last row may be faint.");
 
   section("1. The 16 ANSI colours on the default background",
     ANSI.map(fg => paint([ansiFg(fg)], ` ${pad(fg, 2)} `)).join(""));
@@ -77,7 +79,7 @@ export function terminalColorScreen() {
     ...PAIRS.map(([label, fg, bg]) => `   ${paint([38, 2, ...fg, 48, 2, ...bg], ` ${label} `)}`));
 
   const styled = (name, code) => `${name} ${paint([code], "default ")}${ANSI.map(fg => paint([code, ansiFg(fg)], `${pad(fg, 2)} `)).join("")}`;
-  section("6. Dim and bold: the default foreground and the 16 ANSI colours",
+  section("6. Dim (faint by design) and bold: the default foreground and the 16 ANSI colours",
     styled("dim ", 2), styled("bold", 1));
 
   section("7. Box drawing and block elements (U+2500-259F) are excluded from the floor:",
