@@ -1391,6 +1391,44 @@ seen.tags = nested('tag', '--list');`);
   assertBothCopiedAgain(recovery);
 });
 
+test("a retire hook that gives a nested repository another branch, on a commit nothing else reaches, with no status row, index entry, HEAD, tag or stash changing: the work is copied again, and the nested repository under after-hooks/repo/ has the commit", () => {
+  // The nested repository's Git directory goes with the worktree, so every branch in it is removed
+  // with it. The hook's commit is a stash commit that is stored under no stash ref: only the new
+  // branch reaches it, and the nested repository's files, index and checked-out branch stay as they were.
+  const STATUS = "'status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored=matching', '--ignore-submodules=none'";
+  const retire = quietHook(`const inNested = gitIn(join(work, 'human-ignored', 'nested'));
+const stateOf = () => ({ status: inNested(${STATUS}), head: inNested('rev-parse', 'HEAD'), branch: inNested('symbolic-ref', 'HEAD'), index: inNested('ls-files', '-s', '-v', '-z'),
+  tags: inNested('for-each-ref', 'refs/tags'), stash: inNested('for-each-ref', 'refs/stash') });
+seen.before = stateOf();
+seen.commit = inNested('stash', 'create').trim();
+inNested('update-ref', 'refs/heads/backup', seen.commit);
+seen.after = stateOf();
+seen.branches = inNested('for-each-ref', '--format=%(refname)', 'refs/heads');`);
+  const f = fixture({ capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "hook-nested-branch");
+  const work = join(spawned.home, "work");
+  const nested = nestedRepository(work);
+  write(join(nested, "nested.txt"), "changed in the nested repository\n");
+  const nestedStatusBefore = porcelain(nested);
+  assert.deepEqual(statusRowsIn(nestedStatusBefore), [" M nested.txt"], "fixture premise: the nested repository has one modified tracked file before the retire");
+  const statusBefore = porcelain(work);
+  assert.deepEqual(statusRowsIn(statusBefore), ["!! human-ignored/"], "fixture premise: the only status row is the ignored directory that holds the nested repository");
+
+  const { recovery, seen, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore);
+  assert.match(seen.commit, /^[0-9a-f]{40,64}$/, "fixture premise: the hook made a commit of the nested repository's modified state");
+  assert.deepEqual(seen.branches.split("\n").filter(Boolean).filter((ref) => ref.endsWith("/backup")), ["refs/heads/backup"], "fixture premise: the hook gave the nested repository a branch named backup");
+  assert.deepEqual(seen.after, seen.before, "fixture premise: the nested repository's status, HEAD, checked-out branch, index, tags and stash are as they were");
+  assert.equal(seen.before.status, nestedStatusBefore, "fixture premise: and its status is the one it had before the retire");
+  assert.equal(seen.before.stash, "", "fixture premise: the commit is under no stash ref");
+  const hasCommit = (repo) => { try { execFileSync("git", ["-C", repo, "cat-file", "-e", seen.commit], { stdio: ["ignore", "pipe", "pipe"] }); return true; } catch { return false; } };
+  assert.equal(existsSync(join(nestedUnder(join(recovery.path, "repo")), ".git")), true);
+  assert.equal(hasCommit(nestedUnder(join(recovery.path, "repo"))), false, "the pre-hook snapshot's nested repository does not have the commit: it did not exist yet");
+  assert.equal(existsSync(join(nestedUnder(afterRepo), ".git")), true, "the work is copied again under after-hooks/repo/: the nested repository's branches moved, although nothing else of it did");
+  assert.equal(hasCommit(nestedUnder(afterRepo)), true, "the nested repository copied after the hooks has the hook's commit");
+  assert.equal(readFileSync(join(nestedUnder(afterRepo), "nested.txt"), "utf8"), "changed in the nested repository\n", "its files are the same in both copies");
+  assertBothCopiedAgain(recovery);
+});
+
 test("a repository inside a nested repository cannot be proven unchanged: the work is copied again after the hooks, and a retire hook's commit there is under after-hooks/repo/", () => {
   const retire = quietHook(`const inner = gitIn(join(work, 'human-ignored', 'nested', 'inner'));
 inner('commit', '--quiet', '--allow-empty', '-m', 'made by the retire hook');
