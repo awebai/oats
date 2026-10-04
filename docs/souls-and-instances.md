@@ -459,7 +459,8 @@ is what a work copy holds, for the worktree and for each nested repository:
 - the state of an operation in progress (a merge, a rebase, a cherry-pick, a
   revert, a bisect);
 - its tags and its stash;
-- for a nested repository, every other ref it has (see below);
+- for a nested repository that has its own Git directory, every other ref
+  it has (see below);
 - its exclude rules (`core.excludesFile` with the file it names, and
   `info/exclude`) and the settings that change what `git status` reports
   (`core.fileMode`, `core.ignoreCase`, `core.precomposeUnicode`,
@@ -475,9 +476,12 @@ hold them. The one exception is a worktree whose `HEAD` is detached: its copy
 holds the branch that repository has checked out, so that branch is part of
 the state.
 
-A nested repository is removed with the worktree, and every ref with it. So
-all its refs are part of the state, and a hook that moves or makes one causes
-one more work copy. What the copy of a nested repository holds of each kind:
+A nested repository that has its own Git directory is removed with the
+worktree, and every ref with it. So all its refs are part of the state, and a
+hook that moves or makes one causes one more work copy. A nested directory
+that is a linked worktree of another repository is treated as the instance's
+own worktree is: its refs belong to that repository and are not part of the
+state. What the copy of a nested repository holds of each kind:
 
 | Ref of the nested repository | The copy holds |
 |---|---|
