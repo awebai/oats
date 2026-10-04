@@ -1,6 +1,7 @@
 /** Which roster rows can be addressed, why a row can't, and the copy for a remote read or plan
  * that the host (or this machine's router) refused. Shared by the renderer and the server. */
 import { unsupportedSession } from './instance-presentation.mjs';
+import { displayLine, cleanLine, DETAIL_WITHHELD } from './display-text.mjs';
 
 /** A local row, or a remote row the kernel reports addressable (routed by `--server <id> --home <abs>`).
  * A local OATS before 0.31 reports no `addressable` at all: a row it spawned keeps its saved route. */
@@ -10,12 +11,21 @@ export const canAddressRemote = row => !!row && (!row.server || row.addressable 
 /** The server's registration label as the roster reports it, else its id. */
 export const serverLabel = row => row?.repoName || row?.server || '';
 
+/** The server's label as a sentence shows it: one display line (display-text.mjs), so the sentence is one
+ * too. A label with nothing to show, or a withheld one, reads "the server", the words the fixed sentences
+ * already use. For the sentence only: routing, comparison and requests keep the label and the server id
+ * as they are. `first`: the label opens the sentence. */
+const shownLabel = (label, first = false) => {
+  const line = displayLine(label);
+  return line === null || line === DETAIL_WITHHELD ? first ? 'The server' : 'the server' : line;
+};
+
 /** Why a remote row is refused when the kernel does not report it addressable. */
 export function unaddressableSentence(row) {
   const label = serverLabel(row);
-  if (row.missingRemotely === true) return `${row.instance} is no longer on ${label}. Remove it from this computer with: oats server forget ${row.server} --instance ${row.instance}`;
-  return row.addressable === undefined ? `This computer's OATS does not report whether ${label} can reach this instance. Update OATS here.`
-    : `${label} did not report this instance as reachable.`;
+  if (row.missingRemotely === true) return `${row.instance} is no longer on ${shownLabel(label)}. Remove it from this computer with: oats server forget ${row.server} --instance ${row.instance}`;
+  return row.addressable === undefined ? `This computer's OATS does not report whether ${shownLabel(label)} can reach this instance. Update OATS here.`
+    : `${shownLabel(label, true)} did not report this instance as reachable.`;
 }
 
 /** Why a row can't be opened, as `{key, label, sentence}`, or null when nothing stands in the way.
@@ -34,47 +44,54 @@ export function rowReason(row) {
 }
 
 const HEADLINES = {
-  E_REMOTE_INCOMPATIBLE: label => `${label} runs an OATS that can't do this yet.`,
-  E_SNAPSHOT_UNKNOWN: label => `${label} doesn't list this instance any more.`,
-  E_HOME_MISMATCH: label => `${label} answered for a different instance. Nothing was changed.`,
-  E_AMBIGUOUS: label => `${label} answered for a different instance. Nothing was changed.`,
+  E_REMOTE_INCOMPATIBLE: label => `${shownLabel(label, true)} runs an OATS that can't do this yet.`,
+  E_SNAPSHOT_UNKNOWN: label => `${shownLabel(label, true)} doesn't list this instance any more.`,
+  E_HOME_MISMATCH: label => `${shownLabel(label, true)} answered for a different instance. Nothing was changed.`,
+  E_AMBIGUOUS: label => `${shownLabel(label, true)} answered for a different instance. Nothing was changed.`,
   // Transport: ssh itself failed, or this machine's own deadline on the remote read passed.
-  E_SSH: label => `Couldn't reach ${label}.`,
-  E_CLI_TIMEOUT: label => `Couldn't reach ${label}.`,
+  E_SSH: label => `Couldn't reach ${shownLabel(label)}.`,
+  E_CLI_TIMEOUT: label => `Couldn't reach ${shownLabel(label)}.`,
 };
-/** The headline for a remote failure: the table's, else the view's own sentence for the code. */
+/** The headline for a remote failure: the table's, else the view's own sentence for the code. The
+ * server's label is shown as one display line, so a headline is always one. */
 export const remoteHeadline = (code, label, fallback) => Object.hasOwn(HEADLINES, code) ? HEADLINES[code](label) : fallback;
 
 export const readingFrom = label => `Reading from ${label}…`;
 
-/** A failure's Details line: its code, and the kernel's own message when a remote host sent one. */
-export const codeLine = reason => {
-  const code = typeof reason?.code === 'string' && reason.code ? reason.code : null;
-  const detail = typeof reason?.detail === 'string' && reason.detail ? reason.detail : null;
-  return code && detail ? `${code}: ${detail}` : code;
-};
-
 const CODE = /^E_[A-Z0-9_]{1,64}$/;
-const UNSAFE = /[\x00-\x08\x0b-\x1f\x7f]|[a-z][a-z0-9+.-]*:\/\/[^\s/]*@|(?:token|authorization|password|secret|api[_ -]?key)\s*[:=]\s*\S+|(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{16,}/i;
-const MAX_MESSAGE = 512, MAX_DETAIL = 2048;
-const detailOf = v => typeof v !== 'string' || !v ? null : UNSAFE.test(v) ? '[Detail withheld]' : v.slice(0, MAX_DETAIL);
+const MAX_MESSAGE = 512;
+/** A code in the kernel's code shape. */
+export const kernelCode = v => typeof v === 'string' && CODE.test(v);
+
+/** A failure's Details line as nodes: its code, and the kernel's own message when a host sent one. The
+ * code and the colon are text. The message is alone inside a <bdi>, as a text node: its bidirectional
+ * layout is isolated from the text around it. Only a message that is already a display line is shown. */
+export function codeLineNodes(doc, reason) {
+  const code = typeof reason?.code === 'string' && reason.code ? reason.code : null;
+  if (!code) return [];
+  if (!cleanLine(reason.detail)) return [doc.createTextNode(code)];
+  const field = doc.createElement('bdi'); field.append(doc.createTextNode(reason.detail));
+  return [doc.createTextNode(`${code}: `), field];
+}
 
 /** A host's (or the remote transport's) refusal: the kernel's code verbatim, a headline, and the
- * kernel's message as the detail. Null for anything not shaped like a kernel error. */
+ * kernel's message as the detail, through the display filter (one line, or withheld). Null for anything
+ * not shaped like a kernel error. */
 export function hostReason(error, label, fallback) {
-  if (!error || typeof error.code !== 'string' || !CODE.test(error.code)) return null;
-  return { code: error.code, message: remoteHeadline(error.code, label, fallback), detail: detailOf(error.message), remote: true };
+  if (!kernelCode(error?.code)) return null;
+  return { code: error.code, message: remoteHeadline(error.code, label, fallback), detail: displayLine(error.message), remote: true };
 }
 
 /** This machine's OATS has no `remote` entry for the operation: nothing was sent. */
 export const unroutableReason = label => ({ code: 'unsupported-remote-operation',
-  message: `This computer's OATS can't route this to ${label}. Update OATS here.`, detail: null, remote: true });
+  message: `This computer's OATS can't route this to ${shownLabel(label)}. Update OATS here.`, detail: null, remote: true });
 
-/** Re-validate a relayed remote reason (server → main → renderer), or null. */
+/** Re-validate a relayed remote reason (server → main → renderer), or null. Its message and its detail
+ * are each already a display line (what the filter would return for them), within their limits. */
 export function remoteReason(v) {
   if (!v || typeof v !== 'object' || Array.isArray(v) || Object.keys(v).some(k => !['code', 'message', 'detail', 'remote'].includes(k))
-    || v.remote !== true || typeof v.code !== 'string' || !(CODE.test(v.code) || v.code === 'unsupported-remote-operation')
-    || typeof v.message !== 'string' || !v.message || v.message.length > MAX_MESSAGE || UNSAFE.test(v.message)
-    || !(v.detail === null || typeof v.detail === 'string' && v.detail.length <= MAX_DETAIL && !UNSAFE.test(v.detail))) return null;
+    || v.remote !== true || !(kernelCode(v.code) || v.code === 'unsupported-remote-operation')
+    || !cleanLine(v.message) || v.message.length > MAX_MESSAGE
+    || !(v.detail === null || cleanLine(v.detail))) return null;
   return { code: v.code, message: v.message, detail: v.detail, remote: true };
 }
