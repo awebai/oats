@@ -451,9 +451,11 @@ unchanged. A Git status with the same rows is not that proof: a hook can
 rewrite a file that was already modified, and the row stays the same. In
 directory mode the work state is the bytes of `work/`, with the permission
 bits of each entry and of `work/` itself. In worktree mode it
-is what a work copy of the worktree holds:
+is what a work copy of the worktree holds, each file read where the copy
+reads it:
 
-- its Git status, its branch and commit;
+- its Git status, the ref its HEAD is on and the commit, and, when the copy
+  is made detached, the branch the repository's own HEAD is on;
 - its index: the entries (what `git ls-files -s` lists, with the
   skip-worktree and assume-unchanged marks), the resolve-undo records (what
   `git ls-files --resolve-undo` lists) and the index file's permission bits;
@@ -462,8 +464,8 @@ is what a work copy of the worktree holds:
   rebase, a cherry-pick, a revert, a bisect), `info/attributes` and the
   stash's log;
 - its tags and its stash;
-- its exclude rules (`core.excludesFile` with the file it names, and
-  `info/exclude`) and the settings that change what `git status` reports
+- its exclude rules (`core.excludesFile` with the file the copy reads for it,
+  and `info/exclude`) and the settings that change what `git status` reports
   (`core.fileMode`, `core.ignoreCase`, `core.precomposeUnicode`,
   `core.symlinks`, `core.autocrlf`, `core.eol`);
 - the bytes and the permission bits of its files, Git metadata left out.
