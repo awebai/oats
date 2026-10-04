@@ -442,6 +442,53 @@ for (const platform of ["MacIntel", "Linux x86_64", "Win32"]) test(`app.openFile
   assert.equal(s.chooserInputs.length, before);
 });
 
+// openViewTab's two placeholders (the view module fails to load; the view's mount throws) are built as
+// text. The exception text here looks like markup.
+const MARKUP = '<b>bold</b> <img src="x"> &amp; text';
+function placeholderIn(host) {
+  assert.equal(host.childElementCount, 1, "the host holds only the placeholder");
+  const box = host.firstElementChild;
+  assert.equal(box.tagName, "DIV"); assert.equal(box.className, "placeholder");
+  assert.deepEqual([...box.children].map(el => el.tagName), ["H2", "DIV"]);
+  assert.equal(box.querySelectorAll("*").length, 2, "only the placeholder's own elements");
+  return { heading: box.children[0].textContent, body: box.children[1].textContent };
+}
+const viewTab = (s, title) => [...s.c.tabs.values()].find(tab => tab.title === title);
+test("a view module that fails to load: the placeholder is text; exception text that looks like markup creates no element", async t => {
+  const s = shell(t);
+  const pending = s.openViewTab("markdown", "notes.md"); await tick();
+  s.loads.at(-1).reject(new Error(MARKUP)); await pending;
+  const tab = viewTab(s, "notes.md (missing)"); assert.ok(tab, "the missing view's tab");
+  assert.deepEqual(placeholderIn(tab.paneEl), { heading: "markdown", body: `view module failed to load: ${MARKUP}` });
+  assert.equal(s.document.querySelector("#tabhost b, #tabhost img"), null);
+});
+test("a view whose mount throws: the placeholder is text; exception text that looks like markup creates no element", async t => {
+  const s = shell(t);
+  const pending = s.openViewTab("markdown", "notes.md"); await tick();
+  s.loads.at(-1).resolve({ mount() { throw new Error(MARKUP); } }); await pending;
+  const tab = viewTab(s, "notes.md"); assert.ok(tab, "the view's tab");
+  assert.equal(tab.paneEl.childElementCount, 1, "the view's own host");
+  assert.deepEqual(placeholderIn(tab.paneEl.firstElementChild), { heading: "markdown", body: `mount failed: ${MARKUP}` });
+  assert.equal(s.document.querySelector("#tabhost b, #tabhost img"), null);
+});
+test("a late load rejection for an open that is no longer owned opens no tab and writes nothing", async t => {
+  const s = shell(t);
+  const pending = s.openViewTab("markdown", "notes.md"); await tick();
+  s.tabOpenIntents.invalidate();
+  s.loads.at(-1).reject(new Error(MARKUP)); await pending;
+  assert.equal(s.c.tabs.size, 0); assert.equal(s.document.querySelector("#tabhost .placeholder"), null);
+});
+test("a late mount rejection for a tab whose open is no longer owned writes nothing into it", async t => {
+  const s = shell(t), mount = deferred();
+  const pending = s.openViewTab("markdown", "notes.md"); await tick();
+  s.loads.at(-1).resolve({ mount: () => mount.promise }); await tick();
+  const tab = viewTab(s, "notes.md"); assert.ok(tab, "the view's tab, its mount pending");
+  const before = tab.paneEl.innerHTML;
+  s.tabOpenIntents.invalidate();
+  mount.reject(new Error(MARKUP)); await pending;
+  assert.equal(tab.paneEl.innerHTML, before); assert.equal(s.document.querySelector("#tabhost .placeholder"), null);
+});
+
 // Mutate only source strings in memory. Each assertion below has a passing
 // unmodified counterpart above; no production file or scratch worktree edits.
 test("mutation: file arrival must not mint a replacement selection ticket", async t => {
