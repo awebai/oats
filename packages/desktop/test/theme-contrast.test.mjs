@@ -382,7 +382,7 @@ test("nav ink is subtly darker than muted; identity palettes are opaque and dist
 // a hand-picked expected palette, before measuring contrast. No browser launch.
 for (const [name] of palettes) test(`${name}: actual identity/runtime markup wins the cascade and meets AA`, t => {
   const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><head></head><body>
-    <div id="app"><aside id="sidebar"><button class="ctx-inst active"></button></aside>
+    <div id="app"><aside id="sidebar"><button class="ctx-inst active"></button><button class="ctx-inst idle"></button></aside>
       <div class="oats-view"><button class="soul-card"><span class="sname"></span></button>
         <button class="act primary"><span class="inspector-marks"></span></button></div></div>
   </body></html>`);
@@ -422,6 +422,18 @@ for (const [name] of palettes) test(`${name}: actual identity/runtime markup win
     assert.equal(hostile.getAttribute("style"), null);
     const invalid = document.createElement("span"); invalid.dataset.avatarColor = "red; background:url(x)";
     container.append(invalid); check(invalid, "chip");
+  }
+  // A stopped instance's provider mark dims: whatever pair the shell paints it
+  // with must be one the inventory lists, so every theme (and a host palette)
+  // holds it at AA. (An unreported harness is not dimmed: it keeps its own pair.)
+  const token = value => value.match(/^var\(--([a-z0-9-]+)\)$/)?.[1];
+  for (const runtime of runtimes) {
+    const stopped = createRuntimeBadge(document, runtime); stopped.classList.add("ctx-runtime");
+    document.querySelector(".ctx-inst.idle").append(stopped);
+    const style = dom.window.getComputedStyle(stopped), fg = token(style.color), bg = token(style.background);
+    assert.ok(pairs.some(pair => pair[0] === fg && pair[1] === bg),
+      `${name} stopped ${runtime} mark: ${style.color} on ${style.background} is not a pair in the contrast inventory`);
+    check(stopped, fg.replace(/-fg$/, ""));
   }
 });
 
