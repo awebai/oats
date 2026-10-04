@@ -494,7 +494,20 @@ other. The copy reads what the proof reads, so where the proof failed the
 copy may fail too: the retire then refuses with `E_WORK_PRESERVATION_FAILED`
 before any retire hook runs. No recovery was written and nothing was
 deleted; the retire has already stopped the session of a launched instance
-by then, the instance is not retired, and its home is kept.
+by then, the instance is not retired, and its home and work are kept.
+
+A retire hook can leave the worktree in that state too. The snapshot before
+the hooks was then taken of a provable worktree, and may hold the home only.
+After the hooks the work is copied under `after-hooks/`, whether or not
+anything in it moved. When that copy cannot be made, the retire refuses with
+`E_WORK_PRESERVATION_FAILED` after the hooks have run, and the home, the
+work and the recovery written before the hooks are all kept.
+
+Every refusal of the copy made before the hooks, whatever its cause, ends by
+saying what the retire has done by then: no retire hook has run, no recovery
+was written and nothing was deleted, the instance is not retired, its home
+and work are kept, and its session has been stopped, or this retire stopped
+no session. A refusal after the hooks does not say that.
 
 A snapshot that holds the home only (the work had nothing to preserve
 before the hooks) has no work copy to stand for it. It gets the work under
@@ -531,7 +544,8 @@ hooks, such an entry anywhere in the worktree refuses the retire:
   The entry may be a live endpoint, so deleting it is not the advice. The
   retire has already stopped the session of a launched instance by then: the
   instance's session is stopped, the instance is not retired, and its home
-  is kept. The message says so. To continue, deal with the entry and run
+  is kept. The message says so, and says that this retire stopped no session
+  when the instance had none to stop. To continue, deal with the entry and run
   `oats retire <instance>` again, or start the session again in the same
   home with `oats session start --home <abs>`. A self-retire (`--self`) is
   completed by its detached completion, which stops the session and refuses
