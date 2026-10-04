@@ -13,13 +13,13 @@ import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { OATS_VERSION, launchEnvRefs, launchShellCommand, parseLaunchCommand, renderLaunchCommand, restartInstanceSession, startInstanceSession } from "../lib/core.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
-import { isolateSessionEnvironment, waitUntil } from "./helpers/host-fixture.mjs";
+import { isolateSessionEnvironment, oatsSocket, waitUntil } from "./helpers/host-fixture.mjs";
 
 const KERNEL_BIN = realpathSync(resolve(new URL("../bin/oats.mjs", import.meta.url).pathname));
 const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-kernel-shim-")));
-const socket = join(base, "tmux.sock");
 const session = "k";
-const restoreEnvironment = isolateSessionEnvironment(base, socket);
+const restoreEnvironment = isolateSessionEnvironment(base);
+const socket = oatsSocket(); // the fixture's own `oats` server: where the kernel creates windows
 const tmux = (...args) => execFileSync("tmux", ["-u", "-S", socket, ...args], { encoding: "utf8", timeout: 10000, stdio: ["ignore", "pipe", "pipe"] }).trim();
 const windows = () => { try { return tmux("list-windows", "-t", session, "-F", "#{window_name}").split("\n").filter(Boolean); } catch { return []; } };
 test.after(() => { try { tmux("kill-server"); } catch { /* gone */ } finally { restoreEnvironment(); rmSync(base, { recursive: true, force: true }); } });

@@ -253,6 +253,14 @@ test("oats server + --server: registry, check, remote spawn with a hostile task,
     r = oats(env, ["status", "--server", "build"]);
     assert.match(r.stdout, /server build .*build-host/); assert.match(r.stdout, /dev-probe/);
 
+    // spawn's text answer: the attach line is the routed viewer, never a bare tmux command for the host
+    r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "txt", "--no-launch"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.match(r.stdout, /^  attach: oats session attach --server build --instance dev-txt$/m);
+    assert.doesNotMatch(r.stdout, /tmux attach/);
+    r = oats(env, ["retire", "dev-txt", "--server", "build", "--json"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+
     // the registration disappears; the snapshot still routes the retirement
     r = oats(env, ["server", "remove", "build", "--json"]);
     assert.deepEqual(r.json().result.remoteInstancesStillTracked, ["dev-probe"]);

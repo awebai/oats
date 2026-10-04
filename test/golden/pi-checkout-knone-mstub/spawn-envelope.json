@@ -22,7 +22,7 @@
     "sibling": null,
     "relation": null,
     "spawnOrigin": "operator",
-    "attach": "tmux attach -t oats-golden",
+    "attach": "oats session attach --home <base>/deployment/agents/dev/instances/dev-pi-checkout-knone-mstub",
     "launchConfig": null,
     "launch": {
       "version": 2,
