@@ -487,6 +487,10 @@ one more work copy. What the copy of a nested repository holds of each kind:
 | the stash | the stash and its log |
 | remote-tracking refs, notes, any other namespace | nothing beyond what a branch or a tag reaches |
 
+A commit the copy holds without a name is lost to `git gc` in the copy.
+`git fsck --unreachable` in the copy lists such commits, and
+`git branch <name> <commit>` there gives one a name again.
+
 A ref the copy holds nothing of is part of the state all the same: it can
 cause one more work copy, and never skips one.
 
