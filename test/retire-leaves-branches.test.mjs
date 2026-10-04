@@ -397,5 +397,5 @@ test("the plan of a worktree whose HEAD names a ref outside refs/heads/: branch 
   assert.equal(facts.branch, null, "a ref outside refs/heads/ is not a branch name");
   assert.equal(facts.detached, false);
   const text = cli(f, ["retire", basename(spawned.home), "--plan"]);
-  assert.match(text.stdout, / untracked on a branch OATS carries no name for;/, "the plan's text does not call it detached");
+  assert.match(text.stdout, / untracked on a ref OATS carries no branch name for;/, "the plan's text does not call it detached");
 });

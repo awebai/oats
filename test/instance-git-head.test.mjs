@@ -3,10 +3,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { headName, worktreeHead } from "../lib/instance-git.mjs";
+import { headName, observeInstanceGit, worktreeHead } from "../lib/instance-git.mjs";
 
 const temporaryDirectories = [];
 test.afterEach(() => { for (const dir of temporaryDirectories.splice(0)) rmSync(dir, { recursive: true, force: true }); });
@@ -83,4 +83,35 @@ test("worktreeHead adds the commit HEAD is at, and a HEAD that has no commit is 
   assert.equal(head.ref.toString(), "refs/heads/main");
   git(dir, "checkout", "--quiet", "--detach");
   assert.deepEqual(worktreeHead(dir), { commit, branch: null, detached: true, ref: null });
+});
+
+test("the HEAD the reader and the plan report is the work tree's, whatever repository the caller's GIT_DIR, GIT_WORK_TREE or GIT_INDEX_FILE name", () => {
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "oats-head-home-")));
+  temporaryDirectories.push(home);
+  const work = join(home, "work");
+  mkdirSync(work);
+  execFileSync("git", ["init", "--quiet", work], { stdio: ["ignore", "pipe", "pipe"] });
+  git(work, "config", "user.email", "test@example.invalid");
+  git(work, "config", "user.name", "Test");
+  git(work, "symbolic-ref", "HEAD", "refs/heads/selected");
+  const commit = commitIn(work);
+  writeFileSync(join(home, "instance.json"), JSON.stringify({ instance: "dev-1", agent: "dev", work: "worktree", branch: "selected" }));
+  const other = repository();
+  git(other, "symbolic-ref", "HEAD", "refs/heads/other");
+  const otherCommit = commitIn(other);
+  const saved = { ...process.env };
+  Object.assign(process.env, { GIT_DIR: join(other, ".git"), GIT_WORK_TREE: other, GIT_INDEX_FILE: join(other, ".git", "index") });
+  try {
+    assert.equal(execFileSync("git", ["-C", work, "symbolic-ref", "HEAD"], { encoding: "utf8" }).trim(), "refs/heads/other", "fixture premise: with these variables, Git asked about the work tree answers for the other repository");
+    assert.equal(headName(work).branch, "selected");
+    assert.equal(worktreeHead(work).commit, commit);
+    const observed = observeInstanceGit(home);
+    assert.equal(observed.observation.branch, "selected", "the plan's name is the work tree's");
+    assert.equal(observed.observation.revision, commit, "beside the work tree's commit");
+    assert.equal(observed.recorded.drift, false);
+    assert.notEqual(otherCommit, commit);
+  } finally {
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+    Object.assign(process.env, saved);
+  }
 });
