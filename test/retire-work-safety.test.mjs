@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawn as spawnProcess, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import * as nodeFs from "node:fs";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, lutimesSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { capabilityFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
@@ -2306,9 +2306,11 @@ console.log(JSON.stringify({ meta: { retired: true } }));
   write(join(work, "human-ignored", "kept.txt"), "ignored\n");
   const index = join(gitDirOf(work), "index");
   const older = new Date(Date.now() - 60_000);
-  for (const name of execFileSync("git", ["-C", work, "ls-files", "-z"], { encoding: "utf8" }).split("\0").filter(Boolean)) utimesSync(join(work, name), older, older);
+  const entries = execFileSync("git", ["-C", work, "ls-files", "-z"], { encoding: "utf8" }).split("\0").filter(Boolean).map((name) => join(work, name));
+  for (const entry of entries) lutimesSync(entry, older, older); // a link's own times, which its entry holds
   porcelain(work); // the entries' stat data changed: Git writes the index anew, newer than every entry
   chmodSync(index, 0o644); // whatever bits Git gave it here, under whatever umask
+  assert.deepEqual(entries.filter((entry) => lstatSync(entry).mtimeMs >= lstatSync(index).mtimeMs), [], "fixture premise: every entry of the index is older than the index");
   const indexFile = () => { const st = lstatSync(index); return { ino: st.ino, mode: st.mode & 0o7777 }; };
   const settled = indexFile();
   const statusBefore = porcelain(work);
