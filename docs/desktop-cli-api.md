@@ -1647,13 +1647,13 @@ with `--expect-decision` records the key and decision in `instance.json`.
   sibling, relation, spawnOrigin (operator | instance), attach, launchConfig,
   launch` (the redacted recipe).
 - `tmux.socket` is the absolute socket of the tmux server the window was
-  created on; a launched spawn has it, a `--no-launch` one does not. From
-  0.41 it is the OATS tmux server's
-  ([execution-targets.md](execution-targets.md#the-oats-tmux-server)); the
-  shape is unchanged.
+  created on; a launched spawn has it, a `--no-launch` one does not. It is
+  the OATS tmux server's
+  ([execution-targets.md](execution-targets.md#the-oats-tmux-server)), where
+  earlier kernels recorded the default server's; the shape is unchanged.
 - `attach` is one string, a command for a person to paste, the same in text
-  and JSON. From 0.41 it is `tmux -S <tmux.socket> attach -t <session>` for a
-  launched spawn (it was `tmux attach -t <session>`) and `oats session attach
+  and JSON. It is `tmux -S <tmux.socket> attach -t <session>` for a
+  launched spawn (earlier kernels: `tmux attach -t <session>`) and `oats session attach
   --home <home>` for `--no-launch`. A value is single-quoted only when it
   holds a character outside `A-Za-z0-9_./:-`. It is not a field to parse:
   read `tmux` for the target.
@@ -2574,7 +2574,7 @@ selection flags. See [the start workflow](desktop-instance-start.md).
   instance's events as a `launch-warning` row, `data: {message}`. They are
   advisory: the start went ahead. Earlier kernels omit the field; read a
   missing `warnings` as `[]`.
-- From 0.41 the kernel adds one warning of its own, in the same array and as
+- The kernel adds one warning of its own, in the same array and as
   the same event: when the start had to create the window again and created
   it on a tmux server other than the one the home recorded, the line names
   the instance, the old socket and the new one (each as a JSON string).

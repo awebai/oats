@@ -65,8 +65,9 @@ attach command.
 <a id="the-oats-tmux-server"></a>
 #### The OATS tmux server
 
-Since 0.41 OATS creates sessions on a tmux server of its own, named `oats`
-(`tmux -L oats`), not on your default tmux server. A tool that restyles the
+OATS creates sessions on a tmux server of its own, named `oats`
+(`tmux -L oats`), not on your default tmux server, where earlier kernels
+created them. A tool that restyles the
 default server (a theme switcher, a script that runs `tmux set -g …` or
 `tmux kill-server`) therefore no longer reaches agent terminals.
 
@@ -79,8 +80,8 @@ default server (a theme switcher, a script that runs `tmux set -g …` or
 - **Your configuration loads.** The server starts as any tmux server does, so
   your `~/.tmux.conf` (key bindings, status line, options) applies to it.
 - **See what runs there:** `tmux -L oats ls`. Plain `tmux ls` and a bare
-  `tmux attach` show your default server, so they no longer show sessions
-  created from 0.41 on.
+  `tmux attach` show your default server, so they do not show the sessions
+  OATS creates now.
 - **Attach:** `oats session attach --home <home>`. By hand, copy the `attach:` line that spawn prints: `tmux -S <socket> attach
   -t <session>`, with the recorded socket. `tmux -L oats attach -t <session>`
   is a convenience that holds only in an environment with the same
@@ -122,14 +123,142 @@ options and environment, are left exactly as they were.
 - The two sizing commands are each attempted on their own, and a refused one
   is ignored: the launch goes on. Nothing else is tolerated: a refused
   `window-style` or `window-active-style` is a launch failure (the spawn is
-  rolled back and fails; a start fails with `E_SESSION_START_FAILED`). Before
-  0.41 a start whose recorded tmux server was gone failed when a sizing
-  command was refused; it no longer does.
+  rolled back and fails; a start fails with `E_SESSION_START_FAILED`). An
+  earlier kernel failed a start whose recorded tmux server was gone when a
+  sizing command was refused; this one does not.
+
+<a id="the-servers-start-environment"></a>
+#### The environment of the server and its panes
+
+A tmux server keeps the environment of the process that started it, as its
+global environment. A pane gets that, plus its session's environment (the
+variables tmux's `update-environment` names, taken from whoever created the
+session), plus what the launch command sets (`OATS_INSTANCE`,
+`OATS_INSTANCE_HOME`, the capabilities' and the launch configuration's
+variables). One variable is different: **a pane's `PATH` is the `PATH` of the
+process that creates its window**, that is of each `oats spawn` or `oats
+session start`, with the home's own `oats` shim put first by the launch
+command. So:
+
+- `PATH` follows the process that runs each spawn or start, not whoever
+  started the server.
+- The rest of the ambient environment follows the server's first creator,
+  and a server that already runs keeps what it started with. Creating a
+  session or a window on it changes nothing global.
+
+Who starts the `oats` server, after an install, a reboot or its last session
+ending, decides that ambient environment:
+
+| Started by | The server's environment |
+|---|---|
+| an operator's shell | that shell's |
+| the Desktop | the Desktop's, with the login-shell `PATH` it puts in front ([desktop.md](desktop.md)) |
+| a schedule runner or a trigger | the service's |
+| an OATS instance | the global environment of the tmux server that instance's home records, never the instance's own |
+
+The first creator that succeeds determines it; when two start it at the same
+moment, tmux starts one server and nothing says which of the two it is.
+
+**What OATS removes, for every creator.** The names the kernel itself sets
+never go into the environment OATS creates a server, a session or a window
+with: `COLORFGBG`, `TMUX`, `TMUX_PANE`; the launch identity and roots
+(`OATS_INSTANCE`, `OATS_INSTANCE_HOME`, `OATS_HOME`, `OATS_AGENT`,
+`OATS_SOUL`, `OATS_SOUL_ID`, `OATS_ROOT`, `OATS_CONTEXT`, `OATS_WORKSPACE`,
+`OATS_EVENT`, `OATS_SETTINGS`, `OATS_SETTINGS_ORIGINS`, `OATS_CLI_BIN`,
+`PI_AGENT_INSTANCE`, `PI_AGENT_HOME`, `PI_AGENTS_ROOT`); what a hook, an
+operation, a retire or a trigger is given (`OATS_CAPABILITY`, `OATS_LAYER`,
+`OATS_LEVEL`, `OATS_META`, `OATS_DEPLOYMENT`, `OATS_RESOLUTION`,
+`OATS_OPERATION`, `OATS_REPO`, `OATS_BRANCH`, `OATS_WORK`, `OATS_KIND`,
+`OATS_TASK`, `OATS_HARNESS`, `OATS_PREVIOUS_HARNESS`, `OATS_RUNTIME`,
+`OATS_PREVIOUS_RUNTIME`, `OATS_LAUNCH_PREVIEW`, `OATS_RETIRE_INTENT`,
+`OATS_TRIGGER_EVENT_FILE`, `OATS_TEAM_NAME`, `OATS_TEAM_SCOPE`,
+`OATS_TEAM_ID`, `OATS_TEAM_LABEL`, `OATS_TEAM_LABELS`, `OATS_TEAMS`,
+`OATS_TEAMS_SOURCE`, `OATS_DEFAULT_TEAM`, `OATS_DEFAULT_TEAM_ID`,
+`OATS_DEFAULT_TEAM_FROM`, `OATS_WORKSPACE_NAME`, `OATS_WORKSPACE_KEY`); and
+every launch reference (`OATS_LAUNCH_REF_<NAME>`) with the `<NAME>` it stands
+for. Other `OATS_` variables you export (`OATS_HOME_DIR`,
+`OATS_TMUX_SESSION`) are yours and stay. An agent's plain `oats` finds its
+deployment from its home.
+
+**An instance never passes its own environment.** A harness puts its own
+variables, credentials and identity into the environment of what it runs. A
+process is inside an instance when `OATS_INSTANCE_HOME` names an instance
+home, or its working directory is inside one. That covers an agent that
+spawns or starts another instance, a capability hook that spawns or starts
+(a hook runs with its instance's identity, also when a person ran the command
+that triggered it), and `oats schedule run-now` typed inside an instance.
+
+- When such a process has to create the tmux session, OATS reads the global
+  environment of the server its home records (`tmux -S <recorded socket>
+  show-environment -g -s`, the endpoint of the home's receipt, checked
+  against `instance.json` as every session command checks it) and creates
+  the session with that. It is read strictly and never run by a shell; a
+  variable whose value spans several lines is left out whole; a hidden or
+  removed variable carries nothing; text that cannot be read to its end is
+  a failed read.
+- When it creates a window in a session that exists, it passes only `PATH`,
+  without any instance's `oats` shim directory. Nothing else of it travels.
+- **It is refused** (`E_RUNTIME_ENDPOINT_UNKNOWN`; `oats spawn` reports it
+  as `E_SPAWN_FAILED` with the same message) when the session does not exist
+  on the `oats` server and there is no source to read: the home records no
+  tmux server (it was never launched), its receipt cannot be used, or its
+  recorded server is gone or cannot be read. A process that carries an
+  instance's identity (`OATS_INSTANCE`, `OATS_INSTANCE_HOME`, `OATS_HOME`,
+  `PI_AGENT_INSTANCE` or `PI_AGENT_HOME`) with no home to be found is refused
+  the same way. Nothing falls back to the caller's environment, to another
+  server or to a built-in list. A spawn and a start check this before they
+  create, stop or write anything; if the session disappears between that
+  check and the creation, the refusal comes at the creation, and the spawn
+  is rolled back as any failed launch is.
+- **The remedy** is to create the session from your own shell, outside every
+  instance home, as below. The session name matters: it must be the
+  deployment's (the refusal names it); another deployment's session on the
+  same server does not help. Once the session exists, the instance spawns
+  and starts there without reading anything.
+- The recorded server's environment is an existing baseline, chosen because
+  it is what a window that instance opened on that server got. It is not
+  proof that it holds no old identity or credential, and this is not a
+  promise that secrets are isolated between instances that run as the same
+  user on one tmux server.
+- Which server is reached is decided by the process that creates, never by
+  the environment it passes: its own `tmux`, its own `TMUX_TMPDIR`, and the
+  socket the lookup returned when the server runs. What the server process
+  gets (`HOME` and so which configuration loads, `PATH`, everything else)
+  comes from the passed environment alone. A running server's global
+  environment is never read for this and never changed.
+
+A process that neither sign identifies as an instance is treated as any
+other creator: its environment, without the names above, is what it passes.
+
+By hand (`<session>` is the deployment's session name: `oats-agents` unless
+`session.tmuxSession` or `OATS_TMUX_SESSION` says otherwise):
+
+```sh
+tmux -L oats new-session -d -s <session> -n hq   # start it from your own shell, before anything else does
+tmux -L oats show-environment -g                 # what environment the server has
+tmux -L oats show-environment -g LANG            # one variable
+tmux -L oats set-environment -g LANG "$LANG"     # repair a running server: windows created from now on inherit it
+tmux -L oats kill-server                         # replace it: ends EVERY session on that server
+```
+
+- Start it yourself after an upgrade or a reboot, before agents, the Desktop
+  or a schedule run. OATS finds a session you created and uses it: it looks
+  the session up by its exact name and assumes nothing about its `hq`
+  window.
+- `set-environment -g` is how a running server is repaired: it ends nothing,
+  and panes that already run keep the environment they have. It does not
+  change the `PATH` of panes OATS creates, which is the spawning process's.
+- `kill-server` ends every session on that server, every running agent
+  included. It is for before agents are started, not for repairing a running
+  host. The next start takes the environment of whoever starts it.
+- `-L oats` reaches the server of the environment you type it in
+  (`TMUX_TMPDIR`). For the server an instance is on, use the socket from its
+  row in `oats status --json`: `tmux -S <socket> …`.
 
 <a id="existing-instances"></a>
 #### Existing instances
 
-Upgrading moves nothing. An instance launched before 0.41 stays on the server
+Upgrading moves nothing. An instance launched by an earlier kernel stays on the server
 it recorded (usually your default one), and status, inspect, input, attach,
 stop and retire keep acting on that recorded socket. While a deployment has
 both, look at both servers: `tmux ls` and `tmux -L oats ls`.
@@ -137,7 +266,7 @@ both, look at both servers: `tmux ls` and `tmux -L oats ls`.
 - A restart in place stays on the recorded server: a live harness that is
   restarted, a fallback shell or a dead pane is reused where it is, and the
   record does not change.
-- **Changed in 0.41:** a start that has to create the window again, because
+- **Changed:** a start that has to create the window again, because
   the recorded window or the recorded server is gone, creates it on the OATS
   server. Earlier kernels recreated it on the recorded socket. The start
   records the new socket in `instance.json` and the receipt, and says so: one

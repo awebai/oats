@@ -13,16 +13,16 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile, execFileSync, spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { ensureOatsTmuxSession, inputInstanceSession, inspectInstanceSession, restartInstanceSession, retireInstance, shellWord, startInstanceSession } from "../lib/core.mjs";
+import { ensureOatsTmuxSession, inputInstanceSession, inspectInstanceSession, parseTmuxShellEnvironment, restartInstanceSession, retireInstance, shellWord, startInstanceSession } from "../lib/core.mjs";
 import { prepareSessionViewer } from "../lib/session-viewer.mjs";
 import { readEvents } from "../lib/instance-events.mjs";
 import { isolateSessionEnvironment, oatsSocket, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
-import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { git, v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const CORE = pathToFileURL(resolve(new URL("../lib/core.mjs", import.meta.url).pathname)).href;
@@ -44,6 +44,7 @@ const USER_TMUX_CONF = [
   "set-option -g window-active-style fg=green",
   "set-option -g cursor-colour red",
   "set-option -g window-size smallest",
+  "set-option -ga update-environment FIXTURE_IDENTITY",
   "",
 ].join("\n");
 writeFileSync(join(process.env.HOME, ".tmux.conf"), USER_TMUX_CONF);
@@ -103,8 +104,8 @@ const withPath = async (path, fn) => { const saved = process.env.PATH; process.e
 
 /** A real workspace-model home with a frozen launch command, recorded as launched on `on` (a socket)
  *  or never launched. */
-async function makeHome(name, { on, session = SESSION } = {}) {
-  const { home } = await withPath(fx.env.PATH, () => fx.spawn("dev", { name, harness: "claude" }));
+async function makeHome(name, { on, session = SESSION, deployment = fx } = {}) {
+  const { home } = await withPath(deployment.env.PATH, () => deployment.spawn("dev", { name, harness: "claude" }));
   writeFileSync(join(home, "TASK.md"), "task\n");
   const command = `OATS_INSTANCE=${shq(name)} OATS_INSTANCE_HOME=${shq(home)} ${shq(probe)} --dangerously-skip-permissions -- "$(cat TASK.md)"`;
   const { launch: _recipe, ...spawned } = readJson(join(home, "instance.json"));
@@ -505,4 +506,265 @@ test("an explicit name is taken by a live window on the OATS server, not by one 
   assert.equal(spawned.attach, `oats session attach --home ${spawned.home}`);
   await withPath(fx.env.PATH, () => fx.spawn("dev", { name: "no-session", harness: "claude", tmuxSession: "never-created" }));
   assert.deepEqual(sessionsOf(OATS), sessions, "the name check created no session");
+});
+
+test("tmux's shell-format environment is read strictly and never executed: the whole text or nothing", () => {
+  const read = (text) => parseTmuxShellEnvironment(Buffer.from(text));
+  assert.deepEqual(read(""), {});
+  assert.deepEqual(read('A="1"; export A;\n'), { A: "1" });
+  assert.deepEqual(read('EMPTY=""; export EMPTY;\nEQ="a=b=c"; export EQ;\n'), { EMPTY: "", EQ: "a=b=c" });
+  assert.deepEqual(read('Q="a\\"b\\\\c\\$d\\`e"; export Q;\n'), { Q: 'a"b\\c$d`e' }, "the four escapes tmux writes are undone");
+  assert.deepEqual(read('META="; rm -rf ~ | & ( ) < > * ? ! # \' export X;"; export META;\n'), { META: "; rm -rf ~ | & ( ) < > * ? ! # ' export X;" }, "shell metacharacters are characters");
+  // A line feed inside a value stays inside it: the variable is dropped whole, and the line that
+  // looks like an assignment (of a reserved name, of an ordinary one) is never read as one.
+  assert.deepEqual(read('M="first\nOATS_INSTANCE_HOME=/smuggled"; export M;\nN="first\nINJECTED=1"; export N;\nKEPT="1"; export KEPT;\n'), { KEPT: "1" });
+  assert.deepEqual(read('unset GONE;\nKEPT="1"; export KEPT;\n'), { KEPT: "1" }, "a removed variable carries nothing");
+  assert.deepEqual(read('BASH_FUNC_x%%="() { :; }"; export BASH_FUNC_x%%;\nKEPT="1"; export KEPT;\n'), { KEPT: "1" }, "a name that is no plain identifier is not carried");
+  // Anything the grammar does not consume to the end is a failed read, never a partial environment.
+  for (const [what, text] of [
+    ["cut inside a value", 'A="1"; export A;\nB="unfinished'],
+    ["cut before the last line feed", 'A="1"; export A;'],
+    ["cut inside the export", 'A="1"; export'],
+    ["another name exported", 'A="1"; export B;\n'],
+    ["an escape tmux does not write", 'A="a\\nb"; export A;\n'],
+    ["an unquoted assignment", "A=1\n"],
+    ["a stray line", 'A="1"; export A;\nrm -rf /\n'],
+    ["an unset without a name", "unset ;\n"],
+    ["text after an entry", 'A="1"; export A; echo x\n'],
+  ]) assert.equal(read(text), null, what);
+  assert.equal(parseTmuxShellEnvironment(Buffer.concat([Buffer.from('A="'), Buffer.from([0xff, 0xfe]), Buffer.from('"; export A;\n')])), null, "bytes that are not UTF-8");
+});
+
+test("the environment OATS creates a tmux session and a window with: an instance passes its recorded server's, never its own, or is refused; another creator passes its own without the kernel's names; PATH follows whoever creates the window", async () => {
+  const globalEnv = (socket) => Object.fromEntries(lines(tmuxOn(socket, "show-environment", "-g")).filter((l) => /^[A-Za-z_][A-Za-z0-9_]*=/.test(l)).map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]));
+  const sessionEnv = (session) => tmuxOn(OATS, "show-environment", "-t", `=${session}`);
+  /** One process that ensures a session on the OATS server, with its own environment and directory. */
+  const ensureScript = (session) => `import(${JSON.stringify(CORE)}).then((core) => process.stdout.write(core.ensureOatsTmuxSession(${JSON.stringify(session)}, ${JSON.stringify(base)}))).catch((e) => { process.stdout.write(JSON.stringify({ code: e.code, message: e.message })); process.exit(1); })`;
+  const ensureIn = (session, { env = {}, cwd = base } = {}) => spawnSync(process.execPath, ["-e", ensureScript(session)], { cwd, env: { ...process.env, PWD: cwd, ...env }, encoding: "utf8", timeout: 30000 });
+  const refusal = (r) => { assert.equal(r.status, 1, r.stdout + r.stderr); assert.doesNotMatch(r.stdout + r.stderr, /s3cret|smuggled/, "no value is in what a refusal prints"); return JSON.parse(r.stdout); };
+  const tree = (dir) => readdirSync(dir, { recursive: true }).sort();
+  const shimOf = (home) => join(home, ".oats", "bin");
+  // What an agent's process holds and must not hand on: a credential, a launch reference and the
+  // name it stands for, a harness's marker, a variable update-environment names, its terminal.
+  const SECRETS = ["FIXTURE_SECRET", "OATS_LAUNCH_REF_FIXTURE_TOKEN", "FIXTURE_TOKEN", "CLAUDECODE"];
+  const KERNEL = ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_ROOT", "PI_AGENTS_ROOT", "TMUX", "TMUX_PANE", "COLORFGBG"];
+  const NOT_CARRIED = ["OATS_FIXTURE_MULTI_RESERVED", "OATS_FIXTURE_MULTI_PLAIN", "FIXTURE_INJECTED", "OATS_FIXTURE_HIDDEN", "OATS_FIXTURE_REMOVED"];
+  const agent = { FIXTURE_SECRET: "s3cret", OATS_LAUNCH_REF_FIXTURE_TOKEN: "s3cret", FIXTURE_TOKEN: "s3cret", CLAUDECODE: "1", FIXTURE_IDENTITY: "creator", TMUX: `${OTHER},1,0`, TMUX_PANE: "%1", COLORFGBG: "15;0" };
+  const operator = { FIXTURE_OPERATOR: "kept", FIXTURE_IDENTITY: "operator", PI_AGENTS_ROOT: "/fixture/operator/agents", OATS_LAUNCH_REF_FIXTURE_TOKEN: "s3cret", FIXTURE_TOKEN: "s3cret", TMUX: `${OTHER},1,0`, COLORFGBG: "15;0" };
+  const absent = (env, names, what) => { for (const name of names) assert.equal(name in env, false, `${what} holds no ${name}`); };
+  const SPECIAL = "a \"quoted\" $HOME `tick` back\\slash = ; export X;";
+
+  // The server the calling instance is recorded on: a marker; a value every escaped character is in;
+  // an empty value; two multi-line values, one followed by a line shaped like the assignment of a
+  // reserved name and one by a line shaped like an ordinary assignment; a hidden and a removed
+  // variable; and names the kernel sets.
+  await killServer(OATS);
+  ensureSession(OTHER);
+  const source = (...args) => tmuxOn(OTHER, "set-environment", "-g", ...args);
+  source("OATS_FIXTURE_MARKER", "from the recorded server");
+  source("OATS_FIXTURE_SPECIAL", SPECIAL);
+  source("OATS_FIXTURE_EMPTY", "");
+  source("OATS_FIXTURE_MULTI_RESERVED", "first line\nOATS_INSTANCE_HOME=/smuggled");
+  source("OATS_FIXTURE_MULTI_PLAIN", "first line\nFIXTURE_INJECTED=1");
+  source("-h", "OATS_FIXTURE_HIDDEN", "hidden");
+  source("-r", "OATS_FIXTURE_REMOVED");
+  source("OATS_ROOT", "/recorded/root");
+  source("COLORFGBG", "0;15");
+  const sourceEnvironment = (server) => {
+    absent(server, [...SECRETS, ...KERNEL, ...NOT_CARRIED, "FIXTURE_IDENTITY", "FIXTURE_OPERATOR"], "a server started with the recorded server's environment");
+    assert.equal(server.OATS_FIXTURE_MARKER, "from the recorded server");
+    assert.equal(server.OATS_FIXTURE_SPECIAL, SPECIAL, "a value is carried exactly, whatever characters it holds");
+    assert.equal(server.OATS_FIXTURE_EMPTY, "");
+    assert.doesNotMatch(tmuxOn(OATS, "show-environment", "-g"), /s3cret|smuggled|first line|creator/, "no value of the instance's; a multi-line value is dropped whole");
+  };
+  const caller = await makeHome("env-caller", { on: OTHER });
+  const unlaunched = await makeHome("env-unlaunched");
+  const stranded = await makeHome("env-stranded", { on: join(base, "env-lost.sock") });
+  const mismatched = await makeHome("env-mismatched", { on: OTHER });
+  writeFileSync(join(mismatched.home, "instance.json"), JSON.stringify({ ...readJson(join(mismatched.home, "instance.json")), tmux: { session: SESSION, window: "env-mismatched", socket: join(base, "elsewhere.sock") } }, null, 2) + "\n");
+  const as = (h) => ({ ...agent, OATS_INSTANCE: h.name, OATS_INSTANCE_HOME: h.home, PATH: `${shimOf(h.home)}:${spawnPath}` });
+  const spawnEnv = { OATS_TMUX_SESSION: "envs", PI_AGENTS_TMUX_SESSION: "envs" };
+
+  // No session, and a caller that may not create it: refused before anything exists, by a spawn and
+  // by a start. A home that records no tmux server; a recorded server that is gone; a receipt that
+  // disagrees with instance.json; an instance's identity with no home to be found.
+  const homes = tree(fx.root), refs = git(fx.repo, "for-each-ref");
+  let r = fx.cli(["spawn", "dev", "--name", "env-refused", "--harness", "claude", "--json"], { env: { ...spawnEnv, ...as(unlaunched) } });
+  assert.notEqual(r.status, 0, r.stdout);
+  assert.equal(r.json().error.code, "E_SPAWN_FAILED");
+  assert.match(r.json().error.message, /cannot create tmux session envs on the OATS tmux server from inside an OATS instance: the home of env-unlaunched records no tmux server/);
+  assert.match(r.json().error.message, /the session was not created\. Create it from your own shell, outside every instance home \(tmux -L oats new-session -d -s envs -n hq\)/);
+  assert.doesNotMatch(r.stdout + r.stderr, /s3cret/, "no value of the caller's is in what the refusal prints");
+  assert.deepEqual(tree(fx.root), homes, "no home, no receipt, nothing under the agents root");
+  assert.equal(git(fx.repo, "for-each-ref"), refs, "no branch");
+  const never = await makeHome("env-never", { session: "envs" });
+  const neverTree = tree(never.home), neverMeta = readFileSync(join(never.home, "instance.json"), "utf8");
+  r = fx.cli(["session", "start", "--home", never.home, "--json"], { env: as(stranded) });
+  assert.notEqual(r.status, 0, r.stdout);
+  assert.equal(r.json().error.code, "E_RUNTIME_ENDPOINT_UNKNOWN");
+  assert.match(r.json().error.message, /the environment of the tmux server that env-stranded is recorded on \(.*env-lost\.sock\) could not be read/);
+  assert.deepEqual(tree(never.home), neverTree, "the start wrote nothing: no pending receipt, no event");
+  assert.equal(readFileSync(join(never.home, "instance.json"), "utf8"), neverMeta);
+  let refused = refusal(ensureIn("envs", { env: as(mismatched) }));
+  assert.equal(refused.code, "E_RUNTIME_ENDPOINT_UNKNOWN");
+  assert.match(refused.message, /the session receipt of env-mismatched could not be used \(E_RUNTIME_AUTHORITY_MISMATCH\)/);
+  refused = refusal(ensureIn("envs", { env: { ...agent, PI_AGENT_HOME: "" } }));
+  assert.equal(refused.code, "E_RUNTIME_ENDPOINT_UNKNOWN");
+  assert.match(refused.message, /this process carries an instance's identity \(PI_AGENT_HOME\) and neither OATS_INSTANCE_HOME nor the working directory names its home/);
+  assert.deepEqual(sessionsOf(OATS), [], "no refusal started a server");
+
+  // Another creator (an operator's shell, a runner): its own environment, without the names the
+  // kernel sets. An exported agents root is no sign of an instance. The session imports what
+  // update-environment names from it, as tmux does for anyone.
+  r = ensureIn("envs", { env: operator });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  let server = globalEnv(OATS);
+  absent(server, ["OATS_LAUNCH_REF_FIXTURE_TOKEN", "FIXTURE_TOKEN", "PI_AGENTS_ROOT", "TMUX", "TMUX_PANE", "COLORFGBG", "OATS_FIXTURE_MARKER"], "the server another creator started");
+  assert.equal(server.FIXTURE_OPERATOR, "kept");
+  assert.match(sessionEnv("envs"), /^FIXTURE_IDENTITY=operator$/m);
+  // The session now exists, so the instance that was refused above spawns: nothing is read, nothing
+  // global changes, and of its creator the new window takes only PATH, without the creator's shim.
+  const before = serverState(OATS);
+  r = fx.cli(["spawn", "dev", "--name", "env-child", "--harness", "claude", "--json"], { env: { ...spawnEnv, ...as(unlaunched) } });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const child = r.json().result;
+  assert.equal(child.tmux.socket, OATS);
+  assert.deepEqual(serverState(OATS), before, "a window on a running server changes nothing global");
+  await ready(child.home);
+  let pane = paneEnv(child.home);
+  absent(pane, SECRETS, "the pane an instance opened");
+  assert.equal(pane.FIXTURE_IDENTITY, "operator", "the session's, not the creator's");
+  assert.equal(pane.FIXTURE_OPERATOR, "kept", "the rest of its environment is the server's");
+  assert.equal(pane.OATS_INSTANCE_HOME, child.home, "its identity is its own, from its launch command");
+  assert.equal(pane.PATH.split(":").includes(shimOf(unlaunched.home)), false, "the creator's kernel shim is not on its PATH");
+  assert.equal(pane.PATH.split(":")[0], shimOf(child.home), "its own shim is first");
+  assert.ok(pane.PATH.split(":").includes(probeBin), "the creator's tool directories are");
+  // An instance that has to create another SESSION on the running server passes its recorded
+  // server's environment for it too, and one that cannot read it is refused there as well.
+  r = ensureIn("envs-two", { env: as(caller) });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual(serverState(OATS), before, "a session on a running server changes nothing global");
+  assert.doesNotMatch(sessionEnv("envs-two"), /creator|s3cret/, "the new session imported nothing of the instance's");
+  refused = refusal(ensureIn("envs-three", { env: as(stranded) }));
+  assert.match(refused.message, /cannot create tmux session envs-three .* could not be read/);
+  assert.deepEqual(sessionsOf(OATS).sort(), ["envs", "envs-two"]);
+  // PATH follows whoever creates the window: this start runs with another PATH than the server has.
+  const three = await makeHome("env-three", { session: "envs" });
+  r = fx.cli(["session", "start", "--home", three.home, "--json"], { env: { PATH: `/fixture/starter/bin:${spawnPath}` } });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  await ready(three.home);
+  assert.ok(paneEnv(three.home).PATH.split(":").includes("/fixture/starter/bin"), "the pane's PATH is the starting process's");
+  assert.equal(paneEnv(three.home).FIXTURE_OPERATOR, "kept");
+
+  // An instance that has to START the server, identified by OATS_INSTANCE_HOME, through the CLI.
+  await killServer(OATS);
+  const one = await makeHome("env-one", { session: "envs" });
+  r = fx.cli(["session", "start", "--home", one.home, "--json"], { env: as(caller) });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(r.json().result.target.socket, OATS);
+  sourceEnvironment(globalEnv(OATS));
+  assert.doesNotMatch(sessionEnv("envs"), /creator|s3cret/);
+  // A later start from a clean environment: neither pane holds what the first creator held.
+  const two = await makeHome("env-two", { session: "envs" });
+  assert.equal(startInstanceSession(two.home).target.socket, OATS);
+  await ready(one.home); await ready(two.home);
+  for (const h of [one, two]) {
+    pane = paneEnv(h.home);
+    absent(pane, [...SECRETS, ...NOT_CARRIED, "FIXTURE_IDENTITY"], `the pane of ${h.name}`);
+    assert.equal(pane.OATS_FIXTURE_MARKER, "from the recorded server");
+    assert.equal(pane.OATS_INSTANCE_HOME, h.home, "its identity is its own");
+    assert.equal(pane.PATH.split(":").includes(shimOf(caller.home)), false);
+  }
+
+  // The working directory alone identifies an instance (a harness that strips the session environment).
+  await killServer(OATS);
+  r = ensureIn("envs", { cwd: caller.home, env: agent });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  sourceEnvironment(globalEnv(OATS));
+
+  // A destination that is there at the lookup and gone at the creation: the creation still runs with
+  // the safe environment, on the socket the lookup named.
+  await killServer(OATS);
+  const ambient = { ...process.env };
+  Object.assign(process.env, as(caller), { PATH: ambient.PATH });
+  try {
+    let lookups = 0;
+    const io = { exec: (bin, args, options) => (args.includes("list-sessions") && lookups++ === 0 ? `someone-else\t${OATS}\n` : execFileSync(bin, args, options)) };
+    assert.equal(ensureOatsTmuxSession("envs", base, io), OATS);
+  } finally {
+    for (const key of Object.keys(process.env)) if (!(key in ambient)) delete process.env[key];
+    Object.assign(process.env, ambient);
+  }
+  sourceEnvironment(globalEnv(OATS));
+
+  // Two creators at once, an instance and another: tmux starts the server once, with the environment
+  // of one of them, whole. Never a mix, and neither changes what the other started.
+  for (let round = 0; round < 4; round++) {
+    await killServer(OATS);
+    const run = (env) => new Promise((done) => execFile(process.execPath, ["-e", ensureScript("envs")], { timeout: 30000, cwd: base, env: { ...process.env, PWD: base, ...env } }, (error, stdout, stderr) => done({ error, stdout, stderr })));
+    const both = await Promise.all([run(as(caller)), run(operator)]);
+    for (const done of both) { assert.equal(done.error, null, done.stdout + done.stderr); assert.equal(done.stdout, OATS); }
+    server = globalEnv(OATS);
+    absent(server, [...SECRETS, ...KERNEL, ...NOT_CARRIED], "the server two creators raced to start");
+    assert.ok((server.OATS_FIXTURE_MARKER === "from the recorded server") !== (server.FIXTURE_OPERATOR === "kept"), `the environment is exactly one creator's: ${JSON.stringify({ marker: server.OATS_FIXTURE_MARKER ?? null, operator: server.FIXTURE_OPERATOR ?? null })}`);
+    assert.deepEqual(sessionsOf(OATS), ["envs"]);
+  }
+
+  // A session someone made by hand, before anything else: found by its exact name and used as it is.
+  await killServer(OATS);
+  execFileSync("tmux", ["-L", "oats", "new-session", "-d", "-s", "by-hand", "-n", "hq"], { stdio: "ignore", timeout: 10000 });
+  const four = await makeHome("env-four", { session: "by-hand" });
+  assert.equal(startInstanceSession(four.home).target.socket, OATS);
+  assert.deepEqual(windowsOf(OATS, "by-hand"), ["hq", "env-four"]);
+  assert.deepEqual(ownOptions(OATS, windowId(OATS, "hq", "by-hand")), UNSET, "the window OATS did not create keeps its options");
+  await ready(four.home);
+});
+
+test("a retire hook that spawns: its process is the retiring instance, so with that home's server gone and no session on the OATS server the spawn is refused, the retire is incomplete and keeps the home, and the next retire runs the hook again", async () => {
+  await killServer(OATS);
+  const flags = join(base, "hook-flags");
+  mkdirSync(flags);
+  // The hook runs `oats spawn` as a capability's retire hook would, reports what it was answered,
+  // and fails when the spawn fails.
+  const hook = `import { spawnSync } from "node:child_process";
+import { appendFileSync } from "node:fs";
+const r = spawnSync(process.execPath, [process.env.OATS_CLI_BIN, "spawn", "dev", "--dir", process.env.FIXTURE_DEPLOYMENT, "--name", "hook-child", "--harness", "claude", "--json"], { encoding: "utf8" });
+let answer = null; try { answer = JSON.parse(r.stdout.trim().split("\\n").pop()); } catch { /* no envelope */ }
+appendFileSync(${JSON.stringify(join(flags, "ran"))}, JSON.stringify({ status: r.status, ok: answer?.ok ?? null, code: answer?.error?.code ?? null, message: answer?.error?.message ?? null, identity: process.env.OATS_INSTANCE_HOME ?? null }) + "\\n");
+if (r.status !== 0) process.exit(1);
+console.log(JSON.stringify({ meta: { retired: true } }));
+`;
+  const dep = v2Deployment({ souls: { dev: { soul: { capabilities: { "test.spawner": { from: "here" } } } } },
+    capabilities: { "test.spawner": { manifest: { hooks: { retire: "hook.mjs" } }, files: { "hook.mjs": hook } } } });
+  try {
+    writeFileSync(join(dep.env.HOME, ".tmux.conf"), USER_TMUX_CONF);
+    // The server the retiring home is recorded on was killed: its socket file is left, and refuses.
+    const lost = join(base, "hook-lost.sock");
+    tmuxOn(lost, "new-session", "-d", "-s", SESSION, "-n", "hq", "-c", base);
+    const lostPid = Number(tmuxOn(lost, "display-message", "-p", "#{pid}"));
+    process.kill(lostPid, "SIGKILL");
+    await waitUntil(() => { try { process.kill(lostPid, 0); return false; } catch { return true; } }, "the retiring home's server is gone");
+    const retiring = await makeHome("hook-retiring", { on: lost, deployment: dep });
+    const runs = () => (existsSync(join(flags, "ran")) ? lines(readFileSync(join(flags, "ran"), "utf8")).map((l) => JSON.parse(l)) : []);
+    // Run by an operator-style process: no instance identity, a working directory outside every home.
+    const retire = () => dep.cli(["retire", "hook-retiring", "--json"], { env: { PATH: `${probeBin}:${dep.env.PATH}`, FIXTURE_DEPLOYMENT: dep.dep } });
+    let r = retire();
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.equal(runs().length, 1, "the hook ran");
+    const [first] = runs();
+    assert.equal(first.identity, retiring.home, "the hook's process carries the retiring instance's identity");
+    assert.equal(first.status, 1);
+    assert.equal(first.code, "E_SPAWN_FAILED");
+    assert.match(first.message, /cannot create tmux session .* from inside an OATS instance: the environment of the tmux server that hook-retiring is recorded on \(.*hook-lost\.sock\) could not be read/, "a person running the retire is no exception for the hook's child");
+    assert.deepEqual(sessionsOf(OATS), [], "nothing was created on the OATS server");
+    assert.equal(existsSync(join(dep.root, "dev", "instances", "hook-child")), false);
+    const result = JSON.parse(r.stdout);
+    assert.ok(result.rollbackIncomplete?.some((m) => m.startsWith("retire hook test.spawner: ")), `the failed hook is reported as outstanding, not as a cleanup: ${JSON.stringify(result.rollbackIncomplete)}`);
+    assert.equal(existsSync(join(retiring.home, "instance.json")), true, "the home is kept for the retry");
+    // The next retire runs the hook again.
+    r = retire();
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.equal(runs().length, 2, "the retry reached the hook");
+    assert.equal(existsSync(join(retiring.home, "instance.json")), true);
+  } finally { dep.cleanup(); }
 });

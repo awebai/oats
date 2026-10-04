@@ -49,6 +49,17 @@ export function removeTmuxTmpdir(tmuxTmpdir, tmux = "tmux") {
 let isolatedTmpdir = null;
 /** The private TMUX_TMPDIR of the session environment installed in this process, else null. */
 export function isolatedTmuxTmpdir() { return isolatedTmpdir; }
+/** Take this test worker out of any OATS instance it runs inside. The kernel treats a process whose
+ *  working directory is inside an instance home as that instance (a developer agent runs the suite
+ *  from its work tree), and an instance that has to start a tmux server reads the environment of
+ *  its own recorded server: a test must not. Moves to `dir`, a directory of the fixture; returns
+ *  the function that moves back. The instance's environment names are the caller's to remove. */
+export function leaveEnclosingInstance(dir) {
+  const cwd = process.cwd(), pwd = process.env.PWD;
+  process.chdir(dir);
+  process.env.PWD = dir;
+  return () => { process.chdir(cwd); if (pwd === undefined) delete process.env.PWD; else process.env.PWD = pwd; };
+}
 
 // Applies only to this test worker and its children. The fixture owns a private TMUX_TMPDIR and a
 // `tmux` wrapper, the only tmux on PATH, which admits two addresses and refuses every other call:
@@ -108,8 +119,11 @@ exec ${quote(tmux)}${userConfig ? "" : " -f /dev/null"} "$@"
     if (/^(OATS_|PI_AGENT)/.test(key) || ["TMUX", "TMUX_PANE", "ENV", "BASH_ENV", "COLORFGBG"].includes(key)) delete process.env[key];
   }
   Object.assign(process.env, { HOME: home, XDG_CONFIG_HOME: config, ZDOTDIR: home, SHELL: "/bin/sh", PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), TMUX_TMPDIR: tmuxTmpdir });
+  // Neither the environment (above) nor the working directory makes this worker an OATS instance.
+  const comeBack = leaveEnclosingInstance(base);
   isolatedTmpdir = tmuxTmpdir;
   return () => {
+    comeBack();
     removeTmuxTmpdir(tmuxTmpdir, tmux);
     isolatedTmpdir = null;
     for (const key of Object.keys(process.env)) if (!(key in original)) delete process.env[key];
