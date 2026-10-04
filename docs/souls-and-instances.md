@@ -483,8 +483,12 @@ not provable:
   commands the list above is read with, or one of the files it is read from
   (`info/attributes`, the stash's log, an exclude file, the operation
   state), in the worktree's repository or in a nested one. A nested
-  repository that Git cannot read is such a case. A read that fails is
-  never taken for "not set" or for "unchanged".
+  repository that Git cannot read is such a case, and so is a repository
+  whose path has a line feed in it: Git prints its directories over more
+  than one line. A read that fails is never taken for "not set" or for
+  "unchanged", and neither is a file or directory that the retire cannot
+  test for (no permission, for example): only one that is not there is
+  absent.
 
 A worktree that is not provable always has its work in the pre-hook
 snapshot, also when only the home has something to preserve, and the work is

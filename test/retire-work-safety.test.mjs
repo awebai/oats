@@ -1261,8 +1261,8 @@ seen.head = git('rev-parse', 'HEAD').trim();`);
 });
 
 /** A nested repository under the worktree's ignored human-ignored/, with one commit. → its directory. */
-function nestedRepository(work) {
-  const nested = join(work, "human-ignored", "nested");
+function nestedRepository(work, ...under) {
+  const nested = join(work, "human-ignored", ...under, "nested");
   mkdirSync(nested, { recursive: true });
   execFileSync("git", ["init", "-q", nested]);
   execFileSync("git", ["-C", nested, "config", "user.email", "test@example.invalid"]);
@@ -1427,6 +1427,33 @@ seen.nestedStatus = gitIn(join(work, 'human-ignored', 'nested'))('status', '--po
   assertBothCopiedAgain(recovery);
 });
 
+test("a nested repository under a directory whose name has a line feed cannot be proven unchanged: the work is copied again after the hooks, and a retire hook's rewrite of its MERGE_MSG is under after-hooks/repo/", () => {
+  // Git prints such a repository's paths over more than one line. Taken apart wrongly, every file the
+  // state reads under them would be "not there", before the hooks and after them alike.
+  const BEFORE = "A message\n", REWRITTEN = "A message, as the retire hook left it\n";
+  const retire = quietHook(`const nested = join(work, 'human-ignored', 'line\\nfeed', 'nested');
+writeFileSync(join(nested, '.git', 'MERGE_MSG'), ${JSON.stringify(REWRITTEN)});
+seen.nestedStatus = gitIn(nested)('status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored=matching', '--ignore-submodules=none');`);
+  const f = fixture({ capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "hook-nested-line-feed");
+  const work = join(spawned.home, "work");
+  const nested = nestedRepository(work, "line\nfeed");
+  const under = (repo) => join(repo, "human-ignored", "line\nfeed", "nested");
+  write(join(nested, ".git", "MERGE_MSG"), BEFORE);
+  assert.equal(execFileSync("git", ["-C", nested, "rev-parse", "--absolute-git-dir"], { encoding: "utf8" }).trimEnd().split("\n").length, 2, "fixture premise: Git prints the nested repository's Git directory over two lines");
+  const nestedStatusBefore = porcelain(nested);
+  const statusBefore = porcelain(work);
+  assert.deepEqual(statusRowsIn(statusBefore), ["!! human-ignored/"], "fixture premise: the only status row is the ignored directory that holds the nested repository");
+
+  const { recovery, seen, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore);
+  assert.equal(seen.nestedStatus, nestedStatusBefore, "fixture premise: the nested repository's status is as it was");
+  assert.equal(readFileSync(join(under(join(recovery.path, "repo")), ".git", "MERGE_MSG"), "utf8"), BEFORE, "the pre-hook snapshot's nested repository carries the message as it was");
+  assert.equal(existsSync(join(under(afterRepo), ".git")), true, "the work is copied again under after-hooks/repo/: the nested repository's state could not be read, so nothing proves it unchanged");
+  assert.equal(readFileSync(join(under(afterRepo), ".git", "MERGE_MSG"), "utf8"), REWRITTEN);
+  assert.equal(readFileSync(join(under(afterRepo), "nested.txt"), "utf8"), "nested-commit\n", "its files are the same in both copies");
+  assertBothCopiedAgain(recovery);
+});
+
 const resolveUndoOf = (repo) => execFileSync("git", ["-C", repo, "ls-files", "--resolve-undo", "-z"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 
 test("a retire hook that makes and resolves a conflict on a committed file, leaving every index entry, status row and byte as it was: the index of the work copied under after-hooks/repo/ holds the resolve-undo records", () => {
@@ -1437,7 +1464,7 @@ seen.before = indexOf();
 const blob = git('rev-parse', 'HEAD:tracked.txt').trim();
 const rows = ['0 ' + '0'.repeat(blob.length) + '\\ttracked.txt', ...[1, 2, 3].map((stage) => '100644 ' + blob + ' ' + stage + '\\ttracked.txt')];
 execFileSync('git', ['-C', work, 'update-index', '--index-info'], { input: rows.join('\\n') + '\\n' });
-seen.conflict = git('ls-files', '--stage', '-z');
+seen.conflict = git('ls-files', '--stage', '-z', '--', 'tracked.txt');
 git('add', 'tracked.txt');
 seen.after = indexOf();`);
   const f = fixture({ capabilities: hookCapability(retire) });
@@ -1448,9 +1475,13 @@ seen.after = indexOf();`);
   assert.deepEqual(statusRowsIn(statusBefore), ["?? scratch.txt"], "fixture premise: the committed file is unmodified, and an untracked file gives the pre-hook pass a work copy");
 
   const { recovery, seen, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore);
-  assert.equal(seen.conflict.split("\0").filter(Boolean).length, 3, "fixture premise: the hook put the file in conflict, as three staged entries");
-  assert.equal(seen.before.undo, "", "fixture premise: no resolve-undo record before the hook");
-  assert.equal(seen.after.undo.split("\0").filter(Boolean).length, 3, "fixture premise: resolving left three resolve-undo records");
+  // Each row of either listing is "<mode> <object> <stage>\t<path>": the stage and the path of each. The
+  // index holds the repository's other files too, so the conflict is listed for this file only.
+  const stagesIn = (listing) => listing.split("\0").filter(Boolean).map((row) => row.replace(/^\d+ [0-9a-f]+ (\d)\t/, "$1 "));
+  const THREE_STAGES = ["1 tracked.txt", "2 tracked.txt", "3 tracked.txt"];
+  assert.deepEqual(stagesIn(seen.conflict), THREE_STAGES, "fixture premise: the hook put the file in conflict, as its stages 1, 2 and 3");
+  assert.equal(seen.before.undo, "", "fixture premise: no resolve-undo record before the hook, for any file");
+  assert.deepEqual(stagesIn(seen.after.undo), THREE_STAGES, "fixture premise: resolving left three resolve-undo records, all for that file");
   assert.equal(seen.after.stage, seen.before.stage, "fixture premise: the index entries are as they were");
   assert.equal(seen.after.marks, seen.before.marks, "fixture premise: and so are their marks");
   assert.equal(seen.after.head, seen.before.head, "fixture premise: and the commit");
