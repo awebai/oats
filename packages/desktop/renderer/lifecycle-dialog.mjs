@@ -54,8 +54,6 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     ui.refresh.disabled = applying;
     ui.recursive.disabled = applying || !plan;
     ui.discard.disabled = applying || !plan || operation === 'retire' && plan.facts.workMode !== 'worktree' && !choices.discardWorktree;
-    ui.branch.disabled = applying || !plan || !choices.discardWorktree;
-    if (operation === 'retire' && plan && !choices.deleteBranch && (!plan.facts.work.observed || plan.facts.work.branch === null || plan.facts.workMode !== 'worktree')) ui.branch.disabled = true;
     ui.retry.disabled = applying; ui.retry.hidden = !submission || !submission.uncertain;
     ui.close.textContent = applying ? 'Close status' : 'Close';
   }
@@ -102,7 +100,7 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
       excluded(ui.facts, value.skipped); excluded(ui.facts, value.ambiguous, true);
     } else {
       const f = value.facts;
-      ui.explanation.textContent = 'Remove the instance home. The kernel stops children first and retains their homes; if one will not stop, Remove refuses and names it. Retain the worktree and local branch unless selected below. The PR is never changed.';
+      ui.explanation.textContent = 'Remove the instance home. The kernel stops children first and retains their homes; if one will not stop, Remove refuses and names it. The worktree is retained unless selected below. Remove never deletes a branch. The PR is never changed.';
       rows(ui.facts, [['Session', f.session.established ? f.session.state : 'Unknown — not established'],
         ['Work', f.work.observed ? `${f.work.changed} changed · ${f.work.untracked} untracked` : `Unknown — ${f.work.reason}`],
         ['Worktree branch', f.work.observed ? f.work.branch : null], ['Recorded branch', f.recordedBranch],
@@ -177,7 +175,7 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
         renderPlan(fresh); ui.status.textContent = lifecycleReason('E_PLAN_STALE').message;
       } else if (result.receipt) {
         const receipt = publicLifecycleReceipt(result.receipt, snapshot); if (!receipt) throw new Error('Invalid receipt');
-        const expectedStatus = receipt.deferred ? 'pending' : (receipt.action === 'stop' ? receipt.ok : receipt.removedDir && !receipt.incomplete && !receipt.retention?.branchDeletionSkipped) ? 'complete' : 'partial';
+        const expectedStatus = receipt.deferred ? 'pending' : (receipt.action === 'stop' ? receipt.ok : receipt.removedDir && !receipt.incomplete) ? 'complete' : 'partial';
         if (result.status !== expectedStatus) throw new Error('Invalid outcome');
         ui.status.textContent = receipt.deferred ? 'Retirement is deferred; no completed removal is established.'
           : result.status === 'complete' ? 'Kernel operation completed.' : 'Not every requested effect completed. Review the recorded outcome.';
@@ -185,9 +183,7 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
         else if (!receipt.deferred) {
           stopped(ui.result, receipt.childrenStopped);
           rows(ui.result, [['Home removed', receipt.removedDir], ['Worktree', receipt.retention?.worktree ?? 'Not reported'],
-            ['Retained location', receipt.retention?.movedTo ?? null], ['Branch deleted', receipt.retention?.branchDeleted ?? (receipt.branchDeleted ? 'Deletion reported; branch name not provided' : 'No branch deletion reported')],
-            ['Recovery location', receipt.recoveryPath]]);
-          if (receipt.retention?.branchDeletionSkipped) ui.result.append(node('p', `Branch deletion skipped: expected ${report(receipt.retention.branchDeletionSkipped.expected)}, actual ${report(receipt.retention.branchDeletionSkipped.actual)}. No branch was deleted; home/worktree effects are listed separately.`, 'lifecycle-warning'));
+            ['Retained location', receipt.retention?.movedTo ?? null], ['Recovery location', receipt.recoveryPath]]);
         }
         if (receipt.replayed || result.repeated) ui.result.append(node('p', 'Recorded result for this confirmation, not a new action.', 'lifecycle-note'));
       } else {
@@ -217,7 +213,7 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     if (!target) return;
     server = target.server ? serverLabel(instance) : null;
     onIntent(); restore = takePickerFocusReturn(doc); life++; operation = next;
-    choices = next === 'stop' ? { recursive: true } : { discardWorktree: false, deleteBranch: false };
+    choices = next === 'stop' ? { recursive: true } : { discardWorktree: false };
     overlay = node('div', undefined, 'palette-overlay lifecycle-overlay');
     const dialog = node('section', undefined, 'lifecycle-dialog'); dialog.dataset.operation = operation;
     dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-label', `${next === 'stop' ? 'Stop' : 'Remove'} ${target.instance}?`);
@@ -226,17 +222,17 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     const explanation = node('p', '', 'lifecycle-note'), status = node('p', '', 'lifecycle-note'); status.setAttribute('role', 'status');
     const facts = node('div', undefined, 'lifecycle-facts'), options = node('div', undefined, 'lifecycle-options');
     function choice(label, checked) { const line = node('label'), input = node('input'); input.type = 'checkbox'; input.checked = checked; line.append(input, node('span', label)); options.append(line); return input; }
-    const recursive = choice('Include recorded children', true), discard = choice('Also delete the worktree', false), branch = choice('Also delete the local branch (requires worktree deletion)', false);
-    recursive.parentElement.hidden = next !== 'stop'; discard.parentElement.hidden = branch.parentElement.hidden = next !== 'retire';
+    const recursive = choice('Include recorded children', true), discard = choice('Also delete the worktree', false);
+    recursive.parentElement.hidden = next !== 'stop'; discard.parentElement.hidden = next !== 'retire';
     const mounted = life, mountedGeneration = generation();
     const current = () => alive && overlay && life === mounted && dialog.isConnected && generation() === mountedGeneration;
     const changed = event => {
       if (!current() || !event.target.isConnected || event.target.disabled || applying) return; onIntent();
       if (operation === 'stop') choices = { recursive: recursive.checked };
-      else { if (!discard.checked) branch.checked = false; choices = { discardWorktree: discard.checked, deleteBranch: branch.checked }; }
+      else choices = { discardWorktree: discard.checked };
       void refresh();
     };
-    for (const input of [recursive, discard, branch]) input.addEventListener('change', changed);
+    for (const input of [recursive, discard]) input.addEventListener('change', changed);
     const forge = node('div', undefined, 'lifecycle-forge'), result = node('div', undefined, 'lifecycle-result'), footer = node('div', undefined, 'lifecycle-footer');
     const button = (label, action, cls) => { const b = node('button', label, cls); b.type = 'button';
       b.addEventListener('click', () => {
@@ -247,7 +243,7 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     const confirmButton = button(next === 'stop' ? 'Stop' : 'Remove instance', () => void apply(), 'lifecycle-confirm');
     const retryButton = button('Check recorded result', () => void apply(true), 'lifecycle-retry');
     footer.append(refreshButton, retryButton, closeButton, confirmButton); dialog.append(heading, explanation, status, facts, options, forge, result, footer); overlay.append(dialog); doc.body.append(overlay);
-    ui = { explanation, status, facts, forge, result, recursive, discard, branch, confirm: confirmButton, refresh: refreshButton, close: closeButton, retry: retryButton };
+    ui = { explanation, status, facts, forge, result, recursive, discard, confirm: confirmButton, refresh: refreshButton, close: closeButton, retry: retryButton };
     overlay.addEventListener('keydown', event => {
       if (!current()) return;
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); return; }
