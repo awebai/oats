@@ -1,0 +1,15 @@
+# Hand-made. Every required colour is present, so the file resolves, but the
+# canvas (dark_background) is lighter than the background: no text colour can
+# be 4.5:1 on both, so the renderer's derivation returns nothing.
+mode = "dark"
+
+background = "#595959"
+dark_background = "#959595"
+foreground = "#e0e0e0"
+
+red = "#ff8080"
+green = "#80ff80"
+yellow = "#ffff80"
+blue = "#8080ff"
+magenta = "#ff80ff"
+cyan = "#80ffff"

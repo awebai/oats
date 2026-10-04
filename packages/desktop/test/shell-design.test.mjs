@@ -19,7 +19,7 @@ import { createWorkspaceSwitcher } from "../renderer/workspace-switcher.mjs";
 import { rosterResponseOwns, rosterSignature } from "../renderer/instance-tree.mjs";
 import { staleWorkspaceSelection } from "../renderer/views/common.mjs";
 import { createPendingWatch, NOT_SERVED_CODE, NO_ANSWER_CODE } from "../renderer/deployment-header.mjs";
-import { DEFAULT_KEYMAP, TERMINAL_ALLOWLIST, registerAction, runAction, getBinding, formatChord, setActiveContexts, matchEvent, setBinding, resetBinding, onKeymapChange } from "../renderer/keybindings.mjs";
+import { DEFAULT_KEYMAP, TERMINAL_ALLOWLIST, registerAction, runAction, listActions, getBinding, formatChord, setActiveContexts, matchEvent, setBinding, resetBinding, onKeymapChange } from "../renderer/keybindings.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const html = readFileSync(new URL("../renderer/index.html", import.meta.url), "utf8");
@@ -330,23 +330,28 @@ for (const outcome of ["resolve", "reject"]) test(`reported workspace/root/host 
   assert.equal(document.getElementById("ws-trigger").title, "Active workspace: same <b>name</b>", "a remote id is never the tooltip");
 });
 
-test('White, Solarized and Dark have explicit registry/palette choices without new default chords; cycle stays named', t => {
+test('White, Solarized, Dark and This computer have explicit registry/palette choices without new default chords; every label spells the cycle', t => {
   const s = shell(t);
   const button = s.document.getElementById('sidebar-theme');
-  assert.equal(button.getAttribute('aria-label'), 'Cycle White / Solarized / Dark theme');
-  assert.match(button.title, /White \/ Solarized \/ Dark/);
+  const cycleLabel = 'Cycle White / Solarized / Dark / This computer theme';
+  assert.equal(button.getAttribute('aria-label'), cycleLabel);
+  assert.ok(button.title.startsWith(cycleLabel), 'the title is the label, then a chord when one is bound');
+  assert.match(html, new RegExp(`id="sidebar-theme"[^>]*title="${cycleLabel}" aria-label="${cycleLabel}"`), 'the markup says the same before scripts run');
+  assert.equal(listActions().find(action => action.id === 'app.themeToggle')?.label, cycleLabel, 'the registered action too');
   const start = source.indexOf('// ── command palette');
   const end = source.indexOf('// ── Quick Open', start);
   const commands = runInNewContext(`${source.slice(start, end)}\npalette.commands`, {
     ...s.c, navigator: { platform: 'Linux' }, createPalette: options => options,
   });
-  assert.deepEqual(THEMES.map(({ id, label }) => [id, label]), [['light', 'White'], ['solarized', 'Solarized'], ['dark', 'Dark']]);
+  assert.deepEqual(THEMES.map(({ id, label }) => [id, label]), [['light', 'White'], ['solarized', 'Solarized'], ['dark', 'Dark'], ['host', 'This computer']]);
   for (const { id, label } of THEMES) {
     assert.equal(getBinding(`app.theme.${id}`), null, `${label} has no new default keyboard chord`);
+    assert.equal(listActions().find(action => action.id === `app.theme.${id}`)?.label, `Theme: ${label}`);
     const command = commands.find(item => item.label === `Theme: ${label}`); assert.ok(command);
     assert.equal(command.detail(), ''); command.run(); assert.deepEqual(s.events.at(-1), ['theme', id]);
   }
-  const cycle = commands.find(item => item.label === 'Theme: cycle White / Solarized / Dark'); assert.ok(cycle);
+  assert.equal(commands.filter(item => /^Theme: /.test(item.label)).at(-1).label, 'Theme: This computer', 'listed last');
+  const cycle = commands.find(item => item.label === 'Theme: cycle White / Solarized / Dark / This computer'); assert.ok(cycle);
   cycle.run(); assert.deepEqual(s.events.at(-1), ['theme']);
   assert.equal(commands.some(item => /light\/dark/i.test(item.label)), false);
 });
