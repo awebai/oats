@@ -1385,6 +1385,65 @@ test("a retire hook that moves only the home, in a worktree that holds a linked 
   assertBothCopiedAgain(recovery);
 });
 
+// A `.git` that is a dangling symbolic link is not a repository, and nothing compares it: the copy
+// carries it as a link, and the digests pass over every entry named `.git`. A directory that holds one
+// is listed as one whose `.git` cannot be read as a repository: no class, but the worktree is not
+// provable, so a change to the home alone can now cause a work-copy attempt before the hooks that main
+// did not make, and any failure of that attempt can refuse the retirement.
+
+test("a retire hook that changes the target of a dangling .git symbolic link under an ignored directory, and writes the home: the work is copied again, and after-hooks/repo/ holds the hook's link", () => {
+  const retire = quietHook(`import { symlinkSync, unlinkSync } from 'node:fs';
+const link = join(work, 'human-ignored', 'nested', '.git');
+unlinkSync(link);
+symlinkSync('missing-b', link);`);
+  const f = fixture({ capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "hook-dangling-git-link");
+  const work = join(spawned.home, "work");
+  write(join(work, "human-ignored", "kept.txt"), "ignored\n");
+  mkdirSync(join(work, "human-ignored", "nested"));
+  symlinkSync("missing-a", join(work, "human-ignored", "nested", ".git"));
+  assert.equal(existsSync(join(work, "human-ignored", "nested", ".git")), false, "fixture premise: the .git link leads nowhere");
+  const statusBefore = porcelain(work);
+  assert.deepEqual(statusRowsIn(statusBefore), ["!! human-ignored/"], "fixture premise: the ignored directory that holds the link");
+
+  const { recovery, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore);
+  assert.equal(readlinkSync(join(recovery.path, "repo", "human-ignored", "nested", ".git")), "missing-a", "the snapshot before the hooks holds the link as it was then");
+  assert.equal(existsSync(join(afterRepo, ".git")), true, "the work is copied again under after-hooks/repo/: a worktree with a .git that cannot be read as a repository cannot be proven unchanged");
+  assert.equal(readlinkSync(join(afterRepo, "human-ignored", "nested", ".git")), "missing-b", "the copy made after the hooks holds the link the hook left");
+  assertBothCopiedAgain(recovery);
+});
+
+test("a clean worktree with a dangling .git symbolic link in a tracked directory, a home note and a retire hook that changes nothing: the recovery written before the hooks carries the work, and the work is copied again after them", () => {
+  // The hook records what the recovery holds while it runs: the work copy was made before the hooks.
+  const retire = quietHook(`import { existsSync, readFileSync, readdirSync, readlinkSync } from 'node:fs';
+const recoveries = join(dirname(home), '.oats-retirement', 'recovery');
+seen.recoveries = readdirSync(recoveries).map((name) => {
+  const manifest = JSON.parse(readFileSync(join(recoveries, name, 'recovery.json'), 'utf8'));
+  let link = null;
+  try { link = readlinkSync(join(recoveries, name, 'repo', 'souls', 'dev', '.git')); } catch { /* not in this copy */ }
+  return { phase: manifest.phase, classes: manifest.classes, homeOnly: manifest.repoCopy ?? null, repo: existsSync(join(recoveries, name, 'repo', '.git')), link };
+});`, { home: false });
+  const f = fixture({ capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "dangling-git-home-only");
+  const work = join(spawned.home, "work");
+  write(join(spawned.home, "notes.md"), "Only the home changed.\n");
+  symlinkSync("missing-a", join(work, "souls", "dev", ".git"));
+  assert.equal(existsSync(join(work, "souls", "dev", ".git")), false, "fixture premise: the .git link leads nowhere");
+  const statusBefore = porcelain(work);
+  assert.equal(statusBefore, "", "fixture premise: Git lists no entry named .git, so the worktree reads as clean");
+
+  const { recovery, seen, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore, { home: false });
+  assert.deepEqual(recovery.classes, ["changed instance-home bytes"], "no class is added for the link: the home is the only class");
+  assert.deepEqual(seen.recoveries, [{ phase: "before-hooks", classes: ["changed instance-home bytes"], homeOnly: null, repo: true, link: "missing-a" }], "while the hook ran, the recovery written before the hooks already carried the work, the link included, and did not say it was home-only: a change to the home alone caused a work copy before the hooks");
+  assert.equal(recovery.repoCopy, undefined, "the receipt does not say the recovery is home-only");
+  assert.equal(readFileSync(join(recovery.path, "home", "notes.md"), "utf8"), "Only the home changed.\n");
+  assert.equal(readlinkSync(join(recovery.path, "repo", "souls", "dev", ".git")), "missing-a");
+  // The hook moved nothing, but the work cannot be proven unchanged: it is copied again, and the home is not.
+  assert.equal(readlinkSync(join(afterRepo, "souls", "dev", ".git")), "missing-a");
+  assert.deepEqual(recovery.afterHooks, { home: false, work: true }, "afterHooks.work: a work copy was made after the hooks, not that a hook changed the work");
+  assert.deepEqual(readJson(join(recovery.path, "recovery.json")).afterHooks, { home: false, work: true });
+});
+
 test("a retire hook that leaves a nested repository impossible to copy, after the snapshot before the hooks copied it: the retire refuses with E_WORK_PRESERVATION_FAILED, keeps the home, the work and that snapshot, and leaves no staging", () => {
   // The hook replaces the nested repository's Git directory by a .git file naming a directory that is not there.
   const retire = quietHook(`import { rmSync } from 'node:fs';

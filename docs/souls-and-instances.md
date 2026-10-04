@@ -511,10 +511,14 @@ deletes the one ref that reached it adds a copy attempt, though the
 files, the status and `HEAD` did not move.
 
 **A worktree that holds a repository is not provable.** A directory under
-the worktree that holds a `.git` entry, a directory or a file, is a
-repository: one made by `git init` or a clone, a submodule, or a linked
-worktree of another repository placed in the work. A directory that could
-not be tested for a `.git` entry counts as one. Its state is not compared:
+the worktree that holds a `.git` entry of any kind, a dangling symbolic link
+included, makes the worktree not provable. One whose `.git` is a directory, a
+file or a link that leads to one is a repository: one made by `git init` or
+a clone, a submodule, or a linked worktree of another repository placed in
+the work. One whose `.git` is a dangling symbolic link, or could not be
+tested, is not read as a repository and counts all the same: the copy
+carries such a link as a link, and no comparison reads it. A repository's
+state is not compared:
 the retire hooks run between the two copies and can change it in ways no read
 of its state covers (its configuration, its objects, what a clone of it is
 shown). So the work of such a worktree is in the pre-hook snapshot and is
@@ -525,6 +529,16 @@ fail where the one before did not, because a hook changed the nested
 repository; the retire then refuses with `E_WORK_PRESERVATION_FAILED` after
 the hooks, and the home, the work and the recovery written before the hooks
 are kept.
+
+A worktree with a `.git` entry under it that OATS cannot read as a
+repository (a dangling symbolic link, or a `.git` it cannot test) is never
+home-only, and no class is added for it. So a change to the home alone can
+now cause a work-copy attempt before the hooks that OATS 0.41 did not make,
+and any failure of that attempt can refuse the retirement: it refuses with
+`E_WORK_PRESERVATION_FAILED` before any retire hook runs, with no recovery
+written and the home and the work kept. What the retire did before the copy
+stays done, and the refusal says so: a launched instance's session has been
+stopped by then.
 
 Copied again is not "nothing is lost": a nested repository with its own Git
 directory is removed with the worktree, and its copy is a clone. What the copy of a nested repository
