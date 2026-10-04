@@ -494,7 +494,13 @@ recovery is written after them whenever there is something to preserve.
 
 A Git state that cannot be read refuses the retire with
 `E_WORK_INSPECTION_FAILED`: a read that fails is never taken for "not set"
-or for "unchanged".
+or for "unchanged". That holds for a Git command that fails and for a file
+the state is read from that exists but cannot be read (the file
+`core.excludesFile` names, `info/exclude`, `info/attributes`, the stash's
+log), in the worktree's repository and in each nested one, and also when the
+retire has nothing to preserve. A state that is unreadable from the start
+refuses at the retire's first inspection: nothing has been written and the
+session has not been stopped.
 
 **A socket, a FIFO or a device file in the worktree.** An entry that is not
 a file, a directory or a symbolic link has no bytes to read or to copy, and
