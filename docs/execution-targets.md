@@ -155,7 +155,7 @@ ending, decides that ambient environment:
 | Started by | The server's environment |
 |---|---|
 | an operator's shell | that shell's |
-| the Desktop | the Desktop's, with the login-shell `PATH` it puts in front ([desktop.md](desktop.md)) |
+| the Desktop | your environment as the Desktop got it, without what the Desktop or its packaging added to its own, and with the login-shell `PATH` it puts in front ([desktop.md](desktop.md)) |
 | a schedule runner or a trigger | the service's |
 | an OATS instance that creates an agents' session | the global environment of the tmux server that instance's home records, reduced as described below; not the instance's own |
 
