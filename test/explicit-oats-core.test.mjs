@@ -303,12 +303,16 @@ test('K6g retention authority: kernel post-spawn fields (spawnCompleted, wake) n
   // The "harness": tmux is faked so the launch writes an authored STATE.md into the home the moment it starts —
   // i.e. BEFORE the kernel's completion marker and the CLI's wake record are written.
   const wins = join(fx.base, 'tmux-wins'); writeFileSync(wins, '');
+  // The kernel addresses a server first (-u, then -L oats or -S <socket>): the command follows. No
+  // session exists (list-sessions prints nothing), so the launch creates it and is answered its
+  // socket and first window; new-window answers the window's id.
   const fakeTmux = (writeState) => `#!/bin/sh
+while :; do case "$1" in -u) shift ;; -L|-S) shift 2 ;; *) break ;; esac; done
 case "$1" in
-  display-message) echo /tmp/oats-k6g-fake.sock ;;
-  new-window) prev=""; for a in "$@"; do case "$prev" in -n) echo "$a" >> ${wins};; -c) ${writeState ? `printf 'agent wrote this at launch\\n' > "$a/STATE.md"` : ':'};; esac; prev="$a"; done ;;
+  new-session) printf '/tmp/oats-k6g-fake.sock\\t@0\\n' ;;
+  new-window) prev=""; for a in "$@"; do case "$prev" in -n) echo "$a" >> ${wins};; -c) ${writeState ? `printf 'agent wrote this at launch\\n' > "$a/STATE.md"` : ':'};; esac; prev="$a"; done; echo @1 ;;
   list-windows) cat ${wins} ;;
-  kill-window) : ;;
+  kill-window) : > ${wins} ;;
 esac
 exit 0
 `;

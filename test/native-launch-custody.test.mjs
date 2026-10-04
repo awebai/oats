@@ -75,19 +75,22 @@ function readJson(file) { return JSON.parse(readFileSync(file, "utf8")); }
 
 // A logging-only backend which optionally executes only fixture native
 // binaries. /bin/true is the fallback shell; no tmux, model, host config.
+// It holds no session (list-sessions prints nothing): the one a start creates is
+// answered its socket and first window, and new-window the window's id.
 function installBackend(f, { execute = false } = {}) {
   const log = join(f.base, 'backend.jsonl');
   process.env.SHELL = '/usr/bin/true';
   write(join(f.base, 'bin/tmux'), `#!${process.execPath}
 const fs=require('node:fs'),cp=require('node:child_process');const a=process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(log)},JSON.stringify(a)+String.fromCharCode(10));
-if(a.includes('display-message')) console.log(${JSON.stringify(join(f.base,'fake.sock'))});
+if(a.includes('new-session')) console.log(${JSON.stringify(join(f.base,'fake.sock'))}+String.fromCharCode(9)+'@0');
 if(a.includes('list-panes')) { console.error("can't find window");process.exit(1); }
 if(${execute} && (a.includes('new-window') || a.includes('respawn-pane'))) {
  const env={...process.env}; for(let i=0;i<a.length;i++) if(a[i]==='-e'){const pair=a[++i],k=pair.indexOf('=');env[pair.slice(0,k)]=pair.slice(k+1);}
  const r=cp.spawnSync('/bin/sh',['-c',a.at(-1)],{cwd:a[a.indexOf('-c')+1],env,encoding:'utf8'});
  if(r.status!==0) {console.error(r.stderr);process.exit(r.status||1);}
 }
+if(a.includes('new-window')) console.log('@1');
 `);
   chmodSync(join(f.base, 'bin/tmux'), 0o755);
   return log;
@@ -171,7 +174,8 @@ console.log(JSON.stringify({env:{}}));`);
   write(join(f.base,'bin/tmux'),`#!${process.execPath}
 const fs=require('node:fs');const a=process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(faked)},JSON.stringify(a)+String.fromCharCode(10));
-if(a.includes('display-message')) console.log(${JSON.stringify(join(f.base,'fake.sock'))});
+if(a.includes('new-session')) console.log(${JSON.stringify(join(f.base,'fake.sock'))}+String.fromCharCode(9)+'@0');
+if(a.includes('new-window')) console.log('@1');
 `);chmodSync(join(f.base,'bin/tmux'),0o755);
   const result=await f.spawn('session-substitution');
   if(kind==='preexisting-symlink') {rmSync(join(result.home,'work'),{recursive:true});symlinkSync(f.context,join(result.home,'work'));}

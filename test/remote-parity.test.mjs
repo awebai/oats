@@ -409,12 +409,15 @@ test("server roster: every row the host reports is addressable; savedRoute is in
   for (const row of rows) { assert.equal(row.addressable, true); assert.equal(row.savedRoute, false); }
 });
 
-test("a remote without the session commands: the fallback hint names the instance's recorded tmux session, else the remote's default", () => {
+test("a remote without the session commands: the fallback hint names the instance's recorded tmux session, else the remote's default; a recorded socket is named, and the hint survives a paste", () => {
   const old = { ...FULL_PROBE, version: "0.22.1", remote: ["spawn", "retire", "status"], features: [] };
   const dir = mkdtempSync(join(base, "hint-"));
+  const oddSocket = "/tmp/it's a dir/oats";
   const roster = { root: `${WS}/agents`, agents: [{ name: "dev", instances: [
     { instance: "dev-a", home: homeOf("dev", "dev-a"), tmux: { session: "team-x", window: "dev-a" } },
     { instance: "dev-b", home: homeOf("dev", "dev-b") },
+    { instance: "dev-c", home: homeOf("dev", "dev-c"), tmux: { session: "oats-agents", window: "dev-c", socket: "/tmp/tmux-1000/oats" } },
+    { instance: "dev-d", home: homeOf("dev", "dev-d"), tmux: { session: "oats-agents", window: "dev-d", socket: oddSocket } },
   ] }] };
   const host = fakeHost(dir, { probe: old, answers: { [`status --json --dir ${WS}`]: { stdout: JSON.stringify(roster) } } });
   const env = cliEnv(dir, host);
@@ -425,6 +428,18 @@ test("a remote without the session commands: the fallback hint names the instanc
   assert.match(r.json().error.message, /attach with ssh -t build-host tmux attach -t team-x:dev-a$/);
   r = cli(env, ["session", "inspect", "--server", "build", "--home", homeOf("dev", "dev-b"), "--json"]);
   assert.match(r.json().error.message, /attach with ssh -t build-host tmux attach -t pi-agents$/, "a kernel before 0.22.2 opened its windows in pi-agents");
+  // A row that records its server's socket: the hint names it, and the remote command is one word.
+  r = cli(env, ["session", "inspect", "--server", "build", "--home", homeOf("dev", "dev-c"), "--json"]);
+  assert.match(r.json().error.message, /attach with ssh -t build-host 'tmux -S \/tmp\/tmux-1000\/oats attach -t oats-agents:dev-c'$/);
+  // A socket with a space and a quote, pasted: the local shell hands ssh one word (the remote command),
+  // and the remote shell reads that word back as tmux's own arguments.
+  r = cli(env, ["session", "inspect", "--server", "build", "--home", homeOf("dev", "dev-d"), "--json"]);
+  const pasted = r.json().error.message.match(/attach with (ssh -t build-host .*)$/)[1];
+  const words = (line) => execFileSync("/bin/sh", ["-c", `for word in ${line}; do printf '%s\\n' "$word"; done`], { encoding: "utf8" }).split("\n").slice(0, -1);
+  const local = words(pasted);
+  assert.deepEqual(local.slice(0, 3), ["ssh", "-t", "build-host"]);
+  assert.equal(local.length, 4, `the remote command is one word: ${pasted}`);
+  assert.deepEqual(words(local[3]), ["tmux", "-S", oddSocket, "attach", "-t", "oats-agents:dev-d"]);
 });
 
 // ---- item 4: the Desktop's reads and lifecycle plans, routed ----
