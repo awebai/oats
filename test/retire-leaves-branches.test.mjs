@@ -23,10 +23,12 @@ function write(path, content, mode) {
   writeFileSync(path, content, mode === undefined ? undefined : { mode });
 }
 
-/** A workspace deployment whose soul dev works in a worktree of the member clone. */
-function fixture() {
+/** A workspace deployment whose soul dev works in a worktree of the member clone; with `retireHook`, the
+ *  soul has a capability whose retire hook is that module. */
+function fixture({ retireHook } = {}) {
   const fx = v2Deployment({
-    souls: { dev: { soul: { work: "worktree" }, agents: "# Dev\n" } },
+    souls: { dev: { soul: { work: "worktree", ...(retireHook ? { capabilities: { "test.hook": { from: "here" } } } : {}) }, agents: "# Dev\n" } },
+    ...(retireHook ? { capabilities: { "test.hook": { manifest: { hooks: { retire: "hook.mjs" } }, files: { "hook.mjs": retireHook } } } } : {}),
     files: { ".gitignore": "cache/\n", "tracked.txt": "base\n" },
   });
   temporaryDirectories.push(fx.base);
@@ -235,6 +237,57 @@ exec "$real" "$@"
   assert.equal(existsSync(work), false, "the worktree is removed, after the recovery was written");
   assert.equal(existsSync(spawned.home), false, "the home is removed");
 });
+
+/** A retire hook that detaches the worktree's HEAD and makes an empty commit there: it writes nothing in the
+ *  home and nothing in the worktree's files. */
+const HOOK_COMMIT = "made by a retire hook";
+const COMMITTING_HOOK = `import { execFileSync } from "node:child_process";
+const git = (...args) => execFileSync("git", ["-C", process.env.OATS_HOME + "/work", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgSign=false", ...args]);
+git("checkout", "--quiet", "--detach");
+git("commit", "--quiet", "--allow-empty", "-m", ${JSON.stringify(HOOK_COMMIT)});
+console.log(JSON.stringify({ meta: { retired: true } }));
+`;
+
+for (const [start, label] of [["branch", "on a branch a ref reaches"], ["detached", "detached at a commit no ref reaches"]]) {
+  test(`--discard-worktree, clean worktree ${label}: a commit a retire hook makes on a detached HEAD is in a completed recovery before the worktree is removed`, () => {
+    const f = fixture({ retireHook: COMMITTING_HOOK });
+    const spawned = spawn(f, `hook-commits-${start}`);
+    const work = join(spawned.home, "work");
+    const subjects = [HOOK_COMMIT];
+    if (start === "detached") {
+      git(work, "checkout", "--quiet", "--detach");
+      commitIn(work, "a commit only the worktree's HEAD reaches");
+      subjects.unshift("a commit only the worktree's HEAD reaches");
+      assert.equal(git(f.repo, "for-each-ref", "--contains", git(work, "rev-parse", "HEAD"), "--format=%(refname)"), "", "fixture premise: no ref of the repository reaches the commit");
+    } else {
+      assert.notEqual(headRefHex(work), "", "fixture premise: the worktree is on a branch");
+    }
+    assert.equal(git(work, "status", "--porcelain=v1", "--untracked-files=all", "--ignored=matching"), "", "fixture premise: the worktree is clean");
+    // As in the test above: when the retire asks Git to remove the worktree, a stand-in `git` records the
+    // subject of the commit each completed recovery has checked out.
+    const recoveries = recoveryRootOf(spawned.home);
+    const atRemoval = join(f.base, "recoveries-at-removal");
+    write(join(f.base, "bin", "git"), `#!/bin/sh
+real=${shq(realGit())}
+case " $* " in *" worktree remove "*)
+  : >> ${shq(atRemoval)}
+  for recovery in ${shq(recoveries)}/${shq(basename(spawned.home))}-*; do
+    if [ -f "$recovery/recovery.json" ] && [ -d "$recovery/repo" ]; then "$real" -C "$recovery/repo" log -1 --format=%s HEAD >> ${shq(atRemoval)}; fi
+  done ;;
+esac
+exec "$real" "$@"
+`, 0o755);
+
+    const receipt = retiredReceipt(cli(f, ["retire", basename(spawned.home), "--discard-worktree", "--json"]));
+    assert.equal(existsSync(atRemoval), true, "the retire asked Git to remove the worktree");
+    assert.deepEqual(readFileSync(atRemoval, "utf8").split("\n").filter(Boolean).sort(), [...subjects].sort(),
+      "when the worktree was removed, completed recoveries held each commit only the worktree reached, the hook's among them");
+    const repo = join(receipt.workRecovery.path, "repo");
+    assert.equal(git(repo, "log", "-1", "--format=%s", "HEAD"), HOOK_COMMIT, "the last recovery is checked out at the hook's commit");
+    assert.equal(existsSync(work), false, "the worktree is removed");
+    assert.equal(existsSync(spawned.home), false, "the home is removed");
+  });
+}
 
 // ---- A HEAD that moves after the final inspection ----
 

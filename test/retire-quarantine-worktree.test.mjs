@@ -6,9 +6,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { accessSync, constants, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, isAbsolute, join } from "node:path";
 import { listInstances, retireInstance } from "../lib/core.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
@@ -95,6 +95,42 @@ test("(b) once nothing is outstanding, the retry removes the worktree with --dis
   assert.equal(r.worktreeRemoved, true);
   assert.ok(!w.registered().includes(w.work));
   assert.equal(w.branchTip(), w.tip, "only --delete-branch deletes a branch");
+});
+
+test("(b) a removal that fails in the retry is not attempted again: a HEAD that moved meanwhile keeps its worktree, and the retry stays incomplete", async (t) => {
+  const w = await stubbornInstance(t, "dev-moved");
+  await w.retire({ discardWorktree: true });
+  w.settle();
+  // A stand-in `git` first on PATH passes every call to the real Git, except the first request to remove a
+  // worktree: then it detaches the worktree's HEAD, commits, and fails without removing anything. Every later
+  // removal would go through, so a second attempt after the check of HEAD would remove the new commit's worktree.
+  const real = (process.env.PATH || "").split(delimiter).filter(isAbsolute).map((d) => join(d, "git"))
+    .find((c) => { try { accessSync(c, constants.X_OK); return true; } catch { return false; } });
+  assert.ok(real, "this test needs git on PATH");
+  const bin = mkdtempSync(join(tmpdir(), "oats-git-stand-in-")); t.after(() => rmSync(bin, { recursive: true, force: true }));
+  const marker = join(bin, "moved");
+  const q = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
+  writeFileSync(join(bin, "git"), `#!/bin/sh
+case " $* " in *" worktree remove "*)
+  if [ ! -e ${q(marker)} ]; then
+    ${q(real)} -C ${q(w.work)} checkout --quiet --detach &&
+    ${q(real)} -C ${q(w.work)} -c user.name=t -c user.email=t@t -c commit.gpgSign=false commit --quiet --allow-empty -m 'made while the removal failed' &&
+    ${q(real)} -C ${q(w.work)} rev-parse HEAD > ${q(marker)}
+    exit 1
+  fi ;;
+esac
+exec ${q(real)} "$@"
+`, { mode: 0o755 });
+  process.env.PATH = `${bin}${delimiter}${process.env.PATH}`; // stubbornInstance restores the host's PATH
+
+  const r = await w.retire({ discardWorktree: true });
+  assert.equal(existsSync(marker), true, "fixture premise: the retry asked Git to remove the worktree, and HEAD moved");
+  const moved = readFileSync(marker, "utf8").trim();
+  assert.notEqual(moved, w.tip, "fixture premise: HEAD is at another commit than the one that was inspected");
+  assert.equal(w.git("-C", w.work, "rev-parse", "HEAD"), moved, "the worktree is kept, at the commit HEAD moved to");
+  assert.ok(w.registered().includes(realpathSync(w.work)), "and is still registered");
+  assert.ok(r.rollbackIncomplete?.includes(`git worktree ${realpathSync(w.work)}: still registered`), JSON.stringify(r.rollbackIncomplete));
+  assert.equal(existsSync(join(w.home, "instance.json")), true, "the home is kept for the next retry");
 });
 
 test("(c) a work directory whose admin entry is gone is an incomplete item: the hooks run, the directory stays", async (t) => {
