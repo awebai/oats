@@ -46,11 +46,12 @@ export function cliLifecycle(bin, options, { exec = execFile, timeout } = {}) {
         if (!value) return resolve(failure('E_CLI_PROTOCOL'));
         if (error && value.ok !== false) return resolve(failure('E_CLI_FAILED'));
         // Only internal consumers see result/details. They validate/project all
-        // data against their admitted target; a local command's error message is gone.
-        // A host's message is kept: the boundary shows it, bounded, as the refusal's detail.
+        // data against their admitted target. An error envelope's message is kept, for a
+        // local command and a routed one: the boundary shows it only through the display
+        // filter, as the refusal's detail. Stderr and the process error never leave here.
         if (value.ok) resolve({ schemaVersion: 1, ok: true, result: value.result });
         else resolve({ schemaVersion: 1, ok: false, ...(value.result ? { result: value.result } : {}),
-          error: { code: value.error?.code, ...(options.server ? { message: value.error?.message } : {}), details: value.error?.details } });
+          error: { code: value.error?.code, message: value.error?.message, details: value.error?.details } });
       });
     } catch { resolve(failure('E_CLI_FAILED')); }
   });

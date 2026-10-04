@@ -1,9 +1,10 @@
 import { takePickerFocusReturn } from './overlay-picker.mjs';
 import { gitTarget, gitTargetKey } from './instance-git-contract.mjs';
-import { lifecyclePlan, lifecycleOptions, planReference, lifecycleReason, publicLifecycleReceipt, stoppedTargets, lifecycleChoicesApplicable } from './lifecycle-contract.mjs';
+import { lifecyclePlan, lifecycleOptions, planReference, lifecycleReason, lifecycleDetailCode, publicLifecycleReceipt, stoppedTargets, lifecycleChoicesApplicable } from './lifecycle-contract.mjs';
 import { projectedPullRequest } from './forge-contract.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { codeLineNodes, readingFrom, remoteReason, serverLabel } from './remote-address.mjs';
+import { cleanLine } from './display-text.mjs';
 export const lifecycleCSS = `
 .lifecycle-dialog { width:min(420px,calc(100vw - 32px)); max-height:88vh; overflow:auto; display:flex; flex-direction:column; gap:14px; padding:20px; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--fg); box-shadow:var(--shadow-popover); font-size:12.5px; }
 .lifecycle-dialog h2 { margin:0; font-size:15px; font-weight:700; overflow-wrap:anywhere; }
@@ -58,7 +59,12 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     ui.retry.disabled = applying; ui.retry.hidden = !submission || !submission.uncertain;
     ui.close.textContent = applying ? 'Close status' : 'Close';
   }
-  /** A remote reason's code and the kernel's message, behind a Details disclosure (keyboard and screen reader
+  /** A local reason's code and the CLI's own message, re-validated here (main relays the server's reply as it
+   * is), or null: a code that may show one (lifecycleDetailCode) and a detail that is already a display line.
+   * The headline stays the fixed sentence for the code; the detail is only ever shown, in Details. */
+  const localDetail = reason => reason && typeof reason === 'object' && !Object.hasOwn(reason, 'remote')
+    && lifecycleDetailCode(reason.code) && cleanLine(reason.detail) ? { code: reason.code, detail: reason.detail } : null;
+  /** A reason's code and the kernel's message, behind a Details disclosure (keyboard and screen reader
    * reachable). The code is text; the message is alone in its <bdi> (remote-address.mjs codeLineNodes). */
   function details(parent, reason) {
     if (!reason.detail) return;
@@ -66,11 +72,12 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     more.append(node('summary', 'Details'), line);
     parent.append(more);
   }
-  /** A refusal: a remote host's headline (its code and message in Details), else the fixed sentence for the code. */
+  /** A refusal: a remote host's headline, else the fixed sentence for the code; the code and the kernel's
+   * message in Details when there is one to show. */
   function refusal(reason) {
-    const remote = remoteReason(reason);
+    const remote = remoteReason(reason), shown = remote || localDetail(reason);
     ui.status.textContent = remote ? remote.message : lifecycleReason(reason?.code).message;
-    if (remote) details(ui.result, remote);
+    if (shown) details(ui.result, shown);
   }
   function rows(parent, values) {
     const dl = node('dl'); for (const [label, value] of values) dl.append(node('dt', label), node('dd', report(value))); parent.append(dl);
@@ -185,10 +192,14 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
         if (receipt.replayed || result.repeated) ui.result.append(node('p', 'Recorded result for this confirmation, not a new action.', 'lifecycle-note'));
       } else {
         refusal(result.reason?.code ? result.reason : { code: 'E_OUTCOME_UNKNOWN' });
-        // Why the outcome is unknown: a remote transport or host cause keeps its headline and Details.
+        // Why the outcome is unknown: a remote transport or host cause keeps its headline and Details; a
+        // local one says its fixed sentence, with the CLI's own message in Details when it carries one.
         const cause = result.cause && remoteReason(result.cause);
         if (cause) { ui.result.append(node('p', cause.message, 'lifecycle-note')); details(ui.result, cause); }
-        else if (result.cause) ui.result.append(node('p', lifecycleReason(result.cause.code).message, 'lifecycle-note'));
+        else if (result.cause) {
+          ui.result.append(node('p', lifecycleReason(result.cause.code).message, 'lifecycle-note'));
+          const local = localDetail(result.cause); if (local) details(ui.result, local);
+        }
         if (result.childrenStopped) {
           const children = stoppedTargets(result.childrenStopped, snapshot.facts?.children || []); if (!children) throw new Error('Invalid child outcomes');
           stopped(ui.result, children);
