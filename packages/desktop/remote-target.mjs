@@ -3,6 +3,7 @@
 import { requireRemoteSupport } from "./cli-locator.mjs";
 import { runTerminalCommand } from './terminal-exec.mjs';
 import { HERDR_REMOVED } from './renderer/terminal-contract.mjs';
+import { cliEnvironment } from './cli-environment.mjs';
 
 const coded = (code, message) => Object.assign(new Error(message), { code });
 const herdrRemoved = message => coded('E_HERDR_REMOVED', message);
@@ -82,9 +83,10 @@ export function createTerminalPrepareGate(registry, max) {
   };
 }
 
-// Preserve the operator's SSH agent and PATH, but not local terminal nesting.
+// Preserve the operator's SSH agent and PATH, but not local terminal nesting,
+// nor what the Desktop and its packaging added (cli-environment.mjs).
 export function remoteTerminalEnvironment(source = process.env) {
-  const env = { ...source };
+  const env = cliEnvironment(source);
   delete env.TMUX;
   delete env.HERDR_SESSION;
   delete env.HERDR_SOCKET_PATH;

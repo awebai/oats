@@ -6,7 +6,9 @@
 // puts the merge in its own environment, which the backend server and every
 // child inherit. Only PATH is taken from the login shell, never the rest of
 // its environment. A failure keeps the inherited PATH and is reported through
-// /api/cli (pathSource, pathError).
+// /api/cli (pathSource, pathError). The shell is spawned with the `env` it is
+// given, which main cleans first (cli-environment.mjs); the shell's entries are
+// merged in front of that env's PATH.
 import { spawn as nodeSpawn } from "node:child_process";
 import { posix } from "node:path";
 
