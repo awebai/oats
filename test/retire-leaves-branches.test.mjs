@@ -12,10 +12,11 @@ import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:pa
 import { completeDeferredRetirement, startInstanceSession } from "../lib/core.mjs";
 import { readEvents } from "../lib/instance-events.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
-import { isolateSessionEnvironment, waitUntil } from "./helpers/host-fixture.mjs";
+import { isolateSessionEnvironment, oatsSocket, waitUntil } from "./helpers/host-fixture.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
-const temporaryDirectories = [];
+/** What each test made: run after it, whatever it did. */
+const cleanups = [];
 const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 
@@ -32,7 +33,7 @@ function fixture({ retireHook } = {}) {
     ...(retireHook ? { capabilities: { "test.hook": { manifest: { hooks: { retire: "hook.mjs" } }, files: { "hook.mjs": retireHook } } } } : {}),
     files: { ".gitignore": "cache/\n", "tracked.txt": "base\n" },
   });
-  temporaryDirectories.push(fx.base);
+  cleanups.push(fx.cleanup); // the deployment, and its private TMUX_TMPDIR
   const repo = fx.member;
   execFileSync("git", ["-C", repo, "config", "user.email", "test@example.invalid"]);
   execFileSync("git", ["-C", repo, "config", "user.name", "Test"]);
@@ -54,7 +55,7 @@ function spawn(f, purpose) {
 }
 
 test.afterEach(() => {
-  for (const dir of temporaryDirectories.splice(0)) rmSync(dir, { recursive: true, force: true });
+  for (const cleanup of cleanups.splice(0)) cleanup();
 });
 
 /** Git in a repository, its output as text without the closing line feed. */
@@ -359,24 +360,21 @@ exec "$real" "$@"
 const DELETE_BRANCH_REFUSED = "oats retire no longer deletes branches: --delete-branch is not accepted. Retire without it; the branch is left in the repository. Inspect it there and delete it with Git if it is no longer wanted.";
 
 test("oats retire --delete-branch is refused with E_BAD_ARGS before anything happens: a recorded child that was running is still running, and the instance, its worktree and its branch are as they were", async (t) => {
-  // Real tmux on a private socket, and a harness that records its process id and idles.
+  // Real tmux, the fixture's own `oats` server, and a harness that records its process id and idles.
   // The cleanup is registered before anything that can fail, and each of its steps runs whatever the
-  // one before it did.
+  // one before it did; restoring the environment also kills the fixture's `oats` server.
   const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-leaves-branches-")));
-  const socket = join(base, "tmux.sock");
   const session = "r";
   let restoreEnvironment, fx;
   t.after(() => {
-    try { execFileSync("tmux", ["-u", "-S", socket, "kill-server"], { stdio: "ignore", timeout: 10000 }); } catch { /* no server on the private socket */ }
+    try { restoreEnvironment?.(); }
     finally {
-      try { restoreEnvironment?.(); }
-      finally {
-        try { fx?.cleanup(); }
-        finally { rmSync(base, { recursive: true, force: true }); }
-      }
+      try { fx?.cleanup(); }
+      finally { rmSync(base, { recursive: true, force: true }); }
     }
   });
-  restoreEnvironment = isolateSessionEnvironment(base, socket);
+  restoreEnvironment = isolateSessionEnvironment(base);
+  const socket = oatsSocket(); // where the kernel creates windows
   const binDir = join(base, "bin");
   const harness = join(binDir, "claude");
   write(harness, `#!/bin/sh\necho $$ > "$OATS_INSTANCE_HOME/pid.txt"\nexec sleep 86400\n`, 0o755);
