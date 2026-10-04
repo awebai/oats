@@ -83,7 +83,7 @@ Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
 | Sidebar (`sidebar.toggle`) | ⌘B | Ctrl+B | no (tmux prefix) |
 | Filter instances (`sidebar.focusFilter`) | ⌘F | Ctrl+F | no |
 | Instance panel (`panel.toggle`; no tab-bar button since spec F, the panel keeps its own collapse) | ⌥⌘B | Ctrl+Alt+B | no |
-| Theme cycle (`app.themeToggle`) | none | none | – (the palette keeps it) |
+| Theme cycle: White, Solarized, Dark, This computer (`app.themeToggle`) | none | none | – (the palette keeps it) |
 | Keyboard shortcuts (`app.shortcuts`) | ⌘, | Ctrl+, | no |
 | Terminal zoom (`terminal.fontBigger`, `…Smaller`, `…Reset`; also Settings → Terminal; reset lands on 15px) | ⌘= ⌘- ⌘0 | Ctrl+= Ctrl+- Ctrl+0 | no |
 | Open a file read-only (`app.openFile`) | ⌘O | Ctrl+O | no |
@@ -117,7 +117,8 @@ accelerator from the terminal.
 
 Actions without a default (bind them in the shortcuts editor): the workspace
 switcher, New window (Linux/Windows), Connections, focus mode, focus the active terminal, return to
-terminal groups, explicit themes, and the instance menu's Open in split / Open
+terminal groups, explicit themes (`app.theme.light`, `app.theme.solarized`,
+`app.theme.dark`, and `app.theme.host` for This computer), and the instance menu's Open in split / Open
 pull request.
 
 Rebinding applies everywhere a chord is shown: tooltips, the footer hints, the

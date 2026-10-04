@@ -30,6 +30,14 @@ contextBridge.exposeInMainWorld("oatsDesktop", {
     ipcRenderer.on(channel, fn); return () => ipcRenderer.removeListener(channel, fn);
   },
 
+  /** The theme of this computer (#602): plain state (colours and polarity, or the system
+   * appearance), never a path or file content. The renderer validates it again before use. */
+  hostTheme: () => ipcRenderer.invoke("host-theme:get"),
+  onHostThemeChanged: (cb) => {
+    const fn = (_e, state) => cb(state); ipcRenderer.on("host-theme:changed", fn);
+    return () => ipcRenderer.removeListener("host-theme:changed", fn);
+  },
+
   /** Runtime workspace switcher (privileged; renderer modal is the UX layer). */
   workspaceSuggestions: () => ipcRenderer.invoke("workspace:suggestions"),
   workspaceAdd: (path) => ipcRenderer.invoke("workspace:add", path),
