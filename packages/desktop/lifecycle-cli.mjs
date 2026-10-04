@@ -22,10 +22,7 @@ export function lifecycleArgv(options) {
   else {
     if (o.operation === 'stop') args.push('--apply');
     args.push('--plan-revision', o.revision, '--idempotency-key', o.key);
-    if (o.operation === 'retire') {
-      if (choices.discardWorktree) args.push('--discard-worktree');
-      if (choices.deleteBranch) args.push('--delete-branch');
-    }
+    if (o.operation === 'retire' && choices.discardWorktree) args.push('--discard-worktree');
   }
   args.push('--home', o.home, ...(o.server ? ['--server', o.server] : ['--dir', o.context]));
   if (o.operation === 'stop' && !choices.recursive) args.push('--no-recursive');
