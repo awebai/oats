@@ -1585,7 +1585,18 @@ seen.branches = git('branch', '--list', 'keep');`, { home: false });
   assert.equal(readJson(join(recovery.path, "recovery.json")).phase, "complete");
 });
 
-test("a nested repository whose Git state cannot be read refuses the retire as an inspection failure, and nothing is removed", () => {
+/** Whether a quietHook retire hook ran to its end for this home. */
+const hookRan = (home) => existsSync(join(dirname(home), `hook-saw-${basename(home)}`));
+
+// ---- A worktree that cannot be proven unchanged ----
+// A read of the Git state that fails is never taken for "not set" or for "unchanged", and it does not
+// refuse by itself: the worktree is not provable, and the copy decides. With nothing to preserve the
+// retire goes through. With anything to preserve the work goes into the snapshot before the hooks, also
+// when only the home has something: a snapshot that held the home only could, after the hooks, neither
+// be proven to stand for the work nor be given it.
+
+test("a nested repository whose Git state cannot be read refuses the retire at the copy, as it always did, and nothing is removed", () => {
+  // A pin, not a difference: the copy asks the nested repository for its commit and fails.
   const f = fixture();
   const spawned = spawn(f, "nested-unreadable");
   const work = join(spawned.home, "work");
@@ -1594,11 +1605,53 @@ test("a nested repository whose Git state cannot be read refuses the retire as a
   write(join(work, "human-ignored", "broken", "kept.txt"), "bytes that must not be lost\n");
   const retired = cli(f, ["retire", "dev-nested-unreadable", "--discard-worktree", "--json"]);
   assert.notEqual(retired.status, 0, "a work state that cannot be read was taken for one that can");
-  assert.equal(JSON.parse(retired.stdout).error.code, "E_WORK_INSPECTION_FAILED", retired.stdout);
+  assert.equal(JSON.parse(retired.stdout).error.code, "E_WORK_PRESERVATION_FAILED", retired.stdout);
   assert.equal(existsSync(spawned.home), true);
   assert.equal(readFileSync(join(work, "human-ignored", "broken", "kept.txt"), "utf8"), "bytes that must not be lost\n");
-  assert.equal(existsSync(recoveryRootOf(spawned.home)), false, "no recovery was written");
+  assert.deepEqual(readdirSync(recoveryRootOf(spawned.home)), [], "neither a recovery nor its staging is left behind");
 });
+
+/** Put a directory where the worktree's repository would keep info/attributes: `git status` still works,
+ *  the kernel cannot read the file, and a work copy cannot carry it. */
+function unreadableAttributes(work) {
+  mkdirSync(join(commonDirOf(work), "info", "attributes"), { recursive: true });
+  assert.equal(porcelain(work), "", "fixture premise: Git's status still works, and reports a clean worktree");
+}
+
+test("a worktree whose Git state cannot be read, with nothing to preserve, retires: its retire hook runs and the home is removed", () => {
+  const f = fixture({ capabilities: hookCapability(quietHook("", { home: false })) });
+  const spawned = spawn(f, "unreadable-clean");
+  unreadableAttributes(join(spawned.home, "work"));
+
+  const retired = cli(f, ["retire", basename(spawned.home), "--discard-worktree", "--json"]);
+  assert.equal(retired.status, 0, `a state that cannot be read refused a retire with nothing to preserve: ${retired.stderr}\n${retired.stdout}`);
+  assert.equal(hookRan(spawned.home), true, "the retire hook ran");
+  assert.equal(JSON.parse(retired.stdout).workRecovery, undefined, "nothing to preserve: no recovery");
+  assert.equal(existsSync(spawned.home), false, "the home is removed");
+});
+
+for (const { preserves, prepare } of [
+  // A pin, not a difference: this retire copied its work before, and that copy refused on the same file.
+  { preserves: "an untracked file", prepare: (home) => write(join(home, "work", "scratch.txt"), "untracked\n") },
+  // New: a snapshot of the home only would leave the work neither proven nor copied after the hooks.
+  { preserves: "only a home note", prepare: (home) => write(join(home, "notes", "x.md"), "an authored note\n") },
+]) {
+  test(`a worktree whose Git state cannot be read, with ${preserves} to preserve, has its work copied before the hooks: the copy cannot be made, so the retire refuses with E_WORK_PRESERVATION_FAILED before any hook runs and leaves no recovery`, () => {
+    const f = fixture({ capabilities: hookCapability(quietHook("")) });
+    const spawned = spawn(f, preserves.startsWith("only") ? "unreadable-home-only" : "unreadable-work");
+    unreadableAttributes(join(spawned.home, "work"));
+    prepare(spawned.home);
+
+    const retired = cli(f, ["retire", basename(spawned.home), "--discard-worktree", "--json"]);
+    assert.notEqual(retired.status, 0, `a worktree that could be neither proven nor copied was retired: ${retired.stdout}`);
+    const error = JSON.parse(retired.stdout).error;
+    assert.equal(error.code, "E_WORK_PRESERVATION_FAILED", retired.stdout);
+    assert.match(error.message, /attributes/, "the message names what the copy could not carry");
+    assert.equal(hookRan(spawned.home), false, "no retire hook ran");
+    assert.deepEqual(readdirSync(recoveryRootOf(spawned.home)), [], "neither a recovery nor its staging is left behind");
+    assert.equal(existsSync(join(spawned.home, "work", "tracked.txt")), true, "the home and the work are kept");
+  });
+}
 
 // ---- An entry that is not a file, a directory or a symbolic link ----
 // Proving the work unchanged reads the whole worktree, and such an entry (a socket, a FIFO, a device)
@@ -1607,7 +1660,6 @@ test("a nested repository whose Git state cannot be read refuses the retire as a
 // Before the hooks it also says what this retire has and has not done by then.
 const UNSUPPORTED_ENTRY_TEXT = String.raw`\/work\/pipe has an unsupported filesystem type: it is not a file, a directory or a symbolic link, so it cannot be read or copied\. Safely stop the process or resource that owns it, or move the entry elsewhere, before retrying`;
 const UNSUPPORTED_ENTRY = new RegExp(`${UNSUPPORTED_ENTRY_TEXT}$`);
-const hookRan = (home) => existsSync(join(dirname(home), `hook-saw-${basename(home)}`));
 
 test("a FIFO in a worktree that Git reports as clean refuses the retire before its hooks: the message names it, says what to do and says that the instance is not retired, no retire hook runs, no recovery is written and nothing is deleted, however often it is retried", () => {
   const f = fixture({ capabilities: hookCapability(quietHook("")) });

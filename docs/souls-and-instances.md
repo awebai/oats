@@ -474,10 +474,27 @@ part of the state: a recovery does not hold them. The one exception is a
 worktree whose `HEAD` is detached: its copy holds the branch that repository
 has checked out, so that branch is part of the state.
 
-A repository inside a nested repository is copied as plain files, its Git
-directory included, and nothing proves such a directory unchanged. With one
-present, the work is copied again after the hooks whenever there is
-something to preserve.
+**A worktree that cannot be proven unchanged.** Two things make a worktree
+not provable:
+
+- a repository inside a nested repository. It is copied as plain files, its
+  Git directory included, and nothing proves such a directory unchanged;
+- a read of the state that fails, while `git status` works: one of the Git
+  commands the list above is read with, or one of the files it is read from
+  (`info/attributes`, the stash's log, an exclude file, the operation
+  state), in the worktree's repository or in a nested one. A nested
+  repository that Git cannot read is such a case. A read that fails is
+  never taken for "not set" or for "unchanged".
+
+A worktree that is not provable always has its work in the pre-hook
+snapshot, also when only the home has something to preserve, and the work is
+copied again after the hooks whenever there is something to preserve. Its
+recovery is therefore larger. With nothing to preserve it retires like any
+other. The copy reads what the proof reads, so where the proof failed the
+copy may fail too: the retire then refuses with `E_WORK_PRESERVATION_FAILED`
+before any retire hook runs. No recovery was written and nothing was
+deleted; the retire has already stopped the session of a launched instance
+by then, the instance is not retired, and its home is kept.
 
 A snapshot that holds the home only (the work had nothing to preserve
 before the hooks) has no work copy to stand for it. It gets the work under
@@ -493,15 +510,13 @@ the Git state did not move, or to verify the copy when it did. With nothing
 preserved before the hooks, nothing is compared: a
 recovery is written after them whenever there is something to preserve.
 
-A Git state that cannot be read refuses the retire with
-`E_WORK_INSPECTION_FAILED`: a read that fails is never taken for "not set"
-or for "unchanged". That holds for a Git command that fails and for a file
-the state is read from that exists but cannot be read (the file
-`core.excludesFile` names, `info/exclude`, `info/attributes`, the stash's
-log), in the worktree's repository and in each nested one, and also when the
-retire has nothing to preserve. A state that is unreadable from the start
-refuses at the retire's first inspection: no recovery was written, nothing
-was deleted, and the retire has not stopped the instance's session.
+A worktree whose `git status` fails refuses the retire with
+`E_WORK_INSPECTION_FAILED` at the first inspection: no recovery was written,
+nothing was deleted, and the retire has not stopped the instance's session.
+A directory in place of `info/exclude`, or of the file `core.excludesFile`
+names, is such a case: Git itself refuses to use it. Any other read of the
+state that fails does not refuse here: it makes the worktree not provable,
+as described above.
 
 **A socket, a FIFO or a device file in the worktree.** An entry that is not
 a file, a directory or a symbolic link has no bytes to read or to copy, and
@@ -532,9 +547,8 @@ hooks, such an entry anywhere in the worktree refuses the retire:
   Git state, because the copy then meets the entry before the files are
   read; that message names the entry too.
 
-A worktree that holds a repository inside a nested repository is copied
-without the read, so there the refusal comes from the copy, as
-`E_WORK_PRESERVATION_FAILED`.
+A worktree that cannot be proven unchanged is copied without the read, so
+there the refusal comes from the copy, as `E_WORK_PRESERVATION_FAILED`.
 
 The home is not copied again because the work is. Some entries of a home are
 the kernel's own records and do not count as changes to it:
