@@ -223,7 +223,9 @@ that triggered it), and `oats schedule run-now` typed inside an instance.
   on a host whose only UTF-8 locale is the one they name. tmux hands a pane
   the `PATH` of that client and nothing else of it: the three locale names
   stay with the client, and the pane, the session and the server keep the
-  values they had. Nothing else of the instance travels.
+  values they had. Nothing else of the instance travels. A restart that
+  reuses the pane the home already has runs its tmux client with the same
+  environment; where and whether the pane is reused does not change.
 - **It is refused** (`E_RUNTIME_ENDPOINT_UNKNOWN`; `oats spawn` reports it
   as `E_SPAWN_FAILED` with the same message) when the session does not exist
   on the `oats` server and there is no source to read: the home records no
@@ -270,11 +272,17 @@ that triggered it), and `oats schedule run-now` typed inside an instance.
   process is the one that starts it.
 - Which server is reached is decided by the process that creates, never by
   the environment it passes: its own `tmux`, its own `TMUX_TMPDIR`, and the
-  socket the lookup returned when the server runs. What the server process
-  gets (`HOME` and so which configuration loads, `PATH`, everything else)
-  comes from the passed environment alone. The global environment of the
-  server the session is created on is never read for this and never changed;
-  the one that is read is the recorded server's, as above.
+  socket the lookup returned when the server runs. Its own `tmux` is the one
+  its own `PATH` finds, and OATS runs it by its full path. A process whose
+  `PATH` holds no tmux, or whose `PATH` is not set (tmux used to be found by
+  the system's default search then), is refused
+  (`E_RUNTIME_ENDPOINT_UNKNOWN`) when it has to create the session: run the
+  command with a `PATH` that holds tmux. With the session already there,
+  nothing is refused. What the server process gets (`HOME` and so which
+  configuration loads, `PATH`, everything else) comes from the passed
+  environment alone. The global environment of the server the session is
+  created on is never read for this and never changed; the one that is read
+  is the recorded server's, as above.
 
 A process that neither sign identifies as an instance is treated as any
 other creator: its environment, without the names above, is what it passes.
