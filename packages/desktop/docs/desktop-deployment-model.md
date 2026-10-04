@@ -56,7 +56,8 @@ are gated on their feature), 0.39 (server connect, the capability route and
 servers per workspace, features `server-connect`, `capability-route` and
 `servers-per-workspace`), 0.40 (needs input, feature `waiting-on-you`) and 0.41
 (retirement deletes no branch; `retire --delete-branch` is refused and the
-Desktop no longer offers it), and the `packages-no-approval` fence is the real
+Desktop no longer offers it; new sessions run on the OATS tmux server, named
+by the socket each row records), and the `packages-no-approval` fence is the real
 gate.
 
 ## Projection and ownership
