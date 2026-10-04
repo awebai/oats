@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { disposableHomeRootProblem, manifestContractProblems } from "../lib/capability-contract.mjs";
+import { DISPOSABLE_HOME_ACCEPTED, DISPOSABLE_HOME_REFUSED } from "./helpers/disposable-home.mjs";
 
 // The mirrored official payloads (mirrors/) and this repository's own
 // capabilities (capabilities/) must validate against the manifest schema
@@ -33,4 +35,56 @@ test("every mirrored and repo-owned capability manifest validates against docs/c
   assert.equal(validate({ ...base, private: true }), true, "private: true");
   assert.equal(validate({ ...base, private: "yes" }), false, "private must be a boolean");
   assert.equal(validate({ ...base, team: "engineering" }), false, "team was removed in 0.30");
+});
+
+// The schema is what a package author validates against; the contract (lib/capability-contract.mjs)
+// is what the kernel enforces. A `retirement` one accepts and the other refuses is a manifest that
+// validates and does not load, or the reverse.
+test("the schema and the manifest contract give the same verdict on a retirement declaration's shape and on every disposable home entry", async () => {
+  const { default: Ajv2020 } = await import("ajv/dist/2020.js");
+  const root = resolve(new URL("..", import.meta.url).pathname);
+  const schema = JSON.parse(readFileSync(join(root, "docs", "capability-manifest.schema.json"), "utf8"));
+  const validate = new Ajv2020({ strict: false, allowUnionTypes: true }).compile(schema);
+  const base = { capability: "acme.x", version: "1.0.0", compatibility: { oats: ">=0.6.2" }, description: "x", commands: { go: "bin/x.mjs" } };
+  const bySchema = (retirement) => validate({ ...base, retirement });
+  const byContract = (retirement) => manifestContractProblems({ capability: "acme.x", retirement });
+  assert.equal(validate(base), true, `the manifest every case below adds a retirement to is valid: ${JSON.stringify(validate.errors)}`);
+
+  for (const [value, why] of DISPOSABLE_HOME_REFUSED) {
+    const retirement = { disposable: { home: [value] } };
+    assert.equal(bySchema(retirement), false, `the schema refuses ${JSON.stringify(value)}`);
+    // Refused for that entry, where the contract's pointer names it, and not for something else in the manifest.
+    assert.deepEqual([...new Set(validate.errors.map((e) => e.instancePath))], ["/retirement/disposable/home/0"], `${JSON.stringify(value)}: ${JSON.stringify(validate.errors)}`);
+    assert.equal(disposableHomeRootProblem(value), why, JSON.stringify(value));
+    assert.deepEqual(byContract(retirement).map((p) => p.pointer), ["/retirement/disposable/home/0"], `the contract refuses ${JSON.stringify(value)}`);
+  }
+  for (const value of DISPOSABLE_HOME_ACCEPTED) {
+    const retirement = { disposable: { home: [value] } };
+    assert.equal(bySchema(retirement), true, `the schema accepts ${JSON.stringify(value)}: ${JSON.stringify(validate.errors)}`);
+    assert.equal(disposableHomeRootProblem(value), undefined, JSON.stringify(value));
+    assert.deepEqual(byContract(retirement), [], `the contract accepts ${JSON.stringify(value)}`);
+  }
+  // One rule, both directions: for every entry, whatever the lists above say, the two verdicts are the same.
+  for (const value of [...DISPOSABLE_HOME_REFUSED.map(([v]) => v), ...DISPOSABLE_HOME_ACCEPTED]) {
+    const retirement = { disposable: { home: [value] } };
+    assert.equal(bySchema(retirement), byContract(retirement).length === 0, `schema and contract disagree on ${JSON.stringify(value)}`);
+  }
+
+  // The shape of the declaration: a `disposable` map, only `home` and `work`, each an array of strings.
+  for (const [retirement, sound] of [
+    [{}, false],
+    [{ disposable: [] }, false],
+    [{ disposable: {}, extra: 1 }, false],
+    [{ disposable: { other: [] } }, false],
+    [{ disposable: { home: ".aw" } }, false],
+    [{ disposable: { work: [1] } }, false],
+    [{ disposable: {} }, true],
+    [{ disposable: { work: ["node_modules"] } }, true],
+  ]) {
+    assert.equal(bySchema(retirement), sound, `schema: ${JSON.stringify(retirement)} ${JSON.stringify(validate.errors)}`);
+    assert.equal(byContract(retirement).length === 0, sound, `contract: ${JSON.stringify(retirement)}`);
+  }
+  // A work root's text is the schema's alone to refuse at read: the kernel checks it where it
+  // records the roots at spawn (lib/core.mjs retirementDisposableRoots), not in the contract.
+  assert.equal(bySchema({ disposable: { work: [""] } }), false, "a work root is a non-empty string");
 });

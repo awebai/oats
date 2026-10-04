@@ -6,10 +6,11 @@ import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, re
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import {
-  capabilityManifest, completeDeferredRetirement, composeInstanceAgentsMd, deferredRetireResultPath, findAgent, findInstanceHomes, retirePendingMarkerPath,
+  KERNEL_HOME_RECEIPTS, capabilityManifest, completeDeferredRetirement, composeInstanceAgentsMd, deferredRetireResultPath, findAgent, findInstanceHomes, retirePendingMarkerPath,
   listInstances, retireInstance, runLifecycleHooks, spawnInstanceAsync,
 } from "@awebai/oats/core";
 import { inertHarnessPath } from "./helpers/runtime-stub.mjs";
+import { DISPOSABLE_HOME_ACCEPTED, DISPOSABLE_HOME_REFUSED, disposableHomeRefusal } from "./helpers/disposable-home.mjs";
 import { capabilityFiles, soulFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { packageRepo } from "./helpers/package-repo.mjs";
 
@@ -459,6 +460,48 @@ test("a capability may declare extra environment namespaces it speaks for, discl
   assert.throws(() => capabilityManifest("acme.aw", mk(["OATS_"])), /reserved namespace/);
   assert.throws(() => capabilityManifest("acme.aw", mk(["PATH"])), /uppercase prefix ending in an underscore|reserved namespace/);
   assert.throws(() => capabilityManifest("acme.aw", mk(["aweb_"])), /uppercase prefix/);
+});
+
+test("the kernel loader refuses a retirement declaration through the manifest contract, with the problem's pointer on the error", (t) => {
+  const deployments = [];
+  t.after(() => { for (const dir of deployments) rmSync(dir, { recursive: true, force: true }); });
+  const load = (retirement) => {
+    const entry = storeEntry({ capability: "acme.x", retirement });
+    deployments.push(dirname(dirname(dirname(entry)))); // <deployment>/.oats/modules/<entry>
+    return capabilityManifest("acme.x", entry);
+  };
+  // The receipts the list above takes from the kernel are really there: the set is not empty by accident.
+  for (const name of [".oats-events.jsonl", ".oats-stop.json", ".oats-restart.json"]) assert.ok(KERNEL_HOME_RECEIPTS.has(name), name);
+  for (const name of KERNEL_HOME_RECEIPTS) assert.ok(DISPOSABLE_HOME_REFUSED.some(([value, why]) => value === name && why === "kernel-owned"), `${name} is in the refused list`);
+  // The entry under test is second, after a sound one: the pointer's index is the entry's own.
+  for (const [value, why] of DISPOSABLE_HOME_REFUSED) {
+    assert.throws(() => load({ disposable: { home: [".ok", value] } }), (e) => {
+      assert.equal(e.pointer, "/retirement/disposable/home/1", JSON.stringify(value));
+      assert.equal(e.message, disposableHomeRefusal("acme.x", value, why));
+      return true;
+    }, `${JSON.stringify(value)} is refused (${why})`);
+  }
+  for (const value of DISPOSABLE_HOME_ACCEPTED) {
+    assert.deepEqual(load({ disposable: { home: [".ok", value] } }).retirement.disposable.home, [".ok", value], JSON.stringify(value));
+  }
+  assert.deepEqual(load({ disposable: { home: DISPOSABLE_HOME_ACCEPTED } }).retirement.disposable.home, DISPOSABLE_HOME_ACCEPTED);
+  // The shape of the declaration: a `disposable` map, only `home` and `work`, each an array of strings.
+  for (const [retirement, pointer, why] of [
+    [{}, "/retirement", /^capability acme\.x manifest retirement must contain a disposable map$/],
+    [{ disposable: [] }, "/retirement", /^capability acme\.x manifest retirement must contain a disposable map$/],
+    [{ disposable: {}, extra: 1 }, "/retirement", /^capability acme\.x manifest retirement has unsupported keys: extra$/],
+    [{ disposable: { other: [] } }, "/retirement", /^capability acme\.x manifest retirement has unsupported keys: other$/],
+    [{ disposable: { home: ".aw" } }, "/retirement/disposable/home", /^capability acme\.x manifest retirement\.disposable\.home must be an array of relative roots$/],
+    [{ disposable: { work: [1] } }, "/retirement/disposable/work", /^capability acme\.x manifest retirement\.disposable\.work must be an array of relative roots$/],
+  ]) {
+    assert.throws(() => load(retirement), (e) => {
+      assert.equal(e.pointer, pointer, JSON.stringify(retirement));
+      assert.match(e.message, why);
+      return true;
+    }, `${JSON.stringify(retirement)} is refused`);
+  }
+  assert.deepEqual(load({ disposable: { work: ["node_modules"] } }).retirement, { disposable: { work: ["node_modules"] } });
+  assert.deepEqual(load({ disposable: {} }).retirement, { disposable: {} });
 });
 
 test("a hook may set a variable under a declared extra namespace at spawn, and the harness refuses one it did not declare", async (t) => {
@@ -1805,6 +1848,32 @@ test("the manifest contract is checked where a workspace reads the manifest: dis
   // A soul that declares one is refused with the manifest problem, not "missing".
   fx.commit(soulFiles("dev", { soul: { capabilities: { "acme.req": { from: "here" } } } }));
   await assert.rejects(fx.spawn("dev"), (e) => e.code === "E_WORKSPACE_SCHEMA" && e.details?.reason === "manifest-contract" && /capabilities\/acme\.req\/oats\.json#\/hooks\/retire\/required: .*cannot be required/.test(e.message));
+});
+
+test("discovery refuses a retirement.disposable.home entry at the entry's own pointer, and lists only the manifest whose entries are sound", async (t) => {
+  // One member capability per refused entry (acme.h01 …), the entry second after a sound one.
+  const refused = Object.fromEntries(DISPOSABLE_HOME_REFUSED.map(([value, why], i) => [`acme.h${String(i + 1).padStart(2, "0")}`, { value, why }]));
+  const fx = v2(t, { souls: { dev: {} }, capabilities: {
+    ...Object.fromEntries(Object.entries(refused).map(([id, { value }]) => [id, cap({ retirement: { disposable: { home: [".ok", value] } } })])),
+    "acme.ok": cap({ retirement: { disposable: { home: DISPOSABLE_HOME_ACCEPTED } } }),
+  } });
+  const status = JSON.stringify(fx.cli(["workspace", "status", "--json"]).json());
+  for (const [id, { value }] of Object.entries(refused)) {
+    const at = `capabilities/${id}/oats.json#/retirement/disposable/home/1`;
+    assert.ok(status.includes(at), `${id} (${JSON.stringify(value)}): workspace status names ${at}\n${status.slice(0, 2000)}`);
+  }
+  const { loadLocal } = await import("../lib/workspace.mjs");
+  const { discoverOrStandalone } = await import("../lib/instance-resolution.mjs");
+  const discovery = await fx.inEnv(() => discoverOrStandalone(loadLocal(fx.dep).local, { remoteOptions: fx.remoteOptions }));
+  for (const [id, { value, why }] of Object.entries(refused)) {
+    const mine = discovery.problems.filter((p) => p.path.startsWith(`capabilities/${id}/`));
+    assert.deepEqual(mine.map((p) => ({ code: p.code, path: p.path, message: p.message })),
+      [{ code: "E_WORKSPACE_SCHEMA", path: `capabilities/${id}/oats.json#/retirement/disposable/home/1`, message: disposableHomeRefusal(id, value, why) }],
+      `${id}: ${JSON.stringify(value)} is one problem, at its own index`);
+  }
+  assert.deepEqual(discovery.problems.filter((p) => p.path.startsWith("capabilities/acme.ok/")), [], "sound entries are no problem");
+  assert.deepEqual(discovery.members[0].capabilities.map((c) => c.name), ["acme.ok"], "only the manifest with sound entries is listed as a capability");
+  assert.deepEqual(discovery.members[0].capabilities[0].manifest.retirement.disposable.home, DISPOSABLE_HOME_ACCEPTED);
 });
 
 test("spawn fails closed when a capability's harness package is missing, even after a Claude-only reconciliation", async (t) => {

@@ -52,6 +52,7 @@ import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_
 
 import { observeInstanceGit, diffInstanceFile } from "../lib/instance-git.mjs";
 import { planStop, applyStop, planRetire, resolveInstance as resolveInstanceForCli } from "../lib/instance-lifecycle.mjs";
+import { formatBytes, workRecoveryLines } from "../lib/retire-output.mjs";
 const await_import_lifecycle = () => ({ resolveInstance: resolveInstanceForCli });
 import { homeTarget, soulTarget, isWorkspaceContext, inspectDocument, readinessDocument, policyOf, policySoul, manifestMissingRequires, INSPECT_OPERATIONS_API } from "../lib/instance-inspect.mjs";
 import { readEvents, setWaiting, incarnationOf } from "../lib/instance-events.mjs";
@@ -154,15 +155,6 @@ const jsonFail = (code, message, details, exit = 1) => { console.log(JSON.string
 const jsonOk = (result) => { console.log(JSON.stringify({ schemaVersion: 1, ok: true, result, ...envelopeWarnings() })); };
 // Text mode (or a JSON answer printed before the read): the warning goes to stderr, never stdout.
 process.on("exit", () => { const w = runtimeNameWarning(); if (w && !warningDelivered) process.stderr.write(`oats: warning: ${w.message}\n`); });
-const formatBytes = (n) => n < 1024 ? `${n} B` : n < 1024 ** 2 ? `${(n / 1024).toFixed(1)} KiB` : n < 1024 ** 3 ? `${(n / 1024 ** 2).toFixed(1)} MiB` : `${(n / 1024 ** 3).toFixed(1)} GiB`;
-/** A retire recovery's copied outputs (untracked/ignored or directory work), named with their size. */
-function preservedOutputLines(recovery) {
-  const outputs = recovery?.outputs;
-  if (!outputs?.paths?.length) return [];
-  const shown = outputs.paths.slice(0, 8).map((p) => `${p.path} (${formatBytes(p.bytes)})`);
-  const more = outputs.paths.length > 8 ? `, and ${outputs.paths.length - 8} more` : "";
-  return [`  copied outputs: ${shown.join(", ")}${more} — ${formatBytes(outputs.bytes)} in total`];
-}
 
 function shortPath(p) {
   if (!p) return p;
@@ -2553,11 +2545,7 @@ function retireCmd() {
   console.log(`Retired ${r.retired} (agent ${r.agent})${r.worktreeRemoved ? ", worktree removed" : ""}${r.branchDeleted ? ", branch deleted" : ""}`);
   // Preserving work and not saying so leaves the operator believing it is gone,
   // which is most of the harm of deleting it. Name the classes and the path.
-  for (const recovery of r.workRecoveries || (r.workRecovery ? [r.workRecovery] : [])) {
-    console.log(`Work that was not committed has been preserved: ${recovery.classes.join(", ")}`);
-    console.log(`  ${recovery.path}${typeof recovery.bytes === "number" ? ` (${formatBytes(recovery.bytes)})` : ""}`);
-    for (const line of preservedOutputLines(recovery)) console.log(line);
-  }
+  for (const line of workRecoveryLines(r)) console.log(line);
   for (const w of r.warnings || []) console.log(`  WARNING: ${w}`);
   if (isSelf) console.log("This window dies in ~8s — say any goodbyes now.");
 }
@@ -3704,11 +3692,7 @@ async function serverRouteCmd() {
       for (const f of r.forcedIncomplete) console.error(`  ${f}`);
     }
     console.log(`Retired ${r.retired} on ${id}${r.deferred ? " (deferred completion scheduled there)" : ""}${r.rollbackIncomplete ? " — cleanup INCOMPLETE on the server, home retained there" : ""}`);
-    for (const recovery of r.workRecoveries || (r.workRecovery ? [r.workRecovery] : [])) {
-      console.log(`Work that was not committed has been preserved on ${target.sshHost}: ${(recovery.classes || []).join(", ")}`);
-      console.log(`  ${recovery.path}${typeof recovery.bytes === "number" ? ` (${formatBytes(recovery.bytes)})` : ""}`);
-      for (const line of preservedOutputLines(recovery)) console.log(line);
-    }
+    for (const line of workRecoveryLines(r, { host: target.sshHost })) console.log(line);
     if (r.rollbackIncomplete) { for (const f of r.rollbackIncomplete) console.error(`  ${f}`); console.error(`Fix the cause there and re-run \`oats retire ${r.retired} --server ${id}\`.`); process.exit(1); }
   } else {
     console.log(`oats status — server ${id} (ssh ${r.target.sshHost}, workspace ${r.target.workspace})\n`);

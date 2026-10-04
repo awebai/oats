@@ -2390,6 +2390,25 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   `unestablished`, with a `note` saying why, and retire refuses with
   `E_RUNTIME_ENDPOINT_UNKNOWN`, `--force` included. `notes` repeats either
   case. Read an unknown `state` as not idle.
+- `notes` says what a retire would copy to recovery (0.41), in up to two
+  strings read from the home's retirement baseline and the work mode, without
+  hashing anything:
+
+  ```text
+  recovery: home files changed since spawn are copied to /w/agents/dev/instances/.oats-retirement/recovery before the home is removed; not copied: .aw, .aweb-identity, .aweb-identity-*, .oats-aweb (oats.aweb)
+  recovery: uncommitted worktree state is copied there too
+  ```
+
+  The first is always present. Its `; not copied: …` tail is there only when
+  the baseline records declared home entries
+  (`retirement.disposable.home`): `not copied: <roots> (<capability>)`, the
+  roots as written in the manifest, in the order the baseline stores them
+  (sorted by capability, then root), one group per capability, groups
+  separated by `; `. At most 16 roots are listed, then `, and N more`.
+  The second is the line above in worktree mode, `recovery: work/ is copied
+  there when it is not empty` in directory mode, and absent in checkout,
+  attached and workspace modes. They are strings in `notes`: no other key
+  changes, and `planRevision` is unaffected.
 
 Plain `retire` keeps a worktree-mode instance's work: the worktree is moved
 (`git worktree move`) to `<deployment>/.agents/worktrees/<repo>/<branch>` (a
@@ -2405,8 +2424,12 @@ A first retire prints the **raw receipt**, not an envelope:
 {"retired":"dev-1","agent":"dev",
  "retention":{"worktree":"retained","movedTo":"/w/.agents/worktrees/one/feat-x","branch":"feat/x","detachedAt":null,"recordedBranch":"agents/dev-1"},
  "worktreeRemoved":false,"branchDeleted":false,"removedDir":true,
- "workRecovery":{"path":"/w/.agents/recovered/dev-1-20260928T111000Z","classes":["untracked"],"bytes":2048,
-                 "outputs":{"paths":[{"path":"notes.md","bytes":2048}],"bytes":2048}},
+ "workRecovery":{"path":"/w/agents/dev/instances/.oats-retirement/recovery/dev-1-AbC123",
+                 "classes":["changed instance-home bytes","untracked or ignored worktree bytes"],"bytes":48444211,
+                 "home":{"paths":[{"path":".oats/","bytes":874696},{"path":"notes/","bytes":2048}],"bytes":1099000},
+                 "outputs":{"paths":[{"path":"scratch/","bytes":1258291}],"bytes":1258303},
+                 "notCopied":[{"scope":"home","path":".aw","owner":"oats.aweb"}],
+                 "afterHooks":{"home":true,"work":false}},
  "childrenStopped":[{"instance":"dev-1-child","home":"/w/agents/dev/instances/dev-1-child","ok":true,"stopped":false,"alreadyIdle":true}],
  "planRevision":"4e5f6a7b8c9d0e1f2a3b4c5d","idempotencyKey":"r1","replayed":false}
 ```
@@ -2430,9 +2453,53 @@ A first retire prints the **raw receipt**, not an envelope:
   quarantine that still owes the branch the spawn created stays incomplete
   (`git branch <b>: kept; the failed spawn created it; pass --delete-branch to
   delete it`).
-- `workRecovery` (or `workRecoveries[]`): `{path, classes, bytes, outputs?,
-  repoCopy?}`; `outputs: {paths: [{path, bytes}], bytes}` names what was
-  copied beyond tracked state, largest first.
+- `workRecovery`: `{path, classes, bytes, home, outputs?, repoCopy?,
+  notCopied?, afterHooks?}`, present when a recovery was written. One retire
+  writes at most one recovery directory, and `path` is that directory.
+  - `classes` is the union of the classes seen before and after the retire
+    hooks, in first-seen order. `bytes` covers the whole directory,
+    `after-hooks/` included.
+  - `home`, `outputs` and `repoCopy` describe the pre-hook snapshot (the
+    top-level `home/`, `repo/` or `work/`) and are not rewritten by the
+    post-hook pass. So `repoCopy.copied: false` (a home-only snapshot) can
+    appear with `afterHooks.work: true`: the repository copy is then under
+    `after-hooks/repo/` only. A recovery first written after the hooks (the
+    instance was clean before them) has no `after-hooks/`, and those keys
+    describe that one snapshot.
+  - `home`: `{paths: [{path, bytes}], bytes}`. The top-level entries of the
+    `home/` snapshot, largest first, a directory ending in `/`. Always
+    present when a recovery is written.
+  - `outputs`: `{paths: [{path, bytes}], bytes}` names what was copied
+    beyond tracked state, largest first.
+  - `notCopied`: `[{scope, path, owner}]`, sorted by `path`. The home
+    entries that existed at any point of the retire (before or after the
+    hooks) and were left out by a capability's `retirement.disposable.home`
+    declaration ([capabilities.md](capabilities.md#manifest)), by their real
+    names: a prefix that matches several entries lists each one, and a
+    declared entry that does not exist is not listed. `owner` is the
+    declaring capability; when two declare the same entry it is the first in
+    capability-name order. Each entry has exactly these three keys: names and
+    owners only, no sizes, hashes, modes or contents of what was left out.
+    `scope` is always `"home"` in this release. Present only when there is
+    at least one.
+  - `afterHooks`: `{home: boolean, work: boolean}`, saying which parts were
+    copied again under `after-hooks/`: `after-hooks/home/` when a retire hook
+    changed home bytes, and `after-hooks/repo/` (worktree mode) or
+    `after-hooks/work/` (directory mode) when a hook changed the work state.
+    Each is a full verified snapshot, not a delta. Present only when that
+    directory was written.
+  - `workRecoveries` is no longer emitted. An older kernel on a server may
+    still send `workRecoveries[]` beside `workRecovery` (one `{path, classes,
+    bytes, outputs?, repoCopy?}` per recovery directory it wrote), so a
+    reader must keep accepting it. A kernel before 0.41 sends no `home`,
+    `notCopied` or `afterHooks`.
+  - `recovery.json` inside the directory stays `version: 1`. It carries
+    `phase` (`"before-hooks"`, then `"complete"` once the post-hook check has
+    concluded), `home` and, when they apply, `notCopied` and `afterHooks`.
+    `phase` is not in the receipt: a receipt is produced only once that check
+    has concluded. A retried retire writes its own recovery and its receipt
+    names only that one
+    ([souls-and-instances.md](souls-and-instances.md#retire)).
 - When they apply: `rollbackIncomplete` and `retainedHome` (cleanup
   incomplete, home kept, exit 1), `forcedIncomplete`, `relinked`,
   `capabilityMeta`, `warnings`, `wakeSchedulesRemoved`.

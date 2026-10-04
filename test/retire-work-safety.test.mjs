@@ -1,11 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn as spawnProcess, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { capabilityFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { linkExecutables, waitUntil as waitFor } from "./helpers/host-fixture.mjs";
 import { statusDisagreement } from "../lib/core.mjs";
+import { workRecoveryLines } from "../lib/retire-output.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const temporaryDirectories = [];
@@ -16,12 +18,13 @@ function write(path, content, mode) {
 }
 
 /** A workspace deployment whose soul dev works in a worktree of the member clone
- *  (which carries .gitignore + tracked.txt); `capabilities` are member
- *  capabilities the soul declares (their hooks are captured at spawn). */
-function fixture({ capabilities = {} } = {}) {
+ *  (which carries .gitignore + tracked.txt), or in `work` mode when given;
+ *  `capabilities` are member capabilities the soul declares (their hooks are
+ *  captured at spawn). `commit` changes the member repository (fx.commit). */
+function fixture({ capabilities = {}, work = "worktree" } = {}) {
   const declared = Object.fromEntries(Object.keys(capabilities).map((id) => [id, { from: "here" }]));
   const fx = v2Deployment({
-    souls: { dev: { soul: { work: "worktree", ...(Object.keys(declared).length ? { capabilities: declared } : {}) }, agents: "# Dev\n" } },
+    souls: { dev: { soul: { work, ...(Object.keys(declared).length ? { capabilities: declared } : {}) }, agents: "# Dev\n" } },
     capabilities,
     files: { ".gitignore": "cache/\nhuman-ignored/\n", "tracked.txt": "base\n" },
   });
@@ -33,7 +36,7 @@ function fixture({ capabilities = {} } = {}) {
   write(join(bin, "pi"), "#!/bin/sh\nexit 0\n", 0o755);
   const env = { ...fx.env, PATH: `${bin}:${fx.env.PATH}` };
   delete env.OATS_TMUX_SESSION; delete env.PI_AGENTS_TMUX_SESSION;
-  return { base: fx.base, dep: fx.dep, repo, root: fx.root, env };
+  return { base: fx.base, dep: fx.dep, repo, root: fx.root, env, commit: fx.commit };
 }
 
 function cli(f, args) {
@@ -796,4 +799,470 @@ test("K3 pin 2: --delete-branch through a plan is bound to the CONFIRMED branch 
   assert.deepEqual(r.retention.branchDeletionSkipped, { expected: "feat/confirmed", actual: "feat/sneaky", reason: "the worktree's branch changed between confirmation and deletion; nothing was deleted" });
   const branches = execFileSync("git", ["-C", f.repo, "branch", "--list", "feat/*"], { encoding: "utf8" });
   assert.match(branches, /feat\/confirmed/); assert.match(branches, /feat\/sneaky/, "neither the confirmed nor the switched branch was deleted");
+});
+
+// ---------- one recovery per retire; provider-owned home state is not copied ----------
+
+const recoveryRootOf = (home) => join(dirname(home), ".oats-retirement", "recovery");
+const baselineOf = (home) => join(dirname(home), ".oats-retirement", "baselines", `${createHash("sha256").update(home).digest("hex")}.json`);
+const readJson = (file) => JSON.parse(readFileSync(file, "utf8"));
+/** Every path under `root` whose last segment is `name`; symlinks are entries, never followed. */
+function pathsNamed(root, name) {
+  const hits = [];
+  const walk = (dir) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, e.name);
+      if (e.name === name) hits.push(path);
+      if (e.isDirectory()) walk(path);
+    }
+  };
+  if (existsSync(root)) walk(root);
+  return hits.sort();
+}
+/** The top-level names of a directory as a receipt's `home.paths` writes them: a directory ends in `/`. */
+const topLevel = (dir) => readdirSync(dir, { withFileTypes: true }).map((e) => (e.isDirectory() ? `${e.name}/` : e.name)).sort();
+
+/** A capability that declares nothing and whose retire hook runs `retire`. */
+const HOOK_BYTES = "written by the retire hook\n";
+const RETIRE_WRITES_HOME = `import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+writeFileSync(join(process.env.OATS_INSTANCE_HOME, 'hook-note.txt'), ${JSON.stringify(HOOK_BYTES)});
+console.log(JSON.stringify({ meta: { retired: true } }));
+`;
+const RETIRE_WRITES_WORK = `import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+writeFileSync(join(process.env.OATS_INSTANCE_HOME, 'work', 'from-retire.txt'), ${JSON.stringify(HOOK_BYTES)});
+console.log(JSON.stringify({ meta: { retired: true } }));
+`;
+const RETIRE_WRITES_NOTHING = "console.log(JSON.stringify({ meta: { retired: true } }));\n";
+const hookCapability = (retire) => ({ "acme.hook": { manifest: { description: "acts at retire", hooks: { retire: "retire.mjs" } }, files: { "retire.mjs": retire } } });
+
+/** A provider with state of its own in the home, as a messaging provider keeps
+ *  its identity: the spawn hook writes a signing key under two hidden entries,
+ *  the retire hook reports whether the key was still there, writes a receipt
+ *  under a third, and leaves a marker BESIDE the home that it ran. `declare`:
+ *  whether the manifest declares the three as retirement.disposable.home. */
+const IDENT_KEY = "ident-signing-key 7f3a9c51e0b2\n";
+const IDENT_DECLARED = [".ident", ".ident-state", ".ident-id-*"];
+const IDENT_SPAWN = `import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const home = process.env.OATS_INSTANCE_HOME;
+for (const dir of ['.ident', '.ident-id-wide']) {
+  mkdirSync(join(home, dir), { recursive: true });
+  writeFileSync(join(home, dir, 'signing.key'), ${JSON.stringify(IDENT_KEY)});
+}
+console.log(JSON.stringify({ meta: { minted: true } }));
+`;
+const identRetire = (meta) => `import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
+const home = process.env.OATS_INSTANCE_HOME;
+const keyPresent = existsSync(join(home, '.ident', 'signing.key'));
+mkdirSync(join(home, '.ident-state'), { recursive: true });
+writeFileSync(join(home, '.ident-state', 'retire.json'), JSON.stringify({ at: 'retire' }));
+writeFileSync(join(dirname(home), 'retire-hook-ran-' + basename(home)), 'ran');
+console.log(JSON.stringify({ meta: { ...${JSON.stringify(meta)}, keyPresent } }));
+`;
+const identManifest = (declare) => ({ description: "a provider with state of its own in the home", hooks: { spawn: "spawn.mjs", retire: "retire.mjs" }, ...(declare ? { retirement: { disposable: { home: IDENT_DECLARED } } } : {}) });
+const identCapability = ({ declare = true, meta = { retired: true } } = {}) => ({ "acme.ident": { manifest: identManifest(declare), files: { "spawn.mjs": IDENT_SPAWN, "retire.mjs": identRetire(meta) } } });
+const identHookRan = (home) => existsSync(join(dirname(home), `retire-hook-ran-${basename(home)}`));
+const IDENT_NOT_COPIED = [".ident", ".ident-id-wide", ".ident-state"].map((path) => ({ scope: "home", path, owner: "acme.ident" }));
+/** Spawn an instance of the ident provider and give it one authored note, so a retire has a home change to preserve. */
+function spawnWithNote(f, purpose) {
+  const spawned = spawn(f, purpose);
+  assert.equal(readFileSync(join(spawned.home, ".ident", "signing.key"), "utf8"), IDENT_KEY, "fixture premise: the spawn hook minted the key in the home");
+  assert.equal(readFileSync(join(spawned.home, ".ident-id-wide", "signing.key"), "utf8"), IDENT_KEY);
+  write(join(spawned.home, "notes", "x.md"), "an authored note\n");
+  return spawned;
+}
+
+for (const work of ["directory", "worktree"]) {
+  test(`one retire writes one recovery (${work}): a retire hook's home write goes under after-hooks/, the work is copied once, and the summary says it once`, () => {
+    const f = fixture({ work, capabilities: hookCapability(RETIRE_WRITES_HOME) });
+    const workPart = work === "directory" ? "work" : "repo";
+    const workClass = work === "directory" ? "directory work bytes" : "untracked or ignored worktree bytes";
+    const a = spawn(f, "one");
+    write(join(a.home, "work", "human.txt"), "human bytes\n");
+    const retired = cli(f, ["retire", "dev-one", "--json"]);
+    assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+    const receipt = JSON.parse(retired.stdout);
+    const recovery = receipt.workRecovery;
+    assert.equal(Object.hasOwn(receipt, "workRecoveries"), false, "workRecoveries is no longer emitted");
+    assert.deepEqual(readdirSync(recoveryRootOf(a.home)), [basename(recovery.path)], "one recovery directory, and no staging left beside it");
+    assert.deepEqual(readdirSync(recovery.path).sort(), ["after-hooks", "home", "recovery.json", workPart].sort(), "no staging left inside it");
+    assert.deepEqual(recovery.afterHooks, { home: true, work: false });
+    assert.deepEqual(pathsNamed(recoveryRootOf(a.home), "human.txt"), [join(recovery.path, workPart, "human.txt")], "the work is copied once");
+    assert.equal(readFileSync(join(recovery.path, workPart, "human.txt"), "utf8"), "human bytes\n");
+    // Positive control: the fixture reached the post-hook pass, which used to write the second directory.
+    assert.equal(readFileSync(join(recovery.path, "after-hooks", "home", "hook-note.txt"), "utf8"), HOOK_BYTES);
+    assert.equal(existsSync(join(recovery.path, "home", "hook-note.txt")), false, "the pre-hook snapshot does not hold what the hook wrote later");
+    assert.deepEqual(readdirSync(join(recovery.path, "after-hooks")), ["home"], "only the part the hook moved is copied again");
+    // First-seen order: the work class from before the hooks, then the home class the hook caused.
+    assert.deepEqual(recovery.classes, [workClass, "changed instance-home bytes"]);
+    // `home` names the pre-hook home/ snapshot's top-level entries, largest first.
+    assert.deepEqual(recovery.home.paths.map((p) => p.path).sort(), topLevel(join(recovery.path, "home")));
+    assert.ok(recovery.home.paths.some((p) => p.path === "instance.json") && recovery.home.paths.some((p) => p.path === ".oats/"), JSON.stringify(recovery.home.paths));
+    assert.ok(recovery.home.paths.every((p, i, all) => i === 0 || all[i - 1].bytes >= p.bytes), "largest first");
+    assert.equal(recovery.home.bytes, recovery.home.paths.reduce((n, p) => n + p.bytes, 0));
+    assert.ok(recovery.bytes > recovery.home.bytes, "bytes covers the whole directory");
+    assert.equal(recovery.notCopied, undefined, "nothing was declared, so nothing was left out");
+    const manifest = readJson(join(recovery.path, "recovery.json"));
+    assert.equal(manifest.version, 1);
+    assert.equal(manifest.phase, "complete");
+    assert.deepEqual(manifest.afterHooks, recovery.afterHooks);
+    assert.deepEqual(manifest.home, recovery.home);
+    assert.deepEqual(manifest.classes, recovery.classes);
+    assert.equal(existsSync(a.home), false);
+
+    // The text output of the same retire: the block once, and where the second snapshot is.
+    const b = spawn(f, "one-text");
+    write(join(b.home, "work", "human.txt"), "human bytes\n");
+    const text = cli(f, ["retire", "dev-one-text"]);
+    assert.equal(text.status, 0, text.stderr);
+    const lines = text.stdout.split("\n");
+    assert.equal(lines.filter((line) => line.includes("has been preserved")).length, 1, text.stdout);
+    assert.ok(lines.includes(`Work that was not committed has been preserved: ${workClass}, changed instance-home bytes`), text.stdout);
+    assert.equal(lines.filter((line) => line.includes(".oats-retirement/recovery/dev-one-text-")).length, 1, text.stdout);
+    assert.match(text.stdout, /^  copied from the home: .+ — \d+(\.\d)? (B|KiB|MiB) in total$/m);
+    assert.ok(lines.includes("  copied outputs: human.txt (12 B) — 12 B in total"), text.stdout);
+    assert.ok(lines.includes("  after the retire hooks: home copied again under after-hooks/"), text.stdout);
+    assert.equal(lines.some((line) => line.includes("not copied:")), false, text.stdout);
+    assert.equal(readdirSync(recoveryRootOf(b.home)).length, 2, "one directory per retire");
+  });
+}
+
+test("a home that only has something to preserve after the retire hooks still gets its one verified recovery before it is removed", () => {
+  for (const [purpose, retire, where] of [
+    ["late-home", RETIRE_WRITES_HOME, ["home", "hook-note.txt"]],
+    ["late-work", RETIRE_WRITES_WORK, ["repo", "from-retire.txt"]],
+  ]) {
+    const f = fixture({ capabilities: hookCapability(retire) });
+    const spawned = spawn(f, purpose);
+    const retired = cli(f, ["retire", `dev-${purpose}`, "--json"]);
+    assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+    const recovery = JSON.parse(retired.stdout).workRecovery;
+    assert.ok(recovery?.path, `${purpose}: the hook's change was not preserved: ${retired.stdout}`);
+    assert.deepEqual(readdirSync(recoveryRootOf(spawned.home)), [basename(recovery.path)]);
+    assert.equal(readFileSync(join(recovery.path, ...where), "utf8"), HOOK_BYTES, purpose);
+    // Written by the post-hook pass as the first and only recovery: nothing was there to add to.
+    assert.equal(existsSync(join(recovery.path, "after-hooks")), false, purpose);
+    assert.equal(recovery.afterHooks, undefined, purpose);
+    assert.equal(readJson(join(recovery.path, "recovery.json")).phase, "complete", purpose);
+    assert.equal(existsSync(spawned.home), false, purpose);
+  }
+  // Control: the same instance is clean before its hooks. With a hook that writes nothing, nothing is preserved.
+  const f = fixture({ capabilities: hookCapability(RETIRE_WRITES_NOTHING) });
+  const spawned = spawn(f, "clean");
+  const retired = cli(f, ["retire", "dev-clean", "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  assert.equal(JSON.parse(retired.stdout).workRecovery, undefined);
+  assert.equal(existsSync(recoveryRootOf(spawned.home)), false);
+});
+
+test("home entries a capability declared in retirement.disposable.home are not copied to recovery, stay for the retire hooks, and are named without their contents", () => {
+  const f = fixture({ capabilities: identCapability() });
+  const spawned = spawnWithNote(f, "ident");
+  // Recorded at spawn, in the independent baseline: sorted by owner, then root.
+  assert.deepEqual(readJson(baselineOf(spawned.home)).disposableHome, [".ident", ".ident-id-*", ".ident-state"].map((root) => ({ owner: "acme.ident", root })));
+  const retired = cli(f, ["retire", "dev-ident", "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const receipt = JSON.parse(retired.stdout);
+  const recovery = receipt.workRecovery;
+  const root = recoveryRootOf(spawned.home);
+  assert.deepEqual(readdirSync(root), [basename(recovery.path)]);
+  assert.deepEqual(pathsNamed(root, "signing.key"), [], "no key anywhere under recovery");
+  for (const name of [".ident", ".ident-id-wide", ".ident-state"]) assert.deepEqual(pathsNamed(root, name), [], name);
+  assert.equal(readFileSync(join(recovery.path, "home", "notes", "x.md"), "utf8"), "an authored note\n");
+  // The hook-written .ident-state is declared too: named as not copied, and no post-hook copy was triggered by it.
+  assert.deepEqual(recovery.notCopied, IDENT_NOT_COPIED);
+  assert.equal(recovery.afterHooks, undefined);
+  assert.equal(existsSync(join(recovery.path, "after-hooks")), false);
+  assert.equal(recovery.home.paths.some((p) => p.path.startsWith(".ident")), false, JSON.stringify(recovery.home.paths));
+  // Exclusion is "do not copy": the key was still in the home when the retire hook ran.
+  assert.equal(identHookRan(spawned.home), true);
+  assert.deepEqual(receipt.capabilityMeta["acme.ident"], { retired: true, keyPresent: true });
+  // Names and owners only: no contents, sizes, hashes or modes of what was left out.
+  const manifestText = readFileSync(join(recovery.path, "recovery.json"), "utf8");
+  const manifest = JSON.parse(manifestText);
+  assert.deepEqual(manifest.notCopied, recovery.notCopied);
+  assert.equal(manifest.phase, "complete");
+  for (const row of [...recovery.notCopied, ...manifest.notCopied]) assert.deepEqual(Object.keys(row).sort(), ["owner", "path", "scope"]);
+  for (const [what, text] of [["recovery.json", manifestText], ["the receipt", retired.stdout]]) {
+    assert.equal(text.includes(IDENT_KEY.trim()), false, `the key's bytes are in ${what}`);
+    assert.equal(text.includes(Buffer.from(IDENT_KEY).toString("base64")), false, `the key's bytes are in ${what}, encoded`);
+  }
+  assert.equal(existsSync(spawned.home), false);
+
+  // The text output names them once, by capability.
+  const again = spawnWithNote(f, "ident-text");
+  const text = cli(f, ["retire", "dev-ident-text"]);
+  assert.equal(text.status, 0, text.stderr);
+  assert.ok(text.stdout.split("\n").includes("  not copied: .ident, .ident-id-wide, .ident-state (acme.ident)"), text.stdout);
+  assert.equal(text.stdout.includes("after the retire hooks"), false, text.stdout);
+  assert.equal(text.stdout.includes(IDENT_KEY.trim()), false);
+  assert.deepEqual(pathsNamed(recoveryRootOf(again.home), "signing.key"), []);
+});
+
+test("positive control: the same provider without the declaration has its key copied to recovery, before and after the hooks", () => {
+  const f = fixture({ capabilities: identCapability({ declare: false }) });
+  const spawned = spawnWithNote(f, "undeclared");
+  assert.deepEqual(readJson(baselineOf(spawned.home)).disposableHome, [], "nothing was declared, so nothing was recorded");
+  const retired = cli(f, ["retire", "dev-undeclared", "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const recovery = JSON.parse(retired.stdout).workRecovery;
+  assert.equal(readFileSync(join(recovery.path, "home", ".ident", "signing.key"), "utf8"), IDENT_KEY);
+  assert.equal(readFileSync(join(recovery.path, "home", ".ident-id-wide", "signing.key"), "utf8"), IDENT_KEY);
+  assert.equal(recovery.notCopied, undefined);
+  // The hook's undeclared .ident-state write moves the home: the post-hook pass runs, in the same directory.
+  assert.deepEqual(recovery.afterHooks, { home: true, work: false });
+  assert.equal(readFileSync(join(recovery.path, "after-hooks", "home", ".ident-state", "retire.json"), "utf8"), JSON.stringify({ at: "retire" }));
+  assert.deepEqual(readdirSync(recoveryRootOf(spawned.home)), [basename(recovery.path)]);
+  assert.equal(pathsNamed(recoveryRootOf(spawned.home), "signing.key").length, 4, "the search used above finds a copied key");
+});
+
+test("a retire hook that reports incomplete cleanup keeps the home with its declared entries, and recovery still holds no copy of them", () => {
+  const f = fixture({ capabilities: identCapability({ meta: { retired: false, reason: "remote unreachable" } }) });
+  const spawned = spawnWithNote(f, "owed");
+  const retired = cli(f, ["retire", "dev-owed", "--json"]);
+  assert.equal(retired.status, 1, `${retired.stderr}\n${retired.stdout}`);
+  const receipt = JSON.parse(retired.stdout);
+  assert.ok(receipt.rollbackIncomplete?.some((item) => /acme\.ident: reported incomplete cleanup \(remote unreachable\)/.test(item)), retired.stdout);
+  assert.equal(receipt.retainedHome, spawned.home);
+  assert.equal(receipt.removedDir, false);
+  assert.equal(identHookRan(spawned.home), true);
+  // The credential a retry needs is where it was, with the hook's own state and the cleanup marker.
+  assert.equal(readFileSync(join(spawned.home, ".ident", "signing.key"), "utf8"), IDENT_KEY);
+  assert.equal(readFileSync(join(spawned.home, ".ident-id-wide", "signing.key"), "utf8"), IDENT_KEY);
+  assert.equal(existsSync(join(spawned.home, ".ident-state", "retire.json")), true);
+  assert.equal(existsSync(join(spawned.home, ".oats-rollback-incomplete.json")), true);
+  assert.deepEqual(pathsNamed(recoveryRootOf(spawned.home), "signing.key"), []);
+  assert.equal(readFileSync(join(receipt.workRecovery.path, "home", "notes", "x.md"), "utf8"), "an authored note\n");
+  assert.deepEqual(receipt.workRecovery.notCopied, IDENT_NOT_COPIED);
+});
+
+test("the fingerprint and the copy agree: a change to declared entries alone preserves nothing, an undeclared hidden entry is preserved", () => {
+  const f = fixture({ capabilities: identCapability() });
+  const quiet = spawn(f, "declared-only");
+  write(join(quiet.home, ".ident", "rotated.key"), "rotated after spawn\n");
+  write(join(quiet.home, ".ident-id-late", "signing.key"), IDENT_KEY);
+  let retired = cli(f, ["retire", "dev-declared-only", "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  assert.equal(JSON.parse(retired.stdout).workRecovery, undefined, "only declared entries changed (the test's and the retire hook's)");
+  assert.equal(identHookRan(quiet.home), true);
+  assert.equal(existsSync(recoveryRootOf(quiet.home)), false, "no recovery was written");
+  assert.equal(existsSync(quiet.home), false);
+
+  // Control: a hidden entry nobody declared is the instance's work.
+  const loud = spawn(f, "undeclared-entry");
+  write(join(loud.home, ".other", "x"), "undeclared\n");
+  retired = cli(f, ["retire", "dev-undeclared-entry", "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const recovery = JSON.parse(retired.stdout).workRecovery;
+  assert.deepEqual(recovery.classes, ["changed instance-home bytes"]);
+  assert.equal(readFileSync(join(recovery.path, "home", ".other", "x"), "utf8"), "undeclared\n");
+  assert.deepEqual(pathsNamed(recoveryRootOf(loud.home), "signing.key"), []);
+});
+
+test("the spawn baseline is the only authority for exclusions: a declaration added afterwards to instance.json and to the home's module copy excludes nothing", () => {
+  const f = fixture({ capabilities: identCapability({ declare: false }) });
+  const spawned = spawnWithNote(f, "late-declare");
+  const retirement = { disposable: { home: IDENT_DECLARED } };
+  const metaPath = join(spawned.home, "instance.json");
+  const meta = readJson(metaPath);
+  const runtime = meta.capabilityRuntime.find((cap) => cap.id === "acme.ident");
+  assert.ok(runtime, "fixture premise: instance.json records the provider's runtime row");
+  runtime.retirement = retirement;
+  for (const cap of meta.capabilities || []) if (cap.id === "acme.ident") cap.retirement = retirement;
+  meta.retirement = retirement;
+  meta.disposableHome = IDENT_DECLARED.map((root) => ({ owner: "acme.ident", root }));
+  write(metaPath, JSON.stringify(meta, null, 2) + "\n");
+  const modulePath = join(spawned.home, ".oats", "modules", "acme.ident", "oats.json");
+  write(modulePath, JSON.stringify({ ...readJson(modulePath), retirement }, null, 2) + "\n");
+  const retired = cli(f, ["retire", "dev-late-declare", "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const recovery = JSON.parse(retired.stdout).workRecovery;
+  assert.equal(readFileSync(join(recovery.path, "home", ".ident", "signing.key"), "utf8"), IDENT_KEY);
+  assert.equal(readFileSync(join(recovery.path, "home", ".ident-id-wide", "signing.key"), "utf8"), IDENT_KEY);
+  assert.equal(recovery.notCopied, undefined);
+});
+
+test("an existing home gains no exclusions when its capability starts declaring them: it retires with the home copied whole, an instance spawned afterwards does not", () => {
+  const f = fixture({ capabilities: identCapability({ declare: false }) });
+  const before = spawnWithNote(f, "before-update");
+  const declaring = identCapability()["acme.ident"];
+  f.commit(capabilityFiles("acme.ident", declaring.manifest, declaring.files), "acme.ident declares its home state");
+  const after = spawnWithNote(f, "after-update");
+  assert.deepEqual(readJson(baselineOf(after.home)).disposableHome.map((row) => row.root), [".ident", ".ident-id-*", ".ident-state"], "fixture premise: the update reached a new spawn");
+
+  let retired = cli(f, ["retire", "dev-before-update", "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const old = JSON.parse(retired.stdout).workRecovery;
+  assert.equal(readFileSync(join(old.path, "home", ".ident", "signing.key"), "utf8"), IDENT_KEY);
+  assert.equal(readFileSync(join(old.path, "home", ".ident-id-wide", "signing.key"), "utf8"), IDENT_KEY);
+  assert.equal(readFileSync(join(old.path, "home", "notes", "x.md"), "utf8"), "an authored note\n");
+  assert.equal(old.notCopied, undefined);
+  assert.deepEqual(readdirSync(recoveryRootOf(before.home)), [basename(old.path)], "one directory");
+
+  retired = cli(f, ["retire", "dev-after-update", "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const fresh = JSON.parse(retired.stdout).workRecovery;
+  assert.deepEqual(pathsNamed(fresh.path, "signing.key"), []);
+  assert.deepEqual(fresh.notCopied, IDENT_NOT_COPIED);
+  assert.equal(readdirSync(recoveryRootOf(after.home)).length, 2);
+});
+
+test("a declared name that is a symlink in the home is left out by its name, and its target is never read or copied", () => {
+  const f = fixture({ capabilities: identCapability() });
+  const spawned = spawnWithNote(f, "linked");
+  const outside = join(f.base, "outside");
+  write(join(outside, "outside-secret.txt"), "never copied\n");
+  symlinkSync(outside, join(spawned.home, ".ident-id-link"));
+  symlinkSync(outside, join(spawned.home, ".plain-link"));
+  const retired = cli(f, ["retire", "dev-linked", "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const recovery = JSON.parse(retired.stdout).workRecovery;
+  assert.deepEqual(recovery.notCopied.map((row) => row.path), [".ident", ".ident-id-link", ".ident-id-wide", ".ident-state"]);
+  assert.throws(() => lstatSync(join(recovery.path, "home", ".ident-id-link")), /ENOENT/, "the declared link is not in the copy");
+  // Control: an undeclared link is copied, as a link. Neither is followed.
+  assert.equal(lstatSync(join(recovery.path, "home", ".plain-link")).isSymbolicLink(), true);
+  assert.equal(readlinkSync(join(recovery.path, "home", ".plain-link")), outside);
+  assert.deepEqual(pathsNamed(recoveryRootOf(spawned.home), "outside-secret.txt"), []);
+  assert.equal(readFileSync(join(outside, "outside-secret.txt"), "utf8"), "never copied\n");
+});
+
+test("a failed recovery copy refuses before any retire hook runs and keeps the home with its declared entries and its baseline", () => {
+  const f = fixture({ capabilities: identCapability() });
+  const spawned = spawnWithNote(f, "blocked");
+  const baseline = readFileSync(baselineOf(spawned.home), "utf8");
+  // The recovery storage is unusable: a file where the directory would be.
+  write(recoveryRootOf(spawned.home), "not a directory");
+  const retired = cli(f, ["retire", "dev-blocked", "--json"]);
+  assert.notEqual(retired.status, 0, `a retire that could not copy must refuse: ${retired.stdout}`);
+  assert.equal(identHookRan(spawned.home), false, "no retire hook ran");
+  assert.equal(readFileSync(join(spawned.home, ".ident", "signing.key"), "utf8"), IDENT_KEY);
+  assert.equal(readFileSync(join(spawned.home, ".ident-id-wide", "signing.key"), "utf8"), IDENT_KEY);
+  assert.equal(readFileSync(join(spawned.home, "notes", "x.md"), "utf8"), "an authored note\n");
+  assert.equal(readJson(join(spawned.home, "instance.json")).instance, "dev-blocked");
+  assert.equal(readFileSync(baselineOf(spawned.home), "utf8"), baseline, "the baseline is untouched");
+  assert.equal(readFileSync(recoveryRootOf(spawned.home), "utf8"), "not a directory");
+});
+
+test("a recovery that fails verification refuses with E_WORK_PRESERVATION_FAILED, leaves no recovery directory and keeps the home with its declared entries", () => {
+  // The status disagreement of the "names the differing status rows" test above.
+  const f = fixture({ capabilities: identCapability() });
+  const spawned = spawnWithNote(f, "unverified");
+  const work = join(spawned.home, "work");
+  const names = ["a.txt", "b.txt"];
+  for (const n of names) write(join(work, n), `${n}\r\n`);
+  execFileSync("git", ["-C", work, "add", ...names]);
+  execFileSync("git", ["-C", work, "commit", "-qm", "crlf files"]);
+  staleUnderTextAttribute(f.repo, f.base, names.map((n) => join(work, n)));
+  write(join(work, "untracked.txt"), "forces a repository recovery\n");
+  const retired = cli(f, ["retire", "dev-unverified", "--json"]);
+  assert.equal(retired.status, 1, retired.stdout);
+  const error = JSON.parse(retired.stdout).error;
+  assert.equal(error.code, "E_WORK_PRESERVATION_FAILED");
+  assert.match(error.message, /recovered Git index\/status disagreed with the source/);
+  assert.deepEqual(readdirSync(recoveryRootOf(spawned.home)), [], "neither a recovery nor its staging is left behind");
+  assert.equal(identHookRan(spawned.home), false, "no retire hook ran");
+  assert.equal(existsSync(spawned.home), true, "the home is kept");
+  assert.equal(readFileSync(join(spawned.home, ".ident", "signing.key"), "utf8"), IDENT_KEY);
+  assert.equal(readFileSync(join(spawned.home, ".ident-id-wide", "signing.key"), "utf8"), IDENT_KEY);
+  assert.equal(existsSync(baselineOf(spawned.home)), true);
+});
+
+test("without a valid baseline nothing is excluded, although the capability still declares: the baseline missing, of another version, or with a row outside the grammar", () => {
+  const cases = {
+    missing: (file) => rmSync(file),
+    version: (file) => write(file, JSON.stringify({ ...readJson(file), version: 1 }, null, 2) + "\n"),
+    // One bad row disqualifies the whole list: no row of it excludes anything.
+    grammar: (file) => { const b = readJson(file); write(file, JSON.stringify({ ...b, disposableHome: [...b.disposableHome, { owner: "acme.ident", root: "notes" }] }, null, 2) + "\n"); },
+  };
+  for (const [name, damage] of Object.entries(cases)) {
+    const f = fixture({ capabilities: identCapability() });
+    const spawned = spawnWithNote(f, `baseline-${name}`);
+    assert.equal(readJson(baselineOf(spawned.home)).disposableHome.length, 3, "fixture premise: the declaration was recorded at spawn");
+    assert.deepEqual(readJson(join(spawned.home, ".oats", "modules", "acme.ident", "oats.json")).retirement, { disposable: { home: IDENT_DECLARED } }, "fixture premise: the home's module copy still declares");
+    damage(baselineOf(spawned.home));
+    const retired = cli(f, ["retire", `dev-baseline-${name}`, "--json"]);
+    assert.equal(retired.status, 0, `${name}: ${retired.stderr}\n${retired.stdout}`);
+    const recovery = JSON.parse(retired.stdout).workRecovery;
+    assert.equal(readFileSync(join(recovery.path, "home", ".ident", "signing.key"), "utf8"), IDENT_KEY, name);
+    assert.equal(readFileSync(join(recovery.path, "home", ".ident-id-wide", "signing.key"), "utf8"), IDENT_KEY, name);
+    assert.equal(readFileSync(join(recovery.path, "home", "notes", "x.md"), "utf8"), "an authored note\n", name);
+    assert.equal(recovery.notCopied, undefined, name);
+    assert.equal(Object.hasOwn(readJson(join(recovery.path, "recovery.json")), "notCopied"), false, name);
+  }
+});
+
+test("the recovery lines are one function for the local and the remote path: a historical receipt with workRecoveries prints a block per entry, a new one prints one block with what was copied, what was not, and the second snapshot", () => {
+  const historical = { retired: "dev-1", workRecovery: { path: "/r/dev-1-BBB", classes: ["directory work bytes"], bytes: 2048 }, workRecoveries: [
+    { path: "/r/dev-1-AAA", classes: ["changed instance-home bytes", "directory work bytes"], bytes: 1536, outputs: { paths: [{ path: "scratch/", bytes: 1024 }, { path: "note.txt", bytes: 12 }], bytes: 1036 } },
+    { path: "/r/dev-1-BBB", classes: ["directory work bytes"], bytes: 2048 },
+  ] };
+  assert.deepEqual(workRecoveryLines(historical), [
+    "Work that was not committed has been preserved: changed instance-home bytes, directory work bytes",
+    "  /r/dev-1-AAA (1.5 KiB)",
+    "  copied outputs: scratch/ (1.0 KiB), note.txt (12 B) — 1.0 KiB in total",
+    "Work that was not committed has been preserved: directory work bytes",
+    "  /r/dev-1-BBB (2.0 KiB)",
+  ]);
+  assert.deepEqual(workRecoveryLines(historical, { host: "build.example" }), [
+    "Work that was not committed has been preserved on build.example: changed instance-home bytes, directory work bytes",
+    "  /r/dev-1-AAA (1.5 KiB)",
+    "  copied outputs: scratch/ (1.0 KiB), note.txt (12 B) — 1.0 KiB in total",
+    "Work that was not committed has been preserved on build.example: directory work bytes",
+    "  /r/dev-1-BBB (2.0 KiB)",
+  ]);
+  const current = { retired: "dev-1", workRecovery: {
+    path: "/r/dev-1-CCC", classes: ["changed instance-home bytes", "untracked or ignored worktree bytes"], bytes: 3 * 1024 * 1024,
+    home: { paths: [".oats/", "a/", "b/", "c/", "d/", "e/", "f/", "g/", "h.md", "i.md"].map((path, i) => ({ path, bytes: 2048 - i })), bytes: 20435 },
+    outputs: { paths: [{ path: "scratch/", bytes: 1024 }], bytes: 1024 },
+    notCopied: [{ scope: "home", path: ".aw", owner: "oats.aweb" }, { scope: "home", path: ".ident", owner: "acme.ident" }, { scope: "home", path: ".oats-aweb", owner: "oats.aweb" }],
+    afterHooks: { home: true, work: false },
+  } };
+  const block = (preserved) => [
+    preserved,
+    "  /r/dev-1-CCC (3.0 MiB)",
+    "  copied from the home: .oats/ (2.0 KiB), a/ (2.0 KiB), b/ (2.0 KiB), c/ (2.0 KiB), d/ (2.0 KiB), e/ (2.0 KiB), f/ (2.0 KiB), g/ (2.0 KiB), and 2 more — 20.0 KiB in total",
+    "  copied outputs: scratch/ (1.0 KiB) — 1.0 KiB in total",
+    "  not copied: .ident (acme.ident); .aw, .oats-aweb (oats.aweb)",
+    "  after the retire hooks: home copied again under after-hooks/",
+  ];
+  assert.deepEqual(workRecoveryLines(current), block("Work that was not committed has been preserved: changed instance-home bytes, untracked or ignored worktree bytes"));
+  assert.deepEqual(workRecoveryLines(current, { host: "build.example" }), block("Work that was not committed has been preserved on build.example: changed instance-home bytes, untracked or ignored worktree bytes"));
+  const variant = (afterHooks) => workRecoveryLines({ workRecovery: { path: "/r/x", classes: ["directory work bytes"], afterHooks } }).at(-1);
+  assert.equal(variant({ home: false, work: true }), "  after the retire hooks: work copied again under after-hooks/");
+  assert.equal(variant({ home: true, work: true }), "  after the retire hooks: home and work copied again under after-hooks/");
+  assert.equal(variant(undefined), "  /r/x");
+  assert.deepEqual(workRecoveryLines({ retired: "dev-1" }), [], "nothing preserved, nothing said");
+});
+
+test("the retire plan says where a recovery would be written and what is declared as not copied, per work mode, without changing the plan revision", () => {
+  const notes = (f, instance) => { const r = cli(f, ["retire", instance, "--plan", "--json"]); assert.equal(r.status, 0, r.stdout + r.stderr); return JSON.parse(r.stdout).result; };
+  const recoveryNotes = (plan) => plan.notes.filter((n) => n.startsWith("recovery: "));
+  const worktree = fixture({ capabilities: identCapability() });
+  const a = spawn(worktree, "plan");
+  const planned = notes(worktree, "dev-plan");
+  assert.deepEqual(recoveryNotes(planned), [
+    `recovery: home files changed since spawn are copied to ${recoveryRootOf(a.home)} before the home is removed; not copied: .ident, .ident-id-*, .ident-state (acme.ident)`,
+    "recovery: uncommitted worktree state is copied there too",
+  ]);
+  // Read from the baseline, never from the home: a changed baseline changes the note and nothing else.
+  const baseline = readJson(baselineOf(a.home));
+  write(baselineOf(a.home), JSON.stringify({ ...baseline, disposableHome: [{ owner: "acme.ident", root: ".ident" }] }, null, 2) + "\n");
+  const narrowed = notes(worktree, "dev-plan");
+  assert.equal(recoveryNotes(narrowed)[0], `recovery: home files changed since spawn are copied to ${recoveryRootOf(a.home)} before the home is removed; not copied: .ident (acme.ident)`);
+  assert.equal(narrowed.planRevision, planned.planRevision, "the plan revision does not depend on the recovery notes");
+  // One note lists at most 16 declared roots, in the baseline's order, then counts the rest.
+  const many = Array.from({ length: 17 }, (_, i) => `.r${String(i).padStart(2, "0")}`);
+  write(baselineOf(a.home), JSON.stringify({ ...baseline, disposableHome: many.map((root) => ({ owner: "acme.ident", root })) }, null, 2) + "\n");
+  assert.equal(recoveryNotes(notes(worktree, "dev-plan"))[0], `recovery: home files changed since spawn are copied to ${recoveryRootOf(a.home)} before the home is removed; not copied: ${many.slice(0, 16).join(", ")} (acme.ident), and 1 more`);
+  assert.equal(existsSync(recoveryRootOf(a.home)), false, "a plan writes nothing");
+
+  const directory = fixture({ work: "directory", capabilities: hookCapability(RETIRE_WRITES_NOTHING) });
+  const b = spawn(directory, "plan");
+  assert.deepEqual(recoveryNotes(notes(directory, "dev-plan")), [
+    `recovery: home files changed since spawn are copied to ${recoveryRootOf(b.home)} before the home is removed`,
+    "recovery: work/ is copied there when it is not empty",
+  ]);
 });

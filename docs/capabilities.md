@@ -59,7 +59,8 @@ A self-contained package has an `oats.json`:
   "hooks": {
     "spawn": "bin/team-chat-hook.mjs spawn",
     "retire": "bin/team-chat-hook.mjs retire"
-  }
+  },
+  "retirement": { "disposable": { "home": [".team-chat", ".team-chat-id-*"] } }
 }
 ```
 
@@ -145,7 +146,75 @@ A self-contained package has an `oats.json`:
   and nothing is silently dropped. Without `--force` that state fails closed with
   `E_UNIDENTIFIED_INSTANCE_HOME` rather than deleting whatever credentials the
   directory still holds; `--force` removes it and leaves any external state for
-  the operator to clean up by hand.
+  the operator to clean up by hand. Home entries declared in
+  `retirement.disposable.home` (below) go with the home: recovery holds no
+  copy of them.
+- `retirement.disposable` declares what retirement treats as the provider's
+  own state rather than the instance's work. It is a map with two optional
+  keys, `home` and `work`, each an array of strings.
+  - `home`: provider-owned state that is not the instance's work, left in
+    place until the home is removed, and not copied to recovery. Each entry
+    names top-level entries of the instance home:
+    - an exact hidden name, `^\.[A-Za-z0-9_][A-Za-z0-9._-]*$` (`.team-chat`);
+    - or a prefix, `^\.[A-Za-z0-9_][A-Za-z0-9._-]*-\*$` (`.team-chat-id-*`),
+      meaning every top-level entry whose name starts with the text before
+      `*`.
+
+    Refused:
+    - anything that is not one hidden top-level name (`notes`, `.aw/keys`,
+      `.a*`);
+    - an exact name that is `.oats`, `.agents` or `.claude`, or that starts
+      with `.oats-events`, `.oats-stop`, `.oats-restart`, `.oats-rollback`,
+      `.oats-agents-md`, `.oats-start` or `.oats-attachments`: the top-level
+      entries the kernel itself writes in an instance home;
+    - a prefix that starts with `.oats-`.
+
+    An exact name such as `.oats-aweb` is allowed: it is a provider's
+    directory. Entries are matched by name, without following symlinks: a
+    declared entry that is a symlink is left out and never followed.
+
+    A matching entry is left out of the home fingerprint that retire compares
+    with the spawn baseline, of the home copy and of that copy's
+    verification, before and after the retire hooks. A change to declared
+    entries alone is therefore not "changed instance-home bytes" and causes
+    no copy. When a recovery is written, its receipt names what was left out
+    in `workRecovery.notCopied` (names and owners only).
+
+    The declaration is recorded at spawn, with its owner, in the home's
+    retirement baseline, and retire reads it from there only: never from the
+    module copy in the home, from the capability as it is today, or from
+    `instance.json`. A running instance is unaffected until it is respawned,
+    and a home spawned before its capability declared the entries gains no
+    exclusion from a package update: its home is copied whole. A missing or
+    invalid baseline means no exclusions either.
+
+    Exclusion means "not copied" and nothing more. Nothing is removed early:
+    the entries stay in the home until the home is removed, and retire hooks
+    still see them. An incomplete cleanup, or a copy or verification that
+    fails, keeps the home with them. A capability that declares nothing has
+    its home state copied with the rest of the home.
+  - `work`: relative roots under `work/` that the capability generates. In
+    worktree mode the roots are kept out of the "untracked or ignored
+    worktree bytes" class, so untracked or ignored bytes under them alone do
+    not cause a recovery. They are still copied when a copy is made. Like
+    `home`, the roots are recorded at spawn. The other work modes do not use
+    them.
+
+  A malformed `retirement` is refused wherever the manifest is read: member
+  discovery (`E_WORKSPACE_SCHEMA`), package manifests (`E_PACKAGE_MANIFEST`)
+  and the kernel loader refuse the same manifest, with a JSON pointer:
+  `/retirement` (no `disposable` map, or a key other than `disposable`,
+  `home` and `work`), `/retirement/disposable/<scope>` (not an array of
+  strings) or `/retirement/disposable/home/<i>` (an entry outside the
+  grammar):
+
+  ```text
+  capability <id> manifest retirement.disposable.home entry "<value>" must name one hidden top-level home entry (".name", or ".prefix-*")
+  capability <id> manifest retirement.disposable.home entry "<value>" covers a kernel-owned home entry
+  ```
+
+  This kernel reads the field. What retire does with the entries is in
+  [souls-and-instances.md](souls-and-instances.md#retire).
 - `requires` declares what must exist before the capability works. Two kinds:
   - a **host command** (`command`), satisfied by a binary on `PATH`;
   - a **harness package** (`harness` + `package`, optionally `marketplace`),

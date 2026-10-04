@@ -421,7 +421,8 @@ model or GitHub: processing continues after the home is gone.
 
 Before any retire hook runs, retire preserves the instance's uncommitted and
 unmerged work: a verified recovery under `.oats-retirement/recovery/`, named in
-the summary. A worktree recovery is a standalone clone that carries the
+the summary. One retire writes at most one recovery directory. A worktree
+recovery is a standalone clone that carries the
 repository's local exclude rules (`info/exclude`, a configured
 `core.excludesFile`), its `info/attributes` and the settings that change what
 status reports (`core.fileMode`, `core.ignoreCase`, …), so its Git status
@@ -430,6 +431,62 @@ cannot be verified refuses with `E_WORK_PRESERVATION_FAILED` and keeps the
 home. **`--force` does not skip work preservation.** It forces only past a
 missing or unusable cleanup marker and past incomplete hook cleanup
 ([capabilities.md](capabilities.md)).
+
+The recovery holds the state before the retire hooks at its top level, and
+what the hooks changed under `after-hooks/`:
+
+```text
+<recovery>/
+  recovery.json
+  home/               the home before the retire hooks
+  repo/ or work/      the work before the retire hooks (worktree, directory)
+  after-hooks/
+    home/             the home again, only if a hook changed home bytes
+    repo/ or work/    the work again, only if a hook changed the work state
+```
+
+After the hooks, retire copies again only the part whose state moved. Each
+part under `after-hooks/` is a full, verified snapshot, not a delta, and it is
+verified before the worktree step and before the home is removed. Nothing in
+the pre-hook `home/`, `repo/` or `work/` is rewritten. If that copy fails or
+cannot be verified, retire refuses with `E_WORK_PRESERVATION_FAILED`, keeps
+the home and leaves the pre-hook recovery intact. An instance with nothing to
+preserve before the hooks, and something after them, gets its one recovery
+then: the hooks' bytes are under `home/`, `repo/` or `work/`, and there is no
+`after-hooks/`.
+
+The summary prints the recovery once. The path and the `after-hooks/` line
+are how to find both snapshots; each line after the path appears only when
+it applies:
+
+```text
+Retired dev-1 (agent dev)
+Work that was not committed has been preserved: changed instance-home bytes, untracked or ignored worktree bytes
+  /w/agents/dev/instances/.oats-retirement/recovery/dev-1-AbC123 (46.2 MiB)
+  copied from the home: .oats/ (854 KiB), .agents/ (138 KiB), notes/ (2.0 KiB), STATE.md (512 B) — 1.0 MiB in total
+  copied outputs: scratch/ (1.2 MiB), note.txt (12 B) — 1.2 MiB in total
+  not copied: .aw, .oats-aweb (oats.aweb)
+  after the retire hooks: home copied again under after-hooks/
+```
+
+`recovery.json` records the recovery's `phase`. It is `"before-hooks"` when the
+pre-hook snapshot is written, and `"complete"` once the post-hook check has
+concluded, together with `afterHooks: { home, work }` when `after-hooks/` was
+written. `after-hooks/` counts only when `recovery.json` lists it. A retried
+retire, after incomplete cleanup or after a refused or interrupted attempt,
+starts over: it writes its own recovery, its receipt names only that one, and
+it never reads, amends or deletes an earlier one. A directory that an earlier
+attempt left at `before-hooks` is not corrupt: it is a complete, verified
+pre-hook snapshot.
+
+Home entries that a capability declared in `retirement.disposable.home`
+([capabilities.md](capabilities.md#manifest)) are provider-owned state, not
+the instance's work, and are not copied: neither before nor after the hooks.
+They stay in the home until the home is removed, retire hooks still see them,
+and a home kept for a retry keeps them. The summary lists the ones that
+exist under "not copied", by name, with the declaring capability. The
+declaration is recorded at spawn: a home spawned before its capability
+declared them gains no exclusion from a package update, and is copied whole.
 
 Retire stops the harness through the home's session receipt. A home spawned
 before 0.25.9 has none. It retires only when its session is observably gone:
@@ -569,7 +626,10 @@ used. No implicit fallback changes the other modes.
 `--work-dir` and `--branch` are rejected. Canonical instructions, skill
 composition, provider trust and harness preflight still apply. Retirement preserves nonempty work in verified recovery storage beside the
 home (`workRecovery.path/work`) before deleting it, including files created by
-hooks; directory work has no disposable-root exemptions. The work-root cannot be
+hooks; directory work has no disposable-root exemptions. A retire hook's later
+change to work is in the same recovery, under
+`workRecovery.path/after-hooks/work` (under `workRecovery.path/work` when
+nothing needed preserving before the hooks). The work-root cannot be
 exchanged for a symlink. Recovery does not replace the worker's delivery protocol.
 
 ### `workspace` — cross-repo coordinator
