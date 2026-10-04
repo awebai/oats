@@ -456,14 +456,18 @@ is:
   (what `git ls-files -s` lists), the state of an operation in progress (a
   merge, a rebase, a cherry-pick, a revert, a bisect), and the bytes of its
   files, Git metadata left out;
-- for each nested repository: the same Git state, and also its stash, its
-  exclude rules and its configuration, because its Git directory is removed
-  with the worktree.
+- for each nested repository: the same Git state, and also its tags, its
+  stash, its exclude rules and its configuration, because its Git directory
+  is removed with the worktree.
 
-The worktree's own stash, its other branches and its exclude rules are not
-part of the state: they live in the shared repository and outlive the
-worktree. A nested repository's other branches and tags are not in a
-recovery.
+The worktree's own stash, its other branches and tags and its exclude rules
+are not part of the state: they live in the shared repository and outlive
+the worktree. A nested repository's other branches are not in a recovery.
+
+A repository inside a nested repository is copied as plain files, its Git
+directory included, and nothing proves such a directory unchanged. With one
+present, the work is copied again after the hooks whenever there is
+something to preserve.
 
 The Git state is read at every inspection. The files are read once more
 after the hooks, and only when the Git state did not move; when the snapshot

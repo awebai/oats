@@ -1347,6 +1347,66 @@ seen.nestedStatus = gitIn(join(work, 'human-ignored', 'nested'))('status', '--po
   assertBothCopiedAgain(recovery);
 });
 
+test("a retire hook that tags a commit inside a nested repository, with no status row changing: the nested repository under after-hooks/repo/ carries the tag", () => {
+  const retire = quietHook(`const nested = gitIn(join(work, 'human-ignored', 'nested'));
+nested('tag', 'by-the-retire-hook');
+seen.tags = nested('tag', '--list');`);
+  const f = fixture({ capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "hook-nested-tag");
+  const work = join(spawned.home, "work");
+  const nested = nestedRepository(work);
+  execFileSync("git", ["-C", nested, "tag", "before-the-retire"]);
+  const statusBefore = porcelain(work);
+  assert.deepEqual(statusRowsIn(statusBefore), ["!! human-ignored/"], "fixture premise: the only status row is the ignored directory that holds the nested repository");
+
+  const { recovery, seen, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore);
+  // Sorted here: the order `git tag` lists in follows the user's configuration.
+  const tagNames = (listing) => listing.split("\n").filter(Boolean).sort();
+  const tagsOf = (repo) => tagNames(execFileSync("git", ["-C", nestedUnder(repo), "tag", "--list"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }));
+  assert.deepEqual(tagNames(seen.tags), ["before-the-retire", "by-the-retire-hook"], "fixture premise: the hook made a tag");
+  assert.equal(existsSync(join(nestedUnder(join(recovery.path, "repo")), ".git")), true);
+  assert.deepEqual(tagsOf(join(recovery.path, "repo")), ["before-the-retire"], "a work copy carries a nested repository's tags: the pre-hook snapshot has the one that existed then");
+  assert.equal(existsSync(join(nestedUnder(afterRepo), ".git")), true, "the work is copied again under after-hooks/repo/: the nested repository's tags moved");
+  assert.deepEqual(tagsOf(afterRepo), ["before-the-retire", "by-the-retire-hook"]);
+  assertBothCopiedAgain(recovery);
+});
+
+test("a repository inside a nested repository cannot be proven unchanged: the work is copied again after the hooks, and a retire hook's commit there is under after-hooks/repo/", () => {
+  const retire = quietHook(`const inner = gitIn(join(work, 'human-ignored', 'nested', 'inner'));
+inner('commit', '--quiet', '--allow-empty', '-m', 'made by the retire hook');
+seen.innerHead = inner('rev-parse', 'HEAD').trim();
+seen.nestedStatus = gitIn(join(work, 'human-ignored', 'nested'))('status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored=matching', '--ignore-submodules=none');`);
+  const f = fixture({ capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "hook-inner-commit");
+  const work = join(spawned.home, "work");
+  const nested = nestedRepository(work);
+  // A repository inside the nested one: the nested repository sees it as one untracked directory.
+  const inner = join(nested, "inner");
+  mkdirSync(inner);
+  execFileSync("git", ["init", "-q", inner]);
+  execFileSync("git", ["-C", inner, "config", "user.email", "test@example.invalid"]);
+  execFileSync("git", ["-C", inner, "config", "user.name", "Test"]);
+  execFileSync("git", ["-C", inner, "config", "maintenance.auto", "false"]);
+  write(join(inner, "inner.txt"), "inner-commit\n");
+  execFileSync("git", ["-C", inner, "add", "."]);
+  execFileSync("git", ["-C", inner, "commit", "-qm", "inner"]);
+  const innerBefore = headOf(inner);
+  const nestedStatusBefore = porcelain(nested);
+  assert.deepEqual(statusRowsIn(nestedStatusBefore), ["?? inner/"], "fixture premise: the nested repository reports the inner one as one untracked directory");
+  const statusBefore = porcelain(work);
+  assert.deepEqual(statusRowsIn(statusBefore), ["!! human-ignored/"], "fixture premise: the only status row is the ignored directory that holds the nested repository");
+
+  const { recovery, seen, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore);
+  assert.equal(seen.nestedStatus, nestedStatusBefore, "fixture premise: the nested repository's status is as it was");
+  assert.notEqual(seen.innerHead, innerBefore, "fixture premise: the hook moved the inner repository's HEAD");
+  const innerUnder = (repo) => join(nestedUnder(repo), "inner");
+  assert.equal(existsSync(join(innerUnder(join(recovery.path, "repo")), ".git")), true, "a work copy carries the inner repository with its Git directory");
+  assert.equal(headOf(innerUnder(join(recovery.path, "repo"))), innerBefore, "the pre-hook snapshot's inner repository is at the commit before the hook");
+  assert.equal(existsSync(join(innerUnder(afterRepo), ".git")), true, "the work is copied again under after-hooks/repo/: nothing proves the inner repository unchanged");
+  assert.equal(headOf(innerUnder(afterRepo)), seen.innerHead);
+  assertBothCopiedAgain(recovery);
+});
+
 test("a nested repository whose Git state cannot be read refuses the retire as an inspection failure, and nothing is removed", () => {
   const f = fixture();
   const spawned = spawn(f, "nested-unreadable");
