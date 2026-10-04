@@ -442,16 +442,42 @@ what the hooks changed under `after-hooks/`:
   repo/ or work/      the work before the retire hooks (worktree, directory)
   after-hooks/
     home/             the home again, only if a hook changed home bytes
-    repo/ or work/    the work again, only if a hook changed the work state
+    repo/ or work/    the work again, unless it is proven unchanged
 ```
 
-After the hooks, retire copies again only the part whose state moved. Retire
-compares the work by its state, not always by its contents. In worktree mode
-the work state is the Git status of the worktree: which paths are changed,
-untracked or ignored. A retire hook that only rewrites a file whose status
-row stays the same, such as a file that was already modified, does not move
-it, and the work is not copied again. In directory mode the work state is the
-bytes of `work/`. Each
+After the hooks, retire copies again each part the hooks moved. The home
+moved when its bytes did. The work is copied again unless it is proven
+unchanged. A Git status with the same rows is not that proof: a hook can
+rewrite a file that was already modified, and the row stays the same. In
+directory mode the work state is the bytes of `work/`. In worktree mode it
+is:
+
+- for the worktree: its Git status, its branch and commit, its index content
+  (what `git ls-files -s` lists), the state of an operation in progress (a
+  merge, a rebase, a cherry-pick, a revert, a bisect), and the bytes of its
+  files, Git metadata left out;
+- for each nested repository: the same Git state, and also its stash, its
+  exclude rules and its configuration, because its Git directory is removed
+  with the worktree.
+
+The worktree's own stash, its other branches and its exclude rules are not
+part of the state: they live in the shared repository and outlive the
+worktree. A nested repository's other branches and tags are not in a
+recovery.
+
+The Git state is read at every inspection. The files are read once more
+after the hooks, and only when the Git state did not move; when the snapshot
+before the hooks holds no work copy, they are read once before the hooks and
+once after. A Git state that cannot be read refuses the retire with
+`E_WORK_INSPECTION_FAILED`.
+
+The home is not copied again because the work is. The home's event log and
+its stop and restart receipts do not count as changes to the home, so a
+recovery holds them as of the pre-hook snapshot unless the home itself was
+copied again. The retire's own events are written to the workspace log
+(`<deployment>/.agents/events/`), never to the home's.
+
+Each
 part under `after-hooks/` is a full, verified snapshot, not a delta, and it is
 verified before the worktree step and before the home is removed. Nothing in
 the pre-hook `home/`, `repo/` or `work/` is rewritten. If that copy fails or

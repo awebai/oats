@@ -1010,10 +1010,10 @@ console.log(JSON.stringify({ meta: { retired: true } }));
 // change has to be.
 
 /** A retire hook's source. `body` runs with `home`, `work`, `git(...args)` (in the work tree),
- *  `gitIn(dir)` and `seen` in scope. The hook then writes a home file and leaves beside the
- *  home, as JSON, what `body` put in `seen` and `seen.status`: the kernel's status command,
- *  run once the hook has written. */
-const quietHook = (body) => `import { execFileSync } from 'node:child_process';
+ *  `gitIn(dir)` and `seen` in scope. The hook then writes a home file (unless `home` is false)
+ *  and leaves beside the home, as JSON, what `body` put in `seen` and `seen.status`: the
+ *  kernel's status command, run once the hook has written. */
+const quietHook = (body, { home = true } = {}) => `import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 const home = process.env.OATS_INSTANCE_HOME;
@@ -1022,18 +1022,19 @@ const gitIn = (dir) => (...args) => execFileSync('git', ['-C', dir, ...args], { 
 const git = gitIn(work);
 const seen = {};
 ${body}
-writeFileSync(join(home, 'hook-note.txt'), ${JSON.stringify(HOOK_BYTES)});
+${home ? `writeFileSync(join(home, 'hook-note.txt'), ${JSON.stringify(HOOK_BYTES)});` : "// this hook writes nothing in the home"}
 seen.status = git('status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored=matching', '--ignore-submodules=none');
 writeFileSync(join(dirname(home), 'hook-saw-' + basename(home)), JSON.stringify(seen));
 console.log(JSON.stringify({ meta: { retired: true } }));
 `;
-/** `oats retire <instance> --discard-worktree --json` after a quietHook. Asserts what holds
- *  whether or not the post-hook pass copies the work: exit 0, one recovery, the hook ran and
- *  left Git's status text as it was before the retire (`statusBefore`), its home file is
- *  under after-hooks/home/, and the worktree is gone.
- *  → { recovery: the receipt's workRecovery, seen: what the hook left, afterRepo: <recovery>/after-hooks/repo }. */
-function retireAfterQuietHook(f, spawned, statusBefore) {
-  const retired = cli(f, ["retire", basename(spawned.home), "--discard-worktree", "--json"]);
+/** `oats retire <instance> --discard-worktree --json` (or with `flags`) after a quietHook.
+ *  Asserts what holds whether or not the post-hook pass copies the work: exit 0, one
+ *  recovery, the hook ran and left Git's status text as it was before the retire
+ *  (`statusBefore`), its home file is under after-hooks/home/ (when it wrote one: `home`),
+ *  and the worktree is gone.
+ *  → { receipt, recovery: its workRecovery, seen: what the hook left, afterRepo: <recovery>/after-hooks/repo }. */
+function retireAfterQuietHook(f, spawned, statusBefore, { flags = ["--discard-worktree"], home = true } = {}) {
+  const retired = cli(f, ["retire", basename(spawned.home), ...flags, "--json"]);
   assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
   const receipt = JSON.parse(retired.stdout);
   const recovery = receipt.workRecovery;
@@ -1043,11 +1044,11 @@ function retireAfterQuietHook(f, spawned, statusBefore) {
   const seen = readJson(left);
   assert.equal(seen.status, statusBefore, "fixture premise: Git's status text is the same after the hook's change");
   assert.deepEqual(readdirSync(recoveryRootOf(spawned.home)), [basename(recovery.path)], "one recovery directory");
-  assert.equal(readFileSync(join(recovery.path, "after-hooks", "home", "hook-note.txt"), "utf8"), HOOK_BYTES, "the hook's home file is copied under after-hooks/");
+  if (home) assert.equal(readFileSync(join(recovery.path, "after-hooks", "home", "hook-note.txt"), "utf8"), HOOK_BYTES, "the hook's home file is copied under after-hooks/");
   assert.equal(receipt.retention.worktree, "removed");
   assert.equal(existsSync(join(spawned.home, "work")), false, "the worktree is gone");
   assert.equal(existsSync(spawned.home), false);
-  return { recovery, seen, afterRepo: join(recovery.path, "after-hooks", "repo") };
+  return { receipt, recovery, seen, afterRepo: join(recovery.path, "after-hooks", "repo") };
 }
 /** The receipt and recovery.json both say that the home and the work were copied again. */
 function assertBothCopiedAgain(recovery) {
@@ -1194,6 +1195,171 @@ test("a retire hook that rewrites the message of an in-progress merge, with no s
   assert.equal(readFileSync(join(afterRepo, ".git", "MERGE_MSG"), "utf8"), REWRITTEN);
   assert.equal(readFileSync(join(afterRepo, ".git", "MERGE_HEAD"), "utf8"), head);
   assertBothCopiedAgain(recovery);
+});
+
+test("a retire hook that only rewrites an already modified tracked file, and nothing in the home: its bytes are copied under after-hooks/repo/, and the home is not copied again", () => {
+  const BEFORE = "changed before the retire\n", REWRITTEN = "rewritten by the retire hook\n";
+  const retire = quietHook(`writeFileSync(join(work, 'tracked.txt'), ${JSON.stringify(REWRITTEN)});`, { home: false });
+  const f = fixture({ capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "hook-work-only");
+  const work = join(spawned.home, "work");
+  write(join(work, "tracked.txt"), BEFORE);
+  const statusBefore = porcelain(work);
+  assert.deepEqual(statusRowsIn(statusBefore), [" M tracked.txt"], "fixture premise: one modified tracked file before the retire");
+
+  const { recovery, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore, { home: false });
+  assert.equal(readFileSync(join(recovery.path, "repo", "tracked.txt"), "utf8"), BEFORE, "the pre-hook snapshot is untouched");
+  assert.equal(readFileSync(join(afterRepo, "tracked.txt"), "utf8"), REWRITTEN, "the bytes moved, the status text and the home did not: the work is copied again");
+  assert.equal(existsSync(join(recovery.path, "after-hooks", "home")), false, "the home did not move, so it is not copied again");
+  assert.deepEqual(recovery.afterHooks, { home: false, work: true });
+  assert.deepEqual(readJson(join(recovery.path, "recovery.json")).afterHooks, { home: false, work: true });
+});
+
+test("a retire hook that rewrites a file that was already untracked: its bytes are copied under after-hooks/repo/", () => {
+  const BEFORE = "untracked before the retire\n", REWRITTEN = "rewritten by the retire hook\n";
+  const retire = quietHook(`writeFileSync(join(work, 'scratch.txt'), ${JSON.stringify(REWRITTEN)});`);
+  const f = fixture({ capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "hook-untracked");
+  const work = join(spawned.home, "work");
+  write(join(work, "scratch.txt"), BEFORE);
+  const statusBefore = porcelain(work);
+  assert.deepEqual(statusRowsIn(statusBefore), ["?? scratch.txt"], "fixture premise: one untracked file before the retire");
+
+  const { recovery, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore);
+  assert.equal(readFileSync(join(recovery.path, "repo", "scratch.txt"), "utf8"), BEFORE, "the pre-hook snapshot is untouched");
+  assert.equal(readFileSync(join(afterRepo, "scratch.txt"), "utf8"), REWRITTEN);
+  assertBothCopiedAgain(recovery);
+});
+
+test("a retire hook that commits on a branch the retire then deletes: the commit is in the work copied under after-hooks/repo/, although the snapshot before the hooks was home-only", () => {
+  const retire = quietHook(`git('-c', 'user.name=Hook', '-c', 'user.email=hook@example.invalid', 'commit', '--quiet', '--allow-empty', '-m', 'made by the retire hook');
+seen.head = git('rev-parse', 'HEAD').trim();`);
+  const f = fixture({ capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "hook-commit-deleted");
+  const work = join(spawned.home, "work");
+  write(join(spawned.home, "notes", "x.md"), "an authored note\n");
+  const headBefore = headOf(work);
+  const statusBefore = porcelain(work);
+  assert.equal(statusBefore, "", "fixture premise: a clean worktree before the retire");
+
+  const { receipt, recovery, seen, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore, { flags: ["--delete-branch"] });
+  assert.notEqual(seen.head, headBefore, "fixture premise: the hook moved HEAD");
+  assert.equal(recovery.repoCopy?.copied, false, "fixture premise: the snapshot before the hooks is home-only");
+  assert.equal(existsSync(join(recovery.path, "repo")), false);
+  assert.ok(receipt.retention.branchDeleted, "fixture premise: the retire deleted the branch");
+  assert.equal(execFileSync("git", ["-C", f.repo, "branch", "--list", receipt.retention.branchDeleted], { encoding: "utf8" }).trim(), "", "the branch is gone from the repository");
+  assert.ok(recovery.classes.includes("branch-only local commits"), recovery.classes.join(", "));
+  assert.equal(existsSync(join(afterRepo, ".git")), true, "the work is copied under after-hooks/repo/");
+  assert.equal(headOf(afterRepo), seen.head, "the hook's commit is in the recovery");
+  assertBothCopiedAgain(recovery);
+});
+
+/** A nested repository under the worktree's ignored human-ignored/, with one commit. → its directory. */
+function nestedRepository(work) {
+  const nested = join(work, "human-ignored", "nested");
+  mkdirSync(nested, { recursive: true });
+  execFileSync("git", ["init", "-q", nested]);
+  execFileSync("git", ["-C", nested, "config", "user.email", "test@example.invalid"]);
+  execFileSync("git", ["-C", nested, "config", "user.name", "Test"]);
+  execFileSync("git", ["-C", nested, "config", "maintenance.auto", "false"]);
+  write(join(nested, "nested.txt"), "nested-commit\n");
+  execFileSync("git", ["-C", nested, "add", "."]);
+  execFileSync("git", ["-C", nested, "commit", "-qm", "nested"]);
+  return nested;
+}
+const stashListOf = (repo) => execFileSync("git", ["-C", repo, "stash", "list"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+const nestedUnder = (repo) => join(repo, "human-ignored", "nested");
+
+test("a retire hook that moves only the home: the work is proven unchanged and is not copied again, with a nested repository that has a stash and its own exclude rules", () => {
+  // Two inspections of an untouched worktree must give the same work state, or every retire whose hook
+  // writes the home would copy the work twice. The nested repository's stash, exclude rules and
+  // configuration are part of that state.
+  const f = fixture({ capabilities: hookCapability(quietHook("")) });
+  const spawned = spawn(f, "hook-home-only");
+  const work = join(spawned.home, "work");
+  write(join(work, "tracked.txt"), "changed before the retire\n");
+  write(join(work, "scratch.txt"), "untracked\n");
+  const nested = nestedRepository(work);
+  write(join(nested, "stash.txt"), "nested-stash\n");
+  execFileSync("git", ["-C", nested, "add", "stash.txt"]);
+  execFileSync("git", ["-C", nested, "stash", "push", "-qm", "nested stash"]);
+  write(join(nested, ".git", "info", "exclude"), ".nested-scratch/\n");
+  write(join(nested, ".nested-scratch", "local.txt"), "excluded in the nested repository only\n");
+  write(join(nested, "nested.txt"), "changed in the nested repository\n");
+  const statusBefore = porcelain(work);
+  assert.deepEqual(statusRowsIn(statusBefore).sort(), [" M tracked.txt", "!! human-ignored/", "?? scratch.txt"], "fixture premise: a modified file, an untracked file, and the ignored directory that holds the nested repository");
+  assert.match(stashListOf(nested), /nested stash/, "fixture premise: the nested repository has a stash");
+
+  const { recovery, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore);
+  assert.equal(readFileSync(join(recovery.path, "repo", "tracked.txt"), "utf8"), "changed before the retire\n");
+  assert.match(stashListOf(nestedUnder(join(recovery.path, "repo"))), /nested stash/, "the one work copy carries the nested stash");
+  assert.equal(existsSync(afterRepo), false, "the work did not move: it is not copied again");
+  assert.deepEqual(recovery.afterHooks, { home: true, work: false });
+  assert.deepEqual(readJson(join(recovery.path, "recovery.json")).afterHooks, { home: true, work: false });
+});
+
+test("a retire hook that stashes inside a nested repository and leaves its files as they were: the nested repository under after-hooks/repo/ carries the stash", () => {
+  const retire = quietHook(`const nested = gitIn(join(work, 'human-ignored', 'nested'));
+nested('stash', 'push', '--quiet', '-m', 'made by the retire hook');
+nested('stash', 'apply', '--quiet');
+seen.nestedStatus = nested('status', '--porcelain=v1', '-z');
+seen.stash = nested('stash', 'list');`);
+  const f = fixture({ capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "hook-nested-stash");
+  const work = join(spawned.home, "work");
+  const nested = nestedRepository(work);
+  write(join(nested, "nested.txt"), "changed in the nested repository\n");
+  const nestedStatusBefore = execFileSync("git", ["-C", nested, "status", "--porcelain=v1", "-z"], { encoding: "utf8" });
+  assert.equal(nestedStatusBefore, " M nested.txt\0", "fixture premise: one modified file in the nested repository");
+  const statusBefore = porcelain(work);
+  assert.deepEqual(statusRowsIn(statusBefore), ["!! human-ignored/"], "fixture premise: the only status row is the ignored directory that holds the nested repository");
+
+  const { recovery, seen, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore);
+  assert.match(seen.stash, /made by the retire hook/, "fixture premise: the hook made a stash");
+  assert.equal(seen.nestedStatus, nestedStatusBefore, "fixture premise: the nested repository's status is as it was");
+  assert.equal(existsSync(join(nestedUnder(join(recovery.path, "repo")), ".git")), true);
+  assert.equal(stashListOf(nestedUnder(join(recovery.path, "repo"))), "", "the pre-hook snapshot's nested repository has no stash");
+  assert.equal(existsSync(join(nestedUnder(afterRepo), ".git")), true, "the work is copied again under after-hooks/repo/: the nested repository's stash moved");
+  assert.match(stashListOf(nestedUnder(afterRepo)), /made by the retire hook/);
+  assert.equal(readFileSync(join(nestedUnder(afterRepo), "nested.txt"), "utf8"), "changed in the nested repository\n", "its files are the same in both copies");
+  assertBothCopiedAgain(recovery);
+});
+
+test("a retire hook that adds an exclude rule to a nested repository, with no status row changing: the nested repository under after-hooks/repo/ carries the rule", () => {
+  const retire = quietHook(`writeFileSync(join(work, 'human-ignored', 'nested', '.git', 'info', 'exclude'), '.by-hook/\\n');
+seen.nestedStatus = gitIn(join(work, 'human-ignored', 'nested'))('status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored=matching', '--ignore-submodules=none');`);
+  const f = fixture({ capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "hook-nested-exclude");
+  const work = join(spawned.home, "work");
+  const nested = nestedRepository(work);
+  mkdirSync(join(nested, ".git", "info"), { recursive: true });
+  const nestedStatusBefore = porcelain(nested);
+  const statusBefore = porcelain(work);
+  assert.deepEqual(statusRowsIn(statusBefore), ["!! human-ignored/"], "fixture premise: the only status row is the ignored directory that holds the nested repository");
+
+  const { recovery, seen, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore);
+  assert.equal(seen.nestedStatus, nestedStatusBefore, "fixture premise: the rule matches nothing, so the nested repository's status is as it was");
+  // A clone has an info/exclude only where Git's templates provide one: absent reads as no rule.
+  const excludeOf = (repo) => { const file = join(nestedUnder(repo), ".git", "info", "exclude"); return existsSync(file) ? readFileSync(file, "utf8") : ""; };
+  assert.equal(excludeOf(join(recovery.path, "repo")).includes(".by-hook/"), false, "the pre-hook snapshot's nested repository does not have the rule");
+  assert.equal(existsSync(join(nestedUnder(afterRepo), ".git")), true, "the work is copied again under after-hooks/repo/: the nested repository's exclude rules moved");
+  assert.match(excludeOf(afterRepo), /^\.by-hook\/$/m);
+  assertBothCopiedAgain(recovery);
+});
+
+test("a nested repository whose Git state cannot be read refuses the retire as an inspection failure, and nothing is removed", () => {
+  const f = fixture();
+  const spawned = spawn(f, "nested-unreadable");
+  const work = join(spawned.home, "work");
+  // A nested repository whose Git file names a directory that is not there: Git cannot answer for it.
+  write(join(work, "human-ignored", "broken", ".git"), "gitdir: /nonexistent/oats-fixture/git\n");
+  write(join(work, "human-ignored", "broken", "kept.txt"), "bytes that must not be lost\n");
+  const retired = cli(f, ["retire", "dev-nested-unreadable", "--discard-worktree", "--json"]);
+  assert.notEqual(retired.status, 0, "a work state that cannot be read was taken for one that can");
+  assert.equal(JSON.parse(retired.stdout).error.code, "E_WORK_INSPECTION_FAILED", retired.stdout);
+  assert.equal(existsSync(spawned.home), true);
+  assert.equal(readFileSync(join(work, "human-ignored", "broken", "kept.txt"), "utf8"), "bytes that must not be lost\n");
+  assert.equal(existsSync(recoveryRootOf(spawned.home)), false, "no recovery was written");
 });
 
 test("home entries a capability declared in retirement.disposable.home are not copied to recovery, stay for the retire hooks, and are named without their contents", () => {

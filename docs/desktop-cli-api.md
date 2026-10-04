@@ -2531,7 +2531,11 @@ A first retire prints the **raw receipt**, not an envelope:
   - `afterHooks`: `{home: boolean, work: boolean}`, saying which parts were
     copied again under `after-hooks/`: `after-hooks/home/` when a retire hook
     changed home bytes, and `after-hooks/repo/` (worktree mode) or
-    `after-hooks/work/` (directory mode) when a hook changed the work state.
+    `after-hooks/work/` (directory mode) unless the work is proven unchanged
+    after the hooks: a directory by its bytes, a worktree by its Git state
+    and the bytes of its files
+    ([souls and instances](souls-and-instances.md#retire)). The home is not
+    copied again because the work is.
     Each is a full verified snapshot, not a delta. Present only when that
     directory was written.
   - `workRecoveries` is no longer emitted. An older kernel on a server may
