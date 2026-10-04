@@ -471,8 +471,9 @@ something to preserve.
 
 The Git state is read at every inspection. The files are read once more
 after the hooks, and only when the Git state did not move; when the snapshot
-before the hooks holds no work copy, they are read once before the hooks and
-once after. A Git state that cannot be read refuses the retire with
+before the hooks holds the home only, they are read once before the hooks and
+once after. With nothing preserved before the hooks, nothing is compared: a
+recovery is written after them whenever there is something to preserve. A Git state that cannot be read refuses the retire with
 `E_WORK_INSPECTION_FAILED`.
 
 The home is not copied again because the work is. The home's event log and

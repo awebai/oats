@@ -1465,6 +1465,32 @@ for (const name of readdirSync(baselines)) rmSync(join(baselines, name));`);
   assertBothCopiedAgain(recovery);
 });
 
+test("an instance with nothing to preserve before the hooks gets its one recovery when a class appears after them, although nothing in its home or its work moved: a retire hook deletes the other branch that reached the instance's commit", () => {
+  const retire = quietHook(`git('branch', '--quiet', '-D', 'keep');
+seen.head = git('rev-parse', 'HEAD').trim();
+seen.branches = git('branch', '--list', 'keep');`, { home: false });
+  const f = fixture({ capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "late-class");
+  const work = join(spawned.home, "work");
+  const commit = commitAlsoOnKeep(work);
+  const statusBefore = porcelain(work);
+  assert.equal(statusBefore, "", "fixture premise: a clean worktree before the retire");
+
+  const { receipt, recovery, seen } = retireAfterQuietHook(f, spawned, statusBefore, { flags: ["--delete-branch"], home: false });
+  assert.equal(seen.head, commit, "fixture premise: the hook did not move HEAD");
+  assert.equal(seen.branches, "", "fixture premise: the hook deleted the other branch");
+  assert.deepEqual(recovery.classes, ["branch-only local commits"], "the one class, and it appeared after the hooks");
+  assert.ok(receipt.retention.branchDeleted, "fixture premise: the retire deleted the instance's branch");
+  assert.equal(execFileSync("git", ["-C", f.repo, "branch", "--list", receipt.retention.branchDeleted, "keep"], { encoding: "utf8" }).trim(), "", "no branch reaches the commit any more");
+  // Written by the post-hook pass as the first and only recovery: the work is at its top level.
+  assert.equal(existsSync(join(recovery.path, "repo", ".git")), true);
+  assert.equal(headOf(join(recovery.path, "repo")), commit, "the commit is in the recovery");
+  assert.equal(readFileSync(join(recovery.path, "repo", "committed.txt"), "utf8"), "committed on the instance's branch\n");
+  assert.equal(existsSync(join(recovery.path, "after-hooks")), false);
+  assert.equal(recovery.afterHooks, undefined);
+  assert.equal(readJson(join(recovery.path, "recovery.json")).phase, "complete");
+});
+
 test("a nested repository whose Git state cannot be read refuses the retire as an inspection failure, and nothing is removed", () => {
   const f = fixture();
   const spawned = spawn(f, "nested-unreadable");
