@@ -1,0 +1,10 @@
+schemaVersion: 2
+name: oats-maintainer
+description: The OATS maintainer - direction, roadmap, architecture coherence, routing work to experts, review, merge and releases.
+work: directory
+# oats.core and the oats.okf knowledge slot come from the workspace defaults.
+# What this soul owns and reads in the central base is okf.json beside this file.
+capabilities:
+  oats.maintainer: { from: package }           # the maintainer role: overview, launching work, direction gate, review and merge, releases, peers, knowledge
+  oats.cloning: { from: package }              # request a clone of an instance for a new goal
+launch: { harness: claude, model: claude-opus-5-5 }   # the role's preference; each machine may override it

@@ -1,15 +1,16 @@
 {
   "version": 1,
-  "owner": "c448f593-9b2d-4c48-a679-1c468bda5beb",
+  "owner": "065e17c8-54eb-4f80-86b0-41ce59684922",
   "owns": [
-    "oats/oats-expert"
+    "oats/oats-maintainer"
   ],
   "reads": [
-    "oats/oats-maintainer",
+    "oats/oats-expert",
     "oats/oats-kernel-expert",
     "oats/oats-desktop-expert",
     "oats/market-research-expert",
     "oats/oats-operator-expert",
-    "oats/integrations-expert"
+    "oats/integrations-expert",
+    "oats/oats-setup-admin"
   ]
 }
