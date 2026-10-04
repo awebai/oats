@@ -10,7 +10,7 @@ in the OATS repository.
 - **A package is a contract with every deployment that pins it.** Settings,
   commands, hooks, the declared `environment` and anything a hook writes are
   breaking changes; they ship in a new version with an actionable error or
-  migration, and a contract change needs the maintainer's (oats-expert)
+  migration, and a contract change needs the maintainer's (oats-maintainer)
   decision first.
 - The kernel supplies the contracts (hooks and their environment, the
   readiness check, operations); the package implements behaviour. Kernel

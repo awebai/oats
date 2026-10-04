@@ -5,7 +5,9 @@ capability, `oats.workspace-experts`, assigned to this workspace's expert souls)
 the generic engineering package.
 
 **Surfaces and their developers.** To drive development, launch the developer that owns
-the surface; for work across surfaces, one developer per surface.
+the surface; for work across surfaces, one developer per surface. Work that spans several
+surfaces is led by `oats-expert`, the generalist expert: it writes the spec and plan and
+coordinates the surface experts.
 
 | Surface | Paths | Developer soul | Expert |
 |---|---|---|---|
@@ -22,4 +24,6 @@ the adversarial review loop. Launching a developer is still the default.
 
 **Delivery.** Every change reaches main by a PR. The owning expert lands it (opens it,
 answers reviews, gets it merged). In this repository, merges are done by the maintainer
-(`oats-expert`), so getting its approval is part of landing.
+(`oats-maintainer`), so getting its approval is part of landing.
+
+**The maintainer to tell** when a human starts you directly on OATS work is `oats-maintainer`.

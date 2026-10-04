@@ -52,7 +52,7 @@ hosted, the deployment directory, the installed OATS version and harness, and
 which slots (knowledge, messaging, tasks) the user wants filled. Collect no
 keys or tokens. Agree on one reversible, low-risk task, and check that the
 work was actually done and consumed, not merely launched or sent. Hand off
-direction to oats-expert, kernel contracts to oats-kernel-expert, Desktop
+direction to oats-maintainer, kernel contracts to oats-kernel-expert, Desktop
 behaviour to oats-desktop-expert and comparisons to market-research-expert,
 after checking the soul is available.
 
