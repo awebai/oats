@@ -3,7 +3,7 @@
 // fields, but renderer tests inject them directly — a dropped or typo'd
 // projection field would stay green there. Extract the REAL projection
 // function from server/oats-web.mjs via block markers (house pattern,
-// keySendError) and assert the relation contract fields end to end.
+// as TMUXTGT) and assert the relation contract fields end to end.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

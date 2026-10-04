@@ -92,27 +92,6 @@ test("desktop server: the retired collect helper is refused; no deployment reade
   for (const retired of ["deployment.mjs", "model.mjs", "catalog.mjs"]) assert.ok(!readdirSync(server).includes(retired), retired);
 });
 
-test("desktop server: key-send failures never leak the payload or its hex encoding", () => {
-  const src = extractBlock(SRV, "KEYERR");
-  const keySendError = new Function(src + "\nreturn keySendError;")();
-  const secret = "hunter2-t0ken";
-  const hex = [...Buffer.from(secret, "utf8")].map((b) => b.toString(16).padStart(2, "0")).join(" ");
-  // simulate the real execFileSync failure shape: non-zero exit → e.status,
-  // argv (hex bytes) inside message
-  const err = Object.assign(new Error(`Command failed: tmux send-keys -t s:1 -H ${hex}`),
-                            { status: 1, signal: null });
-  const safe = keySendError(err);
-  for (const [what, s] of [["log", safe.log], ["http error", JSON.stringify(safe.http)]]) {
-    assert.ok(!s.includes(secret), `${what} must not contain the plaintext payload`);
-    assert.ok(!s.includes(hex.slice(0, 8)), `${what} must not contain the hex-encoded payload`);
-    assert.ok(!s.includes("Command failed"), `${what} must not embed the child argv message`);
-  }
-  assert.ok(safe.http.error.includes("code 1"), "exit code is surfaced");
-  // timeout shape (ETIMEDOUT + signal) stays safe too
-  const t = keySendError(Object.assign(new Error(`spawnSync tmux ETIMEDOUT: -H ${hex}`), { code: "ETIMEDOUT", signal: "SIGTERM" }));
-  assert.ok(!t.log.includes(hex.slice(0, 8)) && t.log.includes("ETIMEDOUT") && t.log.includes("SIGTERM"));
-});
-
 // ---- HTTP guards and the kernel-observed roster ----
 
 test("desktop server: POST origin guard rejects hostile/null origins without crashing", async () => {
