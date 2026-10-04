@@ -558,26 +558,34 @@ as described above.
 **A socket, a FIFO or a device file in the worktree.** An entry that is not
 a file, a directory or a symbolic link has no bytes to read or to copy, and
 Git prints no status row for it, so a worktree that holds one can read as
-clean. In worktree mode, when there is something to preserve before the
-hooks, such an entry anywhere in the worktree refuses the retire:
+clean. Such an entry refuses the retire, at one of three points:
 
-- **before the hooks**, with `E_WORK_INSPECTION_FAILED`: no hook has run, no
-  recovery was written and nothing was deleted, however often the retire is
-  retried. The message names the entry and says what to do: safely stop the
-  process or resource that owns it, or move the entry elsewhere, then retry.
-  The entry may be a live endpoint, so deleting it is not the advice. The
-  retire has already stopped the session of a launched instance by then: the
-  instance's session is stopped, the instance is not retired, and its home
-  is kept. The message says so, and says that this retire stopped no session
-  when the instance had none to stop. To continue, deal with the entry and run
-  `oats retire <instance>` again, or start the session again in the same
-  home with `oats session start --home <abs>`. A self-retire (`--self`) is
-  completed by its detached completion, which stops the session and refuses
-  in the same way; the refusal is recorded beside the home, as described
-  below. After a refused self-retire only `oats retire <instance>`
-  continues: `oats session start` refuses while the self-retire's pending
-  marker is there, and a retire clears it. Only `--self --keep-dir`, which
-  stays in the calling process, refuses with the session still running;
+- **at the first inspection**, when the entry is where that inspection reads:
+  inside a directory that Git reports as ignored whole (unless a capability
+  declared it a disposable work root), in the `work/` of a directory
+  instance, or in the home itself. The code is `E_WORK_INSPECTION_FAILED`.
+  The message names the entry and says what to do, and ends there. The first
+  inspection runs before the retire stops the session: the session is still
+  running, no recovery was written and nothing was deleted;
+- **before the hooks**, when the entry is anywhere else in a worktree and
+  there is something to preserve, with `E_WORK_INSPECTION_FAILED`: no hook
+  has run, no recovery was written and nothing was deleted, however often the
+  retire is retried. The message names the entry and says what to do: safely
+  stop the process or resource that owns it, or move the entry elsewhere,
+  then retry. The entry may be a live endpoint, so deleting it is not the
+  advice. The retire has already stopped the session of a launched instance
+  by then: the instance's session is stopped, the instance is not retired,
+  and its home is kept. The message says so, and says that this retire
+  stopped no session when the instance had none to stop. To continue, deal
+  with the entry and run `oats retire <instance>` again, or start the session
+  again in the same home with `oats session start --home <abs>`. A
+  self-retire (`--self`) is completed by its detached completion, which stops
+  the session and refuses in the same way; the refusal is recorded beside the
+  home, as described below. After a refused self-retire only `oats retire
+  <instance>` continues: `oats session start` refuses while the self-retire's
+  pending marker is there, and a retire clears it. Of the refusals at this
+  point, only that of `--self --keep-dir`, which stays in the calling
+  process, comes with the session still running;
 - **after the hooks**, when a retire hook left the entry behind: the hooks
   have run, and the home, the work and the recovery written before the hooks
   are all kept. The code is `E_WORK_INSPECTION_FAILED` when the Git state is
@@ -590,21 +598,20 @@ there the refusal comes from the copy, as `E_WORK_PRESERVATION_FAILED`.
 
 **A file in the worktree that cannot be read.** The same read refuses a file
 it cannot read: one without read permission, or one over 2 GiB, which a
-single read cannot take. Where the file is makes no difference. A directory
-Git ignores and a work root that a capability declared disposable
-(`retirement.disposable.work`) do not count as something to preserve, and
-they are read all the same. So a retire that has only the home to preserve
-refuses for such a file, with `E_WORK_INSPECTION_FAILED`, before any retire
-hook runs, with or without `--force`: no recovery was written and nothing
-was deleted. As for a socket or a FIFO, the retire has already stopped the
+single read cannot take. Two kinds of file are read although they are nothing
+to preserve: a tracked file that is unchanged, and a file under a work root
+that a capability declared disposable (`retirement.disposable.work`). So a
+retire that has only the home to preserve refuses for such a file, with
+`E_WORK_INSPECTION_FAILED`, before any retire hook runs, with or without
+`--force`: no recovery was written and nothing was deleted. As for a socket
+or a FIFO refused before the hooks, the retire has already stopped the
 session of a launched instance by then, the instance is not retired, and its
 home is kept. The message is `could not read the worktree at <work>:
 <reason>`. For a file without read permission the reason names the file. For
-a file over 2 GiB it gives the size, and
-`find <work> -type f -size +2147483647c` finds the file. To continue, move
-the file out of the worktree or make it readable, then run
-`oats retire <instance>` again. With nothing to preserve, the files are not
-read and the retire goes through.
+a file over 2 GiB it gives the size, and `find <work> -type f -size
++2147483647c` finds the file. To continue, move the file out of the worktree
+or make it readable, then run `oats retire <instance>` again. With nothing to
+preserve, the files are not read and the retire goes through.
 
 The home is not copied again because the work is. Some entries of a home are
 the kernel's own records and do not count as changes to it:
@@ -637,7 +644,7 @@ it applies:
 Retired dev-1 (agent dev)
 Work that was not committed has been preserved: changed instance-home bytes, untracked or ignored worktree bytes
   /w/agents/dev/instances/.oats-retirement/recovery/dev-1-AbC123 (46.2 MiB)
-  copied from the home: .oats/ (854 KiB), .agents/ (138 KiB), notes/ (2.0 KiB), STATE.md (512 B) — 1.0 MiB in total
+  copied from the home: .oats/ (854.2 KiB), .agents/ (138.0 KiB), notes/ (2.0 KiB), STATE.md (512 B) — 994.7 KiB in total
   copied outputs: scratch/ (1.2 MiB), note.txt (12 B) — 1.2 MiB in total
   not copied: .aw, .oats-aweb (oats.aweb)
   after the retire hooks: home copied again under after-hooks/

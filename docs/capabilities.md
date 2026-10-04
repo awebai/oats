@@ -153,7 +153,9 @@ A self-contained package has an `oats.json`:
   own state rather than the instance's work. It is a map with two optional
   keys, `home` and `work`, each an array of strings.
   - `home`: provider-owned state that is not the instance's work, left in
-    place until the home is removed, and not copied to recovery. Each entry
+    place until the home is removed, and not copied to recovery. The one
+    exception is the preservation of a failed spawn in directory mode, which
+    copies the whole home, declared entries included. Each entry
     names top-level entries of the instance home:
     - an exact hidden name, `^\.[A-Za-z0-9_][A-Za-z0-9._-]*$` (`.team-chat`);
     - or a prefix, `^\.[A-Za-z0-9_][A-Za-z0-9._-]*-\*$` (`.team-chat-id-*`),

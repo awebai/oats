@@ -2441,7 +2441,7 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   hashing anything:
 
   ```text
-  recovery: home files changed since spawn are copied to /w/agents/dev/instances/.oats-retirement/recovery before the home is removed; not copied: .aw, .aweb-identity, .aweb-identity-*, .oats-aweb (oats.aweb)
+  recovery: the home is copied to /w/agents/dev/instances/.oats-retirement/recovery before the home is removed, when it changed since spawn; not copied: .aw, .aweb-identity, .aweb-identity-*, .oats-aweb (oats.aweb)
   recovery: uncommitted worktree state is copied there too
   ```
 
@@ -2472,8 +2472,8 @@ A first retire prints the **raw receipt**, not an envelope:
  "worktreeRemoved":false,"branchDeleted":false,"removedDir":true,
  "workRecovery":{"path":"/w/agents/dev/instances/.oats-retirement/recovery/dev-1-AbC123",
                  "classes":["changed instance-home bytes","untracked or ignored worktree bytes"],"bytes":48444211,
-                 "home":{"paths":[{"path":".oats/","bytes":874696},{"path":"notes/","bytes":2048}],"bytes":1099000},
-                 "outputs":{"paths":[{"path":"scratch/","bytes":1258291}],"bytes":1258303},
+                 "home":{"paths":[{"path":".oats/","bytes":874696},{"path":".agents/","bytes":141312},{"path":"notes/","bytes":2048},{"path":"STATE.md","bytes":512}],"bytes":1018568},
+                 "outputs":{"paths":[{"path":"scratch/","bytes":1258291},{"path":"note.txt","bytes":12}],"bytes":1258303},
                  "notCopied":[{"scope":"home","path":".aw","owner":"oats.aweb"}],
                  "afterHooks":{"home":true,"work":false}},
  "childrenStopped":[{"instance":"dev-1-child","home":"/w/agents/dev/instances/dev-1-child","ok":true,"stopped":false,"alreadyIdle":true}],

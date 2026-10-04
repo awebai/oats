@@ -304,7 +304,7 @@
           "properties": {
             "home": {
               "type": "array",
-              "description": "Provider-owned state that is not the instance's work, left in place until the home is removed, and not copied to recovery. Each entry names top-level entries of the instance home: one hidden name (.aw) or a prefix (.aweb-identity-*, every top-level name that starts with the text before the *). Recorded at spawn: a running instance is unaffected until it is respawned.",
+              "description": "Provider-owned state that is not the instance's work, left in place until the home is removed, and not copied to recovery (the preservation of a failed spawn in directory mode is the exception: it copies the whole home, declared entries included). Each entry names top-level entries of the instance home: one hidden name (.aw) or a prefix (.aweb-identity-*, every top-level name that starts with the text before the *). Recorded at spawn: a running instance is unaffected until it is respawned.",
               "items": {
                 "type": "string",
                 "pattern": "^\\.[A-Za-z0-9_][A-Za-z0-9._-]*(?:-\\*)?$",
