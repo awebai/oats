@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { createLifecycleDialog, lifecycleCSS } from '../renderer/lifecycle-dialog.mjs';
-import { lifecycleReceipt } from '../renderer/lifecycle-contract.mjs';
+import { lifecycleReceipt, lifecycleReason } from '../renderer/lifecycle-contract.mjs';
 import { pullRequest } from '../renderer/forge-contract.mjs';
 import { pr as rawPr } from './helpers/forge-fixture.mjs';
 import { instance, target, options, stopPlan, retirePlan, stopReceipt, retireReceipt, deferred, tick } from './helpers/lifecycle-fixture.mjs';
@@ -107,6 +107,20 @@ test('branch skip remains partial even after home/worktree removal; ambiguous ch
   f.open('retire'); await tick(); assert.match(f.doc.body.textContent, /not unique/); assert.match(f.doc.body.textContent, /ops\/kid/);
   f.button('lifecycle-confirm').click(); await tick(); assert.match(f.doc.body.textContent, /Branch deletion skipped/); assert.match(f.doc.body.textContent, /Home removedtrue/);
   assert.doesNotMatch(f.doc.body.textContent, /Kernel operation completed/); f.close();
+});
+test('a local Remove refused by inspection shows the inspection sentence under the unknown outcome, never "CLI is unavailable", and no Details', async () => {
+  const f = fixture({ request: (_ws, body) => body.action === 'plan' ? planned('retire')
+    : { lifecycleApi: 1, status: 'unknown', target, planRef: reference, options: options('retire'), plan: null, receipt: null,
+      reason: lifecycleReason('E_OUTCOME_UNKNOWN'), cause: lifecycleReason('E_WORK_INSPECTION_FAILED') } });
+  try {
+    f.open('retire'); await tick(); f.button('lifecycle-confirm').click(); await tick();
+    assert.equal(f.doc.querySelector('.lifecycle-dialog [role=status]').textContent, lifecycleReason('E_OUTCOME_UNKNOWN').message);
+    const shown = f.doc.querySelector('.lifecycle-result').textContent;
+    assert.equal(shown, lifecycleReason('E_WORK_INSPECTION_FAILED').message);
+    assert.notEqual(shown, lifecycleReason('E_CLI_FAILED').message);
+    assert.equal(f.doc.querySelector('.lifecycle-details'), null, 'a local refusal renders no kernel text');
+    assert.equal(f.button('lifecycle-retry').hidden, false);
+  } finally { f.close(); }
 });
 test('a correlated PR link uses external-open only while this confirmation owns it', async () => {
   const opened = [], raw = { ...rawPr(), headRefName: 'feat/work', title: '<script>inert title</script>' };

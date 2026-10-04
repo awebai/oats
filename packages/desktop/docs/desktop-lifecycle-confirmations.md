@@ -103,6 +103,11 @@ status; it does not cancel the dispatched operation or signal its process.
   the operator must explicitly confirm again. It never auto-applies.
 - Preservation/cleanup failure may follow earlier effects. Render retained/partial
   or unknown state honestly; never automatically add discard/force flags.
+- An inspection refusal of Remove (`E_WORK_INSPECTION_FAILED`) is reported as
+  an **unknown outcome** with its own fixed sentence, never as a refusal before
+  any effect: the kernel can raise it after the children stop, the session
+  stop and the retire hooks. A local refusal renders no kernel text; a remote
+  one keeps the host's message in Details.
 - Unknown errors, malformed receipts and timeouts are closed local messages.
   Raw stderr, exception stacks and unprojected diagnostic fields never render.
 

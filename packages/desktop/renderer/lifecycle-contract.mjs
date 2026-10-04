@@ -31,6 +31,7 @@ const messages = {
   E_CHILDREN_RUNNING: 'Some children could not be stopped. Nothing was retired; other children may already be stopped.',
   E_SESSION_STOP_FAILED: 'The session did not stop within the bounded wait. Nothing was escalated.',
   E_WORK_PRESERVATION_FAILED: 'The worktree could not be preserved. The home is kept; earlier retirement steps may have run.',
+  E_WORK_INSPECTION_FAILED: "Retirement was refused: the instance's home or work could not be inspected. The home is kept; its session may already have been stopped, and earlier retirement steps may have run.",
   E_RETIRE_INCOMPLETE: 'Retirement cleanup is incomplete. Inspect the retained state before another action.',
   E_CLI_TIMEOUT: 'The CLI did not answer in time.', E_CLI_OUTPUT_LIMIT: 'The CLI response exceeded the safety limit.',
   E_CLI_PROTOCOL: 'The CLI returned an invalid lifecycle response.', E_CLI_FAILED: 'The lifecycle CLI is unavailable.',
