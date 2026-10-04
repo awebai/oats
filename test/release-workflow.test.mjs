@@ -231,8 +231,11 @@ test("desktop package scripts invoked by the workflow exist and run", (t) => {
     // assertion silently vacuous whenever it ran under the root suite.
     const env = { ...process.env };
     delete env.NODE_TEST_CONTEXT;
-    const r = spawnSync("npm", ["test"], { cwd: new URL("../packages/desktop", import.meta.url).pathname, encoding: "utf8", timeout: 300000, env });
-    assert.equal(r.status, 0, `packages/desktop npm test failed:\n${r.stderr?.slice(-2000)}`);
+    // The child's whole output is captured. Without maxBuffer Node kills the
+    // child at 1 MiB of it, with status null and an empty stderr, and the
+    // Desktop suite prints about that much: r.error then says why.
+    const r = spawnSync("npm", ["test"], { cwd: new URL("../packages/desktop", import.meta.url).pathname, encoding: "utf8", timeout: 300000, maxBuffer: 64 * 1024 * 1024, env });
+    assert.equal(r.status, 0, `packages/desktop npm test failed${r.error ? ` (${r.error.message})` : ""}:\n${r.stderr?.slice(-2000)}`);
     assert.match(r.stdout, /^# pass \d+$|ℹ pass \d+/m, `packages/desktop npm test reported no results — it did not actually run:\n${r.stdout.slice(-2000)}`);
   } else {
     t.diagnostic(`packages/desktop npm test NOT run — dependencies missing (${desktop.missing.join(", ")}); install with ${DESKTOP_TEST_DEPS_INSTALL}`);
