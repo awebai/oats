@@ -218,7 +218,7 @@ test("mode: `mode`, then `theme_type`, only when exactly dark or light; else Oma
 test("key order: first valid #rrggbb wins, left to right, for every colour Desktop uses", () => {
   const ansi = Array.from({ length: 16 }, (_, i) => `color${i} = "#${String(i).padStart(2, "0").repeat(3)}"`).join("\n");
   const only = resolve(ansi); // nothing but color0…color15
-  assert.deepEqual(only.colors.ansi, Array.from({ length: 16 }, (_, i) => `#${String(i).padStart(2, "0").repeat(3)}`), "colorN is the last name tried for every slot");
+  assert.deepEqual(only.colors.ansi, Array.from({ length: 16 }, (_, i) => `#${String(i).padStart(2, "0").repeat(3)}`), "a colorN-only palette supplies every ANSI slot");
   assert.equal(only.colors.background, "#000000"); assert.equal(only.colors.foreground, "#070707"); assert.equal(only.colors.brightForeground, "#151515");
   assert.equal(only.colors.accent, "#040404", "no accent: blue");
   const named = resolve(`${ansi}\nbg = "#a00000"\nfg = "#a00001"\npurple = "#a00002"\nbright_purple = "#a00003"\ndark_fg = "#a00004"\nbright_fg = "#a00005"\nselection_background = "#a00006"\ndark_bg = "#a00007"`);

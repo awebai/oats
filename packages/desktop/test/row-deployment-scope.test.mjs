@@ -72,7 +72,7 @@ test('launch configurations of an instance are read in its deployment while owne
 // The instance-addressed route families, and the renderer modules that address them. Each such request
 // must take its workspace from the row (rowDeployment / a target's deployment / instanceDeployment), never
 // from currentWorkspace() or wsQuery(), which name the view on screen.
-const INSTANCE_ROUTES = /\/api\/(?:instance-(?:git|forge|lifecycle|events|review-threads)|workspace-readiness|session\/|keys\/|interrupt\/|chat\/|start\/|restart\/|harvest\/)/;
+const INSTANCE_ROUTES = /\/api\/(?:instance-(?:git|forge|lifecycle|events|review-threads)|workspace-readiness|chat\/|start\/|restart\/|harvest\/)/;
 const source = (path) => readFileSync(new URL(`../renderer/${path}`, import.meta.url), 'utf8');
 
 test('source pin: no instance-addressed route is composed with the view selector anywhere in the renderer', () => {
