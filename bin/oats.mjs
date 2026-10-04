@@ -3713,7 +3713,7 @@ async function serverRouteCmd() {
     console.log(`  remote home: ${r.home}`);
     console.log(`  route snapshot: ${r.snapshot ? shortPath(r.snapshot) : "none (see the warning)"}`);
     for (const w of r.warnings || []) console.log(`  WARNING: ${w}`);
-    console.log(`  attach: ssh -t ${r.target.sshHost} tmux attach -t ${r.tmux?.session || "oats"}`);
+    console.log(`  attach: oats session attach --server ${shellQuote(id)} --instance ${shellQuote(r.instance)}`);
   } else if (cmd === "retire") {
     // Everything the local retireCmd tells the operator, for a remote home
     // they cannot see: forced-incomplete state now theirs to remove by hand

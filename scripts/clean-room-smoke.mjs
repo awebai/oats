@@ -67,7 +67,9 @@ try {
     // Answer only those read-only probes locally (inactive); every other
     // invocation still fails the no-runtime/no-host-mutation marker. Embed the
     // paths: capability cleanEnv intentionally strips arbitrary OATS_* vars.
-    const status = name === "tmux" ? '[ "$1" = has-session ]'
+    // tmux: the default server's has-session (a home that records no socket), and the
+    // window list of the OATS tmux server that an explicit --name is checked against.
+    const status = name === "tmux" ? '{ [ "$1" = has-session ] || [ "$1 $2 $3 $4" = "-u -L oats list-windows" ]; }'
       : name === "launchctl" ? '[ "$1" = print ]'
       : name === "systemctl" ? '[ "$1" = --user ] && [ "$2" = is-active ]' : "false";
     write(join(fakeBin, name), `#!/bin/sh\nif ${status}; then\n  printf "%s\\n" "$0 $*" >> ${quote(statusProbes)}\n  exit 1\nfi\nprintf "%s\\n" "$0 $*" >> ${quote(unexpectedExec)}\nexit 97\n`);

@@ -993,7 +993,11 @@ test("parent-relation rollback after LAUNCH kills the window, compensates hooks,
   const { base, root } = fx; const repo = fx.member;
   // STATEFUL fake tmux: tracks window names in a file so list-windows reflects
   // new-window/kill-window; TMUX_FAKE_STUBBORN names a window that kill-window
-  // silently fails to remove (for truth-telling assertions).
+  // silently fails to remove (for truth-telling assertions). The kernel addresses a
+  // server first (-u, then -L oats or -S <socket>): the command follows. No session
+  // exists (list-sessions prints nothing), so each launch creates it and is answered
+  // its socket and first window. TMUX_FAKE_LIST_FAIL breaks list-windows only AFTER a
+  // kill-window: the compensation's probe, not the launch's own collision check.
   const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
   const tmuxLog = join(base, "tmux-log");
   const tmuxWins = join(base, "tmux-windows");
@@ -1001,17 +1005,20 @@ test("parent-relation rollback after LAUNCH kills the window, compensates hooks,
   write(join(bin, "tmux"), [
     "#!/bin/sh",
     `echo "$@" >> ${tmuxLog}`,
+    'while :; do case "$1" in -u) shift ;; -L|-S) shift 2 ;; *) break ;; esac; done',
     'cmd="$1"',
     'case "$cmd" in',
-    "  display-message) echo /tmp/oats-test-fake.sock ;;",
+    `  new-session) printf '' > ${tmuxWins}.killed; printf '/tmp/oats-test-fake.sock\\t@0\\n' ;;`,
     "  new-window)",
-    `    while [ $# -gt 0 ]; do if [ "$1" = "-n" ]; then echo "$2" >> ${tmuxWins}; fi; shift; done ;;`,
+    `    while [ $# -gt 0 ]; do if [ "$1" = "-n" ]; then echo "$2" >> ${tmuxWins}; fi; shift; done`,
+    "    echo @1 ;;",
     "  kill-window)",
+    `    echo 1 > ${tmuxWins}.killed`,
     '    while [ $# -gt 0 ]; do if [ "$1" = "-t" ]; then t="$2"; fi; shift; done',
     "    name=$(printf '%s' \"$t\" | sed 's/.*:=//')",
     `    if [ "$name" != "$TMUX_FAKE_STUBBORN" ]; then grep -v -x "$name" ${tmuxWins} > ${tmuxWins}.n || true; mv ${tmuxWins}.n ${tmuxWins}; fi ;;`,
     "  list-windows)",
-    '    if [ -n "$TMUX_FAKE_LIST_FAIL" ]; then echo "list-windows broken" >&2; exit 1; fi',
+    `    if [ -n "$TMUX_FAKE_LIST_FAIL" ] && [ -s ${tmuxWins}.killed ]; then echo "list-windows broken" >&2; exit 1; fi`,
     `    cat ${tmuxWins} ;;`,
     "esac",
     "exit 0",

@@ -1631,8 +1631,8 @@ with `--expect-decision` records the key and decision in `instance.json`.
 ```json
 {"instance":"rm-api","agent":"rm","home":"/w/agents/rm/instances/rm-api","work":"worktree","branch":"agents/rm-api",
  "base":{"ref":"github.com/nw/agents","oid":"66566512…"},"launched":true,"warnings":[],
- "tmux":{"session":"oats-agents","window":"rm-api"},"backend":"tmux","repo":"/w/agents-repo","harness":"pi","model":null,"parent":null,"sibling":null,"relation":null,
- "spawnOrigin":"operator","attach":"tmux attach -t oats-agents","decision":{"instance":"rm-api","revision":"c557d8ec9a272ba1c1739dc3"},"replayed":false,
+ "tmux":{"session":"oats-agents","window":"rm-api","socket":"/tmp/tmux-1000/oats"},"backend":"tmux","repo":"/w/agents-repo","harness":"pi","model":null,"parent":null,"sibling":null,"relation":null,
+ "spawnOrigin":"operator","attach":"tmux -S /tmp/tmux-1000/oats attach -t oats-agents","decision":{"instance":"rm-api","revision":"c557d8ec9a272ba1c1739dc3"},"replayed":false,
  "wake":{"requested":false,"saved":null,"error":null},"launchConfig":null,
  "launch":{"version":2,"harness":"pi","launchConfig":null,"launchConfigSource":null,"executable":"/usr/local/bin/pi","executableDeclared":null,
            "executableResolvedFrom":"PATH","args":[],"env":{},"model":null,"hooks":{"launch":{},"env":{},"contributions":[]},"prompt":{"kind":"task-file","file":"TASK.md"}}}
@@ -1642,10 +1642,21 @@ with `--expect-decision` records the key and decision in `instance.json`.
 
 - Always present: `instance, agent, home, work, branch, base ({ref, oid}
   the new branch started at; `null` without one), launched, warnings
-  (array), tmux ({session, window} | null), backend ("tmux"), repo, harness,
+  (array), tmux ({session, window, socket?} | null), backend ("tmux"), repo, harness,
   model, parent,
   sibling, relation, spawnOrigin (operator | instance), attach, launchConfig,
   launch` (the redacted recipe).
+- `tmux.socket` is the absolute socket of the tmux server the window was
+  created on; a launched spawn has it, a `--no-launch` one does not. It is
+  the OATS tmux server's
+  ([execution-targets.md](execution-targets.md#the-oats-tmux-server)), where
+  earlier kernels recorded the default server's; the shape is unchanged.
+- `attach` is one string, a command for a person to paste, the same in text
+  and JSON. It is `tmux -S <tmux.socket> attach -t <session>` for a
+  launched spawn (earlier kernels: `tmux attach -t <session>`) and `oats session attach
+  --home <home>` for `--no-launch`. A value is single-quoted only when it
+  holds a character outside `A-Za-z0-9_./:-`. It is not a field to parse:
+  read `tmux` for the target.
 - When they apply: `yolo`, `decision` and
   `replayed` (bound apply), `wake` (keyed apply), `wakeSchedule` and
   `wakeScheduleError` (a requested wake).
@@ -1658,7 +1669,8 @@ Feature `spawn-name`. `--name <slug>` is the exact name, with no prefix.
 - A name that is not a slug (lowercase letters and digits, single dashes),
   equals a soul name, or exceeds 64 characters (derived names included, with
   their suffix) is `E_INSTANCE_NAME_INVALID`.
-- A name any soul's `instances/` holds, or a live tmux window carries, is
+- A name any soul's `instances/` holds, or a live window of the target
+  session on the OATS tmux server carries, is
   `E_INSTANCE_NAME_TAKEN {instance, home, session?}`; a typed name never gets
   a silent `-2`.
 - The name is part of the decision.
@@ -2586,6 +2598,12 @@ selection flags. See [the start workflow](desktop-instance-start.md).
   instance's events as a `launch-warning` row, `data: {message}`. They are
   advisory: the start went ahead. Earlier kernels omit the field; read a
   missing `warnings` as `[]`.
+- The kernel adds one warning of its own, in the same array and as
+  the same event: when the start had to create the window again and created
+  it on a tmux server other than the one the home recorded, the line names
+  the instance, the old socket and the new one (each as a JSON string).
+  `target.socket` is then the new socket
+  ([execution-targets.md](execution-targets.md#existing-instances)).
 - A start or restart appends a `launched` event as soon as its session
   exists (0.40, `phase: "start"` or `"restart"`, `startId`), the session
   boundary that voids earlier waiting claims ([Waiting on you](#waiting-on-you)).

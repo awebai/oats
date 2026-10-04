@@ -49,17 +49,26 @@ function spawn(f, purpose) {
 function installFakeTmux(f) {
   const state = join(f.base, "tmux-state");
   mkdirSync(state);
+  // An endpoint per server: the ambient one ($TMUX, else "default"), a socket named with -S, and
+  // the OATS server the kernel selects with -L oats, which lives at $TMUX_FAKE_OATS.
   write(join(f.base, "bin", "tmux"), `#!/bin/sh
 endpoint=\${TMUX%%,*}
 [ -n "$endpoint" ] || endpoint=default
-if [ "$1" = "-S" ]; then endpoint=$2; shift 2; fi
+while :; do
+  case "$1" in
+    -u) shift ;;
+    -S) endpoint=$2; shift 2 ;;
+    -L) endpoint=\${TMUX_FAKE_OATS:?}; shift 2 ;;
+    *) break ;;
+  esac
+done
 command=$1; shift
 state=\${TMUX_FAKE_STATE:?}/\$(printf '%s' "$endpoint" | tr / _)
 case "$command" in
   has-session) exit 0 ;;
-  display-message) printf '%s\\n' "$endpoint" ;;
+  list-sessions) exit 0 ;;
   list-windows) [ -f "$state/window" ] && cat "$state/window"; exit 0 ;;
-  new-session) mkdir -p "$state"; exit 0 ;;
+  new-session) mkdir -p "$state"; printf '%s\\t@0\\n' "$endpoint"; exit 0 ;;
   set-option) exit 0 ;;
   new-window)
     while [ $# -gt 0 ]; do
@@ -71,12 +80,14 @@ case "$command" in
     done
     mkdir -p "$state"; printf '%s\\n' "$window" > "$state/window"
     printf 'early-harness-bytes\\n' > "$cwd/early-harness.txt"
+    printf '@1\\n'
     exit 0 ;;
   kill-window) rm -f "$state/window"; exit 0 ;;
   *) exit 0 ;;
 esac
 `, 0o755);
   f.env.TMUX_FAKE_STATE = state;
+  f.env.TMUX_FAKE_OATS = join(f.base, "oats-socket");
   return state;
 }
 
@@ -87,7 +98,7 @@ test.afterEach(() => {
 test("launched harness writes cannot be stamped into the clean retirement baseline", () => {
   const f = fixture();
   installFakeTmux(f);
-  f.env.TMUX = `${join(f.base, "socket-a")},1,0`;
+  f.env.TMUX = `${join(f.base, "ambient-socket")},1,0`;
   const launched = cli(f, ["spawn", "dev", "--purpose", "early-write", "--json"]);
   assert.equal(launched.status, 0, `${launched.stderr}\n${launched.stdout}`);
   const spawned = JSON.parse(launched.stdout).result;
@@ -103,8 +114,10 @@ test("launched harness writes cannot be stamped into the clean retirement baseli
 test("retire quiesces the exact tmux endpoint recorded at spawn, not ambient TMUX", () => {
   const f = fixture();
   const state = installFakeTmux(f);
+  // The spawn opens its window on the OATS server (here socket A), whatever the ambient TMUX names.
   const socketA = join(f.base, "socket-a");
-  f.env.TMUX = `${socketA},1,0`;
+  f.env.TMUX_FAKE_OATS = socketA;
+  f.env.TMUX = `${join(f.base, "ambient-socket")},1,0`;
   const launched = cli(f, ["spawn", "dev", "--purpose", "socket", "--json"]);
   assert.equal(launched.status, 0, `${launched.stderr}\n${launched.stdout}`);
   const activeA = join(state, socketA.replaceAll("/", "_"), "window");
@@ -120,7 +133,8 @@ test("retire refuses a mutable instance.json endpoint that disagrees with indepe
   const f = fixture();
   const state = installFakeTmux(f);
   const socketA = join(f.base, "socket-authority-a");
-  f.env.TMUX = `${socketA},1,0`;
+  f.env.TMUX_FAKE_OATS = socketA;
+  f.env.TMUX = `${join(f.base, "ambient-socket")},1,0`;
   const launched = cli(f, ["spawn", "dev", "--purpose", "endpoint-authority", "--json"]);
   assert.equal(launched.status, 0, `${launched.stderr}\n${launched.stdout}`);
   const spawned = JSON.parse(launched.stdout).result;

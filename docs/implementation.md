@@ -327,3 +327,23 @@ which fails with `ENOTEMPTY` (awebai/oats#451). So:
   it runs there.
 
 Never paper over such a race with a retry around the cleanup.
+
+A test never reaches the operator's tmux. The kernel creates sessions on the
+server named `oats` (`tmux -L oats`), which tmux resolves under `TMUX_TMPDIR`,
+and acts on every existing session through its recorded socket
+([execution-targets.md](execution-targets.md#the-oats-tmux-server)). So:
+
+- A test that runs real tmux installs `isolateSessionEnvironment(base)`
+  (`test/helpers/host-fixture.mjs`). It owns a private, short `TMUX_TMPDIR`
+  (socket paths are limited to about 104 bytes) and puts a `tmux` wrapper
+  first on `PATH` that admits only `-L oats` and `-S` of a socket inside the
+  fixture, with no user configuration unless the test asks for it;
+  `oatsSocket()` is the socket `-L oats` resolves to there. Its restore
+  function kills that server, by socket.
+- The shared fixture (`test/helpers/v2-deployment.mjs`) gives every command
+  it runs a private `TMUX_TMPDIR` too, so a test with a fake `tmux` on `PATH`
+  cannot reach a real server either. A fake answers what the kernel asks:
+  `list-sessions`, `new-session` (it prints `<socket>\t<window id>`),
+  `list-windows`, `new-window` (a window id) and `set-option`.
+- A server a test starts is killed by its socket, never by name and never
+  with a bare `tmux kill-server`.
