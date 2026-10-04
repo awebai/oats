@@ -298,7 +298,17 @@ test("terminalOptions: native geometry — no lineHeight, no customGlyphs, OAS o
   const o = terminalOptions({ fontSize: 13, fontFamily: "mono", theme: {}, lineHeight: 1.7 });
   assert.equal("lineHeight" in o, false, "xterm must run at its default line height");
   assert.equal("customGlyphs" in o, false, "xterm's default glyph handling; customGlyphs only justified the tall cells");
-  assert.deepEqual(Object.keys(o).sort(), ["fontFamily", "fontSize", "fontWeight", "macOptionClickForcesSelection", "scrollback", "theme"]);
+  assert.deepEqual(Object.keys(o).sort(), ["fontFamily", "fontSize", "fontWeight", "macOptionClickForcesSelection", "minimumContrastRatio", "scrollback", "theme"]);
+});
+
+// The readability floor (#602): xterm moves any text colour that is under 4.5:1
+// against its cell's background. One number for every theme and every terminal,
+// not a parameter: a caller's value must not get through.
+test("terminalOptions: a minimum contrast ratio of 4.5, whatever the caller passes", () => {
+  const o = terminalOptions({ fontSize: 13, fontFamily: "mono", fontWeight: 475, theme: {} });
+  assert.equal(o.minimumContrastRatio, 4.5, "WCAG AA for text, in every theme");
+  const passed = terminalOptions({ fontSize: 13, fontFamily: "mono", fontWeight: 475, theme: {}, minimumContrastRatio: 1 });
+  assert.equal(passed.minimumContrastRatio, 4.5, "1 would switch xterm's floor off; it is not the caller's to set");
 });
 
 test("shell.mjs constructs its Terminal through terminalOptions", () => {
