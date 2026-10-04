@@ -248,7 +248,14 @@ bracketed paste: `load-buffer -b oatsrt-<random>` then
 `paste-buffer -p -r -d`. There's never a send-keys and never an Enter; the
 human presses Enter. The block has no CR/LF, so even an app that has not
 asked for bracketed paste receives no Enter. The buffer is deleted on every
-path.
+path. All three tmux calls (`load-buffer`, `paste-buffer`, and the
+`delete-buffer` after a failed paste) go to the tmux server the instance's row
+records (`tmux.socket`), with the prefix the terminals use (`tmuxSocketArgs`
+in `local-tmux-io.mjs`): `-u -S <socket>`, or `-u` alone for a row that
+records none, which is the default server. The socket comes from the row and
+from nowhere in the request. A recorded socket that fails that helper's
+validation is `E_TERMINAL_UNSUPPORTED` before any tmux call; the paste never
+tries the default server instead.
 
 **Refusals.** `E_REMOTE_TERMINAL`, `E_NOT_RUNNING` and `E_TERMINAL_UNSUPPORTED`
 are checked before any gh read. The others are `E_NO_THREADS`,
