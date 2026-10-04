@@ -1715,6 +1715,13 @@ async function openViewTab(name, title, extra = {}, key = `view:${name}`,
   const owns = () => parentOwns() && latest();
   if (!owns()) return;
   key = JSON.stringify([workspace, key]);
+  // Built as text: an exception's message is not Desktop's own string.
+  const placeholder = (message) => {
+    const box = document.createElement("div"), heading = document.createElement("h2"), body = document.createElement("div");
+    box.className = "placeholder"; heading.textContent = name; body.textContent = message;
+    box.append(heading, body);
+    return box;
+  };
   let mod;
   try {
     mod = await prepareOwnedOpen({
@@ -1726,7 +1733,7 @@ async function openViewTab(name, title, extra = {}, key = `view:${name}`,
   } catch (e) {
     if (!owns()) return;
     const made = addTab({ title: `${title} (missing)`, key, kind, workspace, intent: owns });
-    if (made) made.paneEl.innerHTML = `<div class="placeholder"><h2>${name}</h2><div>view module failed to load: ${e.message}</div></div>`;
+    if (made) made.paneEl.replaceChildren(placeholder(`view module failed to load: ${e.message}`));
     return;
   }
   const life = createViewLifecycle(mod, (e) => console.error(e));
@@ -1763,7 +1770,7 @@ async function openViewTab(name, title, extra = {}, key = `view:${name}`,
     if (!owns()) return;
   }
   catch (e) {
-    if (owns()) el.innerHTML = `<div class="placeholder"><h2>${name}</h2><div>mount failed: ${e.message}</div></div>`;
+    if (owns()) el.replaceChildren(placeholder(`mount failed: ${e.message}`));
   }
 }
 

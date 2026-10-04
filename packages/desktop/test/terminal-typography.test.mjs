@@ -243,3 +243,21 @@ for (const [palette, weight] of Object.entries(WEIGHTS)) {
     }
   });
 }
+
+// The readability floor (#602): xterm's minimumContrastRatio comes from
+// terminalOptions(), so both sites get it, and neither theme listener replaces it.
+for (const palette of Object.keys(WEIGHTS)) {
+  test(`${palette}: both shell terminals are created with a minimum contrast ratio of 4.5 and keep it through every theme change`, t => {
+    const u = fixture(t, { palette });
+    const { terms, dispose } = sites(u.theme);
+    t.after(dispose);
+    for (const [site, term] of terms) assert.equal(term.created.minimumContrastRatio, 4.5, `${site}: created with the floor`);
+    for (const next of ["light", "solarized", "dark", palette]) {
+      u.theme.applyTheme(next);
+      for (const [site, term] of terms) {
+        assert.equal(term.options.minimumContrastRatio, 4.5, `${site}: the floor is still set after a theme change to ${next}`);
+        assert.equal(term.options.fontWeight, WEIGHTS[next], `${site}: and the theme listener ran`);
+      }
+    }
+  });
+}

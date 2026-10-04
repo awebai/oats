@@ -112,12 +112,23 @@ export function createGlyphRenderer({ term, Addon, onChange = () => {},
   return { ensure, dispose: drop, get active() { return Boolean(addon); } };
 }
 
+/** Every terminal's readability floor (xterm's `minimumContrastRatio`): text
+ * under 4.5:1 against its cell's background is drawn lighter or darker until
+ * it reaches it. 4.5 is WCAG AA for text, Desktop's bar in every theme, and
+ * the highest WCAG level that leaves the hand-calibrated palettes unadjusted
+ * on their own background (test/theme-contrast.test.mjs holds them to this
+ * constant), so xterm acts only on what nobody calibrated: ANSI on ANSI
+ * backgrounds, 256-colour and truecolour text. More in renderer/README.md. */
+export const TERMINAL_MINIMUM_CONTRAST = 4.5;
+
 // Native terminal geometry: no lineHeight (xterm's default 1.0), so cells and
 // the block cursor keep their natural height and tmux owns row spacing.
 export function terminalOptions({ fontSize, fontFamily, fontWeight, theme }) {
   // tmux mouse capture must not defeat Option-drag local copy selection on macOS.
   // fontWeight is the theme's (terminalFontWeight); fontWeightBold stays xterm's bold.
-  return { fontSize, fontFamily, fontWeight, theme, scrollback: 5000, macOptionClickForcesSelection: true };
+  // The contrast floor is not a parameter: one number for every terminal and theme.
+  return { fontSize, fontFamily, fontWeight, theme, scrollback: 5000, macOptionClickForcesSelection: true,
+    minimumContrastRatio: TERMINAL_MINIMUM_CONTRAST };
 }
 export function terminalKeyDecision(ev, interceptKey) {
   const { suppress, byte } = shiftEnterAction(ev);
