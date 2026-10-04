@@ -131,7 +131,11 @@ that), Escape, the close button or the backdrop closes with nothing changed,
 and Tab / Shift+Tab stay inside it; a background shortcut that moves focus
 (Ctrl+F to the roster filter) cannot take it out. Focus returns to what had
 it, also to a control in a dialog that stays open under the picker (Remove,
-Connections).
+Connections). The picker stacks above the house modals (z-index 200, below the
+instance start modal), so opened from the spawn form it is never hidden behind
+the spawn dialog; Escape stops at it, and the dialog under it stays open. A
+modal opened while it is open (the palette, Quick Open, the shortcuts editor)
+replaces it, as one picker replaces another.
 
 F1 was considered as a second palette chord and left out: in a terminal F1
 belongs to programs such as htop and mc.
