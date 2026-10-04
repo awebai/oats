@@ -379,7 +379,7 @@ test("one deployment, one home on another server and one on the OATS server: sta
   assert.deepEqual(windowsOf(OTHER), kept);
 });
 
-test("option commands tmux refuses: an unknown cursor-colour is no error; a refused window-size is ignored at session creation and at launch; a refused window-style is a launch failure, compensated on the recorded socket", async () => {
+test("option commands tmux refuses: an unknown cursor-colour is no error; a refused sizing command is ignored at session creation and at launch, each on its own, also when the recorded server is gone; a refused window-style is a launch failure, compensated on the recorded socket", async () => {
   // tmux before 3.3 has no cursor-colour: with -q it answers 0 and sets nothing, without -q it fails.
   const noCursor = tmuxInFront("no-cursor-bin", `case " $* " in *" cursor-colour "*) case " $* " in *" -q "*) exit 0 ;; esac; echo 'invalid option: cursor-colour' >&2; exit 1 ;; esac`);
   const old = await makeHome("old-tmux");
@@ -400,6 +400,21 @@ test("option commands tmux refuses: an unknown cursor-colour is no error; a refu
   assert.equal((await withPath(`${noSize}:${process.env.PATH}`, () => startInstanceSession(unsized.home))).target.socket, OATS);
   assert.deepEqual(ownOptions(OATS, windowId(OATS, "unsized-start", "unsized-two")), { ...OATS_WINDOW, "window-size": "" });
   await ready(unsized.home);
+
+  // The second sizing command is attempted on its own too. And the case that changed: a start whose
+  // recorded server is gone used to fail when a sizing command was refused (it recreated that server
+  // and set both, uncaught); it now creates the session and the window on the OATS server all the same.
+  const noSizing = tmuxInFront("no-sizing-bin", `case " $* " in *" window-size "*|*" aggressive-resize "*) echo 'refused' >&2; exit 1 ;; esac`);
+  const lost = join(base, "lost-unsized.sock");
+  const stranded = await makeHome("unsized-gone", { on: lost, session: "unsized-three" });
+  const moved = await withPath(`${noSizing}:${process.env.PATH}`, () => startInstanceSession(stranded.home));
+  assert.deepEqual(moved.target, { backend: "tmux", session: "unsized-three", window: "unsized-gone", socket: OATS });
+  assert.equal(moved.warnings.length, 1, JSON.stringify(moved.warnings));
+  assert.deepEqual(recorded(stranded.home), both("unsized-three", "unsized-gone", OATS));
+  assert.deepEqual(ownOptions(OATS, windowId(OATS, "hq", "unsized-three")), UNSET, "the session was created with neither sizing option");
+  assert.deepEqual(ownOptions(OATS, windowId(OATS, "unsized-gone", "unsized-three")), { ...OATS_WINDOW, "window-size": "", "aggressive-resize": "" }, "the colours are set; both sizing options are skipped");
+  assert.equal(existsSync(lost), false);
+  await ready(stranded.home);
 
   // A refused window-style is a real failure (a server, permission or transport problem).
   const noStyle = tmuxInFront("no-style-bin", `case " $* " in *" window-style "*) echo 'server exited unexpectedly' >&2; exit 1 ;; esac`);

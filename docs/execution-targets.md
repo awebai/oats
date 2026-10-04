@@ -103,9 +103,9 @@ other than the one the window is on.
 | the pane of each window it launches a harness in, and a pane it respawns in place | no `COLORFGBG` in the pane's environment | that pane's command |
 
 So an agent pane takes the colours of the terminal that views it, whatever
-the server's own defaults say, and viewers of different sizes each get the
-window at their own size. A window that is restarted in place keeps the
-options it has. A session OATS did not create, and the server's global
+the server's own defaults say, and on tmux 3.1 or later the window follows
+the size of the viewer that used it last. A window that is restarted in place
+keeps the options it has. A session OATS did not create, and the server's global
 options and environment, are left exactly as they were.
 
 - `pane-colours` (the palette) is not reset: a local reset did not neutralise
@@ -116,9 +116,15 @@ options and environment, are left exactly as they were.
   set-option -gu pane-colours`.
 - The oldest supported tmux stays 3.0. On tmux 3.0 and 3.0a `window-size
   latest` is not available and is skipped, as before this change;
-  `cursor-colour` is skipped below 3.3; no error in either case. A refused
+  `cursor-colour` is skipped below 3.3; no error in either case. On 3.0 and
+  3.0a the window therefore keeps the sizing that server gives it, not the
+  latest viewer's.
+- The two sizing commands are each attempted on their own, and a refused one
+  is ignored: the launch goes on. Nothing else is tolerated: a refused
   `window-style` or `window-active-style` is a launch failure
-  (`E_SPAWN_LAUNCH_FAILED`, `E_SESSION_START_FAILED`).
+  (`E_SPAWN_LAUNCH_FAILED`, `E_SESSION_START_FAILED`). Before 0.41 a start
+  whose recorded tmux server was gone failed when a sizing command was
+  refused; it no longer does.
 
 <a id="existing-instances"></a>
 #### Existing instances
