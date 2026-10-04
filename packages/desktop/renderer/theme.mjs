@@ -1,8 +1,9 @@
 /* oats desktop — theme runtime.
    theme.css defines the semantic tokens (incl. the --ansi-* terminal set);
-   this module owns switching (White by default regardless of OS, choices
-   persisted under the SAME legacy key as the web panel) and derives the
-   xterm.js theme object from the live tokens.
+   this module owns switching (a saved choice, else the default the shell
+   passes: "This computer" on Linux, White elsewhere; choices persisted under
+   the SAME legacy key as the web panel) and derives the xterm.js theme object
+   from the live tokens.
 
    "This computer" (`host`) is a choice, not a palette: what it shows is a
    built-in theme as base (Dark or White, on data-theme, so theme.css applies
@@ -74,13 +75,15 @@ export function applyTheme(name) {
   return next;
 }
 
-export function initTheme(host = null) {
+export function initTheme(host = null, fallback = "light") {
   hostSource = host;
   let saved = null;
   try { saved = localStorage.getItem(KEY); } catch { /* storage-less */ }
-  // Intentionally no OS listener: fresh/invalid preferences always mean White,
-  // and "This computer" is never chosen for the user.
-  return applyTheme(saved);
+  // A fresh/invalid preference means `fallback`, the platform's default (the
+  // shell passes it: "This computer" on Linux, White elsewhere; anything that
+  // is not a theme is White). Intentionally no OS listener, and nothing is
+  // stored: the default stays a default until the user chooses.
+  return applyTheme(validTheme(saved) ? saved : fallback);
 }
 
 export function setTheme(name) {

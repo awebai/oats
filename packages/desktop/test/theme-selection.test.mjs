@@ -216,3 +216,112 @@ test("a host source that throws leaves the base theme with no override, and the 
   assert.equal(rootStyle(u.doc).cssText, "");
   assert.deepEqual(heard, ["light", "host"]);
 });
+
+// The default (#602). A Desktop with no saved choice starts in the fallback the shell passes
+// to initTheme: `host` on Linux, `light` elsewhere (also the one-argument call). A default is
+// not a choice: starting stores nothing, so it stays a default until the user chooses.
+const darkHost = () => ({ mode: () => "dark", tokens: () => ({ "--bg": "#101010" }), shown() {} });
+
+for (const [what, storage] of [
+  ["nothing saved", {}], ["an empty saved value", { saved: "" }], ["a saved value that is not a theme", { saved: "blue" }],
+  ["a saved label, not an id", { saved: "This computer" }], ["a saved id in another case", { saved: "HOST" }],
+  ["storage that throws on read", { readError: true }], ["storage that throws on read and on write", { readError: true, writeError: true }],
+  ["no storage", { noStorage: true }],
+]) {
+  test(`with the \`host\` fallback, ${what} starts in This computer, and nothing is written`, t => {
+    const u = fixture(t, storage);
+    assert.equal(u.theme.initTheme(darkHost(), "host"), "host");
+    assert.equal(u.theme.currentTheme(), "host", "the choice");
+    assert.equal(u.theme.appliedTheme(), "dark", "shown on the host's base");
+    assert.equal(rootStyle(u.doc).getPropertyValue("--bg"), "#101010", "with the host's overrides");
+    assert.deepEqual(u.writes, [], "a default is not a choice: starting stores nothing");
+    assert.equal(u.mediaQueries(), 0, "the renderer does not consult the OS itself");
+    // Choosing works from there, in memory where storage does not.
+    assert.equal(u.theme.toggleTheme(), "light", "the cycle goes on from This computer");
+    assert.equal(rootStyle(u.doc).cssText, "");
+    assert.equal(u.theme.setTheme("dark"), "dark");
+    assert.equal(u.theme.currentTheme(), "dark");
+    if (!storage.noStorage) assert.deepEqual(u.writes, [[KEY, "light"], [KEY, "dark"]], "only a choice is stored");
+  });
+}
+
+test("the `host` default with no host source shows White, reports the choice as `host` and does not throw", t => {
+  const u = fixture(t);
+  u.doc.documentElement.dataset.theme = "dark";
+  assert.equal(u.theme.initTheme(null, "host"), "host");
+  assert.equal(u.theme.currentTheme(), "host");
+  assert.equal(u.theme.appliedTheme(), "light");
+  assert.equal(u.doc.documentElement.dataset.theme, "light");
+  assert.equal(rootStyle(u.doc).cssText, "");
+  assert.deepEqual(u.writes, []);
+});
+
+test("the `host` default shows what a saved `host` shows: the host source's base and overrides, in one pass", t => {
+  const show = (storage, fallback) => {
+    const calls = [], heard = [];
+    const host = { state: { mode: "dark", tokens: { "--bg": "#101010", "--term-bg": "#202020" } },
+      mode() { return this.state.mode; },
+      tokens(base) { calls.push(["tokens", base("md-code-bg")]); return this.state.tokens; },
+      shown(chosen) { calls.push(["shown", chosen]); } };
+    const u = fixture(t, storage);
+    const root = u.doc.documentElement;
+    const seen = () => ({ choice: u.theme.currentTheme(), applied: u.theme.appliedTheme(), base: root.dataset.theme,
+      bg: rootStyle(u.doc).getPropertyValue("--bg"), termBg: rootStyle(u.doc).getPropertyValue("--term-bg"), terminal: u.theme.xtermTheme().background });
+    u.theme.onThemeChange(name => heard.push([name, root.dataset.theme, rootStyle(u.doc).getPropertyValue("--bg")]));
+    const returned = u.theme.initTheme(host, fallback);
+    const first = seen();
+    // The host's theme changes: followed, as for a saved choice.
+    host.state = { mode: "light", tokens: { "--bg": "#fafafa" } };
+    u.theme.refreshHostTheme();
+    return { returned, first, afterChange: seen(), calls, heard, writes: u.writes };
+  };
+  const byDefault = show({}, "host");
+  assert.deepEqual(byDefault, show({ saved: "host" }), "the same as when `host` is the saved choice");
+  assert.equal(byDefault.returned, "host");
+  assert.deepEqual(byDefault.first, { choice: "host", applied: "dark", base: "dark", bg: "#101010", termBg: "#202020", terminal: "#202020" });
+  assert.deepEqual(byDefault.afterChange, { choice: "host", applied: "light", base: "light", bg: "#fafafa", termBg: "", terminal: "#ffffff" });
+  assert.deepEqual(byDefault.calls, [["tokens", "#ffffff10"], ["shown", true], ["tokens", "#ffffff60"], ["shown", true]]);
+  assert.deepEqual(byDefault.heard, [["host", "dark", "#101010"], ["host", "light", "#fafafa"]], "one notification per pass");
+  assert.deepEqual(byDefault.writes, []);
+});
+
+for (const saved of ["light", "solarized", "dark", "host"]) {
+  test(`a saved ${saved} is applied whatever the fallback, and not rewritten`, t => {
+    for (const fallback of ["host", "light", "dark", "nonsense", undefined]) {
+      const u = fixture(t, { saved });
+      assert.equal(u.theme.initTheme(darkHost(), fallback), saved, `fallback ${JSON.stringify(fallback)}`);
+      assert.equal(u.theme.currentTheme(), saved);
+      assert.deepEqual(u.reads, [KEY]);
+      assert.deepEqual(u.writes, [], "restoring does not rewrite the preference");
+    }
+  });
+}
+
+test("elsewhere the default is White: the `light` fallback, the one-argument call, and a fallback that is not a theme", t => {
+  for (const saved of [null, "blue"]) {
+    for (const fallback of ["light", undefined, null, "nonsense", "", "HOST", "This computer", "system", "__proto__", 7, {}, ["host"]]) {
+      const u = fixture(t, { saved });
+      u.doc.documentElement.dataset.theme = "dark";
+      assert.equal(u.theme.initTheme(darkHost(), fallback), "light", `saved ${JSON.stringify(saved)}, fallback ${JSON.stringify(fallback)}`);
+      assert.equal(u.theme.currentTheme(), "light");
+      assert.equal(u.doc.documentElement.dataset.theme, "light");
+      assert.equal(rootStyle(u.doc).cssText, "", "the host source is not shown");
+      assert.deepEqual(u.writes, []);
+    }
+  }
+});
+
+test("the shell passes the platform's default to initTheme: `host` where navigator.platform includes Linux, `light` otherwise", () => {
+  const shell = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
+  const calls = [...shell.matchAll(/\binitTheme\(([^;\n]*)\);/g)];
+  assert.equal(calls.length, 1, "the shell initializes the theme in one place");
+  const hostTheme = {};
+  for (const [platform, expected] of [["Linux x86_64", "host"], ["Linux aarch64", "host"], ["Linux armv8l", "host"],
+    ["MacIntel", "light"], ["Win32", "light"], ["FreeBSD amd64", "light"], ["", "light"]]) {
+    // The shipped call's own arguments, evaluated against a platform.
+    const args = runInNewContext(`[${calls[0][1]}]`, { hostTheme, navigator: { platform } });
+    assert.equal(args.length, 2, "the host source, then the default");
+    assert.equal(args[0], hostTheme);
+    assert.equal(args[1], expected, platform || "(no platform)");
+  }
+});
