@@ -81,8 +81,11 @@ is dark, White when it is light, each exactly as it is, with nothing imported.
   config is generated from, every theme has one, and it alone carries the
   polarity and the accent; a generated terminal config is per-terminal output a
   theme can replace. The main process (`../host-theme.mjs`) reads it with a small
-  line parser (no TOML dependency, at most 64 KiB, a regular file) and resolves
-  the colours Desktop uses the way Omarchy's own resolver does. The polarity is
+  line parser (no TOML dependency) and resolves the colours Desktop uses the way
+  Omarchy's own resolver does. The file is opened without blocking, and the file
+  that was opened, not its path, is what must be a regular file of at most
+  64 KiB before anything is read: a path can be replaced between a check and the
+  open, and a blocking open of a FIFO would hold the main process. The polarity is
   the file's `mode` (or `theme_type`), else it follows the background: light
   when its R+G+B is over 382, Omarchy's own rule. It never runs a host program
   to read colours.
