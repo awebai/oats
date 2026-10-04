@@ -676,6 +676,9 @@ pre-hook snapshot. The retire's own events are written to the workspace log
 (`<deployment>/.agents/events/`), never to the home's. A home copy is
 verified against the digest the baseline uses, which passes over those
 records: an inherited limit, not an exact verification of the whole home.
+A work copy's verification passes over every entry named `.git`: a `.git`
+symbolic link under the worktree that leads to no repository is copied as a
+link and not verified.
 
 Each part under `after-hooks/` is whole and verified, not a delta, and it is
 verified before the worktree step and before the home is removed.
