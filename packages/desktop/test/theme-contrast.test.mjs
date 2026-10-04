@@ -2,6 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { JSDOM } from "jsdom";
+// The one contrast inventory (renderer/contrast-inventory.mjs): this file holds every built-in palette
+// to it, and the "This computer" derivation (renderer/host-theme.mjs) is computed from the same lists.
+import { TEXT_PAIRS as pairs, GRAPHIC_PAIRS, PAINTED_OVER, HOST_UNADJUSTED_PAIRS, ANSI_TOKENS as ansi, SOUL_TONES as soulTones, RUNTIMES as runtimes,
+  TEXT_CONTRAST, GRAPHIC_CONTRAST } from "../renderer/contrast-inventory.mjs";
+import { deriveHostTokens } from "../renderer/host-theme.mjs";
+import { hostState } from "./helpers/host-theme-fixture.mjs";
 import { createSoulMark, createRuntimeBadge, identityCSS } from "../renderer/identity-marks.mjs";
 import { workspaceStatusData, syncData } from "../deployment-data.mjs";
 import { renderCapabilities, renderCapabilitySections, capabilitySections, renderFilters, filterChoices, memberNames } from "../renderer/workspace-catalog.mjs";
@@ -58,8 +64,6 @@ for (const [key, value] of tokens(css.match(/\[data-theme="light"\] \{([\s\S]*?)
 const solarized = new Map(dark);
 for (const [key, value] of tokens(css.match(/\[data-theme="solarized"\] \{([\s\S]*?)\n\}/)?.[1] || "")) solarized.set(key, value);
 const palettes = [["light", light], ["solarized", solarized], ["dark", dark]];
-const soulTones = ["sand", "sage", "slate", "mauve", "clay", "olive"];
-const runtimes = ["claude", "pi", "codex", "unknown"];
 
 function opaqueChannels(hex) {
   assert.match(hex, /^#[0-9a-f]{6}$/i, "foregrounds and base surfaces must be opaque hex colors");
@@ -69,7 +73,7 @@ function opaqueChannels(hex) {
 // The markdown scroll surface paints --bg behind its translucent code blocks.
 // Do NOT strip the alpha byte, or test against the uncomposited foreground of
 // --md-code-bg. Keep fractional sRGB channels until luminance is calculated.
-const backgroundParents = new Map([["md-code-bg", "bg"]]);
+const backgroundParents = new Map(PAINTED_OVER);
 function backgroundChannels(name, palette) {
   const hex = palette.get(name);
   assert.ok(hex, `defines --${name}`);
@@ -92,33 +96,19 @@ function contrast(foreground, background) {
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 }
 
-const ansi = [
-  "ansi-black", "ansi-red", "ansi-green", "ansi-yellow", "ansi-blue", "ansi-magenta", "ansi-cyan", "ansi-white",
-  "ansi-bright-black", "ansi-bright-red", "ansi-bright-green", "ansi-bright-yellow",
-  "ansi-bright-blue", "ansi-bright-magenta", "ansi-bright-cyan", "ansi-bright-white",
-];
-
-// Explicitly mirrors shipped foreground/background use: shell/view metadata can
-// sit on any base/raised surface; status text appears in shell and transcript;
-// chip and terminal colors have their dedicated surfaces; ANSI is xterm-only.
-const pairs = [
-  ...["surface", "surface-2", "sel"].map(bg => ["nav-fg", bg]),
-  ...soulTones.map(name => [`soul-${name}-fg`, `soul-${name}-bg`]),
-  ...runtimes.map(name => [`runtime-${name}-fg`, `runtime-${name}-bg`]),
-  ...["fg", "muted", "faint", "accent"].flatMap((fg) => ["bg", "surface", "surface-2"].map((bg) => [fg, bg])),
-  ...["ok", "warn", "danger"].flatMap((fg) => ["bg", "surface", "surface-2", "term-bg"].map((bg) => [fg, bg])),
-  ["chip-fg", "chip-bg"], ["accent", "chip-bg"], ["warn", "chip-bg"], ["fg", "chip-bg"],
-  ["primary-fg", "primary-bg"], ["primary-bg", "primary-fg"] /* toast buttons invert on keyboard focus */,
-  ["term-fg", "term-bg"], ["term-sel-fg", "term-sel"],
-  ["term-fg", "surface-2"], ["muted", "term-bg"],
-  ["fg", "term-bg"], ["accent", "term-bg"], ["violet", "term-bg"], ["violet", "surface-2"],
-  ...["fg", "muted", "faint", "accent", "warn", "ok"].map((fg) => [fg, "sel"]),
-  ...["fg", "muted", "accent", "violet", "ok", "warn"].map((fg) => [fg, "md-code-bg"]),
-  ...ansi.map((fg) => [fg, "term-bg"]),
-  // Workspace v4: amber attention chips/nodes, and reason/tag chips.
-  ["warn", "attn-bg"], ["fg", "attn-bg"], ["muted", "attn-bg"],
-  ...["fg", "muted"].map((fg) => [fg, "tag-bg"]),
-];
+// The inventory itself lives in renderer/contrast-inventory.mjs (imported above as `pairs`, `ansi`,
+// `soulTones`, `runtimes`). Its shape is pinned here so a pair cannot leave it unnoticed.
+test("the shared inventory holds token names only, covers the 16 ANSI colours, and names what the host theme does not hold", () => {
+  for (const [fg, bg] of [...pairs, ...GRAPHIC_PAIRS, ...PAINTED_OVER]) { assert.match(fg, /^[a-z0-9-]+$/); assert.match(bg, /^[a-z0-9-]+$/); }
+  assert.equal(new Set(pairs.map(pair => pair.join(" on "))).size, pairs.length, "no pair twice");
+  assert.equal(ansi.length, 16);
+  for (const token of ansi) assert.ok(pairs.some(([fg, bg]) => fg === token && bg === "term-bg"), `--${token} is held on --term-bg`);
+  assert.deepEqual(GRAPHIC_PAIRS, [["graph-edge", "bg"], ["graph-edge", "surface"], ["graph-edge", "surface-2"]]);
+  assert.deepEqual(PAINTED_OVER, [["md-code-bg", "bg"]]);
+  assert.deepEqual(HOST_UNADJUSTED_PAIRS, ansi.map(token => [token, "term-bg"]), "the host theme's one exception: its terminal colours, unadjusted");
+  assert.equal(TEXT_CONTRAST, 4.5); assert.equal(GRAPHIC_CONTRAST, 3);
+  assert.doesNotMatch(readFileSync(new URL("contrast-inventory.mjs", renderer), "utf8"), /#[0-9a-f]{3,8}\b/i, "no colour value: the palettes are theme.css's");
+});
 
 test("contrast inventory retains alpha and composites code backgrounds over the painted --bg", () => {
   assert.equal(dark.get("md-code-bg"), "#ffffff10");
@@ -227,11 +217,93 @@ for (const [name, palette] of palettes) test(`${name}: focus edges outside opaqu
 // --bg/--surface/--surface-2) are meaningful graphics: WCAG 1.4.11 asks 3:1, and --graph-edge must not
 // fall back to the decorative --border it once shared. The accent-lit path already passes the focus rule.
 for (const [name, palette] of palettes) test(`${name}: --graph-edge connectors meet 3:1 on every surface they are drawn on`, () => {
-  for (const bg of ["bg", "surface", "surface-2"]) {
-    const ratio = contrast(opaqueChannels(palette.get("graph-edge")), backgroundChannels(bg, palette));
-    assert.ok(ratio >= 3, `${name} --graph-edge ${palette.get("graph-edge")} on --${bg}: ${ratio.toFixed(2)}:1 < 3:1`);
+  for (const [graphic, bg] of GRAPHIC_PAIRS) {
+    const ratio = contrast(opaqueChannels(palette.get(graphic)), backgroundChannels(bg, palette));
+    assert.ok(ratio >= GRAPHIC_CONTRAST, `${name} --${graphic} ${palette.get(graphic)} on --${bg}: ${ratio.toFixed(2)}:1 < 3:1`);
   }
   assert.notEqual(palette.get("graph-edge"), palette.get("border"), `${name} connectors are not the decorative border`);
+});
+
+// "This computer" (#602): the host's palette as overrides on a built-in base. Real Omarchy 4.0.4
+// palettes (test/fixtures/host-theme/) go through the same inventory, with the same arithmetic, as
+// the built-in themes above. Derived colours are not pinned by value: the mixes may be tuned. What
+// is held: every pair, and the colours that pass through unchanged.
+const HOST_DECORATIVE = ["border", "tree-line", "tree-link", "sel-border", "attn-border", "attn-dot", "live", "graph-edge-coord"];
+for (const fixture of ["tokyo-night", "rose-pine", "hackerman", "legacy"]) test(`This computer (${fixture}): the derived palette on its base meets the whole inventory, and its terminal colours are the host's own`, () => {
+  const state = hostState(fixture);
+  const base = state.mode === "dark" ? dark : light;
+  const overrides = deriveHostTokens(state.colors, state.mode, token => base.get(token));
+  assert.ok(overrides, "the palette can be derived");
+  const palette = new Map(base);
+  for (const [property, value] of Object.entries(overrides)) {
+    assert.match(property, /^--[a-z0-9-]+$/);
+    assert.match(value, /^#[0-9a-f]{6}$/, `${property} is an opaque colour`);
+    assert.ok(base.has(property.slice(2)), `${property} overrides a token the base theme defines`);
+    palette.set(property.slice(2), value);
+  }
+  const unadjusted = new Set(HOST_UNADJUSTED_PAIRS);
+  for (const pair of pairs) {
+    if (unadjusted.has(pair)) continue;
+    const [fgName, bgName] = pair;
+    const painted = backgroundChannels(bgName, palette);
+    const ratio = contrast(opaqueChannels(palette.get(fgName)), painted);
+    assert.ok(ratio >= TEXT_CONTRAST,
+      `${fixture} --${fgName} ${palette.get(fgName)} on --${bgName} ${palette.get(bgName)} (painted ${painted.join(", ")}): ${ratio.toFixed(2)}:1 < 4.5:1`);
+  }
+  for (const [graphic, bgName] of GRAPHIC_PAIRS) {
+    const ratio = contrast(opaqueChannels(palette.get(graphic)), backgroundChannels(bgName, palette));
+    assert.ok(ratio >= GRAPHIC_CONTRAST, `${fixture} --${graphic} ${palette.get(graphic)} on --${bgName}: ${ratio.toFixed(2)}:1 < 3:1`);
+  }
+  // The focus edge (control rule 2) is the accent on the surfaces around a control.
+  for (const bgName of ["bg", "surface", "surface-2", "term-bg", "sel"]) {
+    assert.ok(contrast(opaqueChannels(palette.get("accent")), backgroundChannels(bgName, palette)) >= GRAPHIC_CONTRAST, `${fixture} accent edge on --${bgName}`);
+  }
+  // Passed through unchanged: the 16 terminal colours in Omarchy's mapping, and the surfaces that define the theme.
+  assert.deepEqual(ansi.map(token => overrides[`--${token}`]), state.colors.ansi);
+  assert.equal(overrides["--ansi-black"], state.colors.background, "slot 0 is the background, as in the host's own terminal");
+  assert.equal(overrides["--term-bg"], state.colors.background);
+  assert.equal(overrides["--surface"], state.colors.background);
+  assert.equal(overrides["--bg"], state.colors.canvas);
+  assert.equal(overrides["--term-sel"], state.colors.selection);
+  assert.equal(overrides["--live"], overrides["--accent"]); assert.equal(overrides["--graph-edge-coord"], overrides["--accent"]);
+  // Everything derived is in the inventory (as a foreground or a surface), or is one of the named decorative tokens.
+  const inventoried = new Set([...pairs, ...GRAPHIC_PAIRS].flat());
+  for (const property of Object.keys(overrides)) {
+    const token = property.slice(2);
+    assert.ok(inventoried.has(token) || HOST_DECORATIVE.includes(token), `${property} must join the contrast inventory`);
+  }
+  // Everything else stays the calibrated base theme's.
+  for (const token of ["accent-fg", "md-code-bg", "md-rule", ...soulTones.flatMap(tone => [`soul-${tone}-bg`, `soul-${tone}-fg`]), ...runtimes.flatMap(name => [`runtime-${name}-bg`, `runtime-${name}-fg`])]) {
+    assert.equal(`--${token}` in overrides, false, `--${token} is not imported`);
+  }
+});
+
+test("This computer: a low-contrast host accent is moved until it passes (Rosé Pine); one that passes is left alone", () => {
+  const state = hostState("rose-pine");
+  const onBackground = hex => contrast(opaqueChannels(hex), opaqueChannels(state.colors.background));
+  assert.ok(onBackground(state.colors.accent) < TEXT_CONTRAST, "the stock accent is under 4.5:1 on its own background");
+  const overrides = deriveHostTokens(state.colors, state.mode, token => light.get(token));
+  assert.notEqual(overrides["--accent"], state.colors.accent);
+  assert.ok(onBackground(overrides["--accent"]) >= TEXT_CONTRAST);
+  assert.ok(luminance(opaqueChannels(overrides["--accent"])) < luminance(opaqueChannels(state.colors.accent)), "darkened: away from a light surface");
+  // A colour that already holds on every surface it is paired with is the host's own.
+  const white = { ...state.colors, foreground: "#000000" };
+  assert.equal(deriveHostTokens(white, "light", token => light.get(token))["--fg"], "#000000");
+});
+
+test("This computer: a palette that cannot be made to pass, or is not a palette, derives nothing at all", () => {
+  const impossible = hostState("impossible");
+  assert.equal(deriveHostTokens(impossible.colors, impossible.mode, token => dark.get(token)), null, "no text colour can hold on both of its surfaces");
+  const good = hostState("tokyo-night");
+  const base = token => dark.get(token);
+  assert.ok(deriveHostTokens(good.colors, good.mode, base));
+  assert.equal(deriveHostTokens(good.colors, "blue", base), null, "an unknown mode");
+  assert.equal(deriveHostTokens({ ...good.colors, background: "#1A1B26" }, "dark", base), null, "upper-case hex is not what main sends");
+  assert.equal(deriveHostTokens({ ...good.colors, accent: "red" }, "dark", base), null);
+  assert.equal(deriveHostTokens({ ...good.colors, ansi: good.colors.ansi.slice(0, 15) }, "dark", base), null, "15 terminal colours");
+  assert.equal(deriveHostTokens({ ...good.colors, ansi: [...good.colors.ansi.slice(0, 15), "#12345"] }, "dark", base), null);
+  assert.equal(deriveHostTokens(null, "dark", base), null);
+  assert.equal(deriveHostTokens(good.colors, good.mode, () => undefined), null, "without the base theme's code surface the text on it cannot be held");
 });
 
 // Color fixtures are local: no external reference paths, renderer startup or
@@ -310,7 +382,7 @@ test("nav ink is subtly darker than muted; identity palettes are opaque and dist
 // a hand-picked expected palette, before measuring contrast. No browser launch.
 for (const [name] of palettes) test(`${name}: actual identity/runtime markup wins the cascade and meets AA`, t => {
   const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><head></head><body>
-    <div id="app"><aside id="sidebar"><button class="ctx-inst active"></button></aside>
+    <div id="app"><aside id="sidebar"><button class="ctx-inst active"></button><button class="ctx-inst idle"></button></aside>
       <div class="oats-view"><button class="soul-card"><span class="sname"></span></button>
         <button class="act primary"><span class="inspector-marks"></span></button></div></div>
   </body></html>`);
@@ -350,6 +422,18 @@ for (const [name] of palettes) test(`${name}: actual identity/runtime markup win
     assert.equal(hostile.getAttribute("style"), null);
     const invalid = document.createElement("span"); invalid.dataset.avatarColor = "red; background:url(x)";
     container.append(invalid); check(invalid, "chip");
+  }
+  // A stopped instance's provider mark dims: whatever pair the shell paints it
+  // with must be one the inventory lists, so every theme (and a host palette)
+  // holds it at AA. (An unreported harness is not dimmed: it keeps its own pair.)
+  const token = value => value.match(/^var\(--([a-z0-9-]+)\)$/)?.[1];
+  for (const runtime of runtimes) {
+    const stopped = createRuntimeBadge(document, runtime); stopped.classList.add("ctx-runtime");
+    document.querySelector(".ctx-inst.idle").append(stopped);
+    const style = dom.window.getComputedStyle(stopped), fg = token(style.color), bg = token(style.background);
+    assert.ok(pairs.some(pair => pair[0] === fg && pair[1] === bg),
+      `${name} stopped ${runtime} mark: ${style.color} on ${style.background} is not a pair in the contrast inventory`);
+    check(stopped, fg.replace(/-fg$/, ""));
   }
 });
 

@@ -100,13 +100,19 @@ test('a short-window stack reveals its focused content only inside its own scrol
 test('shipped shell uses the actual center, clears scope, and treats real notification entry as selection intent', t => {
   const dom = new JSDOM('<body><input id="terminal"></body>'); t.after(() => dom.window.close());
   const doc = dom.window.document; let gen = 0, changed;
+  const attached = [];
   const c = { document: doc, window: dom.window, createNotificationCenter, workspaceGeneration: () => gen,
     onWorkspaceChange: fn => { changed = fn; return () => {}; }, currentWorkspace: () => 'workspace',
-    connectionGeneration: 0, subscribeConnections: () => () => {} };
+    connectionGeneration: 0, subscribeConnections: () => () => {}, hostTheme: { attach: fn => attached.push(fn) } };
   c.tabOpenIntents = createSelectionOwnership({ currentWorkspace: () => 'workspace', workspaceGeneration: () => gen });
   const source = readFileSync(new URL('../renderer/shell.mjs', import.meta.url), 'utf8');
   const first = source.indexOf('const notifications = createNotificationCenter'), last = source.indexOf('// ── ctx', first);
   const center = runInNewContext(`${source.slice(first, last)}\nnotifications`, c); t.after(() => center.dispose());
+  // The host theme says its fallback through this same center (#602), handed over once it exists.
+  assert.equal(attached.length, 1);
+  const notice = attached[0]('host theme notice', { sticky: true });
+  assert.equal(doc.querySelector('.app-toast-text').textContent, 'host theme notice'); assert.equal(notice.shown, true);
+  notice.dismiss(); assert.equal(doc.querySelector('.app-toast'), null);
   // Exercise the one-line shipped ctx binding, not a second notification path.
   const binding = source.match(/^  notify: ([^,\n]+),$/m); assert.ok(binding);
   const notify = new Function('notifications', `return ${binding[1]};`)(center);

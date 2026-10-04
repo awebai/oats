@@ -19,7 +19,7 @@ import { retirementSummary, runtimeState, unsupportedSession } from "./instance-
 import { deploymentUnavailableText, NOT_SERVED_CODE, NO_ANSWER_CODE, unservedError, createPendingWatch } from "./deployment-header.mjs";
 import { panelErrorCause } from "./deployment-contract.mjs";
 import {
-  initTheme, toggleTheme, setTheme, THEMES, xtermTheme, terminalFontWeight, onThemeChange,
+  initTheme, toggleTheme, setTheme, refreshHostTheme, THEMES, xtermTheme, terminalFontWeight, onThemeChange,
   terminalTypography, setTerminalFontSize, setTerminalFontFamily, resetTerminalTypography, onTerminalTypographyChange,
 } from "./theme.mjs";
 import { createPalette } from "./palette.mjs";
@@ -54,6 +54,7 @@ import { createInstanceSoulSection, instanceSoulCSS } from "./instance-soul.mjs"
 import { createInstanceGitPanel, instanceGitCSS } from "./instance-git.mjs";
 import { canAddressRemote, rowReason } from "./remote-address.mjs";
 import { createNotificationCenter, notificationCSS } from "./notifications.mjs";
+import { createHostTheme } from "./host-theme.mjs";
 import { createSpawnJobs } from "./spawn-jobs.mjs";
 import { createSpawnFollow, watchOperator } from "./spawn-follow.mjs";
 import { registerSpawnDialogKeys } from "./spawn-dialog-keys.mjs";
@@ -88,7 +89,12 @@ const desk = window.oatsDesktop;
 // One window per workspace (#481): settle this window's workspace (its hash, or the shared default
 // when no other window has it) before anything reads one. A window left choosing reads nothing.
 const windowStart = await startWindow();
-initTheme();
+// "This computer" (#602): the stored last host state paints first, synchronously; main's answer and its
+// pushes then keep it current, in every window whose choice it is.
+const hostTheme = createHostTheme({ desk, storage: (() => { try { return window.localStorage; } catch { return null; } })(), onChange: refreshHostTheme });
+initTheme(hostTheme);
+hostTheme.start();
+window.addEventListener("pagehide", () => hostTheme.dispose(), { once: true });
 mountShellIcons(document);
 const identityStyle = document.createElement("style");
 identityStyle.textContent = identityCSS + contextPanelCSS + teamsCSS + instanceSoulCSS + instanceGitCSS + notificationCSS + connectionsCSS + settingsTerminalCSS + lifecycleCSS + rosterTipCSS + rosterPrCSS; document.head.append(identityStyle);
@@ -113,6 +119,7 @@ const notifications = createNotificationCenter({ document, generation: workspace
   fallbackFocus: () => stableFocusTarget(),
 });
 window.addEventListener('pagehide', () => notifications.dispose(), { once: true });
+hostTheme.attach(notifications.notify); // a host theme that could not be used is said here, once per episode
 
 // ── ctx (shared by all views) ─────────────────────────────────────────────
 async function api(pathname, opts) {
@@ -2024,7 +2031,7 @@ const palette = createPalette({
     { label: "Spawn instance: choose a soul in Workspace…", detail: chordDetail("app.chooseSoul"), run: () => runAction("app.chooseSoul") },
     { label: "Souls: quick open…", detail: chordDetail("app.quickOpenSouls"), run: () => runAction("app.quickOpenSouls") },
     { label: "File: open read-only…", detail: chordDetail("app.openFile"), run: () => runAction("app.openFile") },
-    { label: "Theme: cycle White / Solarized / Dark", detail: chordDetail("app.themeToggle"), run: () => toggleTheme() },
+    { label: "Theme: cycle White / Solarized / Dark / This computer", detail: chordDetail("app.themeToggle"), run: () => toggleTheme() },
     ...THEMES.map(({ id, label }) => ({ label: `Theme: ${label}`, detail: chordDetail(`app.theme.${id}`), run: () => runAction(`app.theme.${id}`) })),
     { label: "Shortcuts: edit keyboard shortcuts…", detail: chordDetail("app.shortcuts"), run: () => openShortcutsEditor() },
     { label: "Settings: Connections…", detail: "GitHub CLI accounts on this machine", run: () => openConnections() },
@@ -2302,7 +2309,7 @@ NAV.forEach((v) => registerAction({
   id: `stage.${v.name}`, label: `View: ${v.label}`, context: "global",
   run: () => showStageFocused(v.name),
 }));
-registerAction({ id: "app.themeToggle", label: "Cycle White / Solarized / Dark theme", context: "global", run: () => toggleTheme() });
+registerAction({ id: "app.themeToggle", label: "Cycle White / Solarized / Dark / This computer theme", context: "global", run: () => toggleTheme() });
 // Explicit theme choices are rebindable, but add no default keyboard chords.
 THEMES.forEach(({ id, label }) => registerAction({
   id: `app.theme.${id}`, label: `Theme: ${label}`, context: "global", run: () => setTheme(id),
@@ -2361,7 +2368,7 @@ const baseTitles = new WeakMap();
 function applyChordTitles() {
   const themeButton = document.getElementById("sidebar-theme");
   if (themeButton) {
-    const label = "Cycle White / Solarized / Dark theme";
+    const label = "Cycle White / Solarized / Dark / This computer theme";
     baseTitles.set(themeButton, label); themeButton.setAttribute("aria-label", label);
   }
   for (const el of document.querySelectorAll("[data-action]")) {

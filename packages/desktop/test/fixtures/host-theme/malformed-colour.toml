@@ -1,0 +1,14 @@
+# Hand-made: the foreground is not a #rrggbb value, under any of its names.
+mode = "dark"
+
+background = "#1a1b26"
+foreground = "rgb(169, 177, 214)"
+fg = "#a9b1d"
+color7 = "a9b1d6"
+
+red = "#f7768e"
+green = "#9ece6a"
+yellow = "#e0af68"
+blue = "#7aa2f7"
+magenta = "#ad8ee6"
+cyan = "#449dab"
