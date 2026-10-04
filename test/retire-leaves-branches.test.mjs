@@ -399,3 +399,30 @@ test("the plan of a worktree whose HEAD names a ref outside refs/heads/: branch 
   const text = cli(f, ["retire", basename(spawned.home), "--plan"]);
   assert.match(text.stdout, / untracked on a ref OATS carries no branch name for;/, "the plan's text does not call it detached");
 });
+
+// ---- A worktree whose HEAD has no commit ----
+
+test("--discard-worktree on a worktree whose branch has no commit yet refuses with E_WORK_INSPECTION_FAILED and removes nothing; its plan is read as before, unborn", () => {
+  const f = fixture();
+  const spawned = spawn(f, "unborn");
+  const work = join(spawned.home, "work");
+  git(work, "switch", "--quiet", "--orphan", "fresh");
+  assert.equal(headRefHex(work), refHex("refs/heads/fresh"), "fixture premise: the worktree is on a branch that has no commit");
+  assert.equal(spawnSync("git", ["-C", work, "rev-parse", "--verify", "--quiet", "HEAD^{commit}"]).status, 1, "fixture premise: its HEAD has no commit");
+
+  const planned = cli(f, ["retire", basename(spawned.home), "--plan", "--json"]);
+  assert.equal(planned.status, 0, `${planned.stderr}\n${planned.stdout}`);
+  const facts = JSON.parse(planned.stdout).result.facts.work;
+  assert.equal(facts.revision, "unborn");
+  assert.equal(facts.branch, "fresh");
+  assert.equal(facts.detached, false);
+
+  const refused = cli(f, ["retire", basename(spawned.home), "--discard-worktree", "--json"]);
+  assert.equal(refused.status, 1, `${refused.stderr}\n${refused.stdout}`);
+  const error = JSON.parse(refused.stdout).error;
+  assert.equal(error.code, "E_WORK_INSPECTION_FAILED");
+  assert.match(error.message, /has no commit that could be read/);
+  assert.equal(existsSync(join(spawned.home, "instance.json")), true, "the home is kept");
+  assert.equal(headRefHex(work), refHex("refs/heads/fresh"), "the worktree is kept, as it was");
+  assert.equal(existsSync(recoveryRootOf(spawned.home)), false, "nothing was written");
+});

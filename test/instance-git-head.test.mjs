@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { headName, observeInstanceGit, worktreeHead } from "../lib/instance-git.mjs";
+import { assertSameWorktreeHead, headName, observeInstanceGit, worktreeCommitUnreached, worktreeHead } from "../lib/instance-git.mjs";
 
 const temporaryDirectories = [];
 test.afterEach(() => { for (const dir of temporaryDirectories.splice(0)) rmSync(dir, { recursive: true, force: true }); });
@@ -114,4 +114,42 @@ test("the HEAD the reader and the plan report is the work tree's, whatever repos
     for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
     Object.assign(process.env, saved);
   }
+});
+
+test("assertSameWorktreeHead passes the same commit with the same ref's bytes, or the same detached commit, and refuses every other pair", () => {
+  const A = "a".repeat(40), B = "b".repeat(40);
+  const on = (commit, ref, branch = null) => ({ commit, branch, detached: false, ref: Buffer.from(ref) });
+  const detached = (commit) => ({ commit, branch: null, detached: true, ref: null });
+  const moved = (e) => e?.code === "E_WORK_PRESERVATION_FAILED" && e.message === "the worktree's HEAD changed after it was inspected, so the worktree was not removed. The home, the worktree and the recovery are kept; retry the retire.";
+  assert.doesNotThrow(() => assertSameWorktreeHead(on(A, "refs/heads/x", "x"), on(A, "refs/heads/x", "x")));
+  assert.doesNotThrow(() => assertSameWorktreeHead(detached(A), detached(A)));
+  assert.throws(() => assertSameWorktreeHead(on(A, "refs/heads/x", "x"), on(B, "refs/heads/x", "x")), moved, "another commit");
+  assert.throws(() => assertSameWorktreeHead(on(A, "refs/heads/x", "x"), on(A, "refs/heads/y", "y")), moved, "another ref");
+  assert.throws(() => assertSameWorktreeHead(detached(A), on(A, "refs/heads/x", "x")), moved, "detached, then on a ref");
+  assert.throws(() => assertSameWorktreeHead(on(A, "refs/heads/x", "x"), detached(A)), moved, "on a ref, then detached");
+  const notUtf8 = (byte) => ({ commit: A, branch: null, detached: false, ref: Buffer.concat([Buffer.from("refs/heads/caf"), Buffer.from([byte])]) });
+  assert.throws(() => assertSameWorktreeHead(notUtf8(0xe9), notUtf8(0xe8)), moved, "two refs OATS carries no name for, with different bytes");
+  assert.doesNotThrow(() => assertSameWorktreeHead(notUtf8(0xe9), notUtf8(0xe9)));
+  assert.throws(() => assertSameWorktreeHead(undefined, detached(A)), moved, "a HEAD the final inspection did not read");
+});
+
+test("worktreeCommitUnreached, in a repository with a branch whose name is not valid UTF-8 and a damaged ref file: decided both ways, and nothing refuses", () => {
+  const repo = repository();
+  git(repo, "symbolic-ref", "HEAD", "refs/heads/main");
+  const base = commitIn(repo);
+  const notUtf8 = Buffer.concat([Buffer.from("refs/heads/caf"), Buffer.from([0xe9])]);
+  writeFileSync(join(repo, ".git", "refs", "heads", "damaged"), "not an object id\n");
+  const work = join(repo, "..", `${repo.split("/").pop()}-work`);
+  temporaryDirectories.push(work);
+  git(repo, "worktree", "add", "--quiet", "--detach", work, base);
+  const commit = commitIn(work);
+  // No ref reaches the worktree's commit: only its HEAD does.
+  execFileSync("git", ["-C", repo, "update-ref", "--stdin"], { input: Buffer.concat([Buffer.from("update "), notUtf8, Buffer.from(` ${base}\n`)]), stdio: ["pipe", "pipe", "pipe"] });
+  const first = worktreeCommitUnreached(repo, work);
+  assert.equal(first.unreached, true, "a commit only the worktree's HEAD reaches");
+  assert.equal(first.head.commit, commit);
+  assert.equal(first.head.detached, true);
+  // The branch whose name is not valid UTF-8 now reaches it.
+  execFileSync("git", ["-C", repo, "update-ref", "--stdin"], { input: Buffer.concat([Buffer.from("update "), notUtf8, Buffer.from(` ${commit}\n`)]), stdio: ["pipe", "pipe", "pipe"] });
+  assert.equal(worktreeCommitUnreached(repo, work).unreached, false, "a commit that branch reaches");
 });
