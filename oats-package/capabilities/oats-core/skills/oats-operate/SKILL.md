@@ -152,6 +152,13 @@ oats retire <instance> --plan                        # what Remove would touch, 
 oats retire <instance>                               # retire (window, hooks, worktree, home)
 ```
 
+`oats session input` sends one literal paste and one Enter. `submitted: true`
+means those terminal operations succeeded; `verified` only reports a display
+change, never model acceptance. Unchanged/unreadable display (`verified: false`)
+does not authorize retry. Settling offers no guaranteed busy-pane submission or
+exactly-once delivery; command errors may be uncertain after partial effects.
+
+
 These act on **other** instances — typically children you spawned — and only
 when your task or your human says so. Retirement runs every module's retire
 hook (identities, scheduled jobs) and retains a worktree with work in it
