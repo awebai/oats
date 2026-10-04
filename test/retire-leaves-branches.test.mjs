@@ -208,8 +208,25 @@ test("--discard-worktree on a clean worktree whose HEAD is detached at a commit 
   assert.equal(headRefHex(work), "", "fixture premise: the worktree's HEAD is detached");
   assert.equal(git(work, "status", "--porcelain=v1", "--untracked-files=all", "--ignored=matching"), "", "fixture premise: the worktree is clean");
   assert.equal(git(f.repo, "for-each-ref", "--contains", commit, "--format=%(refname)"), "", "fixture premise: no ref of the repository reaches the commit");
+  // The removal of the worktree is where the order shows: a stand-in `git` first on PATH passes every
+  // call to the real Git, and when it is asked to remove a worktree it first records the HEAD of each
+  // recovery the retire has completed by then (a recovery is renamed into place only when it is whole).
+  const recoveries = recoveryRootOf(spawned.home);
+  const atRemoval = join(f.base, "recoveries-at-removal");
+  write(join(f.base, "bin", "git"), `#!/bin/sh
+real=${shq(realGit())}
+case " $* " in *" worktree remove "*)
+  : >> ${shq(atRemoval)}
+  for recovery in ${shq(recoveries)}/${shq(basename(spawned.home))}-*; do
+    if [ -d "$recovery/repo" ]; then "$real" -C "$recovery/repo" rev-parse HEAD >> ${shq(atRemoval)}; fi
+  done ;;
+esac
+exec "$real" "$@"
+`, 0o755);
 
   const receipt = retiredReceipt(cli(f, ["retire", basename(spawned.home), "--discard-worktree", "--json"]));
+  assert.equal(existsSync(atRemoval), true, "the retire asked Git to remove the worktree");
+  assert.equal(readFileSync(atRemoval, "utf8"), `${commit}\n`, "when the worktree was removed, a completed recovery already held the commit, checked out");
   assert.ok(receipt.workRecovery?.path, `a recovery is written for the commit that only the worktree reached: ${JSON.stringify(receipt)}`);
   const repo = join(receipt.workRecovery.path, "repo");
   assert.equal(git(repo, "cat-file", "-t", commit), "commit", "the recovery's repository has the commit");
@@ -288,17 +305,23 @@ const DELETE_BRANCH_REFUSED = "oats retire no longer deletes branches: --delete-
 
 test("oats retire --delete-branch is refused with E_BAD_ARGS before anything happens: a recorded child that was running is still running, and the instance, its worktree and its branch are as they were", async (t) => {
   // Real tmux on a private socket, and a harness that records its process id and idles.
+  // The cleanup is registered before anything that can fail, and each of its steps runs whatever the
+  // one before it did.
   const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-leaves-branches-")));
   const socket = join(base, "tmux.sock");
   const session = "r";
-  const restoreEnvironment = isolateSessionEnvironment(base, socket);
-  let fx;
+  let restoreEnvironment, fx;
   t.after(() => {
-    try { execFileSync("tmux", ["-u", "-S", socket, "kill-server"], { stdio: "ignore", timeout: 10000 }); } catch { /* gone */ }
-    restoreEnvironment();
-    fx?.cleanup();
-    rmSync(base, { recursive: true, force: true });
+    try { execFileSync("tmux", ["-u", "-S", socket, "kill-server"], { stdio: "ignore", timeout: 10000 }); } catch { /* no server on the private socket */ }
+    finally {
+      try { restoreEnvironment?.(); }
+      finally {
+        try { fx?.cleanup(); }
+        finally { rmSync(base, { recursive: true, force: true }); }
+      }
+    }
   });
+  restoreEnvironment = isolateSessionEnvironment(base, socket);
   const binDir = join(base, "bin");
   const harness = join(binDir, "claude");
   write(harness, `#!/bin/sh\necho $$ > "$OATS_INSTANCE_HOME/pid.txt"\nexec sleep 86400\n`, 0o755);
