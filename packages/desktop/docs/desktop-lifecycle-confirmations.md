@@ -98,8 +98,8 @@ status; it does not cancel the dispatched operation or signal its process.
 - Remove accepts both the documented first raw receipt and enveloped replay,
   checking revision/key/name against the transaction. Home removal, worktree
   retention/removal and recovery are separate facts.
-- Remove never deletes a branch and asks for no deletion, so a receipt that
-  reports a branch deletion or a skip (`branchDeleted: true`, or
+- Remove never deletes a branch and asks for no deletion, so a receipt,
+  deferred or not, that reports a branch deletion or a skip (`branchDeleted: true`, or
   `retention.branchDeleted` or `retention.branchDeletionSkipped` present with
   any value) is not the answer to its request. It is refused whole, at the
   server and again in the dialog, and reported as an **unknown outcome** with

@@ -169,6 +169,25 @@ test('the dialog refuses a receipt that reports a branch deletion or a skip, wha
     assert.equal(f.doc.querySelector('.lifecycle-dialog [role=status]').textContent, 'Kernel operation completed.'); assert.match(f.doc.body.textContent, /Home removedtrue/);
   } finally { f.close(); }
 });
+test('a deferred Remove is shown as pending; one that reports a branch deletion or a skip is refused and shows nothing of it', async () => {
+  const raw = retirePlan(), deferredReceipt = { action: 'retire', instance: instance.instance, home: instance.home, planRevision: raw.planRevision, replayed: false, deferred: true };
+  const shown = async receipt => {
+    const f = fixture({ request: (_ws, body) => body.action === 'plan' ? planned('retire', reference, raw) : { lifecycleApi: 1, status: 'pending', target, receipt } });
+    try {
+      f.open('retire'); await tick(); f.button('lifecycle-confirm').click(); await tick();
+      return { status: f.doc.querySelector('.lifecycle-dialog [role=status]').textContent, all: told(f.doc), retryHidden: f.button('lifecycle-retry').hidden, settled: f.settled.length };
+    } finally { f.close(); }
+  };
+  const pending = await shown(structuredClone(deferredReceipt));
+  assert.equal(pending.status, 'Retirement is deferred; no completed removal is established.'); assert.equal(pending.retryHidden, false); assert.equal(pending.settled, 1);
+  for (const report of [r => { r.branchDeleted = true; }, r => { r.retention = { worktree: 'removed', branch: 'UNSHOWN-branch', recordedBranch: null, branchDeleted: 'UNSHOWN-branch' }; },
+    r => { r.retention = { worktree: 'removed', branch: 'UNSHOWN-branch', recordedBranch: null, branchDeletionSkipped: { expected: 'feat/work', actual: 'UNSHOWN-branch', reason: 'UNSHOWN reason' } }; }]) {
+    const receipt = structuredClone(deferredReceipt); report(receipt);
+    const refused = await shown(receipt);
+    assert.equal(refused.status, lifecycleReason('E_OUTCOME_UNKNOWN').message); assert.doesNotMatch(refused.all, /UNSHOWN|deferred/);
+    assert.equal(refused.retryHidden, false); assert.equal(refused.settled, 0);
+  }
+});
 test('the dialog refuses a retire plan whose defaults report a branch deletion; false or absent is accepted', async () => {
   for (const [value, accepted] of [[undefined, true], [false, true], [true, false]]) {
     const raw = retirePlan(); if (value === undefined) delete raw.defaults.deleteBranch; else raw.defaults.deleteBranch = value;

@@ -139,7 +139,7 @@ export function stoppedTargets(value, expected, withState = false) {
 /** `server`: the request was routed there. The routed retire's result then may also carry `server`
  * and `target` (its route); a local result carrying them is refused.
  * Desktop asks for no branch deletion, so a retire result that reports one, or a skipped one, is not the
- * answer to its request and is refused whole: nothing of it is projected. */
+ * answer to its request and is refused whole, a deferred one too: nothing of it is projected. */
 export function lifecycleReceipt(v, plan, key, { server = null } = {}) {
   if (!object(v) || v.idempotencyKey !== key || v.planRevision !== plan.planRevision || typeof v.replayed !== 'boolean') return null;
   if (!server ? Object.hasOwn(v, 'server') || Object.hasOwn(v, 'target')
@@ -153,17 +153,18 @@ export function lifecycleReceipt(v, plan, key, { server = null } = {}) {
     return { action: 'stop', instance: v.instance, home: v.home, planRevision: v.planRevision, replayed: v.replayed, at: v.at,
       ok: v.ok, results, retained: [...v.retained] };
   }
+  if (!(v.branchDeleted === undefined || v.branchDeleted === false)
+    || object(v.retention) && (Object.hasOwn(v.retention, 'branchDeleted') || Object.hasOwn(v.retention, 'branchDeletionSkipped'))) return null;
   if (v.retired === plan.instance && v.deferred === true) return { action: 'retire', instance: plan.instance, home: plan.home,
     planRevision: v.planRevision, replayed: v.replayed, deferred: true };
-  if (v.retired !== plan.instance || typeof v.removedDir !== 'boolean' || typeof v.worktreeRemoved !== 'boolean' || !(v.branchDeleted === undefined || v.branchDeleted === false)
+  if (v.retired !== plan.instance || typeof v.removedDir !== 'boolean' || typeof v.worktreeRemoved !== 'boolean'
     || (v.rollbackIncomplete !== undefined && !strings(v.rollbackIncomplete)) || !(v.retainedHome === undefined || v.retainedHome === plan.home)) return null;
   const childrenStopped = stoppedTargets(v.childrenStopped, plan.facts.children);
   if (!childrenStopped || childrenStopped.some(c => !c.ok)) return null;
   let retention = null;
   if (v.retention !== null) {
     const r = v.retention;
-    if (!object(r) || Object.hasOwn(r, 'branchDeleted') || Object.hasOwn(r, 'branchDeletionSkipped')
-      || !['retained', 'removed', 'absent'].includes(r.worktree) || !nullable(r.branch) || !nullable(r.recordedBranch)
+    if (!object(r) || !['retained', 'removed', 'absent'].includes(r.worktree) || !nullable(r.branch) || !nullable(r.recordedBranch)
       || (r.worktree === 'retained' && (!absolute(r.movedTo) || !nullable(r.detachedAt)))) return null;
     retention = { worktree: r.worktree, branch: r.branch, recordedBranch: r.recordedBranch,
       ...(r.worktree === 'retained' ? { movedTo: r.movedTo, detachedAt: r.detachedAt } : {}) };
