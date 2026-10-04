@@ -469,12 +469,22 @@ directory included, and nothing proves such a directory unchanged. With one
 present, the work is copied again after the hooks whenever there is
 something to preserve.
 
+A snapshot that holds the home only (the work had nothing to preserve
+before the hooks) has no work copy to stand for it. It gets the work under
+`after-hooks/` when the hooks moved it, and also when they did not but
+something beyond the home is there to preserve after them: a commit that no
+other branch reaches any more, or a retirement baseline that is gone.
+
 The Git state is read at every inspection. The files are read once more
 after the hooks, and only when the Git state did not move; when the snapshot
 before the hooks holds the home only, they are read once before the hooks and
 once after. With nothing preserved before the hooks, nothing is compared: a
-recovery is written after them whenever there is something to preserve. A Git state that cannot be read refuses the retire with
-`E_WORK_INSPECTION_FAILED`.
+recovery is written after them whenever there is something to preserve.
+
+A Git state that cannot be read refuses the retire with
+`E_WORK_INSPECTION_FAILED`. So does a socket, a FIFO or a device file among
+the files that are read: it cannot be copied, the message names its path, and
+the home is kept.
 
 The home is not copied again because the work is. The home's event log and
 its stop and restart receipts do not count as changes to the home, so a

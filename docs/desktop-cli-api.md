@@ -2534,7 +2534,10 @@ A first retire prints the **raw receipt**, not an envelope:
     `after-hooks/work/` (directory mode) unless the work is proven unchanged
     after the hooks: a directory by its bytes, a worktree by its Git state
     and the bytes of its files
-    ([souls and instances](souls-and-instances.md#retire)). The home is not
+    ([souls and instances](souls-and-instances.md#retire)). `work` is also
+    `true` when the pre-hook snapshot held the home only and the work was
+    copied for the first time after the hooks, moved or not, because
+    something beyond the home was there to preserve. The home is not
     copied again because the work is.
     Each is a full verified snapshot, not a delta. Present only when that
     directory was written.
