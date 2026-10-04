@@ -1444,6 +1444,111 @@ seen.recoveries = readdirSync(recoveries).map((name) => {
   assert.deepEqual(readJson(join(recovery.path, "recovery.json")).afterHooks, { home: false, work: true });
 });
 
+// ---- The comparison resolves what the copier reads the way the copier resolves it ----
+// The copier reads each path from Git trimmed (carryExcludes, carryStatusConfig, detachRecoveryClone,
+// restoreStandaloneGitState), and HEAD as its whole ref (headName). Where the comparison resolved a value
+// otherwise, the copier could carry a file or a branch the comparison never read, and a hook's change to it
+// was lost with the worktree.
+
+test("a core.excludesFile whose value ends in a space, where only the file without it exists, and a retire hook that changes that file and writes the home: the work is copied again, with the hook's rule under after-hooks/repo/", () => {
+  // carryExcludes trims the value, so the copy carries the file without the space (Git itself reads neither).
+  const retire = quietHook(`import { writeFileSync as writeRules } from 'node:fs';
+writeRules(git('config', '--path', '--get', 'core.excludesFile').trim(), 'after-hook-rule/\\n');`);
+  const f = fixture({ capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "excludes-file-space");
+  const work = join(spawned.home, "work");
+  const rules = join(f.base, "exclude-rules");
+  write(rules, "before-hook-rule/\n");
+  execFileSync("git", ["-C", work, "config", "core.excludesFile", `${rules} `]);
+  assert.equal(existsSync(`${rules} `), false, "fixture premise: only the file without the space exists");
+  write(join(work, "tracked.txt"), "changed before the retire\n");
+  const statusBefore = porcelain(work);
+  assert.deepEqual(statusRowsIn(statusBefore), [" M tracked.txt"], "fixture premise: the rules match nothing, and a tracked file is modified");
+
+  const { recovery, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore);
+  assert.match(excludeRulesOf(join(recovery.path, "repo")), /^before-hook-rule\/$/m, "the snapshot before the hooks carries the rule the copier read then");
+  assert.equal(existsSync(join(afterRepo, ".git")), true, "the work is copied again under after-hooks/repo/: the comparison reads the file the copier reads");
+  assert.match(excludeRulesOf(afterRepo), /^after-hook-rule\/$/m, "the copy made after the hooks carries the hook's rule");
+  assert.doesNotMatch(excludeRulesOf(afterRepo), /^before-hook-rule\/$/m);
+  assertBothCopiedAgain(recovery);
+});
+
+test("a repository whose Git directory's path ends in a space, beside a directory of the same name without it, and a retire hook that changes that directory's info/exclude and writes the home: the work is copied again, with the hook's rule under after-hooks/repo/", () => {
+  // The copier trims the common directory Git prints, so it reads the directory without the space.
+  const retire = quietHook(`import { writeFileSync as writeRules } from 'node:fs';
+writeRules(join(git('rev-parse', '--path-format=absolute', '--git-common-dir').trim(), 'info', 'exclude'), 'after-hook-rule/\\n');`);
+  const f = fixture({ capabilities: hookCapability(retire) });
+  execFileSync("git", ["-C", f.repo, "init", "-q", "--separate-git-dir", join(f.base, "member-git ")]);
+  const spawned = spawn(f, "common-dir-space");
+  const work = join(spawned.home, "work");
+  assert.ok(execFileSync("git", ["-C", work, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8" }).endsWith("/member-git \n"), "fixture premise: Git prints the common directory with its trailing space");
+  write(join(f.base, "member-git", "info", "exclude"), "before-hook-rule/\n");
+  write(join(work, "tracked.txt"), "changed before the retire\n");
+  const statusBefore = porcelain(work);
+  assert.deepEqual(statusRowsIn(statusBefore), [" M tracked.txt"], "fixture premise: the rules match nothing, and a tracked file is modified");
+
+  const { recovery, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore);
+  assert.match(excludeRulesOf(join(recovery.path, "repo")), /^before-hook-rule\/$/m, "the snapshot before the hooks carries the rule the copier read then");
+  assert.equal(existsSync(join(afterRepo, ".git")), true, "the work is copied again under after-hooks/repo/: the comparison reads the directory the copier reads");
+  assert.match(excludeRulesOf(afterRepo), /^after-hook-rule\/$/m, "the copy made after the hooks carries the hook's rule");
+  assertBothCopiedAgain(recovery);
+});
+
+test("a retire hook that moves HEAD from the instance's branch to a remote-tracking ref of the same short name, deletes the branch and writes the home, in a worktree the retire keeps: the work is copied again, detached, as the copier copies a HEAD that is not on a branch", () => {
+  // The copier reads HEAD's whole ref; `git symbolic-ref --short` gives the two refs the same name.
+  const retire = quietHook(`const ref = git('symbolic-ref', 'HEAD').trim();
+const name = ref.slice('refs/heads/'.length);
+git('update-ref', 'refs/remotes/' + name, 'HEAD');
+git('symbolic-ref', 'HEAD', 'refs/remotes/' + name);
+git('update-ref', '-d', ref);
+seen.names = [name, git('symbolic-ref', '--short', 'HEAD').trim()];`);
+  const f = fixture({ capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "head-short-name");
+  const work = join(spawned.home, "work");
+  write(join(work, "tracked.txt"), "changed before the retire\n");
+  const statusBefore = porcelain(work);
+  assert.deepEqual(statusRowsIn(statusBefore), [" M tracked.txt"]);
+
+  const retired = cli(f, ["retire", basename(spawned.home), "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const receipt = JSON.parse(retired.stdout);
+  const recovery = receipt.workRecovery;
+  const seen = readJson(join(dirname(spawned.home), `hook-saw-${basename(spawned.home)}`));
+  assert.equal(seen.status, statusBefore, "fixture premise: Git's status text is the same after the hook's change");
+  assert.equal(seen.names[1], seen.names[0], "fixture premise: Git's short name for the remote-tracking ref is the branch's name");
+  assert.equal(receipt.retention.worktree, "retained", "fixture premise: the retire keeps the worktree");
+  assert.equal(execFileSync("git", ["-C", join(recovery.path, "repo"), "symbolic-ref", "--short", "HEAD"], { encoding: "utf8" }).trim(), seen.names[0], "the snapshot before the hooks is on the branch");
+  const afterRepo = join(recovery.path, "after-hooks", "repo");
+  assert.equal(existsSync(join(afterRepo, ".git")), true, "the work is copied again under after-hooks/repo/: the comparison reads HEAD's whole ref, as the copier does");
+  assert.equal(spawnSync("git", ["-C", afterRepo, "symbolic-ref", "--quiet", "HEAD"]).status, 1, "the copy made after the hooks is detached, as the copier copies a HEAD on a ref that is not a branch");
+  assertBothCopiedAgain(recovery);
+});
+
+test("a worktree whose HEAD is on a remote-tracking ref, which the copier copies detached from a clone that keeps the repository's own HEAD branch, and a retire hook that moves the repository's HEAD to another branch and writes the home: the work is copied again, with that branch under after-hooks/repo/", () => {
+  const retire = quietHook(`execFileSync('git', ['--git-dir=' + git('rev-parse', '--path-format=absolute', '--git-common-dir').trim(), 'symbolic-ref', 'HEAD', 'refs/heads/other']);`);
+  const f = fixture({ capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "clone-head");
+  const work = join(spawned.home, "work");
+  const git = (...args) => execFileSync("git", ["-C", work, ...args], { encoding: "utf8" }).trim();
+  const name = git("symbolic-ref", "HEAD").slice("refs/heads/".length);
+  git("update-ref", `refs/remotes/${name}`, "HEAD");
+  git("symbolic-ref", "HEAD", `refs/remotes/${name}`);
+  const common = commonDirOf(work);
+  const repositoryHead = execFileSync("git", [`--git-dir=${common}`, "symbolic-ref", "HEAD"], { encoding: "utf8" }).trim();
+  execFileSync("git", [`--git-dir=${common}`, "branch", "other", repositoryHead]);
+  assert.notEqual(repositoryHead, "refs/heads/other", "fixture premise: the repository's own HEAD is on another branch than the hook's");
+  write(join(work, "tracked.txt"), "changed before the retire\n");
+  const statusBefore = porcelain(work);
+  assert.deepEqual(statusRowsIn(statusBefore), [" M tracked.txt"]);
+
+  const { recovery, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore);
+  const localBranches = (repo) => execFileSync("git", ["-C", repo, "for-each-ref", "--format=%(refname)", "refs/heads"], { encoding: "utf8" }).split("\n").filter(Boolean);
+  assert.deepEqual(localBranches(join(recovery.path, "repo")), [repositoryHead], "the snapshot before the hooks keeps the branch the repository's HEAD was on then");
+  assert.equal(existsSync(join(afterRepo, ".git")), true, "the work is copied again under after-hooks/repo/: the comparison reads the repository's HEAD whenever the copier copies a HEAD detached");
+  assert.deepEqual(localBranches(afterRepo), ["refs/heads/other"], "the copy made after the hooks keeps the branch the hook gave the repository's HEAD");
+  assertBothCopiedAgain(recovery);
+});
+
 test("a retire hook that leaves a nested repository impossible to copy, after the snapshot before the hooks copied it: the retire refuses with E_WORK_PRESERVATION_FAILED, keeps the home, the work and that snapshot, and leaves no staging", () => {
   // The hook replaces the nested repository's Git directory by a .git file naming a directory that is not there.
   const retire = quietHook(`import { rmSync } from 'node:fs';
