@@ -12,7 +12,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, screen, shell } from "electron";
 import { spawn, execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync, realpathSync, writeFileSync, lstatSync, statSync, opendirSync, openSync, readSync, closeSync, watch } from "node:fs";
+import { existsSync, readFileSync, realpathSync, writeFileSync, lstatSync, statSync, fstatSync, opendirSync, openSync, readSync, closeSync, watch } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -265,7 +265,7 @@ function guard(e) { if (!trustedFrame(e)) throw new Error("forbidden: untrusted 
 // window; a window applies it only while that is its choice
 // (renderer/host-theme.mjs). No host program is run to read colours.
 const hostTheme = createHostThemeSource({
-  fs: { statSync, openSync, readSync, closeSync, watch }, home: homedir(), nativeTheme,
+  fs: { statSync, fstatSync, openSync, readSync, closeSync, watch }, home: homedir(), nativeTheme,
   send: (state) => {
     for (const win of BrowserWindow.getAllWindows()) {
       try { if (!win.webContents.isDestroyed()) win.webContents.send("host-theme:changed", state); } catch { /* closing window */ }
