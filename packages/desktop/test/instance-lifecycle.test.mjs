@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
 import { cliLifecycle, lifecycleArgv } from '../lifecycle-cli.mjs';
-import { lifecyclePlan, lifecycleReceipt, publicLifecycleReceipt, lifecycleReason, lifecycleDetailCode } from '../renderer/lifecycle-contract.mjs';
+import { lifecycleOptions, lifecyclePlan, lifecycleReceipt, publicLifecycleReceipt, lifecycleReason, lifecycleDetailCode } from '../renderer/lifecycle-contract.mjs';
 import { displayLine } from '../renderer/display-text.mjs';
 import { discover } from '../cli-locator.mjs';
 import { cli, target, instance, context, request, stopPlan, retirePlan, stopReceipt, retireReceipt, envelope, options, deferred, tick } from './helpers/lifecycle-fixture.mjs';
@@ -40,7 +40,10 @@ test('qualified admission refuses a local/remote crossing, forged scope/home/opt
     assert.equal((await f.service({ ...request(), [extra]: 'forged' }, () => f.ctx)).reason.code, 'E_BAD_ARGS');
     const r = request(); r.selector[extra] = 'forged'; assert.equal((await f.service(r, () => f.ctx)).reason.code, 'E_BAD_ARGS');
   }
-  const r = request('retire'); r.options = { discardWorktree: false, deleteBranch: true }; assert.equal((await f.service(r, () => f.ctx)).reason.code, 'E_BAD_ARGS');
+  // Remove has one choice: a request that names a branch choice is refused before any CLI call, whatever its value.
+  for (const deleteBranch of [true, false]) for (const discardWorktree of [true, false]) {
+    const r = request('retire'); r.options = { discardWorktree, deleteBranch }; assert.equal((await f.service(r, () => f.ctx)).reason.code, 'E_BAD_ARGS');
+  }
 });
 test('coalesced plan commands issue different immutable refs; first confirmation alone mints/uses key', async () => {
   const gate = deferred(); let reads = 0, writes = 0, captured;
@@ -203,23 +206,136 @@ test('ambiguous edges, unknown observations and reported child refusal stay dist
   const p = lifecyclePlan(raw, target, 'stop', options('stop')); assert.equal(p.targets[0].midTask, 'unknown'); assert.equal(p.targets[0].work.observed, false); assert.equal(p.ambiguous.length, 1);
   assert.equal(p.targets.length, 1);
 });
-test('branch deletion skipped is partial, not branch deletion success; public projection preserves safe retention only', async () => {
+test('Remove has one choice, the worktree: options with a deleteBranch key are refused whatever its value, and no retire argument list holds --delete-branch', () => {
+  for (const discardWorktree of [true, false]) {
+    assert.deepEqual(lifecycleOptions('retire', { discardWorktree }), { discardWorktree });
+    for (const deleteBranch of [true, false, undefined, null, 'false']) assert.equal(lifecycleOptions('retire', { discardWorktree, deleteBranch }), null, String(deleteBranch));
+    const base = { operation: 'retire', instance: instance.instance, home: instance.home, context: '/team' }, sent = { revision: 'b'.repeat(24), key: 'server-key' };
+    const planArgv = lifecycleArgv({ ...base, phase: 'plan', choices: { discardWorktree } }), applyArgv = lifecycleArgv({ ...base, phase: 'apply', choices: { discardWorktree }, ...sent });
+    assert.deepEqual(planArgv, ['retire', instance.instance, '--plan', '--home', instance.home, '--dir', '/team', '--json']);
+    assert.deepEqual(applyArgv, ['retire', instance.instance, '--plan-revision', sent.revision, '--idempotency-key', sent.key,
+      ...(discardWorktree ? ['--discard-worktree'] : []), '--home', instance.home, '--dir', '/team', '--json']);
+    for (const argv of [planArgv, applyArgv, lifecycleArgv({ ...base, phase: 'apply', server: 'build', choices: { discardWorktree }, ...sent })]) assert.ok(!argv.includes('--delete-branch'), argv.join(' '));
+    // Choices that name a branch build no argument list at all.
+    for (const deleteBranch of [true, false]) {
+      assert.equal(lifecycleArgv({ ...base, phase: 'plan', choices: { discardWorktree, deleteBranch } }), null);
+      assert.equal(lifecycleArgv({ ...base, phase: 'apply', choices: { discardWorktree, deleteBranch }, ...sent }), null);
+    }
+  }
+  assert.equal(lifecycleOptions('retire', { deleteBranch: false }), null); assert.equal(lifecycleOptions('retire', {}), null);
+});
+test('a retire plan is accepted with defaults.deleteBranch false or absent and refused with any other value; the projection carries no deleteBranch', async () => {
+  for (const [value, accepted] of [[undefined, true], [false, true], [true, false], [null, false], ['false', false], [0, false]]) {
+    const raw = retirePlan(); if (value === undefined) delete raw.defaults.deleteBranch; else raw.defaults.deleteBranch = value;
+    const projected = lifecyclePlan(structuredClone(raw), target, 'retire', options('retire'));
+    assert.equal(projected !== null, accepted, String(value));
+    const f = fixture({ invoke: async () => envelope(raw) }), reply = await f.plan('retire');
+    if (!accepted) { assert.equal(reply.status, 'unavailable', String(value)); assert.equal(reply.reason.code, 'E_CLI_PROTOCOL'); assert.equal(reply.plan, null); continue; }
+    assert.deepEqual(projected.defaults, { retainWorktree: true, stopChildren: true, retainChildren: true });
+    assert.equal(reply.status, 'plan', String(value)); assert.deepEqual(reply.plan.defaults, projected.defaults); assert.deepEqual(reply.options, { discardWorktree: false });
+    // The renderer's pass over the server's projection accepts it again.
+    assert.deepEqual(lifecyclePlan(reply.plan, target, 'retire', reply.options), reply.plan);
+  }
+});
+/** A removed worktree, with a branch name and a reason that must never leave a refused receipt. */
+const removedRetention = () => ({ worktree: 'removed', branch: 'UNSHOWN-branch', recordedBranch: 'UNSHOWN-recorded' });
+const branchReports = [['branchDeleted: true', r => { r.branchDeleted = true; }], ['retention.branchDeleted', r => { r.retention.branchDeleted = 'UNSHOWN-branch'; }],
+  ['both deletion fields', r => { r.branchDeleted = true; r.retention.branchDeleted = 'feat/work'; }],
+  ['retention.branchDeletionSkipped', r => { r.retention.branchDeletionSkipped = { expected: 'feat/work', actual: 'UNSHOWN-branch', reason: 'UNSHOWN reason' }; }],
+  ['retention.branchDeleted: undefined', r => { r.retention.branchDeleted = undefined; }], ['retention.branchDeletionSkipped: false', r => { r.retention.branchDeletionSkipped = false; }]];
+function retireWith(change) {
+  let writes = 0;
   const f = fixture({ invoke: async (_bin, args) => {
     if (args.phase === 'plan') return envelope(retirePlan());
-    const r = retireReceipt(args); r.retention = { worktree: 'removed', branch: 'other', recordedBranch: 'agents/dev-1', branchDeletionSkipped: { expected: 'feat/work', actual: 'other', reason: 'changed' } }; r.worktreeRemoved = true;
-    return envelope(r);
+    writes++; const r = retireReceipt(args); r.worktreeRemoved = true; r.retention = removedRetention(); change(r); return envelope(r);
   } });
-  const p = await f.plan('retire'), outcome = await f.apply(p.planRef);
-  assert.equal(outcome.status, 'partial'); assert.equal(outcome.receipt.removedDir, true); assert.equal(outcome.receipt.branchDeleted, false);
-  assert.equal(publicLifecycleReceipt(outcome.receipt, p.plan).retention.branchDeletionSkipped.actual, 'other');
+  return { ...f, writes: () => writes };
+}
+test('a retire receipt without branchDeleted, or with false, is accepted and complete when the home was removed; the projection carries no branchDeleted', async () => {
+  for (const change of [r => { delete r.branchDeleted; }, r => { r.branchDeleted = false; }]) {
+    const f = retireWith(change), p = await f.plan('retire'), outcome = await f.apply(p.planRef);
+    assert.equal(outcome.status, 'complete'); assert.equal(outcome.reason, null); assert.equal(outcome.receipt.removedDir, true);
+    assert.equal(Object.hasOwn(outcome.receipt, 'branchDeleted'), false); assert.deepEqual(outcome.receipt.retention, removedRetention());
+    // The renderer's pass accepts the server's projection, and one that still says false (an earlier Desktop server).
+    assert.deepEqual(publicLifecycleReceipt(outcome.receipt, p.plan), outcome.receipt);
+    assert.deepEqual(publicLifecycleReceipt({ ...outcome.receipt, branchDeleted: false }, p.plan), outcome.receipt);
+  }
 });
-test('named branch deletion cannot be authorized from unknown/detached work or a non-owned work mode', async () => {
-  for (const mutate of [p => { p.facts.work = { observed: false, reason: 'unavailable' }; }, p => { p.facts.work.branch = null; p.facts.work.detached = true; }, p => { p.facts.workMode = 'checkout'; }]) {
-    const raw = retirePlan(); mutate(raw); let calls = 0;
+test('a retire receipt that reports a branch deletion or a skip is refused whole: unknown outcome, no receipt, nothing of it in the reply', async () => {
+  for (const [name, change] of branchReports) {
+    const f = retireWith(change), p = await f.plan('retire'), outcome = await f.apply(p.planRef);
+    assert.equal(outcome.status, 'unknown', name); assert.equal(outcome.reason.code, 'E_OUTCOME_UNKNOWN', name);
+    assert.deepEqual(outcome.reason, lifecycleReason('E_OUTCOME_UNKNOWN')); assert.deepEqual(outcome.cause, lifecycleReason('E_CLI_PROTOCOL'));
+    assert.equal(outcome.receipt, null, name); assert.equal(outcome.plan, null, name);
+    assert.deepEqual(Object.keys(outcome).sort(), ['cause', 'lifecycleApi', 'options', 'plan', 'planRef', 'reason', 'receipt', 'status', 'target'], name);
+    assert.doesNotMatch(JSON.stringify(outcome), /UNSHOWN|feat\/work|branch/i, name);
+    // The recorded reply, not a second command.
+    const again = await f.apply(p.planRef); assert.equal(again.repeated, true); assert.equal(again.receipt, null); assert.equal(f.writes(), 1, name);
+  }
+});
+test('publicLifecycleReceipt refuses a projection that reports a branch deletion or a skip', async () => {
+  const f = retireWith(() => {}), p = await f.plan('retire'), accepted = (await f.apply(p.planRef)).receipt;
+  assert.ok(publicLifecycleReceipt(structuredClone(accepted), p.plan), 'the same receipt without a report is accepted');
+  for (const [name, change] of branchReports) {
+    const reported = structuredClone(accepted); change(reported);
+    assert.equal(publicLifecycleReceipt(reported, p.plan), null, name);
+  }
+  // A plain lifecycleReceipt, as the server reads the kernel's answer.
+  const raw = retireReceipt({ key: 'k', revision: p.plan.planRevision }); assert.ok(lifecycleReceipt(structuredClone(raw), p.plan, 'k'));
+  for (const [name, change] of branchReports) { const reported = structuredClone(raw); change(reported); assert.equal(lifecycleReceipt(reported, p.plan, 'k'), null, name); }
+});
+test('a deferred retire receipt is pending; one that reports a branch deletion or a skip is refused like any other', async () => {
+  const deferredWith = change => { let writes = 0; const f = fixture({ invoke: async (_bin, args) => {
+    if (args.phase === 'plan') return envelope(retirePlan());
+    writes++; const r = { retired: instance.instance, planRevision: args.revision, idempotencyKey: args.key, replayed: false, deferred: true }; change(r); return envelope(r);
+  } }); return { ...f, writes: () => writes }; };
+  const projection = { action: 'retire', instance: instance.instance, home: instance.home, planRevision: retirePlan().planRevision, replayed: false, deferred: true };
+  for (const change of [() => {}, r => { r.branchDeleted = false; }, r => { r.retention = null; }, r => { r.retention = removedRetention(); }]) {
+    const f = deferredWith(change), p = await f.plan('retire'), outcome = await f.apply(p.planRef);
+    assert.equal(outcome.status, 'pending'); assert.deepEqual(outcome.receipt, projection);
+    assert.deepEqual(publicLifecycleReceipt(outcome.receipt, p.plan), projection); assert.doesNotMatch(JSON.stringify(outcome), /UNSHOWN/);
+  }
+  // A deferred receipt has no retention of its own: the reports are set where a kernel answer would carry them.
+  const reports = [['branchDeleted: true', r => { r.branchDeleted = true; }],
+    ['retention.branchDeleted', r => { r.retention = { ...removedRetention(), branchDeleted: 'UNSHOWN-branch' }; }],
+    ['retention.branchDeletionSkipped', r => { r.retention = { ...removedRetention(), branchDeletionSkipped: { expected: 'feat/work', actual: 'UNSHOWN-branch', reason: 'UNSHOWN reason' } }; }],
+    ['a skip alone in retention', r => { r.retention = { branchDeletionSkipped: false }; }]];
+  for (const [name, change] of reports) {
+    const f = deferredWith(change), p = await f.plan('retire'), outcome = await f.apply(p.planRef);
+    assert.equal(outcome.status, 'unknown', name); assert.deepEqual(outcome.reason, lifecycleReason('E_OUTCOME_UNKNOWN'), name);
+    assert.deepEqual(outcome.cause, lifecycleReason('E_CLI_PROTOCOL'), name); assert.equal(outcome.receipt, null, name);
+    assert.doesNotMatch(JSON.stringify(outcome), /UNSHOWN|feat\/work|branch/i, name); assert.equal(f.writes(), 1, name);
+    const reported = structuredClone(projection); change(reported); assert.equal(publicLifecycleReceipt(reported, p.plan), null, name);
+  }
+});
+test('a retire receipt with incomplete items, or with the home not removed, is still partial', async () => {
+  for (const [change, ok] of [[r => { r.rollbackIncomplete = ['cleanup']; }, false], [r => { r.removedDir = false; r.retainedHome = instance.home; r.rollbackIncomplete = ['cleanup']; }, false], [r => { r.removedDir = false; }, true]]) {
+    const f = fixture({ invoke: async (_bin, args) => {
+      if (args.phase === 'plan') return envelope(retirePlan());
+      const r = retireReceipt(args); change(r);
+      return ok ? envelope(r) : { schemaVersion: 1, ok: false, result: r, error: { code: 'E_RETIRE_INCOMPLETE', message: 'PRIVATE' } };
+    } });
+    const p = await f.plan('retire'), outcome = await f.apply(p.planRef);
+    assert.equal(outcome.status, 'partial'); assert.deepEqual(outcome.reason, lifecycleReason('E_RETIRE_INCOMPLETE'));
+    assert.equal(outcome.receipt.incomplete, !ok); assert.doesNotMatch(JSON.stringify(outcome), /PRIVATE/);
+    assert.deepEqual(publicLifecycleReceipt(outcome.receipt, p.plan), outcome.receipt);
+  }
+});
+test('deleting the worktree cannot be authorized for a work mode that owns none; the refusal is raised before any apply command', async () => {
+  for (const mode of ['checkout', 'directory', 'workspace', null]) {
+    const raw = retirePlan(); raw.facts.workMode = mode; let calls = 0;
     const f = fixture({ invoke: async (_bin, args) => { calls++; assert.equal(args.phase, 'plan'); return envelope(raw); } });
-    const r = request('retire'); r.options = { discardWorktree: true, deleteBranch: true };
+    const r = request('retire'); r.options = { discardWorktree: true };
     const p = await f.service(r, () => f.ctx); assert.equal(p.status, 'plan');
-    assert.equal((await f.apply(p.planRef)).reason.code, 'E_OPTION_UNAVAILABLE'); assert.equal(calls, 1);
+    const refused = await f.apply(p.planRef); assert.deepEqual(refused.reason, lifecycleReason('E_OPTION_UNAVAILABLE')); assert.equal(calls, 1);
+    assert.equal(refused.reason.message, 'Review the choices: deleting work requires an owned worktree.');
+  }
+  // Unobserved or detached work does not make the one choice unavailable: it needs an owned worktree and nothing else.
+  for (const mutate of [p => { p.facts.work = { observed: false, reason: 'unavailable' }; }, p => { p.facts.work.branch = null; p.facts.work.detached = true; }]) {
+    const raw = retirePlan(); mutate(raw);
+    const f = fixture({ invoke: async (_bin, args) => envelope(args.phase === 'plan' ? raw : retireReceipt(args)) });
+    const r = request('retire'); r.options = { discardWorktree: true };
+    const p = await f.service(r, () => f.ctx); assert.equal(p.status, 'plan'); assert.equal((await f.apply(p.planRef)).status, 'complete');
   }
 });
 test('E_CHILDREN_RUNNING preserves partial child outcomes without minting an executable fresh confirmation', async () => {

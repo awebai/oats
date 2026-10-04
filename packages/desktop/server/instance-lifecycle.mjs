@@ -93,7 +93,7 @@ export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => per
     if (envelope.result) {
       const receipt = lifecycleReceipt(envelope.result, entry.plan, entry.key, { server: entry.remote?.server ?? null });
       if (!receipt) return failure('E_OUTCOME_UNKNOWN', 'unknown', { cause: lifecycleReason('E_CLI_PROTOCOL') });
-      const complete = receipt.action === 'stop' ? receipt.ok : receipt.removedDir && !receipt.incomplete && !receipt.retention?.branchDeletionSkipped;
+      const complete = receipt.action === 'stop' ? receipt.ok : receipt.removedDir && !receipt.incomplete;
       return { lifecycleApi: 1, status: receipt.deferred ? 'pending' : complete ? 'complete' : 'partial', target: entry.target, planRef: entry.id,
         options: entry.choices, plan: null, receipt, reason: complete ? null : lifecycleReason(receipt.action === 'stop' ? 'E_SESSION_STOP_FAILED' : 'E_RETIRE_INCOMPLETE') };
     }
