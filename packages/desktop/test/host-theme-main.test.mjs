@@ -1,12 +1,17 @@
 // The theme of this computer, main side (#602): Omarchy's colors.toml parsed and
 // resolved, the watch on `current/`, the system appearance, and the IPC guard.
-// All inert: an in-memory fs, fake timers, a fake nativeTheme and a fake ipc. No
-// Electron, no real watch, no process, no file outside the fixtures.
+// Inert but for one test: an in-memory fs, fake timers, a fake nativeTheme and a
+// fake ipc. No Electron, no real watch, no file outside the fixtures. The one
+// test under "the real file system" runs the reader in a child process, on a
+// temporary directory it removes.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { constants, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
 import {
   parseColorsToml, resolveHostPalette, readOmarchyTheme, createHostThemeSource, installHostThemeHandlers,
@@ -21,12 +26,18 @@ const THEME = join(CURRENT, "theme"), COLORS = join(THEME, "colors.toml"), NAME 
 const resolve = text => resolveHostPalette(parseColorsToml(text));
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
-const dir = () => ({ dir: true });
+/** A directory. It opens, as on Linux and macOS, unless `opens` is false (a platform that refuses). */
+const dir = ({ opens = true } = {}) => ({ dir: true, opens });
 const file = (content, { denied = false } = {}) => ({ bytes: Buffer.isBuffer(content) ? content : Buffer.from(content, "utf8"), denied });
-/** An in-memory fs with the five calls the source uses; `watch` only records and hands back an emitter. */
+/** What opens but is not a regular file: a FIFO that has a writer, a device. Its bytes are there to be left unread. */
+const special = content => ({ special: true, bytes: Buffer.from(content, "utf8") });
+/** An in-memory fs with the six calls the source uses; `watch` only records and hands back an emitter.
+ * A descriptor keeps the entry it opened: replacing the entry at a path does not change an open file,
+ * and growing an entry's `bytes` does. */
 function fakeFs(tree = {}) {
-  const entries = new Map(Object.entries(tree)), fds = new Map(), calls = { stat: [], open: [] }, watchers = [];
+  const entries = new Map(Object.entries(tree)), fds = new Map(), calls = { stat: [], open: [], flags: [], fstat: [], read: [] }, watchers = [];
   const error = code => Object.assign(new Error(code), { code });
+  const stats = entry => ({ isFile: () => !entry.dir && !entry.special, isDirectory: () => Boolean(entry.dir), size: entry.dir ? 0 : entry.bytes.length });
   let next = 3, watchThrows = false;
   return {
     entries, calls, watchers, fds,
@@ -35,20 +46,29 @@ function fakeFs(tree = {}) {
       calls.stat.push(path);
       const entry = entries.get(path);
       if (!entry) throw error("ENOENT");
-      return { isFile: () => !entry.dir, isDirectory: () => Boolean(entry.dir), size: entry.dir ? 0 : entry.bytes.length };
+      return stats(entry);
     },
-    openSync(path) {
-      calls.open.push(path);
+    openSync(path, flags) {
+      calls.open.push(path); calls.flags.push(flags);
       const entry = entries.get(path);
       if (!entry) throw error("ENOENT");
-      if (entry.dir) throw error("EISDIR");
+      if (entry.dir && !entry.opens) throw error("EISDIR");
       if (entry.denied) throw error("EACCES");
-      fds.set(next, { bytes: entry.bytes, at: 0 });
+      fds.set(next, { entry, at: 0 });
       return next++;
     },
-    readSync(fd, buffer, offset, length) {
+    fstatSync(fd) {
+      calls.fstat.push(fd);
       const open = fds.get(fd);
-      const copied = open.bytes.copy(buffer, offset, open.at, Math.min(open.bytes.length, open.at + length));
+      if (!open) throw error("EBADF");
+      return stats(open.entry);
+    },
+    readSync(fd, buffer, offset, length) {
+      calls.read.push(fd);
+      const open = fds.get(fd);
+      if (open.entry.dir) throw error("EISDIR");
+      const bytes = open.entry.bytes;
+      const copied = bytes.copy(buffer, offset, open.at, Math.min(bytes.length, open.at + length));
       open.at += copied;
       return copied;
     },
@@ -251,15 +271,34 @@ test("one read: the state carries colours and polarity only (no name, no path), 
   assert.deepEqual(Object.keys(state).sort(), ["colors", "mode", "source"]);
   assert.deepEqual(Object.keys(state.colors).sort(), ["accent", "ansi", "background", "brightForeground", "canvas", "foreground", "selection"]);
   assert.doesNotMatch(JSON.stringify(state), /fixture|tokyo|omarchy\/|\.toml/, "nothing of the path or the name");
-  assert.deepEqual([...new Set([...fs.calls.stat, ...fs.calls.open])], [COLORS], "only the colours file is touched");
+  assert.deepEqual(fs.calls.open, [COLORS], "only the colours file is opened");
+  assert.deepEqual(fs.calls.stat, [], "and no path is checked: what is checked is the file that was opened");
+  assert.deepEqual(fs.calls.fstat, [3]);
   assert.equal(fs.fds.size, 0, "the file is closed");
+});
+
+test("the colours file is opened read-only and without blocking, so a FIFO at its path cannot hold the main process", () => {
+  const fs = omarchy();
+  assert.deepEqual(readOmarchyTheme(fs, CURRENT).state, hostState("tokyo-night"));
+  assert.equal(fs.calls.flags.length, 1, "one open");
+  const [flags] = fs.calls.flags;
+  assert.equal(typeof flags, "number", 'numeric flags, never the string "r"');
+  if (process.platform !== "win32") assert.ok(constants.O_NONBLOCK > 0 && constants.O_NOCTTY > 0, "this platform defines both flags");
+  for (const name of ["O_NONBLOCK", "O_NOCTTY"]) {
+    if (constants[name] !== undefined) assert.equal(flags & constants[name], constants[name], `${name} is set`);
+  }
+  assert.equal(flags & (constants.O_WRONLY | constants.O_RDWR), 0, "read-only");
+  assert.equal(flags, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0) | (constants.O_NOCTTY ?? 0), "and nothing else: a flag the platform lacks adds nothing");
+  assert.equal(fs.fds.size, 0);
 });
 
 test("each unusable source gives its reason: missing, unreadable, invalid", () => {
   const read = tree => { const fs = fakeFs({ [CURRENT]: dir(), ...tree }); const result = readOmarchyTheme(fs, CURRENT); assert.equal(fs.fds.size, 0); assert.equal(result.state, undefined); return result.reason; };
   assert.equal(read({}), "missing", "current/ exists, theme/ does not");
   assert.equal(read({ [THEME]: dir() }), "missing", "theme/ exists, colors.toml does not");
-  assert.equal(read({ [THEME]: dir(), [COLORS]: dir() }), "unreadable", "colors.toml is a directory");
+  assert.equal(read({ [THEME]: dir(), [COLORS]: dir() }), "unreadable", "colors.toml is a directory that opens");
+  assert.equal(read({ [THEME]: dir(), [COLORS]: dir({ opens: false }) }), "unreadable", "colors.toml is a directory the platform refuses to open");
+  assert.equal(read({ [THEME]: dir(), [COLORS]: special(colorsToml("tokyo-night")) }), "unreadable", "colors.toml is not a regular file");
   assert.equal(read({ [THEME]: dir(), [COLORS]: file(colorsToml("tokyo-night"), { denied: true }) }), "unreadable", "no permission");
   assert.equal(read({ [THEME]: dir(), [COLORS]: file(Buffer.from([0x62, 0x67, 0x20, 0x3d, 0x20, 0xff, 0xfe, 0x0a])) }), "unreadable", "not UTF-8");
   const padded = size => { const text = colorsToml("tokyo-night"); return file(`${text}#${"x".repeat(size - Buffer.byteLength(text) - 1)}`); };
@@ -271,12 +310,69 @@ test("each unusable source gives its reason: missing, unreadable, invalid", () =
   assert.deepEqual(readOmarchyTheme(atLimit, CURRENT).state, hostState("tokyo-night"), "exactly 64 KiB is read");
 });
 
-test("a file that grew past the limit between the stat and the read is unreadable, not truncated", () => {
+test("what is checked is the file that was opened: one that is not a regular file, or is over the limit, is unreadable and nothing is read from it", () => {
+  const cases = [
+    ["a FIFO that has a writer, or a device", special(colorsToml("tokyo-night"))],
+    ["a directory", dir()],
+    ["a file over 64 KiB", file("x".repeat(HOST_THEME_MAX_BYTES + 1))],
+  ];
+  for (const [what, entry] of cases) {
+    const fs = fakeFs({ [CURRENT]: dir(), [THEME]: dir(), [COLORS]: entry });
+    assert.deepEqual(readOmarchyTheme(fs, CURRENT), { reason: "unreadable" }, what);
+    assert.deepEqual(fs.calls.fstat, [3], `${what}: the descriptor is checked`);
+    assert.deepEqual(fs.calls.read, [], `${what}: nothing is read`);
+    assert.equal(fs.fds.size, 0, `${what}: closed`);
+  }
+});
+
+test("an entry replaced after any check of its path is judged by what was opened", () => {
   const fs = omarchy();
-  const stat = fs.statSync.bind(fs);
-  fs.statSync = path => { const result = stat(path); fs.entries.set(COLORS, file("x".repeat(HOST_THEME_MAX_BYTES + 10))); return result; };
-  assert.equal(readOmarchyTheme(fs, CURRENT).reason, "unreadable");
+  const open = fs.openSync.bind(fs);
+  // The replacement holds a valid palette: a reader that trusted a check of the path would read it and answer a state.
+  fs.openSync = (path, flags) => { fs.entries.set(path, special(colorsToml("rose-pine"))); return open(path, flags); };
+  assert.deepEqual(readOmarchyTheme(fs, CURRENT), { reason: "unreadable" });
+  assert.deepEqual(fs.calls.read, [], "nothing is read from it");
   assert.equal(fs.fds.size, 0);
+});
+
+test("a file that grew past the limit between the check and the read is unreadable, not truncated", () => {
+  const fs = omarchy();
+  const fstat = fs.fstatSync.bind(fs);
+  fs.fstatSync = fd => { const result = fstat(fd); fs.entries.get(COLORS).bytes = Buffer.from("x".repeat(HOST_THEME_MAX_BYTES + 10)); return result; };
+  assert.deepEqual(readOmarchyTheme(fs, CURRENT), { reason: "unreadable" });
+  assert.deepEqual(fs.calls.fstat, [3], "the check passed: the file was within the limit then");
+  assert.ok(fs.calls.read.length > 0, "and the read found it over the limit");
+  assert.equal(fs.fds.size, 0);
+});
+
+// ── the real file system ────────────────────────────────────────────────────
+
+const REAL_FS_READER = fileURLToPath(new URL("./fixtures/host-theme/read-real-fs.mjs", import.meta.url));
+/** Far more than the child needs. It is never a measure: it only ends a reader that blocks. */
+const REAL_FS_DEADLINE_MS = 10_000;
+
+test("the real file system, in a child with a deadline: a regular file and a symlink to one are read; a file replaced by a FIFO just before the open is unreadable, and the reader returns", {
+  skip: process.platform === "win32" ? "the cases need the mkfifo program and FIFOs, which Windows does not have" : false,
+}, () => {
+  const root = mkdtempSync(join(tmpdir(), "oats-host-theme-"));
+  try {
+    // spawnSync kills this child, and only it, at the deadline, and has waited for it when it returns.
+    const child = spawnSync(process.execPath, [REAL_FS_READER, root], { timeout: REAL_FS_DEADLINE_MS, killSignal: "SIGKILL", encoding: "utf8" });
+    const said = `\nstdout:\n${child.stdout}\nstderr:\n${child.stderr}`;
+    assert.equal(child.error, undefined, `the child did not end (a reader that blocks is killed at the deadline) or could not run: ${child.error?.message}${said}`);
+    assert.equal(child.signal, null, said);
+    assert.equal(child.status, 0, said);
+    const read = { state: hostState("tokyo-night") };
+    assert.deepEqual(child.stdout.trimEnd().split("\n").map(line => JSON.parse(line)), [
+      { case: "regular", result: read },
+      { case: "symlink", result: read },
+      { case: "swap", replaced: true }, // the regular file was a FIFO when the real open was called
+      { case: "swap", result: { reason: "unreadable" } },
+      { case: "fifo", result: { reason: "unreadable" } },
+      { case: "directory", result: { reason: "unreadable" } },
+      { case: "dangling", result: { reason: "missing" } },
+    ]);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 // ── 4. live change ──────────────────────────────────────────────────────────
@@ -288,6 +384,8 @@ test("start: one read, one state, and one non-recursive watch on current/ (never
   assert.equal(fs.watchers.length, 1, "started once");
   assert.equal(fs.watchers[0].path, CURRENT, "the parent directory: omarchy-theme-set replaces theme/ with a new one on every change");
   assert.notEqual(fs.watchers[0].options?.recursive, true);
+  assert.deepEqual(fs.calls.stat, [CURRENT], "the one path checked is current/; the colours file is opened, not checked by path");
+  assert.equal(fs.fds.size, 0);
   assert.equal(u.nativeTheme.listeners.size, 1);
   assert.equal(u.timers.pending, 0);
 });
@@ -388,6 +486,9 @@ test("app focus and a nativeTheme update re-read at once, which corrects a misse
   u.nativeTheme.set(false);
   assert.deepEqual(u.sent.at(-1), hostState("hackerman"));
   assert.equal(u.timers.pending, 0);
+  assert.deepEqual(fs.calls.open, [COLORS, COLORS, COLORS], "three reads");
+  assert.deepEqual(fs.calls.stat, [CURRENT], "and no check of a path after the one of current/ at start");
+  assert.equal(fs.fds.size, 0);
 });
 
 test("a watch that throws or errors is not retried: the source keeps working from focus and appearance re-reads", () => {
@@ -416,10 +517,11 @@ test("dispose closes the watch, drops the timers and the appearance listener; no
   assert.equal(fs.watchers[0].closed, true);
   assert.equal(u.timers.pending, 0);
   assert.equal(u.nativeTheme.listeners.size, 0);
-  const reads = fs.calls.stat.length;
+  const reads = fs.calls.open.length, checks = fs.calls.stat.length;
   swapTheme(fs, colorsToml("rose-pine"));
   fs.watchers[0].listener("rename", "theme"); u.timers.advance(1000); u.host.refresh(); u.host.start();
-  assert.equal(fs.calls.stat.length, reads);
+  assert.equal(fs.calls.open.length, reads, "no read");
+  assert.equal(fs.calls.stat.length, checks, "and no second check of current/");
   assert.equal(u.sent.length, 1);
 });
 
@@ -503,12 +605,12 @@ test("main installs the handler with its own guard and pushes each state to ever
     { webContents: { isDestroyed: () => false, send: (...args) => sends.push(["two", ...args]) } },
   ];
   const made = { stub: true }, guard = () => {}, ipcMain = {}, nativeTheme = {}, calls = {};
-  const fns = Object.fromEntries(["statSync", "openSync", "readSync", "closeSync", "watch"].map(name => [name, () => {}]));
+  const fns = Object.fromEntries(["statSync", "fstatSync", "openSync", "readSync", "closeSync", "watch"].map(name => [name, () => {}]));
   runInNewContext(main.slice(start, end + tail.length), { ...fns, homedir: () => HOME, nativeTheme, ipcMain, guard,
     BrowserWindow: { getAllWindows: () => windows },
     createHostThemeSource: options => { calls.source = options; return made; },
     installHostThemeHandlers: options => { calls.handlers = options; } });
-  assert.deepEqual(Object.keys(calls.source.fs).sort(), ["closeSync", "openSync", "readSync", "statSync", "watch"], "the fs it is given: stat, a bounded read, a watch");
+  assert.deepEqual(Object.keys(calls.source.fs).sort(), ["closeSync", "fstatSync", "openSync", "readSync", "statSync", "watch"], "the fs it is given: stat, a bounded read of a checked descriptor, a watch");
   assert.equal(calls.source.home, HOME); assert.equal(calls.source.nativeTheme, nativeTheme);
   assert.equal(calls.handlers.guard, guard, "the existing trusted-frame guard");
   assert.equal(calls.handlers.source, made); assert.equal(calls.handlers.ipc, ipcMain);

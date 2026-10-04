@@ -14,6 +14,7 @@
    colours and the polarity leave this module: no path, no file content and no
    name (`current/theme.name` is never read; its write is just one of the events
    that trigger a re-read). */
+import { constants } from "node:fs";
 import { join } from "node:path";
 import { mixHex } from "./renderer/host-theme.mjs";
 
@@ -26,6 +27,12 @@ export const HOST_THEME_DEBOUNCE_MS = 200;
 /** A missing colours file is read once more after this long: `omarchy-theme-set`
  * removes `theme/` and moves the next one in, so the file is absent for a moment. */
 export const HOST_THEME_RETRY_MS = 500;
+
+/** How the colours file is opened: read-only, and never waiting. `O_NONBLOCK`
+ * makes the open of a FIFO return at once instead of waiting for a writer (it
+ * changes nothing for a regular file); `O_NOCTTY` keeps the open of a terminal
+ * device from having a side effect. A flag a platform lacks adds nothing. */
+const OPEN_FLAGS = constants.O_RDONLY | (constants.O_NONBLOCK ?? 0) | (constants.O_NOCTTY ?? 0);
 
 const HEX = /^#[0-9a-f]{6}$/i;
 const NAMES = ["red", "green", "yellow", "blue", "magenta", "cyan"];
@@ -89,18 +96,24 @@ export function resolveHostPalette(entries) {
 
 /** A regular file's text, read up to `max` bytes as UTF-8. `{ text }`, or
  * `{ reason }`: "missing" when there is no such file, "unreadable" for
- * anything else (a directory, too large, not UTF-8, no permission). */
+ * anything else (a directory, a FIFO, too large, not UTF-8, no permission).
+ *
+ * The path is opened first, without blocking, and what is checked is the file
+ * that was opened, never the path: an entry can be replaced between a check of
+ * its path and the open, and a blocking open of a FIFO waits for a writer for
+ * ever, in the main process. Nothing is read from a descriptor that is not a
+ * regular file within the limit. */
 function readBounded(fs, path, max) {
   const failure = error => ({ reason: error?.code === "ENOENT" || error?.code === "ENOTDIR" ? "missing" : "unreadable" });
   let fd = null;
   try {
-    const stat = fs.statSync(path); // follows a symlink, as Omarchy's own `-f` test does
+    fd = fs.openSync(path, OPEN_FLAGS); // follows a symlink, as Omarchy's own `-f` test does
+    const stat = fs.fstatSync(fd);
     if (!stat.isFile() || stat.size > max) return { reason: "unreadable" };
-    fd = fs.openSync(path, "r");
     const buffer = Buffer.alloc(max + 1);
     let length = 0;
     for (let n; length <= max && (n = fs.readSync(fd, buffer, length, buffer.length - length, null)) > 0;) length += n;
-    if (length > max) return { reason: "unreadable" }; // grew since the stat
+    if (length > max) return { reason: "unreadable" }; // grew since the fstat
     return { text: new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, length)) };
   } catch (error) { return failure(error); }
   finally { if (fd !== null) { try { fs.closeSync(fd); } catch { /* nothing to release */ } } }
