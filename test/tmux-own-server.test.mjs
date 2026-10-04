@@ -519,6 +519,13 @@ test("tmux's shell-format environment is read strictly and never executed: the w
   // looks like an assignment (of a reserved name, of an ordinary one) is never read as one.
   assert.deepEqual(read('M="first\nOATS_INSTANCE_HOME=/smuggled"; export M;\nN="first\nINJECTED=1"; export N;\nKEPT="1"; export KEPT;\n'), { KEPT: "1" });
   assert.deepEqual(read('unset GONE;\nKEPT="1"; export KEPT;\n'), { KEPT: "1" }, "a removed variable carries nothing");
+  // tmux 3.4 and 3.5 write each printed line through vis(3). 3.4 puts one more backslash before a
+  // `$` that a letter, `_` or `{` follows; both write a control character or a byte that is not
+  // UTF-8 as an escape. The same value in both forms reads the same; an encoded value is dropped.
+  const DOLLARS = "$HOME ${B} $_x $1 $ \\$HOME";
+  assert.deepEqual(read('D="\\$HOME \\${B} \\$_x \\$1 \\$ \\\\\\$HOME"; export D;\n'), { D: DOLLARS }, "as tmux's shell format alone writes it");
+  assert.deepEqual(read('D="\\\\$HOME \\\\${B} \\\\$_x \\$1 \\$ \\\\\\\\$HOME"; export D;\n'), { D: DOLLARS }, "as tmux 3.4 writes it");
+  assert.deepEqual(read('E="a\\033b"; export E;\nF="a\\rb"; export F;\nG="a\\303\\050b"; export G;\nKEPT="1"; export KEPT;\n'), { KEPT: "1" }, "a value tmux wrote encoded is dropped whole");
   assert.deepEqual(read('BASH_FUNC_x%%="() { :; }"; export BASH_FUNC_x%%;\nKEPT="1"; export KEPT;\n'), { KEPT: "1" }, "a name that is no plain identifier is not carried");
   // Anything the grammar does not consume to the end is a failed read, never a partial environment.
   for (const [what, text] of [
@@ -527,6 +534,9 @@ test("tmux's shell-format environment is read strictly and never executed: the w
     ["cut inside the export", 'A="1"; export'],
     ["another name exported", 'A="1"; export B;\n'],
     ["an escape tmux does not write", 'A="a\\nb"; export A;\n'],
+    ["a bare dollar sign", 'A="a$b"; export A;\n'],
+    ["a bare backtick", 'A="a`b"; export A;\n'],
+    ["two octal digits", 'A="a\\03"; export A;\n'],
     ["an unquoted assignment", "A=1\n"],
     ["a stray line", 'A="1"; export A;\nrm -rf /\n'],
     ["an unset without a name", "unset ;\n"],
@@ -552,7 +562,13 @@ test("the environment OATS creates a tmux session and a window with: an instance
   const agent = { FIXTURE_SECRET: "s3cret", OATS_LAUNCH_REF_FIXTURE_TOKEN: "s3cret", FIXTURE_TOKEN: "s3cret", CLAUDECODE: "1", FIXTURE_IDENTITY: "creator", TMUX: `${OTHER},1,0`, TMUX_PANE: "%1", COLORFGBG: "15;0" };
   const operator = { FIXTURE_OPERATOR: "kept", FIXTURE_IDENTITY: "operator", PI_AGENTS_ROOT: "/fixture/operator/agents", OATS_LAUNCH_REF_FIXTURE_TOKEN: "s3cret", FIXTURE_TOKEN: "s3cret", TMUX: `${OTHER},1,0`, COLORFGBG: "15;0" };
   const absent = (env, names, what) => { for (const name of names) assert.equal(name in env, false, `${what} holds no ${name}`); };
-  const SPECIAL = "a \"quoted\" $HOME `tick` back\\slash = ; export X;";
+  // Every character tmux escapes, a `$` in each position tmux 3.4 treats differently, and text
+  // shaped like the end of an entry. (Not ending in `;`: tmux takes that off a command's argument.)
+  const SPECIAL = "a \"quoted\" $HOME `tick` back\\slash lit\\$HOME ${B} $_x $1 $ = ; export X; end";
+  const CONTROL = "a\u001bb";
+  /** The server's global environment as the kernel's reader gives it: tmux's plain listing is not
+   *  the same text in every tmux version. A pane's own `env` is the independent check below. */
+  const shellEnv = (socket) => parseTmuxShellEnvironment(execFileSync("tmux", ["-u", "-S", socket, "show-environment", "-g", "-s"], { timeout: 10000, stdio: ["ignore", "pipe", "pipe"] }));
 
   // The server the calling instance is recorded on: a marker; a value every escaped character is in;
   // an empty value; two multi-line values, one followed by a line shaped like the assignment of a
@@ -564,6 +580,7 @@ test("the environment OATS creates a tmux session and a window with: an instance
   source("OATS_FIXTURE_MARKER", "from the recorded server");
   source("OATS_FIXTURE_SPECIAL", SPECIAL);
   source("OATS_FIXTURE_EMPTY", "");
+  source("OATS_FIXTURE_CONTROL", CONTROL);
   source("OATS_FIXTURE_MULTI_RESERVED", "first line\nOATS_INSTANCE_HOME=/smuggled");
   source("OATS_FIXTURE_MULTI_PLAIN", "first line\nFIXTURE_INJECTED=1");
   source("-h", "OATS_FIXTURE_HIDDEN", "hidden");
@@ -573,7 +590,7 @@ test("the environment OATS creates a tmux session and a window with: an instance
   const sourceEnvironment = (server) => {
     absent(server, [...SECRETS, ...KERNEL, ...NOT_CARRIED, "FIXTURE_IDENTITY", "FIXTURE_OPERATOR"], "a server started with the recorded server's environment");
     assert.equal(server.OATS_FIXTURE_MARKER, "from the recorded server");
-    assert.equal(server.OATS_FIXTURE_SPECIAL, SPECIAL, "a value is carried exactly, whatever characters it holds");
+    assert.equal(shellEnv(OATS).OATS_FIXTURE_SPECIAL, SPECIAL, "a value is carried exactly, whatever characters it holds");
     assert.equal(server.OATS_FIXTURE_EMPTY, "");
     assert.doesNotMatch(tmuxOn(OATS, "show-environment", "-g"), /s3cret|smuggled|first line|creator/, "no value of the instance's; a multi-line value is dropped whole");
   };
@@ -656,6 +673,29 @@ test("the environment OATS creates a tmux session and a window with: an instance
   assert.ok(paneEnv(three.home).PATH.split(":").includes("/fixture/starter/bin"), "the pane's PATH is the starting process's");
   assert.equal(paneEnv(three.home).FIXTURE_OPERATOR, "kept");
 
+  // The locale names. tmux's client does not start without a UTF-8 locale, so an instance's
+  // new-window client carries LANG, LC_ALL and LC_CTYPE besides PATH. tmux imports none of them:
+  // the pane, the session and the server keep the values they had, whatever the client holds.
+  const BASELINE = { LANG: "fixture_BASELINE_LANG.UTF-8", LC_ALL: "fixture_BASELINE_ALL.UTF-8", LC_CTYPE: "fixture_BASELINE_CTYPE.UTF-8" };
+  const CLIENT = { LANG: "fixture_CLIENT_LANG.UTF-8", LC_ALL: "fixture_CLIENT_ALL.UTF-8", LC_CTYPE: "fixture_CLIENT_CTYPE.UTF-8" };
+  for (const [name, value] of Object.entries(BASELINE)) tmuxOn(OATS, "set-environment", "-g", name, value);
+  const clientSeen = join(base, "new-window-client-env.txt");
+  const recording = tmuxInFront("locale-front", `case " $* " in *" new-window "*) env > ${shq(clientSeen)} ;; esac`);
+  const localised = await makeHome("env-locale", { session: "envs" });
+  r = fx.cli(["session", "start", "--home", localised.home, "--json"], { env: { ...as(caller), ...CLIENT, PATH: `${recording}:${as(caller).PATH}` } });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  await ready(localised.home);
+  const client = Object.fromEntries(lines(readFileSync(clientSeen, "utf8")).filter((l) => l.includes("=")).map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]));
+  for (const [name, value] of Object.entries(CLIENT)) assert.equal(client[name], value, `the new-window client runs with the creator's ${name}`);
+  absent(client, [...SECRETS, "OATS_INSTANCE", "OATS_INSTANCE_HOME", "FIXTURE_IDENTITY", "TMUX", "TMUX_PANE", "COLORFGBG"], "the new-window client of an instance");
+  pane = paneEnv(localised.home);
+  server = globalEnv(OATS);
+  for (const [name, value] of Object.entries(BASELINE)) {
+    assert.equal(pane[name], value, `the pane's ${name} is the server's`);
+    assert.equal(server[name], value, `the server's ${name} is unchanged`);
+  }
+  assert.doesNotMatch(`${tmuxOn(OATS, "show-environment", "-g")}\n${sessionEnv("envs")}\n${readFileSync(join(localised.home, "pane-env.txt"), "utf8")}`, /fixture_CLIENT_/, "no value of the client's is in the server's environment, the session's or the pane's");
+
   // An instance that has to START the server, identified by OATS_INSTANCE_HOME, through the CLI.
   await killServer(OATS);
   const one = await makeHome("env-one", { session: "envs" });
@@ -672,6 +712,9 @@ test("the environment OATS creates a tmux session and a window with: an instance
     pane = paneEnv(h.home);
     absent(pane, [...SECRETS, ...NOT_CARRIED, "FIXTURE_IDENTITY"], `the pane of ${h.name}`);
     assert.equal(pane.OATS_FIXTURE_MARKER, "from the recorded server");
+    assert.equal(pane.OATS_FIXTURE_SPECIAL, SPECIAL, "a process in the pane holds the value exactly");
+    // A value with a control character: carried exactly, or not carried where tmux prints it encoded.
+    assert.ok(pane.OATS_FIXTURE_CONTROL === undefined || pane.OATS_FIXTURE_CONTROL === CONTROL, "never an altered value");
     assert.equal(pane.OATS_INSTANCE_HOME, h.home, "its identity is its own");
     assert.equal(pane.PATH.split(":").includes(shimOf(caller.home)), false);
   }
@@ -718,6 +761,67 @@ test("the environment OATS creates a tmux session and a window with: an instance
   assert.deepEqual(windowsOf(OATS, "by-hand"), ["hq", "env-four"]);
   assert.deepEqual(ownOptions(OATS, windowId(OATS, "hq", "by-hand")), UNSET, "the window OATS did not create keeps its options");
   await ready(four.home);
+});
+
+test("the kernel's own environment names: every OATS_ and PI_ name the kernel gives a spawn hook, a retire hook, a dispatched command and an operation is kept out of the environment a session is created with, and the ones that identify an instance refuse", async () => {
+  // The inventory in lib/core.mjs is kept by hand. This ties it to the code that generates the
+  // names: each kind of process the kernel starts for a capability reports the names it received.
+  const seen = join(base, "kernel-names.jsonl");
+  const report = (kind, answer) => `import { appendFileSync } from "node:fs";
+appendFileSync(${JSON.stringify(seen)}, JSON.stringify({ kind: ${JSON.stringify(kind)}, names: Object.keys(process.env).filter((name) => /^(OATS|PI)_/.test(name)) }) + "\\n");
+process.stdout.write(${JSON.stringify(`${answer}\n`)});
+`;
+  const envelope = JSON.stringify({ schemaVersion: 1, ok: true, result: {} });
+  const dep = v2Deployment({
+    souls: { dev: { soul: { capabilities: { "test.names": { from: "here" } } } } },
+    capabilities: { "test.names": {
+      manifest: { layer: "knowledge", command: "envnames", commands: { show: "show.mjs", act: "act.mjs" }, operations: { act: { command: "act", context: "home" } }, hooks: { spawn: "spawn.mjs", retire: "retire.mjs" } },
+      files: { "spawn.mjs": report("spawn hook", "{}"), "retire.mjs": report("retire hook", "{}"), "show.mjs": report("command", envelope), "act.mjs": report("operation", envelope) },
+    } },
+  });
+  try {
+    const ran = (r, what) => assert.equal(r.status, 0, `${what}: ${r.stdout}${r.stderr}`);
+    const { home } = await withPath(dep.env.PATH, () => dep.spawn("dev", { name: "names-one", harness: "claude" }));
+    ran(dep.cli(["envnames", "show", "--soul", "dev", "--json"]), "the command, dispatched for a soul");
+    ran(dep.cli(["envnames", "show", "--json"], { cwd: home, env: { OATS_INSTANCE_HOME: home } }), "the command, dispatched in a home");
+    ran(dep.cli(["operation", "run", "knowledge:act", "--home", home, "--json"]), "the operation");
+    ran(dep.cli(["retire", "names-one", "--json"]), "the retire");
+    const reports = lines(readFileSync(seen, "utf8")).map((line) => JSON.parse(line));
+    assert.deepEqual([...new Set(reports.map((r) => r.kind))].sort(), ["command", "operation", "retire hook", "spawn hook"], "each kind of process reported");
+    // Beyond the operator's own: the fixture's CLI environment holds host settings under OATS_.
+    const generated = [...new Set(reports.flatMap((r) => r.names))].filter((name) => !(name in dep.env)).sort();
+    for (const name of ["OATS_CAPABILITY", "OATS_SETTINGS", "OATS_CLI_BIN", "OATS_INSTANCE_HOME", "OATS_EVENT", "OATS_OPERATION"]) assert.ok(generated.includes(name), `${name} is among the names reported: ${generated.join(" ")}`);
+
+    const IDENTITY = ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "PI_AGENT_INSTANCE", "PI_AGENT_HOME"];
+    const socket = join(base, "names.sock");
+    const created = [];
+    // No tmux runs: a server that has other sessions, and a creation that records its environment.
+    const io = { exec: (_bin, args, options) => {
+      if (args.includes("list-sessions")) return `someone-else\t${socket}\n`;
+      if (args.includes("new-session")) { created.push(options.env); return `${socket}\t@1\n`; }
+      return "";
+    } };
+    const ambient = { ...process.env };
+    try {
+      for (const name of generated) if (!IDENTITY.includes(name)) process.env[name] = "kernel-name-fixture";
+      process.env.FIXTURE_KEPT = "kept";
+      assert.equal(ensureOatsTmuxSession("names", base, io), socket);
+      assert.equal(created.length, 1);
+      assert.equal(created[0].FIXTURE_KEPT, "kept", "a name the kernel does not own is passed on");
+      assert.deepEqual(generated.filter((name) => name in created[0]), [], "no name the kernel generates is in the environment the session is created with");
+      // The names that identify an instance are not removed from an operator's environment: a
+      // process that carries one is an instance, and one that names no home is refused.
+      for (const name of generated.filter((n) => IDENTITY.includes(n))) {
+        process.env[name] = "";
+        assert.throws(() => ensureOatsTmuxSession("names", base, io), { code: "E_RUNTIME_ENDPOINT_UNKNOWN" }, name);
+        delete process.env[name];
+      }
+      assert.equal(created.length, 1, "a refused creation runs no new-session");
+    } finally {
+      for (const key of Object.keys(process.env)) if (!(key in ambient)) delete process.env[key];
+      Object.assign(process.env, ambient);
+    }
+  } finally { dep.cleanup(); }
 });
 
 test("a retire hook that spawns: its process is the retiring instance, so with that home's server gone and no session on the OATS server the spawn is refused, the retire is incomplete and keeps the home, and the next retire runs the hook again", async () => {

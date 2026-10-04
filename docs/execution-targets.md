@@ -154,13 +154,13 @@ ending, decides that ambient environment:
 | an operator's shell | that shell's |
 | the Desktop | the Desktop's, with the login-shell `PATH` it puts in front ([desktop.md](desktop.md)) |
 | a schedule runner or a trigger | the service's |
-| an OATS instance | the global environment of the tmux server that instance's home records, never the instance's own |
+| an OATS instance that creates an agents' session | the global environment of the tmux server that instance's home records, not the instance's own |
 
 The first creator that succeeds determines it; when two start it at the same
 moment, tmux starts one server and nothing says which of the two it is.
 
 **What OATS removes, for every creator.** The names the kernel itself sets
-never go into the environment OATS creates a server, a session or a window
+never go into the environment OATS creates an agents' session or window
 with: `COLORFGBG`, `TMUX`, `TMUX_PANE`; the launch identity and roots
 (`OATS_INSTANCE`, `OATS_INSTANCE_HOME`, `OATS_HOME`, `OATS_AGENT`,
 `OATS_SOUL`, `OATS_SOUL_ID`, `OATS_ROOT`, `OATS_CONTEXT`, `OATS_WORKSPACE`,
@@ -180,9 +180,11 @@ for. Other `OATS_` variables you export (`OATS_HOME_DIR`,
 `OATS_TMUX_SESSION`) are yours and stay. An agent's plain `oats` finds its
 deployment from its home.
 
-**An instance never passes its own environment.** A harness puts its own
-variables, credentials and identity into the environment of what it runs. A
-process is inside an instance when `OATS_INSTANCE_HOME` names an instance
+**An instance creates an agents' session or window without its own
+environment.** Nothing of an instance's environment reaches a server or a
+pane through the calls that create an agents' session or window. A harness
+puts its own variables, credentials and identity into the environment of
+what it runs. A process is inside an instance when `OATS_INSTANCE_HOME` names an instance
 home, or its working directory is inside one. That covers an agent that
 spawns or starts another instance, a capability hook that spawns or starts
 (a hook runs with its instance's identity, also when a person ran the command
@@ -193,11 +195,17 @@ that triggered it), and `oats schedule run-now` typed inside an instance.
   show-environment -g -s`, the endpoint of the home's receipt, checked
   against `instance.json` as every session command checks it) and creates
   the session with that. It is read strictly and never run by a shell; a
-  variable whose value spans several lines is left out whole; a hidden or
-  removed variable carries nothing; text that cannot be read to its end is
-  a failed read.
-- When it creates a window in a session that exists, it passes only `PATH`,
-  without any instance's `oats` shim directory. Nothing else of it travels.
+  variable whose value spans several lines, or that tmux prints encoded (a
+  control character, a byte that is not UTF-8), is left out whole; a hidden
+  or removed variable carries nothing; text that cannot be read to its end
+  is a failed read.
+- When it creates a window in a session that exists, the tmux client that
+  creates it runs with `PATH`, without any instance's `oats` shim directory,
+  and with `LANG`, `LC_ALL` and `LC_CTYPE`, which that client needs to start
+  on a host whose only UTF-8 locale is the one they name. tmux hands a pane
+  the `PATH` of that client and nothing else of it: the three locale names
+  stay with the client, and the pane, the session and the server keep the
+  values they had. Nothing else of the instance travels.
 - **It is refused** (`E_RUNTIME_ENDPOINT_UNKNOWN`; `oats spawn` reports it
   as `E_SPAWN_FAILED` with the same message) when the session does not exist
   on the `oats` server and there is no source to read: the home records no
@@ -220,6 +228,17 @@ that triggered it), and `oats schedule run-now` typed inside an instance.
   proof that it holds no old identity or credential, and this is not a
   promise that secrets are isolated between instances that run as the same
   user on one tmux server.
+- A server that already runs keeps its baseline. OATS creates sessions and
+  windows on it and does not certify where that baseline came from or that
+  it is clean: someone who started a server named `oats` by other means
+  decided it.
+- These rules are about the calls that create an agents' session or window,
+  nothing wider. `oats session attach` creates a temporary viewer session on
+  the server the home records, with the attaching process's own environment
+  ([#623](https://github.com/awebai/oats/issues/623)): tmux imports the
+  `update-environment` names into that temporary session, and if that
+  server exits between the viewer's check and its creation, the attaching
+  process is the one that starts it.
 - Which server is reached is decided by the process that creates, never by
   the environment it passes: its own `tmux`, its own `TMUX_TMPDIR`, and the
   socket the lookup returned when the server runs. What the server process
@@ -262,7 +281,8 @@ tmux -L oats kill-server                         # replace it: ends EVERY sessio
   tmux's socket directory. Until that issue is fixed, bring the server back
   first, then retire: start any instance of the deployment, or create the
   session by hand with the first command above. For an instance still
-  recorded on another server, `tmux -S <recorded socket> new-session -d`.
+  recorded on another server, `tmux -S <recorded socket> new-session -d`; the
+  session that command creates can be ended after the retire.
 
 <a id="existing-instances"></a>
 #### Existing instances
