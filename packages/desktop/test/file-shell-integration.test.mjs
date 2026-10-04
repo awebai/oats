@@ -442,8 +442,6 @@ for (const platform of ["MacIntel", "Linux x86_64", "Win32"]) test(`app.openFile
   assert.equal(s.chooserInputs.length, before);
 });
 
-// Mutate only source strings in memory. Each assertion below has a passing
-// unmodified counterpart above; no production file or scratch worktree edits.
 // openViewTab's two placeholders (the view module fails to load; the view's mount throws) are built as
 // text. The exception text here looks like markup.
 const MARKUP = '<b>bold</b> <img src="x"> &amp; text';
@@ -491,6 +489,8 @@ test("a late mount rejection for a tab whose open is no longer owned writes noth
   assert.equal(tab.paneEl.innerHTML, before); assert.equal(s.document.querySelector("#tabhost .placeholder"), null);
 });
 
+// Mutate only source strings in memory. Each assertion below has a passing
+// unmodified counterpart above; no production file or scratch worktree edits.
 test("mutation: file arrival must not mint a replacement selection ticket", async t => {
   const from = "const latest = selectionOwns ?? tabOpenIntents.begin();"; assert.ok(source.includes(from));
   await assert.rejects(originalChooserTicket(t, source.replace(from, "const latest = tabOpenIntents.begin();")), /file arrival must retain the chooser's original ticket/);
