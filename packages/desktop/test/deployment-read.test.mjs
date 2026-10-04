@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { cliDeploymentRead, DEPLOYMENT_READ_MAX_BUFFER, DEPLOYMENT_READ_TIMEOUT } from '../deployment-read-cli.mjs';
 import { deploymentReadGate, DEPLOYMENT_FEATURES, remoteFailureCause, panelErrorCause } from '../renderer/deployment-contract.mjs';
 import { deploymentStatusData, workspaceStatusData } from '../deployment-data.mjs';
+import builder from '../electron-builder.config.cjs';
 
 const file = name => new URL(`./fixtures/workspace-v2/${name}.json`, import.meta.url);
 const fixture = name => JSON.parse(readFileSync(file(name), 'utf8'));
@@ -193,8 +194,15 @@ test('every package-root module the bundled server imports (transitively) is in 
     }
   };
   visit(new URL('server/oats-web.mjs', pkg));
-  assert.ok(rootModules.has('deployment-read-cli.mjs') && rootModules.has('deployment-data.mjs'));
+  // The collector's entry module is started by a path, not imported: the walk above cannot reach it.
+  assert.match(readFileSync(new URL('server/oats-web.mjs', pkg), 'utf8'), /^const LIVENESS = join\(HERE, "liveness-main\.mjs"\);$/m);
+  visit(new URL('server/liveness-main.mjs', pkg));
+  assert.ok(rootModules.has('deployment-read-cli.mjs') && rootModules.has('deployment-data.mjs') && rootModules.has('cli-environment.mjs'));
   for (const file of rootModules) assert.ok(config.includes(`"${file}"`), `${file} is packaged`);
+  // server/ ships by its pattern: the entry and the module that cleans a Node-mode process's environment are under it, and no exclusion names them.
+  for (const file of ['server/liveness-main.mjs', 'server/own-environment.mjs']) assert.ok(seen.has(new URL(file, pkg).href), `${file} exists and is loaded`);
+  assert.ok(builder.files.includes('server/**/*'));
+  assert.deepEqual(builder.files.filter(pattern => pattern.startsWith('!') && pattern.includes('server/')), []);
 });
 
 /* Spec D: an unreadable remote's bounded cause crosses (reason, and the host of details.url); nothing else. */
