@@ -13,6 +13,7 @@ import { workRecoveryLines } from "../lib/retire-output.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const temporaryDirectories = [];
+const fixtureCleanups = [];
 
 function write(path, content, mode) {
   mkdirSync(dirname(path), { recursive: true });
@@ -30,7 +31,8 @@ function fixture({ capabilities = {}, work = "worktree" } = {}) {
     capabilities,
     files: { ".gitignore": "cache/\nhuman-ignored/\n", "tracked.txt": "base\n" },
   });
-  temporaryDirectories.push(fx.base);
+  // fx.cleanup also removes the fixture's private TMUX_TMPDIR, which lives outside fx.base.
+  fixtureCleanups.push(fx.cleanup);
   const repo = fx.member;
   execFileSync("git", ["-C", repo, "config", "user.email", "test@example.invalid"]);
   execFileSync("git", ["-C", repo, "config", "user.name", "Test"]);
@@ -97,6 +99,7 @@ esac
 }
 
 test.afterEach(() => {
+  for (const cleanup of fixtureCleanups.splice(0)) cleanup();
   for (const dir of temporaryDirectories.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
@@ -2276,23 +2279,45 @@ test("a retire hook that changes only the permission bits of the repository's in
 
 test("a retire hook that changes only the permission bits of the worktree's index: the work is copied again", (t) => {
   if (!directoryModesKept(t)) return;
-  // The hook runs Git's status after its chmod: Git writes the index anew only when its refresh changed an
-  // entry, and the chmod changes none, so the bits it leaves are the ones the retire reads.
-  const retire = quietHook(`${hookChmods("git", "0o600", "index")}
-git('status', '--porcelain=v1');
-seen.settled = lstatSync(target).mode & 0o7777;`);
+  // Git's status writes the index anew (a new file, with the bits Git gives a new file) whenever its
+  // refresh changes the stat data the index holds, and it does for an entry whose file is not older than
+  // the index: such an entry is racily clean, and it is checked and written again on every status. The
+  // fixture makes every entry older than the index, so that no status, the test's, the retire's or the
+  // hook's, writes the index; and the hook takes its status first and changes the bits last.
+  const retire = `import { execFileSync } from 'node:child_process';
+import { chmodSync, lstatSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
+const home = process.env.OATS_INSTANCE_HOME;
+const git = (...args) => execFileSync('git', ['-C', join(home, 'work'), ...args], { encoding: 'utf8' });
+const seen = {};
+writeFileSync(join(home, 'hook-note.txt'), ${JSON.stringify(HOOK_BYTES)});
+seen.status = git('status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored=matching', '--ignore-submodules=none');
+const target = join(git('rev-parse', '--absolute-git-dir').trim(), 'index');
+seen.before = lstatSync(target).mode & 0o7777;
+seen.ino = lstatSync(target).ino;
+chmodSync(target, 0o600);
+seen.after = lstatSync(target).mode & 0o7777;
+writeFileSync(join(dirname(home), 'hook-saw-' + basename(home)), JSON.stringify(seen));
+console.log(JSON.stringify({ meta: { retired: true } }));
+`;
   const f = fixture({ capabilities: hookCapability(retire) });
   const spawned = spawn(f, "hook-index-mode");
   const work = join(spawned.home, "work");
   write(join(work, "human-ignored", "kept.txt"), "ignored\n");
+  const index = join(gitDirOf(work), "index");
+  const older = new Date(Date.now() - 60_000);
+  for (const name of execFileSync("git", ["-C", work, "ls-files", "-z"], { encoding: "utf8" }).split("\0").filter(Boolean)) utimesSync(join(work, name), older, older);
+  porcelain(work); // the entries' stat data changed: Git writes the index anew, newer than every entry
+  chmodSync(index, 0o644); // whatever bits Git gave it here, under whatever umask
+  const indexFile = () => { const st = lstatSync(index); return { ino: st.ino, mode: st.mode & 0o7777 }; };
+  const settled = indexFile();
   const statusBefore = porcelain(work);
+  assert.deepEqual(indexFile(), settled, "fixture premise: Git's status leaves the index as it is, the same file with the same bits");
+  assert.equal(settled.mode, 0o644);
   assert.deepEqual(statusRowsIn(statusBefore), ["!! human-ignored/"]);
 
   const { recovery, seen, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore);
-  // The retire's own status before the hooks may have written the index anew, with the bits a new file
-  // gets here: the hook found other bits than 0600, whichever.
-  assert.notEqual(seen.before, 0o600, "fixture premise: the hook found other bits than 0600");
-  assert.deepEqual({ after: seen.after, settled: seen.settled }, { after: 0o600, settled: 0o600 }, "fixture premise: the hook left 0600, also after Git's status");
+  assert.deepEqual({ ino: seen.ino, before: seen.before, after: seen.after }, { ino: settled.ino, before: 0o644, after: 0o600 }, "fixture premise: the hook found the index the test left, the same file with the bits 0644, and left 0600");
   assert.equal(existsSync(join(afterRepo, ".git")), true, "the work is copied again under after-hooks/repo/: the hook changed the bits of the index, which a work copy carries");
   // The copy's own bits are not asserted: the copy's verification runs Git's status in it, which may
   // write its index anew, with the bits Git gives a new file.
@@ -2583,13 +2608,15 @@ test("a FIFO in a worktree that Git reports as clean refuses the retire before i
 test("a FIFO in the worktree of a launched instance refuses the retire before its hooks, after the retire stopped its session: the message says that its session has been stopped", () => {
   const f = fixture();
   const state = installFakeTmux(f);
+  // The spawn opens its window on the OATS server (tmux -L oats), which the fake keeps at $TMUX_FAKE_OATS.
   const socket = join(f.base, "socket-fifo");
-  f.env.TMUX = `${socket},1,0`;
+  f.env.TMUX_FAKE_OATS = socket;
   const launched = cli(f, ["spawn", "dev", "--purpose", "fifo-launched", "--json"]);
   assert.equal(launched.status, 0, `${launched.stderr}\n${launched.stdout}`);
   const spawned = JSON.parse(launched.stdout).result;
   const window = join(state, socket.replaceAll("/", "_"), "window");
   assert.equal(existsSync(window), true, "fixture premise: the instance was launched, and its window is there");
+  assert.equal(JSON.parse(readFileSync(join(spawned.home, "instance.json"), "utf8")).tmux?.socket, socket, "fixture premise: the retire addresses the endpoint the window is on");
   assert.equal(readFileSync(join(spawned.home, "early-harness.txt"), "utf8"), "early-harness-bytes\n", "fixture premise: the home has something to preserve");
   const work = join(spawned.home, "work");
   const fifo = join(work, "pipe");
