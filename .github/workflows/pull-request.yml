@@ -107,10 +107,40 @@ jobs:
       - name: Clean-room packed-artifact smoke test
         run: npm run smoke:tarball
 
+  # The release's desktop-build installs and tests inside packages/desktop only, with no
+  # root install. Every shard above installs the root first, so a Desktop test that reaches a
+  # root-only dependency (kernel code importing one) passes there and fails at the tag. This
+  # job runs the Desktop suite the way the release does: NO step here installs at the
+  # repository root (test/continuous-integration.test.mjs pins it against desktop-build).
+  desktop-standalone:
+    name: Node 22 / Desktop tests, Desktop-only install
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Shallow, as desktop-build checks out.
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: packages/desktop/package-lock.json
+
+      - name: Install desktop package dependencies only
+        # The tests do not need the Electron binary; one that did would fail here, before a tag.
+        run: npm ci
+        working-directory: packages/desktop
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+
+      - name: Desktop tests
+        run: npm test
+        working-directory: packages/desktop
+
   # The one check to wait on (the name reviewers and merge tooling already know).
   gate:
     name: Node 22 / test, validate, pack, smoke
-    needs: [tests, verify]
+    needs: [tests, verify, desktop-standalone]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -118,3 +148,4 @@ jobs:
         run: |
           test "${{ needs.tests.result }}" = success
           test "${{ needs.verify.result }}" = success
+          test "${{ needs.desktop-standalone.result }}" = success
