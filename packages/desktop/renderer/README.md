@@ -61,10 +61,96 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
   holds it: the server answers it with that view, whose id is adopted.
 
 `theme.css` carries semantic WCAG AA tokens for **White** (default),
-**Solarized**, and **Dark**. Theme actions are available in the command palette;
-cycling follows that order. Existing valid `oatsweb.theme` preferences survive;
-missing/invalid preferences mean White regardless of OS. Views use tokens only,
-scoped under `.oats-view`. Orange selection is distinct from error/success.
+**Solarized**, and **Dark**. A fourth choice, **This computer** (`host`), has no
+palette of its own: it shows the theme of the computer that runs Desktop. Theme
+actions are available in the command palette; cycling follows that order (White,
+Solarized, Dark, This computer). Existing valid `oatsweb.theme` preferences
+survive; missing/invalid preferences mean White regardless of OS, and This
+computer is never chosen for the operator. Views use tokens only, scoped under
+`.oats-view`. Orange selection is distinct from error/success.
+
+**This computer.** On a computer with an Omarchy theme, the chrome and every
+terminal (local and remote instances alike: they share the two creation sites)
+take the current Omarchy theme and follow a theme change without a restart.
+Anywhere else the choice follows the system's appearance: Dark when the system
+is dark, White when it is light, each exactly as it is, with nothing imported.
+
+- **The source** is Omarchy's own `colors.toml`
+  (`~/.local/state/omarchy/current/theme/colors.toml`; Omarchy hard-codes that
+  directory, so `XDG_STATE_HOME` is not consulted). It is the file every terminal
+  config is generated from, every theme has one, and it alone carries the
+  polarity and the accent; a generated terminal config is per-terminal output a
+  theme can replace. The main process (`../host-theme.mjs`) reads it with a small
+  line parser (no TOML dependency, at most 64 KiB, a regular file) and resolves
+  the colours Desktop uses the way Omarchy's own resolver does. It never runs a
+  host program to read colours.
+- **Following a change.** `omarchy-theme-set` replaces `current/theme/` with a
+  new directory, so main watches the parent `current/`, never `theme/` or the
+  file (that watch would end at the first change). An event is debounced, then
+  read; a missing file is read once more before it is reported, so the moment
+  between the removal and the move never shows as a problem. App focus and a
+  system appearance change re-read too, which corrects a missed or failed watch.
+  A computer with no `current/` at start is not watched: Omarchy installed
+  later is picked up at the next start.
+- **What crosses to the renderer** is plain state, on `host-theme:get` (asked
+  once per window) and `host-theme:changed` (pushed to every window): a palette
+  (`source: "omarchy"`, the mode and the colours), or the system appearance
+  (`source: "system"`), with a `problem` when an Omarchy theme exists but its
+  colours are missing, unreadable or invalid. No path, name or file content.
+  `host-theme.mjs` validates it again before use.
+- **Base plus overrides.** The choice (`currentTheme()`, what is saved and
+  cycled) is separate from what is applied (`appliedTheme()`): `data-theme`
+  stays a built-in id, Dark or White by the host's polarity, so every rule in
+  `theme.css` applies as it does for that theme, and the palette is a set of
+  custom properties set inline on the root. Leaving the choice removes all of
+  them. `theme.mjs` applies what the host source answers and imports nothing
+  (tests evaluate its source on its own); the shell hands the source to
+  `initTheme()`.
+- **The derivation** (`deriveHostTokens` in `host-theme.mjs`) maps the host's
+  colours to tokens: the surfaces are the host's (background, the darker canvas,
+  and mixes of background towards foreground, accent and yellow for raised,
+  border, selected and attention surfaces), and each text colour starts from the
+  host's (foreground and its mixes for the text ramp, accent, and green, yellow,
+  red and magenta for the status colours).
+- **First paint.** The last state shown is kept in `localStorage`
+  (`oats.desktop.hostTheme`) and applied synchronously by `initTheme()`, then
+  reconciled with main's answer, so a dark host does not flash White at launch.
+  A push that arrives before that answer wins over it.
+- **Several windows.** Every window gets each push and applies it only while
+  This computer is its own choice. A window reads the saved choice when it
+  loads (there is no storage listener), so two windows can show different
+  themes until one reloads.
+- **When it falls back.** A problem state, or a palette the derivation refuses,
+  applies no override at all and shows Dark or White (by the system's
+  appearance, or by the palette's own polarity when it resolved but could not be
+  derived). One sticky notification says so, once per episode: an episode is a
+  reason plus the base shown. It is replaced when either changes and dismissed
+  by a usable state or by choosing another theme.
+
+What keeps an imported palette inside the quality bar:
+
+1. Only the surfaces, the text ramp, the accent and the status colours come
+   from the host. Everything else (soul and runtime identity pairs, shadows, the
+   scrim, the markdown code surface, fonts, sizes, the terminal's text weight)
+   is the calibrated built-in theme of the same polarity.
+2. Every imported text colour is moved towards white or black until it is 4.5:1
+   on each surface it is drawn on (3:1 for the graph connectors). The whole map
+   is derived before any of it is set, and a palette that cannot be made to
+   pass is not applied.
+3. The pairs come from one list, `contrast-inventory.mjs`: the derivation reads
+   it to know each colour's surfaces, and `test/theme-contrast.test.mjs` holds
+   the built-in palettes and real Omarchy palettes
+   (`test/fixtures/host-theme/`) to the same list with the same arithmetic. A
+   rule that paints a new foreground on a surface adds its pair there.
+4. The 16 terminal colours are the host's own, unadjusted, in Omarchy's mapping
+   (slot 0 is the background, as in the host's terminal). This is the one place
+   the host theme does not hold the inventory (`HOST_UNADJUSTED_PAIRS`): they
+   are drawn only by xterm, whose minimum contrast ratio (below) keeps them
+   readable when drawn.
+
+Outside Desktop's control: the taste of the host's palette; that an adjusted
+accent or status colour is lighter or darker than the host's; that a program
+painting both text and background is readable but not re-themed.
 
 The default monospace face is **Inconsolata**, bundled (`fonts/`, SIL OFL 1.1;
 source, version and checksum in `fonts/README.md`) so it is the same on every
@@ -78,7 +164,8 @@ Terminal's "Reset to default" forgets the size, so the defaults apply again. Eve
 size control clamps to 9–28 (`clampTerminalFontSize`).
 
 The terminal's text weight belongs to the theme, not to typography: each palette sets
-`--term-font-weight` (White 475, Solarized 450, Dark 400), which `terminalFontWeight()`
+`--term-font-weight` (White 475, Solarized 450, Dark 400; This computer has its base's,
+so 400 for a dark host theme and 475 for a light one), which `terminalFontWeight()`
 (`theme.mjs`) reads into xterm's `fontWeight` when a terminal is created and again on
 every theme change, at both creation sites in `shell.mjs` (the terminal tab and the
 Settings preview). Chromium renders dark-on-light text lighter than light-on-dark, while

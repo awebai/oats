@@ -1,0 +1,62 @@
+/* oats desktop — the contrast inventory: which foreground token is drawn on
+   which surface token. Token names only, never a colour value.
+
+   One list, two consumers:
+   - `test/theme-contrast.test.mjs` holds every built-in palette (White,
+     Solarized, Dark) to it;
+   - `host-theme.mjs` derives the "This computer" theme from it: each imported
+     text colour is moved until it meets the ratio on every surface listed for
+     it here, and the same test file holds the derived palettes to the list.
+
+   A rule that paints a new foreground on a surface adds its pair here, and both
+   consumers follow. */
+
+export const SOUL_TONES = Object.freeze(["sand", "sage", "slate", "mauve", "clay", "olive"]);
+export const RUNTIMES = Object.freeze(["claude", "pi", "codex", "unknown"]);
+/** The 16 terminal colours, in xterm's slot order (0–15). */
+export const ANSI_TOKENS = Object.freeze([
+  "ansi-black", "ansi-red", "ansi-green", "ansi-yellow", "ansi-blue", "ansi-magenta", "ansi-cyan", "ansi-white",
+  "ansi-bright-black", "ansi-bright-red", "ansi-bright-green", "ansi-bright-yellow",
+  "ansi-bright-blue", "ansi-bright-magenta", "ansi-bright-cyan", "ansi-bright-white",
+]);
+
+/** Text ratio (WCAG AA) and the ratio for meaningful graphics (WCAG 1.4.11). */
+export const TEXT_CONTRAST = 4.5, GRAPHIC_CONTRAST = 3;
+
+// Explicitly mirrors shipped foreground/background use: shell/view metadata can
+// sit on any base/raised surface; status text appears in shell and transcript;
+// chip and terminal colors have their dedicated surfaces; ANSI is xterm-only.
+/** [foreground, surface] pairs held to TEXT_CONTRAST. */
+export const TEXT_PAIRS = Object.freeze([
+  ...["surface", "surface-2", "sel"].map(bg => ["nav-fg", bg]),
+  ...SOUL_TONES.map(name => [`soul-${name}-fg`, `soul-${name}-bg`]),
+  ...RUNTIMES.map(name => [`runtime-${name}-fg`, `runtime-${name}-bg`]),
+  ...["fg", "muted", "faint", "accent"].flatMap((fg) => ["bg", "surface", "surface-2"].map((bg) => [fg, bg])),
+  ...["ok", "warn", "danger"].flatMap((fg) => ["bg", "surface", "surface-2", "term-bg"].map((bg) => [fg, bg])),
+  ["chip-fg", "chip-bg"], ["accent", "chip-bg"], ["warn", "chip-bg"], ["fg", "chip-bg"],
+  ["primary-fg", "primary-bg"], ["primary-bg", "primary-fg"] /* toast buttons invert on keyboard focus */,
+  ["term-fg", "term-bg"], ["term-sel-fg", "term-sel"],
+  ["term-fg", "surface-2"], ["muted", "term-bg"],
+  ["fg", "term-bg"], ["accent", "term-bg"], ["violet", "term-bg"], ["violet", "surface-2"],
+  ...["fg", "muted", "faint", "accent", "warn", "ok"].map((fg) => [fg, "sel"]),
+  ...["fg", "muted", "accent", "violet", "ok", "warn"].map((fg) => [fg, "md-code-bg"]),
+  ...ANSI_TOKENS.map((fg) => [fg, "term-bg"]),
+  // Workspace v4: amber attention chips/nodes, and reason/tag chips.
+  ["warn", "attn-bg"], ["fg", "attn-bg"], ["muted", "attn-bg"],
+  ...["fg", "muted"].map((fg) => [fg, "tag-bg"]),
+].map(pair => Object.freeze(pair)));
+
+/** [graphic, surface] pairs held to GRAPHIC_CONTRAST: graph connectors (the
+ * Active overview's edges, Setup's tree lines) are meaningful graphics. */
+export const GRAPHIC_PAIRS = Object.freeze(["bg", "surface", "surface-2"].map(bg => Object.freeze(["graph-edge", bg])));
+
+/** Translucent surfaces and the token painted behind each: contrast is measured
+ * on the composite. The markdown scroll surface paints --bg behind its code blocks. */
+export const PAINTED_OVER = Object.freeze([Object.freeze(["md-code-bg", "bg"])]);
+
+/** The pairs the "This computer" theme does not hold: its 16 terminal colours
+ * are the host's own, unadjusted, as the host's terminal shows them. They are
+ * drawn only by xterm, whose minimum contrast ratio keeps them readable when
+ * drawn, and slot 0 equals the background in every Omarchy theme, so it cannot
+ * meet a ratio against it. The built-in palettes hold every pair. */
+export const HOST_UNADJUSTED_PAIRS = Object.freeze(TEXT_PAIRS.filter(([fg, bg]) => ANSI_TOKENS.includes(fg) && bg === "term-bg"));

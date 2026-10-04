@@ -2,13 +2,21 @@
    theme.css defines the semantic tokens (incl. the --ansi-* terminal set);
    this module owns switching (White by default regardless of OS, choices
    persisted under the SAME legacy key as the web panel) and derives the
-   xterm.js theme object from the live tokens. */
+   xterm.js theme object from the live tokens.
+
+   "This computer" (`host`) is a choice, not a palette: what it shows is a
+   built-in theme as base (Dark or White, on data-theme, so theme.css applies
+   as it does for that theme) plus token overrides set inline on the root. The
+   host source (host-theme.mjs) says which; the shell hands it to initTheme(),
+   because this module imports nothing (tests evaluate its source on its own). */
 
 const KEY = "oatsweb.theme"; // legacy key name kept so existing user prefs survive
+const HOST = "host";
 export const THEMES = Object.freeze([
   Object.freeze({ id: "light", label: "White" }),
   Object.freeze({ id: "solarized", label: "Solarized" }),
   Object.freeze({ id: "dark", label: "Dark" }),
+  Object.freeze({ id: HOST, label: "This computer" }),
 ]);
 const validTheme = name => THEMES.some(theme => theme.id === name);
 const normalizeTheme = name => validTheme(name) ? name : "light";
@@ -23,22 +31,55 @@ export const TERMINAL_FONT_SIZE = 15;
 /** The range every size control clamps to (keys, palette, Settings). */
 export const TERMINAL_FONT_MIN = 9, TERMINAL_FONT_MAX = 28;
 
+let hostSource = null;   // { mode(), tokens(base), shown(chosen) }, from initTheme
+let hostChosen = false;  // the choice is "This computer"; data-theme then carries its base
+let hostOverrides = [];  // the inline custom properties the host theme set
+
+/** The choice: a built-in theme, or `host`. */
 export function currentTheme() {
-  return normalizeTheme(document.documentElement.dataset.theme);
+  return hostChosen ? HOST : appliedTheme();
+}
+
+/** The built-in theme on data-theme (the CSS hook): the choice itself, or the
+ * base "This computer" is shown on. */
+export function appliedTheme() {
+  const name = normalizeTheme(document.documentElement.dataset.theme);
+  return name === HOST ? "light" : name;
 }
 
 // Non-persisting projection, retained for callers that apply a temporary theme.
 export function applyTheme(name) {
   const next = normalizeTheme(name);
-  document.documentElement.dataset.theme = next;
+  const root = document.documentElement;
+  // Every override goes before anything is set, so a built-in theme chosen
+  // after "This computer" is exactly what it is on its own.
+  for (const property of hostOverrides) root.style.removeProperty(property);
+  hostOverrides = [];
+  hostChosen = next === HOST;
+  if (!hostChosen) root.dataset.theme = next;
+  else {
+    // The whole map is derived before any of it is set: no override at all
+    // when the host has no palette or it cannot be used, never half of one.
+    let base = "light", tokens = null;
+    try {
+      base = hostSource?.mode() === "dark" ? "dark" : "light";
+      root.dataset.theme = base;
+      const css = getComputedStyle(root);
+      tokens = hostSource?.tokens(token => css.getPropertyValue(`--${token}`).trim()) ?? null;
+    } catch { root.dataset.theme = base; tokens = null; }
+    for (const [property, value] of Object.entries(tokens ?? {})) { root.style.setProperty(property, value); hostOverrides.push(property); }
+  }
+  try { hostSource?.shown(hostChosen); } catch { /* the theme is applied either way */ }
   for (const fn of [...listeners]) { try { fn(next); } catch { /* one listener must not break others */ } }
   return next;
 }
 
-export function initTheme() {
+export function initTheme(host = null) {
+  hostSource = host;
   let saved = null;
   try { saved = localStorage.getItem(KEY); } catch { /* storage-less */ }
-  // Intentionally no OS listener: fresh/invalid preferences always mean White.
+  // Intentionally no OS listener: fresh/invalid preferences always mean White,
+  // and "This computer" is never chosen for the user.
   return applyTheme(saved);
 }
 
@@ -48,10 +89,16 @@ export function setTheme(name) {
   return applyTheme(next);
 }
 
-// White → Solarized → Dark → White, independent of storage availability.
+// White → Solarized → Dark → This computer → White, independent of storage availability.
 export function toggleTheme() {
   const index = THEMES.findIndex(theme => theme.id === currentTheme());
   return setTheme(THEMES[(index + 1) % THEMES.length].id);
+}
+
+/** The host's theme changed: show it again while "This computer" is the choice
+ * (one pass over the properties, then one notification to the listeners). */
+export function refreshHostTheme() {
+  if (hostChosen) applyTheme(HOST);
 }
 
 export function onThemeChange(fn) {

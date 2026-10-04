@@ -9,10 +9,10 @@
 //   * integrated terminal: node-pty running `tmux attach-session` per
 //     terminal tab, bytes streamed to xterm.js over IPC. Closing a tab kills
 //     the pty ONLY — the tmux session is the durable host and must survive.
-import { app, BrowserWindow, dialog, ipcMain, Menu, screen, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, screen, shell } from "electron";
 import { spawn, execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync, realpathSync, writeFileSync, lstatSync, statSync, opendirSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, writeFileSync, lstatSync, statSync, opendirSync, openSync, readSync, closeSync, watch } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -44,6 +44,7 @@ import { proxyInstanceEvents } from './instance-events-proxy.mjs';
 import { proxySpawnApply } from './spawn-apply-proxy.mjs';
 import { startSingleInstance, launchDirectory, createLaunchOpener } from "./single-instance.mjs";
 import { createActivityNotifier } from "./window-activity.mjs";
+import { createHostThemeSource, installHostThemeHandlers } from "./host-theme.mjs";
 import { frameWorkspace, trustedRendererUrl, workspaceHash } from "./renderer/window-binding.mjs";
 import { validWorkspaceId } from "./renderer/workspace-id.mjs";
 import { createWindowSet } from "./window-set.mjs";
@@ -256,6 +257,22 @@ function trustedFrame(e) {
   return trustedRendererUrl(e.senderFrame?.url, RENDERER_URL);
 }
 function guard(e) { if (!trustedFrame(e)) throw new Error("forbidden: untrusted frame"); }
+
+// ---- IPC: the theme of this computer (#602) ------------------------------
+// "This computer" is a theme choice. Main reads the host's theme (Omarchy's
+// colors.toml, else the system's light or dark appearance), follows it, and
+// pushes plain state (colours and polarity: no path, no file content) to every
+// window; a window applies it only while that is its choice
+// (renderer/host-theme.mjs). No host program is run to read colours.
+const hostTheme = createHostThemeSource({
+  fs: { statSync, openSync, readSync, closeSync, watch }, home: homedir(), nativeTheme,
+  send: (state) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      try { if (!win.webContents.isDestroyed()) win.webContents.send("host-theme:changed", state); } catch { /* closing window */ }
+    }
+  },
+});
+installHostThemeHandlers({ ipc: ipcMain, guard, source: hostTheme });
 
 // ---- IPC: workspace suggestions + runtime add ---------------------------
 // Privileged side of the runtime workspace switcher (phase-2 hook 3; the
@@ -875,6 +892,14 @@ const primaryInstance = startSingleInstance(app, (argv, workingDirectory) => ope
 });
 
 if (primaryInstance) app.on("window-all-closed", () => { app.quit(); });
+
+// The theme of this computer (#602): read once the app is ready, read again whenever the
+// operator comes back to Desktop (which also corrects a missed watch event), closed at quit.
+if (primaryInstance) {
+  app.whenReady().then(() => hostTheme.start());
+  app.on("browser-window-focus", () => hostTheme.refresh());
+  app.on("will-quit", () => hostTheme.dispose());
+}
 
 async function shutdown() {
   try { forgeAuth.dispose(); } catch { /* other resource cleanup must still run */ } // ephemeral gh child only
