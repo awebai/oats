@@ -183,7 +183,7 @@ test("retire recovers a worktree that switched branches after spawn, on its actu
   const manifest = JSON.parse(readFileSync(join(recovery.path, "recovery.json"), "utf8"));
   assert.deepEqual(manifest.branchDrift, { recordedBranch: recorded, worktreeBranch: "fix/switched-after-spawn", detachedAt: null });
   assert.equal(readFileSync(join(recovery.path, "repo", "human-untracked.txt"), "utf8"), "worktree-human-bytes\n");
-  // Without --delete-branch the switched branch survives in the repository, as any branch would.
+  // No retire deletes a branch: the switched branch survives in the repository, as any branch would.
   assert.equal(execFileSync("git", ["-C", f.repo, "rev-parse", "refs/heads/fix/switched-after-spawn"], { encoding: "utf8" }).trim(), tip);
 });
 
@@ -248,7 +248,7 @@ test("home-only recovery preserves notes without cloning a clean merged worktree
   const f = fixture();
   const spawned = spawn(f, "home-only");
   write(join(spawned.home, "notes", "lesson.md"), "Keep this lesson.\n");
-  const retired = cli(f, ["retire", "dev-home-only", "--delete-branch", "--json"]);
+  const retired = cli(f, ["retire", "dev-home-only", "--discard-worktree", "--json"]);
   assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
   const recovery = JSON.parse(retired.stdout).workRecovery;
   assert.deepEqual(recovery.classes, ["changed instance-home bytes"]);
@@ -643,30 +643,23 @@ test("E_WORK_PRESERVATION_FAILED names the differing status rows (the first 10, 
   assert.deepEqual(error.details.statusDisagreement, { repo: "human-ignored/nested", rows: [{ path: "run.sh", source: " M", recovery: null }], total: 1 });
 });
 
-test("branch-only commits are recovered only when retirement deletes their last local ref", () => {
-  const ordinary = fixture();
-  const ordinarySpawn = spawn(ordinary, "branch-kept");
-  write(join(ordinarySpawn.home, "work", "commit.txt"), "unique\n");
-  execFileSync("git", ["-C", join(ordinarySpawn.home, "work"), "add", "."]);
-  execFileSync("git", ["-C", join(ordinarySpawn.home, "work"), "commit", "-qm", "unique ordinary"]);
-  const ordinaryTip = execFileSync("git", ["-C", join(ordinarySpawn.home, "work"), "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-  const ordinaryRetire = cli(ordinary, ["retire", "dev-branch-kept", "--json"]);
-  assert.equal(ordinaryRetire.status, 0, `${ordinaryRetire.stderr}\n${ordinaryRetire.stdout}`);
-  assert.equal(execFileSync("git", ["-C", ordinary.repo, "rev-parse", "refs/heads/agents/dev-branch-kept"], { encoding: "utf8" }).trim(), ordinaryTip);
-
-  const deleting = fixture();
-  const deletingSpawn = spawn(deleting, "branch-deleted");
-  write(join(deletingSpawn.home, "work", "commit.txt"), "unique-delete\n");
-  execFileSync("git", ["-C", join(deletingSpawn.home, "work"), "add", "."]);
-  execFileSync("git", ["-C", join(deletingSpawn.home, "work"), "commit", "-qm", "unique deleting"]);
-  const deletingTip = execFileSync("git", ["-C", join(deletingSpawn.home, "work"), "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-  const deletingRetire = cli(deleting, ["retire", "dev-branch-deleted", "--delete-branch", "--json"]);
-  assert.equal(deletingRetire.status, 0, `${deletingRetire.stderr}\n${deletingRetire.stdout}`);
-  const result = JSON.parse(deletingRetire.stdout);
-  assert.ok(result.workRecovery.classes.includes("branch-only local commits"));
-  assert.equal(execFileSync("git", ["-C", join(result.workRecovery.path, "repo"), "rev-parse", "HEAD"], { encoding: "utf8" }).trim(), deletingTip);
-  const gone = spawnSync("git", ["-C", deleting.repo, "rev-parse", "--verify", "refs/heads/agents/dev-branch-deleted"]);
-  assert.notEqual(gone.status, 0, "the requested original branch deletion did not occur");
+test("commits only a branch has stay on that branch: no retire deletes it, also with --discard-worktree, which needs no recovery for them", () => {
+  for (const flags of [[], ["--discard-worktree"]]) {
+    const f = fixture();
+    const purpose = flags.length ? "branch-discarded" : "branch-kept";
+    const spawned = spawn(f, purpose);
+    const work = join(spawned.home, "work");
+    write(join(work, "commit.txt"), "unique\n");
+    execFileSync("git", ["-C", work, "add", "."]);
+    execFileSync("git", ["-C", work, "commit", "-qm", "unique to the instance's branch"]);
+    const tip = execFileSync("git", ["-C", work, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+    const retired = cli(f, ["retire", `dev-${purpose}`, ...flags, "--json"]);
+    assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+    const result = JSON.parse(retired.stdout);
+    assert.equal(result.branchDeleted, false, purpose);
+    assert.equal(result.workRecovery ?? null, null, `${purpose}: the commit is on a branch that outlives the worktree, so nothing needs a recovery`);
+    assert.equal(execFileSync("git", ["-C", f.repo, "rev-parse", `refs/heads/agents/dev-${purpose}`], { encoding: "utf8" }).trim(), tip, `${purpose}: the branch is where it was`);
+  }
 });
 
 test("repository-global stash survives ordinary retirement without acting as a guard", () => {
@@ -718,7 +711,7 @@ test("recovery copies only staged objects the clone lacks: one batch check, no p
   assert.equal(readFileSync(join(recoveryRepo, "loose.txt"), "utf8"), "untracked human bytes\n");
 });
 
-test("K3b retention: plain retire RE-HOMES the worktree (dirty state intact, branch untouched) under <workspace>/.agents/worktrees/<repo>/<branch>; --discard-worktree removes; --delete-branch uses the worktree's verified branch and implies discard", () => {
+test("K3b retention: plain retire RE-HOMES the worktree (dirty state intact, branch untouched) under <workspace>/.agents/worktrees/<repo>/<branch>; --discard-worktree removes the worktree and deletes no branch", () => {
   const f = fixture();
   const spawned = spawn(f, "keep");
   const work = join(spawned.home, "work");
@@ -745,13 +738,14 @@ test("K3b retention: plain retire RE-HOMES the worktree (dirty state intact, bra
   assert.ok(listed.includes(realpathSync(moved)), `the repository knows the re-homed worktree: ${listed.join(", ")}`);
   assert.ok(repoGit("branch", "--list", "feat/kept-after-retire"), "branch untouched");
 
-  // Discard restores removal; delete-branch uses the VERIFIED branch and implies discard.
+  // Discard restores removal, and deletes no branch: neither the worktree's nor the recorded one.
   const d = spawn(f, "discard"); const dw = join(d.home, "work");
-  execFileSync("git", ["-C", dw, "switch", "--quiet", "-c", "feat/to-delete"]);
-  const rd = JSON.parse(cli(f, ["retire", "dev-discard", "--delete-branch", "--json"]).stdout);
-  assert.equal(rd.retention.worktree, "removed"); assert.equal(rd.retention.branchDeleted, "feat/to-delete"); assert.equal(rd.branchDeleted, true);
-  assert.equal(repoGit("branch", "--list", "feat/to-delete"), "", "the worktree's actual branch was deleted, not the recorded one");
-  assert.ok(repoGit("branch", "--list", rd.retention.recordedBranch), "the recorded spawn branch (never checked out after the switch) is untouched");
+  execFileSync("git", ["-C", dw, "switch", "--quiet", "-c", "feat/to-keep"]);
+  const rd = JSON.parse(cli(f, ["retire", "dev-discard", "--discard-worktree", "--json"]).stdout);
+  assert.equal(rd.retention.worktree, "removed"); assert.equal(rd.retention.branch, "feat/to-keep"); assert.equal(rd.branchDeleted, false);
+  assert.equal(Object.hasOwn(rd.retention, "branchDeleted"), false); assert.equal(Object.hasOwn(rd.retention, "branchDeletionSkipped"), false);
+  assert.ok(repoGit("branch", "--list", "feat/to-keep"), "the worktree's branch is left");
+  assert.ok(repoGit("branch", "--list", rd.retention.recordedBranch), "the recorded spawn branch is left");
   assert.equal(existsSync(dw), false);
 });
 
@@ -777,7 +771,7 @@ test("K3 guarded Remove: retire --plan-revision/--idempotency-key revalidates th
   assert.equal(again.replayed, true); assert.equal(again.retired, "dev-guard"); assert.equal(again.retention.worktree, done.retention.worktree, "the recorded receipt, not a second retirement");
 });
 
-test("K3 pin 2: --delete-branch through a plan is bound to the CONFIRMED branch — a branch switch during retirement (hook window) deletes nothing and is reported", () => {
+test("K3 pin 2: a plan-driven --discard-worktree whose retire hook switches the branch deletes no branch: the confirmed and the switched one are both left", () => {
   // The retire hook set is the one CAPTURED at spawn (capabilityRuntime), so the
   // switching capability is declared by the soul BEFORE the instance is spawned.
   const f = fixture({ capabilities: { "acme.switcher": {
@@ -788,12 +782,14 @@ test("K3 pin 2: --delete-branch through a plan is bound to the CONFIRMED branch 
   execFileSync("git", ["-C", work, "switch", "--quiet", "-c", "feat/confirmed"]);
   const plan = JSON.parse(cli(f, ["retire", "dev-bind", "--plan", "--json"]).stdout).result;
   assert.equal(plan.facts.work.branch, "feat/confirmed");
-  // The hook switches the branch after the plan comparison, before deletion.
+  // The hook switches the branch after the plan comparison, before the worktree step.
   const fresh = plan;
-  const r = JSON.parse(cli(f, ["retire", "dev-bind", "--plan-revision", fresh.planRevision, "--idempotency-key", "b-1", "--delete-branch", "--json"]).stdout);
+  const r = JSON.parse(cli(f, ["retire", "dev-bind", "--plan-revision", fresh.planRevision, "--idempotency-key", "b-1", "--discard-worktree", "--json"]).stdout);
   assert.equal(r.retired, "dev-bind");
   assert.equal(r.branchDeleted, false, `no branch deleted: ${JSON.stringify(r.retention)} hooks=${JSON.stringify(r.hooks ?? r.capabilityMeta)}`);
-  assert.deepEqual(r.retention.branchDeletionSkipped, { expected: "feat/confirmed", actual: "feat/sneaky", reason: "the worktree's branch changed between confirmation and deletion; nothing was deleted" });
+  assert.equal(r.retention.worktree, "removed");
+  assert.equal(r.retention.branch, "feat/sneaky", "the branch the worktree was on when it was removed");
+  assert.equal(Object.hasOwn(r.retention, "branchDeletionSkipped"), false);
   const branches = execFileSync("git", ["-C", f.repo, "branch", "--list", "feat/*"], { encoding: "utf8" });
   assert.match(branches, /feat\/confirmed/); assert.match(branches, /feat\/sneaky/, "neither the confirmed nor the switched branch was deleted");
 });

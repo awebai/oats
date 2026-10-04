@@ -5,11 +5,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { accessSync, chmodSync, constants, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { accessSync, chmodSync, constants, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path";
-import { startInstanceSession } from "../lib/core.mjs";
+import { completeDeferredRetirement, startInstanceSession } from "../lib/core.mjs";
+import { readEvents } from "../lib/instance-events.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { isolateSessionEnvironment, waitUntil } from "./helpers/host-fixture.mjs";
 
@@ -39,7 +40,7 @@ function fixture({ retireHook } = {}) {
   write(join(bin, "pi"), "#!/bin/sh\nexit 0\n", 0o755);
   const env = { ...fx.env, PATH: `${bin}:${fx.env.PATH}` };
   delete env.OATS_TMUX_SESSION; delete env.PI_AGENTS_TMUX_SESSION;
-  return { base: fx.base, dep: fx.dep, repo, root: fx.root, env };
+  return { base: fx.base, dep: fx.dep, repo, root: fx.root, env, inEnv: fx.inEnv };
 }
 
 function cli(f, args) {
@@ -291,7 +292,7 @@ exec "$real" "$@"
 
 // ---- A HEAD that moves after the final inspection ----
 
-const HEAD_MOVED = "the worktree's HEAD changed after it was inspected, so the worktree was not removed. The home, the worktree and the recovery are kept; retry the retire.";
+const HEAD_MOVED = "the worktree's HEAD changed after it was inspected, so the worktree was not removed. The home and the worktree are kept, and so is any recovery the retire wrote; retry the retire.";
 
 /** The Git the tests run, by its path: what a stand-in on PATH passes every call to. */
 function realGit() {
@@ -432,6 +433,90 @@ test("oats retire --delete-branch is refused with E_BAD_ARGS before anything hap
   assert.equal(branchOf().stdout.trim(), branchAt, "its branch is where it was");
   assert.equal(existsSync(join(dirname(parent.home), ".oats-retire-receipt.k-1.json")), false, "no receipt was written");
   assert.equal(existsSync(recoveryRootOf(parent.home)), false, "and no recovery");
+});
+
+/** Every file under `dir`, by its path, with a digest of its bytes (a link by its target). */
+function filesOf(dir, prefix = "") {
+  const out = {};
+  for (const e of readdirSync(join(dir, prefix), { withFileTypes: true })) {
+    const rel = join(prefix, e.name);
+    if (e.isDirectory()) Object.assign(out, filesOf(dir, rel));
+    else out[rel] = e.isSymbolicLink() ? `-> ${readlinkSync(join(dir, rel))}` : createHash("sha256").update(readFileSync(join(dir, rel))).digest("hex");
+  }
+  return out;
+}
+
+test("--delete-branch is refused the same way with --plan, a plan revision, --self, --force, --server and without --json; nothing is read, run or written", () => {
+  const f = fixture({ retireHook: COMMITTING_HOOK });
+  const spawned = spawn(f, "refused");
+  const name = basename(spawned.home);
+  const work = join(spawned.home, "work");
+  write(join(work, "scratch.txt"), "untracked\n");
+  const branch = readJson(join(spawned.home, "instance.json")).branch;
+  const head = git(work, "rev-parse", "HEAD");
+  const home = filesOf(spawned.home);
+  const plain = (args, env = f.env) => spawnSync(process.execPath, [CLI, ...args], { cwd: f.dep, encoding: "utf8", env });
+  const variants = [
+    ["--plan", cli(f, ["retire", name, "--delete-branch", "--plan", "--json"])],
+    ["a plan revision", cli(f, ["retire", name, "--plan-revision", "rev", "--idempotency-key", "k-2", "--delete-branch", "--json"])],
+    ["--self", cli({ ...f, env: { ...f.env, OATS_INSTANCE: name, OATS_INSTANCE_HOME: spawned.home } }, ["retire", name, "--self", "--delete-branch", "--json"])],
+    ["--force", cli(f, ["retire", name, "--force", "--discard-worktree", "--delete-branch", "--json"])],
+    ["--server", plain(["retire", name, "--delete-branch", "--server", "no-such-server", "--json"])],
+  ];
+  for (const [label, refused] of variants) {
+    assert.equal(refused.status, 1, `${label}: ${refused.stderr}\n${refused.stdout}`);
+    const error = JSON.parse(refused.stdout).error;
+    assert.equal(error.code, "E_BAD_ARGS", label);
+    assert.equal(error.message, DELETE_BRANCH_REFUSED, label);
+  }
+  const text = cli(f, ["retire", name, "--delete-branch"]);
+  assert.notEqual(text.status, 0);
+  assert.equal(text.stdout, "");
+  assert.ok(text.stderr.includes(DELETE_BRANCH_REFUSED), text.stderr);
+
+  assert.equal(git(work, "rev-parse", "HEAD"), head, "the retire hook did not run");
+  assert.equal(git(f.repo, "rev-parse", `refs/heads/${branch}`), head, "the branch is where it was");
+  assert.equal(readFileSync(join(work, "scratch.txt"), "utf8"), "untracked\n", "the worktree is as it was");
+  assert.deepEqual(filesOf(spawned.home), home, "nothing in the home changed");
+  assert.equal(existsSync(join(dirname(spawned.home), ".oats-retire-receipt.k-2.json")), false, "no receipt was written");
+  assert.equal(existsSync(recoveryRootOf(spawned.home)), false, "and no recovery");
+});
+
+// ---- A self-retire an older OATS recorded with --delete-branch ----
+
+const OBSOLETE_INTENT = "this self-retire was requested with --delete-branch by an older OATS; retirement no longer deletes branches, so the branch and the worktree were left";
+
+test("a self-retire intent an older OATS wrote with deleteBranch: true is completed: the branch and the worktree are left, and the retired event and the output say so", async () => {
+  const f = fixture();
+  const spawned = spawn(f, "old-intent");
+  const other = spawn(f, "no-intent");
+  const name = basename(spawned.home);
+  const branch = readJson(join(spawned.home, "instance.json")).branch;
+  const head = git(join(spawned.home, "work"), "rev-parse", "HEAD");
+  // The intent as an older kernel wrote it for `oats retire <self> --self --delete-branch`.
+  const intent = { instance: name, agent: "dev", root: f.root, requestedAt: new Date().toISOString(), requestedByPid: process.pid, delaySec: 0,
+    options: { home: spawned.home, deleteBranch: true, tmuxSession: "oats-test-nosuch" }, resultPath: join(f.base, "deferred-result.json") };
+  const printed = [];
+  const log = console.log;
+  console.log = (...a) => { printed.push(a.join(" ")); };
+  let ok;
+  try { ok = await f.inEnv(() => completeDeferredRetirement(intent, { quiesce: false })); } finally { console.log = log; }
+  assert.equal(ok, true, existsSync(intent.resultPath) ? readFileSync(intent.resultPath, "utf8") : "the completion returned false");
+  assert.equal(existsSync(spawned.home), false, "the retirement the intent owes is completed");
+  assert.ok(printed.includes(OBSOLETE_INTENT), `the completion says so: ${JSON.stringify(printed)}`);
+  assert.equal(git(f.repo, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`), head, "the branch is left, at its commit");
+  const worktrees = git(f.repo, "worktree", "list", "--porcelain").split("\n\n").map((entry) => Object.fromEntries(entry.split("\n").filter(Boolean).map((line) => [line.split(" ")[0], line.slice(line.indexOf(" ") + 1)])));
+  const kept = worktrees.find((w) => w.branch === `refs/heads/${branch}`);
+  assert.ok(kept && existsSync(kept.worktree), `the worktree was not removed: ${JSON.stringify(worktrees)}`);
+  assert.equal(kept.HEAD, head);
+  const retired = readEvents(spawned.home).events.filter((e) => e.kind === "retired");
+  assert.equal(retired.length, 1);
+  assert.equal(retired[0].data.reason, OBSOLETE_INTENT, "the retired event carries the sentence as its reason");
+
+  retiredReceipt(cli(f, ["retire", basename(other.home), "--json"]));
+  const plain = readEvents(other.home).events.filter((e) => e.kind === "retired");
+  assert.equal(plain.length, 1);
+  assert.equal(Object.hasOwn(plain[0].data, "reason"), false, "a retire without that intent has no reason");
 });
 
 // ---- The plan's name for a HEAD that is not on a branch OATS can name ----

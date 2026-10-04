@@ -31,6 +31,7 @@ import {
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
   officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, isCapturedHome, capturedHomeRefusal, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
   findInstanceHome, findInstanceHomes, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, recordedKernelBin, launchConfigsAt, launchReportFor, explicitInstanceName, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
+  FAILED_SPAWN_BRANCH_LEFT, RETIRE_DELETE_BRANCH_REFUSED,
 } from "../lib/core.mjs";
 import {
   writeFileAtomic, LOCK_FILE, readLock, readLockIfPresent, writeLock, resolvePackages, memoizedRemote,
@@ -2460,7 +2461,9 @@ async function spawnCmd() {
 
 function retireCmd() {
   const name = args[1];
-  if (!name || name.startsWith("--")) die("usage: oats retire <instance> [--plan] [--plan-revision <rev> --idempotency-key <key>] [--home <path>] [--self] [--discard-worktree] [--delete-branch] [--keep-dir] [--force] [--json]");
+  // Refused before anything else: before --plan, a replay, a plan revision or a recorded child is stopped.
+  if (args.includes("--delete-branch")) return args.includes("--json") ? jsonFail("E_BAD_ARGS", RETIRE_DELETE_BRANCH_REFUSED) : die(RETIRE_DELETE_BRANCH_REFUSED);
+  if (!name || name.startsWith("--")) die("usage: oats retire <instance> [--plan] [--plan-revision <rev> --idempotency-key <key>] [--home <path>] [--self] [--discard-worktree] [--keep-dir] [--force] [--json]");
   let homeFlag = flag("home");
   if (homeFlag === true) die("--home needs the instance home path");
   if (args.includes("--plan")) {
@@ -2492,7 +2495,7 @@ function retireCmd() {
   const planRev = flag("plan-revision"), idemKey = flag("idempotency-key");
   if (planRev === true || idemKey === true) die("--plan-revision and --idempotency-key need values");
   if ((planRev !== undefined) !== (idemKey !== undefined)) die("--plan-revision and --idempotency-key go together");
-  let replayPath = null, childrenStopped = null, expectedBranch;
+  let replayPath = null, childrenStopped = null;
   if (planRev !== undefined) {
     if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(idemKey)) die("--idempotency-key: 1-128 chars of [A-Za-z0-9._:-]");
     // Replay first: after a successful retire the home is gone, so the receipt
@@ -2513,10 +2516,9 @@ function retireCmd() {
     }
     const running = childrenStopped.filter((k) => !k.ok);
     if (running.length) return args.includes("--json") ? jsonFail("E_CHILDREN_RUNNING", `${running.map((k) => k.instance).join(", ")} ${running.length === 1 ? "is" : "are"} still running after a bounded stop; nothing was retired and nothing was escalated`, { childrenStopped, plan: fresh }) : die(`children still running: ${running.map((k) => k.instance).join(", ")}; nothing retired`);
-    expectedBranch = fresh.facts.work.observed ? fresh.facts.work.branch : undefined;
   }
   let r;
-  try { r = retireInstance(root, name, { home: homeFlag, self: isSelf, deleteBranch: args.includes("--delete-branch"), discardWorktree: args.includes("--discard-worktree"), keepDir: args.includes("--keep-dir"), force: args.includes("--force"), ...(expectedBranch !== undefined ? { expectedBranch } : {}) }); }
+  try { r = retireInstance(root, name, { home: homeFlag, self: isSelf, discardWorktree: args.includes("--discard-worktree"), keepDir: args.includes("--keep-dir"), force: args.includes("--force") }); }
   catch (e) { if (!e?.code) throw e; return args.includes("--json") ? jsonFail(e.code, e.message, e.candidates ? { ...e.details, candidates: e.candidates } : e.details) : die(e.message); }
   if (childrenStopped) r.childrenStopped = childrenStopped;
   if (replayPath) { r.planRevision = planRev; r.idempotencyKey = idemKey; r.replayed = false; try { writeFileAtomic(replayPath, JSON.stringify(r, null, 2)); } catch { /* receipt is evidence, not authority */ } }
@@ -2539,6 +2541,7 @@ function retireCmd() {
   if (r.forcedIncomplete) {
     console.error(`Removed ${r.retired} under --force with cleanup INCOMPLETE — this external state was NOT cleaned up and is now yours to remove by hand:`);
     for (const f of r.forcedIncomplete) console.error(`  ${f}`);
+    if (r.retention?.recordedBranch && r.forcedIncomplete.includes(FAILED_SPAWN_BRANCH_LEFT)) console.error(`  branch: ${r.retention.recordedBranch}`);
   }
   if (args.includes("--json")) { console.log(JSON.stringify(r, null, 2)); if (r.rollbackIncomplete) process.exit(1); return; }
   // An unsuccessful cleanup retry must NOT read as a completed retirement: the
@@ -2547,10 +2550,12 @@ function retireCmd() {
   if (r.rollbackIncomplete) {
     console.error(`Cleanup for ${r.retired} is INCOMPLETE — the instance home is retained at ${r.retainedHome} because external state may still exist:`);
     for (const f of r.rollbackIncomplete) console.error(`  ${f}`);
+    // The branch the item speaks of, on a line of its own: the item names none.
+    if (r.retention?.recordedBranch && r.rollbackIncomplete.includes(FAILED_SPAWN_BRANCH_LEFT)) console.error(`  branch: ${r.retention.recordedBranch}`);
     console.error(`Fix the cause and re-run \`oats retire ${r.retired}\`; the home holds the state that cleanup needs.`);
     process.exit(1);
   }
-  console.log(`Retired ${r.retired} (agent ${r.agent})${r.worktreeRemoved ? ", worktree removed" : ""}${r.branchDeleted ? ", branch deleted" : ""}`);
+  console.log(`Retired ${r.retired} (agent ${r.agent})${r.worktreeRemoved ? ", worktree removed" : ""}`);
   // Preserving work and not saying so leaves the operator believing it is gone,
   // which is most of the harm of deleting it. Name the classes and the path.
   for (const recovery of r.workRecoveries || (r.workRecovery ? [r.workRecovery] : [])) {
@@ -3673,6 +3678,8 @@ async function serverRouteCmd() {
     }
     rest.push(a);
   }
+  // Refused here too, before anything is sent: a host on an older OATS would still delete the branch.
+  if (cmd === "retire" && rest.includes("--delete-branch")) bail("E_BAD_ARGS", RETIRE_DELETE_BRANCH_REFUSED);
   let routed;
   try { routed = routeCommand(id, cmd, rest); }
   catch (e) { bail(e.code || "E_SSH", e.message, e.details); }
@@ -3987,7 +3994,7 @@ Usage:
                                             decision binds an apply (--expect-decision <rev>);
                                             --max-age reuses recent heads (preview only)
   oats retire <instance> [--force]           retire an instance (window, hooks,
-      [--self] [--delete-branch]            worktree, home); --self = retire the
+      [--self]                              worktree, home); --self = retire the
       [--keep-dir] [--json]                 CALLING instance: the window dies, then
                                             a detached external retirement runs
   oats inspect [--dir <scope>] [--soul <name>   one authoritative JSON answer for a GUI: souls
@@ -4084,13 +4091,13 @@ Usage:
                                              with origins (captured homes refuse: the
                                              captured/portable path was removed in 0.26)
   oats retire <instance> --plan [--json]     what Remove would touch, with retention defaults
-  oats retire <instance> [--plan-revision <rev> --idempotency-key <key>] [--discard-worktree] [--delete-branch]
+  oats retire <instance> [--plan-revision <rev> --idempotency-key <key>] [--discard-worktree]
                                              with a plan revision: refuses E_PLAN_STALE (fresh plan
                                              attached) if facts moved; a repeated key replays
                                              retire; a worktree is RETAINED (re-homed under
                                              <workspace>/.agents/worktrees/<repo>/<branch>)
-                                             unless discarded; --delete-branch deletes the
-                                             worktree's verified branch and implies discard
+                                             unless discarded; no retire deletes a branch
+                                             (--delete-branch is refused)
   oats root                                  print this package's install root
                                             (adapters resolve the kernel from it)
 

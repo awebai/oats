@@ -120,7 +120,7 @@ test("assertSameWorktreeHead passes the same commit with the same ref's bytes, o
   const A = "a".repeat(40), B = "b".repeat(40);
   const on = (commit, ref, branch = null) => ({ commit, branch, detached: false, ref: Buffer.from(ref) });
   const detached = (commit) => ({ commit, branch: null, detached: true, ref: null });
-  const moved = (e) => e?.code === "E_WORK_PRESERVATION_FAILED" && e.message === "the worktree's HEAD changed after it was inspected, so the worktree was not removed. The home, the worktree and the recovery are kept; retry the retire.";
+  const moved = (e) => e?.code === "E_WORK_PRESERVATION_FAILED" && e.message === "the worktree's HEAD changed after it was inspected, so the worktree was not removed. The home and the worktree are kept, and so is any recovery the retire wrote; retry the retire.";
   assert.doesNotThrow(() => assertSameWorktreeHead(on(A, "refs/heads/x", "x"), on(A, "refs/heads/x", "x")));
   assert.doesNotThrow(() => assertSameWorktreeHead(detached(A), detached(A)));
   assert.throws(() => assertSameWorktreeHead(on(A, "refs/heads/x", "x"), on(B, "refs/heads/x", "x")), moved, "another commit");
