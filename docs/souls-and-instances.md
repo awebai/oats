@@ -453,9 +453,10 @@ directory mode the work state is the bytes of `work/`. In worktree mode it
 is what a work copy holds, for the worktree and for each nested repository
 alike:
 
-- its Git status, its branch and commit, and its index entries (what
+- its Git status, its branch and commit, its index entries (what
   `git ls-files -s` lists, with the skip-worktree and assume-unchanged
-  marks);
+  marks) and the index's resolve-undo records (what
+  `git ls-files --resolve-undo` lists);
 - the state of an operation in progress (a merge, a rebase, a cherry-pick, a
   revert, a bisect);
 - its tags and its stash;
@@ -499,8 +500,8 @@ the state is read from that exists but cannot be read (the file
 `core.excludesFile` names, `info/exclude`, `info/attributes`, the stash's
 log), in the worktree's repository and in each nested one, and also when the
 retire has nothing to preserve. A state that is unreadable from the start
-refuses at the retire's first inspection: nothing has been written and the
-session has not been stopped.
+refuses at the retire's first inspection: no recovery was written, nothing
+was deleted, and the retire has not stopped the instance's session.
 
 **A socket, a FIFO or a device file in the worktree.** An entry that is not
 a file, a directory or a symbolic link has no bytes to read or to copy, and
@@ -508,20 +509,22 @@ Git prints no status row for it, so a worktree that holds one can read as
 clean. In worktree mode, when there is something to preserve before the
 hooks, such an entry anywhere in the worktree refuses the retire:
 
-- **before the hooks**, with `E_WORK_INSPECTION_FAILED`: no hook has run and
-  nothing has been written, so no recovery is left, however often the retire
-  is retried. The message names the entry and says what to do: safely stop
-  the process or resource that owns it, or move the entry elsewhere, then
-  retry. The entry may be a live endpoint, so deleting it is not the advice.
-  The session of a launched instance has been stopped by then: the instance
-  is stopped, not retired, and its home is kept. To continue, deal with the
-  entry and run `oats retire <instance>` again, or start the session again
-  in the same home with `oats session start --home <abs>`. A self-retire
-  (`--self`) is completed by its detached completion, which stops the
-  session and refuses in the same way; the refusal is recorded beside the
-  home, as described below, and the same two commands continue. Only
-  `--self --keep-dir`, which stays in the calling process, refuses with the
-  session still running;
+- **before the hooks**, with `E_WORK_INSPECTION_FAILED`: no hook has run, no
+  recovery was written and nothing was deleted, however often the retire is
+  retried. The message names the entry and says what to do: safely stop the
+  process or resource that owns it, or move the entry elsewhere, then retry.
+  The entry may be a live endpoint, so deleting it is not the advice. The
+  retire has already stopped the session of a launched instance by then: the
+  instance's session is stopped, the instance is not retired, and its home
+  is kept. The message says so. To continue, deal with the entry and run
+  `oats retire <instance>` again, or start the session again in the same
+  home with `oats session start --home <abs>`. A self-retire (`--self`) is
+  completed by its detached completion, which stops the session and refuses
+  in the same way; the refusal is recorded beside the home, as described
+  below. After a refused self-retire only `oats retire <instance>`
+  continues: `oats session start` refuses while the self-retire's pending
+  marker is there, and a retire clears it. Only `--self --keep-dir`, which
+  stays in the calling process, refuses with the session still running;
 - **after the hooks**, when a retire hook left the entry behind: the hooks
   have run, and the home, the work and the recovery written before the hooks
   are all kept. The code is `E_WORK_INSPECTION_FAILED` when the Git state is

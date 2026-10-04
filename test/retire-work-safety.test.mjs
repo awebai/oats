@@ -1421,6 +1421,41 @@ seen.nestedStatus = gitIn(join(work, 'human-ignored', 'nested'))('status', '--po
   assertBothCopiedAgain(recovery);
 });
 
+const resolveUndoOf = (repo) => execFileSync("git", ["-C", repo, "ls-files", "--resolve-undo", "-z"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+
+test("a retire hook that makes and resolves a conflict on a committed file, leaving every index entry, status row and byte as it was: the index of the work copied under after-hooks/repo/ holds the resolve-undo records", () => {
+  // The index file is copied whole, so a work copy holds its resolve-undo records. Resolving a conflict adds
+  // them, and here the entry that comes back is the one that was there: nothing else of the index moves.
+  const retire = quietHook(`const indexOf = () => ({ stage: git('ls-files', '--stage', '-z'), marks: git('ls-files', '-s', '-v', '-z'), head: git('rev-parse', 'HEAD'), undo: git('ls-files', '--resolve-undo', '-z') });
+seen.before = indexOf();
+const blob = git('rev-parse', 'HEAD:tracked.txt').trim();
+const rows = ['0 ' + '0'.repeat(blob.length) + '\\ttracked.txt', ...[1, 2, 3].map((stage) => '100644 ' + blob + ' ' + stage + '\\ttracked.txt')];
+execFileSync('git', ['-C', work, 'update-index', '--index-info'], { input: rows.join('\\n') + '\\n' });
+seen.conflict = git('ls-files', '--stage', '-z');
+git('add', 'tracked.txt');
+seen.after = indexOf();`);
+  const f = fixture({ capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "hook-resolve-undo");
+  const work = join(spawned.home, "work");
+  write(join(work, "scratch.txt"), "untracked\n");
+  const statusBefore = porcelain(work);
+  assert.deepEqual(statusRowsIn(statusBefore), ["?? scratch.txt"], "fixture premise: the committed file is unmodified, and an untracked file gives the pre-hook pass a work copy");
+
+  const { recovery, seen, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore);
+  assert.equal(seen.conflict.split("\0").filter(Boolean).length, 3, "fixture premise: the hook put the file in conflict, as three staged entries");
+  assert.equal(seen.before.undo, "", "fixture premise: no resolve-undo record before the hook");
+  assert.equal(seen.after.undo.split("\0").filter(Boolean).length, 3, "fixture premise: resolving left three resolve-undo records");
+  assert.equal(seen.after.stage, seen.before.stage, "fixture premise: the index entries are as they were");
+  assert.equal(seen.after.marks, seen.before.marks, "fixture premise: and so are their marks");
+  assert.equal(seen.after.head, seen.before.head, "fixture premise: and the commit");
+  assert.equal(readFileSync(join(recovery.path, "repo", "tracked.txt"), "utf8"), "base\n");
+  assert.equal(resolveUndoOf(join(recovery.path, "repo")), "", "the pre-hook snapshot's index has no resolve-undo record");
+  assert.equal(existsSync(join(afterRepo, ".git")), true, "the work is copied again under after-hooks/repo/: the index's resolve-undo records moved, although no entry, status row or byte did");
+  assert.equal(resolveUndoOf(afterRepo), seen.after.undo, "the copy's index holds the records");
+  assert.equal(readFileSync(join(afterRepo, "tracked.txt"), "utf8"), "base\n", "its files are the same in both copies");
+  assertBothCopiedAgain(recovery);
+});
+
 // What a work copy holds of the worktree's own repository is state as well: the exclude rules and status
 // settings the copy is given, the stash and the tags. They are kept by the repository the worktree belongs
 // to, so a hook can change them without touching a file or a status row of the worktree.
@@ -1569,10 +1604,12 @@ test("a nested repository whose Git state cannot be read refuses the retire as a
 // Proving the work unchanged reads the whole worktree, and such an entry (a socket, a FIFO, a device)
 // has no bytes to read or to copy. Git prints no status row for it, so a worktree that holds one can
 // read as clean. The retire refuses, names the entry and says what to do; it never says to remove it.
-const UNSUPPORTED_ENTRY = /\/work\/pipe has an unsupported filesystem type: it is not a file, a directory or a symbolic link, so it cannot be read or copied\. Safely stop the process or resource that owns it, or move the entry elsewhere, before retrying$/;
+// Before the hooks it also says what this retire has and has not done by then.
+const UNSUPPORTED_ENTRY_TEXT = String.raw`\/work\/pipe has an unsupported filesystem type: it is not a file, a directory or a symbolic link, so it cannot be read or copied\. Safely stop the process or resource that owns it, or move the entry elsewhere, before retrying`;
+const UNSUPPORTED_ENTRY = new RegExp(`${UNSUPPORTED_ENTRY_TEXT}$`);
 const hookRan = (home) => existsSync(join(dirname(home), `hook-saw-${basename(home)}`));
 
-test("a FIFO in a worktree that Git reports as clean refuses the retire before anything is written: the message names it and says what to do, no retire hook runs, and no recovery is left, however often it is retried", () => {
+test("a FIFO in a worktree that Git reports as clean refuses the retire before its hooks: the message names it, says what to do and says that the instance is not retired, no retire hook runs, no recovery is written and nothing is deleted, however often it is retried", () => {
   const f = fixture({ capabilities: hookCapability(quietHook("")) });
   const spawned = spawn(f, "fifo-before-hooks");
   const work = join(spawned.home, "work");
@@ -1586,10 +1623,11 @@ test("a FIFO in a worktree that Git reports as clean refuses the retire before a
     assert.notEqual(retired.status, 0, `${attempt} attempt: a worktree that cannot be read was retired: ${retired.stdout}`);
     const error = JSON.parse(retired.stdout).error;
     assert.equal(error.code, "E_WORK_INSPECTION_FAILED", retired.stdout);
-    assert.match(error.message, UNSUPPORTED_ENTRY, "the message names the entry and says what to do");
+    assert.match(error.message, new RegExp(`${UNSUPPORTED_ENTRY_TEXT}\\. No recovery was written and nothing was deleted: ${basename(spawned.home)} is not retired and its home is kept$`), "the message names the entry, says what to do, and says what this retire did and did not do");
+    assert.doesNotMatch(error.message, /session/, "this instance was never launched: the message claims no stopped session");
     assert.doesNotMatch(error.message, /\b(remove|delete)\b/i, "the entry may be a live endpoint: the message does not say to remove it");
     assert.equal(hookRan(spawned.home), false, `${attempt} attempt: no retire hook ran`);
-    assert.equal(existsSync(recoveryRootOf(spawned.home)), false, `${attempt} attempt: no recovery directory is left behind`);
+    assert.equal(existsSync(recoveryRootOf(spawned.home)), false, `${attempt} attempt: no recovery was written`);
     assert.equal(readFileSync(join(spawned.home, "notes", "x.md"), "utf8"), "an authored note\n", "the home is kept");
     assert.equal(lstatSync(fifo).isFIFO(), true, "the worktree is kept as it was");
   }
