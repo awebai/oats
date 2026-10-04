@@ -1549,7 +1549,7 @@ test("a worktree whose HEAD is on a remote-tracking ref, which the copier copies
   assertBothCopiedAgain(recovery);
 });
 
-test("a worktree whose HEAD is on a remote-tracking ref, which the copier copies detached from a clone that keeps the repository's own HEAD branch, and a retire hook that moves the repository's HEAD to a remote-tracking ref of the same short name, deletes that branch and writes the home: the work is copied again, with no local branch under after-hooks/repo/", () => {
+test("a detached worktree, which the copier copies from a clone that keeps the repository's own HEAD branch, and a retire hook that moves the repository's HEAD to a remote-tracking ref of the same short name, deletes that branch and writes the home: the work is copied again, with no local branch under after-hooks/repo/", () => {
   // A clone of a repository whose HEAD is not on a branch keeps no local branch; `git symbolic-ref
   // --short` gives the branch and the remote-tracking ref the same name.
   const retire = quietHook(`const common = git('rev-parse', '--path-format=absolute', '--git-common-dir').trim();
@@ -1561,10 +1561,7 @@ seen.names = [repository('symbolic-ref', '--short', 'HEAD').trim()];`);
   const f = fixture({ capabilities: hookCapability(retire) });
   const spawned = spawn(f, "clone-head-short-name");
   const work = join(spawned.home, "work");
-  const git = (...args) => execFileSync("git", ["-C", work, ...args], { encoding: "utf8" }).trim();
-  const name = git("symbolic-ref", "HEAD").slice("refs/heads/".length);
-  git("update-ref", `refs/remotes/${name}`, "HEAD");
-  git("symbolic-ref", "HEAD", `refs/remotes/${name}`);
+  execFileSync("git", ["-C", work, "checkout", "--quiet", "--detach"]);
   const repository = (...args) => execFileSync("git", [`--git-dir=${commonDirOf(work)}`, ...args], { encoding: "utf8" }).trim();
   repository("branch", "keeper", repository("symbolic-ref", "HEAD"));
   repository("symbolic-ref", "HEAD", "refs/heads/keeper");
@@ -1579,6 +1576,68 @@ seen.names = [repository('symbolic-ref', '--short', 'HEAD').trim()];`);
   assert.deepEqual(localBranches(join(recovery.path, "repo")), ["refs/heads/keeper"], "the snapshot before the hooks keeps the branch the repository's HEAD was on then");
   assert.equal(existsSync(join(afterRepo, ".git")), true, "the work is copied again under after-hooks/repo/: the comparison reads the repository's HEAD as its whole ref");
   assert.deepEqual(localBranches(afterRepo), [], "the copy made after the hooks keeps no local branch, as a clone of a repository whose HEAD is not on a branch");
+  assertBothCopiedAgain(recovery);
+});
+
+test("an instance spawned with --repo naming a linked worktree of the repository, whose own worktree is detached, and a retire hook that moves that linked worktree's HEAD to another branch and writes the home: the work is copied again, with that branch under after-hooks/repo/", () => {
+  // The copier clones the repository the instance was spawned from, and that clone keeps the branch
+  // its HEAD is on: the linked worktree's HEAD, which is not the HEAD of the common directory.
+  const retire = quietHook(`import { readFileSync as readSource } from 'node:fs';
+const source = readSource(join(dirname(home), 'clone-source-' + basename(home)), 'utf8');
+execFileSync('git', ['-C', source, 'symbolic-ref', 'HEAD', 'refs/heads/moved-source']);`);
+  const f = fixture({ capabilities: hookCapability(retire) });
+  const source = join(f.base, "source-worktree");
+  execFileSync("git", ["-C", f.repo, "worktree", "add", "-q", "-b", "source", source]);
+  execFileSync("git", ["-C", f.repo, "branch", "moved-source", "source"]);
+  const result = cli(f, ["spawn", "dev", "--purpose", "linked-source", "--no-launch", "--repo", source, "--json"]);
+  assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
+  const spawned = JSON.parse(result.stdout).result;
+  assert.equal(readJson(join(spawned.home, "instance.json")).repo, source, "fixture premise: the instance's repository is the linked worktree");
+  write(join(dirname(spawned.home), `clone-source-${basename(spawned.home)}`), source);
+  const work = join(spawned.home, "work");
+  execFileSync("git", ["-C", work, "checkout", "--quiet", "--detach"]);
+  const commonHead = execFileSync("git", [`--git-dir=${commonDirOf(work)}`, "symbolic-ref", "HEAD"], { encoding: "utf8" }).trim();
+  assert.notEqual(commonHead, "refs/heads/source", "fixture premise: the common directory's HEAD is not the linked worktree's");
+  write(join(work, "tracked.txt"), "changed before the retire\n");
+  const statusBefore = porcelain(work);
+  assert.deepEqual(statusRowsIn(statusBefore), [" M tracked.txt"]);
+
+  const { recovery, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore);
+  assert.equal(execFileSync("git", [`--git-dir=${commonDirOf(source)}`, "symbolic-ref", "HEAD"], { encoding: "utf8" }).trim(), commonHead, "fixture premise: the hook left the common directory's HEAD as it was");
+  const localBranches = (repo) => execFileSync("git", ["-C", repo, "for-each-ref", "--format=%(refname)", "refs/heads"], { encoding: "utf8" }).split("\n").filter(Boolean);
+  assert.deepEqual(localBranches(join(recovery.path, "repo")), ["refs/heads/source"], "the snapshot before the hooks keeps the branch the linked worktree's HEAD was on then");
+  assert.equal(existsSync(join(afterRepo, ".git")), true, "the work is copied again under after-hooks/repo/: the comparison reads the HEAD of the repository the copy is cloned from");
+  assert.deepEqual(localBranches(afterRepo), ["refs/heads/moved-source"], "the copy made after the hooks keeps the branch the hook gave the linked worktree's HEAD");
+  assertBothCopiedAgain(recovery);
+});
+
+test("a worktree whose own Git directory's path ends in a space, beside a directory of the same name without it that holds a copy of its index and an unfinished rebase, and a retire hook that changes that rebase and writes the home: the work is copied again, with the hook's change under after-hooks/repo/", () => {
+  // The copier trims the Git directory Git prints, so it copies the index and the operation from the
+  // directory without the space.
+  const retire = quietHook(`import { writeFileSync as writeOperation } from 'node:fs';
+writeOperation(join(git('rev-parse', '--absolute-git-dir').trim(), 'rebase-merge', 'note'), 'after the hook\\n');`);
+  const f = fixture({ capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "git-dir-space");
+  const work = join(spawned.home, "work");
+  const admin = gitDirOf(work);
+  nodeFs.renameSync(admin, `${admin} `);
+  write(join(work, ".git"), `gitdir: ${admin} \n`);
+  assert.equal(execFileSync("git", ["-C", work, "rev-parse", "--absolute-git-dir"], { encoding: "utf8" }), `${admin} \n`, "fixture premise: Git prints the worktree's Git directory with its trailing space");
+  mkdirSync(admin);
+  nodeFs.copyFileSync(join(`${admin} `, "index"), join(admin, "index"));
+  const head = headOf(work);
+  write(join(admin, "rebase-merge", "head-name"), `${execFileSync("git", ["-C", work, "symbolic-ref", "HEAD"], { encoding: "utf8" }).trim()}\n`);
+  write(join(admin, "rebase-merge", "onto"), `${head}\n`);
+  write(join(admin, "rebase-merge", "orig-head"), `${head}\n`);
+  write(join(admin, "rebase-merge", "note"), "before the hook\n");
+  write(join(work, "tracked.txt"), "changed before the retire\n");
+  const statusBefore = porcelain(work);
+  assert.deepEqual(statusRowsIn(statusBefore), [" M tracked.txt"]);
+
+  const { recovery, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore);
+  assert.equal(readFileSync(join(recovery.path, "repo", ".git", "rebase-merge", "note"), "utf8"), "before the hook\n", "the snapshot before the hooks carries the operation the copier read then");
+  assert.equal(existsSync(join(afterRepo, ".git")), true, "the work is copied again under after-hooks/repo/: the comparison reads the Git directory the copier reads");
+  assert.equal(readFileSync(join(afterRepo, ".git", "rebase-merge", "note"), "utf8"), "after the hook\n", "the copy made after the hooks carries the hook's change");
   assertBothCopiedAgain(recovery);
 });
 
