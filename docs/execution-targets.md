@@ -84,10 +84,11 @@ default server (a theme switcher, a script that runs `tmux set -g …` or
 - **See what runs there:** `tmux -L oats ls`. Plain `tmux ls` and a bare
   `tmux attach` show your default server, so they do not show the sessions
   OATS creates now.
-- **Attach:** `oats session attach --home <home>`. By hand, copy the `attach:` line that spawn prints: `tmux -S <socket> attach
-  -t <session>`, with the recorded socket. `tmux -L oats attach -t <session>`
-  is a convenience that holds only in an environment with the same
-  `TMUX_TMPDIR` as the one that created the session.
+- **Attach:** `oats session attach --home <home>`. By hand, copy the
+  `attach:` line that spawn prints: `tmux -S <socket> attach -t <session>`,
+  with the recorded socket. `tmux -L oats attach -t <session>` is a
+  convenience that holds only in an environment with the same `TMUX_TMPDIR`
+  as the one that created the session.
 - **`TMUX_TMPDIR`.** Two environments with different values (a login shell,
   and a process started by a service manager or launchd, a schedule runner or
   a GUI launch) each get their own `oats` server. Every instance stays
