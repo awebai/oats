@@ -1407,6 +1407,64 @@ seen.nestedStatus = gitIn(join(work, 'human-ignored', 'nested'))('status', '--po
   assertBothCopiedAgain(recovery);
 });
 
+/** Give the instance's branch one commit that a second local branch, `keep`, also reaches: no commit is branch-only. → that commit. */
+function commitAlsoOnKeep(work) {
+  write(join(work, "committed.txt"), "committed on the instance's branch\n");
+  execFileSync("git", ["-C", work, "add", "committed.txt"]);
+  execFileSync("git", ["-C", work, "commit", "-qm", "the instance's commit"]);
+  execFileSync("git", ["-C", work, "branch", "keep"]);
+  return headOf(work);
+}
+
+test("a snapshot that was home-only before the hooks gets a work copy when a class appears after them from outside the work state: a retire hook deletes the other branch that reached the instance's commit, and the retire deletes the instance's", () => {
+  const retire = quietHook(`git('branch', '--quiet', '-D', 'keep');
+seen.head = git('rev-parse', 'HEAD').trim();
+seen.branches = git('branch', '--list', 'keep');`);
+  const f = fixture({ capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "hook-drops-branch");
+  const work = join(spawned.home, "work");
+  const commit = commitAlsoOnKeep(work);
+  write(join(spawned.home, "notes", "x.md"), "an authored note\n");
+  const statusBefore = porcelain(work);
+  assert.equal(statusBefore, "", "fixture premise: a clean worktree before the retire");
+
+  const { receipt, recovery, seen, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore, { flags: ["--delete-branch"] });
+  // The work state did not move: same status, same commit, same bytes. Only another ref did.
+  assert.equal(seen.head, commit, "fixture premise: the hook did not move HEAD");
+  assert.equal(seen.branches, "", "fixture premise: the hook deleted the other branch");
+  assert.equal(recovery.repoCopy?.copied, false, "fixture premise: the snapshot before the hooks is home-only, because no commit was branch-only then");
+  assert.equal(existsSync(join(recovery.path, "repo")), false);
+  assert.ok(recovery.classes.includes("branch-only local commits"), `the class appeared after the hooks: ${recovery.classes.join(", ")}`);
+  assert.ok(receipt.retention.branchDeleted, "fixture premise: the retire deleted the instance's branch");
+  assert.equal(execFileSync("git", ["-C", f.repo, "branch", "--list", receipt.retention.branchDeleted, "keep"], { encoding: "utf8" }).trim(), "", "no branch reaches the commit any more");
+  assert.equal(existsSync(join(afterRepo, ".git")), true, "the work is copied under after-hooks/repo/, although nothing in the work state moved: the recovery held no work copy, and the commit is now branch-only");
+  assert.equal(headOf(afterRepo), commit, "the commit is in the recovery");
+  assert.equal(readFileSync(join(afterRepo, "committed.txt"), "utf8"), "committed on the instance's branch\n");
+  assertBothCopiedAgain(recovery);
+});
+
+test("a snapshot that was home-only before the hooks gets a work copy when the retire hook removes the instance's retirement baseline", () => {
+  const retire = quietHook(`import { readdirSync, rmSync } from 'node:fs';
+const baselines = join(dirname(home), '.oats-retirement', 'baselines');
+for (const name of readdirSync(baselines)) rmSync(join(baselines, name));`);
+  const f = fixture({ capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "hook-drops-baseline");
+  const work = join(spawned.home, "work");
+  write(join(spawned.home, "notes", "x.md"), "an authored note\n");
+  assert.equal(existsSync(baselineOf(spawned.home)), true, "fixture premise: the baseline is where the hook will look");
+  const statusBefore = porcelain(work);
+  assert.equal(statusBefore, "", "fixture premise: a clean worktree before the retire");
+
+  const { recovery, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore);
+  assert.equal(existsSync(baselineOf(spawned.home)), false, "fixture premise: the hook removed the baseline");
+  assert.equal(recovery.repoCopy?.copied, false, "fixture premise: the snapshot before the hooks is home-only");
+  assert.equal(existsSync(join(recovery.path, "repo")), false);
+  assert.ok(recovery.classes.includes("unknown instance-home provenance"), `the class appeared after the hooks: ${recovery.classes.join(", ")}`);
+  assert.equal(existsSync(join(afterRepo, ".git")), true, "without the baseline nothing says the work is disposable: it is copied under after-hooks/repo/");
+  assert.equal(readFileSync(join(afterRepo, "tracked.txt"), "utf8"), "base\n");
+  assertBothCopiedAgain(recovery);
+});
+
 test("a nested repository whose Git state cannot be read refuses the retire as an inspection failure, and nothing is removed", () => {
   const f = fixture();
   const spawned = spawn(f, "nested-unreadable");
