@@ -185,3 +185,18 @@ test("retire of a launched instance is refused when the socket file is gone and 
   f.env = { ...f.env, PATH: bin };
   refused(f, launched, /No such file or directory\); whether a process still works in this home could not be established \(lsof is not on PATH\)/);
 });
+
+test("retire of a launched instance is refused when the socket file is gone and the process scan was cut off before it listed the home", () => {
+  const f = fixture();
+  const socket = join(f.base, "tmux.sock");
+  const launched = launchedHome(f, "scan-cut-off", socket);
+  const server = startServer(socket, launched.instance, { cwd: launched.home });
+  rmSync(socket);
+  // An lsof that prints the start of a listing, without the home's row, and is then ended by a
+  // signal: what it printed is not a completed scan, so it does not say that nothing works in the home.
+  const bin = join(f.base, "cut-off-lsof-bin");
+  write(join(bin, "lsof"), "#!/bin/sh\nprintf 'p1\\nR0\\ncinit\\nn/\\n'\nkill -KILL $$\n", { mode: 0o755 });
+  f.env = { ...f.env, PATH: `${bin}:${f.env.PATH}` };
+  refused(f, launched, /No such file or directory\); whether a process still works in this home could not be established \(lsof was ended by SIGKILL\)/);
+  assert.ok(alive(server), "the server still runs");
+});
