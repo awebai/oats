@@ -246,14 +246,23 @@ tmux -L oats kill-server                         # replace it: ends EVERY sessio
   the session up by its exact name and assumes nothing about its `hq`
   window.
 - `set-environment -g` is how a running server is repaired: it ends nothing,
-  and panes that already run keep the environment they have. It does not
-  change the `PATH` of panes OATS creates, which is the spawning process's.
+  and panes that already run keep the environment they have. A pane's `PATH`
+  is always that of the process that runs the spawn or the start, so setting
+  `PATH` on the server changes nothing for OATS panes.
 - `kill-server` ends every session on that server, every running agent
   included. It is for before agents are started, not for repairing a running
   host. The next start takes the environment of whoever starts it.
 - `-L oats` reaches the server of the environment you type it in
   (`TMUX_TMPDIR`). For the server an instance is on, use the socket from its
   row in `oats status --json`: `tmux -S <socket> …`.
+- **Limit
+  ([#620](https://github.com/awebai/oats/issues/620)).** `oats retire` of a
+  launched instance is refused (`E_RUNTIME_QUIESCE_FAILED`) while the file of
+  its recorded socket does not exist, for example after a reboot that cleared
+  tmux's socket directory. Until that issue is fixed, bring the server back
+  first, then retire: start any instance of the deployment, or create the
+  session by hand with the first command above. For an instance still
+  recorded on another server, `tmux -S <recorded socket> new-session -d`.
 
 <a id="existing-instances"></a>
 #### Existing instances
