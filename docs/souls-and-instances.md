@@ -467,6 +467,15 @@ is what a work copy holds, for the worktree and for each nested repository:
   `core.symlinks`, `core.autocrlf`, `core.eol`, and `info/attributes`);
 - the bytes of its files, Git metadata left out.
 
+Every part of that state is compared as its bytes, never as decoded text. A
+ref name, a path in the index or in the status, a file name or the target of
+a symbolic link need not be valid UTF-8, and two states that differ only in
+such bytes are two states. This is what the proof compares, not what a copy
+can hold: a recovery cannot hold a file whose name is not valid UTF-8. A
+copy of a home or a worktree that has one fails, and the retire refuses with
+nothing lost. A clean worktree that has one, with only the home to preserve,
+needs no work copy and retires.
+
 A worktree's tags, stash, exclude rules and settings are kept by the
 repository it belongs to. They are part of the state because a work copy
 carries them, so a tag or a stash made in that repository while the retire
