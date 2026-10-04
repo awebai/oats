@@ -6,10 +6,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { accessSync, constants, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { listInstances, retireInstance } from "../lib/core.mjs";
+import { delimiter, isAbsolute, join } from "node:path";
+import { FAILED_SPAWN_BRANCH_LEFT, listInstances, retireInstance } from "../lib/core.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 /** A deployment whose retire hook reports incomplete cleanup while `<flags>/stubborn` exists, and records each
@@ -94,7 +94,85 @@ test("(b) once nothing is outstanding, the retry removes the worktree with --dis
   assert.equal(r.retention.worktree, "removed");
   assert.equal(r.worktreeRemoved, true);
   assert.ok(!w.registered().includes(w.work));
-  assert.equal(w.branchTip(), w.tip, "only --delete-branch deletes a branch");
+  assert.equal(w.branchTip(), w.tip, "no retire deletes a branch");
+});
+
+test("(b) a removal that fails in the retry is not attempted again: a HEAD that moved meanwhile keeps its worktree, and the retry stays incomplete", async (t) => {
+  const w = await stubbornInstance(t, "dev-moved");
+  await w.retire({ discardWorktree: true });
+  w.settle();
+  // A stand-in `git` first on PATH passes every call to the real Git, except the first request to remove a
+  // worktree: then it detaches the worktree's HEAD, commits, and fails without removing anything. Every later
+  // removal would go through, so a second attempt after the check of HEAD would remove the new commit's worktree.
+  const real = (process.env.PATH || "").split(delimiter).filter(isAbsolute).map((d) => join(d, "git"))
+    .find((c) => { try { accessSync(c, constants.X_OK); return true; } catch { return false; } });
+  assert.ok(real, "this test needs git on PATH");
+  const bin = mkdtempSync(join(tmpdir(), "oats-git-stand-in-")); t.after(() => rmSync(bin, { recursive: true, force: true }));
+  const marker = join(bin, "moved");
+  const q = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
+  writeFileSync(join(bin, "git"), `#!/bin/sh
+case " $* " in *" worktree remove "*)
+  if [ ! -e ${q(marker)} ]; then
+    ${q(real)} -C ${q(w.work)} checkout --quiet --detach &&
+    ${q(real)} -C ${q(w.work)} -c user.name=t -c user.email=t@t -c commit.gpgSign=false commit --quiet --allow-empty -m 'made while the removal failed' &&
+    ${q(real)} -C ${q(w.work)} rev-parse HEAD > ${q(marker)}
+    exit 1
+  fi ;;
+esac
+exec ${q(real)} "$@"
+`, { mode: 0o755 });
+  process.env.PATH = `${bin}${delimiter}${process.env.PATH}`; // stubbornInstance restores the host's PATH
+
+  const r = await w.retire({ discardWorktree: true });
+  assert.equal(existsSync(marker), true, "fixture premise: the retry asked Git to remove the worktree, and HEAD moved");
+  const moved = readFileSync(marker, "utf8").trim();
+  assert.notEqual(moved, w.tip, "fixture premise: HEAD is at another commit than the one that was inspected");
+  assert.equal(w.git("-C", w.work, "rev-parse", "HEAD"), moved, "the worktree is kept, at the commit HEAD moved to");
+  assert.ok(w.registered().includes(realpathSync(w.work)), "and is still registered");
+  assert.ok(r.rollbackIncomplete?.includes(`git worktree ${realpathSync(w.work)}: still registered`), JSON.stringify(r.rollbackIncomplete));
+  assert.equal(existsSync(join(w.home, "instance.json")), true, "the home is kept for the next retry");
+});
+
+test("a retry of a quarantine that owes its branch stays incomplete while the branch exists or cannot be shown gone, with a fixed item that names no branch; it completes once Git has deleted the branch", async (t) => {
+  const w = await stubbornInstance(t, "dev-owes");
+  await w.retire({ discardWorktree: true });
+  w.settle();
+  // A quarantine that owes the deletion of its recorded branch, as a failed spawn's rollback leaves it.
+  const markerPath = join(w.home, ".oats-rollback-incomplete.json");
+  const marker = JSON.parse(readFileSync(markerPath, "utf8"));
+  marker.cleanup.outstanding = { ...marker.cleanup.outstanding, git: ["branch"] };
+  writeFileSync(markerPath, JSON.stringify(marker, null, 2));
+  assert.ok(w.meta.branch, "fixture premise: the instance records its branch");
+
+  // The branch exists: the fixed item, without the branch's name; the receipt names the branch.
+  const first = await w.retire({ discardWorktree: true });
+  assert.deepEqual(first.rollbackIncomplete, [FAILED_SPAWN_BRANCH_LEFT]);
+  assert.equal(first.rollbackIncomplete[0].includes(w.meta.branch), false, "the item holds no branch name");
+  assert.equal(first.retention.worktree, "removed", "the worktree step ran");
+  assert.equal(first.retention.recordedBranch, w.meta.branch, "and the receipt has the branch's name");
+  assert.equal(first.branchDeleted, false);
+  assert.equal(w.branchTip(), w.tip, "the branch is left");
+  assert.equal(existsSync(join(w.home, "instance.json")), true, "the home is kept for the next retry");
+
+  // The branch's ref file is damaged: Git cannot show the branch gone, so the debt stays.
+  const gitPath = w.git("-C", w.meta.repo, "rev-parse", "--git-path", `refs/heads/${w.meta.branch}`);
+  const refFile = isAbsolute(gitPath) ? gitPath : join(w.meta.repo, gitPath);
+  assert.equal(existsSync(refFile), true, "fixture premise: the branch is a loose ref file");
+  const refBytes = readFileSync(refFile);
+  writeFileSync(refFile, "not an object id\n");
+  const damaged = await w.retire();
+  assert.equal(damaged.rollbackIncomplete?.length, 1, JSON.stringify(damaged.rollbackIncomplete));
+  assert.ok(damaged.rollbackIncomplete[0].startsWith(`git branch ${w.meta.branch}: could not verify whether it still exists (`), damaged.rollbackIncomplete[0]);
+  assert.equal(existsSync(join(w.home, "instance.json")), true);
+  writeFileSync(refFile, refBytes);
+  assert.equal(w.branchTip(), w.tip, "fixture premise: the ref file is restored");
+
+  // The operator deletes the branch with Git: the retry shows it gone and completes.
+  w.git("-C", w.meta.repo, "branch", "-D", w.meta.branch);
+  const done = await w.retire();
+  assert.equal(done.rollbackIncomplete, undefined, JSON.stringify(done.rollbackIncomplete));
+  assert.equal(done.branchDeleted, false, "the retire deleted nothing");
+  assert.equal(existsSync(w.home), false, "the home is retired");
 });
 
 test("(c) a work directory whose admin entry is gone is an incomplete item: the hooks run, the directory stays", async (t) => {

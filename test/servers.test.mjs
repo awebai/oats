@@ -14,7 +14,7 @@ import { fakeBin } from "./helpers/fake-ssh.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { dirname, join, resolve } from "node:path";
 
-import { spawnInstanceAsync } from "../lib/core.mjs";
+import { FAILED_SPAWN_BRANCH_LEFT, spawnInstanceAsync } from "../lib/core.mjs";
 import { attachArgv, checkRemoteSupport, resolveRoute, routeCommand, runRemote, compareSemver, remoteQuote, snapshotPath, sshArgv, validateServer } from "../lib/servers.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
@@ -641,5 +641,59 @@ test("roster budget: slow targets are bounded, healthy results survive, unreache
     assert.equal(out2.bounds.skipped, 1);
     r = oats(env, ["server", "roster", "--json", "--budget", "5"]);
     assert.equal(r.json().error.code, "E_BAD_ARGS");
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("routed retire: the branch a failed spawn's quarantine still owes is named on its own line, from the host's receipt", () => {
+  const base = mkdtempSync("/tmp/oats-servers-"); // short: the control socket path must fit in 104 bytes
+  try {
+    const { bin, tools } = fakeBin(base);
+    const repo = remoteWorkspace();
+    const env = { ...process.env, PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
+    mkdirSync(env.HOME, { recursive: true }); mkdirSync(env.OATS_HOME_DIR, { recursive: true });
+    for (const k of Object.keys(env)) if (/^(OATS_INSTANCE|PI_AGENT)/.test(k)) delete env[k];
+    // The host's oats: the real kernel, except that a retire answers with the receipt the test wrote,
+    // with its exit status. No retirement runs. Shell builtins only: the fixture's PATH has no cat.
+    const receipt = join(base, "receipt.json"), exit = join(base, "receipt-exit");
+    const hostOats = join(base, "host-oats");
+    writeFileSync(hostOats, `#!/bin/sh
+case " $* " in *" retire "*) case " $* " in *" --plan "*) ;; *)
+  while IFS= read -r line || [ -n "$line" ]; do printf '%s\\n' "$line"; done < ${JSON.stringify(receipt)}
+  read -r code < ${JSON.stringify(exit)}; exit "$code" ;; esac ;; esac
+exec ${JSON.stringify(process.execPath)} ${JSON.stringify(CLI)} "$@"
+`);
+    chmodSync(hostOats, 0o755);
+    let r = oats(env, ["server", "add", "build", "--ssh", "build-host", "--workspace", repo, "--oats", hostOats, "--path", tools, "--json"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "owes", "--no-launch", "--json"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    const home = r.json().result.home;
+    const answer = (doc, status) => { writeFileSync(receipt, JSON.stringify(doc)); writeFileSync(exit, String(status)); };
+    const itemThenBranch = (stderr, branchLine) => {
+      const lines = stderr.split("\n");
+      const at = lines.indexOf(`  ${FAILED_SPAWN_BRANCH_LEFT}`);
+      assert.ok(at >= 0, stderr);
+      assert.equal(lines[at + 1], branchLine, stderr);
+    };
+
+    // Incomplete, the worktree step ran: the receipt's recorded branch.
+    answer({ retired: "dev-owes", agent: "dev", removedDir: false, branchDeleted: false, retainedHome: home, rollbackIncomplete: [FAILED_SPAWN_BRANCH_LEFT],
+      retention: { worktree: "removed", branch: null, recordedBranch: "agents/dev-owes" } }, 1);
+    r = oats(env, ["retire", "dev-owes", "--server", "build"]);
+    assert.equal(r.status, 1, r.stderr + r.stdout);
+    itemThenBranch(r.stderr, "  branch: agents/dev-owes");
+
+    // Incomplete, no worktree step ran: where the retained home records it, on the host.
+    answer({ retired: "dev-owes", agent: "dev", removedDir: false, branchDeleted: false, retainedHome: home, rollbackIncomplete: ["retire hook x: reported incomplete cleanup", FAILED_SPAWN_BRANCH_LEFT], retention: null }, 1);
+    r = oats(env, ["retire", "dev-owes", "--server", "build"]);
+    assert.equal(r.status, 1, r.stderr + r.stdout);
+    itemThenBranch(r.stderr, `  branch: the "branch" recorded in ${join(home, "instance.json")} on build-host`);
+
+    // Forced past the debt: the host's own stderr is not relayed on success, so the name comes from the receipt.
+    answer({ retired: "dev-owes", agent: "dev", removedDir: true, branchDeleted: false, forcedIncomplete: [FAILED_SPAWN_BRANCH_LEFT],
+      retention: { worktree: "removed", branch: null, recordedBranch: "agents/dev-owes" } }, 0);
+    r = oats(env, ["retire", "dev-owes", "--server", "build", "--force"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    itemThenBranch(r.stderr, "  branch: agents/dev-owes");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });

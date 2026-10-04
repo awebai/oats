@@ -51,8 +51,7 @@
 // THE MATRIX. harness × work mode × knowledge slot × messaging slot = 32 cases,
 // named `<harness>-<work>-k<none|stub>-m<none|stub>` (k = knowledge slot, m =
 // messaging slot), plus 4 model-preference cases named with a `-model` /
-// `-modellist` suffix (see MODEL PREFERENCE below) and one `-deletebranch` case
-// for the branch-deleting retire path = 37.
+// `-modellist` suffix (see MODEL PREFERENCE below) = 36.
 // NOTHING IS SKIPPED: every combination is reachable, including
 // the two that need extra setup —
 //   - `attached` needs `--work-dir`, so each attached case first spawns an owner
@@ -218,17 +217,8 @@ for (const harness of HARNESSES) {
   CASES.push({ id: `${harness}-worktree-kstub-mstub-model`, ...fixed, model: MODEL_ONE });
   CASES.push({ id: `${harness}-worktree-kstub-mstub-modellist`, ...fixed, model: MODEL_LIST });
 }
-// Branch deletion. Every case above retires WITHOUT --delete-branch, so all of
-// them freeze `branchDeleted: false` and a surviving `agents/dev-…` branch, and
-// the deletion path — which is the one that destroys work if step 10 moves it
-// wrong — was unfrozen. ONE case covers it, on pi only: branch deletion belongs
-// to the work target, not to the harness provider (retireInstance's git block,
-// lib/core.mjs:6682-6685, never consults meta.harness), so a claude twin would
-// duplicate the fixture without testing anything the pi one does not.
-CASES.push({
-  id: "pi-worktree-kstub-mstub-deletebranch",
-  harness: "pi", work: "worktree", knowledge: "stub", messaging: "stub", deleteBranch: true,
-});
+// No retire deletes a branch, so every case freezes `branchDeleted: false` and a
+// surviving `agents/dev-…` branch.
 
 // ---------- fixture construction ----------
 
@@ -775,9 +765,7 @@ for (const kase of CASES) {
     assert.equal(moduleSkills, (kase.knowledge === "stub" ? 1 : 0) + (kase.messaging === "stub" ? 1 : 0), "every stub's one skill is materialized");
 
     // ---- retirement ----
-    const retireArgs = ["retire", spawned.instance, "--json"];
-    if (kase.deleteBranch) retireArgs.push("--delete-branch");
-    const retired = cli(f, retireArgs);
+    const retired = cli(f, ["retire", spawned.instance, "--json"]);
     assert.equal(retired.status, 0, `retire failed (${retired.status}):\n${retired.stderr}\n${retired.stdout}`);
     const retireDoc = JSON.parse(retired.stdout);
     golden(kase.id, "retire-result.json", normalize(`${JSON.stringify(retireDoc, null, 2)}\n`, f));
