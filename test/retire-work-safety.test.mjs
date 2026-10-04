@@ -1797,23 +1797,24 @@ const at = bytes.indexOf(${JSON.stringify(PAYLOAD_MARKER)}) + ${PAYLOAD_MARKER.l
 seen.byteBefore = bytes[at];
 bytes[at] = 0x81;
 writeFileSync(file, bytes);`;
-/** quietHook body: rewrite an untracked file of the worktree. Its status row stays `?? scratch.txt`. */
-const SCRATCH_REWRITTEN = "rewritten by the retire hook\n";
-const REWRITES_SCRATCH = `writeFileSync(join(work, 'scratch.txt'), ${JSON.stringify(SCRATCH_REWRITTEN)});`;
+/** quietHook body: write a new untracked file in the worktree. The status gains a row, which is a
+ *  change of the work that every kernel sees, also one that compares nothing but the status text. */
+const SCRATCH_BYTES = "written in the work by the retire hook\n";
+const WRITES_SCRATCH = `writeFileSync(join(work, 'scratch.txt'), ${JSON.stringify(SCRATCH_BYTES)});`;
+const STATUS_WITH_SCRATCH = "?? scratch.txt\0";
 
-test("a retire hook that changes one byte that is not UTF-8 in a field of the home's instance.json that is not the kernel's, and also rewrites a file in the work: the home is copied again with the work, and the file under after-hooks/home/ holds the hook's byte", () => {
+test("a retire hook that changes one byte that is not UTF-8 in a field of the home's instance.json that is not the kernel's, and also writes a file in the work: the home is copied again with the work, and the file under after-hooks/home/ holds the hook's byte", () => {
   // The hook writes no note in the home: the only thing it changes there is that byte.
-  const f = fixture({ capabilities: hookCapability(quietHook(`${CHANGES_PAYLOAD_BYTE}\n${REWRITES_SCRATCH}`, { home: false })) });
+  const f = fixture({ capabilities: hookCapability(quietHook(`${CHANGES_PAYLOAD_BYTE}\n${WRITES_SCRATCH}`, { home: false })) });
   const spawned = spawn(f, "hook-instance-byte-work");
   const work = join(spawned.home, "work");
   writePayloadByte(spawned.home);
-  write(join(work, "scratch.txt"), "written before the retire\n");
-  const statusBefore = porcelain(work);
-  assert.deepEqual(statusRowsIn(statusBefore), ["?? scratch.txt"]);
+  assert.equal(porcelain(work), "", "fixture premise: the worktree is clean before the retire");
 
-  const { recovery, seen, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore, { home: false });
+  // The helper is given the status the hook leaves: the one new row.
+  const { recovery, seen, afterRepo } = retireAfterQuietHook(f, spawned, STATUS_WITH_SCRATCH, { home: false });
   assert.equal(seen.byteBefore, 0x80, "fixture premise: the retire left the byte as it was until the hook ran");
-  assert.equal(readFileSync(join(afterRepo, "scratch.txt"), "utf8"), SCRATCH_REWRITTEN, "fixture premise: the work moved and is copied again");
+  assert.equal(readFileSync(join(afterRepo, "scratch.txt"), "utf8"), SCRATCH_BYTES, "fixture premise: the work moved and is copied under after-hooks/repo/");
   assert.equal(payloadByteIn(join(recovery.path, "home", "instance.json")), 0x80, "the snapshot taken before the hooks holds the file as it was then");
   const after = join(recovery.path, "after-hooks", "home", "instance.json");
   assert.equal(existsSync(after), true, "the home is copied again under after-hooks/home/: the hook changed a byte of instance.json that text does not tell apart");
@@ -1822,6 +1823,8 @@ test("a retire hook that changes one byte that is not UTF-8 in a field of the ho
 });
 
 test("a retire hook that changes only that byte of the home's instance.json: the home is copied again, and the file under after-hooks/home/ holds the hook's byte", () => {
+  // The kernel before one recovery per retire had this loss too: it copied again when the home's
+  // fingerprint or the status text moved, and this change moves neither.
   const f = fixture({ capabilities: hookCapability(quietHook(CHANGES_PAYLOAD_BYTE, { home: false })) });
   const spawned = spawn(f, "hook-instance-byte");
   const work = join(spawned.home, "work");
@@ -1834,33 +1837,34 @@ test("a retire hook that changes only that byte of the home's instance.json: the
   assert.deepEqual(recovery.classes, ["changed instance-home bytes"]);
   assert.equal(payloadByteIn(join(recovery.path, "home", "instance.json")), 0x80, "the snapshot taken before the hooks holds the file as it was then");
   const after = join(recovery.path, "after-hooks", "home", "instance.json");
-  assert.equal(existsSync(after), true, "the home is copied again under after-hooks/home/: the hook changed a byte of instance.json that text does not tell apart");
+  assert.equal(existsSync(after), true, "the home is copied again under after-hooks/home/: the hook changed a byte of instance.json that text does not tell apart (a loss the earlier kernel had as well, with nothing else changed)");
   assert.equal(payloadByteIn(after), 0x81, "the file copied after the hooks has the byte the hook gave it");
   assert.deepEqual(recovery.afterHooks, { home: true, work: false }, "the home moved; the clean worktree did not");
   assert.deepEqual(readJson(join(recovery.path, "recovery.json")).afterHooks, { home: true, work: false });
 });
 
-test("a retire hook that rewrites the home's instance.json to the same value in other bytes (other white space), and also rewrites a file in the work: the home is copied again, and the file under after-hooks/home/ holds the hook's bytes", () => {
+test("a retire hook that rewrites the home's instance.json to the same value in other bytes (other white space), and also writes a file in the work: the home is copied again, and the file under after-hooks/home/ holds the hook's bytes", () => {
   // All of it valid UTF-8, and JSON that parses to what it was: only the bytes differ.
   const retire = quietHook(`import { readFileSync } from 'node:fs';
 const file = join(home, 'instance.json');
 seen.jsonBefore = readFileSync(file, 'utf8');
 seen.jsonAfter = JSON.stringify(JSON.parse(seen.jsonBefore));
 writeFileSync(file, seen.jsonAfter);
-${REWRITES_SCRATCH}`, { home: false });
+${WRITES_SCRATCH}`, { home: false });
   const f = fixture({ capabilities: hookCapability(retire) });
   const spawned = spawn(f, "hook-instance-space");
   const work = join(spawned.home, "work");
   const atRetire = readFileSync(join(spawned.home, "instance.json"), "utf8");
-  write(join(work, "scratch.txt"), "written before the retire\n");
-  const statusBefore = porcelain(work);
-  assert.deepEqual(statusRowsIn(statusBefore), ["?? scratch.txt"]);
+  // Something to preserve before the hooks, so that a snapshot is taken before them: a note in the home.
+  write(join(spawned.home, "notes", "x.md"), "an authored note\n");
+  assert.equal(porcelain(work), "", "fixture premise: the worktree is clean before the retire");
 
-  const { recovery, seen, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore, { home: false });
+  // The helper is given the status the hook leaves: the one new row.
+  const { recovery, seen, afterRepo } = retireAfterQuietHook(f, spawned, STATUS_WITH_SCRATCH, { home: false });
   assert.equal(seen.jsonBefore, atRetire, "fixture premise: the retire left the file as it was until the hook ran");
   assert.notEqual(seen.jsonAfter, seen.jsonBefore, "fixture premise: the hook wrote other bytes");
   assert.deepEqual(JSON.parse(seen.jsonAfter), JSON.parse(seen.jsonBefore), "fixture premise: the two files parse to the same value");
-  assert.equal(readFileSync(join(afterRepo, "scratch.txt"), "utf8"), SCRATCH_REWRITTEN, "fixture premise: the work moved and is copied again");
+  assert.equal(readFileSync(join(afterRepo, "scratch.txt"), "utf8"), SCRATCH_BYTES, "fixture premise: the work moved and is copied under after-hooks/repo/");
   assert.equal(readFileSync(join(recovery.path, "home", "instance.json"), "utf8"), atRetire, "the snapshot taken before the hooks holds the file as it was then");
   const after = join(recovery.path, "after-hooks", "home", "instance.json");
   assert.equal(existsSync(after), true, "the home is copied again under after-hooks/home/: the hook rewrote instance.json, and a parse does not tell the two files apart");
