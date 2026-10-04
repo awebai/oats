@@ -23,6 +23,14 @@ function jsonResult(r) {
   assert.equal(env.ok, true, JSON.stringify(env.error));
   return env.result;
 }
+// Assert the producer's structural outcome independently of its operator wording.
+function rollbackError(message, unconfirmed) {
+  return (error) => {
+    assert.match(error.message, message);
+    assert.equal(error.details?.unconfirmed, unconfirmed);
+    return true;
+  };
+}
 function temp() { return mkdtempSync(join(tmpdir(), "oats-cap-test-")); }
 function write(path, content) { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content); }
 
@@ -341,7 +349,7 @@ console.log(JSON.stringify({ env: { AWEB_TWO: 2 } }));`,
     }),
   });
   process.env.PATH = fakeHarnesses(fx.base);
-  await assert.rejects(fx.spawn("dev", { instance: "dev-env-compensate" }), /rollback INCOMPLETE.*retire hook aweb.two.*supported only for spawn/);
+  await assert.rejects(fx.spawn("dev", { instance: "dev-env-compensate" }), rollbackError(/rollback INCOMPLETE.*retire hook aweb.two.*supported only for spawn/, true));
   assert.equal(existsSync(join(fx.root, "dev", "instances", "dev-env-compensate", ".oats-rollback-incomplete.json")), true);
   assert.deepEqual(readFileSync(events, "utf8").trim().split("\n"), [
     "one:spawn", "two:spawn", "two:retire", "one:retire",
@@ -360,6 +368,7 @@ console.log(JSON.stringify({ meta: { created: true }, env: { AWEB_IDENTITY_HOME:
   }) });
   process.env.PATH = fakeHarnesses(fx.base);
   await assert.rejects(fx.spawn("dev", { instance: "dev-env-sideeffect" }), (error) => {
+    assert.equal(error.details?.unconfirmed, true);
     assert.match(error.message, /rollback INCOMPLETE.*reported state it created.*no retire hook/);
     assert.doesNotMatch(error.message, /hooks compensated/);
     return true;
@@ -991,7 +1000,7 @@ test("retire splices lineage: orphans inherit the retiree's links (parent-relati
     execFileSync("chmod", ["555", dirname(soloMetaPath)]);
     try {
       await assert.rejects(fx.spawn("dev", { instance: "dev-rev5", relation: "parent", relativeTo: solo.instance }),
-        /failed to re-point anchor.*rolled back/s,
+        rollbackError(/failed to re-point anchor.*rolled back/s, undefined),
         "anchor-write failure is compensated");
     } finally {
       execFileSync("chmod", ["755", dirname(soloMetaPath)]);
@@ -1066,7 +1075,7 @@ test("parent-relation rollback after LAUNCH kills the window, compensates hooks,
     execFileSync("chmod", ["555", anchor.home]);
     try {
       await assert.rejects(fx.spawn("dev", { instance: "dev-zomb", relation: "parent", relativeTo: anchor.instance, tmuxSession: "oats-test-fake", launch: true }),
-        /failed to re-point anchor.*rolled back/s);
+        rollbackError(/failed to re-point anchor.*rolled back/s, undefined));
     } finally { execFileSync("chmod", ["755", anchor.home]); }
     // Anchor file NEVER truncated or altered (atomic temp+rename path).
     assert.equal(readFileSync(anchorMetaPath, "utf8"), before, "anchor instance.json byte-identical");
@@ -1091,7 +1100,7 @@ test("parent-relation rollback after LAUNCH kills the window, compensates hooks,
     mkdirSync(tmpDir); write(join(tmpDir, "blocker"), "x");
     try {
       await assert.rejects(fx.spawn("dev", { instance: "dev-zomb2", relation: "parent", relativeTo: anchor.instance, tmuxSession: "oats-test-fake", launch: true }),
-        /failed to re-point anchor.*rollback INCOMPLETE.*tmp-dev-zomb2/s,
+        rollbackError(/failed to re-point anchor.*rollback INCOMPLETE.*tmp-dev-zomb2/s, true),
         "original anchor-write error surfaces, and the unremovable temp is reported for manual cleanup");
     } finally { rmSync(tmpDir, { recursive: true, force: true }); }
     assert.equal(readFileSync(anchorMetaPath, "utf8"), before, "anchor still byte-identical");
@@ -1116,7 +1125,7 @@ test("parent-relation rollback after LAUNCH kills the window, compensates hooks,
     const zombHome = join(root, "dev", "instances", "dev-zomb3");
     try {
       await assert.rejects(fx.spawn("dev", { instance: "dev-zomb3", relation: "parent", relativeTo: anchor.instance, tmuxSession: "oats-test-fake" }),
-        /failed to re-point anchor.*rollback INCOMPLETE.*instance home/s,
+        rollbackError(/failed to re-point anchor.*rollback INCOMPLETE.*instance home/s, true),
         "unremovable home reported as incomplete with the failed path");
       assert.ok(existsSync(zombHome), "zombie home really remains (message told the truth)");
     } finally {
@@ -1132,7 +1141,7 @@ test("parent-relation rollback after LAUNCH kills the window, compensates hooks,
     process.env.TMUX_FAKE_STUBBORN = "dev-zomb4";
     try {
       await assert.rejects(fx.spawn("dev", { instance: "dev-zomb4", relation: "parent", relativeTo: anchor.instance, tmuxSession: "oats-test-fake", launch: true }),
-        /rollback INCOMPLETE.*tmux window oats-test-fake:dev-zomb4 still running/s,
+        rollbackError(/rollback INCOMPLETE.*tmux window oats-test-fake:dev-zomb4 still running/s, true),
         "unkillable window reported despite kill-window exiting 0");
     } finally {
       delete process.env.TMUX_FAKE_STUBBORN;
@@ -1146,7 +1155,7 @@ test("parent-relation rollback after LAUNCH kills the window, compensates hooks,
     process.env.TMUX_FAKE_LIST_FAIL = "1";
     try {
       await assert.rejects(fx.spawn("dev", { instance: "dev-zomb4b", relation: "parent", relativeTo: anchor.instance, tmuxSession: "oats-test-fake", launch: true }),
-        /rollback INCOMPLETE.*tmux window oats-test-fake:dev-zomb4b: could not verify removal/s,
+        rollbackError(/rollback INCOMPLETE.*tmux window oats-test-fake:dev-zomb4b: could not verify removal/s, true),
         "failed verification probe reported as could-not-verify, never as success");
     } finally {
       delete process.env.TMUX_FAKE_LIST_FAIL;
@@ -1163,7 +1172,7 @@ test("parent-relation rollback after LAUNCH kills the window, compensates hooks,
       `if (process.env.OATS_EVENT === 'retire' && process.env.OATS_INSTANCE === 'dev-zomb5') process.exit(3);\n` });
     try {
       await assert.rejects(fx.spawn("dev", { instance: "dev-zomb5", relation: "parent", relativeTo: anchor.instance, tmuxSession: "oats-test-fake" }),
-        /rollback INCOMPLETE.*retire hook acme\.comp/s,
+        rollbackError(/rollback INCOMPLETE.*retire hook acme\.comp/s, true),
         "nonzero retire hook reported via structured failures");
     } finally { rmSync(tmpDir5, { recursive: true, force: true }); }
 
@@ -1180,7 +1189,7 @@ test("parent-relation rollback after LAUNCH kills the window, compensates hooks,
     const zomb6Home = join(root, "dev", "instances", "dev-zomb6");
     try {
       await assert.rejects(fx.spawn("dev", { instance: "dev-zomb6", work: "worktree", relation: "parent", relativeTo: anchor.instance, tmuxSession: "oats-test-fake" }),
-        /rollback INCOMPLETE.*(git worktree .* still registered|instance home)/s,
+        rollbackError(/rollback INCOMPLETE.*(git worktree .* still registered|instance home)/s, true),
         "failed worktree cleanup reported");
     } finally {
       rmSync(tmpDir6, { recursive: true, force: true });
@@ -1247,7 +1256,7 @@ test("rollback detects a still-registered canonical worktree through a symlinked
     try {
       await assert.rejects(
         spawnAt(fx, linkedRoot, "dev", { instance: "dev-early-canon", work: "worktree", branch: earlyBranch }),
-        (err) => /git worktree add\/canonicalization failed/.test(err.message)
+        (err) => err.details?.unconfirmed === true && /git worktree add\/canonicalization failed/.test(err.message)
           && /rollback INCOMPLETE/.test(err.message)
           && /remove failed \(forced-remove-failure\)/.test(err.message)
           && /prune failed \(forced-prune-failure\)/.test(err.message)
@@ -1271,7 +1280,7 @@ test("rollback detects a still-registered canonical worktree through a symlinked
     try {
       await assert.rejects(
         spawnAt(fx, linkedRoot, "dev", { instance: "dev-sym-child", relation: "parent", relativeTo: anchor.instance, work: "worktree", branch }),
-        (err) => /rollback INCOMPLETE/.test(err.message)
+        (err) => err.details?.unconfirmed === true && /rollback INCOMPLETE/.test(err.message)
           && /git worktree .*dev-sym-child\/work: still registered/.test(err.message)
           && !err.message.includes(linkedRoot + "/dev/instances/dev-sym-child/work"),
         "canonical registered path is detected and reported, not the lexical symlink path");
@@ -1297,7 +1306,7 @@ test("rollback detects a still-registered canonical worktree through a symlinked
     try {
       await assert.rejects(
         spawnAt(fx, linkedRoot, "dev", { instance: "dev-sym-missing", relation: "parent", relativeTo: missingAnchor.instance, work: "worktree", branch: missingBranch }),
-        (err) => /rollback INCOMPLETE/.test(err.message)
+        (err) => err.details?.unconfirmed === true && /rollback INCOMPLETE/.test(err.message)
           && /git worktree .*dev-sym-missing\/work: still registered/.test(err.message)
           && !err.message.includes(linkedRoot + "/dev/instances/dev-sym-missing/work"),
         "captured canonical path detects stale registration after the directory vanished");
@@ -1322,7 +1331,7 @@ test("rollback detects a still-registered canonical worktree through a symlinked
     try {
       await assert.rejects(
         spawnAt(fx, linkedRoot, "dev", { instance: "dev-sym-probe", relation: "parent", relativeTo: anchor2.instance, work: "worktree", branch: probeBranch }),
-        (err) => /rollback INCOMPLETE/.test(err.message)
+        (err) => err.details?.unconfirmed === true && /rollback INCOMPLETE/.test(err.message)
           && /git worktree .*could not verify removal \(forced-list-failure\)/s.test(err.message)
           && /git branch agents\/dev-sym-probe: could not verify deletion \(forced-rev-parse-failure\)/s.test(err.message),
         "failed Git probes report could-not-verify, never confirmed absence");
@@ -2172,9 +2181,17 @@ test("a clean rollback reports no verification problems (probe stderr regression
     // INCOMPLETE, training readers to ignore the one message that matters.
     await assert.rejects(
       fx.spawn("dev", { instance: "dev-cleanrb", harness: "pi", work: "worktree" }),
-      (e) => /spawn rolled back/.test(e.message) && !/rollback INCOMPLETE/.test(e.message),
+      (e) => e.details?.unconfirmed === undefined && /spawn rolled back/.test(e.message) && !/rollback INCOMPLETE/.test(e.message),
       "a rollback that fully succeeded must say so",
     );
+    const cli = fx.cli(["spawn", "dev", "--name", "dev-cleanrb-cli", "--harness", "pi", "--work", "worktree", "--no-launch", "--json"], { env: { PATH: process.env.PATH } });
+    assert.equal(cli.status, 1, cli.stdout + cli.stderr);
+    const failure = cli.json();
+    assert.equal(failure.ok, false);
+    assert.equal(failure.error.code, "E_SPAWN_FAILED");
+    assert.equal(failure.error.details?.unconfirmed, undefined);
+    assert.match(failure.error.message, /spawn rolled back/);
+    assert.equal(existsSync(join(root, "dev", "instances", "dev-cleanrb-cli")), false);
   } finally { process.env.PATH = oldPath; }
 });
 
@@ -2202,7 +2219,7 @@ console.log('{}');`,
   try {
     await assert.rejects(
       fx.spawn("dev", { instance: "dev-comp", harness: "pi" }),
-      (e) => e.code === "E_REQUIRED_HOOK_FAILED",
+      (e) => e.code === "E_REQUIRED_HOOK_FAILED" && e.details?.unconfirmed === undefined,
     );
     assert.equal(existsSync(marker), false, "the retire hook received the failed hook's metadata and undid its external state");
     assert.equal(existsSync(join(root, "dev", "instances", "dev-comp")), false);
@@ -2296,6 +2313,7 @@ console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed
     await assert.rejects(
       fx.spawn("dev", { instance: "dev-badcomp", harness: "pi" }),
       (e) => e.code === "E_REQUIRED_HOOK_FAILED"
+        && e.details?.unconfirmed === true
         && /rollback INCOMPLETE/.test(e.message)
         && /external state may remain/.test(e.message)
         && /instance home is RETAINED/.test(e.message)
@@ -2316,6 +2334,13 @@ console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed
     assert.ok(listed?.rollbackIncomplete, "status identifies the quarantine");
     assert.equal(listed.running, false);
     rmSync(kept, { recursive: true, force: true });
+    const cli = fx.cli(["spawn", "dev", "--name", "dev-badcomp-cli", "--harness", "pi", "--no-launch", "--json"], { env: { PATH: process.env.PATH } });
+    assert.equal(cli.status, 1, cli.stdout + cli.stderr);
+    const failure = cli.json();
+    assert.equal(failure.ok, false);
+    assert.equal(failure.error.code, "E_SPAWN_FAILED");
+    assert.equal(failure.error.details?.unconfirmed, true);
+    assert.equal(existsSync(join(root, "dev", "instances", "dev-badcomp-cli", ".oats-rollback-incomplete.json")), true);
   } finally { process.env.PATH = oldPath; }
 });
 
@@ -2331,7 +2356,7 @@ console.log(JSON.stringify({ meta: { retired: false, reason: 'nothing-to-delete'
   try {
     await assert.rejects(
       fx.spawn("dev", { instance: "dev-nooop", harness: "pi" }),
-      (e) => /spawn rolled back/.test(e.message) && !/rollback INCOMPLETE/.test(e.message),
+      (e) => e.details?.unconfirmed === undefined && /spawn rolled back/.test(e.message) && !/rollback INCOMPLETE/.test(e.message),
       "nothing to undo is completion, not failure",
     );
   } finally { process.env.PATH = oldPath; }
@@ -2694,7 +2719,7 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
   try {
     await assert.rejects(
       fx.spawn("dev", { instance: "dev-retry", harness: "pi", work: "worktree" }),
-      (e) => e.code === "E_REQUIRED_HOOK_FAILED" && /RETAINED/.test(e.message),
+      (e) => e.code === "E_REQUIRED_HOOK_FAILED" && e.details?.unconfirmed === true && /RETAINED/.test(e.message),
     );
     assert.equal(existsSync(remote), true, "external state exists and cleanup has not succeeded");
     assert.equal(existsSync(join(home, credential)), true, "its credential is preserved");
@@ -2740,7 +2765,7 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
   try {
     await assert.rejects(
       fx.spawn("dev", { instance: "dev-git", harness: "pi", work: "worktree" }),
-      (e) => e.code === "E_REQUIRED_HOOK_FAILED" && /RETAINED/.test(e.message),
+      (e) => e.code === "E_REQUIRED_HOOK_FAILED" && e.details?.unconfirmed === true && /RETAINED/.test(e.message),
     );
     assert.equal(existsSync(home), true, "the spawn quarantined the home");
 
@@ -3377,7 +3402,7 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
 
     await assert.rejects(
       fx.spawn("dev", { instance: "dev-child", harness: "pi", relation: "parent", relativeTo: "dev-anchor" }),
-      (e) => /failed to re-point anchor/.test(e.message) && /RETAINED/.test(e.message),
+      (e) => e.details?.unconfirmed === true && /failed to re-point anchor/.test(e.message) && /RETAINED/.test(e.message),
       "a rollback that could not compensate must not report a clean one",
     );
     assert.equal(existsSync(join(home, "identity.key")), true, "the credential the retry needs survives");
@@ -3469,7 +3494,7 @@ process.exit(1);`,
   try {
     await assert.rejects(
       fx.spawn("dev", { instance: "dev-nocomp", harness: "pi" }),
-      (e) => e.code === "E_REQUIRED_HOOK_FAILED" && /RETAINED/.test(e.message),
+      (e) => e.code === "E_REQUIRED_HOOK_FAILED" && e.details?.unconfirmed === true && /RETAINED/.test(e.message),
       "a rollback that could not compensate must not report a clean one",
     );
     assert.equal(existsSync(join(home, "identity.key")), true, "the key the hook wrote survives");

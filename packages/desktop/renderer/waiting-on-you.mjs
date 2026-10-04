@@ -5,7 +5,7 @@
  * The claim contract only: the server imports it (deployment-data, remote-roster), so it imports
  * contract modules and nothing else — no tree traversal, no loading UI. */
 import { record } from './readiness-contract.mjs';
-import { eventsTimestamp, eventsId, eventsUnsafe } from './instance-events-contract.mjs';
+import { eventsTimestamp, eventsId, eventsUnsafe, EVENTS_WITHHELD } from './instance-events-contract.mjs';
 
 /** Not text a one-line note may hold, an exact set (the maintainer's decision for the kernel's
  * validWaitingMessage): control characters (Cc: C0, DEL, C1), the line and paragraph separators, the bidi
@@ -15,29 +15,36 @@ import { eventsTimestamp, eventsId, eventsUnsafe } from './instance-events-contr
 const NOT_NOTE_TEXT = /[\p{Cc}\u2028\u2029\u202A-\u202E\u2066-\u2069\u200B\u2060\uFEFF\u{E0000}-\u{E007F}]/u;
 
 /** A claim's note: a non-empty string of at most 200 code points (not UTF-16 units: 101 emoji is a valid
- * note), with none of NOT_NOTE_TEXT; unsafe text is withheld (the activity view's house rule). Anything
- * else → null: the claim itself is kept. Never throws (no length-throwing detail helper on this path). */
+ * note), with none of NOT_NOTE_TEXT; unsafe text is withheld (the activity view's house rule: it shows
+ * EVENTS_WITHHELD). Anything else → null: the claim itself is kept. Not null is the validity answer the
+ * kernel's validWaitingMessage gives (a withheld note is a valid note). Never throws (no length-throwing
+ * detail helper on this path). */
 export function waitingMessage(v) {
   if (typeof v !== 'string' || !v || [...v].length > 200 || NOT_NOTE_TEXT.test(v)) return null;
-  return eventsUnsafe.test(v) ? '[Detail withheld]' : v;
+  return eventsUnsafe.test(v) ? EVENTS_WITHHELD : v;
 }
 
-/** `{ since, producer, reason, message }` or null. Only `since` and `producer` can drop a claim: a
- * missing or malformed reason (never rendered) is null, a malformed message is null. Extra keys are
- * ignored (forward compatible). */
+/** The sidebar's claim: `{ since, producer, reason, message }` or null. Only `since` and `producer` can
+ * drop a claim: a missing or malformed reason (never rendered) is null, a malformed message is null, and
+ * so is a withheld one (#584): the row, the card and the tab then show the reason in words (waitingLabel),
+ * never the withheld marker. Extra keys are ignored (forward compatible). */
 export function waitingOnYouData(v) {
   if (!record(v) || !eventsTimestamp(v.since) || !eventsId(v.producer)) return null;
   const reason = typeof v.reason === 'string' && v.reason.length <= 64 ? v.reason : null;
-  return { since: v.since, producer: v.producer, reason, message: waitingMessage(v.message) };
+  const message = waitingMessage(v.message);
+  return { since: v.since, producer: v.producer, reason, message: message === EVENTS_WITHHELD ? null : message };
 }
 
-/** The claim a row may show, or null. The only gate: the Desktop's own liveness says running (a tmux
- * `shell`, a stopped pane, an unreachable or unsupported session never shows it), and the row is
- * current: a remote row whose server was not reached, or a row the roster holds stale (`stale`: its
- * last re-read failed), carries a last-known claim, which is unknown. */
+/** The claim a row may show, or null. The only gate: liveness says running (`running === true`, and no
+ * reported `runtimeState` other than `running`: a tmux `shell`, a stopped pane, an unreachable or
+ * unsupported session never shows it), and the row is current: a remote row whose server was not reached,
+ * or a row the roster holds stale (`stale`: its last re-read failed), carries a last-known claim, which is
+ * unknown. A null or absent `runtimeState` is "not reported", never "not running" (#582): the kernel's
+ * remote roster sends null on every row, so a remote row is gated on the `running` its host reported; a
+ * local row always carries the concrete state Desktop liveness observed. */
 export function waitingClaim(row, { stale = false } = {}) {
   if (stale || !record(row) || row.running !== true || row.serverUnreached === true) return null;
-  if (row.runtimeState !== undefined && row.runtimeState !== 'running') return null;
+  if (row.runtimeState != null && row.runtimeState !== 'running') return null;
   return waitingOnYouData(row.waitingOnYou);
 }
 

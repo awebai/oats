@@ -66,11 +66,54 @@ published to npm. Its developer docs are in
 | `harness-trust.mjs` | reading (never writing) Claude's and Codex's folder trust for a launch |
 
 The schedule registry stores explicit concurrency caps, leaving the schedule
-cap absent for its effective default of five. Reads migrate legacy stored one
-to absent once, under `registry.lock`, and record `capsVersion: 2`. Registration
-and cap updates use that same short lock; later explicit one stays explicit.
-`readRegistry()` returns stored choices; scheduling and status apply the default
-without writing it back. The trigger cap is independent and absent means no cap.
+cap absent for its effective default of five. `readRegistry()` is a pure,
+bounded atomic-file snapshot: it takes no lock and writes nothing, projecting
+legacy implicit one to absent and `capsVersion: 2` only in memory. Its no-follow
+regular-file descriptor accepts an atomic rename between stat and open, so it
+returns a complete old or new snapshot; other bounded readers retain their
+identity check. Invalid present schedule or trigger caps are refused.
+Registration, unregistration and cap updates reread under `registry.lock` and
+compare against the raw snapshot, so even unchanged membership persists the
+migration. A successful write removing legacy one emits a stderr notice naming
+the one-slot restoration command. `writeRegistry()` remains a raw atomic writer;
+read-modify-write callers must supply the lock and reread. Later explicit one
+stays explicit, including one reintroduced by an older writer: the stored
+marker cannot distinguish its provenance. The trigger cap stays independent.
+
+The shared mkdir lock retries every occupied-directory window within the
+caller's retry deadline, including owner-file publication and removal. It never
+removes a contender's lock or steals from a live, dead or unreadable owner;
+persistent contention ends in the caller's existing busy error.
+
+Spawn compensation returns its diagnostic and a structural uncertainty flag;
+only an incomplete result marks the original error's `details.unconfirmed`.
+CLI wrappers preserve that field, and the operation runner promotes a provider's
+literal true marker while retaining the nested envelope. Message-based consumers
+remain during the additive producer migration; do not replace stage evidence
+with a substring check or infer uncertainty from a retained home alone.
+
+The schedule child supervisor installs SIGINT/SIGTERM/SIGHUP handlers before
+launch and removes them on settlement. All catchable shutdown signals share
+its idempotent TERM/KILL path; the first stop cause is retained. The private
+receipt records interruption independently of both the first stop cause and
+the direct child's observed exit, so a signal during overflow cleanup still
+keeps an otherwise valid envelope unconfirmed. Group probes
+start at leader exit; an observed-empty group is permanently excluded from
+later probes/signals. Polling cannot eliminate the gap before observation or
+prove away PID reuse. Escaped sessions are outside the owned group, and
+SIGKILL/OOM or unrecoverable supervisor death cannot be cleaned up by handlers;
+a missing receipt supplies no child-exit evidence and cannot release a slot.
+
+Session input keeps terminal operations separate from display observation.
+The pre-Enter budget starts at paste completion, before best-effort buffer
+cleanup; post-Enter observation starts after the single key command returns.
+Both use a monotonic clock, clip sleeps and read-only capture subprocess
+budgets, and stop observing on failure or exhaustion. Capture subprocesses use
+SIGKILL on timeout so an ignored TERM cannot extend a probe; terminal command
+timeouts/errors are unchanged. Screen comparison can set only the observational
+`verified` boolean, never send another key or report terminal failure. Tests
+use inert command runners and clocks; they do not qualify broker delivery or
+harness acceptance.
 
 The kernel is runtime-neutral: nothing in `lib/` depends on a harness or on
 a provider. Provider behaviour lives in capabilities; the kernel supplies

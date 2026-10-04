@@ -613,6 +613,18 @@ runs `bin/claude-waiting.sh` from the home's module copy, which calls
 | `PostToolUseFailure` | `*` | clear, unless a subagent made the call |
 | `UserPromptSubmit`, `Stop`, `SessionEnd` | none | clear, not debounced (a turn boundary) |
 
+**One home per settings file.** The launch hook bakes the home it writes the
+settings for into every command, as its real path (oats.core 2.4.1). The
+script acts only when the session's `$OATS_INSTANCE_HOME` names that same
+home, through any spelling (a symlinked deployment resolves to the same
+path). A Claude process that loads one home's settings while carrying
+another instance's environment (a nested `claude -p`, a `claude -p` started
+with its working directory in another home, a pane that inherited the
+variables) does nothing at all: no CLI call and no marker write, for either
+home. Before 2.4.1 it set and cleared the claim of the home its environment
+named, and its `Stop` and `SessionEnd` clears could erase that instance's
+real claim.
+
 Claude Code shows an AskUserQuestion through its permission dialog, so that
 dialog's own `permission_prompt` follows the question's set: the script keeps
 the current reason in its marker, and a permission prompt never relabels an
@@ -666,7 +678,8 @@ clears it.
   after the hook began, the worst case is about 4 s, well under Claude's 5 s
   hook timeout.
 - **Debounce.** The script keeps private state outside the home, in a file
-  per home: `<dir>/<first 16 hex of sha256(home)>.claude`, where `<dir>`
+  per home: `<dir>/<first 16 hex of sha256(home)>.claude` (the home's real
+  path, so each spelling of a home has the same file), where `<dir>`
   is per user: `$XDG_RUNTIME_DIR/oats-waiting` when that is set and
   absolute, else `$TMPDIR/oats-waiting-<uid>` when `TMPDIR` is absolute,
   else `/tmp/oats-waiting-<uid>`. The spawn and launch
@@ -784,6 +797,11 @@ again" permission rules there.
 - A `Stop` or `UserPromptSubmit` always clears, even one the main thread
   produces while a subagent's prompt is open (a background subagent's
   completion is submitted as a prompt).
+- The one-home rule separates homes, not two sessions of one home: a second
+  Claude process started inside the same home with that home's own
+  `$OATS_INSTANCE_HOME` (a `claude -p` the agent runs there) still matches,
+  so its `Stop` and `SessionEnd` clears can erase the home's own live
+  `oats.core` claim ([#557](https://github.com/awebai/oats/issues/557)).
 - A Claude instance spawned before the upgrade gets the emitter only when
   it is respawned. Its launch hook comes from its recorded module copy.
 
@@ -821,7 +839,22 @@ with no provider or a home operation without `--home`
 The provider must exit 0 with exactly one JSON envelope on stdout. Otherwise
 the outcome is **unconfirmed**: `E_OPERATION_TIMEOUT` (after 240 s) or
 `E_OPERATION_RESULT`, with `error.details { unconfirmed: true, exit, envelope?, stderr? }`.
-A provider's own `ok: false` is relayed with its code. A schedule of kind
+A provider's own `ok: false` is relayed with its code and full envelope. When
+the provider sets `error.details.unconfirmed: true` (the boolean), the operation
+wrapper also sets its outer `error.details.unconfirmed: true`. Providers should
+set that marker when dispatched effects or their compensation cannot be
+confirmed, and preserve it through wrappers. Producers should leave ordinary
+refusals and fully compensated failures unmarked: naming a home or retained
+evidence is not itself uncertainty. The operation wrapper and scheduler still
+apply their existing message-based compatibility checks during this additive
+migration, including for copied providers in older homes; their text-based
+false positives are not removed by this change.
+
+The kernel marks incomplete keyed spawns (`E_SPAWN_INCOMPLETE`) and spawn
+failures whose rollback cannot finish with the same field, through the CLI.
+A completed rollback remains an unmarked failure. This adds structural evidence;
+it does not remove text fallbacks or change scheduler slot and retry rules.
+A schedule of kind
 `operation` runs the same command ([schedules.md](schedules.md)). The JSON
 shapes are in [desktop-cli-api.md](desktop-cli-api.md#inspect-readiness-and-operation-run-on-the-workspace-model-operationsapi-2-soulsapi-2-readinessapi-2-oats-0260).
 

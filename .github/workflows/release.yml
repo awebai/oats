@@ -3,7 +3,8 @@ name: Release
 # Tag-driven release: push a tag `vX.Y.Z` (on a commit reachable from main)
 # and this workflow builds and validates EVERYTHING from the exact tag SHA,
 # then publishes: npm (root, then pi), then the GitHub Release (Desktop
-# artifacts + checksums), then opens the version-bump PR to protected main.
+# artifacts + checksums), then opens the version-bump PR for a maintainer to
+# review and merge. The workflow never merges into main itself.
 #
 # Binding ordering (desktop-dist contract):
 #   1. checkout the EXACT tag SHA (never a branch ref);
@@ -31,6 +32,11 @@ permissions:
   contents: write
   id-token: write
   attestations: write
+  # The publish job's last step opens the version-bump PR with github.token.
+  # Without this the step fails at createPullRequest after everything is
+  # published, and the release run ends red. It also needs the repository
+  # setting "Allow GitHub Actions to create and approve pull requests".
+  pull-requests: write
 
 concurrency:
   group: release
@@ -348,7 +354,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Open the version-bump PR (all three manifests — main is protected)
+      - name: Open the version-bump PR (all three manifests)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -360,7 +366,10 @@ jobs:
             echo "manifests already at ${GITHUB_REF_NAME#v} on the tagged commit — no bump PR needed"
             exit 0
           fi
-          git commit -m "release: ${GITHUB_REF_NAME} [skip ci]"
+          # No [skip ci]: a pull request opened with github.token starts no
+          # workflows by itself, and the marker would also stop the checks a
+          # maintainer starts by closing and reopening it.
+          git commit -m "release: ${GITHUB_REF_NAME} version bump"
           BRANCH="release-bump/${GITHUB_REF_NAME}"
           # Fully-qualify the destination ref: the publish job checks out the
           # exact tag SHA (ref: github.sha), so HEAD is DETACHED. Pushing
@@ -370,7 +379,9 @@ jobs:
           git push origin "HEAD:refs/heads/${BRANCH}"
           gh pr create --base main --head "${BRANCH}" \
             --title "release: ${GITHUB_REF_NAME} version bump" \
-            --body "Automated version bump (root, pi, desktop) from the ${GITHUB_REF_NAME} release run. Zero-approval merge per branch protection."
-          gh pr merge "${BRANCH}" --squash --delete-branch
+            --body "Automated version bump (root, pi, desktop) from the ${GITHUB_REF_NAME} release run. It waits for a maintainer to review and merge: the diff must be the version lines only. This pull request was opened by the workflow token, so no checks ran on it; close and reopen it to run them, and do not read missing checks as green."
+          # Open only. The release run tested the bumped tree at the tagged
+          # commit, not whatever main is by now, so merging is a maintainer's
+          # reviewed act and never this job's.
         env:
           GH_TOKEN: ${{ github.token }}

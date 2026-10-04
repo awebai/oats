@@ -39,9 +39,15 @@ oats schedule tick --dry-run   # what would run this minute, launching nothing
 The default cap is five running scheduled jobs. The two install flags set
 independent positive-integer caps; `default` restores the schedule default and
 `none` removes the trigger cap. Omitted flags keep existing choices. Use these
-CLI flags, never hand-edit the registry. Upgrading migrates the old implicit
-cap of one to the default once; explicitly set `--max-concurrent 1` after
-upgrade if the operator needs one. `host status` reports both effective caps.
+CLI flags, never hand-edit the registry. Reads take no registry lock and write
+nothing; they interpret the old implicit cap of one as five. The next registry
+mutation persists that migration and emits a stderr notice; a pre-migration
+hand-set one is indistinguishable, so explicitly set `--max-concurrent 1` if the
+operator needs one. Older binaries can reintroduce one while retaining the new
+marker: stop mixed-version writes and set the desired cap with the CLI. Invalid
+stored caps are refused, not replaced with five; an explicit `--max-concurrent
+N|default` repairs an invalid schedule cap. `host status` reports both effective
+caps.
 
 **Credentials reach the tick through the timer, not your shell.** The timer's
 environment sets only `PATH` and `OATS_HOME_DIR`. `gh` logged in through the
@@ -148,7 +154,9 @@ or `run: command`, `cron`, `tz`, `agent`, `task`, plus `runsOn` and `owner`).
 - **Opting a host out** without a commit: `oats trigger disable <member>/<id>`
   writes `triggers.disabled`, and `oats schedule disable <member>/<id>` writes
   `schedules.disabled`, in that host's `oats-local.yaml`; `enable` removes
-  the entry. A workspace definition is never edited or removed from a host
+  the entry. Qualified schedule names accept up to 100 characters in opt-outs
+  and named `automations.trust` entries; trigger definitions and opt-outs stay
+  limited to 40. A workspace definition is never edited or removed from a host
   (`E_AUTOMATION_WORKSPACE`): change the file in Git.
 - **Refresh.** `oats sync` takes a snapshot of the members' automations; the
   host tick refreshes it when it is more than ten minutes old
@@ -178,8 +186,23 @@ offline and checks other deployments registered with this host.
 An unknown command or operation frees its host slot only after the kernel
 observes its process exit. Scheduler command/operation and workspace-spawn
 children receive SIGTERM at five minutes and SIGKILL after a two-second
-cleanup grace if needed. Its own job stays blocked until reconcile. Spawn,
+cleanup grace if needed. Catchable SIGINT/SIGTERM/SIGHUP to the supervisor uses
+the same cleanup; interruption stays unconfirmed even with a printed envelope.
+SIGKILL/OOM or an unrecoverable supervisor death cannot guarantee child cleanup:
+without its receipt, the unknown attempt retains its slot. Descendants that
+start their own sessions are outside the owned group. Its own job stays blocked
+until reconcile. Spawn,
 wake and legacy attempts without observed exits retain their slot rules.
+
+### Structural uncertainty during provider migration
+
+A provider that cannot confirm dispatched effects or compensation sets
+`error.details.unconfirmed: true` (a boolean). The operation wrapper promotes
+that marker without dropping its nested receipt. Kernel incomplete-spawn and
+rollback failures carry it too; completed compensation remains unmarked.
+Existing text-based checks still protect older providers and copied homes.
+Do not assume those copies were upgraded or retry a marked attempt without
+reconciliation; the marker does not change host-slot release rules.
 
 ## Gotchas
 

@@ -543,7 +543,10 @@ oats operation run <layer>:<name> (--home <abs> | --soul <name> [--dir <d>]) [--
   home operation without `--home`), `E_CAPABILITY_REQUIRES`, `E_BAD_ARGS`
   (undeclared or missing `--arg`), `E_CAPABILITY_BROKEN`. A provider's `ok:
   false` is relayed with its code and `details: {exit, envelope,
-  unconfirmed?}`. `E_OPERATION_TIMEOUT` (240 s) and `E_OPERATION_RESULT` are
+  unconfirmed?}`. A literal provider `error.details.unconfirmed: true` is
+  promoted to the outer details while its full envelope stays nested. Existing
+  retained-effect text checks remain for compatibility during migration.
+  `E_OPERATION_TIMEOUT` (240 s) and `E_OPERATION_RESULT` are
   unconfirmed outcomes: `details: {exit, signal, unconfirmed: true,
   envelope?, stderr?, cleanup?}`.
 
@@ -1617,7 +1620,7 @@ with `--expect-decision` records the key and decision in `instance.json`.
   `E_IDEMPOTENCY_CONFLICT {instance, home}`.
 - `spawnCompleted` is `false` until launch, lineage and events are done; a
   retry of an unfinished spawn is `E_SPAWN_INCOMPLETE {instance, home,
-  launched}` (recover through the session surface).
+  launched, unconfirmed: true}` (recover through the session surface).
 - The key lives in the home. Mint it on the first confirmation and keep it
   for that intent's retries.
 - `wake: {requested, saved, error}` is recorded and replayed; `saved: null`
@@ -1686,11 +1689,17 @@ Feature `spawn-name`. `--name <slug>` is the exact name, with no prefix.
 | `E_INSTANCE_NAME_INVALID`, `E_INSTANCE_NAME_TAKEN` | see above | |
 | `E_DECISION_STALE` | `{decision}` | |
 | `E_PLACEMENT_TAKEN`, `E_IDEMPOTENCY_CONFLICT` | `{instance, home}` | |
-| `E_SPAWN_INCOMPLETE` | `{instance, home, launched}` | |
+| `E_SPAWN_INCOMPLETE` | `{instance, home, launched, unconfirmed: true}` | |
 | `E_LAUNCH_*`, `E_MODEL_UNKNOWN`, `E_UNSUPPORTED_HARNESS` | | the launch selection is refused |
 | `E_LAUNCH_SHIM` | | the home's `oats` (`<home>/.oats/bin/oats`) cannot be written; the spawn is rolled back |
 | `E_SCHEDULE_INVALID` | | a bad wake (`--wake-json`, `--wake-file`, `--wake-*`) |
-| `E_SPAWN_FAILED` | | anything else |
+| `E_SPAWN_FAILED` | `{unconfirmed: true}` when compensation cannot finish | anything else |
+
+Spawn failure envelopes carry `error.details.unconfirmed: true` when an existing
+keyed spawn is incomplete (`E_SPAWN_INCOMPLETE`) or compensation cannot confirm
+cleanup. The keyed-spawn details retain `instance`, `home` and `launched`.
+Confirmed completed compensation does not set this marker. This is an additive
+producer migration; existing text-based compatibility checks remain.
 
 ## `instance.json` and the roster
 
@@ -1922,6 +1931,15 @@ route target:
   `relativeTo` and `spawnOrigin` are always present, `null` when the host
   does not supply them (a host before 0.31, a fact it never recorded, or a
   saved route the host no longer lists). Nothing is derived on this side.
+- **`waitingOnYou`** (0.40.2, [Waiting on you](#waiting-on-you)) is on a row
+  only when the host's kernel reports it: a row from a host before 0.40.0,
+  and a saved route the host did not list, have no such key. Absent means
+  "not reported", which is not `null` ("no claim"). When present it is `null`
+  or `{since, producer, reason, message}`, passed through the kernel's read
+  rule again on this side: a value that is not a claim (no valid `since` or
+  `producer`) is `null`, and an unknown `reason` or an invalid `message` is
+  `null` inside a claim that still counts. As on a local row, the host
+  reports a claim only for a running instance.
 - **`addressable`** (0.31): `true` for every row the host reports. Routed
   session and lifecycle commands reach it by `--home`, or by name when the
   name is unique on the host ([addressing](servers.md#run-there); a shared
@@ -2160,7 +2178,9 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
 
 - **Sources.** `home` is `<home>/.oats-events.jsonl`; `workspace` is
   `<deployment>/.agents/events/<agent>--<instance>.jsonl` (it survives the
-  home). Each is `{path, status: "ok" | "absent" | "refused" | "tail",
+  home). The deployment is the one the home's spawn recorded, when that
+  directory really holds the home at `agents/<agent>/instances/<instance>`;
+  otherwise it is the fourth ancestor of the home as it was addressed. Each is `{path, status: "ok" | "absent" | "refused" | "tail",
   bytes}`. Only a regular file is opened (no symlinks, same device and inode
   after open), and at most its last 4 MiB is read (`"tail"`).
 - **Kinds:** `spawned`, `launched`, `restarted`, `stopped`, `stop-refused`,
@@ -2182,12 +2202,35 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   `null` for old rows); the top-level `incarnation` is the current home's (or
   `null`). Earlier incarnations are returned as this address's history.
 - **Address.** `--home` must be a home of `<instance>` (`E_HOME_MISMATCH`).
+  A home has one address in storage, its real path (since 0.40.2): rows are
+  written and matched under it, whatever spelling a writer or reader used (a
+  deployment reached through a symlink, a symlinked agents root). The answer
+  keeps the spelling it was asked in: the top-level `home` and every
+  returned row's `home` are the home as the caller addressed it (`--home`,
+  or the home found under `--dir`), the same string a status row carries.
   Rows for another address are dropped and counted in
   `integrity.foreignRows`; torn or invalid lines are counted in
   `integrity.unreadableRows`. A row present in both logs is returned once;
   identical rows repeated within one log (a set, a clear and the same set in
   one millisecond) are all returned, as many as the log holding the most
   copies has.
+- **Rows from before 0.40.2**, in a deployment addressed through a symlink
+  only. A stored `home` is never rewritten, and never matched under another
+  spelling. A row an earlier kernel wrote under the lexical spelling (a
+  spawn's rows, and the claims of a session that was spawned and never
+  restarted) is foreign after the upgrade, and counted in
+  `integrity.foreignRows`. What that means for a claim:
+  - A claim that was live under the lexical spelling stops showing. Nothing
+    brings that row back: the claim shows again only when a producer makes it
+    anew (the next permission prompt or question, the agent's next
+    `oats instance attention`). A restart starts a new session with no
+    claim, as always.
+  - A claim that stayed set because the restart that should have voided it
+    was recorded under the real path (#583) is gone.
+  - The rows a started or restarted session wrote under the real path, which
+    `oats status --dir <symlink>` could not see, are read now. They cannot
+    surface a stale claim: such a session wrote its clears and its session
+    boundaries under the real path too, so that history is complete.
 - **Window.** `count` is the rows after `--since`; `returned` the window
   (`--limit`, default 200, 1–2000); `truncated` means rows were cut or a
   source was a tail. `lastEvent` is `{kind, at, producer, incarnation}` of
@@ -2251,14 +2294,17 @@ oats instance attention [--message <text>] [--clear] --json
   message (a hand-edited log) reads as `null`, and the claim still counts.
   A stored `reason` outside `permission`, `question`, `attention` reads as
   `null` too, and a row whose `producer` is neither `kernel` nor a valid
-  producer id is no claim at all.
+  producer id, or whose `at` is not a date, is no claim at all.
 - **Idempotent.** The verb reads the producer's live claim first and appends
   only on a change: a `set` whose reason or message differs from the live
   positive claim appends (`changed: true`), an identical one does not; a
   `clear` appends only over a live positive claim. The answer is
   `{eventsApi, instance, home, producer, changed, waitingOnYou}`, where
   `waitingOnYou` is that producer's resulting claim (`null` when it holds
-  none). Concurrent writers append whole lines; the latest row decides.
+  none) and `home` is the home as the caller addressed it (`--home`,
+  `$OATS_INSTANCE_HOME` or the enclosing home); the row is stored under the
+  real path, so a set and a clear through different spellings of one home
+  meet. Concurrent writers append whole lines; the latest row decides.
   Each log is judged on its own, and success means both took the row: a
   write either log refused is `E_EVENTS_FAILED` naming it, and the next call
   (a retry) appends again to repair it.
@@ -2527,6 +2573,42 @@ source, recovery}], total}}` (the first 10 paths). Usage errors are text on
 stderr, not envelopes.
 
 ## Sessions and launch configurations
+
+### Input
+
+```text
+oats session input --home <abs> [--text-file <path>] --json
+```
+
+Input bytes come from stdin or the named file. The existing version-1 success
+answer is `{schemaVersion: 1, ok: true, result: {home, backend: "tmux",
+present: true, state, paneId, submitted: true, verified}}`. Session input runs
+on the execution host, including when the wake broker invokes it there;
+`--server` is not supported for input. The adapter sends one literal
+bracketed paste and one Enter after the existing input/authority/target checks.
+
+`submitted` means terminal-operation success, **not model acceptance or
+processing**. `verified` is display observation only: `true` means a bounded
+look changed, possibly because of unrelated output or a dialog; `false` means
+unchanged, unreadable or exhausted observation. False never authorizes retry
+and is not proof of a pending draft or absence of effects. No `reason` is
+emitted; the `enter-not-taken` result from 0.39.4 is removed.
+
+Read-only settling before Enter shares one monotonic 2-second budget starting
+when paste returns; up to two post-Enter looks share a 1-second budget. Probe
+timeouts and sleeps use the remaining budget. Observation failures produce
+`verified: false`, not input errors or extra keys. The original paste/key
+command timeouts and `E_SESSION_INPUT_FAILED` errors remain; the observation
+budgets do not bound those commands, failed buffer cleanup or OS scheduling.
+No busy-pane submission or exactly-once guarantee is provided. Generic command
+errors can still be uncertain after partial effects.
+
+The Desktop terminal's authorized PTY writes are a separate stream; they do not
+consume this `verified` field. The Pi bridge does not interpret this result.
+Scheduler wake still records a nonthrowing input operation as delivered without
+adding acceptance/history fields. Actual broker acknowledgement and retry
+policy require their own consumer qualification; this result is not a native
+harness receipt. See [execution targets](execution-targets.md).
 
 ### Start and restart
 

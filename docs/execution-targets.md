@@ -143,35 +143,36 @@ oats session attach --home /abs/home
   live claim that the instance needs input from a human, `{since, producer,
   reason, message}`, or `null`; it is non-null only for a running harness
   (docs/desktop-cli-api.md, "Waiting on you").
-- **input** submits UTF-8 text (stdin or `--text-file`, at most 256 KiB, no
-  NUL) followed by Enter, as a bracketed paste. The text is never run by a
-  shell. A fallback shell, a stopped session or a split
-  tmux window is refused. The text is pasted once. Enter waits for the pane to
-  settle (two identical captures, at least about 200 ms, longer for a larger
-  paste, at most 2 s), and is judged by whether it changed the bottom 15 lines
-  of the pane. The comparison is of bytes only, and the pane's text is never
-  interpreted. Trailing spaces are ignored. When the pane was seen to change
-  size (a resize, or a second client attaching), a reflow of the same content
-  is not a change either: each side's content must already be on the other
-  side's screen or in its history, so content that appeared or disappeared
-  still counts. An Enter that changed nothing was swallowed, and is resent
-  after a backoff, at most 3 Enters in total. The answer adds:
-  - `submitted: true, verified: true`: an Enter was taken.
-  - `submitted: false, verified: true, reason: "enter-not-taken"`: none of the
-    3 Enters changed the pane. The text stays in the agent's input box; it is
-    not pasted again.
-  - `submitted: true, verified: false`: a capture failed, so no further Enter
-    was sent and the last one was not judged. As before, this means the
-    terminal accepted the keys. When the pane cannot be read before the first
-    resend, exactly one Enter was sent.
+- **input** sends UTF-8 text (stdin or `--text-file`, at most 256 KiB, no
+  NUL) as exactly one bracketed paste followed by exactly one Enter. The text
+  is never run by a shell. Existing endpoint authority, fallback-shell,
+  stopped-session and split-window checks still refuse before input.
 
-  `submitted` never means the agent processed the text. A pane that changes
-  for another reason after Enter (a spinner, a clock, a human typing) reads as
-  taken. A harness that shows no visible reaction to Enter receives up to two
-  extra Enters; real harnesses (claude, codex, pi) redraw on submit. A call takes at most about 4 s plus its tmux calls. A failed paste or
-  key send is `E_SESSION_INPUT_FAILED`, with no retry. Wake schedules and
-  messaging capabilities use this command ([schedules.md](schedules.md)); a
-  wake schedule records any answer as delivered.
+  Before Enter, a size-based floor (200 ms plus 3 ms per KiB) and read-only
+  settling polls share one **monotonic 2-second observation budget**, starting
+  immediately after the paste command returns, before buffer cleanup. Sleeps
+  and capture timeouts are clipped to the remaining budget; a failed capture
+  or exhausted budget ends settling and proceeds to the single Enter. After
+  Enter, at most two read-only looks share a separate 1-second observation
+  budget. These deadlines do not bound the original paste/key commands, buffer
+  cleanup or OS scheduling. They authorize no further keys.
+
+  Successful terminal commands return `submitted: true` and `verified`, with
+  no `reason`. `verified: true` means only that the bounded display comparison
+  saw a changed look; `false` means unchanged, unreadable or exhausted
+  observation. The comparison retains its whitespace and resize/reflow
+  handling. Display movement can be unrelated output, a spinner or a dialog;
+  an unchanged display is not proof that no effects occurred or that a draft
+  is pending. **Neither value authorizes retry or proves model acceptance.**
+
+  A failed paste or key command remains `E_SESSION_INPUT_FAILED`; an
+  observational failure does not turn successful terminal operations into a
+  refusal. Command errors may themselves be uncertain after partial effects.
+  This transport offers no exactly-once guarantee and does not guarantee that
+  a busy pane accepts the input. Wake schedules retain their existing rule:
+  any nonthrowing input answer is recorded as delivered, meaning terminal
+  operations, not model processing. Broker delivery/ack policy and harness
+  acceptance evidence remain separate contracts.
 - **attach** is interactive and takes no `--json`. It opens a temporary tmux
   session linked to the agent's window alone.
   Closing the viewer leaves the agent running.

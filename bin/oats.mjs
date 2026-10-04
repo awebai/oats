@@ -482,7 +482,7 @@ function finishOperation({ r, bail, address, provider, op, argFlags, cwd, home, 
   // (a partial receipt such as result.instance of something it launched
   // before failing, and any details it gave) travels in error.details so a
   // scheduler can keep an unconfirmed outcome and reconcile that target.
-  if (!envelope.ok) bail(envelope.error?.code || "E_OPERATION_FAILED", `${address}: ${envelope.error?.message || "failed"}`, { exit: r.status, envelope, ...(reportsRetainedEffectsText(envelope.error?.message) ? { unconfirmed: true } : {}) });
+  if (!envelope.ok) bail(envelope.error?.code || "E_OPERATION_FAILED", `${address}: ${envelope.error?.message || "failed"}`, { exit: r.status, envelope, ...(envelope.error?.details?.unconfirmed === true || reportsRetainedEffectsText(envelope.error?.message) ? { unconfirmed: true } : {}) });
   if (r.status !== 0) bail("E_OPERATION_RESULT", `${address} (${provider.capability} ${op.command}) answered ok but exited ${r.status}; the receipt is not trusted and its effects are unconfirmed${stderr ? `: ${stderr.slice(0, 400)}` : ""}`, observed(envelope));
   const result = envelope.result && typeof envelope.result === "object" ? envelope.result : {};
   if (op.kind === "view") {
@@ -2405,8 +2405,8 @@ async function spawnCmd() {
     if (e?.code === "E_PLACEMENT_TAKEN") { bail(e.code, e.message, { instance: e.instance, home: e.home }); throw e; }
     if (e?.code === "E_INSTANCE_NAME_TAKEN") { bail(e.code, e.message, { instance: e.instance, home: e.home ?? null, ...(e.session ? { session: e.session } : {}) }); throw e; }
     if (e?.code === "E_INSTANCE_NAME_INVALID") { bail(e.code, e.message, e.details); throw e; }
-    if (e?.code === "E_SPAWN_INCOMPLETE") { bail(e.code, e.message, { instance: e.instance, home: e.home, launched: e.launched }); throw e; }
-    bail(["E_BAD_ARGS", "E_RELATIVE_AMBIGUOUS"].includes(e.code) ? e.code : "E_SPAWN_FAILED", e.message || e); throw e;
+    if (e?.code === "E_SPAWN_INCOMPLETE") { bail(e.code, e.message, { ...e.details, instance: e.instance, home: e.home, launched: e.launched }); throw e; }
+    bail(["E_BAD_ARGS", "E_RELATIVE_AMBIGUOUS"].includes(e.code) ? e.code : "E_SPAWN_FAILED", e.message || e, e.details?.unconfirmed === true ? e.details : undefined); throw e;
   }
   // The instance exists from here on: a failed wake save is reported beside
   // the full receipt, never hidden, and never causes a second spawn.
@@ -3802,7 +3802,7 @@ else if (cmd === "session") await sessionCmd();
 else if (cmd === "schedule") await scheduleCmd();
 else if (cmd === "trigger") await triggerCmd();
 else if (cmd === "automations") await automationsCmd();
-else if (cmd === "spawn") { try { await spawnCmd(); } catch (e) { if (TYPED_CLI_FAILURES.has(e?.code)) throw e; if (JSON_MODE) jsonFail("E_SPAWN_FAILED", e.message || e); throw e; } }
+else if (cmd === "spawn") { try { await spawnCmd(); } catch (e) { if (TYPED_CLI_FAILURES.has(e?.code)) throw e; if (JSON_MODE) jsonFail("E_SPAWN_FAILED", e.message || e, e.details?.unconfirmed === true ? e.details : undefined); throw e; } }
 else if (cmd === "retire") retireCmd();
 else if (cmd === "capture" || cmd === "recall" || cmd === "setup") await recordCmd(cmd);
 else if (cmd === "experimental") await experimentalCmd();
@@ -4046,7 +4046,7 @@ Usage:
                                              typed lifecycle events (spawned, launched, stopped,
                                              restarted, retired, worktree-retained…) written by
                                              the action that made them true; nothing inferred
-  oats instance waiting <set|clear> --producer <id> [--reason permission|question|attention] [--message <text>] [--home <abs>] [--json]
+  oats instance waiting <set|clear> --producer <id> [--reason permission|question|attention] [--message <text>] [--home <abs>] [--dir <d>] [--json]
                                              a producer's claim that the instance needs input
                                              from a human; appended only on change; display only
   oats instance attention [--message <text>] [--clear] [--json]
@@ -4119,7 +4119,7 @@ Layers: ${LAYERS.join(", ")}. Workspace model v2: docs/design/2026-09-23-workspa
   // Same two renderings as every other typed failure: one envelope on stdout in
   // --json mode, one `oats: <message>` line on stderr otherwise. The message
   // already names the offending file — the readers re-raise it with one.
-  if (JSON_MODE) jsonFail(e.code, e.message);
+  if (JSON_MODE) jsonFail(e.code, e.message, e.details?.unconfirmed === true ? e.details : undefined);
   die(e.message);
 } finally {
   // The command's read session: every `git cat-file --batch` child ends before the process does.
