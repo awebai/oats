@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import {
   capabilityManifest, completeDeferredRetirement, composeInstanceAgentsMd, deferredRetireResultPath, findAgent, findInstanceHomes, retirePendingMarkerPath,
-  listInstances, retireInstance, runLifecycleHooks, spawnInstanceAsync,
+  FAILED_SPAWN_BRANCH_LEFT, listInstances, RETIRE_DELETE_BRANCH_REFUSED, retireInstance, runLifecycleHooks, spawnInstanceAsync,
 } from "@awebai/oats/core";
 import { inertHarnessPath } from "./helpers/runtime-stub.mjs";
 import { capabilityFiles, soulFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
@@ -2683,7 +2683,7 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
   } finally { process.env.PATH = oldPath; }
 });
 
-test("a quarantine retry re-runs and VERIFIES the rollback-owned Git cleanup; the spawn's branch goes only with --delete-branch (reviewer-d6e916d, #436)", async (t) => {
+test("a quarantine retry re-runs and VERIFIES the rollback-owned Git cleanup; the spawn's branch is left, and the debt clears once Git has deleted it (reviewer-d6e916d, #436)", async (t) => {
   const out = temp(); t.after(() => rmSync(out, { recursive: true, force: true }));
   const allow = join(out, "cleanup-works");
   // Retire fails until the operator fixes the cause, so the spawn genuinely
@@ -2708,8 +2708,8 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
     assert.equal(existsSync(home), true, "the spawn quarantined the home");
 
     // Git residue the initial rollback left behind: a rollback-owned branch that
-    // still exists. Cleanup is NOT complete until it is gone, and a retire never
-    // deletes a branch the operator did not name with --delete-branch (#436).
+    // still exists. Cleanup is NOT complete until it is gone, and no retire
+    // deletes a branch (#436).
     execFileSync("git", ["-C", fx.member, "branch", "dev-git-leftover"]);
     const markerPath = join(home, ".oats-rollback-incomplete.json");
     const marker = JSON.parse(readFileSync(markerPath, "utf8"));
@@ -2723,17 +2723,21 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
 
     writeFileSync(allow, "ok");                 // hooks will now succeed
     const branches = () => execFileSync("git", ["-C", fx.member, "branch", "--list"], { encoding: "utf8" });
-    // Without the flag the branch stays, and the debt is said, never silent.
+    // The branch stays, and the debt is said, never silent.
     const kept = retireInstance(root, "dev-git", { tmuxSession: "oats-test-nosuch" });
-    assert.match(branches(), /dev-git-leftover/, "a retry does not delete the branch on its own");
-    assert.deepEqual(kept.rollbackIncomplete, ["git branch dev-git-leftover: kept; the failed spawn created it; pass --delete-branch to delete it"]);
+    assert.match(branches(), /dev-git-leftover/, "a retry does not delete the branch");
+    assert.deepEqual(kept.rollbackIncomplete, [FAILED_SPAWN_BRANCH_LEFT]);
     assert.equal(kept.branchDeleted, false);
     assert.equal(existsSync(home), true, "the home stays while the debt does");
-    // The operator asks: the branch is deleted and verified, and the deletion is REPORTED
-    // (--json consumers read branchDeleted).
-    const r = retireInstance(root, "dev-git", { tmuxSession: "oats-test-nosuch", deleteBranch: true });
-    assert.doesNotMatch(branches(), /dev-git-leftover/, "the branch is deleted and verified on retry");
-    assert.equal(r.branchDeleted, true, "and the verified deletion is REPORTED");
+    // Asking for the deletion is refused before anything happens.
+    assert.throws(() => retireInstance(root, "dev-git", { tmuxSession: "oats-test-nosuch", deleteBranch: true }),
+      (e) => e.code === "E_BAD_ARGS" && e.message === RETIRE_DELETE_BRANCH_REFUSED);
+    assert.match(branches(), /dev-git-leftover/);
+    assert.equal(existsSync(home), true);
+    // The operator deletes the branch with Git: the retry shows it gone, and cleanup then reports complete.
+    execFileSync("git", ["-C", fx.member, "branch", "-D", "dev-git-leftover"]);
+    const r = retireInstance(root, "dev-git", { tmuxSession: "oats-test-nosuch" });
+    assert.equal(r.branchDeleted, false, "the retire deleted nothing");
     assert.equal(r.rollbackIncomplete, undefined, "and cleanup then reports complete");
     assert.equal(existsSync(home), false);
   } finally { process.env.PATH = oldPath; }
