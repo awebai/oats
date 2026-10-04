@@ -30,7 +30,7 @@ import { createInstanceGitPanel } from '../renderer/instance-git.mjs';
 import { spawnDialogCSS } from '../renderer/spawn-dialog.mjs';
 import { createAutomationsView } from '../renderer/views/automations.mjs';
 import { setWorkspace } from '../renderer/views/common.mjs';
-import { createTerminalTab } from "../renderer/terminal-tab.mjs";
+import { createTerminalTab, terminalOptions, TERMINAL_MINIMUM_CONTRAST } from "../renderer/terminal-tab.mjs";
 
 const renderer = new URL("../renderer/", import.meta.url);
 const css = readFileSync(new URL("theme.css", renderer), "utf8");
@@ -190,6 +190,23 @@ for (const [name, palette] of palettes) {
     }
   });
 }
+
+// The terminal's contrast floor (#602): xterm is given TERMINAL_MINIMUM_CONTRAST and redraws any text
+// colour that is under it against its cell's background. The calibrated palette has to meet that ratio
+// on its own background already, so the floor leaves it as designed and only acts on combinations
+// nobody calibrated. Raising the constant without recalibrating the palettes fails here.
+for (const [name, palette] of palettes) test(`${name}: the default foreground and the 16 ANSI colours meet the terminal's minimum contrast on --term-bg`, () => {
+  assert.equal(typeof TERMINAL_MINIMUM_CONTRAST, "number");
+  assert.equal(terminalOptions({}).minimumContrastRatio, TERMINAL_MINIMUM_CONTRAST, "the ratio held here is the one xterm is given");
+  const bg = backgroundChannels("term-bg", palette);
+  for (const fgName of ["term-fg", ...ansi]) {
+    const fg = palette.get(fgName);
+    assert.ok(fg, `${name} defines --${fgName}`);
+    const ratio = contrast(opaqueChannels(fg), bg);
+    assert.ok(ratio >= TERMINAL_MINIMUM_CONTRAST,
+      `${name} --${fgName} ${fg} on --term-bg ${palette.get("term-bg")}: ${ratio.toFixed(2)}:1 < ${TERMINAL_MINIMUM_CONTRAST}:1, so xterm would redraw a palette colour`);
+  }
+});
 
 // Control rule 2: keyboard focus is a 1px edge (WCAG 1.4.11 non-text, 3:1). Controls that paint their own
 // opaque pair (primary, danger fill) carry it 1px OUTSIDE, so it is measured against the surfaces those
