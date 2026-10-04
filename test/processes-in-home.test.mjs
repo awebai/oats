@@ -2,7 +2,8 @@
 // Retire removes a home on an empty answer, so a listing counts only when lsof completed: it exits
 // 1 with a full listing when some process could not be read, and that is the one failure whose
 // output is used. A scan that was cut off (a timeout, too much output, a signal) is unknown, never
-// none, whatever it printed first. Unit tests over the injected exec.
+// none, whatever it printed first. So is a listing with no process row at all: a real lsof always
+// lists at least itself and its caller. Unit tests over the injected exec.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
@@ -21,6 +22,8 @@ const PID = process.pid + 1;
 const IN_HOME = `p${PID}\nR${process.pid + 2}\ncnode\nn${join(home, "work")}\n`;
 /** An exec that fails the way execFileSync does: an error carrying what the child printed. */
 const failing = (props) => ({ exec: () => { throw Object.assign(new Error("Command failed: lsof"), { stdout: PREFIX, stderr: "", ...props }); } });
+/** An exec that succeeds, as execFileSync does when the child exits 0: what the child printed. */
+const printing = (stdout) => ({ exec: () => stdout });
 function unknown(io, why) {
   const scan = processesInHome(home, io);
   assert.equal(scan.ok, false, JSON.stringify(scan));
@@ -57,4 +60,17 @@ test("a listing lsof completed with status 1 is used: a process in the home is n
 test("a listing lsof completed with status 1 is used: no process in the home is none", () => {
   const scan = processesInHome(home, failing({ status: 1, signal: null }));
   assert.deepEqual(scan, { ok: true, processes: [] });
+});
+
+test("a scan that exited 0 and printed nothing is unknown: a listing has at least one process", () => {
+  unknown(printing(""), /^lsof listed no process$/);
+});
+
+test("a scan that exited 0 and printed no process row is unknown", () => {
+  unknown(printing("lsof: a wrapper that lists nothing\nn/\n"), /^lsof listed no process$/);
+});
+
+test("a listing lsof completed with status 0 is used, with a process in the home and with none", () => {
+  assert.deepEqual(processesInHome(home, printing(PREFIX + IN_HOME)), { ok: true, processes: [{ pid: PID, command: "node" }] });
+  assert.deepEqual(processesInHome(home, printing(PREFIX)), { ok: true, processes: [] });
 });
