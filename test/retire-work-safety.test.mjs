@@ -958,6 +958,50 @@ test("a home that only has something to preserve after the retire hooks still ge
   assert.equal(existsSync(recoveryRootOf(spawned.home)), false);
 });
 
+test("a retire hook that rewrites an already modified tracked file and writes the home: Git's status text does not change, and the hook's work bytes are still copied under after-hooks/", () => {
+  const BEFORE = "changed before the retire\n", REWRITTEN = "rewritten by the retire hook\n";
+  assert.notEqual(REWRITTEN, BEFORE, "fixture premise: the hook's bytes are not the pre-hook bytes");
+  // The hook rewrites the tracked file, writes a home file, and leaves beside the home what Git
+  // reports once it has written (the kernel's own status command), for this test to read.
+  const retire = `import { execFileSync } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
+const home = process.env.OATS_INSTANCE_HOME;
+const work = join(home, 'work');
+writeFileSync(join(work, 'tracked.txt'), ${JSON.stringify(REWRITTEN)});
+writeFileSync(join(home, 'hook-note.txt'), ${JSON.stringify(HOOK_BYTES)});
+const status = execFileSync('git', ['-C', work, 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored=matching', '--ignore-submodules=none'], { encoding: 'utf8' });
+writeFileSync(join(dirname(home), 'status-after-hook-' + basename(home)), status);
+console.log(JSON.stringify({ meta: { retired: true } }));
+`;
+  const f = fixture({ capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "same-status");
+  const work = join(spawned.home, "work");
+  assert.equal(readFileSync(join(work, "tracked.txt"), "utf8"), "base\n", "fixture premise: tracked.txt is committed");
+  write(join(work, "tracked.txt"), BEFORE);
+  const statusBefore = porcelain(work);
+  assert.ok(statusBefore.split("\0").includes(" M tracked.txt"), `fixture premise: the file is modified before the retire, saw ${JSON.stringify(statusBefore)}`);
+
+  const retired = cli(f, ["retire", "dev-same-status", "--discard-worktree", "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const receipt = JSON.parse(retired.stdout);
+  const recovery = receipt.workRecovery;
+  assert.ok(recovery?.path, `a recovery was written: ${retired.stdout}`);
+  // The premises: the hook ran, and its write left Git's status text as it was.
+  assert.equal(readFileSync(join(dirname(spawned.home), `status-after-hook-${basename(spawned.home)}`), "utf8"), statusBefore, "fixture premise: the status text is the same after the hook's write");
+  assert.equal(readFileSync(join(recovery.path, "after-hooks", "home", "hook-note.txt"), "utf8"), HOOK_BYTES, "the hook's home file is copied under after-hooks/");
+  assert.deepEqual(readdirSync(recoveryRootOf(spawned.home)), [basename(recovery.path)], "one recovery directory");
+  assert.equal(readFileSync(join(recovery.path, "repo", "tracked.txt"), "utf8"), BEFORE, "the pre-hook snapshot is untouched");
+  // The worktree is discarded: the hook's bytes exist nowhere else.
+  assert.equal(receipt.retention.worktree, "removed");
+  assert.equal(existsSync(work), false, "the worktree is gone");
+  assert.equal(existsSync(spawned.home), false);
+  assert.equal(existsSync(join(recovery.path, "after-hooks", "repo", "tracked.txt")), true, "the work the hook changed is copied again under after-hooks/, although the status text did not change");
+  assert.equal(readFileSync(join(recovery.path, "after-hooks", "repo", "tracked.txt"), "utf8"), REWRITTEN);
+  assert.deepEqual(recovery.afterHooks, { home: true, work: true });
+  assert.deepEqual(readJson(join(recovery.path, "recovery.json")).afterHooks, { home: true, work: true });
+});
+
 test("home entries a capability declared in retirement.disposable.home are not copied to recovery, stay for the retire hooks, and are named without their contents", () => {
   const f = fixture({ capabilities: identCapability() });
   const spawned = spawnWithNote(f, "ident");
