@@ -312,21 +312,6 @@ tmux -L oats kill-server                         # replace it: ends EVERY sessio
 - `-L oats` reaches the server of the environment you type it in
   (`TMUX_TMPDIR`). For the server an instance is on, use the socket from its
   row in `oats status --json`: `tmux -S <socket> …`.
-- **Limit
-  ([#620](https://github.com/awebai/oats/issues/620)).** `oats retire` of a
-  launched instance is refused (`E_RUNTIME_QUIESCE_FAILED`) while the file of
-  its recorded socket does not exist. Until that issue is fixed, what to do
-  depends on why the file is missing:
-  - After a reboot the server is gone and its socket file with it. The
-    retire is refused until a session exists at that socket again: start any
-    instance of the deployment, or create the session by hand with the first
-    command above; for an instance still recorded on another server, `tmux
-    -S <recorded socket> new-session -d` (the session that command creates
-    can be ended after the retire). Then retire.
-  - If the server may still be running and only its socket file was removed,
-    do not create a session at that path: a new server there hides the
-    running one. Send the tmux server process `SIGUSR1`, which makes it
-    create its socket again (tmux(1), `-S`).
 - A tmux server whose socket file is missing or does not answer reads as not
   reachable, which is not proof that it exited: status, start and stop read
   that state as stopped
