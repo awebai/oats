@@ -137,11 +137,11 @@ test("common: instanceApiPath carries the home qualifier for object refs (merged
   try {
     common.setWorkspace("w1");
     // object ref → exact-home qualified (server refuses ambiguous bare names)
-    const p = common.instanceApiPath("keys", { instance: "dev-1", home: "/ws/agents/dev/instances/dev-1" });
-    assert.equal(p, `/api/keys/dev-1?home=${encodeURIComponent("/ws/agents/dev/instances/dev-1")}&ws=w1`);
+    const p = common.instanceApiPath("start", { instance: "dev-1", home: "/ws/agents/dev/instances/dev-1" });
+    assert.equal(p, `/api/start/dev-1?home=${encodeURIComponent("/ws/agents/dev/instances/dev-1")}&ws=w1`);
     // extra query composes with the qualifier
-    const p2 = common.instanceApiPath("session", { instance: "dev-1", home: "/h" }, "lines=200");
-    assert.equal(p2, `/api/session/dev-1?lines=200&home=${encodeURIComponent("/h")}&ws=w1`);
+    const p2 = common.instanceApiPath("chat", { instance: "dev-1", home: "/h" }, "limit=200");
+    assert.equal(p2, `/api/chat/dev-1?limit=200&home=${encodeURIComponent("/h")}&ws=w1`);
     // legacy string ref unchanged
     assert.equal(common.instanceApiPath("chat", "solo"), "/api/chat/solo?ws=w1");
   } finally { common.setWorkspace(prev); }

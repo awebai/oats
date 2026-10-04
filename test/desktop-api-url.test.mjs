@@ -12,7 +12,7 @@ const BASE = "http://127.0.0.1:4820";
 
 test("normal API paths stay on the server origin", () => {
   assert.equal(apiUrl("/api/panel", BASE).href, `${BASE}/api/panel`);
-  assert.equal(apiUrl("/api/session/foo?lines=100", BASE).href, `${BASE}/api/session/foo?lines=100`);
+  assert.equal(apiUrl("/api/chat/foo?limit=100", BASE).href, `${BASE}/api/chat/foo?limit=100`);
 });
 
 test("rejects non-string and non-absolute pathnames", () => {
@@ -59,7 +59,7 @@ test("pins ws on /api/brain/* like the other scoped endpoints", () => {
 
 test("pins ws on the whole instance-addressed route family", () => {
   const ws = "/Users/me/oats", other = "/Users/me/lfx";
-  for (const ep of ["session", "keys", "interrupt", "chat", "brain"]) {
+  for (const ep of ["chat", "brain"]) {
     // omitted ws → fails safe to the verified workspace
     assert.equal(apiUrl(`/api/${ep}/inst-a`, BASE, ws).searchParams.get("ws"), ws, `${ep}: pin on omission`);
     // stale/unknown caller ws → overwritten

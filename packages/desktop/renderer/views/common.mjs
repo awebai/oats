@@ -267,9 +267,9 @@ export function rowDeployment(row) {
 
 /* Per-instance endpoint path, ALWAYS scoped to the row's deployment (rowDeployment).
    Same-named instances exist across workspaces; an unscoped request lets
-   the server resolve globally — an Interrupt viewed in workspace B could
-   Ctrl-C workspace A's session, and chat could leak A's data. Every
-   per-instance call (interrupt, chat, session, keys…) must be built
+   the server resolve globally — a Start viewed in workspace B could
+   launch workspace A's instance, and chat could leak A's data. Every
+   per-instance call (chat, start, restart, harvest) must be built
    through here. `instance` may be a bare name (legacy) or a roster object
    { instance, home } — pass the OBJECT whenever you have it: same-named
    instances also exist across roots WITHIN a workspace, and the server

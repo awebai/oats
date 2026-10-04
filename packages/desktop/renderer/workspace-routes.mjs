@@ -6,7 +6,7 @@ export function workspaceScoped(pathname) {
   return pathname === "/api/panel" || pathname === "/api/agents" || pathname === '/api/spawn' || pathname === '/api/automations' || pathname === '/api/forge-roster'
     || pathname === '/api/team-members'
     || /^\/api\/(?:instance|workspace)-[a-z-]+$/.test(pathname) // entire body-addressed scoped families
-    || /^\/api\/(brain|session|keys|interrupt|chat)\//.test(pathname);
+    || /^\/api\/(brain|chat)\//.test(pathname);
 }
 
 /** Is a renderer api() path a workspace-scoped request (resolved as main resolves it)? */
