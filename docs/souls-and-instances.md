@@ -505,9 +505,10 @@ repository it belongs to. They are part of the state because a work copy
 carries them, so a tag or a stash made in that repository while the retire
 hooks run adds a copy attempt. That repository's other branches are
 not part of the state: they outlive the worktree, and a recovery does not
-hold them. The one exception is a worktree whose `HEAD` is detached: its copy
-holds the branch that repository has checked out, so that branch is part of
-the state. When the retire removes the worktree, whether a ref that outlives
+hold them. The one exception is a worktree whose copy is made detached (its
+`HEAD` is detached, on a ref that is not a branch, or on a branch whose name
+is not UTF-8): its copy holds the branch the `HEAD` of the repository it is
+cloned from is on, so that branch is part of the state. When the retire removes the worktree, whether a ref that outlives
 it reaches the commit `HEAD` is at is part of the state too: a hook that
 deletes the one ref that reached it adds a copy attempt, though the
 files, the status and `HEAD` did not move.

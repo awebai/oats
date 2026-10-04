@@ -1644,6 +1644,41 @@ writeOperation(join(git('rev-parse', '--absolute-git-dir').trim(), 'rebase-merge
   assertBothCopiedAgain(recovery);
 });
 
+test("a worktree whose own Git directory's path ends in a space, beside a directory of the same name without it that holds a copy of its index, and a retire hook that marks a file assume-unchanged in that copy, keeps the index file's mode and writes the home: the work is copied again, with the hook's mark under after-hooks/repo/", () => {
+  // The copier copies the index from the directory without the space: its entries are what the copy
+  // carries, not those of the index Git reads.
+  const retire = quietHook(`import { chmodSync, statSync } from 'node:fs';
+const index = join(git('rev-parse', '--absolute-git-dir').trim(), 'index');
+const mode = statSync(index).mode & 0o7777;
+execFileSync('git', ['-C', work, 'update-index', '--assume-unchanged', '.gitignore'], { env: { ...process.env, GIT_INDEX_FILE: index } });
+chmodSync(index, mode);
+seen.modes = [mode, statSync(index).mode & 0o7777];
+seen.gitMark = git('ls-files', '-v', '.gitignore').slice(0, 2);`);
+  const f = fixture({ capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "git-dir-space-index");
+  const work = join(spawned.home, "work");
+  const admin = gitDirOf(work);
+  nodeFs.renameSync(admin, `${admin} `);
+  write(join(work, ".git"), `gitdir: ${admin} \n`);
+  assert.equal(execFileSync("git", ["-C", work, "rev-parse", "--absolute-git-dir"], { encoding: "utf8" }), `${admin} \n`, "fixture premise: Git prints the worktree's Git directory with its trailing space");
+  mkdirSync(admin);
+  // The retire reads the .git file's path trimmed too (worktreeAdminMissing): it finds a HEAD here.
+  nodeFs.copyFileSync(join(`${admin} `, "HEAD"), join(admin, "HEAD"));
+  nodeFs.copyFileSync(join(`${admin} `, "index"), join(admin, "index"));
+  write(join(work, "tracked.txt"), "changed before the retire\n");
+  const statusBefore = porcelain(work);
+  assert.deepEqual(statusRowsIn(statusBefore), [" M tracked.txt"]);
+  const markOf = (repo) => execFileSync("git", ["-C", repo, "ls-files", "-v", ".gitignore"], { encoding: "utf8" }).slice(0, 2);
+
+  const { recovery, seen, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore);
+  assert.equal(seen.modes[1], seen.modes[0], "fixture premise: the hook kept the index file's mode");
+  assert.equal(seen.gitMark, "H ", "fixture premise: the index Git reads has no mark");
+  assert.equal(markOf(join(recovery.path, "repo")), "H ", "the snapshot before the hooks has the index without the mark");
+  assert.equal(existsSync(join(afterRepo, ".git")), true, "the work is copied again under after-hooks/repo/: the comparison reads the entries of the index the copier copies");
+  assert.equal(markOf(afterRepo), "h ", "the copy made after the hooks has the hook's mark");
+  assertBothCopiedAgain(recovery);
+});
+
 test("a retire hook that leaves a nested repository impossible to copy, after the snapshot before the hooks copied it: the retire refuses with E_WORK_PRESERVATION_FAILED, keeps the home, the work and that snapshot, and leaves no staging", () => {
   // The hook replaces the nested repository's Git directory by a .git file naming a directory that is not there.
   const retire = quietHook(`import { rmSync } from 'node:fs';
