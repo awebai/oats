@@ -278,7 +278,9 @@ the ssh command without running it. A server without the `session` commands
 (before 0.22.2) is refused with the tmux command to attach there directly,
 naming the session and window its roster records for the instance (else
 `pi-agents`, that kernel's default), and the tmux socket when the roster
-records one (`ssh -t <host> 'tmux -S <socket> attach -t <target>'`).
+records one. The remote command is one quoted word either way: `ssh -t
+<host> 'tmux attach -t <target>'`, or `ssh -t <host> 'tmux -S <socket>
+attach -t <target>'`.
 
 ## The roster and harvest
 

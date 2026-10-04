@@ -74,9 +74,11 @@ default server (a theme switcher, a script that runs `tmux set -g …` or
 - **Where it is.** The server's socket is
   `${TMUX_TMPDIR:-/tmp}/tmux-<uid>/oats`. The instance records the absolute
   socket path it was created on, in `instance.json` and in the receipt, and
-  every later command uses that recorded path, never the name. OATS reads
-  neither `TMUX` nor `TMUX_TMPDIR` itself: tmux resolves the name once, when
-  the session is ensured.
+  every later command uses that recorded path, never the name. OATS does not
+  compute the socket path and does not use `TMUX` to find a server: tmux
+  resolves the name once, when the session is ensured, from the
+  `TMUX_TMPDIR` of the process that runs OATS, which OATS passes on unchanged
+  when it replaces the environment for that call.
 - **Your configuration loads.** The server starts as any tmux server does, so
   your `~/.tmux.conf` (key bindings, status line, options) applies to it.
 - **See what runs there:** `tmux -L oats ls`. Plain `tmux ls` and a bare
@@ -229,10 +231,19 @@ that triggered it), and `oats schedule run-now` typed inside an instance.
   instance's identity (`OATS_INSTANCE`, `OATS_INSTANCE_HOME`, `OATS_HOME`,
   `PI_AGENT_INSTANCE` or `PI_AGENT_HOME`) with no home to be found is refused
   the same way. Nothing falls back to the caller's environment, to another
-  server or to a built-in list. A spawn and a start check this before they
-  create, stop or write anything; if the session disappears between that
-  check and the creation, the refusal comes at the creation, and the spawn
-  is rolled back as any failed launch is.
+  server or to a built-in list.
+- **When the refusal comes.** In `oats spawn`: before any scaffold, work
+  tree, identity or hook. In `oats session start`: after the start's
+  preflights and its planning, and before the real run of preview-aware
+  launch hooks, a stop and any write. A launch hook that does not declare
+  `launchPreview` has already run by then, as it has before any other late
+  refusal of a start (`E_SESSION_RUNNING`, `E_LAUNCH_ENV_MISSING`). Nothing
+  undoes what that hook did, and there is nothing to clean up: a launch hook
+  may do idempotent provider registration on a real start and no more
+  ([capabilities.md](capabilities.md)), so the next start repeats it
+  harmlessly. Both launch hooks OATS ships are preview-aware. If the
+  session disappears between that check and the creation, the refusal comes
+  at the creation, and the spawn is rolled back as any failed launch is.
 - **The remedy** is to create the session from your own shell, outside every
   instance home, as below. The session name matters: it must be the
   deployment's (the refusal names it); another deployment's session on the
@@ -258,8 +269,9 @@ that triggered it), and `oats schedule run-now` typed inside an instance.
   the environment it passes: its own `tmux`, its own `TMUX_TMPDIR`, and the
   socket the lookup returned when the server runs. What the server process
   gets (`HOME` and so which configuration loads, `PATH`, everything else)
-  comes from the passed environment alone. A running server's global
-  environment is never read for this and never changed.
+  comes from the passed environment alone. The global environment of the
+  server the session is created on is never read for this and never changed;
+  the one that is read is the recorded server's, as above.
 
 A process that neither sign identifies as an instance is treated as any
 other creator: its environment, without the names above, is what it passes.
@@ -344,9 +356,10 @@ instance's row in `oats status --json`. The stop leaves a fallback shell in the
 window, which a start would reuse in place; closing the window is what makes
 the start create a new one.
 
-Do not end the agents' session by hand (`tmux kill-session`): a window that a
-viewer still links would live on in that viewer, and the next start would
-create a second window for the same home.
+Do not end the agents' session by hand (`tmux kill-session`): that ends every
+other instance whose window is in that session, not only the one you are
+moving. And a window that a viewer still links would live on in that viewer,
+so the next start would create a second window for the same home.
 
 ### Herdr (removed in 0.31.0)
 

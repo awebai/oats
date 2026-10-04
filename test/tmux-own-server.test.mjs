@@ -855,6 +855,71 @@ process.stdout.write(${JSON.stringify(`${answer}\n`)});
   } finally { dep.cleanup(); }
 });
 
+test("the tmux that creates the session is the one the creating process's own PATH finds, in PATH order: an absolute entry, a relative one, an empty one", () => {
+  const socket = join(base, "creator.sock");
+  const ran = [];
+  // No tmux runs: a server with other sessions, and a creation that records which executable ran.
+  const io = { exec: (bin, args) => {
+    if (args.includes("list-sessions")) return `someone-else\t${socket}\n`;
+    if (args.includes("new-session")) { ran.push(bin); return `${socket}\t@1\n`; }
+    return "";
+  } };
+  const tool = (dir) => { mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, "tmux"), "#!/bin/sh\nexit 1\n"); chmodSync(join(dir, "tmux"), 0o755); return join(dir, "tmux"); };
+  const absolute = tool(join(base, "creator-abs")), relative = tool(join(base, "creator-rel")), here = join(base, "tmux");
+  const ambient = process.env.PATH;
+  assert.equal(process.cwd(), base, "the fixture's working directory");
+  try {
+    process.env.PATH = `${join(base, "creator-abs")}:creator-rel:${ambient}`;
+    ensureOatsTmuxSession("creator", base, io);
+    process.env.PATH = `creator-rel:${join(base, "creator-abs")}:${ambient}`;
+    ensureOatsTmuxSession("creator", base, io);
+    writeFileSync(here, "#!/bin/sh\nexit 1\n"); chmodSync(here, 0o755);
+    process.env.PATH = `:${join(base, "creator-abs")}:${ambient}`;
+    ensureOatsTmuxSession("creator", base, io);
+    assert.deepEqual(ran, [absolute, relative, here]);
+  } finally { process.env.PATH = ambient; rmSync(here, { force: true }); }
+});
+
+test("the stage of a start's refusal, pinning the existing order: a launch hook that does not declare launchPreview has already run, a preview-aware one has run only as a preview, and nothing is stopped, written or created", async () => {
+  const seen = join(base, "hook-order.jsonl");
+  const hook = (kind) => `import { appendFileSync } from "node:fs";
+appendFileSync(${JSON.stringify(seen)}, JSON.stringify({ kind: ${JSON.stringify(kind)}, event: process.env.OATS_EVENT, preview: process.env.OATS_LAUNCH_PREVIEW ?? null }) + "\\n");
+console.log("{}");
+`;
+  const dep = v2Deployment({
+    souls: { dev: { soul: { capabilities: { "test.unaware": { from: "here" }, "test.aware": { from: "here" } } } } },
+    capabilities: {
+      "test.unaware": { manifest: { hooks: { launch: "launch.mjs" } }, files: { "launch.mjs": hook("unaware") } },
+      "test.aware": { manifest: { launchPreview: true, hooks: { launch: "launch.mjs" } }, files: { "launch.mjs": hook("aware") } },
+    },
+  });
+  try {
+    const session = { OATS_TMUX_SESSION: "hookorder", PI_AGENTS_TMUX_SESSION: "hookorder" };
+    const spawned = dep.cli(["spawn", "dev", "--name", "order-target", "--harness", "claude", "--no-launch", "--json"], { env: session });
+    assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+    const { home } = spawned.json().result;
+    const entries = () => (existsSync(seen) ? lines(readFileSync(seen, "utf8")).map((line) => JSON.parse(line)) : []);
+    // The caller: an instance whose recorded tmux server cannot be read.
+    const caller = await makeHome("order-caller", { on: join(base, "order-lost.sock") });
+    const before = entries().length, record = readFileSync(join(home, "instance.json"), "utf8"), sessions = sessionsOf(OATS);
+    const r = dep.cli(["session", "start", "--home", home, "--json"], { env: { ...session, OATS_INSTANCE: caller.name, OATS_INSTANCE_HOME: caller.home } });
+    assert.notEqual(r.status, 0, r.stdout);
+    assert.equal(r.json().error.code, "E_RUNTIME_ENDPOINT_UNKNOWN", r.stdout);
+    assert.match(r.json().error.message, /the environment of the tmux server that order-caller is recorded on \(.*order-lost\.sock\) could not be read/);
+    const ran = entries().slice(before).filter((e) => e.event === "launch");
+    const unaware = ran.filter((e) => e.kind === "unaware"), aware = ran.filter((e) => e.kind === "aware");
+    // Fails if the check moves before the start's planning: this hook would not have run yet.
+    assert.ok(unaware.length >= 1 && unaware.every((e) => e.preview === null), `the hook that is not preview-aware ran for real during the start's planning: ${JSON.stringify(ran)}`);
+    // Fails if the real run of a preview-aware hook moves before the check.
+    assert.ok(aware.length >= 1 && aware.every((e) => e.preview === "1"), `the preview-aware hook ran as a preview only: ${JSON.stringify(ran)}`);
+    // Fails if a stop or a write moves before the check.
+    assert.deepEqual(readEvents(home).events.filter((e) => /stop/.test(e.kind)), [], "nothing was stopped");
+    assert.equal(existsSync(join(home, ".oats-start-pending.json")), false, "no pending receipt");
+    assert.equal(readFileSync(join(home, "instance.json"), "utf8"), record, "the home's record is unchanged");
+    assert.deepEqual(sessionsOf(OATS), sessions, "no session, and so no window, was created");
+  } finally { dep.cleanup(); }
+});
+
 test("a retire hook that spawns: its process is the retiring instance, so with that home's server gone and no session on the OATS server the spawn is refused, the retire is incomplete and keeps the home, and the next retire runs the hook again", async () => {
   await killServer(OATS);
   const flags = join(base, "hook-flags");
