@@ -290,10 +290,10 @@ sidebar's Spawn instance, Quick Open and the soul cards spawn.
 ### Scope per row
 
 - **Instance-addressed** requests go to the row's own deployment,
-  `?ws=<row.deployment.id>`: terminal resolution, session, keys, interrupt,
-  chat, start, restart, harvest, lifecycle, readiness, events, Git, the
-  instance's pull request and review threads, and capabilities, launch
-  configurations and schedules that name a home. The server resolves these
+  `?ws=<row.deployment.id>`: terminal resolution, chat, start, restart,
+  harvest, lifecycle, readiness, events, Git, the instance's pull request
+  and review threads, and capabilities, launch configurations and
+  schedules that name a home. The server resolves these
   only by exact deployment id, so a view id there is refused, and
   `admitInstance` resolves a row only inside its own deployment. The
   schedule form's add and update go to the deployment its home list was read
