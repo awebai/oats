@@ -34,7 +34,7 @@ test('a 0.41 retire receipt with workRecovery.home, notCopied and afterHooks is 
   const receipt = lifecycleReceipt(raw, plan, 'k');
   assert.ok(receipt, 'the reader refused a 0.41 retire receipt');
   assert.deepEqual(receipt, { action: 'retire', instance: target.instance, home: target.home, planRevision: plan.planRevision, replayed: false,
-    removedDir: true, worktreeRemoved: false, branchDeleted: false,
+    removedDir: true, worktreeRemoved: false,
     retention: { worktree: 'retained', branch: 'feat/work', recordedBranch: 'agents/dev-1', movedTo: '/team/.agents/worktrees/repo/feat-work', detachedAt: null },
     childrenStopped: [], incomplete: false, retainedHome: null, recoveryPath });
 });
