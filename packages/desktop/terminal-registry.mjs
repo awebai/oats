@@ -2,19 +2,18 @@
 // broker in terminal-owner.mjs and imports only MAX_TERMINALS from this module.
 // The helper semantics below are not the active IPC/resource boundary.
 //
-// HARD invariant (human release blocker): the Desktop app must never fan out
-// enough terminal/viewer sessions to hang the machine. The main process owns
-// every node-pty and its `oatsdesk-*` tmux viewer session, so the ceiling and
-// the dedupe live HERE — not in the renderer, whose tab-key dedupe is a
-// best-effort UX nicety scoped to one workspace's tab list, NOT a resource
-// bound.
+// Why reuse and the ceiling sit in the main process (Slice G, 2026-07-24): it
+// owns every node-pty and its `oatsdesk-*` tmux viewer session. The renderer's
+// tab-key dedupe is a best-effort UX nicety scoped to one workspace's tab
+// list, NOT a resource bound. Neither the ceiling nor this helper proves the
+// host cannot be overloaded: a count alone cannot (see MAX_TERMINALS below).
 //
 // Two guarantees:
 //   1. DEDUPE by intended target: one live pty/viewer per distinct terminal
 //      target. Repeated opens of the same target (clicks, re-renders,
 //      polling, focus, reconnect, stale async completion) REUSE the existing
 //      terminal — they never create a second viewer.
-//   2. HARD CAP: at most `max` (default 20) simultaneous terminals. A
+//   2. HARD CAP: at most `max` (default 200) simultaneous terminals. A
 //      distinct open beyond the cap is REJECTED, visibly and actionably —
 //      never a silent eviction, never a silent extra create.
 //
@@ -22,11 +21,17 @@
 // preparation before plan()->create->commit(); that final sequence contains
 // no await, so concurrent IPC opens cannot interleave to exceed the cap.
 
-// The cap is the machine-protecting ceiling, not a UX preference: it exists
-// so the app can never fan out enough attached tmux clients + ptys to hang
-// the host. 20 is a generous working ceiling (operator-directed) well below
-// the fan-out that caused the hang.
-export const MAX_TERMINALS = 20;
+// The cap stops a runaway of DISTINCT opens; it is not what stops repeated or
+// leaked ones. Those are stopped in terminal-owner.mjs: reuse by target per
+// window document, lease revocation on reload, navigation and renderer crash,
+// and confirmed viewer cleanup. 200 is a number a person does not meet in
+// ordinary use. A terminal costs one pty and one attached tmux client on a
+// small viewer session; a remote terminal costs an `oats session attach`
+// process and its ssh. Measured on 2026-10-04 on Linux with tmux 3.7, on a
+// private tmux server, following openTerm's command sequence: 200
+// linked-window viewers with attached clients took 24 MB in the tmux server,
+// about 5 MB per client, no idle CPU, and 30 to 90 ms per open.
+export const MAX_TERMINALS = 200;
 
 /**
  * @param {{ max?: number }} [opts]
