@@ -1888,6 +1888,123 @@ test("fingerprintTree of an instance home tells apart two instance.json files th
   assert.notEqual(withByte(0x58), withByte(0x59), "and with every other byte of it");
 });
 
+// ---- Two trees that the stored digest reads alike ----
+// The digest a spawn baseline is stored with frames an entry as its path, NUL, its mode, NUL, its
+// kind, NUL, and for a file its bytes and NUL, with no length. So a file whose bytes spell the entry
+// that follows it reads like the two files. A stored digest cannot change. The proof that the retire
+// hooks left a part as it was must not read the two alike.
+
+const PAIR_A = "the first file\n", PAIR_B = "the second file\n";
+/** Write the files `a` and `b` into `dir`, each with the mode 0644. */
+function writePair(dir) {
+  for (const [name, bytes] of [["a", PAIR_A], ["b", PAIR_B]]) {
+    write(join(dir, name), bytes);
+    chmodSync(join(dir, name), 0o644);
+  }
+}
+/** What stands in the stored digest between the bytes of `a` and the bytes of `b`, in a directory at
+ *  `under` (its path from the root the digest is taken of): NUL, b's path, NUL, its mode in decimal,
+ *  NUL, "file", NUL. `dir` is a directory that holds the pair. */
+const pairGlue = (dir, under) => `\0${join(...under, "b")}\0${lstatSync(join(dir, "b")).mode & 0o7777}\0file\0`;
+const mergedPair = (glue) => `${PAIR_A}${glue}${PAIR_B}`;
+/** Hook source: replace the pair in the directory `dirSource` (an expression of the hook) by the one
+ *  file `a` that holds a's bytes, the glue and b's bytes. Needs readFileSync, unlinkSync,
+ *  writeFileSync and join. */
+const mergesPair = (dirSource, glue) => `const pair = ${dirSource};
+writeFileSync(join(pair, 'a'), Buffer.concat([readFileSync(join(pair, 'a')), Buffer.from(${JSON.stringify(glue)}), readFileSync(join(pair, 'b'))]));
+unlinkSync(join(pair, 'b'));`;
+const PAIR_IMPORTS = "import { readFileSync, unlinkSync } from 'node:fs';";
+/** The fixture premise of these tests, on two temporary trees: with the pair at `under`, the stored
+ *  digest (fingerprintTree) of the two files and of the one merged file is the same. → the glue. */
+function storedDigestReadsThePairAlike(under) {
+  const two = mkdtempSync(join(tmpdir(), "oats-pair-two-")), one = mkdtempSync(join(tmpdir(), "oats-pair-one-"));
+  temporaryDirectories.push(two, one);
+  writePair(join(two, ...under));
+  const glue = pairGlue(join(two, ...under), under);
+  write(join(one, ...under, "a"), mergedPair(glue));
+  chmodSync(join(one, ...under, "a"), 0o644);
+  for (let depth = 1; depth <= under.length; depth++) chmodSync(join(one, ...under.slice(0, depth)), lstatSync(join(two, ...under.slice(0, depth))).mode & 0o7777);
+  assert.deepEqual([readdirSync(join(two, ...under)).sort(), readdirSync(join(one, ...under))], [["a", "b"], ["a"]], "fixture premise: two files in one tree, one file in the other");
+  assert.equal(fingerprintTree(one), fingerprintTree(two), "fixture premise: the stored digest reads the two layouts alike");
+  return glue;
+}
+/** What a directory that held the pair holds after the hook: the one file, with the merged bytes. */
+function assertMerged(dir, glue, what) {
+  assert.deepEqual(readdirSync(dir), ["a"], `${what} holds the one file the hook left`);
+  assert.equal(readFileSync(join(dir, "a"), "utf8"), mergedPair(glue), `${what} holds the bytes the hook wrote`);
+}
+/** What it held before: the two files. */
+function assertPair(dir, what) {
+  assert.deepEqual(readdirSync(dir).sort(), ["a", "b"], `${what} holds the two files`);
+  assert.equal(readFileSync(join(dir, "a"), "utf8"), PAIR_A);
+  assert.equal(readFileSync(join(dir, "b"), "utf8"), PAIR_B);
+}
+
+test("a retire hook that replaces two files of the work, under a directory Git reports as ignored whole, by one file that the stored digest reads like the two, and writes a home note: the work is copied again, and after-hooks/repo/ holds the hook's layout", () => {
+  const under = ["human-ignored", "pair"];
+  const glue = storedDigestReadsThePairAlike(under);
+  const f = fixture({ capabilities: hookCapability(quietHook(`${PAIR_IMPORTS}\n${mergesPair("join(work, 'human-ignored', 'pair')", glue)}`)) });
+  const spawned = spawn(f, "hook-pair-work");
+  const work = join(spawned.home, "work");
+  writePair(join(work, ...under));
+  assert.equal(pairGlue(join(work, ...under), under), glue, "fixture premise: the files have the mode the premise was shown with");
+  const statusBefore = porcelain(work);
+  assert.deepEqual(statusRowsIn(statusBefore), ["!! human-ignored/"], "fixture premise: Git reports the directory whole, so the status text cannot change");
+
+  const { recovery, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore);
+  assertPair(join(recovery.path, "repo", ...under), "the snapshot taken before the hooks");
+  assert.equal(existsSync(join(afterRepo, ".git")), true, "the work is copied again under after-hooks/repo/: the hook changed its files, in a way the stored digest does not tell apart");
+  assertMerged(join(afterRepo, ...under), glue, "the work copied after the hooks");
+  assertBothCopiedAgain(recovery);
+});
+
+test("a retire hook that replaces two files of the home by one file that the stored digest reads like the two, and writes a file in the work: the home is copied again, and after-hooks/home/ holds the hook's layout", () => {
+  const under = ["notes", "pair"];
+  const glue = storedDigestReadsThePairAlike(under);
+  // The hook writes no note of its own in the home: the only thing it changes there is the pair.
+  const f = fixture({ capabilities: hookCapability(quietHook(`${PAIR_IMPORTS}\n${mergesPair("join(home, 'notes', 'pair')", glue)}\n${WRITES_SCRATCH}`, { home: false })) });
+  const spawned = spawn(f, "hook-pair-home");
+  const work = join(spawned.home, "work");
+  writePair(join(spawned.home, ...under));
+  assert.equal(pairGlue(join(spawned.home, ...under), under), glue, "fixture premise: the files have the mode the premise was shown with");
+  assert.equal(porcelain(work), "", "fixture premise: the worktree is clean before the retire");
+
+  // The helper is given the status the hook leaves: the one new row.
+  const { recovery, afterRepo } = retireAfterQuietHook(f, spawned, STATUS_WITH_SCRATCH, { home: false });
+  assert.equal(readFileSync(join(afterRepo, "scratch.txt"), "utf8"), SCRATCH_BYTES, "fixture premise: the work moved and is copied under after-hooks/repo/");
+  assertPair(join(recovery.path, "home", ...under), "the snapshot taken before the hooks");
+  assert.equal(existsSync(join(recovery.path, "after-hooks", "home")), true, "the home is copied again under after-hooks/home/: the hook changed its files, in a way the stored digest does not tell apart");
+  assertMerged(join(recovery.path, "after-hooks", "home", ...under), glue, "the home copied after the hooks");
+  assertBothCopiedAgain(recovery);
+});
+
+test("a retire hook that replaces two files of a directory instance's work/ by one file that the stored digest reads like the two, and writes a home note: the work is copied again, and after-hooks/work/ holds the hook's layout", () => {
+  const under = ["pair"];
+  const glue = storedDigestReadsThePairAlike(under);
+  const retire = `import { readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const home = process.env.OATS_INSTANCE_HOME;
+${mergesPair("join(home, 'work', 'pair')", glue)}
+writeFileSync(join(home, 'hook-note.txt'), ${JSON.stringify(HOOK_BYTES)});
+console.log(JSON.stringify({ meta: { retired: true } }));
+`;
+  const f = fixture({ work: "directory", capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "hook-pair-directory");
+  writePair(join(spawned.home, "work", ...under));
+  assert.equal(pairGlue(join(spawned.home, "work", ...under), under), glue, "fixture premise: the files have the mode the premise was shown with");
+
+  const retired = cli(f, ["retire", basename(spawned.home), "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const recovery = JSON.parse(retired.stdout).workRecovery;
+  assert.deepEqual(readdirSync(recoveryRootOf(spawned.home)), [basename(recovery.path)], "one recovery directory");
+  assert.equal(readFileSync(join(recovery.path, "after-hooks", "home", "hook-note.txt"), "utf8"), HOOK_BYTES, "fixture premise: the retire hook ran, and its home note is copied under after-hooks/");
+  assertPair(join(recovery.path, "work", ...under), "the snapshot taken before the hooks");
+  assert.equal(existsSync(join(recovery.path, "after-hooks", "work")), true, "the work is copied again under after-hooks/work/: the hook changed its files, in a way the stored digest does not tell apart");
+  assertMerged(join(recovery.path, "after-hooks", "work", ...under), glue, "the work copied after the hooks");
+  assertBothCopiedAgain(recovery);
+  assert.equal(existsSync(spawned.home), false, "the home is removed");
+});
+
 test("fingerprintTree's digest of a tree whose names are all valid UTF-8 is the one it has always been: a file, a directory with a file, a symbolic link and a name that is not ASCII", () => {
   // A spawn baseline written by an earlier kernel holds such digests, and a retire compares with them.
   // The expected value is the SHA-256 of this byte stream, written out by hand from the algorithm
