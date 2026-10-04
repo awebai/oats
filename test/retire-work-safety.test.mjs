@@ -2005,6 +2005,64 @@ console.log(JSON.stringify({ meta: { retired: true } }));
   assert.equal(existsSync(spawned.home), false, "the home is removed");
 });
 
+// The directory a digest is taken of has permission bits of its own, and no digest held them. A copy
+// of a directory instance's work/ carries them (copyTreeSafe ends with a chmod of the copy); the copy
+// of a worktree and of a home does not.
+
+/** Whether the file system keeps the permission bits 0700 and 0755 on a directory. Where it does
+ *  not, the test is skipped with the reason. On Linux that is a failure. */
+function directoryModesKept(t) {
+  const probe = mkdtempSync(join(tmpdir(), "oats-mode-"));
+  temporaryDirectories.push(probe);
+  const kept = (mode) => { chmodSync(probe, mode); return (lstatSync(probe).mode & 0o7777) === mode; };
+  if (kept(0o700) && kept(0o755)) return true;
+  const reason = "the file system does not keep the permission bits 0700 and 0755 on a directory";
+  assert.notEqual(process.platform, "linux", `this test is not skipped on Linux: ${reason}`);
+  t.skip(reason);
+  return false;
+}
+
+test("a retire hook that changes the permission bits of a directory instance's work/ itself, and writes a home note: the work is copied again, and after-hooks/work has the hook's bits", (t) => {
+  if (!directoryModesKept(t)) return;
+  const KEPT = "bytes the hook leaves alone\n";
+  const retire = `import { chmodSync, lstatSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
+const home = process.env.OATS_INSTANCE_HOME;
+const work = join(home, 'work');
+const seen = { before: lstatSync(work).mode & 0o7777 };
+chmodSync(work, 0o700);
+seen.after = lstatSync(work).mode & 0o7777;
+seen.entries = readdirSync(work);
+seen.kept = readFileSync(join(work, 'kept.txt'), 'utf8');
+writeFileSync(join(home, 'hook-note.txt'), ${JSON.stringify(HOOK_BYTES)});
+writeFileSync(join(dirname(home), 'hook-saw-' + basename(home)), JSON.stringify(seen));
+console.log(JSON.stringify({ meta: { retired: true } }));
+`;
+  const f = fixture({ work: "directory", capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "hook-root-mode");
+  const work = join(spawned.home, "work");
+  const bitsOf = (dir) => lstatSync(dir).mode & 0o7777;
+  write(join(work, "kept.txt"), KEPT);
+  chmodSync(work, 0o755);
+  assert.equal(bitsOf(work), 0o755, "fixture premise: work/ has the bits 0755 before the retire");
+
+  const retired = cli(f, ["retire", basename(spawned.home), "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const recovery = JSON.parse(retired.stdout).workRecovery;
+  assert.deepEqual(readdirSync(recoveryRootOf(spawned.home)), [basename(recovery.path)], "one recovery directory");
+  assert.deepEqual(readJson(join(dirname(spawned.home), `hook-saw-${basename(spawned.home)}`)), { before: 0o755, after: 0o700, entries: ["kept.txt"], kept: KEPT },
+    "fixture premise: the hook found the bits 0755, left 0700, and left the files under work/ as they were");
+  assert.equal(readFileSync(join(recovery.path, "after-hooks", "home", "hook-note.txt"), "utf8"), HOOK_BYTES, "fixture premise: the hook's home note is copied under after-hooks/");
+  assert.equal(bitsOf(join(recovery.path, "work")), 0o755, "the snapshot taken before the hooks has work/ with the bits it had then");
+  assert.equal(readFileSync(join(recovery.path, "work", "kept.txt"), "utf8"), KEPT);
+  const after = join(recovery.path, "after-hooks", "work");
+  assert.equal(existsSync(after), true, "the work is copied again under after-hooks/work/: the hook changed the permission bits of work/ itself");
+  assert.equal(bitsOf(after), 0o700, "the work copied after the hooks has the bits the hook gave work/");
+  assert.equal(readFileSync(join(after, "kept.txt"), "utf8"), KEPT);
+  assertBothCopiedAgain(recovery);
+  assert.equal(existsSync(spawned.home), false, "the home is removed");
+});
+
 test("fingerprintTree's digest of a tree whose names are all valid UTF-8 is the one it has always been: a file, a directory with a file, a symbolic link and a name that is not ASCII", () => {
   // A spawn baseline written by an earlier kernel holds such digests, and a retire compares with them.
   // The expected value is the SHA-256 of this byte stream, written out by hand from the algorithm
