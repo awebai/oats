@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { retireInstance } from "../lib/core.mjs";
+import { FAILED_SPAWN_BRANCH_LEFT, retireInstance } from "../lib/core.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 /** A capability whose retire hook always reports incomplete cleanup. */
@@ -57,6 +57,28 @@ test("--delete-branch is refused before anything happens, also on a quarantine r
     && e.message === "oats retire no longer deletes branches: --delete-branch is not accepted. Retire without it; the branch is left in the repository. Inspect it there and delete it with Git if it is no longer wanted.");
   assert.equal(existsSync(w.home), true, "the quarantined home is kept");
   assert.equal(w.branchTip(), w.tip, "and the branch, with its unpushed commit");
+});
+
+test("oats retire names the branch a quarantine still owes on the line after its item, from the retained home when no worktree step ran", async (t) => {
+  const w = await worktreeInstance(t, "dev-named");
+  await w.retire();
+  const markerPath = join(w.home, ".oats-rollback-incomplete.json");
+  const marker = JSON.parse(readFileSync(markerPath, "utf8"));
+  marker.cleanup.outstanding = { ...marker.cleanup.outstanding, git: ["branch"] };
+  writeFileSync(markerPath, JSON.stringify(marker, null, 2));
+  // The hook is still incomplete, so the worktree step does not run: the receipt has no retention.
+  const json = w.fx.cli(["retire", "dev-named", "--json"]);
+  assert.equal(json.status, 1, json.stderr + json.stdout);
+  const receipt = JSON.parse(json.stdout); // the raw receipt, printed whole
+  assert.equal(receipt.retention, null);
+  assert.ok(receipt.rollbackIncomplete.includes(FAILED_SPAWN_BRANCH_LEFT), JSON.stringify(receipt.rollbackIncomplete));
+  const text = w.fx.cli(["retire", "dev-named"]);
+  assert.equal(text.status, 1, text.stderr + text.stdout);
+  const lines = text.stderr.split("\n");
+  const at = lines.indexOf(`  ${FAILED_SPAWN_BRANCH_LEFT}`);
+  assert.ok(at >= 0, text.stderr);
+  assert.equal(lines[at + 1], `  branch: ${w.meta.branch}`, "the branch the retained home records");
+  assert.equal(w.branchTip(), w.tip, "the branch is left");
 });
 
 /** A capability whose required spawn hook fails; with `commit`, it first commits into the new worktree. */

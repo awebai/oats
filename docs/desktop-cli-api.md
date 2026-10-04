@@ -2485,7 +2485,9 @@ A first retire prints the **raw receipt**, not an envelope:
   spawn's quarantine that still owes the branch the spawn created stays
   incomplete while the branch is there (`the branch the failed spawn created
   is left: OATS does not delete it. Inspect it and delete it with Git if it
-  is not wanted, then retry`; `retention.recordedBranch` names it) or while
+  is not wanted, then retry`; the item names no branch:
+  `retention.recordedBranch` has it when the worktree step ran, otherwise the
+  retained home's `instance.json` `branch`) or while
   Git cannot show it gone (`git branch <b>: could not verify whether it still
   exists (…)`). Such a home cannot be completed from Desktop: the operator
   deletes the branch with Git and retries, or uses `--force` from the CLI.
@@ -2494,7 +2496,10 @@ A first retire prints the **raw receipt**, not an envelope:
   (`the worktree's HEAD changed after it was inspected, so the worktree was
   not removed. The home and the worktree are kept, and so is any recovery the
   retire wrote; retry the retire.`), and a HEAD that cannot be read with
-  `E_WORK_INSPECTION_FAILED`. Both come after effects (hooks, a recovery).
+  `E_WORK_INSPECTION_FAILED`. Either may follow earlier effects of the same
+  retire (hooks run, a recovery copied), and neither says that one happened:
+  an error here is not proof that nothing happened, nor that a recovery
+  exists.
 - `workRecovery` (or `workRecoveries[]`): `{path, classes, bytes, outputs?,
   repoCopy?}`; `outputs: {paths: [{path, bytes}], bytes}` names what was
   copied beyond tracked state, largest first.

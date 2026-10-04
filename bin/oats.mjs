@@ -2459,6 +2459,17 @@ async function spawnCmd() {
   console.log(`  attach: ${r.attach}`);
 }
 
+/** The line naming the branch a FAILED_SPAWN_BRANCH_LEFT item speaks of, on a line of its own: the item names
+ *  none. The receipt's `retention.recordedBranch` when the worktree step ran; otherwise the retained home's
+ *  recorded branch, read here (`local`), or where to read it on the host. Null when no item asks for it. */
+function failedSpawnBranchLine(r, items, { local = false, host } = {}) {
+  if (!items?.includes(FAILED_SPAWN_BRANCH_LEFT)) return null;
+  let name = r.retention?.recordedBranch ?? null;
+  if (!name && local && r.retainedHome) { try { name = JSON.parse(readFileSync(join(r.retainedHome, "instance.json"), "utf8")).branch ?? null; } catch { /* said below */ } }
+  if (name) return `  branch: ${name}`;
+  return r.retainedHome ? `  branch: the "branch" recorded in ${join(r.retainedHome, "instance.json")}${host ? ` on ${host}` : ""}` : null;
+}
+
 function retireCmd() {
   const name = args[1];
   // Refused before anything else: before --plan, a replay, a plan revision or a recorded child is stopped.
@@ -2541,7 +2552,8 @@ function retireCmd() {
   if (r.forcedIncomplete) {
     console.error(`Removed ${r.retired} under --force with cleanup INCOMPLETE — this external state was NOT cleaned up and is now yours to remove by hand:`);
     for (const f of r.forcedIncomplete) console.error(`  ${f}`);
-    if (r.retention?.recordedBranch && r.forcedIncomplete.includes(FAILED_SPAWN_BRANCH_LEFT)) console.error(`  branch: ${r.retention.recordedBranch}`);
+    const branch = failedSpawnBranchLine(r, r.forcedIncomplete, { local: true });
+    if (branch) console.error(branch);
   }
   if (args.includes("--json")) { console.log(JSON.stringify(r, null, 2)); if (r.rollbackIncomplete) process.exit(1); return; }
   // An unsuccessful cleanup retry must NOT read as a completed retirement: the
@@ -2550,8 +2562,8 @@ function retireCmd() {
   if (r.rollbackIncomplete) {
     console.error(`Cleanup for ${r.retired} is INCOMPLETE — the instance home is retained at ${r.retainedHome} because external state may still exist:`);
     for (const f of r.rollbackIncomplete) console.error(`  ${f}`);
-    // The branch the item speaks of, on a line of its own: the item names none.
-    if (r.retention?.recordedBranch && r.rollbackIncomplete.includes(FAILED_SPAWN_BRANCH_LEFT)) console.error(`  branch: ${r.retention.recordedBranch}`);
+    const branch = failedSpawnBranchLine(r, r.rollbackIncomplete, { local: true });
+    if (branch) console.error(branch);
     console.error(`Fix the cause and re-run \`oats retire ${r.retired}\`; the home holds the state that cleanup needs.`);
     process.exit(1);
   }
@@ -3709,6 +3721,8 @@ async function serverRouteCmd() {
     if (r.forcedIncomplete) {
       console.error(`Removed ${r.retired} on ${id} under --force with cleanup INCOMPLETE — this external state was NOT cleaned up and is now yours to remove by hand on ${target.sshHost}:`);
       for (const f of r.forcedIncomplete) console.error(`  ${f}`);
+      const branch = failedSpawnBranchLine(r, r.forcedIncomplete, { host: target.sshHost });
+      if (branch) console.error(branch);
     }
     console.log(`Retired ${r.retired} on ${id}${r.deferred ? " (deferred completion scheduled there)" : ""}${r.rollbackIncomplete ? " — cleanup INCOMPLETE on the server, home retained there" : ""}`);
     for (const recovery of r.workRecoveries || (r.workRecovery ? [r.workRecovery] : [])) {
@@ -3716,7 +3730,13 @@ async function serverRouteCmd() {
       console.log(`  ${recovery.path}${typeof recovery.bytes === "number" ? ` (${formatBytes(recovery.bytes)})` : ""}`);
       for (const line of preservedOutputLines(recovery)) console.log(line);
     }
-    if (r.rollbackIncomplete) { for (const f of r.rollbackIncomplete) console.error(`  ${f}`); console.error(`Fix the cause there and re-run \`oats retire ${r.retired} --server ${id}\`.`); process.exit(1); }
+    if (r.rollbackIncomplete) {
+      for (const f of r.rollbackIncomplete) console.error(`  ${f}`);
+      const branch = failedSpawnBranchLine(r, r.rollbackIncomplete, { host: target.sshHost });
+      if (branch) console.error(branch);
+      console.error(`Fix the cause there and re-run \`oats retire ${r.retired} --server ${id}\`.`);
+      process.exit(1);
+    }
   } else {
     console.log(`oats status — server ${id} (ssh ${r.target.sshHost}, workspace ${r.target.workspace})\n`);
     for (const a of r.agents || []) {
