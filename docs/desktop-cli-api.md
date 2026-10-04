@@ -2577,7 +2577,9 @@ A first retire prints the **raw receipt**, not an envelope:
 
 Refusals (envelopes): `E_PLAN_STALE`, `E_CHILDREN_RUNNING`,
 `E_WORK_PRESERVATION_FAILED` (the home is kept; retry or
-`--discard-worktree`), `E_SESSION_UNKNOWN`, `E_AMBIGUOUS_INSTANCE`,
+`--discard-worktree`), `E_WORK_INSPECTION_FAILED` (the home is kept; the
+message names the entry or the state that could not be read),
+`E_SESSION_UNKNOWN`, `E_AMBIGUOUS_INSTANCE`,
 `E_NO_ROOT`, `E_LIFECYCLE_FAILED`. A recovery whose Git status disagrees with
 the source's carries `details: {home, statusDisagreement: {repo, rows: [{path,
 source, recovery}], total}}` (the first 10 paths). Usage errors are text on
