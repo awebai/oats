@@ -21,7 +21,7 @@ function repository() {
   git(dir, "config", "user.name", "Test");
   return dir;
 }
-const commitIn = (dir) => { git(dir, "-c", "commit.gpgSign=false", "commit", "--quiet", "--allow-empty", "-m", "a commit"); return git(dir, "rev-parse", "HEAD"); };
+const commitIn = (dir, message = "a commit") => { git(dir, "-c", "commit.gpgSign=false", "commit", "--quiet", "--allow-empty", "-m", message); return git(dir, "rev-parse", "HEAD"); };
 /** Point HEAD at a ref by its bytes, as Git stores it. */
 const pointHeadAt = (dir, ref) => writeFileSync(join(dir, ".git", "HEAD"), Buffer.concat([Buffer.from("ref: "), Buffer.isBuffer(ref) ? ref : Buffer.from(ref), Buffer.from("\n")]));
 const isInspectionFailure = (e) => e?.code === "E_WORK_INSPECTION_FAILED";
@@ -94,11 +94,12 @@ test("the HEAD the reader and the plan report is the work tree's, whatever repos
   git(work, "config", "user.email", "test@example.invalid");
   git(work, "config", "user.name", "Test");
   git(work, "symbolic-ref", "HEAD", "refs/heads/selected");
-  const commit = commitIn(work);
+  const commit = commitIn(work, "the work tree's commit");
   writeFileSync(join(home, "instance.json"), JSON.stringify({ instance: "dev-1", agent: "dev", work: "worktree", branch: "selected" }));
   const other = repository();
   git(other, "symbolic-ref", "HEAD", "refs/heads/other");
-  const otherCommit = commitIn(other);
+  const otherCommit = commitIn(other, "the other repository's commit");
+  assert.notEqual(otherCommit, commit, "fixture premise: the two repositories are at two commits");
   const saved = { ...process.env };
   Object.assign(process.env, { GIT_DIR: join(other, ".git"), GIT_WORK_TREE: other, GIT_INDEX_FILE: join(other, ".git", "index") });
   try {
@@ -109,7 +110,6 @@ test("the HEAD the reader and the plan report is the work tree's, whatever repos
     assert.equal(observed.observation.branch, "selected", "the plan's name is the work tree's");
     assert.equal(observed.observation.revision, commit, "beside the work tree's commit");
     assert.equal(observed.recorded.drift, false);
-    assert.notEqual(otherCommit, commit);
   } finally {
     for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
     Object.assign(process.env, saved);
