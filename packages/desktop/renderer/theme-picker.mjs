@@ -40,15 +40,29 @@ const plainKey = event => !event.ctrlKey && !event.metaKey && !event.altKey;
  */
 export function createThemePicker({ doc, themes, current, choose, subscribe = () => () => {},
   onIntent = () => {}, applyFocus = fn => fn() } = {}) {
-  let overlay = null, rows = [], restore = null, life = 0;
+  let overlay = null, rows = [], restore = null, held = null, lastInside = null, life = 0;
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
   const isOpen = () => !!overlay;
 
+  // Focus stays in the picker: a background action that moves focus (Ctrl+F to the roster filter)
+  // is pulled back to where it was inside. Another modal taking over (the palette, the shortcuts
+  // editor, a dialog over this one) keeps its focus.
+  function contain(event) {
+    if (!overlay) return;
+    if (overlay.contains(event.target)) { lastInside = event.target; return; }
+    if (event.target?.closest?.('.palette-overlay, [aria-modal="true"]')) return;
+    (lastInside?.isConnected && overlay.contains(lastInside) ? lastInside : rows[0])?.focus();
+  }
+
+  /** An opener inside a dialog that stays open under the picker (Connections, Remove): focus-return
+   * skips every control under .palette-overlay (a picker's own), so this one is returned to directly. */
+  const stillOpen = el => el?.isConnected && !el.disabled && !!el.closest?.('.palette-overlay');
+
   function close({ restoreFocus = true } = {}) {
     if (!overlay) return;
-    life++; overlay.remove(); overlay = null; rows = [];
-    const opener = restore; restore = null;
-    if (restoreFocus) applyFocus(() => opener?.restore());
+    life++; doc.removeEventListener('focusin', contain); overlay.remove(); overlay = null; rows = []; lastInside = null;
+    const opener = restore, inDialog = held; restore = null; held = null;
+    if (restoreFocus) applyFocus(() => { if (stillOpen(inDialog)) inDialog.focus(); else opener?.restore(); });
   }
 
   /** The marks follow the current choice; the rows and focus stay as they are. */
@@ -69,7 +83,8 @@ export function createThemePicker({ doc, themes, current, choose, subscribe = ()
 
   function open() {
     if (overlay) return; // one dialog, never two
-    onIntent(); restore = takePickerFocusReturn(doc); const mounted = ++life;
+    onIntent(); const prior = doc.activeElement; restore = takePickerFocusReturn(doc); const mounted = ++life;
+    held = stillOpen(prior) ? prior : null; // a palette or Quick Open opener was just dismissed: not still open
     overlay = node('div', undefined, 'palette-overlay theme-picker-overlay');
     const dialog = node('section', undefined, 'theme-picker'), titleId = `theme-picker-title-${mounted}`;
     dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-labelledby', titleId);
@@ -112,7 +127,7 @@ export function createThemePicker({ doc, themes, current, choose, subscribe = ()
       if (to === undefined) return;
       event.preventDefault(); event.stopPropagation(); rows[to].focus();
     });
-    doc.body.append(overlay); mark();
+    doc.body.append(overlay); doc.addEventListener('focusin', contain); mark();
     applyFocus(() => (rows.find(row => row.getAttribute('aria-current') === 'true') || rows[0])?.focus());
   }
 

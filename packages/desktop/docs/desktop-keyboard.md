@@ -128,7 +128,10 @@ palette.
 Inside the theme picker: ↑/↓ move between the themes (wrapping), Home/End go to
 the first and last, Enter, Space or a click chooses (nothing applies before
 that), Escape, the close button or the backdrop closes with nothing changed,
-and Tab / Shift+Tab stay inside it. Focus returns to what had it.
+and Tab / Shift+Tab stay inside it; a background shortcut that moves focus
+(Ctrl+F to the roster filter) cannot take it out. Focus returns to what had
+it, also to a control in a dialog that stays open under the picker (Remove,
+Connections).
 
 F1 was considered as a second palette chord and left out: in a terminal F1
 belongs to programs such as htop and mc.

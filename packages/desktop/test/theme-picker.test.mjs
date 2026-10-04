@@ -9,6 +9,9 @@ import { createThemePicker, themePickerCSS } from '../renderer/theme-picker.mjs'
 import { createPalette } from '../renderer/palette.mjs';
 import { THEMES } from '../renderer/theme.mjs';
 import { TEXT_PAIRS } from '../renderer/contrast-inventory.mjs';
+import { registerAction, handleKeydown } from '../renderer/keybindings.mjs';
+import { createLifecycleDialog } from '../renderer/lifecycle-dialog.mjs';
+import { instance as lifecycleInstance } from './helpers/lifecycle-fixture.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 function fixture(t, { current = 'dark' } = {}) {
@@ -213,3 +216,65 @@ test('no saved theme and the "host" fallback: This computer is marked current, a
   picker.open();
   assert.deepEqual([...doc.querySelectorAll('.theme-picker-row')].map(row => row.getAttribute('aria-current')), [null, null, 'true', null]);
 });
+
+// With the keymap engine and the shell's one window keydown listener present (Linux chords).
+function withEngine(t, f) {
+  const offs = [
+    // The shell's sidebar.focusFilter (Ctrl+F) focuses the roster filter behind the modal.
+    registerAction({ id: 'sidebar.focusFilter', label: 'Filter', context: 'global', run: () => f.doc.getElementById('field').focus() }),
+    registerAction({ id: 'app.themePicker', label: 'Choose a theme…', context: 'global', run: e => { if (!e?.repeat) f.picker.toggle(); } }),
+  ];
+  const listener = event => handleKeydown(event, { isMac: false });
+  f.dom.window.addEventListener('keydown', listener);
+  t.after(() => { offs.forEach(off => off()); f.dom.window.removeEventListener('keydown', listener); });
+  return { chord: (extra = {}) => f.key(' ', { code: 'Space', ctrlKey: true, shiftKey: true, ...extra }) };
+}
+
+test('a background focus chord (Ctrl+F) cannot take focus out of the picker: Tab and Escape keep working', t => {
+  const f = fixture(t), engine = withEngine(t, f);
+  engine.chord();
+  assert.equal(f.overlays().length, 1, 'the chord opens it from the opener');
+  const rows = f.rows(); rows[1].focus();
+  const filter = f.key('f', { ctrlKey: true });
+  assert.equal(filter.defaultPrevented, true, 'the background action ran');
+  assert.equal(f.doc.activeElement, rows[1], 'focus is pulled back to where it was in the picker');
+  rows[3].focus(); f.key('Tab'); assert.equal(f.doc.activeElement, f.doc.querySelector('.theme-picker-close'), 'Tab still wraps inside');
+  f.key('Escape'); assert.equal(f.overlays().length, 0); assert.equal(f.doc.activeElement, f.opener, 'Escape closes and returns focus');
+  // The chord again: opens; a held chord (repeat) does nothing; pressed again, it closes.
+  engine.chord(); assert.equal(f.overlays().length, 1);
+  engine.chord({ repeat: true }); assert.equal(f.overlays().length, 1, 'a repeat neither closes nor reopens');
+  engine.chord(); assert.equal(f.overlays().length, 0); assert.equal(f.doc.activeElement, f.opener);
+  assert.deepEqual(f.chosen, []);
+});
+
+// Opened from a dialog that stays open under it: focus-return skips controls under .palette-overlay,
+// so the picker returns focus to that control itself.
+const dialogs = {
+  'Remove/Stop (the real lifecycle dialog)': f => {
+    const dialog = createLifecycleDialog({ doc: f.doc, request: () => new Promise(() => {}) });
+    dialog.open({ operation: 'stop', instance: lifecycleInstance, workspace: 'team' });
+    return { opener: f.doc.querySelector('.lifecycle-close'), dispose: () => dialog.dispose() };
+  },
+  'Connections (its overlay and close button)': f => {
+    const overlay = f.doc.createElement('div'); overlay.className = 'palette-overlay forge-overlay';
+    overlay.innerHTML = '<section role="dialog" aria-modal="true" aria-label="Settings"><button type="button">Close settings</button></section>';
+    f.doc.body.append(overlay); const opener = overlay.querySelector('button'); opener.focus();
+    return { opener, dispose: () => overlay.remove() };
+  },
+};
+for (const [name, mount] of Object.entries(dialogs)) {
+  for (const how of ['Escape', 'the chord', 'the close button', 'a choice']) test(`opened from ${name}: closing by ${how} returns focus to its control`, t => {
+    const f = fixture(t), engine = withEngine(t, f), under = mount(f);
+    t.after(() => under.dispose());
+    assert.equal(f.doc.activeElement, under.opener);
+    engine.chord(); assert.equal(f.overlays().length, 1); assert.ok(f.rows().includes(f.doc.activeElement));
+    if (how === 'Escape') f.key('Escape');
+    else if (how === 'the chord') engine.chord();
+    else if (how === 'the close button') f.doc.querySelector('.theme-picker-close').click();
+    else f.rows()[0].click();
+    assert.equal(f.overlays().length, 0);
+    assert.ok(under.opener.isConnected, 'the dialog under it stays open');
+    assert.equal(f.doc.activeElement, under.opener, 'focus is back on its control');
+    assert.deepEqual(f.chosen, how === 'a choice' ? ['light'] : []);
+  });
+}
