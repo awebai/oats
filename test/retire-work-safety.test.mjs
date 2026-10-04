@@ -1624,6 +1624,9 @@ writeOperation(join(git('rev-parse', '--absolute-git-dir').trim(), 'rebase-merge
   write(join(work, ".git"), `gitdir: ${admin} \n`);
   assert.equal(execFileSync("git", ["-C", work, "rev-parse", "--absolute-git-dir"], { encoding: "utf8" }), `${admin} \n`, "fixture premise: Git prints the worktree's Git directory with its trailing space");
   mkdirSync(admin);
+  // The retire reads the .git file's path trimmed too (worktreeAdminMissing): it finds a HEAD here, so the
+  // worktree is not taken for one whose admin entry is gone.
+  nodeFs.copyFileSync(join(`${admin} `, "HEAD"), join(admin, "HEAD"));
   nodeFs.copyFileSync(join(`${admin} `, "index"), join(admin, "index"));
   const head = headOf(work);
   write(join(admin, "rebase-merge", "head-name"), `${execFileSync("git", ["-C", work, "symbolic-ref", "HEAD"], { encoding: "utf8" }).trim()}\n`);
