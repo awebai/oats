@@ -3,7 +3,7 @@
 // fields, but renderer tests inject them directly — a dropped or typo'd
 // projection field would stay green there. Extract the REAL projection
 // function from server/oats-web.mjs via block markers (house pattern,
-// keySendError) and assert the relation contract fields end to end.
+// as TMUXTGT) and assert the relation contract fields end to end.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -110,7 +110,7 @@ test("instance routes: same name across TWO ROOTS in one workspace — home qual
     ["w2", { instances: [{ instance: "dev-1", home: "/other/agents/dev/instances/dev-1" }] }],
   ]));
   // exact home qualifier → precisely that instance (privileged routes:
-  // harvest cwd, keys/interrupt tmux target must never hit the twin)
+  // the harvest cwd and the home a start launches must never be the twin's)
   assert.equal(findInstance("dev-1", "w1", twinA.home), twinA);
   assert.equal(findInstance("dev-1", "w1", twinB.home), twinB);
   // bare name with an intra-workspace twin → AMBIGUOUS sentinel, and the
