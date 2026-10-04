@@ -855,7 +855,7 @@ process.stdout.write(${JSON.stringify(`${answer}\n`)});
   } finally { dep.cleanup(); }
 });
 
-test("the tmux that creates the session is the one the creating process's own PATH finds, in PATH order: an absolute entry, a relative one, an empty one", () => {
+test("the tmux that creates the session is the one the creating process's own PATH finds, in PATH order: an absolute entry, a relative one, an empty one, and an empty PATH, which is one empty entry and not an absent PATH", () => {
   const socket = join(base, "creator.sock");
   const ran = [];
   // No tmux runs: a server with other sessions, and a creation that records which executable ran.
@@ -876,8 +876,199 @@ test("the tmux that creates the session is the one the creating process's own PA
     writeFileSync(here, "#!/bin/sh\nexit 1\n"); chmodSync(here, 0o755);
     process.env.PATH = `:${join(base, "creator-abs")}:${ambient}`;
     ensureOatsTmuxSession("creator", base, io);
-    assert.deepEqual(ran, [absolute, relative, here]);
+    process.env.PATH = "";
+    ensureOatsTmuxSession("creator", base, io);
+    assert.deepEqual(ran, [absolute, relative, here, here]);
   } finally { process.env.PATH = ambient; rmSync(here, { force: true }); }
+});
+
+// ---- the creation boundary, with no tmux run: everything goes through the injected exec ----
+/** One entry of `tmux show-environment -g -s`, as a tmux that prints the line as it is writes it. */
+const entry = (name, value) => `${name}="${value.replace(/[$"`\\]/g, "\\$&")}"; export ${name};\n`;
+/** A failed call, as execFileSync throws it: `marks` are what Node sets on the error. */
+const failedCall = (marks) => Object.assign(new Error("Command failed: tmux"), { stdout: "", stderr: "", ...marks });
+let ioCallerHome;
+/** An instance recorded on a tmux server that is never run: what it holds is what `source` says. */
+const ioCaller = async () => (ioCallerHome ??= await makeHome("io-caller", { on: join(base, "io-recorded.sock") }));
+/**
+ * ensureOatsTmuxSession(session) in this process, with no tmux run. `listed` is the lookup's answer
+ * (default: a server with another session; an Error is thrown). `caller` makes this process that
+ * instance, and `source` is then what its recorded server's show-environment gives (text, or an
+ * Error to throw). `own` sets or removes (undefined) variables of this process for the call. A
+ * creation is recorded; a bare name is run as Node runs one, looked up in the PATH of the
+ * environment passed, and only when that PATH is `decoy`, a directory holding nothing but a script.
+ */
+function creation(session, { caller, source, own = {}, listed, decoy } = {}) {
+  const socket = join(base, `${session}.sock`);
+  const created = [];
+  const io = { exec: (bin, args, options) => {
+    if (args.includes("list-sessions")) { const answer = listed ?? `someone-else\t${socket}\n`; if (answer instanceof Error) throw answer; return answer; }
+    if (args.includes("show-environment")) { if (source instanceof Error) throw source; return Buffer.from(source); }
+    if (!args.includes("new-session")) return "";
+    created.push({ bin, address: args.slice(1, 3).join(" "), env: options.env });
+    return bin === "tmux" && decoy && options.env.PATH === decoy ? execFileSync(bin, args, options) : `${socket}\t@1\n`;
+  } };
+  const ambient = { ...process.env };
+  if (caller) Object.assign(process.env, { OATS_INSTANCE: caller.name, OATS_INSTANCE_HOME: caller.home });
+  for (const [name, value] of Object.entries(own)) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
+  try { return { answer: ensureOatsTmuxSession(session, base, io), code: null, message: "", created, socket }; }
+  catch (e) { return { answer: null, code: e.code ?? null, message: String(e.message), created, socket }; }
+  finally {
+    for (const key of Object.keys(process.env)) if (!(key in ambient)) delete process.env[key];
+    Object.assign(process.env, ambient);
+  }
+}
+/** A directory whose only program is a `tmux` that is not tmux: it says that it ran and answers as a creation would. */
+function decoyTmux(name) {
+  const dir = join(base, `${name}-decoy`), ran = join(base, `${name}-decoy-ran`);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "tmux"), `#!/bin/sh\necho ran >> ${shq(ran)}\nprintf '%s\\t@1\\n' ${shq(join(base, `${name}-decoy.sock`))}\n`);
+  chmodSync(join(dir, "tmux"), 0o755);
+  return { dir, ran: () => existsSync(ran) };
+}
+
+for (const [title, slug, text] of [
+  ["PATH is not set", "nopath", /PATH is not set in this process/],
+  ["its PATH holds no tmux", "nomatch", /no tmux was found on this process's PATH/],
+]) test(`a creator that cannot name a tmux through its own PATH is refused at the creation, and the PATH of the environment it passes never chooses the executable: ${title}`, async () => {
+  const caller = await ioCaller();
+  const nothing = join(base, "no-tmux-here");
+  mkdirSync(nothing, { recursive: true });
+  const own = { PATH: slug === "nopath" ? undefined : nothing };
+  // An instance: the environment selected for the creation is its recorded server's, and that
+  // server's PATH holds a decoy. Then a creator that is no instance: the environment is its own.
+  const decoy = decoyTmux(slug);
+  const selected = creation(`${slug}-selected`, { caller, source: entry("HOME", "/fixture/home") + entry("PATH", decoy.dir), own, decoy: decoy.dir });
+  const ownEnvironment = creation(`${slug}-own`, { own });
+  const outcome = (got) => ({ code: got.code, tmuxRun: got.created.map((call) => call.bin) });
+  const refused = { code: "E_RUNTIME_ENDPOINT_UNKNOWN", tmuxRun: [] };
+  assert.deepEqual({ selected: outcome(selected), decoyRan: decoy.ran(), own: outcome(ownEnvironment) }, { selected: refused, decoyRan: false, own: refused });
+  for (const got of [selected, ownEnvironment]) {
+    assert.match(got.message, text);
+    assert.match(got.message, /with a PATH that holds tmux/, "the refusal names the fix");
+    assert.equal([decoy.dir, nothing, "/fixture/home"].some((value) => got.message.includes(value)), false, "no value of any variable is in the refusal");
+  }
+});
+
+test("with the session already there no executable has to be chosen: a creator with no PATH, or with a PATH that holds no tmux, gets the session's socket and nothing is refused", () => {
+  const nothing = join(base, "no-tmux-here");
+  mkdirSync(nothing, { recursive: true });
+  for (const [session, own] of [["there-nopath", { PATH: undefined }], ["there-nomatch", { PATH: nothing }]]) {
+    const socket = join(base, `${session}.sock`);
+    const got = creation(session, { own, listed: `${session}\t${socket}\n` });
+    assert.deepEqual({ answer: got.answer, code: got.code, created: got.created.length }, { answer: socket, code: null, created: 0 });
+  }
+});
+
+test("the session lookup takes tmux's answer only from a call that exited by itself: a lost-server line left by a call that timed out, overflowed or was ended by a signal is not an answer, and no session is created on it", () => {
+  // What Node reports besides a plain exit. A status alone is not enough: an error that has one and
+  // also says timeout, overflow or signal is not a completed call.
+  const CUT = {
+    "timed out": { code: "ETIMEDOUT", status: null, signal: "SIGTERM" },
+    "more output than the buffer holds": { code: "ENOBUFS", status: null, signal: "SIGTERM" },
+    "ended by a signal": { status: null, signal: "SIGKILL" },
+    "a status and a timeout": { code: "ETIMEDOUT", status: 1, signal: null },
+    "a status and an overflow": { code: "ENOBUFS", status: 1, signal: null },
+    "a status and a signal": { status: 1, signal: "SIGTERM" },
+    "no status at all": {},
+  };
+  const lookup = (session, marks, stderr) => {
+    const got = creation(session, { listed: failedCall({ ...marks, stderr }) });
+    return { code: got.code, created: got.created.map((call) => call.address), answered: got.answer !== null };
+  };
+  for (const [form, line] of [["none", (socket) => `no server running on ${socket}\n`], ["nofile", (socket) => `error connecting to ${socket} (No such file or directory)\n`]]) {
+    const stderr = line(join(base, "cut-lost.sock"));
+    assert.deepEqual(
+      Object.fromEntries(Object.entries(CUT).map(([what, marks], i) => [what, lookup(`cut-${form}-${i}`, marks, stderr)])),
+      Object.fromEntries(Object.keys(CUT).map((what) => [what, { code: "E_RUNTIME_ENDPOINT_UNKNOWN", created: [], answered: false }])),
+      `tmux's line was: ${stderr.trim()}`);
+    // The kept case: tmux exited by itself with that line. There is no server, so the session is created by name.
+    assert.deepEqual(lookup(`cut-${form}-completed`, { status: 1, signal: null }, stderr), { code: null, created: ["-L oats"], answered: true });
+  }
+  // What a cut-off lookup says: that the call did not end by itself, with no claim about the server.
+  const timedOut = creation("cut-message", { listed: failedCall({ code: "ETIMEDOUT", status: null, signal: "SIGTERM", stderr: `no server running on ${join(base, "cut-lost.sock")}\n` }) });
+  assert.match(timedOut.message, /could not read the OATS tmux server for session cut-message: tmux list-sessions did not exit by itself \(ETIMEDOUT\)/);
+});
+
+test("a failed read of the recorded server's environment is discarded whole, even when what it printed looks complete: the creation is refused", async () => {
+  const caller = await ioCaller();
+  const listing = entry("HOME", "/fixture/home") + entry("PATH", "/fixture/bin") + entry("FIXTURE_KEPT", "kept");
+  const FAILED = {
+    "exited 1": { status: 1, signal: null },
+    "timed out": { code: "ETIMEDOUT", status: null, signal: "SIGTERM" },
+    "more output than the buffer holds": { code: "ENOBUFS", status: null, signal: "SIGTERM" },
+  };
+  const read = (session, source) => {
+    const got = creation(session, { caller, source });
+    return { code: got.code, unread: /could not be read/.test(got.message), created: got.created.length };
+  };
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(FAILED).map(([what, marks], i) => [what, read(`failed-read-${i}`, failedCall({ ...marks, stdout: Buffer.from(listing), stderr: Buffer.alloc(0) }))])),
+    Object.fromEntries(Object.keys(FAILED).map((what) => [what, { code: "E_RUNTIME_ENDPOINT_UNKNOWN", unread: true, created: 0 }])));
+  // The same text from a call that succeeded is the recorded server's environment, and the session is created with it.
+  const succeeded = creation("failed-read-ok", { caller, source: listing });
+  assert.equal(succeeded.code, null, succeeded.message);
+  assert.equal(succeeded.created[0]?.env.FIXTURE_KEPT, "kept");
+});
+
+test("the session an instance creates is addressed with the creator's TMUX_TMPDIR, never the recorded server's: the environment of the creation call", async () => {
+  const caller = await ioCaller();
+  const source = entry("HOME", "/fixture/home") + entry("PATH", "/fixture/bin") + entry("TMUX_TMPDIR", "/fixture/recorded-tmp") + entry("FIXTURE_KEPT", "kept");
+  // The recorded server has one value and the creator another: the creator's.
+  let got = creation("tmpdir-other", { caller, source, own: { TMUX_TMPDIR: "/fixture/creator-tmp" } });
+  assert.equal(got.code, null, got.message);
+  assert.deepEqual({ tmpdir: got.created[0]?.env.TMUX_TMPDIR, kept: got.created[0]?.env.FIXTURE_KEPT }, { tmpdir: "/fixture/creator-tmp", kept: "kept" });
+  // The creator has none: the name is absent, whatever the recorded server holds.
+  got = creation("tmpdir-none", { caller, source, own: { TMUX_TMPDIR: undefined } });
+  assert.equal(got.code, null, got.message);
+  assert.deepEqual({ present: "TMUX_TMPDIR" in (got.created[0]?.env ?? {}), kept: got.created[0]?.env.FIXTURE_KEPT }, { present: false, kept: "kept" });
+});
+
+test("a recorded server's HOME, XDG_CONFIG_HOME, PATH or SHELL that the reader left out refuses the creation, each of the four: the message names the variable and not its value; a server that simply has none of them is copied as it is", async () => {
+  const caller = await ioCaller();
+  const carried = { HOME: "/fixture/home", XDG_CONFIG_HOME: "/fixture/config", PATH: "/fixture/bin", SHELL: "/bin/sh" };
+  const LEFT_OUT = "/fixture/$synthetic/left-out"; // a value with a `$` is left out by the reader
+  const outcome = (name) => {
+    const got = creation(`leftout-${name.toLowerCase().replace(/_/g, "-")}`, { caller, source: Object.entries({ ...carried, [name]: LEFT_OUT }).map(([n, value]) => entry(n, value)).join("") });
+    return { code: got.code, names: got.message.includes(`has a ${name} that cannot be carried over`), value: got.message.includes("synthetic"), created: got.created.length };
+  };
+  assert.deepEqual(
+    Object.fromEntries(Object.keys(carried).map((name) => [name, outcome(name)])),
+    Object.fromEntries(Object.keys(carried).map((name) => [name, { code: "E_RUNTIME_ENDPOINT_UNKNOWN", names: true, value: false, created: 0 }])));
+  // Left out is not absent: a recorded server without any of the four is a server to copy faithfully.
+  const without = creation("leftout-none", { caller, source: entry("FIXTURE_KEPT", "kept") });
+  assert.equal(without.code, null, without.message);
+  assert.deepEqual(Object.keys(without.created[0]?.env ?? {}).filter((name) => name in carried), []);
+  // And with all four carried, the session is created with them.
+  const all = creation("leftout-all", { caller, source: Object.entries(carried).map(([n, value]) => entry(n, value)).join("") });
+  assert.equal(all.code, null, all.message);
+  assert.deepEqual(Object.fromEntries(Object.keys(carried).map((name) => [name, all.created[0]?.env[name]])), carried);
+});
+
+test("a restart in place run from inside an instance gives tmux the client environment a window creation gets: the caller's PATH without a home's shim directory, and the locale names, and nothing else of the caller", async () => {
+  const caller = await ioCaller();
+  const socket = join(base, "respawn.sock");
+  const target = await makeHome("respawn-target", { on: socket });
+  const shim = join(caller.home, ".oats", "bin");
+  const calls = [];
+  // No tmux runs: the recorded pane is there with a shell and no harness, so the start reuses it.
+  const io = { exec: (binary, args, options) => {
+    if (binary === "ps") return "100 1 /bin/zsh\n";
+    if (args.includes("list-panes")) return "%1\t0\tzsh\t100\n";
+    if (args.includes("list-sessions")) return `${SESSION}\t${socket}\n`;
+    if (args.includes("list-windows")) return "hq\nrespawn-target\n";
+    if (args.includes("respawn-pane") || args.includes("new-window")) { calls.push({ call: args.includes("respawn-pane") ? "respawn-pane" : "new-window", env: options.env ?? null }); return "@1\n"; }
+    return "";
+  } };
+  const ambient = { ...process.env };
+  Object.assign(process.env, { OATS_INSTANCE: caller.name, OATS_INSTANCE_HOME: caller.home, FIXTURE_SECRET: "s3cret", PATH: `${shim}:${ambient.PATH}`, LANG: "C.UTF-8" });
+  delete process.env.LC_ALL; delete process.env.LC_CTYPE;
+  try { startInstanceSession(target.home, { io }); }
+  finally {
+    for (const key of Object.keys(process.env)) if (!(key in ambient)) delete process.env[key];
+    Object.assign(process.env, ambient);
+  }
+  assert.deepEqual(calls, [{ call: "respawn-pane", env: { PATH: ambient.PATH, LANG: "C.UTF-8" } }]);
 });
 
 test("the stage of a start's refusal, pinning the existing order: a launch hook that does not declare launchPreview has already run and its warning is already an event, a preview-aware one has run only as a preview, and nothing is stopped, no launch state is written and nothing is created", async () => {
