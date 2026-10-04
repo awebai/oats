@@ -15,8 +15,11 @@
 // cadence itself is proven with fake timers in test/refresh-loop.test.mjs.
 // The config is re-read on every invocation and every poll, so the probe, the
 // feature list and the gated set can change mid-run.
-// Nothing here touches tmux state: the fixture's tmux target does not exist, so
-// the liveness child reports the seat as not running.
+// Nothing here touches tmux state: PATH holds no tmux, so the liveness child
+// cannot read the seat's target. With `tmux: true` a fake tmux stands on PATH
+// instead: it records the environment it was started with and answers as a
+// server that is not running. With `recordEnvironment: true` the fake oats
+// logs the environment of each call too.
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, realpathSync, readFileSync, renameSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
@@ -46,7 +49,7 @@ const dir = a.includes('--dir') ? a[a.indexOf('--dir') + 1] : cfg.deployment;
 const fixture = name => JSON.parse(readFileSync(scriptDir + '/' + name + '.json', 'utf8').replaceAll(${JSON.stringify(FIXTURE_DEPLOYMENT)}, dir));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const observation = () => a.includes('--max-age') ? { observation: { observedAt: ${JSON.stringify(FAKE_OBSERVED_AT)}, reused: a[a.indexOf('--max-age') + 1] !== '0' } } : {};
-appendFileSync(log, JSON.stringify({ id, verb, argv: a, start, phase: 'start' }) + '\\n');
+appendFileSync(log, JSON.stringify({ id, verb, argv: a, start, phase: 'start', ...(cfg.recordEnvironment ? { env: process.env } : {}) }) + '\\n');
 // Gated: hold after the start line until released by id, or until the verb is no longer gated.
 while ((config().gated || []).includes(verb) && !existsSync(scriptDir + '/go/' + id)) await sleep(5);
 let out;
@@ -70,6 +73,13 @@ process.stdout.write(JSON.stringify(out));
 process.exit(out?.ok === false ? 1 : 0);
 `;
 
+const FAKE_TMUX = `#!${process.execPath}
+import { appendFileSync } from 'node:fs';
+appendFileSync(new URL('./tmux-calls.jsonl', import.meta.url), JSON.stringify({ argv: process.argv.slice(2), env: process.env }) + '\\n');
+process.stderr.write('no server running on /nonexistent/tmux-socket\\n');
+process.exit(1);
+`;
+
 async function freePort() {
   const socket = createServer(); socket.listen(0, '127.0.0.1'); await once(socket, 'listening');
   const port = socket.address().port; await new Promise(resolve => socket.close(resolve));
@@ -79,8 +89,10 @@ async function freePort() {
 /** Boot a server for one temp deployment. `probe` mutates the fixture probe (e.g. adds a feature);
  * `gated` names the verbs whose calls block until the test releases them; `extra` registers that
  * many more deployments (`deployments`, each its own --dir, in order); `empty` lists the indexes
- * (into `deployments`) whose `status` is an empty deployment's answer. */
-export async function startLoadPathServer({ probe = v => v, gated = [], extra = 0, empty = [] } = {}) {
+ * (into `deployments`) whose `status` is an empty deployment's answer. `env` is given the directory
+ * that holds the fakes (`dir`) and returns names laid over the server's environment;
+ * `recordEnvironment` and `tmux` are described at the top. */
+export async function startLoadPathServer({ probe = v => v, gated = [], extra = 0, empty = [], env = () => ({}), recordEnvironment = false, tmux = false } = {}) {
   const temp = realpathSync(mkdtempSync(join(tmpdir(), 'oats-load-path-')));
   const deployment = join(temp, 'workspace'); mkdirSync(join(deployment, 'agents'), { recursive: true });
   writeFileSync(join(deployment, 'oats-local.yaml'), 'workspace: fixture\n');
@@ -94,18 +106,20 @@ export async function startLoadPathServer({ probe = v => v, gated = [], extra = 
   const script = join(temp, 'script'); mkdirSync(join(script, 'go'), { recursive: true });
   for (const name of ['status', 'workspace-status', 'souls', 'capabilities', 'inspect-soul', 'inspect-home']) writeFileSync(join(script, `${name}.json`), readFileSync(join(FIXTURES, `${name}.json`)));
   const version = probe(JSON.parse(readFileSync(join(FIXTURES, 'version.json'), 'utf8')));
-  const config = { version, gated: [...gated], deployment, emptyDirs: empty.map(index => deployments[index]) };
+  const config = { version, gated: [...gated], deployment, emptyDirs: empty.map(index => deployments[index]), recordEnvironment };
   // Atomic: fakes read the config at every start and every gate poll; a truncate-then-write would let one read it half-written.
   const writeConfig = () => { writeFileSync(join(script, 'config.json.tmp'), JSON.stringify(config)); renameSync(join(script, 'config.json.tmp'), join(script, 'config.json')); };
   writeConfig();
   const log = join(temp, 'calls.jsonl'); writeFileSync(log, '');
   const fake = join(temp, 'oats'); writeFileSync(fake, FAKE, { mode: 0o700 });
+  const tmuxLog = join(temp, 'tmux-calls.jsonl'); writeFileSync(tmuxLog, '');
+  if (tmux) writeFileSync(join(temp, 'tmux'), FAKE_TMUX, { mode: 0o700 });
   writeFileSync(join(temp, 'package.json'), '{"type":"module"}'); // the extensionless fake is ESM whatever the temp path
   const port = await freePort();
   const proc = spawn(process.execPath, [SERVER, 'start', '--port', String(port), ...deployments.flatMap(dir => ['--dir', dir])], {
     detached: true, stdio: ['ignore', 'ignore', 'pipe'],
     env: { ...process.env, OATS_DESKTOP_OATS_BIN: fake, FAKE_SCRIPT_DIR: script, FAKE_LOG: log, PATH: '/nonexistent', SHELL: '/bin/false',
-      OATS_INSTANCE_HOME: undefined, OATS_INSTANCE: undefined, OATS_DEPLOYMENT: undefined },
+      OATS_INSTANCE_HOME: undefined, OATS_INSTANCE: undefined, OATS_DEPLOYMENT: undefined, ...env({ dir: temp }) },
   });
   let stderr = ''; proc.stderr.on('data', data => { stderr += data; });
   const base = `http://127.0.0.1:${port}`;
@@ -118,12 +132,13 @@ export async function startLoadPathServer({ probe = v => v, gated = [], extra = 
     if (!ready) await new Promise(resolve => setTimeout(resolve, 50));
   }
   if (!ready) throw new Error(`server never listened: ${stderr}`);
-  /** Every call so far, in start order: { id, verb, argv, start, end } with `end` null while it runs (or waits at its gate). */
+  /** Every call so far, in start order: { id, verb, argv, start, end } with `end` null while it runs (or waits at its gate);
+   * `env` too under `recordEnvironment`. */
   const calls = () => {
     const byId = new Map();
     for (const line of readFileSync(log, 'utf8').split('\n').filter(Boolean)) {
       const row = JSON.parse(line);
-      if (row.phase === 'start') byId.set(row.id, { id: row.id, verb: row.verb, argv: row.argv, start: row.start, end: null });
+      if (row.phase === 'start') byId.set(row.id, { id: row.id, verb: row.verb, argv: row.argv, start: row.start, end: null, ...(row.env ? { env: row.env } : {}) });
       else if (byId.has(row.id)) byId.get(row.id).end = row.end;
     }
     return [...byId.values()];
@@ -141,6 +156,10 @@ export async function startLoadPathServer({ probe = v => v, gated = [], extra = 
   const release = id => writeFileSync(join(script, 'go', id), '');
   return {
     deployment, deployments, base, ws, get, post, calls, until, config, pending, release,
+    /** The directory that holds the fakes, as `env` was given it. */
+    dir: temp,
+    /** Every start of the fake tmux so far: { argv, env }. */
+    tmuxCalls: () => readFileSync(tmuxLog, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line)),
     /** The HTTP status and body of a GET, for refusals. */
     async getStatus(path) { const response = await fetch(base + path); return { status: response.status, body: await response.json() }; },
     /** Change the fake's config for every invocation from now on. */

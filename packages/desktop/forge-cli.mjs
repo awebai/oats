@@ -7,14 +7,17 @@ import { performance } from 'node:perf_hooks';
 import { delimiter, isAbsolute, join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { hostName, loginName, object, PR_FIELDS, pullRequest, repoPath, branchName } from './renderer/forge-contract.mjs';
+import { cliEnvironment } from './cli-environment.mjs';
 
 const nativeKeys = ['HOME', 'USER', 'LOGNAME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'PATH',
   'GH_CONFIG_DIR', 'XDG_CONFIG_HOME', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS',
   'DISPLAY', 'WAYLAND_DISPLAY', 'SECURITYSESSIONID', 'SSL_CERT_FILE', 'SSL_CERT_DIR',
   'HTTPS_PROXY', 'HTTP_PROXY', 'ALL_PROXY', 'NO_PROXY', 'https_proxy', 'http_proxy', 'all_proxy', 'no_proxy'];
+/** The allow-list, picked from what any program the Desktop starts gets (cli-environment.mjs):
+ * of these names only PATH can hold what the Desktop's packaging added. */
 export function forgeEnvironment(source = process.env, interactive = false) {
-  const env = {};
-  for (const key of nativeKeys) if (typeof source[key] === 'string') env[key] = source[key];
+  const env = {}, user = cliEnvironment(source);
+  for (const key of nativeKeys) if (typeof user[key] === 'string') env[key] = user[key];
   Object.assign(env, { GH_NO_UPDATE_NOTIFIER: '1', GH_NO_EXTENSION_UPDATE_NOTIFIER: '1', NO_COLOR: '1', LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8' });
   if (interactive) env.TERM = 'xterm-256color';
   else env.GH_PROMPT_DISABLED = '1';

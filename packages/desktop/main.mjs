@@ -37,6 +37,7 @@ import { validateWorkspace, workspaceSuggestions, parseRecents, pushRecent, deci
 import { workspaceNotServed } from "./renderer/deployment-header.mjs";
 import { appMenuTemplate } from "./app-menu.mjs";
 import { resolveLoginPath } from "./login-path.mjs";
+import { cliEnvironment } from "./cli-environment.mjs";
 import { pickerDefaultPath, workspacePickerCandidates, cliPickerCandidates, parseLastWorkspaceParent, lastWorkspaceParentState } from "./picker-default-path.mjs";
 import { proxyReadiness } from './readiness-proxy.mjs';
 import { proxySpawnPreview } from './spawn-preview-proxy.mjs';
@@ -98,13 +99,21 @@ const knowDirs = (dirs) => { for (const d of dirs) if (typeof d === "string" && 
 // git). Resolved once at startup, BEFORE anything is spawned, and merged into
 // this process's own PATH, so the backend server, every oats call, the CLI
 // probe, tmux and terminals inherit it. Only PATH is taken from the shell.
+// The shell itself is started with the cleaned environment (cli-environment.mjs),
+// like every other program main starts. What it answers is not assumed clean: a
+// profile can print an entry under the AppImage's mount, and this process's own
+// PATH is whatever the merge returns. Each child is filtered when it starts; gh's
+// environment is the one copy made at module load, so its PATH is taken again
+// here from this process's environment, which still has APPDIR.
 let loginPath = { source: "inherited", error: null };
 async function applyLoginPath() {
-  const r = await resolveLoginPath({ env: process.env });
+  const r = await resolveLoginPath({ env: cliEnvironment(process.env) });
   loginPath = { source: r.source, error: r.error };
   if (r.source !== "login-shell") { console.error(`oats-desktop: keeping the inherited PATH: ${r.error}`); return; }
   process.env.PATH = r.path;
-  forgeEnv.PATH = r.path; // the one environment copied at module load
+  const path = forgeEnvironment().PATH;
+  if (path === undefined) delete forgeEnv.PATH;
+  else forgeEnv.PATH = path;
 }
 
 // ---- backend server management ----------------------------------------
@@ -130,6 +139,12 @@ const serverHost = createServerHost({
       cwd: dirs[0] ?? homedir(),
       // process.execPath is the packaged Electron executable. The backend
       // and its collector children must run as Node, not relaunch the app.
+      // This is the one child that gets this process's whole environment: the
+      // executable starts as it always did (on an AppImage that includes the
+      // library path into the mount), and the backend then drops what the
+      // Desktop and its packaging added before it loads anything else
+      // (server/own-environment.mjs). Every other program main starts gets
+      // cliEnvironment(process.env), computed when it starts.
       env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
     });
     child.stdout.on("data", (d) => process.stdout.write(`[oats-desktop-server] ${d}`));
@@ -631,7 +646,7 @@ const terminalBroker = createTerminalOwnerBroker({ rendererUrl: RENDERER_URL, co
 invalidateTerminalPreparations = () => terminalBroker.invalidatePreparations();
 installTerminalHandlers(ipcMain, terminalBroker);
 
-const tmuxRun = (args) => execFileSync("tmux", args, { stdio: "ignore", timeout: 4000 });
+const tmuxRun = (args) => execFileSync("tmux", args, { stdio: "ignore", timeout: 4000, env: cliEnvironment(process.env) });
 
 /** Sweep crashed Desktop viewers on one socket (dead oatsdesk-<pid>- owners only).
  * Startup/quit sweep the default socket; opening a terminal also sweeps its
@@ -639,7 +654,7 @@ const tmuxRun = (args) => execFileSync("tmux", args, { stdio: "ignore", timeout:
 function sweepOrphanViewers(socket) {
   try {
     const prefix = tmuxSocketArgs(socket);
-    const names = execFileSync("tmux", [...prefix, "list-sessions", "-F", "#{session_name}"], { encoding: "utf8", timeout: 4000 })
+    const names = execFileSync("tmux", [...prefix, "list-sessions", "-F", "#{session_name}"], { encoding: "utf8", timeout: 4000, env: cliEnvironment(process.env) })
       .split("\n").filter(Boolean);
     const swept = sweepViewers({
       listSessions: () => names,

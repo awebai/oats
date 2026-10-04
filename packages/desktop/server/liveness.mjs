@@ -1,9 +1,8 @@
 /** Terminal-target liveness for kernel-reported rows. This is unchanged,
  * v2-agnostic terminal observation: it consults tmux for the exact recorded
- * target, never deployment files. It runs out of the serving process
- * (see oats-web.mjs) so a slow terminal server cannot stall key passthrough. */
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+ * target, never deployment files. A library only: the program that runs it out
+ * of the serving process is liveness-main.mjs (see oats-web.mjs), so a slow
+ * terminal server cannot stall request handling. */
 import { createTmuxStatusReader, DEFAULT_TMUX_SESSION } from './tmux-status.mjs';
 import { unsupportedSession } from '../renderer/instance-presentation.mjs';
 
@@ -22,8 +21,4 @@ export function observeLiveness(rows, { tmuxReader = createTmuxStatusReader(), s
     const { tmux: observed, running, runtimeState, runtimeError } = tmuxReader({ instance: row.instance, tmux }, session);
     return { tmux: observed, running, runtimeState, ...(runtimeError ? { runtimeError: String(runtimeError).slice(0, 300) } : {}) };
   });
-}
-
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  process.stdout.write(JSON.stringify(observeLiveness(JSON.parse(readFileSync(0, 'utf8')))));
 }

@@ -79,7 +79,9 @@ login shell once (`$SHELL -ilc`, 3 s timeout) and puts its PATH in front of
 the inherited one, so the CLI probe, every `oats` call, a CLI picked with
 **Choose oats…**, and the tmux server and terminals the Desktop starts all run
 with your shell's PATH. Only PATH is taken from the shell, never the rest of
-its environment. If the shell fails, times out or prints no PATH, the
+its environment. The shell is started with your environment, without what the
+Desktop or its packaging added to its own (on the AppImage, the entries under
+its mount), like every other program the Desktop starts. If the shell fails, times out or prints no PATH, the
 inherited PATH stays: the backend's `/api/cli` reports `pathSource`
 (`login-shell` or `inherited`), `pathError` (why, or `null`) and
 `probePath` (the PATH the probe used), and the reason is logged at startup.
