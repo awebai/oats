@@ -124,8 +124,8 @@ options and environment, are left exactly as they were.
   is ignored: the launch goes on. Nothing else is tolerated: a refused
   `window-style` or `window-active-style` is a launch failure (the spawn is
   rolled back and fails; a start fails with `E_SESSION_START_FAILED`). An
-  earlier kernel failed a start whose recorded tmux server was gone when a
-  sizing command was refused; this one does not.
+  earlier kernel failed a start whose recorded tmux server could not be
+  reached when a sizing command was refused; this one does not.
 
 <a id="the-servers-start-environment"></a>
 #### The environment of the server and its panes
@@ -194,11 +194,21 @@ that triggered it), and `oats schedule run-now` typed inside an instance.
   environment of the server its home records (`tmux -S <recorded socket>
   show-environment -g -s`, the endpoint of the home's receipt, checked
   against `instance.json` as every session command checks it) and creates
-  the session with that. It is read strictly and never run by a shell; a
-  variable whose value spans several lines, or that tmux prints encoded (a
-  control character, a byte that is not UTF-8), is left out whole; a hidden
-  or removed variable carries nothing; text that cannot be read to its end
-  is a failed read.
+  the session with that. It is read strictly and never run by a shell;
+  text that cannot be read to its end is a failed read. Not carried from
+  the recorded server:
+  - a hidden or removed variable;
+  - a variable whose value holds a line break;
+  - a variable whose value holds a `$`: tmux versions print it differently,
+    so OATS does not guess what the value was;
+  - on tmux 3.4 and 3.5, a variable whose value holds a control character or
+    a byte that is not UTF-8, which those versions print encoded. Other
+    versions print the line as it is: there a control character other than
+    a line break is carried exactly, and a byte that is not UTF-8 fails the
+    read.
+
+  Such a variable is absent in the panes of the new server unless the pane's
+  own shell start-up files set it.
 - When it creates a window in a session that exists, the tmux client that
   creates it runs with `PATH`, without any instance's `oats` shim directory,
   and with `LANG`, `LC_ALL` and `LC_CTYPE`, which that client needs to start
@@ -210,7 +220,7 @@ that triggered it), and `oats schedule run-now` typed inside an instance.
   as `E_SPAWN_FAILED` with the same message) when the session does not exist
   on the `oats` server and there is no source to read: the home records no
   tmux server (it was never launched), its receipt cannot be used, or its
-  recorded server is gone or cannot be read. A process that carries an
+  recorded server cannot be reached or read. A process that carries an
   instance's identity (`OATS_INSTANCE`, `OATS_INSTANCE_HOME`, `OATS_HOME`,
   `PI_AGENT_INSTANCE` or `PI_AGENT_HOME`) with no home to be found is refused
   the same way. Nothing falls back to the caller's environment, to another
@@ -277,12 +287,24 @@ tmux -L oats kill-server                         # replace it: ends EVERY sessio
 - **Limit
   ([#620](https://github.com/awebai/oats/issues/620)).** `oats retire` of a
   launched instance is refused (`E_RUNTIME_QUIESCE_FAILED`) while the file of
-  its recorded socket does not exist, for example after a reboot that cleared
-  tmux's socket directory. Until that issue is fixed, bring the server back
-  first, then retire: start any instance of the deployment, or create the
-  session by hand with the first command above. For an instance still
-  recorded on another server, `tmux -S <recorded socket> new-session -d`; the
-  session that command creates can be ended after the retire.
+  its recorded socket does not exist. Until that issue is fixed, what to do
+  depends on why the file is missing:
+  - After a reboot the server is gone and its socket file with it. The
+    retire is refused until a session exists at that socket again: start any
+    instance of the deployment, or create the session by hand with the first
+    command above; for an instance still recorded on another server, `tmux
+    -S <recorded socket> new-session -d` (the session that command creates
+    can be ended after the retire). Then retire.
+  - If the server may still be running and only its socket file was removed,
+    do not create a session at that path: a new server there hides the
+    running one. Send the tmux server process `SIGUSR1`, which makes it
+    create its socket again (tmux(1), `-S`).
+- A tmux server whose socket file is missing or does not answer reads as not
+  reachable, which is not proof that it exited: status, start and stop read
+  that state as stopped
+  ([#624](https://github.com/awebai/oats/issues/624)). That is an existing
+  limit of every tmux server OATS uses, not of the `oats` server in
+  particular.
 
 <a id="existing-instances"></a>
 #### Existing instances
@@ -295,12 +317,12 @@ both, look at both servers: `tmux ls` and `tmux -L oats ls`.
 - A restart in place stays on the recorded server: a live harness that is
   restarted, a fallback shell or a dead pane is reused where it is, and the
   record does not change.
-- **Changed:** a start that has to create the window again, because
-  the recorded window or the recorded server is gone, creates it on the OATS
-  server. Earlier kernels recreated it on the recorded socket. The start
-  records the new socket in `instance.json` and the receipt, and says so: one
-  line in its `warnings`, naming the instance, the old socket and the new
-  one, and the same text as a `launch-warning` instance event.
+- **Changed:** a start that has to create the window again, because the
+  recorded window is gone or the recorded server cannot be reached, creates
+  it on the OATS server. Earlier kernels recreated it on the recorded socket.
+  The start records the new socket in `instance.json` and the receipt, and
+  says so: one line in its `warnings`, naming the instance, the old socket
+  and the new one, and the same text as a `launch-warning` instance event.
 - A home that was never launched (`--no-launch`) starts on the OATS server,
   with no warning.
 
@@ -369,8 +391,8 @@ included, opens on [the OATS tmux server](#the-oats-tmux-server).
   run every check before anything starts. `--model` replaces the recorded model
   for this and later starts.
 - A live harness is refused (`E_SESSION_RUNNING`). A fallback shell or a dead
-  pane is reused in place. A missing window, or one whose tmux server is gone,
-  is created again on the OATS tmux server, and the start warns when that is
+  pane is reused in place. A missing window, or one whose tmux server cannot
+  be reached, is created again on the OATS tmux server, and the start warns when that is
   not the server the home recorded ([Existing instances](#existing-instances)).
 - A state that cannot be established is refused (`E_SESSION_UNKNOWN`). Two
   starts of one home serialize (`E_SESSION_START_BUSY`). A home being retired

@@ -513,19 +513,26 @@ test("tmux's shell-format environment is read strictly and never executed: the w
   assert.deepEqual(read(""), {});
   assert.deepEqual(read('A="1"; export A;\n'), { A: "1" });
   assert.deepEqual(read('EMPTY=""; export EMPTY;\nEQ="a=b=c"; export EQ;\n'), { EMPTY: "", EQ: "a=b=c" });
-  assert.deepEqual(read('Q="a\\"b\\\\c\\$d\\`e"; export Q;\n'), { Q: 'a"b\\c$d`e' }, "the four escapes tmux writes are undone");
+  assert.deepEqual(read('Q="a\\"b\\\\c\\`e"; export Q;\n'), { Q: 'a"b\\c`e' }, "the escapes tmux writes before a quote, a backslash and a backtick are undone");
   assert.deepEqual(read('META="; rm -rf ~ | & ( ) < > * ? ! # \' export X;"; export META;\n'), { META: "; rm -rf ~ | & ( ) < > * ? ! # ' export X;" }, "shell metacharacters are characters");
   // A line feed inside a value stays inside it: the variable is dropped whole, and the line that
   // looks like an assignment (of a reserved name, of an ordinary one) is never read as one.
   assert.deepEqual(read('M="first\nOATS_INSTANCE_HOME=/smuggled"; export M;\nN="first\nINJECTED=1"; export N;\nKEPT="1"; export KEPT;\n'), { KEPT: "1" });
   assert.deepEqual(read('unset GONE;\nKEPT="1"; export KEPT;\n'), { KEPT: "1" }, "a removed variable carries nothing");
-  // tmux 3.4 and 3.5 write each printed line through vis(3). 3.4 puts one more backslash before a
-  // `$` that a letter, `_` or `{` follows; both write a control character or a byte that is not
-  // UTF-8 as an escape. The same value in both forms reads the same; an encoded value is dropped.
-  const DOLLARS = "$HOME ${B} $_x $1 $ \\$HOME";
-  assert.deepEqual(read('D="\\$HOME \\${B} \\$_x \\$1 \\$ \\\\\\$HOME"; export D;\n'), { D: DOLLARS }, "as tmux's shell format alone writes it");
-  assert.deepEqual(read('D="\\\\$HOME \\\\${B} \\\\$_x \\$1 \\$ \\\\\\\\$HOME"; export D;\n'), { D: DOLLARS }, "as tmux 3.4 writes it");
-  assert.deepEqual(read('E="a\\033b"; export E;\nF="a\\rb"; export F;\nG="a\\303\\050b"; export G;\nKEPT="1"; export KEPT;\n'), { KEPT: "1" }, "a value tmux wrote encoded is dropped whole");
+  // A value that holds a `$` is not carried, on any tmux: tmux 3.4 writes its output through vis(3)
+  // and puts one more backslash before a `$` that a letter, `_` or `{` follows, so the value is not
+  // known the same way everywhere. Where the value ENDS is: the same variables, printed as the
+  // shell format alone writes them and as tmux 3.4 does, give the same carried set, with 0, 1 and
+  // 2 backslashes of the value before the `$`, a backtick or a quote.
+  const B = "\\";
+  const printed = (added) => [0, 1, 2].map((n) => `D${n}="${B.repeat(2 * n + 1 + added)}$HOME"; export D${n};\nT${n}="${B.repeat(2 * n + 1)}\`x"; export T${n};\nQ${n}="${B.repeat(2 * n + 1)}"x"; export Q${n};\n`).join("")
+    + 'S="\\$ \\$1 end\\$"; export S;\nKEPT="1"; export KEPT;\n';
+  const carried = { T0: "`x", T1: "\\`x", T2: "\\\\`x", Q0: "\"x", Q1: "\\\"x", Q2: "\\\\\"x", KEPT: "1" };
+  assert.deepEqual(read(printed(0)), carried, "as the shell format alone writes it");
+  assert.deepEqual(read(printed(1)), carried, "as tmux 3.4 writes it");
+  assert.deepEqual(read('A="a$b"; export A;\nKEPT="1"; export KEPT;\n'), { KEPT: "1" }, "a `$` with no backslash before it: not carried either");
+  // tmux 3.4 and 3.5 write a control character or a byte that is not UTF-8 as an escape.
+  assert.deepEqual(read('E="a\\033b"; export E;\nF="a\\rb"; export F;\nG="a\\303\\050b"; export G;\nKEPT="1"; export KEPT;\n'), { KEPT: "1" }, "a value tmux wrote encoded is left out whole");
   assert.deepEqual(read('BASH_FUNC_x%%="() { :; }"; export BASH_FUNC_x%%;\nKEPT="1"; export KEPT;\n'), { KEPT: "1" }, "a name that is no plain identifier is not carried");
   // Anything the grammar does not consume to the end is a failed read, never a partial environment.
   for (const [what, text] of [
@@ -534,7 +541,6 @@ test("tmux's shell-format environment is read strictly and never executed: the w
     ["cut inside the export", 'A="1"; export'],
     ["another name exported", 'A="1"; export B;\n'],
     ["an escape tmux does not write", 'A="a\\nb"; export A;\n'],
-    ["a bare dollar sign", 'A="a$b"; export A;\n'],
     ["a bare backtick", 'A="a`b"; export A;\n'],
     ["two octal digits", 'A="a\\03"; export A;\n'],
     ["an unquoted assignment", "A=1\n"],
@@ -558,17 +564,15 @@ test("the environment OATS creates a tmux session and a window with: an instance
   // name it stands for, a harness's marker, a variable update-environment names, its terminal.
   const SECRETS = ["FIXTURE_SECRET", "OATS_LAUNCH_REF_FIXTURE_TOKEN", "FIXTURE_TOKEN", "CLAUDECODE"];
   const KERNEL = ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_ROOT", "PI_AGENTS_ROOT", "TMUX", "TMUX_PANE", "COLORFGBG"];
-  const NOT_CARRIED = ["OATS_FIXTURE_MULTI_RESERVED", "OATS_FIXTURE_MULTI_PLAIN", "FIXTURE_INJECTED", "OATS_FIXTURE_HIDDEN", "OATS_FIXTURE_REMOVED"];
+  const NOT_CARRIED = ["OATS_FIXTURE_MULTI_RESERVED", "OATS_FIXTURE_MULTI_PLAIN", "FIXTURE_INJECTED", "OATS_FIXTURE_HIDDEN", "OATS_FIXTURE_REMOVED", "OATS_FIXTURE_DOLLAR"];
   const agent = { FIXTURE_SECRET: "s3cret", OATS_LAUNCH_REF_FIXTURE_TOKEN: "s3cret", FIXTURE_TOKEN: "s3cret", CLAUDECODE: "1", FIXTURE_IDENTITY: "creator", TMUX: `${OTHER},1,0`, TMUX_PANE: "%1", COLORFGBG: "15;0" };
   const operator = { FIXTURE_OPERATOR: "kept", FIXTURE_IDENTITY: "operator", PI_AGENTS_ROOT: "/fixture/operator/agents", OATS_LAUNCH_REF_FIXTURE_TOKEN: "s3cret", FIXTURE_TOKEN: "s3cret", TMUX: `${OTHER},1,0`, COLORFGBG: "15;0" };
   const absent = (env, names, what) => { for (const name of names) assert.equal(name in env, false, `${what} holds no ${name}`); };
-  // Every character tmux escapes, a `$` in each position tmux 3.4 treats differently, and text
-  // shaped like the end of an entry. (Not ending in `;`: tmux takes that off a command's argument.)
-  const SPECIAL = "a \"quoted\" $HOME `tick` back\\slash lit\\$HOME ${B} $_x $1 $ = ; export X; end";
+  // Every character tmux escapes but `$`, and text shaped like the end of an entry. (Not ending in
+  // `;`: tmux takes that off a command's argument.) A value that holds a `$` is not carried.
+  const SPECIAL = "a \"quoted\" `tick` back\\slash = ; export X; end";
+  const DOLLAR = "before $HOME ${B} $_x $1 $ lit\\$HOME after";
   const CONTROL = "a\u001bb";
-  /** The server's global environment as the kernel's reader gives it: tmux's plain listing is not
-   *  the same text in every tmux version. A pane's own `env` is the independent check below. */
-  const shellEnv = (socket) => parseTmuxShellEnvironment(execFileSync("tmux", ["-u", "-S", socket, "show-environment", "-g", "-s"], { timeout: 10000, stdio: ["ignore", "pipe", "pipe"] }));
 
   // The server the calling instance is recorded on: a marker; a value every escaped character is in;
   // an empty value; two multi-line values, one followed by a line shaped like the assignment of a
@@ -581,6 +585,7 @@ test("the environment OATS creates a tmux session and a window with: an instance
   source("OATS_FIXTURE_SPECIAL", SPECIAL);
   source("OATS_FIXTURE_EMPTY", "");
   source("OATS_FIXTURE_CONTROL", CONTROL);
+  source("OATS_FIXTURE_DOLLAR", DOLLAR);
   source("OATS_FIXTURE_MULTI_RESERVED", "first line\nOATS_INSTANCE_HOME=/smuggled");
   source("OATS_FIXTURE_MULTI_PLAIN", "first line\nFIXTURE_INJECTED=1");
   source("-h", "OATS_FIXTURE_HIDDEN", "hidden");
@@ -590,7 +595,7 @@ test("the environment OATS creates a tmux session and a window with: an instance
   const sourceEnvironment = (server) => {
     absent(server, [...SECRETS, ...KERNEL, ...NOT_CARRIED, "FIXTURE_IDENTITY", "FIXTURE_OPERATOR"], "a server started with the recorded server's environment");
     assert.equal(server.OATS_FIXTURE_MARKER, "from the recorded server");
-    assert.equal(shellEnv(OATS).OATS_FIXTURE_SPECIAL, SPECIAL, "a value is carried exactly, whatever characters it holds");
+    assert.equal(server.OATS_FIXTURE_SPECIAL, SPECIAL, "a value is carried exactly: quotes, a backtick, a backslash, text shaped like the end of an entry");
     assert.equal(server.OATS_FIXTURE_EMPTY, "");
     assert.doesNotMatch(tmuxOn(OATS, "show-environment", "-g"), /s3cret|smuggled|first line|creator/, "no value of the instance's; a multi-line value is dropped whole");
   };
