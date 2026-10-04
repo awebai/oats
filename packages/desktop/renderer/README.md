@@ -60,14 +60,20 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
   workspace views (a path, `remote:<server>:<target>`) is stale once a view
   holds it: the server answers it with that view, whose id is adopted.
 
-`theme.css` carries semantic WCAG AA tokens for **White** (default),
-**Solarized**, and **Dark**. A fourth choice, **This computer** (`host`), has no
-palette of its own: it shows the theme of the computer that runs Desktop. Theme
-actions are available in the command palette; cycling follows that order (White,
-Solarized, Dark, This computer). Existing valid `oatsweb.theme` preferences
-survive; missing/invalid preferences mean White regardless of OS, and This
-computer is never chosen for the operator. Views use tokens only, scoped under
-`.oats-view`. Orange selection is distinct from error/success.
+`theme.css` carries semantic WCAG AA tokens for **White**, **Solarized**, and
+**Dark**. A fourth choice, **This computer** (`host`), has no palette of its
+own: it shows the theme of the computer that runs Desktop. Theme actions are
+available in the command palette; cycling follows that order (White, Solarized,
+Dark, This computer). Existing valid `oatsweb.theme` preferences survive, on
+every platform. A missing or invalid preference means the platform's default:
+This computer on Linux, White elsewhere. The shell decides which from
+`navigator.platform` and passes it to `initTheme()` as the fallback;
+`theme.mjs` itself knows no platform, and a fallback that is not a theme is
+White. Starting never stores the default, so it stays a default until the
+operator chooses: an install where no theme was ever chosen cannot be told
+from a fresh one and follows a change of default, and one where White was
+chosen keeps White. Views use tokens only, scoped under `.oats-view`. Orange
+selection is distinct from error/success.
 
 **This computer.** On a computer with an Omarchy theme, the chrome and every
 terminal (local and remote instances alike: they share the two creation sites)
@@ -124,7 +130,10 @@ is dark, White when it is light, each exactly as it is, with nothing imported.
 - **First paint.** The last state shown is kept in `localStorage`
   (`oats.desktop.hostTheme`) and applied synchronously by `initTheme()`, then
   reconciled with main's answer, so a dark host does not flash White at launch.
-  A push that arrives before that answer wins over it.
+  A push that arrives before that answer wins over it. Until This computer has
+  been shown once in a profile nothing is kept, so the first start in it (on
+  Linux, where it is the default, a profile's very first start) paints White
+  until main's answer arrives. There is deliberately no wait for that answer.
 - **Several windows.** Every window gets each push and applies it only while
   This computer is its own choice. A window reads the saved choice when it
   loads (there is no storage listener), so two windows can show different
