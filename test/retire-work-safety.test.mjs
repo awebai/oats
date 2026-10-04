@@ -1549,6 +1549,39 @@ test("a worktree whose HEAD is on a remote-tracking ref, which the copier copies
   assertBothCopiedAgain(recovery);
 });
 
+test("a worktree whose HEAD is on a remote-tracking ref, which the copier copies detached from a clone that keeps the repository's own HEAD branch, and a retire hook that moves the repository's HEAD to a remote-tracking ref of the same short name, deletes that branch and writes the home: the work is copied again, with no local branch under after-hooks/repo/", () => {
+  // A clone of a repository whose HEAD is not on a branch keeps no local branch; `git symbolic-ref
+  // --short` gives the branch and the remote-tracking ref the same name.
+  const retire = quietHook(`const common = git('rev-parse', '--path-format=absolute', '--git-common-dir').trim();
+const repository = (...args) => execFileSync('git', ['--git-dir=' + common, ...args], { encoding: 'utf8' });
+repository('update-ref', 'refs/remotes/keeper', 'refs/heads/keeper');
+repository('symbolic-ref', 'HEAD', 'refs/remotes/keeper');
+repository('update-ref', '-d', 'refs/heads/keeper');
+seen.names = [repository('symbolic-ref', '--short', 'HEAD').trim()];`);
+  const f = fixture({ capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "clone-head-short-name");
+  const work = join(spawned.home, "work");
+  const git = (...args) => execFileSync("git", ["-C", work, ...args], { encoding: "utf8" }).trim();
+  const name = git("symbolic-ref", "HEAD").slice("refs/heads/".length);
+  git("update-ref", `refs/remotes/${name}`, "HEAD");
+  git("symbolic-ref", "HEAD", `refs/remotes/${name}`);
+  const repository = (...args) => execFileSync("git", [`--git-dir=${commonDirOf(work)}`, ...args], { encoding: "utf8" }).trim();
+  repository("branch", "keeper", repository("symbolic-ref", "HEAD"));
+  repository("symbolic-ref", "HEAD", "refs/heads/keeper");
+  assert.equal(repository("symbolic-ref", "--short", "HEAD"), "keeper", "fixture premise: the repository's own HEAD is on keeper");
+  write(join(work, "tracked.txt"), "changed before the retire\n");
+  const statusBefore = porcelain(work);
+  assert.deepEqual(statusRowsIn(statusBefore), [" M tracked.txt"]);
+
+  const { recovery, seen, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore);
+  assert.deepEqual(seen.names, ["keeper"], "fixture premise: Git's short name for the repository's HEAD is still keeper");
+  const localBranches = (repo) => execFileSync("git", ["-C", repo, "for-each-ref", "--format=%(refname)", "refs/heads"], { encoding: "utf8" }).split("\n").filter(Boolean);
+  assert.deepEqual(localBranches(join(recovery.path, "repo")), ["refs/heads/keeper"], "the snapshot before the hooks keeps the branch the repository's HEAD was on then");
+  assert.equal(existsSync(join(afterRepo, ".git")), true, "the work is copied again under after-hooks/repo/: the comparison reads the repository's HEAD as its whole ref");
+  assert.deepEqual(localBranches(afterRepo), [], "the copy made after the hooks keeps no local branch, as a clone of a repository whose HEAD is not on a branch");
+  assertBothCopiedAgain(recovery);
+});
+
 test("a retire hook that leaves a nested repository impossible to copy, after the snapshot before the hooks copied it: the retire refuses with E_WORK_PRESERVATION_FAILED, keeps the home, the work and that snapshot, and leaves no staging", () => {
   // The hook replaces the nested repository's Git directory by a .git file naming a directory that is not there.
   const retire = quietHook(`import { rmSync } from 'node:fs';
