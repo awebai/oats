@@ -1807,6 +1807,88 @@ test("a retire hook that leaves the worktree's Git state unreadable and its copy
   assert.deepEqual(readdirSync(recovery).filter((name) => name.includes("after-hooks")), [], "nothing was added to it, and no staging is left in it");
 });
 
+// ---- The one recovery of an instance that had nothing to preserve before its hooks ----
+// It is written after the hooks, whole and verified, before the worktree step and before the home
+// is removed. It is a complete recovery of its own: nothing in it says a snapshot was taken before.
+
+test("a worktree that cannot be proven unchanged, with nothing to preserve before the hooks and a home write by the retire hook: the one recovery is written after the hooks and holds the work too, not the home only", () => {
+  const f = fixture({ capabilities: hookCapability(quietHook("")) });
+  const spawned = spawn(f, "unprovable-late");
+  const work = join(spawned.home, "work");
+  unreadableStashLog(work);
+  const commit = headOf(work);
+
+  const retired = cli(f, ["retire", basename(spawned.home), "--discard-worktree", "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const recovery = JSON.parse(retired.stdout).workRecovery;
+  assert.equal(hookRan(spawned.home), true, "fixture premise: the retire hook ran to its end");
+  assert.deepEqual(recovery.classes, ["changed instance-home bytes"], "the one class, and it appeared after the hooks");
+  assert.deepEqual(readdirSync(recoveryRootOf(spawned.home)), [basename(recovery.path)], "one recovery");
+  // Written after the hooks as the first and only recovery: the hook's write is in home/, and nothing is under after-hooks/.
+  assert.equal(readFileSync(join(recovery.path, "home", "hook-note.txt"), "utf8"), HOOK_BYTES);
+  assert.equal(existsSync(join(recovery.path, "after-hooks")), false);
+  assert.equal(recovery.afterHooks, undefined);
+  const manifest = readJson(join(recovery.path, "recovery.json"));
+  assert.equal(manifest.phase, "complete");
+  assert.equal(manifest.afterHooks, undefined);
+  // Only the home has something to preserve, and the worktree is not provable: its work is copied all the same.
+  assert.equal(existsSync(join(recovery.path, "repo", ".git")), true, "the work is in the recovery: a worktree that cannot be proven unchanged is never left out as having nothing to preserve");
+  assert.equal(recovery.repoCopy, undefined, "the recovery is not home-only");
+  assert.equal(headOf(join(recovery.path, "repo")), commit);
+  assert.equal(readFileSync(join(recovery.path, "repo", "tracked.txt"), "utf8"), "base\n");
+  assert.equal(existsSync(spawned.home), false, "the home is removed");
+});
+
+test("the one recovery written after the hooks cannot be made: an instance with nothing to preserve before them, whose retire hook writes the home and leaves the worktree impossible to copy, is refused with E_WORK_PRESERVATION_FAILED, and the home and the work are kept", () => {
+  const f = fixture({ capabilities: hookCapability(quietHook(hookMakesDirectory("info", "attributes"))) });
+  const spawned = spawn(f, "late-refused");
+  const work = join(spawned.home, "work");
+  assert.equal(porcelain(work), "", "fixture premise: a clean worktree before the retire, in a home that has nothing to preserve");
+
+  const retired = cli(f, ["retire", basename(spawned.home), "--discard-worktree", "--json"]);
+  assert.notEqual(retired.status, 0, `an instance whose one recovery could not be made was retired: ${retired.stdout}`);
+  const error = JSON.parse(retired.stdout).error;
+  assert.equal(error.code, "E_WORK_PRESERVATION_FAILED", retired.stdout);
+  assert.match(error.message, /attributes/, "the message names what the copy could not carry");
+  assert.doesNotMatch(error.message, /No retire hook has run/, "the hooks have run: the message does not say otherwise");
+  assert.equal(hookRan(spawned.home), true, "fixture premise: the retire hook ran to its end");
+  assert.equal(readFileSync(join(spawned.home, "hook-note.txt"), "utf8"), HOOK_BYTES, "the home is kept, with the hook's write");
+  assert.equal(readFileSync(join(work, "tracked.txt"), "utf8"), "base\n", "the work is kept");
+  assert.deepEqual(readdirSync(recoveryRootOf(spawned.home)), [], "neither a recovery nor its staging is left behind");
+});
+
+test("an instance with nothing to preserve before the hooks, whose retire hook writes the home and reports incomplete cleanup: the one recovery is written, and the home and the work are kept for the retry as for any incomplete cleanup", () => {
+  const retire = `import { writeFileSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
+const home = process.env.OATS_INSTANCE_HOME;
+writeFileSync(join(home, 'hook-note.txt'), ${JSON.stringify(HOOK_BYTES)});
+writeFileSync(join(dirname(home), 'hook-saw-' + basename(home)), '{}');
+console.log(JSON.stringify({ meta: { retired: false, reason: 'remote unreachable' } }));
+`;
+  const f = fixture({ capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "late-owed");
+  const work = join(spawned.home, "work");
+  assert.equal(porcelain(work), "", "fixture premise: a clean worktree before the retire, in a home that has nothing to preserve");
+
+  const retired = cli(f, ["retire", basename(spawned.home), "--json"]);
+  assert.equal(retired.status, 1, `${retired.stderr}\n${retired.stdout}`);
+  const receipt = JSON.parse(retired.stdout);
+  assert.equal(hookRan(spawned.home), true, "fixture premise: the retire hook ran to its end");
+  assert.ok(receipt.rollbackIncomplete?.some((item) => /acme\.hook: reported incomplete cleanup \(remote unreachable\)/.test(item)), retired.stdout);
+  assert.equal(receipt.retainedHome, spawned.home);
+  assert.equal(receipt.removedDir, false);
+  assert.equal(existsSync(join(spawned.home, ".oats-rollback-incomplete.json")), true, "the home is kept with its cleanup marker");
+  assert.equal(readFileSync(join(work, "tracked.txt"), "utf8"), "base\n", "the worktree is where it was: its step waits for the cleanup");
+  // The recovery is the one written after the hooks, complete, with the hook's home write.
+  const recovery = receipt.workRecovery;
+  assert.deepEqual(readdirSync(recoveryRootOf(spawned.home)), [basename(recovery.path)], "one recovery");
+  assert.deepEqual(recovery.classes, ["changed instance-home bytes"]);
+  assert.equal(readFileSync(join(recovery.path, "home", "hook-note.txt"), "utf8"), HOOK_BYTES);
+  assert.equal(readJson(join(recovery.path, "recovery.json")).phase, "complete");
+  assert.equal(recovery.afterHooks, undefined);
+  assert.equal(existsSync(join(recovery.path, "after-hooks")), false);
+});
+
 // ---- An entry that is not a file, a directory or a symbolic link ----
 // Proving the work unchanged reads the whole worktree, and such an entry (a socket, a FIFO, a device)
 // has no bytes to read or to copy. Git prints no status row for it, so a worktree that holds one can
@@ -1836,6 +1918,33 @@ test("a FIFO in a worktree that Git reports as clean refuses the retire before i
     assert.equal(readFileSync(join(spawned.home, "notes", "x.md"), "utf8"), "an authored note\n", "the home is kept");
     assert.equal(lstatSync(fifo).isFIFO(), true, "the worktree is kept as it was");
   }
+});
+
+test("a FIFO in the worktree of a launched instance refuses the retire before its hooks, after the retire stopped its session: the message says that its session has been stopped", () => {
+  const f = fixture();
+  const state = installFakeTmux(f);
+  const socket = join(f.base, "socket-fifo");
+  f.env.TMUX = `${socket},1,0`;
+  const launched = cli(f, ["spawn", "dev", "--purpose", "fifo-launched", "--json"]);
+  assert.equal(launched.status, 0, `${launched.stderr}\n${launched.stdout}`);
+  const spawned = JSON.parse(launched.stdout).result;
+  const window = join(state, socket.replaceAll("/", "_"), "window");
+  assert.equal(existsSync(window), true, "fixture premise: the instance was launched, and its window is there");
+  assert.equal(readFileSync(join(spawned.home, "early-harness.txt"), "utf8"), "early-harness-bytes\n", "fixture premise: the home has something to preserve");
+  const work = join(spawned.home, "work");
+  const fifo = join(work, "pipe");
+  execFileSync("mkfifo", [fifo]);
+  assert.equal(porcelain(work), "", "fixture premise: Git has no status row for a FIFO, so the worktree reads as clean");
+
+  const retired = cli(f, ["retire", basename(spawned.home), "--discard-worktree", "--json"]);
+  assert.notEqual(retired.status, 0, `a worktree that cannot be read was retired: ${retired.stdout}`);
+  const error = JSON.parse(retired.stdout).error;
+  assert.equal(error.code, "E_WORK_INSPECTION_FAILED", retired.stdout);
+  assert.match(error.message, new RegExp(`${UNSUPPORTED_ENTRY_TEXT}\\. No recovery was written and nothing was deleted: ${basename(spawned.home)} is not retired and its home is kept; its session has been stopped$`), "the message says what this retire did by then: it stopped the session of a launched instance");
+  assert.equal(existsSync(window), false, "the retire stopped the session before it refused");
+  assert.equal(existsSync(recoveryRootOf(spawned.home)), false, "no recovery was written");
+  assert.equal(readFileSync(join(spawned.home, "early-harness.txt"), "utf8"), "early-harness-bytes\n", "the home is kept");
+  assert.equal(lstatSync(fifo).isFIFO(), true, "the worktree is kept as it was");
 });
 
 for (const { leaves, body, code, message } of [
@@ -1979,6 +2088,26 @@ test("a retire hook that reports incomplete cleanup keeps the home with its decl
   assert.equal(existsSync(join(spawned.home, ".ident-state", "retire.json")), true);
   assert.equal(existsSync(join(spawned.home, ".oats-rollback-incomplete.json")), true);
   assert.deepEqual(pathsNamed(recoveryRootOf(spawned.home), "signing.key"), []);
+  assert.equal(readFileSync(join(receipt.workRecovery.path, "home", "notes", "x.md"), "utf8"), "an authored note\n");
+  assert.deepEqual(receipt.workRecovery.notCopied, IDENT_NOT_COPIED);
+});
+
+test("a forced removal past incomplete cleanup removes the home with its declared entries, and recovery holds no copy of them", () => {
+  const f = fixture({ capabilities: identCapability({ meta: { retired: false, reason: "remote unreachable" } }) });
+  const spawned = spawnWithNote(f, "forced");
+  const retired = cli(f, ["retire", "dev-forced", "--force", "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const receipt = JSON.parse(retired.stdout);
+  assert.ok(receipt.forcedIncomplete?.some((item) => /acme\.ident: reported incomplete cleanup \(remote unreachable\)/.test(item)), retired.stdout);
+  assert.equal(receipt.rollbackIncomplete, undefined);
+  assert.equal(receipt.removedDir, true);
+  assert.equal(identHookRan(spawned.home), true);
+  assert.equal(existsSync(spawned.home), false, "the home is removed, and its declared entries with it");
+  // What was declared went with the home: no copy of it anywhere under recovery.
+  const root = recoveryRootOf(spawned.home);
+  assert.deepEqual(readdirSync(root), [basename(receipt.workRecovery.path)], "one recovery");
+  assert.deepEqual(pathsNamed(root, "signing.key"), [], "no key anywhere under recovery");
+  for (const name of [".ident", ".ident-id-wide", ".ident-state"]) assert.deepEqual(pathsNamed(root, name), [], name);
   assert.equal(readFileSync(join(receipt.workRecovery.path, "home", "notes", "x.md"), "utf8"), "an authored note\n");
   assert.deepEqual(receipt.workRecovery.notCopied, IDENT_NOT_COPIED);
 });
