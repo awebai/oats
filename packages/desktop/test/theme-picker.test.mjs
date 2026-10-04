@@ -257,15 +257,6 @@ const dialogs = {
     dialog.open({ operation: 'stop', instance: lifecycleInstance, workspace: 'team' });
     return { opener: f.doc.querySelector('.lifecycle-close'), dispose: () => dialog.dispose() };
   },
-  // The spawn form: a text field in .spawn-modal, whose view closes it on an Escape that reaches the document.
-  'the spawn dialog (its name field)': f => {
-    const modal = f.doc.createElement('div'); modal.className = 'spawn-modal';
-    modal.innerHTML = '<section class="spawn-dialog" role="dialog" aria-modal="true" aria-label="Spawn"><input class="fname"></section>';
-    f.doc.body.append(modal); const opener = modal.querySelector('input'); opener.focus();
-    let escapes = 0; const onEscape = event => { if (event.key === 'Escape' && !event.defaultPrevented) escapes++; };
-    f.doc.addEventListener('keydown', onEscape);
-    return { opener, escapes: () => escapes, dispose: () => { f.doc.removeEventListener('keydown', onEscape); modal.remove(); } };
-  },
   'Connections (its overlay and close button)': f => {
     const overlay = f.doc.createElement('div'); overlay.className = 'palette-overlay forge-overlay';
     overlay.innerHTML = '<section role="dialog" aria-modal="true" aria-label="Settings"><button type="button">Close settings</button></section>';
@@ -285,34 +276,35 @@ for (const [name, mount] of Object.entries(dialogs)) {
     else f.rows()[0].click();
     assert.equal(f.overlays().length, 0);
     assert.ok(under.opener.isConnected, 'the dialog under it stays open');
-    if (under.escapes) assert.equal(under.escapes(), 0, 'Escape stops at the picker: it never reaches the dialog under it');
     assert.equal(f.doc.activeElement, under.opener, 'focus is back on its control');
     assert.deepEqual(f.chosen, how === 'a choice' ? ['light'] : []);
   });
 }
 
-test('stacking: above the house modals (the spawn dialog, the palette family), below the instance start modal', () => {
-  const z = (source, selector) => {
-    const at = source.indexOf(`${selector} {`); assert.ok(at >= 0, selector);
-    const value = source.slice(at, source.indexOf('}', at)).match(/z-index:\s*(\d+)/); assert.ok(value, `${selector} z-index`);
-    return Number(value[1]);
-  };
-  const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), 'utf8');
-  const picker = z(themePickerCSS, '.palette-overlay.theme-picker-overlay');
-  assert.equal(picker, 200, 'as add-machine-dialog.mjs over the spawn dialog');
-  assert.ok(picker > z(read('views/spawn.mjs'), '.spawn-modal'), 'above the spawn dialog, never hidden behind its scrim');
-  assert.ok(picker > z(read('shell.css'), '.palette-overlay'), 'above the palette, the shortcuts editor, Connections and Remove');
-  assert.ok(picker < z(read('shell.css'), '.instance-start-modal'), 'below the instance start modal');
-});
-
-test('another modal that takes focus (the palette, stacked below) replaces the picker: it closes without returning focus', async t => {
-  const f = fixture(t);
-  const palette = createPalette({ doc: f.doc, loadInstances: async () => [], openTerminal: () => {}, commands: [] });
-  t.after(() => palette.close());
-  f.picker.open(); assert.equal(f.overlays().length, 1);
-  await palette.open(); await tick();
-  assert.equal(f.overlays().length, 0, 'the picker is gone, so nothing is chosen unseen');
-  assert.equal(f.doc.activeElement, f.doc.querySelector('.palette-input'), 'the palette keeps its focus');
-  assert.equal(f.doc.querySelectorAll('[aria-modal="true"]').length, 1);
+// The picker is on the palette layer: it never opens while a dialog above that layer is shown,
+// where it could not be seen (the spawn dialog, removed on close; the workspace dialog, hidden).
+test('a shown dialog above the palette layer: the chord and open() do nothing; hidden or gone, the picker opens', t => {
+  const f = fixture(t), engine = withEngine(t, f);
+  const spawn = f.doc.createElement('div'); spawn.className = 'spawn-modal';
+  spawn.innerHTML = '<section class="spawn-dialog" role="dialog" aria-modal="true" aria-label="Spawn"><form><input class="fname"></form></section>';
+  const workspace = f.doc.createElement('div'); workspace.className = 'ws-modal'; workspace.hidden = true;
+  workspace.innerHTML = '<section class="ws-dialog" role="dialog" aria-modal="true" aria-label="Add a workspace"><input id="ws-suggestion-search"></section>';
+  f.doc.body.append(spawn, workspace);
+  const field = spawn.querySelector('input'); field.focus();
+  const chord = engine.chord();
+  assert.equal(chord.defaultPrevented, true, 'the chord is still the app\'s (claimed), it just opens nothing');
+  f.picker.open(); f.picker.toggle();
+  assert.equal(f.overlays().length, 0, 'no picker under the spawn dialog');
+  assert.equal(f.picker.isOpen(), false);
+  assert.equal(f.doc.activeElement, field, 'focus stays in the spawn form');
+  assert.deepEqual(f.chosen, []);
+  // The hidden workspace dialog does not count; the spawn dialog closing (removed) lets the picker open.
+  spawn.remove(); f.opener.focus();
+  engine.chord(); assert.equal(f.overlays().length, 1, 'opens once no higher dialog is shown');
+  f.key('Escape'); assert.equal(f.doc.activeElement, f.opener);
+  // The workspace dialog shown: nothing again.
+  workspace.hidden = false; workspace.querySelector('input').focus();
+  engine.chord(); assert.equal(f.overlays().length, 0, 'no picker under the workspace dialog');
+  assert.equal(f.doc.activeElement, workspace.querySelector('input'));
   assert.deepEqual(f.chosen, []);
 });

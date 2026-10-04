@@ -5,14 +5,14 @@
 // provenance through takePickerFocusReturn, its own Escape and Tab handling) with
 // the spawn dialog's centring and header. Nothing is applied while moving between
 // rows (no preview). The rows never rebuild while open: a theme changed by another
-// path (the palette, a key, the host) only moves the marks. It stacks above the house modals
-// (z-index 200, as add-machine-dialog.mjs over the spawn dialog; below .instance-start-modal's
-// 1000), so opened from the spawn form it is seen, never behind that dialog's scrim.
+// path (the palette, a key, the host) only moves the marks. It is on the palette layer, so it
+// does not open while a dialog above that layer is shown (the spawn dialog, the workspace dialog).
 import { takePickerFocusReturn } from './overlay-picker.mjs';
 import { iconElement } from './shell-icons.mjs';
+import { isShown } from './focus-regions.mjs';
 
 export const themePickerCSS = `
-.palette-overlay.theme-picker-overlay { z-index:200; display:grid; place-items:center; padding:16px; }
+.palette-overlay.theme-picker-overlay { display:grid; place-items:center; padding:16px; }
 .theme-picker { width:min(360px,calc(100vw - 32px)); max-height:calc(100vh - 32px); box-sizing:border-box; display:flex; flex-direction:column; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--fg); box-shadow:var(--shadow-modal); overflow:hidden; }
 .theme-picker-head { min-height:52px; flex:none; display:flex; align-items:center; gap:10px; padding:0 12px 0 20px; border-bottom:1px solid var(--border); }
 .theme-picker-head h2 { margin:0; font-size:15px; font-weight:700; }
@@ -47,13 +47,12 @@ export function createThemePicker({ doc, themes, current, choose, subscribe = ()
   const isOpen = () => !!overlay;
 
   // Focus stays in the picker: a background action that moves focus (Ctrl+F to the roster filter)
-  // is pulled back to where it was inside. Another modal that takes focus (the palette, Quick Open,
-  // the shortcuts editor, all stacked below this one) replaces the picker, as one picker replaces
-  // another (overlay-picker.mjs): it closes without returning focus, so nothing is chosen unseen.
+  // is pulled back to where it was inside. Another modal taking over (the palette, the shortcuts
+  // editor, a dialog over this one) keeps its focus.
   function contain(event) {
     if (!overlay) return;
     if (overlay.contains(event.target)) { lastInside = event.target; return; }
-    if (event.target?.closest?.('.palette-overlay, [aria-modal="true"]')) { close({ restoreFocus: false }); return; }
+    if (event.target?.closest?.('.palette-overlay, [aria-modal="true"]')) return;
     (lastInside?.isConnected && overlay.contains(lastInside) ? lastInside : rows[0])?.focus();
   }
 
@@ -84,8 +83,12 @@ export function createThemePicker({ doc, themes, current, choose, subscribe = ()
     }
   }
 
+  /** A shown modal dialog that is not on the palette layer: it stacks above the picker. */
+  const higherDialogShown = () => [...doc.querySelectorAll('[aria-modal="true"]')].some(el => !el.closest('.palette-overlay') && isShown(el));
+
   function open() {
     if (overlay) return; // one dialog, never two
+    if (higherDialogShown()) return; // the picker never opens where it cannot be seen
     onIntent(); const prior = doc.activeElement; restore = takePickerFocusReturn(doc); const mounted = ++life;
     held = stillOpen(prior) ? prior : null; // a palette or Quick Open opener was just dismissed: not still open
     overlay = node('div', undefined, 'palette-overlay theme-picker-overlay');
