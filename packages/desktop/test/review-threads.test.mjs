@@ -50,17 +50,62 @@ test('the paste: load-buffer + ONE bracketed paste-buffer (-p -r -d), never send
   const tmuxTarget = i => `=${i.tmux.session}:=${i.tmux.window}`;
   const calls = []; const ok = createReviewPaste({ find: () => inst, tmuxTarget, random: () => 'r1', exec: (bin, argv, opts) => { calls.push([bin, argv, opts.input]); } });
   assert.equal(ok.paste({ home: '/h' }, 'one line'), null);
-  assert.deepEqual(calls.map(c => c[1]), [['load-buffer', '-b', 'oatsrt-r1', '-'], ['paste-buffer', '-p', '-r', '-d', '-b', 'oatsrt-r1', '-t', '=s:=w']]);
+  assert.deepEqual(calls.map(c => c[1]), [['-u', 'load-buffer', '-b', 'oatsrt-r1', '-'], ['-u', 'paste-buffer', '-p', '-r', '-d', '-b', 'oatsrt-r1', '-t', '=s:=w']]);
   assert.equal(calls[0][2], 'one line'); assert.ok(calls.every(c => !c[1].includes('send-keys') && !c[1].includes('Enter')));
   assert.equal(ok.paste({ home: '/h' }, 'two\nlines'), 'E_BAD_ARGS', 'a CR/LF never reaches tmux');
-  const failed = []; const broken = createReviewPaste({ find: () => inst, tmuxTarget, random: () => 'r2', exec: (_b, argv) => { failed.push(argv[0]); if (argv[0] === 'paste-buffer') throw new Error('pane gone'); } });
-  assert.equal(broken.paste({ home: '/h' }, 'x'), 'E_PASTE_FAILED'); assert.deepEqual(failed, ['load-buffer', 'paste-buffer', 'delete-buffer']);
-  const early = []; const noLoad = createReviewPaste({ find: () => inst, tmuxTarget, exec: (_b, argv) => { early.push(argv[0]); throw new Error('no server'); } });
-  assert.equal(noLoad.paste({ home: '/h' }, 'x'), 'E_PASTE_FAILED'); assert.deepEqual(early, ['load-buffer'], 'nothing loaded, nothing to delete');
+  const failed = []; const broken = createReviewPaste({ find: () => inst, tmuxTarget, random: () => 'r2', exec: (_b, argv) => { failed.push(argv); if (argv.includes('paste-buffer')) throw new Error('pane gone'); } });
+  assert.equal(broken.paste({ home: '/h' }, 'x'), 'E_PASTE_FAILED');
+  assert.deepEqual(failed, [['-u', 'load-buffer', '-b', 'oatsrt-r2', '-'], ['-u', 'paste-buffer', '-p', '-r', '-d', '-b', 'oatsrt-r2', '-t', '=s:=w'], ['-u', 'delete-buffer', '-b', 'oatsrt-r2']]);
+  const early = []; const noLoad = createReviewPaste({ find: () => inst, tmuxTarget, random: () => 'r3', exec: (_b, argv) => { early.push(argv); throw new Error('no server'); } });
+  assert.equal(noLoad.paste({ home: '/h' }, 'x'), 'E_PASTE_FAILED'); assert.deepEqual(early, [['-u', 'load-buffer', '-b', 'oatsrt-r3', '-']], 'nothing loaded, nothing to delete');
   for (const [i, code] of [[{ ...inst, running: false }, 'E_NOT_RUNNING'], [{ ...inst, server: 'box' }, 'E_REMOTE_TERMINAL'], [null, 'E_NOT_RUNNING'],
     [{ ...inst, tmux: { session: 'a:b', window: 'w' } }, 'E_TERMINAL_UNSUPPORTED']]) {
     const p = createReviewPaste({ find: () => i, tmuxTarget: x => { if (!/^[\w@%.-]+$/.test(x.tmux.session)) throw new Error('bad'); return 'ok'; }, exec: assert.fail });
     assert.equal(p.check({ home: '/h' }), code); assert.equal(p.paste({ home: '/h' }, 'x'), code);
+  }
+});
+
+// The paste and the tmux server the row records (#602). One test per claim, so each fails on its own.
+const SOCKET = '/saved/tmux.sock', AT = { home: '/h' };
+const socketRow = tmux => ({ home: '/h', instance: 'dev-1', running: true, tmux: { session: 's', window: 'w', ...tmux } });
+const anchored = i => `=${i.tmux.session}:=${i.tmux.window}`;
+
+test('a row on another tmux server: load-buffer and paste-buffer carry -S <socket>, the target is the same anchored one', () => {
+  const calls = []; const p = createReviewPaste({ find: () => socketRow({ socket: SOCKET }), tmuxTarget: anchored, random: () => 'r1', exec: (bin, argv, opts) => { calls.push([bin, argv, opts.input]); } });
+  assert.equal(p.check(AT), null); assert.equal(p.paste(AT, 'one line'), null);
+  assert.deepEqual(calls.map(c => c[1]), [['-u', '-S', SOCKET, 'load-buffer', '-b', 'oatsrt-r1', '-'], ['-u', '-S', SOCKET, 'paste-buffer', '-p', '-r', '-d', '-b', 'oatsrt-r1', '-t', '=s:=w']]);
+  assert.equal(calls[0][2], 'one line'); assert.ok(calls.every(c => c[0] === 'tmux'));
+});
+
+test('a row on another tmux server: a failed paste deletes the buffer on the server it was loaded on; a failed load deletes nothing', () => {
+  const failed = []; const broken = createReviewPaste({ find: () => socketRow({ socket: SOCKET }), tmuxTarget: anchored, random: () => 'r2', exec: (_b, argv) => { failed.push(argv); if (argv.includes('paste-buffer')) throw new Error('pane gone'); } });
+  assert.equal(broken.paste(AT, 'x'), 'E_PASTE_FAILED'); assert.equal(failed.length, 3);
+  assert.deepEqual(failed[2], ['-u', '-S', SOCKET, 'delete-buffer', '-b', 'oatsrt-r2']);
+  const early = []; const noLoad = createReviewPaste({ find: () => socketRow({ socket: SOCKET }), tmuxTarget: anchored, random: () => 'r3', exec: (_b, argv) => { early.push(argv); throw new Error('no server'); } });
+  assert.equal(noLoad.paste(AT, 'x'), 'E_PASTE_FAILED', 'a call that fails on the recorded server is not retried on the default one');
+  assert.deepEqual(early, [['-u', '-S', SOCKET, 'load-buffer', '-b', 'oatsrt-r3', '-']], 'nothing loaded, nothing to delete');
+});
+
+test('a row that records no socket (absent, undefined, null, "", or no tmux object): the default server, no -S', () => {
+  const plainArgv = [['-u', 'load-buffer', '-b', 'oatsrt-r4', '-'], ['-u', 'paste-buffer', '-p', '-r', '-d', '-b', 'oatsrt-r4', '-t', '=s:=w']];
+  for (const none of [{}, { socket: undefined }, { socket: null }, { socket: '' }]) {
+    const plain = []; const p = createReviewPaste({ find: () => socketRow(none), tmuxTarget: anchored, random: () => 'r4', exec: (_b, argv) => { plain.push(argv); } });
+    assert.equal(p.check(AT), null); assert.equal(p.paste(AT, 'one line'), null); assert.deepEqual(plain, plainArgv);
+  }
+  for (const bare of [{ home: '/h', instance: 'dev-1', running: true }, { home: '/h', instance: 'dev-1', running: true, tmux: null }]) {
+    const plain = []; const p = createReviewPaste({ find: () => bare, tmuxTarget: () => '=s:=w', random: () => 'r4', exec: (_b, argv) => { plain.push(argv); } });
+    assert.equal(p.paste(AT, 'one line'), null); assert.deepEqual(plain, plainArgv, 'tmuxTarget decides whether the target is usable');
+  }
+});
+
+test('a recorded socket that fails validation is E_TERMINAL_UNSUPPORTED before any tmux call, never the default server', () => {
+  for (const bad of ['saved/tmux.sock', './tmux.sock', '/saved/tm\0ux.sock', 7, { path: SOCKET }, [SOCKET], true]) {
+    let ran = 0; const p = createReviewPaste({ find: () => socketRow({ socket: bad }), tmuxTarget: anchored, exec: () => { ran++; } });
+    assert.equal(p.check(AT), 'E_TERMINAL_UNSUPPORTED'); assert.equal(p.paste(AT, 'x'), 'E_TERMINAL_UNSUPPORTED'); assert.equal(ran, 0);
+    for (const [over, code] of [[{ running: false }, 'E_NOT_RUNNING'], [{ server: 'box' }, 'E_REMOTE_TERMINAL'], [{ remote: true }, 'E_REMOTE_TERMINAL']]) {
+      const first = createReviewPaste({ find: () => ({ ...socketRow({ socket: bad }), ...over }), tmuxTarget: anchored, exec: assert.fail });
+      assert.equal(first.check(AT), code, 'the unchanged codes come first'); assert.equal(first.paste(AT, 'x'), code);
+    }
   }
 });
 
