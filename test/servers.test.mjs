@@ -645,11 +645,13 @@ test("routed retire: the branch a failed spawn's quarantine still owes is named 
     mkdirSync(env.HOME, { recursive: true }); mkdirSync(env.OATS_HOME_DIR, { recursive: true });
     for (const k of Object.keys(env)) if (/^(OATS_INSTANCE|PI_AGENT)/.test(k)) delete env[k];
     // The host's oats: the real kernel, except that a retire answers with the receipt the test wrote,
-    // with its exit status. No retirement runs.
+    // with its exit status. No retirement runs. Shell builtins only: the fixture's PATH has no cat.
     const receipt = join(base, "receipt.json"), exit = join(base, "receipt-exit");
     const hostOats = join(base, "host-oats");
     writeFileSync(hostOats, `#!/bin/sh
-case " $* " in *" retire "*) case " $* " in *" --plan "*) ;; *) cat ${JSON.stringify(receipt)}; exit "$(cat ${JSON.stringify(exit)})" ;; esac ;; esac
+case " $* " in *" retire "*) case " $* " in *" --plan "*) ;; *)
+  while IFS= read -r line || [ -n "$line" ]; do printf '%s\\n' "$line"; done < ${JSON.stringify(receipt)}
+  read -r code < ${JSON.stringify(exit)}; exit "$code" ;; esac ;; esac
 exec ${JSON.stringify(process.execPath)} ${JSON.stringify(CLI)} "$@"
 `);
     chmodSync(hostOats, 0o755);
