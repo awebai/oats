@@ -450,19 +450,28 @@ moved when its bytes did. The work is copied again unless it is proven
 unchanged. A Git status with the same rows is not that proof: a hook can
 rewrite a file that was already modified, and the row stays the same. In
 directory mode the work state is the bytes of `work/`. In worktree mode it
-is:
+is what a work copy holds, for the worktree and for each nested repository
+alike:
 
-- for the worktree: its Git status, its branch and commit, its index content
-  (what `git ls-files -s` lists), the state of an operation in progress (a
-  merge, a rebase, a cherry-pick, a revert, a bisect), and the bytes of its
-  files, Git metadata left out;
-- for each nested repository: the same Git state, and also its tags, its
-  stash, its exclude rules and its configuration, because its Git directory
-  is removed with the worktree.
+- its Git status, its branch and commit, and its index entries (what
+  `git ls-files -s` lists, with the skip-worktree and assume-unchanged
+  marks);
+- the state of an operation in progress (a merge, a rebase, a cherry-pick, a
+  revert, a bisect);
+- its tags and its stash;
+- its exclude rules (`core.excludesFile` with the file it names, and
+  `info/exclude`) and the settings that change what `git status` reports
+  (`core.fileMode`, `core.ignoreCase`, `core.precomposeUnicode`,
+  `core.symlinks`, `core.autocrlf`, `core.eol`, and `info/attributes`);
+- the bytes of its files, Git metadata left out.
 
-The worktree's own stash, its other branches and tags and its exclude rules
-are not part of the state: they live in the shared repository and outlive
-the worktree. A nested repository's other branches are not in a recovery.
+A worktree's tags, stash, exclude rules and settings are kept by the
+repository it belongs to. They are part of the state because a work copy
+carries them, so a tag or a stash made in that repository while the retire
+hooks run causes one more work copy. A repository's other branches are not
+part of the state: a recovery does not hold them. The one exception is a
+worktree whose `HEAD` is detached: its copy holds the branch that repository
+has checked out, so that branch is part of the state.
 
 A repository inside a nested repository is copied as plain files, its Git
 directory included, and nothing proves such a directory unchanged. With one
@@ -475,26 +484,56 @@ before the hooks) has no work copy to stand for it. It gets the work under
 something beyond the home is there to preserve after them: a commit that no
 other branch reaches any more, or a retirement baseline that is gone.
 
-The Git state is read at every inspection. The files are read once more
-after the hooks, and only when the Git state did not move; when the snapshot
-before the hooks holds the home only, they are read once before the hooks and
-once after. With nothing preserved before the hooks, nothing is compared: a
+The Git state is read at every inspection. When there is something to
+preserve before the hooks, the files are read once before the recovery is
+written, and a pre-hook copy of the work is verified against that read. They
+are read at most once more after the hooks: to prove the work unchanged when
+the Git state did not move, or to verify the copy when it did. With nothing
+preserved before the hooks, nothing is compared: a
 recovery is written after them whenever there is something to preserve.
 
 A Git state that cannot be read refuses the retire with
-`E_WORK_INSPECTION_FAILED`. So does a socket, a FIFO or a device file among
-the files that are read: it cannot be copied, the message names its path, and
-the home is kept.
+`E_WORK_INSPECTION_FAILED`: a read that fails is never taken for "not set"
+or for "unchanged".
 
-The home is not copied again because the work is. The home's event log and
-its stop and restart receipts do not count as changes to the home, so a
-recovery holds them as of the pre-hook snapshot unless the home itself was
-copied again. The retire's own events are written to the workspace log
-(`<deployment>/.agents/events/`), never to the home's.
+**A socket, a FIFO or a device file in the worktree.** An entry that is not
+a file, a directory or a symbolic link has no bytes to read or to copy, and
+Git prints no status row for it, so a worktree that holds one can read as
+clean. In worktree mode, when there is something to preserve before the
+hooks, such an entry anywhere in the worktree refuses the retire:
 
-Each
-part under `after-hooks/` is a full, verified snapshot, not a delta, and it is
-verified before the worktree step and before the home is removed. Nothing in
+- **before the hooks**, with `E_WORK_INSPECTION_FAILED`: no hook has run and
+  nothing has been written, so no recovery is left, however often the retire
+  is retried. The message names the entry and says what to do: safely stop
+  the process or resource that owns it, or move the entry elsewhere, then
+  retry. The entry may be a live endpoint, so deleting it is not the advice;
+- **after the hooks**, when a retire hook left the entry behind: the hooks
+  have run, and the home, the work and the recovery written before the hooks
+  are all kept. The code is `E_WORK_INSPECTION_FAILED` when the Git state is
+  as it was, and `E_WORK_PRESERVATION_FAILED` when the hook also moved the
+  Git state, because the copy then meets the entry before the files are
+  read; that message names the entry too.
+
+A worktree that holds a repository inside a nested repository is copied
+without the read, so there the refusal comes from the copy, as
+`E_WORK_PRESERVATION_FAILED`.
+
+The home is not copied again because the work is. Some entries of a home are
+the kernel's own records and do not count as changes to it:
+`.oats-events.jsonl`, `.oats-stop.json`, `.oats-stop-receipt.json` and
+`.oats-stop-receipt.*.json`, `.oats-restart.json`,
+`.oats-agents-md.*.previous`, `.claude/settings.json`, and the
+`spawnCompleted` and `wake` fields of `instance.json`. They are copied with
+the home and never on their own, so when a hook moved only the work the
+recovery holds them as of the pre-hook snapshot. The retire's own events are
+written to the workspace log (`<deployment>/.agents/events/`), never to the
+home's.
+
+Each part under `after-hooks/` is whole and verified, not a delta, and it is
+verified before the worktree step and before the home is removed.
+`after-hooks/` is not a complete picture of the instance after the hooks: its
+`home/` exists only when the home's own bytes moved, and a part that is not
+there is the one in the pre-hook snapshot. Nothing in
 the pre-hook `home/`, `repo/` or `work/` is rewritten. If that copy fails or
 cannot be verified, retire refuses with `E_WORK_PRESERVATION_FAILED`, keeps
 the home and leaves the pre-hook recovery intact. An instance with nothing to

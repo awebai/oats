@@ -2539,8 +2539,12 @@ A first retire prints the **raw receipt**, not an envelope:
     copied for the first time after the hooks, moved or not, because
     something beyond the home was there to preserve. The home is not
     copied again because the work is.
-    Each is a full verified snapshot, not a delta. Present only when that
-    directory was written.
+    Each part is whole and verified, not a delta, but `after-hooks/` is not
+    a complete picture of the instance after the hooks: with `home: false`
+    the recovery's home is the pre-hook one, and it holds the kernel's own
+    records (the event log, the stop and restart receipts, listed in
+    [souls and instances](souls-and-instances.md#retire)) as of then.
+    Present only when that directory was written.
   - `workRecoveries` is no longer emitted. An older kernel on a server may
     still send `workRecoveries[]` beside `workRecovery` (one `{path, classes,
     bytes, outputs?, repoCopy?}` per recovery directory it wrote), so a
