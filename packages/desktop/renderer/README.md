@@ -88,6 +88,25 @@ three palettes. A missing or unusable token means 400 (xterm's `normal`). Bold s
 xterm's 700 (`fontWeightBold` is not set), and weight never changes the cell, so
 `terminalTypography()` stays `{ fontFamily, fontSize }` and no weight is stored.
 
+Every terminal keeps a minimum contrast ratio (#602): `terminalOptions()`
+(`terminal-tab.mjs`) gives xterm `minimumContrastRatio: TERMINAL_MINIMUM_CONTRAST` (4.5),
+so both creation sites in `shell.mjs` get it. It is one number for every theme: not a
+parameter, a setting or a token. Text that is under 4.5:1 against its cell's background
+is drawn lighter or darker until it reaches it; xterm never changes the background. 4.5
+is WCAG AA for text, Desktop's bar in every theme, and the highest WCAG level that
+leaves the hand-calibrated palettes unadjusted on their own background: the default
+foreground and the 16 ANSI colours already meet it on `--term-bg` in White, Solarized
+and Dark (`test/theme-contrast.test.mjs` holds them to the constant), so xterm acts only
+on combinations nobody calibrated: ANSI on ANSI backgrounds, 256-colour and truecolour
+text. 7 (AAA) would redraw most of the palette, and 3 would leave mid-grey on white
+below AA. Dim text asks for half the ratio (2.25), which the palette colours meet, so
+dim keeps xterm's own half-opacity rendering. xterm excludes box drawing and block
+elements (U+2500–259F) and powerline glyphs from the floor, so borders and bars keep
+the colour a program chose. Setting `options.theme` clears xterm's contrast cache, so
+after a theme change the floor is applied against the new palette with no listener of
+its own. `node packages/desktop/test/fixtures/terminal-colors.mjs` prints a labelled
+screen of colour cases to look at in a terminal tab, in each theme.
+
 **Copying (#520).** A terminal tab is a tmux client with tmux's mouse on, so a plain
 drag is tmux's: the viewer's locked key table (`tmux-target.mjs`
 `LOCKED_TABLE_BINDINGS`; the kernel's remote viewer, `lib/session-viewer.mjs`, binds
