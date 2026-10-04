@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
 import { cliLifecycle, lifecycleArgv } from '../lifecycle-cli.mjs';
-import { lifecyclePlan, lifecycleReceipt, publicLifecycleReceipt } from '../renderer/lifecycle-contract.mjs';
+import { lifecyclePlan, lifecycleReceipt, publicLifecycleReceipt, lifecycleReason } from '../renderer/lifecycle-contract.mjs';
 import { discover } from '../cli-locator.mjs';
 import { cli, target, instance, context, request, stopPlan, retirePlan, stopReceipt, retireReceipt, envelope, options, deferred, tick } from './helpers/lifecycle-fixture.mjs';
 function fixture(overrides = {}) {
@@ -93,6 +93,27 @@ test('unknown outcome remains unknown on retry, never a second native command or
     : (writes++, { schemaVersion: 1, ok: false, error: { code: 'E_CLI_TIMEOUT', message: 'PRIVATE ghp_SECRET' } }) });
   const p = await f.plan(); const r = await f.apply(p.planRef); assert.equal(r.status, 'unknown'); assert.doesNotMatch(JSON.stringify(r), /PRIVATE|ghp_/);
   assert.equal((await f.apply(p.planRef)).status, 'unknown'); assert.equal(writes, 1);
+});
+test('E_WORK_INSPECTION_FAILED keeps its code and its own sentence: refused, home kept, session possibly stopped', () => {
+  const reason = lifecycleReason('E_WORK_INSPECTION_FAILED');
+  assert.equal(reason.code, 'E_WORK_INSPECTION_FAILED'); assert.notEqual(reason.message, lifecycleReason('E_CLI_FAILED').message);
+  // The facts, not the bytes: a rewording that keeps all three needs no edit here.
+  assert.match(reason.message, /\brefused\b/i, 'the retire was refused');
+  assert.match(reason.message, /\bhome\b[^.;]*\b(?:kept|retained)\b/i, 'the home is kept');
+  assert.match(reason.message, /\bsession\b[^.;]*\bmay\b[^.;]*\bstopped\b/i, 'the session may already have been stopped');
+});
+test('a local Remove refused by inspection is an unknown outcome with its own fixed cause; no CLI text is forwarded', async () => {
+  const path = '/srv/unreadable/dev-1/work', remedy = 'restore the owned work root before retrying cleanup';
+  const message = `directory work must remain an owned directory, not missing, a link or another filesystem type: ${path}; ${remedy}`;
+  let writes = 0;
+  const f = fixture({ invoke: async (_bin, args) => args.phase === 'plan' ? envelope(retirePlan())
+    : (writes++, { schemaVersion: 1, ok: false, error: { code: 'E_WORK_INSPECTION_FAILED', message } }) });
+  const p = await f.plan('retire'), result = await f.apply(p.planRef);
+  // Never "refused": the kernel can raise it after the children stop, the session stop and the retire hooks.
+  assert.equal(result.status, 'unknown'); assert.equal(result.reason.code, 'E_OUTCOME_UNKNOWN'); assert.equal(writes, 1);
+  assert.equal(result.cause.code, 'E_WORK_INSPECTION_FAILED'); assert.deepEqual(result.cause, lifecycleReason('E_WORK_INSPECTION_FAILED'));
+  const sent = JSON.stringify(result);
+  for (const raw of [message, path, remedy]) assert.equal(sent.includes(raw), false, raw);
 });
 test('expired plans, malformed/oversized DTOs, stale admission and hostile returned aliases cannot authorize an apply', async () => {
   let clock = 0; const f = fixture({ now: () => clock }); const p = await f.plan(); clock += 300_001;

@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
 import { cliLifecycle, lifecycleArgv } from '../lifecycle-cli.mjs';
-import { lifecycleReceipt } from '../renderer/lifecycle-contract.mjs';
+import { lifecycleReceipt, lifecycleReason } from '../renderer/lifecycle-contract.mjs';
+import { remoteReason } from '../renderer/remote-address.mjs';
 import { cli, instance, stopPlan, retirePlan, stopReceipt, retireReceipt, envelope, options } from './helpers/lifecycle-fixture.mjs';
 
 const remoteRow = { ...instance, server: 'build', addressable: true, missingRemotely: false, savedRoute: false, running: true };
@@ -101,6 +102,18 @@ test('remote apply: a transport failure or timeout may have acted on the host, s
     const again = await f.apply(plan.planRef);
     assert.equal(again.status, 'unknown'); assert.equal(again.repeated, true); assert.equal(f.calls.length, 2);
   }
+});
+
+test('remote Remove refused by inspection: an unknown outcome whose cause is the inspection sentence over the host\'s own message', async () => {
+  const detail = `could not inspect instance worktree: fatal: not a git repository: ${instance.home}/work`;
+  const f = fixture({ apply: () => ({ schemaVersion: 1, ok: false, error: { code: 'E_WORK_INSPECTION_FAILED', message: detail } }) });
+  const result = await f.apply((await f.plan('retire')).planRef);
+  assert.equal(result.status, 'unknown');
+  assert.equal(result.reason.code, 'E_OUTCOME_UNKNOWN');
+  const headline = lifecycleReason('E_WORK_INSPECTION_FAILED').message;
+  assert.notEqual(headline, lifecycleReason('E_CLI_FAILED').message);
+  assert.deepEqual(result.cause, { code: 'E_WORK_INSPECTION_FAILED', message: headline, detail, remote: true });
+  assert.deepEqual(remoteReason(result.cause), result.cause, 'the dialog keeps the headline and its Details');
 });
 
 test('remote refusals before invocation: no probe entry, not addressable, a local selector', async () => {
