@@ -70,6 +70,9 @@ The shell has three navigation contexts:
   Binds 127.0.0.1 only — it can type into your terminals.
 - `preload.cjs` — contextBridge surface (`window.oatsDesktop`); renderer runs
   with contextIsolation on, nodeIntegration off.
+- `host-theme.mjs` — the theme of the computer that runs Desktop, for the
+  "This computer" theme choice: reads and follows Omarchy's `colors.toml`, else
+  the system's light or dark appearance, and sends plain state to the windows.
 - `renderer/shell.mjs` — contextual single sidebar, stage host, artifact-tab
   host, command palette, recursive instance roster, and integrated terminals.
 - `renderer/views/*.mjs` — feature views per the shared contract:
@@ -78,7 +81,9 @@ The shell has three navigation contexts:
   `mount()` MAY return a disposer function; the host prefers it over the
   module-level `unmount()` (required for multi-mounted views such as markdown).
   `views/common.mjs` carries shared helpers and the workspace bus;
-  `theme.css` carries AA dark + solarized-light semantic tokens;
+  `theme.css` carries the AA semantic tokens of the three built-in themes
+  (White, Solarized, Dark); a fourth choice, This computer, shows the host's
+  theme on a built-in base (renderer/README.md);
   `loading.mjs` / `loading.css` are the shared loading-state primitive
   (skeletons, refreshing, stale and failed; see renderer/README.md). Bare ESM deps
   (marked, dompurify, highlight.js) resolve through the importmap in

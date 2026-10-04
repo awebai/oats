@@ -28,7 +28,7 @@ function fixture(t, { saved = null, readError = false, writeError = false, noSto
     setItem(key, value) { writes.push([key, value]); if (writeError) throw new Error("storage full"); saved = value; },
   };
   const theme = runInNewContext(`${source.replace(/\bexport /g, "")}\n({
-    THEMES, initTheme, currentTheme, applyTheme, setTheme, toggleTheme, onThemeChange, xtermTheme
+    THEMES, initTheme, currentTheme, appliedTheme, applyTheme, setTheme, toggleTheme, refreshHostTheme, onThemeChange, xtermTheme
   })`, context);
   return { theme, doc: context.document, reads, writes,
     mediaQueries: () => mediaQueries,
@@ -41,14 +41,14 @@ test("initial HTML is White before scripts run; public choices have stable label
   assert.equal(doc.documentElement.dataset.theme, "light");
   assert.equal(theme.currentTheme(), "light");
   assert.deepEqual(Array.from(theme.THEMES, item => [item.id, item.label]), [
-    ["light", "White"], ["solarized", "Solarized"], ["dark", "Dark"],
+    ["light", "White"], ["solarized", "Solarized"], ["dark", "Dark"], ["host", "This computer"],
   ]);
   assert.ok(Object.isFrozen(theme.THEMES));
   for (const item of theme.THEMES) assert.ok(Object.isFrozen(item));
 });
 
 for (const osDark of [false, true]) {
-  for (const saved of [null, "", "bogus", "LIGHT", "white", "system", "__proto__", "#ff0000", " dark "]) {
+  for (const saved of [null, "", "bogus", "LIGHT", "white", "system", "__proto__", "#ff0000", " dark ", "HOST", "omarchy", "This computer"]) {
     test(`OS ${osDark ? "dark" : "light"}, invalid/missing ${JSON.stringify(saved)} defaults to White`, t => {
       const u = fixture(t, { saved, osDark });
       u.doc.documentElement.dataset.theme = "dark";
@@ -75,13 +75,14 @@ for (const storage of [{}, { readError: true }, { writeError: true }, { noStorag
   test(`storage ${JSON.stringify(storage)}: selection and cycling remain usable`, t => {
     const u = fixture(t, storage);
     assert.equal(u.theme.initTheme(), "light");
-    for (const expected of ["solarized", "dark", "light", "solarized"]) {
+    // White → Solarized → Dark → This computer → White.
+    for (const expected of ["solarized", "dark", "host", "light", "solarized"]) {
       assert.equal(u.theme.toggleTheme(), expected);
       assert.equal(u.theme.currentTheme(), expected);
     }
     assert.equal(u.theme.setTheme("dark"), "dark");
     assert.equal(u.theme.currentTheme(), "dark");
-    if (!storage.noStorage) assert.deepEqual(u.writes, ["solarized", "dark", "light", "solarized", "dark"].map(value => [KEY, value]));
+    if (!storage.noStorage) assert.deepEqual(u.writes, ["solarized", "dark", "host", "light", "solarized", "dark"].map(value => [KEY, value]));
   });
 }
 
@@ -128,4 +129,90 @@ test("xterm follows all three live CSS palettes including selection and all 16 A
       assert.equal(result[field], value, `${name} ${field}`);
     }
   }
+});
+
+// "This computer" (#602): a choice, not a palette. What it shows comes from a host source
+// (renderer/host-theme.mjs; a stub here, the real one in host-theme.test.mjs).
+const rootStyle = doc => doc.documentElement.style;
+
+test("This computer saves and restores as `host`; the choice is not the applied theme; with no host source it shows White", t => {
+  const u = fixture(t, { saved: "host" });
+  u.doc.documentElement.dataset.theme = "dark";
+  assert.equal(u.theme.initTheme(), "host");
+  assert.equal(u.theme.currentTheme(), "host", "the choice");
+  assert.equal(u.theme.appliedTheme(), "light", "what is applied");
+  assert.equal(u.doc.documentElement.dataset.theme, "light", "data-theme stays a built-in id: it is the CSS hook");
+  assert.deepEqual(u.reads, [KEY]); assert.deepEqual(u.writes, [], "restoring does not rewrite the preference");
+  assert.equal(u.mediaQueries(), 0, "the renderer does not consult the OS itself");
+  assert.equal(u.theme.setTheme("solarized"), "solarized");
+  assert.equal(u.theme.appliedTheme(), "solarized"); assert.equal(u.theme.currentTheme(), "solarized");
+  assert.equal(u.theme.setTheme("host"), "host");
+  assert.deepEqual(u.writes, [[KEY, "solarized"], [KEY, "host"]]);
+  assert.equal(u.theme.toggleTheme(), "light", "the cycle closes: This computer → White");
+});
+
+test("This computer applies the host source's base and its overrides in one pass, and notifies listeners once", t => {
+  const calls = [];
+  const host = { state: { mode: "dark", tokens: { "--bg": "#101010", "--term-bg": "#202020" } },
+    mode() { return this.state.mode; },
+    tokens(base) { calls.push(["tokens", base("md-code-bg")]); return this.state.tokens; },
+    shown(chosen) { calls.push(["shown", chosen]); } };
+  const u = fixture(t, { saved: "host" });
+  const heard = [];
+  u.theme.onThemeChange(name => heard.push([name, u.doc.documentElement.dataset.theme, rootStyle(u.doc).getPropertyValue("--bg")]));
+  assert.equal(u.theme.initTheme(host), "host");
+  assert.equal(u.doc.documentElement.dataset.theme, "dark", "the base, by the host's polarity");
+  assert.equal(rootStyle(u.doc).getPropertyValue("--bg"), "#101010");
+  assert.equal(u.theme.xtermTheme().background, "#202020", "terminals read the override through the same tokens");
+  assert.deepEqual(calls, [["tokens", "#ffffff10"], ["shown", true]], "the source reads the base theme's own tokens (Dark's here), and hears the result");
+  assert.deepEqual(heard, [["host", "dark", "#101010"]], "one notification, after every property is set");
+
+  host.state = { mode: "light", tokens: { "--bg": "#fafafa" } };
+  u.theme.refreshHostTheme();
+  assert.equal(u.doc.documentElement.dataset.theme, "light");
+  assert.equal(rootStyle(u.doc).getPropertyValue("--bg"), "#fafafa");
+  assert.equal(rootStyle(u.doc).getPropertyValue("--term-bg"), "", "an override the new palette does not set is gone");
+  assert.equal(u.theme.xtermTheme().background, "#ffffff", "so the base theme's value shows");
+  assert.equal(heard.length, 2); assert.deepEqual(heard[1], ["host", "light", "#fafafa"]);
+  assert.deepEqual(calls.slice(2), [["tokens", "#ffffff60"], ["shown", true]], "White's token this time");
+
+  host.state = { mode: "dark", tokens: null };
+  u.theme.refreshHostTheme();
+  assert.equal(u.doc.documentElement.dataset.theme, "dark");
+  assert.equal(rootStyle(u.doc).cssText, "", "no palette: the base theme exactly, with no override");
+  assert.equal(u.theme.currentTheme(), "host"); assert.equal(u.theme.appliedTheme(), "dark");
+});
+
+test("leaving This computer removes every inline override; refreshing the host does nothing for another choice", t => {
+  const calls = [];
+  const tokens = { "--bg": "#101010", "--surface": "#111111", "--fg": "#eeeeee", "--term-bg": "#202020", "--ansi-red": "#ff0000" };
+  const host = { mode: () => "dark", tokens: () => tokens, shown: chosen => calls.push(chosen) };
+  const u = fixture(t, { saved: "host" });
+  u.theme.initTheme(host);
+  for (const [property, value] of Object.entries(tokens)) assert.equal(rootStyle(u.doc).getPropertyValue(property), value);
+  for (const next of ["dark", "solarized", "light"]) {
+    u.theme.setTheme("host");
+    assert.equal(rootStyle(u.doc).getPropertyValue("--bg"), "#101010");
+    assert.equal(u.theme.setTheme(next), next);
+    for (const property of Object.keys(tokens)) assert.equal(rootStyle(u.doc).getPropertyValue(property), "", `${next}: ${property} is no longer set inline`);
+    assert.equal(rootStyle(u.doc).cssText, "", `${next} is exactly the built-in theme`);
+    assert.equal(u.doc.documentElement.dataset.theme, next);
+    assert.equal(calls.at(-1), false, "the source hears that it is no longer the choice");
+  }
+  const heard = [];
+  u.theme.onThemeChange(name => heard.push(name));
+  u.theme.refreshHostTheme();
+  assert.deepEqual(heard, [], "a host change is not applied in a window whose choice is another theme");
+  assert.equal(u.doc.documentElement.dataset.theme, "light"); assert.equal(rootStyle(u.doc).cssText, "");
+});
+
+test("a host source that throws leaves the base theme with no override, and the theme is still applied", t => {
+  const u = fixture(t);
+  const heard = [];
+  u.theme.onThemeChange(name => heard.push(name));
+  u.theme.initTheme({ mode: () => "dark", tokens: () => { throw new Error("inert source failed"); }, shown: () => { throw new Error("inert source failed"); } });
+  assert.equal(u.theme.setTheme("host"), "host");
+  assert.equal(u.doc.documentElement.dataset.theme, "dark");
+  assert.equal(rootStyle(u.doc).cssText, "");
+  assert.deepEqual(heard, ["light", "host"]);
 });
