@@ -521,7 +521,7 @@ workspace's view; its rows carry `server`, `home`, and the kernel's
   behind Details. A missing `remote` entry is
   "This computer's OATS can't route this to `<server>`. Update OATS here."
 - **The display filter** (`renderer/display-text.mjs`, `displayLine`) is the
-  one way a host's free text reaches a view. Text that looks like a credential,
+  one way a refusal's `detail` reaches a view. Text that looks like a credential,
   or holds DEL or a C0 control character other than tab and line feed, is
   withheld whole (`[Detail withheld]`), tested on the text as given. Otherwise it becomes one
   line: tab, line feed and the Unicode line and paragraph separators become a
@@ -535,8 +535,8 @@ workspace's view; its rows carry `server`, `home`, and the kernel's
   text, not for a name that identifies something.
   - A view sets the detail as text, alone inside a `<bdi>`
     (`codeLineNodes`); the code and Desktop's own words stay outside it.
-  - A host's free text never goes into an attribute: the stale line's `title`
-    holds Desktop's sentence and the code, the code only in the kernel's code
+  - A refusal's detail never goes into an attribute: the stale line's `title`
+    holds the read's message and the code, the code only in the kernel's code
     shape. The detail stays in Details.
   - A headline shows the server's label as a display line too (a label with
     nothing to show reads "the server"); routing, comparison and requests keep

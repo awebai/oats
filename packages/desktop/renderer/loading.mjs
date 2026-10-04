@@ -205,11 +205,11 @@ function noticeText(kind, noun, observedAt, now, variant = null) {
   return wording.observed(observedAgeText(observedAt, now));
 }
 /** A failed read's cause, in the two forms the stale notice says it. `title`: the read's own message and
- * its code, the code only in the kernel's code shape; never a host's own message (free text does not go
- * into an attribute). `nodes`: the Details line: the same message and code as text, and a host's message
+ * its code, the code only in the kernel's code shape; never the `detail` (a refusal's detail does not go
+ * into an attribute). `nodes`: the Details line: the same message and code as text, and the detail
  * after the code, inside its <bdi> (remote-address.mjs codeLineNodes). `codeOnly`: the message is on the
  * notice itself, so both keep only the code. */
-export function staleCause(doc, { message = null, code = null, detail = null, codeOnly = false } = {}) {
+function staleCause(doc, { message = null, code = null, detail = null, codeOnly = false } = {}) {
   const said = codeOnly ? null : message, shown = kernelCode(code) ? code : null, coded = codeLineNodes(doc, { code, detail });
   return { title: said && shown ? `${said} (${shown})` : said || shown,
     nodes: said && coded.length ? [doc.createTextNode(`${said} (`), ...coded, doc.createTextNode(')')] : said ? [doc.createTextNode(said)] : coded };
@@ -241,7 +241,7 @@ export function updateNotice(el, { noun, observedAt = null, cause = null, busy =
   el.querySelector('.loading-notice-text').textContent = noticeText(el.dataset.kind, noun, observedAt, now, variant);
   if (variant) el.dataset.variant = variant.reason; else delete el.dataset.variant;
   const said = el.querySelector('.loading-notice-message');
-  if (said) { const text = variant?.reason === 'cache' && typeof message === 'string' ? message : ''; if (said.textContent !== text) said.textContent = text; said.hidden = !text; }
+  if (said) { const text = variant?.reason === 'cache' && typeof message === 'string' ? message : ''; said.textContent = text; said.hidden = !text; }
   const title = typeof cause === 'string' ? cause : cause?.title ?? null;
   const nodes = typeof cause === 'string' ? cause ? [cause] : [] : cause?.nodes ?? [];
   if (title) el.title = title; else el.removeAttribute('title');
