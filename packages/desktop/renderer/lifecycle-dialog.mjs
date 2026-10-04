@@ -105,7 +105,7 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
         ['Work', f.work.observed ? `${f.work.changed} changed · ${f.work.untracked} untracked` : `Unknown — ${f.work.reason}`],
         ['Worktree branch', f.work.observed ? f.work.branch : null], ['Recorded branch', f.recordedBranch],
         ['Worktree by default', value.defaults.retainWorktree ? 'Retained and re-homed by OATS' : 'Not reported as an owned worktree']]);
-      if (f.work.observed && f.work.drift) ui.facts.append(node('p', 'Branch drift: actions use the observed worktree branch, not the recorded spawn name.', 'lifecycle-warning'));
+      if (f.work.observed && f.work.drift) ui.facts.append(node('p', 'Branch drift: the worktree is not on the branch recorded at spawn. A recovery keeps the worktree\'s own branch and commit.', 'lifecycle-warning'));
       if (f.children.length) { const list = node('ul'); for (const c of f.children) list.append(node('li', `${c.instance} · ${c.agent} · ${c.home} · ${c.session.established ? c.session.state : 'Unknown session'}`)); ui.facts.append(node('p', 'Children stopped first; their homes are retained.'), list); }
       excluded(ui.facts, f.ambiguous, true);
       ui.forge.append(node('p', 'Pull request: unknown. Forge facts are informational; the kernel never touches a PR.', 'lifecycle-note'));
