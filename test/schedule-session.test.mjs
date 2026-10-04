@@ -8,20 +8,25 @@ import { tmpdir } from "node:os";
 import { addSchedule, tickWorkspace, withHostLock } from "../lib/schedule.mjs";
 import { inspectInstanceSession, inputInstanceSession } from "../lib/core.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { ensureOatsSocketDir, leaveEnclosingInstance, privateTmuxTmpdir, removeTmuxTmpdir } from "./helpers/host-fixture.mjs";
 
 // Exercise the actual scheduler -> session start -> tmux -> harness stdin
 // boundary. All homes, receipts, binaries and the tmux socket are fixtures;
 // no model, identity, user's tmux server or host timer is involved.
 test("scheduled wakes deliver literal text once and give the next cold home the slot after a harness stops", async () => {
   const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-schedule-session-")));
-  const socket = join(base, "tmux.sock");
+  // The fixture's own `oats` server (a private TMUX_TMPDIR): where a start creates its window.
+  const tmuxTmpdir = privateTmuxTmpdir();
+  const socket = ensureOatsSocketDir(tmuxTmpdir);
   // A workspace deployment; the schedule scope is its directory (oats-local.yaml).
   const fx = v2Deployment({ souls: { dev: { soul: { work: "worktree" } } } });
   const ws = fx.dep;
-  const savedEnv = new Map(["OATS_HOME_DIR", "SHELL", "ENV", "BASH_ENV", "OATS_INSTANCE", "OATS_INSTANCE_HOME", "PI_AGENT_INSTANCE", "PI_AGENT_HOME", "PI_AGENTS_ROOT"].map(k => [k, process.env[k]]));
+  const savedEnv = new Map(["TMUX_TMPDIR", "OATS_HOME_DIR", "SHELL", "ENV", "BASH_ENV", "OATS_INSTANCE", "OATS_INSTANCE_HOME", "PI_AGENT_INSTANCE", "PI_AGENT_HOME", "PI_AGENTS_ROOT"].map(k => [k, process.env[k]]));
   process.env.OATS_HOME_DIR = join(base, "host");
+  process.env.TMUX_TMPDIR = tmuxTmpdir;
   process.env.SHELL = "/bin/sh";
   for (const key of ["ENV", "BASH_ENV", "OATS_INSTANCE", "OATS_INSTANCE_HOME", "PI_AGENT_INSTANCE", "PI_AGENT_HOME", "PI_AGENTS_ROOT"]) delete process.env[key];
+  const comeBack = leaveEnclosingInstance(base); // this worker starts a tmux server: as no instance
   const tmux = (...args) => execFileSync("tmux", ["-u", "-S", socket, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
   const shq = s => `'${s.replace(/'/g, `'\\''`)}'`;
   const waitFor = async (fn, why) => {
@@ -89,6 +94,8 @@ setTimeout(()=>process.exit(0),30000);\n`);
     assert.ok(existsSync(homes[0].home), "stopping a harness does not require deleting its persistent home");
   } finally {
     try { tmux("kill-server"); } catch { /* fixture server already gone */ }
+    comeBack();
+    removeTmuxTmpdir(tmuxTmpdir);
     // The tmux server exits asynchronously and may still be writing under base: bounded retry on ENOTEMPTY/EBUSY.
     rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     fx.cleanup();

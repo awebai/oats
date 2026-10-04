@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { parseLaunchCommand, renderLaunchCommand, withLaunchModel, withSafeTaskPrompt, startInstanceSession, restartInstanceSession, inspectInstanceSession } from "../lib/core.mjs";
 import { startRemote } from "../lib/servers.mjs";
 import { liveWaiting, readEvents, setWaiting } from "../lib/instance-events.mjs";
-import { isolateSessionEnvironment, waitUntil } from "./helpers/host-fixture.mjs";
+import { isolateSessionEnvironment, oatsSocket, waitUntil } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -61,11 +61,14 @@ test("commands OATS did not render are refused, never rewritten by substring", (
   }
 });
 
-// ---- real tmux on a private socket ------------------------------------------------
+// ---- real tmux: the fixture's own `oats` server ------------------------------------
+// Every home here is recorded on the server OATS creates sessions on (`tmux -L oats`, in the fixture's
+// private TMUX_TMPDIR), so a window the kernel has to create again lands on the socket the home
+// recorded. A home recorded on ANOTHER server is test/tmux-own-server.test.mjs.
 const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-session-start-")));
-const socket = join(base, "tmux.sock");
 const session = "t";
-const restoreEnvironment = isolateSessionEnvironment(base, socket);
+const restoreEnvironment = isolateSessionEnvironment(base);
+const socket = oatsSocket();
 const tmux = (...args) => execFileSync("tmux", ["-u", "-S", socket, ...args], { encoding: "utf8", timeout: 10000, stdio: ["ignore", "pipe", "pipe"] }).trim();
 const windows = () => { try { return tmux("list-windows", "-t", session, "-F", "#{window_name}").split("\n").filter(Boolean); } catch { return []; } };
 // Every home is a real workspace-model spawn (0.26.0 starts no other kind); the
@@ -513,8 +516,10 @@ test("a transient startup child does not discard the startup guard", async () =>
       if (!launched) throw Object.assign(new Error("absent"), { stderr: "can't find window: transient-child" });
       return `%1\t0\t${command}\t100\n`;
     }
+    if (args.includes("list-sessions")) return `${session}\t${socket}\n`;
     if (args.includes("list-windows")) return "hq\n";
-    if (args.includes("new-window") || args.includes("respawn-pane")) { launched = true; launches++; return ""; }
+    if (args.includes("new-window") || args.includes("respawn-pane")) { launched = true; launches++; return "@1\n"; }
+    if (args.includes("set-option")) return "";
     assert.fail(`unexpected ${args}`);
   } };
   startInstanceSession(f.home, { io });
@@ -539,6 +544,7 @@ test("launch errors never expose saved commands through tmux diagnostics", async
           if (backend === "new-window") throw Object.assign(new Error("absent"), { stderr: "can't find window: agent" });
           return "%1\t0\tzsh\t100\n";
         }
+        if (args.includes("list-sessions")) return `${session}\t${socket}\n`;
         if (args.includes("list-windows")) return "hq\n";
         assert.ok(args.includes("respawn-pane") || args.includes("new-window"));
         throw Object.assign(new Error(`Command failed: ${binary} ${args.join(" ")}`), failure);
@@ -557,9 +563,11 @@ test("successful launch responses omit the private launch command too", async ()
   writeFileSync(join(f.home, "instance.json"), JSON.stringify({ ...f.meta, command: `REVIEW_TOKEN=${shq(secret)} ${f.command}` }));
   const io = { exec: (binary, args) => {
     if (args.includes("list-panes")) throw Object.assign(new Error("absent"), { stderr: "can't find window: private-result" });
+    if (args.includes("list-sessions")) return `${session}\t${socket}\n`;
     if (args.includes("list-windows")) return "hq\n";
+    if (args.includes("set-option")) return "";
     assert.ok(args.includes("new-window"));
-    return "";
+    return "@1\n";
   } };
   const result = startInstanceSession(f.home, { io });
   assert.equal("command" in result, false);

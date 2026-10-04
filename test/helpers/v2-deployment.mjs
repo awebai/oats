@@ -11,7 +11,10 @@
 // Spawns go through the real kernel path, exactly as bin/oats.mjs does it:
 // prepareInstance (discovery over the local remote) → ensureWorkspaceSoul →
 // spawnInstanceAsync. No network, no packages, no catalog, never bare `oats setup`;
-// HOME, the remote cache, tmux and the harnesses are isolated.
+// HOME, the remote cache, tmux and the harnesses are isolated. tmux: a session name that does not
+// exist, and a private TMUX_TMPDIR, so the server the kernel selects by name (`tmux -L oats`) is the
+// fixture's own, never the operator's. Inside a session environment (isolateSessionEnvironment, which
+// must be installed first) that environment's TMUX_TMPDIR is used, so both name one `oats` server.
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir, devNull } from "node:os";
@@ -19,6 +22,7 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import YAML from "yaml";
 import { inertHarnessDir } from "./runtime-stub.mjs";
+import { isolatedTmuxTmpdir, privateTmuxTmpdir, removeTmuxTmpdir } from "./host-fixture.mjs";
 
 export const CLI = resolve(new URL("../../bin/oats.mjs", import.meta.url).pathname);
 const IDENTITY = ["TMUX", "TMUX_PANE", "OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "OATS_AGENT", "OATS_SOUL", "OATS_ROOT", "OATS_CONTEXT", "OATS_WORKSPACE",
@@ -124,8 +128,9 @@ export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilit
   writeFileSync(join(dep, "oats-local.yaml"), YAML.stringify({ schemaVersion: 2, workspace: ref, ...local }, { lineWidth: 0 }));
   const bin = inertHarnessDir(base);
   const cache = join(base, "cache");
+  const ownTmuxTmpdir = isolatedTmuxTmpdir() ? null : privateTmuxTmpdir();
   const env = { ...process.env, HOME: home, OATS_HOME_DIR: join(base, "oats-home"), OATS_REMOTE_CACHE: cache, PATH: `${bin}:${process.env.PATH}`,
-    OATS_TMUX_SESSION: `none-${process.pid}`, PI_AGENTS_TMUX_SESSION: `none-${process.pid}` };
+    OATS_TMUX_SESSION: `none-${process.pid}`, PI_AGENTS_TMUX_SESSION: `none-${process.pid}`, TMUX_TMPDIR: ownTmuxTmpdir ?? isolatedTmuxTmpdir() };
   for (const k of IDENTITY) delete env[k];
   const remoteOptions = { cacheDir: cache };
 
@@ -138,14 +143,14 @@ export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilit
     return git(seed, "rev-parse", "HEAD");
   };
   /** Run `fn` with the fixture's isolation forced onto process.env, restored afterwards:
-   *  HOME, the remote cache, a tmux session that does not exist, and no ambient instance
-   *  identity or TMUX. Everything else the test set (its own PATH with fakes, switches)
+   *  HOME, the remote cache, a tmux session that does not exist, the private TMUX_TMPDIR, and no
+   *  ambient instance identity or TMUX. Everything else the test set (its own PATH with fakes, switches)
    *  is kept. Every in-process kernel call goes through here, so a test can never reach
    *  the operator's own tmux server or deployment. */
   fx.inEnv = async (fn) => {
     const saved = process.env;
     const next = { ...saved };
-    for (const k of ["HOME", "OATS_HOME_DIR", "OATS_REMOTE_CACHE", "OATS_TMUX_SESSION", "PI_AGENTS_TMUX_SESSION"]) next[k] = env[k];
+    for (const k of ["HOME", "OATS_HOME_DIR", "OATS_REMOTE_CACHE", "OATS_TMUX_SESSION", "PI_AGENTS_TMUX_SESSION", "TMUX_TMPDIR"]) next[k] = env[k];
     for (const k of IDENTITY) delete next[k];
     process.env = next;
     try { return await fn(); } finally { process.env = saved; }
@@ -176,6 +181,10 @@ export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilit
     const r = spawnSync(process.execPath, [CLI, ...args], { cwd, env: { ...env, ...extra }, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
     return { ...r, json: () => JSON.parse(r.stdout.trim().split("\n").pop()) };
   };
-  fx.cleanup = () => rmSync(base, { recursive: true, force: true });
+  fx.cleanup = () => {
+    // Its own `oats` server, if a test launched on real tmux: killed by socket, never by name.
+    if (ownTmuxTmpdir) removeTmuxTmpdir(ownTmuxTmpdir);
+    rmSync(base, { recursive: true, force: true });
+  };
   return fx;
 }

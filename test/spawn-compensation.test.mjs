@@ -21,6 +21,7 @@ function fixture({ harness = true, harnessName = "pi", platform = true, taskDire
   const resource = join(resourceHolder, "external-resource");
   const events = join(resourceHolder, "events");
   const window = join(resourceHolder, "window");
+  const tmuxCalls = join(resourceHolder, "tmux-calls.jsonl");
   const bin = join(resourceHolder, "bin");
   mkdirSync(bin);
   // A workspace deployment: soul dev (worktree) with one member capability
@@ -68,14 +69,18 @@ else { rmSync(${JSON.stringify(resource)}); console.log(JSON.stringify({meta:{re
   if (platform) write(join(bin, "tmux"), `#!${process.execPath}
 const { existsSync, readFileSync, writeFileSync, rmSync } = require('node:fs');
 const args = process.argv.slice(2);
-if (args[0] === '-S') args.splice(0, 2);
+require('node:fs').appendFileSync(${JSON.stringify(tmuxCalls)}, JSON.stringify(args) + '\\n');
+// The kernel addresses a server first: -u, then -L oats (to ensure the session) or -S <socket>.
+while (['-u', '-S', '-L'].includes(args[0])) args.splice(0, args[0] === '-u' ? 1 : 2);
 const command = args[0];
 const state = ${JSON.stringify(window)};
-if (command === 'display-message') console.log(${JSON.stringify(join(base, "tmux.sock"))});
+// No session yet (list-sessions prints nothing): the one created answers its socket and first window.
+if (command === 'new-session') console.log(${JSON.stringify(join(base, "tmux.sock"))} + '\t@0');
 if (command === 'list-windows' && existsSync(state)) console.log(readFileSync(state, 'utf8'));
 if (command === 'new-window') {
   writeFileSync(state, args[args.indexOf('-n') + 1]);
   if (${launchFailure}) { console.error('launch failed after creating window'); process.exit(1); }
+  console.log('@1');
 }
 if (command === 'kill-window' && !${stubbornWindow}) rmSync(state, {force:true});
 `, 0o755);
@@ -83,7 +88,7 @@ if (command === 'kill-window' && !${stubbornWindow}) rmSync(state, {force:true})
   // The harness is a spawn choice (a v2 soul declares none); pi is the default.
   const harnessFlag = harnessName === "pi" ? [] : ["--harness", harnessName];
   const spawn = (launch = true) => run(["spawn", "dev", "--purpose", "probe", ...harnessFlag, ...(launch ? [] : ["--no-launch"])]);
-  return { base, dep, repo, root, home, resource, events, window, spawn, run, env, harnessFlag };
+  return { base, dep, repo, root, home, resource, events, window, tmuxCalls, spawn, run, env, harnessFlag };
 }
 
 function assertClean(f) {
@@ -122,6 +127,16 @@ test("failed platform launch removes a window created before the failure and com
   // rendered command and reference values); the failure is named generically.
   assert.match(result.stdout, /tmux new-window failed for dev-probe/);
   assert.doesNotMatch(result.stdout, /launch failed after creating window/);
+  // The message's hint and the compensation both name the socket this spawn recorded: the one the
+  // session's creation answered, never the ambient server.
+  const socket = join(f.base, "tmux.sock");
+  assert.ok(JSON.parse(result.stdout.trim().split("\n").pop()).error.message.includes(`run tmux -S ${socket} list-windows -t `), result.stdout);
+  const calls = readFileSync(f.tmuxCalls, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+  const launched = calls.findIndex((call) => call.includes("new-window"));
+  assert.deepEqual(calls[launched].slice(0, 3), ["-u", "-S", socket]);
+  const cleanup = calls.slice(launched + 1);
+  assert.deepEqual(cleanup.map((call) => call[3]), ["kill-window", "list-windows"], "the kill, then the probe that verifies it");
+  for (const call of cleanup) assert.deepEqual(call.slice(0, 3), ["-u", "-S", socket]);
   assert.match(result.stdout, /spawn rolled back/);
   assert.equal(readFileSync(f.events, "utf8"), "spawn\nretire\n");
   assertClean(f);
