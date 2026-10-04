@@ -11,8 +11,10 @@ import { JSDOM } from 'jsdom';
 import { createReadinessView, readinessCSS } from '../renderer/readiness-view.mjs';
 import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 import { readinessFailure } from '../renderer/readiness-contract.mjs';
-import { PENDING_DELAY_MS, REFRESHING_DELAY_MS } from '../renderer/loading.mjs';
-import { cli, workspace, selector, target, data, view, deferred, tick } from './helpers/readiness-fixture.mjs';
+import { PENDING_DELAY_MS, REFRESHING_DELAY_MS, AGE_TICK_MS } from '../renderer/loading.mjs';
+import { createReadinessBoundary } from '../server/readiness.mjs';
+import { cli, workspace, selector, target, data, view, envelope, deferred, tick } from './helpers/readiness-fixture.mjs';
+import { assertIsolatedDetail, MESSY, MESSY_LINE } from './helpers/detail-line.mjs';
 
 /** A fake clock for the controller's delays: timers fire in order when advanced; `now()` follows. */
 function clock() {
@@ -129,6 +131,36 @@ test('failure with a value: stale line with the observed age and Retry under the
   assert.equal(u.one('.loading-notice'), null); assert.equal(u.status().textContent, 'Readiness updated');
   assert.equal(u.doc.activeElement, u.one('.readiness-refresh'), 'the vanished Retry hands focus to Refresh');
   assert.equal(u.one('.readiness-checks'), checks, 'same facts, same nodes');
+});
+
+test("from the server: a host message with line breaks and a character of the set is one line, alone in its <bdi>, in the failed block and in the stale line's Details; the stale line's title never holds it, before or after an age tick", async t => {
+  const u = setup(t); setWorkspace('remote:build:1');
+  const remoteWs = { id: 'remote:build:1', name: 'Build box', remote: true, server: 'build' }, home = '/srv/agents/dev/instances/dev-1';
+  const remoteSelector = { kind: 'instance', instance: 'dev-1', agent: 'dev', agentsRoot: '/srv/agents', server: 'build' };
+  const refused = () => ({ schemaVersion: 1, ok: false, error: { code: 'E_SSH', message: MESSY } });
+  let answer = refused;
+  const server = createReadinessBoundary({ invoke: async (_bin, options) => answer(options) });
+  const context = () => ({ cli: { ...structuredClone(cli), remote: ['readiness'] }, localCwd: '/Users/me/work', agents: [], workspace: { ...remoteWs, scope: '/srv' },
+    instances: [{ instance: 'dev-1', agent: 'dev', agentsRoot: '/srv/agents', home, server: 'build', addressable: true, missingRemotely: false, running: true }] });
+  /** The server's reply to the view's latest request. */
+  const reply = async () => { u.gates.at(-1).resolve(await server(u.calls.at(-1), context)); await tick(); };
+  // Nothing read yet: the failed block.
+  void u.update({ workspace: remoteWs, selector: remoteSelector }); await reply();
+  assert.equal(u.one('.loading-failed-message').textContent, "Couldn't reach Build box.");
+  assertIsolatedDetail(u.one('.loading-failed-code'), { before: 'E_SSH: ', detail: MESSY_LINE });
+  // A value, then the same refusal: the stale line.
+  answer = options => { const d = data(options.target); d.at = new Date(u.c.now() - 45_000).toISOString(); return envelope(d); };
+  void u.component.refresh(); await reply();
+  assert.equal(u.all('.readiness-check').length, 4); assert.equal(u.one('.loading-failed'), null);
+  answer = refused;
+  void u.component.refresh(); await reply();
+  const notice = u.one('.readiness-notice .loading-notice[data-kind="stale"]'), cause = notice.querySelector('.loading-notice-cause');
+  const shown = { before: "Couldn't reach Build box. (E_SSH: ", detail: MESSY_LINE, after: ')' };
+  assert.equal(notice.title, "Couldn't reach Build box. (E_SSH)", "the title is Desktop's sentence and the code");
+  assert.equal(notice.querySelector('.loading-notice-details').hidden, false); assertIsolatedDetail(cause, shown);
+  u.c.advance(AGE_TICK_MS);
+  assert.match(notice.querySelector('.loading-notice-text').textContent, /observed 1 min ago$/, 'the age line was repainted');
+  assert.equal(notice.title, "Couldn't reach Build box. (E_SSH)"); assertIsolatedDetail(cause, shown);
 });
 
 test('failure without a value: the failed block (cause, Details with the code, Retry) where the skeleton stood; the status says the message; Retry recovers', async t => {

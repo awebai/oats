@@ -6,19 +6,13 @@
  * contract modules and nothing else — no tree traversal, no loading UI. */
 import { record } from './readiness-contract.mjs';
 import { eventsTimestamp, eventsId, eventsUnsafe, EVENTS_WITHHELD } from './instance-events-contract.mjs';
-
-/** Not text a one-line note may hold, an exact set (the maintainer's decision for the kernel's
- * validWaitingMessage): control characters (Cc: C0, DEL, C1), the line and paragraph separators, the bidi
- * embeddings and overrides (U+202A–202E) and isolates (U+2066–2069), the zero-width space, the word
- * joiner, the BOM and the tag characters (U+E0000–E007F). Every other format character is text: ZWJ
- * (emoji sequences), ZWNJ (Persian, Urdu), LRM, RLM and ALM (Hebrew, Arabic), the soft hyphen. */
-const NOT_NOTE_TEXT = /[\p{Cc}\u2028\u2029\u202A-\u202E\u2066-\u2069\u200B\u2060\uFEFF\u{E0000}-\u{E007F}]/u;
+import { NOT_NOTE_TEXT } from './display-text.mjs';
 
 /** A claim's note: a non-empty string of at most 200 code points (not UTF-16 units: 101 emoji is a valid
- * note), with none of NOT_NOTE_TEXT; unsafe text is withheld (the activity view's house rule: it shows
- * EVENTS_WITHHELD). Anything else → null: the claim itself is kept. Not null is the validity answer the
- * kernel's validWaitingMessage gives (a withheld note is a valid note). Never throws (no length-throwing
- * detail helper on this path). */
+ * note), with none of NOT_NOTE_TEXT (the set's one definition is in display-text.mjs); unsafe text is
+ * withheld (the activity view's house rule: it shows EVENTS_WITHHELD). Anything else → null: the claim
+ * itself is kept. Not null is the validity answer the kernel's validWaitingMessage gives (a withheld note
+ * is a valid note). Never throws (no length-throwing detail helper on this path). */
 export function waitingMessage(v) {
   if (typeof v !== 'string' || !v || [...v].length > 200 || NOT_NOTE_TEXT.test(v)) return null;
   return eventsUnsafe.test(v) ? EVENTS_WITHHELD : v;

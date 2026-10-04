@@ -4,7 +4,7 @@ import { postJson, workspaceGeneration } from './views/common.mjs';
 import { cliStatus, onCliChange } from './views/cli-status.mjs';
 import { absolute } from './readiness-contract.mjs';
 import { eventsSelector, eventsSupported, eventsTarget, eventsFailure, eventsTimestamp } from './instance-events-contract.mjs';
-import { codeLine, readingFrom, remoteReason } from './remote-address.mjs';
+import { codeLineNodes, readingFrom, remoteReason } from './remote-address.mjs';
 import { eventsData, eventsIncomplete, eventIncarnation, EVENT_TITLES } from './instance-events-data.mjs';
 export const instanceEventsCSS = `
 .events-view { color:var(--fg); margin-top:10px; padding-top:10px; border-top:1px solid var(--border); font-size:11px; line-height:1.5; }
@@ -48,7 +48,9 @@ export function createInstanceEventsView(host, { ctx, selection, owner = () => t
   const content = node('div'); disclosure.append(content);
   section.append(heading, load, status, disclosure); host.append(section);
   let alive = true, serial = 0, cliEpoch = 0, key = null, value = null, busy = false, stale = false, attempted = false;
-  let message = '', wasVisible = true, wasValid = false;
+  // `messageNodes`: a remote refusal's status as nodes (its host's message alone in its <bdi>); `message` is its text.
+  let message = '', messageNodes = null, statusText = '', wasVisible = true, wasValid = false;
+  const say = (text, nodes = null) => { message = text; messageNodes = nodes; };
   function visible() {
     if (!section.isConnected || doc.visibilityState === 'hidden') return false;
     for (let el = section; el; el = el.parentElement) if (el.hidden || el.inert || el.hasAttribute('inert') || el.style.display === 'none' || el.style.visibility === 'hidden') return false;
@@ -79,14 +81,17 @@ export function createInstanceEventsView(host, { ctx, selection, owner = () => t
     section.setAttribute('aria-busy', String(busy));
     const reason = !selected() ? 'Choose a current, qualified local instance.' : !supported ? eventsFailure('E_EVENTS_UNAVAILABLE').reason.message : '';
     load.title = reason || 'Read this selected address only. No lifecycle action.';
-    const statusChanged = setText(status, [message, reason].filter(Boolean).join(' '));
+    const text = [message, reason].filter(Boolean).join(' ');
+    // Compared with what was last painted, kept here: the rendered line is never read back.
+    const statusChanged = text !== statusText;
+    if (statusChanged) { statusText = text; status.replaceChildren(...(messageNodes ? [...messageNodes(), ...(reason ? [` ${reason}`] : [])] : text ? [text] : [])); }
     const summaryChanged = paintSummary();
     if ((statusChanged || summaryChanged) && alive && owner() && visible()) layout();
   }
   function invalidate(reason = '', clear = false) {
     serial++; busy = false; stale = !!value;
     if (clear) { value = null; stale = false; attempted = false; content.replaceChildren(); disclosure.hidden = true; }
-    message = reason; controls();
+    say(reason); controls();
   }
   function sync() {
     if (!alive) return;
@@ -132,7 +137,7 @@ export function createInstanceEventsView(host, { ctx, selection, owner = () => t
     if (!validTarget() || !eventsSupported(cli())) return;
     const selectedAtStart = selected(), selectedIdentity = key, cliIdentity = cliKey(), ticket = ++serial;
     attempted = true; busy = true; stale = !!value;
-    message = selectedAtStart.serverLabel ? readingFrom(selectedAtStart.serverLabel) : 'Reading reported lifecycle activity…'; controls();
+    say(selectedAtStart.serverLabel ? readingFrom(selectedAtStart.serverLabel) : 'Reading reported lifecycle activity…'); controls();
     const owns = () => alive && serial === ticket && validTarget() && selectedKey(selected()) === selectedIdentity && cliKey() === cliIdentity;
     try {
       const response = await postJson(ctx, `/api/instance-events?ws=${encodeURIComponent(selectedAtStart.workspace)}`, { action: 'read', selector: selectedAtStart.selector, limit: 100 });
@@ -144,13 +149,19 @@ export function createInstanceEventsView(host, { ctx, selection, owner = () => t
         || Object.keys(selectedAtStart.selector).some(k => target.selector[k] !== selectedAtStart.selector[k])) throw { code: 'E_CLI_PROTOCOL' };
       const next = eventsData(response.data, target, 100, { publicView: true });
       if (!next || new TextEncoder().encode(JSON.stringify(next)).length > 4194304) throw { code: 'E_CLI_PROTOCOL' };
-      value = next; stale = false; message = 'Reported observation loaded. Runtime state is shown separately.';
+      value = next; stale = false; say('Reported observation loaded. Runtime state is shown separately.');
       render();
     } catch (error) {
       if (!owns()) return;
       // A remote read's reason: the host's headline, then its code and message.
       const reason = error?.reason || eventsFailure(error?.code).reason;
-      stale = !!value; message = `${reason.message}${reason.remote && reason.code !== 'unsupported-remote-operation' ? ` (${codeLine(reason)})` : ''}${value ? ' Last observation retained — refresh required.' : ''}`;
+      stale = !!value;
+      const tail = value ? ' Last observation retained — refresh required.' : '';
+      if (reason.remote && reason.code !== 'unsupported-remote-operation') {
+        // A revalidated reason's detail is null or already a display line: the text below is what the nodes say.
+        say(`${reason.message} (${reason.code}${reason.detail === null ? '' : `: ${reason.detail}`})${tail}`,
+          () => [`${reason.message} (`, ...codeLineNodes(doc, reason), `)${tail}`]);
+      } else say(`${reason.message}${tail}`);
     } finally { if (owns()) { busy = false; controls(); } }
   }
   load.addEventListener('click', () => { if (!load.disabled) void read(); });

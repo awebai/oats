@@ -5,7 +5,9 @@ import { createLifecycleDialog, lifecycleCSS } from '../renderer/lifecycle-dialo
 import { lifecycleReceipt, lifecycleReason } from '../renderer/lifecycle-contract.mjs';
 import { pullRequest } from '../renderer/forge-contract.mjs';
 import { pr as rawPr } from './helpers/forge-fixture.mjs';
-import { instance, target, options, stopPlan, retirePlan, stopReceipt, retireReceipt, deferred, tick } from './helpers/lifecycle-fixture.mjs';
+import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
+import { cli, context, envelope, instance, target, options, stopPlan, retirePlan, stopReceipt, retireReceipt, deferred, tick } from './helpers/lifecycle-fixture.mjs';
+import { assertIsolatedDetail, MESSY, MESSY_LINE } from './helpers/detail-line.mjs';
 const reference = 'd'.repeat(64), newReference = 'e'.repeat(64);
 const planned = (operation = 'stop', planRef = reference, raw) => ({ lifecycleApi: 1, status: 'plan', target,
   planRef, plan: raw || (operation === 'stop' ? stopPlan() : retirePlan()), options: options(operation), receipt: null, reason: null });
@@ -108,7 +110,7 @@ test('branch skip remains partial even after home/worktree removal; ambiguous ch
   f.button('lifecycle-confirm').click(); await tick(); assert.match(f.doc.body.textContent, /Branch deletion skipped/); assert.match(f.doc.body.textContent, /Home removedtrue/);
   assert.doesNotMatch(f.doc.body.textContent, /Kernel operation completed/); f.close();
 });
-test('a local Remove refused by inspection shows the inspection sentence under the unknown outcome, never "CLI is unavailable", and no Details', async () => {
+test('a local Remove refused by inspection shows the inspection sentence under the unknown outcome, never "CLI is unavailable", and no Details when the CLI sent no message', async () => {
   const f = fixture({ request: (_ws, body) => body.action === 'plan' ? planned('retire')
     : { lifecycleApi: 1, status: 'unknown', target, planRef: reference, options: options('retire'), plan: null, receipt: null,
       reason: lifecycleReason('E_OUTCOME_UNKNOWN'), cause: lifecycleReason('E_WORK_INSPECTION_FAILED') } });
@@ -118,7 +120,7 @@ test('a local Remove refused by inspection shows the inspection sentence under t
     const shown = f.doc.querySelector('.lifecycle-result').textContent;
     assert.equal(shown, lifecycleReason('E_WORK_INSPECTION_FAILED').message);
     assert.notEqual(shown, lifecycleReason('E_CLI_FAILED').message);
-    assert.equal(f.doc.querySelector('.lifecycle-details'), null, 'a local refusal renders no kernel text');
+    assert.equal(f.doc.querySelector('.lifecycle-details'), null, 'no message from the CLI, no Details');
     assert.equal(f.button('lifecycle-retry').hidden, false);
   } finally { f.close(); }
 });
@@ -190,6 +192,104 @@ test('a remote apply that lost the link is an unknown outcome with the transport
   } finally { f.close(); }
 });
 
+/** The dialog's `request`, answered by the server boundary for a remote workspace: what the dialog reads is
+ * what the server sends. `respond.plan` / `respond.apply`: the installed CLI's answer for that phase. */
+function remoteServer(respond = {}) {
+  const context = { cli: { ...structuredClone(cli), remote: ['lifecycle-plans'] }, localCwd: '/Users/me/work',
+    workspace: { id: 'team', name: 'Build box', scope: '/team', remote: true, server: 'build' },
+    instances: [{ ...instance, server: 'build', addressable: true, missingRemotely: false, savedRoute: false, running: true }] };
+  const service = createLifecycleBoundary({ invoke: async (_bin, args) => respond[args.phase]?.(args)
+    ?? envelope(args.phase === 'plan' ? args.operation === 'stop' ? stopPlan() : retirePlan() : stopReceipt(args)) });
+  return (_workspace, body) => service(body, () => context);
+}
+test('from the server: a host message with line breaks and a character of the set is one line in Details, alone in its <bdi>, the code outside it', async () => {
+  const refusedBy = code => () => ({ schemaVersion: 1, ok: false, error: { code, message: MESSY } });
+  // A refused plan.
+  let f = fixture({ request: remoteServer({ plan: refusedBy('E_REMOTE_INCOMPATIBLE') }) });
+  try {
+    f.dialog.open({ operation: 'retire', instance: remoteInstance, workspace: 'team' }); await tick();
+    assert.equal(f.doc.querySelector('.lifecycle-dialog [role=status]').textContent, "Build box runs an OATS that can't do this yet.");
+    assert.equal(f.doc.querySelector('.lifecycle-details summary').textContent, 'Details');
+    assertIsolatedDetail(f.doc.querySelector('.lifecycle-details p'), { before: 'E_REMOTE_INCOMPATIBLE: ', detail: MESSY_LINE });
+  } finally { f.close(); }
+  // An apply with no confirmed outcome: the cause's headline in its own element, its Details under it.
+  f = fixture({ request: remoteServer({ apply: refusedBy('E_SSH') }) });
+  try {
+    f.dialog.open({ operation: 'stop', instance: remoteInstance, workspace: 'team' }); await tick();
+    f.button('lifecycle-confirm').click(); await tick();
+    assert.match(f.doc.querySelector('.lifecycle-dialog [role=status]').textContent, /no confirmed outcome/);
+    assert.equal(f.doc.querySelector('.lifecycle-result .lifecycle-note').textContent, "Couldn't reach Build box.");
+    assertIsolatedDetail(f.doc.querySelector('.lifecycle-result .lifecycle-details p'), { before: 'E_SSH: ', detail: MESSY_LINE });
+  } finally { f.close(); }
+});
+/** The dialog's `request`, answered by the server boundary for a local workspace. */
+function localServer(respond = {}) {
+  const ctx = context();
+  const service = createLifecycleBoundary({ invoke: async (_bin, args) => respond[args.phase]?.(args)
+    ?? envelope(args.phase === 'plan' ? args.operation === 'stop' ? stopPlan() : retirePlan() : args.operation === 'stop' ? stopReceipt(args) : retireReceipt(args)) });
+  return (_workspace, body) => service(body, () => ctx);
+}
+const localError = (code, message) => () => ({ schemaVersion: 1, ok: false, error: { code, message } });
+test("from the server: a local Remove refused by inspection shows Desktop's sentence and, in Details, the code and the CLI's message as one line alone in its <bdi>", async () => {
+  const f = fixture({ request: localServer({ apply: localError('E_WORK_INSPECTION_FAILED', MESSY) }) });
+  try {
+    f.open('retire'); await tick(); f.button('lifecycle-confirm').click(); await tick();
+    assert.equal(f.doc.querySelector('.lifecycle-dialog [role=status]').textContent, lifecycleReason('E_OUTCOME_UNKNOWN').message);
+    assert.equal(f.doc.querySelector('.lifecycle-result .lifecycle-note').textContent, lifecycleReason('E_WORK_INSPECTION_FAILED').message, "the headline is Desktop's fixed sentence, in its own element");
+    assert.equal(f.doc.querySelectorAll('.lifecycle-details').length, 1); assert.equal(f.doc.querySelector('.lifecycle-details summary').textContent, 'Details');
+    // A line break, a tab, the line separators and a character of the set: one line, the character shown as U+FFFD.
+    assertIsolatedDetail(f.doc.querySelector('.lifecycle-result .lifecycle-details p'), { before: 'E_WORK_INSPECTION_FAILED: ', detail: MESSY_LINE });
+    assert.equal(f.doc.body.textContent.split(MESSY_LINE).length, 2, 'said once, in Details');
+    assert.equal(f.button('lifecycle-retry').hidden, false);
+  } finally { f.close(); }
+});
+test('a local message that looks like a credential shows "[Detail withheld]"; a local E_CLI_TIMEOUT shows no Details, whatever came with it', async () => {
+  let f = fixture({ request: localServer({ apply: localError('E_WORK_INSPECTION_FAILED', 'could not read the work root: token=abc123') }) });
+  try {
+    f.open('retire'); await tick(); f.button('lifecycle-confirm').click(); await tick();
+    assertIsolatedDetail(f.doc.querySelector('.lifecycle-result .lifecycle-details p'), { before: 'E_WORK_INSPECTION_FAILED: ', detail: '[Detail withheld]' });
+    assert.doesNotMatch(f.doc.body.textContent, /abc123|work root/);
+  } finally { f.close(); }
+  f = fixture({ request: localServer({ apply: localError('E_CLI_TIMEOUT', 'TEXT FROM THE ENVELOPE') }) });
+  try {
+    f.open('retire'); await tick(); f.button('lifecycle-confirm').click(); await tick();
+    assert.equal(f.doc.querySelector('.lifecycle-result .lifecycle-note').textContent, lifecycleReason('E_CLI_TIMEOUT').message);
+    assert.equal(f.doc.querySelector('.lifecycle-details'), null); assert.doesNotMatch(f.doc.body.textContent, /TEXT FROM/);
+  } finally { f.close(); }
+});
+test("from the server: a local plan the kernel refuses shows the fixed sentence and the CLI's message in Details", async () => {
+  const f = fixture({ request: localServer({ plan: localError('E_INSTANCE_RETIRING', MESSY) }) });
+  try {
+    f.open('retire'); await tick();
+    assert.equal(f.doc.querySelector('.lifecycle-dialog [role=status]').textContent, lifecycleReason('E_INSTANCE_RETIRING').message);
+    assertIsolatedDetail(f.doc.querySelector('.lifecycle-details p'), { before: 'E_INSTANCE_RETIRING: ', detail: MESSY_LINE });
+    assert.equal(f.button('lifecycle-confirm').disabled, true);
+  } finally { f.close(); }
+});
+test("the dialog re-validates a local detail: only a display line, only for a code with its own sentence that Desktop does not raise, and never as the headline", async () => {
+  const fixed = lifecycleReason('E_WORK_INSPECTION_FAILED');
+  const shown = async cause => {
+    const f = fixture({ request: (_ws, body) => body.action === 'plan' ? planned('retire')
+      : { lifecycleApi: 1, status: 'unknown', target, planRef: reference, options: options('retire'), plan: null, receipt: null, reason: lifecycleReason('E_OUTCOME_UNKNOWN'), cause } });
+    try {
+      f.open('retire'); await tick(); f.button('lifecycle-confirm').click(); await tick();
+      return { headline: f.doc.querySelector('.lifecycle-result .lifecycle-note').textContent, details: f.doc.querySelector('.lifecycle-details p')?.textContent ?? null, text: f.doc.body.textContent };
+    } finally { f.close(); }
+  };
+  // Kept: the headline is the fixed sentence for the code, whatever the reply's `message` says.
+  const kept = await shown({ ...fixed, message: 'A HEADLINE FROM THE REPLY', detail: 'one line' });
+  assert.equal(kept.headline, fixed.message); assert.equal(kept.details, 'E_WORK_INSPECTION_FAILED: one line'); assert.doesNotMatch(kept.text, /A HEADLINE FROM THE REPLY/);
+  // Dropped: not a display line; one of Desktop's own codes; a code without a sentence; a reason that claims to be remote.
+  for (const cause of [{ ...fixed, detail: 'UNSHOWN two\nlines' }, { ...fixed, detail: 'UNSHOWN two  spaces' }, { ...fixed, detail: `UNSHOWN a${String.fromCodePoint(0x202E)}b` },
+    { ...fixed, detail: 'UNSHOWN token=abc123' }, { ...fixed, detail: 7 }, { ...lifecycleReason('E_CLI_TIMEOUT'), detail: 'UNSHOWN line' },
+    { ...lifecycleReason('E_OUTCOME_UNKNOWN'), detail: 'UNSHOWN line' }, { ...fixed, detail: 'UNSHOWN line', remote: false }]) {
+    const view = await shown(cause);
+    assert.equal(view.details, null, JSON.stringify(cause)); assert.equal(view.headline, lifecycleReason(cause.code).message);
+    assert.doesNotMatch(view.text, /UNSHOWN/, JSON.stringify(cause));
+  }
+  const unknown = await shown({ code: 'E_NOT_IN_THE_TABLE', message: 'A HEADLINE FROM THE REPLY', detail: 'UNSHOWN line' });
+  assert.equal(unknown.headline, lifecycleReason('E_CLI_FAILED').message); assert.equal(unknown.details, null); assert.doesNotMatch(unknown.text, /UNSHOWN|A HEADLINE/);
+});
 test('each dialog shows only its own choices: a hidden choice stays hidden despite the label layout (Stop has no worktree/branch options, Remove no children option)', () => {
   // The label's display:flex beats the user agent's [hidden] rule in Chromium; jsdom's cascade does not model that, so pin the rule.
   const dom = new JSDOM('<!doctype html><style></style>'), sheet = dom.window.document.querySelector('style');

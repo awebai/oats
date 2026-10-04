@@ -17,7 +17,7 @@
  * the age line and the Retry wiring. The surface owns its latest-intent
  * tokens: it calls begin()/succeed()/fail() only for the read it still owns.
  * Wording is fixed here so no surface drifts. No framework: vanilla DOM. */
-import { codeLine } from './remote-address.mjs';
+import { codeLineNodes, kernelCode } from './remote-address.mjs';
 
 export const PENDING_DELAY_MS = 150;
 export const REFRESHING_DELAY_MS = 400;
@@ -204,9 +204,20 @@ function noticeText(kind, noun, observedAt, now, variant = null) {
   if (kind === 'stale') return age ? `${wording.couldNotRefresh(noun)} · ${age}` : wording.couldNotRefresh(noun);
   return wording.observed(observedAgeText(observedAt, now));
 }
+/** A failed read's cause, in the two forms the stale notice says it. `title`: the read's own message and
+ * its code, the code only in the kernel's code shape; never the `detail` (a refusal's detail does not go
+ * into an attribute). `nodes`: the Details line: the same message and code as text, and the detail
+ * after the code, inside its <bdi> (remote-address.mjs codeLineNodes). `codeOnly`: the message is on the
+ * notice itself, so both keep only the code. */
+function staleCause(doc, { message = null, code = null, detail = null, codeOnly = false } = {}) {
+  const said = codeOnly ? null : message, shown = kernelCode(code) ? code : null, coded = codeLineNodes(doc, { code, detail });
+  return { title: said && shown ? `${said} (${shown})` : said || shown,
+    nodes: said && coded.length ? [doc.createTextNode(`${said} (`), ...coded, doc.createTextNode(')')] : said ? [doc.createTextNode(said)] : coded };
+}
 /** Build the notice line: `kind` 'stale' (the read failed: Retry, the cause behind a Details disclosure
  * and in the title) or 'observed' (an old observation, muted, no Retry). `onRetry` runs on an activation
- * while not busy. Update it in place with `updateNotice()` so a focused Retry survives. */
+ * while not busy. Update it in place with `updateNotice()` so a focused Retry survives.
+ * `cause`: a page's own line (a string: the title and the Details line alike), or staleCause()'s parts. */
 export function noticeElement(doc, kind, { noun, observedAt = null, cause = null, busy = false, onRetry = null, now = Date.now(), variant = null, message = null } = {}) {
   const el = element(doc, 'div', 'loading-notice'); el.dataset.kind = kind;
   el.append(element(doc, 'span', 'loading-notice-text'));
@@ -230,18 +241,21 @@ export function updateNotice(el, { noun, observedAt = null, cause = null, busy =
   el.querySelector('.loading-notice-text').textContent = noticeText(el.dataset.kind, noun, observedAt, now, variant);
   if (variant) el.dataset.variant = variant.reason; else delete el.dataset.variant;
   const said = el.querySelector('.loading-notice-message');
-  if (said) { const text = variant?.reason === 'cache' && typeof message === 'string' ? message : ''; if (said.textContent !== text) said.textContent = text; said.hidden = !text; }
-  if (cause) el.title = cause; else el.removeAttribute('title');
+  if (said) { const text = variant?.reason === 'cache' && typeof message === 'string' ? message : ''; said.textContent = text; said.hidden = !text; }
+  const title = typeof cause === 'string' ? cause : cause?.title ?? null;
+  const nodes = typeof cause === 'string' ? cause ? [cause] : [] : cause?.nodes ?? [];
+  if (title) el.title = title; else el.removeAttribute('title');
   const more = el.querySelector('.loading-notice-details');
-  if (more) { more.hidden = !cause; more.querySelector('.loading-notice-cause').textContent = cause || ''; }
+  if (more) { more.hidden = !nodes.length; more.querySelector('.loading-notice-cause').replaceChildren(...nodes); }
   const retry = el.querySelector('.loading-retry');
   if (retry) { if (busy) retry.setAttribute('aria-disabled', 'true'); else retry.removeAttribute('aria-disabled'); }
 }
 
-/** Build the failed block (the read failed with nothing to show): the cause, the code behind a Details disclosure,
+/** Build the failed block (the read failed with nothing to show): the cause, the code (and a host's own message,
+ * `detail`, inside its <bdi>) behind a Details disclosure,
  * Retry, and an optional second action `{ label, onActivate }` beside it (Re-add workspace, #461).
  * Shared by the controller and pages that mirror a controller's state; update in place with `updateFailed()`. */
-export function failedElement(doc, { message = null, code = null, noun = 'data', busy = false, onRetry = null, action = null } = {}) {
+export function failedElement(doc, { message = null, code = null, detail = null, noun = 'data', busy = false, onRetry = null, action = null } = {}) {
   const el = element(doc, 'div', 'loading-failed');
   el.append(element(doc, 'p', 'loading-failed-message'));
   const more = element(doc, 'details', 'loading-failed-details');
@@ -251,13 +265,13 @@ export function failedElement(doc, { message = null, code = null, noun = 'data',
   retry.addEventListener('click', () => { if (retry.getAttribute('aria-disabled') === 'true') return; onRetry?.(); });
   if (typeof onRetry !== 'function') retry.hidden = true;
   el.append(more, retry);
-  updateFailed(el, { message, code, noun, busy, action });
+  updateFailed(el, { message, code, detail, noun, busy, action });
   return el;
 }
-export function updateFailed(el, { message = null, code = null, noun = 'data', busy = false, action = null } = {}) {
+export function updateFailed(el, { message = null, code = null, detail = null, noun = 'data', busy = false, action = null } = {}) {
   el.querySelector('.loading-failed-message').textContent = typeof message === 'string' && message ? message : `${wording.couldNotRefresh(noun)}.`;
-  const more = el.querySelector('.loading-failed-details'), shown = typeof code === 'string' && code ? code : null;
-  more.hidden = !shown; more.querySelector('.loading-failed-code').textContent = shown || '';
+  const more = el.querySelector('.loading-failed-details'), line = codeLineNodes(el.ownerDocument, { code, detail });
+  more.hidden = !line.length; more.querySelector('.loading-failed-code').replaceChildren(...line);
   const retry = el.querySelector('.loading-retry');
   if (retry) { if (busy) retry.setAttribute('aria-disabled', 'true'); else retry.removeAttribute('aria-disabled'); }
   // The second action is kept in place across updates (it may hold focus); only its label and handler change.
@@ -298,7 +312,7 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
   let state = 'idle', settled = 'idle', busy = false, hasData = false, user = false, disposed = false;
   let observedAt = null, announced = null, inFlight = null;
   let pendingTimer = null, refreshingTimer = null, ageTimer = null;
-  let skeletonEl = null, failedEl = null, indicatorEl = null, noticeEl = null, noticeVariantNow = null, noticeMessage = null;
+  let skeletonEl = null, failedEl = null, indicatorEl = null, noticeEl = null, noticeVariantNow = null, noticeMessage = null, noticeCause = null;
   let failedAction = null; // the failed block's second action, if the failing read named one
   const refreshControls = new Set();
 
@@ -352,11 +366,11 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
     indicatorHost.append(indicatorEl);
   }
   function showNotice(kind, { cause = null, variant = null, message = null } = {}) {
-    // `cause`: the read's message; code appended when the error carried one (set by fail()).
+    // `cause`: the read's message and its code as staleCause() parts (set by fail()).
     // `variant` / `message`: the kernel's cause and message for an unreadable remote (Spec D).
     // A notice of the same kind is updated in place: its Retry (which may hold focus) is kept.
     if (!noticeHost) return;
-    noticeVariantNow = variant; noticeMessage = message;
+    noticeVariantNow = variant; noticeMessage = message; noticeCause = cause;
     if (!noticeEl || noticeEl.dataset.kind !== kind) {
       removeNotice();
       noticeEl = noticeElement(doc, kind, { noun, observedAt, cause, busy, now: now(), variant, message, onRetry: () => { if (!disposed && !busy) onRetry?.(); } });
@@ -370,7 +384,7 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
     removeSkeleton();
     if (!failedHost) return;
     const action = failedAction && { label: failedAction.label, onActivate: () => { if (!disposed && !busy) failedAction?.onActivate(); } };
-    const facts = { message: error?.message, code: codeLine(error), noun, busy, action };
+    const facts = { message: error?.message, code: error?.code, detail: error?.detail, noun, busy, action };
     if (!failedEl) { failedEl = failedElement(doc, { ...facts, onRetry: () => { if (!disposed && !busy) onRetry?.(); } }); failedHost.append(failedEl); }
     else updateFailed(failedEl, facts);
   }
@@ -381,7 +395,7 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
   /** Re-render the age line (called on a timer, and by surfaces on their own polls). */
   function touch() {
     if (disposed || !noticeEl) return;
-    showNotice(noticeEl.dataset.kind, { cause: noticeEl.title || null, variant: noticeEl.dataset.kind === 'stale' ? noticeVariantNow : null, message: noticeMessage });
+    showNotice(noticeEl.dataset.kind, { cause: noticeCause, variant: noticeEl.dataset.kind === 'stale' ? noticeVariantNow : null, message: noticeMessage });
   }
 
   const api = {
@@ -445,10 +459,9 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
       user = false; busy = false;
       if (typeof at === 'string' && at) observedAt = at;
       const message = typeof error?.message === 'string' && error.message ? error.message : null;
-      const code = codeLine(error);
       const variant = noticeVariant(error?.cause);
       // A cache problem's message is on the line itself; Details keeps only the code.
-      const cause = variant?.reason === 'cache' ? code : message && code ? `${message} (${code})` : message || code;
+      const cause = staleCause(doc, { message, code: error?.code, detail: error?.detail, codeOnly: variant?.reason === 'cache' });
       if (hasData) {
         state = settled = 'stale'; setRegionBusy(false);
         showNotice('stale', { cause, variant, message });

@@ -106,10 +106,26 @@ status; it does not cancel the dispatched operation or signal its process.
 - An inspection refusal of Remove (`E_WORK_INSPECTION_FAILED`) is reported as
   an **unknown outcome** with its own fixed sentence, never as a refusal before
   any effect: the kernel can raise it after the children stop, the session
-  stop and the retire hooks. A local refusal renders no kernel text; a remote
-  one keeps the host's message in Details.
+  stop and the retire hooks. The kernel's own message (it names the path and
+  the remedy) is in Details, for a local refusal and a remote one alike.
 - Unknown errors, malformed receipts and timeouts are closed local messages.
-  Raw stderr, exception stacks and unprojected diagnostic fields never render.
+  An error envelope's `message` renders only through the display filter
+  (`renderer/display-text.mjs`; see
+  [desktop-deployment-model.md](desktop-deployment-model.md#remote-rows)), in
+  the dialog's Details as `CODE: message`, under Desktop's fixed sentence for
+  the code. The headline is never the CLI's text. A local failure carries the
+  message only when both hold:
+  - the installed CLI answered with an error envelope. A failure Desktop's own
+    adapter or boundary raises (`E_CLI_TIMEOUT`, `E_CLI_OUTPUT_LIMIT`,
+    `E_CLI_PROTOCOL`, `E_CLI_FAILED`, `E_OUTCOME_UNKNOWN`, the plan and
+    admission codes of the boundary) never carries one, whatever came with it;
+  - the code has its own sentence (`lifecycleDetailCode`). A code without one
+    reads as `E_CLI_FAILED`, with no CLI text.
+
+  The server builds the detail (`failureReason`) and the dialog re-validates it
+  (a display line, the same code rule) before showing it: it is set as text,
+  never parsed, linked or acted on. Raw stderr, exception stacks and every
+  other field of an error still never render.
 
 The kernel's Stop replay horizon is per key while its home exists. Retire
 receipts live beside the instances directory and survive home removal. Desktop
