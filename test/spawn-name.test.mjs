@@ -3,8 +3,8 @@
 //
 //   - `--name` is exact: `slug(x) !== x` or a soul name of this deployment → E_INSTANCE_NAME_INVALID.
 //   - `--name` and `--purpose` are mutually exclusive → E_BAD_ARGS.
-//   - A taken name (any soul's instances/ under the deployment agents root, or a live tmux
-//     window of that name) → E_INSTANCE_NAME_TAKEN; never a silent `-2` for an explicit name.
+//   - A taken name (any soul's instances/ under the deployment agents root, or a live window of
+//     that name on the OATS tmux server) → E_INSTANCE_NAME_TAKEN; never a silent `-2` for an explicit name.
 //   - Preview reports the final name and the same refusals; the name is part of the decision
 //     revision, so --expect-decision binds it.
 //   - Derived names (`<soul>-<purpose>`, `<soul>-<n>`) de-duplicate deployment-wide (still `-2`).
@@ -50,12 +50,18 @@ test("spawn --name: exact unprefixed name, typed refusals, preview binds it, dep
     const catalogFile = join(base, "catalog.json");
     writeFileSync(catalogFile, JSON.stringify({ packages: fx.catalog }, null, 2));
     mkdirSync(join(base, "home"));
-    // A fake tmux: the session `live-<pid>` exists and holds a window named `rm-live`.
+    // A fake tmux with two servers, each holding the session `live-<pid>`: the OATS server, which the
+    // kernel selects by name (`-u -L oats`), with a window named `rm-live`; and the default server
+    // (no -L, no -S), with a window named `rm-default`. An explicit name is checked on the OATS server.
     mkdirSync(join(base, "fake-bin"));
     writeFileSync(join(base, "fake-bin", "tmux"), `#!/bin/sh
+if [ "$1 $2 $3" = "-u -L oats" ]; then
+  [ "$4" = list-windows ] && [ "$6" = "=live-${process.pid}" ] && { printf 'hq\\nrm-live\\n'; exit 0; }
+  exit 1
+fi
 case "$1" in
   has-session) [ "$3" = "live-${process.pid}" ] && exit 0; exit 1 ;;
-  list-windows) [ "$3" = "live-${process.pid}" ] && printf 'hq\\nrm-live\\n'; exit 0 ;;
+  list-windows) [ "$3" = "live-${process.pid}" ] && printf 'hq\\nrm-default\\n'; exit 0 ;;
 esac
 exit 1
 `);
@@ -120,6 +126,11 @@ exit 1
       refused(oats(["spawn", "release-manager", "--dir", dep, "--agents-root", agentsRoot, "--work", "directory", "--no-launch", "--provider", "oats.okf", "state-dir=/tmp/x", "--name", "rm-live", ...extra, "--json"],
         { cwd: dep, env: { ...env, OATS_TMUX_SESSION: `live-${process.pid}`, PI_AGENTS_TMUX_SESSION: `live-${process.pid}` }, base }), "E_INSTANCE_NAME_TAKEN", `a live tmux window rm-live ${extra.join(" ")}`);
     }
+    // A window of that name on the DEFAULT server is no collision: new sessions do not live there.
+    r = oats(["spawn", "release-manager", "--dir", dep, "--agents-root", agentsRoot, "--work", "directory", "--no-launch", "--provider", "oats.okf", "state-dir=/tmp/x", "--name", "rm-default", "--preview", "--json"],
+      { cwd: dep, env: { ...env, OATS_TMUX_SESSION: `live-${process.pid}`, PI_AGENTS_TMUX_SESSION: `live-${process.pid}` }, base });
+    assert.equal(r.status, 0, `a default-server window rm-default does not take the name\n${r.stdout}\n${r.stderr}`);
+    assert.equal(envelope(r).result.instance, "rm-default");
 
     // ---- derived names de-duplicate deployment-wide (the latent collision) ----
     // release-manager takes the name support-triager-x; support-triager --purpose x would derive the same.

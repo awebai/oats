@@ -17,6 +17,7 @@ import { execFile } from 'node:child_process';
 import { isAbsolute, resolve } from 'node:path';
 import { OBSERVE_MAX_AGE_FEATURE, validMaxAge } from './renderer/deployment-contract.mjs';
 import { capabilityShowSupported, validCapabilityName, validPackageId, validRelativePath, validRepoKey } from './renderer/capability-show-contract.mjs';
+import { cliEnvironment } from './cli-environment.mjs';
 
 export const WORKSPACE_READ_TIMEOUT = 60_000;
 export const WORKSPACE_WRITE_TIMEOUT = 300_000; // discovery reads every member remote
@@ -102,7 +103,7 @@ export function cliWorkspace(cli, options, io = {}) {
   }
   const plan = workspaceArgv(options);
   if (!plan) return Promise.resolve(workspaceFailure('E_BAD_ARGS'));
-  const env = { ...(io.env ?? process.env) };
+  const env = cliEnvironment(io.env ?? process.env); // main's own environment is not cleaned; in the backend this changes nothing
   for (const key of SCRUB) delete env[key];
   return new Promise(done => {
     const fail = code => done(workspaceFailure(code));

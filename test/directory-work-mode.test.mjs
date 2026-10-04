@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { findAgent, fingerprintTree, listInstances, retireInstance, spawnInstanceAsync, startInstanceSession } from "../lib/core.mjs";
+import { findAgent, fingerprintTree, listInstances, RETIRE_DELETE_BRANCH_REFUSED, retireInstance, spawnInstanceAsync, startInstanceSession } from "../lib/core.mjs";
 import { git, v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const CLI = realpathSync(new URL("../bin/oats.mjs", import.meta.url));
@@ -148,7 +148,10 @@ test("directory repo selector resolves a non-Git relative path; capabilities sta
   assert.equal(result.repo, external);
   assert.deepEqual(readdirSync(join(result.home, "work")), []);
   assert.ok(existsSync(join(result.home, ".agents", "skills", "worker-skill", "SKILL.md")), "capabilities come from the soul's resolution, not from the selected context");
-  retireInstance(f.root, result.instance, { deleteBranch: true });
+  // Asking for a branch deletion is refused before anything happens; the retire touches nothing of the context.
+  assert.throws(() => retireInstance(f.root, result.instance, { deleteBranch: true }), (e) => e.code === "E_BAD_ARGS" && e.message === RETIRE_DELETE_BRANCH_REFUSED);
+  assert.equal(existsSync(result.home), true);
+  retireInstance(f.root, result.instance);
   assert.equal(readFileSync(join(external, "sentinel.txt"), "utf8"), "not owned");
 });
 
@@ -383,7 +386,7 @@ test("retirement fails closed for exchanged work roots, missing authority and po
       const file = join(result.home, "instance.json"), meta = readJson(file);
       meta.work = "checkout"; meta.branch = "main"; write(file, JSON.stringify(meta));
     } else rmSync(join(dirname(result.home), ".oats-retirement", "baselines"), { recursive: true });
-    assert.throws(() => retireInstance(f.root, result.instance, { force: true, deleteBranch: true }), (e) => e.code === "E_WORK_INSPECTION_FAILED");
+    assert.throws(() => retireInstance(f.root, result.instance, { force: true }), (e) => e.code === "E_WORK_INSPECTION_FAILED");
     assert.equal(existsSync(result.home), true);
   }
 });
@@ -431,8 +434,9 @@ test("existing Git checkout, worktree, attached and workspace modes keep their l
   retireInstance(f.root, workspace.instance);
   retireInstance(f.root, checkout.instance);
   assert.equal(existsSync(join(f.context, ".git")), true);
-  retireInstance(f.root, worktree.instance, { deleteBranch: true });
+  retireInstance(f.root, worktree.instance, { discardWorktree: true });
   assert.equal(existsSync(worktree.home), false);
+  assert.equal(execFileSync("git", ["-C", f.context, "branch", "--list", worktree.branch], { encoding: "utf8" }).trim().replace(/^[*+] /, ""), worktree.branch, "the worktree's branch is left");
 });
 
 test("Git-owned home placement still fails closed when Git is unavailable even for explicit directory execution", async (t) => {
@@ -636,7 +640,7 @@ console.log(JSON.stringify({meta: {retired: true}}));`);
     assert.deepEqual(marker.cleanup.capabilityMeta, { "example.worker": { receipt: "original-hook-receipt" } });
     assert.deepEqual(marker.cleanup.outstanding.hooks, ["example.worker"]);
     assert.equal(marker.cleanup.outstanding.directory, true);
-    assert.throws(() => retireInstance(f.root, "worker-substituted", { force: true, deleteBranch: true }), (e) => e.code === "E_WORK_INSPECTION_FAILED");
+    assert.throws(() => retireInstance(f.root, "worker-substituted", { force: true }), (e) => e.code === "E_WORK_INSPECTION_FAILED");
     assert.equal(readFileSync(join(f.context, "sentinel"), "utf8"), "not owned");
     if (kind !== "missing") rmSync(join(home, "work")); // unlink only; never recurse through a target
     renameSync(join(home, "original-work"), join(home, "work"));

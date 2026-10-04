@@ -54,17 +54,26 @@ function spawn(f, purpose) {
 function installFakeTmux(f) {
   const state = join(f.base, "tmux-state");
   mkdirSync(state);
+  // An endpoint per server: the ambient one ($TMUX, else "default"), a socket named with -S, and
+  // the OATS server the kernel selects with -L oats, which lives at $TMUX_FAKE_OATS.
   write(join(f.base, "bin", "tmux"), `#!/bin/sh
 endpoint=\${TMUX%%,*}
 [ -n "$endpoint" ] || endpoint=default
-if [ "$1" = "-S" ]; then endpoint=$2; shift 2; fi
+while :; do
+  case "$1" in
+    -u) shift ;;
+    -S) endpoint=$2; shift 2 ;;
+    -L) endpoint=\${TMUX_FAKE_OATS:?}; shift 2 ;;
+    *) break ;;
+  esac
+done
 command=$1; shift
 state=\${TMUX_FAKE_STATE:?}/\$(printf '%s' "$endpoint" | tr / _)
 case "$command" in
   has-session) exit 0 ;;
-  display-message) printf '%s\\n' "$endpoint" ;;
+  list-sessions) exit 0 ;;
   list-windows) [ -f "$state/window" ] && cat "$state/window"; exit 0 ;;
-  new-session) mkdir -p "$state"; exit 0 ;;
+  new-session) mkdir -p "$state"; printf '%s\\t@0\\n' "$endpoint"; exit 0 ;;
   set-option) exit 0 ;;
   new-window)
     while [ $# -gt 0 ]; do
@@ -76,12 +85,14 @@ case "$command" in
     done
     mkdir -p "$state"; printf '%s\\n' "$window" > "$state/window"
     printf 'early-harness-bytes\\n' > "$cwd/early-harness.txt"
+    printf '@1\\n'
     exit 0 ;;
   kill-window) rm -f "$state/window"; exit 0 ;;
   *) exit 0 ;;
 esac
 `, 0o755);
   f.env.TMUX_FAKE_STATE = state;
+  f.env.TMUX_FAKE_OATS = join(f.base, "oats-socket");
   return state;
 }
 
@@ -92,7 +103,7 @@ test.afterEach(() => {
 test("launched harness writes cannot be stamped into the clean retirement baseline", () => {
   const f = fixture();
   installFakeTmux(f);
-  f.env.TMUX = `${join(f.base, "socket-a")},1,0`;
+  f.env.TMUX = `${join(f.base, "ambient-socket")},1,0`;
   const launched = cli(f, ["spawn", "dev", "--purpose", "early-write", "--json"]);
   assert.equal(launched.status, 0, `${launched.stderr}\n${launched.stdout}`);
   const spawned = JSON.parse(launched.stdout).result;
@@ -108,8 +119,10 @@ test("launched harness writes cannot be stamped into the clean retirement baseli
 test("retire quiesces the exact tmux endpoint recorded at spawn, not ambient TMUX", () => {
   const f = fixture();
   const state = installFakeTmux(f);
+  // The spawn opens its window on the OATS server (here socket A), whatever the ambient TMUX names.
   const socketA = join(f.base, "socket-a");
-  f.env.TMUX = `${socketA},1,0`;
+  f.env.TMUX_FAKE_OATS = socketA;
+  f.env.TMUX = `${join(f.base, "ambient-socket")},1,0`;
   const launched = cli(f, ["spawn", "dev", "--purpose", "socket", "--json"]);
   assert.equal(launched.status, 0, `${launched.stderr}\n${launched.stdout}`);
   const activeA = join(state, socketA.replaceAll("/", "_"), "window");
@@ -125,7 +138,8 @@ test("retire refuses a mutable instance.json endpoint that disagrees with indepe
   const f = fixture();
   const state = installFakeTmux(f);
   const socketA = join(f.base, "socket-authority-a");
-  f.env.TMUX = `${socketA},1,0`;
+  f.env.TMUX_FAKE_OATS = socketA;
+  f.env.TMUX = `${join(f.base, "ambient-socket")},1,0`;
   const launched = cli(f, ["spawn", "dev", "--purpose", "endpoint-authority", "--json"]);
   assert.equal(launched.status, 0, `${launched.stderr}\n${launched.stdout}`);
   const spawned = JSON.parse(launched.stdout).result;
@@ -188,7 +202,7 @@ test("retire recovers a worktree that switched branches after spawn, on its actu
   const manifest = JSON.parse(readFileSync(join(recovery.path, "recovery.json"), "utf8"));
   assert.deepEqual(manifest.branchDrift, { recordedBranch: recorded, worktreeBranch: "fix/switched-after-spawn", detachedAt: null });
   assert.equal(readFileSync(join(recovery.path, "repo", "human-untracked.txt"), "utf8"), "worktree-human-bytes\n");
-  // Without --delete-branch the switched branch survives in the repository, as any branch would.
+  // No retire deletes a branch: the switched branch survives in the repository, as any branch would.
   assert.equal(execFileSync("git", ["-C", f.repo, "rev-parse", "refs/heads/fix/switched-after-spawn"], { encoding: "utf8" }).trim(), tip);
 });
 
@@ -253,7 +267,7 @@ test("home-only recovery preserves notes without cloning a clean merged worktree
   const f = fixture();
   const spawned = spawn(f, "home-only");
   write(join(spawned.home, "notes", "lesson.md"), "Keep this lesson.\n");
-  const retired = cli(f, ["retire", "dev-home-only", "--delete-branch", "--json"]);
+  const retired = cli(f, ["retire", "dev-home-only", "--discard-worktree", "--json"]);
   assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
   const recovery = JSON.parse(retired.stdout).workRecovery;
   assert.deepEqual(recovery.classes, ["changed instance-home bytes"]);
@@ -654,30 +668,23 @@ test("E_WORK_PRESERVATION_FAILED names the differing status rows (the first 10, 
   assert.deepEqual(error.details.statusDisagreement, { repo: "human-ignored/nested", rows: [{ path: "run.sh", source: " M", recovery: null }], total: 1 });
 });
 
-test("branch-only commits are recovered only when retirement deletes their last local ref", () => {
-  const ordinary = fixture();
-  const ordinarySpawn = spawn(ordinary, "branch-kept");
-  write(join(ordinarySpawn.home, "work", "commit.txt"), "unique\n");
-  execFileSync("git", ["-C", join(ordinarySpawn.home, "work"), "add", "."]);
-  execFileSync("git", ["-C", join(ordinarySpawn.home, "work"), "commit", "-qm", "unique ordinary"]);
-  const ordinaryTip = execFileSync("git", ["-C", join(ordinarySpawn.home, "work"), "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-  const ordinaryRetire = cli(ordinary, ["retire", "dev-branch-kept", "--json"]);
-  assert.equal(ordinaryRetire.status, 0, `${ordinaryRetire.stderr}\n${ordinaryRetire.stdout}`);
-  assert.equal(execFileSync("git", ["-C", ordinary.repo, "rev-parse", "refs/heads/agents/dev-branch-kept"], { encoding: "utf8" }).trim(), ordinaryTip);
-
-  const deleting = fixture();
-  const deletingSpawn = spawn(deleting, "branch-deleted");
-  write(join(deletingSpawn.home, "work", "commit.txt"), "unique-delete\n");
-  execFileSync("git", ["-C", join(deletingSpawn.home, "work"), "add", "."]);
-  execFileSync("git", ["-C", join(deletingSpawn.home, "work"), "commit", "-qm", "unique deleting"]);
-  const deletingTip = execFileSync("git", ["-C", join(deletingSpawn.home, "work"), "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-  const deletingRetire = cli(deleting, ["retire", "dev-branch-deleted", "--delete-branch", "--json"]);
-  assert.equal(deletingRetire.status, 0, `${deletingRetire.stderr}\n${deletingRetire.stdout}`);
-  const result = JSON.parse(deletingRetire.stdout);
-  assert.ok(result.workRecovery.classes.includes("branch-only local commits"));
-  assert.equal(execFileSync("git", ["-C", join(result.workRecovery.path, "repo"), "rev-parse", "HEAD"], { encoding: "utf8" }).trim(), deletingTip);
-  const gone = spawnSync("git", ["-C", deleting.repo, "rev-parse", "--verify", "refs/heads/agents/dev-branch-deleted"]);
-  assert.notEqual(gone.status, 0, "the requested original branch deletion did not occur");
+test("commits only a branch has stay on that branch: no retire deletes it, also with --discard-worktree, which needs no recovery for them", () => {
+  for (const flags of [[], ["--discard-worktree"]]) {
+    const f = fixture();
+    const purpose = flags.length ? "branch-discarded" : "branch-kept";
+    const spawned = spawn(f, purpose);
+    const work = join(spawned.home, "work");
+    write(join(work, "commit.txt"), "unique\n");
+    execFileSync("git", ["-C", work, "add", "."]);
+    execFileSync("git", ["-C", work, "commit", "-qm", "unique to the instance's branch"]);
+    const tip = execFileSync("git", ["-C", work, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+    const retired = cli(f, ["retire", `dev-${purpose}`, ...flags, "--json"]);
+    assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+    const result = JSON.parse(retired.stdout);
+    assert.equal(result.branchDeleted, false, purpose);
+    assert.equal(result.workRecovery ?? null, null, `${purpose}: the commit is on a branch that outlives the worktree, so nothing needs a recovery`);
+    assert.equal(execFileSync("git", ["-C", f.repo, "rev-parse", `refs/heads/agents/dev-${purpose}`], { encoding: "utf8" }).trim(), tip, `${purpose}: the branch is where it was`);
+  }
 });
 
 test("repository-global stash survives ordinary retirement without acting as a guard", () => {
@@ -729,7 +736,7 @@ test("recovery copies only staged objects the clone lacks: one batch check, no p
   assert.equal(readFileSync(join(recoveryRepo, "loose.txt"), "utf8"), "untracked human bytes\n");
 });
 
-test("K3b retention: plain retire RE-HOMES the worktree (dirty state intact, branch untouched) under <workspace>/.agents/worktrees/<repo>/<branch>; --discard-worktree removes; --delete-branch uses the worktree's verified branch and implies discard", () => {
+test("K3b retention: plain retire RE-HOMES the worktree (dirty state intact, branch untouched) under <workspace>/.agents/worktrees/<repo>/<branch>; --discard-worktree removes the worktree and deletes no branch", () => {
   const f = fixture();
   const spawned = spawn(f, "keep");
   const work = join(spawned.home, "work");
@@ -756,13 +763,14 @@ test("K3b retention: plain retire RE-HOMES the worktree (dirty state intact, bra
   assert.ok(listed.includes(realpathSync(moved)), `the repository knows the re-homed worktree: ${listed.join(", ")}`);
   assert.ok(repoGit("branch", "--list", "feat/kept-after-retire"), "branch untouched");
 
-  // Discard restores removal; delete-branch uses the VERIFIED branch and implies discard.
+  // Discard restores removal, and deletes no branch: neither the worktree's nor the recorded one.
   const d = spawn(f, "discard"); const dw = join(d.home, "work");
-  execFileSync("git", ["-C", dw, "switch", "--quiet", "-c", "feat/to-delete"]);
-  const rd = JSON.parse(cli(f, ["retire", "dev-discard", "--delete-branch", "--json"]).stdout);
-  assert.equal(rd.retention.worktree, "removed"); assert.equal(rd.retention.branchDeleted, "feat/to-delete"); assert.equal(rd.branchDeleted, true);
-  assert.equal(repoGit("branch", "--list", "feat/to-delete"), "", "the worktree's actual branch was deleted, not the recorded one");
-  assert.ok(repoGit("branch", "--list", rd.retention.recordedBranch), "the recorded spawn branch (never checked out after the switch) is untouched");
+  execFileSync("git", ["-C", dw, "switch", "--quiet", "-c", "feat/to-keep"]);
+  const rd = JSON.parse(cli(f, ["retire", "dev-discard", "--discard-worktree", "--json"]).stdout);
+  assert.equal(rd.retention.worktree, "removed"); assert.equal(rd.retention.branch, "feat/to-keep"); assert.equal(rd.branchDeleted, false);
+  assert.equal(Object.hasOwn(rd.retention, "branchDeleted"), false); assert.equal(Object.hasOwn(rd.retention, "branchDeletionSkipped"), false);
+  assert.ok(repoGit("branch", "--list", "feat/to-keep"), "the worktree's branch is left");
+  assert.ok(repoGit("branch", "--list", rd.retention.recordedBranch), "the recorded spawn branch is left");
   assert.equal(existsSync(dw), false);
 });
 
@@ -788,7 +796,7 @@ test("K3 guarded Remove: retire --plan-revision/--idempotency-key revalidates th
   assert.equal(again.replayed, true); assert.equal(again.retired, "dev-guard"); assert.equal(again.retention.worktree, done.retention.worktree, "the recorded receipt, not a second retirement");
 });
 
-test("K3 pin 2: --delete-branch through a plan is bound to the CONFIRMED branch — a branch switch during retirement (hook window) deletes nothing and is reported", () => {
+test("K3 pin 2: a plan-driven --discard-worktree whose retire hook switches the branch deletes no branch: the confirmed and the switched one are both left", () => {
   // The retire hook set is the one CAPTURED at spawn (capabilityRuntime), so the
   // switching capability is declared by the soul BEFORE the instance is spawned.
   const f = fixture({ capabilities: { "acme.switcher": {
@@ -799,12 +807,14 @@ test("K3 pin 2: --delete-branch through a plan is bound to the CONFIRMED branch 
   execFileSync("git", ["-C", work, "switch", "--quiet", "-c", "feat/confirmed"]);
   const plan = JSON.parse(cli(f, ["retire", "dev-bind", "--plan", "--json"]).stdout).result;
   assert.equal(plan.facts.work.branch, "feat/confirmed");
-  // The hook switches the branch after the plan comparison, before deletion.
+  // The hook switches the branch after the plan comparison, before the worktree step.
   const fresh = plan;
-  const r = JSON.parse(cli(f, ["retire", "dev-bind", "--plan-revision", fresh.planRevision, "--idempotency-key", "b-1", "--delete-branch", "--json"]).stdout);
+  const r = JSON.parse(cli(f, ["retire", "dev-bind", "--plan-revision", fresh.planRevision, "--idempotency-key", "b-1", "--discard-worktree", "--json"]).stdout);
   assert.equal(r.retired, "dev-bind");
   assert.equal(r.branchDeleted, false, `no branch deleted: ${JSON.stringify(r.retention)} hooks=${JSON.stringify(r.hooks ?? r.capabilityMeta)}`);
-  assert.deepEqual(r.retention.branchDeletionSkipped, { expected: "feat/confirmed", actual: "feat/sneaky", reason: "the worktree's branch changed between confirmation and deletion; nothing was deleted" });
+  assert.equal(r.retention.worktree, "removed");
+  assert.equal(r.retention.branch, "feat/sneaky", "the branch the worktree was on when it was removed");
+  assert.equal(Object.hasOwn(r.retention, "branchDeletionSkipped"), false);
   const branches = execFileSync("git", ["-C", f.repo, "branch", "--list", "feat/*"], { encoding: "utf8" });
   assert.match(branches, /feat\/confirmed/); assert.match(branches, /feat\/sneaky/, "neither the confirmed nor the switched branch was deleted");
 });
@@ -1239,8 +1249,9 @@ test("a retire hook that rewrites a file that was already untracked: its bytes a
   assertBothCopiedAgain(recovery);
 });
 
-test("a retire hook that commits on a branch the retire then deletes: the commit is in the work copied under after-hooks/repo/, although the snapshot before the hooks was home-only", () => {
-  const retire = quietHook(`git('-c', 'user.name=Hook', '-c', 'user.email=hook@example.invalid', 'commit', '--quiet', '--allow-empty', '-m', 'made by the retire hook');
+test("a retire hook that commits on a detached HEAD in a worktree the retire removes: the commit, which no ref reaches, is in the work copied under after-hooks/repo/, although the snapshot before the hooks was home-only", () => {
+  const retire = quietHook(`git('checkout', '--quiet', '--detach');
+git('-c', 'user.name=Hook', '-c', 'user.email=hook@example.invalid', 'commit', '--quiet', '--allow-empty', '-m', 'made by the retire hook');
 seen.head = git('rev-parse', 'HEAD').trim();`);
   const f = fixture({ capabilities: hookCapability(retire) });
   const spawned = spawn(f, "hook-commit-deleted");
@@ -1250,13 +1261,12 @@ seen.head = git('rev-parse', 'HEAD').trim();`);
   const statusBefore = porcelain(work);
   assert.equal(statusBefore, "", "fixture premise: a clean worktree before the retire");
 
-  const { receipt, recovery, seen, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore, { flags: ["--delete-branch"] });
+  const { recovery, seen, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore);
   assert.notEqual(seen.head, headBefore, "fixture premise: the hook moved HEAD");
   assert.equal(recovery.repoCopy?.copied, false, "fixture premise: the snapshot before the hooks is home-only");
   assert.equal(existsSync(join(recovery.path, "repo")), false);
-  assert.ok(receipt.retention.branchDeleted, "fixture premise: the retire deleted the branch");
-  assert.equal(execFileSync("git", ["-C", f.repo, "branch", "--list", receipt.retention.branchDeleted], { encoding: "utf8" }).trim(), "", "the branch is gone from the repository");
-  assert.ok(recovery.classes.includes("branch-only local commits"), recovery.classes.join(", "));
+  assert.equal(execFileSync("git", ["-C", f.repo, "for-each-ref", "--contains", seen.head, "--format=%(refname)"], { encoding: "utf8" }).trim(), "", "no ref of the repository reaches the hook's commit");
+  assert.ok(recovery.classes.includes("worktree commits no ref reaches"), recovery.classes.join(", "));
   assert.equal(existsSync(join(afterRepo, ".git")), true, "the work is copied under after-hooks/repo/");
   assert.equal(headOf(afterRepo), seen.head, "the hook's commit is in the recovery");
   assertBothCopiedAgain(recovery);
@@ -1578,39 +1588,40 @@ seen.tags = git('tag', '--list');`);
   assertBothCopiedAgain(recovery);
 });
 
-/** Give the instance's branch one commit that a second local branch, `keep`, also reaches: no commit is branch-only. → that commit. */
-function commitAlsoOnKeep(work) {
-  write(join(work, "committed.txt"), "committed on the instance's branch\n");
+/** Detach the worktree's HEAD and make one commit there that a second local branch, `keep`, reaches: no
+ *  other ref does, the instance's branch included. → that commit. */
+function commitOnlyKeepReaches(work) {
+  execFileSync("git", ["-C", work, "checkout", "--quiet", "--detach"]);
+  write(join(work, "committed.txt"), "committed on the detached HEAD\n");
   execFileSync("git", ["-C", work, "add", "committed.txt"]);
   execFileSync("git", ["-C", work, "commit", "-qm", "the instance's commit"]);
   execFileSync("git", ["-C", work, "branch", "keep"]);
   return headOf(work);
 }
 
-test("a snapshot that was home-only before the hooks gets a work copy when a class appears after them from outside the work state: a retire hook deletes the other branch that reached the instance's commit, and the retire deletes the instance's", () => {
+test("a snapshot that was home-only before the hooks gets a work copy when a retire hook deletes the one branch that reached the worktree's detached commit, in a worktree the retire removes", () => {
   const retire = quietHook(`git('branch', '--quiet', '-D', 'keep');
 seen.head = git('rev-parse', 'HEAD').trim();
 seen.branches = git('branch', '--list', 'keep');`);
   const f = fixture({ capabilities: hookCapability(retire) });
   const spawned = spawn(f, "hook-drops-branch");
   const work = join(spawned.home, "work");
-  const commit = commitAlsoOnKeep(work);
+  const commit = commitOnlyKeepReaches(work);
   write(join(spawned.home, "notes", "x.md"), "an authored note\n");
   const statusBefore = porcelain(work);
   assert.equal(statusBefore, "", "fixture premise: a clean worktree before the retire");
 
-  const { receipt, recovery, seen, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore, { flags: ["--delete-branch"] });
-  // The work state did not move: same status, same commit, same bytes. Only another ref did.
+  const { recovery, seen, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore);
+  // The status, the commit and the bytes did not move. Only another ref did: the one that reached the commit.
   assert.equal(seen.head, commit, "fixture premise: the hook did not move HEAD");
   assert.equal(seen.branches, "", "fixture premise: the hook deleted the other branch");
-  assert.equal(recovery.repoCopy?.copied, false, "fixture premise: the snapshot before the hooks is home-only, because no commit was branch-only then");
+  assert.equal(recovery.repoCopy?.copied, false, "fixture premise: the snapshot before the hooks is home-only, because a ref reached the commit then");
   assert.equal(existsSync(join(recovery.path, "repo")), false);
-  assert.ok(recovery.classes.includes("branch-only local commits"), `the class appeared after the hooks: ${recovery.classes.join(", ")}`);
-  assert.ok(receipt.retention.branchDeleted, "fixture premise: the retire deleted the instance's branch");
-  assert.equal(execFileSync("git", ["-C", f.repo, "branch", "--list", receipt.retention.branchDeleted, "keep"], { encoding: "utf8" }).trim(), "", "no branch reaches the commit any more");
-  assert.equal(existsSync(join(afterRepo, ".git")), true, "the work is copied under after-hooks/repo/, although nothing in the work state moved: the recovery held no work copy, and the commit is now branch-only");
+  assert.ok(recovery.classes.includes("worktree commits no ref reaches"), `the class appeared after the hooks: ${recovery.classes.join(", ")}`);
+  assert.equal(execFileSync("git", ["-C", f.repo, "for-each-ref", "--contains", commit, "--format=%(refname)"], { encoding: "utf8" }).trim(), "", "no ref reaches the commit any more");
+  assert.equal(existsSync(join(afterRepo, ".git")), true, "the work is copied under after-hooks/repo/: the recovery held no work copy, and no ref that outlives the worktree reaches its commit now");
   assert.equal(headOf(afterRepo), commit, "the commit is in the recovery");
-  assert.equal(readFileSync(join(afterRepo, "committed.txt"), "utf8"), "committed on the instance's branch\n");
+  assert.equal(readFileSync(join(afterRepo, "committed.txt"), "utf8"), "committed on the detached HEAD\n");
   assertBothCopiedAgain(recovery);
 });
 
@@ -1636,27 +1647,26 @@ for (const name of readdirSync(baselines)) rmSync(join(baselines, name));`);
   assertBothCopiedAgain(recovery);
 });
 
-test("an instance with nothing to preserve before the hooks gets its one recovery when a class appears after them, although nothing in its home or its work moved: a retire hook deletes the other branch that reached the instance's commit", () => {
+test("an instance with nothing to preserve before the hooks gets its one recovery when a class appears after them, although nothing in its home or its files moved: a retire hook deletes the one branch that reached the worktree's detached commit, in a worktree the retire removes", () => {
   const retire = quietHook(`git('branch', '--quiet', '-D', 'keep');
 seen.head = git('rev-parse', 'HEAD').trim();
 seen.branches = git('branch', '--list', 'keep');`, { home: false });
   const f = fixture({ capabilities: hookCapability(retire) });
   const spawned = spawn(f, "late-class");
   const work = join(spawned.home, "work");
-  const commit = commitAlsoOnKeep(work);
+  const commit = commitOnlyKeepReaches(work);
   const statusBefore = porcelain(work);
   assert.equal(statusBefore, "", "fixture premise: a clean worktree before the retire");
 
-  const { receipt, recovery, seen } = retireAfterQuietHook(f, spawned, statusBefore, { flags: ["--delete-branch"], home: false });
+  const { recovery, seen } = retireAfterQuietHook(f, spawned, statusBefore, { home: false });
   assert.equal(seen.head, commit, "fixture premise: the hook did not move HEAD");
   assert.equal(seen.branches, "", "fixture premise: the hook deleted the other branch");
-  assert.deepEqual(recovery.classes, ["branch-only local commits"], "the one class, and it appeared after the hooks");
-  assert.ok(receipt.retention.branchDeleted, "fixture premise: the retire deleted the instance's branch");
-  assert.equal(execFileSync("git", ["-C", f.repo, "branch", "--list", receipt.retention.branchDeleted, "keep"], { encoding: "utf8" }).trim(), "", "no branch reaches the commit any more");
+  assert.deepEqual(recovery.classes, ["worktree commits no ref reaches"], "the one class, and it appeared after the hooks");
+  assert.equal(execFileSync("git", ["-C", f.repo, "for-each-ref", "--contains", commit, "--format=%(refname)"], { encoding: "utf8" }).trim(), "", "no ref reaches the commit any more");
   // Written by the post-hook pass as the first and only recovery: the work is at its top level.
   assert.equal(existsSync(join(recovery.path, "repo", ".git")), true);
   assert.equal(headOf(join(recovery.path, "repo")), commit, "the commit is in the recovery");
-  assert.equal(readFileSync(join(recovery.path, "repo", "committed.txt"), "utf8"), "committed on the instance's branch\n");
+  assert.equal(readFileSync(join(recovery.path, "repo", "committed.txt"), "utf8"), "committed on the detached HEAD\n");
   assert.equal(existsSync(join(recovery.path, "after-hooks")), false);
   assert.equal(recovery.afterHooks, undefined);
   assert.equal(readJson(join(recovery.path, "recovery.json")).phase, "complete");

@@ -553,7 +553,7 @@ workspace's view; its rows carry `server`, `home`, and the kernel's
 
 ## Unchanged, v2-agnostic
 
-Terminal-target liveness (`server/liveness.mjs`, running out of process) still
+Terminal-target liveness (`server/liveness.mjs`, run out of process by `server/liveness-main.mjs`) still
 observes the exact recorded tmux socket/session/window — it reads no deployment
 file. A Herdr-recorded row (a `sessionTarget`, or `runtimeState: "unsupported"`)
 is never probed: it is reported unsupported with the kernel's E_HERDR_REMOVED

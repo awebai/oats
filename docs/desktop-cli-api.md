@@ -1631,8 +1631,8 @@ with `--expect-decision` records the key and decision in `instance.json`.
 ```json
 {"instance":"rm-api","agent":"rm","home":"/w/agents/rm/instances/rm-api","work":"worktree","branch":"agents/rm-api",
  "base":{"ref":"github.com/nw/agents","oid":"66566512…"},"launched":true,"warnings":[],
- "tmux":{"session":"oats-agents","window":"rm-api"},"backend":"tmux","repo":"/w/agents-repo","harness":"pi","model":null,"parent":null,"sibling":null,"relation":null,
- "spawnOrigin":"operator","attach":"tmux attach -t oats-agents","decision":{"instance":"rm-api","revision":"c557d8ec9a272ba1c1739dc3"},"replayed":false,
+ "tmux":{"session":"oats-agents","window":"rm-api","socket":"/tmp/tmux-1000/oats"},"backend":"tmux","repo":"/w/agents-repo","harness":"pi","model":null,"parent":null,"sibling":null,"relation":null,
+ "spawnOrigin":"operator","attach":"tmux -S /tmp/tmux-1000/oats attach -t oats-agents","decision":{"instance":"rm-api","revision":"c557d8ec9a272ba1c1739dc3"},"replayed":false,
  "wake":{"requested":false,"saved":null,"error":null},"launchConfig":null,
  "launch":{"version":2,"harness":"pi","launchConfig":null,"launchConfigSource":null,"executable":"/usr/local/bin/pi","executableDeclared":null,
            "executableResolvedFrom":"PATH","args":[],"env":{},"model":null,"hooks":{"launch":{},"env":{},"contributions":[]},"prompt":{"kind":"task-file","file":"TASK.md"}}}
@@ -1642,10 +1642,21 @@ with `--expect-decision` records the key and decision in `instance.json`.
 
 - Always present: `instance, agent, home, work, branch, base ({ref, oid}
   the new branch started at; `null` without one), launched, warnings
-  (array), tmux ({session, window} | null), backend ("tmux"), repo, harness,
+  (array), tmux ({session, window, socket?} | null), backend ("tmux"), repo, harness,
   model, parent,
   sibling, relation, spawnOrigin (operator | instance), attach, launchConfig,
   launch` (the redacted recipe).
+- `tmux.socket` is the absolute socket of the tmux server the window was
+  created on; a launched spawn has it, a `--no-launch` one does not. It is
+  the OATS tmux server's
+  ([execution-targets.md](execution-targets.md#the-oats-tmux-server)), where
+  earlier kernels recorded the default server's; the shape is unchanged.
+- `attach` is one string, a command for a person to paste, the same in text
+  and JSON. It is `tmux -S <tmux.socket> attach -t <session>` for a
+  launched spawn (earlier kernels: `tmux attach -t <session>`) and `oats session attach
+  --home <home>` for `--no-launch`. A value is single-quoted only when it
+  holds a character outside `A-Za-z0-9_./:-`. It is not a field to parse:
+  read `tmux` for the target.
 - When they apply: `yolo`, `decision` and
   `replayed` (bound apply), `wake` (keyed apply), `wakeSchedule` and
   `wakeScheduleError` (a requested wake).
@@ -1658,7 +1669,8 @@ Feature `spawn-name`. `--name <slug>` is the exact name, with no prefix.
 - A name that is not a slug (lowercase letters and digits, single dashes),
   equals a soul name, or exceeds 64 characters (derived names included, with
   their suffix) is `E_INSTANCE_NAME_INVALID`.
-- A name any soul's `instances/` holds, or a live tmux window carries, is
+- A name any soul's `instances/` holds, or a live window of the target
+  session on the OATS tmux server carries, is
   `E_INSTANCE_NAME_TAKEN {instance, home, session?}`; a typed name never gets
   a silent `-2`.
 - The name is part of the decision.
@@ -2185,7 +2197,8 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   after open), and at most its last 4 MiB is read (`"tail"`).
 - **Kinds:** `spawned`, `launched`, `restarted`, `stopped`, `stop-refused`,
   `retire-planned`, `retired`, `worktree-retained`, `worktree-removed`,
-  `branch-deleted`, `child-spawn-refused`, `launch-warning` (0.30: a
+  `branch-deleted` (not written since 0.41.0: no retire deletes a branch;
+  older logs hold it), `child-spawn-refused`, `launch-warning` (0.30: a
   `launch` hook's warning at session start/restart, `data: {message}`),
   `recomposed` (from earlier kernels), `waiting` (0.40: a producer's claim,
   [Waiting on you](#waiting-on-you)). `producer` is `kernel`, a capability id,
@@ -2198,6 +2211,14 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   is dated at the receipt's launch time. The boundary is complete per log: a
   log that missed it gets a copy of the same row (same time and data), never
   a second one.
+- `retired` (`data: {agent, keepDir, self, quarantine, workRecovery, hooks,
+  reason?}`) is written to the workspace log only,
+  `<deployment>/.agents/events/<agent>--<instance>.jsonl`, which outlives the
+  home. `reason` is present only when
+  the retire completed a self-retire an older OATS recorded with
+  `--delete-branch` (since 0.41.0: `this self-retire was requested with
+  --delete-branch by an older OATS; retirement no longer deletes branches, so
+  the branch and the worktree were left`).
 - **Incarnation.** Each row carries the writing home's `createdAt` (or
   `null` for old rows); the top-level `incarnation` is the current home's (or
   `null`). Earlier incarnations are returned as this address's history.
@@ -2461,7 +2482,7 @@ Plain `retire` keeps a worktree-mode instance's work: the worktree is moved
 `-2` suffix if taken; `detached-<oid12>` when detached), state intact.
 
 ```text
-oats retire <instance> [--plan-revision <rev> --idempotency-key <key>] [--discard-worktree] [--delete-branch] [--home <abs>] --json
+oats retire <instance> [--plan-revision <rev> --idempotency-key <key>] [--discard-worktree] [--home <abs>] --json
 ```
 
 A first retire prints the **raw receipt**, not an envelope:
@@ -2481,8 +2502,7 @@ A first retire prints the **raw receipt**, not an envelope:
 ```
 
 - `retention`: `{worktree: "retained" | "removed" | "absent", movedTo?,
-  branch, detachedAt?, recordedBranch, branchDeleted?,
-  branchDeletionSkipped?: {expected, actual, reason}}`, or `null` when no
+  branch, detachedAt?, recordedBranch}`, or `null` when no
   worktree step ran: a non-worktree mode, or a worktree kept for the retry.
   A retire whose hooks left cleanup outstanding keeps the worktree exactly as
   it was (with `worktreeRemoved: false`) and says why in `rollbackIncomplete`
@@ -2491,14 +2511,30 @@ A first retire prints the **raw receipt**, not an envelope:
   entry is gone is never touched: it is an incomplete item (`git worktree
   <path>: its admin entry is missing; …`), and `--force` refuses it with
   `E_WORK_PRESERVATION_FAILED`.
-- `--discard-worktree` removes the worktree. `--delete-branch` deletes the
-  worktree's verified branch (re-verified at deletion time) and implies
-  discarding; a mismatch deletes nothing and reports
-  `branchDeletionSkipped`. Without `--delete-branch` no retire deletes a
-  branch, a retried or `--force`d quarantine included. A failed spawn's
-  quarantine that still owes the branch the spawn created stays incomplete
-  (`git branch <b>: kept; the failed spawn created it; pass --delete-branch to
-  delete it`).
+- `--discard-worktree` removes the worktree. No retire deletes a branch, a
+  retried or `--force`d quarantine included: `branchDeleted` is always
+  `false`, and `retention.branchDeleted` and `retention.branchDeletionSkipped`
+  are not written. `--delete-branch` is refused with `E_BAD_ARGS` (`oats
+  retire no longer deletes branches: …`) before any effect: before a plan
+  revision is compared and before a recorded child is stopped. A failed
+  spawn's quarantine that still owes the branch the spawn created stays
+  incomplete while the branch is there (`the branch the failed spawn created
+  is left: OATS does not delete it. Inspect it and delete it with Git if it
+  is not wanted, then retry`; the item names no branch:
+  `retention.recordedBranch` has it when the worktree step ran, otherwise the
+  retained home's `instance.json` `branch`) or while
+  Git cannot show it gone (`git branch <b>: could not verify whether it still
+  exists (…)`). Such a home cannot be completed from Desktop: the operator
+  deletes the branch with Git and retries, or uses `--force` from the CLI.
+- Before the worktree is removed, HEAD is read again: a HEAD that moved since
+  the retire's last inspection stops it with `E_WORK_PRESERVATION_FAILED`
+  (`the worktree's HEAD changed after it was inspected, so the worktree was
+  not removed. The home and the worktree are kept, and so is any recovery the
+  retire wrote; retry the retire.`), and a HEAD that cannot be read with
+  `E_WORK_INSPECTION_FAILED`. Either may follow earlier effects of the same
+  retire (hooks run, a recovery copied), and neither says that one happened:
+  an error here is not proof that nothing happened, nor that a recovery
+  exists.
 - `workRecovery`: `{path, classes, bytes, home, outputs?, repoCopy?,
   notCopied?, afterHooks?}`, present when a recovery was written. One retire
   writes at most one recovery directory, and `path` is that directory.
@@ -2642,6 +2678,12 @@ selection flags. See [the start workflow](desktop-instance-start.md).
   instance's events as a `launch-warning` row, `data: {message}`. They are
   advisory: the start went ahead. Earlier kernels omit the field; read a
   missing `warnings` as `[]`.
+- The kernel adds one warning of its own, in the same array and as
+  the same event: when the start had to create the window again and created
+  it on a tmux server other than the one the home recorded, the line names
+  the instance, the old socket and the new one (each as a JSON string).
+  `target.socket` is then the new socket
+  ([execution-targets.md](execution-targets.md#existing-instances)).
 - A start or restart appends a `launched` event as soon as its session
   exists (0.40, `phase: "start"` or `"restart"`, `startId`), the session
   boundary that voids earlier waiting claims ([Waiting on you](#waiting-on-you)).

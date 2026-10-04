@@ -484,7 +484,10 @@ hooks run causes one more work copy. That repository's other branches are
 not part of the state: they outlive the worktree, and a recovery does not
 hold them. The one exception is a worktree whose `HEAD` is detached: its copy
 holds the branch that repository has checked out, so that branch is part of
-the state.
+the state. When the retire removes the worktree, whether a ref that outlives
+it reaches the commit `HEAD` is at is part of the state too: a hook that
+deletes the one ref that reached it causes one more work copy, though the
+files, the status and `HEAD` did not move.
 
 A nested repository that has its own Git directory is removed with the
 worktree, and every ref with it. So all its refs are part of the state, and a
@@ -695,6 +698,18 @@ cannot run, retire refuses with
 `E_RUNTIME_ENDPOINT_UNKNOWN`, even with `--force`: stop that session yourself,
 then retire again. `oats retire <instance> --plan` says which case applies.
 
+With a receipt, if the recorded window is still running, or its tmux server
+cannot be read, retire refuses with `E_RUNTIME_QUIESCE_FAILED` and keeps the
+home. When the recorded server cannot be reached because its socket file is
+missing (after a reboot), retire proceeds only when no process on this host
+works in the home (any process whose working directory is in the home, not
+only the harness); a tmux server that lost its socket file still runs, and
+recreates the socket when its process is sent `SIGUSR1`. That check needs
+`lsof`: on a host without it, a retire whose recorded socket file is missing
+is refused, and the message says that `lsof` is missing; install it, then
+retire. A scan that does not complete (a timeout, for example) refuses the
+same way, also for a home without its receipt.
+
 `oats retire <instance> --self` lets an instance retire itself when the human
 or briefing says it is done. A live harness cannot give a stable final
 inspection of its own work, so the calling process inspects, runs, and removes
@@ -713,17 +728,31 @@ When a retire hook reports incomplete cleanup, the home is quarantined before
 any worktree step: the worktree, its git admin entry and the branch stay
 exactly as they were, so the retry can reach the hook and the work it needs.
 The retry does the worktree step only once nothing else is outstanding:
-retain by default, remove with `--discard-worktree` or `--delete-branch`.
+retain by default, remove with `--discard-worktree`.
 `--force` removes the home regardless, so it does the worktree step first. A
 work directory whose git admin entry is gone is never removed: the hooks still
 run, the home is kept, and `--force` refuses it until you move the directory
 out or delete it by hand.
 
-Retire never deletes a branch unless you pass `--delete-branch`, and then
-only the verified branch: not on a quarantine, its retry or `--force`. A
-spawn that fails deletes the branch it created only while the branch's tip
-is still where the spawn created it. If something was committed there, the
-branch is kept and the failure says so.
+Retire never deletes a branch: not a plain retire, `--discard-worktree`, a
+quarantine, its retry or `--force`. `--delete-branch` is refused with
+`E_BAD_ARGS` before anything happens. The branch stays in the repository:
+inspect it there, and delete it with Git if it is no longer wanted. A spawn
+that fails deletes the branch it created only while the branch's tip is
+still where the spawn created it. If something was committed there, the
+branch is kept and the failure says so; the quarantine's retry stays
+incomplete until the branch is deleted with Git.
+
+Before it removes a worktree (`--discard-worktree`, or a failed spawn's
+quarantine that owes it), a retire preserves a commit that only the worktree
+reaches (HEAD detached at a commit no ref of the repository reaches) in a
+recovery, and reads HEAD again immediately before the removal: if HEAD moved
+since the retire's last inspection, the worktree is not removed and the
+retire stops with `E_WORK_PRESERVATION_FAILED`; the home and the worktree are
+kept, and so is any recovery the retire wrote. A worktree whose branch has no
+commit yet cannot be read that way: a retire that would remove it, or that
+has work of it to copy, refuses with `E_WORK_INSPECTION_FAILED` and removes
+nothing.
 
 ## Work modes
 

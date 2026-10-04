@@ -92,7 +92,8 @@ const windowStart = await startWindow();
 // "This computer" (#602): the stored last host state paints first, synchronously; main's answer and its
 // pushes then keep it current, in every window whose choice it is.
 const hostTheme = createHostTheme({ desk, storage: (() => { try { return window.localStorage; } catch { return null; } })(), onChange: refreshHostTheme });
-initTheme(hostTheme);
+// Where no theme was ever chosen: "This computer" on Linux, White elsewhere.
+initTheme(hostTheme, navigator.platform.includes("Linux") ? "host" : "light");
 hostTheme.start();
 window.addEventListener("pagehide", () => hostTheme.dispose(), { once: true });
 mountShellIcons(document);

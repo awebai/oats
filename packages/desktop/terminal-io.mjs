@@ -7,6 +7,7 @@ import { localTmuxIo, tmuxSocketArgs } from './local-tmux-io.mjs';
 import { prepareRemoteTerm, remoteTerminalEnvironment } from './remote-target.mjs';
 import { copyTerminalAttachments, prepareTerminalAttachments } from './terminal-attachments.mjs';
 import { runTerminalCommand } from './terminal-exec.mjs';
+import { cliEnvironment } from './cli-environment.mjs';
 
 const changed = code => Object.assign(new Error('Terminal context changed'), { code });
 const cliKey = cli => JSON.stringify([cli.bin, cli.version, [...(cli.remote || [])].sort(), [...(cli.features || [])].sort()]);
@@ -37,9 +38,12 @@ export async function readTerminalCli(base, { fetch: fetcher = fetch, signal, cu
 }
 
 export function createTerminalIo({ base, context, attachmentDirectory, spawnPty, execFileSync, sweep = () => {},
-  fetch: fetcher = fetch, run = runTerminalCommand, env = process.env, fs,
+  fetch: fetcher = fetch, run: runCommand = runTerminalCommand, env = process.env, fs,
 }) {
   const readCli = control => readTerminalCli(base(), { fetch: fetcher, ...control });
+  // Every program started here (tmux, `oats session …`) gets the user's environment, computed
+  // from `env` when it starts (cli-environment.mjs). Last in the options: it is the one used.
+  const run = (binary, args, options) => runCommand(binary, args, { ...options, env: cliEnvironment(env) });
   return {
     admit: admitTerminalTarget, copyAttachments: copyTerminalAttachments,
     async prepare(spec, control) {
