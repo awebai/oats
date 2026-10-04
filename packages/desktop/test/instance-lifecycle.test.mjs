@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
 import { cliLifecycle, lifecycleArgv } from '../lifecycle-cli.mjs';
-import { lifecyclePlan, lifecycleReceipt, publicLifecycleReceipt, lifecycleReason } from '../renderer/lifecycle-contract.mjs';
+import { lifecyclePlan, lifecycleReceipt, publicLifecycleReceipt, lifecycleReason, lifecycleDetailCode } from '../renderer/lifecycle-contract.mjs';
+import { displayLine } from '../renderer/display-text.mjs';
 import { discover } from '../cli-locator.mjs';
 import { cli, target, instance, context, request, stopPlan, retirePlan, stopReceipt, retireReceipt, envelope, options, deferred, tick } from './helpers/lifecycle-fixture.mjs';
 function fixture(overrides = {}) {
@@ -102,18 +103,79 @@ test('E_WORK_INSPECTION_FAILED keeps its code and its own sentence: refused, hom
   assert.match(reason.message, /\bhome\b[^.;]*\b(?:kept|retained)\b/i, 'the home is kept');
   assert.match(reason.message, /\bsession\b[^.;]*\bmay\b[^.;]*\bstopped\b/i, 'the session may already have been stopped');
 });
-test('a local Remove refused by inspection is an unknown outcome with its own fixed cause; no CLI text is forwarded', async () => {
+test("a local Remove refused by inspection is an unknown outcome with its own fixed cause; the CLI's message is its detail, through the display filter, and nowhere else", async () => {
   const path = '/srv/unreadable/dev-1/work', remedy = 'restore the owned work root before retrying cleanup';
-  const message = `directory work must remain an owned directory, not missing, a link or another filesystem type: ${path}; ${remedy}`;
+  // As a CLI can send it: a line break, a tab and a character of the set.
+  const message = `directory work must remain an owned directory, not missing, a link or another filesystem type: ${path};\n\t${remedy}\u202E`;
+  const line = `directory work must remain an owned directory, not missing, a link or another filesystem type: ${path}; ${remedy}\uFFFD`;
   let writes = 0;
   const f = fixture({ invoke: async (_bin, args) => args.phase === 'plan' ? envelope(retirePlan())
     : (writes++, { schemaVersion: 1, ok: false, error: { code: 'E_WORK_INSPECTION_FAILED', message } }) });
   const p = await f.plan('retire'), result = await f.apply(p.planRef);
   // Never "refused": the kernel can raise it after the children stop, the session stop and the retire hooks.
-  assert.equal(result.status, 'unknown'); assert.equal(result.reason.code, 'E_OUTCOME_UNKNOWN'); assert.equal(writes, 1);
-  assert.equal(result.cause.code, 'E_WORK_INSPECTION_FAILED'); assert.deepEqual(result.cause, lifecycleReason('E_WORK_INSPECTION_FAILED'));
-  const sent = JSON.stringify(result);
-  for (const raw of [message, path, remedy]) assert.equal(sent.includes(raw), false, raw);
+  assert.equal(result.status, 'unknown'); assert.deepEqual(result.reason, lifecycleReason('E_OUTCOME_UNKNOWN')); assert.equal(writes, 1);
+  assert.deepEqual(result.cause, { ...lifecycleReason('E_WORK_INSPECTION_FAILED'), detail: line }, "the sentence is Desktop's own; the detail is one display line");
+  assert.equal(result.cause.detail, displayLine(message));
+  // Nowhere else: without the detail, the reply holds none of the CLI's text.
+  const { detail: _detail, ...cause } = result.cause, rest = JSON.stringify({ ...result, cause });
+  for (const raw of [path, remedy, 'directory work']) assert.equal(rest.includes(raw), false, raw);
+  // The recorded reply, not a second command.
+  const again = await f.apply(p.planRef);
+  assert.equal(again.repeated, true); assert.deepEqual(again.cause, result.cause); assert.equal(writes, 1);
+});
+test("a local refusal's detail is withheld whole when the message looks like a credential, and absent when the CLI sent no message or nothing to show", async () => {
+  const cause = async error => {
+    const f = fixture({ invoke: async (_bin, args) => args.phase === 'plan' ? envelope(retirePlan()) : { schemaVersion: 1, ok: false, error } });
+    return (await f.apply((await f.plan('retire')).planRef)).cause;
+  };
+  const fixed = lifecycleReason('E_WORK_INSPECTION_FAILED');
+  assert.deepEqual(await cause({ code: 'E_WORK_INSPECTION_FAILED', message: 'could not read the work root\ntoken=abc123' }), { ...fixed, detail: '[Detail withheld]' });
+  for (const none of [undefined, null, '', ' \n\t ', 7, { text: 'not a string' }]) assert.deepEqual(await cause({ code: 'E_WORK_INSPECTION_FAILED', message: none }), fixed, JSON.stringify(none));
+});
+test('a failure Desktop raises itself never carries a detail, whatever the envelope holds; a code without its own sentence keeps the fixed reply', async () => {
+  const outcomes = async code => {
+    const answer = { schemaVersion: 1, ok: false, error: { code, message: 'TEXT FROM THE ENVELOPE' } };
+    const f = fixture({ invoke: async (_bin, args) => args.phase === 'plan' ? envelope(stopPlan()) : answer });
+    return { applied: await f.apply((await f.plan()).planRef), planned: await fixture({ invoke: async () => answer }).plan() };
+  };
+  for (const code of ['E_CLI_TIMEOUT', 'E_CLI_OUTPUT_LIMIT', 'E_CLI_PROTOCOL', 'E_CLI_FAILED', 'E_OUTCOME_UNKNOWN', 'E_PLAN_EXPIRED', 'E_PLAN_CHANGED', 'E_PLAN_LIMIT',
+    'E_PLAN_REQUIRED', 'E_OPTION_UNAVAILABLE', 'E_LIFECYCLE_UNAVAILABLE', 'E_FORBIDDEN_FRAME', 'E_WORKSPACE_UNKNOWN', 'cli-unavailable', 'unsupported-remote-operation']) {
+    assert.equal(lifecycleDetailCode(code), false, code);
+    const { applied, planned } = await outcomes(code);
+    assert.equal(applied.status, 'unknown', code); assert.deepEqual(applied.cause, lifecycleReason(code), code);
+    assert.deepEqual(planned.reason, lifecycleReason(code), code);
+    assert.doesNotMatch(JSON.stringify([applied, planned]), /TEXT FROM/, code);
+  }
+  // A code Desktop has no sentence for (#603): today's reply, unchanged.
+  const { applied, planned } = await outcomes('E_NOT_IN_THE_TABLE');
+  assert.equal(lifecycleDetailCode('E_NOT_IN_THE_TABLE'), false);
+  assert.deepEqual(applied.cause, lifecycleReason('E_CLI_FAILED')); assert.deepEqual(planned.reason, lifecycleReason('E_CLI_FAILED'));
+  assert.doesNotMatch(JSON.stringify([applied, planned]), /TEXT FROM|E_NOT_IN_THE_TABLE/);
+  // The codes the kernel raises and Desktop has a sentence for.
+  for (const code of ['E_BAD_ARGS', 'E_SESSION_UNKNOWN', 'E_AMBIGUOUS_INSTANCE', 'E_HOME_MISMATCH', 'E_PLAN_STALE', 'E_LIFECYCLE_BUSY', 'E_INSTANCE_RETIRING', 'E_CHILDREN_RUNNING',
+    'E_SESSION_STOP_FAILED', 'E_WORK_PRESERVATION_FAILED', 'E_WORK_INSPECTION_FAILED', 'E_RETIRE_INCOMPLETE']) assert.equal(lifecycleDetailCode(code), true, code);
+  for (const none of [undefined, null, '', 7, {}]) assert.equal(lifecycleDetailCode(none), false);
+});
+test("a local plan refusal and a refusal before any effect carry the CLI's message as their detail; an answer that is not an error envelope never does", async () => {
+  const error = { code: 'E_INSTANCE_RETIRING', message: 'dev-1 is already being retired\n(since 12:00)' }, fixed = lifecycleReason('E_INSTANCE_RETIRING');
+  const shown = { ...fixed, detail: 'dev-1 is already being retired (since 12:00)' };
+  const planned = await fixture({ invoke: async () => ({ schemaVersion: 1, ok: false, error }) }).plan('retire');
+  assert.equal(planned.status, 'unavailable'); assert.deepEqual(planned.reason, shown);
+  const f = fixture({ invoke: async (_bin, args) => args.phase === 'plan' ? envelope(retirePlan()) : { schemaVersion: 1, ok: false, error } });
+  const refused = await f.apply((await f.plan('retire')).planRef);
+  assert.equal(refused.status, 'refused'); assert.deepEqual(refused.reason, shown); assert.equal(Object.hasOwn(refused, 'cause'), false);
+  // Not the installed CLI's error envelope: another schema version, or `ok` that is not false.
+  for (const answer of [{ schemaVersion: 2, ok: false, error }, { ok: false, error }, { schemaVersion: 1, error }, { schemaVersion: 1, ok: 'false', error }]) {
+    const reply = await fixture({ invoke: async () => answer }).plan('retire');
+    assert.deepEqual(reply.reason, fixed, JSON.stringify(Object.keys(answer)));
+  }
+});
+test("the adapter keeps an error envelope's code, message and details for a local command; stderr, the process error and other fields never leave it", async () => {
+  const args = { operation: 'retire', phase: 'apply', instance: instance.instance, home: instance.home, context: '/team', choices: options('retire'), revision: 'b'.repeat(24), key: 'server-key' };
+  const sent = { schemaVersion: 1, ok: false, error: { code: 'E_WORK_INSPECTION_FAILED', message: 'could not inspect the work tree', details: { path: '/team/x' }, stack: 'PRIVATE stack' }, debug: 'PRIVATE field' };
+  const result = await cliLifecycle(cli.bin, args, { exec: (_b, _a, _o, done) => done(Object.assign(new Error('PRIVATE process error'), { code: 1 }), JSON.stringify(sent), 'PRIVATE stderr') });
+  assert.deepEqual(result, { schemaVersion: 1, ok: false, error: { code: 'E_WORK_INSPECTION_FAILED', message: 'could not inspect the work tree', details: { path: '/team/x' } } });
+  assert.doesNotMatch(JSON.stringify(result), /PRIVATE/);
 });
 test('expired plans, malformed/oversized DTOs, stale admission and hostile returned aliases cannot authorize an apply', async () => {
   let clock = 0; const f = fixture({ now: () => clock }); const p = await f.plan(); clock += 300_001;

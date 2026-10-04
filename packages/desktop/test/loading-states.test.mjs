@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { createDataState, skeleton, skeletonBlock, statusLine, captureFocusState, observedAgeText, observedText, isOldObservation,
   wording, PENDING_DELAY_MS, REFRESHING_DELAY_MS, OLD_AFTER_MS, AGE_TICK_MS } from '../renderer/loading.mjs';
+import { assertIsolatedDetail, MESSY, MESSY_LINE } from './helpers/detail-line.mjs';
 
 /** A fake clock: timers fire in order when advanced; `now()` follows. */
 function clock() {
@@ -330,6 +331,44 @@ test('while the stale line or the failed block is visible the status line is ann
   const css = readFileSync(new URL('../renderer/loading.css', import.meta.url), 'utf8');
   assert.match(css, /\.loading-quiet \{ clip-path: inset\(50%\); \}/, 'clipped, not removed: the 1.5em box stays, so nothing shifts');
   assert.doesNotMatch(css, /loading-retry:focus-visible/, 'no per-component focus ring: the global :focus-visible rule covers every button');
+});
+test("a host's message never enters the stale line's title; Details holds it alone in its <bdi>, and touch() and the age tick repaint it from the cause the controller was given", t => {
+  const u = setup(t);
+  u.ds.begin(); u.ds.succeed({ observedAt: new Date(u.c.now() - 45_000).toISOString() });
+  u.ds.begin(); u.ds.fail(Object.assign(new Error("Couldn't reach Build box."), { code: 'E_SSH', detail: MESSY_LINE }));
+  const notice = u.one('.loading-notice[data-kind="stale"]'), cause = notice.querySelector('.loading-notice-cause');
+  const shown = { before: "Couldn't reach Build box. (E_SSH: ", detail: MESSY_LINE, after: ')' }, title = "Couldn't reach Build box. (E_SSH)";
+  assert.equal(notice.title, title, "Desktop's sentence and the code");
+  assert.equal(notice.querySelector('.loading-notice-details').hidden, false); assert.equal(notice.querySelector('.loading-notice-details summary').textContent, 'Details');
+  assertIsolatedDetail(cause, shown);
+  // A repaint reads nothing back from the title or the rendered line.
+  u.ds.touch();
+  assert.equal(notice.title, title); assertIsolatedDetail(cause, shown);
+  u.c.advance(AGE_TICK_MS);
+  assert.match(notice.querySelector('.loading-notice-text').textContent, /observed 1 min ago$/, 'the age tick repainted the line');
+  assert.equal(notice.title, title); assertIsolatedDetail(cause, shown);
+  u.c.advance(AGE_TICK_MS); u.ds.touch();
+  assert.equal(notice.title, title); assertIsolatedDetail(cause, shown);
+  assert.equal(u.all('.loading-notice').length, 1);
+  // A code outside the kernel's code shape stays out of the title; Details keeps it.
+  u.ds.begin(); u.ds.fail(Object.assign(new Error('Select a compatible installed OATS CLI.'), { code: 'cli-unavailable' }));
+  assert.equal(notice.title, 'Select a compatible installed OATS CLI.'); assert.equal(cause.textContent, 'Select a compatible installed OATS CLI. (cli-unavailable)');
+  u.ds.touch(); assert.equal(cause.textContent, 'Select a compatible installed OATS CLI. (cli-unavailable)');
+  // A detail that is not already a display line renders nowhere.
+  u.ds.begin(); u.ds.fail(Object.assign(new Error("Couldn't reach Build box."), { code: 'E_SSH', detail: MESSY }));
+  assert.equal(notice.title, title); assert.equal(cause.textContent, title); assert.equal(cause.querySelector('bdi'), null);
+});
+test("the failed block's Details: the code is text and a host's message is alone in its <bdi>", t => {
+  const u = setup(t);
+  u.ds.begin(); u.ds.fail(Object.assign(new Error("Couldn't reach Build box."), { code: 'E_SSH', detail: MESSY_LINE }));
+  const failed = u.region.querySelector('.loading-failed');
+  assert.equal(failed.querySelector('.loading-failed-message').textContent, "Couldn't reach Build box.");
+  assert.equal(failed.querySelector('.loading-failed-details').hidden, false);
+  assertIsolatedDetail(failed.querySelector('.loading-failed-code'), { before: 'E_SSH: ', detail: MESSY_LINE });
+  u.ds.begin(); u.ds.fail(Object.assign(new Error("Couldn't reach Build box."), { code: 'E_SSH', detail: MESSY }));
+  assert.equal(failed.querySelector('.loading-failed-code').textContent, 'E_SSH', 'a detail that is not a display line is not shown');
+  u.ds.begin(); u.ds.fail(new Error('no code'));
+  assert.equal(failed.querySelector('.loading-failed-details').hidden, true); assert.equal(failed.querySelector('.loading-failed-code').textContent, '');
 });
 test('a remote read: begin({message}) says what is in flight, pending and refreshing; a host detail joins the code in Details and the cause', t => {
   const u = setup(t);
