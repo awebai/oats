@@ -452,7 +452,8 @@ only the harness); a tmux server that lost its socket file still runs, and
 recreates the socket when its process is sent `SIGUSR1`. That check needs
 `lsof`: on a host without it, a retire whose recorded socket file is missing
 is refused, and the message says that `lsof` is missing; install it, then
-retire.
+retire. A scan that does not complete (a timeout, for example) refuses the
+same way, also for a home without its receipt.
 
 `oats retire <instance> --self` lets an instance retire itself when the human
 or briefing says it is done. A live harness cannot give a stable final
