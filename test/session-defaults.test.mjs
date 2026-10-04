@@ -4,8 +4,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { listInstances, retireInstance, sessionDefaults } from "../lib/core.mjs";
 import { validateLocal } from "../lib/workspace.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
@@ -115,6 +116,35 @@ test("a self-retire that keeps its directory kills the window the home recorded,
     assert.equal(r.selfKillScheduled, true);
     const kill = readFileSync(log, "utf8").split("\n").find((l) => l.startsWith("run-shell"));
     assert.ok(kill && kill.includes("=pi-agents:=keep-1"), `the scheduled kill targets the recorded window: ${kill}`);
+  } finally {
+    process.env.PATH = path;
+    if (inst === undefined) delete process.env.OATS_INSTANCE; else process.env.OATS_INSTANCE = inst;
+    fx.cleanup();
+  }
+});
+
+test("a self-retire that keeps its directory schedules the kill on the socket the home recorded: the scheduling and the kill both name it", async () => {
+  const fx = v2Deployment();
+  const log = fakeTmux(join(base, "fake-tmux-retire-socket"), {});
+  const path = process.env.PATH, inst = process.env.OATS_INSTANCE;
+  // A path a shell would split or expand, and a # that run-shell would read as a format.
+  const socket = join(base, "it's a dir", "oats#1");
+  const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+  try {
+    process.env.PATH = fx.env.PATH;
+    const spawned = await fx.spawn("dev", { name: "keep-2", backend: "tmux" });
+    const recorded = { session: "oats-agents", window: "keep-2", socket };
+    const metaPath = join(spawned.home, "instance.json");
+    writeFileSync(metaPath, JSON.stringify({ ...JSON.parse(readFileSync(metaPath, "utf8")), launched: true, tmux: recorded }, null, 2) + "\n");
+    const receiptPath = join(dirname(spawned.home), ".oats-retirement", "baselines", `${createHash("sha256").update(spawned.home).digest("hex")}.json`);
+    writeFileSync(receiptPath, JSON.stringify({ ...JSON.parse(readFileSync(receiptPath, "utf8")), runtime: { launched: true, tmux: recorded } }, null, 2) + "\n", { mode: 0o600 });
+    process.env.PATH = `${join(base, "fake-tmux-retire-socket")}:${fx.env.PATH}`;
+    process.env.OATS_INSTANCE = "keep-2";
+    const r = retireInstance(fx.root, "keep-2", { self: true, keepDir: true, selfKillDelaySec: 600 });
+    assert.equal(r.selfKillScheduled, true);
+    const kill = readFileSync(log, "utf8").split("\n").find((l) => l.includes("run-shell"));
+    const inner = `sleep 600; tmux -u -S ${shq(socket)} kill-window -t '=oats-agents:=keep-2' 2>/dev/null || true`.replace(/#/g, "##");
+    assert.equal(kill, `-u -S ${socket} run-shell -b ${inner}`, "run-shell is sent to the recorded socket, and the command it runs names that socket too");
   } finally {
     process.env.PATH = path;
     if (inst === undefined) delete process.env.OATS_INSTANCE; else process.env.OATS_INSTANCE = inst;

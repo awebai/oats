@@ -1,12 +1,12 @@
-// Retire never deletes a branch unless the operator asked (--delete-branch), and then only the verified one
-// (awebai/oats#436): a retire whose hook reports incomplete cleanup quarantines the home, and its retry (or
-// --force) must not take the instance's branch, unpushed commits and all, with it.
+// Retire never deletes a branch (awebai/oats#436): a retire whose hook reports incomplete cleanup
+// quarantines the home, and its retry (or --force) must not take the instance's branch, unpushed commits
+// and all, with it. --delete-branch is refused before anything happens.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { retireInstance } from "../lib/core.mjs";
+import { FAILED_SPAWN_BRANCH_LEFT, retireInstance } from "../lib/core.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 /** A capability whose retire hook always reports incomplete cleanup. */
@@ -33,8 +33,8 @@ async function worktreeInstance(t, name) {
 test("a retire whose hook reports incomplete cleanup keeps the branch: on the quarantine, its retry and --force", async (t) => {
   const w = await worktreeInstance(t, "dev-keep");
   assert.ok(w.meta.branch, "a worktree instance records its branch");
-  // --discard-worktree frees the branch (no worktree has it checked out), as in the report: only the
-  // missing --delete-branch protects it.
+  // --discard-worktree frees the branch (no worktree has it checked out), as in the report: a retire
+  // still leaves it.
   const first = await w.retire({ discardWorktree: true });
   assert.ok(first.rollbackIncomplete, "the hook's incomplete cleanup quarantines the home");
   assert.equal(existsSync(w.home), true);
@@ -49,14 +49,36 @@ test("a retire whose hook reports incomplete cleanup keeps the branch: on the qu
   assert.equal(w.branchTip(), w.tip, "and still keeps the branch");
 });
 
-test("with --delete-branch, a quarantine retry deletes the instance's verified branch", async (t) => {
+test("--delete-branch is refused before anything happens, also on a quarantine retry with --force: the home and the branch stay", async (t) => {
   const w = await worktreeInstance(t, "dev-delete");
   await w.retire({ discardWorktree: true });
   assert.equal(w.branchTip(), w.tip);
-  const forced = await w.retire({ force: true, deleteBranch: true });
-  assert.equal(existsSync(w.home), false);
-  assert.equal(w.branchTip(), null, "the operator asked: the branch is gone");
-  assert.equal(forced.branchDeleted, true);
+  await assert.rejects(() => w.retire({ force: true, deleteBranch: true }), (e) => e.code === "E_BAD_ARGS"
+    && e.message === "oats retire no longer deletes branches: --delete-branch is not accepted. Retire without it; the branch is left in the repository. Inspect it there and delete it with Git if it is no longer wanted.");
+  assert.equal(existsSync(w.home), true, "the quarantined home is kept");
+  assert.equal(w.branchTip(), w.tip, "and the branch, with its unpushed commit");
+});
+
+test("oats retire names the branch a quarantine still owes on the line after its item, from the retained home when no worktree step ran", async (t) => {
+  const w = await worktreeInstance(t, "dev-named");
+  await w.retire();
+  const markerPath = join(w.home, ".oats-rollback-incomplete.json");
+  const marker = JSON.parse(readFileSync(markerPath, "utf8"));
+  marker.cleanup.outstanding = { ...marker.cleanup.outstanding, git: ["branch"] };
+  writeFileSync(markerPath, JSON.stringify(marker, null, 2));
+  // The hook is still incomplete, so the worktree step does not run: the receipt has no retention.
+  const json = w.fx.cli(["retire", "dev-named", "--json"]);
+  assert.equal(json.status, 1, json.stderr + json.stdout);
+  const receipt = JSON.parse(json.stdout); // the raw receipt, printed whole
+  assert.equal(receipt.retention, null);
+  assert.ok(receipt.rollbackIncomplete.includes(FAILED_SPAWN_BRANCH_LEFT), JSON.stringify(receipt.rollbackIncomplete));
+  const text = w.fx.cli(["retire", "dev-named"]);
+  assert.equal(text.status, 1, text.stderr + text.stdout);
+  const lines = text.stderr.split("\n");
+  const at = lines.indexOf(`  ${FAILED_SPAWN_BRANCH_LEFT}`);
+  assert.ok(at >= 0, text.stderr);
+  assert.equal(lines[at + 1], `  branch: ${w.meta.branch}`, "the branch the retained home records");
+  assert.equal(w.branchTip(), w.tip, "the branch is left");
 });
 
 /** A capability whose required spawn hook fails; with `commit`, it first commits into the new worktree. */
@@ -93,17 +115,18 @@ for (const [commit, title] of [[false, "a failed spawn's rollback deletes the br
   });
 }
 
-test("with --delete-branch only the verified branch goes, even when it is not the recorded one", async (t) => {
+test("a forced retry of a worktree switched to another branch deletes neither the worktree's branch nor the recorded one", async (t) => {
   const w = await worktreeInstance(t, "dev-switched");
   const first = await w.retire();
   assert.equal(first.retention, null, "the quarantine kept the worktree in the home for the retry");
   // The worktree, still under the home, now on another branch.
   const work = join(w.home, "work");
   execFileSync("git", ["-C", work, "checkout", "-q", "-b", "feature-x"]);
-  const r = await w.retire({ force: true, deleteBranch: true });
-  assert.equal(r.retention.branchDeleted, "feature-x");
-  assert.ok(!(r.forcedIncomplete || []).some((m) => m.includes(w.meta.branch)), JSON.stringify(r.forcedIncomplete));
+  const r = await w.retire({ force: true });
+  assert.equal(r.branchDeleted, false);
+  assert.equal(Object.hasOwn(r.retention, "branchDeleted"), false);
+  assert.equal(r.retention.branch, "feature-x");
   const exists = (b) => { try { execFileSync("git", ["-C", w.meta.repo, "rev-parse", "--verify", "--quiet", `refs/heads/${b}`]); return true; } catch { return false; } };
-  assert.equal(exists("feature-x"), false, "the verified branch is deleted");
-  assert.equal(w.branchTip(), w.tip, "the recorded branch, not targeted, keeps its commit");
+  assert.equal(exists("feature-x"), true, "the worktree's branch is left");
+  assert.equal(w.branchTip(), w.tip, "the recorded branch keeps its commit");
 });

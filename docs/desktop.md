@@ -86,8 +86,7 @@ inherited PATH stays: the backend's `/api/cli` reports `pathSource`
 (`login-shell` or `inherited`), `pathError` (why, or `null`) and
 `probePath` (the PATH the probe used), and the reason is logged at startup.
 A tmux server that was already running keeps its own environment; restart it
-(`tmux kill-server`, which ends its sessions) if its sessions should get the
-new PATH.
+if its sessions should get the new PATH, which ends its sessions: `tmux -L oats kill-server` for the OATS tmux server, where instances run, and `tmux kill-server` for your default server, where an instance started by an earlier kernel may still be.
 
 ## Opening a workspace
 
@@ -324,7 +323,7 @@ error in the terminal. Each drop/paste accepts up to 16 files totaling 25 MB.
 | --- | --- |
 | "Compatible oats CLI required" card | No CLI, or a version outside the range the card itself states. Copy the card's install command, or **Choose oats…** to point at the right binary; **Retry** re-probes. Spawn is disabled until a compatible CLI is verified. |
 | Spawn disabled, no card | The probe hasn't settled yet (transient, resolves in ms). If it persists, the backend is unreachable — restart the app. |
-| Terminals fail to open ("could not attach") | tmux missing, or no live session for that instance. Install tmux (`tmux -V`); check `tmux ls`. |
+| Terminals fail to open ("could not attach") | tmux missing, or no live session for that instance. Install tmux (`tmux -V`); check `tmux -L oats ls` (the OATS tmux server, where instances run) and `tmux ls` (your default server, where an instance started by an earlier kernel may still be). |
 | Can't select/copy text in a terminal tab | A plain drag copies on release ([Copy from a terminal](#copy-from-a-terminal)). If nothing reaches the clipboard, the program in the pane has the mouse, or your tmux config sets `set-clipboard off`: hold **Option** (macOS) or **Shift** while dragging, then copy (Cmd+C / right-click → Copy). |
 | macOS "app is damaged / can't be opened" | Ad-hoc-signed (not notarized) build + quarantine. Right-click → Open, or clear the quarantine attribute (above). If it persists, verify the bundle: `codesign --verify --deep --strict --verbose=2 "/Applications/OATS Desktop.app"` — a non-zero exit means a broken artifact, report it. |
 | Roster empty | The opened directory isn't an OATS deployment (it needs `oats-local.yaml` and `agents/`). Use the workspace switcher → Add workspace to select the right folder. |
