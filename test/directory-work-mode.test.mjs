@@ -583,9 +583,24 @@ console.log(JSON.stringify({meta: {retired: retry || ${phase === "after-complete
     assert.equal(existsSync(home), false);
     const receipts = readFileSync(events, "utf8").trim().split("\n").map(JSON.parse);
     assert.deepEqual(receipts, Array(phase === "before" ? 1 : 2).fill({ receipt: "original-external-id" }));
-    const copies = readdirSync(recovery).map((entry) => readFileSync(join(recovery, entry, "work/result.txt"), "utf8"));
-    assert.ok(copies.includes("before compensation"));
-    assert.ok(copies.includes("after compensation"));
+    const entries = readdirSync(recovery);
+    if (phase === "before") {
+      // The failed spawn could not write its copy (the storage was unusable), so this retire wrote the one
+      // recovery: the work as the spawn hook left it, and under after-hooks/ the work as the retire hook left it.
+      assert.deepEqual(entries, [basename(retired.workRecovery.path)], "one recovery, written by this retire");
+      const entry = join(recovery, entries[0]);
+      assert.equal(readFileSync(join(entry, "work/result.txt"), "utf8"), "before compensation");
+      assert.equal(readFileSync(join(entry, "after-hooks/work/result.txt"), "utf8"), "after compensation");
+      const recorded = readJson(join(entry, "recovery.json"));
+      assert.equal(recorded.phase, "complete");
+      assert.deepEqual(recorded.afterHooks, { home: false, work: true });
+    } else {
+      // Two directories here, and the second does not come from the retire: the failed spawn wrote its own copy
+      // before its compensation hook ran (issue #598), and the retire wrote one, of the work that hook left.
+      const copies = entries.map((entry) => readFileSync(join(recovery, entry, "work/result.txt"), "utf8"));
+      assert.ok(copies.includes("before compensation"));
+      assert.ok(copies.includes("after compensation"));
+    }
   });
 }
 
