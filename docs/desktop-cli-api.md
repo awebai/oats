@@ -2457,7 +2457,7 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   `unestablished`, with a `note` saying why, and retire refuses with
   `E_RUNTIME_ENDPOINT_UNKNOWN`, `--force` included. `notes` repeats either
   case. Read an unknown `state` as not idle.
-- `notes` says what a retire would copy to recovery (0.41), in up to two
+- `notes` says what a retire would copy to recovery (0.42), in up to two
   strings read from the home's retirement baseline and the work mode, without
   hashing anything:
 
@@ -2566,15 +2566,18 @@ A first retire prints the **raw receipt**, not an envelope:
     at least one.
   - `afterHooks`: `{home: boolean, work: boolean}`, saying which parts were
     copied again under `after-hooks/`: `after-hooks/home/` when a retire hook
-    changed home bytes, and `after-hooks/repo/` (worktree mode) or
+    changed the home (its bytes and permission bits, the kernel's own
+    records included), and `after-hooks/repo/` (worktree mode) or
     `after-hooks/work/` (directory mode) unless the work is proven unchanged
-    after the hooks: a directory by its bytes, a worktree by its Git state
-    and the bytes of its files
-    ([souls and instances](souls-and-instances.md#retire)). `work` is also
-    `true` when the pre-hook snapshot held the home only and the work was
-    copied for the first time after the hooks, moved or not, because
-    something beyond the home was there to preserve. The home is not
-    copied again because the work is.
+    after the hooks: a directory by its bytes and bits, a worktree by its Git
+    state and the bytes and bits of its files
+    ([souls and instances](souls-and-instances.md#retire)). A worktree that
+    holds a repository is never proven unchanged: for it `work: true` says
+    that a work copy was made after the hooks, not that a hook changed the
+    work. `work` is also `true` when the pre-hook snapshot held the home
+    only and the work was copied for the first time after the hooks, moved
+    or not, because something beyond the home was there to preserve. The
+    home is not copied again because the work is.
     Each part is whole and verified, not a delta, but `after-hooks/` is not
     a complete picture of the instance after the hooks: with `home: false`
     the recovery's home is the pre-hook one, and it holds the kernel's own
@@ -2584,7 +2587,7 @@ A first retire prints the **raw receipt**, not an envelope:
   - `workRecoveries` is no longer emitted. An older kernel on a server may
     still send `workRecoveries[]` beside `workRecovery` (one `{path, classes,
     bytes, outputs?, repoCopy?}` per recovery directory it wrote), so a
-    reader must keep accepting it. A kernel before 0.41 sends no `home`,
+    reader must keep accepting it. A kernel before 0.42 sends no `home`,
     `notCopied` or `afterHooks`.
   - `recovery.json` inside the directory stays `version: 1`. It carries
     `phase` (`"before-hooks"`, then `"complete"` once the post-hook check has

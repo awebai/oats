@@ -451,22 +451,43 @@ unchanged. A Git status with the same rows is not that proof: a hook can
 rewrite a file that was already modified, and the row stays the same. In
 directory mode the work state is the bytes of `work/`, with the permission
 bits of each entry and of `work/` itself. In worktree mode it
-is what a work copy holds, for the worktree and for each nested repository:
+is what a work copy of the worktree holds:
 
-- its Git status, its branch and commit, its index entries (what
-  `git ls-files -s` lists, with the skip-worktree and assume-unchanged
-  marks) and the index's resolve-undo records (what
-  `git ls-files --resolve-undo` lists);
-- the state of an operation in progress (a merge, a rebase, a cherry-pick, a
-  revert, a bisect);
+- its Git status, its branch and commit;
+- its index: the entries (what `git ls-files -s` lists, with the
+  skip-worktree and assume-unchanged marks), the resolve-undo records (what
+  `git ls-files --resolve-undo` lists) and the index file's permission bits;
+- what the copy takes from the Git directories as files, each with its bytes
+  and its permission bits: the state of an operation in progress (a merge, a
+  rebase, a cherry-pick, a revert, a bisect), `info/attributes` and the
+  stash's log;
 - its tags and its stash;
-- for a nested repository that has its own Git directory, every other ref
-  it has (see below);
 - its exclude rules (`core.excludesFile` with the file it names, and
   `info/exclude`) and the settings that change what `git status` reports
   (`core.fileMode`, `core.ignoreCase`, `core.precomposeUnicode`,
-  `core.symlinks`, `core.autocrlf`, `core.eol`, and `info/attributes`);
-- the bytes of its files, Git metadata left out.
+  `core.symlinks`, `core.autocrlf`, `core.eol`);
+- the bytes and the permission bits of its files, Git metadata left out.
+
+The rule is that the work is unchanged only if everything its copy would
+carry is equal byte for byte, and anything that cannot be compared exactly
+counts as changed. Two things bound it, and neither is a claim of byte
+equality:
+
+- **The index's derived data, a deliberate semantic exception.** The index
+  file also holds a cache of each file's stat data, which a read-only Git
+  command rewrites, and extensions derived from its entries. It is compared
+  by what it holds (its entries, its resolve-undo records and its mode), not
+  by its bytes.
+- **The shared repository, a custody boundary.** The repository the worktree
+  belongs to stays where it is: its objects, its other branches and the
+  settings a clone of it is served under (a shallow boundary, grafts, hidden
+  refs) are not compared. That holds because no retire removes that
+  repository or deletes a branch, and a commit of the worktree that no ref
+  reaches is preserved before the worktree is removed.
+
+The permission bits of the home directory and of the worktree directory
+themselves are not compared: their copies are made in directories the copier
+creates, which do not carry them.
 
 Every part of that state is compared as its bytes, never as decoded text. A
 ref name, a path in the index or in the status, a file name or the target of
@@ -480,52 +501,63 @@ needs no work copy and retires.
 A worktree's tags, stash, exclude rules and settings are kept by the
 repository it belongs to. They are part of the state because a work copy
 carries them, so a tag or a stash made in that repository while the retire
-hooks run causes one more work copy. That repository's other branches are
+hooks run adds a copy attempt. That repository's other branches are
 not part of the state: they outlive the worktree, and a recovery does not
 hold them. The one exception is a worktree whose `HEAD` is detached: its copy
 holds the branch that repository has checked out, so that branch is part of
 the state. When the retire removes the worktree, whether a ref that outlives
 it reaches the commit `HEAD` is at is part of the state too: a hook that
-deletes the one ref that reached it causes one more work copy, though the
+deletes the one ref that reached it adds a copy attempt, though the
 files, the status and `HEAD` did not move.
 
-A nested repository that has its own Git directory is removed with the
-worktree, and every ref with it. So all its refs are part of the state, and a
-hook that moves or makes one causes one more work copy. A nested directory
-that is a linked worktree of another repository is treated as the instance's
-own worktree is: its refs belong to that repository and are not part of the
-state. What the copy of a nested repository holds of each kind:
+**A worktree that holds a repository is not provable.** A directory under
+the worktree that holds a `.git` entry, a directory or a file, is a
+repository: one made by `git init` or a clone, a submodule, or a linked
+worktree of another repository placed in the work. A directory that could
+not be tested for a `.git` entry counts as one. Its state is not compared:
+the retire hooks run between the two copies and can change it in ways no read
+of its state covers (its configuration, its objects, what a clone of it is
+shown). So the work of such a worktree is in the pre-hook snapshot and is
+copied again after the hooks, whatever they did. `afterHooks.work` is then
+`true` on a successful completion: it says that a work copy was made after
+the hooks, not that a hook changed the work. The copy after the hooks can
+fail where the one before did not, because a hook changed the nested
+repository; the retire then refuses with `E_WORK_PRESERVATION_FAILED` after
+the hooks, and the home, the work and the recovery written before the hooks
+are kept.
 
-| Ref of the nested repository | The copy holds |
+Copied again is not "nothing is lost": a nested repository with its own Git
+directory is removed with the worktree, and its copy is a clone. What the copy of a nested repository
+holds of each kind:
+
+| Of the nested repository | The copy holds |
 |---|---|
 | the branch `HEAD` is on | the branch and its commits |
 | every other branch | its commits, without the branch name: `git fsck --unreachable` in the copy lists them |
 | tags | the tags and what they name |
-| the stash | the stash and its log |
+| the stash | its latest entry and the stash's log; the commits of older entries are not there |
 | remote-tracking refs, notes, any other namespace | nothing beyond what a branch or a tag reaches |
+| a repository inside it | its files, its Git directory included, as plain files |
 
 A commit the copy holds without a name is lost to `git gc` in the copy.
 `git fsck --unreachable` in the copy lists such commits, and
-`git branch <name> <commit>` there gives one a name again.
-
-A ref the copy holds nothing of is part of the state all the same: it can
-cause one more work copy, and never skips one.
+`git branch <name> <commit>` there gives one a name again. What the copier
+cannot carry at all (a file whose name is not valid UTF-8, an entry that is
+not a file, a directory or a symbolic link) refuses the copy, here as
+anywhere.
 
 **A worktree that cannot be proven unchanged.** Two things make a worktree
 not provable:
 
-- a repository inside a nested repository. It is copied as plain files, its
-  Git directory included, and nothing proves such a directory unchanged;
+- a repository under it (above);
 - a read of the state that fails, while `git status` works: one of the Git
   commands the list above is read with, or one of the files it is read from
-  (`info/attributes`, the stash's log, an exclude file, the operation
-  state), in the worktree's repository or in a nested one. A nested
-  repository that Git cannot read is such a case, and so is a repository
-  whose path has a line feed in it: Git prints its directories over more
-  than one line. A read that fails is never taken for "not set" or for
-  "unchanged", and neither is a file or directory that the retire cannot
-  test for (no permission, for example): only one that is not there is
-  absent.
+  (`info/attributes`, the stash's log, the index, an exclude file, the
+  operation state). A worktree whose path has a line feed in it is such a
+  case: Git prints its directories over more than one line. A read that
+  fails is never taken for "not set" or for "unchanged", and neither is a
+  file or directory that the retire cannot test for (no permission, for
+  example): only one that is not there is absent.
 
 A worktree that is not provable always has its work in the pre-hook
 snapshot, also when only the home has something to preserve, and the work is
@@ -553,8 +585,8 @@ no session. A refusal after the hooks does not say that.
 A snapshot that holds the home only (the work had nothing to preserve
 before the hooks) has no work copy to stand for it. It gets the work under
 `after-hooks/` when the hooks moved it, and also when they did not but
-something beyond the home is there to preserve after them: a commit that no
-other branch reaches any more, or a retirement baseline that is gone.
+something beyond the home is there to preserve after them, such as a
+retirement baseline that is gone.
 
 The Git state is read at every inspection. When there is something to
 preserve before the hooks, the files are read once before the recovery is
@@ -630,16 +662,20 @@ a file over 2 GiB it gives the size, and `find <work> -type f -size
 or make it readable, then run `oats retire <instance>` again. With nothing to
 preserve, the files are not read and the retire goes through.
 
-The home is not copied again because the work is. Some entries of a home are
-the kernel's own records and do not count as changes to it:
-`.oats-events.jsonl`, `.oats-stop.json`, `.oats-stop-receipt.json` and
-`.oats-stop-receipt.*.json`, `.oats-restart.json`,
-`.oats-agents-md.*.previous`, `.claude/settings.json`, and the
-`spawnCompleted` and `wake` fields of `instance.json`. They are copied with
-the home and never on their own, so when a hook moved only the work the
-recovery holds them as of the pre-hook snapshot. The retire's own events are
-written to the workspace log (`<deployment>/.agents/events/`), never to the
-home's.
+The home is not copied again because the work is, and the work is not copied
+again because the home is. The home's comparison after the hooks holds every
+entry the home copy carries, as its bytes and permission bits, the kernel's
+own records included: `.oats-events.jsonl`, `.oats-stop.json`,
+`.oats-stop-receipt.json` and `.oats-stop-receipt.*.json`,
+`.oats-restart.json`, `.oats-agents-md.*.previous`, `.claude/settings.json`,
+and every field of `instance.json`. A hook that writes one of them has the
+home copied again. Those records are left out only of the comparison with the
+spawn baseline, which decides whether the home has anything to preserve at
+all. When a hook moved only the work, the recovery holds them as of the
+pre-hook snapshot. The retire's own events are written to the workspace log
+(`<deployment>/.agents/events/`), never to the home's. A home copy is
+verified against the digest the baseline uses, which passes over those
+records: an inherited limit, not an exact verification of the whole home.
 
 Each part under `after-hooks/` is whole and verified, not a delta, and it is
 verified before the worktree step and before the home is removed.
