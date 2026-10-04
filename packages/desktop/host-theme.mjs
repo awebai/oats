@@ -67,6 +67,7 @@ export function resolveHostPalette(entries) {
   const sum = [1, 3, 5].reduce((total, at) => total + parseInt(background.slice(at, at + 2), 16), 0);
   const mode = declared ?? (sum > 382 ? "light" : "dark");
   const blue = normal[3];
+  const brightForeground = pick("bright_foreground", "bright_fg", "color15") ?? foreground;
   return {
     mode,
     colors: {
@@ -74,11 +75,11 @@ export function resolveHostPalette(entries) {
       accent: pick("accent") ?? blue,
       selection: pick("selection", "selection_background") ?? mixHex(background, foreground, 0.2),
       canvas: pick("dark_background", "dark_bg") ?? mixHex(background, "#000000", mode === "dark" ? 0.25 : 0.05),
-      brightForeground: pick("bright_foreground", "bright_fg", "color15") ?? foreground,
+      brightForeground,
       // Omarchy's fixed mapping (its ghostty, alacritty, kitty and foot templates agree).
       ansi: [background, ...normal, foreground,
         pick("muted", "color8", "dark_foreground", "dark_fg") ?? mixHex(background, foreground, 0.4), ...bright,
-        pick("bright_foreground", "bright_fg", "color15") ?? foreground],
+        brightForeground],
     },
   };
 }

@@ -82,8 +82,10 @@ is dark, White when it is light, each exactly as it is, with nothing imported.
   polarity and the accent; a generated terminal config is per-terminal output a
   theme can replace. The main process (`../host-theme.mjs`) reads it with a small
   line parser (no TOML dependency, at most 64 KiB, a regular file) and resolves
-  the colours Desktop uses the way Omarchy's own resolver does. It never runs a
-  host program to read colours.
+  the colours Desktop uses the way Omarchy's own resolver does. The polarity is
+  the file's `mode` (or `theme_type`), else it follows the background: light
+  when its R+G+B is over 382, Omarchy's own rule. It never runs a host program
+  to read colours.
 - **Following a change.** `omarchy-theme-set` replaces `current/theme/` with a
   new directory, so main watches the parent `current/`, never `theme/` or the
   file (that watch would end at the first change). An event is debounced, then

@@ -17,7 +17,9 @@
    evaluate its source on its own), so the shell hands one to `initTheme()`. */
 import { TEXT_PAIRS, GRAPHIC_PAIRS, PAINTED_OVER, ANSI_TOKENS, TEXT_CONTRAST, GRAPHIC_CONTRAST } from "./contrast-inventory.mjs";
 
-const HEX = /^#[0-9a-f]{6}$/;
+const HEX = /^#[0-9a-f]{6}$/; // what main sends: opaque and lower-case
+// A base theme's own token, as theme.css writes it: opaque, or with an alpha byte.
+const CSS_OPAQUE = /^#[0-9a-f]{6}$/i, CSS_ALPHA = /^#[0-9a-f]{8}$/i;
 const channels = hex => [1, 3, 5].map(at => parseInt(hex.slice(at, at + 2), 16));
 const toHex = rgb => `#${rgb.map(value => Math.round(value).toString(16).padStart(2, "0")).join("")}`;
 /** `a` moved towards `b` by `t` (0–1): a linear mix of the sRGB channels. */
@@ -102,8 +104,8 @@ export function deriveHostTokens(colors, mode, base = () => undefined) {
   const painted = token => {
     const value = tokens[token] ?? base(token);
     if (typeof value !== "string") return null;
-    if (/^#[0-9a-f]{6}$/i.test(value)) return channels(value);
-    if (!/^#[0-9a-f]{8}$/i.test(value) || !behind.has(token)) return null;
+    if (CSS_OPAQUE.test(value)) return channels(value);
+    if (!CSS_ALPHA.test(value) || !behind.has(token)) return null;
     const backdrop = painted(behind.get(token));
     if (!backdrop) return null;
     const alpha = parseInt(value.slice(7), 16) / 255;
