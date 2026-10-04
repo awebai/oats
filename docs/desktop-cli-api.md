@@ -2200,7 +2200,9 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   log that missed it gets a copy of the same row (same time and data), never
   a second one.
 - `retired` (`data: {agent, keepDir, self, quarantine, workRecovery, hooks,
-  reason?}`) is written to the workspace log. `reason` is present only when
+  reason?}`) is written to the workspace log only,
+  `<deployment>/.agents/events/<agent>--<instance>.jsonl`, which outlives the
+  home. `reason` is present only when
   the retire completed a self-retire an older OATS recorded with
   `--delete-branch` (since 0.41.0: `this self-retire was requested with
   --delete-branch by an older OATS; retirement no longer deletes branches, so
