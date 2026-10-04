@@ -2185,7 +2185,8 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   after open), and at most its last 4 MiB is read (`"tail"`).
 - **Kinds:** `spawned`, `launched`, `restarted`, `stopped`, `stop-refused`,
   `retire-planned`, `retired`, `worktree-retained`, `worktree-removed`,
-  `branch-deleted`, `child-spawn-refused`, `launch-warning` (0.30: a
+  `branch-deleted` (not written since 0.41.0: no retire deletes a branch;
+  older logs hold it), `child-spawn-refused`, `launch-warning` (0.30: a
   `launch` hook's warning at session start/restart, `data: {message}`),
   `recomposed` (from earlier kernels), `waiting` (0.40: a producer's claim,
   [Waiting on you](#waiting-on-you)). `producer` is `kernel`, a capability id,
@@ -2198,6 +2199,12 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   is dated at the receipt's launch time. The boundary is complete per log: a
   log that missed it gets a copy of the same row (same time and data), never
   a second one.
+- `retired` (`data: {agent, keepDir, self, quarantine, workRecovery, hooks,
+  reason?}`) is written to the workspace log. `reason` is present only when
+  the retire completed a self-retire an older OATS recorded with
+  `--delete-branch` (since 0.41.0: `this self-retire was requested with
+  --delete-branch by an older OATS; retirement no longer deletes branches, so
+  the branch and the worktree were left`).
 - **Incarnation.** Each row carries the writing home's `createdAt` (or
   `null` for old rows); the top-level `incarnation` is the current home's (or
   `null`). Earlier incarnations are returned as this address's history.
@@ -2442,7 +2449,7 @@ Plain `retire` keeps a worktree-mode instance's work: the worktree is moved
 `-2` suffix if taken; `detached-<oid12>` when detached), state intact.
 
 ```text
-oats retire <instance> [--plan-revision <rev> --idempotency-key <key>] [--discard-worktree] [--delete-branch] [--home <abs>] --json
+oats retire <instance> [--plan-revision <rev> --idempotency-key <key>] [--discard-worktree] [--home <abs>] --json
 ```
 
 A first retire prints the **raw receipt**, not an envelope:
@@ -2458,8 +2465,7 @@ A first retire prints the **raw receipt**, not an envelope:
 ```
 
 - `retention`: `{worktree: "retained" | "removed" | "absent", movedTo?,
-  branch, detachedAt?, recordedBranch, branchDeleted?,
-  branchDeletionSkipped?: {expected, actual, reason}}`, or `null` when no
+  branch, detachedAt?, recordedBranch}`, or `null` when no
   worktree step ran: a non-worktree mode, or a worktree kept for the retry.
   A retire whose hooks left cleanup outstanding keeps the worktree exactly as
   it was (with `worktreeRemoved: false`) and says why in `rollbackIncomplete`
@@ -2468,14 +2474,25 @@ A first retire prints the **raw receipt**, not an envelope:
   entry is gone is never touched: it is an incomplete item (`git worktree
   <path>: its admin entry is missing; …`), and `--force` refuses it with
   `E_WORK_PRESERVATION_FAILED`.
-- `--discard-worktree` removes the worktree. `--delete-branch` deletes the
-  worktree's verified branch (re-verified at deletion time) and implies
-  discarding; a mismatch deletes nothing and reports
-  `branchDeletionSkipped`. Without `--delete-branch` no retire deletes a
-  branch, a retried or `--force`d quarantine included. A failed spawn's
-  quarantine that still owes the branch the spawn created stays incomplete
-  (`git branch <b>: kept; the failed spawn created it; pass --delete-branch to
-  delete it`).
+- `--discard-worktree` removes the worktree. No retire deletes a branch, a
+  retried or `--force`d quarantine included: `branchDeleted` is always
+  `false`, and `retention.branchDeleted` and `retention.branchDeletionSkipped`
+  are not written. `--delete-branch` is refused with `E_BAD_ARGS` (`oats
+  retire no longer deletes branches: …`) before any effect: before a plan
+  revision is compared and before a recorded child is stopped. A failed
+  spawn's quarantine that still owes the branch the spawn created stays
+  incomplete while the branch is there (`the branch the failed spawn created
+  is left: OATS does not delete it. Inspect it and delete it with Git if it
+  is not wanted, then retry`; `retention.recordedBranch` names it) or while
+  Git cannot show it gone (`git branch <b>: could not verify whether it still
+  exists (…)`). Such a home cannot be completed from Desktop: the operator
+  deletes the branch with Git and retries, or uses `--force` from the CLI.
+- Before the worktree is removed, HEAD is read again: a HEAD that moved since
+  the retire's last inspection stops it with `E_WORK_PRESERVATION_FAILED`
+  (`the worktree's HEAD changed after it was inspected, so the worktree was
+  not removed. The home and the worktree are kept, and so is any recovery the
+  retire wrote; retry the retire.`), and a HEAD that cannot be read with
+  `E_WORK_INSPECTION_FAILED`. Both come after effects (hooks, a recovery).
 - `workRecovery` (or `workRecoveries[]`): `{path, classes, bytes, outputs?,
   repoCopy?}`; `outputs: {paths: [{path, bytes}], bytes}` names what was
   copied beyond tracked state, largest first.

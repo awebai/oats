@@ -52,7 +52,7 @@ is bounded to30 seconds; proxy35 seconds.
 Changing any option obtains a new plan/reference and revokes the old controls.
 Remove has one choice, the worktree: deleting it requires an owned worktree.
 Remove no longer offers to delete a branch: retirement leaves branches to the
-operator, and the kernel will refuse the flag. A retire request whose options
+operator, and the kernel refuses the flag. A retire request whose options
 hold any other key is refused before a command, and no retire command carries
 `--delete-branch`. There is no force/self/keep-dir/grace override or “don't ask
 again” shortcut.

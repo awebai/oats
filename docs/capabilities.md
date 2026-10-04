@@ -117,7 +117,11 @@ A self-contained package has an `oats.json`:
   `oats status` reports it as retained state rather than a live instance, and
   `oats retire <instance>` retries the cleanup — re-running the retire hooks and
   the worktree removal, verifying both, and verifying (never deleting) the
-  branch: a branch is deleted only with `--delete-branch`. A retry that still cannot
+  branch: no retire deletes a branch. While the branch the failed spawn created
+  is still there, or Git cannot show it gone, the retry stays incomplete with
+  the item `the branch the failed spawn created is left: OATS does not delete
+  it. Inspect it and delete it with Git if it is not wanted, then retry`; the
+  CLI names the branch on the next line. A retry that still cannot
   finish keeps the home again, names what is outstanding, and exits nonzero.
 - The **escape hatch is `oats retire <instance> --force`**, for a home OATS cannot
   identify at all: no `instance.json` and no **usable** cleanup descriptor. Usable
