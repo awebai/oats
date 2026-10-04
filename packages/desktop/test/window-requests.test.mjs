@@ -13,8 +13,10 @@ const WINDOW = 'ws:0123456789abcdef0123';
 const ADVERTISED = new Set([VERIFIED, WINDOW, '/d/second', 'remote:altair:/srv/agents']);
 const SCOPED = ['/api/panel', '/api/agents', '/api/spawn', '/api/automations', '/api/forge-roster', '/api/team-members',
   '/api/instance-lifecycle', '/api/instance-git', '/api/instance-events', '/api/workspace-readiness', '/api/workspace-spawn-preview',
-  '/api/workspace-sync', '/api/brain/notes', '/api/session/x', '/api/keys/x', '/api/interrupt/x', '/api/chat/x'];
-const UNSCOPED = ['/api/cli', '/api/version', '/api/forge-connections', '/api/capabilities', '/api/window-state'];
+  '/api/workspace-sync', '/api/brain/notes', '/api/chat/x'];
+// The last three were instance routes until #609: they are no route now, so nothing pins or refuses them.
+const UNSCOPED = ['/api/cli', '/api/version', '/api/forge-connections', '/api/capabilities', '/api/window-state',
+  '/api/session/x', '/api/keys/x', '/api/interrupt/x'];
 
 test('workspaceScoped names exactly the routes main pins a workspace onto', () => {
   for (const path of SCOPED) assert.equal(workspaceScoped(path), true, path);

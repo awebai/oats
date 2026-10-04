@@ -25,7 +25,7 @@ const CLI = { ok: true, bin: '/oats', version: '0.36.0', features: ['workspace-i
 const HOME = { A: `${A}/agents/dev/instances/dev-a`, B: `${B}/agents/dev/instances/dev-b`, R: '/home/juan/oats/agents/dev/instances/far-a' };
 const enc = encodeURIComponent;
 
-/** The handler with every effect recorded: `effects` (what ran: CLI invocations, tmux, chat) and `contexts`
+/** The handler with every effect recorded: `effects` (what ran: CLI invocations, chat) and `contexts`
  * (the workspace and rows the handler built for each boundary). */
 async function harness() {
   const effects = [], contexts = [];
@@ -42,10 +42,8 @@ async function harness() {
     locator: { requireRemoteSupport: () => {} }, harnessFlag: () => 'harness', canAddressRemote, unaddressableSentence,
     harvestHome: inst => inst.home, dirname: p => p.slice(0, p.lastIndexOf('/')),
     observeMutation: () => {}, refreshRemoteSnapshot: () => {}, remoteLoop: { request: () => {} },
-    paneInfo: inst => { effects.push({ kind: 'pane', args: [inst.home] }); return { history: 10, size: { cols: 80, rows: 24 } }; },
-    capture: () => 'screen', tmuxTarget: inst => `=${inst.tmux.session}:=${inst.tmux.window}`,
-    sendKeys: inst => effects.push({ kind: 'keys', args: [inst.home] }), sendInterrupt: inst => effects.push({ kind: 'interrupt', args: [inst.home] }),
-    chatData: inst => { effects.push({ kind: 'chat', args: [inst.home] }); return { messages: [] }; }, keySendError: () => assert.fail('keys failed'),
+    tmuxTarget: inst => `=${inst.tmux.session}:=${inst.tmux.window}`,
+    chatData: inst => { effects.push({ kind: 'chat', args: [inst.home] }); return { messages: [] }; },
     agentsData: () => ({ agents: [] }), spawnPreviewCache: { invalidate: () => {} }, inspectCache: { invalidate: () => {} }, capabilityCatalogKey: () => null,
     readinessFailure, eventsFailure,
     readinessRequest: (req, getContext) => { seen('readiness', getContext()); return readiness(req, getContext); },
@@ -68,7 +66,7 @@ async function harness() {
 }
 
 const named = [
-  ['session', 'GET'], ['keys', 'POST', { data: 'x' }], ['interrupt', 'POST'], ['chat', 'GET'],
+  ['chat', 'GET'],
   ['start', 'POST', {}], ['restart', 'POST', {}], ['harvest', 'POST'],
 ];
 const instanceSelector = (deployment, name) => ({ instance: name, agent: 'dev', agentsRoot: `${deployment}/agents`, server: null });
@@ -198,7 +196,7 @@ test('served selectors are view ids and deployment ids; a deployment id survives
   assert.deepEqual([...served].sort(), [V_OATS, V_LAB, L, A, B, R, V].sort());
   const base = 'http://127.0.0.1:4820';
   for (const id of [A, B, R, V]) {
-    for (const path of ['/api/session/dev-b', '/api/instance-lifecycle', '/api/workspace-readiness', '/api/instance-git', '/api/instance-events']) {
+    for (const path of ['/api/chat/dev-b', '/api/instance-lifecycle', '/api/workspace-readiness', '/api/instance-git', '/api/instance-events']) {
       assert.equal(apiUrl(`${path}?ws=${enc(id)}`, base, V_OATS, served).searchParams.get('ws'), id, `${path} ${id}`);
     }
   }
@@ -209,8 +207,11 @@ test('served selectors are view ids and deployment ids; a deployment id survives
   h.reset();
   await h.request({ url: `${kept.pathname}${kept.search}`, method: 'POST', body: bodies[0][1] });
   assert.deepEqual(h.contexts.map(c => c.workspace), [null]);
-  const session = apiUrl(`/api/session/dev-b?ws=${enc(V_OATS)}&home=${enc(HOME.B)}`, base, B, served);
-  assert.equal((await h.request({ url: `${session.pathname}${session.search}` })).status, 404);
+  const chat = apiUrl(`/api/chat/dev-b?ws=${enc(V_OATS)}&home=${enc(HOME.B)}`, base, B, served);
+  assert.equal(chat.searchParams.get('ws'), V_OATS);
+  const refused = await h.request({ url: `${chat.pathname}${chat.search}` });
+  assert.equal(refused.status, 404);
+  assert.equal(refused.body.error, 'unknown instance "dev-b"', 'refused at instance resolution, not as an unknown route');
   assert.deepEqual(h.effects, []);
   assert.equal(servedSelectors(undefined).size, 0);
   assert.deepEqual([...servedSelectors([{ id: 'ws:x', deployments: ['/a', '', 3, null] }, { id: '' }, null])], ['ws:x', '/a']);

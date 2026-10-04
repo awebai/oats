@@ -107,17 +107,17 @@ test("per-instance requests are workspace-scoped: same-named instance in two wor
   // honoring ?ws= the way the real server's findInstance(name, wsId) does:
   // scoped lookup only in that workspace, strict 404 on unknown ws.
   const byWs = { wsA: { "dev-1": "A" }, wsB: { "dev-1": "B" } };
-  const interrupted = [];
+  const harvested = [];
   const upstream = createServer((req, res) => {
     const url = new URL(req.url, "http://localhost");
-    const m = url.pathname.match(/^\/api\/(interrupt|chat)\/([^/]+)$/);
+    const m = url.pathname.match(/^\/api\/(harvest|chat)\/([^/]+)$/);
     const ws = url.searchParams.get("ws");
     const ok = (body) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
     const notFound = () => { res.writeHead(404, { "content-type": "application/json" }); res.end(JSON.stringify({ error: "unknown instance" })); };
     if (!m) return notFound();
     const owner = ws ? byWs[ws]?.[m[2]] : Object.values(byWs).find((w) => w[m[2]])?.[m[2]]; // unscoped = global (the hazard)
     if (!owner) return notFound();
-    if (m[1] === "interrupt") { interrupted.push(owner); return ok({ sent: true }); }
+    if (m[1] === "harvest") { harvested.push(owner); return ok({ ran: true }); }
     return ok({ owner });
   });
   await new Promise((ok) => upstream.listen(0, "127.0.0.1", ok));
@@ -127,20 +127,20 @@ test("per-instance requests are workspace-scoped: same-named instance in two wor
   try {
     common.setWorkspace("wsB");
     // the path builder itself pins the selected workspace on every kind
-    for (const kind of ["interrupt", "chat", "session", "keys"]) {
+    for (const kind of ["chat", "start", "restart", "harvest"]) {
       const p = common.instanceApiPath(kind, "dev-1");
       assert.match(p, new RegExp(`^/api/${kind}/dev-1\\?ws=wsB$`), `${kind} must carry the selected ws`);
     }
     assert.equal(common.instanceApiPath("chat", "dev-1", "limit=150"), "/api/chat/dev-1?limit=150&ws=wsB");
     // MUTATING request viewed from wsB lands on wsB's instance — never wsA's
-    await common.postJson(ctx, common.instanceApiPath("interrupt", "dev-1"), {});
-    assert.deepEqual(interrupted, ["B"], "interrupt must resolve only inside the selected workspace");
+    await common.postJson(ctx, common.instanceApiPath("harvest", "dev-1"), {});
+    assert.deepEqual(harvested, ["B"], "harvest must resolve only inside the selected workspace");
     // reads scope identically
     assert.deepEqual(await common.apiJson(ctx, common.instanceApiPath("chat", "dev-1")), { owner: "B" });
     // an instance that exists only in the OTHER workspace is a strict miss
     common.setWorkspace("wsC");
-    await assert.rejects(common.postJson(ctx, common.instanceApiPath("interrupt", "dev-1"), {}), /unknown instance/);
-    assert.deepEqual(interrupted, ["B"], "no cross-workspace interrupt leaked");
+    await assert.rejects(common.postJson(ctx, common.instanceApiPath("harvest", "dev-1"), {}), /unknown instance/);
+    assert.deepEqual(harvested, ["B"], "no cross-workspace harvest leaked");
   } finally {
     common.setWorkspace(prevWs);
     upstream.close();
