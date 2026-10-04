@@ -79,7 +79,7 @@ test("unknown selections stay pinned without extra polling; only panel responses
   const b = bridge();
   b.advertise(["/", remote]);
   for (let i = 0; i < 3; i++) {
-    await b.call("/api/keys/agent?ws=" + encodeURIComponent(remote), { method: "POST", body: "{}" });
+    await b.call("/api/instance-git?ws=" + encodeURIComponent(remote), { method: "POST", body: "{}" });
     assert.equal(b.requests.at(-1).searchParams.get("ws"), "/");
   }
   assert.equal(b.requests.length, 3);

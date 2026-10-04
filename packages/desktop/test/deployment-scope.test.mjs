@@ -198,7 +198,7 @@ test('served selectors are view ids and deployment ids; a deployment id survives
   assert.deepEqual([...served].sort(), [V_OATS, V_LAB, L, A, B, R, V].sort());
   const base = 'http://127.0.0.1:4820';
   for (const id of [A, B, R, V]) {
-    for (const path of ['/api/session/dev-b', '/api/instance-lifecycle', '/api/workspace-readiness', '/api/instance-git', '/api/instance-events']) {
+    for (const path of ['/api/chat/dev-b', '/api/instance-lifecycle', '/api/workspace-readiness', '/api/instance-git', '/api/instance-events']) {
       assert.equal(apiUrl(`${path}?ws=${enc(id)}`, base, V_OATS, served).searchParams.get('ws'), id, `${path} ${id}`);
     }
   }
@@ -209,8 +209,11 @@ test('served selectors are view ids and deployment ids; a deployment id survives
   h.reset();
   await h.request({ url: `${kept.pathname}${kept.search}`, method: 'POST', body: bodies[0][1] });
   assert.deepEqual(h.contexts.map(c => c.workspace), [null]);
-  const session = apiUrl(`/api/session/dev-b?ws=${enc(V_OATS)}&home=${enc(HOME.B)}`, base, B, served);
-  assert.equal((await h.request({ url: `${session.pathname}${session.search}` })).status, 404);
+  const chat = apiUrl(`/api/chat/dev-b?ws=${enc(V_OATS)}&home=${enc(HOME.B)}`, base, B, served);
+  assert.equal(chat.searchParams.get('ws'), V_OATS);
+  const refused = await h.request({ url: `${chat.pathname}${chat.search}` });
+  assert.equal(refused.status, 404);
+  assert.equal(refused.body.error, 'unknown instance "dev-b"', 'refused at instance resolution, not as an unknown route');
   assert.deepEqual(h.effects, []);
   assert.equal(servedSelectors(undefined).size, 0);
   assert.deepEqual([...servedSelectors([{ id: 'ws:x', deployments: ['/a', '', 3, null] }, { id: '' }, null])], ['ws:x', '/a']);

@@ -119,17 +119,56 @@ test("desktop server: POST origin guard rejects hostile/null origins without cra
   const { scope } = northwindDeployment();
   const { port, proc, post, get } = await startServer(scope);
   try {
-    assert.equal((await post("/api/keys/x", { data: "x" }, { origin: "null" })).status, 403, "Origin: null is rejected, not a crash");
-    assert.equal((await post("/api/keys/x", { data: "x" }, { origin: "http://evil.com" })).status, 403);
+    // An instance-addressed POST that would run a command (start launches a harness in the instance's terminal).
+    assert.equal((await post("/api/start/x", {}, { origin: "null" })).status, 403, "Origin: null is rejected, not a crash");
+    assert.equal((await post("/api/start/x", {}, { origin: "http://evil.com" })).status, 403);
     // fetch can't override Host — use a raw request for the rebinding case
     const hostStatus = await new Promise((resolve, reject) => {
-      const rq = httpRequest({ host: "127.0.0.1", port, path: "/api/keys/x", method: "POST",
+      const rq = httpRequest({ host: "127.0.0.1", port, path: "/api/start/x", method: "POST",
         headers: { "content-type": "application/json", host: "evil.com" } }, (rs) => resolve(rs.statusCode));
-      rq.on("error", reject); rq.end('{"data":"x"}');
+      rq.on("error", reject); rq.end("{}");
     });
     assert.equal(hostStatus, 403, "non-loopback Host is rejected");
-    assert.equal((await post("/api/keys/x", { data: "x" }, { origin: `http://127.0.0.1:${port}` })).status, 404, "loopback origin passes the guard (unknown instance)");
+    const passed = await post("/api/start/x", {}, { origin: `http://127.0.0.1:${port}` });
+    assert.equal(passed.status, 404, "loopback origin passes the guard (unknown instance)");
+    assert.deepEqual(await passed.json(), { error: 'unknown instance "x"' }, "the 404 is instance resolution's, not routing's");
     assert.equal((await get("/api/panel")).status, 200, "server survived the malformed origin");
+  } finally { proc.kill(); rmSync(scope, { recursive: true, force: true }); }
+});
+
+test("desktop server: no route reads or types into a pane by instance name (#609)", async (t) => {
+  const { scope } = northwindDeployment();
+  const { port, proc, post, get } = await startServer(scope);
+  try {
+    const loopback = { origin: `http://127.0.0.1:${port}` };
+    const unknown = await get("/api/no-such-route");
+    assert.equal(unknown.status, 404);
+    const notFound = await unknown.json();
+    assert.deepEqual(notFound, { error: "not found" });
+    // An unknown name and the deployment's own instance: neither is resolved, the path is no route at all.
+    // One subtest per request, so each removed route reports on its own.
+    for (const name of ["x", INSTANCE]) {
+      for (const [route, ask] of [
+        ["GET /api/session", () => get(`/api/session/${name}`)],
+        ["POST /api/keys", () => post(`/api/keys/${name}`, { data: "x" }, loopback)],
+        ["POST /api/interrupt", () => post(`/api/interrupt/${name}`, {}, loopback)],
+      ]) {
+        await t.test(`${route}/${name} answers as an unknown route does`, async () => {
+          const answer = await ask();
+          assert.equal(answer.status, 404);
+          assert.deepEqual(await answer.json(), notFound);
+        });
+      }
+    }
+    // The guards run before routing: an unknown path is still refused to a foreign origin.
+    for (const path of ["/api/keys/x", "/api/interrupt/x"]) {
+      assert.equal((await post(path, { data: "x" }, { origin: "http://evil.com" })).status, 403, path);
+    }
+    // The transcript read of the same family is untouched.
+    const chat = await get(`/api/chat/${INSTANCE}`);
+    assert.equal(chat.status, 200, "GET /api/chat/<instance> still answers");
+    assert.ok(Array.isArray((await chat.json()).turns), "with the transcript's turns");
+    assert.equal((await post(`/api/chat/${INSTANCE}`, {}, loopback)).status, 404, "a POST there was never a route");
   } finally { proc.kill(); rmSync(scope, { recursive: true, force: true }); }
 });
 
