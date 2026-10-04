@@ -37,17 +37,19 @@ test('opening reads a plan only; exact selector/typed facts render; explicit con
     f.dialog.close(); assert.equal(f.doc.activeElement.id, 'opener');
   } finally { f.close(); }
 });
-test('changing Stop children or Remove choices revokes the displayed ref and obtains a fresh plan', async () => {
+test('changing Stop children or the Remove choice revokes the displayed ref and obtains a fresh plan', async () => {
   const f = fixture();
   try {
     f.open(); await tick(); const check = f.doc.querySelector('input'); check.checked = false; check.dispatchEvent(new f.dom.window.Event('change')); await tick();
     assert.equal(f.calls.at(-1).body.options.recursive, false);
     f.open('retire'); await tick(); const inputs = [...f.doc.querySelectorAll('input')];
-    assert.equal(inputs[2].disabled, true); inputs[1].checked = true; inputs[1].dispatchEvent(new f.dom.window.Event('change')); await tick();
-    assert.equal(f.calls.at(-1).body.options.discardWorktree, true); assert.equal(inputs[2].disabled, false);
-    inputs[2].checked = true; inputs[2].dispatchEvent(new f.dom.window.Event('change')); await tick();
-    assert.deepEqual(f.calls.at(-1).body.options, { discardWorktree: true, deleteBranch: true });
-    assert.ok(f.calls.every(c => c.body.action === 'plan'));
+    assert.equal(inputs.length, 2, 'the children choice (hidden for Remove) and the worktree choice');
+    assert.deepEqual(f.calls.at(-1).body.options, { discardWorktree: false }); assert.equal(inputs[1].disabled, false);
+    inputs[1].checked = true; inputs[1].dispatchEvent(new f.dom.window.Event('change')); await tick();
+    assert.deepEqual(f.calls.at(-1).body.options, { discardWorktree: true });
+    inputs[1].checked = false; inputs[1].dispatchEvent(new f.dom.window.Event('change')); await tick();
+    assert.deepEqual(f.calls.at(-1).body.options, { discardWorktree: false });
+    assert.equal(f.calls.length, 5); assert.ok(f.calls.every(c => c.body.action === 'plan'));
   } finally { f.close(); }
 });
 test('late plan success AND rejection after A→B→A cannot repaint a newer modal', async () => {
@@ -100,15 +102,83 @@ test('late apply success and rejection after close never steal focus or refresh 
     await tick(); assert.equal(f.settled.length, 0); assert.equal(f.doc.activeElement, focused); assert.equal(f.doc.querySelector('.lifecycle-overlay'), null); f.close();
   }
 });
-test('branch skip remains partial even after home/worktree removal; ambiguous children are not hidden or acted on', async () => {
+/** Everything the dialog tells a person: its text, and every element's title, accessible name and description. */
+const told = doc => [doc.body.textContent, ...[...doc.querySelectorAll('*')].flatMap(el => ['title', 'aria-label', 'aria-description', 'aria-valuetext', 'placeholder', 'value', 'alt']
+  .map(name => el.getAttribute(name) ?? ''))].join('\n');
+test('incomplete cleanup remains partial even after home removal; ambiguous children are not hidden or acted on', async () => {
   const raw = retirePlan(); raw.facts.ambiguous = [{ instance: 'kid', agent: 'ops', home: '/ops/kid', reason: 'parent not unique' }];
-  const result = retireReceipt({ key: 'k', revision: raw.planRevision }); result.worktreeRemoved = true;
-  result.retention = { worktree: 'removed', branch: 'changed', recordedBranch: 'agents/dev-1', branchDeletionSkipped: { expected: 'feat/work', actual: 'changed', reason: 'changed after confirmation' } };
+  const result = retireReceipt({ key: 'k', revision: raw.planRevision }); result.rollbackIncomplete = ['cleanup'];
   const f = fixture({ request: (_ws, body) => body.action === 'plan' ? planned('retire', reference, raw)
     : { lifecycleApi: 1, status: 'partial', target, receipt: lifecycleReceipt(result, raw, 'k') } });
-  f.open('retire'); await tick(); assert.match(f.doc.body.textContent, /not unique/); assert.match(f.doc.body.textContent, /ops\/kid/);
-  f.button('lifecycle-confirm').click(); await tick(); assert.match(f.doc.body.textContent, /Branch deletion skipped/); assert.match(f.doc.body.textContent, /Home removedtrue/);
-  assert.doesNotMatch(f.doc.body.textContent, /Kernel operation completed/); f.close();
+  try {
+    f.open('retire'); await tick(); assert.match(f.doc.body.textContent, /not unique/); assert.match(f.doc.body.textContent, /ops\/kid/);
+    f.button('lifecycle-confirm').click(); await tick();
+    assert.equal(f.doc.querySelector('.lifecycle-dialog [role=status]').textContent, 'Not every requested effect completed. Review the recorded outcome.');
+    assert.match(f.doc.body.textContent, /Home removedtrue/); assert.doesNotMatch(f.doc.body.textContent, /Kernel operation completed/);
+  } finally { f.close(); }
+});
+test('Remove shows one choice, the worktree, and says it never deletes a branch; its result has no branch row', async () => {
+  const raw = retirePlan(), result = retireReceipt({ key: 'k', revision: raw.planRevision });
+  const f = fixture({ request: (_ws, body) => body.action === 'plan' ? planned('retire', reference, raw)
+    : { lifecycleApi: 1, status: 'complete', target, receipt: lifecycleReceipt(result, raw, 'k') } });
+  try {
+    f.open('retire'); await tick();
+    const labels = [...f.doc.querySelectorAll('.lifecycle-options label')];
+    assert.deepEqual(labels.filter(label => !label.hidden).map(label => label.textContent), ['Also delete the worktree']);
+    assert.deepEqual(labels.map(label => label.textContent), ['Include recorded children', 'Also delete the worktree']);
+    assert.equal(f.doc.querySelectorAll('.lifecycle-dialog input').length, 2);
+    const explanation = f.doc.querySelector('.lifecycle-dialog > p.lifecycle-note').textContent;
+    assert.ok(explanation.includes('The worktree is retained unless selected below. Remove never deletes a branch. The PR is never changed.'), explanation);
+    assert.ok(explanation.startsWith('Remove the instance home. The kernel stops children first and retains their homes; if one will not stop, Remove refuses and names it.'), explanation);
+    // The plan still reads both branches.
+    const facts = [...f.doc.querySelectorAll('.lifecycle-facts dt')].map(dt => [dt.textContent, dt.nextElementSibling.textContent]);
+    assert.deepEqual(facts.filter(([label]) => /branch/i.test(label)), [['Worktree branch', 'feat/work'], ['Recorded branch', 'agents/dev-1']]);
+    assert.doesNotMatch(told(f.doc), /delete the local branch|local branch/i);
+    f.button('lifecycle-confirm').click(); await tick();
+    assert.equal(f.doc.querySelector('.lifecycle-dialog [role=status]').textContent, 'Kernel operation completed.');
+    assert.deepEqual([...f.doc.querySelectorAll('.lifecycle-result dt')].map(dt => dt.textContent), ['Home removed', 'Worktree', 'Retained location', 'Recovery location']);
+    assert.doesNotMatch(told(f.doc), /Branch deleted|Branch deletion|delete the local branch|local branch/i);
+  } finally { f.close(); }
+  // Stop has neither.
+  const stop = fixture();
+  try {
+    stop.open(); await tick();
+    assert.deepEqual([...stop.doc.querySelectorAll('.lifecycle-options label')].filter(label => !label.hidden).map(label => label.textContent), ['Include recorded children']);
+    assert.doesNotMatch(told(stop.doc), /local branch/i);
+  } finally { stop.close(); }
+});
+test('the dialog refuses a receipt that reports a branch deletion or a skip, whatever status came with it, and shows nothing of it', async () => {
+  const raw = retirePlan(), accepted = lifecycleReceipt(retireReceipt({ key: 'k', revision: raw.planRevision }), raw, 'k');
+  const reports = [r => { r.branchDeleted = true; }, r => { r.retention.branchDeleted = 'UNSHOWN-branch'; },
+    r => { r.retention.branchDeletionSkipped = { expected: 'feat/work', actual: 'UNSHOWN-branch', reason: 'UNSHOWN reason' }; }];
+  for (const report of reports) for (const status of ['complete', 'partial']) {
+    const receipt = structuredClone(accepted); receipt.retention.branch = 'UNSHOWN-branch'; report(receipt);
+    const f = fixture({ request: (_ws, body) => body.action === 'plan' ? planned('retire', reference, raw) : { lifecycleApi: 1, status, target, receipt } });
+    try {
+      f.open('retire'); await tick(); f.button('lifecycle-confirm').click(); await tick();
+      assert.equal(f.doc.querySelector('.lifecycle-dialog [role=status]').textContent, lifecycleReason('E_OUTCOME_UNKNOWN').message);
+      assert.equal(f.doc.querySelector('.lifecycle-result').textContent, '', 'no row of the refused receipt');
+      assert.doesNotMatch(told(f.doc), /UNSHOWN|Home removed|Branch deleted|Branch deletion|Kernel operation completed/);
+      assert.equal(f.button('lifecycle-retry').hidden, false); assert.equal(f.settled.length, 0);
+    } finally { f.close(); }
+  }
+  // The same receipt without a report is shown.
+  const f = fixture({ request: (_ws, body) => body.action === 'plan' ? planned('retire', reference, raw) : { lifecycleApi: 1, status: 'complete', target, receipt: structuredClone(accepted) } });
+  try {
+    f.open('retire'); await tick(); f.button('lifecycle-confirm').click(); await tick();
+    assert.equal(f.doc.querySelector('.lifecycle-dialog [role=status]').textContent, 'Kernel operation completed.'); assert.match(f.doc.body.textContent, /Home removedtrue/);
+  } finally { f.close(); }
+});
+test('the dialog refuses a retire plan whose defaults report a branch deletion; false or absent is accepted', async () => {
+  for (const [value, accepted] of [[undefined, true], [false, true], [true, false]]) {
+    const raw = retirePlan(); if (value === undefined) delete raw.defaults.deleteBranch; else raw.defaults.deleteBranch = value;
+    const f = fixture({ request: () => planned('retire', reference, raw) });
+    try {
+      f.open('retire'); await tick();
+      assert.equal(f.doc.querySelector('.lifecycle-dialog [role=status]').textContent, accepted ? 'Review these facts before confirming.' : lifecycleReason('E_CLI_PROTOCOL').message, String(value));
+      assert.equal(f.button('lifecycle-confirm').disabled, !accepted, String(value)); assert.equal(f.doc.querySelector('.lifecycle-facts').textContent === '', !accepted);
+    } finally { f.close(); }
+  }
 });
 test('a local Remove refused by inspection shows the inspection sentence under the unknown outcome, never "CLI is unavailable", and no Details when the CLI sent no message', async () => {
   const f = fixture({ request: (_ws, body) => body.action === 'plan' ? planned('retire')
@@ -266,6 +336,25 @@ test("from the server: a local plan the kernel refuses shows the fixed sentence 
     assert.equal(f.button('lifecycle-confirm').disabled, true);
   } finally { f.close(); }
 });
+test("from the server: a Remove whose receipt reports a branch deletion or a skip shows Desktop's two fixed sentences and nothing of the receipt", async () => {
+  const reports = [r => { r.branchDeleted = true; r.retention.branchDeleted = 'UNSHOWN-branch'; }, r => { r.retention.branchDeleted = 'UNSHOWN-branch'; },
+    r => { r.retention.branchDeletionSkipped = { expected: 'feat/work', actual: 'UNSHOWN-branch', reason: 'UNSHOWN reason' }; }];
+  for (const report of reports) {
+    const replies = [], server = localServer({ apply: args => { const r = retireReceipt(args); r.retention.branch = 'UNSHOWN-branch'; report(r); return envelope(r); } });
+    const f = fixture({ request: async (workspace, body) => { const reply = await server(workspace, body); replies.push(structuredClone(reply)); return reply; } });
+    try {
+      f.open('retire'); await tick(); f.button('lifecycle-confirm').click(); await tick();
+      assert.equal(replies.length, 2); assert.equal(replies[1].status, 'unknown'); assert.equal(replies[1].receipt, null);
+      assert.deepEqual(replies[1].reason, lifecycleReason('E_OUTCOME_UNKNOWN')); assert.deepEqual(replies[1].cause, lifecycleReason('E_CLI_PROTOCOL'));
+      assert.doesNotMatch(JSON.stringify(replies[1]), /UNSHOWN/);
+      assert.equal(f.doc.querySelector('.lifecycle-dialog [role=status]').textContent, lifecycleReason('E_OUTCOME_UNKNOWN').message);
+      assert.equal(f.doc.querySelector('.lifecycle-result').textContent, lifecycleReason('E_CLI_PROTOCOL').message, 'the cause sentence alone: no row, no Details');
+      assert.equal(f.doc.querySelector('.lifecycle-details'), null);
+      assert.doesNotMatch(told(f.doc), /UNSHOWN|Home removed|Branch deleted|Branch deletion/);
+      assert.equal(f.button('lifecycle-retry').hidden, false);
+    } finally { f.close(); }
+  }
+});
 test("the dialog re-validates a local detail: only a display line, only for a code with its own sentence that Desktop does not raise, and never as the headline", async () => {
   const fixed = lifecycleReason('E_WORK_INSPECTION_FAILED');
   const shown = async cause => {
@@ -290,7 +379,7 @@ test("the dialog re-validates a local detail: only a display line, only for a co
   const unknown = await shown({ code: 'E_NOT_IN_THE_TABLE', message: 'A HEADLINE FROM THE REPLY', detail: 'UNSHOWN line' });
   assert.equal(unknown.headline, lifecycleReason('E_CLI_FAILED').message); assert.equal(unknown.details, null); assert.doesNotMatch(unknown.text, /UNSHOWN|A HEADLINE/);
 });
-test('each dialog shows only its own choices: a hidden choice stays hidden despite the label layout (Stop has no worktree/branch options, Remove no children option)', () => {
+test('each dialog shows only its own choices: a hidden choice stays hidden despite the label layout (Stop has no worktree option, Remove no children option)', () => {
   // The label's display:flex beats the user agent's [hidden] rule in Chromium; jsdom's cascade does not model that, so pin the rule.
   const dom = new JSDOM('<!doctype html><style></style>'), sheet = dom.window.document.querySelector('style');
   sheet.textContent = lifecycleCSS;

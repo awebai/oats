@@ -13,7 +13,7 @@ export const retirePlan = () => ({ lifecycleApi: 1, action: 'retire', instance: 
   at: '2026-09-22T00:00:00Z', planRevision: 'b'.repeat(24), notes: [],
   facts: { session: session(), work: work(), workMode: 'worktree', repo: '/repo', recordedBranch: 'agents/dev-1', children: [], ambiguous: [], pullRequest: 'unknown' },
   defaults: { retainWorktree: true, deleteBranch: false, stopChildren: true, retainChildren: true } });
-export const options = operation => operation === 'stop' ? { recursive: true } : { discardWorktree: false, deleteBranch: false };
+export const options = operation => operation === 'stop' ? { recursive: true } : { discardWorktree: false };
 export const request = (operation = 'stop') => ({ action: 'plan', operation, selector: structuredClone(selector), options: options(operation) });
 export const envelope = result => ({ schemaVersion: 1, ok: true, result });
 export const stopReceipt = (args, plan = stopPlan()) => ({ lifecycleApi: 1, action: 'stop', instance: plan.instance, home: plan.home,

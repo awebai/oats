@@ -23,7 +23,7 @@ const messages = {
   E_PLAN_REQUIRED: 'Open a fresh Stop or Remove confirmation; unguarded retirement is unavailable.',
   E_PLAN_EXPIRED: 'This confirmation expired or its server changed. Observe a fresh plan before confirming.',
   E_PLAN_CHANGED: 'The target or CLI changed. Observe a fresh plan before confirming.',
-  E_OPTION_UNAVAILABLE: 'Review the choices: deleting work requires an owned worktree; deleting a branch requires its reported name.',
+  E_OPTION_UNAVAILABLE: 'Review the choices: deleting work requires an owned worktree.',
   E_PLAN_STALE: 'The kernel reports changed facts. Review the fresh plan and confirm again.',
   E_PLAN_LIMIT: 'The complete plan exceeds the display limit. No action was submitted.',
   E_LIFECYCLE_BUSY: 'A lifecycle operation is already in progress. Wait for its recorded outcome.',
@@ -55,15 +55,14 @@ export function lifecycleFailure(code, extra = {}) {
 export function lifecycleOptions(operation, v) {
   if (!object(v)) return null;
   if (operation === 'stop' && Object.keys(v).length === 1 && Object.hasOwn(v, 'recursive') && typeof v.recursive === 'boolean') return { recursive: v.recursive };
-  if (operation === 'retire' && Object.keys(v).length === 2 && Object.hasOwn(v, 'discardWorktree') && Object.hasOwn(v, 'deleteBranch')
-    && typeof v.discardWorktree === 'boolean' && typeof v.deleteBranch === 'boolean'
-    && (!v.deleteBranch || v.discardWorktree)) return { discardWorktree: v.discardWorktree, deleteBranch: v.deleteBranch };
+  // Remove has one choice, the worktree. It never deletes a branch: any other key is refused.
+  if (operation === 'retire' && Object.keys(v).length === 1 && Object.hasOwn(v, 'discardWorktree')
+    && typeof v.discardWorktree === 'boolean') return { discardWorktree: v.discardWorktree };
   return null;
 }
 export function lifecycleChoicesApplicable(plan, choices) {
   if (plan.action === 'stop') return true;
-  return (!choices.discardWorktree || plan.facts.workMode === 'worktree')
-    && (!choices.deleteBranch || plan.facts.workMode === 'worktree' && plan.facts.work.observed === true && typeof plan.facts.work.branch === 'string' && !!plan.facts.work.branch);
+  return !choices.discardWorktree || plan.facts.workMode === 'worktree';
 }
 export function lifecycleSession(v) {
   if (!object(v) || !text(v.state, 128) || !v.state || typeof v.established !== 'boolean' || ![null, true, false].includes(v.present)
@@ -117,14 +116,14 @@ export function lifecyclePlan(v, target, operation, options) {
   }
   const f = v.facts, d = v.defaults;
   if (!object(f) || !object(d) || !nullable(f.workMode) || !(f.repo === null || absolute(f.repo)) || !nullable(f.recordedBranch) || f.pullRequest !== 'unknown'
-    || typeof d.retainWorktree !== 'boolean' || d.deleteBranch !== false || d.stopChildren !== true || d.retainChildren !== true) return null;
+    || typeof d.retainWorktree !== 'boolean' || !(d.deleteBranch === undefined || d.deleteBranch === false) || d.stopChildren !== true || d.retainChildren !== true) return null;
   const session = lifecycleSession(f.session), work = lifecycleWork(f.work);
   const children = rows(f.children, t => { const i = identity(t), s = lifecycleSession(t?.session); return i && s ? { ...i, session: s } : null; });
   const ambiguous = rows(f.ambiguous, excluded);
   if (!session || !work || !children || !ambiguous || children.length + ambiguous.length + 1 > MAX_LIFECYCLE_TARGETS
     || [...children, ...ambiguous].some(t => t.home === target.home) || ambiguous.some(t => children.some(c => c.home === t.home))) return null;
   return { ...common, facts: { session, work, workMode: f.workMode, repo: f.repo, recordedBranch: f.recordedBranch,
-    children, ambiguous, pullRequest: 'unknown' }, defaults: { retainWorktree: d.retainWorktree, deleteBranch: false, stopChildren: true, retainChildren: true } };
+    children, ambiguous, pullRequest: 'unknown' }, defaults: { retainWorktree: d.retainWorktree, stopChildren: true, retainChildren: true } };
 }
 export function stoppedTargets(value, expected, withState = false) {
   if (!Array.isArray(value) || value.length !== expected.length || value.length > MAX_LIFECYCLE_TARGETS) return null;
@@ -138,7 +137,9 @@ export function stoppedTargets(value, expected, withState = false) {
   return result.some(v => !v) ? null : result;
 }
 /** `server`: the request was routed there. The routed retire's result then may also carry `server`
- * and `target` (its route); a local result carrying them is refused. */
+ * and `target` (its route); a local result carrying them is refused.
+ * Desktop asks for no branch deletion, so a retire result that reports one, or a skipped one, is not the
+ * answer to its request and is refused whole: nothing of it is projected. */
 export function lifecycleReceipt(v, plan, key, { server = null } = {}) {
   if (!object(v) || v.idempotencyKey !== key || v.planRevision !== plan.planRevision || typeof v.replayed !== 'boolean') return null;
   if (!server ? Object.hasOwn(v, 'server') || Object.hasOwn(v, 'target')
@@ -154,30 +155,22 @@ export function lifecycleReceipt(v, plan, key, { server = null } = {}) {
   }
   if (v.retired === plan.instance && v.deferred === true) return { action: 'retire', instance: plan.instance, home: plan.home,
     planRevision: v.planRevision, replayed: v.replayed, deferred: true };
-  if (v.retired !== plan.instance || typeof v.removedDir !== 'boolean' || typeof v.worktreeRemoved !== 'boolean' || typeof v.branchDeleted !== 'boolean'
+  if (v.retired !== plan.instance || typeof v.removedDir !== 'boolean' || typeof v.worktreeRemoved !== 'boolean' || !(v.branchDeleted === undefined || v.branchDeleted === false)
     || (v.rollbackIncomplete !== undefined && !strings(v.rollbackIncomplete)) || !(v.retainedHome === undefined || v.retainedHome === plan.home)) return null;
   const childrenStopped = stoppedTargets(v.childrenStopped, plan.facts.children);
   if (!childrenStopped || childrenStopped.some(c => !c.ok)) return null;
   let retention = null;
   if (v.retention !== null) {
     const r = v.retention;
-    if (!object(r) || !['retained', 'removed', 'absent'].includes(r.worktree) || !nullable(r.branch) || !nullable(r.recordedBranch)
+    if (!object(r) || Object.hasOwn(r, 'branchDeleted') || Object.hasOwn(r, 'branchDeletionSkipped')
+      || !['retained', 'removed', 'absent'].includes(r.worktree) || !nullable(r.branch) || !nullable(r.recordedBranch)
       || (r.worktree === 'retained' && (!absolute(r.movedTo) || !nullable(r.detachedAt)))) return null;
     retention = { worktree: r.worktree, branch: r.branch, recordedBranch: r.recordedBranch,
       ...(r.worktree === 'retained' ? { movedTo: r.movedTo, detachedAt: r.detachedAt } : {}) };
-    if (r.branchDeleted !== undefined) {
-      if (!plan.facts.work.observed || !text(r.branchDeleted) || r.branchDeleted !== plan.facts.work.branch || !v.branchDeleted || r.branchDeletionSkipped) return null;
-      retention.branchDeleted = r.branchDeleted;
-    }
-    if (r.branchDeletionSkipped !== undefined) {
-      const s = r.branchDeletionSkipped;
-      if (!object(s) || !nullable(s.expected) || !nullable(s.actual) || !text(s.reason) || s.expected !== plan.facts.work.branch || v.branchDeleted) return null;
-      retention.branchDeletionSkipped = { expected: s.expected, actual: s.actual, reason: 'The branch changed after confirmation; no branch was deleted.' };
-    }
   }
   const recovery = v.workRecovery?.path;
   return { action: 'retire', instance: plan.instance, home: plan.home, planRevision: v.planRevision, replayed: v.replayed,
-    removedDir: v.removedDir, worktreeRemoved: v.worktreeRemoved, branchDeleted: v.branchDeleted, retention, childrenStopped,
+    removedDir: v.removedDir, worktreeRemoved: v.worktreeRemoved, retention, childrenStopped,
     incomplete: !!v.rollbackIncomplete?.length, retainedHome: v.retainedHome ?? null,
     recoveryPath: absolute(recovery) ? recovery : null };
 }

@@ -20,7 +20,7 @@ instance family. Bodies are strict JSON objects up to64 KiB:
 
 ```json
 {"action":"plan","operation":"stop","selector":{"instance":"dev-1","agent":"dev","agentsRoot":"/team/agents","server":null},"options":{"recursive":true}}
-{"action":"plan","operation":"retire","selector":{"instance":"dev-1","agent":"dev","agentsRoot":"/team/agents","server":null},"options":{"discardWorktree":false,"deleteBranch":false}}
+{"action":"plan","operation":"retire","selector":{"instance":"dev-1","agent":"dev","agentsRoot":"/team/agents","server":null},"options":{"discardWorktree":false}}
 {"action":"apply","planRef":"<opaque server reference>"}
 ```
 
@@ -50,9 +50,11 @@ is refused, never truncated into a smaller executable action. Plan execution
 is bounded to30 seconds; proxy35 seconds.
 
 Changing any option obtains a new plan/reference and revokes the old controls.
-Delete-branch requires an explicitly selected worktree discard, an owned
-worktree and a reported branch; unknown/detached work cannot authorize a named
-branch deletion. There is no force/self/keep-dir/grace override or “don't ask
+Remove has one choice, the worktree: deleting it requires an owned worktree.
+Remove no longer offers to delete a branch: retirement leaves branches to the
+operator, and the kernel will refuse the flag. A retire request whose options
+hold any other key is refused before a command, and no retire command carries
+`--delete-branch`. There is no force/self/keep-dir/grace override or “don't ask
 again” shortcut.
 
 On the FIRST explicit confirmation, the server reserves its **one global apply
@@ -68,7 +70,7 @@ oats retire NAME --plan --home HOME --dir SCOPE --json
 oats instance stop NAME --apply --plan-revision REV --idempotency-key KEY \
   --home HOME --dir SCOPE [--no-recursive] --json
 oats retire NAME --plan-revision REV --idempotency-key KEY \
-  --home HOME --dir SCOPE [--discard-worktree] [--delete-branch] --json
+  --home HOME --dir SCOPE [--discard-worktree] --json
 ```
 
 Applies have a600-second/4 MiB bound; proxy610 seconds. At most32 settled or
@@ -95,10 +97,22 @@ status; it does not cancel the dispatched operation or signal its process.
   plan before a new confirmation; do not compose another Stop in Desktop.
 - Remove accepts both the documented first raw receipt and enveloped replay,
   checking revision/key/name against the transaction. Home removal, worktree
-  retention/removal, recovery and branch deletion are separate facts.
-- `retention.branchDeletionSkipped` is reported as a skipped named deletion,
-  even if home/worktree retirement completed. Neither a switched branch nor the
-  confirmed branch is invented as deleted. No Desktop Git preflight is used.
+  retention/removal and recovery are separate facts.
+- Remove never deletes a branch and asks for no deletion, so a receipt that
+  reports a branch deletion or a skip (`branchDeleted: true`, or
+  `retention.branchDeleted` or `retention.branchDeletionSkipped` present with
+  any value) is not the answer to its request. It is refused whole, at the
+  server and again in the dialog, and reported as an **unknown outcome** with
+  Desktop's two fixed sentences (`E_OUTCOME_UNKNOWN`, then `E_CLI_PROTOCOL` as
+  the cause): no field of that receipt is forwarded or shown. `branchDeleted`
+  `false` or absent is accepted, and so is a plan whose `defaults.deleteBranch`
+  is `false` or absent; any other value there is an invalid plan. No Desktop
+  Git preflight is used.
+- A home left by a failed spawn that still owes its branch stays incomplete
+  (`E_RETIRE_INCOMPLETE`: "Retirement cleanup is incomplete. Inspect the
+  retained state before another action.") while that branch exists, and Remove
+  can no longer complete it: the person checks the branch and deletes it with
+  Git, then removes the home again.
 - `E_PLAN_STALE` displays the validated producer's fresh plan and a new reference;
   the operator must explicitly confirm again. It never auto-applies.
 - Preservation/cleanup failure may follow earlier effects. Render retained/partial
@@ -139,7 +153,7 @@ colors and keyboard focus language. Stop/Remove are separate from existing
 Start/Restart/Inspect. Stop always requires explicit confirmation. The Remove
 PR row is only an informational2b overlay: exact home/server/workspace, revision,
 branch and remote host/path must correlate. Disconnected/unmatched facts remain
-unknown; a local branch action never closes or changes the remote PR.
+unknown; Remove never closes or changes the remote PR.
 
 Modal lifetime, workspace generation, target and request/operation tickets guard
 success, rejection and cleanup. Old controls cannot close or confirm a new
