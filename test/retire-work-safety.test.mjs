@@ -2,11 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn as spawnProcess, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
+import * as nodeFs from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { capabilityFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { linkExecutables, waitUntil as waitFor } from "./helpers/host-fixture.mjs";
-import { statusDisagreement } from "../lib/core.mjs";
+import { fingerprintTree, statusDisagreement } from "../lib/core.mjs";
 import { workRecoveryLines } from "../lib/retire-output.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
@@ -1658,6 +1660,138 @@ seen.branches = git('branch', '--list', 'keep');`, { home: false });
   assert.equal(existsSync(join(recovery.path, "after-hooks")), false);
   assert.equal(recovery.afterHooks, undefined);
   assert.equal(readJson(join(recovery.path, "recovery.json")).phase, "complete");
+});
+
+// ---- Bytes, not text ----
+// Git's output, the names in a worktree and the targets of its links are compared as their bytes. Read
+// as text, a byte that is not valid UTF-8 becomes U+FFFD, and two different such bytes read alike.
+
+/** The tag refs of a repository as Git prints them, as the hex of those bytes. */
+const tagRefBytesOf = (repo) => execFileSync("git", ["-C", repo, "for-each-ref", "--format=%(refname)", "refs/tags"], { stdio: ["ignore", "pipe", "pipe"] }).toString("hex");
+const tagRefWith = (byte) => Buffer.concat([Buffer.from("refs/tags/tag-"), Buffer.from([byte]), Buffer.from("\n")]).toString("hex");
+/** Run `make`, which needs a file system that stores a byte that is not UTF-8 in a name or in a link's
+ *  target, and read the bytes back with `read` (hex). → true when they are there. Where the platform
+ *  does not store them the test is skipped with the reason. On Linux that is a failure: there the
+ *  test cannot pass by being skipped. */
+function storedBytes(t, make, read, expected) {
+  let reason;
+  try {
+    make();
+    const got = read();
+    if (got !== expected) reason = `the file system stored ${got || "nothing"} where the test wrote ${expected}`;
+  } catch (e) { reason = `the file system refused the bytes ${expected}: ${e.message}`; }
+  if (!reason) return true;
+  assert.notEqual(process.platform, "linux", `this test is not skipped on Linux: ${reason}`);
+  t.skip(reason);
+  return false;
+}
+
+test("a retire hook that changes one byte of a packed tag's name in a nested repository, from one byte that is not UTF-8 to another, with no status row, index entry, HEAD or stash changing: the work is copied again, and the nested repository under after-hooks/repo/ has the tag as the hook left it", () => {
+  // The tag is in packed-refs, so no file has the byte in its name. Read as text, both names are
+  // "tag-" and U+FFFD: only their bytes tell them apart.
+  const STATUS = "'status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored=matching', '--ignore-submodules=none'";
+  const retire = quietHook(`import { readFileSync } from 'node:fs';
+const nested = join(work, 'human-ignored', 'nested');
+const inNested = gitIn(nested);
+const tagBytes = () => execFileSync('git', ['-C', nested, 'for-each-ref', '--format=%(refname)', 'refs/tags']).toString('hex');
+const stateOf = () => ({ status: inNested(${STATUS}), head: inNested('rev-parse', 'HEAD'), branch: inNested('symbolic-ref', 'HEAD'), index: inNested('ls-files', '-s', '-v', '-z'), stash: inNested('for-each-ref', 'refs/stash') });
+seen.before = stateOf();
+seen.tagBefore = tagBytes();
+const packed = join(nested, '.git', 'packed-refs');
+const bytes = readFileSync(packed);
+seen.at = bytes.indexOf(0x80);
+bytes[seen.at] = 0x81;
+writeFileSync(packed, bytes);
+seen.after = stateOf();
+seen.tagAfter = tagBytes();`);
+  const f = fixture({ capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "hook-tag-byte");
+  const work = join(spawned.home, "work");
+  const nested = nestedRepository(work);
+  const commit = headOf(nested);
+  writeFileSync(join(nested, ".git", "packed-refs"), Buffer.concat([Buffer.from(`${commit} refs/tags/tag-`), Buffer.from([0x80]), Buffer.from("\n")]));
+  assert.equal(tagRefBytesOf(nested), tagRefWith(0x80), "fixture premise: Git reads the packed tag and prints its name with the byte 0x80");
+  const statusBefore = porcelain(work);
+  assert.deepEqual(statusRowsIn(statusBefore), ["!! human-ignored/"], "fixture premise: the outer status has one row, the ignored directory that holds the nested repository");
+
+  const { recovery, seen, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore);
+  assert.ok(seen.at >= 0, "fixture premise: the hook found the byte 0x80 in packed-refs");
+  assert.equal(seen.tagBefore, tagRefWith(0x80), "fixture premise: the hook saw the tag with the byte 0x80");
+  assert.equal(seen.tagAfter, tagRefWith(0x81), "fixture premise: the hook left the tag with the byte 0x81");
+  assert.equal(Buffer.from(seen.tagBefore, "hex").toString("utf8"), Buffer.from(seen.tagAfter, "hex").toString("utf8"), "fixture premise: read as text, the two names are the same");
+  assert.deepEqual(seen.after, seen.before, "fixture premise: the hook changed no status row, HEAD, checked-out branch, index entry or stash of the nested repository");
+  assert.equal(tagRefBytesOf(nestedUnder(join(recovery.path, "repo"))), tagRefWith(0x80), "the snapshot taken before the hooks has the tag as it was then, and is as it was written");
+  assert.equal(existsSync(join(nestedUnder(afterRepo), ".git")), true, "the work is copied again under after-hooks/repo/: the tag's name changed, in a byte that text does not tell apart");
+  assert.equal(tagRefBytesOf(nestedUnder(afterRepo)), tagRefWith(0x81), "the nested repository copied after the hooks has the tag as the hook left it");
+  assert.equal(headOf(nestedUnder(afterRepo)), commit);
+  assertBothCopiedAgain(recovery);
+});
+
+test("a retire hook that replaces an untracked symbolic link by one whose target differs in one byte that is not UTF-8, with the same status rows: the snapshot before the hooks holds the first target byte for byte, the work is copied again, and the link under after-hooks/repo/ holds the second", (t) => {
+  const retire = quietHook(`import { symlinkSync, unlinkSync } from 'node:fs';
+const link = join(work, 'link');
+unlinkSync(link);
+symlinkSync(Buffer.from([0x74, 0x81]), link);`);
+  const f = fixture({ capabilities: hookCapability(retire) });
+  const spawned = spawn(f, "hook-link-byte");
+  const work = join(spawned.home, "work");
+  const link = join(work, "link");
+  const targetOf = (path) => readlinkSync(path, "buffer").toString("hex");
+  if (!storedBytes(t, () => symlinkSync(Buffer.from([0x74, 0x80]), link), () => targetOf(link), "7480")) return;
+  const statusBefore = porcelain(work);
+  assert.deepEqual(statusRowsIn(statusBefore), ["?? link"], "fixture premise: the link is untracked, and Git's row names it, not its target");
+
+  const { recovery, afterRepo } = retireAfterQuietHook(f, spawned, statusBefore);
+  assert.equal(targetOf(join(recovery.path, "repo", "link")), "7480", "the snapshot taken before the hooks holds the link with its target byte for byte");
+  assert.equal(existsSync(join(afterRepo, ".git")), true, "the work is copied again under after-hooks/repo/: the link's target changed, in a byte that text does not tell apart");
+  assert.equal(targetOf(join(afterRepo, "link")), "7481", "the link copied after the hooks has the target the hook gave it");
+  assertBothCopiedAgain(recovery);
+});
+
+test("a clean worktree with a committed file whose name is not UTF-8, and only a home note to preserve: the retire completes with a home-only recovery", (t) => {
+  const f = fixture();
+  const spawned = spawn(f, "name-byte");
+  const work = join(spawned.home, "work");
+  const named = Buffer.concat([Buffer.from(join(work, "x")), Buffer.from([0x80])]);
+  const namesWithX = () => readdirSync(work, { encoding: "buffer" }).filter((name) => name[0] === 0x78).map((name) => name.toString("hex")).join(",");
+  if (!storedBytes(t, () => writeFileSync(named, "bytes\n"), namesWithX, "7880")) return;
+  execFileSync("git", ["-C", work, "add", "-A"]);
+  execFileSync("git", ["-C", work, "commit", "-qm", "a file whose name is not UTF-8"]);
+  assert.equal(execFileSync("git", ["-C", work, "ls-files", "-z"]).includes(Buffer.from([0x78, 0x80, 0x00])), true, "fixture premise: Git tracks the file under its name, byte for byte");
+  assert.equal(porcelain(work), "", "fixture premise: the file is committed and the worktree is clean");
+  write(join(spawned.home, "notes", "x.md"), "an authored note\n");
+
+  const retired = cli(f, ["retire", basename(spawned.home), "--discard-worktree", "--json"]);
+  assert.equal(retired.status, 0, `a retire with only the home to preserve was refused for a file's name: ${retired.stderr}\n${retired.stdout}`);
+  const recovery = JSON.parse(retired.stdout).workRecovery;
+  assert.deepEqual(recovery.classes, ["changed instance-home bytes"]);
+  assert.equal(recovery.repoCopy?.copied, false, "the recovery holds the home only");
+  assert.equal(existsSync(join(recovery.path, "repo")), false);
+  assert.equal(readFileSync(join(recovery.path, "home", "notes", "x.md"), "utf8"), "an authored note\n");
+  assert.equal(existsSync(join(recovery.path, "after-hooks")), false, "nothing moved after the snapshot");
+  assert.equal(readJson(join(recovery.path, "recovery.json")).phase, "complete");
+  assert.equal(existsSync(spawned.home), false, "the home is removed");
+});
+
+test("fingerprintTree's digest of a tree whose names are all valid UTF-8 is the one it has always been: a file, a directory with a file, a symbolic link and a name that is not ASCII", () => {
+  // A spawn baseline written by an earlier kernel holds such digests, and a retire compares with them.
+  // The expected value is the SHA-256 of this byte stream, written out by hand from the algorithm
+  // (per entry, in the order of the names: its path, NUL, its permission bits in decimal, NUL, then
+  // "file" NUL its bytes NUL, or "link" NUL its target NUL, or "dir" NUL followed by its entries):
+  //   a.txt\0420\0file\0alpha\n\0  dir\0493\0dir\0  dir/inner.txt\0416\0file\0inner\n\0
+  //   link\0511\0link\0a.txt\0  zé.txt\0384\0file\0zed\n\0
+  const root = mkdtempSync(join(tmpdir(), "oats-fingerprint-"));
+  temporaryDirectories.push(root);
+  for (const [name, content, mode] of [["a.txt", "alpha\n", 0o644], [join("dir", "inner.txt"), "inner\n", 0o640], ["zé.txt", "zed\n", 0o600]]) {
+    write(join(root, name), content);
+    chmodSync(join(root, name), mode);
+  }
+  chmodSync(join(root, "dir"), 0o755);
+  symlinkSync("a.txt", join(root, "link"));
+  // A link has permission bits of its own only where the platform gives it some; there they follow the umask.
+  if ((lstatSync(join(root, "link")).mode & 0o7777) !== 0o777) nodeFs.lchmodSync?.(join(root, "link"), 0o777);
+  assert.equal(lstatSync(join(root, "link")).mode & 0o7777, 0o777, "fixture premise: the link's permission bits are 0777");
+  assert.equal(fingerprintTree(root), "sha256:612e407ca91d0e9258ab0cc9d929db7bbc9e6b6d81179a74ce745dcd7638e71a");
 });
 
 /** Whether a quietHook retire hook ran to its end for this home. */
