@@ -12,10 +12,6 @@
  *   POST /api/spawn?ws=<id>         { action: prepare|apply|result, … } → preview-bound spawn (server/spawn-apply.mjs);
  *                                   { agent, agentsRoot, serverId, … } → execution-server spawn only
  *                                   (mutations require the installed `oats` CLI; see cliUnavailable)
- *   GET  /api/session/<instance>?lines=n   ANSI pane capture of the live session
- *   POST /api/keys/<instance>       { data } → raw key bytes into the session (no Enter)
- *   POST /api/interrupt/<instance>  sends Ctrl-C (Escape for pi/claude prompts stays manual)
-
  *   POST /api/instance-git?ws=<id>  { action: git|diff, selector, fileId?, revision?, indexRevision? } → qualified K1 read
  *   POST /api/workspace-sync?ws=<id> { action: read|sync, refresh? } → the held `oats capabilities` catalog / `oats sync` (workspace-v2)
  *   POST /api/capabilities?ws=<id>  { action: inspect|run, selector, … } → `oats inspect` / provider operations (server/capabilities.mjs);
@@ -40,15 +36,13 @@
  * (see docs/desktop-load-path.md). Every roster/agents/catalog/inspect answer carries
  * `observedAt` (the kernel's observation time when reported, else the read's completion) and
  * `refreshing` (a read for that data is in flight).
- * Interaction model: terminal-direct (tmux send-keys / capture-pane) — the
- * feel of sitting at the agent's terminal; identical for pi and claude runs.
  */
 // FIRST, above every other import: this process drops what the Desktop and its packaging added
 // to its environment (own-environment.mjs), so each module below, and every program this
 // process starts, sees the user's. Nothing here passes the cleaning function to a child.
 import { launchEnvironment } from "./own-environment.mjs";
 import { createServer } from "node:http";
-import { execFile, execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync, realpathSync, accessSync, constants as fsConstants } from "node:fs";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -776,7 +770,7 @@ const servedCliStatus = () => ({ ...cliStatus(), probePath: process.env.PATH || 
    Every local deployment fact is one bounded `oats status --json` plus one
    `oats workspace status --json` (deployment-observer.mjs). Terminal liveness for
    the kernel-reported targets is observed in a separate short-lived child
-   (server/liveness-main.mjs) so tmux latency cannot stall key/echo handling.
+   (server/liveness-main.mjs) so tmux latency cannot stall request handling.
    Local roster Git is null; only the on-demand K1 route observes Git.
 
    Observation reuse (kernel feature observe-max-age): a background cycle lets the kernel reuse
@@ -1059,79 +1053,6 @@ function tmuxTarget(inst) {
   return `=${s}:=${w}`;
 }
 /* OATSWEB_TMUXTGT_END */
-
-function capture(inst, lines) {
-  try {
-    // No -J: joining wrapped rows would break the row-per-line grid mapping
-    // (cursor_y is physical). Each output line is exactly one pane row.
-    return execFileSync("tmux", ["capture-pane", "-p", "-e", "-t", tmuxTarget(inst), "-S", `-${Math.max(16, lines)}`],
-      { encoding: "utf8", timeout: 4000 });
-  } catch { return ""; }
-}
-
-/** Pane geometry + cursor + history depth in ONE tmux round-trip (these were
- * two display-message calls — attach latency is round-trip-bound).
- * cursor x/y are 0-based within the visible pane; "visible" reflects
- * cursor_flag and copy-mode (in copy mode the live cursor is not where
- * typing lands). history_size lets the client map capture lines to screen
- * rows deterministically (cursor row = history + cursor_y). */
-/* OATSWEB_PANEINFO_BEGIN — active-pane geometry, extracted by tests (depends
-   on tmuxTarget + execFileSync in scope). */
-function paneInfo(inst) {
-  try {
-    // list-panes, NOT display-message: display-message -p -t <missing target>
-    // silently falls back to a default context instead of erroring — the
-    // anchored target must fail CLOSED on the read path too. The -f filter
-    // selects the ACTIVE pane: capture-pane/send-keys on a window target
-    // operate on the active pane, and list-panes emits all panes in index
-    // order — row 0 is the wrong pane once the user splits and switches.
-    const out = execFileSync("tmux", ["list-panes", "-t", tmuxTarget(inst), "-f", "#{pane_active}", "-F",
-      "#{pane_width} #{pane_height} #{cursor_x} #{cursor_y} #{cursor_flag} #{pane_in_mode} #{history_size}"],
-      { encoding: "utf8", timeout: 4000 }).trim().split("\n")[0].split(/\s+/).map(Number);
-    return { size: { cols: out[0] || 80, rows: out[1] || 24, cx: out[2] || 0, cy: out[3] || 0,
-                     cursor: out[4] === 1 && out[5] !== 1 },
-             history: out[6] || 0 };
-  } catch { return { size: { cols: 80, rows: 24, cx: 0, cy: 0, cursor: false }, history: 0 }; }
-}
-/* OATSWEB_PANEINFO_END */
-
-/** Raw keystroke passthrough: bytes from the browser terminal go straight into
- * the pane via send-keys -H (hex bytes) — no key-name interpretation, no Enter. */
-function sendKeys(inst, data, paste = false) {
-  const s = String(data);
-  if (paste || s.length > 512) {
-    // Pastes (any size) and large payloads go through a tmux buffer as ONE
-    // bracketed paste — raw carriage returns via send-keys would let a shell
-    // or TUI submit/execute each line separately.
-    execFileSync("tmux", ["load-buffer", "-b", "oatswebk", "-"], { input: s.replace(/\r\n?/g, "\n"), timeout: 4000 });
-    execFileSync("tmux", ["paste-buffer", "-p", "-d", "-b", "oatswebk", "-t", tmuxTarget(inst)], { timeout: 4000 });
-    return;
-  }
-  const bytes = [...Buffer.from(s, "utf8")].map((b) => b.toString(16).padStart(2, "0"));
-  if (!bytes.length) return;
-  // chunk to keep argv small
-  for (let i = 0; i < bytes.length; i += 256) {
-    execFileSync("tmux", ["send-keys", "-t", tmuxTarget(inst), "-H", ...bytes.slice(i, i + 256)], { timeout: 4000 });
-  }
-}
-
-function sendInterrupt(inst) {
-  execFileSync("tmux", ["send-keys", "-t", tmuxTarget(inst), "C-c"], { timeout: 4000 });
-}
-
-/* OATSWEB_KEYERR_BEGIN — safe error shaping for the /api/keys failure path,
-   extracted by tests. exec errors embed the child argv (hex-encoded
-   keystrokes) in e.message; only exit code and signal are safe to surface. */
-function keySendError(e) {
-  // execFileSync exposes normal non-zero exits as e.status; e.code carries
-  // spawn-level errno strings (ETIMEDOUT, ENOENT). Prefer status.
-  const code = e && (e.status ?? e.code) != null ? String(e.status ?? e.code) : "unknown";
-  const signal = (e && e.signal) || "none";
-  return { code, signal,
-           log: `[keys] FAILED code=${code} signal=${signal}`,
-           http: { error: `send-keys failed (code ${code}) — see the terminal directly` } };
-}
-/* OATSWEB_KEYERR_END */
 
 // ---- Chat transcript: parse the runtime's session log into structured turns ----
 // pi:     ~/.pi/agent/sessions/--<home with / -> ->--/<ts>_<id>.jsonl
@@ -1867,41 +1788,13 @@ const server = createServer(async (req, res) => {
       const r = fileData(url.searchParams.get("path") || "");
       return r.error ? send(res, r.code, { error: r.error }) : send(res, 200, r.body);
     }
-    const m = path.match(/^\/api\/(session|keys|interrupt|chat)\/([A-Za-z0-9._-]+)$/);
+    const m = path.match(/^\/api\/chat\/([A-Za-z0-9._-]+)$/);
     if (m) {
-      const r = resolveInstanceOr(m[2], url.searchParams.get("ws") || undefined, url.searchParams.get("home") || undefined, url.searchParams.get("server") || undefined);
+      const r = resolveInstanceOr(m[1], url.searchParams.get("ws") || undefined, url.searchParams.get("home") || undefined, url.searchParams.get("server") || undefined);
       if (r.error) return send(res, r.error.status, r.error.body);
       const inst = r.inst;
       if (inst.server) return send(res, 409, { error: "Use the remote agent terminal for this operation", code: "E_REMOTE_TERMINAL" });
-      if (m[1] === "session" && req.method === "GET") {
-        if (!inst.running) return send(res, 200, { running: false, text: "" });
-        const info = paneInfo(inst);
-        const hist = Math.min(info.history, Math.max(0, Number(url.searchParams.get("lines") || 500)));
-        return send(res, 200, { running: true, size: info.size, history: hist, text: capture(inst, hist) });
-      }
-      if (m[1] === "keys" && req.method === "POST") {
-        if (!inst.running) return send(res, 409, { error: "instance is not running" });
-        const { data, paste } = await readBody(req);
-        if (typeof data !== "string" || !data.length) return send(res, 400, { error: "body needs { data }" });
-        // SECURITY: never log the payload — typed text can contain secrets.
-        if (DEBUG) console.log(`[keys] inst=${inst.instance} target=${tmuxTarget(inst)} paste=${paste === true} len=${Buffer.byteLength(data, "utf8")}`);
-        try {
-          sendKeys(inst, data, paste === true);
-        } catch (e) {
-          // SECURITY: e.message embeds the child argv (hex-encoded keystrokes)
-          // — never let it reach logs or the response (keySendError shapes it).
-          const safe = keySendError(e);
-          if (DEBUG) console.log(`${safe.log} inst=${inst.instance}`);
-          return send(res, 500, safe.http);
-        }
-        return send(res, 200, { sent: true });
-      }
-      if (m[1] === "interrupt" && req.method === "POST") {
-        if (!inst.running) return send(res, 409, { error: "instance is not running" });
-        sendInterrupt(inst);
-        return send(res, 200, { sent: true });
-      }
-      if (m[1] === "chat" && req.method === "GET") return send(res, 200, chatData(inst, Number(url.searchParams.get("limit") || 120)));
+      if (req.method === "GET") return send(res, 200, chatData(inst, Number(url.searchParams.get("limit") || 120)));
     }
     return send(res, 404, { error: "not found" });
   } catch (e) {
