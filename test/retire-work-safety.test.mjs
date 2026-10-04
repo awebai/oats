@@ -2024,6 +2024,8 @@ function directoryModesKept(t) {
 
 test("a retire hook that changes the permission bits of a directory instance's work/ itself, and writes a home note: the work is copied again, and after-hooks/work has the hook's bits", (t) => {
   if (!directoryModesKept(t)) return;
+  // The kernel before one recovery per retire kept the hook's bits: the home note moves its state
+  // hash, its second recovery is whole, and the copy of work/ in it has the bits work/ has then.
   const KEPT = "bytes the hook leaves alone\n";
   const retire = `import { chmodSync, lstatSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
