@@ -15,7 +15,10 @@ test.after(() => rmSync(home, { recursive: true, force: true }));
 
 // What lsof prints first on any host: a process that works outside the home.
 const PREFIX = "p1\nR0\ncinit\nn/\n";
-const IN_HOME = `p4242\nR1\ncnode\nn${join(home, "work")}\n`;
+// A process that works in the home. The scan leaves out this process and its children, so the row's
+// pid and parent pid are ones this test's own process cannot have.
+const PID = process.pid + 1;
+const IN_HOME = `p${PID}\nR${process.pid + 2}\ncnode\nn${join(home, "work")}\n`;
 /** An exec that fails the way execFileSync does: an error carrying what the child printed. */
 const failing = (props) => ({ exec: () => { throw Object.assign(new Error("Command failed: lsof"), { stdout: PREFIX, stderr: "", ...props }); } });
 function unknown(io, why) {
@@ -48,7 +51,7 @@ test("a scan that timed out while lsof exited 1 by itself is still unknown", () 
 
 test("a listing lsof completed with status 1 is used: a process in the home is named by pid and program", () => {
   const scan = processesInHome(home, failing({ status: 1, signal: null, stdout: PREFIX + IN_HOME }));
-  assert.deepEqual(scan, { ok: true, processes: [{ pid: 4242, command: "node" }] });
+  assert.deepEqual(scan, { ok: true, processes: [{ pid: PID, command: "node" }] });
 });
 
 test("a listing lsof completed with status 1 is used: no process in the home is none", () => {
