@@ -927,6 +927,11 @@ function decoyTmux(name) {
   return { dir, ran: () => existsSync(ran) };
 }
 
+// What these two pin is the guard at the creation: no bare name is ever run under a replaced PATH.
+// The lookup is answered by the injected exec whatever PATH is. A real process whose PATH is not
+// set reaches the creation (the system's default search finds tmux for the lookup); one whose PATH
+// holds no tmux does not: it is stopped at the lookup first (the next test), so the second case is
+// the guard alone, not the refusal a person meets.
 for (const [title, slug, text] of [
   ["PATH is not set", "nopath", /PATH is not set in this process/],
   ["its PATH holds no tmux", "nomatch", /no tmux was found on this process's PATH/],
@@ -950,14 +955,19 @@ for (const [title, slug, text] of [
   }
 });
 
-test("with the session already there no executable has to be chosen: a creator with no PATH, or with a PATH that holds no tmux, gets the session's socket and nothing is refused", () => {
+test("with the session already there no executable has to be chosen: a creator with no PATH gets the session's socket and nothing is refused; a creator whose PATH holds no tmux cannot read the server at all, session or not, and is told to run with a PATH that holds tmux", () => {
+  // PATH not set: the lookup finds tmux by the system's default search, and the session is there.
+  const socket = join(base, "there-nopath.sock");
+  const there = creation("there-nopath", { own: { PATH: undefined }, listed: `there-nopath\t${socket}\n` });
+  assert.deepEqual({ answer: there.answer, code: there.code, created: there.created.length }, { answer: socket, code: null, created: 0 });
+  // A PATH that holds no tmux: the lookup itself cannot run tmux, as Node reports a program it did not find.
   const nothing = join(base, "no-tmux-here");
   mkdirSync(nothing, { recursive: true });
-  for (const [session, own] of [["there-nopath", { PATH: undefined }], ["there-nomatch", { PATH: nothing }]]) {
-    const socket = join(base, `${session}.sock`);
-    const got = creation(session, { own, listed: `${session}\t${socket}\n` });
-    assert.deepEqual({ answer: got.answer, code: got.code, created: got.created.length }, { answer: socket, code: null, created: 0 });
-  }
+  const notFound = Object.assign(new Error("spawnSync tmux ENOENT"), { code: "ENOENT", errno: -2, syscall: "spawnSync tmux", path: "tmux", status: null, signal: null, stdout: null, stderr: null });
+  const got = creation("there-nomatch", { own: { PATH: nothing }, listed: notFound });
+  assert.deepEqual({ answer: got.answer, code: got.code, created: got.created.length }, { answer: null, code: "E_RUNTIME_ENDPOINT_UNKNOWN", created: 0 });
+  assert.match(got.message, /could not read the OATS tmux server for session there-nomatch: tmux was not found through this process's PATH\. Run this command with a PATH that holds tmux$/);
+  assert.equal(got.message.includes(nothing), false, "no value of any variable is in the refusal");
 });
 
 test("the session lookup takes tmux's answer only from a call that exited by itself: a lost-server line left by a call that timed out, overflowed or was ended by a signal is not an answer, and no session is created on it", () => {
@@ -1069,6 +1079,66 @@ test("a restart in place run from inside an instance gives tmux the client envir
     Object.assign(process.env, ambient);
   }
   assert.deepEqual(calls, [{ call: "respawn-pane", env: { PATH: ambient.PATH, LANG: "C.UTF-8" } }]);
+});
+
+/**
+ * The launch call of startInstanceSession(<a new home>) in this process, as the instance `caller`,
+ * with no tmux run. `pane`: the recorded pane is there with a shell and no harness (the start reuses
+ * it), or its window is gone (the start creates one, in a session that exists). `path` is this
+ * process's PATH when that call is built (undefined: not set). It is changed at the start's last
+ * read before the call, so that the test depends on nothing else a start does with PATH: what is
+ * asserted is the environment the call receives.
+ */
+async function launchCallAs(caller, name, { pane, path }) {
+  const socket = join(base, `${name}.sock`);
+  const target = await makeHome(name, { on: socket });
+  const calls = [];
+  let launched = false;
+  const ambient = { ...process.env };
+  const setPath = () => { if (path === undefined) delete process.env.PATH; else process.env.PATH = path(caller); };
+  const io = { exec: (binary, args, options) => {
+    if (binary === "ps") return "100 1 /bin/zsh\n";
+    if (args.includes("list-panes")) {
+      if (!pane && !launched) throw Object.assign(new Error("absent"), { stderr: `can't find window: ${name}` });
+      if (pane && !launched) setPath();
+      return "%1\t0\tzsh\t100\n";
+    }
+    if (args.includes("list-sessions")) return `${SESSION}\t${socket}\n`;
+    if (args.includes("list-windows")) { if (!launched) setPath(); return "hq\n"; }
+    if (args.includes("respawn-pane") || args.includes("new-window")) {
+      launched = true;
+      calls.push({ call: args.includes("respawn-pane") ? "respawn-pane" : "new-window", env: options.env ?? null });
+      process.env.PATH = ambient.PATH; // the call is built: the rest of the start runs as before
+      return "@1\n";
+    }
+    return "";
+  } };
+  Object.assign(process.env, { OATS_INSTANCE: caller.name, OATS_INSTANCE_HOME: caller.home, FIXTURE_SECRET: "s3cret", LANG: "C.UTF-8" });
+  delete process.env.LC_ALL; delete process.env.LC_CTYPE;
+  try { startInstanceSession(target.home, { io }); }
+  finally {
+    for (const key of Object.keys(process.env)) if (!(key in ambient)) delete process.env[key];
+    Object.assign(process.env, ambient);
+  }
+  return calls;
+}
+
+test("an instance gives the tmux client of a window creation or of a restart in place no PATH when it has none to give: its PATH is not set, or holds only homes' shim directories; an empty PATH set on purpose stays one empty entry", async () => {
+  const caller = await ioCaller();
+  const shims = (h) => `${join(h.home, ".oats", "bin")}:/fixture/agents/dev/instances/other/.oats/bin`;
+  assert.deepEqual({
+    "a restart in place, PATH not set": await launchCallAs(caller, "nopath-respawn", { pane: true, path: undefined }),
+    "a window creation, PATH not set": await launchCallAs(caller, "nopath-window", { pane: false, path: undefined }),
+    "a restart in place, a PATH of shim directories only": await launchCallAs(caller, "shimpath-respawn", { pane: true, path: shims }),
+    "a window creation, a PATH of shim directories only": await launchCallAs(caller, "shimpath-window", { pane: false, path: shims }),
+    "a restart in place, an empty PATH set on purpose": await launchCallAs(caller, "emptypath-respawn", { pane: true, path: () => "" }),
+  }, {
+    "a restart in place, PATH not set": [{ call: "respawn-pane", env: { LANG: "C.UTF-8" } }],
+    "a window creation, PATH not set": [{ call: "new-window", env: { LANG: "C.UTF-8" } }],
+    "a restart in place, a PATH of shim directories only": [{ call: "respawn-pane", env: { LANG: "C.UTF-8" } }],
+    "a window creation, a PATH of shim directories only": [{ call: "new-window", env: { LANG: "C.UTF-8" } }],
+    "a restart in place, an empty PATH set on purpose": [{ call: "respawn-pane", env: { PATH: "", LANG: "C.UTF-8" } }],
+  });
 });
 
 test("the stage of a start's refusal, pinning the existing order: a launch hook that does not declare launchPreview has already run and its warning is already an event, a preview-aware one has run only as a preview, and nothing is stopped, no launch state is written and nothing is created", async () => {
