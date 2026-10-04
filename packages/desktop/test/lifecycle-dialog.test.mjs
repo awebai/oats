@@ -5,7 +5,9 @@ import { createLifecycleDialog, lifecycleCSS } from '../renderer/lifecycle-dialo
 import { lifecycleReceipt, lifecycleReason } from '../renderer/lifecycle-contract.mjs';
 import { pullRequest } from '../renderer/forge-contract.mjs';
 import { pr as rawPr } from './helpers/forge-fixture.mjs';
-import { instance, target, options, stopPlan, retirePlan, stopReceipt, retireReceipt, deferred, tick } from './helpers/lifecycle-fixture.mjs';
+import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
+import { cli, envelope, instance, target, options, stopPlan, retirePlan, stopReceipt, retireReceipt, deferred, tick } from './helpers/lifecycle-fixture.mjs';
+import { assertIsolatedDetail, MESSY, MESSY_LINE } from './helpers/detail-line.mjs';
 const reference = 'd'.repeat(64), newReference = 'e'.repeat(64);
 const planned = (operation = 'stop', planRef = reference, raw) => ({ lifecycleApi: 1, status: 'plan', target,
   planRef, plan: raw || (operation === 'stop' ? stopPlan() : retirePlan()), options: options(operation), receipt: null, reason: null });
@@ -190,6 +192,36 @@ test('a remote apply that lost the link is an unknown outcome with the transport
   } finally { f.close(); }
 });
 
+/** The dialog's `request`, answered by the server boundary for a remote workspace: what the dialog reads is
+ * what the server sends. `respond.plan` / `respond.apply`: the installed CLI's answer for that phase. */
+function remoteServer(respond = {}) {
+  const context = { cli: { ...structuredClone(cli), remote: ['lifecycle-plans'] }, localCwd: '/Users/me/work',
+    workspace: { id: 'team', name: 'Build box', scope: '/team', remote: true, server: 'build' },
+    instances: [{ ...instance, server: 'build', addressable: true, missingRemotely: false, savedRoute: false, running: true }] };
+  const service = createLifecycleBoundary({ invoke: async (_bin, args) => respond[args.phase]?.(args)
+    ?? envelope(args.phase === 'plan' ? args.operation === 'stop' ? stopPlan() : retirePlan() : stopReceipt(args)) });
+  return (_workspace, body) => service(body, () => context);
+}
+test('from the server: a host message with line breaks and a character of the set is one line in Details, alone in its <bdi>, the code outside it', async () => {
+  const refusedBy = code => () => ({ schemaVersion: 1, ok: false, error: { code, message: MESSY } });
+  // A refused plan.
+  let f = fixture({ request: remoteServer({ plan: refusedBy('E_REMOTE_INCOMPATIBLE') }) });
+  try {
+    f.dialog.open({ operation: 'retire', instance: remoteInstance, workspace: 'team' }); await tick();
+    assert.equal(f.doc.querySelector('.lifecycle-dialog [role=status]').textContent, "Build box runs an OATS that can't do this yet.");
+    assert.equal(f.doc.querySelector('.lifecycle-details summary').textContent, 'Details');
+    assertIsolatedDetail(f.doc.querySelector('.lifecycle-details p'), { before: 'E_REMOTE_INCOMPATIBLE: ', detail: MESSY_LINE });
+  } finally { f.close(); }
+  // An apply with no confirmed outcome: the cause's headline in its own element, its Details under it.
+  f = fixture({ request: remoteServer({ apply: refusedBy('E_SSH') }) });
+  try {
+    f.dialog.open({ operation: 'stop', instance: remoteInstance, workspace: 'team' }); await tick();
+    f.button('lifecycle-confirm').click(); await tick();
+    assert.match(f.doc.querySelector('.lifecycle-dialog [role=status]').textContent, /no confirmed outcome/);
+    assert.equal(f.doc.querySelector('.lifecycle-result .lifecycle-note').textContent, "Couldn't reach Build box.");
+    assertIsolatedDetail(f.doc.querySelector('.lifecycle-result .lifecycle-details p'), { before: 'E_SSH: ', detail: MESSY_LINE });
+  } finally { f.close(); }
+});
 test('each dialog shows only its own choices: a hidden choice stays hidden despite the label layout (Stop has no worktree/branch options, Remove no children option)', () => {
   // The label's display:flex beats the user agent's [hidden] rule in Chromium; jsdom's cascade does not model that, so pin the rule.
   const dom = new JSDOM('<!doctype html><style></style>'), sheet = dom.window.document.querySelector('style');

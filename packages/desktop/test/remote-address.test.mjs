@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canAddressRemote, serverLabel, rowReason, remoteHeadline, hostReason, remoteReason, unroutableReason, readingFrom }
-  from '../renderer/remote-address.mjs';
+import { JSDOM } from 'jsdom';
+import { canAddressRemote, serverLabel, rowReason, remoteHeadline, hostReason, remoteReason, unroutableReason, readingFrom,
+  unaddressableSentence, codeLineNodes, kernelCode } from '../renderer/remote-address.mjs';
+import { assertIsolatedDetail, MESSY, MESSY_LINE } from './helpers/detail-line.mjs';
 import { canAddressRemote as serverCanAddressRemote, admitInstance } from '../server/instance-admission.mjs';
 
 const remote = (extra = {}) => ({ instance: 'dev-a', agent: 'dev', home: '/srv/agents/dev/instances/dev-a', server: 'build',
@@ -63,6 +65,116 @@ test('hostReason / remoteReason: the kernel\'s code and message verbatim, bounde
   assert.equal(hostReason({ code: 'E_X', message: 'm'.repeat(5000) }, 'Build box', 'x').detail.length, 2048);
   for (const bad of [null, {}, { ...reason, remote: false }, { ...reason, code: 'bad' }, { ...reason, message: '' },
     { ...reason, extra: 1 }, { ...reason, detail: 3 }]) assert.equal(remoteReason(bad), null);
+});
+
+test('hostReason: the detail is one display line; remoteReason accepts a message and a detail only when each already is one', () => {
+  const at = cp => String.fromCodePoint(cp), replaced = at(0xFFFD);
+  const made = message => hostReason({ code: 'E_GIT_FAILED', message }, 'Build box', 'The view says this.');
+  // Production: line breaks fold to a space, characters of the set are replaced, the unsafe is withheld whole.
+  assert.equal(made('fatal: bad object HEAD\n\thint: fetch first\n').detail, 'fatal: bad object HEAD hint: fetch first');
+  assert.equal(made(`first${at(0x2028)}second${at(0x2029)}third`).detail, 'first second third');
+  for (const cp of [0x0085, 0x202A, 0x202E, 0x2066, 0x2069, 0x200B, 0x2060, 0xFEFF, 0xE0041]) assert.equal(made(`work${at(cp)}tree`).detail, `work${replaced}tree`, cp.toString(16));
+  for (const unsafe of ['token=abc123', 'https://user:pw@host.example/x', `line one\n${at(0x202E)}password: hunter2`]) assert.equal(made(unsafe).detail, '[Detail withheld]', unsafe);
+  assert.equal(made('\n \n').detail, null, 'nothing to show');
+  assert.equal(made(`${'m '.repeat(3000)}`).detail.length, 2047, 'bounded after filtering, never ending on a space');
+  // Ordinary international names pass both hops unchanged.
+  for (const text of ['\u65E5\u672C\u8A9E\u306E\u30D5\u30A1\u30A4\u30EB', '\u0645\u0644\u0641 \u0627\u0644\u0639\u0645\u0644', '\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645', '\u{1F469}\u200D\u{1F4BB}']) {
+    const reason = made(text);
+    assert.equal(reason.detail, text, JSON.stringify(text));
+    assert.deepEqual(remoteReason({ ...reason, message: text }), { ...reason, message: text }, JSON.stringify(text));
+  }
+  // Revalidation: what production made survives unchanged (twice equals once); anything else is refused.
+  for (const message of ['fatal: bad object HEAD\n\thint: fetch first\n', `work${at(0x202E)}tree`, 'token=abc123', 'm'.repeat(5000), '\n']) {
+    const reason = made(message);
+    assert.deepEqual(remoteReason(reason), reason, JSON.stringify(message.slice(0, 40)));
+  }
+  const good = made('fatal: bad object HEAD');
+  for (const bad of ['two\nlines', 'a\tb', `a${at(0x2028)}b`, `a${at(0x2029)}b`, `a${at(0x0085)}b`, `a${at(0x202E)}b`, `a${at(0x2066)}b`, `a${at(0x200B)}b`, `a${at(0xFEFF)}b`,
+    `a${at(0xE0041)}b`, ' leading', 'trailing ', 'two  spaces', 'token=abc123', 'm'.repeat(2049), '']) {
+    assert.equal(remoteReason({ ...good, detail: bad }), null, `detail ${JSON.stringify(bad.slice(0, 40))}`);
+    assert.equal(remoteReason({ ...good, message: bad }), null, `message ${JSON.stringify(bad.slice(0, 40))}`);
+  }
+  assert.deepEqual(remoteReason({ ...good, message: 'm'.repeat(512), detail: 'm'.repeat(2048) }), { ...good, message: 'm'.repeat(512), detail: 'm'.repeat(2048) });
+  assert.equal(remoteReason({ ...good, message: 'm'.repeat(513) }), null, 'the message limit is unchanged');
+});
+
+test('a carriage return withholds the whole text, alone or before a line feed; a line feed or a tab alone is formatted: production and revalidation', () => {
+  const made = message => hostReason({ code: 'E_GIT_FAILED', message }, 'Build box', 'The view says this.');
+  const good = made('fatal: bad object HEAD');
+  for (const withheld of ['one\rtwo', 'one\r\ntwo', '\r', 'one\r\n']) {
+    assert.equal(made(withheld).detail, '[Detail withheld]', JSON.stringify(withheld));
+    assert.deepEqual(remoteReason(made(withheld)), made(withheld), 'the marker is a display line');
+    assert.equal(remoteReason({ ...good, detail: withheld }), null, `detail ${JSON.stringify(withheld)}`);
+    assert.equal(remoteReason({ ...good, message: withheld }), null, `message ${JSON.stringify(withheld)}`);
+  }
+  for (const [formatted, line] of [['one\ntwo', 'one two'], ['one\n\ntwo\n', 'one two'], ['one\ttwo', 'one two'], ['\tone\t\ttwo\t', 'one two']]) {
+    assert.equal(made(formatted).detail, line, JSON.stringify(formatted));
+    assert.deepEqual(remoteReason(made(formatted)), made(formatted));
+    assert.equal(remoteReason({ ...good, detail: formatted }), null, 'revalidation formats nothing: it refuses what is not already a line');
+    assert.equal(remoteReason({ ...good, message: formatted }), null);
+  }
+});
+
+test('a server label that is not a display line: the headline shows it as one, and the reason survives revalidation with its Details', () => {
+  // A tab, two spaces and a character of the set.
+  const label = 'Build\tbox  \u202Eone', shown = 'Build box \uFFFDone';
+  const detail = 'ssh: connect to host build-host port 22: Connection refused';
+  const reason = hostReason({ code: 'E_SSH', message: detail }, label, 'The view says this.');
+  assert.deepEqual(reason, { code: 'E_SSH', message: `Couldn't reach ${shown}.`, detail, remote: true });
+  assert.deepEqual(remoteReason(reason), reason, 'kept, with its Details');
+  for (const code of ['E_REMOTE_INCOMPATIBLE', 'E_SNAPSHOT_UNKNOWN', 'E_HOME_MISMATCH', 'E_AMBIGUOUS', 'E_SSH', 'E_CLI_TIMEOUT']) {
+    const made = hostReason({ code, message: detail }, label, 'The view says this.');
+    assert.ok(made.message.includes(shown), code); assert.deepEqual(remoteReason(made), made, code);
+  }
+  assert.equal(unroutableReason(label).message, `This computer's OATS can't route this to ${shown}. Update OATS here.`);
+  assert.deepEqual(remoteReason(unroutableReason(label)), unroutableReason(label));
+  // The sentences an unaddressable row's refusal carries; the command keeps the server id as it is.
+  const row = remote({ repoName: label, addressable: false });
+  for (const sentence of [unaddressableSentence(row), unaddressableSentence({ ...row, addressable: undefined }), unaddressableSentence({ ...row, missingRemotely: true })]) {
+    const refusal = { code: 'E_SNAPSHOT_UNKNOWN', message: sentence, detail: null, remote: true };
+    assert.ok(sentence.includes(shown), sentence); assert.deepEqual(remoteReason(refusal), refusal);
+  }
+  assert.equal(unaddressableSentence({ ...row, missingRemotely: true }), `dev-a is no longer on ${shown}. Remove it from this computer with: oats server forget build --instance dev-a`);
+  // Display only: the label a row is routed and compared by is the one the roster reports.
+  assert.equal(serverLabel(row), label);
+});
+
+test('a server label with nothing to show, or a withheld one, reads "the server": a headline is always a sentence', () => {
+  for (const none of ['', ' \n\t ', null, undefined, 'token=abc123']) {
+    const name = JSON.stringify(none);
+    assert.equal(remoteHeadline('E_SSH', none, 'fallback'), "Couldn't reach the server.", name);
+    assert.equal(remoteHeadline('E_SNAPSHOT_UNKNOWN', none, 'fallback'), "The server doesn't list this instance any more.", name);
+    assert.equal(remoteHeadline('E_REMOTE_INCOMPATIBLE', none, 'fallback'), "The server runs an OATS that can't do this yet.", name);
+    assert.equal(unroutableReason(none).message, "This computer's OATS can't route this to the server. Update OATS here.", name);
+    const reason = hostReason({ code: 'E_SSH', message: 'ssh failed' }, none, 'fallback');
+    assert.deepEqual(remoteReason(reason), reason, name);
+  }
+  assert.equal(unaddressableSentence({ instance: 'dev-a', server: 'build', repoName: ' \n ', addressable: false }), 'The server did not report this instance as reachable.');
+});
+
+test('codeLineNodes: the code and the colon are text; the detail is alone in its <bdi>, as text', t => {
+  const dom = new JSDOM('<!doctype html><p></p>'), doc = dom.window.document, line = doc.querySelector('p');
+  t.after(() => dom.window.close());
+  const show = reason => { line.replaceChildren(...codeLineNodes(doc, reason)); return line; };
+  assertIsolatedDetail(show(hostReason({ code: 'E_GIT_FAILED', message: MESSY }, 'Build box', 'fallback')), { before: 'E_GIT_FAILED: ', detail: MESSY_LINE });
+  // Markup in a detail is text.
+  const markup = '<b>bold</b> <img src=x> &amp;';
+  assertIsolatedDetail(show({ code: 'E_GIT_FAILED', detail: markup }), { before: 'E_GIT_FAILED: ', detail: markup });
+  assert.equal(line.querySelector('b, img'), null);
+  assertIsolatedDetail(show({ code: 'E_GIT_FAILED', detail: '[Detail withheld]' }), { before: 'E_GIT_FAILED: ', detail: '[Detail withheld]' });
+  // No detail, or one that is not already a display line: the code alone, no <bdi>.
+  for (const detail of [null, undefined, '', 3, 'two\nlines', 'a\tb', 'two  spaces', ' leading', `a${String.fromCodePoint(0x202E)}b`, 'token=abc123', 'm'.repeat(2049)]) {
+    assert.equal(show({ code: 'E_GIT_FAILED', detail }).textContent, 'E_GIT_FAILED', JSON.stringify(String(detail).slice(0, 20)));
+    assert.equal(line.querySelector('bdi'), null);
+  }
+  // A view's own code (not a kernel one) is still its Details line; no code, no line.
+  assert.equal(show({ code: 'cli-unavailable' }).textContent, 'cli-unavailable');
+  for (const none of [null, undefined, {}, { code: '' }, { code: 3, detail: 'kept out' }, { detail: 'kept out' }]) assert.deepEqual(codeLineNodes(doc, none), []);
+});
+
+test('kernelCode: the shape of a kernel code, nothing else', () => {
+  for (const code of ['E_SSH', 'E_GIT_FAILED', 'E_A1_B', `E_${'A'.repeat(64)}`]) assert.equal(kernelCode(code), true, code);
+  for (const code of ['', 'E_', 'e_ssh', 'cli-unavailable', 'unsupported-remote-operation', 'E_SSH ', 'E_SSH\n', `E_${'A'.repeat(65)}`, 3, null, undefined]) assert.equal(kernelCode(code), false, String(code));
 });
 
 test('unroutableReason: this machine cannot route the operation (no remote entry)', () => {

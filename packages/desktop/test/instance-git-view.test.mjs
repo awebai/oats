@@ -1,4 +1,5 @@
-// Inert DTO/DOM tests plus static source/CSS reads. No CLI, server, native window or Git.
+// Inert DTO/DOM tests plus static source/CSS reads. No CLI, HTTP server, native window or Git. One test reads
+// the server boundary's reply to an injected CLI answer.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -6,6 +7,9 @@ import { contextPanelCSS } from '../renderer/context-panel.mjs';
 import { JSDOM } from 'jsdom';
 import { createInstanceGitPanel, instanceGitCSS, baseDistance, noGitReason, upstreamDistance, readNotes } from '../renderer/instance-git.mjs';
 import { gitState, gitDiff, gitTarget, gitTargetKey, INSTANCE_DIFF_LIMIT } from '../renderer/instance-git-contract.mjs';
+import { hostReason } from '../renderer/remote-address.mjs';
+import { createInstanceGitBoundary } from '../server/instance-git.mjs';
+import { assertIsolatedDetail, MESSY, MESSY_LINE } from './helpers/detail-line.mjs';
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 const oid = 'a'.repeat(40), idx = 'b'.repeat(40), id = 'c'.repeat(24), secondId = 'd'.repeat(24);
@@ -414,6 +418,30 @@ for (const code of ['E_GIT_FAILED', 'E_CLI_FAILED', 'E_CLI_PROTOCOL', 'cli-unava
   assert.equal(u.one('.git-status-details').hidden, false); assert.equal(u.one('.git-status-details pre').textContent, code);
   assert.equal(u.one('.git-empty').hidden, true); assert.equal(u.one('.git-empty-note').hidden, true); assert.equal(u.one('.git-toolbar').hidden, false);
   assert.equal(u.one('.git-footer').hidden, false, 'Refresh to retry');
+});
+
+test('from the server: a host message with line breaks and a character of the set is one line in the Details <pre>, alone in its <bdi>; the diff status line isolates it the same way', async t => {
+  const remote = { ...target('/srv/agents', 'build'), repoName: 'Build box' }, { repoName: _label, ...echo } = remote;
+  const server = createInstanceGitBoundary({ invoke: async () => ({ schemaVersion: 1, ok: false, error: { code: 'E_GIT_FAILED', message: MESSY } }) });
+  const context = { cli: { ok: true, bin: '/installed/oats', version: '0.31.0', remote: ['instance-git'] }, localCwd: '/Users/me/work',
+    workspace: { id: echo.workspace, name: 'Build box', scope: '/srv', remote: true, server: 'build' },
+    instances: [{ instance: echo.instance, agent: echo.agent, agentsRoot: echo.agentsRoot, home: echo.home, server: 'build', addressable: true, missingRemotely: false, running: true }] };
+  const u = setup(t, (_ws, body) => server(body, context));
+  await u.show(remote); await tick();
+  const [status, diffStatus] = u.host.querySelectorAll('.git-status');
+  assert.equal(status.textContent, 'The installed OATS CLI could not read this Git worktree', "the headline is Desktop's own sentence, in its own element");
+  assert.equal(u.one('.git-status-details').hidden, false); assert.equal(u.one('.git-status-details summary').textContent, 'Details');
+  assertIsolatedDetail(u.one('.git-status-details pre'), { before: 'E_GIT_FAILED: ', detail: MESSY_LINE });
+  // A diff the host refuses: the sentence, the code and the brackets are Desktop's text around the field.
+  u.read((_ws, body) => body.action === 'git' ? available(data(echo), echo)
+    : { ...refused('E_GIT_FAILED', echo), reason: hostReason({ code: 'E_GIT_FAILED', message: MESSY }, 'Build box', 'The diff could not be read') });
+  await u.view.refresh(); await tick(); u.buttons()[0].click(); await tick();
+  assert.ok(diffStatus.classList.contains('error'));
+  assertIsolatedDetail(diffStatus, { before: 'The diff could not be read (E_GIT_FAILED: ', detail: MESSY_LINE, after: ')' });
+  // A local refusal has no host message: the code alone, no field.
+  u.read((_ws, body) => body.action === 'git' ? available(data(echo), echo) : refused('E_USAGE', echo));
+  await u.view.refresh(); await tick(); u.buttons()[0].click(); await tick();
+  assert.equal(diffStatus.textContent, 'Read unavailable (E_USAGE)'); assert.equal(diffStatus.querySelector('bdi'), null);
 });
 
 test('the Git CSS uses semantic tokens only and leaves keyboard focus to the global rule (no per-component rings)', () => {

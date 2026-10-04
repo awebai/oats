@@ -4,7 +4,7 @@ import { gitTarget, gitTargetKey, gitState, gitDiff, gitObservation, gitKinds, I
 import { createForgePrPanel } from './forge-pr.mjs';
 import { ageText } from './age-text.mjs';
 import { iconElement } from './shell-icons.mjs';
-import { codeLine, readingFrom, serverLabel } from './remote-address.mjs';
+import { codeLineNodes, readingFrom, serverLabel } from './remote-address.mjs';
 
 export const instanceGitCSS = `
 /* v4.1 Developer tab (Git and GitHub; board 2): Branch, Changes and Pull request cards under small-caps labels,
@@ -263,9 +263,11 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
   const owns = ref => alive && active && ref.epoch === epoch && ref.identity === identity && ref.generation === generation() && ref.connection === connectionGeneration();
   const canPaint = ref => owns(ref) && visible();
   const message = (el, text = '', error = false) => { el.textContent = text; el.classList.toggle('error', error); if (el === status) { statusDetails.hidden = true; statusCode.textContent = ''; } };
-  const unavailable = (text, code = '') => {
+  // `reason`: the refusal, for Details: its code as text, a host's own message alone in its <bdi> (codeLineNodes).
+  const unavailable = (text, reason = null) => {
     message(status, `${text}${facts.childElementCount ? ' Previous observation is stale; file actions are disabled.' : ''}`, true);
-    statusCode.textContent = code; statusDetails.hidden = !code;
+    const line = codeLineNodes(doc, reason);
+    statusCode.replaceChildren(...line); statusDetails.hidden = !line.length;
   };
   const clearDiff = () => { selected = null; fileTicket++; diffBody.replaceChildren(); message(diffStatus); for (const b of controls.values()) b.setAttribute('aria-pressed', 'false'); };
   const clear = (summary = true) => { if (summary) onObservation(null); observation = null; pullRequest.update(); clearDiff(); controls.clear(); facts.replaceChildren(); files.replaceChildren(); changesNotes.replaceChildren(); files.classList.remove('git-card'); changesCount.textContent = ''; workMode.textContent = ''; message(status); setChecked(null); noGit(false); changesSection.hidden = true; openDiff.hidden = true; github.hidden = true; };
@@ -366,7 +368,7 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
         // including E_NO_WORKTREE for a mode that should have a tree (a lost worktree), stays red with its code.
         const calm = result.reason.code === 'E_NO_WORKTREE' && !facts.childElementCount ? noGitReason(work) : null;
         if (calm) { message(status); emptyWhy.textContent = calm; noGit(true); locks(); return; }
-        unavailable(result.reason.message, codeLine(result.reason)); return;
+        unavailable(result.reason.message, result.reason); return;
       }
       const data = gitState(result.data, ref.target);
       if (!data) throw new Error('Invalid Git observation');
@@ -394,7 +396,7 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
         await refresh({ notice: `The file observation changed${fresh ? ` (current revision ${fresh.revision})` : ''}. Select a file from the refreshed observation.` });
         return;
       }
-      if (result.status !== 'available') { message(diffStatus, `${result.reason.message} (${codeLine(result.reason)})`, true); return; }
+      if (result.status !== 'available') { message(diffStatus, '', true); diffStatus.append(`${result.reason.message} (`, ...codeLineNodes(doc, result.reason), ')'); return; }
       const data = gitDiff(result.data, { fileId: file.id, revision: snapshot.observation.revision, indexRevision: snapshot.observation.indexRevision, observation: snapshot.observation, file });
       if (!data) throw new Error('Invalid diff');
       const against = node('p', `Against: ${/^[0-9a-f]{40,64}$/.test(data.against) ? data.against.slice(0, 7) : data.against} · ${data.bytes} patch bytes${data.truncated ? ` · truncated at ${data.limit} bytes` : ''}`, 'git-note'); against.title = data.against;

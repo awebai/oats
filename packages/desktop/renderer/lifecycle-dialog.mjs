@@ -3,7 +3,7 @@ import { gitTarget, gitTargetKey } from './instance-git-contract.mjs';
 import { lifecyclePlan, lifecycleOptions, planReference, lifecycleReason, publicLifecycleReceipt, stoppedTargets, lifecycleChoicesApplicable } from './lifecycle-contract.mjs';
 import { projectedPullRequest } from './forge-contract.mjs';
 import { iconElement } from './shell-icons.mjs';
-import { readingFrom, remoteReason, serverLabel } from './remote-address.mjs';
+import { codeLineNodes, readingFrom, remoteReason, serverLabel } from './remote-address.mjs';
 export const lifecycleCSS = `
 .lifecycle-dialog { width:min(420px,calc(100vw - 32px)); max-height:88vh; overflow:auto; display:flex; flex-direction:column; gap:14px; padding:20px; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--fg); box-shadow:var(--shadow-popover); font-size:12.5px; }
 .lifecycle-dialog h2 { margin:0; font-size:15px; font-weight:700; overflow-wrap:anywhere; }
@@ -58,10 +58,12 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     ui.retry.disabled = applying; ui.retry.hidden = !submission || !submission.uncertain;
     ui.close.textContent = applying ? 'Close status' : 'Close';
   }
-  /** A remote reason's code and the kernel's message, behind a Details disclosure (keyboard and screen reader reachable). */
+  /** A remote reason's code and the kernel's message, behind a Details disclosure (keyboard and screen reader
+   * reachable). The code is text; the message is alone in its <bdi> (remote-address.mjs codeLineNodes). */
   function details(parent, reason) {
     if (!reason.detail) return;
-    const more = node('details', undefined, 'lifecycle-details'); more.append(node('summary', 'Details'), node('p', `${reason.code}: ${reason.detail}`));
+    const more = node('details', undefined, 'lifecycle-details'), line = node('p'); line.append(...codeLineNodes(doc, reason));
+    more.append(node('summary', 'Details'), line);
     parent.append(more);
   }
   /** A refusal: a remote host's headline (its code and message in Details), else the fixed sentence for the code. */
