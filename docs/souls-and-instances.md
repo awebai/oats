@@ -445,7 +445,13 @@ what the hooks changed under `after-hooks/`:
     repo/ or work/    the work again, only if a hook changed the work state
 ```
 
-After the hooks, retire copies again only the part whose state moved. Each
+After the hooks, retire copies again only the part whose state moved. Retire
+compares the work by its state, not always by its contents. In worktree mode
+the work state is the Git status of the worktree: which paths are changed,
+untracked or ignored. A retire hook that only rewrites a file whose status
+row stays the same, such as a file that was already modified, does not move
+it, and the work is not copied again. In directory mode the work state is the
+bytes of `work/`. Each
 part under `after-hooks/` is a full, verified snapshot, not a delta, and it is
 verified before the worktree step and before the home is removed. Nothing in
 the pre-hook `home/`, `repo/` or `work/` is rewritten. If that copy fails or
