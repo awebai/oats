@@ -9,6 +9,8 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { JSDOM } from "jsdom";
 import { terminalOptions } from "../renderer/terminal-tab.mjs";
+import { createHostTheme } from "../renderer/host-theme.mjs";
+import { hostState, systemState } from "./helpers/host-theme-fixture.mjs";
 
 const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), "utf8");
 const themeSource = read("theme.mjs"), html = read("index.html");
@@ -31,7 +33,7 @@ function fixture(t, { stored = {}, noStorage = false, palette, fonts } = {}) {
   };
   if (!noStorage) context.localStorage = { getItem: key => stored[key] ?? null, setItem: (key, value) => { stored[key] = String(value); }, removeItem: key => { delete stored[key]; } };
   const theme = runInNewContext(`${themeSource.replace(/\bexport /g, "")}\n({ terminalTypography, onTerminalTypographyChange, setTerminalFontFamily, setTerminalFontSize, resetTerminalTypography, BUNDLED_MONO, TERMINAL_FONT_SIZE,
-    terminalFontWeight, TERMINAL_FONT_WEIGHT, xtermTheme, applyTheme, onThemeChange })`, context);
+    terminalFontWeight, TERMINAL_FONT_WEIGHT, xtermTheme, applyTheme, onThemeChange, initTheme, setTheme, refreshHostTheme })`, context);
   const rule = selector => {
     for (const sheet of dom.window.document.styleSheets) {
       for (const r of sheet.cssRules) if (r.selectorText === selector) return r.style;
@@ -261,3 +263,46 @@ for (const palette of Object.keys(WEIGHTS)) {
     }
   });
 }
+
+// "This computer" (#602): a host theme pushed by main reaches both terminals through the same
+// onThemeChange path as any theme change. The colours are the host's; the weight is the base
+// theme's (Dark's 400 for a dark host palette, White's 475 for a light one).
+test("This computer: a pushed host theme updates both shell terminals' colours and weight (dark 400, light 475), and the floor stays", t => {
+  const u = fixture(t);
+  const pushes = new Set();
+  const desk = { hostTheme: () => new Promise(() => {}), onHostThemeChanged: fn => { pushes.add(fn); return () => pushes.delete(fn); } };
+  const host = createHostTheme({ desk, onChange: () => u.theme.refreshHostTheme() });
+  t.after(() => host.dispose());
+  u.theme.initTheme(host); host.start();
+  const { terms, dispose } = sites(u.theme);
+  t.after(dispose);
+  assert.equal(u.theme.setTheme("host"), "host");
+  const push = state => { for (const fn of [...pushes]) fn(state); };
+  for (const [name, weight] of [["tokyo-night", 400], ["rose-pine", 475], ["tokyo-night", 400]]) {
+    const state = hostState(name);
+    push(state);
+    assert.equal(u.doc.documentElement.dataset.theme, state.mode, `${name}: the base follows the host's polarity`);
+    for (const [site, term] of terms) {
+      assert.equal(term.options.fontWeight, weight, `${site}: ${name} is drawn at the base theme's weight`);
+      assert.equal(term.options.theme.background, state.colors.background, `${site}: the host's background`);
+      assert.equal(term.options.theme.selectionBackground, state.colors.selection);
+      assert.deepEqual([term.options.theme.black, term.options.theme.red, term.options.theme.brightBlack, term.options.theme.brightWhite],
+        [state.colors.ansi[0], state.colors.ansi[1], state.colors.ansi[8], state.colors.ansi[15]], `${site}: the host's own terminal colours`);
+      assert.equal(term.options.theme.foreground, u.theme.xtermTheme().foreground);
+      assert.equal(term.options.minimumContrastRatio, 4.5, `${site}: the floor that keeps unadjusted colours readable is still set`);
+    }
+  }
+  // A computer with no Omarchy theme: the built-in theme of the system's appearance, as it is.
+  push(systemState("light"));
+  for (const [site, term] of terms) {
+    assert.equal(term.options.fontWeight, 475, site);
+    assert.equal(term.options.theme.background, "#ffffff", `${site}: White's own terminal background`);
+  }
+  // Another choice: a later push changes nothing in this window's terminals.
+  u.theme.setTheme("dark");
+  push(hostState("rose-pine"));
+  for (const [site, term] of terms) {
+    assert.equal(term.options.fontWeight, 400, site);
+    assert.equal(term.options.theme.background, "#0a0d12", `${site}: Dark's own terminal background`);
+  }
+});

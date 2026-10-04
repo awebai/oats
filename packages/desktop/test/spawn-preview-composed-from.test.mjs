@@ -13,6 +13,7 @@ import { proxySpawnPreview } from '../spawn-preview-proxy.mjs';
 import { previewData, previewComposedFrom } from '../renderer/spawn-preview-contract.mjs';
 import { composePreviewModules, moduleWhyText, spawnDialogCSS } from '../renderer/spawn-dialog.mjs';
 import { harnessList } from '../renderer/harness-names.mjs';
+import { TEXT_PAIRS } from '../renderer/contrast-inventory.mjs';
 
 const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/composed-from/${name}.json`, import.meta.url), 'utf8'));
 const provenance = fixture('provenance'), version = fixture('version'), captured = fixture('preview');
@@ -139,6 +140,6 @@ test('the reason tag reuses the source chip\'s muted tag pair (--muted on --tag-
   // Core rows share the rule: one row grammar for both boxes.
   assert.match(spawnDialogCSS, /\.spawn-core-row, \.spawn-cap-row \{ display:flex; flex-wrap:wrap; justify-content:flex-end;/);
   assert.match(spawnDialogCSS, /\.spawn-core-row \.mono, \.spawn-cap-row \.mono, [^{]*\{ flex:1 1 auto; min-width:0; overflow-wrap:anywhere; \}/);
-  const contrast = readFileSync(new URL('./theme-contrast.test.mjs', import.meta.url), 'utf8');
-  assert.match(contrast, /\["fg", "muted"\]\.map\(\(fg\) => \[fg, "tag-bg"\]\)/, 'muted on tag-bg is in the computed contrast inventory');
+  // The inventory theme-contrast.test.mjs holds every palette to (renderer/contrast-inventory.mjs).
+  assert.ok(TEXT_PAIRS.some(([fg, bg]) => fg === 'muted' && bg === 'tag-bg'), 'muted on tag-bg is in the computed contrast inventory');
 });

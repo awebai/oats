@@ -1,0 +1,11 @@
+# Hand-made: no green under any of its names (green, color2).
+mode = "dark"
+
+background = "#1a1b26"
+foreground = "#a9b1d6"
+
+red = "#f7768e"
+yellow = "#e0af68"
+blue = "#7aa2f7"
+magenta = "#ad8ee6"
+cyan = "#449dab"
