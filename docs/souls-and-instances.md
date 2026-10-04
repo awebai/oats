@@ -449,7 +449,8 @@ After the hooks, retire copies again each part the hooks moved. The home
 moved when its bytes did. The work is copied again unless it is proven
 unchanged. A Git status with the same rows is not that proof: a hook can
 rewrite a file that was already modified, and the row stays the same. In
-directory mode the work state is the bytes of `work/`. In worktree mode it
+directory mode the work state is the bytes of `work/`, with the permission
+bits of each entry and of `work/` itself. In worktree mode it
 is what a work copy holds, for the worktree and for each nested repository:
 
 - its Git status, its branch and commit, its index entries (what
