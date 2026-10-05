@@ -60,6 +60,7 @@ published to npm. Its developer docs are in
 | `operator-dispatch.mjs` | capability commands run from a deployment, and its module store |
 | `instance-*.mjs` | inspection, lifecycle, events and Git views of an instance |
 | `tmux-config.mjs`, `session-*.mjs` | the tmux session backend and terminal input |
+| `login-environment.mjs` | the user's login environment a server OATS starts gets: the login shell's answer on a pipe of its own, bounded and accepted only whole ([execution targets](execution-targets.md#the-servers-start-environment)) |
 | `capability-contract.mjs`, `provider-binding.mjs` | manifest validation (launch environment, hooks, `retirement`), the hook environment rules, the readiness wire |
 | `retire-output.mjs` | the lines `oats retire` prints for preserved work, one function for the local and the remote path |
 | `servers.mjs` | routing commands to a registered server |

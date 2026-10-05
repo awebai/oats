@@ -201,17 +201,72 @@ set `PATH` in the launch configuration, or start the server from your own
 shell. It never prints a `PATH`'s contents.
 
 Who starts the `oats` server, after an install, a reboot or its last session
-ending, decides that ambient environment:
+ending, decides that ambient environment.
+
+**When OATS starts the server, it gives it your login environment.** The
+`new-session` that creates an agents' session is the only OATS call that
+starts the server. When no server answered before it, whoever runs it (a spawn
+or a start from an instance, the Desktop, an operator's shell, a schedule
+runner or a trigger), OATS reads the environment your own login shell sets up
+and starts the server with that:
+
+- **The shell** is your login shell from the password database (not the
+  creator's `SHELL`): bash, zsh or fish, run as `-l -i -c` from your home
+  directory, so your profile and rc files run as they do in a terminal (a
+  version manager's activation, an agent socket an rc exports).
+- **It starts from a fixed seed**, nothing else of the creator: `HOME`,
+  `USER`, `LOGNAME` and `SHELL` from the password database, `PATH` as
+  `/usr/bin:/bin:/usr/sbin:/sbin`, `TERM=dumb`, the creator's `LANG`,
+  `LC_ALL` and `LC_CTYPE`, and the session variables `SSH_AUTH_SOCK`,
+  `DISPLAY`, `WAYLAND_DISPLAY`, `XDG_RUNTIME_DIR` and
+  `DBUS_SESSION_BUS_ADDRESS`. Each of those comes from the first source that
+  has it, an empty value counting as present: the creator, when it is not an
+  instance; for an instance, the global environment of the server its home
+  records; then your user session, read as data (`systemctl --user
+  show-environment` on Linux, decoding systemd's `$'…'` values; `launchctl
+  getenv` on macOS). A user session that cannot be read leaves those names to
+  your login shell, and OATS says so on stderr, without values. No `OATS_`,
+  `AWEB_`, harness or credential variable of the creator is in the seed.
+- **What your setup produces wins**: the shell's answer is final, including
+  what its rc files set. OATS then removes the kernel's names and the
+  instance-identity names, as below. The server is still reached with the
+  creator's `TMUX_TMPDIR`.
+- **The answer travels on a pipe of its own** (file descriptor 3): a small
+  emitter run by the shell writes the environment there as JSON. The shell's
+  output and errors are discarded, so a banner, a prompt or text that looks
+  like an assignment never mixes with it, and no value is written to a file,
+  an argument or a log. It is accepted only whole: exit status 0, at most
+  1 MiB, one JSON object whose values are all text, plain identifiers as
+  names, `HOME` and `PATH` present. Nothing in it is evaluated.
+- **It is bounded at 5 s.** The shell runs in its own process group; at the
+  deadline that group, and only it, is killed, and the read ends even when a
+  descendant still holds the pipe. A descendant that put itself in its own
+  session or group (a daemon an rc starts) is outside that group, and OATS
+  does not promise to end it.
+- **When it cannot be read** (a timeout, a non-zero exit, a partial,
+  oversized or malformed answer, no `HOME` or `PATH`, a shell that is not
+  bash, zsh or fish or cannot run), OATS prints one line on stderr saying
+  why and what it used instead, never a value, and `--json` output stays one
+  valid envelope. A creator outside every instance falls back to its own
+  environment without the kernel's names (the behaviour before 0.42.0); an
+  instance falls back to a copy of the server its home records, as below, or
+  is refused, never to its own environment. A fallback is degraded: it is
+  neither a login environment nor proof of a working agent socket.
+
+A server OATS did not start keeps what its starter gave it:
 
 | Started by | The server's environment |
 |---|---|
-| an operator's shell | that shell's |
-| the Desktop | your environment as the Desktop got it, without what the Desktop or its packaging added to its own, and with the login-shell `PATH` it puts in front ([desktop.md](desktop.md)) |
-| a schedule runner or a trigger | the service's |
-| an OATS instance that creates an agents' session | the global environment of the tmux server that instance's home records, reduced as described below; not the instance's own |
+| OATS (any creator; see above) | your login environment, or the creator's fallback |
+| you, from your own shell (`tmux -L oats new-session …`) | that shell's |
+| a service manager (`systemd-run`, a unit, launchd) | only that manager's environment |
 
+OATS uses an existing server as it is and does not certify its environment.
 The first creator that succeeds determines it; when two start it at the same
-moment, tmux starts one server and nothing says which of the two it is.
+moment, tmux starts one server and nothing says which of the two it is. A
+server that exits between OATS's lookup and its `new-session` is started
+with the environment the creator would give a running server (its own, or an
+instance's copy of its recorded server), not the login environment.
 
 **What OATS removes, for every creator.** The names the kernel itself sets
 never go into the environment OATS creates an agents' session or window
@@ -225,7 +280,8 @@ operation, a retire or a trigger is given (`OATS_CAPABILITY`, `OATS_LAYER`,
 `OATS_OPERATION`, `OATS_REPO`, `OATS_BRANCH`, `OATS_WORK`, `OATS_KIND`,
 `OATS_TASK`, `OATS_HARNESS`, `OATS_PREVIOUS_HARNESS`, `OATS_RUNTIME`,
 `OATS_PREVIOUS_RUNTIME`, `OATS_LAUNCH_PREVIEW`, `OATS_RETIRE_INTENT`,
-`OATS_TRIGGER_EVENT_FILE`, `OATS_TEAM_NAME`, `OATS_TEAM_SCOPE`,
+`OATS_TRIGGER_EVENT_FILE`, `OATS_TEST_LOGIN_SHELL` (a test seam that replaces
+the login shell; never set it outside tests), `OATS_TEAM_NAME`, `OATS_TEAM_SCOPE`,
 `OATS_TEAM_ID`, `OATS_TEAM_LABEL`, `OATS_TEAM_LABELS`, `OATS_TEAMS`,
 `OATS_TEAMS_SOURCE`, `OATS_DEFAULT_TEAM`, `OATS_DEFAULT_TEAM_ID`,
 `OATS_DEFAULT_TEAM_FROM`, `OATS_WORKSPACE_NAME`, `OATS_WORKSPACE_KEY`); and
@@ -244,7 +300,8 @@ spawns or starts another instance, a capability hook that spawns or starts
 (a hook runs with its instance's identity, also when a person ran the command
 that triggered it), and `oats schedule run-now` typed inside an instance.
 
-- When such a process has to create the tmux session, OATS reads the global
+- When such a process has to create the tmux session on a server that runs,
+  or its login environment could not be read, OATS reads the global
   environment of the server its home records (`tmux -S <recorded socket>
   show-environment -g -s`, the endpoint of the home's receipt, checked
   against `instance.json` as every session command checks it) and creates
@@ -279,7 +336,9 @@ that triggered it), and `oats schedule run-now` typed inside an instance.
   not change.
 - **It is refused** (`E_RUNTIME_ENDPOINT_UNKNOWN`; `oats spawn` reports it
   as `E_SPAWN_FAILED` with the same message) when the session does not exist
-  on the `oats` server and there is no source to read: the home records no
+  on the `oats` server, its login environment is not what the server gets
+  (the server runs, or the login environment could not be read), and there is
+  no source to read: the home records no
   tmux server (it was never launched), its receipt cannot be used, or its
   recorded server cannot be reached or read. A process that carries an
   instance's identity (`OATS_INSTANCE`, `OATS_INSTANCE_HOME`, `OATS_HOME`,
@@ -338,30 +397,33 @@ that triggered it), and `oats schedule run-now` typed inside an instance.
   the one that is read is the recorded server's, as above.
 
 A process that neither sign identifies as an instance is treated as any
-other creator: its environment, without the names above, is what it passes.
+other creator: when it starts the server, your login environment (above);
+otherwise, and as the fallback, its environment without the names above.
 
 By hand (`<session>` is the deployment's session name: `oats-agents` unless
 `session.tmuxSession` or `OATS_TMUX_SESSION` says otherwise):
 
 ```sh
-tmux -L oats new-session -d -s <session> -n hq   # start it from your own shell, before anything else does
+tmux -L oats new-session -d -s <session> -n hq   # start it yourself: it keeps your shell's environment
 tmux -L oats show-environment -g                 # what environment the server has
 tmux -L oats show-environment -g LANG            # one variable
 tmux -L oats set-environment -g LANG "$LANG"     # repair a running server: windows created from now on inherit it
 tmux -L oats kill-server                         # replace it: ends EVERY session on that server
 ```
 
-- Start it yourself after an upgrade or a reboot, before agents, the Desktop
-  or a schedule run. OATS finds a session you created and uses it: it looks
-  the session up by its exact name and assumes nothing about its `hq`
-  window.
+- There is no manual step: when OATS starts the server, it gives it your
+  login environment. A server you start yourself keeps your shell's
+  environment, and one a service manager starts gets only that manager's.
+  OATS finds a session you created and uses it: it looks the session up by
+  its exact name and assumes nothing about its `hq` window.
 - `set-environment -g` is how a running server is repaired: it ends nothing,
   and panes that already run keep the environment they have. Windows created
   from now on take it, `PATH` included (with no session override of it), and
   their harness is looked up on that `PATH`.
 - `kill-server` ends every session on that server, every running agent
   included. It is for before agents are started, not for repairing a running
-  host. The next start takes the environment of whoever starts it.
+  host. The next start gives the new server your login environment when OATS
+  starts it, or the environment of whoever else does.
 - `-L oats` reaches the server of the environment you type it in
   (`TMUX_TMPDIR`). For the server an instance is on, use the socket from its
   row in `oats status --json`: `tmux -S <socket> …`.

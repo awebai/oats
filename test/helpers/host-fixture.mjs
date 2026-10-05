@@ -47,6 +47,9 @@ export function removeTmuxTmpdir(tmuxTmpdir, tmux = "tmux") {
   rmSync(tmuxTmpdir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }
 let isolatedTmpdir = null;
+/** A login shell that cannot be run (see isolateSessionEnvironment): named bash, so it is not refused
+ *  for its name, under `dir`, where nothing creates it. */
+export function noLoginShell(dir) { return join(dir, "no-login-shell", "bash"); }
 /** The private TMUX_TMPDIR of the session environment installed in this process, else null. */
 export function isolatedTmuxTmpdir() { return isolatedTmpdir; }
 /** Take this test worker out of any OATS instance it runs inside. The kernel treats a process whose
@@ -69,6 +72,12 @@ export function leaveEnclosingInstance(dir) {
 // the forced empty config, so a server reads $HOME/.tmux.conf of the fixture's own HOME as a user's
 // server does. Returns the function that restores the environment; it also kills the fixture's
 // `oats` server, by socket, and removes the TMUX_TMPDIR.
+//
+// A server the kernel starts gets the user's login environment, read by running the login shell
+// (lib/login-environment.mjs). A test never runs the operator's: OATS_TEST_LOGIN_SHELL names a shell
+// that does not exist, so the reading fails and the creator's fallback (its own environment, or an
+// instance's recorded server) is what the server gets, as before. A test of the reading itself sets
+// its own fake shell.
 export function isolateSessionEnvironment(base, { userConfig = false } = {}) {
   const original = { ...process.env };
   const tmux = executable("tmux");
@@ -118,7 +127,7 @@ exec ${quote(tmux)}${userConfig ? "" : " -f /dev/null"} "$@"
   for (const key of Object.keys(process.env)) {
     if (/^(OATS_|PI_AGENT)/.test(key) || ["TMUX", "TMUX_PANE", "ENV", "BASH_ENV", "COLORFGBG"].includes(key)) delete process.env[key];
   }
-  Object.assign(process.env, { HOME: home, XDG_CONFIG_HOME: config, ZDOTDIR: home, SHELL: "/bin/sh", PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), TMUX_TMPDIR: tmuxTmpdir });
+  Object.assign(process.env, { HOME: home, XDG_CONFIG_HOME: config, ZDOTDIR: home, SHELL: "/bin/sh", PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), TMUX_TMPDIR: tmuxTmpdir, OATS_TEST_LOGIN_SHELL: noLoginShell(base) });
   // Neither the environment (above) nor the working directory makes this worker an OATS instance.
   const comeBack = leaveEnclosingInstance(base);
   isolatedTmpdir = tmuxTmpdir;
