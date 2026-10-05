@@ -52,7 +52,8 @@ else { rmSync(${JSON.stringify(resource)}); console.log(JSON.stringify({meta:{re
   directories.push(fx.base);
   const { base, dep, root, member: repo } = fx;
   const home = join(root, "dev", "instances", "dev-probe");
-  const env = Object.fromEntries(Object.entries(fx.env).filter(([key]) => !/^(OATS|PI)_/.test(key) || key === "OATS_REMOTE_CACHE" || key === "OATS_HOME_DIR"));
+  // The login-shell seam stays: a server this suite's spawns start never runs the operator's login shell.
+  const env = Object.fromEntries(Object.entries(fx.env).filter(([key]) => !/^(OATS|PI)_/.test(key) || key === "OATS_REMOTE_CACHE" || key === "OATS_HOME_DIR" || key === "OATS_TEST_LOGIN_SHELL"));
   // PATH is the fixture's bin directory ONLY. The "missing platform" case
   // relies on tmux being absent from PATH, and a system directory defeats
   // that: on the Ubuntu CI runner /usr/bin (and /bin, which is the same
@@ -77,6 +78,8 @@ const state = ${JSON.stringify(window)};
 // No session yet (list-sessions prints nothing): the one created answers its socket and first window.
 if (command === 'new-session') console.log(${JSON.stringify(join(base, "tmux.sock"))} + '\t@0');
 if (command === 'list-windows' && existsSync(state)) console.log(readFileSync(state, 'utf8'));
+// The session's and the server's environment: a PATH that holds the harness, where a pane looks it up.
+if (command === 'show-environment') process.stdout.write('PATH="' + ${JSON.stringify(bin)} + '"; export PATH;\\n');
 if (command === 'new-window') {
   writeFileSync(state, args[args.indexOf('-n') + 1]);
   if (${launchFailure}) { console.error('launch failed after creating window'); process.exit(1); }
@@ -104,7 +107,9 @@ for (const missing of ["harness", "platform"]) {
     const f = fixture({ [missing]: false });
     const result = f.spawn();
     assert.notEqual(result.status, 0);
-    assert.match(result.stdout, missing === "harness" ? /pi binary not found/ : /tmux not installed/);
+    // A launched harness is looked up where its pane looks it up (0.42.0, awebai/oats#616): here, the
+    // PATH the OATS tmux server is created with, since no server runs.
+    assert.match(result.stdout, missing === "harness" ? /pi was not found on the PATH the OATS tmux server is created with/ : /tmux not installed/);
     assert.equal(existsSync(f.events), false, "no hook ran");
     assertClean(f);
   });

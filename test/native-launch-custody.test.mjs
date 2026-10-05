@@ -5,6 +5,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSy
 import { dirname, join } from "node:path";
 import { startInstanceSession, restartInstanceSession } from "../lib/core.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { leaveEnclosingInstance } from "./helpers/host-fixture.mjs";
 
 import { nativeHistoryPath, historicalSessionRoots } from "../packages/record/lib/native-history.mjs";
 import { sessionsForHome } from "../packages/record/lib/sessions-for-home.mjs";
@@ -42,7 +43,10 @@ console.log(JSON.stringify({meta: {context: e.OATS_CONTEXT, repo: e.OATS_REPO, r
   });
   const base = fx.base;
   const saved = { ...process.env };
+  // Not inside the instance a developer agent runs the suite from: this fixture is no instance.
+  const comeBack = leaveEnclosingInstance(base);
   t.after(() => {
+    comeBack();
     for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
     Object.assign(process.env, saved);
     fx.cleanup();
@@ -83,10 +87,14 @@ function installBackend(f, { execute = false } = {}) {
   write(join(f.base, 'bin/tmux'), `#!${process.execPath}
 const fs=require('node:fs'),cp=require('node:child_process');const a=process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(log)},JSON.stringify(a)+String.fromCharCode(10));
-if(a.includes('new-session')) console.log(${JSON.stringify(join(f.base,'fake.sock'))}+String.fromCharCode(9)+'@0');
+// As tmux: the server keeps the environment it was started with, and a pane gets that, with its -e
+// pairs over it, whatever the window's client holds.
+const serverEnv=${JSON.stringify(join(f.base,'fake-server-env.json'))};
+if(a.includes('new-session')) { fs.writeFileSync(serverEnv,JSON.stringify(process.env)); console.log(${JSON.stringify(join(f.base,'fake.sock'))}+String.fromCharCode(9)+'@0'); }
 if(a.includes('list-panes')) { console.error("can't find window");process.exit(1); }
+if(a.includes('show-environment')) process.stdout.write('PATH="'+${JSON.stringify(join(f.base,'bin'))}+'"; export PATH;'+String.fromCharCode(10));
 if(${execute} && (a.includes('new-window') || a.includes('respawn-pane'))) {
- const env={...process.env}; for(let i=0;i<a.length;i++) if(a[i]==='-e'){const pair=a[++i],k=pair.indexOf('=');env[pair.slice(0,k)]=pair.slice(k+1);}
+ const env=fs.existsSync(serverEnv)?JSON.parse(fs.readFileSync(serverEnv,'utf8')):{}; for(let i=0;i<a.length;i++) if(a[i]==='-e'){const pair=a[++i],k=pair.indexOf('=');env[pair.slice(0,k)]=pair.slice(k+1);}
  const r=cp.spawnSync('/bin/sh',['-c',a.at(-1)],{cwd:a[a.indexOf('-c')+1],env,encoding:'utf8'});
  if(r.status!==0) {console.error(r.stderr);process.exit(r.status||1);}
 }
@@ -174,7 +182,10 @@ console.log(JSON.stringify({env:{}}));`);
   write(join(f.base,'bin/tmux'),`#!${process.execPath}
 const fs=require('node:fs');const a=process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(faked)},JSON.stringify(a)+String.fromCharCode(10));
-if(a.includes('new-session')) console.log(${JSON.stringify(join(f.base,'fake.sock'))}+String.fromCharCode(9)+'@0');
+// As tmux: the server keeps the environment it was started with, and a pane gets that, with its -e
+// pairs over it, whatever the window's client holds.
+const serverEnv=${JSON.stringify(join(f.base,'fake-server-env.json'))};
+if(a.includes('new-session')) { fs.writeFileSync(serverEnv,JSON.stringify(process.env)); console.log(${JSON.stringify(join(f.base,'fake.sock'))}+String.fromCharCode(9)+'@0'); }
 if(a.includes('new-window')) console.log('@1');
 `);chmodSync(join(f.base,'bin/tmux'),0o755);
   const result=await f.spawn('session-substitution');

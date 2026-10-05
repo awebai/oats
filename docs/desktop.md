@@ -77,16 +77,26 @@ Opened from Finder or the Dock, an app inherits launchd's PATH
 the CLI's `#!/usr/bin/env node`. At startup the Desktop therefore runs your
 login shell once (`$SHELL -ilc`, 3 s timeout) and puts its PATH in front of
 the inherited one, so the CLI probe, every `oats` call, a CLI picked with
-**Choose oats…**, and the tmux server and terminals the Desktop starts all run
-with your shell's PATH. Only PATH is taken from the shell, never the rest of
-its environment. The shell is started with your environment, without what the
+**Choose oats…**, and the terminals the Desktop starts all run with your
+shell's PATH. Only PATH is taken from the shell, never the rest of its
+environment. The OATS tmux server is different: when a spawn or a start the
+Desktop runs has to start it, the CLI gives it your whole login environment,
+read from your login shell
+([execution-targets.md](execution-targets.md#the-servers-start-environment)),
+and falls back to the environment the Desktop gave the CLI (with this PATH)
+only when that cannot be read, saying so on stderr. The shell is started with your environment, without what the
 Desktop or its packaging added to its own (on the AppImage, the entries under
 its mount), like every other program the Desktop starts. If the shell fails, times out or prints no PATH, the
 inherited PATH stays: the backend's `/api/cli` reports `pathSource`
 (`login-shell` or `inherited`), `pathError` (why, or `null`) and
 `probePath` (the PATH the probe used), and the reason is logged at startup.
-A tmux server that was already running keeps its own environment; restart it
-if its sessions should get the new PATH, which ends its sessions: `tmux -L oats kill-server` for the OATS tmux server, where instances run, and `tmux kill-server` for your default server, where an instance started by an earlier kernel may still be.
+An agent's pane takes its tmux session's or server's PATH, whoever opens its
+window, and its harness is looked up there
+([execution-targets.md](execution-targets.md#the-servers-start-environment)):
+a window the Desktop opens on a server that already runs gets that server's
+PATH, not the Desktop's. A tmux server that was already running keeps its own
+environment; restart it if its sessions should get the new PATH, which ends
+its sessions: `tmux -L oats kill-server` for the OATS tmux server, where instances run, and `tmux kill-server` for your default server, where an instance started by an earlier kernel may still be.
 
 ## Opening a workspace
 

@@ -632,7 +632,11 @@ writeFileSync(process.env.OATS_CONTEXT + '/retired.json', process.env.OATS_META)
 console.log(JSON.stringify({meta: {retired: true}}));`);
     const home = join(f.root, "worker/instances/worker-substituted");
     await assert.rejects(f.spawn("substituted", { launch, tmuxSession: "inert-fixture-only" }), (e) => e.code === "E_WORK_INSPECTION_FAILED" && /RETAINED/.test(e.message));
-    assert.equal(existsSync(events), false, "no backend command may run with the substituted root");
+    // A launch reads the OATS server before any hook runs (its harness is looked up where its pane will look):
+    // that read is all. Nothing is created, killed or sent, so no command can reach the substituted root.
+    const afterSpawn = existsSync(events) ? readFileSync(events, "utf8") : "";
+    const backend = afterSpawn.split("\n").filter(Boolean).map((line) => JSON.parse(line));
+    assert.deepEqual(backend.filter((argv) => !argv.includes("list-sessions") && !argv.includes("show-environment")), [], "no backend command may run with the substituted root");
     assert.ok(noSpawnRecord(home), "the failed spawn wrote no instance record");
     assert.equal(existsSync(join(home, "TASK.md")), false);
     assert.deepEqual(readdirSync(f.context).sort(), untouched, "must not compensate through or write into the substituted target");
@@ -649,7 +653,7 @@ console.log(JSON.stringify({meta: {retired: true}}));`);
     assert.equal(readFileSync(join(retired.workRecovery.path, "work/authored"), "utf8"), "keep original work");
     assert.deepEqual(readJson(join(f.context, "retired.json")), { receipt: "original-hook-receipt" });
     assert.equal(existsSync(home), false);
-    assert.equal(existsSync(events), false);
+    assert.equal(existsSync(events) ? readFileSync(events, "utf8") : "", afterSpawn, "the retire ran no backend command");
   });
 }
 

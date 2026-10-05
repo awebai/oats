@@ -57,7 +57,8 @@ function installFakeTmux(f) {
   const state = join(f.base, "tmux-state");
   mkdirSync(state);
   // An endpoint per server: the ambient one ($TMUX, else "default"), a socket named with -S, and
-  // the OATS server the kernel selects with -L oats, which lives at $TMUX_FAKE_OATS.
+  // the OATS server the kernel selects with -L oats, which lives at $TMUX_FAKE_OATS. The state is
+  // found without the environment too: a window is created by a tmux client given the locale only.
   write(join(f.base, "bin", "tmux"), `#!/bin/sh
 endpoint=\${TMUX%%,*}
 [ -n "$endpoint" ] || endpoint=default
@@ -70,12 +71,13 @@ while :; do
   esac
 done
 command=$1; shift
-state=\${TMUX_FAKE_STATE:?}/\$(printf '%s' "$endpoint" | tr / _)
+state=\${TMUX_FAKE_STATE:-${state}}/\$(printf '%s' "$endpoint" | tr / _)
 case "$command" in
   has-session) exit 0 ;;
   list-sessions) exit 0 ;;
   list-windows) [ -f "$state/window" ] && cat "$state/window"; exit 0 ;;
   new-session) mkdir -p "$state"; printf '%s\\t@0\\n' "$endpoint"; exit 0 ;;
+  show-environment) printf 'PATH="%s"; export PATH;\\n' "$PATH"; exit 0 ;;
   set-option) exit 0 ;;
   new-window)
     while [ $# -gt 0 ]; do

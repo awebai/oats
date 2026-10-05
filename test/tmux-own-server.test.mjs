@@ -270,6 +270,50 @@ test("a live instance on another server restarts in place: same pane, record unc
   assert.deepEqual(ownOptions(OTHER, windowId(OTHER, "stays")), UNSET, "a restart in place sets no option: the window keeps what it has");
 });
 
+test("a selected start or restart that reuses its recorded pane on another server looks its harness up on that pane's session, whatever the OATS server's PATH holds and whether or not one runs (#616)", async () => {
+  // Homes with a launch recipe, recorded on OTHER, each window a shell there; OTHER's session gives
+  // its panes a PATH with claude (the probe). This process's PATH has none.
+  ensureSession(OTHER);
+  tmuxOn(OTHER, "set-environment", "-t", `=${SESSION}`, "PATH", spawnPath);
+  const recordedOnOther = async (name) => {
+    const { home } = await withPath(fx.env.PATH, () => fx.spawn("dev", { name, harness: "claude" }));
+    writeFileSync(join(home, "TASK.md"), "task\n");
+    const tmux = { session: SESSION, window: name, socket: OTHER };
+    writeFileSync(join(home, "instance.json"), JSON.stringify({ ...readJson(join(home, "instance.json")), tmux, launched: true }, null, 2) + "\n");
+    writeFileSync(baselineOf(home), JSON.stringify({ ...readJson(baselineOf(home)), runtime: { launched: true, tmux } }, null, 2) + "\n", { mode: 0o600 });
+    tmuxOn(OTHER, "new-window", "-d", "-t", `=${SESSION}:`, "-n", name, "-c", home, "/bin/sh");
+    await waitUntil(() => tmuxOn(OTHER, "display-message", "-p", "-t", `=${SESSION}:=${name}`, "#{pane_current_command}") === "sh", `${name}'s pane is a shell`);
+    return home;
+  };
+  const reusedOnOther = async (home, r) => {
+    assert.equal(r.reused, "pane", "the recorded pane was reused");
+    assert.equal(r.target.socket, OTHER);
+    await ready(home);
+    assert.equal(readJson(join(home, "instance.json")).launch.executable, probe, "the claude on the pane's own PATH, recorded");
+  };
+  // The OATS server runs, with a session of the same name whose PATH has no claude: no veto.
+  ensureSession(OATS);
+  tmuxOn(OATS, "set-environment", "-t", `=${SESSION}`, "PATH", "/oats-fixture-no-harness");
+  try {
+    const home = await recordedOnOther("reuse-recorded");
+    await reusedOnOther(home, startInstanceSession(home, { harness: "claude" }));
+    assert.equal(windowsOf(OATS).includes("reuse-recorded"), false, "nothing was opened on the OATS server");
+    // A restart of the running harness: the same.
+    rmSync(join(home, "harness-ready"));
+    await reusedOnOther(home, restartInstanceSession(home, { harness: "claude", stopGraceMs: 5000 }));
+    assert.equal(windowsOf(OATS).includes("reuse-recorded"), false, "nothing was opened on the OATS server");
+  } finally {
+    tmuxOn(OATS, "set-environment", "-u", "-t", `=${SESSION}`, "PATH");
+  }
+  // No OATS server at all: the start neither needs nor starts one.
+  await killServer(OATS);
+  const alone = await recordedOnOther("reuse-no-oats");
+  await reusedOnOther(alone, startInstanceSession(alone, { harness: "claude" }));
+  assert.deepEqual(sessionsOf(OATS), [], "no OATS server was started");
+  for (const name of ["reuse-recorded", "reuse-no-oats"]) tmuxOn(OTHER, "kill-window", "-t", `=${SESSION}:=${name}`);
+  tmuxOn(OTHER, "set-environment", "-u", "-t", `=${SESSION}`, "PATH");
+});
+
 test("a start that has to create the window again opens it on the OATS server and says so: the recorded window is gone, or the recorded server is gone", async () => {
   ensureSession(OTHER);
   const gone = await makeHome("window-gone", { on: OTHER });
@@ -394,6 +438,9 @@ test("option commands tmux refuses: an unknown cursor-colour is no error; a refu
   // tmux 3.0 has no `window-size latest`: the command's failure is ignored, as it always was.
   const noSize = tmuxInFront("no-size-bin", `case " $* " in *" window-size "*) echo 'unknown value: latest' >&2; exit 1 ;; esac`);
   const env = { PATH: `${noSize}:${spawnPath}`, OATS_TMUX_SESSION: "unsized", PI_AGENTS_TMUX_SESSION: "unsized" };
+  // A pane looks its harness up on its server's PATH (0.42.0): the server these tests share was
+  // started by an in-process start, whose PATH holds no harness, so the server is given one.
+  tmuxOn(OATS, "set-environment", "-g", "PATH", spawnPath);
   let r = fx.cli(["spawn", "dev", "--name", "unsized-spawn", "--harness", "claude", "--json"], { env });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.deepEqual(r.json().result.tmux, { session: "unsized", window: "unsized-spawn", socket: OATS });
@@ -561,7 +608,7 @@ test("tmux's shell-format environment is read strictly and never executed: the w
   assert.equal(parseTmuxShellEnvironment(Buffer.concat([Buffer.from('A="'), Buffer.from([0xff, 0xfe]), Buffer.from('"; export A;\n')])), null, "bytes that are not UTF-8");
 });
 
-test("the environment OATS creates a tmux session and a window with: an instance passes its recorded server's, never its own, or is refused; another creator passes its own without the kernel's names; PATH follows whoever creates the window", async () => {
+test("the environment OATS creates a tmux session and a window with: an instance passes its recorded server's, never its own, or is refused; another creator passes its own without the kernel's names; a window's PATH is its session's or server's, whoever creates it", async () => {
   const globalEnv = (socket) => Object.fromEntries(lines(tmuxOn(socket, "show-environment", "-g")).filter((l) => /^[A-Za-z_][A-Za-z0-9_]*=/.test(l)).map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]));
   const sessionEnv = (session) => tmuxOn(OATS, "show-environment", "-t", `=${session}`);
   /** One process that ensures a session on the OATS server, with its own environment and directory. */
@@ -576,7 +623,8 @@ test("the environment OATS creates a tmux session and a window with: an instance
   const KERNEL = ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_ROOT", "PI_AGENTS_ROOT", "TMUX", "TMUX_PANE", "COLORFGBG"];
   const NOT_CARRIED = ["OATS_FIXTURE_MULTI_RESERVED", "OATS_FIXTURE_MULTI_PLAIN", "FIXTURE_INJECTED", "OATS_FIXTURE_HIDDEN", "OATS_FIXTURE_REMOVED", "OATS_FIXTURE_DOLLAR", "OATS_FIXTURE_MULTI_DOLLAR", "FAKE"];
   const agent = { FIXTURE_SECRET: "s3cret", OATS_LAUNCH_REF_FIXTURE_TOKEN: "s3cret", FIXTURE_TOKEN: "s3cret", CLAUDECODE: "1", FIXTURE_IDENTITY: "creator", TMUX: `${OTHER},1,0`, TMUX_PANE: "%1", COLORFGBG: "15;0" };
-  const operator = { FIXTURE_OPERATOR: "kept", FIXTURE_IDENTITY: "operator", PI_AGENTS_ROOT: "/fixture/operator/agents", OATS_LAUNCH_REF_FIXTURE_TOKEN: "s3cret", FIXTURE_TOKEN: "s3cret", TMUX: `${OTHER},1,0`, COLORFGBG: "15;0" };
+  // The operator's PATH holds the harness: a pane looks its harness up on the server's PATH.
+  const operator = { FIXTURE_OPERATOR: "kept", FIXTURE_IDENTITY: "operator", PI_AGENTS_ROOT: "/fixture/operator/agents", OATS_LAUNCH_REF_FIXTURE_TOKEN: "s3cret", FIXTURE_TOKEN: "s3cret", TMUX: `${OTHER},1,0`, COLORFGBG: "15;0", PATH: spawnPath };
   const absent = (env, names, what) => { for (const name of names) assert.equal(name in env, false, `${what} holds no ${name}`); };
   // Every character tmux escapes but `$`, and text shaped like the end of an entry. (Not ending in
   // `;`: tmux takes that off a command's argument.) A value that holds a `$` is not carried.
@@ -617,7 +665,9 @@ test("the environment OATS creates a tmux session and a window with: an instance
   const stranded = await makeHome("env-stranded", { on: join(base, "env-lost.sock") });
   const mismatched = await makeHome("env-mismatched", { on: OTHER });
   writeFileSync(join(mismatched.home, "instance.json"), JSON.stringify({ ...readJson(join(mismatched.home, "instance.json")), tmux: { session: SESSION, window: "env-mismatched", socket: join(base, "elsewhere.sock") } }, null, 2) + "\n");
-  const as = (h) => ({ ...agent, OATS_INSTANCE: h.name, OATS_INSTANCE_HOME: h.home, PATH: `${shimOf(h.home)}:${spawnPath}` });
+  // An instance's PATH: its shim, a directory only it has, and the rest.
+  const CALLER_ONLY = "/fixture/caller-only/bin";
+  const as = (h) => ({ ...agent, OATS_INSTANCE: h.name, OATS_INSTANCE_HOME: h.home, PATH: `${shimOf(h.home)}:${CALLER_ONLY}:${spawnPath}` });
   const spawnEnv = { OATS_TMUX_SESSION: "envs", PI_AGENTS_TMUX_SESSION: "envs" };
 
   // No session, and a caller that may not create it: refused before anything exists, by a spawn and
@@ -671,7 +721,8 @@ test("the environment OATS creates a tmux session and a window with: an instance
   assert.equal(server.FIXTURE_OPERATOR, "kept");
   assert.match(sessionEnv("envs"), /^FIXTURE_IDENTITY=operator$/m);
   // The session now exists, so the instance that was refused above spawns: nothing is read, nothing
-  // global changes, and of its creator the new window takes only PATH, without the creator's shim.
+  // global changes, and the new window takes nothing of its creator, PATH included: its PATH is its
+  // own shim, then the server's.
   const before = serverState(OATS);
   r = fx.cli(["spawn", "dev", "--name", "env-child", "--harness", "claude", "--json"], { env: { ...spawnEnv, ...as(unlaunched) } });
   assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -685,8 +736,9 @@ test("the environment OATS creates a tmux session and a window with: an instance
   assert.equal(pane.FIXTURE_OPERATOR, "kept", "the rest of its environment is the server's");
   assert.equal(pane.OATS_INSTANCE_HOME, child.home, "its identity is its own, from its launch command");
   assert.equal(pane.PATH.split(":").includes(shimOf(unlaunched.home)), false, "the creator's kernel shim is not on its PATH");
-  assert.equal(pane.PATH.split(":")[0], shimOf(child.home), "its own shim is first");
-  assert.ok(pane.PATH.split(":").includes(probeBin), "the creator's tool directories are");
+  // Changed in 0.42.0 (awebai/oats#616): the creator's PATH no longer reaches the pane.
+  assert.equal(pane.PATH, `${shimOf(child.home)}:${server.PATH}`, "its own shim, then the server's PATH");
+  assert.equal(pane.PATH.split(":").includes(CALLER_ONLY), false, "a directory only the creator has is not on it");
   // An instance that has to create another SESSION on the running server passes its recorded
   // server's environment for it too, and one that cannot read it is refused there as well.
   r = ensureIn("envs-two", { env: as(caller) });
@@ -696,29 +748,30 @@ test("the environment OATS creates a tmux session and a window with: an instance
   refused = refusal(ensureIn("envs-three", { env: as(stranded) }));
   assert.match(refused.message, /cannot create tmux session envs-three .* could not be read/);
   assert.deepEqual(sessionsOf(OATS).sort(), ["envs", "envs-two"]);
-  // PATH follows whoever creates the window: this start runs with another PATH than the server has.
+  // A window's PATH is the server's, whoever creates it: this start runs with another PATH than the
+  // server has (changed in 0.42.0, awebai/oats#616: it used to be the starting process's).
   const three = await makeHome("env-three", { session: "envs" });
   r = fx.cli(["session", "start", "--home", three.home, "--json"], { env: { PATH: `/fixture/starter/bin:${spawnPath}` } });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   await ready(three.home);
-  assert.ok(paneEnv(three.home).PATH.split(":").includes("/fixture/starter/bin"), "the pane's PATH is the starting process's");
+  assert.equal(paneEnv(three.home).PATH, `${shimOf(three.home)}:${server.PATH}`, "the pane's PATH is the server's, not the starting process's");
   assert.equal(paneEnv(three.home).FIXTURE_OPERATOR, "kept");
 
-  // The locale names. tmux's client does not start without a UTF-8 locale, so an instance's
-  // new-window client carries LANG, LC_ALL and LC_CTYPE besides PATH. tmux imports none of them:
+  // The locale names. tmux's client does not start without a UTF-8 locale, so a new-window client
+  // carries LANG, LC_ALL and LC_CTYPE, and nothing else (no PATH). tmux imports none of them:
   // the pane, the session and the server keep the values they had, whatever the client holds.
   const BASELINE = { LANG: "fixture_BASELINE_LANG.UTF-8", LC_ALL: "fixture_BASELINE_ALL.UTF-8", LC_CTYPE: "fixture_BASELINE_CTYPE.UTF-8" };
   const CLIENT = { LANG: "fixture_CLIENT_LANG.UTF-8", LC_ALL: "fixture_CLIENT_ALL.UTF-8", LC_CTYPE: "fixture_CLIENT_CTYPE.UTF-8" };
   for (const [name, value] of Object.entries(BASELINE)) tmuxOn(OATS, "set-environment", "-g", name, value);
   const clientSeen = join(base, "new-window-client-env.txt");
-  const recording = tmuxInFront("locale-front", `case " $* " in *" new-window "*) env > ${shq(clientSeen)} ;; esac`);
+  const recording = tmuxInFront("locale-front", `case " $* " in *" new-window "*) ${shq(systemExecutable("env"))} > ${shq(clientSeen)} ;; esac`);
   const localised = await makeHome("env-locale", { session: "envs" });
   r = fx.cli(["session", "start", "--home", localised.home, "--json"], { env: { ...as(caller), ...CLIENT, PATH: `${recording}:${as(caller).PATH}` } });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   await ready(localised.home);
   const client = Object.fromEntries(lines(readFileSync(clientSeen, "utf8")).filter((l) => l.includes("=")).map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]));
   for (const [name, value] of Object.entries(CLIENT)) assert.equal(client[name], value, `the new-window client runs with the creator's ${name}`);
-  absent(client, [...SECRETS, "OATS_INSTANCE", "OATS_INSTANCE_HOME", "FIXTURE_IDENTITY", "TMUX", "TMUX_PANE", "COLORFGBG"], "the new-window client of an instance");
+  absent(client, [...SECRETS, "PATH", "OATS_INSTANCE", "OATS_INSTANCE_HOME", "FIXTURE_IDENTITY", "TMUX", "TMUX_PANE", "COLORFGBG"], "the new-window client of an instance");
   pane = paneEnv(localised.home);
   server = globalEnv(OATS);
   for (const [name, value] of Object.entries(BASELINE)) {
@@ -1055,7 +1108,7 @@ test("a recorded server's HOME, XDG_CONFIG_HOME, PATH or SHELL that the reader l
   assert.deepEqual(Object.fromEntries(Object.keys(carried).map((name) => [name, all.created[0]?.env[name]])), carried);
 });
 
-test("a restart in place run from inside an instance gives tmux the client environment a window creation gets: the caller's PATH without a home's shim directory, and the locale names, and nothing else of the caller", async () => {
+test("a restart in place run from inside an instance gives tmux the client environment a window creation gets: the locale names, and nothing else of the caller, PATH included", async () => {
   const caller = await ioCaller();
   const socket = join(base, "respawn.sock");
   const target = await makeHome("respawn-target", { on: socket });
@@ -1078,7 +1131,8 @@ test("a restart in place run from inside an instance gives tmux the client envir
     for (const key of Object.keys(process.env)) if (!(key in ambient)) delete process.env[key];
     Object.assign(process.env, ambient);
   }
-  assert.deepEqual(calls, [{ call: "respawn-pane", env: { PATH: ambient.PATH, LANG: "C.UTF-8" } }]);
+  // Changed in 0.42.0 (awebai/oats#616): the client no longer carries the caller's PATH.
+  assert.deepEqual(calls, [{ call: "respawn-pane", env: { LANG: "C.UTF-8" } }]);
 });
 
 /**
@@ -1089,7 +1143,7 @@ test("a restart in place run from inside an instance gives tmux the client envir
  * read before the call, so that the test depends on nothing else a start does with PATH: what is
  * asserted is the environment the call receives.
  */
-async function launchCallAs(caller, name, { pane, path }) {
+async function launchCallAs(caller, name, { pane, path, instance = true }) {
   const socket = join(base, `${name}.sock`);
   const target = await makeHome(name, { on: socket });
   const calls = [];
@@ -1107,15 +1161,16 @@ async function launchCallAs(caller, name, { pane, path }) {
     if (args.includes("list-windows")) { if (!launched) setPath(); return "hq\n"; }
     if (args.includes("respawn-pane") || args.includes("new-window")) {
       launched = true;
-      calls.push({ call: args.includes("respawn-pane") ? "respawn-pane" : "new-window", env: options.env ?? null });
+      calls.push({ call: args.includes("respawn-pane") ? "respawn-pane" : "new-window", env: options.env ?? null, tmux: binary });
       process.env.PATH = ambient.PATH; // the call is built: the rest of the start runs as before
       return "@1\n";
     }
     return "";
   } };
-  Object.assign(process.env, { OATS_INSTANCE: caller.name, OATS_INSTANCE_HOME: caller.home, FIXTURE_SECRET: "s3cret", LANG: "C.UTF-8" });
+  Object.assign(process.env, instance ? { OATS_INSTANCE: caller.name, OATS_INSTANCE_HOME: caller.home } : {}, { FIXTURE_SECRET: "s3cret", LANG: "C.UTF-8" });
   delete process.env.LC_ALL; delete process.env.LC_CTYPE;
   try { startInstanceSession(target.home, { io }); }
+  catch (e) { calls.push({ refused: e.code, message: e.message }); }
   finally {
     for (const key of Object.keys(process.env)) if (!(key in ambient)) delete process.env[key];
     Object.assign(process.env, ambient);
@@ -1123,22 +1178,28 @@ async function launchCallAs(caller, name, { pane, path }) {
   return calls;
 }
 
-test("an instance gives the tmux client of a window creation or of a restart in place no PATH when it has none to give: its PATH is not set, or holds only homes' shim directories; an empty PATH set on purpose stays one empty entry", async () => {
+test("every creator gives the tmux client of a window creation or of a restart in place no PATH, whatever its own PATH holds, and runs that client by the absolute tmux its own PATH finds; with no PATH there is no tmux to run, and nothing is launched", async () => {
+  // Changed in 0.42.0 (awebai/oats#616): an instance used to pass its PATH without shim directories,
+  // and any other creator its whole environment. Now the client gets the locale names only.
   const caller = await ioCaller();
-  const shims = (h) => `${join(h.home, ".oats", "bin")}:/fixture/agents/dev/instances/other/.oats/bin`;
+  const withShims = (h) => `${join(h.home, ".oats", "bin")}:/fixture/agents/dev/instances/other/.oats/bin:/fixture/caller-only/bin:${process.env.PATH}`;
+  const tmux = join(base, "system-bin", "tmux"); // the first tmux on this process's PATH
   assert.deepEqual({
-    "a restart in place, PATH not set": await launchCallAs(caller, "nopath-respawn", { pane: true, path: undefined }),
-    "a window creation, PATH not set": await launchCallAs(caller, "nopath-window", { pane: false, path: undefined }),
-    "a restart in place, a PATH of shim directories only": await launchCallAs(caller, "shimpath-respawn", { pane: true, path: shims }),
-    "a window creation, a PATH of shim directories only": await launchCallAs(caller, "shimpath-window", { pane: false, path: shims }),
-    "a restart in place, an empty PATH set on purpose": await launchCallAs(caller, "emptypath-respawn", { pane: true, path: () => "" }),
+    "an instance, a restart in place": await launchCallAs(caller, "anypath-respawn", { pane: true, path: withShims }),
+    "an instance, a window creation": await launchCallAs(caller, "anypath-window", { pane: false, path: withShims }),
+    "another creator, a restart in place": await launchCallAs(caller, "operator-respawn", { pane: true, path: withShims, instance: false }),
+    "another creator, a window creation": await launchCallAs(caller, "operator-window", { pane: false, path: withShims, instance: false }),
   }, {
-    "a restart in place, PATH not set": [{ call: "respawn-pane", env: { LANG: "C.UTF-8" } }],
-    "a window creation, PATH not set": [{ call: "new-window", env: { LANG: "C.UTF-8" } }],
-    "a restart in place, a PATH of shim directories only": [{ call: "respawn-pane", env: { LANG: "C.UTF-8" } }],
-    "a window creation, a PATH of shim directories only": [{ call: "new-window", env: { LANG: "C.UTF-8" } }],
-    "a restart in place, an empty PATH set on purpose": [{ call: "respawn-pane", env: { PATH: "", LANG: "C.UTF-8" } }],
+    "an instance, a restart in place": [{ call: "respawn-pane", env: { LANG: "C.UTF-8" }, tmux }],
+    "an instance, a window creation": [{ call: "new-window", env: { LANG: "C.UTF-8" }, tmux }],
+    "another creator, a restart in place": [{ call: "respawn-pane", env: { LANG: "C.UTF-8" }, tmux }],
+    "another creator, a window creation": [{ call: "new-window", env: { LANG: "C.UTF-8" }, tmux }],
   });
+  // PATH not set at the call: tmux is reported unavailable and no client runs.
+  const refused = await launchCallAs(caller, "nopath-respawn", { pane: true, path: undefined });
+  assert.equal(refused.length, 1, JSON.stringify(refused));
+  assert.equal(refused[0].refused, "E_SESSION_START_FAILED");
+  assert.match(refused[0].message, /backend executable unavailable/);
 });
 
 test("the stage of a start's refusal, pinning the existing order: a launch hook that does not declare launchPreview has already run and its warning is already an event, a preview-aware one has run only as a preview, and nothing is stopped, no launch state is written and nothing is created", async () => {

@@ -22,7 +22,7 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import YAML from "yaml";
 import { inertHarnessDir } from "./runtime-stub.mjs";
-import { isolatedTmuxTmpdir, privateTmuxTmpdir, removeTmuxTmpdir } from "./host-fixture.mjs";
+import { isolatedTmuxTmpdir, noLoginShell, privateTmuxTmpdir, removeTmuxTmpdir } from "./host-fixture.mjs";
 
 export const CLI = resolve(new URL("../../bin/oats.mjs", import.meta.url).pathname);
 const IDENTITY = ["TMUX", "TMUX_PANE", "OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "OATS_AGENT", "OATS_SOUL", "OATS_ROOT", "OATS_CONTEXT", "OATS_WORKSPACE",
@@ -130,7 +130,9 @@ export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilit
   const cache = join(base, "cache");
   const ownTmuxTmpdir = isolatedTmuxTmpdir() ? null : privateTmuxTmpdir();
   const env = { ...process.env, HOME: home, OATS_HOME_DIR: join(base, "oats-home"), OATS_REMOTE_CACHE: cache, PATH: `${bin}:${process.env.PATH}`,
-    OATS_TMUX_SESSION: `none-${process.pid}`, PI_AGENTS_TMUX_SESSION: `none-${process.pid}`, TMUX_TMPDIR: ownTmuxTmpdir ?? isolatedTmuxTmpdir() };
+    OATS_TMUX_SESSION: `none-${process.pid}`, PI_AGENTS_TMUX_SESSION: `none-${process.pid}`, TMUX_TMPDIR: ownTmuxTmpdir ?? isolatedTmuxTmpdir(),
+    // Never the operator's login shell (host-fixture.mjs isolateSessionEnvironment says why).
+    OATS_TEST_LOGIN_SHELL: process.env.OATS_TEST_LOGIN_SHELL ?? noLoginShell(base) };
   for (const k of IDENTITY) delete env[k];
   const remoteOptions = { cacheDir: cache };
 
@@ -143,7 +145,8 @@ export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilit
     return git(seed, "rev-parse", "HEAD");
   };
   /** Run `fn` with the fixture's isolation forced onto process.env, restored afterwards:
-   *  HOME, the remote cache, a tmux session that does not exist, the private TMUX_TMPDIR, and no
+   *  HOME, the remote cache, a tmux session that does not exist, the private TMUX_TMPDIR, a login
+   *  shell that cannot run (unless the test set its own), and no
    *  ambient instance identity or TMUX. Everything else the test set (its own PATH with fakes, switches)
    *  is kept. Every in-process kernel call goes through here, so a test can never reach
    *  the operator's own tmux server or deployment. */
@@ -151,6 +154,7 @@ export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilit
     const saved = process.env;
     const next = { ...saved };
     for (const k of ["HOME", "OATS_HOME_DIR", "OATS_REMOTE_CACHE", "OATS_TMUX_SESSION", "PI_AGENTS_TMUX_SESSION", "TMUX_TMPDIR"]) next[k] = env[k];
+    next.OATS_TEST_LOGIN_SHELL ??= env.OATS_TEST_LOGIN_SHELL;
     for (const k of IDENTITY) delete next[k];
     process.env = next;
     try { return await fn(); } finally { process.env = saved; }
