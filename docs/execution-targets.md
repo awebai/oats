@@ -254,16 +254,26 @@ and starts the server with that:
   `OATS_PACKAGE_CATALOG`, …) is the creator's, over what your rc files set;
   for an instance, the one the server its home records has, never its own. The server is still reached with the
   creator's `TMUX_TMPDIR`.
-- **The answer travels on a pipe of its own** (file descriptor 3): a small
-  emitter run by the shell writes the environment there as JSON. The shell's
-  output and errors are discarded, so a banner, a prompt or text that looks
-  like an assignment never mixes with it, and no value is written to a file,
-  an argument or a log. It is accepted only whole: exit status 0, at most
-  1 MiB, one JSON object whose values are all text, plain identifiers as
-  names, `HOME` and `PATH` present. Nothing in it is evaluated.
+- **The answer is one frame on the shell's stdout**: a small emitter run by
+  the shell writes the environment as JSON between a start and an end
+  delimiter that carry a random value made for this reading only. Exactly one
+  complete frame of that reading, start before end, is the answer; anything
+  else the shell prints (a banner, a prompt, text that looks like an
+  assignment, like JSON or like a frame of another reading) is discarded, and
+  a missing, cut, repeated or misordered frame is no answer. The shell's
+  errors are not read, and no value is written to a file, an argument or a
+  log. It is accepted only whole: exit status 0, at most 1 MiB for all the
+  shell printed, one JSON object whose values are all text, plain
+  identifiers as names, `HOME` and `PATH` present. Nothing in it is
+  evaluated. Not a descriptor of its own: bash 5.3, started `-l -i`, marks
+  the descriptors it inherits from 3 to 19 close-on-exec, so an answer there
+  never reaches the emitter. The random value keeps accidental output apart;
+  it does not guard against your own start-up files, which can also send the
+  shell's stdout elsewhere (then there is no answer, and the fallback
+  below applies).
 - **It is bounded at 5 s.** The shell runs in its own process group; at the
   deadline that group, and only it, is killed, and the read ends even when a
-  descendant still holds the pipe. A descendant that put itself in its own
+  descendant still holds the shell's stdout. A descendant that put itself in its own
   session or group (a daemon an rc starts) is outside that group, and OATS
   does not promise to end it.
 - **When it cannot be read** (a process whose `HOME` is not yours, a timeout, a non-zero exit, a partial,
@@ -274,7 +284,13 @@ and starts the server with that:
   environment without the kernel's names (the behaviour before 0.42.0); an
   instance falls back to a copy of the server its home records, as below, or
   is refused, never to its own environment. A fallback is degraded: it is
-  neither a login environment nor proof of a working agent socket.
+  neither a login environment nor proof of a working agent socket, and it
+  passes on whatever the creator's environment holds. A creator whose `PATH`
+  names a version manager's directories without the variables that interpret
+  them (a process started by a service manager, an agent's shell) gives the
+  server that same mismatch, and a version-manager wrapper can then resolve
+  its own name again and loop, as in #616. OATS prevents that only when it
+  reads your login environment.
 
 A server OATS did not start keeps what its starter gave it:
 
