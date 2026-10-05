@@ -239,7 +239,13 @@ and starts the server with that:
   records; then your user session, read as data (`systemctl --user
   show-environment` on Linux, decoding systemd's `$'…'` values; `launchctl
   getenv` on macOS). A user session that cannot be read leaves those names to
-  your login shell, and OATS says so on stderr, without values. The tool runs
+  your login shell, and OATS says so on stderr, without values. On macOS the
+  agent socket launchd gives the apps and terminals you open is not a
+  `launchctl` variable (it is the `SSH_AUTH_SOCK` key of the
+  `com.openssh.ssh-agent` job), so `launchctl getenv` usually has none: a
+  server OATS starts there has your agent socket when the process that starts
+  it has one (the Desktop opened from the Finder or the Dock, a terminal), or
+  when your login shell sets it. The tool runs
   from `/usr/bin:/bin:/usr/sbin:/sbin` with your own `HOME`, `USER`,
   `LOGNAME` and, on Linux, your runtime directory (`/run/user/<uid>`), never
   with the creator's environment. No `OATS_`,
