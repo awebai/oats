@@ -74,10 +74,11 @@ export function leaveEnclosingInstance(dir) {
 // `oats` server, by socket, and removes the TMUX_TMPDIR.
 //
 // A server the kernel starts gets the user's login environment, read by running the login shell
-// (lib/login-environment.mjs). A test never runs the operator's: OATS_TEST_LOGIN_SHELL names a shell
-// that does not exist, so the reading fails and the creator's fallback (its own environment, or an
-// instance's recorded server) is what the server gets, as before. A test of the reading itself sets
-// its own fake shell.
+// (lib/login-environment.mjs). A test never runs the operator's: the kernel runs it only for a process
+// whose HOME is the user's home directory, and the fixture's HOME is not; OATS_TEST_LOGIN_SHELL names
+// a shell that does not exist, so the reading fails and the creator's fallback (its own environment,
+// or an instance's recorded server) is what the server gets, as before. A test of the reading itself
+// sets its own fake shell.
 export function isolateSessionEnvironment(base, { userConfig = false } = {}) {
   const original = { ...process.env };
   const tmux = executable("tmux");

@@ -3,17 +3,19 @@
 // creator's fallback (awebai/oats#616). lib/login-environment.mjs and docs/execution-targets.md.
 //
 // The login shell is always a fake (OATS_TEST_LOGIN_SHELL, a script named bash), never the
-// operator's, and the user session is a fake systemctl/launchctl first on the creator's PATH. Real
-// tmux on the fixture's private TMUX_TMPDIR only.
+// operator's: the fixture's HOME is not the user's home directory, so without the seam nothing is run.
+// The user session is a fake systemctl/launchctl first on the creator's PATH (where the platform's
+// tools are looked up under the seam). Real tmux on the fixture's private TMUX_TMPDIR only.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { LOGIN_SESSION_ENV, parseSystemdEnvironment } from "../lib/login-environment.mjs";
+import { validateLaunchConfig } from "../lib/core.mjs";
 import { isolateSessionEnvironment, oatsSocket, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
@@ -101,7 +103,7 @@ test.after(async () => {
   fx.cleanup();
 });
 
-test("the login shell's answer becomes the server's environment: nothing of the creator's own (no OATS_, AWEB_ or CLAUDE_ name, nothing ambient) but what the seed carries, and the server is reached with the creator's TMUX_TMPDIR", async () => {
+test("the login shell's answer becomes the server's environment: nothing of the creator's own (no AWEB_ or CLAUDE_ name, nothing ambient) but what the seed carries and the operator's OATS configuration, and the server is reached with the creator's TMUX_TMPDIR", async () => {
   const r = await ensureIn({ ...CREATOR, OATS_TEST_LOGIN_SHELL: fakeShell(RC) });
   const server = created(r);
   assert.deepEqual(warnings(r), [], r.stderr);
@@ -112,7 +114,46 @@ test("the login shell's answer becomes the server's environment: nothing of the 
   assert.equal(server.LANG, "C.UTF-8", "the creator's locale is in the seed");
   assert.equal(server.TMUX_TMPDIR, process.env.TMUX_TMPDIR, "the creator's");
   assert.equal(server.CREATOR_ONLY, undefined);
-  assert.deepEqual(Object.keys(server).filter((name) => /^(OATS_|AWEB_|CLAUDE|PI_AGENT)/.test(name)), [], "no creator's OATS_, AWEB_ or CLAUDE_ name");
+  assert.deepEqual(Object.keys(server).filter((name) => /^(AWEB_|CLAUDE|PI_AGENT)/.test(name)), [], "no creator's AWEB_ or CLAUDE_ name");
+  // The operator's OATS configuration is the creator's (docs/execution-targets.md): exactly its
+  // OATS_ names that are not the kernel's, with its values.
+  assert.deepEqual(Object.fromEntries(Object.entries(server).filter(([name]) => name.startsWith("OATS_"))), { OATS_FIXTURE_CREATOR: "creator", OATS_HOME_DIR: process.env.OATS_HOME_DIR });
+});
+
+test("the operator's OATS configuration is the creator's over what the login shell sets, and the kernel's and the instance-identity names the login shell exports are never the server's", async () => {
+  const rc = `${RC} OATS_HOME_DIR=/fixture/rc-home OATS_INSTANCE=rc OATS_INSTANCE_HOME=/fixture/rc OATS_TASK=rc TMUX=/fixture/rc,1,0 OATS_RC_ONLY=rc`;
+  const server = created(await ensureIn({ ...CREATOR, OATS_TEST_LOGIN_SHELL: fakeShell(rc) }));
+  assert.equal(server.OATS_HOME_DIR, process.env.OATS_HOME_DIR, "the creator's, not the rc's");
+  assert.equal(server.OATS_RC_ONLY, "rc", "one only the rc sets is the login environment's");
+  for (const name of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_TASK", "TMUX", "OATS_TEST_LOGIN_SHELL"]) assert.equal(name in server, false, name);
+});
+
+test("the seed: HOME, USER, LOGNAME and SHELL from the password database and a fixed PATH, never the creator's; a creator whose HOME is not the user's home has no login shell run without the seam", async () => {
+  const seen = `SEEN_HOME="$HOME" SEEN_USER="$USER" SEEN_LOGNAME="$LOGNAME" SEEN_SHELL="$SHELL" SEEN_PATH="$PATH" SEEN_PWD="$(pwd)"`;
+  const user = userInfo();
+  const server = created(await ensureIn({ ...CREATOR, USER: "decoy", LOGNAME: "decoy", SHELL: "/fixture/decoy/sh", OATS_TEST_LOGIN_SHELL: fakeShell(`export ${seen}\nexport HOME=${shq(HOME)} SHELL=/bin/sh`) }));
+  assert.equal(server.SEEN_HOME, user.homedir);
+  assert.equal(server.SEEN_USER, user.username);
+  assert.equal(server.SEEN_LOGNAME, user.username);
+  assert.equal(server.SEEN_SHELL, user.shell);
+  assert.equal(server.SEEN_PWD, realpathSync(user.homedir), "it starts in the user's home directory");
+  assert.equal(server.SEEN_PATH, "/usr/bin:/bin:/usr/sbin:/sbin");
+  assert.equal(server.PATH, "/usr/bin:/bin:/usr/sbin:/sbin", "the seed's PATH, where the rc sets none");
+  fellBack(await ensureIn({ ...CREATOR, OATS_TEST_LOGIN_SHELL: "" }), "this process's HOME is not your home directory, so it does not run in your login session");
+});
+
+test("the functions bash exports (BASH_FUNC_name%%) are dropped from the answer, not a reason to reject it", async () => {
+  const ENV = systemExecutable("env");
+  const server = created(await ensureIn({ ...CREATOR, OATS_TEST_LOGIN_SHELL: script(`shell-${++shells}`, "bash", `${RC}\nexec ${ENV} 'BASH_FUNC_which%%=() {  echo fixture; }' /bin/sh -c "$4"\n`) }));
+  assert.equal(server.LOGIN_MARKER, "from the login shell");
+  assert.deepEqual(Object.keys(server).filter((name) => name.startsWith("BASH_FUNC_")), []);
+});
+
+test("a login shell ended by a signal is an acquisition failure: its group is killed and the creator falls back", async () => {
+  const pidFile = join(base, "signalled.pid");
+  const r = await ensureIn({ ...CREATOR, OATS_TEST_LOGIN_SHELL: script(`shell-${++shells}`, "bash", `${RC}\n${SLEEP} 60 3>&- &\necho $! > ${shq(pidFile)}\nkill -TERM $$\n`) });
+  fellBack(r, "your login shell was ended by SIGTERM");
+  await groupGone(pidFile);
 });
 
 test("a noisy start-up (text on stdout and stderr, some shaped like assignments or JSON) is not the answer: only the data descriptor is", async () => {
@@ -177,6 +218,19 @@ test("session variables in the seed, per name from the first source that has it:
   assert.equal(created(own).SSH_AUTH_SOCK, "/rc/agent.sock");
 });
 
+test("the user session's tool runs with the OS user's own environment, never the creator's (no token, nothing ambient)", { skip: process.platform !== "linux" && "systemd's user session is Linux's" }, async () => {
+  const dump = join(base, "systemctl-env.txt");
+  const recording = session("platform-recording-bin", `${systemExecutable("env")} > ${shq(dump)}\nexec ${CAT} ${shq(SYSTEMD_OUTPUT)}\n`);
+  const server = created(await ensureIn({ ...CREATOR, PATH: `${recording}:${SYSTEM}`, OATS_TEST_LOGIN_SHELL: fakeShell(RC) }));
+  assert.equal(server.DISPLAY, ":9");
+  const seen = Object.fromEntries(lines(readFileSync(dump, "utf8")).map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]));
+  for (const name of ["AWEB_FIXTURE_TOKEN", "CLAUDE_FIXTURE_TOKEN", "CREATOR_ONLY", "OATS_FIXTURE_CREATOR", "OATS_TEST_LOGIN_SHELL", "LANG"]) assert.equal(name in seen, false, name);
+  const user = userInfo();
+  assert.equal(seen.HOME, user.homedir);
+  assert.equal(seen.USER, user.username);
+  assert.equal(seen.XDG_RUNTIME_DIR, `/run/user/${user.uid}`);
+});
+
 test("a user session that cannot be read leaves its names absent and is noted without values; the login environment is still used", { skip: process.platform !== "linux" && "systemd's user session is Linux's" }, async () => {
   const r = await ensureIn({ ...CREATOR, PATH: `${failingPlatformBin}:${SYSTEM}`, OATS_TEST_LOGIN_SHELL: fakeShell(RC) });
   const server = created(r);
@@ -198,8 +252,10 @@ test("an instance: the session variables come from the server its home records, 
   tmuxOn(other, "set-environment", "-g", "SSH_AUTH_SOCK", "/recorded/agent.sock");
   tmuxOn(other, "set-environment", "-g", "RECORDED_MARKER", "from the recorded server");
   tmuxOn(other, "set-environment", "-g", "SHELL", "/bin/sh");
+  tmuxOn(other, "set-environment", "-g", "WAYLAND_DISPLAY", "");
+  tmuxOn(other, "set-environment", "-g", "OATS_FIXTURE_RECORDED", "recorded config");
   const home = await instanceOn("login-caller", other);
-  const as = { ...CREATOR, SSH_AUTH_SOCK: "/creator/agent.sock", OATS_INSTANCE: "login-caller", OATS_INSTANCE_HOME: home };
+  const as = { ...CREATOR, SSH_AUTH_SOCK: "/creator/agent.sock", DISPLAY: ":creator", WAYLAND_DISPLAY: "creator-wayland", OATS_INSTANCE: "login-caller", OATS_INSTANCE_HOME: home };
   try {
     // Read: the login environment, with the recorded server's session variables and the user
     // session's for the rest.
@@ -208,6 +264,9 @@ test("an instance: the session variables come from the server its home records, 
     assert.equal(server.LOGIN_MARKER, "from the login shell");
     assert.equal(server.SSH_AUTH_SOCK, "/recorded/agent.sock", "the recorded server's, not the instance's own");
     assert.equal(server.DISPLAY, ":9", "the user session's: an instance's own is never a source");
+    assert.equal(server.WAYLAND_DISPLAY, "", "present and empty on the recorded server: that, not the session's nor the instance's");
+    assert.equal(server.OATS_FIXTURE_RECORDED, "recorded config", "the operator's OATS configuration, from the recorded server");
+    assert.equal(server.OATS_FIXTURE_CREATOR, undefined, "never the instance's own OATS_ names");
     assert.equal(server.RECORDED_MARKER, undefined, "the rest of the recorded server is not copied when the login environment is read");
     assert.equal(server.CREATOR_ONLY, undefined);
     assert.equal(server.OATS_INSTANCE_HOME, undefined);
@@ -243,4 +302,8 @@ test("--json stdout stays one valid envelope whatever the login shell prints, an
     assert.equal(envelope.ok, true, what);
     assert.deepEqual(warnings(r).map((l) => /could not read your login environment/.test(l)), fallback ? [true] : [], `${what}: ${r.stderr}`);
   }
+});
+
+test("a launch configuration cannot set the login-shell test seam: it is reserved, so no instance's launch can choose the program whose answer becomes a server's environment", () => {
+  assert.throws(() => validateLaunchConfig("seam", { harness: "claude", env: { OATS_TEST_LOGIN_SHELL: "/fixture/bash" } }), (e) => e.code === "E_LAUNCH_CONFIG_INVALID" && /OATS_TEST_LOGIN_SHELL/.test(e.message));
 });

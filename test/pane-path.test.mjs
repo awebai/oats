@@ -55,6 +55,7 @@ const fx = v2Deployment({
   // A spawn hook that, when asked, creates the spawn's session first, with its own PATH: another
   // creator that wins the race between the spawn's plan and its creation.
   capabilities: { "test.racer": { manifest: { layer: "knowledge", hooks: { spawn: "spawn.mjs" } }, files: { "spawn.mjs": `import { execFileSync } from "node:child_process";
+if (process.env.RACE_KILL) execFileSync(${JSON.stringify(TMUX)}, ["-L", "oats", "kill-server"], { env: { HOME: process.env.HOME, TMUX_TMPDIR: process.env.TMUX_TMPDIR, LANG: "C.UTF-8" }, stdio: "ignore", timeout: 10000 });
 if (process.env.RACE_SESSION) execFileSync(${JSON.stringify(TMUX)}, ["-L", "oats", "new-session", "-d", "-s", process.env.RACE_SESSION, "-n", "hq"], { env: { HOME: process.env.HOME, TMUX_TMPDIR: process.env.TMUX_TMPDIR, PATH: process.env.RACE_PATH, SHELL: "/bin/sh", LANG: "C.UTF-8" }, stdio: "ignore", timeout: 10000 });
 process.stdout.write("{}\\n");
 ` } } },
@@ -62,6 +63,8 @@ process.stdout.write("{}\\n");
     abs: { harness: "claude", executable: PROBE_EXE },
     wrapped: { harness: "claude", executable: WRAPPER },
     withpath: { harness: "claude", env: { PATH: SERVER_PATH } },
+    frompath: { harness: "claude", env: { PATH: { fromEnv: "FIXTURE_LAUNCH_PATH" } } },
+    bare: { harness: "claude", executable: "claude" },
   } },
 });
 
@@ -94,6 +97,16 @@ function refused(r, name, code = "E_HARNESS_UNAVAILABLE") {
   assert.equal(existsSync(homeOf(name)), false, "nothing is left of the spawn");
   for (const value of [probeBin, decoyBin, SYSTEM, "/fixture/"]) assert.equal((r.stdout + r.stderr).includes(value), false, `no PATH value is printed: ${error.message}`);
   return error.message;
+}
+/** A fake login shell (OATS_TEST_LOGIN_SHELL, named bash; never the operator's): it sets the fixture's
+ *  HOME, a plain shell and `path`, then runs the kernel's emitter. */
+let shells = 0;
+function loginShell(path) {
+  const dir = join(base, `login-shell-${++shells}`);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "bash"), `#!/bin/sh\nexport HOME=${shq(process.env.HOME)} SHELL=/bin/sh LOGIN_MARKER=login PATH=${shq(path)}\nexec /bin/sh -c "$4"\n`);
+  chmodSync(join(dir, "bash"), 0o755);
+  return join(dir, "bash");
 }
 const REMEDIES = /declare the executable's absolute path in the launch configuration \(executable\), set PATH in the launch configuration \(env\), or start the OATS tmux server from your own shell/;
 
@@ -279,4 +292,57 @@ test("a start: under a new selection the harness is looked up on the pane's PATH
   assert.equal(existsSync(join(none.home, "harness-ready")), false);
   assert.equal(readJson(join(none.home, "instance.json")).launched, false, "nothing was recorded as started");
   assert.deepEqual(lines(tmuxOn("list-windows", "-t", "=base", "-F", "#{window_name}")), ["hq", "start-frozen"]);
+});
+
+test("a start under a new selection with no OATS server running looks its harness up on the PATH the server will be created with (the login environment), never the creating process's, and is refused when that PATH has none, with no server started", async () => {
+  const unlaunched = (name) => spawned(fx.cli(["spawn", "dev", "--name", name, "--harness", "claude", "--no-launch", "--json"], { env: { OATS_TMUX_SESSION: "boot", PI_AGENTS_TMUX_SESSION: "boot", LANG: "C.UTF-8", PATH: `${decoyBin}:${SYSTEM}` } }));
+  const start = (home, loginPath) => fx.cli(["session", "start", "--home", home, "--harness", "claude", "--json"], { env: { LANG: "C.UTF-8", PATH: `${decoyBin}:${SYSTEM}`, OATS_TEST_LOGIN_SHELL: loginShell(loginPath) } });
+  const found = unlaunched("boot-found");
+  await killServer();
+  let r = start(found.home, SERVER_PATH);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  await ready(found.home);
+  assert.equal(executableOf(found.home), PROBE_EXE, "the login PATH's harness, recorded");
+  assert.equal(existsSync(join(found.home, "decoy-ran")), false, "the creator's never ran");
+  assert.equal(paneEnv(found.home).LOGIN_MARKER, "login", "the server was started with the login environment");
+  const none = unlaunched("boot-none");
+  await killServer();
+  r = start(none.home, SYSTEM);
+  assert.notEqual(r.status, 0, r.stdout);
+  assert.equal(r.json().error.code, "E_HARNESS_UNAVAILABLE", r.json().error.message);
+  assert.match(r.json().error.message, /claude was not found on the PATH the OATS tmux server is created with/);
+  assert.throws(() => tmuxOn("list-sessions"), "no server was started");
+  assert.equal(readJson(join(none.home, "instance.json")).launched, false);
+});
+
+test("a restart of a running instance under a new selection whose harness is not on its pane's PATH is refused before the running harness is stopped", async () => {
+  await startServer(SERVER_PATH);
+  const running = spawned(spawn("restart-running", { path: SERVER_PATH }));
+  await ready(running.home);
+  const pid = Number(readFileSync(join(running.home, "harness-ready"), "utf8").trim());
+  tmuxOn("set-environment", "-g", "PATH", SYSTEM);
+  const r = fx.cli(["session", "restart", "--home", running.home, "--harness", "claude", "--json"], { env: { LANG: "C.UTF-8", PATH: SERVER_PATH } });
+  assert.notEqual(r.status, 0, r.stdout);
+  assert.equal(r.json().error.code, "E_HARNESS_UNAVAILABLE", r.json().error.message);
+  assert.doesNotThrow(() => process.kill(pid, 0), "the running harness was not stopped");
+});
+
+test("a declared bare executable is looked up on the pane's PATH (E_LAUNCH_EXECUTABLE when it is not there), and a launch configuration's PATH given as a reference is the lookup's", async () => {
+  await startServer(SYSTEM);
+  const message = refused(spawn("bare-missing", { path: SERVER_PATH, config: "bare" }), "bare-missing", "E_LAUNCH_EXECUTABLE");
+  assert.match(message, /launch configuration bare: claude was not found on the global PATH of the OATS tmux server/);
+  const child = spawned(spawn("from-env-path", { path: `${decoyBin}:${SYSTEM}`, config: "frompath", env: { FIXTURE_LAUNCH_PATH: SERVER_PATH } }));
+  await ready(child.home);
+  assert.equal(executableOf(child.home), PROBE_EXE, "looked up on the referenced PATH");
+});
+
+test("a server that exits between a spawn's plan and its creation is started again with what a server start gets (the login environment), not with what the plan read for the running one", async () => {
+  await startServer(SERVER_PATH);
+  // The racer's spawn hook kills the server after the plan (which saw it running) and before the creation.
+  const r = fx.cli(["spawn", "racer", "--name", "race-gone", "--harness", "claude", "--json"], { env: { OATS_TMUX_SESSION: "gone", PI_AGENTS_TMUX_SESSION: "gone", LANG: "C.UTF-8", PATH: `${decoyBin}:${SERVER_PATH}`, RACE_KILL: "1", OATS_TEST_LOGIN_SHELL: loginShell(SERVER_PATH) } });
+  const child = spawned(r);
+  await ready(child.home);
+  assert.equal(paneEnv(child.home).LOGIN_MARKER, "login", "the new server has the login environment");
+  assert.equal(executableOf(child.home), PROBE_EXE, "and its harness");
+  assert.equal(existsSync(join(child.home, "decoy-ran")), false);
 });
