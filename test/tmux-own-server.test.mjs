@@ -270,6 +270,50 @@ test("a live instance on another server restarts in place: same pane, record unc
   assert.deepEqual(ownOptions(OTHER, windowId(OTHER, "stays")), UNSET, "a restart in place sets no option: the window keeps what it has");
 });
 
+test("a selected start or restart that reuses its recorded pane on another server looks its harness up on that pane's session, whatever the OATS server's PATH holds and whether or not one runs (#616)", async () => {
+  // Homes with a launch recipe, recorded on OTHER, each window a shell there; OTHER's session gives
+  // its panes a PATH with claude (the probe). This process's PATH has none.
+  ensureSession(OTHER);
+  tmuxOn(OTHER, "set-environment", "-t", `=${SESSION}`, "PATH", spawnPath);
+  const recordedOnOther = async (name) => {
+    const { home } = await withPath(fx.env.PATH, () => fx.spawn("dev", { name, harness: "claude" }));
+    writeFileSync(join(home, "TASK.md"), "task\n");
+    const tmux = { session: SESSION, window: name, socket: OTHER };
+    writeFileSync(join(home, "instance.json"), JSON.stringify({ ...readJson(join(home, "instance.json")), tmux, launched: true }, null, 2) + "\n");
+    writeFileSync(baselineOf(home), JSON.stringify({ ...readJson(baselineOf(home)), runtime: { launched: true, tmux } }, null, 2) + "\n", { mode: 0o600 });
+    tmuxOn(OTHER, "new-window", "-d", "-t", `=${SESSION}:`, "-n", name, "-c", home, "/bin/sh");
+    await waitUntil(() => tmuxOn(OTHER, "display-message", "-p", "-t", `=${SESSION}:=${name}`, "#{pane_current_command}") === "sh", `${name}'s pane is a shell`);
+    return home;
+  };
+  const reusedOnOther = async (home, r) => {
+    assert.equal(r.reused, "pane", "the recorded pane was reused");
+    assert.equal(r.target.socket, OTHER);
+    await ready(home);
+    assert.equal(readJson(join(home, "instance.json")).launch.executable, probe, "the claude on the pane's own PATH, recorded");
+  };
+  // The OATS server runs, with a session of the same name whose PATH has no claude: no veto.
+  ensureSession(OATS);
+  tmuxOn(OATS, "set-environment", "-t", `=${SESSION}`, "PATH", "/oats-fixture-no-harness");
+  try {
+    const home = await recordedOnOther("reuse-recorded");
+    await reusedOnOther(home, startInstanceSession(home, { harness: "claude" }));
+    assert.equal(windowsOf(OATS).includes("reuse-recorded"), false, "nothing was opened on the OATS server");
+    // A restart of the running harness: the same.
+    rmSync(join(home, "harness-ready"));
+    await reusedOnOther(home, restartInstanceSession(home, { harness: "claude", stopGraceMs: 5000 }));
+    assert.equal(windowsOf(OATS).includes("reuse-recorded"), false, "nothing was opened on the OATS server");
+  } finally {
+    tmuxOn(OATS, "set-environment", "-u", "-t", `=${SESSION}`, "PATH");
+  }
+  // No OATS server at all: the start neither needs nor starts one.
+  await killServer(OATS);
+  const alone = await recordedOnOther("reuse-no-oats");
+  await reusedOnOther(alone, startInstanceSession(alone, { harness: "claude" }));
+  assert.deepEqual(sessionsOf(OATS), [], "no OATS server was started");
+  for (const name of ["reuse-recorded", "reuse-no-oats"]) tmuxOn(OTHER, "kill-window", "-t", `=${SESSION}:=${name}`);
+  tmuxOn(OTHER, "set-environment", "-u", "-t", `=${SESSION}`, "PATH");
+});
+
 test("a start that has to create the window again opens it on the OATS server and says so: the recorded window is gone, or the recorded server is gone", async () => {
   ensureSession(OTHER);
   const gone = await makeHome("window-gone", { on: OTHER });

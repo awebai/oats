@@ -173,8 +173,11 @@ with, by this precedence:
    reader below.
 
 The lookup happens twice. Before anything is created, against the `PATH` the
-pane is expected to have: the session's or the server's when the server runs,
-otherwise the `PATH` of the environment the server is created with. And again
+pane is expected to have: for a start that reuses the home's recorded pane
+(running, or left as a shell), that pane's own session on its recorded
+server, whatever the OATS server holds and whether one runs; otherwise the
+session's or the server's when the server runs, otherwise the `PATH` of the
+environment the server is created with. And again
 on the session OATS actually gets, whoever created it and with whatever
 environment (another creator that won the race to create the server, a
 session whose environment overrides `PATH`): found elsewhere, the launch runs
