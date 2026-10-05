@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
 import {
   DEFAULT_KEYMAP, TERMINAL_ALLOWLIST, defaultBinding, getBinding, formatChord, isPlainChord,
-  registerAction, setActiveContexts, resetAllBindings, setBinding, matchEvent, handleKeydown,
+  registerAction, setActiveContexts, resetAllBindings, setBinding, matchEvent, handleKeydown, findConflict, keymapConflicts,
 } from "../renderer/keybindings.mjs";
 
 const map = new Map();
@@ -47,7 +47,7 @@ test("the shipped table: each changed default resolves per platform", () => {
     "focus.nextRegion": ["F6", "F6"], "focus.prevRegion": ["Shift+F6", "Shift+F6"],
     "focus.leaveTerminal": ["Mod+Shift+F6", "Mod+Shift+F6"],
     "sidebar.toggle": ["Mod+B", "Mod+B"], "sidebar.focusFilter": ["Mod+F", "Mod+F"], "panel.toggle": ["Mod+Alt+B", "Mod+Alt+B"],
-    "app.themeToggle": [null, null], "app.shortcuts": ["Mod+,", "Mod+,"],
+    "app.themeToggle": [null, null], "app.themePicker": ["Mod+Shift+Space", "Ctrl+Shift+Space"], "app.shortcuts": ["Mod+,", "Mod+,"],
     "terminal.fontBigger": ["Mod+=", "Mod+="], "terminal.fontSmaller": ["Mod+-", "Mod+-"], "terminal.fontReset": ["Mod+0", "Mod+0"],
   };
   for (const [id, [mac, other]] of Object.entries(table)) {
@@ -70,7 +70,7 @@ test("nothing binds Super/Meta on Linux/Windows: Mod is Ctrl there", () => {
 
 test("the terminal allowlist is exactly the actions that must work in a terminal", () => {
   assert.deepEqual([...TERMINAL_ALLOWLIST].sort(), [
-    "app.chooseSoul", "app.palette", "focus.leaveTerminal",
+    "app.chooseSoul", "app.palette", "app.themePicker", "focus.leaveTerminal",
     "split.close", "split.horizontal", "split.vertical",
     "tabs.close", "tabs.next", "tabs.prev",
   ].sort());
@@ -203,4 +203,51 @@ test("real targets: F6 cycles from text fields; in xterm's textarea F6 is the pr
   assert.equal(isPlainChord("B"), true);
   assert.equal(matchEvent(ev("b", { target: doc.querySelector(".ctx-filter") }), { isMac: false }), null);
   assert.equal(matchEvent(ev("b", { target: doc.querySelector(".xterm-helper-textarea") }), { isMac: true }), null);
+});
+
+// The theme picker's chord, dispatched as the real keydown: Space reports key " " (KEY_ALIASES → "space").
+const space = (mods = {}) => ev(" ", { code: "Space", ...mods });
+test("theme picker: Ctrl+Shift+Space on Linux/Windows, ⇧⌘Space on macOS, from the real Space event", t => {
+  registerAll(t);
+  assert.equal(formatChord(getBinding("app.themePicker", false), false), "Ctrl+Shift+Space");
+  assert.equal(formatChord(getBinding("app.themePicker", true), true), "⇧⌘Space");
+  assert.ok(TERMINAL_ALLOWLIST.includes("app.themePicker"));
+  for (const insideTerminal of [false, true]) {
+    const linuxOpts = { isMac: false, insideTerminal }, macOpts = { isMac: true, insideTerminal };
+    assert.equal(matchEvent(space({ ctrlKey: true, shiftKey: true }), linuxOpts), "app.themePicker", `Linux, terminal=${insideTerminal}`);
+    // Linux ignores metaKey (chordFromEvent): where the window manager lets Super+Ctrl+Shift+Space through, it opens the picker too.
+    assert.equal(matchEvent(space({ ctrlKey: true, shiftKey: true, metaKey: true }), linuxOpts), "app.themePicker", `Linux + Super, terminal=${insideTerminal}`);
+    assert.equal(matchEvent(space({ metaKey: true, shiftKey: true }), macOpts), "app.themePicker", `macOS, terminal=${insideTerminal}`);
+    const claimed = space({ ctrlKey: true, shiftKey: true }); handleKeydown(claimed, linuxOpts);
+    assert.equal(claimed.defaultPrevented, true, "claimed before the pty");
+    // Plain Ctrl+Space (NUL: set-mark in emacs, completion in shells and editors) is never the app's.
+    const nul = space({ ctrlKey: true });
+    for (const opts of [linuxOpts, macOpts]) assert.equal(matchEvent(nul, opts), null, `Ctrl+Space, mac=${opts.isMac}`);
+    assert.equal(handleKeydown(nul, linuxOpts), false); assert.equal(nul.defaultPrevented, false);
+    // Not the other platform's chord: ⌃⇧Space on macOS (⌃ in a terminal is the program's), ⌘ alone elsewhere.
+    assert.equal(matchEvent(space({ ctrlKey: true, shiftKey: true }), macOpts), null);
+    assert.equal(matchEvent(space({ metaKey: true, ctrlKey: true, shiftKey: true }), macOpts), null, "⌃⇧⌘Space is not the macOS chord");
+  }
+  // In a text field (the roster filter, the spawn form): a modified chord is not typing, so the engine's
+  // editable-field guard (plain chords only) lets it fire there.
+  const dom = new JSDOM(`<input class="ctx-filter"><textarea class="ftask"></textarea><div class="xterm"><textarea class="xterm-helper-textarea"></textarea></div>`);
+  t.after(() => dom.window.close());
+  for (const target of dom.window.document.querySelectorAll("input, textarea")) {
+    assert.equal(matchEvent(space({ target, ctrlKey: true, shiftKey: true }), { isMac: false }), "app.themePicker", target.className);
+    assert.equal(matchEvent(space({ target, metaKey: true, shiftKey: true }), { isMac: true }), "app.themePicker", target.className);
+  }
+});
+
+test("theme picker: no other default shares either chord", t => {
+  registerAll(t);
+  for (const isMac of [false, true]) {
+    const chord = getBinding("app.themePicker", isMac);
+    assert.equal(findConflict(chord, "global", "app.themePicker", isMac), null, `mac=${isMac}: ${chord}`);
+    for (const id of IDS) if (id !== "app.themePicker") assert.notEqual(getBinding(id, isMac), chord, id);
+    assert.deepEqual(keymapConflicts(isMac), [], `mac=${isMac}`);
+  }
+  // A user who bound the chord to another action keeps it; the existing warning names the clash.
+  setBinding("app.shortcuts", "Ctrl+Shift+Space");
+  assert.equal(getBinding("app.shortcuts", false), "Ctrl+Shift+Space");
+  assert.deepEqual(keymapConflicts(false).map(c => c.actions.map(a => a.id).sort()), [["app.shortcuts", "app.themePicker"]]);
 });

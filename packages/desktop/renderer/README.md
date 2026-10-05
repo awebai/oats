@@ -62,9 +62,12 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
 
 `theme.css` carries semantic WCAG AA tokens for **White**, **Solarized**, and
 **Dark**. A fourth choice, **This computer** (`host`), has no palette of its
-own: it shows the theme of the computer that runs Desktop. Theme actions are
-available in the command palette; cycling follows that order (White, Solarized,
-Dark, This computer). Existing valid `oatsweb.theme` preferences survive, on
+own: it shows the theme of the computer that runs Desktop. The theme button,
+the palette's **Theme: choose…** and Ctrl+Shift+Space (⇧⌘Space on macOS;
+`app.themePicker`) open the theme picker (`theme-picker.mjs`), a modal in the
+middle of the window that applies a choice through `setTheme`. The other
+theme actions are in the command palette; cycling follows that order
+(White, Solarized, Dark, This computer). Existing valid `oatsweb.theme` preferences survive, on
 every platform. A missing or invalid preference means the platform's default:
 This computer on Linux, White elsewhere. The shell decides which from
 `navigator.platform` and passes it to `initTheme()` as the fallback;

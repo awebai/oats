@@ -19,7 +19,7 @@ import { createWorkspaceSwitcher } from "../renderer/workspace-switcher.mjs";
 import { rosterResponseOwns, rosterSignature } from "../renderer/instance-tree.mjs";
 import { staleWorkspaceSelection } from "../renderer/views/common.mjs";
 import { createPendingWatch, NOT_SERVED_CODE, NO_ANSWER_CODE } from "../renderer/deployment-header.mjs";
-import { DEFAULT_KEYMAP, TERMINAL_ALLOWLIST, registerAction, runAction, listActions, getBinding, formatChord, setActiveContexts, matchEvent, setBinding, resetBinding, onKeymapChange } from "../renderer/keybindings.mjs";
+import { DEFAULT_KEYMAP, TERMINAL_ALLOWLIST, registerAction, runAction, listActions, getBinding, formatChord, setActiveContexts, matchEvent, handleKeydown, setBinding, resetBinding, onKeymapChange } from "../renderer/keybindings.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const html = readFileSync(new URL("../renderer/index.html", import.meta.url), "utf8");
@@ -63,7 +63,7 @@ function shell(t, shellSource = source) {
     quickOpen: { toggle: () => events.push(["quickOpen"]) },
     shortcutsEditor: { close() {}, open: () => events.push(["shortcuts"]) },
     THEMES, setTheme: id => events.push(["theme", id]),
-    toggleTheme: () => events.push(["theme"]),
+    toggleTheme: () => events.push(["theme"]), themePicker: { toggle: () => events.push(["themePicker"]) },
     splitPane: orientation => events.push(["split", orientation]), closeSplit: () => events.push(["split", "close"]),
     fileOpener: { choose() {}, dispose() {} },
     getBinding, formatChord, isMac: false, contextRosterEl: document.getElementById("instance-roster"),
@@ -161,14 +161,14 @@ test("footer has one honest chooser and five permanently named tools, all dispat
   const s = shell(t), q = id => s.document.getElementById(id);
   const foot = q("nav-foot"), tools = [...q("sidebar-tools").children];
   assert.deepEqual([...foot.children].map(el => el.id), ["sidebar-spawn", "sidebar-tools"]);
-  assert.deepEqual(tools.map(b => b.dataset.action), ["sidebar.toggle", "app.themeToggle", "app.shortcuts", "app.connections", "app.palette"]);
+  assert.deepEqual(tools.map(b => b.dataset.action), ["sidebar.toggle", "app.themePicker", "app.shortcuts", "app.connections", "app.palette"]);
   for (const button of foot.querySelectorAll("button")) {
     assert.equal(button.type, "button"); assert.equal(button.hidden, false); assert.equal(button.disabled, false);
     assert.ok(button.tabIndex >= 0); assert.ok(button.getAttribute("aria-label")); assert.ok(button.title);
     assert.ok(button.querySelector('svg[aria-hidden="true"]'));
   }
   q("sidebar-theme").click(); q("sidebar-shortcuts").click(); q("sidebar-settings").click(); q("sidebar-palette").click();
-  assert.deepEqual(s.events, [["theme"], ["shortcuts"], ["connections"], ["palette"]]);
+  assert.deepEqual(s.events, [["themePicker"], ["shortcuts"], ["connections"], ["palette"]]);
   assert.equal(getBinding('app.connections'), null, 'Connections does not invent a new global chord');
   assert.match(q("sidebar-spawn").title, /Choose a soul/);
   assert.equal(getBinding("app.chooseSoul", true), "Mod+N", "redesign shortcut chooses a soul, never launches one");
@@ -330,14 +330,22 @@ for (const outcome of ["resolve", "reject"]) test(`reported workspace/root/host 
   assert.equal(document.getElementById("ws-trigger").title, "Active workspace: same <b>name</b>", "a remote id is never the tooltip");
 });
 
-test('White, Solarized, Dark and This computer have explicit registry/palette choices without new default chords; every label spells the cycle', t => {
+test('White, Solarized, Dark and This computer have explicit registry/palette choices without new default chords; the cycle keeps its label', t => {
   const s = shell(t);
+  t.after(() => resetBinding('app.themePicker'));
   const button = s.document.getElementById('sidebar-theme');
   const cycleLabel = 'Cycle White / Solarized / Dark / This computer theme';
-  assert.equal(button.getAttribute('aria-label'), cycleLabel);
-  assert.ok(button.title.startsWith(cycleLabel), 'the title is the label, then a chord when one is bound');
-  assert.match(html, new RegExp(`id="sidebar-theme"[^>]*title="${cycleLabel}" aria-label="${cycleLabel}"`), 'the markup says the same before scripts run');
-  assert.equal(listActions().find(action => action.id === 'app.themeToggle')?.label, cycleLabel, 'the registered action too');
+  assert.equal(listActions().find(action => action.id === 'app.themeToggle')?.label, cycleLabel, 'the cycle action stays as it is');
+  // The theme button opens the picker (app.themePicker); its name and tooltip carry the effective chord, never a hard-coded one.
+  assert.equal(button.dataset.action, 'app.themePicker');
+  assert.equal(button.getAttribute('aria-haspopup'), 'dialog');
+  assert.equal(button.getAttribute('aria-label'), 'Choose a theme');
+  assert.equal(button.title, 'Choose a theme (Ctrl+Shift+Space)', 'the title is the label, then the bound chord');
+  assert.match(html, /id="sidebar-theme"[^>]*data-action="app\.themePicker" aria-haspopup="dialog"\s+title="Choose a theme" aria-label="Choose a theme"/, 'the markup says the same before scripts run');
+  assert.equal(listActions().find(action => action.id === 'app.themePicker')?.label, 'Choose a theme…');
+  setBinding('app.themePicker', 'Ctrl+Alt+T');
+  assert.equal(button.title, 'Choose a theme (Ctrl+Alt+T)', 'a rebind follows');
+  assert.equal(button.getAttribute('aria-label'), 'Choose a theme');
   const start = source.indexOf('// ── command palette');
   const end = source.indexOf('// ── Quick Open', start);
   const commands = runInNewContext(`${source.slice(start, end)}\npalette.commands`, {
@@ -353,6 +361,19 @@ test('White, Solarized, Dark and This computer have explicit registry/palette ch
   assert.equal(commands.filter(item => /^Theme: /.test(item.label)).at(-1).label, 'Theme: This computer', 'listed last');
   const cycle = commands.find(item => item.label === 'Theme: cycle White / Solarized / Dark / This computer'); assert.ok(cycle);
   cycle.run(); assert.deepEqual(s.events.at(-1), ['theme']);
+  const choose = commands.filter(item => item.label === 'Theme: choose…');
+  assert.equal(choose.length, 1, 'one palette entry opens the picker');
+  assert.equal(choose[0].detail(), 'Ctrl+Alt+T', 'its hint is the effective chord');
+  resetBinding('app.themePicker');
+  assert.equal(choose[0].detail(), 'Ctrl+Shift+Space'); assert.equal(button.title, 'Choose a theme (Ctrl+Shift+Space)');
+  choose[0].run(); assert.deepEqual(s.events.at(-1), ['themePicker']);
+  assert.ok(commands.indexOf(choose[0]) < commands.indexOf(cycle), 'listed before the cycle');
+  // The chord toggles the picker once; a held chord (key repeat) does nothing.
+  const before = s.events.length;
+  const chord = (repeat) => ({ key: ' ', code: 'Space', ctrlKey: true, shiftKey: true, metaKey: false, altKey: false, repeat, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } });
+  assert.equal(handleKeydown(chord(false), { isMac: false, insideTerminal: false }), true);
+  assert.equal(handleKeydown(chord(true), { isMac: false, insideTerminal: false }), true, 'a repeat is still claimed');
+  assert.deepEqual(s.events.slice(before), [['themePicker']]);
   assert.equal(commands.some(item => /light\/dark/i.test(item.label)), false);
 });
 
