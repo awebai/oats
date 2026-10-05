@@ -69,6 +69,16 @@ test("fitTerminal keeps no width for xterm's scrollbar: the gutters match", t =>
     "the scrollbar is hidden on terminal tabs, so the grid can take its width");
 });
 
+test("no classic scrollbar on Linux: a terminal's pane never scrolls, and the tab strips scroll without one", () => {
+  const css = read("renderer/shell.css");
+  assert.match(css, /\.term-wrap \{ overflow: hidden; \}\n\.tab-pane:has\(> \.term-wrap\) \{ overflow: hidden; \}/,
+    "a pane holding a terminal clips; xterm and tmux scroll");
+  assert.match(css, /#tabbar, \.group-tabbar \{ scrollbar-width: none; \}\n#tabbar::-webkit-scrollbar, \.group-tabbar::-webkit-scrollbar \{ display: none; \}/,
+    "the flat strip and every split group's strip hide their scrollbar");
+  assert.match(css, /#tabbar \{[^}]*overflow-x: auto;/, "the flat strip still scrolls");
+  assert.match(css, /\.group-tabbar \{[^}]*overflow-x: auto;/, "a group strip still scrolls");
+});
+
 test("fitTerminal rounds the centring margin to device pixels, so glyphs stay sharp", t => {
   const p = pane(t, { width: 397.5, height: 600, ratio: 2 }); // a split half: 373.5px across
   fitTerminal(p.term, p.fit);
