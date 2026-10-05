@@ -85,8 +85,13 @@ its mount), like every other program the Desktop starts. If the shell fails, tim
 inherited PATH stays: the backend's `/api/cli` reports `pathSource`
 (`login-shell` or `inherited`), `pathError` (why, or `null`) and
 `probePath` (the PATH the probe used), and the reason is logged at startup.
-A tmux server that was already running keeps its own environment; restart it
-if its sessions should get the new PATH, which ends its sessions: `tmux -L oats kill-server` for the OATS tmux server, where instances run, and `tmux kill-server` for your default server, where an instance started by an earlier kernel may still be.
+An agent's pane takes its tmux session's or server's PATH, whoever opens its
+window, and its harness is looked up there
+([execution-targets.md](execution-targets.md#the-servers-start-environment)):
+a window the Desktop opens on a server that already runs gets that server's
+PATH, not the Desktop's. A tmux server that was already running keeps its own
+environment; restart it if its sessions should get the new PATH, which ends
+its sessions: `tmux -L oats kill-server` for the OATS tmux server, where instances run, and `tmux kill-server` for your default server, where an instance started by an earlier kernel may still be.
 
 ## Opening a workspace
 

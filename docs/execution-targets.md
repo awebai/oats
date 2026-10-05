@@ -134,20 +134,71 @@ options and environment, are left exactly as they were.
 #### The environment of the server and its panes
 
 A tmux server keeps the environment of the process that started it, as its
-global environment. A pane gets that, plus its session's environment (the
+global environment. A pane gets its session's environment over that (the
 variables tmux's `update-environment` names, taken from whoever created the
-session), plus what the launch command sets (`OATS_INSTANCE`,
-`OATS_INSTANCE_HOME`, the capabilities' and the launch configuration's
-variables). One variable is different: **a pane's `PATH` is the `PATH` of the
-process that creates its window**, that is of each `oats spawn` or `oats
-session start`, with the home's own `oats` shim put first by the launch
-command. So:
+session, and anything set on the session with `set-environment -t`), plus
+what the launch command sets (`OATS_INSTANCE`, `OATS_INSTANCE_HOME`, the
+capabilities' and the launch configuration's variables). **A pane's
+environment is its session's, `PATH` included, whoever creates its window**:
+an instance, the Desktop or an operator's shell. The tmux client that creates
+the window (or respawns the pane, in a restart in place) runs with only
+`LANG`, `LC_ALL` and `LC_CTYPE`, and tmux takes a client's `PATH` only when
+the client has one. The launch command then puts the home's own `oats` shim
+first. So:
 
-- `PATH` follows the process that runs each spawn or start, not whoever
-  started the server.
+- A pane's `PATH` is its session's `PATH` when the session has one, otherwise
+  the server's global `PATH`. It no longer follows the process that runs each
+  spawn or start (it did before 0.42.0).
+- A `PATH` and the variables that interpret it (a version manager's
+  bookkeeping, such as mise's `__MISE_DIFF`, or nvm's) therefore come from
+  one environment. OATS no longer overlays a creator's `PATH` onto another
+  environment's companion state. It does not make an existing or external
+  server's environment, a session override or a launch configuration's
+  `PATH` coherent: it uses them as they are.
 - The rest of the ambient environment follows the server's first creator,
   and a server that already runs keeps what it started with. Creating a
   session or a window on it changes nothing global.
+
+**The harness is looked up where its pane looks it up.** A launch whose
+executable is a bare name (the harness's own, or a launch configuration's
+`executable` without a `/`) looks it up on the `PATH` the pane will run it
+with, by this precedence:
+
+1. a declared absolute `executable` is used as it is, with no lookup (a
+   relative one is resolved against the deployment directory, as before);
+2. a `PATH` set in the launch configuration's `env` (a literal, or a
+   `fromEnv` reference resolved on this host) is what the pane's command
+   line applies, so the lookup uses it;
+3. otherwise the session's or the server's `PATH`, read with the strict
+   reader below.
+
+The lookup happens twice. Before anything is created, against the `PATH` the
+pane is expected to have: the session's or the server's when the server runs,
+otherwise the `PATH` of the environment the server is created with. And again
+on the session OATS actually gets, whoever created it and with whatever
+environment (another creator that won the race to create the server, a
+session whose environment overrides `PATH`): found elsewhere, the launch runs
+and records that executable; not there, the spawn is refused and rolled back
+as any failed launch is, and a start is refused before it stops or launches
+anything. A recorded executable (a start that reuses the home's launch) is
+kept as it is: it then runs with its pane's environment, but it is not looked
+up again. A `--no-launch` spawn, and a preview with no server running, look
+the harness up on the process's own `PATH`, as before.
+
+A session's `PATH` can be in four states, and the lookup tells them apart:
+no entry (the server's `PATH` is used), a value, even an empty one (used as
+it is), an explicit clear (`unset PATH;` in `show-environment -s`: tmux gives
+the pane no `PATH` at all), or a value the strict reader leaves out. The last
+two, and a server with no `PATH` or one that cannot be read, are refused: OATS
+never substitutes the server's `PATH`, the caller's or a default for them.
+
+A harness that is not on that `PATH` is refused with `E_HARNESS_UNAVAILABLE`
+(a configuration's declared bare name with `E_LAUNCH_EXECUTABLE`). The message
+names where it looked (`the PATH of tmux session <name>`, `the global PATH of
+the OATS tmux server (<socket>)`, or the launch configuration's) and the
+remedies: declare the executable's absolute path in the launch configuration,
+set `PATH` in the launch configuration, or start the server from your own
+shell. It never prints a `PATH`'s contents.
 
 Who starts the `oats` server, after an install, a reboot or its last session
 ending, decides that ambient environment:
@@ -218,17 +269,14 @@ that triggered it), and `oats schedule run-now` typed inside an instance.
   `XDG_CONFIG_HOME`, `PATH`, `SHELL`), the creation is refused instead, with
   the same remedy as below.
 - When it creates a window in a session that exists, the tmux client that
-  creates it runs with `PATH`, without any instance's `oats` shim directory,
-  and with `LANG`, `LC_ALL` and `LC_CTYPE`, which that client needs to start
-  on a host whose only UTF-8 locale is the one they name. tmux hands a pane
-  the `PATH` of that client and nothing else of it: the three locale names
-  stay with the client, and the pane, the session and the server keep the
-  values they had. Nothing else of the instance travels. When the instance
-  has no `PATH` to give (none is set, or only `oats` shim directories were
-  in it), none is passed: the pane then takes no `PATH` from the client. A
-  restart that reuses the pane the home already has runs its tmux client
-  with the same environment; where and whether the pane is reused does not
-  change.
+  creates it runs with `LANG`, `LC_ALL` and `LC_CTYPE` only, which that client
+  needs to start on a host whose only UTF-8 locale is the one they name, as
+  every creator's does. tmux hands a pane none of them: the pane, the session
+  and the server keep the values they had, and the pane's `PATH` is the
+  session's or the server's. Nothing of the instance travels, its `PATH`
+  included. A restart that reuses the pane the home already has runs its tmux
+  client with the same environment; where and whether the pane is reused does
+  not change.
 - **It is refused** (`E_RUNTIME_ENDPOINT_UNKNOWN`; `oats spawn` reports it
   as `E_SPAWN_FAILED` with the same message) when the session does not exist
   on the `oats` server and there is no source to read: the home records no
@@ -277,7 +325,8 @@ that triggered it), and `oats schedule run-now` typed inside an instance.
   the environment it passes: its own `tmux`, its own `TMUX_TMPDIR`, and the
   socket the lookup returned when the server runs. Its own `tmux` is the one
   its own `PATH` finds, and the session is created by that program's full
-  path. A process whose `PATH` holds no tmux cannot read the server at all:
+  path, as is every window client (it has no `PATH` to look one up with). A
+  process whose `PATH` holds no tmux cannot read the server at all:
   it is refused (`E_RUNTIME_ENDPOINT_UNKNOWN`) whether or not the session
   exists, and told to run the command with a `PATH` that holds tmux. A
   process whose `PATH` is not set is refused only when it has to create the
@@ -307,9 +356,9 @@ tmux -L oats kill-server                         # replace it: ends EVERY sessio
   the session up by its exact name and assumes nothing about its `hq`
   window.
 - `set-environment -g` is how a running server is repaired: it ends nothing,
-  and panes that already run keep the environment they have. A pane's `PATH`
-  is always that of the process that runs the spawn or the start, so setting
-  `PATH` on the server changes nothing for OATS panes.
+  and panes that already run keep the environment they have. Windows created
+  from now on take it, `PATH` included (with no session override of it), and
+  their harness is looked up on that `PATH`.
 - `kill-server` ends every session on that server, every running agent
   included. It is for before agents are started, not for repairing a running
   host. The next start takes the environment of whoever starts it.
