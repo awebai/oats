@@ -203,7 +203,8 @@ test('K6c spawn idempotency: --expect-decision + --idempotency-key — a retry o
 test('K6d (spawn-apply-2): the decision binds EFFECTIVE launch facts (a changed inherited model drifts it); a stale launching apply starts no session; two concurrent applies of one decision create exactly one home (E_PLACEMENT_TAKEN for the loser)', async t => {
   const fx = deployment(t, { souls: WORKTREE, local: OPUS });
   // A tmux that records every call: a session or window it was asked to create is a started backend.
-  writeFileSync(join(fx.bin, 'tmux'), `#!/bin/sh\necho "$*" >> "${fx.base}/tmux-calls"; exit 1\n`, { mode: 0o700 });
+  // Its OATS server lists no session (a launch reads that before it places anything); everything else fails.
+  writeFileSync(join(fx.bin, 'tmux'), `#!/bin/sh\necho "$*" >> "${fx.base}/tmux-calls"\ncase " $* " in *" list-sessions "*) exit 0 ;; esac\nexit 1\n`, { mode: 0o700 });
   const tmuxStarted = () => existsSync(join(fx.base, 'tmux-calls')) && /new-session|new-window/.test(readFileSync(join(fx.base, 'tmux-calls'), 'utf8'));
   const spawnArgs = ['spawn', 'wt', '--purpose', 'a', '--launch-config', 'opus'];
   // A. effective facts are hashed: same placement, different inherited model (the launch configuration's) → stale.
@@ -310,6 +311,7 @@ test('K6g retention authority: kernel post-spawn fields (spawnCompleted, wake) n
 while :; do case "$1" in -u) shift ;; -L|-S) shift 2 ;; *) break ;; esac; done
 case "$1" in
   new-session) printf '/tmp/oats-k6g-fake.sock\\t@0\\n' ;;
+  show-environment) printf 'PATH="%s"; export PATH;\\n' "$PATH" ;;
   new-window) prev=""; for a in "$@"; do case "$prev" in -n) echo "$a" >> ${wins};; -c) ${writeState ? `printf 'agent wrote this at launch\\n' > "$a/STATE.md"` : ':'};; esac; prev="$a"; done; echo @1 ;;
   list-windows) cat ${wins} ;;
   kill-window) : > ${wins} ;;

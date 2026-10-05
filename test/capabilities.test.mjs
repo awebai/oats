@@ -1052,6 +1052,8 @@ test("parent-relation rollback after LAUNCH kills the window, compensates hooks,
     'cmd="$1"',
     'case "$cmd" in',
     `  new-session) printf '' > ${tmuxWins}.killed; printf '/tmp/oats-test-fake.sock\\t@0\\n' ;;`,
+    // The server has the PATH of the client that started it, as tmux's does: a pane looks its harness up there.
+    `  show-environment) printf 'PATH="%s"; export PATH;\\n' "$PATH" ;;`,
     "  new-window)",
     `    while [ $# -gt 0 ]; do if [ "$1" = "-n" ]; then echo "$2" >> ${tmuxWins}; fi; shift; done`,
     "    echo @1 ;;",
