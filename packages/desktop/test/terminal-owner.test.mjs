@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { createTerminalOwnerBroker, installTerminalHandlers } from '../terminal-owner.mjs';
+import { MAX_TERMINALS } from '../terminal-registry.mjs';
 import { admitTerminalTarget } from '../terminal-target.mjs';
 import { workspaceHash } from '../renderer/window-binding.mjs';
 import { TERM_READY_MS, TERM_READY_BYTES, TERM_CLOSE_MS, HERDR_REMOVED, terminalHandle, terminalFailure } from '../renderer/terminal-contract.mjs';
@@ -160,14 +161,41 @@ test('same-url old frame and crashed owner cannot write; child/in-place workspac
   assert.deepEqual(f.ptys[0].writes, ['still owner']);
 });
 
-test('global20 cap includes revoked preparations across owners and backend families, until real settlement', async () => {
+test('global cap includes revoked preparations across owners and backend families, until real settlement', async () => {
   const gate = deferred(), f = fixture({ prepare: () => gate.promise }), a = f.owner('A'), b = f.owner('B');
-  const pending = Array.from({ length: 20 }, (_, n) => f.open(n % 2 ? a : b, { name: `r${n}`, remote: true }));
-  await drain(); assert.equal(f.calls.filter(c => c[0] === 'prepare').length, 20);
+  const pending = Array.from({ length: MAX_TERMINALS }, (_, n) => f.open(n % 2 ? a : b, { name: `r${n}`, remote: true }));
+  await drain(); assert.equal(f.calls.filter(c => c[0] === 'prepare').length, MAX_TERMINALS);
   f.navigate(a); f.navigate(b);
-  assert.equal((await f.open(a, { name: 'local' })).code, 'E_TERM_CAP'); assert.equal(f.broker.counts().slots, 20);
+  assert.equal((await f.open(a, { name: 'local' })).code, 'E_TERM_CAP'); assert.equal(f.broker.counts().slots, MAX_TERMINALS);
   gate.resolve({}); for (const result of await Promise.all(pending)) assert.equal(result.code, 'E_TERM_CONTEXT_CHANGED');
   assert.equal(f.broker.counts().slots, 0); assert.equal(f.ptys.length, 0);
+});
+
+test('more than the old limit of 20 terminals open: the 21st gets its own pty and slot', async () => {
+  const f = fixture(), a = f.owner('A');
+  for (let n = 1; n <= 21; n++) assert.equal((await f.open(a, { name: `t${n}` })).status, 'opened');
+  assert.equal(f.broker.counts().slots, 21); assert.equal(f.ptys.length, 21);
+});
+
+test('the ceiling refuses a local and a remote open before any preparation or pty; a confirmed close frees one place', async () => {
+  const f = fixture({ autoExit: true }), a = f.owner('A'), b = f.owner('B'), handles = [];
+  for (let n = 0; n < MAX_TERMINALS; n++) handles.push(await f.attached(n % 2 ? a : b, { name: `t${n}`, remote: n % 4 === 0 }));
+  const calls = f.calls.length, ptys = f.ptys.length;
+  for (const spec of [{ name: 'over' }, { name: 'over', remote: true }]) assert.deepEqual(await f.open(a, spec), terminalFailure('E_TERM_CAP'));
+  assert.equal(f.calls.length, calls); assert.equal(f.ptys.length, ptys); assert.equal(f.broker.counts().slots, MAX_TERMINALS);
+  assert.equal((await f.handlers.get('term:close')(f.event(b), handles[0])).status, 'closed');
+  assert.equal(f.broker.counts().slots, MAX_TERMINALS - 1);
+  assert.equal((await f.open(a, { name: 'over' })).status, 'opened'); assert.equal(f.broker.counts().slots, MAX_TERMINALS);
+  assert.equal((await f.open(a, { name: 'again' })).code, 'E_TERM_CAP');
+});
+
+test('a failed create gives its place back: one below the ceiling, the open after a failure still succeeds', async () => {
+  const pty = () => ({ onData: () => ({ dispose() {} }), onExit: () => ({ dispose() {} }), write() {}, resize() {}, kill() {} });
+  const f = fixture({ create: spec => { if (spec.name === 'broken') throw new Error('no pty'); return { pty: pty() }; } }), a = f.owner('A');
+  for (let n = 0; n < MAX_TERMINALS - 1; n++) assert.equal((await f.open(a, { name: `t${n}` })).ok, true);
+  assert.equal((await f.open(a, { name: 'broken' })).code, 'E_TERM_OPEN_FAILED'); assert.equal(f.broker.counts().slots, MAX_TERMINALS - 1);
+  assert.equal((await f.open(a, { name: 'last' })).ok, true); assert.equal(f.broker.counts().slots, MAX_TERMINALS);
+  assert.equal((await f.open(a, { name: 'over' })).code, 'E_TERM_CAP');
 });
 
 test('preparation success AND rejection after context replacement are stale; live direct viewers survive', async () => {

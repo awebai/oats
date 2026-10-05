@@ -33,7 +33,7 @@ this is an algorithmic-shape measurement, not a native latency benchmark.
 - Dedupe is per canonical backend target and owner document. `reused` does not
   grant a second renderer tab an acquisition; closing its refused placeholder
   cannot detach the existing tab.
-- **MAX_TERMINALS=20 is process-wide**, not20 per owner/backend. Reserve before
+- **MAX_TERMINALS=200 is process-wide**, not200 per owner/backend. Reserve before
   any await. Pending/revoked inspection, awaiting-ready, closing, active attachment
   work and uncertain partial creation remain counted until settlement/confirmation.
   No unbounded queue, fulfilled preparation cache, eviction or conflicting overwrite.

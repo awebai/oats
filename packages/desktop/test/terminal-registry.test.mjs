@@ -1,6 +1,6 @@
 // Historical target-index helper tests, retained for pure bookkeeping coverage.
 // This simulator is NOT the current main terminal authority or an end-to-end
-// security proof. Production owns20 global slots through terminal-owner.mjs;
+// security proof. Production owns MAX_TERMINALS global slots through terminal-owner.mjs;
 // terminal-owner.test.mjs and terminal-wire-io.test.mjs exercise the actual
 // broker/handlers/composition, including owner/document leases and pending cleanup.
 import { test } from "node:test";
@@ -144,8 +144,8 @@ test("app quit releases every slot back to baseline zero", () => {
   assert.ok(r.id !== undefined);
 });
 
-test("MAX_TERMINALS is 20 (operator-directed working ceiling; a change is a resource-policy decision)", () => {
-  assert.equal(MAX_TERMINALS, 20);
+test("MAX_TERMINALS is 200 (the bound on a runaway of distinct opens; a change is a resource-policy decision)", () => {
+  assert.equal(MAX_TERMINALS, 200);
 });
 
 test("the production default cap is enforced end to end (open MAX+1 distinct → the last is capped)", () => {
