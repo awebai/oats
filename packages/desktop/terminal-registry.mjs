@@ -28,9 +28,11 @@
 // ordinary use. A terminal costs one pty and one attached tmux client on a
 // small viewer session; a remote terminal costs an `oats session attach`
 // process and its ssh. Measured on 2026-10-04 on Linux with tmux 3.7, on a
-// private tmux server, following openTerm's command sequence: 200
+// private tmux server, driving openTerm's tmux command sequence directly: 200
 // linked-window viewers with attached clients took 24 MB in the tmux server,
-// about 5 MB per client, no idle CPU, and 30 to 90 ms per open.
+// about 5 MB per client, 0.04 s of server CPU over 5 idle seconds, and 30 to
+// 90 ms per open. Not measured: Electron and node-pty, remote terminals, a Mac,
+// heavy output.
 export const MAX_TERMINALS = 200;
 
 /**
