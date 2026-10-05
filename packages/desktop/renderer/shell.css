@@ -411,6 +411,10 @@ body {
   display: flex; flex: 1; min-width: 0;
   overflow-x: auto; height: calc(var(--bar-h) - 1px); /* the strip's rule is the 48th pixel */
 }
+/* A tab strip scrolls (the wheel, revealInStrip) with no scrollbar, like the other tab bars:
+   on Linux Chromium draws a classic one, arrows included, under the tabs. */
+#tabbar, .group-tabbar { scrollbar-width: none; }
+#tabbar::-webkit-scrollbar, .group-tabbar::-webkit-scrollbar { display: none; }
 /* tab-strip split controls (shown while the active tab is a terminal) */
 #tab-actions { display: flex; align-items: center; gap: 2px; padding: 0 8px; flex: none;
                --tab-actions-w: 74px; /* padding 8 + 8, two 28px buttons, the 2px gap */ width: var(--tab-actions-w); }
@@ -534,6 +538,10 @@ body {
    width for it and the left and right gutters match. */
 .term-wrap .xterm-viewport { scrollbar-width: none; }
 .term-wrap .xterm-viewport::-webkit-scrollbar { display: none; }
+/* A terminal's pane never scrolls: xterm and tmux do. Its gutters and the grid's last
+   partial row would otherwise give the pane a classic scrollbar on Linux. */
+.term-wrap { overflow: hidden; }
+.tab-pane:has(> .term-wrap) { overflow: hidden; }
 .term-banner {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   background: var(--term-bg); color: var(--warn); font-size: 15px; z-index: 5;
