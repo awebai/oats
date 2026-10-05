@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
 import * as packages from "../lib/packages.mjs";
+import { DISPOSABLE_HOME_ACCEPTED, DISPOSABLE_HOME_REFUSED, disposableHomeRefusal } from "./helpers/disposable-home.mjs";
 import {
   classifyPackageValue, packageProviding, parsePackageRequest,
   readLock, readPackageManifests, resolvePackages, writeLock, canonicalLock, validateLock,
@@ -405,6 +406,31 @@ test("a package capability manifest that breaks the kernel contract is E_PACKAGE
   bad.tag("v1.0.0", c);
   await assert.rejects(readPackageManifests(fakeRemote([bad]), bad.url, c, "oats-package"),
     (e) => e.code === "E_PACKAGE_MANIFEST" && e.details.pointer === "/hooks/launch/required" && /hook "launch" cannot be required/.test(e.message));
+});
+
+test("a package capability's retirement.disposable.home entry is refused as E_PACKAGE_MANIFEST at the entry's own pointer; sound entries are read", async () => {
+  // One package per entry: the first manifest that breaks the contract ends the read.
+  const packageDeclaring = (key, home) => {
+    const repo = new FakeRepo(key);
+    const commit = repo.commit("1", {
+      "oats-package/oats-package.json": JSON.stringify({ package: "x.home", version: "1.0.0", capabilities: ["capabilities/tool"] }),
+      "oats-package/capabilities/tool/oats.json": JSON.stringify({ capability: "x.tool", version: "1.0.0", description: "d", retirement: { disposable: { home } } }),
+    });
+    return readPackageManifests(fakeRemote([repo]), repo.url, commit, "oats-package");
+  };
+  // The entry under test is second, after a sound one: the pointer's index is the entry's own.
+  for (const [i, [value, why]] of DISPOSABLE_HOME_REFUSED.entries()) {
+    await assert.rejects(packageDeclaring(`github.com/x/home-${i}`, [".ok", value]), (e) => {
+      assert.equal(e.code, "E_PACKAGE_MANIFEST", JSON.stringify(value));
+      assert.equal(e.details.pointer, "/retirement/disposable/home/1", JSON.stringify(value));
+      assert.equal(e.details.capability, "x.tool");
+      assert.equal(e.message, `oats-package/capabilities/tool/oats.json#/retirement/disposable/home/1: ${disposableHomeRefusal("x.tool", value, why)}`);
+      return true;
+    }, `${JSON.stringify(value)} is refused (${why})`);
+  }
+  const read = await packageDeclaring("github.com/x/home-ok", DISPOSABLE_HOME_ACCEPTED);
+  assert.deepEqual(read.capabilities.map((c) => [c.name, c.dir]), [["x.tool", "oats-package/capabilities/tool"]]);
+  assert.deepEqual(read.capabilities[0].manifest.retirement.disposable.home, DISPOSABLE_HOME_ACCEPTED);
 });
 
 // ---------- pre-0.26 locks (approval removed, human decision 2026-09-24) ----------

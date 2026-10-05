@@ -421,7 +421,8 @@ model or GitHub: processing continues after the home is gone.
 
 Before any retire hook runs, retire preserves the instance's uncommitted and
 unmerged work: a verified recovery under `.oats-retirement/recovery/`, named in
-the summary. A worktree recovery is a standalone clone that carries the
+the summary. One retire writes at most one recovery directory. A worktree
+recovery is a standalone clone that carries the
 repository's local exclude rules (`info/exclude`, a configured
 `core.excludesFile`), its `info/attributes` and the settings that change what
 status reports (`core.fileMode`, `core.ignoreCase`, …), so its Git status
@@ -430,6 +431,315 @@ cannot be verified refuses with `E_WORK_PRESERVATION_FAILED` and keeps the
 home. **`--force` does not skip work preservation.** It forces only past a
 missing or unusable cleanup marker and past incomplete hook cleanup
 ([capabilities.md](capabilities.md)).
+
+The recovery holds the state before the retire hooks at its top level, and
+what the hooks changed under `after-hooks/`:
+
+```text
+<recovery>/
+  recovery.json
+  home/               the home before the retire hooks
+  repo/ or work/      the work before the retire hooks (worktree, directory)
+  after-hooks/
+    home/             the home again, only if a hook changed home bytes
+    repo/ or work/    the work again, unless it is proven unchanged
+```
+
+After the hooks, retire copies again each part the hooks moved. The home
+moved when its bytes did. The work is copied again unless it is proven
+unchanged. A Git status with the same rows is not that proof: a hook can
+rewrite a file that was already modified, and the row stays the same. In
+directory mode the work state is the bytes of `work/`, with the permission
+bits of each entry and of `work/` itself. In worktree mode it
+is what a work copy of the worktree holds, each file read where the copy
+reads it:
+
+- its Git status, the ref its HEAD is on and the commit, and, when the copy
+  is made detached, the branch the repository's own HEAD is on;
+- its index: the entries (what `git ls-files -s` lists, with the
+  skip-worktree and assume-unchanged marks), the resolve-undo records (what
+  `git ls-files --resolve-undo` lists) and the index file's permission bits;
+- what the copy takes from the Git directories as files, each with its bytes
+  and its permission bits: the state of an operation in progress (a merge, a
+  rebase, a cherry-pick, a revert, a bisect), `info/attributes` and the
+  stash's log;
+- its tags and its stash;
+- its exclude rules (`core.excludesFile` with the file the copy reads for it,
+  and `info/exclude`) and the settings that change what `git status` reports
+  (`core.fileMode`, `core.ignoreCase`, `core.precomposeUnicode`,
+  `core.symlinks`, `core.autocrlf`, `core.eol`);
+- the bytes and the permission bits of its files, Git metadata left out.
+
+The rule is that the work is unchanged only if everything its copy would
+carry is equal byte for byte, and anything that cannot be compared exactly
+counts as changed. Two things bound it, and neither is a claim of byte
+equality:
+
+- **The index's derived data, a deliberate semantic exception.** The index
+  file also holds a cache of each file's stat data, which a read-only Git
+  command rewrites, and extensions derived from its entries. It is compared
+  by what it holds (its entries, its resolve-undo records and its mode), not
+  by its bytes.
+- **The shared repository, a custody boundary.** The repository the worktree
+  belongs to stays where it is: its objects, its other branches and the
+  settings a clone of it is served under (a shallow boundary, grafts, hidden
+  refs) are not compared. That holds because no retire removes that
+  repository or deletes a branch, and a commit of the worktree that no ref
+  reaches is preserved before the worktree is removed.
+
+The permission bits of the home directory and of the worktree directory
+themselves are not compared: their copies are made in directories the copier
+creates, which do not carry them.
+
+Every part of that state is compared as its bytes, never as decoded text. A
+ref name, a path in the index or in the status, a file name or the target of
+a symbolic link need not be valid UTF-8, and two states that differ only in
+such bytes are two states. This is what the proof compares, not what a copy
+can hold: a recovery cannot hold a file whose name is not valid UTF-8. A
+copy of a home or a worktree that has one fails, and the retire refuses with
+nothing lost. A clean worktree that has one, with only the home to preserve,
+needs no work copy and retires.
+
+A worktree's tags, stash, exclude rules and settings are kept by the
+repository it belongs to. They are part of the state because a work copy
+carries them, so a tag or a stash made in that repository while the retire
+hooks run adds a copy attempt. That repository's other branches are
+not part of the state: they outlive the worktree, and a recovery does not
+hold them. The one exception is a worktree whose copy is made detached (its
+`HEAD` is detached, on a ref that is not a branch, or on a branch whose name
+is not UTF-8): its copy holds the branch the `HEAD` of the repository it is
+cloned from is on, so that branch is part of the state. When the retire removes the worktree, whether a ref that outlives
+it reaches the commit `HEAD` is at is part of the state too: a hook that
+deletes the one ref that reached it adds a copy attempt, though the
+files, the status and `HEAD` did not move.
+
+**A worktree that holds a repository is not provable.** A directory under
+the worktree that holds a `.git` entry of any kind, a dangling symbolic link
+included, makes the worktree not provable. One whose `.git` is a directory, a
+file or a link that leads to one is a repository: one made by `git init` or
+a clone, a submodule, or a linked worktree of another repository placed in
+the work. One whose `.git` is a dangling symbolic link, or could not be
+tested, is not read as a repository and counts all the same: the copy
+carries such a link as a link, and no comparison reads it. A repository's
+state is not compared:
+the retire hooks run between the two copies and can change it in ways no read
+of its state covers (its configuration, its objects, what a clone of it is
+shown). So the work of such a worktree is in the pre-hook snapshot and is
+copied again after the hooks, whatever they did. `afterHooks.work` is then
+`true` on a successful completion: it says that a work copy was made after
+the hooks, not that a hook changed the work. The copy after the hooks can
+fail where the one before did not, because a hook changed the nested
+repository; the retire then refuses with `E_WORK_PRESERVATION_FAILED` after
+the hooks, and the home, the work and the recovery written before the hooks
+are kept.
+
+A worktree with a `.git` entry under it that OATS cannot read as a
+repository (a dangling symbolic link, or a `.git` it cannot test) is never
+home-only, and no class is added for it. So a change to the home alone can
+now cause a work-copy attempt before the hooks that OATS 0.41 did not make,
+and any failure of that attempt can refuse the retirement: it refuses with
+`E_WORK_PRESERVATION_FAILED` before any retire hook runs, with no recovery
+written and the home and the work kept. What the retire did before the copy
+stays done, and the refusal says so: a launched instance's session has been
+stopped by then.
+
+Copied again is not "nothing is lost": a nested repository with its own Git
+directory is removed with the worktree, and its copy is a clone. What the copy of a nested repository
+holds of each kind:
+
+| Of the nested repository | The copy holds |
+|---|---|
+| the branch `HEAD` is on | the branch and its commits |
+| every other branch | its commits, without the branch name: `git fsck --unreachable` in the copy lists them |
+| tags | the tags and what they name |
+| the stash | its latest entry and the stash's log; the commits of older entries are not there |
+| remote-tracking refs, notes, any other namespace | nothing beyond what a branch or a tag reaches |
+| a repository inside it | its files, its Git directory included, as plain files |
+
+A commit the copy holds without a name is lost to `git gc` in the copy.
+`git fsck --unreachable` in the copy lists such commits, and
+`git branch <name> <commit>` there gives one a name again. What the copier
+cannot carry at all (a file whose name is not valid UTF-8, an entry that is
+not a file, a directory or a symbolic link) refuses the copy, here as
+anywhere.
+
+**A worktree that cannot be proven unchanged.** Two things make a worktree
+not provable:
+
+- a repository under it (above);
+- a read of the state that fails, while `git status` works: one of the Git
+  commands the list above is read with, or one of the files it is read from
+  (`info/attributes`, the stash's log, the index, an exclude file, the
+  operation state). A worktree whose path has a line feed in it is such a
+  case: Git prints its directories over more than one line. A read that
+  fails is never taken for "not set" or for "unchanged", and neither is a
+  file or directory that the retire cannot test for (no permission, for
+  example): only one that is not there is absent.
+
+A worktree that is not provable always has its work in the pre-hook
+snapshot, also when only the home has something to preserve, and the work is
+copied again after the hooks whenever there is something to preserve. Its
+recovery is therefore larger. With nothing to preserve it retires like any
+other. The copy reads what the proof reads, so where the proof failed the
+copy may fail too: the retire then refuses with `E_WORK_PRESERVATION_FAILED`
+before any retire hook runs. No recovery was written and nothing was
+deleted; the retire has already stopped the session of a launched instance
+by then, the instance is not retired, and its home and work are kept.
+
+A retire hook can leave the worktree in that state too. The snapshot before
+the hooks was then taken of a provable worktree, and may hold the home only.
+After the hooks the work is copied under `after-hooks/`, whether or not
+anything in it moved. When that copy cannot be made, the retire refuses with
+`E_WORK_PRESERVATION_FAILED` after the hooks have run, and the home, the
+work and the recovery written before the hooks are all kept.
+
+Every refusal of the copy made before the hooks, whatever its cause, ends by
+saying what the retire has done by then: no retire hook has run, no recovery
+was written and nothing was deleted, the instance is not retired, its home
+and work are kept, and its session has been stopped, or this retire stopped
+no session. A refusal after the hooks does not say that.
+
+A snapshot that holds the home only (the work had nothing to preserve
+before the hooks) has no work copy to stand for it. It gets the work under
+`after-hooks/` when the hooks moved it, and also when they did not but
+something beyond the home is there to preserve after them, such as a
+retirement baseline that is gone.
+
+The Git state is read at every inspection. When there is something to
+preserve before the hooks, the files are read once before the recovery is
+written, and a pre-hook copy of the work is verified against that read. They
+are read at most once more after the hooks: to prove the work unchanged when
+the Git state did not move, or to verify the copy when it did. With nothing
+preserved before the hooks, nothing is compared: a
+recovery is written after them whenever there is something to preserve.
+
+A worktree whose `git status` fails refuses the retire with
+`E_WORK_INSPECTION_FAILED` at the first inspection: no recovery was written,
+nothing was deleted, and the retire has not stopped the instance's session.
+A directory in place of `info/exclude`, or of the file `core.excludesFile`
+names, is such a case: Git itself refuses to use it. Any other read of the
+state that fails does not refuse here: it makes the worktree not provable,
+as described above.
+
+**A socket, a FIFO or a device file in the worktree.** An entry that is not
+a file, a directory or a symbolic link has no bytes to read or to copy, and
+Git prints no status row for it, so a worktree that holds one can read as
+clean. Such an entry refuses the retire, at one of three points:
+
+- **at the first inspection**, when the entry is where that inspection reads:
+  inside a directory that Git reports as ignored whole (unless a capability
+  declared it a disposable work root), in the `work/` of a directory
+  instance, or in the home itself. The code is `E_WORK_INSPECTION_FAILED`.
+  The message names the entry and says what to do, and ends there. The first
+  inspection runs before the retire stops the session: the session is still
+  running, no recovery was written and nothing was deleted;
+- **before the hooks**, when the entry is anywhere else in a worktree and
+  there is something to preserve, with `E_WORK_INSPECTION_FAILED`: no hook
+  has run, no recovery was written and nothing was deleted, however often the
+  retire is retried. The message names the entry and says what to do: safely
+  stop the process or resource that owns it, or move the entry elsewhere,
+  then retry. The entry may be a live endpoint, so deleting it is not the
+  advice. The retire has already stopped the session of a launched instance
+  by then: the instance's session is stopped, the instance is not retired,
+  and its home is kept. The message says so, and says that this retire
+  stopped no session when the instance had none to stop. To continue, deal
+  with the entry and run `oats retire <instance>` again, or start the session
+  again in the same home with `oats session start --home <abs>`. A
+  self-retire (`--self`) is completed by its detached completion, which stops
+  the session and refuses in the same way; the refusal is recorded beside the
+  home, as described below. After a refused self-retire only `oats retire
+  <instance>` continues: `oats session start` refuses while the self-retire's
+  pending marker is there, and a retire clears it. Of the refusals at this
+  point, only that of `--self --keep-dir`, which stays in the calling
+  process, comes with the session still running;
+- **after the hooks**, when a retire hook left the entry behind: the hooks
+  have run, and the home, the work and the recovery written before the hooks
+  are all kept. The code is `E_WORK_INSPECTION_FAILED` when the Git state is
+  as it was, and `E_WORK_PRESERVATION_FAILED` when the hook also moved the
+  Git state, because the copy then meets the entry before the files are
+  read; that message names the entry too.
+
+A worktree that cannot be proven unchanged is copied without the read, so
+there the refusal comes from the copy, as `E_WORK_PRESERVATION_FAILED`.
+
+**A file in the worktree that cannot be read.** The same read refuses a file
+it cannot read: one without read permission, or one over 2 GiB, which a
+single read cannot take. Two kinds of file are read although they are nothing
+to preserve: a tracked file that is unchanged, and a file under a work root
+that a capability declared disposable (`retirement.disposable.work`). So a
+retire that has only the home to preserve refuses for such a file, with
+`E_WORK_INSPECTION_FAILED`, before any retire hook runs, with or without
+`--force`: no recovery was written and nothing was deleted. As for a socket
+or a FIFO refused before the hooks, the retire has already stopped the
+session of a launched instance by then, the instance is not retired, and its
+home is kept. The message is `could not read the worktree at <work>:
+<reason>`. For a file without read permission the reason names the file. For
+a file over 2 GiB it gives the size, and `find <work> -type f -size
++2147483647c` finds the file. To continue, move the file out of the worktree
+or make it readable, then run `oats retire <instance>` again. With nothing to
+preserve, the files are not read and the retire goes through.
+
+The home is not copied again because the work is, and the work is not copied
+again because the home is. The home's comparison after the hooks holds every
+entry the home copy carries, as its bytes and permission bits, the kernel's
+own records included: `.oats-events.jsonl`, `.oats-stop.json`,
+`.oats-stop-receipt.json` and `.oats-stop-receipt.*.json`,
+`.oats-restart.json`, `.oats-agents-md.*.previous`, `.claude/settings.json`,
+and every field of `instance.json`. A hook that writes one of them has the
+home copied again. Those records are left out only of the comparison with the
+spawn baseline, which decides whether the home has anything to preserve at
+all. When a hook moved only the work, the recovery holds them as of the
+pre-hook snapshot. The retire's own events are written to the workspace log
+(`<deployment>/.agents/events/`), never to the home's. A home copy is
+verified against the digest the baseline uses, which passes over those
+records: an inherited limit, not an exact verification of the whole home.
+A work copy's verification passes over every entry named `.git`: a dangling
+`.git` symbolic link under the worktree is copied as a link and not verified.
+
+Each part under `after-hooks/` is whole and verified, not a delta, and it is
+verified before the worktree step and before the home is removed.
+`after-hooks/` is not a complete picture of the instance after the hooks: its
+`home/` exists only when the home's own bytes moved, and a part that is not
+there is the one in the pre-hook snapshot. Nothing in
+the pre-hook `home/`, `repo/` or `work/` is rewritten. If that copy fails or
+cannot be verified, retire refuses with `E_WORK_PRESERVATION_FAILED`, keeps
+the home and leaves the pre-hook recovery intact. An instance with nothing to
+preserve before the hooks, and something after them, gets its one recovery
+then: the hooks' bytes are under `home/`, `repo/` or `work/`, and there is no
+`after-hooks/`.
+
+The summary prints the recovery once. The path and the `after-hooks/` line
+are how to find both snapshots; each line after the path appears only when
+it applies:
+
+```text
+Retired dev-1 (agent dev)
+Work that was not committed has been preserved: changed instance-home bytes, untracked or ignored worktree bytes
+  /w/agents/dev/instances/.oats-retirement/recovery/dev-1-AbC123 (46.2 MiB)
+  copied from the home: .oats/ (854.2 KiB), .agents/ (138.0 KiB), notes/ (2.0 KiB), STATE.md (512 B) — 994.7 KiB in total
+  copied outputs: scratch/ (1.2 MiB), note.txt (12 B) — 1.2 MiB in total
+  not copied: .aw, .oats-aweb (oats.aweb)
+  after the retire hooks: home copied again under after-hooks/
+```
+
+`recovery.json` records the recovery's `phase`. It is `"before-hooks"` when the
+pre-hook snapshot is written, and `"complete"` once the post-hook check has
+concluded, together with `afterHooks: { home, work }` when `after-hooks/` was
+written. `after-hooks/` counts only when `recovery.json` lists it. A retried
+retire, after incomplete cleanup or after a refused or interrupted attempt,
+starts over: it writes its own recovery, its receipt names only that one, and
+it never reads, amends or deletes an earlier one. A directory that an earlier
+attempt left at `before-hooks` is not corrupt: it is a complete, verified
+pre-hook snapshot.
+
+Home entries that a capability declared in `retirement.disposable.home`
+([capabilities.md](capabilities.md#manifest)) are provider-owned state, not
+the instance's work, and are not copied: neither before nor after the hooks.
+They stay in the home until the home is removed, retire hooks still see them,
+and a home kept for a retry keeps them. The summary lists the ones that
+exist under "not copied", by name, with the declaring capability. The
+declaration is recorded at spawn: a home spawned before its capability
+declared them gains no exclusion from a package update, and is copied whole.
 
 Retire stops the harness through the home's session receipt. A home spawned
 before 0.25.9 has none. It retires only when its session is observably gone:
@@ -595,7 +905,10 @@ used. No implicit fallback changes the other modes.
 `--work-dir` and `--branch` are rejected. Canonical instructions, skill
 composition, provider trust and harness preflight still apply. Retirement preserves nonempty work in verified recovery storage beside the
 home (`workRecovery.path/work`) before deleting it, including files created by
-hooks; directory work has no disposable-root exemptions. The work-root cannot be
+hooks; directory work has no disposable-root exemptions. A retire hook's later
+change to work is in the same recovery, under
+`workRecovery.path/after-hooks/work` (under `workRecovery.path/work` when
+nothing needed preserving before the hooks). The work-root cannot be
 exchanged for a symlink. Recovery does not replace the worker's delivery protocol.
 
 ### `workspace` — cross-repo coordinator

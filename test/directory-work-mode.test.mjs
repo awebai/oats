@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { findAgent, listInstances, RETIRE_DELETE_BRANCH_REFUSED, retireInstance, spawnInstanceAsync, startInstanceSession } from "../lib/core.mjs";
+import { basename, dirname, join } from "node:path";
+import { findAgent, fingerprintTree, listInstances, RETIRE_DELETE_BRANCH_REFUSED, retireInstance, spawnInstanceAsync, startInstanceSession } from "../lib/core.mjs";
 import { git, v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const CLI = realpathSync(new URL("../bin/oats.mjs", import.meta.url));
@@ -215,16 +215,147 @@ test("ordinary directory work, hidden files, empty directories, executable bits 
   assert.equal(readFileSync(external, "utf8"), "external");
 });
 
-test("post-retire-hook changes with unchanged filenames get a second verified directory snapshot", async (t) => {
+test("post-retire-hook changes with unchanged filenames get a second verified directory snapshot, under after-hooks/ of the one recovery", async (t) => {
   const f = fixture(t, { hook: true });
   write(join(f.cap, "retire.mjs"), `import { writeFileSync } from 'node:fs';
 writeFileSync(process.env.OATS_INSTANCE_HOME + '/work/from-hook.txt', 'retire bytes');
 console.log(JSON.stringify({meta: {retired: true}}));\n`);
   const result = await f.spawn("post-hook");
   const retired = retireInstance(f.root, result.instance);
-  assert.equal(retired.workRecoveries.length, 2);
-  assert.equal(readFileSync(join(retired.workRecoveries[0].path, "work", "from-hook.txt"), "utf8"), "spawn bytes");
-  assert.equal(readFileSync(join(retired.workRecoveries[1].path, "work", "from-hook.txt"), "utf8"), "retire bytes");
+  assert.equal(Object.hasOwn(retired, "workRecoveries"), false, "one recovery: workRecoveries is no longer emitted");
+  const recovery = retired.workRecovery.path;
+  assert.deepEqual(readdirSync(dirname(recovery)), [basename(recovery)], "one recovery directory");
+  assert.equal(readFileSync(join(recovery, "work", "from-hook.txt"), "utf8"), "spawn bytes");
+  assert.equal(readFileSync(join(recovery, "after-hooks", "work", "from-hook.txt"), "utf8"), "retire bytes");
+  // Only the part the hook moved is copied again.
+  assert.deepEqual(retired.workRecovery.afterHooks, { home: false, work: true });
+  assert.deepEqual(readdirSync(join(recovery, "after-hooks")), ["work"]);
+  assert.deepEqual(readJson(join(recovery, "recovery.json")).afterHooks, { home: false, work: true });
+  assert.equal(readJson(join(recovery, "recovery.json")).phase, "complete");
+});
+
+test("a clean directory instance whose retire hook creates work gets its one recovery after the hooks, before the home is removed", async (t) => {
+  const f = fixture(t, { hook: true });
+  write(join(f.cap, "spawn.mjs"), `console.log(JSON.stringify({meta: {configured: true}}));\n`);
+  write(join(f.cap, "retire.mjs"), `import { writeFileSync } from 'node:fs';
+writeFileSync(process.env.OATS_INSTANCE_HOME + '/work/from-retire.txt', 'retire bytes');
+console.log(JSON.stringify({meta: {retired: true}}));\n`);
+  const result = await f.spawn("late-work");
+  assert.deepEqual(readdirSync(join(result.home, "work")), [], "fixture premise: nothing to preserve before the hooks");
+  const retired = retireInstance(f.root, result.instance);
+  const recovery = retired.workRecovery.path;
+  assert.deepEqual(readdirSync(dirname(recovery)), [basename(recovery)]);
+  assert.equal(readFileSync(join(recovery, "work", "from-retire.txt"), "utf8"), "retire bytes");
+  assert.equal(existsSync(join(recovery, "after-hooks")), false, "written by the post-hook pass as the first and only snapshot");
+  assert.equal(retired.workRecovery.afterHooks, undefined);
+  assert.equal(readJson(join(recovery, "recovery.json")).phase, "complete");
+  assert.equal(existsSync(result.home), false);
+});
+
+test("a failed second phase keeps the home and the untouched pre-hook snapshot at before-hooks; a retry starts over in its own recovery", async (t) => {
+  const f = fixture(t, { hook: true });
+  const manifest = readJson(join(f.cap, "oats.json"));
+  manifest.retirement = { disposable: { home: [".ident"] } };
+  write(join(f.cap, "oats.json"), JSON.stringify(manifest));
+  write(join(f.cap, "spawn.mjs"), `import { mkdirSync, writeFileSync } from 'node:fs';
+const home = process.env.OATS_INSTANCE_HOME;
+mkdirSync(home + '/.ident');
+writeFileSync(home + '/.ident/signing.key', 'directory-ident-key');
+writeFileSync(home + '/work/from-hook.txt', 'spawn bytes');
+console.log(JSON.stringify({meta: {minted: true}}));\n`);
+  // The retire hook changes the home (an undeclared file), so the post-hook pass has a part to add. While
+  // <context>/misbehave exists it also occupies the name that part needs, inside the recovery it finds beside the home.
+  write(join(f.cap, "retire.mjs"), `import { existsSync, readdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+const home = process.env.OATS_INSTANCE_HOME;
+writeFileSync(join(home, 'hook-note.txt'), 'written by the retire hook');
+if (existsSync(join(process.env.OATS_CONTEXT, 'misbehave'))) {
+  const root = join(dirname(home), '.oats-retirement', 'recovery');
+  for (const name of readdirSync(root)) writeFileSync(join(root, name, 'after-hooks'), 'in the way');
+}
+console.log(JSON.stringify({meta: {retired: true}}));\n`);
+  write(join(f.context, "misbehave"), "1");
+  const result = await f.spawn("second-phase");
+  const root = join(dirname(result.home), ".oats-retirement", "recovery");
+  const preHookHome = fingerprintTree(result.home, { excludeRoot: new Set(["work", ".ident"]), instanceHome: true });
+  const preHookWork = fingerprintTree(join(result.home, "work"));
+
+  assert.throws(() => retireInstance(f.root, result.instance), (e) => {
+    assert.equal(e.code, "E_WORK_PRESERVATION_FAILED");
+    assert.match(e.message, /^retirement work remains at .*; recovery could not be verified: .*after-hooks already exists$/);
+    return true;
+  });
+  // The home is kept, with the entry it declared and with what the hook wrote.
+  assert.equal(readFileSync(join(result.home, ".ident", "signing.key"), "utf8"), "directory-ident-key");
+  assert.equal(readFileSync(join(result.home, "hook-note.txt"), "utf8"), "written by the retire hook", "fixture premise: the hook ran and moved the home");
+  assert.equal(readFileSync(join(result.home, "work", "from-hook.txt"), "utf8"), "spawn bytes");
+  assert.equal(existsSync(join(result.home, "instance.json")), true);
+  // The pre-hook snapshot is byte-identical to the home and work as they were before the hooks.
+  const [name] = readdirSync(root);
+  const first = join(root, name);
+  assert.deepEqual(readdirSync(root), [name], "one recovery, and no staging beside it");
+  assert.deepEqual(readdirSync(first).sort(), ["after-hooks", "home", "recovery.json", "work"], "no staging directory and no temporary manifest are left inside it");
+  assert.equal(readFileSync(join(first, "after-hooks"), "utf8"), "in the way", "the entry that was in the way is not replaced");
+  assert.equal(fingerprintTree(join(first, "home"), { instanceHome: true }), preHookHome);
+  assert.equal(fingerprintTree(join(first, "work")), preHookWork);
+  assert.equal(existsSync(join(first, "home", "hook-note.txt")), false);
+  assert.equal(existsSync(join(first, "home", ".ident")), false, "the declared entry was not copied");
+  // An interrupted second phase is never reported complete.
+  const interrupted = readJson(join(first, "recovery.json"));
+  assert.equal(interrupted.phase, "before-hooks");
+  assert.equal(Object.hasOwn(interrupted, "afterHooks"), false);
+  const firstBytes = fingerprintTree(first);
+
+  // The hook behaves; the retry runs from the start and writes a recovery of its own.
+  rmSync(join(f.context, "misbehave"));
+  const retired = retireInstance(f.root, result.instance);
+  assert.equal(existsSync(result.home), false);
+  assert.equal(Object.hasOwn(retired, "workRecoveries"), false);
+  assert.notEqual(retired.workRecovery.path, first, "the receipt names only the retry's own recovery");
+  assert.deepEqual(readdirSync(root).sort(), [name, basename(retired.workRecovery.path)].sort());
+  assert.equal(readJson(join(retired.workRecovery.path, "recovery.json")).phase, "complete");
+  assert.equal(readFileSync(join(retired.workRecovery.path, "home", "hook-note.txt"), "utf8"), "written by the retire hook");
+  assert.equal(readFileSync(join(retired.workRecovery.path, "work", "from-hook.txt"), "utf8"), "spawn bytes");
+  assert.equal(existsSync(join(retired.workRecovery.path, "home", ".ident")), false);
+  assert.deepEqual(retired.workRecovery.notCopied, [{ scope: "home", path: ".ident", owner: "example.worker" }]);
+  // The earlier directory is not read, amended, completed or deleted.
+  assert.equal(fingerprintTree(first), firstBytes, "the first recovery is unchanged");
+  assert.equal(readJson(join(first, "recovery.json")).phase, "before-hooks");
+});
+
+test("a retire hook that redirects recovery storage after the pre-hook snapshot is refused: nothing is written through the link and the home is kept", async (t) => {
+  const f = fixture(t, { hook: true });
+  // The hook moves the recovery storage away, leaves a link in its place, and changes work/: the post-hook pass
+  // has a part to add, and the only path to the recovery it would add it to now leads outside the owned storage.
+  write(join(f.cap, "retire.mjs"), `import { renameSync, symlinkSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+const home = process.env.OATS_INSTANCE_HOME;
+const root = join(dirname(home), '.oats-retirement', 'recovery');
+const moved = join(process.env.OATS_CONTEXT, 'moved-recovery');
+renameSync(root, moved);
+symlinkSync(moved, root);
+writeFileSync(join(home, 'work', 'late.txt'), 'written by the retire hook');
+console.log(JSON.stringify({meta: {retired: true}}));\n`);
+  const result = await f.spawn("late-redirect");
+  const root = join(dirname(result.home), ".oats-retirement", "recovery");
+  const moved = join(f.context, "moved-recovery");
+
+  assert.throws(() => retireInstance(f.root, result.instance), (e) => {
+    assert.equal(e.code, "E_WORK_PRESERVATION_FAILED");
+    assert.match(e.message, /^retirement work remains at .*; recovery could not be verified: directory recovery storage was redirected$/);
+    return true;
+  });
+  assert.equal(lstatSync(root).isSymbolicLink(), true, "fixture premise: the hook redirected the storage");
+  assert.equal(readFileSync(join(result.home, "work", "late.txt"), "utf8"), "written by the retire hook", "fixture premise: the hook moved the work");
+  // The home and its work are kept.
+  assert.equal(readFileSync(join(result.home, "work", "from-hook.txt"), "utf8"), "spawn bytes");
+  assert.equal(existsSync(join(result.home, "instance.json")), true);
+  // The pre-hook snapshot, where the hook put it, gained nothing: no after-hooks/, no staging, no rewritten manifest.
+  const [name] = readdirSync(moved);
+  assert.deepEqual(readdirSync(moved), [name]);
+  assert.deepEqual(readdirSync(join(moved, name)).sort(), ["home", "recovery.json", "work"], "nothing was written through the link");
+  assert.equal(readJson(join(moved, name, "recovery.json")).phase, "before-hooks");
+  assert.equal(existsSync(join(moved, name, "work", "late.txt")), false);
 });
 
 test("incomplete retire hooks retain directory work and cleanup metadata for a safe retry", async (t) => {
@@ -456,9 +587,24 @@ console.log(JSON.stringify({meta: {retired: retry || ${phase === "after-complete
     assert.equal(existsSync(home), false);
     const receipts = readFileSync(events, "utf8").trim().split("\n").map(JSON.parse);
     assert.deepEqual(receipts, Array(phase === "before" ? 1 : 2).fill({ receipt: "original-external-id" }));
-    const copies = readdirSync(recovery).map((entry) => readFileSync(join(recovery, entry, "work/result.txt"), "utf8"));
-    assert.ok(copies.includes("before compensation"));
-    assert.ok(copies.includes("after compensation"));
+    const entries = readdirSync(recovery);
+    if (phase === "before") {
+      // The failed spawn could not write its copy (the storage was unusable), so this retire wrote the one
+      // recovery: the work as the spawn hook left it, and under after-hooks/ the work as the retire hook left it.
+      assert.deepEqual(entries, [basename(retired.workRecovery.path)], "one recovery, written by this retire");
+      const entry = join(recovery, entries[0]);
+      assert.equal(readFileSync(join(entry, "work/result.txt"), "utf8"), "before compensation");
+      assert.equal(readFileSync(join(entry, "after-hooks/work/result.txt"), "utf8"), "after compensation");
+      const recorded = readJson(join(entry, "recovery.json"));
+      assert.equal(recorded.phase, "complete");
+      assert.deepEqual(recorded.afterHooks, { home: false, work: true });
+    } else {
+      // Two directories here, and the second does not come from the retire: the failed spawn wrote its own copy
+      // before its compensation hook ran (issue #598), and the retire wrote one, of the work that hook left.
+      const copies = entries.map((entry) => readFileSync(join(recovery, entry, "work/result.txt"), "utf8"));
+      assert.ok(copies.includes("before compensation"));
+      assert.ok(copies.includes("after compensation"));
+    }
   });
 }
 

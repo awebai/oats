@@ -60,7 +60,8 @@ published to npm. Its developer docs are in
 | `operator-dispatch.mjs` | capability commands run from a deployment, and its module store |
 | `instance-*.mjs` | inspection, lifecycle, events and Git views of an instance |
 | `tmux-config.mjs`, `session-*.mjs` | the tmux session backend and terminal input |
-| `capability-contract.mjs`, `provider-binding.mjs` | manifest validation, the hook environment rules, the readiness wire |
+| `capability-contract.mjs`, `provider-binding.mjs` | manifest validation (launch environment, hooks, `retirement`), the hook environment rules, the readiness wire |
+| `retire-output.mjs` | the lines `oats retire` prints for preserved work, one function for the local and the remote path |
 | `servers.mjs` | routing commands to a registered server |
 | `harness-trust.mjs` | reading (never writing) Claude's and Codex's folder trust for a launch |
 

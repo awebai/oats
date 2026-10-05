@@ -266,7 +266,8 @@ for (const [start, label] of [["branch", "on a branch a ref reaches"], ["detache
     }
     assert.equal(git(work, "status", "--porcelain=v1", "--untracked-files=all", "--ignored=matching"), "", "fixture premise: the worktree is clean");
     // As in the test above: when the retire asks Git to remove the worktree, a stand-in `git` records the
-    // subject of the commit each completed recovery has checked out.
+    // subject of the commit each copy of the work in a completed recovery has checked out: the copy made
+    // before the hooks, and the one under after-hooks/ when the hooks moved the work.
     const recoveries = recoveryRootOf(spawned.home);
     const atRemoval = join(f.base, "recoveries-at-removal");
     write(join(f.base, "bin", "git"), `#!/bin/sh
@@ -274,7 +275,13 @@ real=${shq(realGit())}
 case " $* " in *" worktree remove "*)
   : >> ${shq(atRemoval)}
   for recovery in ${shq(recoveries)}/${shq(basename(spawned.home))}-*; do
-    if [ -f "$recovery/recovery.json" ] && [ -d "$recovery/repo" ]; then "$real" -C "$recovery/repo" log -1 --format=%s HEAD >> ${shq(atRemoval)}; fi
+    [ -f "$recovery/recovery.json" ] || continue
+    complete=
+    while IFS= read -r line || [ -n "$line" ]; do case "$line" in *'"phase": "complete"'*) complete=1 ;; esac; done < "$recovery/recovery.json"
+    [ -n "$complete" ] || continue
+    for copy in "$recovery/repo" "$recovery/after-hooks/repo"; do
+      if [ -d "$copy" ]; then "$real" -C "$copy" log -1 --format=%s HEAD >> ${shq(atRemoval)}; fi
+    done
   done ;;
 esac
 exec "$real" "$@"
@@ -284,8 +291,9 @@ exec "$real" "$@"
     assert.equal(existsSync(atRemoval), true, "the retire asked Git to remove the worktree");
     assert.deepEqual(readFileSync(atRemoval, "utf8").split("\n").filter(Boolean).sort(), [...subjects].sort(),
       "when the worktree was removed, completed recoveries held each commit only the worktree reached, the hook's among them");
-    const repo = join(receipt.workRecovery.path, "repo");
-    assert.equal(git(repo, "log", "-1", "--format=%s", "HEAD"), HOOK_COMMIT, "the last recovery is checked out at the hook's commit");
+    const last = join(receipt.workRecovery.path, "after-hooks", "repo");
+    const repo = existsSync(last) ? last : join(receipt.workRecovery.path, "repo");
+    assert.equal(git(repo, "log", "-1", "--format=%s", "HEAD"), HOOK_COMMIT, "the recovery's last copy of the work is checked out at the hook's commit");
     assert.equal(existsSync(work), false, "the worktree is removed");
     assert.equal(existsSync(spawned.home), false, "the home is removed");
   });
