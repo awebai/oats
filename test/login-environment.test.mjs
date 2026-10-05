@@ -1,9 +1,11 @@
 // When the kernel creates the OATS tmux server, the server gets the user's login environment, read
-// by the login shell over a dedicated pipe and accepted only whole; when it cannot be read, the
-// creator's fallback (awebai/oats#616). lib/login-environment.mjs and docs/execution-targets.md.
+// by the login shell as one framed answer on its stdout and accepted only whole; when it cannot be
+// read, the creator's fallback (awebai/oats#616). lib/login-environment.mjs and docs/execution-targets.md.
 //
 // The login shell is always a fake (OATS_TEST_LOGIN_SHELL, a script named bash), never the
 // operator's: the fixture's HOME is not the user's home directory, so without the seam nothing is run.
+// One test runs the real bash, -l -i, through a wrapper that gives it --noprofile --norc and the
+// fixture's HOME and directory, so no start-up file of the operator's is read.
 // The user session is a fake systemctl/launchctl first on the creator's PATH (where the platform's
 // tools are looked up under the seam). Real tmux on the fixture's private TMUX_TMPDIR only.
 import test from "node:test";
@@ -14,7 +16,7 @@ import { createHash } from "node:crypto";
 import { tmpdir, userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { LOGIN_SESSION_ENV, parseSystemdEnvironment } from "../lib/login-environment.mjs";
+import { LOGIN_SESSION_ENV, captureLoginEnvironment, parseSystemdEnvironment } from "../lib/login-environment.mjs";
 import { validateLaunchConfig } from "../lib/core.mjs";
 import { isolateSessionEnvironment, oatsSocket, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
@@ -36,6 +38,10 @@ const script = (dir, name, body) => { mkdirSync(join(base, dir), { recursive: tr
  *  real `-c` command (the kernel's emitter) unless `rc` ends the script itself. */
 let shells = 0;
 const fakeShell = (rc) => script(`shell-${++shells}`, "bash", `${rc}\nexec /bin/sh -c "$4"\n`);
+// The kernel's command ends with the nonce of this reading (hex, unquoted): a fake that forges an
+// answer frames it with that nonce, or with `nonce` when the test means another one.
+const START = "OATS-LOGIN-ENVIRONMENT-BEGIN-", END = "OATS-LOGIN-ENVIRONMENT-END-";
+const frame = (json, nonce = '"${4##* }"') => `printf '\\n%s%s\\n%s\\n%s%s\\n' ${START} ${nonce} ${shq(json)} ${END} ${nonce}`;
 // What a user's rc sets: the fixture's HOME and a plain shell (so a server's hq pane never starts a
 // real one), a marker, and a PATH of its own.
 const LOGIN_PATH = `/fixture/login/bin:${SYSTEM}`;
@@ -151,14 +157,15 @@ test("the functions bash exports (BASH_FUNC_name%%) are dropped from the answer,
 
 test("a login shell ended by a signal is an acquisition failure: its group is killed and the creator falls back", async () => {
   const pidFile = join(base, "signalled.pid");
-  const r = await ensureIn({ ...CREATOR, OATS_TEST_LOGIN_SHELL: script(`shell-${++shells}`, "bash", `${RC}\n${SLEEP} 60 3>&- &\necho $! > ${shq(pidFile)}\nkill -TERM $$\n`) });
+  const r = await ensureIn({ ...CREATOR, OATS_TEST_LOGIN_SHELL: script(`shell-${++shells}`, "bash", `${RC}\n${SLEEP} 60 >/dev/null &\necho $! > ${shq(pidFile)}\nkill -TERM $$\n`) });
   fellBack(r, "your login shell was ended by SIGTERM");
   await groupGone(pidFile);
 });
 
-test("a noisy start-up (text on stdout and stderr, some shaped like assignments or JSON) is not the answer: only the data descriptor is", async () => {
-  const noise = `echo 'PATH=/evil; export PATH'; echo '{"PATH":"/evil","HOME":"/evil"}'; echo 'HOME=/evil' >&2; printf 'bash: no job control in this shell\\n' >&2`;
-  const r = await ensureIn({ ...CREATOR, OATS_TEST_LOGIN_SHELL: fakeShell(`${noise}\n${RC}\n${noise}`) });
+test("a noisy start-up (text on stdout and stderr before and after the answer, some shaped like assignments, JSON or a frame with another nonce) is not the answer: only the one frame of this reading is", async () => {
+  const evil = '{"PATH":"/evil","HOME":"/evil"}';
+  const noise = `echo 'PATH=/evil; export PATH'; echo ${shq(evil)}; ${frame(evil, "0123456789abcdef0123456789abcdef")}; echo 'HOME=/evil' >&2; printf 'bash: no job control in this shell\\n' >&2`;
+  const r = await ensureIn({ ...CREATOR, OATS_TEST_LOGIN_SHELL: script(`shell-${++shells}`, "bash", `${noise}\n${RC}\n${noise}\n/bin/sh -c "$4" || exit 1\n${noise}\nexit 0\n`) });
   const server = created(r);
   assert.deepEqual(warnings(r), [], r.stderr);
   assert.equal(server.PATH, LOGIN_PATH);
@@ -168,9 +175,17 @@ test("a noisy start-up (text on stdout and stderr, some shaped like assignments 
 
 test("an answer that is not whole is rejected whole, and the creator falls back to its own environment with one line that holds no value: oversize, partial, not an object, a value that is not text, a bad name, no HOME, no PATH, a non-zero exit, an unsupported shell, a shell that cannot run", async (t) => {
   const node = shq(process.execPath);
-  const answer = (json) => `${RC}\nprintf '%s' ${shq(json)} >&3\nexit 0`;
+  const answer = (json) => `${RC}\n${frame(json)}\nexit 0`;
   const cases = [
-    ["oversize", `${RC}\nexec ${node} -e 'require("fs").writeSync(3, JSON.stringify({ HOME: "/h", PATH: "/p", BIG: "x".repeat(2 * 1024 * 1024) }))'`, "its answer was larger than 1 MiB"],
+    ["oversize", `${RC}\nexec ${node} -e 'require("fs").writeSync(1, JSON.stringify({ HOME: "/h", PATH: "/p", BIG: "x".repeat(2 * 1024 * 1024) }))'`, "its answer was larger than 1 MiB"],
+    ["oversize chatter around a whole answer", `${RC}\n${node} -e 'require("fs").writeSync(1, "x".repeat(2 * 1024 * 1024))'\n${frame('{"HOME":"/h","PATH":"/p"}')}\nexit 0`, "its answer was larger than 1 MiB"],
+    ["no end delimiter", `${RC}\nprintf '\\n%s%s\\n%s\\n' ${START} "\${4##* }" '{"HOME":"/h","PATH":"/p"}'\nexit 0`, "its answer was not exactly one complete frame"],
+    ["no start delimiter", `${RC}\nprintf '%s\\n%s%s\\n' '{"HOME":"/h","PATH":"/p"}' ${END} "\${4##* }"\nexit 0`, "its answer was not exactly one complete frame"],
+    ["end before start", `${RC}\nprintf '\\n%s%s\\n{}\\n%s%s\\n' ${END} "\${4##* }" ${START} "\${4##* }"\nexit 0`, "its answer was not exactly one complete frame"],
+    ["two frames", `${RC}\n${frame('{"HOME":"/h","PATH":"/p"}')}\n${frame('{"HOME":"/h2","PATH":"/p2"}')}\nexit 0`, "its answer was not exactly one complete frame"],
+    ["a frame of another nonce only", `${RC}\n${frame('{"HOME":"/h","PATH":"/p"}', "0123456789abcdef0123456789abcdef")}\nexit 0`, "your login shell gave no answer"],
+    ["unframed JSON only", `${RC}\necho '{"HOME":"/h","PATH":"/p"}'\nexit 0`, "your login shell gave no answer"],
+    ["an empty frame", answer(""), "its answer was not one complete JSON object"],
     ["partial", answer('{"HOME":"/h","PATH":"/p'), "its answer was not one complete JSON object"],
     ["not an object", answer('["HOME","/h"]'), "its answer was not one complete JSON object"],
     ["two objects", answer('{"HOME":"/h","PATH":"/p"}{"X":"y"}'), "its answer was not one complete JSON object"],
@@ -180,6 +195,7 @@ test("an answer that is not whole is rejected whole, and the creator falls back 
     ["no PATH", answer('{"HOME":"/h"}'), "its answer had no PATH"],
     ["no answer", `${RC}\nexit 0`, "your login shell gave no answer"],
     ["non-zero exit", `${RC}\n/bin/sh -c "$4"\nexit 3`, "your login shell exited with status 3"],
+    ["a whole answer and a non-zero exit", `${RC}\n${frame('{"HOME":"/h","PATH":"/p"}')}\nexit 2`, "your login shell exited with status 2"],
   ];
   for (const [what, rc, why] of cases) {
     const shell = script(`shell-${++shells}`, "bash", `${rc}\n`);
@@ -191,13 +207,13 @@ test("an answer that is not whole is rejected whole, and the creator falls back 
   fellBack(await ensureIn({ ...CREATOR, OATS_TEST_LOGIN_SHELL: join(base, "nowhere", "zsh") }), "your login shell could not be started (ENOENT)");
 });
 
-test("the deadline: a login shell that does not answer, and one that exits while a descendant keeps the data descriptor open, are both ended at 5 s, their process group is killed, and the creator falls back", async () => {
+test("the deadline: a login shell that does not answer, and one that exits while a descendant keeps its stdout open, are both ended at 5 s, their process group is killed, and the creator falls back", async () => {
   const hanging = join(base, "hanging.pid"), holding = join(base, "holding.pid");
   let r = await ensureIn({ ...CREATOR, OATS_TEST_LOGIN_SHELL: script(`shell-${++shells}`, "bash", `echo $$ > ${shq(hanging)}\nexec ${SLEEP} 60\n`) });
   fellBack(r, "your login shell did not answer within 5 s");
   await groupGone(hanging);
   const started = Date.now();
-  r = await ensureIn({ ...CREATOR, OATS_TEST_LOGIN_SHELL: script(`shell-${++shells}`, "bash", `${RC}\n${SLEEP} 60 &\necho $! > ${shq(holding)}\nprintf '{"HOME":"/h",' >&3\nexit 0\n`) });
+  r = await ensureIn({ ...CREATOR, OATS_TEST_LOGIN_SHELL: script(`shell-${++shells}`, "bash", `${RC}\n${SLEEP} 60 &\necho $! > ${shq(holding)}\n${frame('{"HOME":"/h","PATH":"/p"}')}\nexit 0\n`) });
   fellBack(r, "your login shell did not answer within 5 s");
   assert.ok(Date.now() - started < 20000, "the read ended at the deadline, not when the descendant would have");
   await groupGone(holding);
@@ -306,4 +322,29 @@ test("--json stdout stays one valid envelope whatever the login shell prints, an
 
 test("a launch configuration cannot set the login-shell test seam: it is reserved, so no instance's launch can choose the program whose answer becomes a server's environment", () => {
   assert.throws(() => validateLaunchConfig("seam", { harness: "claude", env: { OATS_TEST_LOGIN_SHELL: "/fixture/bash" } }), (e) => e.code === "E_LAUNCH_CONFIG_INVALID" && /OATS_TEST_LOGIN_SHELL/.test(e.message));
+});
+
+// A real bash, started -l -i through the kernel's own capture and emitter: bash 5.3 marks the
+// descriptors it inherits from 3 to 19 close-on-exec in a login interactive shell, so an answer on a
+// descriptor of its own never reached the emitter (polaris, bash 5.3.15). The wrapper is the seam: it
+// gives the real bash --noprofile --norc and the fixture's HOME and directory, so no start-up file is
+// read (the capture seeds HOME and its directory from the password database even under the seam),
+// and exports what the answer must carry back as it is. zsh and fish are not run here.
+const REAL_BASH = ["/bin/bash", "/usr/bin/bash"].find((p) => existsSync(p));
+test("a real bash started -l -i answers through the kernel's capture: the frame on stdout survives what bash does to inherited descriptors, and values come back exactly", { skip: !REAL_BASH && "no bash on this host" }, (t) => {
+  t.diagnostic(execFileSync(REAL_BASH, ["--version"], { encoding: "utf8" }).split("\n")[0]);
+  const tricky = `quote ' double " dollar $HOME backtick \` newline\nend é`;
+  const wrapper = script(`shell-${++shells}`, "bash", `cd ${shq(HOME)} || exit 1\nexport HOME=${shq(HOME)} REAL_BASH_FIXTURE=ran ROUND_TRIP=${shq(tricky)}\nexec ${shq(REAL_BASH)} --noprofile --norc "$@"\n`);
+  if (process.platform === "linux") {
+    // Whether this bash is one that closes the old channel: an inherited descriptor 3, close-on-exec under -l -i.
+    const probe = spawnSync(wrapper, ["-l", "-i", "-c", "while read -r k v; do [ \"$k\" = flags: ] && echo \"flags: $v\" >&2; done < /proc/$$/fdinfo/3"], { stdio: ["ignore", "ignore", "pipe", "pipe"], encoding: "utf8", timeout: 5000 });
+    const flags = probe.stderr.match(/flags:\s*([0-7]+)/)?.[1];
+    t.diagnostic(`this bash marks an inherited descriptor 3 close-on-exec under -l -i: ${flags ? (parseInt(flags, 8) & 0o2000000 ? "yes" : "no") : "unknown"}`);
+  }
+  const r = captureLoginEnvironment({ creatorEnv: { HOME, PATH: CREATOR.PATH, LANG: "C.UTF-8" }, shell: wrapper });
+  assert.equal(r.failure, undefined, r.failure);
+  assert.equal(r.env.REAL_BASH_FIXTURE, "ran", "the answer is the real bash's environment, read by the emitter it ran");
+  assert.equal(r.env.HOME, HOME);
+  assert.equal(r.env.ROUND_TRIP, tricky, "a value comes back byte for byte");
+  assert.ok(r.env.PATH);
 });
