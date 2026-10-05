@@ -19,7 +19,7 @@ import { retirementSummary, runtimeState, unsupportedSession } from "./instance-
 import { deploymentUnavailableText, NOT_SERVED_CODE, NO_ANSWER_CODE, unservedError, createPendingWatch } from "./deployment-header.mjs";
 import { panelErrorCause } from "./deployment-contract.mjs";
 import {
-  initTheme, toggleTheme, setTheme, refreshHostTheme, THEMES, xtermTheme, terminalFontWeight, onThemeChange,
+  initTheme, toggleTheme, setTheme, currentTheme, refreshHostTheme, THEMES, xtermTheme, terminalFontWeight, onThemeChange,
   terminalTypography, setTerminalFontSize, setTerminalFontFamily, resetTerminalTypography, onTerminalTypographyChange,
 } from "./theme.mjs";
 import { createPalette } from "./palette.mjs";
@@ -35,6 +35,7 @@ import { createKeybindingsEditor } from "./keybindings-editor.mjs";
 import { createConnections, connectionsCSS } from "./connections.mjs";
 import { createTerminalSettings, settingsTerminalCSS } from "./settings-terminal.mjs";
 import { createLifecycleDialog, lifecycleCSS } from './lifecycle-dialog.mjs';
+import { createThemePicker, themePickerCSS } from './theme-picker.mjs';
 import { rosterKeyAction, moveTarget } from "./roster-keys.mjs";
 import { createViewLifecycle } from "./view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "./tab-keys.mjs";
@@ -98,7 +99,7 @@ hostTheme.start();
 window.addEventListener("pagehide", () => hostTheme.dispose(), { once: true });
 mountShellIcons(document);
 const identityStyle = document.createElement("style");
-identityStyle.textContent = identityCSS + contextPanelCSS + teamsCSS + instanceSoulCSS + instanceGitCSS + notificationCSS + connectionsCSS + settingsTerminalCSS + lifecycleCSS + rosterTipCSS + rosterPrCSS; document.head.append(identityStyle);
+identityStyle.textContent = identityCSS + contextPanelCSS + teamsCSS + instanceSoulCSS + instanceGitCSS + notificationCSS + connectionsCSS + settingsTerminalCSS + lifecycleCSS + themePickerCSS + rosterTipCSS + rosterPrCSS; document.head.append(identityStyle);
 const rosterTip = createRosterTip(document);
 // The PR of each local instance's branch (forge-roster), re-read at most once a minute.
 const rosterPrs = createRosterPrs({
@@ -2032,6 +2033,7 @@ const palette = createPalette({
     { label: "Spawn instance: choose a soul in Workspace…", detail: chordDetail("app.chooseSoul"), run: () => runAction("app.chooseSoul") },
     { label: "Souls: quick open…", detail: chordDetail("app.quickOpenSouls"), run: () => runAction("app.quickOpenSouls") },
     { label: "File: open read-only…", detail: chordDetail("app.openFile"), run: () => runAction("app.openFile") },
+    { label: "Theme: choose…", detail: chordDetail("app.themePicker"), run: () => runAction("app.themePicker") },
     { label: "Theme: cycle White / Solarized / Dark / This computer", detail: chordDetail("app.themeToggle"), run: () => toggleTheme() },
     ...THEMES.map(({ id, label }) => ({ label: `Theme: ${label}`, detail: chordDetail(`app.theme.${id}`), run: () => runAction(`app.theme.${id}`) })),
     { label: "Shortcuts: edit keyboard shortcuts…", detail: chordDetail("app.shortcuts"), run: () => openShortcutsEditor() },
@@ -2169,6 +2171,11 @@ function openLifecycleDialog(operation, instance, workspace) {
   lifecycleDialog.open({ operation, instance, workspace: rowDeployment(instance) });
 }
 window.addEventListener('pagehide', () => lifecycleDialog.dispose(), { once: true });
+// The theme button, the palette and the chord (app.themePicker) open it; a choice goes through setTheme,
+// so it is stored as a palette choice is.
+const themePicker = createThemePicker({ doc: document, themes: THEMES, current: currentTheme, choose: setTheme,
+  subscribe: onThemeChange, onIntent: () => tabOpenIntents.invalidate(), applyFocus: fn => tabOpenIntents.applyFocus(fn) });
+window.addEventListener('pagehide', () => themePicker.dispose(), { once: true });
 
 function focusRoster() {
   tabOpenIntents.invalidate(); // also when the filter already has DOM focus
@@ -2310,6 +2317,8 @@ NAV.forEach((v) => registerAction({
   id: `stage.${v.name}`, label: `View: ${v.label}`, context: "global",
   run: () => showStageFocused(v.name),
 }));
+// A held chord (key repeat) does nothing: it never opens and closes the picker over and over.
+registerAction({ id: "app.themePicker", label: "Choose a theme…", context: "global", run: (e) => { if (!e?.repeat) themePicker.toggle(); } });
 registerAction({ id: "app.themeToggle", label: "Cycle White / Solarized / Dark / This computer theme", context: "global", run: () => toggleTheme() });
 // Explicit theme choices are rebindable, but add no default keyboard chords.
 THEMES.forEach(({ id, label }) => registerAction({
@@ -2369,7 +2378,7 @@ const baseTitles = new WeakMap();
 function applyChordTitles() {
   const themeButton = document.getElementById("sidebar-theme");
   if (themeButton) {
-    const label = "Cycle White / Solarized / Dark / This computer theme";
+    const label = "Choose a theme";
     baseTitles.set(themeButton, label); themeButton.setAttribute("aria-label", label);
   }
   for (const el of document.querySelectorAll("[data-action]")) {

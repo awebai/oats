@@ -365,6 +365,49 @@ test("wired handler: an intercepted chord is suppressed in every phase and write
   await tab.close();
 });
 
+// The theme picker's chord in a terminal, through the shell's interceptKey (the engine's terminal policy):
+// Ctrl+Shift+Space (Linux/Windows) and ⇧⌘Space (macOS) are claimed in every phase, run the action once, and
+// write nothing to the pty (xterm.js 5.5.0 maps neither to a byte either: its Ctrl+Space → NUL needs Shift up,
+// and on macOS ⌘ suppresses its printable path). Plain Ctrl+Space is left to xterm, which sends the program NUL.
+import { registerAction, matchEvent, handleKeydown } from "../renderer/keybindings.mjs";
+test("the theme picker chord opens once in a terminal and writes no byte; plain Ctrl+Space reaches the program", async () => {
+  let runs = 0;
+  const off = registerAction({ id: "app.themePicker", label: "Choose a theme…", context: "global", run: e => { if (!e?.repeat) runs++; } });
+  try {
+    for (const isMac of [false, true]) {
+      const d = makeDoubles(Promise.resolve(9)), writes = [];
+      let handler = null;
+      d.term.attachCustomKeyEventHandler = (h) => { handler = h; };
+      d.desk.termWrite = (id, data) => writes.push([id, data]);
+      const interceptKey = (ev) => {
+        if (!matchEvent(ev, { insideTerminal: true, isMac })) return false;
+        if (ev.type === "keydown") handleKeydown(ev, { insideTerminal: true, isMac });
+        return true;
+      };
+      const tab = mk(d, { interceptKey });
+      await tab.start();
+      const ev = (type, o = {}) => ({ type, key: " ", code: "Space", keyCode: 32, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false,
+        repeat: false, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, ...o });
+      const chord = isMac ? { metaKey: true, shiftKey: true } : { ctrlKey: true, shiftKey: true };
+      runs = 0;
+      const down = ev("keydown", chord);
+      assert.equal(handler(down), false, `mac=${isMac}: keydown claimed before xterm`);
+      assert.equal(down.defaultPrevented, true);
+      assert.equal(handler(ev("keypress", chord)), false, "keypress claimed");
+      assert.equal(handler(ev("keyup", chord)), false, "keyup claimed");
+      assert.equal(runs, 1, `mac=${isMac}: the picker toggles once, on keydown`);
+      // A held chord: claimed (still no byte) but the action does nothing on a repeat.
+      assert.equal(handler(ev("keydown", { ...chord, repeat: true })), false);
+      assert.equal(runs, 1, "key repeat does not toggle again");
+      assert.deepEqual(writes, [], `mac=${isMac}: nothing written to the pty`);
+      const nul = ev("keydown", { ctrlKey: true });
+      assert.equal(handler(nul), true, `mac=${isMac}: plain Ctrl+Space is left to xterm`);
+      assert.equal(nul.defaultPrevented, false); assert.equal(runs, 1);
+      await tab.close();
+    }
+  } finally { off(); }
+});
+
 test("shell wires interceptKey through the engine's terminal policy", () => {
   const here2 = dirname(fileURLToPath(import.meta.url));
   const src = readFileSync(join(here2, "..", "renderer", "shell.mjs"), "utf8");

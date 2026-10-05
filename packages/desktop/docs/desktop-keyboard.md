@@ -10,7 +10,8 @@ Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
 `renderer/surface-return.mjs` (back to where you were), `renderer/shell.mjs`
 (action registration). Tests: `test/keymap-linux.test.mjs`,
 `test/keybindings.test.mjs`, `test/focus-regions.test.mjs`,
-`test/spawn-dialog-keyboard.test.mjs`, `test/palette-tree.test.mjs` (the palette's rows and cycling), `test/tab-strip-reveal.test.mjs`.
+`test/spawn-dialog-keyboard.test.mjs`, `test/palette-tree.test.mjs` (the palette's rows and cycling), `test/tab-strip-reveal.test.mjs`,
+`test/theme-picker.test.mjs` (the theme picker's keys).
 
 ## Principles
 
@@ -83,6 +84,7 @@ Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
 | Sidebar (`sidebar.toggle`) | ⌘B | Ctrl+B | no (tmux prefix) |
 | Filter instances (`sidebar.focusFilter`) | ⌘F | Ctrl+F | no |
 | Instance panel (`panel.toggle`; no tab-bar button since spec F, the panel keeps its own collapse) | ⌥⌘B | Ctrl+Alt+B | no |
+| Theme picker (`app.themePicker`; also the theme button and **Theme: choose…**) | ⇧⌘Space | Ctrl+Shift+Space | yes |
 | Theme cycle: White, Solarized, Dark, This computer (`app.themeToggle`) | none | none | – (the palette keeps it) |
 | Keyboard shortcuts (`app.shortcuts`) | ⌘, | Ctrl+, | no |
 | Terminal zoom (`terminal.fontBigger`, `…Smaller`, `…Reset`; also Settings → Terminal; reset lands on 15px) | ⌘= ⌘- ⌘0 | Ctrl+= Ctrl+- Ctrl+0 | no |
@@ -107,6 +109,32 @@ Ctrl+Shift+E (split right on Linux) is also IBus's emoji hotkey on GNOME. The
 Desktop keeps it, after Terminator and Tilix; if IBus takes it first, rebind
 split right in the shortcuts editor or change IBus's hotkey (IBus Preferences →
 Emoji).
+
+The theme picker's chord is the in-app counterpart of Omarchy's theme menu
+(Super+Ctrl+Shift+Space). Linux/Windows leave out Super, which belongs to the
+window manager (principle 1); macOS puts ⌘ in Super's place and leaves out ⌃,
+because on macOS a chord that holds ⌃ never fires while a terminal has focus
+(Ctrl+Tab aside).
+xterm.js sends no byte for either chord (its Ctrl+Space → NUL needs Shift up),
+so the picker takes nothing from a program, and plain Ctrl+Space stays the
+program's. On Omarchy, Super+Ctrl+Shift+Space opens Omarchy's own theme menu,
+which changes the computer's theme (the one This computer follows), and
+Ctrl+Shift+Space opens Desktop's picker. On Linux the engine ignores Super, so
+where the window manager lets Super+Ctrl+Shift+Space through, it opens
+Desktop's picker as well. A held chord does not open and close the picker over
+and over. The theme button opens the picker too; the theme cycle stays in the
+palette.
+
+Inside the theme picker: ↑/↓ move between the themes (wrapping), Home/End go to
+the first and last, Enter, Space or a click chooses (nothing applies before
+that), Escape, the close button or the backdrop closes with nothing changed,
+and Tab / Shift+Tab stay inside it; a background shortcut that moves focus
+(Ctrl+F to the roster filter) cannot take it out. Focus returns to what had
+it, also to a control in a dialog that stays open under the picker (Remove,
+Connections). The picker is on the palette layer, so it never opens where it
+cannot be seen: while a dialog above that layer is shown (the spawn dialog,
+the workspace dialog, the start dialog), the chord and **Theme: choose…** do
+nothing, and the theme button is behind that dialog's scrim.
 
 F1 was considered as a second palette chord and left out: in a terminal F1
 belongs to programs such as htop and mc.

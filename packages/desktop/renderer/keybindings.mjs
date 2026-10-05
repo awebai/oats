@@ -164,6 +164,10 @@ export const DEFAULT_KEYMAP = Object.freeze({
   // No default (spec F): ⌘⇧T is "reopen closed tab" in browsers and Ctrl+Shift+T "new tab" in
   // Linux terminals. The palette keeps the command; the editor can bind one.
   "app.themeToggle": null,
+  // The theme picker: the in-app counterpart of Omarchy's theme menu (Super+Ctrl+Shift+Space), without
+  // Super on Linux/Windows (the window manager's) and with ⌘ for Super on macOS, without ⌃: on macOS a
+  // chord holding ⌃ never fires in a terminal (matchEvent). xterm.js sends nothing for either chord.
+  "app.themePicker": { mac: "Mod+Shift+Space", other: "Ctrl+Shift+Space" },
   "stage.hierarchy": "Mod+1",
   "stage.spawn": "Mod+2",
   "stage.automations": "Mod+3",
@@ -216,8 +220,11 @@ export function defaultBinding(actionId, isMac = defaultIsMac()) {
 // app.quickOpenSouls is deliberately ABSENT too: Ctrl+P inside a terminal
 // is shell history navigation — it must reach the pty (⌘P on macOS still
 // fires inside xterm via the ⌘-chord policy above).
+// app.themePicker is safe: xterm.js 5.5.0 sends no byte for Ctrl+Shift+Space (its
+// Ctrl+Space → NUL needs Shift up), so claiming it takes nothing from a program, and
+// plain Ctrl+Space stays the program's.
 export const TERMINAL_ALLOWLIST = Object.freeze([
-  "app.palette", "app.chooseSoul",
+  "app.palette", "app.chooseSoul", "app.themePicker",
   "tabs.next", "tabs.prev", "tabs.close",
   "split.vertical", "split.horizontal", "split.close",
   "focus.leaveTerminal",
