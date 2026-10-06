@@ -189,7 +189,7 @@ test('describe: gated on automation-descriptions; refused before any call when t
   assert.equal((await automationsRequest(ok, { workspace: { ...workspace, remote: true, server: 'host' }, cli: describeCli, invoke })).reason.code, 'E_UNSUPPORTED_REMOTE');
   for (const request of [{ ...ok, key: 'agents/nightly' }, { ...ok, kind: 'trigger', key: 'agents/pr-review' }, { ...ok, key: '--dir' }, { kind: 'schedule', action: 'describe', description: 'x' },
     { ...ok, description: 'one\ntwo' }, { ...ok, description: 'one\r' }, { ...ok, description: 'x'.repeat(201) }, { ...ok, description: 'tab\there' }, { ...ok, description: 'a\u0000b' },
-    { ...ok, description: 'a b' }, { ...ok, description: 'a b' }, { ...ok, description: 'a\u007fb' }, { ...ok, description: 42 }, { ...ok, description: null }, { ...ok, description: ['x'] },
+    { ...ok, description: 'a\u2028b' }, { ...ok, description: 'a\u2029b' }, { ...ok, description: 'a\u007fb' }, { ...ok, description: 42 }, { ...ok, description: null }, { ...ok, description: ['x'] },
     { kind: 'schedule', action: 'describe', key: 'local/digest' }, { kind: 'trigger', action: 'enable', key: 'local/hotfix', description: 'x' }, { kind: 'trigger', action: 'list', description: '' },
     { ...ok, extra: 1 }, { ...ok, id: 'local/digest' }]) {
     assert.equal((await automationsRequest(request, { workspace, cli: describeCli, invoke })).reason.code, 'E_BAD_ARGS', JSON.stringify(request));

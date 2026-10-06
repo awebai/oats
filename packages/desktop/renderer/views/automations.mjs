@@ -566,7 +566,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     if (run.unknown) {
       const u = run.unknown;
       line('warn', 'Run state unknown', u.since);
-      card.body.append(pageFacts(doc, [['Scheduled', relativeTime(u.scheduledFor, now())?.label, relativeTime(u.scheduledFor, now())?.title], ['Exited', u.exited ? 'yes' : null],
+      card.body.append(pageFacts(doc, [['Scheduled', relativeTime(u.scheduledFor, now())?.label, relativeTime(u.scheduledFor, now())?.title], ['Host slot', u.holdsSlot ? 'held (counts against the host limit)' : null], ['Exited', u.exited ? 'yes' : null],
         ['Exit status', u.exitStatus === null ? null : String(u.exitStatus)], ['Exit signal', u.exitSignal], ['Error', u.error, null, 'wrap']]));
       if (checks.length) { const bar = node('div', undefined, 'auto-card-actions'); for (const extra of checks) extraButton(extra, bar); card.body.append(bar); }
       const note = node('p', undefined, 'page-note');
@@ -627,7 +627,8 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     if (describeBusy || !describing || !describe) return;
     const row = rowById(describing);
     if (!row) { closeDescribe(); return; }
-    const value = summaryInput.value.trim();
+    // Sent as typed: only "" clears; the kernel keeps boundary spaces, and refuses what breaks its rule.
+    const value = summaryInput.value;
     if (value && !descriptionValid(value)) { sheetError.textContent = `A summary is one line of up to ${DESCRIPTION_MAX} characters, without control characters.`; summaryInput.focus(); return; }
     const my = ++describeSerial; describeBusy = true; sheetError.textContent = ''; paintSheet(); sheetStatus.focus();
     try {

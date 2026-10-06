@@ -24,7 +24,7 @@
         "--json"
       ],
       "exit": 0,
-      "sha256": "91697768d199068ba03e98ebc0fca81d3f026aab5ea6663669ed7ee0517c2ef1"
+      "sha256": "cf0e02f1b1229b005ba6491a01b272a22318235bdda66c96c0008e07d8c1775f"
     },
     "schedule-add-command": {
       "argv": [
@@ -38,7 +38,7 @@
         "--json"
       ],
       "exit": 0,
-      "sha256": "db495389eec7156d722d338c262c2da272112e870a3bd757191df5f4f975b849"
+      "sha256": "a3e9d186ee9b66f520db19fa88cba2f9c29cef83e8df853277beea3ce2ca6894"
     },
     "schedule-add-wake": {
       "argv": [
@@ -51,7 +51,7 @@
         "--json"
       ],
       "exit": 0,
-      "sha256": "dfed2c5bfa59096e1c8d90f997154c4611f113944fef252819accea2923e2245"
+      "sha256": "d31447d06f4c731a7ec63c704ead6a736b686c5a1f25f96062c316c994827fab"
     },
     "schedule-add-operation": {
       "argv": [
@@ -64,7 +64,20 @@
         "--json"
       ],
       "exit": 0,
-      "sha256": "2b5f9cf3cc2959f1b3638696687fc2b3ede3059a4491d8cd9ed9616006a2cdf7"
+      "sha256": "38b4c4b3f73439f41e2e9e732581532fd9b089d1107c354b7f0257c951376556"
+    },
+    "schedule-add-threw": {
+      "argv": [
+        "oats",
+        "schedule",
+        "add",
+        "threw",
+        "--spec-json",
+        "{\"kind\":\"command\",\"cron\":\"0 * * * *\",\"tz\":\"UTC\",\"cwd\":\"<base>/deployment\",\"argv\":[\"oats\",\"status\"]}",
+        "--json"
+      ],
+      "exit": 0,
+      "sha256": "c074ab394beb662d671c1b3bd9128437be6cca78226bd887fdcb75faaf5828d7"
     },
     "schedule-add-spawn": {
       "argv": [
@@ -77,7 +90,7 @@
         "--json"
       ],
       "exit": 0,
-      "sha256": "8efd2211add7f188b980aa11d2548920f9004b29c571edbc923552e8bc48f299"
+      "sha256": "4dcaa77722388b859c6cbf9e5cddb8d61b08b833b35e90585e39b76f3e3a80dc"
     },
     "trigger-add-local": {
       "argv": [
@@ -90,7 +103,7 @@
         "--json"
       ],
       "exit": 0,
-      "sha256": "b1fb2969de9c619ca07ac0916b69b104248cd5de72b60cb56ba6809d7f6b9707"
+      "sha256": "6ddc25b25b40a2126d4eac855d5e132a95f6eafab226928e8fd39f70099c50ab"
     },
     "trigger-add-plain": {
       "argv": [
@@ -102,7 +115,7 @@
         "--json"
       ],
       "exit": 0,
-      "sha256": "34037846f7b9639604994a91b874c0552fb24069f68acfb6216eccde05ab8be1"
+      "sha256": "e26b465a0a7a32a909e5629c15514a6872a366d5c429a3932c6f64f19392774f"
     },
     "schedule-update-describe": {
       "argv": [
@@ -114,7 +127,7 @@
         "--json"
       ],
       "exit": 0,
-      "sha256": "e162c0d565feb34c02e5b58be63e340e2e89f24cc611e7b05aff00de0c73f7c0"
+      "sha256": "94e44c29af62e9dd865b5d45b9b95c13918a3f85c421d4969f6e0b7e347ec45a"
     },
     "schedule-update-clear": {
       "argv": [
@@ -126,7 +139,7 @@
         "--json"
       ],
       "exit": 0,
-      "sha256": "43f65eff98c0c354904d05e8b3f0dd2fe6954cbd74e934251b7d1c0cc9651024"
+      "sha256": "99074eae63988ecfcd775b0f8ad1a4aac62dff0c1dce6d6d37e65e8756824964"
     },
     "schedule-update-invalid": {
       "argv": [
@@ -162,7 +175,7 @@
         "--json"
       ],
       "exit": 0,
-      "sha256": "b3f6a479c2921e9e09e241511844676ca8539ff9d63211e8a65d18d3dbd23ef7"
+      "sha256": "3edc5d3b4ff32d09e2a503a6a08c7dcbf96ba95474d800a4abc56e447accac5e"
     },
     "trigger-update-clear": {
       "argv": [
@@ -174,7 +187,7 @@
         "--json"
       ],
       "exit": 0,
-      "sha256": "ed48346746401a6e8bd6868dac274d8caf42c60c61259023219af83fd99c5332"
+      "sha256": "a9af850f4cf2415537e938e11bfa437d8ba036d615c7fb032b7d0256d2e24e85"
     },
     "trigger-update-flag": {
       "argv": [
@@ -200,7 +213,7 @@
         "--json"
       ],
       "exit": 1,
-      "sha256": "eed004862103ac92196915e7453fa77b3916d7acb740c63f03e411bb0bbfb1dc"
+      "sha256": "09c368cab9e896a5dd29134e28247256bebb7360bd9f4ce7868dbfe9335f4143"
     },
     "trigger-update-unknown": {
       "argv": [
@@ -222,7 +235,7 @@
         "--json"
       ],
       "exit": 0,
-      "sha256": "3f0f507171c4a48aee28ed38dc529f984ba0e0ece5a85aa34561f345962050d3"
+      "sha256": "fa2d94528ced109d9badb3cad477d807cdead5dde258652a44fca8faa05f4cb5"
     },
     "trigger-list": {
       "argv": [
@@ -232,7 +245,7 @@
         "--json"
       ],
       "exit": 0,
-      "sha256": "a04186bdf13118101767e62d132d668437c2f52c85edf6c43cd8a0cd628c2109"
+      "sha256": "f4d619fa4de7be8f6bb3366b903602393bc7b68df398c1d1cf5d876a768fbf70"
     },
     "schedule-reconcile": {
       "argv": [
@@ -243,7 +256,7 @@
         "--json"
       ],
       "exit": 0,
-      "sha256": "fed3000eb8a3c117309cccca12b689c5048a337064c1ffbfe6068735320c3590"
+      "sha256": "190f53d6aae939ec77b381198bff472012473fd75df93c279c27e56d25632b3f"
     }
   }
 }

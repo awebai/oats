@@ -10,7 +10,8 @@
 //   the description-only update verbs: set, clear, refused (out of rule, workspace, another flag, unknown);
 //   run state, by the kernel's own state files: the command job holding its lock with its attempt
 //     (running), the wake job with an attempt that has no recorded result (unknown, exited 1), the
-//     spawn job with a pending wake; then `schedule reconcile local/<id>` on the unknown one.
+//     spawn job with a pending wake; a command run by the kernel's own runNow whose launch threw (its
+//     effects unconfirmed: unknown, and it KEEPS its lock); then `schedule reconcile local/<id>`.
 // Writes the documents here, `<base>` → /fixture/base, with provenance.json (argv, exit, sha256).
 // Usage: CAPTURE_COMMIT=<oid> node capture-descriptions.mjs <kernel-tree>
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
@@ -74,6 +75,7 @@ try {
   run("schedule-add-command", ["schedule", "add", "status", "--spec-json", JSON.stringify({ kind: "command", cron: "30 8 * * 1-5", tz: "UTC", cwd: fx.dep, argv: ["oats", "status", "--json", "--dir", "a dir/with spaces"] }), "--description=Morning workspace status", "--json"]);
   run("schedule-add-wake", ["schedule", "add", "standup", "--spec-json", JSON.stringify({ kind: "wake", cron: "0 9 * * 1-5", tz: "Europe/Madrid", home, message: "\n  Post the standup summary to the team.\nThen check the release branch." }), "--json"]);
   run("schedule-add-operation", ["schedule", "add", "harvest", "--spec-json", JSON.stringify({ kind: "operation", cron: "0 */6 * * *", tz: "UTC", home, operation: "knowledge:harvest" }), "--json"]);
+  run("schedule-add-threw", ["schedule", "add", "threw", "--spec-json", JSON.stringify({ kind: "command", cron: "0 * * * *", tz: "UTC", cwd: fx.dep, argv: ["oats", "status"] }), "--json"]);
   run("schedule-add-spawn", ["schedule", "add", "digest", "--spec-json", JSON.stringify({ kind: "spawn", cron: "0 7 * * *", tz: "UTC", agent: "reviewer", task: "Write the nightly digest.\nKeep it under a page.",
     purpose: "digest", harness: "claude", model: "opus", yolo: false, backend: "tmux", wake: { cron: "0 12 * * *", tz: "UTC", message: "Midday: post progress." } }), "--json"]);
   run("trigger-add-local", ["trigger", "add", "--file", file("t.json", { id: "kb-review", kind: "trigger", on, spawn: { soul: "reviewer", purpose: "{trigger}-{number}", task: "Review {repo}#{number}." } }), "--description=Reviews every harvest PR", "--json"]);
@@ -97,6 +99,9 @@ try {
   } };
   mkdirSync(S.stateDir(fx.dep), { recursive: true }); writeFileSync(join(S.stateDir(fx.dep), "state.json"), JSON.stringify(state));
   S.acquireJobLock(fx.dep, "status", { pid: process.pid });
+  // The kernel's run-now with a launcher that throws (lib/schedule.mjs: a command that threw is
+  // unconfirmed and keeps its slot), as test/schedule.test.mjs drives it.
+  await fx.inEnv(async () => S.runNow(fx.dep, "threw", { now: new Date("2026-10-06T09:00:00.000Z"), io: { command() { throw new Error("the command launcher failed"); } } }));
   run("schedule-list", ["schedule", "list", "--json"]);
   run("trigger-list", ["trigger", "list", "--json"]);
   run("schedule-reconcile", ["schedule", "reconcile", "local/standup", "--json"]);

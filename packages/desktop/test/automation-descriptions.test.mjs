@@ -46,7 +46,7 @@ test('the capture: the kernel reports automation-descriptions; summaries fill in
   assert.deepEqual(problems, ['oats-triggers/from-bad-header.yaml#/description', 'ops/nightly.oats-schedule.yaml#/description']);
   const s = rowsOf('schedule'), t = rowsOf('trigger');
   assert.deepEqual(Object.values(s).map(r => [r.id, r.run, r.description]), [['local/digest', 'spawn', null], ['local/harvest', 'operation', null], ['local/standup', 'wake', null],
-    ['local/status', 'command', 'Morning workspace status'], ['ws/nightly', 'spawn', null]], 'the out-of-rule header loads with description null');
+    ['local/status', 'command', 'Morning workspace status'], ['local/threw', 'command', null], ['ws/nightly', 'spawn', null]], 'the out-of-rule header loads with description null');
   assert.equal(s['ws/nightly'].runsHere, true, 'and still runs');
   assert.deepEqual(Object.values(t).map(r => [r.id, r.description]), [['local/kb-review', 'Reviews every harvest PR'], ['local/kb-triage', null],
     ['ws/from-bad-header', 'Review each harvest PR (template)'], ['ws/from-header', 'The header wins'], ['ws/from-template', 'Review each harvest PR (template)']]);
@@ -68,7 +68,14 @@ test('the adapter reads what each run sends, the spawn settings, run state and p
   assert.equal(templateProvenance(null), null);
   // Run state, from the kernel's state files.
   assert.deepEqual(runState(status), { running: { since: '2026-10-06T08:30:04.000Z' }, unknown: null, pendingWake: null }, 'the job lock + its attempt');
-  assert.deepEqual(runState(standup).unknown, { since: '2026-10-06T07:00:03.000Z', scheduledFor: '2026-10-06T07:00:00.000Z', exited: true, exitStatus: 1, exitSignal: null, error: 'the wake was not confirmed' });
+  assert.deepEqual(runState(standup).unknown, { since: '2026-10-06T07:00:03.000Z', scheduledFor: '2026-10-06T07:00:00.000Z', holdsSlot: false, exited: true, exitStatus: 1, exitSignal: null, error: 'the wake was not confirmed' });
+  // A held lock is a slot, not a launch: the kernel's run-now whose launcher threw keeps its lock with
+  // an unconfirmed attempt (running: true, lastRun unknown). Unknown wins, and says it holds the slot.
+  const threw = s['local/threw'];
+  assert.deepEqual([threw.running, threw.lastRun.outcome, threw.attempt.error], [true, 'unknown', 'the command launcher failed'], 'the capture');
+  assert.equal(runState(threw).running, null);
+  assert.deepEqual(runState(threw).unknown, { since: '2026-10-06T09:00:00.000Z', scheduledFor: '2026-10-06T09:00:00.000Z', holdsSlot: true, exited: null, exitStatus: null, exitSignal: null, error: 'the command launcher failed' });
+  assert.equal(runState({ ...threw, attempt: null, lastRun: { outcome: 'launched', startedAt: '2026-10-06T09:00:00.000Z' } }).running.since, '2026-10-06T09:00:00.000Z', 'a launched spawn holding its slot: running since its launch');
   assert.deepEqual(runState(digest), { running: null, unknown: null, pendingWake: { scheduledFor: '2026-10-06T12:00:00.000Z' } });
   assert.equal(runState(harvest), null); assert.equal(runState(t['local/kb-review']), null, 'triggers have no run state card');
   assert.deepEqual(runState({ ...harvest, lastRun: { outcome: 'unknown', startedAt: '2026-10-06T06:00:00.000Z' } }).unknown.since, '2026-10-06T06:00:00.000Z', 'a last run of unknown outcome');
@@ -176,6 +183,12 @@ test('detail, Run state: running since; unknown since, with exit facts, Check ru
   assert.deepEqual([...unknown.querySelectorAll('code')].map(c => c.textContent), ['oats schedule reconcile local/standup --dir /fixture/base/deployment', 'oats schedule reconcile local/standup --clear --dir /fixture/base/deployment']);
   unknown.querySelector('button[data-verb=reconcile]').click(); assert.deepEqual(checks, ['local/standup']);
   assert.equal(u.$('.page-bar-actions [data-verb=reconcile]'), null, 'the check lives on its card, not twice');
+  u.view.open('local/threw'); await tick();
+  const retained = u.$('.page-card[data-card="Run state"]');
+  assert.match(retained.querySelector('.auto-verdict.warn').textContent, /^Run state unknown since .+ · 1 h ago$/, 'a held lock does not hide an unknown run');
+  assert.doesNotMatch(retained.textContent, /Running since/);
+  assert.equal(u.facts('Run state')['Host slot'], 'held (counts against the host limit)'); assert.equal(u.facts('Run state').Error, 'the command launcher failed');
+  retained.querySelector('button[data-verb=reconcile]').click(); assert.deepEqual(checks, ['local/standup', 'local/threw']);
   u.view.open('local/digest'); await tick();
   assert.match(u.$('.page-card[data-card="Run state"]').textContent, /A wake message is waiting to be delivered \(due in 2 h\)\./);
   u.view.open('local/harvest'); await tick();
@@ -204,7 +217,16 @@ test('detail: an Invalid or Unreadable card shows code, field and message; Comes
   assert.deepEqual(Object.keys(tr.facts('Comes from')), ['Created', 'Updated']);
 });
 
-test('Edit summary: the sheet opens on the summary, saves the trimmed text, re-reads, and returns focus to the control by identity', async t => {
+test('the Schedules page offers Check run state for an unknown run that still holds its lock', async () => {
+  const threw = fx('schedule-list').schedules.find(r => r.id === 'threw');
+  const s = setup({ read: async () => ({ schedules: [threw], scheduler: { installed: true, active: true, registered: true } }), mutate: async () => ({ reconciled: 'unknown' }) });
+  try {
+    await tick(); await tick();
+    assert.ok(s.rowAction('threw', 'reconcile'), 'the row menu keeps its recovery action');
+  } finally { s.cleanup(); }
+});
+
+test('Edit summary: the sheet opens on the summary, saves the text as typed, re-reads, and returns focus to the control by identity', async t => {
   const calls = [];
   const u = mount(t, 'schedule', { describe: async (row, text) => { calls.push([row.key, text]); return doc('schedule-update-describe').result; } }); await tick();
   u.view.open('local/status'); await tick();
@@ -215,15 +237,18 @@ test('Edit summary: the sheet opens on the summary, saves the trimmed text, re-r
   const form = sheet.querySelector('form');
   assert.deepEqual([form.getAttribute('role'), form.getAttribute('aria-modal'), u.dom.window.document.getElementById(form.getAttribute('aria-labelledby')).textContent], ['dialog', 'true', 'Summary of status']);
   input.value = '  Status, every weekday morning  ';
-  const json = fx('schedule-list'); json.schedules.find(r => r.id === 'status').description = 'Status, every weekday morning'; u.set(json);
+  const json = fx('schedule-list'); json.schedules.find(r => r.id === 'status').description = '  Status, every weekday morning  '; u.set(json);
   const reads = u.reads.length;
   form.dispatchEvent(new u.dom.window.Event('submit', { cancelable: true })); await tick(); await tick();
-  assert.deepEqual(calls, [['local/status', 'Status, every weekday morning']]);
+  assert.deepEqual(calls, [['local/status', '  Status, every weekday morning  ']], 'as typed: the kernel keeps boundary spaces');
   assert.equal(sheet.hidden, true); assert.equal(u.reads.length, reads + 1, 'a save re-reads the list');
-  assert.equal(u.$('.page-lede').textContent, 'Status, every weekday morning');
+  assert.equal(u.$('.page-lede').textContent, '  Status, every weekday morning  ');
   assert.equal(u.active(), u.$('.page-bar-actions [data-verb=describe]'), 'focus on the repainted Edit summary, never <body>');
-  // Clear: an empty value is sent as "".
+  // Spaces only are a summary (the kernel's rule admits them); only an empty value clears.
   u.active().click(); sheet.querySelector('input').value = '   ';
+  form.dispatchEvent(new u.dom.window.Event('submit', { cancelable: true })); await tick(); await tick();
+  assert.deepEqual(calls.at(-1), ['local/status', '   ']);
+  u.active().click(); sheet.querySelector('input').value = '';
   form.dispatchEvent(new u.dom.window.Event('submit', { cancelable: true })); await tick(); await tick();
   assert.deepEqual(calls.at(-1), ['local/status', '']);
   // From the lede (no summary) and from the row menu: focus comes back to that row's menu.
@@ -242,7 +267,7 @@ test('Edit summary: out-of-rule text never leaves; a refusal keeps the sheet wit
   const u = mount(t, 'trigger', { describe: async (row, text) => { calls.push(text); const e = new Error(doc('trigger-update-flag').error.message); throw e; } }); await tick();
   u.view.open('local/kb-review'); await tick(); u.$('.page-bar-actions [data-verb=describe]').click();
   const sheet = u.$('.auto-sheet'), form = sheet.querySelector('form'), input = form.querySelector('input');
-  for (const bad of ['a\tb', 'x'.repeat(201), 'a b']) {
+  for (const bad of ['a\tb', '\tValid\t', 'x'.repeat(201), 'a\u2028b']) {
     input.value = bad; form.dispatchEvent(new u.dom.window.Event('submit', { cancelable: true })); await tick();
     assert.match(sheet.querySelector('.auto-describe-error').textContent, /one line of up to 200 characters/); assert.equal(u.active(), input);
   }
@@ -321,7 +346,12 @@ test('the schedule form: Summary shows only with the feature and is sent as type
   r = await run(['automation-descriptions']);
   try {
     r.form.elements.description.value = '  Review pending work  ';
-    assert.equal((await r.submit()).spec.description, 'Review pending work', 'a typed one is trimmed');
+    assert.equal((await r.submit()).spec.description, '  Review pending work  ', 'sent as typed');
+  } finally { r.s.cleanup(); }
+  r = await run(['automation-descriptions']);
+  try {
+    r.form.elements.description.value = '   ';
+    assert.equal((await r.submit()).spec.description, '   ', 'spaces only are kept, not a removal');
   } finally { r.s.cleanup(); }
   r = await run(['automation-descriptions']);
   try {
@@ -330,7 +360,7 @@ test('the schedule form: Summary shows only with the feature and is sent as type
   } finally { r.s.cleanup(); }
   r = await run(['automation-descriptions']);
   try {
-    r.form.elements.description.value = 'a\tb'; const saved = await r.submit();
+    r.form.elements.description.value = '\tValid\t'; const saved = await r.submit();
     assert.equal(saved, null, 'out of the rule: nothing is sent'); assert.match(r.s.el.querySelector('.schedule-form-error').textContent, /Summary: one line/);
   } finally { r.s.cleanup(); }
   void posts;

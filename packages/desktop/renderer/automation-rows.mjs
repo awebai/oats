@@ -97,17 +97,20 @@ export function summaryLine(row) {
   return first ? { text: first, title: PROMPT_LINE, derived: true } : null;
 }
 
-/** A schedule's run state on this computer, from the kernel's row: running (since its attempt
- * started), unknown (an attempt with no recorded result, or a last run whose outcome is unknown), and
- * a wake waiting to be delivered. → { running, unknown, pendingWake } | null when there is nothing to say. */
+/** A schedule's run state on this computer, from the kernel's row: unknown, running, and a wake
+ * waiting to be delivered. `running` is the job lock (a host slot), not proof of a launch: an attempt
+ * whose effects are unconfirmed keeps its lock (lib/schedule.mjs), so unknown wins — an attempt with
+ * an error, a last run of outcome `unknown`, or an attempt with no lock (a crash before its result);
+ * running is a held lock with none of those (since its attempt, or the launch it holds the slot for).
+ * → { running, unknown, pendingWake } | null when there is nothing to say. */
 export function runState(row) {
   if (row?.kind !== 'schedule') return null;
   const attempt = row.attempt, last = row.lastRun;
-  const running = row.running ? { since: text(attempt?.startedAt) } : null;
-  const unresolved = !row.running && (attempt || last?.outcome === 'unknown');
+  const unresolved = !!text(attempt?.error) || last?.outcome === 'unknown' || (!!attempt && !row.running);
+  const running = row.running && !unresolved ? { since: text(attempt?.startedAt) || text(last?.startedAt) } : null;
   const from = attempt || last || {};
   const unknown = unresolved ? {
-    since: text(from.startedAt) || text(from.scheduledFor), scheduledFor: text(from.scheduledFor),
+    since: text(from.startedAt) || text(from.scheduledFor), scheduledFor: text(from.scheduledFor), holdsSlot: row.running,
     exited: attempt?.exited === true ? true : null,
     exitStatus: Number.isInteger(attempt?.exitStatus) ? attempt.exitStatus : null, exitSignal: text(attempt?.exitSignal),
     error: text(attempt?.error) || text(last?.error),

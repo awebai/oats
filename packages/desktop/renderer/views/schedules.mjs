@@ -220,9 +220,8 @@ export function createSchedulesView(el, ctx, { cli = cliStatus, subscribeCli = o
     const kind = field("kind").value;
     const spec = { kind, cron: preserve("cron"), tz: preserve("tz"), enabled: field("enabled").checked };
     if (summaries()) {
-      // The Summary field: empty leaves the replacement without one (which removes it).
-      const typed = field("description").value;
-      const description = original && Object.hasOwn(original, "description") && typed === baseline.description ? original.description : typed.trim();
+      // The Summary field, sent as typed: empty leaves the replacement without one (which removes it).
+      const description = field("description").value;
       if (description && !descriptionValid(description)) { q(".schedule-form-error").textContent = `Summary: one line of up to ${DESCRIPTION_MAX} characters, without control characters`; field("description").focus(); return; }
       if (description) spec.description = description;
     // An OATS without summaries: the form does not edit this label, but a replacement definition must retain it.

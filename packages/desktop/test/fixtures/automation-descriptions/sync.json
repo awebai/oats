@@ -7,14 +7,14 @@
       "triggers": 3,
       "schedules": 1,
       "problems": 2,
-      "takenAt": "2026-10-06T13:18:01.898Z"
+      "takenAt": "2026-10-06T13:32:14.549Z"
     },
     "workspace": {
       "name": "acme",
       "key": "local//fixture/base/remotes/ws.git",
       "url": "/fixture/base/remotes/ws.git",
-      "commit": "6919a5d900d9f1784d158c5ab800fedc1347c921",
-      "observedAt": "2026-10-06T13:18:01.730Z",
+      "commit": "a73b6084ac727207e13c7fba3c40a74266aa2be4",
+      "observedAt": "2026-10-06T13:32:14.421Z",
       "local": "/fixture/base/deployment/oats-local.yaml",
       "lock": "/fixture/base/deployment/oats-lock.json"
     },
@@ -22,7 +22,7 @@
       {
         "key": "local//fixture/base/remotes/ws.git",
         "name": "ws",
-        "commit": "6919a5d900d9f1784d158c5ab800fedc1347c921",
+        "commit": "a73b6084ac727207e13c7fba3c40a74266aa2be4",
         "confirmed": true,
         "status": "confirmed",
         "detail": null,
@@ -37,7 +37,7 @@
       {
         "id": "acme.pkg",
         "version": "1.0.0",
-        "source": "git:local//tmp/oats-pkgsoul-OO1uqD/pkg.git@v1.0.0",
+        "source": "git:local//tmp/oats-pkgsoul-UMkjJM/pkg.git@v1.0.0",
         "commit": "d672657f2e06571fc0283a6c8e583836ae188171",
         "integrity": "sha256-62d7ac5a530a0402678dace8dbd4922edcc197c81aa2f1caab9ca04a78de9fbb",
         "capabilities": [

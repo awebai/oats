@@ -68,11 +68,14 @@ run state (`running`, `attempt`, `pendingWake`) and `createdAt`/`updatedAt`.
 - **The detail page** shows the name with the qualified id under it, then the
   summary or "No summary". What it sends is shown whole, never summarized;
   Spawns (spawn schedules, triggers) adds the purpose, permissions, backend
-  and the recurring wake. `runState` gives the Run state card: running since
-  its attempt began; unknown (an attempt without a result, or a last run of
-  outcome `unknown`) with its exit facts, *Check run state* and the
+  and the recurring wake. `runState` gives the Run state card. `running` is
+  the job lock, a host slot, not proof of a launch: an attempt whose effects
+  are unconfirmed keeps its lock. So unknown wins (an attempt with an error, an
+  attempt without its lock, or a last run of outcome `unknown`), with its exit
+  facts, whether it still holds the slot, *Check run state* and the
   `reconcileCommand` to paste (`oats schedule reconcile <qualified id>
-  [--clear] --dir <scope>`); a wake waiting to be delivered. An Invalid or
+  [--clear] --dir <scope>`); otherwise a held lock is "Running since"; and a
+  wake waiting to be delivered. An Invalid or
   Unreadable item gets its own card (code, field, message); Comes from adds
   the package template's provenance and a local item's times.
 - **Writes** need `automation-descriptions` (`automationDescriptionsSupported`;
@@ -81,7 +84,8 @@ run state (`running`, `attempt`, `pendingWake`) and `createdAt`/`updatedAt`.
   sheet per view. Its save is a latest-intent operation: closing or disposing
   invalidates it, focus parks on the sheet's status line while it runs, and it
   returns to the opening control, or the same control by identity after the
-  re-read. The schedule form's Summary field shows only with the feature;
+  re-read. Both editors send the text as typed (the kernel keeps boundary
+  spaces); only an empty value clears. The schedule form's Summary field shows only with the feature;
   without it the form keeps the stored summary as it is.
 
 ## Opening a definition

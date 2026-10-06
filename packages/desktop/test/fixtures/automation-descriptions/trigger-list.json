@@ -67,8 +67,8 @@
         },
         "triggerApi": 1,
         "scope": "/fixture/base/deployment",
-        "createdAt": "2026-10-06T13:18:02.990Z",
-        "updatedAt": "2026-10-06T13:18:02.990Z"
+        "createdAt": "2026-10-06T13:32:15.464Z",
+        "updatedAt": "2026-10-06T13:32:15.464Z"
       },
       {
         "kind": "trigger",
@@ -126,8 +126,8 @@
         },
         "triggerApi": 1,
         "scope": "/fixture/base/deployment",
-        "createdAt": "2026-10-06T13:18:03.175Z",
-        "updatedAt": "2026-10-06T13:18:07.695Z"
+        "createdAt": "2026-10-06T13:32:15.611Z",
+        "updatedAt": "2026-10-06T13:32:16.480Z"
       },
       {
         "kind": "trigger",
@@ -137,7 +137,7 @@
           "kind": "workspace",
           "repoKey": "local//fixture/base/remotes/ws.git",
           "path": "oats-triggers/from-bad-header.yaml",
-          "commit": "6919a5d900d9f1784d158c5ab800fedc1347c921",
+          "commit": "a73b6084ac727207e13c7fba3c40a74266aa2be4",
           "url": null,
           "localPath": "/fixture/base/deployment/ws/oats-triggers/from-bad-header.yaml"
         },
@@ -202,7 +202,7 @@
           "kind": "workspace",
           "repoKey": "local//fixture/base/remotes/ws.git",
           "path": "oats-triggers/from-header.yaml",
-          "commit": "6919a5d900d9f1784d158c5ab800fedc1347c921",
+          "commit": "a73b6084ac727207e13c7fba3c40a74266aa2be4",
           "url": null,
           "localPath": "/fixture/base/deployment/ws/oats-triggers/from-header.yaml"
         },
@@ -267,7 +267,7 @@
           "kind": "workspace",
           "repoKey": "local//fixture/base/remotes/ws.git",
           "path": "oats-triggers/from-template.yaml",
-          "commit": "6919a5d900d9f1784d158c5ab800fedc1347c921",
+          "commit": "a73b6084ac727207e13c7fba3c40a74266aa2be4",
           "url": null,
           "localPath": "/fixture/base/deployment/ws/oats-triggers/from-template.yaml"
         },
@@ -326,7 +326,7 @@
       }
     ],
     "snapshot": {
-      "takenAt": "2026-10-06T13:18:01.898Z",
+      "takenAt": "2026-10-06T13:32:14.549Z",
       "problems": 2
     },
     "scheduler": {
