@@ -198,6 +198,25 @@ for (const [name, palette] of palettes) test(`${name}: the default foreground an
   }
 });
 
+// A terminal's selection (#672): a drag is xterm's own selection, drawn from --term-sel and --term-sel-fg
+// (xtermTheme). Every theme, the host's included, defines both, opaque, so xterm paints the selection
+// exactly as given (its renderers use blend(background, selectionBackground), which for an opaque colour is
+// the colour itself: nothing is composited under the text), and selected text meets the terminal's
+// minimum contrast on it.
+const selectionPalettes = [...palettes, ...["tokyo-night", "rose-pine", "hackerman", "legacy"].map(fixture => {
+  const state = hostState(fixture);
+  const base = state.mode === "dark" ? dark : light;
+  const palette = new Map(base);
+  for (const [property, value] of Object.entries(deriveHostTokens(state.colors, state.mode, token => base.get(token)))) palette.set(property.slice(2), value);
+  return [`This computer (${fixture})`, palette];
+})];
+for (const [name, palette] of selectionPalettes) test(`${name}: the terminal selection is opaque and selected text meets the terminal's minimum contrast on it`, () => {
+  for (const token of ["term-sel", "term-sel-fg"]) assert.match(palette.get(token) || "", /^#[0-9a-f]{6}$/i, `${name} defines an opaque --${token}`);
+  const ratio = contrast(opaqueChannels(palette.get("term-sel-fg")), opaqueChannels(palette.get("term-sel")));
+  assert.ok(ratio >= TERMINAL_MINIMUM_CONTRAST, `${name} --term-sel-fg on --term-sel: ${ratio.toFixed(2)}:1`);
+  assert.ok(pairs.some(([fg, bg]) => fg === "term-sel-fg" && bg === "term-sel"), "the pair is in the shared inventory");
+});
+
 // Control rule 2: keyboard focus is a 1px edge (WCAG 1.4.11 non-text, 3:1). Controls that paint their own
 // opaque pair (primary, danger fill) carry it 1px OUTSIDE, so it is measured against the surfaces those
 // buttons sit on; inset it would sit on their own fill, which fails in every theme. The toast's edge is
