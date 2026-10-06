@@ -227,11 +227,14 @@ tracking with other modes is left to xterm, tracking included, which is the old
 behaviour (tmux never sends one); later tracking resets are then passed to xterm too, so
 its tracking cannot stick. A RIS (`ESC c`) clears the recorded state. Each new
 `Terminal` starts clean and tmux re-sends its modes on every attach, reconnects included.
-The wheel is reported by the renderer while tracking is on (`attachCustomWheelEventHandler`):
+The wheel is reported by the renderer while VT200, button-event or any-event tracking is on
+(`attachCustomWheelEventHandler`; X10 tracking reports no wheel, as in xterm):
 the line amount is xterm's own (`Viewport.getLinesScrolled`: pixel deltas accumulated per
 cell height, LINE as is, PAGE times rows, Shift or a horizontal-only delta gives nothing),
 and a non-zero amount writes ONE report per event, button 64 up or 65 down plus xterm's
-modifier bits, at the pointer's cell, SGR when 1006 is set and X10 otherwise, through
+modifier bits, at the pointer's cell, SGR when 1006 is set (pixels for 1016) and X10
+otherwise (a report that needs a byte above 127 is not sent: xterm sends X10 as binary,
+and `term.input` would UTF-8 encode it), through
 `term.input(seq, false)` and so the usual `onData` → pty path. tmux's locked
 `WheelUpPane` binding (`tmux-target.mjs`) therefore still drives copy-mode scrollback,
 and a program that grabbed the mouse (Codex) still gets the wheel; the selection is
