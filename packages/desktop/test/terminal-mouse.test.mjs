@@ -4,6 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import { JSDOM } from 'jsdom';
 import { attachTerminalMouse, TRACKING_MODES } from '../renderer/terminal-mouse.mjs';
@@ -67,8 +68,12 @@ test('tracking-only sequences are consumed and recorded, set and reset, the late
   assert.deepEqual(mouse.state(), { tracking: 0, wheel: false, encoding: 'default', xtermTracks: false });
   assert.equal(set(term, 1000, 1002), true, 'several tracking modes in one sequence');
   assert.equal(mouse.state().tracking, 1002);
-  assert.equal(set(term, [1000]), true, 'a parameter with sub-parameters counts by its value');
+  // The parser's shape: `?1000:25h` is [1000, [25]], `?1006:1000h` is [1006, [1000]]. A sub-parameter
+  // list belongs to the mode before it and is no mode itself, as in xterm's InputHandler.
+  assert.equal(set(term, 1000, [25]), true, 'still tracking-only: consumed');
   assert.equal(mouse.state().tracking, 1000);
+  assert.equal(set(term, 1006, [1003]), false, 'only 1006 is a mode here');
+  assert.deepEqual([mouse.state().tracking, mouse.state().encoding], [1000, 'sgr']);
 });
 
 test('X10 (9) and 1001 are consumed, but neither reports the wheel, as in xterm', () => {
@@ -108,6 +113,15 @@ test('fallback: a mixed sequence goes to xterm, and so do tracking-only ones unt
   assert.equal(mouse.state().xtermTracks, false);
   assert.equal(reset(term, 1000, 1006), false, 'a mixed reset goes to xterm too');
   assert.deepEqual(mouse.state(), { tracking: 0, wheel: false, encoding: 'default', xtermTracks: false });
+});
+
+test('fallback: a mixed sequence that tracks nothing in xterm (1001 is ignored) does not hand later requests to xterm', () => {
+  const term = fakeTerm(), mouse = attachTerminalMouse(term);
+  assert.equal(set(term, 1000), true);
+  assert.equal(set(term, 1001, 1006), false, 'mixed: left to xterm, which ignores 1001 and sets SGR');
+  assert.deepEqual(mouse.state(), { tracking: 1000, wheel: true, encoding: 'sgr', xtermTracks: false });
+  assert.equal(set(term, 1002), true, 'xterm tracks nothing, so this is consumed: the buttons stay with the selection');
+  assert.equal(mouse.state().xtermTracks, false);
 });
 
 test('fallback: while xterm tracks, the wheel is still reported once, by this handler (xterm\'s own report is suppressed)', () => {
@@ -199,6 +213,18 @@ test('X10 encoding without 1006: ESC [ M and three bytes of value + 32; one that
   assert.equal(wide.cleared, 1);
 });
 
+test('fractional geometry: the cell comes from the unrounded position, as in xterm\'s MouseService', () => {
+  // A scaled display or a centred grid: the screen starts at x = 0.5 and cells are 7.5 px wide.
+  const term = fakeTerm({ rect: { left: 0.5, top: 0, width: 600, height: 480 } });
+  attachTerminalMouse(term); set(term, 1000); set(term, 1006);
+  term.wheel(wheel({ deltaY: -100, clientX: 8, clientY: 20 }));
+  assert.deepEqual(term.sent.map(s => s.data), ['\x1b[<64;2;2M'], 'floor((8 - 0.5) / 7.5) + 1 = 2, not column 1');
+  const pixels = fakeTerm({ rect: { left: 0.5, top: 0, width: 600, height: 480 } });
+  attachTerminalMouse(pixels); set(pixels, 1000); set(pixels, 1016);
+  pixels.wheel(wheel({ deltaY: -100, clientX: 8, clientY: 20.75 }));
+  assert.deepEqual(pixels.sent.map(s => s.data), ['\x1b[<64;7;20M'], 'SGR pixels reports whole pixels');
+});
+
 test('SGR pixels (1016) reports the pointer\'s pixel position', () => {
   const { term } = tracked([1016]);
   term.wheel(wheel({ deltaY: -100, clientX: RECT.left + 35.7, clientY: RECT.top + 45.2 }));
@@ -257,6 +283,63 @@ test('dispose removes the CSI and ESC handlers and hands the wheel back to xterm
   assert.equal(term.wheel(wheel({ deltaY: -100 })), true);
   assert.deepEqual(term.sent, []);
   mouse.dispose();
+});
+
+// The real parser (@xterm/xterm 5.5, headless: no open()): what xterm itself ends up tracking.
+const require = createRequire(import.meta.url);
+function realTerm(t) {
+  const { Terminal } = require('@xterm/xterm');
+  const term = new Terminal({ cols: 80, rows: 24, allowProposedApi: true });
+  t.after(() => term.dispose());
+  const mouse = attachTerminalMouse(term);
+  const write = data => new Promise(resolve => term.write(data, resolve));
+  return { term, mouse, write };
+}
+
+test('real xterm: tmux\'s separate requests never turn xterm\'s tracking on; the far side\'s state is recorded', async t => {
+  const { term, mouse, write } = realTerm(t);
+  for (const sequence of ['\x1b[?1006h', '\x1b[?1000h', '\x1b[?1002h', '\x1b[?2004h', '\x1b[?1049h']) await write(sequence);
+  assert.equal(term.modes.mouseTrackingMode, 'none', 'xterm\'s selection keeps the buttons');
+  assert.equal(term.modes.bracketedPasteMode, true, 'everything else reaches xterm');
+  assert.deepEqual(mouse.state(), { tracking: 1002, wheel: true, encoding: 'sgr', xtermTracks: false });
+  await write('\x1b[?1002l');
+  assert.equal(mouse.state().tracking, 0);
+  await write('\x1b[?1000:25h');
+  assert.equal(term.modes.mouseTrackingMode, 'none', 'a sub-parameter does not make it mixed');
+  assert.equal(mouse.state().tracking, 1000);
+});
+
+test('real xterm: 1001 in a mixed sequence leaves xterm untracked, so the next request is still consumed', async t => {
+  const { term, mouse, write } = realTerm(t);
+  await write('\x1b[?1000h');
+  await write('\x1b[?1001;1006h');
+  assert.equal(term.modes.mouseTrackingMode, 'none');
+  await write('\x1b[?1002h');
+  assert.equal(term.modes.mouseTrackingMode, 'none', 'native selection is not disabled');
+  assert.deepEqual(mouse.state(), { tracking: 1002, wheel: true, encoding: 'sgr', xtermTracks: false });
+});
+
+test('real xterm: a mixed sequence is xterm\'s (today\'s behaviour) and its tracking follows the next sequences to none', async t => {
+  const { term, mouse, write } = realTerm(t);
+  await write('\x1b[?1000;1006h');
+  assert.equal(term.modes.mouseTrackingMode, 'vt200', 'the documented fallback');
+  await write('\x1b[?1002h');
+  assert.equal(term.modes.mouseTrackingMode, 'drag', 'followed while xterm tracks');
+  await write('\x1b[?1002l');
+  assert.equal(term.modes.mouseTrackingMode, 'none', 'the reset reached xterm: nothing sticks');
+  await write('\x1b[?1003h');
+  assert.equal(term.modes.mouseTrackingMode, 'none', 'consumed again');
+  assert.deepEqual(mouse.state(), { tracking: 1003, wheel: true, encoding: 'sgr', xtermTracks: false });
+});
+
+test('real xterm: RIS resets xterm and the recorded state alike', async t => {
+  const { term, mouse, write } = realTerm(t);
+  await write('\x1b[?1000;2004h');
+  await write('\x1bc');
+  assert.equal(term.modes.mouseTrackingMode, 'none');
+  assert.deepEqual(mouse.state(), { tracking: 0, wheel: false, encoding: 'default', xtermTracks: false });
+  await write('\x1b[?1000h');
+  assert.equal(term.modes.mouseTrackingMode, 'none', 'consumed after the reset');
 });
 
 // The shipped wiring (shell.mjs), executed: each terminal tab installs the mouse and the clipboard once,

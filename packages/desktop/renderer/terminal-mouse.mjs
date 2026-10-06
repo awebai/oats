@@ -35,34 +35,35 @@ const DOM_DELTA_LINE = 1, DOM_DELTA_PAGE = 2;
 // xterm's modifier bits in a mouse report.
 const SHIFT = 4, ALT = 8, CTRL = 16;
 
-const modeOf = param => (Array.isArray(param) ? param[0] : param);
+// The DEC modes of a `CSI ? … h|l`: the parser's top-level parameters, as xterm's InputHandler reads them.
+// A sub-parameter list (`1006:1000` is [1006, [1000]]) belongs to the mode before it and is no mode itself.
+const modesOf = params => params.filter(param => !Array.isArray(param));
 
 /** Install on one xterm Terminal. Returns { state(), dispose() }. */
 export function attachTerminalMouse(term) {
   let protocol = 0;          // the far side's tracking request: 0 (none), 9, 1000, 1002 or 1003
   let encoding = 'default';  // 'default' (X10 bytes), 'sgr' or 'sgr-pixels'
-  let xtermTracks = false;   // a mixed sequence let xterm apply tracking itself (the fallback)
+  let xtermProtocol = 0;     // the protocol xterm itself applied, from sequences left to it (the fallback)
   let partial = 0;           // pixel deltas below one row, carried to the next event (xterm's arithmetic)
   let disposed = false;
 
   // xterm's own state machine: the last protocol set wins, resetting any protocol clears it.
-  const apply = (mode, set) => {
-    if (PROTOCOLS.has(mode)) protocol = set ? mode : 0;
-    else if (ENCODINGS.has(mode)) encoding = set ? ENCODINGS.get(mode) : 'default';
-  };
+  const step = (current, modes, set) => modes.reduce((value, mode) => (PROTOCOLS.has(mode) ? (set ? mode : 0) : value), current);
   const onMode = set => params => {
     if (disposed) return false;
-    const modes = params.map(modeOf);
-    for (const mode of modes) apply(mode, set);
+    const modes = modesOf(params);
+    protocol = step(protocol, modes, set);
+    for (const mode of modes) if (ENCODINGS.has(mode)) encoding = set ? ENCODINGS.get(mode) : 'default';
     const tracking = modes.filter(mode => TRACKING_MODES.includes(mode)).length;
     if (!tracking) return false; // 1006, 2004 bracketed paste, 1049 and the rest are xterm's
-    if (xtermTracks || tracking < modes.length) {
-      xtermTracks = protocol !== 0;
+    if (xtermProtocol !== 0 || tracking < modes.length) {
+      // Left to xterm, which applies every mode in it: follow what xterm now tracks.
+      xtermProtocol = step(xtermProtocol, modes, set);
       return false;
     }
     return true; // recorded, never obeyed: xterm's selection keeps the buttons
   };
-  const reset = () => { protocol = 0; encoding = 'default'; xtermTracks = false; partial = 0; return false; };
+  const reset = () => { protocol = 0; encoding = 'default'; xtermProtocol = 0; partial = 0; return false; };
 
   const subscriptions = [
     term.parser.registerCsiHandler({ prefix: '?', final: 'h' }, onMode(true)),
@@ -91,14 +92,16 @@ export function attachTerminalMouse(term) {
 
   function report(ev, rect) {
     const cellWidth = rect.width / term.cols, cellHeight = rect.height / term.rows;
-    // MouseService.getMouseReportCoords: clamped to the canvas, then the cell under it (1-based).
-    const x = Math.floor(Math.min(Math.max(ev.clientX - rect.left, 0), rect.width - 1));
-    const y = Math.floor(Math.min(Math.max(ev.clientY - rect.top, 0), rect.height - 1));
+    // MouseService.getMouseReportCoords: clamped to the canvas, then the cell under it (1-based). The
+    // position stays fractional for the cell (a scaled display or a centred grid puts edges between
+    // pixels); only SGR pixels reports it in whole pixels.
+    const x = Math.min(Math.max(ev.clientX - rect.left, 0), rect.width - 1);
+    const y = Math.min(Math.max(ev.clientY - rect.top, 0), rect.height - 1);
     const col = Math.min(Math.floor(x / cellWidth), term.cols - 1) + 1;
     const row = Math.min(Math.floor(y / cellHeight), term.rows - 1) + 1;
     const code = 64 | (ev.deltaY < 0 ? 0 : 1) | (ev.shiftKey ? SHIFT : 0) | (ev.altKey ? ALT : 0) | (ev.ctrlKey ? CTRL : 0);
     if (encoding === 'sgr') return `\x1b[<${code};${col};${row}M`;
-    if (encoding === 'sgr-pixels') return `\x1b[<${code};${x};${y}M`;
+    if (encoding === 'sgr-pixels') return `\x1b[<${code};${Math.floor(x)};${Math.floor(y)}M`;
     // X10: one byte each, value + 32. xterm sends these as binary; through term.input a byte above
     // 127 would be UTF-8 encoded on its way to the pty, so such a report is not sent at all, as xterm
     // drops one past 255.
@@ -124,7 +127,7 @@ export function attachTerminalMouse(term) {
 
   return {
     /** What the far side asked for (tests and live checks). */
-    state: () => ({ tracking: protocol, wheel: WHEEL_PROTOCOLS.has(protocol), encoding, xtermTracks }),
+    state: () => ({ tracking: protocol, wheel: WHEEL_PROTOCOLS.has(protocol), encoding, xtermTracks: xtermProtocol !== 0 }),
     dispose() {
       if (disposed) return;
       disposed = true;
