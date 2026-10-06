@@ -110,20 +110,23 @@ test('copyTerminalSelection: the copy-mode padding is trimmed (a 124-column pane
 });
 
 // ⌘C / Edit › Copy and right-click › Copy reach the xterm textarea's copy event; xterm's own listener on
-// its element (bubble phase) would set the untrimmed text after ours, so ours must stop it.
+// its element (bubble phase) would set the untrimmed text after ours, so ours must stop it. The wrap also
+// holds the page's own content (the banner, the reconnect strip), whose copies are not the terminal's.
 function copyDom(t, selection) {
-  const dom = new JSDOM('<div class="term-wrap"><div class="xterm"><textarea class="xterm-helper-textarea"></textarea></div></div>');
+  const dom = new JSDOM('<div class="term-wrap"><div class="xterm"><textarea class="xterm-helper-textarea"></textarea></div><div class="term-banner">Session ended</div><input class="probe" value="typed"></div>');
   t.after(() => dom.window.close());
   const doc = dom.window.document, wrap = doc.querySelector('.term-wrap'), element = doc.querySelector('.xterm');
-  const term = { hasSelection: () => selection !== '', getSelection: () => selection };
+  const term = { textarea: doc.querySelector('textarea'), hasSelection: () => selection !== '', getSelection: () => selection };
   const xtermRan = [];
-  // xterm 5.5: addDisposableDomListener(this.element, 'copy', ev => copyHandler(ev, selectionService)), bubble phase.
-  element.addEventListener('copy', event => { xtermRan.push(true); event.clipboardData.setData('text/plain', term.getSelection()); event.preventDefault(); });
-  const copy = () => {
+  // xterm 5.5: addDisposableDomListener(this.element, 'copy', ev => copyHandler(ev, selectionService)), bubble
+  // phase; copyHandler sets the data only with a selection.
+  element.addEventListener('copy', event => { xtermRan.push(true); if (!term.hasSelection()) return;
+    event.clipboardData.setData('text/plain', term.getSelection()); event.preventDefault(); });
+  const copy = (at = 'textarea') => {
     const data = new Map();
     const event = new dom.window.Event('copy', { bubbles: true, cancelable: true });
     event.clipboardData = { setData: (type, value) => data.set(type, value) };
-    doc.querySelector('textarea').dispatchEvent(event);
+    doc.querySelector(at).dispatchEvent(event);
     return { data: data.get('text/plain'), prevented: event.defaultPrevented };
   };
   return { wrap, term, xtermRan, copy };
@@ -139,10 +142,34 @@ test('attachSelectionCopy: with a selection, the trimmed text is set and xterm\'
   assert.equal(d.xtermRan.length, 1);
 });
 
-test('attachSelectionCopy: with no selection the event is left alone', t => {
+// #695: xterm's right-click handler (and on Linux its mouse selection) leave the selected text in its textarea,
+// still selected there, after the terminal's selection is cleared; Chromium's default copy would write it.
+test('attachSelectionCopy: with nothing selected, a copy aimed at xterm\'s input is cancelled and writes nothing (#695)', t => {
   const d = copyDom(t, '');
   attachSelectionCopy(d.term, d.wrap);
-  const result = d.copy();
-  assert.equal(d.xtermRan.length, 1, 'xterm\'s listener still runs');
-  assert.equal(result.data, '', 'only xterm touched the data');
+  d.term.textarea.value = 'codexlike'; // the stale text of an earlier right-click copy
+  assert.deepEqual(d.copy(), { data: undefined, prevented: true }, 'cancelled with no data: the clipboard keeps what it held');
+  assert.deepEqual(d.xtermRan, [], 'stopped there');
+});
+
+test('attachSelectionCopy: a copy from the page\'s own content in the wrap is left alone, terminal selection or not (#695)', t => {
+  for (const selection of ['', 'selected   ']) {
+    const d = copyDom(t, selection);
+    attachSelectionCopy(d.term, d.wrap);
+    for (const at of ['.term-banner', 'input.probe']) {
+      assert.deepEqual(d.copy(at), { data: undefined, prevented: false }, `${at}, ${selection ? 'with' : 'without'} a terminal selection: no setData, no preventDefault`);
+    }
+    assert.deepEqual(d.xtermRan, [], 'outside xterm\'s element, its listener never sees these');
+  }
+});
+
+test('attachSelectionCopy: before xterm is open (no textarea yet) every copy is left alone', t => {
+  const d = copyDom(t, 'selected');
+  const textarea = d.term.textarea;
+  d.term.textarea = undefined;
+  attachSelectionCopy(d.term, d.wrap);
+  assert.deepEqual(d.copy(), { data: 'selected', prevented: true }, 'xterm\'s own listener only');
+  d.term.textarea = textarea;
+  assert.deepEqual(d.copy(), { data: 'selected', prevented: true });
+  assert.equal(d.xtermRan.length, 1, 'once open, the hook takes it first');
 });

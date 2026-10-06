@@ -373,7 +373,7 @@ test('shell: a terminal tab is wired once and its teardown removes everything it
   assert.equal(c.terminalSelections.get(wrap), term);
   assert.equal(set(term, 1000), true);
   // ⌘C / right-click › Copy inside the wrap is taken by the trimming copy hook.
-  Object.assign(term, { hasSelection: () => true, getSelection: () => 'copied   ' });
+  Object.assign(term, { textarea: wrap.querySelector('textarea'), hasSelection: () => true, getSelection: () => 'copied   ' });
   const copy = () => { const data = []; const event = new doc.defaultView.Event('copy', { bubbles: true, cancelable: true });
     event.clipboardData = { setData: (type, value) => data.push(value) }; wrap.querySelector('textarea').dispatchEvent(event); return data; };
   assert.deepEqual(copy(), ['copied']);

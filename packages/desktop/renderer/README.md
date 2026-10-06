@@ -252,7 +252,12 @@ and tabs that end each line (`trimLineEnds`), as Ghostty, kitty and VTE do: tmux
 copy mode with written spaces, which xterm keeps in a selection. ⌘C and right-click ›
 Copy both reach the xterm textarea's `copy` event; `attachSelectionCopy` takes it first,
 in the capture phase on the tab's wrap, and stops it so xterm's untrimmed handler never
-runs. On Linux xterm also puts a mouse selection in its textarea and selects it there,
+runs. It takes only a copy aimed at xterm's own input (`term.textarea`): a copy from the
+page's own content in the wrap (the banner, the reconnect strip, an input) is left alone,
+terminal selection or not. With nothing selected it cancels that copy and writes nothing,
+so the clipboard keeps what it held (#695): xterm's right-click handler, and on Linux its
+mouse selection, leave the selected text in the textarea, still selected there, after the
+terminal's selection is cleared, and Chromium's default copy would write that stale text. On Linux xterm also puts a mouse selection in its textarea and selects it there,
 which makes it the primary selection, and middle-click pastes it through xterm's own paste
 handler (its `auxclick` moves the textarea under the pointer), so it is one bracketed paste
 like Ctrl+Shift+V. The primary selection is xterm's text, untrimmed: Chromium takes it only
