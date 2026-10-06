@@ -821,8 +821,9 @@ directory differs from its common directory, its top level is the entry
 itself, and that repository's `git worktree list` names it. Its repository is
 the first entry of that list (the main worktree, or the bare repository).
 Anything named `.work-*` that does not verify (a plain directory, an orphaned
-`.git` file, a symbolic link, a nested full clone) is ordinary home bytes, and
-the home's recovery copies it as before. This holds in every work mode,
+`.git` file, a symbolic link, a nested full clone), or that is a worktree of a
+repository inside the home itself, is ordinary home bytes, and the home's
+recovery copies it as before (with that repository). This holds in every work mode,
 `directory` included.
 
 A verified extra tree is not part of the home's recovery bytes: it does not

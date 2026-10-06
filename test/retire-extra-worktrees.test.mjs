@@ -158,6 +158,21 @@ test("unverified .work-* entries are home bytes: copied by the home recovery, no
   assert.deepEqual(r.workRecovery.notCopied, [{ scope: "home", path: ".work-ok", owner: "kernel:extra-worktree" }]);
 });
 
+test("a .work-* tree of a repository inside the home is home bytes: it goes to recovery with that repository", async (t) => {
+  const w = await instance(t, "dev-inner");
+  const inner = join(w.home, ".scratch-repo");
+  mkdirSync(inner);
+  w.git(inner, "init", "-q", "-b", "main");
+  commit(w, inner, "a.txt", "a\n");
+  w.git(inner, "worktree", "add", "-q", "-b", "side", join(w.home, ".work-inner"));
+  writeFileSync(join(w.home, ".work-inner", "b.txt"), "only here\n");
+  const r = await w.retire();
+  assert.equal(r.extraWorktrees, undefined, "not an extra tree: its repository goes with the home");
+  assert.equal(readFileSync(join(r.workRecovery.path, "home", ".work-inner", "b.txt"), "utf8"), "only here\n");
+  assert.ok(existsSync(join(r.workRecovery.path, "home", ".scratch-repo", ".git")), "the repository is recovered with it");
+  assert.equal(r.workRecovery.notCopied, undefined);
+});
+
 test("--keep-dir leaves the extra trees untouched", async (t) => {
   const w = await instance(t, "dev-keep");
   const clean = w.tree("clean", "agents/keep-clean");

@@ -200,3 +200,15 @@ test("reworking an existing remote branch as <instance>/<branch> and pushing HEA
   assert.deepEqual(gone.filter((line) => line.includes("\trefs/remotes/")).map((line) => line.split("\t")[1]), ["refs/remotes/origin/feature"]);
   assert.deepEqual(added.filter((line) => line.includes("\trefs/remotes/")), [`${pushed} commit\trefs/remotes/origin/feature`], "only origin/feature moved, to the pushed commit");
 });
+
+test("the instance-boundary block, composed into every instance, defers extra trees to the mode block and no longer says `only there`", () => {
+  const boundary = readFileSync(join(ROOT, "injects", "instance-boundary.md"), "utf8");
+  const rule = "- **Repository work happens there, or in the extra trees your mode block\n  grants, and nowhere else**: reading, editing, building, testing, git and\n  commits, on repository content. Never from the main checkout or from your\n  home root, beyond what your mode block names.\n";
+  assert.ok(boundary.includes(rule), "the boundary rule grants extra trees only through the mode block");
+  assert.ok(!boundary.includes("there and only there"), "the old rule, which contradicted the extra-trees paragraph, is gone");
+  assert.ok(!/\b(worktree|checkout|attached|workspace|directory)` mode/.test(boundary), "the boundary block names no work mode");
+  for (const dir of readdirSync(join(ROOT, "test", "golden"))) {
+    const composed = readFileSync(join(ROOT, "test", "golden", dir, "AGENTS.md"), "utf8");
+    assert.ok(composed.includes(rule), `${dir}: the composed boundary carries the rule`);
+  }
+});
