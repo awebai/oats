@@ -247,7 +247,12 @@ cleared, since the content scrolls under it. Copying is xterm's: ⌘C and Edit �
 right-click, so the main process's editable context menu copies it) and the
 `terminal.copySelection` action (Ctrl+Shift+C on Linux/Windows, terminal-allowlisted),
 which writes `term.getSelection()` with `navigator.clipboard` and posts a notification
-when the write fails; with nothing selected it does nothing. OSC 52 is still written to
+when the write fails; with nothing selected it does nothing. Every copy trims the spaces
+and tabs that end each line (`trimLineEnds`), as Ghostty, kitty and VTE do: tmux redraws
+copy mode with written spaces, which xterm keeps in a selection. ⌘C and right-click ›
+Copy both reach the xterm textarea's `copy` event; `attachSelectionCopy` takes it first,
+in the capture phase on the tab's wrap, and stops it so xterm's untrimmed handler never
+runs. OSC 52 is still written to
 the clipboard by `terminal-clipboard.mjs`: it is how a tmux copy-mode copy arrives (a
 keyboard copy inside copy mode, an older remote viewer). Write-only, a query is never
 answered, at most 1 MiB, valid UTF-8 only. The viewer's `MouseDrag1Pane` binding is

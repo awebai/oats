@@ -7,6 +7,12 @@
    with its default `set-clipboard external`, sends the text to the terminal as OSC 52
    (`ESC ] 52 ; <selection> ; <base64> BEL`), and attachClipboardWrite writes it to the clipboard.
 
+   Every copy of a selection trims the spaces and tabs at the end of each line (trimLineEnds), as
+   Ghostty, kitty and VTE do: tmux redraws copy mode with written spaces, which xterm keeps in a
+   selection, so a copy from scrollback would be padded to the pane's width. ⌘C / Edit › Copy and
+   right-click › Copy both reach the xterm textarea's `copy` event, which attachSelectionCopy takes
+   first; terminal.copySelection trims the same way.
+
    Write-only: a clipboard query (`?`) is consumed and never answered, so nothing on the other side of
    the terminal can read the clipboard. A clear request, a malformed or an oversized one writes nothing.
    Programs inside the panes cannot reach this: tmux sends only its own copies (set-clipboard external).
@@ -50,13 +56,34 @@ export function attachClipboardWrite(term, write, onError = () => {}) {
   });
 }
 
-/** Copy the terminal's selection: `write(text)` gets exactly what xterm selected, and a refused write
- * goes to `onError(error)`. With nothing selected nothing is written, and nothing reaches the pty.
- * Returns whether there was a selection to copy. */
+/** `text` without the spaces and tabs that end each of its lines. Leading and inner whitespace, line
+ * breaks and their style (\n or \r\n) stay as they are; a line of only whitespace becomes empty. */
+export function trimLineEnds(text) {
+  return String(text).replace(/[ \t]+(?=\r?\n|$)/g, '');
+}
+
+/** Copy the terminal's selection: `write(text)` gets what xterm selected, its line ends trimmed, and a
+ * refused write goes to `onError(error)`. With nothing selected nothing is written, and nothing reaches
+ * the pty. Returns whether there was a selection to copy. */
 export function copyTerminalSelection(term, write, onError = () => {}) {
   if (!term?.hasSelection?.()) return false;
   const text = term.getSelection();
   if (!text) return false;
-  writeText(write, text, onError);
+  writeText(write, trimLineEnds(text), onError);
   return true;
+}
+
+/** ⌘C / Edit › Copy and right-click › Copy put the selection on the clipboard trimmed. xterm's own `copy`
+ * listener (on its element, bubble phase) would write it untrimmed, so this one listens on an ancestor
+ * (`target`, the tab's wrap) in the capture phase and, when there is a selection, sets the data and stops
+ * the event there. With no selection the event is left alone. Returns { dispose() }. */
+export function attachSelectionCopy(term, target) {
+  const onCopy = event => {
+    if (!term.hasSelection() || !event.clipboardData) return;
+    event.clipboardData.setData('text/plain', trimLineEnds(term.getSelection()));
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  target.addEventListener('copy', onCopy, true);
+  return { dispose: () => target.removeEventListener('copy', onCopy, true) };
 }

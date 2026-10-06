@@ -303,7 +303,8 @@ stays after you release the mouse. Double-click selects a word, triple-click a
 line. Nothing is copied yet: copy it with ⌘C or Edit › Copy (macOS),
 **Ctrl+Shift+C** (Linux and Windows), or right-click › Copy (every platform).
 With nothing selected, Ctrl+Shift+C does nothing, and Ctrl+C still interrupts
-the program in the pane.
+the program in the pane. Copies trim trailing spaces at line ends, as native
+terminals do.
 
 A drag selects what is on the screen. To select older output, wheel up first
 (the pane scrolls back through tmux's history), then select. The wheel scrolls

@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { JSDOM } from 'jsdom';
 import { attachTerminalMouse, TRACKING_MODES } from '../renderer/terminal-mouse.mjs';
-import { attachClipboardWrite, copyTerminalSelection } from '../renderer/terminal-clipboard.mjs';
+import { attachClipboardWrite, attachSelectionCopy, copyTerminalSelection } from '../renderer/terminal-clipboard.mjs';
 
 // The screen: 80×24 cells of 10×20 px, its top-left corner at (10, 20).
 const RECT = { left: 10, top: 20, width: 800, height: 480 };
@@ -272,7 +272,7 @@ function shellWiring(t) {
   t.after(() => dom.window.close());
   const doc = dom.window.document, written = [], notices = [];
   const c = {
-    attachTerminalMouse, attachClipboardWrite, copyTerminalSelection,
+    attachTerminalMouse, attachClipboardWrite, attachSelectionCopy, copyTerminalSelection,
     terminalSelections: new Map(), writeClipboard: text => { written.push(text); },
     clipboardRefused: error => notices.push(error.message),
     activeTab: 1, tabs: new Map([[1, { paneEl: doc.getElementById('pane') }]]),
@@ -289,7 +289,13 @@ test('shell: a terminal tab is wired once and its teardown removes everything it
   assert.deepEqual([...term.esc.keys(), ...term.osc.keys()], ['c', 52]);
   assert.equal(c.terminalSelections.get(wrap), term);
   assert.equal(set(term, 1000), true);
+  // ⌘C / right-click › Copy inside the wrap is taken by the trimming copy hook.
+  Object.assign(term, { hasSelection: () => true, getSelection: () => 'copied   ' });
+  const copy = () => { const data = []; const event = new doc.defaultView.Event('copy', { bubbles: true, cancelable: true });
+    event.clipboardData = { setData: (type, value) => data.push(value) }; wrap.querySelector('textarea').dispatchEvent(event); return data; };
+  assert.deepEqual(copy(), ['copied']);
   unwire();
+  assert.deepEqual(copy(), [], 'the copy hook is gone');
   assert.deepEqual([...term.csi.keys(), ...term.esc.keys(), ...term.osc.keys()], []);
   assert.equal(c.terminalSelections.has(wrap), false);
   assert.equal(term.wheel(wheel({ deltaY: -100 })), true, 'the wheel is xterm\'s again');

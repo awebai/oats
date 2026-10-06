@@ -40,7 +40,7 @@ import { rosterKeyAction, moveTarget } from "./roster-keys.mjs";
 import { createViewLifecycle } from "./view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "./tab-keys.mjs";
 import { createTerminalTab, terminalOptions, fitTerminal, createGlyphRenderer } from "./terminal-tab.mjs";
-import { attachClipboardWrite, copyTerminalSelection } from "./terminal-clipboard.mjs";
+import { attachClipboardWrite, attachSelectionCopy, copyTerminalSelection } from "./terminal-clipboard.mjs";
 import { attachTerminalMouse } from "./terminal-mouse.mjs";
 import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "./tab-a11y.mjs";
 import { revealInStrip } from "./reveal-in-scrollport.mjs";
@@ -2230,13 +2230,15 @@ const writeClipboard = text => navigator.clipboard.writeText(text);
 const clipboardRefused = error => notifications.notify("Couldn't copy to the clipboard.", { detail: String(error?.message || error) });
 /** A terminal tab's selection and copies; returns its teardown, run from the tab's onClose. The far
  * side's mouse tracking is recorded, never obeyed, so a drag is xterm's own selection, and the wheel is
- * reported to it (terminal-mouse.mjs). tmux's own copies (copy mode from the keyboard, an older remote's
- * drag) still arrive as OSC 52 (write-only, terminal-clipboard.mjs). */
+ * reported to it (terminal-mouse.mjs). ⌘C / Edit › Copy and right-click › Copy copy it with line ends
+ * trimmed. tmux's own copies (copy mode from the keyboard, an older remote's drag) still arrive as
+ * OSC 52 (write-only, terminal-clipboard.mjs). */
 function wireTerminalSelection(term, wrap) {
   const mouse = attachTerminalMouse(term);
+  const copies = attachSelectionCopy(term, wrap);
   const clipboard = attachClipboardWrite(term, writeClipboard, clipboardRefused);
   terminalSelections.set(wrap, term);
-  return () => { clipboard.dispose(); mouse.dispose(); if (terminalSelections.get(wrap) === term) terminalSelections.delete(wrap); };
+  return () => { clipboard.dispose(); copies.dispose(); mouse.dispose(); if (terminalSelections.get(wrap) === term) terminalSelections.delete(wrap); };
 }
 /** The selection of the terminal a chord was pressed in; from the palette or the editor (no key event
  * in a terminal), the active tab's. A chord pressed outside a terminal copies nothing. Nothing selected:
