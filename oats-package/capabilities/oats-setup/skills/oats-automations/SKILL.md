@@ -62,9 +62,11 @@ own credentials, visible to no other machine. Use them for personal or
 experimental jobs. Schedule IDs allow 1–100 lowercase letters, digits and
 dashes; trigger IDs allow 1–40. Use a short explicit `purpose` for a spawn
 schedule with a long ID, so its derived instance name fits the 64-character
-limit. Local schedules may carry an informational `description`: 1–200
-characters on one line without control characters. It appears in list/show
-and the Desktop; it never changes what runs.
+limit. Every schedule and trigger may carry an informational `description`:
+1–200 characters on one line without control characters (OATS 0.43; before
+it, local schedules only). It appears in list/show and the Desktop; it never
+changes what runs. Set it in the spec or with `--description=<text>`; change
+only it with `update <id> --description=<text>` (`--description=` clears it).
 
 ```bash
 oats schedule add <id> --file spec.json      # spawn | command | wake (the shapes: docs/schedules.md "Kinds")
@@ -73,7 +75,9 @@ oats schedule enable <id>
 oats schedule disable <id>
 oats schedule run <id>                       # now, under the same lock
 oats trigger add --file trigger.json         # or from a package template:
-oats trigger add --from <package>:<template> --set repo=github.com/<org>/<repo>
+oats trigger add --from <package>:<template> --set repo=github.com/<org>/<repo> [--description=<text>]
+oats schedule update <id> --description=<text>   # the description only, even while it runs
+oats trigger update <id> --description=<text>    # the description only (local triggers)
 oats trigger list
 oats trigger test <id>                       # dry run: gh auth, repo permissions, soul resolves, teams declared, what would fire
 oats trigger status <id>                     # last poll, pending events, fired keys, live instances, last error
