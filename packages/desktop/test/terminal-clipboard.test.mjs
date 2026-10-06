@@ -2,7 +2,7 @@
 // a clipboard query is never answered, nothing oversized or malformed is written.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { osc52Text, attachClipboardWrite, OSC52_MAX_BYTES } from '../renderer/terminal-clipboard.mjs';
+import { osc52Text, attachClipboardWrite, copyTerminalSelection, OSC52_MAX_BYTES } from '../renderer/terminal-clipboard.mjs';
 
 const b64 = text => Buffer.from(text, 'utf8').toString('base64');
 
@@ -47,4 +47,42 @@ test('attachClipboardWrite: a failed clipboard write is contained', async () => 
   attachClipboardWrite(term, () => Promise.reject(new Error('not focused')));
   assert.equal(term.handlers.get(52)(`;${b64('x')}`), true);
   await new Promise(r => setImmediate(r)); // no unhandled rejection
+});
+
+test('attachClipboardWrite: a refused write is reported once, so the failure is never silent (#672)', async () => {
+  const term = fakeTerm(), errors = [];
+  attachClipboardWrite(term, () => Promise.reject(new Error('not focused')), error => errors.push(error.message));
+  term.handlers.get(52)(`;${b64('x')}`);
+  attachClipboardWrite(term, () => { throw new Error('no clipboard'); }, error => errors.push(error.message));
+  term.handlers.get(52)(`;${b64('y')}`);
+  await new Promise(r => setImmediate(r));
+  assert.deepEqual(errors, ['not focused', 'no clipboard']);
+});
+
+// #672: the terminal.copySelection action (Ctrl+Shift+C on Linux/Windows) copies xterm's own selection.
+const selecting = text => ({ hasSelection: () => text !== '', getSelection: () => text, input() { throw new Error('nothing reaches the pty'); } });
+
+test('copyTerminalSelection: exactly the selected text is written', async () => {
+  const written = [], errors = [];
+  assert.equal(copyTerminalSelection(selecting('alpha\n  bravo ✓'), text => { written.push(text); }, e => errors.push(e)), true);
+  await new Promise(r => setImmediate(r));
+  assert.deepEqual(written, ['alpha\n  bravo ✓']);
+  assert.deepEqual(errors, []);
+});
+
+test('copyTerminalSelection: with nothing selected nothing is written and nothing is sent', () => {
+  const written = [];
+  assert.equal(copyTerminalSelection(selecting(''), text => written.push(text)), false);
+  assert.equal(copyTerminalSelection({ hasSelection: () => true, getSelection: () => '' }, text => written.push(text)), false);
+  assert.equal(copyTerminalSelection(null, text => written.push(text)), false);
+  assert.deepEqual(written, []);
+});
+
+test('copyTerminalSelection: a refused write reaches onError, never an unhandled rejection', async () => {
+  const errors = [];
+  copyTerminalSelection(selecting('x'), () => Promise.reject(new Error('Document is not focused.')), e => errors.push(e.message));
+  copyTerminalSelection(selecting('y'), () => { throw new Error('denied'); }, e => errors.push(e.message));
+  copyTerminalSelection(selecting('z'), () => Promise.reject(new Error('quiet')), () => { throw new Error('a reporter that throws'); });
+  await new Promise(r => setImmediate(r));
+  assert.deepEqual(errors, ['Document is not focused.', 'denied']);
 });

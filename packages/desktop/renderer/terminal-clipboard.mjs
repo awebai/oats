@@ -1,9 +1,11 @@
-/* oats desktop — copies from the terminal reach the clipboard (#520).
+/* oats desktop — copies from the terminal reach the clipboard (#520, #672).
 
-   An agent's terminal is a tmux client with tmux's mouse on, so a drag is a tmux copy-mode selection
-   (tmux-target.mjs binds it in the viewer's locked table). On release tmux copies it and, with its
-   default `set-clipboard external`, sends the text to the terminal as OSC 52
-   (`ESC ] 52 ; <selection> ; <base64> BEL`). This handler writes that text to the system clipboard.
+   A drag in a terminal tab is xterm's own selection (terminal-mouse.mjs keeps the buttons from tmux),
+   copied by ⌘C / Edit › Copy, right-click › Copy, or the terminal.copySelection action, which writes
+   it with copyTerminalSelection below. OSC 52 is still how tmux's own copies arrive: a copy made in
+   copy mode from the keyboard, or by an older remote whose viewer still gives tmux the drag. tmux,
+   with its default `set-clipboard external`, sends the text to the terminal as OSC 52
+   (`ESC ] 52 ; <selection> ; <base64> BEL`), and attachClipboardWrite writes it to the clipboard.
 
    Write-only: a clipboard query (`?`) is consumed and never answered, so nothing on the other side of
    the terminal can read the clipboard. A clear request, a malformed or an oversized one writes nothing.
@@ -30,14 +32,31 @@ export function osc52Text(data) {
   try { return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); } catch { return null; }
 }
 
-/** Handle OSC 52 on an xterm terminal: each copy is passed to `write(text)` (the clipboard); every OSC 52
- * is consumed. Returns the registration (dispose() removes it). */
-export function attachClipboardWrite(term, write) {
+// A write the clipboard refused is reported once to `onError(error)`, never thrown or left unhandled.
+function writeText(write, text, onError) {
+  let written;
+  try { written = Promise.resolve(write(text)); } catch (error) { written = Promise.reject(error); }
+  written.catch(error => { try { onError(error); } catch { /* reporting must not throw */ } });
+}
+
+/** Handle OSC 52 on an xterm terminal: each copy is passed to `write(text)` (the clipboard), and a write
+ * the clipboard refuses to `onError(error)`; every OSC 52 is consumed. Returns the registration
+ * (dispose() removes it). */
+export function attachClipboardWrite(term, write, onError = () => {}) {
   return term.parser.registerOscHandler(52, data => {
     const text = osc52Text(data);
-    if (text !== null) {
-      try { Promise.resolve(write(text)).catch(() => {}); } catch { /* the clipboard refused: nothing to undo */ }
-    }
+    if (text !== null) writeText(write, text, onError);
     return true;
   });
+}
+
+/** Copy the terminal's selection: `write(text)` gets exactly what xterm selected, and a refused write
+ * goes to `onError(error)`. With nothing selected nothing is written, and nothing reaches the pty.
+ * Returns whether there was a selection to copy. */
+export function copyTerminalSelection(term, write, onError = () => {}) {
+  if (!term?.hasSelection?.()) return false;
+  const text = term.getSelection();
+  if (!text) return false;
+  writeText(write, text, onError);
+  return true;
 }

@@ -193,6 +193,10 @@ export const DEFAULT_KEYMAP = Object.freeze({
   // The instance panel (the tab bar's panel-right toggle). Not terminal-allowlisted: on
   // Linux/Windows Ctrl+Alt+B stays with the program in the terminal (macOS ⌘⌥B fires there).
   "panel.toggle": "Mod+Alt+B",
+  // Copy the terminal's selection (#672): Ctrl+Shift+C, the Linux terminals' copy (Ctrl+C is the
+  // interrupt). No macOS default: ⌘C is Edit › Copy, the menu role. xterm.js sends nothing for
+  // Ctrl+Shift+C (its Ctrl+letter control bytes need Shift up), so claiming it takes nothing.
+  "terminal.copySelection": { mac: null, other: "Ctrl+Shift+C" },
   "terminal.fontBigger": "Mod+=",
   "terminal.fontSmaller": "Mod+-",
   "terminal.fontReset": "Mod+0",
@@ -222,9 +226,10 @@ export function defaultBinding(actionId, isMac = defaultIsMac()) {
 // fires inside xterm via the ⌘-chord policy above).
 // app.themePicker is safe: xterm.js 5.5.0 sends no byte for Ctrl+Shift+Space (its
 // Ctrl+Space → NUL needs Shift up), so claiming it takes nothing from a program, and
-// plain Ctrl+Space stays the program's.
+// plain Ctrl+Space stays the program's. terminal.copySelection is the same: Ctrl+Shift+C is no
+// byte, and with nothing selected the action does nothing.
 export const TERMINAL_ALLOWLIST = Object.freeze([
-  "app.palette", "app.chooseSoul", "app.themePicker",
+  "app.palette", "app.chooseSoul", "app.themePicker", "terminal.copySelection",
   "tabs.next", "tabs.prev", "tabs.close",
   "split.vertical", "split.horizontal", "split.close",
   "focus.leaveTerminal",

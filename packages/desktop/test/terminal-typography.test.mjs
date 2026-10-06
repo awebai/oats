@@ -218,7 +218,7 @@ function sites(theme) {
     loadAddon() {} open() {} dispose() {} onData() {} attachCustomKeyEventHandler() {}
   };
   const context = { ...theme, terminalOptions, Terminal, FitAddon: { FitAddon: class { fit() {} } },
-    onTerminalTypographyChange: () => () => {}, attachClipboardWrite: () => ({ dispose() {} }),
+    onTerminalTypographyChange: () => () => {}, wireTerminalSelection: () => () => {}, wrap: {},
     navigator: { clipboard: { writeText() {} } }, ResizeObserver: class { observe() {} disconnect() {} } };
   // The tab: from its typography read to its theme listener (openTerminalTabInner).
   const tab = runInNewContext(`(() => {\n${slice("  const type = terminalTypography();\n  const term = new Terminal(terminalOptions({", "\n  const offTheme = onThemeChange(")}${slice("() => { term.options.theme = xtermTheme();", "});\n")}\nreturn offTheme;\n})()`, context);

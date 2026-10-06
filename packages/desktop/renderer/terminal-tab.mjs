@@ -124,7 +124,8 @@ export const TERMINAL_MINIMUM_CONTRAST = 4.5;
 // Native terminal geometry: no lineHeight (xterm's default 1.0), so cells and
 // the block cursor keep their natural height and tmux owns row spacing.
 export function terminalOptions({ fontSize, fontFamily, fontWeight, theme }) {
-  // tmux mouse capture must not defeat Option-drag local copy selection on macOS.
+  // A drag is xterm's own selection (terminal-mouse.mjs keeps tmux's mouse tracking from xterm); Option-drag
+  // still selects on macOS if the far side's tracking ever reaches xterm (the mixed-sequence fallback).
   // fontWeight is the theme's (terminalFontWeight); fontWeightBold stays xterm's bold.
   // The contrast floor is not a parameter: one number for every terminal and theme.
   return { fontSize, fontFamily, fontWeight, theme, scrollback: 5000, macOptionClickForcesSelection: true,

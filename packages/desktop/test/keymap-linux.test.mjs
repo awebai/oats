@@ -12,6 +12,8 @@ import {
   DEFAULT_KEYMAP, TERMINAL_ALLOWLIST, defaultBinding, getBinding, formatChord, isPlainChord,
   registerAction, setActiveContexts, resetAllBindings, setBinding, matchEvent, handleKeydown, findConflict, keymapConflicts,
 } from "../renderer/keybindings.mjs";
+import { terminalKeyDecision } from "../renderer/terminal-tab.mjs";
+import { copyTerminalSelection } from "../renderer/terminal-clipboard.mjs";
 
 const map = new Map();
 globalThis.localStorage = { getItem: k => map.get(k) ?? null, setItem: (k, v) => map.set(k, String(v)), removeItem: k => map.delete(k) };
@@ -49,6 +51,7 @@ test("the shipped table: each changed default resolves per platform", () => {
     "sidebar.toggle": ["Mod+B", "Mod+B"], "sidebar.focusFilter": ["Mod+F", "Mod+F"], "panel.toggle": ["Mod+Alt+B", "Mod+Alt+B"],
     "app.themeToggle": [null, null], "app.themePicker": ["Mod+Shift+Space", "Ctrl+Shift+Space"], "app.shortcuts": ["Mod+,", "Mod+,"],
     "terminal.fontBigger": ["Mod+=", "Mod+="], "terminal.fontSmaller": ["Mod+-", "Mod+-"], "terminal.fontReset": ["Mod+0", "Mod+0"],
+    "terminal.copySelection": [null, "Ctrl+Shift+C"],
   };
   for (const [id, [mac, other]] of Object.entries(table)) {
     assert.equal(defaultBinding(id, true), mac, `${id} on macOS`);
@@ -72,7 +75,7 @@ test("the terminal allowlist is exactly the actions that must work in a terminal
   assert.deepEqual([...TERMINAL_ALLOWLIST].sort(), [
     "app.chooseSoul", "app.palette", "app.themePicker", "focus.leaveTerminal",
     "split.close", "split.horizontal", "split.vertical",
-    "tabs.close", "tabs.next", "tabs.prev",
+    "tabs.close", "tabs.next", "tabs.prev", "terminal.copySelection",
   ].sort());
   // No allowlisted default on Linux/Windows is a key a program reads: not a plain Ctrl+letter,
   // not a bare function key, not Alt+digit, not Ctrl+PgUp/PgDn.
@@ -90,7 +93,7 @@ test("Linux/Windows inside a terminal: the allowlisted chords fire from real (sh
     [linux("W", { shiftKey: true }), "tabs.close"], [linux("Tab"), "tabs.next"], [linux("Tab", { shiftKey: true }), "tabs.prev"],
     [linux("E", { shiftKey: true }), "split.vertical"], [linux("O", { shiftKey: true }), "split.horizontal"],
     [linux("W", { shiftKey: true, altKey: true }), "split.close"],
-    [linux("F6", { shiftKey: true }), "focus.leaveTerminal"],
+    [linux("F6", { shiftKey: true }), "focus.leaveTerminal"], [linux("C", { shiftKey: true }), "terminal.copySelection"],
   ]) {
     assert.equal(matchEvent(event, inTerm), id, `${JSON.stringify({ key: event.key, ctrl: event.ctrlKey, shift: event.shiftKey, alt: event.altKey })}`);
     const claimed = ev(event.key, event); handleKeydown(claimed, inTerm);
@@ -171,7 +174,7 @@ test("a stored override survives the new defaults and wins on every platform", t
 
 test("shell wiring: the new actions are registered, rebindable and discoverable", () => {
   const src = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
-  for (const id of ["tabs.nextPage", "tabs.prevPage", "focus.nextRegion", "focus.prevRegion", "focus.leaveTerminal"]) assert.match(src, new RegExp(`id: "${id.replace(".", "\\.")}"`), id);
+  for (const id of ["tabs.nextPage", "tabs.prevPage", "focus.nextRegion", "focus.prevRegion", "focus.leaveTerminal", "terminal.copySelection"]) assert.match(src, new RegExp(`id: "${id.replace(".", "\\.")}"`), id);
   assert.match(src, /id: `tabs\.goto\$\{n\}`/, "go to tab 1–9");
   assert.match(src, /NAV\.forEach\(\(v\) => registerAction\(\{\n  id: `stage\.\$\{v\.name\}`/, "stage.automations comes from the nav manifest");
 });
@@ -250,4 +253,72 @@ test("theme picker: no other default shares either chord", t => {
   setBinding("app.shortcuts", "Ctrl+Shift+Space");
   assert.equal(getBinding("app.shortcuts", false), "Ctrl+Shift+Space");
   assert.deepEqual(keymapConflicts(false).map(c => c.actions.map(a => a.id).sort()), [["app.shortcuts", "app.themePicker"]]);
+});
+
+// #672: Ctrl+Shift+C copies the terminal's selection on Linux/Windows. The terminal's key path is the
+// shell's: terminal-tab.mjs's custom key handler runs terminalKeyDecision with the shell's interceptKey,
+// and a handled key writes only the decision's byte. Ctrl+C stays the program's interrupt.
+function terminalKeyPath(t, selection) {
+  resetAllBindings();
+  const pty = [], clipboard = [];
+  const term = { hasSelection: () => selection !== "", getSelection: () => selection };
+  const offs = IDS.map(id => registerAction({ id, label: id, context: /^(tabs|split)\./.test(id) ? "tabs" : "global",
+    run: id === "terminal.copySelection" ? () => copyTerminalSelection(term, text => { clipboard.push(text); }) : () => {} }));
+  setActiveContexts(new Set(["tabs"]));
+  t.after(() => { offs.forEach(off => off()); setActiveContexts(new Set()); resetAllBindings(); });
+  const opts = { isMac: false, insideTerminal: true };
+  const interceptKey = (e) => {
+    if (!matchEvent(e, opts)) return false;
+    if (e.type === "keydown") handleKeydown(e, opts);
+    return true;
+  };
+  // What xterm sends when the custom handler lets a key through (Keyboard.ts: Ctrl+letter only with Shift up).
+  const xtermBytes = (e) => (e.ctrlKey && !e.shiftKey && !e.altKey && /^[a-z]$/i.test(e.key) ? String.fromCharCode(e.key.toUpperCase().charCodeAt(0) - 64)
+    : e.key === "Enter" ? "\r" : e.key.length === 1 && !e.ctrlKey ? e.key : "");
+  const press = (e) => {
+    const { handled, byte } = terminalKeyDecision(e, interceptKey);
+    if (!handled) pty.push(xtermBytes(e));
+    else if (byte !== null) pty.push(byte);
+    return { handled, prevented: e.defaultPrevented };
+  };
+  return { press, pty, clipboard };
+}
+const keydown = (key, mods = {}) => ev(key, { type: "keydown", ...mods });
+
+test("Linux/Windows: Ctrl+Shift+C with nothing selected sends nothing to the pty and copies nothing", t => {
+  const { press, pty, clipboard } = terminalKeyPath(t, "");
+  assert.deepEqual(press(keydown("C", { ctrlKey: true, shiftKey: true })), { handled: true, prevented: true });
+  assert.equal(press(ev("C", { type: "keyup", ctrlKey: true, shiftKey: true })).handled, true, "every phase is claimed");
+  assert.deepEqual(pty, [], "no byte reaches the program");
+  assert.deepEqual(clipboard, []);
+});
+
+test("Linux/Windows: Ctrl+Shift+C copies exactly the selection, and still sends nothing", async t => {
+  const { press, pty, clipboard } = terminalKeyPath(t, "  line one\nline two");
+  press(keydown("C", { ctrlKey: true, shiftKey: true }));
+  await new Promise(r => setImmediate(r));
+  assert.deepEqual(clipboard, ["  line one\nline two"]);
+  assert.deepEqual(pty, []);
+});
+
+test("Linux/Windows: Ctrl+C is still the interrupt, selection or not; plain keys and Shift+Enter are unchanged", t => {
+  for (const selection of ["", "selected"]) {
+    const { press, pty, clipboard } = terminalKeyPath(t, selection);
+    assert.deepEqual(press(keydown("c", { ctrlKey: true })), { handled: false, prevented: false });
+    press(keydown("a"));
+    press(keydown("Enter", { shiftKey: true }));
+    press(keydown("Enter"));
+    assert.equal(pty[0], "\x03", "ETX reaches the program");
+    assert.equal(pty[1], "a");
+    assert.equal(pty[2], "\n", "Shift+Enter keeps its own byte (a newline in the agent's draft)");
+    assert.equal(pty[3], "\r");
+    assert.deepEqual(clipboard, []);
+  }
+});
+
+test("macOS: the copy action has no chord, so ⌘C stays the menu's Copy and ⌃⇧C the program's", t => {
+  registerAll(t);
+  assert.equal(getBinding("terminal.copySelection", true), null);
+  assert.equal(matchEvent(ev("c", { metaKey: true }), { isMac: true, insideTerminal: true }), null);
+  assert.equal(matchEvent(ev("C", { ctrlKey: true, shiftKey: true }), { isMac: true, insideTerminal: true }), null);
 });
