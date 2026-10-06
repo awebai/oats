@@ -7,9 +7,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { retireInstance } from "../lib/core.mjs";
+import { completeDeferredRetirement, retireInstance } from "../lib/core.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 async function instance(t, name, { work = "worktree" } = {}) {
@@ -108,6 +108,30 @@ test("a detached HEAD on a commit no ref reaches is re-homed, and the commit is 
   assert.equal(row.movedTo, w.retained(`detached-${tip.slice(0, 12)}`));
   assert.match(row.reason, /reached by no ref/);
   assert.equal(w.git(row.movedTo, "rev-parse", "HEAD"), tip);
+});
+
+test("a commit only the tree's own refs reach is re-homed: refs/worktree/ and the tree's HEAD go with its admin entry", async (t) => {
+  const w = await instance(t, "dev-private");
+  const path = w.tree("private");
+  const tip = commit(w, path, "private.txt", "reached only from this tree\n");
+  w.git(path, "update-ref", "refs/worktree/save", "HEAD");
+  const r = await w.retire();
+  const [row] = r.extraWorktrees;
+  assert.equal(row.outcome, "retained", "a per-worktree ref does not count: it is removed with the tree");
+  assert.match(row.reason, /reached by no ref/);
+  assert.equal(w.git(row.movedTo, "rev-parse", "HEAD"), tip);
+});
+
+test("the retire's Git commands run helper-free: a repository's core.fsmonitor does not run while a tree is removed", async (t) => {
+  const w = await instance(t, "dev-helper", { work: "directory" });
+  const path = w.tree("clean", "agents/helper");
+  const marker = join(w.fx.base, "fsmonitor-ran");
+  const script = join(w.fx.base, "fsmonitor.sh");
+  writeFileSync(script, `#!/bin/sh\ntouch '${marker}'\n`); chmodSync(script, 0o755);
+  w.git(w.fx.member, "config", "core.fsmonitor", script);
+  const r = await w.retire();
+  assert.equal(r.extraWorktrees[0].outcome, "removed");
+  assert.equal(existsSync(marker), false, "no helper the repository names was run");
 });
 
 test("a rebase in progress on an otherwise clean tree re-homes it", async (t) => {
@@ -249,6 +273,24 @@ test("a retire given a plan's rows refuses as stale when the trees no longer rea
   assert.equal(existsSync(w.home), true);
   assert.equal(w.registered(path), true);
   assert.equal(w.registered(join(w.home, "work")), true, "work/ is untouched");
+});
+
+test("a planned self-retire carries the plan's trees to its deferred completion, which refuses as stale on a tree the plan did not name", async (t) => {
+  const w = await instance(t, "dev-self");
+  const planned = w.plan().facts.extraWorktrees;
+  assert.deepEqual(planned, []);
+  const scheduled = await w.fx.inEnv(() => retireInstance(w.fx.root, "dev-self", { self: true, selfKillDelaySec: 600, tmuxSession: "oats-test-nosuch", plannedExtraWorktrees: planned }));
+  assert.equal(scheduled.deferred, true);
+  try { process.kill(scheduled.completionPid, "SIGKILL"); } catch { /* already gone */ }
+  const intent = JSON.parse(readFileSync(scheduled.pendingMarker, "utf8"));
+  assert.deepEqual(intent.options.plannedExtraWorktrees, [], "the intent carries the binding, empty included");
+  const late = w.tree("late", "agents/late");
+  writeFileSync(join(late, "x.txt"), "x\n");
+  const ok = await w.fx.inEnv(() => completeDeferredRetirement(intent, { delaySec: 0, quiesce: false }));
+  assert.equal(ok, false);
+  assert.equal(JSON.parse(readFileSync(intent.resultPath, "utf8")).error.code, "E_PLAN_STALE");
+  assert.equal(existsSync(w.home), true, "the home is kept");
+  assert.equal(w.registered(late), true, "the unplanned tree was not moved");
 });
 
 test("the step does not depend on the work mode: a directory-mode home's extra trees are handled", async (t) => {

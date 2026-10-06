@@ -840,9 +840,11 @@ leaves `work/` untouched. For each tree:
 - **A clean tree is removed.** Clean means that `git status`, ignored and
   untracked files included, is empty; no merge, rebase, cherry-pick, revert,
   bisect or sequencer operation is in progress; and its HEAD commit is
-  reached by some ref. The retire runs `git worktree remove` (without
+  reached by a ref of its repository (the tree's own HEAD, reflog and
+  `refs/worktree/` refs do not count: they go with its admin entry). The retire runs `git worktree remove` (without
   `--force`) and `git worktree prune`, and verifies that the tree is gone from
-  `git worktree list`. Its branch is never deleted: a commit on the branch that
+  `git worktree list`. Every Git command of this step runs helper-free (no
+  fsmonitor, hooks or external diff the repository's configuration names). Its branch is never deleted: a commit on the branch that
   was not pushed stays in the clone, on that branch.
 - **Any other tree is re-homed**, as `work/` is by default: `git worktree
   move` to `<deployment>/.agents/worktrees/<repo>/<leaf>`, where `<leaf>` is
