@@ -2588,10 +2588,12 @@ A first retire prints the **raw receipt**, not an envelope:
   `"removed"` or `"retained"`, with `movedTo` where a retained tree went. The
   step runs only when the home is removed (not with `--keep-dir`, not when the
   home is kept for a retry), after the hooks and before the worktree step of
-  `work/`. `--discard-worktree` does not apply to it. A refused tree
-  (`"refuse"` in the plan, or a move or removal Git refuses) stops the retire
-  with `E_WORK_PRESERVATION_FAILED` naming the tree, `--force` included; the
-  home and `work/` are kept, and trees already handled stay handled. A tree
+  `work/`. `--discard-worktree` does not apply to it. A locked tree
+  (`"refuse"` in the plan) stops the retire with `E_WORK_PRESERVATION_FAILED`
+  naming the tree before anything runs (no session stop, no retire hook);
+  a lock that appears during the hooks, or a move or removal Git refuses,
+  stops it at the step, after the hooks. `--force` does not bypass either;
+  the home and `work/` are kept, and trees already handled stay handled. A tree
   that no longer matches what the applied plan said refuses with
   `E_PLAN_STALE`, the home kept, rather than be moved or removed unplanned.
   The key is additive.

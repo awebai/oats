@@ -852,10 +852,14 @@ leaves `work/` untouched. For each tree:
   `detached-<12 hex>` when HEAD is detached. A target that exists gets `-2`,
   `-3`, and so on. A tree whose HEAD cannot be read is re-homed too.
 - **A tree the retire cannot handle refuses it.** A locked tree (`git worktree
-  lock`) is refused before any tree is touched. A move or a removal that Git
-  refuses (a tree with submodules, for example), or a removal that cannot be
-  verified, refuses too. The refusal is `E_WORK_PRESERVATION_FAILED` naming
-  the tree, and the home is kept. Trees already handled in that pass stay
+  lock`) refuses before anything runs: a retire that would remove the home
+  finds the lock in its first inspection, before the session is stopped and
+  before any retire hook, and stops with "nothing was run or removed". A lock
+  that appears while the hooks run is refused at the step, before any tree is
+  touched. A move or a removal that Git refuses (a tree with submodules, for
+  example), or a removal that cannot be verified, refuses at the step, after
+  the hooks. Each refusal is `E_WORK_PRESERVATION_FAILED` naming the tree,
+  and the home is kept. At the step, trees already handled in that pass stay
   handled, and the message says what was done. `--force` does not bypass it:
   it forces past hook cleanup, not past local work.
 

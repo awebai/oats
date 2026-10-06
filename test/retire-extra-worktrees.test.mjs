@@ -12,8 +12,23 @@ import { join } from "node:path";
 import { completeDeferredRetirement, retireInstance } from "../lib/core.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
-async function instance(t, name, { work = "worktree" } = {}) {
-  const fx = v2Deployment({ souls: { dev: { soul: { work } } } });
+/** A capability whose retire hook records that it ran (`<root>/retire-hook-ran`) and, when the home holds
+ *  `.lock-on-retire`, locks every `.work-*` tree in it: a lock that appears while the hooks run. */
+const recordingHook = {
+  manifest: { hooks: { retire: "hook.mjs" } },
+  files: { "hook.mjs": `import { appendFileSync, existsSync, readdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { join } from "node:path";
+appendFileSync(join(process.env.OATS_ROOT, "retire-hook-ran"), "ran\\n");
+const home = process.env.OATS_INSTANCE_HOME;
+if (existsSync(join(home, ".lock-on-retire"))) for (const n of readdirSync(home)) if (n.startsWith(".work-")) execFileSync("git", ["-C", join(home, n), "worktree", "lock", "--reason", "during hooks", join(home, n)]);
+` },
+};
+
+async function instance(t, name, { work = "worktree", hook = false } = {}) {
+  const fx = v2Deployment(hook
+    ? { souls: { dev: { soul: { work, capabilities: { "test.recording": { from: "here" } } } } }, capabilities: { "test.recording": recordingHook } }
+    : { souls: { dev: { soul: { work } } } });
   t.after(fx.cleanup);
   const hostPath = process.env.PATH; process.env.PATH = fx.env.PATH; t.after(() => { process.env.PATH = hostPath; });
   const r = await fx.spawn("dev", { instance: name, work });
@@ -34,7 +49,8 @@ async function instance(t, name, { work = "worktree" } = {}) {
   const retained = (leaf) => join(fx.dep, ".agents", "worktrees", "ws", leaf);
   const plan = () => { const p = fx.cli(["retire", name, "--plan", "--json"]); assert.equal(p.status, 0, p.stderr + p.stdout); return p.json().result; };
   const apply = (revision, key) => fx.cli(["retire", name, "--plan-revision", revision, "--idempotency-key", key, "--json"]);
-  return { fx, home, git, tree, registered, branchTip, retire, retained, plan, apply };
+  const hookRan = () => existsSync(join(fx.root, "retire-hook-ran"));
+  return { fx, home, git, tree, registered, branchTip, retire, retained, plan, apply, hookRan };
 }
 const commit = (w, path, file, text, msg = "work") => { writeFileSync(join(path, file), text); w.git(path, "add", file); w.git(path, "commit", "-qm", msg); return w.git(path, "rev-parse", "HEAD"); };
 
@@ -148,14 +164,18 @@ test("a rebase in progress on an otherwise clean tree re-homes it", async (t) =>
   assert.ok(existsSync(join(w.git(row.movedTo, "rev-parse", "--path-format=absolute", "--git-dir"), "rebase-merge")), "the rebase moved with it");
 });
 
-test("a locked tree refuses with E_WORK_PRESERVATION_FAILED: the home, the tree and work/ are kept", async (t) => {
-  const w = await instance(t, "dev-locked");
+test("a locked tree refuses before anything runs: no retire hook, --force included; the home, the tree and work/ are kept", async (t) => {
+  const w = await instance(t, "dev-locked", { hook: true });
   const path = w.tree("locked", "agents/locked");
   writeFileSync(join(path, "keep.txt"), "dirty\n");
   w.git(w.fx.member, "worktree", "lock", "--reason", "in use", path);
   const work = join(w.home, "work");
-  await assert.rejects(() => w.retire(), (e) => e.code === "E_WORK_PRESERVATION_FAILED" && e.message.includes(path) && /locked \(in use\)/.test(e.message) && /work\/ is untouched/.test(e.message));
+  const refused = (e) => e.code === "E_WORK_PRESERVATION_FAILED" && e.message.includes(path) && /locked \(in use\)/.test(e.message) && /nothing was run or removed/.test(e.message);
+  await assert.rejects(() => w.retire(), refused);
+  await assert.rejects(() => w.retire({ force: true }), refused, "--force does not bypass it");
+  assert.equal(w.hookRan(), false, "no retire hook ran");
   assert.equal(existsSync(w.home), true, "the home is kept");
+  assert.equal(existsSync(join(w.home, ".oats-rollback-incomplete.json")), false, "and not quarantined");
   assert.equal(readFileSync(join(path, "keep.txt"), "utf8"), "dirty\n", "the tree is kept");
   assert.equal(w.registered(path), true);
   assert.equal(w.registered(work), true, "work/ is untouched");
@@ -163,8 +183,25 @@ test("a locked tree refuses with E_WORK_PRESERVATION_FAILED: the home, the tree 
   const p = w.plan();
   assert.equal(p.facts.extraWorktrees[0].disposition, "refuse");
   assert.ok(p.notes.some((n) => n.includes(path) && n.includes("retire refuses")), p.notes.join("\n"));
+  // Unlocked, the same retire runs its hook and re-homes the tree.
+  w.git(w.fx.member, "worktree", "unlock", path);
+  const r = await w.retire();
+  assert.equal(w.hookRan(), true, "the hook runs once nothing refuses");
+  assert.equal(r.extraWorktrees[0].outcome, "retained");
 });
 
+test("a lock that appears while the retire hooks run is refused at the step: the home and the tree are kept, work/ untouched", async (t) => {
+  const w = await instance(t, "dev-late-lock", { hook: true });
+  const path = w.tree("late", "agents/late-lock");
+  writeFileSync(join(path, "keep.txt"), "dirty\n");
+  writeFileSync(join(w.home, ".lock-on-retire"), "");
+  await assert.rejects(() => w.retire(), (e) => e.code === "E_WORK_PRESERVATION_FAILED" && e.message.includes(path) && /locked \(during hooks\)/.test(e.message) && /work\/ is untouched/.test(e.message) && /retire hooks have run/.test(e.message));
+  assert.equal(w.hookRan(), true);
+  assert.equal(existsSync(w.home), true, "the home is kept");
+  assert.equal(readFileSync(join(path, "keep.txt"), "utf8"), "dirty\n");
+  assert.equal(w.registered(path), true);
+  assert.equal(w.registered(join(w.home, "work")), true, "work/ is untouched");
+});
 test("unverified .work-* entries are home bytes: copied by the home recovery, not treated as extra trees", async (t) => {
   const w = await instance(t, "dev-unverified");
   mkdirSync(join(w.home, ".work-x"));
