@@ -6,7 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { cliAutomation, AUTOMATION_ID } from '../cli-adapter.mjs';
-import { automationsRequest, automationsSupported } from '../server/automations.mjs';
+import { automationsRequest, automationsSupported, automationDescriptionsSupported } from '../server/automations.mjs';
 
 const doc = name => JSON.parse(readFileSync(new URL(`./fixtures/automations/kernel/${name}.json`, import.meta.url), 'utf8'));
 const provenance = doc('provenance');
@@ -136,5 +136,93 @@ test('schedule actions carry 100-character names through server and CLI, preserv
         }
       }
     }
+  }
+});
+
+// describe (feature automation-descriptions, kernel 0.43): `<kind> update <local key> --description=<text>`.
+// Kernel captures: test/fixtures/automation-descriptions (capture-descriptions.mjs on the K branch, provenance.json).
+const described = name => JSON.parse(readFileSync(new URL(`./fixtures/automation-descriptions/${name}.json`, import.meta.url), 'utf8'));
+const describedVersion = described('version'), describedProvenance = described('provenance');
+const describeCli = { ok: true, bin: '/fixture/oats', version: describedVersion.version, features: [...describedVersion.features], automationsApi: describedVersion.automationsApi };
+/** The kernel's captured answer to `<kind> update … --description=<text>` (set, or clear with ""). */
+const updated = (kind, key, description) => described(`${kind}-update-${description ? 'describe' : 'clear'}`);
+const describing = answer => { const calls = [];
+  const invoke = (bin, opts) => cliAutomation(bin, opts, { exec: (b, argv, o, done) => { calls.push({ argv, cwd: o.cwd, shell: o.shell, timeout: o.timeout });
+    const d = typeof answer === 'function' ? answer(argv) : answer; done(d.ok ? null : Object.assign(new Error('exit 1'), { code: 1 }), JSON.stringify(d)); } });
+  return { invoke, calls };
+};
+
+test('describe: one --description= token on `update`, argv only, the kernel\'s result verbatim', async () => {
+  for (const [kind, key, description] of [['schedule', 'local/digest', 'Daily digest of open PRs'], ['trigger', 'hotfix', 'Hotfix labels'],
+    ['schedule', 'digest', ''], ['trigger', 'local/hotfix', '--json'], ['schedule', 'local/digest', '-x --dir /etc']]) {
+    const answer = updated(kind, key, description), { invoke, calls } = describing(answer);
+    const out = await automationsRequest({ kind, action: 'describe', key, description }, { workspace, cli: describeCli, invoke });
+    assert.deepEqual(calls.map(c => c.argv), [[kind, 'update', key, `--description=${description}`, '--dir', DEPLOYMENT, '--json']], `${kind} ${JSON.stringify(description)}`);
+    assert.notEqual(calls[0].shell, true); assert.equal(calls[0].cwd, DEPLOYMENT); assert.equal(calls[0].timeout, 30_000);
+    assert.deepEqual([out.status, out.kind, out.action, out.reason], ['ok', kind, 'describe', null]); assert.deepEqual(out.result, answer.result);
+  }
+  const { invoke, calls } = describing(updated('schedule', 'digest', ''));
+  await automationsRequest({ kind: 'schedule', action: 'describe', key: 'digest', description: '' }, { workspace, cli: describeCli, invoke });
+  assert.equal(calls[0].argv[3], '--description=', 'clearing is exactly the empty `=` token');
+});
+
+test('describe: the captured argv (the capture ran in its scope; the Desktop adds --dir), and the captured answers', async () => {
+  for (const name of ['schedule-update-describe', 'schedule-update-clear', 'trigger-update-describe', 'trigger-update-clear']) {
+    const [, kind, , key, flag] = describedProvenance.files[name].argv, description = flag.slice('--description='.length);
+    const { invoke, calls } = describing(described(name));
+    const out = await automationsRequest({ kind, action: 'describe', key, description }, { workspace, cli: describeCli, invoke });
+    assert.deepEqual(calls[0].argv, [...describedProvenance.files[name].argv.slice(1, -1), '--dir', DEPLOYMENT, '--json'], name);
+    assert.equal(out.status, 'ok'); assert.equal(out.result[kind].qualifiedId, key);
+    assert.equal(out.result[kind].description, description || null, `${name}: the row carries the new summary`);
+  }
+});
+
+test('describe: gated on automation-descriptions; refused before any call when the key or summary is not admissible', async () => {
+  assert.ok(describedVersion.features.includes('automation-descriptions'), 'the captured kernel reports the feature');
+  assert.equal(automationDescriptionsSupported(cli), false, 'the 0.29 capture does not'); assert.equal(automationDescriptionsSupported(describeCli), true);
+  assert.equal(automationDescriptionsSupported({ ...describeCli, automationsApi: undefined }), false); assert.equal(automationDescriptionsSupported(null), false);
+  let calls = 0; const invoke = async () => { calls++; return updated('schedule', 'local/digest', 'x'); };
+  const ok = { kind: 'schedule', action: 'describe', key: 'local/digest', description: 'Daily digest' };
+  const gated = await automationsRequest(ok, { workspace, cli, invoke });
+  assert.equal(gated.reason.code, 'E_DESCRIPTIONS_UNAVAILABLE'); assert.match(gated.reason.message, /0\.43/);
+  assert.equal((await automationsRequest(ok, { workspace, cli: { ...describeCli, automationsApi: undefined }, invoke })).reason.code, 'E_AUTOMATIONS_UNAVAILABLE');
+  assert.equal((await automationsRequest(ok, { workspace: { ...workspace, remote: true, server: 'host' }, cli: describeCli, invoke })).reason.code, 'E_UNSUPPORTED_REMOTE');
+  for (const request of [{ ...ok, key: 'agents/nightly' }, { ...ok, kind: 'trigger', key: 'agents/pr-review' }, { ...ok, key: '--dir' }, { kind: 'schedule', action: 'describe', description: 'x' },
+    { ...ok, description: 'one\ntwo' }, { ...ok, description: 'one\r' }, { ...ok, description: 'x'.repeat(201) }, { ...ok, description: 'tab\there' }, { ...ok, description: 'a\u0000b' },
+    { ...ok, description: 'a\u2028b' }, { ...ok, description: 'a\u2029b' }, { ...ok, description: 'a\u007fb' }, { ...ok, description: 42 }, { ...ok, description: null }, { ...ok, description: ['x'] },
+    { kind: 'schedule', action: 'describe', key: 'local/digest' }, { kind: 'trigger', action: 'enable', key: 'local/hotfix', description: 'x' }, { kind: 'trigger', action: 'list', description: '' },
+    { ...ok, extra: 1 }, { ...ok, id: 'local/digest' }]) {
+    assert.equal((await automationsRequest(request, { workspace, cli: describeCli, invoke })).reason.code, 'E_BAD_ARGS', JSON.stringify(request));
+  }
+  assert.equal(calls, 0);
+  // The adapter keeps the same guard on its own (defense in depth).
+  for (const opts of [{ kind: 'schedule', action: 'describe', id: 'agents/nightly', description: 'x' }, { kind: 'schedule', action: 'describe', id: 'digest' },
+    { kind: 'trigger', action: 'describe', id: 'hotfix', description: 'a\nb' }, { kind: 'trigger', action: 'enable', id: 'hotfix', description: 'x' }, { kind: 'trigger', action: 'enable', id: 'hotfix', description: '' }]) {
+    const r = await cliAutomation('/fixture/oats', { ...opts, workspaceDir: DEPLOYMENT }, { exec: () => assert.fail('must not execute') });
+    assert.equal(r.error.code, 'E_BAD_ARGS', JSON.stringify(opts));
+  }
+});
+
+test('describe: 200 code points of astral text is one line (code points, not UTF-16 units); 201 is not', async () => {
+  const emoji = '\u{1F600}'.repeat(200); assert.equal(emoji.length, 400);
+  const { invoke, calls } = describing(updated('trigger', 'local/hotfix', emoji));
+  const out = await automationsRequest({ kind: 'trigger', action: 'describe', key: 'local/hotfix', description: emoji }, { workspace, cli: describeCli, invoke });
+  assert.equal(out.status, 'ok'); assert.equal(calls[0].argv[3], `--description=${emoji}`);
+  assert.equal((await automationsRequest({ kind: 'trigger', action: 'describe', key: 'local/hotfix', description: emoji + '\u{1F600}' }, { workspace, cli: describeCli, invoke })).reason.code, 'E_BAD_ARGS');
+  assert.equal(calls.length, 1);
+});
+
+test('describe: kernel refusals keep their code and message; a success of the wrong shape is a protocol failure', async () => {
+  // Captured refusals: out of rule, a workspace item (asked by a newer client), an unknown id, another flag.
+  for (const [kind, name, code] of [['schedule', 'schedule-update-invalid', 'E_SCHEDULE_INVALID'], ['schedule', 'schedule-update-workspace', 'E_AUTOMATION_WORKSPACE'],
+    ['trigger', 'trigger-update-workspace', 'E_AUTOMATION_WORKSPACE'], ['trigger', 'trigger-update-unknown', 'E_TRIGGER_UNKNOWN'], ['trigger', 'trigger-update-flag', 'E_BAD_ARGS']]) {
+    const answer = described(name); assert.equal(answer.error.code, code, name);
+    const { invoke } = describing(answer);
+    const out = await automationsRequest({ kind, action: 'describe', key: 'local/x', description: 'Fine' }, { workspace, cli: describeCli, invoke });
+    assert.deepEqual([out.status, out.reason.code, out.reason.message], ['unavailable', code, answer.error.message], name);
+  }
+  for (const [kind, result] of [['schedule', {}], ['trigger', {}], ['schedule', { trigger: {} }], ['trigger', { schedule: {} }], ['schedule', { schedule: [] }], ['trigger', { trigger: null }]]) {
+    const { invoke } = describing({ schemaVersion: 1, ok: true, result });
+    assert.equal((await automationsRequest({ kind, action: 'describe', key: 'local/x', description: 'Fine' }, { workspace, cli: describeCli, invoke })).reason.code, 'E_CLI_PROTOCOL', `${kind} ${JSON.stringify(result)}`);
   }
 });

@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "schedule": {
+      "id": "harvest",
+      "cron": "0 */6 * * *",
+      "tz": "UTC",
+      "kind": "operation",
+      "operation": "knowledge:harvest",
+      "home": "/fixture/base/deployment/agents/reviewer/instances/reviewer-1",
+      "createdAt": "2026-10-06T13:32:15.025Z",
+      "updatedAt": "2026-10-06T13:32:15.025Z",
+      "scope": "/fixture/base/deployment",
+      "scheduleApi": 2,
+      "scheduleHistoryApi": 3,
+      "executionStatus": {
+        "kind": "legacy",
+        "capture": "unknown",
+        "migrationRequired": true
+      },
+      "nextRun": "2026-10-06T18:00:00.000Z",
+      "lastRun": null,
+      "history": {
+        "status": "ok",
+        "stored": 0,
+        "truncated": false
+      },
+      "recentRuns": [],
+      "running": false,
+      "name": "harvest",
+      "origin": {
+        "kind": "local",
+        "path": "oats-schedules.json",
+        "url": null,
+        "localPath": "/fixture/base/deployment/oats-schedules.json"
+      },
+      "description": null,
+      "owner": null,
+      "runsOn": null,
+      "runsHere": true,
+      "reason": null,
+      "enabledHere": true,
+      "qualifiedId": "local/harvest",
+      "soul": null,
+      "task": null,
+      "teams": [],
+      "launchConfig": null,
+      "harness": null,
+      "model": null,
+      "concurrency": null,
+      "nextDue": "2026-10-06T18:00:00.000Z",
+      "enabled": true
+    }
+  }
+}

@@ -9,8 +9,9 @@
  * the kernel's `automations` lists (feature `automations`, automationsApi 1). */
 import {
   automationRows, groupRows, filterRows, placementText, ownerParts, taskParts, cronInWords, onSummary, relativeTime,
-  hostLogin, templateLabel, soulOriginText, testResult, triggerStatus,
+  hostLogin, templateLabel, soulOriginText, testResult, triggerStatus, summaryLine, runState, reconcileCommand, templateProvenance,
 } from '../automation-rows.mjs';
+import { descriptionValid, DESCRIPTION_MAX } from '../schedule-read-data.mjs';
 import { pageCardCSS, pageBar, pageCard, pageFacts, pageSection } from '../capability-page.mjs';
 import { iconElement } from '../shell-icons.mjs';
 import { harnessName } from '../identity-marks.mjs';
@@ -130,8 +131,35 @@ export const automationsCSS = `
 .auto-run time { color:var(--muted); font-size:11.5px; }
 .auto-test-line { margin:0; font-size:12px; overflow-wrap:anywhere; }
 .auto-test-line.warn { color:var(--warn); }
+/* The summary line: authored, or derived from the prompt's first line (muted italic, its title says so). */
+.auto-sub.auto-summary.derived { font-style:italic; }
+.auto-qid { margin:0; color:var(--muted); font:12px var(--mono,monospace); overflow-wrap:anywhere; }
+.auto-page .page-lede { display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; overflow-wrap:anywhere; }
+.oats-view .auto-page button.auto-lede-edit { height:24px; min-height:24px; padding:0 8px; border-radius:6px; font-size:12px; font-weight:600; }
+/* A command's argv, verbatim: one chip per argument, so the boundaries show. */
+.auto-argv { display:flex; flex-wrap:wrap; gap:6px; margin:0; padding:12px 14px; list-style:none; border:1px solid var(--border); border-radius:8px; background:var(--surface); }
+.auto-argv li { padding:1px 6px; border-radius:4px; background:var(--chip-bg); color:var(--fg); font:12.5px/1.6 var(--mono,monospace); white-space:pre-wrap; overflow-wrap:anywhere; }
+.auto-command { padding:1px 4px; border-radius:4px; background:var(--chip-bg); color:var(--fg); font:12px var(--mono,monospace); overflow-wrap:anywhere; }
+.auto-card-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
+.oats-view .auto-card-actions button.act { height:28px; min-height:28px; padding:0 10px; border-radius:6px; font-size:12px; font-weight:600; }
+/* Edit summary: a small modal sheet over the page. */
+.auto-sheet { position:fixed; z-index:90; inset:0; display:grid; place-items:center; padding:24px; background:var(--scrim); }
+.auto-sheet[hidden] { display:none; }
+.auto-describe { display:grid; gap:10px; width:min(480px, 100%); box-sizing:border-box; padding:18px 20px; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--fg); box-shadow:var(--shadow-popover); font-size:12.5px; }
+.auto-describe h3 { margin:0; font-size:15px; overflow-wrap:anywhere; }
+.auto-describe label { display:grid; gap:5px; }
+.auto-describe .field { width:100%; min-width:0; box-sizing:border-box; }
+.auto-describe-error { margin:0; color:var(--danger); font-size:12.5px; }
+.auto-describe-error:empty, .auto-describe-status:empty { display:none; }
+.auto-describe-status { margin:0; color:var(--muted); font-size:12px; outline:none; }
+.auto-describe-actions { display:flex; flex-wrap:wrap; gap:8px; }
 `;
 
+/** "14:05" today, else "6 Oct, 14:05": when a run state began (its title keeps the full date). */
+function clockTime(iso, now) {
+  const d = new Date(iso), today = new Date(now).toDateString() === d.toDateString();
+  return today ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : d.toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
 const HEADS = ['On', 'Automation', 'Soul', 'When', 'Runs on', 'Last · next', ''];
 const TITLES = { schedule: 'Schedules', trigger: 'Triggers' };
 const OUTCOMES = { launched: 'agent launched', active: 'agent active', running: 'agent active', ended: 'run ended', stopped: 'agent stopped', unknown: 'launch state unknown', 'launch-failed': 'launch failed', skipped: 'skipped', delivered: 'wake delivered' };
@@ -141,8 +169,9 @@ const OUTCOMES = { launched: 'agent launched', active: 'agent active', running: 
 /** verbs: the act verbs this server serves (default all) · headerActions(doc): extra header controls ·
  * rowActions(row): extra { label, run, enabled } for a row's menu and page · onEnableScheduler: the banner's action. */
 /** heading: the Automations title + subtabs, in place of the page's own title (its count then goes to `onCount(n)`). */
+/** describe(row, text): set (or, with "", clear) a local row's summary (feature automation-descriptions); null hides Edit summary. */
 export function createAutomationsView(host, { kind, read, act = null, status = null, openFile = null, now = () => Date.now(),
-  verbs = null, headerActions = null, rowActions = null, onEnableScheduler = null, onResult = null, heading = null, onCount = null } = {}) {
+  verbs = null, headerActions = null, rowActions = null, onEnableScheduler = null, onResult = null, heading = null, onCount = null, describe = null } = {}) {
   const doc = host.ownerDocument;
   const node = (tag, value, cls) => { const el = doc.createElement(tag); if (value !== undefined && value !== null) el.textContent = value; if (cls) el.className = cls; return el; };
   const title = TITLES[kind], noun = kind === 'trigger' ? 'trigger' : 'schedule';
@@ -168,6 +197,8 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
   const openTitle = row => row.origin.localPath || row.origin.url
     || 'This computer has no clone of this member, and the kernel reports no web address for the file';
   const supports = verb => !!act && (!verbs || verbs.includes(verb));
+  // A summary is edited here only for a local item the kernel could read; a workspace one changes in Git.
+  const canDescribe = row => !!describe && row.origin.kind === 'local' && !row.unreadable;
   const rowById = id => data?.rows.find(r => r.id === id) || null;
 
   // ── toolbar (persistent: the search keeps focus across renders) ──
@@ -229,7 +260,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
   function stateTags(row, tags) {
     if (!row.enabledHere && row.group !== 'elsewhere') tags.append(node('span', 'Off here', 'auto-tag muted'));
     const bad = row.invalid || row.unreadable;
-    if (bad) { const t = node('span', 'Invalid', 'auto-tag warn'); t.title = bad.message || bad.code || ''; tags.append(t); }
+    if (bad) { const t = node('span', row.unreadable ? 'Unreadable' : 'Invalid', 'auto-tag warn'); t.title = bad.message || bad.code || ''; tags.append(t); }
     const template = templateLabel(row.template);
     if (template) { const t = node('span', undefined, 'auto-tag muted'); t.append(iconElement(doc, 'package', { size: 11 }), node('span', template)); t.title = `From the package template ${template}${row.template.version ? ` ${row.template.version}` : ''}`; tags.append(t); }
   }
@@ -240,6 +271,13 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     line.append(iconElement(doc, icon, { size: 12 }), node('span', row.soul.name, 'auto-mono'));
     line.title = `${row.soul.name} · ${soulOriginText(o).long}`;
     return line;
+  }
+  /** The row's summary line, as text: authored, derived from the prompt (styled so), or "No summary". */
+  function summaryEl(row) {
+    const s = summaryLine(row);
+    const el = node('span', s ? s.text : 'No summary', `auto-sub auto-summary${s?.derived ? ' derived' : ''}${s ? '' : ' auto-none'}`);
+    if (s) el.title = s.title;
+    return el;
   }
   const soulSub = row => row.soul ? soulOriginText(row.soul.origin).short : '';
   function whenCell(row) {
@@ -286,6 +324,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     if (row.kind === 'schedule' && row.runsHere && supports('run')) item('Run now', 'run');
     if (row.group !== 'elsewhere' && supports(row.enabledHere ? 'disable' : 'enable')) item(row.enabledHere ? 'Turn off here' : 'Turn on here', row.enabledHere ? 'disable' : 'enable');
     if (canOpen(row)) item('Open file', 'file');
+    if (canDescribe(row)) { const b = node('button', 'Edit summary'); b.type = 'button'; b.dataset.verb = 'describe'; b.disabled = busy; b.addEventListener('click', () => { closeMenu(); openDescribe(row); }); items.append(b); }
     for (const extra of rowActions ? rowActions(row) : []) {
       const b = node('button', extra.label); b.type = 'button'; b.dataset.verb = extra.verb || ''; b.disabled = busy || extra.enabled === false;
       b.addEventListener('click', () => { closeMenu(); extra.run(); }); items.append(b);
@@ -298,9 +337,10 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
   function rowEl(row) {
     const el = node('div', undefined, `auto-row${!row.enabledHere && row.group !== 'elsewhere' ? ' off' : ''}`); el.setAttribute('role', 'row'); el.dataset.id = row.id; el.dataset.group = row.group;
     const nameCell = node('div', undefined, 'auto-cell auto-name'), open = node('button', undefined, 'auto-open'); open.type = 'button';
-    const id = node('span', row.id, 'auto-id'); id.title = row.id; const tags = node('span', undefined, 'auto-tags'); tags.append(originTag(row)); stateTags(row, tags);
+    // The bare name beside its origin tag (local, or the member): the tag already says where it is from.
+    const id = node('span', row.name, 'auto-id'); id.title = row.id; const tags = node('span', undefined, 'auto-tags'); tags.append(originTag(row)); stateTags(row, tags);
     open.append(id, tags); open.setAttribute('aria-label', `Open ${row.id}`); open.addEventListener('click', () => openRow(row.id));
-    nameCell.append(open); if (row.description) nameCell.append(node('span', row.description, 'auto-sub'));
+    nameCell.append(open, summaryEl(row));
     // Untrusted here (0.30): the kernel's words, which name the oats-local.yaml line to add, in the row itself.
     if (row.reason === 'untrusted' && row.reasonDetail) nameCell.append(node('span', row.reasonDetail, 'auto-sub auto-remedy'));
     const soul = node('div', undefined, 'auto-cell'); soul.append(soulLine(row), node('span', soulSub(row), 'auto-sub'));
@@ -385,39 +425,51 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     page.replaceChildren();
     const { bar, actions } = pageBar(doc, { backLabel: title, crumbs: [title], current: row.id, onBack: closeRow });
     const button = (label, verb, primary = false, enabled = true) => { const b = node('button', label, `act${primary ? ' primary' : ''}`); b.type = 'button'; b.dataset.verb = verb; b.disabled = busy || !enabled; b.addEventListener('click', () => verb === 'file' ? openFile?.(row) : perform(verb, row)); actions.append(b); return b; };
+    const extras = rowActions ? rowActions(row) : [];
+    const run = runState(row);
+    // An unknown run state is checked from its own card; the bar keeps the other page actions.
+    const inCard = extra => extra.verb === 'reconcile' && !!run?.unknown;
+    const extraButton = (extra, into) => { const b = node('button', extra.label, 'act'); b.type = 'button'; b.dataset.verb = extra.verb || ''; b.disabled = busy || extra.enabled === false; b.addEventListener('click', () => extra.run()); into.append(b); return b; };
     if (canOpen(row)) button('Open file', 'file');
-    for (const extra of rowActions ? rowActions(row) : []) { const b = node('button', extra.label, 'act'); b.type = 'button'; b.dataset.verb = extra.verb || ''; b.disabled = busy || extra.enabled === false; b.addEventListener('click', () => extra.run()); actions.append(b); }
+    if (canDescribe(row)) { const b = node('button', 'Edit summary', 'act'); b.type = 'button'; b.dataset.verb = 'describe'; b.disabled = busy; b.addEventListener('click', () => openDescribe(row)); actions.append(b); }
+    for (const extra of extras) if (!inCard(extra)) extraButton(extra, actions);
     if (row.kind === 'schedule' && row.runsHere && supports('run')) button('Run now', 'run');
     if (supports('test')) button('Test', 'test', true);
     const pageBody = node('div', undefined, 'page-body'), main = node('div', undefined, 'page-main'), side = node('div', undefined, 'page-side');
-    // Identity.
+    // Identity: the name, with the qualified id (the address) under it; then the summary.
     const identity = node('div', undefined, 'page-identity'), glyph = node('span', undefined, 'page-glyph');
     glyph.append(iconElement(doc, kind === 'trigger' ? 'triggers' : 'schedules', { size: 22 }));
-    const copy = node('div', undefined, 'page-identity-copy'), h = node('h2', undefined, 'page-title mono'); h.append(node('span', row.id));
+    const copy = node('div', undefined, 'page-identity-copy'), h = node('h2', undefined, 'page-title mono'); h.append(node('span', row.name));
     const tags = node('div', undefined, 'auto-tags'); tags.append(originTag(row)); stateTags(row, tags);
-    copy.append(h, tags); if (row.description) copy.append(node('p', row.description, 'page-lede'));
+    copy.append(h, node('p', row.id, 'auto-qid'), tags);
+    if (row.description) copy.append(node('p', row.description, 'page-lede'));
+    else {
+      const lede = node('p', undefined, 'page-lede'); lede.append(node('span', 'No summary'));
+      if (canDescribe(row)) { const b = node('button', 'Edit summary', 'act auto-lede-edit'); b.type = 'button'; b.dataset.verb = 'describe'; b.disabled = busy; b.addEventListener('click', () => openDescribe(row)); lede.append(b); }
+      copy.append(lede);
+    }
     identity.append(glyph, copy);
     if (row.group !== 'elsewhere') identity.append(switchFor(row));
     main.append(identity);
-    // Prompt.
-    const prompt = pageSection(doc, row.run === 'wake' ? 'Wake message' : 'Prompt', kind === 'trigger' ? 'highlighted fields are filled from the event' : '');
-    if (row.task) {
-      const pre = node('pre', undefined, 'auto-prompt');
-      for (const part of taskParts(row.task)) pre.append(part.field ? node('span', `{${part.field}}`, 'auto-token') : doc.createTextNode(part.text));
-      prompt.append(pre);
-      if (kind === 'trigger') prompt.append(node('p', 'Pull request titles and bodies are never inserted: the instance reads them from its event file.', 'page-note'));
-    } else prompt.append(node('p', row.run && row.run !== 'spawn' ? `No prompt: this ${noun} runs a ${row.run}.` : 'No prompt reported.', 'page-note'));
-    main.append(prompt);
-    // When / On, and Spawns.
+    // What it sends: shown whole, never summarized.
+    main.append(sendsSection(row));
+    // When / On, and Spawns (a spawn schedule and every trigger).
     const cards = node('div', undefined, 'auto-cards');
     const when = pageCard(doc, kind === 'trigger' ? 'On' : 'When', { icon: kind === 'trigger' ? 'triggers' : 'schedules' });
     if (kind === 'trigger') { const on = onSummary(row.on); when.body.append(pageFacts(doc, [['Event', on?.title], ['Repo', on?.repo], ['Labels', on?.labels.join(', ')], ['Base', on?.base], ['Polls', on?.poll ? `every ${on.poll}` : null]])); }
     else when.body.append(pageFacts(doc, [['Runs', cronInWords(row.cron)], ['Cron', row.cron], ['Time zone', row.tz], ['Next', row.runsHere ? relativeTime(row.nextDue, now())?.label : null]]));
-    const spawns = pageCard(doc, 'Spawns', { icon: 'soul' });
-    const conc = row.concurrency ? [Number.isInteger(row.concurrency.max) ? `${row.concurrency.max} at once` : null, Number.isInteger(row.concurrency.perKey) ? `${row.concurrency.perKey} per event` : null].filter(Boolean).join(' · ') : null;
-    spawns.body.append(pageFacts(doc, [['Soul', row.soul ? `${row.soul.name}${soulSub(row) ? ` · ${soulSub(row)}` : ''}` : null], ['Purpose', row.spawn?.purpose], ['Teams', row.teams.join(', ')],
-      ['Launch config', row.launchConfig], ['Harness', [row.harness ? harnessName(row.harness) : null, row.model].filter(Boolean).join(' · ')], ['Concurrency', conc]]));
-    cards.append(when.card, spawns.card); main.append(cards);
+    cards.append(when.card);
+    if (row.run === 'spawn') {
+      const spawns = pageCard(doc, 'Spawns', { icon: 'soul' });
+      const conc = row.concurrency ? [Number.isInteger(row.concurrency.max) ? `${row.concurrency.max} at once` : null, Number.isInteger(row.concurrency.perKey) ? `${row.concurrency.perKey} per event` : null].filter(Boolean).join(' · ') : null;
+      const wake = row.wake ? [cronInWords(row.wake.cron) || row.wake.cron, row.wake.tz].filter(Boolean).join(' · ') : null;
+      spawns.body.append(pageFacts(doc, [['Soul', row.soul ? `${row.soul.name}${soulSub(row) ? ` · ${soulSub(row)}` : ''}` : null], ['Purpose', row.purpose], ['Teams', row.teams.join(', ')],
+        ['Harness', [row.harness ? harnessName(row.harness) : null, row.model].filter(Boolean).join(' · ')], ['Launch config', row.launchConfig],
+        ['Permissions', row.yolo === true ? 'YOLO — skips permission prompts' : row.yolo === false ? 'Native permission policy' : null], ['Backend', row.backend], ['Concurrency', conc],
+        ['Wakes it', wake, row.wake ? row.wake.cron : null], ['Wake message', row.wake?.message, null, 'wrap']]));
+      cards.append(spawns.card);
+    }
+    main.append(cards);
     // Recent runs (this computer only).
     // A trigger's history comes from `trigger status` (fired, live, pending); the row alone has only its last fire.
     const st = kind === 'trigger' ? statuses.get(row.id) : null;
@@ -426,21 +478,31 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     const history = node('div', undefined, 'auto-runs');
     if (st?.lastError) history.append(node('p', `Last error: ${st.lastError.message || st.lastError.code}`, 'auto-test-line warn'));
     const items = st?.fired.length ? st.fired : row.recentRuns.length ? row.recentRuns : row.lastRun ? [row.lastRun] : [];
-    for (const run of items.slice(0, 10)) {
-      const at = relativeTime(run.at || run.startedAt || run.scheduledFor, now()), line = node('div', undefined, 'auto-run'), time = node('time', at?.label || '—'); if (at) time.title = at.title;
-      line.append(time, node('span', [run.outcome ? OUTCOMES[run.outcome] || run.outcome : null, run.event ? String(run.event).replace(/_/g, ' ') : null, run.number ? `#${run.number}` : null, run.instance].filter(Boolean).join(' · ') || 'Recorded'));
+    for (const r of items.slice(0, 10)) {
+      const at = relativeTime(r.at || r.startedAt || r.scheduledFor, now()), line = node('div', undefined, 'auto-run'), time = node('time', at?.label || '—'); if (at) time.title = at.title;
+      line.append(time, node('span', [r.outcome ? OUTCOMES[r.outcome] || r.outcome : null, r.event ? String(r.event).replace(/_/g, ' ') : null, r.number ? `#${r.number}` : null, r.instance].filter(Boolean).join(' · ') || 'Recorded'));
       history.append(line);
     }
     if (!items.length) history.append(node('p', row.runsHere ? 'Not run yet on this computer.' : 'Runs are recorded on the computer that runs it.', 'page-note'));
     runs.append(history); main.append(runs);
-    // Side: where it runs, where it comes from, the test result.
+    // Side: what is wrong with it, its run state, where it runs, where it comes from, the test result.
+    const bad = row.unreadable || row.invalid;
+    if (bad) {
+      const card = pageCard(doc, row.unreadable ? 'Unreadable' : 'Invalid', { icon: 'warning' });
+      const fact = v => typeof v === 'string' ? v : null;
+      card.body.append(pageFacts(doc, [['Code', fact(bad.code)], ['Field', fact(bad.field)], ['Message', fact(bad.message), null, 'wrap']]));
+      side.append(card.card);
+    }
+    if (run) side.append(runStateCard(row, run, extras.filter(inCard), extraButton));
     const where = pageCard(doc, 'Where it runs', { icon: 'computer' }), p = placementText(row, data.host);
     where.body.append(pageFacts(doc, row.origin.kind === 'local' ? [['Runs on', 'This computer']] : [['Runs on', row.runsOn], ['This computer', data.host.name || 'no host name'], ['Acts as', row.owner], ['Logged in', hostLogin(data.host, row.owner)]]));
     const verdict = node('div', undefined, `auto-verdict${p.tone === 'warn' ? ' warn' : ''}`); verdict.append(node('span', '', `auto-dot ${p.tone}`), node('span', row.runsHere ? 'Runs on this computer' : p.label));
     where.body.append(verdict); if (row.reasonDetail) where.body.append(node('p', row.reasonDetail, 'page-note'));
     const from = pageCard(doc, 'Comes from', { icon: row.origin.kind === 'local' ? 'computer' : 'repo' });
-    if (row.origin.kind === 'workspace') from.body.append(pageFacts(doc, [['Member', row.origin.member], ['Repo', row.origin.repoKey], ['Path', row.origin.path], ['Commit', row.origin.commit ? row.origin.commit.slice(0, 7) : null, row.origin.commit]]));
-    else from.body.append(node('p', 'Local to this computer; not shared through Git.', 'page-note'));
+    const template = ['Template', templateProvenance(row.template), row.template ? [templateLabel(row.template) || row.template.from, row.template.version, row.template.commit].filter(v => typeof v === 'string' && v).join(' ') : null];
+    const stamp = (label, iso) => { const t = relativeTime(iso, now()); return [label, t?.label, t?.title]; };
+    if (row.origin.kind === 'workspace') from.body.append(pageFacts(doc, [['Member', row.origin.member], ['Repo', row.origin.repoKey], ['Path', row.origin.path], ['Commit', row.origin.commit ? row.origin.commit.slice(0, 7) : null, row.origin.commit], template]));
+    else from.body.append(node('p', 'Local to this computer; not shared through Git.', 'page-note'), pageFacts(doc, [template, stamp('Created', row.createdAt), stamp('Updated', row.updatedAt)]));
     if (openFile) {
       const f = node('button', 'Open file', 'act'); f.type = 'button'; f.disabled = !canOpen(row); f.title = openTitle(row);
       f.addEventListener('click', () => { if (canOpen(row)) openFile(row); }); from.body.append(f);
@@ -462,6 +524,141 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     }
     pageBody.append(main, side); page.append(bar, pageBody);
   }
+  /** What a run sends, whole: a spawn's or trigger's task, a wake's message and the home it wakes,
+   * a command's argv (verbatim, one chip per argument) and cwd, an operation and its home. */
+  function sendsSection(row) {
+    if (row.run === 'wake') {
+      const section = pageSection(doc, 'Wake message');
+      section.append(row.message ? node('pre', row.message, 'auto-prompt') : node('p', 'No wake message reported.', 'page-note'), pageFacts(doc, [['Wakes', row.home, null, 'wrap']]));
+      return section;
+    }
+    if (row.run === 'command') {
+      const section = pageSection(doc, 'Command', 'run as written, without a shell');
+      if (row.argv?.length) { const argv = node('ol', undefined, 'auto-argv'); argv.setAttribute('aria-label', 'Command arguments'); for (const arg of row.argv) argv.append(node('li', arg)); section.append(argv); }
+      else section.append(node('p', 'No command reported.', 'page-note'));
+      section.append(pageFacts(doc, [['Runs in', row.cwd, null, 'wrap']]));
+      return section;
+    }
+    if (row.run === 'operation') {
+      const section = pageSection(doc, 'Operation');
+      section.append(row.operation || row.home ? pageFacts(doc, [['Operation', row.operation], ['Runs in', row.home, null, 'wrap']]) : node('p', 'No operation reported.', 'page-note'));
+      return section;
+    }
+    const section = pageSection(doc, 'Prompt', kind === 'trigger' ? 'highlighted fields are filled from the event' : '');
+    if (row.task) {
+      const pre = node('pre', undefined, 'auto-prompt');
+      for (const part of taskParts(row.task)) pre.append(part.field ? node('span', `{${part.field}}`, 'auto-token') : doc.createTextNode(part.text));
+      section.append(pre);
+      if (kind === 'trigger') section.append(node('p', 'Pull request titles and bodies are never inserted: the instance reads them from its event file.', 'page-note'));
+    } else section.append(node('p', row.run && row.run !== 'spawn' ? `Nothing to show for a ${row.run} run.` : 'No prompt reported.', 'page-note'));
+    return section;
+  }
+  /** Run state on this computer: running since, an unknown state (with its Check action and the
+   * reconcile command to paste), a wake waiting to be delivered. */
+  function runStateCard(row, run, checks, extraButton) {
+    const card = pageCard(doc, 'Run state', { icon: 'schedules' });
+    const line = (tone, words, iso) => {
+      const t = relativeTime(iso, now()), v = node('div', undefined, `auto-verdict${tone === 'warn' ? ' warn' : ''}`);
+      const label = node('span', t ? `${words} since ${clockTime(iso, now())} · ${t.label}` : words); if (t) label.title = t.title;
+      v.append(node('span', '', `auto-dot ${tone}`), label); card.body.append(v);
+    };
+    if (run.running) line('ok', 'Running', run.running.since);
+    if (run.unknown) {
+      const u = run.unknown;
+      line('warn', 'Run state unknown', u.since);
+      card.body.append(pageFacts(doc, [['Scheduled', relativeTime(u.scheduledFor, now())?.label, relativeTime(u.scheduledFor, now())?.title], ['Host slot', u.holdsSlot ? 'held (counts against the host limit)' : null], ['Exited', u.exited ? 'yes' : null],
+        ['Exit status', u.exitStatus === null ? null : String(u.exitStatus)], ['Exit signal', u.exitSignal], ['Error', u.error, null, 'wrap']]));
+      if (checks.length) { const bar = node('div', undefined, 'auto-card-actions'); for (const extra of checks) extraButton(extra, bar); card.body.append(bar); }
+      const note = node('p', undefined, 'page-note');
+      note.append('From a terminal: ', node('code', reconcileCommand(row), 'auto-command'), '. If its effects can’t be proven, check by hand, then ',
+        node('code', reconcileCommand(row, { clear: true }), 'auto-command'), ' records it as launch failed and frees its slot.');
+      card.body.append(note);
+    }
+    if (run.pendingWake) {
+      const t = relativeTime(run.pendingWake.scheduledFor, now()), p = node('p', `A wake message is waiting to be delivered${t ? ` (due ${t.label})` : ''}.`, 'auto-test-line');
+      if (t) p.title = t.title; card.body.append(p);
+    }
+    return card.card;
+  }
+
+  // ── Edit summary: a small modal sheet (feature automation-descriptions; local rows only) ──
+  // One sheet per view. A save is a latest-intent operation: closing, reopening or disposing the view
+  // invalidates it, and a late answer (success or refusal) for an abandoned sheet changes nothing.
+  const sheet = node('div', undefined, 'auto-sheet'); sheet.hidden = true;
+  const form = node('form', undefined, 'auto-describe'); form.noValidate = true;
+  const sheetTitle = node('h3'); sheetTitle.id = `auto-describe-title-${kind}`;
+  const hint = node('p', `One line of up to ${DESCRIPTION_MAX} characters. Leave it empty to remove the summary.`, 'page-note'); hint.id = `auto-describe-hint-${kind}`;
+  form.setAttribute('role', 'dialog'); form.setAttribute('aria-modal', 'true'); form.setAttribute('aria-labelledby', sheetTitle.id); form.setAttribute('aria-describedby', hint.id);
+  const fieldLabel = node('label'), summaryInput = node('input', undefined, 'field');
+  // No native maxlength: it counts UTF-16 units, so it would cut a valid summary of emoji short of the
+  // rule's 200 characters (code points); descriptionValid checks the length on save, with its message.
+  summaryInput.type = 'text'; summaryInput.name = 'description'; summaryInput.autocomplete = 'off'; summaryInput.spellcheck = true;
+  summaryInput.setAttribute('aria-describedby', hint.id);
+  fieldLabel.append(node('span', 'Summary'), summaryInput);
+  const sheetError = node('p', '', 'auto-describe-error'); sheetError.setAttribute('role', 'alert');
+  // While a save runs, focus parks here (the inputs are disabled; a disabled control cannot hold focus).
+  const sheetStatus = node('p', '', 'auto-describe-status'); sheetStatus.tabIndex = -1; sheetStatus.setAttribute('role', 'status');
+  const saveButton = node('button', 'Save summary', 'act primary'), cancelButton = node('button', 'Cancel', 'act');
+  saveButton.type = 'submit'; cancelButton.type = 'button';
+  const sheetActions = node('div', undefined, 'auto-describe-actions'); sheetActions.append(saveButton, cancelButton);
+  form.append(sheetTitle, hint, fieldLabel, sheetError, sheetStatus, sheetActions); sheet.append(form); root.append(sheet);
+  let describing = null, describeOpener = null, describeSerial = 0, describeBusy = false;
+  function paintSheet() {
+    summaryInput.disabled = describeBusy; saveButton.disabled = describeBusy; cancelButton.disabled = describeBusy;
+    sheetStatus.textContent = describeBusy ? 'Saving the summary…' : '';
+  }
+  function openDescribe(row) {
+    if (!canDescribe(row) || busy || describeBusy) return;
+    ++describeSerial; describing = row.id; describeOpener = doc.activeElement;
+    sheetTitle.textContent = `Summary of ${row.name}`; summaryInput.value = row.description || ''; sheetError.textContent = '';
+    sheet.hidden = false; paintSheet(); summaryInput.focus(); summaryInput.select();
+  }
+  /** The control to return to: the one that opened the sheet if it is still there, else the same
+   * control by identity after a re-render (the page's Edit summary, or the row's menu), else Back. */
+  function describeReturn(id) {
+    if (describeOpener?.isConnected && !describeOpener.disabled) return describeOpener;
+    if (openId) return page.querySelector('[data-verb=describe]') || page.querySelector('.page-back');
+    return [...listHost.querySelectorAll('.auto-row')].find(r => r.dataset.id === id)?.querySelector('.auto-menu summary') || null;
+  }
+  function closeDescribe() {
+    const id = describing; ++describeSerial; describing = null; describeBusy = false; sheet.hidden = true; paintSheet();
+    describeReturn(id)?.focus(); describeOpener = null;
+  }
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    if (describeBusy || !describing || !describe) return;
+    const row = rowById(describing);
+    if (!row) { closeDescribe(); return; }
+    // Sent as typed: only "" clears; the kernel keeps boundary spaces, and refuses what breaks its rule.
+    const value = summaryInput.value;
+    if (value && !descriptionValid(value)) { sheetError.textContent = `A summary is one line of up to ${DESCRIPTION_MAX} characters, without control characters.`; summaryInput.focus(); return; }
+    const my = ++describeSerial; describeBusy = true; sheetError.textContent = ''; paintSheet(); sheetStatus.focus();
+    try {
+      await describe(row, value);
+      if (!alive || my !== describeSerial) return;
+      describeBusy = false; sheet.hidden = true; paintSheet(); describing = null;
+      describeReturn(row.id)?.focus();
+      await refresh();
+      // The re-read repaints the page: put focus back on the same control by identity, unless it moved on.
+      if (alive && (!doc.activeElement || doc.activeElement === doc.body)) describeReturn(row.id)?.focus();
+      describeOpener = null;
+    } catch (error) {
+      if (!alive || my !== describeSerial) return;
+      describeBusy = false; paintSheet();
+      sheetError.textContent = error?.message || String(error); summaryInput.focus();
+    }
+  });
+  cancelButton.addEventListener('click', () => { if (!describeBusy) closeDescribe(); });
+  sheet.addEventListener('keydown', e => {
+    // Escape closes it (never the detail page under it); a running save cannot be dismissed.
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (!describeBusy) closeDescribe(); return; }
+    if (e.key !== 'Tab') return;
+    // Modal: Tab and Shift+Tab stay inside; while saving, on the status line.
+    if (describeBusy) { e.preventDefault(); sheetStatus.focus(); return; }
+    const stops = [summaryInput, saveButton, cancelButton];
+    if (e.shiftKey ? doc.activeElement === stops[0] : doc.activeElement === stops.at(-1)) { e.preventDefault(); (e.shiftKey ? stops.at(-1) : stops[0]).focus(); }
+  });
+  sheet.addEventListener('mousedown', e => { if (e.target === sheet && !describeBusy) closeDescribe(); });
 
   function render() {
     if (!alive) return;
@@ -478,11 +675,15 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
   const closeMenus = e => { for (const m of root.querySelectorAll('.auto-menu[open]')) if (!m.contains(e.target)) m.open = false; };
   doc.addEventListener('click', closeMenus);
   render(); void refresh();
-  return { refresh, open: openRow, setNotice(text) { notice = text || ''; render(); }, setBusy(v) { busy = !!v; render(); }, dispose() { alive = false; serial++; scope.dispose(); doc.removeEventListener('click', closeMenus); root.remove(); } };
+  return { refresh, open: openRow, describe: id => { const row = rowById(id); if (row) openDescribe(row); }, setNotice(text) { notice = text || ''; render(); }, setBusy(v) { busy = !!v; render(); }, dispose() { alive = false; serial++; describeSerial++; scope.dispose(); doc.removeEventListener('click', closeMenus); root.remove(); } };
 }
 
 /** The Desktop shows these pages only for an OATS that reports them (kernel 0.29.0). */
 export const automationsSupported = cli => !!cli?.ok && Array.isArray(cli.features) && cli.features.includes('automations') && cli.automationsApi === 1;
+/** Summaries are written (Edit summary, the schedule form's Summary) only through an OATS that reports
+ * them (feature automation-descriptions, 0.43): an older kernel refuses a trigger's and has no
+ * description-only update. Reading needs no gate: an older kernel sends null. */
+export const automationDescriptionsSupported = cli => automationsSupported(cli) && cli.features.includes('automation-descriptions');
 /** The row verbs the Desktop server serves per kind (POST /api/automations); a trigger's
  * `status` feeds its detail page and a schedule's `reconcile` its run-state check. */
 export const AUTOMATION_VERBS = Object.freeze({ trigger: ['enable', 'disable', 'test'], schedule: ['enable', 'disable', 'test', 'run'] });
@@ -517,8 +718,8 @@ export function mountAutomationsPage(el, ctx, kind, extend = () => ({}), { cli: 
   }
   function build() {
     if (!alive) return;
-    const cli = readCli(), ok = automationsSupported(cli), ws = currentWorkspace();
-    const key = JSON.stringify([ok, ws, cliKnownUnavailable()]);
+    const cli = readCli(), ok = automationsSupported(cli), ws = currentWorkspace(), describes = automationDescriptionsSupported(cli);
+    const key = JSON.stringify([ok, describes, ws, cliKnownUnavailable()]);
     if (key === shown) return; // CLI polls re-emit; rebuild only when the gate changes
     shown = key; view?.dispose(); view = null; card?.dispose?.(); card = null;
     if (cliKnownUnavailable()) { const body = gate(`${title} need the OATS CLI`); card = cliCard(doc, ctx); body.append(card.el); return; }
@@ -532,6 +733,7 @@ export function mountAutomationsPage(el, ctx, kind, extend = () => ({}), { cli: 
       read: () => call({ kind, action: 'list' }),
       act: (verb, row) => call({ kind, action: verb, key: row.key }),
       status: kind === 'trigger' ? row => call({ kind, action: 'status', key: row.key }) : null,
+      describe: describes ? (row, description) => call({ kind, action: 'describe', key: row.key, description }) : null,
       // Read-only through the contained /api/file; a member without a clone opens its web page.
       openFile: row => { if (row.origin.localPath) ctx.openFile?.(row.origin.localPath); else if (row.origin.url) ctx.openExternal?.(row.origin.url); },
       ...extend(call),

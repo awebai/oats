@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "schedule": {
+      "id": "digest",
+      "cron": "0 7 * * *",
+      "tz": "UTC",
+      "kind": "spawn",
+      "agent": "reviewer",
+      "backend": "tmux",
+      "purpose": "digest",
+      "task": "Write the nightly digest.\nKeep it under a page.",
+      "harness": "claude",
+      "model": "opus",
+      "yolo": false,
+      "wake": {
+        "cron": "0 12 * * *",
+        "tz": "UTC",
+        "message": "Midday: post progress."
+      },
+      "createdAt": "2026-10-06T13:32:15.323Z",
+      "updatedAt": "2026-10-06T13:32:15.323Z",
+      "scope": "/fixture/base/deployment",
+      "scheduleApi": 2,
+      "scheduleHistoryApi": 3,
+      "executionStatus": {
+        "kind": "legacy",
+        "capture": "unknown",
+        "migrationRequired": true
+      },
+      "nextRun": "2026-10-07T07:00:00.000Z",
+      "lastRun": null,
+      "history": {
+        "status": "ok",
+        "stored": 0,
+        "truncated": false
+      },
+      "recentRuns": [],
+      "running": false,
+      "name": "digest",
+      "origin": {
+        "kind": "local",
+        "path": "oats-schedules.json",
+        "url": null,
+        "localPath": "/fixture/base/deployment/oats-schedules.json"
+      },
+      "description": null,
+      "owner": null,
+      "runsOn": null,
+      "runsHere": true,
+      "reason": null,
+      "enabledHere": true,
+      "qualifiedId": "local/digest",
+      "soul": {
+        "name": "reviewer",
+        "origin": null
+      },
+      "teams": [],
+      "launchConfig": null,
+      "concurrency": null,
+      "nextDue": "2026-10-07T07:00:00.000Z",
+      "enabled": true
+    }
+  }
+}

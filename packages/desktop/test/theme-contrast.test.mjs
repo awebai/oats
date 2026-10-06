@@ -572,6 +572,37 @@ for (const [name] of palettes) test(`${name}: Schedules and Triggers text uses A
   }
 });
 
+// Automation summaries (feature automation-descriptions): the derived summary line, the detail's
+// qualified id, a command's argv chips, the reconcile command and the Edit summary sheet, rendered
+// from the captured kernel output (automation-descriptions).
+for (const [name] of palettes) test(`${name}: automation summaries, argv, run state and the Edit summary sheet use AA tokens`, async t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="a"></div><div class="c"></div><div class="d"></div></body></html>`);
+  const doc = dom.window.document;
+  const style = doc.createElement('style'); style.textContent = css; doc.head.append(style);
+  t.after(() => dom.window.close());
+  const list = JSON.parse(readFileSync(new URL('fixtures/automation-descriptions/schedule-list.json', new URL('./', import.meta.url)), 'utf8')).result;
+  const now = () => Date.parse('2026-10-06T10:00:00.000Z');
+  createAutomationsView(doc.querySelector('.a'), { kind: 'schedule', read: async () => list, now });
+  const command = createAutomationsView(doc.querySelector('.c'), { kind: 'schedule', read: async () => list, now });
+  const wake = createAutomationsView(doc.querySelector('.d'), { kind: 'schedule', read: async () => list, now, describe: async () => ({}) });
+  await new Promise(r => setTimeout(r, 0));
+  command.open('local/status'); wake.open('local/standup'); wake.describe('local/standup');
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  for (const [selector, painted, fg, bg] of [
+    ['.a .auto-summary.derived', '.a .auto-table', 'muted', 'surface'], ['.a .auto-summary.auto-none', '.a .auto-table', 'muted', 'surface'],
+    ['.c .auto-qid', '.c .automations', 'muted', 'bg'], ['.c .auto-argv li', '.c .auto-argv li', 'fg', 'chip-bg'],
+    ['.d .auto-command', '.d .auto-command', 'fg', 'chip-bg'], ['.d .auto-verdict.warn', '.d .page-card', 'warn', 'surface'],
+    ['.d .auto-describe h3', '.d .auto-describe', 'fg', 'surface'], ['.d .auto-describe .page-note', '.d .auto-describe', 'muted', 'surface'],
+  ]) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted);
+    assert.ok(el && surface, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background, `var(--${bg})`, painted);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${selector} on ${bg}`);
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+  }
+});
+
 for (const [name] of palettes) test(`${name}: shipped sidebar shortcut hints meet AA on their actual painted controls`, t => {
   const dom = new JSDOM(readFileSync(new URL("index.html", renderer), "utf8"));
   t.after(() => dom.window.close());
@@ -819,7 +850,7 @@ test("every full-screen modal backdrop uses the shared scrim token, and each the
     if (!/position:\s*fixed/.test(body) || !/inset:\s*0\s*[;}]?/.test(body) || /inset:\s*auto/.test(body)) continue;
     overlays.push({ selector: selector.trim(), path, background: body.match(/background(?:-color)?:\s*([^;]+)/)?.[1].trim() });
   }
-  assert.deepEqual(overlays.map(o => o.selector).sort(), [".instance-start-modal", ".palette-overlay", ".schedule-sheet", ".spawn-modal", ".ws-modal", ".ws-sync-sheet"]);
+  assert.deepEqual(overlays.map(o => o.selector).sort(), [".auto-sheet", ".instance-start-modal", ".palette-overlay", ".schedule-sheet", ".spawn-modal", ".ws-modal", ".ws-sync-sheet"]);
   for (const o of overlays) assert.equal(o.background, "var(--scrim)", `${o.selector} (${o.path})`);
   for (const theme of ["dark", "light", "solarized"]) {
     const start = css.indexOf(`[data-theme="${theme}"] {`); assert.ok(start >= 0, theme);

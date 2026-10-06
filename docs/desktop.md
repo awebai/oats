@@ -211,6 +211,17 @@ whether the host scheduler is enabled. Pause, edit, run now and delete operate
 on that workspace's saved jobs. Launching an agent is reported separately from
 the end of its run; neither means its task succeeded.
 
+Each schedule and trigger can carry a one-line **summary** (up to 200
+characters), shown under its name in the list. Without one, the list shows the
+first line of the task or wake message in italics, or "No summary" for a
+command or operation. Set it in the schedule form's Summary field, or with
+**Edit summary** on any local schedule or trigger (leave it empty to remove
+it); a workspace item's summary is its file's `description:` in Git. A detail
+page shows everything the item sends (the whole prompt or message, a command's
+arguments as written, an operation and its home), its run state and where it
+comes from. Writing summaries needs OATS 0.43 or later; an older OATS still
+shows the ones it reports.
+
 The Spawn dialog also has an optional **Recurring wake-up** setting. It binds
 the schedule to the newly created home, preserving that agent's identity and
 work. A wake starts that same home if it is stopped, then sends the saved

@@ -32,7 +32,7 @@ function setup({ mutate, read, instances = [{ home, instance: "reviewer-seat" }]
     if (path.startsWith("/api/panel")) return { instances };
     assert.fail(path);
   } };
-  const view = createSchedulesView(el, ctx, { cli: () => ({ ...cli, ...cliFacts, scheduleApi: 2, automationsApi: 1, features: ["schedule", "automations"] }), subscribeCli: () => () => {} });
+  const view = createSchedulesView(el, ctx, { cli: () => ({ ...cli, ...cliFacts, scheduleApi: 2, automationsApi: 1, features: ["schedule", "automations", ...(cliFacts.features || [])] }), subscribeCli: () => () => {} });
   const rowAction = (id, verb) => el.querySelector(`.auto-row[data-id="local/${id}"] .auto-menu button[data-verb=${verb}]`);
   return { dom, el, calls, view, rowAction, cleanup() { view.dispose(); dom.window.close(); } };
 }

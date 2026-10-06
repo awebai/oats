@@ -1,0 +1,262 @@
+{
+  "capturedBy": "oats-desktop-developer-automation-descriptions: the Desktop's automation summaries on the real kernel",
+  "kernelTree": "oats branch agents/oats-kernel-developer-automation-descriptions @5ede6892ed82834fd3c0550aee1c4557e8241c18",
+  "script": "capture-descriptions.mjs",
+  "fixture": "test/helpers/v2-deployment.mjs as test/automation-descriptions.test.mjs builds it (kb-host, fake gh kb-bot, trust *), package acme.pkg with trigger template harvest-review",
+  "redactions": [
+    "<base> (capture scratch) → /fixture/base",
+    "<oats> (kernel tree) → /fixture/oats"
+  ],
+  "files": {
+    "version": {
+      "argv": [
+        "oats",
+        "version",
+        "--json"
+      ],
+      "exit": 0,
+      "sha256": "bd01ed963d08d82bc9487ed5f479b138c52c3b3b1f4cb999ee69336e9b1a11f1"
+    },
+    "sync": {
+      "argv": [
+        "oats",
+        "sync",
+        "--json"
+      ],
+      "exit": 0,
+      "sha256": "cf0e02f1b1229b005ba6491a01b272a22318235bdda66c96c0008e07d8c1775f"
+    },
+    "schedule-add-command": {
+      "argv": [
+        "oats",
+        "schedule",
+        "add",
+        "status",
+        "--spec-json",
+        "{\"kind\":\"command\",\"cron\":\"30 8 * * 1-5\",\"tz\":\"UTC\",\"cwd\":\"<base>/deployment\",\"argv\":[\"oats\",\"status\",\"--json\",\"--dir\",\"a dir/with spaces\"]}",
+        "--description=Morning workspace status",
+        "--json"
+      ],
+      "exit": 0,
+      "sha256": "a3e9d186ee9b66f520db19fa88cba2f9c29cef83e8df853277beea3ce2ca6894"
+    },
+    "schedule-add-wake": {
+      "argv": [
+        "oats",
+        "schedule",
+        "add",
+        "standup",
+        "--spec-json",
+        "{\"kind\":\"wake\",\"cron\":\"0 9 * * 1-5\",\"tz\":\"Europe/Madrid\",\"home\":\"<base>/deployment/agents/reviewer/instances/reviewer-1\",\"message\":\"\\n  Post the standup summary to the team.\\nThen check the release branch.\"}",
+        "--json"
+      ],
+      "exit": 0,
+      "sha256": "d31447d06f4c731a7ec63c704ead6a736b686c5a1f25f96062c316c994827fab"
+    },
+    "schedule-add-operation": {
+      "argv": [
+        "oats",
+        "schedule",
+        "add",
+        "harvest",
+        "--spec-json",
+        "{\"kind\":\"operation\",\"cron\":\"0 */6 * * *\",\"tz\":\"UTC\",\"home\":\"<base>/deployment/agents/reviewer/instances/reviewer-1\",\"operation\":\"knowledge:harvest\"}",
+        "--json"
+      ],
+      "exit": 0,
+      "sha256": "38b4c4b3f73439f41e2e9e732581532fd9b089d1107c354b7f0257c951376556"
+    },
+    "schedule-add-threw": {
+      "argv": [
+        "oats",
+        "schedule",
+        "add",
+        "threw",
+        "--spec-json",
+        "{\"kind\":\"command\",\"cron\":\"0 * * * *\",\"tz\":\"UTC\",\"cwd\":\"<base>/deployment\",\"argv\":[\"oats\",\"status\"]}",
+        "--json"
+      ],
+      "exit": 0,
+      "sha256": "c074ab394beb662d671c1b3bd9128437be6cca78226bd887fdcb75faaf5828d7"
+    },
+    "schedule-add-spawn": {
+      "argv": [
+        "oats",
+        "schedule",
+        "add",
+        "digest",
+        "--spec-json",
+        "{\"kind\":\"spawn\",\"cron\":\"0 7 * * *\",\"tz\":\"UTC\",\"agent\":\"reviewer\",\"task\":\"Write the nightly digest.\\nKeep it under a page.\",\"purpose\":\"digest\",\"harness\":\"claude\",\"model\":\"opus\",\"yolo\":false,\"backend\":\"tmux\",\"wake\":{\"cron\":\"0 12 * * *\",\"tz\":\"UTC\",\"message\":\"Midday: post progress.\"}}",
+        "--json"
+      ],
+      "exit": 0,
+      "sha256": "4dcaa77722388b859c6cbf9e5cddb8d61b08b833b35e90585e39b76f3e3a80dc"
+    },
+    "trigger-add-local": {
+      "argv": [
+        "oats",
+        "trigger",
+        "add",
+        "--file",
+        "<base>/t.json",
+        "--description=Reviews every harvest PR",
+        "--json"
+      ],
+      "exit": 0,
+      "sha256": "6ddc25b25b40a2126d4eac855d5e132a95f6eafab226928e8fd39f70099c50ab"
+    },
+    "trigger-add-plain": {
+      "argv": [
+        "oats",
+        "trigger",
+        "add",
+        "--file",
+        "<base>/u.json",
+        "--json"
+      ],
+      "exit": 0,
+      "sha256": "e26b465a0a7a32a909e5629c15514a6872a366d5c429a3932c6f64f19392774f"
+    },
+    "schedule-update-describe": {
+      "argv": [
+        "oats",
+        "schedule",
+        "update",
+        "local/harvest",
+        "--description=Harvest the knowledge base",
+        "--json"
+      ],
+      "exit": 0,
+      "sha256": "94e44c29af62e9dd865b5d45b9b95c13918a3f85c421d4969f6e0b7e347ec45a"
+    },
+    "schedule-update-clear": {
+      "argv": [
+        "oats",
+        "schedule",
+        "update",
+        "local/harvest",
+        "--description=",
+        "--json"
+      ],
+      "exit": 0,
+      "sha256": "99074eae63988ecfcd775b0f8ad1a4aac62dff0c1dce6d6d37e65e8756824964"
+    },
+    "schedule-update-invalid": {
+      "argv": [
+        "oats",
+        "schedule",
+        "update",
+        "local/harvest",
+        "--description=two\nlines",
+        "--json"
+      ],
+      "exit": 1,
+      "sha256": "5e0331977bd59c4e9ce9c6c0792d775251fb03c59b6530e77209d9c0e94cd1c1"
+    },
+    "schedule-update-workspace": {
+      "argv": [
+        "oats",
+        "schedule",
+        "update",
+        "ws/nightly",
+        "--description=x",
+        "--json"
+      ],
+      "exit": 1,
+      "sha256": "a595ab56df21b7afdd118351769196a9d8e2f9d2f969d88adeaacafb910ab159"
+    },
+    "trigger-update-describe": {
+      "argv": [
+        "oats",
+        "trigger",
+        "update",
+        "local/kb-triage",
+        "--description=--Triage new harvest PRs",
+        "--json"
+      ],
+      "exit": 0,
+      "sha256": "3edc5d3b4ff32d09e2a503a6a08c7dcbf96ba95474d800a4abc56e447accac5e"
+    },
+    "trigger-update-clear": {
+      "argv": [
+        "oats",
+        "trigger",
+        "update",
+        "local/kb-triage",
+        "--description=",
+        "--json"
+      ],
+      "exit": 0,
+      "sha256": "a9af850f4cf2415537e938e11bfa437d8ba036d615c7fb032b7d0256d2e24e85"
+    },
+    "trigger-update-flag": {
+      "argv": [
+        "oats",
+        "trigger",
+        "update",
+        "local/kb-triage",
+        "--description=x",
+        "--file",
+        "<base>/u.json",
+        "--json"
+      ],
+      "exit": 1,
+      "sha256": "07d325fb4ad7698876bb01ee3d70285e4fbb5d43ad7ec71a35a7fff1ca449411"
+    },
+    "trigger-update-workspace": {
+      "argv": [
+        "oats",
+        "trigger",
+        "update",
+        "ws/from-template",
+        "--description=x",
+        "--json"
+      ],
+      "exit": 1,
+      "sha256": "09c368cab9e896a5dd29134e28247256bebb7360bd9f4ce7868dbfe9335f4143"
+    },
+    "trigger-update-unknown": {
+      "argv": [
+        "oats",
+        "trigger",
+        "update",
+        "local/nope",
+        "--description=x",
+        "--json"
+      ],
+      "exit": 1,
+      "sha256": "d557467a05e8e0884097b207c7224e2b51f21e6bfca224ebe71ac5ba9f529913"
+    },
+    "schedule-list": {
+      "argv": [
+        "oats",
+        "schedule",
+        "list",
+        "--json"
+      ],
+      "exit": 0,
+      "sha256": "fa2d94528ced109d9badb3cad477d807cdead5dde258652a44fca8faa05f4cb5"
+    },
+    "trigger-list": {
+      "argv": [
+        "oats",
+        "trigger",
+        "list",
+        "--json"
+      ],
+      "exit": 0,
+      "sha256": "f4d619fa4de7be8f6bb3366b903602393bc7b68df398c1d1cf5d876a768fbf70"
+    },
+    "schedule-reconcile": {
+      "argv": [
+        "oats",
+        "schedule",
+        "reconcile",
+        "local/standup",
+        "--json"
+      ],
+      "exit": 0,
+      "sha256": "190f53d6aae939ec77b381198bff472012473fd75df93c279c27e56d25632b3f"
+    }
+  }
+}
