@@ -109,9 +109,10 @@ let viewerSeq = 0;
 export const LOCKED_TABLE_BINDINGS = [
   // argv tail for: tmux bind-key -T oatsdesk-locked <key> <command...>
   ["WheelUpPane", "if-shell", "-F", "#{||:#{pane_in_mode},#{mouse_any_flag}}", "send-keys -M", "copy-mode -e; send-keys -M"],
-  // A plain drag selects agent output (#520): tmux's root behavior, so copy mode's own drag-end binding copies the
-  // selection and tmux sends it to the terminal as OSC 52 (set-clipboard external, its default), which the
-  // renderer writes to the clipboard (terminal-clipboard.mjs). An app that grabbed the mouse gets the drag.
+  // tmux's root drag behavior (#520): copy mode's own drag-end binding copies the selection and tmux sends it as
+  // OSC 52 (set-clipboard external, its default); an app that grabbed the mouse gets the drag. It serves the CLI
+  // viewer (lib/session-viewer.mjs binds the same) and the renderer's far-side fallback only: a Desktop tab keeps
+  // the mouse buttons for xterm's own selection (renderer/terminal-mouse.mjs, #672), so no drag reaches tmux there.
   ["MouseDrag1Pane", "if-shell", "-F", "#{||:#{pane_in_mode},#{mouse_any_flag}}", "send-keys -M", "copy-mode -M"],
 ];
 

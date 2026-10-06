@@ -107,6 +107,27 @@ test("live path: setup in onReady, close disposes every resource, setup precedes
   }
 });
 
+// #672: a drag is xterm's own selection, and agent output keeps arriving under it (Claude Code redraws its
+// spinner and status line many times a second). The tab's output path only writes to xterm: nothing in it
+// clears or replaces the selection, a background tab included. (xterm keeps a selection across writes;
+// the live run checks that with a real one.)
+test("agent output under a selection is only written to xterm: the tab never clears the selection", async () => {
+  const d = makeDoubles(Promise.resolve(7));
+  let output = null; const written = [];
+  d.desk.onTermData = (h, fn) => { output = fn; return () => {}; };
+  Object.assign(d.term, { write: data => written.push(data), clearSelection: () => d.log.push("clearSelection"),
+    select: () => d.log.push("select"), selectAll: () => d.log.push("selectAll"), reset: () => d.log.push("reset") });
+  let active = true;
+  const tab = mk(d, { isActive: () => active, ownsFocus: () => active });
+  await tab.start();
+  for (const frame of ["\x1b[s\x1b[24;1H\u280b Working\x1b[u", "\x1b[2J\x1b[Hredrawn", "\x1b[?25l\x1b[1;1Hline\x1b[?25h"]) output(frame);
+  active = false; // a tab in the background repaints too
+  output("\x1b[3;1Hbackground repaint");
+  assert.equal(written.length, 4, "every frame reached xterm");
+  assert.deepEqual(d.log.filter(entry => /select|reset/i.test(entry)), [], "no selection call, no reset");
+  await tab.close();
+});
+
 test("open rejection on a live tab shows the banner and close stays safe", async () => {
   const gate = deferred();
   const d = makeDoubles(gate.promise);
@@ -281,7 +302,7 @@ import { fileURLToPath } from "node:url";
 
 test("terminalOptions: forces Option+drag local selection and carries typography/theme", () => {
   const o = terminalOptions({ fontSize: 13, fontFamily: "mono", fontWeight: 475, theme: { background: "#000" } });
-  assert.equal(o.macOptionClickForcesSelection, true, "Option+drag must force a LOCAL xterm selection (tmux mouse-on eats plain drags)");
+  assert.equal(o.macOptionClickForcesSelection, true, "Option+drag forces a LOCAL xterm selection if the far side's tracking ever reaches xterm (terminal-mouse.mjs fallback)");
   assert.equal(o.scrollback, 5000);
   assert.equal(o.fontSize, 13);
   assert.equal(o.fontFamily, "mono");
@@ -298,7 +319,16 @@ test("terminalOptions: native geometry — no lineHeight, no customGlyphs, OAS o
   const o = terminalOptions({ fontSize: 13, fontFamily: "mono", theme: {}, lineHeight: 1.7 });
   assert.equal("lineHeight" in o, false, "xterm must run at its default line height");
   assert.equal("customGlyphs" in o, false, "xterm's default glyph handling; customGlyphs only justified the tall cells");
-  assert.deepEqual(Object.keys(o).sort(), ["fontFamily", "fontSize", "fontWeight", "macOptionClickForcesSelection", "minimumContrastRatio", "scrollback", "theme"]);
+  assert.deepEqual(Object.keys(o).sort(), ["altClickMovesCursor", "fontFamily", "fontSize", "fontWeight", "macOptionClickForcesSelection", "minimumContrastRatio", "scrollback", "theme"]);
+});
+
+// #694: xterm's selection always owns the buttons (terminal-mouse.mjs), so xterm's Alt+click "move the
+// cursor here" would turn a quick Alt/Option+click into cursor keys, Up/Down among them, which recall a
+// prompt's history. It is off, whatever the caller passes.
+test("terminalOptions: Alt/Option+click never moves the cursor (no cursor keys reach the pane)", () => {
+  const o = terminalOptions({ fontSize: 13, fontFamily: "mono", fontWeight: 475, theme: {} });
+  assert.equal(o.altClickMovesCursor, false, "xterm's default is true");
+  assert.equal(terminalOptions({ fontSize: 13, fontFamily: "mono", theme: {}, altClickMovesCursor: true }).altClickMovesCursor, false);
 });
 
 // The readability floor (#602): xterm moves any text colour that is under 4.5:1

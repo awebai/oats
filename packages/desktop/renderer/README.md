@@ -129,7 +129,11 @@ is dark, White when it is light, each exactly as it is, with nothing imported.
   and mixes of background towards foreground, accent and yellow for raised,
   border, selected and attention surfaces), and each text colour starts from the
   host's (foreground and its mixes for the text ramp, accent, and green, yellow,
-  red and magenta for the status colours).
+  red and magenta for the status colours). The terminal's selection fill starts
+  from the host's selection colour and is moved until it holds 3:1 on the
+  terminal's background, a UI state like the graph edges (`GRAPHIC_PAIRS`;
+  Omarchy's selections are about 1.3:1); its text is then held to 4.5:1 on it
+  (#672).
 - **First paint.** The last state shown is kept in `localStorage`
   (`oats.desktop.hostTheme`) and applied synchronously by `initTheme()`, then
   reconciled with main's answer, so a dark host does not flash White at launch.
@@ -215,15 +219,61 @@ after a theme change the floor is applied against the new palette with no listen
 its own. `node packages/desktop/test/fixtures/terminal-colors.mjs` prints a labelled
 screen of colour cases to look at in a terminal tab, in each theme.
 
-**Copying (#520).** A terminal tab is a tmux client with tmux's mouse on, so a plain
-drag is tmux's: the viewer's locked key table (`tmux-target.mjs`
-`LOCKED_TABLE_BINDINGS`; the kernel's remote viewer, `lib/session-viewer.mjs`, binds
-the same) starts copy mode on `MouseDrag1Pane` unless the pane is in a mode or its
-program grabbed the mouse. On release copy mode copies, and tmux (with its default
-`set-clipboard external`) sends the text as OSC 52, which `terminal-clipboard.mjs`
-writes to the clipboard: write-only, a query is never answered, at most 1 MiB, valid
-UTF-8 only. Option-drag (`macOptionClickForcesSelection`) is still xterm's own
-selection, copied by ⌘C and the right-click menu.
+**Selecting and copying (#520, #672).** A terminal tab is a tmux client with tmux's
+mouse on, and tmux asks the terminal for mouse tracking (DECSET 1000/1002/1006).
+`terminal-mouse.mjs` records those requests instead of letting xterm obey them: a
+DECSET/DECRST whose every parameter is a tracking mode (9, 1000, 1001, 1002, 1003)
+updates its own state and is consumed, so xterm never enables tracking and its
+SelectionService always owns the buttons: a drag, double-click (word) and triple-click
+(line) select, and a click focuses the terminal. A sequence with no tracking mode goes
+to xterm as before (1006 is also recorded, for the wheel's encoding). A sequence mixing
+tracking with other modes is left to xterm, tracking included, which is the old
+behaviour (tmux never sends one); later tracking resets are then passed to xterm too, so
+its tracking cannot stick. A RIS (`ESC c`) clears the recorded state. Each new
+`Terminal` starts clean and tmux re-sends its modes on every attach, reconnects included.
+The wheel is reported by the renderer while VT200, button-event or any-event tracking is on
+(`attachCustomWheelEventHandler`; X10 tracking reports no wheel, as in xterm):
+the line amount is xterm's own (`Viewport.getLinesScrolled`: pixel deltas accumulated per
+cell height, LINE as is, PAGE times rows, Shift or a horizontal-only delta gives nothing),
+and a non-zero amount writes ONE report per event, button 64 up or 65 down plus xterm's
+modifier bits, at the pointer's cell, SGR when 1006 is set (pixels for 1016) and X10
+otherwise (a report that needs a byte above 127 is not sent: xterm sends X10 as binary,
+and `term.input` would UTF-8 encode it), through
+`term.input(seq, false)` and so the usual `onData` → pty path. tmux's locked
+`WheelUpPane` binding (`tmux-target.mjs`) therefore still drives copy-mode scrollback,
+and a program that grabbed the mouse (Codex) still gets the wheel; the selection is
+cleared, since the content scrolls under it. Copying is xterm's: ⌘C and Edit › Copy
+(the menu role), right-click › Copy (xterm puts the selection in its textarea on
+right-click, so the main process's editable context menu copies it) and the
+`terminal.copySelection` action (Ctrl+Shift+C on Linux/Windows, terminal-allowlisted),
+which writes `term.getSelection()` with `navigator.clipboard` and posts a notification
+when the write fails; with nothing selected it does nothing. Every copy trims the spaces
+and tabs that end each line (`trimLineEnds`), as Ghostty, kitty and VTE do: tmux redraws
+copy mode with written spaces, which xterm keeps in a selection. ⌘C and right-click ›
+Copy both reach the xterm textarea's `copy` event; `attachSelectionCopy` takes it first,
+in the capture phase on the tab's wrap, and stops it so xterm's untrimmed handler never
+runs. On Linux xterm also puts a mouse selection in its textarea and selects it there,
+which makes it the primary selection, and middle-click pastes it through xterm's own paste
+handler (its `auxclick` moves the textarea under the pointer), so it is one bracketed paste
+like Ctrl+Shift+V. The primary selection is xterm's text, untrimmed: Chromium takes it only
+from selection changes made while it handles the mouse event, so a later rewrite of the
+textarea (on `select` or `onSelectionChange`) does not reach it, and no public seam runs
+inside every one of xterm's writes (a re-drag of the same range and a right-click on the
+selection fire no selection change). Verified live (#694).
+`terminalOptions` sets `altClickMovesCursor: false`: with the SelectionService always
+owning the buttons, xterm would otherwise turn a quick Alt/Option+click into cursor keys,
+and a tmux client has no scrollback of its own, so those include Up/Down, which recall a
+prompt's history (#694). OSC 52 is still written to
+the clipboard by `terminal-clipboard.mjs`: it is how a tmux copy-mode copy arrives (a
+keyboard copy inside copy mode, or a drag after the mixed-sequence fallback has handed
+tracking to xterm). The renderer consumes the tracking requests whatever the remote's
+version, so no drag from a Desktop tab reaches tmux. Write-only, a query is never
+answered, at most 1 MiB, valid UTF-8 only. A refused OSC 52 write is said only while the
+window has focus (`osc52Refused` in `shell.mjs`): tmux sends its copies to every client
+showing the pane and an unfocused window's write is refused, so a copy made in another
+terminal would otherwise stack notifications. The chord and the action always say it. The viewer's `MouseDrag1Pane` binding is
+unchanged and serves only the direct CLI viewer (`lib/session-viewer.mjs` binds the
+same) and the mixed-sequence fallback: no drag from a Desktop tab reaches tmux.
 
 A terminal tab shows its program the way a native terminal would. It renders with
 xterm's WebGL renderer (`@xterm/addon-webgl`, `createGlyphRenderer` in

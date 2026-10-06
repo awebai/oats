@@ -41,7 +41,7 @@
   --bar-h: 48px;          /* one top-bar height everywhere — borders align across panes */
   --term-bg: #0a0d12;     /* transcript surface follows the theme */
   --term-fg: #e6edf3;
-  --term-sel: #264f78;
+  --term-sel: #2f6496;    /* a drag's selection: 3:1 on --term-bg (a UI state, WCAG 1.4.11), its text 4.5:1 */
   --term-sel-fg: #f5f9ff;
   /* xterm typography: the bundled Inconsolata, then the OS monospace stack; user overrides persist via theme.mjs */
   --term-font-family: "Inconsolata", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -100,7 +100,7 @@
   --live: #d06a00; --attn-bg: #fbf1dc; --attn-border: #e0c48f; --tag-bg: #efefeb; --sel-border: #f3cfa6; --attn-dot: #c98a1b;
   --term-bg: #ffffff;
   --term-fg: #1a1a18;
-  --term-sel: #fff0df;
+  --term-sel: #6394d4;
   --term-sel-fg: #1a1a18;
   --term-font-weight: 475; /* Chromium draws dark-on-light text lighter: 475 matches a native macOS terminal's smoothed stroke (Ghostty font-thicken) */
   --shadow: 0 1px 3px rgb(26 26 24 / .06);
@@ -155,8 +155,8 @@
   --live: #155f96; --attn-bg: #f6e7c1; --attn-border: #d8bd7e; --tag-bg: #ebe3c9; --sel-border: #a9c3d4; --attn-dot: #b58900;
   --term-bg: #fdf6e3;
   --term-fg: #52666c;
-  --term-sel: #d3c9a8;
-  --term-sel-fg: #37424a;
+  --term-sel: #586e75;    /* base01: no light fill holds 3:1 on base3 and 4.5:1 under its text */
+  --term-sel-fg: #fdf6e3;
   --term-font-weight: 450; /* Chromium draws dark-on-light text lighter: 450 matches a native macOS terminal's smoothed stroke (Ghostty font-thicken) */
   --shadow: 0 1px 3px rgb(88 110 117 / .14);
   --shadow-popover: 0 12px 32px rgb(88 110 117 / .18);

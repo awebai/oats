@@ -40,7 +40,8 @@ import { rosterKeyAction, moveTarget } from "./roster-keys.mjs";
 import { createViewLifecycle } from "./view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "./tab-keys.mjs";
 import { createTerminalTab, terminalOptions, fitTerminal, createGlyphRenderer } from "./terminal-tab.mjs";
-import { attachClipboardWrite } from "./terminal-clipboard.mjs";
+import { attachClipboardWrite, attachSelectionCopy, copyTerminalSelection } from "./terminal-clipboard.mjs";
+import { attachTerminalMouse } from "./terminal-mouse.mjs";
 import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "./tab-a11y.mjs";
 import { revealInStrip } from "./reveal-in-scrollport.mjs";
 import { createIntentGate, prepareOwnedOpen, runOpenFlow } from "./open-intent.mjs";
@@ -1889,8 +1890,9 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
     fontWeight: terminalFontWeight(),
     theme: xtermTheme(),
   }));
-  // A drag in the agent's terminal is tmux's copy; tmux sends it as OSC 52 and it goes to the clipboard (write-only, #520).
-  const clipboard = attachClipboardWrite(term, text => navigator.clipboard.writeText(text));
+  // A drag is xterm's own selection, and copies reach the clipboard (#520, #672).
+  const unwireSelection = wireTerminalSelection(term, wrap);
+  const unwire = () => { offTheme(); offTypography(); unwireSelection(); };
   // live terminals follow app theme (colours and text weight) + persisted typography preferences
   const offTheme = onThemeChange(() => { term.options.theme = xtermTheme(); term.options.fontWeight = terminalFontWeight(); });
   const offTypography = onTerminalTypographyChange((next) => {
@@ -1949,13 +1951,13 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
     // Keep the pane/key while cleanup is pending or unconfirmed. Theme hooks
     // belong to the retained view and are removed only on confirmed disposal.
     confirmClose: () => tab.close(),
-    onClose: () => { offTheme(); offTypography(); clipboard.dispose(); },
+    onClose: () => unwire(),
     onShow: () => { requestAnimationFrame(() => { try { glyphs.ensure(); fitTerminal(term, fit); } catch {} }); },
     // user-initiated activation → keyboard lands in the xterm textarea
     focusContent: () => tab.focus(),
     focusOnActivate: true, // addTab's own dedup here is a user jump too
   });
-  if (!made) { offTheme(); offTypography(); clipboard.dispose(); term.dispose(); return; } // lost a race to an identical tab
+  if (!made) { unwire(); term.dispose(); return; } // lost a race to an identical tab
   // A tab opened on a waiting instance shows it at once, from the last painted roster (#558).
   syncTabNeedsInput(tabNeedsInputRoster.instances, tabNeedsInputRoster.workspace);
   made.paneEl.append(wrap);
@@ -2222,6 +2224,41 @@ function toggleSidebar() {
 document.getElementById("sidebar-restore").addEventListener("click", () => runAction("sidebar.toggle"));
 try { if (localStorage.getItem(SIDEBAR_HIDDEN_KEY) === "1") setSidebarHidden(true); } catch { /* storage-less */ }
 
+// Terminal copies (#672). Each open terminal tab's xterm, by its wrap, for terminal.copySelection.
+const terminalSelections = new Map();
+const writeClipboard = text => navigator.clipboard.writeText(text);
+const clipboardRefused = error => notifications.notify("Couldn't copy to the clipboard.", { detail: String(error?.message || error) });
+/** An OSC 52 write the clipboard refused. tmux sends its copies to every client showing the pane, and the
+ * clipboard refuses a write from an unfocused window, so a copy made in another terminal would stack
+ * toasts here: it is said only while this window has focus, and otherwise dropped (nothing could have been
+ * written). The explicit copies (the chord, the action) always say a refusal. (#694) */
+function osc52Refused(error) {
+  if (document.hasFocus()) clipboardRefused(error);
+}
+/** A terminal tab's selection and copies; returns its teardown, run from the tab's onClose. The far
+ * side's mouse tracking is recorded, never obeyed, so a drag is xterm's own selection, and the wheel is
+ * reported to it (terminal-mouse.mjs). ⌘C / Edit › Copy and right-click › Copy copy it with line ends
+ * trimmed. No drag reaches tmux, whatever the remote's version; tmux's own copies (copy mode from the
+ * keyboard, or a drag after the mixed-sequence fallback hands tracking to xterm) arrive as OSC 52
+ * (write-only, terminal-clipboard.mjs). */
+function wireTerminalSelection(term, wrap) {
+  const mouse = attachTerminalMouse(term);
+  const copies = attachSelectionCopy(term, wrap);
+  const clipboard = attachClipboardWrite(term, writeClipboard, osc52Refused);
+  terminalSelections.set(wrap, term);
+  return () => { clipboard.dispose(); copies.dispose(); mouse.dispose(); if (terminalSelections.get(wrap) === term) terminalSelections.delete(wrap); };
+}
+/** The selection of the terminal a chord was pressed in; from the palette or the editor (no key event
+ * in a terminal), the active tab's. A chord pressed outside a terminal copies nothing. Nothing selected:
+ * nothing is written, and nothing reaches the pty. */
+function copyTerminalSelectionFrom(e) {
+  const pressed = e?.target?.closest?.(".term-wrap");
+  if (e?.target && !pressed) return;
+  const wrap = pressed || (activeTab != null ? tabs.get(activeTab)?.paneEl?.querySelector(".term-wrap") : null);
+  const term = wrap ? terminalSelections.get(wrap) : null;
+  if (term) copyTerminalSelection(term, writeClipboard, clipboardRefused);
+}
+
 /** Focus the ACTIVE terminal tab's xterm input from anywhere in the shell
  * (explicit action — rebindable, editor-visible). No default chord: every
  * safe candidate is taken or terminal-hostile (any Ctrl chord belongs to
@@ -2337,6 +2374,8 @@ registerAction({ id: "split.horizontal", label: "Split terminal down (stacked)",
 registerAction({ id: "split.close", label: "Close the split (single pane)", context: "tabs", run: () => closeSplit() });
 // Recovery must also work from the stage. No new default keyboard binding.
 registerAction({ id: "split.restore", label: "Return to terminal groups", context: "global", run: () => restoreTerminalGroups() });
+// Ctrl+Shift+C on Linux/Windows (DEFAULT_KEYMAP), terminal-allowlisted; macOS copies with ⌘C, the menu role.
+registerAction({ id: "terminal.copySelection", label: "Terminal: copy the selection", context: "global", run: (e) => copyTerminalSelectionFrom(e) });
 // No defaultChord (documented): safe candidates are exhausted — rebindable in the editor.
 registerAction({ id: "terminal.focusActive", label: "Focus the active terminal input", context: "global", run: () => focusActiveTerminal() });
 registerAction({ id: "terminal.fontBigger", label: "Terminal: increase font size", context: "global", run: () => setTerminalFontSize(terminalTypography().fontSize + 1) });

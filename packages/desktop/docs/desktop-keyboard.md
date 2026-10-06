@@ -87,6 +87,7 @@ Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
 | Theme picker (`app.themePicker`; also the theme button and **Theme: choose…**) | ⇧⌘Space | Ctrl+Shift+Space | yes |
 | Theme cycle: White, Solarized, Dark, This computer (`app.themeToggle`) | none | none | – (the palette keeps it) |
 | Keyboard shortcuts (`app.shortcuts`) | ⌘, | Ctrl+, | no |
+| Copy the terminal selection (`terminal.copySelection`) | ⌘C (Edit › Copy, the menu role; the action has no macOS default) | Ctrl+Shift+C | yes |
 | Terminal zoom (`terminal.fontBigger`, `…Smaller`, `…Reset`; also Settings → Terminal; reset lands on 15px) | ⌘= ⌘- ⌘0 | Ctrl+= Ctrl+- Ctrl+0 | no |
 | Open a file read-only (`app.openFile`) | ⌘O | Ctrl+O | no |
 | New window, with no workspace (`app.newWindow`) | ⌘⇧N (File → New Window, the menu's accelerator) | none (the palette's **Window: new window**) | – |
@@ -104,6 +105,18 @@ On macOS the "works in a terminal" column is simpler: every ⌘ chord works ther
 From a terminal, Ctrl+Tab switches tabs on every platform, and ⌥⌘digit goes to
 a tab on macOS; on Linux/Windows leave the terminal first (Ctrl+Shift+F6), then
 Alt+digit.
+
+Copy and paste in a terminal (#672). A drag, double-click or triple-click is
+xterm's own selection. Ctrl+Shift+C (`terminal.copySelection`, allowlisted)
+writes it to the clipboard on Linux/Windows; with nothing selected it does
+nothing and sends nothing to the pty, and Ctrl+C, which xterm sends as the
+interrupt, stays the program's. On macOS ⌘C is Edit › Copy, the menu's role,
+not a keymap action. Right-click › Copy works on every platform. Paste is not
+a keymap action either: ⌘V (Edit › Paste) on macOS and Ctrl+Shift+V on
+Linux/Windows are Chromium's own paste into the terminal's input, which xterm
+sends as one bracketed paste when the program asked for it; right-click ›
+Paste does the same, and so does middle-click on Linux, which pastes the
+primary selection a drag sets.
 
 Ctrl+Shift+E (split right on Linux) is also IBus's emoji hotkey on GNOME. The
 Desktop keeps it, after Terminator and Tilix; if IBus takes it first, rebind
@@ -289,7 +302,7 @@ the rig). "Fixed" marks a gap this change closed.
 | Sidebar footer: Spawn instance, sidebar, theme, shortcuts, settings, palette | Tab | Enter/Space run the same registered actions as the chords |
 | Sidebar restore edge | Tab, while the sidebar is hidden (hiding moves focus to it) | Enter |
 | Tab bar | One roving stop per tablist (per group when split); F6 (main). Tabs shrink to fit (spec F); the active tab is scrolled fully into view in its own strip on every activation, close and strip resize, and a focused control is revealed in its strip, never by scrolling an ancestor | Left/Right/Home/End select; Delete closes the focused tab, and the keymap's `tabs.close` (⌘W / Ctrl+Shift+W, rebindable; the close button's tooltip names it) closes the active one; Ctrl+Tab from anywhere in the tab layer, and Ctrl+PgDn/PgUp and go-to-tab outside a terminal (⌥⌘digit also inside one on macOS), **keeping focus in the content (fixed: fell to `<body>`)** |
-| Terminal | Enter on its roster row; F6 (main) | Every key reaches the program except the terminal-allowlisted chords; ⇧⌘F6 / Ctrl+Shift+F6 leaves for the next region |
+| Terminal | Enter on its roster row; F6 (main) | Every key reaches the program except the terminal-allowlisted chords; ⇧⌘F6 / Ctrl+Shift+F6 leaves for the next region; ⌘C / Ctrl+Shift+C copy the selection and ⌘V / Ctrl+Shift+V paste |
 | Tab close buttons | Tab | Enter |
 | Split right / down (the only buttons after the tabs: closing the split and the instance panel are on their chords and the palette) | Tab (shown for a terminal) | Enter; their chords |
 | Split separator | Tab | Arrows resize, Home/End to the ends, **Enter resets to even (fixed: double-click only)** |

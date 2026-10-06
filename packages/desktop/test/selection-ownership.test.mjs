@@ -10,7 +10,6 @@ import { JSDOM } from "jsdom";
 import { createSelectionOwnership, wirePaneSelection } from "../renderer/selection-ownership.mjs";
 import { createIntentGate, prepareOwnedOpen } from "../renderer/open-intent.mjs";
 import { createTerminalTab, terminalOptions, fitTerminal, createGlyphRenderer, terminalKeyDecision, RECONNECT_DELAYS_MS, RECONNECT_RETRIED, NO_ANSWER_RETRIES, LOST_LINK_EXIT } from "../renderer/terminal-tab.mjs";
-import { attachClipboardWrite } from "../renderer/terminal-clipboard.mjs";
 import { createTermLifecycle } from "../renderer/term-lifecycle.mjs";
 import { opened, confirmed, ready } from './helpers/terminal-wire.mjs';
 import { terminalHandle, terminalSameHandle, terminalFailure, terminalMessage } from '../renderer/terminal-contract.mjs';
@@ -87,7 +86,7 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     // Keep identity resolution out of this test; keys/targets remain distinct.
     resolveTerminalOpen: (instances, ref, ws) => ({ inst: { instance: ref, running: true, tmux: { session: "synthetic", window: ref } }, key: `${ws}:${ref}` }),
     ctx: {}, reserveKey, whenKeyFree, createViewLifecycle, createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart,
-    createSelectionOwnership: ownership, wirePaneSelection, terminalOptions, attachClipboardWrite, fitTerminal, createGlyphRenderer,
+    createSelectionOwnership: ownership, wirePaneSelection, terminalOptions, wireTerminalSelection: () => () => {}, fitTerminal, createGlyphRenderer,
     ...workspaceTabs, ...layout, projectSplitDom, splitControlsState,
     // tabs.close also goes into the real keymap: the strip's close chord is the keymap's, not tab-a11y's.
     registerAction: action => { actions.set(action.id, action.run); if (action.id === "tabs.close") t.after(keymap.registerAction(action)); },

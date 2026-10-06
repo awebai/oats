@@ -218,7 +218,7 @@ function sites(theme) {
     loadAddon() {} open() {} dispose() {} onData() {} attachCustomKeyEventHandler() {}
   };
   const context = { ...theme, terminalOptions, Terminal, FitAddon: { FitAddon: class { fit() {} } },
-    onTerminalTypographyChange: () => () => {}, attachClipboardWrite: () => ({ dispose() {} }),
+    onTerminalTypographyChange: () => () => {}, wireTerminalSelection: () => () => {}, wrap: {},
     navigator: { clipboard: { writeText() {} } }, ResizeObserver: class { observe() {} disconnect() {} } };
   // The tab: from its typography read to its theme listener (openTerminalTabInner).
   const tab = runInNewContext(`(() => {\n${slice("  const type = terminalTypography();\n  const term = new Terminal(terminalOptions({", "\n  const offTheme = onThemeChange(")}${slice("() => { term.options.theme = xtermTheme();", "});\n")}\nreturn offTheme;\n})()`, context);
@@ -265,7 +265,8 @@ for (const palette of Object.keys(WEIGHTS)) {
 }
 
 // "This computer" (#602): a host theme pushed by main reaches both terminals through the same
-// onThemeChange path as any theme change. The colours are the host's; the weight is the base
+// onThemeChange path as any theme change. The colours are the host's (the selection moved until it is
+// visible, theme-contrast.test.mjs); the weight is the base
 // theme's (Dark's 400 for a dark host palette, White's 475 for a light one).
 test("This computer: a pushed host theme updates both shell terminals' colours and weight (dark 400, light 475), and the floor stays", t => {
   const u = fixture(t);
@@ -285,7 +286,9 @@ test("This computer: a pushed host theme updates both shell terminals' colours a
     for (const [site, term] of terms) {
       assert.equal(term.options.fontWeight, weight, `${site}: ${name} is drawn at the base theme's weight`);
       assert.equal(term.options.theme.background, state.colors.background, `${site}: the host's background`);
-      assert.equal(term.options.theme.selectionBackground, state.colors.selection);
+      // The selection is derived (#672): the host's colour moved until it holds 3:1 on the terminal.
+      assert.equal(term.options.theme.selectionBackground, u.theme.xtermTheme().selectionBackground, `${site}: the derived selection`);
+      assert.notEqual(term.options.theme.selectionBackground, state.colors.selection, `${site}: ${name}'s 1.3:1 selection was moved`);
       assert.deepEqual([term.options.theme.black, term.options.theme.red, term.options.theme.brightBlack, term.options.theme.brightWhite],
         [state.colors.ansi[0], state.colors.ansi[1], state.colors.ansi[8], state.colors.ansi[15]], `${site}: the host's own terminal colours`);
       assert.equal(term.options.theme.foreground, u.theme.xtermTheme().foreground);
