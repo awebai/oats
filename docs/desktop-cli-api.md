@@ -1923,7 +1923,11 @@ route target:
                "running":true,"identity":{"alias":"dev-a","address":"acme/dev-a"},"identityAddress":"acme/dev-a",
                "teams":[{"label":"default","team":"acme:team"}],"startedAt":"2026-09-29T10:00:00.000Z","createdAt":"2026-09-29T09:58:12.004Z",
                "model":"opus","runtimeState":null,"parentInstance":"lead","siblingInstance":null,"relation":"child","relativeTo":"lead",
-               "spawnOrigin":"instance","retirePending":false,"rollbackIncomplete":false,
+               "spawnOrigin":"instance","work":"worktree","repo":"/srv/team/ws","branch":"agents/dev-a","modelFrom":"soul",
+               "soul":{"repoKey":"github.com/acme/team","commit":"66566512…","current":"9c1e04ab…","status":"moved"},
+               "modules":[{"name":"oats.okf","from":{"kind":"package","package":"oats.okf","version":"2.1.3","commit":"ab897841…","integrity":"sha256-bada35…","repoKey":"github.com/awebai/oats-okf"},
+                           "commit":"ab897841…","current":{"commit":"ab897841…","version":"2.1.3"},"status":"current"}],
+               "retirePending":false,"rollbackIncomplete":false,
                "savedRoute":false,"addressable":true,"missingRemotely":false}],
  "retireFailures":[]}
 ```
@@ -1940,9 +1944,16 @@ route target:
 - **Instance rows** relay the host's own `status --json` row: `identity`,
   `identityAddress`, `teams`, `startedAt`, `createdAt`, `model`,
   `runtimeState`, `parentInstance`, `siblingInstance`, `relation`,
-  `relativeTo` and `spawnOrigin` are always present, `null` when the host
-  does not supply them (a host before 0.31, a fact it never recorded, or a
-  saved route the host no longer lists). Nothing is derived on this side.
+  `relativeTo` and `spawnOrigin`, and (relayed from 0.42.1) `work`, `repo`,
+  `branch`, `modelFrom`, `soul` and `modules`, are always present, `null`
+  when the host does not supply them (an older host, a fact it never
+  recorded, or a saved route the host no longer lists). Each is the
+  [local row's](#the-roster-oats-status---json) fact of the same name,
+  relayed as the host answered it. Nothing is derived on this side: `repo`
+  is a path on the host, never read here, and `soul` and `modules` are the
+  host's own drift observation (against its own members and lock), not
+  recomputed: `modules` is the drift rows, or the recorded map when the host
+  could not read its workspace, as on a local row.
 - **`waitingOnYou`** (0.40.2, [Waiting on you](#waiting-on-you)) is on a row
   only when the host's kernel reports it: a row from a host before 0.40.0,
   and a saved route the host did not list, have no such key. Absent means
