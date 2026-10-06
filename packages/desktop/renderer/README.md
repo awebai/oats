@@ -215,15 +215,37 @@ after a theme change the floor is applied against the new palette with no listen
 its own. `node packages/desktop/test/fixtures/terminal-colors.mjs` prints a labelled
 screen of colour cases to look at in a terminal tab, in each theme.
 
-**Copying (#520).** A terminal tab is a tmux client with tmux's mouse on, so a plain
-drag is tmux's: the viewer's locked key table (`tmux-target.mjs`
-`LOCKED_TABLE_BINDINGS`; the kernel's remote viewer, `lib/session-viewer.mjs`, binds
-the same) starts copy mode on `MouseDrag1Pane` unless the pane is in a mode or its
-program grabbed the mouse. On release copy mode copies, and tmux (with its default
-`set-clipboard external`) sends the text as OSC 52, which `terminal-clipboard.mjs`
-writes to the clipboard: write-only, a query is never answered, at most 1 MiB, valid
-UTF-8 only. Option-drag (`macOptionClickForcesSelection`) is still xterm's own
-selection, copied by ⌘C and the right-click menu.
+**Selecting and copying (#520, #672).** A terminal tab is a tmux client with tmux's
+mouse on, and tmux asks the terminal for mouse tracking (DECSET 1000/1002/1006).
+`terminal-mouse.mjs` records those requests instead of letting xterm obey them: a
+DECSET/DECRST whose every parameter is a tracking mode (9, 1000, 1001, 1002, 1003)
+updates its own state and is consumed, so xterm never enables tracking and its
+SelectionService always owns the buttons: a drag, double-click (word) and triple-click
+(line) select, and a click focuses the terminal. A sequence with no tracking mode goes
+to xterm as before (1006 is also recorded, for the wheel's encoding). A sequence mixing
+tracking with other modes is left to xterm, tracking included, which is the old
+behaviour (tmux never sends one); later tracking resets are then passed to xterm too, so
+its tracking cannot stick. A RIS (`ESC c`) clears the recorded state. Each new
+`Terminal` starts clean and tmux re-sends its modes on every attach, reconnects included.
+The wheel is reported by the renderer while tracking is on (`attachCustomWheelEventHandler`):
+the line amount is xterm's own (`Viewport.getLinesScrolled`: pixel deltas accumulated per
+cell height, LINE as is, PAGE times rows, Shift or a horizontal-only delta gives nothing),
+and a non-zero amount writes ONE report per event, button 64 up or 65 down plus xterm's
+modifier bits, at the pointer's cell, SGR when 1006 is set and X10 otherwise, through
+`term.input(seq, false)` and so the usual `onData` → pty path. tmux's locked
+`WheelUpPane` binding (`tmux-target.mjs`) therefore still drives copy-mode scrollback,
+and a program that grabbed the mouse (Codex) still gets the wheel; the selection is
+cleared, since the content scrolls under it. Copying is xterm's: ⌘C and Edit › Copy
+(the menu role), right-click › Copy (xterm puts the selection in its textarea on
+right-click, so the main process's editable context menu copies it) and the
+`terminal.copySelection` action (Ctrl+Shift+C on Linux/Windows, terminal-allowlisted),
+which writes `term.getSelection()` with `navigator.clipboard` and posts a notification
+when the write fails; with nothing selected it does nothing. OSC 52 is still written to
+the clipboard by `terminal-clipboard.mjs`: it is how a tmux copy-mode copy arrives (a
+keyboard copy inside copy mode, an older remote viewer). Write-only, a query is never
+answered, at most 1 MiB, valid UTF-8 only. The viewer's `MouseDrag1Pane` binding is
+unchanged and serves only the direct CLI viewer (`lib/session-viewer.mjs` binds the
+same) and the mixed-sequence fallback: no drag from a Desktop tab reaches tmux.
 
 A terminal tab shows its program the way a native terminal would. It renders with
 xterm's WebGL renderer (`@xterm/addon-webgl`, `createGlyphRenderer` in
