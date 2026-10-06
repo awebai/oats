@@ -314,6 +314,8 @@ select.
 
 Paste with ⌘V (macOS), **Ctrl+Shift+V** (Linux and Windows) or right-click ›
 Paste. The text reaches the agent's draft as one bracketed paste, as before.
+On Linux, a drag also sets the primary selection, and middle-click pastes it
+(one bracketed paste), as in other Linux terminals.
 Nothing in a terminal can read the clipboard.
 
 **In your own terminal** (`oats session attach`), tmux keeps the mouse for

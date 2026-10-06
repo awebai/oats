@@ -252,12 +252,23 @@ and tabs that end each line (`trimLineEnds`), as Ghostty, kitty and VTE do: tmux
 copy mode with written spaces, which xterm keeps in a selection. ⌘C and right-click ›
 Copy both reach the xterm textarea's `copy` event; `attachSelectionCopy` takes it first,
 in the capture phase on the tab's wrap, and stops it so xterm's untrimmed handler never
-runs. OSC 52 is still written to
+runs. On Linux xterm also puts a mouse selection in its textarea and selects it there,
+which makes it the primary selection; `attachPrimarySelectionTrim` (on `onSelectionChange`,
+only while the textarea holds exactly xterm's copy of the selection) puts the trimmed text
+there instead, and middle-click pastes it through xterm's own paste handler (its `auxclick`
+moves the textarea under the pointer), so it is one bracketed paste like Ctrl+Shift+V.
+`terminalOptions` sets `altClickMovesCursor: false`: with the SelectionService always
+owning the buttons, xterm would otherwise turn a quick Alt/Option+click into cursor keys,
+and a tmux client has no scrollback of its own, so those include Up/Down, which recall a
+prompt's history (#694). OSC 52 is still written to
 the clipboard by `terminal-clipboard.mjs`: it is how a tmux copy-mode copy arrives (a
 keyboard copy inside copy mode, or a drag after the mixed-sequence fallback has handed
 tracking to xterm). The renderer consumes the tracking requests whatever the remote's
 version, so no drag from a Desktop tab reaches tmux. Write-only, a query is never
-answered, at most 1 MiB, valid UTF-8 only. The viewer's `MouseDrag1Pane` binding is
+answered, at most 1 MiB, valid UTF-8 only. A refused OSC 52 write is said only while the
+window has focus (`osc52Refused` in `shell.mjs`): tmux sends its copies to every client
+showing the pane and an unfocused window's write is refused, so a copy made in another
+terminal would otherwise stack notifications. The chord and the action always say it. The viewer's `MouseDrag1Pane` binding is
 unchanged and serves only the direct CLI viewer (`lib/session-viewer.mjs` binds the
 same) and the mixed-sequence fallback: no drag from a Desktop tab reaches tmux.
 

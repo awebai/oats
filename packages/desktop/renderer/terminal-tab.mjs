@@ -126,10 +126,13 @@ export const TERMINAL_MINIMUM_CONTRAST = 4.5;
 export function terminalOptions({ fontSize, fontFamily, fontWeight, theme }) {
   // A drag is xterm's own selection (terminal-mouse.mjs keeps tmux's mouse tracking from xterm); Option-drag
   // still selects on macOS if the far side's tracking ever reaches xterm (the mixed-sequence fallback).
+  // altClickMovesCursor is off: with xterm's selection always owning the buttons, a quick Alt/Option+click
+  // would otherwise send cursor keys to move the prompt's cursor there, and a tmux client has no scrollback
+  // of its own, so that includes Up/Down, which recall a prompt's history (Claude Code's) (#694).
   // fontWeight is the theme's (terminalFontWeight); fontWeightBold stays xterm's bold.
   // The contrast floor is not a parameter: one number for every terminal and theme.
   return { fontSize, fontFamily, fontWeight, theme, scrollback: 5000, macOptionClickForcesSelection: true,
-    minimumContrastRatio: TERMINAL_MINIMUM_CONTRAST };
+    altClickMovesCursor: false, minimumContrastRatio: TERMINAL_MINIMUM_CONTRAST };
 }
 export function terminalKeyDecision(ev, interceptKey) {
   const { suppress, byte } = shiftEnterAction(ev);

@@ -88,3 +88,21 @@ export function attachSelectionCopy(term, target) {
   target.addEventListener('copy', onCopy, true);
   return { dispose: () => target.removeEventListener('copy', onCopy, true) };
 }
+
+/** Linux's primary selection, which middle-click pastes, trimmed like every copy. On Linux xterm puts a mouse
+ * selection in its textarea and selects it there, which is what makes it the primary selection. When the
+ * selection settles (onSelectionChange), and the textarea holds exactly xterm's copy of it, this puts the
+ * trimmed text there instead and selects it again. Anything else in the textarea (typed or composed text, a
+ * selection not made with the mouse, another platform) is left alone. Returns the subscription. */
+export function attachPrimarySelectionTrim(term) {
+  return term.onSelectionChange(() => {
+    const area = term.textarea;
+    if (!area || !term.hasSelection()) return;
+    const text = term.getSelection();
+    if (area.value !== text) return;
+    const trimmed = trimLineEnds(text);
+    if (trimmed === text) return;
+    area.value = trimmed;
+    area.select();
+  });
+}

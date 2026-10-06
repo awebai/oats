@@ -115,7 +115,8 @@ not a keymap action. Right-click › Copy works on every platform. Paste is not
 a keymap action either: ⌘V (Edit › Paste) on macOS and Ctrl+Shift+V on
 Linux/Windows are Chromium's own paste into the terminal's input, which xterm
 sends as one bracketed paste when the program asked for it; right-click ›
-Paste does the same.
+Paste does the same, and so does middle-click on Linux, which pastes the
+primary selection a drag sets.
 
 Ctrl+Shift+E (split right on Linux) is also IBus's emoji hotkey on GNOME. The
 Desktop keeps it, after Terminator and Tilix; if IBus takes it first, rebind

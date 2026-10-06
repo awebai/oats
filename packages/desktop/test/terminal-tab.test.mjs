@@ -319,7 +319,16 @@ test("terminalOptions: native geometry — no lineHeight, no customGlyphs, OAS o
   const o = terminalOptions({ fontSize: 13, fontFamily: "mono", theme: {}, lineHeight: 1.7 });
   assert.equal("lineHeight" in o, false, "xterm must run at its default line height");
   assert.equal("customGlyphs" in o, false, "xterm's default glyph handling; customGlyphs only justified the tall cells");
-  assert.deepEqual(Object.keys(o).sort(), ["fontFamily", "fontSize", "fontWeight", "macOptionClickForcesSelection", "minimumContrastRatio", "scrollback", "theme"]);
+  assert.deepEqual(Object.keys(o).sort(), ["altClickMovesCursor", "fontFamily", "fontSize", "fontWeight", "macOptionClickForcesSelection", "minimumContrastRatio", "scrollback", "theme"]);
+});
+
+// #694: xterm's selection always owns the buttons (terminal-mouse.mjs), so xterm's Alt+click "move the
+// cursor here" would turn a quick Alt/Option+click into cursor keys, Up/Down among them, which recall a
+// prompt's history. It is off, whatever the caller passes.
+test("terminalOptions: Alt/Option+click never moves the cursor (no cursor keys reach the pane)", () => {
+  const o = terminalOptions({ fontSize: 13, fontFamily: "mono", fontWeight: 475, theme: {} });
+  assert.equal(o.altClickMovesCursor, false, "xterm's default is true");
+  assert.equal(terminalOptions({ fontSize: 13, fontFamily: "mono", theme: {}, altClickMovesCursor: true }).altClickMovesCursor, false);
 });
 
 // The readability floor (#602): xterm moves any text colour that is under 4.5:1

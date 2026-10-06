@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { osc52Text, attachClipboardWrite, copyTerminalSelection, attachSelectionCopy, trimLineEnds, OSC52_MAX_BYTES } from '../renderer/terminal-clipboard.mjs';
+import { osc52Text, attachClipboardWrite, copyTerminalSelection, attachSelectionCopy, attachPrimarySelectionTrim, trimLineEnds, OSC52_MAX_BYTES } from '../renderer/terminal-clipboard.mjs';
 
 const b64 = text => Buffer.from(text, 'utf8').toString('base64');
 
@@ -145,4 +145,49 @@ test('attachSelectionCopy: with no selection the event is left alone', t => {
   const result = d.copy();
   assert.equal(d.xtermRan.length, 1, 'xterm\'s listener still runs');
   assert.equal(result.data, '', 'only xterm touched the data');
+});
+
+// #694: on Linux, xterm puts a mouse selection in its textarea and selects it, which makes it the primary
+// selection that middle-click pastes. That copy is trimmed like every other one.
+function primaryTerm(doc, selection) {
+  const listeners = new Set(), textarea = doc.createElement('textarea');
+  doc.body.append(textarea);
+  const term = { textarea, selection, hasSelection: () => term.selection !== '', getSelection: () => term.selection,
+    onSelectionChange(fn) { listeners.add(fn); return { dispose: () => listeners.delete(fn) }; },
+    settle() { for (const fn of listeners) fn(); }, listeners };
+  return term;
+}
+const mirror = term => { term.textarea.value = term.selection; term.textarea.select(); }; // xterm's onLinuxMouseSelection
+
+test('attachPrimarySelectionTrim: xterm\'s copy of a mouse selection in its textarea becomes the trimmed text, selected', t => {
+  const dom = new JSDOM('<body></body>'); t.after(() => dom.window.close());
+  const term = primaryTerm(dom.window.document, 'line 084   \nline 085\t\n  inner  x  ');
+  const sub = attachPrimarySelectionTrim(term);
+  mirror(term); term.settle();
+  assert.equal(term.textarea.value, 'line 084\nline 085\n  inner  x');
+  assert.equal(term.textarea.selectionStart, 0);
+  assert.equal(term.textarea.selectionEnd, term.textarea.value.length, 'selected again, so it is the primary selection');
+  sub.dispose();
+  assert.equal(term.listeners.size, 0);
+});
+
+test('attachPrimarySelectionTrim: anything else in the textarea is left alone', t => {
+  const dom = new JSDOM('<body></body>'); t.after(() => dom.window.close());
+  const term = primaryTerm(dom.window.document, 'selected   ');
+  attachPrimarySelectionTrim(term);
+  term.textarea.value = 'typed or composed';
+  term.settle();
+  assert.equal(term.textarea.value, 'typed or composed', 'not xterm\'s copy of the selection');
+  term.selection = '';
+  term.textarea.value = 'selected   ';
+  term.settle();
+  assert.equal(term.textarea.value, 'selected   ', 'nothing selected');
+  term.selection = 'nothing to trim';
+  mirror(term);
+  const select = term.textarea.select;
+  term.textarea.select = () => { throw new Error('nothing to trim: not selected again'); };
+  term.settle();
+  term.textarea.select = select;
+  assert.equal(term.textarea.value, 'nothing to trim');
+  assert.doesNotThrow(() => attachPrimarySelectionTrim({ ...term, textarea: undefined }) && term.settle(), 'no textarea yet');
 });
