@@ -590,7 +590,9 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
   const hint = node('p', `One line of up to ${DESCRIPTION_MAX} characters. Leave it empty to remove the summary.`, 'page-note'); hint.id = `auto-describe-hint-${kind}`;
   form.setAttribute('role', 'dialog'); form.setAttribute('aria-modal', 'true'); form.setAttribute('aria-labelledby', sheetTitle.id); form.setAttribute('aria-describedby', hint.id);
   const fieldLabel = node('label'), summaryInput = node('input', undefined, 'field');
-  summaryInput.type = 'text'; summaryInput.name = 'description'; summaryInput.maxLength = DESCRIPTION_MAX; summaryInput.autocomplete = 'off'; summaryInput.spellcheck = true;
+  // No native maxlength: it counts UTF-16 units, so it would cut a valid summary of emoji short of the
+  // rule's 200 characters (code points); descriptionValid checks the length on save, with its message.
+  summaryInput.type = 'text'; summaryInput.name = 'description'; summaryInput.autocomplete = 'off'; summaryInput.spellcheck = true;
   summaryInput.setAttribute('aria-describedby', hint.id);
   fieldLabel.append(node('span', 'Summary'), summaryInput);
   const sheetError = node('p', '', 'auto-describe-error'); sheetError.setAttribute('role', 'alert');

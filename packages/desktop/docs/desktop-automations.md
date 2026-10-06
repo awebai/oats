@@ -85,7 +85,9 @@ run state (`running`, `attempt`, `pendingWake`) and `createdAt`/`updatedAt`.
   invalidates it, focus parks on the sheet's status line while it runs, and it
   returns to the opening control, or the same control by identity after the
   re-read. Both editors send the text as typed (the kernel keeps boundary
-  spaces); only an empty value clears. The schedule form's Summary field shows only with the feature;
+  spaces); only an empty value clears. Neither sets a native `maxlength`: it
+  counts UTF-16 units and would cut a valid summary of emoji short, so the
+  code-point rule (`descriptionValid`) alone limits the length, with its message. The schedule form's Summary field shows only with the feature;
   without it the form keeps the stored summary as it is.
 
 ## Opening a definition

@@ -233,7 +233,7 @@ test('Edit summary: the sheet opens on the summary, saves the text as typed, re-
   u.$('.page-bar-actions [data-verb=describe]').focus(); u.$('.page-bar-actions [data-verb=describe]').click();
   const sheet = u.$('.auto-sheet'), input = sheet.querySelector('input');
   assert.equal(sheet.hidden, false); assert.equal(u.active(), input); assert.equal(input.value, 'Morning workspace status');
-  assert.equal(input.maxLength, 200);
+  assert.equal(input.hasAttribute('maxlength'), false, 'no native UTF-16 limit (the rule counts code points)');
   const form = sheet.querySelector('form');
   assert.deepEqual([form.getAttribute('role'), form.getAttribute('aria-modal'), u.dom.window.document.getElementById(form.getAttribute('aria-labelledby')).textContent], ['dialog', 'true', 'Summary of status']);
   input.value = '  Status, every weekday morning  ';
@@ -304,6 +304,40 @@ test('Edit summary while saving: focus parks on the status line, Escape and Tab 
   assert.equal(u.reads.length, reads, 'the disposed view does not re-read');
 });
 
+// maxlength counts UTF-16 code units (HTML: "limiting user input length"), the rule code points: a
+// native limit of 200 would stop 200 emoji (400 units) at 100. Neither editor sets one, so what the
+// browser takes from typing or pasting is exactly what the validator judges.
+test('summary length is the rule\'s alone: no native limit cuts 200 emoji short; the 201st is refused inline', async t => {
+  const emoji = '\u{1F642}'.repeat(200); assert.equal(emoji.length, 400, 'UTF-16 units');
+  const calls = [];
+  const u = mount(t, 'schedule', { describe: async (row, text) => { calls.push(text); return {}; } }); await tick();
+  u.view.open('local/harvest'); await tick(); u.$('.page-lede button').click();
+  const input = u.$('.auto-sheet input'), form = u.$('.auto-sheet form');
+  assert.equal(input.hasAttribute('maxlength'), false); assert.equal(input.maxLength, -1, 'no limit at all');
+  input.value = emoji; assert.equal(input.validity.tooLong, false); assert.equal(input.validity.valid, true);
+  form.dispatchEvent(new u.dom.window.Event('submit', { cancelable: true })); await tick();
+  assert.deepEqual(calls, [emoji], '200 characters go through');
+  u.view.open('local/harvest'); await tick(); u.$('.page-lede button').click();
+  u.$('.auto-sheet input').value = emoji + '\u{1F642}';
+  form.dispatchEvent(new u.dom.window.Event('submit', { cancelable: true })); await tick();
+  assert.equal(calls.length, 1, 'the 201st is refused before any request');
+  assert.match(u.$('.auto-describe-error').textContent, /up to 200 characters/);
+  // The schedule form, the same.
+  let saved = null;
+  const s = setup({ cliFacts: { features: ['automation-descriptions'] }, read: async () => ({ schedules: [{ kind: 'wake', id: 'review', enabled: true, cron: '0 9 * * *', tz: 'UTC', home: '/team/agents/reviewer/instances/reviewer-seat', message: 'Check work.' }], scheduler: { installed: true, active: true, registered: true } }), mutate: async (path, body) => { saved = body; return { schedule: { ...body.spec, id: 'review' } }; } });
+  try {
+    await tick(); s.rowAction('review', 'edit').click(); await tick();
+    const field = s.el.querySelector('form').elements.description;
+    assert.equal(field.maxLength, -1); field.value = emoji; assert.equal(field.validity.valid, true);
+    s.el.querySelector('form').dispatchEvent(new s.dom.window.Event('submit', { cancelable: true })); await tick();
+    assert.equal(saved.spec.description, emoji);
+    saved = null; s.rowAction('review', 'edit').click(); await tick();
+    s.el.querySelector('form').elements.description.value = emoji + '\u{1F642}';
+    s.el.querySelector('form').dispatchEvent(new s.dom.window.Event('submit', { cancelable: true })); await tick();
+    assert.equal(saved, null); assert.match(s.el.querySelector('.schedule-form-error').textContent, /Summary: one line of up to 200 characters/);
+  } finally { s.cleanup(); }
+});
+
 test('the mounted page: Edit summary only with automation-descriptions, and it posts describe with the qualified key', async t => {
   const dom = new JSDOM('<!doctype html><body><main></main></body>', { pretendToBeVisual: true });
   const el = dom.window.document.querySelector('main'), bodies = [];
@@ -340,7 +374,7 @@ test('the schedule form: Summary shows only with the feature and is sent as type
   } finally { r.s.cleanup(); }
   r = await run(['automation-descriptions']);
   try {
-    assert.equal(r.field.hidden, false); assert.equal(r.form.elements.description.value, '  Keep — as stored  '); assert.equal(r.form.elements.description.maxLength, 200);
+    assert.equal(r.field.hidden, false); assert.equal(r.form.elements.description.value, '  Keep — as stored  '); assert.equal(r.form.elements.description.hasAttribute('maxlength'), false);
     assert.equal((await r.submit()).spec.description, '  Keep — as stored  ', 'untouched: kept exactly');
   } finally { r.s.cleanup(); }
   r = await run(['automation-descriptions']);
