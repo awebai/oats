@@ -129,7 +129,11 @@ is dark, White when it is light, each exactly as it is, with nothing imported.
   and mixes of background towards foreground, accent and yellow for raised,
   border, selected and attention surfaces), and each text colour starts from the
   host's (foreground and its mixes for the text ramp, accent, and green, yellow,
-  red and magenta for the status colours).
+  red and magenta for the status colours). The terminal's selection fill starts
+  from the host's selection colour and is moved until it holds 3:1 on the
+  terminal's background, a UI state like the graph edges (`GRAPHIC_PAIRS`;
+  Omarchy's selections are about 1.3:1); its text is then held to 4.5:1 on it
+  (#672).
 - **First paint.** The last state shown is kept in `localStorage`
   (`oats.desktop.hostTheme`) and applied synchronously by `initTheme()`, then
   reconciled with main's answer, so a dark host does not flash White at launch.

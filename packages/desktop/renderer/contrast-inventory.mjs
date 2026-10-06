@@ -47,8 +47,12 @@ export const TEXT_PAIRS = Object.freeze([
 ].map(pair => Object.freeze(pair)));
 
 /** [graphic, surface] pairs held to GRAPHIC_CONTRAST: graph connectors (the
- * Active overview's edges, Setup's tree lines) are meaningful graphics. */
-export const GRAPHIC_PAIRS = Object.freeze(["bg", "surface", "surface-2"].map(bg => Object.freeze(["graph-edge", bg])));
+ * Active overview's edges, Setup's tree lines) are meaningful graphics, and a
+ * terminal's selection fill is the one sign of what a copy will take (issue 672). */
+export const GRAPHIC_PAIRS = Object.freeze([
+  ...["bg", "surface", "surface-2"].map(bg => Object.freeze(["graph-edge", bg])),
+  Object.freeze(["term-sel", "term-bg"]),
+]);
 
 /** Translucent surfaces and the token painted behind each: contrast is measured
  * on the composite. The markdown scroll surface paints --bg behind its code blocks. */

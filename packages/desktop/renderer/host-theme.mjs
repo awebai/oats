@@ -94,7 +94,6 @@ export function deriveHostTokens(colors, mode, base = () => undefined) {
     "tree-line": mixHex(background, foreground, 0.2), "tree-link": mixHex(background, foreground, 0.4),
     sel: mixHex(background, accent, 0.18), "sel-border": mixHex(background, accent, 0.45),
     "attn-bg": mixHex(background, yellow, 0.16), "attn-border": mixHex(background, yellow, 0.4), "attn-dot": yellow,
-    "term-sel": selection,
   };
   // The 16 terminal colours are the host's, unadjusted (HOST_UNADJUSTED_PAIRS says why).
   ANSI_TOKENS.forEach((token, slot) => { tokens[token] = ansi[slot]; });
@@ -118,6 +117,11 @@ export function deriveHostTokens(colors, mode, base = () => undefined) {
     if (value) tokens[token] = value;
     return Boolean(value);
   };
+  // A terminal's selection (#672) is the one sign of what a copy takes: its fill holds 3:1 on the terminal's
+  // background (GRAPHIC_PAIRS) and its text 4.5:1 on the fill. The host's selection colour, moved until it
+  // does (Omarchy's are about 1.3:1). Moving all the way to white or black is at least 4.58:1 on any colour,
+  // so both always get there.
+  if (!hold("term-sel", selection, GRAPHIC_PAIRS, GRAPHIC_CONTRAST)) return null;
   const secondary = mixHex(foreground, background, 0.3);
   // --primary-fg and --primary-bg are each other's surface (toast buttons invert on focus):
   // the first starts as the host's background, and is held to the final --primary-bg below.

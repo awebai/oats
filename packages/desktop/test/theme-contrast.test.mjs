@@ -103,7 +103,7 @@ test("the shared inventory holds token names only, covers the 16 ANSI colours, a
   assert.equal(new Set(pairs.map(pair => pair.join(" on "))).size, pairs.length, "no pair twice");
   assert.equal(ansi.length, 16);
   for (const token of ansi) assert.ok(pairs.some(([fg, bg]) => fg === token && bg === "term-bg"), `--${token} is held on --term-bg`);
-  assert.deepEqual(GRAPHIC_PAIRS, [["graph-edge", "bg"], ["graph-edge", "surface"], ["graph-edge", "surface-2"]]);
+  assert.deepEqual(GRAPHIC_PAIRS, [["graph-edge", "bg"], ["graph-edge", "surface"], ["graph-edge", "surface-2"], ["term-sel", "term-bg"]]);
   assert.deepEqual(PAINTED_OVER, [["md-code-bg", "bg"]]);
   assert.deepEqual(HOST_UNADJUSTED_PAIRS, ansi.map(token => [token, "term-bg"]), "the host theme's one exception: its terminal colours, unadjusted");
   assert.equal(TEXT_CONTRAST, 4.5); assert.equal(GRAPHIC_CONTRAST, 3);
@@ -214,7 +214,16 @@ for (const [name, palette] of selectionPalettes) test(`${name}: the terminal sel
   for (const token of ["term-sel", "term-sel-fg"]) assert.match(palette.get(token) || "", /^#[0-9a-f]{6}$/i, `${name} defines an opaque --${token}`);
   const ratio = contrast(opaqueChannels(palette.get("term-sel-fg")), opaqueChannels(palette.get("term-sel")));
   assert.ok(ratio >= TERMINAL_MINIMUM_CONTRAST, `${name} --term-sel-fg on --term-sel: ${ratio.toFixed(2)}:1`);
-  assert.ok(pairs.some(([fg, bg]) => fg === "term-sel-fg" && bg === "term-sel"), "the pair is in the shared inventory");
+  assert.ok(pairs.some(([fg, bg]) => fg === "term-sel-fg" && bg === "term-sel"), "the text pair is in the shared inventory");
+  // The fill is the one sign of what a copy takes: a UI state, held to 3:1 on the terminal (WCAG 1.4.11).
+  const fill = contrast(opaqueChannels(palette.get("term-sel")), opaqueChannels(palette.get("term-bg")));
+  assert.ok(fill >= GRAPHIC_CONTRAST, `${name} --term-sel on --term-bg: ${fill.toFixed(2)}:1 < 3:1`);
+  assert.ok(GRAPHIC_PAIRS.some(([graphic, bg]) => graphic === "term-sel" && bg === "term-bg"), "the fill pair is in the shared inventory");
+});
+
+test("an unfocused terminal's selection is drawn like a focused one: the xterm theme sets no inactive selection colour", () => {
+  // xterm 5.5 defaults selectionInactiveBackground to selectionBackground, so both floors above hold for it.
+  assert.doesNotMatch(themeJs, /selectionInactive/);
 });
 
 // Control rule 2: keyboard focus is a 1px edge (WCAG 1.4.11 non-text, 3:1). Controls that paint their own
@@ -235,7 +244,7 @@ for (const [name, palette] of palettes) test(`${name}: focus edges outside opaqu
 // Graph connectors (the Active overview's edges on its --surface-2 group cards, Setup's tree lines on
 // --bg/--surface/--surface-2) are meaningful graphics: WCAG 1.4.11 asks 3:1, and --graph-edge must not
 // fall back to the decorative --border it once shared. The accent-lit path already passes the focus rule.
-for (const [name, palette] of palettes) test(`${name}: --graph-edge connectors meet 3:1 on every surface they are drawn on`, () => {
+for (const [name, palette] of palettes) test(`${name}: --graph-edge connectors and the terminal selection meet 3:1 on every surface they are drawn on`, () => {
   for (const [graphic, bg] of GRAPHIC_PAIRS) {
     const ratio = contrast(opaqueChannels(palette.get(graphic)), backgroundChannels(bg, palette));
     assert.ok(ratio >= GRAPHIC_CONTRAST, `${name} --${graphic} ${palette.get(graphic)} on --${bg}: ${ratio.toFixed(2)}:1 < 3:1`);
@@ -283,7 +292,9 @@ for (const fixture of ["tokyo-night", "rose-pine", "hackerman", "legacy"]) test(
   assert.equal(overrides["--term-bg"], state.colors.background);
   assert.equal(overrides["--surface"], state.colors.background);
   assert.equal(overrides["--bg"], state.colors.canvas);
-  assert.equal(overrides["--term-sel"], state.colors.selection);
+  // The host's selection is moved until it holds 3:1 on the terminal (#672): Omarchy's are about 1.3:1.
+  if (contrast(opaqueChannels(state.colors.selection), opaqueChannels(state.colors.background)) >= GRAPHIC_CONTRAST) assert.equal(overrides["--term-sel"], state.colors.selection);
+  else assert.notEqual(overrides["--term-sel"], state.colors.selection, "moved");
   assert.equal(overrides["--live"], overrides["--accent"]); assert.equal(overrides["--graph-edge-coord"], overrides["--accent"]);
   // Everything derived is in the inventory (as a foreground or a surface), or is one of the named decorative tokens.
   const inventoried = new Set([...pairs, ...GRAPHIC_PAIRS].flat());
@@ -341,7 +352,8 @@ test("White uses neutral surfaces, ink primaries and AA-safe orange distinct fro
   assert.notEqual(light.get("accent"), light.get("ok"), "running/selection is not success green");
   assert.equal(light.get("danger"), "#b52f35");
   assert.equal(light.get("ok"), "#267548");
-  assert.equal(light.get("term-sel"), light.get("sel"));
+  // A drag's selection is a UI state (#672): the faint --sel tint (1.12:1 on the white terminal) hid it.
+  assert.equal(light.get("term-sel"), "#6394d4"); assert.equal(light.get("term-sel-fg"), "#1a1a18");
   assert.equal(light.get("graph-edge-coord"), light.get("accent"));
 });
 
@@ -351,7 +363,7 @@ test("dark color palette is preserved; primary is an existing opaque ink/surface
     fg: "#e6edf3", muted: "#9aa4b2", faint: "#8b949e", accent: "#4493f8", "accent-fg": "#ffffff",
     violet: "#c297ff", ok: "#3fb950", warn: "#d29922", danger: "#f85149",
     "chip-bg": "#21262e", "chip-fg": "#adb6c2", sel: "#1b2b40",
-    "term-bg": "#0a0d12", "term-fg": "#e6edf3", "term-sel": "#264f78", "term-sel-fg": "#f5f9ff",
+    "term-bg": "#0a0d12", "term-fg": "#e6edf3", "term-sel": "#2f6496", "term-sel-fg": "#f5f9ff",
     "md-code-bg": "#ffffff10", "md-rule": "#ffffff2e", "graph-edge": "#636c79", "graph-edge-coord": "#4493f8",
   };
   for (const [key, value] of Object.entries(expected)) assert.equal(dark.get(key), value, key);
@@ -370,7 +382,7 @@ test("Solarized retains every prior Light semantic and ANSI color from b280ce1b"
     fg: "#37424a", muted: "#56676d", faint: "#55666b", accent: "#155f96", "accent-fg": "#ffffff",
     violet: "#7f3f98", ok: "#465f00", warn: "#725500", danger: "#b52f35",
     "chip-bg": "#ede5cc", "chip-fg": "#56676d", sel: "#dce7e8",
-    "term-bg": "#fdf6e3", "term-fg": "#52666c", "term-sel": "#d3c9a8", "term-sel-fg": "#37424a",
+    "term-bg": "#fdf6e3", "term-fg": "#52666c", "term-sel": "#586e75", "term-sel-fg": "#fdf6e3",
     "md-code-bg": "#58637510", "md-rule": "#5863752e", "graph-edge": "#8e846f", "graph-edge-coord": "#1f6fb2",
   };
   for (const [key, value] of Object.entries(expected)) assert.equal(solarized.get(key), value, key);
