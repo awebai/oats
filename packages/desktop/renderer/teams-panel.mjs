@@ -5,6 +5,7 @@
  * document is decoded strictly and bounded; its refusals are shown verbatim. */
 import { teamRow } from './team-rows.mjs';
 import { iconElement } from './shell-icons.mjs';
+import { codeLineNodes } from './remote-address.mjs';
 
 /** One card, the same in the Workspace inspector and the context panel:
  * tokens only (computed-AA inventory in theme-contrast), no opacity.
@@ -254,7 +255,8 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
     const code = typeof error?.code === 'string' ? error.code : '';
     const box = node('div', undefined, 'teams-problem');
     box.append(node('p', typeof error?.message === 'string' && error.message ? error.message : fallback));
-    if (code) { const more = node('details'); more.append(node('summary', 'Details'), node('pre', code)); box.append(more); }
+    // Details: the code, and a relayed remote refusal's own message (`detail`) after it in a <bdi> (codeLineNodes).
+    if (code) { const line = node('pre'); line.append(...codeLineNodes(doc, { code, detail: error?.detail })); const more = node('details'); more.append(node('summary', 'Details'), line); box.append(more); }
     return box;
   }
   // A join/leave the provider did with a non-fatal warning: said under the team's row, verbatim.

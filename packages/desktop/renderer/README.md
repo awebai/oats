@@ -756,7 +756,12 @@ refusal arrives as the route's relayed `reason` (`/api/capabilities` attaches
 `relayedFailure` (`remote-address.mjs`) turns it into the failed block: the
 headline, or for `E_REMOTE_INCOMPATIBLE` the section's own
 `incompatibleSentence`, with the code and the kernel's message under Details.
-The soul page shows the same relayed reason.
+The Teams card's own provider operations (its list, Refresh, join/leave) relay
+a host's refusal the same way, with the kernel's message after the code in its
+Details. A card already up for a row that stops being routable (it left the
+host's list, or this computer's OATS lost remote operations) holds its controls
+and is replaced by the reason at the next render, with nothing sent. The soul
+page shows the same relayed reason.
 
 Roster-derived claims follow the roster's *settled* state
 (`rosterSettledState(s)` in `views/spawn.mjs`: the controller's `settled`

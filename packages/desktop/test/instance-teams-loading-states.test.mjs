@@ -163,3 +163,57 @@ test('an unaddressable remote row: nothing is sent; its row sentence claims the 
   assert.equal(u.calls.length, 0); assert.equal(u.presence.at(-1), true);
   assert.equal(u.body().querySelector('.loading-failed-message').textContent, 'Build box did not report this instance as reachable.');
 });
+
+test('a host refusal of the card\'s own provider operation (inspect succeeded): the relayed headline, the code and the kernel message in a <bdi> under Details', async t => {
+  const reason = { code: 'E_SSH', message: "Couldn't reach Build box.", detail: 'ssh: connect refused', remote: true };
+  const u = section(t, (ws, body) => { if (body.action === 'inspect') return answer(ws, body); throw Object.assign(new Error('ssh: connect refused'), { code: 'E_SSH', reason }); }, REMOTE_CLI);
+  u.s.update({ active: true, workspace: 'remote:g1', instance: remoteRow() }); await tick(); await tick(); await tick(); await tick();
+  const problem = u.body().querySelector('.teams-panel .teams-problem'); assert.ok(problem, 'the card shows the refusal');
+  assert.equal(problem.querySelector('p').textContent, "Couldn't reach Build box.");
+  const details = problem.querySelector('details pre');
+  assert.equal(details.textContent, 'E_SSH: ssh: connect refused');
+  assert.equal(details.querySelector('bdi').textContent, 'ssh: connect refused');
+  const incompatible = { code: 'E_REMOTE_INCOMPATIBLE', message: "Build box runs an OATS that can't do this yet.", detail: null, remote: true };
+  const v = section(t, (ws, body) => { if (body.action === 'inspect') return answer(ws, body); throw Object.assign(new Error('old'), { code: 'E_REMOTE_INCOMPATIBLE', reason: incompatible }); }, REMOTE_CLI);
+  v.s.update({ active: true, workspace: 'remote:g1', instance: remoteRow() }); await tick(); await tick(); await tick(); await tick();
+  assert.equal(v.body().querySelector('.teams-panel .teams-problem p').textContent,
+    "Build box runs an OATS that can't show this instance's teams here (it needs the operations feature). Update OATS on Build box.");
+  assert.equal(v.body().querySelector('.teams-panel .teams-problem details pre').textContent, 'E_REMOTE_INCOMPATIBLE', 'no detail: the code alone');
+  // A local row's provider refusal stays as it came (no reason, no detail).
+  const w = section(t, (ws, body) => { if (body.action === 'inspect') return answer(ws, body); throw Object.assign(new Error('provider said no'), { code: 'E_PROVIDER' }); });
+  w.s.update({ active: true, workspace: 'A', instance: instance() }); await tick(); await tick(); await tick(); await tick();
+  assert.equal(w.body().querySelector('.teams-panel .teams-problem p').textContent, 'provider said no');
+  assert.equal(w.body().querySelector('.teams-panel .teams-problem details pre').innerHTML, 'E_PROVIDER');
+});
+
+test('a mounted card whose row can no longer be routed: replaced by the reason at once, nothing more is sent, its controls hold', async t => {
+  // The row leaves the host's list (the saved-route projection): the status identity changes too.
+  const u = section(t, answer, REMOTE_CLI);
+  u.s.update({ active: true, workspace: 'remote:g1', instance: remoteRow({ running: true }) }); await tick(); await tick(); await tick();
+  assert.ok(u.body().querySelector('.teams-panel'), 'the card is up');
+  const sent = u.calls.length;
+  u.doc.querySelector('.teams-panel button.teams-refresh')?.focus();
+  u.s.update({ active: true, workspace: 'remote:g1', instance: remoteRow({ running: null, addressable: false, missingRemotely: true }) }); await tick(); await tick();
+  assert.equal(u.calls.length, sent, 'nothing is sent');
+  assert.equal(u.body().querySelector('.teams-panel'), null, 'the card is gone');
+  const failed = u.body().querySelector('.loading-failed'); assert.ok(failed, 'the failed block, not a stale card');
+  assert.match(failed.querySelector('.loading-failed-message').textContent, /is no longer on Build box/);
+  assert.equal(u.presence.at(-1), true);
+  assert.notEqual(u.doc.activeElement, u.doc.body, 'focus never lands on <body>');
+  failed.querySelector('.loading-retry').click(); await tick();
+  assert.equal(u.calls.length, sent, 'Retry sends nothing');
+  // Addressability alone (no status change), and losing remote operations here, do the same.
+  for (const [row, cli] of [[remoteRow({ addressable: false }), REMOTE_CLI], [remoteRow(), () => ({ ok: true, operationsApi: 2, remote: [] })]]) {
+    let current = REMOTE_CLI;
+    const v = section(t, answer, () => current());
+    v.s.update({ active: true, workspace: 'remote:g1', instance: remoteRow() }); await tick(); await tick(); await tick();
+    const before = v.calls.length; assert.ok(v.body().querySelector('.teams-panel'));
+    current = cli;
+    v.s.update({ active: false, workspace: 'remote:g1', instance: row });
+    assert.equal(v.body().querySelector('.teams-panel button.teams-refresh')?.disabled ?? true, true, 'an inactive card\'s controls hold');
+    v.s.update({ active: true, workspace: 'remote:g1', instance: row }); await tick(); await tick();
+    assert.equal(v.calls.length, before, 'nothing is sent');
+    assert.equal(v.body().querySelector('.teams-panel'), null);
+    assert.ok(v.body().querySelector('.loading-failed'));
+  }
+});
