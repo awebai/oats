@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_TRIGGER_UNKNOWN",
+    "message": "no trigger \"local/nope\" in /fixture/base/deployment",
+    "details": {
+      "id": "local/nope"
+    }
+  }
+}

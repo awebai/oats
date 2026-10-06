@@ -5,6 +5,10 @@ import { harnessOf, HARNESSES } from './harness-names.mjs';
 import { record } from './readiness-contract.mjs';
 const scheduleId = v => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(v);
 const policyKeys = ['definitionVersion', 'recurrencePolicy', 'execution', 'preparation', 'executionBinding', 'responsibleHuman'];
+/** The kernel's summary rule (lib/automations.mjs validateDescription): one line of 1 to 200
+ * characters, no control characters, no line or paragraph separator. */
+export const DESCRIPTION_MAX = 200;
+export const descriptionValid = v => typeof v === 'string' && v.length > 0 && [...v].length <= DESCRIPTION_MAX && !/[\p{Cc}\u2028\u2029]/u.test(v);
 const draftString = v => typeof v === 'string' && v.length <= 1048576 && !v.includes('\0');
 /** Exact legacy editor inputs only: no previews/redactions/trim, no captured fields.
  * If the adapter cannot preserve a definition, it is not an editable draft. */
@@ -20,7 +24,7 @@ export function scheduleDraft(v) {
   if (Object.keys(v).some(k => !common.includes(k) && !fields.includes(k))) return null;
   const out = { id: v.id, kind: v.kind, cron: v.cron, tz: v.tz, enabled: v.enabled };
   if (Object.hasOwn(v, 'description')) {
-    if (typeof v.description !== 'string' || !v.description.length || [...v.description].length > 200 || /[\p{Cc}\u2028\u2029]/u.test(v.description)) return null;
+    if (!descriptionValid(v.description)) return null;
     out.description = v.description;
   }
   const required = v.kind === 'spawn' ? ['agent', 'agentsRoot', 'task'] : v.kind === 'wake' ? ['home', 'message'] : ['home', 'operation'];

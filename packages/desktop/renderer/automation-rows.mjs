@@ -44,6 +44,7 @@ export function automationRow(raw, kind) {
   if (!record(raw)) return null;
   const qualifiedId = text(raw.qualifiedId) || text(raw.id);
   if (!qualifiedId) return null;
+  const spawnOf = kind === 'trigger' ? (record(raw.spawn) ? raw.spawn : {}) : raw;
   const row = {
     kind,
     // A schedule's kernel `kind` is its run (spawn, command, wake, operation).
@@ -59,6 +60,16 @@ export function automationRow(raw, kind) {
     soul: soul(raw.soul), task: text(raw.task),
     on: kind === 'trigger' && record(raw.on) ? raw.on : null,
     spawn: kind === 'trigger' && record(raw.spawn) ? raw.spawn : null,
+    // What it sends, per run, read from the stored definition the kernel spreads into the row:
+    // a wake's message and home, a command's argv and cwd, an operation and its home.
+    message: text(raw.message), home: text(raw.home), operation: text(raw.operation), cwd: text(raw.cwd),
+    argv: Array.isArray(raw.argv) && raw.argv.every(a => typeof a === 'string') ? raw.argv : null,
+    // A spawn's own settings: a schedule's are top-level, a trigger's sit under `spawn`.
+    purpose: text(spawnOf.purpose), backend: text(spawnOf.backend), yolo: typeof spawnOf.yolo === 'boolean' ? spawnOf.yolo : null,
+    wake: kind === 'schedule' && record(raw.wake) && text(raw.wake.cron) ? { cron: raw.wake.cron, tz: text(raw.wake.tz), message: text(raw.wake.message) } : null,
+    // Run state (schedules on this computer): the job lock, an attempt with no recorded result, a wake waiting.
+    running: raw.running === true, attempt: record(raw.attempt) ? raw.attempt : null, pendingWake: record(raw.pendingWake) ? raw.pendingWake : null,
+    scope: text(raw.scope), createdAt: text(raw.createdAt), updatedAt: text(raw.updatedAt),
     cron: kind === 'schedule' ? text(raw.cron) : null, tz: kind === 'schedule' ? text(raw.tz) : null,
     teams: list(raw.teams).filter(text), launchConfig: text(raw.launchConfig) || text(raw.spawn?.launchConfig), harness: text(raw.harness), model: text(raw.model),
     concurrency: record(raw.concurrency) ? raw.concurrency : null,
@@ -72,6 +83,52 @@ export function automationRow(raw, kind) {
   };
   row.group = automationGroup(row);
   return row;
+}
+
+const PROMPT_LINE = 'No summary set — first line of the prompt';
+/** The list row's summary line: the authored description, else the first non-empty line of what it
+ * sends to an agent (a spawn's or trigger's task, a wake's message), marked derived; else null
+ * (command and operation rows: "No summary"; never a label made from argv).
+ * → { text, title, derived } | null */
+export function summaryLine(row) {
+  if (row?.description) return { text: row.description, title: row.description, derived: false };
+  const prompt = row?.run === 'wake' ? row.message : row?.run === 'spawn' ? row.task : null;
+  const first = typeof prompt === 'string' ? prompt.split(/\r\n|[\n\r\u2028\u2029]/).map(l => l.trim()).find(Boolean) : null;
+  return first ? { text: first, title: PROMPT_LINE, derived: true } : null;
+}
+
+/** A schedule's run state on this computer, from the kernel's row: running (since its attempt
+ * started), unknown (an attempt with no recorded result, or a last run whose outcome is unknown), and
+ * a wake waiting to be delivered. → { running, unknown, pendingWake } | null when there is nothing to say. */
+export function runState(row) {
+  if (row?.kind !== 'schedule') return null;
+  const attempt = row.attempt, last = row.lastRun;
+  const running = row.running ? { since: text(attempt?.startedAt) } : null;
+  const unresolved = !row.running && (attempt || last?.outcome === 'unknown');
+  const from = attempt || last || {};
+  const unknown = unresolved ? {
+    since: text(from.startedAt) || text(from.scheduledFor), scheduledFor: text(from.scheduledFor),
+    exited: attempt?.exited === true ? true : null,
+    exitStatus: Number.isInteger(attempt?.exitStatus) ? attempt.exitStatus : null, exitSignal: text(attempt?.exitSignal),
+    error: text(attempt?.error) || text(last?.error),
+  } : null;
+  const pendingWake = row.pendingWake ? { scheduledFor: text(row.pendingWake.scheduledFor) } : null;
+  return running || unknown || pendingWake ? { running, unknown, pendingWake } : null;
+}
+// The kernel's own shell-safe word test for a --dir it prints (lib/schedule.mjs remedy).
+const shellWord = v => /^[\w./@%+=:,-]+$/.test(v) ? v : `'${v.replaceAll("'", `'\\''`)}'`;
+/** `oats schedule reconcile <qualified id> [--clear] --dir <scope>`: a command that works when pasted. */
+export function reconcileCommand(row, { clear = false } = {}) {
+  return ['oats schedule reconcile', shellWord(row.id), clear ? '--clear' : null, row.scope ? `--dir ${shellWord(row.scope)}` : null].filter(Boolean).join(' ');
+}
+
+/** A package template's provenance in words: "oats.okf:harvest-review v0.4.0 @abc1234", or a
+ * workspace trigger's `from:` ("oats.okf:harvest-review"). */
+export function templateProvenance(template) {
+  if (!record(template)) return null;
+  const label = templateLabel(template) || text(template.from);
+  if (!label) return null;
+  return [label, text(template.version) ? `v${template.version.replace(/^v/, '')}` : null, text(template.commit) ? `@${template.commit.slice(0, 7)}` : null].filter(Boolean).join(' ');
 }
 
 /** A whole list answer → { kind, host, scheduler, snapshot, rows }, or null when it is not one. */
@@ -96,11 +153,11 @@ export function groupRows(rows) {
   return GROUPS.map(g => ({ ...g, rows: rows.filter(r => r.group === g.id) })).filter(g => g.rows.length);
 }
 
-/** The origin filter (All / Workspace / Local) and the search (id, soul, task, description). */
+/** The origin filter (All / Workspace / Local) and the search (id, soul, task or wake message, description). */
 export function filterRows(rows, { origin = 'all', query = '' } = {}) {
   const needle = String(query || '').trim().toLowerCase();
   return rows.filter(r => (origin === 'all' || r.origin.kind === origin)
-    && (!needle || [r.id, r.soul?.name, r.task, r.description, r.runsOn, r.owner].some(v => typeof v === 'string' && v.toLowerCase().includes(needle))));
+    && (!needle || [r.id, r.soul?.name, r.task, r.message, r.description, r.runsOn, r.owner].some(v => typeof v === 'string' && v.toLowerCase().includes(needle))));
 }
 
 /** "github.com/acme-kb-bot" → { login: "acme-kb-bot", host: "github.com" }. */

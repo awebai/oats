@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_BAD_ARGS",
+    "message": "oats trigger update: only --description is supported for now (got --file); to change anything else, remove the trigger and add it again"
+  }
+}

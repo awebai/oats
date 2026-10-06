@@ -1,0 +1,356 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "scope": "/fixture/base/deployment",
+    "scheduleApi": 2,
+    "scheduleHistoryApi": 3,
+    "integrity": {
+      "sources": [
+        {
+          "path": "definitions",
+          "status": "ok",
+          "bytes": 3210
+        },
+        {
+          "path": "state",
+          "status": "ok",
+          "bytes": 450
+        }
+      ]
+    },
+    "host": {
+      "name": "kb-host",
+      "ghUser": {
+        "github.com": "kb-bot"
+      }
+    },
+    "schedules": [
+      {
+        "id": "digest",
+        "cron": "0 7 * * *",
+        "tz": "UTC",
+        "kind": "spawn",
+        "agent": "reviewer",
+        "backend": "tmux",
+        "purpose": "digest",
+        "task": "Write the nightly digest.\nKeep it under a page.",
+        "harness": "claude",
+        "model": "opus",
+        "yolo": false,
+        "wake": {
+          "cron": "0 12 * * *",
+          "tz": "UTC",
+          "message": "Midday: post progress."
+        },
+        "createdAt": "2026-10-06T13:18:02.792Z",
+        "updatedAt": "2026-10-06T13:18:02.792Z",
+        "scope": "/fixture/base/deployment",
+        "scheduleApi": 2,
+        "scheduleHistoryApi": 3,
+        "executionStatus": {
+          "kind": "legacy",
+          "capture": "unknown",
+          "migrationRequired": true
+        },
+        "nextRun": "2026-10-07T07:00:00.000Z",
+        "lastRun": null,
+        "history": {
+          "status": "ok",
+          "stored": 0,
+          "truncated": false
+        },
+        "recentRuns": [],
+        "running": false,
+        "pendingWake": {
+          "scheduledFor": "2026-10-06T12:00:00.000Z"
+        },
+        "name": "digest",
+        "origin": {
+          "kind": "local",
+          "path": "oats-schedules.json",
+          "url": null,
+          "localPath": "/fixture/base/deployment/oats-schedules.json"
+        },
+        "description": null,
+        "owner": null,
+        "runsOn": null,
+        "runsHere": true,
+        "reason": null,
+        "enabledHere": true,
+        "qualifiedId": "local/digest",
+        "soul": {
+          "name": "reviewer",
+          "origin": {
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "member": "ws"
+          }
+        },
+        "teams": [],
+        "launchConfig": null,
+        "concurrency": null,
+        "nextDue": "2026-10-07T07:00:00.000Z",
+        "enabled": true
+      },
+      {
+        "id": "harvest",
+        "cron": "0 */6 * * *",
+        "tz": "UTC",
+        "kind": "operation",
+        "operation": "knowledge:harvest",
+        "home": "/fixture/base/deployment/agents/reviewer/instances/reviewer-1",
+        "createdAt": "2026-10-06T13:18:02.569Z",
+        "updatedAt": "2026-10-06T13:18:04.297Z",
+        "scope": "/fixture/base/deployment",
+        "scheduleApi": 2,
+        "scheduleHistoryApi": 3,
+        "executionStatus": {
+          "kind": "legacy",
+          "capture": "unknown",
+          "migrationRequired": true
+        },
+        "nextRun": "2026-10-06T18:00:00.000Z",
+        "lastRun": null,
+        "history": {
+          "status": "ok",
+          "stored": 0,
+          "truncated": false
+        },
+        "recentRuns": [],
+        "running": false,
+        "name": "harvest",
+        "origin": {
+          "kind": "local",
+          "path": "oats-schedules.json",
+          "url": null,
+          "localPath": "/fixture/base/deployment/oats-schedules.json"
+        },
+        "description": null,
+        "owner": null,
+        "runsOn": null,
+        "runsHere": true,
+        "reason": null,
+        "enabledHere": true,
+        "qualifiedId": "local/harvest",
+        "soul": null,
+        "task": null,
+        "teams": [],
+        "launchConfig": null,
+        "harness": null,
+        "model": null,
+        "concurrency": null,
+        "nextDue": "2026-10-06T18:00:00.000Z",
+        "enabled": true
+      },
+      {
+        "id": "standup",
+        "cron": "0 9 * * 1-5",
+        "tz": "Europe/Madrid",
+        "kind": "wake",
+        "home": "/fixture/base/deployment/agents/reviewer/instances/reviewer-1",
+        "message": "\n  Post the standup summary to the team.\nThen check the release branch.",
+        "createdAt": "2026-10-06T13:18:02.339Z",
+        "updatedAt": "2026-10-06T13:18:02.339Z",
+        "scope": "/fixture/base/deployment",
+        "scheduleApi": 2,
+        "scheduleHistoryApi": 3,
+        "executionStatus": {
+          "kind": "legacy",
+          "capture": "unknown",
+          "migrationRequired": true,
+          "intent": {
+            "kind": "legacy",
+            "capture": "unknown",
+            "migrationRequired": true
+          }
+        },
+        "nextRun": "2026-10-07T07:00:00.000Z",
+        "lastRun": null,
+        "history": {
+          "status": "ok",
+          "stored": 0,
+          "truncated": false
+        },
+        "recentRuns": [],
+        "running": false,
+        "attempt": {
+          "scheduledFor": "2026-10-06T07:00:00.000Z",
+          "startedAt": "2026-10-06T07:00:03.000Z",
+          "wallClock": "2026-10-06T07:00:03.000Z",
+          "error": "the wake was not confirmed",
+          "exited": true,
+          "exitStatus": 1,
+          "exitSignal": null
+        },
+        "name": "standup",
+        "origin": {
+          "kind": "local",
+          "path": "oats-schedules.json",
+          "url": null,
+          "localPath": "/fixture/base/deployment/oats-schedules.json"
+        },
+        "description": null,
+        "owner": null,
+        "runsOn": null,
+        "runsHere": true,
+        "reason": null,
+        "enabledHere": true,
+        "qualifiedId": "local/standup",
+        "soul": null,
+        "task": null,
+        "teams": [],
+        "launchConfig": null,
+        "harness": null,
+        "model": null,
+        "concurrency": null,
+        "nextDue": "2026-10-07T07:00:00.000Z",
+        "enabled": true
+      },
+      {
+        "id": "status",
+        "cron": "30 8 * * 1-5",
+        "tz": "UTC",
+        "kind": "command",
+        "description": "Morning workspace status",
+        "cwd": "/fixture/base/deployment",
+        "argv": [
+          "oats",
+          "status",
+          "--json",
+          "--dir",
+          "a dir/with spaces"
+        ],
+        "createdAt": "2026-10-06T13:18:02.121Z",
+        "updatedAt": "2026-10-06T13:18:02.121Z",
+        "scope": "/fixture/base/deployment",
+        "scheduleApi": 2,
+        "scheduleHistoryApi": 3,
+        "executionStatus": {
+          "kind": "legacy",
+          "capture": "unknown",
+          "migrationRequired": true,
+          "intent": {
+            "kind": "legacy",
+            "capture": "unknown",
+            "migrationRequired": true
+          }
+        },
+        "nextRun": "2026-10-07T08:30:00.000Z",
+        "lastRun": null,
+        "history": {
+          "status": "ok",
+          "stored": 0,
+          "truncated": false
+        },
+        "recentRuns": [],
+        "running": true,
+        "attempt": {
+          "scheduledFor": "2026-10-06T08:30:00.000Z",
+          "startedAt": "2026-10-06T08:30:04.000Z",
+          "wallClock": "2026-10-06T08:30:04.000Z"
+        },
+        "name": "status",
+        "origin": {
+          "kind": "local",
+          "path": "oats-schedules.json",
+          "url": null,
+          "localPath": "/fixture/base/deployment/oats-schedules.json"
+        },
+        "owner": null,
+        "runsOn": null,
+        "runsHere": true,
+        "reason": null,
+        "enabledHere": true,
+        "qualifiedId": "local/status",
+        "soul": null,
+        "task": null,
+        "teams": [],
+        "launchConfig": null,
+        "harness": null,
+        "model": null,
+        "concurrency": null,
+        "nextDue": "2026-10-07T08:30:00.000Z",
+        "enabled": true
+      },
+      {
+        "id": "ws/nightly",
+        "cron": "0 7 * * *",
+        "tz": "UTC",
+        "kind": "spawn",
+        "agent": "reviewer",
+        "task": "Write the nightly digest.",
+        "purpose": "nightly",
+        "scope": "/fixture/base/deployment",
+        "scheduleApi": 2,
+        "scheduleHistoryApi": 3,
+        "executionStatus": {
+          "kind": "legacy",
+          "capture": "unknown",
+          "migrationRequired": true
+        },
+        "nextRun": "2026-10-07T07:00:00.000Z",
+        "lastRun": null,
+        "history": {
+          "status": "ok",
+          "stored": 0,
+          "truncated": false
+        },
+        "recentRuns": [],
+        "running": false,
+        "name": "nightly",
+        "origin": {
+          "kind": "workspace",
+          "repoKey": "local//fixture/base/remotes/ws.git",
+          "path": "ops/nightly.oats-schedule.yaml",
+          "commit": "6919a5d900d9f1784d158c5ab800fedc1347c921",
+          "url": null,
+          "localPath": "/fixture/base/deployment/ws/ops/nightly.oats-schedule.yaml"
+        },
+        "description": null,
+        "owner": "github.com/kb-bot",
+        "runsOn": "kb-host",
+        "runsHere": true,
+        "reason": null,
+        "enabledHere": true,
+        "qualifiedId": "ws/nightly",
+        "soul": {
+          "name": "reviewer",
+          "origin": {
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "member": "ws"
+          }
+        },
+        "teams": [],
+        "launchConfig": null,
+        "harness": null,
+        "model": null,
+        "concurrency": null,
+        "nextDue": "2026-10-07T07:00:00.000Z",
+        "enabled": true
+      }
+    ],
+    "triggers": {
+      "count": 5,
+      "command": "oats trigger list"
+    },
+    "snapshot": {
+      "takenAt": "2026-10-06T13:18:01.898Z",
+      "problems": 2
+    },
+    "scheduler": {
+      "installed": false,
+      "active": false,
+      "unit": "/fixture/base/home/.config/systemd/user/oats-schedule-tick.timer",
+      "lastTick": null,
+      "maxConcurrent": 5,
+      "triggersMaxConcurrent": null,
+      "tickIntervalSec": 60,
+      "workspace": "/fixture/base/deployment",
+      "registered": false,
+      "workspaces": [],
+      "live": 0
+    }
+  }
+}

@@ -1,0 +1,346 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "triggerApi": 1,
+    "scope": "/fixture/base/deployment",
+    "host": {
+      "name": "kb-host",
+      "ghUser": {
+        "github.com": "kb-bot"
+      }
+    },
+    "triggers": [
+      {
+        "kind": "trigger",
+        "id": "local/kb-review",
+        "name": "kb-review",
+        "origin": {
+          "kind": "local",
+          "path": "oats-schedules.json",
+          "url": null,
+          "localPath": "/fixture/base/deployment/oats-schedules.json"
+        },
+        "description": "Reviews every harvest PR",
+        "owner": null,
+        "runsOn": null,
+        "runsHere": true,
+        "reason": null,
+        "enabledHere": true,
+        "qualifiedId": "local/kb-review",
+        "soul": {
+          "name": "reviewer",
+          "origin": {
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "member": "ws"
+          }
+        },
+        "task": "Review {repo}#{number}.",
+        "on": {
+          "source": "github.pull_request",
+          "repo": "github.com/acme/knowledge",
+          "events": [
+            "opened"
+          ],
+          "labels": [
+            "okf-harvest"
+          ],
+          "poll": "2m"
+        },
+        "teams": [],
+        "launchConfig": null,
+        "harness": null,
+        "model": null,
+        "concurrency": {
+          "max": 1,
+          "perKey": 1
+        },
+        "lastRun": null,
+        "nextDue": null,
+        "enabled": true,
+        "spawn": {
+          "soul": "reviewer",
+          "purpose": "{trigger}-{number}",
+          "task": "Review {repo}#{number}.",
+          "teams": []
+        },
+        "triggerApi": 1,
+        "scope": "/fixture/base/deployment",
+        "createdAt": "2026-10-06T13:18:02.990Z",
+        "updatedAt": "2026-10-06T13:18:02.990Z"
+      },
+      {
+        "kind": "trigger",
+        "id": "local/kb-triage",
+        "name": "kb-triage",
+        "origin": {
+          "kind": "local",
+          "path": "oats-schedules.json",
+          "url": null,
+          "localPath": "/fixture/base/deployment/oats-schedules.json"
+        },
+        "description": null,
+        "owner": null,
+        "runsOn": null,
+        "runsHere": true,
+        "reason": null,
+        "enabledHere": true,
+        "qualifiedId": "local/kb-triage",
+        "soul": {
+          "name": "reviewer",
+          "origin": {
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "member": "ws"
+          }
+        },
+        "task": "\nTriage {repo}#{number} and label it.",
+        "on": {
+          "source": "github.pull_request",
+          "repo": "github.com/acme/knowledge",
+          "events": [
+            "opened"
+          ],
+          "labels": [
+            "okf-harvest"
+          ],
+          "poll": "2m"
+        },
+        "teams": [],
+        "launchConfig": null,
+        "harness": null,
+        "model": null,
+        "concurrency": {
+          "max": 1,
+          "perKey": 1
+        },
+        "lastRun": null,
+        "nextDue": null,
+        "enabled": true,
+        "spawn": {
+          "soul": "reviewer",
+          "purpose": "triage-{number}",
+          "task": "\nTriage {repo}#{number} and label it.",
+          "teams": []
+        },
+        "triggerApi": 1,
+        "scope": "/fixture/base/deployment",
+        "createdAt": "2026-10-06T13:18:03.175Z",
+        "updatedAt": "2026-10-06T13:18:07.695Z"
+      },
+      {
+        "kind": "trigger",
+        "id": "ws/from-bad-header",
+        "name": "from-bad-header",
+        "origin": {
+          "kind": "workspace",
+          "repoKey": "local//fixture/base/remotes/ws.git",
+          "path": "oats-triggers/from-bad-header.yaml",
+          "commit": "6919a5d900d9f1784d158c5ab800fedc1347c921",
+          "url": null,
+          "localPath": "/fixture/base/deployment/ws/oats-triggers/from-bad-header.yaml"
+        },
+        "description": "Review each harvest PR (template)",
+        "owner": "github.com/kb-bot",
+        "runsOn": "kb-host",
+        "runsHere": true,
+        "reason": null,
+        "enabledHere": true,
+        "qualifiedId": "ws/from-bad-header",
+        "soul": {
+          "name": "acme.pkg/keeper",
+          "origin": {
+            "kind": "package",
+            "package": "acme.pkg",
+            "version": "1.0.0"
+          }
+        },
+        "task": "Review knowledge-base PR {repo}#{number}.",
+        "on": {
+          "source": "github.pull_request",
+          "repo": "github.com/acme/knowledge",
+          "events": [
+            "opened"
+          ],
+          "labels": [
+            "okf-harvest"
+          ],
+          "poll": "2m"
+        },
+        "teams": [],
+        "launchConfig": null,
+        "harness": null,
+        "model": null,
+        "concurrency": {
+          "max": 1,
+          "perKey": 1
+        },
+        "template": {
+          "package": "acme.pkg",
+          "version": "1.0.0",
+          "commit": "d672657f2e06571fc0283a6c8e583836ae188171",
+          "template": "harvest-review"
+        },
+        "lastRun": null,
+        "nextDue": null,
+        "enabled": true,
+        "spawn": {
+          "soul": "acme.pkg/keeper",
+          "purpose": "review-pr-{number}",
+          "task": "Review knowledge-base PR {repo}#{number}.",
+          "teams": []
+        },
+        "triggerApi": 1,
+        "scope": "/fixture/base/deployment"
+      },
+      {
+        "kind": "trigger",
+        "id": "ws/from-header",
+        "name": "from-header",
+        "origin": {
+          "kind": "workspace",
+          "repoKey": "local//fixture/base/remotes/ws.git",
+          "path": "oats-triggers/from-header.yaml",
+          "commit": "6919a5d900d9f1784d158c5ab800fedc1347c921",
+          "url": null,
+          "localPath": "/fixture/base/deployment/ws/oats-triggers/from-header.yaml"
+        },
+        "description": "The header wins",
+        "owner": "github.com/kb-bot",
+        "runsOn": "kb-host",
+        "runsHere": true,
+        "reason": null,
+        "enabledHere": true,
+        "qualifiedId": "ws/from-header",
+        "soul": {
+          "name": "acme.pkg/keeper",
+          "origin": {
+            "kind": "package",
+            "package": "acme.pkg",
+            "version": "1.0.0"
+          }
+        },
+        "task": "Review knowledge-base PR {repo}#{number}.",
+        "on": {
+          "source": "github.pull_request",
+          "repo": "github.com/acme/knowledge",
+          "events": [
+            "opened"
+          ],
+          "labels": [
+            "okf-harvest"
+          ],
+          "poll": "2m"
+        },
+        "teams": [],
+        "launchConfig": null,
+        "harness": null,
+        "model": null,
+        "concurrency": {
+          "max": 1,
+          "perKey": 1
+        },
+        "template": {
+          "package": "acme.pkg",
+          "version": "1.0.0",
+          "commit": "d672657f2e06571fc0283a6c8e583836ae188171",
+          "template": "harvest-review"
+        },
+        "lastRun": null,
+        "nextDue": null,
+        "enabled": true,
+        "spawn": {
+          "soul": "acme.pkg/keeper",
+          "purpose": "review-pr-{number}",
+          "task": "Review knowledge-base PR {repo}#{number}.",
+          "teams": []
+        },
+        "triggerApi": 1,
+        "scope": "/fixture/base/deployment"
+      },
+      {
+        "kind": "trigger",
+        "id": "ws/from-template",
+        "name": "from-template",
+        "origin": {
+          "kind": "workspace",
+          "repoKey": "local//fixture/base/remotes/ws.git",
+          "path": "oats-triggers/from-template.yaml",
+          "commit": "6919a5d900d9f1784d158c5ab800fedc1347c921",
+          "url": null,
+          "localPath": "/fixture/base/deployment/ws/oats-triggers/from-template.yaml"
+        },
+        "description": "Review each harvest PR (template)",
+        "owner": "github.com/kb-bot",
+        "runsOn": "kb-host",
+        "runsHere": true,
+        "reason": null,
+        "enabledHere": true,
+        "qualifiedId": "ws/from-template",
+        "soul": {
+          "name": "acme.pkg/keeper",
+          "origin": {
+            "kind": "package",
+            "package": "acme.pkg",
+            "version": "1.0.0"
+          }
+        },
+        "task": "Review knowledge-base PR {repo}#{number}.",
+        "on": {
+          "source": "github.pull_request",
+          "repo": "github.com/acme/knowledge",
+          "events": [
+            "opened"
+          ],
+          "labels": [
+            "okf-harvest"
+          ],
+          "poll": "2m"
+        },
+        "teams": [],
+        "launchConfig": null,
+        "harness": null,
+        "model": null,
+        "concurrency": {
+          "max": 1,
+          "perKey": 1
+        },
+        "template": {
+          "package": "acme.pkg",
+          "version": "1.0.0",
+          "commit": "d672657f2e06571fc0283a6c8e583836ae188171",
+          "template": "harvest-review"
+        },
+        "lastRun": null,
+        "nextDue": null,
+        "enabled": true,
+        "spawn": {
+          "soul": "acme.pkg/keeper",
+          "purpose": "review-pr-{number}",
+          "task": "Review knowledge-base PR {repo}#{number}.",
+          "teams": []
+        },
+        "triggerApi": 1,
+        "scope": "/fixture/base/deployment"
+      }
+    ],
+    "snapshot": {
+      "takenAt": "2026-10-06T13:18:01.898Z",
+      "problems": 2
+    },
+    "scheduler": {
+      "installed": false,
+      "active": false,
+      "unit": "/fixture/base/home/.config/systemd/user/oats-schedule-tick.timer",
+      "lastTick": null,
+      "maxConcurrent": 5,
+      "triggersMaxConcurrent": null,
+      "tickIntervalSec": 60,
+      "workspace": "/fixture/base/deployment",
+      "registered": false,
+      "workspaces": [],
+      "live": 0
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_AUTOMATION_WORKSPACE",
+    "message": "ws/nightly is a workspace schedule, defined in Git: update its file there",
+    "details": {
+      "id": "ws/nightly"
+    }
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "trigger": {
+      "kind": "trigger",
+      "id": "local/kb-triage",
+      "name": "kb-triage",
+      "origin": {
+        "kind": "local",
+        "path": "oats-schedules.json",
+        "url": null,
+        "localPath": "/fixture/base/deployment/oats-schedules.json"
+      },
+      "description": null,
+      "owner": null,
+      "runsOn": null,
+      "runsHere": true,
+      "reason": null,
+      "enabledHere": true,
+      "qualifiedId": "local/kb-triage",
+      "soul": {
+        "name": "reviewer",
+        "origin": null
+      },
+      "task": "\nTriage {repo}#{number} and label it.",
+      "on": {
+        "source": "github.pull_request",
+        "repo": "github.com/acme/knowledge",
+        "events": [
+          "opened"
+        ],
+        "labels": [
+          "okf-harvest"
+        ],
+        "poll": "2m"
+      },
+      "teams": [],
+      "launchConfig": null,
+      "harness": null,
+      "model": null,
+      "concurrency": {
+        "max": 1,
+        "perKey": 1
+      },
+      "lastRun": null,
+      "nextDue": null,
+      "enabled": true,
+      "spawn": {
+        "soul": "reviewer",
+        "purpose": "triage-{number}",
+        "task": "\nTriage {repo}#{number} and label it.",
+        "teams": []
+      },
+      "triggerApi": 1,
+      "scope": "/fixture/base/deployment",
+      "createdAt": "2026-10-06T13:18:03.175Z",
+      "updatedAt": "2026-10-06T13:18:03.175Z"
+    }
+  }
+}

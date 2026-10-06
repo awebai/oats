@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "syncApi": 1,
+    "automations": {
+      "triggers": 3,
+      "schedules": 1,
+      "problems": 2,
+      "takenAt": "2026-10-06T13:18:01.898Z"
+    },
+    "workspace": {
+      "name": "acme",
+      "key": "local//fixture/base/remotes/ws.git",
+      "url": "/fixture/base/remotes/ws.git",
+      "commit": "6919a5d900d9f1784d158c5ab800fedc1347c921",
+      "observedAt": "2026-10-06T13:18:01.730Z",
+      "local": "/fixture/base/deployment/oats-local.yaml",
+      "lock": "/fixture/base/deployment/oats-lock.json"
+    },
+    "members": [
+      {
+        "key": "local//fixture/base/remotes/ws.git",
+        "name": "ws",
+        "commit": "6919a5d900d9f1784d158c5ab800fedc1347c921",
+        "confirmed": true,
+        "status": "confirmed",
+        "detail": null,
+        "souls": [
+          "reviewer"
+        ],
+        "capabilities": [],
+        "publishes": null
+      }
+    ],
+    "packages": [
+      {
+        "id": "acme.pkg",
+        "version": "1.0.0",
+        "source": "git:local//tmp/oats-pkgsoul-OO1uqD/pkg.git@v1.0.0",
+        "commit": "d672657f2e06571fc0283a6c8e583836ae188171",
+        "integrity": "sha256-62d7ac5a530a0402678dace8dbd4922edcc197c81aa2f1caab9ca04a78de9fbb",
+        "capabilities": [
+          "acme-tool"
+        ],
+        "souls": [
+          "keeper"
+        ]
+      }
+    ],
+    "changes": [
+      {
+        "id": "acme.pkg",
+        "from": null,
+        "to": "1.0.0",
+        "commit": "d672657f2e06571fc0283a6c8e583836ae188171"
+      }
+    ],
+    "problems": [
+      {
+        "code": "E_AUTOMATION_SCHEMA",
+        "kind": "trigger",
+        "repoKey": "local//fixture/base/remotes/ws.git",
+        "path": "oats-triggers/from-bad-header.yaml#/description",
+        "message": "description: one line of 1 to 200 characters without control characters — shorten it or remove it; the automation keeps running without one"
+      },
+      {
+        "code": "E_AUTOMATION_SCHEMA",
+        "kind": "schedule",
+        "repoKey": "local//fixture/base/remotes/ws.git",
+        "path": "ops/nightly.oats-schedule.yaml#/description",
+        "message": "description: one line of 1 to 200 characters without control characters — shorten it or remove it; the automation keeps running without one"
+      }
+    ],
+    "warnings": []
+  }
+}

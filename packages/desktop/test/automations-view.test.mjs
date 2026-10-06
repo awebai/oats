@@ -191,7 +191,7 @@ test('the detail page: prompt with highlighted fields, where it runs, where it c
   await tick(); await tick();
   assert.match(u.$('.page-section[data-section="Recent fires"]').textContent, /1 of 1 live now · 3 fired in all/, 'trigger status: live and total');
   assert.equal(u.dom.window.document.activeElement, u.$('.page-back'), 'the status read keeps focus on Back');
-  assert.deepEqual(facts('Comes from'), { Member: 'agents', Repo: 'local//fixture/base/fx/remotes/agents.git', Path: 'oats-triggers/pr-review.yaml', Commit: CAPTURED_COMMIT.slice(0, 7) });
+  assert.deepEqual(facts('Comes from'), { Member: 'agents', Repo: 'local//fixture/base/fx/remotes/agents.git', Path: 'oats-triggers/pr-review.yaml', Commit: CAPTURED_COMMIT.slice(0, 7), Template: 'oats.okf:harvest-review v0.4.0' }, 'the package template it was made from');
   assert.equal(facts('Spawns')['Launch config'], 'reviewers');
   assert.deepEqual(u.$$('.page-bar-actions button').map(b => b.textContent), ['Open file', 'Test']);
   u.$('.page-bar-actions button[data-verb=file]').click(); assert.deepEqual(opened, [URL_215], 'opens the kernel-reported link');

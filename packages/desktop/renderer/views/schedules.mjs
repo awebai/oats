@@ -5,9 +5,9 @@
 import { isShown } from "../focus-regions.mjs";
 import { apiJson, postJson, workspaceGeneration, wsQuery, onWorkspaceChange } from "./common.mjs";
 import { wakeScheduleFields } from "../wake-schedule-fields.mjs";
-import { scheduleDraft } from "../schedule-read-data.mjs";
-import { localScheduleDefinition } from "../automation-rows.mjs";
-import { mountAutomationsPage } from "./automations.mjs";
+import { scheduleDraft, descriptionValid, DESCRIPTION_MAX } from "../schedule-read-data.mjs";
+import { localScheduleDefinition, runState } from "../automation-rows.mjs";
+import { mountAutomationsPage, automationDescriptionsSupported } from "./automations.mjs";
 import { cliStatus, onCliChange } from "./cli-status.mjs";
 
 // Mounted as the Automations stage's Schedules subtab (views/automations.mjs).
@@ -44,6 +44,7 @@ const FORM = `
   <form class="schedule-form" role="dialog" aria-modal="true" aria-labelledby="schedule-form-title">
     <h3 class="schedule-form-title" id="schedule-form-title">New schedule</h3>
     <label>Name<input class="field" name="id" required pattern="[a-z0-9][a-z0-9\\-]{0,99}" placeholder="daily-review"></label>
+    <label class="schedule-summary-field" hidden>Summary (optional)<input class="field" name="description" maxlength="${DESCRIPTION_MAX}" autocomplete="off" aria-describedby="schedule-summary-hint"><span class="schedule-hint" id="schedule-summary-hint">One line, shown in the list. Without one, the list shows the first line of the message or task.</span></label>
     <label>Action<select class="field" name="kind"><option value="wake">Wake an existing agent</option><option value="spawn">Launch a new agent</option><option value="operation">Run a provider operation</option></select></label>
     <label class="schedule-agent-field">Soul<select class="field" name="agent"></select></label>
     <label class="schedule-home-field">Agent home<select class="field" name="home"></select></label>
@@ -83,6 +84,8 @@ export function createSchedulesView(el, ctx, { cli = cliStatus, subscribeCli = o
   let operationRequest = 0, formOperation = 0, mutationOperation = 0;
   // The local verbs need the schedule contract (0.28) on a compatible CLI, and a list that read:
   // nothing changes what the page could not show.
+  // The Summary field needs an OATS that writes summaries (feature automation-descriptions, 0.43).
+  const summaries = () => automationDescriptionsSupported(cli());
   const canMutate = () => { const c = cli(); return alive && readOk && c?.ok === true && [1, 2].includes(c.scheduleApi) && !!c.features?.includes("schedule"); };
   const owns = (token, gen) => alive && token === formOperation && gen === workspaceGeneration();
   const preserve = (name, key = name) => original && original.kind === field("kind").value && Object.hasOwn(original, key) && field(name).value === baseline[name] ? original[key] : field(name).value;
@@ -150,6 +153,7 @@ export function createSchedulesView(el, ctx, { cli = cliStatus, subscribeCli = o
     field("cron").value = job?.cron || "*/15 * * * *";
     field("repeat").value = [...field("repeat").options].some(o => o.value === field("cron").value) ? field("cron").value : "custom";
     field("enabled").checked = job?.enabled ?? true;
+    q(".schedule-summary-field").hidden = !summaries(); field("description").value = job?.description || "";
     field("kind").value = job?.kind || (soul ? "spawn" : "wake");
     field("task").value = job?.message || job?.task || "";
     field("purpose").value = job?.purpose || "";
@@ -215,8 +219,14 @@ export function createSchedulesView(el, ctx, { cli = cliStatus, subscribeCli = o
     event.preventDefault(); if (busy || !formReady || !canMutate() || sheet.hidden) return;
     const kind = field("kind").value;
     const spec = { kind, cron: preserve("cron"), tz: preserve("tz"), enabled: field("enabled").checked };
-    // The form does not edit this label, but a replacement definition must retain it.
-    if (original && Object.hasOwn(original, "description")) spec.description = original.description;
+    if (summaries()) {
+      // The Summary field: empty leaves the replacement without one (which removes it).
+      const typed = field("description").value;
+      const description = original && Object.hasOwn(original, "description") && typed === baseline.description ? original.description : typed.trim();
+      if (description && !descriptionValid(description)) { q(".schedule-form-error").textContent = `Summary: one line of up to ${DESCRIPTION_MAX} characters, without control characters`; field("description").focus(); return; }
+      if (description) spec.description = description;
+    // An OATS without summaries: the form does not edit this label, but a replacement definition must retain it.
+    } else if (original && Object.hasOwn(original, "description")) spec.description = original.description;
     if (kind === "spawn") {
       const [agent, repo, agentsRoot] = JSON.parse(field("agent").value || "[]"); Object.assign(spec, { agent, repo, agentsRoot, task: preserve("task", "task") });
       if (field("purpose").value) spec.purpose = preserve("purpose");
@@ -280,7 +290,7 @@ export function createSchedulesView(el, ctx, { cli = cliStatus, subscribeCli = o
   const rowActions = row => {
     if (!canMutate()) return [];
     const actions = row.origin.kind === "local" ? [{ label: "Edit", verb: "edit", run: () => editRow(row) }] : [];
-    if (row.runsHere && row.lastRun?.outcome === "unknown") actions.push({ label: "Check run state", verb: "reconcile",
+    if (row.runsHere && runState(row)?.unknown) actions.push({ label: "Check run state", verb: "reconcile",
       run: () => mutate("reconcile", row.key, null, () => automations({ kind: "schedule", action: "reconcile", key: row.key })) });
     if (row.origin.kind === "local") actions.push({ label: "Delete…", verb: "remove", run: () => askDelete(row) });
     return actions;

@@ -323,21 +323,29 @@ export async function cliSchedule(bin, { operation, id, spec, workspaceDir, serv
 
 /** Workspace + local triggers and schedules (feature automations, automationsApi 1): the
  * kernel's own lists and verbs, argv only. `id` is a qualified id (`local/<id>`,
- * `<member>/<id>`) or a bare local id; nothing option-shaped reaches the CLI. */
+ * `<member>/<id>`) or a bare local id; nothing option-shaped reaches the CLI. `describe`
+ * (feature automation-descriptions) is `<kind> update <local id> --description=<text>`: a
+ * local item only, the summary as ONE `=` token so a `-`-led value never becomes a flag. */
 // `list` takes no id; `status` takes an optional one (a trigger's fire history); the rest need one.
-export const AUTOMATION_VERBS = Object.freeze({ trigger: ["list", "status", "enable", "disable", "test"], schedule: ["list", "enable", "disable", "test", "run", "reconcile"] });
+export const AUTOMATION_VERBS = Object.freeze({ trigger: ["list", "status", "enable", "disable", "test", "describe"], schedule: ["list", "enable", "disable", "test", "run", "reconcile", "describe"] });
 const ID_OPTIONAL = new Set(["status"]);
 export const AUTOMATION_ID = /^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,63}\/)?[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 // The member component and trigger admission retain their existing bounds.
 const SCHEDULE_AUTOMATION_ID = /^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,63}\/)?[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 export const automationIdValid = (kind, id) => typeof id === "string" && (kind === "schedule" ? SCHEDULE_AUTOMATION_ID : AUTOMATION_ID).test(id);
-export function cliAutomation(bin, { kind, action, id, workspaceDir }, io = {}) {
+// A local item's key: bare or `local/`; a member's (workspace) item is edited in Git, never here.
+export const automationKeyLocal = id => typeof id === "string" && (!id.includes("/") || id.startsWith("local/"));
+// The kernel's summary rule (and renderer/schedule-read-data.mjs's): "" clears, else one line of 1-200 code points.
+export const automationDescriptionValid = v => typeof v === "string" && [...v].length <= 200 && !/[\p{Cc}\u2028\u2029]/u.test(v);
+export function cliAutomation(bin, { kind, action, id, description, workspaceDir }, io = {}) {
   if (!Object.hasOwn(AUTOMATION_VERBS, kind) || !AUTOMATION_VERBS[kind].includes(action)
     || (action === "list" ? id !== undefined : id === undefined ? !ID_OPTIONAL.has(action) : !automationIdValid(kind, id))
+    || (action === "describe" ? !automationKeyLocal(id) || !automationDescriptionValid(description) : description !== undefined)
     || typeof workspaceDir !== "string" || !isAbsolute(workspaceDir) || workspaceDir.includes("\0")) {
     return Promise.resolve({ schemaVersion: 1, ok: false, error: { code: "E_BAD_ARGS", message: "Invalid automation request" } });
   }
-  const argv = [kind, action, ...(id === undefined ? [] : [id]), "--dir", workspaceDir, "--json"];
+  const verb = action === "describe" ? ["update", id, `--description=${description}`] : [action, ...(id === undefined ? [] : [id])];
+  const argv = [kind, ...verb, "--dir", workspaceDir, "--json"];
   return runJson(bin, argv, { cwd: workspaceDir, exec: io.exec, timeout: io.timeout || (action === "test" ? 60_000 : 30_000) });
 }
 

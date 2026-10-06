@@ -19,11 +19,21 @@ exactly one `ws`, the server-wide loopback Origin guard):
 | `trigger` | `enable`, `disable`, `test` | required |
 | `schedule` | `list` | none |
 | `schedule` | `enable`, `disable`, `test`, `run`, `reconcile` | required |
+| `trigger`, `schedule` | `describe` (with `description`) | required, local |
 
 `key` is the row's qualified id (`local/<id>`, `<member>/<id>`) or a bare local
 id, never option-shaped. The server runs `oats <kind> <action> [key] --dir
 <workspace scope> --json` (argv only, the accepted CLI binary; 30 s, 60 s for
 `trigger test`) for a **local** workspace only.
+
+`describe` (feature `automation-descriptions`, kernel 0.43) sets or clears a
+local item's summary: `oats <kind> update <key> --description=<text> --dir …
+--json`, the text as ONE `=` token so a `-`-led value never becomes a flag, and
+`""` (exactly `--description=`) clears it. The server refuses before any call a
+workspace key, `description` on any other action, and text outside the
+kernel's rule (one line of 1 to 200 code points, no `\p{Cc}`, no U+2028 or
+U+2029); without the feature it answers `E_DESCRIPTIONS_UNAVAILABLE`. The
+kernel answers `{ schedule: <row> }` or `{ trigger: <row> }`.
 
 The answer resolves; it never rejects:
 
@@ -40,6 +50,39 @@ The answer resolves; it never rejects:
 The app proxy classifies `/api/automations` as its own route, pins the verified
 workspace unless the server advertises the one asked, keeps duplicate `ws` for
 the backend's refusal, and allows 90 s.
+
+## Summaries and the detail page
+
+The adapter (`renderer/automation-rows.mjs`) reads every fact a view shows
+from the kernel row explicitly: what each run sends (a wake's `message` and
+`home`, a command's `argv` and `cwd`, an `operation` and its `home`), a spawn's
+`purpose`, `backend`, `yolo` and own `wake` (under `spawn` for a trigger), the
+run state (`running`, `attempt`, `pendingWake`) and `createdAt`/`updatedAt`.
+`raw` feeds only the local editor's draft.
+
+- **The list row** shows the bare `name` beside its origin tag (the qualified
+  id is the title and the accessible name). Under it, `summaryLine`: the
+  `description` as text; else the first non-empty line of the task (spawn,
+  trigger) or wake message, muted italic, titled "No summary set — first line
+  of the prompt"; else "No summary". Nothing is ever derived from argv.
+- **The detail page** shows the name with the qualified id under it, then the
+  summary or "No summary". What it sends is shown whole, never summarized;
+  Spawns (spawn schedules, triggers) adds the purpose, permissions, backend
+  and the recurring wake. `runState` gives the Run state card: running since
+  its attempt began; unknown (an attempt without a result, or a last run of
+  outcome `unknown`) with its exit facts, *Check run state* and the
+  `reconcileCommand` to paste (`oats schedule reconcile <qualified id>
+  [--clear] --dir <scope>`); a wake waiting to be delivered. An Invalid or
+  Unreadable item gets its own card (code, field, message); Comes from adds
+  the package template's provenance and a local item's times.
+- **Writes** need `automation-descriptions` (`automationDescriptionsSupported`;
+  reading needs no gate, an older kernel sends null). *Edit summary* (the
+  lede, the page bar and the row menu, local rows only) opens one modal
+  sheet per view. Its save is a latest-intent operation: closing or disposing
+  invalidates it, focus parks on the sheet's status line while it runs, and it
+  returns to the opening control, or the same control by identity after the
+  re-read. The schedule form's Summary field shows only with the feature;
+  without it the form keeps the stored summary as it is.
 
 ## Opening a definition
 
@@ -59,5 +102,9 @@ nothing ("edit it with the CLI") when the form cannot keep a field.
 
 `test/automations-server.test.mjs` (captured argv, verbatim results, refusals,
 gates, keys, the adapter over the real shapes), `automations-view.test.mjs`,
-`schedule-draft.test.mjs`, `normalized-api-guards.test.mjs`; fixtures
-`test/fixtures/automations/kernel/` (kernel captures, `provenance.json`).
+`automation-descriptions.test.mjs` (summaries, every detail card, Edit summary,
+the gate, the form's Summary), `schedule-draft.test.mjs`,
+`normalized-api-guards.test.mjs`; fixtures `test/fixtures/automations/kernel/`
+and `test/fixtures/automation-descriptions/` (kernel captures,
+`provenance.json`; the latter re-captured with `CAPTURE_COMMIT=<oid> node
+capture-descriptions.mjs <kernel tree>`).

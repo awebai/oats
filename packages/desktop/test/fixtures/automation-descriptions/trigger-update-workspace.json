@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_AUTOMATION_WORKSPACE",
+    "message": "ws/from-template is defined in Git (local//fixture/base/remotes/ws.git:oats-triggers/from-template.yaml @ 6919a5d900d9); change the file there",
+    "details": {
+      "id": "ws/from-template",
+      "origin": {
+        "kind": "workspace",
+        "repoKey": "local//fixture/base/remotes/ws.git",
+        "path": "oats-triggers/from-template.yaml",
+        "commit": "6919a5d900d9f1784d158c5ab800fedc1347c921",
+        "url": null,
+        "localPath": "/fixture/base/deployment/ws/oats-triggers/from-template.yaml"
+      }
+    }
+  }
+}

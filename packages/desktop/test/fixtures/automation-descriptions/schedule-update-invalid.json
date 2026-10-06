@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_SCHEDULE_INVALID",
+    "message": "description: one line of 1 to 200 characters, without control characters",
+    "details": {
+      "field": "description"
+    }
+  }
+}
