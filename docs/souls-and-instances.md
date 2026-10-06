@@ -809,6 +809,69 @@ commit yet cannot be read that way: a retire that would remove it, or that
 has work of it to copy, refuses with `E_WORK_INSPECTION_FAILED` and removes
 nothing.
 
+#### Extra trees at retire
+
+An instance can hold [extra trees](#extra-trees) in its home beside `work/`.
+Retire handles them itself, so the home removal never deletes their work.
+
+An **extra tree** is a top-level entry of the home named `.work-*` that is a
+real directory (not a symbolic link), whose `.git` is a regular file, and that
+Git confirms is a registered linked worktree of some repository: its Git
+directory differs from its common directory, its top level is the entry
+itself, and that repository's `git worktree list` names it. Its repository is
+the first entry of that list (the main worktree, or the bare repository).
+Anything named `.work-*` that does not verify (a plain directory, an orphaned
+`.git` file, a symbolic link, a nested full clone) is ordinary home bytes, and
+the home's recovery copies it as before. This holds in every work mode,
+`directory` included.
+
+A verified extra tree is not part of the home's recovery bytes: it does not
+count as changed instance-home bytes, it is not copied, and the recovery's
+`notCopied` lists it as `{scope: "home", path: ".work-<purpose>", owner:
+"kernel:extra-worktree"}`.
+
+The extra-tree step runs only when the home is going to be removed: not with
+`--keep-dir`, and not when the retire keeps the home for a retry. That is the
+condition of the `work/` worktree step (nothing outstanding, or `--force`).
+It runs after the retire hooks and before the `work/` step, so a refusal
+leaves `work/` untouched. For each tree:
+
+- **A clean tree is removed.** Clean means that `git status`, ignored and
+  untracked files included, is empty; no merge, rebase, cherry-pick, revert,
+  bisect or sequencer operation is in progress; and its HEAD commit is
+  reached by some ref. The retire runs `git worktree remove` (without
+  `--force`) and `git worktree prune`, and verifies that the tree is gone from
+  `git worktree list`. Its branch is never deleted: a commit on the branch that
+  was not pushed stays in the clone, on that branch.
+- **Any other tree is re-homed**, as `work/` is by default: `git worktree
+  move` to `<deployment>/.agents/worktrees/<repo>/<leaf>`, where `<leaf>` is
+  the branch name with characters outside `A-Za-z0-9._-` replaced by `-`, or
+  `detached-<12 hex>` when HEAD is detached. A target that exists gets `-2`,
+  `-3`, and so on. A tree whose HEAD cannot be read is re-homed too.
+- **A tree the retire cannot handle refuses it.** A locked tree (`git worktree
+  lock`) is refused before any tree is touched. A move or a removal that Git
+  refuses (a tree with submodules, for example), or a removal that cannot be
+  verified, refuses too. The refusal is `E_WORK_PRESERVATION_FAILED` naming
+  the tree, and the home is kept. Trees already handled in that pass stay
+  handled, and the message says what was done. `--force` does not bypass it:
+  it forces past hook cleanup, not past local work.
+
+`--discard-worktree` applies to `work/` only: a tree that is not clean is
+always re-homed. The retire writes one workspace event per handled tree
+(`worktree-removed` or `worktree-retained`, with `extra: true` and the tree's
+`path`), and its summary prints one line per tree: removed, or re-homed to
+the new path.
+
+`oats retire <instance> --plan` lists the trees and what the retire would do
+with each, and they are part of the plan's revision: a tree created, removed,
+dirtied or cleaned between the plan and a guarded apply, or a new target for
+it, refuses the apply with `E_PLAN_STALE` before anything runs. The retire
+checks the trees again at the step itself and refuses with `E_PLAN_STALE`,
+keeping the home, rather than move or remove a tree in a way the plan did
+not say. The retire hooks have run by then, and no tree was moved or
+removed. The fields are in
+[the CLI API](desktop-cli-api.md#retire).
+
 ## Work modes
 
 A work mode decides what `./work` points at and what discipline the agent must
@@ -824,7 +887,8 @@ instructions state first (`injects/instance-boundary.md`):
   target another one deliberately).
 - `<instance-home>/work` — the repository or workspace view — is where
   repository reading, editing, building, testing, git and commits happen, to the
-  extent the mode below permits.
+  extent the mode below permits. In `worktree` and `checkout` mode, the
+  instance's [extra trees](#extra-trees) in the home serve the same purpose.
 - The home has no soul link: the composed `AGENTS.md` already carries the
   soul's instructions, and `instance.json` `soulDir` records the (read-only,
   per-commit) soul directory every hook and dispatched command receives as
@@ -863,10 +927,12 @@ Use this for agents that will edit code or docs independently.
 Rules:
 
 - Build, test, and commit from `work/`, on your own branch.
-- Never run git from the repo's main checkout — it resolves to the wrong branch
-  and skips review.
-- Do not create extra worktrees. Ask for another instance if parallel work is
-  needed.
+- Never work in a shared checkout (the repo's main checkout, or any clone
+  others use): do not edit, commit or switch branches there. Against a clone,
+  run only `git worktree add` and `git worktree remove`, as in
+  [extra trees](#extra-trees).
+- Everything you change happens in `work/` or in your extra trees.
+- Leave your branch and the worktree list clean when your task closes.
 
 ### `checkout` — shared current branch
 
@@ -880,7 +946,10 @@ Rules:
 
 - Stay on the currently checked-out branch.
 - Do not switch branches unless explicitly asked.
-- Avoid destructive git operations unless the human explicitly asks.
+- No destructive git operations (`reset --hard`, rebase, force-push, checkout
+  of another branch) unless the human explicitly asks.
+- Work that needs its own branch goes in an [extra tree](#extra-trees), not
+  in `work/`.
 
 ### `attached` — another instance's tree
 
@@ -934,6 +1003,50 @@ Rules:
   direct edits through the workspace view.
 
 The instance records no branch: the workspace is not a Git tree.
+
+### Extra trees
+
+An instance in `worktree` or `checkout` mode can create extra trees: linked
+Git worktrees in its home, beside `work/`. It does so when the work needs
+another branch, or another repository of the deployment (one task that
+touches several repositories). The `worktree` and `checkout` briefings give
+the command; the `workspace`, `directory` and `attached` briefings do not.
+There is no `oats` command for it.
+
+`<clone>` is any clone of the deployment (`oats-local.yaml` `clones:`, or
+`<deployment>/<repo>`), `origin` is its remote for that repository, and
+`<base>` is the remote branch the work starts from (the branch itself, to
+rework an existing one):
+
+```bash
+git -C <clone> worktree add --detach "$OATS_INSTANCE_HOME/.work-<purpose>"
+git -C "$OATS_INSTANCE_HOME/.work-<purpose>" fetch --refmap= origin <base>
+git -C "$OATS_INSTANCE_HOME/.work-<purpose>" switch -c <branch> FETCH_HEAD
+```
+
+- The tree starts from the remote's current state, never from a local branch
+  of the clone, which may be stale.
+- Creating it moves none of the clone's refs. The fetch runs inside the new
+  linked tree, which has its own `FETCH_HEAD`, and `--refmap=` keeps it from
+  updating remote-tracking refs. The clone's `FETCH_HEAD`, branches and work
+  tree are not touched, so creation does not race with others who use the
+  clone. The fetched objects go to the repository's shared object store.
+- `git switch` needs Git 2.23 or later.
+- `<branch>` follows the repository's own naming rules, else
+  `agents/<instance>-<purpose>`. If that branch already exists in the clone,
+  `switch -c` refuses: use `<instance>/<branch>`. Never `-C` or `-B`, which
+  reset a branch someone else may own.
+- The tree has no upstream. Push with `git push origin HEAD:<remote-branch>`
+  (`<base>` when reworking an existing branch). A push does update the
+  clone's `refs/remotes/origin/<remote-branch>`, as any push does.
+- Before the task closes, merge each extra tree into the PR branch, or push
+  its branch and name it in the hand-back; then
+  `git -C <clone> worktree remove "$OATS_INSTANCE_HOME/.work-<purpose>"`.
+
+`$OATS_INSTANCE_HOME` is set in every harness session OATS launches (Claude
+Code, Codex, pi), not only in hooks. Retirement removes a clean extra tree
+and re-homes one that holds work, but the briefing tells the agent not to
+rely on it: see [extra trees at retire](#extra-trees-at-retire).
 
 ## Agents root
 
