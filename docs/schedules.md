@@ -52,14 +52,21 @@ both are evaluated by the croner library. Schedule IDs use lowercase letters,
 digits and dashes, from 1 to 100 characters. Spawn schedules with a long ID
 need an explicit shorter `purpose` to fit the instance-name limit below.
 
-Any kind may carry `description`: what the job is for, in words, for the
-people reading `oats schedule list`, `show` and the Desktop. It is one line of
-1 to 200 characters with no control characters (no CR, LF, TAB or any other
-C0 or C1 character, nor a Unicode line or paragraph separator); anything else
-is `E_SCHEDULE_INVALID` with `field: "description"`. It is stored as given and
-is informational only: it never reaches a run's argv, environment, task or
-reconcile. A capability that registers jobs (knowledge harvest's `run-source`
-jobs) sets it so that its command jobs can be told apart.
+Every schedule and trigger, of any kind, may carry `description`: what it is
+for, in words, for the people reading `oats schedule list`, `oats trigger
+list`, `show` and the Desktop. It is one line of 1 to 200 characters with no
+control characters (no CR, LF, TAB or any other C0 or C1 character, nor a
+Unicode line or paragraph separator). A local schedule or trigger that breaks
+the rule is refused, `E_SCHEDULE_INVALID` or `E_TRIGGER_INVALID` with `field:
+"description"`; a workspace file's header that breaks it is only a warning
+(see [the header](#workspace-triggers-and-schedules)). It is stored as given
+and is informational only: it never reaches a run's argv, environment, task,
+template or reconcile. A capability that registers jobs (knowledge harvest's
+`run-source` jobs) sets it so that its command jobs can be told apart. Set it
+in the definition or with `--description=<text>` on `add`; change only it with
+`update <id> --description=<text>` (see [Commands](#commands)). Local triggers
+take it from OATS 0.43.0 (feature `automation-descriptions`); an older kernel
+refuses the key on a trigger.
 
 - **spawn** `{…, agent, agentsRoot?, repo?, backend?, purpose?, task,
   launchConfig?, harness?, model?, yolo?, wake?}` — every due minute launches
@@ -131,6 +138,7 @@ when the timer cannot reach it.
 
 ```json
 { "id": "okf-harvest-review", "enabled": true, "kind": "trigger",
+  "description": "Review every harvest PR on the knowledge base",
   "on": { "source": "github.pull_request", "repo": "github.com/acme/knowledge",
           "events": ["opened", "reopened", "ready_for_review"],
           "labels": ["okf-harvest"], "base": "main", "poll": "2m" },
@@ -178,15 +186,19 @@ when the timer cannot reach it.
   harness, and is recorded in `instance.json.trigger`.
 
 ```sh
-oats trigger add --file trigger.json                 # or:
-oats trigger add --from oats.okf:harvest-review --set repo=github.com/acme/knowledge [--id <id>]
+oats trigger add --file trigger.json [--description=<text>]   # or:
+oats trigger add --from oats.okf:harvest-review --set repo=github.com/acme/knowledge [--id <id>] [--description=<text>]
+oats trigger update <id> --description=<text>   # the description only; --description= clears it
 oats trigger list | show <id> | enable <id> | disable <id> | remove <id>
 oats trigger test <id>      # dry run: gh credentials, repo permissions, the soul, what WOULD fire
 oats trigger status [<id>]  # last poll, next due, pending and fired events, live vs max, last error
 ```
 
 All take `--dir` and `--json` (`triggerApi: 1`). `remove` leaves the instances
-it spawned running. `oats schedule list` does not list triggers but counts
+it spawned running. `update` changes only a local trigger's description (any
+other flag is `E_BAD_ARGS`: a full trigger update is a remove and an add); it
+sets `updatedAt` and leaves the trigger's fired and pending events as they
+are. A workspace trigger is changed in Git (`E_AUTOMATION_WORKSPACE`). `oats schedule list` does not list triggers but counts
 them (`triggers: { count, command: "oats trigger list" }`, and a line in text
 mode). Errors: `E_TRIGGER_INVALID { field }`, `E_TRIGGER_EXISTS`,
 `E_TRIGGER_UNKNOWN`, `E_TRIGGER_TEAMS`, `E_BAD_ARGS`.
@@ -196,8 +208,10 @@ in `oats-package.json`, each file `{ parameters: { <name>: { path, required?,
 default?, description? } }, definition }`. `oats trigger add --from
 <package>:<id>` reads it at the locked commit, and `--set <name>=<value>`
 fills a parameter at its dotted `path` (a list value is comma-separated; a
-missing required one is `E_BAD_ARGS { missing }`). See
-[packages.md](packages.md#trigger-templates).
+missing required one is `E_BAD_ARGS { missing }`). A template's `definition`
+may carry `description` (validated like any trigger's): `add --from` copies
+it, and `--description=<text>` overrides it (`--description=` leaves it out).
+See [packages.md](packages.md#trigger-templates).
 
 ## Workspace triggers and schedules
 
@@ -246,6 +260,15 @@ owner: github.com/ana
   `runsOn` and `owner`, and optionally `id`, `description` and `enabled`. A
   candidate of the wrong kind (a schedule in `oats-triggers/`) or without one
   is an `E_AUTOMATION_SCHEMA` problem, never silently skipped.
+- **The description** follows the [one rule](#kinds), but a header that
+  breaks it does not stop the job: the entry still loads and runs as if it
+  had none (`description: null`), and the snapshot reports an `E_AUTOMATION_SCHEMA`
+  problem at `<path>#/description` ("description: one line of 1 to 200
+  characters without control characters — shorten it or remove it; the
+  automation keeps running without one"). A trigger made `from:` a package
+  template shows the header's description, else the template's. It lives in
+  the header only: `add --workspace` writes the flag's (else the spec's) there,
+  never into the body.
 - **The id** is `id:`, else the filename stem. The same id twice in one member
   for one kind is `E_AUTOMATION_DUPLICATE`, naming both paths; the second file
   is not listed. Schedule IDs allow 1 to 100 lowercase letters, digits and dashes; trigger
@@ -312,8 +335,9 @@ check the placement and everything else on this host.
 ## Commands
 
 ```sh
-oats schedule add <id> --file spec.json [--dir <deployment>] [--json]
-oats schedule update <id> --file spec.json
+oats schedule add <id> --file spec.json [--description=<text>] [--dir <deployment>] [--json]
+oats schedule update <id> --file spec.json [--description=<text>]
+oats schedule update <id> --description=<text>   # the description only; --description= clears it
 oats schedule list | show <id> | enable <id> | disable <id> | remove <id> [--force]
 oats schedule run <id> [--force]  # now, under the same lock and bound
 oats schedule test <id>           # dry run: where it runs, whether its soul resolves, when it is next due
@@ -325,6 +349,16 @@ oats schedule host install --max-concurrent default --triggers-max-concurrent no
 oats schedule host status | uninstall
 oats spawn <agent> ... --wake-every 15 --wake-message "Anything new?"   # or --wake-file spec.json
 ```
+
+`--description=<text>` sets the spec's `description`, or overrides it;
+`--description=` (empty) removes it. Take the `=` form: it is the one that
+carries an empty value, or one that starts with `-`. With `--file` or
+`--spec-json`, `update` replaces the whole definition as before (one without a
+description drops it). Without them, `update <id> --description=<text>`
+changes only the description of a local schedule, under the same locks, and
+is allowed while the job runs or has an unresolved attempt. With `--server`,
+the destination must advertise `automation-descriptions`
+(`E_REMOTE_INCOMPATIBLE` otherwise, before anything is forwarded).
 
 `<id>` is `local/<id>` (or the bare id) or `<member>/<id>`. `host uninstall`
 unregisters the deployment and removes the timer once none is registered.

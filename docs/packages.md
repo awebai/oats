@@ -283,6 +283,12 @@ A package may also ship **trigger templates**: `triggers: [{ id,
 file }]` in `oats-package.json`, each file `{ parameters, definition }`.
 `oats trigger add --from <package>:<id> --set <name>=<value>` instantiates one
 at the locked commit; see [schedules.md#triggers](schedules.md#triggers).
+A template's `definition` may carry `description`, the one-line summary its
+triggers show (validated like any trigger's: one line of 1 to 200 characters
+without control characters). `add --from` copies it and `--description=<text>`
+overrides it; a workspace trigger made `from:` it shows its file header's
+description, else the template's. A kernel before 0.43.0 refuses the key, so
+a package whose template sets it needs `compatibility.oats: ">=0.43.0"`.
 
 ## Compatibility floors
 

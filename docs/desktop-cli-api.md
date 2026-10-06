@@ -108,6 +108,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
 | `capability-route` | `oats <namespace> <command> … --server <id>` runs the capability command on the server, OATS 0.39.0 ([Capability commands on a server](#capability-commands-on-a-server)) | |
 | `operator-default-soul` | a capability command from a deployment without `--soul` runs as the first soul that provides its namespace (named on stderr); none is `E_BAD_ARGS`, OATS 0.39.0 ([capabilities.md](capabilities.md)) | |
 | `waiting-on-you` | the `waiting` event kind and the session boundary rule; `oats instance waiting` and `oats instance attention`; `waitingOnYou` (with `message`) on `oats status --json` instance rows, on `oats session inspect --json` and in the events read, OATS 0.40.0 ([Waiting on you](#waiting-on-you)) | `eventsApi: 2` |
+| `automation-descriptions` | a `description` on every trigger and schedule row, local or workspace, by one rule; `oats schedule update <id> --description=<text>` (the description only) and `oats trigger update <id> --description=<text>`; `--description=<text>` on `schedule add` and `trigger add`, OATS 0.43.0 ([Shared row fields](#automations-shared-rows)) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -2862,6 +2863,7 @@ workspace item of a readable member. Render the rows; never re-derive them.
 ```text
 oats schedule list [--dir <d>] --json
 oats schedule show <id> --json
+oats schedule update <id> --description=<text> [--dir <d>] --json
 ```
 
 ```json
@@ -2888,6 +2890,14 @@ oats schedule show <id> --json
 - `list`: `{scope, scheduleApi, scheduleHistoryApi, integrity, host,
   triggers, snapshot, schedules, scheduler}`; `triggers` counts the trigger
   definitions left out. `show <id>`: `{schedule}`, without `integrity`.
+- `update <id> --description=<text>` without `--file`/`--spec-json` (feature
+  `automation-descriptions`) changes only a local schedule's description,
+  any kind's (a command schedule too), and is allowed while the job runs or
+  has an unresolved attempt. `--description=` (empty) removes it. It answers
+  `{schedule}` (the row `show` answers). A workspace schedule refuses
+  `E_AUTOMATION_WORKSPACE`; out of the rule is `E_SCHEDULE_INVALID {field:
+  "description"}`. Run it as argv, without a shell, always in the `=` form.
+  An older kernel refuses it as a missing `--file`.
 - **A readable row**: the definition (`id, kind, cron, tz, enabled, …`, and
   `agent/task/purpose/harness` for a spawn, `argv/cwd` for a command, the
   message for a wake, the operation for an operation) plus `scope,
@@ -2907,14 +2917,8 @@ oats schedule show <id> --json
   limit. Desktop accepts these schedule names for creation, editing and row
   actions (enable, disable, test, run and reconcile), including qualified IDs.
   A spawn's derived instance name still has a 64-character limit.
-- **`description`** (0.40.0): the shared row field is the local definition's
-  `description` when it has one, else `null` (a workspace schedule's comes
-  from its file header). It is one line of at most 200 characters with no
-  control characters; show it in place of the argv when present. Like `task`,
-  it is untrusted text: render it as text. Desktop preserves it unchanged
-  through edits to timing and other fields. A kernel before 0.40.0 sends
-  `null` for every local schedule, and drops a `description` given to `oats
-  schedule add` without refusing it.
+- **`description`**: the [shared row field](#automations-shared-rows).
+  Desktop preserves it unchanged through edits to timing and other fields.
 - **An unreadable row** (`list` only): `{id, scope, scheduleApi,
   scheduleHistoryApi, unreadable: {code, message}, history: {status:
   "corrupt", stored: null, truncated: false}, recentRuns: []}`. One bad job
@@ -2964,14 +2968,14 @@ oats schedule show <id> --json
 ### `oats trigger`
 
 ```text
-oats trigger list | show <id> | status [<id>] | test <id> | add (--file <json> | --from <package>:<template> [--set k=v]) | enable <id> | disable <id> | remove <id> --json
+oats trigger list | show <id> | status [<id>] | test <id> | add (--file <json> | --from <package>:<template> [--set k=v]) [--description=<text>] | update <id> --description=<text> | enable <id> | disable <id> | remove <id> --json
 ```
 
 Event-driven spawns. Local definitions live in `oats-schedules.json` (`kind:
 "trigger"`).
 
 - `list`: `{triggerApi, scope, host, snapshot, triggers, scheduler}`.
-  `show`, `add`, `enable`, `disable` → `{trigger}`; `remove` → `{removed,
+  `show`, `add`, `update`, `enable`, `disable` → `{trigger}`; `remove` → `{removed,
   live: [instance]}`. A stored definition that no longer validates carries
   `invalid: {code, message, field?}`.
 - **A trigger row**: the [shared row fields](#automations-shared-rows) plus
@@ -3007,6 +3011,12 @@ Event-driven spawns. Local definitions live in `oats-schedules.json` (`kind:
   cannot reach is a warning.
 - A triggered instance records `instance.json.trigger`; its event file is
   `OATS_TRIGGER_EVENT_FILE`.
+- `update <id> --description=<text>` (feature `automation-descriptions`)
+  changes only a local trigger's description; `--description=` (empty)
+  removes it. It sets `updatedAt` and leaves fired and pending events
+  untouched. `<id>` is `local/<id>` or the bare id; a workspace trigger
+  refuses `E_AUTOMATION_WORKSPACE`. Any other flag is `E_BAD_ARGS` ("only
+  --description is supported for now"). An older kernel has no `update`.
 - Errors: `E_TRIGGER_INVALID {field}`, `E_TRIGGER_EXISTS`,
   `E_TRIGGER_UNKNOWN`, `E_TRIGGER_TEAMS`, `E_TRIGGER_POLL`,
   `E_TRIGGER_FAILED`, `E_BAD_ARGS`, `E_PACKAGE_MISSING`,
@@ -3032,7 +3042,18 @@ registered). `maxConcurrent` is the effective scheduled-job cap (default 5);
   localPath}` or `{kind: "workspace", repoKey, path, commit, url,
   localPath}` (`url` for `github.com` only; `localPath` `null` when the
   member is not cloned here).
-- `description`, `owner`, `runsOn`, `runsHere`, `reason` (`null` |
+- `description`: what it is for, in words, or `null`. One rule for both kinds
+  and every level: one line of 1 to 200 characters with no control
+  characters (no `\p{Cc}`, U+2028 or U+2029). A local item's comes from its
+  definition; a workspace item's from its file header, and for a trigger made
+  `from:` a package template, the template's when the header has none. A
+  header out of the rule counts as none (the item still runs) and leaves a
+  snapshot problem at `<path>#/description`. Like `task`, it is untrusted
+  text: render it as text. A kernel before 0.43.0 (feature
+  `automation-descriptions`) sends `null` for every local trigger and refuses
+  a trigger `description`; one before 0.40.0 sends `null` for every local
+  schedule too.
+- `owner`, `runsOn`, `runsHere`, `reason` (`null` |
   `host-unnamed` | `assigned-elsewhere` | `owner-mismatch` | `untrusted`),
   `reasonDetail`, `enabledHere`.
 - `untrusted` (0.30, [automations.trust](configuration.md#who-runs-workspace-automations)):
