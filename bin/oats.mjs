@@ -47,7 +47,7 @@ import { attachArgv, checkRemote, connectServer, forgetSnapshot, getServer, insp
 import { spawnSync as spawnSyncProc } from "node:child_process";
 import { tickTriggers } from "../lib/triggers.mjs";
 import * as A from "../lib/automations.mjs";
-import { parseEnvelopeText, unresolvedScheduleAttempts, scheduleScopeOf, listSchedules, describe as describeSchedule, testSchedule, addSchedule, updateSchedule, setEnabled as setScheduleEnabled, removeSchedule, runNow as runScheduleNow, reconcile as reconcileSchedule, tickHost, tickWorkspace, scopeAutomations, scheduleKind, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } from "../lib/schedule.mjs";
+import { parseEnvelopeText, unresolvedScheduleAttempts, scheduleScopeOf, listSchedules, describe as describeSchedule, testSchedule, addSchedule, updateSchedule, updateScheduleDescription, setEnabled as setScheduleEnabled, removeSchedule, runNow as runScheduleNow, reconcile as reconcileSchedule, tickHost, tickWorkspace, scopeAutomations, scheduleKind, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } from "../lib/schedule.mjs";
 import { hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/schedule-host.mjs";
 import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } from "../lib/attachments.mjs";
 
@@ -69,6 +69,9 @@ const KERNEL_SWITCHES = new Set(["allow-child-spawns", "apply", "check", "clear"
  *  value is kept out of argv, where it would read as a flag (`--message=--clear` must not
  *  clear), and flag() answers it from `inline`. */
 const INLINE_TEXT_FLAGS = new Set(["message"]);
+/** Free-text flags whose inline value is always kept whole, the empty one included:
+ *  `--description=` clears a trigger's or schedule's description. */
+const INLINE_WHOLE_FLAGS = new Set(["description"]);
 function expandInlineValues(argv) {
   const out = [];
   const inline = new Map();
@@ -77,7 +80,7 @@ function expandInlineValues(argv) {
     const eq = a.indexOf("=");
     if (!a.startsWith("--") || eq <= 2) { out.push(a); continue; }
     const name = a.slice(2, eq), value = a.slice(eq + 1);
-    if (INLINE_TEXT_FLAGS.has(name) && value.startsWith("--")) { inline.set(name, value); out.push(`--${name}`); continue; }
+    if (INLINE_WHOLE_FLAGS.has(name) || (INLINE_TEXT_FLAGS.has(name) && value.startsWith("--"))) { inline.set(name, value); out.push(`--${name}`); continue; }
     problem ??= KERNEL_SWITCHES.has(name) ? `--${name} takes no value (got ${a})` : value === "" ? `--${name}= needs a value` : value.startsWith("--") ? `--${name}= takes a value, not an option (got ${a})` : undefined;
     out.push(`--${name}`, value);
   }
@@ -104,6 +107,20 @@ function valueFlag(name) {
   const value = flag(name);
   if (value === true) cmdFail("E_BAD_ARGS", `--${name} needs a value`);
   return value;
+}
+/** `--description=<text>` on the trigger and schedule verbs: undefined when absent, the text
+ *  otherwise (`""` clears). The spaced form works too, but only `=` carries an empty value or one
+ *  that starts with `--`. */
+function descriptionFlag() {
+  const value = flag("description");
+  if (value === true) throw Object.assign(new Error("--description needs a value: --description=<text> (--description= clears it)"), { code: "E_BAD_ARGS" });
+  return value;
+}
+/** A spec with the --description flag applied: it sets or overrides `description`; `""` removes it. */
+function withDescription(spec, description) {
+  if (description === undefined || !spec || typeof spec !== "object" || Array.isArray(spec)) return spec;
+  const { description: _d, ...rest } = spec; void _d;
+  return description === "" ? rest : { ...rest, description };
 }
 const die = (msg, exit = 1) => { console.error(`oats: ${msg}`); process.exit(exit); };
 /** A command's harness: --harness, or --runtime, its pre-0.27 name (the released okf worker and
@@ -1430,9 +1447,11 @@ async function automationsCmd() {
 /** `oats trigger|schedule add --workspace <member> --runs-on <host> --owner <host>/<login>`: the
  *  workspace file, written into the member's checkout when `--dir` (or the cwd) is inside one, else
  *  printed. What is written must read back as the same automation (parseAutomationFile + expand). */
-async function addWorkspaceAutomation(desc, { id, body }) {
+async function addWorkspaceAutomation(desc, { id, body, description }) {
   const bail = (code, msg, details) => { throw Object.assign(new Error(msg), { code, details }); };
-  const member = flag("workspace"), runsOn = flag("runs-on"), owner = flag("owner"), description = flag("description");
+  const member = flag("workspace"), runsOn = flag("runs-on"), owner = flag("owner");
+  // The header's description: refused here when out of the rule (discovery would only warn).
+  if (description !== undefined && description !== "") A.validateDescription(description, desc.kind === "trigger" ? "E_TRIGGER_INVALID" : "E_SCHEDULE_INVALID");
   if (typeof member !== "string" || !member) bail("E_BAD_ARGS", "--workspace needs a member name");
   if (typeof runsOn !== "string" || !A.HOST_NAME_RE.test(runsOn)) bail("E_BAD_ARGS", "--runs-on <host>: the host.name (oats-local.yaml) of the machine that runs it");
   if (!A.parseOwner(owner)) bail("E_BAD_ARGS", "--owner <host>/<login>: the GitHub account it acts as, e.g. github.com/acme-kb-bot");
@@ -1441,7 +1460,7 @@ async function addWorkspaceAutomation(desc, { id, body }) {
   const row = (discovery.members || []).find((m) => m.confirmed && (memberLabel(m.key) === member || m.key === member));
   if (!row) bail("E_AUTOMATION_MEMBER", `${member} is not a confirmed member of this workspace (members: ${(discovery.members || []).filter((m) => m.confirmed).map((m) => memberLabel(m.key)).join(", ") || "none"})`, { member });
   const name = memberLabel(row.key);
-  const content = A.automationFileText(desc, { id, description: typeof description === "string" ? description : undefined, runsOn, owner, body });
+  const content = A.automationFileText(desc, { id, description: description || undefined, runsOn, owner, body });
   const parsed = A.parseAutomationFile(desc, { stem: id, path: `${desc.folder}/${id}.yaml`, bytes: Buffer.from(content), member: name, repoKey: row.key, commit: row.commit });
   if (parsed.problem) bail(parsed.problem.code, parsed.problem.message, { path: parsed.problem.path });
   await desc.expand(parsed.entry);
@@ -2603,19 +2622,25 @@ async function scheduleCmd() {
       case "show": return out({ schedule: describeSchedule(ws(), needId(), io, { ctx: ctx() }) });
       case "test": return out({ test: testSchedule(ws(), needId(), io, { ctx: ctx() }) }, (r) => `${r.test.qualifiedId}: ${r.test.placement.runsHere ? "runs here" : `not here (${r.test.placement.reason ?? "disabled here"})`}${r.test.soul ? `; soul ${r.test.soul.name} ${r.test.soul.resolves ? "resolves" : `does NOT resolve (${r.test.soul.error?.code})`}` : ""}; next due ${r.test.nextDue ?? "never"}${r.test.problems.length ? `\n  ${r.test.problems.join("\n  ")}` : ""}\n(spawned nothing)`);
       case "add": {
-        const spec = readSpec();
+        const spec = withDescription(readSpec(), descriptionFlag());
         if (flag("workspace") !== undefined) {
           const wid = id ?? spec.id;
           if (typeof wid !== "string") throw scheduleError("E_BAD_ARGS", "oats schedule add <id> --workspace <member> …: the id names the file (oats-schedules/<id>.yaml)");
-          const { id: _i, enabled: _e, kind, ...rest } = spec; void _i; void _e;
-          const r = await addWorkspaceAutomation(scheduleKind({ dep: ws() }), { id: wid, body: { run: kind ?? "spawn", ...rest } });
+          // A description is the file header's, never the body's.
+          const { id: _i, enabled: _e, kind, description, ...rest } = spec; void _i; void _e;
+          const r = await addWorkspaceAutomation(scheduleKind({ dep: ws() }), { id: wid, body: { run: kind ?? "spawn", ...rest }, description });
           return out(r, printWorkspaceAdd);
         }
         if (id && spec.id === undefined) spec.id = id;
         if (id && spec.id !== id) throw scheduleError("E_SCHEDULE_INVALID", `id ${JSON.stringify(spec.id)} in the file does not match ${JSON.stringify(id)}`, { field: "id" });
         return out({ schedule: addSchedule(ws(), spec, io) });
       }
-      case "update": return out({ schedule: updateSchedule(ws(), needId(), readSpec(), io) });
+      case "update": {
+        const description = descriptionFlag();
+        // --description alone (no --file/--spec-json) changes only the description.
+        if (description !== undefined && flag("file") === undefined && flag("spec-json") === undefined) return out({ schedule: updateScheduleDescription(ws(), needId(), description, io) });
+        return out({ schedule: updateSchedule(ws(), needId(), withDescription(readSpec(), description), io) });
+      }
       case "enable":
       case "disable": {
         const on = sub === "enable";
@@ -2658,7 +2683,7 @@ async function scheduleCmd() {
         if (op === "status") return out({ scheduler: schedulerStatus(ws(), io) });
         throw scheduleError("E_BAD_ARGS", "oats schedule host install|uninstall|status");
       }
-      default: throw scheduleError("E_BAD_ARGS", "usage: oats schedule list|show <id>|test <id>|add <id> --file <spec.json> [--workspace <member> --runs-on <host> --owner <host>/<login>]|update <id> --file <spec.json>|enable <id>|disable <id>|run <id> [--force]|remove <id> [--force]|reconcile <id> [--clear]|tick [--dry-run] [--host]|host install [--max-concurrent <N|default>] [--triggers-max-concurrent <N|none>]|uninstall|status [--dir <workspace>|--server <id>] [--json]");
+      default: throw scheduleError("E_BAD_ARGS", "usage: oats schedule list|show <id>|test <id>|add <id> --file <spec.json> [--description=<text>] [--workspace <member> --runs-on <host> --owner <host>/<login>]|update <id> (--file <spec.json> [--description=<text>] | --description=<text>)|enable <id>|disable <id>|run <id> [--force]|remove <id> [--force]|reconcile <id> [--clear]|tick [--dry-run] [--host]|host install [--max-concurrent <N|default>] [--triggers-max-concurrent <N|none>]|uninstall|status [--dir <workspace>|--server <id>] [--json]");
     }
   } catch (e) {
     // K8b: typed refusal details travel (identity mismatch: key/declared; a refused file: its integrity source).
@@ -2677,7 +2702,7 @@ async function triggerCmd() {
   const ws = () => (scope ??= scheduleScopeOf(dirFlag()));
   const out = (result, text) => { if (JSON_MODE) jsonOk(result); else console.log(text ? text(result) : JSON.stringify(result, null, 2)); };
   const needId = () => { if (!id) throw T.triggerError("E_BAD_ARGS", `oats trigger ${sub} <id>`); return id; };
-  const usage = "usage: oats trigger add (--file <trigger.json> | --from <package>:<template> [--set <name>=<value>]… [--id <id>]) [--workspace <member> --runs-on <host> --owner <host>/<login>] | list | show <id> | enable <id> | disable <id> | remove <id> | test <id> | status [<id>]  [--dir <deployment>] [--json]   (<id>: local/<id> or <member>/<id>)";
+  const usage = "usage: oats trigger add (--file <trigger.json> | --from <package>:<template> [--set <name>=<value>]… [--id <id>]) [--description=<text>] [--workspace <member> --runs-on <host> --owner <host>/<login>] | update <id> --description=<text> | list | show <id> | enable <id> | disable <id> | remove <id> | test <id> | status [<id>]  [--dir <deployment>] [--json]   (<id>: local/<id> or <member>/<id>)";
   const where = (t) => (t.origin?.kind === "workspace" ? (t.runsHere ? `runs here as ${t.owner}` : `${t.reason === "assigned-elsewhere" ? `runs on ${t.runsOn}` : t.reason ?? "disabled here"}`) : t.enabledHere ? "local" : "local, disabled");
   const line = (t) => `${t.id}  ${where(t)}  ${t.on?.source ?? "?"} ${t.on?.repo ?? "?"} [${(t.on?.events || []).join(",")}]${t.on?.labels?.length ? ` labels ${t.on.labels.join(",")}` : ""} every ${t.on?.poll ?? "?"} → spawn ${t.spawn?.soul ?? "?"}${t.spawn?.teams?.length ? ` in ${t.spawn.teams.join(",")}` : ""}${t.invalid ? `  INVALID: ${t.invalid.message}` : ""}`;
   // The workspace automations of this deployment (the snapshot) placed on this host.
@@ -2696,6 +2721,15 @@ async function triggerCmd() {
         setDisabledHereCli(ws(), "trigger", A.qualifiedId(id), on);
         actx = undefined;
         return out({ trigger: T.describeTrigger(ws(), id, ctx()) }, (r) => line(r.trigger));
+      }
+      case "update": {
+        // Description only, for now (0.43.0): a full trigger update is remove + add.
+        const known = new Set(["--description", "--dir", "--json"]);
+        const other = args.slice(2).find((a) => a.startsWith("--") && !known.has(a));
+        if (other) throw T.triggerError("E_BAD_ARGS", `oats trigger update: only --description is supported for now (got ${other}); to change anything else, remove the trigger and add it again`);
+        const description = descriptionFlag();
+        if (description === undefined) throw T.triggerError("E_BAD_ARGS", "oats trigger update <id> --description=<text> (--description= clears it)");
+        return out({ trigger: T.updateTriggerDescription(ws(), needId(), description, ctx()) }, (r) => line(r.trigger));
       }
       case "remove": return out(T.removeTrigger(ws(), needId(), ctx()), (r) => `removed trigger ${r.removed}${r.live.length ? ` (its live instances keep running: ${r.live.join(", ")})` : ""}`);
       case "status": return out(T.triggerStatus(ws(), id, ctx()), (r) => r.triggers.map((t) => `${t.id}  last poll ${t.lastPoll ? `${t.lastPoll.at} ${t.lastPoll.ok ? `ok (${t.lastPoll.matching}/${t.lastPoll.prs} PRs match)` : `FAILED: ${t.lastPoll.error}`}` : "never"}  pending ${t.pending.length}  fired ${t.firedTotal}  live ${t.live.map((l) => l.instance).join(",") || "none"}${t.lastError ? `\n    last error ${t.lastError.at}: ${t.lastError.message}` : ""}`).join("\n") || "(no triggers)");
@@ -2731,6 +2765,7 @@ async function triggerCmd() {
         }
         const idFlag = flag("id");
         if (idFlag === true) throw T.triggerError("E_BAD_ARGS", "--id needs a trigger id");
+        const description = descriptionFlag();
         let spec;
         if (file !== undefined) {
           if (file === true || !existsSync(file)) throw T.triggerError("E_BAD_ARGS", `--file ${file === true ? "needs a path" : `not found: ${file}`}`);
@@ -2743,12 +2778,14 @@ async function triggerCmd() {
           const kinds = await automationKinds(ws(), readLock(ws()), remoteOptionsFromEnv());
           const wid = typeof idFlag === "string" ? idFlag : from !== undefined ? String(from).split(":")[1] : spec?.id;
           if (typeof wid !== "string") throw T.triggerError("E_BAD_ARGS", "--workspace: name the trigger with --id (or an id in the file)");
-          const body = from !== undefined ? { from: String(from), ...(Object.keys(sets).length ? { set: sets } : {}) } : (({ id: _i, kind: _k, enabled: _e, template: _t, createdAt: _c, updatedAt: _u, ...rest }) => rest)(spec);
-          const r = await addWorkspaceAutomation(kinds.trigger, { id: wid, body });
+          // A description is the file header's (the flag, else the file's), never the body's; made
+          // from a template without one, the row shows the template's.
+          const body = from !== undefined ? { from: String(from), ...(Object.keys(sets).length ? { set: sets } : {}) } : (({ id: _i, kind: _k, enabled: _e, template: _t, createdAt: _c, updatedAt: _u, description: _d, ...rest }) => rest)(spec);
+          const r = await addWorkspaceAutomation(kinds.trigger, { id: wid, body, description: description ?? spec?.description });
           return out(r, printWorkspaceAdd);
         }
         if (spec === undefined) spec = await triggerFromPackage(T, String(from), sets, idFlag);
-        return out({ trigger: T.addTrigger(ws(), spec) }, (r) => `added ${line(r.trigger)}\n(\`oats trigger test ${r.trigger.id}\` checks gh, the repository, the soul and the teams on this host)`);
+        return out({ trigger: T.addTrigger(ws(), withDescription(spec, description)) }, (r) => `added ${line(r.trigger)}\n(\`oats trigger test ${r.trigger.id}\` checks gh, the repository, the soul and the teams on this host)`);
       }
       default: throw T.triggerError("E_BAD_ARGS", usage);
     }
@@ -3271,7 +3308,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capabilityShowApi: 1 }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capabilityShowApi: 1 }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -3575,6 +3612,8 @@ async function serverRouteCmd() {
         rest.push("--spec-json", readFileSync(f, "utf8"));
         continue;
       }
+      // An inline --description travels inline (it may be empty, or start with --).
+      if (a === "--description" && inlineValues.has("description")) { rest.push(`--description=${inlineValues.get("description")}`); continue; }
       rest.push(a);
     }
     let out;
