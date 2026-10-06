@@ -2230,6 +2230,15 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   `--delete-branch` (since 0.41.0: `this self-retire was requested with
   --delete-branch by an older OATS; retirement no longer deletes branches, so
   the branch and the worktree were left`).
+- `worktree-retained` (`data: {movedTo, branch, recordedBranch}`) and
+  `worktree-removed` (`data: {branch}`) are written to the workspace log only,
+  by the retire's worktree step. Since 0.42.1 the retire also writes one per
+  extra tree it handled
+  ([extra trees at retire](souls-and-instances.md#extra-trees-at-retire)),
+  with `extra: true` and the tree's absolute `path` added:
+  `worktree-retained` `{movedTo, branch, recordedBranch: null, extra: true,
+  path}` and `worktree-removed` `{branch, extra: true, path}`. A row without
+  `extra` is about `work/`.
 - **Incarnation.** Each row carries the writing home's `createdAt` (or
   `null` for old rows); the top-level `incarnation` is the current home's (or
   `null`). Earlier incarnations are returned as this address's history.
@@ -2449,7 +2458,9 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
                   "upstream":{"ref":null,"ahead":null,"behind":null},"base":{"ref":null,"ahead":null,"behind":null},"remote":null},
           "workMode":"worktree","repo":"/w/one","recordedBranch":"agents/dev-1",
           "children":[{"instance":"dev-1-child","agent":"dev","home":"/w/agents/dev/instances/dev-1-child","session":{"state":"shell","present":true,"backend":"tmux","established":true}}],
-          "ambiguous":[],"pullRequest":"unknown"},
+          "ambiguous":[],"pullRequest":"unknown",
+          "extraWorktrees":[{"path":"/w/agents/dev/instances/dev-1/.work-docs","repo":"/w/docs","branch":"agents/dev-1-docs","detachedAt":null,
+                             "disposition":"retain","movedTo":"/w/.agents/worktrees/docs/agents-dev-1-docs","reason":"…"}]},
  "defaults":{"retainWorktree":true,"deleteBranch":false,"stopChildren":true,"retainChildren":true},
  "planRevision":"4e5f6a7b8c9d0e1f2a3b4c5d","notes":["the worktree is on feat/x, not the recorded agents/dev-1; …"]}
 ```
@@ -2487,10 +2498,35 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   there when it is not empty` in directory mode, and absent in checkout,
   attached and workspace modes. They are strings in `notes`: no other key
   changes, and `planRevision` is unaffected.
+- `facts.extraWorktrees` (0.42.1) lists the instance's
+  [extra trees](souls-and-instances.md#extra-trees-at-retire): linked
+  worktrees at `<home>/.work-*` that Git confirms. It is an array, empty when
+  there are none, in every work mode. Each row is `{path, repo, branch,
+  detachedAt, disposition, movedTo, reason}`:
+  - `path`: the tree's absolute path in the home.
+  - `repo`: its repository, the first entry of that repository's `git
+    worktree list` (the main worktree, or the bare repository).
+  - `branch`: the branch its HEAD is on, or `null`. `detachedAt`: the commit
+    when HEAD is detached, else `null`.
+  - `disposition`: `"remove"` (the tree is clean: it would be removed, its
+    branch kept), `"retain"` (it would be moved to `movedTo`, as `work/` is
+    retained) or `"refuse"` (the retire would refuse with
+    `E_WORK_PRESERVATION_FAILED` and keep the home).
+  - `movedTo`: the target for `"retain"`, else `null`.
+  - `reason`: `null` for `"remove"`, why the tree is not clean for
+    `"retain"`, why it is refused for `"refuse"`.
+
+  `notes` also carries one string per tree that says the same. The trees are
+  part of `planRevision`: a tree created, removed, dirtied or cleaned between
+  the plan and the apply, or a change of its disposition or target (another
+  directory taking the `<leaf>-N` it would move to, for example), refuses a
+  guarded apply with `E_PLAN_STALE` before anything runs. A reader that does
+  not know the key can ignore it; the `notes` strings say the same.
 
 Plain `retire` keeps a worktree-mode instance's work: the worktree is moved
 (`git worktree move`) to `<deployment>/.agents/worktrees/<repo>/<branch>` (a
-`-2` suffix if taken; `detached-<oid12>` when detached), state intact.
+`-2` suffix if taken; `detached-<oid12>` when detached), state intact. An
+extra tree that is not clean is moved the same way; a clean one is removed.
 
 ```text
 oats retire <instance> [--plan-revision <rev> --idempotency-key <key>] [--discard-worktree] [--home <abs>] --json
@@ -2546,6 +2582,21 @@ A first retire prints the **raw receipt**, not an envelope:
   retire (hooks run, a recovery copied), and neither says that one happened:
   an error here is not proof that nothing happened, nor that a recovery
   exists.
+- `extraWorktrees` (0.42.1): the extra trees the retire handled, present only
+  when it handled at least one. Each row is the plan's row (`{path, repo,
+  branch, detachedAt, disposition, movedTo, reason}`) plus `outcome`:
+  `"removed"` or `"retained"`, with `movedTo` where a retained tree went. The
+  step runs only when the home is removed (not with `--keep-dir`, not when the
+  home is kept for a retry), after the hooks and before the worktree step of
+  `work/`. `--discard-worktree` does not apply to it. A locked tree
+  (`"refuse"` in the plan) stops the retire with `E_WORK_PRESERVATION_FAILED`
+  naming the tree before anything runs (no session stop, no retire hook);
+  a lock that appears during the hooks, or a move or removal Git refuses,
+  stops it at the step, after the hooks. `--force` does not bypass either;
+  the home and `work/` are kept, and trees already handled stay handled. A tree
+  that no longer matches what the applied plan said refuses with
+  `E_PLAN_STALE`, the home kept, rather than be moved or removed unplanned.
+  The key is additive.
 - `workRecovery`: `{path, classes, bytes, home, outputs?, repoCopy?,
   notCopied?, afterHooks?}`, present when a recovery was written. One retire
   writes at most one recovery directory, and `path` is that directory.
@@ -2571,10 +2622,12 @@ A first retire prints the **raw receipt**, not an envelope:
     names: a prefix that matches several entries lists each one, and a
     declared entry that does not exist is not listed. `owner` is the
     declaring capability; when two declare the same entry it is the first in
-    capability-name order. Each entry has exactly these three keys: names and
-    owners only, no sizes, hashes, modes or contents of what was left out.
-    `scope` is always `"home"` in this release. Present only when there is
-    at least one.
+    capability-name order. Since 0.42.1 the list also holds each verified
+    extra tree (`.work-<purpose>`), with `owner: "kernel:extra-worktree"`: the
+    retire handles it at its own step, never in the copy. Each entry has
+    exactly these three keys: names and owners only, no sizes, hashes, modes
+    or contents of what was left out. `scope` is always `"home"` in this
+    release. Present only when there is at least one.
   - `afterHooks`: `{home: boolean, work: boolean}`, saying which parts were
     copied again under `after-hooks/`: `after-hooks/home/` when a retire hook
     changed the home (its bytes and permission bits, the kernel's own
@@ -2626,8 +2679,9 @@ A first retire prints the **raw receipt**, not an envelope:
   `idempotencyKey` and `replayed: false`.
 
 Refusals (envelopes): `E_PLAN_STALE`, `E_CHILDREN_RUNNING`,
-`E_WORK_PRESERVATION_FAILED` (the home is kept; retry or
-`--discard-worktree`), `E_WORK_INSPECTION_FAILED` (the home is kept; the
+`E_WORK_PRESERVATION_FAILED` (the home is kept; retry, or
+`--discard-worktree` when it is `work/` that could not be re-homed: it does
+not apply to an extra tree), `E_WORK_INSPECTION_FAILED` (the home is kept; the
 message names the entry or the state that could not be read),
 `E_SESSION_UNKNOWN`, `E_AMBIGUOUS_INSTANCE`,
 `E_NO_ROOT`, `E_LIFECYCLE_FAILED`. A recovery whose Git status disagrees with

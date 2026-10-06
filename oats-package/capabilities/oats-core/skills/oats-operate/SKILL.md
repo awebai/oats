@@ -42,8 +42,10 @@ is not shown here, read `oats help`; never invent one.
   notes, whatever your knowledge capability keeps. OATS operational commands
   run here.
 - **`work/` is where repository work happens**: reading, editing, building,
-  testing, Git. Never run Git from the home root or from the operator's own
-  checkout.
+  testing, Git. In `worktree` and `checkout` mode, so do the extra trees
+  (`.work-<purpose>` in the home) that your work-mode briefing tells you how
+  to create. Never run Git from the home root or from the operator's own
+  checkout, beyond the `worktree add`/`remove` that briefing gives.
 - **A change to a soul is repository work**: an ordinary, reviewed change to
   the member repository that defines it, made in a work tree.
 
@@ -162,7 +164,8 @@ exactly-once delivery; command errors may be uncertain after partial effects.
 These act on **other** instances — typically children you spawned — and only
 when your task or your human says so. Retirement runs every module's retire
 hook (identities, scheduled jobs) and retains a worktree with work in it
-unless told to discard.
+unless told to discard. An extra tree in the home is removed when it is
+clean and retained when it holds work; discarding does not apply to it.
 
 ## Asking for a human's attention
 

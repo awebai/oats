@@ -35,9 +35,10 @@ root, and not the work tree. Anything that says "your home" means this directory
 **`<instance-home>/work` is your repository or workspace view** — whatever your
 work mode grants you of the code.
 
-- **Repository work happens there and only there**: reading, editing, building,
-  testing, git and commits, on repository content. Never from the main checkout
-  or from your home root.
+- **Repository work happens there, or in the extra trees your mode block
+  grants, and nowhere else**: reading, editing, building, testing, git and
+  commits, on repository content. Never from the main checkout or from your
+  home root, beyond what your mode block names.
 - **What your mode permits is the mode block's call**, immediately below. Some
   modes are read-only, some share a tree with others, and that block is the
   authority on which operations are yours to perform.
@@ -56,14 +57,37 @@ Move between the two as the task needs — the boundary is what each directory i
 Your `./work` is a **git worktree on your own branch** — a full checkout that is
 yours alone: build, test and commit there, on your branch.
 
-- **Never run git from the repo's main checkout**: it resolves to the wrong
-  branch and skips review. If unsure, `pwd`.
-- Everything you change happens in `work/` — **including your own soul** when
-  it lives in this repo: soul edits are branch changes, reviewed and merged
-  like code.
-- Don't create extra worktrees; `work/` is your one tree. Parallel work means
-  your human spawns another instance.
+- **Never work in a shared checkout** (the repo's main checkout, or any clone
+  others use): don't edit, commit or switch branches there. Against a clone you
+  run only `worktree add`/`remove` below. If unsure, `pwd`.
+- Everything you change happens in `work/` or your extra trees — **including your
+  own soul** when it lives in this repo: soul edits are branch changes, reviewed
+  and merged like code.
 - Leave your branch and the worktree list clean when your task closes.
+
+### Extra trees
+
+When the work needs another branch, or another repository of this deployment,
+create an extra tree in your home. `<clone>` is any clone of this deployment
+(`oats-local.yaml` `clones:`, or `<deployment>/<repo>`); `origin` is its remote
+for that repository; `<base>` is the remote branch the work starts from (the
+branch itself, when you rework an existing one):
+
+    git -C <clone> worktree add --detach "$OATS_INSTANCE_HOME/.work-<purpose>"
+    git -C "$OATS_INSTANCE_HOME/.work-<purpose>" fetch --refmap= origin <base>
+    git -C "$OATS_INSTANCE_HOME/.work-<purpose>" switch -c <branch> FETCH_HEAD
+
+- This starts from the remote's current state and moves none of the clone's
+  refs. Never start from a local branch of the clone, which may be stale.
+- Name `<branch>` by the repository's own rules, else `agents/<instance>-<purpose>`.
+  If it already exists in that clone, `switch -c` refuses: use `<instance>/<branch>`.
+  Never `-C`/`-B`, which reset a branch someone else may own.
+- The tree has no upstream: push with `git push origin HEAD:<remote-branch>`
+  (`<base>` when you rework an existing branch).
+- Before your task closes, merge each extra tree into your PR branch, or push its
+  branch and name it in your hand-back; then
+  `git -C <clone> worktree remove "$OATS_INSTANCE_HOME/.work-<purpose>"`.
+  Retirement keeps a tree that still holds uncommitted work, but don't rely on it.
 <!-- /oats:work-mode:worktree -->
 
 <!-- oats:capability:golden.knowledge src=<base>/deployment/agents/dev/instances/dev-claude-worktree-kstub-mstub/.oats/modules/golden.knowledge/inject.md -->

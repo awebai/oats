@@ -53,7 +53,7 @@ import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_
 
 import { observeInstanceGit, diffInstanceFile } from "../lib/instance-git.mjs";
 import { planStop, applyStop, planRetire, resolveInstance as resolveInstanceForCli } from "../lib/instance-lifecycle.mjs";
-import { formatBytes, workRecoveryLines } from "../lib/retire-output.mjs";
+import { extraWorktreeLines, formatBytes, workRecoveryLines } from "../lib/retire-output.mjs";
 const await_import_lifecycle = () => ({ resolveInstance: resolveInstanceForCli });
 import { homeTarget, soulTarget, isWorkspaceContext, inspectDocument, readinessDocument, policyOf, policySoul, manifestMissingRequires, INSPECT_OPERATIONS_API } from "../lib/instance-inspect.mjs";
 import { readEvents, setWaiting, incarnationOf } from "../lib/instance-events.mjs";
@@ -2498,7 +2498,7 @@ function retireCmd() {
   const planRev = flag("plan-revision"), idemKey = flag("idempotency-key");
   if (planRev === true || idemKey === true) die("--plan-revision and --idempotency-key need values");
   if ((planRev !== undefined) !== (idemKey !== undefined)) die("--plan-revision and --idempotency-key go together");
-  let replayPath = null, childrenStopped = null;
+  let replayPath = null, childrenStopped = null, plannedExtraWorktrees;
   if (planRev !== undefined) {
     if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(idemKey)) die("--idempotency-key: 1-128 chars of [A-Za-z0-9._:-]");
     // Replay first: after a successful retire the home is gone, so the receipt
@@ -2508,6 +2508,9 @@ function retireCmd() {
     let fresh;
     try { fresh = planRetire(dirFlag(), root, name, { home: homeFlag }); } catch (e) { return args.includes("--json") ? jsonFail(e.code || "E_LIFECYCLE_FAILED", e.message, e.details) : die(e.message); }
     replayPath = join(dirname(fresh.home), `.oats-retire-receipt.${idemKey}.json`);
+    // The extra trees the confirmed plan names, as it names them: the retire refuses as stale rather than
+    // move or remove one that no longer reads that way when it gets to them.
+    plannedExtraWorktrees = fresh.facts.extraWorktrees;
     if (fresh.planRevision !== planRev) return args.includes("--json") ? jsonFail("E_PLAN_STALE", `the retire plan changed since it was shown (${planRev} → ${fresh.planRevision}); review the fresh plan`, { plan: fresh }) : die(`the retire plan changed since it was shown; re-run oats retire ${name} --plan`);
     // The plan promised: recorded children are STOPPED first (bounded, never
     // escalated) and retained. A child still running after the grace refuses
@@ -2521,7 +2524,7 @@ function retireCmd() {
     if (running.length) return args.includes("--json") ? jsonFail("E_CHILDREN_RUNNING", `${running.map((k) => k.instance).join(", ")} ${running.length === 1 ? "is" : "are"} still running after a bounded stop; nothing was retired and nothing was escalated`, { childrenStopped, plan: fresh }) : die(`children still running: ${running.map((k) => k.instance).join(", ")}; nothing retired`);
   }
   let r;
-  try { r = retireInstance(root, name, { home: homeFlag, self: isSelf, discardWorktree: args.includes("--discard-worktree"), keepDir: args.includes("--keep-dir"), force: args.includes("--force") }); }
+  try { r = retireInstance(root, name, { home: homeFlag, self: isSelf, discardWorktree: args.includes("--discard-worktree"), keepDir: args.includes("--keep-dir"), force: args.includes("--force"), ...(plannedExtraWorktrees ? { plannedExtraWorktrees } : {}) }); }
   catch (e) { if (!e?.code) throw e; return args.includes("--json") ? jsonFail(e.code, e.message, e.candidates ? { ...e.details, candidates: e.candidates } : e.details) : die(e.message); }
   if (childrenStopped) r.childrenStopped = childrenStopped;
   if (replayPath) { r.planRevision = planRev; r.idempotencyKey = idemKey; r.replayed = false; try { writeFileAtomic(replayPath, JSON.stringify(r, null, 2)); } catch { /* receipt is evidence, not authority */ } }
@@ -2563,6 +2566,7 @@ function retireCmd() {
   // Preserving work and not saying so leaves the operator believing it is gone,
   // which is most of the harm of deleting it. Name the classes and the path.
   for (const line of workRecoveryLines(r)) console.log(line);
+  for (const line of extraWorktreeLines(r)) console.log(line);
   for (const w of r.warnings || []) console.log(`  WARNING: ${w}`);
   if (isSelf) console.log("This window dies in ~8s — say any goodbyes now.");
 }
@@ -3714,6 +3718,7 @@ async function serverRouteCmd() {
     }
     console.log(`Retired ${r.retired} on ${id}${r.deferred ? " (deferred completion scheduled there)" : ""}${r.rollbackIncomplete ? " — cleanup INCOMPLETE on the server, home retained there" : ""}`);
     for (const line of workRecoveryLines(r, { host: target.sshHost })) console.log(line);
+    for (const line of extraWorktreeLines(r, { host: target.sshHost })) console.log(line);
     if (r.rollbackIncomplete) {
       for (const f of r.rollbackIncomplete) console.error(`  ${f}`);
       const branch = failedSpawnBranchLine(r, r.rollbackIncomplete, { host: target.sshHost });

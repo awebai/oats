@@ -26,9 +26,10 @@ root, and not the work tree. Anything that says "your home" means this directory
 **`<instance-home>/work` is your repository or workspace view** — whatever your
 work mode grants you of the code.
 
-- **Repository work happens there and only there**: reading, editing, building,
-  testing, git and commits, on repository content. Never from the main checkout
-  or from your home root.
+- **Repository work happens there, or in the extra trees your mode block
+  grants, and nowhere else**: reading, editing, building, testing, git and
+  commits, on repository content. Never from the main checkout or from your
+  home root, beyond what your mode block names.
 - **What your mode permits is the mode block's call**, immediately below. Some
   modes are read-only, some share a tree with others, and that block is the
   authority on which operations are yours to perform.
