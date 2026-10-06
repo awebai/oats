@@ -3986,12 +3986,14 @@ Usage:
       host install|uninstall|status              explicit IANA tz; see docs/schedules.md); --server
                                                 routes to that host's workspace
         install [--max-concurrent N|default] [--triggers-max-concurrent N|none]
+  oats schedule add|update <id> … --description=<text>   a one-line summary (1-200 characters)
+  oats schedule update <id> --description=<text>   change only it (--description= clears it)
   oats trigger add (--file <json> | --from <package>:<template> [--set k=v]) | list | show | enable
       | disable | remove <id> | test <id> | status [<id>]   event-driven spawns (github.pull_request
                                                 polled with the host's gh by the schedule tick;
                                                 see docs/schedules.md#triggers)
-  oats trigger|schedule add … --description=<text>   a one-line summary (1-200 characters);
-  oats trigger|schedule update <id> --description=<text>   change only it (--description= clears it)
+  oats trigger add … --description=<text>    a one-line summary (1-200 characters)
+  oats trigger update <id> --description=<text>   change only it (--description= clears it)
   oats trigger|schedule add … --workspace <member> --runs-on <host> --owner <host>/<login>
                                                 a trigger/schedule declared in Git (<member>/<id>):
                                                 writes oats-triggers|oats-schedules/<id>.yaml in a

@@ -207,6 +207,12 @@ test("the feature: oats version --json advertises automation-descriptions; a rem
   try {
     const v = JSON.parse(fx.cli(["version", "--json"]).stdout);
     assert.ok(v.features.includes("automation-descriptions"), JSON.stringify(v.features));
+    // Each command's own --help names the flag and the description-only update.
+    for (const kind of ["trigger", "schedule"]) {
+      const help = fx.cli([kind, "--help"]).stdout;
+      assert.match(help, new RegExp(`\\n  oats ${kind} (?:add|add\\|update)[^\\n]* --description=<text> `), `${kind} --help: add`);
+      assert.match(help, new RegExp(`\\n  oats ${kind} update <id> --description=<text> `), `${kind} --help: update`);
+    }
   } finally { fx.cleanup(); }
   const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-desc-remote-")));
   const saved = process.env.OATS_HOME_DIR;
