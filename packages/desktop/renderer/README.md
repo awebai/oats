@@ -254,7 +254,9 @@ Copy both reach the xterm textarea's `copy` event; `attachSelectionCopy` takes i
 in the capture phase on the tab's wrap, and stops it so xterm's untrimmed handler never
 runs. OSC 52 is still written to
 the clipboard by `terminal-clipboard.mjs`: it is how a tmux copy-mode copy arrives (a
-keyboard copy inside copy mode, an older remote viewer). Write-only, a query is never
+keyboard copy inside copy mode, or a drag after the mixed-sequence fallback has handed
+tracking to xterm). The renderer consumes the tracking requests whatever the remote's
+version, so no drag from a Desktop tab reaches tmux. Write-only, a query is never
 answered, at most 1 MiB, valid UTF-8 only. The viewer's `MouseDrag1Pane` binding is
 unchanged and serves only the direct CLI viewer (`lib/session-viewer.mjs` binds the
 same) and the mixed-sequence fallback: no drag from a Desktop tab reaches tmux.

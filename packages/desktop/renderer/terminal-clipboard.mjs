@@ -2,9 +2,10 @@
 
    A drag in a terminal tab is xterm's own selection (terminal-mouse.mjs keeps the buttons from tmux),
    copied by ⌘C / Edit › Copy, right-click › Copy, or the terminal.copySelection action, which writes
-   it with copyTerminalSelection below. OSC 52 is still how tmux's own copies arrive: a copy made in
-   copy mode from the keyboard, or by an older remote whose viewer still gives tmux the drag. tmux,
-   with its default `set-clipboard external`, sends the text to the terminal as OSC 52
+   it with copyTerminalSelection below. No drag from a Desktop tab reaches tmux, whatever the remote's
+   version: the renderer consumes the tracking requests. OSC 52 is how tmux's own copies arrive: a
+   copy made in copy mode from the keyboard, or a drag after the mixed-sequence fallback has handed
+   tracking to xterm (terminal-mouse.mjs). tmux, with its default `set-clipboard external`, sends the text to the terminal as OSC 52
    (`ESC ] 52 ; <selection> ; <base64> BEL`), and attachClipboardWrite writes it to the clipboard.
 
    Every copy of a selection trims the spaces and tabs at the end of each line (trimLineEnds), as

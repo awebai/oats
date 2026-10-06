@@ -2231,8 +2231,9 @@ const clipboardRefused = error => notifications.notify("Couldn't copy to the cli
 /** A terminal tab's selection and copies; returns its teardown, run from the tab's onClose. The far
  * side's mouse tracking is recorded, never obeyed, so a drag is xterm's own selection, and the wheel is
  * reported to it (terminal-mouse.mjs). ⌘C / Edit › Copy and right-click › Copy copy it with line ends
- * trimmed. tmux's own copies (copy mode from the keyboard, an older remote's drag) still arrive as
- * OSC 52 (write-only, terminal-clipboard.mjs). */
+ * trimmed. No drag reaches tmux, whatever the remote's version; tmux's own copies (copy mode from the
+ * keyboard, or a drag after the mixed-sequence fallback hands tracking to xterm) arrive as OSC 52
+ * (write-only, terminal-clipboard.mjs). */
 function wireTerminalSelection(term, wrap) {
   const mouse = attachTerminalMouse(term);
   const copies = attachSelectionCopy(term, wrap);
