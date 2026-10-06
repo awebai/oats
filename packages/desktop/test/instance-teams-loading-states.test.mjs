@@ -217,3 +217,33 @@ test('a mounted card whose row can no longer be routed: replaced by the reason a
     assert.ok(v.body().querySelector('.loading-failed'));
   }
 });
+
+test('late answers after the row stopped being routable on an inactive tab: nothing further is sent (a refused join\'s re-read, a pending inspection\'s card)', async t => {
+  const gone = remoteRow({ running: null, addressable: false, missingRemotely: true });
+  // A pending Join, refused after the tab went inactive and the row left the host's list: the card's re-read is not sent.
+  let rejectJoin;
+  const u = section(t, (ws, body) => body.action === 'run' && body.args ? new Promise((_r, reject) => { rejectJoin = reject; }) : answer(ws, body), REMOTE_CLI);
+  u.s.update({ active: true, workspace: 'remote:g1', instance: remoteRow() }); await tick(); await tick(); await tick();
+  u.body().querySelector('[data-team-action="join"][data-team="dev"]').click(); await tick();
+  assert.ok(rejectJoin, 'the join is in flight');
+  const sent = u.calls.length;
+  u.s.update({ active: false, workspace: 'remote:g1', instance: gone });
+  rejectJoin(Object.assign(new Error('no'), { code: 'E_SSH' })); await tick(); await tick(); await tick();
+  assert.equal(u.calls.length, sent, 'no messaging:teams re-read');
+  // The inspection still in flight when that happens: no card is built, so its first read is never sent.
+  let answerInspect;
+  const v = section(t, (ws, body) => body.action === 'inspect' ? new Promise(resolve => { answerInspect = () => resolve(answer(ws, body)); }) : answer(ws, body), REMOTE_CLI);
+  v.s.update({ active: true, workspace: 'remote:g1', instance: remoteRow() }); await tick();
+  v.s.update({ active: false, workspace: 'remote:g1', instance: gone });
+  answerInspect(); await tick(); await tick(); await tick();
+  assert.deepEqual(v.calls.map(c => c.action), ['inspect'], 'nothing after the inspection');
+  assert.equal(v.body().querySelector('.teams-panel'), null, 'no card');
+  assert.match(v.body().querySelector('.loading-failed-message').textContent, /is no longer on Build box/);
+  // A local row's late answers are unchanged: the card is built and reads its list.
+  let answerLocal;
+  const w = section(t, (ws, body) => body.action === 'inspect' ? new Promise(resolve => { answerLocal = () => resolve(answer(ws, body)); }) : answer(ws, body));
+  w.s.update({ active: true, workspace: 'A', instance: instance() }); await tick();
+  w.s.update({ active: false, workspace: 'A', instance: instance() });
+  answerLocal(); await tick(); await tick(); await tick();
+  assert.deepEqual(w.calls.map(c => c.action), ['inspect', 'run']);
+});
