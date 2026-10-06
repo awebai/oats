@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import { JSDOM } from 'jsdom';
 import { attachTerminalMouse, TRACKING_MODES } from '../renderer/terminal-mouse.mjs';
-import { attachClipboardWrite, attachPrimarySelectionTrim, attachSelectionCopy, copyTerminalSelection } from '../renderer/terminal-clipboard.mjs';
+import { attachClipboardWrite, attachSelectionCopy, copyTerminalSelection } from '../renderer/terminal-clipboard.mjs';
 
 // The screen: 80×24 cells of 10×20 px, its top-left corner at (10, 20).
 const RECT = { left: 10, top: 20, width: 800, height: 480 };
@@ -32,8 +32,6 @@ function fakeTerm({ rect = RECT, options = {} } = {}) {
     attachCustomWheelEventHandler(fn) { term.wheel = fn; },
     input(data, wasUserInput) { sent.push({ data, wasUserInput }); },
     clearSelection() { term.cleared++; },
-    selectionListeners: new Set(),
-    onSelectionChange(fn) { term.selectionListeners.add(fn); return { dispose: () => term.selectionListeners.delete(fn) }; },
     element: { querySelector: sel => (sel === '.xterm-screen' && rect ? { getBoundingClientRect: () => rect } : null) },
   };
   return term;
@@ -357,7 +355,7 @@ function shellWiring(t) {
   t.after(() => dom.window.close());
   const doc = dom.window.document, written = [], notices = [];
   const c = {
-    attachTerminalMouse, attachClipboardWrite, attachPrimarySelectionTrim, attachSelectionCopy, copyTerminalSelection,
+    attachTerminalMouse, attachClipboardWrite, attachSelectionCopy, copyTerminalSelection,
     terminalSelections: new Map(), writeClipboard: text => { written.push(text); },
     clipboardRefused: error => notices.push(error.message), document: { hasFocus: () => true },
     activeTab: 1, tabs: new Map([[1, { paneEl: doc.getElementById('pane') }]]),
@@ -373,7 +371,6 @@ test('shell: a terminal tab is wired once and its teardown removes everything it
   assert.deepEqual([...term.csi.keys()].sort(), ['?h', '?l']);
   assert.deepEqual([...term.esc.keys(), ...term.osc.keys()], ['c', 52]);
   assert.equal(c.terminalSelections.get(wrap), term);
-  assert.equal(term.selectionListeners.size, 1, 'the primary selection trim');
   assert.equal(set(term, 1000), true);
   // ⌘C / right-click › Copy inside the wrap is taken by the trimming copy hook.
   Object.assign(term, { hasSelection: () => true, getSelection: () => 'copied   ' });
@@ -384,7 +381,6 @@ test('shell: a terminal tab is wired once and its teardown removes everything it
   assert.deepEqual(copy(), [], 'the copy hook is gone');
   assert.deepEqual([...term.csi.keys(), ...term.esc.keys(), ...term.osc.keys()], []);
   assert.equal(c.terminalSelections.has(wrap), false);
-  assert.equal(term.selectionListeners.size, 0);
   assert.equal(term.wheel(wheel({ deltaY: -100 })), true, 'the wheel is xterm\'s again');
   // The tab's onClose (and the lost-race path) run the teardown with the theme hooks.
   assert.match(shellSource, /const unwireSelection = wireTerminalSelection\(term, wrap\);\n  const unwire = \(\) => \{ offTheme\(\); offTypography\(\); unwireSelection\(\); \};/);

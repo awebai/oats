@@ -40,7 +40,7 @@ import { rosterKeyAction, moveTarget } from "./roster-keys.mjs";
 import { createViewLifecycle } from "./view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "./tab-keys.mjs";
 import { createTerminalTab, terminalOptions, fitTerminal, createGlyphRenderer } from "./terminal-tab.mjs";
-import { attachClipboardWrite, attachPrimarySelectionTrim, attachSelectionCopy, copyTerminalSelection } from "./terminal-clipboard.mjs";
+import { attachClipboardWrite, attachSelectionCopy, copyTerminalSelection } from "./terminal-clipboard.mjs";
 import { attachTerminalMouse } from "./terminal-mouse.mjs";
 import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "./tab-a11y.mjs";
 import { revealInStrip } from "./reveal-in-scrollport.mjs";
@@ -2244,10 +2244,9 @@ function osc52Refused(error) {
 function wireTerminalSelection(term, wrap) {
   const mouse = attachTerminalMouse(term);
   const copies = attachSelectionCopy(term, wrap);
-  const primary = attachPrimarySelectionTrim(term);
   const clipboard = attachClipboardWrite(term, writeClipboard, osc52Refused);
   terminalSelections.set(wrap, term);
-  return () => { clipboard.dispose(); primary.dispose(); copies.dispose(); mouse.dispose(); if (terminalSelections.get(wrap) === term) terminalSelections.delete(wrap); };
+  return () => { clipboard.dispose(); copies.dispose(); mouse.dispose(); if (terminalSelections.get(wrap) === term) terminalSelections.delete(wrap); };
 }
 /** The selection of the terminal a chord was pressed in; from the palette or the editor (no key event
  * in a terminal), the active tab's. A chord pressed outside a terminal copies nothing. Nothing selected:

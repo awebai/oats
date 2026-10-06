@@ -253,10 +253,13 @@ copy mode with written spaces, which xterm keeps in a selection. ⌘C and right-
 Copy both reach the xterm textarea's `copy` event; `attachSelectionCopy` takes it first,
 in the capture phase on the tab's wrap, and stops it so xterm's untrimmed handler never
 runs. On Linux xterm also puts a mouse selection in its textarea and selects it there,
-which makes it the primary selection; `attachPrimarySelectionTrim` (on `onSelectionChange`,
-only while the textarea holds exactly xterm's copy of the selection) puts the trimmed text
-there instead, and middle-click pastes it through xterm's own paste handler (its `auxclick`
-moves the textarea under the pointer), so it is one bracketed paste like Ctrl+Shift+V.
+which makes it the primary selection, and middle-click pastes it through xterm's own paste
+handler (its `auxclick` moves the textarea under the pointer), so it is one bracketed paste
+like Ctrl+Shift+V. The primary selection is xterm's text, untrimmed: Chromium takes it only
+from selection changes made while it handles the mouse event, so a later rewrite of the
+textarea (on `select` or `onSelectionChange`) does not reach it, and no public seam runs
+inside every one of xterm's writes (a re-drag of the same range and a right-click on the
+selection fire no selection change). Verified live (#694).
 `terminalOptions` sets `altClickMovesCursor: false`: with the SelectionService always
 owning the buttons, xterm would otherwise turn a quick Alt/Option+click into cursor keys,
 and a tmux client has no scrollback of its own, so those include Up/Down, which recall a
