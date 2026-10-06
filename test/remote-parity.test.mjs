@@ -11,6 +11,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writ
 import { dirname, join } from "node:path";
 
 import { checkRemote, dropRemoteProbes, rosterGroups, routeCommand, runRemote, sshArgv, writeServers } from "../lib/servers.mjs";
+import { remotePanel } from "../packages/desktop/server/remote-roster.mjs";
 
 // ssh binds the control socket at `<ControlPath>.<16 random>`: a short
 // OATS_HOME_DIR keeps it inside the 104-byte socket path limit (macOS).
@@ -176,13 +177,21 @@ test("server roster: instance rows carry the remote status facts, null where the
     identity: { alias: "dev-a", address: "acme/dev-a" }, identityAddress: "acme/dev-a", teams: [{ label: "default", team: "acme:t" }],
     startedAt: "2026-09-29T10:00:00.000Z", createdAt: "2026-09-29T09:00:00.000Z", model: "opus", runtimeState: "working",
     parentInstance: "boss", siblingInstance: "dev-b", relation: "child", relativeTo: "boss", spawnOrigin: "instance",
+    // #675: the host's work record and its own drift observation, relayed as it answered them.
+    work: "worktree", repo: "/srv/ws/repo", branch: "agents/dev-a", modelFrom: "soul",
+    soul: { repoKey: "github.com/acme/agents", commit: "1111111111111111111111111111111111111111", current: "2222222222222222222222222222222222222222", status: "moved" },
+    modules: [
+      { name: "acme.x", from: { kind: "member", repoKey: "github.com/acme/agents", commit: "3333333333333333333333333333333333333333" }, commit: "3333333333333333333333333333333333333333", current: { commit: "4444444444444444444444444444444444444444", version: "1.1.0" }, status: "moved" },
+      { name: "acme.y", from: { kind: "member", repoKey: "github.com/acme/gone" }, commit: "5555555555555555555555555555555555555555", current: null, status: "missing", reason: "capability-absent" },
+    ],
   };
   const bare = { instance: "dev-b", home: "/srv/ws/agents/dev/instances/dev-b", running: false };
   const status = { root: "/srv/ws/agents", agents: [{ name: "dev", harness: "claude", instances: [full, bare] }] };
   const { exec } = countingExec(() => JSON.stringify(status));
   const out = rosterGroups({ io: { execFileSync: exec } });
   const rows = out.groups[0].instances;
-  const FIELDS = ["identity", "identityAddress", "teams", "startedAt", "createdAt", "model", "runtimeState", "parentInstance", "siblingInstance", "relation", "relativeTo", "spawnOrigin"];
+  const FIELDS = ["identity", "identityAddress", "teams", "startedAt", "createdAt", "model", "runtimeState", "parentInstance", "siblingInstance", "relation", "relativeTo", "spawnOrigin",
+    "work", "repo", "branch", "modelFrom", "soul", "modules"];
   const a = rows.find((r) => r.instance === "dev-a");
   for (const k of FIELDS) assert.deepEqual(a[k], full[k], k);
   assert.equal(a.savedRoute, false);
@@ -194,6 +203,12 @@ test("server roster: instance rows carry the remote status facts, null where the
   for (const k of FIELDS) assert.equal(gone[k], null, k);
   assert.equal(gone.missingRemotely, true);
   assert.deepEqual(Object.keys(gone).sort(), Object.keys(b).sort(), "remote rows and saved-route rows share one shape");
+  // The Desktop's remote panel spreads the row: the relayed work and drift facts reach it unchanged.
+  const panel = Object.fromEntries(remotePanel(out.groups[0]).instances.map((r) => [r.instance, r]));
+  for (const k of ["work", "repo", "branch", "modelFrom", "soul", "modules"]) {
+    assert.deepEqual(panel["dev-a"][k], full[k], `panel ${k}`);
+    assert.equal(panel["dev-b"][k], null, `panel ${k} (not supplied)`); assert.equal(panel["dev-gone"][k], null, `panel ${k} (gone)`);
+  }
   rmSync(snapDir, { recursive: true, force: true });
 });
 

@@ -300,7 +300,10 @@ before 0.36.0, `null` when it reports none or the probe failed), the remote soul
 the host's own facts from its `status --json`: `identity`,
 `identityAddress`, `teams`, `startedAt`, `createdAt`, `model`,
 `runtimeState`, `parentInstance`, `siblingInstance`, `relation`,
-`relativeTo` and `spawnOrigin`. A fact the host does not supply is `null`
+`relativeTo`, `spawnOrigin`, and (0.42.1) `work`, `repo`, `branch`,
+`modelFrom`, `soul` and `modules`: the local row's facts, with `soul` and
+`modules` the host's own drift observation, never recomputed here, and
+`repo` a path on the host. A fact the host does not supply is `null`
 (an older host, or a saved route the host no longer lists). A row also
 carries `waitingOnYou` (needs input) when the host's kernel reports it, and
 only then: an older host's row has no such key. A removed or edited registration keeps
