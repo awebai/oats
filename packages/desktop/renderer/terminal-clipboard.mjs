@@ -77,11 +77,20 @@ export function copyTerminalSelection(term, write, onError = () => {}) {
 /** ⌘C / Edit › Copy and right-click › Copy put the selection on the clipboard trimmed. xterm's own `copy`
  * listener (on its element, bubble phase) would write it untrimmed, so this one listens on an ancestor
  * (`target`, the tab's wrap) in the capture phase and, when there is a selection, sets the data and stops
- * the event there. With no selection the event is left alone. Returns { dispose() }. */
+ * the event there.
+ *
+ * Only a copy aimed at xterm's own input (`term.textarea`) is the terminal's: a copy from anything else in the
+ * wrap (the banner, the reconnect strip, an input) is the page's own and left alone, terminal selection or not.
+ *
+ * With nothing selected, a copy aimed at xterm's input is cancelled, and nothing is written (#695). xterm's
+ * right-click handler (all platforms), and on Linux its mouse selection, put the selected text in that textarea
+ * and select it there; clearing the terminal's selection leaves the text in place, still selected. xterm's
+ * listener returns without a selection, so Chromium's default copy would put that stale text on the clipboard
+ * (⌘C and Edit › Copy on macOS). Cancelled with no data, the clipboard keeps what it held. Returns { dispose() }. */
 export function attachSelectionCopy(term, target) {
   const onCopy = event => {
-    if (!term.hasSelection() || !event.clipboardData) return;
-    event.clipboardData.setData('text/plain', trimLineEnds(term.getSelection()));
+    if (!term.textarea || event.target !== term.textarea) return;
+    if (term.hasSelection() && event.clipboardData) event.clipboardData.setData('text/plain', trimLineEnds(term.getSelection()));
     event.preventDefault();
     event.stopPropagation();
   };
