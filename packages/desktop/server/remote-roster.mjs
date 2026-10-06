@@ -12,6 +12,8 @@ export function remoteWorkspace(group) {
 
 export function remotePanel(group) {
   const ws = remoteWorkspace(group);
+  // A row's soul subtitle: its own group's soul list only, a string as the host reported it, never synthesized.
+  const described = name => { const soul = (group.souls || []).find((a) => a?.name === name); return typeof soul?.description === "string" ? soul.description : null; };
   // A Herdr-recorded row is unsupported whatever the host's probe said: it cannot open or start.
   const instances = (group.instances || []).map(({ runtime: _released, ...i }) => {
     const unsupported = unsupportedSession(i);
@@ -21,7 +23,7 @@ export function remotePanel(group) {
       serverUnreached: !group.probe.ok,
       home: i.home, agentsRoot: i.agentsRoot || group.agentsRoot,
       workspace: group.target.workspace, repoName: group.label || group.server,
-      harness: harnessOf({ runtime: _released, ...i }) || null, model: i.model || null,
+      harness: harnessOf({ runtime: _released, ...i }) || null, model: i.model || null, description: described(i.agent),
       running: group.probe.ok ? i.running : null,
       runtimeError: group.probe.ok ? i.runtimeError : group.probe.error?.message || "Server is unreachable",
       tmux: i.tmux || null, git: i.git || null, task: i.task || "", next: i.next || "",

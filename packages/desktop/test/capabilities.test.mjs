@@ -139,3 +139,94 @@ test('a remote home is inspected when the kernel reports it addressable, never o
     { code: 'E_SNAPSHOT_UNKNOWN', message: 'dev-seat is no longer on Build box. Remove it from this computer with: oats server forget hetzner --instance dev-seat' });
   assert.equal(calls.length, 1);
 });
+
+// #675: a remote refusal travels as a structured reason (hostReason) through the route's error body and both
+// renderer error paths, which keep it only once re-validated (remoteReason).
+import { apiJson, httpError } from '../renderer/views/common.mjs';
+import { MESSY, MESSY_LINE } from './helpers/detail-line.mjs';
+import { DETAIL_WITHHELD } from '../renderer/display-text.mjs';
+const spawnErrorPayload = (() => {
+  const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
+  const start = source.indexOf('function spawnErrorPayload(e)'), end = source.indexOf('/* OATSWEB_SPAWNERR_END */', start);
+  return new Function(`${source.slice(start, end)}\nreturn spawnErrorPayload;`)();
+})();
+const remoteWs = { id: 'remote:g1', name: 'Build box', scope: '/srv/w', remote: true, server: 'build', registrationPresent: true };
+const remoteHome = '/srv/w/agents/dev/instances/dev-a';
+const remoteRows = [{ instance: 'dev-a', home: remoteHome, agentsRoot: '/srv/w/agents', server: 'build', addressable: true }];
+const remoteRefusal = async (error, { workspace: ws = remoteWs, cli: c = cli, rows = remoteRows } = {}) => {
+  const calls = [];
+  try {
+    await capabilityRequest({ action: 'inspect', selector: { home: rows[0].home } }, { workspace: ws, cli: c, instances: rows, localCwd: '/local',
+      invoke: async (_, args) => { calls.push(args); return { schemaVersion: 1, ok: false, error }; } });
+  } catch (e) { return { e, calls }; }
+  assert.fail('expected a refusal');
+};
+
+test('#675: a remote refusal carries its reason: the code verbatim, the headline, the display-filtered detail', async () => {
+  const { e, calls } = await remoteRefusal({ code: 'E_REMOTE_INCOMPATIBLE', message: 'remote oats 0.30.0 lacks operations' });
+  assert.equal(calls[0].server, 'build'); assert.equal(calls[0].home, remoteHome);
+  assert.equal(e.code, 'E_REMOTE_INCOMPATIBLE'); assert.equal(e.message, 'remote oats 0.30.0 lacks operations', 'the existing error stays');
+  assert.deepEqual(e.reason, { code: 'E_REMOTE_INCOMPATIBLE', message: "Build box runs an OATS that can't do this yet.",
+    detail: 'remote oats 0.30.0 lacks operations', remote: true });
+  const ssh = (await remoteRefusal({ code: 'E_SSH', message: 'ssh: connect to host build port 22: Connection refused' })).e;
+  assert.equal(ssh.reason.message, "Couldn't reach Build box.");
+  // A code outside the shared table: the route's own sentence, naming the server.
+  const other = (await remoteRefusal({ code: 'E_INSPECT_FAILED', message: 'no such home' })).e;
+  assert.deepEqual(other.reason, { code: 'E_INSPECT_FAILED', message: 'Build box refused this request.', detail: 'no such home', remote: true });
+  // The detail is the display filter's: a multi-line message as one line, a control character or a secret
+  // withheld whole. The code stays verbatim.
+  for (const [message, detail] of [[MESSY, MESSY_LINE], ['bell\u0007here', DETAIL_WITHHELD], ['token: abc123', DETAIL_WITHHELD], ['', null]]) {
+    const { e: messy } = await remoteRefusal({ code: 'E_SSH', message });
+    assert.equal(messy.reason.code, 'E_SSH'); assert.equal(messy.reason.detail, detail, JSON.stringify(message));
+  }
+  // A code not in the kernel's shape gets no reason.
+  assert.equal(Object.hasOwn((await remoteRefusal({ code: 'not-a-kernel-code', message: 'x' })).e, 'reason'), false);
+  // The label falls back to the server id, and a label with nothing to show reads "The server".
+  assert.equal((await remoteRefusal({ code: 'E_SSH', message: 'x' }, { workspace: { ...remoteWs, name: undefined } })).e.reason.message, "Couldn't reach build.");
+  for (const name of ['   ', 'bell\u0007']) assert.equal((await remoteRefusal({ code: 'E_INSPECT_FAILED', message: 'x' }, { workspace: { ...remoteWs, name } })).e.reason.message,
+    'The server refused this request.', JSON.stringify(name));
+});
+
+test('#675: a remote workspace whose CLI cannot route operations: nothing sent, the unroutable reason, the code and error kept', async () => {
+  const calls = [];
+  const options = { workspace: remoteWs, cli: { ...cli, remote: ['roster'] }, instances: remoteRows, localCwd: '/local', invoke: async (_, args) => { calls.push(args); return envelope({}); } };
+  const e = await capabilityRequest({ action: 'inspect', selector: { home: remoteHome } }, options).catch(x => x);
+  assert.equal(calls.length, 0, 'nothing was sent');
+  assert.equal(e.code, 'cli-no-operations'); assert.equal(e.message, 'This workspace needs a registered server and remote operations support');
+  assert.deepEqual(e.reason, { code: 'unsupported-remote-operation', message: "This computer's OATS can't route this to Build box. Update OATS here.", detail: null, remote: true });
+  // An unregistered server is not a routing gap: the refusal stays as it was, with no reason.
+  const unregistered = await capabilityRequest({ action: 'inspect', selector: { home: remoteHome } }, { ...options, workspace: { ...remoteWs, registrationPresent: false } }).catch(x => x);
+  assert.equal(unregistered.code, 'cli-no-operations'); assert.equal(Object.hasOwn(unregistered, 'reason'), false);
+});
+
+test('#675: a local refusal has no reason', async () => {
+  const e = await capabilityRequest({ action: 'inspect', selector: { home } }, { workspace, cli, instances, localCwd: '/local',
+    invoke: async () => ({ schemaVersion: 1, ok: false, error: { code: 'E_REMOTE_INCOMPATIBLE', message: 'x' } }) }).catch(x => x);
+  assert.equal(e.code, 'E_REMOTE_INCOMPATIBLE'); assert.equal(Object.hasOwn(e, 'reason'), false);
+  assert.equal(Object.hasOwn(spawnErrorPayload(e).body, 'reason'), false, 'and the route body has none');
+});
+
+test('#675: the route body carries the reason; apiJson and httpError keep a valid one and drop an invalid one', async () => {
+  const { e } = await remoteRefusal({ code: 'E_REMOTE_INCOMPATIBLE', message: 'remote oats 0.30.0 lacks operations' });
+  const { status, body } = spawnErrorPayload(e);
+  assert.equal(status, 409);
+  assert.deepEqual(body, { error: 'remote oats 0.30.0 lacks operations', code: 'E_REMOTE_INCOMPATIBLE', reason: e.reason });
+  const viaFetch = b => apiJson({ api: async () => ({ ok: false, status: 409, json: async () => b }) }, '/api/capabilities', {}).catch(x => x);
+  for (const error of [await viaFetch(body), httpError({ status: 409, body }, '/api/capabilities')]) {
+    assert.equal(error.code, 'E_REMOTE_INCOMPATIBLE'); assert.deepEqual(error.reason, e.reason);
+  }
+  const unroutable = { error: 'x', code: 'cli-no-operations', reason: { code: 'unsupported-remote-operation', message: "This computer's OATS can't route this to Build box. Update OATS here.", detail: null, remote: true } };
+  assert.deepEqual((await viaFetch(unroutable)).reason, unroutable.reason);
+  assert.deepEqual(httpError({ status: 409, body: unroutable }, '/p').reason, unroutable.reason);
+  const invalid = [
+    { ...e.reason, extra: 1 }, // an extra key
+    { ...e.reason, code: 'e_lower' }, { ...e.reason, code: 'cli-no-operations' }, // a bad code
+    { ...e.reason, message: 'one\ntwo' }, // a multi-line message
+    { ...e.reason, detail: 'a\nb' }, { ...e.reason, remote: false }, 'E_SSH', null,
+  ];
+  for (const reason of invalid) {
+    const b = { ...body, reason };
+    assert.equal(Object.hasOwn(await viaFetch(b), 'reason'), false, JSON.stringify(reason));
+    assert.equal(Object.hasOwn(httpError({ status: 409, body: b }, '/p'), 'reason'), false, JSON.stringify(reason));
+  }
+});

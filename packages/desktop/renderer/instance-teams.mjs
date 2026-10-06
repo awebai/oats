@@ -18,12 +18,18 @@
  * never again for a subject whose inspection found no provider: a section that
  * appeared and vanished would shift Lineage under it. An instance whose status
  * identity changes (a restart, drift) re-reads: the card refreshes its list, or
- * the inspection runs again. */
+ * the inspection runs again.
+ *
+ * An instance on a registered server is read through the same route by its
+ * deployment, server and home; a row that can't be routed from here sends
+ * nothing and claims the place to say why, as a failure does, and a host's
+ * refusal is shown as relayed (remote-address.mjs). */
 import { inspectData, inspectSupported } from './inspect-contract.mjs';
 import { createTeamsPanel, teamsCSS, teamsOperations } from './teams-panel.mjs';
 import { cliStatus } from './views/cli-status.mjs';
 import { createDataState, statusLine } from './loading.mjs';
 import { instanceStatusIdentity } from './instance-status-identity.mjs';
+import { relayedFailure, remoteInspectBlock, serverLabel } from './remote-address.mjs';
 
 export { teamsCSS };
 
@@ -59,10 +65,24 @@ export function createInstanceTeamsSection(host, { request, generation = () => 0
     root.append(card);
     return root;
   }
+  /** Why the selection's current row can't be routed from here, or null (a local row never is). Checked before
+   * every request, the card's included: the row and this computer's OATS may have changed since it was built. */
+  const routeBlock = () => remoteInspectBlock(current?.instance, cli());
+  // A remote row that can't be routed from here: nothing is sent (Retry included); the reason claims the place.
+  // A card already on screen goes first (this controller has no stale line to keep it under): the failed block
+  // takes its place, and focus that was in it moves to the block's Retry, never to <body>.
+  function showBlocked(blocked) {
+    const focused = host.contains(doc.activeElement) || !!tools?.contains(doc.activeElement);
+    if (panel || loading.hasData) { panel?.dispose(); panel = null; body.querySelector('.teams-panel')?.remove(); loading.reset(); }
+    loading.fail(blocked); onPresence(true);
+    if (focused && !host.contains(doc.activeElement)) body.querySelector('.loading-retry')?.focus({ preventScroll: true });
+  }
   async function load(workspace, instance, id, { user = false } = {}) {
     const ticket = ++serial, gen = generation();
     const owns = () => !disposed && ticket === serial && identity === id && generation() === gen;
     const selector = { home: instance.home };
+    const blocked = remoteInspectBlock(instance, cli());
+    if (blocked) { showBlocked(blocked); return; }
     // Claim the section now only when the roster says messaging applies here, or a failure is on screen to retry;
     // a re-read after a no-provider answer (loading.hasData, no panel) stays hidden.
     const known = loading.state === 'failed' || !!panel;
@@ -70,8 +90,11 @@ export function createInstanceTeamsSection(host, { request, generation = () => 0
     loading.begin({ user }); if (claim) onPresence(true);
     let result;
     try { result = await request(workspace, { action: 'inspect', selector, ...(user ? { refresh: true } : {}) }); }
-    catch (error) { if (owns()) { loading.fail(error); onPresence(true); } return; } // visible: the failed block and Retry, never a silent absence
+    catch (error) { if (owns()) { loading.fail(instance.server ? relayedFailure(error, serverLabel(instance), 'teams') : error); onPresence(true); } return; } // visible: the failed block and Retry, never a silent absence
     if (!owns()) return;
+    // The row stopped being routable while the inspection ran (an inactive tab gets no update): no card, no read.
+    const late = routeBlock();
+    if (late) { showBlocked(late); return; }
     const inspected = inspectData(result, { instance, selector });
     if (!inspected) {
       loading.fail(new Error(result?.operationsApi === 1 ? 'This workspace still uses the classic layout, which answers an older inspection.'
@@ -86,8 +109,17 @@ export function createInstanceTeamsSection(host, { request, generation = () => 0
     noProvider = false;
     // The card first, then succeed(): a focused Retry in the leaving failed block lands on the card's Refresh.
     panel?.dispose(); body.querySelector('.teams-panel')?.remove();
+    // The card's provider operations go by the same route; a host's refusal shows as relayed. While the current
+    // row can't be routed from here its controls hold, and any request it still makes (a re-read after a refused
+    // join, say) is refused here, unsent, with the reason; the next active update() replaces the card.
+    const label = serverLabel(instance);
     panel = createTeamsPanel(body, { operations, selector, heading: false, owns, compact: true, refreshHost: tools,
-      request: body => request(workspace, body), available: () => inspectSupported(cli()) });
+      request: body => {
+        const late = routeBlock();
+        if (late) return Promise.reject(late);
+        return request(workspace, body).catch(error => { throw instance.server ? relayedFailure(error, label, 'teams') : error; });
+      },
+      available: () => inspectSupported(cli()) && !routeBlock() });
     loading.succeed({ observedAt }); onPresence(true);
   }
   return {
@@ -97,12 +129,17 @@ export function createInstanceTeamsSection(host, { request, generation = () => 0
      * inspection when there is no card yet. */
     update({ active, workspace, instance } = {}) {
       if (disposed) return;
-      const id = instance?.home && !instance.server ? JSON.stringify([workspace, instance.home]) : null;
+      // A remote row's identity includes its server (the same home on two servers is two subjects).
+      const id = !instance?.home ? null : instance.server ? JSON.stringify([workspace, instance.server, instance.home])
+        : JSON.stringify([workspace, instance.home]);
       if (id !== identity) { identity = id; attempted = null; statusId = null; noProvider = false; serial++; clear(); }
       current = id ? { workspace, instance } : null;
       // One inspection per selection (renders are frequent); a new selection reads again.
       if (!active || !id || !inspectSupported(cli())) { panel?.sync(); return; }
       const sid = instanceStatusIdentity(instance);
+      // A card for a row that can no longer be routed from here (it left the host's list, or this computer's
+      // OATS lost remote operations) is replaced by the reason at once, whatever the status identity says.
+      if (panel && routeBlock()) { attempted = id; statusId = sid; void load(workspace, instance, id); return; }
       if (attempted === id && sid === statusId) { panel?.sync(); return; }
       const changed = attempted === id; attempted = id; statusId = sid;
       if (changed && panel) { panel.refresh(); return; }

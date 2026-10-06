@@ -4,7 +4,7 @@ import { cliCapability, operationArgs } from '../cli-adapter.mjs';
 import { inspectKey } from './inspect-cache.mjs';
 import { observationData } from '../deployment-data.mjs';
 import { OBSERVE_MAX_AGE_FEATURE } from '../renderer/deployment-contract.mjs';
-import { canAddressRemote, unaddressableSentence } from '../renderer/remote-address.mjs';
+import { canAddressRemote, unaddressableSentence, hostReason, shownLabel, unroutableReason } from '../renderer/remote-address.mjs';
 
 const fail = (message, code = 'E_BAD_ARGS') => { throw Object.assign(new Error(message), { code }); };
 
@@ -21,8 +21,13 @@ export async function capabilityRequest(request, { workspace, cli, agents = [], 
     fail('Update the installed OATS CLI (inspection needs operations API 2)', 'cli-no-operations');
   }
   const server = workspace.server || undefined;
+  // A remote workspace's refusals carry a structured reason (remote-address.mjs) naming the server.
+  const label = workspace.name || server;
   if (workspace.remote && (!server || !workspace.registrationPresent || !cli.remote?.includes('operations'))) {
-    fail('This workspace needs a registered server and remote operations support', 'cli-no-operations');
+    const error = Object.assign(new Error('This workspace needs a registered server and remote operations support'), { code: 'cli-no-operations' });
+    // This computer's OATS can't route inspection to a registered server: nothing was sent.
+    if (server && workspace.registrationPresent) error.reason = unroutableReason(label);
+    throw error;
   }
   const { action, selector = {} } = request;
   // Read-only plus provider operations: a v2 soul is edited in its repository,
@@ -83,6 +88,10 @@ export async function capabilityRequest(request, { workspace, cli, agents = [], 
   if (!envelope.ok) {
     const code = envelope.error?.code || 'E_OPERATION_FAILED';
     const error = Object.assign(new Error(envelope.error?.message || 'Capability operation failed'), { code });
+    // A host's (or the remote transport's) refusal: its code verbatim, a headline naming the server and the
+    // kernel's message through the display filter (hostReason; null for a code not in the kernel's shape).
+    const reason = server ? hostReason({ code, message: envelope.error?.message }, label, `${shownLabel(label, true)} refused this request.`) : null;
+    if (reason) error.reason = reason;
     // E_TEAM_CONFLICT (teams contract): the two disagreeing labels travel with the refusal, bounded.
     const labels = envelope.error?.details?.labels;
     if (code === 'E_TEAM_CONFLICT' && Array.isArray(labels) && labels.length >= 2 && labels.length <= 16

@@ -59,7 +59,7 @@ test('the core rows say why in the soul page\'s words for an instance (layers-fr
   assert.equal(without.host.querySelector('.soul-tab-why'), null, 'no reason without the feature');
 });
 
-test('an inactive tab or a remote instance: no read; a failed first read is visible — the cause, its code behind Details, Retry (which reads live)', async t => {
+test('an inactive tab or an unaddressable remote instance: no read; a failed first read is visible — the cause, its code behind Details, Retry (which reads live)', async t => {
   const a = section(t, () => fx().result);
   a.s.update({ active: false, workspace: 'A', instance: instance() }); await tick();
   a.s.update({ active: true, workspace: 'A', instance: { ...instance(), server: 'remote' } }); await tick();
@@ -130,4 +130,80 @@ test('a new selection drops the previous soul before its read lands', async t =>
   u.s.update({ active: true, workspace: 'A', instance: instance(`${HOME}-2`) });
   assert.equal(u.host.querySelector('.soul-tab'), null, 'no stale soul while the next read is in flight');
   release(); await tick(); await tick();
+});
+
+// #675: an instance on a registered server reads through the same route, by its deployment, server and home.
+const REMOTE_CLI = () => ({ ok: true, operationsApi: 2, features: [], remote: ['operations'] });
+const remoteRow = (extra = {}) => ({ ...instance(), server: 'build', repoName: 'Build box', addressable: true, missingRemotely: false, savedRoute: false,
+  deployment: { id: 'remote:g1' }, ...extra });
+
+test('a local row: identity and request as before (its workspace and { home }, no server, the generic pending line)', async t => {
+  let release; const gate = new Promise(r => { release = r; });
+  const u = section(t, async () => { await gate; return fx().result; });
+  u.s.update({ active: true, workspace: 'A', instance: instance() }); await tick();
+  assert.equal(u.status().textContent, 'Loading soul…');
+  release(); await tick(); await tick();
+  assert.deepEqual(u.calls, [{ workspace: 'A', action: 'inspect', selector: { home: HOME } }]);
+  // The same home under a server is another subject: a new selection, read again.
+  const v = section(t, () => fx().result, REMOTE_CLI);
+  v.s.update({ active: true, workspace: 'A', instance: instance() }); await tick(); await tick();
+  v.s.update({ active: true, workspace: 'A', instance: remoteRow() }); await tick(); await tick();
+  assert.equal(v.calls.length, 2, 'local and remote rows with one home are two identities');
+});
+
+test('a remote addressable row with the feature: one inspect by its deployment and { home }, "Reading from <server>…" in flight, the body renders; the same identity sends nothing more', async t => {
+  let release; const gate = new Promise(r => { release = r; });
+  const u = section(t, async () => { await gate; return fx().result; }, REMOTE_CLI);
+  u.s.update({ active: true, workspace: 'remote:g1', instance: remoteRow() }); await tick();
+  assert.equal(u.status().textContent, 'Reading from Build box…');
+  release(); await tick(); await tick();
+  assert.deepEqual(u.calls, [{ workspace: 'remote:g1', action: 'inspect', selector: { home: HOME } }]);
+  assert.ok(u.host.querySelector('.soul-tab'), 'the body renders');
+  for (let i = 0; i < 3; i++) u.s.update({ active: true, workspace: 'remote:g1', instance: remoteRow() });
+  await tick(); assert.equal(u.calls.length, 1, 'one read per selection: no polling');
+});
+
+test('a remote row whose local CLI lacks remote operations: nothing is sent (Retry included); the unroutable sentence is the body', async t => {
+  const u = section(t, () => fx().result, () => ({ ok: true, operationsApi: 2, features: [], remote: ['roster'] }));
+  u.s.update({ active: true, workspace: 'remote:g1', instance: remoteRow() }); await tick();
+  const failed = u.host.querySelector('.loading-failed'); assert.ok(failed);
+  assert.equal(failed.querySelector('.loading-failed-message').textContent, "This computer's OATS can't route this to Build box. Update OATS here.");
+  assert.equal(u.presence.at(-1), true);
+  failed.querySelector('.loading-retry').click(); await tick();
+  u.s.update({ active: true, workspace: 'remote:g1', instance: remoteRow() }); await tick();
+  assert.equal(u.calls.length, 0, 'never sent');
+});
+
+test('a host E_REMOTE_INCOMPATIBLE refusal: the soul sentence naming the server and what to update; the code and the kernel message under Details', async t => {
+  const reason = { code: 'E_REMOTE_INCOMPATIBLE', message: 'Build box runs an OATS that can\'t do this yet.', detail: 'remote oats 0.30.0 lacks operations', remote: true };
+  const u = section(t, () => { throw Object.assign(new Error('remote oats 0.30.0 lacks operations'), { code: 'E_REMOTE_INCOMPATIBLE', reason }); }, REMOTE_CLI);
+  u.s.update({ active: true, workspace: 'remote:g1', instance: remoteRow() }); await tick(); await tick();
+  const failed = u.host.querySelector('.loading-failed'); assert.ok(failed);
+  assert.equal(failed.querySelector('.loading-failed-message').textContent,
+    "Build box runs an OATS that can't show this instance's soul here (it needs the operations feature). Update OATS on Build box.");
+  const code = failed.querySelector('.loading-failed-code');
+  assert.equal(code.textContent, 'E_REMOTE_INCOMPATIBLE: remote oats 0.30.0 lacks operations');
+  assert.equal(code.querySelector('bdi').textContent, 'remote oats 0.30.0 lacks operations', 'the kernel message alone in its <bdi>');
+  // Another host refusal: the relayed headline stands.
+  const ssh = { code: 'E_SSH', message: "Couldn't reach Build box.", detail: 'ssh: connect refused', remote: true };
+  const v = section(t, () => { throw Object.assign(new Error('ssh: connect refused'), { code: 'E_SSH', reason: ssh }); }, REMOTE_CLI);
+  v.s.update({ active: true, workspace: 'remote:g1', instance: remoteRow() }); await tick(); await tick();
+  assert.equal(v.host.querySelector('.loading-failed-message').textContent, "Couldn't reach Build box.");
+  assert.equal(v.host.querySelector('.loading-failed-code').textContent, 'E_SSH: ssh: connect refused');
+  // A withheld label words the sentence with "The server".
+  const w = section(t, () => { throw Object.assign(new Error('x'), { code: 'E_REMOTE_INCOMPATIBLE', reason: { ...reason, detail: null } }); }, REMOTE_CLI);
+  w.s.update({ active: true, workspace: 'remote:g1', instance: remoteRow({ repoName: 'password: hunter2' }) }); await tick(); await tick();
+  assert.equal(w.host.querySelector('.loading-failed-message').textContent,
+    "The server runs an OATS that can't show this instance's soul here (it needs the operations feature). Update OATS on the server.");
+});
+
+test('an unaddressable remote row: nothing is sent; its row sentence is the body', async t => {
+  const u = section(t, () => fx().result, REMOTE_CLI);
+  u.s.update({ active: true, workspace: 'remote:g1', instance: remoteRow({ addressable: false }) }); await tick();
+  assert.equal(u.calls.length, 0);
+  assert.equal(u.host.querySelector('.loading-failed-message').textContent, 'Build box did not report this instance as reachable.');
+  const v = section(t, () => fx().result, REMOTE_CLI);
+  v.s.update({ active: true, workspace: 'remote:g1', instance: remoteRow({ addressable: false, missingRemotely: true }) }); await tick();
+  assert.equal(v.calls.length, 0);
+  assert.match(v.host.querySelector('.loading-failed-message').textContent, /is no longer on Build box\. Remove it from this computer with: oats server forget build/);
 });

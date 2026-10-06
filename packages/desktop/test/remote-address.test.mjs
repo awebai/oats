@@ -256,3 +256,25 @@ test('a local OATS before 0.31 reports no addressable fact: a saved-route row ke
   assert.equal(rowReason({ ...older, savedRoute: false }).sentence,
     "This computer's OATS does not report whether Build box can reach this instance. Update OATS here.");
 });
+
+test('incompatibleSentence, relayedFailure, remoteInspectBlock (#675): the panel reads of a remote instance', async () => {
+  const { incompatibleSentence, relayedFailure, remoteInspectBlock } = await import('../renderer/remote-address.mjs');
+  assert.equal(incompatibleSentence('Build box', 'soul'),
+    "Build box runs an OATS that can't show this instance's soul here (it needs the operations feature). Update OATS on Build box.");
+  assert.equal(incompatibleSentence('', 'teams'),
+    "The server runs an OATS that can't show this instance's teams here (it needs the operations feature). Update OATS on the server.");
+  const plain = new Error('bridge down');
+  assert.equal(relayedFailure(plain, 'Build box', 'soul'), plain, 'no relayed reason: the error as it came');
+  const reason = { code: 'E_REMOTE_INCOMPATIBLE', message: "Build box runs an OATS that can't do this yet.", detail: 'needs operations', remote: true };
+  const shown = relayedFailure(Object.assign(new Error('raw'), { reason }), 'Build box', 'soul');
+  assert.deepEqual([shown.message, shown.code, shown.detail], [incompatibleSentence('Build box', 'soul'), 'E_REMOTE_INCOMPATIBLE', 'needs operations']);
+  assert.equal(relayedFailure(Object.assign(new Error('raw'), { reason }), 'Build box').message, reason.message, 'without `what`: the relayed headline');
+  const ssh = relayedFailure(Object.assign(new Error('raw'), { reason: { code: 'E_SSH', message: "Couldn't reach Build box.", detail: null, remote: true } }), 'Build box', 'soul');
+  assert.deepEqual([ssh.message, ssh.code, ssh.detail], ["Couldn't reach Build box.", 'E_SSH', null]);
+  const cli = { remote: ['operations'] };
+  assert.equal(remoteInspectBlock({ instance: 'x', home: '/w/x' }, {}), null, 'a local row is never blocked');
+  assert.equal(remoteInspectBlock(remote(), cli), null);
+  assert.equal(remoteInspectBlock(remote({ addressable: false }), cli).message, 'Build box did not report this instance as reachable.');
+  const unroutable = remoteInspectBlock(remote(), { remote: ['roster'] });
+  assert.deepEqual([unroutable.message, unroutable.code], [unroutableReason('Build box').message, 'unsupported-remote-operation']);
+});

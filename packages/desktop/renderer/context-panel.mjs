@@ -3,7 +3,7 @@ import { iconElement } from './shell-icons.mjs';
 import { ageText } from './age-text.mjs';
 import { createSoulMark, createRuntimeBadge, harnessName } from './identity-marks.mjs';
 import { unsupportedSession } from './instance-presentation.mjs';
-import { canAddressRemote } from './remote-address.mjs';
+import { canAddressRemote, serverLabel, shownLabel, unaddressableSentence } from './remote-address.mjs';
 /** Shell-owned contextual surface. Optional Git reads are delegated to an
  * injected controller; this host performs no IO, lookup or lifecycle actions. */
 export const contextPanelCSS = `
@@ -30,6 +30,8 @@ export const contextPanelCSS = `
 #context-panel .context-panel-page { flex:1; min-height:0; overflow:auto; padding:16px; box-sizing:border-box; overflow-wrap:anywhere; }
 #context-panel .context-panel-page h2 { font-size:14px; margin:0 0 12px; }
 #context-panel .context-panel-note { color:var(--muted); }
+/* A remote row whose work and build aren't relayed: one muted line in the Work section's place. */
+#context-panel .context-panel-work-note { margin:0; font-size:12.5px; line-height:1.5; }
 /* v4.1 instance page (board 1): identity header, then labelled sections. */
 #context-panel .context-panel-page[data-context-page="instance"], #context-panel .context-panel-page[data-context-page="soul"] { display:flex; flex-direction:column; gap:20px; }
 #context-panel .context-panel-page[hidden] { display:none; }
@@ -163,6 +165,24 @@ const WORK_MODES = Object.freeze({ __proto__: null,
   workspace: { icon: 'layers', sentence: () => ['Sees the whole workspace: reads across every member repository.'] } });
 /** Modes whose <home>/work is a link to a tree other instances share (the kernel symlinks it). */
 const LINKED = new Set(['checkout', 'attached', 'workspace']);
+/** The repository the Work sentence names: a local row's repoName; a remote row's own `repo` (a host
+ * path, its last segment, for display only: a remote row's repoName is its server's label). */
+function workRepo(instance) {
+  if (!instance?.server) return instance?.repoName;
+  return typeof instance.repo === 'string' ? instance.repo.replace(/\/+$/, '').split('/').pop() : null;
+}
+/** Why a remote row shows no work and build, or null for a local row or a remote row that reports it. A row
+ * the kernel built from its saved route alone (the host no longer lists it, or wasn't reached) has every fact
+ * null, which says nothing about the host's OATS: it says why first. Then this computer's OATS predates the
+ * relay (no `work` key), or the host doesn't report it (`work: null`). */
+export function remoteWorkNote(instance) {
+  if (!instance?.server || typeof instance.work === 'string') return null;
+  const label = serverLabel(instance);
+  if (instance.missingRemotely === true) return unaddressableSentence(instance);
+  if (instance.serverUnreached) return `${shownLabel(label, true)} wasn't reached, so this instance's work and build aren't known.`;
+  if (!Object.hasOwn(instance, 'work')) return `This computer's OATS doesn't show the work and build of instances on ${shownLabel(label)}. Update OATS here.`;
+  return instance.work === null ? `${shownLabel(label, true)} doesn't report this instance's work and build. Update OATS on ${shownLabel(label)}.` : null;
+}
 /** The folder an instance works in: <home>/work in every mode (a real folder for worktree and
  * directory, a link to the shared tree otherwise). Joined with the home's own separator, so a
  * Windows home stays a Windows path; null without a home. */
@@ -416,6 +436,9 @@ export function createContextPanel({
   const homeValue = node('dd'); homeValue.append(pathLine('home', 'Copy home path', { own: false }));
   factRow(pathFacts, 'home', 'Home', homeValue);
   paths.append(pathFacts); workCard.append(workMain, paths); workSection.append(workCard);
+  // A remote row without its work facts: one muted line where the Work section stands (no card, no guess).
+  const workNote = node('p', 'context-panel-note context-panel-work-note'); workNote.dataset.contextWorkNote = ''; workNote.hidden = true;
+  workSection.after(workNote);
   let workKey = null;
   // Session: the harness (and model) it runs, its terminal session and age.
   const session = section('instance', 'Session');
@@ -581,11 +604,14 @@ export function createContextPanel({
     // later rewrites the sentence in place); an unknown or unreported mode hides the section.
     const work = WORK_MODES[instance.work] ? instance.work : null;
     workSection.hidden = !work;
+    const note = remoteWorkNote(instance) ?? '';
+    if (workNote.textContent !== note) workNote.textContent = note;
+    workNote.hidden = !note;
     if (work && modeTile.dataset.work !== work) {
       modeTile.dataset.work = work; modeTile.replaceChildren(iconElement(document, WORK_MODES[work].icon, { size: 14 }));
     }
     const fact = value => typeof value === 'string' && value ? value : null;
-    const parts = work ? WORK_MODES[work].sentence({ repo: fact(instance.repoName), branch: fact(instance.branch), parent: fact(instance.parentInstance) }) : [];
+    const parts = work ? WORK_MODES[work].sentence({ repo: fact(workRepo(instance)), branch: fact(instance.branch), parent: fact(instance.parentInstance) }) : [];
     const key = JSON.stringify(parts);
     if (workKey !== key) {
       workKey = key;

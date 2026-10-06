@@ -220,6 +220,21 @@ test('a failed first read is the failed block where the skeleton stood: the caus
   assert.equal(u.status().textContent, 'Soul updated'); assert.equal(u.doc.activeElement, u.refresh());
 });
 
+test('a remote instance: a relayed host refusal shows as the context panel words it (#675) — the soul sentence for E_REMOTE_INCOMPATIBLE, the headline otherwise; code and kernel message under Details', async t => {
+  const remoteSelection = { instance: { ...homeSelection.instance, server: 'build', repoName: 'Build box' }, selector: homeSelection.selector };
+  const u = mount(t);
+  void u.inspector.show(remoteSelection);
+  await u.reject(refusal('E_REMOTE_INCOMPATIBLE', 'needs operations', { reason: { code: 'E_REMOTE_INCOMPATIBLE', message: "Build box runs an OATS that can't do this yet.", detail: 'needs operations', remote: true } }));
+  const failed = u.content().querySelector('.loading-failed'); assert.ok(failed);
+  assert.equal(failed.querySelector('.loading-failed-message').textContent,
+    "Build box runs an OATS that can't show this instance's soul here (it needs the operations feature). Update OATS on Build box.");
+  assert.equal(failed.querySelector('.loading-failed-code').textContent, 'E_REMOTE_INCOMPATIBLE: needs operations');
+  assert.equal(failed.querySelector('.loading-failed-code bdi').textContent, 'needs operations');
+  failed.querySelector('.loading-retry').click();
+  await u.reject(refusal('E_SSH', 'ssh: refused', { reason: { code: 'E_SSH', message: "Couldn't reach Build box.", detail: 'ssh: refused', remote: true } }));
+  assert.equal(u.content().querySelector('.loading-failed-message').textContent, "Couldn't reach Build box.");
+});
+
 test('an unreadable inspection (operationsApi 1) is a failure with the existing sentence, not a skeleton forever', async t => {
   const u = mount(t);
   void u.inspector.show(soulSelection);

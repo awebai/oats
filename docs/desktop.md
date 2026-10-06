@@ -249,14 +249,18 @@ for a password or key, and never runs anything over ssh itself.
 
 Every instance a registered server reports shows in its workspace's roster, whoever spawned it. You
 can open its terminal, start, restart, stop and remove it, and read its readiness, activity, Git
-and diffs, as for a local one. Only its pull request is not read here, since the forge reads this
+and diffs, as for a local one. The context panel's Soul tab and its Messaging & Teams list read
+through the server too (`oats inspect --server <id> --home <path>`), and its Work card, "model
+from" line and "older build" chip show the facts the server relays. Only its pull request is not read here, since the forge reads this
 computer's clones. Every command goes to the server by the instance's home (`--server <id> --home
 <path>`), never by a bare name. Stop and Remove show the plan the server makes, and confirm
 against it.
 
 A read waits for the server: the view says "Reading from <server>…", and gives up after about
 45 seconds with "Couldn't reach <server>." When the server refuses, you see its code and message;
-nothing is read from this computer in its place. A row that can't be opened says why on the row:
+nothing is read from this computer in its place. When the server's OATS, or this computer's, lacks
+what a part of the panel needs, that part names the server and says which OATS to update, rather
+than showing nothing. A row that can't be opened says why on the row:
 Herdr no longer supported, gone from <server>, not reachable on <server>, or <server> not reached.
 For an instance a server no longer lists, the reason names the command that removes it from this
 computer (`oats server forget <server> --instance <name>`).
