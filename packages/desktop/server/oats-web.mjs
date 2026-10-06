@@ -560,6 +560,8 @@ function spawnErrorPayload(e) {
       error: e.code === "E_RELATIVE_AMBIGUOUS" ? message : message.slice(0, 300),
       ...(e.code ? { code: e.code } : {}),
       ...(e.code === "E_TEAM_CONFLICT" && Array.isArray(e.labels) ? { labels: e.labels } : {}),
+      // A remote refusal's structured reason (server/capabilities.mjs); the renderer re-validates it.
+      ...(e.reason ? { reason: e.reason } : {}),
     },
   };
 }

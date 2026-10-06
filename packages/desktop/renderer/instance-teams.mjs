@@ -18,12 +18,18 @@
  * never again for a subject whose inspection found no provider: a section that
  * appeared and vanished would shift Lineage under it. An instance whose status
  * identity changes (a restart, drift) re-reads: the card refreshes its list, or
- * the inspection runs again. */
+ * the inspection runs again.
+ *
+ * An instance on a registered server is read through the same route by its
+ * deployment, server and home; a row that can't be routed from here sends
+ * nothing and claims the place to say why, as a failure does, and a host's
+ * refusal is shown as relayed (remote-address.mjs). */
 import { inspectData, inspectSupported } from './inspect-contract.mjs';
 import { createTeamsPanel, teamsCSS, teamsOperations } from './teams-panel.mjs';
 import { cliStatus } from './views/cli-status.mjs';
 import { createDataState, statusLine } from './loading.mjs';
 import { instanceStatusIdentity } from './instance-status-identity.mjs';
+import { relayedFailure, remoteInspectBlock, serverLabel } from './remote-address.mjs';
 
 export { teamsCSS };
 
@@ -63,6 +69,9 @@ export function createInstanceTeamsSection(host, { request, generation = () => 0
     const ticket = ++serial, gen = generation();
     const owns = () => !disposed && ticket === serial && identity === id && generation() === gen;
     const selector = { home: instance.home };
+    // A remote row that can't be routed from here: nothing is sent (Retry included); the reason claims the place.
+    const blocked = remoteInspectBlock(instance, cli());
+    if (blocked) { loading.fail(blocked); onPresence(true); return; }
     // Claim the section now only when the roster says messaging applies here, or a failure is on screen to retry;
     // a re-read after a no-provider answer (loading.hasData, no panel) stays hidden.
     const known = loading.state === 'failed' || !!panel;
@@ -70,7 +79,7 @@ export function createInstanceTeamsSection(host, { request, generation = () => 0
     loading.begin({ user }); if (claim) onPresence(true);
     let result;
     try { result = await request(workspace, { action: 'inspect', selector, ...(user ? { refresh: true } : {}) }); }
-    catch (error) { if (owns()) { loading.fail(error); onPresence(true); } return; } // visible: the failed block and Retry, never a silent absence
+    catch (error) { if (owns()) { loading.fail(instance.server ? relayedFailure(error, serverLabel(instance), 'teams') : error); onPresence(true); } return; } // visible: the failed block and Retry, never a silent absence
     if (!owns()) return;
     const inspected = inspectData(result, { instance, selector });
     if (!inspected) {
@@ -97,7 +106,9 @@ export function createInstanceTeamsSection(host, { request, generation = () => 0
      * inspection when there is no card yet. */
     update({ active, workspace, instance } = {}) {
       if (disposed) return;
-      const id = instance?.home && !instance.server ? JSON.stringify([workspace, instance.home]) : null;
+      // A remote row's identity includes its server (the same home on two servers is two subjects).
+      const id = !instance?.home ? null : instance.server ? JSON.stringify([workspace, instance.server, instance.home])
+        : JSON.stringify([workspace, instance.home]);
       if (id !== identity) { identity = id; attempted = null; statusId = null; noProvider = false; serial++; clear(); }
       current = id ? { workspace, instance } : null;
       // One inspection per selection (renders are frequent); a new selection reads again.

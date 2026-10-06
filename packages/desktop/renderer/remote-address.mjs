@@ -15,7 +15,7 @@ export const serverLabel = row => row?.repoName || row?.server || '';
  * too. A label with nothing to show, or a withheld one, reads "the server", the words the fixed sentences
  * already use. For the sentence only: routing, comparison and requests keep the label and the server id
  * as they are. `first`: the label opens the sentence. */
-const shownLabel = (label, first = false) => {
+export const shownLabel = (label, first = false) => {
   const line = displayLine(label);
   return line === null || line === DETAIL_WITHHELD ? first ? 'The server' : 'the server' : line;
 };
@@ -57,6 +57,35 @@ const HEADLINES = {
 export const remoteHeadline = (code, label, fallback) => Object.hasOwn(HEADLINES, code) ? HEADLINES[code](label) : fallback;
 
 export const readingFrom = label => `Reading from ${label}…`;
+
+/** A host's E_REMOTE_INCOMPATIBLE for a panel read (the context panel's Soul tab and teams): the server,
+ * what it can't show and what to upgrade. `what`: "soul", "teams". */
+export const incompatibleSentence = (label, what) =>
+  `${shownLabel(label, true)} runs an OATS that can't show this instance's ${what} here (it needs the operations feature). Update OATS on ${shownLabel(label)}.`;
+
+/** Why an instance inspection for a remote row is not sent (an Error for a failed block: the sentence, and
+ * the code when there is one), or null. A row the kernel does not report addressable says why; this
+ * computer's OATS without remote operations can't route it. A local row is never blocked. */
+export function remoteInspectBlock(row, cli) {
+  if (!row?.server) return null;
+  if (!canAddressRemote(row)) return new Error(unaddressableSentence(row));
+  if (!Array.isArray(cli?.remote) || !cli.remote.includes('operations')) {
+    const { message, code, detail } = unroutableReason(serverLabel(row));
+    return Object.assign(new Error(message), { code, detail });
+  }
+  return null;
+}
+
+/** The error a view's loading state shows for a failed read: the relayed remote reason when the request's
+ * error carries one (re-validated where it was received), as an Error with its code and detail; else the
+ * error as it came. `what` ("soul", "teams") words a host's E_REMOTE_INCOMPATIBLE for the panel read
+ * (incompatibleSentence); without it the relayed headline stands. */
+export function relayedFailure(error, label, what = null) {
+  const reason = error?.reason;
+  if (!reason || typeof reason.message !== 'string') return error;
+  const message = what && reason.code === 'E_REMOTE_INCOMPATIBLE' ? incompatibleSentence(label, what) : reason.message;
+  return Object.assign(new Error(message), { code: reason.code, detail: reason.detail ?? null });
+}
 
 const CODE = /^E_[A-Z0-9_]{1,64}$/;
 const MAX_MESSAGE = 512;

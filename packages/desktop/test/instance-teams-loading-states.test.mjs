@@ -19,10 +19,10 @@ function clock(win) {
   win.clearTimeout = id => { timers.delete(id); };
   return { advance(ms) { const until = now + ms; for (;;) { const next = [...timers.entries()].filter(([, t]) => t.at <= until).sort((a, b) => a[1].at - b[1].at)[0]; if (!next) break; now = next[1].at; timers.delete(next[0]); next[1].fn(); } now = until; } };
 }
-function section(t, request) {
+function section(t, request, cli = () => ({ ok: true, operationsApi: 2 })) {
   const dom = new JSDOM('<body><section><div class="context-panel-section-head">Messaging</div></section></body>');
   const host = dom.window.document.querySelector('section'), calls = [], presence = [], timers = clock(dom.window);
-  const s = createInstanceTeamsSection(host, { cli: () => ({ ok: true, operationsApi: 2 }), onPresence: p => presence.push(p),
+  const s = createInstanceTeamsSection(host, { cli, onPresence: p => presence.push(p),
     request: async (workspace, body) => { calls.push({ workspace, ...body }); return request(workspace, body); } });
   t.after(() => { s.dispose(); dom.window.close(); });
   return { host, s, calls, presence, timers, doc: dom.window.document, body: () => host.querySelector('.instance-teams-body'), status: () => host.querySelector('.instance-teams-status') };
@@ -100,4 +100,66 @@ test('the status identity: a restart or drift re-reads the same selection — th
   assert.equal(reads(), 3, 'drift is a status change too');
   assert.notEqual(instanceStatusIdentity(row), instanceStatusIdentity({ ...row, soul: { commit: 'abc' } }), 'the soul source counts');
   assert.equal(instanceStatusIdentity(null), null);
+});
+
+// #675: an instance on a registered server reads through the same route, by its deployment, server and home.
+const REMOTE_CLI = () => ({ ok: true, operationsApi: 2, remote: ['operations'] });
+const remoteRow = (extra = {}) => instance({ server: 'build', repoName: 'Build box', addressable: true, missingRemotely: false, savedRoute: false,
+  deployment: { id: 'remote:g1' }, identityAddress: 'dev@oats.aweb.ai', ...extra });
+
+test('a local row: identity and request as before (its workspace and { home }); the same home on a server is another subject', async t => {
+  const u = section(t, answer);
+  u.s.update({ active: true, workspace: 'A', instance: instance() }); await tick(); await tick(); await tick();
+  assert.deepEqual(u.calls.filter(c => c.action === 'inspect'), [{ workspace: 'A', action: 'inspect', selector: { home: HOME } }]);
+  const v = section(t, answer, REMOTE_CLI);
+  v.s.update({ active: true, workspace: 'A', instance: instance() }); await tick(); await tick(); await tick();
+  v.s.update({ active: true, workspace: 'A', instance: remoteRow() }); await tick(); await tick(); await tick();
+  assert.equal(v.calls.filter(c => c.action === 'inspect').length, 2, 'two identities');
+});
+
+test('a remote addressable row with the feature: one inspect by its deployment and { home }, the card renders and its operations go through the same request; the same identity sends nothing more', async t => {
+  const u = section(t, answer, REMOTE_CLI);
+  u.s.update({ active: true, workspace: 'remote:g1', instance: remoteRow() }); await tick(); await tick(); await tick();
+  const inspects = u.calls.filter(c => c.action === 'inspect');
+  assert.deepEqual(inspects, [{ workspace: 'remote:g1', action: 'inspect', selector: { home: HOME } }]);
+  assert.ok(u.body().querySelector('.teams-panel [data-team-row="default"]'), 'the card renders');
+  const runs = u.calls.filter(c => c.action === 'run'); assert.ok(runs.length > 0, 'the card read its list');
+  assert.ok(runs.every(c => c.workspace === 'remote:g1' && c.selector?.home === HOME), 'provider operations by the same deployment and home');
+  const before = u.calls.length;
+  for (let i = 0; i < 3; i++) u.s.update({ active: true, workspace: 'remote:g1', instance: remoteRow() });
+  await tick(); await tick(); assert.equal(u.calls.length, before, 'one read per selection: no polling');
+});
+
+test('a remote row whose local CLI lacks remote operations: nothing is sent (Retry included); the section claims its place for the unroutable sentence', async t => {
+  const u = section(t, answer, () => ({ ok: true, operationsApi: 2, remote: ['roster'] }));
+  u.s.update({ active: true, workspace: 'remote:g1', instance: remoteRow({ identityAddress: null }) }); await tick();
+  const failed = u.body().querySelector('.loading-failed'); assert.ok(failed);
+  assert.equal(failed.querySelector('.loading-failed-message').textContent, "This computer's OATS can't route this to Build box. Update OATS here.");
+  assert.equal(u.presence.at(-1), true, 'claimed, as a failure is');
+  failed.querySelector('.loading-retry').click(); await tick();
+  assert.equal(u.calls.length, 0, 'never sent');
+});
+
+test('a host E_REMOTE_INCOMPATIBLE refusal: the teams sentence naming the server and what to update; the code and the kernel message under Details', async t => {
+  const reason = { code: 'E_REMOTE_INCOMPATIBLE', message: "Build box runs an OATS that can't do this yet.", detail: 'remote oats 0.30.0 lacks operations', remote: true };
+  const u = section(t, () => { throw Object.assign(new Error('remote oats 0.30.0 lacks operations'), { code: 'E_REMOTE_INCOMPATIBLE', reason }); }, REMOTE_CLI);
+  u.s.update({ active: true, workspace: 'remote:g1', instance: remoteRow() }); await tick(); await tick();
+  const failed = u.body().querySelector('.loading-failed'); assert.ok(failed); assert.equal(u.presence.at(-1), true);
+  assert.equal(failed.querySelector('.loading-failed-message').textContent,
+    "Build box runs an OATS that can't show this instance's teams here (it needs the operations feature). Update OATS on Build box.");
+  const code = failed.querySelector('.loading-failed-code');
+  assert.equal(code.textContent, 'E_REMOTE_INCOMPATIBLE: remote oats 0.30.0 lacks operations');
+  assert.equal(code.querySelector('bdi').textContent, 'remote oats 0.30.0 lacks operations');
+  const ssh = { code: 'E_CLI_TIMEOUT', message: "Couldn't reach Build box.", detail: null, remote: true };
+  const v = section(t, () => { throw Object.assign(new Error('timed out'), { code: 'E_CLI_TIMEOUT', reason: ssh }); }, REMOTE_CLI);
+  v.s.update({ active: true, workspace: 'remote:g1', instance: remoteRow() }); await tick(); await tick();
+  assert.equal(v.body().querySelector('.loading-failed-message').textContent, "Couldn't reach Build box.", 'another refusal: the relayed headline');
+  assert.equal(v.body().querySelector('.loading-failed-code').textContent, 'E_CLI_TIMEOUT');
+});
+
+test('an unaddressable remote row: nothing is sent; its row sentence claims the place', async t => {
+  const u = section(t, answer, REMOTE_CLI);
+  u.s.update({ active: true, workspace: 'remote:g1', instance: remoteRow({ addressable: false }) }); await tick();
+  assert.equal(u.calls.length, 0); assert.equal(u.presence.at(-1), true);
+  assert.equal(u.body().querySelector('.loading-failed-message').textContent, 'Build box did not report this instance as reachable.');
 });

@@ -1,5 +1,6 @@
 import { hashWorkspace, workspaceHash } from "../window-binding.mjs";
 import { validWorkspaceId } from "../workspace-id.mjs";
+import { remoteReason } from "../remote-address.mjs";
 
 /* oats desktop — shared helpers for renderer views.
    Plain ES module, DOM-only, no frameworks (contract). Views import from
@@ -37,6 +38,8 @@ export async function apiJson(ctx, pathname, opts) {
     const err = new Error(d.error || `HTTP ${r.status}`);
     if (d.code) err.code = d.code; // stable CLI/domain code (e.g. cli-unavailable, E_RELATIVE_AMBIGUOUS)
     if (Array.isArray(d.labels)) err.labels = d.labels; // E_TEAM_CONFLICT: the disagreeing team labels
+    const reason = remoteReason(d.reason); // a remote refusal's reason, only once re-validated
+    if (reason) err.reason = reason;
     throw err;
   }
   return d;
@@ -55,6 +58,9 @@ export function httpError(r, pathname) {
   if (r.body?.code) err.code = r.body.code;
   if (r.body?.result) err.result = r.body.result;
   if (Array.isArray(r.body?.labels)) err.labels = r.body.labels;
+  // A remote refusal's reason (server → main → renderer): kept only once re-validated, else dropped.
+  const reason = remoteReason(r.body?.reason);
+  if (reason) err.reason = reason;
   // A window's refusal for a workspace not served carries the served choices (#481).
   if (Array.isArray(r.body?.workspaces)) err.workspaces = r.body.workspaces;
   return err;

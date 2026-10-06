@@ -868,6 +868,8 @@ for (const [name] of palettes) test(`${name}: F7 inspector cards, teams, compact
     ['#context-panel .context-panel-copy', '#context-panel', 'muted', 'surface'],
     // Spec D: the Folder row's "shared" tag (linked modes), the muted tag pair.
     ['#context-panel .context-panel-shared-tag', '#context-panel .context-panel-shared-tag', 'muted', 'tag-bg'],
+    // #675: a remote row's "work and build not reported" line, muted on the panel.
+    ['#context-panel .context-panel-work-note', '#context-panel', 'muted', 'surface'],
   ];
   checks.push(['.git-status-details > summary', '#context-panel', 'muted', 'surface']);
   for (const [selector, painted, fg, bg] of checks) {

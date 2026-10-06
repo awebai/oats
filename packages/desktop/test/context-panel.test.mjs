@@ -359,3 +359,81 @@ test('a Herdr-recorded instance: the footer shows Start disabled with the kernel
   u.select(instance('/A/t1', { running: false }));
   assert.equal(control('start').disabled, false); assert.equal(control('start').title, '', 'a tmux row carries no Herdr reason');
 });
+
+// #675 item 5: a remote row's work, build and drift facts as the kernel relays them (null when the host
+// doesn't supply one); the repository from its own `repo`, never its repoName (the server's label).
+const remoteRow = (extra = {}) => ({ instance: 'dev-r', agent: 'dev', home: '/srv/agents/dev/instances/dev-r', agentsRoot: '/srv/agents',
+  server: 'build', repoName: 'Build box', addressable: true, running: true, harness: 'claude', model: 'opus',
+  deployment: { id: 'remote:g1' }, ...extra });
+const SIX = { work: 'worktree', repo: '/srv/code/northwind', branch: 'feat/remote', modelFrom: 'soul',
+  soul: { status: 'moved' }, modules: [] };
+const workParts = u => {
+  const section = u.query('[data-context-work]').closest('.context-panel-section'), note = u.query('[data-context-work-note]');
+  return { section, note, sentence: u.query('[data-context-work]'), chip: u.query('[data-context-drift]') };
+};
+
+test('a remote row with the six facts: the Work card (repository from repo, not the server label), model from, drift chip', t => {
+  const u = fixture(t); u.select(remoteRow(SIX));
+  const { section, note, sentence, chip } = workParts(u);
+  assert.equal(section.hidden, false); assert.equal(note.hidden, true);
+  assert.equal(sentence.textContent, 'Works in its own worktree of northwind, on branch feat/remote.');
+  assert.doesNotMatch(sentence.textContent, /Build box/, 'never the server label');
+  assert.equal(u.query('.context-panel-mode-tile').dataset.work, 'worktree');
+  assert.equal(u.value('modelFrom'), "the soul's choice"); assert.equal(u.query('[data-context-field="modelFrom"]').hidden, false);
+  assert.equal(chip.hidden, false); assert.match(chip.title, /Its soul's repository has moved on/);
+  // A trailing slash or a bare name still names the repository's last segment.
+  u.select(remoteRow({ ...SIX, repo: '/srv/code/northwind/', soul: { status: 'current' } }));
+  assert.equal(sentence.textContent, 'Works in its own worktree of northwind, on branch feat/remote.');
+  assert.equal(chip.hidden, true, 'a current soul: no chip');
+  // repo null (the host doesn't supply it): the generic words, never the server label.
+  u.select(remoteRow({ ...SIX, repo: null }));
+  assert.equal(sentence.textContent, "Works in its own worktree of its soul's repository, on branch feat/remote.");
+});
+
+test('a remote row whose host reports the keys as null: "<Server> doesn\'t report…", no Work card, no chip, no wrong value', t => {
+  const u = fixture(t);
+  u.select(remoteRow({ work: null, repo: null, branch: null, modelFrom: null, soul: null, modules: null }));
+  const { section, note, chip } = workParts(u);
+  assert.equal(section.hidden, true, 'no Work card');
+  assert.equal(note.hidden, false);
+  assert.equal(note.textContent, "Build box doesn't report this instance's work and build. Update OATS on Build box.");
+  assert.equal(note.className, 'context-panel-note context-panel-work-note');
+  assert.equal(note.previousElementSibling, section, "in the Work section's place");
+  assert.equal(chip.hidden, true); assert.equal(u.query('[data-context-field="modelFrom"]').hidden, true);
+  // The label is one display line (a line break folds); a withheld label reads "the server".
+  u.select(remoteRow({ work: null, repoName: 'Build\nbox' }));
+  assert.equal(note.textContent, "Build box doesn't report this instance's work and build. Update OATS on Build box.");
+  u.select(remoteRow({ work: null, repoName: 'box\x07bell' }));
+  assert.equal(note.textContent, "The server doesn't report this instance's work and build. Update OATS on the server.");
+});
+
+test('a remote row without the keys (this computer\'s OATS predates the relay): "This computer\'s OATS…"', t => {
+  const u = fixture(t); u.select(remoteRow());
+  const { section, note, chip } = workParts(u);
+  assert.equal(section.hidden, true);
+  assert.equal(note.hidden, false);
+  assert.equal(note.textContent, "This computer's OATS doesn't show the work and build of instances on Build box. Update OATS here.");
+  assert.equal(chip.hidden, true);
+  // Unchanged words on a repaint: no write.
+  const observer = new u.dom.window.MutationObserver(() => {}); observer.observe(note, { childList: true, subtree: true, characterData: true });
+  u.select(remoteRow({ running: false }));
+  assert.equal(observer.takeRecords().length, 0); observer.disconnect();
+  // The server id stands in for an empty label.
+  u.select(remoteRow({ repoName: '' }));
+  assert.equal(note.textContent, "This computer's OATS doesn't show the work and build of instances on build. Update OATS here.");
+});
+
+test('a local row: unchanged — repoName in the sentence, never the remote note', t => {
+  const u = fixture(t);
+  u.select(instance('/A/one', { work: 'worktree', repoName: 'northwind', repo: '/elsewhere/other', branch: 'main' }));
+  const { section, note } = workParts(u);
+  assert.equal(section.hidden, false); assert.equal(note.hidden, true); assert.equal(note.textContent, '');
+  assert.equal(u.query('[data-context-work]').textContent, 'Works in its own worktree of northwind, on branch main.');
+  for (const extra of [{}, { work: null }, { work: undefined }]) {
+    u.select(instance('/A/two', extra));
+    assert.equal(section.hidden, true); assert.equal(note.hidden, true, JSON.stringify(extra));
+  }
+  // Switching from a remote row to a local one clears the note.
+  u.select(remoteRow()); assert.equal(note.hidden, false);
+  u.select(instance('/A/three', { work: 'directory' })); assert.equal(note.hidden, true); assert.equal(section.hidden, false);
+});

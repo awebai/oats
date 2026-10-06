@@ -4,7 +4,13 @@
  * there. The context panel stays IO-free: this section is injected like the
  * Teams section and owns one read, `oats inspect --home` (the as-spawned
  * resolution). Every await carries the selection identity, the workspace
- * generation and a serial, checked on success and rejection. */
+ * generation and a serial, checked on success and rejection.
+ *
+ * An instance on a registered server is read through the same route, by its
+ * deployment, server and home (`oats inspect --server <id> --home <abs>`): a
+ * row the kernel does not report addressable, or this computer's OATS without
+ * remote operations, sends nothing and says why; a host's refusal is shown as
+ * relayed (remote-address.mjs). */
 import { inspectData, inspectSupported } from './inspect-contract.mjs';
 import { cliStatus } from './views/cli-status.mjs';
 import { iconElement } from './shell-icons.mjs';
@@ -14,6 +20,7 @@ import { compositionEntries, coreEntries, coreNote, whyTag, desktopFacts } from 
 import { layerLabel } from './workspace-catalog.mjs';
 import { createDataState, statusLine, captureFocusState } from './loading.mjs';
 import { instanceStatusIdentity } from './instance-status-identity.mjs';
+import { readingFrom, relayedFailure, remoteInspectBlock, serverLabel } from './remote-address.mjs';
 
 export const instanceSoulCSS = `
 #context-panel .soul-tab { display:flex; flex-direction:column; gap:20px; min-width:0; }
@@ -81,12 +88,16 @@ export function createInstanceSoulSection(host, { request, generation = () => 0,
     const ticket = ++serial, gen = generation();
     const owns = () => !disposed && ticket === serial && identity === id && generation() === gen;
     const selector = { home: instance.home };
-    loading.begin({ user }); onPresence(true);
+    // A remote row that can't be routed from here: nothing is sent (Retry included), the reason is the body.
+    const blocked = remoteInspectBlock(instance, cli());
+    if (blocked) { loading.fail(blocked); onPresence(true); return; }
+    loading.begin({ user, ...(instance.server ? { message: readingFrom(serverLabel(instance)) } : {}) }); onPresence(true);
     let result;
     try { result = await request(workspace, { action: 'inspect', selector, ...(user ? { refresh: true } : {}) }); }
     catch (error) {
       // Visible: stale with content (the line and Retry), the failed block without — never silence.
-      if (owns()) loading.fail(error);
+      // A host's refusal shows as relayed (its headline; the code and its message under Details).
+      if (owns()) loading.fail(instance.server ? relayedFailure(error, serverLabel(instance), 'soul') : error);
       return;
     }
     if (!owns()) return;
@@ -182,7 +193,9 @@ export function createInstanceSoulSection(host, { request, generation = () => 0,
      * the content. A new selection resets. */
     update({ active, workspace, instance } = {}) {
       if (disposed) return;
-      const id = instance?.home && !instance.server ? JSON.stringify([workspace, instance.home]) : null;
+      // A remote row's identity includes its server (the same home on two servers is two subjects).
+      const id = !instance?.home ? null : instance.server ? JSON.stringify([workspace, instance.server, instance.home])
+        : JSON.stringify([workspace, instance.home]);
       if (id !== identity) { identity = id; attempted = null; statusId = null; serial++; clear(); }
       current = id ? { workspace, instance } : null;
       if (!active || !id || !inspectSupported(cli())) return;

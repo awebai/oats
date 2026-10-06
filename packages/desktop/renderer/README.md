@@ -744,6 +744,20 @@ the card's Refresh; the Soul body host; the Souls search field; the
 Capabilities search field): a focused Retry whose line or block leaves on
 success never lands on `<body>`.
 
+A row on a registered server reads through the same route by its deployment
+(`remote:<group>`) and home: its identity also carries the server, and it gets
+the same one read per selection, never a poll. The Soul tab says "Reading from
+<server>…" while the read waits. Before sending, the gate runs in `update()`
+(and Retry goes through it): a row the kernel doesn't report addressable shows
+`unaddressableSentence`, and a CLI here without `operations` in `remote` shows
+`unroutableReason`, each as the failed block with nothing sent. A host's
+refusal arrives as the route's relayed `reason` (`/api/capabilities` attaches
+`hostReason`, `apiJson`/`httpError` keep it only through `remoteReason`), and
+`relayedFailure` (`remote-address.mjs`) turns it into the failed block: the
+headline, or for `E_REMOTE_INCOMPATIBLE` the section's own
+`incompatibleSentence`, with the code and the kernel's message under Details.
+The soul page shows the same relayed reason.
+
 Roster-derived claims follow the roster's *settled* state
 (`rosterSettledState(s)` in `views/spawn.mjs`: the controller's `settled`
 while a re-read runs — a refresh over a stale roster is still stale — else
@@ -1063,7 +1077,12 @@ instance (`WORK_MODES` in `context-panel.mjs`: an icon and a sentence builder pe
 mode). The roster row's own facts (repo, branch, parent) sit in it in the mono
 face, and an unreported fact gets the generic words ("its soul's repository",
 "its parent's tree"), never an invented name. An unknown mode hides the section.
-The sentence is rebuilt only when its words change. Ahead/behind counts are the
+The sentence is rebuilt only when its words change. A row on a server takes
+its repository from its own `repo` (the host path's last segment, display only),
+never from `repoName`, which is the server's label there. When a server row has
+no `work` key (this computer's OATS predates the relay) or a null one (the host
+doesn't report it), one muted line in the Work section's place says so and names
+which OATS to update; a local row never shows it. Ahead/behind counts are the
 Developer tab's alone. Under the sentence, a closed **Paths** disclosure holds
 Folder and Home, each with an icon Copy. It is built once and never rebuilt, so a
 repaint keeps its open state and a focused Copy. It closes when the selection

@@ -111,3 +111,17 @@ test("Needs input (#582): a kernel-shaped remote row (runtimeState null) shows i
   assert.equal(waitingClaim(panel([kernelRemoteRow("dev-one")])[0]), null, "no field (an older remote kernel): unknown");
   assert.equal(waitingClaim(panel([kernelRemoteRow("dev-one", { waitingOnYou: null })])[0]), null, "a reported null: unknown");
 });
+
+test("#675: a remote row's description comes from its own group's soul, as reported, never synthesized", () => {
+  const described = { ...group, souls: [{ name: "dev", description: "Builds the desktop app." }, { name: "ops", description: "Runs ops." }] };
+  assert.equal(remotePanel(described).instances[0].description, "Builds the desktop app.");
+  for (const souls of [[{ name: "dev" }], [{ name: "dev", description: 42 }], [{ name: "dev", description: null }], [], undefined, [{ name: "ops", description: "Runs ops." }]]) {
+    assert.equal(remotePanel({ ...group, souls }).instances[0].description, null, JSON.stringify(souls));
+  }
+  // A same-named soul in another group is never used.
+  const other = { ...group, id: "other", server: "other", souls: [{ name: "dev", description: "Another host's dev." }] };
+  const bare = { ...group, souls: [] };
+  assert.equal(remotePanel(bare).instances[0].description, null);
+  assert.equal(remotePanel(other).instances[0].description, "Another host's dev.");
+  assert.equal(remotePanel(bare).instances[0].description, null, "projection is per group");
+});

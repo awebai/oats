@@ -28,6 +28,7 @@ import { inspectData, inspectFacts, originText } from './inspect-contract.mjs';
 import { createTeamsPanel, teamsOperations, teamsCSS, soulTeams, teamLabels } from './teams-panel.mjs';
 import { createSoulTeamsHere, soulTeamsHereCSS } from './soul-teams-here.mjs';
 import { teamsAnswer } from './computer-teams.mjs';
+import { relayedFailure, serverLabel } from './remote-address.mjs';
 import { ageText } from './age-text.mjs';
 import { pageBar, pageCard, pageSection, isCoreCapability, compositionEntries, coreEntries, coreNote, whyElement, renderSoulCore, desktopFacts } from './capability-page.mjs';
 import { layerLabel } from './workspace-catalog.mjs';
@@ -400,7 +401,8 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       // With content: stale (the line under the head, Retry). Without: the failed block where the skeleton
       // stood — the kernel's sentence, the code behind Details, Retry.
       // Stale and failed are calm information (the amber line / the failed block carry them): never the error red.
-      loading.fail(error);
+      // A remote host's refusal shows as relayed, as the context panel's Soul tab words it (remote-address.mjs).
+      loading.fail(relayedFailure(error, serverLabel(next.instance), next.instance?.server ? 'soul' : null));
       // E_TEAM_CONFLICT: the soul can't be spawned until the workspace agrees; name the two labels.
       const labels = !loading.hasData && error?.code === 'E_TEAM_CONFLICT' ? teamLabels(error.labels) : null;
       content.querySelector('.inspector-conflict-labels')?.remove();
