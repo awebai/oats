@@ -1087,7 +1087,10 @@ its repository from its own `repo` (the host path's last segment, display only),
 never from `repoName`, which is the server's label there. When a server row has
 no `work` key (this computer's OATS predates the relay) or a null one (the host
 doesn't report it), one muted line in the Work section's place says so and names
-which OATS to update; a local row never shows it. Ahead/behind counts are the
+which OATS to update; a local row never shows it. A row the kernel built from its
+saved route alone has every fact null, which says nothing about either OATS, so
+it says why first: gone from the server (`unaddressableSentence`, with the
+forget command), or the server wasn't reached. Ahead/behind counts are the
 Developer tab's alone. Under the sentence, a closed **Paths** disclosure holds
 Folder and Home, each with an icon Copy. It is built once and never rebuilt, so a
 repaint keeps its open state and a focused Copy. It closes when the selection

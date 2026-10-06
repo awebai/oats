@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { createContextPanel, contextPanelCSS } from '../renderer/context-panel.mjs';
+import { remotePanel } from '../server/remote-roster.mjs';
+import { kernelRemoteRow, kernelGoneRow, kernelRemoteGroup } from './helpers/kernel-remote-row.mjs';
 
 const panelAPI = ['setContext', 'attach', 'release', 'toggle', 'setCollapsed', 'setFocusMode', 'toggleFocusMode', 'isFocusMode', 'dispose'];
 const leaseAPI = ['setPresent', 'isVisible', 'collapse', 'dispose'];
@@ -436,4 +438,39 @@ test('a local row: unchanged — repoName in the sentence, never the remote note
   // Switching from a remote row to a local one clears the note.
   u.select(remoteRow()); assert.equal(note.hidden, false);
   u.select(instance('/A/three', { work: 'directory' })); assert.equal(note.hidden, true); assert.equal(section.hidden, false);
+});
+
+// The kernel's own row shape (helpers/kernel-remote-row.mjs: every REMOTE_ROW_FACTS key, null unless the host
+// reported it) through the shipped remotePanel projection, not a hand-built row.
+const kernelRows = (instances, extra) => remotePanel(kernelRemoteGroup(instances, extra)).instances
+  .map(row => ({ ...row, deployment: { id: 'remote:host' } }));
+
+test('kernel-shaped remote rows: a listed row whose host reports null says "doesn\'t report"; saved-route rows say why instead, never "Update OATS on…"', t => {
+  const u = fixture(t);
+  const { section, note } = workParts(u);
+  const [listed] = kernelRows([kernelRemoteRow()]);
+  assert.ok(Object.hasOwn(listed, 'work') && listed.work === null, 'the kernel relays the key, null');
+  u.select(listed);
+  assert.equal(section.hidden, true);
+  assert.equal(note.textContent, "Build server doesn't report this instance's work and build. Update OATS on Build server.");
+  // A saved route the host no longer lists: the forget sentence.
+  const [gone] = kernelRows([kernelGoneRow()]);
+  u.select(gone);
+  assert.equal(note.hidden, false);
+  assert.equal(note.textContent, 'dev-gone is no longer on Build server. Remove it from this computer with: oats server forget host --instance dev-gone');
+  // A group whose last roster read failed: its rows are last-known, the server unreached.
+  const [unreached] = kernelRows([kernelRemoteRow()], { probe: { ok: false, error: { code: 'E_SSH', message: 'ssh: timeout' } } });
+  assert.equal(unreached.serverUnreached, true);
+  u.select(unreached);
+  assert.equal(note.textContent, "Build server wasn't reached, so this instance's work and build aren't known.");
+  assert.equal(section.hidden, true);
+  for (const row of [gone, unreached]) { u.select(row); assert.doesNotMatch(note.textContent, /Update OATS on/); }
+  // A withheld label reads "The server" here too.
+  const [hidden] = kernelRows([kernelRemoteRow()], { label: 'box\x07bell', probe: { ok: false, error: { code: 'E_SSH', message: 'x' } } });
+  u.select(hidden);
+  assert.equal(note.textContent, "The server wasn't reached, so this instance's work and build aren't known.");
+  // Last-known facts on an unreached row stay as they were read: the Work card, no note.
+  const [known] = kernelRows([kernelRemoteRow('dev-one', { work: 'worktree', repo: '/srv/code/northwind', branch: 'main' })], { probe: { ok: false, error: { code: 'E_SSH', message: 'x' } } });
+  u.select(known);
+  assert.equal(section.hidden, false); assert.equal(note.hidden, true);
 });

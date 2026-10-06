@@ -3,7 +3,7 @@ import { iconElement } from './shell-icons.mjs';
 import { ageText } from './age-text.mjs';
 import { createSoulMark, createRuntimeBadge, harnessName } from './identity-marks.mjs';
 import { unsupportedSession } from './instance-presentation.mjs';
-import { canAddressRemote, serverLabel, shownLabel } from './remote-address.mjs';
+import { canAddressRemote, serverLabel, shownLabel, unaddressableSentence } from './remote-address.mjs';
 /** Shell-owned contextual surface. Optional Git reads are delegated to an
  * injected controller; this host performs no IO, lookup or lifecycle actions. */
 export const contextPanelCSS = `
@@ -171,11 +171,15 @@ function workRepo(instance) {
   if (!instance?.server) return instance?.repoName;
   return typeof instance.repo === 'string' ? instance.repo.replace(/\/+$/, '').split('/').pop() : null;
 }
-/** Why a remote row shows no work and build: this computer's OATS predates the relay (no `work` key),
- * or the host doesn't report it (`work: null`). null for a local row, or a remote row that reports it. */
+/** Why a remote row shows no work and build, or null for a local row or a remote row that reports it. A row
+ * the kernel built from its saved route alone (the host no longer lists it, or wasn't reached) has every fact
+ * null, which says nothing about the host's OATS: it says why first. Then this computer's OATS predates the
+ * relay (no `work` key), or the host doesn't report it (`work: null`). */
 export function remoteWorkNote(instance) {
-  if (!instance?.server) return null;
+  if (!instance?.server || typeof instance.work === 'string') return null;
   const label = serverLabel(instance);
+  if (instance.missingRemotely === true) return unaddressableSentence(instance);
+  if (instance.serverUnreached) return `${shownLabel(label, true)} wasn't reached, so this instance's work and build aren't known.`;
   if (!Object.hasOwn(instance, 'work')) return `This computer's OATS doesn't show the work and build of instances on ${shownLabel(label)}. Update OATS here.`;
   return instance.work === null ? `${shownLabel(label, true)} doesn't report this instance's work and build. Update OATS on ${shownLabel(label)}.` : null;
 }
