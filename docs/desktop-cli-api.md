@@ -1105,7 +1105,8 @@ operator guide: [workspaces.md](workspaces.md#teams).
   `<member>/<soul>` with the member repository's name (as `souls.disabled`
   names it). A label matches `[a-z0-9][a-z0-9._-]*` and is at most 64
   characters (0.44.0). A longer one is refused: `E_WORKSPACE_SCHEMA` in
-  either file, and `E_BAD_ARGS` from `oats teams add`.
+  either file, `E_BAD_ARGS` from `oats teams add`, and `E_TRIGGER_INVALID`
+  (`field: spawn.teams`) in a trigger.
 - **Team ids.** A `team` value (in either file, and `oats teams add --team`)
   matches `^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,255}$`: the kernel's safety rule
   (never `-`-led, no whitespace or control characters, bounded). Otherwise

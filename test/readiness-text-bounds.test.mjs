@@ -4,12 +4,14 @@
 // accepts one (#726: both schemas, `oats teams add`, a trigger's spawn.teams).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import YAML from "yaml";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { readinessData } from "../packages/desktop/renderer/readiness-contract.mjs";
 import * as T from "../lib/triggers.mjs";
+import { ITEM_TEXT, readinessDocument } from "../lib/instance-inspect.mjs";
 
 const DESKTOP_TEXT = 1024;
 /** Every free-text field the Desktop's reader bounds, anywhere in a readiness document. */
@@ -39,7 +41,7 @@ test("#725 a readiness item's reason and remedy are clamped: an oversized discov
   const member = doc.checks.member.items[0];
   assert.equal(member.status, "unknown");
   assert.match(member.reason, /^the workspace could not be read: /);
-  assert.equal(member.reason.length, 1000, "clipped to 1000 characters");
+  assert.equal(member.reason.length, ITEM_TEXT, "clipped to ITEM_TEXT (1000) characters");
   assert.ok(member.reason.endsWith("…"));
   for (const [field, value] of texts(doc)) assert.ok(value.length <= DESKTOP_TEXT, `${field}: ${value.length} characters`);
   // The Desktop's own reader takes the answer (it returns null for an answer it refuses).
@@ -78,4 +80,34 @@ test("#726 a team label is at most 64 characters: both files refuse a longer one
     spawn: { soul: "reviewer", purpose: "review-pr-{number}", task: "Review {url}.", teams }, concurrency: { max: 1, perKey: 1 } });
   assert.deepEqual(T.validateTrigger(definition([at64])).spawn.teams, [at64]);
   assert.throws(() => T.validateTrigger(definition([at65])), (e) => e.code === "E_TRIGGER_INVALID" && e.field === "spawn.teams");
+});
+
+test("#725 a provider's refusal: its message is clipped, an oversized code is provider-unavailable; the provider's own result stays verbatim", async () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-text-bounds-"));
+  try {
+    const home = join(base, "home"), dir = join(home, ".oats", "modules", "fx.provider");
+    mkdirSync(join(dir, "bin"), { recursive: true });
+    const manifest = { capability: "fx.provider", version: "1.0.0", layer: "messaging", commands: { "binding-check": "bin/check.mjs" }, binding: { version: 1, check: "binding-check" } };
+    writeFileSync(join(dir, "oats.json"), JSON.stringify(manifest));
+    const answer = (code) => ({ schemaVersion: 1, phase: "check", slot: "messaging", capability: "fx.provider", ok: false, error: { code, message: "m".repeat(5000) } });
+    const t = { kind: "instance", home, meta: { instance: "fx-1", agent: "fx" }, deployment: base, agentsRoot: join(base, "agents"),
+      subject: { kind: "instance", instance: "fx-1", home, soul: "fx" },
+      soul: { name: "fx", repoKey: null, commit: null, external: true, path: null, soulDir: null, definition: null, problems: [] },
+      workspace: { key: null, name: null, deployment: base, commit: null, standalone: false },
+      modules: [{ name: "fx.provider", from: null, manifest, dir }], payloads: {}, slots: { knowledge: null, messaging: "fx.provider", tasks: null },
+      discovery: null, discoveryError: null, resolutionError: null, lock: null, prepared: null };
+    for (const [code, expected] of [["needs-human", "needs-human"], ["c".repeat(129), "provider-unavailable"]]) {
+      writeFileSync(join(dir, "bin", "check.mjs"), `process.stdout.write(${JSON.stringify(JSON.stringify(answer(code)))} + "\\n");\n`);
+      const item = (await readinessDocument(t)).checks.providers.items[0];
+      assert.equal(item.status, "unknown");
+      assert.deepEqual(item.problems.map((p) => [p.code, p.message.length]), [[expected, ITEM_TEXT]], "the kernel's problem: a short code, a clipped message");
+      assert.ok(item.reason.length <= ITEM_TEXT);
+    }
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("#726 both files define a team label the same way", () => {
+  const def = (file) => JSON.parse(readFileSync(new URL(`../docs/${file}`, import.meta.url), "utf8")).$defs.label;
+  assert.deepEqual(def("oats-local.schema.json"), def("oats-workspace.schema.json"));
+  assert.equal(def("oats-workspace.schema.json").maxLength, 64);
 });
