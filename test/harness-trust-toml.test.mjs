@@ -10,7 +10,7 @@ test('Codex preserves bytes in table, dotted and inline forms', () => {
   }
 });
 test('Codex inserts missing leaf/ancestors with unrelated settings intact', () => {
-  for (const text of ['', 'model = "sentinel"\n', '[projects."/r"]\nother = 9007199254740993\n[next]\nx = true\n', '[projects]\n"/r" = {}\n', 'projects."/r".other = 1\n', '[projects]\n"/r".other = 1\n', '# [comment]\nprojects."/r".other=1\n[next]\nx=true\n']) {
+  for (const text of ['projects."/other".trust_level="trusted"\n', 'projects."/other".trust_level="trusted"\n[other]\nx=1\n', '', 'model = "sentinel"\n', '[projects."/r"]\nother = 9007199254740993\n[next]\nx = true\n', '[projects]\n"/r" = {}\n', 'projects."/r".other = 1\n', '[projects]\n"/r".other = 1\n', '# [comment]\nprojects."/r".other=1\n[next]\nx=true\n']) {
     const result = editCodexTrust(text, '/r');
     assert.equal(result.current, null); assert.equal(editCodexTrust(result.text, '/r').current, 'trusted');
   }
