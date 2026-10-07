@@ -190,9 +190,9 @@ export const DEFAULT_KEYMAP = Object.freeze({
   "split.vertical": { mac: "Mod+\\", other: "Ctrl+Shift+E" },
   "split.horizontal": { mac: "Mod+Shift+\\", other: "Ctrl+Shift+O" },
   "split.close": { mac: "Mod+Alt+W", other: "Ctrl+Shift+Alt+W" },
-  // The instance panel (the tab bar's panel-right toggle). Not terminal-allowlisted: on
-  // Linux/Windows Ctrl+Alt+B stays with the program in the terminal (macOS ⌘⌥B fires there).
-  "panel.toggle": "Mod+Alt+B",
+  // The instance panel (the right-hand panel). Not terminal-allowlisted: on Linux/Windows
+  // Ctrl+I (the Tab byte) stays with the program in the terminal (macOS ⌘I fires there).
+  "panel.toggle": "Mod+I",
   // Copy the terminal's selection (#672): Ctrl+Shift+C, the Linux terminals' copy (Ctrl+C is the
   // interrupt). No macOS default: ⌘C is Edit › Copy, the menu role. xterm.js sends nothing for
   // Ctrl+Shift+C (its Ctrl+letter control bytes need Shift up), so claiming it takes nothing.

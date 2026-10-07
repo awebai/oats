@@ -735,7 +735,7 @@ export function createContextPanel({
       const slot = slots.get(owner);
       if (slot) project(() => { slots.delete(owner); slot.wrapper.remove(); });
     },
-    // panel.toggle (Mod+Alt+B, the palette, the rail's expand) leaves focus mode and shows the panel.
+    // panel.toggle (Mod+I, the palette, the rail's expand) leaves focus mode and shows the panel.
     toggle() {
       if (disposed || !hasContent()) return;
       if (focusMode) project(() => { focusMode = false; app?.classList.remove('focus-mode'); pref().collapsed = false; }, () => onFocusModeChange(false));

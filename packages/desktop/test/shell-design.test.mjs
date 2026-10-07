@@ -485,7 +485,7 @@ test('the palette keeps focus mode reachable without the bar and names the insta
   });
   assert.equal(commands.some(item => /context panel/i.test(item.label)), false, 'the panel is the instance panel now');
   const panelCommand = commands.find(item => item.label === 'Instance panel: show / hide'); assert.ok(panelCommand);
-  assert.equal(panelCommand.detail(), 'Ctrl+Alt+B');
+  assert.equal(panelCommand.detail(), 'Ctrl+I');
   s.contextPanel.setContext({ workspace: 'A', instance: { instance: 'selected', home: '/A/selected' }, key: 'exact:A:selected' });
   panelCommand.run(); assert.equal(s.document.getElementById('context-panel').classList.contains('is-collapsed'), true);
   const focusCommand = commands.find(item => item.label === 'Focus mode: toggle'); assert.ok(focusCommand);
@@ -525,13 +525,14 @@ test('focusRoster exits focus mode, reveals the sidebar and focuses its filter t
   assert.equal(s.document.activeElement, s.document.querySelector('.ctx-filter'));
 });
 
-test('panel.toggle defaults to Mod+Alt+B (no conflict), focus mode has no default, and neither captures Linux terminal bytes', t => {
+test('panel.toggle defaults to Mod+I (no conflict), focus mode has no default, and neither captures Linux terminal bytes', t => {
   shell(t);
-  assert.equal(DEFAULT_KEYMAP['panel.toggle'], 'Mod+Alt+B'); assert.equal(getBinding('panel.toggle'), 'Mod+Alt+B');
-  assert.deepEqual(Object.entries(DEFAULT_KEYMAP).filter(([, chord]) => chord === 'Mod+Alt+B').map(([id]) => id), ['panel.toggle']);
-  assert.equal(matchEvent({ key: 'b', ctrlKey: true, altKey: true }, { isMac: false, insideTerminal: false }), 'panel.toggle');
-  assert.equal(matchEvent({ key: 'b', ctrlKey: true, altKey: true }, { isMac: false, insideTerminal: true }), null, 'Ctrl+Alt+B stays with the program in a Linux terminal');
-  assert.equal(matchEvent({ key: 'b', metaKey: true, altKey: true }, { isMac: true, insideTerminal: true }), 'panel.toggle');
+  assert.equal(DEFAULT_KEYMAP['panel.toggle'], 'Mod+I'); assert.equal(getBinding('panel.toggle'), 'Mod+I');
+  assert.deepEqual(Object.entries(DEFAULT_KEYMAP).filter(([, chord]) => chord === 'Mod+I').map(([id]) => id), ['panel.toggle']);
+  assert.equal(matchEvent({ key: 'i', ctrlKey: true }, { isMac: false, insideTerminal: false }), 'panel.toggle');
+  assert.equal(matchEvent({ key: 'i', ctrlKey: true }, { isMac: false, insideTerminal: true }), null, 'Ctrl+I (Tab) stays with the program in a Linux terminal');
+  assert.equal(matchEvent({ key: 'i', metaKey: true }, { isMac: true, insideTerminal: true }), 'panel.toggle');
+  assert.equal(matchEvent({ key: 'i', metaKey: true, altKey: true }, { isMac: true, insideTerminal: false }), null, '⌥⌘I (the dev tools) is not this action');
   assert.equal(DEFAULT_KEYMAP['app.focusMode'], undefined); assert.equal(getBinding('app.focusMode'), null);
   for (const [id, key] of [['panel.toggle', 'j'], ['app.focusMode', 'u']]) {
     assert.equal(TERMINAL_ALLOWLIST.includes(id), false);

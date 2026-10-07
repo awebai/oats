@@ -48,7 +48,7 @@ test("the shipped table: each changed default resolves per platform", () => {
     "stage.hierarchy": ["Mod+1", "Mod+1"], "stage.spawn": ["Mod+2", "Mod+2"], "stage.automations": ["Mod+3", "Mod+3"],
     "focus.nextRegion": ["F6", "F6"], "focus.prevRegion": ["Shift+F6", "Shift+F6"],
     "focus.leaveTerminal": ["Mod+Shift+F6", "Mod+Shift+F6"],
-    "sidebar.toggle": ["Mod+B", "Mod+B"], "sidebar.focusFilter": ["Mod+F", "Mod+F"], "panel.toggle": ["Mod+Alt+B", "Mod+Alt+B"],
+    "sidebar.toggle": ["Mod+B", "Mod+B"], "sidebar.focusFilter": ["Mod+F", "Mod+F"], "panel.toggle": ["Mod+I", "Mod+I"],
     "app.themeToggle": [null, null], "app.themePicker": ["Mod+Shift+Space", "Ctrl+Shift+Space"], "app.shortcuts": ["Mod+,", "Mod+,"],
     "terminal.fontBigger": ["Mod+=", "Mod+="], "terminal.fontSmaller": ["Mod+-", "Mod+-"], "terminal.fontReset": ["Mod+0", "Mod+0"],
     "terminal.copySelection": [null, "Ctrl+Shift+C"],
@@ -122,7 +122,7 @@ test("Linux/Windows inside a terminal: Ctrl+W/K/\\/P/B, F6, Alt+digit and Ctrl+P
   // Ctrl+Shift+\ (the shifted "|") is not claimed on Linux either.
   assert.equal(matchEvent(linux("|", { shiftKey: true }), inTerm), null);
   // Actions that are not allowlisted never fire inside, even on their own chord.
-  for (const [event, id] of [[linux("p"), "app.quickOpenSouls"], [linux("b"), "sidebar.toggle"], [linux("1"), "stage.hierarchy"], [linux("b", { altKey: true }), "panel.toggle"]]) {
+  for (const [event, id] of [[linux("p"), "app.quickOpenSouls"], [linux("b"), "sidebar.toggle"], [linux("1"), "stage.hierarchy"], [linux("i"), "panel.toggle"]]) {
     assert.equal(matchEvent(event, inTerm), null, id);
     assert.equal(matchEvent(event, { isMac: false, insideTerminal: false }), id, `${id} still works outside the terminal`);
   }
