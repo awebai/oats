@@ -14,7 +14,7 @@ import { setupCSS, renderSetup, teamsBox } from './workspace-setup.mjs';
 import { createWorkspaceMachines, machinesCSS } from './workspace-machines.mjs';
 import { machinesGated } from './machine-contract.mjs';
 import { computerTeamsCSS, createComputerTeams, teamsAnswer } from './computer-teams.mjs';
-import { catalogCSS, renderCapabilitySections, capabilitySections, renderRepoPills, rovePill, repoChoices, filterCapabilities, matchCapabilities, hostKeyOf, memberNames, deploymentNotes, syncCapabilityNav } from './workspace-catalog.mjs';
+import { catalogCSS, renderCapabilitySections, capabilitySections, renderRepoPills, rovePill, repoChoices, filterCapabilities, matchCapabilities, hostKeyOf, memberNames, deploymentNotes, syncCapabilityNav, soulsComposition } from './workspace-catalog.mjs';
 import { createWorkspaceSync, syncCSS, reasonText } from './workspace-sync-view.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { createDataState, skeleton, statusLine } from './loading.mjs';
@@ -374,7 +374,8 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     // (Not `loading` or `failure`: the controller paints those beside the projection, which must not rebuild for them.)
     // The status's observation stamp moves on every poll and nothing here paints it: it is left out.
     const stableStatus = s && { ...s, workspace: s.workspace && { ...s.workspace, observedAt: undefined } };
-    const key = JSON.stringify([tab, setupView, setupMember, souls.map(a => a?.team ?? null), query, unavailable, repo, catalog, stableStatus, rosterState(), deployment?.withheld, deployment?.reachable, privateListed(), instances.map(i => [i.agent, i.agentsRoot, i.modules, i.running])]);
+    // The souls' composition (souls-capabilities) and marks feed "Used by".
+    const key = JSON.stringify([tab, setupView, setupMember, souls.map(a => [a?.team ?? null, a?.name, a?.key, a?.color, a?.agentsRoot, a?.capabilities]), soulsComposition(cliStatus()), query, unavailable, repo, catalog, stableStatus, rosterState(), deployment?.withheld, deployment?.reachable, privateListed(), instances.map(i => [i.agent, i.agentsRoot, i.modules, i.running])]);
     if (key === rendered) return;
     rendered = key;
     // A focused pill is rebuilt below: focus returns to the same repository's pill (by its key).
@@ -415,7 +416,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     renderRepoPills(filterHost, { repos, value: repo, total: sections.workspace.length, shown: matchCapabilities(shown, query).length,
       narrowed: !!repo || !!String(query || '').trim(), onChange: next => { repo = next; render(); refocusPill(repo ?? ''); } });
     renderCapabilitySections(body, { sections, shown, filterHost, navHost: capLead, privateListed: privateListed(), query,
-      status: s, instances, root: workspace?.id, rosterState: rosterState(), onOpen: onOpenCapability });
+      status: s, instances, souls, composition: soulsComposition(cliStatus()), root: workspace?.id, rosterState: rosterState(), onOpen: onOpenCapability });
     if (focusedPill !== null) refocusPill(focusedPill);
     reveal();
   }
@@ -481,7 +482,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   return {
     setTab, updateRoster, syncCli, get tab() { return tab; },
     /** What the capability table renders with (observed facts only), for pages that reuse it. */
-    context: () => ({ status: observed(), instances, root: workspace?.id, remote: !!(workspace?.remote || workspace?.server), rosterState: rosterState(), catalog: catalog?.capabilities ?? null,
+    context: () => ({ status: observed(), instances, souls, composition: soulsComposition(cliStatus()), root: workspace?.id, remote: !!(workspace?.remote || workspace?.server), rosterState: rosterState(), catalog: catalog?.capabilities ?? null,
       // The catalog's loading state for pages rendered from it (item 7): its state, observation and the last failure's text.
       catalogState: loadState.state, catalogSettled: loadState.settled, catalogBusy: loadState.busy, catalogObservedAt: loadState.observedAt, catalogFailure: failure || null }),
     /** A page's Retry: re-read the catalog live (announced on completion). */

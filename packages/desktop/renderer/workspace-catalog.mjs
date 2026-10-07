@@ -5,12 +5,13 @@
  * `publishes` stays informational, package capabilities stay package rows. */
 import { createCapabilityMark, createSoulMark } from './identity-marks.mjs';
 import { iconElement } from './shell-icons.mjs';
-import { ROSTER_STALE_TITLE } from './loading.mjs';
+import { ROSTER_STALE_TITLE, SOULS_STALE_TITLE } from './loading.mjs';
 import { groupHeading, groupHeadingCSS } from './group-heading.mjs';
 
 export const catalogCSS = `
 /* Workspace v4.1: a segmented section jump, section titles with a lead, repository pills
-   inside Workspace owned, and a Capability | Source | Used by list of row cards, grouped by repository. */
+   inside Workspace owned, and a Capability | Used by list of row cards, grouped by repository (Packages by package):
+   the group heading names the source, the card's accessible name repeats it. */
 /* The jump is one segmented group (shared control rule 1): one frame, 2px inner padding,
    6px segments, no dividers; the current section is the brand tint, never ink-on-white.
    Scoped to .capability-nav.ws-segmented so it holds whichever order the sheets load in. */
@@ -36,7 +37,7 @@ export const catalogCSS = `
 /* The list: a column header, then one card per capability (58px, 6px apart). The
    header and the cards share one grid so the columns line up. */
 .catalog-table { display:flex; flex-direction:column; gap:6px; font-size:12px; }
-.catalog-head, .catalog-row { display:grid; grid-template-columns:44px minmax(0,1fr) 190px 120px 24px; column-gap:14px; align-items:center; padding:0 16px; box-sizing:border-box; }
+.catalog-head, .catalog-row { display:grid; grid-template-columns:44px minmax(0,1fr) 120px 24px; column-gap:14px; align-items:center; padding:0 16px; box-sizing:border-box; }
 .catalog-head { margin:0 0 4px; color:var(--muted); font-size:10.5px; font-weight:650; letter-spacing:.065em; text-transform:uppercase; }
 /* The whole card is one button (rule: no nested interactive elements); reset the UA button. */
 .oats-view button.catalog-row, button.catalog-row { appearance:none; -webkit-appearance:none; width:100%; height:58px; min-height:0; margin:0; border:1px solid var(--border); border-radius:10px; background:var(--surface); color:var(--fg); font:inherit; text-align:left; cursor:pointer; }
@@ -57,7 +58,6 @@ export const catalogCSS = `
 .catalog-name { color:var(--fg); font:650 13px var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
 /* One line, always: the card keeps its height and the page holds the full text. */
 .catalog-desc { display:block; min-width:0; color:var(--muted); font-size:12px; line-height:1.4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.catalog-source { display:flex; min-width:0; }
 .catalog-chevron { color:var(--muted); }
 /* A repository group's heading: the Souls tab's (group-heading.mjs), between the cards. */
 .catalog-group { min-height:28px; margin:10px 0 0; }
@@ -86,7 +86,7 @@ ${groupHeadingCSS}.source-chip { display:inline-flex; align-items:center; gap:7p
 .capability-section-title { display:flex; align-items:baseline; gap:10px; margin:0; padding:0 2px; color:var(--fg); font-size:15px; font-weight:650; }
 .capability-section-lead { color:var(--muted); font-size:12px; font-weight:400; }
 .capability-none { margin:0; }
-/* Narrow: the card grows; source and used-by drop under the name, the tile and chevron stay on the first line. */
+/* Narrow: the card grows; used-by drops under the name, the tile and chevron stay on the first line. */
 @container(max-width:700px) {
  .catalog-head { display:none; }
  .oats-view button.catalog-row, button.catalog-row { grid-template-columns:44px minmax(0,1fr) 24px; height:auto; min-height:58px; padding:10px 16px; row-gap:6px; }
@@ -94,7 +94,7 @@ ${groupHeadingCSS}.source-chip { display:inline-flex; align-items:center; gap:7p
  .catalog-row .catalog-tile { grid-row:1; grid-column:1; }
  .catalog-row .catalog-cap { grid-row:1; grid-column:2; }
  .catalog-row .catalog-chevron { grid-row:1; grid-column:3; }
- .catalog-row .catalog-source, .catalog-row .catalog-used { grid-column:2; }
+ .catalog-row .catalog-used { grid-column:2; }
 }
 `;
 
@@ -128,7 +128,8 @@ export function capabilitySource(row, names = new Map()) {
   return { kind: 'external', key: `external:${row.repoKey || row.origin}`, label: String(row.repoKey || row.origin || 'external').split('/').pop() };
 }
 /** Souls whose instances carry this capability as a recorded module, from
- * the roster's own module rows; moved = the kernel reported drift. */
+ * the roster's own module rows; moved = the kernel reported drift. "Used by" before the kernel
+ * reported each soul's composition (souls-capabilities); soulsUsing is the rule with it. */
 export function capabilityUse(instances, name) {
   const souls = new Map(); let moved = 0;
   for (const instance of list(instances)) {
@@ -141,13 +142,38 @@ export function capabilityUse(instances, name) {
   }
   return { souls: [...souls.values()], moved };
 }
+/** The CLI feature under which every `oats souls` row reports its composed capabilities
+ * (deployment-data.mjs soulCapabilitiesOf): "Used by" is then the souls whose composition includes
+ * the capability, not only the souls whose live instances recorded it. */
+export const SOULS_CAPABILITIES_FEATURE = 'souls-capabilities';
+export const soulsComposition = cli => list(cli?.features).includes(SOULS_CAPABILITIES_FEATURE);
+/** A soul's agent name in the roster (an instance's `agent`): a package soul's is the kernel's
+ * `<package>--<soul>`, the package id with every character outside [a-z0-9-] as '-'
+ * (lib/workspace.mjs packageSoulAgentName); every other soul's is its name. */
+export function rosterAgentName(soul) {
+  if (soul?.soulKind === 'package' && text(soul.package)) return `${soul.package.replace(/[^a-z0-9-]/g, '-')}--${soul.name}`;
+  return soul?.name;
+}
+/** Whether a soul's composition entry is this catalog row: the same name, kind and origin (the repository
+ * for a member capability, the package for a package one). A repo-owned row matches the same way; an
+ * external row never does (the kernel reports no external entry). */
+export function composes(entry, row) {
+  if (!entry || entry.name !== row?.name || entry.kind !== row.kind) return false;
+  return row.kind === 'package' ? !!text(row.package) && entry.package === row.package : !!text(row.repoKey) && entry.repoKey === row.repoKey;
+}
+/** The souls (the `oats souls` rows the Souls tab shows) whose composition includes this row; a soul that
+ * did not resolve (`capabilities: null`) is never counted. */
+export function soulsUsing(souls, row) {
+  return list(souls).filter(soul => Array.isArray(soul?.capabilities) && soul.capabilities.some(entry => composes(entry, row)));
+}
 /** The repository group a member or external capability sits in, as the Souls tab groups souls:
  * the workspace host's repository first, then the other members by name, then one "external"
  * group for every source outside the member repos (a package, never listed here, keeps its own).
  * `hostKey`: workspace status's workspace.key. */
 export function capabilityGroup(row, names = new Map(), hostKey = null) {
   const source = capabilitySource(row, names);
-  if (source.kind === 'package') return { key: source.key, rank: 3, icon: 'package', name: source.label, note: 'package', mono: true };
+  // A package group (the Packages section) names its pinned version: "package · v1.2.0".
+  if (source.kind === 'package') return { key: source.key, rank: 3, icon: 'package', name: source.label, note: ['package', text(row.version) ? `v${row.version}` : null].filter(Boolean).join(' · '), mono: true };
   if (source.kind !== 'member') return { key: 'external', rank: 2, icon: 'external', name: 'external', note: 'not in a member repo', mono: false };
   const host = !!hostKey && row.repoKey === hostKey;
   return { key: source.key, rank: host ? 0 : 1, icon: 'repo', name: source.label, note: host ? 'member repo · host' : 'member repo', mono: true };
@@ -301,16 +327,19 @@ let rowIds = 0;
 const markCurrent = (button, current) => { if (current) button.setAttribute('aria-current', 'true'); else button.removeAttribute('aria-current'); };
 
 /** The capability list: a column header, then one row card per capability —
- * icon tile | name + kind chip over a one-line description | source chip |
- * used by (the souls whose instances carry it, from the roster's module rows;
- * "Every soul" for a workspace default) | chevron.
- * groups: groupCapabilities' [{ key, icon, name, note, rows }] adds a repository heading before each group.
+ * icon tile | name + kind chip over a one-line description | used by | chevron. Used by: with
+ * `composition` (the CLI reports each soul's composition, soulsComposition), the `souls` whose
+ * composition includes it (soulsUsing); without, the souls whose instances carry it (the roster's module
+ * rows, capabilityUse); "Every soul" for a workspace default either way. The source is the group heading
+ * and the card's accessible name, not a column.
+ * groups: groupCapabilities' [{ key, icon, name, note, rows }] adds a repository (or package) heading before each group.
  * onOpen(row): the card is one button opening the capability's page (click; Enter and Space are the
  * native button's). Its name is short ("<cap>, <kind>, from <source>"); its description and used-by
  * are its accessible description (aria-describedby), since the column header is for the eye only. */
-/** `rosterState` (desktop/loading-states): the roster the "Used by" cells derive from — 'ready' / 'empty' for a
- * settled good read; while pending, failed or stale the cell makes no claim (a muted "—" with the reason). */
-export function renderCapabilities(host, { rows, groups = null, status, instances, root, total = list(rows).length, onOpen = null, label = 'Workspace capabilities', empty = null, rosterState = 'ready' }) {
+/** `rosterState` (desktop/loading-states): the read the "Used by" cells derive from (the souls list and the roster,
+ * one read) — 'ready' / 'empty' for a settled good read; while pending, failed or stale the cell makes no claim
+ * (a muted "—" with the reason). */
+export function renderCapabilities(host, { rows, groups = null, status, instances, souls = [], composition = false, root, total = list(rows).length, onOpen = null, label = 'Workspace capabilities', empty = null, rosterState = 'ready' }) {
   const doc = host.ownerDocument, names = memberNames(status);
   host.replaceChildren();
   const table = node(doc, 'div', null, 'catalog-table'); table.setAttribute('role', 'group'); table.setAttribute('aria-label', label);
@@ -318,7 +347,7 @@ export function renderCapabilities(host, { rows, groups = null, status, instance
   if (any) {
     // Each card names and describes its own columns to assistive tech; the header is for the eye.
     const head = node(doc, 'div', null, 'catalog-head'); head.setAttribute('aria-hidden', 'true');
-    for (const label of ['', 'Capability', 'Source', 'Used by', '']) head.append(node(doc, 'span', label));
+    for (const label of ['', 'Capability', 'Used by', '']) head.append(node(doc, 'span', label));
     table.append(head);
   }
   const line = row => {
@@ -345,13 +374,12 @@ export function renderCapabilities(host, { rows, groups = null, status, instance
       const desc = node(doc, 'span', row.description, 'catalog-desc'); desc.title = row.description; desc.id = `${id}-desc`;
       described.push(desc.id); cap.append(desc);
     }
-    const source = node(doc, 'span', null, 'catalog-source');
-    source.append(sourceChip(doc, row, names, { boxed: true }));
-    const use = capabilityUse(instances, row.name);
+    const use = composition ? { souls: soulsUsing(souls, row) } : capabilityUse(instances, row.name);
+    const staleTitle = composition ? SOULS_STALE_TITLE : ROSTER_STALE_TITLE;
     const used = node(doc, 'span', null, 'catalog-used');
     const marks = node(doc, 'span', null, 'catalog-used-marks'); marks.setAttribute('aria-hidden', 'true');
     const count = node(doc, 'span', null, 'catalog-used-count');
-    const who = use.souls.map(soul => soul.name).join(', ');
+    const who = use.souls.map(soul => soul.key || soul.name).join(', ');
     if (isWorkspaceDefault(status, row)) {
       count.textContent = 'Every soul'; count.classList.add('every');
       count.title = `A workspace default: every soul starts with it${who ? ` (recorded by ${who})` : ''}`;
@@ -359,9 +387,9 @@ export function renderCapabilities(host, { rows, groups = null, status, instance
       for (const soul of use.souls.slice(0, 3)) marks.append(createSoulMark(doc, soul));
       count.textContent = `${use.souls.length} ${use.souls.length === 1 ? 'soul' : 'souls'}`; count.title = `Used by ${who}`;
     } else if (rosterState !== 'ready' && rosterState !== 'empty') {
-      // The roster is not settled-good: "Not used" would be a claim the roster cannot back.
-      count.textContent = '—'; count.classList.add('none', 'unknown'); count.title = ROSTER_STALE_TITLE; count.setAttribute('aria-description', ROSTER_STALE_TITLE); count.dataset.rosterState = rosterState;
-    } else { count.textContent = 'Not used'; count.classList.add('none'); count.title = 'No instance carries it yet'; }
+      // The read is not settled-good: "Not used" would be a claim it cannot back.
+      count.textContent = '—'; count.classList.add('none', 'unknown'); count.title = staleTitle; count.setAttribute('aria-description', staleTitle); count.dataset.rosterState = rosterState;
+    } else { count.textContent = 'Not used'; count.classList.add('none'); count.title = composition ? 'No soul here includes it' : 'No instance carries it yet'; }
     // The marks are aria-hidden; assistive tech has no column header, so a count is read as "Used by …"
     // ("Not used" says it already).
     if (!count.classList.contains('none')) {
@@ -371,10 +399,10 @@ export function renderCapabilities(host, { rows, groups = null, status, instance
     count.id = `${id}-used`; described.push(count.id);
     used.append(marks, count);
     el.setAttribute('aria-describedby', described.join(' '));
-    el.append(tile, cap, source, used, iconElement(doc, 'chevronRight', { size: 16, className: 'shell-icon catalog-chevron' }));
+    el.append(tile, cap, used, iconElement(doc, 'chevronRight', { size: 16, className: 'shell-icon catalog-chevron' }));
     return el;
   };
-  // A repository group (groupCapabilities) opens with the Souls tab's heading: icon, name, "member repo · N capabilities".
+  // A repository or package group (groupCapabilities) opens with the Souls tab's heading: icon, name, "member repo · N capabilities".
   if (groups) for (const group of groups) {
     if (!group.rows.length) continue; // a search that empties a group hides it
     const title = groupHeading(doc, { icon: group.icon, name: group.name, note: [group.note, capabilityCount(group.rows.length)].filter(Boolean).join(' · '), mono: group.mono !== false, level: 3 });
@@ -407,14 +435,15 @@ export function lockNotes(status) {
 
 /** The Capabilities tab: the section jump, then Workspace owned (grouped by repository, with its
  * repository pills), Repo owned grouped the same way when the kernel lists it (feature
- * capabilities-private), then Packages. `shown`: the Workspace owned rows the pills leave;
+ * capabilities-private), then Packages grouped by package. `shown`: the Workspace owned rows the pills leave;
  * `filterHost` is the discovery's persistent pill row; `query` narrows every section by name.
- * `navHost`, when given, takes the section jump (the view's toolbar row). */
-export function renderCapabilitySections(host, { sections, shown, filterHost, navHost = null, privateListed, status, instances, root, onOpen = null, query = '', rosterState = 'ready' }) {
+ * `navHost`, when given, takes the section jump (the view's toolbar row). `souls` and `composition`:
+ * renderCapabilities' "Used by" inputs. */
+export function renderCapabilitySections(host, { sections, shown, filterHost, navHost = null, privateListed, status, instances, souls = [], composition = false, root, onOpen = null, query = '', rosterState = 'ready' }) {
   const doc = host.ownerDocument, names = memberNames(status), hostKey = hostKeyOf(status);
   host.replaceChildren();
   const match = rows => matchCapabilities(rows, query);
-  const table = (parent, rows, opts) => { const box = node(doc, 'div'); parent.append(box); renderCapabilities(box, { rows, status, instances, root, onOpen, rosterState, ...opts }); };
+  const table = (parent, rows, opts) => { const box = node(doc, 'div'); parent.append(box); renderCapabilities(box, { rows, status, instances, souls, composition, root, onOpen, rosterState, ...opts }); };
   // Nothing at all: one factual line, not three empty sections.
   if (!sections.workspace.length && !sections.packages.length && !sections.repo.length) { table(host, [], {}); return; }
   // Workspace owned → Repo owned (when listed) → Packages: the nav segments and the sections, in one order.
@@ -457,7 +486,11 @@ export function renderCapabilitySections(host, { sections, shown, filterHost, na
       const groups = groupCapabilities(match(sections.repo), names, hostKey);
       table(repo, groups.flatMap(g => g.rows), { groups, label: 'Repo owned capabilities', total: sections.repo.length });
     },
-    packages: packages => table(packages, match(sections.packages), { label: 'Package capabilities', empty: 'No package capability is locked yet. Sync to lock the declared packages.' }),
+    // Grouped by package, as the other sections are by repository: no section loses where its rows come from.
+    packages: packages => {
+      const groups = groupCapabilities(match(sections.packages), names, hostKey);
+      table(packages, groups.flatMap(g => g.rows), { groups, total: sections.packages.length, label: 'Package capabilities', empty: 'No package capability is locked yet. Sync to lock the declared packages.' });
+    },
   };
   for (const def of defs) render[def.id](section(def));
 }

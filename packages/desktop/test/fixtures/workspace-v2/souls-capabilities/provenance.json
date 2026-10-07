@@ -1,0 +1,10 @@
+{
+  "source": "DERIVED, not captured: test/fixtures/workspace-v2/f7/souls.json (kernel 0.29.3) with the souls-capabilities field added to every row as the kernel contract for OATS 0.44.2 states it (oats-maintainer, 2026-10-07): capabilities [{name, kind member|package, repoKey|package, from soul|workspace}] sorted by name, null exactly when spawnable is false.",
+  "changes": [
+    "every row: capabilities (the composition invented from f7/capabilities.json rows)",
+    "data-analyst: spawnable false, problem E_SOUL_DISABLED, capabilities null",
+    "security-reviewer: one entry whose repository differs from the catalog row of that name (an origin mismatch)",
+    "one package soul added: nw.tools/deployer (package nw.tools 0.4.0)"
+  ],
+  "replace": "with a real capture once the kernel ships souls-capabilities"
+}

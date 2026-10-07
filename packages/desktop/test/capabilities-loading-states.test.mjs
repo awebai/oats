@@ -9,8 +9,8 @@ import { readFileSync } from 'node:fs';
 import * as spawn from '../renderer/views/spawn.mjs';
 import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 import { refreshCli } from '../renderer/views/cli-status.mjs';
-import { workspaceStatusData, deploymentStatusData } from '../deployment-data.mjs';
-import { PENDING_DELAY_MS, REFRESHING_DELAY_MS } from '../renderer/loading.mjs';
+import { workspaceStatusData, deploymentStatusData, soulsData } from '../deployment-data.mjs';
+import { PENDING_DELAY_MS, REFRESHING_DELAY_MS, SOULS_STALE_TITLE } from '../renderer/loading.mjs';
 import { soulInspection } from './helpers/inspect-fixture.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -41,7 +41,7 @@ function clock(win) {
   } };
 }
 
-async function setup(t, { holdRoster = false, holdReads = false } = {}) {
+async function setup(t, { holdRoster = false, holdReads = false, cli = CLI, souls = agents } = {}) {
   const dom = new JSDOM('<!doctype html><body><div id="host"></div>', { url: 'http://localhost' });
   const saved = { document: globalThis.document, window: globalThis.window, setInterval: globalThis.setInterval, ws: currentWorkspace() };
   globalThis.document = dom.window.document; globalThis.window = dom.window;
@@ -52,8 +52,8 @@ async function setup(t, { holdRoster = false, holdReads = false } = {}) {
     deployment: { status: 'observed', root: roster.root, workspace: status.workspace, workspaceStatus: status, reachable: { reachable: true }, withheld: [] } });
   const ctx = { hasWorkspaceSwitcher: true, api: async (path, opts = {}) => {
     const body = opts.body ? JSON.parse(opts.body) : undefined; calls.push({ path, body });
-    if (path === '/api/cli') return CLI;
-    if (path.startsWith('/api/agents')) { if (!holdRoster) return { agents }; const r = deferred(); rosters.push(r); return r.promise; }
+    if (path === '/api/cli') return cli;
+    if (path.startsWith('/api/agents')) { if (!holdRoster) return { agents: souls }; const r = deferred(); rosters.push(r); return r.promise; }
     if (path.startsWith('/api/panel')) return panel();
     if (path.startsWith('/api/workspace-sync')) { if (!holdReads) return okRead(); const r = deferred(); reads.push({ ...r, body }); return r.promise; }
     if (path.startsWith('/api/capabilities') && body?.action === 'inspect') return soulInspection(body.selector.soul || 'release-manager');
@@ -62,7 +62,7 @@ async function setup(t, { holdRoster = false, holdReads = false } = {}) {
   } };
   const doc = dom.window.document;
   t.after(() => { spawn.unmount(); setWorkspace(saved.ws); globalThis.document = saved.document; globalThis.window = saved.window; globalThis.setInterval = saved.setInterval; dom.window.close(); });
-  setWorkspace('/team'); await refreshCli({ api: async () => CLI });
+  setWorkspace('/team'); await refreshCli({ api: async () => cli });
   spawn.mount(doc.querySelector('#host'), ctx); await settle();
   const q = sel => doc.querySelector(sel);
   return {
@@ -249,6 +249,41 @@ test('roster-derived "Used by" claims wait for a settled good roster: "—" with
   assert.match(pageOf(u).textContent, /No instance carries it yet/, 'a good read restores the claim on the open page');
   pageOf(u).querySelector('.page-back').click(); await settle();
   assert.equal(cell().textContent, 'Not used', 'and in the table at once, not one poll later');
+});
+
+// souls-capabilities: "Used by" derives from the souls list (each soul's composition), the same read's state.
+const COMPOSED = soulsData(JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/souls-capabilities/souls.json', import.meta.url), 'utf8'))).souls
+  .map(s => ({ name: s.name, key: s.key, soulKind: s.kind, ...(s.kind === 'package' ? { package: s.package, version: s.version, qualifiedName: s.qualifiedName } : {}),
+    description: s.description || '', kind: 'persistent', work: s.work, capabilities: s.capabilities, agentsRoot: roster.root }));
+const COMPOSING_CLI = { ...CLI, features: [...CLI.features, 'souls-capabilities'] };
+test('souls-derived "Used by" waits for a settled good souls read: "—" with the souls list\'s reason, in the table and on the page', async t => {
+  const u = await setup(t, { holdRoster: true, holdReads: true, cli: COMPOSING_CLI });
+  u.rosters[0].resolve({ agents: COMPOSED }); await settle(); await u.resolveRead(0, okRead()); await u.tab('capabilities');
+  const cell = name => u.q(`.catalog-row[data-capability="${name}"] .catalog-used-count`);
+  assert.equal(cell('nw-brand-voice').textContent, '2 souls', 'from the composition: no instance needed');
+  assert.equal(cell('nw-warehouse-access').textContent, 'Not used', 'a good read: the claim');
+  u.poll(); await tick(); u.rosters[1].reject(new Error('down')); await settle();
+  assert.equal(cell('nw-warehouse-access').textContent, '—'); assert.equal(cell('nw-warehouse-access').getAttribute('aria-description'), SOULS_STALE_TITLE);
+  assert.equal(cell('nw-brand-voice').textContent, '2 souls', 'the held list\'s souls stay');
+  u.q('.catalog-row[data-capability="nw-warehouse-access"]').click(); await settle();
+  assert.equal(pageOf(u).querySelector('.used-unknown').getAttribute('aria-description'), SOULS_STALE_TITLE, 'the page makes no claim either');
+  u.poll(); await tick(); u.rosters[2].resolve({ agents: COMPOSED }); await settle();
+  assert.match(pageOf(u).textContent, /No soul here includes it/, 'a good read restores the claim on the open page');
+});
+
+test('the page opens a package soul from "Used by" by its key, never a member soul of its bare name', async t => {
+  // A member soul named "deployer" beside the package soul nw.tools/deployer.
+  const twin = { ...COMPOSED.find(s => s.name === 'release-manager'), name: 'deployer', key: 'deployer', capabilities: [] };
+  const u = await setup(t, { cli: COMPOSING_CLI, souls: [...COMPOSED, twin] });
+  await u.tab('capabilities');
+  u.q('.catalog-row[data-capability="nw-deploy"]').click(); await settle();
+  const rows = [...pageOf(u).querySelectorAll('.used-row:not(.head)')];
+  assert.deepEqual(rows.map(r => r.querySelector('.used-name').textContent), ['deployer', 'release-manager'], 'the package soul only');
+  rows[0].click(); await settle();
+  assert.equal(pageOf(u), null, 'the capability page closed');
+  assert.ok(u.q('.workspace-soul-page'), 'the soul page opened');
+  const inspected = u.calls.filter(c => c.path.startsWith('/api/capabilities') && c.body?.action === 'inspect').at(-1);
+  assert.equal(inspected.body.selector.soul, 'deployer');
 });
 
 test('a catalog that failed with nothing held shows the failed treatment on the page (cause, Details, Retry), not silence', async t => {

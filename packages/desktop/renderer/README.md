@@ -837,7 +837,9 @@ and makes no claim (no count) while failed or stale; the Capabilities table's
 `syncRoster()` and render key) and the capability page's "Used by" section
 show a muted "—" carrying `ROSTER_STALE_TITLE` (`loading.mjs`, re-exported by
 `instance-tree.mjs`) as their accessible description instead of "Not used" /
-"No instance carries it yet." while the roster is not settled-good. A
+"No instance carries it yet." while the roster is not settled-good. With
+`souls-capabilities` the claim derives from the souls list (the same read, the
+same state) and the "—" carries `SOULS_STALE_TITLE` instead. A
 roster failure discarded because the selection moved still `cancel()`s the
 grid's read, so nothing is left "refreshing". A catalog that failed with
 nothing held shows the failed treatment on an open capability page
@@ -910,17 +912,35 @@ workspace is observed through its server and never synced from here.
   section in view carries `aria-current`), then one 58px row
   card per capability (design board 4): a tile tinted by kind (Knowledge,
   Messaging, Tasks, other, package), the name with its kind chip over a
-  one-line description, the source chip (package + pinned version, or the
-  member repository at latest), *Used by* (souls whose instances record the
-  module: up to three tiles and "N souls"; "Every soul" for a reported
-  workspace default; "Not used") and a chevron. The whole row is one native
-  button (Enter and Space are its own) named "<cap>, <kind>, from <source>"
-  and described by its description and used-by (`aria-describedby`); it opens
-  the capability's page with the full description; Back returns to
-  the list with its scroll offset, search and repository pill. No Members list here.
+  one-line description, *Used by* and a chevron; the columns are
+  `'' | Capability | Used by | ''`. There is no Source column: the group
+  heading names the source, and the row's accessible name repeats it. *Used by*
+  shows up to three soul marks and "N souls", "Every soul" for a reported
+  workspace default, and "Not used" only after a settled good read. Which souls
+  count depends on the CLI:
+  - With the kernel feature `souls-capabilities` (`soulsComposition`): the
+    souls whose composition includes the capability. Every `oats souls` row's
+    `capabilities` entry (`{name, kind, repoKey|package, from}`, read only by
+    `deployment-data.mjs soulCapabilitiesOf`) is joined to the catalog row on
+    name, kind and repository or package (`composes` / `soulsUsing`). A soul
+    whose `capabilities` is `null` (not spawnable) is not counted.
+  - Without it: the souls whose instances record the module (`capabilityUse`).
+
+  The capability page's *Used by* section uses the same rule: one row per soul,
+  and its *Instances* column counts that soul's live instances carrying the
+  capability. A package soul's instances are matched by the roster's agent
+  name, `rosterAgentName`: `<package>--<soul>`, the kernel's
+  `packageSoulAgentName`. Opening a soul goes by its key. The whole row is one
+  native button (Enter and Space are its own) named
+  "<cap>, <kind>, from <source>" and described by its description and used-by
+  (`aria-describedby`). It opens the capability's page with the full
+  description; Back returns to the list with its scroll offset, search and
+  repository pill. No Members list here.
   Workspace owned and Repo owned are grouped by repository (`groupCapabilities`,
-  headed with the Souls tab's `group-heading.mjs`): the host first, then by name,
-  one **external** group last. A search that empties a group hides it.
+  headed with the Souls tab's `group-heading.mjs`): the host first, then by
+  name, one **external** group last. Packages are grouped by package, under the
+  heading "package · v<version> · N capabilities". A search that empties a
+  group hides it.
   Workspace owned's repository pills (`renderRepoPills`, "Show capabilities
   from") are **All** plus one pill per group, each with its catalog count. They
   are a single choice with one roving tab stop, and focus is kept by repository
