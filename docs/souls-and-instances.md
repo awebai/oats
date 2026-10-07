@@ -236,6 +236,13 @@ When a claude or codex home is not covered, the spawn says so (text and
 prompt: trust <deployment> once (<the step>)`. `oats readiness` reports the
 same in `checks.configured` (code `harness-trust`, not required).
 
+Exact-home [aweb development-channel consent](configuration.md#exact-home-launch-prompt-consent)
+does not cover folder-trust prompts. It neither writes trust settings nor
+enables existing homes automatically.
+A blocked or incomplete prompt outcome preserves the home and process even
+though its metadata says `launched:false`; inspect that endpoint before any
+recovery. See [launch prompt outcomes](execution-targets.md#launch-prompt-outcomes).
+
 ### Codex tool commands and the instance environment
 
 Codex can run tool commands under its shared app-server daemon rather than as

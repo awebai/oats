@@ -60,6 +60,7 @@ refused (`E_WORKSPACE_SCHEMA`).
 | `workspace` | Repo ref of the workspace host (`git:host/org/repo`, `https://…`, `git@host:…`, `file:///…`, `/abs/bare.git`). Read with your own Git credentials; it need not be cloned. |
 | `standalone` | A repo ref to realize on its own: its souls and `from: here` capabilities plus `oats.core`, with no workspace lookup. For a repository whose workspace this machine cannot read ([workspaces.md](workspaces.md#the-standalone-case)). |
 | `clones` | `<repo key>: <absolute path>` for a member clone that is not at `<deployment>/<member name>/`. Only a soul whose work target needs a clone (`work: worktree \| checkout`) uses it. Lookup order: `spawn --repo`, then this map, then `<deployment>/<member name>` (a member named `agents` → `<deployment>/agents-repo`). None → `E_CLONE_MISSING`; a directory whose `origin` is another repository → `E_CLONE_MISMATCH`. |
+| `launchPromptAnswers.homes.<absolute-home>` | Explicit per-home `awebDevelopmentChannel` boolean consent; defaults false. See [launch prompt consent](#exact-home-launch-prompt-consent). |
 | `settings.<cap>.<key>` | Host-owned values a capability's manifest asks for: absolute paths, state roots, delivery modes. The workspace file refuses absolute paths; they go here. Merged into the capability's provider payload after the soul's own and before any `--provider` flag ([three homes](workspaces.md#provider-payloads-have-three-homes)). |
 | `teams.<label>` | A **local** team: `{ team: <provider team id>, description? }`, a team only this deployment uses; every soul may join it. Allowed only where `oats-workspace.yaml` says `localTeams: true` (or in the standalone view); otherwise refused (`E_WORKSPACE_SCHEMA`, reason `local-teams-closed`). Shared teams are committed in `oats-workspace.yaml`; a label in both is `team-label-collision` (the shared one wins). Written by `oats teams add <label> --team <id>` and `oats teams remove <label>`. |
 | `defaultTeam` | This deployment's default team: a label of a local or shared team, under the same condition as `teams`. A soul's own default in the workspace's `souls:` wins over it; it wins over the workspace's `defaultTeam`. The first `oats teams add` sets it; `oats teams default <label>` changes it. |
@@ -76,6 +77,57 @@ Which teams a soul may join, and its default, are committed in the workspace's
 (`E_WORKSPACE_SCHEMA`, reason `removed-key`; the refusal prints the `souls:` to
 commit instead). How teams are resolved, and what a messaging provider does
 with them, is in [workspaces.md](workspaces.md#teams).
+
+## Exact-home launch prompt consent
+
+`launchPromptAnswers` belongs only in the host's `oats-local.yaml`. It is
+refused in workspace and soul declarations. Add an entry only for a home whose
+owner has explicitly authorized Claude's aweb development-channel confirmation:
+
+```yaml
+launchPromptAnswers:
+  homes:
+    /absolute/canonical/instance/home:
+      awebDevelopmentChannel: false
+```
+
+`awebDevelopmentChannel` is a strict boolean; absent means `false`. Unknown keys
+are refused. `workspaceTrust` is unsupported: remove it and handle folder trust
+with the harness. Folder-trust automation is separate work in
+[oats#712](https://github.com/awebai/oats/issues/712); it is not enabled here.
+Each home key is an exact absolute canonical path, with no symlink alias,
+wildcard, dot segment, trailing separator, ancestor inheritance or soul-wide
+default. A home not yet created uses its resolved existing directory ancestor
+plus its intended suffix; launch checks the created home's identity again.
+No existing home is enabled automatically. Removing an entry disables consent
+for future launches.
+
+The sole confirmation covered is Claude's development-channel prompt for
+`plugin:aweb-channel@awebai-marketplace`. The provider's `claudeChannelMode`
+selects arguments; it does not grant consent. Approved-mode arguments, another
+plugin, multiple plugins or contradictory channel arguments cannot qualify.
+Environment values, spawn flags and saved launch recipes cannot enable consent.
+Existing harness folder-trust configuration remains independent.
+
+Preview reports effective `launchPromptAnswers.awebDevelopmentChannel` and
+`consentSource` without terminal capture or input. `--no-launch` never answers.
+The qualified fixture is limited to Claude 2.1.289 on `darwin-arm64`, at terminal
+geometry 110 columns by 35 rows, with executable SHA-256
+`03d66745e3bb69ec727d66023696f3820bc0a00a8a5ba725eb6706d0c67cbe69`.
+The launch must satisfy these guards and the exact complete frame, selection
+and argument checks. Reported version alone is insufficient; another
+executable, platform, geometry or prompt variant does not inherit acceptance.
+The qualified channel frame starts on its accepted option and permits one
+Enter only. Folder-trust and API-key questions remain unexpected and block.
+A qualified normal-output boundary closes observation without asserting readiness.
+
+When a harness update changes the version-bound prompt frame, opted-in homes
+block again with `blocked: unexpected prompt` until fixtures are refreshed.
+There is no fallback keystroke or broader matching rule. The returned
+`launchPrompts.receipt` identifies the launch-prompt event receipt; the home
+and pane are retained for inspection. See [launch outcomes](execution-targets.md#launch-prompt-outcomes)
+for recovery. Answering a confirmation never establishes harness or messaging
+receive readiness.
 
 ## Launch configurations
 

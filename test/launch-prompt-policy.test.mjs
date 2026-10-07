@@ -12,29 +12,39 @@ function fixture(t) {
   return dir;
 }
 const local = (home, consent) => ({ schemaVersion: 2, workspace: "example.com/team/workspace", launchPromptAnswers: { homes: { [home]: consent } } });
-const disabled = { workspaceTrust: false, awebDevelopmentChannel: false, consentSource: null };
+const disabled = { awebDevelopmentChannel: false, consentSource: null };
 
-test("exact-home strict booleans are independent and default false", (t) => {
+test("sole exact-home development-channel consent defaults false", (t) => {
   const home = join(fixture(t), "new", "home");
   assert.deepEqual(validateLocal(local(home, {})), []);
-  for (const key of ["workspaceTrust", "awebDevelopmentChannel"]) {
-    const config = local(home, { [key]: true });
-    const result = effectiveLaunchPromptPolicy(config, home, "/host/oats-local.yaml");
-    assert.equal(result[key], true);
-    assert.equal(result[key === "workspaceTrust" ? "awebDevelopmentChannel" : "workspaceTrust"], false);
-    assert.equal(result.consentSource, `/host/oats-local.yaml#/launchPromptAnswers/homes/${home.replaceAll("/", "~1")}`);
-    assert.deepEqual(effectiveLaunchPromptPolicy(config, join(home, "child"), "file"), disabled);
-    assert.deepEqual(effectiveLaunchPromptPolicy(config, join(home, "..", "other"), "file"), disabled);
-  }
+  const config = local(home, { awebDevelopmentChannel: true });
+  assert.deepEqual(effectiveLaunchPromptPolicy(config, home, "/host/oats-local.yaml"), {
+    awebDevelopmentChannel: true,
+    consentSource: `/host/oats-local.yaml#/launchPromptAnswers/homes/${home.replaceAll("/", "~1")}`,
+  });
+  assert.deepEqual(effectiveLaunchPromptPolicy(config, join(home, "child"), "file"), disabled);
+  assert.deepEqual(effectiveLaunchPromptPolicy(config, join(home, "..", "other"), "file"), disabled);
   assert.deepEqual(effectiveLaunchPromptPolicy({ settings: { "oats.aweb": { claudeChannelMode: "development" } } }, home, "file"), disabled);
   assert.deepEqual(effectiveLaunchPromptPolicy({}, home, "file"), disabled);
-  assert.equal(effectiveLaunchPromptPolicy(local(home, { workspaceTrust: false }), home, "file").workspaceTrust, false);
+  assert.equal(effectiveLaunchPromptPolicy(local(home, { awebDevelopmentChannel: false }), home, "file").awebDevelopmentChannel, false);
+});
+
+test("workspaceTrust is unknown even when false and gives actionable separate-work guidance", (t) => {
+  const home = fixture(t);
+  for (const value of [true, false]) {
+    const config = local(home, { workspaceTrust: value });
+    const problems = validateLocal(config);
+    assert.equal(problems.length, 1);
+    assert.equal(problems[0].reason, "unsupported-launch-prompt");
+    assert.match(problems[0].message, /remove this key.*oats#712/);
+    assert.throws(() => effectiveLaunchPromptPolicy(config, home, "file"), error => error.code === "E_WORKSPACE_SCHEMA" && /remove this key.*oats#712/.test(error.message));
+  }
 });
 
 test("all policy levels reject unknown keys, nonobjects and boolean coercion", (t) => {
   const home = fixture(t);
   const bad = [null, [], true, { workspaceTrust: true }, { homes: null }, { homes: [] }, { homes: { [home]: null } }, { homes: { [home]: { other: true } } }];
-  for (const value of ["true", "false", 1, 0, null, [], {}]) for (const key of ["workspaceTrust", "awebDevelopmentChannel"]) bad.push({ homes: { [home]: { [key]: value } } });
+  for (const value of ["true", "false", 1, 0, null, [], {}]) for (const key of ["awebDevelopmentChannel"]) bad.push({ homes: { [home]: { [key]: value } } });
   for (const policy of bad) {
     const config = { ...local(home, {}), launchPromptAnswers: policy };
     assert.ok(validateLocal(config).length, JSON.stringify(policy));
@@ -52,13 +62,13 @@ test("canonical existing ancestors permit future homes but aliases and unsafe pa
   writeFileSync(join(dir, "file"), "x");
   for (const bad of ["relative", "~/home", `${dir}/*`, `${dir}/../x`, `${home}/`, `${dir}//x`, join(dir, "alias", "home"), join(dir, "alias", "not-created"), join(dir, "dangling", "home"), join(dir, "file", "home"), `${dir}/\0`]) {
     assert.throws(() => canonicalLaunchPromptHome(bad), undefined, bad);
-    assert.ok(validateLocal(local(bad, { workspaceTrust: true })).some((p) => p.reason === "noncanonical-home"), bad);
+    assert.ok(validateLocal(local(bad, { awebDevelopmentChannel: true })).some((p) => p.reason === "noncanonical-home"), bad);
   }
 });
 
 test("replacing a future ancestor with a symlink disables previously valid policy", (t) => {
-  const dir = fixture(t), home = join(dir, "future", "home"), config = local(home, { workspaceTrust: true });
-  assert.equal(effectiveLaunchPromptPolicy(config, home, "file").workspaceTrust, true);
+  const dir = fixture(t), home = join(dir, "future", "home"), config = local(home, { awebDevelopmentChannel: true });
+  assert.equal(effectiveLaunchPromptPolicy(config, home, "file").awebDevelopmentChannel, true);
   mkdirSync(join(dir, "elsewhere"));
   symlinkSync(join(dir, "elsewhere"), join(dir, "future"));
   assert.throws(() => effectiveLaunchPromptPolicy(config, home, "file"), { code: "E_WORKSPACE_SCHEMA" });

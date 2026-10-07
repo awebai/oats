@@ -171,6 +171,21 @@ oats spawn backend-expert --task "First concrete task"
 oats status
 ```
 
+Before configuring unattended development-channel confirmation, read
+`docs/configuration.md#exact-home-launch-prompt-consent`. The sole opt-in is
+`oats-local.yaml` `launchPromptAnswers.homes.<absolute-canonical-home>.awebDevelopmentChannel`;
+it defaults false and requires the owner's explicit authorization for that home.
+Never infer consent from provider development mode, harness trust settings or
+a request to spawn. `workspaceTrust` is unsupported; remove it and handle
+folder trust with the harness (separate automation work: oats#712). Folder-trust
+and API-key questions remain unexpected and blocked. Only the qualified Claude
+2.1.289 executable digest, `darwin-arm64` platform and 110x35 geometry documented
+there can match the exact aweb development-channel frame. A reported version
+alone is insufficient. Preview reports policy without terminal input;
+`--no-launch` never answers. If launch returns `E_SPAWN_INCOMPLETE`, inspect the
+retained home/pane: do not respawn, repeat keys or treat `launched:false` as an
+absent process.
+
 Create and spawn only when asked. After the first spawn, the `oats.setup`
 skills carry the rest of the deployment (messaging, more souls, rebuilds); the
 `oats.authoring` package teaches writing capabilities, skills and souls. The

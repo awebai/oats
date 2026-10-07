@@ -578,6 +578,50 @@ its children, waits `--stop-grace <seconds>` (default 20, at most 300), then
 starts in place. It never escalates: a harness still running is reported
 (`E_SESSION_STOP_FAILED`) and nothing is launched.
 
+### Launch prompt outcomes
+
+For a home with [explicit host-local consent](configuration.md#exact-home-launch-prompt-consent),
+spawn, start and restart can observe only the process created by that invocation.
+A new window supplies the exact pane identity. Reusing a pane requires a changed
+numeric process ID and fresh visible bytes differing from the pre-respawn
+screen. An already-running process, stale screen or scrollback grants no input
+authority. Home, socket, pane, PID, geometry and exact visible signature are
+rechecked before each key.
+
+Observation is bounded to 30 seconds with 100 ms intervals. Only accepted
+version/platform-specific startup and prompt frames keep authority open;
+unexpected output permanently closes it. Only the exact aweb development-channel
+confirmation can be answered, once, with one Enter. Folder-trust and API-key
+prompts are unexpected and block; no multi-prompt sequence is authorized.
+For a qualified launch, the controller saves the exclusively owned window's
+size policy and dimensions, temporarily pins it to the fixture's 110x35
+geometry, and confirms the size before matching. It audits restoration on
+every exit, including timeout and failure; a replaced process/window is never
+resized during cleanup. Pinning a reused pane cannot establish freshness: that
+must already be proved at its original geometry. The selected-option frame
+is rechecked before Enter. Uncertain submission is never retried. Only the
+qualified Claude executable/platform/geometry in
+[configuration](configuration.md#exact-home-launch-prompt-consent) has an enabled
+development-channel fixture. Installed version alone grants no match. Ordinary
+`session input` and wake delivery do not enter this controller.
+
+Both spawn and start return `E_SPAWN_INCOMPLETE` for retained prompt failures.
+With `launchPrompts.status` set to `blocked`, the home, actual terminal target,
+provider effects and committed parent lineage are retained. `launchPrompts` records `status`,
+`answers`, `reason` and event `receipt`; unknown prompts use
+`blocked: unexpected prompt`. Status `incomplete` means the audit could not be
+completed, including a possible key followed by an audit failure. It is
+not proof that no input was sent. Both outcomes record `launched:false` while
+retaining the real process/endpoint for inspection: this is never permission
+to allocate another harness.
+
+Inspect the retained home with `oats session inspect --home <home>` and attach
+if needed. A later `oats session start --home <home>` uses the ordinary running
+process checks; it cannot answer into a still-running retained launch. Repeating
+spawn, including the same idempotency key, does not replay prompt answers or
+create a duplicate home. A genuinely new process in a later launch gets its own
+bounded authority. A prompt receipt does not assert receive readiness.
+
 ### Stop
 
 `oats instance stop <instance> --plan` reports the session state, recorded

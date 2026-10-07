@@ -64,6 +64,8 @@ published to npm. Its developer docs are in
 | `capability-contract.mjs`, `provider-binding.mjs` | manifest validation (launch environment, hooks, `retirement`), the hook environment rules, the readiness wire |
 | `retire-output.mjs` | the lines `oats retire` prints for preserved work, one function for the local and the remote path |
 | `servers.mjs` | routing commands to a registered server |
+| `launch-prompt-policy.mjs` | strict host-local exact-home aweb development-channel consent, canonical directory validation and config provenance |
+| `launch-prompts.mjs`, `launch-prompt-transport.mjs` | bounded launch-only controller and visible-screen transport; private process authority, injectable clock/transport, durable checked receipts and the fixture-gated exact aweb development-channel signature |
 | `harness-trust.mjs` | reading (never writing) Claude's and Codex's folder trust for a launch |
 
 The schedule registry stores explicit concurrency caps, leaving the schedule
