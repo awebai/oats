@@ -128,9 +128,12 @@ and medium effort. Source-derived synthetic variants additionally allow exactly
 `Claude Max`, `Claude Pro`, `Claude Team` or `Claude Enterprise` in place of
 `API Usage Billing`; these are not observed subscription captures. Claude may
 prefer an account-specific plan display name over those fallback labels; other
-display names remain unqualified even for subscribers on those plans. Every other
-row stays exact apart from the bounded canonical-home directory line. This
-interim extension does not cover task-filled screens or bypass-permissions mode.
+display names remain unqualified even for subscribers on those plans. A further source-derived family allows only Claude Max with bypass-permissions
+mode and the same displayed medium-effort status. Its longer mode label consumes
+nine columns of the alignment gap; the entire remaining empty frame stays exact,
+apart from the bounded canonical-home directory line. These interim extensions
+do not cover task-filled screens, missing effort status or arbitrary bypass-mode
+sessions.
 Other model, billing, effort or permission banners remain unqualified: the one
 Enter can be submitted before `E_SPAWN_INCOMPLETE` with
 `launchPrompts.status: blocked`. The submitted answer remains in `answers` and

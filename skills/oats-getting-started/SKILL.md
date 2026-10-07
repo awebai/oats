@@ -193,10 +193,18 @@ alone is insufficient. Preview reports policy without terminal input;
 retained home/pane: do not respawn, repeat keys or treat `launched:false` as an
 absent process.
 Completion additionally accepts source-derived Max/Pro/Team/Enterprise labels
-on the exact empty Opus 5.5 / auto / medium frame. This interim support does not
-cover task-filled or bypass-permissions screens and does not prove readiness.
+on the exact empty Opus 5.5 / auto / medium frame, plus source-derived empty
+Max/bypass/medium frames. This interim support does not cover task-filled
+screens or missing effort status and does not prove readiness.
 
 Create and spawn only when asked. After the first spawn, the `oats.setup`
 skills carry the rest of the deployment (messaging, more souls, rebuilds); the
 `oats.authoring` package teaches writing capabilities, skills and souls. The
 model in full is `docs/workspaces.md` in the OATS repository.
+
+For a retained launch-prompt block after a submitted answer, inspect the existing
+launch event and private frame receipt as described in
+`docs/execution-targets.md#private-unmatched-launch-evidence`. Do not transmit raw
+screen text or treat a saved frame as a new accepted signature. Exact empty
+Max/bypass/medium completion is source-derived and bounded; task-filled screens
+and missing effort status can still block without implying the pane is inactive.

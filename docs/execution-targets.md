@@ -636,10 +636,52 @@ No audit or metadata write is directed into the replacement home.
 A blocked result can follow a successfully submitted Enter. The accepted
 completion families cover exact installed-plugin and plugin-absent banners,
 plus source-derived billing-only variants of those empty frames (Max, Pro,
-Team and Enterprise). Other model, billing, effort or permission text can leave the pane active while
+Team and Enterprise), and source-derived empty Max/bypass/medium frames.
+Other model, billing, effort or permission text can leave the pane active while
 reporting a retained block. Inspect `answers` and the event receipts; never infer
 that nothing started or nothing was answered. See the
 [completion limitation](configuration.md#exact-home-launch-prompt-consent).
+
+### Private unmatched launch evidence
+
+After a submitted launch answer, an unmatched 110x35 frame is retained locally
+at `<home>/.oats/launch-prompt-evidence/<sha256(startId)>/frame.txt`, with
+`receipt.json` published last. This is the exact UTF-8 text already compared by
+the controller, including whitespace and final newline, not a later recapture.
+It is bounded to 64 KiB and 35 rows. There is no new input, observation, retry,
+geometry change or readiness claim. No evidence is saved by this path before a
+submitted answer, on successful completion, or for a different blocked reason.
+
+Find the invocation's existing `launch-prompt` event in the home's
+`.oats-events.jsonl` (or the checked event rows in `launchPrompts.receipt`). Its
+`data.startId` supplies the string to hash with SHA-256, UTF-8, yielding the
+lowercase hexadecimal directory name. Match the event's home, socket, window,
+pane, PID and `signatureDigest`; do not assume a top-level spawn-result `startId`.
+Spawn and same-home start/restart use this same controller and event path.
+
+New evidence directories are owner-only 0700 and files 0600. The writer checks
+canonical directory identities, ownership, modes and symlinks, refuses an
+existing invocation directory, and publishes bounded files without overwrite.
+The private receipt binds the start, target, original home identity, dimensions,
+frame inode, byte count and SHA-256. `retainedAt` is write time; `captureTime:null`
+means no independent capture timestamp was recorded. It does not substitute an
+event timestamp for capture time. Same-uid concurrent mutation between checks is
+not excluded.
+
+Verify both files, receipt/identity/digest and the corresponding checked event
+before treating the save as complete. A frame alone is partial evidence. Failed
+publication, fsync, readback or temporary-file cleanup leaves the launch blocked
+and adds only `; private launch evidence retention failed` to its diagnostic
+reason. Already published files may remain, including a receipt if a later
+verification fails; their presence alone is not a success claim. The submitted
+answer is preserved. Existing event-audit failures still report `incomplete`.
+No public result or event contains the raw screen or private receipt.
+
+The frame can contain private task or account text. It stays on this host with
+no automatic transmission or expiry. Preserve needed evidence privately before
+retirement; it follows the home's ordinary conservative recovery behavior, with
+no integrity-neutral exclusion or new cleanup policy. A saved frame is evidence
+for review, never automatic permission to activate a new matcher.
 
 Retiring a blocked or incomplete spawned home can preserve a recovery copy
 labelled `changed instance-home bytes`, even without authored changes: the
