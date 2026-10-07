@@ -34,6 +34,7 @@ import { createSoulInspector, inspectorCSS } from '../renderer/soul-inspector.mj
 import { readinessCSS as readinessViewCSS } from '../renderer/readiness-view.mjs';
 import { createInstanceGitPanel } from '../renderer/instance-git.mjs';
 import { spawnDialogCSS } from '../renderer/spawn-dialog.mjs';
+import { groupHeadingCSS } from '../renderer/group-heading.mjs';
 import { createAutomationsView } from '../renderer/views/automations.mjs';
 import { setWorkspace } from '../renderer/views/common.mjs';
 import { createTerminalTab, terminalOptions, TERMINAL_MINIMUM_CONTRAST } from "../renderer/terminal-tab.mjs";
@@ -408,6 +409,15 @@ test("nav ink is subtly darker than muted; identity palettes are opaque and dist
 });
 
 
+// The Souls view's actual stylesheet: its `const CSS` template, with the shared group heading it
+// interpolates (group-heading.mjs) substituted as the app does, so no literal `${...}` reaches the CSSOM.
+function spawnViewCSS() {
+  const source = readFileSync(new URL("views/spawn.mjs", renderer), "utf8").match(/const CSS = `([\s\S]*?)`;/)?.[1];
+  assert.ok(source, "views/spawn.mjs has its const CSS template");
+  const parts = { groupHeadingCSS };
+  return source.replace(/\$\{(\w+)\}/g, (_, n) => parts[n] ?? assert.fail(`spawn.mjs CSS interpolates unknown \${${n}}`));
+}
+
 // Real marker constructors in representative shipped containers, with shell and
 // view rules loaded AFTER theme.css just like the app. JSDOM preserves var()
 // values: resolve the winning declaration through the actual root CSSOM, not
@@ -420,8 +430,7 @@ for (const [name] of palettes) test(`${name}: actual identity/runtime markup win
   </body></html>`);
   t.after(() => dom.window.close());
   const { document } = dom.window;
-  const spawnSource = readFileSync(new URL("views/spawn.mjs", renderer), "utf8");
-  const spawnCSS = spawnSource.match(/const CSS = `([\s\S]*?)`;/)?.[1];
+  const spawnCSS = spawnViewCSS();
   assert.ok(spawnCSS, "exercise actual late-mounted soul card/glyph rules");
   for (const source of [css, readFileSync(new URL("shell.css", renderer), "utf8"), spawnCSS, identityCSS]) {
     const style = document.createElement("style"); style.textContent = source; document.head.append(style);
@@ -1076,7 +1085,7 @@ for (const [name] of palettes) test(`${name}: the can't-spawn-here notes meet co
   const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><div class="souls"><div class="soul-tile"><button class="soul-card"><span class="sbody"><span class="sproblem">Can't spawn here</span></span></button></div></div>
     <aside class="soul-inspector soul-page"><div class="inspector-head"><p class="inspector-refusal">Can't spawn here</p></div></aside></div></body></html>`);
   t.after(() => dom.window.close());
-  const doc = dom.window.document, spawnCSS = readFileSync(new URL('views/spawn.mjs', renderer), 'utf8').match(/const CSS = `([\s\S]*?)`;/)[1];
+  const doc = dom.window.document, spawnCSS = spawnViewCSS();
   for (const source of [css, spawnCSS, inspectorCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
   const root = dom.window.getComputedStyle(doc.documentElement);
   const painted = el => { for (let p = el; p; p = p.parentElement) { const bg = dom.window.getComputedStyle(p).background; if (/^var\(--/.test(bg)) return bg.slice(6, -1); } return null; };
@@ -1097,7 +1106,7 @@ for (const [name] of palettes) test(`${name}: soul-card chips, the default note 
     <div class="soul-tile" id="running"><button class="soul-card"><span class="sfoot"><span class="sactivity running">2 instances running</span></span></button></div>
     <div class="soul-tile" id="stopped"><button class="soul-card"><span class="sfoot"><span class="sactivity">1 stopped</span></span></button></div></div></div></body></html>`);
   t.after(() => dom.window.close());
-  const doc = dom.window.document, spawnCSS = readFileSync(new URL('views/spawn.mjs', renderer), 'utf8').match(/const CSS = `([\s\S]*?)`;/)[1];
+  const doc = dom.window.document, spawnCSS = spawnViewCSS();
   for (const source of [css, spawnCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
   const root = dom.window.getComputedStyle(doc.documentElement);
   const painted = el => { for (let p = el; p; p = p.parentElement) { const bg = dom.window.getComputedStyle(p).background; if (/^var\(--/.test(bg)) return bg.slice(6, -1); } return null; };
