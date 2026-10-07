@@ -470,7 +470,7 @@ naming `oats sync`; team refusals go under `configured` instead.
 **`configured`.** Producer `capability manifest`: each manifest `requires`
 command, `evidence: {command}`, the manifest's `install` hint as remedy.
 Producer `team model`: the soul's [team readiness items](#team-readiness-items).
-Producer `operator coverage` (0.43.4): the workspace's and the soul's teams'
+Producer `operator coverage` (0.44.0): the workspace's and the soul's teams'
 [operator coverage items](#operator-coverage-items), warnings only.
 
 **`member`** (producer `workspace discovery`): the soul's repository is a
@@ -1345,7 +1345,7 @@ local file.
 <a id="operator-coverage-items"></a>
 ### Operator coverage items
 
-(0.43.4, [#671](https://github.com/awebai/oats/issues/671)) Every workspace
+(0.44.0, [#671](https://github.com/awebai/oats/issues/671)) Every workspace
 needs an operator: a soul that composes `oats.setup`. A soul the workspace
 offers **covers** it when all of these hold on this machine:
 
@@ -2892,7 +2892,7 @@ selection flags. See [the start workflow](desktop-instance-start.md).
 - Restart is one command: the kernel validates the new selection before
   stopping, and owns the stop, lock, launch recovery and metadata. Never
   restart by retiring and spawning.
-- Launch recovery (0.43.4). A start keeps its launch receipt in the home
+- Launch recovery (0.44.0). A start keeps its launch receipt in the home
   until the next start replaces it. The next start **adopts** a receipt only
   for a start `instance.json` does not record (one whose metadata write
   failed): it records that target and launches nothing again. A receipt for
