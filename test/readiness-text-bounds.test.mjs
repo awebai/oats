@@ -82,7 +82,7 @@ test("#726 a team label is at most 64 characters: both files refuse a longer one
   assert.throws(() => T.validateTrigger(definition([at65])), (e) => e.code === "E_TRIGGER_INVALID" && e.field === "spawn.teams");
 });
 
-test("#725 a provider's refusal: its message is clipped, an oversized code is provider-unavailable; the provider's own result stays verbatim", async () => {
+test("#725 a provider's refusal: its message is clipped, an oversized code is provider-unavailable", async () => {
   const base = mkdtempSync(join(tmpdir(), "oats-text-bounds-"));
   try {
     const home = join(base, "home"), dir = join(home, ".oats", "modules", "fx.provider");
