@@ -250,7 +250,8 @@ const audienceEntry = ({ key, level, repo, soul }) => level === 0 ? { kind: 'eve
  *     when "*" sets a default and so no soul falls back);
  *   - mayJoin: each key whose teams include the label (or `any`, for a shared team) and whose souls do not
  *     already have it as their default, less the keys their nearest broader key already covers; `except` names
- *     the more specific keys under it whose souls may not join. A local team where local teams are allowed:
+ *     the more specific keys under it whose souls are not in that audience (they may not join, or it is their
+ *     default and so said under defaultFor). A local team where local teams are allowed:
  *     `local` (every soul).
  * Each list: every/fallback/local first, then repos, then souls, by code point. Null before team model 3. */
 export function teamAudience(document, label) {
@@ -291,15 +292,15 @@ export function teamAudience(document, label) {
   }
 
   // May join: the keys that list it for souls it is not already the default of; one is implied when its nearest
-  // broader key (the one its souls would fall to) is itself shown.
+  // broader key (the one its souls would fall to) is itself shown. Under a shown pattern, the keys whose souls are
+  // outside it (they may not join, or it is already their default) are its exceptions.
   const shown = k => lists(k) && ownDefault(k) !== label;
-  const canJoin = k => lists(k) || ownDefault(k) === label;
   const mayJoin = [];
   for (const k of rules.values()) {
     if (!shown(k)) continue;
     const above = broader(k)[0];
     if (above && shown(above)) continue;
-    const except = exceptions(k, d => !canJoin(d), d => broader(d)[0], canJoin);
+    const except = exceptions(k, d => !shown(d), d => broader(d)[0], shown);
     mayJoin.push({ ...audienceEntry(k), ...(except.length ? { except } : {}) });
   }
   if (list(document.teams).some(t => t.label === label && t.from === 'local') && localAllowed(document)) mayJoin.push({ kind: 'local' });

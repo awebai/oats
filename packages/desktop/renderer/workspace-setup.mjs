@@ -27,7 +27,7 @@ export const setupCSS = `
 .setup-badge.host { background:var(--sel); color:var(--accent); }
 .setup-badge.member { background:var(--tag-bg); color:var(--muted); }
 .setup-badge .mono { font-family:var(--mono,monospace); font-weight:500; }
-.setup-badges { display:inline-flex; align-items:center; flex:none; gap:4px; }
+.setup-badges { display:inline-flex; flex-wrap:wrap; align-items:center; flex:0 1 auto; min-width:0; gap:4px; }
 .setup-cols { display:grid; grid-template-columns:minmax(0,1fr) 380px; gap:16px; align-items:start; min-width:0; }
 .setup-col { display:flex; flex-direction:column; gap:16px; min-width:0; }
 @container (max-width: 980px) { .setup-cols { grid-template-columns:minmax(0,1fr); } }
@@ -39,10 +39,12 @@ export const setupCSS = `
 .setup-scope { display:inline-flex; align-items:center; gap:5px; flex:none; margin-left:auto; height:20px; padding:0 7px; border-radius:5px; background:var(--tag-bg); color:var(--muted); font-size:11px; font-weight:550; white-space:nowrap; }
 .setup-row { display:grid; grid-template-columns:minmax(0,1.3fr) 150px minmax(0,1fr) 150px; gap:12px; align-items:center; min-height:42px; padding:6px 16px; box-sizing:border-box; border-top:1px solid var(--tag-bg); }
 .setup-box-head + .setup-row { border-top:0; }
+/* The rows' layout follows their own box (Members, Packages), not the tab: the sidebar takes 380px of it. */
+.setup-box[data-box=Members], .setup-box[data-box=Packages] { container:setup-rows / inline-size; }
 .setup-row > * { min-width:0; }
 /* Narrow: the name and its badges take the row's first line, the facts the second (every row alike, so
    Members and Packages keep one height and one set of columns). */
-@container (max-width: 860px) {
+@container setup-rows (max-width: 960px) {
  .setup-row { grid-template-columns:130px minmax(0,1fr) auto; row-gap:6px; padding:9px 16px; }
  .setup-row > .setup-name { grid-column:1 / -1; }
 }

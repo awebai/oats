@@ -105,7 +105,7 @@ test('souls: as committed, read only, with where to change it in the kernel\'s w
   // Spec A: each card says whose default it is and who else may join, from the patterns (teamAudience).
   const fact = (label, row) => u.row(label).querySelector(`[data-audience=${row}] dd`)?.textContent ?? null;
   assert.equal(fact('engineering', 'default'), 'release-manager (agents)');
-  assert.equal(fact('engineering', 'join'), 'souls of agents except no-such-soul');
+  assert.equal(fact('engineering', 'join'), 'souls of agents except no-such-soul and release-manager', 'release-manager has it as its default: said once, under Default for');
   assert.equal(fact('global', 'default'), 'every soul without its own default');
   assert.equal(fact('global', 'join'), 'no-such-soul (agents)');
   assert.equal(u.row('engineering').querySelector('.ct-join'), null, 'no team model 2 line');

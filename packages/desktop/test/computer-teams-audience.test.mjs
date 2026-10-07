@@ -51,11 +51,21 @@ test('except: the more specific keys under a pattern that set another default, o
     'p/*': { default: 'a', teams: ['b'] }, 'p/x': { default: 'b' }, 'p/y': { default: 'a', teams: [] }, 'p/z': { teams: ['a'] } } });
   assert.deepEqual(teamAudience(doc, 'a'), { defaultFor: [{ ...repo('p'), except: [soul('p', 'x')] }], mayJoin: [] },
     'y and z keep a as their default (implied, never repeated in May join)');
-  assert.deepEqual(teamAudience(doc, 'b'), { defaultFor: [soul('p', 'x')], mayJoin: [{ ...repo('p'), except: [soul('p', 'y'), soul('p', 'z')] }] },
-    'x has b as its default; y and z list other teams (most specific key wins outright, no merging)');
+  assert.deepEqual(teamAudience(doc, 'b'), { defaultFor: [soul('p', 'x')], mayJoin: [{ ...repo('p'), except: [soul('p', 'x'), soul('p', 'y'), soul('p', 'z')] }] },
+    'x has b as its default (said under Default for, so not "without it being their default"); y and z list other teams (most specific key wins outright, no merging)');
   const star = v3({ teams: [shared('a'), shared('b')], souls: { '*': { teams: ['a'] }, 'q/*': { teams: [] }, 'r/*': { teams: ['a'] }, 'r/s': { teams: [] }, 't/u': { teams: ['b'] } } });
   assert.deepEqual(teamAudience(star, 'a').mayJoin, [{ kind: 'every', key: '*', except: [repo('q'), soul('r', 's'), soul('t', 'u')] }],
     'r/* is implied by "*", so its own exception is "*"\'s');
+});
+
+test('May join never covers the souls it is already the default of: a pattern\'s default audience is its exception', () => {
+  // "*" lists a, but p's souls (p/x included: it inherits p/*'s default) have a as their default.
+  const star = v3({ teams: [shared('a')], souls: { '*': { teams: ['a'] }, 'p/*': { default: 'a' }, 'p/x': { teams: [] }, 'p/y': { default: 'b', teams: ['a'] } } });
+  assert.deepEqual(teamAudience(star, 'a'), { defaultFor: [{ ...repo('p'), except: [soul('p', 'y')] }],
+    mayJoin: [{ kind: 'every', key: '*', except: [repo('p')] }, soul('p', 'y')] }, 'y, under the excepted p, may join again in its own right');
+  // A repo that may join, with one soul whose default it is.
+  const one = v3({ teams: [shared('a')], souls: { 'p/*': { teams: ['a'] }, 'p/x': { default: 'a' } } });
+  assert.deepEqual(teamAudience(one, 'a'), { defaultFor: [soul('p', 'x')], mayJoin: [{ ...repo('p'), except: [soul('p', 'x')] }] });
 });
 
 test('implied entries drop at every level; a "*" that sets a default leaves the fallback to no soul', () => {

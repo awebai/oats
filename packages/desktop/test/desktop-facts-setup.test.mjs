@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { workspaceStatusData } from '../deployment-data.mjs';
-import { renderSetup, teamsBox } from '../renderer/workspace-setup.mjs';
+import { renderSetup, setupCSS, teamsBox } from '../renderer/workspace-setup.mjs';
 
 const DEPLOYMENT = '/fixture/base/northwind-workspace';
 const capture = () => JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/desktop-facts/workspace-status.json', import.meta.url), 'utf8'));
@@ -163,4 +163,11 @@ test('Setup list: hostile names and file paths render literally', () => {
   assert.equal(root.querySelector('img'), null);
   assert.ok(root.querySelector('.setup-legend').textContent.includes(hostile));
   assert.equal(root.querySelector('[data-box=Members] .setup-row .setup-name-text').textContent, hostile);
+});
+
+test('Setup list: the rows switch to two lines by their own box\'s width (the sidebar takes part of the tab), and badges wrap, never overflow', () => {
+  const rule = selector => { const m = setupCSS.match(new RegExp(`^${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{([^}]*)\\}`, 'm')); assert.ok(m, selector); return m[1]; };
+  assert.match(rule('.setup-box[data-box=Members], .setup-box[data-box=Packages]'), /container:setup-rows \/ inline-size/);
+  assert.match(setupCSS, /@container setup-rows \(max-width: 960px\) \{\n \.setup-row \{ grid-template-columns:130px minmax\(0,1fr\) auto;/);
+  assert.match(rule('.setup-badges'), /flex-wrap:wrap;.*min-width:0/);
 });
