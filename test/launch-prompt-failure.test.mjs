@@ -1,4 +1,6 @@
 import test from 'node:test';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -10,8 +12,8 @@ import { readEvents } from '../lib/instance-events.mjs';
 
 // Only isolated fixture deployments and a long-lived inert stub are used.
 // v2Deployment supplies a private TMUX_TMPDIR and cleans its sockets by path.
-function setup(t, name) {
-  const fx = v2Deployment();
+function setup(t, name, options = {}) {
+  const fx = v2Deployment(options);
   t.after(() => fx.cleanup());
   const executable = join(fx.base, 'stub');
   writeFileSync(executable, `#!${process.execPath}\nconsole.log('SYNTHETIC unexpected frame');\nsetInterval(() => {}, 1000);\n`);
@@ -99,7 +101,7 @@ test('no-launch creates no prompt event or terminal window despite exact-home op
   assert.deepEqual(readEvents(home).events.filter(event => event.kind === 'launch-prompt'), []);
 });
 
-test('policy refusal after parent insertion but before dispatch restores anchor and compensates new home', async t => {
+test('policy refusal before dispatch preserves anchor and compensates new home', async t => {
   const name = 'predispatch-parent';
   const { fx, home, config, configFile } = setup(t, name);
   const anchor = await fx.spawn('dev', { name: 'anchor', launchConfig: 'stub', launch: false });
@@ -124,7 +126,7 @@ test('policy refusal after parent insertion but before dispatch restores anchor 
   assert.equal(existsSync(home), false);
 });
 
-test('a concurrent anchor edit cannot skip window and scaffold compensation', async t => {
+test('default-off launch failure preserves a concurrent anchor edit and compensates window and scaffold', async t => {
   const name = 'changed-anchor';
   const { fx, home, config, configFile } = setup(t, name);
   config.launchPromptAnswers.homes[home].awebDevelopmentChannel = false;
@@ -157,11 +159,86 @@ try {
   try {
     await assert.rejects(fx.spawn('dev', { name, launchConfig: 'stub', launch: true, relativeTo: anchor.instance, relation: 'parent' }), e => { failure = e; return e.code === 'E_SPAWN_LAUNCH_FAILED'; });
   } finally { process.env.PATH = previousPath; }
-  assert.equal(failure.details.unconfirmed, true);
-  assert.match(failure.message, /parent lineage could not be restored/);
+  assert.equal(failure.details?.unconfirmed, undefined, 'off-case launch never committed parent lineage');
+  assert.doesNotMatch(failure.message, /parent lineage could not be restored/);
   assert.equal(metadata(anchor.home).concurrentNote, 'preserve this edit');
   assert.equal(existsSync(home), false, 'scaffold compensation still runs');
   const allocated = JSON.parse(readFileSync(marker, 'utf8'));
   const remaining = execFileSync(actualTmux, ['-u', '-S', allocated.socket, 'list-windows', '-a', '-F', '#{window_id}'], {encoding:'utf8'}).trim().split('\n');
   assert.ok(!remaining.includes(allocated.windowId), 'allocated window was removed');
+});
+
+
+for (const concurrentEdit of [false, true]) test(`opted-in predispatch failure ${concurrentEdit ? 'reports refused anchor restoration' : 'restores parent lineage'} and still compensates scaffold`, async t => {
+  const name = 'predispatch-concurrent';
+  const { fx, home } = setup(t, name);
+  const anchor = await fx.spawn('dev', { name: 'anchor', launchConfig: 'stub', launch: false });
+  const anchorFile = join(anchor.home, 'instance.json');
+  const before = readFileSync(anchorFile, 'utf8');
+  const original = fs.lstatSync;
+  let injected = false;
+  // Fail the controller's home-identity read AFTER the consented parent write,
+  // before any new-window dispatch. Model a concurrent anchor writer at that
+  // boundary; cleanup must report that its restore cannot overwrite the edit.
+  const mock = t.mock.method(fs, 'lstatSync', (path, ...rest) => {
+    if (!injected && path === home && metadata(anchor.home).parentInstance === name) {
+      injected = true;
+      if (concurrentEdit) {
+        const concurrent = metadata(anchor.home);
+        concurrent.concurrentNote = 'preserve this edit';
+        writeFileSync(anchorFile, JSON.stringify(concurrent));
+      }
+      throw new Error('forced controller home-identity failure');
+    }
+    return original(path, ...rest);
+  });
+  syncBuiltinESMExports();
+  let failure;
+  try {
+    await assert.rejects(fx.spawn('dev', { name, launchConfig: 'stub', launch: true, relativeTo: anchor.instance, relation: 'parent' }), e => {
+      failure = e;
+      return /forced controller home-identity failure/.test(e.message);
+    });
+  } finally { mock.mock.restore(); syncBuiltinESMExports(); }
+  assert.equal(injected, true);
+  if (concurrentEdit) {
+    assert.equal(failure.details.unconfirmed, true);
+    assert.match(failure.message, /parent lineage could not be restored/);
+    assert.equal(metadata(anchor.home).concurrentNote, 'preserve this edit');
+  } else {
+    assert.equal(failure.details?.unconfirmed, undefined);
+    assert.equal(readFileSync(anchorFile, 'utf8'), before);
+  }
+  assert.equal(existsSync(home), false, 'independent scaffold compensation still runs');
+});
+
+
+for (const enabled of [false, true]) for (const mutation of ['edit', 'remove']) test(`spawn hook ${mutation} of the anchor is preserved and compensated (prompt opt-in ${enabled})`, async t => {
+  const name = 'hook-anchor';
+  const hook = `
+import { readFileSync, writeFileSync, unlinkSync } from 'node:fs';
+import { join } from 'node:path';
+if (process.env.OATS_INSTANCE === '${name}') {
+  const root = process.env.OATS_ROOT;
+  if (process.env.OATS_EVENT === 'spawn') {
+    const file = join(root, 'dev', 'instances', 'anchor', 'instance.json');
+    if ('${mutation}' === 'remove') unlinkSync(file);
+    else { const data = JSON.parse(readFileSync(file, 'utf8')); data.concurrentNote = 'hook edit'; writeFileSync(file, JSON.stringify(data)); }
+  } else if (process.env.OATS_EVENT === 'retire') writeFileSync(join(root, 'compensated'), 'yes');
+}
+`;
+  const { fx, home, config, configFile } = setup(t, name, {
+    souls: { dev: { soul: { capabilities: { 'test.anchor': { from: 'here' } } } } },
+    capabilities: { 'test.anchor': { manifest: { hooks: { spawn: 'hook.mjs', retire: 'hook.mjs' } }, files: { 'hook.mjs': hook } } },
+  });
+  config.launchPromptAnswers.homes[home].awebDevelopmentChannel = enabled;
+  writeFileSync(configFile, YAML.stringify(config));
+  const anchor = await fx.spawn('dev', { name: 'anchor', launchConfig: 'stub', launch: false });
+  await assert.rejects(fx.spawn('dev', { name, launchConfig: 'stub', launch: true, relativeTo: anchor.instance, relation: 'parent' }), /failed to re-point anchor.*rolled back/s);
+  assert.equal(existsSync(home), false);
+  assert.equal(readFileSync(join(fx.root, 'compensated'), 'utf8'), 'yes', 'hook effects are compensated');
+  if (mutation === 'edit') {
+    assert.equal(metadata(anchor.home).concurrentNote, 'hook edit');
+    assert.equal(metadata(anchor.home).parentInstance, undefined);
+  } else assert.equal(existsSync(join(anchor.home, 'instance.json')), false, 'removed anchor metadata is never resurrected');
 });

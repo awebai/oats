@@ -22,7 +22,7 @@ function executable(t) {
   return path;
 }
 function args(executablePath, changes = {}) {
-  return { home: captureHome, harness: "claude", executablePath, platform: "darwin", arch: "arm64", argv, ...changes };
+  return { home: "/fixture/home", harness: "claude", executablePath, platform: "darwin", arch: "arm64", argv, ...changes };
 }
 
 test("reported version and executable name cannot substitute for pinned bytes", t => {
@@ -80,6 +80,9 @@ test("qualified fixture construction and argv exclusions (synthetic hash substit
   for (const change of [{ platform: "linux" }, { arch: "x64" }, { harness: "other" }]) assert.deepEqual(qualifyLaunchPromptFixtures(args(path, change)).fixtures, []);
   // Completion variations are exact home-derived lines only. None is input
   // authority, and the known surrounding frame cannot be weakened.
+  const foreignLongHome = "/outside/" + "x".repeat(110);
+  const foreignLongFrames = qualifyLaunchPromptFixtures(args(path, { home: foreignLongHome })).fixtures[0].frames;
+  assert.deepEqual(foreignLongFrames.map(f => f.kind), ["prompt"], "over-width foreign homes do not gain an abbreviated completion path");
   const normalHome = join(homedir(), "oats", "project");
   const normal = qualifyLaunchPromptFixtures(args(path, { home: normalHome }));
   const completions = normal.fixtures.flatMap(f => f.frames).filter(f => f.kind === "completed");

@@ -607,7 +607,9 @@ development-channel fixture. Installed version alone grants no match. Ordinary
 
 Both spawn and start return `E_SPAWN_INCOMPLETE` for retained prompt failures.
 With `launchPrompts.status` set to `blocked`, the home, actual terminal target,
-provider effects and committed parent lineage are retained. `launchPrompts` records `status`,
+provider effects and committed parent lineage are retained. Only an opted-in
+launch commits a new parent link before dispatch; ordinary launches keep their
+post-launch lineage commit and compensate a failed anchor write. `launchPrompts` records `status`,
 `answers`, `reason` and event `receipt`; unknown prompts use
 `blocked: unexpected prompt`. Status `incomplete` means the audit could not be
 completed, including a possible key followed by an audit failure. It is

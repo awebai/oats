@@ -24,13 +24,14 @@ function fixture(t) {
     writeFileSync(join(fx.dep, 'oats-local.yaml'), YAML.stringify(local));
     return home;
   };
+  writeFileSync(join(fx.dep, 'oats-local.yaml'), YAML.stringify(local));
   return { fx, configure };
 }
 const meta = home => JSON.parse(readFileSync(join(home, 'instance.json'), 'utf8'));
 
 test('preview/no-launch have no capture or prompt effects; opted-in spawn retains lineage and refuses cached replay', async t => {
   const {fx, configure} = fixture(t);
-  const anchor = await fx.spawn('dev', { name: 'dev-anchor', harness: 'claude' });
+  const anchor = await fx.spawn('dev', { name: 'dev-anchor', launchConfig: 'stub' });
   const home = configure('dev-blocked');
   const args = {name: 'dev-blocked', launchConfig: 'stub', launch: true, relativeTo: anchor.instance, relation: 'parent'};
   const preview = await fx.spawn('dev', {...args, preview: true});
