@@ -60,7 +60,7 @@
   },
   "$defs": {
     "slug": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
-    "label": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+    "label": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$", "maxLength": 64, "description": "A team label: at most 64 characters (0.44.0), the length the Desktop shows." },
     "capabilityName": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
     "packageId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
     "packageVersion": {
