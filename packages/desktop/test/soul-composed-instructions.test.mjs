@@ -1,6 +1,6 @@
 // Spec D (B2): the soul page's composed AGENTS.md — `inspect --soul --instructions` (kernel feature
 // soul-composed-instructions, awebai/oats#751) through the server's one optional `instructions` key, and the
-// Instructions section's "As composed" group: parts in order, their headers, scroll to a part, Open capability, Copy.
+// Instructions section's "Instance composed AGENTS.md" group: parts in order, their headers, scroll to a part, Open capability, Copy.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -120,11 +120,16 @@ function setup(t, options = {}) {
 }
 function scrollable(el) { let top = 0; Object.defineProperty(el, 'scrollTop', { configurable: true, get: () => top, set: v => { top = Math.max(0, Number(v) || 0); } }); return el; }
 
-test('navigation: "This soul" then "As composed", the composed item collapsed with its parts count; the own file stays the default', t => {
+test('navigation: "This soul" then "Instance composed AGENTS.md" with its hint, its AGENTS.md collapsed with its parts count; the own file stays the default', t => {
   const u = setup(t); u.section.update(row());
   const groups = u.$$('[role=tree] > li[role=none] > ul[role=group]').map(g => u.doc.getElementById(g.getAttribute('aria-labelledby')).textContent);
-  assert.deepEqual(groups, ['This soul', 'As composed · a new instance here']);
+  // The hint is part of the label element: the group's accessible name is both together.
+  assert.deepEqual(groups, ['This soul', 'Instance composed AGENTS.md (AGENTS.md after spawn with capability injects)']);
+  const hint = u.$('.soul-group-hint'); assert.equal(hint.textContent, '(AGENTS.md after spawn with capability injects)');
+  assert.equal(hint.parentElement.textContent.startsWith('Instance composed AGENTS.md '), true);
   const composed = u.item(COMPOSED);
+  assert.equal(composed.getAttribute('aria-label'), 'AGENTS.md', 'the group\'s top item, parallel to the soul\'s');
+  assert.equal(composed.querySelector(':scope > .cap-node .cap-node-name').textContent, 'AGENTS.md');
   assert.equal(composed.getAttribute('aria-expanded'), 'false'); assert.equal(composed.getAttribute('aria-description'), '4 parts');
   assert.equal(composed.querySelector('.cap-node-desc').textContent, '4 parts');
   assert.deepEqual([...composed.querySelectorAll('[role=treeitem]')].map(i => i.getAttribute('aria-label')), ['This soul', 'Instance boundary · OATS', 'Work mode · worktree', 'oats.core']);
@@ -209,11 +214,11 @@ test('without the feature no composed group; a null answer is a note pointing at
   u.section.update(row({ composedInstructions: undefined }));
   const { composedInstructions, ...without } = row(); void composedInstructions;
   u.section.update(without);
-  assert.equal(u.item(COMPOSED), null); assert.doesNotMatch(u.host.textContent, /As composed/);
+  assert.equal(u.item(COMPOSED), null); assert.doesNotMatch(u.host.textContent, /Instance composed|after spawn/);
   u.section.update(row({ composedInstructions: null }));
   assert.equal(u.item(COMPOSED), null);
   assert.equal(u.$('.cap-contents-note').textContent, SOUL_INSTRUCTIONS_COPY.cannotCompose);
-  assert.match(u.$$('.cap-contents-group-label').at(-1).textContent, /As composed/);
+  assert.equal(u.$$('.cap-contents-group-label').at(-1).textContent, 'Instance composed AGENTS.md (AGENTS.md after spawn with capability injects)');
   u.section.update(row({ composedInstructions: { text: 'x' } }));
   assert.equal(u.$('.cap-contents-note').textContent, SOUL_INSTRUCTIONS_COPY.cannotRead);
 });

@@ -56,7 +56,7 @@ test('section, navigation and default selection: one tree, the "This soul" group
   assert.equal(u.$('.cap-reader-size').textContent, `${Buffer.byteLength(TEXT)} B`);
   assert.equal(u.$('.cap-reader-flag'), null);
   assert.doesNotMatch(u.host.textContent, /\/Users\/someone|abc123/, 'never the host cache path');
-  assert.doesNotMatch(u.host.textContent, /As composed|Composed/, 'D1 promises no composed view');
+  assert.doesNotMatch(u.host.textContent, /Instance composed|Composed|after spawn/, 'without composedInstructions there is no composed view');
 });
 
 test('the file reads like a capability inject: front matter as facts, Markdown, highlighted code with copy', t => {
