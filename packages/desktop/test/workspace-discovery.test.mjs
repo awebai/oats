@@ -290,7 +290,8 @@ test('soul identity marks stay qualified and stable across reordered polling and
     assert.equal(u.doc.querySelector('.inspector-head h2').textContent, name);
     assert.equal(u.doc.querySelector('[name=color]'), null, 'no invented writable CLI field');
   }
-  assert.equal(u.doc.querySelector('img,svg:not(.shell-icon),script,[data-runtime="<svg onload=evil()>"]'), null, 'only the vetted Lucide chrome renders SVG');
+  assert.equal(u.doc.querySelector('img,svg:not(.shell-icon):not(.runtime-mark),script,[data-runtime="<svg onload=evil()>"]'), null, 'only the vetted Lucide chrome and the static harness marks render SVG');
+  for (const mark of u.doc.querySelectorAll('svg.runtime-mark')) assert.match(mark.parentElement.dataset.runtime, /^(claude|pi|codex)$/, 'a harness mark only inside a known harness badge');
   // Read-only POSTs only: inspect, and the catalog read the tab bar counts (never a spawn or sync).
   assert.ok(u.calls.filter(c => c.method === 'POST').every(c => c.body.action === 'inspect' || (c.path.startsWith('/api/workspace-sync') && c.body.action === 'read')));
   assert.deepEqual(u.files, []); assert.deepEqual(u.opens, []);

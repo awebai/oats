@@ -435,6 +435,25 @@ for (const [name] of palettes) test(`${name}: actual identity/runtime markup win
       opaqueChannels(root.getPropertyValue(`--${prefix}-bg`).trim()));
     assert.ok(ratio >= 4.5, `${name} ${prefix} actual marked pair ${ratio.toFixed(2)}:1`);
     assert.equal(style.opacity, "1", "no text opacity composition");
+    if (mark.classList.contains("runtime-badge")) checkMark(mark);
+  }
+  // A known harness's mark (WCAG 1.4.11: >= 3:1, held here at the pair's 4.5:1) is painted only with
+  // currentColor, so its effective colour IS the badge's measured foreground: no loaded rule may
+  // repaint, fade or blend the <svg> or its paths, and the <svg> inherits the badge's color.
+  const markProps = ["color", "fill", "stroke", "opacity", "fill-opacity", "stroke-opacity", "filter", "mix-blend-mode"];
+  const rules = [...document.styleSheets].flatMap(sheet => [...sheet.cssRules]).filter(rule => rule.selectorText);
+  function checkMark(badge) {
+    const svg = badge.querySelector(":scope > svg");
+    if (!badge.dataset.runtime) { assert.equal(svg, null, "an unknown harness is the '?' text"); return; }
+    assert.ok(svg, `${name} ${badge.dataset.runtime} draws its mark`);
+    assert.equal(dom.window.getComputedStyle(svg).color, dom.window.getComputedStyle(badge).color, "the mark inherits the badge colour");
+    for (const el of [svg, ...svg.querySelectorAll("*")]) {
+      for (const attr of ["fill", "stroke"]) if (el.hasAttribute(attr)) assert.match(el.getAttribute(attr), /^(currentColor|none)$/);
+      for (const rule of rules) if (el.matches(rule.selectorText)) for (const prop of markProps) {
+        assert.equal(rule.style.getPropertyValue(prop), "", `${name}: "${rule.selectorText}" sets ${prop} on a harness mark`);
+      }
+    }
+    assert.ok(svg.getAttribute("fill") === "currentColor" || svg.getAttribute("stroke") === "currentColor");
   }
   for (const selector of [".ctx-inst", ".soul-card .sname", ".inspector-marks"]) {
     const container = document.querySelector(selector);

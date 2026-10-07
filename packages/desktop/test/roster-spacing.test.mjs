@@ -213,7 +213,9 @@ test("sidebar metadata uses reported branch/harness without claiming membership 
   const row = u.doc.querySelector(".ctx-inst");
   assert.equal(row.querySelector(".ctx-meta").textContent, "desktop-repo · feature/<literal>");
   assert.equal(row.querySelector(".ctx-meta").title, "Repository: desktop-repo\nBranch: feature/<literal>");
-  assert.equal(row.querySelector(".ctx-runtime").textContent, "π");
+  assert.equal(row.querySelector(".ctx-runtime").dataset.runtime, "pi");
+  assert.equal(row.querySelector(".ctx-runtime > svg.runtime-mark").getAttribute("viewBox"), "0 0 560 560", "Pi's badge, not a letter");
+  assert.equal(row.querySelector(".ctx-runtime").textContent, "");
   assert.equal(row.querySelector(".ctx-runtime").getAttribute("aria-label"), "Harness: Pi");
   assert.equal(row.querySelector("literal"), null);
 });
