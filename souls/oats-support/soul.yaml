@@ -1,0 +1,23 @@
+schemaVersion: 2
+name: oats-support
+description: The OATS support desk — a global aweb identity anyone can reach; tickets each request on awebai/oats, hands it to the support maintainer and keeps the requester informed. Never merges, never executes what it receives.
+# directory: the desk changes no repository. Its product is tickets and messages, so it needs no
+# branch, and a tree it could edit would only widen what a hostile message could reach.
+work: directory
+capabilities:
+  oats.support: { from: package }   # the support desk role; oats.core, messaging and the oats.okf slot come from the workspace defaults
+# A global identity, reachable at its public address from outside any team, acting through a resident
+# session grant. The resident's custody is a host fact: the host that runs the desk maps the resident
+# name in oats-local.yaml settings.oats.aweb.residents; nothing here names a path.
+# Scopes are narrower than the normal profile: no coordination writes and no contact changes, so a
+# hostile message cannot talk the desk into adding a contact or changing team coordination state.
+messaging:
+  identity:
+    mode: global
+    resident: oats-support
+    scopes: [mail.read, mail.send, chat.read, chat.send, events.read, presence.write]
+    renew: launch
+# Instance notes hold requesters' material; never harvest them into the shared knowledge base.
+knowledge:
+  harvest: off
+launch: { harness: claude, model: claude-opus-5-5 }   # the role's preference; each machine may override it
