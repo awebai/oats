@@ -153,6 +153,27 @@ workspace on a server: `name — server`).
   window they were opened in, and switching that window back to the
   workspace brings them back.
 
+## Capabilities and spawning
+
+**Workspace › Capabilities** lists what the workspace offers, in three
+sections: **Workspace owned** (from the member repos, for every soul),
+**Repo owned** (only for souls of the same repo) and **Packages** (pinned
+versions). Workspace owned and Repo owned are grouped by the repository
+that defines each capability. The groups are headed like the Souls tab:
+repo name, then "member repo · host · N capabilities". The host repository
+comes first, then the others by name; capabilities from outside the member
+repos come last, under **external**. At the top right of Workspace owned,
+pills (**All**, then one per repository, each with its count) show one
+repository at a time; "N of M shown" appears while a pill or the search
+narrows the list.
+
+The **Spawn** dialog's left column, **What will be created**, starts with the
+new instance's name and its home. Then come where it works, its harness and
+model (with where that choice came from), its default team and the teams it may
+also join, and its relationship when it has one. Under them are its core
+capabilities and its other capabilities. Every dropdown in the app has the
+same themed look, and its open list follows the light or dark theme.
+
 ## One workspace, several machines
 
 The switcher lists each workspace once, however many deployments it has: the

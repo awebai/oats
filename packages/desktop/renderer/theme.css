@@ -19,6 +19,7 @@
 :root { --mono: "Inconsolata", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
 
 :root, [data-theme="dark"] {
+  color-scheme: dark;     /* native lists, scrollbars and pickers follow the theme */
   --bg: #0e1116;          /* app background */
   --surface: #161b22;     /* cards, sidebar */
   --surface-2: #1c2129;   /* hover / raised */
@@ -79,6 +80,7 @@
   --runtime-unknown-bg: #5f5f5a; --runtime-unknown-fg: #ffffff;
 }
 [data-theme="light"] {
+  color-scheme: light;
   /* Off-white / white / ink / orange (not error red). AA deviations:
      --faint replaces the export's #9a9a95 (2.57:1 on canvas) with opaque ink.
      Deep orange #ad5500 on pale-orange --sel is 4.61:1; brighter orange
@@ -134,6 +136,7 @@
   --runtime-unknown-bg: #5f5f5a; --runtime-unknown-fg: #ffffff;
 }
 [data-theme="solarized"] {
+  color-scheme: light;
   /* Solarized Light semantic + ANSI palette restored verbatim from b280ce1b.
      New chrome tokens below complement it without remapping the old colors. */
   --bg: #f3eddd;
@@ -239,14 +242,27 @@ input:is([type="checkbox"], [type="radio"]):focus-visible { outline-offset: 1px;
 .oats-view button.act.danger { color: var(--danger); }
 .oats-view button.act.danger:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); }
 .oats-view button.act:disabled { color: var(--faint); border-color: var(--border); background: var(--surface-2); cursor: default; }
-.oats-view input.field, .oats-view textarea.field, .oats-view select.field {
+.oats-view input.field, .oats-view textarea.field {
   background: var(--surface); border: 1px solid var(--border); color: var(--fg);
   min-height: 36px; border-radius: 7px; padding: 7px 10px; font-family: inherit; font-size: 12.5px; line-height: 1.45; }
 .oats-view textarea.field { min-height: 64px; }
-.oats-view input.field:focus-visible, .oats-view textarea.field:focus-visible, .oats-view select.field:focus-visible { outline: none; border-color: var(--accent); }
+.oats-view input.field:focus-visible, .oats-view textarea.field:focus-visible, select.field:focus-visible { outline: none; border-color: var(--accent); }
 .oats-view input.field::placeholder, .oats-view textarea.field::placeholder { color: var(--faint); }
-.oats-view input.field:disabled, .oats-view textarea.field:disabled, .oats-view select.field:disabled {
+.oats-view input.field:disabled, .oats-view textarea.field:disabled {
   background: var(--surface-2); color: var(--faint); cursor: default; }
+/* A native select: every <select class="field">, in a view or not (Brain and Settings render outside
+   .oats-view). The text field's frame and padding with no platform chrome, and a static chevron drawn
+   from two thin --muted gradient strokes over its right padding (a graphic: --muted on --surface and
+   --surface-2 is in the contrast inventory). Its open list and scrollbars follow the theme's
+   color-scheme (above). One rule set: a page may size a select (width, height), never restyle it. */
+select.field {
+  appearance: none; -webkit-appearance: none; border: 1px solid var(--border); border-radius: 7px; color: var(--fg);
+  min-height: 36px; padding: 7px 30px 7px 10px; font-family: inherit; font-size: 12.5px; line-height: 1.45; cursor: pointer;
+  background-color: var(--surface);
+  background-image: linear-gradient(45deg, transparent calc(50% - .9px), var(--muted) calc(50% - .4px), var(--muted) calc(50% + .4px), transparent calc(50% + .9px)),
+    linear-gradient(135deg, transparent calc(50% - .9px), var(--muted) calc(50% - .4px), var(--muted) calc(50% + .4px), transparent calc(50% + .9px));
+  background-position: calc(100% - 17px) calc(50% + 1px), calc(100% - 12px) calc(50% + 1px); background-size: 5px 5px; background-repeat: no-repeat; }
+select.field:disabled { background-color: var(--surface-2); color: var(--faint); cursor: default; }
 
 @keyframes oats-spin { to { transform: rotate(360deg); } }
 .oats-view .spinner { width: 14px; height: 14px; border: 2px solid color-mix(in srgb, var(--fg) 25%, transparent);

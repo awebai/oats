@@ -335,6 +335,14 @@ global part, views follow them in their own CSS). `test/control-rules.test.mjs` 
    its wrapper border accent on `:focus-within`; the `<input>` inside has `border: 0;
    outline: none` in every state. A bare field (`.field`, `#ws-menu-search`, the palette
    input's bottom rule) turns its own border accent on `:focus-visible` and never outlines.
+4. **Native selects have one look.** Every `<select>` is `class="field"` and takes
+   `theme.css`'s `select.field` rule, unscoped because Brain and the Settings overlay render
+   outside `.oats-view`. That rule gives `appearance: none`, the text field's frame and
+   padding, and a static chevron drawn from two thin `--muted` gradient strokes (the inventory
+   holds it as a graphic on `--surface`/`--surface-2`). Each theme declares `color-scheme`
+   (`dark` for Dark, `light` for White and Solarized), so an open list and its scrollbars
+   follow the theme. A page may size a select (width, height, vertical padding, font
+   size), never paint it: `test/select-field.test.mjs` holds every sheet to that.
 
 Contrast is checked on effective colours in all three themes: `--accent` on `--sel`
 (selected text, focus tint) is AA text, and the accent edge/border is ≥3:1 on `--surface`,
@@ -909,10 +917,17 @@ workspace is observed through its server and never synced from here.
   button (Enter and Space are its own) named "<cap>, <kind>, from <source>"
   and described by its description and used-by (`aria-describedby`); it opens
   the capability's page with the full description; Back returns to
-  the list with its scroll offset, search and filters. No Members list here.
-  The **Team** and **Repo** dropdowns filter Workspace owned locally (AND);
-  they name only what the rows hold (non-collapse rule: a member's
-  `publishes` never absorbs its package's capabilities).
+  the list with its scroll offset, search and repository pill. No Members list here.
+  Workspace owned and Repo owned are grouped by repository (`groupCapabilities`,
+  headed with the Souls tab's `group-heading.mjs`): the host first, then by name,
+  one **external** group last. A search that empties a group hides it.
+  Workspace owned's repository pills (`renderRepoPills`, "Show capabilities
+  from") are **All** plus one pill per group, each with its catalog count. They
+  are a single choice with one roving tab stop, and focus is kept by repository
+  key across repaints. They name only what the rows hold (non-collapse rule: a
+  member's `publishes` never absorbs its package's capabilities). A remembered
+  repository the catalog stops offering falls back to All. "N of M shown" counts
+  what the pill and the search leave.
 - **Teams** (kernel feature `team-model-2` or `team-model-3`, `teamModelOf`;
   `computer-teams.mjs`) is the
   *Teams* page: *Shared with the workspace* (read-only, edited by PR) and
@@ -977,8 +992,8 @@ block never changes height; the Souls grid does the same with a top edge
 (`.is-scrolled`). `trackStickyTop` also writes the pinned block's height to
 `--ws-sticky-h`, the `scroll-margin-top` of the section heads, rows and the
 Teams page's controls, so a pill jump or a focused row never lands under it.
-"Filter by Team / Repo" stays in the Workspace owned header: it filters only
-that section, so it scrolls with it. Section and group headers scroll. This
+The repository pills stay in the Workspace owned header: they narrow only
+that section, so they scroll with it. Section and group headers scroll. This
 holds at every width: soul-inspector's narrow `@container(max-width:700px)`
 block restacks only `.souls-body.inspecting` (the side inspector under the
 list, scrolling together); without it the view keeps the layout above.

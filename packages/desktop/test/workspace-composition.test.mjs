@@ -204,7 +204,9 @@ test('W5: the capability table follows the v4 grid — 32px head, 48px rows, mon
   assert.match(shipped, /\.catalog-used-marks \.identity-mark \{ width:20px; height:20px; margin-left:-5px; border-radius:6px;/, '20px used-by marks');
   assert.equal(u.get('.catalog-cap .identity-mark'), null, 'no capability monogram in the table');
   assert.equal(u.css('.capability-nav button').borderRadius, '6px', 'segments of one group (rule 1), not pills');
-  assert.equal(u.get('.workspace-discovery').querySelectorAll('.catalog-select').length, 2, 'Team and Repo dropdowns');
+  assert.equal(u.get('.workspace-discovery').querySelectorAll('select').length, 0, 'no Team or Repo dropdown');
+  assert.deepEqual([...u.get('.workspace-discovery').querySelectorAll('.catalog-pills button')].map(b => b.dataset.repo), ['', 'member:local//fixture/base/fx/remotes/agents.git',
+    'member:local//fixture/base/fx/remotes/data.git', 'member:local//fixture/base/fx/remotes/marketing.git', 'member:local//fixture/base/fx/remotes/nw-tools.git'], 'repository pills: All, then the host and the members by name');
   assert.equal(u.css('.workspace-discovery[data-tab=capabilities] > *').maxWidth, '1000px', 'one centred column');
   u.get('#workspace-tab-sources').click(); await tick();
   assert.equal(u.get('.workspace-discovery').querySelector('.catalog-table button, .catalog-table a, .catalog-table input'), null, 'Sources are read-only');
@@ -309,11 +311,11 @@ test('v4.1: a row shows one line of its description and the page the whole of it
   const list = u.get('.workspace-discovery');
   const desc = list.querySelector('.catalog-row[data-capability="nw-release-tooling"] .catalog-desc');
   assert.equal(desc.textContent, long); assert.equal(u.css('.catalog-desc').whiteSpace, 'nowrap'); assert.equal(u.css('.catalog-desc').textOverflow, 'ellipsis');
-  // A search and a filter, then scroll the list.
+  // A search and a repository pill, then scroll the list.
   const search = list.querySelector('.ws-search input'); search.value = 'nw-'; search.dispatchEvent(new u.dom.window.Event('input', { bubbles: true }));
-  const team = list.querySelector('.catalog-select[data-filter-key="team"] select'); team.value = 'engineering'; team.dispatchEvent(new u.dom.window.Event('change', { bubbles: true }));
+  const pill = () => list.querySelector('.catalog-pills button[data-repo="member:local//fixture/base/fx/remotes/agents.git"]'); pill().click();
   const owned = () => [...list.querySelectorAll('[data-section=workspace] .catalog-row')].map(r => r.dataset.capability);
-  assert.deepEqual(owned(), ['nw-release-tooling', 'nw-tools-dev', 'nw-warehouse-access']);
+  assert.deepEqual(owned(), ['nw-house-style', 'nw-release-tooling']);
   list.scrollTop = 180;
   list.querySelector('.catalog-row[data-capability="nw-release-tooling"]').click();
   const page = u.get('.workspace-cap-page');
@@ -322,8 +324,8 @@ test('v4.1: a row shows one line of its description and the page the whole of it
   list.scrollTop = 0; // Chromium drops a display:none scroller's offset
   page.querySelector('.page-back').click();
   assert.equal(list.hidden, false); assert.equal(list.scrollTop, 180, 'back to where the list was');
-  assert.equal(list.querySelector('.ws-search input').value, 'nw-'); assert.equal(list.querySelector('.catalog-select[data-filter-key="team"] select').value, 'engineering');
-  assert.deepEqual(owned(), ['nw-release-tooling', 'nw-tools-dev', 'nw-warehouse-access'], 'the same rows');
+  assert.equal(list.querySelector('.ws-search input').value, 'nw-'); assert.equal(pill().getAttribute('aria-pressed'), 'true');
+  assert.deepEqual(owned(), ['nw-house-style', 'nw-release-tooling'], 'the same rows');
   assert.equal(u.doc.activeElement.dataset.capability, 'nw-release-tooling');
 });
 

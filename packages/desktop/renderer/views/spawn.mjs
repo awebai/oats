@@ -21,6 +21,7 @@ import { shownLaunch, launchHarnessName } from "../launch-view.mjs";
 import { harnessOf } from "../harness-names.mjs";
 import { memberState } from "../workspace-catalog.mjs";
 import { iconElement } from "../shell-icons.mjs";
+import { groupHeading, groupHeadingCSS } from "../group-heading.mjs";
 import {
   apiJson, postJson, ensureTheme,
   currentWorkspace, switchWorkspace, onWorkspaceChange, wsQuery, workspaceGeneration,
@@ -72,13 +73,8 @@ const CSS = `
 .souls-grid.is-scrolled { border-top-color:var(--border); }
 .souls-group { display:flex; flex-direction:column; gap:14px; min-width:0; }
 .souls-group + .souls-group { padding-top:10px; }
-.souls-group-title { display:flex; align-items:center; gap:8px; margin:0; padding:0 2px; color:var(--fg); font-size:13px; font-weight:650; min-width:0; }
-.souls-group-title .shell-icon { flex:none; color:var(--muted); }
-.souls-group-name { font:650 13px var(--mono,monospace); overflow-wrap:anywhere; }
-.souls-group-name.plain { font-family:inherit; }
-.souls-group-title.warn .souls-group-name { color:var(--warn); }
-.souls-group-title.warn .shell-icon { color:var(--warn); }
-.souls-group-note { color:var(--muted); font-size:12px; font-weight:500; overflow-wrap:anywhere; }
+/* The group heading (icon, monospace name, muted qualifier) is group-heading.mjs's, shared with Capabilities. */
+${groupHeadingCSS}
 .souls-group-cards { display:grid; gap:14px; grid-template-columns:repeat(auto-fill, minmax(min(240px, 100%), 1fr)); align-content:start; }
 .soul-card { display:flex; flex-direction:column; min-width:0; padding:0; overflow:hidden; background:var(--surface); border:1px solid var(--border); border-radius:10px;
              cursor:pointer; text-align:left; font:inherit; color:var(--fg); }
@@ -814,13 +810,9 @@ function renderGrid(s, { restoreFocus = true } = {}) {
   }
   const group = (g, cards, { warn = false } = {}) => {
     const section = doc.createElement("section"); section.className = "souls-group";
-    const heading = doc.createElement("h2"); heading.className = `souls-group-title${warn ? " warn" : ""}`;
+    // A team label reads as words (mono: false).
+    const heading = groupHeading(doc, { icon: g.icon, name: g.name, note: g.qualifier, mono: g.mono !== false, warn });
     heading.id = `souls-group-${grid.querySelectorAll(".souls-group").length}`; section.setAttribute("aria-labelledby", heading.id);
-    const name = doc.createElement("span"); name.className = "souls-group-name"; name.textContent = g.name;
-    if (g.mono === false) name.classList.add("plain"); // a team label reads as words
-    const icon = iconElement(doc, g.icon, { size: 15 }); icon.setAttribute("data-icon", g.icon);
-    heading.append(icon, name);
-    const note = doc.createElement("span"); note.className = "souls-group-note"; note.textContent = g.qualifier; heading.append(note);
     const body = doc.createElement("div"); body.className = "souls-group-cards";
     section.append(heading, body); body.append(...cards); grid.append(section);
   };
@@ -1201,7 +1193,8 @@ function openSpawnModal(s, a, draft = {}) {
         if (!ui.dialog.querySelector(".guarded-schedules")) {
           const manage = doc.createElement("button"); manage.className = "act guarded-schedules"; manage.type = "button"; manage.textContent = "View schedules";
           manage.addEventListener("click", () => { if (!ownsModal()) return; closeSpawnModal(s); preselectAutomationsTab("schedule"); s.ctx.openView?.("automations"); });
-          ui.dialog.querySelector(".spawn-footer").insertBefore(manage, ui.spawn);
+          // Its own footer item before the Cancel/Spawn group: it wraps with the status, never widening the group.
+          ui.spawn.parentElement.before(manage);
         }
         return; // creation succeeded; never retry spawn to repair a wake
       }

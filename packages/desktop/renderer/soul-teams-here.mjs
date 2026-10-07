@@ -42,7 +42,8 @@ export const soulTeamsHereCSS = `
 .oats-view .soul-teams-here button.sth-act:not(.primary):focus-visible { background:var(--sel); }
 .soul-teams-here .sth-where { display:block; padding-top:8px; border-top:1px solid var(--tag-bg); }
 .soul-teams-here .sth-add { display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding-top:8px; border-top:1px solid var(--tag-bg); }
-.soul-teams-here .sth-add select { height:26px; min-width:0; max-width:100%; padding:0 6px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--fg); font:12px var(--mono,monospace); }
+/* The add select is theme.css's select.field; the row only sizes it to its compact height. */
+.soul-teams-here .sth-add select.field { height:26px; min-height:0; min-width:0; max-width:100%; padding-top:0; padding-bottom:0; font-size:12px; }
 .soul-teams-here .sth-error { grid-column:1 / -1; border-left:2px solid var(--danger); padding-left:8px; color:var(--fg); font-size:12px; line-height:1.45; }
 .soul-teams-here .sth-error p { margin:0; overflow-wrap:anywhere; }
 .soul-teams-here .sth-error summary { color:var(--muted); font-size:11.5px; cursor:pointer; }
@@ -208,7 +209,7 @@ export function createSoulTeamsHere(doc, { soul, request, listTeams = null, cloc
     if (choices === null) add.append(button('Add a team', '', () => { void loadChoices(); }, { key: 'add-team' }));
     else if (!offer.length) add.append(el(doc, 'span', `${soul} is in every team on this computer.`, 'sth-meta'));
     else {
-      const select = el(doc, 'select'); select.setAttribute('aria-label', `Team to add to ${soul}`); select.dataset.focusKey = 'add-select';
+      const select = el(doc, 'select', null, 'field'); select.setAttribute('aria-label', `Team to add to ${soul}`); select.dataset.focusKey = 'add-select';
       for (const t of offer) { const o = el(doc, 'option', t.team ? t.label : `${t.label} (no provider id yet)`); o.value = t.label; select.append(o); }
       add.append(select, button('Add', 'primary', () => run({ action: 'add', labels: [select.value] }), { key: 'add' }));
       if (focusAdd) { focusAdd = false; queueMicrotask(() => { if (select.isConnected) select.focus(); }); }

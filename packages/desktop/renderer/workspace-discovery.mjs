@@ -14,7 +14,7 @@ import { setupCSS, renderSetup, teamsBox } from './workspace-setup.mjs';
 import { createWorkspaceMachines, machinesCSS } from './workspace-machines.mjs';
 import { machinesGated } from './machine-contract.mjs';
 import { computerTeamsCSS, createComputerTeams, teamsAnswer } from './computer-teams.mjs';
-import { catalogCSS, renderCapabilitySections, capabilitySections, renderFilters, filterChoices, filterCapabilities, memberNames, deploymentNotes, syncCapabilityNav } from './workspace-catalog.mjs';
+import { catalogCSS, renderCapabilitySections, capabilitySections, renderRepoPills, rovePill, repoChoices, filterCapabilities, matchCapabilities, hostKeyOf, memberNames, deploymentNotes, syncCapabilityNav } from './workspace-catalog.mjs';
 import { createWorkspaceSync, syncCSS, reasonText } from './workspace-sync-view.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { createDataState, skeleton, statusLine } from './loading.mjs';
@@ -99,7 +99,7 @@ ${tabBarCSS('.workspace-tabs')}
 /* The Capabilities toolbar keeps its 16px below: 8px inside the edge, 7px + the 1px edge outside. */
 .workspace-discovery > .ws-toolbar.ws-sticky { padding-bottom:8px; margin-bottom:7px; }
 /* Jumping to a section or focusing a row never leaves it under the pinned block. */
-.workspace-discovery :is(.capability-section-title, .capability-repo-title, [data-capability], .catalog-row, .computer-teams .ct-body :is(button, a[href], input, select, textarea, [tabindex])) { scroll-margin-top:var(--ws-sticky-h, 60px); }
+.workspace-discovery :is(.capability-section-title, .catalog-group, [data-capability], .catalog-row, .computer-teams .ct-body :is(button, a[href], input, select, textarea, [tabindex])) { scroll-margin-top:var(--ws-sticky-h, 60px); }
 .discovery-status { margin:0 0 14px; color:var(--muted); font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
 .discovery-status:empty { display:none; }
 .discovery-status[hidden] { display:none; }
@@ -175,7 +175,8 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   const doc = header.ownerDocument;
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
   let alive = true, serial = 0, rosterGen = null, workspace = null, deployment = null, instances = [], tab = 'souls';
-  let catalog = null, loading = false, failure = '', filters = { team: null, repo: null }, rendered = null;
+  // `repo`: the Workspace owned repository pill (a group key; null = All), remembered while the subject stays.
+  let catalog = null, loading = false, failure = '', repo = null, rendered = null;
   let setupView = 'list', query = '', setupMember = null, souls = [];
   // The Souls tab's count: a number, 'pending' (a pill reserving its width) or null (a failed roster read: nothing, still).
   let soulsCount = 'pending';
@@ -373,9 +374,11 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     // (Not `loading` or `failure`: the controller paints those beside the projection, which must not rebuild for them.)
     // The status's observation stamp moves on every poll and nothing here paints it: it is left out.
     const stableStatus = s && { ...s, workspace: s.workspace && { ...s.workspace, observedAt: undefined } };
-    const key = JSON.stringify([tab, setupView, setupMember, souls.map(a => a?.team ?? null), query, unavailable, filters, catalog, stableStatus, rosterState(), deployment?.withheld, deployment?.reachable, privateListed(), instances.map(i => [i.agent, i.agentsRoot, i.modules, i.running])]);
+    const key = JSON.stringify([tab, setupView, setupMember, souls.map(a => a?.team ?? null), query, unavailable, repo, catalog, stableStatus, rosterState(), deployment?.withheld, deployment?.reachable, privateListed(), instances.map(i => [i.agent, i.agentsRoot, i.modules, i.running])]);
     if (key === rendered) return;
     rendered = key;
+    // A focused pill is rebuilt below: focus returns to the same repository's pill (by its key).
+    const focusedPill = filterHost.contains(doc.activeElement) ? doc.activeElement.closest('.catalog-pills button')?.dataset.repo ?? null : null;
     notes.replaceChildren(); filterHost.replaceChildren(); body.replaceChildren(); capLead.replaceChildren(); filterHost.className = '';
     if (unavailable || tab === 'souls') return;
     for (const note of deploymentNotes(deployment)) notes.append(node('p', note.text, `catalog-note${note.warn ? ' warn' : ''}`));
@@ -403,20 +406,17 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     }
     if (!catalog) return; // pending, or failed with nothing held: the controller's skeleton or failed block stands in capState
     for (const problem of list(catalog.problems)) notes.append(node('p', reasonText(problem), 'catalog-note warn'));
-    const names = memberNames(s);
+    const names = memberNames(s), hostKey = hostKeyOf(s);
     const sections = capabilitySections(catalog.capabilities);
-    const choices = filterChoices(sections.workspace, names);
-    // A remembered choice the catalog no longer offers falls back to All.
-    if (filters.team && !choices.teams.includes(filters.team)) filters = { ...filters, team: null };
-    if (filters.repo && !choices.repos.some(option => option !== 'sep' && option.value === filters.repo)) filters = { ...filters, repo: null };
-    const shown = filterCapabilities(sections.workspace, filters, names);
-    renderFilters(filterHost, { ...choices, value: filters, shown: shown.length, total: sections.workspace.length,
-      onChange: next => {
-        const focused = doc.activeElement?.closest?.('.catalog-select')?.dataset.filterKey || (doc.activeElement?.classList?.contains('catalog-clear') ? 'team' : null);
-        filters = next; render(); refocusFilter(focused);
-      } });
+    const repos = repoChoices(sections.workspace, names, hostKey);
+    // A remembered repository the catalog no longer offers falls back to All.
+    if (repo && !repos.some(choice => choice.key === repo)) repo = null;
+    const shown = filterCapabilities(sections.workspace, { repo }, names, hostKey);
+    renderRepoPills(filterHost, { repos, value: repo, total: sections.workspace.length, shown: matchCapabilities(shown, query).length,
+      narrowed: !!repo || !!String(query || '').trim(), onChange: next => { repo = next; render(); refocusPill(repo ?? ''); } });
     renderCapabilitySections(body, { sections, shown, filterHost, navHost: capLead, privateListed: privateListed(), query,
       status: s, instances, root: workspace?.id, rosterState: rosterState(), onOpen: onOpenCapability });
+    if (focusedPill !== null) refocusPill(focusedPill);
     reveal();
   }
   // Repo owned is shown only when the kernel lists private capabilities.
@@ -432,7 +432,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   // Setup → Capabilities: a repository's capabilities (filtered), or the Packages section.
   let pendingReveal = null;
   function openRepo(key) {
-    pendingReveal = { repo: `member:${key}` }; filters = { team: null, repo: `member:${key}` };
+    pendingReveal = { repo: `member:${key}` }; repo = `member:${key}`;
     if (!setTab('capabilities')) pendingReveal = null;
   }
   function openPackages() {
@@ -444,21 +444,25 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     const want = pendingReveal; pendingReveal = null;
     let target = null;
     if (want.section) target = body.querySelector(`#capability-section-${want.section}`);
-    else if (filters.repo === want.repo) target = body.querySelector('#capability-section-workspace');
-    else target = [...body.querySelectorAll('.capability-repo')].find(el => el.dataset.repo === want.repo)?.querySelector('.capability-repo-title') || body.querySelector('#capability-section-workspace');
+    else if (repo === want.repo) target = body.querySelector('#capability-section-workspace');
+    else target = [...body.querySelectorAll('.catalog-group')].find(el => el.dataset.repo === want.repo) || body.querySelector('#capability-section-workspace');
     if (!target) return;
     target.tabIndex = -1; target.scrollIntoView?.({ block: 'start' }); target.focus({ preventScroll: true });
   }
-  // The filter row is rebuilt on a change; keep focus on the same dropdown.
-  function refocusFilter(key) {
-    if (!key) return;
-    filterHost.querySelector(`.catalog-select[data-filter-key="${key}"] select`)?.focus({ preventScroll: true });
+  // The pill row is rebuilt on a change or a repaint; focus stays on the same repository's pill
+  // ('' = All), which becomes the group's tab stop. A pill no longer offered leaves focus to the pressed one.
+  function refocusPill(key) {
+    const pills = filterHost.querySelector('.catalog-pills'); if (!pills) return;
+    const buttons = [...pills.querySelectorAll('button')];
+    const target = buttons.find(button => button.dataset.repo === key) || buttons.find(button => button.getAttribute('aria-pressed') === 'true');
+    if (!target) return;
+    rovePill(pills, target); target.focus({ preventScroll: true });
   }
   panel.addEventListener('scroll', () => { if (tab === 'capabilities') syncCapabilityNav(body, panel, capLead); }, { passive: true });
   function updateRoster(agents, panelData) {
     const gen = workspaceGeneration();
     // Another workspace generation is another subject: the table is forgotten. Within one, it is never set to null.
-    if (rosterGen !== gen) { catalog = null; failure = ''; filters = { team: null, repo: null }; setupMember = null; serial++; loading = false; loadState.reset(); }
+    if (rosterGen !== gen) { catalog = null; failure = ''; repo = null; setupMember = null; serial++; loading = false; loadState.reset(); }
     rosterGen = gen; workspace = panelData.workspace || null; deployment = panelData.deployment || null; souls = list(agents);
     instances = list(panelData.instances);
     updateCounts(agents.length); render();
@@ -489,7 +493,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     reset() {
       machines?.dispose(); machines = null; machinesFor = null; // another workspace: its dialog and reads go with it
       serial++; rosterGen = null; workspace = null; deployment = null; instances = []; catalog = null; loading = false; failure = '';
-      filters = { team: null, repo: null }; sync.reset(); loadState.reset(); updateCounts('pending'); render(); onCatalog?.();
+      repo = null; sync.reset(); loadState.reset(); updateCounts('pending'); render(); onCatalog?.();
     },
     dispose() { alive = false; serial++; sync.dispose(); computerTeams?.dispose(); machines?.dispose(); loadState.dispose(); stickyTop.dispose(); soulsEdge.dispose(); scope.dispose(); scope.element.remove(); },
   };

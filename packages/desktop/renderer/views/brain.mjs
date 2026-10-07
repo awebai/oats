@@ -24,9 +24,8 @@ const CSS = `
              border-bottom: 1px solid var(--border); background: var(--surface); }
 .brain-bar label { color: var(--muted); font-size: 12px; }
 .brain > .brain-scope { flex: none; padding: 6px 14px; border-bottom: 1px solid var(--border); background: var(--surface); }
-.brain-bar select { background: var(--surface-2); color: var(--fg); border: 1px solid var(--border); border-radius: 8px;
-                    padding: 5px 8px; font: inherit; max-width: 320px; }
-.brain-bar select:hover, .brain-bar select:focus-visible { border-color: var(--accent); outline: none; }
+/* The agent select is theme.css's select.field; the bar only bounds its width. */
+.brain-bar select.field { max-width: 320px; }
 .brain-desc { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .brain-body { flex: 1; display: flex; gap: 14px; padding: 14px; overflow: auto; min-height: 0; align-items: flex-start; }
 .brain-col { flex: 1; min-width: 280px; display: flex; flex-direction: column; gap: 12px; }
@@ -199,6 +198,7 @@ export async function mount(el, ctx) {
   const selectorId = `brain-agent-${++nextMountId}`;
   bar.innerHTML = `<label for="${selectorId}">Agent</label>`;
   const sel = document.createElement("select");
+  sel.className = "field";
   sel.id = selectorId;
   const desc = document.createElement("span");
   desc.className = "brain-desc";

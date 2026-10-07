@@ -15,7 +15,7 @@ function gates() {
     gate: body => { if (!on) return undefined; const d = deferred(); held.push({ body, ...d }); return d.promise; } };
 }
 const input = (u, selector, value) => { const el = u.q(selector); el.value = value; el.dispatchEvent(new u.dom.window.Event('input', { bubbles: true })); return el; };
-const facts = u => Object.fromEntries([...u.dialog().querySelectorAll('.spawn-preview-facts dt')].map(dt => [dt.textContent, dt.nextElementSibling.textContent.trim()]));
+const facts = u => Object.fromEntries([...u.dialog().querySelectorAll('.spawn-preview-created dt')].map(dt => [dt.textContent, dt.nextElementSibling.textContent.trim()]));
 const updating = u => u.q('.spawn-preview').getAttribute('aria-busy') === 'true' && !u.q('.spawn-preview-updating').hidden;
 const formControls = u => [...u.dialog().querySelectorAll('.spawn-form :is(input, select, textarea, button)')]
   .map(el => ({ el, disabled: el.disabled, hidden: !!el.closest('[hidden]') }));

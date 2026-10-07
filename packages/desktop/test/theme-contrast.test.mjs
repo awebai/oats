@@ -10,7 +10,7 @@ import { deriveHostTokens } from "../renderer/host-theme.mjs";
 import { hostState } from "./helpers/host-theme-fixture.mjs";
 import { createSoulMark, createRuntimeBadge, identityCSS } from "../renderer/identity-marks.mjs";
 import { workspaceStatusData, syncData } from "../deployment-data.mjs";
-import { renderCapabilities, renderCapabilitySections, capabilitySections, renderFilters, filterChoices, memberNames } from "../renderer/workspace-catalog.mjs";
+import { renderCapabilities, renderCapabilitySections, capabilitySections, renderRepoPills, repoChoices, hostKeyOf, memberNames } from "../renderer/workspace-catalog.mjs";
 import { renderSetup, teamsBox } from "../renderer/workspace-setup.mjs";
 import { discoveryCSS } from "../renderer/workspace-discovery.mjs";
 import { createConnections, connectionsCSS } from '../renderer/connections.mjs';
@@ -34,6 +34,7 @@ import { createSoulInspector, inspectorCSS } from '../renderer/soul-inspector.mj
 import { readinessCSS as readinessViewCSS } from '../renderer/readiness-view.mjs';
 import { createInstanceGitPanel } from '../renderer/instance-git.mjs';
 import { spawnDialogCSS } from '../renderer/spawn-dialog.mjs';
+import { groupHeadingCSS } from '../renderer/group-heading.mjs';
 import { createAutomationsView } from '../renderer/views/automations.mjs';
 import { setWorkspace } from '../renderer/views/common.mjs';
 import { createTerminalTab, terminalOptions, TERMINAL_MINIMUM_CONTRAST } from "../renderer/terminal-tab.mjs";
@@ -103,7 +104,7 @@ test("the shared inventory holds token names only, covers the 16 ANSI colours, a
   assert.equal(new Set(pairs.map(pair => pair.join(" on "))).size, pairs.length, "no pair twice");
   assert.equal(ansi.length, 16);
   for (const token of ansi) assert.ok(pairs.some(([fg, bg]) => fg === token && bg === "term-bg"), `--${token} is held on --term-bg`);
-  assert.deepEqual(GRAPHIC_PAIRS, [["graph-edge", "bg"], ["graph-edge", "surface"], ["graph-edge", "surface-2"], ["term-sel", "term-bg"]]);
+  assert.deepEqual(GRAPHIC_PAIRS, [["graph-edge", "bg"], ["graph-edge", "surface"], ["graph-edge", "surface-2"], ["muted", "surface"], ["muted", "surface-2"], ["term-sel", "term-bg"]]);
   assert.deepEqual(PAINTED_OVER, [["md-code-bg", "bg"]]);
   assert.deepEqual(HOST_UNADJUSTED_PAIRS, ansi.map(token => [token, "term-bg"]), "the host theme's one exception: its terminal colours, unadjusted");
   assert.equal(TEXT_CONTRAST, 4.5); assert.equal(GRAPHIC_CONTRAST, 3);
@@ -244,7 +245,8 @@ for (const [name, palette] of palettes) test(`${name}: focus edges outside opaqu
 // Graph connectors (the Active overview's edges on its --surface-2 group cards, Setup's tree lines on
 // --bg/--surface/--surface-2) are meaningful graphics: WCAG 1.4.11 asks 3:1, and --graph-edge must not
 // fall back to the decorative --border it once shared. The accent-lit path already passes the focus rule.
-for (const [name, palette] of palettes) test(`${name}: --graph-edge connectors and the terminal selection meet 3:1 on every surface they are drawn on`, () => {
+// A native select's chevron (theme.css select.field) is --muted on the field, enabled or disabled.
+for (const [name, palette] of palettes) test(`${name}: --graph-edge connectors, the select chevron and the terminal selection meet 3:1 on every surface they are drawn on`, () => {
   for (const [graphic, bg] of GRAPHIC_PAIRS) {
     const ratio = contrast(opaqueChannels(palette.get(graphic)), backgroundChannels(bg, palette));
     assert.ok(ratio >= GRAPHIC_CONTRAST, `${name} --${graphic} ${palette.get(graphic)} on --${bg}: ${ratio.toFixed(2)}:1 < 3:1`);
@@ -407,6 +409,15 @@ test("nav ink is subtly darker than muted; identity palettes are opaque and dist
 });
 
 
+// The Souls view's actual stylesheet: its `const CSS` template, with the shared group heading it
+// interpolates (group-heading.mjs) substituted as the app does, so no literal `${...}` reaches the CSSOM.
+function spawnViewCSS() {
+  const source = readFileSync(new URL("views/spawn.mjs", renderer), "utf8").match(/const CSS = `([\s\S]*?)`;/)?.[1];
+  assert.ok(source, "views/spawn.mjs has its const CSS template");
+  const parts = { groupHeadingCSS };
+  return source.replace(/\$\{(\w+)\}/g, (_, n) => parts[n] ?? assert.fail(`spawn.mjs CSS interpolates unknown \${${n}}`));
+}
+
 // Real marker constructors in representative shipped containers, with shell and
 // view rules loaded AFTER theme.css just like the app. JSDOM preserves var()
 // values: resolve the winning declaration through the actual root CSSOM, not
@@ -419,8 +430,7 @@ for (const [name] of palettes) test(`${name}: actual identity/runtime markup win
   </body></html>`);
   t.after(() => dom.window.close());
   const { document } = dom.window;
-  const spawnSource = readFileSync(new URL("views/spawn.mjs", renderer), "utf8");
-  const spawnCSS = spawnSource.match(/const CSS = `([\s\S]*?)`;/)?.[1];
+  const spawnCSS = spawnViewCSS();
   assert.ok(spawnCSS, "exercise actual late-mounted soul card/glyph rules");
   for (const source of [css, readFileSync(new URL("shell.css", renderer), "utf8"), spawnCSS, identityCSS]) {
     const style = document.createElement("style"); style.textContent = source; document.head.append(style);
@@ -500,7 +510,9 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
   // Kernel #217: rows carry a description (rendered as a muted line under the name).
   const rows = f2('capabilities').result.capabilities.map(r => ({ ...r, description: `About ${r.name}.` }));
   const names = memberNames(status);
-  renderFilters(doc.querySelector('.filters'), { ...filterChoices(rows, names), value: { team: 'marketing', repo: null }, shown: 2, total: 5, onChange() {} });
+  // Workspace owned's repository pills: one pressed (the first repository), the rest not, and the shown count.
+  const repos = repoChoices(rows, names, hostKeyOf(status));
+  renderRepoPills(doc.querySelector('.filters'), { repos, value: repos[0].key, total: rows.length, shown: repos[0].count, narrowed: true, onChange() {} });
   renderCapabilities(doc.querySelector('.caps'), { rows, status, instances: [], root: dir });
   // F7 (kernel #185): the three sections, with a repo-owned (private) row.
   const sections = capabilitySections(JSON.parse(readFileSync(new URL('fixtures/workspace-v2/f7/capabilities.json', new URL('./', import.meta.url)), 'utf8')).result.capabilities);
@@ -530,19 +542,17 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     ['.catalog-desc', 'button.catalog-row', 'muted', 'surface'],
     ['.source-chip', '.source-chip.boxed', 'muted', 'surface'], ['.source-chip-name', '.source-chip.boxed', 'fg', 'surface'],
     ['.catalog-used-count.none', 'button.catalog-row', 'muted', 'surface'],
-    // Filters: "Filter by", a plain dropdown, an active one (Team = marketing), the count and Clear filters.
-    ['.catalog-filters-label', '.oats-view', 'muted', 'bg'],
-    ['.catalog-select:not(.active) .catalog-select-key', '.catalog-select:not(.active)', 'muted', 'surface'],
-    ['.catalog-select:not(.active) select', '.catalog-select:not(.active)', 'fg', 'surface'],
-    ['.catalog-select.active .catalog-select-key', '.catalog-select.active', 'accent', 'sel'],
-    ['.catalog-select.active select', '.catalog-select.active', 'fg', 'sel'],
-    ['.catalog-shown', '.oats-view', 'muted', 'bg'], ['.catalog-clear', '.oats-view', 'accent', 'bg'],
+    // Repository pills (rule 1): unpressed --muted on --surface, pressed --accent on --sel (name and count), and the shown count.
+    ['.catalog-pills button[aria-pressed=false]', '.catalog-pills button[aria-pressed=false]', 'muted', 'surface'],
+    ['.catalog-pills button[aria-pressed=true]', '.catalog-pills button[aria-pressed=true]', 'accent', 'sel'],
+    ['.catalog-shown', '.oats-view', 'muted', 'bg'],
     ['.catalog-note.warn', '.oats-view', 'warn', 'bg'], ['.catalog-note.catalog-remedy', '.oats-view', 'muted', 'bg'],
     // Sections: the segmented jump (current = brand tint, rule 1), titles with their lead, repo headings.
     ['.capability-nav button[aria-current]', '.capability-nav button[aria-current]', 'accent', 'sel'],
     ['.capability-nav button:not([aria-current])', '.capability-nav', 'muted', 'surface'],
     ['.capability-section-title', '.oats-view', 'fg', 'bg'], ['.capability-section-lead', '.oats-view', 'muted', 'bg'],
-    ['.catalog-group', '.oats-view', 'muted', 'bg'],
+    // A repository group's heading (the Souls tab's, group-heading.mjs): the name --fg, its qualifier --muted.
+    ['.catalog-group .souls-group-name', '.oats-view', 'fg', 'bg'], ['.catalog-group .souls-group-note', '.oats-view', 'muted', 'bg'],
     // Workspace v4 Setup (W1/W2) — replaces the old setup-card/node/sources inventory.
     ['.setup-lede h2', '.oats-view', 'fg', 'bg'], ['.setup-lede-where', '.oats-view', 'muted', 'bg'],
     ['.setup-box-head h3', '.setup-box', 'fg', 'surface'], ['.setup-box-lead', '.setup-box', 'muted', 'surface'],
@@ -578,6 +588,14 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     assert.equal(dom.window.getComputedStyle(surface).background, `var(--${bg})`, painted);
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${selector} on ${bg}`);
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+  }
+  // A keyboard-focused pill takes the shell's tint (its own rule out-ranks the global one): its --muted
+  // (unpressed) and --accent (pressed) ink on --sel are inventoried pairs and meet AA here.
+  // (jsdom does not resolve the pill's :focus-visible here: the declared rule is read.)
+  assert.ok([...doc.styleSheets].flatMap(sheet => [...sheet.cssRules]).some(rule => rule.selectorText === '.oats-view .catalog-pills button:focus-visible' && rule.style.background === 'var(--sel)'), 'the pill focus tint rule');
+  for (const fg of ['muted', 'accent']) {
+    assert.ok(pairs.some(([f, b]) => f === fg && b === 'sel'), `--${fg} on --sel is inventoried`);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue('--sel').trim())) >= 4.5, `focused pill: --${fg} on --sel`);
   }
 });
 
@@ -786,7 +804,7 @@ for (const [name] of palettes) test(`${name}: actual Connections and reported PR
   const root = dom.window.getComputedStyle(doc.documentElement);
   for (const [selector, painted, fg, bg] of [
     ['.forge-settings h2', '.forge-settings', 'fg', 'surface'], ['.forge-card .forge-hint', '.forge-card', 'muted', 'surface-2'],
-    ['.forge-settings button', '.forge-settings button', 'fg', 'surface'], ['.forge-settings select', '.forge-settings select', 'fg', 'surface'],
+    ['.forge-settings button', '.forge-settings button', 'fg', 'surface'], ['.forge-settings select.field', '.forge-settings select.field', 'fg', 'surface'],
     // Settings → Terminal: the size field, the stepper and its hint, on the dialog's own pairs.
     ['.term-size input', '.term-size input', 'fg', 'surface'], ['.term-size button', '.term-size button', 'fg', 'surface'],
     ['.term-size label', '.forge-card', 'fg', 'surface-2'], ['#settings-terminal-hint', '.forge-card', 'muted', 'surface-2'],
@@ -804,7 +822,9 @@ for (const [name] of palettes) test(`${name}: actual Connections and reported PR
   ]) {
     const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
     assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
-    assert.equal(dom.window.getComputedStyle(surface).background, `var(--${bg})`, painted);
+    // A select.field paints background-color (its chevron is its background-image); every other surface the shorthand.
+    const paint = dom.window.getComputedStyle(surface);
+    assert.equal(surface.matches('select.field') ? paint.backgroundColor : paint.background, `var(--${bg})`, painted);
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
   }
@@ -1065,7 +1085,7 @@ for (const [name] of palettes) test(`${name}: the can't-spawn-here notes meet co
   const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><div class="souls"><div class="soul-tile"><button class="soul-card"><span class="sbody"><span class="sproblem">Can't spawn here</span></span></button></div></div>
     <aside class="soul-inspector soul-page"><div class="inspector-head"><p class="inspector-refusal">Can't spawn here</p></div></aside></div></body></html>`);
   t.after(() => dom.window.close());
-  const doc = dom.window.document, spawnCSS = readFileSync(new URL('views/spawn.mjs', renderer), 'utf8').match(/const CSS = `([\s\S]*?)`;/)[1];
+  const doc = dom.window.document, spawnCSS = spawnViewCSS();
   for (const source of [css, spawnCSS, inspectorCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
   const root = dom.window.getComputedStyle(doc.documentElement);
   const painted = el => { for (let p = el; p; p = p.parentElement) { const bg = dom.window.getComputedStyle(p).background; if (/^var\(--/.test(bg)) return bg.slice(6, -1); } return null; };
@@ -1086,7 +1106,7 @@ for (const [name] of palettes) test(`${name}: soul-card chips, the default note 
     <div class="soul-tile" id="running"><button class="soul-card"><span class="sfoot"><span class="sactivity running">2 instances running</span></span></button></div>
     <div class="soul-tile" id="stopped"><button class="soul-card"><span class="sfoot"><span class="sactivity">1 stopped</span></span></button></div></div></div></body></html>`);
   t.after(() => dom.window.close());
-  const doc = dom.window.document, spawnCSS = readFileSync(new URL('views/spawn.mjs', renderer), 'utf8').match(/const CSS = `([\s\S]*?)`;/)[1];
+  const doc = dom.window.document, spawnCSS = spawnViewCSS();
   for (const source of [css, spawnCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
   const root = dom.window.getComputedStyle(doc.documentElement);
   const painted = el => { for (let p = el; p; p = p.parentElement) { const bg = dom.window.getComputedStyle(p).background; if (/^var\(--/.test(bg)) return bg.slice(6, -1); } return null; };

@@ -40,11 +40,15 @@ for (const mode of ['on', 'off', 'absent', 'malformed']) test(`spawn dialog laun
     return v;
   } });
   await u.open();
-  const facts = u.q('.spawn-preview-facts');
+  // A policy note at the end of "What will be created", out of the facts grid: never a fact.
+  const facts = u.q('.spawn-preview-prompts');
   const label = [...(facts?.querySelectorAll('dt') ?? [])].find(n => n.textContent === 'Launch prompts');
+  assert.equal([...(u.q('.spawn-preview-facts')?.querySelectorAll('dt') ?? [])].some(n => /Launch prompts|Prompt consent/.test(n.textContent)), false);
   if (mode === 'absent' || mode === 'malformed') assert.equal(label, undefined);
   else {
     assert.ok(label);
+    assert.equal(facts.parentElement.lastElementChild, facts, 'the last block of the section');
+    assert.equal(facts.previousElementSibling, u.q('.spawn-preview-facts'), 'after the facts');
     if (mode === 'on') {
       assert.match(facts.textContent, /Prompt consent source.*\/fixture\/oats.yaml#/);
       assert.match(label.nextElementSibling.textContent, /A harness update can block the launch until its prompt fixtures are refreshed; no fallback key is sent/);

@@ -6,10 +6,11 @@
 import { createCapabilityMark, createSoulMark } from './identity-marks.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { ROSTER_STALE_TITLE } from './loading.mjs';
+import { groupHeading, groupHeadingCSS } from './group-heading.mjs';
 
 export const catalogCSS = `
-/* Workspace v4.1: a segmented section jump, section titles with a lead, dropdown filters
-   inside Workspace owned, and a Capability | Source | Used by list of row cards. */
+/* Workspace v4.1: a segmented section jump, section titles with a lead, repository pills
+   inside Workspace owned, and a Capability | Source | Used by list of row cards, grouped by repository. */
 /* The jump is one segmented group (shared control rule 1): one frame, 2px inner padding,
    6px segments, no dividers; the current section is the brand tint, never ink-on-white.
    Scoped to .capability-nav.ws-segmented so it holds whichever order the sheets load in. */
@@ -18,22 +19,20 @@ export const catalogCSS = `
 .oats-view .capability-nav.ws-segmented button:hover { color:var(--fg); }
 .oats-view .capability-nav.ws-segmented button[aria-current] { background:var(--sel); color:var(--accent); font-weight:650; }
 .capability-nav-count { font:10.5px var(--mono,monospace); }
-.catalog-filters { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:0; padding:0 2px; }
-.catalog-filters-label { margin-right:2px; color:var(--muted); font-size:12px; }
-.catalog-select { position:relative; display:inline-flex; align-items:center; gap:6px; flex:none; height:28px; padding:0 0 0 10px; border:1px solid var(--border); border-radius:7px; background:var(--surface); font-size:12px; white-space:nowrap; box-sizing:border-box; }
-.catalog-select.active { border-color:var(--sel-border); background:var(--sel); }
-.catalog-select-key { color:var(--muted); }
-.catalog-select.active .catalog-select-key, .catalog-select.active .shell-icon { color:var(--accent); }
-/* The native select is the visible value (no platform chrome); the chevron sits over its right padding. */
-.oats-view .catalog-select select { appearance:none; -webkit-appearance:none; height:26px; min-height:0; margin:0; padding:0 26px 0 0; border:0; background:transparent; color:var(--fg); font:600 12px var(--sans,system-ui); cursor:pointer; }
-.oats-view .catalog-select.active select { font:650 12px var(--mono,monospace); }
-/* Rule 3: the wrapper's border is the field's one frame; the select inside never draws its own. */
-.oats-view .catalog-select select, .oats-view .catalog-select select:focus-visible { outline:none; }
-.catalog-select .shell-icon { position:absolute; right:8px; color:var(--muted); pointer-events:none; }
-.catalog-select:focus-within { border-color:var(--accent); }
-.catalog-shown { margin-left:4px; color:var(--muted); font-size:12px; white-space:nowrap; }
-.oats-view button.catalog-clear { min-height:0; height:auto; padding:0; border:0; background:none; color:var(--accent); font:600 12px var(--sans,system-ui); cursor:pointer; }
-.oats-view button.catalog-clear:hover { text-decoration:underline; }
+/* Workspace owned's repository pills (human, 2026-10-07): where capabilities are defined, as one
+   single-choice group of wrapping chips (a workspace can have many repos), at the section head's
+   right. Each chip has the segmented look (rule 1): a 1px frame, muted at rest, the brand tint
+   when pressed; never ink-on-white. */
+.catalog-filters { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:6px 10px; min-width:0; max-width:100%; margin:0; padding:0 2px; }
+.catalog-pills { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:6px; min-width:0; max-width:100%; }
+.oats-view .catalog-pills button { display:inline-flex; align-items:center; gap:6px; min-width:0; max-width:100%; height:28px; min-height:0; margin:0; padding:0 10px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--muted); font:500 12px/1 var(--sans,system-ui); cursor:pointer; box-sizing:border-box; }
+.oats-view .catalog-pills button:hover { color:var(--fg); }
+.oats-view .catalog-pills button[aria-pressed=true] { border-color:var(--sel-border); background:var(--sel); color:var(--accent); font-weight:650; }
+/* Keyboard focus: the shell's tint (rule 2) under the global accent edge; the rule above would out-rank the global one. */
+.oats-view .catalog-pills button:focus-visible { background:var(--sel); }
+.catalog-pill-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:var(--mono,monospace); }
+.catalog-pill-name.plain { font-family:inherit; }
+.catalog-shown { color:var(--muted); font-size:12px; white-space:nowrap; }
 /* The list: a column header, then one card per capability (58px, 6px apart). The
    header and the cards share one grid so the columns line up. */
 .catalog-table { display:flex; flex-direction:column; gap:6px; font-size:12px; }
@@ -60,9 +59,10 @@ export const catalogCSS = `
 .catalog-desc { display:block; min-width:0; color:var(--muted); font-size:12px; line-height:1.4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .catalog-source { display:flex; min-width:0; }
 .catalog-chevron { color:var(--muted); }
-.catalog-group { display:flex; align-items:center; gap:7px; min-height:28px; margin:8px 0 0; padding:0 16px; color:var(--muted); font:600 11.5px var(--mono,monospace); }
-.catalog-group:first-child { margin-top:0; }
-.source-chip { display:inline-flex; align-items:center; gap:7px; min-width:0; color:var(--muted); font:12px var(--mono,monospace); }
+/* A repository group's heading: the Souls tab's (group-heading.mjs), between the cards. */
+.catalog-group { min-height:28px; margin:10px 0 0; }
+.catalog-head + .catalog-group { margin-top:0; }
+${groupHeadingCSS}.source-chip { display:inline-flex; align-items:center; gap:7px; min-width:0; color:var(--muted); font:12px var(--mono,monospace); }
 .source-chip .shell-icon { flex:none; }
 .source-chip-name { color:var(--fg); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
 .source-chip-version { white-space:nowrap; }
@@ -82,7 +82,7 @@ export const catalogCSS = `
 .capability-section { display:flex; flex-direction:column; gap:10px; }
 .capability-section + .capability-section { margin-top:22px; }
 .capability-section-head { display:flex; align-items:center; flex-wrap:wrap; gap:8px 16px; min-width:0; }
-.capability-section-head .catalog-filters { margin-left:auto; }
+.capability-section-head .catalog-filters { flex:0 1 auto; margin-left:auto; }
 .capability-section-title { display:flex; align-items:baseline; gap:10px; margin:0; padding:0 2px; color:var(--fg); font-size:15px; font-weight:650; }
 .capability-section-lead { color:var(--muted); font-size:12px; font-weight:400; }
 .capability-none { margin:0; }
@@ -90,7 +90,10 @@ export const catalogCSS = `
 @container(max-width:700px) {
  .catalog-head { display:none; }
  .oats-view button.catalog-row, button.catalog-row { grid-template-columns:44px minmax(0,1fr) 24px; height:auto; min-height:58px; padding:10px 16px; row-gap:6px; }
- .catalog-row .catalog-tile, .catalog-row .catalog-chevron { grid-row:1; }
+ /* Every cell placed: auto-placement would put the name after the chevron on the first line. */
+ .catalog-row .catalog-tile { grid-row:1; grid-column:1; }
+ .catalog-row .catalog-cap { grid-row:1; grid-column:2; }
+ .catalog-row .catalog-chevron { grid-row:1; grid-column:3; }
  .catalog-row .catalog-source, .catalog-row .catalog-used { grid-column:2; }
 }
 `;
@@ -138,9 +141,39 @@ export function capabilityUse(instances, name) {
   }
   return { souls: [...souls.values()], moved };
 }
-export function filterCapabilities(rows, { team = null, repo = null } = {}, names = new Map()) {
-  return list(rows).filter(row => (!team || row.team === team) && (!repo || capabilitySource(row, names).key === repo));
+/** The repository group a member or external capability sits in, as the Souls tab groups souls:
+ * the workspace host's repository first, then the other members by name, then one "external"
+ * group for every source outside the member repos (a package, never listed here, keeps its own).
+ * `hostKey`: workspace status's workspace.key. */
+export function capabilityGroup(row, names = new Map(), hostKey = null) {
+  const source = capabilitySource(row, names);
+  if (source.kind === 'package') return { key: source.key, rank: 3, icon: 'package', name: source.label, note: 'package', mono: true };
+  if (source.kind !== 'member') return { key: 'external', rank: 2, icon: 'external', name: 'external', note: 'not in a member repo', mono: false };
+  const host = !!hostKey && row.repoKey === hostKey;
+  return { key: source.key, rank: host ? 0 : 1, icon: 'repo', name: source.label, note: host ? 'member repo · host' : 'member repo', mono: true };
 }
+/** Rows in their repository groups, in the Souls tab's order: [{ key, rank, icon, name, note, mono, rows }]. */
+export function groupCapabilities(rows, names = new Map(), hostKey = null) {
+  const groups = new Map();
+  for (const row of list(rows)) {
+    const group = capabilityGroup(row, names, hostKey);
+    if (!groups.has(group.key)) groups.set(group.key, { ...group, rows: [] });
+    groups.get(group.key).rows.push(row);
+  }
+  return [...groups.values()].sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
+}
+/** The workspace host's repository key, from workspace status (null when not reported). */
+export const hostKeyOf = status => text(status?.workspace?.key);
+/** Rows from one repository group (`repo`: a group key; null = all). */
+export function filterCapabilities(rows, { repo = null } = {}, names = new Map(), hostKey = null) {
+  return list(rows).filter(row => !repo || capabilityGroup(row, names, hostKey).key === repo);
+}
+/** The view search: capability names containing the query, case-insensitive. */
+export function matchCapabilities(rows, query = '') {
+  const needle = String(query || '').trim().toLowerCase();
+  return needle ? list(rows).filter(row => String(row.name).toLowerCase().includes(needle)) : list(rows);
+}
+const capabilityCount = n => `${n} ${n === 1 ? 'capability' : 'capabilities'}`;
 
 function node(doc, tag, value, cls) {
   const el = doc.createElement(tag);
@@ -149,54 +182,52 @@ function node(doc, tag, value, cls) {
   return el;
 }
 
-/** Workspace owned filters: a Team and a Repo dropdown (single choice each, AND
- * across them), how many rows are shown, and Clear filters when one is set. */
-export function renderFilters(host, { teams, repos, value, onChange, shown = null, total = null }) {
+/** Workspace owned's repository pills: `All N`, then one pill per repository group (choices from
+ * repoChoices, in group order), single choice. One group (role=group) with one tab stop: the
+ * pressed pill (roving tabindex); Arrow keys move along it, Home/End to its ends, Enter/Space press
+ * (native buttons). `value`: the chosen group key, null for All. "N of M shown" follows the pills
+ * whenever a repository or a search narrows the list (`narrowed`). Nothing when there are no choices. */
+export function renderRepoPills(host, { repos, value = null, total, shown = total, narrowed = false, onChange }) {
   const doc = host.ownerDocument;
-  host.replaceChildren(); host.className = 'catalog-filters'; host.setAttribute('role', 'group'); host.setAttribute('aria-label', 'Filter workspace owned capabilities');
-  host.append(node(doc, 'span', 'Filter by', 'catalog-filters-label'));
-  const select = (label, key, options) => {
-    const current = value[key] ?? null;
-    const chosen = options.find(option => option !== 'sep' && option.value === current);
-    const box = node(doc, 'label', null, `catalog-select${current ? ' active' : ''}`); box.dataset.filterKey = key;
-    box.append(node(doc, 'span', label, 'catalog-select-key'));
-    const el = node(doc, 'select'); el.setAttribute('aria-label', `${label} filter`); el.title = chosen?.title || '';
-    let parent = el;
-    for (const option of [{ label: 'All', value: null }, ...options]) {
-      if (option === 'sep') { parent = node(doc, 'optgroup'); parent.label = 'External'; el.append(parent); continue; }
-      const opt = node(doc, 'option', option.label); opt.value = option.value ?? ''; opt.selected = (option.value ?? null) === current;
-      if (option.title) opt.title = option.title;
-      parent.append(opt);
-    }
-    el.addEventListener('change', () => onChange({ ...value, [key]: el.value || null }));
-    box.append(el, iconElement(doc, 'chevronDown', { size: 13 }));
-    return box;
+  host.replaceChildren(); host.className = 'catalog-filters';
+  if (!repos.length) return;
+  const group = node(doc, 'div', null, 'catalog-pills'); group.setAttribute('role', 'group'); group.setAttribute('aria-label', 'Show capabilities from');
+  const pill = (choice, count) => {
+    const button = node(doc, 'button', null); button.type = 'button'; button.dataset.repo = choice.key ?? '';
+    const pressed = (choice.key ?? null) === value;
+    button.setAttribute('aria-pressed', String(pressed)); button.tabIndex = pressed ? 0 : -1;
+    if (choice.title) button.title = choice.title;
+    // The space keeps the name and count apart in the accessible name ("lfx-agents 3"); the flex gap draws it.
+    button.append(node(doc, 'span', choice.label, `catalog-pill-name${choice.mono ? '' : ' plain'}`), ' ', node(doc, 'span', String(count), 'capability-nav-count'));
+    button.addEventListener('click', () => { if (!pressed) onChange(choice.key ?? null); });
+    return button;
   };
-  host.append(select('Team', 'team', teams.map(team => ({ label: team, value: team }))), select('Repo', 'repo', repos));
-  if (value.team || value.repo) {
-    if (shown !== null && total !== null) host.append(node(doc, 'span', `${shown} of ${total} shown`, 'catalog-shown'));
-    const clear = node(doc, 'button', 'Clear filters', 'catalog-clear'); clear.type = 'button';
-    clear.addEventListener('click', () => onChange({ team: null, repo: null }));
-    host.append(clear);
-  }
+  group.append(pill({ key: null, label: 'All', mono: false }, total), ...repos.map(choice => pill(choice, choice.count)));
+  const buttons = () => [...group.querySelectorAll('button')];
+  group.addEventListener('keydown', event => {
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+    if (!step && event.key !== 'Home' && event.key !== 'End') return;
+    if (event.metaKey || event.ctrlKey || event.altKey || event.isComposing) return;
+    const all = buttons(), at = all.indexOf(event.target);
+    if (at < 0) return;
+    event.preventDefault();
+    const next = all[event.key === 'Home' ? 0 : event.key === 'End' ? all.length - 1 : (at + step + all.length) % all.length];
+    rovePill(group, next); next.focus();
+  });
+  host.append(group);
+  if (narrowed) host.append(node(doc, 'span', `${shown} of ${total} shown`, 'catalog-shown'));
+}
+/** Make `button` the pills' one tab stop. */
+export function rovePill(group, button) {
+  for (const other of group.querySelectorAll('button')) other.tabIndex = other === button ? 0 : -1;
 }
 
-/** Team and source choices from the catalog rows themselves (members first,
- * then packages), so a pill never names something the table cannot show. */
-/** Filter choices for the Workspace owned section: its rows' teams and the
- * repositories they come from (members, then external sources). */
-export function filterChoices(rows, names = new Map()) {
-  const owned = list(rows).filter(row => row.kind !== 'package');
-  const teams = [...new Set(owned.map(row => text(row.team)).filter(Boolean))].sort();
-  const byRepo = new Map();
-  for (const row of owned) { const source = capabilitySource(row, names); if (!byRepo.has(source.key)) byRepo.set(source.key, source); }
-  const all = [...byRepo.values()].sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'member' ? -1 : 1) || a.label.localeCompare(b.label));
-  const repos = [];
-  all.forEach((source, index) => {
-    if (index && source.kind !== all[index - 1].kind) repos.push('sep');
-    repos.push({ label: source.label, value: source.key, title: `${source.kind === 'member' ? 'Repository' : 'External'}: ${source.label}` });
-  });
-  return { teams, repos };
+/** The repository choices for Workspace owned, from its rows themselves (so a pill never names
+ * something the list cannot show): each group's key, name and row count, in group order. */
+export function repoChoices(rows, names = new Map(), hostKey = null) {
+  return groupCapabilities(list(rows).filter(row => row.kind !== 'package'), names, hostKey)
+    .map(group => ({ key: group.key, label: group.name, count: group.rows.length, mono: group.mono,
+      title: `${group.key === 'external' ? 'Sources outside the member repos' : `Repository ${group.name}`}: ${capabilityCount(group.rows.length)}` }));
 }
 
 /** The Capabilities view's three sections, from the catalog rows' own facts:
@@ -273,7 +304,7 @@ const markCurrent = (button, current) => { if (current) button.setAttribute('ari
  * icon tile | name + kind chip over a one-line description | source chip |
  * used by (the souls whose instances carry it, from the roster's module rows;
  * "Every soul" for a workspace default) | chevron.
- * groups: [{ label, rows }] adds a repository heading before each group (Repo owned).
+ * groups: groupCapabilities' [{ key, icon, name, note, rows }] adds a repository heading before each group.
  * onOpen(row): the card is one button opening the capability's page (click; Enter and Space are the
  * native button's). Its name is short ("<cap>, <kind>, from <source>"); its description and used-by
  * are its accessible description (aria-describedby), since the column header is for the eye only. */
@@ -343,9 +374,11 @@ export function renderCapabilities(host, { rows, groups = null, status, instance
     el.append(tile, cap, source, used, iconElement(doc, 'chevronRight', { size: 16, className: 'shell-icon catalog-chevron' }));
     return el;
   };
+  // A repository group (groupCapabilities) opens with the Souls tab's heading: icon, name, "member repo · N capabilities".
   if (groups) for (const group of groups) {
-    const title = node(doc, 'div', null, 'catalog-group'); title.setAttribute('role', 'heading'); title.setAttribute('aria-level', '3'); title.dataset.repo = group.key;
-    title.append(iconElement(doc, 'repo', { size: 13 }), node(doc, 'span', group.label));
+    if (!group.rows.length) continue; // a search that empties a group hides it
+    const title = groupHeading(doc, { icon: group.icon, name: group.name, note: [group.note, capabilityCount(group.rows.length)].filter(Boolean).join(' · '), mono: group.mono !== false, level: 3 });
+    title.classList.add('catalog-group'); title.dataset.repo = group.key;
     table.append(title, ...group.rows.map(line));
   } else for (const row of list(rows)) table.append(line(row));
   if (!any) table.append(node(doc, 'p', total ? 'No capabilities match these filters.' : empty || 'The workspace reports no capabilities yet: members publish capabilities and packages lock theirs on sync.', 'catalog-empty'));
@@ -372,16 +405,15 @@ export function lockNotes(status) {
   return lines;
 }
 
-/** The Capabilities tab: the section jump, then Workspace owned (with its team/repo
- * filters), Repo owned grouped by repository when the kernel lists it (feature
- * capabilities-private), then Packages. `filterHost` is the
- * discovery's persistent filter row; `query` narrows every section by name.
+/** The Capabilities tab: the section jump, then Workspace owned (grouped by repository, with its
+ * repository pills), Repo owned grouped the same way when the kernel lists it (feature
+ * capabilities-private), then Packages. `shown`: the Workspace owned rows the pills leave;
+ * `filterHost` is the discovery's persistent pill row; `query` narrows every section by name.
  * `navHost`, when given, takes the section jump (the view's toolbar row). */
 export function renderCapabilitySections(host, { sections, shown, filterHost, navHost = null, privateListed, status, instances, root, onOpen = null, query = '', rosterState = 'ready' }) {
-  const doc = host.ownerDocument, names = memberNames(status);
+  const doc = host.ownerDocument, names = memberNames(status), hostKey = hostKeyOf(status);
   host.replaceChildren();
-  const needle = String(query || '').trim().toLowerCase();
-  const match = rows => needle ? rows.filter(row => String(row.name).toLowerCase().includes(needle)) : rows;
+  const match = rows => matchCapabilities(rows, query);
   const table = (parent, rows, opts) => { const box = node(doc, 'div'); parent.append(box); renderCapabilities(box, { rows, status, instances, root, onOpen, rosterState, ...opts }); };
   // Nothing at all: one factual line, not three empty sections.
   if (!sections.workspace.length && !sections.packages.length && !sections.repo.length) { table(host, [], {}); return; }
@@ -410,20 +442,19 @@ export function renderCapabilitySections(host, { sections, shown, filterHost, na
     const el = node(doc, 'section', null, 'capability-section'); el.dataset.section = def.id;
     const head = node(doc, 'h2', null, 'capability-section-title'); head.id = `capability-section-${def.id}`; head.tabIndex = -1;
     head.append(node(doc, 'span', def.title), node(doc, 'span', def.lead, 'capability-section-lead'));
-    // The title row (board 4): the title and its lead, then (Workspace owned) the filters at its right.
+    // The title row (board 4): the title and its lead, then (Workspace owned) the repository pills at its right.
     const row = node(doc, 'div', null, 'capability-section-head'); row.append(head);
     el.setAttribute('aria-labelledby', head.id); el.append(row); host.append(el); return el;
   };
   const render = {
     workspace: owned => {
       if (filterHost) owned.querySelector('.capability-section-head').append(filterHost);
-      table(owned, match(shown), { total: sections.workspace.length, label: 'Workspace owned capabilities', empty: 'No workspace repository offers a capability yet.' });
+      const groups = groupCapabilities(match(shown), names, hostKey);
+      table(owned, groups.flatMap(g => g.rows), { groups, total: sections.workspace.length, label: 'Workspace owned capabilities', empty: 'No workspace repository offers a capability yet.' });
     },
     repo: repo => {
       if (!sections.repo.length) { repo.append(node(doc, 'p', 'No repository keeps a private capability.', 'catalog-empty capability-none')); return; }
-      const byRepo = new Map();
-      for (const row of match(sections.repo)) { const source = capabilitySource(row, names); if (!byRepo.has(source.key)) byRepo.set(source.key, { key: source.key, label: source.label, rows: [] }); byRepo.get(source.key).rows.push(row); }
-      const groups = [...byRepo.values()].sort((a, b) => a.label.localeCompare(b.label));
+      const groups = groupCapabilities(match(sections.repo), names, hostKey);
       table(repo, groups.flatMap(g => g.rows), { groups, label: 'Repo owned capabilities', total: sections.repo.length });
     },
     packages: packages => table(packages, match(sections.packages), { label: 'Package capabilities', empty: 'No package capability is locked yet. Sync to lock the declared packages.' }),

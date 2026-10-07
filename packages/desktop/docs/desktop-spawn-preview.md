@@ -164,10 +164,12 @@ and the renderer re-validate it the same way. It is provenance only and never
 enters the decision the apply binds.
 
 The dialog's Core capabilities and Capabilities are two bordered boxes of one
-row grammar: the module in mono, its source chip and, beside it, a reason tag in
-the same muted tag pair (`--muted` on `--tag-bg`, one CSS rule): **Soul** or
-**Workspace default**. A core row leads with its slot (Knowledge, Messaging,
-Tasks), so its reason never repeats it; an empty slot reads **None**, with no
+row grammar, the same at every column width: line 1 is the module in mono, which
+may wrap anywhere; line 2 is its source chip and a reason tag, left-aligned and
+wrapping as a group. Both chips use the same muted tag pair (`--muted` on
+`--tag-bg`, one CSS rule), and the reason tag reads **Soul** or
+**Workspace default**. Nothing in a row is right-justified. A core row leads with its slot (Knowledge, Messaging,
+Tasks) as a fixed left column beside those two lines, so its reason never repeats it; an empty slot reads **None**, with no
 chips (the preview does not project `capabilitiesOff`, so it cannot say whether
 the soul emptied it). A module filling a core slot (`layer` knowledge,
 messaging or tasks) is Core's only: never in the Capabilities list or its
@@ -263,6 +265,36 @@ ownership-checked: dialog alive, same workspace mount, latest ticket). An
 `E_BUSY` refusal (both server slots held, usually by this dialog's superseded
 reads) is retried inside the dialog as soon as one of its reads lands, else
 after 400 ms, for about the CLI's timeout, and is never shown while it retries.
+
+### What will be created
+
+The column reads top to bottom:
+
+1. **The instance.** Its name comes first and largest (mono, `--fg`). Under it
+   is its home (mono, `--muted`), relative to the deployment (the preview's
+   `subject.dir`) when the home lies inside it, else `…/` plus its last three
+   segments. The full path is the home's `title`.
+2. **The facts**, a label/value list in this order:
+   - **Works in.** A worktree reads "worktree · branch `<branch>` from
+     `<base ref>`"; every other mode keeps its phrase.
+   - **Harness.** The badge, the harness and the model (or "default model").
+     Where that choice came from sits on its own muted line beneath.
+   - **Team.** "`<default>` · default", then a muted "may also join …" line
+     naming the other teams in `teams`.
+   - **Relationship.** Shown only when the spawn is not independent: "child of
+     `<anchor>`".
+   - **Runs on.** Shown with two or more deployments; in the loading and refusal
+     states it shows alone.
+
+   Labels are 11.5px `--muted` and values 12.5px `--fg`. The preview is a size
+   container: below 300px of content width the facts stack label-above-value.
+3. **Launch prompts**, when the preview reports them: a full-width muted note
+   after the facts, holding the policy sentence and its consent source verbatim
+   (see Launch-prompt diagnostics).
+
+The footer keeps **Cancel** and **Spawn** together, right-aligned on one line, at
+every width. The status beside them yields first: its text wraps, or the status
+sits on its own line above them.
 
 No field is disabled, hidden or rebuilt because a read is in the air; focus and
 caret stay. Before the first settled answer the preview column shows the loading

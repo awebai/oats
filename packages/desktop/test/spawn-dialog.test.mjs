@@ -414,6 +414,8 @@ test('a created instance whose wake schedule was not saved stays created: View s
   await u.spawn();
   assert.equal(u.spawns().at(0).wake.message, 'check in');
   assert.ok(u.dialog().querySelector('.guarded-schedules')); assert.equal(u.q('.fspawn').textContent, 'Created'); assert.equal(u.q('.fspawn').disabled, true);
+  // Its own footer item before the Cancel/Created group, so the group never grows past the footer.
+  assert.equal(u.q('.guarded-schedules').parentElement, u.q('.spawn-footer')); assert.equal(u.q('.guarded-schedules').nextElementSibling, u.q('.spawn-actions'));
   assert.doesNotMatch(u.text('.fstatus'), /PRIVATE/); assert.match(u.text('.fstatus'), /wake schedule was not saved/);
   await u.spawn(); assert.equal(u.applied.length, 1);
 });
