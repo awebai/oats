@@ -3,7 +3,9 @@
 **Release gate:** before this writer is released to **any deployment**, an
 accepted completion frame family captured with the aweb plugin installed and an
 ordinary real-configuration model, billing and effort banner must be integrated
-and reviewed. The current plugin-absent fixture alone does not satisfy this gate.
+and reviewed. The accepted installed-plugin capture below satisfies the
+maintainer’s completion condition once included in the reviewed head; the
+plugin-absent fixture alone does not.
 Desktop [#711](https://github.com/awebai/oats/issues/711) reader compatibility must
 land in the same release or earlier. These conditions do not block opening the
 reviewed PR; they block releasing its writer. No invented or broadened fixture
@@ -24,13 +26,18 @@ can substitute for the accepted capture.
   recorded in configuration documentation. It permits one Enter. Folder-trust,
   API-key and all other prompts remain unexpected and blocked. No live rollout
   accompanies this change.
-- **Known completion limitation:** the accepted post-answer banner contains
-  “plugin not installed”, Opus 5.5, API Usage Billing and captured effort/mode
-  text. Installed-plugin or different model/billing/effort output can therefore
-  follow a submitted Enter with a retained `E_SPAWN_INCOMPLETE` / `blocked`
-  result. The submitted answer and actual target remain recorded; the pane may
-  already be active. This does not solve unattended normal-production success.
-  Inspect it; never automatically resend or relaunch. No readiness claim follows.
+- **Qualified completion family:** Claude 2.1.289 darwin-arm64, 110x35,
+  aweb-channel 1.7.11 installed, Opus 5.5 / API Usage Billing / auto mode /
+  medium effort. The original plugin-absent frame remains accepted. Only the
+  existing finite canonical-home directory-line family may vary; all other
+  captured bytes remain exact. Provenance records an isolated native plugin
+  installation, dummy credentials and denied runtime network access.
+- **Known completion limitation:** other model, billing, effort or permission
+  variants remain blocked. They can follow a submitted Enter with retained
+  `E_SPAWN_INCOMPLETE` / `blocked`. The submitted answer and actual target remain
+  recorded; the pane may already be active. Inspect it; never automatically
+  resend or relaunch. This bounded acceptance is not live-account, connection
+  or native-receive proof, nor a blanket production-success claim.
 - Retirement conservatively keeps a changed-home recovery copy after a blocked
   spawn's kernel metadata transition, even if no authored bytes changed.
   Runtime endpoint mismatches remain refused.

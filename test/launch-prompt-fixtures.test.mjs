@@ -35,7 +35,7 @@ test("reported version and executable name cannot substitute for pinned bytes", 
 
 test("accepted channel frame files retain exact digests and geometry", () => {
   const manifest = JSON.parse(read("manifest.json"));
-  for (const name of ["frame-05-channel-seeded.txt", "frame-06-first-after-channel.txt", "frame-07-after-channel-200ms.txt"]) {
+  for (const name of ["frame-05-channel-seeded.txt", "frame-06-first-after-channel.txt", "frame-07-after-channel-200ms.txt", "frame-08-installed-after-channel-200ms.txt"]) {
     const text = read(name);
     assert.equal(crypto.createHash("sha256").update(text).digest("hex"), manifest.frames[name].sha256);
     assert.equal(Buffer.byteLength(text), manifest.frames[name].bytes);
@@ -104,40 +104,57 @@ test("qualified fixture construction and argv exclusions (synthetic hash substit
   const ready = qualifyLaunchPromptFixtures(args(path, { home }));
   const frames = ready.fixtures.flatMap(f => f.frames);
   const prompt = frames.find(f => f.kind === "prompt").text;
-  const complete = frames.find(f => f.kind === "completed" && f.after.join() === "awebDevelopmentChannel").text;
+  const completeBanners = frames.filter(f => f.kind === "completed" && f.after.join() === "awebDevelopmentChannel");
+  assert.equal(completeBanners.length, 2);
   const target = { socket: "/private/test", windowId: "@1", paneId: "%1", pid: "123" };
-  for (const mode of ["valid", "foreign", "partial", "footer", "question", "installed", "model", "billing", "effort", "send-failed", "audit-failed"]) {
-    let text = prompt, sends = 0;
-    const controller = createLaunchPromptController({ home, startId: "fixture-test", ...ready, geometry: undefined,
-      policy: { awebDevelopmentChannel: true }, audit: () => ({ ok: mode !== "audit-failed" }),
-      transport: {
-        snapshot: () => ({ ...target, width: 110, height: 35, text }),
-        send: () => {
-          sends++;
-          text = complete;
-          if (mode === "foreign") text = text.replace(home, "/foreign/home");
-          if (mode === "partial") text = text.replace(home, home.slice(1));
-          if (mode === "footer") text += "unexpected footer";
-          if (mode === "question") text = text.replace("plugin not installed", "Allow this plugin?");
-          if (mode === "installed") text = text.replace("plugin not installed", "plugin connected");
-          if (mode === "model") text = text.replace("Opus 5.5", "Sonnet 5");
-          if (mode === "billing") text = text.replace("API Usage Billing", "Pro Subscription");
-          if (mode === "effort") text = text.replace("medium · /effort", "high · /effort");
-          return { status: mode === "send-failed" ? "failed" : "submitted" };
-        },
-      },
+  for (const { text: complete } of completeBanners) {
+    let firstText = complete;
+    const completed = createLaunchPromptController({ home, startId: "completion-only", ...ready, geometry: undefined,
+      policy: { awebDevelopmentChannel: true }, audit: () => ({ ok: true }),
+      transport: { snapshot: () => ({ ...target, width: 110, height: 35, text: firstText }),
+        send: () => assert.fail("completion cannot authorize a key") },
     });
-    const observed = controller.observeNew(target);
-    assert.equal(observed.status, mode === "valid" ? "completed" : ["audit-failed", "send-failed"].includes(mode) ? "incomplete" : "blocked", mode);
-    if (["installed", "model", "billing", "effort"].includes(mode)) {
-      assert.equal(observed.answers.length, 1, "the submitted answer survives the later blocked frame");
-      assert.equal(observed.answers[0].status, "submitted");
-      assert.equal(sends, 1);
+    const terminal = completed.observeNew(target);
+    assert.equal(terminal.status, "completed");
+    assert.deepEqual(terminal.answers, []);
+    firstText = prompt;
+    assert.equal(completed.observeNew(target), terminal);
+    for (const mode of ["valid", "foreign", "partial", "footer", "question", "installed", "model", "billing", "effort", "permission", "send-failed", "audit-failed"]) {
+      let text = prompt, sends = 0;
+      const controller = createLaunchPromptController({ home, startId: "fixture-test", ...ready, geometry: undefined,
+        policy: { awebDevelopmentChannel: true }, audit: () => ({ ok: mode !== "audit-failed" }),
+        transport: {
+          snapshot: () => ({ ...target, width: 110, height: 35, text }),
+          send: () => {
+            sends++;
+            text = complete;
+            if (mode === "foreign") text = text.replace(home, "/foreign/home");
+            if (mode === "partial") text = text.replace(home, home.slice(1));
+            if (mode === "footer") text += "unexpected footer";
+            if (mode === "question") text = text.replace("Channels (experimental)", "Allow this plugin?");
+            if (mode === "installed") text = text.replace("Channels (experimental)", "Channels connected");
+            if (mode === "model") text = text.replace("Opus 5.5", "Sonnet 5");
+            if (mode === "billing") text = text.replace("API Usage Billing", "Pro Subscription");
+            if (mode === "effort") text = text.replace("medium · /effort", "high · /effort");
+            if (mode === "permission") text = text.replace("auto mode on", "accept edits on");
+            return { status: mode === "send-failed" ? "failed" : "submitted" };
+          },
+        },
+      });
+      const observed = controller.observeNew(target);
+      assert.equal(observed.status, mode === "valid" ? "completed" : ["audit-failed", "send-failed"].includes(mode) ? "incomplete" : "blocked", mode);
+      if (["installed", "model", "billing", "effort", "permission"].includes(mode)) {
+        assert.equal(observed.answers.length, 1, "the submitted answer survives the later blocked frame");
+        assert.equal(observed.answers[0].status, "submitted");
+        assert.equal(sends, 1);
+      }
+      const previousSends = sends;
+      text = complete;
+      assert.equal(controller.observeNew(target), observed, "completion cannot upgrade an earlier error");
+      text = prompt;
+      assert.equal(controller.observeNew(target), observed);
+      assert.equal(sends, previousSends, "completion and errors close authority permanently");
     }
-    const previousSends = sends;
-    text = prompt;
-    assert.equal(controller.observeNew(target), observed);
-    assert.equal(sends, previousSends, "completion and errors close authority permanently");
   }
   // Captured folder-trust screens have no production matcher, regardless of
   // selection. Each is blocked with a receipt and absolutely no input.

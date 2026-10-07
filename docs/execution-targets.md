@@ -616,8 +616,8 @@ retaining the real process/endpoint for inspection: this is never permission
 to allocate another harness.
 
 A blocked result can follow a successfully submitted Enter. The accepted
-completion frame is narrower than ordinary production output: an installed
-plugin or different model, billing or effort can leave the pane active while
+completion families cover exact installed-plugin and plugin-absent banners;
+different model, billing, effort or permission text can leave the pane active while
 reporting a retained block. Inspect `answers` and the event receipts; never infer
 that nothing started or nothing was answered. See the
 [completion limitation](configuration.md#exact-home-launch-prompt-consent).

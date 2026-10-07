@@ -121,15 +121,18 @@ The qualified channel frame starts on its accepted option and permits one
 Enter only. Folder-trust and API-key questions remain unexpected and block.
 A qualified normal-output boundary closes observation without asserting readiness.
 
-**Completion limitation:** the accepted normal-output frame names “plugin not
-installed”, Opus 5.5, API Usage Billing and its captured effort/mode status.
-An installed plugin or different model, billing or effort can therefore receive
-the one Enter and then produce `E_SPAWN_INCOMPLETE` with
+**Qualified completion and limitation:** exact captured banners cover Claude
+2.1.289 on darwin-arm64 at 110x35 with aweb-channel 1.7.11 installed, and the
+original plugin-absent banner. Both name Opus 5.5, API Usage Billing, auto mode
+and medium effort. Only the bounded canonical-home directory line may vary.
+Other model, billing, effort or permission banners remain unqualified: the one
+Enter can be submitted before `E_SPAWN_INCOMPLETE` with
 `launchPrompts.status: blocked`. The submitted answer remains in `answers` and
-the event receipt; the pane may already be active. This fixture does not establish
-unattended success for a normal production setup. Inspect the retained target;
-do not automatically retry input or relaunch it. No broader completion rule is
-implied by the input signature's acceptance.
+the event receipt; the pane may already be active. Inspect the retained target;
+do not automatically retry input or relaunch it. The installed capture used an
+isolated configuration and dummy credentials with runtime network denied. It
+proves bounded UI completion, not live-account admission, connection or native
+receive readiness, and does not establish success for every production setup.
 
 When a harness update changes the version-bound prompt frame, opted-in homes
 block again with `blocked: unexpected prompt` until fixtures are refreshed.
