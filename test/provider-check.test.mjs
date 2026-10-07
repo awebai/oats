@@ -148,10 +148,11 @@ const WIRE_TEAMS = [{ label: "engineering", team: "acme:eng", default: true, fro
 function wireTarget(base, { home = null, soulDir = null, teams = WIRE_TEAMS, defaultTeam = WIRE_DEFAULT } = {}) {
   return { kind: home ? "instance" : "soul", home, meta: home ? { instance: "rm-1", agent: "release-manager" } : null, deployment: base, agentsRoot: join(base, "agents"),
     soul: { name: "release-manager", repoKey: "github.com/acme/agents", commit: "c".repeat(40), external: false, path: null, soulDir, definition: null, problems: [] },
+    soulIdentity: { agent: "release-manager", id: "github.com/acme/agents#release-manager" },
     workspace: { key: "github.com/acme/agents", name: "acme", deployment: base, commit: "c".repeat(40), standalone: false },
     payloads: { "fx.provider": { root: "/srv/aw" } }, slots: { knowledge: null, messaging: "fx.provider", tasks: null }, teams, defaultTeam, teamsSource: "live" };
 }
-const AMBIENT = { OATS_INSTANCE: "ambient-instance", OATS_SOUL: "/ambient/soul", OATS_ROOT: "/ambient/agents", OAS_HOME: "/ambient/oas", PI_AGENTS_ROOT: "/ambient/pi", PI_AGENT_HOME: "/ambient/home", OATS_PROVIDER_WIRE_KEEP: "no", PROVIDER_WIRE_AMBIENT: "kept" };
+const AMBIENT = { OATS_INSTANCE: "ambient-instance", OATS_SOUL: "/ambient/soul", OATS_AGENT: "ambient-agent", OATS_SOUL_ID: "ambient#agent", OATS_ROOT: "/ambient/agents", OAS_HOME: "/ambient/oas", PI_AGENTS_ROOT: "/ambient/pi", PI_AGENT_HOME: "/ambient/home", OATS_PROVIDER_WIRE_KEEP: "no", PROVIDER_WIRE_AMBIENT: "kept" };
 function withAmbient(fn) {
   const saved = Object.fromEntries(Object.keys(AMBIENT).map((k) => [k, process.env[k]]));
   Object.assign(process.env, AMBIENT);
@@ -182,7 +183,7 @@ test("provider-check wire (pinned): the request on stdin, the environment, the c
       OATS_CAPABILITY: "fx.provider", OATS_SETTINGS: JSON.stringify(settings), OATS_SETTINGS_ORIGINS: "{}", OATS_CLI_BIN: join(fileURLToPath(new URL("..", import.meta.url)), "bin", "oats.mjs"), OATS_WORKSPACE: base,
       OATS_TEAM_NAME: "", OATS_TEAM_SCOPE: base, OATS_DEFAULT_TEAM: "engineering", OATS_DEFAULT_TEAM_ID: "acme:eng", OATS_DEFAULT_TEAM_FROM: "deployment",
       OATS_TEAMS: JSON.stringify([WIRE_TEAMS[0]]), OATS_TEAMS_SOURCE: "live", OATS_WORKSPACE_NAME: "acme", OATS_WORKSPACE_KEY: "github.com/acme/agents",
-      OATS_INSTANCE: "rm-1", OATS_INSTANCE_HOME: home, OATS_AGENT: "release-manager", OATS_SOUL: soulDir,
+      OATS_INSTANCE: "rm-1", OATS_INSTANCE_HOME: home, OATS_AGENT: "release-manager", OATS_SOUL_ID: "github.com/acme/agents#release-manager", OATS_SOUL: soulDir,
     }, "exactly these OATS_* variables; every ambient OATS_/OAS_/PI_ variable is stripped");
     assert.equal(seen.env.PROVIDER_WIRE_AMBIENT, "kept", "an ambient non-OATS variable passes through (as for the broker)");
 
@@ -195,7 +196,7 @@ test("provider-check wire (pinned): the request on stdin, the environment, the c
     assert.equal(seen.env.OATS_DEFAULT_TEAM, undefined, "no default: none of the default names is set");
     assert.deepEqual(JSON.parse(seen.stdin).input.context, { kind: "workspace", workspace: "github.com/acme/agents", deployment: base, soul: "release-manager", instance: null, home: null });
     for (const k of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_SOUL", "OATS_ROOT", "OAS_HOME", "PI_AGENTS_ROOT", "PI_AGENT_HOME", "OATS_PROVIDER_WIRE_KEEP"]) assert.equal(seen.env[k], undefined, `${k} is not passed for a soul subject`);
-    assert.equal(seen.env.OATS_AGENT, "release-manager"); assert.equal(seen.env.OATS_TEAM_LABEL, undefined);
+    assert.equal(seen.env.OATS_AGENT, "release-manager"); assert.equal(seen.env.OATS_SOUL_ID, "github.com/acme/agents#release-manager"); assert.equal(seen.env.OATS_TEAM_LABEL, undefined);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
