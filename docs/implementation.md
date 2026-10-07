@@ -203,7 +203,9 @@ gets the plain per-call behaviour. Within a session:
   the half-initialised cache's wait and the lock-race backoff. What the
   deadline ends is a `timeout` (a peel or version it ended is never read as a
   missing commit or an older git), so an unread member degrades as any
-  unreadable one. A cut wait never changes what it judges: past the deadline
+  unreadable one. A peel is judged by git's own result (`timedOut`), never by
+  the wall clock: git's timer can fire a moment before `Date.now()` reaches the
+  deadline. A cut wait never changes what it judges: past the deadline
   no lock is taken or reclaimed (live, stale or unreadable), and a cache
   directory waited for less than in full is not taken for a crash's leftover;
 - every git child is ended with SIGTERM first and SIGKILL only after a
