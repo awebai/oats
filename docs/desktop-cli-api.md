@@ -1353,8 +1353,9 @@ offers **covers** it when all of these hold on this machine:
 - it is not in `souls.disabled`;
 - it resolves as a spawn would;
 - its modules include `oats.setup`;
-- it empties no layer slot the workspace fills, so it keeps the workspace's
-  core, messaging and knowledge.
+- it does not empty the messaging slot the workspace fills (`messaging:
+  none`), so it stays reachable. Emptying `knowledge` or `tasks` does not
+  disqualify it (0.44.2).
 
 It covers a team when that team is among its resolved teams. Detection is by
 composition only: a soul's name never counts, and there is no role marker. An
@@ -1388,8 +1389,8 @@ relevant, each as `{soul, code}`:
 - a soul whose `soul.yaml` names `oats.setup` but that is disabled
   (`E_SOUL_DISABLED`), ambiguous (`E_SOUL_AMBIGUOUS`) or refused (the
   resolution's code);
-- a soul that composes `oats.setup` but empties a slot the workspace fills
-  (`slot-none`, with `slots`).
+- a soul that composes `oats.setup` but empties the messaging slot the
+  workspace fills (`slot-none`, with `slots: ["messaging"]`).
 
 Coverage that holds adds no item.
 

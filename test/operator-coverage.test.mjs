@@ -43,31 +43,47 @@ test("a member soul composing oats.setup covers the workspace and the teams it m
   assert.deepEqual(operatorProblems(doctor(fx)).map((p) => [p.code, p.label]), [["operator-team-uncovered", "b"]]);
 });
 
-test("no soul composes oats.setup: operator-soul-missing names the declared-but-unusable ones (disabled, unresolvable, an emptied slot); a soul's name never counts; no teams, no team items; nothing written", (t) => {
+test("no soul composes oats.setup: operator-soul-missing names the declared-but-unusable ones (disabled, unresolvable, an emptied messaging slot); a soul's name never counts; no teams, no team items; nothing written", (t) => {
   const fx = fixture(t, {
     souls: {
       dev: {}, "oats-operator-expert": {},
       off: { soul: { capabilities: SETUP } },
       broken: { soul: { capabilities: { ...SETUP, nope: { from: "here" } } } },
-      mute: { soul: { knowledge: "none", capabilities: SETUP } },
+      mute: { soul: { messaging: "none", capabilities: SETUP } },
     },
-    capabilities: { "oats.setup": { manifest: {} }, notes: { manifest: { layer: "knowledge" } } },
+    capabilities: { "oats.setup": { manifest: {} }, chat: { manifest: { layer: "messaging" } } },
     local: { souls: { disabled: ["off"] } },
   });
   fx.commit({ "oats-workspace.yaml": { yaml: { schemaVersion: 2, name: "fixture", members: [fx.ref], teams: {},
-    defaults: { knowledge: { notes: { from: fx.key } }, messaging: "none", tasks: "none" } } } }, "no teams; knowledge for every soul");
+    defaults: { knowledge: "none", messaging: { chat: { from: fx.key } }, tasks: "none" } } } }, "no teams; messaging for every soul");
   synced(fx);
   for (const soul of ["dev", "oats-operator-expert"]) {
     const items = operatorItems(readiness(fx, soul));
     assert.deepEqual(items.map((i) => [i.subject, i.code, i.status, i.required]), [["operator", "operator-soul-missing", "fail", false]], `${soul}: the workspace item only (no teams)`);
     assert.deepEqual(items[0].evidence.excluded.map((x) => [x.soul, x.code]).sort(), [["ws/broken", "E_CAPABILITY_MISSING"], ["ws/mute", "slot-none"], ["ws/off", "E_SOUL_DISABLED"]]);
-    assert.deepEqual(items[0].evidence.excluded.find((x) => x.soul === "ws/mute").slots, ["knowledge"]);
+    assert.deepEqual(items[0].evidence.excluded.find((x) => x.soul === "ws/mute").slots, ["messaging"]);
     assert.match(items[0].reason, /no soul workspace fixture offers composes oats\.setup/);
   }
   const before = readdirSync(fx.root).sort();
   assert.deepEqual(operatorProblems(doctor(fx)).map((p) => p.code), ["operator-soul-missing"]);
   assert.deepEqual(readdirSync(fx.root).sort(), before, "doctor writes nothing");
   assert.ok(before.every((d) => !existsSync(join(fx.root, d, "instances"))), "no instance was spawned");
+});
+
+test("an operator soul that empties knowledge and tasks still covers the workspace and its teams; one that empties messaging does not", (t) => {
+  const fx = fixture(t, {
+    souls: { dev: {}, lean: { soul: { knowledge: "none", tasks: "none", capabilities: SETUP } }, mute: { soul: { messaging: "none", capabilities: SETUP } } },
+    capabilities: { "oats.setup": { manifest: {} }, notes: { manifest: { layer: "knowledge" } }, chat: { manifest: { layer: "messaging" } }, board: { manifest: { layer: "tasks" } } },
+  });
+  fx.commit({ "oats-workspace.yaml": { yaml: { schemaVersion: 2, name: "fixture", members: [fx.ref], teams: { global: { description: "g" }, a: { description: "a" } }, defaultTeam: "global",
+    souls: { "ws/mute": { teams: ["a"] } },
+    defaults: { knowledge: { notes: { from: fx.key } }, messaging: { chat: { from: fx.key } }, tasks: { board: { from: fx.key } } } } } }, "every slot filled; mute alone may join a");
+  resolvedHere(synced(fx));
+  // lean (knowledge: none, tasks: none) is the workspace's operator and covers global; team a has only mute, which
+  // empties messaging: uncovered, and mute is no operator.
+  assert.deepEqual(operatorItems(readiness(fx, "dev")), [], "lean covers the workspace and dev's team global");
+  assert.deepEqual(operatorItems(readiness(fx, "mute")).map((i) => [i.subject, i.code, i.label]), [["team a", "operator-team-uncovered", "a"]], "mute's team a: its only soul empties messaging");
+  assert.deepEqual(operatorProblems(doctor(fx)).map((p) => [p.code, p.label]), [["operator-team-uncovered", "a"]]);
 });
 
 test("a package soul composing oats.setup covers the workspace", (t) => {
