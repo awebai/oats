@@ -172,9 +172,8 @@ redefined here. Execute the selected card in `/oats-aweb`, then use
 `/oats-teams` to read back mapping/default/eligibility before card 6.
 
 **Provider version boundary:** the referenced canonical `/oats-aweb` cards
-are planned for the provider release containing
-[oats-aweb#64](https://github.com/awebai/oats-aweb/pull/64)
-(target **1.22.1**, not yet published). Use a card only when the actually
+were published in oats.aweb **1.22.1**
+([oats-aweb#64](https://github.com/awebai/oats-aweb/pull/64)). Use a card only when the actually
 installed provider's skill contains it and supports the selected act. For
 earlier installed providers, including 1.21.1 and 1.22.0, follow their own
 installed skill text. A missing card is an oats.aweb owner boundary: report
