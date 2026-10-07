@@ -315,8 +315,8 @@ infer installation from a source merge or construct an alternative command.
 - `E_TEAM_DEFAULT: <label> is the default team and cannot be left` → stop
   that leave; changing config does not move the running identity.
 - Cloud dashboard human-account/role invitations: **aweb Cloud owner**,
-  human-account procedure established in source `7665d863`, not proof of
-  deployment. Organization owner/admin authority is required. Agent token
+  human-account procedure established in deployed Cloud 0.8.28 source
+  `7665d863` (deployment confirmed by the aweb maintainer). Organization owner/admin authority is required. Agent token
   invites and organization-level membership invitations are distinct acts.
 - Seat retirement belongs to `/oats-operate`; provider membership/certificate
   removal belongs to `/oats-aweb`. Label removal is neither operation.

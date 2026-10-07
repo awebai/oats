@@ -66,11 +66,11 @@ package pin is not proof that a running home contains the change. Use
 `oats version --json` and the installed provider's version/help and recorded
 module provenance; if the composed procedure lacks the selected supported act,
 report that provider-version blocker to its owner. Do not reconstruct it from
-source or knowledge-base notes during execution. The audited aw 1.36.23
-evidence is version-specific. In published aw 1.36.24, external
-`--identity-home` is not supported for `team invite`, `id team remove-member`
-or `doctor local`; global help alone does not establish that allowlist.
-`id team accept-invite` remains supported. External-home invite issuance,
+source or knowledge-base notes during execution. In aw 1.36.23 and 1.36.24,
+external `--identity-home` is not supported for `team invite`,
+`id team remove-member` or `doctor local`; global help alone does not
+establish that allowlist. `id team accept-invite` is supported, and
+`id team create` is also supported from 1.36.24. External-home invite issuance,
 certificate removal and required local-category diagnostics stay blocked
 pending a native owner-supported context; identity/registry diagnostics do
 not replace missing local-category evidence. Never clear identity selection
@@ -218,8 +218,8 @@ Provider/native support boundaries (retain the named owner on a blocker):
 - GLOBAL grant-seat wider-team join/leave: aweb provider owner,
   [oats-aweb#60](https://github.com/awebai/oats-aweb/issues/60); no in-seat LOCAL switch.
 - Cloud dashboard human-account/role invitation: route to the aweb/Cloud
-  owner's human-account procedure, established in Cloud source `7665d863`
-  but not verified here as deployed. It requires organization owner/admin
+  owner's human-account procedure, established in deployed Cloud 0.8.28
+  source `7665d863` (deployment confirmed by the aweb maintainer). It requires organization owner/admin
   authority and selected team, email and role; an agent token invite and an
   organization membership invitation are different acts.
 
