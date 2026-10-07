@@ -65,6 +65,8 @@ export const computerTeamsCSS = `
 .computer-teams .ct-tile { display:grid; place-items:center; width:32px; height:32px; border-radius:8px; background:var(--chip-bg); color:var(--chip-fg); }
 .computer-teams .ct-tile.default { background:var(--sel); color:var(--accent); }
 .computer-teams .ct-main { display:flex; flex-direction:column; gap:6px; min-width:0; }
+/* Nothing on the right (no members, no actions): the main column takes its width. */
+.computer-teams .ct-card.no-side > .ct-main { grid-column:2 / -1; }
 .computer-teams .ct-head { display:flex; align-items:center; flex-wrap:wrap; gap:6px 8px; min-width:0; }
 .computer-teams .ct-label { color:var(--fg); font-size:14.5px; font-weight:650; line-height:1.3; overflow-wrap:anywhere; }
 .computer-teams .ct-pill { display:inline-flex; align-items:center; padding:1px 7px; border-radius:10px; background:var(--sel); color:var(--accent); font-size:10.5px; font-weight:650; white-space:nowrap; }
@@ -593,7 +595,7 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
       if (team.default) side.append(el(doc, 'span', 'every instance joins its default team', 'ct-note'));
     }
     if (actions.childElementCount) side.append(actions);
-    if (side.childElementCount) card.append(side);
+    if (side.childElementCount) card.append(side); else card.classList.add('no-side');
     if (confirming === team.label) {
       const confirm = el(doc, 'div', null, 'ct-confirm');
       confirm.append(el(doc, 'p', `Make ${team.label} the default team on this computer? Running instances keep their current default team until they are respawned.`));

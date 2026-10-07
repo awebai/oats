@@ -110,6 +110,9 @@ test('lfx cards: Default for first under the description, then May join, then th
   assert.deepEqual([...u.row('lfx-platform-team').querySelectorAll('b.ct-name')].map(b => [b.textContent, b.title]),
     [['lfx-platform', 'lfx-platform/*'], ['lfx-agents', 'lfx-agents/*'], ['ai-reviewer', 'lfx-ai-engineering/ai-reviewer']]);
   assert.equal(u.page.element.querySelector('.ct-facts'), null, 'no team model 2 facts line');
+  // No members and no actions (local teams closed): no right column, and the main one takes its width.
+  assert.ok(u.row('lfx-ai-team').classList.contains('no-side')); assert.equal(u.row('lfx-ai-team').querySelector('.ct-side'), null);
+  assert.match(computerTeamsCSS, /\.computer-teams \.ct-card\.no-side > \.ct-main \{ grid-column:2 \/ -1; \}/);
 });
 
 test('solo cards: only the rows with entries; this deployment\'s choice; docs keeps its warning below the address', async t => {
