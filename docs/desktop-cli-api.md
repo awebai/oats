@@ -447,7 +447,10 @@ oats readiness (--home <abs> | --soul <name> [--dir <d>]) [--policy] --json
 - Four checks, each `{status, items}`. An item is `{subject, status,
   required, reason, producer, evidence, remedy}`, plus `capability: {id}` on a
   per-capability item and the keys named below. Statuses are `pass | fail |
-  unknown | not-applicable`.
+  unknown | not-applicable`. An item's `reason`, `remedy` and kernel
+  `problems[].message` are at most 1000 characters (0.44.0). Longer text,
+  such as a remote error, is clipped with `…`. A provider's `result` is
+  relayed verbatim.
 - A check's status rolls up its required items (any `fail` → `fail`, else any
   `unknown` → `unknown`, else `pass`; `not-applicable` with none required).
 - `summary.ready` is true when every required item passes or is
@@ -1100,7 +1103,9 @@ operator guide: [workspaces.md](workspaces.md#teams).
   home's own record, as always.
 - **A soul's key** is its qualified name: `<package>/<soul>`, or
   `<member>/<soul>` with the member repository's name (as `souls.disabled`
-  names it). A label matches `[a-z0-9][a-z0-9._-]*`.
+  names it). A label matches `[a-z0-9][a-z0-9._-]*` and is at most 64
+  characters (0.44.0). A longer one is refused: `E_WORKSPACE_SCHEMA` in
+  either file, and `E_BAD_ARGS` from `oats teams add`.
 - **Team ids.** A `team` value (in either file, and `oats teams add --team`)
   matches `^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,255}$`: the kernel's safety rule
   (never `-`-led, no whitespace or control characters, bounded). Otherwise
