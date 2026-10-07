@@ -32,6 +32,10 @@ test('private evidence retains exact compared bytes, target and receipt-last ide
   const { args, dir, home } = setup(t);
   assert.deepEqual(retainLaunchPromptFrame(args), { ok: true });
   const receipt = JSON.parse(fs.readFileSync(join(dir, 'receipt.json')));
+  assert.equal(receipt.version, 2);
+  assert.equal(receipt.kind, 'launch-prompt-frame');
+  assert.equal(receipt.outcome, 'blocked');
+  assert.equal(receipt.recognition, 'unmatched');
   assert.equal(fs.readFileSync(join(dir, 'frame.txt'), 'utf8'), args.screen.text);
   assert.equal(receipt.signatureDigest, hash(args.screen.text));
   assert.equal(receipt.bytes, Buffer.byteLength(args.screen.text));
@@ -48,6 +52,29 @@ test('private evidence retains exact compared bytes, target and receipt-last ide
   assert.deepEqual(retainLaunchPromptFrame(args), { ok: false }, 'no overwrite of any invocation');
   assert.deepEqual(fs.readFileSync(join(dir, 'receipt.json')), before);
 });
+
+test('structural evidence binds the proposed completion without asserting the final public outcome', t => {
+  const { args, dir } = setup(t);
+  assert.deepEqual(retainLaunchPromptFrame({ ...args, outcome: 'completed', recognition: 'structural' }), { ok: true });
+  const receipt = JSON.parse(fs.readFileSync(join(dir, 'receipt.json')));
+  assert.equal(receipt.version, 2);
+  assert.equal(receipt.kind, 'launch-prompt-frame');
+  assert.equal(receipt.outcome, 'completed');
+  assert.equal(receipt.recognition, 'structural');
+  assert.equal(receipt.signatureDigest, hash(args.screen.text));
+  assert.equal(fs.readFileSync(join(dir, 'frame.txt'), 'utf8'), args.screen.text);
+  assert.equal(Object.hasOwn(receipt, 'ready'), false);
+  assert.equal(Object.hasOwn(receipt, 'audit'), false);
+});
+
+for (const [outcome, recognition] of [['completed', 'unmatched'], ['blocked', 'structural'],
+  ['incomplete', 'structural'], ['completed', 'exact'], ['unknown', 'unmatched'], [null, null]]) {
+  test(`private receipt refuses unsupported pair ${outcome}/${recognition} before any publication`, t => {
+    const { args, home } = setup(t);
+    assert.deepEqual(retainLaunchPromptFrame({ ...args, outcome, recognition }), { ok: false });
+    assert.equal(fs.existsSync(join(home, '.oats')), false);
+  });
+}
 
 for (const mode of ['width', 'height', 'rows', 'oversized', 'start', 'target', 'identity', 'home-replaced', 'oats-symlink', 'root-symlink', 'root-mode', 'home-mode', 'invocation-symlink']) {
   test(`evidence refuses unsafe ${mode} without writing through it`, t => {
@@ -125,7 +152,7 @@ for (const mode of ['saved', 'write-failed', 'throw', 'audit-failed', 'no-consen
       { text: done, width: 110, height: 35, kind: 'completed', after: ['awebDevelopmentChannel'] },
     ] }], now: () => time, sleep: ms => { time += ms; },
     audit(data) { rows.push(data); return mode === 'audit-failed' && data.status === 'blocked' ? { ok: false, results: [] } : appendEvent(home, { kind: 'launch-prompt', data }); },
-    retainUnmatched(input) {
+    retainFrame(input) {
       calls++; assert.equal(input.screen.text, args.screen.text);
       text = 'A NEWER SCREEN MUST NOT BE CAPTURED';
       if (mode === 'write-failed') return { ok: false };

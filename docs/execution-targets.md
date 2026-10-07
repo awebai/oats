@@ -615,7 +615,8 @@ anchor edited or removed since the original pre-hook snapshot, instead of
 replacing concurrent changes with stale metadata. `launchPrompts` records `status`,
 `answers`, `reason` and event `receipt`; unknown prompts use
 `blocked: unexpected prompt`. Status `incomplete` means the audit could not be
-completed, including a possible key followed by an audit failure. It is
+completed, including a possible key followed by an audit failure or failure to
+retain mandatory structural-completion evidence. It is
 not proof that no input was sent. Both outcomes record `launched:false` while
 retaining the real process/endpoint for inspection: this is never permission
 to allocate another harness.
@@ -644,13 +645,17 @@ that nothing started or nothing was answered. See the
 
 ### Private unmatched launch evidence
 
+This section also covers mandatory structural-completion evidence.
+
 After a submitted launch answer, an unmatched 110x35 frame is retained locally
 at `<home>/.oats/launch-prompt-evidence/<sha256(startId)>/frame.txt`, with
 `receipt.json` published last. This is the exact UTF-8 text already compared by
 the controller, including whitespace and final newline, not a later recapture.
 It is bounded to 64 KiB and 35 rows. There is no new input, observation, retry,
-geometry change or readiness claim. No evidence is saved by this path before a
-submitted answer, on successful completion, or for a different blocked reason.
+geometry change or readiness claim. Evidence is also mandatory when the post-answer
+[structural completion rule](launch-prompt-completion.md) selects completion.
+Previously qualified exact completion does not acquire that requirement. No
+frame is saved before a submitted answer or for unrelated blocked reasons.
 
 Find the invocation's existing `launch-prompt` event in the home's
 `.oats-events.jsonl` (or the checked event rows in `launchPrompts.receipt`). Its
@@ -669,6 +674,23 @@ means no independent capture timestamp was recorded. It does not substitute an
 event timestamp for capture time. Same-uid concurrent mutation between checks is
 not excluded.
 
+Private receipt version 2 uses `kind:"launch-prompt-frame"` and admits only
+`outcome:"blocked", recognition:"unmatched"` or
+`outcome:"completed", recognition:"structural"`. These fields describe the
+recognition whose frame was saved, not the final public launch result: a later
+audit or cleanup failure can still report `incomplete`. Historical version 1
+receipts with `kind:"launch-prompt-unmatched"` describe blocked/unmatched
+evidence. Readers must reject unknown versions, kinds or crossed pairs rather
+than infer completion from an artifact's presence.
+
+Before collecting a frame, verify its original `frameIdentity`, byte count,
+digest and dimensions against the receipt, and bind the receipt's `startId`,
+home and target to the checked launch event. A copied file has a different
+inode: preserve the original identity as provenance instead of comparing the
+copy's inode with it. Missing, partial, mismatched or failed-save evidence, or
+an incomplete public launch result, must not be reported as a successful
+completed observation. Collection never recaptures the pane or retries input.
+
 Verify both files, receipt/identity/digest and the corresponding checked event
 before treating the save as complete. A frame alone is partial evidence. Failed
 publication, fsync, readback or temporary-file cleanup leaves the launch blocked
@@ -676,7 +698,11 @@ and adds only `; private launch evidence retention failed` to its diagnostic
 reason. Already published files may remain, including a receipt if a later
 verification fails; their presence alone is not a success claim. The submitted
 answer is preserved. Existing event-audit failures still report `incomplete`.
-No public result or event contains the raw screen or private receipt.
+A structural-completion save failure instead reports checked `incomplete` with
+`private launch evidence retention failed`, preserving the submitted answer and
+retained target. It never retries publication or input. An audit failure remains
+incomplete even if private evidence was saved. No public result or event contains
+the raw screen or private receipt.
 
 The frame can contain private task or account text. It stays on this host with
 no automatic transmission or expiry. Preserve needed evidence privately before

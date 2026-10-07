@@ -1,0 +1,2 @@
+# Exact terminal evidence includes blank screen rows and must keep its bytes.
+test/fixtures/launch-prompts/claude-max-started-home-sanitized.txt -whitespace

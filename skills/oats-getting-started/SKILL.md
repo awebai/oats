@@ -192,10 +192,13 @@ alone is insufficient. Preview reports policy without terminal input;
 `--no-launch` never answers. If launch returns `E_SPAWN_INCOMPLETE`, inspect the
 retained home/pane: do not respawn, repeat keys or treat `launched:false` as an
 absent process.
-Completion additionally accepts source-derived Max/Pro/Team/Enterprise labels
-on the exact empty Opus 5.5 / auto / medium frame, plus source-derived empty
-Max/bypass/medium frames. This interim support does not cover task-filled
-screens or missing effort status and does not prove readiness.
+Completion retains the exact empty-frame families and, only after the submitted
+channel Enter, can recognize the qualified bottom composer/effort-footer region.
+See [the bounded completion contract](../../docs/launch-prompt-completion.md).
+Known question markers block first; normal shortcut/interrupt hints do not.
+Unknown dialogs retaining that region may be misclassified completed. Completion
+closes input authority, not a readiness or idle-state promise. Missing effort or
+trailing notices still block. Required private evidence failure is incomplete.
 
 Create and spawn only when asked. After the first spawn, the `oats.setup`
 skills carry the rest of the deployment (messaging, more souls, rebuilds); the
@@ -205,6 +208,6 @@ model in full is `docs/workspaces.md` in the OATS repository.
 For a retained launch-prompt block after a submitted answer, inspect the existing
 launch event and private frame receipt as described in
 `docs/execution-targets.md#private-unmatched-launch-evidence`. Do not transmit raw
-screen text or treat a saved frame as a new accepted signature. Exact empty
-Max/bypass/medium completion is source-derived and bounded; task-filled screens
-and missing effort status can still block without implying the pane is inactive.
+screen text or treat a saved frame as a new accepted signature. A structurally completed frame is also saved privately. A saved artifact alone
+does not establish completion: verify the final checked launch outcome. Missing
+effort or unsupported footer shapes can block while the pane is active.

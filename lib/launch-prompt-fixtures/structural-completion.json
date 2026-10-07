@@ -1,0 +1,205 @@
+{
+  "binarySha256": "03d66745e3bb69ec727d66023696f3820bc0a00a8a5ba725eb6706d0c67cbe69",
+  "version": "2.1.289",
+  "platform": "darwin-arm64",
+  "ranges": [
+    {
+      "id": "mode-symbols",
+      "start": 179782256,
+      "end": 179784383,
+      "sha256": "cc59173a00e4391864795bd39fa4da775cff19da9d858c3723b8878b7e4b1933"
+    },
+    {
+      "id": "mode-map",
+      "start": 179784383,
+      "end": 179785973,
+      "sha256": "290bd33df357cf05d275997cbe491bcb1689947829d9f106d6b1b9d2235384aa"
+    },
+    {
+      "id": "key-hint",
+      "start": 197498600,
+      "end": 197502800,
+      "sha256": "d666e7d25425520ac1b2e90f2e14e797b343d41df5f857ae645ec8f8c0f82103"
+    },
+    {
+      "id": "prompt-symbol",
+      "start": 187133430,
+      "end": 187133650,
+      "sha256": "29b53ed2eb87a241383e548d981fa1296bf72a386b46166e850b104d6201b220"
+    },
+    {
+      "id": "prompt-selector",
+      "start": 209099897,
+      "end": 209100980,
+      "sha256": "c8309eedb10e283a5a41261204c9dd8212b21bc50c9bbe2cf8d49192120b981a"
+    },
+    {
+      "id": "prompt-border",
+      "start": 209124438,
+      "end": 209125440,
+      "sha256": "61ba81594d61dc978f8e244c831465fc8fa4d0047c59a95136af9f85d41074e6"
+    },
+    {
+      "id": "editor-layout",
+      "start": 209158000,
+      "end": 209161530,
+      "sha256": "6f99e5bb96a73aa69fa977280c375e5829680041911e83aa634c28934e802b5f"
+    },
+    {
+      "id": "footer-mode",
+      "start": 208947546,
+      "end": 208948093,
+      "sha256": "bb9a808a262604016a60b52371acabdf71eb929a3d22a1d3b060e48cec8389cd"
+    },
+    {
+      "id": "footer-branches",
+      "start": 209072435,
+      "end": 209082570,
+      "sha256": "ea8c896b8d6225c76beddd9be6bd5d9c4d18ccefb15e35b79c725f2eafe45fe0"
+    },
+    {
+      "id": "footer-layout",
+      "start": 209093603,
+      "end": 209099807,
+      "sha256": "5d9c5a87fdcbf304bce467c1569f7ddb6e10267929ba68184127a2adf7c6dda2"
+    },
+    {
+      "id": "agent-hint",
+      "start": 209052245,
+      "end": 209055035,
+      "sha256": "4e528a20ee2cb4b931839f8eb72e33aada6940193e71c888c284e267fd3a974d"
+    },
+    {
+      "id": "effort",
+      "start": 208495700,
+      "end": 208496448,
+      "sha256": "ca7197f1491a673124e7ecc57e2c93198df1a8bdd4aa1bce9e1e0324ac5117a1"
+    },
+    {
+      "id": "trust",
+      "start": 213600100,
+      "end": 213603100,
+      "sha256": "a45e19812ac9f3d6002c2f9f6e4de3a2b156d83626712edaba016a9863d4f11a"
+    },
+    {
+      "id": "channel",
+      "start": 215139100,
+      "end": 215140720,
+      "sha256": "a6e330a9166ff933b226263ddda384c8a6d03167e3d5bd4d39ce3a1ba1b6a103"
+    },
+    {
+      "id": "managed-settings",
+      "start": 205478700,
+      "end": 205479600,
+      "sha256": "85b72e92961af88f400d9630ace4a42eb61ea55236622c6aa812cf59434aca9e"
+    },
+    {
+      "id": "api-key",
+      "start": 215175700,
+      "end": 215176620,
+      "sha256": "40979b32fca9c0d29f6546378f8105ae1074bd915d4672475822b0209ee839f0"
+    },
+    {
+      "id": "login",
+      "start": 203523150,
+      "end": 203523800,
+      "sha256": "44e632bee5f03f98df47fbfcde92d76dfbbb70cbc59cafa4de797b80c0e83e83"
+    },
+    {
+      "id": "permission-question",
+      "start": 208009000,
+      "end": 208009700,
+      "sha256": "63e00a8b392249ec7c730314f4f95931ff3f8b9d4182f15be6434b5c76b082de"
+    },
+    {
+      "id": "connection-question",
+      "start": 209416500,
+      "end": 209417050,
+      "sha256": "53ac231cb85f5f70d042daca6ee58748d880ed79f98a6e0b15f189aa6080654d"
+    },
+    {
+      "id": "permission-wait",
+      "start": 209207500,
+      "end": 209208080,
+      "sha256": "0f483d8338bdf69daacf8b671bcac4b7bbd95094f99da5d7ef919c36c3e54fa9"
+    },
+    {
+      "id": "confirmation-guide",
+      "start": 202713350,
+      "end": 202714100,
+      "sha256": "830d7821db28f650d2465690ab7d35076768b8c091f3667f945b839af4426555"
+    },
+    {
+      "id": "lower-cancel",
+      "start": 197647850,
+      "end": 197648260,
+      "sha256": "14947f734aa61d45fb13fb17e41294825b70598ca97f782486063995569848fa"
+    },
+    {
+      "id": "selection-dialog",
+      "start": 217942250,
+      "end": 217943000,
+      "sha256": "4a454e26a631e6c39fc490379d94be0e67b973f4fba3421137b9ef82a8e31d34"
+    },
+    {
+      "id": "gateway",
+      "start": 203506200,
+      "end": 203506740,
+      "sha256": "359b0da11cab049a15c9f8411c25a38b5d54d22007fc8439b328893170eb5963"
+    },
+    {
+      "id": "round-border-glyphs",
+      "start": 182630499,
+      "end": 182630665,
+      "sha256": "6b03cfc0d757ebd18a1f171a012e05e78af72dba34cd636f6843272282d14f5d"
+    }
+  ],
+  "note": "Read-only source qualification; no harness execution or copied modules. Marker set is finite, not exhaustive of unknown dialogs.",
+  "contract": "post-submitted-completion-v1",
+  "layout": "non-Jt (tengu_copper_thistle=false); no runtime flag inspection",
+  "acceptedRisk": "Unknown dialogs retaining the composer/footer can be misclassified completed; no subsequent input or readiness inference.",
+  "markers": [
+    "Accessing workspace:",
+    "Quick safety check:",
+    "Yes, I trust this folder",
+    "No, continue without these permissions",
+    "No, exit",
+    "WARNING: Loading development channels",
+    "I am using this for local development",
+    "Managed settings require approval",
+    "Yes, I trust these settings",
+    "No, exit Claude Code",
+    "Do you want to use this API key?",
+    "Detected a custom API key in your environment",
+    "Select login method:",
+    "Do you want to proceed?",
+    "Do you want to allow this connection?",
+    "Waiting for permission…",
+    "Enter to confirm",
+    "Esc to cancel",
+    "esc to cancel",
+    "Enter to select",
+    "Esc to exit"
+  ],
+  "observedRegression": {
+    "file": "test/fixtures/launch-prompts/claude-max-started-home-sanitized.txt",
+    "classification": "SANITIZED DERIVATIVE, not raw replay or exact spinner matcher",
+    "rawBytes": 1217,
+    "rawSha256": "bb59a8cf1ef0d1a07c7f298e4c6f51227f12e09e6c8ae16b2eb6bc4248436a93",
+    "derivativeBytes": 1156,
+    "derivativeSha256": "49c8073ae86da4325dc03587d4ff1568cc39b8f6dda0d451bc776b876adcb6a0",
+    "changedRowIndices": [
+      2
+    ],
+    "sampleHome": "/fixture/home",
+    "geometry": {
+      "width": 110,
+      "height": 35
+    },
+    "source": "controller-compared-frame",
+    "captureTime": null,
+    "retainedAt": "2026-10-07T20:10:57.986Z",
+    "candidateHead": "57d993fc28681e8f4803d19bf227f19ff43f4aea",
+    "meaning": "Observed transient in-progress task turn; not idle, ready, or recurring spinner qualification."
+  }
+}

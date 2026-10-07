@@ -46,7 +46,7 @@ stable bytes at 200ms/1s/3s, and verified private-server cleanup. The prompt and
 blank transition were byte-identical to the earlier captures. No configuration,
 credentials or extracted source is included. No task or real-account/channel
 connection was tested. Apart from the source-derived variants below, other
-model/billing/effort/permission variants remain unqualified; a submitted answer can be followed by a retained blocked result.
+model/billing/effort/permission variants are not exact-frame candidates; a submitted answer can be followed by a retained blocked result.
 
 ## Source-derived subscription billing variants
 
@@ -105,9 +105,9 @@ zero-based column 90 and the complete row remains 108 columns. The independent
 unchanged, except the already qualified header atom and finite home line.
 
 The source supports this bounded transformation, not arbitrary renderer states.
-The displayed medium status is mandatory: no effort status, another effort,
-model, billing, permission, update notice, task transcript or dialog still
-blocks. The #712 observed child screens corroborate the 62-column left footer
+Within these exact families, the displayed medium status is mandatory; other
+content does not match an exact candidate. The separate post-answer structural
+policy below can recognize additional bounded states. The #712 observed child screens corroborate the 62-column left footer
 text, but have task/update rows and no effort status there; they are not these
 fixtures. Full-frame comparison and all Enter guards remain unchanged.
 
@@ -125,5 +125,28 @@ All follow controller geometry restoration; actual later-capture geometry,
 executable hash and plugin version were not independently recorded. File mtime
 is not capture time, and restoration dimensions are not capture dimensions.
 No first post-answer frame survives. None is cropped, reflowed or published as
-a raw 110x35 replay. This remains interim empty-frame coverage, not general
-Max completion or a resolution of the task-filled onboarding boundary.
+a raw 110x35 replay. These four captures remain provenance only, not qualified structural input.
+The separate controller-compared regression and structural policy below do not
+turn them into qualified captures or establish general Max success.
+
+## Post-answer structural completion
+
+The [complete table](../../docs/launch-prompt-completion.md) defines the six modes,
+five efforts, finite hints, exact region geometry and 21 marker forms.
+[Source provenance](structural-completion.json) pins all 25 byte ranges against
+the same executable hash. This is the non-Jt footer layout; remote feature flags
+can change shape without binary drift. Unknown dialogs retaining a recognized
+composer/footer can evade the marker set: the accepted risk concerns reporting
+only, never another input action or a readiness claim.
+
+The observed regression is a SANITIZED DERIVATIVE of the actual compared
+110x35 frame retained by the earlier controller after its one Enter. Only
+zero-based home row 2 becomes `/fixture/home`; the manifest records separate
+original/derivative byte counts and hashes. Outside that row, independent review
+found only native constants and the launcher's literal `@TASK.md` reference, no
+task body, account-personal or routing data. Four additional rows distinguish
+this captured in-progress state from the empty source-derived family. Its
+spinner verb is chosen per turn (or configured), its glyph animates and later
+suffixes change. No exact spinner matcher or recurrence claim follows. The
+empty footer derivation remains separately qualified; its arithmetic was not
+disproved by observing a different startup state.
