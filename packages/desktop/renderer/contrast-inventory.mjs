@@ -51,6 +51,8 @@ export const TEXT_PAIRS = Object.freeze([
  * terminal's selection fill is the one sign of what a copy will take (issue 672). */
 export const GRAPHIC_PAIRS = Object.freeze([
   ...["bg", "surface", "surface-2"].map(bg => Object.freeze(["graph-edge", bg])),
+  // A native select's chevron (theme.css select.field): --muted, on the field and on a disabled field.
+  ...["surface", "surface-2"].map(bg => Object.freeze(["muted", bg])),
   Object.freeze(["term-sel", "term-bg"]),
 ]);
 

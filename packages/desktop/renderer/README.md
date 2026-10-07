@@ -335,6 +335,14 @@ global part, views follow them in their own CSS). `test/control-rules.test.mjs` 
    its wrapper border accent on `:focus-within`; the `<input>` inside has `border: 0;
    outline: none` in every state. A bare field (`.field`, `#ws-menu-search`, the palette
    input's bottom rule) turns its own border accent on `:focus-visible` and never outlines.
+4. **Native selects have one look.** Every `<select>` is `class="field"` and takes
+   `theme.css`'s `select.field` rule, unscoped because Brain and the Settings overlay render
+   outside `.oats-view`. That rule gives `appearance: none`, the text field's frame and
+   padding, and a static chevron drawn from two thin `--muted` gradient strokes (the inventory
+   holds it as a graphic on `--surface`/`--surface-2`). Each theme declares `color-scheme`
+   (`dark` for Dark, `light` for White and Solarized), so an open list and its scrollbars
+   follow the theme. A page may size a select (width, height, vertical padding, font
+   size), never paint it: `test/select-field.test.mjs` holds every sheet to that.
 
 Contrast is checked on effective colours in all three themes: `--accent` on `--sel`
 (selected text, focus tint) is AA text, and the accent edge/border is ≥3:1 on `--surface`,

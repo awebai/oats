@@ -12,7 +12,7 @@ import * as spawn from '../renderer/views/spawn.mjs';
 import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 import { refreshCli } from '../renderer/views/cli-status.mjs';
 import { workspaceStatusData, deploymentStatusData, syncData } from '../deployment-data.mjs';
-import { filterChoices, capabilityUse, memberNames, capabilitySections } from '../renderer/workspace-catalog.mjs';
+import { repoChoices, capabilityUse, memberNames, capabilitySections, hostKeyOf } from '../renderer/workspace-catalog.mjs';
 import { iconElement } from '../renderer/shell-icons.mjs';
 import { syncStateText } from '../renderer/workspace-sync-view.mjs';
 
@@ -94,31 +94,87 @@ test('Capabilities is the kernel catalog: counts, jump pills, and Capability | S
   assert.equal(u.doc.querySelector('.workspace-discovery').textContent.includes('Members'), false, 'no Members list in Capabilities');
 });
 
-test('team and repo dropdowns filter Workspace owned only (AND), name only what it holds, and Clear filters resets', async t => {
+// Human, 2026-10-07: Workspace owned is split by repository, and group pills replace the Team and
+// Repo dropdowns (the Team one was dead: kernel capability rows carry no team).
+test('repository pills choose one Workspace owned group (single choice, All by default), name only what it holds, and count truthfully with the search', async t => {
   const u = await setup(t);
   await u.tab('capabilities');
-  const choices = filterChoices(capabilitySections(f2('capabilities').result.capabilities).workspace, memberNames(statusOf('workspace-status')));
-  assert.deepEqual(choices.teams, ['engineering', 'global', 'marketing']);
-  assert.deepEqual(choices.repos.map(s => s === 'sep' ? '|' : s.label), ['agents', 'data', 'marketing', 'nw-tools'], 'repositories, never packages');
-  assert.ok(u.doc.querySelector('[data-section=workspace] .catalog-filters'), 'the filters sit in the Workspace owned section');
-  const select = key => u.doc.querySelector(`.catalog-select[data-filter-key=${key}] select`);
-  const choose = async (key, value) => { const el = select(key); el.focus(); el.value = value; el.dispatchEvent(new u.dom.window.Event('change', { bubbles: true })); await settle(); };
-  assert.deepEqual([...select('team').options].map(o => o.textContent), ['All', 'engineering', 'global', 'marketing']);
-  assert.equal(u.doc.querySelector('.catalog-clear'), null, 'nothing to clear yet');
-  await choose('team', 'marketing');
+  const status = statusOf('workspace-status');
+  const choices = repoChoices(capabilitySections(f2('capabilities').result.capabilities).workspace, memberNames(status), hostKeyOf(status));
+  assert.deepEqual(choices.map(c => [c.label, c.count]), [['agents', 2], ['data', 1], ['marketing', 2], ['nw-tools', 1]], 'repositories (the host first), never packages');
+  const pills = () => [...u.doc.querySelectorAll('[data-section=workspace] .capability-section-head .catalog-pills button')];
+  const group = u.doc.querySelector('.catalog-pills');
+  assert.equal(group.getAttribute('role'), 'group'); assert.equal(group.getAttribute('aria-label'), 'Show capabilities from');
+  assert.deepEqual(pills().map(b => [b.textContent, b.getAttribute('aria-pressed'), b.tabIndex]),
+    [['All 6', 'true', 0], ['agents 2', 'false', -1], ['data 1', 'false', -1], ['marketing 2', 'false', -1], ['nw-tools 1', 'false', -1]], 'All by default, the one tab stop');
+  assert.equal(u.doc.querySelector('.workspace-discovery select'), null, 'no dropdowns');
+  assert.equal(u.doc.querySelector('.catalog-shown'), null, 'nothing narrowed yet');
+  pills()[3].focus(); pills()[3].click(); await settle();
   assert.deepEqual(u.owned(), ['nw-brand-voice', 'nw-campaign-metrics']);
   assert.equal(u.doc.querySelector('.catalog-shown').textContent, '2 of 6 shown');
-  assert.ok(u.doc.querySelector('.catalog-select[data-filter-key=team]').classList.contains('active'));
-  assert.equal(u.doc.querySelectorAll('[data-section=packages] .catalog-row:not(.head)').length, 4, 'Packages are not filtered');
-  assert.equal(u.doc.activeElement, select('team'), 'focus stays on the chosen dropdown across the re-render');
-  await choose('repo', 'member:local//fixture/base/fx/remotes/agents.git');
-  assert.deepEqual(u.owned(), []); assert.match(u.doc.querySelector('[data-section=workspace] .catalog-empty').textContent, /No capabilities match/);
-  await choose('team', '');
-  assert.deepEqual(u.owned(), ['nw-house-style', 'nw-release-tooling']);
-  u.doc.querySelector('.catalog-clear').click(); await settle();
+  assert.deepEqual(pills().map(b => b.getAttribute('aria-pressed')), ['false', 'false', 'false', 'true', 'false']);
+  assert.equal(u.doc.querySelectorAll('[data-section=packages] .catalog-row:not(.head)').length, 4, 'Packages are not narrowed');
+  assert.equal(u.doc.activeElement, pills()[3], 'focus stays on the chosen pill across the re-render');
+  assert.equal(pills()[3].tabIndex, 0);
+  assert.deepEqual([...u.doc.querySelectorAll('[data-section=workspace] .catalog-group')].map(h => h.dataset.repo), ['member:local//fixture/base/fx/remotes/marketing.git'], 'only that group');
+  // The search narrows within the choice; the count says what is on screen, the pills keep their totals.
+  const search = u.doc.querySelector('.ws-toolbar[data-tools=capabilities] input');
+  search.value = 'brand'; search.dispatchEvent(new u.dom.window.Event('input', { bubbles: true })); await settle();
+  assert.deepEqual(u.owned(), ['nw-brand-voice']);
+  assert.equal(u.doc.querySelector('.catalog-shown').textContent, '1 of 6 shown');
+  assert.deepEqual(pills().map(b => b.textContent), ['All 6', 'agents 2', 'data 1', 'marketing 2', 'nw-tools 1']);
+  pills()[0].click(); await settle();
+  assert.deepEqual(u.owned(), ['nw-brand-voice']); assert.equal(u.doc.querySelector('.catalog-shown').textContent, '1 of 6 shown', 'a search alone still narrows');
+  search.value = ''; search.dispatchEvent(new u.dom.window.Event('input', { bubbles: true })); await settle();
   assert.equal(u.owned().length, 6);
   assert.equal(u.doc.querySelector('.catalog-shown'), null);
-  assert.deepEqual(u.syncCalls(), [{ action: 'read' }], 'filtering is local');
+  assert.deepEqual(u.syncCalls(), [{ action: 'read' }], 'choosing is local');
+});
+
+test('a remembered repository the catalog no longer offers falls back to All; a focused pill keeps focus across a repaint', async t => {
+  let rows = f2('capabilities').result.capabilities;
+  const reply = () => ({ workspaceSyncApi: 1, status: 'ok', report: null, reason: null, capabilities: { capabilitiesApi: 1, ...f2('capabilities').result, capabilities: rows } });
+  const u = await setup(t, { sync: body => body.action === 'sync' ? report('sync-current', 'ok') : reply() });
+  await u.tab('capabilities');
+  const pills = () => [...u.doc.querySelectorAll('.catalog-pills button')];
+  const marketing = () => pills().find(b => b.dataset.repo.endsWith('marketing.git'));
+  marketing().click(); await settle();
+  // Arrow keys move focus along the group (not the choice); the focused pill becomes the one tab stop.
+  marketing().focus(); marketing().dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }));
+  assert.equal(u.doc.activeElement.dataset.repo, 'member:local//fixture/base/fx/remotes/data.git');
+  assert.equal(marketing().getAttribute('aria-pressed'), 'true', 'moving is not choosing');
+  // The catalog changes (a sync re-reads it): the pills are rebuilt and the same repository keeps focus.
+  rows = rows.filter(r => r.name !== 'nw-house-style');
+  u.doc.querySelector('.ws-sync button.ws-sync-run').click(); await settle();
+  assert.deepEqual(pills().map(b => b.textContent), ['All 5', 'agents 1', 'data 1', 'marketing 2', 'nw-tools 1']);
+  assert.equal(u.doc.activeElement, pills()[2], 'focus survives the repaint on the same repository');
+  assert.deepEqual(pills().map(b => b.tabIndex), [-1, -1, 0, -1, -1]);
+  // The chosen repository disappears from the catalog: All again, every row shown.
+  rows = rows.filter(r => !String(r.repoKey).endsWith('marketing.git'));
+  u.doc.querySelector('.ws-sync button.ws-sync-run').click(); await settle();
+  assert.deepEqual(pills().map(b => [b.textContent, b.getAttribute('aria-pressed')]), [['All 3', 'true'], ['agents 1', 'false'], ['data 1', 'false'], ['nw-tools 1', 'false']]);
+  assert.deepEqual(u.owned(), ['nw-release-tooling', 'nw-warehouse-access', 'nw-tools-dev']);
+  assert.equal(u.doc.querySelector('.catalog-shown'), null);
+  // No workspace-owned capability at all: no pills.
+  rows = rows.filter(r => r.kind === 'package');
+  u.doc.querySelector('.ws-sync button.ws-sync-run').click(); await settle();
+  assert.equal(u.doc.querySelector('.catalog-pills'), null);
+  assert.match(u.doc.querySelector('[data-section=workspace] .catalog-empty').textContent, /No workspace repository offers a capability yet/);
+});
+
+test('Workspace owned is split by repository, headed as on the Souls tab: the host first, then by name', async t => {
+  const u = await setup(t);
+  await u.tab('capabilities');
+  const heads = [...u.doc.querySelectorAll('[data-section=workspace] .catalog-group')];
+  assert.deepEqual(heads.map(h => [h.tagName, h.querySelector('svg').getAttribute('data-icon'), h.querySelector('.souls-group-name').textContent, h.querySelector('.souls-group-note').textContent]), [
+    ['H3', 'repo', 'agents', 'member repo · host · 2 capabilities'], ['H3', 'repo', 'data', 'member repo · 1 capability'],
+    ['H3', 'repo', 'marketing', 'member repo · 2 capabilities'], ['H3', 'repo', 'nw-tools', 'member repo · 1 capability']]);
+  assert.deepEqual(u.owned(), ['nw-house-style', 'nw-release-tooling', 'nw-warehouse-access', 'nw-brand-voice', 'nw-campaign-metrics', 'nw-tools-dev'], 'the rows under their heading');
+  assert.equal(heads[0].nextElementSibling.dataset.capability, 'nw-house-style');
+  // A search that empties a group hides its heading.
+  const search = u.doc.querySelector('.ws-toolbar[data-tools=capabilities] input');
+  search.value = 'warehouse'; search.dispatchEvent(new u.dom.window.Event('input', { bubbles: true })); await settle();
+  assert.deepEqual([...u.doc.querySelectorAll('[data-section=workspace] .catalog-group .souls-group-name')].map(el => el.textContent), ['data']);
 });
 
 // Workspace v4 (human decision 2026-09-26; replaces the header search): the search is
@@ -149,7 +205,8 @@ test('three sections: Workspace owned, Repo owned (grouped by repo, only when th
   assert.deepEqual([...u.doc.querySelectorAll('.capability-nav button')].map(el => el.dataset.jump), ['workspace', 'repo', 'packages']);
   assert.ok(!u.owned().includes('nw-platform-runbook'), 'a repo-owned capability is never listed as workspace owned');
   const group = u.doc.querySelector('[data-section=repo] .catalog-group');
-  assert.equal(group.textContent, 'platform');
+  assert.equal(group.querySelector('.souls-group-name').textContent, 'platform');
+  assert.equal(group.querySelector('.souls-group-note').textContent, 'member repo · 1 capability', 'the same heading grammar as Workspace owned');
   assert.equal(group.querySelector('svg').innerHTML, iconElement(u.doc, 'repo').innerHTML, 'the repository icon');
   const runbook = u.doc.querySelector('[data-section=repo] .catalog-row[data-capability=nw-platform-runbook]');
   assert.equal(group.nextElementSibling, runbook);
@@ -244,8 +301,7 @@ test('W2 Setup graph: this computer → the lock → the workspace → members a
   assert.deepEqual([...panel.querySelectorAll('.setup-hand-mark')].map(m => m.dataset.side), ['yes', 'yes']);
   [...panel.querySelectorAll('button')].find(b => b.textContent === 'Show its capabilities').click(); await settle();
   assert.equal(u.doc.getElementById('workspace-tab-capabilities').getAttribute('aria-selected'), 'true');
-  assert.match(u.doc.querySelector('.catalog-select[data-filter-key=repo] select').value, /agents\.git$/, 'the Repo filter is that repository');
-  assert.ok(u.doc.querySelector('.catalog-select[data-filter-key=repo]').classList.contains('active'));
+  assert.match(u.doc.querySelector('.catalog-pills button[aria-pressed=true]').dataset.repo, /agents\.git$/, 'the pressed pill is that repository');
   assert.deepEqual(u.owned(), ['nw-house-style', 'nw-release-tooling']);
   assert.equal(u.doc.activeElement, u.doc.getElementById('capability-section-workspace'));
 });

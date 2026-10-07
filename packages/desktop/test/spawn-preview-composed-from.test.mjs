@@ -102,18 +102,20 @@ test('the dialog tags each row with why it is there, beside its source, in Core 
   const { response } = await read();
   const { core, caps } = composePreviewModules(doc, response.data.modules);
   const rows = [...caps[1].querySelectorAll('.spawn-cap-row')];
-  assert.deepEqual(rows.map(row => [...row.children].map(c => [c.className, c.textContent])), [
-    [['mono', 'acme-tool'], ['spawn-cap-source', 'ws · latest'], ['spawn-cap-why', 'Soul']],
-    [['mono', 'acme.own'], ['spawn-cap-source', 'ws · latest'], ['spawn-cap-why', 'Soul']],
-    [['mono', 'acme.ws'], ['spawn-cap-source', 'ws · latest'], ['spawn-cap-why', 'Workspace default']],
+  // The module on line 1, its chips (source, then reason) as one group on line 2.
+  const shape = parent => [...parent.children].map(c => c.className === 'spawn-cap-tags' ? [...c.children].map(t => [t.className, t.textContent]) : [c.className, c.textContent]);
+  assert.deepEqual(rows.map(shape), [
+    [['mono', 'acme-tool'], [['spawn-cap-source', 'ws · latest'], ['spawn-cap-why', 'Soul']]],
+    [['mono', 'acme.own'], [['spawn-cap-source', 'ws · latest'], ['spawn-cap-why', 'Soul']]],
+    [['mono', 'acme.ws'], [['spawn-cap-source', 'ws · latest'], ['spawn-cap-why', 'Workspace default']]],
   ], 'chat fills the messaging slot: Core\'s only');
   assert.equal(caps[0].textContent, 'Capabilities · 3');
   // The reason is part of the row's accessible text: plain text, never hidden from assistive technology.
   for (const row of rows) { assert.equal(row.querySelector('[aria-hidden]'), null); assert.ok(row.textContent.endsWith(row.querySelector('.spawn-cap-why').textContent)); }
   // A core row: the same chips, its reason without the slot (the row already names it).
-  assert.deepEqual([...core[1].querySelectorAll('.spawn-core-row')].map(row => [...row.children].map(c => [c.className, c.textContent])), [
+  assert.deepEqual([...core[1].querySelectorAll('.spawn-core-row')].map(row => [...row.children].map(c => c.className === 'spawn-core-module' ? shape(c) : [c.className, c.textContent])), [
     [['spawn-core-layer', 'Knowledge'], ['muted', 'None']],
-    [['spawn-core-layer', 'Messaging'], ['mono', 'chat'], ['spawn-cap-source', 'ws · latest'], ['spawn-cap-why', 'Workspace default']],
+    [['spawn-core-layer', 'Messaging'], [['mono', 'chat'], [['spawn-cap-source', 'ws · latest'], ['spawn-cap-why', 'Workspace default']]]],
     [['spawn-core-layer', 'Tasks'], ['muted', 'None']]]);
   // An older CLI (or a dropped value): the rows carry no composedFrom, and no tag is guessed.
   const older = composePreviewModules(doc, (await read(kernel(), WITHOUT)).response.data.modules);
@@ -135,11 +137,11 @@ test('the reason tag reuses the source chip\'s muted tag pair (--muted on --tag-
   assert.ok(rule, 'one rule for both tags');
   assert.match(rule[1], /background:var\(--tag-bg\); color:var\(--muted\);/);
   assert.equal(spawnDialogCSS.match(/\.spawn-cap-why/g).length, 1, 'no rule, colour or opacity of its own');
-  // A long name beside a package source and a reason: the tags wrap to a right-aligned line of their own
-  // instead of squeezing the name to one character per line (seen in a 360px column, fixed here).
-  // Core rows share the rule: one row grammar for both boxes.
-  assert.match(spawnDialogCSS, /\.spawn-core-row, \.spawn-cap-row \{ display:flex; flex-wrap:wrap; justify-content:flex-end;/);
-  assert.match(spawnDialogCSS, /\.spawn-core-row \.mono, \.spawn-cap-row \.mono, [^{]*\{ flex:1 1 auto; min-width:0; overflow-wrap:anywhere; \}/);
+  // A long name beside a package source and a reason: the name always has line 1 to itself and the tags
+  // wrap as a left-aligned group on line 2, at every width (never right-justified chips that drop only
+  // for long names). Core rows share the grammar inside their slot column.
+  assert.match(spawnDialogCSS, /\.spawn-cap-row, \.spawn-core-module \{ display:flex; flex-direction:column; align-items:flex-start;/);
+  assert.match(spawnDialogCSS, /\.spawn-core-row \.mono, \.spawn-cap-row \.mono, [^{]*\{ max-width:100%; min-width:0; overflow-wrap:anywhere; \}/);
   // The inventory theme-contrast.test.mjs holds every palette to (renderer/contrast-inventory.mjs).
   assert.ok(TEXT_PAIRS.some(([fg, bg]) => fg === 'muted' && bg === 'tag-bg'), 'muted on tag-bg is in the computed contrast inventory');
 });

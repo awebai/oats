@@ -198,7 +198,7 @@ test("search fields: the wrapper or the field's own border is the only frame; th
   for (const selector of ["#ws-menu-search", "#ws-suggestion-search", ".oats-view input.field", ".palette-input"]) {
     assert.equal(u.focused(selector).outline, "none", `${selector} draws no outline when focused`);
   }
-  const fieldRule = u.rule(".oats-view input.field:focus-visible, .oats-view textarea.field:focus-visible, .oats-view select.field:focus-visible");
+  const fieldRule = u.rule(".oats-view input.field:focus-visible, .oats-view textarea.field:focus-visible, select.field:focus-visible");
   assert.equal(fieldRule.outline, "none"); assert.equal(fieldRule.borderColor, "var(--accent)");
   const inputRule = u.rule(":is(input:not([type=\"checkbox\"]):not([type=\"radio\"]), textarea, select):focus-visible");
   assert.equal(inputRule.outline, "none"); assert.equal(inputRule.borderColor, "var(--accent)", "the palette input's bottom rule turns accent through this rule");

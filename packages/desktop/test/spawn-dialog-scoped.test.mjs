@@ -39,9 +39,10 @@ function mount(t, { soul = member, agents = [member, other, packaged], layout, p
   const q = selector => ui.dialog.querySelector(selector);
   return { dom, doc, ui, calls, chosen, q, text: selector => (q(selector)?.textContent || '').trim(), style: el => dom.window.getComputedStyle(el),
     hidden: el => !el || el.hidden || !!el.closest('[hidden]'),
-    // A fact's words, without the decorative harness badge's glyph.
-    facts: () => Object.fromEntries([...ui.dialog.querySelectorAll('.spawn-preview-facts dt')].map(dt => {
+    // A fact's words, without the decorative harness badge's glyph; a value's second line after " / ".
+    facts: () => Object.fromEntries([...ui.dialog.querySelectorAll('.spawn-preview-created dt')].map(dt => {
       const dd = dt.nextElementSibling.cloneNode(true); for (const badge of dd.querySelectorAll('.runtime-badge')) badge.remove();
+      for (const line of dd.querySelectorAll('.spawn-fact-sub')) line.textContent = ` / ${line.textContent}`;
       return [dt.textContent, dd.textContent.trim()];
     })),
     // jsdom does not compute a shorthand holding var() (border:1px solid var(--border)), so frames are read from the rules.
@@ -124,8 +125,16 @@ test('the preview column: a skeleton with aria-busy while reading, then the fact
   assert.equal(u.rule('.spawn-footer .fstatus.ok::before', 'color'), 'var(--ok)');
   assert.match(u.rule('.spawn-footer .fstatus.ok::before', 'content'), /^"\\2713"\s*\/\s*""$/);
   const data = preview('preview-worktree-default');
-  assert.deepEqual(u.facts(), { Name: data.instance, 'Works in': 'own worktree', Harness: 'Pi · native default', Team: 'engineering' });
-  assert.ok(u.q('.spawn-preview-facts dd .mono'), 'the name in monospace');
+  assert.deepEqual(u.facts(), { Name: data.instance, Home: 'agents/release-manager/instances/release-manager-1', 'Works in': 'worktree · branch agents/release-manager-1 from HEAD',
+    Harness: 'Pi · default model / native default', Team: 'engineering' });
+  // The instance leads, apart from the facts: its name and its home (relative to the deployment, the full path its title).
+  const created = u.q('.spawn-preview-created .spawn-preview-body');
+  assert.deepEqual([...created.children].map(c => c.className), ['spawn-preview-identity', 'spawn-preview-facts']);
+  assert.equal(u.q('.spawn-preview-name').textContent, data.instance); assert.equal(u.q('.spawn-preview-home').title, data.home);
+  assert.match(u.rule('.spawn-preview-name', 'font'), /13\.5px.*var\(--mono/); assert.equal(u.style(u.q('.spawn-preview-name')).color, 'var(--fg)');
+  assert.equal(u.style(u.q('.spawn-preview-home')).color, 'var(--muted)');
+  assert.ok([...u.q('.spawn-preview-identity').querySelectorAll('dt')].every(dt => dt.classList.contains('workspace-sr-only')), 'the terms are for assistive tech');
+  assert.equal(u.q('.spawn-preview-facts dd .mono').textContent, data.branch, 'the branch in monospace');
   const harness = u.q('.spawn-preview-harness'); assert.equal(harness.querySelector('.runtime-badge').dataset.runtime, 'pi');
   assert.equal(harness.querySelector('.runtime-badge').getAttribute('aria-hidden'), 'true', 'decorative beside the words');
   assert.equal(u.style(harness.querySelector('.runtime-badge')).width, '16px');
@@ -158,7 +167,7 @@ test('the preview follows the latest choice: typing keeps the settled facts, mar
   assert.equal(u.hidden(mark), false); assert.equal(mark.textContent, 'Updating…');
   assert.equal(mark.parentElement, u.q('.spawn-preview-created .spawn-preview-head'), 'beside the "What will be created" title');
   assert.equal(u.facts().Name, 'release-manager-api-v2', 'the name the form spells, at once: never a stale name');
-  assert.equal(u.facts()['Works in'], 'own worktree', 'the other settled facts stay');
+  assert.equal(u.facts()['Works in'], 'worktree · branch agents/release-manager-1 from HEAD', 'the other settled facts stay');
   assert.equal(u.hidden(u.q('.spawn-preview-core')), false); assert.equal(u.q('.spawn-preview-core .spawn-core-box'), core, 'Core capabilities stay in place, not redrawn');
   assert.equal(u.hidden(u.q('.spawn-preview-caps')), false);
   await settle(12);
@@ -175,12 +184,14 @@ test('Harness says where the launch came from (0.30 launch), Team the default th
   const featured = { ...structuredClone(CLI), features: [...CLI.features, 'launch-preference'] };
   const data = { ...preview('preview-worktree-default'), launch: { declared: { harness: 'pi', model: null }, effective: { harness: 'pi', model: null, launchConfig: null }, from: 'soul', at: 'souls/release-manager/soul.yaml#/launch', problem: null } };
   const u = mount(t, { layout: 'scoped', cli: featured, previews: () => view(target, data) }); await settle(12);
-  assert.equal(u.facts().Harness, "Pi · the soul's preference");
+  assert.equal(u.facts().Harness, "Pi · default model / the soul's preference", 'the harness and model, where it came from beneath');
   const teams = mount(t, { layout: 'scoped', cli: { ...structuredClone(v2('version')), ok: true, bin: '/fixture/oats' }, previews: () => view(target, v2('preview').result) }); await settle(12);
-  assert.equal(teams.facts().Team, 'engineering (default)');
-  assert.equal(teams.q('.spawn-preview-facts dd .muted').textContent, '(default)');
+  // The default, then (muted, its own line) the other teams this spawn may join.
+  assert.equal(teams.facts().Team, 'engineering · default / may also join global, mine');
+  const teamValue = u => [...u.ui.dialog.querySelectorAll('.spawn-preview-facts dt')].find(dt => dt.textContent === 'Team').nextElementSibling;
+  assert.deepEqual([...teamValue(teams).querySelectorAll('.muted')].map(m => [m.className, m.textContent]), [['muted', ' · default'], ['muted spawn-fact-sub', 'may also join global, mine']]);
   const none = mount(t, { layout: 'scoped', cli: { ...structuredClone(v2('version')), ok: true, bin: '/fixture/oats' }, previews: () => view(target, { ...v2('preview').result, defaultTeam: null, teams: [] }) }); await settle(12);
-  assert.equal(none.facts().Team, 'none'); assert.equal(none.q('.spawn-preview-facts dd .muted').textContent, 'none');
+  assert.equal(none.facts().Team, 'none'); assert.equal(teamValue(none).querySelector('.muted').textContent, 'none');
 });
 
 test('a kernel refusal replaces the facts with the footer\'s plain sentence; a name refusal stays at the Name field', async t => {
@@ -207,7 +218,7 @@ test('Core capabilities and Capabilities come from the preview\'s modules only',
   assert.equal(core[0].textContent, 'Core capabilities');
   // Core rows speak the Capabilities rows' grammar (the module in mono, its source chip), led by the slot.
   assert.deepEqual([...core[1].querySelectorAll('.spawn-core-row')].map(row => [...row.children].map(c => [c.className, c.textContent])),
-    [[['spawn-core-layer', 'Knowledge'], ['mono', 'oats.okf'], ['spawn-cap-source', 'package oats.okf 2.1.3']],
+    [[['spawn-core-layer', 'Knowledge'], ['spawn-core-module', 'oats.okfpackage oats.okf 2.1.3']],
       [['spawn-core-layer', 'Messaging'], ['muted', 'None']], [['spawn-core-layer', 'Tasks'], ['muted', 'None']]]);
   // An empty slot reads as an absence (muted "None"), never as a provider named "none".
   assert.match(spawnDialogCSS, /\.spawn-core-row \.muted, [^{]*\{ color:var\(--muted\); \}/);
@@ -215,6 +226,14 @@ test('Core capabilities and Capabilities come from the preview\'s modules only',
   assert.equal(caps[0].textContent, 'Capabilities · 4');
   assert.deepEqual([...caps[1].querySelectorAll('.spawn-cap-row')].map(row => [row.querySelector('.mono').textContent, row.querySelector('.spawn-cap-source').textContent]),
     [['nw-deploy', 'package nw.tools 0.4.0'], ['nw-house-style', 'agents · latest'], ['nw-release-tooling', 'agents · latest'], ['oats.core', 'package oats.framework 1.1.3']]);
+  // Line 1 the module, line 2 its chips as one wrapping group: the same structure at every width, nothing right-justified.
+  assert.deepEqual([...caps[1].querySelector('.spawn-cap-row').children].map(c => c.className), ['mono', 'spawn-cap-tags']);
+  assert.deepEqual([...core[1].querySelector('.spawn-core-module').children].map(c => c.className), ['mono', 'spawn-cap-tags']);
+  assert.match(spawnDialogCSS, /\.spawn-core-row \{ display:grid; grid-template-columns:84px minmax\(0,1fr\);/, 'the slot is a fixed left column');
+  assert.match(spawnDialogCSS, /\.spawn-cap-row, \.spawn-core-module \{ display:flex; flex-direction:column; align-items:flex-start;/);
+  assert.match(spawnDialogCSS, /\.spawn-cap-tags \{ display:flex; flex-wrap:wrap; justify-content:flex-start;/);
+  assert.doesNotMatch(spawnDialogCSS, /justify-content:flex-end/, 'nothing right-justified');
+  assert.doesNotMatch(spawnDialogCSS.match(/^\.spawn-cap-source, \.spawn-cap-why \{[^}]*\}/m)[0], /nowrap/, 'a long source wraps inside its chip');
   // Nothing but core: the Capabilities box says so rather than standing empty.
   const only = composePreviewModules(doc, modules.filter(m => m.layer));
   assert.equal(only.caps[0].textContent, 'Capabilities · 0'); assert.equal(only.caps[1].textContent, 'No other capabilities: only the core ones.');
@@ -278,11 +297,13 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: the scoped d
   const sections = composePreviewModules(u.doc, v2('preview').result.modules.map(m => ({ name: m.name, layer: m.layer, from: m.from, composedFrom: 'workspace' })));
   u.q('.spawn-preview-core').hidden = false; u.q('.spawn-preview-core').append(...sections.core); u.q('.spawn-preview-caps').hidden = false; u.q('.spawn-preview-caps').append(...sections.caps);
   const failure = u.doc.createElement('p'); failure.className = 'spawn-preview-failure'; failure.textContent = spawnProblem({ code: failing.error.code, message: failing.error.message }).text; u.q('.spawn-preview-body').append(failure);
+  const prompts = u.doc.createElement('dl'); prompts.className = 'spawn-preview-prompts'; prompts.innerHTML = '<dt>Launch prompts</dt><dd>None.</dd>'; u.q('.spawn-preview-body').append(prompts);
   const root = u.dom.window.getComputedStyle(u.doc.documentElement);
   for (const [selector, surfaceSelector, fg, bg] of [
     ['.spawn-dialog-head h2', '.spawn-dialog', 'fg', 'surface'], ['.spawn-context', '.spawn-dialog', 'muted', 'surface'], ['.spawn-change-soul', '.spawn-dialog', 'accent', 'surface'],
     ['.spawn-preview-title', '.spawn-preview', 'muted', 'surface-2'], ['.spawn-preview-facts dt', '.spawn-preview', 'muted', 'surface-2'], ['.spawn-preview-facts', '.spawn-preview', 'fg', 'surface-2'],
-    ['.spawn-preview-facts dd .muted', '.spawn-preview', 'muted', 'surface-2'], ['.spawn-preview-failure', '.spawn-preview', 'warn', 'surface-2'], ['.spawn-preview-note', '.spawn-preview', 'muted', 'surface-2'],
+    ['.spawn-preview-facts dd .muted', '.spawn-preview', 'muted', 'surface-2'], ['.spawn-preview-name', '.spawn-preview', 'fg', 'surface-2'], ['.spawn-preview-home', '.spawn-preview', 'muted', 'surface-2'],
+    ['.spawn-preview-facts .spawn-fact-sub', '.spawn-preview', 'muted', 'surface-2'], ['.spawn-preview-prompts dt', '.spawn-preview-prompts', 'muted', 'surface'], ['.spawn-preview-prompts dd', '.spawn-preview-prompts', 'muted', 'surface'], ['.spawn-preview-failure', '.spawn-preview', 'warn', 'surface-2'], ['.spawn-preview-note', '.spawn-preview', 'muted', 'surface-2'],
     ['.spawn-core-box', '.spawn-core-box', 'fg', 'surface'], ['.spawn-core-layer', '.spawn-core-box', 'muted', 'surface'], ['.spawn-core-row .muted', '.spawn-core-box', 'muted', 'surface'],
     ['.spawn-cap-list', '.spawn-cap-list', 'fg', 'surface'], ['.spawn-core-row .spawn-cap-why', '.spawn-core-row .spawn-cap-why', 'muted', 'tag-bg'], ['.spawn-cap-source', '.spawn-cap-source', 'muted', 'tag-bg'], ['.spawn-cap-why', '.spawn-cap-why', 'muted', 'tag-bg'],
     ['.spawn-seg input:checked + span', '.spawn-seg input:checked + span', 'accent', 'sel'], ['.spawn-seg input:not(:checked) + span', '.spawn-seg', 'muted', 'surface'],

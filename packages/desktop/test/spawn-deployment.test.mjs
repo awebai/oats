@@ -35,7 +35,7 @@ const chosen = u => u.q('.fdeployment input:checked')?.value;
 async function choose(u, id) { [...u.q('.fdeployment').querySelectorAll('input')].find(i => i.value === id).click(); await settle(); }
 const key = (target, k) => target.dispatchEvent(new target.ownerDocument.defaultView.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
 /** What the "What will be created" column says, as dt → dd. */
-const facts = u => Object.fromEntries([...u.doc.querySelectorAll('.spawn-preview-facts dt')].map(dt => [dt.textContent, dt.nextElementSibling.textContent.trim()]));
+const facts = u => Object.fromEntries([...u.doc.querySelectorAll('.spawn-preview-created dt')].map(dt => [dt.textContent, dt.nextElementSibling.textContent.trim()]));
 /** Every message the dialog shows outside its footer: the field, the form's hints, the preview column. */
 const elsewhere = u => [...u.dialog().querySelectorAll('.spawn-deployment, .spawn-preview-body, .spawn-hint')].map(n => n.textContent).join('\n');
 
@@ -220,7 +220,9 @@ test('two deployments: the field comes first, before Name, replaces Where to run
   assert.deepEqual(options(u), ['This Mac · northwind-workspace', 'This Mac · northwind'], 'by machine; one machine with two: the path tail');
   assert.equal(chosen(u), A);
   // The summary's first row: where it runs, by its full label.
-  assert.deepEqual(Object.keys(facts(u)).slice(0, 2), ['Runs on', 'Name']); assert.equal(facts(u)['Runs on'], 'This Mac · …/base/northwind-workspace');
+  // The instance leads the column; where it runs closes its facts.
+  assert.deepEqual(Object.keys(facts(u)).slice(0, 2), ['Name', 'Home']); assert.equal(Object.keys(facts(u)).at(-1), 'Runs on');
+  assert.equal(facts(u)['Runs on'], 'This Mac · …/base/northwind-workspace');
   await choose(u, B);
   assert.equal(facts(u)['Runs on'], 'This Mac · …/other/northwind');
   assert.equal(previewWs(u).at(-1), B);

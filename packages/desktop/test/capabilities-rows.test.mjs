@@ -203,9 +203,11 @@ test('rule 2 in the card CSS: hover restyles the border and surface; focus is th
   assert.match(catalogCSS, /button\.catalog-row:hover \{ background:var\(--surface-2\); border-color:var\(--tree-line\); \}/);
   // The shell's :focus-visible (theme.css) is the keyboard's tint + 1px accent edge; a component rule would override it.
   assert.doesNotMatch(catalogCSS, /(catalog-row|capability-nav[^{]*button):focus/);
-  // Rule 3: the filter dropdown's wrapper is its one frame, accent on focus-within; the select draws none.
-  assert.match(catalogCSS, /\.catalog-select:focus-within \{ border-color:var\(--accent\); \}/);
-  assert.match(catalogCSS, /\.catalog-select select:focus-visible \{ outline:none; \}/);
+  // The repository pills: each chip has its own 1px frame. Its background out-ranks the global focus tint, so
+  // its one focus rule restates the shell's tint (as #ws-trigger does), and nothing else: the edge stays the shell's.
+  assert.match(catalogCSS, /\.catalog-pills button \{[^}]*border:1px solid var\(--border\); border-radius:7px; background:var\(--surface\); color:var\(--muted\)/);
+  assert.deepEqual(catalogCSS.match(/[^{}\n]*catalog-pills[^{}\n]*:focus[^{}]*\{[^}]*\}/g).map(rule => rule.trim()), ['.oats-view .catalog-pills button:focus-visible { background:var(--sel); }']);
+  assert.doesNotMatch(catalogCSS, /catalog-select|catalog-clear/, 'the Team and Repo dropdowns are gone');
   // jsdom cannot compute a border shorthand holding var(): the card's frame is read from the sheet.
   assert.match(catalogCSS, /button\.catalog-row \{[^}]*border:1px solid var\(--border\); border-radius:10px; background:var\(--surface\)/);
   for (const rule of catalogCSS.match(/^[^{\n]*(catalog-row|capability-nav)[^{\n]*\{[^}]*\}/gm)) assert.doesNotMatch(rule, /outline:2px|outline-offset/, rule);
@@ -227,7 +229,7 @@ test('the section jump is one ws-segmented group of navigation segments (aria-cu
   assert.deepEqual(buttons.map(b => [b.dataset.jump, b.getAttribute('aria-current'), b.getAttribute('aria-pressed')]), [['workspace', 'true', null], ['repo', null, null], ['packages', null, null]], 'Repo owned before Packages');
   assert.deepEqual(u.$$('.capability-section').map(el => el.dataset.section), ['workspace', 'repo', 'packages'], 'the sections in the nav\'s order');
   assert.match(catalogCSS, /\.capability-nav\.ws-segmented button\[aria-current\] \{ background:var\(--sel\); color:var\(--accent\); font-weight:650; \}/, 'rule 1 look on the current segment');
-  assert.doesNotMatch(catalogCSS, /aria-pressed/);
+  for (const rule of catalogCSS.match(/^[^{\n]*capability-nav[^{\n]*\{[^}]*\}/gm)) assert.doesNotMatch(rule, /aria-pressed/, 'the jump is navigation: no pressed state');
   assert.deepEqual(buttons.map(b => b.querySelector('.capability-nav-count').textContent), ['4', '1', '2'], 'the count span stays');
   assert.equal(u.css(buttons[0]).borderRadius, '6px');
   assert.equal(u.css(buttons[1]).background, 'rgba(0, 0, 0, 0)'); assert.equal(u.css(buttons[1]).color, 'var(--muted)');
@@ -245,9 +247,10 @@ test('the section jump is one ws-segmented group of navigation segments (aria-cu
   tops.packages = 10; syncCapabilityNav(u.$('.sections'), { getBoundingClientRect: () => ({ top: 0 }) });
   assert.deepEqual(current(), [null, null, 'true'], 'Packages in view');
   assert.equal(u.$('[aria-pressed]'), null, 'navigation, not a toggle');
-  // Repo owned: the repository heading sits between cards, and its card is a button too.
+  // Repo owned: the repository heading (the Souls tab's grammar) sits between cards, and its card is a button too.
   const group = u.$('[data-section=repo] .catalog-group');
-  assert.equal(group.getAttribute('role'), 'heading'); assert.equal(group.textContent, 'oats');
+  assert.equal(group.tagName, 'H3'); assert.equal(group.querySelector('.souls-group-name').textContent, 'oats');
+  assert.equal(group.querySelector('.souls-group-note').textContent, 'member repo · 1 capability');
   assert.equal(group.nextElementSibling.tagName, 'BUTTON'); assert.equal(group.nextElementSibling.dataset.capability, 'nw-runbook');
   group.nextElementSibling.click(); assert.deepEqual(opened, ['nw-runbook']);
 });

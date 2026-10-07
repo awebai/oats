@@ -4,13 +4,14 @@ export const connectionsCSS = `
 .forge-settings { width:min(760px,calc(100vw - 32px)); max-height:90vh; overflow:auto; padding:18px; border:1px solid var(--border); border-radius:10px; background:var(--surface); color:var(--fg); box-shadow:var(--shadow-popover); }
 .forge-settings header, .forge-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .forge-settings header h2 { flex:1; margin:0; font-size:16px; }
-.forge-settings button, .forge-settings select, .forge-settings input { font:inherit; padding:6px 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--fg); }
+.forge-settings button, .forge-settings input { font:inherit; padding:6px 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--fg); }
 .forge-settings button:focus-visible { background:var(--sel); }
 .forge-settings [aria-disabled=true] { color:var(--muted); cursor:wait; }
 .forge-settings .forge-card { margin:16px 0; padding:14px; border:1px solid var(--border); border-radius:9px; background:var(--surface-2); }
 .forge-settings .forge-hint { color:var(--muted); line-height:1.5; overflow-wrap:anywhere; }
 .forge-settings label { display:flex; align-items:center; gap:8px; min-width:0; }
-.forge-settings select { min-width:0; max-width:100%; flex:1; }
+/* The host select is theme.css's select.field; here it only takes the row's width. */
+.forge-settings select.field { min-width:0; max-width:100%; flex:1; }
 .forge-settings .forge-terminal { height:260px; padding:8px; margin:8px 0; background:var(--surface); border:1px solid var(--border); border-radius:6px; }
 .forge-settings .forge-terminal .xterm { height:100%; }
 `;
@@ -158,7 +159,7 @@ export function createConnections({ doc, request, desk, terminalFactory, subscri
       const header = node('header'), closeButton = button('Close settings', () => close());
       header.append(node('h2', 'Settings'), button('Keyboard shortcuts', () => { close(); openShortcuts(); }), closeButton);
       const card = node('section', undefined, 'forge-card'), status = node('p', '', 'forge-hint'), observed = node('p', '', 'forge-hint'); status.setAttribute('role', 'status');
-      const host = node('select'); host.setAttribute('aria-label', 'GitHub host'); const label = node('label', 'Host'); label.append(host);
+      const host = node('select', undefined, 'field'); host.setAttribute('aria-label', 'GitHub host'); const label = node('label', 'Host'); label.append(host);
       const refreshButton = button('Refresh', () => { onIntent(); void refresh(); });
       const connectButton = button('Connect GitHub', () => { if (current && !pending) { onIntent(); void startAuth(current.connectionRef); } });
       const disconnectButton = button('Disconnect', () => void disconnect());

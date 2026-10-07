@@ -85,7 +85,7 @@ test('Capabilities: the section pills and search are one sticky block, flush at 
 test('Capabilities: jump targets and rows keep clear of the pinned block (scroll-margin-top = its height)', async t => {
   const u = await mountWorkspace(t);
   u.get('#workspace-tab-capabilities').click(); await tick(); await tick();
-  const targets = [...u.doc.querySelectorAll('.capability-section-title, .catalog-row, .capability-repo-title')];
+  const targets = [...u.doc.querySelectorAll('.capability-section-title, .catalog-row, .catalog-group')];
   assert.ok(targets.length >= 3, 'section heads and rows rendered');
   for (const target of targets) assert.equal(u.css(target).scrollMarginTop, 'var(--ws-sticky-h, 60px)', target.className);
   // The jump pills scroll their section head into view with block:start, so the margin applies.

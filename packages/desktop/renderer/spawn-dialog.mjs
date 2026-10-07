@@ -71,21 +71,39 @@ export const spawnDialogCSS = `
 .spawn-dialog .close-act { flex:none; margin-left:auto; display:grid; place-items:center; }
 .spawn-columns { display:grid; grid-template-columns:300px minmax(0,1fr); height:calc(100vh - 100px); max-height:700px; min-height:0; overflow:hidden; }
 .spawn-dialog[data-layout=scoped] .spawn-columns { grid-template-columns:360px minmax(0,1fr); }
-/* The preview column: what the kernel will create, re-drawn from every observation. */
-.spawn-preview { display:flex; flex-direction:column; gap:16px; min-width:0; min-height:0; overflow:auto; padding:18px 20px; box-sizing:border-box; background:var(--surface-2); border-right:1px solid var(--border); }
+/* The preview column: what the kernel will create, re-drawn from every observation. A named size
+   container: below ~300px of content width its facts stack label-above-value. */
+.spawn-preview { display:flex; flex-direction:column; gap:16px; min-width:0; min-height:0; overflow:auto; padding:18px 20px; box-sizing:border-box; background:var(--surface-2); border-right:1px solid var(--border); container:spawn-preview / inline-size; }
 .spawn-preview-section { display:flex; flex-direction:column; gap:6px; min-width:0; }
-.spawn-preview-body { display:flex; flex-direction:column; gap:8px; min-width:0; }
+.spawn-preview-body { display:flex; flex-direction:column; gap:12px; min-width:0; }
 .spawn-preview-title { margin:0; font-size:10.5px; font-weight:650; letter-spacing:.065em; text-transform:uppercase; color:var(--muted); }
 /* A newer preview is reading: the settled facts stay, and the title line says so in words (never fading the text: AA). */
 .spawn-preview-head { display:flex; align-items:baseline; justify-content:space-between; gap:8px; min-width:0; }
 .spawn-preview-updating { flex:none; font-size:10.5px; font-weight:600; color:var(--muted); }
-.spawn-preview-facts { display:grid; grid-template-columns:86px minmax(0,1fr); row-gap:8px; column-gap:10px; margin:0; font-size:12.5px; color:var(--fg); }
-.spawn-preview-facts dt { margin:0; color:var(--muted); }
+/* The instance first and largest, its home beneath (shortened; the full path is its title). */
+.spawn-preview-identity { display:flex; flex-direction:column; gap:2px; margin:0; min-width:0; }
+.spawn-preview-identity dd { margin:0; min-width:0; overflow-wrap:anywhere; }
+.spawn-preview-name { color:var(--fg); font:650 13.5px/1.45 var(--mono,monospace); }
+.spawn-preview-home { color:var(--muted); font:11.5px/1.45 var(--mono,monospace); }
+/* The facts: a label column and a value column; a value's origin or extra on its own muted line. */
+.spawn-preview-facts { display:grid; grid-template-columns:86px minmax(0,1fr); row-gap:8px; column-gap:10px; margin:0; font-size:12.5px; line-height:1.5; color:var(--fg); }
+.spawn-preview-facts dt { margin:0; color:var(--muted); font-size:11.5px; line-height:1.6; }
 .spawn-preview-facts dd { margin:0; min-width:0; overflow-wrap:anywhere; }
 .spawn-preview-facts .mono, .spawn-core-row .mono, .spawn-cap-row .mono { font-family:var(--mono,monospace); }
 .spawn-preview .muted { color:var(--muted); }
-.spawn-preview-harness { display:flex; align-items:center; gap:6px; }
-.spawn-preview-harness .runtime-badge { width:16px; height:16px; border-radius:4px; font-size:9px; }
+.spawn-preview-facts .spawn-fact-sub { display:block; font-size:11.5px; line-height:1.45; }
+.spawn-preview-harness { display:flex; align-items:center; gap:6px; min-width:0; }
+.spawn-preview-harness .runtime-badge { flex:none; width:16px; height:16px; border-radius:4px; font-size:9px; }
+/* Launch prompts: a policy note, not a fact; full width at the section's end. */
+.spawn-preview-prompts { display:flex; flex-direction:column; gap:2px; margin:0; padding:8px 10px; border-radius:6px; background:var(--surface); font-size:11.5px; line-height:1.5; color:var(--muted); }
+.spawn-preview-prompts dt { margin:0; font-weight:650; }
+.spawn-preview-prompts dd { margin:0; min-width:0; overflow-wrap:anywhere; }
+.spawn-preview-prompts dd + dt { margin-top:4px; }
+@container spawn-preview (max-width:299px) {
+ .spawn-preview-facts { grid-template-columns:minmax(0,1fr); row-gap:0; }
+ .spawn-preview-facts dd { margin-bottom:8px; }
+ .spawn-preview-facts dd:last-child { margin-bottom:0; }
+}
 /* Loading: the shape of the facts, no words (the sr-only text says it). */
 .spawn-preview-skeleton { display:grid; grid-template-columns:86px minmax(0,1fr); row-gap:10px; column-gap:10px; align-items:center; }
 .spawn-preview-skeleton span { display:block; height:12px; border-radius:6px; background:var(--tag-bg); }
@@ -96,15 +114,19 @@ export const spawnDialogCSS = `
 .spawn-preview-skeleton span:nth-child(8) { width:34%; }
 .spawn-preview-failure { margin:0; font-size:12.5px; line-height:1.5; color:var(--warn); overflow-wrap:anywhere; }
 .spawn-preview-empty { margin:0; font-size:12.5px; line-height:1.5; color:var(--muted); overflow-wrap:anywhere; }
-.spawn-core-box, .spawn-cap-list { display:flex; flex-direction:column; border:1px solid var(--border); border-radius:8px; background:var(--surface); font-size:12px; color:var(--fg); }
-/* One row grammar for both boxes (core rows lead with their slot): the module in mono, then its source and reason chips. */
-.spawn-core-row, .spawn-cap-row { display:flex; flex-wrap:wrap; justify-content:flex-end; align-items:center; gap:3px 8px; min-width:0; padding:7px 10px; border-bottom:1px solid var(--border); }
+.spawn-core-box, .spawn-cap-list { display:flex; flex-direction:column; border:1px solid var(--border); border-radius:8px; background:var(--surface); font-size:12px; line-height:1.45; color:var(--fg); }
+/* One row grammar for both boxes, the same at every width: line 1 the module (mono, wraps anywhere),
+   line 2 its source and reason chips, left-aligned and wrapping as a group. A core row leads with its
+   slot as a fixed left column. Nothing is right-justified. */
+.spawn-core-row, .spawn-cap-row { min-width:0; padding:7px 10px; border-bottom:1px solid var(--border); }
 .spawn-core-row:last-child, .spawn-cap-row:last-child { border-bottom:0; }
-.spawn-core-row .spawn-core-layer { flex:none; width:84px; color:var(--muted); }
-.spawn-core-row .mono, .spawn-cap-row .mono, .spawn-core-row .muted, .spawn-cap-row .muted { flex:1 1 auto; min-width:0; overflow-wrap:anywhere; }
+.spawn-core-row { display:grid; grid-template-columns:84px minmax(0,1fr); column-gap:8px; align-items:baseline; }
+.spawn-core-row .spawn-core-layer { color:var(--muted); }
+.spawn-cap-row, .spawn-core-module { display:flex; flex-direction:column; align-items:flex-start; gap:4px; min-width:0; }
+.spawn-core-row .mono, .spawn-cap-row .mono, .spawn-core-row .muted { max-width:100%; min-width:0; overflow-wrap:anywhere; }
 .spawn-core-row .muted, .spawn-cap-row .muted, .spawn-cap-row.spawn-cap-none { color:var(--muted); }
-.spawn-cap-row.spawn-cap-none { justify-content:flex-start; }
-.spawn-cap-source, .spawn-cap-why { flex:none; padding:1px 6px; border-radius:4px; background:var(--tag-bg); color:var(--muted); font-size:10.5px; font-weight:600; white-space:nowrap; }
+.spawn-cap-tags { display:flex; flex-wrap:wrap; justify-content:flex-start; gap:4px 6px; max-width:100%; min-width:0; }
+.spawn-cap-source, .spawn-cap-why { max-width:100%; padding:1px 6px; border-radius:4px; background:var(--tag-bg); color:var(--muted); font-size:10.5px; font-weight:600; overflow-wrap:anywhere; }
 .spawn-preview-note { margin:auto 0 0; font-size:11.5px; line-height:1.5; color:var(--muted); }
 .spawn-chooser { border-right:1px solid var(--border); min-width:0; min-height:0; overflow:auto; padding:16px 10px 12px; }
 .spawn-chooser-head { display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin:0 6px 10px; }
@@ -222,7 +244,15 @@ export const spawnDialogCSS = `
 .spawn-advanced > summary::-webkit-details-marker { display:none; }
 .spawn-advanced > summary::before { content:''; flex:none; width:6px; height:6px; margin:0 2px; border-right:1.5px solid var(--muted); border-bottom:1.5px solid var(--muted); transform:rotate(-45deg); transition:transform .15s; }
 .spawn-advanced[open] > summary::before { transform:rotate(45deg); }
-.spawn-advanced > summary small { margin-left:auto; font-weight:400; color:var(--muted); font-size:11px; }
+.spawn-advanced > summary { flex-wrap:wrap; row-gap:2px; }
+/* The topics hint: beside the title when it fits whole, else on its own line below it (never broken
+   mid-phrase beside it); with no room at all it is clipped, never pushing the summary wider. */
+.spawn-advanced > summary small { flex:0 1 auto; min-width:0; margin-left:auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:400; color:var(--muted); font-size:11px; }
+.spawn-advanced { container:spawn-advanced / inline-size; }
+@container spawn-advanced (max-width:479px) {
+ /* No room beside the title: the hint drops to its own line, under the title's text (past the chevron). */
+ .spawn-advanced > summary small { flex-basis:100%; margin-left:18px; }
+}
 .spawn-advanced-body { display:flex; flex-direction:column; gap:14px; padding:4px 14px 14px; }
 .spawn-advanced-body [hidden] { display:none; }
 .spawn-dialog fieldset.frelgroup { border:1px solid var(--border); border-radius:8px; margin:0; padding:8px 10px 10px; display:flex; flex-direction:column; gap:8px; background:var(--surface); }
@@ -231,7 +261,10 @@ export const spawnDialogCSS = `
 .spawn-dialog .freldesc { font-size:11.5px; color:var(--muted); }
 .spawn-dialog .freldesc:empty { display:none; }
 .spawn-footer { flex:none; display:flex; align-items:center; gap:8px; flex-wrap:wrap; border-top:1px solid var(--border); padding:12px 24px; background:var(--surface); }
-.spawn-status { flex:1 1 240px; min-width:0; display:flex; align-items:baseline; flex-wrap:wrap; gap:2px 10px; }
+.spawn-status { flex:1 1 160px; min-width:0; display:flex; align-items:baseline; flex-wrap:wrap; gap:2px 10px; }
+/* Cancel and Spawn are one group, right-aligned on one line at every width: the status yields first
+   (its text wraps beside them, or the whole status sits on its own line above them). */
+.spawn-actions { flex:none; display:flex; align-items:center; gap:8px; margin-left:auto; }
 .spawn-footer .fstatus { flex:0 1 auto; margin:0; min-width:0; font-size:12.5px; line-height:1.5; color:var(--muted); overflow-wrap:break-word; white-space:pre-line; }
 .spawn-footer .fstatus.err { color:var(--danger); }
 /* Board 6: a settled preview says so; the check is decoration (empty alt), the words are the status. */
@@ -338,6 +371,28 @@ export function soulOriginText(soul) {
 /** The preview's work mode in words (board 6, "Works in"); an unknown mode verbatim. */
 const WORK_PHRASES = Object.freeze({ __proto__: null, worktree: 'own worktree', checkout: 'shared checkout', attached: "a parent's worktree", directory: 'own folder · free to work across repos', workspace: 'all member repos' });
 export const worksInText = work => WORK_PHRASES[work] ?? work;
+/** The preview's home, short enough to read: relative to the deployment (the preview's subject.dir)
+ * when it lies inside it, else its last three segments behind "…/". The full path is the title. */
+export function homeText(home, dir) {
+  if (typeof home !== 'string' || !home) return null;
+  const base = typeof dir === 'string' && dir ? dir.replace(/\/+$/, '') : '';
+  if (base && home.startsWith(`${base}/`) && home.length > base.length + 1) return { text: home.slice(base.length + 1), title: home };
+  const parts = home.split('/').filter(Boolean);
+  return { text: parts.length > 3 ? `…/${parts.slice(-3).join('/')}` : home, title: home };
+}
+/** A worktree spawn's "Works in": the new branch (mono in the view) and the ref it starts from, when the preview says. */
+export function worktreeText(data) {
+  return { lead: 'worktree · branch ', branch: data.branch, tail: data.base?.ref ? ` from ${data.base.ref}` : '' };
+}
+/** The relation the preview binds, in words with its anchor ("child of api-2"); null when independent. */
+const RELATION_WORDS = Object.freeze({ __proto__: null, child: 'child of', sibling: 'sibling of', parent: 'parent of' });
+export function relationText(data) {
+  const kind = data?.relation;
+  if (typeof kind !== 'string' || !kind) return null;
+  const anchor = data.decision?.effective?.relation?.anchor?.instance;
+  if (!RELATION_WORDS[kind]) return kind;
+  return typeof anchor === 'string' && anchor ? `${RELATION_WORDS[kind]} ${anchor}` : RELATION_WORDS[kind];
+}
 /** A preview module's source, as the Capabilities tag says it: the package and version, the member
  * repository, or the kind verbatim. Never a reason: that is moduleWhyText's, beside it. */
 export function moduleSourceText(from) {
@@ -357,27 +412,31 @@ export function moduleWhyText(m) {
 }
 /** The preview column's Core capabilities and Capabilities sections (their children), from the
  * preview's `modules` rows [{name, layer, from, composedFrom?}]; null when the preview carries none
- * (no placeholder). Both are bordered boxes of one row grammar: the module in mono, its source chip
- * and its reason chip. A module filling a core slot is Core's only: never in Capabilities or its count. */
+ * (no placeholder). Both are bordered boxes of one row grammar: the module in mono on its own line,
+ * then its source and reason chips (.spawn-cap-tags). A module filling a core slot is Core's only: never in Capabilities or its count. */
 export function composePreviewModules(doc, modules) {
   if (!Array.isArray(modules)) return null;
   const el = (tag, text, cls) => node(doc, tag, text, cls);
   const rows = modules.filter(m => m && typeof m === 'object' && typeof m.name === 'string' && m.name);
-  // The reason is plain text in the row: part of what a screen reader reads for it.
-  const describe = (row, m) => {
-    row.dataset.module = m.name; row.append(el('span', m.name, 'mono'), el('span', moduleSourceText(m.from), 'spawn-cap-source'));
-    const why = moduleWhyText(m); if (why) row.append(el('span', why, 'spawn-cap-why'));
+  // Line 1 the module, line 2 its chips (one group that wraps). The reason is plain text in the row:
+  // part of what a screen reader reads for it.
+  const describe = (row, into, m) => {
+    row.dataset.module = m.name;
+    const tags = el('span', undefined, 'spawn-cap-tags'); tags.append(el('span', moduleSourceText(m.from), 'spawn-cap-source'));
+    const why = moduleWhyText(m); if (why) tags.append(el('span', why, 'spawn-cap-why'));
+    into.append(el('span', m.name, 'mono'), tags);
   };
   const coreBox = el('div', undefined, 'spawn-core-box');
   for (const [layer, label] of [['knowledge', 'Knowledge'], ['messaging', 'Messaging'], ['tasks', 'Tasks']]) {
     const row = el('span', undefined, 'spawn-core-row'), m = rows.find(x => x.layer === layer); row.dataset.layer = layer;
     row.append(el('span', label, 'spawn-core-layer'));
-    if (m) describe(row, m); else row.append(el('span', 'None', 'muted')); // an empty slot, not a provider named "none"
+    if (m) { const module = el('span', undefined, 'spawn-core-module'); describe(row, module, m); row.append(module); }
+    else row.append(el('span', 'None', 'muted')); // an empty slot, not a provider named "none"
     coreBox.append(row);
   }
   const others = rows.filter(m => !CORE_LAYERS.includes(m.layer)).sort((a, b) => a.name.localeCompare(b.name));
   const capsList = el('div', undefined, 'spawn-cap-list');
-  for (const m of others) { const row = el('span', undefined, 'spawn-cap-row'); describe(row, m); capsList.append(row); }
+  for (const m of others) { const row = el('span', undefined, 'spawn-cap-row'); describe(row, row, m); capsList.append(row); }
   if (!others.length) capsList.append(el('span', 'No other capabilities: only the core ones.', 'spawn-cap-row spawn-cap-none'));
   return { core: [el('h3', 'Core capabilities', 'spawn-preview-title'), coreBox], caps: [el('h3', `Capabilities · ${others.length}`, 'spawn-preview-title'), capsList] };
 }
@@ -748,7 +807,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   statusRow.append(inflight, status, detailsToggle);
   const cancel = el('button', 'Cancel', 'act fcancel'); cancel.type = 'button';
   const spawn = el('button', 'Spawn', 'act fspawn primary'); spawn.type = 'button';
-  footer.append(statusRow, cancel, spawn, details);
+  const actions = el('div', undefined, 'spawn-actions'); actions.append(cancel, spawn);
+  footer.append(statusRow, actions, details);
   const body = el('div', undefined, 'spawn-form-body');
   body.append(selectionSummary, nameField, runField, placeField, relation, teamsField, taskLabel, advanced);
   form.append(body, footer); // the footer stays in view while the body scrolls
@@ -1102,7 +1162,9 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     previewDrawn = signature; factsBody.replaceChildren();
     const facts = el('dl', undefined, 'spawn-preview-facts');
     const fact = (label, ...value) => { const dd = el('dd'); dd.append(...value); facts.append(el('dt', label), dd); };
-    if (runsOn) { fact('Runs on', runsOn); if (state.kind !== 'data') factsBody.append(facts); }
+    // #482: the chosen deployment's row is the facts' last; alone (before the state's words) until data lands.
+    const runsOnFact = () => { if (runsOn) fact('Runs on', runsOn); };
+    if (state.kind !== 'data' && runsOn) { runsOnFact(); factsBody.append(facts); }
     if (state.kind === 'reading') {
       const skeleton = el('div', undefined, 'spawn-preview-skeleton'); skeleton.setAttribute('aria-hidden', 'true');
       for (let i = 0; i < 4; i++) skeleton.append(el('span'), el('span'));
@@ -1110,9 +1172,17 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     } else if (state.kind === 'failure') factsBody.append(el('p', state.text, 'spawn-preview-failure'));
     else if (state.kind === 'empty') { if (state.text) factsBody.append(el('p', state.text, 'spawn-preview-empty')); }
     else {
-      const muted = text => el('span', text, 'muted');
-      fact('Name', name ? el('span', name, 'mono') : muted('numbered by the kernel'));
-      if (data.work) fact('Works in', worksInText(data.work));
+      const muted = (text, cls = '') => el('span', text, `muted${cls ? ` ${cls}` : ''}`);
+      const sub = text => muted(text, 'spawn-fact-sub'); // a value's second line: where it came from, what else
+      // The instance first and largest, its home beneath: the terms are for assistive tech, the eye reads the shape.
+      const identity = el('dl', undefined, 'spawn-preview-identity');
+      const said = (label, value) => { identity.append(el('dt', label, 'workspace-sr-only'), value); };
+      said('Name', name ? el('dd', name, 'spawn-preview-name') : el('dd', 'numbered by the kernel', 'spawn-preview-name muted'));
+      const home = homeText(data.home, data.subject?.dir);
+      if (home) { const dd = el('dd', home.text, 'spawn-preview-home'); dd.title = home.title; said('Home', dd); }
+      const worktree = data.work === 'worktree' && data.branch ? worktreeText(data) : null;
+      if (worktree) fact('Works in', doc.createTextNode(worktree.lead), el('span', worktree.branch, 'mono'), ...(worktree.tail ? [doc.createTextNode(worktree.tail)] : []));
+      else if (data.work) fact('Works in', worksInText(data.work));
       if (data.harness) {
         // Where the harness came from: the Launch's `from` in words (0.30), else the kernel's modelSource verbatim.
         const launch = shownLaunch(data.launch, cli());
@@ -1120,21 +1190,28 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
         const harness = el('span', undefined, 'spawn-preview-harness');
         // The badge is decorative here: the term says Harness and the text names it.
         const badge = createRuntimeBadge(doc, data.harness); badge.setAttribute('aria-hidden', 'true');
-        harness.append(badge, doc.createTextNode(`${runtimeName(data.harness)}${from ? ` · ${from}` : ''}`));
-        fact('Harness', harness);
+        harness.append(badge, el('span', `${runtimeName(data.harness)} · ${data.model ?? 'default model'}`));
+        fact('Harness', harness, ...(from ? [sub(from)] : []));
       }
-      // Team model v2: the default the kernel resolved (or none). A 0.29 kernel reports only `team`, the primary label.
-      if (data.defaultTeam) fact('Team', doc.createTextNode(`${data.defaultTeam.label} `), muted('(default)'));
+      // Team model v2: the default the kernel resolved (or none), then the other teams it may join. A 0.29 kernel reports only `team`, the primary label.
+      const others = (data.teams || []).map(t => t.label).filter(label => label !== data.defaultTeam?.label);
+      const also = others.length ? [sub(`may also join ${others.join(', ')}`)] : [];
+      if (data.defaultTeam) fact('Team', doc.createTextNode(data.defaultTeam.label), muted(' · default'), ...also);
       else if (data.defaultTeam === null && !(data.teams?.length)) fact('Team', muted('none'));
       else if (data.defaultTeam === undefined && typeof data.team === 'string' && data.team) fact('Team', data.team);
+      const relation = relationText(data);
+      if (relation) fact('Relationship', relation);
+      runsOnFact();
+      factsBody.append(identity, facts);
       if (data.launchPromptAnswers) {
-        const policy = data.launchPromptAnswers;
-        fact('Launch prompts', policy.awebDevelopmentChannel
+        // The launch-prompt policy is a note, not a fact: its words stay the kernel contract's, verbatim.
+        const policy = data.launchPromptAnswers, note = el('dl', undefined, 'spawn-preview-prompts');
+        note.append(el('dt', 'Launch prompts'), el('dd', policy.awebDevelopmentChannel
           ? 'The launcher will answer the aweb development-channel confirmation for this home. This policy does not confirm readiness. A harness update can block the launch until its prompt fixtures are refreshed; no fallback key is sent.'
-          : 'None. The launcher will not answer prompts for this home. This policy does not confirm readiness.');
-        if (policy.consentSource) fact('Prompt consent source', policy.consentSource);
+          : 'None. The launcher will not answer prompts for this home. This policy does not confirm readiness.'));
+        if (policy.consentSource) note.append(el('dt', 'Prompt consent source'), el('dd', policy.consentSource, 'mono'));
+        factsBody.append(note);
       }
-      factsBody.append(facts);
     }
     // Core capabilities and Capabilities exist only when the preview carries `modules`; redrawn only when those change.
     const modules = state.kind === 'data' ? JSON.stringify(data.modules ?? null) : '';
