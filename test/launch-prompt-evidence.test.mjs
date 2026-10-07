@@ -5,7 +5,7 @@ import { syncBuiltinESMExports } from 'node:module';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
-import { retainLaunchPromptFrame } from '../lib/launch-prompt-evidence.mjs';
+import { retainLaunchPromptFrame, launchPromptEvidenceRecognition } from '../lib/launch-prompt-evidence.mjs';
 import { createLaunchPromptController } from '../lib/launch-prompts.mjs';
 import { appendEvent } from '../lib/instance-events.mjs';
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -27,6 +27,22 @@ function mock(t, method, handler) {
   syncBuiltinESMExports();
   t.after(() => { stub.mock.restore(); syncBuiltinESMExports(); });
 }
+
+test('private receipt reader keeps historical v1 readable and accepts only the two v2 pairs', () => {
+  const old = { version: 1, kind: 'launch-prompt-unmatched', captureTime: null };
+  const bytes = JSON.stringify(old);
+  assert.deepEqual(launchPromptEvidenceRecognition(old), { outcome: 'blocked', recognition: 'unmatched' });
+  assert.equal(JSON.stringify(old), bytes, 'reading does not migrate historical evidence');
+  for (const [outcome, recognition] of [['blocked', 'unmatched'], ['completed', 'structural']]) {
+    assert.deepEqual(launchPromptEvidenceRecognition({ version: 2, kind: 'launch-prompt-frame', outcome, recognition }), { outcome, recognition });
+  }
+  for (const wrong of [null, {}, { ...old, outcome: 'completed' }, { ...old, version: 2 },
+    { version: 2, kind: 'launch-prompt-frame', outcome: 'blocked', recognition: 'structural' },
+    { version: 2, kind: 'launch-prompt-frame', outcome: 'completed', recognition: 'unmatched' },
+    { version: 3, kind: 'launch-prompt-frame', outcome: 'completed', recognition: 'structural' }]) {
+    assert.equal(launchPromptEvidenceRecognition(wrong), null);
+  }
+});
 
 test('private evidence retains exact compared bytes, target and receipt-last identities', t => {
   const { args, dir, home } = setup(t);
