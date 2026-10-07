@@ -1530,7 +1530,7 @@ for (const [name] of palettes) test(`${name}: the soul page's Instructions secti
   doc.querySelector('[data-path="composed"] .cap-node-name').click();
   check([
     ['.cap-tree [role=group] [role=treeitem] .cap-node-name.mono', '.cap-contents', 'fg', 'surface'],
-    ['.cap-contents-group-label .soul-group-hint', '.cap-contents', 'muted', 'surface'],
+    ['[data-path=composed][aria-selected=true] > .cap-node .cap-node-desc', '[data-path=composed][aria-selected=true] > .cap-node', 'muted', 'sel'],
     ['.soul-part[data-source=soul] .soul-part-title', '.cap-contents-reader', 'fg', 'bg'],
     ['.soul-part[data-source=soul] .soul-part-file', '.cap-contents-reader', 'fg', 'bg'],
     ['.soul-part[data-source^=capability] .soul-part-size', '.cap-contents-reader', 'muted', 'bg'],

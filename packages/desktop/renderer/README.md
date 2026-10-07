@@ -806,10 +806,10 @@ contract — ranges that don't tile `text` from 0 — a note, nothing rendered),
 `<path>/AGENTS.md`) then each `sources[]` entry with its marker lines dropped
 (`blockText`; a part cut by the cap may lack its closing one); a part wholly
 past the cap (`start == end == text.length`) shows "Not included: past the size
-limit." The group's label is "Instance composed AGENTS.md" with its hint
-"(AGENTS.md after spawn with capability injects)" in a `.soul-group-hint` span on
-its own line, inside the one label element so the group's accessible name is
-both; its top item is "AGENTS.md" (the reader head says "Composed AGENTS.md").
+limit." The group's label is "Instance"; its top item is "AGENTS.md" with
+"after spawn, with injects" as its second line (`.cap-node-desc`), accessible
+name "AGENTS.md, after spawn, with injects", and its parts count as
+`aria-description` (the reader head says "Composed AGENTS.md").
 That item is expandable and selectable (the twisty only folds;
 the row opens the document); a part's item scrolls the one continuous reader to
 its `section.soul-part`, labelled by its header. **Copy** copies the kernel's

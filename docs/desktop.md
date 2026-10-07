@@ -176,9 +176,8 @@ what you had open, and your place in it. A file over 200,000 characters is
 shown cut, and says so.
 
 With an OATS that composes a soul's instructions (0.46.0 and later), the tree
-also has **Instance composed AGENTS.md** (*AGENTS.md after spawn with
-capability injects*): its **AGENTS.md** is the file a spawn of this soul on
-this computer would write, with one entry per part
+also has **Instance**: its **AGENTS.md**, *after spawn, with injects*, is the
+file a spawn of this soul on this computer would write, with one entry per part
 (the soul's own text, then each block OATS and the soul's capabilities add, in
 order). Open it to read the whole document; choose a part to go to it. Each
 part's header says where it comes from (**From this soul** or **Injected by …**)

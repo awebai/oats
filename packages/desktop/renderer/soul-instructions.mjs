@@ -25,8 +25,8 @@ export const SOUL_INSTRUCTIONS_COPY = Object.freeze({
   unreadable: "This soul's AGENTS.md could not be read.",
   // The kernel caps a file it reports at 200,000 characters (instance-inspect.mjs readTextCapped, soul-composition.mjs).
   truncated: 'Truncated at 200,000 characters',
-  composedGroup: 'Instance composed AGENTS.md',
-  composedGroupHint: '(AGENTS.md after spawn with capability injects)',
+  composedGroup: 'Instance',
+  composedNote: 'after spawn, with injects',
   composed: 'Composed AGENTS.md',
   parts: n => `${n} part${n === 1 ? '' : 's'}`,
   soulPart: 'This soul',
@@ -50,9 +50,6 @@ export const soulInstructionsCSS = `
 .soul-instructions .cap-tree [role=treeitem] [role=group] .cap-node { font-family:inherit; font-size:12px; }
 .soul-instructions .cap-tree [role=treeitem] [role=group] .cap-node-name.mono { font-family:var(--mono,monospace); font-size:11.5px; }
 .oats-view .soul-instructions button.soul-copy { height:24px; min-height:24px; margin-left:auto; padding:0 8px; font-size:11.5px; }
-/* The composed group's label: the group-label style, then its hint smaller, muted and as written, on its own line
-   (the uppercase label already fills most of the 220px nav). Both together are the group's accessible name. */
-.soul-group-hint { display:block; margin-top:2px; font-size:10px; font-weight:400; letter-spacing:0; text-transform:none; }
 .soul-part + .soul-part { margin-top:22px; }
 .soul-part-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px; margin:0 0 8px; font-size:11.5px; }
 .soul-part-title { color:var(--fg); font-size:12.5px; font-weight:650; }
@@ -197,20 +194,14 @@ export function createSoulInstructions(doc, { openExternal = null, canOpenCapabi
     const shownPath = own.path !== SOUL_INSTRUCTIONS_COPY.file ? own.path : null;
     group(`${uid}-own`, node('div', 'cap-contents-group-label', SOUL_INSTRUCTIONS_COPY.own)).append(leaf(OWN, [node('span', 'cap-node-name', SOUL_INSTRUCTIONS_COPY.file), ...(shownPath ? [node('span', 'cap-node-file', shownPath)] : [])],
       { level: 1, label: shownPath ? `${SOUL_INSTRUCTIONS_COPY.file}, ${shownPath}` : SOUL_INSTRUCTIONS_COPY.file }));
-    if (composed) group(`${uid}-composed`, composedLabel()).append(composedNode());
+    if (composed) group(`${uid}-composed`, node('div', 'cap-contents-group-label', SOUL_INSTRUCTIONS_COPY.composedGroup)).append(composedNode());
     navBody.append(tree);
     // The kernel answered but there is nothing to list: the group's label and a note beside the tree (notes are not tree items).
-    if (composed === null || composed === false) navBody.append(composedLabel(),
+    if (composed === null || composed === false) navBody.append(node('div', 'cap-contents-group-label', SOUL_INSTRUCTIONS_COPY.composedGroup),
       node('p', 'cap-contents-note', composed === null ? SOUL_INSTRUCTIONS_COPY.cannotCompose : SOUL_INSTRUCTIONS_COPY.cannotRead));
     keys.syncRoving();
     // The tree item that held focus is found again by its key (or its group's composed item when its part is gone).
     if (focusKey) (nav.querySelector(`[data-focus-key="${focusKey}"]`) || nav.querySelector(`[data-focus-key="instructions:${COMPOSED}"]`) || nav.querySelector('[role=treeitem]'))?.focus({ preventScroll: true });
-  }
-  /** "Instance composed AGENTS.md" and its hint, one label element (so one accessible name). */
-  function composedLabel() {
-    const label = node('div', 'cap-contents-group-label', SOUL_INSTRUCTIONS_COPY.composedGroup);
-    label.append(' ', node('span', 'soul-group-hint', SOUL_INSTRUCTIONS_COPY.composedGroupHint));
-    return label;
   }
   function leaf(key, content, { level, label }) {
     const item = treeItem(key, content, { level, label });
@@ -225,11 +216,13 @@ export function createSoulInstructions(doc, { openExternal = null, canOpenCapabi
     const copy = node('span', 'cap-node-copy'); copy.append(...content); row.append(twisty, copy); item.append(row);
     return item;
   }
-  /** The group's "AGENTS.md" (parallel to the soul's): selectable (the composed document at its top) and expandable
-   * (its parts, in order). The reader's head names it "Composed AGENTS.md". */
+  /** The Instance group's "AGENTS.md" (parallel to the soul's), "after spawn, with injects" on its second line (the
+   * soul item's path style, in the proportional face: it is prose): selectable (the composed document at its top) and
+   * expandable (its parts, in order). The reader's head names it "Composed AGENTS.md". */
   function composedNode() {
     const open_ = expanded.has(COMPOSED), count = SOUL_INSTRUCTIONS_COPY.parts(composed.parts.length);
-    const item = treeItem(COMPOSED, [node('span', 'cap-node-name', SOUL_INSTRUCTIONS_COPY.file), node('span', 'cap-node-desc', count)], { level: 1, label: SOUL_INSTRUCTIONS_COPY.file });
+    const item = treeItem(COMPOSED, [node('span', 'cap-node-name', SOUL_INSTRUCTIONS_COPY.file), node('span', 'cap-node-desc', SOUL_INSTRUCTIONS_COPY.composedNote)],
+      { level: 1, label: `${SOUL_INSTRUCTIONS_COPY.file}, ${SOUL_INSTRUCTIONS_COPY.composedNote}` });
     item.setAttribute('aria-expanded', String(open_)); item.setAttribute('aria-description', count);
     const twisty = item.querySelector('.cap-node-twisty'); twisty.textContent = open_ ? '▾' : '▸';
     const children = node('ul'); children.setAttribute('role', 'group'); children.hidden = !open_;
