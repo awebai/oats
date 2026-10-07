@@ -17,22 +17,33 @@ description: >-
   day-to-day operation inside an instance is oats.core.
 ---
 
-# Teams (team model 3, OATS 0.38.0)
+# Teams: configuration and eligibility
 
-The contract is `docs/workspaces.md` ("Teams") and `docs/capabilities.md`
-("Teams in the provider environment") in the installed kernel. A **team** is a
-messaging-provider team (for oats.aweb, an aweb team id) under a **label**
-(`engineering`, `okf`). **A team organises and routes messages; it never
-gates, restricts, grants trust or partitions knowledge.**
+For the contract and rationale, see [Teams](https://github.com/awebai/oats/blob/main/docs/workspaces.md#teams)
+and [team model 3](https://github.com/awebai/oats/blob/main/docs/design/2026-10-02-team-model-3.md).
+These cards are self-contained for execution. Teams route messages; they never
+restrict capabilities, grant trust, or partition knowledge.
 
-An instance in two teams is a bridge between them, so which teams an
-organisation's instances may join, and their default team, are the
-organisation's decision: committed in its workspace file, closed by default.
-This prevents accidental joins and makes the intended team set visible and
-reviewable in Git. It does not enforce anything against a deliberate bridge:
-an operator holding two identities can relay between them, and the messaging
-provider's admission controls who holds credentials for a team, not what a
-process does with what it reads.
+## Inputs and version boundary
+
+Use the authority and policy inputs already selected through `/oats-onboarding`:
+`D` is the absolute deployment path, `S` the resolved soul, `L` the selected
+label, and `T` the provider's canonical team ID (`name:namespace` for aweb,
+not an internal UUID). In commands below, substitute those slots with quoted
+values. Run deployment commands from your instance home with `--dir D`.
+Shared edits target the selected workspace repository's `oats-workspace.yaml`;
+local edits target `D/oats-local.yaml`.
+
+Every card requires OATS **0.38.0 or later**, with `team-model-3` support;
+these verbs also exist in the audited OATS 0.41.0 command contract. Check the
+installed `oats version --json` and `oats help` through onboarding's inventory.
+A source merge does not establish which package is installed. Provider acts
+have their own version checks in the **composed `/oats-aweb` skill**.
+
+Carry the intake authorization through routine reversible configuration and
+readback. Shared changes follow the repository's review/merge policy. Do not
+ask again for an unchanged decision. Stop only on a concrete failure or a
+named missing input (for example, `missing shared-team policy authority`).
 
 ## Where teams are declared
 
@@ -61,7 +72,7 @@ defaultTeam: mine
 
 - A **shared** team is the same provider team for everyone. Without `team` it
   is unmapped: `team-unmapped` (a warning; blocking when it is the default).
-  Its owner creates the team (`oats aweb setup`) and commits the id.
+  Its owner uses the selected `/oats-aweb` procedure and commits the ID.
 - **`souls:` keys are patterns:** `<member>/<soul>` or `<package>/<soul>`,
   `<member>/*` or `<package>/*`, and `"*"`. Member and package names are the
   ones `souls.disabled` uses (a member's name is its repository's name). A
@@ -105,117 +116,209 @@ defaultTeam: mine
 - Capabilities compose from the workspace defaults and the soul only; a team
   adds none.
 
-## The verbs
+## Act cards
 
-Config only: they never call a provider. Run them from the deployment.
+Each card uses the version floor and selected context above. Readback is part
+of the act; “Next” is the single handoff after its success predicate passes.
 
-```bash
-oats teams [--json]                                   # teams, ids, the default, localTeams, the workspace's souls:, problems
-oats teams add <label> --team <id> [--description d]  # a local team (needs localTeams: true); the first add sets the local default
-oats teams remove <label>                             # a local team nothing references
-oats teams default <label>                            # the local default (needs localTeams: true)
-oats soul teams <soul>|'*' [--json]                   # read only: a soul's default, its teams, and which souls: key applied
-```
+### Inspect declarations and a soul's eligibility
 
-- `add`, `remove` and `default` rewrite `oats-local.yaml` in place (comments
-  kept). Which teams a soul may join, and its default, are changed only by a
-  PR to `souls:` in `oats-workspace.yaml`.
-- `oats soul teams` reports `match` and `defaultMatch` (the `souls:` keys
-  that gave the teams and the default) and `via` on each row.
-- `E_TEAM_EXISTS`: the label is already declared (`from` says where).
-- `E_TEAM_SHARED`: you tried to remove a shared team; edit
-  `oats-workspace.yaml` by PR instead.
-- `E_TEAM_IN_USE`: the local team is the `defaultTeam` (`usedBy`). Nothing
-  cascades: change the default first.
-- `oats teams remove` works even when local teams are closed: it is how you
-  clear them out after committing them to the workspace file.
-
-## Local teams closed (`local-teams-closed`)
-
-With `teams` or `defaultTeam` in `oats-local.yaml` and no `localTeams: true`
-in the workspace, spawn, preview and `inspect --soul` refuse with
-`E_WORKSPACE_SCHEMA` reason `local-teams-closed`; `oats teams` and readiness
-report it as a failure, and `oats doctor` checks it offline from the cached
-workspace file. Two fixes:
-
-1. Add `localTeams: true` to the workspace file (by PR), or
-2. commit the teams and `defaultTeam` in the workspace file, then remove them
-   from `oats-local.yaml` (`oats teams remove <label>`).
-
-A standalone deployment (explicit `standalone:`, or a fallback when the
-workspace cannot be read) has no workspace rules: its local teams and
-`defaultTeam` apply.
-
-## Joining
-
-- **At spawn an instance joins its default team only.** Its identity lives
-  there. The soul's other teams are eligible: offered, joined only on request.
-
+- **Prerequisites/context:** selected `D` and `S`; read-only access.
+- **Commands:**
   ```bash
-  oats spawn <soul> --preview                                   # teams + defaultTeam
-  oats spawn <soul> --purpose <slug> --provider oats.aweb join=engineering,docs
+  oats teams --dir D --json
+  oats soul teams S --dir D --json
   ```
+- **Effects:** none. Reports declared mappings, `localTeams`, deployment
+  default, soul default, `match`, `defaultMatch`, and each team's `from`/`via`.
+- **Success:** both reports resolve the selected deployment/soul, expected
+  labels and canonical IDs are present, and no relevant failure remains.
+  Eligibility is not membership.
+- **Next:** select the configuration card matching the requested change, or
+  the provider handoff below when configuration is already correct.
+- **Error → remedy:** `E_TEAM_UNKNOWN` → fix the named missing label using
+  the declaration card for its authorized shared/local scope, then reread.
+  `E_WORKSPACE_SCHEMA` with `local-teams-closed` → use the refusal table.
 
-- Later, the provider's own verbs join and leave (for oats.aweb,
-  `oats aweb join`; see `/aweb-team-membership`). Joining a team the soul is
-  not eligible for is refused by the provider (`E_TEAM_NOT_ELIGIBLE`). A
-  provider leaves a team only on a live team list, never a recorded one. A
-  scheduled wake uses the teams recorded at spawn.
-- The kernel never joins anything. It hands the provider `OATS_DEFAULT_TEAM`,
-  `OATS_DEFAULT_TEAM_ID`, `OATS_DEFAULT_TEAM_FROM`, `OATS_TEAMS` (mapped rows)
-  and `OATS_TEAMS_SOURCE` (`live` or `recorded`).
+### Declare or change shared mappings, default, or soul eligibility
 
-## Add a team
+- **Prerequisites/context:** shared-policy authority; selected workspace
+  repository; selected labels/IDs and qualified soul patterns. Use the YAML
+  shape above. All labels used by `defaultTeam` or `souls:` must be shared
+  declarations in this file. `teams: any` means every shared team.
+- **Edit/commands:** prepare one reviewed change to `oats-workspace.yaml`:
+  put `T` in `teams.L.team`; set `defaultTeam: L` for the workspace fallback,
+  or `souls.<qualified-pattern>.default: L` for a soul default; set that
+  pattern's complete `teams` list for wider eligibility. Preserve unrelated
+  keys. After the change is merged through the repository's normal policy:
+  ```bash
+  oats sync --dir D
+  oats teams --dir D --json
+  oats soul teams S --dir D --json
+  ```
+- **Effects:** shared declarations and policy change; sync refreshes this
+  deployment's workspace observation. No identities or memberships change.
+- **Success:** readback shows the selected mapping, default and complete
+  eligible set; `match`/`defaultMatch` identify the intended pattern and no
+  relevant failure remains.
+- **Next:** return to `/oats-onboarding`'s preview step for the selected seat.
+- **Error → remedy:** `E_WORKSPACE_SCHEMA` for an unknown label → add the
+  selected shared declaration or correct the reference in the same PR.
+  `team-soul-unknown` → correct the qualified key from `oats souls --dir D --json`.
+  `team-unmapped` → use the provider handoff to obtain the authorized ID,
+  then commit it in `teams.L.team`; do not guess one.
 
-1. Shared: add `teams.<label>` to `oats-workspace.yaml` by PR (with `team`
-   once the provider team exists; its owner creates it with `oats aweb setup`,
-   which prints the id to commit). Local (only with `localTeams: true`):
-   `oats aweb setup --create <label>` creates a new team and runs
-   `oats teams add` for you; an existing team you already belong to is
-   `oats teams add <label> --team <id>`.
-2. Let souls join it: add the label to the `teams` of their `souls:` entry in
-   the same PR (or set `default:`). A local team under `localTeams: true` is
-   eligible for every soul of that deployment.
-3. Check: `oats teams` (no problems), `oats soul teams <soul>` and
-   `oats spawn <soul> --preview` (the label is in `teams` with its id and
-   `via`).
+### Declare a local label
 
-## Create a team, or join a shared one (onboarding)
+- **Prerequisites/context:** host-edit authority; selected `D`, `L`, `T`;
+  workspace `localTeams: true` (or an intentional standalone deployment).
+  The label must not already exist in either scope.
+- **Commands:**
+  ```bash
+  oats teams add L --team T --dir D
+  oats teams --dir D --json
+  oats soul teams S --dir D --json
+  ```
+- **Effects:** writes the local mapping. If no local default exists, also
+  sets `defaultTeam: L`, even when a shared fallback exists. Every local
+  team is eligible for every soul in this deployment. No provider call.
+- **Success:** `L` resolves to `T` with `from: local`; the resulting default
+  and eligible set match the selected policy.
+- **Next:** use the provider handoff for the selected membership act.
+- **Error → remedy:** `E_TEAM_EXISTS` → reuse the existing mapping if it
+  matches; otherwise use the refusal table before redefining it.
+  `E_WORKSPACE_SCHEMA` with `local-teams-closed` → shared-policy repair below.
 
-`oats aweb setup` (oats.aweb 1.17) is the one command that creates messaging
-accounts and teams, and it records what it creates in `oats-local.yaml`. It
-runs only when asked, never at spawn:
+### Choose the local default
 
-- **Nothing configured yet:** `oats aweb setup --username <u>` creates the
-  account and its first team, recorded in `oats-local.yaml` as the local
-  default. That needs `localTeams: true`; otherwise it is
-  `local-teams-closed`: commit the team and `defaultTeam` to the workspace
-  file and remove them here.
-- **A new team of your own:** `oats aweb setup --create <label>` (needs
-  `localTeams: true`).
-- **A shared team without an id yet** (its owner): `oats aweb setup` creates it
-  and prints the id; commit it to `oats-workspace.yaml` by a PR.
-- **A shared team someone else created:** ask its owner for an invite, then
-  `oats aweb setup --join <label> --invite <token>`.
+- **Prerequisites/context:** host-edit authority; selected `D`, `L`, `S`;
+  local teams allowed or intentional standalone; `L` already declared in
+  either scope. A soul-specific shared default still wins.
+- **Commands:**
+  ```bash
+  oats teams default L --dir D
+  oats teams --dir D --json
+  oats soul teams S --dir D --json
+  ```
+- **Effects:** writes local `defaultTeam`. Does not migrate a running
+  identity or change its primary team.
+- **Success:** deployment default is `L`; soul readback shows
+  `from: deployment`, unless an intended `souls:` default overrides it.
+- **Next:** return to `/oats-onboarding`'s preview step for the selected seat.
+- **Error → remedy:** `E_TEAM_UNKNOWN` → declare the selected label first.
+  `E_WORKSPACE_SCHEMA` with `local-teams-closed` → choose the shared-default
+  card or obtain a shared-policy change, rather than bypassing it locally.
 
-## Gotchas
+### Remove a local label
 
-- Changing a soul's default does not move a running instance:
-  `oats inspect --home` reports `default-team-changed`; respawn.
-- A team never hides a soul or restricts a capability. Visibility comes from
-  membership, and repo-owned capabilities are `private: true` in their
-  manifest.
-- Migrating from 0.29: move each `byTeam` id into `teams.<label>.team`, and
-  each soul/membership `team:` into `souls:` in the workspace file.
+- **Prerequisites/context:** host-edit authority; selected `D`, `L`;
+  `L` exists locally and is not a purely local referenced default. This
+  removal remains supported when local teams are closed.
+- **Commands:**
+  ```bash
+  oats teams remove L --dir D
+  oats teams --dir D --json
+  oats soul teams S --dir D --json
+  ```
+- **Effects:** removes the local declaration only. A shared declaration of
+  the same label remains. It does not revoke an identity, leave a provider
+  team, retire a seat, or clear local `defaultTeam`.
+- **Success:** the local declaration is absent; retained mappings and
+  defaults resolve correctly, with no relevant failure.
+- **Next:** return to `/oats-onboarding`'s completion check.
+- **Error → remedy:** `E_TEAM_IN_USE` → choose another authorized default
+  first. With local teams closed, follow the migration row below instead.
+  `E_TEAM_SHARED` → use the shared-removal card. `E_TEAM_UNKNOWN` → reread
+  the selected deployment; an already-absent label needs no removal retry.
 
-## Upgrading from 0.36
+### Remove a shared label
 
-0.38.0 refuses `souls.teams` and `souls.default` in `oats-local.yaml`
-(`E_WORKSPACE_SCHEMA` reason `removed-key`; `oats doctor` reports the same).
-The error names each key and prints the `souls:` snippet to commit; bare soul
-names appear as `<member>/<soul>` for you to qualify. Per workspace: commit
-`souls:` entries for what each deployment said (patterns never merge, so a
-soul's entry lists `"*"`'s teams too), and `defaultTeam:` when the deployment
-default is a shared team; for personal local teams add `localTeams: true` or
-commit them; then remove the old keys from each `oats-local.yaml`. Steps:
-`docs/release-notes/v0.38.0.md`.
+- **Prerequisites/context:** shared-policy authority; selected workspace,
+  `D`, `L`, affected souls and replacement policy.
+- **Edit/commands:** in one reviewed workspace change, replace/remove every
+  `defaultTeam`, `souls.*.default` and `souls.*.teams` reference to `L`, then
+  remove `teams.L`. Repair any deployment-local default referencing `L`
+  using the local-default card before removing its shared declaration.
+  After the workspace change is merged:
+  ```bash
+  oats sync --dir D
+  oats teams --dir D --json
+  oats soul teams S --dir D --json
+  ```
+  Repeat soul readback for each affected selected soul.
+- **Effects:** removes shared configuration and eligibility. No membership
+  or certificate is revoked and running seats are not migrated.
+- **Success:** shared `L` and its shared references are absent; selected
+  deployment and soul defaults resolve to the replacement policy.
+- **Next:** return to `/oats-onboarding`'s completion check.
+- **Error → remedy:** `E_WORKSPACE_SCHEMA` for a remaining shared reference
+  → fix it in the workspace change. `E_TEAM_UNKNOWN` for a local default
+  → repair that deployment's reference under its authorized local policy.
+
+## Refusals and configuration recovery
+
+Codes below are emitted codes/conditions; dynamic labels and paths are not
+fixed server text. After a repair, repeat the inspection card. Do not mint
+an identity to work around a configuration refusal.
+
+| Emitted code or condition | Supported remedy |
+|---|---|
+| `E_TEAM_NOT_ELIGIBLE` (provider) | Edit the complete matching shared `souls:` teams list under shared-policy authority, merge/sync, and reread eligibility. Local teams, if allowed, are eligible for all souls; there is no local per-soul override. Resume the provider act only after readback. |
+| `E_TEAM_UNKNOWN` | Read the named reference and scope. Correct its label or declare the authorized mapping in the shared PR/local card; do not substitute an internal UUID for `T`. |
+| `E_TEAM_UNCONFIGURED` | Choose an existing mapped default using the shared/local card. If no authorized provider team exists, hand off to `/oats-aweb`'s selected setup branch first; the diagnostic's bare setup hint is not a complete procedure. |
+| `E_TEAM_SHARED` | Remove/change the declaration by workspace PR; `oats teams remove` cannot remove a shared declaration. |
+| `E_TEAM_IN_USE` | `usedBy` identifies the local default. Set another declared default through the local-default card before removing a purely local label. If local teams are closed, use the migration row below. |
+| `E_TEAM_EXISTS` | Read `from` and the mapping. Reuse a matching declaration. For a differing shared mapping, use a PR. For an authorized local redefinition, first move a referencing default to another declared label, then remove/add; if no alternate exists, edit the selected local mapping in place and inspect it. Never silently change provider identity state. |
+| `E_WORKSPACE_SCHEMA`, `local-teams-closed` | Either obtain the selected shared-policy PR setting `localTeams: true`, then sync, or commit the selected team mappings/default in the workspace, merge/sync, and remove local `defaultTeam` from `D/oats-local.yaml` before `oats teams remove L --dir D` for each local declaration. Removing a label alone does not clear the local default. Reread after all local remnants are removed. |
+| `team-label-collision` | Shared wins. If the local mapping is still needed, rename its local key and any local default reference to the selected noncolliding label in `D/oats-local.yaml`. If it is a migrated duplicate, remove the local copy and any disallowed local default. |
+| `team-unmapped` | Ask the authorized provider procedure for the canonical ID and commit it in the shared mapping. Unmapped default is a failure; other unmapped labels are warnings. |
+| `team-soul-unknown` | `oats souls --dir D --json` supplies qualified names. Correct/remove the shared `souls:` key by PR, merge and sync. |
+| `default-team-changed` | Existing instance default remains recorded; return to onboarding for an authorized replacement seat. There is no generic in-place primary-team migration. |
+| `E_WORKSPACE_SCHEMA`, `removed-key` for `souls.teams` / `souls.default` | Commit the error's replacement `souls:` entries with qualified keys, preserving each soul's full eligible list; merge/sync, then remove the old local keys. Use `localTeams: true` only if selected policy permits local teams. |
+| `E_LOCAL_CHANGED` | Reread the local file after the competing writer settles, then retry the same authorized edit. |
+
+Older `messaging.byTeam`, `defaults.byTeam`, soul/membership `team:`, and
+`external[].team` are schema errors. Move mappings into shared `teams` and
+policy into workspace `souls:`; do not add team settings to soul manifests.
+
+## Provider and lifecycle handoff (no duplicate recipes)
+
+Load the **composed `/oats-aweb` skill** for first hosted LOCAL account setup,
+controller-owned team creation, labelled LOCAL root join/resume, invitations,
+GLOBAL resident bootstrap/reuse, grant lifecycle, wider-team join/leave, and
+receive proof. Select the named procedure using the existing intake inputs.
+If that procedure is missing or its installed version cannot support the
+selected act, report that exact prerequisite to the oats.aweb owner; do not
+infer installation from a source merge or construct an alternative command.
+
+- At spawn, the default is joined; wider eligible teams are joined only on
+  request through the provider. For a later join/leave, use the target's own
+  instance home, never the caller's accidental scope. Provider join state is
+  separate from these config reports.
+- Token-only provider join remains blocked until supported by the installed
+  release ([oats-aweb#56](https://github.com/awebai/oats-aweb/issues/56)); use
+  the provider's labelled join/resume procedure. Never redeem another token
+  merely to retry an uncertain connection.
+- Bare provider hosted additional-team creation remains refused by the
+  audited provider. Its `aweb-abkh` unreleased wording is stale: native hosted
+  sibling creation is published in aw 1.36.24, absent in audited 1.36.23.
+  Use `/oats-aweb`'s native hosted-create card under its specified owner/admin
+  authority; private invite output does not auto-join the caller. No implicit
+  install or trial. Controller-owned namespaces are a separate authorized
+  branch, never a workaround for absent hosted authority.
+- GLOBAL grant-seat wider-team join/leave is blocked on
+  [oats-aweb#60](https://github.com/awebai/oats-aweb/issues/60).
+  `E_TEAM_GLOBAL_MODE` → report the owner-side contract blocker; no LOCAL
+  fallback, native identity switch, or duplicate custody.
+- `E_TEAM_DEFAULT: <label> is the default team and cannot be left` → stop
+  that leave; changing config does not move the running identity.
+- Cloud dashboard human-account/role invitations: **aweb Cloud owner**,
+  human-account procedure established in source `7665d863`, not proof of
+  deployment. Organization owner/admin authority is required. Agent token
+  invites and organization-level membership invitations are distinct acts.
+- Seat retirement belongs to `/oats-operate`; provider membership/certificate
+  removal belongs to `/oats-aweb`. Label removal is neither operation.
+- Receive proof belongs to `/oats-aweb`: Codex always uses the host broker,
+  with no native channel. Claude/Pi primary native delivery and joined-team
+  broker delivery are distinct paths; native enrollment must be confirmed
+  by the installed provider procedure.

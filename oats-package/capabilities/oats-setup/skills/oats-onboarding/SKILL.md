@@ -14,182 +14,279 @@ description: >-
 
 # Onboarding a deployment
 
-This skill is the **procedure**. The **why** of each step — and what goes
-wrong without it — is the operator knowledge node (`oats/oats-operator-expert`
-in the central base); the concept named at a step is the one to consult before
-advising. The **contract** is `docs/workspaces.md` and `docs/configuration.md`
-in the installed kernel (`"$(oats root)/docs/"` — they ship with it and
-match the running version). Do not restate either to the operator from
-memory; read them.
+This is the procedure for intake, ordering, operator composition and completion.
+Optional rationale: the operator knowledge node selected by this project's
+knowledge binding. It is not a prerequisite for executing these cards.
+Contracts: `docs/workspaces.md` and `docs/configuration.md` under `oats root`.
+Team declarations belong to `/oats-teams`; provider identity, admission,
+custody and delivery procedures belong to the composed `/oats-aweb` skill.
 
-Explain each decision, ask before writing a file, declaring a package or
-spawning, and never run a step on a deployment the operator did not name.
+## 1. One intake, then execute
 
-## 1. Ask two things first
+Use inputs already supplied by the task; collect the remaining inputs together:
 
-1. **Which directory is the deployment?** Ask; never impose a name. It is
-   usually the folder that already holds the operator's clones. `oats onboard`
-   adds only `oats-local.yaml`, `oats-lock.json` and `agents/` there.
-2. **Which repository hosts the workspace file?** Get its reference
-   (`git:github.com/<org>/<repo>`, `https://…`, `git@host:…`). If there is no
-   workspace yet, continue with step 2; otherwise go to step 3.
+- Authorized deployment directory and workspace repository; new or reuse,
+  existing clones/private repositories, pins and target first task with its
+  success criterion.
+- Account/team authority and canonical provider team ID (`name:namespace`,
+  not an internal UUID); authorized account creation or existing admission;
+  LOCAL minting root or fresh/reused GLOBAL resident; owner custody reference.
+- Team label/default/eligibility policy, selected root and instance names,
+  soul, harness/model/launch configuration and required capabilities.
+- For GLOBAL: resident, grant profile, TTL and renewal policy. For all seats:
+  primary and joined receive requirements, including whether native delivery
+  is mandatory, and authorized effects (files, identities, sessions, services).
+- Knowledge binding, if selected, and credentials supplied through the
+  provider's private input channel. Never ask for secrets in conversation.
 
-## 2. Hosting and the shared declarations (only if the workspace is new)
+Carry that authorization through routine reversible setup, sync, preview,
+scaffold, launch and verification within the selected scope. Do not ask again
+per file, command, unchanged preview or receipt. Stop only for a concrete
+missing input/authority, a failed predicate or an unsupported path; name the
+blocker, its owner and the single input or remedy needed. A changed preview
+within the same authorized scope needs readback, not another approval round.
 
-- **Hosting rule.** If any member is private, host the workspace file in a
-  dedicated private repository that is not itself a public member; decide
-  this before the first sync. *Rationale:* operator node, decision
-  "private member requires a private workspace host".
-- **Trust is declaration.** Listing a member is the whole trust decision for
-  its capabilities, and listing a package in `packages:` is the whole trust
-  decision for that package: their hooks and scripts run on every operator's
-  machine at spawn. Before declaring a package, show the operator what it
-  runs (its manifests' `commands` and `hooks`). In a mixed organisation keep
-  executables in packages (a reviewed pin, locked to a commit) or private
-  members; public members carry souls.
-- Write `oats-workspace.yaml` in the host, `oats-membership.yaml` in every
-  member (the host included), and `souls/<name>/` for each soul, as reviewed
-  changes. Shapes, field by field: `docs/workspaces.md` ("The files"). No absolute paths, accounts or team
-  ids in any shared file. *Rationale:* operator node, lesson "place each fact
-  at the scope that owns it".
+In the cards, replace `D` with the selected absolute deployment, `S` with the
+qualified target soul, `H` with the returned instance home, `N` with the
+selected instance name, `F` with its task-file path and `R` with the preview's
+`decision.revision`. `HARNESS` is the selected `claude`, `pi` or `codex`.
+Run deployment commands from the operator's instance home with `--dir D`;
+instance commands explicitly select `H`. Do not copy these symbolic values.
 
-## 3. Onboard
+Preserve workspace-approved soul launch/harness constraints. `HARNESS` must
+agree with that policy; the example is not permission to override it. If the
+resolved launch already selects the authorized harness, omit `--harness` from
+both preview and apply. A missing owner opt-in or prompt confirmation is a
+prerequisite blocker, never a prompt to answer silently.
 
-```bash
-oats onboard <deployment-dir> --workspace <repo-ref>
-```
+**Version boundary:** these kernel command forms are checked against OATS
+0.41.0; team configuration requires 0.38.0 or later. Provider procedures must
+state their own released version support. A source merge, guide on main or
+package pin is not proof that a running home contains the change. Use
+`oats version --json` and the installed provider's version/help and recorded
+module provenance; if the composed procedure lacks the selected supported act,
+report that provider-version blocker to its owner. Do not reconstruct it from
+source or knowledge-base notes during execution. The audited aw 1.36.23
+evidence is version-specific. In published aw 1.36.24, external
+`--identity-home` is not supported for `team invite`, `id team remove-member`
+or `doctor local`; global help alone does not establish that allowlist.
+`id team accept-invite` remains supported. Use the provider's version-valid
+owner context; never clear identity selection to bypass a refusal.
 
-Read the report row by row. Every member must be `confirmed` (`✓↔`); any other
-status (`no-backlink`, `backlink-elsewhere`, `not-listed`, `cannot-read`) is
-fixed in the member's repository or the operator's Git access, not worked
-around. `oats workspace status --dir <deployment-dir>` re-reads the same
-picture.
+## 2. Inventory and select reuse or new
 
-## 4. Host settings before the first spawn
-
-Some packages need host-owned values; they go under `settings.<capability>`
-in `<deployment-dir>/oats-local.yaml`, never in a committed file. Read each
-package's manifest (`oats.json#settings`) for its keys — the installed
-provider is the authority, not a doc example. *Rationale:* operator node,
-lesson "the installed provider is the authority for a setting".
-
-- **Knowledge (`oats.okf`)**: `bindings-file` and `state-dir`, both absolute
-  host paths, and a bindings file that binds every base alias the souls'
-  `okf.json` name, under exactly those aliases (the workspace file lists them
-  next to `stores:`). Use real paths: the provider's path check refuses a
-  path that traverses a symlink (`E_PATH symlink not allowed`; on macOS `/tmp`
-  is one — use `/private/tmp`). A soul whose knowledge slot is `oats.okf`
-  does not spawn until these exist — set them before spawning any soul, the
-  operator expert included.
-- **How this machine starts each harness.** Ask whether every instance of a
-  harness here needs something the harness alone does not give: an account
-  directory (Claude Code's `CLAUDE_CONFIG_DIR`, for a second account), a
-  wrapper executable, an argument. If so, declare it once as that harness's
-  default launch configuration (kernel 0.32+), not per soul:
-  ```bash
-  echo '{"harness":"claude","env":{"CLAUDE_CONFIG_DIR":"/abs/.claude-personal"},"default":true}' > /tmp/mine.json
-  oats launch-config set mine --file /tmp/mine.json --dir <deployment-dir>
-  oats launch-config list --dir <deployment-dir>   # "mine: claude (this machine's claude default) …"
-  ```
-  Every new claude launch that names no configuration then runs it, whatever
-  soul or preference chose claude; the model still comes from the soul. A
-  shell alias (`claude-personal`) is not an executable: use `env`, or point
-  `executable` at a real wrapper script. Do not rely on the terminal
-  multiplexer's environment for it: a tmux server started elsewhere loses it.
-  An old `oats-claude-config` file is refused from 0.32: move its name into
-  the default (`executable`) and delete it. Every kernel reading this
-  deployment must be 0.32+ once a `default` is declared.
-- **Messaging** is set up in its own step, after sync (step 6).
-- A fact true of **one spawn** (a retained messaging seat) is not a host
-  setting: it is `oats spawn <soul> --provider <cap> key=value`.
-
-## 5. Sync after any change
-
-`oats onboard` already synced. After any change to the workspace file (a pin,
-a member, a default), run `oats sync`: it resolves every package to a commit,
-fetches it, verifies its integrity and writes `oats-lock.json`. See
-`/oats-package-pins`.
-
-## 6. Set up messaging and teams before the first spawn
-
-If the workspace's messaging default, or any soul, uses `oats.aweb`, its spawn
-hook is required: with no messaging root, or no default team, the spawn is
-rolled back. With messaging as the workspace default that is **every** soul,
-the operator expert included. So set it up now, after sync and before any
-spawn.
-
-Put the root **in the deployment directory** (the layout `oats onboard`
-creates), or name it in `oats-local.yaml` `settings.oats.aweb.root`.
-*Rationale:* operator node, lesson "messaging root placement decides the
-team": read it before choosing another place.
-
-Which teams exist, the default team and which souls may join which are the
-organisation's, committed in `oats-workspace.yaml` (`teams:`, `defaultTeam:`,
-`souls:`). A deployment may declare its own teams in `oats-local.yaml` only
-when the workspace says `localTeams: true` (`/oats-teams`). `oats aweb setup`
-is the one command that creates messaging accounts and teams, and it records
-what it creates in `oats-local.yaml`. It runs only when asked, never at spawn.
-Ask the operator first: it acts on the messaging service.
-
-1. **No account yet:** `oats aweb setup --username <u>` creates the hosted
-   account and its first team at the root, and records that team as this
-   deployment's `defaultTeam` (that needs `localTeams: true`; otherwise commit
-   the team and `defaultTeam` to the workspace file by PR and remove them from
-   `oats-local.yaml`). (With a team API key: `AWEB_API_KEY=<key> oats
-   aweb setup`. To start in an existing team: `oats aweb setup --invite
-   <token>`, with an invite from one of its members.)
-2. **More teams of your own** (only with `localTeams: true`):
-   `oats aweb setup --create <label>` creates a new team and records it as a
-   local team (`oats teams add <label> --team <id>`).
-   An existing team you already belong to is declared directly with `oats teams
-   add <label> --team <id>`.
-3. **A shared team** (declared in `oats-workspace.yaml`): if it has an id, ask
-   its owner for an invite, then `oats aweb setup --join <label> --invite
-   <token>`. If it has no id yet, its owner runs `oats aweb setup`, which
-   creates it, and commits the printed id to `oats-workspace.yaml` by a PR.
-4. **Choose what each soul may join** (offered at spawn, never joined
-   automatically): `souls:` entries in `oats-workspace.yaml`, by PR (a soul no
-   entry matches gets its default only). `oats soul teams <soul>` shows the
-   result.
-5. **Check:** `oats teams` shows the teams, their ids and the default, and
-   `oats readiness --soul <soul>` shows no team problem in the `configured`
-   check.
-
-Each instance's own identity lives in the default team. The soul's other teams
-are only offered: the instance joins one at spawn (`join=`, or the Desktop's
-checkboxes) or later.
-
-## 7. Clone work targets
-
-Only souls with `work: worktree | checkout` need a clone of their repository.
-The kernel looks, in order, at `oats spawn … --repo <path>`, the local file's
-`clones:` map, then `<deployment-dir>/<repo name>` (`agents-repo` for a
-member named `agents`). Clone with the operator's own credentials; a
-directory whose origin is another repository is refused, not used.
-
-## 8. Verify before the first real spawn
-
-Positive enumeration, in order — absence of errors proves nothing
-(*rationale:* operator node, playbook "outsider verification of a rebuild"):
+**Prerequisites/context:** intake complete; selected `D` (OATS 0.41.0).
+**Commands (read-only):**
 
 ```bash
-oats workspace status --dir <deployment-dir>   # every member confirmed, every package locked
-oats souls --dir <deployment-dir>              # every expected soul, with origin, teams and default team
-oats spawn <soul> --preview                    # modules at locked commits; merged settings show the host values;
-                                               # "via launch configuration <name> (this machine's <harness> default)" when one applies
+oats workspace status --dir D --json
+oats souls --dir D --json
+oats teams --dir D --json
+oats soul teams S --dir D --json
 ```
 
-Then spawn one soul with `--no-launch` and check its home: exactly one "You run
-on OATS" block in `AGENTS.md` (two means `oats.core` did not resolve), the
-expected skills under `.agents/skills/`, and — with messaging — a spawn the
-aweb hook did not roll back: its output carries a `Comms:` line, and
-`instance.json` → `defaultTeam.team` equals the default team's id (and
-`capabilityMeta["oats.aweb"].team` agrees).
-Only then spawn for real.
+For current identity/team inventory, use `/oats-aweb` “Who you are” and
+“Find who to talk to” in that identity's own home. A roster does not establish
+account authority or identify the coordinator.
+
+**Success:** enumerate confirmed members, locked packages, available souls,
+team mappings/defaults and reusable host state against the intake.
+**Next:** use card 3 for a new deployment, otherwise card 4.
+**Error → remedy:** `E_LOCAL_MISSING` → if `D` is the authorized new directory,
+use card 3; if reuse was selected, resolve the incorrect/missing deployment
+with its owner before writing. `no-backlink`, `backlink-elsewhere`,
+`not-listed`, `cannot-read` → correct the shared membership declaration or
+owner's Git access, then repeat this inventory. Never invent another repo.
+
+## 3. Establish the selected workspace
+
+**Prerequisites/context:** new deployment authorized; selected repository
+reference `W`; reviewed shared declarations available; OATS 0.41.0.
+If any member is private, host the workspace in a private repository that is
+not itself a public member. Inspect package manifests' commands/hooks before
+using the intake's trust authorization. Shared workspace, membership and soul
+changes follow the project's Git review path. Do not merge them without that
+authority.
+
+Shared `teams.<label>.team` IDs and schema-defined trigger `runsOn`/`owner`
+identifiers belong in Git. Absolute host paths, credentials, custody and
+resident directories stay host-private. Use `/oats-workspace-config` for
+shared file shapes and `/oats-package-pins` for selected pins.
+
+**Command:**
+
+```bash
+oats onboard D --workspace W
+```
+
+**Effects:** local configuration, lock and `agents/` scaffold in `D`; no seat
+is spawned. **Success:** reported members are confirmed and packages locked.
+**Next:** card 4.
+**Error → remedy:** `E_REPO_REF` → correct `W` to the owner-selected repository
+reference; `cannot-read` → owner fixes Git access, then inventory `D` before
+retrying. Do not overwrite partial or existing state to force onboarding.
+
+## 4. Prepare host settings and sync
+
+**Prerequisites/context:** selected deployment and authorized host settings;
+merged shared changes, if any; OATS 0.41.0.
+Use the installed provider's settings contract for knowledge bindings/state
+paths, messaging roots or resident custody. Bind the project's own knowledge
+aliases; never substitute a central base owner or copy a running home.
+Use `/oats-workspace-config` for the selected host launch configuration. Clone selected work targets with
+the owner's Git credentials only for `worktree`/`checkout` souls: the kernel
+uses `--repo`, then the local `clones` map, then `D/<repo name>`.
+
+**Commands (after the authorized edits):**
+
+```bash
+oats sync --dir D
+oats workspace status --dir D --json
+```
+
+**Effects:** resolves packages and writes the lock; refreshes shared state.
+**Success:** confirmed members, correct locked pins, required host bindings
+and clones present. **Next:** card 5.
+**Error → remedy:** `E_PATH symlink not allowed` from a provider → select a
+real absolute host path within the authorized scope (on macOS `/private/tmp`
+rather than `/tmp`); preserve the failing output and rerun the provider check.
+An integrity refusal is a pin/owner problem, never a reason to hand-edit the lock.
+
+## 5. Select the canonical messaging act
+
+**Prerequisites/context:** intake authority/scope selected; provider's released
+version and its composed procedure support the act. No provider command is
+redefined here. Execute the selected card in `/oats-aweb`, then use
+`/oats-teams` to read back mapping/default/eligibility before card 6.
+
+| Selected act | Canonical procedure / boundary |
+|---|---|
+| First hosted account/team with LOCAL root | `/oats-aweb`, operator setup: first account, selected username/authority |
+| Additional team under an owned namespace | `/oats-aweb`, operator setup: BYOT/controller create; use only the selected domain authority |
+| Existing LOCAL deployment root admission | `/oats-aweb`, labelled join with private token input, selected service and root alias |
+| Interrupted LOCAL root join | `/oats-aweb`, accepted-state resume without another token; read back uncertain effects first |
+| LOCAL or existing GLOBAL member invitation | `/oats-aweb`, owner-side native admission; distinguish admission from spawn authority |
+| Fresh/reused GLOBAL resident and grant seat | `/oats-aweb`, existing-team GLOBAL resident reference; owner custody first, then selected grant settings for card 7 |
+| LOCAL wider-team join/leave | `/oats-aweb`, instance teams; run in target home, eligibility from `/oats-teams` |
+| Remove a label | `/oats-teams`, configuration removal; it does not revoke an identity |
+| Retire an OATS seat | `/oats-operate`, retirement plan/apply under intake authority; provider owns grant/membership outcome |
+| Owner certificate removal or resident cleanup | `/oats-aweb`, native owner lifecycle; certificate removal, Cloud archival and replacement-preserving cleanup are distinct acts |
+| Delivery and checkpointed restart/recovery | `/oats-aweb`, delivery verification/recovery; `/oats-operate` owns session lifecycle |
+
+Provider/native support boundaries (retain the named owner on a blocker):
+
+- Token-only deployment join: aweb provider owner,
+  [oats-aweb#56](https://github.com/awebai/oats-aweb/issues/56); do not drop the label.
+- Bare provider hosted additional-team creation: the audited provider still
+  refuses this route; its `aweb-abkh` “not yet released” message is stale
+  provider wording, not current product status. Native hosted sibling-team
+  creation is published in aw 1.36.24 (absent in audited 1.36.23); use the
+  composed `/oats-aweb` native hosted-create card with selected source team,
+  owner/admin authority and request ID. Its secret invite output stays private
+  and the caller is not auto-joined. Do not install or trial it implicitly.
+- GLOBAL grant-seat wider-team join/leave: aweb provider owner,
+  [oats-aweb#60](https://github.com/awebai/oats-aweb/issues/60); no in-seat LOCAL switch.
+- Cloud dashboard human-account/role invitation: route to the aweb/Cloud
+  owner's human-account procedure, established in Cloud source `7665d863`
+  but not verified here as deployed. It requires organization owner/admin
+  authority and selected team, email and role; an agent token invite and an
+  organization membership invitation are different acts.
+
+Claude/Pi primary delivery uses its configured native channel/extension when
+selected; Claude enrollment acceptance is not assumed. Codex has **no native
+channel**: its automatic receive path is the host broker everywhere. Joined
+`receive: native` denotes the joined-identity **broker**, not a Claude/Pi
+native channel; `receive: poll` is manual. If mandatory native enrollment is
+unavailable or unconfirmed, report that blocker rather than silently using a
+broker and claiming native success.
+
+## 6. Check operator composition and preview
+
+**Prerequisites/context:** host/provider readiness and team configuration
+resolved; selected project operator plus target `S`; OATS 0.41.0.
+For the operator, use its qualified soul as `S` and its selected `N`/`F`.
+
+```bash
+oats readiness --soul S --dir D --json
+oats spawn S --dir D --name N --harness HARNESS --task-file F --preview --json
+```
+
+Include the intake's selected model/launch and provider options in the preview
+and carry those exact options into card 7. GLOBAL options come from the
+provider's resident/grant card, not a guessed `setup --global` flag.
+
+**Effects:** read-only checks and preview. **Success:** enumerate resolved
+modules, merged host settings, selected launch, mapped default and eligible
+teams. The operator must resolve `oats.setup` (including these onboarding and
+teams skills), the selected core/messaging capabilities and its own knowledge
+binding if selected. Check composition, not the literal name
+`oats-operator-expert`. For each team in scope record eligible operator
+coverage separately from an actually authorized/running operator seat.
+
+A project operator need not import this repository's central operator soul,
+its engineering/cloning roles, private workspace capability or knowledge
+identity. Declare project-owned composition through existing configuration;
+there is no new inheritance mechanism. An absent usable operator is a named
+setup blocker to its owner; `operator-soul-missing` / `operator-team-uncovered`
+are proposals in [#671](https://github.com/awebai/oats/issues/671), not existing
+kernel warnings. **Next:** card 7 with the returned decision revision.
+**Error → remedy:** `E_TEAM_UNCONFIGURED` or configuration refusals →
+`/oats-teams` error table; unavailable provider/knowledge prerequisites → the
+owning provider's card. Do not launch past a failed required check.
+
+## 7. Scaffold, inspect, then start
+
+**Prerequisites/context:** successful card 6; same authorized inputs and
+`R = decision.revision`; OATS 0.41.0. Lifecycle owner: `/oats-operate`.
+
+```bash
+oats spawn S --dir D --name N --harness HARNESS --task-file F --no-launch --expect-decision R --json
+```
+
+**Effects:** creates the home/work and runs provider hooks, without launching.
+**Success:** exit success and returned `H` exists; exactly one “You run on OATS”
+briefing, expected composed skills, `Comms:` delivery route and recorded
+`defaultTeam.team` matching the selected team. Compare composed onboarding
+and teams skill wording with the selected source/version. A failed scaffold
+must never be followed by session start.
+**Next:** card 8.
+**Error → remedy:** `E_DECISION_STALE` → repeat card 6 and inspect the change;
+`E_REQUIRED_HOOK_FAILED` → retain private stdout/stderr/exit, inspect rollback
+and provider state, then use that provider's remedy. Do not retry uncertain
+identity effects blindly or edit receipts to make validation pass.
+
+## 8. Start and prove the first task
+
+**Prerequisites/context:** successful inspected scaffold `H`; launch authorized;
+OATS 0.41.0; provider's selected receive route ready.
+
+```bash
+oats session start --home H --json
+oats readiness --home H --json
+```
+
+**Effects:** starts the scaffolded session and checks prerequisites.
+**Success:** the provider's delivery card proves a nonce message actually
+presented automatically and a receiver-verified reply for the exact message
+ID; the first task is done and its result consumed. Readiness, a send receipt
+or unread inbox status alone is insufficient. Record tested versions, source
+and composed provenance, route, exact message IDs, safe receipts, timings and
+any explicit holds. A future authorized timed acceptance measures pasted
+command to receiver-verified reply (target ≤30 seconds), without subtracting
+holds; report preparation, selection and recovery separately. This card does
+not authorize a disposable acceptance rehearsal. Keep private failure bodies local; report safe code and
+owner. **Next:** hand back that completion evidence to the task owner.
+**Error → remedy:** `E_SESSION_UNKNOWN` → verify the scaffold result and `H`
+before retrying; `grant_expired`, `grant_revoked`, `grant_subject_inactive`,
+`grant_issuer_revoked` or `grant_freshness_unavailable` → stop worker messaging
+and send the code to the custody owner for the supported grant lifecycle.
+For interrupted delivery use the provider's exact-message-ID recovery;
+checkpointed restart is a separate authorized lifecycle act, not automatic
+receipt repair.
 
 ## Knowledge operations with OKF
 
-Set this up only after steps 1–8 work, and only when the operator wants harvested
+Set this up only after cards 1–8 succeed, and only when the intake authorizes harvested
 knowledge reviewed and merged by an agent. It needs kernel ≥ 0.29.0 (package
 souls, triggers, workspace automations) and `oats.okf` 4.0.0. The contract is
 `docs/knowledge.md` ("Knowledge operations") and `docs/schedules.md`
@@ -295,7 +392,7 @@ Order:
    knowledge-base repo (see `/okf-trigger-setup`): a harvest PR opens with its
    provenance block, the trigger spawns the maintainer, it merges, and the
    harvester retires. Read every step back.
-2. Only then turn it on, per host, with the operator's consent (it captures
+2. Only then turn it on, per host, with intake consent covering capture (it captures
    session transcripts). These are okf's commands (okf 4.0.0), run from the
    deployment directory:
    - `oats okf setup --harvest on` writes `settings.oats.okf.harvest`, or
