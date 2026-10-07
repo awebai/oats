@@ -1,9 +1,9 @@
 {
-  "source": "oats-desktop-developer-capabilities-used-by: a real capture from the kernel PR that adds souls-capabilities (OATS 0.44.2), run in its own tree with its test helpers; import-capture.mjs wrote these files",
+  "source": "oats-desktop-developer-capabilities-used-by: a real capture from the kernel PR that adds souls-capabilities (OATS 0.44.2), run in its own tree with its test helpers: capture.mjs wrote the raw documents, import-capture.mjs these files",
   "scenario": "The kernel PR's soulCapabilities fixture (test/desktop-facts.test.mjs): v2Deployment + packageRepo (acme.pkg v1.0.0, package soul keeper declaring acme-tool), workspace defaults knowledge notes, messaging chat, capabilities acme.ws, acme.off and acme-tool (package); dev declares acme.own, acme_z, acme.ws, turns acme.off off and sets knowledge: none. Extended for Desktop: dev also declares acme.private (a manifest with private: true); a member soul keeper (the package soul's bare name) declares acme.own; a soul off is disabled in oats-local.yaml (souls.disabled), so it is not spawnable and its capabilities are null.",
   "redactions": [
-    "<base> (deployment scratch) → /fixture/base",
-    "<pkg> (package repo scratch) → /fixture/pkg"
+    "<base> (deployment scratch) \u2192 /fixture/base",
+    "<pkg> (package repo scratch) \u2192 /fixture/pkg"
   ],
   "kernel": {
     "pr": "awebai/oats#745",
