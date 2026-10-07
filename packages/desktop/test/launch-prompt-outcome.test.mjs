@@ -42,3 +42,34 @@ test('dialog retains the incomplete result and disables another spawn', async t 
   u.q('.fspawn').click(); await settle();
   assert.deepEqual(u.spawns().map(b => b.action), ['prepare', 'apply']);
 });
+
+// Retained-result vocabulary captured from writer 28e0a633: core.mjs's
+// incompleteLaunchPrompt/retainedPromptError call sites and launch-prompts.mjs's
+// controller exits (including both dynamic input outcomes). This independent
+// fixture must be refreshed when the writer adds reasons; no kernel execution.
+const writerReasons = {
+  blocked: [
+    'blocked: unexpected prompt', 'blocked: observation timeout', 'blocked: launch observation failed',
+    'blocked: invalid target', 'blocked: respawn ownership not proven',
+    'blocked: respawn geometry changed before fresh screen', 'blocked: launch geometry not pinned',
+    'blocked: repeated or unsupported prompt', 'blocked: prompt consent absent',
+    'blocked: prompt changed before input', 'blocked: launch authority already used',
+  ],
+  incomplete: [
+    'launch prompt audit failed', 'launch prompt audit failed after possible input',
+    'launch prompt audit failed before geometry pin', 'launch prompt audit failed after geometry pin',
+    'launch prompt geometry pin failed', 'launch prompt geometry restoration incomplete',
+    'launch prompt input failed', 'launch prompt input uncertain',
+    'launch prompt dispatch or recording incomplete', 'launch prompt metadata recording incomplete',
+    'launch prompt pending receipt incomplete', 'launch home identity changed; metadata retained at original home',
+  ],
+};
+for (const [status, reasons] of Object.entries(writerReasons)) for (const reason of reasons) {
+  test(`writer retained reason is shown: ${reason}`, () => {
+    const r = retainedSpawnDetails({ ...retained(d), launchPrompts: { status, reason, answers: [], receipt: [] } });
+    assert.equal(r.launchPrompts.reason, reason);
+    assert.equal(launchPromptOutcome(r.launchPrompts).reason, reason);
+    assert.ok(retainedSpawnMessage(r).includes(reason));
+    assert.match(retainedSpawnMessage(r), /Inspect its existing pane, then use oats session start --home/);
+  });
+}

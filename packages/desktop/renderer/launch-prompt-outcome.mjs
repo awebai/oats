@@ -12,6 +12,8 @@ const reasons = new Set([
   'launch prompt audit failed before geometry pin', 'launch prompt audit failed after geometry pin',
   'launch prompt geometry pin failed', 'launch prompt geometry restoration incomplete',
   'launch prompt input failed', 'launch prompt input uncertain',
+  'launch prompt dispatch or recording incomplete', 'launch prompt metadata recording incomplete',
+  'launch prompt pending receipt incomplete', 'launch home identity changed; metadata retained at original home',
 ]);
 export const LAUNCH_INSPECTION = 'Launch requires inspection';
 export const LAUNCH_DIAGNOSTIC_BYTES = 32768;

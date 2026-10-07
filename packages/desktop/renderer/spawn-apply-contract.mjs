@@ -1,7 +1,7 @@
 /** Confirmed K6d input/data boundary. No kernel resolution or renderer key authority. */
 import { retainedSpawnDetails } from './launch-prompt-outcome.mjs';
 import { harnessOf } from './harness-names.mjs';
-import { absolute, record, previewSupported, previewSelector, previewChoices, previewTarget, previewData, previewFailure } from './spawn-preview-contract.mjs';
+import { record, previewSupported, previewSelector, previewChoices, previewTarget, previewData, previewFailure } from './spawn-preview-contract.mjs';
 import { spawnDecision, sameSpawnDecision } from './spawn-decision.mjs';
 const exact = (v, keys) => record(v) && Object.keys(v).every(k => keys.includes(k));
 const bytes = v => new TextEncoder().encode(v).byteLength;
@@ -96,10 +96,9 @@ export function spawnApplyView(v, expected = {}) {
   if (['unavailable', 'refused', 'unknown', 'stale', 'incomplete'].includes(v.status)) {
     const out = spawnApplyFailure(v.reason?.code, { target, spawnRef: v.spawnRef, status: v.status });
     if (v.status === 'incomplete') {
-      const d = v.incomplete;
-      if (v.reason?.code !== 'E_SPAWN_INCOMPLETE' || !target || !record(d) || typeof d.instance !== 'string'
-        || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(d.instance) || !absolute(d.home) || ![false, 'unknown'].includes(d.launched)) return null;
-      out.incomplete = retainedSpawnDetails(d);
+      const incomplete = retainedSpawnDetails(v.incomplete);
+      if (v.reason?.code !== 'E_SPAWN_INCOMPLETE' || !target || !incomplete) return null;
+      out.incomplete = incomplete;
     }
     return out;
   }

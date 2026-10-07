@@ -476,6 +476,8 @@ spawn/preview/signature fetch, install or restart is part of local testing.
 An optional preview `launchPromptAnswers` reports the exact home's
 `awebDevelopmentChannel` boolean and `consentSource` (string or null). The dialog
 shows the development-channel confirmation or none, with available provenance.
+Enabled policy also explains that a harness update can block launch until its
+qualified prompt fixtures are refreshed, with no fallback key.
 An older CLI omitting the field makes no policy claim. This is read-only policy,
 not observed input or readiness; workspace-trust prompt answering is not included.
 

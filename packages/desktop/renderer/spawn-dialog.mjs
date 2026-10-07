@@ -1130,7 +1130,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       if (data.launchPromptAnswers) {
         const policy = data.launchPromptAnswers;
         fact('Launch prompts', policy.awebDevelopmentChannel
-          ? 'The launcher will answer the aweb development-channel confirmation for this home. This policy does not confirm readiness.'
+          ? 'The launcher will answer the aweb development-channel confirmation for this home. This policy does not confirm readiness. A harness update can block the launch until its prompt fixtures are refreshed; no fallback key is sent.'
           : 'None. The launcher will not answer prompts for this home. This policy does not confirm readiness.');
         if (policy.consentSource) fact('Prompt consent source', policy.consentSource);
       }

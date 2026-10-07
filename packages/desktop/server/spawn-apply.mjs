@@ -97,9 +97,9 @@ export function createSpawnApplyBoundary({ read = spawnPreviewPrepareRequest, in
     const code = envelope.error?.code;
     if (!result.started) return denied(code, entry, 'refused');
     if (code === 'E_SPAWN_INCOMPLETE') {
-      const d = envelope.error.details;
-      if (d?.instance !== entry.preview.decision.instance || d?.home !== entry.preview.decision.home || ![false, 'unknown'].includes(d.launched)) return denied('E_OUTCOME_UNKNOWN', entry, 'unknown');
-      return { ...denied(code, entry, 'incomplete'), incomplete: retainedSpawnDetails(d) };
+      const d = retainedSpawnDetails(envelope.error.details);
+      if (!d || d.instance !== entry.preview.decision.instance || d.home !== entry.preview.decision.home) return denied('E_OUTCOME_UNKNOWN', entry, 'unknown');
+      return { ...denied(code, entry, 'incomplete'), incomplete: d };
     }
     // A taken explicit name (spawn-name) refuses before any home is kept: the
     // confirmation is consumed and a fresh preview reports the taken name.

@@ -45,7 +45,10 @@ for (const mode of ['on', 'off', 'absent', 'malformed']) test(`spawn dialog laun
   if (mode === 'absent' || mode === 'malformed') assert.equal(label, undefined);
   else {
     assert.ok(label);
-    if (mode === 'on') assert.match(facts.textContent, /Prompt consent source.*\/fixture\/oats.yaml#/);
+    if (mode === 'on') {
+      assert.match(facts.textContent, /Prompt consent source.*\/fixture\/oats.yaml#/);
+      assert.match(label.nextElementSibling.textContent, /A harness update can block the launch until its prompt fixtures are refreshed; no fallback key is sent/);
+    }
     assert.match(label.nextElementSibling.textContent, mode === 'on'
       ? /will answer the aweb development-channel confirmation for this home/
       : /None\. The launcher will not answer prompts for this home/);
