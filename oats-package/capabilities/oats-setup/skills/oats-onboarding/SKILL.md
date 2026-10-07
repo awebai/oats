@@ -162,19 +162,28 @@ version and its composed procedure support the act. No provider command is
 redefined here. Execute the selected card in `/oats-aweb`, then use
 `/oats-teams` to read back mapping/default/eligibility before card 6.
 
+Provider heading contract: §8 “8. Provider configuration and setup internals”
+owns setup; §5 “5. Teams: join and leave” owns existing LOCAL seats; §7
+“7. Troubleshooting” is the error index. The named §8 subheadings and §4
+“Receive verification and recovery” below are integration targets until the
+provider's released text is composed. Use current §8 or §4 “4. How messages
+reach you (delivery and wakes)” only when it already contains a complete,
+version-supported procedure for the selected act; otherwise report the
+missing provider procedure. A heading agreement is not a release receipt.
+
 | Selected act | Canonical procedure / boundary |
 |---|---|
-| First hosted account/team with LOCAL root | `/oats-aweb`, operator setup: first account, selected username/authority |
-| Additional team under an owned namespace | `/oats-aweb`, operator setup: BYOT/controller create; use only the selected domain authority |
-| Existing LOCAL deployment root admission | `/oats-aweb`, labelled join with private token input, selected service and root alias |
-| Interrupted LOCAL root join | `/oats-aweb`, accepted-state resume without another token; read back uncertain effects first |
-| LOCAL or existing GLOBAL member invitation | `/oats-aweb`, owner-side native admission; distinguish admission from spawn authority |
-| Fresh/reused GLOBAL resident and grant seat | `/oats-aweb`, existing-team GLOBAL resident reference; owner custody first, then selected grant settings for card 7 |
-| LOCAL wider-team join/leave | `/oats-aweb`, instance teams; run in target home, eligibility from `/oats-teams` |
+| First hosted account/team with LOCAL root | `/oats-aweb` §8: first account, selected username/authority |
+| Additional team under an owned namespace | `/oats-aweb` §8: BYOT/controller create; use only the selected domain authority |
+| Existing LOCAL deployment root admission | `/oats-aweb` §8 “LOCAL team join and resume”: labelled join with private token input, selected service and root alias |
+| Interrupted LOCAL root join | `/oats-aweb` §8 “LOCAL team join and resume”: accepted-state resume without another token; read back uncertain effects first |
+| LOCAL or existing GLOBAL member invitation | `/oats-aweb` §8 “Invitations and certificate ownership”: distinguish admission from spawn authority |
+| Fresh/reused GLOBAL resident and grant seat | `/oats-aweb` §8 “GLOBAL residents and grant seats”, linking its `references/existing-team-global-resident.md` (“A GLOBAL resident in an existing hosted team”); owner custody first, then selected grant settings for card 7 |
+| LOCAL wider-team join/leave | `/oats-aweb` §5 “5. Teams: join and leave”; run in target home, eligibility from `/oats-teams` |
 | Remove a label | `/oats-teams`, configuration removal; it does not revoke an identity |
 | Retire an OATS seat | `/oats-operate`, retirement plan/apply under intake authority; provider owns grant/membership outcome |
-| Owner certificate removal or resident cleanup | `/oats-aweb`, native owner lifecycle; external-home certificate removal is blocked pending supported owner context. Hosted archival with active certificates and generic GLOBAL cleanup remain owner-path pending; customer-specific cleanup is not a generic recipe |
-| Delivery and checkpointed restart/recovery | `/oats-aweb`, delivery verification/recovery; `/oats-operate` owns session lifecycle |
+| Owner certificate removal or resident cleanup | `/oats-aweb` §8 “Invitations and certificate ownership”; external-home certificate removal is blocked pending supported owner context. Hosted archival with active certificates and generic GLOBAL cleanup remain owner-path pending; customer-specific cleanup is not a generic recipe |
+| Delivery and checkpointed restart/recovery | `/oats-aweb` §4 “Receive verification and recovery”; `/oats-operate` owns session lifecycle |
 
 Provider/native support boundaries (retain the named owner on a blocker):
 
@@ -184,7 +193,7 @@ Provider/native support boundaries (retain the named owner on a blocker):
   refuses this route; its `aweb-abkh` “not yet released” message is stale
   provider wording, not current product status. Native hosted sibling-team
   creation is published in aw 1.36.24 (absent in audited 1.36.23); use the
-  composed `/oats-aweb` native hosted-create card with selected source team,
+  composed `/oats-aweb` §8 “Hosted team creation” card with selected source team,
   owner/admin authority and request ID. Its secret invite output stays private
   and the caller is not auto-joined. Do not install or trial it implicitly.
 - GLOBAL grant-seat wider-team join/leave: aweb provider owner,

@@ -286,7 +286,9 @@ policy into workspace `souls:`; do not add team settings to soul manifests.
 Load the **composed `/oats-aweb` skill** for first hosted LOCAL account setup,
 controller-owned team creation, labelled LOCAL root join/resume, invitations,
 GLOBAL resident bootstrap/reuse, grant lifecycle, wider-team join/leave, and
-receive proof. Select the named procedure using the existing intake inputs.
+receive proof. Select the exact procedure heading in `/oats-onboarding` card 5 using the
+existing intake inputs; its heading contract distinguishes current sections
+from provider integration targets.
 If that procedure is missing or its installed version cannot support the
 selected act, report that exact prerequisite to the oats.aweb owner; do not
 infer installation from a source merge or construct an alternative command.
@@ -302,7 +304,7 @@ infer installation from a source merge or construct an alternative command.
 - Bare provider hosted additional-team creation remains refused by the
   audited provider. Its `aweb-abkh` unreleased wording is stale: native hosted
   sibling creation is published in aw 1.36.24, absent in audited 1.36.23.
-  Use `/oats-aweb`'s native hosted-create card under its specified owner/admin
+  Use `/oats-aweb` §8 “Hosted team creation” card under its specified owner/admin
   authority; private invite output does not auto-join the caller. No implicit
   install or trial. Controller-owned namespaces are a separate authorized
   branch, never a workaround for absent hosted authority.
