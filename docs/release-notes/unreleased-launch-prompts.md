@@ -1,5 +1,14 @@
 # Unreleased: exact-home aweb development-channel confirmation
 
+**Release gate:** before this writer is released to **any deployment**, an
+accepted completion frame family captured with the aweb plugin installed and an
+ordinary real-configuration model, billing and effort banner must be integrated
+and reviewed. The current plugin-absent fixture alone does not satisfy this gate.
+Desktop [#711](https://github.com/awebai/oats/issues/711) reader compatibility must
+land in the same release or earlier. These conditions do not block opening the
+reviewed PR; they block releasing its writer. No invented or broadened fixture
+can substitute for the accepted capture.
+
 - Adds the host-only strict boolean
   `launchPromptAnswers.homes.<canonical-home>.awebDevelopmentChannel`, default
   false. No existing home is opted in automatically. Provider development mode
