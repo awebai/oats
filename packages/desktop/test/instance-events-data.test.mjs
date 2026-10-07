@@ -1,7 +1,36 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { eventsData, eventsIncomplete, eventIncarnation, EVENT_TITLES } from '../renderer/instance-events-data.mjs';
-import { target, birth, event, data } from './helpers/instance-events-fixture.mjs';
+import { target, birth, event, data, launchPromptEvent } from './helpers/instance-events-fixture.mjs';
+
+test('launch-prompt audit rows preserve bounded reported outcomes across private and public projection', () => {
+  assert.equal(EVENT_TITLES['launch-prompt'], 'Launch prompt');
+  const rows = [launchPromptEvent(), event({ kind: 'launch-prompt', data: { action: 'restore-geometry', status: 'failed',
+    consentSource: null, previous: { width: 80, height: 24 } } })];
+  const out = eventsData(data(rows), target);
+  assert.ok(out);
+  assert.deepEqual(out.events.map(row => row.data), [
+    { status: 'submitted', class: 'awebDevelopmentChannel', consentSource: rows[0].data.consentSource },
+    { status: 'failed', action: 'restore-geometry', consentSource: null },
+  ]);
+  assert.deepEqual(eventsData(out, target, 100, { publicView: true }), out);
+  const blocked = event({ kind: 'launch-prompt', data: { startId: 'fixture-launch', status: 'blocked', reason: 'blocked: unexpected prompt' } });
+  assert.deepEqual(eventsData(data([blocked]), target).events[0].data, { status: 'blocked', reason: 'blocked: unexpected prompt' });
+  const incomplete = event({ kind: 'launch-prompt', data: { status: 'incomplete', reason: 'launch prompt audit failed' } });
+  assert.deepEqual(eventsData(data([incomplete]), target).events[0].data, { status: 'incomplete', reason: 'launch prompt audit failed' });
+});
+
+test('launch-prompt facts retain event detail bounds and redaction without exposing receipt payloads', () => {
+  for (const key of ['status', 'class', 'action', 'consentSource', 'reason']) {
+    const out = eventsData(data([launchPromptEvent({ [key]: 'token: PRIVATE', screen: 'PRIVATE', receipt: [{ secret: 'PRIVATE' }] })]), target);
+    assert.ok(out); assert.equal(out.events[0].data[key], '[Detail withheld]');
+    assert.doesNotMatch(JSON.stringify(out), /PRIVATE/);
+    assert.equal(eventsData(data([launchPromptEvent({ [key]: 'x'.repeat(4097) })]), target), null);
+    assert.equal(eventsData(data([launchPromptEvent({ [key]: {} })]), target), null);
+  }
+  const out = eventsData(data([launchPromptEvent({ consentSource: null })]), target);
+  assert.equal(out.events[0].data.consentSource, null);
+});
 
 test('address history preserves earlier/current/unknown incarnations without runtime inference', () => {
   const rows = [event({ incarnation: '2025-01-01T00:00:00.000Z' }), event({ incarnation: null }), event()];

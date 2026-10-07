@@ -476,3 +476,16 @@ test('Spec D: storage that throws or holds junk never breaks the store', async (
   const t2 = store({ storage: junk });
   assert.equal(t2.s.recover(), 0); assert.equal(junk.raw(), null, 'junk is dropped');
 });
+
+test('store: retained prompt outcome explains reason/recovery without Reopen spawn or automatic follow', async () => {
+  const { retained } = await import('./helpers/launch-prompt-fixture.mjs');
+  for (const status of ['blocked', 'incomplete']) {
+    const d = created().decision;
+    const { s, notes } = brokerStore({ apply: () => ({ started: true, envelope: { schemaVersion: 1, ok: false,
+      error: { code: 'E_SPAWN_INCOMPLETE', details: retained(d, status) } } }) });
+    await settle(10);
+    assert.match(notes[0].message, status === 'blocked' ? /blocked: unexpected prompt/ : /audit failed after possible input/);
+    assert.match(notes[0].message, /Inspect its existing pane, then use oats session start --home/);
+    assert.equal(reopenButton(notes[0]), undefined); assert.equal(s.rows('northwind').length, 1);
+  }
+});

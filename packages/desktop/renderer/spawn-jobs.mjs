@@ -27,6 +27,7 @@
  * /api/spawn request and the reply it checks). Without a deployment the view id addresses it, as before.
  * A created spawn records its deployment as the view's last used (the spawn dialog's default).
  * `rehome(map)` moves owners onto views (workspace-rehome.mjs); a job's address never changes. */
+import { retainedSpawnMessage } from './launch-prompt-outcome.mjs';
 import { spawnApplyView, spawnApplyReason } from './spawn-apply-contract.mjs';
 import { sameSpawnDecision } from './spawn-decision.mjs';
 import { spawnProblem } from './spawn-messages.mjs';
@@ -148,7 +149,7 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
     } else if (view.status === 'incomplete') {
       job.wantRunning = false;
       const problem = spawnProblem(view.reason, 'spawn');
-      say(job, `${view.incomplete.instance} was created but didn’t finish starting. Open it from the instance list instead of spawning again.`, details(problem));
+      say(job, retainedSpawnMessage(view.incomplete), details(problem));
     } else if (!view.receipt.launched) {
       job.wantRunning = false;
       say(job, `Created ${job.instance} — not launched. Open its session from the roster.`);

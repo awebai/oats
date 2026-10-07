@@ -32,7 +32,8 @@ const labels = { agent: 'Soul', work: 'Work mode', branch: 'Branch', harness: 'H
   waitedMs: 'Waited (ms)', stillRunningCount: 'Targets still running', planRevision: 'Plan revision', children: 'Children', dirty: 'Changed work count',
   keepDir: 'Home retained', self: 'Self retirement', quarantine: 'Quarantine', workRecovery: 'Recovery path', movedTo: 'Retained path',
   recordedBranch: 'Recorded branch', child: 'Child', previous: 'Previous composition path', soulDir: 'Soul path', blocks: 'Blocks',
-  waitingOnYou: 'Waiting claim', reason: 'Reported reason', message: 'Note' };
+  waitingOnYou: 'Waiting claim', reason: 'Reported reason', message: 'Note',
+  status: 'Reported outcome', class: 'Prompt class', action: 'Launch action', consentSource: 'Consent source' };
 
 export function createInstanceEventsView(host, { ctx, selection, owner = () => true, summary, layout = () => {},
   cli = cliStatus, subscribeCli = onCliChange, generation = workspaceGeneration,

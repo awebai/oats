@@ -53,6 +53,12 @@ bounded and credential/URL-redacted. Raw notes, task/environment/recipe/command
 payloads and PID arrays are not forwarded. Paths and past plan revisions are
 provenance text, not file links, terminal targets or executable confirmations.
 
+`launch-prompt` rows are titled "Launch prompt" and expose only the reported
+`status`, prompt `class`, `action`, `consentSource` and `reason`, through the
+same bounded, redacted scalar projection. Pane/PID identity, signature data and
+other receipt payloads are not forwarded. A submitted answer is historical
+input evidence, not readiness or permission to retry a key.
+
 A claim may carry a `message`: 1 to 200 code points (not UTF-16 units), with
 none of an exact refused set: control characters (C0, DEL, C1), U+2028/U+2029,
 the bidi embeddings, overrides and isolates (U+202A–202E, U+2066–2069), the
