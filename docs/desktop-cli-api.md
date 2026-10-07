@@ -2761,6 +2761,20 @@ selection flags. See [the start workflow](desktop-instance-start.md).
 - Restart is one command: the kernel validates the new selection before
   stopping, and owns the stop, lock, launch recovery and metadata. Never
   restart by retiring and spawning.
+- Launch recovery (0.43.4). A start keeps its launch receipt in the home
+  until the next start replaces it. The next start **adopts** a receipt only
+  for a start `instance.json` does not record (one whose metadata write
+  failed): it records that target and launches nothing again. A receipt for
+  a start `instance.json` already records, on the target it records, is
+  **completed**, and none of it is recorded again: a newer launch recipe or
+  provider metadata stays. A plain start then answers `E_SESSION_RUNNING`
+  while that target runs, writing nothing and running no hook; a restart, or
+  a start after the target is gone or the harness exited, starts from
+  `instance.json` as it is, and its own receipt replaces the old one. A
+  receipt that names the recorded start on another target is ambiguous:
+  `E_SESSION_UNKNOWN`, the receipt kept, nothing started. The message names
+  that target and the way out: stop it, then `oats session restart`, which
+  goes ahead once that target no longer runs. Never edit or remove a receipt by hand.
 - A lost response does not mean the launch failed: check status before a
   retry. A remote home's saved route names its execution host.
 - Errors: `E_BAD_ARGS`, `E_SESSION_UNKNOWN`, `E_UNSUPPORTED_MODE`,
