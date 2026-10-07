@@ -1353,9 +1353,9 @@ offers **covers** it when all of these hold on this machine:
 - it is not in `souls.disabled`;
 - it resolves as a spawn would;
 - its modules include `oats.setup`;
-- it does not empty the workspace's messaging slot (`messaging: none`), so it
-  keeps the workspace's core and stays reachable. Emptying `knowledge` or
-  `tasks` does not disqualify it (0.44.2).
+- it does not empty the messaging slot the workspace fills (`messaging:
+  none`), so it stays reachable. Emptying `knowledge` or `tasks` does not
+  disqualify it (0.44.2).
 
 It covers a team when that team is among its resolved teams. Detection is by
 composition only: a soul's name never counts, and there is no role marker. An
