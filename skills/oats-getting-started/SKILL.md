@@ -177,7 +177,14 @@ Before configuring unattended development-channel confirmation, read
 it defaults false and requires the owner's explicit authorization for that home.
 Never infer consent from provider development mode, harness trust settings or
 a request to spawn. `workspaceTrust` is unsupported; remove it and handle
-folder trust with the harness (separate automation work: oats#712). Folder-trust
+folder trust explicitly with `oats harness trust --dir D --harness claude --plan`,
+then the same command without `--plan` to apply. Run it on the target host with
+native configuration writers quiescent. Use `codex` or `all` for those selected
+harnesses; inspect the exact canonical root and effective native file first.
+The command changes only deployment-root trust and records an audit under
+`D/.agents/harness-trust.jsonl`. A failure can retain an applied native change;
+inspect its per-file outcome and audit before retrying. Nested Git boundaries
+can prevent Claude inheritance. See [harness trust](../../docs/harness-trust.md). Folder-trust
 and API-key questions remain unexpected and blocked. Only the qualified Claude
 2.1.289 executable digest, `darwin-arm64` platform and 110x35 geometry documented
 there can match the exact aweb development-channel frame. A reported version

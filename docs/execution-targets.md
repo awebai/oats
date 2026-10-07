@@ -760,3 +760,12 @@ When yolo is true, OATS adds `--dangerously-skip-permissions` for Claude Code,
 and `--yolo` plus trust for the instance home for Codex. pi takes no flag.
 `--no-yolo` removes only those added flags; native settings stay in force.
 Unattended execution never implies yolo.
+
+### Explicit deployment trust
+
+Use `oats harness trust --dir <deployment> --harness claude|codex|all --plan`,
+then the same command without `--plan`, on the execution host. This is the explicit
+operator-only native-config write path; spawn/start/retire remain read-only with
+respect to native trust. See [native trust](harness-trust.md) for qualified formats,
+Git-boundary limits, audit evidence and partial-failure recovery. Root trust does
+not establish channel/account/model readiness or enable launch-prompt consent.

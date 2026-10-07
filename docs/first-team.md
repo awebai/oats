@@ -82,20 +82,20 @@ them. Do not commit `oats-local.yaml`.
 
 **Trust the deployment once, for unattended launches.** Claude Code and Codex
 ask before they work in a folder they have not seen, and every instance home is
-new: a launch that stops at that prompt waits for a human. OATS never writes
-the harnesses' configuration, so trust the deployment directory yourself, once
-per harness you use:
+new: a launch that stops at that prompt waits for a human. On the target host,
+preview the exact deployment-root entry, then explicitly apply it while native
+configuration writers are quiescent:
 
 ```bash
-cd ~/acme && claude    # accept the folder-trust prompt, then quit
-cd ~/acme && codex     # choose "Trust and continue", then quit
+oats harness trust --dir ~/acme --harness all --plan
+oats harness trust --dir ~/acme --harness all
 ```
 
-One entry covers every instance home under the deployment
-([souls-and-instances.md](souls-and-instances.md#unattended-launches-folder-trust)
-says how each harness applies it). Until then, a claude or codex spawn warns
-that its session will stop at the folder-trust prompt, and so does
-`oats readiness`.
+Select `claude` or `codex` instead of `all` when only one is needed. The apply
+records a deployment audit; it does not launch a harness. Claude inheritance
+stops at a Git boundary; Codex uses the existing per-invocation home override.
+See [native trust](harness-trust.md) for qualification, format and recovery
+limits. Spawn and `oats readiness` warn when the selected home remains uncovered.
 
 ## 3. Give the deployment a team
 

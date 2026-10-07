@@ -13,7 +13,7 @@
     },
     "launched": false,
     "warnings": [
-      "the claude session will stop at its folder-trust prompt: trust <base>/deployment once (run `claude` in <base>/deployment and accept its folder-trust prompt; one entry covers every instance home under it)"
+      "the claude session will stop at its folder-trust prompt: trust <base>/deployment once (preview with `oats harness trust --dir '<base>/deployment' --harness claude --plan`, then apply with `oats harness trust --dir '<base>/deployment' --harness claude`; a nested Git boundary may still require operator inspection)"
     ],
     "tmux": {
       "session": "oats-golden",

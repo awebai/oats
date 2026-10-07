@@ -68,7 +68,9 @@ published to npm. Its developer docs are in
 | `servers.mjs` | routing commands to a registered server |
 | `launch-prompt-policy.mjs` | strict host-local exact-home aweb development-channel consent, canonical directory validation and config provenance |
 | `launch-prompts.mjs`, `launch-prompt-transport.mjs` | bounded launch-only controller and visible-screen transport; private process authority, injectable clock/transport, durable checked receipts and the fixture-gated exact aweb development-channel signature |
-| `harness-trust.mjs` | reading (never writing) Claude's and Codex's folder trust for a launch |
+| `harness-trust.mjs` | read-only native trust coverage and operator remedy for launches |
+| `harness-trust-write.mjs` | explicit operator plan/apply, cooperating locks, durable deployment audit and no-rollback outcomes |
+| `harness-trust-json.mjs`, `harness-trust-toml.mjs` | bounded native parsers and byte-preserving edits of one trust leaf |
 
 The schedule registry stores explicit concurrency caps, leaving the schedule
 cap absent for its effective default of five. `readRegistry()` is a pure,
