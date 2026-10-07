@@ -741,7 +741,7 @@ test("#691 a completed start's receipt is never recorded again: no write, no hoo
   tmux("new-window", "-d", "-t", `${session}:`, "-n", "stray", "-c", home, "sleep 600");
   write(pendingPath, JSON.stringify({ ...readJson(pendingPath), id: readJson(metaPath).startId, target: { ...readJson(pendingPath).target, window: "stray" } }));
   const ambiguous = { meta: readFileSync(metaPath, "utf8"), metaIno: ino(metaPath), pending: readFileSync(pendingPath, "utf8"), runs: hookRuns() };
-  const refusedAmbiguous = (e) => e.code === "E_SESSION_UNKNOWN" && /receipt is kept and nothing was started/.test(e.message) && /oats session inspect --home/.test(e.message) && /kill-window -t r:stray/.test(e.message) && /oats session restart --home/.test(e.message);
+  const refusedAmbiguous = (e) => e.code === "E_SESSION_UNKNOWN" && /receipt is kept and nothing was started/.test(e.message) && /oats session inspect --home/.test(e.message) && /kill-window -t '=r:=stray'/.test(e.message) && /oats session restart --home/.test(e.message);
   assert.throws(() => startInstanceSession(home, { env: env({ RESTART_TEST_SRC: "x" }) }), refusedAmbiguous, "plain start");
   assert.throws(() => restart({ env: env({ RESTART_TEST_SRC: "x" }), launchConfig: "polite" }), refusedAmbiguous, "restart while the stray target runs");
   assert.deepEqual({ meta: readFileSync(metaPath, "utf8"), metaIno: ino(metaPath), pending: readFileSync(pendingPath, "utf8"), runs: hookRuns() }, ambiguous, "nothing written, no hook run");

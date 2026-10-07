@@ -2771,10 +2771,10 @@ selection flags. See [the start workflow](desktop-instance-start.md).
   while that target runs, writing nothing and running no hook; a restart, or
   a start after the target is gone or the harness exited, starts from
   `instance.json` as it is, and its own receipt replaces the old one. A
-  receipt that names the recorded start on another target is ambiguous while
-  that target runs: `E_SESSION_UNKNOWN`, the receipt kept, nothing started.
-  The message names that target and the way out: stop it, then
-  `oats session restart`. Never edit or remove a receipt by hand.
+  receipt that names the recorded start on another target is ambiguous:
+  `E_SESSION_UNKNOWN`, the receipt kept, nothing started. The message names
+  that target and the way out: stop it, then `oats session restart`, which
+  goes ahead once that target no longer runs. Never edit or remove a receipt by hand.
 - A lost response does not mean the launch failed: check status before a
   retry. A remote home's saved route names its execution host.
 - Errors: `E_BAD_ARGS`, `E_SESSION_UNKNOWN`, `E_UNSUPPORTED_MODE`,
