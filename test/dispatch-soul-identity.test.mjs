@@ -84,9 +84,8 @@ test("an ambient OATS_AGENT, OATS_SOUL_ID or OATS_SOUL from the caller never rea
   }
 });
 
-test("a package soul's dispatched commands get its agents-root name and its package id, as its hook does", (t) => {
-  // The package ships the probe capability beside its own acme-tool; its soul takes both.
-  const pkg = packageRepo({
+// The package ships the probe capability beside its own acme-tool; its keeper soul takes both.
+const probePackage = () => packageRepo({
     manifest: { capabilities: ["capabilities/acme-tool", "capabilities/probe"] },
     files: {
       "capabilities/probe/oats.json": { capability: "acme.probe", version: "1.0.0", description: "probe", compatibility: { oats: ">=0.24.0" }, ...probeCap.manifest },
@@ -94,10 +93,17 @@ test("a package soul's dispatched commands get its agents-root name and its pack
       "capabilities/probe/hooks/spawn.mjs": probeCap.files["hooks/spawn.mjs"].text,
     },
     souls: { keeper: { soul: { capabilities: { "acme-tool": { from: "here" }, "acme.probe": { from: "here" } } } } },
-  });
+});
+const withPackage = (t, souls = { dev: {} }) => {
+  const pkg = probePackage();
   t.after(pkg.cleanup);
-  const fx = v2Deployment({ name: "acme", souls: { dev: {} }, workspace: { packages: { "acme.pkg": `${pkg.ref}@v1.0.0` } } });
+  const fx = v2Deployment({ name: "acme", souls, capabilities: { "test.probe": probeCap }, workspace: { packages: { "acme.pkg": `${pkg.ref}@v1.0.0` } } });
   t.after(fx.cleanup);
+  return fx;
+};
+
+test("a package soul's dispatched commands get its agents-root name and its package id, as its hook does", (t) => {
+  const fx = withPackage(t);
   { const s = fx.cli(["sync", "--json"]); assert.equal(s.status, 0, s.stdout + s.stderr); }
   const spawned = fx.cli(["spawn", "acme.pkg/keeper", "--purpose", "p", "--no-launch", "--json"]);
   assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
@@ -110,4 +116,13 @@ test("a package soul's dispatched commands get its agents-root name and its pack
     byDefault: seen(fx, [], { env: AMBIENT }),
   };
   for (const [path, r] of Object.entries(runs)) assert.deepEqual({ agent: r.agent, id: r.id }, { agent: hook.agent, id: hook.id }, `${path}: what the hook got`);
+});
+
+test("souls of one name from different sources keep different ids: a member soul and a package soul named keeper", (t) => {
+  const fx = withPackage(t, { keeper: { soul: { capabilities: { "test.probe": { from: "here" } } } } });
+  { const s = fx.cli(["sync", "--json"]); assert.equal(s.status, 0, s.stdout + s.stderr); }
+  const member = seen(fx, ["--soul", "ws/keeper"]);
+  const packaged = seen(fx, ["--soul", "acme.pkg/keeper"]);
+  assert.deepEqual({ agent: member.agent, id: member.id }, { agent: "keeper", id: `${fx.key}#keeper` });
+  assert.deepEqual({ agent: packaged.agent, id: packaged.id }, { agent: "acme-pkg--keeper", id: "package:acme.pkg#keeper" });
 });
