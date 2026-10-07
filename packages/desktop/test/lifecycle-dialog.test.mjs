@@ -8,11 +8,12 @@ import { pr as rawPr } from './helpers/forge-fixture.mjs';
 import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
 import { cli, context, envelope, instance, target, options, stopPlan, retirePlan, stopReceipt, retireReceipt, deferred, tick } from './helpers/lifecycle-fixture.mjs';
 import { assertIsolatedDetail, MESSY, MESSY_LINE } from './helpers/detail-line.mjs';
+import { successorRow } from '../renderer/focus-return.mjs';
 const reference = 'd'.repeat(64), newReference = 'e'.repeat(64);
 const planned = (operation = 'stop', planRef = reference, raw) => ({ lifecycleApi: 1, status: 'plan', target,
   planRef, plan: raw || (operation === 'stop' ? stopPlan() : retirePlan()), options: options(operation), receipt: null, reason: null });
-function fixture({ request, ...extra } = {}) {
-  const dom = new JSDOM('<!doctype html><button id="opener">Actions</button><div id="roster"><button id="successor">dev-2</button></div>', { pretendToBeVisual: true });
+function fixture({ request, html = '<button id="opener">Actions</button><div id="roster"><button id="successor">dev-2</button></div>', ...extra } = {}) {
+  const dom = new JSDOM(`<!doctype html>${html}`, { pretendToBeVisual: true });
   const doc = dom.window.document, calls = [], settled = []; let generation = 0, workspaceChange;
   const dialog = createLifecycleDialog({ doc, generation: () => generation,
     subscribeWorkspace: fn => { workspaceChange = fn; return () => {}; }, onSettled: (...args) => settled.push(args),
@@ -709,4 +710,93 @@ test('like Chromium, hiding a focused control blurs it: focus still lands on the
     f.button('lifecycle-review').focus(); f.button('lifecycle-review').click();
     assert.equal(f.doc.activeElement, f.button('lifecycle-close'), 'Review again → loading: Cancel'); assert.equal(f.doc.activeElement.textContent, 'Cancel');
   } finally { f.close(); }
+});
+
+// ── Review round 1 ──
+const observation = { revision: 'a'.repeat(40), branch: 'feat/work' };
+const gitAnswer = async () => ({ target, status: 'available', observationKey: reference, data: { observation } });
+const prAnswer = () => ({ forgeApi: 1, target, status: 'available', observation: { key: reference, ...observation }, host: 'github.com', repository: 'owner/repo',
+  data: pullRequest({ ...rawPr(), headRefName: 'feat/work' }, { host: 'github.com', path: 'owner/repo', branch: 'feat/work' }) });
+test('a PR link kept across Check again stays live and keeps its focus; a re-read that cannot confirm it drops it and hands focus to Cancel', async () => {
+  for (const reread of ['same', 'fails']) {
+    const opened = [], planGate = deferred(), forgeGate = deferred(); let plans = 0, forges = 0;
+    const f = fixture({ openExternal: url => opened.push(url), gitRequest: gitAnswer,
+      request: () => ++plans === 1 ? planned('retire') : planGate.promise.then(() => planned('retire', newReference)),
+      forgeRequest: () => ++forges === 1 ? Promise.resolve(prAnswer()) : forgeGate.promise });
+    try {
+      f.open('retire'); await tick(); await tick();
+      const link = f.doc.querySelector('.lifecycle-forge a'); assert.ok(link, reread);
+      f.button('lifecycle-check').click(); link.focus();
+      assert.equal(f.doc.querySelector('.lifecycle-forge a'), link, `${reread}: kept while the plan is read`);
+      link.click(); assert.equal(opened.length, 1, `${reread}: live while the plan is read`);
+      planGate.resolve(); await tick();
+      assert.equal(f.status(), ''); assert.equal(f.doc.querySelector('.lifecycle-forge a'), link, `${reread}: the same correlation keeps the node`);
+      assert.equal(f.doc.activeElement, link); link.click(); assert.equal(opened.length, 2, `${reread}: live after the swap`);
+      if (reread === 'same') forgeGate.resolve(prAnswer()); else forgeGate.reject(new Error('PRIVATE'));
+      await tick(); await tick();
+      if (reread === 'same') {
+        assert.equal(f.doc.querySelector('.lifecycle-forge a'), link, 'the same PR re-read keeps the node'); assert.equal(f.doc.activeElement, link);
+        link.click(); assert.equal(opened.length, 3);
+      } else {
+        assert.equal(f.doc.querySelector('.lifecycle-forge').textContent, '', 'unknown again: left out');
+        assert.equal(f.doc.activeElement, f.button('lifecycle-close'), 'focus on Cancel, never <body>'); assert.equal(f.doc.activeElement.textContent, 'Cancel');
+        link.click(); assert.equal(opened.length, 2, 'the removed link is inert');
+      }
+    } finally { f.close(); }
+  }
+});
+test('a plan with the same revision and branch but another remote drops the PR row at once; a failed re-read never brings it back', async () => {
+  const opened = [], planGate = deferred(), forgeGate = deferred(); let plans = 0, forges = 0;
+  const moved = retirePlan(); moved.facts.work.remote = { host: 'github.com', path: 'owner/other-repo' };
+  const f = fixture({ openExternal: url => opened.push(url), gitRequest: gitAnswer,
+    request: () => ++plans === 1 ? planned('retire') : planGate.promise.then(() => planned('retire', newReference, moved)),
+    forgeRequest: () => ++forges === 1 ? Promise.resolve(prAnswer()) : forgeGate.promise });
+  try {
+    f.open('retire'); await tick(); await tick();
+    const link = f.doc.querySelector('.lifecycle-forge a'); assert.ok(link); link.focus();
+    f.button('lifecycle-check').click(); planGate.resolve(); await tick();
+    assert.equal(f.doc.querySelector('.lifecycle-forge').textContent, '', 'another repository: the row is not carried over');
+    assert.equal(f.doc.activeElement, f.button('lifecycle-close')); assert.equal(forges, 2, 'the re-read is still out');
+    forgeGate.reject(new Error('PRIVATE')); await tick(); await tick();
+    assert.equal(f.doc.querySelector('.lifecycle-forge').textContent, ''); link.click(); assert.deepEqual(opened, []);
+  } finally { f.close(); }
+});
+test('a connection change while a plan is read drops a kept PR row: the account it was read with no longer answers for it', async () => {
+  const opened = [], planGate = deferred(); let plans = 0, account = 0, changed;
+  const f = fixture({ openExternal: url => opened.push(url), gitRequest: gitAnswer, connectionGeneration: () => account,
+    subscribeConnections: fn => { changed = fn; return () => {}; },
+    request: () => ++plans === 1 ? planned('retire') : planGate.promise.then(() => planned('retire', newReference)), forgeRequest: async () => prAnswer() });
+  try {
+    f.open('retire'); await tick(); await tick(); const link = f.doc.querySelector('.lifecycle-forge a'); assert.ok(link);
+    f.button('lifecycle-check').click(); account++; changed();
+    assert.equal(f.doc.querySelector('.lifecycle-forge').textContent, ''); link.click(); assert.deepEqual(opened, []);
+  } finally { f.close(); }
+});
+/** The shipped roster's ancestry (#instance-roster: the filter, then the list of rows, each with its actions trigger), so the
+ * generic return (an ancestor's first control: the filter) is there to compete with the successor row. */
+const roster = `<section id="instance-roster"><div class="ctx-filter-field"><input class="ctx-filter" type="search"></div><div class="ctx-list">${['a', 'b', 'c'].map((id, i) =>
+  `<div class="ctx-tree-row"><button class="ctx-inst" data-tree-instance="${id}" tabindex="${i === 0 ? 0 : -1}">dev-${i}</button><span class="ctx-row-tools"><button class="ctx-instance-actions" data-tree-instance="key-${id}" data-tree-control="actions">⋯</button></span></div>`).join('')}</div></section>`;
+test('in the roster: after the retired row leaves, Done and Esc land on the row that followed it, not the filter; with the row still there, focus returns to its trigger', async () => {
+  for (const how of ['done', 'escape', 'cancel']) {
+    const gate = deferred(); let fallbacks = 0, doc;
+    const order = ['a', 'b', 'c'], fallbackFocus = () => { fallbacks++; return successorRow([...doc.querySelectorAll('.ctx-inst')], order, 1); };
+    const f = fixture({ html: roster, fallbackFocus, request: (_ws, body) => body.action === 'plan' ? planned('retire') : gate.promise });
+    doc = f.doc;
+    try {
+      const trigger = f.doc.querySelector('[data-tree-instance="key-b"]'); trigger.focus(); f.open('retire'); await tick();
+      if (how === 'cancel') { f.key('Escape'); assert.equal(f.doc.activeElement, trigger, 'the opener'); assert.equal(fallbacks, 0); continue; }
+      f.button('lifecycle-confirm').click(); await tick();
+      trigger.closest('.ctx-tree-row').remove(); // the roster refresh after the retire
+      gate.resolve({ lifecycleApi: 1, status: 'complete', target, receipt: lifecycleReceipt(retireReceipt({ key: 'k', revision: retirePlan().planRevision }), retirePlan(), 'k') }); await tick();
+      if (how === 'done') f.button('lifecycle-done').click(); else f.key('Escape');
+      assert.equal(f.doc.activeElement.dataset.treeInstance, 'c', `${how}: the successor row`); assert.equal(fallbacks, 1);
+    } finally { f.close(); }
+  }
+});
+test('successorRow: the next surviving row, else the nearest before it, else none', () => {
+  const rows = ids => ids.map(id => ({ dataset: { treeInstance: id } }));
+  assert.equal(successorRow(rows(['a', 'c', 'd']), ['a', 'b', 'c', 'd'], 1).dataset.treeInstance, 'c');
+  assert.equal(successorRow(rows(['a', 'd']), ['a', 'b', 'c', 'd'], 1).dataset.treeInstance, 'd');
+  assert.equal(successorRow(rows(['a']), ['a', 'b', 'c'], 2).dataset.treeInstance, 'a');
+  assert.equal(successorRow(rows([]), ['a', 'b'], 0), null); assert.equal(successorRow(rows(['a']), ['a'], -1), null);
 });

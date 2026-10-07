@@ -156,7 +156,11 @@ context panel's footer **Stop…** and **Retire…**. Stop always requires expli
 confirmation. The Retire PR row is only an informational 2b overlay: exact
 home/server/workspace, revision, branch and remote host/path must correlate. A
 PR that is not known (disconnected, unmatched, failed) is left out, never shown
-as "no PR"; Retire never closes or changes the remote PR.
+as "no PR"; Retire never closes or changes the remote PR. While a new plan is
+read, the row stays only if the new plan has the same revision, branch and
+remote host/path and the connection has not changed; it is then read again, and
+a re-read that cannot confirm it drops it. Its link opens the PR on screen, not
+the read that drew it, so a kept link stays usable (and keeps focus) until then.
 
 ### UI states
 
@@ -192,9 +196,13 @@ its reason in the visible status line (`aria-describedby`).
   is never shown as done.
 - **Focus.** It starts on Cancel and does not move when a plan lands. Running
   and every result focus Close (never an action that resubmits); done focuses
-  Done; stale focuses Cancel. On close, focus returns to the opener, else to
-  the roster (the row that followed a retired row, else the one before, else
-  the roster's tab stop: `shell.mjs` `lifecycleFallbackFocus`), never `<body>`.
+  Done; stale focuses Cancel. A focused control that leaves (a PR link that is
+  dropped, a button the next phase does not have) hands focus to the control
+  that stays. On close, focus returns to the opener or a control with its
+  identity (`focus-return.mjs` `restoreExact`), else to the roster (the row that
+  followed a retired row, else the one before, else the roster's tab stop:
+  `shell.mjs` `lifecycleFallbackFocus`, `successorRow`), else to the generic
+  return near the opener; never `<body>`.
 - **Copy.** Plain words, no timestamps and no kernel vocabulary: the plan's
   `at` is shown as an age, a session as Running / Not running / Unknown. The
   fixed sentences live in `lifecycle-contract.mjs`.

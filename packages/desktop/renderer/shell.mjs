@@ -35,6 +35,7 @@ import { createKeybindingsEditor } from "./keybindings-editor.mjs";
 import { createConnections, connectionsCSS } from "./connections.mjs";
 import { createTerminalSettings, settingsTerminalCSS } from "./settings-terminal.mjs";
 import { createLifecycleDialog, lifecycleCSS } from './lifecycle-dialog.mjs';
+import { successorRow } from "./focus-return.mjs";
 import { createThemePicker, themePickerCSS } from './theme-picker.mjs';
 import { rosterKeyAction, moveTarget } from "./roster-keys.mjs";
 import { createViewLifecycle } from "./view-lifecycle.mjs";
@@ -2174,8 +2175,7 @@ function lifecycleFallbackFocus() {
   const shown = el => el?.isConnected && !el.disabled && !el.closest("[hidden]") && document.defaultView.getComputedStyle(el).display !== "none" && !sidebarHidden();
   const rows = listEl ? [...listEl.querySelectorAll(".ctx-inst")].filter(shown) : [];
   const { order = [], at = -1 } = lifecycleRowOrder || {};
-  const near = at < 0 ? [] : [...order.slice(at + 1), ...order.slice(0, at).reverse()];
-  const row = near.map(id => rows.find(r => r.dataset.treeInstance === id)).find(Boolean) || rows.find(r => r.tabIndex === 0) || rows[0];
+  const row = successorRow(rows, order, at) || rows.find(r => r.tabIndex === 0) || rows[0];
   if (!row) return stableFocusTarget();
   for (const r of listEl.querySelectorAll('.ctx-inst[tabindex="0"]')) r.tabIndex = -1;
   row.tabIndex = 0; return row;

@@ -22,7 +22,10 @@ export function captureFocusReturn(doc) {
     }
     return true;
   };
-  const resolve = () => {
+  /** `exact`: only the opener itself or a replacement with its identity (id, tree control, its row), never a
+   * control found through an ancestor: a caller with a better fallback of its own (a retired row's successor)
+   * tries this first. */
+  const resolve = ({ exact = false } = {}) => {
     if (eligible(original)) return original;
     if (id) { const replacement = doc.getElementById(id); if (eligible(replacement)) return replacement; }
     if (treeInstance && treeControl) {
@@ -34,11 +37,21 @@ export function captureFocusReturn(doc) {
       const row = [...doc.querySelectorAll('.ctx-inst[data-tree-instance]')].find(el => el.dataset.treeInstance === rowInstance && eligible(el));
       if (row) return row;
     }
+    if (exact) return null;
     for (const parentId of ancestors) {
       const replacement = [...(doc.getElementById(parentId)?.querySelectorAll('input, button, [tabindex="0"]') || [])].find(eligible);
       if (replacement) return replacement;
     }
     return null;
   };
-  return { resolve, restore: () => { const target = resolve(); target?.focus?.(); return target === doc.activeElement; } };
+  const restoreTo = target => { target?.focus?.(); return !!target && target === doc.activeElement; };
+  return { resolve, restore: () => restoreTo(resolve()), restoreExact: () => restoreTo(resolve({ exact: true })) };
+}
+
+/** The row to take focus when `order[at]` has left the roster: the first one after it that is still in
+ * `rows` (matched by `data-tree-instance`), else the nearest before it; null when none is. */
+export function successorRow(rows, order, at) {
+  if (!(at >= 0)) return null;
+  const near = [...order.slice(at + 1), ...order.slice(0, at).reverse()];
+  return near.map(id => rows.find(r => r.dataset.treeInstance === id)).find(Boolean) ?? null;
 }

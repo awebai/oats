@@ -76,10 +76,19 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
   const question = () => `${retire() ? 'Retire' : 'Stop'} ${target.instance}?`;
   function close({ restoreFocus = true } = {}) {
     if (!overlay) return;
-    life++; ticket++; overlay.remove(); overlay = null; ui = null; target = null; plan = null; planRef = null; applying = false; submission = null; phase = null; shown = null;
+    life++; ticket++; overlay.remove(); overlay = null; ui = null; prLink = null; target = null; plan = null; planRef = null; applying = false; submission = null; phase = null; shown = null;
     clearInterval(ticker); ticker = null;
-    // The opener, else the roster's own fallback (a retired row's successor or the list), never <body>.
-    if (restoreFocus) applyFocus(() => { if (!restore?.restore()) fallbackFocus()?.focus?.(); }); restore = null;
+    // The opener (or a control with its identity), else the host's fallback (a retired row's successor in the
+    // roster), else the generic return (a control near where the opener was), never <body>.
+    if (restoreFocus) {
+      const back = restore;
+      applyFocus(() => {
+        if (back?.restoreExact ? back.restoreExact() : back?.restore()) return;
+        const fallback = fallbackFocus(); fallback?.focus?.();
+        if (!fallback || doc.activeElement !== fallback) back?.restore();
+      });
+    }
+    restore = null;
   }
   const say = text => { ui.statusText.textContent = text; };
   const title = text => { ui.title.textContent = text; };
@@ -190,12 +199,24 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
       : n ? `, including ${plural(n, 'uncommitted change')} (a recovery copy is saved first)` : '';
     return `Deletes the worktree folder${including}.${b ? ` Branch ${b} stays in the repository.` : ''}`;
   }
-  const sameWork = (a, b) => a?.action === 'retire' && b?.action === 'retire' && a.facts.work.observed && b.facts.work.observed
-    && a.facts.work.revision === b.facts.work.revision && a.facts.work.branch === b.facts.work.branch;
+  /** What a PR row is correlated to: the observed revision and branch, and the remote's host and path. Null
+   * when the work is not observed (no PR row then). The connection account is held beside it, on the link. */
+  const correlation = value => value?.action === 'retire' && value.facts.work.observed
+    ? JSON.stringify([value.facts.work.revision, value.facts.work.branch, value.facts.work.remote?.host ?? null, value.facts.work.remote?.path ?? null]) : null;
+  /** The PR row's link, or null: { anchor, url, account, key }. Its click reads this record, never the read
+   * that drew it, so a link kept across a plan swap stays live exactly while its correlation and account hold. */
+  let prLink = null;
+  /** Replace the PR row. A focused link that leaves hands focus to the new link, else to Cancel (Close). */
+  function setForge(nodes = [], link = null) {
+    if (!ui) return;
+    const focused = ui.forge.contains(doc.activeElement);
+    ui.forge.replaceChildren(...nodes); prLink = link;
+    if (focused) focusOn(link?.anchor ?? ui.close);
+  }
   /** Swap a plan in, atomically: the previous facts stay on screen until this one replaces them. */
   function renderPlan(value, requested) {
-    // The PR row is correlated to the observed revision and branch: kept across a swap that keeps both, else re-read.
-    if (!sameWork(shown, value)) ui.forge.replaceChildren();
+    // The PR row is kept across a swap with the same correlation (and re-read); any other swap drops it.
+    if (correlation(shown) === null || correlation(shown) !== correlation(value)) setForge();
     ui.happen.replaceChildren(happening(value, requested)); ui.facts.replaceChildren(...current(value));
     ui.warning.textContent = retire() && requested.discardWorktree ? discardWarning(value) : ''; ui.warning.hidden = !ui.warning.textContent;
     if (!retire()) ui.confirm.textContent = value.targets.length > 1 ? 'Stop sessions' : 'Stop session';
@@ -206,34 +227,45 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     const bones = node('div', undefined, 'lifecycle-skeleton'); bones.setAttribute('aria-hidden', 'true');
     for (let i = 0; i < 4; i++) bones.append(skeleton(doc, 'line'));
     const facts = bones.cloneNode(false); for (let i = 0; i < 3; i++) facts.append(skeleton(doc, 'line'));
-    ui.happen.replaceChildren(bones); ui.facts.replaceChildren(facts); ui.forge.replaceChildren(); shown = null;
+    ui.happen.replaceChildren(bones); ui.facts.replaceChildren(facts); setForge(); shown = null;
   }
   function validTarget(result, ref) {
     return result?.lifecycleApi === 1 && result.target && gitTargetKey(result.target) === gitTargetKey(ref.target);
   }
   async function overlayForge(ref, snapshot) {
-    if (!retire() || !snapshot.facts.work.observed || !gitRequest || !forgeRequest) return;
-    const account = connectionGeneration();
+    const account = connectionGeneration(), key = correlation(snapshot);
     const current = () => owns(ref) && plan === snapshot && !applying && account === connectionGeneration();
-    const pullRequest = (...value) => { const dl = node('dl'), dd = node('dd'); dd.append(...value); dl.append(node('dt', 'Pull request'), dd); ui.forge.replaceChildren(dl); };
+    // What this read cannot confirm is unknown: the row is left out, a row kept from the previous plan too.
+    const unknown = () => { if (current()) setForge(); };
+    if (!retire() || key === null || !gitRequest || !forgeRequest) { unknown(); return; }
+    const row = (...value) => { const dl = node('dl'), dd = node('dd'); dd.append(...value); dl.append(node('dt', 'Pull request'), dd); return dl; };
     try {
       const git = await gitRequest(ref.target.workspace, { action: 'git', selector: selector() });
       if (!current()) return;
       const expected = snapshot.facts.work, observed = git?.data?.observation;
       if (!git.target || gitTargetKey(git.target) !== gitTargetKey(ref.target) || git.status !== 'available' || !planReference(git.observationKey)
-        || observed?.revision !== expected.revision || observed.branch !== expected.branch) return;
+        || observed?.revision !== expected.revision || observed.branch !== expected.branch) { unknown(); return; }
       const result = await forgeRequest(ref.target.workspace, { selector: selector(), observationKey: git.observationKey });
-      if (!current() || result?.forgeApi !== 1 || !result.target || gitTargetKey(result.target) !== gitTargetKey(ref.target)
+      if (!current()) return;
+      if (result?.forgeApi !== 1 || !result.target || gitTargetKey(result.target) !== gitTargetKey(ref.target)
         || result.observation?.key !== git.observationKey || result.observation.revision !== expected.revision || result.observation.branch !== expected.branch
-        || result.host !== expected.remote?.host || result.repository !== expected.remote?.path) return;
-      if (result.status === 'no-pull-request' && result.data === null) pullRequest('None for this branch');
-      else if (result.status === 'available') {
-        const pr = projectedPullRequest(result.data, { host: result.host, path: result.repository, branch: expected.branch }); if (!pr) return;
-        const a = node('a', `#${pr.number} · ${pr.title} · ${pr.state}`); a.href = pr.url; a.rel = 'noopener noreferrer';
-        a.addEventListener('click', event => { event.preventDefault(); if (current() && a.isConnected) openExternal(pr.url); });
-        pullRequest(a, ' (not changed)');
-      }
-    } catch { /* unknown stays unknown: the row is left out, never "no PR", and the kernel facts are not blocked */ }
+        || result.host !== expected.remote?.host || result.repository !== expected.remote?.path) { unknown(); return; }
+      const pr = result.status === 'available' ? projectedPullRequest(result.data, { host: result.host, path: result.repository, branch: expected.branch }) : null;
+      if (result.status === 'no-pull-request' && result.data === null) setForge([row('None for this branch')]);
+      else if (pr) {
+        const text = `#${pr.number} · ${pr.title} · ${pr.state}`;
+        // The same PR as the link on screen: keep the node, and with it any focus on it.
+        if (prLink?.url === pr.url && prLink.key === key && prLink.anchor.textContent === text && prLink.anchor.isConnected) { prLink.account = account; return; }
+        const a = node('a', text); a.href = pr.url; a.rel = 'noopener noreferrer';
+        const link = { anchor: a, url: pr.url, account, key };
+        a.addEventListener('click', event => {
+          event.preventDefault();
+          if (prLink === link && a.isConnected && alive && overlay === ref.overlay && life === ref.life && generation() === ref.generation && !applying
+            && link.account === connectionGeneration() && link.key === correlation(plan ?? shown)) openExternal(link.url);
+        });
+        setForge([row(a, ' (not changed)')], link);
+      } else unknown();
+    } catch { unknown(); }
   }
   /** A result: a plain title, the headline in the status line, and one way forward where the contract allows it. */
   function settle(next, heading) {
@@ -405,9 +437,9 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
   }
   const off = subscribeWorkspace(() => close({ restoreFocus: false }));
   const offConnections = subscribeConnections(() => {
-    if (!overlay || operation !== 'retire' || !plan || applying) return;
-    ui.forge.replaceChildren(); // unknown until the new account answers: the row is left out
-    void overlayForge(capture(), plan);
+    if (!overlay || operation !== 'retire') return;
+    setForge(); // unknown until the new account answers: the row is left out, also while a plan is read
+    if (plan && !applying) void overlayForge(capture(), plan);
   });
   return { open, close, dispose() { close({ restoreFocus: false }); alive = false; off(); offConnections(); } };
 }
