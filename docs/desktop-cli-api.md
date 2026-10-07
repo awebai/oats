@@ -110,7 +110,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
 | `operator-default-soul` | a capability command from a deployment without `--soul` runs as the first soul that provides its namespace (named on stderr); none is `E_BAD_ARGS`, OATS 0.39.0 ([capabilities.md](capabilities.md)) | |
 | `waiting-on-you` | the `waiting` event kind and the session boundary rule; `oats instance waiting` and `oats instance attention`; `waitingOnYou` (with `message`) on `oats status --json` instance rows, on `oats session inspect --json` and in the events read, OATS 0.40.0 ([Waiting on you](#waiting-on-you)) | `eventsApi: 2` |
 | `automation-descriptions` | a `description` on every trigger and schedule row, local or workspace, by one rule; `oats schedule update <id> --description=<text>` (the description only) and `oats trigger update <id> --description=<text>`; `--description=<text>` on `schedule add` and `trigger add`, OATS 0.43.0 ([Shared row fields](#automations-shared-rows)) | |
-| `souls-capabilities` | `capabilities` on `oats souls --json` rows: the capabilities each soul composes, keyed like `oats capabilities` rows, with `from`, OATS 0.44.2 ([`oats capabilities` and `oats souls`](#oats-capabilities---dir---json--capabilitiesapi-1--oats-souls---dir---json--soulsapi-1)) | |
+| `souls-capabilities` | `capabilities` on `oats souls --json` rows: the capabilities each soul composes, keyed like `oats capabilities` rows, with `from`, OATS 0.45.0 ([`oats capabilities` and `oats souls`](#oats-capabilities---dir---json--capabilitiesapi-1--oats-souls---dir---json--soulsapi-1)) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -862,7 +862,7 @@ problem`, (feature `souls-capabilities`) `capabilities`, and (feature
   [TeamRow](#the-team-row-teamrow) list and a
   [DefaultTeam](#the-default-defaultteam); both `null` when the soul's teams
   do not resolve (`problem` names the `E_TEAM_*` code).
-- `capabilities` (feature `souls-capabilities`, OATS 0.44.2): what the soul's
+- `capabilities` (feature `souls-capabilities`, OATS 0.45.0): what the soul's
   resolution composes, slots and additive alike, sorted by `name`. Each entry
   names its capability with the capability row's own keys: `name`, `kind`
   (`member` | `package`), then `repoKey` for a member or `package` for a
@@ -1370,7 +1370,7 @@ offers **covers** it when all of these hold on this machine:
 - its modules include `oats.setup`;
 - it does not empty the messaging slot the workspace fills (`messaging:
   none`), so it stays reachable. Emptying `knowledge` or `tasks` does not
-  disqualify it (0.44.2).
+  disqualify it (0.45.0).
 
 It covers a team when that team is among its resolved teams. Detection is by
 composition only: a soul's name never counts, and there is no role marker. An

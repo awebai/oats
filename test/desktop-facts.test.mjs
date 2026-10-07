@@ -287,7 +287,7 @@ test("feature preview-composed-from is advertised, after launch-preference", (t)
   assert.equal(features.indexOf("preview-composed-from"), features.indexOf("launch-preference") + 1);
 });
 
-// ---- Feature souls-capabilities (0.44.2): each `oats souls --json` row says what the soul's resolution
+// ---- Feature souls-capabilities (0.45.0): each `oats souls --json` row says what the soul's resolution
 // composes — the same resolution `spawnable` comes from — keyed like `oats capabilities` rows, with `from`.
 
 /** dev composes from every place: its own member capabilities (acme.own, acme_z), a workspace default it also

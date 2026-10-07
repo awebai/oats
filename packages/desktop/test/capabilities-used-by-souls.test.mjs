@@ -1,4 +1,4 @@
-// Capabilities "Used by" from each soul's composition (kernel feature souls-capabilities, OATS 0.44.2): the
+// Capabilities "Used by" from each soul's composition (kernel feature souls-capabilities, OATS 0.45.0): the
 // souls whose `oats souls` row lists the capability by name, kind and origin, not only the souls whose live
 // instances recorded it. The parse (deployment-data.mjs soulCapabilitiesOf), the /api/agents projection,
 // the join (workspace-catalog.mjs composes/soulsUsing), the list's cells and the capability page's section.
