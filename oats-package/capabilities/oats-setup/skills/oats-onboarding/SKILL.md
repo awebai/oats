@@ -172,12 +172,14 @@ redefined here. Execute the selected card in `/oats-aweb`, then use
 `/oats-teams` to read back mapping/default/eligibility before card 6.
 
 **Provider version boundary:** the referenced canonical `/oats-aweb` cards
-ship with **oats.aweb 1.22.1**
-([oats-aweb#64](https://github.com/awebai/oats-aweb/pull/64)). For earlier
-installed providers, including 1.21.1 and 1.22.0, follow their own installed
-skill text. A missing card is an oats.aweb owner boundary: report the missing
-procedure, never invent a command. A source merge or package pin does not
-prove that a running home has composed the released cards.
+are planned for the provider release containing
+[oats-aweb#64](https://github.com/awebai/oats-aweb/pull/64)
+(target **1.22.1**, not yet published). Use a card only when the actually
+installed provider's skill contains it and supports the selected act. For
+earlier installed providers, including 1.21.1 and 1.22.0, follow their own
+installed skill text. A missing card is an oats.aweb owner boundary: report
+the missing procedure, never invent a command. A source merge or package pin
+does not prove that a running home has composed the released cards.
 
 Provider heading contract: §8 “8. Provider configuration and setup internals”
 owns setup; §5 “5. Teams: join and leave” owns existing LOCAL seats; §7
