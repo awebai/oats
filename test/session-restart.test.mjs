@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, readdirSync, symlinkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readdirSync, symlinkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
@@ -629,4 +629,100 @@ test("a 0.26.0 home (instance.json `runtime`, a version-1 recipe) inspects, rest
   assert.equal(stopInstanceSession(home, { graceMs: 5000 }).stopped, true);
   const r = oats(["retire", name, "--dir", repo]); assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.equal(existsSync(home), false);
+});
+
+// #691: the receipt of a start instance.json already records (same start id, same target) is
+// history, never authority. Reconciling it writes nothing; a plain start while it runs answers
+// E_SESSION_RUNNING before any write or hook; a restart, or a start after the target is gone, retires
+// it and starts from instance.json as it is. A genuinely interrupted start is still adopted. The
+// provider's metadata changes only through a supported path: its launch hook answering from the
+// provider's own state (<home>/answer.json). instance.json is never edited after setup.
+test("#691 a completed start's receipt is never recorded again: no write, no hook run, newest meta kept; an interrupted start is still adopted", async () => {
+  const name = "dev-receipt";
+  const home = homeOf(name, "renew");
+  await makeHome(name, { soul: "renew", command: renderFor(home, name, join(binDir, "polite")), launch: recipeFor(home, name, { executable: join(binDir, "polite") }) });
+  const meta0 = readJson(join(home, "instance.json"));
+  const captured = { capability: "test.renew", layer: null, level: home, settings: {}, trust: { trusted: true, integrity: null }, launch: {}, env: [] };
+  write(join(home, "instance.json"), JSON.stringify({ ...meta0, launch: { ...meta0.launch, hooks: { launch: {}, env: {}, contributions: [captured] } }, capabilityRuntime: [{ id: "test.renew", layer: null, level: repo, settings: {}, trust: { trusted: true, integrity: null }, hooks: { launch: "bin/launch.mjs" }, environment: [] }], capabilityMeta: { "test.renew": { grant: { id: "grant-original" } } } }));
+  const provider = (answer) => write(join(home, "answer.json"), JSON.stringify(answer)); // the provider's own state
+  const metaPath = join(home, "instance.json"), pendingPath = join(home, ".oats-start-pending.json");
+  const ino = (p) => statSync(p).ino;
+  const hookRuns = () => { try { return readFileSync(join(home, ".oats-events.jsonl"), "utf8").split("\n").filter((l) => l.includes("provider hook ran")).length; } catch { return 0; } };
+  const grant = () => readJson(metaPath).capabilityMeta["test.renew"].grant.id;
+  const restart = (o = {}) => restartInstanceSession(home, { launchConfig: "codexy", env: env(), stopGraceMs: 5000, ...o });
+  try { tmux("has-session", "-t", session); } catch { tmux("new-session", "-d", "-s", session, "-n", "hq", "-c", home); }
+  tmux("new-window", "-t", `${session}:`, "-n", name, "-c", home, "exec /bin/sh");
+  await waitFor(() => inspectInstanceSession(home).state === "shell", "idle pane shell");
+
+  // A start completes: its receipt stays, naming the start instance.json records, on the recorded target.
+  provider({ meta: { grant: { id: "grant-1" } }, warning: "provider hook ran" });
+  restart();
+  assert.ok(await waitFor(() => runningPid(home) !== null));
+  const pending1 = readJson(pendingPath);
+  assert.equal(pending1.id, readJson(metaPath).startId, "the receipt is the recorded start's");
+  assert.equal(grant(), "grant-1");
+
+  // (a)+(e) Plain start while it runs: E_SESSION_RUNNING, and nothing written: no instance.json or receipt
+  // write (a write replaces the file: a new inode), no launch hook run.
+  const before = { meta: readFileSync(metaPath, "utf8"), metaIno: ino(metaPath), pending: readFileSync(pendingPath, "utf8"), pendingIno: ino(pendingPath), runs: hookRuns() };
+  const unchanged = (what) => assert.deepEqual({ meta: readFileSync(metaPath, "utf8"), metaIno: ino(metaPath), pending: readFileSync(pendingPath, "utf8"), pendingIno: ino(pendingPath), runs: hookRuns() }, before, what);
+  for (const o of [{}, { model: "claude-x" }, { launchConfig: "polite" }]) {
+    assert.throws(() => startInstanceSession(home, { env: env(), ...o }), (e) => e.code === "E_SESSION_RUNNING", JSON.stringify(o));
+    unchanged(`plain start ${JSON.stringify(o)}: nothing written, no hook run`);
+  }
+
+  // (c) The provider's state moves on; each restart records the newest meta, and an older one never comes back.
+  for (const id of ["grant-2", "grant-3"]) {
+    provider({ meta: { grant: { id } }, warning: "provider hook ran" });
+    const pid = runningPid(home);
+    const r = restart();
+    assert.ok(await waitFor(() => runningPid(home) !== null && runningPid(home) !== pid));
+    assert.equal(grant(), id, `restart to ${id}: the newest provider meta`);
+    assert.ok(r.startedAt); assert.equal(readJson(pendingPath).id, readJson(metaPath).startId, "a new receipt for the new start");
+  }
+  // A restart whose hook answers no meta keeps the newest one (grant-3), not the previous receipt's.
+  provider({});
+  { const pid = runningPid(home); restart(); assert.ok(await waitFor(() => runningPid(home) !== null && runningPid(home) !== pid)); }
+  assert.equal(grant(), "grant-3");
+
+  // An ordinary restart under another launch configuration: the receipt retired, the new configuration recorded.
+  provider({ meta: { grant: { id: "grant-4" } } });
+  { const pid = runningPid(home); const count = readJson(metaPath).restartCount;
+    const r = restart({ launchConfig: "polite", env: env({ RESTART_TEST_SRC: "x" }) });
+    assert.ok(await waitFor(() => runningPid(home) !== null && runningPid(home) !== pid));
+    const m = readJson(metaPath);
+    assert.equal(r.launchConfig, "polite"); assert.equal(m.launch.launchConfig, "polite"); assert.equal(m.restartCount, count + 1); assert.equal(m.capabilityMeta["test.renew"].grant.id, "grant-4");
+    assert.equal(readJson(pendingPath).id, m.startId); }
+
+  // A target that is gone: the completed receipt is retired and the start runs from instance.json as it is.
+  provider({ meta: { grant: { id: "grant-5" } } });
+  tmux("kill-window", "-t", `${session}:${name}`);
+  await waitFor(() => runningPid(home) === null || !windows().includes(name), "window gone");
+  { const count = readJson(metaPath).restartCount;
+    const r = startInstanceSession(home, { env: env({ RESTART_TEST_SRC: "x" }) });
+    assert.equal(r.reused, "new"); assert.equal(r.launchConfig, "polite", "the recorded (newest) configuration, not an older receipt's");
+    assert.ok(await waitFor(() => runningPid(home) !== null));
+    const m = readJson(metaPath);
+    assert.equal(m.restartCount, count + 1); assert.equal(m.capabilityMeta["test.renew"].grant.id, "grant-5"); assert.equal(readJson(pendingPath).id, m.startId); }
+
+  // (d) A genuinely interrupted start (allocated, metadata write failed) is still adopted, with no second launch.
+  provider({ meta: { grant: { id: "grant-6" } } });
+  { const pid = runningPid(home);
+    assert.throws(() => restart({ env: env({ RESTART_TEST_SRC: "x" }), launchConfig: "polite", io: { failBeforeMetadataWrite: true } }), (e) => e.code === "E_SESSION_START_INCOMPLETE");
+    assert.ok(await waitFor(() => runningPid(home) !== null && runningPid(home) !== pid), "the interrupted start's harness runs");
+    const interrupted = readJson(pendingPath);
+    assert.notEqual(interrupted.id, readJson(metaPath).startId, "instance.json does not record the interrupted start");
+    const adoptedPid = runningPid(home);
+    const r = startInstanceSession(home, { env: env({ RESTART_TEST_SRC: "x" }) });
+    assert.equal(r.reused, "adopted"); assert.equal(runningPid(home), adoptedPid, "no second launch");
+    const m = readJson(metaPath);
+    assert.equal(m.startId, interrupted.id); assert.equal(m.capabilityMeta["test.renew"].grant.id, "grant-6", "the interrupted start's meta is recorded on adoption"); }
+
+  // Q2: a receipt naming the recorded start on another target is ambiguous. The kernel never writes this
+  // state; it is constructed here only to pin the refusal: nothing written, the way out named.
+  write(pendingPath, JSON.stringify({ ...readJson(pendingPath), id: readJson(metaPath).startId, target: { ...readJson(pendingPath).target, window: "stray" } }));
+  const ambiguous = { meta: readFileSync(metaPath, "utf8"), metaIno: ino(metaPath), pending: readFileSync(pendingPath, "utf8") };
+  assert.throws(() => startInstanceSession(home, { env: env({ RESTART_TEST_SRC: "x" }) }), (e) => e.code === "E_SESSION_UNKNOWN" && /receipt is kept and nothing was started/.test(e.message) && /oats session inspect --home/.test(e.message) && /oats session restart --home/.test(e.message));
+  assert.deepEqual({ meta: readFileSync(metaPath, "utf8"), metaIno: ino(metaPath), pending: readFileSync(pendingPath, "utf8") }, ambiguous, "nothing written");
+  process.kill(runningPid(home), "SIGKILL"); // test cleanup only
 });
