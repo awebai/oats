@@ -68,12 +68,14 @@
   --soul-mauve-bg: #3b2e3b; --soul-mauve-fg: #d0aec7;
   --soul-clay-bg: #3e302b; --soul-clay-fg: #d5b09a;
   --soul-olive-bg: #343828; --soul-olive-fg: #bdc393;
-  /* Runtime brand families: warm-brown Claude, purple Pi, teal Codex.
-     AA-darkened blocks retain white marks (>=5.19:1); bright teal with
-     white fails AA. Reuse these readable blocks in every theme. */
-  --runtime-claude-bg: #966040; --runtime-claude-fg: #ffffff;
-  --runtime-pi-bg: #7957bd; --runtime-pi-fg: #ffffff;
-  --runtime-codex-bg: #0f766e; --runtime-codex-fg: #ffffff;
+  /* Harness marks (identity-marks.mjs): -fg paints the mark, -bg its tile,
+     held at AA though a mark needs only 3:1. Claude: an ivory sparkle on our
+     own terracotta (not Anthropic's Clay), the same in every theme. Pi: the
+     pi.dev badge in its own dark-scheme #f6f6f6 on a quiet tile. Codex: an
+     inverse tile, light here, dark in the light themes. */
+  --runtime-claude-bg: #b4532f; --runtime-claude-fg: #fff7ea;
+  --runtime-pi-bg: #262c35; --runtime-pi-fg: #f6f6f6;
+  --runtime-codex-bg: #e6edf3; --runtime-codex-fg: #161b22;
   --runtime-unknown-bg: #5f5f5a; --runtime-unknown-fg: #ffffff;
 }
 [data-theme="light"] {
@@ -125,12 +127,10 @@
   --soul-mauve-bg: #eee3eb; --soul-mauve-fg: #74536a;
   --soul-clay-bg: #f0e2da; --soul-clay-fg: #79533f;
   --soul-olive-bg: #e9eadb; --soul-olive-fg: #5d623b;
-  /* Runtime brand families: warm-brown Claude, purple Pi, teal Codex.
-     AA-darkened blocks retain white marks (>=5.19:1); bright teal with
-     white fails AA. Reuse these readable blocks in every theme. */
-  --runtime-claude-bg: #966040; --runtime-claude-fg: #ffffff;
-  --runtime-pi-bg: #7957bd; --runtime-pi-fg: #ffffff;
-  --runtime-codex-bg: #0f766e; --runtime-codex-fg: #ffffff;
+  /* Harness marks: see the dark block. Pi keeps its badge's own #111111. */
+  --runtime-claude-bg: #b4532f; --runtime-claude-fg: #fff7ea;
+  --runtime-pi-bg: #efefeb; --runtime-pi-fg: #111111;
+  --runtime-codex-bg: #24292f; --runtime-codex-fg: #f6f8fa;
   --runtime-unknown-bg: #5f5f5a; --runtime-unknown-fg: #ffffff;
 }
 [data-theme="solarized"] {
@@ -177,12 +177,10 @@
   --soul-mauve-bg: #eee3eb; --soul-mauve-fg: #74536a;
   --soul-clay-bg: #f0e2da; --soul-clay-fg: #79533f;
   --soul-olive-bg: #e9eadb; --soul-olive-fg: #5d623b;
-  /* Runtime brand families: warm-brown Claude, purple Pi, teal Codex.
-     AA-darkened blocks retain white marks (>=5.19:1); bright teal with
-     white fails AA. Reuse these readable blocks in every theme. */
-  --runtime-claude-bg: #966040; --runtime-claude-fg: #ffffff;
-  --runtime-pi-bg: #7957bd; --runtime-pi-fg: #ffffff;
-  --runtime-codex-bg: #0f766e; --runtime-codex-fg: #ffffff;
+  /* Harness marks: see the dark block. Pi keeps its badge's own #111111. */
+  --runtime-claude-bg: #b4532f; --runtime-claude-fg: #fff7ea;
+  --runtime-pi-bg: #ebe3c9; --runtime-pi-fg: #111111;
+  --runtime-codex-bg: #37424a; --runtime-codex-fg: #fdf6e3;
   --runtime-unknown-bg: #5f5f5a; --runtime-unknown-fg: #ffffff;
 }
 

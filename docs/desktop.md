@@ -342,6 +342,18 @@ has reached the execution host. Both CLI installations must advertise
 `session-upload`. A failed transfer leaves the draft unchanged and shows an
 error in the terminal. Each drop/paste accepts up to 16 files totaling 25 MB.
 
+## Harness badges
+
+Roster rows, soul cards, the soul page, the context panel and the spawn
+dialog show each instance's or soul's harness as a small badge, next to its
+name. The badge names the harness the CLI reports; it says nothing about
+whether that harness is installed or signed in. Pi's badge is the official
+pi.dev press-kit mark (MIT). The Claude Code and Codex badges are OATS's own
+drawings: they are not those products' logos, and OATS is not affiliated
+with or endorsed by Anthropic or OpenAI. An unknown or unreported harness
+shows "?". Sources and licences are in
+`packages/desktop/renderer/harness-marks/README.md`.
+
 ## Security posture
 
 - The bundled backend binds **127.0.0.1 only** and guards against DNS
