@@ -1193,7 +1193,8 @@ function openSpawnModal(s, a, draft = {}) {
         if (!ui.dialog.querySelector(".guarded-schedules")) {
           const manage = doc.createElement("button"); manage.className = "act guarded-schedules"; manage.type = "button"; manage.textContent = "View schedules";
           manage.addEventListener("click", () => { if (!ownsModal()) return; closeSpawnModal(s); preselectAutomationsTab("schedule"); s.ctx.openView?.("automations"); });
-          ui.spawn.before(manage); // in the footer's actions group, before Spawn
+          // Its own footer item before the Cancel/Spawn group: it wraps with the status, never widening the group.
+          ui.spawn.parentElement.before(manage);
         }
         return; // creation succeeded; never retry spawn to repair a wake
       }
