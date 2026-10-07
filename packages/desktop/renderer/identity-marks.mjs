@@ -45,17 +45,18 @@ export function harnessName(value) {
 const words = text => text.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
 /** The two-letter mark, one grammar app-wide: drop a package qualifier (after the
  * last `/` or `--`) and, from three words, a leading namespace word; then the
- * initials of two words, or a single word's first two characters. Code points,
- * not UTF-16 units; no letters or digits at all is `?`. */
+ * initials of two words, or a single word's first two characters, uppercased.
+ * Code points, not UTF-16 units; no letters or digits after the qualifier is `?`. */
 export function markText(value) {
   if (typeof value !== 'string') return '?';
   const slash = value.lastIndexOf('/'), dashes = value.lastIndexOf('--');
   const cut = Math.max(slash < 0 ? 0 : slash + 1, dashes < 0 ? 0 : dashes + 2);
-  let parts = words(value.slice(cut)); if (!parts.length) parts = words(value);
+  let parts = words(value.slice(cut));
   if (parts.length >= 3) parts = parts.slice(1);
   const chars = parts.length >= 2 ? [[...parts[0]][0], [...parts[1]][0]] : parts.length ? [...parts[0]].slice(0, 2) : [];
-  // Each character uppercased on its own, keeping its first code point: "ß" is "SS" in upper case, never a third glyph.
-  return chars.map(c => [...c.toLocaleUpperCase('en')][0]).join('') || '?';
+  const upper = [...chars.join('').toLocaleUpperCase('en')];
+  // Upper case can grow ("ß" is "SS"): a mark is two glyphs at most, so then each character keeps its first.
+  return (upper.length <= 2 ? upper : chars.map(c => [...c.toLocaleUpperCase('en')][0])).join('') || '?';
 }
 function identityMark(doc, name, color, kind) {
   const el = doc.createElement('span');

@@ -51,7 +51,9 @@ test('two-letter marks: one grammar for every identity, the package qualifier an
     ['oats-cloning--cloner', 'CL'], ['oats.aweb', 'OA'], ['x', 'X'], ['', '?'], [null, '?'], ['--', '?'],
     [undefined, '?'], [42, '?'], ['—', '?'], ['équipe-données', 'ÉD'], ['maintainer', 'MA']]) assert.equal(markText(name), mark, String(name));
   assert.equal(markText('𝐀𝐁c'), '𝐀𝐁', 'code points: a non-BMP letter is never split');
+  assert.equal(markText('ß'), 'SS', 'upper case as written while it fits two glyphs');
   assert.equal(markText('ß-x'), 'SX', 'two glyphs at most, even where upper case grows'); assert.equal(markText('straße'), 'ST');
+  for (const name of ['acme/!!!', 'a/', 'pkg--', 'pkg--—']) assert.equal(markText(name), '?', `${name}: only what follows the qualifier counts`);
   const dom = new JSDOM('<body></body>'); const doc = dom.window.document;
   assert.equal(createSoulMark(doc, { ...soul, name: 'oats-okf--knowledge-harvester' }).textContent, 'KH', 'the soul mark uses it');
   assert.equal(createCapabilityMark(doc, { id: 'oats.aweb' }).textContent, 'OA', 'and the capability mark');
