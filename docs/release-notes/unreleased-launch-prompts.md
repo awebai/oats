@@ -15,6 +15,16 @@
   recorded in configuration documentation. It permits one Enter. Folder-trust,
   API-key and all other prompts remain unexpected and blocked. No live rollout
   accompanies this change.
+- **Known completion limitation:** the accepted post-answer banner contains
+  “plugin not installed”, Opus 5.5, API Usage Billing and captured effort/mode
+  text. Installed-plugin or different model/billing/effort output can therefore
+  follow a submitted Enter with a retained `E_SPAWN_INCOMPLETE` / `blocked`
+  result. The submitted answer and actual target remain recorded; the pane may
+  already be active. This does not solve unattended normal-production success.
+  Inspect it; never automatically resend or relaunch. No readiness claim follows.
+- Retirement conservatively keeps a changed-home recovery copy after a blocked
+  spawn's kernel metadata transition, even if no authored bytes changed.
+  Runtime endpoint mismatches remain refused.
 - Harness updates that change the version-bound prompt frame cause opted-in
   homes to block again with `blocked: unexpected prompt` until fixtures are
   refreshed. This fail-closed behavior is intentional: fallback keystrokes or

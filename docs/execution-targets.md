@@ -615,6 +615,19 @@ not proof that no input was sent. Both outcomes record `launched:false` while
 retaining the real process/endpoint for inspection: this is never permission
 to allocate another harness.
 
+A blocked result can follow a successfully submitted Enter. The accepted
+completion frame is narrower than ordinary production output: an installed
+plugin or different model, billing or effort can leave the pane active while
+reporting a retained block. Inspect `answers` and the event receipts; never infer
+that nothing started or nothing was answered. See the
+[completion limitation](configuration.md#exact-home-launch-prompt-consent).
+
+Retiring a blocked or incomplete spawned home can preserve a recovery copy
+labelled `changed instance-home bytes`, even without authored changes: the
+kernel changed metadata from `launched:true` to `false` after its baseline.
+This conservative recovery is intentional. The independent runtime receipt
+still controls the endpoint, and a mismatched metadata endpoint is refused.
+
 Inspect the retained home with `oats session inspect --home <home>` and attach
 if needed. A later `oats session start --home <home>` uses the ordinary running
 process checks; it cannot answer into a still-running retained launch. Repeating

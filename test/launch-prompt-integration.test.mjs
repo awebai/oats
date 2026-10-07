@@ -4,7 +4,7 @@ import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
 import { v2Deployment } from './helpers/v2-deployment.mjs';
-import { startInstanceSession, restartInstanceSession, inspectInstanceSession, stopInstanceSession } from '../lib/core.mjs';
+import { startInstanceSession, restartInstanceSession, inspectInstanceSession, stopInstanceSession, retireInstance } from '../lib/core.mjs';
 import { waitUntil } from './helpers/host-fixture.mjs';
 import { readEvents } from '../lib/instance-events.mjs';
 
@@ -123,4 +123,23 @@ test('CLI JSON preserves the established incomplete envelope and additive prompt
   assert.equal(response.error.details.retained, true);
   assert.equal(response.error.details.launchPrompts.status, 'blocked');
   assert.match(response.error.details.target.paneId, /^%\d+$/);
+});
+
+
+test('blocked spawn keeps conservative retirement recovery and refuses a mismatched endpoint', async t => {
+  const {fx, configure} = fixture(t);
+  const name = 'dev-retire-blocked', home = configure(name);
+  await assert.rejects(fx.spawn('dev', {name, launchConfig:'stub', launch:true}), e => e.code === 'E_SPAWN_INCOMPLETE');
+  const file = join(home, 'instance.json'), original = readFileSync(file, 'utf8');
+  const changed = JSON.parse(original);
+  changed.tmux.window = 'unrelated-window';
+  writeFileSync(file, JSON.stringify(changed));
+  await assert.rejects(fx.inEnv(() => inspectInstanceSession(home)), e => e.code === 'E_RUNTIME_AUTHORITY_MISMATCH');
+  await assert.rejects(fx.inEnv(() => retireInstance(fx.root, name)), e => e.code === 'E_RUNTIME_AUTHORITY_MISMATCH');
+  assert.equal(existsSync(home), true);
+  writeFileSync(file, original);
+  const result = await fx.inEnv(() => retireInstance(fx.root, name));
+  assert.ok(result.workRecovery.classes.includes('changed instance-home bytes'));
+  assert.equal(existsSync(join(result.workRecovery.path, 'home', 'instance.json')), true);
+  assert.equal(existsSync(home), false);
 });

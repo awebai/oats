@@ -1490,6 +1490,14 @@ metadata does not mean there is no process or that another harness may be
 allocated. Use runtime inspection and the existing start/restart lifecycle.
 Same-key spawn replay cannot convert a blocked outcome to successful spawn.
 
+`answers` can contain a `submitted` answer even when the final status is
+`blocked`: the accepted completion banner includes a missing plugin and specific
+model/billing/effort text. A different normal-looking banner can block after Enter
+while the actual pane is active. Consumers must preserve that submitted receipt
+and never translate this outcome into “nothing started” or automatic retry.
+The [completion limitation](configuration.md#exact-home-launch-prompt-consent)
+is part of the shipping contract.
+
 Strict Desktop/pi readers must accept these additive fields and the new event
 kind before a writer containing them ships. For operator recovery, see
 [launch prompt outcomes](execution-targets.md#launch-prompt-outcomes).

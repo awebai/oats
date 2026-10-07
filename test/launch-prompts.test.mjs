@@ -192,8 +192,14 @@ test("repeated prompt or unknown post-answer frame closes authority", t => {
   for (const mode of ["repeat", "unknown"]) {
     const { controller, io, prompt } = setup(t);
     io.sendHook = () => { io.text = mode === "repeat" ? prompt : "normal-looking but unknown"; return { status: "submitted" }; };
-    assert.equal(controller.observeNew(target).status, "blocked");
+    const result = controller.observeNew(target);
+    assert.equal(result.status, "blocked");
+    assert.equal(result.answers[0].status, "submitted");
+    assert.ok(result.receipt.some(r => r.row?.data.status === "submitted"));
     assert.deepEqual(io.sends, ["Enter"]);
+    io.text = prompt;
+    assert.equal(controller.observeNew(target), result);
+    assert.deepEqual(io.sends, ["Enter"], "a later valid frame cannot reopen authority");
   }
 });
 

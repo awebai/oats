@@ -106,7 +106,7 @@ test("qualified fixture construction and argv exclusions (synthetic hash substit
   const prompt = frames.find(f => f.kind === "prompt").text;
   const complete = frames.find(f => f.kind === "completed" && f.after.join() === "awebDevelopmentChannel").text;
   const target = { socket: "/private/test", windowId: "@1", paneId: "%1", pid: "123" };
-  for (const mode of ["valid", "foreign", "partial", "footer", "question", "send-failed", "audit-failed"]) {
+  for (const mode of ["valid", "foreign", "partial", "footer", "question", "installed", "model", "billing", "effort", "send-failed", "audit-failed"]) {
     let text = prompt, sends = 0;
     const controller = createLaunchPromptController({ home, startId: "fixture-test", ...ready, geometry: undefined,
       policy: { awebDevelopmentChannel: true }, audit: () => ({ ok: mode !== "audit-failed" }),
@@ -119,12 +119,21 @@ test("qualified fixture construction and argv exclusions (synthetic hash substit
           if (mode === "partial") text = text.replace(home, home.slice(1));
           if (mode === "footer") text += "unexpected footer";
           if (mode === "question") text = text.replace("plugin not installed", "Allow this plugin?");
+          if (mode === "installed") text = text.replace("plugin not installed", "plugin connected");
+          if (mode === "model") text = text.replace("Opus 5.5", "Sonnet 5");
+          if (mode === "billing") text = text.replace("API Usage Billing", "Pro Subscription");
+          if (mode === "effort") text = text.replace("medium · /effort", "high · /effort");
           return { status: mode === "send-failed" ? "failed" : "submitted" };
         },
       },
     });
     const observed = controller.observeNew(target);
     assert.equal(observed.status, mode === "valid" ? "completed" : ["audit-failed", "send-failed"].includes(mode) ? "incomplete" : "blocked", mode);
+    if (["installed", "model", "billing", "effort"].includes(mode)) {
+      assert.equal(observed.answers.length, 1, "the submitted answer survives the later blocked frame");
+      assert.equal(observed.answers[0].status, "submitted");
+      assert.equal(sends, 1);
+    }
     const previousSends = sends;
     text = prompt;
     assert.equal(controller.observeNew(target), observed);
