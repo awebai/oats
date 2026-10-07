@@ -953,7 +953,11 @@ passed as arguments; no shell is involved.
     [Teams in the provider environment](#teams-in-the-provider-environment)),
     `OATS_TEAM_SCOPE`, `OATS_TEAM_NAME`, `OATS_WORKSPACE_NAME` and
     `OATS_WORKSPACE_KEY`;
-  - `OATS_AGENT` (the soul);
+  - `OATS_AGENT` and `OATS_SOUL_ID` (0.43.3), the soul's name and stable id
+    with the values its hooks and dispatched commands get (see
+    [Commands and hooks](#commands-and-hooks)): for `--soul` on a package
+    soul, `OATS_AGENT` is `<package>--<soul>`, as its hooks get it (before,
+    the bare soul name);
   - `OATS_SOUL`, the soul directory: a home's recorded one, or for a soul
     (`readiness --soul`, `inspect --soul`) its copy at the resolved commit,
     which the kernel materialises first as a spawn would (0.30; a copy that
