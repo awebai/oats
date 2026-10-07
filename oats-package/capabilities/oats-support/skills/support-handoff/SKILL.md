@@ -53,7 +53,8 @@ Work in this order, and stop at the first step that works:
    stopped:** start it if your soul allows it (`/oats-operate`), else ask your
    human.
 2. **Not in the roster and not on this machine:** spawn one, once, from
-   your soul's recipe:
+   your soul's recipe, which says whether your human approves the spawn
+   (the session asks them) or the host lets it run unattended:
    - Write the brief from the template below, filling only the bracketed
      fields, into a file in your home.
    - Preview first: `oats spawn <soul> --relation unrelated --purpose
@@ -66,8 +67,10 @@ Work in this order, and stop at the first step that works:
    spawn interval:** don't retry or improvise. Tell your human with
    `oats instance attention`, naming the tickets waiting.
 
-Always tell your human when you start or spawn a support maintainer. Another
-one may be stopped on a machine you can't see.
+Record every start and spawn in your append-only log, so your human sees it.
+Another support maintainer may be stopped on a machine you can't see. Use
+`oats instance attention` only when you are blocked waiting for your human,
+never for a notice.
 
 ### The brief template
 ```markdown
