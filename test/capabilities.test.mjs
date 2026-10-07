@@ -3220,7 +3220,7 @@ test("the package mirrors carry the versions package-catalog.json pins", () => {
     assert.equal(catalog.capabilities[id], "oats.engineering", `${id} is supplied by the oats.engineering package`);
     assert.equal(Object.hasOwn(manifest, "agents"), false, `${id} declares no capability agent: the code-reviewer is oats.engineering's package soul`);
   }
-  assert.equal(catalog.packages["oats.engineering"].ref, "v1.8.1");
+  assert.equal(catalog.packages["oats.engineering"].ref, "v1.9.0");
   // oats.cloning exports one capability under the package's own id: no alias; the cloner is a package soul.
   assert.equal(catalog.packages["oats.cloning"].ref, "v1.0.1");
   assert.equal(catalog.capabilities["oats.cloning"], undefined, "an identity mapping needs no alias");
