@@ -36,7 +36,7 @@ const markup = `<div id="app"><aside id="sidebar">
     <button class="primary">Add workspace</button></footer></section></div>
   <div class="oats-view"><button class="act primary">Primary</button><button class="act danger">Danger</button>
     <button class="act">Secondary</button><input class="field"><textarea class="field"></textarea><select class="field"><option>Fixture</option></select></div>
-  <div class="ctx-instance-menu"><button data-action="retire">Remove instance</button></div>`;
+  <div class="ctx-instance-menu"><button data-action="retire">Retire instance</button></div>`;
 
 function fixture(t, palette = "light") {
   const dom = new JSDOM(`<!doctype html><html data-theme="${palette}"><head></head><body>${markup}</body></html>`);

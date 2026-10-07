@@ -28,7 +28,8 @@ import { target as forgeTarget, pr as forgePr } from './helpers/forge-fixture.mj
 import { createLifecycleDialog, lifecycleCSS } from '../renderer/lifecycle-dialog.mjs';
 import { createReadinessView, readinessCSS } from '../renderer/readiness-view.mjs';
 import { cli as readinessCli, workspace as readinessWorkspace, selector as readinessSelector, view as readinessView, data as readinessFixture } from './helpers/readiness-fixture.mjs';
-import { instance as lifeInstance, target as lifeTarget, stopPlan as stopFixture, retirePlan as retireFixture } from './helpers/lifecycle-fixture.mjs';
+import { instance as lifeInstance, target as lifeTarget, stopPlan as stopFixture, retirePlan as retireFixture, stopReceipt, retireReceipt } from './helpers/lifecycle-fixture.mjs';
+import { lifecycleReceipt } from '../renderer/lifecycle-contract.mjs';
 import { createSchedulesView } from '../renderer/views/schedules.mjs';
 import { createSoulInspector, inspectorCSS } from '../renderer/soul-inspector.mjs';
 import { readinessCSS as readinessViewCSS } from '../renderer/readiness-view.mjs';
@@ -104,7 +105,7 @@ test("the shared inventory holds token names only, covers the 16 ANSI colours, a
   assert.equal(new Set(pairs.map(pair => pair.join(" on "))).size, pairs.length, "no pair twice");
   assert.equal(ansi.length, 16);
   for (const token of ansi) assert.ok(pairs.some(([fg, bg]) => fg === token && bg === "term-bg"), `--${token} is held on --term-bg`);
-  assert.deepEqual(GRAPHIC_PAIRS, [["graph-edge", "bg"], ["graph-edge", "surface"], ["graph-edge", "surface-2"], ["muted", "surface"], ["muted", "surface-2"], ["term-sel", "term-bg"]]);
+  assert.deepEqual(GRAPHIC_PAIRS, [["graph-edge", "bg"], ["graph-edge", "surface"], ["graph-edge", "surface-2"], ["muted", "surface"], ["muted", "surface-2"], ["term-sel", "term-bg"], ["accent", "surface"]]);
   assert.deepEqual(PAINTED_OVER, [["md-code-bg", "bg"]]);
   assert.deepEqual(HOST_UNADJUSTED_PAIRS, ansi.map(token => [token, "term-bg"]), "the host theme's one exception: its terminal colours, unadjusted");
   assert.equal(TEXT_CONTRAST, 4.5); assert.equal(GRAPHIC_CONTRAST, 3);
@@ -703,32 +704,75 @@ for (const [name] of palettes) test(`${name}: shipped sidebar shortcut hints mee
   }
 });
 
-for (const [name] of palettes) test(`${name}: actual Stop/Remove confirmations meet computed AA without text opacity`, async t => {
+for (const [name] of palettes) test(`${name}: actual Stop/Retire confirmations meet computed AA without text opacity, in every phase`, async t => {
   const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body></body></html>`), doc = dom.window.document;
-  for (const source of [css, readFileSync(new URL('shell.css', renderer), 'utf8'), lifecycleCSS]) {
+  for (const source of [css, readFileSync(new URL('shell.css', renderer), 'utf8'), readFileSync(new URL('loading.css', renderer), 'utf8'), lifecycleCSS]) {
     const style = doc.createElement('style'); style.textContent = source; doc.head.append(style);
   }
-  const dialog = createLifecycleDialog({ doc, request: async (_ws, body) => ({ lifecycleApi: 1, status: 'plan', target: lifeTarget,
-    planRef: 'e'.repeat(64), plan: body.operation === 'stop' ? stopFixture() : retireFixture(), options: body.options }) });
+  let planGate = null, applyGate = null;
+  const answer = body => ({ lifecycleApi: 1, status: 'plan', target: lifeTarget, planRef: 'e'.repeat(64), plan: body.operation === 'stop' ? stopFixture() : retireFixture(), options: body.options });
+  const dialog = createLifecycleDialog({ doc, request: async (_ws, body) => body.action === 'apply' ? applyGate.promise : planGate ? planGate.promise.then(() => answer(body)) : answer(body) });
   t.after(() => { dialog.dispose(); dom.window.close(); });
-  const root = dom.window.getComputedStyle(doc.documentElement);
-  for (const operation of ['stop', 'retire']) {
-    dialog.open({ operation, instance: lifeInstance, workspace: lifeTarget.workspace }); await new Promise(resolve => setImmediate(resolve));
-    for (const [selector, surfaceSelector, fg, bg] of [
-      ['.lifecycle-dialog h2', '.lifecycle-dialog', 'fg', 'surface'], ['.lifecycle-dialog .lifecycle-note', '.lifecycle-dialog', 'muted', 'surface'],
-      ['.lifecycle-dialog dt', '.lifecycle-facts', 'muted', 'surface-2'], ['.lifecycle-dialog dd', '.lifecycle-facts', 'fg', 'surface-2'],
-      ['.lifecycle-dialog label', '.lifecycle-options', 'fg', 'surface-2'],
-      // Close holds focus when the dialog opens; the keyboard-focus tint (control rule 2) is what is painted.
-      ['.lifecycle-close', '.lifecycle-close', 'fg', 'sel'],
-      ['.lifecycle-confirm', '.lifecycle-confirm', 'primary-fg', operation === 'stop' ? 'primary-bg' : 'danger'],
-    ]) {
-      const el = doc.querySelector(selector), surface = doc.querySelector(surfaceSelector); assert.ok(el && surface, selector);
-      assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
-      assert.equal(dom.window.getComputedStyle(surface).background, `var(--${bg})`, surfaceSelector);
-      assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${name} ${selector}`);
-      for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+  const root = dom.window.getComputedStyle(doc.documentElement), settle = () => new Promise(resolve => setImmediate(resolve));
+  const tokenOf = (value, what) => { const m = /^var\(--([\w-]+)\)$/.exec(value); assert.ok(m, `${what} is a token: ${value}`); return m[1]; };
+  const ratio = (fg, bg) => contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim()));
+  const check = (phase, rows) => {
+    for (let [selector, surfaceSelector, fg, bg, min = TEXT_CONTRAST] of rows) {
+      const el = doc.querySelector(selector), surface = doc.querySelector(surfaceSelector); assert.ok(el && surface, `${phase}: ${selector}`);
+      assert.equal(tokenOf(min === TEXT_CONTRAST ? dom.window.getComputedStyle(el).color : dom.window.getComputedStyle(el).borderTopColor, selector), fg, `${phase}: ${selector}`);
+      // A surface given as a list: the button that holds focus, idle or under the keyboard tint (jsdom's :focus-visible depends on
+      // the history of programmatic focus); the pair it reports is held either way.
+      const painted = tokenOf(dom.window.getComputedStyle(surface).background || dom.window.getComputedStyle(surface).backgroundColor, surfaceSelector);
+      assert.ok([].concat(bg).includes(painted), `${phase}: ${surfaceSelector} on --${painted}`); bg = painted;
+      // Every pair the phases paint is in the inventory, except the danger-filled Retire confirm, which predates it and is held by its ratio here.
+      if (!(fg === 'primary-fg' && bg === 'danger')) assert.ok(min === TEXT_CONTRAST ? pairs.some(([f, b]) => f === fg && b === bg) : GRAPHIC_PAIRS.some(([f, b]) => f === fg && b === bg), `${phase}: --${fg} on --${bg} is in the inventory`);
+      assert.ok(ratio(fg, bg) >= min, `${name} ${phase} ${selector}: ${ratio(fg, bg).toFixed(2)}`);
+      for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1', `${phase}: ${selector} has no opacity`);
     }
+  };
+  for (const operation of ['stop', 'retire']) {
+    // loading: the status line and the skeleton (its fill is held by loading-contrast.test.mjs on --surface).
+    planGate = Promise.withResolvers(); applyGate = Promise.withResolvers();
+    dialog.open({ operation, instance: lifeInstance, workspace: lifeTarget.workspace });
+    assert.ok(doc.querySelector('.lifecycle-happen .skeleton'));
+    check(`${operation} loading`, [['.lifecycle-status', '.lifecycle-dialog', 'fg', 'surface'], ['.lifecycle-dialog h3', '.lifecycle-dialog', 'muted', 'surface'],
+      // Cancel holds focus when the dialog opens: idle --surface, or the keyboard-focus tint (control rule 2).
+      ['.lifecycle-close', '.lifecycle-close', 'fg', ['surface', 'sel']]]);
+    assert.ok(pairs.some(([f, b]) => f === 'fg' && b === 'sel') && ratio('fg', 'sel') >= TEXT_CONTRAST, `${name} Cancel focused`);
+    planGate.resolve(); planGate = null; await settle();
+    const review = [['.lifecycle-dialog h2', '.lifecycle-dialog', 'fg', 'surface'], ['.lifecycle-happen li', '.lifecycle-dialog', 'fg', 'surface'],
+      ['.lifecycle-observed', '.lifecycle-dialog', 'muted', 'surface'],
+      ['.lifecycle-dialog dt', '.lifecycle-facts', 'muted', 'surface-2'], ['.lifecycle-dialog dd', '.lifecycle-facts', 'fg', 'surface-2'],
+      ['.lifecycle-dialog label', '.lifecycle-options', 'fg', 'surface-2'], ['.lifecycle-check', '.lifecycle-dialog', 'accent', 'surface'],
+      ['.lifecycle-confirm', '.lifecycle-confirm', 'primary-fg', operation === 'stop' ? 'primary-bg' : 'danger']];
+    if (operation === 'stop') review.push(['.lifecycle-happen .lifecycle-note', '.lifecycle-dialog', 'muted', 'surface'], ['.lifecycle-happen .lifecycle-attention', '.lifecycle-dialog', 'warn', 'surface']);
+    else {
+      review.push(['.lifecycle-happen .lifecycle-path', '.lifecycle-dialog', 'muted', 'surface'], ['.lifecycle-facts .lifecycle-attention', '.lifecycle-facts', 'warn', 'surface-2']);
+      // The worktree warning, once the plan for that choice lands.
+      const discard = doc.querySelectorAll('.lifecycle-dialog input')[1]; discard.checked = true; discard.dispatchEvent(new dom.window.Event('change')); await settle();
+      review.push(['.lifecycle-warning', '.lifecycle-options', 'danger', 'surface-2']);
+    }
+    // Check again under keyboard focus paints --accent on the --sel tint (its rule: control-rules.test.mjs).
+    assert.ok(pairs.some(([f, b]) => f === 'accent' && b === 'sel') && ratio('accent', 'sel') >= TEXT_CONTRAST, `${name} Check again focused`);
+    check(`${operation} review`, review);
+    doc.querySelector('.lifecycle-confirm').click(); await settle();
+    // running: the status text, the spinner's arc (a graphic, 3:1) and the note that it continues.
+    check(`${operation} running`, [['.lifecycle-status', '.lifecycle-dialog', 'fg', 'surface'], ['.lifecycle-dialog .spinner', '.lifecycle-dialog', 'accent', 'surface', GRAPHIC_CONTRAST],
+      ['.lifecycle-happen li', '.lifecycle-dialog', 'muted', 'surface']]);
+    const plan = operation === 'stop' ? stopFixture() : retireFixture();
+    const receipt = operation === 'stop' ? stopReceipt({ key: 'k', revision: plan.planRevision }) : retireReceipt({ key: 'k', revision: plan.planRevision });
+    applyGate.resolve({ lifecycleApi: 1, status: 'complete', target: lifeTarget, receipt: lifecycleReceipt(receipt, plan, 'k') }); await settle();
+    // done: the success mark and Done, which holds focus and keeps its own pair.
+    check(`${operation} done`, [['.lifecycle-mark', '.lifecycle-mark', 'ok', 'surface-2'], ['.lifecycle-result li', '.lifecycle-dialog', 'fg', 'surface'],
+      ['.lifecycle-done', '.lifecycle-done', 'primary-fg', 'primary-bg']]);
+    assert.equal(doc.activeElement, doc.querySelector('.lifecycle-done'));
+    dialog.close();
   }
+  // A result: the headline and Review again (no plan could be read).
+  const failing = createLifecycleDialog({ doc, request: async () => ({ lifecycleApi: 1, status: 'unavailable', target: lifeTarget, reason: { code: 'E_LIFECYCLE_BUSY' } }) });
+  t.after(() => failing.dispose());
+  failing.open({ operation: 'retire', instance: lifeInstance, workspace: lifeTarget.workspace }); await settle();
+  check('result', [['.lifecycle-status', '.lifecycle-dialog', 'fg', 'surface'], ['.lifecycle-review', '.lifecycle-review', 'fg', 'surface'], ['.lifecycle-close', '.lifecycle-close', 'fg', ['surface', 'sel']]]);
 });
 
 for (const [name] of palettes) test(`${name}: actual readiness checks, provider problems, warnings and policy use computed AA surfaces`, async t => {

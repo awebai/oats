@@ -63,7 +63,7 @@ const markup = `<div id="app"><aside id="sidebar">
       <button type="button" aria-pressed="true">List</button><button type="button" aria-pressed="false">Graph</button></div>
     <button class="act">Secondary</button><button class="act primary">Primary</button><button class="act danger">Danger</button><input class="field"></div>
   <div class="app-notifications"><div class="app-toast"><button class="app-toast-dismiss">×</button></div></div>
-  <div class="lifecycle-dialog" data-operation="retire"><button class="lifecycle-close">Close</button><button class="lifecycle-confirm">Remove</button></div>
+  <div class="lifecycle-dialog" data-operation="retire"><button class="lifecycle-close">Close</button><button class="lifecycle-confirm">Retire instance</button><button class="lifecycle-done">Done</button><button class="lifecycle-review">Review again</button><button class="lifecycle-check">Check again</button></div>
   <div class="ctx-instance-menu"><button data-action="open">Open</button></div>`;
 
 function fixture(t, palette = "light") {
@@ -153,7 +153,7 @@ test("focus: keyboard focus on plain shell controls paints the tint and the edge
   const u = fixture(t);
   for (const selector of ["#ws-trigger", ".ws-option", ".ws-add-open", ".nav-item:not(.active)", ".ctx-inst", ".tab-trigger", ".tab .close",
     "#tab-actions button", ".ws-suggestion", ".ws-dialog-foot .secondary", ".kb-chord", ".kb-close", ".ws-segmented [aria-pressed=false]",
-    ".ctx-instance-menu button", ".ctx-instance-actions", ".lifecycle-close", ".oats-view .act:not(.primary):not(.danger)"]) {
+    ".ctx-instance-menu button", ".ctx-instance-actions", ".lifecycle-close", ".lifecycle-review", ".lifecycle-check", ".oats-view .act:not(.primary):not(.danger)"]) {
     const s = u.focused(selector);
     assert.equal(s.background, "var(--sel)", `${selector} tint`);
     assert.equal(s.outline, "1px solid var(--accent)", `${selector} edge`);
@@ -164,7 +164,7 @@ test("focus: keyboard focus on plain shell controls paints the tint and the edge
 test("focus: controls with their own opaque pair keep it and show the edge only", t => {
   const u = fixture(t);
   for (const [selector, bg, fg, edge = "accent"] of [["#sidebar-spawn", "primary-bg", "primary-fg"], [".ws-dialog-foot .primary", "primary-bg", "primary-fg"],
-    [".oats-view .act.primary", "primary-bg", "primary-fg"], [".lifecycle-confirm", "danger", "primary-fg"],
+    [".oats-view .act.primary", "primary-bg", "primary-fg"], [".lifecycle-confirm", "danger", "primary-fg"], [".lifecycle-done", "primary-bg", "primary-fg"],
     [".app-toast-dismiss", "primary-fg", "primary-bg", "primary-fg"] /* toast buttons invert inside the dark toast, edge in its ink */]) {
     const s = u.focused(selector);
     assert.equal(s.background, `var(--${bg})`, `${selector} background`);

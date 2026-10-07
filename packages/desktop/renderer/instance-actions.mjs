@@ -6,7 +6,19 @@ import { canAddressRemote, rowReason } from "./remote-address.mjs";
 /** Decorative menu icons (the Redesign's context menu), keyed by action. */
 const MENU_ICONS = Object.freeze({ 'open-split': 'splitRight', 'open-pr': 'pullRequest', inspect: 'knowledge', start: 'start', restart: 'refresh', stop: 'stop', retire: 'remove' });
 
-const pending = new Map(); // instance key -> controls replaced during an action
+const pending = new Map(); // instance key -> { reason, controls } replaced during an action
+/** A menu label without its trailing ellipsis, for prose ("Knowledge & capabilities…" → "Knowledge & capabilities"). */
+const plainLabel = label => String(label).replace(/…$/, '');
+// A pending action marks the trigger aria-disabled (focus kept, like markStaleControl) with why it waits. Clearing
+// removes only its own marking: a stale-roster marking set over it (another title) stays.
+const markPending = (control, reason) => {
+  control.dataset.pendingAction = 'true'; control.setAttribute('aria-disabled', 'true'); control.title = reason; control.setAttribute('aria-description', reason);
+};
+const clearPending = (control, reason) => {
+  if (control.dataset.pendingAction !== 'true') return;
+  delete control.dataset.pendingAction;
+  if (control.title === reason) { control.removeAttribute('aria-disabled'); control.removeAttribute('title'); control.removeAttribute('aria-description'); }
+};
 
 /** Preserve an open menu through the roster's periodic DOM rebuild. */
 export function captureInstanceActionMenu(root) {
@@ -20,6 +32,7 @@ export function captureInstanceActionMenu(root) {
   };
 }
 
+/** `report(headline, { detail?, action, instance })` says an action didn't finish: a plain headline, the error text as `detail`. */
 export function instanceActions(doc, instance, { invoke, openLifecycle, done = () => {}, report = () => {},
   scope = '', owner = () => true, extra = [], dispatch, onMenuState = () => {}, onFocusChange = () => {}, shortcut = () => '' }) {
   const key = JSON.stringify([scope, instanceId(instance), instance.createdAt ?? null]);
@@ -59,9 +72,9 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
   };
   // A remote row the kernel does not report addressable has no actions here; the trigger says why.
   const unrouted = !canAddressRemote(instance);
-  trigger.disabled = unrouted || pending.has(key);
-  pending.get(key)?.push({ trigger, unrouted, owns });
+  trigger.disabled = unrouted;
   if (unrouted) trigger.title = rowReason(instance).sentence;
+  else if (pending.has(key)) { const { reason, controls } = pending.get(key); markPending(trigger, reason); controls.push({ trigger, owns }); }
   const close = (restoreFocus = false) => {
     menu.hidePopover();
     if (restoreFocus && owns() && visible(trigger)) trigger.focus();
@@ -72,7 +85,7 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
     menu.style.left = `${Math.max(8, Math.min(anchor.right - size.width, win.innerWidth - size.width - 8))}px`;
     menu.style.top = `${Math.max(8, anchor.bottom + size.height + 8 <= win.innerHeight ? anchor.bottom + 4 : anchor.top - size.height - 4)}px`;
   };
-  // A stale roster marks the trigger aria-disabled (instance-tree.mjs markStaleControl): blocked like `disabled`, focus kept.
+  // A stale roster (instance-tree.mjs markStaleControl) or a pending action marks the trigger aria-disabled: blocked like `disabled`, focus kept.
   const blocked = () => trigger.disabled || trigger.getAttribute("aria-disabled") === "true";
   const open = (action) => {
     if (blocked() || !visible(trigger) || !owns()) return;
@@ -127,20 +140,22 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
     close(true);
     if (action === 'stop' || action === 'retire') {
       if (typeof openLifecycle === 'function') openLifecycle(action, instance);
-      else report('A plan-backed confirmation is required for Stop or Remove.');
+      else report('A plan-backed confirmation is required for Stop or Retire.', { action, instance });
       return; // never fall back to an unguarded invoke('retire')
     }
-    const controls = [{ trigger, unrouted, owns }]; pending.set(key, controls); trigger.disabled = true;
+    const label = plainLabel(descriptors.find(row => row.action === action).label);
+    const entry = { reason: `Waiting for ${label} to finish`, controls: [{ trigger, owns }] };
+    pending.set(key, entry); markPending(trigger, entry.reason);
     try { const result = await invoke(action, instance); if (owns()) done(result, action); }
-    catch (error) { if (owns()) report(error.message, error.result); }
+    catch (error) { if (owns()) report(`${label} didn't finish for ${instance.instance}.`, { detail: String(error?.message || error), action, instance }); }
     finally {
-      if (pending.get(key) === controls) {
-        for (const control of controls) if (control.owns()) control.trigger.disabled = control.unrouted;
+      if (pending.get(key) === entry) {
+        for (const control of entry.controls) if (control.owns()) clearPending(control.trigger, entry.reason);
         pending.delete(key);
       }
     }
   }
-  const descriptors = [...extra, ...[["inspect", "Knowledge & capabilities…"], ...launchAction, ['stop', 'Stop…'], ["retire", "Remove instance…"]]
+  const descriptors = [...extra, ...[["inspect", "Knowledge & capabilities…"], ...launchAction, ['stop', 'Stop…'], ["retire", "Retire instance…"]]
     .map(([action, label, reason]) => ({ action, label, ...(reason ? { reason } : {}) }))];
   for (const descriptor of descriptors) {
     const { action, label, reason, actionId } = descriptor;

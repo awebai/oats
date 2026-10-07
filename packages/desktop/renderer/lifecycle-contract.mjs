@@ -18,24 +18,24 @@ const messages = {
   E_SESSION_UNKNOWN: 'This instance is no longer in the current roster.', E_AMBIGUOUS_INSTANCE: 'Select an exact instance home.',
   E_HOME_MISMATCH: 'The instance home no longer matches this selection.',
   'cli-unavailable': 'Choose a compatible installed OATS CLI.',
-  E_LIFECYCLE_UNAVAILABLE: 'This OATS CLI does not advertise the required lifecycle contract. Update OATS.',
+  E_LIFECYCLE_UNAVAILABLE: "This OATS can't stop or retire instances from Desktop. Update OATS.",
   'unsupported-remote-operation': "This computer's OATS can't route this to the server. Update OATS here.",
-  E_PLAN_REQUIRED: 'Open a fresh Stop or Remove confirmation; unguarded retirement is unavailable.',
-  E_PLAN_EXPIRED: 'This confirmation expired or its server changed. Observe a fresh plan before confirming.',
-  E_PLAN_CHANGED: 'The target or CLI changed. Observe a fresh plan before confirming.',
-  E_OPTION_UNAVAILABLE: 'Review the choices: deleting work requires an owned worktree.',
-  E_PLAN_STALE: 'The kernel reports changed facts. Review the fresh plan and confirm again.',
-  E_PLAN_LIMIT: 'The complete plan exceeds the display limit. No action was submitted.',
-  E_LIFECYCLE_BUSY: 'A lifecycle operation is already in progress. Wait for its recorded outcome.',
+  E_PLAN_REQUIRED: 'Open a fresh Stop or Retire confirmation; unguarded retirement is unavailable.',
+  E_PLAN_EXPIRED: 'This confirmation expired. Review again to check the current state.',
+  E_PLAN_CHANGED: 'The instance or OATS changed. Review again before confirming.',
+  E_OPTION_UNAVAILABLE: 'Only an instance with its own worktree can delete it. Review the choice again.',
+  E_PLAN_STALE: 'Something changed since you opened this. Review it and confirm again.',
+  E_PLAN_LIMIT: 'This would act on more instances than Desktop can show. Nothing was submitted.',
+  E_LIFECYCLE_BUSY: 'Another stop or retire is already running. Wait for it to finish, then review again.',
   E_INSTANCE_RETIRING: 'An instance in this plan is already being retired.',
-  E_CHILDREN_RUNNING: 'Some children could not be stopped. Nothing was retired; other children may already be stopped.',
-  E_SESSION_STOP_FAILED: 'The session did not stop within the bounded wait. Nothing was escalated.',
-  E_WORK_PRESERVATION_FAILED: 'The worktree could not be preserved. The home is kept; earlier retirement steps may have run.',
-  E_WORK_INSPECTION_FAILED: "Retirement was refused: the instance's home or work could not be inspected. The home is kept; its session may already have been stopped, and earlier retirement steps may have run.",
-  E_RETIRE_INCOMPLETE: 'Retirement cleanup is incomplete. Inspect the retained state before another action.',
-  E_CLI_TIMEOUT: 'The CLI did not answer in time.', E_CLI_OUTPUT_LIMIT: 'The CLI response exceeded the safety limit.',
-  E_CLI_PROTOCOL: 'The CLI returned an invalid lifecycle response.', E_CLI_FAILED: 'The lifecycle CLI is unavailable.',
-  E_OUTCOME_UNKNOWN: 'The submitted operation has no confirmed outcome. Observe current state; do not assume no effect.',
+  E_CHILDREN_RUNNING: "A child instance wouldn't stop, so nothing was retired. Other children may already have stopped.",
+  E_SESSION_STOP_FAILED: "The session didn't stop in time. Nothing was forced.",
+  E_WORK_PRESERVATION_FAILED: "Its work couldn't be saved safely, so the home folder is kept. Earlier retirement steps may have run.",
+  E_WORK_INSPECTION_FAILED: "Retirement was refused: OATS couldn't inspect the instance's home or work. The home folder is kept; its session may already have been stopped, and earlier retirement steps may have run.",
+  E_RETIRE_INCOMPLETE: "Retirement didn't finish cleaning up. Check what was kept before trying again.",
+  E_CLI_TIMEOUT: "OATS didn't answer in time.", E_CLI_OUTPUT_LIMIT: "OATS's answer was larger than Desktop reads safely.",
+  E_CLI_PROTOCOL: "OATS answered in a form Desktop can't read.", E_CLI_FAILED: "OATS couldn't be run for this.",
+  E_OUTCOME_UNKNOWN: "OATS didn't confirm the result. Check again before assuming nothing happened.",
   E_FORBIDDEN_FRAME: 'This window cannot request a lifecycle operation.',
 };
 export const lifecycleReason = code => ({ code: Object.hasOwn(messages, code) ? code : 'E_CLI_FAILED', message: messages[code] || messages.E_CLI_FAILED });
@@ -55,7 +55,7 @@ export function lifecycleFailure(code, extra = {}) {
 export function lifecycleOptions(operation, v) {
   if (!object(v)) return null;
   if (operation === 'stop' && Object.keys(v).length === 1 && Object.hasOwn(v, 'recursive') && typeof v.recursive === 'boolean') return { recursive: v.recursive };
-  // Remove has one choice, the worktree. It never deletes a branch: any other key is refused.
+  // Retire has one choice, the worktree. It never deletes a branch: any other key is refused.
   if (operation === 'retire' && Object.keys(v).length === 1 && Object.hasOwn(v, 'discardWorktree')
     && typeof v.discardWorktree === 'boolean') return { discardWorktree: v.discardWorktree };
   return null;
