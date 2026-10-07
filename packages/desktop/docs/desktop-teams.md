@@ -50,6 +50,10 @@ same team as `lfx-ai-engineering/*`). A pattern lists as `except` the more speci
 fall outside, as in "all souls of p except x". Where `"*"` sets a default, no soul falls back to the
 `defaultTeam`, and its row says so quietly. Before team model 3 the function answers null, and the
 card keeps the team model 2 "Address … Who may join …" line from `whoMayJoin`.
+This is a second reading of the kernel's resolution in the renderer. `test/desktop-team-audience-kernel.test.mjs`
+(at the repository root) pins it to the kernel: for each fixture it resolves every concrete soul with
+`soulTeams` and checks each team's audience against it. A change to resolution in `lib/teams.mjs` must
+keep that test green, or change `teamAudience` with it.
 
 A card lists its members (below) under a "Members · N" head. Within a deployment group the rows
 share their columns (a subgrid), so the state words line up.
