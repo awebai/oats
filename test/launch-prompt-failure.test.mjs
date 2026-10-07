@@ -242,3 +242,90 @@ if (process.env.OATS_INSTANCE === '${name}') {
     assert.equal(metadata(anchor.home).parentInstance, undefined);
   } else assert.equal(existsSync(join(anchor.home, 'instance.json')), false, 'removed anchor metadata is never resurrected');
 });
+
+
+for (const phase of ['spawn-metadata', 'start-pending', 'start-metadata']) for (const auditFails of [false, true]) test(`${phase} escalation has a checked incomplete receipt (audit failure ${auditFails})`, async t => {
+  const name = 'recording-escalation';
+  const { fx, home } = setup(t, name);
+  const spawning = phase.startsWith('spawn');
+  if (!spawning) await fx.spawn('dev', { name, launchConfig: 'stub', launch: false });
+  const originalWrite = fs.writeFileSync, originalAppend = fs.appendFileSync;
+  const suffix = phase === 'start-pending' ? '.oats-start-pending.json' : 'instance.json';
+  const failedPath = join(home, `${suffix}.tmp-${process.pid}`);
+  let failures = 0;
+  const writes = t.mock.method(fs, 'writeFileSync', (path, value, ...rest) => {
+    if (path === failedPath && typeof value === 'string' && JSON.parse(value).launchPrompts) {
+      failures++;
+      throw new Error('injected prompt receipt write failure');
+    }
+    return originalWrite(path, value, ...rest);
+  });
+  const appends = t.mock.method(fs, 'appendFileSync', (path, value, ...rest) => {
+    if (auditFails && typeof value === 'string') {
+      let row; try { row = JSON.parse(value); } catch { /* other append */ }
+      if (row?.kind === 'launch-prompt' && row.data?.status === 'incomplete') throw new Error('injected incomplete audit failure');
+    }
+    return originalAppend(path, value, ...rest);
+  });
+  syncBuiltinESMExports();
+  let error;
+  try {
+    await assert.rejects(spawning
+      ? fx.spawn('dev', { name, launchConfig: 'stub', launch: true })
+      : fx.inEnv(() => startInstanceSession(home)), e => { error = e; return e.code === 'E_SPAWN_INCOMPLETE'; });
+  } finally { writes.mock.restore(); appends.mock.restore(); syncBuiltinESMExports(); }
+  assert.ok(failures > 0);
+  assert.equal(error.details.retained, true);
+  assert.equal(existsSync(home), true);
+  const outcome = error.details.launchPrompts;
+  assert.equal(outcome.status, 'incomplete');
+  assert.deepEqual(outcome.answers, []);
+  assert.equal(outcome.reason, auditFails ? 'launch prompt audit failed' : phase === 'start-pending' ? 'launch prompt pending receipt incomplete' : 'launch prompt metadata recording incomplete');
+  assert.ok(outcome.receipt.slice(0, -1).some(receipt => receipt.row?.data?.status === 'blocked'), 'prior controller evidence is retained');
+  const receipt = outcome.receipt.at(-1);
+  assert.equal(receipt.ok, !auditFails);
+  assert.equal(receipt.row.data.status, 'incomplete');
+  assert.ok(receipt.results.length > 0);
+  assert.ok(receipt.results.every(result => result.ok === !auditFails));
+  const events = readEvents(home).events.filter(row => row.kind === 'launch-prompt');
+  assert.equal(events.at(-1).data.status, auditFails ? 'blocked' : 'incomplete');
+});
+
+for (const spawning of [false, true]) test(`${spawning ? 'spawn' : 'start'} refuses to audit or write into a replaced home after controller completion`, async t => {
+  const name = 'replaced-after-controller';
+  const { fx, home } = setup(t, name);
+  if (!spawning) await fx.spawn('dev', { name, launchConfig: 'stub', launch: false });
+  const workspaceLog = join(fx.dep, '.agents', 'events', `dev--${name}.jsonl`);
+  const originalAppend = fs.appendFileSync;
+  const originalHome = join(fx.base, 'original-home');
+  const replacement = JSON.stringify({ instance: name, createdAt: 'replacement', workspace: { deployment: join(fx.base, 'untrusted-deployment') } });
+  let swapped = false, workspaceBytes;
+  const mock = t.mock.method(fs, 'appendFileSync', (path, value, ...rest) => {
+    const result = originalAppend(path, value, ...rest);
+    let row; try { row = JSON.parse(value); } catch { /* other append */ }
+    if (!swapped && path === workspaceLog && row?.kind === 'launch-prompt' && row.data?.status === 'blocked') {
+      swapped = true;
+      fs.renameSync(home, originalHome);
+      mkdirSync(home);
+      writeFileSync(join(home, 'instance.json'), replacement);
+      workspaceBytes = readFileSync(workspaceLog, 'utf8');
+    }
+    return result;
+  });
+  syncBuiltinESMExports();
+  let error;
+  try {
+    await assert.rejects(spawning
+      ? fx.spawn('dev', { name, launchConfig: 'stub', launch: true })
+      : fx.inEnv(() => startInstanceSession(home)), e => { error = e; return e.code === 'E_SPAWN_INCOMPLETE'; });
+  } finally { mock.mock.restore(); syncBuiltinESMExports(); }
+  assert.equal(swapped, true);
+  assert.equal(error.details.launchPrompts.status, 'incomplete');
+  assert.equal(error.details.launchPrompts.reason, 'launch home identity changed; metadata retained at original home');
+  assert.deepEqual(error.details.launchPrompts.receipt.at(-1), { ok: false, results: [] }, 'zero audit destinations attempted, no fabricated row');
+  assert.ok(error.details.launchPrompts.receipt.slice(0, -1).some(receipt => receipt.row?.data?.status === 'blocked'));
+  assert.deepEqual(fs.readdirSync(home), ['instance.json']);
+  assert.equal(readFileSync(join(home, 'instance.json'), 'utf8'), replacement);
+  assert.equal(readFileSync(workspaceLog, 'utf8'), workspaceBytes, 'no repointed workspace audit');
+  assert.equal(existsSync(join(fx.base, 'untrusted-deployment')), false);
+});

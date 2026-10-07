@@ -38,6 +38,9 @@ can substitute for the accepted capture.
   recorded; the pane may already be active. Inspect it; never automatically
   resend or relaunch. This bounded acceptance is not live-account, connection
   or native-receive proof, nor a blanket production-success claim.
+- Ordinary non-opted-in parent spawns keep their post-launch lineage timing,
+  but now refuse an anchor edited or removed since the original pre-hook
+  snapshot instead of overwriting concurrent changes with stale metadata.
 - Retirement conservatively keeps a changed-home recovery copy after a blocked
   spawn's kernel metadata transition, even if no authored bytes changed.
   Runtime endpoint mismatches remain refused.

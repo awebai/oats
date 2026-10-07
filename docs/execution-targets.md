@@ -609,13 +609,29 @@ Both spawn and start return `E_SPAWN_INCOMPLETE` for retained prompt failures.
 With `launchPrompts.status` set to `blocked`, the home, actual terminal target,
 provider effects and committed parent lineage are retained. Only an opted-in
 launch commits a new parent link before dispatch; ordinary launches keep their
-post-launch lineage commit and compensate a failed anchor write. `launchPrompts` records `status`,
+post-launch lineage commit and compensate a failed anchor write. That preserves
+timing, not overwrite behavior: even non-opted-in parent spawns now refuse an
+anchor edited or removed since the original pre-hook snapshot, instead of
+replacing concurrent changes with stale metadata. `launchPrompts` records `status`,
 `answers`, `reason` and event `receipt`; unknown prompts use
 `blocked: unexpected prompt`. Status `incomplete` means the audit could not be
 completed, including a possible key followed by an audit failure. It is
 not proof that no input was sent. Both outcomes record `launched:false` while
 retaining the real process/endpoint for inspection: this is never permission
 to allocate another harness.
+
+If metadata or pending-receipt recording fails after controller completion,
+the API escalates to `incomplete` and appends a checked `launch-prompt` incomplete
+event, retaining prior answers and receipts. Failed audit writes remain
+`incomplete`; they never authorize another key or retry.
+
+A replaced or unverifiable launch home is the explicit auditing exception.
+There is no new home or deployment row: resolving either log through current
+home metadata could address the replacement incarnation. The API reports
+`launch home identity changed; metadata retained at original home`, preserves
+prior evidence, and adds `{ok:false, results:[]}` to the receipt array. That
+entry means zero audit destinations were attempted, not a successful write.
+No audit or metadata write is directed into the replacement home.
 
 A blocked result can follow a successfully submitted Enter. The accepted
 completion families cover exact installed-plugin and plugin-absent banners;
