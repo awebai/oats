@@ -13,8 +13,9 @@ reference pages ([workspaces](workspaces.md), [souls and instances](souls-and-in
   catalog (`package-catalog.json`). It has no runtime dependencies.
 - **`@awebai/oats-pi`** (`packages/pi/`): a thin pi adapter that exposes an
   instance's own resources. It registers no agent tools.
-- **`oats.framework`** (`oats-package/`): the `oats.core`, `oats.setup` and
-  `oats.knowledge-theory` capabilities and the `knowledge-theory-expert` soul,
+- **`oats.framework`** (`oats-package/`): the `oats.core`, `oats.setup`,
+  `oats.support` and `oats.knowledge-theory` capabilities and the
+  `knowledge-theory-expert` soul,
   released as a package under its own `oats-framework/v<version>` tags.
   `oats.core` is the one with executables: its spawn and launch hook and the
   Claude Code waiting emitter (`capabilities/oats-core/bin/`).

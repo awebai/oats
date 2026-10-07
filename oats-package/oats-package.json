@@ -1,8 +1,8 @@
 {
   "package": "oats.framework",
-  "version": "1.7.0",
-  "description": "Explicit OATS operation and setup guidance plus optional reference knowledge theory, and the knowledge-theory-expert package soul.",
+  "version": "1.8.0",
+  "description": "Explicit OATS operation and setup guidance, the support desk role, optional reference knowledge theory, and the knowledge-theory-expert package soul.",
   "compatibility": { "oats": ">=0.24.0" },
-  "capabilities": ["capabilities/oats-knowledge-theory", "capabilities/oats-core", "capabilities/oats-setup"],
+  "capabilities": ["capabilities/oats-knowledge-theory", "capabilities/oats-core", "capabilities/oats-setup", "capabilities/oats-support"],
   "souls": ["souls/knowledge-theory-expert"]
 }

@@ -102,7 +102,9 @@ souls) is ordinary capability content: **`oats.core`** (package
 `oats.framework`). Workspaces give it to every soul through
 `defaults.capabilities: { oats.core: { from: package } }`; a soul may say
 `oats.core: off`. **`oats.setup`** (same package) carries the whole-architecture
-knowledge an onboarding expert needs. Neither is kernel magic; the kernel still
+knowledge an onboarding expert needs, and **`oats.support`** (same package)
+is the support desk role: a publicly reachable soul that tickets requests and
+hands them to a support maintainer. None of them is kernel magic; the kernel still
 composes its own instance-boundary and work-mode briefings, and the "You run
 on OATS" briefing is `oats.core`'s inject: a soul without `oats.core` gets no
 OATS operating instructions, and `oats doctor --soul` says so. Its capability
