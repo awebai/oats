@@ -60,7 +60,7 @@ import { readEvents, setWaiting, incarnationOf } from "../lib/instance-events.mj
 
 const rawArgs = process.argv.slice(2);
 /** The kernel's switches: a value never rides one (`--yolo=false` must not turn yolo on). */
-const KERNEL_SWITCHES = new Set(["allow-child-spawns", "apply", "check", "clear", "delete-branch", "discard-worktree", "dry-run", "ephemeral", "force", "help", "host", "install-oats", "json", "keep-dir", "keep-env", "no-child-spawns", "no-launch", "no-recursive", "no-yolo", "plan", "policy", "preview", "print", "replace", "self", "verbose", "yes", "yolo"]);
+const KERNEL_SWITCHES = new Set(["allow-child-spawns", "apply", "check", "clear", "delete-branch", "discard-worktree", "dry-run", "ephemeral", "force", "help", "host", "install-oats", "instructions", "json", "keep-dir", "keep-env", "no-child-spawns", "no-launch", "no-recursive", "no-yolo", "plan", "policy", "preview", "print", "replace", "self", "verbose", "yes", "yolo"]);
 /** `--flag=value` is `--flag value`: every kernel reader (flag(), valueFlag(), the onboard and
  *  routed-command loops) then applies the spaced form's validation to it. `problem` is an empty
  *  `--flag=`, a switch given a value, or a value that is itself an option (`--model=--yolo`):

@@ -16,7 +16,7 @@
 // - the cap, and doctor --soul's home-relative capability blocks.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { packageRepo } from "./helpers/package-repo.mjs";
@@ -265,6 +265,43 @@ test("no scratch home can be made (an unwritable TMPDIR): composedInstructions n
   const problem = result.problems.find((p) => String(p.message).startsWith("composedInstructions:"));
   assert.deepEqual(Object.keys(problem).sort(), ["code", "message"]);
   assert.equal(problem.code, "E_MATERIALIZE_HOME");
+});
+
+test("a canonical AGENTS.md that cannot be read (unreadable, or a directory): composedInstructions null with an E_SOUL_INCOMPLETE problem, still one ok envelope", (t) => {
+  const fx = v2Deployment({ souls: { dev: { soul: withOps() } }, capabilities: ops });
+  t.after(fx.cleanup);
+  const file = okResult(fx.cli(["inspect", "--soul", "dev", "--json"]), "inspect --soul").souls[0].instructions.file;
+  const refused = (what) => {
+    const { result, ci } = inspectComposed(fx, "dev", { tmp: privateTmp(fx, what) });
+    assert.equal(ci, null, what);
+    const problems = result.problems.filter((p) => String(p.message).startsWith("composedInstructions:"));
+    assert.equal(problems.length, 1, `${what}: ${JSON.stringify(result.problems)}`);
+    assert.deepEqual(Object.keys(problems[0]).sort(), ["code", "message"]);
+    assert.equal(problems[0].code, "E_SOUL_INCOMPLETE", what);
+  };
+  chmodSync(file, 0o000);
+  try { refused("unreadable"); } finally { chmodSync(file, 0o644); }
+  const text = readFileSync(file, "utf8");
+  rmSync(file);
+  mkdirSync(file);
+  try { refused("directory"); } finally { rmSync(file, { recursive: true }); writeFileSync(file, text); }
+});
+
+test("--instructions is a switch: a value is refused (E_BAD_ARGS) before anything is composed", (t) => {
+  const fx = v2Deployment({ souls: { dev: { soul: withOps() } }, capabilities: ops });
+  t.after(fx.cleanup);
+  for (const arg of ["--instructions=false", "--instructions=true"]) {
+    const tmp = privateTmp(fx, arg.slice(-4));
+    const r = fx.cli(["inspect", "--soul", "dev", arg, "--json"], { env: { TMPDIR: tmp } });
+    assert.notEqual(r.status, 0, arg);
+    const lines = r.stdout.trim().split("\n");
+    assert.equal(lines.length, 1, `one envelope: ${r.stdout}`);
+    const j = JSON.parse(lines[0]);
+    assert.equal(j.ok, false);
+    assert.equal(j.error.code, "E_BAD_ARGS");
+    assert.match(j.error.message, /--instructions takes no value/);
+    assert.deepEqual(readdirSync(tmp), [], `${arg}: nothing composed`);
+  }
 });
 
 test("composeSoulInstructions caps the text and clamps every range: a cut part ends at the cap, later parts are listed empty at it, a cut body too", async (t) => {
