@@ -19,8 +19,8 @@ description: >-
 
 # Teams: configuration and eligibility
 
-For the contract and rationale, see [Teams](https://github.com/awebai/oats/blob/main/docs/workspaces.md#teams)
-and [team model 3](https://github.com/awebai/oats/blob/main/docs/design/2026-10-02-team-model-3.md).
+For the installed contract and rationale, see `docs/workspaces.md` (“Teams”)
+and `docs/design/2026-10-02-team-model-3.md` under `oats root`.
 These cards are self-contained for execution. Teams route messages; they never
 restrict capabilities, grant trust, or partition knowledge.
 

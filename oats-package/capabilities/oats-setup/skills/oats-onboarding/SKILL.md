@@ -92,10 +92,15 @@ For current identity/team inventory, use `/oats-aweb` “Who you are” and
 “Find who to talk to” in that identity's own home. A roster does not establish
 account authority or identify the coordinator.
 
-**Success:** enumerate confirmed members, locked packages, available souls,
-team mappings/defaults and reusable host state against the intake.
+**Success:** the workspace status envelope's `result.workspace.local` is
+exactly `D/oats-local.yaml`. Only then enumerate confirmed members, locked
+packages, available souls, team mappings/defaults and reusable host state
+against the intake.
 **Next:** use card 3 for a new deployment, otherwise card 4.
-**Error → remedy:** `E_LOCAL_MISSING` → if `D` is the authorized new directory,
+**Error → remedy:** a different `result.workspace.local` path → `D` is inside
+another deployment. For a new deployment use card 3; for reuse, stop and name
+the deployment-path blocker to its owner. Never sync or edit the resolved
+ancestor. `E_LOCAL_MISSING` → if `D` is the authorized new directory,
 use card 3; if reuse was selected, resolve the incorrect/missing deployment
 with its owner before writing. `no-backlink`, `backlink-elsewhere`,
 `not-listed`, `cannot-read` → correct the shared membership declaration or
@@ -132,7 +137,10 @@ retrying. Do not overwrite partial or existing state to force onboarding.
 ## 4. Prepare host settings and sync
 
 **Prerequisites/context:** selected deployment and authorized host settings;
-merged shared changes, if any; OATS 0.41.0.
+merged shared changes, if any; OATS 0.41.0. Before any host edit or sync, run
+`oats workspace status --dir D --json` and require `result.workspace.local`
+to equal `D/oats-local.yaml`; a different path uses card 2's deployment-path
+remedy, without editing or syncing the ancestor.
 Use the installed provider's settings contract for knowledge bindings/state
 paths, messaging roots or resident custody. Bind the project's own knowledge
 aliases; never substitute a central base owner or copy a running home.
@@ -148,8 +156,9 @@ oats workspace status --dir D --json
 ```
 
 **Effects:** resolves packages and writes the lock; refreshes shared state.
-**Success:** confirmed members, correct locked pins, required host bindings
-and clones present. **Next:** card 5.
+**Success:** status still reports `result.workspace.local` exactly
+`D/oats-local.yaml`; confirmed members, correct locked pins, required host
+bindings and clones are present. **Next:** card 5.
 **Error → remedy:** `E_PATH symlink not allowed` from a provider → select a
 real absolute host path within the authorized scope (on macOS `/private/tmp`
 rather than `/tmp`); preserve the failing output and rerun the provider check.
@@ -177,7 +186,7 @@ missing provider procedure. A heading agreement is not a release receipt.
 | Additional team under an owned namespace | `/oats-aweb` §8: BYOT/controller create; use only the selected domain authority |
 | Existing LOCAL deployment root admission | `/oats-aweb` §8 “LOCAL team join and resume”: labelled join with private token input, selected service and root alias |
 | Interrupted LOCAL root join | `/oats-aweb` §8 “LOCAL team join and resume”: accepted-state resume without another token; read back uncertain effects first |
-| LOCAL or existing GLOBAL member invitation | `/oats-aweb` §8 “Invitations and certificate ownership”: distinguish admission from spawn authority |
+| LOCAL or existing GLOBAL member invitation | `/oats-aweb` §8 “Invitations and certificate ownership”: external-home invite issuance is blocked pending supported owner context; `id team accept-invite` remains supported. Distinguish admission from spawn authority |
 | Fresh/reused GLOBAL resident and grant seat | `/oats-aweb` §8 “GLOBAL residents and grant seats”, linking its `references/existing-team-global-resident.md` (“A GLOBAL resident in an existing hosted team”); owner custody first, then selected grant settings for card 7 |
 | LOCAL wider-team join/leave | `/oats-aweb` §5 “5. Teams: join and leave”; run in target home, eligibility from `/oats-teams` |
 | Remove a label | `/oats-teams`, configuration removal; it does not revoke an identity |
@@ -258,9 +267,9 @@ oats spawn S --dir D --name N --harness HARNESS --task-file F --no-launch --expe
 **Effects:** creates the home/work and runs provider hooks, without launching.
 **Success:** exit success and returned `H` exists; exactly one “You run on OATS”
 briefing, expected composed skills, `Comms:` delivery route and recorded
-`defaultTeam.team` matching the selected team. Compare composed onboarding
-and teams skill wording with the selected source/version. A failed scaffold
-must never be followed by session start.
+`defaultTeam.team` matching the selected team. The scaffold's recorded
+`instance.json` modules name the selected package versions/commits. A failed
+scaffold must never be followed by session start.
 **Next:** card 8.
 **Error → remedy:** `E_DECISION_STALE` → repeat card 6 and inspect the change;
 `E_REQUIRED_HOOK_FAILED` → retain private stdout/stderr/exit, inspect rollback
