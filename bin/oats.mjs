@@ -30,7 +30,7 @@ import {
   LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
   officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, isCapturedHome, capturedHomeRefusal, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
-  findInstanceHome, findInstanceHomes, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, recordedKernelBin, launchConfigsAt, launchReportFor, explicitInstanceName, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
+  findInstanceHome, findInstanceHomes, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, stableSoulId, preparedSoulIdOf, recordedKernelBin, launchConfigsAt, launchReportFor, explicitInstanceName, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
   FAILED_SPAWN_BRANCH_LEFT, RETIRE_DELETE_BRANCH_REFUSED,
 } from "../lib/core.mjs";
 import {
@@ -3094,10 +3094,13 @@ async function capabilityCommand() {
     // as a spawn preview reads it (the per-commit copy a spawn left under the agents root, else a
     // temporary fetch removed when the command ends). Read only when the command runs (after its
     // --help). A soul that cannot be read refuses the command: it never runs with OATS_SOUL unset.
+    // Its name and stable id are the ones a spawn of it records and hands its hooks (OATS_AGENT,
+    // OATS_SOUL_ID): the agents-root name and the prepared entry's id, never the copy's path.
     const soul = async () => {
-      const { previewWorkspaceSoul } = await import("../lib/instance-resolution.mjs");
+      const { previewWorkspaceSoul, agentDirOf } = await import("../lib/instance-resolution.mjs");
       const entry = hit.prepared?.soulEntry;
-      try { const p = await previewWorkspaceSoul(hit.prepared, join(hit.deployment, "agents")); return { dir: p.soulDir, cleanup: p.cleanup }; }
+      const identity = entry ? { agent: agentDirOf(entry), id: preparedSoulIdOf(entry) } : {};
+      try { const p = await previewWorkspaceSoul(hit.prepared, join(hit.deployment, "agents")); return { dir: p.soulDir, cleanup: p.cleanup, ...identity }; }
       catch (e) {
         throw Object.assign(new Error(`oats ${cmd}: cannot read soul ${flag("soul")} at ${String(entry?.commit ?? "?").slice(0, 12)}, so the command would run without OATS_SOUL; nothing was run: ${e.message}`),
           { code: typeof e?.code === "string" && e.code.startsWith("E_") ? e.code : "E_REMOTE_UNREADABLE", details: { soul: flag("soul"), repoKey: entry?.repoKey ?? null, commit: entry?.commit ?? null } });
@@ -3177,7 +3180,10 @@ async function capabilityCommand() {
       catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details); throw e; }
       teamCtx = homeTeamCtx(live);
     }
-    return runManifestCommand(m, { settings: capSettings[m.capability] || {}, origins: capOrigins[m.capability] }, teamCtx, () => m._dir, () => ({ dir: soulDir, cleanup: () => {} }));
+    // The home's soul as its lifecycle hooks get it: the recorded name and stableSoulId's id.
+    const agent = homeMeta.meta.agent;
+    return runManifestCommand(m, { settings: capSettings[m.capability] || {}, origins: capOrigins[m.capability] }, teamCtx, () => m._dir,
+      () => ({ dir: soulDir, cleanup: () => {}, agent, id: stableSoulId({ home: instanceHome, soulDir, agentName: agent }) }));
   }
 
   /** Help / unknown-command / spec validation / exec — shared by every context.
@@ -3218,14 +3224,15 @@ async function capabilityCommand() {
     try { abs = capabilityExecutablePath(withDir, script); }
     catch (e) { bail("E_CAPABILITY_BROKEN", e.message); }
     if (!abs) bail("E_CAPABILITY_BROKEN", `${cmd} ${sub}: script not found (${join(dir, script)})`);
-    // The soul the command acts for → { dir, cleanup }: a home's recorded soul directory, or (operator
-    // dispatch) the soul read at its resolved commit, whose temporary copy goes when this process exits.
-    let soulDir;
-    try { const read = await soul(); soulDir = read.dir; process.once("exit", read.cleanup); }
+    // The soul the command acts for → { dir, cleanup, agent, id }: a home's recorded soul directory, or
+    // (operator dispatch) the soul read at its resolved commit, whose temporary copy goes when this
+    // process exits; with its name and stable id, as the soul's lifecycle hooks get them.
+    let soulDir, soulAgent, soulId;
+    try { const read = await soul(); soulDir = read.dir; soulAgent = read.agent; soulId = read.id; process.once("exit", read.cleanup); }
     catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) bail(e.code, e.message, e.details); throw e; }
-    // OATS_SOUL is the recorded soul or nothing: an ambient value inherited from the
-    // invoking process names some other soul (a coordinator's own), never this one.
-    const { OATS_SOUL: _ambientSoul, ...inherited } = process.env;
+    // OATS_SOUL, OATS_AGENT and OATS_SOUL_ID are this command's soul or nothing: an ambient value
+    // inherited from the invoking process names some other soul (a coordinator's own), never this one.
+    const { OATS_SOUL: _ambientSoul, OATS_AGENT: _ambientAgent, OATS_SOUL_ID: _ambientSoulId, ...inherited } = process.env;
     await readSession?.closeBatches(); // no idle `git cat-file --batch` child held for the provider's whole run
     const r = spawnSync("node", [abs, ...rest, ...rawArgs.slice(2)], { stdio: "inherit", env: {
       ...inherited, OATS_CAPABILITY: m.capability,
@@ -3245,6 +3252,10 @@ async function capabilityCommand() {
       // The soul the command acts for (an instance home's recorded soul directory):
       // homes carry no soul link, so providers read it here.
       ...(soulDir ? { OATS_SOUL: soulDir } : {}),
+      // Its name and stable identity, the values its hooks get: what a provider keys durable state
+      // on (OATS_SOUL is a per-commit or temporary copy, so never a key).
+      ...(typeof soulAgent === "string" && soulAgent ? { OATS_AGENT: soulAgent } : {}),
+      ...(typeof soulId === "string" && soulId ? { OATS_SOUL_ID: soulId } : {}),
     } });
     // Child never ran (spawn error): nothing reached stdout — keep the envelope contract.
     if (r.error) bail("E_CAPABILITY_BROKEN", `oats ${cmd} ${sub}: ${r.error.message || r.error}`);

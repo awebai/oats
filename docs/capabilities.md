@@ -443,6 +443,36 @@ A spawn hook also gets `OATS_TASK`, `OATS_REPO`, `OATS_BRANCH`, `OATS_WORK`,
 preview (only a preview-aware hook does, below); on a real run
 `OATS_LAUNCH_PREVIEW` is not set.
 
+A dispatched command (`oats <namespace> <command>`, from an instance home or
+from the deployment directory) receives:
+
+- `OATS_CAPABILITY`;
+- `OATS_CLI_BIN`;
+- `OATS_SETTINGS`, `OATS_SETTINGS_ORIGINS`: the home's recorded payload, or
+  the soul's merged payload from the deployment;
+- the team and workspace variables, as hooks get them;
+- `OATS_SOUL`: the home's recorded soul directory, or from the deployment the
+  soul's source at the resolved commit (the copy a spawn left under the
+  agents root, else a temporary copy removed when the command ends). It is a
+  per-commit or temporary path, so a provider never keys durable state on it;
+- `OATS_AGENT` and `OATS_SOUL_ID` (0.43.3), with the values that soul's
+  hooks get: the soul's agents-root name (`<package>--<soul>` for a package
+  soul, see [Package souls](packages.md#package-souls)) and its stable id
+  (`<repoKey>#<soul>`, or `package:<id>#<soul>`; for a home, the id its
+  spawn recorded). One soul gives the same values from its home, from the
+  deployment (with `--soul` or as the default soul) and in its hooks. Key
+  durable per-soul state on `OATS_SOUL_ID`. A provider that relies on them
+  declares `compatibility.oats: ">=0.43.3"`: an earlier kernel sets
+  neither, so a value a command sees there is the caller's.
+
+An `OATS_SOUL`, `OATS_AGENT` or `OATS_SOUL_ID` in the caller's environment is
+removed: it names another soul (a coordinator's, an outer command's). With
+no soul, the variable is absent. The kernel sets no other hook variable
+(`OATS_EVENT`, `OATS_LAYER`, `OATS_LEVEL`, `OATS_CONTEXT`, `OATS_WORKSPACE`,
+`OATS_ROOT`, `OATS_META`, the spawn and launch extras). `OATS_INSTANCE`,
+`OATS_INSTANCE_HOME` and `OATS_HOME` are neither set nor removed: inside an
+instance session they are the session's.
+
 `OATS_SETTINGS_ORIGINS` says where each leaf of
 `OATS_SETTINGS` came from: a JSON object from a JSON pointer to `{ kind, at }`,
 `kind` being `manifest-default`, `workspace`, `soul`, `host`, `spawn` or
