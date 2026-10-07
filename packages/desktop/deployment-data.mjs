@@ -298,7 +298,7 @@ const PACKAGE_ID = /^[a-z0-9][a-z0-9._-]{0,127}$/; // the kernel's package-id gr
 // The kernel's soul key (K1's pattern): '*' never names one soul, so it is not a row key.
 const SOUL_KEY = /^(?:[a-z0-9][a-z0-9._-]*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const soulKey = v => typeof v === 'string' && v.length <= 256 && SOUL_KEY.test(v);
-/** A soul row's `capabilities` (feature souls-capabilities, OATS 0.44.2): the soul's composed capabilities
+/** A soul row's `capabilities` (feature souls-capabilities, OATS 0.45.0): the soul's composed capabilities
  * (turned-off ones are not listed), each in `oats capabilities`' own row keys — `{name, kind: 'member', repoKey}`
  * or `{name, kind: 'package', package}`; the kernel reports no external entry — plus `from` ('soul' | 'workspace';
  * 'soul' when it is both). `null`: the soul did not resolve (exactly when it is not spawnable); `[]` composes
