@@ -1,0 +1,47 @@
+{
+  "source": "oats-desktop-developer-capabilities-used-by: a real capture of the kernel feature souls-capabilities (OATS 0.44.2, awebai/oats#745), run in an oats tree at main 2f8c60b9 (#745 merged) with its own test helpers: capture.mjs wrote the raw documents, import-capture.mjs these files",
+  "scenario": "The kernel PR's soulCapabilities fixture (test/desktop-facts.test.mjs): v2Deployment + packageRepo (acme.pkg v1.0.0, package soul keeper declaring acme-tool), workspace defaults knowledge notes, messaging chat, capabilities acme.ws, acme.off and acme-tool (package); dev declares acme.own, acme_z, acme.ws, turns acme.off off and sets knowledge: none. Extended for Desktop: dev also declares acme.private (a manifest with private: true); a member soul keeper (the package soul's bare name) declares acme.own; a soul off is disabled in oats-local.yaml (souls.disabled), so it is not spawnable and its capabilities are null; scribe takes only the workspace defaults; quiet, spawnable, turns every default off and empties both slots, so its capabilities are [].",
+  "redactions": [
+    "<base> (deployment scratch) → /fixture/base",
+    "<pkg> (package repo scratch) → /fixture/pkg"
+  ],
+  "kernel": {
+    "pr": "awebai/oats#745",
+    "commit": "2f8c60b9d64309e1108de52f449dd3ced237b89c"
+  },
+  "files": {
+    "version": {
+      "argv": [
+        "oats",
+        "version",
+        "--json"
+      ],
+      "cwd": "<base>/deployment",
+      "exit": 0,
+      "sourceSha256": "8a16a10913ce4d9fcc0e756c0160cb5d0086a20ed0c2256b56c5ee9f0e5ff504",
+      "fixtureSha256": "a52b547c48df404daad5b7ea6e0645822dce972cc6bab777022782989871ea34"
+    },
+    "souls": {
+      "argv": [
+        "oats",
+        "souls",
+        "--json"
+      ],
+      "cwd": "<base>/deployment",
+      "exit": 0,
+      "sourceSha256": "f610407ff560bb57aa11c564384c88461cf61d611074fb408bc015520350d471",
+      "fixtureSha256": "111e20cfb68b3e86c125863213fd1f1cb9f13706a1a80e2cecb09b105546e1d7"
+    },
+    "capabilities": {
+      "argv": [
+        "oats",
+        "capabilities",
+        "--json"
+      ],
+      "cwd": "<base>/deployment",
+      "exit": 0,
+      "sourceSha256": "431ce1283a78496549b6038cb2247c8530f8e6587bdfdca1e457e467643793c8",
+      "fixtureSha256": "055e5320dbf6c5f2f8443918870124f3d8ecfbc25aab6be2a681b97fdc06a98e"
+    }
+  }
+}

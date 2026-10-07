@@ -66,7 +66,7 @@ async function setup(t, { status = 'workspace-status', cli = CLI, sync, teams, w
   };
 }
 
-test('Capabilities is the kernel catalog: counts, jump pills, and Capability | Source | Used by in v2 terms', async t => {
+test('Capabilities is the kernel catalog: counts, jump pills, and Capability | Used by in v2 terms (the source in the group heading and the accessible name)', async t => {
   const u = await setup(t);
   // Workspace v4: the tab bar counts capabilities, so the catalog is read once on mount (any tab).
   assert.deepEqual(u.syncCalls(), [{ action: 'read' }], 'exactly one read; never a sync');
@@ -76,14 +76,14 @@ test('Capabilities is the kernel catalog: counts, jump pills, and Capability | S
   // Workspace v4.1: the section jump is one segmented group (navigation: aria-current); each capability is a row card under a column head.
   assert.deepEqual([...u.doc.querySelectorAll('.capability-nav button')].map(el => [el.dataset.jump, el.textContent, el.getAttribute('aria-current')]),
     [['workspace', 'Workspace owned6', 'true'], ['packages', 'Packages4', null]]);
-  assert.deepEqual([...u.doc.querySelectorAll('[data-section=workspace] .catalog-head span')].map(el => el.textContent), ['', 'Capability', 'Source', 'Used by', '']);
+  assert.deepEqual([...u.doc.querySelectorAll('[data-section=workspace] .catalog-head span')].map(el => el.textContent), ['', 'Capability', 'Used by', '']);
   assert.equal(u.rows().length, 10);
   const row = name => u.rows().find(el => el.dataset.capability === name);
-  // Source: the package and its pinned version, or the member repository at its latest.
-  assert.equal(row('oats.okf').querySelector('.source-chip').dataset.source, 'package');
-  assert.equal(row('oats.okf').querySelector('.source-chip').textContent, 'oats.okf2.1.3');
-  assert.equal(row('nw-brand-voice').querySelector('.source-chip').dataset.source, 'member');
-  assert.equal(row('nw-brand-voice').querySelector('.source-chip').textContent, 'marketinglatest');
+  // Source: no column (the group heading names it); the card's accessible name still says it — the package and
+  // its pinned version, or the member repository at its latest.
+  assert.equal(u.doc.querySelector('[data-section] .catalog-row .source-chip, .catalog-source'), null, 'no Source cell');
+  assert.equal(row('oats.okf').getAttribute('aria-label'), 'oats.okf, capability, from oats.okf 2.1.3');
+  assert.equal(row('nw-brand-voice').getAttribute('aria-label'), 'nw-brand-voice, capability, from marketing latest');
   assert.doesNotMatch(u.doc.querySelector('.workspace-discovery').textContent, APPROVAL_TEXT);
   // Used by = souls whose instances record the module (roster module rows).
   const used = capabilityUse(instances, 'nw-release-tooling');
@@ -194,7 +194,7 @@ test('the view search narrows every section by capability name', async t => {
   assert.equal(search.closest('.ws-toolbar').hidden, true, 'the search belongs to Capabilities');
 });
 
-test('three sections: Workspace owned, Repo owned (grouped by repo, only when the CLI advertises capabilities-private), then Packages', async t => {
+test('three sections: Workspace owned, Repo owned (grouped by repo, only when the CLI advertises capabilities-private), then Packages grouped by package', async t => {
   const sections = capabilitySections(fx('f7/capabilities').result.capabilities);
   assert.deepEqual(sections.repo.map(r => r.name), ['nw-platform-runbook'], 'the kernel\'s private: true row (#185)');
   const withFeature = { ...CLI, features: [...CLI.features, 'capabilities-private'] };
@@ -210,7 +210,17 @@ test('three sections: Workspace owned, Repo owned (grouped by repo, only when th
   assert.equal(group.querySelector('svg').innerHTML, iconElement(u.doc, 'repo').innerHTML, 'the repository icon');
   const runbook = u.doc.querySelector('[data-section=repo] .catalog-row[data-capability=nw-platform-runbook]');
   assert.equal(group.nextElementSibling, runbook);
-  assert.equal(runbook.querySelector('.source-chip svg').innerHTML, iconElement(u.doc, 'home').innerHTML, 'repo owned: this soul\'s own repository');
+  assert.equal(runbook.querySelector('.source-chip'), null, 'no Source cell: the group heading names the repository');
+  assert.equal(runbook.getAttribute('aria-label'), 'nw-platform-runbook, capability, from platform latest', 'the accessible name still names it');
+  // Packages: one group per package, its heading "package · v<version> · N capabilities", in name order.
+  const packages = [...u.doc.querySelectorAll('[data-section=packages] .catalog-group')];
+  assert.deepEqual(packages.map(h => [h.querySelector('.souls-group-name').textContent, h.querySelector('.souls-group-note').textContent]), [
+    ['nw.chat', 'package · v0.1.0 · 1 capability'], ['nw.tools', 'package · v0.4.0 · 2 capabilities'], ['oats.aweb', 'package · v1.16.0 · 1 capability'],
+    ['oats.framework', 'package · v1.1.3 · 1 capability'], ['oats.okf', 'package · v2.1.3 · 1 capability']]);
+  assert.ok(packages.every(h => h.querySelector('svg').innerHTML === iconElement(u.doc, 'package').innerHTML), 'the package icon');
+  const tools = packages[1];
+  assert.deepEqual([tools.nextElementSibling, tools.nextElementSibling.nextElementSibling].map(el => el.dataset.capability), ['nw-deploy', 'nw-lint'], 'its rows follow its heading');
+  assert.equal(tools.dataset.repo, 'package:nw.tools');
   // Without the feature the section is hidden, never guessed.
   spawn.unmount();
   const v = await setup(t, { sync: () => catalog('f7/capabilities') });

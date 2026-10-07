@@ -1,0 +1,367 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "soulsApi": 1,
+    "workspace": {
+      "name": "fixture",
+      "key": "local//fixture/base/remotes/ws.git",
+      "commit": "3f22a424f9216d615ade9401cb6968e34ac0ab0e"
+    },
+    "souls": [
+      {
+        "name": "dev",
+        "key": "dev",
+        "origin": "member local//fixture/base/remotes/ws.git @ 3f22a424",
+        "kind": "member",
+        "repoKey": "local//fixture/base/remotes/ws.git",
+        "commit": "3f22a424f9216d615ade9401cb6968e34ac0ab0e",
+        "teams": [],
+        "defaultTeam": null,
+        "private": false,
+        "path": "souls/dev",
+        "work": "directory",
+        "description": "dev fixture soul.",
+        "harness": "pi",
+        "model": null,
+        "harnessFrom": "kernel-default",
+        "launch": {
+          "declared": null,
+          "effective": {
+            "harness": "pi",
+            "model": null,
+            "launchConfig": null
+          },
+          "from": "host",
+          "at": null,
+          "problem": null
+        },
+        "file": {
+          "path": "souls/dev/soul.yaml",
+          "url": null
+        },
+        "spawnable": true,
+        "problem": null,
+        "capabilities": [
+          {
+            "name": "acme-tool",
+            "kind": "package",
+            "package": "acme.pkg",
+            "from": "workspace"
+          },
+          {
+            "name": "acme.own",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "soul"
+          },
+          {
+            "name": "acme.private",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "soul"
+          },
+          {
+            "name": "acme.ws",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "soul"
+          },
+          {
+            "name": "acme_z",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "soul"
+          },
+          {
+            "name": "chat",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "workspace"
+          }
+        ]
+      },
+      {
+        "name": "keeper",
+        "key": "keeper",
+        "origin": "member local//fixture/base/remotes/ws.git @ 3f22a424",
+        "kind": "member",
+        "repoKey": "local//fixture/base/remotes/ws.git",
+        "commit": "3f22a424f9216d615ade9401cb6968e34ac0ab0e",
+        "teams": [],
+        "defaultTeam": null,
+        "private": false,
+        "path": "souls/keeper",
+        "work": "directory",
+        "description": "keeper fixture soul.",
+        "harness": "pi",
+        "model": null,
+        "harnessFrom": "kernel-default",
+        "launch": {
+          "declared": null,
+          "effective": {
+            "harness": "pi",
+            "model": null,
+            "launchConfig": null
+          },
+          "from": "host",
+          "at": null,
+          "problem": null
+        },
+        "file": {
+          "path": "souls/keeper/soul.yaml",
+          "url": null
+        },
+        "spawnable": true,
+        "problem": null,
+        "capabilities": [
+          {
+            "name": "acme-tool",
+            "kind": "package",
+            "package": "acme.pkg",
+            "from": "workspace"
+          },
+          {
+            "name": "acme.off",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "workspace"
+          },
+          {
+            "name": "acme.own",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "soul"
+          },
+          {
+            "name": "acme.ws",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "workspace"
+          },
+          {
+            "name": "chat",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "workspace"
+          },
+          {
+            "name": "notes",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "workspace"
+          }
+        ]
+      },
+      {
+        "name": "keeper",
+        "key": "acme.pkg/keeper",
+        "qualifiedName": "acme.pkg/keeper",
+        "origin": "package acme.pkg v1.0.0",
+        "kind": "package",
+        "package": "acme.pkg",
+        "version": "1.0.0",
+        "repoKey": "local//fixture/pkg/pkg.git",
+        "commit": "efbeaad930fc3e966aa455a3667e20aa7b1fb23e",
+        "teams": [],
+        "defaultTeam": null,
+        "private": false,
+        "path": "oats-package/souls/keeper",
+        "work": "directory",
+        "description": "keeper package soul.",
+        "harness": "pi",
+        "model": null,
+        "harnessFrom": "kernel-default",
+        "launch": {
+          "declared": null,
+          "effective": {
+            "harness": "pi",
+            "model": null,
+            "launchConfig": null
+          },
+          "from": "host",
+          "at": null,
+          "problem": null
+        },
+        "file": {
+          "path": "oats-package/souls/keeper/soul.yaml",
+          "url": null
+        },
+        "spawnable": true,
+        "problem": null,
+        "capabilities": [
+          {
+            "name": "acme-tool",
+            "kind": "package",
+            "package": "acme.pkg",
+            "from": "soul"
+          },
+          {
+            "name": "acme.off",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "workspace"
+          },
+          {
+            "name": "acme.ws",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "workspace"
+          },
+          {
+            "name": "chat",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "workspace"
+          },
+          {
+            "name": "notes",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "workspace"
+          }
+        ]
+      },
+      {
+        "name": "off",
+        "key": "off",
+        "origin": "member local//fixture/base/remotes/ws.git @ 3f22a424",
+        "kind": "member",
+        "repoKey": "local//fixture/base/remotes/ws.git",
+        "commit": "3f22a424f9216d615ade9401cb6968e34ac0ab0e",
+        "teams": [],
+        "defaultTeam": null,
+        "private": false,
+        "path": "souls/off",
+        "work": "directory",
+        "description": "off fixture soul.",
+        "harness": "pi",
+        "model": null,
+        "harnessFrom": "kernel-default",
+        "launch": {
+          "declared": null,
+          "effective": {
+            "harness": "pi",
+            "model": null,
+            "launchConfig": null
+          },
+          "from": "host",
+          "at": null,
+          "problem": null
+        },
+        "file": {
+          "path": "souls/off/soul.yaml",
+          "url": null
+        },
+        "spawnable": false,
+        "problem": {
+          "code": "E_SOUL_DISABLED",
+          "message": "disabled on this machine (oats-local.yaml souls.disabled: off)"
+        },
+        "capabilities": null
+      },
+      {
+        "name": "quiet",
+        "key": "quiet",
+        "origin": "member local//fixture/base/remotes/ws.git @ 3f22a424",
+        "kind": "member",
+        "repoKey": "local//fixture/base/remotes/ws.git",
+        "commit": "3f22a424f9216d615ade9401cb6968e34ac0ab0e",
+        "teams": [],
+        "defaultTeam": null,
+        "private": false,
+        "path": "souls/quiet",
+        "work": "directory",
+        "description": "quiet fixture soul.",
+        "harness": "pi",
+        "model": null,
+        "harnessFrom": "kernel-default",
+        "launch": {
+          "declared": null,
+          "effective": {
+            "harness": "pi",
+            "model": null,
+            "launchConfig": null
+          },
+          "from": "host",
+          "at": null,
+          "problem": null
+        },
+        "file": {
+          "path": "souls/quiet/soul.yaml",
+          "url": null
+        },
+        "spawnable": true,
+        "problem": null,
+        "capabilities": []
+      },
+      {
+        "name": "scribe",
+        "key": "scribe",
+        "origin": "member local//fixture/base/remotes/ws.git @ 3f22a424",
+        "kind": "member",
+        "repoKey": "local//fixture/base/remotes/ws.git",
+        "commit": "3f22a424f9216d615ade9401cb6968e34ac0ab0e",
+        "teams": [],
+        "defaultTeam": null,
+        "private": false,
+        "path": "souls/scribe",
+        "work": "directory",
+        "description": "scribe fixture soul.",
+        "harness": "pi",
+        "model": null,
+        "harnessFrom": "kernel-default",
+        "launch": {
+          "declared": null,
+          "effective": {
+            "harness": "pi",
+            "model": null,
+            "launchConfig": null
+          },
+          "from": "host",
+          "at": null,
+          "problem": null
+        },
+        "file": {
+          "path": "souls/scribe/soul.yaml",
+          "url": null
+        },
+        "spawnable": true,
+        "problem": null,
+        "capabilities": [
+          {
+            "name": "acme-tool",
+            "kind": "package",
+            "package": "acme.pkg",
+            "from": "workspace"
+          },
+          {
+            "name": "acme.off",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "workspace"
+          },
+          {
+            "name": "acme.ws",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "workspace"
+          },
+          {
+            "name": "chat",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "workspace"
+          },
+          {
+            "name": "notes",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "workspace"
+          }
+        ]
+      }
+    ],
+    "problems": []
+  }
+}

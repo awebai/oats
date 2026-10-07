@@ -10,7 +10,7 @@ import { deriveHostTokens } from "../renderer/host-theme.mjs";
 import { hostState } from "./helpers/host-theme-fixture.mjs";
 import { createSoulMark, createRuntimeBadge, identityCSS } from "../renderer/identity-marks.mjs";
 import { workspaceStatusData, syncData } from "../deployment-data.mjs";
-import { renderCapabilities, renderCapabilitySections, capabilitySections, renderRepoPills, repoChoices, hostKeyOf, memberNames } from "../renderer/workspace-catalog.mjs";
+import { renderCapabilities, renderCapabilitySections, capabilitySections, renderRepoPills, repoChoices, hostKeyOf, memberNames, sourceChip } from "../renderer/workspace-catalog.mjs";
 import { renderSetup, teamsBox } from "../renderer/workspace-setup.mjs";
 import { discoveryCSS } from "../renderer/workspace-discovery.mjs";
 import { createConnections, connectionsCSS } from '../renderer/connections.mjs';
@@ -514,6 +514,9 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
   const repos = repoChoices(rows, names, hostKeyOf(status));
   renderRepoPills(doc.querySelector('.filters'), { repos, value: repos[0].key, total: rows.length, shown: repos[0].count, narrowed: true, onChange() {} });
   renderCapabilities(doc.querySelector('.caps'), { rows, status, instances: [], root: dir });
+  // The boxed source chip left the list (its group heading names the source); a soul's capability tables and the
+  // capability page still draw it with this sheet.
+  doc.querySelector('.caps').append(sourceChip(doc, rows[0], names, { boxed: true }));
   // F7 (kernel #185): the three sections, with a repo-owned (private) row.
   const sections = capabilitySections(JSON.parse(readFileSync(new URL('fixtures/workspace-v2/f7/capabilities.json', new URL('./', import.meta.url)), 'utf8')).result.capabilities);
   renderCapabilitySections(doc.querySelector('.sections'), { sections, shown: sections.workspace, filterHost: null, privateListed: true, status, instances: [], root: dir });
@@ -536,7 +539,7 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
   const root = dom.window.getComputedStyle(doc.documentElement);
   for (const [selector, painted, fg, bg] of [
     // Workspace v4.1: the column head sits on the page; each capability is a row card (surface) with its
-    // name, one-line description, boxed source chip and used-by words.
+    // name, one-line description and used-by words; the boxed source chip (soul tables, the page).
     ['.catalog-head', '.oats-view', 'muted', 'bg'],
     ['.catalog-name', 'button.catalog-row', 'fg', 'surface'],
     ['.catalog-desc', 'button.catalog-row', 'muted', 'surface'],

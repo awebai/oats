@@ -51,28 +51,28 @@ function mount(t, theme = 'light') {
 }
 const key = (u, el, name) => el.dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }));
 
-test('each capability is one row card: header, 58px grid, tile + name/kind + one-line description, boxed source, used by, chevron', t => {
+test('each capability is one row card: header, 58px grid, tile + name/kind + one-line description, used by, chevron; no Source column', t => {
   const u = mount(t);
   renderCapabilities(u.$('.caps'), { rows: ROWS, status: STATUS, instances: INSTANCES, onOpen() {} });
   const list = u.$('.catalog-table');
   assert.equal(u.css(list).display, 'flex'); assert.equal(u.css(list).gap, '6px');
   assert.doesNotMatch(catalogCSS, /\.catalog-table \{[^}]*(border|background)/, 'the list itself has no frame or surface: each card does');
   const head = u.$('.catalog-head');
-  assert.deepEqual([...head.children].map(el => el.textContent), ['', 'Capability', 'Source', 'Used by', '']);
+  assert.deepEqual([...head.children].map(el => el.textContent), ['', 'Capability', 'Used by', '']);
   assert.equal(u.css(head).textTransform, 'uppercase'); assert.equal(u.css(head).fontSize, '10.5px'); assert.equal(u.css(head).letterSpacing, '0.065em');
-  assert.equal(u.css(head).gridTemplateColumns, '44px minmax(0,1fr) 190px 120px 24px');
+  assert.equal(u.css(head).gridTemplateColumns, '44px minmax(0,1fr) 120px 24px');
   const rows = u.$$('.catalog-row');
   assert.equal(rows.length, ROWS.length);
   for (const row of rows) {
     assert.equal(row.tagName, 'BUTTON'); assert.equal(row.type, 'button');
     assert.equal(u.css(row).height, '58px'); assert.equal(u.css(row).borderRadius, '10px');
     assert.equal(u.css(row).background, 'var(--surface)'); assert.equal(u.css(row).color, 'var(--fg)');
-    assert.equal(u.css(row).gridTemplateColumns, '44px minmax(0,1fr) 190px 120px 24px'); assert.equal(u.css(row).columnGap, '14px'); assert.equal(u.css(row).padding, '0px 16px');
-    assert.deepEqual([...row.children].map(el => el.className.baseVal ?? el.className), ['catalog-tile', 'catalog-cap', 'catalog-source', 'catalog-used', 'shell-icon catalog-chevron']);
+    assert.equal(u.css(row).gridTemplateColumns, '44px minmax(0,1fr) 120px 24px'); assert.equal(u.css(row).columnGap, '14px'); assert.equal(u.css(row).padding, '0px 16px');
+    assert.deepEqual([...row.children].map(el => el.className.baseVal ?? el.className), ['catalog-tile', 'catalog-cap', 'catalog-used', 'shell-icon catalog-chevron']);
     assert.equal(row.querySelectorAll('button, a, input, select, [tabindex]').length, 0, 'no nested interactive element');
     const tile = row.querySelector('.catalog-tile');
     assert.equal(u.css(tile).width, '32px'); assert.equal(u.css(tile).borderRadius, '8px'); assert.ok(tile.querySelector('svg'));
-    assert.ok(row.querySelector('.catalog-source .source-chip.boxed'), 'the boxed source chip');
+    assert.equal(row.querySelector('.catalog-source, .source-chip'), null, 'the source is the group heading and the accessible name, not a cell');
     assert.equal(row.querySelector('.catalog-chevron').tagName.toLowerCase(), 'svg');
   }
   const okf = u.$('.catalog-row[data-capability="oats.okf"]');
@@ -80,6 +80,7 @@ test('each capability is one row card: header, 58px grid, tile + name/kind + one
   assert.match(u.css(okf.querySelector('.catalog-name')).font, /650 13px var\(--mono/);
   assert.equal(u.$('.catalog-row[data-capability="oats.authoring"] .catalog-core'), null, 'no kind chip without a layer');
   assert.equal(u.$('.catalog-row[data-capability="nw-quiet"] .catalog-desc'), null, 'no description line when the kernel reports none');
+  assert.doesNotMatch(catalogCSS, /catalog-source/, 'no Source cell rule, wide or narrow');
 });
 
 test('descriptions render as one element on one line (nowrap + ellipsis), never wrapping', t => {

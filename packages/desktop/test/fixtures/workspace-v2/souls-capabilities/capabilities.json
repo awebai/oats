@@ -1,0 +1,176 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "capabilitiesApi": 1,
+    "workspace": {
+      "name": "fixture",
+      "key": "local//fixture/base/remotes/ws.git",
+      "commit": "3f22a424f9216d615ade9401cb6968e34ac0ab0e"
+    },
+    "capabilities": [
+      {
+        "name": "acme-tool",
+        "origin": "package acme.pkg v1.0.0",
+        "kind": "package",
+        "package": "acme.pkg",
+        "version": "1.0.0",
+        "commit": "efbeaad930fc3e966aa455a3667e20aa7b1fb23e",
+        "private": false,
+        "layer": null,
+        "description": "tool",
+        "skills": [
+          "tool-skill"
+        ],
+        "commands": [],
+        "hooks": [],
+        "file": {
+          "path": "oats-package/capabilities/acme-tool/oats.json",
+          "url": null
+        },
+        "tree": null
+      },
+      {
+        "name": "acme.off",
+        "origin": "member local//fixture/base/remotes/ws.git @ 3f22a424",
+        "kind": "member",
+        "repoKey": "local//fixture/base/remotes/ws.git",
+        "commit": "3f22a424f9216d615ade9401cb6968e34ac0ab0e",
+        "private": false,
+        "path": "capabilities/acme.off",
+        "layer": null,
+        "version": "0.0.0-workspace",
+        "description": "acme.off fixture capability.",
+        "skills": [],
+        "commands": [],
+        "hooks": [],
+        "file": {
+          "path": "capabilities/acme.off/oats.json",
+          "url": null
+        },
+        "tree": "48928cc72ac6e55880361e94326aa8dd4ccbb2f6"
+      },
+      {
+        "name": "acme.own",
+        "origin": "member local//fixture/base/remotes/ws.git @ 3f22a424",
+        "kind": "member",
+        "repoKey": "local//fixture/base/remotes/ws.git",
+        "commit": "3f22a424f9216d615ade9401cb6968e34ac0ab0e",
+        "private": false,
+        "path": "capabilities/acme.own",
+        "layer": null,
+        "version": "0.0.0-workspace",
+        "description": "acme.own fixture capability.",
+        "skills": [],
+        "commands": [],
+        "hooks": [],
+        "file": {
+          "path": "capabilities/acme.own/oats.json",
+          "url": null
+        },
+        "tree": "d817bbc4ed1526c95e0b7eb7e9dfcaedfafaf559"
+      },
+      {
+        "name": "acme.private",
+        "origin": "member local//fixture/base/remotes/ws.git @ 3f22a424",
+        "kind": "member",
+        "repoKey": "local//fixture/base/remotes/ws.git",
+        "commit": "3f22a424f9216d615ade9401cb6968e34ac0ab0e",
+        "private": true,
+        "path": "capabilities/acme.private",
+        "layer": null,
+        "version": "0.0.0-workspace",
+        "description": "acme.private fixture capability.",
+        "skills": [],
+        "commands": [],
+        "hooks": [],
+        "file": {
+          "path": "capabilities/acme.private/oats.json",
+          "url": null
+        },
+        "tree": "0c98777d2824f438a2a73cd728407320036b2a58"
+      },
+      {
+        "name": "acme.ws",
+        "origin": "member local//fixture/base/remotes/ws.git @ 3f22a424",
+        "kind": "member",
+        "repoKey": "local//fixture/base/remotes/ws.git",
+        "commit": "3f22a424f9216d615ade9401cb6968e34ac0ab0e",
+        "private": false,
+        "path": "capabilities/acme.ws",
+        "layer": null,
+        "version": "0.0.0-workspace",
+        "description": "acme.ws fixture capability.",
+        "skills": [],
+        "commands": [],
+        "hooks": [],
+        "file": {
+          "path": "capabilities/acme.ws/oats.json",
+          "url": null
+        },
+        "tree": "f1bee029665bb324f566f4072326cc81862dbf1a"
+      },
+      {
+        "name": "acme_z",
+        "origin": "member local//fixture/base/remotes/ws.git @ 3f22a424",
+        "kind": "member",
+        "repoKey": "local//fixture/base/remotes/ws.git",
+        "commit": "3f22a424f9216d615ade9401cb6968e34ac0ab0e",
+        "private": false,
+        "path": "capabilities/acme_z",
+        "layer": null,
+        "version": "0.0.0-workspace",
+        "description": "acme_z fixture capability.",
+        "skills": [],
+        "commands": [],
+        "hooks": [],
+        "file": {
+          "path": "capabilities/acme_z/oats.json",
+          "url": null
+        },
+        "tree": "58ecd4eb5b322f5dccad32056e87ad44ff51d7cc"
+      },
+      {
+        "name": "chat",
+        "origin": "member local//fixture/base/remotes/ws.git @ 3f22a424",
+        "kind": "member",
+        "repoKey": "local//fixture/base/remotes/ws.git",
+        "commit": "3f22a424f9216d615ade9401cb6968e34ac0ab0e",
+        "private": false,
+        "path": "capabilities/chat",
+        "layer": "messaging",
+        "version": "0.0.0-workspace",
+        "description": "chat fixture capability.",
+        "skills": [],
+        "commands": [],
+        "hooks": [],
+        "file": {
+          "path": "capabilities/chat/oats.json",
+          "url": null
+        },
+        "tree": "eeba3d10e0048f6488c9f2ef6a74b9139b2708be"
+      },
+      {
+        "name": "notes",
+        "origin": "member local//fixture/base/remotes/ws.git @ 3f22a424",
+        "kind": "member",
+        "repoKey": "local//fixture/base/remotes/ws.git",
+        "commit": "3f22a424f9216d615ade9401cb6968e34ac0ab0e",
+        "private": false,
+        "path": "capabilities/notes",
+        "layer": "knowledge",
+        "version": "0.0.0-workspace",
+        "description": "notes fixture capability.",
+        "skills": [],
+        "commands": [],
+        "hooks": [],
+        "file": {
+          "path": "capabilities/notes/oats.json",
+          "url": null
+        },
+        "tree": "19c8f933ddf0c7b6d953b8c8351bb00a0f6906e6"
+      }
+    ],
+    "problems": []
+  }
+}

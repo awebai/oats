@@ -306,7 +306,9 @@ function paintCapabilityPage(s) {
   const current = contentsRow(row, from, catalog, facts);
   const shown = from ? (current && current !== row ? { ...current, ...row } : row) : current || row;
   // The page itself follows the catalog's content; its age line (below) follows the controller's state, on its own.
-  const signature = JSON.stringify([current === row ? null : current, catalogPending, context.instances, context.root, context.rosterState]);
+  // "Used by" reads the souls' composition (souls-capabilities) and marks, or the roster's module rows.
+  const signature = JSON.stringify([current === row ? null : current, catalogPending, context.instances, context.root, context.rosterState, context.composition,
+    context.composition ? context.souls.map(a => [a.name, a.key, a.color, a.agentsRoot, a.soulKind, a.package, a.capabilities]) : null]);
   const host = s.q("workspace-cap-page");
   if (signature !== open.signature) { // an unchanged catalog never rebuilds the page under focus
     open.signature = signature; open.noticeSignature = null;
@@ -316,7 +318,8 @@ function paintCapabilityPage(s) {
       backLabel: from ? from.name : "Capabilities", from: from ? { label: from.name, why } : null,
       onBack: () => closeCapability(s, { restoreFocus: true }),
       openSoul: target => {
-        const matches = s.souls.agents.filter(a => a.name === target.name && a.agentsRoot === target.agentsRoot);
+        // A soul row (Used by from the composition) carries its key: a package soul never opens a member soul of its bare name.
+        const matches = s.souls.agents.filter(a => a.name === target.name && a.agentsRoot === target.agentsRoot && (target.key === undefined || a.key === target.key));
         if (matches.length !== 1) return;
         closeCapability(s); inspectSoul(s, matches[0]);
       } });

@@ -6,8 +6,8 @@
  * workspace status. Nothing here is inferred — unreported facts are not shown. */
 import { createSoulMark } from './identity-marks.mjs';
 import { iconElement } from './shell-icons.mjs';
-import { capabilitySource, capabilityUse, capabilityRow, memberNames, layerLabel, sourceChip } from './workspace-catalog.mjs';
-import { skeleton, noticeElement, updateNotice, failedElement, updateFailed, isOldObservation, ROSTER_STALE_TITLE } from './loading.mjs';
+import { capabilitySource, capabilityUse, capabilityRow, memberNames, layerLabel, sourceChip, soulsUsing, rosterAgentName } from './workspace-catalog.mjs';
+import { skeleton, noticeElement, updateNotice, failedElement, updateFailed, isOldObservation, ROSTER_STALE_TITLE, SOULS_STALE_TITLE } from './loading.mjs';
 import { createDeploymentScopeLine } from './deployment-scope-line.mjs';
 
 /** Each host's "On <deployment>" line (#482): a re-render replaces it. */
@@ -235,7 +235,7 @@ function failedFacts({ cause = null, busy = false } = {}) {
  * under the bar: the host paints it (`catalogNotice` / `updateCatalogNotice`), optionally seeded here
  * with `observation` ({ state, settled, busy, observedAt, cause, onRetry }). `contents`: the Contents section's
  * element (createCapabilityContents), placed after Provides and before Used by. */
-export function renderCapabilityPage(host, { row, status, instances, root, rosterState = 'ready', backLabel = 'Capabilities', onBack, openSoul = null, from = null, openExternal = null, catalogPending = false, observation = null, contents = null }) {
+export function renderCapabilityPage(host, { row, status, instances, souls = [], composition = false, root, rosterState = 'ready', backLabel = 'Capabilities', onBack, openSoul = null, from = null, openExternal = null, catalogPending = false, observation = null, contents = null }) {
   const doc = host.ownerDocument;
   const node = (tag, value, cls) => el(doc, tag, value, cls);
   host.replaceChildren();
@@ -274,9 +274,11 @@ export function renderCapabilityPage(host, { row, status, instances, root, roste
   // Contents (spec C): the host's long-lived section (capability-contents.mjs), re-appended on every rebuild so
   // what is open in its reader survives a catalog repaint. In both forms: the catalog's and a soul's.
   if (contents) main.append(contents);
-  // Used by: the souls whose instances carry it (roster module rows).
-  const use = capabilityUse(instances, row.name);
-  // "Used by" derives from the roster: with none carrying it, the claim needs a settled good roster read.
+  // Used by: with `composition` (souls-capabilities) the souls whose composition includes it, each with its live
+  // instances carrying it; before, the souls whose instances carry it (roster module rows).
+  const use = composition ? { souls: soulsUsing(souls, row) } : capabilityUse(instances, row.name);
+  const staleTitle = composition ? SOULS_STALE_TITLE : ROSTER_STALE_TITLE;
+  // "Used by" derives from the souls list and the roster (one read): with none, the claim needs a settled good read.
   const rosterGood = rosterState === 'ready' || rosterState === 'empty';
   const used = pageSection(doc, 'Used by', use.souls.length || rosterGood ? `${use.souls.length} soul${use.souls.length === 1 ? '' : 's'}` : '');
   const table = node('div', undefined, 'page-table'); table.setAttribute('role', 'table'); table.setAttribute('aria-label', `Souls using ${row.name}`);
@@ -284,15 +286,18 @@ export function renderCapabilityPage(host, { row, status, instances, root, roste
   for (const label of ['Soul', 'Instances']) { const cell = node('span', label); cell.setAttribute('role', 'columnheader'); head.append(cell); }
   table.append(head);
   if (!use.souls.length) {
-    if (rosterGood) table.append(node('p', 'No instance carries it yet.', 'page-note page-table-row'));
-    else { const none = node('p', '—', 'page-note page-table-row used-unknown'); none.title = ROSTER_STALE_TITLE; none.setAttribute('aria-description', ROSTER_STALE_TITLE); none.dataset.rosterState = rosterState; table.append(none); }
+    if (rosterGood) table.append(node('p', composition ? 'No soul here includes it.' : 'No instance carries it yet.', 'page-note page-table-row'));
+    else { const none = node('p', '—', 'page-note page-table-row used-unknown'); none.title = staleTitle; none.setAttribute('aria-description', staleTitle); none.dataset.rosterState = rosterState; table.append(none); }
   }
   for (const soul of use.souls) {
-    const carrying = list(instances).filter(i => i.agent === soul.name && i.agentsRoot === soul.agentsRoot && moduleRow(i, row.name));
+    // A soul's instances: the roster's agent name (a package soul's is `<package>--<soul>`) within its agents root.
+    const agent = composition ? rosterAgentName(soul) : soul.name;
+    const carrying = list(instances).filter(i => i.agent === agent && i.agentsRoot === soul.agentsRoot && moduleRow(i, row.name));
     const behind = carrying.filter(i => moduleRow(i, row.name)?.status === 'moved').length;
     const line = typeof openSoul === 'function' ? node('button', undefined, 'page-table-row used-row') : node('div', undefined, 'page-table-row used-row');
     line.setAttribute('role', 'row');
-    if (line.tagName === 'BUTTON') { line.type = 'button'; line.addEventListener('click', () => openSoul(soul)); line.title = `Open ${soul.name}`; line.dataset.focusKey = `used:${soul.name}:${soul.agentsRoot || ''}`; }
+    // The tooltip and focus key name the soul by its key (two package souls may share a bare name).
+    if (line.tagName === 'BUTTON') { line.type = 'button'; line.addEventListener('click', () => openSoul(soul)); line.title = `Open ${soul.key || soul.name}`; line.dataset.focusKey = `used:${soul.key || soul.name}:${soul.agentsRoot || ''}`; }
     const who = node('span', undefined, 'used-soul'); who.setAttribute('role', 'cell'); who.append(createSoulMark(doc, soul), node('span', soul.name, 'used-name'));
     const meta = node('span', `${carrying.length}${behind ? ` · ${behind} on an older version` : ''}`, `used-meta${behind ? ' warn' : ''}`); meta.setAttribute('role', 'cell');
     line.append(who, meta); table.append(line);

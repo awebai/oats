@@ -298,6 +298,30 @@ const PACKAGE_ID = /^[a-z0-9][a-z0-9._-]{0,127}$/; // the kernel's package-id gr
 // The kernel's soul key (K1's pattern): '*' never names one soul, so it is not a row key.
 const SOUL_KEY = /^(?:[a-z0-9][a-z0-9._-]*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const soulKey = v => typeof v === 'string' && v.length <= 256 && SOUL_KEY.test(v);
+/** A soul row's `capabilities` (feature souls-capabilities, OATS 0.44.2): the soul's composed capabilities
+ * (turned-off ones are not listed), each in `oats capabilities`' own row keys — `{name, kind: 'member', repoKey}`
+ * or `{name, kind: 'package', package}`; the kernel reports no external entry — plus `from` ('soul' | 'workspace';
+ * 'soul' when it is both). `null`: the soul did not resolve (exactly when it is not spawnable); `[]` composes
+ * nothing. The one place the entry shape is read: anything else is undefined, and the caller refuses the document. */
+const COMPOSED_FROM = ['soul', 'workspace'];
+const capabilityName = v => typeof v === 'string' && v.length > 0 && v.length <= 256;
+const repoKeyOf = v => typeof v === 'string' && v.length > 0 && v.length <= 1024;
+export function soulCapabilitiesOf(value) {
+  if (value === null) return null;
+  if (!Array.isArray(value) || value.length > 1024) return undefined;
+  const out = [];
+  for (const entry of value) {
+    if (!record(entry) || !capabilityName(entry.name) || !COMPOSED_FROM.includes(entry.from)) return undefined;
+    if (entry.kind === 'package') {
+      if (!(typeof entry.package === 'string' && PACKAGE_ID.test(entry.package)) || own(entry, 'repoKey')) return undefined;
+      out.push({ name: entry.name, kind: 'package', package: entry.package, from: entry.from });
+    } else if (entry.kind === 'member') {
+      if (!repoKeyOf(entry.repoKey) || own(entry, 'package')) return undefined;
+      out.push({ name: entry.name, kind: 'member', repoKey: entry.repoKey, from: entry.from });
+    } else return undefined;
+  }
+  return out;
+}
 export function soulsData(document) {
   check(record(document) && document.schemaVersion === 1 && document.ok === true);
   const data = document.result;
@@ -332,6 +356,13 @@ export function soulsData(document) {
     if (own(row, 'defaultTeam')) { const d = defaultTeamOf(row.defaultTeam); check(d !== undefined); out.defaultTeam = d; }
     // Launch preferences (0.30, feature launch-preference): what a spawn with no flags would decide here.
     if (own(row, 'launch')) { const l = launchOf(row.launch, REPORT_FROM); check(l !== undefined); out.launch = l; }
+    // Its composed capabilities (feature souls-capabilities): Capabilities' "Used by" reads them.
+    // null exactly when the kernel reports the soul not spawnable here (the contract): a disagreement refuses the document.
+    if (own(row, 'capabilities')) {
+      const c = soulCapabilitiesOf(row.capabilities); check(c !== undefined);
+      if (typeof row.spawnable === 'boolean') check((c === null) === (row.spawnable === false));
+      out.capabilities = c;
+    }
     // 0.29: every team label the soul carries (primary first; teams contract), when reported.
     if (own(row, 'labels')) {
       check(Array.isArray(row.labels) && row.labels.length <= 64 && row.labels.every(l => typeof l === 'string' && TEAM_LABEL.test(l)) && new Set(row.labels).size === row.labels.length);

@@ -9,8 +9,8 @@ import { readFileSync } from 'node:fs';
 import * as spawn from '../renderer/views/spawn.mjs';
 import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 import { refreshCli } from '../renderer/views/cli-status.mjs';
-import { workspaceStatusData, deploymentStatusData } from '../deployment-data.mjs';
-import { PENDING_DELAY_MS, REFRESHING_DELAY_MS } from '../renderer/loading.mjs';
+import { workspaceStatusData, deploymentStatusData, soulsData } from '../deployment-data.mjs';
+import { PENDING_DELAY_MS, REFRESHING_DELAY_MS, SOULS_STALE_TITLE } from '../renderer/loading.mjs';
 import { soulInspection } from './helpers/inspect-fixture.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -41,7 +41,7 @@ function clock(win) {
   } };
 }
 
-async function setup(t, { holdRoster = false, holdReads = false } = {}) {
+async function setup(t, { holdRoster = false, holdReads = false, cli = CLI, souls = agents, catalog = CATALOG } = {}) {
   const dom = new JSDOM('<!doctype html><body><div id="host"></div>', { url: 'http://localhost' });
   const saved = { document: globalThis.document, window: globalThis.window, setInterval: globalThis.setInterval, ws: currentWorkspace() };
   globalThis.document = dom.window.document; globalThis.window = dom.window;
@@ -52,17 +52,17 @@ async function setup(t, { holdRoster = false, holdReads = false } = {}) {
     deployment: { status: 'observed', root: roster.root, workspace: status.workspace, workspaceStatus: status, reachable: { reachable: true }, withheld: [] } });
   const ctx = { hasWorkspaceSwitcher: true, api: async (path, opts = {}) => {
     const body = opts.body ? JSON.parse(opts.body) : undefined; calls.push({ path, body });
-    if (path === '/api/cli') return CLI;
-    if (path.startsWith('/api/agents')) { if (!holdRoster) return { agents }; const r = deferred(); rosters.push(r); return r.promise; }
+    if (path === '/api/cli') return cli;
+    if (path.startsWith('/api/agents')) { if (!holdRoster) return { agents: souls }; const r = deferred(); rosters.push(r); return r.promise; }
     if (path.startsWith('/api/panel')) return panel();
-    if (path.startsWith('/api/workspace-sync')) { if (!holdReads) return okRead(); const r = deferred(); reads.push({ ...r, body }); return r.promise; }
+    if (path.startsWith('/api/workspace-sync')) { if (!holdReads) return okRead({ capabilities: catalog }); const r = deferred(); reads.push({ ...r, body }); return r.promise; }
     if (path.startsWith('/api/capabilities') && body?.action === 'inspect') return soulInspection(body.selector.soul || 'release-manager');
     if (path.startsWith('/api/servers')) return { servers: [] };
     throw new Error(`Unexpected fixture API request: ${path}`);
   } };
   const doc = dom.window.document;
   t.after(() => { spawn.unmount(); setWorkspace(saved.ws); globalThis.document = saved.document; globalThis.window = saved.window; globalThis.setInterval = saved.setInterval; dom.window.close(); });
-  setWorkspace('/team'); await refreshCli({ api: async () => CLI });
+  setWorkspace('/team'); await refreshCli({ api: async () => cli });
   spawn.mount(doc.querySelector('#host'), ctx); await settle();
   const q = sel => doc.querySelector(sel);
   return {
@@ -93,7 +93,13 @@ test('pending: both tab counts are pills; on Capabilities the real card rows as 
   const sk = u.skeleton(); assert.ok(sk); assert.equal(sk.getAttribute('aria-hidden'), 'true'); assert.equal(sk.textContent, '');
   const bones = sk.querySelectorAll('button.catalog-row.skeleton-catalog-row'); assert.ok(bones.length >= 5, 'card rows wearing the table classes');
   for (const row of bones) { assert.equal(row.disabled, true); assert.equal(row.tabIndex, -1); assert.ok(row.querySelector('.catalog-tile.skeleton')); assert.ok(row.querySelector('.catalog-cap .skeleton-name')); }
+  // The settled card's cells, one per grid track and placed by the same classes (wide and narrow): tile | capability | used by | chevron.
+  const cells = row => [...row.children].map(el => ['catalog-tile', 'catalog-cap', 'catalog-used', 'catalog-chevron'].find(c => el.classList.contains(c)) ?? null);
+  assert.deepEqual(cells(bones[0]), ['catalog-tile', 'catalog-cap', 'catalog-used', 'catalog-chevron']);
+  const boneHead = sk.querySelector('.catalog-head').children.length;
   await u.resolveRead(0, okRead());
+  assert.deepEqual(cells(u.rows()[0]), ['catalog-tile', 'catalog-cap', 'catalog-used', 'catalog-chevron'], 'the skeleton is the settled card');
+  assert.equal(boneHead, u.q('.catalog-head').children.length, 'and its head has the same columns');
   assert.equal(u.skeleton(), null); assert.equal(u.rows().length, 10); assert.equal(u.state().getAttribute('aria-busy'), null);
   assert.equal(u.count('capabilities').textContent, '10'); assert.equal(u.status().textContent, '');
 });
@@ -249,6 +255,46 @@ test('roster-derived "Used by" claims wait for a settled good roster: "—" with
   assert.match(pageOf(u).textContent, /No instance carries it yet/, 'a good read restores the claim on the open page');
   pageOf(u).querySelector('.page-back').click(); await settle();
   assert.equal(cell().textContent, 'Not used', 'and in the table at once, not one poll later');
+});
+
+// souls-capabilities: "Used by" derives from the souls list (each soul's composition), the same read's state.
+// The kernel PR's real capture (fixtures/workspace-v2/souls-capabilities): its souls and its own catalog.
+const capture = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/souls-capabilities/${name}.json`, import.meta.url), 'utf8'));
+const COMPOSED_CATALOG = { capabilitiesApi: 1, ...capture('capabilities').result };
+const COMPOSED = soulsData(capture('souls')).souls
+  .map(s => ({ name: s.name, key: s.key, soulKind: s.kind, ...(s.kind === 'package' ? { package: s.package, version: s.version, qualifiedName: s.qualifiedName } : {}),
+    description: s.description || '', kind: 'persistent', work: s.work, capabilities: s.capabilities, agentsRoot: roster.root }));
+const COMPOSING_CLI = { ...CLI, features: [...CLI.features, 'souls-capabilities'] };
+test('souls-derived "Used by" waits for a settled good souls read: "—" with the souls list\'s reason, in the table and on the page', async t => {
+  const u = await setup(t, { holdRoster: true, holdReads: true, cli: COMPOSING_CLI });
+  const souls = COMPOSED.filter(s => s.key !== 'dev'); // acme_z: only dev composes it
+  u.rosters[0].resolve({ agents: souls }); await settle(); await u.resolveRead(0, okRead({ capabilities: COMPOSED_CATALOG })); await u.tab('capabilities');
+  const cell = name => u.q(`.catalog-row[data-capability="${name}"] .catalog-used-count`);
+  assert.equal(cell('acme-tool').textContent, '3 souls', 'from the composition: no instance needed');
+  assert.equal(cell('acme_z').textContent, 'Not used', 'a good read: the claim');
+  u.poll(); await tick(); u.rosters[1].reject(new Error('down')); await settle();
+  assert.equal(cell('acme_z').textContent, '—'); assert.equal(cell('acme_z').getAttribute('aria-description'), SOULS_STALE_TITLE);
+  assert.equal(cell('acme-tool').textContent, '3 souls', 'the held list\'s souls stay');
+  u.q('.catalog-row[data-capability="acme_z"]').click(); await settle();
+  assert.equal(pageOf(u).querySelector('.used-unknown').getAttribute('aria-description'), SOULS_STALE_TITLE, 'the page makes no claim either');
+  u.poll(); await tick(); u.rosters[2].resolve({ agents: souls }); await settle();
+  assert.match(pageOf(u).textContent, /No soul here includes it/, 'a good read restores the claim on the open page');
+});
+
+test('the page opens a package soul from "Used by" by its key, never the member soul of its bare name', async t => {
+  // The capture's member soul keeper and package soul acme.pkg/keeper both compose acme-tool.
+  const u = await setup(t, { cli: COMPOSING_CLI, souls: COMPOSED, catalog: COMPOSED_CATALOG });
+  await u.tab('capabilities');
+  u.q('.catalog-row[data-capability="acme-tool"]').click(); await settle();
+  const rows = [...pageOf(u).querySelectorAll('.used-row:not(.head)')];
+  assert.deepEqual(rows.map(r => [r.querySelector('.used-name').textContent, r.title]), [['dev', 'Open dev'], ['keeper', 'Open keeper'], ['keeper', 'Open acme.pkg/keeper'], ['scribe', 'Open scribe']]);
+  rows[2].click(); await settle();
+  assert.equal(pageOf(u), null, 'the capability page closed');
+  const soulPage = u.q('.workspace-soul-page');
+  assert.match(soulPage.textContent, /keeper package soul\./, 'the package soul\'s page');
+  assert.doesNotMatch(soulPage.textContent, /keeper fixture soul\./, 'never the member soul\'s');
+  // Which row opens is this page's business; how the soul page then addresses the kernel (a bare-name selector on
+  // every soul surface) is the soul page's own, unchanged here.
 });
 
 test('a catalog that failed with nothing held shows the failed treatment on the page (cause, Details, Retry), not silence', async t => {
