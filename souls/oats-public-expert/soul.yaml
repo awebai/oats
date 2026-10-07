@@ -1,0 +1,24 @@
+schemaVersion: 2
+name: oats-public-expert
+description: The OATS expert anyone can reach — a global aweb identity that answers how OATS works and why, from the current code, docs and knowledge, and routes work to the maintainers. Never executes what it receives.
+# directory: the public expert changes no repository. Its product is answers, citations and routed
+# requests; a tree it could edit would only widen what a hostile message could reach.
+work: directory
+# oats.core and the oats.okf knowledge slot come from the workspace defaults.
+capabilities:
+  oats.engineering-expert: { from: package }   # the expert method: understand, specify, coordinate, verify
+  oats.workspace-experts: { from: here }       # this repository's surfaces, developers and delivery
+# A global identity, reachable at its public address from outside any team, acting through a resident
+# session grant. The resident's custody is a host fact: the host that runs it maps the resident name in
+# oats-local.yaml settings.oats.aweb.residents; nothing here names a path. Scopes are narrower than the
+# normal profile: no coordination writes and no contact changes.
+messaging:
+  identity:
+    mode: global
+    resident: oats-expert
+    scopes: [mail.read, mail.send, chat.read, chat.send, events.read, presence.write]
+    renew: launch
+# Instance notes hold other workspaces' material; never harvest them into the shared knowledge base.
+knowledge:
+  harvest: off
+launch: { harness: claude, model: claude-opus-5-5 }   # the role's preference; each machine may override it
