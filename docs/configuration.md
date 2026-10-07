@@ -124,7 +124,11 @@ A qualified normal-output boundary closes observation without asserting readines
 **Qualified completion and limitation:** exact captured banners cover Claude
 2.1.289 on darwin-arm64 at 110x35 with aweb-channel 1.7.11 installed, and the
 original plugin-absent banner. Both name Opus 5.5, API Usage Billing, auto mode
-and medium effort. Only the bounded canonical-home directory line may vary.
+and medium effort. Source-derived synthetic variants additionally allow exactly
+`Claude Max`, `Claude Pro`, `Claude Team` or `Claude Enterprise` in place of
+`API Usage Billing`; these are not observed subscription captures. Every other
+row stays exact apart from the bounded canonical-home directory line. This
+interim extension does not cover task-filled screens or bypass-permissions mode.
 Other model, billing, effort or permission banners remain unqualified: the one
 Enter can be submitted before `E_SPAWN_INCOMPLETE` with
 `launchPrompts.status: blocked`. The submitted answer remains in `answers` and
