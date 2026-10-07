@@ -956,8 +956,10 @@ passed as arguments; no shell is involved.
   - `OATS_AGENT` and `OATS_SOUL_ID` (0.43.3), the soul's name and stable id
     with the values its hooks and dispatched commands get (see
     [Commands and hooks](#commands-and-hooks)): for `--soul` on a package
-    soul, `OATS_AGENT` is `<package>--<soul>`, as its hooks get it (before,
-    the bare soul name);
+    soul, `OATS_AGENT` is its agents-root name `<package>--<soul>`
+    ([Package souls](packages.md#package-souls)), as its hooks get it
+    (before, the bare soul name). A check that relies on them declares
+    `compatibility.oats: ">=0.43.3"`;
   - `OATS_SOUL`, the soul directory: a home's recorded one, or for a soul
     (`readiness --soul`, `inspect --soul`) its copy at the resolved commit,
     which the kernel materialises first as a spawn would (0.30; a copy that

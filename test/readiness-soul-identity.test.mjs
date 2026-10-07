@@ -66,6 +66,7 @@ for (const [soul, qualified, agent, id] of [
     surfaces["readiness --soul"] = readiness(["--soul", qualified]);
     surfaces["readiness --home"] = readiness(["--home", home]);
     surfaces["operation --soul"] = fx.run(["operation", "run", "messaging:peek", "--soul", qualified]).result;
+    surfaces["operation --home"] = fx.run(["operation", "run", "messaging:peek", "--home", home]).result;
     surfaces["command --soul"] = fx.run(["probe", "go", "--soul", qualified]);
     surfaces["command in home"] = fx.run(["probe", "go"], inHome);
     for (const [surface, r] of Object.entries(surfaces)) assert.deepEqual(pair(r), hook, `${surface}: what the hook got, not the ambient identity`);
