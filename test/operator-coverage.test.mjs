@@ -20,6 +20,9 @@ const readiness = (fx, soul) => ok(fx.cli(["readiness", "--soul", soul, "--json"
 const doctor = (fx) => ok(fx.cli(["doctor", "--json"]), "doctor");
 function fixture(t, opts) { const fx = v2Deployment(opts); t.after(fx.cleanup); return fx; }
 const synced = (fx) => { ok(fx.cli(["sync", "--json"]), "sync"); return fx; };
+// Doctor reads only this machine's cache: `oats souls` resolves every soul and keeps what doctor reads.
+const resolvedHere = (fx) => { ok(fx.cli(["souls", "--json"]), "souls"); return fx; };
+const unknownLines = (doc) => (doc.information || []).filter((l) => l.startsWith("operator-coverage-unknown:"));
 
 test("a member soul composing oats.setup covers the workspace and the teams it may join; a team none may join is uncovered, as a warning", (t) => {
   const fx = fixture(t, {
@@ -72,9 +75,10 @@ test("a package soul composing oats.setup covers the workspace", (t) => {
     files: { "capabilities/oats.setup/oats.json": { capability: "oats.setup", version: "1.0.0", description: "setup", compatibility: { oats: ">=0.24.0" } } },
     souls: { keeper: { soul: { capabilities: { "acme-tool": { from: "here" }, ...SETUP } } } } });
   t.after(pkg.cleanup);
-  const fx = synced(fixture(t, { workspace: { defaultTeam: "global", packages: { "acme.pkg": `${pkg.ref}@v1.0.0` } } }));
+  const fx = resolvedHere(synced(fixture(t, { workspace: { defaultTeam: "global", packages: { "acme.pkg": `${pkg.ref}@v1.0.0` } } })));
+  const doc = doctor(fx); // before any readiness: what `oats souls` kept is enough
+  assert.deepEqual([operatorProblems(doc), unknownLines(doc)], [[], []], "doctor resolves the package soul from the cache: known, and covered");
   assert.deepEqual(operatorItems(readiness(fx, "dev")), []);
-  assert.deepEqual(operatorProblems(doctor(fx)), [], "doctor resolves the package soul from the cache");
 });
 
 test("an external soul composing oats.setup covers the workspace", (t) => {
@@ -89,26 +93,54 @@ test("an external soul composing oats.setup covers the workspace", (t) => {
   const commit = git(seed, "rev-parse", "HEAD");
   fx.commit({ "oats-workspace.yaml": { yaml: { schemaVersion: 2, name: "fixture", members: [fx.ref], teams: { global: { description: "g" } }, defaultTeam: "global",
     defaults: { knowledge: "none", messaging: "none", tasks: "none" }, external: [{ source: `${pathToFileURL(bare).href}@${commit}`, soul: "souls/ext" }] } } }, "external operator");
-  synced(fx);
+  resolvedHere(synced(fx));
+  const doc = doctor(fx);
+  assert.deepEqual([operatorProblems(doc), unknownLines(doc)], [[], []], "known, and covered by the external soul");
   assert.deepEqual(operatorItems(readiness(fx, "dev")), []);
-  assert.deepEqual(operatorProblems(doctor(fx)), []);
 });
 
 test("coverage that cannot be read is unknown, never missing: doctor without a cache, readiness with the workspace unreadable", (t) => {
   const fx = fixture(t, {});
   assert.deepEqual(operatorProblems(doctor(fx)), [], "never synced: nothing cached");
-  assert.ok(doctor(fx).information.some((l) => /^operator-coverage-unknown: .*oats sync/.test(l)), "doctor says unknown and names the fix");
-  synced(fx);
+  assert.ok(unknownLines(doctor(fx)).some((l) => /oats sync, then oats souls/.test(l)), "doctor says unknown and names the fix");
+  resolvedHere(synced(fx));
   // The fixture declares team global with no default team: no soul may join it, operator or not.
   assert.deepEqual(operatorProblems(doctor(fx)).map((p) => [p.code, p.label]), [["operator-soul-missing", undefined], ["operator-team-uncovered", "global"]], "with the cache: known, and missing");
   const home = ok(fx.cli(["spawn", "dev", "--purpose", "p", "--no-launch", "--json"]), "spawn").home;
   rmSync(join(fx.base, "cache"), { recursive: true, force: true });
   const offline = doctor(fx);
   assert.deepEqual(operatorProblems(offline), [], "no cache: no absence asserted");
-  assert.ok(offline.information.some((l) => l.startsWith("operator-coverage-unknown:")));
+  assert.equal(unknownLines(offline).length, 1);
   renameSync(join(fx.base, "remotes", "ws.git"), join(fx.base, "remotes", "gone.git"));
   const doc = ok(fx.cli(["readiness", "--home", home, "--json"], { cwd: home, env: { OATS_INSTANCE_HOME: home } }), "readiness --home");
   assert.deepEqual(operatorItems(doc).map((i) => [i.subject, i.code, i.status, i.required]), [["operator", "operator-coverage-unknown", "unknown", false]]);
   assert.match(operatorItems(doc)[0].reason, /the workspace could not be read/);
   assert.match(operatorItems(doc)[0].remedy, /oats workspace status/);
+});
+
+test("a source discovery could not read makes absence unknown, never missing; a covering soul found is still reported", async (t) => {
+  const { discoverOrStandalone } = await import("../lib/instance-resolution.mjs");
+  const { operatorCoverage, operatorProblems: problemsOf } = await import("../lib/operator-coverage.mjs");
+  const { loadLocal } = await import("../lib/workspace.mjs");
+  const { createReadSession } = await import("../lib/remote.mjs");
+  // Discovery drops a member it cannot read (and records a soul file it cannot read as a problem) and carries on.
+  const lost = { key: "local//nowhere/lost.git", ref: "file:///nowhere/lost.git", commit: null, confirmed: false, reason: "cannot-read", detail: "cannot read file:///nowhere/lost.git", souls: [], capabilities: [], publishes: null };
+  const unreadableSoul = { code: "E_REMOTE_UNREADABLE", path: "souls/x/soul.yaml", message: "cannot read souls/x/soul.yaml" };
+  const coverage = (fx, add) => fx.inEnv(async () => {
+    const { local } = loadLocal(fx.dep);
+    const remoteOptions = { cacheDir: fx.remoteOptions.cacheDir, session: createReadSession({}) };
+    const d = await discoverOrStandalone(local, { deployment: fx.dep, remoteOptions });
+    return operatorCoverage({ discovery: { ...d, ...add(d) }, local, teams: ["global"], remoteOptions });
+  });
+  const none = synced(fixture(t, { workspace: { defaultTeam: "global" } }));
+  assert.equal((await coverage(none, () => ({}))).workspace.covered, false, "every source read: known absence");
+  for (const add of [(d) => ({ members: [...d.members, lost] }), (d) => ({ problems: [...(d.problems || []), unreadableSoul] })]) {
+    const c = await coverage(none, add);
+    assert.equal(c.known, false, JSON.stringify(c));
+    assert.match(c.reason, /cannot read/);
+    assert.deepEqual(problemsOf(c).map((p) => p.code), ["operator-coverage-unknown"]);
+  }
+  const covered = synced(fixture(t, { souls: { dev: {}, ops: { soul: { capabilities: SETUP } } }, capabilities: { "oats.setup": { manifest: {} } }, workspace: { defaultTeam: "global" } }));
+  const c = await coverage(covered, (d) => ({ members: [...d.members, lost] }));
+  assert.deepEqual([c.known, c.workspace.covered, c.teams], [true, true, [{ label: "global", covered: true, by: "ws/ops" }]], "what was found covers, whatever else was unreadable");
 });

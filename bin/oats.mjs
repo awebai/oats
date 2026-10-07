@@ -264,15 +264,23 @@ async function doctorOperator(ws) {
   const local = ws.local.value;
   const remote = cacheOnlyRemote();
   const remoteOptions = remoteOptionsFromEnv();
-  let coverage, workspace = null;
+  // Doctor reads the resolutions `oats souls` (and readiness, spawn) leave in the cache; `oats sync` alone
+  // does not resolve souls. Online, `oats readiness --soul <soul>` answers the same question.
+  const CACHE_REMEDY = "oats sync, then oats souls (it resolves every soul; doctor reads what that keeps), or online: oats readiness --soul <soul>";
+  let coverage, workspace = null, unknownRemedy = CACHE_REMEDY;
   try {
     const lock = readLockIfPresent(deployment);
     const discovery = await discoverOrStandalone(local, { lock, deployment, remoteOptions, remote });
     workspace = discovery.workspace?.name ?? null;
     const labels = [...teamModel(discovery.standalone === true ? null : discovery.workspace, local, { workspaceKey: discovery.key ?? null }).labels.keys()].sort();
     coverage = await operatorCoverage({ discovery, local, lock, teams: labels, remoteOptions, remote });
-  } catch (e) { coverage = { known: false, reason: `this machine's cache cannot answer (${e?.message ?? e})` }; }
-  const found = operatorProblems(coverage, { workspace, unknownRemedy: "oats sync (doctor reads only what this machine has cached), or oats readiness --soul <soul>" });
+  } catch (e) {
+    // A cache miss is the cache's; anything else (an invalid lock, which doctor reports above) is named as itself.
+    const missed = e?.code === "E_REMOTE_UNREADABLE";
+    coverage = { known: false, reason: missed ? `this machine's cache cannot answer (${e.message})` : `${e?.code ? `${e.code}: ` : ""}${e?.message ?? e}` };
+    if (!missed) unknownRemedy = "fix the error named here (doctor reports it), then run doctor again";
+  }
+  const found = operatorProblems(coverage, { workspace, unknownRemedy });
   const unknown = found.find((p) => p.code === "operator-coverage-unknown");
   if (unknown) return { problems: [], information: [`${unknown.code}: ${unknown.message}; ${unknown.remedy}`] };
   return { problems: found.map(({ code, label, message, remedy }) => ({ code, ...(label ? { label } : {}), message, remedy })), information: [] };

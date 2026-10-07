@@ -1352,21 +1352,50 @@ items cover the subject's own teams only.
 | Code | Subject | Status | Keys | When |
 |---|---|---|---|---|
 | `operator-soul-missing` | `operator` | `fail` | `evidence.excluded` | no soul the workspace offers composes `oats.setup` |
-| `operator-team-uncovered` | `team <label>` | `fail` | `label`, `evidence.excluded` | no such soul is eligible for one of the subject's teams |
-| `operator-coverage-unknown` | `operator` | `unknown` | | coverage cannot be read (the workspace or a source is unreadable); it never asserts absence |
+| `operator-team-uncovered` | `team <label>` | `fail` | `label` | no such soul is eligible for one of the subject's teams |
+| `operator-coverage-unknown` | `operator` | `unknown` | | a question is still open and a source could not be read; it never asserts absence |
 
-`evidence.excluded` lists the souls whose `soul.yaml` names `oats.setup` but
-that cannot cover, each as `{soul, code}`. The code is `E_SOUL_DISABLED`,
-`E_SOUL_AMBIGUOUS`, the resolution's refusal, or `slot-none` with `slots`.
+A source could not be read when:
+
+- the workspace itself could not be read;
+- only its member view could (an unreadable host);
+- discovery dropped a member as `cannot-read`;
+- a soul file or listing could not be read;
+- a resolution hit `E_REMOTE_UNREADABLE`.
+
+A covering soul that was found is still reported. Any other refusal belongs to
+the soul, since a spawn would meet it too, so that soul does not cover.
+
+`evidence.excluded` lists the souls that cannot cover although they are
+relevant, each as `{soul, code}`:
+
+- a soul whose `soul.yaml` names `oats.setup` but that is disabled
+  (`E_SOUL_DISABLED`), ambiguous (`E_SOUL_AMBIGUOUS`) or refused (the
+  resolution's code);
+- a soul that composes `oats.setup` but empties a slot the workspace fills
+  (`slot-none`, with `slots`).
+
 Coverage that holds adds no item.
 
 `oats doctor` stays offline. It resolves the souls from this machine's cache
 only (no git process, no network) and checks the workspace and **every**
 declared team. It lists `operator-soul-missing` and `operator-team-uncovered`
 under `problems[]` as `{code, label?, message, remedy}` (text: `! <code>:
-<message>`, then the remedy). When the cache cannot answer (never synced, or
-pruned), it adds no problem. Instead it adds one `information[]` line, starting
-`operator-coverage-unknown:`, that names `oats sync`.
+<message>`, then the remedy).
+
+Doctor reads the resolutions that `oats souls`, readiness and spawn keep in the
+cache. `oats sync` alone does not resolve souls. When the cache cannot answer,
+doctor adds no problem. Instead it adds one `information[]` line, starting
+`operator-coverage-unknown:`, whose remedy is `oats sync`, then `oats souls`.
+The cache cannot answer when:
+
+- the machine never synced;
+- the cache was pruned;
+- a soul was not yet resolved here;
+- the deployment uses a configured `standalone:` view, whose membership read
+  is not cached. There, ask readiness.
+
+Any other error, such as an invalid lock, is named as itself.
 
 <a id="soul-launch-preferences-feature-launch-preference-oats-0300"></a>
 ## Launch preferences
