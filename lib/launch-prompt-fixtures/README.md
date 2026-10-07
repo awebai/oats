@@ -59,7 +59,12 @@ home-row policy is unchanged. These variants cannot authorize input.
 
 Provenance is the same pinned 2.1.289 darwin-arm64 executable SHA256 above,
 rechecked by read-only inspection. In that binary, `Knr` at the region containing
-byte offset 182366506 returns the four subscription labels. The welcome-data
+byte offset 182366506 falls back to the four subscription labels (or
+`Claude API` by default). Before that fallback it may return
+`Claude ${planDisplayName}` when the account value and gates permit it. Those
+custom display names are not qualified unless their complete bytes equal an
+explicitly accepted label; subscription membership alone does not qualify a
+banner. The welcome-data
 region containing offset 197387574 selects that billing value independently;
 `Hgr` at offset 197387656 splits model/billing only when their display widths
 plus the three-character separator exceed the available width. These four

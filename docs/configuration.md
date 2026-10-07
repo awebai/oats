@@ -126,7 +126,9 @@ A qualified normal-output boundary closes observation without asserting readines
 original plugin-absent banner. Both name Opus 5.5, API Usage Billing, auto mode
 and medium effort. Source-derived synthetic variants additionally allow exactly
 `Claude Max`, `Claude Pro`, `Claude Team` or `Claude Enterprise` in place of
-`API Usage Billing`; these are not observed subscription captures. Every other
+`API Usage Billing`; these are not observed subscription captures. Claude may
+prefer an account-specific plan display name over those fallback labels; other
+display names remain unqualified even for subscribers on those plans. Every other
 row stays exact apart from the bounded canonical-home directory line. This
 interim extension does not cover task-filled screens or bypass-permissions mode.
 Other model, billing, effort or permission banners remain unqualified: the one
