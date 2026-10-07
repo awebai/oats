@@ -129,7 +129,10 @@ else in `workspace status` changes it.
   miss: the TTL bounds what no key can see (local configuration, teams
   changed on the messaging side, the launch choice this machine would make
   now). Keys: `inspect --soul` → (deployment, server, soul, agents root,
-  capabilities key);
+  capabilities key, `instructions`): the soul page's read with the composed
+  AGENTS.md (`instructions: true`, a soul inspect only, local only, sent to the
+  CLI as `--instructions` when its probe lists `soul-composed-instructions`) is
+  another entry than the sidebar's plain read of the same soul;
   `inspect --home` → (deployment, server, home, instance, and the status row's
   identity and drift facts: createdAt, startedAt, soul, modules), so a retire,
   restart or drift change is another subject. `refresh: true` bypasses the

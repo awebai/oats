@@ -163,11 +163,13 @@ export function createContentsTree(nav, { selected, activate, onExpand = null })
  */
 export function createContentsReader(doc, { reader, head, body, alive, openExternal = null, isLocal = () => false, openLocal = null }) {
   const node = (tag, cls, text) => { const el = doc.createElement(tag); if (cls) el.className = cls; if (text !== undefined && text !== null) el.textContent = text; return el; };
-  /** The sticky head: the path, its size when known, and the host's truncated flag text when truncated. */
-  function paintHead(path, { bytes = null, flag = null } = {}) {
+  /** The sticky head: the path, its size when known, the host's truncated flag text when truncated, and the
+   * host's controls for the shown file (`actions`, placed last). */
+  function paintHead(path, { bytes = null, flag = null, actions = [] } = {}) {
     head.replaceChildren(node('span', 'cap-reader-path', path));
     const size = sizeText(bytes); if (size) head.append(node('span', 'cap-reader-size', size));
     if (flag) head.append(node('span', 'cap-reader-flag', flag));
+    head.append(...actions);
     head.hidden = false;
   }
   const line = text => node('p', 'cap-reader-line', text);
@@ -176,6 +178,10 @@ export function createContentsReader(doc, { reader, head, body, alive, openExter
     body.replaceChildren();
     if (file.binary) { body.append(line(binary)); return; }
     if (file.text === null) { body.append(line(missing)); return; }
+    body.append(fileView(file));
+  }
+  /** A text file `{ path, text }` rendered as the reader shows it (an element for the host to place in the body). */
+  function fileView(file) {
     const view = node('div', 'mdv');
     if (isMarkdownName(file.path)) {
       const { frontMatter, body: markdown } = splitFrontMatter(file.text);
@@ -189,7 +195,7 @@ export function createContentsReader(doc, { reader, head, body, alive, openExter
       view.innerHTML = renderCodeHtml(file.text, file.path);
       decorateMarkdown(view, doc, { anchors: false });
     }
-    body.append(view);
+    return view;
   }
   function factsTable(entries) {
     const table = node('table', 'cap-fm'); table.setAttribute('aria-label', 'Front matter');
@@ -238,7 +244,7 @@ export function createContentsReader(doc, { reader, head, body, alive, openExter
   body.addEventListener('click', onClick);
   body.addEventListener('auxclick', onClick);
   return {
-    paintHead, paintFile, line, scrollTo,
+    paintHead, paintFile, fileView, line, scrollTo,
     /** Empty the head and body. */
     clear() { head.hidden = true; head.replaceChildren(); body.replaceChildren(); },
     dispose() { for (const timer of copyTimers) clearTimeout(timer); copyTimers.clear(); body.removeEventListener('click', onClick); body.removeEventListener('auxclick', onClick); },
