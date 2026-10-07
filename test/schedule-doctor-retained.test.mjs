@@ -233,3 +233,25 @@ for (const corruption of [{ runsOn: "not a host name" }, { enabled: "false" }]) 
     assert.deepEqual(diskEvidence(fx), before);
   });
 }
+
+test("local retained state doctor cannot vouch for (unreadable lock custody) says doctor does not recommend reconciling, not that reconcile is unavailable", async (t) => {
+  const fx = v2Deployment();
+  t.after(() => fx.cleanup());
+  await fx.inEnv(() => {
+    S.addSchedule(fx.dep, { id: "custody", kind: "command", cwd: fx.dep, argv: ["oats", "status"], cron: "0 * * * *", tz: "UTC" });
+    S.writeState(fx.dep, { jobs: { custody: { attempt: { scheduledFor, startedAt } } } });
+    S.acquireJobLock(fx.dep, "custody", {});
+    const ownerPath = join(S.stateDir(fx.dep), "locks", "custody", "owner.json");
+    writeFileSync(ownerPath, "{not json");
+    const statePath = join(S.stateDir(fx.dep), "state.json");
+    const state = readFileSync(statePath, "utf8");
+    const problem = S.unresolvedScheduleAttempts(fx.dep).problems.find((p) => p.id === "custody");
+    assert.ok(problem);
+    assert.deepEqual(Object.keys(problem).sort(), problemKeys);
+    noExecutableReconcile(problem);
+    assert.match(problem.remedy, /^Doctor does not recommend reconciling this job because job lock custody is unreadable/);
+    assert.doesNotMatch(problem.remedy, /unavailable/i, "reconcile itself does not refuse an unreadable lock: doctor only declines to recommend it");
+    assert.equal(readFileSync(statePath, "utf8"), state, "doctor wrote nothing");
+    assert.equal(readFileSync(ownerPath, "utf8"), "{not json", "the lock custody is untouched");
+  });
+});

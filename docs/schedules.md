@@ -430,8 +430,9 @@ you), `launch-failed`, `unknown`, and for wake jobs `delivered`, `started` or
 `skipped`. The kernel never claims a task succeeded.
 
 `unknown` means the launch's side effects are unconfirmed: a command timed out
-or answered no envelope, or an attempt was never recorded. The job is skipped
-until `oats schedule reconcile <id>`, which adopts only an attributable
+or answered no envelope, or an attempt was never recorded. A job with a
+persisted attempt is skipped until `oats schedule reconcile <id>` (an
+unknown `lastRun` alone does not block it; see below), which adopts only an attributable
 receipt (a spawn job's instance, named for its minute, or the instance a
 command's answer named). When nothing is attributable, check the roster and
 the host by hand, then `reconcile <id> --clear` records `launch-failed` and
