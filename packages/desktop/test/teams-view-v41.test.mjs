@@ -93,8 +93,10 @@ test('the board\'s measures and the shared control rules, in the page\'s own CSS
   assert.match(rule('.computer-teams .ct-section-title'), /font-size:10.5px; font-weight:650; letter-spacing:.065em; text-transform:uppercase/);
   assert.match(rule('.computer-teams .ct-scope'), /height:20px;.*border:1px solid var\(--border\); border-radius:5px; background:var\(--surface\); color:var\(--muted\); font-size:10.5px; font-weight:600/);
   assert.match(rule('.computer-teams .ct-scope.dashed'), /border:1px dashed var\(--tree-line\)/);
-  assert.match(rule('.computer-teams .ct-card'), /grid-template-columns:44px minmax\(0,1fr\) 240px; column-gap:16px;.*padding:16px 18px; background:var\(--surface\); border:1px solid var\(--border\); border-radius:10px/);
-  assert.match(rule('.computer-teams .ct-tile'), /width:40px; height:40px; border-radius:10px; background:var\(--chip-bg\); color:var\(--chip-fg\)/);
+  // Spec A (calmer cards): a 32px tile; at a narrow board (container under 640px) the right column moves under the main one.
+  assert.match(rule('.computer-teams .ct-card'), /grid-template-columns:32px minmax\(0,1fr\) 240px; column-gap:14px;.*padding:16px 18px; background:var\(--surface\); border:1px solid var\(--border\); border-radius:10px/);
+  assert.match(rule('.computer-teams .ct-tile'), /width:32px; height:32px; border-radius:8px; background:var\(--chip-bg\); color:var\(--chip-fg\)/);
+  assert.match(computerTeamsCSS, /@container \(max-width: 640px\) \{\n \.computer-teams \.ct-card \{ grid-template-columns:32px minmax\(0,1fr\); \}\n \.computer-teams \.ct-side \{ grid-column:2;/);
   assert.match(rule('.computer-teams .ct-tile.default'), /background:var\(--sel\); color:var\(--accent\)/, 'rule 1: the selected state is the brand tint');
   assert.match(rule('.computer-teams .ct-pill'), /border-radius:10px; background:var\(--sel\); color:var\(--accent\); font-size:10.5px; font-weight:650/);
   assert.match(rule('.computer-teams .ct-label'), /font-size:14.5px; font-weight:650/);

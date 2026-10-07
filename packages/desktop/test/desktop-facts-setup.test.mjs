@@ -110,3 +110,57 @@ test('Defaults: a null slot reads "not set"; a standalone deployment (no default
   renderSetup(root, { status: statusOf(r => { delete r.defaults; }) });
   assert.equal(root.querySelector('[data-box=Defaults]'), null); assert.equal(root.querySelector('[data-team-defaults]'), null);
 });
+
+// Spec A (Setup roles): the host (it holds the workspace file) and the members (trusted for their souls and
+// capabilities) at a glance: a legend under the lede, the host's row first with Host · <file>, and Member on
+// every member row, the host's included. File names only as the kernel reports them.
+const AGENTS = 'local//fixture/base/fx/remotes/agents.git';
+test('Setup list: the legend names the files the kernel reports; the host leads with Host · its file, and every member says Member', () => {
+  const root = host();
+  // The host listed last: the view still puts it first, the others in the kernel's order.
+  renderSetup(root, { status: statusOf(r => { r.members.push(r.members.shift()); }) });
+  const header = root.querySelector('.setup > .setup-header');
+  assert.deepEqual([...header.children].map(c => c.className), ['setup-lede', 'setup-legend'], 'the lede and the legend read as one header');
+  assert.equal(header.querySelector('.setup-legend').textContent,
+    "Hostholds oats-workspace.yaml, the workspace's declarationsMemberbacklinks with oats-membership.yaml; its souls and capabilities are trustedThe host is a member too.");
+  assert.deepEqual([...root.querySelectorAll('.setup-legend .setup-badge')].map(b => [b.textContent, b.className]), [['Host', 'setup-badge host'], ['Member', 'setup-badge member']]);
+  assert.equal(root.querySelector('[data-box=Members] .setup-box-lead').textContent, 'repos the workspace trusts for souls and capabilities · always latest');
+  const rows = [...root.querySelectorAll('[data-box=Members] .setup-row[data-member]')];
+  assert.deepEqual(rows.map(r => r.querySelector('.setup-name-text').textContent), ['agents', 'platform', 'data', 'marketing', 'nw-tools'], 'host first');
+  assert.deepEqual(rows.map(r => [...r.querySelectorAll('.setup-badge')].map(b => b.textContent)),
+    [['Host·oats-workspace.yaml', 'Member'], ['Member'], ['Member'], ['Member'], ['Member']], 'Member on every row, the host included');
+  assert.equal(rows[0].dataset.member, AGENTS);
+  assert.equal(rows[0].querySelector('.setup-badge.host button'), null, 'no web address: the file name is plain text');
+  assert.equal(root.querySelector('.setup-host'), null, 'the old lowercase tag is gone');
+  // The graph keeps its lede alone (no legend) and says the host is a member too.
+  renderSetup(root, { status: statusOf(), view: 'graph', onSelect() {} });
+  assert.equal(root.querySelector('.setup-legend'), null);
+  assert.ok(root.querySelector('.setup > .setup-lede'));
+  const leaf = root.querySelector(`.setup-node[data-member="${AGENTS}"]`);
+  assert.equal(leaf.querySelector('.setup-node-meta').textContent, 'host · member · 2 souls');
+  assert.equal(leaf.getAttribute('aria-label'), 'agents: host · member · 2 souls — show its membership');
+  assert.equal(root.querySelector('.setup-node[data-member$="platform.git"] .setup-node-meta').textContent, '2 souls');
+});
+
+test('Setup list: the Host badge links its file when the kernel gives a web address; an older kernel keeps generic words', () => {
+  const opened = [], root = host();
+  const url = `https://github.com/northwind/agents/blob/${SHORT}/oats-workspace.yaml`;
+  renderSetup(root, { status: statusOf(r => { r.workspace.file.url = url; }), openExternal: u => opened.push(u) });
+  const link = root.querySelector('[data-box=Members] .setup-badge.host button.setup-file');
+  assert.equal(link.textContent, 'oats-workspace.yaml'); assert.equal(link.getAttribute('aria-label'), 'Open oats-workspace.yaml');
+  link.click(); assert.deepEqual(opened, [url]);
+  const old = host();
+  renderSetup(old, { status: statusOf(r => { delete r.workspace.file; for (const m of r.members) delete m.membershipFile; }) });
+  assert.equal(old.querySelector('.setup-legend').textContent,
+    "Hostholds the workspace file, the workspace's declarationsMemberbacklinks with a membership file; its souls and capabilities are trustedThe host is a member too.");
+  assert.doesNotMatch(old.querySelector('.setup').textContent, /oats-workspace\.yaml|oats-membership\.yaml/, 'never a guessed file name');
+  assert.deepEqual([...old.querySelectorAll('[data-box=Members] .setup-row')[0].querySelectorAll('.setup-badge')].map(b => b.textContent), ['Host', 'Member']);
+});
+
+test('Setup list: hostile names and file paths render literally', () => {
+  const root = host(), hostile = '<img src=x onerror=alert(1)>';
+  renderSetup(root, { status: statusOf(r => { r.workspace.file.path = hostile; r.members[0].name = hostile; r.members[1].membershipFile.path = hostile; }) });
+  assert.equal(root.querySelector('img'), null);
+  assert.ok(root.querySelector('.setup-legend').textContent.includes(hostile));
+  assert.equal(root.querySelector('[data-box=Members] .setup-row .setup-name-text').textContent, hostile);
+});

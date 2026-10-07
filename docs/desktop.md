@@ -258,6 +258,20 @@ registered remote workspace the timer and definitions live on that server, so
 they do not depend on the Mac staying awake. See [Schedules](schedules.md) for
 the CLI, cron semantics, observed outcomes and recovery commands.
 
+## A workspace's teams and setup
+
+The Workspace › **Teams** tab has one card per team. Under its description,
+**Default for** says whose default the team is: all souls of a repository, a
+single soul, or every soul without its own default for the default team. **May
+join** says who else may join it. Both are read from the workspace's committed
+`souls:`; a team nobody may join yet says so. The address (the team on the
+messaging provider) and the members running in it follow.
+
+The **Setup** tab's List view starts with the workspace's **host**, the
+repository that holds `oats-workspace.yaml`, and marks every repository the
+workspace trusts for souls and capabilities as a **Member**. The host is a
+member too. A legend under the title explains both badges.
+
 ## A workspace's machines
 
 A window offers only the machines that run its workspace: those whose

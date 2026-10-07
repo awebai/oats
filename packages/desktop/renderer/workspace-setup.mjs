@@ -11,11 +11,23 @@ import { packageOrigin } from './capability-page.mjs';
 
 export const setupCSS = `
 .setup { display:flex; flex-direction:column; gap:16px; min-width:0; }
+/* The list view's header: the lede and the legend read as one block (the root's gap falls below it). */
+.setup-header { display:flex; flex-direction:column; gap:6px; min-width:0; }
 .setup-lede { display:flex; align-items:baseline; flex-wrap:wrap; gap:4px 12px; min-width:0; }
 .setup-lede h2 { margin:0; color:var(--fg); font-size:18px; font-weight:700; letter-spacing:-.01em; }
 .setup-lede-where { color:var(--muted); font-size:12.5px; min-width:0; overflow-wrap:anywhere; }
 .setup-lede-where .mono { font-family:var(--mono,monospace); }
 .setup-lede-where .strong { color:var(--fg); }
+/* What Host and Member mean, each a badge and a few words (docs/workspaces.md terms). */
+.setup-legend { display:flex; flex-wrap:wrap; align-items:center; gap:4px 14px; margin:0; color:var(--muted); font-size:12px; line-height:1.45; min-width:0; }
+.setup-legend-item { display:inline-flex; align-items:center; gap:6px; min-width:0; overflow-wrap:anywhere; }
+.setup-legend .mono { font-family:var(--mono,monospace); }
+/* A member's roles: Host (accent tint, names its file) and Member (neutral), never cropped. */
+.setup-badge { display:inline-flex; align-items:center; gap:4px; flex:none; height:18px; padding:0 6px; box-sizing:border-box; border-radius:4px; font:600 10.5px var(--sans,system-ui); white-space:nowrap; }
+.setup-badge.host { background:var(--sel); color:var(--accent); }
+.setup-badge.member { background:var(--tag-bg); color:var(--muted); }
+.setup-badge .mono { font-family:var(--mono,monospace); font-weight:500; }
+.setup-badges { display:inline-flex; align-items:center; flex:none; gap:4px; }
 .setup-cols { display:grid; grid-template-columns:minmax(0,1fr) 380px; gap:16px; align-items:start; min-width:0; }
 .setup-col { display:flex; flex-direction:column; gap:16px; min-width:0; }
 @container (max-width: 980px) { .setup-cols { grid-template-columns:minmax(0,1fr); } }
@@ -25,14 +37,20 @@ export const setupCSS = `
 .setup-box-head .shell-icon { flex:none; color:var(--muted); }
 .setup-box-lead { min-width:0; color:var(--muted); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .setup-scope { display:inline-flex; align-items:center; gap:5px; flex:none; margin-left:auto; height:20px; padding:0 7px; border-radius:5px; background:var(--tag-bg); color:var(--muted); font-size:11px; font-weight:550; white-space:nowrap; }
-.setup-row { display:grid; grid-template-columns:minmax(0,1.3fr) 150px minmax(0,1fr) 150px; gap:12px; align-items:center; min-height:42px; padding:0 16px; box-sizing:border-box; border-top:1px solid var(--tag-bg); }
+.setup-row { display:grid; grid-template-columns:minmax(0,1.3fr) 150px minmax(0,1fr) 150px; gap:12px; align-items:center; min-height:42px; padding:6px 16px; box-sizing:border-box; border-top:1px solid var(--tag-bg); }
 .setup-box-head + .setup-row { border-top:0; }
 .setup-row > * { min-width:0; }
-.setup-name { display:flex; align-items:center; gap:8px; min-width:0; color:var(--fg); font:12.5px var(--mono,monospace); }
+/* Narrow: the name and its badges take the row's first line, the facts the second (every row alike, so
+   Members and Packages keep one height and one set of columns). */
+@container (max-width: 860px) {
+ .setup-row { grid-template-columns:130px minmax(0,1fr) auto; row-gap:6px; padding:9px 16px; }
+ .setup-row > .setup-name { grid-column:1 / -1; }
+}
+/* A name too long for its badges wraps them to a second line rather than cropping one. */
+.setup-name { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; min-width:0; color:var(--fg); font:12.5px var(--mono,monospace); }
 .setup-name .shell-icon { flex:none; color:var(--muted); }
 .setup-name-text { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
 .setup-version { flex:none; color:var(--muted); }
-.setup-host { flex:none; padding:0 5px; border:1px solid var(--border); border-radius:4px; color:var(--muted); font:10.5px var(--sans,system-ui); }
 .setup-state { display:inline-flex; align-items:center; gap:6px; justify-self:start; height:22px; padding:0 8px; border-radius:5px; background:var(--tag-bg); color:var(--muted); font-size:11.5px; font-weight:600; white-space:nowrap; }
 .setup-state.warn { background:var(--attn-bg); color:var(--warn); }
 .setup-cell { color:var(--fg); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -222,9 +240,12 @@ export function renderSetup(host, { status, instances = [], souls = [], cli = nu
   const doc = host.ownerDocument;
   host.replaceChildren();
   const root = el(doc, 'div', null, 'setup'); root.dataset.view = view;
-  root.append(lede(doc, status, openExternal));
-  if (view === 'graph') root.append(graph(doc, { status, instances, selected, onSelect, onOpenRepo, onOpenPackages, openExternal }));
-  else root.append(columns(doc, { status, instances, souls, cli, onSelect, onOpenRepo, onOpenPackages }));
+  if (view === 'graph') root.append(lede(doc, status, openExternal), graph(doc, { status, instances, selected, onSelect, onOpenRepo, onOpenPackages, openExternal }));
+  else {
+    // The list's header: the lede and what Host and Member mean, read as one block.
+    const header = el(doc, 'div', null, 'setup-header'); header.append(lede(doc, status, openExternal), legend(doc, status));
+    root.append(header, columns(doc, { status, instances, souls, cli, onSelect, onOpenRepo, onOpenPackages, openExternal }));
+  }
   if (machines) root.append(machines);
   host.append(root);
   return root;
@@ -248,16 +269,39 @@ function lede(doc, status, openExternal) {
   return line;
 }
 
-function columns(doc, { status, instances, souls, cli, onSelect }) {
+/** What Host and Member mean, by the file names the kernel reports (workspace.file, a member's
+ * membershipFile); generic words otherwise. */
+function legend(doc, status) {
+  const wsFile = fileRef(status?.workspace?.file), memberFile = list(status?.members).map(m => fileRef(m?.membershipFile)).find(Boolean);
+  const line = el(doc, 'p', null, 'setup-legend');
+  const named = (file, words) => file ? el(doc, 'span', file.path, 'mono') : words;
+  const item = (badge, ...words) => { const span = el(doc, 'span', null, 'setup-legend-item'), said = el(doc, 'span'); said.append(...words); span.append(badge, said); line.append(span); };
+  item(el(doc, 'span', 'Host', 'setup-badge host'), 'holds ', named(wsFile, 'the workspace file'), ", the workspace's declarations");
+  item(el(doc, 'span', 'Member', 'setup-badge member'), 'backlinks with ', named(memberFile, 'a membership file'), '; its souls and capabilities are trusted');
+  line.append(el(doc, 'span', 'The host is a member too.', 'setup-legend-item'));
+  return line;
+}
+/** The host's badge: Host, and the workspace file it holds (a link when it has a web address). */
+function hostBadge(doc, status, openExternal) {
+  const badge = el(doc, 'span', 'Host', 'setup-badge host'), file = fileRef(status?.workspace?.file);
+  if (file) { const name = fileName(doc, file, openExternal); name.classList.add('mono'); badge.append(el(doc, 'span', '·'), name); }
+  return badge;
+}
+
+function columns(doc, { status, instances, souls, cli, onSelect, openExternal }) {
   const ws = status?.workspace || {};
   const cols = el(doc, 'div', null, 'setup-cols'), main = el(doc, 'div', null, 'setup-col'), side = el(doc, 'div', null, 'setup-col');
-  // Members: the repositories that contribute souls and capabilities, always at their latest.
-  const members = box(doc, 'Members', 'repos that contribute souls and capabilities · always latest', 'Shared · Git');
-  for (const member of list(status?.members)) {
+  // Members: the repositories the workspace trusts for souls and capabilities, always at their latest.
+  const members = box(doc, 'Members', 'repos the workspace trusts for souls and capabilities · always latest', 'Shared · Git');
+  // The host first (it is a member too); the others in the kernel's order.
+  const isHost = m => !!text(ws.key) && m?.key === ws.key;
+  for (const member of [...list(status?.members)].sort((a, b) => isHost(b) - isHost(a))) {
     const row = el(doc, 'div', null, 'setup-row'); row.dataset.member = member.key;
     const name = el(doc, 'span', null, 'setup-name'); name.append(iconElement(doc, 'repo', { size: 15 }));
     const label = el(doc, 'span', memberName(member), 'setup-name-text'); label.title = member.key; name.append(label);
-    if (member.key === ws.key) name.append(el(doc, 'span', 'host', 'setup-host'));
+    const badges = el(doc, 'span', null, 'setup-badges');
+    if (isHost(member)) badges.append(hostBadge(doc, status, openExternal));
+    badges.append(el(doc, 'span', 'Member', 'setup-badge member')); name.append(badges);
     const gives = contribution(member), state = memberState(member);
     const cell = el(doc, 'span', gives.text, `setup-cell${gives.muted ? ' muted' : ''}`); cell.title = gives.text;
     row.append(name, stateChip(doc, member), cell);
@@ -459,7 +503,7 @@ function graph(doc, { status, instances, selected, onSelect, onOpenRepo, onOpenP
   if (members.length) label('Members · latest');
   for (const member of members) {
     const state = memberState(member), souls = list(member.souls).length;
-    const meta = state.ok ? [member.key === ws.key ? 'host' : null, plural(souls, 'soul')].filter(Boolean).join(' · ') : state.label;
+    const meta = state.ok ? [member.key === ws.key ? 'host · member' : null, plural(souls, 'soul')].filter(Boolean).join(' · ') : state.label;
     const node = item('repo', memberName(member), meta, { bad: !state.ok, pressed: member.key === selected,
       run: () => onSelect(member.key === selected ? null : member.key), aria: `${memberName(member)}: ${meta} — show its membership` });
     node.dataset.member = member.key; leaf(node, !state.ok);

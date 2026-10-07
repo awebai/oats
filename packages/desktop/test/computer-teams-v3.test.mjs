@@ -99,11 +99,16 @@ test('souls: as committed, read only, with where to change it in the kernel\'s w
   const u = await mount(t, () => teams('teams-closed'));
   const souls = u.q('[data-section=souls]');
   const rows = [...souls.querySelectorAll('.ct-soul-rule')].map((r) => [r.querySelector('.ct-soul-key').textContent, r.querySelector('.ct-soul-teams').textContent]);
-  assert.deepEqual(rows, [['*', 'no other team'], ['agents/*', 'engineering'], ['agents/release-manager', 'default engineering · marketing'], ['agents/no-such-soul', 'global']]);
+  assert.deepEqual(rows, [['*', 'no other team'], ['agents/*', 'may join engineering'], ['agents/release-manager', 'default engineering · may also join marketing'], ['agents/no-such-soul', 'may join global']]);
   assert.match(souls.textContent, /souls: in oats-workspace\.yaml \(a PR to the workspace file\)/);
   assert.equal(souls.querySelector('button'), null, 'nothing to edit here');
-  assert.equal(u.row('engineering').querySelector('.ct-join').textContent, '2 entries in souls:', 'who may join, from the patterns');
-  assert.equal(u.row('global').querySelector('.ct-join').textContent, 'souls without their own default · 1 entry in souls:');
+  // Spec A: each card says whose default it is and who else may join, from the patterns (teamAudience).
+  const fact = (label, row) => u.row(label).querySelector(`[data-audience=${row}] dd`)?.textContent ?? null;
+  assert.equal(fact('engineering', 'default'), 'release-manager (agents)');
+  assert.equal(fact('engineering', 'join'), 'souls of agents except no-such-soul');
+  assert.equal(fact('global', 'default'), 'every soul without its own default');
+  assert.equal(fact('global', 'join'), 'no-such-soul (agents)');
+  assert.equal(u.row('engineering').querySelector('.ct-join'), null, 'no team model 2 line');
 });
 
 test('the closed-state wording is the kernel\'s own clause', () => {
