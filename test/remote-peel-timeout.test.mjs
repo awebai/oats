@@ -52,7 +52,7 @@ test("a peel of a commit already in the cache that times out is a timeout too, n
   await observeRemote(f.bare, { cacheDir: f.cacheDir, at: f.commit }); // in the cache now
   const calls = [];
   const exec = async (args, opts) => {
-    calls.push(args[0] === "-C" ? args[2] : args[0]);
+    calls.push(args.includes("fetch") ? "fetch" : args.find((a) => a === "rev-parse" || a === "cat-file") ?? "other");
     if (args.includes("rev-parse") && args.some((a) => a.endsWith("^{commit}"))) throw gitTimedOut(args);
     return runGit(args, opts);
   };
