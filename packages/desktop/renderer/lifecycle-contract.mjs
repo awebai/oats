@@ -30,7 +30,7 @@ const messages = {
   E_INSTANCE_RETIRING: 'An instance in this plan is already being retired.',
   E_CHILDREN_RUNNING: "A child instance wouldn't stop, so nothing was retired. Other children may already have stopped.",
   E_SESSION_STOP_FAILED: "The session didn't stop in time. Nothing was forced.",
-  E_WORK_PRESERVATION_FAILED: "The worktree couldn't be kept safely, so the home folder is kept. Earlier retirement steps may have run.",
+  E_WORK_PRESERVATION_FAILED: "Its work couldn't be saved safely, so the home folder is kept. Earlier retirement steps may have run.",
   E_WORK_INSPECTION_FAILED: "Retirement was refused: OATS couldn't inspect the instance's home or work. The home folder is kept; its session may already have been stopped, and earlier retirement steps may have run.",
   E_RETIRE_INCOMPLETE: "Retirement didn't finish cleaning up. Check what was kept before trying again.",
   E_CLI_TIMEOUT: "OATS didn't answer in time.", E_CLI_OUTPUT_LIMIT: "OATS's answer was larger than Desktop reads safely.",
