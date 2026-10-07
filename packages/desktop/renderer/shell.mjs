@@ -852,7 +852,7 @@ function renderContextRoster(instances) {
         rowWrap.classList.toggle("active", isActive);
         if (hasChildren) row.setAttribute("aria-expanded", String(filtering || !collapsed));
         // A row that can't open (unknown state, a remote row the kernel does not report addressable) stays
-        // focusable (aria-disabled, spec F): its row tools — the actions menu's Inspect/Stop/Remove — must
+        // focusable (aria-disabled, spec F): its row tools — the actions menu's Inspect/Stop/Retire — must
         // stay reachable from the keyboard. Its activation does nothing and says why.
         const unavailable = i.running == null || !canAddressRemote(i);
         if (unavailable) { row.setAttribute("aria-disabled", "true"); row.classList.add("unavailable"); }
