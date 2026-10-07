@@ -383,9 +383,10 @@ Roster rows, soul cards, the soul page, the context panel and the spawn
 dialog show each instance's or soul's harness as a small badge, next to its
 name. The badge names the harness the CLI reports; it says nothing about
 whether that harness is installed or signed in. Pi's badge is the official
-pi.dev press-kit mark (MIT). The Claude Code and Codex badges are OATS's own
-drawings: they are not those products' logos, and OATS is not affiliated
-with or endorsed by Anthropic or OpenAI. An unknown or unreported harness
+pi.dev press-kit mark (MIT), and Claude Code's is Anthropic's Claude spark
+in the theme's colours. The Codex badge is OATS's own drawing, not OpenAI's
+logo. OATS is not affiliated with or endorsed by Anthropic or OpenAI. An
+unknown or unreported harness
 shows "?". Sources and licences are in
 `packages/desktop/renderer/harness-marks/README.md`.
 
