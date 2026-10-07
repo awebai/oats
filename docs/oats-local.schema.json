@@ -26,6 +26,24 @@
       "additionalProperties": { "type": "string", "minLength": 1 },
       "description": "<repo key>: <path on this machine> for member clones outside the convention."
     },
+    "launchPromptAnswers": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "homes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "awebDevelopmentChannel": { "type": "boolean" }
+            }
+          },
+          "description": "Exact absolute canonical instance-home paths only; no wildcard or ancestor inheritance. Runtime validation resolves existing ancestors for homes not yet created."
+        }
+      },
+      "description": "Host-only consent to the bounded exact aweb development-channel confirmation. Missing awebDevelopmentChannel is false; provider settings and captured recipes do not grant consent."
+    },
     "settings": {
       "type": "object",
       "propertyNames": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },

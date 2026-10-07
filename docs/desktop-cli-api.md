@@ -1533,6 +1533,48 @@ shows the drift as `launch-changed`.
 No verb writes `souls.launch`; it is plain YAML. A GUI that edits it checks
 the result with `oats inspect --soul <name> --json`.
 
+## Launch prompt results
+
+Spawn preview adds `launchPromptAnswers` with the strict effective boolean
+`awebDevelopmentChannel` and `consentSource` (a config-file
+JSON pointer or `null`). This is a policy report, not a terminal observation
+or readiness assertion. Only the aweb development-channel confirmation is
+covered, restricted to the qualified Claude executable digest, platform and
+geometry documented under [launch consent](configuration.md#exact-home-launch-prompt-consent).
+Folder-trust prompts remain unexpected and blocked.
+
+An observed launch has `launchPrompts: {status, answers, reason, receipt}`.
+`receipt` carries the actual checked launch-prompt event-write results,
+including partial log availability; it is not a receive-readiness receipt.
+The `launch-prompt` event records the launch start and pane/PID identity,
+consent provenance, signature identifier/digest, action and outcome. Intent is
+durable before input; submission (`submitted`, `failed`, `uncertain`) and an
+observed screen transition are distinct. Unexpected raw screen text is never
+included in the receipt.
+
+Spawn and start both reuse `E_SPAWN_INCOMPLETE` for retained prompt outcomes,
+with `launchPrompts.status` set to `blocked` or `incomplete`. Error details
+preserve `instance`, `home`, `launched:"unknown"`, `unconfirmed:true` and add
+`retained:true`, `target`,
+`parentLineageCommitted`, and `launchPrompts`. Unknown prompts report
+`blocked: unexpected prompt`. An incomplete audit can follow a possible key;
+clients must not offer automatic key retry. `launched:false` in retained
+metadata does not mean there is no process or that another harness may be
+allocated. Use runtime inspection and the existing start/restart lifecycle.
+Same-key spawn replay cannot convert a blocked outcome to successful spawn.
+
+`answers` can contain a `submitted` answer even when the final status is
+`blocked`: the accepted installed-plugin and plugin-absent completion banners
+pin specific model/billing/effort/permission text. A different normal-looking banner can block after Enter
+while the actual pane is active. Consumers must preserve that submitted receipt
+and never translate this outcome into “nothing started” or automatic retry.
+The [completion limitation](configuration.md#exact-home-launch-prompt-consent)
+is part of the shipping contract.
+
+Strict Desktop/pi readers must accept these additive fields and the new event
+kind before a writer containing them ships. For operator recovery, see
+[launch prompt outcomes](execution-targets.md#launch-prompt-outcomes).
+
 ## Spawn
 
 ### The preview
@@ -1775,7 +1817,7 @@ Feature `spawn-name`. `--name <slug>` is the exact name, with no prefix.
 | `E_INSTANCE_NAME_INVALID`, `E_INSTANCE_NAME_TAKEN` | see above | |
 | `E_DECISION_STALE` | `{decision}` | |
 | `E_PLACEMENT_TAKEN`, `E_IDEMPOTENCY_CONFLICT` | `{instance, home}` | |
-| `E_SPAWN_INCOMPLETE` | `{instance, home, launched, unconfirmed: true}` | |
+| `E_SPAWN_INCOMPLETE` | `{instance, home, launched, unconfirmed: true}`; retained launch-prompt outcomes additionally carry `{retained: true, target, parentLineageCommitted, launchPrompts}` | See [launch prompt results](#launch-prompt-results). |
 | `E_LAUNCH_*`, `E_MODEL_UNKNOWN`, `E_UNSUPPORTED_HARNESS` | | the launch selection is refused |
 | `E_LAUNCH_SHIM` | | the home's `oats` (`<home>/.oats/bin/oats`) cannot be written; the spawn is rolled back |
 | `E_SCHEDULE_INVALID` | | a bad wake (`--wake-json`, `--wake-file`, `--wake-*`) |

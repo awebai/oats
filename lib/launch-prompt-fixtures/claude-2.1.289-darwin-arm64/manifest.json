@@ -1,0 +1,77 @@
+{
+  "harness": "claude",
+  "version": "2.1.289",
+  "platform": "darwin-arm64",
+  "binarySha256": "03d66745e3bb69ec727d66023696f3820bc0a00a8a5ba725eb6706d0c67cbe69",
+  "geometry": {
+    "width": 110,
+    "height": 35
+  },
+  "frames": {
+    "frame-05-channel-seeded.txt": {
+      "sha256": "8a6dacbf45eab69ddf641cfcb292a5bb5c9eecb45690d0920e35834e24b30036",
+      "bytes": 763
+    },
+    "frame-06-first-after-channel.txt": {
+      "sha256": "5a5331bc2f941678f6c169fca0ad1ce0d133abc6b0946564311870e03b89b03a",
+      "bytes": 35
+    },
+    "frame-07-after-channel-200ms.txt": {
+      "sha256": "1b30359fcb9181d02faf10ed0780812079222cf6c54b60ed468ce037c1ff37e7",
+      "bytes": 1274
+    },
+    "frame-08-installed-after-channel-200ms.txt": {
+      "bytes": 1210,
+      "sha256": "f27d73189f2b1ba23899d99ba1596545f29d1d2494cb94b12ab314cf42426bef"
+    }
+  },
+  "installedCapture": {
+    "pluginVersion": "1.7.11",
+    "pluginDistSha256": "dc313b57f1aa952ea45685f6108187b7943a30a7b840a250d15efad0ff9c8e92",
+    "marketplaceCommit": "153033b9a8035617043a3450004399959c2ad9c6",
+    "network": "denied",
+    "credentials": "dummy only; real home read/write denied",
+    "seededInputs": [
+      "completed onboarding",
+      "trusted exact throwaway directory",
+      "dummy API key approval",
+      "cachedGrowthBookFeatures.tengu_harbor=true"
+    ],
+    "keys": [
+      "Enter"
+    ],
+    "serverAbsent": true,
+    "completionDisposition": "accepted bounded completion-only frame with existing finite canonical-home cwd family; no input authority or account/channel readiness",
+    "acceptanceMessage": "c1ba2c2d-d4c4-4673-8e13-12d65be0243d",
+    "captureOwner": "oats-kernel-expert-wake-lifecycle",
+    "installation": "native plugin CLI in isolated config and npm cache; no deployment settings or identity copied",
+    "observations": {
+      "before.txt": {
+        "bytes": 763,
+        "sha256": "8a6dacbf45eab69ddf641cfcb292a5bb5c9eecb45690d0920e35834e24b30036"
+      },
+      "selected.txt": {
+        "bytes": 763,
+        "sha256": "8a6dacbf45eab69ddf641cfcb292a5bb5c9eecb45690d0920e35834e24b30036"
+      },
+      "after-immediate.txt": {
+        "bytes": 35,
+        "sha256": "5a5331bc2f941678f6c169fca0ad1ce0d133abc6b0946564311870e03b89b03a"
+      },
+      "after-200ms.txt": {
+        "bytes": 1210,
+        "sha256": "f27d73189f2b1ba23899d99ba1596545f29d1d2494cb94b12ab314cf42426bef"
+      },
+      "after-1s.txt": {
+        "bytes": 1210,
+        "sha256": "f27d73189f2b1ba23899d99ba1596545f29d1d2494cb94b12ab314cf42426bef"
+      },
+      "after-3s.txt": {
+        "bytes": 1210,
+        "sha256": "f27d73189f2b1ba23899d99ba1596545f29d1d2494cb94b12ab314cf42426bef"
+      }
+    },
+    "banner": "Opus 5.5 / API Usage Billing / auto mode / medium effort",
+    "limits": "No task, real account, connection or native-receive success tested; other model/billing/effort/permission variants unqualified."
+  }
+}

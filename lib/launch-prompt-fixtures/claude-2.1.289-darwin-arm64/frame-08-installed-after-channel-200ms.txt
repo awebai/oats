@@ -1,0 +1,35 @@
+ ▐▛███▛█   Claude Code v2.1.289
+▝▜██████▀  Opus 5.5 · API Usage Billing
+ ▝▝   ▝▝   ~/…/instances/oats-kernel-expert-wake-lifecycle/work/708-fixtures/installed-run/target
+
+▎ Channels (experimental) messages from plugin:aweb-channel@awebai-marketplace inject directly in this session
+▎ · restart without --dangerously-load-development-channels to stop
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents                                     ◐ medium · /effort
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
