@@ -26,7 +26,6 @@
     }
   },
   "installedCapture": {
-    "home": "/Users/juanre/Agents/oats/agents/oats-kernel-expert/instances/oats-kernel-expert-wake-lifecycle/work/708-fixtures/installed-run/target",
     "pluginVersion": "1.7.11",
     "pluginDistSha256": "dc313b57f1aa952ea45685f6108187b7943a30a7b840a250d15efad0ff9c8e92",
     "marketplaceCommit": "153033b9a8035617043a3450004399959c2ad9c6",
