@@ -333,7 +333,7 @@ test("grant subject alias from grant.yaml wins over mint output, with resident f
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test("readiness checks the newest grant home for custody attachment", () => {
+test("readiness checks the recorded grant home for custody attachment", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
   try {
     const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
@@ -342,9 +342,10 @@ test("readiness checks the newest grant home for custody attachment", () => {
     write(join(oldHome, "grant.yaml"), "grant_id: old\nteam_id: t:example.test\nexpires_at: old\ncustody:\n  socket_path: old.sock\n");
     write(join(newHome, "grant.yaml"), "grant_id: newer\nteam_id: t:example.test\nexpires_at: newer\n");
     const later = new Date(Date.now() + 5000);
-    statSync(newHome); // ensure directory exists before utimes()
-    utimesSync(newHome, later, later);
+    statSync(oldHome); // A newer unselected directory must not override the recorded locator.
+    utimesSync(oldHome, later, later);
     const ctx = { kind: "workspace", workspace: root, deployment: root, soul: "dev", home };
+    write(join(home, "instance.json"), JSON.stringify({ capabilityMeta: { "oats.aweb": { identity: { mode: "global", grant: { id: "newer", home: newHome } } } } }));
     const checked = runBindingCheck(bin, settings(custody), ctx);
     assert.equal(checked.status, 0, checked.stderr);
     assert.equal(checked.doc.result.status, "needs-configuration");
@@ -358,7 +359,7 @@ test("launch with renewal off preserves the existing grant locator and session d
     const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
     const oldHome = join(home, ".aweb-identity"); mkdirSync(oldHome, { recursive: true });
     const old = { delivery: "session", identity: { mode: "global", alias: "resident-alias", team: "t:example.test", resident: "merlin", grant: { id: "grant-old", expiresAt: "old", scopes: ["mail.read"] } } };
-    const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ ...settings(custody), delivery: "session" }), AWEB_IDENTITY_HOME: join(base, "foreign-parent-grant") });
+    const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ ...settings(custody, { renew: "off" }), delivery: "session" }), AWEB_IDENTITY_HOME: join(base, "foreign-parent-grant") });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.deepEqual(r.doc.env, { AWEB_DELIVERY: "session", AWEB_IDENTITY_HOME: oldHome });
     assert.deepEqual(r.doc.meta, { ...old, delivery: "session", runtime: "" }, "the start records the delivery and runtime it ran under and keeps the grant");
@@ -373,7 +374,7 @@ test("local-mode launch with renew=launch still preserves delivery launch contri
     const old = { delivery: "session", identity: { mode: "local", alias: "probe", team: "t:example.test", address: null, resident: null } };
     const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ delivery: "session", identity: { mode: "local", renew: "launch" }, residents: { merlin: custody } }) });
     assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.deepEqual(r.doc.env, { AWEB_DELIVERY: "session" });
+    assert.deepEqual(r.doc.env, { AWEB_DELIVERY: "session", AWEB_IDENTITY_HOME: join(home, ".aw") });
     assert.equal(logLines(base).some((l) => l.argv[0] !== "wake"), false, "local renew=launch does not try grant renewal");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
