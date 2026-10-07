@@ -71,7 +71,7 @@ ${groupHeadingCSS}.source-chip { display:inline-flex; align-items:center; gap:7p
 .catalog-used { display:flex; align-items:center; gap:6px; min-width:0; }
 .catalog-used-marks { display:flex; flex:none; padding-left:5px; }
 .catalog-used-marks:empty { display:none; }
-.catalog-used-marks .identity-mark { width:20px; height:20px; margin-left:-5px; border-radius:6px; border:1.5px solid var(--surface); font-size:9.5px; font-weight:700; box-sizing:border-box; }
+.catalog-used-marks .identity-mark { width:20px; height:20px; margin-left:-5px; border-radius:6px; border:1.5px solid var(--surface); font-size:9px; font-weight:700; box-sizing:border-box; }
 .catalog-used-count { color:var(--fg); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .catalog-used-count.none { color:var(--muted); }
 .catalog-empty { margin:0; padding:24px 16px; color:var(--muted); line-height:1.5; }

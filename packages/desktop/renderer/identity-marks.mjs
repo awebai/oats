@@ -3,7 +3,7 @@ import { colorForIdentity, soulColor } from './soul-colors.mjs';
 // Theme branches own all colors, including AA foreground/background pairs.
 // No data is ever interpolated into styles, SVG, HTML, or resource URLs.
 export const identityCSS = `
-.identity-mark { display:inline-grid; place-items:center; flex:none; width:36px; height:36px; border-radius:9px; font-size:15px; font-weight:650; }
+.identity-mark { display:inline-grid; place-items:center; flex:none; width:36px; height:36px; border-radius:9px; font-size:15px; font-weight:650; letter-spacing:-.02em; }
 .runtime-badge { display:inline-grid; place-items:center; flex:none; width:18px; height:18px; border-radius:5px; font-size:9.5px; font-weight:700; }
 .runtime-badge > .runtime-mark { display:block; width:100%; height:100%; overflow:visible; }
 .runtime-badge[data-runtime="pi"] > .runtime-mark { width:66%; height:66%; }
@@ -42,13 +42,27 @@ export function harnessName(value) {
   const reported = typeof value === 'string' ? value.trim() : '';
   return runtimeMarks.get(reported.toLowerCase())?.name || reported;
 }
-const monogram = value => (typeof value === 'string' ? value.match(/[\p{L}\p{N}]/u)?.[0] : null)?.toUpperCase() || '?';
+const words = text => text.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+/** The two-letter mark, one grammar app-wide: drop a package qualifier (after the
+ * last `/` or `--`) and, from three words, a leading namespace word; then the
+ * initials of two words, or a single word's first two characters. Code points,
+ * not UTF-16 units; no letters or digits at all is `?`. */
+export function markText(value) {
+  if (typeof value !== 'string') return '?';
+  const slash = value.lastIndexOf('/'), dashes = value.lastIndexOf('--');
+  const cut = Math.max(slash < 0 ? 0 : slash + 1, dashes < 0 ? 0 : dashes + 2);
+  let parts = words(value.slice(cut)); if (!parts.length) parts = words(value);
+  if (parts.length >= 3) parts = parts.slice(1);
+  const chars = parts.length >= 2 ? [[...parts[0]][0], [...parts[1]][0]] : parts.length ? [...parts[0]].slice(0, 2) : [];
+  // Each character uppercased on its own, keeping its first code point: "ß" is "SS" in upper case, never a third glyph.
+  return chars.map(c => [...c.toLocaleUpperCase('en')][0]).join('') || '?';
+}
 function identityMark(doc, name, color, kind) {
   const el = doc.createElement('span');
   el.className = `identity-mark ${kind}`;
   el.dataset.avatarColor = color;
   el.setAttribute('aria-hidden', 'true'); // the adjacent name is authoritative
-  el.textContent = monogram(name);
+  el.textContent = markText(name);
   return el;
 }
 export function createWorkspaceMark(doc, workspace) {

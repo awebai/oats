@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { SOUL_COLORS, normalizeSoulColor, colorForIdentity, soulColor } from '../renderer/soul-colors.mjs';
-import { createSoulMark, createCapabilityMark, createRuntimeBadge, harnessName, identityCSS } from '../renderer/identity-marks.mjs';
+import { createSoulMark, createCapabilityMark, createRuntimeBadge, harnessName, identityCSS, markText } from '../renderer/identity-marks.mjs';
 
 const soul = { agentsRoot: '/team/one/shared/agents', name: 'dev', server: 'host-one' };
 
@@ -43,6 +43,21 @@ test('stable assignment uses full current root/name/host, not basename, iteratio
   for (const count of counts.values()) assert.ok(count >= 60 && count <= 140, 'muted tones are dispersed, not a sequential render-time cycle');
 });
 
+test('two-letter marks: one grammar for every identity, the package qualifier and a leading namespace word dropped', () => {
+  for (const [name, mark] of [['oats-desktop-expert', 'DE'], ['oats-desktop-developer', 'DD'], ['oats-kernel-expert', 'KE'],
+    ['oats-kernel-developer', 'KD'], ['oats-integrations-developer', 'ID'], ['integrations-expert', 'IE'], ['market-research-expert', 'RE'],
+    ['oats-setup-admin', 'SA'], ['oats-operator-expert', 'OE'], ['oats-expert', 'OE'], ['oats-maintainer', 'OM'],
+    ['oats-okf--knowledge-harvester', 'KH'], ['oats-okf/knowledge-maintainer', 'KM'], ['oats-engineering--code-reviewer', 'CR'],
+    ['oats-cloning--cloner', 'CL'], ['oats.aweb', 'OA'], ['x', 'X'], ['', '?'], [null, '?'], ['--', '?'],
+    [undefined, '?'], [42, '?'], ['—', '?'], ['équipe-données', 'ÉD'], ['maintainer', 'MA']]) assert.equal(markText(name), mark, String(name));
+  assert.equal(markText('𝐀𝐁c'), '𝐀𝐁', 'code points: a non-BMP letter is never split');
+  assert.equal(markText('ß-x'), 'SX', 'two glyphs at most, even where upper case grows'); assert.equal(markText('straße'), 'ST');
+  const dom = new JSDOM('<body></body>'); const doc = dom.window.document;
+  assert.equal(createSoulMark(doc, { ...soul, name: 'oats-okf--knowledge-harvester' }).textContent, 'KH', 'the soul mark uses it');
+  assert.equal(createCapabilityMark(doc, { id: 'oats.aweb' }).textContent, 'OA', 'and the capability mark');
+  dom.window.close();
+});
+
 test('safe decorative monograms and closed runtime placeholders never create resource markup or provider claims', t => {
   const dom = new JSDOM('<body></body>'); t.after(() => dom.window.close()); const doc = dom.window.document;
   for (const name of ['dev', '<img src=x onerror=evil()>', 'π-worker', '👻', '', null]) {
@@ -69,7 +84,7 @@ test('safe decorative monograms and closed runtime placeholders never create res
   }
   const cap = createCapabilityMark(doc, { id: 'fixture.notes', usedBy: ['invented-soul'], source: 'javascript:evil()' }, { root: '/team', host: 'one' });
   assert.equal(cap.getAttribute('aria-hidden'), 'true'); assert.equal(cap.children.length, 0);
-  assert.equal(cap.textContent, 'F'); assert.ok(SOUL_COLORS.includes(cap.dataset.avatarColor)); doc.body.append(cap);
+  assert.equal(cap.textContent, 'FN'); assert.ok(SOUL_COLORS.includes(cap.dataset.avatarColor)); doc.body.append(cap);
   assert.equal(doc.querySelector('img,script,a,[style],link,use,image,foreignObject'), null);
   assert.equal(doc.querySelectorAll('svg').length, 3, 'only the three known harnesses draw a mark');
   assert.doesNotMatch(doc.body.textContent, /invented-soul|javascript:/);
