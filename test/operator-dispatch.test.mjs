@@ -287,6 +287,7 @@ test("oats okf init --soul probe from the deployment (no home) provisions the ba
     assert.deepEqual(rest, before, "the legacy homes are never read into the roster");
     const doctor = run(["doctor", "--dir", dep, "--json"]);
     assert.equal(doctor.code, 0, doctor.out + doctor.err);
-    assert.deepEqual(JSON.parse(doctor.out).problems.map((p) => p.code), ["legacy-local-agents"]);
+    // Operator coverage (#671) warnings are their own; this pins the legacy-layout problem.
+    assert.deepEqual(JSON.parse(doctor.out).problems.map((p) => p.code).filter((c) => !c.startsWith("operator-")), ["legacy-local-agents"]);
   } finally { rmSync(room, { recursive: true, force: true }); }
 });

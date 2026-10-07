@@ -120,11 +120,13 @@ test("doctor checks local-teams-closed offline: from the cached workspace file, 
   const UNCHECKED = "local-teams-closed: whether oats-workspace.yaml allows oats-local.yaml teams/defaultTeam (localTeams: true) couldn't be checked: this deployment hasn't observed its workspace yet; run oats sync";
   let doc = JSON.parse(fx.cli(["doctor", "--json"]).stdout);
   assert.equal((doc.problems ?? []).some((p) => p.condition === "local-teams-closed"), false, "not known offline yet");
-  assert.deepEqual(doc.information, [UNCHECKED]);
+  // Operator coverage (#671) reports on its own lines; this test pins the local-teams line.
+  const own = (lines) => lines.filter((l) => !l.startsWith("operator-coverage-unknown:"));
+  assert.deepEqual(own(doc.information), [UNCHECKED]);
   assert.ok(fx.cli(["doctor"]).stdout.includes(`INFO: ${UNCHECKED}`));
   ok(fx.cli(["teams", "--json"]), "teams observes the workspace");
   doc = JSON.parse(fx.cli(["doctor", "--json"]).stdout);
-  assert.deepEqual([doc.problems.filter((p) => p.condition === "local-teams-closed"), doc.information], [[closedProblem(["teams", "defaultTeam"])], []]);
+  assert.deepEqual([doc.problems.filter((p) => p.condition === "local-teams-closed"), own(doc.information)], [[closedProblem(["teams", "defaultTeam"])], []]);
   assert.ok(fx.cli(["doctor"]).stdout.includes(`! E_WORKSPACE_SCHEMA (local-teams-closed): ${closedProblem(["teams", "defaultTeam"]).message}`));
   setWorkspace(fx, { localTeams: true });
   ok(fx.cli(["teams", "--json"]), "observe the change");
