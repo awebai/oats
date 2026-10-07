@@ -210,23 +210,30 @@ test("the git version probe is bounded too: asked with what is left, waited for 
   assert.ok(versionOpts.signal instanceof AbortSignal, "and the session's signal");
 });
 
-test("a deadline that ends the peel of a commit just fetched is a timeout, never a missing commit", async () => {
+test("a deadline that ends the peel of a commit just fetched is a timeout, never a missing commit", async (t) => {
   const f = fixture();
   const { runGit } = await import("../lib/remote.mjs");
-  let fetched = false;
+  // The session reads the deadline by Date.now(), which this test owns (awebai/oats#727): it stands still until the
+  // peel, so no earlier step is cut, and the peel's timeout ends exactly at the deadline. A real timer of the peel's
+  // timeout raced the wall clock instead: it can fire up to 1 ms before Date.now() reaches the deadline.
+  t.mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const deadline = Date.now() + 20_000; // shorter than GIT_TIMEOUT_MS: the peel's timeout is the deadline's cut
+  let fetched = false, peelTimeout = null;
   const exec = async (args, opts) => {
     if (fetched && args.includes("rev-parse")) {
-      await new Promise((r) => setTimeout(r, opts.timeout)); // the peel runs until the deadline's timeout
+      peelTimeout = opts.timeout;
+      t.mock.timers.tick(opts.timeout); // the peel runs until its timeout, which the deadline cut: the deadline passes
       throw Object.assign(new Error("timed out"), { code: null, killed: true, signal: "SIGTERM", timedOut: true, overflowed: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) });
     }
     const out = await runGit(args, opts);
     if (args.includes("fetch")) fetched = true;
     return out;
   };
-  const session = createReadSession({ deadline: Date.now() + 1_500 });
+  const session = createReadSession({ deadline });
   const e = await caught(observeRemote(f.bare, { cacheDir: f.cacheDir, at: f.commit, session, exec }));
   await session.close();
   assert.equal(fetched, true);
+  assert.equal(peelTimeout, 20_000, "the peel got what was left of the deadline");
   assert.deepEqual([e.code, e.details.reason, e.details.commit, e.details.stage], ["E_REMOTE_UNREADABLE", "timeout", f.commit, "fetch"]);
 });
 
