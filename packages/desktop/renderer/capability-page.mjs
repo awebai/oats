@@ -296,7 +296,8 @@ export function renderCapabilityPage(host, { row, status, instances, souls = [],
     const behind = carrying.filter(i => moduleRow(i, row.name)?.status === 'moved').length;
     const line = typeof openSoul === 'function' ? node('button', undefined, 'page-table-row used-row') : node('div', undefined, 'page-table-row used-row');
     line.setAttribute('role', 'row');
-    if (line.tagName === 'BUTTON') { line.type = 'button'; line.addEventListener('click', () => openSoul(soul)); line.title = `Open ${soul.name}`; line.dataset.focusKey = `used:${soul.key || soul.name}:${soul.agentsRoot || ''}`; }
+    // The tooltip and focus key name the soul by its key (two package souls may share a bare name).
+    if (line.tagName === 'BUTTON') { line.type = 'button'; line.addEventListener('click', () => openSoul(soul)); line.title = `Open ${soul.key || soul.name}`; line.dataset.focusKey = `used:${soul.key || soul.name}:${soul.agentsRoot || ''}`; }
     const who = node('span', undefined, 'used-soul'); who.setAttribute('role', 'cell'); who.append(createSoulMark(doc, soul), node('span', soul.name, 'used-name'));
     const meta = node('span', `${carrying.length}${behind ? ` · ${behind} on an older version` : ''}`, `used-meta${behind ? ' warn' : ''}`); meta.setAttribute('role', 'cell');
     line.append(who, meta); table.append(line);

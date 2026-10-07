@@ -93,7 +93,13 @@ test('pending: both tab counts are pills; on Capabilities the real card rows as 
   const sk = u.skeleton(); assert.ok(sk); assert.equal(sk.getAttribute('aria-hidden'), 'true'); assert.equal(sk.textContent, '');
   const bones = sk.querySelectorAll('button.catalog-row.skeleton-catalog-row'); assert.ok(bones.length >= 5, 'card rows wearing the table classes');
   for (const row of bones) { assert.equal(row.disabled, true); assert.equal(row.tabIndex, -1); assert.ok(row.querySelector('.catalog-tile.skeleton')); assert.ok(row.querySelector('.catalog-cap .skeleton-name')); }
+  // The settled card's cells, one per grid track and placed by the same classes (wide and narrow): tile | capability | used by | chevron.
+  const cells = row => [...row.children].map(el => ['catalog-tile', 'catalog-cap', 'catalog-used', 'catalog-chevron'].find(c => el.classList.contains(c)) ?? null);
+  assert.deepEqual(cells(bones[0]), ['catalog-tile', 'catalog-cap', 'catalog-used', 'catalog-chevron']);
+  const boneHead = sk.querySelector('.catalog-head').children.length;
   await u.resolveRead(0, okRead());
+  assert.deepEqual(cells(u.rows()[0]), ['catalog-tile', 'catalog-cap', 'catalog-used', 'catalog-chevron'], 'the skeleton is the settled card');
+  assert.equal(boneHead, u.q('.catalog-head').children.length, 'and its head has the same columns');
   assert.equal(u.skeleton(), null); assert.equal(u.rows().length, 10); assert.equal(u.state().getAttribute('aria-busy'), null);
   assert.equal(u.count('capabilities').textContent, '10'); assert.equal(u.status().textContent, '');
 });
@@ -281,9 +287,11 @@ test('the page opens a package soul from "Used by" by its key, never a member so
   assert.deepEqual(rows.map(r => r.querySelector('.used-name').textContent), ['deployer', 'release-manager'], 'the package soul only');
   rows[0].click(); await settle();
   assert.equal(pageOf(u), null, 'the capability page closed');
-  assert.ok(u.q('.workspace-soul-page'), 'the soul page opened');
-  const inspected = u.calls.filter(c => c.path.startsWith('/api/capabilities') && c.body?.action === 'inspect').at(-1);
-  assert.equal(inspected.body.selector.soul, 'deployer');
+  const soulPage = u.q('.workspace-soul-page');
+  assert.match(soulPage.textContent, /Deploys with the nw\.tools package\./, 'the package soul\'s page');
+  assert.doesNotMatch(soulPage.textContent, /Cuts, verifies and announces platform releases/, 'never the member twin\'s');
+  // Which row opens is this page's business; how the soul page then addresses the kernel (a bare-name selector on
+  // every soul surface) is the soul page's own, unchanged here.
 });
 
 test('a catalog that failed with nothing held shows the failed treatment on the page (cause, Details, Retry), not silence', async t => {

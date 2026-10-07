@@ -194,6 +194,16 @@ test('the page\'s "Used by": one row per soul whose composition includes it, wit
   section.querySelector('.used-row:not(.head)').click();
   assert.deepEqual([opened[0].key, opened[0].name, opened[0].agentsRoot], ['nw.tools/deployer', 'deployer', ROOT], 'opens the soul by its key');
   assert.equal(section.querySelector('.used-row:not(.head)').dataset.focusKey, `used:nw.tools/deployer:${ROOT}`);
+  assert.equal(section.querySelector('.used-row:not(.head)').title, 'Open nw.tools/deployer', 'the tooltip names the soul by its key');
+});
+
+test('the page tells two package souls of one bare name apart by their keys (visible name bare, tooltip and focus key qualified)', t => {
+  const twins = ['a.tools', 'b.tools'].map(pkg => ({ name: 'deployer', key: `${pkg}/deployer`, soulKind: 'package', package: pkg, agentsRoot: ROOT,
+    capabilities: [{ name: 'oats.core', kind: 'package', package: 'oats.framework', from: 'workspace' }] }));
+  const { section } = page(t, { row: cap('oats.core'), souls: twins, instances: [{ agent: 'a-tools--deployer', agentsRoot: ROOT, modules: [{ name: 'oats.core' }] }] });
+  const rows = [...section.querySelectorAll('.used-row:not(.head)')];
+  assert.deepEqual(rows.map(r => [r.querySelector('.used-name').textContent, r.title, r.dataset.focusKey, r.querySelector('.used-meta').textContent]), [
+    ['deployer', 'Open a.tools/deployer', `used:a.tools/deployer:${ROOT}`, '1'], ['deployer', 'Open b.tools/deployer', `used:b.tools/deployer:${ROOT}`, '0']]);
 });
 
 test('the page counts "0" instances for a soul that composes it with none running it, says none on a good read, "—" with the reason otherwise', t => {

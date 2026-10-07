@@ -153,17 +153,18 @@ function gateTransient(workspace, deployment) {
 }
 
 /** Pending catalog: one section's worth of the real card rows (a disabled, aria-hidden button wears
- * the table's own classes, so workspace-catalog.mjs's CSS gives the height, frame and columns). */
+ * the table's own classes, so workspace-catalog.mjs's CSS gives the height, frame and columns): the
+ * card's four cells — tile | capability | used by | chevron — placed as the settled cards are, wide and narrow. */
 function catalogSkeleton(doc, rows = 6) {
   const section = doc.createElement('div'); section.className = 'capability-section skeleton-item'; section.setAttribute('aria-hidden', 'true'); section.dataset.skeleton = 'catalog-rows';
   const bone = cls => { const el = doc.createElement('span'); el.className = `skeleton ${cls}`; el.setAttribute('aria-hidden', 'true'); return el; };
   section.append(bone('capability-section-title'));
   const table = doc.createElement('div'); table.className = 'catalog-table';
-  const head = doc.createElement('div'); head.className = 'catalog-head'; head.append(doc.createElement('span'), bone('skeleton-cell'), bone('skeleton-cell'), bone('skeleton-cell')); table.append(head);
+  const head = doc.createElement('div'); head.className = 'catalog-head'; head.append(doc.createElement('span'), bone('skeleton-cell'), bone('skeleton-cell'), doc.createElement('span')); table.append(head);
   for (let i = 0; i < rows; i++) {
     const row = doc.createElement('button'); row.type = 'button'; row.className = 'catalog-row skeleton-catalog-row'; row.disabled = true; row.tabIndex = -1; row.setAttribute('aria-hidden', 'true');
     const cap = doc.createElement('span'); cap.className = 'catalog-cap'; cap.append(bone('skeleton-name'), bone('skeleton-desc'));
-    row.append(bone('catalog-tile'), cap, bone('skeleton-cell'), bone('skeleton-cell'), bone('skeleton-chevron'));
+    row.append(bone('catalog-tile'), cap, bone('skeleton-cell catalog-used'), bone('skeleton-chevron catalog-chevron'));
     table.append(row);
   }
   section.append(table);
