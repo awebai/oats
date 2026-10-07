@@ -55,7 +55,7 @@ import { observeInstanceGit, diffInstanceFile } from "../lib/instance-git.mjs";
 import { planStop, applyStop, planRetire, resolveInstance as resolveInstanceForCli } from "../lib/instance-lifecycle.mjs";
 import { extraWorktreeLines, formatBytes, workRecoveryLines } from "../lib/retire-output.mjs";
 const await_import_lifecycle = () => ({ resolveInstance: resolveInstanceForCli });
-import { homeTarget, soulTarget, isWorkspaceContext, inspectDocument, readinessDocument, policyOf, policySoul, manifestMissingRequires, INSPECT_OPERATIONS_API } from "../lib/instance-inspect.mjs";
+import { homeTarget, soulTarget, isWorkspaceContext, inspectDocument, withComposedInstructions, readinessDocument, policyOf, policySoul, manifestMissingRequires, INSPECT_OPERATIONS_API } from "../lib/instance-inspect.mjs";
 import { readEvents, setWaiting, incarnationOf } from "../lib/instance-events.mjs";
 
 const rawArgs = process.argv.slice(2);
@@ -195,14 +195,16 @@ function operationalKnowledgeNote(composition, soulName) {
     ? `soul ${soulName} has no oats.core capability (the workspace default); it gets no OATS operating instructions` : null;
 }
 /** `doctor --soul`: the instructions an instance of that soul would carry. The soul
- *  is resolved over the workspace remotes exactly as a spawn preview resolves it,
- *  the kernel half composed, and the modules materialized into a scratch home
- *  OUTSIDE the deployment (removed after), so module injects are part of the text.
- *  Nothing in the deployment is written. Block files of module injects are named
- *  home-relative (`.oats/modules/<cap>/<inject>`), where an instance carries them. */
+ *  is resolved over the workspace remotes exactly as a spawn preview resolves it
+ *  (previewWorkspaceSoul: the soul cache is not written), then composed by the one
+ *  composer spawn's path, doctor and inspect share (lib/soul-composition.mjs): kernel
+ *  half, then the modules materialized into a scratch home OUTSIDE the deployment
+ *  (removed after). Capability blocks are named home-relative
+ *  (`.oats/modules/<cap>/<inject>`), where an instance carries them. */
 async function doctorComposition(ctx, soulName, ws, bail) {
   if (!soulName) return undefined;
-  const { prepareInstance, previewWorkspaceSoul, materializePrepared, discoverOrStandalone, agentDirOf } = await import("../lib/instance-resolution.mjs");
+  const { prepareInstance, previewWorkspaceSoul, discoverOrStandalone } = await import("../lib/instance-resolution.mjs");
+  const { composeSoulInstructions } = await import("../lib/soul-composition.mjs");
   const deployment = dirname(ws.local.path);
   const root = join(deployment, "agents");
   const remoteOptions = remoteOptionsFromEnv();
@@ -214,24 +216,8 @@ async function doctorComposition(ctx, soulName, ws, bail) {
     const prepared = await prepareInstance(deployment, soulName, { remoteOptions, discovery });
     const pv = await previewWorkspaceSoul(prepared, root);
     cleanups.push(pv.cleanup);
-    const agent = findAgentAt(root, agentDirOf(prepared.soulEntry), pv.soulDir);
-    if (!agent) bail("E_SOUL_UNKNOWN", `soul "${soulName}" was fetched but is not readable as a soul`);
-    const composition = composeInstanceAgentsMd(pv.soulDir, deployment, agent.name, agent.work || "checkout", agent.kind, prepared);
-    const scratch = realpathSync(mkdtempSync(join(tmpdir(), "oats-doctor-home-")));
-    cleanups.push(() => rmSync(scratch, { recursive: true, force: true }));
-    const outcome = await materializePrepared({ ...prepared, soulAgentsMd: composition.text, soulDir: pv.soulDir }, scratch);
-    const text = readFileSync(join(scratch, "AGENTS.md"), "utf8");
-    const known = new Set(composition.blocks.map((b) => b.source));
-    const outcomeBlocks = Array.isArray(outcome?.blocks) ? outcome.blocks : [];
-    for (const m of text.matchAll(/^<!-- oats:(capability:[^\s]+) src=(.+?) -->$/gm)) {
-      const [, source, file] = m;
-      if (known.has(source)) continue;
-      known.add(source);
-      const content = outcomeBlocks.find((b) => b.source === source && b.file === file)?.content ?? (existsSync(file) ? readFileSync(file, "utf8").trim() : "");
-      const rel = file.startsWith(scratch + sep) ? file.slice(scratch.length + 1) : file;
-      composition.blocks.push({ source, file: rel, content, materialized: true });
-    }
-    return { ...composition, text };
+    const { text, blocks, resolved, oatsCoreDeclared } = await composeSoulInstructions({ deployment, prepared, soulDir: pv.soulDir });
+    return { text, blocks, resolved, oatsCoreDeclared };
   } catch (e) {
     if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details);
     throw e;
@@ -431,9 +417,13 @@ function soulEntry(soul, root, { capability } = {}) {
 function dropAmbientRoot() { delete process.env.PI_AGENTS_ROOT; }
 async function inspectCmd() {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
-  const t = await workspaceTarget(bail, { command: "inspect" });
+  // Feature soul-composed-instructions: opt-in, soul subject only; without it nothing extra is composed.
+  const instructions = args.includes("--instructions");
+  if (instructions && flag("home") !== undefined) return bail("E_BAD_ARGS", "--instructions composes a soul's instructions before a spawn: it takes --soul, not --home (an instance's composed AGENTS.md is instance.instructions)");
+  let t = await workspaceTarget(bail, { command: "inspect" });
   if (t) {
     if (t.resolutionError) return bail(t.resolutionError.code, t.resolutionError.message, t.resolutionError.details ?? undefined);
+    if (instructions) t = await withComposedInstructions(t);
     const doc = inspectDocument(t, { kernel: OATS_VERSION });
     if (JSON_MODE) { jsonOk(withObservation(doc)); return; }
     printWorkspaceInspect(doc); return;
@@ -482,6 +472,8 @@ function printWorkspaceInspect(doc) {
   for (const l of LAYERS) console.log(`  ${l} capability: ${doc.layers[l].id || "none"}`);
   for (const c of doc.capabilities) console.log(`  ${c.id}@${c.version || "?"} ${c.from?.kind === "package" ? `package ${c.from.package}` : c.from?.kind === "member" ? `member ${c.from.repoKey}` : ""}${c.operations.length ? `  ops: ${c.operations.map((o) => `${o.name}${o.available ? "" : "(unavailable)"}`).join(", ")}` : ""}`);
   for (const p of doc.problems) console.log(`  ! ${p.code}: ${p.message}`);
+  const composed = doc.souls[0].composedInstructions;
+  if (composed !== undefined) console.log(composed ? `\nComposed AGENTS.md (a spawn here, resolution ${composed.resolution ?? "?"}${composed.truncated ? ", truncated" : ""}):\n\n${composed.text}` : "\nComposed AGENTS.md: unavailable (see the problems above)");
 }
 
 /** `{ teams, defaultTeam, teamsSource }` for a session start of a workspace home: its teams read
@@ -3389,7 +3381,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capabilityShowApi: 1 }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capabilityShowApi: 1 }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -4132,11 +4124,12 @@ Usage:
                                             a detached external retirement runs
   oats inspect [--dir <scope>] [--soul <name>   one authoritative JSON answer for a GUI: souls
       [--agents-root <abs>]] [--home <abs>]   (harness defaults, editability, instructions),
-      [--max-age <s>] [--json]              installed capabilities with health, effective
-                                            layer bindings and activation, declared
+      [--instructions] [--max-age <s>]      installed capabilities with health, effective
+      [--json]                              layer bindings and activation, declared
                                             operations with availability; --home answers the
                                             running home's recorded modules and their drift
-                                            from the deployment
+                                            from the deployment; --instructions (--soul only)
+                                            adds the AGENTS.md a spawn of the soul here would write
   oats operation run <layer>:<name>          run an operation the soul's core capability for that
       (--home <abs> | --soul <name> [--dir <d>])  layer declares (knowledge:harvest, knowledge:
       [--arg k=v ...] [--json]              inspect ...): resolved from the home's recorded
