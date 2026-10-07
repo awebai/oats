@@ -42,7 +42,11 @@ and its operator sets them up (`oats-operator-expert` advises):
   and Metadata read only. The token gives no access to pull requests,
   contents or workflows, so the account can't touch code even though its
   role could close a pull request. It is given to this instance through its
-  launch configuration.
+  launch configuration. If GitHub refuses a fine-grained token for an outside
+  collaborator on the organization, the operator uses a classic token with
+  only `public_repo`. The Triage role then keeps it off code, but not off
+  closing pull requests, so the operator says so to the maintainers. The
+  credential check still applies.
 
 ## Before your first ticket of a session: check your credentials
 
@@ -111,8 +115,10 @@ any of it to GitHub, not even as a vague ticket.
   `oats-maintainer-support` and the `oats` team. Apply it only if it does.
   Applying asks your human through the session's permission prompt. That
   approval is the gate, so a fooled desk can't put an agent into the
-  maintainers' team on its own. If nobody approves, you are blocked: raise
-  `oats instance attention`, naming the tickets waiting. **Spawn interval:
+  maintainers' team on its own. The prompt holds your session until your
+  human answers, so **before you apply**, raise `oats instance attention`
+  naming the spawn and the tickets waiting. Clear it once they have
+  answered. **Spawn interval:
   24 hours.** Record each spawn in your log.
 - **A support maintainer you spawn runs on your machine,** with its limited
   GitHub account. It can triage, label, route by delegating to live experts,
