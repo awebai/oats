@@ -23,7 +23,17 @@ The command writes only the canonical deployment root's native trust leaf:
   `$CODEX_HOME/config.toml`, or `~/.codex/config.toml`.
 
 Nonempty override directories must be absolute. Directory aliases are resolved;
-symlink/nonregular/hardlinked leaves, foreign ownership and ACLs refuse; macOS extended-attribute files also refuse. Existing file permissions are preserved.
+symlink/nonregular/hardlinked leaves, foreign ownership and ACLs refuse. On Linux, GNU ls's single `.` security-context marker is accepted;
+the context must be readable, match the same-directory candidate before replacement,
+and remain unchanged at verification. A differing directory-default context refuses
+before rename; OATS does not relabel files. This comparison narrows metadata races,
+not the documented uncooperative-writer race. Tests simulate these SELinux probes;
+they are not a live SELinux-host qualification.
+
+On macOS, any extended-attribute (`@`) or ACL (`+`) marker deliberately refuses,
+including `com.apple.provenance`. This v1 writer does not copy or remove those
+attributes. Inspect the selected file; a refusal never authorizes stripping its
+metadata automatically. Existing file permissions are preserved.
 New config directories use 0700 and files 0600. The plan shows the effective file,
 semantic key, current/desired trust scalar, byte digests and override provenance;
 it never returns other config values or credentials.
