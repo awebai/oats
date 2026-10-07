@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { claudeTrusts, codexTrustsRoot } from '../lib/harness-trust.mjs';
 import { harnessTrust } from '../lib/harness-trust-write.mjs';
 const fixture = t => { const base=fs.mkdtempSync(join(tmpdir(),'oats-trust-write-'));t.after(()=>fs.rmSync(base,{recursive:true,force:true}));const root=join(base,'deployment');fs.mkdirSync(root);return {base,root,env:{HOME:join(base,'native')}}; };
 test('plan creates nothing; apply writes exact leaves and durable audit; repeat is config no-op', t => {
@@ -135,4 +136,69 @@ test('audit replacement after fsync cannot be reported as a checked durable row'
   assert.equal(fs.existsSync(join(env.HOME,'.claude.json')),targetAppend===2);
   assert.equal(fs.readFileSync(audit,'utf8'),'{}\n');
  }
+});
+
+// On case-insensitive APFS the spelling resolves without a symlink, whereas
+// realpathSync's JS implementation can retain that spelling. Case-sensitive
+// systems use a directory alias to exercise the same native-key contract.
+test('native canonical spelling is used for root, keys, audit and reader verification', t => {
+ const {base,env}=fixture(t);
+ const root=join(base,'DeploymentCase'), typed=join(base,'deploymentcase');
+ fs.mkdirSync(root);
+ if(!fs.existsSync(typed))fs.symlinkSync(root,typed);
+ const canonical=fs.realpathSync.native(root);
+ assert.equal(fs.realpathSync.native(typed),canonical);
+ const planned=harnessTrust(typed,{env,plan:true});
+ assert.equal(planned.root,canonical);
+ for(const entry of planned.entries)assert.equal(entry.key[1],canonical);
+ const applied=harnessTrust(typed,{env});
+ assert.equal(applied.root,canonical);
+ assert.equal(applied.audit.path,join(canonical,'.agents/harness-trust.jsonl'));
+ assert.deepEqual(applied.entries.map(e=>e.status),['applied','applied']);
+ for(const entry of applied.entries)assert.equal(entry.key[1],canonical);
+ const projects=JSON.parse(fs.readFileSync(applied.entries[0].file,'utf8')).projects;
+ assert.deepEqual(Object.keys(projects),[canonical]);
+ assert.equal(claudeTrusts(typed,{env}),true);
+ assert.equal(codexTrustsRoot(typed,{env}),true);
+ // A differently cased key must not make the reader claim native trust.
+ fs.writeFileSync(applied.entries[0].file,JSON.stringify({projects:{[typed]:{hasTrustDialogAccepted:true}}}));
+ fs.writeFileSync(applied.entries[1].file,`[projects.${JSON.stringify(typed)}]\ntrust_level = "trusted"\n`);
+ assert.equal(claudeTrusts(typed,{env}),false);
+ assert.equal(codexTrustsRoot(typed,{env}),false);
+ const rows=fs.readFileSync(applied.audit.path,'utf8').trim().split('\n').map(JSON.parse);
+ assert.equal(rows.length,4);
+ for(const row of rows)assert.equal(row.root,canonical);
+});
+
+test('each existing destination or audit lock is named and never stolen', t => {
+ for(const target of ['claude','codex','audit']) {
+  const {root,env}=fixture(t);
+  const canonical=fs.realpathSync.native(root);
+  const lock=(target==='audit'?join(canonical,'.agents/harness-trust.jsonl'):target==='claude'?join(env.HOME,'.claude.json'):join(env.HOME,'.codex/config.toml'))+'.oats-trust.lock';
+  fs.mkdirSync(join(lock,'..'),{recursive:true});
+  fs.writeFileSync(lock,'prior owner');
+  assert.throws(()=>harnessTrust(root,{env}),e=>{
+   assert.equal(e.code,'E_HARNESS_TRUST_INCOMPLETE');assert.equal(e.details.reason,'locked');
+   assert.equal(e.details.mayHaveChanged,false);assert.ok(e.message.includes(fs.realpathSync.native(lock)),e.message);return true;
+  });
+  assert.equal(fs.readFileSync(lock,'utf8'),'prior owner');
+  assert.equal(fs.existsSync(join(env.HOME,'.claude.json')),false);
+  assert.equal(fs.existsSync(join(env.HOME,'.codex/config.toml')),false);
+ }
+});
+
+test('native config directory aliases use on-disk spelling even with missing descendants', t => {
+ const {root,base}=fixture(t);
+ const actual=join(base,'NativeCase'), typed=join(base,'nativecase');fs.mkdirSync(actual);
+ if(!fs.existsSync(typed))fs.symlinkSync(actual,typed);
+ const native=fs.realpathSync.native(actual);
+ const env={HOME:typed,CLAUDE_CONFIG_DIR:join(typed,'claude-new'),CODEX_HOME:join(typed,'codex-new')};
+ const expected=[join(native,'claude-new/.claude.json'),join(native,'codex-new/config.toml')];
+ assert.deepEqual(harnessTrust(root,{env,plan:true}).entries.map(e=>e.file),expected);
+ assert.deepEqual(fs.readdirSync(actual),[]);
+ const result=harnessTrust(root,{env});
+ assert.deepEqual(result.entries.map(e=>e.file),expected);
+ assert.deepEqual(result.entries.map(e=>e.status),['applied','applied']);
+ assert.equal(claudeTrusts(root,{env}),true);assert.equal(codexTrustsRoot(root,{env}),true);
+ assert.deepEqual(harnessTrust(root,{env}).entries.map(e=>e.status),['unchanged','unchanged']);
 });

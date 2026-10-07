@@ -11,7 +11,9 @@ oats harness trust --dir /absolute/deployment --harness all
 `--plan` reads only. The bare command applies a fresh plan; there is no `--apply`.
 The default harness is `all`, in Claude-then-Codex order. `claude` or `codex`
 selects one. The deployment is resolved from the existing local command context,
-including when invoked from an instance home, then canonicalized. No remote
+including when invoked from an instance home, then canonicalized with the native
+filesystem lookup. The result, native key, audit and reader verification use that
+on-disk spelling, including on case-insensitive APFS. No remote
 adapter, arbitrary file selector, parent-root substitution or harness launch is
 performed. A native executable need not be installed to edit the qualified format.
 
@@ -91,7 +93,9 @@ do not automatically write a second root or answer a trust dialog.
 
 All selected configs are preflighted before any native write. Cooperating OATS
 writers acquire exclusive destination locks in canonical-path order plus an audit
-lock. Existing locks refuse promptly; no stale-lock stealing occurs. Identity and
+lock. Existing locks refuse promptly. The human/JSON error message names the exact
+lock path so an operator can inspect an interrupted apply; OATS never steals or
+deletes another invocation's lock, even when it appears stale. Identity and
 raw-byte digests are rechecked after locking and immediately before replacement.
 Candidate files are exclusively created beside the destination, fsynced, atomically
 renamed and verified through the existing trust reader. Native writers do not
