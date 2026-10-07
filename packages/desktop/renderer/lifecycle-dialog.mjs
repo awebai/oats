@@ -8,9 +8,11 @@ import { cleanLine } from './display-text.mjs';
 import { skeleton, observedAgeText, AGE_TICK_MS } from './loading.mjs';
 export const lifecycleCSS = `
 .lifecycle-dialog { width:min(420px,calc(100vw - 32px)); max-height:88vh; overflow:auto; display:flex; flex-direction:column; gap:14px; padding:20px; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--fg); box-shadow:var(--shadow-popover); font-size:12.5px; }
-.lifecycle-dialog h2 { margin:0; font-size:15px; font-weight:700; overflow-wrap:anywhere; }
+.lifecycle-dialog h2 { margin:0; font-size:15px; line-height:1.3; font-weight:700; overflow-wrap:anywhere; }
 .lifecycle-dialog h3 { margin:0; font-size:11.5px; font-weight:650; color:var(--muted); }
 .lifecycle-heading { display:flex; gap:14px; align-items:center; }
+/* The title and the status line under it share a column tall enough for both, so a status that comes and goes moves nothing below. */
+.lifecycle-titles { flex:1; min-width:0; min-height:42px; display:flex; flex-direction:column; justify-content:center; gap:2px; }
 .lifecycle-mark { flex:none; width:36px; height:36px; border-radius:10px; display:grid; place-items:center; background:var(--surface-2); color:var(--danger); font-size:16px; }
 .lifecycle-mark[data-tone=ok] { color:var(--ok); }
 .lifecycle-dialog p { margin:0; line-height:1.5; overflow-wrap:anywhere; }
@@ -86,6 +88,8 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
   /** Show the controls this phase has, and only those. A control that cannot act now names why beside it. */
   function paint() {
     if (!ui) return;
+    // What had focus before any control is hidden: Chromium blurs a control the moment it is hidden (jsdom does not).
+    const had = ui.dialog.contains(doc.activeElement) ? doc.activeElement : null;
     const before = ['loading', 'review', 'updating'].includes(phase), planned = phase === 'review' || phase === 'updating';
     ui.dialog.dataset.phase = phase;
     ui.happenSection.hidden = !before && phase !== 'running';
@@ -112,7 +116,7 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     ui.done.hidden = phase !== 'done';
     // A control that leaves while it has focus hands focus to the button that stays.
     const active = doc.activeElement;
-    if (ui.dialog.contains(active) && !isShown(active)) focusOn(phase === 'done' ? ui.done : ui.close);
+    if (had && (!isShown(had) || active !== had) && (!active || active === doc.body || !isShown(active))) focusOn(phase === 'done' ? ui.done : ui.close);
   }
   /** A local reason's code and the CLI's own message, re-validated here (main relays the server's reply as it
    * is), or null: a code that may show one (lifecycleDetailCode) and a detail that is already a display line.
@@ -343,9 +347,10 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     const dialog = node('section', undefined, 'lifecycle-dialog'); dialog.dataset.operation = operation;
     dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-labelledby', `${id}-title`);
     const heading = node('div', undefined, 'lifecycle-heading'), mark = node('span', undefined, 'lifecycle-mark'); mark.append(iconElement(doc, next === 'stop' ? 'stop' : 'remove', { size: 18 })); mark.setAttribute('aria-hidden', 'true');
-    const h2 = node('h2'); h2.id = `${id}-title`; heading.append(mark, h2);
+    const h2 = node('h2'); h2.id = `${id}-title`;
     const status = node('p', undefined, 'lifecycle-status'), spinner = node('span', undefined, 'spinner'), statusText = node('span');
     status.id = `${id}-status`; status.setAttribute('role', 'status'); spinner.setAttribute('aria-hidden', 'true'); status.append(spinner, statusText);
+    const titles = node('div', undefined, 'lifecycle-titles'); titles.append(h2, status); heading.append(mark, titles);
     const section = (label, region) => { const s = node('section', undefined, 'lifecycle-section'), h = node('h3', label); h.id = `${id}-${region.className}`;
       s.setAttribute('aria-labelledby', h.id); s.append(h, region); return s; };
     const happen = node('div', undefined, 'lifecycle-happen'), facts = node('div', undefined, 'lifecycle-facts'), forge = node('div', undefined, 'lifecycle-forge');
@@ -382,7 +387,7 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     const retryButton = button('Check again', () => void apply(true), 'lifecycle-retry');
     const reviewButton = button('Review again', () => { onIntent(); void refresh('review'); }, 'lifecycle-review');
     footer.append(retryButton, reviewButton, closeButton, confirmButton, doneButton);
-    dialog.append(heading, status, happenSection, stateSection, options, observed, result, continues, footer); overlay.append(dialog); doc.body.append(overlay);
+    dialog.append(heading, happenSection, stateSection, options, observed, result, continues, footer); overlay.append(dialog); doc.body.append(overlay);
     ui = { dialog, title: h2, mark, status, statusText, spinner, happen, happenSection, facts, stateSection, forge, options, optionSkeleton, warning,
       observed, observedText, result, continues, recursive, discard, confirm: confirmButton, close: closeButton, done: doneButton, retry: retryButton, review: reviewButton };
     overlay.addEventListener('keydown', event => {

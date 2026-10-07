@@ -460,7 +460,16 @@ test('each dialog shows only its own choices: a hidden choice stays hidden despi
   assert.equal(rules[hidden]?.style.display, 'none');
   for (const selector of ['.lifecycle-dialog .lifecycle-facts, .lifecycle-dialog .lifecycle-options', '.lifecycle-status', '.lifecycle-section', '.lifecycle-footer'])
     assert.ok(rules.findIndex(r => r.selectorText === selector) < hidden, selector);
+  // No layout jump when the status line comes and goes (updating, Check again): it sits under the title, in a column tall enough for both.
+  const titles = rules.find(r => r.selectorText === '.lifecycle-titles');
+  assert.equal(titles?.style.minHeight, '42px'); assert.equal(titles.style.justifyContent, 'center');
   dom.window.close();
+});
+test('the status line lives in the heading, under the title, never between the title and the facts', () => {
+  const f = fixture();
+  try { f.open('retire'); const status = f.doc.querySelector('.lifecycle-status');
+    assert.equal(status.parentElement.className, 'lifecycle-titles'); assert.equal(status.previousElementSibling.tagName, 'H2');
+    assert.equal(status.parentElement.parentElement.className, 'lifecycle-heading'); } finally { f.close(); }
 });
 
 // ── The phases (spec: loading, review, updating, running, done, result) ──
@@ -679,5 +688,25 @@ test('a replayed result says nothing ran again', async () => {
   try {
     f.open('retire'); await tick(); f.button('lifecycle-confirm').click(); await tick();
     assert.match(f.doc.querySelector('.lifecycle-result').textContent, /This is the result already recorded for this confirmation; nothing ran again\./);
+  } finally { f.close(); }
+});
+test('like Chromium, hiding a focused control blurs it: focus still lands on the control that stays, never <body>', async () => {
+  let fail = true;
+  const f = fixture({ request: (_ws, body) => body.action === 'plan' ? planned('retire', fail ? reference : newReference)
+    : fail ? { lifecycleApi: 1, status: 'unknown', target, reason: lifecycleReason('E_OUTCOME_UNKNOWN') } : { lifecycleApi: 1, status: 'refused', target, reason: lifecycleReason('E_PLAN_EXPIRED') } });
+  // jsdom keeps focus on a control that becomes hidden; Chromium blurs it at once, during the click that hid it.
+  const hidden = Object.getOwnPropertyDescriptor(f.dom.window.HTMLElement.prototype, 'hidden');
+  Object.defineProperty(f.dom.window.HTMLElement.prototype, 'hidden', { configurable: true, get: hidden.get,
+    set(value) { hidden.set.call(this, value); if (value && this.contains(f.doc.activeElement)) f.doc.activeElement.blur(); } });
+  try {
+    f.open('retire'); await tick();
+    f.button('lifecycle-confirm').focus(); f.button('lifecycle-confirm').click();
+    assert.equal(f.doc.activeElement, f.button('lifecycle-close'), 'running: Close'); await tick();
+    assert.deepEqual(footer(f), ['Check again', 'Close']);
+    fail = false; f.button('lifecycle-retry').focus(); f.button('lifecycle-retry').click();
+    assert.equal(f.doc.activeElement, f.button('lifecycle-close'), 'Check again → running: Close'); await tick();
+    assert.deepEqual(footer(f), ['Review again', 'Close']);
+    f.button('lifecycle-review').focus(); f.button('lifecycle-review').click();
+    assert.equal(f.doc.activeElement, f.button('lifecycle-close'), 'Review again → loading: Cancel'); assert.equal(f.doc.activeElement.textContent, 'Cancel');
   } finally { f.close(); }
 });
