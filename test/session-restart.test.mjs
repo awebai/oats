@@ -670,8 +670,12 @@ test("#691 a completed start's receipt is never recorded again: no write, no hoo
     assert.throws(() => startInstanceSession(home, { env: env(), ...o }), (e) => e.code === "E_SESSION_RUNNING", JSON.stringify(o));
     unchanged(`plain start ${JSON.stringify(o)}: nothing written, no hook run`);
   }
+  // A restart refused in its preflight leaves instance.json and the receipt as they were.
+  assert.throws(() => restart({ launchConfig: "nope" }), (e) => e.code === "E_LAUNCH_CONFIG_UNKNOWN");
+  unchanged("a refused restart: nothing written, the receipt kept");
 
-  // (c) The provider's state moves on; each restart records the newest meta, and an older one never comes back.
+  // (c) The provider's state moves on; each restart records the newest meta (the regression lock is the
+  // no-write check above: through supported paths the receipt and instance.json agree here).
   for (const id of ["grant-2", "grant-3"]) {
     provider({ meta: { grant: { id } }, warning: "provider hook ran" });
     const pid = runningPid(home);
@@ -705,6 +709,18 @@ test("#691 a completed start's receipt is never recorded again: no write, no hoo
     const m = readJson(metaPath);
     assert.equal(m.restartCount, count + 1); assert.equal(m.capabilityMeta["test.renew"].grant.id, "grant-5"); assert.equal(readJson(pendingPath).id, m.startId); }
 
+  // A harness that exited (its completion marker names the completed start, the pane is a shell): a plain
+  // start runs in that pane from instance.json as it is, and its receipt replaces the old one.
+  provider({ meta: { grant: { id: "grant-5b" } } });
+  { const completedId = readJson(metaPath).startId;
+    process.kill(runningPid(home), "SIGTERM");
+    await waitFor(() => existsSync(join(home, ".oats-start-exited")) && readFileSync(join(home, ".oats-start-exited"), "utf8").trim() === completedId && inspectInstanceSession(home).state === "shell", "the harness exited to its fallback shell");
+    const r = startInstanceSession(home, { env: env({ RESTART_TEST_SRC: "x" }) });
+    assert.equal(r.reused, "pane"); assert.equal(r.launchConfig, "polite");
+    assert.ok(await waitFor(() => runningPid(home) !== null));
+    const m = readJson(metaPath);
+    assert.notEqual(m.startId, completedId); assert.equal(m.capabilityMeta["test.renew"].grant.id, "grant-5b"); assert.equal(readJson(pendingPath).id, m.startId); }
+
   // (d) A genuinely interrupted start (allocated, metadata write failed) is still adopted, with no second launch.
   provider({ meta: { grant: { id: "grant-6" } } });
   { const pid = runningPid(home);
@@ -720,9 +736,21 @@ test("#691 a completed start's receipt is never recorded again: no write, no hoo
 
   // Q2: a receipt naming the recorded start on another target is ambiguous. The kernel never writes this
   // state; it is constructed here only to pin the refusal: nothing written, the way out named.
+  // A stray window running under the receipt's target name makes it ambiguous while it runs.
+  provider({ meta: { grant: { id: "grant-7" } }, warning: "provider hook ran" });
+  tmux("new-window", "-d", "-t", `${session}:`, "-n", "stray", "-c", home, "sleep 600");
   write(pendingPath, JSON.stringify({ ...readJson(pendingPath), id: readJson(metaPath).startId, target: { ...readJson(pendingPath).target, window: "stray" } }));
-  const ambiguous = { meta: readFileSync(metaPath, "utf8"), metaIno: ino(metaPath), pending: readFileSync(pendingPath, "utf8") };
-  assert.throws(() => startInstanceSession(home, { env: env({ RESTART_TEST_SRC: "x" }) }), (e) => e.code === "E_SESSION_UNKNOWN" && /receipt is kept and nothing was started/.test(e.message) && /oats session inspect --home/.test(e.message) && /oats session restart --home/.test(e.message));
-  assert.deepEqual({ meta: readFileSync(metaPath, "utf8"), metaIno: ino(metaPath), pending: readFileSync(pendingPath, "utf8") }, ambiguous, "nothing written");
+  const ambiguous = { meta: readFileSync(metaPath, "utf8"), metaIno: ino(metaPath), pending: readFileSync(pendingPath, "utf8"), runs: hookRuns() };
+  const refusedAmbiguous = (e) => e.code === "E_SESSION_UNKNOWN" && /receipt is kept and nothing was started/.test(e.message) && /oats session inspect --home/.test(e.message) && /kill-window -t r:stray/.test(e.message) && /oats session restart --home/.test(e.message);
+  assert.throws(() => startInstanceSession(home, { env: env({ RESTART_TEST_SRC: "x" }) }), refusedAmbiguous, "plain start");
+  assert.throws(() => restart({ env: env({ RESTART_TEST_SRC: "x" }), launchConfig: "polite" }), refusedAmbiguous, "restart while the stray target runs");
+  assert.deepEqual({ meta: readFileSync(metaPath, "utf8"), metaIno: ino(metaPath), pending: readFileSync(pendingPath, "utf8"), runs: hookRuns() }, ambiguous, "nothing written, no hook run");
+  // The way out the message names: stop the stray target, then restart from instance.json.
+  tmux("kill-window", "-t", `${session}:stray`);
+  { const pid = runningPid(home);
+    const r = restart({ env: env({ RESTART_TEST_SRC: "x" }), launchConfig: "polite" });
+    assert.ok(await waitFor(() => runningPid(home) !== null && runningPid(home) !== pid));
+    const m = readJson(metaPath);
+    assert.equal(r.target.window, name, "the recorded target"); assert.equal(m.capabilityMeta["test.renew"].grant.id, "grant-7"); assert.equal(readJson(pendingPath).id, m.startId); }
   process.kill(runningPid(home), "SIGKILL"); // test cleanup only
 });
