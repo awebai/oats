@@ -82,9 +82,11 @@ test("4. oats souls: spawnable, or the refusal a spawn would meet (resolution, s
   assert.equal(fx.cli(["sync", "--json"]).status, 0);
   const rows = Object.fromEntries(ok(fx.cli(["souls", "--json"])).souls.map((s) => [s.name, s]));
   assert.deepEqual([rows.dev.spawnable, rows.dev.problem], [true, null]);
+  assert.ok(Array.isArray(rows.dev.capabilities), "a spawnable soul says what it composes (souls-capabilities)");
   for (const [name, code] of [["broken", "E_CAPABILITY_MISSING"], ["off", "E_SOUL_DISABLED"]]) {
     assert.equal(rows[name].spawnable, false, name);
     assert.equal(rows[name].problem.code, code, `${name}: ${JSON.stringify(rows[name].problem)}`);
+    assert.equal(rows[name].capabilities, null, `${name}: not spawnable, so capabilities is null (never [])`);
     assert.equal(typeof rows[name].problem.message, "string");
     // The same refusal a spawn meets.
     const spawn = fx.cli(["spawn", name, "--preview", "--json"]);
@@ -94,6 +96,7 @@ test("4. oats souls: spawnable, or the refusal a spawn would meet (resolution, s
   writeFileSync(join(fx.dep, "oats-local.yaml"), YAML.stringify({ schemaVersion: 2, workspace: fx.ref, defaultTeam: "a" }));
   const closed = ok(fx.cli(["souls", "--json"])).souls.find((x) => x.name === "dev");
   assert.deepEqual([closed.spawnable, closed.problem.code], [false, "E_WORKSPACE_SCHEMA"]);
+  assert.equal(closed.capabilities, null, "a soul refused only for a team problem has null capabilities too: null whenever spawnable is false");
   assert.equal(fx.cli(["spawn", "dev", "--preview", "--json"]).json().error.details.reason, "local-teams-closed");
 });
 
@@ -282,4 +285,68 @@ test("feature preview-composed-from is advertised, after launch-preference", (t)
   const fx = v2Deployment(); t.after(fx.cleanup);
   const { features } = JSON.parse(fx.cli(["version", "--json"]).stdout);
   assert.equal(features.indexOf("preview-composed-from"), features.indexOf("launch-preference") + 1);
+});
+
+// ---- Feature souls-capabilities (0.44.2): each `oats souls --json` row says what the soul's resolution
+// composes — the same resolution `spawnable` comes from — keyed like `oats capabilities` rows, with `from`.
+
+/** dev composes from every place: its own member capabilities (acme.own, acme_z), a workspace default it also
+ *  declares (acme.ws), a messaging slot default (chat) and a package default (acme-tool); it turns a workspace
+ *  default off (acme.off) and empties the knowledge slot the workspace fills (notes). acme_z sorts after
+ *  acme.own by codepoint and before it under a locale compare. The package's keeper declares acme-tool itself. */
+function soulCapabilities(t) {
+  const pkg = packageRepo(); t.after(pkg.cleanup);
+  const fx = v2Deployment({
+    souls: { dev: { soul: { knowledge: "none", capabilities: { "acme.own": { from: "here" }, acme_z: { from: "here" }, "acme.ws": { from: "here" }, "acme.off": "off" } } } },
+    capabilities: { ...Object.fromEntries(["acme.own", "acme_z", "acme.ws", "acme.off"].map((id) => [id, { manifest: {} }])),
+      notes: { manifest: { layer: "knowledge" } }, chat: { manifest: { layer: "messaging" } } },
+  });
+  t.after(fx.cleanup);
+  fx.commit({ "oats-workspace.yaml": { yaml: { schemaVersion: 2, name: "fixture", members: [fx.ref], teams: { global: { description: "Fixture team" } },
+    packages: { "acme.pkg": `${pkg.ref}@v1.0.0` },
+    defaults: { knowledge: { notes: { from: fx.key } }, messaging: { chat: { from: fx.key } }, tasks: "none",
+      capabilities: { "acme.ws": { from: fx.key }, "acme.off": { from: fx.key }, "acme-tool": { from: "package" } } } } } }, "soul capabilities");
+  assert.equal(fx.cli(["sync", "--json"]).status, 0);
+  return fx;
+}
+
+test("souls-capabilities: a soul row lists what its resolution composes, by name in codepoint order, keyed like capability rows, with from", (t) => {
+  const fx = soulCapabilities(t);
+  const souls = ok(fx.cli(["souls", "--json"])).souls;
+  const dev = souls.find((s) => s.name === "dev");
+  assert.equal(dev.spawnable, true, JSON.stringify(dev.problem));
+  assert.deepEqual(dev.capabilities, [
+    { name: "acme-tool", kind: "package", package: "acme.pkg", from: "workspace" },
+    { name: "acme.own", kind: "member", repoKey: fx.key, from: "soul" },
+    { name: "acme.ws", kind: "member", repoKey: fx.key, from: "soul" },
+    { name: "acme_z", kind: "member", repoKey: fx.key, from: "soul" },
+    { name: "chat", kind: "member", repoKey: fx.key, from: "workspace" },
+  ], "acme.off (off) and notes (knowledge: none) are absent; acme.ws, defaulted and declared, appears once as the soul's");
+  const keeper = souls.find((s) => s.qualifiedName === "acme.pkg/keeper");
+  assert.deepEqual(keeper.capabilities.find((c) => c.name === "acme-tool"), { name: "acme-tool", kind: "package", package: "acme.pkg", from: "soul" });
+  // The same composition a spawn of it previews.
+  assert.deepEqual(dev.capabilities.map((c) => [c.name, c.from]), ok(fx.cli(["spawn", "dev", "--preview", "--json"])).modules.map((m) => [m.name, m.composedFrom]));
+  // Each entry names exactly one `oats capabilities` row.
+  const rows = ok(fx.cli(["capabilities", "--json"])).capabilities;
+  for (const s of souls) for (const c of s.capabilities) {
+    const hits = rows.filter((r) => r.name === c.name && r.kind === c.kind && (c.kind === "package" ? r.package === c.package : r.repoKey === c.repoKey));
+    assert.equal(hits.length, 1, `${s.name}: ${JSON.stringify(c)} matches ${hits.length} capability rows`);
+  }
+});
+
+test("souls-capabilities: a slot conflict is not spawnable, and its capabilities are null", (t) => {
+  const fx = v2Deployment({
+    souls: { dev: {}, clash: { soul: { capabilities: { one: { from: "here" }, two: { from: "here" } } } } },
+    capabilities: { one: { manifest: { layer: "tasks" } }, two: { manifest: { layer: "tasks" } } },
+  });
+  t.after(fx.cleanup);
+  const rows = Object.fromEntries(ok(fx.cli(["souls", "--json"])).souls.map((s) => [s.name, s]));
+  assert.deepEqual([rows.clash.spawnable, rows.clash.problem.code, rows.clash.capabilities], [false, "E_SLOT_CONFLICT", null]);
+  assert.ok(Array.isArray(rows.dev.capabilities), "a resolvable soul beside it still lists its capabilities");
+});
+
+test("feature souls-capabilities is advertised, after automation-descriptions", (t) => {
+  const fx = v2Deployment(); t.after(fx.cleanup);
+  const { features } = JSON.parse(fx.cli(["version", "--json"]).stdout);
+  assert.equal(features.indexOf("souls-capabilities"), features.indexOf("automation-descriptions") + 1);
 });

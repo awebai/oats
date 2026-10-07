@@ -38,8 +38,9 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
              "instance-events-2","schedule-history","schedule-read-2","spawn-preview-2","spawn-idempotency","spawn-idempotency-2","spawn-apply-2",
              "workspace-v2","instance-modules","spawn-provider-payload","served-identity","packages-no-approval","spawn-name","settings-origins",
              "team-model-3","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts","launch-preference",
-             "preview-composed-from","observe-max-age","spawn-preview-max-age","capability-show","capture-file","workspace-identity",
-             "server-connect","capability-route","servers-per-workspace","operator-default-soul","waiting-on-you"],
+             "preview-composed-from","observe-max-age","spawn-preview-max-age","launch-config-default","capability-show","capture-file",
+             "workspace-identity","server-connect","capability-route","servers-per-workspace","operator-default-soul","waiting-on-you",
+             "automation-descriptions","souls-capabilities"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
@@ -109,6 +110,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
 | `operator-default-soul` | a capability command from a deployment without `--soul` runs as the first soul that provides its namespace (named on stderr); none is `E_BAD_ARGS`, OATS 0.39.0 ([capabilities.md](capabilities.md)) | |
 | `waiting-on-you` | the `waiting` event kind and the session boundary rule; `oats instance waiting` and `oats instance attention`; `waitingOnYou` (with `message`) on `oats status --json` instance rows, on `oats session inspect --json` and in the events read, OATS 0.40.0 ([Waiting on you](#waiting-on-you)) | `eventsApi: 2` |
 | `automation-descriptions` | a `description` on every trigger and schedule row, local or workspace, by one rule; `oats schedule update <id> --description=<text>` (the description only) and `oats trigger update <id> --description=<text>`; `--description=<text>` on `schedule add` and `trigger add`, OATS 0.43.0 ([Shared row fields](#automations-shared-rows)) | |
+| `souls-capabilities` | `capabilities` on `oats souls --json` rows: the capabilities each soul composes, keyed like `oats capabilities` rows, with `from`, OATS 0.44.2 ([`oats capabilities` and `oats souls`](#oats-capabilities---dir---json--capabilitiesapi-1--oats-souls---dir---json--soulsapi-1)) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -826,12 +828,14 @@ packages' capabilities and souls, sorted by name, then origin. Both carry
     "teams":[{"label":"mine","team":"mine:ana.aweb.ai","default":true,"from":"local"},{"label":"global","team":null,"default":false,"from":"shared"}],
     "defaultTeam":{"label":"mine","team":"mine:ana.aweb.ai","from":"deployment"},
     "private":false,"path":"souls/writer","work":"directory","description":"Drafts campaigns.","harness":"pi","model":null,"harnessFrom":"kernel-default",
-    "file":{"path":"souls/writer/soul.yaml","url":null},"spawnable":true,"problem":null},
+    "file":{"path":"souls/writer/soul.yaml","url":null},"spawnable":true,"problem":null,
+    "capabilities":[{"name":"oats.aweb","kind":"package","package":"oats.aweb","from":"workspace"}]},
    {"name":"knowledge-maintainer","qualifiedName":"oats.okf/knowledge-maintainer","origin":"package oats.okf v4.1.1","kind":"package","package":"oats.okf",
     "version":"4.1.1","repoKey":"github.com/awebai/oats-okf","commit":"e1d604f7…","teams":null,"defaultTeam":null,"private":false,
     "path":"oats-package/souls/knowledge-maintainer","work":"directory","description":"Reviews harvested knowledge.","harness":"pi","model":null,
     "harnessFrom":"kernel-default","file":{"path":"oats-package/souls/knowledge-maintainer/soul.yaml","url":null},
-    "spawnable":false,"problem":{"code":"E_TEAM_UNKNOWN","message":"team \"reviewers\" is not declared (oats-local.yaml#/defaultTeam): …"}}],
+    "spawnable":false,"problem":{"code":"E_TEAM_UNKNOWN","message":"team \"reviewers\" is not declared (oats-local.yaml#/defaultTeam): …"},
+    "capabilities":null}],
  "problems":[]}
 ```
 
@@ -846,7 +850,8 @@ are absent until `sync`.
 **Soul rows:** `name, origin, kind (member | external | package), repoKey,
 commit, teams, defaultTeam, private (always false), path, work, description`,
 plus the Desktop facts `harness, model, harnessFrom, file, spawnable,
-problem`, and (feature `launch-preference`) `key` and `launch`.
+problem`, (feature `souls-capabilities`) `capabilities`, and (feature
+`launch-preference`) `key` and `launch`.
 - `key` is the soul key that `souls.launch` uses, and that
   `oats soul teams <key>` takes: `qualifiedName` for a package
   soul, the bare `name` for a member or external soul. Two member souls that
@@ -857,6 +862,16 @@ problem`, and (feature `launch-preference`) `key` and `launch`.
   [TeamRow](#the-team-row-teamrow) list and a
   [DefaultTeam](#the-default-defaultteam); both `null` when the soul's teams
   do not resolve (`problem` names the `E_TEAM_*` code).
+- `capabilities` (feature `souls-capabilities`, OATS 0.44.2): what the soul's
+  resolution composes, slots and additive alike, sorted by `name`. Each entry
+  names its capability with the capability row's own keys: `name`, `kind`
+  (`member` | `package`), then `repoKey` for a member or `package` for a
+  package, so it matches exactly one `oats capabilities` row. `from` is why
+  the soul has it: `soul` (it declares it) or `workspace` (a workspace
+  default), as in inspect's `layers.<slot>.from`. A capability the soul
+  turned off (`off`, or `<slot>: none` over a workspace default) is not
+  listed. `null` whenever `spawnable` is false (`problem` names why),
+  including a soul disabled on this machine; never `[]` for unknown.
 - Package souls (feature `package-souls`) add `qualifiedName`
   (`<package>/<soul>`), `package` and `version`. Spawn one by
   `qualifiedName` (the bare name when unique). Its instances live under
