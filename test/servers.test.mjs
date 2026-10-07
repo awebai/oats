@@ -697,3 +697,36 @@ exec ${JSON.stringify(process.execPath)} ${JSON.stringify(CLI)} "$@"
     itemThenBranch(r.stderr, "  branch: agents/dev-owes");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
+
+test("routed inspect --instructions needs a remote that advertises soul-composed-instructions: refused before anything is sent, else the flag travels", () => {
+  const server = { id: "build", sshHost: "h", workspace: "/w", oatsPath: "oats" };
+  const probe = (features) => ({ schemaVersion: 1, name: "@awebai/oats", version: "0.46.0", desktopApi: 1, harnesses: ["pi"], sessionBackends: ["tmux"], launchOptions: [], remote: ["spawn", "status"], features, operationsApi: 2 });
+  const remote = (features) => {
+    const sent = [];
+    const exec = (bin, argv) => {
+      const word = String(argv.at(-1));
+      if (word.includes("version --json")) return JSON.stringify(probe(features));
+      sent.push(word);
+      if (word.includes(" inspect ")) return JSON.stringify({ schemaVersion: 1, ok: true, result: { souls: [{ name: "dev" }] } });
+      throw new Error(`unexpected remote call: ${word}`);
+    };
+    return { sent, exec };
+  };
+  // An older host would ignore the flag and answer without the field: refused, nothing sent.
+  const old = remote(["operations"]);
+  assert.throws(() => routeCommand("build", "inspect", ["--soul", "dev", "--instructions"], { server, execFileSync: old.exec }),
+    (e) => e.code === "E_REMOTE_INCOMPATIBLE" && /soul-composed-instructions/.test(e.message) && /nothing was sent/.test(e.message));
+  assert.deepEqual(old.sent, [], "no inspect was sent to a host without the feature");
+  // Without the flag that host still answers inspect.
+  const plain = routeCommand("build", "inspect", ["--soul", "dev"], { server, execFileSync: old.exec });
+  assert.equal(plain.envelope.ok, true);
+  assert.equal(old.sent.length, 1);
+  assert.ok(!old.sent[0].includes("--instructions"));
+  // A host that advertises it gets the flag, scoped to the registered workspace.
+  const current = remote(["operations", "soul-composed-instructions"]);
+  const routed = routeCommand("build", "inspect", ["--soul", "dev", "--instructions"], { server, execFileSync: current.exec });
+  assert.equal(routed.envelope.ok, true);
+  assert.equal(routed.envelope.result.server, "build");
+  assert.equal(current.sent.length, 1);
+  assert.match(current.sent[0], /(^| )oats inspect --soul dev --instructions --dir \/w --json$/);
+});
