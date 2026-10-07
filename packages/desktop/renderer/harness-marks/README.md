@@ -22,17 +22,29 @@ harness shows a "?" text instead.
   The full text is [`PI-LICENSE.txt`](PI-LICENSE.txt). Pi publishes no trademark or
   logo-usage terms.
 
-## Claude Code and Codex: OATS's own drawings
+## Claude Code: Anthropic's Claude spark
 
-The Claude Code mark (an ivory four-pointed concave sparkle on a terracotta tile) and the
-Codex mark (a `>_` prompt, round-capped strokes on an inverse monochrome tile) are OATS's
-own original drawings, hand-authored in a `0 0 24 24` viewBox. They are **not** the
-official Anthropic or OpenAI logos. They are not traced, copied or derived from those
-logos, and they use none of their colours. OATS is not affiliated with or endorsed by
-Anthropic or OpenAI. "Claude Code" and "Codex" name the harness the instance reports, and
-nothing more.
+- Source: the Claude mark as published by Simple Icons (slug `claude`, version 16.34.0,
+  https://unpkg.com/simple-icons@16.34.0/icons/claude.svg, whose own source is
+  https://claude.ai; read 2026-10-07; SHA-256
+  `2d6fda79eb18ddccca35b799eeb3cece0dfabc22520ce3b10abd25668df9fa93`). Its single path and
+  its `0 0 24 24` viewBox ship unmodified.
+- It is painted in the theme's `--runtime-claude-fg` (ivory) on the terracotta
+  `--runtime-claude-bg` tile, not in Anthropic's `#D97757`, so it holds 4.5:1 in every theme.
+- Terms: the mark is Anthropic's trademark. Anthropic's trademark guidelines
+  (https://www.anthropic.com/legal/trademark-guidelines) require prior approval to use its
+  marks and forbid recolouring. The workspace owner chose on 2026-10-07 to ship it without
+  that approval and to accept the risk. If Anthropic asks, replace it with a text monogram.
+  OATS is not affiliated with or endorsed by Anthropic.
 
-Anthropic's terms require prior approval to use its marks, and OpenAI's forbid designing a
-similar logo, so these drawings must stay clearly distinct from the official marks: no
-many-rayed or irregular asterisk, and nothing knot-like, hexagonal or interlaced. A change
-to either mark keeps it that way.
+## Codex: OATS's own drawing
+
+The Codex mark (a `>_` prompt, round-capped strokes on an inverse monochrome tile) is
+OATS's own original drawing, hand-authored in a `0 0 24 24` viewBox. It is **not** the
+official OpenAI logo. It is not traced, copied or derived from that logo, and it uses
+none of its colours. OATS is not affiliated with or endorsed by OpenAI. "Codex" names the
+harness the instance reports, and nothing more.
+
+OpenAI's terms forbid designing a similar logo, so this drawing must stay clearly distinct
+from the official mark: nothing knot-like, hexagonal or interlaced. A change to it keeps it
+that way.

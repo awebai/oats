@@ -70,7 +70,7 @@
   --soul-clay-bg: #3e302b; --soul-clay-fg: #d5b09a;
   --soul-olive-bg: #343828; --soul-olive-fg: #bdc393;
   /* Harness marks (identity-marks.mjs): -fg paints the mark, -bg its tile,
-     held at AA though a mark needs only 3:1. Claude: an ivory sparkle on our
+     held at AA though a mark needs only 3:1. Claude: the ivory spark on our
      own terracotta (not Anthropic's Clay), the same in every theme. Pi: the
      pi.dev badge in its own dark-scheme #f6f6f6 on a quiet tile. Codex: an
      inverse tile, light here, dark in the light themes. */
