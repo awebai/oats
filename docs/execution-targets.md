@@ -660,7 +660,8 @@ pane, PID and `signatureDigest`; do not assume a top-level spawn-result `startId
 Spawn and same-home start/restart use this same controller and event path.
 
 New evidence directories are owner-only 0700 and files 0600. The writer checks
-canonical directory identities, ownership, modes and symlinks, refuses an
+canonical directory identities, ownership, modes and symlinks, refuses ACLs on
+evidence directories/files (including macOS ACLs hidden by xattrs), refuses an
 existing invocation directory, and publishes bounded files without overwrite.
 The private receipt binds the start, target, original home identity, dimensions,
 frame inode, byte count and SHA-256. `retainedAt` is write time; `captureTime:null`

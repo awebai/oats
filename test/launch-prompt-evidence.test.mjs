@@ -207,3 +207,24 @@ test('bounded verification refuses concurrent growth without reading beyond the 
   assert.deepEqual(retainLaunchPromptFrame(args), { ok: false });
   assert.equal(largest, Buffer.byteLength(args.screen.text) + 1);
 });
+
+// Real ACL manipulation is platform-dependent. The metadata probe's output is
+// simulated; no shared native files or ACLs are changed by these tests.
+for (const mode of ['acl', 'hidden-acl', 'probe-failed', 'temp-acl']) {
+ test(`private evidence refuses ${mode} before exposing frame bytes`, async t => {
+  const child = (await import('node:child_process')).default;
+  const original = child.execFileSync, { args, dir } = setup(t);
+  const stub = t.mock.method(child, 'execFileSync', (command, argv, options) => {
+    if (command !== '/bin/ls') return original(command, argv, options);
+    const path = argv.at(-1);
+    if (mode === 'temp-acl' && !path.endsWith('.tmp')) return original(command, argv, options);
+    if (mode === 'probe-failed') throw new Error('probe failed');
+    if (mode === 'hidden-acl') return 'drwx------@ 1 owner group 0 date private\n 0: user:other allow read,write\n';
+    return (path.endsWith('.tmp') ? '-rw-------+' : 'drwx------+') + ' 1 owner group 0 date private\n';
+  });
+  syncBuiltinESMExports(); t.after(() => { stub.mock.restore(); syncBuiltinESMExports(); });
+  assert.deepEqual(retainLaunchPromptFrame(args), { ok: false });
+  assert.equal(fs.existsSync(join(dir, 'frame.txt')), false);
+  assert.equal(fs.existsSync(join(dir, 'receipt.json')), false);
+ });
+}
