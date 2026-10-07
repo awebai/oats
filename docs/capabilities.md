@@ -462,16 +462,16 @@ from the deployment directory) receives:
   spawn recorded). One soul gives the same values from its home, from the
   deployment (with `--soul` or as the default soul) and in its hooks. Key
   durable per-soul state on `OATS_SOUL_ID`. A provider that relies on them
-  declares `compatibility.oats: ">=0.43.3"`: on an earlier kernel a
-  dispatched command gets neither, and a value it sees there is the
-  caller's.
+  declares `compatibility.oats: ">=0.43.3"`: an earlier kernel sets
+  neither, so a value a command sees there is the caller's.
 
 An `OATS_SOUL`, `OATS_AGENT` or `OATS_SOUL_ID` in the caller's environment is
 removed: it names another soul (a coordinator's, an outer command's). With
-no soul, the variable is absent. The kernel sets no other variable a hook
-gets (for example `OATS_EVENT`, `OATS_INSTANCE`, `OATS_HOME`,
-`OATS_CONTEXT`, `OATS_WORKSPACE`, `OATS_META` or the spawn and launch
-extras), so a dispatched command does not read them.
+no soul, the variable is absent. The kernel sets no other hook variable
+(`OATS_EVENT`, `OATS_LAYER`, `OATS_LEVEL`, `OATS_CONTEXT`, `OATS_WORKSPACE`,
+`OATS_ROOT`, `OATS_META`, the spawn and launch extras). `OATS_INSTANCE`,
+`OATS_INSTANCE_HOME` and `OATS_HOME` are neither set nor removed: inside an
+instance session they are the session's.
 
 `OATS_SETTINGS_ORIGINS` says where each leaf of
 `OATS_SETTINGS` came from: a JSON object from a JSON pointer to `{ kind, at }`,
