@@ -1,10 +1,48 @@
 {
-  "source": "DERIVED, not captured: test/fixtures/workspace-v2/f7/souls.json (kernel 0.29.3) with the souls-capabilities field added to every row as the kernel contract for OATS 0.44.2 states it (oats-maintainer, 2026-10-07): capabilities [{name, kind member|package, repoKey|package, from soul|workspace}] sorted by name, null exactly when spawnable is false.",
-  "changes": [
-    "every row: capabilities (the composition invented from f7/capabilities.json rows)",
-    "data-analyst: spawnable false, problem E_SOUL_DISABLED, capabilities null",
-    "security-reviewer: one entry whose repository differs from the catalog row of that name (an origin mismatch)",
-    "one package soul added: nw.tools/deployer (package nw.tools 0.4.0)"
+  "source": "oats-desktop-developer-capabilities-used-by: a real capture from the kernel PR that adds souls-capabilities (OATS 0.44.2), run in its own tree with its test helpers; import-capture.mjs wrote these files",
+  "scenario": "The kernel PR's soulCapabilities fixture (test/desktop-facts.test.mjs): v2Deployment + packageRepo (acme.pkg v1.0.0, package soul keeper declaring acme-tool), workspace defaults knowledge notes, messaging chat, capabilities acme.ws, acme.off and acme-tool (package); dev declares acme.own, acme_z, acme.ws, turns acme.off off and sets knowledge: none. Extended for Desktop: dev also declares acme.private (a manifest with private: true); a member soul keeper (the package soul's bare name) declares acme.own; a soul off is disabled in oats-local.yaml (souls.disabled), so it is not spawnable and its capabilities are null.",
+  "redactions": [
+    "<base> (deployment scratch) → /fixture/base",
+    "<pkg> (package repo scratch) → /fixture/pkg"
   ],
-  "replace": "with a real capture once the kernel ships souls-capabilities"
+  "kernel": {
+    "pr": "awebai/oats#745",
+    "branch": "kernel/souls-capabilities",
+    "commit": "0ee79761331b518ee490eb9f266c4492ab794b40"
+  },
+  "files": {
+    "version": {
+      "argv": [
+        "oats",
+        "version",
+        "--json"
+      ],
+      "cwd": "<base>/deployment",
+      "exit": 0,
+      "sourceSha256": "8a16a10913ce4d9fcc0e756c0160cb5d0086a20ed0c2256b56c5ee9f0e5ff504",
+      "fixtureSha256": "a52b547c48df404daad5b7ea6e0645822dce972cc6bab777022782989871ea34"
+    },
+    "souls": {
+      "argv": [
+        "oats",
+        "souls",
+        "--json"
+      ],
+      "cwd": "<base>/deployment",
+      "exit": 0,
+      "sourceSha256": "6b53bb99f5e3b49c60d424ba102d9fc035bb1ac78c7d6396912cdd84c8b60939",
+      "fixtureSha256": "0e14a88c1464bb509280ea62aa878ebfc8ac191103058f9ebb33d23adbce8e4f"
+    },
+    "capabilities": {
+      "argv": [
+        "oats",
+        "capabilities",
+        "--json"
+      ],
+      "cwd": "<base>/deployment",
+      "exit": 0,
+      "sourceSha256": "e0831f99d182c97e453e854c19563b1b474f7612137ec6511f5019c6df6da256",
+      "fixtureSha256": "067b47bbaa39f23eafb27384e98749a5e8ab6bedc9975485f9d26828008236a1"
+    }
+  }
 }

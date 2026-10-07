@@ -41,7 +41,7 @@ function clock(win) {
   } };
 }
 
-async function setup(t, { holdRoster = false, holdReads = false, cli = CLI, souls = agents } = {}) {
+async function setup(t, { holdRoster = false, holdReads = false, cli = CLI, souls = agents, catalog = CATALOG } = {}) {
   const dom = new JSDOM('<!doctype html><body><div id="host"></div>', { url: 'http://localhost' });
   const saved = { document: globalThis.document, window: globalThis.window, setInterval: globalThis.setInterval, ws: currentWorkspace() };
   globalThis.document = dom.window.document; globalThis.window = dom.window;
@@ -55,7 +55,7 @@ async function setup(t, { holdRoster = false, holdReads = false, cli = CLI, soul
     if (path === '/api/cli') return cli;
     if (path.startsWith('/api/agents')) { if (!holdRoster) return { agents: souls }; const r = deferred(); rosters.push(r); return r.promise; }
     if (path.startsWith('/api/panel')) return panel();
-    if (path.startsWith('/api/workspace-sync')) { if (!holdReads) return okRead(); const r = deferred(); reads.push({ ...r, body }); return r.promise; }
+    if (path.startsWith('/api/workspace-sync')) { if (!holdReads) return okRead({ capabilities: catalog }); const r = deferred(); reads.push({ ...r, body }); return r.promise; }
     if (path.startsWith('/api/capabilities') && body?.action === 'inspect') return soulInspection(body.selector.soul || 'release-manager');
     if (path.startsWith('/api/servers')) return { servers: [] };
     throw new Error(`Unexpected fixture API request: ${path}`);
@@ -258,38 +258,41 @@ test('roster-derived "Used by" claims wait for a settled good roster: "—" with
 });
 
 // souls-capabilities: "Used by" derives from the souls list (each soul's composition), the same read's state.
-const COMPOSED = soulsData(JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/souls-capabilities/souls.json', import.meta.url), 'utf8'))).souls
+// The kernel PR's real capture (fixtures/workspace-v2/souls-capabilities): its souls and its own catalog.
+const capture = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/souls-capabilities/${name}.json`, import.meta.url), 'utf8'));
+const COMPOSED_CATALOG = { capabilitiesApi: 1, ...capture('capabilities').result };
+const COMPOSED = soulsData(capture('souls')).souls
   .map(s => ({ name: s.name, key: s.key, soulKind: s.kind, ...(s.kind === 'package' ? { package: s.package, version: s.version, qualifiedName: s.qualifiedName } : {}),
     description: s.description || '', kind: 'persistent', work: s.work, capabilities: s.capabilities, agentsRoot: roster.root }));
 const COMPOSING_CLI = { ...CLI, features: [...CLI.features, 'souls-capabilities'] };
 test('souls-derived "Used by" waits for a settled good souls read: "—" with the souls list\'s reason, in the table and on the page', async t => {
   const u = await setup(t, { holdRoster: true, holdReads: true, cli: COMPOSING_CLI });
-  u.rosters[0].resolve({ agents: COMPOSED }); await settle(); await u.resolveRead(0, okRead()); await u.tab('capabilities');
+  const souls = COMPOSED.filter(s => s.key !== 'dev'); // acme_z: only dev composes it
+  u.rosters[0].resolve({ agents: souls }); await settle(); await u.resolveRead(0, okRead({ capabilities: COMPOSED_CATALOG })); await u.tab('capabilities');
   const cell = name => u.q(`.catalog-row[data-capability="${name}"] .catalog-used-count`);
-  assert.equal(cell('nw-brand-voice').textContent, '2 souls', 'from the composition: no instance needed');
-  assert.equal(cell('nw-warehouse-access').textContent, 'Not used', 'a good read: the claim');
+  assert.equal(cell('acme-tool').textContent, '2 souls', 'from the composition: no instance needed');
+  assert.equal(cell('acme_z').textContent, 'Not used', 'a good read: the claim');
   u.poll(); await tick(); u.rosters[1].reject(new Error('down')); await settle();
-  assert.equal(cell('nw-warehouse-access').textContent, '—'); assert.equal(cell('nw-warehouse-access').getAttribute('aria-description'), SOULS_STALE_TITLE);
-  assert.equal(cell('nw-brand-voice').textContent, '2 souls', 'the held list\'s souls stay');
-  u.q('.catalog-row[data-capability="nw-warehouse-access"]').click(); await settle();
+  assert.equal(cell('acme_z').textContent, '—'); assert.equal(cell('acme_z').getAttribute('aria-description'), SOULS_STALE_TITLE);
+  assert.equal(cell('acme-tool').textContent, '2 souls', 'the held list\'s souls stay');
+  u.q('.catalog-row[data-capability="acme_z"]').click(); await settle();
   assert.equal(pageOf(u).querySelector('.used-unknown').getAttribute('aria-description'), SOULS_STALE_TITLE, 'the page makes no claim either');
-  u.poll(); await tick(); u.rosters[2].resolve({ agents: COMPOSED }); await settle();
+  u.poll(); await tick(); u.rosters[2].resolve({ agents: souls }); await settle();
   assert.match(pageOf(u).textContent, /No soul here includes it/, 'a good read restores the claim on the open page');
 });
 
-test('the page opens a package soul from "Used by" by its key, never a member soul of its bare name', async t => {
-  // A member soul named "deployer" beside the package soul nw.tools/deployer.
-  const twin = { ...COMPOSED.find(s => s.name === 'release-manager'), name: 'deployer', key: 'deployer', capabilities: [] };
-  const u = await setup(t, { cli: COMPOSING_CLI, souls: [...COMPOSED, twin] });
+test('the page opens a package soul from "Used by" by its key, never the member soul of its bare name', async t => {
+  // The capture's member soul keeper and package soul acme.pkg/keeper both compose acme-tool.
+  const u = await setup(t, { cli: COMPOSING_CLI, souls: COMPOSED, catalog: COMPOSED_CATALOG });
   await u.tab('capabilities');
-  u.q('.catalog-row[data-capability="nw-deploy"]').click(); await settle();
+  u.q('.catalog-row[data-capability="acme-tool"]').click(); await settle();
   const rows = [...pageOf(u).querySelectorAll('.used-row:not(.head)')];
-  assert.deepEqual(rows.map(r => r.querySelector('.used-name').textContent), ['deployer', 'release-manager'], 'the package soul only');
-  rows[0].click(); await settle();
+  assert.deepEqual(rows.map(r => [r.querySelector('.used-name').textContent, r.title]), [['dev', 'Open dev'], ['keeper', 'Open keeper'], ['keeper', 'Open acme.pkg/keeper']]);
+  rows[2].click(); await settle();
   assert.equal(pageOf(u), null, 'the capability page closed');
   const soulPage = u.q('.workspace-soul-page');
-  assert.match(soulPage.textContent, /Deploys with the nw\.tools package\./, 'the package soul\'s page');
-  assert.doesNotMatch(soulPage.textContent, /Cuts, verifies and announces platform releases/, 'never the member twin\'s');
+  assert.match(soulPage.textContent, /keeper package soul\./, 'the package soul\'s page');
+  assert.doesNotMatch(soulPage.textContent, /keeper fixture soul\./, 'never the member soul\'s');
   // Which row opens is this page's business; how the soul page then addresses the kernel (a bare-name selector on
   // every soul surface) is the soul page's own, unchanged here.
 });

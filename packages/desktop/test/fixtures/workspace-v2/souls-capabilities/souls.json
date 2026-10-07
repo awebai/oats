@@ -4,455 +4,261 @@
   "result": {
     "soulsApi": 1,
     "workspace": {
-      "name": "northwind",
-      "key": "local//fixture/base/fx/remotes/agents.git",
-      "commit": "535e5d7c4a7e869e05effd2db237a8de943f2d9e"
+      "name": "fixture",
+      "key": "local//fixture/base/remotes/ws.git",
+      "commit": "81562ec5d07854cdef62257a04d2db2c02f79e55"
     },
     "souls": [
       {
-        "name": "campaign-writer",
-        "origin": "member local//fixture/base/fx/remotes/marketing.git @ 7e58b046",
+        "name": "dev",
+        "key": "dev",
+        "origin": "member local//fixture/base/remotes/ws.git @ 81562ec5",
         "kind": "member",
-        "repoKey": "local//fixture/base/fx/remotes/marketing.git",
-        "commit": "7e58b0464dd457a3d81663f6cfe83778d17f2747",
-        "team": "marketing",
-        "labels": [
-          "marketing"
-        ],
+        "repoKey": "local//fixture/base/remotes/ws.git",
+        "commit": "81562ec5d07854cdef62257a04d2db2c02f79e55",
+        "teams": [],
+        "defaultTeam": null,
         "private": false,
-        "path": "souls/campaign-writer",
+        "path": "souls/dev",
         "work": "directory",
-        "description": "Drafts launch campaigns from what engineering is actually shipping.",
+        "description": "dev fixture soul.",
         "harness": "pi",
         "model": null,
         "harnessFrom": "kernel-default",
+        "launch": {
+          "declared": null,
+          "effective": {
+            "harness": "pi",
+            "model": null,
+            "launchConfig": null
+          },
+          "from": "host",
+          "at": null,
+          "problem": null
+        },
         "file": {
-          "path": "souls/campaign-writer/soul.yaml",
+          "path": "souls/dev/soul.yaml",
           "url": null
         },
         "spawnable": true,
         "problem": null,
         "capabilities": [
           {
-            "name": "nw-brand-voice",
-            "kind": "member",
-            "repoKey": "local//fixture/base/fx/remotes/marketing.git",
-            "from": "soul"
-          },
-          {
-            "name": "nw-campaign-metrics",
-            "kind": "member",
-            "repoKey": "local//fixture/base/fx/remotes/marketing.git",
-            "from": "soul"
-          },
-          {
-            "name": "nw-house-style",
-            "kind": "member",
-            "repoKey": "local//fixture/base/fx/remotes/agents.git",
+            "name": "acme-tool",
+            "kind": "package",
+            "package": "acme.pkg",
             "from": "workspace"
           },
           {
-            "name": "oats.core",
-            "kind": "package",
-            "package": "oats.framework",
-            "from": "workspace"
+            "name": "acme.own",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "soul"
           },
           {
-            "name": "oats.okf",
-            "kind": "package",
-            "package": "oats.okf",
+            "name": "acme.private",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "soul"
+          },
+          {
+            "name": "acme.ws",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "soul"
+          },
+          {
+            "name": "acme_z",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "soul"
+          },
+          {
+            "name": "chat",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
             "from": "workspace"
           }
         ]
       },
       {
-        "name": "data-analyst",
-        "origin": "member local//fixture/base/fx/remotes/data.git @ 6a3610af",
+        "name": "keeper",
+        "key": "keeper",
+        "origin": "member local//fixture/base/remotes/ws.git @ 81562ec5",
         "kind": "member",
-        "repoKey": "local//fixture/base/fx/remotes/data.git",
-        "commit": "6a3610af7b70fd32717565479f8ccc971d94a68c",
-        "team": "engineering",
-        "labels": [
-          "engineering"
-        ],
+        "repoKey": "local//fixture/base/remotes/ws.git",
+        "commit": "81562ec5d07854cdef62257a04d2db2c02f79e55",
+        "teams": [],
+        "defaultTeam": null,
         "private": false,
-        "path": "souls/data-analyst",
+        "path": "souls/keeper",
         "work": "directory",
-        "description": "Answers questions against the warehouse with attributable evidence.",
+        "description": "keeper fixture soul.",
         "harness": "pi",
         "model": null,
         "harnessFrom": "kernel-default",
+        "launch": {
+          "declared": null,
+          "effective": {
+            "harness": "pi",
+            "model": null,
+            "launchConfig": null
+          },
+          "from": "host",
+          "at": null,
+          "problem": null
+        },
         "file": {
-          "path": "souls/data-analyst/soul.yaml",
+          "path": "souls/keeper/soul.yaml",
+          "url": null
+        },
+        "spawnable": true,
+        "problem": null,
+        "capabilities": [
+          {
+            "name": "acme-tool",
+            "kind": "package",
+            "package": "acme.pkg",
+            "from": "workspace"
+          },
+          {
+            "name": "acme.off",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "workspace"
+          },
+          {
+            "name": "acme.own",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "soul"
+          },
+          {
+            "name": "acme.ws",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "workspace"
+          },
+          {
+            "name": "chat",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "workspace"
+          },
+          {
+            "name": "notes",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "workspace"
+          }
+        ]
+      },
+      {
+        "name": "keeper",
+        "key": "acme.pkg/keeper",
+        "qualifiedName": "acme.pkg/keeper",
+        "origin": "package acme.pkg v1.0.0",
+        "kind": "package",
+        "package": "acme.pkg",
+        "version": "1.0.0",
+        "repoKey": "local//fixture/pkg/pkg.git",
+        "commit": "efbeaad930fc3e966aa455a3667e20aa7b1fb23e",
+        "teams": [],
+        "defaultTeam": null,
+        "private": false,
+        "path": "oats-package/souls/keeper",
+        "work": "directory",
+        "description": "keeper package soul.",
+        "harness": "pi",
+        "model": null,
+        "harnessFrom": "kernel-default",
+        "launch": {
+          "declared": null,
+          "effective": {
+            "harness": "pi",
+            "model": null,
+            "launchConfig": null
+          },
+          "from": "host",
+          "at": null,
+          "problem": null
+        },
+        "file": {
+          "path": "oats-package/souls/keeper/soul.yaml",
+          "url": null
+        },
+        "spawnable": true,
+        "problem": null,
+        "capabilities": [
+          {
+            "name": "acme-tool",
+            "kind": "package",
+            "package": "acme.pkg",
+            "from": "soul"
+          },
+          {
+            "name": "acme.off",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "workspace"
+          },
+          {
+            "name": "acme.ws",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "workspace"
+          },
+          {
+            "name": "chat",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "workspace"
+          },
+          {
+            "name": "notes",
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "from": "workspace"
+          }
+        ]
+      },
+      {
+        "name": "off",
+        "key": "off",
+        "origin": "member local//fixture/base/remotes/ws.git @ 81562ec5",
+        "kind": "member",
+        "repoKey": "local//fixture/base/remotes/ws.git",
+        "commit": "81562ec5d07854cdef62257a04d2db2c02f79e55",
+        "teams": [],
+        "defaultTeam": null,
+        "private": false,
+        "path": "souls/off",
+        "work": "directory",
+        "description": "off fixture soul.",
+        "harness": "pi",
+        "model": null,
+        "harnessFrom": "kernel-default",
+        "launch": {
+          "declared": null,
+          "effective": {
+            "harness": "pi",
+            "model": null,
+            "launchConfig": null
+          },
+          "from": "host",
+          "at": null,
+          "problem": null
+        },
+        "file": {
+          "path": "souls/off/soul.yaml",
           "url": null
         },
         "spawnable": false,
         "problem": {
           "code": "E_SOUL_DISABLED",
-          "message": "data-analyst is disabled in this deployment (oats-local.yaml souls.disabled)."
+          "message": "disabled on this machine (oats-local.yaml souls.disabled: off)"
         },
         "capabilities": null
-      },
-      {
-        "name": "deployer",
-        "origin": "package nw.tools v0.4.0",
-        "kind": "package",
-        "repoKey": "local//fixture/base/fx/remotes/nw-tools.git",
-        "commit": "535e5d7c4a7e869e05effd2db237a8de943f2d9e",
-        "private": false,
-        "path": "oats-package/souls/deployer",
-        "work": "directory",
-        "description": "Deploys with the nw.tools package.",
-        "harness": "pi",
-        "model": null,
-        "harnessFrom": "kernel-default",
-        "file": {
-          "path": "oats-package/souls/deployer/soul.yaml",
-          "url": null
-        },
-        "spawnable": true,
-        "problem": null,
-        "capabilities": [
-          {
-            "name": "nw-deploy",
-            "kind": "package",
-            "package": "nw.tools",
-            "from": "soul"
-          },
-          {
-            "name": "nw-house-style",
-            "kind": "member",
-            "repoKey": "local//fixture/base/fx/remotes/agents.git",
-            "from": "workspace"
-          },
-          {
-            "name": "nw-lint",
-            "kind": "package",
-            "package": "nw.tools",
-            "from": "soul"
-          },
-          {
-            "name": "oats.core",
-            "kind": "package",
-            "package": "oats.framework",
-            "from": "workspace"
-          },
-          {
-            "name": "oats.okf",
-            "kind": "package",
-            "package": "oats.okf",
-            "from": "workspace"
-          }
-        ],
-        "qualifiedName": "nw.tools/deployer",
-        "package": "nw.tools",
-        "version": "0.4.0"
-      },
-      {
-        "name": "platform-engineer",
-        "origin": "member local//fixture/base/fx/remotes/platform.git @ f745ac02",
-        "kind": "member",
-        "repoKey": "local//fixture/base/fx/remotes/platform.git",
-        "commit": "f745ac02fe85fb957583d59a5f4e38b1c754d753",
-        "team": "engineering",
-        "labels": [
-          "engineering"
-        ],
-        "private": false,
-        "path": "souls/platform-engineer",
-        "work": "worktree",
-        "description": "Implements platform features on a branch and opens PRs.",
-        "harness": "pi",
-        "model": null,
-        "harnessFrom": "kernel-default",
-        "file": {
-          "path": "souls/platform-engineer/soul.yaml",
-          "url": null
-        },
-        "spawnable": true,
-        "problem": null,
-        "capabilities": [
-          {
-            "name": "nw-house-style",
-            "kind": "member",
-            "repoKey": "local//fixture/base/fx/remotes/agents.git",
-            "from": "workspace"
-          },
-          {
-            "name": "nw-platform-runbook",
-            "kind": "member",
-            "repoKey": "local//fixture/base/fx/remotes/platform.git",
-            "from": "soul"
-          },
-          {
-            "name": "oats.core",
-            "kind": "package",
-            "package": "oats.framework",
-            "from": "workspace"
-          },
-          {
-            "name": "oats.okf",
-            "kind": "package",
-            "package": "oats.okf",
-            "from": "workspace"
-          }
-        ]
-      },
-      {
-        "name": "platform-reviewer",
-        "origin": "member local//fixture/base/fx/remotes/platform.git @ f745ac02",
-        "kind": "member",
-        "repoKey": "local//fixture/base/fx/remotes/platform.git",
-        "commit": "f745ac02fe85fb957583d59a5f4e38b1c754d753",
-        "team": "engineering",
-        "labels": [
-          "engineering"
-        ],
-        "private": false,
-        "path": "souls/platform-reviewer",
-        "work": "checkout",
-        "description": "Reviews platform PRs; internal to this repo.",
-        "harness": "pi",
-        "model": null,
-        "harnessFrom": "kernel-default",
-        "file": {
-          "path": "souls/platform-reviewer/soul.yaml",
-          "url": null
-        },
-        "spawnable": true,
-        "problem": null,
-        "capabilities": []
-      },
-      {
-        "name": "positioning-analyst",
-        "origin": "member local//fixture/base/fx/remotes/marketing.git @ 7e58b046",
-        "kind": "member",
-        "repoKey": "local//fixture/base/fx/remotes/marketing.git",
-        "commit": "7e58b0464dd457a3d81663f6cfe83778d17f2747",
-        "team": "marketing",
-        "labels": [
-          "marketing"
-        ],
-        "private": false,
-        "path": "souls/positioning-analyst",
-        "work": "directory",
-        "description": "Analyses market positioning against competitors.",
-        "harness": "pi",
-        "model": null,
-        "harnessFrom": "kernel-default",
-        "file": {
-          "path": "souls/positioning-analyst/soul.yaml",
-          "url": null
-        },
-        "spawnable": true,
-        "problem": null,
-        "capabilities": [
-          {
-            "name": "nw-brand-voice",
-            "kind": "member",
-            "repoKey": "local//fixture/base/fx/remotes/marketing.git",
-            "from": "soul"
-          },
-          {
-            "name": "nw-house-style",
-            "kind": "member",
-            "repoKey": "local//fixture/base/fx/remotes/agents.git",
-            "from": "workspace"
-          },
-          {
-            "name": "oats.core",
-            "kind": "package",
-            "package": "oats.framework",
-            "from": "workspace"
-          },
-          {
-            "name": "oats.okf",
-            "kind": "package",
-            "package": "oats.okf",
-            "from": "workspace"
-          }
-        ]
-      },
-      {
-        "name": "release-manager",
-        "origin": "member local//fixture/base/fx/remotes/agents.git @ 535e5d7c",
-        "kind": "member",
-        "repoKey": "local//fixture/base/fx/remotes/agents.git",
-        "commit": "535e5d7c4a7e869e05effd2db237a8de943f2d9e",
-        "team": "engineering",
-        "labels": [
-          "engineering",
-          "global"
-        ],
-        "private": false,
-        "path": "souls/release-manager",
-        "work": "worktree",
-        "description": "Cuts, verifies and announces platform releases.",
-        "harness": "pi",
-        "model": null,
-        "harnessFrom": "kernel-default",
-        "file": {
-          "path": "souls/release-manager/soul.yaml",
-          "url": null
-        },
-        "spawnable": true,
-        "problem": null,
-        "capabilities": [
-          {
-            "name": "nw-deploy",
-            "kind": "package",
-            "package": "nw.tools",
-            "from": "soul"
-          },
-          {
-            "name": "nw-house-style",
-            "kind": "member",
-            "repoKey": "local//fixture/base/fx/remotes/agents.git",
-            "from": "workspace"
-          },
-          {
-            "name": "nw-release-tooling",
-            "kind": "member",
-            "repoKey": "local//fixture/base/fx/remotes/agents.git",
-            "from": "soul"
-          },
-          {
-            "name": "oats.core",
-            "kind": "package",
-            "package": "oats.framework",
-            "from": "workspace"
-          },
-          {
-            "name": "oats.okf",
-            "kind": "package",
-            "package": "oats.okf",
-            "from": "workspace"
-          }
-        ]
-      },
-      {
-        "name": "security-reviewer",
-        "origin": "external local//fixture/base/fx/remotes/experts.git @ 3c606e09",
-        "kind": "external",
-        "repoKey": "local//fixture/base/fx/remotes/experts.git",
-        "commit": "3c606e09ea25c9976d9c8371d48e9737564e6896",
-        "team": "unassigned",
-        "labels": [],
-        "private": false,
-        "path": "souls/security-reviewer",
-        "work": "worktree",
-        "description": "Reviews changes for security regressions.",
-        "harness": "pi",
-        "model": null,
-        "harnessFrom": "kernel-default",
-        "file": {
-          "path": "souls/security-reviewer/soul.yaml",
-          "url": null
-        },
-        "spawnable": true,
-        "problem": null,
-        "capabilities": [
-          {
-            "name": "nw-brand-voice",
-            "kind": "member",
-            "repoKey": "local//fixture/base/fx/remotes/experts.git",
-            "from": "soul"
-          }
-        ]
-      },
-      {
-        "name": "support-triager",
-        "origin": "member local//fixture/base/fx/remotes/agents.git @ 535e5d7c",
-        "kind": "member",
-        "repoKey": "local//fixture/base/fx/remotes/agents.git",
-        "commit": "535e5d7c4a7e869e05effd2db237a8de943f2d9e",
-        "team": "global",
-        "labels": [
-          "global"
-        ],
-        "private": false,
-        "path": "souls/support-triager",
-        "work": "directory",
-        "description": "Triages inbound support issues into Jira.",
-        "harness": "pi",
-        "model": null,
-        "harnessFrom": "kernel-default",
-        "file": {
-          "path": "souls/support-triager/soul.yaml",
-          "url": null
-        },
-        "spawnable": true,
-        "problem": null,
-        "capabilities": [
-          {
-            "name": "nw-house-style",
-            "kind": "member",
-            "repoKey": "local//fixture/base/fx/remotes/agents.git",
-            "from": "workspace"
-          },
-          {
-            "name": "oats.core",
-            "kind": "package",
-            "package": "oats.framework",
-            "from": "workspace"
-          },
-          {
-            "name": "oats.okf",
-            "kind": "package",
-            "package": "oats.okf",
-            "from": "workspace"
-          }
-        ]
-      },
-      {
-        "name": "tools-expert",
-        "origin": "member local//fixture/base/fx/remotes/nw-tools.git @ 18e3c359",
-        "kind": "member",
-        "repoKey": "local//fixture/base/fx/remotes/nw-tools.git",
-        "commit": "18e3c359a4f4c2209ddc0cef5d53b8c01a756aa0",
-        "team": "engineering",
-        "labels": [
-          "engineering"
-        ],
-        "private": false,
-        "path": "souls/tools-expert",
-        "work": "worktree",
-        "description": "Knows the nw.tools package \u2014 its manifests, executables, release tags and consumers; evolves it through PRs.",
-        "harness": "pi",
-        "model": null,
-        "harnessFrom": "kernel-default",
-        "file": {
-          "path": "souls/tools-expert/soul.yaml",
-          "url": null
-        },
-        "spawnable": true,
-        "problem": null,
-        "capabilities": [
-          {
-            "name": "nw-lint",
-            "kind": "package",
-            "package": "nw.tools",
-            "from": "soul"
-          },
-          {
-            "name": "nw-tools-dev",
-            "kind": "member",
-            "repoKey": "local//fixture/base/fx/remotes/nw-tools.git",
-            "from": "soul"
-          },
-          {
-            "name": "oats.core",
-            "kind": "package",
-            "package": "oats.framework",
-            "from": "workspace"
-          },
-          {
-            "name": "oats.okf",
-            "kind": "package",
-            "package": "oats.okf",
-            "from": "workspace"
-          }
-        ]
       }
     ],
     "problems": []
