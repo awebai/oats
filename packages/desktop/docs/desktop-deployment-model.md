@@ -42,7 +42,7 @@ Matching deployments into workspace views needs `workspace-identity`; without
 it each deployment keeps a view of its own under its deployment id, the switcher
 lists them as before (not under "Not matched to a workspace"), and the
 deployment list says why.
-`ACCEPT_RANGE` is `>=0.25.8 <0.44.0`: the floor admits main's kernel before
+`ACCEPT_RANGE` is `>=0.25.8 <0.45.0`: the floor admits main's kernel before
 0.26.0 was tagged, the ceiling admits 0.27 (the harness rename, gated on feature
 `harness`) through 0.30 (team model v2, gated on feature `team-model-2`; the
 0.29 team shapes are still read), 0.31 (Herdr removed; per-instance reads and
@@ -59,10 +59,12 @@ servers per workspace, features `server-connect`, `capability-route` and
 Desktop no longer offers it; new sessions run on the OATS tmux server, named
 by the socket each row records), 0.42 (a retire plan carries two recovery
 notes and a retire receipt's `workRecovery` adds `home`, `notCopied` and
-`afterHooks`, which the lifecycle readers accept) and 0.43 (schedule and
+`afterHooks`, which the lifecycle readers accept), 0.43 (schedule and
 trigger rows carry `description`, and `<kind> update <id> --description`
 sets one, feature `automation-descriptions`, which gates the summary
-writes), and the `packages-no-approval` fence is the real
+writes) and 0.44 (launch-prompt answers: the spawn preview's optional
+`launchPromptAnswers`, `E_SPAWN_INCOMPLETE` details' optional `launchPrompts`
+and the `launch-prompt` instance event, all read as optional, no new gate), and the `packages-no-approval` fence is the real
 gate.
 
 ## Projection and ownership
