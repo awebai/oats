@@ -430,8 +430,9 @@ you), `launch-failed`, `unknown`, and for wake jobs `delivered`, `started` or
 `skipped`. The kernel never claims a task succeeded.
 
 `unknown` means the launch's side effects are unconfirmed: a command timed out
-or answered no envelope, or an attempt was never recorded. The job is skipped
-until `oats schedule reconcile <id>`, which adopts only an attributable
+or answered no envelope, or an attempt was never recorded. A job with a
+persisted attempt is skipped until `oats schedule reconcile <id>` (an
+unknown `lastRun` alone does not block it; see below), which adopts only an attributable
 receipt (a spawn job's instance, named for its minute, or the instance a
 command's answer named). When nothing is attributable, check the roster and
 the host by hand, then `reconcile <id> --clear` records `launch-failed` and
@@ -448,13 +449,30 @@ is `! schedule-unresolved: …`; in `--json` it is a `problems[]` item:
   scheduledFor, startedAt, ageSeconds, holdsSlot, exited, error, remedy, message }
 ```
 
-`holdsSlot` says whether the job counts against `maxConcurrent`. `remedy` is
-`oats schedule reconcile <id>`, with `--clear` for a command or operation
-whose effects no named home proves (check the roster and the host by hand
-first), and with `--dir <scope>` for another deployment. A warning never
-changes doctor's exit status. Workspace command kinds come from the last
-saved automations snapshot, without a refresh or an account lookup. Unresolved
-workspace state is reported even if its definition is no longer available.
+`holdsSlot` says whether the job counts against `maxConcurrent`. For a local
+schedule whose saved state supports reconciliation, `remedy` names
+`oats schedule reconcile <id>`, with `--clear` for unproven command/operation
+effects (check the roster and host by hand first), and `--dir <scope>` for
+another deployment. Invalid or unsupported saved inputs instead receive a
+warning to preserve state and inspect effects with the deployment owner.
+A warning never changes doctor's exit status.
+
+Workspace guidance uses only validated local settings and the saved automation
+snapshot. A known opt-out, missing saved definition, different assigned host or
+absent trust explains why retained-state reconciliation is currently unavailable.
+Missing saved data does not prove remote deletion. Invalid/unreadable inputs
+are reported as unverifiable; even statically eligible placement is **not**
+verified current authorization, because doctor does not check the owner account,
+refresh discovery or access the network. No unconditional executable workspace
+reconcile remedy is printed. Preserve retained state and inspect effects with
+the deployment owner: this diagnostic correction does not add a way to clear
+workspace attempts outside current placement, and that recovery remains
+unsupported. Do not re-enable or retrust a job merely to clear its state.
+
+Only a persisted `attempt` blocks that job pending reconciliation. An unknown
+`lastRun` without an attempt is a last observation that an eligible tick may
+re-observe; doctor does not promise that a tick will clear it or launch again.
+Both cases retain their reported age, error and slot facts.
 
 Whether an `unknown` job keeps its host slot depends on what is still running:
 

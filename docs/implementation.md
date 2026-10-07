@@ -116,6 +116,14 @@ timeouts/errors are unchanged. Screen comparison can set only the observational
 use inert command runners and clocks; they do not qualify broker delivery or
 harness acceptance.
 
+Schedule doctor diagnostics read saved definitions, run state, snapshot and
+validated local configuration without constructing a live placement context.
+Only a persisted attempt is described as blocking another run; an unknown last
+observation may be refreshed by a later eligible tick. Workspace exclusions
+can be diagnosed offline, but owner authorization cannot be established there,
+so the remedy remains diagnostic prose. This does not add retained-state
+reconciliation outside current placement or mutate attempts and locks.
+
 The kernel is runtime-neutral: nothing in `lib/` depends on a harness or on
 a provider. Provider behaviour lives in capabilities; the kernel supplies
 their contracts ([layers](layers.md)).

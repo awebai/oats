@@ -182,10 +182,16 @@ or `run: command`, `cron`, `tz`, `agent`, `task`, plus `runsOn` and `owner`).
 ## Unresolved schedule attempts
 
 `oats doctor` reports `schedule-unresolved` warnings with the job ID, attempt
-age, original error and whether the job holds a host slot. Follow its
-`oats schedule reconcile <id>` remedy; use `--clear` only after checking
-unproven effects by hand. Doctor also reads saved workspace definitions
-offline and checks other deployments registered with this host.
+age, original error and whether the job holds a host slot. For a supported
+local attempt, follow its `oats schedule reconcile <id>` remedy; use `--clear`
+only after checking unproven effects by hand. Workspace guidance is offline:
+known placement exclusions prevent reconciliation, and static eligibility is
+not verified current authorization. Preserve retained state and inspect effects
+with the deployment owner; clearing workspace attempts outside current placement
+remains unsupported. Do not re-enable/retrust a job or delete locks to recover it.
+An unknown last observation without a persisted attempt may be re-observed by an
+eligible tick; it is not the same rerun-blocking condition and clearance is not
+guaranteed. Doctor also checks other deployments registered with this host.
 
 An unknown command or operation frees its host slot only after the kernel
 observes its process exit. Scheduler command/operation and workspace-spawn
