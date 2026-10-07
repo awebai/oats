@@ -578,6 +578,10 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     ['.setup-hand-title', '.setup-panel', 'fg', 'surface'], ['.setup-hand-sub', '.setup-panel', 'muted', 'surface'], ['.setup-hand-mark.warn', '.setup-panel', 'warn', 'surface'],
     ['.setup-panel p:not(.muted):not(.warn)', '.setup-panel', 'fg', 'surface'], ['.setup-panel p.warn', '.setup-panel', 'warn', 'surface'], ['.setup-panel p.muted', '.setup-panel', 'muted', 'surface'],
     ['.setup-detail', '.setup-detail', 'fg', 'surface-2'],
+    // Spec A: the list view's legend under the lede, and each member's roles (Host names its file, Member on every row).
+    ['.setup-legend', '.oats-view', 'muted', 'bg'], ['.setup-legend .setup-badge.host', '.setup-legend .setup-badge.host', 'accent', 'sel'],
+    ['.setup-row .setup-badge.host', '.setup-row .setup-badge.host', 'accent', 'sel'], ['.setup-row .setup-badge.host button.setup-file', '.setup-row .setup-badge.host', 'accent', 'sel'],
+    ['.setup-row .setup-badge.member', '.setup-row .setup-badge.member', 'muted', 'tag-bg'],
     ['.ws-sync-state.warn', '.workspace-header', 'warn', 'surface'],
     ['.ws-sync-lead.error', '.ws-sync-dialog', 'danger', 'surface'], ['.ws-sync-lead:not(.error)', '.ws-sync-dialog', 'fg', 'surface'],
     ['.ws-sync-details', '.ws-sync-dialog', 'muted', 'surface'], ['.ws-sync-detail', '.ws-sync-detail', 'muted', 'surface-2'],
@@ -1209,6 +1213,42 @@ for (const [name] of palettes) test(`${name}: team model v2 cards, left entries,
     // The not-reached line is the page head's lead style: the same colour on the same ground.
   assert.equal(dom.window.getComputedStyle(doc.querySelector('.ct-reach')).color, dom.window.getComputedStyle(doc.querySelector('.ct-lead')).color);
   assert.ok(doc.querySelector('.ct-reach').textContent.includes('Far box'));
+});
+
+// Spec A (Teams says whose default it is): team model 3's card rows (Default for, May join, a quiet fallback),
+// the address line, the "Members · N" head and the nobody line, on a teamsApi 2 document shaped like the lfx rig.
+for (const [name] of palettes) test(`${name}: team model 3 card facts, address and members head meet computed AA`, async t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"></div></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document;
+  for (const source of [css, computerTeamsCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  const team = (label, extra = {}) => ({ label, team: `${label}:lfx.aweb.ai`, description: null, from: 'shared', default: false, at: 'x', ...extra });
+  const document = { teamsApi: 2, deployment: '/d', localTeams: false, problems: [],
+    defaultTeam: { label: 'lfx-all', team: null, from: 'workspace' },
+    teams: [team('lfx-all', { team: null, default: true }), team('lfx-ai-team'), team('idle'), team('lone')],
+    souls: { '*': { default: 'idle', teams: [] }, 'lfx-ai-engineering/*': { default: 'lfx-ai-team', teams: ['lfx-all'] } } };
+  const TEAM = 'lfx-ai-team:lfx.aweb.ai';
+  const page = createComputerTeams(doc, { request: async () => structuredClone(document), readMembers: async () => ({ members: [{ workspace: '/d', server: null, serverLabel: null,
+    instance: 'ai-reviewer', agent: 'ai-reviewer', agentsRoot: '/d/agents', home: '/d/agents/ai-reviewer/instances/ai-reviewer', team: TEAM, running: true, addressable: true, missingRemotely: false, reason: null }], servers: [], notReached: [] }) });
+  doc.querySelector('.oats-view').append(page.element);
+  t.after(() => { page.dispose(); dom.window.close(); });
+  for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve));
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  for (const [selector, painted, fg, bg] of [
+    ['[data-team="lfx-ai-team"] .ct-aud dt', '.ct-card', 'muted', 'surface'],
+    ['[data-team="lfx-ai-team"] .ct-aud[data-audience=default] dd', '.ct-card', 'fg', 'surface'],
+    ['[data-team="lfx-ai-team"] .ct-aud[data-audience=default] .ct-name', '.ct-card', 'fg', 'surface'],
+    ['[data-team="lfx-all"] .ct-aud[data-audience=join] dd', '.ct-card', 'muted', 'surface'],
+    ['[data-team="lfx-all"] .ct-aud[data-audience=join] .ct-name', '.ct-card', 'muted', 'surface'],
+    ['[data-team="lfx-all"] .ct-quiet', '.ct-card', 'muted', 'surface'],
+    ['[data-team="lfx-ai-team"] .ct-address', '.ct-card', 'muted', 'surface'], ['.ct-address.none', '.ct-card', 'warn', 'surface'],
+    ['.ct-members-head', '.ct-card', 'muted', 'surface'], ['.ct-join.none', '.ct-card', 'muted', 'surface'],
+  ]) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background.replace(/^.*(var\(--[\w-]+\)).*$/, '$1'), `var(--${bg})`, painted);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+  }
 });
 
 // v4.1 cleanup (boards 1 and 2): the instance panel's header chip and soul link, the Work card's sentence

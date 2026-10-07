@@ -21,6 +21,46 @@ join, and its default, in the workspace's `souls:`. So:
   oats-workspace.yaml (a PR to the workspace file)`, the local-teams-closed message and fix, the
   unmapped fix.
 
+## The Teams board
+
+`renderer/computer-teams.mjs`. Two sections of cards, shared teams then local ones, each with the
+default team's card first (otherwise the document's order), then the workspace's `souls:` as committed.
+A card reads, top to bottom: the label and its default pill, the description, any problem that blocks
+spawning, the team's audience, the address (the provider team id, the quietest line; "no provider id
+yet" in the warn colour), the team's warnings, why Remove is off, then its members. The right column
+holds the member count and the actions; under a 640px container they move below the main column.
+
+**The audience** (team model 3) is two labelled rows, each shown only when it has entries:
+
+- **Default for**: whose default the team is, e.g. "all souls of **lfx-ai-engineering**",
+  "**writer** (acme-agents)", or, for the document's `defaultTeam`, "every soul without its own
+  default" (with "(this deployment's choice)" when it is the deployment's).
+- **May join**: who else may join it without it being their default, e.g. "souls of
+  **lfx-agents** · **ai-reviewer** (lfx-ai-engineering)", or "every soul (local team)" for a local
+  team where local teams are allowed.
+
+A card with neither says "No soul may join it yet". Repo and soul names are bold, each titled with
+the `souls:` key it comes from.
+
+`teamAudience(document, label)` computes both from the committed `souls:` map alone, with the
+kernel's resolution (`lib/teams.mjs`): a soul's teams come from its most specific key outright, its
+default from the most specific key that sets one, and `any` is every shared team. So an entry a
+broader key already implies is never repeated (`lfx-ai-engineering/ai-reviewer` defaulting to the
+same team as `lfx-ai-engineering/*`). A pattern lists as `except` the more specific keys under it that
+fall outside, as in "all souls of p except x". Where `"*"` sets a default, no soul falls back to the
+`defaultTeam`, and its row says so quietly. Before team model 3 the function answers null, and the
+card keeps the team model 2 "Address … Who may join …" line from `whoMayJoin`.
+This is a second reading of the kernel's resolution in the renderer. `test/desktop-team-audience-kernel.test.mjs`
+(at the repository root) pins it to the kernel: for each fixture it resolves every concrete soul with
+`soulTeams` and checks each team's audience against it. A change to resolution in `lib/teams.mjs` must
+keep that test green, or change `teamAudience` with it.
+
+A card lists its members (below) under a "Members · N" head. Within a deployment group the rows
+share their columns (a subgrid), so the state words line up.
+
+The souls section's right column reads "default lfx-ai-team · may also join lfx-all", or "may join
+any shared team".
+
 ## Routes
 
 Both are `POST` with exactly one `?ws=<view id or deployment id>` and a JSON body of at most 4 KiB.

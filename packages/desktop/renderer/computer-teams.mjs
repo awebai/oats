@@ -22,7 +22,8 @@
  * default before writing, so neither is offered; local teams still in oats-local.yaml keep Remove (the
  * kernel accepts it: the last step of committing them in the workspace), and the kernel's local-teams-closed
  * failure leads the page in its own words. The default says where it comes from (this deployment, or the
- * workspace's defaultTeam). */
+ * workspace's defaultTeam). Each card says whose default the team is and who else may join it, computed from
+ * souls: alone (`teamAudience`; packages/desktop/docs/desktop-teams.md "The Teams board"). */
 import { iconElement } from './shell-icons.mjs';
 import { createSoulMark } from './identity-marks.mjs';
 import { deploymentLabel, shortPath, THIS_MACHINE } from './deployment-label.mjs';
@@ -60,10 +61,12 @@ export const computerTeamsCSS = `
 .computer-teams .ct-section-title { margin:0; color:var(--muted); font-size:10.5px; font-weight:650; letter-spacing:.065em; text-transform:uppercase; }
 .computer-teams .ct-scope { display:inline-flex; align-items:center; gap:5px; height:20px; padding:0 7px; border:1px solid var(--border); border-radius:5px; background:var(--surface); color:var(--muted); font-size:10.5px; font-weight:600; white-space:nowrap; }
 .computer-teams .ct-scope.dashed { border:1px dashed var(--tree-line); }
-.computer-teams .ct-card { display:grid; grid-template-columns:44px minmax(0,1fr) 240px; column-gap:16px; row-gap:10px; align-items:start; padding:16px 18px; background:var(--surface); border:1px solid var(--border); border-radius:10px; min-width:0; }
-.computer-teams .ct-tile { display:grid; place-items:center; width:40px; height:40px; border-radius:10px; background:var(--chip-bg); color:var(--chip-fg); }
+.computer-teams .ct-card { display:grid; grid-template-columns:32px minmax(0,1fr) 240px; column-gap:14px; row-gap:10px; align-items:start; padding:16px 18px; background:var(--surface); border:1px solid var(--border); border-radius:10px; min-width:0; }
+.computer-teams .ct-tile { display:grid; place-items:center; width:32px; height:32px; border-radius:8px; background:var(--chip-bg); color:var(--chip-fg); }
 .computer-teams .ct-tile.default { background:var(--sel); color:var(--accent); }
 .computer-teams .ct-main { display:flex; flex-direction:column; gap:6px; min-width:0; }
+/* Nothing on the right (no members, no actions): the main column takes its width. */
+.computer-teams .ct-card.no-side > .ct-main { grid-column:2 / -1; }
 .computer-teams .ct-head { display:flex; align-items:center; flex-wrap:wrap; gap:6px 8px; min-width:0; }
 .computer-teams .ct-label { color:var(--fg); font-size:14.5px; font-weight:650; line-height:1.3; overflow-wrap:anywhere; }
 .computer-teams .ct-pill { display:inline-flex; align-items:center; padding:1px 7px; border-radius:10px; background:var(--sel); color:var(--accent); font-size:10.5px; font-weight:650; white-space:nowrap; }
@@ -75,6 +78,15 @@ export const computerTeamsCSS = `
 .computer-teams .ct-id.none { font-family:inherit; }
 .computer-teams .ct-join { color:var(--fg); font-weight:600; }
 .computer-teams .ct-join.none { color:var(--muted); font-weight:500; }
+/* Team model 3: two labelled rows (Default for, May join), names bold; then the address, the quietest line. */
+.computer-teams .ct-audience { display:grid; grid-template-columns:92px minmax(0,1fr); align-items:baseline; gap:3px 10px; margin:2px 0 0; min-width:0; font-size:12.5px; line-height:1.45; }
+.computer-teams .ct-aud { display:contents; }
+.computer-teams .ct-aud dt { color:var(--muted); font-size:12px; }
+.computer-teams .ct-aud dd { margin:0; min-width:0; color:var(--fg); overflow-wrap:anywhere; }
+.computer-teams .ct-aud[data-audience=join] dd, .computer-teams .ct-quiet { color:var(--muted); }
+.computer-teams .ct-name { font-weight:650; }
+.computer-teams .ct-address { color:var(--muted); font:11.5px var(--mono,monospace); overflow-wrap:anywhere; }
+.computer-teams .ct-address.none { color:var(--warn); font-family:inherit; }
 .computer-teams .ct-why { color:var(--muted); font-size:11.5px; line-height:1.45; overflow-wrap:anywhere; }
 .computer-teams .ct-warn { font-size:11.5px; line-height:1.45; overflow-wrap:anywhere; }
 .computer-teams .ct-blocking { display:flex; flex-direction:column; gap:2px; margin-top:4px; padding-left:8px; border-left:2px solid var(--danger); color:var(--muted); font-size:11.5px; line-height:1.45; overflow-wrap:anywhere; }
@@ -129,22 +141,34 @@ export const computerTeamsCSS = `
 /* The members (spec 02): grouped by machine, one row per instance with its state in words and two buttons. */
 .computer-teams .ct-reach { margin:0; color:var(--muted); font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
 .computer-teams .ct-reach:empty { display:none; }
-.computer-teams .ct-members { display:flex; flex-direction:column; gap:10px; margin:6px 0 0; padding:0; list-style:none; min-width:0; }
+.computer-teams .ct-members-head { display:flex; align-items:center; gap:8px; margin-top:8px; color:var(--muted); font-size:10.5px; font-weight:650; letter-spacing:.065em; text-transform:uppercase; }
+.computer-teams .ct-members-head::after { content:''; flex:1; border-top:1px solid var(--border); }
+.computer-teams .ct-members { display:flex; flex-direction:column; gap:10px; margin:0; padding:0; list-style:none; min-width:0; }
 .computer-teams .ct-group { display:flex; flex-direction:column; gap:4px; min-width:0; }
 .computer-teams .ct-group-head { margin:0; color:var(--muted); font-size:12px; font-weight:500; line-height:1.45; overflow-wrap:anywhere; }
-.computer-teams .ct-member-list { display:flex; flex-direction:column; gap:2px; margin:0; padding:0; list-style:none; min-width:0; }
-.computer-teams .ct-member { display:flex; align-items:center; gap:8px; min-height:26px; min-width:0; }
+/* A group scans as a table: dot, name, soul mark, state word, Terminal, in columns shared by its rows (subgrid). */
+.computer-teams .ct-member-list { display:grid; grid-template-columns:8px fit-content(220px) 18px fit-content(220px) auto; justify-content:start; column-gap:8px; row-gap:2px; margin:0; padding:0; list-style:none; min-width:0; }
+.computer-teams .ct-member { display:grid; grid-column:1 / -1; grid-template-columns:subgrid; align-items:center; min-height:26px; min-width:0; }
 .computer-teams .ct-member .identity-mark { width:18px; height:18px; border-radius:5px; font-size:9px; font-weight:700; flex:none; }
 .computer-teams .ct-dot { box-sizing:border-box; width:8px; height:8px; flex:none; border-radius:50%; border:1.5px solid var(--faint); background:var(--surface); }
 .computer-teams .ct-dot[data-state=running] { border-color:var(--accent); background:var(--accent); }
 .computer-teams .ct-dot[data-state=unknown], .computer-teams .ct-dot[data-state=gone] { border-color:var(--warn); background:var(--warn); }
 /* The name is the roster's (proportional, 12.5px/600) and shows the row: a text control, underlined on hover and focus. */
-.oats-view .computer-teams .ct-member-name { appearance:none; margin:0; padding:0; border:0; background:none; color:var(--fg); font:600 12.5px/1.3 var(--sans,system-ui); text-align:left; overflow-wrap:anywhere; min-width:0; cursor:pointer; }
+.oats-view .computer-teams .ct-member-name { appearance:none; justify-self:start; margin:0; padding:0; border:0; background:none; color:var(--fg); font:600 12.5px/1.3 var(--sans,system-ui); text-align:left; overflow-wrap:anywhere; min-width:0; cursor:pointer; }
 .oats-view .computer-teams .ct-member-name:hover, .oats-view .computer-teams .ct-member-name:focus-visible { text-decoration:underline; }
-.computer-teams .ct-member-state { color:var(--muted); font-size:11.5px; white-space:nowrap; flex-grow:1; }
+.computer-teams .ct-member-state { min-width:0; color:var(--muted); font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 /* Terminal: quiet, borderless until hover or focus. */
 .oats-view .computer-teams .ct-member-term { appearance:none; display:inline-flex; align-items:center; gap:4px; flex:none; height:22px; padding:0 6px; border:1px solid transparent; border-radius:5px; background:none; color:var(--muted); font:600 11px var(--sans,system-ui); cursor:pointer; }
 .oats-view .computer-teams .ct-member-term:hover, .oats-view .computer-teams .ct-member-term:focus-visible { border-color:var(--border); background:var(--surface-2); color:var(--fg); }
+/* A narrow board: the actions and the member count move under the main column instead of squeezing it. */
+@container (max-width: 640px) {
+ .computer-teams .ct-card { grid-template-columns:32px minmax(0,1fr); }
+ .computer-teams .ct-side { grid-column:2; align-items:flex-start; }
+ .computer-teams .ct-side .ct-actions { justify-content:flex-start; }
+ .computer-teams .ct-note { text-align:left; }
+ /* The count repeats the "Members · N" head right above it. */
+ .computer-teams .ct-side .ct-inst { display:none; }
+}
 `;
 
 const text = v => typeof v === 'string' && v ? v : null;
@@ -199,6 +223,88 @@ export function teamInUse(document, label) {
   if (every) reasons.push('every soul may join it');
   if (souls.size) reasons.push(`${plural(souls.size, 'soul')} use${souls.size === 1 ? 's' : ''} it`);
   return reasons.length ? `Can't remove: ${reasons.join('; ')}. Change that first.` : null;
+}
+
+/** A souls: key's place in the pattern order: "*" (level 0), `<repo-or-package>/*` (1), `<repo-or-package>/<soul>`
+ * (2), split as the kernel does (lib/teams.mjs patternsOf: the last "/"); anything else is ignored. */
+function soulKey(key) {
+  if (key === '*') return { key, level: 0, repo: null, soul: null };
+  const at = key.lastIndexOf('/');
+  if (at <= 0 || at === key.length - 1) return null;
+  const repo = key.slice(0, at), soul = key.slice(at + 1);
+  return soul === '*' ? { key, level: 1, repo, soul: null } : { key, level: 2, repo, soul };
+}
+const AUDIENCE_ORDER = ['every', 'fallback', 'local', 'repo', 'soul'];
+const byAudience = (a, b) => AUDIENCE_ORDER.indexOf(a.kind) - AUDIENCE_ORDER.indexOf(b.kind)
+  || codePoint(a.repo ?? '', b.repo ?? '') || codePoint(a.soul ?? '', b.soul ?? '');
+const audienceEntry = ({ key, level, repo, soul }) => level === 0 ? { kind: 'every', key } : level === 1 ? { kind: 'repo', key, repo } : { kind: 'soul', key, repo, soul };
+
+/** Team model 3 (teamsApi 2): whose default a team is, and who else may join it, from the committed souls: map
+ * alone (docs/design/2026-10-02-team-model-3.md: a soul's teams come from its most specific key, its default
+ * from the most specific key that sets one; `any` is every shared team). → `{ defaultFor, mayJoin }`, each a
+ * list of `{ kind: 'every' | 'fallback' | 'local' | 'repo' | 'soul', key?, repo?, soul?, except? }`:
+ *   - defaultFor: each key whose default is the label (`"*"` every soul, `<p>/*` all souls of p, `<p>/<s>` soul s
+ *     of p), less the keys a broader one already implies (the nearest broader key that sets a default gives the
+ *     same); `except` names the more specific keys under it that set another default. Plus `fallback` when the
+ *     label is the document's defaultTeam (every soul without a souls: default; `from` says whose, `nobody`
+ *     when "*" sets a default and so no soul falls back);
+ *   - mayJoin: each key whose teams include the label (or `any`, for a shared team) and whose souls do not
+ *     already have it as their default, less the keys their nearest broader key already covers; `except` names
+ *     the more specific keys under it whose souls are not in that audience (they may not join, or it is their
+ *     default and so said under defaultFor). A local team where local teams are allowed:
+ *     `local` (every soul).
+ * Each list: every/fallback/local first, then repos, then souls, by code point. Null before team model 3. */
+export function teamAudience(document, label) {
+  if (!model3(document)) return null;
+  const rules = new Map();
+  for (const [key, rule] of record(document.souls) ? Object.entries(document.souls) : []) {
+    const at = soulKey(key);
+    if (at && record(rule)) rules.set(key, { ...at, rule });
+  }
+  const shared = list(document.teams).some(t => t.label === label && t.from === 'shared');
+  /** The broader keys that exist, nearest first (the kernel's pattern order). */
+  const broader = k => (k.level === 2 ? [`${k.repo}/*`, '*'] : k.level === 1 ? ['*'] : []).map(key => rules.get(key)).filter(Boolean);
+  const under = (k, top) => top.level === 0 ? k.level > 0 : top.level === 1 && k.level === 2 && k.repo === top.repo;
+  const setsDefault = k => !!text(k.rule.default);
+  const ownDefault = k => [k, ...broader(k)].find(setsDefault)?.rule.default ?? null;
+  const lists = k => k.rule.teams === 'any' ? shared : list(k.rule.teams).includes(label);
+  const sorted = entries => entries.sort(byAudience);
+  /** The keys under `top` that `out` (their souls are not in its audience) and whose nearest broader key
+   * (`nearest`) is `top`, or a key under it whose souls are (`inside`). */
+  const exceptions = (top, out, nearest, inside) => sorted([...rules.values()].filter(d => {
+    if (!under(d, top) || !out(d)) return false;
+    const n = nearest(d);
+    return n === top || (!!n && under(n, top) && inside(n));
+  }).map(audienceEntry));
+
+  // Default for: implied when the nearest broader key that sets a default gives the same one.
+  const defaultFor = [];
+  for (const k of rules.values()) {
+    if (k.rule.default !== label) continue;
+    const above = broader(k).find(setsDefault);
+    if (above?.rule.default === label) continue;
+    const except = exceptions(k, d => setsDefault(d) && d.rule.default !== label, d => broader(d).find(setsDefault), n => n.rule.default === label);
+    defaultFor.push({ ...audienceEntry(k), ...(except.length ? { except } : {}) });
+  }
+  if (document.defaultTeam?.label === label) {
+    const star = rules.get('*');
+    defaultFor.push({ kind: 'fallback', from: document.defaultTeam.from === 'deployment' ? 'deployment' : 'workspace', ...(star && setsDefault(star) ? { nobody: true } : {}) });
+  }
+
+  // May join: the keys that list it for souls it is not already the default of; one is implied when its nearest
+  // broader key (the one its souls would fall to) is itself shown. Under a shown pattern, the keys whose souls are
+  // outside it (they may not join, or it is already their default) are its exceptions.
+  const shown = k => lists(k) && ownDefault(k) !== label;
+  const mayJoin = [];
+  for (const k of rules.values()) {
+    if (!shown(k)) continue;
+    const above = broader(k)[0];
+    if (above && shown(above)) continue;
+    const except = exceptions(k, d => !shown(d), d => broader(d)[0], shown);
+    mayJoin.push({ ...audienceEntry(k), ...(except.length ? { except } : {}) });
+  }
+  if (list(document.teams).some(t => t.label === label && t.from === 'local') && localAllowed(document)) mayJoin.push({ kind: 'local' });
+  return { defaultFor: sorted(defaultFor), mayJoin: sorted(mayJoin) };
 }
 
 /** A card's "Who may join" value: 'every soul', 'N souls', or null when no soul is declared for it yet. */
@@ -380,7 +486,10 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
     return item;
   }
   function memberList(members) {
-    const groups = el(doc, 'ul', null, 'ct-members');
+    const groups = el(doc, 'ul', null, 'ct-members'), labelId = `ct-members-${++groupIds}`;
+    // "Members · N" over a hairline: the list's label.
+    const label = el(doc, 'div', `Members · ${members.length}`, 'ct-members-head'); label.id = labelId;
+    groups.setAttribute('aria-labelledby', labelId);
     for (const group of memberGroups(members, roster?.servers)) {
       const item = el(doc, 'li', null, 'ct-group'), id = `ct-group-${++groupIds}`;
       item.setAttribute('role', 'group'); item.setAttribute('aria-labelledby', id);
@@ -390,7 +499,47 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
       for (const m of group.members) rows.append(memberRow(m));
       item.append(head, rows); groups.append(item);
     }
-    return groups;
+    return [label, groups];
+  }
+
+  /** Team model 3's two labelled rows (only those with entries), or "No soul may join it yet". Names are bold,
+   * each with its souls: key as its title; every string enters by assignment. */
+  function audienceFacts({ defaultFor, mayJoin }) {
+    if (!defaultFor.length && !mayJoin.length) return el(doc, 'span', 'No soul may join it yet', 'ct-join none');
+    const rows = el(doc, 'dl', null, 'ct-audience');
+    const name = entry => { const b = el(doc, 'b', entry.kind === 'soul' ? entry.soul : entry.repo, 'ct-name'); b.title = entry.key; return [b]; };
+    const soul = entry => [...name(entry), ` (${entry.repo})`];
+    const series = (items, nodes) => items.flatMap((item, i) => [...(i ? [i === items.length - 1 ? ' and ' : ', '] : []), ...nodes(item)]);
+    /** What "every soul" leaves out: the repos as one series ("souls of p and q"), then each soul. */
+    const everyBut = except => {
+      const repos = except.filter(x => x.kind === 'repo'), groups = except.filter(x => x.kind === 'soul').map(soul);
+      if (repos.length) groups.unshift(['souls of ', ...series(repos, name)]);
+      return series(groups, nodes => nodes);
+    };
+    const phrase = (entries, may) => {
+      const parts = [], plainRepos = entries.filter(e => e.kind === 'repo' && !e.except), souls = entries.filter(e => e.kind === 'soul');
+      const ofRepo = may ? 'souls of ' : 'all souls of ';
+      for (const e of entries) {
+        if (e.kind === 'every') parts.push(['every soul', ...(e.except ? [' except ', ...everyBut(e.except)] : [])]);
+        else if (e.kind === 'fallback') parts.push(e.nobody ? [el(doc, 'span', 'fallback; every soul has its own default', 'ct-quiet')]
+          : [`every soul without its own default${e.from === 'deployment' ? " (this deployment's choice)" : ''}`]);
+        else if (e.kind === 'local') parts.push(['every soul (local team)']);
+        else if (e.kind === 'repo' && e.except) parts.push([ofRepo, ...name(e), ' except ', ...series(e.except, name)]);
+        // The repos without exceptions read as one series ("souls of a, b and c"), as do the single souls.
+        else if (e === plainRepos[0]) parts.push([ofRepo, ...series(plainRepos, name)]);
+        else if (e === souls[0]) parts.push(series(souls, soul));
+      }
+      return parts.flatMap((nodes, i) => [...(i ? [' · '] : []), ...nodes]);
+    };
+    const row = (key, caption, entries, may) => {
+      if (!entries.length) return;
+      const item = el(doc, 'div', null, 'ct-aud'); item.dataset.audience = key;
+      const value = el(doc, 'dd'); value.append(...phrase(entries, may));
+      item.append(el(doc, 'dt', caption), value); rows.append(item);
+    };
+    row('default', 'Default for', defaultFor, false);
+    row('join', 'May join', mayJoin, true);
+    return rows;
   }
 
   function teamCard(team) {
@@ -398,19 +547,31 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
     if (team.default) card.dataset.default = 'true';
     // The tile: the board's users glyph.
     const tile = el(doc, 'span', null, `ct-tile${team.default ? ' default' : ''}`); tile.setAttribute('aria-hidden', 'true');
-    tile.append(iconElement(doc, 'users', { size: 18 }));
+    tile.append(iconElement(doc, 'users', { size: 16 }));
     const main = el(doc, 'div', null, 'ct-main'), head = el(doc, 'div', null, 'ct-head');
     head.append(el(doc, 'span', team.label, 'ct-label'));
     if (team.default) head.append(el(doc, 'span', !model3(current) ? 'Default on this computer'
       : current.defaultTeam?.from === 'workspace' ? "Default · the workspace's" : 'Default · this deployment', 'ct-pill'));
     main.append(head);
     if (text(team.description)) main.append(el(doc, 'span', team.description, 'ct-desc'));
-    const facts = el(doc, 'div', null, 'ct-facts');
-    const address = el(doc, 'span', 'Address ', 'ct-fact'); address.append(el(doc, 'span', team.team ?? 'no provider id yet', `ct-id${team.team ? '' : ' none'}`));
-    const join = el(doc, 'span', 'Who may join ', 'ct-fact'), who = whoMayJoin(current, team.label);
-    join.append(el(doc, 'b', who ?? 'No soul yet', `ct-join${who ? '' : ' none'}`));
-    facts.append(address, join); main.append(facts);
-    for (const problem of list(current.problems).filter(p => p?.label === team.label)) main.append(kernelProblem(problem));
+    const problems = list(current.problems).filter(p => p?.label === team.label), blocks = p => p.default === true || p.severity === 'failure';
+    const audience = teamAudience(current, team.label);
+    if (audience) {
+      // Team model 3: what blocks comes first, then whose default it is and who else may join, then the
+      // address (the quietest line), then the team's warnings.
+      for (const problem of problems.filter(blocks)) main.append(kernelProblem(problem));
+      main.append(audienceFacts(audience));
+      const address = el(doc, 'span', team.team ?? 'no provider id yet', `ct-address${team.team ? '' : ' none'}`);
+      address.title = 'Address: the team on the messaging provider'; main.append(address);
+      for (const problem of problems.filter(p => !blocks(p))) main.append(kernelProblem(problem));
+    } else {
+      const facts = el(doc, 'div', null, 'ct-facts');
+      const address = el(doc, 'span', 'Address ', 'ct-fact'); address.append(el(doc, 'span', team.team ?? 'no provider id yet', `ct-id${team.team ? '' : ' none'}`));
+      const join = el(doc, 'span', 'Who may join ', 'ct-fact'), who = whoMayJoin(current, team.label);
+      join.append(el(doc, 'b', who ?? 'No soul yet', `ct-join${who ? '' : ' none'}`));
+      facts.append(address, join); main.append(facts);
+      for (const problem of problems) main.append(kernelProblem(problem));
+    }
     const actions = el(doc, 'div', null, 'ct-actions');
     // Make default writes oats-local.yaml's defaultTeam: only where this deployment may declare it.
     if (!team.default && localAllowed(current)) actions.append(button('Make default', '', () => { confirming = team.label; render(); focusIn(`[data-team="${team.label}"] .ct-confirm .primary`); },
@@ -423,7 +584,7 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
     }
     // The members come last in the main column: below the facts and the card's own notes (problems, why Remove is off).
     const members = membersOf(team);
-    if (members.length) main.append(memberList(members));
+    if (members.length) main.append(...memberList(members));
     card.append(tile, main);
     // The right column says who is in the team only when the roster shows someone; never a zero.
     const side = el(doc, 'div', null, 'ct-side');
@@ -435,7 +596,7 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
       if (team.default) side.append(el(doc, 'span', 'every instance joins its default team', 'ct-note'));
     }
     if (actions.childElementCount) side.append(actions);
-    if (side.childElementCount) card.append(side);
+    if (side.childElementCount) card.append(side); else card.classList.add('no-side');
     if (confirming === team.label) {
       const confirm = el(doc, 'div', null, 'ct-confirm');
       confirm.append(el(doc, 'p', `Make ${team.label} the default team on this computer? Running instances keep their current default team until they are respawned.`));
@@ -497,8 +658,9 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
     }
     const table = el(doc, 'ul', null, 'ct-soul-rules');
     for (const [key, rule] of rules) {
-      const parts = [...(text(rule.default) ? [`default ${rule.default}`] : []),
-        ...(rule.teams === 'any' ? ['any shared team'] : list(rule.teams).length ? [list(rule.teams).join(', ')] : [])];
+      // "default a · may also join b, c" (any: every shared team); the default is not said twice.
+      const others = rule.teams === 'any' ? 'any shared team' : list(rule.teams).filter(l => l !== rule.default).join(', ');
+      const parts = [...(text(rule.default) ? [`default ${rule.default}`] : []), ...(others ? [`may ${text(rule.default) ? 'also ' : ''}join ${others}`] : [])];
       const row = el(doc, 'li', null, 'ct-soul-rule');
       row.append(el(doc, 'span', key, 'ct-soul-key'), el(doc, 'span', parts.join(' · ') || 'no other team', 'ct-soul-teams'));
       table.append(row);
@@ -522,7 +684,9 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
     for (const problem of [...pageProblems.filter(p => p.severity === 'failure'), ...pageProblems.filter(p => p.severity !== 'failure')]) {
       const wrap = el(doc, 'div', null, 'ct-problem'); wrap.append(kernelProblem(problem)); body.append(wrap);
     }
-    const teams = list(current.teams), shared = teams.filter(t => t.from === 'shared'), local = teams.filter(t => t.from !== 'shared');
+    // The default team's card leads its section; the others keep the document's order (a stable sort).
+    const teams = list(current.teams).slice().sort((a, b) => (b.default === true) - (a.default === true));
+    const shared = teams.filter(t => t.from === 'shared'), local = teams.filter(t => t.from !== 'shared');
     const sharedSection = section('shared', 'Shared with the workspace', 'Shared · Git', false);
     for (const team of shared) sharedSection.append(teamCard(team));
     if (!shared.length) sharedSection.append(emptyCard("No shared teams. A shared team is declared in the workspace's oats-workspace.yaml and committed, so every computer running the workspace has it."));
