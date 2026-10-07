@@ -154,12 +154,14 @@ test("restart: a harness that ignores SIGTERM is reported still running after th
   assert.ok(await waitFor(() => runningPid(home) !== null));
   const pid = runningPid(home);
   const before = readFileSync(join(home, "instance.json"), "utf8");
+  // The completed start keeps its receipt as launch evidence; a refused restart leaves it as it was (#691).
+  const receiptBefore = readFileSync(join(home, ".oats-start-pending.json"), "utf8");
   const t = Date.now();
   assert.throws(() => restartInstanceSession(home, { launchConfig: "polite", env: env({ RESTART_TEST_SRC: "x" }), stopGraceMs: 1500 }), (e) => e.code === "E_SESSION_STOP_FAILED" && /still running after/.test(e.message) && /nothing was escalated/.test(e.message));
   assert.ok(Date.now() - t < 6000, "bounded");
   assert.equal(runningPid(home), pid, "the stubborn harness is still there, untouched by any stronger signal");
   assert.equal(readFileSync(join(home, "instance.json"), "utf8"), before, "metadata unchanged");
-  assert.equal(existsSync(join(home, ".oats-start-pending.json")), false, "no launch receipt was written");
+  assert.equal(readFileSync(join(home, ".oats-start-pending.json"), "utf8"), receiptBefore, "no launch receipt was written: the completed start's is kept, unchanged");
   const receipt = readJson(join(home, ".oats-restart.json"));
   assert.equal(receipt.stop.exited, false); assert.deepEqual(receipt.stop.stillRunning, [pid]);
   assert.ok(windows().includes("neighbour") && windows().filter((w) => w === name).length === 1);
