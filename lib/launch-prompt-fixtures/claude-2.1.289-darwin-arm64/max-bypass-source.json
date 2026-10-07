@@ -1,0 +1,88 @@
+{
+  "binarySha256": "03d66745e3bb69ec727d66023696f3820bc0a00a8a5ba725eb6706d0c67cbe69",
+  "method": "read-only byte slices, binary not executed; no extracted modules copied",
+  "ranges": [
+    {
+      "description": "permission enum, indicator/symbol/color selectors",
+      "startInclusive": 179784383,
+      "endExclusive": 179785973,
+      "sha256": "290bd33df357cf05d275997cbe491bcb1689947829d9f106d6b1b9d2235384aa"
+    },
+    {
+      "description": "mode footer component kx",
+      "startInclusive": 208947546,
+      "endExclusive": 208948093,
+      "sha256": "bb9a808a262604016a60b52371acabdf71eb929a3d22a1d3b060e48cec8389cd"
+    },
+    {
+      "description": "footer state layout dHe",
+      "startInclusive": 209072435,
+      "endExclusive": 209082284,
+      "sha256": "3c52ece98f866e45e9dcc804616d2e601a58bd0d4b637ef3745fadc7ac0cae9d"
+    },
+    {
+      "description": "footer parent and right-aligned status",
+      "startInclusive": 209093603,
+      "endExclusive": 209099807,
+      "sha256": "5d9c5a87fdcbf304bce467c1569f7ddb6e10267929ba68184127a2adf7c6dda2"
+    },
+    {
+      "description": "effort label formatting",
+      "startInclusive": 208496116,
+      "endExclusive": 208496448,
+      "sha256": "840a01dd29dc8a6ccb0bdd5d4d4b4e93ac44711552725afa5bdbe278f31b846b"
+    }
+  ],
+  "candidates": [
+    {
+      "sourceCapture": "frame-07-after-channel-200ms.txt",
+      "sourceSha256": "1b30359fcb9181d02faf10ed0780812079222cf6c54b60ed468ce037c1ff37e7",
+      "candidateSha256": "e223df1791380aa2632bec04e584a821684991d1ce60a70426036dbcf5105c60",
+      "candidateBytes": 1194,
+      "rows": 35,
+      "geometry": {
+        "width": 110,
+        "height": 35
+      },
+      "changedRowIndices": [
+        1,
+        2,
+        11
+      ],
+      "footer": {
+        "index": 11,
+        "oldGapSpaces": 37,
+        "newGapSpaces": 28,
+        "effortColumnZeroBased": 90,
+        "text": "  \u23f5\u23f5 bypass permissions on (shift+tab to cycle) \u00b7 \u2190 for agents                            \u25d0 medium \u00b7 /effort"
+      },
+      "status": "SOURCE-DERIVED / SYNTHETIC, not an observed capture"
+    },
+    {
+      "sourceCapture": "frame-08-installed-after-channel-200ms.txt",
+      "sourceSha256": "f27d73189f2b1ba23899d99ba1596545f29d1d2494cb94b12ab314cf42426bef",
+      "candidateSha256": "0c83c1ccead19bfcd9bd6947a284948b30c551eae339258f66b6fe59b063c2e1",
+      "candidateBytes": 1128,
+      "rows": 35,
+      "geometry": {
+        "width": 110,
+        "height": 35
+      },
+      "changedRowIndices": [
+        1,
+        2,
+        10
+      ],
+      "footer": {
+        "index": 10,
+        "oldGapSpaces": 37,
+        "newGapSpaces": 28,
+        "effortColumnZeroBased": 90,
+        "text": "  \u23f5\u23f5 bypass permissions on (shift+tab to cycle) \u00b7 \u2190 for agents                            \u25d0 medium \u00b7 /effort"
+      },
+      "status": "SOURCE-DERIVED / SYNTHETIC, not an observed capture"
+    }
+  ],
+  "qualification": "SOURCE-DERIVED / SYNTHETIC complete empty Max/bypass/medium frames; not observed subscription captures",
+  "sampleHome": "/fixture/home"
+}

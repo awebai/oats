@@ -1,3 +1,6 @@
+// This suite pins the original exact-frame adapter in isolation. The qualified
+// structural policy and marker precedence run through the same controller in
+// launch-prompt-structural.test.mjs; input signatures remain unchanged.
 import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
@@ -108,11 +111,11 @@ test("qualified fixture construction and argv exclusions (synthetic hash substit
   const frames = ready.fixtures.flatMap(f => f.frames);
   const prompt = frames.find(f => f.kind === "prompt").text;
   const completeBanners = frames.filter(f => f.kind === "completed" && f.after.join() === "awebDevelopmentChannel");
-  assert.equal(completeBanners.length, 10);
+  assert.equal(completeBanners.length, 12);
   const target = { socket: "/private/test", windowId: "@1", paneId: "%1", pid: "123" };
   for (const { text: complete } of completeBanners) {
     let firstText = complete;
-    const completed = createLaunchPromptController({ home, startId: "completion-only", ...ready, geometry: undefined,
+    const completed = createLaunchPromptController({ home, startId: "completion-only", ...ready, classifyCompletion: undefined, geometry: undefined,
       policy: { awebDevelopmentChannel: true }, audit: () => ({ ok: true }),
       transport: { snapshot: () => ({ ...target, width: 110, height: 35, text: firstText }),
         send: () => assert.fail("completion cannot authorize a key") },
@@ -124,7 +127,7 @@ test("qualified fixture construction and argv exclusions (synthetic hash substit
     assert.equal(completed.observeNew(target), terminal);
     for (const mode of ["valid", "foreign", "partial", "footer", "question", "installed", "model", "billing", "effort", "permission", "send-failed", "audit-failed"]) {
       let text = prompt, sends = 0;
-      const controller = createLaunchPromptController({ home, startId: "fixture-test", ...ready, geometry: undefined,
+      const controller = createLaunchPromptController({ home, startId: "fixture-test", ...ready, classifyCompletion: undefined, geometry: undefined,
         policy: { awebDevelopmentChannel: true }, audit: () => ({ ok: mode !== "audit-failed" }),
         transport: {
           snapshot: () => ({ ...target, width: 110, height: 35, text }),
@@ -139,7 +142,7 @@ test("qualified fixture construction and argv exclusions (synthetic hash substit
             if (mode === "model") text = text.replace("Opus 5.5", "Sonnet 5");
             if (mode === "billing") text = text.replace(/API Usage Billing|Claude (Max|Pro|Team|Enterprise)/, "Unqualified Subscription");
             if (mode === "effort") text = text.replace("medium · /effort", "high · /effort");
-            if (mode === "permission") text = text.replace("auto mode on", "accept edits on");
+            if (mode === "permission") text = text.replace(/(?:auto mode|bypass permissions) on/, "accept edits on");
             return { status: mode === "send-failed" ? "failed" : "submitted" };
           },
         },
@@ -163,7 +166,7 @@ test("qualified fixture construction and argv exclusions (synthetic hash substit
   // selection. Each is blocked with a receipt and absolutely no input.
   for (const name of ["frame-01.txt", "frame-02-trust-selected.txt", "seq-02-trust-resized-110x35.txt", "seq-03-trust-confirm-selected.txt"]) {
     const events = [], keys = [];
-    const controller = createLaunchPromptController({ home, startId: "negative-trust", ...ready, geometry: undefined,
+    const controller = createLaunchPromptController({ home, startId: "negative-trust", ...ready, classifyCompletion: undefined, geometry: undefined,
       policy: { awebDevelopmentChannel: true },
       audit(data) { events.push(data); return { ok: true, row: { kind: "launch-prompt", data }, results: [{ path: "/actual/log", ok: true }] }; },
       transport: { snapshot: () => ({ ...target, width: 110, height: 35, text: negative(name) }), send: (_, key) => { keys.push(key); return { status: "submitted" }; } },

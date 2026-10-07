@@ -28,7 +28,7 @@ blocked outcome and sends no key. Captured folder-trust screens live only in
 
 Normal-output completion has a separate accepted finite policy: all surrounding
 bytes must equal one of the captured normal banners, except for its bounded
-directory line and the source-derived billing atoms described below. Candidates are the exact home, a home-directory-relative `~` spelling,
+directory line and the source-derived header/footer variants described below. Candidates are the exact home, a home-directory-relative `~` spelling,
 and `~/…/` followed by nonempty whole-component suffixes within the user home.
 Every complete line must fit 110 columns. Only conservative ASCII path components
 without traversal or empty segments qualify. These variants can only terminate
@@ -45,8 +45,8 @@ network and real-home access, seeded onboarding/trust/feature flag, one Enter,
 stable bytes at 200ms/1s/3s, and verified private-server cleanup. The prompt and
 blank transition were byte-identical to the earlier captures. No configuration,
 credentials or extracted source is included. No task or real-account/channel
-connection was tested. Apart from the billing atoms below, other
-model/billing/effort/permission variants remain unqualified; a submitted answer can be followed by a retained blocked result.
+connection was tested. Apart from the source-derived variants below, other
+model/billing/effort/permission variants are not exact-frame candidates; a submitted answer can be followed by a retained blocked result.
 
 ## Source-derived subscription billing variants
 
@@ -76,9 +76,77 @@ proprietary extracted module is included.
 The reported Max journey is different evidence: its later retained pane has
 SHA256 `9eb587ab3ac7f97b746169619e02e3c8dd7df2c9069ff4368b6f0858c0964c68`,
 1597 bytes and 51 newline rows. It shows task activity and bypass-permissions
-mode. Captured at 2026-10-07T14:31:54.028296Z, it follows the submitted Enter at
+mode. Its file mtime is 2026-10-07T14:31:54.028296Z (not an independently recorded
+capture time); it follows the submitted Enter at
 14:31:45.365Z and block at 14:31:45.476Z. Its geometry, executable digest and
 plugin version were not independently recorded; no earlier raw frame exists.
 It is not padded, cropped or claimed as a qualified 110x35 first frame. See the
 [published operator evidence](https://github.com/awebai/oats/issues/754#issuecomment-6040215059).
 The billing-only extension does not recognize that later task-filled screen.
+
+## Source-derived empty Max/bypass/medium variants
+
+**SOURCE-DERIVED / SYNTHETIC:** only the two existing empty banners with
+`Claude Max` additionally qualify the bypass-permissions footer. The pinned
+source ranges and hashes, exact changed row indices, sample home and complete
+candidate digests are in
+[the derivation manifest](claude-2.1.289-darwin-arm64/max-bypass-source.json).
+No proprietary extracted modules or private task text are included.
+
+The permission-mode table uses the same `⏵⏵` symbol for auto and bypass; only
+colour differs, which plain captures omit. `kx` renders that symbol, the mode
+indicator and ` on`; both modes take `dHe`'s same non-default branch with the
+same hint. Thus the left text changes from `auto mode on` to
+`bypass permissions on`, adding nine columns. The footer container has width
+110, horizontal padding 2 and a right status child with `marginLeft:auto`.
+The alignment gap shrinks from 37 to 28 spaces; the effort glyph remains at
+zero-based column 90 and the complete row remains 108 columns. The independent
+`y8` effort rendering stays exactly `◐ medium · /effort`. All other bytes are
+unchanged, except the already qualified header atom and finite home line.
+
+The source supports this bounded transformation, not arbitrary renderer states.
+Within these exact families, the displayed medium status is mandatory; other
+content does not match an exact candidate. The separate post-answer structural
+policy below can recognize additional bounded states. The #712 observed child screens corroborate the 62-column left footer
+text, but have task/update rows and no effort status there; they are not these
+fixtures. Full-frame comparison and all Enter guards remain unchanged.
+
+Four later private operator captures motivated this work. Their SHA-256 values
+are retained here as provenance only:
+
+| Evidence | Bytes / newline rows | SHA-256 |
+| --- | --- | --- |
+| Journey start | 1597 / 51 | `9eb587ab3ac7f97b746169619e02e3c8dd7df2c9069ff4368b6f0858c0964c68` |
+| Journey restart | 2449 / 51 | `c21cc6ac90487a18828ea2375243c642df2d6959b50a339a187132ec26dc213a` |
+| Pre-rehearsal spawn | 3604 / 87 | `368170ecf1155e45f92a9c394972bf5a2ff0d56d2e03501f3d88615d0d2fab67` |
+| Pre-rehearsal restart | 3180 / 87 | `88352f740e3e8f51f3613a057d7fe8aa41ae26efe20fb0ce24c7ac025fa70d9c` |
+
+All follow controller geometry restoration; actual later-capture geometry,
+executable hash and plugin version were not independently recorded. File mtime
+is not capture time, and restoration dimensions are not capture dimensions.
+No first post-answer frame survives. None is cropped, reflowed or published as
+a raw 110x35 replay. These four captures remain provenance only, not qualified structural input.
+The separate controller-compared regression and structural policy below do not
+turn them into qualified captures or establish general Max success.
+
+## Post-answer structural completion
+
+The [complete table](../../docs/launch-prompt-completion.md) defines the six modes,
+five efforts, finite hints, exact region geometry and 21 marker forms.
+[Source provenance](structural-completion.json) pins all 25 byte ranges against
+the same executable hash. This is the non-Jt footer layout; remote feature flags
+can change shape without binary drift. Unknown dialogs retaining a recognized
+composer/footer can evade the marker set: the accepted risk concerns reporting
+only, never another input action or a readiness claim.
+
+The observed regression is a SANITIZED DERIVATIVE of the actual compared
+110x35 frame retained by the earlier controller after its one Enter. Only
+zero-based home row 2 becomes `/fixture/home`; the manifest records separate
+original/derivative byte counts and hashes. Outside that row, independent review
+found only native constants and the launcher's literal `@TASK.md` reference, no
+task body, account-personal or routing data. Four additional rows distinguish
+this captured in-progress state from the empty source-derived family. Its
+spinner verb is chosen per turn (or configured), its glyph animates and later
+suffixes change. No exact spinner matcher or recurrence claim follows. The
+empty footer derivation remains separately qualified; its arithmetic was not
+disproved by observing a different startup state.

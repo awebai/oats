@@ -1,3 +1,6 @@
+// This suite pins the original exact-frame adapter in isolation. The qualified
+// structural policy and marker precedence run through the same controller in
+// launch-prompt-structural.test.mjs; input signatures remain unchanged.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -43,7 +46,7 @@ for (const billing of ['Claude Max', 'Claude Pro', 'Claude Team', 'Claude Enterp
       for (const mode of ['valid', 'question', 'bypass', 'audit-failure', 'no-consent']) {
         let screen = prompt, sends = 0;
         const events = [];
-        const controller = createLaunchPromptController({ home, startId: 'synthetic-subscription', ...qualified, geometry: undefined,
+        const controller = createLaunchPromptController({ home, startId: 'synthetic-subscription', ...qualified, classifyCompletion: undefined, geometry: undefined,
           policy: { awebDevelopmentChannel: mode !== 'no-consent' },
           audit(data) { events.push(data); return { ok: !(mode === 'audit-failure' && data.status === 'completed'), row: { kind: 'launch-prompt', data }, results: [] }; },
           transport: { snapshot: () => ({ ...target, width: 110, height: 35, text: screen }),

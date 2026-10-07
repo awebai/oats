@@ -121,24 +121,30 @@ The qualified channel frame starts on its accepted option and permits one
 Enter only. Folder-trust and API-key questions remain unexpected and block.
 A qualified normal-output boundary closes observation without asserting readiness.
 
-**Qualified completion and limitation:** exact captured banners cover Claude
-2.1.289 on darwin-arm64 at 110x35 with aweb-channel 1.7.11 installed, and the
-original plugin-absent banner. Both name Opus 5.5, API Usage Billing, auto mode
-and medium effort. Source-derived synthetic variants additionally allow exactly
-`Claude Max`, `Claude Pro`, `Claude Team` or `Claude Enterprise` in place of
-`API Usage Billing`; these are not observed subscription captures. Claude may
-prefer an account-specific plan display name over those fallback labels; other
-display names remain unqualified even for subscribers on those plans. Every other
-row stays exact apart from the bounded canonical-home directory line. This
-interim extension does not cover task-filled screens or bypass-permissions mode.
-Other model, billing, effort or permission banners remain unqualified: the one
-Enter can be submitted before `E_SPAWN_INCOMPLETE` with
-`launchPrompts.status: blocked`. The submitted answer remains in `answers` and
-the event receipt; the pane may already be active. Inspect the retained target;
-do not automatically retry input or relaunch it. The installed capture used an
-isolated configuration and dummy credentials with runtime network denied. It
-proves bounded UI completion, not live-account admission, connection or native
-receive readiness, and does not establish success for every production setup.
+**Qualified completion and limitation:** the existing exact captured and
+source-derived empty API/subscription frames remain supported. After one recorded
+submitted channel Enter, the same qualified Claude 2.1.289 darwin-arm64 executable
+also recognizes the [bounded bottom input/footer structure](launch-prompt-completion.md)
+at 110x35. Its six mode labels, five effort labels and finite hints are
+source-qualified; header/billing/model and preceding task text are not structural
+completion conditions. The 21 exact question markers take precedence over both
+completion paths after submission. Normal `? for shortcuts` and `esc to interrupt`
+are not markers. Input authorization and exact-home consent are unchanged.
+
+**Accepted reporting risk:** an unknown dialog retaining the composer/footer can
+be misclassified completed. Completion permanently closes input authority, but
+proves neither absence of all questions nor idle/account/channel readiness.
+Missing effort, trailing notices, wrapped footers and other unsupported shapes
+still block. A feature-flag footer change can reduce matches without a binary
+change. A matched structural frame must be saved privately before completed is
+audited; failure reports incomplete with the answer and target preserved.
+
+A submitted Enter can therefore precede `E_SPAWN_INCOMPLETE`; the pane may already
+be active. Inspect the answer, checked event receipt and retained target, rather
+than automatically retrying input or relaunching. Existing API fixtures used
+isolated dummy credentials; the observed Max regression is a labeled home-only
+sanitized derivative of one controller-compared in-progress frame, not a new
+end-to-end launch proof or general production-success claim.
 
 When a harness update changes the version-bound prompt frame, opted-in homes
 block again with `blocked: unexpected prompt` until fixtures are refreshed.

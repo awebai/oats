@@ -1626,13 +1626,15 @@ allocated. Use runtime inspection and the existing start/restart lifecycle.
 Same-key spawn replay cannot convert a blocked outcome to successful spawn.
 
 `answers` can contain a `submitted` answer even when the final status is
-`blocked`: the accepted installed-plugin and plugin-absent completion banners
-pin specific model/effort/permission text and finite billing labels, including
-source-derived Max/Pro/Team/Enterprise variants of the empty API frame. A different normal-looking banner can block after Enter
+`blocked`: even after exact or structural completion recognition is qualified,
+unsupported input/footer shapes and known question markers can block after Enter
 while the actual pane is active. Consumers must preserve that submitted receipt
 and never translate this outcome into “nothing started” or automatic retry.
 The [completion limitation](configuration.md#exact-home-launch-prompt-consent)
-is part of the shipping contract.
+is part of the shipping contract. Structural completion closes observation only;
+unknown dialogs retaining the recognized composer/footer can be misclassified.
+Mandatory structural evidence-save failure reports checked `incomplete` with the
+same answer and target preserved. Private receipt v2 adds no public DTO fields.
 
 Strict Desktop/pi readers must accept these additive fields and the new event
 kind before a writer containing them ships. For operator recovery, see
