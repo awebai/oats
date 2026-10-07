@@ -173,6 +173,7 @@ test("readiness reports existing grant homes without custody.socket_path as not 
   try {
     const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
     write(join(home, ".aweb-identity", "grant.yaml"), "grant_id: old\nteam_id: t:example.test\nexpires_at: old\n");
+    write(join(home, "instance.json"), JSON.stringify({ capabilityMeta: { "oats.aweb": { identity: { mode: "global", grant: { id: "old", home: join(home, ".aweb-identity") } } } } }));
     const ctx = { kind: "workspace", workspace: root, deployment: root, soul: "dev", home };
     const missing = runBindingCheck(bin, globalSettings(custody), ctx);
     assert.equal(missing.status, 0, missing.stderr);

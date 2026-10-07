@@ -7,13 +7,13 @@
   ],
   "standIn": {
     "reason": "No fixture binds a messaging provider; oats.aweb itself would run aw at spawn. The stand-in copies oats.aweb's settings.identity declaration byte for byte and declares no executables.",
-    "copiedFrom": "capabilities/oats-aweb/oats.json#/settings/identity",
-    "copiedFromSha256": "e659749d52236b03e4ec0481c7b5e142adc35a46903a2dc123f53fa45f7a2840",
+    "copiedFrom": "mirrors/oats-aweb/oats.json#/settings/identity",
+    "copiedFromSha256": "d9bff5718064a17edfb8c3ec07e57661eef3f0c501c6aa31faa9ad32b0aa50e9",
     "declaration": {
       "default": {
         "mode": "local"
       },
-      "description": "Identity selection. mode=local (default) mints an instance-local team identity or uses the existing identity.source retained-seat flow. mode=global acts as a named resident identity through a session grant; requires identity.resident. Optional global fields: profile (normal|reviewer), scopes (explicit concrete grant scope list, wins over profile), ttl, e2ee (default true), renew (off|launch, default off)."
+      "description": "Identity selection. mode=local (default) mints an instance-local team identity or uses the existing identity.source retained-seat flow. mode=global acts as a named resident identity through a session grant; requires identity.resident. Optional global fields: profile (normal|reviewer), scopes (explicit concrete grant scope list, wins over profile), ttl (Go duration, 60s to 720h, default 720h), e2ee (default true), renew (off|launch, default launch)."
     },
     "manifest": {
       "capability": "nw.messaging",
@@ -29,11 +29,11 @@
           "default": {
             "mode": "local"
           },
-          "description": "Identity selection. mode=local (default) mints an instance-local team identity or uses the existing identity.source retained-seat flow. mode=global acts as a named resident identity through a session grant; requires identity.resident. Optional global fields: profile (normal|reviewer), scopes (explicit concrete grant scope list, wins over profile), ttl, e2ee (default true), renew (off|launch, default off)."
+          "description": "Identity selection. mode=local (default) mints an instance-local team identity or uses the existing identity.source retained-seat flow. mode=global acts as a named resident identity through a session grant; requires identity.resident. Optional global fields: profile (normal|reviewer), scopes (explicit concrete grant scope list, wins over profile), ttl (Go duration, 60s to 720h, default 720h), e2ee (default true), renew (off|launch, default launch)."
         }
       }
     },
-    "manifestSha256": "7f8a88aefb7fe22bf5e387e23caf3e8f49cd5771183f4238877fd5bb8194dc5e",
+    "manifestSha256": "356202405ca5d648abe6853934cd08289061291ac87ea2f736874181db4b59fa",
     "package": {
       "package": "nw.messaging",
       "version": "0.1.0",
@@ -54,6 +54,11 @@
           "from": "package"
         }
       }
+    },
+    "pinAmendment": {
+      "provider": "oats.aweb v1.23.1",
+      "previousStandInManifestSha256": "7f8a88aefb7fe22bf5e387e23caf3e8f49cd5771183f4238877fd5bb8194dc5e",
+      "scope": "Refresh settings.identity description from the pinned mirror. Machine-readable defaults remain identical. Captured kernel responses and their hashes are unchanged; this is not a new kernel capture."
     }
   },
   "files": {

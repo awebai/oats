@@ -27,12 +27,31 @@ aw --identity-home <identityHome> mail|chat ...            # act as a joined tea
 Always use `--body-file` for anything longer than a sentence. `aw chat send`
 only continues an existing session (`--session-id`); it has no `--to`.
 
-**How mail reaches you** depends on your runtime, and your `Comms:` line names
+**The intended receive path** depends on your runtime, and your `Comms:` line names
 it. Under the default `delivery: channel`, Claude Code is woken by the aweb
 channel plugin and pi by its aweb extension, both pushing into the session;
 Codex, which has no aweb channel, is woken by the host wake broker
 (`Notification delivery: external`). Under `delivery: session` the host wake
 broker wakes every runtime. One path per session, never both.
+
+New Claude/channel compositions select development mode to avoid a silent missing receiver. Explicit approved mode registers no aweb
+channel unless applicable managed `allowedChannelPlugins` for this identity lists
+the plugin and marketplace, or a future approval exists: aweb-channel is currently
+not on the default approved list. Installation or a trusted marketplace is not
+approval. Effective admission remains unverified. Frozen homes retain their
+captured mode; no automatic flip-back occurs, and a future default change requires
+an explicit reviewed release. An operator may choose supported session delivery
+for unattended use where authorized, without overriding an explicit native-channel
+requirement. Never switch to development as an automatic fallback.
+
+Development selection may stop at confirmation; nothing in this provider answers
+it. For future support, a compatible kernel may answer it at launch under explicit
+per-home consent recorded in the kernel's host-only configuration. This does not
+claim support in the installed kernel. See /oats-aweb section 4, **Channel
+selection and launch consent**, for the boundaries. Provider mode, consent and
+readiness never establish that a prompt was answered; actual outcomes belong to
+the kernel launch result and durable receipt, where supported. Passing
+confirmation does not prove native receive; `native-receive-unproven` remains.
 
 **When woken**, read what the broker or channel presents first: it may be a
 line naming what is waiting, or the full mail/chat event with body. aw 1.36.21+
