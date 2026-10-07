@@ -1,7 +1,7 @@
 {
   "capability": "oats.aweb",
   "command": "aweb",
-  "version": "1.21.1",
+  "version": "1.23.1",
   "compatibility": {
     "oats": ">=0.30.0"
   },
@@ -73,7 +73,8 @@
     "binding-check": "bin/oats-aweb-binding.mjs check",
     "teams": "bin/oats-aweb.mjs teams",
     "join": "bin/oats-aweb.mjs join",
-    "leave": "bin/oats-aweb.mjs leave"
+    "leave": "bin/oats-aweb.mjs leave",
+    "invite": "bin/oats-aweb.mjs invite"
   },
   "binding": {
     "version": 1,
@@ -137,7 +138,13 @@
         "channel",
         "session"
       ],
-      "description": "channel (default): Claude Code is woken by the aweb-channel plugin and pi by the @awebai/pi extension, which push into the session; Codex and any other runtime without an aweb channel go through the host wake broker (AWEB_DELIVERY=session). Every start re-decides by runtime and leaves the home on exactly one path. session: every runtime goes through the host wake broker (AWEB_DELIVERY=session), no channel flag."
+      "description": "channel (default): Claude Code selects the aweb-channel plugin (admission/connection unverified) and pi selects the @awebai/pi extension for in-session delivery; Codex and any other runtime without an aweb channel go through the host wake broker (AWEB_DELIVERY=session). Every start re-decides by runtime and leaves the home on exactly one path. session: every runtime goes through the host wake broker (AWEB_DELIVERY=session), no channel flag."
+    },
+    "claudeChannelMode": {
+      "hostOnly": true,
+      "values": ["approved", "development"],
+      "default": "development",
+      "description": "Host-selected Claude/channel request, only in oats-local.yaml. Development is the default for new compositions; it selects the fixed plugin argument, never launch consent. Approved is explicit and requires applicable managed allowedChannelPlugins or future approval; installation/trusted marketplace is not approval. No automatic fallback, migration or flip-back; a future default change requires an explicit reviewed release. Pi, Codex and session routes are unchanged."
     },
     "root": {
       "hostOnly": true,
@@ -151,7 +158,7 @@
       "default": {
         "mode": "local"
       },
-      "description": "Identity selection. mode=local (default) mints an instance-local team identity or uses the existing identity.source retained-seat flow. mode=global acts as a named resident identity through a session grant; requires identity.resident. Optional global fields: profile (normal|reviewer), scopes (explicit concrete grant scope list, wins over profile), ttl, e2ee (default true), renew (off|launch, default off)."
+      "description": "Identity selection. mode=local (default) mints an instance-local team identity or uses the existing identity.source retained-seat flow. mode=global acts as a named resident identity through a session grant; requires identity.resident. Optional global fields: profile (normal|reviewer), scopes (explicit concrete grant scope list, wins over profile), ttl (Go duration, 60s to 720h, default 720h), e2ee (default true), renew (off|launch, default launch)."
     },
     "residents": {
       "hostOnly": true,
@@ -196,6 +203,19 @@
           "flag": "--labels",
           "required": true,
           "description": "Comma-separated joined team labels to leave."
+        }
+      ]
+    },
+    "invite": {
+      "kind": "action",
+      "command": "invite",
+      "context": "scope",
+      "description": "Issue a LOCAL member invite from the selected deployment root; server decides authority. Returns a secret token; capture privately.",
+      "args": [
+        {
+          "name": "label",
+          "flag": "--label",
+          "description": "Declared team label; defaults to selected default team."
         }
       ]
     }

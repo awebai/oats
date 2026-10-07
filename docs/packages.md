@@ -76,7 +76,7 @@ members:
 packages:
   oats.framework: v1.8.0
   oats.okf: v4.1.1
-  oats.aweb: v1.21.1
+  oats.aweb: v1.23.1
 teams:
   platform: { team: "platform:acme.aweb.ai", description: Platform engineering }
 defaults:
@@ -134,7 +134,7 @@ Declaring a package in the workspace's `packages:` is the trust decision
 ## `oats package add | remove`
 
 ```bash
-oats package add oats.aweb v1.21.1                         # a catalog version
+oats package add oats.aweb v1.23.1                         # a catalog version
 oats package add acme.tools git:github.com/acme/tools@v0.4.0
 oats package remove acme.tools
 ```

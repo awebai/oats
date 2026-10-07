@@ -1,10 +1,10 @@
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { delimiter, isAbsolute, join, resolve } from 'node:path';
 import { TextDecoder } from 'node:util';
 import { assessCapturedSessionReadiness } from './session-readiness.mjs';
 import { custodyPreflight } from './grant-custody.mjs';
-import { CHANNEL_DEV_CONFIRMATION, brokerDelivers, joinedReceiveModes, recordedRuntime, recordedStart, runtimeDeliveryFor } from './wake-receive.mjs';
+import { selectClaudeChannel, recordedStart, expectedReceive, targetReceiveAssessment } from './wake-receive.mjs';
 import {
   MESSAGING_CONTRACT,
   MESSAGING_CONTRACT_VERSION,
@@ -87,7 +87,8 @@ function settings(value,{phase}={}) {
   if(!obj(value)) wireError('invalid-binding');
   if(Object.hasOwn(value,'team')) wireError('needs-configuration',TEAM_SETTING_MESSAGE);
   if(phase!=='check' && Object.hasOwn(value,'identity')) wireError('provider-not-qualified');
-  keys(value,phase==='check'?['delivery','root','roots','identity','residents','join']:['delivery','root','roots','join'],[]);
+  keys(value,phase==='check'?['delivery','claudeChannelMode','root','roots','identity','residents','join']:['delivery','claudeChannelMode','root','roots','join'],[]);
+  if(phase!=='check') {try {selectClaudeChannel(value.claudeChannelMode);} catch {wireError('needs-configuration');}}
   if(value.delivery!==undefined && !['channel','session'].includes(value.delivery)) wireError('needs-configuration');
   if(value.root!==undefined && (typeof value.root!=='string' || !value.root.trim())) wireError('needs-configuration');
   if(value.join!==undefined && typeof value.join!=='string') wireError('needs-configuration');
@@ -206,16 +207,9 @@ export function grantYamlCustodySocket(text) {
   }
   return undefined;
 }
-function newestGrantHome(home) {
-  if(typeof home!=='string'||!home.trim()) return null;
-  try {
-    const dirs=readdirSync(home).filter((name)=>name==='.aweb-identity'||/^\.aweb-identity-\d+$/.test(name)).map((name)=>join(home,name)).filter((p)=>{try{return statSync(p).isDirectory();}catch{return false;}}).map((p)=>{try{return {path:p,mtime:statSync(p).mtimeMs};}catch{return {path:p,mtime:0};}}).sort((a,b)=>b.mtime-a.mtime||b.path.localeCompare(a.path));
-    return dirs[0]?.path||null;
-  } catch {return null;}
-}
 function grantAttachmentProblem(home) {
-  const grantHome=newestGrantHome(home);
-  if(!grantHome) return null;
+  const grantHome=home?recordedStart(home).meta?.identity?.grant?.home:null;
+  if(typeof grantHome!=='string' || !isAbsolute(grantHome)) return null;
   const grantYaml=join(grantHome,'grant.yaml');
   if(!existsSync(grantYaml)) return null;
   let text;try{text=readFileSync(grantYaml,'utf8');}catch{return null;}
@@ -242,8 +236,10 @@ function invalidAwebTeamId(env=process.env){const id=typeof env.OATS_DEFAULT_TEA
 function parseOatsTeams(env=process.env){try{const rows=JSON.parse(env.OATS_TEAMS||'[]');return Array.isArray(rows)?rows.filter(r=>r&&typeof r==='object').map(r=>({label:String(r.label||''),team:typeof r.team==='string'?r.team:null,default:r.default===true,from:r.from==='shared'?'shared':'local'})):[];}catch{return [];}}
 function primaryTeamLabel(env=process.env){return typeof env.OATS_DEFAULT_TEAM==='string'&&env.OATS_DEFAULT_TEAM.trim()?env.OATS_DEFAULT_TEAM.trim():null;}
 function unmappedPrimary(env=process.env){return undefined;}
-function joinedTeams(home){if(!home)return[];try{const doc=JSON.parse(readFileSync(join(home,'.oats-aweb','teams.json'),'utf8'));return Array.isArray(doc.joinedTeams)?doc.joinedTeams.filter(j=>j&&typeof j==='object'&&j.label&&j.team&&j.identityHome):[];}catch{return[];}}
+
 async function readinessDetails(settings,{deployment,env=process.env}={}) {
+  try { selectClaudeChannel(settings.claudeChannelMode); }
+  catch (error) { return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:error.message}]}}; }
   if(classicEnv(env)) return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:CLASSIC_REFUSAL}]}};
   const invalidTeam=invalidAwebTeamId(env);if(invalidTeam)return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:AWEB_TEAM_ID_MESSAGE}]}};
   const team=teamFromSettings(settings,null,{env}),candidate=rootCandidate(settings,team,{deployment,env}),problems=[],warnings=[];
@@ -265,21 +261,9 @@ function runAw(argv,cwd,{unsetEnv=[],timeout=60000}={}) {
 function semverLt(a,b) {const A=String(a||'0.0.0').split('.').map(n=>Number(n)||0),B=String(b).split('.').map(n=>Number(n)||0);for(let i=0;i<3;i++){if((A[i]||0)!==(B[i]||0)) return (A[i]||0)<(B[i]||0);}return false;}
 function onPath(cmd,env=process.env){for(const dir of String(env.PATH||'').split(delimiter)){if(!dir)continue;try{const st=statSync(join(dir,cmd));if(st.isFile()&&(st.mode&0o111))return true;}catch{}}return false;}
 async function awFloorProblem(){if(!onPath('aw'))return{code:'needs-configuration',message:`aw CLI not on PATH; install aw >= ${AW_MIN}`};const installed=await readAwVersion();if(!installed)return{code:'needs-configuration',message:`aw version could not be read; install aw >= ${AW_MIN}`};return !semverLt(installed,AW_MIN)?null:{code:'needs-configuration',message:`aw ${installed} is older than required ${AW_MIN}; install aw >= ${AW_MIN}`};}
-function wakeReadiness(home,{reliedOn=false}={}) {
-  if(!home || !reliedOn) return {problems:[],warnings:[]};
-  try {
-    const doc=JSON.parse(runAw(['aw','wake','status','--json'],home,{timeout:10000}));
-    const state=doc.daemon_version_state || (doc.daemon_running===false?'not_running':doc.daemon_version?'reported':'unknown');
-    if(state==='reported') {
-      const running=String(doc.daemon_version||'unknown');
-      if(semverLt(running,AW_MIN)) return {problems:[{code:'wake-daemon-outdated',message:`host wake daemon is running ${running}; required ${AW_MIN}; upgrade aw, then restart the host wake daemon`}],warnings:[]};
-      return {problems:[],warnings:[]};
-    }
-    if(state==='not_running') return {problems:[{code:'wake-daemon-not-running',message:'host wake daemon is not running; this home\'s broker delivery relies on it'}],warnings:[]};
-    return {problems:[],warnings:[{code:'wake-daemon-version-unknown',message:`host wake daemon version is unknown; compatibility unproven; required ${AW_MIN}; upgrade aw, then restart the host wake daemon`}]};
-  } catch {return {problems:[],warnings:[{code:'wake-daemon-version-unknown',message:`host wake daemon version is unknown; compatibility unproven; required ${AW_MIN}; upgrade aw, then restart the host wake daemon`}]};}
-}
 async function workspaceReadinessPhase(req) {
+  const deadline=Date.now()+28000;
+  const localAw=(argv,cwd)=>runAw(argv,cwd,{timeout:Math.max(1,Math.min(5000,deadline-Date.now()))});
   const ctx=workspaceReadinessContext(req.input.context);
   if(!obj(req.input.action) || req.input.action.kind!=='readiness') wireError('invalid-binding');
   const details=await readinessDetails(req.settings,{deployment:ctx.deployment}),problems=[...details.result.problems],warnings=[...details.warnings];
@@ -293,35 +277,37 @@ async function workspaceReadinessPhase(req) {
     else if(typeof custody!=='string' || !isAbsolute(custody) || !existsSync(join(custody,'.aw','identity.yaml'))) problems.push({code:'custody',message:`identity.mode "global" resident ${JSON.stringify(resident)} is not resolvable; set oats-local.yaml settings.oats.aweb.residents.${resident} to an absolute custody directory whose .aw/identity.yaml exists`});
     else if(details.team) {
       try {
-        const preflight=custodyPreflight({custody,resident,team:details.team,e2eeRequired:identity.e2ee!==false,fatalOnError:false,runAw:(argv,cwd,options={})=>runAw(argv,cwd,{...options,timeout:20000})});
+        const preflight=custodyPreflight({custody,resident,team:details.team,e2eeRequired:identity.e2ee!==false,fatalOnError:false,runAw:localAw});
         for(const message of preflight.warnings) warnings.push({code:'e2ee-disabled',message});
       }
       catch(e) {problems.push({code:'custody',message:e.message});}
     }
   }
-  const joined=joinedTeams(ctx.home);
-  if(joined.length) {
-    let status;try{status=JSON.parse(runAw(['aw','wake','status','--json'],ctx.home,{timeout:10000}));}catch{status=undefined;}
-    const why={'home-not-registered':'this home is not registered with the host wake broker','not-registered-with-broker':'its identity home is not registered with the host wake broker','wake-daemon-not-running':'the host wake daemon is not running','stream-not-admitted':'the host wake broker has not admitted its stream'};
-    for(const mode of joinedReceiveModes(status,{home:ctx.home,joined})) {
-      const row=joined.find(j=>j.label===mode.label);
-      if(mode.receive==='native') warnings.push({code:'joined-team-receive',message:`joined team ${mode.label} receives native through the host wake broker (stream ${mode.phase})`});
-      else warnings.push({code:'joined-team-poll-only',message:`joined team ${mode.label} receives by polling: ${status?why[mode.reason]||mode.reason:'aw wake status is unavailable'}${mode.detail?` (${mode.detail})`:''}; check aw --identity-home ${row.identityHome} mail inbox and chat pending at task boundaries`});
+  const receiveProblems=[];
+  // Preserve prerequisite diagnostics; receive evidence is meaningful only
+  // after configuration and custody checks succeed.
+  if(ctx.home && !problems.length) {
+    const expected=expectedReceive(ctx.home,{delivery:req.settings.delivery||'channel'});
+    receiveProblems.push(...expected.problems);
+    warnings.push(...(expected.warnings||[]));
+    if(!expected.problems.length) {
+      if(expected.native) warnings.push({code:'native-receive-unproven',message:'native receive connection is unproven: plugin/extension configuration and confirmation do not establish connected receive'});
+      if(expected.brokerRequired) {
+        let status;
+        try {status=JSON.parse(localAw(['aw','wake','status','--json'],ctx.home));} catch { /* unavailable below */ }
+        const target=targetReceiveAssessment(status,{home:ctx.home,...expected},{minimumVersion:AW_MIN});
+        const targetProblems=target.problems;
+        warnings.push(...target.warnings);
+        receiveProblems.push(...targetProblems);
+        for(const joined of expected.joined) {
+          if(targetProblems.length) warnings.push({code:'joined-team-poll-only',message:`joined team ${joined.label} has unproven broker receive; check aw --identity-home ${joined.identityHome} mail inbox and chat pending at task boundaries`});
+          else warnings.push({code:'joined-team-receive',message:`joined team ${joined.label} passes observable broker route prerequisites; this is not harness-native connection or proof of message presentation`});
+        }
+      }
     }
   }
-  // A home relies on the wake daemon when the broker delivers to it: decided
-  // from the home's own record (its delivery and the runtime of its last
-  // start), never from the runtime of whoever runs the check. Without a
-  // record only delivery: session is known to rely on it.
-  const {meta:recorded,harness}=ctx.home?recordedStart(ctx.home):{};
-  const reliedOn=typeof recorded?.delivery==='string'?brokerDelivers({delivery:recorded.delivery,runtime:recordedRuntime(recorded,harness)}):String(req.settings.delivery||'channel')==='session';
-  const wake=reliedOn?wakeReadiness(ctx.home,{reliedOn:true}):{problems:[],warnings:[]};
-  problems.push(...wake.problems);warnings.push(...wake.warnings);
-  // The same record says whether the home's starts load the Claude channel
-  // plugin, and so wait at Claude Code's development-channels confirmation.
-  if(typeof recorded?.delivery==='string' && runtimeDeliveryFor({delivery:recorded.delivery,runtime:recordedRuntime(recorded,harness)})==='native-channel') warnings.push({...CHANNEL_DEV_CONFIRMATION});
-  const result=checkProblems(problems) || {status:'ready',problems:[]};
-  return {...result,warnings};
+  const result=checkProblems(problems) || {status:receiveProblems.length?'unavailable':'ready',problems:[]};
+  return {...result,problems:[...result.problems,...receiveProblems],warnings};
 }
 async function checkPhase(req) {
   keys(req.input,['binding','context','action','invocation'],['context','action']);

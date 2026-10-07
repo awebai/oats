@@ -10,10 +10,12 @@
 //   primary (aw's mixed mode).
 // Under delivery: channel a runtime with no native surface (Codex, unknown) is
 // an external-session home like any session home (brokerDelivers).
-import {readFileSync, realpathSync} from 'node:fs';
-import {join, resolve} from 'node:path';
+import {lstatSync, readFileSync, realpathSync, statSync} from 'node:fs';
+import {dirname, isAbsolute, join, resolve} from 'node:path';
 
 const JOINED_EVENT_CLASSES = ['mail', 'chat'];
+// Observation age is advisory; readiness does not certify recent observation.
+const RECEIVE_OBSERVATION_WARN_AGE_MS = 30000;
 
 const NATIVE_CHANNEL_RUNTIMES = ['claude', 'pi'];
 
@@ -33,7 +35,7 @@ export function recordedStart(home) {
   try { doc = JSON.parse(readFileSync(join(home, 'instance.json'), 'utf8')); } catch { return {}; }
   const meta = doc?.capabilityMeta?.['oats.aweb'];
   const harness = typeof doc?.launch?.harness === 'string' ? doc.launch.harness : typeof doc?.harness === 'string' ? doc.harness : undefined;
-  return {meta: meta && typeof meta === 'object' && !Array.isArray(meta) ? meta : undefined, harness};
+  return {identityHome: doc?.launch?.hooks?.env?.AWEB_IDENTITY_HOME, meta: meta && typeof meta === 'object' && !Array.isArray(meta) ? meta : undefined, harness};
 }
 
 /** The runtime a home's last start ran under: what this provider recorded
@@ -43,16 +45,70 @@ export function recordedRuntime(meta, harness) {
   return typeof meta?.runtime === 'string' ? meta.runtime : harness;
 }
 
-/** Claude Code loads aweb-channel only with
- *  --dangerously-load-development-channels, because the plugin is not on
- *  Claude Code's approved channel list (the Anthropic default list, or a
- *  Team/Enterprise organization's managed allowedChannelPlugins). Before every
- *  session that flag starts, Claude Code shows a confirmation that waits for a
- *  human answer in the terminal; nothing may answer it for them. */
+/** Selection is not consent or a prompt-outcome receipt. Keep warnings brief;
+ * the skill explains provider boundaries and compatible-kernel support. */
 export const CHANNEL_DEV_CONFIRMATION = {
   code: 'channel-dev-confirmation',
-  message: 'Claude Code stops at its development-channels confirmation ("Loading development channels") before the session starts, and waits until someone answers it in the instance\'s terminal: aweb-channel is not on Claude Code\'s approved channel list, so it is loaded with --dangerously-load-development-channels',
+  message: 'Claude Code may stop at its development-channels confirmation, and nothing in this provider answers it; see the oats-aweb skill, section 4 (Channel selection and launch consent).',
 };
+
+export const CLAUDE_CHANNEL_ARGUMENTS = Object.freeze({
+  approved: '--channels plugin:aweb-channel@awebai-marketplace',
+  development: '--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace',
+});
+const CHANNEL_ENROLLMENT_UNVERIFIED = {
+  code: 'claude-channel-enrollment-unverified',
+  message: 'aweb-channel is currently not on the default approved list, so approved mode registers no aweb channel without applicable managed allowedChannelPlugins or future approval; see the oats-aweb skill, section 4 (Channel selection and launch consent).',
+};
+
+/** Host selection is a requested mode, never an admission or connection receipt. */
+export function selectClaudeChannel(mode = 'development') {
+  if (mode !== 'approved' && mode !== 'development') throw new Error('settings.oats.aweb.claudeChannelMode must be approved or development; set it only in oats-local.yaml');
+  return {mode, argument: CLAUDE_CHANNEL_ARGUMENTS[mode], warning: mode === 'approved' ? {...CHANNEL_ENROLLMENT_UNVERIFIED} : {...CHANNEL_DEV_CONFIRMATION}};
+}
+
+/** Recognize only the provider's literal bare selector pairs in an aggregate.
+ * Quoted/escaped text is opaque: another capability's message is not a selector.
+ * This detects contradictions, never assigns provider provenance or rewrites argv. */
+function aggregateClaudeModes(combined) {
+  if (combined === undefined) return [];
+  const bare = combined.replace(/'[^']*'|"(?:\\[\s\S]|[^"\\])*"|\\[\s\S]/g, text => 'x'.repeat(text.length));
+  if (/['"\\]/.test(bare)) throw new Error('captured Claude channel aggregate quoting is ambiguous');
+  const options = bare.split(/(?:^|\s)--(?=\s|$)/, 1)[0];
+  const modes = Object.entries(CLAUDE_CHANNEL_ARGUMENTS).filter(([, argument]) => {
+    const [flag, plugin] = argument.split(' ');
+    return new RegExp(`(?:^|\\s)${flag}\\s+${plugin.replaceAll('.', '\\.')}(?=\\s|$)`).test(options);
+  }).map(([mode]) => mode);
+  // The fixed bare-word contract does not interpret shell expressions.
+  if (modes.length && /[$`;|&<>(){}*?~#]/.test(options)) throw new Error('captured Claude channel aggregate selector context is ambiguous');
+  return modes;
+}
+
+/** Only exact provider contributions identify historical mode. The combined
+ * hook argument is a fallback for old records without per-provider receipts. */
+function capturedClaudeChannel(meta, hooks) {
+  const recorded = meta.claudeChannelMode;
+  if (recorded !== undefined) selectClaudeChannel(recorded);
+  const combined = hooks?.launch?.claude;
+  if ((hooks?.launch !== undefined && !object(hooks.launch)) || (combined !== undefined && typeof combined !== 'string')) throw new Error('captured channel launch is malformed');
+  const exactCombined = Object.values(CLAUDE_CHANNEL_ARGUMENTS).includes(combined) ? combined : undefined;
+  let contribution;
+  if (hooks?.contributions !== undefined) {
+    if (!Array.isArray(hooks.contributions) || hooks.contributions.some(c => !object(c) || typeof c.capability !== 'string')) throw new Error('captured channel contributions are malformed');
+    const own = hooks.contributions.filter(c => c?.capability === 'oats.aweb');
+    if (own.length > 1 || (own[0]?.launch !== undefined && !object(own[0].launch))) throw new Error('captured aweb channel contribution is malformed or duplicated');
+    contribution = own[0]?.launch?.claude;
+    if (contribution !== undefined && !Object.values(CLAUDE_CHANNEL_ARGUMENTS).includes(contribution)) throw new Error('captured aweb channel contribution is malformed');
+  } else {
+    contribution = exactCombined;
+  }
+  const contributed = Object.keys(CLAUDE_CHANNEL_ARGUMENTS).find(mode => CLAUDE_CHANNEL_ARGUMENTS[mode] === contribution);
+  if (recorded !== undefined && contributed !== undefined && recorded !== contributed) throw new Error('captured Claude channel mode contradicts its contribution');
+  const mode = recorded ?? contributed;
+  const aggregateModes = aggregateClaudeModes(combined);
+  if (aggregateModes.length > 1 || (mode !== undefined && aggregateModes.some(value => value !== mode))) throw new Error('captured Claude channel mode contradicts its aggregate contribution');
+  return mode === undefined ? {code:'claude-channel-mode-unproven',message:'captured Claude channel mode is unproven; no approved admission or development selection is inferred from current settings'} : selectClaudeChannel(mode).warning;
+}
 
 /** external-session | native-channel | native-pi. */
 export function runtimeDeliveryFor({delivery, runtime}) {
@@ -99,4 +155,216 @@ export function joinedReceiveModes(status, {home, joined = []}) {
     if (hit.stream_error || hit.stream_admitted === false) return {label: j.label, receive: 'poll', reason: 'stream-not-admitted', detail: String(hit.stream_error || hit.stream_phase || 'not admitted').slice(0, 160)};
     return {label: j.label, receive: 'native', phase: hit.stream_phase || row.phase || 'unknown'};
   });
+}
+
+
+const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const pathValue = value => typeof value === 'string' && value.trim() === value && isAbsolute(value) && !value.includes('\0');
+const samePath = (a, b) => pathValue(a) && pathValue(b) && canon(a) === canon(b);
+const directory = value => { try { return pathValue(value) && statSync(value).isDirectory(); } catch { return false; } };
+const problem = (code, message) => ({code, message});
+const joinedShape = j => object(j) && typeof j.label === 'string' && j.label.trim() && j.label !== 'default' && typeof j.team === 'string' && j.team.trim() && pathValue(j.identityHome);
+// A dangling leaf or parent symlink is unreadable, not legacy absence. When
+// components are missing, the nearest existing ancestor must resolve to a dir.
+const absentFile = (file, error) => {
+  if (error.code !== 'ENOENT') return false;
+  let candidate = file;
+  while (true) {
+    try { lstatSync(candidate); }
+    catch (statError) {
+      if (statError.code !== 'ENOENT' || dirname(candidate) === candidate) return false;
+      candidate = dirname(candidate);
+      continue;
+    }
+    if (candidate === file) return false;
+    try { return statSync(candidate).isDirectory(); } catch { return false; }
+  }
+};
+
+/** Readiness alone needs to distinguish legacy absence from corrupt records.
+ * Keep recordedStart's historical lifecycle behavior unchanged for its callers. */
+function receiveRecord(home) {
+  let doc;
+  try { doc = JSON.parse(readFileSync(join(home, 'instance.json'), 'utf8')); }
+  catch (error) { return absentFile(join(home, 'instance.json'), error) ? {meta: {}} : {error: 'captured instance record is unreadable or malformed'}; }
+  if (!object(doc) || (doc.capabilityMeta !== undefined && !object(doc.capabilityMeta)) ||
+      (doc.launch !== undefined && !object(doc.launch))) return {error: 'captured instance record is malformed'};
+  const meta = doc.capabilityMeta?.['oats.aweb'] ?? {};
+  if (!object(meta) || doc.capabilityMeta?.['oats.aweb'] === null ||
+      [meta.runtime, doc.launch?.harness, doc.harness].some(v => v !== undefined && typeof v !== 'string') ||
+      (meta.delivery !== undefined && !['session', 'channel'].includes(meta.delivery)) ||
+      (doc.launch?.hooks !== undefined && !object(doc.launch.hooks)) ||
+      (doc.launch?.hooks?.env !== undefined && !object(doc.launch.hooks.env))) return {error: 'captured delivery/runtime or credential metadata is malformed'};
+  try { if (meta.claudeChannelMode !== undefined) selectClaudeChannel(meta.claudeChannelMode); }
+  catch { return {error: 'captured Claude channel mode is malformed'}; }
+  return {meta, runtime: recordedRuntime(meta, doc.launch?.harness ?? doc.harness), identityHome: doc.launch?.hooks?.env?.AWEB_IDENTITY_HOME, hooks: doc.launch?.hooks};
+}
+
+/** Preserve valid retained facts even when a legacy record lacks ownership.
+ * Old producers lacked delivery/runtime and kept joins only in metadata. */
+export function expectedReceive(home, {delivery = 'channel'} = {}) {
+  const captured = receiveRecord(home);
+  const fail = message => ({problems: [problem('receive-record-unavailable', message)], warnings: []});
+  if (captured.error) return fail(captured.error);
+  if (!directory(home)) return fail('instance home is missing or unreadable; it is not a legacy record');
+  const {meta, runtime, identityHome: launchIdentity} = captured;
+  // Valid stale metadata may lag a join/leave, including removed directories;
+  // malformed retained entries must not be reclassified as legacy absence.
+  if (meta.joinedTeams !== undefined && (!Array.isArray(meta.joinedTeams) || meta.joinedTeams.some(j => !joinedShape(j)) ||
+      new Set(meta.joinedTeams.map(j => j.label)).size !== meta.joinedTeams.length ||
+      new Set(meta.joinedTeams.map(j => canon(j.identityHome))).size !== meta.joinedTeams.length)) return fail('captured joined-team metadata is malformed');
+  const incomplete = meta.delivery === undefined || runtime === undefined;
+  const warnings = incomplete ? [problem('receive-ownership-unproven', 'legacy captured delivery/runtime is absent; settings supply prerequisites only, receive ownership and complete-set assurance remain unproven')] : [];
+  const runtimeDelivery = !incomplete ? runtimeDeliveryFor({delivery: meta.delivery, runtime}) : undefined;
+  if (meta.identity !== undefined && (!object(meta.identity) || !['local', 'global'].includes(meta.identity.mode))) return fail('captured identity metadata is malformed');
+  const grant = meta.identity?.grant;
+  if (grant !== undefined && (!object(grant) || meta.identity?.mode !== 'global' || typeof grant.id !== 'string' || !grant.id.trim())) return fail('captured grant provenance is malformed');
+  const primaryLocator = grant ? grant.home : join(home, '.aw');
+  // Missing local material in a genuinely old/absent record is unproven. An
+  // explicit grant/env locator or a complete modern plan must remain valid.
+  if ((!directory(primaryLocator) && (!incomplete || grant || launchIdentity !== undefined)) ||
+      (launchIdentity !== undefined && !samePath(primaryLocator, launchIdentity))) return fail('captured primary identity locator is missing, unreadable or inconsistent');
+  const primary = directory(primaryLocator) ? primaryLocator : undefined;
+  let state;
+  try { state = JSON.parse(readFileSync(join(home, '.oats-aweb', 'teams.json'), 'utf8')); }
+  catch (error) {
+    if (!absentFile(join(home, '.oats-aweb', 'teams.json'), error)) return fail('retained joined-team state is unreadable or malformed');
+    if (meta.identity?.mode === 'global' && (grant || meta.retained === true) &&
+        (meta.joinedTeams === undefined || (Array.isArray(meta.joinedTeams) && meta.joinedTeams.length === 0))) state = {joinedTeams: []};
+    else if (incomplete) {
+      state = {joinedTeams: meta.joinedTeams === undefined ? [] : meta.joinedTeams};
+      if (meta.joinedTeams === undefined) warnings.push(problem('receive-ownership-unproven', 'legacy retained membership sources are absent; there are no known joined entries, not a proven empty receive set'));
+    } else return fail('retained joined-team state is missing; the complete receive set is unproven');
+  }
+  if (!object(state) || !Array.isArray(state.joinedTeams)) return fail('retained joined-team state is malformed');
+  const joined = state.joinedTeams;
+  if (joined.some(j => !joinedShape(j) || !directory(j.identityHome))) return fail('retained joined-team entry or identity locator is malformed or unreadable');
+  if (new Set(joined.map(j => j.label)).size !== joined.length || new Set([...(primary ? [canon(primary)] : []), ...joined.map(j => canon(j.identityHome))]).size !== joined.length + (primary ? 1 : 0)) return fail('retained receive identity locators or labels overlap');
+  // Local commands update disk without rewriting launch metadata. Global modes
+  // forbid joins, so contradictory recorded global joins cannot be discarded.
+  if (meta.identity?.mode === 'global' && (joined.length || (meta.joinedTeams !== undefined && (!Array.isArray(meta.joinedTeams) || meta.joinedTeams.length)))) return fail('global identity records contain contradictory joined-team state');
+  const primaryBroker = meta.delivery === undefined ? delivery === 'session' :
+    meta.delivery === 'session' || (runtime !== undefined && brokerDelivers({delivery: meta.delivery, runtime}));
+  const native = meta.delivery === 'channel' && runtime !== undefined && !primaryBroker;
+  if (meta.claudeChannelMode !== undefined && (meta.delivery !== 'channel' || runtime !== 'claude')) return fail('captured Claude channel mode contradicts delivery/runtime');
+  if (native && runtime === 'claude') {
+    try { warnings.push(capturedClaudeChannel(meta, captured.hooks)); }
+    catch (error) { return fail(error.message); }
+  }
+  const bindings = joined.map(j => ({identity_home: j.identityHome, label: j.label, team: j.team, controls: false, event_classes: ['mail', 'chat']}));
+  // Incomplete projections retain known joins but do not manufacture an exact
+  // primary plan from settings or the broker's supplied binding list.
+  if (!incomplete && primaryBroker) bindings.unshift({identity_home: primary, team: meta.identity?.team || meta.team || meta.defaultTeam?.team, label: joined.length ? 'default' : undefined, controls: true, event_classes: []});
+  return {problems: [], warnings, runtimeDelivery, runtime, primary, primaryTeam: meta.identity?.team || meta.team || meta.defaultTeam?.team, primaryBroker, capturedDelivery: meta.delivery, joined, bindings, native, incomplete, brokerRequired: primaryBroker || joined.length > 0};
+}
+
+/** Released aw status is a transport observation. Worker telemetry is absent at
+ * the CLI floor; that is unknown, not permission to invent a healthy worker.
+ * No generation/start witness is required or inferred from historical inputs. */
+export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime, capturedDelivery, primary, primaryTeam, bindings, incomplete = false}, {minimumVersion, now = Date.now()} = {}) {
+  const warnings = [];
+  const fail = (code, message) => ({problems: [problem(code, message)], warnings});
+  if (!object(status) || !Array.isArray(status.instances)) return fail('wake-status-unavailable', 'aw wake status is unavailable or malformed');
+  if (status.daemon_running !== true) return fail('wake-daemon-not-running', 'host wake daemon is not confirmed running');
+  if (status.daemon_version_state !== 'reported' || typeof status.daemon_version !== 'string' || !/^\d+\.\d+\.\d+$/.test(status.daemon_version || '')) return fail('wake-daemon-version-unknown', 'host wake daemon compatibility is unproven');
+  const version = status.daemon_version.split('.').map(Number), floor = minimumVersion.split('.').map(Number);
+  const difference = version.map((n, i) => n - floor[i]).find(n => n !== 0);
+  if (difference < 0) return fail('wake-daemon-outdated', `host wake daemon is running ${status.daemon_version}; required ${minimumVersion}`);
+  const rows = status.instances.filter(row => samePath(row?.home, home));
+  if (rows.length !== 1) return fail('wake-target-missing', 'canonical home must have exactly one broker target row');
+  const row = rows[0];
+  if (row.paused !== false) return fail('wake-target-paused', 'broker target is paused or its pause state is unknown');
+  if (row.phase !== 'active') return fail('wake-target-inactive', 'broker target is not confirmed active');
+  if (row.stream_admitted !== undefined && row.stream_admitted !== true) return fail('wake-stream-unavailable', 'broker target reports streams not admitted or malformed admission evidence');
+  if (row.primary_identity_home !== undefined && (!pathValue(row.primary_identity_home) || (primary && !samePath(row.primary_identity_home, primary)))) return fail('wake-target-binding', 'supplied primary locator is malformed or contradicts the retained locator');
+  const actualRuntime = row.runtime_delivery;
+  if (!['external-session', 'native-channel', 'native-pi'].includes(actualRuntime) ||
+      row.delivery !== (actualRuntime === 'external-session' ? 'session' : actualRuntime) || !pathValue(row.identity_home)) return fail('wake-target-binding', 'broker target delivery or primary identity is malformed');
+  if (!incomplete) {
+    if (actualRuntime !== runtimeDelivery || !samePath(row.identity_home, bindings[0]?.identity_home) ||
+        (runtimeDelivery !== 'external-session' && !samePath(row.primary_identity_home, primary)) ||
+        (runtimeDelivery === 'external-session' && row.primary_identity_home && !samePath(row.primary_identity_home, primary))) return fail('wake-target-binding', 'broker target delivery or primary identity does not match the captured home');
+  } else {
+    // Validate supplied claims against retained facts, without deriving the
+    // missing ownership plan from the row or treating unknown extras as primary.
+    if ((capturedDelivery === 'session' && actualRuntime !== 'external-session') ||
+        (runtime !== undefined && actualRuntime !== 'external-session' && actualRuntime !== runtimeDeliveryFor({delivery:'channel', runtime})) ||
+        (primary && actualRuntime === 'external-session' && !samePath(row.identity_home, primary)) ||
+        (actualRuntime !== 'external-session' && (!pathValue(row.primary_identity_home) || (primary && !samePath(row.primary_identity_home, primary))))) return fail('wake-target-binding', 'broker target contradicts retained delivery, runtime or primary locator facts');
+  }
+  const actual = row.receive_identities;
+  if (!Array.isArray(actual) || !actual.length || (!incomplete && actual.length !== bindings.length)) return fail('wake-target-binding', 'broker receive identity set is missing, extra or incomplete');
+  if (actual.some(r => !object(r) || !pathValue(r.identity_home)) || new Set(actual.map(r => canon(r.identity_home))).size !== actual.length) return fail('wake-target-binding', 'broker receive identities are malformed or duplicated');
+  if (actual.some(r => r.stream_error !== undefined && typeof r.stream_error !== 'string')) return fail('wake-status-unavailable', 'supplied receive stream error is malformed');
+  if (incomplete) {
+    if (!actual.some(r => samePath(r.identity_home, row.identity_home)) || actual.filter(r => r.controls === true).length > 1 ||
+        (row.primary_identity_home !== undefined && !pathValue(row.primary_identity_home))) return fail('wake-target-binding', 'partial broker binding facts contradict each other');
+    for (const hit of actual) {
+      const classes = hit.event_classes === undefined ? [] : hit.event_classes;
+      if (hit.delivery_owner !== 'session-hints' || (hit.controls !== undefined && typeof hit.controls !== 'boolean') ||
+          (hit.label !== undefined && typeof hit.label !== 'string') || (hit.team_id !== undefined && typeof hit.team_id !== 'string') ||
+          !Array.isArray(classes) || classes.some(c => !['mail','chat'].includes(c)) || new Set(classes).size !== classes.length ||
+          (actualRuntime !== 'external-session' && (hit.controls === true || samePath(hit.identity_home, row.primary_identity_home))) ||
+          (hit.controls === true && primary && !samePath(hit.identity_home, primary))) return fail('wake-target-binding', 'partial broker receive policy contradicts retained or supplied facts');
+      if (primary && samePath(hit.identity_home, primary)) {
+        if (hit.team_id !== undefined && primaryTeam !== undefined && hit.team_id !== primaryTeam) return fail('wake-target-binding', 'broker primary team contradicts the retained identity');
+        if (capturedDelivery === 'session' && (hit.controls !== true || classes.length)) return fail('wake-target-binding', 'broker primary policy contradicts the retained session route');
+      }
+      if (hit.stream_admitted !== true || hit.stream_error || hit.stream_phase !== 'streaming') return fail('wake-stream-unavailable', 'supplied receive stream is missing, refused or not connected');
+    }
+  }
+  for (const expected of bindings) {
+    const hits = actual.filter(r => samePath(r?.identity_home, expected.identity_home));
+    if (hits.length !== 1) return fail('wake-target-binding', 'broker receive identity set differs from the captured home');
+    const hit = hits[0];
+    // controls/event_classes/label are omitempty in the released Go wire.
+    const classes = hit.event_classes === undefined ? [] : hit.event_classes;
+    if ((hit.label !== undefined && typeof hit.label !== 'string') || (hit.label || undefined) !== expected.label || (hit.team_id !== undefined && hit.team_id !== expected.team) || hit.delivery_owner !== 'session-hints' ||
+        (hit.controls !== undefined && typeof hit.controls !== 'boolean') || (hit.controls === true) !== expected.controls ||
+        !Array.isArray(classes) || classes.length !== expected.event_classes.length || classes.some(c => typeof c !== 'string') || JSON.stringify([...classes].sort()) !== JSON.stringify([...expected.event_classes].sort())) return fail('wake-target-binding', 'broker receive ownership, label or event policy differs from the captured home');
+    if (hit.stream_admitted !== true || hit.stream_error || hit.stream_phase !== 'streaming') return fail('wake-stream-unavailable', 'required receive stream is missing, refused or not connected');
+  }
+  const core = row.channel_core;
+  if (!object(core) || core.running !== true) return fail('wake-worker-unavailable', 'broker worker is stopped or current worker evidence is unavailable');
+  if ([row.last_error, row.conflict_home, core.last_error, core.readiness_error].some(v => v !== undefined && typeof v !== 'string') ||
+      [core.paused, core.readiness_paused].some(v => v !== undefined && typeof v !== 'boolean') ||
+      (core.binding_errors !== undefined && !object(core.binding_errors))) return fail('wake-status-unavailable', 'broker target or worker status is malformed');
+  if (row.last_error || row.conflict_home || core.readiness_error || core.paused || core.readiness_paused || (core.binding_errors && (!object(core.binding_errors) || Object.keys(core.binding_errors).length))) return fail('wake-worker-unavailable', 'broker target or worker reports an unresolved error, pause or binding conflict');
+  // inspect_start retains earlier state/errors. A failure stays a failure,
+  // regardless of observation age or whether a new inspection is in flight.
+  const states = [row.last_state, core.readiness_state];
+  const vocabulary = ['unknown', 'idle', 'working', 'blocked', 'shell', 'stopped', 'not-launched'];
+  if (states.some(state => state !== undefined && (typeof state !== 'string' || (state !== '' && !vocabulary.includes(state)))) ||
+      (core.readiness_waiting !== undefined && !['', 'inspect_start', 'inspect_done', 'inspect_error'].includes(core.readiness_waiting))) return fail('wake-status-unavailable', 'broker observation status is malformed');
+  if (core.readiness_waiting === 'inspect_error' || states.some(state => ['shell', 'stopped', 'not-launched'].includes(state))) return fail('receive-inspection-unproven', 'broker reports a failed inspection or an unusable endpoint');
+  if (states.every(Boolean) && states[0] !== states[1]) return fail('wake-status-unavailable', 'broker observation states contradict each other');
+  const timestamp = value => {
+    const match = typeof value === 'string' && /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(?:\.\d{1,9})?(?:Z|[+-]\d\d:\d\d)$/.exec(value);
+    if (!match) return NaN;
+    const [, year, month, day, hour, minute, second] = match.map(Number);
+    const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+    const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    // Date.parse normalizes impossible calendar dates such as February 30.
+    if (month < 1 || month > 12 || day < 1 || day > days[month - 1] || hour > 23 || minute > 59 || second > 59) return NaN;
+    return Date.parse(value);
+  };
+  const updated = status.updated_at === undefined ? undefined : timestamp(status.updated_at);
+  const inspected = row.last_inspect_at === undefined ? undefined : timestamp(row.last_inspect_at);
+  if (updated !== undefined && (!Number.isFinite(updated) || updated > now)) return fail('wake-status-stale', 'supplied broker status timestamp is invalid or future');
+  if (inspected !== undefined && (!Number.isFinite(inspected) || inspected > now || (updated !== undefined && inspected > updated))) return fail('receive-inspection-unproven', 'supplied broker inspection timestamp is invalid, future or later than the snapshot');
+  // Released aw retains nonempty LastError across child status updates, while
+  // ReadinessError can clear (channel_core_runner.go:508-539, v1.36.23). There
+  // is no error timestamp/order token; LastSuccessAt is last input, not proof
+  // that inspection followed or resolved this error. Other failures win above.
+  if (core.last_error) {
+    if (core.readiness_waiting !== 'inspect_done' || !core.readiness_state) return fail('wake-worker-unavailable', 'broker worker reports an error without completed nonfailure inspection evidence');
+    const detail = core.last_error.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').slice(0, 160);
+    warnings.push(problem('wake-worker-error-retained', `broker worker retained error of unproven currency alongside completed nonfailure observation (no error/inspection ordering evidence): ${detail}`));
+  }
+  for (const [name, at] of [['snapshot', updated], ['inspection', inspected]]) {
+    if (at !== undefined && now - at > RECEIVE_OBSERVATION_WARN_AGE_MS) warnings.push(problem('receive-observation-aged', `broker ${name} observation is ${Math.floor((now - at) / 1000)} seconds old (30-second advisory threshold); readiness does not certify recent observation`));
+  }
+  if (updated === undefined || inspected === undefined || states.some(state => !state) || !core.readiness_waiting) warnings.push(problem('receive-observation-unproven', 'optional broker observation evidence is absent; no completed inspection or successful history is established'));
+  if (core.readiness_waiting === 'inspect_start') warnings.push(problem('receive-inspection-pending', 'broker inspection is in progress; retained state is not evidence of completion or current endpoint presence'));
+  return {problems: [], warnings};
 }
