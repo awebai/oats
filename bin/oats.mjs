@@ -36,6 +36,7 @@ import {
 import {
   writeFileAtomic, LOCK_FILE, canonicalLock, readLock, readLockIfPresent, writeLock, resolvePackages, memoizedRemote,
   classifyPackageValue, parsePackageRequest } from "../lib/packages.mjs";
+import { harnessTrust } from "../lib/harness-trust-write.mjs";
 import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, workspaceWarnings, memberRowByKey } from "../lib/workspace.mjs";
 import { discoveredTeamKeys, isTeamRefusal, localTeamsClosedProblem, recordedTeams, reportRows, soulKeyOf, soulTeams, teamKeyOf, teamModel } from "../lib/teams.mjs";
 import { launchLayers } from "../lib/launch-preference.mjs";
@@ -89,7 +90,7 @@ function expandInlineValues(argv) {
 const { argv: args, problem: argvProblem, inline: inlineValues } = expandInlineValues(rawArgs);
 let cmd = args[0];
 const HELP_WORDS = new Set(["help", "--help", "-h"]);
-const KERNEL_COMMANDS = new Set(["automations", "trigger", "capture", "capabilities", "doctor", "inspect", "instance", "operation", "package", "readiness", "souls", "soul", "teams", "launch-config", "experimental", "onboard", "pane", "recall", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "sync", "update", "version", "workspace"]);
+const KERNEL_COMMANDS = new Set(["harness", "automations", "trigger", "capture", "capabilities", "doctor", "inspect", "instance", "operation", "package", "readiness", "souls", "soul", "teams", "launch-config", "experimental", "onboard", "pane", "recall", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "sync", "update", "version", "workspace"]);
 /** Commands whose argv another parser reads (packages/record and packages/experimental parse process.argv). */
 const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental"]);
 /** Commands `--server <id>` runs on a registered server. */
@@ -1220,6 +1221,31 @@ function workspaceContext(bail) {
   try { found = loadLocal(dir); }
   catch (e) { return bail(e.code || "E_LOCAL_MISSING", e.message, e.details); }
   return { dir, localPath: found.path, local: found.local, deploymentDir: dirname(found.path), remoteOptions: remoteOptionsFromEnv() };
+}
+
+/** An explicit host-local operator action; never routed to a remote adapter. */
+function harnessTrustCmd() {
+  if (args[1] !== "trust") return cmdFail("E_BAD_ARGS", "usage: oats harness trust [--dir <deployment>] [--harness claude|codex|all] [--plan] [--json]");
+  const seen = new Set();
+  for (let i = 2; i < args.length; i++) {
+    const arg = args[i];
+    if (seen.has(arg)) return cmdFail("E_BAD_ARGS", `duplicate argument ${arg}`);
+    seen.add(arg);
+    if (["--plan", "--json"].includes(arg)) continue;
+    if (["--dir", "--harness"].includes(arg) && args[i + 1] && !args[i + 1].startsWith("-")) { i++; continue; }
+    return cmdFail("E_BAD_ARGS", `unsupported argument ${arg}; use oats harness trust --help`);
+  }
+  const context = workspaceContext(cmdFail);
+  try {
+    const result = harnessTrust(context.deploymentDir, { harness: flag("harness") ?? "all", plan: args.includes("--plan") });
+    if (JSON_MODE) jsonOk(result);
+    else {
+      console.log(`${result.mode}: native harness trust for ${result.root}`);
+      for (const entry of result.entries) console.log(`${entry.harness}: ${entry.status} ${entry.file} ${JSON.stringify(entry.key)} ${JSON.stringify(entry.current)} -> ${JSON.stringify(entry.desired)} (${entry.beforeDigest ?? "missing"} -> ${entry.afterDigest})`);
+      if (result.audit) console.log(`audit: ${result.audit.status} ${result.audit.path} ${result.audit.operationId}`);
+      for (const warning of result.warnings) console.log(`warning: ${warning}`);
+    }
+  } catch (e) { cmdFail(e.code || "E_CONFIG_BROKEN", e.message, e.details); }
 }
 
 /** The official catalog's package map (package-catalog.json; OATS_PACKAGE_CATALOG overrides). */
@@ -3928,6 +3954,7 @@ else if (cmd === "update") {
   if (t || flag("to") !== undefined) { cmdFail("E_BAD_ARGS", "oats update takes no package: pin package versions in oats-workspace.yaml (`oats package add <id> <version>`), then `oats sync`; bare `oats update [--check] [--yes]` updates the kernel"); process.exit(1); }
   updateCmd();
 }
+else if (cmd === "harness") harnessTrustCmd();
 else if (cmd === "readiness") await readinessCmd();
 else if (cmd === "instance") instanceCmd();
 else if (cmd === "root") console.log(resolve(new URL("..", import.meta.url).pathname));
@@ -4136,6 +4163,9 @@ Usage:
                                             modules or the deployment's soul, trust checked, the provider's
                                             own command run in the home or scope, envelope
                                             relayed; a view answers {documents: [...]}
+  oats harness trust [--dir <deployment>]  explicitly trust one canonical deployment root
+      [--harness claude|codex|all]         in native host configuration; --plan reads only,
+      [--plan] [--json]                   bare command applies with a durable audit
   oats launch-config list [--dir <scope>     named launch configurations effective at a scope,
       | --home <abs> | --soul <name>]       a home's recorded context or a soul's own scope:
       [--agents-root <abs>] [--json]        harness, executable, args, env (values redacted,

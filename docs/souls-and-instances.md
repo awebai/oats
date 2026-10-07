@@ -213,18 +213,18 @@ instructions and pins model/provider settings; it excludes nothing.
 Claude Code and Codex ask before they work in a folder they have not seen, and
 every instance home is new. A launch stopped at that prompt waits for a human,
 so the operator trusts the **deployment directory** (where `oats-local.yaml`
-is) once per harness. OATS only reads the harnesses' configuration; it never
-writes it.
+is) once per harness. Launches only read native configuration. The explicit
+`oats harness trust --dir D --harness all --plan` previews the entry; the same
+command without `--plan` applies it with a deployment audit. See
+[native trust](harness-trust.md) for safe operation and partial-failure recovery.
 
 - **Claude Code** looks for an accepted entry for its folder or an ancestor, up
-  to a git root. Instance homes are not inside a git repository, so one entry
-  for the deployment covers every home under it. To add it, run `claude` in the
-  deployment once and accept the prompt. That records
+  to a Git root. An intervening repository can prevent deployment-root inheritance;
+  the command does not automatically trust another root. The native field is
   `projects["<deployment>"].hasTrustDialogAccepted` in `~/.claude.json`
   (`$CLAUDE_CONFIG_DIR/.claude.json` when that is set).
 - **Codex** applies only an exact entry: a trusted parent does not cover the
-  folders below it. To give the operator's consent, run `codex` in the
-  deployment once and choose "Trust and continue". That records
+  folders below it. The explicit deployment-root command records
   `[projects."<deployment>"] trust_level = "trusted"` in
   `~/.codex/config.toml` (`$CODEX_HOME/config.toml`). With that entry, or one
   for an ancestor of the deployment, each codex launch trusts its own new home

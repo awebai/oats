@@ -3310,3 +3310,44 @@ One warning per command, however many old spellings it read:
 
 The `--server` routes translate for a host without the `harness` feature:
 they send `--runtime` and `runtime` keys and read its `runtimes` list.
+
+### `harness trust`
+
+`oats harness trust [--dir <deployment>] [--harness claude|codex|all] [--plan] [--json]`
+is host-local. Bare applies; `--apply`, remote selectors, unsupported harnesses,
+unknown flags and extra positionals are `E_BAD_ARGS`. Default harness is `all`.
+It uses the existing success/error JSON envelope. Result:
+
+```json
+{
+  "operation": "harness-trust",
+  "mode": "plan",
+  "root": "/canonical/deployment",
+  "entries": [{
+    "harness": "claude", "file": "/native/.claude.json",
+    "key": ["projects", "/canonical/deployment", "hasTrustDialogAccepted"],
+    "current": null, "desired": true,
+    "beforeDigest": null, "afterDigest": "sha256-hex", "status": "change"
+  }],
+  "audit": null,
+  "warnings": []
+}
+```
+
+Entry statuses are `change|unchanged|refused|applied|failed|incomplete|not-attempted`.
+`current` contains only the known trust scalar, or null when missing. Codex's key
+ends in `trust_level` and its desired value is `trusted`. Digests are raw-byte
+SHA256 hex; missing files have null beforeDigest. Apply's audit is
+`{path,operationId,status:"recorded"|"incomplete"}`. Override provenance is conveyed
+in warnings, without native configuration contents.
+
+Preflight failures use `E_CONFIG_BROKEN` with the result in details. Apply failures
+use `E_HARNESS_TRUST_INCOMPLETE`, details `{...result,reason,mayHaveChanged}`;
+reason is the closed set `locked|changed|audit|write|verify`. Partial writes are
+retained. No existing instance-event envelope or lifecycle DTO changes.
+
+Audit JSONL rows have `version: 1`, `kind: "harness-trust"`, ISO `at`,
+`operationId`, `phase: "intent"|"outcome"`, harness, root, file, beforeDigest,
+afterDigest and status.
+Intent status is planned; outcome status is applied, unchanged, failed or
+incomplete. See [native trust](harness-trust.md) for durability and race limits.

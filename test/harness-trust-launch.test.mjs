@@ -62,8 +62,8 @@ test("spawn: codex trusts the new home only under a trusted root; claude and cod
   const userHome = fx.env.HOME, dep = realpathSync(fx.dep);
   const codexConfig = join(userHome, ".codex", "config.toml"), claudeConfig = join(userHome, ".claude.json");
   const spawn = async (purpose, harness) => { const r = await fx.spawn("dev", { purpose, harness }); return { r, meta: JSON.parse(readFileSync(join(r.home, "instance.json"), "utf8")) }; };
-  const codexWarning = `the codex session will stop at its folder-trust prompt: trust ${dep} once (run \`codex\` in ${dep} and choose "Trust and continue"; OATS then trusts each new home under it at launch)`;
-  const claudeWarning = `the claude session will stop at its folder-trust prompt: trust ${dep} once (run \`claude\` in ${dep} and accept its folder-trust prompt; one entry covers every instance home under it)`;
+  const codexWarning = `the codex session will stop at its folder-trust prompt: trust ${dep} once (preview with \`oats harness trust --dir '${dep}' --harness codex --plan\`, then apply with \`oats harness trust --dir '${dep}' --harness codex\`; a nested Git boundary may still require operator inspection)`;
+  const claudeWarning = `the claude session will stop at its folder-trust prompt: trust ${dep} once (preview with \`oats harness trust --dir '${dep}' --harness claude --plan\`, then apply with \`oats harness trust --dir '${dep}' --harness claude\`; a nested Git boundary may still require operator inspection)`;
 
   // No trust anywhere: no override, and the spawn says the session will stop.
   let { r, meta } = await spawn("c1", "codex");

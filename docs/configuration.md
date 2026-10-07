@@ -93,8 +93,8 @@ launchPromptAnswers:
 
 `awebDevelopmentChannel` is a strict boolean; absent means `false`. Unknown keys
 are refused. `workspaceTrust` is unsupported: remove it and handle folder trust
-with the harness. Folder-trust automation is separate work in
-[oats#712](https://github.com/awebai/oats/issues/712); it is not enabled here.
+through the explicit [native trust command](harness-trust.md). Launch prompt
+consent does not authorize a native trust write.
 Each home key is an exact absolute canonical path, with no symlink alias,
 wildcard, dot segment, trailing separator, ancestor inheritance or soul-wide
 default. A home not yet created uses its resolved existing directory ancestor

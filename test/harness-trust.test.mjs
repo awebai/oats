@@ -76,9 +76,14 @@ test("codexTrustsRoot: the deployment root or an ancestor trusted in config.toml
 
 test("harnessTrustWarning: the exact sentence for an uncovered claude or codex home; null when covered or for pi", () => {
   assert.equal(harnessTrustWarning({ harness: "claude", root: "/dep", covered: false }),
-    "the claude session will stop at its folder-trust prompt: trust /dep once (run `claude` in /dep and accept its folder-trust prompt; one entry covers every instance home under it)");
+    "the claude session will stop at its folder-trust prompt: trust /dep once (preview with `oats harness trust --dir '/dep' --harness claude --plan`, then apply with `oats harness trust --dir '/dep' --harness claude`; a nested Git boundary may still require operator inspection)");
   assert.equal(harnessTrustWarning({ harness: "codex", root: "/dep", covered: false }),
-    "the codex session will stop at its folder-trust prompt: trust /dep once (run `codex` in /dep and choose \"Trust and continue\"; OATS then trusts each new home under it at launch)");
+    "the codex session will stop at its folder-trust prompt: trust /dep once (preview with `oats harness trust --dir '/dep' --harness codex --plan`, then apply with `oats harness trust --dir '/dep' --harness codex`; a nested Git boundary may still require operator inspection)");
   assert.equal(harnessTrustWarning({ harness: "claude", root: "/dep", covered: true }), null);
   assert.equal(harnessTrustWarning({ harness: "pi", root: "/dep", covered: false }), null);
+});
+
+test('harness trust remedy shell-quotes apostrophes without executing path content', () => {
+ const warning = harnessTrustWarning({ harness: 'claude', root: "/tmp/operator's deployment", covered: false });
+ assert.ok(warning.includes("--dir '/tmp/operator'\"'\"'s deployment' --harness claude --plan"));
 });
