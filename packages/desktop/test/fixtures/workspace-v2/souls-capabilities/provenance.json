@@ -1,14 +1,13 @@
 {
-  "source": "oats-desktop-developer-capabilities-used-by: a real capture from the kernel PR that adds souls-capabilities (OATS 0.44.2), run in its own tree with its test helpers: capture.mjs wrote the raw documents, import-capture.mjs these files",
-  "scenario": "The kernel PR's soulCapabilities fixture (test/desktop-facts.test.mjs): v2Deployment + packageRepo (acme.pkg v1.0.0, package soul keeper declaring acme-tool), workspace defaults knowledge notes, messaging chat, capabilities acme.ws, acme.off and acme-tool (package); dev declares acme.own, acme_z, acme.ws, turns acme.off off and sets knowledge: none. Extended for Desktop: dev also declares acme.private (a manifest with private: true); a member soul keeper (the package soul's bare name) declares acme.own; a soul off is disabled in oats-local.yaml (souls.disabled), so it is not spawnable and its capabilities are null.",
+  "source": "oats-desktop-developer-capabilities-used-by: a real capture of the kernel feature souls-capabilities (OATS 0.44.2, awebai/oats#745), run in an oats tree at main 2f8c60b9 (#745 merged) with its own test helpers: capture.mjs wrote the raw documents, import-capture.mjs these files",
+  "scenario": "The kernel PR's soulCapabilities fixture (test/desktop-facts.test.mjs): v2Deployment + packageRepo (acme.pkg v1.0.0, package soul keeper declaring acme-tool), workspace defaults knowledge notes, messaging chat, capabilities acme.ws, acme.off and acme-tool (package); dev declares acme.own, acme_z, acme.ws, turns acme.off off and sets knowledge: none. Extended for Desktop: dev also declares acme.private (a manifest with private: true); a member soul keeper (the package soul's bare name) declares acme.own; a soul off is disabled in oats-local.yaml (souls.disabled), so it is not spawnable and its capabilities are null; scribe takes only the workspace defaults; quiet, spawnable, turns every default off and empties both slots, so its capabilities are [].",
   "redactions": [
-    "<base> (deployment scratch) \u2192 /fixture/base",
-    "<pkg> (package repo scratch) \u2192 /fixture/pkg"
+    "<base> (deployment scratch) → /fixture/base",
+    "<pkg> (package repo scratch) → /fixture/pkg"
   ],
   "kernel": {
     "pr": "awebai/oats#745",
-    "branch": "kernel/souls-capabilities",
-    "commit": "0ee79761331b518ee490eb9f266c4492ab794b40"
+    "commit": "2f8c60b9d64309e1108de52f449dd3ced237b89c"
   },
   "files": {
     "version": {
@@ -30,8 +29,8 @@
       ],
       "cwd": "<base>/deployment",
       "exit": 0,
-      "sourceSha256": "6b53bb99f5e3b49c60d424ba102d9fc035bb1ac78c7d6396912cdd84c8b60939",
-      "fixtureSha256": "0e14a88c1464bb509280ea62aa878ebfc8ac191103058f9ebb33d23adbce8e4f"
+      "sourceSha256": "f610407ff560bb57aa11c564384c88461cf61d611074fb408bc015520350d471",
+      "fixtureSha256": "111e20cfb68b3e86c125863213fd1f1cb9f13706a1a80e2cecb09b105546e1d7"
     },
     "capabilities": {
       "argv": [
@@ -41,8 +40,8 @@
       ],
       "cwd": "<base>/deployment",
       "exit": 0,
-      "sourceSha256": "e0831f99d182c97e453e854c19563b1b474f7612137ec6511f5019c6df6da256",
-      "fixtureSha256": "067b47bbaa39f23eafb27384e98749a5e8ab6bedc9975485f9d26828008236a1"
+      "sourceSha256": "431ce1283a78496549b6038cb2247c8530f8e6587bdfdca1e457e467643793c8",
+      "fixtureSha256": "055e5320dbf6c5f2f8443918870124f3d8ecfbc25aab6be2a681b97fdc06a98e"
     }
   }
 }

@@ -4,7 +4,8 @@
 // the join (workspace-catalog.mjs composes/soulsUsing), the list's cells and the capability page's section.
 // Fixture: workspace-v2/souls-capabilities, a REAL capture from the kernel PR (awebai/oats#745 @ 0ee79761,
 // provenance.json): member souls dev and keeper, the package soul acme.pkg/keeper (the member's bare name),
-// a private capability, workspace defaults, and the disabled soul off (capabilities null).
+// a private capability, workspace defaults (scribe takes only those), the disabled soul off (capabilities null)
+// and quiet, spawnable with every default turned off (capabilities []).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -51,6 +52,7 @@ test('soulsData keeps each soul\'s composition in the catalog\'s own keys; null 
   ]);
   assert.deepEqual(souls['acme.pkg/keeper'].capabilities.find(c => c.name === 'acme-tool'), { name: 'acme-tool', kind: 'package', package: 'acme.pkg', from: 'soul' }, 'a package soul too');
   assert.equal(souls.off.capabilities, null, 'disabled here: did not resolve');
+  assert.deepEqual([souls.quiet.spawnable, souls.quiet.capabilities], [true, []], 'spawnable and composes nothing: [] is accepted and kept, never refused or made null');
   assert.deepEqual(soulCapabilitiesOf([]), [], 'composes nothing (the contract\'s [])');
   // Every entry names exactly one catalog row (the contract): the join never guesses.
   for (const s of Object.values(souls)) for (const entry of s.capabilities || []) assert.equal(CATALOG.filter(row => composes(entry, row)).length, 1, `${s.key}: ${entry.name}`);
@@ -113,11 +115,12 @@ test('a soul\'s roster agent name is the kernel\'s (lib/workspace.mjs packageSou
 test('the join: name, kind and origin (repository or package); private rows the same; null never counted; a mismatch never', () => {
   const who = name => soulsUsing(SOULS, cap(name)).map(s => s.key);
   assert.deepEqual(who('acme.own'), ['dev', 'keeper'], 'member; off declares it too but did not resolve');
-  assert.deepEqual(who('acme-tool'), ['dev', 'keeper', 'acme.pkg/keeper'], 'package, the package soul included');
+  assert.deepEqual(who('acme-tool'), ['dev', 'keeper', 'acme.pkg/keeper', 'scribe'], 'package, the package soul included; quiet turned it off');
   assert.deepEqual(who('acme.private'), ['dev'], 'a repo-owned (private) row');
   assert.equal(cap('acme.private').private, true);
-  assert.deepEqual(who('acme.off'), ['keeper', 'acme.pkg/keeper'], 'dev turned the default off');
-  assert.deepEqual(who('notes'), ['keeper', 'acme.pkg/keeper'], 'dev emptied the knowledge slot');
+  assert.deepEqual(who('acme.off'), ['keeper', 'acme.pkg/keeper', 'scribe'], 'dev and quiet turned the default off');
+  assert.deepEqual(who('notes'), ['keeper', 'acme.pkg/keeper', 'scribe'], 'dev and quiet emptied the knowledge slot');
+  assert.ok(SOULS.filter(s => Array.isArray(s.capabilities) && !s.capabilities.length).every(s => !CATALOG.some(row => soulsUsing([s], row).length)), 'quiet ([]) uses nothing');
   assert.equal(composes({ name: 'acme.own', kind: 'member', repoKey: 'local//fixture/base/remotes/other.git', from: 'soul' }, cap('acme.own')), false, 'another repository');
   assert.equal(composes({ name: 'acme-tool', kind: 'package', package: 'oats.okf', from: 'soul' }, cap('acme-tool')), false, 'another package');
   assert.equal(composes({ name: 'acme-tool', kind: 'member', repoKey: REPO, from: 'soul' }, cap('acme-tool')), false, 'another kind');
@@ -148,8 +151,10 @@ test('the list\'s "Used by" with the feature: the souls whose composition includ
   renderCapabilities(u.$('.caps'), { rows: CATALOG, status: null, instances: INSTANCES, souls: SOULS, composition: true, onOpen() {} });
   assert.equal(count(u, 'acme.own').textContent, '2 souls'); assert.equal(count(u, 'acme.own').title, 'Used by dev, keeper');
   assert.equal(u.$$('.catalog-row[data-capability="acme.own"] .catalog-used-marks .identity-mark').length, 2);
-  assert.equal(count(u, 'acme-tool').textContent, '3 souls'); assert.equal(count(u, 'acme-tool').title, 'Used by dev, keeper, acme.pkg/keeper', 'a package soul by its key');
-  assert.equal(count(u, 'acme.ws').textContent, '3 souls', 'no live instance needed');
+  // Four souls compose acme-tool: the count and title name all four, the marks stop at three.
+  assert.equal(count(u, 'acme-tool').textContent, '4 souls'); assert.equal(count(u, 'acme-tool').title, 'Used by dev, keeper, acme.pkg/keeper, scribe', 'a package soul by its key');
+  assert.equal(u.$$('.catalog-row[data-capability="acme-tool"] .catalog-used-marks .identity-mark').length, 3, 'up to three marks');
+  assert.equal(count(u, 'acme.ws').textContent, '4 souls', 'no live instance needed');
   // Without dev, what only dev composes is used by nobody.
   renderCapabilities(u.$('.caps'), { rows: CATALOG, status: null, instances: INSTANCES, souls: SOULS.filter(s => s.key !== 'dev'), composition: true, onOpen() {} });
   assert.equal(count(u, 'acme_z').textContent, 'Not used', 'dev\'s live instance recorded it, but no listed soul composes it');
@@ -186,7 +191,7 @@ test('every section passes the composition through (Repo owned and Packages too)
   const sections = capabilitySections(CATALOG);
   assert.deepEqual([sections.repo.map(r => r.name), sections.packages.map(r => r.name)], [['acme.private'], ['acme-tool']]);
   renderCapabilitySections(u.$('.caps'), { sections, shown: sections.workspace, filterHost: null, privateListed: true, status: null, instances: [], souls: SOULS, composition: true });
-  assert.deepEqual([count(u, 'acme.own').textContent, count(u, 'acme.private').textContent, count(u, 'acme-tool').textContent], ['2 souls', '1 soul', '3 souls']);
+  assert.deepEqual([count(u, 'acme.own').textContent, count(u, 'acme.private').textContent, count(u, 'acme-tool').textContent], ['2 souls', '1 soul', '4 souls']);
 });
 
 const page = (t, opts) => {
@@ -199,18 +204,18 @@ const page = (t, opts) => {
 
 test('the page\'s "Used by": one row per soul whose composition includes it, with that soul\'s live instances carrying it', t => {
   const { section, rows, lines, opened } = page(t, { row: cap('acme-tool') });
-  assert.match(section.querySelector('.page-section-title').textContent, /3 souls/);
+  assert.match(section.querySelector('.page-section-title').textContent, /4 souls/);
   // dev: two here (one on an older version; the one under another agents root is not this deployment's). The member
-  // keeper's instance never recorded acme-tool: 0. The package keeper's instance is acme-pkg--keeper: 1.
-  assert.deepEqual(rows(), [['dev', '2 · 1 on an older version'], ['keeper', '0'], ['keeper', '1']]);
+  // keeper's instance never recorded acme-tool: 0. The package keeper's instance is acme-pkg--keeper: 1. scribe runs none.
+  assert.deepEqual(rows(), [['dev', '2 · 1 on an older version'], ['keeper', '0'], ['keeper', '1'], ['scribe', '0']]);
   // Two souls named keeper: the visible name is bare, the tooltip and focus key are the soul's key.
-  assert.deepEqual(lines().map(r => [r.title, r.dataset.focusKey]), [['Open dev', `used:dev:${ROOT}`], ['Open keeper', `used:keeper:${ROOT}`], ['Open acme.pkg/keeper', `used:acme.pkg/keeper:${ROOT}`]]);
+  assert.deepEqual(lines().map(r => [r.title, r.dataset.focusKey]), [['Open dev', `used:dev:${ROOT}`], ['Open keeper', `used:keeper:${ROOT}`], ['Open acme.pkg/keeper', `used:acme.pkg/keeper:${ROOT}`], ['Open scribe', `used:scribe:${ROOT}`]]);
   lines()[2].click();
   assert.deepEqual([opened[0].key, opened[0].name, opened[0].agentsRoot], ['acme.pkg/keeper', 'keeper', ROOT], 'opens the soul by its key');
 });
 
 test('the page counts "0" instances for a soul that composes it with none running it, says none on a good read, "—" with the reason otherwise', t => {
-  assert.deepEqual(page(t, { row: cap('notes') }).rows(), [['keeper', '0'], ['keeper', '0']]);
+  assert.deepEqual(page(t, { row: cap('notes') }).rows(), [['keeper', '0'], ['keeper', '0'], ['scribe', '0']]);
   const souls = SOULS.filter(s => s.key !== 'dev');
   const none = page(t, { row: cap('acme_z'), souls });
   assert.equal(none.rows().length, 0); assert.match(none.section.textContent, /No soul here includes it\./); assert.match(none.section.querySelector('.page-section-title').textContent, /0 souls/);

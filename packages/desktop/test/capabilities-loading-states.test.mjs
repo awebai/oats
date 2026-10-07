@@ -270,11 +270,11 @@ test('souls-derived "Used by" waits for a settled good souls read: "—" with th
   const souls = COMPOSED.filter(s => s.key !== 'dev'); // acme_z: only dev composes it
   u.rosters[0].resolve({ agents: souls }); await settle(); await u.resolveRead(0, okRead({ capabilities: COMPOSED_CATALOG })); await u.tab('capabilities');
   const cell = name => u.q(`.catalog-row[data-capability="${name}"] .catalog-used-count`);
-  assert.equal(cell('acme-tool').textContent, '2 souls', 'from the composition: no instance needed');
+  assert.equal(cell('acme-tool').textContent, '3 souls', 'from the composition: no instance needed');
   assert.equal(cell('acme_z').textContent, 'Not used', 'a good read: the claim');
   u.poll(); await tick(); u.rosters[1].reject(new Error('down')); await settle();
   assert.equal(cell('acme_z').textContent, '—'); assert.equal(cell('acme_z').getAttribute('aria-description'), SOULS_STALE_TITLE);
-  assert.equal(cell('acme-tool').textContent, '2 souls', 'the held list\'s souls stay');
+  assert.equal(cell('acme-tool').textContent, '3 souls', 'the held list\'s souls stay');
   u.q('.catalog-row[data-capability="acme_z"]').click(); await settle();
   assert.equal(pageOf(u).querySelector('.used-unknown').getAttribute('aria-description'), SOULS_STALE_TITLE, 'the page makes no claim either');
   u.poll(); await tick(); u.rosters[2].resolve({ agents: souls }); await settle();
@@ -287,7 +287,7 @@ test('the page opens a package soul from "Used by" by its key, never the member 
   await u.tab('capabilities');
   u.q('.catalog-row[data-capability="acme-tool"]').click(); await settle();
   const rows = [...pageOf(u).querySelectorAll('.used-row:not(.head)')];
-  assert.deepEqual(rows.map(r => [r.querySelector('.used-name').textContent, r.title]), [['dev', 'Open dev'], ['keeper', 'Open keeper'], ['keeper', 'Open acme.pkg/keeper']]);
+  assert.deepEqual(rows.map(r => [r.querySelector('.used-name').textContent, r.title]), [['dev', 'Open dev'], ['keeper', 'Open keeper'], ['keeper', 'Open acme.pkg/keeper'], ['scribe', 'Open scribe']]);
   rows[2].click(); await settle();
   assert.equal(pageOf(u), null, 'the capability page closed');
   const soulPage = u.q('.workspace-soul-page');

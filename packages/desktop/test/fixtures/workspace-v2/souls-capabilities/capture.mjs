@@ -2,7 +2,9 @@
 // into OUT, with <base>/<pkg> placeholders for the scratch paths; import-capture.mjs then writes the fixture.
 // Scenario: the kernel's own soulCapabilities fixture (test/desktop-facts.test.mjs; helpers v2-deployment.mjs
 // and package-repo.mjs), extended for Desktop: a private (repo-owned) capability dev declares, a member soul
-// `keeper` sharing the package soul's bare name, and a soul disabled here (capabilities null).
+// `keeper` sharing the package soul's bare name, a soul disabled here (capabilities null), a soul taking only
+// the workspace defaults (scribe: four souls then compose each default) and a spawnable soul that turns every
+// default off (quiet: capabilities []).
 // Runs the kernel CLI in an isolated scratch deployment (no network, no operator state).
 // Usage: node capture.mjs KERNEL_TREE OUT_DIR   (KERNEL_TREE: an oats checkout at or after awebai/oats#745)
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
@@ -17,6 +19,8 @@ const fx = v2Deployment({
     dev: { soul: { knowledge: 'none', capabilities: { 'acme.own': { from: 'here' }, acme_z: { from: 'here' }, 'acme.ws': { from: 'here' }, 'acme.off': 'off', 'acme.private': { from: 'here' } } } },
     keeper: { soul: { capabilities: { 'acme.own': { from: 'here' } } } },
     off: { soul: { capabilities: { 'acme.own': { from: 'here' } } } },
+    scribe: {},
+    quiet: { soul: { knowledge: 'none', messaging: 'none', capabilities: { 'acme.ws': 'off', 'acme.off': 'off', 'acme-tool': 'off' } } },
   },
   capabilities: { ...Object.fromEntries(['acme.own', 'acme_z', 'acme.ws', 'acme.off'].map(id => [id, { manifest: {} }])),
     'acme.private': { manifest: { private: true } }, notes: { manifest: { layer: 'knowledge' } }, chat: { manifest: { layer: 'messaging' } } },

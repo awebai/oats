@@ -1,4 +1,4 @@
-// Import the souls-capabilities kernel capture (awebai/oats#745 @ 0ee79761): `oats version`, `oats souls`
+// Import the souls-capabilities kernel capture (capture.mjs; awebai/oats#745): `oats version`, `oats souls`
 // and `oats capabilities` from one deployment built with the kernel's own test helpers (provenance.json
 // `scenario`). <base>/<pkg> placeholders become absolute fixture paths. NEVER runs a CLI.
 // Usage: node import-capture.mjs CAPTURE_OUT_DIR KERNEL_COMMIT
@@ -12,7 +12,7 @@ const target = fileURLToPath(new URL('.', import.meta.url));
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const runs = JSON.parse(readFileSync(join(source, 'runs.json'), 'utf8'));
 const provenance = JSON.parse(readFileSync(join(target, 'provenance.json'), 'utf8'));
-provenance.kernel = { pr: 'awebai/oats#745', branch: 'kernel/souls-capabilities', commit };
+provenance.kernel = { pr: 'awebai/oats#745', commit }; // the oats tree capture.mjs ran in
 provenance.files = {};
 for (const run of runs) {
   const original = readFileSync(join(source, `${run.name}.json`));
