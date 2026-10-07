@@ -1176,8 +1176,8 @@ inspector fallback.
 
 There is no status bar under the editor groups. After the tabs the editor tab bar
 holds only the two split buttons (spec F). The instance panel has no tab-bar
-button: `panel.toggle` (default **Mod+Alt+B**, not terminal-allowlisted, so
-Ctrl+Alt+B stays with the program in a Linux/Windows terminal), the palette's
+button: `panel.toggle` (default **Mod+I**, not terminal-allowlisted, so
+Ctrl+I, the Tab byte, stays with the program in a Linux/Windows terminal), the palette's
 "Instance panel: show / hide" and the panel's own collapse/expand controls run
 it. **Focus mode**
 (`app.focusMode`: palette and a rebindable action, no default chord) hides the

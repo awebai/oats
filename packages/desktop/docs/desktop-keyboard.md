@@ -83,7 +83,7 @@ Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
 | Leave the terminal for the next region (`focus.leaveTerminal`) | ⇧⌘F6 | Ctrl+Shift+F6 | yes |
 | Sidebar (`sidebar.toggle`) | ⌘B | Ctrl+B | no (tmux prefix) |
 | Filter instances (`sidebar.focusFilter`) | ⌘F | Ctrl+F | no |
-| Instance panel (`panel.toggle`; no tab-bar button since spec F, the panel keeps its own collapse) | ⌥⌘B | Ctrl+Alt+B | no |
+| Instance panel (`panel.toggle`; no tab-bar button since spec F, the panel keeps its own collapse) | ⌘I | Ctrl+I | no (Ctrl+I is Tab) |
 | Theme picker (`app.themePicker`; also the theme button and **Theme: choose…**) | ⇧⌘Space | Ctrl+Shift+Space | yes |
 | Theme cycle: White, Solarized, Dark, This computer (`app.themeToggle`) | none | none | – (the palette keeps it) |
 | Keyboard shortcuts (`app.shortcuts`) | ⌘, | Ctrl+, | no |
