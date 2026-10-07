@@ -1236,16 +1236,21 @@ function harnessTrustCmd() {
     return cmdFail("E_BAD_ARGS", `unsupported argument ${arg}; use oats harness trust --help`);
   }
   const context = workspaceContext(cmdFail);
+  const show = (result, log = console.log) => {
+    log(`${result.mode}: native harness trust for ${result.root}`);
+    for (const entry of result.entries) log(`${entry.harness}: ${entry.status} ${entry.file ?? "unresolved file"} ${JSON.stringify(entry.key)} ${JSON.stringify(entry.current)} -> ${JSON.stringify(entry.desired)} (${entry.beforeDigest ?? "missing"} -> ${entry.afterDigest ?? "unknown/absent"})`);
+    if (result.audit) log(`audit: ${result.audit.status} ${result.audit.path} ${result.audit.operationId}`);
+    for (const warning of result.warnings) log(`warning: ${warning}`);
+    if (result.reason) log(`reason: ${result.reason}; native configuration may have changed: ${result.mayHaveChanged}`);
+  };
   try {
     const result = harnessTrust(context.deploymentDir, { harness: flag("harness") ?? "all", plan: args.includes("--plan") });
     if (JSON_MODE) jsonOk(result);
-    else {
-      console.log(`${result.mode}: native harness trust for ${result.root}`);
-      for (const entry of result.entries) console.log(`${entry.harness}: ${entry.status} ${entry.file} ${JSON.stringify(entry.key)} ${JSON.stringify(entry.current)} -> ${JSON.stringify(entry.desired)} (${entry.beforeDigest ?? "missing"} -> ${entry.afterDigest})`);
-      if (result.audit) console.log(`audit: ${result.audit.status} ${result.audit.path} ${result.audit.operationId}`);
-      for (const warning of result.warnings) console.log(`warning: ${warning}`);
-    }
-  } catch (e) { cmdFail(e.code || "E_CONFIG_BROKEN", e.message, e.details); }
+    else show(result);
+  } catch (e) {
+    if (!JSON_MODE && e.details?.operation === "harness-trust") show(e.details, console.error);
+    cmdFail(e.code || "E_CONFIG_BROKEN", e.message, e.details);
+  }
 }
 
 /** The official catalog's package map (package-catalog.json; OATS_PACKAGE_CATALOG overrides). */

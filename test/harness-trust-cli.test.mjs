@@ -16,3 +16,9 @@ test('trust CLI refuses unknown flags, old apply spelling, unsupported harness a
  assert.equal(fs.existsSync(f.env.HOME),false);
 });
 test('trust CLI help documents bare apply and has no effects',t=>{const f=fixture(t);const r=f.run(['harness','trust','--help']);assert.equal(r.status,0);assert.match(r.value.result.usage.join('\n'),/bare command applies/);assert.equal(fs.existsSync(f.env.HOME),false);});
+
+test('human failure shows each outcome and uncertainty without native contents', t => {
+ const f=fixture(t);fs.mkdirSync(f.env.HOME);const file=join(f.env.HOME,'.claude.json');fs.writeFileSync(file,'{"privateSentinel":"never-print-this"}');fs.writeFileSync(file+'.oats-trust.lock','other operator');
+ const r=spawnSync(process.execPath,[CLI,'harness','trust','--harness','claude'],{cwd:f.deployment,env:f.env,encoding:'utf8'});
+ assert.notEqual(r.status,0);assert.match(r.stderr,/claude: not-attempted/);assert.match(r.stderr,/reason: locked; native configuration may have changed: false/);assert.match(r.stderr,/audit: incomplete/);assert.ok(!r.stderr.includes('never-print-this'));
+});

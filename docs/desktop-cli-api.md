@@ -3337,7 +3337,10 @@ It uses the existing success/error JSON envelope. Result:
 Entry statuses are `change|unchanged|refused|applied|failed|incomplete|not-attempted`.
 `current` contains only the known trust scalar, or null when missing. Codex's key
 ends in `trust_level` and its desired value is `trusted`. Digests are raw-byte
-SHA256 hex; missing files have null beforeDigest. Apply's audit is
+SHA256 hex; missing files have null beforeDigest. Plan and unattempted entries
+carry the candidate afterDigest. Failed/incomplete attempted entries carry the
+last observed digest, or null for an absent/unverifiable file (a warning marks
+unverifiable observations). The intent retains the candidate digest. Apply's audit is
 `{path,operationId,status:"recorded"|"incomplete"}`. Override provenance is conveyed
 in warnings, without native configuration contents.
 

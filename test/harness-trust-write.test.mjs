@@ -88,6 +88,8 @@ test('native temp write, fsync and rename failures retain checked evidence and c
   assert.deepEqual(fs.readdirSync(env.HOME),[],stage);
   const rows=fs.readFileSync(join(root,'.agents/harness-trust.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
   assert.deepEqual(rows.map(r=>r.status),['planned',stage==='rename'?'incomplete':'failed']);
+  assert.equal(rows[1].afterDigest,null,'failed replacement did not create the proposed bytes');
+  assert.match(rows[0].afterDigest,/^[a-f0-9]{64}$/,'intent retains candidate digest');
   assert.deepEqual(fs.readdirSync(join(root,'.agents')),['harness-trust.jsonl']);
  }
 });
@@ -116,4 +118,21 @@ test('same-byte inode replacement is a conflict, never silently rebased', t => {
  const {root,env}=fixture(t);fs.mkdirSync(env.HOME);const file=join(env.HOME,'.claude.json');fs.writeFileSync(file,'{}');
  assert.throws(()=>harnessTrust(root,{env,harness:'claude',checkpoint(name){if(name==='before-replace'){fs.writeFileSync(file+'.external','{}');fs.renameSync(file+'.external',file);}}}),e=>e.details.reason==='changed'&&!e.details.mayHaveChanged);
  assert.equal(fs.readFileSync(file,'utf8'),'{}');assert.deepEqual(fs.readdirSync(env.HOME),['.claude.json']);
+});
+
+test('audit replacement after fsync cannot be reported as a checked durable row', async t => {
+ const mutableFs=(await import('node:fs')).default;
+ const {syncBuiltinESMExports}=await import('node:module');
+ for(const targetAppend of [1,2]) {
+  const {root,env}=fixture(t);const audit=join(root,'.agents/harness-trust.jsonl');let appends=0;
+  const originalSync=mutableFs.fsyncSync;
+  t.mock.method(mutableFs,'fsyncSync',fd=>{
+   originalSync(fd);
+   if(fs.existsSync(audit)&&fs.fstatSync(fd).ino===fs.statSync(audit).ino&&++appends===targetAppend){fs.writeFileSync(audit+'.external','{}\n');fs.renameSync(audit+'.external',audit);}
+  });syncBuiltinESMExports();
+  try {assert.throws(()=>harnessTrust(root,{env,harness:'claude'}),e=>e.details.reason==='audit'&&e.details.audit.status==='incomplete'&&e.details.mayHaveChanged===(targetAppend===2));}
+  finally {t.mock.restoreAll();syncBuiltinESMExports();}
+  assert.equal(fs.existsSync(join(env.HOME,'.claude.json')),targetAppend===2);
+  assert.equal(fs.readFileSync(audit,'utf8'),'{}\n');
+ }
 });
