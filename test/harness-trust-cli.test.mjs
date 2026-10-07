@@ -14,6 +14,7 @@ test('trust CLI plan, bare apply and deployment context from nested directory',t
 test('trust CLI refuses unknown flags, old apply spelling, unsupported harness and positionals',t=>{
  const f=fixture(t);for(const args of [['--apply'],['--server','x'],['--harness','pi'],['oops'],['--plan=false'],['--harness'],['--plan','--plan']]) {const r=f.run(['harness','trust',...args]);assert.notEqual(r.status,0);assert.equal(r.value.error.code,'E_BAD_ARGS',JSON.stringify(r.value));}
  assert.equal(fs.existsSync(f.env.HOME),false);
+ const outside=f.run(['harness','trust','--harness','pi'],f.base);assert.equal(outside.value.error.code,'E_BAD_ARGS');
 });
 test('trust CLI help documents bare apply and has no effects',t=>{const f=fixture(t);const r=f.run(['harness','trust','--help']);assert.equal(r.status,0);assert.match(r.value.result.usage.join('\n'),/bare command applies/);assert.equal(fs.existsSync(f.env.HOME),false);});
 

@@ -16,7 +16,7 @@ test('plan creates nothing; apply writes exact leaves and durable audit; repeat 
 });
 test('all preflights before writes and refuses unsupported second file',t=>{
  const {root,env}=fixture(t);fs.mkdirSync(join(env.HOME,'.codex'),{recursive:true});fs.writeFileSync(join(env.HOME,'.codex/config.toml'),'[[unsupported]]\nx=1\n');
- assert.throws(()=>harnessTrust(root,{env}),e=>e.code==='E_CONFIG_BROKEN');assert.equal(fs.existsSync(join(env.HOME,'.claude.json')),false);
+ assert.throws(()=>harnessTrust(root,{env}),e=>e.code==='E_CONFIG_BROKEN'&&e.details.mode==='apply');assert.equal(fs.existsSync(join(env.HOME,'.claude.json')),false);
 });
 test('audit failure before replacement sends no write; after replacement retains actual change',t=>{
  const {root,env}=fixture(t);

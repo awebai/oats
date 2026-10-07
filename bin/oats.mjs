@@ -1235,6 +1235,8 @@ function harnessTrustCmd() {
     if (["--dir", "--harness"].includes(arg) && args[i + 1] && !args[i + 1].startsWith("-")) { i++; continue; }
     return cmdFail("E_BAD_ARGS", `unsupported argument ${arg}; use oats harness trust --help`);
   }
+  const selected = flag("harness") ?? "all";
+  if (!["claude", "codex", "all"].includes(selected)) return cmdFail("E_BAD_ARGS", "--harness must be claude, codex, or all");
   const context = workspaceContext(cmdFail);
   const show = (result, log = console.log) => {
     log(`${result.mode}: native harness trust for ${result.root}`);
@@ -1244,7 +1246,7 @@ function harnessTrustCmd() {
     if (result.reason) log(`reason: ${result.reason}; native configuration may have changed: ${result.mayHaveChanged}`);
   };
   try {
-    const result = harnessTrust(context.deploymentDir, { harness: flag("harness") ?? "all", plan: args.includes("--plan") });
+    const result = harnessTrust(context.deploymentDir, { harness: selected, plan: args.includes("--plan") });
     if (JSON_MODE) jsonOk(result);
     else show(result);
   } catch (e) {
