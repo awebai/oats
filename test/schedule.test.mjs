@@ -632,7 +632,8 @@ test("oats doctor warns about every unresolved attempt in the deployment and the
   const env = { ...process.env, OATS_HOME_DIR: process.env.OATS_HOME_DIR };
   const doctor = (ws, ...a) => execFileSync(process.execPath, [bin, "doctor", ws, ...a], { encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] });
   const clean = workspace();
-  assert.equal(JSON.parse(doctor(clean, "--json")).problems, undefined, "nothing unresolved, nothing reported");
+  // Operator coverage (#671) warnings are their own; no schedule problem is reported.
+  assert.deepEqual((JSON.parse(doctor(clean, "--json")).problems ?? []).filter((p) => !p.code.startsWith("operator-")), [], "nothing unresolved, nothing reported");
   const ws = workspace();
   const src = home(ws, "dev-src");
   const reg = { ...S.readRegistry(), maxConcurrent: 4 };

@@ -467,6 +467,8 @@ naming `oats sync`; team refusals go under `configured` instead.
 **`configured`.** Producer `capability manifest`: each manifest `requires`
 command, `evidence: {command}`, the manifest's `install` hint as remedy.
 Producer `team model`: the soul's [team readiness items](#team-readiness-items).
+Producer `operator coverage` (0.43.4): the workspace's and the soul's teams'
+[operator coverage items](#operator-coverage-items), warnings only.
 
 **`member`** (producer `workspace discovery`): the soul's repository is a
 confirmed member (`evidence: {repoKey, workspace, commit}`); `fail` when not
@@ -1323,6 +1325,77 @@ teams/defaultTeam (localTeams: true) couldn't be checked: this deployment
 hasn't observed its workspace yet; run oats sync"`. A removed key in
 `oats-local.yaml` makes doctor answer that refusal, as for any unreadable
 local file.
+
+<a id="operator-coverage-items"></a>
+### Operator coverage items
+
+(0.43.4, [#671](https://github.com/awebai/oats/issues/671)) Every workspace
+needs an operator: a soul that composes `oats.setup`. A soul the workspace
+offers **covers** it when all of these hold on this machine:
+
+- it is a confirmed member's soul, a locked package soul or an external soul;
+- it is not in `souls.disabled`;
+- it resolves as a spawn would;
+- its modules include `oats.setup`;
+- it empties no layer slot the workspace fills, so it keeps the workspace's
+  core, messaging and knowledge.
+
+It covers a team when that team is among its resolved teams. Detection is by
+composition only: a soul's name never counts, and there is no role marker. An
+eligible soul is not a launched or authorized seat. These are warnings: they
+never refuse anything, and nothing is spawned.
+
+`oats readiness` lists them under `checks.configured` with `producer:
+"operator coverage"`, `required: false`, `code`, `reason` and `remedy`. Team
+items cover the subject's own teams only.
+
+| Code | Subject | Status | Keys | When |
+|---|---|---|---|---|
+| `operator-soul-missing` | `operator` | `fail` | `evidence.excluded` | no soul the workspace offers composes `oats.setup` |
+| `operator-team-uncovered` | `team <label>` | `fail` | `label` | no such soul is eligible for one of the subject's teams |
+| `operator-coverage-unknown` | `operator` | `unknown` | | a question is still open and a source could not be read; it never asserts absence |
+
+A source could not be read when:
+
+- the workspace itself could not be read;
+- only its member view could (an unreadable host);
+- discovery dropped a member as `cannot-read`;
+- a soul file or listing could not be read;
+- a resolution hit `E_REMOTE_UNREADABLE`.
+
+A covering soul that was found is still reported. Any other refusal belongs to
+the soul, since a spawn would meet it too, so that soul does not cover.
+
+`evidence.excluded` lists the souls that cannot cover although they are
+relevant, each as `{soul, code}`:
+
+- a soul whose `soul.yaml` names `oats.setup` but that is disabled
+  (`E_SOUL_DISABLED`), ambiguous (`E_SOUL_AMBIGUOUS`) or refused (the
+  resolution's code);
+- a soul that composes `oats.setup` but empties a slot the workspace fills
+  (`slot-none`, with `slots`).
+
+Coverage that holds adds no item.
+
+`oats doctor` stays offline. It resolves the souls from this machine's cache
+only (no git process, no network) and checks the workspace and **every**
+declared team. It lists `operator-soul-missing` and `operator-team-uncovered`
+under `problems[]` as `{code, label?, message, remedy}` (text: `! <code>:
+<message>`, then the remedy).
+
+Doctor reads the resolutions that `oats souls`, readiness and spawn keep in the
+cache. `oats sync` alone does not resolve souls. When the cache cannot answer,
+doctor adds no problem. Instead it adds one `information[]` line, starting
+`operator-coverage-unknown:`, whose remedy is `oats sync`, then `oats souls`.
+The cache cannot answer when:
+
+- the machine never synced;
+- the cache was pruned;
+- a soul was not yet resolved here;
+- the deployment uses a configured `standalone:` view, whose membership read
+  is not cached. There, ask readiness.
+
+Any other error, such as an invalid lock, is named as itself.
 
 <a id="soul-launch-preferences-feature-launch-preference-oats-0300"></a>
 ## Launch preferences

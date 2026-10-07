@@ -252,6 +252,40 @@ function doctorLocalTeams(local) {
     information: !standalone && file === null && declared ? ["local-teams-closed: whether oats-workspace.yaml allows oats-local.yaml teams/defaultTeam (localTeams: true) couldn't be checked: this deployment hasn't observed its workspace yet; run oats sync"] : [] };
 }
 
+/** Operator coverage in doctor (#671), OFFLINE like the rest of doctor: the souls this workspace offers,
+ *  discovered and resolved from this machine's cache only (cacheOnlyRemote: no git process, no network),
+ *  for the workspace and EVERY declared team. Warnings in problems; when the cache cannot answer, one
+ *  information line that says coverage is unknown, never that the operator is missing.
+ *  → { problems: [{ code, message, remedy, label? }], information: [string] } */
+async function doctorOperator(ws) {
+  const { operatorCoverage, operatorProblems, cacheOnlyRemote } = await import("../lib/operator-coverage.mjs");
+  const { discoverOrStandalone } = await import("../lib/instance-resolution.mjs");
+  const deployment = dirname(ws.local.path);
+  const local = ws.local.value;
+  const remote = cacheOnlyRemote();
+  const remoteOptions = remoteOptionsFromEnv();
+  // Doctor reads the resolutions `oats souls` (and readiness, spawn) leave in the cache; `oats sync` alone
+  // does not resolve souls. Online, `oats readiness --soul <soul>` answers the same question.
+  const CACHE_REMEDY = "oats sync, then oats souls (it resolves every soul; doctor reads what that keeps), or online: oats readiness --soul <soul>";
+  let coverage, workspace = null, unknownRemedy = CACHE_REMEDY;
+  try {
+    const lock = readLockIfPresent(deployment);
+    const discovery = await discoverOrStandalone(local, { lock, deployment, remoteOptions, remote });
+    workspace = discovery.workspace?.name ?? null;
+    const labels = [...teamModel(discovery.standalone === true ? null : discovery.workspace, local, { workspaceKey: discovery.key ?? null }).labels.keys()].sort();
+    coverage = await operatorCoverage({ discovery, local, lock, teams: labels, remoteOptions, remote });
+  } catch (e) {
+    // A cache miss is the cache's; anything else (an invalid lock, which doctor reports above) is named as itself.
+    const missed = e?.code === "E_REMOTE_UNREADABLE";
+    coverage = { known: false, reason: missed ? `this machine's cache cannot answer (${e.message})` : `${e?.code ? `${e.code}: ` : ""}${e?.message ?? e}` };
+    if (!missed) unknownRemedy = "fix the error named here (doctor reports it), then run doctor again";
+  }
+  const found = operatorProblems(coverage, { workspace, unknownRemedy });
+  const unknown = found.find((p) => p.code === "operator-coverage-unknown");
+  if (unknown) return { problems: [], information: [`${unknown.code}: ${unknown.message}; ${unknown.remedy}`] };
+  return { problems: found.map(({ code, label, message, remedy }) => ({ code, ...(label ? { label } : {}), message, remedy })), information: [] };
+}
+
 /** Workspace-model v2 doctor data, OFFLINE: the deployment declaration found
  * walking up from ctx (oats-local.yaml) and the lock v3 beside it. Doctor never
  * goes to the network for this view (only `--soul`, which resolves the soul like a
@@ -619,12 +653,13 @@ async function doctorWorkspaceJson(ctx, soulName, ws) {
   const agentsRoot = join(dirname(ws.local.path), "agents");
   const localTeams = doctorLocalTeams(ws.local.value);
   const schedules = unresolvedScheduleAttempts(dirname(ws.local.path));
-  const problems = [...legacyLayoutProblems(agentsRoot), readableInstanceHomes(agentsRoot), ...localTeams.problems, ...schedules.problems].filter(Boolean);
+  const operator = await doctorOperator(ws);
+  const problems = [...legacyLayoutProblems(agentsRoot), readableInstanceHomes(agentsRoot), ...localTeams.problems, ...schedules.problems, ...operator.problems].filter(Boolean);
   return {
     schemaVersion: 1, workspaceApi: 2, context: ctx,
     workspace: { file: ws.local.path, ref: ws.local.workspace },
     workspaceError: ws.localError, lockFile: ws.lockFile, packages: ws.packages, lockError: ws.lockError,
-    information: [...(operationalKnowledgeNote(composition, soulName) ? [operationalKnowledgeNote(composition, soulName)] : []), ...localTeams.information, ...schedules.information],
+    information: [...(operationalKnowledgeNote(composition, soulName) ? [operationalKnowledgeNote(composition, soulName)] : []), ...localTeams.information, ...schedules.information, ...operator.information],
     composedInstructions: composition?.text, instructionBlocks: composition?.blocks,
     ...(problems.length ? { problems } : {}),
   };
@@ -664,7 +699,9 @@ async function doctor(dir) {
   for (const p of localTeams.problems) console.log(`\n! ${p.code} (${p.condition}): ${p.message}`);
   const schedules = unresolvedScheduleAttempts(dirname(ws.local.path));
   for (const p of schedules.problems) console.log(`\n! ${p.code}: ${p.message}`);
-  for (const line of [...localTeams.information, ...schedules.information]) console.log(`\nINFO: ${line}`);
+  const operator = await doctorOperator(ws);
+  for (const p of operator.problems) console.log(`\n! ${p.code}: ${p.message}\n  ${p.remedy}`);
+  for (const line of [...localTeams.information, ...schedules.information, ...operator.information]) console.log(`\nINFO: ${line}`);
   if (soulName) {
     const information = operationalKnowledgeNote(composition, soulName);
     if (information) console.log(`\nINFO: ${information}`);

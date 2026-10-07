@@ -58,6 +58,7 @@ published to npm. Its developer docs are in
 | `schedule.mjs`, `schedule-host.mjs`, `triggers.mjs`, `automations.mjs` | schedules, triggers and the host timer |
 | `schedule-command.mjs`, `schedule-command-child.mjs` | synchronous scheduler adapter and asynchronous child supervisor: bounded output, TERM/KILL escalation and observed exit; no changes to synchronous tick/lock callbacks |
 | `operator-dispatch.mjs` | capability commands run from a deployment, and its module store |
+| `operator-coverage.mjs` | whether a soul the workspace offers composes `oats.setup`, for the workspace and each team (readiness and doctor warnings), and the cache-only remote offline doctor resolves through |
 | `instance-*.mjs` | inspection, lifecycle, events and Git views of an instance |
 | `tmux-config.mjs`, `session-*.mjs` | the tmux session backend and terminal input |
 | `login-environment.mjs` | the user's login environment a server OATS starts gets: the login shell's answer as one nonce-framed block on its stdout, bounded and accepted only whole ([execution targets](execution-targets.md#the-servers-start-environment)) |
