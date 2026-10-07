@@ -123,3 +123,45 @@ test('policy refusal after parent insertion but before dispatch restores anchor 
   assert.equal(readFileSync(anchorFile, 'utf8'), before);
   assert.equal(existsSync(home), false);
 });
+
+test('a concurrent anchor edit cannot skip window and scaffold compensation', async t => {
+  const name = 'changed-anchor';
+  const { fx, home, config, configFile } = setup(t, name);
+  config.launchPromptAnswers.homes[home].awebDevelopmentChannel = false;
+  writeFileSync(configFile, YAML.stringify(config));
+  const anchor = await fx.spawn('dev', { name: 'anchor', launchConfig: 'stub', launch: false });
+  const anchorFile = join(anchor.home, 'instance.json');
+  const wrapperDir = join(fx.base, 'tmux-wrapper'); mkdirSync(wrapperDir);
+  const actualTmux = execFileSync('/usr/bin/which', ['tmux'], { encoding: 'utf8' }).trim();
+  const marker = join(fx.base, 'allocated-target');
+  writeFileSync(join(wrapperDir, 'tmux'), `#!${process.execPath}
+import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+if (args.includes('set-option') && existsSync(${JSON.stringify(marker)})) process.exit(1);
+try {
+  const out = execFileSync(${JSON.stringify(actualTmux)}, args, {encoding:'utf8', timeout:3000, stdio:['ignore','pipe','pipe']});
+  if (args.includes('new-window')) {
+    const anchor = JSON.parse(readFileSync(${JSON.stringify(anchorFile)}, 'utf8'));
+    anchor.concurrentNote = 'preserve this edit';
+    writeFileSync(${JSON.stringify(anchorFile)}, JSON.stringify(anchor));
+    writeFileSync(${JSON.stringify(marker)}, JSON.stringify({socket:args[args.indexOf('-S')+1],windowId:out.trim()}));
+  }
+  process.stdout.write(out);
+} catch(e) { process.stderr.write(String(e.stderr ?? '')); process.exit(e.status ?? 1); }
+`);
+  chmodSync(join(wrapperDir, 'tmux'), 0o755);
+  const previousPath = process.env.PATH;
+  process.env.PATH = `${wrapperDir}:${previousPath}`;
+  let failure;
+  try {
+    await assert.rejects(fx.spawn('dev', { name, launchConfig: 'stub', launch: true, relativeTo: anchor.instance, relation: 'parent' }), e => { failure = e; return e.code === 'E_SPAWN_LAUNCH_FAILED'; });
+  } finally { process.env.PATH = previousPath; }
+  assert.equal(failure.details.unconfirmed, true);
+  assert.match(failure.message, /parent lineage could not be restored/);
+  assert.equal(metadata(anchor.home).concurrentNote, 'preserve this edit');
+  assert.equal(existsSync(home), false, 'scaffold compensation still runs');
+  const allocated = JSON.parse(readFileSync(marker, 'utf8'));
+  const remaining = execFileSync(actualTmux, ['-u', '-S', allocated.socket, 'list-windows', '-a', '-F', '#{window_id}'], {encoding:'utf8'}).trim().split('\n');
+  assert.ok(!remaining.includes(allocated.windowId), 'allocated window was removed');
+});
