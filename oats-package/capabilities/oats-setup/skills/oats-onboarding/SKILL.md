@@ -70,8 +70,11 @@ source or knowledge-base notes during execution. The audited aw 1.36.23
 evidence is version-specific. In published aw 1.36.24, external
 `--identity-home` is not supported for `team invite`, `id team remove-member`
 or `doctor local`; global help alone does not establish that allowlist.
-`id team accept-invite` remains supported. Use the provider's version-valid
-owner context; never clear identity selection to bypass a refusal.
+`id team accept-invite` remains supported. External-home invite issuance,
+certificate removal and required local-category diagnostics stay blocked
+pending a native owner-supported context; identity/registry diagnostics do
+not replace missing local-category evidence. Never clear identity selection
+to bypass a refusal. See the [corrected compatibility cards](https://github.com/awebai/oats/issues/709#issuecomment-6030635650).
 
 ## 2. Inventory and select reuse or new
 
@@ -170,7 +173,7 @@ redefined here. Execute the selected card in `/oats-aweb`, then use
 | LOCAL wider-team join/leave | `/oats-aweb`, instance teams; run in target home, eligibility from `/oats-teams` |
 | Remove a label | `/oats-teams`, configuration removal; it does not revoke an identity |
 | Retire an OATS seat | `/oats-operate`, retirement plan/apply under intake authority; provider owns grant/membership outcome |
-| Owner certificate removal or resident cleanup | `/oats-aweb`, native owner lifecycle; certificate removal, Cloud archival and replacement-preserving cleanup are distinct acts |
+| Owner certificate removal or resident cleanup | `/oats-aweb`, native owner lifecycle; external-home certificate removal is blocked pending supported owner context. Hosted archival with active certificates and generic GLOBAL cleanup remain owner-path pending; customer-specific cleanup is not a generic recipe |
 | Delivery and checkpointed restart/recovery | `/oats-aweb`, delivery verification/recovery; `/oats-operate` owns session lifecycle |
 
 Provider/native support boundaries (retain the named owner on a blocker):
@@ -273,7 +276,9 @@ or unread inbox status alone is insufficient. Record tested versions, source
 and composed provenance, route, exact message IDs, safe receipts, timings and
 any explicit holds. A future authorized timed acceptance measures pasted
 command to receiver-verified reply (target ≤30 seconds), without subtracting
-holds; report preparation, selection and recovery separately. This card does
+holds; report preparation, selection and recovery separately. Preserve an
+initial pushed `verification_stale` event separately from a later verified
+exact-message read; the latter does not rewrite the initial observation. This card does
 not authorize a disposable acceptance rehearsal. Keep private failure bodies local; report safe code and
 owner. **Next:** hand back that completion evidence to the task owner.
 **Error → remedy:** `E_SESSION_UNKNOWN` → verify the scaffold result and `H`
