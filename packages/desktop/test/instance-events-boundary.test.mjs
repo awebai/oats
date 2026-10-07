@@ -2,7 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createInstanceEventsBoundary } from '../server/instance-events.mjs';
 import { cliInstanceEvents } from '../instance-events-cli.mjs';
-import { context, target, request, data, envelope, deferred, tick } from './helpers/instance-events-fixture.mjs';
+import { context, target, request, data, envelope, deferred, tick, launchPromptEvent } from './helpers/instance-events-fixture.mjs';
+
+test('launch-prompt rows pass the CLI and server readers without target or signature payloads', async () => {
+  const read = createInstanceEventsBoundary({ invoke: (cli, opts) => cliInstanceEvents(cli, opts, {
+    env: {}, exec: (_bin, _argv, _exec, cb) => cb(null, JSON.stringify(envelope(data([launchPromptEvent()])))),
+  }) });
+  const out = await read(request(), context);
+  assert.equal(out.status, 'available');
+  assert.equal(out.data.events[0].kind, 'launch-prompt');
+  assert.deepEqual(out.data.events[0].data, { status: 'submitted', class: 'awebDevelopmentChannel',
+    consentSource: launchPromptEvent().data.consentSource });
+});
 
 test('actual admitted read reaches fixed adapter with exact target/birth and projects producer output', async () => {
   const c = context(); let seen;

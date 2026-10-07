@@ -6,7 +6,7 @@ import { createInstanceEventsView, instanceEventsCSS } from '../renderer/instanc
 import { eventsData } from '../renderer/instance-events-data.mjs';
 import { eventsFailure } from '../renderer/instance-events-contract.mjs';
 import { hostReason } from '../renderer/remote-address.mjs';
-import { cli, target, birth, data, event, deferred, tick } from './helpers/instance-events-fixture.mjs';
+import { cli, target, birth, data, event, deferred, tick, launchPromptEvent } from './helpers/instance-events-fixture.mjs';
 import { assertIsolatedDetail, MESSY, MESSY_LINE } from './helpers/detail-line.mjs';
 const view = (value = data(), t = target) => ({ instanceEventsViewApi: 1, status: 'available', target: structuredClone(t), data: eventsData(value, t), reason: null });
 function setup(t, invoke = async () => view()) {
@@ -23,6 +23,22 @@ function setup(t, invoke = async () => view()) {
     setRead: next => read = next, cliChange: () => { for (const fn of listeners) fn(); },
     connectionChange: () => { state.connection++; for (const fn of connections) fn(); }, listeners, connections };
 }
+test('launch-prompt view displays reported facts as text without adding an input action', async t => {
+  const u = setup(t, async () => view(data([launchPromptEvent(), event({ kind: 'launch-prompt',
+    data: { action: 'restore-geometry', status: 'failed', reason: '<b>partial pin rollback</b>' } })])));
+  await u.controller.read();
+  assert.equal(u.one('.events-rows strong').textContent, 'Launch prompt');
+  const facts = u.one('.events-rows');
+  assert.match(facts.textContent, /Reported outcomefailed/);
+  assert.match(facts.textContent, /Reported outcomesubmitted/);
+  assert.match(facts.textContent, /Prompt classawebDevelopmentChannel/);
+  assert.match(facts.textContent, /Launch actionrestore-geometry/);
+  assert.match(facts.textContent, /Consent source\/inert\//);
+  assert.match(facts.textContent, /Reported reason<b>partial pin rollback<\/b>/);
+  assert.equal(facts.querySelector('b'), null);
+  assert.equal(u.host.querySelectorAll('button').length, 1);
+  assert.match(u.summary.textContent, /Launch prompt/);
+});
 test('selected view issues zero mount/sync reads; explicit native button sends only qualified K7 POST', async t => {
   const u = setup(t); for (let n = 0; n < 5; n++) u.controller.sync(); assert.equal(u.calls.length, 0);
   const button = u.one('.events-load'); assert.equal(button.disabled, false); assert.equal(button.textContent, 'Load activity');

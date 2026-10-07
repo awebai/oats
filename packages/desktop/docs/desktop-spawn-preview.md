@@ -470,3 +470,25 @@ and K11 enrolment remain separate open contracts, not parity-complete. Qualifica
 uses inert CLI/HTTP/IPC/DOM fixtures and computed three-theme AA, not native GUI,
 model/auth/lifecycle acceptance. Full root gates belong to PR CI; no operator
 spawn/preview/signature fetch, install or restart is part of local testing.
+
+### Launch-prompt diagnostics
+
+An optional preview `launchPromptAnswers` reports the exact home's
+`awebDevelopmentChannel` boolean and `consentSource` (string or null). The dialog
+shows the development-channel confirmation or none, with available provenance.
+An older CLI omitting the field makes no policy claim. This is read-only policy,
+not observed input or readiness; workspace-trust prompt answering is not included.
+
+`E_SPAWN_INCOMPLETE` can carry additive `launchPrompts` diagnostics. The CLI,
+broker and renderer preserve its retained home and incomplete outcome even if
+these optional diagnostics are malformed. A bounded projection keeps blocked or
+incomplete status, submitted answer facts, and audit-write outcomes/paths; raw
+event rows and OS failure text do not cross this projection. Activity owns event
+rendering. Target fields are inspection data only, never terminal input authority.
+Unknown reason strings receive a generic inspection message.
+
+Both the dialog and background spawn notice show the reason and direct the
+operator to inspect the existing pane, then use `oats session start --home` for
+that home. No new spawn or key retry is offered. A submitted answer does not
+confirm readiness; empty answers after audit failure do not prove no input was
+sent. Result reads and repeated apply requests keep the same retained result.

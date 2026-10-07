@@ -11,12 +11,13 @@ const nullableDetail = (v, max) => v === null ? null : detail(v, max);
 export const EVENT_TITLES = Object.freeze({ spawned: 'Spawned', launched: 'Launched', restarted: 'Restarted', stopped: 'Stopped',
   'stop-refused': 'Stop refused', 'retire-planned': 'Retirement planned', retired: 'Retired',
   'worktree-retained': 'Worktree retained', 'worktree-removed': 'Worktree removed', 'branch-deleted': 'Branch deleted',
-  'child-spawn-refused': 'Child spawn refused', recomposed: 'Instructions recomposed', waiting: 'Waiting claim' });
+  'child-spawn-refused': 'Child spawn refused', 'launch-prompt': 'Launch prompt', recomposed: 'Instructions recomposed', waiting: 'Waiting claim' });
 const strings = {
   spawned: ['agent', 'work', 'branch', 'model', 'parentInstance', 'relation'], launched: ['backend', 'launchConfig'],
   restarted: ['phase', 'signal'], stopped: ['signal', 'state'], 'stop-refused': ['phase', 'signal', 'state'],
   'retire-planned': ['planRevision'], retired: ['agent', 'workRecovery'], 'worktree-retained': ['movedTo', 'branch', 'recordedBranch'],
   'worktree-removed': ['branch'], 'branch-deleted': ['branch'], 'child-spawn-refused': ['child', 'agent'], recomposed: ['previous', 'soulDir'],
+  'launch-prompt': ['status', 'class', 'action', 'consentSource'],
 };
 const numbers = { restarted: ['waitedMs'], stopped: ['waitedMs'], 'stop-refused': ['waitedMs'], 'retire-planned': ['children', 'dirty'], recomposed: ['blocks'] };
 const booleans = { spawned: ['launched'], retired: ['keepDir', 'self', 'quarantine'] };

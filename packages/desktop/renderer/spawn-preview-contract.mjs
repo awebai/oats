@@ -244,6 +244,13 @@ export function previewFailure(code, target = null, kernelMessage, kernelFix) {
  * preview-composed-from) why each is there (modulesOf); capabilities[], skills,
  * settings and the task are the kernel's business and are not projected. */
 const hex24 = v => typeof v === 'string' && /^[a-f0-9]{24}$/.test(v);
+/** Optional launch policy, not observed answers or readiness. Keep absence for
+ * older CLIs distinct from an explicit policy that answers no prompts. */
+function launchPromptAnswersOf(v) {
+  if (!record(v) || typeof v.awebDevelopmentChannel !== 'boolean'
+    || !(v.consentSource === null || safe(v.consentSource) && !!v.consentSource)) return null;
+  return { awebDevelopmentChannel: v.awebDevelopmentChannel, consentSource: v.consentSource };
+}
 export function previewData(v, expected, { composedFrom = false } = {}) {
   const t = previewTarget(expected);
   if (!t || !record(v) || v.spawnPreviewApi !== 2 || v.preview !== true || !record(v.subject)
@@ -268,6 +275,8 @@ export function previewData(v, expected, { composedFrom = false } = {}) {
   if (messaging === undefined || teams === undefined || modules === undefined || (Object.hasOwn(v, 'defaultTeam') && defaultTeam === undefined)) return null;
   // Launch preferences (0.30): the Launch with flags applied; its effective launch IS the preview's.
   const launch = Object.hasOwn(v, 'launch') ? launchOf(v.launch, PREVIEW_FROM) : undefined;
+  const launchPromptAnswers = Object.hasOwn(v, 'launchPromptAnswers') ? launchPromptAnswersOf(v.launchPromptAnswers) : undefined;
+  if (launchPromptAnswers === null) return null;
   // Only reports carry `problem`: a preview that would hit one refuses with the error instead.
   if (Object.hasOwn(v, 'launch') && (launch === undefined || launch.problem !== null || launch.effective.harness !== e.harness || launch.effective.model !== e.model
     || launch.effective.launchConfig !== e.launchConfig)) return null;
@@ -277,5 +286,6 @@ export function previewData(v, expected, { composedFrom = false } = {}) {
     launchConfig: e.launchConfig, yolo: e.yolo, backend: e.backend, team: v.team ?? null,
     backendStatus: { name: v.backendStatus.name, installed: v.backendStatus.installed, started: false },
     preflight: { status: v.preflight.status, budgetMs: v.preflight.budgetMs, elapsedMs: v.preflight.elapsedMs }, messaging, teams, modules,
-    ...(defaultTeam !== undefined ? { defaultTeam } : {}), ...(launch ? { launch } : {}) };
+    ...(defaultTeam !== undefined ? { defaultTeam } : {}), ...(launch ? { launch } : {}),
+    ...(launchPromptAnswers ? { launchPromptAnswers } : {}) };
 }

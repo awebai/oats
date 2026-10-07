@@ -188,3 +188,21 @@ test('wake projector rejects contradictions and safe receipt never leaks raw pro
   const preview = applyPreview(target), raw = creation(preview, { launch: { env: 'PRIVATE' }, attach: 'PRIVATE', task: 'PRIVATE', warnings: ['PRIVATE'] });
   assert.doesNotMatch(JSON.stringify(spawnCreationReceipt(raw, { target, preview })), /PRIVATE/);
 });
+
+test('retained launch outcomes survive broker and renderer projection; repeat never invokes again', async () => {
+  const { retained } = await import('./helpers/launch-prompt-fixture.mjs');
+  const { spawnApplyView } = await import('../renderer/spawn-apply-contract.mjs');
+  for (const status of ['blocked', 'incomplete', 'malformed']) {
+    const d = retained(applyPreview(target).decision, status);
+    if (status === 'malformed') { d.launchPrompts = null; d.target = {}; }
+    const f = fixture({ invoke: () => ({ started: true, envelope: { schemaVersion: 1, ok: false, error: { code: 'E_SPAWN_INCOMPLETE', details: d } } }) });
+    const p = await f.send(prepare()), r = await f.send({ action: 'apply', spawnRef: p.spawnRef });
+    assert.equal(r.status, 'incomplete'); assert.equal(r.receipt, null);
+    const view = spawnApplyView(r, { workspace: target.workspace });
+    assert.equal(view.status, 'incomplete'); assert.equal(view.incomplete.launchPrompts.status, status === 'malformed' ? 'unknown' : status);
+    assert.deepEqual(view.incomplete, r.incomplete, 'idempotent across HTTP/main/renderer projections');
+    assert.deepEqual((await f.send({ action: 'result', spawnRef: p.spawnRef })).incomplete, r.incomplete);
+    await f.send({ action: 'apply', spawnRef: p.spawnRef }); assert.equal(f.calls.length, 1);
+    assert.doesNotMatch(JSON.stringify(view), /PRIVATE/);
+  }
+});

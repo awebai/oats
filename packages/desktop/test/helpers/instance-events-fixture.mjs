@@ -7,6 +7,13 @@ export function context() { return { workspace: { id: 'ws', scope: '/inert/ws', 
   instances: [{ ...selector, home: target.home, createdAt: birth }] }; }
 export const event = (extra = {}) => ({ eventsApi: 2, instance: selector.instance, home: target.home, incarnation: birth,
   producer: 'kernel', kind: 'spawned', at: '2026-09-22T01:00:00.000Z', data: { agent: 'dev', work: 'worktree', launched: false }, ...extra });
+// The launch controller's audit shape; all identities and paths are inert.
+export const launchPromptEvent = (facts = {}) => event({ kind: 'launch-prompt', data: {
+  home: target.home, startId: 'fixture-launch', socket: 'inert', windowId: '@1', paneId: '%2', pid: 123,
+  consentSource: '/inert/ws/.oats/local.yaml#/launchPromptAnswers/homes/~1inert~1dev-a',
+  signatureId: 'fixture-aweb', signatureDigest: 'a'.repeat(64), version: '2.1.289', platform: 'darwin-arm64',
+  class: 'awebDevelopmentChannel', key: 'Enter', status: 'submitted', ...facts,
+} });
 export function data(events = [event()]) {
   const last = events.at(-1);
   return { eventsApi: 2, instance: selector.instance, home: target.home, incarnation: birth,

@@ -16,6 +16,7 @@
  * idempotency key). If the world moved, the dialog shows the new values and
  * asks again. An unknown outcome is checked on the same intent, never retried
  * under a new one. */
+import { retainedSpawnMessage } from './launch-prompt-outcome.mjs';
 import { harnessOf } from './harness-names.mjs';
 import { createSoulMark, createRuntimeBadge } from './identity-marks.mjs';
 import { distinguishingRootTags } from './instance-tree.mjs';
@@ -1126,6 +1127,13 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       if (data.defaultTeam) fact('Team', doc.createTextNode(`${data.defaultTeam.label} `), muted('(default)'));
       else if (data.defaultTeam === null && !(data.teams?.length)) fact('Team', muted('none'));
       else if (data.defaultTeam === undefined && typeof data.team === 'string' && data.team) fact('Team', data.team);
+      if (data.launchPromptAnswers) {
+        const policy = data.launchPromptAnswers;
+        fact('Launch prompts', policy.awebDevelopmentChannel
+          ? 'The launcher will answer the aweb development-channel confirmation for this home. This policy does not confirm readiness.'
+          : 'None. The launcher will not answer prompts for this home. This policy does not confirm readiness.');
+        if (policy.consentSource) fact('Prompt consent source', policy.consentSource);
+      }
       factsBody.append(facts);
     }
     // Core capabilities and Capabilities exist only when the preview carries `modules`; redrawn only when those change.
@@ -1344,7 +1352,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
         if (!delivered) { delivered = true; deploymentField?.remember(); await onCreated(view, () => current() && owner === mount); }
       } else if (phase === 'incomplete') {
         const problem = spawnProblem(view.reason, 'spawn');
-        setStatus(`${view.incomplete.instance} was created but didn’t finish starting. Open it from the instance list instead of spawning again.`, true, problem);
+        setStatus(retainedSpawnMessage(view.incomplete), true, problem);
       } else if (phase === 'pending') {
         setStatus('The spawn is still running. Check result again in a moment; nothing else was started.');
       } else if (phase === 'unknown') {

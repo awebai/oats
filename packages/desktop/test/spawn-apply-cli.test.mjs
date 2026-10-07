@@ -152,3 +152,25 @@ test('malformed typed refusals and non-string error codes resolve without a call
     assert.equal(result.started, true); assert.equal(result.envelope.error.code, typeof error.code === 'string' ? 'E_CLI_PROTOCOL' : 'E_CLI_FAILED'); assert.equal(f.removed.length, 1);
   }
 });
+
+test('retained launch-prompt details cross CLI projection without raw audit or OS text', async () => {
+  const { retained } = await import('./helpers/launch-prompt-fixture.mjs');
+  for (const status of ['blocked', 'incomplete']) {
+    const d = retained(data().decision, status);
+    const f = fixture({ exec: (_bin, _argv, _opts, done) => done(Error('incomplete'), JSON.stringify({ schemaVersion: 1, ok: false, error: { code: 'E_SPAWN_INCOMPLETE', details: d } })) });
+    const r = await cliSpawnApply(capable(), options(), f.io);
+    assert.equal(r.envelope.error.code, 'E_SPAWN_INCOMPLETE');
+    const out = r.envelope.error.details;
+    assert.equal(out.launchPrompts.status, status); assert.equal(out.launchPrompts.reason, d.launchPrompts.reason);
+    assert.deepEqual(out.launchPrompts.answers, d.launchPrompts.answers);
+    assert.deepEqual(out.target, d.target); assert.equal(out.parentLineageCommitted, true);
+    assert.deepEqual(out.launchPrompts.receipt[0].results.map(r => r.ok), [true, false]);
+    assert.doesNotMatch(JSON.stringify(out), /PRIVATE/);
+  }
+});
+test('malformed additive diagnostics do not erase retained CLI failure', async () => {
+  const d = { instance: data().instance, home: data().home, launched: false, launchPrompts: { status: 'completed', reason: 'PRIVATE' } };
+  const f = fixture({ exec: (_b, _a, _o, done) => done(null, JSON.stringify({ schemaVersion: 1, ok: false, error: { code: 'E_SPAWN_INCOMPLETE', details: d } })) });
+  const r = await cliSpawnApply(capable(), options(), f.io);
+  assert.equal(r.envelope.error.code, 'E_SPAWN_INCOMPLETE'); assert.equal(r.envelope.error.details.launchPrompts.status, 'unknown');
+});

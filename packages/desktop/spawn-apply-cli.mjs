@@ -1,6 +1,7 @@
 /** Private K6e transport. Only the server broker supplies an admitted immutable intent.
  * started is conservative dispatch evidence, NOT a creation/rollback receipt.
  * The broker must qualify a success receipt before exposing it or handing off. */
+import { retainedSpawnDetails } from './renderer/launch-prompt-outcome.mjs';
 import { execFile } from 'node:child_process';
 import { parseEnvelope, writeTaskFile } from './cli-adapter.mjs';
 import { absolute, record, previewTarget, choiceArgv } from './renderer/spawn-preview-contract.mjs';
@@ -19,7 +20,7 @@ function refusal(doc) {
     const d = doc.error?.details;
     if (!record(d) || !named(d.instance) || !absolute(d.home)
       || error.code === 'E_SPAWN_INCOMPLETE' && ![false, 'unknown'].includes(d.launched)) return failure('E_CLI_PROTOCOL', true);
-    details = { instance: d.instance, home: d.home, ...(error.code === 'E_SPAWN_INCOMPLETE' ? { launched: d.launched } : {}) };
+    details = error.code === 'E_SPAWN_INCOMPLETE' ? retainedSpawnDetails(d) : { instance: d.instance, home: d.home };
   }
   return { started: true, envelope: { schemaVersion: 1, ok: false, error: { ...error, ...(details ? { details } : {}) } } };
 }

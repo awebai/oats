@@ -1,6 +1,7 @@
 /** One backend-owned confirmed-spawn broker across all workspaces.
  * RAM custody only. No kernel imports, placement logic, persistent instructions,
  * implicit retry, name-based recovery, or mutation from result/prepare. */
+import { retainedSpawnDetails, LAUNCH_DIAGNOSTIC_BYTES } from '../renderer/launch-prompt-outcome.mjs';
 import { randomBytes } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { cliSpawnApply } from '../spawn-apply-cli.mjs';
@@ -62,7 +63,7 @@ export function createSpawnApplyBoundary({ read = spawnPreviewPrepareRequest, in
     if (!entry.ref) return denied('E_BUSY', entry);
     // Reserve bounded outcome storage before dispatch. A settled reply shares
     // this immutable preview internally; public responses are always cloned.
-    entry.bytes = byteSize(entry) + 3 * byteSize(preview.decision) + 2 * byteSize(entry.target) + 4096;
+    entry.bytes = byteSize(entry) + 3 * byteSize(preview.decision) + 2 * byteSize(entry.target) + 4096 + LAUNCH_DIAGNOSTIC_BYTES;
     if (usedBytes() + entry.bytes > 8 * 1024 * 1024) return denied('E_BUSY', entry);
     prepared.set(entry.ref, entry);
     return display(entry, 'prepared');
@@ -98,7 +99,7 @@ export function createSpawnApplyBoundary({ read = spawnPreviewPrepareRequest, in
     if (code === 'E_SPAWN_INCOMPLETE') {
       const d = envelope.error.details;
       if (d?.instance !== entry.preview.decision.instance || d?.home !== entry.preview.decision.home || ![false, 'unknown'].includes(d.launched)) return denied('E_OUTCOME_UNKNOWN', entry, 'unknown');
-      return { ...denied(code, entry, 'incomplete'), incomplete: { instance: d.instance, home: d.home, launched: d.launched } };
+      return { ...denied(code, entry, 'incomplete'), incomplete: retainedSpawnDetails(d) };
     }
     // A taken explicit name (spawn-name) refuses before any home is kept: the
     // confirmation is consumed and a fresh preview reports the taken name.
