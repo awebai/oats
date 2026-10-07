@@ -216,7 +216,7 @@ sent as text or on stdin, never as paths.
 | `okf harvest --instance <name>` | the saved home | `harvest` |
 | `schedule ...` | registered workspace | `schedule` |
 | `launch-config list\|set\|remove\|preview` | `--dir`, the instance's home, or the registered workspace | `launch-config` |
-| `inspect`, `operation run` | `--dir`, the instance's home, or the registered workspace | `operations` |
+| `inspect`, `operation run` | `--dir`, the instance's home, or the registered workspace | `operations`; `inspect --instructions` also `soul-composed-instructions` |
 | `readiness` | the instance's home, `--dir`, or the registered workspace | `readiness` (`readinessApi: 2`) |
 | `instance events` | the instance's home | `instance-events-2` (`eventsApi: 2`) |
 | `instance git`, `instance diff` | the instance's home; the Git runs there | `instance-git` (`instanceGitApi: 1`) |

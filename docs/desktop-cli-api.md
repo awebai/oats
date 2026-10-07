@@ -40,7 +40,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
              "team-model-3","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts","launch-preference",
              "preview-composed-from","observe-max-age","spawn-preview-max-age","launch-config-default","capability-show","capture-file",
              "workspace-identity","server-connect","capability-route","servers-per-workspace","operator-default-soul","waiting-on-you",
-             "automation-descriptions","souls-capabilities"],
+             "automation-descriptions","souls-capabilities","soul-composed-instructions"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
@@ -111,6 +111,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
 | `waiting-on-you` | the `waiting` event kind and the session boundary rule; `oats instance waiting` and `oats instance attention`; `waitingOnYou` (with `message`) on `oats status --json` instance rows, on `oats session inspect --json` and in the events read, OATS 0.40.0 ([Waiting on you](#waiting-on-you)) | `eventsApi: 2` |
 | `automation-descriptions` | a `description` on every trigger and schedule row, local or workspace, by one rule; `oats schedule update <id> --description=<text>` (the description only) and `oats trigger update <id> --description=<text>`; `--description=<text>` on `schedule add` and `trigger add`, OATS 0.43.0 ([Shared row fields](#automations-shared-rows)) | |
 | `souls-capabilities` | `capabilities` on `oats souls --json` rows: the capabilities each soul composes, keyed like `oats capabilities` rows, with `from`, OATS 0.45.0 ([`oats capabilities` and `oats souls`](#oats-capabilities---dir---json--capabilitiesapi-1--oats-souls---dir---json--soulsapi-1)) | |
+| `soul-composed-instructions` | `oats inspect --soul <soul> --instructions` and its `souls[].composedInstructions`: the AGENTS.md a spawn of the soul here would write, with the soul body and each composed block as ranges, OATS 0.46.0 ([`oats inspect`](#oats-inspect---home-----soul----dir----json--operationsapi-2)) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -323,7 +324,7 @@ A module's origin (`from`) is `{kind: "member", repoKey, commit}` or `{kind:
 ### `oats inspect`
 
 ```text
-oats inspect (--home <abs> | --soul <name> [--dir <d>]) [--max-age <s>] --json
+oats inspect (--home <abs> | --soul <name> [--dir <d>] [--instructions]) [--max-age <s>] --json
 ```
 
 An instance subject, abridged:
@@ -377,6 +378,35 @@ capabilities}`, each the soul.yaml section as written or `null`.
 `instructions` is `{file, text, truncated}` of the soul's `AGENTS.md`, or
 `null` before a spawn has copied the soul. `declarationProblems` holds
 `soul-declarations-unreadable` when soul.yaml does not parse.
+
+`composedInstructions` (feature `soul-composed-instructions`) is present only
+with `--instructions`, which takes a soul subject (`--home` is `E_BAD_ARGS`);
+without the flag the key is absent and nothing extra is composed. It is the
+AGENTS.md a spawn of this soul here with no flags would write, produced by
+spawn's own composition — the kernel blocks, then each capability's inject,
+materialized into a scratch home outside the deployment and removed. It is
+`{file: null, text, truncated, resolution, body, sources}`. `text` and
+`truncated` follow the 200,000-character cap of `instructions`; `resolution` is
+the resolution revision it was composed at. `body` is the soul's own AGENTS.md,
+`{start, end, truncated}`, and `body.start` is always 0. `sources` lists each
+block in text order like `instance.instructions.sources`, as `{source, file,
+start, end, truncated}`: `source` is the marker's (`kernel:instance-boundary`,
+`work-mode:<mode>`, `capability:<id>`). `file` is home-relative by design here
+— `.oats/modules/<id>/<inject>` for a capability, `null` for a kernel block —
+while `instance.instructions.sources[].file` is a host path: same key,
+different base. Ranges are `[start, end)` into `text` in JavaScript string
+units; `sources` is contiguous with `body` and with each other, with no
+overlaps (each part ends after the blank line that separates it from the
+next). A block's range includes its opening and closing marker lines. Ranges
+are clamped to `text`: a part cut by the cap has `truncated: true` and may lack
+its closing marker, and one wholly past the cap has `start == end ==
+text.length`. The text equals what the spawn writes except that capability
+markers' `src=` is home-relative. It is `null` when the soul resolves but
+cannot be composed here, with the kernel's code and sentence, naming
+`composedInstructions`, in `problems[]`. Routed with `--server <id>`, the flag
+travels to the host; a host whose probe does not advertise
+`soul-composed-instructions` is refused with `E_REMOTE_INCOMPATIBLE`, and
+nothing is sent.
 
 **Layers.** `id` is the capability filling the slot or `null`. `from`
 (feature `layers-from`) is `"soul"` or `"workspace"`, `null` for an empty slot

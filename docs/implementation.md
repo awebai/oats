@@ -53,7 +53,8 @@ published to npm. Its developer docs are in
 | `capability-show.mjs` | `oats capabilities show`: one catalog row's inject and skill files, read at its commit |
 | `materialize.mjs` | copying modules into a home and composing it |
 | `core.mjs` | spawn, retire, sessions, hooks, launch recipes, instance metadata |
-| `instruction-composition.mjs` | the generated `AGENTS.md` |
+| `instruction-composition.mjs` | the generated `AGENTS.md`; `renderInstructionParts` is the span-reporting renderer (`renderInstructionText` is its text) |
+| `soul-composition.mjs` | the instructions a spawn of a soul would write, composed without a spawn (kernel half + materialize into a scratch home): the one path behind `doctor --soul` and `inspect --soul --instructions` |
 | `teams.mjs`, `teams-verbs.mjs` | the team model and the `oats teams` verbs |
 | `schedule.mjs`, `schedule-host.mjs`, `triggers.mjs`, `automations.mjs` | schedules, triggers and the host timer |
 | `schedule-command.mjs`, `schedule-command-child.mjs` | synchronous scheduler adapter and asynchronous child supervisor: bounded output, TERM/KILL escalation and observed exit; no changes to synchronous tick/lock callbacks |

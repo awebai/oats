@@ -105,7 +105,10 @@ souls) is ordinary capability content: **`oats.core`** (package
 knowledge an onboarding expert needs. Neither is kernel magic; the kernel still
 composes its own instance-boundary and work-mode briefings, and the "You run
 on OATS" briefing is `oats.core`'s inject: a soul without `oats.core` gets no
-OATS operating instructions, and `oats doctor --soul` says so.
+OATS operating instructions, and `oats doctor --soul` says so. Its capability
+markers' `src=` is home-relative (`.oats/modules/<cap>/<inject>`), composed by
+the same path as `oats inspect --soul --instructions`; kernel markers keep the
+installed package's path.
 
 ## Instance anatomy
 
