@@ -677,12 +677,21 @@ same argument, given once). The ref is checked before anything is written.
 ### `oats sync`
 
 ```text
-oats sync [--dir <d>] --json
+oats sync [--dir <d>] [--plan] --json
 ```
 
 Discovers the workspace, confirms membership, resolves `packages:`, writes
 `oats-lock.json` (lockfileVersion 3), takes the automations snapshot and
 reports. It creates `agents/` if missing.
+
+`--plan` (0.44.0) previews: the same discovery, resolution and report, with
+`plan: true`, and nothing written (no lock, no `agents/`, no automations
+snapshot; the remote cache fills as any read fills it). `changes[]` is what a
+bare `oats sync` would apply, `workspace.lock` the lock it would write, and
+`automations` counts what it would snapshot. A flag or a positional `sync` does
+not read is refused with `E_BAD_ARGS` (`details: {flag}` or `{argument}`) before
+anything is read or written. A kernel before 0.44.0 ignores `--plan` and
+applies: gate `sync --plan` on `version` 0.44.0 or later, never by trying.
 
 ```json
 {"syncApi":1,"automations":{"triggers":3,"schedules":2,"problems":1,"takenAt":"2026-09-26T19:58:09.281Z"},
@@ -698,6 +707,7 @@ reports. It creates `agents/` if missing.
  "problems":[],"warnings":[]}
 ```
 
+- `plan`: `true` on a `--plan` answer, absent otherwise.
 - `automations`: counts from the snapshot this sync took.
 - `workspace.name` is `standalone:<repo>` on a standalone view.
 - `members[]`: `status` is `confirmed | not-listed | no-backlink |

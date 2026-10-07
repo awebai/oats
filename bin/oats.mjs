@@ -5,8 +5,8 @@
  *   oats doctor [dir] [--soul <s>] [--json] show the deployment; --soul: the instructions an instance of <s> would carry
  *   oats onboard [<dir>] --workspace <ref>  realize a workspace here (oats-local.yaml +
  *                                          agents/), then sync
- *   oats sync [--dir <d>] [--json]          discover the workspace, confirm membership,
- *                                          resolve packages, write the lock
+ *   oats sync [--dir <d>] [--plan] [--json] discover the workspace, confirm membership,
+ *                                          resolve packages, write the lock (--plan: write nothing)
  *   oats package add|remove ...            edit `packages:` in the workspace file
  *   oats workspace status                  membership table, packages
  *   oats capabilities | oats souls         every visible item of the workspace
@@ -34,7 +34,7 @@ import {
   FAILED_SPAWN_BRANCH_LEFT, RETIRE_DELETE_BRANCH_REFUSED,
 } from "../lib/core.mjs";
 import {
-  writeFileAtomic, LOCK_FILE, readLock, readLockIfPresent, writeLock, resolvePackages, memoizedRemote,
+  writeFileAtomic, LOCK_FILE, canonicalLock, readLock, readLockIfPresent, writeLock, resolvePackages, memoizedRemote,
   classifyPackageValue, parsePackageRequest } from "../lib/packages.mjs";
 import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, workspaceWarnings, memberRowByKey } from "../lib/workspace.mjs";
 import { discoveredTeamKeys, isTeamRefusal, localTeamsClosedProblem, recordedTeams, reportRows, soulKeyOf, soulTeams, teamKeyOf, teamModel } from "../lib/teams.mjs";
@@ -1350,8 +1350,10 @@ const APPROVAL_REMOVED = "package approval was removed; declaring a package in p
  * `packages:` against the lock (commit + integrity), write the lock. There is no approval step:
  * declaring a package in `packages:` is the trust decision (human decision 2026-09-24).
  * `bail` never returns (it exits the process with the caller's error shape).
+ * `plan` (#731, `oats sync --plan`): the same discovery, resolution and report, written nowhere —
+ * no lock, no agents/, no automations snapshot; `lockFile` is the lock a sync would write.
  * → { report, lock, discovery, items, lockFile, problems } */
-async function performSync(ctx, bail, { onDiscovered } = {}) {
+async function performSync(ctx, bail, { onDiscovered, plan = false } = {}) {
   if (args.includes("--approve")) return bail("E_BAD_ARGS", `--approve: ${APPROVAL_REMOVED}`, { flag: "--approve" });
   const catalog = catalogForSync(bail);
   const discovery = await discoverForCli(ctx, bail);
@@ -1371,8 +1373,9 @@ async function performSync(ctx, bail, { onDiscovered } = {}) {
     throw e;
   }
   const lock = resolved.lock;
-  let lockFile;
-  try { lockFile = writeLock(ctx.deploymentDir, lock); } catch (e) { return bail(e.code || "E_LOCK_SCHEMA", e.message, e.details); }
+  let lockFile = join(resolve(ctx.deploymentDir), LOCK_FILE);
+  // A plan validates the lock exactly as writeLock would (canonicalLock), so it never answers ok where the sync fails.
+  try { if (plan) canonicalLock(lock); else lockFile = writeLock(ctx.deploymentDir, lock); } catch (e) { return bail(e.code || "E_LOCK_SCHEMA", e.message, e.details); }
   // Package souls come from the lock: list what THIS sync locked, not what the previous lock held.
   if (discovery.standalone !== true) {
     let pkg;
@@ -1386,19 +1389,22 @@ async function performSync(ctx, bail, { onDiscovered } = {}) {
   }
   // The deployment's instance root: <deployment>/agents/ (findRoot's marker). A hand-written
   // oats-local.yaml + sync is a complete deployment; spawn must not answer E_NO_DEPLOYMENT after it.
-  try { mkdirSync(join(ctx.deploymentDir, "agents"), { recursive: true }); } catch { /* reported by spawn's E_NO_DEPLOYMENT remedy if it matters */ }
+  // A plan creates nothing: on a deployment that never synced, a schedule whose cwd is under agents/ is reported
+  // invalid by the plan and accepted by the sync that creates agents/ first (#731 review, accepted edge).
+  if (!plan) try { mkdirSync(join(ctx.deploymentDir, "agents"), { recursive: true }); } catch { /* reported by spawn's E_NO_DEPLOYMENT remedy if it matters */ }
   // Workspace automations (0.29.0): discovered with the members and the new lock (a trigger
   // template instantiates at the locked package commit), kept as the snapshot the host tick reads.
   let automations;
-  try { automations = await takeAutomationSnapshot(ctx, discovery, lock); }
+  try { automations = await takeAutomationSnapshot(ctx, discovery, lock, { write: !plan }); }
   catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details); throw e; }
   problems.push(...automations.problems);
   const members = memberRows(discovery);
   const packages = packageRows(lock);
   const changes = resolved.changes;
   const items = workspaceItems(discovery, lock, ctx.local, ctx.deploymentDir);
-  const report = { syncApi: 1, automations: automationCounts(automations), standalone: discovery.standalone === true || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, lock: lockFile }, members, packages, changes, problems, warnings: discovery.warnings ?? [] };
-  return { report, lock, discovery, items, lockFile, problems };
+  const snapshotDue = plan && automationSnapshotDue(ctx.deploymentDir, automations);
+  const report = { syncApi: 1, ...(plan ? { plan: true } : {}), automations: automationCounts(automations), standalone: discovery.standalone === true || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, lock: lockFile }, members, packages, changes, problems, warnings: discovery.warnings ?? [] };
+  return { report, lock, discovery, items, lockFile, problems, snapshotDue };
 }
 
 /** The one-line standalone explanation (decision 10). `standaloneReason` says WHY the view is
@@ -1424,7 +1430,8 @@ function printSyncReport(ctx, synced) {
   console.log(`packages   ${packages.map((p) => `${p.id} ${p.version} ✓ (@ ${short(p.commit)})`).join("   ") || "(none)"}`);
   const changed = changes.filter((c) => c.to !== null && c.from !== c.to).map((c) => `${c.id}  ${c.from ?? "—"} → ${c.to} (@ ${short(c.commit)})`);
   const removed = changes.filter((c) => c.to === null).map((c) => `${c.id}  ${c.from} → removed`);
-  console.log(`changed    ${[...changed, ...removed].join("   ") || "(nothing — the lock already described this workspace)"}`);
+  const plan = report.plan === true;
+  console.log(`${plan ? "to change " : "changed   "} ${[...changed, ...removed].join("   ") || `(nothing — the lock already ${plan ? "describes" : "described"} this workspace)`}`);
   const memberSouls = items.souls.filter((s) => s.kind === "member");
   const externalSouls = items.souls.filter((s) => s.kind === "external");
   // Souls have no private mode (0.26.0); the private count is of repo-owned member capabilities.
@@ -1438,22 +1445,24 @@ function printSyncReport(ctx, synced) {
   if (ac.triggers || ac.schedules) console.log(`automations ${ac.triggers} trigger${ac.triggers === 1 ? "" : "s"}, ${ac.schedules} schedule${ac.schedules === 1 ? "" : "s"} in the members (oats trigger list · oats schedule list)`);
   for (const p of synced.problems ?? discovery.problems) console.log(`problem    ${p.code}  ${p.repoKey ? `${memberLabel(p.repoKey)}:` : ""}${p.path}  ${p.message}`);
   for (const w of discovery.warnings ?? []) console.log(`warning    ${w.code}  ${w.message}`);
-  console.log(`\nlock       ${shortPath(lockFile)}`);
+  if (plan) console.log(`\nplan       nothing written: \`oats sync\` would write ${shortPath(lockFile)} ${changes.length ? "with the changes above" : "(unchanged)"}${synced.snapshotDue ? " and the automations snapshot" : ""}`);
+  else console.log(`\nlock       ${shortPath(lockFile)}`);
 }
 
 /** Discover the workspace automations of a discovery and write the snapshot the host tick reads
  *  (lib/automations.mjs). A trigger's `from:` instantiates the package template at the lock's
  *  commit; a schedule is checked against this deployment. → the snapshot */
-async function takeAutomationSnapshot(ctx, discovery, lock) {
+async function takeAutomationSnapshot(ctx, discovery, lock, { write = true } = {}) {
   const kinds = await automationKinds(ctx.deploymentDir, lock, ctx.remoteOptions);
   const found = await A.discoverAutomations(discovery, { remote: kinds.remote, memberName: memberLabel, kinds: [kinds.trigger, kinds.schedule], previous: A.readSnapshot(ctx.deploymentDir) });
   const snap = A.snapshotOf(discovery, found, { souls: A.soulIndexOf(discovery, memberLabel) });
   // A workspace with no triggers or schedules leaves nothing behind (onboard creates what the
   // kernel needs and nothing else); a snapshot that existed is replaced, so a removal lands.
-  const empty = !snap.triggers.length && !snap.schedules.length && !snap.problems.length;
-  if (!empty || A.readSnapshot(ctx.deploymentDir)) A.writeSnapshot(ctx.deploymentDir, snap);
+  if (write && automationSnapshotDue(ctx.deploymentDir, snap)) A.writeSnapshot(ctx.deploymentDir, snap);
   return snap;
 }
+/** Whether a sync writes this snapshot: it has entries, or one exists to replace. */
+const automationSnapshotDue = (dep, snap) => !!(snap.triggers.length || snap.schedules.length || snap.problems.length || A.readSnapshot(dep));
 /** The two kinds' descriptors (lib/triggers.mjs triggerKind, lib/schedule.mjs scheduleKind). */
 async function automationKinds(dep, lock, remoteOptions) {
   const T = await import("../lib/triggers.mjs");
@@ -1521,11 +1530,33 @@ function setDisabledHereCli(ws, kind, qid, enabled) {
   return A.setDisabledHere(path, kind, qid, !enabled, { validate: validateLocal });
 }
 
-/** `oats sync [--dir] [--json]` — contract §6. */
+const SYNC_USAGE = "usage: oats sync [--dir <deployment>] [--plan] [--json]";
+/** Why `oats sync`'s argv is not a sync, or undefined (#731): an unknown flag or a positional is refused
+ *  before anything is read or written, never ignored. `--approve` keeps its own refusal (performSync). */
+function syncArgvProblem(argv) {
+  let dirs = 0;
+  for (let i = 1; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--json" || a === "--plan") continue;
+    if (a === "--dir") {
+      if (dirs++) return { message: `oats sync: give --dir once\n${SYNC_USAGE}`, details: { flag: a } };
+      if (argv[i + 1] !== undefined && !argv[i + 1].startsWith("--")) i++;
+      continue;
+    }
+    if (a === "--approve") return { message: `--approve: ${APPROVAL_REMOVED}`, details: { flag: a } };
+    if (a.startsWith("-")) return { message: `oats sync: unknown flag ${a}\n${SYNC_USAGE}`, details: { flag: a } };
+    return { message: `oats sync: unexpected argument ${JSON.stringify(a)}: sync takes no positional (the deployment is --dir <deployment>)\n${SYNC_USAGE}`, details: { argument: a } };
+  }
+  return undefined;
+}
+
+/** `oats sync [--dir] [--plan] [--json]` — contract §6. `--plan` previews: the same report, nothing written. */
 async function syncCmd() {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
+  const problem = syncArgvProblem(args);
+  if (problem) return bail("E_BAD_ARGS", problem.message, problem.details);
   const ctx = workspaceContext(bail);
-  const synced = await performSync(ctx, bail);
+  const synced = await performSync(ctx, bail, { plan: args.includes("--plan") });
   // One envelope (or the §8 report); success is exit 0 (a failure bails with its code).
   if (JSON_MODE) jsonOk(synced.report); else printSyncReport(ctx, synced);
 }
@@ -4130,13 +4161,15 @@ Usage:
                                             --soul shows final composed AGENTS.md
   oats update [--check] [--yes]              check npm for a newer kernel+pi bridge and
                                             optionally run the update; then run oats doctor
-  oats sync [--dir <d>] [--json]             workspace model v2: observe the workspace named by
+  oats sync [--dir <d>] [--plan] [--json]    workspace model v2: observe the workspace named by
                                             oats-local.yaml over its Git remote, confirm every
                                             member (reciprocal oats-membership.yaml), resolve
                                             packages: to exact commits + integrity, write
-                                            oats-lock.json (v3) and report the diff. No approval
-                                            step: declaring a package in packages: is the trust
-                                            decision (--approve is E_BAD_ARGS)
+                                            oats-lock.json (v3) and report the diff. --plan:
+                                            the same report, nothing written (what a bare sync
+                                            would change). No approval step: declaring a
+                                            package in packages: is the trust decision
+                                            (--approve is E_BAD_ARGS)
   oats package add <id> <version|git:<repo>@<ref>>  edit packages: in oats-workspace.yaml when the
       | remove <id>  [--dir <d>]            workspace repo is the current checkout; otherwise
                                             print the line to add (the file travels through Git)
