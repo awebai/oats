@@ -1488,6 +1488,41 @@ for (const [name] of palettes) test(`${name}: capability Contents navigation, re
   contents.dispose(); dom.window.close();
 });
 
+// Spec D (B1): the soul page's Instructions — the Contents card's grammar on the soul page, its own copy (the
+// group label, the file's repository path, the truncated flag, the unreadable line) on the same grounds.
+import { createSoulInstructions } from '../renderer/soul-instructions.mjs';
+for (const [name] of palettes) test(`${name}: the soul page's Instructions section meets computed AA without opacity`, () => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><div class="workspace-page soul-page"><div class="inspector-content inspector-main"></div></div></div></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document;
+  for (const source of [css, inspectorCSS, pageCardCSS, capabilityPageCSS, capabilityContentsCSS, MARKDOWN_CSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  const section = createSoulInstructions(doc, { openExternal() {} }); doc.querySelector('.inspector-main').append(section.element);
+  const soul = text => ({ name: 'release-manager', path: 'souls/release-manager', instructions: { file: '/cache/AGENTS.md', text, truncated: true } });
+  section.update(soul('---\nname: x\n---\n# T\n\n[a](https://example.com)\n'));
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  const check = list => { for (const [selector, painted, fg, bg] of list) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
+    const color = dom.window.getComputedStyle(el).color;
+    assert.ok(color === `var(--${fg})` || (fg === 'fg' && ['', 'var(--fg)'].includes(color)), `${selector}: ${color}`);
+    assert.equal(dom.window.getComputedStyle(surface).background.replace(/^.*(var\(--[\w-]+\)).*$/, '$1') || 'var(--bg)', `var(--${bg})`, painted);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${name} ${selector}`);
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+  } };
+  check([
+    ['.soul-instructions .page-section-lead', '.workspace-page', 'muted', 'bg'],
+    ['.cap-contents-group-label', '.cap-contents', 'muted', 'surface'],
+    ['[aria-selected=true] .cap-node-name', '[aria-selected=true] > .cap-node', 'fg', 'sel'],
+    ['[aria-selected=true] .cap-node-file', '[aria-selected=true] > .cap-node', 'muted', 'sel'],
+    ['.cap-reader-path', '.cap-reader-head', 'fg', 'bg'],
+    ['.cap-reader-flag', '.cap-reader-head', 'warn', 'bg'],
+    ['.cap-fm th', '.cap-contents-reader', 'muted', 'bg'],
+    ['.cap-reader-body .mdv a', '.cap-contents-reader', 'accent', 'bg'],
+  ]);
+  section.update({ ...soul(null), instructions: { file: '/cache/AGENTS.md', text: null, truncated: false } });
+  check([['.cap-reader-line', '.cap-contents-reader', 'muted', 'bg']]);
+  assert.equal(doc.querySelector('.cap-reader-line').textContent, "This soul's AGENTS.md could not be read.");
+  section.dispose(); dom.window.close();
+});
+
 // #517: Add a machine (every step status) and the Setup tab's Machines box (a row, its states and the Remove confirmation).
 import { openAddMachineDialog } from '../renderer/add-machine-dialog.mjs';
 import { createWorkspaceMachines, machinesCSS, resetMachineChecks } from '../renderer/workspace-machines.mjs';

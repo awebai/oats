@@ -167,6 +167,14 @@ pills (**All**, then one per repository, each with its count) show one
 repository at a time; "N of M shown" appears while a pill or the search
 narrows the list.
 
+A soul's page (open a soul from **Workspace › Souls**) ends with
+**Instructions**, what its instances are told: the soul's own `AGENTS.md`,
+read like a capability's injected instructions (a navigation tree on the left,
+the file on the right), at its path in the soul's repository. It comes from the
+same inspection as the rest of the page, so **Refresh** re-reads it and keeps
+what you had open, and your place in it. A file over 200,000 characters is
+shown cut, and says so.
+
 The **Spawn** dialog's left column, **What will be created**, starts with the
 new instance's name and its home. Then come where it works, its harness and
 model (with where that choice came from), its default team and the teams it may
@@ -377,7 +385,16 @@ has reached the execution host. Both CLI installations must advertise
 `session-upload`. A failed transfer leaves the draft unchanged and shows an
 error in the terminal. Each drop/paste accepts up to 16 files totaling 25 MB.
 
-## Harness badges
+## Identity marks and harness badges
+
+Souls, capabilities and workspaces carry a coloured two-letter mark beside
+their name. It is decorative: the name beside it is authoritative. The letters
+come from the name without its package qualifier (what follows the last `/`
+or `--`), and from three words or more without its first (a namespace word like
+`oats`): the initials of the first two words, or a one-word name's first two
+letters. So `oats-desktop-expert` is DE, `oats-okf--knowledge-harvester` KH and
+`oats.aweb` OA. Two names can share a mark (`oats-expert` and
+`oats-operator-expert` are both OE); the name and the colour tell them apart.
 
 Roster rows, soul cards, the soul page, the context panel and the spawn
 dialog show each instance's or soul's harness as a small badge, next to its
