@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const CAPABILITY_PATH = "capabilities/oats-knowledge-theory";
 export const DISTRIBUTION_PACKAGE_ID = "oats.framework";
-export const DISTRIBUTION_CAPABILITIES = [CAPABILITY_PATH, "capabilities/oats-core", "capabilities/oats-setup"];
+export const DISTRIBUTION_CAPABILITIES = [CAPABILITY_PATH, "capabilities/oats-core", "capabilities/oats-setup", "capabilities/oats-support"];
 // Dev-only validators load lazily so syntax-only checks (release lane, --syntax-only)
 // work in a checkout without node_modules; a missing dependency then fails only
 // the manifest/frontmatter checks that actually need it.
@@ -127,7 +127,7 @@ export function syncKnowledgeTheoryReferences(repoRoot = REPO_ROOT) {
   }
 }
 
-// Keep the operational capabilities narrow. oats.setup is resource-only; oats.core
+// Keep the operational capabilities narrow. oats.setup and oats.support are resource-only; oats.core
 // adds exactly one executable surface, its Claude Code waiting emitter: the spawn
 // and launch hooks of bin/oats-core.mjs (preview-aware) and the bin/claude-waiting.sh
 // they wire into a Claude instance's settings. Any other executable surface, key or
@@ -141,6 +141,8 @@ const OPERATIONAL_CAPABILITIES = [
     executable: { hooks: { spawn: "bin/oats-core.mjs spawn", launch: "bin/oats-core.mjs launch" }, launchPreview: true, files: ["bin/claude-waiting.sh", "bin/oats-core.mjs"] },
   },
   { slug: "oats-setup", names: ["oats-setup-model", "oats-onboarding", "oats-workspace-config", "oats-teams", "oats-package-pins", "oats-automations"], injection: "injects/setup.md", compatibility: ">=0.30.0" },
+  // 0.40.0: `oats instance attention`, which the skills use to ask the desk's human.
+  { slug: "oats-support", names: ["support-intake", "support-safety", "support-ticket", "support-handoff", "support-relay"], injection: "injects/support.md", compatibility: ">=0.40.0" },
 ];
 export function checkOperationalCapabilities(packageRoot) {
   for (const { slug, names, injection, compatibility, executable } of OPERATIONAL_CAPABILITIES) {
