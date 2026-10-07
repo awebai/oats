@@ -386,8 +386,7 @@ whether that harness is installed or signed in. Pi's badge is the official
 pi.dev press-kit mark (MIT), and Claude Code's is Anthropic's Claude spark
 in the theme's colours. The Codex badge is OATS's own drawing, not OpenAI's
 logo. OATS is not affiliated with or endorsed by Anthropic or OpenAI. An
-unknown or unreported harness
-shows "?". Sources and licences are in
+unknown or unreported harness shows "?". Sources and licences are in
 `packages/desktop/renderer/harness-marks/README.md`.
 
 ## Security posture
