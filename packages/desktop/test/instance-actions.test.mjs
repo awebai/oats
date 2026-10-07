@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { registerAction, setActiveContexts, getBinding, formatChord, setBinding, resetBinding, runAction, handleKeydown, onKeymapChange } from '../renderer/keybindings.mjs';
 import { instanceActions, captureInstanceActionMenu } from "../renderer/instance-actions.mjs";
+import { markStaleControl, ROSTER_STALE_TITLE } from "../renderer/instance-tree.mjs";
 import { cliRetire, parseRetireEnvelope } from "../cli-adapter.mjs";
 
 // jsdom has no top-layer API. Model only its open/close events here; native
@@ -88,8 +89,8 @@ for (const reject of [false, true]) test(`frame10 owner revokes menu late ${reje
   const row = { instance: 'dev', home: '/home/dev', createdAt: 'birth' }, first = instanceActions(doc, row, options); doc.body.append(first);
   first.querySelector('[data-action=inspect]').click(); current = false;
   const next = instanceActions(doc, row, { ...options, scope: 'B', owner: () => true }); doc.body.append(next);
-  assert.equal(triggerOf(next).disabled, false, 'pending key includes workspace'); if (reject) fail(Error('PRIVATE')); else finish({}); await new Promise(setImmediate);
-  assert.deepEqual(effects, []); assert.equal(triggerOf(first).disabled, true); assert.equal(triggerOf(next).disabled, false);
+  assert.equal(triggerOf(next).hasAttribute('aria-disabled'), false, 'pending key includes workspace'); if (reject) fail(Error('PRIVATE')); else finish({}); await new Promise(setImmediate);
+  assert.deepEqual(effects, []); assert.equal(triggerOf(first).getAttribute('aria-disabled'), 'true'); assert.equal(triggerOf(next).hasAttribute('aria-disabled'), false);
   dom.window.close();
 });
 test('shipped frame10 action registration is menu-focus scoped, mouse/key equivalent and live rebind-aware without default Ctrl chords', async () => {
@@ -149,12 +150,66 @@ test("roster rebuilds cannot submit a second lifecycle action while one is pendi
   dom.window.document.body.append(first);
   first.querySelector('[data-action="inspect"]').click();
   const replacement = instanceActions(dom.window.document, instance, options);
-  assert.equal(triggerOf(replacement).disabled, true);
+  assert.equal(triggerOf(replacement).getAttribute("aria-disabled"), "true");
+  assert.equal(triggerOf(replacement).title, "Waiting for Knowledge & capabilities to finish");
   replacement.querySelector('[data-action="retire"]').click();
   assert.equal(calls, 1);
   finish({}); await new Promise((r) => setImmediate(r));
-  assert.equal(triggerOf(replacement).disabled, false, "the currently displayed control re-enables without another poll");
-  assert.equal(triggerOf(instanceActions(dom.window.document, instance, options)).disabled, false);
+  assert.equal(triggerOf(replacement).hasAttribute("aria-disabled"), false, "the currently displayed control re-enables without another poll");
+  assert.equal(triggerOf(instanceActions(dom.window.document, instance, options)).hasAttribute("aria-disabled"), false);
+  dom.window.close();
+});
+
+test("a pending action marks its trigger aria-disabled with why it waits, keeps focus, and clears only its own marking", async () => {
+  const dom = menuDom(), doc = dom.window.document; dom.window.alert = () => assert.fail("no alert");
+  let finish; let calls = 0;
+  const instance = { instance: "dev-wait", home: "/home/dev-wait" };
+  const options = { invoke: () => { calls++; return new Promise((r) => { finish = r; }); }, openLifecycle: assert.fail, done() {}, report: assert.fail };
+  const waiting = "Waiting for Knowledge & capabilities to finish";
+  const marked = (trigger, reason) => {
+    assert.equal(trigger.disabled, false, "never `disabled`: Chromium would blur a focused trigger");
+    assert.equal(trigger.getAttribute("aria-disabled"), "true"); assert.equal(trigger.title, reason); assert.equal(trigger.getAttribute("aria-description"), reason);
+  };
+  const clear = trigger => { for (const name of ["aria-disabled", "title", "aria-description"]) assert.equal(trigger.hasAttribute(name), false, name); };
+  const first = instanceActions(doc, instance, options); doc.body.append(first);
+  const trigger = triggerOf(first); trigger.click(); assert.equal(doc.activeElement.dataset.action, "inspect");
+  doc.activeElement.click(); assert.equal(calls, 1);
+  marked(trigger, waiting); assert.equal(doc.activeElement, trigger, "focus returns to, and stays on, the waiting trigger");
+  trigger.click(); assert.equal(trigger.getAttribute("aria-expanded"), "false", "a pending trigger cannot open its menu");
+  trigger.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true }));
+  assert.equal(trigger.getAttribute("aria-expanded"), "false");
+  await choose(first, "inspect"); assert.equal(calls, 1, "no second action while one is pending");
+  const replacement = instanceActions(doc, instance, options); doc.body.append(replacement); marked(triggerOf(replacement), waiting);
+  const stale = instanceActions(doc, instance, options); doc.body.append(stale); markStaleControl(triggerOf(stale));
+  finish({}); await new Promise(setImmediate);
+  clear(trigger); clear(triggerOf(replacement)); assert.equal(triggerOf(replacement).dataset.pendingAction, undefined);
+  marked(triggerOf(stale), ROSTER_STALE_TITLE);
+  dom.window.close();
+});
+
+test("a failing action reports a plain headline with the error as detail, never an alert", async () => {
+  const dom = menuDom(), doc = dom.window.document; dom.window.alert = () => assert.fail("no alert");
+  const reports = [], instance = { instance: "dev-fail", home: "/home/dev-fail" };
+  const control = instanceActions(doc, instance, { invoke: async () => { throw new Error("E_SPAWN: preview refused"); },
+    openLifecycle: assert.fail, done: assert.fail, report: (...args) => reports.push(args),
+    extra: [{ action: "open-split", label: "Open in split" }] });
+  doc.body.append(control);
+  await choose(control, "inspect"); await choose(control, "open-split");
+  assert.deepEqual(reports, [
+    ["Knowledge & capabilities didn't finish for dev-fail.", { detail: "E_SPAWN: preview refused", action: "inspect", instance }],
+    ["Open in split didn't finish for dev-fail.", { detail: "E_SPAWN: preview refused", action: "open-split", instance }]]);
+  assert.equal(triggerOf(control).hasAttribute("aria-disabled"), false);
+  const unplanned = instanceActions(doc, instance, { invoke: assert.fail, report: (...args) => reports.push(args) }); doc.body.append(unplanned);
+  await choose(unplanned, "retire");
+  assert.deepEqual(reports.at(-1), ["A plan-backed confirmation is required for Stop or Retire.", { action: "retire", instance }]);
+  dom.window.close();
+});
+
+test("the retire item reads Retire instance…", () => {
+  const dom = menuDom();
+  const control = instanceActions(dom.window.document, { instance: "dev", home: "/home/dev" }, {});
+  assert.equal(control.querySelector('[data-action="retire"]').textContent, "Retire instance…");
+  assert.doesNotMatch(control.textContent, /Remove/);
   dom.window.close();
 });
 

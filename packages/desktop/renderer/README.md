@@ -422,7 +422,7 @@ Those are per-instance identity cues, never invented group names.
 Activity and waiting-on-you are explicitly **unknown / available after K7**.
 `TASK`, `STATE`, transcript prose, unnegotiated activity/group labels and the old
 aggregate `instance.git` are not consumed by this projection. Git stays disabled
-with a K1/P1 note; no Tasks destination or new Stop/Remove surface is introduced.
+with a K1/P1 note; no Tasks destination or new Stop/Retire surface is introduced.
 
 `active-observation.mjs` validates the roster/address shape and rejects duplicate
 identities rather than silently losing nodes. Local request tickets and global
@@ -1132,7 +1132,14 @@ the shell's projection guard, a surviving next control or a visible same-scope
 return target. The polite live region is independent of roster repaints and
 continues to work without a roster. Primary foreground/background pairs and
 existing popover shadows adapt to White/Solarized/Dark without raw colors.
-Lifecycle alerts and confirmation paths are not replaced.
+The roster row's actions menu (`instance-actions.mjs`) reports here, never with
+`alert`: an action that fails says "<Action> didn't finish for <name>." with its
+error in Details. While one of its actions runs, the menu trigger is
+`aria-disabled` (focus kept, as `markStaleControl`) and says "Waiting for
+<action> to finish"; clearing that leaves a stale-roster marking in place. Stop
+and Retire never run from the menu: they open the plan-backed confirmation
+(`lifecycle-dialog.mjs`, phases in
+[desktop-lifecycle-confirmations.md](../docs/desktop-lifecycle-confirmations.md#ui-states)).
 
 `choice-popup.mjs` owns the existing provider/model popup behavior. Model search
 is local to reported advisory IDs/labels; **Defaults**, **Reported suggestions**
@@ -1154,7 +1161,7 @@ listbox, never fake workspaces; removed options cannot select through a new
 empty state. Registry transaction behavior and source/context soul grouping are
 unchanged. Already-conforming badges, workspace/context menus and native titles
 with live keymap chords are retained—not replaced by a new tooltip manager or
-keyboard interceptor. No Stop/Remove, K6, editor/detach/PR or OS notification
+keyboard interceptor. No Stop/Retire, K6, editor/detach/PR or OS notification
 surface is introduced. Tests are inert DOM/CSSOM/ownership/contrast checks, not
 native rendered acceptance.
 

@@ -1749,7 +1749,7 @@ const server = createServer(async (req, res) => {
     }
     const hm = path.match(/^\/api\/(harvest|retire|start|restart)\/([A-Za-z0-9._-]+)$/);
     if (hm && req.method === "POST") {
-      if (hm[1] === 'retire') return send(res, 409, { code: 'E_PLAN_REQUIRED', error: 'Open a fresh Remove confirmation. Unguarded retirement is unavailable, including remote retirement.' });
+      if (hm[1] === 'retire') return send(res, 409, { code: 'E_PLAN_REQUIRED', error: 'Open a fresh Retire confirmation. Unguarded retirement is unavailable, including remote retirement.' });
       // Desktop v1 mutation 2: the active provider’s harvest operation, cwd FIXED by this
       // privileged backend to the RESOLVED instance home — the caller only
       // names an instance; it can never steer the cwd.

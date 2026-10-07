@@ -294,12 +294,12 @@ for a password or key, and never runs anything over ssh itself.
 ## Instances on servers
 
 Every instance a registered server reports shows in its workspace's roster, whoever spawned it. You
-can open its terminal, start, restart, stop and remove it, and read its readiness, activity, Git
+can open its terminal, start, restart, stop and retire it, and read its readiness, activity, Git
 and diffs, as for a local one. The context panel's Soul tab and its Messaging & Teams list read
 through the server too (`oats inspect --server <id> --home <path>`), and its Work card, "model
 from" line and "older build" chip show the facts the server relays. Only its pull request is not read here, since the forge reads this
 computer's clones. Every command goes to the server by the instance's home (`--server <id> --home
-<path>`), never by a bare name. Stop and Remove show the plan the server makes, and confirm
+<path>`), never by a bare name. Stop and Retire show the plan the server makes, and confirm
 against it.
 
 A read waits for the server: the view says "Reading from <server>…", and gives up after about

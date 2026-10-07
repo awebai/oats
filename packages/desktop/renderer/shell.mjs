@@ -15,7 +15,7 @@ import { instanceActionTarget, sameInstanceActionTarget } from "./instance-actio
 import { createInstancePrAction } from "./instance-pr-action.mjs";
 import { instanceSplitPlan, instanceSplitIdentity } from "./instance-split.mjs";
 import { createInstanceStarter } from "./start-instance.mjs";
-import { retirementSummary, runtimeState, unsupportedSession } from "./instance-presentation.mjs";
+import { runtimeState, unsupportedSession } from "./instance-presentation.mjs";
 import { deploymentUnavailableText, NOT_SERVED_CODE, NO_ANSWER_CODE, unservedError, createPendingWatch } from "./deployment-header.mjs";
 import { panelErrorCause } from "./deployment-contract.mjs";
 import {
@@ -973,9 +973,9 @@ function renderContextRoster(instances) {
             openLifecycleDialog(operation, instance, ws);
           },
           done: () => {},
-          report: (message, result) => {
+          report: (headline, { detail } = {}) => {
             if (currentWorkspace() !== ws || workspaceGeneration() !== rosterGeneration) return;
-            alert([message, retirementSummary(result)].filter(Boolean).join("\n"));
+            notifications.notify(headline, { detail });
           },
         }));
         // Stale roster: actions that need current state wait for a refresh;
@@ -2163,10 +2163,27 @@ const lifecycleDialog = createLifecycleDialog({ doc: document,
   generation: workspaceGeneration, subscribeWorkspace: onWorkspaceChange,
   subscribeConnections, connectionGeneration: () => connectionGeneration,
   onIntent: () => tabOpenIntents.invalidate(), applyFocus: fn => tabOpenIntents.applyFocus(fn),
-  onSettled: () => { void refreshContextRoster(); }, openExternal: ctx.openExternal,
+  onSettled: () => { void refreshContextRoster(); }, openExternal: ctx.openExternal, fallbackFocus: () => lifecycleFallbackFocus(),
 });
+/** The roster's rows (by identity) when the confirmation opened, and where its instance stood among them. */
+let lifecycleRowOrder = null;
+/** Where focus lands when a confirmation closes and its opener is gone (a retired row left the roster): the
+ * row that followed it, else the one before it, else the roster's tab-order row, else a stable shell control. */
+function lifecycleFallbackFocus() {
+  const listEl = contextRosterEl?.querySelector(".ctx-list");
+  const shown = el => el?.isConnected && !el.disabled && !el.closest("[hidden]") && document.defaultView.getComputedStyle(el).display !== "none" && !sidebarHidden();
+  const rows = listEl ? [...listEl.querySelectorAll(".ctx-inst")].filter(shown) : [];
+  const { order = [], at = -1 } = lifecycleRowOrder || {};
+  const near = at < 0 ? [] : [...order.slice(at + 1), ...order.slice(0, at).reverse()];
+  const row = near.map(id => rows.find(r => r.dataset.treeInstance === id)).find(Boolean) || rows.find(r => r.tabIndex === 0) || rows[0];
+  if (!row) return stableFocusTarget();
+  for (const r of listEl.querySelectorAll('.ctx-inst[tabindex="0"]')) r.tabIndex = -1;
+  row.tabIndex = 0; return row;
+}
 function openLifecycleDialog(operation, instance, workspace) {
   connections.close(); shortcutsEditor.close();
+  const order = [...(contextRosterEl?.querySelectorAll(".ctx-list .ctx-inst") || [])].map(r => r.dataset.treeInstance);
+  lifecycleRowOrder = { order, at: order.indexOf(instanceId(instance)) };
   // The callers check the workspace on screen (`workspace`); the plan and apply are addressed to the
   // row's own deployment (#482), which the server's echoed target names too.
   void workspace;

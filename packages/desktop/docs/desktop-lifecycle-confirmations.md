@@ -1,6 +1,6 @@
-# Desktop Stop and Remove confirmations
+# Desktop Stop and Retire confirmations
 
-Stop and Remove are consumers of the installed CLI's **lifecycleApi1**. The
+Stop and Retire are consumers of the installed CLI's **lifecycleApi1**. The
 Desktop does not implement stopping, ancestry, retention, Git deletion, recovery
 or lifecycle policy. It never signals a reported PID or creates a Stop+Retire
 recipe. The kernel owns those actions and their per-target outcomes.
@@ -8,7 +8,7 @@ recipe. The kernel owns those actions and their per-target outcomes.
 ## Compatibility and admission
 
 Before any command, require an accepted installed CLI, a real `features` array
-containing `lifecycle-plans`, and **`lifecycleApi === 1`**. Remove apply also
+containing `lifecycle-plans`, and **`lifecycleApi === 1`**. Retire apply also
 requires `retire-retention` and `retire-home`. Neither a version number nor a
 trial invocation establishes support: older `retire` ignores unknown `--plan`
 and retires. Missing/malformed advertisement means unavailable, zero invocation.
@@ -36,8 +36,9 @@ invocation, even for remote callers.
 Plan payloads validate the exact primary home/name, producer revision, all
 bounded target identities, session/work states and ambiguity. Unestablished is
 not idle; unobserved work is not clean; nullable comparisons are not zeros.
-Ambiguous parent edges are shown as **not acted on — parent name not unique**:
-Stop uses `plan.ambiguous`, Remove uses `plan.facts.ambiguous`.
+Ambiguous parent edges are shown as **not included**, with the reason (another
+instance has the same parent name): Stop uses `plan.ambiguous`, Retire uses
+`plan.facts.ambiguous`.
 
 ## Confirmation references, resource bounds and retry
 
@@ -50,8 +51,8 @@ is refused, never truncated into a smaller executable action. Plan execution
 is bounded to30 seconds; proxy35 seconds.
 
 Changing any option obtains a new plan/reference and revokes the old controls.
-Remove has one choice, the worktree: deleting it requires an owned worktree.
-Remove no longer offers to delete a branch: retirement leaves branches to the
+Retire has one choice, the worktree: deleting it requires an owned worktree.
+Retire no longer offers to delete a branch: retirement leaves branches to the
 operator, and the kernel refuses the flag. A retire request whose options
 hold any other key is refused before a command, and no retire command carries
 `--delete-branch`. There is no force/self/keep-dir/grace override or “don't ask
@@ -77,12 +78,12 @@ Applies have a600-second/4 MiB bound; proxy610 seconds. At most32 settled or
 uncertain results are kept for30 minutes, without expiring an in-flight action.
 This is a bounded process-local transaction record, not a persistent journal.
 A repeated cached result is marked `repeated`; it does not rewrite the kernel's
-`replayed` fact. Replay of a recorded Remove result never resolves a newly
+`replayed` fact. Replay of a recorded Retire result never resolves a newly
 created same-name home. Lost server/reference/CLI identity requires a fresh
 observation, not a silently minted retry key.
 
 **Transport loss after dispatch means unknown outcome, not no effect.** Check
-recorded result resubmits the same planRef. An uncertain CLI result stays
+again resubmits the same planRef. An uncertain CLI result stays
 uncertain rather than re-executing a mutation. Closing the dialog only closes
 status; it does not cancel the dispatched operation or signal its process.
 
@@ -91,14 +92,14 @@ status; it does not cancel the dispatched operation or signal its process.
 - Stop processes the kernel's ordered targets. Nested `ok:false` remains partial
   even inside a successful envelope. Reported still-running PIDs are text only;
   no stronger-kill control. Home/work/transcript/launch remain retained.
-- Remove stops recorded children first. `E_CHILDREN_RUNNING` displays
+- Retire stops recorded children first. `E_CHILDREN_RUNNING` displays
   `details.childrenStopped` and refuses retirement; **some children may already
   have stopped**, so “nothing retired” is not “nothing happened”. Read a fresh
   plan before a new confirmation; do not compose another Stop in Desktop.
-- Remove accepts both the documented first raw receipt and enveloped replay,
+- Retire accepts both the documented first raw receipt and enveloped replay,
   checking revision/key/name against the transaction. Home removal, worktree
   retention/removal and recovery are separate facts.
-- Remove never deletes a branch and asks for no deletion, so a receipt,
+- Retire never deletes a branch and asks for no deletion, so a receipt,
   deferred or not, that reports a branch deletion or a skip (`branchDeleted: true`, or
   `retention.branchDeleted` or `retention.branchDeletionSkipped` present with
   any value) is not the answer to its request. It is refused whole, at the
@@ -109,15 +110,15 @@ status; it does not cancel the dispatched operation or signal its process.
   is `false` or absent; any other value there is an invalid plan. No Desktop
   Git preflight is used.
 - A home left by a failed spawn that still owes its branch stays incomplete
-  (`E_RETIRE_INCOMPLETE`: "Retirement cleanup is incomplete. Inspect the
-  retained state before another action.") while that branch exists, and Remove
+  (`E_RETIRE_INCOMPLETE`: "Retirement didn't finish cleaning up. Check what
+  was kept before trying again.") while that branch exists, and Retire
   can no longer complete it: the person checks the branch and deletes it with
   Git, then removes the home again.
 - `E_PLAN_STALE` displays the validated producer's fresh plan and a new reference;
   the operator must explicitly confirm again. It never auto-applies.
 - Preservation/cleanup failure may follow earlier effects. Render retained/partial
   or unknown state honestly; never automatically add discard/force flags.
-- An inspection refusal of Remove (`E_WORK_INSPECTION_FAILED`) is reported as
+- An inspection refusal of Retire (`E_WORK_INSPECTION_FAILED`) is reported as
   an **unknown outcome** with its own fixed sentence, never as a refusal before
   any effect: the kernel can raise it after the children stop, the session
   stop and the retire hooks. The kernel's own message (it names the path and
@@ -148,12 +149,55 @@ worktree; the kernel may append its documented `retire-planned` audit event.
 
 ## UI and ownership
 
-The420px confirmation surface follows the supplied layout, semantic theme
-colors and keyboard focus language. Stop/Remove are separate from existing
-Start/Restart/Inspect. Stop always requires explicit confirmation. The Remove
-PR row is only an informational2b overlay: exact home/server/workspace, revision,
-branch and remote host/path must correlate. Disconnected/unmatched facts remain
-unknown; Remove never closes or changes the remote PR.
+The 420px confirmation surface follows the supplied layout, semantic theme
+colors and keyboard focus language. Stop/Retire are separate from existing
+Start/Restart/Inspect; the roster row's menu says **Retire instance…**, the
+context panel's footer **Stop…** and **Retire…**. Stop always requires explicit
+confirmation. The Retire PR row is only an informational 2b overlay: exact
+home/server/workspace, revision, branch and remote host/path must correlate. A
+PR that is not known (disconnected, unmatched, failed) is left out, never shown
+as "no PR"; Retire never closes or changes the remote PR.
+
+### UI states
+
+One phase decides which controls exist (`lifecycle-dialog.mjs`); a control
+with no use in a phase is not rendered, and one that cannot act yet carries
+its reason in the visible status line (`aria-describedby`).
+
+| Phase | Title | Body | Footer |
+|---|---|---|---|
+| loading | Retire X? / Stop X? | "Checking what retiring X will do…" (or "Reading from <server>…"); What will happen and Current state as skeletons, `aria-busy`; the option's place held by one skeleton line | Cancel · confirm (disabled, described by the status line) |
+| review | same | What will happen (plain lines built from the plan), Current state, the option, "Observed <age>" with **Check again** | Cancel · **Retire instance** / **Stop session(s)** |
+| updating | same | the previous facts stay on screen, `aria-busy`, until the new plan replaces them at once; "Updating for this choice…" or "Checking again…" | Cancel · confirm (disabled, described by the status line) |
+| running | Retiring X… / Stopping X… | spinner and status; What will happen kept, muted; "You can close this window; retirement continues." | Close |
+| done | X retired / X stopped / N sessions stopped | a short summary from the receipt (paths muted and selectable) | **Done** |
+| result | per outcome | the fixed sentence (or a remote host's headline), the effects that did happen, Details | Check again (uncertain) or Review again · Close |
+
+- **Cancel and Close.** Before anything is dispatched the secondary button is
+  Cancel: nothing happened. After dispatch it is Close, and closing never
+  cancels the operation. Esc does what the visible button does in each phase.
+- **Option changes and Check again** revoke the reference on screen at once,
+  keep the facts on screen and swap in the new plan when it lands; the latest
+  choice wins (older answers are dropped by their ticket). The worktree option
+  is shown only for an instance with its own worktree (`workMode: worktree`),
+  or while that choice is still checked, so `E_OPTION_UNAVAILABLE` stays
+  visible and undoable.
+- **Results.** An uncertain outcome (`unknown`, `pending`, a deferred retire,
+  transport loss, a refused receipt) offers **Check again**, which resubmits
+  the same planRef. Anything else that did not succeed (a refusal, a partial
+  receipt, a plan that could not be read) offers **Review again**, which reads
+  a fresh plan and returns to loading, with Cancel. `E_PLAN_STALE` returns to
+  review with the fresh plan and "Something changed since you opened this.
+  Review it and confirm again."; it never applies by itself. A partial outcome
+  is never shown as done.
+- **Focus.** It starts on Cancel and does not move when a plan lands. Running
+  and every result focus Close (never an action that resubmits); done focuses
+  Done; stale focuses Cancel. On close, focus returns to the opener, else to
+  the roster (the row that followed a retired row, else the one before, else
+  the roster's tab stop: `shell.mjs` `lifecycleFallbackFocus`), never `<body>`.
+- **Copy.** Plain words, no timestamps and no kernel vocabulary: the plan's
+  `at` is shown as an age, a session as Running / Not running / Unknown. The
+  fixed sentences live in `lifecycle-contract.mjs`.
 
 Modal lifetime, workspace generation, target and request/operation tickets guard
 success, rejection and cleanup. Old controls cannot close or confirm a new

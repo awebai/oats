@@ -54,6 +54,8 @@ export const GRAPHIC_PAIRS = Object.freeze([
   // A native select's chevron (theme.css select.field): --muted, on the field and on a disabled field.
   ...["surface", "surface-2"].map(bg => Object.freeze(["muted", bg])),
   Object.freeze(["term-sel", "term-bg"]),
+  // A running lifecycle confirmation's spinner arc (lifecycle-dialog.mjs .spinner) on the dialog's --surface.
+  Object.freeze(["accent", "surface"]),
 ]);
 
 /** Translucent surfaces and the token painted behind each: contrast is measured

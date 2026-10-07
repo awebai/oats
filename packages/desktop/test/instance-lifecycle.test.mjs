@@ -328,7 +328,7 @@ test('deleting the worktree cannot be authorized for a work mode that owns none;
     const r = request('retire'); r.options = { discardWorktree: true };
     const p = await f.service(r, () => f.ctx); assert.equal(p.status, 'plan');
     const refused = await f.apply(p.planRef); assert.deepEqual(refused.reason, lifecycleReason('E_OPTION_UNAVAILABLE')); assert.equal(calls, 1);
-    assert.equal(refused.reason.message, 'Review the choices: deleting work requires an owned worktree.');
+    assert.equal(refused.reason.message, 'Only an instance with its own worktree can delete it. Review the choice again.');
   }
   // Unobserved or detached work does not make the one choice unavailable: it needs an owned worktree and nothing else.
   for (const mutate of [p => { p.facts.work = { observed: false, reason: 'unavailable' }; }, p => { p.facts.work.branch = null; p.facts.work.detached = true; }]) {
