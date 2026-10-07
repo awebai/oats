@@ -204,7 +204,10 @@ its reason in the visible status line (`aria-describedby`).
   `shell.mjs` `lifecycleFallbackFocus`, `successorRow`), else to the generic
   return near the opener; never `<body>`.
 - **Copy.** Plain words, no timestamps and no kernel vocabulary: the plan's
-  `at` is shown as an age, a session as Running / Not running / Unknown. The
+  `at` is shown as an age, a session as Running / Not running / Unknown.
+  Work the kernel did not observe reads "Unknown (couldn't be checked)", its
+  reason (a code such as `E_NO_WORKTREE`) only in the row's title; an instance
+  without its own worktree has no Uncommitted work row. The
   fixed sentences live in `lifecycle-contract.mjs`.
 
 Modal lifetime, workspace generation, target and request/operation tickets guard

@@ -568,7 +568,8 @@ test('checking "Also delete the worktree" swaps in a plan whose lines and warnin
   const g = fixture({ request: (_ws, body) => ({ ...planned('retire', reference, structuredClone(unobserved)), options: body.options }) });
   try {
     g.open('retire'); await tick();
-    assert.deepEqual(factRows(g), [['Session', 'Running'], ['Uncommitted work', 'Unknown (unreadable)']]);
+    assert.deepEqual(factRows(g), [['Session', 'Running'], ['Uncommitted work', "Unknown (couldn't be checked)"]]);
+    assert.equal(g.doc.querySelectorAll('.lifecycle-facts dd')[1].title, 'unreadable', 'the reason only in the title');
     g.check(g.doc.querySelectorAll('input')[1], true); await tick();
     assert.equal(g.doc.querySelector('.lifecycle-warning').textContent,
       'Deletes the worktree folder, including uncommitted changes, if any (a recovery copy is saved first). Branch agents/dev-1 stays in the repository.');
@@ -799,4 +800,16 @@ test('successorRow: the next surviving row, else the nearest before it, else non
   assert.equal(successorRow(rows(['a', 'd']), ['a', 'b', 'c', 'd'], 1).dataset.treeInstance, 'd');
   assert.equal(successorRow(rows(['a']), ['a', 'b', 'c'], 2).dataset.treeInstance, 'a');
   assert.equal(successorRow(rows([]), ['a', 'b'], 0), null); assert.equal(successorRow(rows(['a']), ['a'], -1), null);
+});
+test('a plan without a worktree (directory mode, work unobserved: E_NO_WORKTREE) has no Uncommitted work row and never shows the raw reason', async () => {
+  const raw = retirePlan(); raw.facts.workMode = 'directory'; raw.facts.work = { observed: false, reason: 'E_NO_WORKTREE' }; raw.facts.recordedBranch = null;
+  raw.facts.session = { state: 'unestablished', present: null, established: false, backend: null, reason: 'no session' };
+  const f = fixture({ request: (_ws, body) => ({ ...planned('retire', reference, raw), options: body.options }) });
+  try {
+    f.open('retire'); await tick();
+    assert.deepEqual(factRows(f), [['Session', "Unknown (couldn't be checked)"]]);
+    assert.doesNotMatch(told(f.doc), /E_NO_WORKTREE/);
+    assert.ok(happenLines(f).some(line => line.startsWith('Saves a recovery copy of any uncommitted work, then deletes its home folder.')), 'the work is covered there');
+    assert.equal(f.doc.querySelector('.lifecycle-options').hidden, true);
+  } finally { f.close(); }
 });

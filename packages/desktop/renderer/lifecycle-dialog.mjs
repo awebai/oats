@@ -52,7 +52,9 @@ const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const names = values => values.map(v => v.instance).join(', ');
 /** What a person reads for a session: whether it runs, never the backend's raw state word. */
 const sessionText = s => !s.established ? "Unknown (couldn't be checked)" : s.present ? 'Running' : 'Not running';
-const workText = w => !w.observed ? `Unknown (${w.reason})` : !w.changed && !w.untracked ? 'None'
+/** The kernel's reason for unobserved work is a code or a sentence for operators (E_NO_WORKTREE, a path):
+ * never inline, only in the row's title. */
+const workText = w => !w.observed ? "Unknown (couldn't be checked)" : !w.changed && !w.untracked ? 'None'
   : [w.changed && `${w.changed} changed`, w.untracked && `${w.untracked} untracked`].filter(Boolean).join(', ');
 /** The worktree's branch as observed, else the one recorded at spawn; null when detached or unknown. */
 const branchOf = f => f.work.observed ? f.work.branch : f.recordedBranch;
@@ -179,13 +181,15 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
   /** Current state: a compact two-column list of plain values, then what is not included and why. */
   function current(value) {
     const dl = node('dl'), notes = [];
-    const row = (label, value) => dl.append(node('dt', label), node('dd', value));
+    const row = (label, value, title = '') => { const dd = node('dd', value); if (title) dd.title = title; dl.append(node('dt', label), dd); };
     if (value.action === 'stop') {
       for (const t of value.targets) row(t.instance, sessionText(t.session));
       for (const v of value.ambiguous) notes.push(node('p', ambiguousText(v), 'lifecycle-note'));
     } else {
       const f = value.facts;
-      row('Session', sessionText(f.session)); row('Uncommitted work', workText(f.work));
+      row('Session', sessionText(f.session));
+      // Without a worktree of its own there is no Git work to report: the recovery line under What will happen covers it.
+      if (f.work.observed || f.workMode === 'worktree') row('Uncommitted work', workText(f.work), f.work.observed ? '' : f.work.reason);
       if (f.work.observed) row('Branch', f.work.detached ? 'Detached' : f.work.branch);
       if (f.work.observed && f.work.drift) notes.push(node('p', `The worktree is on ${f.work.detached ? 'a detached commit' : f.work.branch}, not the branch it was spawned on${f.recordedBranch ? ` (${f.recordedBranch})` : ''}.`, 'lifecycle-attention'));
       for (const v of f.ambiguous) { const p = node('p', ambiguousText(v), 'lifecycle-note'); p.title = v.home; notes.push(p); }
