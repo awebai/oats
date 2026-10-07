@@ -144,3 +144,25 @@ test("a source discovery could not read makes absence unknown, never missing; a 
   const c = await coverage(covered, (d) => ({ members: [...d.members, lost] }));
   assert.deepEqual([c.known, c.workspace.covered, c.teams], [true, true, [{ label: "global", covered: true, by: "ws/ops" }]], "what was found covers, whatever else was unreadable");
 });
+
+test("every reason and remedy stays within the Desktop's 1024-character item text, however large its inputs", async () => {
+  const { operatorCoverage, operatorProblems: problemsOf } = await import("../lib/operator-coverage.mjs");
+  const huge = (c) => c.repeat(5000);
+  // Unknown: many unreadable members and soul files, each with an oversized message.
+  const discovery = { key: "local//w", workspace: { name: huge("w") }, members: Array.from({ length: 40 }, (_, i) =>
+    ({ key: `local//m${i}`, confirmed: false, reason: "cannot-read", detail: huge("d"), souls: [], capabilities: [] })),
+    problems: Array.from({ length: 40 }, () => ({ code: "E_REMOTE_UNREADABLE", path: huge("p"), message: huge("m") })) };
+  const unknown = await operatorCoverage({ discovery, teams: ["global"] });
+  assert.equal(unknown.known, false);
+  // Known and missing: many excluded souls with oversized names, an oversized team label and workspace name.
+  const missing = { known: true, workspace: { covered: false, by: null }, teams: [{ label: huge("t"), covered: false, by: null }],
+    excluded: Array.from({ length: 40 }, (_, i) => ({ soul: `${huge("s")}${i}`, code: "E_CAPABILITY_MISSING" })) };
+  const found = [...problemsOf(unknown, { unknownRemedy: huge("r") }), ...problemsOf(missing, { workspace: huge("w") })];
+  assert.deepEqual(found.map((p) => p.code), ["operator-coverage-unknown", "operator-soul-missing", "operator-team-uncovered"]);
+  for (const p of found) {
+    assert.ok(p.message.length <= 1024, `${p.code} reason: ${p.message.length}`);
+    assert.ok(p.remedy.length <= 1024, `${p.code} remedy: ${p.remedy.length}`);
+  }
+  assert.match(found[0].message, /and 77 more/, "a list shows three and a count");
+  assert.match(found[1].message, /and 37 more/);
+});
