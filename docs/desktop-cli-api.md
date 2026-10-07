@@ -1627,7 +1627,8 @@ Same-key spawn replay cannot convert a blocked outcome to successful spawn.
 
 `answers` can contain a `submitted` answer even when the final status is
 `blocked`: the accepted installed-plugin and plugin-absent completion banners
-pin specific model/billing/effort/permission text. A different normal-looking banner can block after Enter
+pin specific model/effort/permission text and finite billing labels, including
+source-derived Max/Pro/Team/Enterprise variants of the empty API frame. A different normal-looking banner can block after Enter
 while the actual pane is active. Consumers must preserve that submitted receipt
 and never translate this outcome into “nothing started” or automatic retry.
 The [completion limitation](configuration.md#exact-home-launch-prompt-consent)

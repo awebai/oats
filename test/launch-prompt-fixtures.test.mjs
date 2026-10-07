@@ -108,7 +108,7 @@ test("qualified fixture construction and argv exclusions (synthetic hash substit
   const frames = ready.fixtures.flatMap(f => f.frames);
   const prompt = frames.find(f => f.kind === "prompt").text;
   const completeBanners = frames.filter(f => f.kind === "completed" && f.after.join() === "awebDevelopmentChannel");
-  assert.equal(completeBanners.length, 2);
+  assert.equal(completeBanners.length, 10);
   const target = { socket: "/private/test", windowId: "@1", paneId: "%1", pid: "123" };
   for (const { text: complete } of completeBanners) {
     let firstText = complete;
@@ -137,7 +137,7 @@ test("qualified fixture construction and argv exclusions (synthetic hash substit
             if (mode === "question") text = text.replace("Channels (experimental)", "Allow this plugin?");
             if (mode === "installed") text = text.replace("Channels (experimental)", "Channels connected");
             if (mode === "model") text = text.replace("Opus 5.5", "Sonnet 5");
-            if (mode === "billing") text = text.replace("API Usage Billing", "Pro Subscription");
+            if (mode === "billing") text = text.replace(/API Usage Billing|Claude (Max|Pro|Team|Enterprise)/, "Unqualified Subscription");
             if (mode === "effort") text = text.replace("medium · /effort", "high · /effort");
             if (mode === "permission") text = text.replace("auto mode on", "accept edits on");
             return { status: mode === "send-failed" ? "failed" : "submitted" };

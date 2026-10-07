@@ -634,8 +634,9 @@ entry means zero audit destinations were attempted, not a successful write.
 No audit or metadata write is directed into the replacement home.
 
 A blocked result can follow a successfully submitted Enter. The accepted
-completion families cover exact installed-plugin and plugin-absent banners;
-different model, billing, effort or permission text can leave the pane active while
+completion families cover exact installed-plugin and plugin-absent banners,
+plus source-derived billing-only variants of those empty frames (Max, Pro,
+Team and Enterprise). Other model, billing, effort or permission text can leave the pane active while
 reporting a retained block. Inspect `answers` and the event receipts; never infer
 that nothing started or nothing was answered. See the
 [completion limitation](configuration.md#exact-home-launch-prompt-consent).

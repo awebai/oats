@@ -185,6 +185,9 @@ alone is insufficient. Preview reports policy without terminal input;
 `--no-launch` never answers. If launch returns `E_SPAWN_INCOMPLETE`, inspect the
 retained home/pane: do not respawn, repeat keys or treat `launched:false` as an
 absent process.
+Completion additionally accepts source-derived Max/Pro/Team/Enterprise labels
+on the exact empty Opus 5.5 / auto / medium frame. This interim support does not
+cover task-filled or bypass-permissions screens and does not prove readiness.
 
 Create and spawn only when asked. After the first spawn, the `oats.setup`
 skills carry the rest of the deployment (messaging, more souls, rebuilds); the
