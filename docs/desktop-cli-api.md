@@ -403,7 +403,10 @@ its closing marker, and one wholly past the cap has `start == end ==
 text.length`. The text equals what the spawn writes except that capability
 markers' `src=` is home-relative. It is `null` when the soul resolves but
 cannot be composed here, with the kernel's code and sentence, naming
-`composedInstructions`, in `problems[]`.
+`composedInstructions`, in `problems[]`. Routed with `--server <id>`, the flag
+travels to the host; a host whose probe does not advertise
+`soul-composed-instructions` is refused with `E_REMOTE_INCOMPATIBLE`, and
+nothing is sent.
 
 **Layers.** `id` is the capability filling the slot or `null`. `from`
 (feature `layers-from`) is `"soul"` or `"workspace"`, `null` for an empty slot
