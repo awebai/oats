@@ -34,7 +34,7 @@ import {
   FAILED_SPAWN_BRANCH_LEFT, RETIRE_DELETE_BRANCH_REFUSED,
 } from "../lib/core.mjs";
 import {
-  writeFileAtomic, LOCK_FILE, readLock, readLockIfPresent, writeLock, resolvePackages, memoizedRemote,
+  writeFileAtomic, LOCK_FILE, canonicalLock, readLock, readLockIfPresent, writeLock, resolvePackages, memoizedRemote,
   classifyPackageValue, parsePackageRequest } from "../lib/packages.mjs";
 import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, workspaceWarnings, memberRowByKey } from "../lib/workspace.mjs";
 import { discoveredTeamKeys, isTeamRefusal, localTeamsClosedProblem, recordedTeams, reportRows, soulKeyOf, soulTeams, teamKeyOf, teamModel } from "../lib/teams.mjs";
@@ -1374,7 +1374,8 @@ async function performSync(ctx, bail, { onDiscovered, plan = false } = {}) {
   }
   const lock = resolved.lock;
   let lockFile = join(resolve(ctx.deploymentDir), LOCK_FILE);
-  if (!plan) try { lockFile = writeLock(ctx.deploymentDir, lock); } catch (e) { return bail(e.code || "E_LOCK_SCHEMA", e.message, e.details); }
+  // A plan validates the lock exactly as writeLock would (canonicalLock), so it never answers ok where the sync fails.
+  try { if (plan) canonicalLock(lock); else lockFile = writeLock(ctx.deploymentDir, lock); } catch (e) { return bail(e.code || "E_LOCK_SCHEMA", e.message, e.details); }
   // Package souls come from the lock: list what THIS sync locked, not what the previous lock held.
   if (discovery.standalone !== true) {
     let pkg;
@@ -1388,6 +1389,8 @@ async function performSync(ctx, bail, { onDiscovered, plan = false } = {}) {
   }
   // The deployment's instance root: <deployment>/agents/ (findRoot's marker). A hand-written
   // oats-local.yaml + sync is a complete deployment; spawn must not answer E_NO_DEPLOYMENT after it.
+  // A plan creates nothing: on a deployment that never synced, a schedule whose cwd is under agents/ is reported
+  // invalid by the plan and accepted by the sync that creates agents/ first (#731 review, accepted edge).
   if (!plan) try { mkdirSync(join(ctx.deploymentDir, "agents"), { recursive: true }); } catch { /* reported by spawn's E_NO_DEPLOYMENT remedy if it matters */ }
   // Workspace automations (0.29.0): discovered with the members and the new lock (a trigger
   // template instantiates at the locked package commit), kept as the snapshot the host tick reads.
@@ -1399,8 +1402,9 @@ async function performSync(ctx, bail, { onDiscovered, plan = false } = {}) {
   const packages = packageRows(lock);
   const changes = resolved.changes;
   const items = workspaceItems(discovery, lock, ctx.local, ctx.deploymentDir);
+  const snapshotDue = plan && automationSnapshotDue(ctx.deploymentDir, automations);
   const report = { syncApi: 1, ...(plan ? { plan: true } : {}), automations: automationCounts(automations), standalone: discovery.standalone === true || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, lock: lockFile }, members, packages, changes, problems, warnings: discovery.warnings ?? [] };
-  return { report, lock, discovery, items, lockFile, problems };
+  return { report, lock, discovery, items, lockFile, problems, snapshotDue };
 }
 
 /** The one-line standalone explanation (decision 10). `standaloneReason` says WHY the view is
@@ -1427,7 +1431,7 @@ function printSyncReport(ctx, synced) {
   const changed = changes.filter((c) => c.to !== null && c.from !== c.to).map((c) => `${c.id}  ${c.from ?? "—"} → ${c.to} (@ ${short(c.commit)})`);
   const removed = changes.filter((c) => c.to === null).map((c) => `${c.id}  ${c.from} → removed`);
   const plan = report.plan === true;
-  console.log(`${plan ? "would change" : "changed   "} ${[...changed, ...removed].join("   ") || `(nothing — the lock already ${plan ? "describes" : "described"} this workspace)`}`);
+  console.log(`${plan ? "to change " : "changed   "} ${[...changed, ...removed].join("   ") || `(nothing — the lock already ${plan ? "describes" : "described"} this workspace)`}`);
   const memberSouls = items.souls.filter((s) => s.kind === "member");
   const externalSouls = items.souls.filter((s) => s.kind === "external");
   // Souls have no private mode (0.26.0); the private count is of repo-owned member capabilities.
@@ -1441,7 +1445,7 @@ function printSyncReport(ctx, synced) {
   if (ac.triggers || ac.schedules) console.log(`automations ${ac.triggers} trigger${ac.triggers === 1 ? "" : "s"}, ${ac.schedules} schedule${ac.schedules === 1 ? "" : "s"} in the members (oats trigger list · oats schedule list)`);
   for (const p of synced.problems ?? discovery.problems) console.log(`problem    ${p.code}  ${p.repoKey ? `${memberLabel(p.repoKey)}:` : ""}${p.path}  ${p.message}`);
   for (const w of discovery.warnings ?? []) console.log(`warning    ${w.code}  ${w.message}`);
-  if (plan) console.log(`\nplan       nothing written: \`oats sync\` would write ${shortPath(lockFile)} with the changes above${report.automations.triggers || report.automations.schedules || report.automations.problems ? " and the automations snapshot" : ""}`);
+  if (plan) console.log(`\nplan       nothing written: \`oats sync\` would write ${shortPath(lockFile)} ${changes.length ? "with the changes above" : "(unchanged)"}${synced.snapshotDue ? " and the automations snapshot" : ""}`);
   else console.log(`\nlock       ${shortPath(lockFile)}`);
 }
 
@@ -1454,10 +1458,11 @@ async function takeAutomationSnapshot(ctx, discovery, lock, { write = true } = {
   const snap = A.snapshotOf(discovery, found, { souls: A.soulIndexOf(discovery, memberLabel) });
   // A workspace with no triggers or schedules leaves nothing behind (onboard creates what the
   // kernel needs and nothing else); a snapshot that existed is replaced, so a removal lands.
-  const empty = !snap.triggers.length && !snap.schedules.length && !snap.problems.length;
-  if (write && (!empty || A.readSnapshot(ctx.deploymentDir))) A.writeSnapshot(ctx.deploymentDir, snap);
+  if (write && automationSnapshotDue(ctx.deploymentDir, snap)) A.writeSnapshot(ctx.deploymentDir, snap);
   return snap;
 }
+/** Whether a sync writes this snapshot: it has entries, or one exists to replace. */
+const automationSnapshotDue = (dep, snap) => !!(snap.triggers.length || snap.schedules.length || snap.problems.length || A.readSnapshot(dep));
 /** The two kinds' descriptors (lib/triggers.mjs triggerKind, lib/schedule.mjs scheduleKind). */
 async function automationKinds(dep, lock, remoteOptions) {
   const T = await import("../lib/triggers.mjs");
@@ -1529,10 +1534,15 @@ const SYNC_USAGE = "usage: oats sync [--dir <deployment>] [--plan] [--json]";
 /** Why `oats sync`'s argv is not a sync, or undefined (#731): an unknown flag or a positional is refused
  *  before anything is read or written, never ignored. `--approve` keeps its own refusal (performSync). */
 function syncArgvProblem(argv) {
+  let dirs = 0;
   for (let i = 1; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--json" || a === "--plan") continue;
-    if (a === "--dir") { if (argv[i + 1] !== undefined && !argv[i + 1].startsWith("--")) i++; continue; }
+    if (a === "--dir") {
+      if (dirs++) return { message: `oats sync: give --dir once\n${SYNC_USAGE}`, details: { flag: a } };
+      if (argv[i + 1] !== undefined && !argv[i + 1].startsWith("--")) i++;
+      continue;
+    }
     if (a === "--approve") return { message: `--approve: ${APPROVAL_REMOVED}`, details: { flag: a } };
     if (a.startsWith("-")) return { message: `oats sync: unknown flag ${a}\n${SYNC_USAGE}`, details: { flag: a } };
     return { message: `oats sync: unexpected argument ${JSON.stringify(a)}: sync takes no positional (the deployment is --dir <deployment>)\n${SYNC_USAGE}`, details: { argument: a } };

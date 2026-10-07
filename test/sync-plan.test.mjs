@@ -63,11 +63,14 @@ test("sync --plan writes nothing and reports the changes the following bare sync
     r = oats(["sync", "--json"], { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.equal(envelope(r).result.plan, undefined, "a bare sync is no plan");
+    // An automations snapshot to replace: a sync would rewrite it (Northwind has no automations), a plan must not.
+    mkdirSync(join(dep, ".agents", "automations"), { recursive: true });
+    writeFileSync(join(dep, ".agents", "automations", "snapshot.json"), JSON.stringify({ triggers: [], schedules: [] }) + "\n");
     const lock = JSON.parse(readFileSync(lockFile, "utf8"));
     delete lock.packages["oats.okf"];
     writeFileSync(lockFile, JSON.stringify(lock, null, 2) + "\n");
     const past = new Date(Date.now() - 3_600_000);
-    utimesSync(lockFile, past, past);
+    for (const f of [lockFile, join(dep, ".agents", "automations", "snapshot.json")]) utimesSync(f, past, past);
     const before = tree(dep);
     r = oats(["sync", "--plan", "--json"], { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -79,8 +82,8 @@ test("sync --plan writes nothing and reports the changes the following bare sync
     // The text preview says what a bare sync would change, and still writes nothing.
     r = oats(["sync", "--plan"], { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /^would change oats\.okf {2}— → 2\.1\.3/m);
-    assert.match(r.stdout, /^plan {7}nothing written: `oats sync` would write /m);
+    assert.match(r.stdout, /^to change {2}oats\.okf {2}— → 2\.1\.3/m);
+    assert.match(r.stdout, /^plan {7}nothing written: `oats sync` would write \S+ with the changes above and the automations snapshot$/m);
     assert.doesNotMatch(r.stdout, /^lock /m);
     assert.deepEqual(tree(dep), before);
 
@@ -99,7 +102,7 @@ test("sync refuses a flag or a positional it does not read, before anything is w
   const { base, dep, env } = await northwind();
   try {
     const before = tree(dep);
-    for (const [argv, named] of [[["--plna"], "--plna"], [["--force"], "--force"], [["--dir", dep, "extra"], "\"extra\""], [["-n"], "-n"]]) {
+    for (const [argv, named] of [[["--plna"], "--plna"], [["--force"], "--force"], [["--dir", dep, "extra"], "\"extra\""], [["-n"], "-n"], [["--dir", dep, "--dir", dep], "--dir once"]]) {
       let r = oats(["sync", ...argv, "--json"], { cwd: dep, env, base });
       assert.equal(r.status, 1, `${argv.join(" ")}: ${r.stdout}${r.stderr}`);
       const err = envelope(r).error;

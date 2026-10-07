@@ -690,7 +690,8 @@ snapshot; the remote cache fills as any read fills it). `changes[]` is what a
 bare `oats sync` would apply, `workspace.lock` the lock it would write, and
 `automations` counts what it would snapshot. A flag or a positional `sync` does
 not read is refused with `E_BAD_ARGS` (`details: {flag}` or `{argument}`) before
-anything is read or written.
+anything is read or written. A kernel before 0.44.0 ignores `--plan` and
+applies: gate `sync --plan` on `version` 0.44.0 or later, never by trying.
 
 ```json
 {"syncApi":1,"automations":{"triggers":3,"schedules":2,"problems":1,"takenAt":"2026-09-26T19:58:09.281Z"},
