@@ -25,7 +25,7 @@ import { inertHarnessDir } from "./runtime-stub.mjs";
 import { isolatedTmuxTmpdir, noLoginShell, privateTmuxTmpdir, removeTmuxTmpdir } from "./host-fixture.mjs";
 
 export const CLI = resolve(new URL("../../bin/oats.mjs", import.meta.url).pathname);
-const IDENTITY = ["TMUX", "TMUX_PANE", "OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "OATS_AGENT", "OATS_SOUL", "OATS_ROOT", "OATS_CONTEXT", "OATS_WORKSPACE",
+const IDENTITY = ["TMUX", "TMUX_PANE", "OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "OATS_AGENT", "OATS_SOUL", "OATS_SOUL_ID", "OATS_ROOT", "OATS_CONTEXT", "OATS_WORKSPACE",
   "PI_AGENT_INSTANCE", "PI_AGENT_HOME", "PI_AGENTS_ROOT"];
 const DATE = "2026-09-25T09:00:00Z";
 

@@ -12,7 +12,7 @@ import { packageRepo } from "./helpers/package-repo.mjs";
 
 const SEEN = `{ agent: process.env.OATS_AGENT ?? null, id: process.env.OATS_SOUL_ID ?? null, soul: process.env.OATS_SOUL ?? null }`;
 const probeCap = {
-  manifest: { command: "probe", commands: { go: "bin/go.mjs" }, hooks: { spawn: "hooks/spawn.mjs" } },
+  manifest: { command: "probe", commands: { go: "bin/go.mjs" }, hooks: { spawn: "hooks/spawn.mjs", retire: "hooks/retire.mjs" } },
   files: {
     "bin/go.mjs": `console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: ${SEEN} }));\n`,
     // The spawn hook records what it was given, beside the home it scaffolds.
@@ -21,6 +21,11 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 writeFileSync(join(process.env.OATS_INSTANCE_HOME, "probe-hook.json"), JSON.stringify(${SEEN}));
 ` },
+    // Retire hooks take the soul id from the home, not from the spawn's prepared entry; the home is
+    // removed after, so it records outside it.
+    "hooks/retire.mjs": `import { writeFileSync } from "node:fs";
+writeFileSync(process.env.PROBE_RETIRE_OUT, JSON.stringify(${SEEN}));
+`,
   },
 };
 // A soul without the namespace sorts first, so the default soul is chosen by the namespace, not by name.
@@ -49,7 +54,7 @@ test("operator dispatch, with --soul and with the default soul, gets the soul's 
   assert.notEqual(explicit[0].soul, explicit[1].soul, "OATS_SOUL is a per-run temporary copy");
 });
 
-test("one soul gives one OATS_AGENT and OATS_SOUL_ID through its spawn hook, its home's dispatch and an operator dispatch", async (t) => {
+test("one soul gives one OATS_AGENT and OATS_SOUL_ID through its spawn and retire hooks, its home's dispatch and an operator dispatch", async (t) => {
   const fx = fixture(t);
   await fx.spawn("withprobe", { instance: "withprobe-1" });
   const home = join(fx.root, "withprobe", "instances", "withprobe-1");
@@ -59,12 +64,19 @@ test("one soul gives one OATS_AGENT and OATS_SOUL_ID through its spawn hook, its
   assert.equal(recorded.workspace.soul.id, hook.id, "the id spawn recorded is the one its hook got");
 
   const inHome = seen(fx, [], { cwd: home, env: { OATS_INSTANCE_HOME: home } });
+  const byCwd = seen(fx, [], { cwd: home });
   const operator = seen(fx, ["--soul", "withprobe"]);
   const byDefault = seen(fx, []);
-  for (const [path, r] of Object.entries({ inHome, operator, byDefault })) {
+  for (const [path, r] of Object.entries({ inHome, byCwd, operator, byDefault })) {
     assert.deepEqual({ agent: r.agent, id: r.id }, { agent: hook.agent, id: hook.id }, `${path}: what the hook got`);
   }
   assert.equal(inHome.soul, hook.soul, "home dispatch: the home's recorded soul directory, as before");
+
+  const out = join(fx.base, "retire-hook.json");
+  const retired = fx.cli(["retire", "withprobe-1", "--json"], { env: { PROBE_RETIRE_OUT: out } });
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  const retire = JSON.parse(readFileSync(out, "utf8"));
+  assert.deepEqual({ agent: retire.agent, id: retire.id }, { agent: hook.agent, id: hook.id }, "the retire hook got the same");
 });
 
 test("an ambient OATS_AGENT, OATS_SOUL_ID or OATS_SOUL from the caller never reaches the command", async (t) => {
@@ -82,6 +94,7 @@ test("an ambient OATS_AGENT, OATS_SOUL_ID or OATS_SOUL from the caller never rea
     assert.equal(r.id, id, `${path}: OATS_SOUL_ID is this command's soul`);
     assert.notEqual(r.soul, AMBIENT.OATS_SOUL, `${path}: OATS_SOUL is this command's soul`);
   }
+  assert.equal(runs.inHome.soul, JSON.parse(readFileSync(join(home, "instance.json"), "utf8")).soulDir, "home dispatch: the recorded soul directory");
 });
 
 // The package ships the probe capability beside its own acme-tool; its keeper soul takes both.
@@ -91,6 +104,7 @@ const probePackage = () => packageRepo({
       "capabilities/probe/oats.json": { capability: "acme.probe", version: "1.0.0", description: "probe", compatibility: { oats: ">=0.24.0" }, ...probeCap.manifest },
       "capabilities/probe/bin/go.mjs": probeCap.files["bin/go.mjs"],
       "capabilities/probe/hooks/spawn.mjs": probeCap.files["hooks/spawn.mjs"].text,
+      "capabilities/probe/hooks/retire.mjs": probeCap.files["hooks/retire.mjs"],
     },
     souls: { keeper: { soul: { capabilities: { "acme-tool": { from: "here" }, "acme.probe": { from: "here" } } } } },
 });

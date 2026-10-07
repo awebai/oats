@@ -457,18 +457,21 @@ from the deployment directory) receives:
   per-commit or temporary path, so a provider never keys durable state on it;
 - `OATS_AGENT` and `OATS_SOUL_ID` (0.43.3), with the values that soul's
   hooks get: the soul's agents-root name (`<package>--<soul>` for a package
-  soul) and its stable id (`<repoKey>#<soul>`, or `package:<id>#<soul>`).
-  One soul gives the same values from its home, from the deployment (with
-  `--soul` or as the default soul) and in its hooks. Key durable
-  per-soul state on `OATS_SOUL_ID`.
+  soul, see [Package souls](packages.md#package-souls)) and its stable id
+  (`<repoKey>#<soul>`, or `package:<id>#<soul>`; for a home, the id its
+  spawn recorded). One soul gives the same values from its home, from the
+  deployment (with `--soul` or as the default soul) and in its hooks. Key
+  durable per-soul state on `OATS_SOUL_ID`. A provider that relies on them
+  declares `compatibility.oats: ">=0.43.3"`: on an earlier kernel a
+  dispatched command gets neither, and a value it sees there is the
+  caller's.
 
 An `OATS_SOUL`, `OATS_AGENT` or `OATS_SOUL_ID` in the caller's environment is
 removed: it names another soul (a coordinator's, an outer command's). With
-no soul, the variable is absent. The kernel sets none of the hook-only
-variables (`OATS_EVENT`, `OATS_LAYER`, `OATS_LEVEL`, `OATS_INSTANCE`,
-`OATS_INSTANCE_HOME`, `OATS_CONTEXT`, `OATS_WORKSPACE`, `OATS_ROOT`,
-`OATS_META`): those, like every other variable of the caller's, pass through
-as the caller had them.
+no soul, the variable is absent. The kernel sets no other variable a hook
+gets (for example `OATS_EVENT`, `OATS_INSTANCE`, `OATS_HOME`,
+`OATS_CONTEXT`, `OATS_WORKSPACE`, `OATS_META` or the spawn and launch
+extras), so a dispatched command does not read them.
 
 `OATS_SETTINGS_ORIGINS` says where each leaf of
 `OATS_SETTINGS` came from: a JSON object from a JSON pointer to `{ kind, at }`,
