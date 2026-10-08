@@ -638,7 +638,9 @@ Git in the recovery. Set by hand in the recovery only what you trust.
 copy and for each nested repository's alike, the copier collects what the
 Git metadata it carries names: every commit the stash's log names (the new
 id of each entry, as `git log -g refs/stash` shows them), for a nested
-repository every commit its `HEAD` and branch reflogs name, and every blob
+repository the commit of each of its local branches (its own `refs/heads`,
+including a branch its configuration hides from a clone) and every commit
+its `HEAD` and branch reflogs name, and every blob
 the copied index's entries and resolve-undo records name (a gitlink names
 another repository's commit and is left out). It asks which of them the
 copy lacks, fetches the missing commits from the source by id and copies

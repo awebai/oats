@@ -2058,6 +2058,27 @@ test("#657 a nested repository's copy is on its source's branch, has every local
   assert.match(readFileSync(join(copy, "nested.txt"), "utf8"), /^<<<<<<< /m, "the resolved conflict can be recreated");
 });
 
+test("#657 a nested repository's branch that its configuration hides from a clone (uploadpack.hideRefs), on a commit nothing else reaches, is in the copy under its name, with its reflog", () => {
+  const f = fixture();
+  const spawned = spawn(f, "nested-hidden");
+  const work = join(spawned.home, "work");
+  const nested = nestedRepository(work);
+  const git = gitTextIn(nested);
+  const hidden = git("commit-tree", "-p", "HEAD", "-m", "only the hidden branch reaches this", `${headOf(nested)}^{tree}`).trim();
+  git("update-ref", "--create-reflog", "refs/heads/hidden", hidden);
+  git("config", "uploadpack.hideRefs", "refs/heads/hidden");
+  assert.doesNotMatch(git("reflog", "show", "--format=%H", "HEAD"), new RegExp(hidden), "fixture premise: HEAD's reflog does not name the hidden tip");
+  const branches = git("for-each-ref", "--format=%(objectname) %(refname)", "refs/heads");
+  const hiddenLog = git("reflog", "show", "--format=%H", "refs/heads/hidden");
+
+  const retired = cli(f, ["retire", "dev-nested-hidden", "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const copy = nestedUnder(join(JSON.parse(retired.stdout).workRecovery.path, "repo"));
+  assert.equal(hasObject(copy, hidden), true, "the hidden branch's commit is in the copy");
+  assert.equal(gitTextIn(copy)("for-each-ref", "--format=%(objectname) %(refname)", "refs/heads"), branches, "every local branch, the hidden one included");
+  assert.equal(gitTextIn(copy)("reflog", "show", "--format=%H", "refs/heads/hidden"), hiddenLog, "with its reflog");
+});
+
 test("#657 a detached nested repository's copy is detached at the source's commit, which no branch reaches, with the source's other branches", () => {
   const f = fixture();
   const spawned = spawn(f, "nested-detached");
