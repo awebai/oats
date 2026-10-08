@@ -38,6 +38,10 @@ export async function capabilityRequest(request, { workspace, cli, agents = [], 
   // refresh (bypass the cached observation) is an inspect concern only.
   if (request.refresh !== undefined && (action !== 'inspect' || typeof request.refresh !== 'boolean')) fail('Invalid refresh flag');
   const refresh = request.refresh === true;
+  // instructions (feature soul-composed-instructions): a soul's composed AGENTS.md, inspect of a soul only. The
+  // adapter sends it only to a CLI whose probe advertises it; it never routes to a server (that host's probe is not held).
+  if (request.instructions !== undefined && (action !== 'inspect' || typeof request.instructions !== 'boolean' || selector.soul === undefined)) fail('Invalid instructions flag');
+  const instructions = request.instructions === true && !server;
   let soul, agentsRoot, home, key;
   let context = workspace.scope;
   if (selector.home !== undefined) {
@@ -59,11 +63,11 @@ export async function capabilityRequest(request, { workspace, cli, agents = [], 
     const agent = matches[0];
     soul = agent.name; agentsRoot = agent.agentsRoot;
     context = dirname(agentsRoot);
-    key = inspectKey({ deployment: workspace.scope, server, kind: 'soul', soul, agentsRoot, catalogKey });
+    key = inspectKey({ deployment: workspace.scope, server, kind: 'soul', soul, agentsRoot, catalogKey, instructions });
   } else fail('Select a soul or an instance home (inspection has no scope subject)');
   const call = () => invoke(cli.bin, {
     action, context, server, soul, agentsRoot, home,
-    operation: request.operation, ...(request.args !== undefined ? { args: request.args } : {}),
+    operation: request.operation, ...(request.args !== undefined ? { args: request.args } : {}), ...(instructions ? { instructions } : {}),
     localCwd: server ? localCwd : context || workspace.scope,
     // --max-age travels only on a LOCAL inspect (reuse is local only: the kernel refuses it with --server)
     // and only when the probe declared observe-max-age (the adapter's call).

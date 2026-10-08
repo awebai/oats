@@ -1490,12 +1490,12 @@ for (const [name] of palettes) test(`${name}: capability Contents navigation, re
 
 // Spec D (B1): the soul page's Instructions — the Contents card's grammar on the soul page, its own copy (the
 // group label, the file's repository path, the truncated flag, the unreadable line) on the same grounds.
-import { createSoulInstructions } from '../renderer/soul-instructions.mjs';
+import { createSoulInstructions, soulInstructionsCSS } from '../renderer/soul-instructions.mjs';
 for (const [name] of palettes) test(`${name}: the soul page's Instructions section meets computed AA without opacity`, () => {
   const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><div class="workspace-page soul-page"><div class="inspector-content inspector-main"></div></div></div></body></html>`, { pretendToBeVisual: true });
   const doc = dom.window.document;
-  for (const source of [css, inspectorCSS, pageCardCSS, capabilityPageCSS, capabilityContentsCSS, MARKDOWN_CSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
-  const section = createSoulInstructions(doc, { openExternal() {} }); doc.querySelector('.inspector-main').append(section.element);
+  for (const source of [css, inspectorCSS, pageCardCSS, capabilityPageCSS, capabilityContentsCSS, soulInstructionsCSS, MARKDOWN_CSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  const section = createSoulInstructions(doc, { openExternal() {}, canOpenCapability: () => true, openCapability() {} }); doc.querySelector('.inspector-main').append(section.element);
   const soul = text => ({ name: 'release-manager', path: 'souls/release-manager', instructions: { file: '/cache/AGENTS.md', text, truncated: true } });
   section.update(soul('---\nname: x\n---\n# T\n\n[a](https://example.com)\n'));
   const root = dom.window.getComputedStyle(doc.documentElement);
@@ -1520,6 +1520,23 @@ for (const [name] of palettes) test(`${name}: the soul page's Instructions secti
   section.update({ ...soul(null), instructions: { file: '/cache/AGENTS.md', text: null, truncated: false } });
   check([['.cap-reader-line', '.cap-contents-reader', 'muted', 'bg']]);
   assert.equal(doc.querySelector('.cap-reader-line').textContent, "This soul's AGENTS.md could not be read.");
+  // B2: the composed document's part headers ("From this soul" / "Injected by …", file, size, the cut flag) and the
+  // past-the-limit line. A kernel-shaped answer: the body, a capability block cut by the cap, a block wholly past it.
+  const body = '# T\n\n', block = '<!-- oats:capability:oats.core -->\n## Core\n\nText that the cap cuts.\n<!-- /oats:capability:oats.core -->\n\n';
+  const cap = body.length + 40, text = (body + block).slice(0, cap);
+  section.update({ ...soul('# T\n'), composedInstructions: { file: null, text, truncated: true, resolution: 'r', body: { start: 0, end: body.length, truncated: false },
+    sources: [{ source: 'capability:oats.core', file: '.oats/modules/oats.core/inject.md', start: body.length, end: cap, truncated: true },
+      { source: 'work-mode:worktree', file: null, start: cap, end: cap, truncated: true }] } });
+  doc.querySelector('[data-path="composed"] .cap-node-name').click();
+  check([
+    ['.cap-tree [role=group] [role=treeitem] .cap-node-name.mono', '.cap-contents', 'fg', 'surface'],
+    ['[data-path=composed][aria-selected=true] > .cap-node .cap-node-desc', '[data-path=composed][aria-selected=true] > .cap-node', 'muted', 'sel'],
+    ['.soul-part[data-source=soul] .soul-part-title', '.cap-contents-reader', 'fg', 'bg'],
+    ['.soul-part[data-source=soul] .soul-part-file', '.cap-contents-reader', 'fg', 'bg'],
+    ['.soul-part[data-source^=capability] .soul-part-size', '.cap-contents-reader', 'muted', 'bg'],
+    ['.soul-part[data-source^=capability] .soul-part-flag', '.cap-contents-reader', 'warn', 'bg'],
+    ['.soul-part[data-source^=work-mode] .cap-reader-line', '.cap-contents-reader', 'muted', 'bg'],
+  ]);
   section.dispose(); dom.window.close();
 });
 

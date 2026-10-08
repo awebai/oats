@@ -35,7 +35,7 @@ import { layerLabel } from './workspace-catalog.mjs';
 import { shownLaunch, launchHarnessName, launchModelText, launchFromText, launchAtText, declaredText, preferenceText, declaredDiffers } from './launch-view.mjs';
 import { createDataState, skeletonBlock, skeleton, captureFocusState } from './loading.mjs';
 import { createDeploymentScopeLine } from './deployment-scope-line.mjs';
-import { createSoulInstructions } from './soul-instructions.mjs';
+import { createSoulInstructions, composedSupported } from './soul-instructions.mjs';
 
 
 const HARNESS_NAMES = { pi: 'Pi', claude: 'Claude Code', codex: 'Codex' };
@@ -215,7 +215,9 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
   // The loading controller of the shown subject (loading.mjs), and the signature of what the content paints.
   let loading = null, painted = null, scopeLine = null; // scopeLine: "On <primary deployment>" (#482)
   // The soul page's Instructions section (soul-instructions.mjs): one controller per subject, re-appended by every repaint.
-  let instructionsSection = null;
+  // `instructionCapabilities`: the shown inspection's capabilities by id, each with its core or composition entry, so a
+  // composed part's "Open capability" takes the tables' own path.
+  let instructionsSection = null, instructionCapabilities = new Map();
   // The controller's clock (tests inject one); createDataState's defaults apply on undefined.
   const timers = { now: clock.now, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout };
   const pendingOperations = new WeakMap();
@@ -326,7 +328,15 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       if (selection.agent) { renderSoulActions(column); renderSoulRoster(); }
       // "Teams here" reads `oats soul teams` in parallel with `inspect`, not after it.
       if (selection.agent) ensureTeamsHere();
-      if (selection.agent) instructionsSection = createSoulInstructions(doc, { openExternal: typeof ctx?.openExternal === 'function' ? url => { if (alive) ctx.openExternal(url); } : null });
+      if (selection.agent) {
+        const id = subject, gen = selectionGen;
+        instructionsSection = createSoulInstructions(doc, { openExternal: typeof ctx?.openExternal === 'function' ? url => { if (alive) ctx.openExternal(url); } : null,
+          canOpenCapability: capability => typeof openCapability === 'function' && instructionCapabilities.has(capability),
+          openCapability: capability => {
+            const found = instructionCapabilities.get(capability);
+            if (found && ownsSubject(id, gen)) openCapability(found.cap, selection.agent, found.entry);
+          } });
+      }
       return;
     }
     headActions = null; facts$ = null; side = null;
@@ -379,7 +389,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     if (same && selection.agent) renderSoulRoster();
     if (same && teamsHere) void teamsHere.refresh({ user });
     try {
-      const result = await request({ action: 'inspect', selector: next.selector, ...(user ? { refresh: true } : {}) });
+      const result = await request({ action: 'inspect', selector: next.selector, ...(user ? { refresh: true } : {}), ...(composedWanted(next) ? { instructions: true } : {}) });
       if (!valid(id, gen)) return;
       data = result;
       const inspected = inspectData(data, selection);
@@ -413,6 +423,11 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       if (labels) content.append(node('p', `Team labels in conflict: ${labels.join(', ')}`, 'muted inspector-conflict-labels'));
       syncAvailability(); // stale: the mutations wait, with the reason
     }
+  }
+  /** The soul page asks for the composed AGENTS.md (feature soul-composed-instructions) of a soul inspected on this
+   * computer: a remote host's probe is not known here, and a host without the feature refuses the flag. */
+  function composedWanted(next) {
+    return layout === 'page' && !!next?.agent && !next.agent.remote && !next.agent.server && composedSupported(cliStatus());
   }
   function facts(entries, parent = content) {
     const dl = node('dl', undefined, 'inspector-facts');
@@ -684,6 +699,8 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     const table = node('div', undefined, 'inspector-capability-table'); composition.append(table); content.append(composition);
     if (typeof capabilityTable === 'function') capabilityTable(table, entries, { soul: selection.agent });
     // Instructions (spec D): what the soul tells its instances, from this inspection (no read of its own).
+    instructionCapabilities = new Map([...coreRows.filter(entry => entry.id && entry.cap).map(entry => [entry.id, { cap: entry.cap, entry }]),
+      ...entries.filter(entry => entry.cap?.id).map(entry => [entry.cap.id, { cap: entry.cap, entry }])]);
     if (instructionsSection) { instructionsSection.update(soul); content.append(instructionsSection.element); }
     // Beside: its teams (joining is per instance) and its knowledge nodes. Team model v2
     // (kernel feature team-model-2): "Teams here", this computer's membership, editable — created

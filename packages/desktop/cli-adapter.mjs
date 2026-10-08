@@ -493,7 +493,7 @@ export function operationArgs(args) {
 }
 /** `maxAge` (feature observe-max-age) is inspect's alone; `features` is the probe's list and
  * gates the flag, so an undeclared kernel gets the flagless argv even when a value is given. */
-export async function cliCapability(bin, { action, context, server, soul, agentsRoot, home, operation, args, localCwd, maxAge, features }, io = {}) {
+export async function cliCapability(bin, { action, context, server, soul, agentsRoot, home, operation, args, localCwd, maxAge, instructions = false, features }, io = {}) {
   const bad = message => { throw Object.assign(new Error(message), { code: 'E_BAD_ARGS' }); };
   const value = (v, label) => {
     if (typeof v !== 'string' || !v || v.startsWith('-') || v.includes('\0')) bad(`Invalid ${label}`);
@@ -518,7 +518,11 @@ export async function cliCapability(bin, { action, context, server, soul, agents
   // Reuse is local only: the kernel refuses --max-age with --server (E_BAD_ARGS), so a routed inspect never carries it.
   if (server && maxAge !== undefined) bad('Observation age does not route to a server');
   if (!validMaxAge(maxAge)) bad('Invalid observation age');
-  return await runJson(bin, [...argv, ...target, ...maxAgeArgv(features, maxAge), '--json'], {
+  // --instructions (feature soul-composed-instructions) composes a soul's AGENTS.md: inspect --soul only, never routed
+  // (a host without the feature refuses it); a CLI that does not advertise it gets the flagless argv.
+  if (instructions && (action !== 'inspect' || !soul || home || server)) bad('Composed instructions belong to a local soul inspection');
+  const composed = instructions && Array.isArray(features) && features.includes('soul-composed-instructions') ? ['--instructions'] : [];
+  return await runJson(bin, [...argv, ...target, ...composed, ...maxAgeArgv(features, maxAge), '--json'], {
     cwd: localCwd, exec: io.exec, timeout: io.timeout ?? (action === 'run' ? 300_000 : ENVELOPE_TIMEOUT_MS),
   });
 }

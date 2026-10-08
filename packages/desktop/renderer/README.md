@@ -791,6 +791,38 @@ and `render()` re-appends its element after taking `hold()` before
 offsets; `update(soul)` repaints its tree or reader only when what they show
 changed. The tree's focus key is `instructions:own`.
 
+**The composed AGENTS.md (spec D, B2).** On the soul page of a local soul,
+when the CLI's probe advertises `soul-composed-instructions`
+(`composedSupported`), the inspect request carries `instructions: true`
+(`composedWanted` in `soul-inspector.mjs`; never the sidebar, never a remote or
+server soul, whose host probe this app does not hold). The server accepts that
+one boolean on a soul inspect only, drops it for a routed workspace, and keys
+the cache on it; the adapter appends `--instructions` only when the probe's
+features list it. `composedOf(soul)` decodes `souls[0].composedInstructions`:
+`undefined` (key absent: no group), `null` (cannot be composed here: a note,
+the problem shows with the page's others), `false` (an answer that breaks the
+contract — ranges that don't tile `text` from 0 — a note, nothing rendered), or
+`{ text, truncated, parts }`. Parts are the body (`source: 'soul'`, file
+`<path>/AGENTS.md`) then each `sources[]` entry with its marker lines dropped
+(`blockText`; a part cut by the cap may lack its closing one); a part wholly
+past the cap (`start == end == text.length`) shows "Not included: past the size
+limit." The group's label is "Instance"; its top item is "AGENTS.md" with
+"after spawn, with injects" as its second line (`.cap-node-desc`, the description
+style, not the path's `.cap-node-file`), accessible
+name "AGENTS.md, after spawn, with injects", and its parts count as
+`aria-description` (the reader head says "Composed AGENTS.md").
+That item is expandable and selectable (the twisty only folds;
+the row opens the document); a part's item scrolls the one continuous reader to
+its `section.soul-part`, labelled by its header. Every part renders as Markdown (`fileView(…, { markdown: true })`: an `inject.txt` is still a slice of
+AGENTS.md; its file is provenance only), and the document's heading ids are renumbered across parts with
+one `createHeadingSlugger` (`views/markdown.mjs`, the same slugging `decorateMarkdown` uses; a suffix
+never reuses an id already emitted, so "Usage", "Usage", "Usage 1" are usage, usage-1, usage-1-1), so they are
+the ids the whole AGENTS.md would give; a part's own `#fragment` links follow its renamed headings.
+**Copy** copies the kernel's
+`text` exactly (markers included); **Open capability** appears only on a
+capability part the page lists, and goes through the page's own
+`openCapability` path. Keys: `composed`, `part:<i>`.
+
 **Core capabilities and Capabilities read as one system.** Wherever the two
 sections appear (the soul page, the inspector's *Modules as spawned*, the
 spawn preview, the context panel's Soul tab), a core slot's provider (by

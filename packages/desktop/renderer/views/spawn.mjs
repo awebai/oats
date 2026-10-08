@@ -8,6 +8,7 @@ import { createWorkspaceDiscovery, discoveryCSS, workspaceTabs } from "../worksp
 import { capabilityRow } from "../workspace-catalog.mjs";
 import { renderCapabilityPage, renderSoulCapabilities, renderSoulCore, capabilityPageCSS, pageCardCSS, soulCapabilitiesCSS, desktopFacts, catalogNotice, catalogNoticeKind, updateCatalogNotice } from "../capability-page.mjs";
 import { createCapabilityContents, capabilityContentsCSS } from "../capability-contents.mjs";
+import { soulInstructionsCSS } from "../soul-instructions.mjs";
 import { capabilitySelector, sameSelector } from "../capability-show-contract.mjs";
 import { MARKDOWN_CSS } from "./markdown.mjs";
 import { runtimeState } from "../instance-presentation.mjs";
@@ -394,6 +395,7 @@ ${inspectorCSS}
 ${pageCardCSS}
 ${capabilityPageCSS}
 ${capabilityContentsCSS}
+${soulInstructionsCSS}
 ${MARKDOWN_CSS}
 ${soulCapabilitiesCSS}
 ${discoveryCSS}
