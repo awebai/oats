@@ -14,6 +14,62 @@
 //    the caller rebinds the port, and invalidates the advertised trust
 //    state at transition start via onInvalidate() — stale entries from the
 //    outgoing server must never validate anything.
+//  - the child's stdin is the owner lifeline (#698): a pipe whose write end
+//    only this process holds, never written to and never ended. When this
+//    process ends by any path (quit, crash, SIGKILL) the kernel closes it, and
+//    the server, started with --exit-on-stdin-close, sees EOF and exits.
+//    Node creates the pipe close-on-exec, so no other child (CLI runs, ptys,
+//    a tmux server) inherits the write end and keeps the server alive.
+
+/** The argument that tells the server its stdin is the owner lifeline. */
+export const LIFELINE_FLAG = "--exit-on-stdin-close";
+
+/**
+ * How main starts the bundled server: THE production argv and options,
+ * importable so a test starts the real server exactly as main does
+ * (dropping the lifeline flag or the stdin pipe here fails a test).
+ *
+ * @param {object} o
+ * @param {string} o.execPath          the executable (the packaged Electron, run as Node)
+ * @param {string} o.bin               server/oats-web.mjs
+ * @param {string[]} o.dirs            deployments to serve
+ * @param {number} o.port
+ * @param {string|null} [o.oatsBin]    the persisted user-chosen oats binary
+ * @param {string} o.pathSource        where the inherited PATH came from
+ * @param {string|null} [o.pathError]
+ * @param {string} o.remoteIdentityFile
+ * @param {string} o.home              cwd when no deployment is served
+ * @param {object} o.env               this process's environment
+ * @returns {{ command: string, args: string[], options: object }}
+ */
+export function serverSpawnSpec(o) {
+  return {
+    command: o.execPath,
+    args: [o.bin, "start", "--port", String(o.port),
+      ...o.dirs.flatMap((d) => ["--dir", d]), ...(o.oatsBin ? ["--oats-bin", o.oatsBin] : []),
+      // Where the PATH it inherits came from, for /api/cli diagnostics.
+      "--path-source", o.pathSource, ...(o.pathError ? ["--path-error", o.pathError] : []),
+      // The remembered remote workspace identities (#482): the server owns the file, written atomically.
+      "--remote-identity", o.remoteIdentityFile,
+      LIFELINE_FLAG],
+    options: {
+      // stdin: the owner lifeline (header). Never "ignore": /dev/null is EOF at once.
+      stdio: ["pipe", "pipe", "pipe"],
+      // Never the launch folder (`/` from Finder): it is not a deployment unless it is served.
+      cwd: o.dirs[0] ?? o.home,
+      // execPath is the packaged Electron executable. The backend and its
+      // collector children must run as Node, not relaunch the app. This is the
+      // one child that gets main's whole environment: the executable starts as
+      // it always did (on an AppImage that includes the library path into the
+      // mount), and the backend then drops what the Desktop and its packaging
+      // added before it loads anything else (server/own-environment.mjs).
+      // Every other program main starts gets cliEnvironment(process.env),
+      // computed when it starts.
+      env: { ...o.env, ELECTRON_RUN_AS_NODE: "1" },
+    },
+  };
+}
+
 /**
  * Port-committing adapter between the selection seam (ensureServerOnPort /
  * the add executor) and the host — THE production wiring, importable so

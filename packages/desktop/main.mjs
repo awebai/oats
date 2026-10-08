@@ -29,7 +29,7 @@ import { tmuxSocketArgs } from "./local-tmux-io.mjs";
 import { createTerminalOwnerBroker, installTerminalHandlers } from './terminal-owner.mjs';
 import { createTerminalIo } from './terminal-io.mjs';
 import { ensureServerOnPort, serverCompatible } from "./server-compat.mjs";
-import { createServerHost, createServerAdapter } from "./server-host.mjs";
+import { createServerHost, createServerAdapter, serverSpawnSpec } from "./server-host.mjs";
 import { cliWorkspace, validWorkspaceRef } from "./workspace-cli.mjs";
 import { onboardData } from "./deployment-data.mjs";
 import { validateWorkspace, workspaceSuggestions, parseRecents, pushRecent, decideAdd, createGenerations, createAddExecutor, restoreWorkspaceDirs, saveWorkspaceDirs, commitOpenSet, startupOpenSet, matchWorkspaceDirs, createOnboardOffers, createOnboardExecutor,
@@ -128,25 +128,13 @@ const serverHost = createServerHost({
     // The persisted user-chosen oats binary (if any) rides along as the
     // server's top-priority discovery candidate; the server re-probes it.
     const chosen = readCliChoice();
-    const child = spawn(process.execPath, [bin, "start", "--port", String(onPort),
-      ...dirs.flatMap((d) => ["--dir", d]), ...(chosen ? ["--oats-bin", chosen] : []),
-      // Where the PATH it inherits came from, for /api/cli diagnostics.
-      "--path-source", loginPath.source, ...(loginPath.error ? ["--path-error", loginPath.error] : []),
-      // The remembered remote workspace identities (#482): the server owns the file, written atomically.
-      "--remote-identity", REMOTE_IDENTITY_FILE()], {
-      stdio: ["ignore", "pipe", "pipe"],
-      // Never the launch folder (`/` from Finder): it is not a deployment unless it is served.
-      cwd: dirs[0] ?? homedir(),
-      // process.execPath is the packaged Electron executable. The backend
-      // and its collector children must run as Node, not relaunch the app.
-      // This is the one child that gets this process's whole environment: the
-      // executable starts as it always did (on an AppImage that includes the
-      // library path into the mount), and the backend then drops what the
-      // Desktop and its packaging added before it loads anything else
-      // (server/own-environment.mjs). Every other program main starts gets
-      // cliEnvironment(process.env), computed when it starts.
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
-    });
+    // The argv and options, including the stdin owner lifeline (#698), are serverSpawnSpec's.
+    const spec = serverSpawnSpec({ execPath: process.execPath, bin, dirs, port: onPort, oatsBin: chosen,
+      pathSource: loginPath.source, pathError: loginPath.error, remoteIdentityFile: REMOTE_IDENTITY_FILE(),
+      home: homedir(), env: process.env });
+    const child = spawn(spec.command, spec.args, spec.options);
+    // The lifeline's write end: held, never written, never ended (server-host.mjs).
+    child.stdin.on("error", () => { /* the server is gone; its exit is reported */ });
     child.stdout.on("data", (d) => process.stdout.write(`[oats-desktop-server] ${d}`));
     child.stderr.on("data", (d) => process.stderr.write(`[oats-desktop-server] ${d}`));
     return child;
