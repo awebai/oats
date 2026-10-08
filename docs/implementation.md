@@ -326,7 +326,9 @@ a root shard. Its results go to the child's stdout, so when the nested run
 fails, the assertion's message is built from that output by
 `test/helpers/nested-test-failure.mjs`. The message names the failing Desktop
 tests (TAP or spec reporter) with their location and error, then gives bounded
-stdout and stderr tails, and its size is capped.
+stdout and stderr tails, and its size is capped. It is built only when the run
+failed, and it never throws: if reading the failures fails, the message says so
+and still carries the tails.
 
 Cross-package tests that import both the kernel and Desktop belong under root
 `test/`; install dependencies at the root and in `packages/desktop` before

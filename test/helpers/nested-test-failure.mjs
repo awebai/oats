@@ -11,6 +11,11 @@
 // run died before printing that summary. Bounded tails of stdout and stderr
 // follow for whatever the parse misses. Everything is capped, so a mass
 // failure cannot flood the log.
+//
+// It never throws: a diagnostic must not turn into a failure of its own. If
+// reading the failures throws, the message says so and still carries the
+// tails. Callers build it only for a run that failed (release-workflow's
+// `if (r.status !== 0) assert.fail(…)`), so green output is never parsed.
 
 export const MAX_FAILURES = 8;
 export const MAX_MESSAGE = 8192;
@@ -21,27 +26,54 @@ const MAX_STDERR_TAIL = 2000;
 const ANSI = /\x1b\[[0-9;]*m/g;
 const EMPTY = "(empty)\n";
 
-export function describeNestedTestFailure(r, label = "nested node --test run") {
-  const stdout = String(r?.stdout ?? "").replace(ANSI, "");
-  const stderr = String(r?.stderr ?? "").replace(ANSI, "");
-  const why = [`status ${r?.status ?? null}`];
-  if (r?.signal) why.push(`signal ${r.signal}`);
-  if (r?.error) why.push(r.error.message);
-  const failures = parseTapFailures(stdout) ?? parseSpecFailures(stdout);
-  const parts = [`${label} failed (${why.join(", ")})`];
-  if (failures.length === 0) {
-    parts.push("No failing test could be read from its output; see the tails below.");
-  } else {
-    parts.push(`${failures.length} failing test${failures.length === 1 ? "" : "s"}${failures.length > MAX_FAILURES ? `, the first ${MAX_FAILURES} shown` : ""}:`);
-    for (const f of failures.slice(0, MAX_FAILURES)) parts.push(clip(formatFailure(f), MAX_FAILURE_CHARS));
-    if (failures.length > MAX_FAILURES) parts.push(`… and ${failures.length - MAX_FAILURES} more failing tests not shown.`);
+// `readFailures` is a seam for the tests, which force it to throw.
+export function describeNestedTestFailure(r, label = "nested node --test run", { readFailures = readTestFailures } = {}) {
+  let header = `${label} failed`;
+  try {
+    const stdout = asText(r?.stdout);
+    const stderr = asText(r?.stderr);
+    const why = [`status ${r?.status ?? null}`];
+    if (r?.signal) why.push(`signal ${r.signal}`);
+    if (r?.error) why.push(asText(r.error.message ?? r.error));
+    header = clip(`${label} failed (${why.join(", ")})`, 500);
+    let body;
+    try {
+      body = failureSection(readFailures(stdout));
+    } catch (e) {
+      body = clip(`The failing tests could not be read: the parser threw (${asText(e?.message ?? e)}). See the tails below.`, 500);
+    }
+    return withTails(`${header}\n\n${body}`, stdout, stderr);
+  } catch (e) {
+    return clip(`${header}; the failure message could not be built (${asText(e?.message ?? e)}).`, MAX_MESSAGE);
   }
-  const head = parts.join("\n\n");
+}
+
+function readTestFailures(stdout) {
+  return parseTapFailures(stdout) ?? parseSpecFailures(stdout);
+}
+
+function failureSection(failures) {
+  if (failures.length === 0) return "No failing test could be read from its output; see the tails below.";
+  const parts = [`${failures.length} failing test${failures.length === 1 ? "" : "s"}${failures.length > MAX_FAILURES ? `, the first ${MAX_FAILURES} shown` : ""}:`];
+  for (const f of failures.slice(0, MAX_FAILURES)) parts.push(clip(formatFailure(f), MAX_FAILURE_CHARS));
+  if (failures.length > MAX_FAILURES) parts.push(`… and ${failures.length - MAX_FAILURES} more failing tests not shown.`);
+  return parts.join("\n\n");
+}
+
+function withTails(head, stdout, stderr) {
   const frame = (out, err) => `${head}\n\n--- stdout tail ---\n${out || EMPTY}--- stderr tail ---\n${err || EMPTY}`;
   const room = Math.max(0, MAX_MESSAGE - frame(EMPTY, EMPTY).length);
   const errTail = tail(stderr, Math.min(MAX_STDERR_TAIL, Math.floor(room / 2)));
   const outTail = tail(stdout, room - errTail.length);
   return frame(outTail, errTail);
+}
+
+function asText(v) {
+  try {
+    return (v == null ? "" : String(v)).replace(ANSI, "");
+  } catch {
+    return "";
+  }
 }
 
 function formatFailure({ name, location, error, context }) {
@@ -145,6 +177,11 @@ function precedingDiagnostics(lines, i) {
 // that closes a `▶` group at the same depth is a parent: listed when nothing
 // inside it failed (its own body or hook did), skipped when a descendant
 // already names the failure.
+// One spec result line: mark, name, then `(duration)` and, for a skip or a
+// TODO, ` # reason`. A test that failed has no reason; a ✖ or ⚠ (Node 23+)
+// with one is a TODO, which does not fail the run.
+const SPEC_RESULT = /^([✔✖⚠﹣]) (.*?)(?: \([\d.]+m?s\)(?: # (.*))?)?$/;
+
 function parseSpecFailures(out) {
   const lines = out.split("\n");
   const start = lines.findIndex((l) => /^✖ failing tests:\s*$/.test(l));
@@ -157,12 +194,14 @@ function specSummaryFailures(lines) {
   let current = null;
   for (const line of lines) {
     const at = line.match(/^test at (.+)$/);
-    const x = line.match(/^✖ (.*?)(?: \([\d.]+m?s\))?$/);
+    const x = line.match(SPEC_RESULT);
     if (at) {
       location = at[1].trim();
-    } else if (x) {
-      current = { name: x[1], location, body: [] };
-      failures.push(current);
+    } else if (x && "✖⚠".includes(x[1])) {
+      current = { name: x[2], location, body: [] };
+      // The summary lists a failing TODO too; its reason marks it, and it is
+      // not a failure. It still takes its body lines.
+      if (x[3] === undefined) failures.push(current);
       location = null;
     } else if (current) {
       current.body.push(line.replace(/^ {2}/, ""));
@@ -181,12 +220,13 @@ function specTreeFailures(lines) {
   for (const line of lines) {
     const g = line.match(/^( *)▶ (.*)$/);
     if (g) { open.push({ depth: g[1].length, name: g[2], failuresBefore: failures.length }); continue; }
-    const x = line.match(/^( *)([✔✖]) (.*?)(?: \([\d.]+m?s\))?$/);
+    const indent = line.match(/^ */)[0].length;
+    const x = line.slice(indent).match(SPEC_RESULT);
     if (!x) continue;
-    const [, { length: depth }, mark, name] = x;
-    while (open.length && open.at(-1).depth > depth) open.pop();
-    const group = open.at(-1)?.depth === depth && open.at(-1).name === name ? open.pop() : null;
-    if (mark === "✖" && (!group || failures.length === group.failuresBefore)) failures.push({ name, location: null, error: "" });
+    const [, mark, name, directive] = x;
+    while (open.length && open.at(-1).depth > indent) open.pop();
+    const group = open.at(-1)?.depth === indent && open.at(-1).name === name ? open.pop() : null;
+    if (mark === "✖" && directive === undefined && (!group || failures.length === group.failuresBefore)) failures.push({ name, location: null, error: "" });
   }
   return failures;
 }

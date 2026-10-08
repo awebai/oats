@@ -324,9 +324,84 @@ not ok ${i + 1} - flood ${i}
   assert.equal(listed(s).length, MAX_FAILURES);
 });
 
+// A passing run's output must not trip the parser either: TODO and SKIP
+// directives, escaped names, a failing TODO, and a lot of it.
+test("passing TAP and spec runs, with TODO and SKIP lines, list no failures and do not throw", () => {
+  const passing = Array.from({ length: 4000 }, (_, i) => `# Subtest: ok \\# ${i} \\\\ x
+ok ${i + 1} - ok \\# ${i} \\\\ x${i % 3 === 0 ? " # SKIP not here" : i % 3 === 1 ? " # TODO" : ""}
+  ---
+  duration_ms: 0.5
+  type: 'test'
+  ...`).join("\n");
+  const tap = `${NPM}TAP version 13
+${passing}
+# Subtest: todo failing
+not ok 4001 - todo failing # TODO later
+  ---
+  duration_ms: 0.3
+  type: 'test'
+  location: '${T}/p.test.mjs:5:1'
+  failureType: 'testCodeFailure'
+  error: 'todo boom'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..4001
+${TAP_SUMMARY(4001, 0)}`;
+  assert.ok(tap.length > 300000, `a large passing run (${tap.length} characters)`);
+  const t = describeNestedTestFailure({ status: 0, stdout: tap, stderr: "" });
+  assert.deepEqual(listed(t), []);
+  assert.ok(t.length <= MAX_MESSAGE);
+  // Node 22 marks a failing TODO's spec line only by its reason; Node 23+ uses ⚠.
+  const spec = `${NPM}✔ plain passes (1.465757ms)
+﹣ skipped one (0.224492ms) # not here
+✔ todo passing (0.198906ms) # TODO
+✖ todo failing (0.319575ms) # later
+⚠ todo failing on 26 (3.856684ms) # later
+✔ name with # hash and \\ backslash (1.194243ms)
+▶ group
+  ﹣ inner skip (0.330408ms) # nope
+  ✔ inner todo (0.174015ms) # TODO
+✔ group (1.128033ms)
+ℹ tests 7
+ℹ pass 2
+ℹ fail 0
+`;
+  const summary = `
+✖ failing tests:
+
+test at p.test.mjs:5:1
+✖ todo failing (0.319575ms) # later
+  Error: todo boom
+
+test at p.test.mjs:6:1
+⚠ todo failing on 26 (3.856684ms) # later
+  Error: todo boom
+`;
+  for (const stdout of [spec, spec + summary]) {
+    const m = describeNestedTestFailure({ status: 0, stdout, stderr: "" });
+    assert.deepEqual(listed(m), [], `no failures in\n${m}`);
+  }
+  // In a failing run, a failing TODO does not take one of the slots.
+  const failing = `${spec}✖ real failure (2ms)\n${summary}\ntest at p.test.mjs:9:1\n✖ real failure (2ms)\n  Error: real\n`;
+  assert.deepEqual(listed(describeNestedTestFailure({ status: 1, stdout: failing, stderr: "" })), ["✖ real failure  (p.test.mjs:9:1)"]);
+  assert.deepEqual(listed(describeNestedTestFailure({ status: 1, stdout: failing.slice(0, failing.indexOf("\n✖ failing tests:")), stderr: "" })), ["✖ real failure"]);
+});
+
+test("a parser that throws still yields a bounded message with the tails, and so does a hostile result", () => {
+  const r = { status: 1, error: new Error("spawnSync npm ETIMEDOUT"), stdout: `${"o".repeat(20000)}\nlast stdout line\n`, stderr: "last stderr line\n" };
+  const m = describeNestedTestFailure(r, "packages/desktop npm test", { readFailures: () => { throw new TypeError("x".repeat(5000)); } });
+  assert.match(m, /^packages\/desktop npm test failed \(status 1, spawnSync npm ETIMEDOUT\)\n\nThe failing tests could not be read: the parser threw \(x+…\n\n--- stdout tail ---\n…\nlast stdout line\n--- stderr tail ---\nlast stderr line\n$/);
+  assert.ok(m.length <= MAX_MESSAGE, `message is ${m.length} characters`);
+  // Output that cannot even be turned into text, and a result that throws on read.
+  const boom = { toString() { throw new Error("no text"); } };
+  assert.match(describeNestedTestFailure({ status: 1, stdout: boom, stderr: boom, error: { message: boom } }), /^nested node --test run failed \(status 1, \)\n\nNo failing test could be read/);
+  const hostile = { get status() { throw new Error("status unreadable"); } };
+  assert.equal(describeNestedTestFailure(hostile, "packages/desktop npm test"), "packages/desktop npm test failed; the failure message could not be built (status unreadable).");
+});
+
 // The formatter against what this Node actually prints, under each reporter
 // and under the default one (TAP on CI's Node 22, spec from Node 23).
-test("a real failing node --test child is named under the tap, spec and default reporters", (t) => {
+test("a real node --test child is read right under the tap, spec and default reporters, failing or passing", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "oats-nested-failure-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   writeFileSync(join(dir, "probe.test.mjs"), [
@@ -347,6 +422,19 @@ test("a real failing node --test child is named under the tap, spec and default 
     assert.match(names[0], /^✖ (group › )?leaf breaks {2}\(.*probe\.test\.mjs:4:\d+\)$/);
     assert.match(failuresOf(m), /one is not two/);
   }
+  // And a passing child with skips and TODOs, one of them failing.
+  writeFileSync(join(dir, "pass.test.mjs"), [
+    'import test from "node:test";',
+    'test("plain passes", () => {});',
+    'test("skipped", { skip: "not here" }, () => {});',
+    'test("todo failing", { todo: "later" }, () => { throw new Error("todo boom"); });',
+  ].join("\n"));
+  for (const reporter of ["tap", "spec", null]) {
+    const args = ["--test", ...(reporter ? [`--test-reporter=${reporter}`] : []), "pass.test.mjs"];
+    const r = spawnSync(process.execPath, args, { cwd: dir, encoding: "utf8", env, timeout: 60000 });
+    assert.equal(r.status, 0, `${reporter ?? "default"} reporter: the passing probe passes\n${r.stdout}\n${r.stderr}`);
+    assert.deepEqual(listed(describeNestedTestFailure(r)), [], `${reporter ?? "default"} reporter: nothing listed`);
+  }
 });
 
 // Reverting the assertion to a stderr-only message must turn this red: the
@@ -355,7 +443,8 @@ test("a real failing node --test child is named under the tap, spec and default 
 test("the nested Desktop run's exit-status assertion uses the formatter, and its gate is intact", () => {
   const src = readFileSync(new URL("./release-workflow.test.mjs", import.meta.url), "utf8");
   assert.match(src, /^import \{ describeNestedTestFailure \} from "\.\/helpers\/nested-test-failure\.mjs";$/m);
-  assert.match(src, /assert\.equal\(r\.status, 0, describeNestedTestFailure\(r, "packages\/desktop npm test"\)\);/);
+  assert.match(src, /if \(r\.status !== 0\) assert\.fail\(describeNestedTestFailure\(r, "packages\/desktop npm test"\)\);/,
+    "the status gate, with the message built only for a failing run");
   assert.match(src, /delete env\.NODE_TEST_CONTEXT;/);
   assert.match(src, /spawnSync\("npm", \["test"\], \{[^}]*timeout: 300000, maxBuffer: 64 \* 1024 \* 1024, env \}\)/);
   assert.match(src, /assert\.match\(r\.stdout, \/\^# pass \\d\+\$\|ℹ pass \\d\+\/m, `packages\/desktop npm test reported no results/);

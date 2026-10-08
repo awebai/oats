@@ -238,7 +238,8 @@ test("desktop package scripts invoked by the workflow exist and run", (t) => {
     const r = spawnSync("npm", ["test"], { cwd: new URL("../packages/desktop", import.meta.url).pathname, encoding: "utf8", timeout: 300000, maxBuffer: 64 * 1024 * 1024, env });
     // The child's results are on stdout, so the message names the failing
     // Desktop tests from there, then bounded stdout and stderr tails (#644).
-    assert.equal(r.status, 0, describeNestedTestFailure(r, "packages/desktop npm test"));
+    // It is built only for a failing run: a passing one is never parsed.
+    if (r.status !== 0) assert.fail(describeNestedTestFailure(r, "packages/desktop npm test"));
     assert.match(r.stdout, /^# pass \d+$|ℹ pass \d+/m, `packages/desktop npm test reported no results — it did not actually run:\n${r.stdout.slice(-2000)}`);
   } else {
     t.diagnostic(`packages/desktop npm test NOT run — dependencies missing (${desktop.missing.join(", ")}); install with ${DESKTOP_TEST_DEPS_INSTALL}`);
