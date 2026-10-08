@@ -1235,7 +1235,9 @@ the answer names it with the reason. Two commands on one purpose never act
 at once: each holds the purpose's claim, `.oats/trees/<p>.lock`, while it
 reads and changes the record. The claim is not held while the hooks run.
 A claim left by a command that was killed is taken over by the next one,
-once its holder (pid and start time) is verified gone. A quarantined
+once its holder (pid and start time) is verified gone. Any git step the
+killed command left running is ended first, so it cannot finish late on
+the new tree. A quarantined
 home or one being retired is refused (`E_INSTANCE_RETIRING`).
 
 **`remove`** runs `git worktree remove` (without `--force`) and `git worktree

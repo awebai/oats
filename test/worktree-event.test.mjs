@@ -816,20 +816,49 @@ test("a recovery killed while it holds the purpose's claim: the next command tak
   first.child.kill("SIGKILL");
   await first.done;
   // The recovering add is killed inside its rollback, holding the claim.
-  const path = gatedGit(fx, "claim", { gate: `a.includes("worktree") && a.includes("remove") && a.includes("--force")`, entered: `"recovering"`, release: `"never"` });
+  const path = gatedGit(fx, "claim", { gate: `a.includes("worktree") && a.includes("remove") && a.includes("--force")`, entered: `"recovering"`, release: `"release-old-git"` });
   const recovering = cliChild(fx, argv, { cwd: home, env: { OATS_INSTANCE_HOME: home, PATH: path } });
   assert.ok(await waitFor(() => existsSync(join(fx.base, "recovering"))));
   const lock = join(home, ".oats", "trees", "feat.lock");
-  assert.equal(JSON.parse(readFileSync(lock, "utf8")).pid, recovering.child.pid, "the recovering add holds the claim");
+  const oldGit = Number(readFileSync(join(fx.base, "recovering"), "utf8"));
+  const held = JSON.parse(readFileSync(lock, "utf8"));
+  assert.equal(held.pid, recovering.child.pid, "the recovering add holds the claim");
+  assert.equal(held.gitPid, oldGit, "and the claim records its running git step");
   recovering.child.kill("SIGKILL");
   await recovering.done;
-  process.kill(Number(readFileSync(join(fx.base, "recovering"), "utf8")), "SIGKILL"); // its gated git, so it never runs late
   assert.ok(existsSync(lock), "the killed recovery left its claim");
+  assert.equal(alive(oldGit), true, "its git step outlived it");
+  // The next add takes the claim over: it ends that git first, then rolls back and adds afresh.
+  execFileSync("rm", [join(fx.root, "hook-sleep")]);
+  const again = add(fx, home);
+  assert.equal(again.status, 0, again.stderr + again.stdout);
+  assert.equal(alive(oldGit), false, "the old git step was ended before the takeover");
+  const tree = join(home, ".work-feat");
+  writeFileSync(join(tree, "authored-after-recovery.txt"), "work\n");
+  writeFileSync(join(fx.base, "release-old-git"), ""); // had it survived, it would run now
+  await new Promise((r) => setTimeout(r, 1500));
+  assert.ok(existsSync(join(tree, "authored-after-recovery.txt")), "the new tree and its work survive");
+  assert.equal(JSON.parse(readFileSync(join(home, ".oats", "trees", "feat.json"), "utf8")).state, "ready");
+  assert.deepEqual(readdirSync(join(home, ".oats", "trees")).sort(), ["feat.json"], "no claim or takeover claim is left");
+});
+
+test("an add killed during its own git step: the recovery ends that git first, so it never creates the branch late", async (t) => {
+  const fx = deployment(t, { hookless: true });
+  const { home } = await fx.spawn("dev", { instance: "dev-late", work: "checkout" });
+  const path = gatedGit(fx, "late", { gate: `a.includes("switch") && a.includes("-c")`, entered: `"switching"`, release: `"release-switch"` });
+  const killed = cliChild(fx, ["worktree", "add", "--purpose", "feat", "--branch", "agents/feat", "--base", "main", "--json"], { cwd: home, env: { OATS_INSTANCE_HOME: home, PATH: path } });
+  assert.ok(await waitFor(() => existsSync(join(fx.base, "switching"))));
+  const switchGit = Number(readFileSync(join(fx.base, "switching"), "utf8"));
+  assert.equal(JSON.parse(readFileSync(join(home, ".oats", "trees", "feat.json"), "utf8")).gitPid, switchGit, "the record names the running git step");
+  killed.child.kill("SIGKILL");
+  await killed.done;
+  assert.equal(alive(switchGit), true);
   const r = wt(fx, home, ["remove", "--purpose", "feat", "--json"]);
   assert.equal(r.status, 0, r.stdout);
   assert.equal(r.json().result.rolledBack, true);
-  assert.equal(r.json().result.branchKept, false);
+  assert.equal(alive(switchGit), false, "the git step was ended before the rollback");
+  writeFileSync(join(fx.base, "release-switch"), "");
+  await new Promise((r) => setTimeout(r, 1500));
+  assert.equal(tipOf(fx, "agents/feat"), null, "no branch appears late");
   assert.equal(existsSync(join(home, ".work-feat")), false);
-  assert.equal(tipOf(fx, "agents/feat"), null);
-  assert.deepEqual(readdirSync(join(home, ".oats", "trees")), [], "no claim, takeover claim or record is left");
 });

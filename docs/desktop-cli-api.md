@@ -2065,6 +2065,17 @@ that names its holder by pid and start time. A second command waits up to
 middle of a recovery, is taken over by the next command. So a killed `add`
 or `remove` can always be run again.
 
+A killed parent does not take its running git with it. So every git step
+that changes a tree, a ref or the worktree list runs in its own process
+group, and is recorded (pid and start time) before it starts: in the claim,
+or for an `add`'s own steps, in the tree record. A takeover or recovery
+first ends a recorded git step that still runs, signalling it only while its
+leader runs with the recorded start time (SIGTERM, which git answers by
+removing its lock files, then SIGKILL). Only then does it act, so a dead
+command's git never finishes late on a tree or branch made after it. A git
+step that cannot be ended keeps the claim, or the record, and the command
+answers `E_LIFECYCLE_BUSY`.
+
 A failed `add` reports the same facts about its rollback in `details`:
 `rolledBack`, `branchKept`, `branchKeptReason` and `warnings`.
 

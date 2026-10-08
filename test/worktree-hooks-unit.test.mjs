@@ -114,25 +114,25 @@ test("the purpose claim: taken over from a dead holder (and from a dead takeover
   const dead = (nonce) => JSON.stringify({ pid: 2147483646, processStart: "proc:gone", nonce });
   const N1 = "a".repeat(32), N2 = "b".repeat(32);
 
-  assert.equal(withClaim(lock, () => JSON.parse(readFileSync(lock, "utf8")).pid, { busy }), process.pid, "held while fn runs");
+  assert.equal(await withClaim(lock, () => JSON.parse(readFileSync(lock, "utf8")).pid, { busy }), process.pid, "held while fn runs");
   assert.equal(existsSync(lock), false, "released");
 
   writeFileSync(lock, dead(N1));
-  assert.equal(withClaim(lock, () => "ran", { busy }), "ran", "a dead holder's claim is taken over");
+  assert.equal(await withClaim(lock, () => "ran", { busy }), "ran", "a dead holder's claim is taken over");
   // A takeover that was itself killed: its own claim is taken over in turn.
   writeFileSync(lock, dead(N1));
   writeFileSync(`${lock}.reclaim-${N1}`, dead(N2));
-  assert.equal(withClaim(lock, () => "ran", { busy }), "ran");
+  assert.equal(await withClaim(lock, () => "ran", { busy }), "ran");
   assert.deepEqual(readdirSync(dir), [], "nothing left behind");
 
   // A live holder (this process, under another holding): waited for, then refused.
   writeFileSync(lock, JSON.stringify({ ...selfIdentity(), nonce: N2 }));
   const t0 = Date.now();
-  assert.throws(() => withClaim(lock, () => "ran", { busy, waitMs: 300 }), (e) => e.code === "E_LIFECYCLE_BUSY" && e.message === `busy ${process.pid}`);
+  await assert.rejects(withClaim(lock, () => "ran", { busy, waitMs: 300 }), (e) => e.code === "E_LIFECYCLE_BUSY" && e.message === `busy ${process.pid}`);
   assert.ok(Date.now() - t0 >= 300, "it waited");
   assert.equal(JSON.parse(readFileSync(lock, "utf8")).nonce, N2, "a live holder's claim is untouched");
 
   writeFileSync(lock, "{not json");
-  assert.throws(() => withClaim(lock, () => "ran", { busy }), (e) => e.code === "E_LIFECYCLE_BUSY" && /not a readable claim/.test(e.message));
+  await assert.rejects(withClaim(lock, () => "ran", { busy }), (e) => e.code === "E_LIFECYCLE_BUSY" && /not a readable claim/.test(e.message));
   assert.equal(readFileSync(lock, "utf8"), "{not json", "an unreadable claim is never removed");
 });

@@ -1128,7 +1128,7 @@ async function worktreeCmd() {
   try {
     if (sub === "remove") {
       for (const f of ["branch", "base", "repo", "preview"]) if (args.includes(`--${f}`)) return bail("E_BAD_ARGS", `oats worktree remove takes only --purpose; ${usage}`);
-      const r = W.worktreeRemove(resolve(home), { purpose: value("purpose") });
+      const r = await W.worktreeRemove(resolve(home), { purpose: value("purpose") });
       if (JSON_MODE) { jsonOk(r); return; }
       console.log(r.rolledBack
         ? `rolled back the interrupted add of ${r.path}; branch ${r.branch} ${r.branchKept ? `kept${r.branchKeptReason ? ` (${r.branchKeptReason})` : ""}` : "not left behind"}`
