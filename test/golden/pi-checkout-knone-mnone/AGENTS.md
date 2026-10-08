@@ -66,24 +66,30 @@ in the same tree as the human and possibly other agents.
 ### Extra trees
 
 When the work needs another branch, or another repository of this deployment,
-create an extra tree in your home. `<clone>` is any clone of this deployment
-(`oats-local.yaml` `clones:`, or `<deployment>/<repo>`); `origin` is its remote
-for that repository; `<base>` is the remote branch the work starts from (the
-branch itself, when you rework an existing one):
+create an extra tree in your home. Run this from your home; `<base>` is the
+remote branch the work starts from (the branch itself, when you rework an
+existing one):
 
-    git -C <clone> worktree add --detach "$OATS_INSTANCE_HOME/.work-<purpose>"
-    git -C "$OATS_INSTANCE_HOME/.work-<purpose>" fetch --refmap= origin <base>
-    git -C "$OATS_INSTANCE_HOME/.work-<purpose>" switch -c <branch> FETCH_HEAD
+    oats worktree add --purpose <purpose> --branch <branch> --base <base>
 
-- This starts from the remote's current state and moves none of the clone's
-  refs. Never start from a local branch of the clone, which may be stale.
+It makes `.work-<purpose>` in your home, on a new `<branch>` at `origin`'s
+`<base>`. The repository is yours unless `--repo <member key|clone path>`
+names another; `--preview` shows what it would do.
+
+- It starts from the remote's current state and moves none of the clone's
+  refs. Never start a tree from a local branch of the clone, which may be stale.
 - Name `<branch>` by the repository's own rules, else `agents/<instance>-<purpose>`.
-  If it already exists in that clone, `switch -c` refuses: use `<instance>/<branch>`.
+  If it already exists in that clone, `add` refuses: use `<instance>/<branch>`.
   Never `-C`/`-B`, which reset a branch someone else may own.
+- If a capability of yours sets up new trees, `add` runs that setup, which
+  may take minutes: give it a long timeout, or run it in the background and
+  wait for it to exit. A killed `add` rolls back; run it again. Once it has
+  finished, running it again with the same arguments does nothing.
 - The tree has no upstream: push with `git push origin HEAD:<remote-branch>`
   (`<base>` when you rework an existing branch).
 - Before your task closes, merge each extra tree into your PR branch, or push its
   branch and name it in your hand-back; then
-  `git -C <clone> worktree remove "$OATS_INSTANCE_HOME/.work-<purpose>"`.
+  `oats worktree remove --purpose <purpose>`, which keeps the branch and
+  refuses a tree with uncommitted work.
   Retirement keeps a tree that still holds uncommitted work, but don't rely on it.
 <!-- /oats:work-mode:checkout -->

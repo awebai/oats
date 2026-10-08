@@ -2,7 +2,7 @@
 name: oats-operate
 description: >-
   Use when operating OATS from inside an instance: your home and work
-  directories, what a module is, reading `oats status` (modules, soul source,
+  directories, extra trees (`oats worktree add|remove`), what a module is, reading `oats status` (modules, soul source,
   drift), spawning with preview then apply, relations, stopping or retiring
   instances you spawned, asking a human for input you are blocked on
   (`oats instance attention`), being spawned by a trigger, lifecycle events
@@ -43,9 +43,8 @@ is not shown here, read `oats help`; never invent one.
   run here.
 - **`work/` is where repository work happens**: reading, editing, building,
   testing, Git. In `worktree` and `checkout` mode, so do the extra trees
-  (`.work-<purpose>` in the home) that your work-mode briefing tells you how
-  to create. Never run Git from the home root or from the operator's own
-  checkout, beyond the `worktree add`/`remove` that briefing gives.
+  (`.work-<purpose>` in the home) that `oats worktree add` makes (below).
+  Never run Git from the home root or from the operator's own checkout.
 - **A change to a soul is repository work**: an ordinary, reviewed change to
   the member repository that defines it, made in a work tree.
 
@@ -55,6 +54,34 @@ worktree of the soul's repository; `checkout` — a shared checkout;
 deployment directory itself, read-only across members, for coordination.
 `attached` is chosen only at spawn (`--work attached --work-dir <owner work>`):
 the new instance shares its owner's work tree and is always its child.
+
+## Extra trees
+
+When the work needs another branch, or another repository of the deployment,
+make an extra tree in your home. Run these from your home:
+
+```bash
+oats worktree add --purpose <p> --branch <b> --base <remote-branch> --preview   # what it would do
+oats worktree add --purpose <p> --branch <b> --base <remote-branch> [--repo <member key|clone path>]
+oats worktree remove --purpose <p>
+```
+
+- `add` makes `.work-<p>` in your home, on the new branch `<b>` at `origin`'s
+  `<remote-branch>`. It starts from the remote's current state, never from a
+  local branch of the clone, and moves none of the clone's refs. The
+  repository is your instance's unless `--repo` names another.
+- `<b>` follows the repository's own naming rules, else
+  `agents/<instance>-<p>`. A branch that already exists is refused
+  (`E_BRANCH_EXISTS`): use `<instance>/<b>`. Never reset a branch with
+  `-C`/`-B`.
+- If one of your capabilities sets up new trees (a `worktree` hook), `add`
+  runs that setup, and it may take minutes. Give the command a long timeout,
+  or run it in the background and wait for it to exit. A killed `add` rolls
+  back; run it again. Once it has finished, the same `add` again does nothing.
+- The tree has no upstream: push with `git push origin HEAD:<remote-branch>`.
+- Before your task closes, merge each extra tree into your PR branch, or push
+  its branch and name it in your hand-back; then `remove` it. `remove` keeps
+  the branch and refuses a tree with uncommitted work (`E_WORKTREE_DIRTY`).
 
 ## Modules: what you were given
 

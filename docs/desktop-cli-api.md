@@ -43,7 +43,7 @@ see the [official catalog](official-catalog.md) for current pins.
              "preview-composed-from","observe-max-age","spawn-preview-max-age","launch-config-default","capability-show","capture-file",
              "workspace-identity","server-connect","capability-route","servers-per-workspace","operator-default-soul","waiting-on-you",
              "automation-descriptions","souls-capabilities","soul-composed-instructions","teams-conditional-default",
-             "server-probe-features"],
+             "server-probe-features","worktree-event"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
@@ -116,6 +116,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `souls-capabilities` | `capabilities` on `oats souls --json` rows: the capabilities each soul composes, keyed like `oats capabilities` rows, with `from`, OATS 0.45.0 ([`oats capabilities` and `oats souls`](#oats-capabilities---dir---json--capabilitiesapi-1--oats-souls---dir---json--soulsapi-1)) | |
 | `soul-composed-instructions` | `oats inspect --soul <soul> --instructions` and its `souls[].composedInstructions`: the AGENTS.md a spawn of the soul here would write, with the soul body and each composed block as ranges, OATS 0.46.0 ([`oats inspect`](#oats-inspect---home-----soul----dir----json--operationsapi-2)) | |
 | `teams-conditional-default` | `oats teams default <label> --if-absent \| --expect <label>` and `E_TEAM_DEFAULT_MISMATCH`; `oats teams add … --no-default` and its `reused` answer; `E_TEAM_EXISTS` `observed`; unknown flags on `oats teams` refused, OATS 0.48.0 ([`oats teams`](#oats-teams)). A kernel without it ignores the flags: `--if-absent` there is an unconditional set, so check the feature before passing them | |
+| `worktree-event` | the `worktree` hook event; `oats worktree add\|remove` ([`oats worktree`](#oats-worktree)); `worktreeHooks` on `spawn --preview` and on the spawn result and `spawned` event; `spawnInProgress` on `oats status --json` instance rows; the `worktree-added` event kind; `E_INTERRUPTED` and `E_WORKTREE_DIRTY`, OATS 0.49.0 | |
 | `server-probe-features` | `features` on `oats status --json` (this kernel's own list, as `version --json` answers it), and each `oats server roster --json` group's `probe.features`: the host's list, relayed from that status answer after validation, `null` when unknown, OATS 0.49.0 ([The remote roster](#the-remote-roster-oats-server-roster---json)) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
@@ -1765,6 +1766,7 @@ it to a temporary copy (`soulFetched: true`).
  "preflight":{"status":"complete","budgetMs":20000,"elapsedMs":53},"backendStatus":{"name":"tmux","installed":true,"started":false},
  "harness":"pi","model":null,"modelSource":"native default","launchConfig":null,"backend":"tmux",
  "branch":"agents/rm-api","base":{"ref":"github.com/nw/agents","oid":"66566512…"},"worktree":"/w/agents/rm/instances/rm-api/work",
+ "worktreeHooks":[{"capability":"nw-tools","required":true}],
  "relation":null,"parentInstance":null,"policy":{"childSpawns":{"allowed":true,"origin":{"kind":"default","detail":"no spawn option: children allowed"}}},
  "executable":"/usr/local/bin/pi",
  "capabilities":[{"name":"nw-tools","origin":"member:github.com/nw/agents@66566512…"},{"name":"oats.okf","origin":"package:oats.okf@2.1.3"}],
@@ -1784,6 +1786,12 @@ it to a temporary copy (`soulFetched: true`).
   observed>}`, fetched into the clone at apply (`E_REMOTE_UNREADABLE` when it
   cannot be); otherwise `HEAD`. `E_BRANCH_EXISTS` and `E_BASE_UNKNOWN` refuse
   preview and apply alike.
+- `worktreeHooks` (feature `worktree-event`, OATS 0.49.0): for a `worktree`
+  spawn, the capabilities whose `worktree` hook the spawn would fire, in the
+  order they run, as `[{capability, required}]` (`[]` when none declares
+  one); `null` in every other mode. `worktree` stays the path string. The
+  text preview prints `worktree hooks: a, b (required)` or `worktree hooks:
+  none` ([the worktree event](capabilities.md#the-worktree-event)).
 - `subject` echoes `{soul, agentsRoot, dir}` byte-exact.
 - `warnings`, present only when there is one, is an array of strings: the
   launch-prompt notice, and (0.49.0) the message of each
@@ -1935,7 +1943,12 @@ with `--expect-decision` records the key and decision in `instance.json`.
   read `tmux` for the target.
 - When they apply: `yolo`, `decision` and
   `replayed` (bound apply), `wake` (keyed apply), `wakeSchedule` and
-  `wakeScheduleError` (a requested wake).
+  `wakeScheduleError` (a requested wake), `worktreeHooks` (feature
+  `worktree-event`: only when the spawn ran `worktree` hooks, the receipt
+  `[{capability, ok, required, log, exitCode, signal?, timedOut?,
+  contract?}]`, `log` being the hook's log file).
+- A spawn that runs `worktree` hooks can take up to 30 minutes per hook
+  ([the worktree event](capabilities.md#the-worktree-event)).
 
 <a id="instance-names"></a>
 ### Instance names
@@ -1981,13 +1994,77 @@ Feature `spawn-name`. `--name <slug>` is the exact name, with no prefix.
 | `E_LAUNCH_*`, `E_MODEL_UNKNOWN`, `E_UNSUPPORTED_HARNESS` | | the launch selection is refused |
 | `E_LAUNCH_SHIM` | | the home's `oats` (`<home>/.oats/bin/oats`) cannot be written; the spawn is rolled back |
 | `E_SCHEDULE_INVALID` | | a bad wake (`--wake-json`, `--wake-file`, `--wake-*`) |
-| `E_SPAWN_FAILED` | `{unconfirmed: true}` when compensation cannot finish | anything else |
+| `E_INTERRUPTED` | `{signal, hooks}` | SIGINT, SIGTERM or SIGHUP while the spawn's `worktree` hooks ran (feature `worktree-event`): the running hook's process group is ended, the spawn is rolled back as for a required hook failure, and the process exits 128 + the signal number |
+| `E_SPAWN_FAILED` | `{unconfirmed: true}` when compensation cannot finish | anything else, a failed required `worktree` hook included |
 
 Spawn failure envelopes carry `error.details.unconfirmed: true` when an existing
 keyed spawn is incomplete (`E_SPAWN_INCOMPLETE`) or compensation cannot confirm
 cleanup. The keyed-spawn details retain `instance`, `home` and `launched`.
 Confirmed completed compensation does not set this marker. This is an additive
 producer migration; existing text-based compatibility checks remain.
+
+<a id="oats-worktree"></a>
+### `oats worktree`
+
+Feature `worktree-event` (OATS 0.49.0). An instance's extra trees,
+`<home>/.work-<purpose>`, made and removed from its home
+([extra trees](souls-and-instances.md#extra-trees)). There is no `--home`,
+`--dir` or `--server`: the home is `$OATS_INSTANCE_HOME` (or `$OATS_HOME`),
+else the home enclosing the working directory.
+
+```text
+oats worktree add --purpose <p> --branch <b> --base <remote-branch> [--repo <member key|clone path>] [--preview] [--json]
+oats worktree remove --purpose <p> [--json]
+```
+
+`add` creates the tree with Git, fires the `worktree` hooks
+([the worktree event](capabilities.md#the-worktree-event)), writes
+`<home>/.oats/trees/<p>.json` and appends a `worktree-added` event. It can run
+for minutes; the hooks' output goes to stderr, and stdout holds only the
+envelope. Its result:
+
+```json
+{"purpose":"docs","path":"/w/agents/dev/instances/dev-1/.work-docs","clone":"/w/docs","remote":"https://github.com/nw/docs.git",
+ "member":"github.com/nw/docs","branch":"agents/dev-1-docs","base":"main","baseOid":"9f2c41d0…","state":"ready",
+ "hooks":[{"capability":"nw-setup","ok":true,"required":true,"log":"/w/agents/dev/instances/dev-1/.oats/logs/worktree-docs-nw-setup.log","exitCode":0}],
+ "record":"/w/agents/dev/instances/dev-1/.oats/trees/docs.json","resumed":false,"warnings":[]}
+```
+
+- `remote` never carries credentials; `member` is a member key or `null`.
+- `resumed: true`: a `ready` record with the same clone, branch and base was
+  found; nothing ran, and the result is the recorded receipt.
+- `treeMissing: true` appears when a non-required hook removed or moved the
+  tree.
+- `--preview` fetches and writes nothing: `{preview: true, purpose, path,
+  clone, remote, member, branch, base, record, resume, hooks}`, `resume`
+  being `null` or `"recover"` (an interrupted add is rolled back first), and
+  `hooks` the hooks that would run, `[{capability, required}]`. When the tree
+  is already made, it is the recorded receipt with `preview: true`,
+  `resume: "noop"` and `hooksToRun: []`.
+
+`remove` answers `{purpose, path, removed: true, rolledBack, branch,
+branchKept}`: `rolledBack: true` (and `branchKept: false`) when it completed
+an interrupted add's rollback.
+
+| Code | When |
+|---|---|
+| `E_BAD_ARGS` | not run from an instance home; `--dir`, `--home` or `--server`; a missing value; a value starting with `-`; an invalid purpose, branch or base; `remove` of a purpose with no record (a tree made with raw Git is removed with `git worktree remove`) |
+| `E_INSTANCE_RETIRING` | `add` in a quarantined home, or one being retired |
+| `E_CLONE_MISSING` | the repository is not found, or is not a Git repository |
+| `E_CLONE_MISMATCH` | the path is a linked worktree, or the clone has no `origin`; `git worktree add` failed |
+| `E_BRANCH_EXISTS` | the branch exists in the clone; `details.remedy` is `<instance>/<branch>` |
+| `E_PLACEMENT_TAKEN` | a `ready` record with another clone, branch or base (`details.differ`); `.work-<p>` with no record, or a file or symbolic link there; an unreadable record |
+| `E_LIFECYCLE_BUSY` | an add of that purpose is still running (pid and start time verified), or an interrupted add's rollback could not be completed (`details.owed`) |
+| `E_REMOTE_UNREADABLE` | the fetch of `<base>` from `origin` failed; the tree is removed |
+| `E_BASE_UNKNOWN` | the new HEAD is not the fetched commit; the message names both |
+| `E_REQUIRED_HOOK_FAILED`, `E_HOOK_ENVIRONMENT_CONTRACT` | a required `worktree` hook failed or timed out, or a hook answered `env`; the tree is removed (`details.hooks`, `details.rolledBack`) |
+| `E_INTERRUPTED` | SIGINT, SIGTERM or SIGHUP while the hooks ran; the tree is removed and the process exits 128 + the signal number (`details.signal`) |
+| `E_WORKTREE_DIRTY` | `remove`: Git refused a tree with uncommitted or untracked work (`details.git` is Git's message); the record is kept. Commit and push, or discard, then retry |
+| `E_WORK_PRESERVATION_FAILED` | `remove`: Git refused for another reason, or the tree is still there; the record is kept |
+
+A rollback that cannot finish keeps the record and says so in the message
+(`details.rolledBack: false`, `details.owed`); the next `add` or `remove` of
+that purpose finishes it.
 
 ## `instance.json` and the roster
 
@@ -2091,6 +2168,14 @@ its absence.
   in the row),
   `identity` when a provider recorded one, `rollbackIncomplete` and
   `retirePending` when present, and the Desktop facts below.
+- **`spawnInProgress`** (feature `worktree-event`, OATS 0.49.0): `true` while
+  a spawn that is running its `worktree` hooks is verifiably alive (its pid
+  runs with the recorded start time). Such a home holds the quarantine marker
+  with an `inProgress` field ([capabilities.md](capabilities.md#manifest)),
+  and its row carries `spawnInProgress: true` and **no**
+  `rollbackIncomplete`: a live spawn, not a failed one. Once that process is
+  gone, the row carries `rollbackIncomplete` as for any quarantine. Absent
+  otherwise, and from older kernels.
 - **`waitingOnYou`** (feature `waiting-on-you`): `{since, producer, reason,
   message}` when the row is `running: true` and a producer holds a live claim
   that the instance needs input from a human, else `null` (unknown, not "not
@@ -2516,7 +2601,11 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   older logs hold it), `child-spawn-refused`, `launch-warning` (0.30: a
   `launch` hook's warning at session start/restart, `data: {message}`),
   `recomposed` (from earlier kernels), `waiting` (0.40: a producer's claim,
-  [Waiting on you](#waiting-on-you)). `producer` is `kernel`, a capability id,
+  [Waiting on you](#waiting-on-you)), `worktree-added` (0.49.0, feature
+  `worktree-event`: `oats worktree add` made an extra tree, `data: {purpose,
+  path, branch, base, baseOid, remote, member, hooks}`, `remote` without
+  credentials, `member` a key or `null`, `hooks` the `worktree` hooks'
+  receipt). `producer` is `kernel`, a capability id,
   or another producer id (`agent`). Older rows may carry `eventsApi: 1`.
   `launched` is written by spawn and, since 0.40, once per session start or
   restart, as soon as the session exists (`data: {harness, backend,
@@ -2526,6 +2615,9 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   is dated at the receipt's launch time. The boundary is complete per log: a
   log that missed it gets a copy of the same row (same time and data), never
   a second one.
+- `spawned` carries `worktreeHooks` (the receipt `[{capability, ok,
+  required, log, exitCode, …}]`) in its `data` only when the spawn ran
+  `worktree` hooks (0.49.0).
 - `retired` (`data: {agent, keepDir, self, quarantine, workRecovery, hooks,
   reason?}`) is written to the workspace log only,
   `<deployment>/.agents/events/<agent>--<instance>.jsonl`, which outlives the
@@ -2870,9 +2962,12 @@ A first retire prints the **raw receipt**, not an envelope:
   `retention.worktree` is `"absent"`, never `"removed"`, and a quarantine
   retry keeps `could not verify removal` as an incomplete item, which only
   `--force` clears ([souls-and-instances.md](souls-and-instances.md)). No retire deletes a branch, a
-  retried or `--force`d quarantine included: `branchDeleted` is always
-  `false`, and `retention.branchDeleted` and `retention.branchDeletionSkipped`
-  are not written. `--delete-branch` is refused with `E_BAD_ARGS` (`oats
+  retried or `--force`d quarantine included, with the one exception below.
+  `branchDeleted` means exactly "retire's own `--delete-branch`", which is
+  refused, so it is always `false`; it does not say whether a branch was
+  deleted. `spawnCompensation` (below) is the one place a branch deletion by
+  retire is reported. `retention.branchDeleted` and
+  `retention.branchDeletionSkipped` are not written. `--delete-branch` is refused with `E_BAD_ARGS` (`oats
   retire no longer deletes branches: …`) before any effect: before a plan
   revision is compared and before a recorded child is stopped. A failed
   spawn's quarantine that still owes the branch the spawn created stays
@@ -2884,6 +2979,23 @@ A first retire prints the **raw receipt**, not an envelope:
   Git cannot show it gone (`git branch <b>: could not verify whether it still
   exists (…)`). Such a home cannot be completed from Desktop: the operator
   deletes the branch with Git and retries, or uses `--force` from the CLI.
+- **The one exception** (feature `worktree-event`, OATS 0.49.0): a spawn
+  killed while its `worktree` hooks ran (SIGKILL, or its rollback cut short)
+  leaves a marker with `inProgress.branch` and `inProgress.baseOid`. Once
+  that process is verified dead, retire ends the leftover hook process group,
+  runs the retire hooks, removes the worktree and verifies the removal, and
+  only then deletes the branch with an atomic compare-and-delete (`git
+  update-ref -d refs/heads/<b> <baseOid>`), finishing the spawn's own
+  compensation: a branch still at its creation commit holds no work. When
+  the tip moved, the branch is checked out in any worktree, or the ref cannot
+  be read, it is not deleted, and the retry stays incomplete with the
+  "branch left" item above (the home is kept). `branchDeleted` stays
+  `false` (retire's own `--delete-branch`); the step is reported in the
+  additive `spawnCompensation`, the one place such a deletion is reported:
+  `{branch, branchDeleted: true}`, or `{branch, branchDeleted: false, reason}`
+  (`reason`: the tip moved, it is checked out in a worktree, it could not be
+  read, or Git refused), present only when the step was reached. Desktop's
+  retire-receipt reader accepts it as an unknown field.
 - Before the worktree is removed, HEAD is read again: a HEAD that moved since
   the retire's last inspection stops it with `E_WORK_PRESERVATION_FAILED`
   (`the worktree's HEAD changed after it was inspected, so the worktree was
@@ -3015,7 +3127,9 @@ message names the entry or the state that could not be read, or the directory
 Git reads as the top level of a `work/` whose `core.worktree` names another
 one),
 `E_SESSION_UNKNOWN`, `E_AMBIGUOUS_INSTANCE`,
-`E_NO_ROOT`, `E_LIFECYCLE_FAILED`. A recovery whose Git status disagrees with
+`E_NO_ROOT`, `E_LIFECYCLE_FAILED`, `E_LIFECYCLE_BUSY` (feature
+`worktree-event`: the home is a spawn still running its `worktree` hooks, a
+row with `spawnInProgress: true`; `--force` included). A recovery whose Git status disagrees with
 the source's carries `details: {home, statusDisagreement: {repo, rows: [{path,
 source, recovery}], total}}` (the first 10 paths). Usage errors are text on
 stderr, not envelopes.

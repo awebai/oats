@@ -62,6 +62,8 @@ published to npm. Its developer docs are in
 | `operator-dispatch.mjs` | capability commands run from a deployment, and its module store |
 | `operator-coverage.mjs` | whether a soul the workspace offers composes `oats.setup`, for the workspace and each team (readiness and doctor warnings), and the cache-only remote offline doctor resolves through |
 | `instance-*.mjs` | inspection, lifecycle, events and Git views of an instance |
+| `worktree.mjs` | `oats worktree add\|remove`: an instance's extra trees (`.work-<purpose>`), their records (`.oats/trees/`), argument checks before any write, and the rollback of an interrupted add |
+| `worktree-hooks.mjs` | the `worktree` event's runner (cwd the tree, detached process group, log under `.oats/logs/`, fixed timeout, interrupt handling), process identity by pid and start time, and the credential-free `origin` URL |
 | `tmux-config.mjs`, `session-*.mjs` | the tmux session backend and terminal input |
 | `login-environment.mjs` | the user's login environment a server OATS starts gets: the login shell's answer as one nonce-framed block on its stdout, bounded and accepted only whole ([execution targets](execution-targets.md#the-servers-start-environment)) |
 | `capability-contract.mjs`, `provider-binding.mjs` | manifest validation (launch environment, hooks, `retirement`) as problems and warnings (`manifestContract`: an unknown, non-required hook event is a warning every reader reports), the hook environment rules, the readiness wire |

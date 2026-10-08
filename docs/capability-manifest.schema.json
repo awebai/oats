@@ -24,7 +24,7 @@
     "OptionalHook": {
       "oneOf":[
         {"type":"string"},
-        {"type":"object","required":["command"],"additionalProperties":false,"properties":{"command":{"type":"string"},"required":{"const":false,"description":"Only the existing spawn hook may be required."},"inputs":{"$ref":"#/$defs/HookInputs"}}}
+        {"type":"object","required":["command"],"additionalProperties":false,"properties":{"command":{"type":"string"},"required":{"const":false,"description":"Only the spawn and worktree hooks may be required."},"inputs":{"$ref":"#/$defs/HookInputs"}}}
       ]
     }
   },
@@ -259,7 +259,14 @@
           ]
         },
         "retire": {"$ref":"#/$defs/OptionalHook"},
-        "launch": {"$ref":"#/$defs/OptionalHook"}
+        "launch": {"$ref":"#/$defs/OptionalHook"},
+        "worktree": {
+          "description": "Runs once in each tree the kernel creates: ./work of a work: worktree spawn (after the spawn hooks) and each `oats worktree add`. Its cwd is the new tree; see docs/capabilities.md, The worktree event.",
+          "oneOf":[
+            {"type":"string"},
+            {"type":"object","required":["command"],"additionalProperties":false,"properties":{"command":{"type":"string"},"required":{"type":"boolean","description":"When true, a failure or timeout fails the spawn, or removes the tree `oats worktree add` made."},"inputs":{"$ref":"#/$defs/HookInputs"}}}
+          ]
+        }
       },
       "additionalProperties": {"$ref":"#/$defs/OptionalHook"},
       "description": "Lifecycle events to commands. An event this kernel does not run (a newer kernel's) is accepted with a warning and ignored, unless it is declared required: that is refused. Kernels before 0.49.0 refuse every unknown event."
