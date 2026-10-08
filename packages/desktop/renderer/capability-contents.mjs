@@ -11,10 +11,14 @@
  * Latest intent: the show read and each file read carry a ticket checked on success and on failure; a
  * read for a subject or a selection the user has since left is discarded (A→B→A included). Selection and
  * focus never move on a background repaint: the tree is rebuilt only when the answer changed, focus is
- * found again by `data-focus-key`, and the open file stays open while it is still listed. */
+ * found again by `data-focus-key`, and the open file stays open while it is still listed.
+ *
+ * Capability warnings (OATS 0.49.0, capability-warnings.mjs) sit above the card, full width: every one is
+ * about this capability, so no name and no Open capability. They never change the section's ready state. */
 import { capabilityShowSupported, capabilitySelector, capabilityShowData, capabilityFileData, listedFiles, skillFilePath, skillRelativePath, CAPABILITY_SHOW_UNREADABLE } from './capability-show-contract.mjs';
 import { contentsCardCSS, sizeText, firstSentence, createContentsTree, createContentsReader } from './contents-reader.mjs';
 import { createDataState, skeleton, captureFocusState } from './loading.mjs';
+import { createWarningsList, capabilityWarningsCSS, WARNINGS_COPY } from './capability-warnings.mjs';
 
 export const CONTENTS_COPY = Object.freeze({
   title: 'Contents',
@@ -37,8 +41,12 @@ export const CONTENTS_COPY = Object.freeze({
   moved: 'The capability changed while it was read. Its contents are read again when the list is refreshed.',
 });
 
-/** The Contents card's grammar (contents-reader.mjs), shared with the soul page's Instructions. */
-export const capabilityContentsCSS = contentsCardCSS;
+/** The Contents card's grammar (contents-reader.mjs), shared with the soul page's Instructions, and the warnings above it. */
+export const capabilityContentsCSS = `${contentsCardCSS}${capabilityWarningsCSS}
+.cap-contents-warnings { display:flex; flex-direction:column; gap:8px; min-width:0; }
+/* A part of Contents, not a section of its own: the card's group-label grammar, not the section title's. */
+.cap-contents-warnings-title { margin:0; color:var(--muted); font-size:10.5px; font-weight:650; letter-spacing:.05em; text-transform:uppercase; }
+`;
 
 const isSkillMd = (skill, file) => file.path === `${skill.path}/SKILL.md`;
 const shortCommit = v => typeof v === 'string' && /^[0-9a-f]{40}$/i.test(v) ? v.slice(0, 7) : null;
@@ -89,10 +97,11 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
   const head = node('div', 'cap-reader-head'); head.hidden = true;
   const body = node('div', 'cap-reader-body');
   nav.append(navNotice, navBody); reader.append(head, body); card.append(nav, reader);
-  element.append(heading, gate, card);
+  const warnings = node('div', 'cap-contents-warnings'); warnings.hidden = true;
+  element.append(heading, gate, warnings, card);
 
   let alive = true, subjectKey = null, identityKey = null, selector = null, rowCommit = null, show = null, files = new Map();
-  let selected = null, readerPath = null, expanded = new Set(), showTicket = 0, fileTicket = 0, rendered = null;
+  let selected = null, readerPath = null, expanded = new Set(), showTicket = 0, fileTicket = 0, rendered = null, renderedWarnings = null;
 
   const navState = createDataState({ doc, noun: 'contents', region: nav, skeletonHost: navBody, indicatorHost: navNotice,
     skeleton: () => { const block = node('div', 'cap-nav-skeleton'); block.setAttribute('aria-hidden', 'true'); for (let i = 0; i < 6; i++) block.append(skeleton(doc, 'line')); return block; },
@@ -114,7 +123,7 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
 
   function showGate(text) {
     subjectKey = identityKey = null; selector = show = null; files = new Map(); showTicket++; fileTicket++;
-    navState.reset(); fileState.reset();
+    navState.reset(); fileState.reset(); clearWarnings();
     gate.textContent = text; gate.hidden = false; card.hidden = true; lead.hidden = true;
   }
 
@@ -127,14 +136,14 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
     reader.setAttribute('aria-label', `File of ${row?.name || 'this capability'}`);
     if (subject.pending) {
       // The selector comes from the catalog row, which is not read yet: the navigation's skeleton stands.
-      if (subjectKey !== 'pending') { subjectKey = identityKey = null; selector = show = null; files = new Map(); rendered = null; showTicket++; navState.reset(); navBody.replaceChildren(); clearReader(); lead.hidden = true; subjectKey = 'pending'; navState.begin(); }
+      if (subjectKey !== 'pending') { subjectKey = identityKey = null; selector = show = null; files = new Map(); rendered = null; showTicket++; navState.reset(); navBody.replaceChildren(); clearReader(); clearWarnings(); lead.hidden = true; subjectKey = 'pending'; navState.begin(); }
       return;
     }
     const identity = JSON.stringify([deployment, subject.selector]);
     const key = JSON.stringify([identity, typeof row?.commit === 'string' ? row.commit : null]);
     if (key === subjectKey) return;
     // Another capability (or deployment) starts afresh; the same one at a moved commit keeps the open path when it is still listed.
-    if (identity !== identityKey) { selected = null; expanded = new Set(); show = null; files = new Map(); rendered = null; navState.reset(); navBody.replaceChildren(); clearReader(); lead.hidden = true; }
+    if (identity !== identityKey) { selected = null; expanded = new Set(); show = null; files = new Map(); rendered = null; navState.reset(); navBody.replaceChildren(); clearReader(); clearWarnings(); lead.hidden = true; }
     subjectKey = key; identityKey = identity; selector = subject.selector; rowCommit = typeof row?.commit === 'string' ? row.commit : null;
     readShow();
   }
@@ -171,12 +180,23 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
     if (!selected || !files.has(selected)) selected = defaultSelection(data);
     const parent = selected ? files.get(selected) : null;
     if (parent?.kind === 'skill') expanded.add(parent.skill.path);
-    // An unchanged answer (a re-read at the same commit) never rebuilds the tree under focus.
-    const signature = JSON.stringify(data);
+    // An unchanged answer (a re-read at the same commit) never rebuilds the tree, or the warnings, under focus.
+    const signature = JSON.stringify({ ...data, warnings: null });
     if (signature !== rendered) { rendered = signature; paintNav(); }
+    const warned = JSON.stringify(data.warnings);
+    if (warned !== renderedWarnings) { renderedWarnings = warned; paintWarnings(); }
     const moved = !!previous && previous.commit !== data.commit;
     if (!previous || moved || readerPath !== selected) open(selected, { force: moved });
   }
+
+  /* ── warnings ────────────────────────────────────────────────────────── */
+  function paintWarnings() {
+    const restore = captureFocusState(warnings, { scroller: null });
+    const list = createWarningsList(doc, show.warnings, { focusKey: 'cap-warning' });
+    warnings.replaceChildren(...(list ? [node('h4', 'cap-contents-warnings-title', WARNINGS_COPY.title), list] : [])); warnings.hidden = !list;
+    restore();
+  }
+  function clearWarnings() { renderedWarnings = null; warnings.replaceChildren(); warnings.hidden = true; }
 
   /* ── navigation ──────────────────────────────────────────────────────── */
   function paintNav() {

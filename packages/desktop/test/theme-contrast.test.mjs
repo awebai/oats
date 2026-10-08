@@ -499,7 +499,7 @@ for (const [name] of palettes) test(`${name}: actual identity/runtime markup win
 });
 
 for (const [name] of palettes) test(`${name}: workspace catalog, sources and sync text use AA tokens on their computed surfaces`, t => {
-  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"><header class="workspace-header"><div class="ws-sync"><span class="ws-sync-state warn">Lock out of date</span></div></header><p class="catalog-note warn">note</p><p class="catalog-note catalog-remedy">add the line</p><div class="filters"></div><div class="caps"></div><div class="sections"></div><div class="sources"></div><div class="graph"></div></main></body></html>`);
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"><header class="workspace-header"><div class="ws-sync"><span class="ws-sync-state warn">Lock out of date</span></div></header><p class="catalog-note warn">note</p><p class="catalog-note">a note</p><div class="filters"></div><div class="caps"></div><div class="sections"></div><div class="sources"></div><div class="graph"></div></main></body></html>`);
   const doc = dom.window.document;
   for (const source of [css, identityCSS, discoveryCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
   t.after(() => dom.window.close());
@@ -550,7 +550,7 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     ['.catalog-pills button[aria-pressed=false]', '.catalog-pills button[aria-pressed=false]', 'muted', 'surface'],
     ['.catalog-pills button[aria-pressed=true]', '.catalog-pills button[aria-pressed=true]', 'accent', 'sel'],
     ['.catalog-shown', '.oats-view', 'muted', 'bg'],
-    ['.catalog-note.warn', '.oats-view', 'warn', 'bg'], ['.catalog-note.catalog-remedy', '.oats-view', 'muted', 'bg'],
+    ['.catalog-note.warn', '.oats-view', 'warn', 'bg'], ['.catalog-note:not(.warn)', '.oats-view', 'muted', 'bg'],
     // Sections: the segmented jump (current = brand tint, rule 1), titles with their lead, repo headings.
     ['.capability-nav button[aria-current]', '.capability-nav button[aria-current]', 'accent', 'sel'],
     ['.capability-nav button:not([aria-current])', '.capability-nav', 'muted', 'surface'],
@@ -1618,4 +1618,46 @@ for (const [name] of palettes) test(`${name}: the terminal tab's Needs input gly
     assert.ok(ratio >= 3, `--warn on --${bg}: ${ratio.toFixed(2)}`);
   }
   for (let parent = doc.querySelector('.tab-attn'); parent; parent = parent.parentElement) assert.equal(view.getComputedStyle(parent).opacity, '1');
+});
+
+// Capability warnings (OATS 0.49.0, capability-warnings.mjs): one list, six hosts. In each, the list sits in the host's
+// real classes and CSS; every text part is held to AA against the ground actually painted under it, with no opacity.
+import { createWarningsList, capabilityWarningsCSS } from '../renderer/capability-warnings.mjs';
+import { instanceSoulCSS } from '../renderer/instance-soul.mjs';
+for (const [name] of palettes) test(`${name}: the capability warnings list meets computed AA on every surface that shows it`, () => {
+  const hosts = [
+    ['capability page', '<div class="oats-view"><div class="workspace-page"><section class="page-section cap-contents-section"><div class="cap-contents-warnings" id="host"><h4 class="cap-contents-warnings-title">Warnings</h4></div></section></div></div>', [inspectorCSS, capabilityContentsCSS], false, [['.cap-contents-warnings-title', 'muted']]],
+    ['soul page', '<div class="oats-view"><div class="workspace-page soul-page"><div class="inspector-content inspector-main" id="host"></div></div></div>', [inspectorCSS, pageCardCSS]],
+    ['readiness (sidebar)', '<div class="oats-view"><div class="soul-inspector"><div class="readiness-view"><section class="readiness-warnings" id="host"></section></div></div></div>', [inspectorCSS]],
+    ['instance Soul tab', '<aside id="context-panel" class="context-panel"><div class="soul-tab"><section class="soul-tab-section soul-tab-warnings" id="host"></section></div></aside>', [contextPanelCSS, instanceSoulCSS]],
+    ['spawn preview', '<div class="spawn-modal"><div class="spawn-dialog"><div class="spawn-preview"><div class="spawn-preview-warnings" id="host"></div></div></div></div>', [spawnDialogCSS], true],
+    ['Workspace › Sources', '<main class="oats-view"><div class="workspace-discovery"><div class="catalog-notes" id="host"></div></div></main>', [discoveryCSS]],
+  ];
+  for (const [surface, html, sources, lines = false, own = []] of hosts) {
+    const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body>${html}</body></html>`), doc = dom.window.document;
+    for (const source of [css, ...sources]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+    // Every host's CSS carries the list's own rules (the component's CSS is composed into each).
+    assert.ok(sources.some(source => source.includes(capabilityWarningsCSS.trim())), `${surface} composes the list's CSS`);
+    const warning = { code: 'hook-event-unsupported', capability: 'acme.tool', path: 'k:capabilities/acme.tool/oats.json#/hooks/on-merge', message: 'capability acme.tool declares hook "on-merge"' };
+    const list = createWarningsList(doc, lines ? Array(33).fill('line one\nline two') : Array(33).fill(warning), { showCapability: true, after: () => 'add the line', canOpen: () => true, open() {} });
+    doc.getElementById('host').append(list);
+    const root = dom.window.getComputedStyle(doc.documentElement);
+    const ground = el => { for (let x = el; x; x = x.parentElement) { const s = dom.window.getComputedStyle(x), m = /var\(--([\w-]+)\)/.exec(`${s.background} ${s.backgroundColor}`); if (m) return m[1]; } return 'bg'; };
+    const parts = [['.cap-warning-label', 'warn'], ['.cap-warning-message', 'fg'], ['.cap-warnings-more', 'muted'],
+      ...own, ...(lines ? [] : [['.cap-warning-capability', 'muted'], ['.cap-warning-note', 'muted'], ['.cap-warning-details > summary', 'muted'], ['.cap-warning-details dt', 'muted'], ['.cap-warning-details dd', 'fg']])];
+    for (const [selector, fg] of parts) {
+      const el = doc.querySelector(selector); assert.ok(el, `${surface}: ${selector}`);
+      const color = dom.window.getComputedStyle(el).color;
+      assert.ok(color === `var(--${fg})` || (fg === 'fg' && ['', 'var(--fg)'].includes(color)), `${surface} ${selector}: ${color}`);
+      const bg = ground(el);
+      assert.ok(pairs.some(([f, b]) => f === fg && b === bg), `${surface}: --${fg} on --${bg} is in the inventory`);
+      const ratio = contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim()));
+      assert.ok(ratio >= TEXT_CONTRAST, `${name} ${surface} ${selector}: ${ratio.toFixed(2)} on --${bg}`);
+      for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1', `${surface}: ${selector} has no opacity`);
+    }
+    // Marked by the word, not colour alone, and the icon is decorative beside it.
+    assert.equal(doc.querySelector('.cap-warning-label').textContent, 'Warning');
+    assert.equal(doc.querySelector('.cap-warning-head svg').getAttribute('aria-hidden'), 'true');
+    dom.window.close();
+  }
 });

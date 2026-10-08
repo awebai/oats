@@ -6,7 +6,9 @@
  * The decoder is strict and bounded: an unknown API version, a field of the wrong type, an
  * oversize string or list, or a path that is not a plain relative POSIX path inside the
  * capability refuses the WHOLE answer (null), never a partial render. Presentation-only: nothing
- * here infers a file the kernel did not list. */
+ * here infers a file the kernel did not list. The one tolerant field is `warnings` (OATS 0.49.0): projected by
+ * capability-warnings-contract.mjs, never a reason to refuse the answer (an older kernel sends none). */
+import { warningsOf } from './capability-warnings-contract.mjs';
 
 export const CAPABILITY_SHOW_API = 1;
 export const CAPABILITY_SHOW_FEATURE = 'capability-show';
@@ -127,6 +129,8 @@ export function capabilityShowData(v, { selector, name = selector?.name } = {}) 
       package: v.kind === 'package' ? v.package : null, version: v.version === null || v.version === undefined ? null : str(v.version, 64),
       commit: v.commit, path: v.path === null || v.path === undefined ? null : str(v.path, LIMITS.path),
       inject: v.inject === null ? null : file(v.inject, { inject: true }), skills, problems,
+      // Tolerant and idempotent: the server's projection, relayed, projects to itself in the renderer.
+      warnings: warningsOf(v.warnings),
     };
   } catch (error) { if (error instanceof Unreadable) return null; throw error; }
 }

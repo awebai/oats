@@ -5,6 +5,7 @@ import { spawnDecision } from './spawn-decision.mjs';
 import { teamRow, defaultTeamOf } from './team-rows.mjs';
 import { harnessOf, harnessFlag, HARNESSES } from './harness-names.mjs';
 import { launchOf, PREVIEW_FROM } from './launch-contract.mjs';
+import { previewWarningsOf } from './capability-warnings-contract.mjs';
 export { absolute, record };
 const exact = (v, keys) => record(v) && Object.keys(v).every(k => keys.includes(k));
 const name = v => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(v);
@@ -287,5 +288,8 @@ export function previewData(v, expected, { composedFrom = false } = {}) {
     backendStatus: { name: v.backendStatus.name, installed: v.backendStatus.installed, started: false },
     preflight: { status: v.preflight.status, budgetMs: v.preflight.budgetMs, elapsedMs: v.preflight.elapsedMs }, messaging, teams, modules,
     ...(defaultTeam !== undefined ? { defaultTeam } : {}), ...(launch ? { launch } : {}),
-    ...(launchPromptAnswers ? { launchPromptAnswers } : {}) };
+    ...(launchPromptAnswers ? { launchPromptAnswers } : {}),
+    // Capability warnings (0.49.0): the kernel's message strings, tolerant and idempotent (a malformed list reads as none,
+    // never refuses the preview); absent on an older kernel. Shown only: the apply binds nothing on them.
+    ...(Object.hasOwn(v, 'warnings') ? { warnings: previewWarningsOf(v.warnings) } : {}) };
 }

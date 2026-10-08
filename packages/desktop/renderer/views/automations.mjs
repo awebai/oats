@@ -9,7 +9,7 @@
  * the kernel's `automations` lists (feature `automations`, automationsApi 1). */
 import {
   automationRows, groupRows, filterRows, placementText, ownerParts, taskParts, cronInWords, onSummary, relativeTime,
-  hostLogin, templateLabel, soulOriginText, testResult, triggerStatus, summaryLine, runState, reconcileCommand, templateProvenance,
+  hostLogin, templateLabel, soulOriginText, testResult, triggerStatus, summaryLine, runState, reconcileCommand, templateProvenance, eventLabel, firedEntry,
 } from '../automation-rows.mjs';
 import { descriptionValid, DESCRIPTION_MAX } from '../schedule-read-data.mjs';
 import { pageCardCSS, pageBar, pageCard, pageFacts, pageSection } from '../capability-page.mjs';
@@ -131,6 +131,11 @@ export const automationsCSS = `
 .auto-run time { color:var(--muted); font-size:11.5px; }
 .auto-test-line { margin:0; font-size:12px; overflow-wrap:anywhere; }
 .auto-test-line.warn { color:var(--warn); }
+/* A trigger's status lists (waiting, live, fired) and the Test card's would-fire entries: plain lists, no markers. */
+.auto-list { margin:0; padding:0; list-style:none; }
+.auto-list-head { margin:8px 0 0; color:var(--muted); font-size:11.5px; font-weight:650; }
+.auto-live li, .auto-fire li { padding:4px 0; font-size:12px; overflow-wrap:anywhere; }
+.auto-fire { margin:2px 0 0 12px; }
 /* The summary line: authored, or derived from the prompt's first line (muted italic, its title says so). */
 .auto-sub.auto-summary.derived { font-style:italic; }
 .auto-qid { margin:0; color:var(--muted); font:12px var(--mono,monospace); overflow-wrap:anywhere; }
@@ -162,6 +167,7 @@ function clockTime(iso, now) {
 }
 const HEADS = ['On', 'Automation', 'Soul', 'When', 'Runs on', 'Last · next', ''];
 const TITLES = { schedule: 'Schedules', trigger: 'Triggers' };
+const NAME_CUT = 'The purpose was cut and a hash added so the name fits 64 characters.';
 const OUTCOMES = { launched: 'agent launched', active: 'agent active', running: 'agent active', ended: 'run ended', stopped: 'agent stopped', unknown: 'launch state unknown', 'launch-failed': 'launch failed', skipped: 'skipped', delivered: 'wake delivered' };
 
 /** read(): the list JSON · act(verb, row): enable|disable|test|run → kernel JSON · status(row): a trigger's
@@ -234,7 +240,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     try {
       const result = await act(verb, row);
       if (!alive) return;
-      if (verb === 'test') tests.set(row.id, testResult(result, kind) || { ok: false, error: `This OATS did not answer a ${noun} test.` });
+      if (verb === 'test') tests.set(row.id, testResult(result, kind, { source: row.on?.source }) || { ok: false, error: `This OATS did not answer a ${noun} test.` });
       else { onResult?.(verb, row, result); await refresh(); }
     } catch (error) { if (alive) { if (verb === 'test') tests.set(row.id, { ok: false, error: error?.message || String(error) }); else failure = error?.message || String(error); } }
     finally { if (alive) { busy = false; render(); } }
@@ -309,7 +315,9 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     const next = relativeTime(row.nextDue, now()), last = relativeTime(row.lastRun?.at || row.lastRun?.startedAt || row.lastRun?.scheduledFor, now());
     // A trigger that runs here but has not polled yet polls at the next tick (nextDue null).
     const n = node('span', next ? `Next ${next.label}` : !row.enabledHere ? 'Off here' : row.runsHere && kind === 'trigger' ? 'Polls at the next tick' : 'Next not reported', 'auto-main-line auto-text'); n.title = next ? next.title : n.textContent;
-    const l = node('span', last ? `Last ${last.label}${row.lastRun?.outcome ? ` · ${OUTCOMES[row.lastRun.outcome] || row.lastRun.outcome}` : row.lastRun?.number ? ` · #${row.lastRun.number}` : ''}` : 'Not run yet', 'auto-sub'); if (last) l.title = last.title;
+    // A trigger's last fire is named by its event's subject (0.49), else its number; a schedule's by its outcome.
+    const fired = kind === 'trigger' ? eventLabel(row.lastRun, row.on?.source) : row.lastRun?.number ? `#${row.lastRun.number}` : null;
+    const l = node('span', last ? `Last ${last.label}${row.lastRun?.outcome ? ` · ${OUTCOMES[row.lastRun.outcome] || row.lastRun.outcome}` : fired ? ` · ${fired}` : ''}` : 'Not run yet', 'auto-sub'); if (last) l.title = last.title;
     cell.append(n, l); return cell;
   }
   function menuFor(row) {
@@ -411,7 +419,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     const row = rowById(id);
     if (kind !== 'trigger' || !status || !row) return;
     try {
-      const st = triggerStatus(await status(row), row.id);
+      const st = triggerStatus(await status(row), row.id, { source: row.on?.source });
       if (!alive || !st) return;
       statuses.set(row.id, st);
       if (openId === id) { const back = doc.activeElement === page.querySelector('.page-back'); render(); if (back) page.querySelector('.page-back')?.focus(); }
@@ -476,11 +484,43 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     const lead = st ? [st.liveCount !== null ? `${st.liveCount}${st.max !== null ? ` of ${st.max}` : ''} live now` : null, st.firedTotal ? `${st.firedTotal} fired in all` : null, st.pending.length ? `${st.pending.length} waiting` : null].filter(Boolean).join(' · ') : '';
     const runs = pageSection(doc, kind === 'trigger' ? 'Recent fires' : 'Recent runs', ['on this computer', lead].filter(Boolean).join(' · '));
     const history = node('div', undefined, 'auto-runs');
-    if (st?.lastError) history.append(node('p', `Last error: ${st.lastError.message || st.lastError.code}`, 'auto-test-line warn'));
-    const items = st?.fired.length ? st.fired : row.recentRuns.length ? row.recentRuns : row.lastRun ? [row.lastRun] : [];
+    const timeEl = iso => { const at = relativeTime(iso, now()), el = node('time', at?.label || '—'); if (at) el.title = at.title; return el; };
+    // Status (0.49 fields; each absent on an older kernel): the last poll, the last error (message, then its
+    // code), the events waiting (newest first, at most 10), the instances live now, then what fired.
+    const poll = st?.lastPoll;
+    if (poll) {
+      const p = node('p', undefined, `auto-test-line${poll.ok ? '' : ' warn'}`), n = v => `${v} ${v === 1 ? 'pull request' : 'pull requests'}`;
+      p.append('Last poll ', timeEl(poll.at), poll.ok ? `: ${n(poll.prs)}, ${poll.matching} matching` : ` failed${poll.error ? `: ${poll.error}` : ''}`);
+      history.append(p);
+    }
+    if (st?.lastError) {
+      const p = node('p', `Last error: ${st.lastError.message || ''}`, 'auto-test-line warn');
+      if (st.lastError.code) p.append(st.lastError.message ? ' ' : '', node('code', st.lastError.code, 'auto-mono'));
+      history.append(p);
+    }
+    // One order in every list of the section: the event's label, its kind, then the instance (Waiting has none).
+    const eventText = e => [e.label, e.event].filter(Boolean).join(' · ');
+    if (st?.pending.length) {
+      const waiting = node('ul', undefined, 'auto-list auto-runs'); waiting.setAttribute('aria-label', 'Waiting');
+      for (const e of st.pending.slice(0, 10)) { const li = node('li', undefined, 'auto-run'); li.append(timeEl(e.observedAt), node('span', eventText(e))); waiting.append(li); }
+      history.append(node('p', 'Waiting', 'auto-list-head'), waiting);
+      if (st.pending.length > 10) history.append(node('p', `and ${st.pending.length - 10} more`, 'page-note'));
+    }
+    if (st?.live.length) {
+      const live = node('ul', undefined, 'auto-list auto-live'); live.setAttribute('aria-label', 'Live now');
+      for (const e of st.live) { const li = node('li'), what = eventText(e); if (what) li.append(what); if (e.instance) li.append(what ? ' · ' : '', node('span', e.instance, 'auto-mono')); live.append(li); }
+      history.append(node('p', 'Live now', 'auto-list-head'), live);
+    }
+    // A trigger's fires are read through firedEntry (labels by subject); a schedule's runs as recorded.
+    const runOf = r => kind === 'trigger' ? firedEntry(r, row.on?.source) : { ...r, event: r.event ? String(r.event).replace(/_/g, ' ') : null, label: r.number ? `#${r.number}` : null };
+    const items = st?.fired.length ? st.fired : (row.recentRuns.length ? row.recentRuns : row.lastRun ? [row.lastRun] : []).map(runOf).filter(Boolean);
+    if (items.length && (st?.pending.length || st?.live.length)) history.append(node('p', 'Fired', 'auto-list-head'));
     for (const r of items.slice(0, 10)) {
-      const at = relativeTime(r.at || r.startedAt || r.scheduledFor, now()), line = node('div', undefined, 'auto-run'), time = node('time', at?.label || '—'); if (at) time.title = at.title;
-      line.append(time, node('span', [r.outcome ? OUTCOMES[r.outcome] || r.outcome : null, r.event ? String(r.event).replace(/_/g, ' ') : null, r.number ? `#${r.number}` : null, r.instance].filter(Boolean).join(' · ') || 'Recorded'));
+      const line = node('div', undefined, 'auto-run');
+      const outcome = r.outcome ? OUTCOMES[r.outcome] || r.outcome : null;
+      // A trigger's fire in the section's order (label, event, instance); a schedule's run leads with its outcome.
+      const parts = kind === 'trigger' ? [r.label, r.event, r.instance, outcome] : [outcome, r.event, r.label, r.instance];
+      line.append(timeEl(r.at || r.startedAt || r.scheduledFor), node('span', parts.filter(Boolean).join(' · ') || 'Recorded'));
       history.append(line);
     }
     if (!items.length) history.append(node('p', row.runsHere ? 'Not run yet on this computer.' : 'Runs are recorded on the computer that runs it.', 'page-note'));
@@ -517,7 +557,18 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
       // The soul's own error, unless a problem already says it.
       if (tested.soul && !tested.soul.resolves && !(tested.problems || []).length) card.body.append(node('p', `The soul does not resolve${tested.soul.error ? `: ${tested.soul.error}` : ''}`, 'auto-test-line warn'));
       if (tested.account) card.body.append(node('p', `gh acts as ${tested.account}`, 'auto-test-line'));
-      if (tested.wouldFire) card.body.append(node('p', tested.wouldFire.length ? `Would fire now: ${tested.wouldFire.map(f => `${f.number ? `#${f.number}` : f.key}${f.held ? ' (held)' : ''}`).join(', ')}` : 'Nothing would fire now.', 'auto-test-line'));
+      // Each event that would fire, with the instance name its spawn would be asked to derive (0.49).
+      if (tested.wouldFire?.length) {
+        const fires = node('ul', undefined, 'auto-list auto-fire'); fires.setAttribute('aria-label', 'Would fire now');
+        for (const f of tested.wouldFire) {
+          const li = node('li', f.label);
+          if (f.instance) li.append(' → ', node('span', f.instance, 'auto-mono'));
+          if (f.held) li.append(' (held)');
+          if (f.nameCut) { li.append(' · name shortened to fit'); li.setAttribute('aria-description', NAME_CUT); li.title = NAME_CUT; }
+          fires.append(li);
+        }
+        card.body.append(node('p', 'Would fire now:', 'auto-test-line'), fires);
+      } else if (tested.wouldFire) card.body.append(node('p', 'Nothing would fire now.', 'auto-test-line'));
       const due = relativeTime(tested.nextDue, now());
       if (due) card.body.append(node('p', `Next due ${due.label}`, 'auto-test-line'));
       side.append(card.card);

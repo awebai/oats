@@ -90,6 +90,35 @@ run state (`running`, `attempt`, `pendingWake`) and `createdAt`/`updatedAt`.
   code-point rule (`descriptionValid`) alone limits the length, with its message. The schedule form's Summary field shows only with the feature;
   without it the form keeps the stored summary as it is.
 
+## A trigger's status and test (kernel 0.49 fields)
+
+`triggerStatus(json, id, { source })` and `testResult(json, kind, { source })`
+project `oats trigger status` and `oats trigger test`; `source` is the list
+row's `on.source` (status rows carry no `on`). Every 0.49 field is optional:
+without it the page renders as before. Each kernel string (subjects, events,
+instance names, error messages and codes, poll errors) goes through
+`displayLine` and is set as text; `null` from it is absent. A malformed entry
+is skipped.
+
+- **Event labels** (`eventLabel(entry, source)`): the event's `subject` (a
+  string), else its `number`, prefixed `#` only for a `github.pull_request`
+  source; with neither, the event `key`. Used for waiting, live and fired
+  events, the list row's last fire and the Test card. Never `#null`; a `null`
+  repo omits the Repo fact.
+- **Recent fires** shows, in order: *Last poll* (`<time>: <prs> pull
+  request(s), <matching> matching`, or `<time> failed: <error>`; nothing when
+  `lastPoll` is absent or malformed, and the counts must be non-negative safe
+  integers); *Last error* (the message, then the code in mono); *Waiting*
+  (`pending`, newest `observedAt` first, an unparseable time last, kernel
+  order among ties; at most 10, then "and N more"); *Live now* (`live`);
+  then the fires. Every event in these lists reads in one order: its label,
+  its event, then its instance (`#1 · opened · dev-review-pr-1`; a waiting
+  event has no instance). A schedule's runs lead with their outcome.
+- **The Test card** lists each `wouldFire` entry as `<label> → <instance>`
+  (the name the spawn would be asked to derive), "(held)" when held, and
+  "name shortened to fit" with an `aria-description` (and title) when
+  `nameCut`; with no `instance`, only the label.
+
 ## Opening a definition
 
 A row's file opens read-only in a tab from `origin.localPath` (this
@@ -109,7 +138,9 @@ nothing ("edit it with the CLI") when the form cannot keep a field.
 `test/automations-server.test.mjs` (captured argv, verbatim results, refusals,
 gates, keys, the adapter over the real shapes), `automations-view.test.mjs`,
 `automation-descriptions.test.mjs` (summaries, every detail card, Edit summary,
-the gate, the form's Summary), `schedule-draft.test.mjs`,
+the gate, the form's Summary), `trigger-subject-rows.test.mjs` and
+`trigger-subject-view.test.mjs` (the 0.49 status and test fields),
+`schedule-draft.test.mjs`,
 `normalized-api-guards.test.mjs`; fixtures `test/fixtures/automations/kernel/`
 and `test/fixtures/automation-descriptions/` (kernel captures,
 `provenance.json`; the latter re-captured with `CAPTURE_COMMIT=<oid> node

@@ -17,7 +17,10 @@ import { computerTeamsCSS, createComputerTeams, teamsAnswer } from './computer-t
 import { catalogCSS, renderCapabilitySections, capabilitySections, renderRepoPills, rovePill, repoChoices, filterCapabilities, matchCapabilities, hostKeyOf, memberNames, deploymentNotes, syncCapabilityNav, soulsComposition } from './workspace-catalog.mjs';
 import { createWorkspaceSync, syncCSS, reasonText } from './workspace-sync-view.mjs';
 import { iconElement } from './shell-icons.mjs';
-import { createDataState, skeleton, statusLine } from './loading.mjs';
+import { createDataState, skeleton, statusLine, captureFocusState } from './loading.mjs';
+import { warningOf } from './capability-warnings-contract.mjs';
+import { createWarningsList, capabilityWarningsCSS } from './capability-warnings.mjs';
+import { displayLine } from './display-text.mjs';
 import { trackStickyTop, trackScrolledEdge } from './sticky-top.mjs';
 import { createDeploymentScopeLine } from './deployment-scope-line.mjs';
 
@@ -40,6 +43,7 @@ ${setupCSS}
 ${machinesCSS}
 ${computerTeamsCSS}
 ${syncCSS}
+${capabilityWarningsCSS}
 .workspace-header { height:var(--bar-h); min-height:48px; flex:none; display:flex; align-items:stretch; flex-wrap:nowrap; gap:22px; padding:0 16px; border-bottom:1px solid var(--border); background:var(--surface); box-sizing:border-box; }
 .workspace-header[hidden] { display:none; }
 .workspace-header[hidden] + .deployment-scope { display:none; } /* a soul or capability page shows its own line */
@@ -129,6 +133,13 @@ export function setupAttention(status) {
 }
 /** A kernel workspace warning about a team label: said on the Teams tab, not Setup. */
 const teamWarning = w => w?.code === 'unmapped-team-label';
+/** The catalog row a warning's capability names (exact name), for Open capability; a name both a member and a
+ * package carry is told apart by the warning's path (`<repoKey>:…` or `package:<id>:…`), else none. */
+function warnedRow(rows, name, path) {
+  const named = list(rows).filter(row => row?.name === name);
+  if (named.length < 2) return named[0] || null;
+  return named.find(row => typeof path === 'string' && path.startsWith(row.kind === 'package' ? `package:${row.package}:` : `${row.repoKey}:`)) || null;
+}
 
 /** Why the catalog cannot be read right now (probe facts only). */
 function gate(workspace, deployment) {
@@ -178,6 +189,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   let alive = true, serial = 0, rosterGen = null, workspace = null, deployment = null, instances = [], tab = 'souls';
   // `repo`: the Workspace owned repository pill (a group key; null = All), remembered while the subject stays.
   let catalog = null, loading = false, failure = '', repo = null, rendered = null;
+  let warningsDrawn = { signature: null, element: null }; // Sources' warnings list, kept while it is unchanged
   let setupView = 'list', query = '', setupMember = null, souls = [];
   // The Souls tab's count: a number, 'pending' (a pill reserving its width) or null (a failed roster read: nothing, still).
   let soulsCount = 'pending';
@@ -381,6 +393,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     rendered = key;
     // A focused pill is rebuilt below: focus returns to the same repository's pill (by its key).
     const focusedPill = filterHost.contains(doc.activeElement) ? doc.activeElement.closest('.catalog-pills button')?.dataset.repo ?? null : null;
+    const restoreNotes = captureFocusState(notes, { scroller: null }); // a warning's Details or Open capability (by its focus key)
     notes.replaceChildren(); filterHost.replaceChildren(); body.replaceChildren(); capLead.replaceChildren(); filterHost.className = '';
     if (unavailable || tab === 'souls') return;
     for (const note of deploymentNotes(deployment)) notes.append(node('p', note.text, `catalog-note${note.warn ? ' warn' : ''}`));
@@ -397,12 +410,26 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
       return;
     }
     if (tab === 'sources') {
-      // The kernel's workspace warnings, verbatim; a team's warning is said on the Teams tab.
-      for (const warning of list(s?.warnings)) if (typeof warning?.message === 'string' && warning.message && !teamWarning(warning)) {
-        notes.append(node('p', warning.message, 'catalog-note warn'));
-        // A warning's remedy (0.30 automation-untrusted: the oats-local.yaml line to add), verbatim.
-        if (typeof warning.remedy === 'string' && warning.remedy) notes.append(node('p', warning.remedy, 'catalog-note catalog-remedy'));
-      }
+      // The kernel's workspace warnings, through the one warnings list (capability-warnings.mjs); a team's
+      // warning is said on the Teams tab. A remedy (0.30 automation-untrusted: the oats-local.yaml line to add)
+      // is a muted line under its message. Open capability once the catalog lists the warning's capability.
+      // Each warning keeps its own catalog row: two warnings may name two capabilities of one name (another member, a
+      // package), each told apart by its path.
+      const remedies = new Map(), opens = new Map();
+      const shown = list(s?.warnings).flatMap(raw => {
+        const w = teamWarning(raw) ? null : warningOf(raw); if (!w) return [];
+        remedies.set(w, displayLine(raw.remedy));
+        const row = w.capability && catalog ? warnedRow(catalog.capabilities, w.capability, w.path) : null;
+        if (row) opens.set(w, row);
+        return [w];
+      });
+      // An unchanged list is the same element (a roster poll repaints the tab): its open Details stay open.
+      const signature = JSON.stringify(shown.map(w => [w, remedies.get(w), opens.has(w) ? [opens.get(w).kind, opens.get(w).repoKey ?? opens.get(w).package ?? null] : null]));
+      if (signature !== warningsDrawn.signature) warningsDrawn = { signature, element: createWarningsList(doc, shown, { showCapability: true, focusKey: 'ws-warning', after: w => remedies.get(w) ?? null,
+        // Open capability takes the catalog row as it is when pressed: an unchanged list outlives the render that drew it.
+        canOpen: (name, w) => opens.has(w), open: typeof onOpenCapability === 'function' ? (name, w) => { const row = catalog ? warnedRow(catalog.capabilities, name, w.path) : null; if (row) onOpenCapability(row); } : null }) };
+      const warned = warningsDrawn.element;
+      if (warned) { notes.append(warned); restoreNotes(); }
       renderSetup(body, { status: s, instances, souls, cli: cliStatus(), view: setupView, selected: setupMember,
         onSelect: key => selectMember(key), onOpenRepo: openRepo, onOpenPackages: openPackages, openExternal: url => ctx.openExternal?.(url), machines: machinesCard() }); return;
     }

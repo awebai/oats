@@ -509,9 +509,11 @@ test('Setup: automation-untrusted and automation-trust-stale are said verbatim, 
   status.warnings = workspaceStatusData(trust, '/fixture/base/deployment').warnings;
   const u = await setup(t, { status });
   await u.tab('sources');
-  const notes = [...u.doc.querySelectorAll('.catalog-note')].map(el => [el.className, el.textContent]);
+  // Each through the shared warnings list (capability-warnings.mjs): "Warning", the message, its remedy as a muted note.
+  const items = [...u.doc.querySelectorAll('.catalog-notes .cap-warning')].map(el => [el.querySelector('.cap-warning-label').textContent,
+    el.querySelector('.cap-warning-message').textContent, el.querySelector('.cap-warning-note')?.textContent ?? null]);
   const said = trust.result.warnings;
-  assert.deepEqual(notes.filter(([, text]) => said.some(w => w.message === text || w.remedy === text)), [
-    ['catalog-note warn', said[0].message], ['catalog-note catalog-remedy', said[0].remedy], ['catalog-note warn', said[1].message]]);
+  assert.deepEqual(items.filter(([, message]) => said.some(w => w.message === message)), [
+    ['Warning', said[0].message, said[0].remedy], ['Warning', said[1].message, null]]);
   assert.equal(u.doc.querySelector('#workspace-tab-sources .workspace-attn').hidden, false, 'Setup carries the attention dot');
 });

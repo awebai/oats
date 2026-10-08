@@ -21,8 +21,11 @@ import { layerLabel } from './workspace-catalog.mjs';
 import { createDataState, statusLine, captureFocusState } from './loading.mjs';
 import { instanceStatusIdentity } from './instance-status-identity.mjs';
 import { readingFrom, relayedFailure, remoteInspectBlock, serverLabel } from './remote-address.mjs';
+import { warningsOf } from './capability-warnings-contract.mjs';
+import { createWarningsList, capabilityWarningsCSS, WARNINGS_COPY } from './capability-warnings.mjs';
 
 export const instanceSoulCSS = `
+${capabilityWarningsCSS}
 #context-panel .soul-tab { display:flex; flex-direction:column; gap:20px; min-width:0; }
 /* The section body sits under the roster-derived header (context-panel.mjs), which stays put: the
    soul's repository and teams are one muted line, then the sections (desktop/loading-states item 8). */
@@ -185,6 +188,10 @@ export function createInstanceSoulSection(host, { request, generation = () => 0,
     }
     if (!entries.length) rows.append(node('p', 'No other capabilities: only the core ones.', 'context-panel-note'));
     caps.append(rows); root.append(caps);
+    // Capability warnings (0.49.0): as spawned, after its capabilities; compact, and no Open capability (the context
+    // panel navigates nowhere). None, or an older kernel's absent list: no section.
+    const list = createWarningsList(doc, warningsOf(inspected.warnings), { compact: true, showCapability: true, focusKey: 'soul-tab-warning' });
+    if (list) { const warned = node('section', undefined, 'soul-tab-section soul-tab-warnings'); warned.append(node('div', WARNINGS_COPY.title, 'context-panel-label'), list); root.append(warned); }
     return root;
   }
   return {

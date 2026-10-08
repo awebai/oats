@@ -775,6 +775,44 @@ a soul, Commands and Settings) with every name its own code chip, wrapping.
 `paintCapabilityPage` renders the page's facts and Contents from the same
 current catalog row (`contentsRow`), so a refresh moves them together.
 
+**Capability warnings (OATS 0.49.0, `hook-event-unsupported`).** A capability
+that declares a hook event the kernel does not run still composes; the answers
+that show it carry `warnings[]` (`{code, capability, path, message}`; strings in
+`spawn --preview`). A warning is not an error: it blocks nothing and never
+changes a ready state or an attention count (the Sources tab's count already
+counts every non-team workspace warning, unchanged). Two modules, used by every
+surface:
+`capability-warnings-contract.mjs` (pure, imported by the server: `warningsOf`,
+`previewWarningsOf`, `warningsShown`) projects tolerantly (a missing or
+malformed list is none, a malformed entry is skipped, nothing refuses its
+document) and idempotently (every string is already a `displayLine`, so the
+renderer re-projects the server's relayed projection to itself; preview lines
+are joined by `\n`). `capability-warnings.mjs` (`createWarningsList`,
+`capabilityWarningsCSS`) is the one presentation: the icon and the word
+"Warning", the message as text, code and path behind **Details**, at most 32
+then "and N more"; the host owns the heading and the repaint barrier, and the
+controls carry `data-focus-key` `<prefix>:<i>:details|open`. Surfaces: the
+capability page's Contents (a block above the card, no Open capability:
+`capabilityShowData`'s one tolerant field), the soul page (below the problems,
+**Open capability** through the inspector's `capabilityTargets`, the composed
+instructions' path; prefix `soul-warning`), readiness (`readinessData.warnings`,
+after the four checks, apart from a provider's own `result.warnings`;
+`createReadinessView({canOpenCapability, openCapability})` from the inspector;
+in the Workspace sidebar, where readiness shows, Open capability opens the page
+as the Capabilities table does, Back to the list, and only for an instance on
+this computer in the view's primary deployment, the one the page reads (#482;
+another deployment's or a server's instance shows its warnings without it);
+`readiness-warning`), the instance Soul tab (compact,
+no Open capability: the context panel navigates nowhere, `soul-tab-warning`),
+the spawn preview (lines only, after the launch prompts) and Workspace ›
+Sources (every non-team workspace warning, its remedy a muted line; Open
+capability when the catalog lists the name, each warning resolving its own row
+by its path, so two capabilities of one name each open theirs; an unchanged list
+is kept as the same element, so a roster repaint leaves an open Details open;
+`ws-warning`; `workspaceStatusData`
+keeps `capability` and `path` only when they are text). The contrast test holds
+the list on each host's real ground.
+
 **The soul page's Instructions (spec D).** `soul-instructions.mjs`, after
 Capabilities on the soul page only (not the 340px inspector, not an
 instance): the soul's own AGENTS.md from the inspection the page already

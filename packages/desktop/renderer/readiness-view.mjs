@@ -18,7 +18,9 @@ import { CHECKS, readinessSelector, readinessSupported, readinessTarget, readine
 import { originText } from './inspect-contract.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { readingFrom, remoteReason } from './remote-address.mjs';
+import { createWarningsList, capabilityWarningsCSS, WARNINGS_COPY } from './capability-warnings.mjs';
 export const readinessCSS = `
+${capabilityWarningsCSS}
 .readiness-view { color:var(--fg); min-width:0; margin:18px 0; font-size:12px; line-height:1.5; }
 .readiness-view[hidden], .readiness-view [hidden] { display:none; }
 .readiness-view h2 { font-size:14px; margin:0; }
@@ -53,6 +55,12 @@ export const readinessCSS = `
 .readiness-actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
 .soul-inspector .readiness-view { margin-top:16px; }
 .soul-inspector .readiness-check { padding:12px 8px; }
+/* Capability warnings (0.49.0) after the checks: the list's own spacing, not the view's p and details margins. */
+.readiness-warnings { margin-top:14px; }
+.readiness-warnings h3 { margin:0 0 8px; font-size:13.5px; }
+.readiness-view .cap-warning p { margin:0; }
+.readiness-view .cap-warning-details { margin-top:0; }
+.readiness-view .readiness-warnings .cap-warnings-more { margin:8px 0 0; }
 `;
 const label = v => v[0].toUpperCase() + v.slice(1);
 /** A kernel `at` in words: `[<repoKey>:]<file>#/<json pointer>` → "oats-workspace.yaml ›
@@ -70,8 +78,10 @@ const PROVIDER_SAYS = {
   'authorization-required': 'Sign in needed: the provider is set up but is not signed in.', unavailable: 'The provider says: unavailable right now.',
 };
 const signIn = i => i.result?.status === 'authorization-required';
-/** @param {object} [options.clock] `{ now, setTimeout, clearTimeout }` for the loading controller's delays (tests). */
-export function createReadinessView(host, { ctx, compact = false, clock = {} } = {}) {
+/** @param {object} [options.clock] `{ now, setTimeout, clearTimeout }` for the loading controller's delays (tests).
+ * @param {(name: string) => boolean} [options.canOpenCapability] whether a capability warning's Open capability resolves (the host's inspection)
+ * @param {(name: string) => void} [options.openCapability] opens it; absent, no warning shows the action */
+export function createReadinessView(host, { ctx, compact = false, clock = {}, canOpenCapability = () => false, openCapability = null } = {}) {
   const doc = host.ownerDocument;
   const node = (tag, value, cls) => { const el = doc.createElement(tag); if (value !== undefined) el.textContent = value; if (cls) el.className = cls; return el; };
   let alive = true, active = false, serial = 0, identity = null, gen = null, state = {}, attempted = false, busy = false, value = null, blocked = '', query = '', painted = null;
@@ -114,7 +124,9 @@ export function createReadinessView(host, { ctx, compact = false, clock = {} } =
     return '';
   }
   /** Open disclosures by their summary text, so a repaint from refreshed data keeps what the person opened. */
-  const openDisclosures = () => new Set([...content.querySelectorAll('details')].filter(d => d.open).map(d => d.querySelector('summary')?.textContent));
+  // A warning's Details by its focus key: every warning's summary says "Details".
+  const disclosureKey = d => { const summary = d.querySelector('summary'); return summary?.dataset.focusKey || summary?.textContent; };
+  const openDisclosures = () => new Set([...content.querySelectorAll('details')].filter(d => d.open).map(disclosureKey));
   function render() {
     if (!value) { content.replaceChildren(); summary.textContent = ''; painted = null; return; }
     const data = value.data;
@@ -122,7 +134,10 @@ export function createReadinessView(host, { ctx, compact = false, clock = {} } =
       : data.summary.required === 0 ? 'Readiness not established — no required checks reported.' : `${data.summary.fail} failing · ${data.summary.unknown} unknown · ${data.summary.required} required checks`;
     const observed = `Observed: ${data.at}. Target: ${value.target.observedAs}. This is not an atomic snapshot or a permission lease.`;
     // Unchanged facts (the observation time aside) are not repainted: the open disclosures and any focus inside stay untouched.
-    const signature = JSON.stringify([value.target.observedAs, query, { ...data, at: null }]);
+    // Capability warnings (0.49.0): this read's, filtered like the items; whether each opens is the host's, so it is painted too.
+    const warnings = data.warnings.filter(w => !query || JSON.stringify(w).toLowerCase().includes(query));
+    const openable = typeof openCapability === 'function' ? warnings.map(w => !!w.capability && canOpenCapability(w.capability)) : [];
+    const signature = JSON.stringify([value.target.observedAs, query, { ...data, at: null }, openable]);
     if (signature === painted) { content.querySelector('.readiness-observed').textContent = observed; return; }
     painted = signature;
     const restoreFocus = captureFocusState(content), open = openDisclosures();
@@ -163,11 +178,15 @@ export function createReadinessView(host, { ctx, compact = false, clock = {} } =
       if (!c.items.length) row.append(node('p', 'No items reported for this check.', 'readiness-note'));
       checks.append(row);
     }
+    // After the four checks, apart from a provider's own warnings above: they never change the summary, a status or a count.
+    const list = createWarningsList(doc, warnings, { showCapability: true, focusKey: 'readiness-warning', canOpen: name => canOpenCapability(name),
+      open: typeof openCapability === 'function' ? name => { if (alive) openCapability(name); } : null });
+    if (list) { const box = node('section', undefined, 'readiness-warnings'); box.append(node('h3', WARNINGS_COPY.title), list); content.append(box); }
     const policy = node('details', undefined, 'readiness-policy'); policy.append(node('summary', 'View policy'), node('p', 'Lifecycle authority, not an OS sandbox.', 'readiness-note'));
     for (const [key, p] of Object.entries(data.policy)) policy.append(node('p', `${key === 'childSpawns' ? 'Child spawns' : 'Worktrees'}: ${p.allowed === null ? 'unknown' : p.allowed ? 'allowed' : 'not allowed'} · ${p.enforced ? 'enforced' : 'advisory, not enforced'} · ${p.origin.kind}${p.origin.detail ? `: ${p.origin.detail}` : ''}${p.mode ? ` · mode ${p.mode}` : ''}`));
     content.append(policy);
     for (const note of data.notes) content.append(node('p', note, 'readiness-note'));
-    for (const d of content.querySelectorAll('details')) if (open.has(d.querySelector('summary')?.textContent)) d.open = true;
+    for (const d of content.querySelectorAll('details')) if (open.has(disclosureKey(d))) d.open = true;
     restoreFocus();
   }
   /** One read. `user`: a Refresh/Retry the person asked for (its completion is announced). The previous
@@ -220,6 +239,8 @@ export function createReadinessView(host, { ctx, compact = false, clock = {} } =
       if (active && !next.active) { serial++; if (busy) { busy = false; attempted = false; loading.cancel(); } }
       active = next.active === true; section.hidden = !active;
       if (active && !blocked && !attempted) return load();
+      // The host's inspection may land after this read: whether a warning opens follows it (signature-gated, focus kept).
+      if (value) render();
     },
     /** The host's explicit refresh: a person asked, so its completion is announced. */
     refresh: () => load({ user: true }),
