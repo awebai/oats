@@ -184,6 +184,30 @@ test("a status that would run the repository's content filter is not asked for",
   assert.equal(existsSync(marker), true, "the fixture's filter runs under a plain git status");
 });
 
+for (const key of ["clean", "process"]) {
+  test(`a ${key} filter with the empty driver name is a content filter too`, (t) => {
+    const { fx, wtA } = leftovers(t);
+    const marker = join(fx.base, "filter-ran");
+    writeFileSync(join(wtA, ".gitattributes"), "*.txt filter=\n");
+    writeFileSync(join(wtA, "a.txt"), "a\n");
+    git(wtA, "add", ".gitattributes", "a.txt");
+    git(wtA, "commit", "-qm", "an empty driver");
+    git(fx.member, "config", "--unset", "core.fsmonitor");
+    git(fx.member, "config", `filter..${key}`, markerScript(fx, "empty-driver", marker));
+    const later = new Date(Date.now() + 60_000);
+    utimesSync(join(wtA, "a.txt"), later, later);
+
+    const doc = doctorJson(fx);
+    const line = doc.information.find((l) => l.startsWith(`retained-worktree: ${wtA}:`));
+    assert.match(line, /; branch agents\/a; clean: unknown \(its repository configures a content filter that doctor does not run: filter\."" \(the empty driver name\)\); commits: /);
+    assert.equal(existsSync(marker), false, "no filter ran");
+    // The fixture is hostile for real: a plain status runs it (a process filter that doesn't speak
+    // the protocol may fail the status, after it ran).
+    try { git(wtA, "status", "--porcelain"); } catch { /* ran, then failed */ }
+    assert.equal(existsSync(marker), true, "the fixture's filter runs under a plain git status");
+  });
+}
+
 test("a status never enters a submodule, whose own configuration may name a filter", (t) => {
   const { fx, wtB, } = leftovers(t);
   const marker = join(fx.base, "filter-ran");
