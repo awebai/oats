@@ -1,10 +1,11 @@
-// v1 reclaimed a fixed memory-harvest branch in the source checkout. v2 must
-// never use that checkout: independent worker staging publishes immutable,
-// run-unique Git proposals. All Git objects below stay in disposable repos;
-// only GitHub's PR API is deterministic fake data.
+// 5.0 has no kernel/provider publication worker or completion/retry journal.
+// Execute the materialized skill's actual Git/gh command block against local
+// repositories (gh is a narrow argv-checking fake). This proves Git isolation
+// and the command template, NOT model judgment, real GitHub or owner review.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { fixture, write, json, readJSON } from './helpers/okf-v2.mjs';
 
@@ -15,85 +16,91 @@ function github(f) {
 import * as fs from 'node:fs';import {execFileSync} from 'node:child_process';
 const a=process.argv.slice(2),v=k=>a[a.indexOf(k)+1],p=${JSON.stringify(prs)};
 fs.appendFileSync(${JSON.stringify(calls)},JSON.stringify(a)+'\\n');
-if(a[0]==='label') process.exit(0); // okf 4.0.0 ensures the harvest-review label before the PR
-if(a[0]!=='pr') process.exit(91);
-if(a[1]==='list') console.log(fs.readFileSync(p,'utf8'));
-else if(a[1]==='view') {
- if(v('--repo')!=='fixture/knowledge') process.exit(92);
- const row=JSON.parse(fs.readFileSync(p)).find(row=>String(row.number)===a[2] || row.url===a[2]);
- if(!row) process.exit(1);
- console.log(JSON.stringify(row));
-}
-else if(a[1]==='create') {
- const head=v('--head'),oid=execFileSync('git',['ls-remote','origin','refs/heads/'+head],{encoding:'utf8'}).trim().split(/\\s/)[0];
- const old=JSON.parse(fs.readFileSync(p)),number=old.length+1,url='https://github.com/fixture/knowledge/pull/'+number;
- old.push({number,url,state:'OPEN',headRefName:head,headRefOid:oid,baseRefName:v('--base'),mergedAt:null,mergeCommit:null});fs.writeFileSync(p,JSON.stringify(old));console.log(url);
-} else process.exit(91);
+if(v('--repo')!=='fixture/knowledge') process.exit(92);
+if(a[0]==='label' && a[1]==='create' && a[2]==='okf-harvest' && a.includes('--force')) process.exit(0);
+if(a[0]!=='pr' || a[1]!=='create' || v('--base')!=='main' || !a.includes('--head') || v('--title')!=='OKF knowledge proposal' || !fs.statSync(v('--body-file')).isFile()) process.exit(91);
+const head=v('--head'),oid=execFileSync('git',['ls-remote',${JSON.stringify(f.accepted)},'refs/heads/'+head],{encoding:'utf8'}).trim().split(/\\s/)[0];
+if(!/^[0-9a-f]{40}$/.test(oid)) process.exit(93);
+const old=JSON.parse(fs.readFileSync(p)),number=old.length+1,url='https://github.com/fixture/knowledge/pull/'+number;
+old.push({number,url,state:'OPEN',headRefName:head,headRefOid:oid,baseRefName:v('--base')});fs.writeFileSync(p,JSON.stringify(old));console.log(url);
 `);
   fs.chmodSync(join(f.bin, 'gh'), 0o755);
   return { prs, calls };
 }
+function stage(f) {
+  write(join(f.home, 'notes/lesson.md'), 'A bounded review decision.\n');
+  const run = f.propose(), clone = join(run.home, 'work/project');
+  f.git('clone', '-q', f.accepted, clone);
+  const base = join(clone, 'knowledge');
+  write(join(base, 'expert/decision.md'), '---\ntype: Decision\ntitle: File based claims\ndescription: Why claim text is written as data.\n---\n\nClaims are data, never shell commands.\n');
+  fs.appendFileSync(join(base, 'expert/index.md'), '* [File based claims](decision.md) - Why claim text is data.\n');
+  return { run, clone, base };
+}
+function publishTemplate(f, staged) {
+  const skill = fs.readFileSync(join(staged.run.home, '.agents/skills/knowledge-harvest/SKILL.md'), 'utf8');
+  const block = /^```sh\n(branch=[\s\S]*?)\n```$/m.exec(skill)?.[1]; assert.ok(block);
+  const message = join(staged.run.home, 'commit.txt'), body = join(staged.run.home, 'pr.md');
+  // Native file writes, not shell interpolation of claims.
+  write(message, 'okf-harvest: file based claims\n'); write(body, 'Fixture proposal; review is required.\n');
+  const command = block.replace('<source instance>', f.source.instance).replace('<YYYYMMDD-HHMM>', '20261008-0000')
+    .replaceAll('<alias>', 'project').replace('<owned paths>', "'knowledge/expert'")
+    .replace('<absolute commit message file>', message).replace('<absolute PR body file>', body)
+    .replaceAll('<owner>/<repo>', 'fixture/knowledge').replaceAll('<acceptedBranch>', 'main');
+  assert.doesNotMatch(command, /<[^<>]+>/);
+  const env = { ...f.env, PATH: `${f.bin}:${process.env.PATH}` };
+  const validator = spawnSync(process.execPath, [join(staged.run.home, '.agents/skills/okf-authoring/scripts/okf-validate.mjs'), staged.base, '--strict'], { cwd: staged.run.home, env, encoding: 'utf8' });
+  assert.equal(validator.status, 0, validator.stdout + validator.stderr);
+  const published = spawnSync('bash', ['-e', '-c', command], { cwd: staged.run.home, env, encoding: 'utf8' });
+  assert.equal(published.status, 0, published.stdout + published.stderr);
+  return `okf-harvest/${f.source.instance}-20261008-0000`;
+}
 
-test('real directory worker delivers a Git PR without modifying accepted head or deleting any old harvest branch', t => {
-  const f = fixture(t, { git: true }), gh = github(f);
-  const git = (...a) => f.git('-C', f.accepted, ...a);
-  const head = git('rev-parse', 'HEAD');
-  git('branch', 'memory-harvest/source-probe');
-  write(join(f.home, 'notes/decision.md'), 'Human chose explicit custody.\n');
-  const run = f.run(); assert.equal(run.status, 'ready');
-  assert.equal(fs.lstatSync(join(run.home, 'work')).isSymbolicLink(), false);
-  const stage = readJSON(join(run.home, 'work/staging.json')).project.root;
-  assert.ok(stage.startsWith(join(run.home, 'work') + '/'));
-  assert.notEqual(stage, join(f.accepted, 'knowledge'));
-  const result = f.complete(run), receipt = result.receipts.project;
-  assert.equal(result.processed, true); assert.equal(receipt.status, 'delivered');
-  assert.match(receipt.branch, /^okf\//); assert.match(receipt.pr.url, /fixture\/knowledge\/pull\/1/);
-  assert.equal(git('rev-parse', 'HEAD'), head, 'opening a PR is not acceptance');
-  assert.equal(git('rev-parse', 'memory-harvest/source-probe'), head, 'v1 branch is never reclaimed');
-  assert.equal(git('show', `${receipt.commit}:code.txt`), 'untouched code');
-  assert.ok(git('diff', '--name-only', head, receipt.commit).split('\n').every(p => p.startsWith('knowledge/expert/')));
+test('materialized 5.0 publishing commands create a Git proposal without changing accepted HEAD or reclaiming old branches', t => {
+  const f = fixture(t, { git: true }), gh = github(f), git = (...a) => f.git('-C', f.accepted, ...a);
+  const head = git('rev-parse', 'HEAD'); git('branch', 'memory-harvest/source-probe');
+  const staged = stage(f), branch = publishTemplate(f, staged), commit = git('rev-parse', branch);
+  assert.equal(git('rev-parse', 'HEAD'), head, 'a proposed branch is not acceptance');
+  assert.equal(git('rev-parse', 'memory-harvest/source-probe'), head, 'old branch never reclaimed');
+  assert.equal(git('show', `${commit}:code.txt`), 'untouched code');
+  assert.ok(git('diff', '--name-only', head, commit).split('\n').every(p => p.startsWith('knowledge/expert/')));
   assert.equal(fs.existsSync(join(f.accepted, 'knowledge/expert/decision.md')), false);
-  const reader = f.spawn('before-merge');
-  assert.equal(f.consult(reader.home, 'expert/decision.md'), null, 'not accepted before the merge');
-  f.retire(reader.instance);
-  // Replay reconciles the existing PR; it cannot push a second branch/PR.
-  assert.equal(f.complete(run).receipts.project.commit, receipt.commit);
-  assert.equal(readJSON(gh.prs).length, 1);
-  assert.ok(fs.readFileSync(gh.calls,'utf8').trim().split('\n').map(JSON.parse).some(a=>a[1]==='view' && a[2]==='1' && a.includes('--repo')), 'replay queries the persisted PR identity, not only a mutable branch list');
-  git('merge', '--ff-only', receipt.branch);
-  const prs = readJSON(gh.prs); Object.assign(prs[0], { state: 'MERGED', mergedAt: '2026-09-13T12:00:00Z', mergeCommit: { oid: receipt.commit } }); json(gh.prs, prs);
-  assert.equal(f.complete(run).receipts.project.status, 'accepted');
+  assert.equal(f.consult(f.home, 'expert/decision.md'), null, 'proposal is not accepted knowledge');
+  assert.equal(readJSON(gh.prs).length, 1); assert.equal(readJSON(gh.prs)[0].headRefOid, commit);
+  const beforeCalls = fs.readFileSync(gh.calls, 'utf8');
+  const removed = f.raw(['okf', 'complete', '--soul', 'source', '--json']);
+  assert.equal(removed.status, 1); assert.equal(JSON.parse(removed.stdout).error.code, 'E_REMOVED');
+  assert.equal(fs.readFileSync(gh.calls, 'utf8'), beforeCalls, 'removed completion cannot replay a PR');
+  assert.equal(git('rev-parse', branch), commit);
+  // Explicit fixture-operator acceptance, NOT a kernel/harvester completion.
+  git('merge', '--ff-only', branch);
   const fresh = f.spawn('after-merge');
-  // okf 3.0.0 serves the host's clone of the base within consult-max-age: the merge is read with --fresh.
-  assert.match(f.consult(fresh.home, 'expert/decision.md', { fresh: true }), /avoids silent fallback/);
-  f.retire(fresh.instance); f.retire(run.instance); f.retire(f.source.instance);
+  assert.match(f.consult(fresh.home, 'expert/decision.md', { fresh: true }), /Claims are data/);
+  f.retire(fresh.instance); f.retire(staged.run.instance); f.retire(f.source.instance);
 });
 
-test('Git custody rejects peer edits and retains worker/input until an explicit corrected judgment', t => {
-  const f = fixture(t, { git: true }), gh = github(f);
-  write(join(f.home, 'notes/one.md'), 'Pending rationale.\n'); const run = f.run(), judgment = f.judgment(run);
-  const stage = readJSON(join(run.home, 'work/staging.json')).project.root;
-  const peer = join(stage, 'peer/log.md'), before = fs.readFileSync(peer);
-  fs.appendFileSync(peer, 'Unauthorized peer edit.\n');
-  const failed = f.raw(['okf', 'complete', '--source', f.sourceFile, '--run', run.run, '--judgment', judgment, '--soul', 'source', '--json']);
-  assert.equal(failed.status, 1); assert.equal(JSON.parse(failed.stdout).error.code, 'E_OWNER');
-  assert.deepEqual(f.inspect().status.processed, []); assert.equal(readJSON(gh.prs).length, 0);
-  assert.equal(fs.existsSync(join(run.home, 'work/input.json')), true);
-  fs.writeFileSync(peer, before);
-  assert.equal(f.complete(run, judgment).processed, true);
+test('the publishing command stages only owned paths, never a peer edit; semantic ownership review is not a kernel publisher', t => {
+  const f = fixture(t, { git: true }); github(f);
+  const staged = stage(f), peer = join(staged.base, 'peer/log.md'), before = fs.readFileSync(peer, 'utf8');
+  fs.appendFileSync(peer, 'Unowned fixture edit.\n');
+  const branch = publishTemplate(f, staged);
+  assert.equal(f.git('-C', f.accepted, 'show', `${branch}:knowledge/peer/log.md`), before.trimEnd(), 'peer bytes not committed');
+  assert.match(f.git('-C', staged.clone, 'status', '--porcelain'), /knowledge\/peer\/log.md/, 'unowned edit remains outside the commit');
+  assert.equal(fs.existsSync(join(staged.run.home, 'work/input.json')), false);
+  f.retire(staged.run.instance); f.retire(f.source.instance);
 });
 
-test('directory custody rejects accepted-base drift, preserves evidence and rejudges in a new independent worker', t => {
-  const f = fixture(t);
-  write(join(f.home, 'notes/one.md'), 'Pending rationale.\n'); const run = f.run(), judgment = f.judgment(run);
-  fs.appendFileSync(join(f.accepted, 'peer/log.md'), 'Cooperative accepted update.\n');
-  const failed = f.raw(['okf', 'complete', '--source', f.sourceFile, '--run', run.run, '--judgment', judgment, '--soul', 'source', '--json']);
-  assert.equal(failed.status, 1); assert.equal(JSON.parse(failed.stdout).error.code, 'E_BASELINE');
-  assert.deepEqual(f.inspect().status.processed, []);
-  const retried = f.cli(['okf', 'retry', '--source', f.sourceFile, '--rejudge', '--soul', 'source', '--json']);
-  assert.equal(retried.status, 'abandoned'); assert.equal(fs.existsSync(run.home), true, 'failure evidence is retained');
-  const next = f.run(); assert.notEqual(next.run, run.run); assert.notEqual(next.home, run.home);
-  assert.deepEqual(readJSON(join(next.home, 'work/input.json')).inputs, readJSON(join(run.home, 'work/input.json')).inputs);
-  assert.equal(f.complete(next).receipts.project.status, 'accepted');
-  assert.match(fs.readFileSync(join(f.accepted, 'peer/log.md'), 'utf8'), /Cooperative accepted update/);
+test('directory-base changes cannot enter a removed completion/retry engine or silently publish over accepted drift', t => {
+  const f = fixture(t), staged = f.propose(), peer = join(f.accepted, 'peer/log.md');
+  fs.appendFileSync(peer, 'Cooperative accepted update.\n');
+  const before = fs.readFileSync(peer, 'utf8');
+  for (const command of ['complete', 'retry', 'run-source']) {
+    const r = f.raw(['okf', command, '--soul', 'source', '--json']);
+    assert.equal(r.status, 1); assert.equal(JSON.parse(r.stdout).error.code, 'E_REMOVED');
+  }
+  assert.equal(fs.readFileSync(peer, 'utf8'), before);
+  assert.equal(fs.existsSync(join(staged.home, 'work/staging.json')), false);
+  assert.equal(fs.existsSync(join(f.accepted, 'expert/decision.md')), false);
+  const skill = fs.readFileSync(join(staged.home, '.agents/skills/knowledge-harvest/SKILL.md'), 'utf8').replace(/\s+/g, ' ');
+  assert.match(skill, /directory base <alias> is unsupported for harvest in oats\.okf 5\.0/);
+  f.retire(staged.instance); f.retire(f.source.instance);
 });

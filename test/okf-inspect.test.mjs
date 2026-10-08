@@ -17,18 +17,20 @@ const operation = f => f.cli(['operation', 'run', 'knowledge:inspect', '--home',
 // mirrors), built once; each test spawns its own home in it. The direct pipe
 // runs the source tree's provider (CAP) against that same home.
 let deployment;
-after(() => { if (deployment) fs.rmSync(deployment.room, { recursive: true, force: true }); });
+const rooms = new Set();
+after(() => { for (const room of rooms) fs.rmSync(room, { recursive: true, force: true }); });
 function workspaceDeployment() {
   if (deployment) return deployment;
   const room = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'okf-inspect-v2-')));
-  deployment = { room };
+  rooms.add(room);
   const sh = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8' }).trim();
   const git = (dir, ...args) => sh('git', ['-C', dir, '-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...args]);
-  const official = join(room, 'official'); materializeOkfGitPayload(join(official, 'oats-package'), { repoRoot: ROOT });
-  sh('git', ['init', '-q', official]); git(official, 'add', '-A'); git(official, 'commit', '-qm', 'okf'); git(official, 'tag', 'v2.1.3');
+  const official = join(room, 'official'), inventory = materializeOkfGitPayload(join(official, 'oats-package'), { repoRoot: ROOT });
+  const tag = `v${inventory.version}`;
+  sh('git', ['init', '-q', official]); git(official, 'add', '-A'); git(official, 'commit', '-qm', 'okf'); git(official, 'tag', tag);
   const host = join(room, 'host'), hostRef = pathToFileURL(host).href;
   sh('git', ['init', '-q', host]);
-  write(join(host, 'oats-workspace.yaml'), `schemaVersion: 2\nname: okf-inspect\nmembers:\n  - ${hostRef}\npackages:\n  oats.okf: v2.1.3\nteams:\n  global: { description: all }\ndefaults:\n  knowledge:\n    oats.okf: { from: package }\n`);
+  write(join(host, 'oats-workspace.yaml'), `schemaVersion: 2\nname: okf-inspect\nmembers:\n  - ${hostRef}\npackages:\n  oats.okf: ${tag}\nteams:\n  global: { description: all }\ndefaults:\n  knowledge:\n    oats.okf: { from: package }\n`);
   write(join(host, 'oats-membership.yaml'), `schemaVersion: 2\nworkspace: ${hostRef}\n`);
   write(join(host, 'souls/source/soul.yaml'), 'schemaVersion: 2\nname: source\ndescription: source\nwork: directory\n');
   write(join(host, 'souls/source/AGENTS.md'), '# Expert\nOwn rationale and observed limitations, not code descriptions.\n');
@@ -37,22 +39,22 @@ function workspaceDeployment() {
   const dep = join(room, 'dep'), accepted = join(room, 'accepted'), bindings = join(room, 'bindings.json');
   fs.mkdirSync(join(dep, 'agents'), { recursive: true });
   json(bindings, { version: 1, stateDir: join(room, 'state'), bases: { project: { id: 'fixture-base', kind: 'directory', path: accepted } } });
-  write(join(dep, 'oats-local.yaml'), `schemaVersion: 2\nworkspace: ${hostRef}\nsettings:\n  oats.okf:\n    bindings-file: ${bindings}\n    harvest: "on"\n`); // okf 4.0.0: harvest (source registration) is off by default
+  write(join(dep, 'oats-local.yaml'), `schemaVersion: 2\nworkspace: ${hostRef}\nsettings:\n  oats.okf:\n    bindings-file: ${bindings}\n`); // 5.0 has no host harvest setting
   const catalog = join(room, 'catalog.json');
-  json(catalog, { packages: { 'oats.okf': { url: pathToFileURL(official).href, ref: 'v2.1.3', path: 'oats-package' } } });
+  json(catalog, { packages: { 'oats.okf': { url: pathToFileURL(official).href, ref: tag, path: 'oats-package' } } });
   const user = join(room, 'user'); fs.mkdirSync(user);
   const env = { HOME: user, PATH: inertHarnessPath(room), OATS_HOME_DIR: join(room, 'host-state'), LANG: 'en_US.UTF-8',
     OATS_PACKAGE_CATALOG: catalog, OATS_REMOTE_CACHE: join(room, 'cache'), OATS_TMUX_SESSION: `none-${process.pid}`,
     GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_ALLOW_PROTOCOL: 'file' };
-  const cli = args => {
-    const r = spawnSync(process.execPath, [CLI, ...args], { cwd: dep, env, encoding: 'utf8', timeout: 90000, maxBuffer: 32 * 1024 * 1024 });
+  const cli = (args, { cwd = dep, environment = env } = {}) => {
+    const r = spawnSync(process.execPath, [CLI, ...args], { cwd, env: environment, encoding: 'utf8', timeout: 90000, maxBuffer: 32 * 1024 * 1024 });
     assert.equal(r.status, 0, JSON.stringify(args) + '\n' + r.stdout + r.stderr);
     const out = JSON.parse(r.stdout); assert.equal(out.ok, true, JSON.stringify(out)); return out.result;
   };
   cli(['sync', '--dir', dep, '--json']);
   const nodes = join(room, 'nodes.json'); json(nodes, { expert: { path: 'expert', owner: 'source-owner' } });
   cli(['okf', 'init', '--base', 'project', '--nodes', nodes, '--confirm', '--soul', 'source', '--json']);
-  Object.assign(deployment, { dep, accepted, env, cli });
+  deployment = { room, dep, accepted, env, cli }; // publish only a fully initialized fixture
   return deployment;
 }
 let homes = 0;
@@ -61,7 +63,7 @@ function workspaceHome() {
   const source = d.cli(['spawn', 'source', '--dir', d.dep, '--purpose', `probe-${++homes}`, '--no-launch', '--json']);
   const home = source.home, meta = readJSON(join(home, 'instance.json'));
   assert.ok(meta.modules?.['oats.okf'], 'the home materialized the real oats.okf');
-  const sourceFile = readJSON(join(home, '.okf-source.json')).source;
+  assert.equal(fs.existsSync(join(home, '.okf-source.json')), false, '5.0 has no source descriptor');
   const f = { home, source, accepted: d.accepted, cli: d.cli };
   // The source tree's provider against this home, with the payload the spawn recorded.
   f.direct = args => {
@@ -73,7 +75,7 @@ function workspaceHome() {
     assert.equal(r.status, 0, args.join(' ') + '\n' + r.stdout + r.stderr);
     return { ...r, out: JSON.parse(r.stdout) };
   };
-  f.inspect = () => d.cli(['okf', 'inspect', '--source', sourceFile, '--soul', 'source', '--json']);
+  f.inspect = () => d.cli(['okf', 'inspect', '--json'], { cwd: home, environment: { ...d.env, OATS_INSTANCE_HOME: home } });
   return f;
 }
 test('local execution ignores ambient installed-package roots and source identity', () => {
@@ -90,7 +92,9 @@ test('local execution ignores ambient installed-package roots and source identit
       assert.equal(out.liveMemory.available, true);
       assert.equal(out.documents[0].text, 'isolated local inspection');
       f.retire(f.source.instance);
-      assert.equal(f.inspect().liveMemory.reason, 'retired');
+      const old = f.raw(['okf', 'inspect', '--source', join(f.base, 'old-source.json'), '--soul', 'source', '--json']);
+      assert.equal(old.status, 1);
+      assert.equal(JSON.parse(old.stdout).error.code, 'E_REMOVED');
     } finally { cleanup?.(); }
   `;
   const r = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
@@ -102,7 +106,7 @@ test('local execution ignores ambient installed-package roots and source identit
   });
   assert.equal(r.status, 0, r.stdout + r.stderr);
 });
-test('OKF inspect exposes matching STATE/log/notes alongside durable evidence through direct and public operation pipes', { timeout: 300_000 }, () => {
+test('OKF inspect exposes only matching STATE/log/notes through direct and public operation pipes', { timeout: 300_000 }, () => {
   const f = workspaceHome();
   const manifest = readJSON(join(CAP, 'oats.json'));
   assert.deepEqual(Object.keys(manifest.operations).sort(), ['harvest', 'inspect']);
@@ -115,18 +119,18 @@ test('OKF inspect exposes matching STATE/log/notes alongside durable evidence th
   assert.deepEqual(discovery.knowledge.operations.map(o => [o.name, o.kind, o.available]).sort(), [['harvest', 'action', true], ['inspect', 'view', true]]);
   for (const out of [f.direct(['inspect']).out.result, operation(f).result, f.inspect()]) {
     assert.equal(out.liveMemory.available, true);
-    assert.deepEqual(out.documents.map(d => d.label), ['Working state (STATE.md)', 'Log (log.md)', 'Pending note: a.md', 'Pending note: b.md', 'Pending note: nested/c.md', 'Durable processing receipts']);
+    assert.deepEqual(out.documents.map(d => d.label), ['Working state (STATE.md)', 'Log (log.md)', 'Pending note: a.md', 'Pending note: b.md', 'Pending note: nested/c.md']);
     assert.equal(out.documents[0].text, '# state\n\nworking\n');
     assert.equal(out.documents[2].path, join(f.home, 'notes/a.md'));
-    assert.deepEqual(JSON.parse(out.documents.at(-1).text), out.status);
-    assert.ok(out.acceptedView.project.digest); assert.equal(out.bases.project.path, f.accepted);
+    assert.equal(out.status, undefined, '5.0 invents no durable processing status');
+    assert.deepEqual(out.owns, ['project/expert']); assert.equal(out.bases.project.path, f.accepted);
     assert.match(out.summary, /5 working-memory documents/);
-    assert.equal(out.status.activeRun, null, 'inspection never requests a worker');
+    assert.equal(out.documents.length, 5, 'inspection adds no custody or worker receipts');
   }
   assert.equal(operation(f).instance, undefined, 'a view launches nothing');
   for (const p of ['STATE.md', 'log.md', 'notes']) fs.rmSync(join(f.home, p), { recursive: true });
   const empty = operation(f).result;
-  assert.equal(empty.documents.length, 1, 'durable receipts remain even without live documents');
+  assert.equal(empty.documents.length, 0, 'no live documents means no documents, not invented receipts');
   assert.equal(empty.liveMemory.available, true); assert.match(empty.summary, /0 working-memory documents/);
 });
 
@@ -142,7 +146,7 @@ test('large pipe regression: three live documents over 128 KiB arrive byte-exact
   for (const result of [direct.out.result, operation(f).result]) {
     assert.deepEqual(result.documents.slice(0, 3).map(d => d.text), texts);
     assert.ok(result.documents.slice(0, 3).every(d => d.truncated === undefined));
-    assert.equal(result.documents.at(-1).label, 'Durable processing receipts');
+    assert.equal(result.documents.length, 3, 'all three full documents, no processing receipt');
   }
 });
 
@@ -155,28 +159,28 @@ test('inspection announces its document preview cap without splitting UTF-8', { 
   }
 });
 
-for (const mode of ['retired', 'missing', 'reused', 'invalid-marker']) test(`descriptor inspection retains evidence but never exposes ${mode} live memory`, t => {
-  const f = fixture(t);
-  write(join(f.home, 'notes/decision.md'), 'Durable evidence before disappearance.\n');
+for (const mode of ['retired', 'missing', 'reused', 'invalid-marker']) test(`removed descriptor inspection never reads ${mode} live memory or a legacy descriptor`, t => {
+  const f = fixture(t), descriptor = join(f.base, 'untrusted-old-source.json');
+  // Deliberately untrusted legacy bytes, not a forged valid 4.x source record.
+  write(descriptor, 'DO_NOT_EXPOSE_REUSED_HOME');
   if (mode === 'retired') f.retire(f.source.instance);
   else {
-    // Capture through the real command, but never launch a model.
-    const run = f.run(); assert.equal(run.status, 'ready');
     fs.renameSync(f.home, join(f.base, 'preserved-home'));
     if (mode !== 'missing') {
       write(join(f.home, 'STATE.md'), 'DO_NOT_EXPOSE_REUSED_HOME');
-      if (mode === 'reused') json(join(f.home, '.okf-source.json'), { version: 1, id: 'replacement', source: f.sourceFile });
-      else write(join(f.home, '.okf-source.json'), 'DO_NOT_EXPOSE_REUSED_HOME');
+      write(join(f.home, '.okf-source.json'), mode === 'reused' ? JSON.stringify({ source: descriptor }) : 'invalid');
     }
   }
-  const out = f.inspect();
-  assert.equal(out.liveMemory.available, false); assert.equal(out.documents.length, 1);
-  assert.equal(out.status.captured.inputs.length, 1); assert.doesNotMatch(JSON.stringify(out), /DO_NOT_EXPOSE_REUSED_HOME/);
-  // okf 3.0.0 has no views: refresh is removed, and nothing is materialized for the home.
-  const refresh = f.raw(['okf', 'refresh', '--source', f.sourceFile, '--soul', 'source', '--json']);
-  assert.equal(JSON.parse(refresh.stdout).error.code, 'E_REMOVED');
+  for (const command of ['inspect', 'refresh']) {
+    const r = f.raw(['okf', command, '--source', descriptor, '--soul', 'source', '--json']);
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    const out = JSON.parse(r.stdout);
+    assert.equal(out.ok, false); assert.equal(out.error.code, 'E_REMOVED');
+    assert.equal(out.result, undefined); assert.doesNotMatch(r.stdout, /DO_NOT_EXPOSE_REUSED_HOME/);
+  }
+  assert.equal(fs.readFileSync(descriptor, 'utf8'), 'DO_NOT_EXPOSE_REUSED_HOME', 'legacy bytes untouched');
   assert.equal(fs.existsSync(join(f.home, 'knowledge-view')), false);
-  assert.equal(fs.existsSync(join(dirname(f.sourceFile), 'views')), false);
+  assert.equal(fs.existsSync(join(f.base, 'state/sources')), false);
 });
 
 for (const mode of ['symlink', 'hardlink', 'directory', 'notes-file']) test(`inspection fails explicitly for unsafe live ${mode}, never returns partial success`, t => {

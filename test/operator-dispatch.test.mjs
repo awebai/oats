@@ -166,13 +166,14 @@ test("oats okf init --soul probe from the deployment (no home) provisions the ba
     const sh = (cmd, a, opts = {}) => execFileSync(cmd, a, { encoding: "utf8", ...opts }).trim();
     const git = (dir, ...a) => sh("git", ["-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", ...a]);
     // The official OKF package repo (the exact payload the release mirrors), tagged.
-    const official = join(room, "official"); materializeOkfGitPayload(join(official, "oats-package"), { repoRoot: REPO_ROOT });
-    sh("git", ["init", "-q", official]); git(official, "add", "-A"); git(official, "commit", "-qm", "okf"); git(official, "tag", "v2.1.3");
+    const official = join(room, "official"), inventory = materializeOkfGitPayload(join(official, "oats-package"), { repoRoot: REPO_ROOT });
+    const tag = `v${inventory.version}`;
+    sh("git", ["init", "-q", official]); git(official, "add", "-A"); git(official, "commit", "-qm", "okf"); git(official, "tag", tag);
     // A host workspace that is also its one member, carrying the probe soul.
     const host = join(room, "host"); mkdirSync(join(host, "souls", "probe"), { recursive: true });
     sh("git", ["init", "-q", host]);
     const hostRef = pathToFileURL(host).href;
-    writeFileSync(join(host, "oats-workspace.yaml"), `schemaVersion: 2\nname: opd\nmembers:\n  - ${hostRef}\npackages:\n  oats.okf: v2.1.3\nteams:\n  global: { description: all }\ndefaults:\n  knowledge:\n    oats.okf: { from: package }\n`);
+    writeFileSync(join(host, "oats-workspace.yaml"), `schemaVersion: 2\nname: opd\nmembers:\n  - ${hostRef}\npackages:\n  oats.okf: ${tag}\nteams:\n  global: { description: all }\ndefaults:\n  knowledge:\n    oats.okf: { from: package }\n`);
     writeFileSync(join(host, "oats-membership.yaml"), `schemaVersion: 2\nworkspace: ${hostRef}\n`);
     writeFileSync(join(host, "souls/probe/soul.yaml"), "schemaVersion: 2\nname: probe\ndescription: probe\nwork: directory\n");
     writeFileSync(join(host, "souls/probe/AGENTS.md"), "# Probe\n\nCanonical instructions.\n");
@@ -182,8 +183,8 @@ test("oats okf init --soul probe from the deployment (no home) provisions the ba
     const dep = join(room, "dep"); mkdirSync(join(dep, "agents"), { recursive: true });
     const accepted = join(room, "accepted"); const bindings = join(room, "okf-bindings.json");
     writeFileSync(bindings, JSON.stringify({ version: 1, stateDir: join(room, "okf-state"), bases: { project: { id: "opd-base", kind: "directory", path: accepted } } }));
-    writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${hostRef}\nsettings:\n  oats.okf:\n    bindings-file: ${bindings}\n    harvest: "on"\n`); // okf 4.0.0: harvest is off by default
-    const catalog = join(room, "catalog.json"); writeFileSync(catalog, JSON.stringify({ packages: { "oats.okf": { url: pathToFileURL(official).href, ref: "v2.1.3", path: "oats-package" } } }));
+    writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${hostRef}\nsettings:\n  oats.okf:\n    bindings-file: ${bindings}\n`); // no legacy host harvest setting in 5.0
+    const catalog = join(room, "catalog.json"); writeFileSync(catalog, JSON.stringify({ packages: { "oats.okf": { url: pathToFileURL(official).href, ref: tag, path: "oats-package" } } }));
     const home = join(room, "home"); mkdirSync(home);
     const env = { ...process.env, PATH: inertHarnessPath(room), OATS_PACKAGE_CATALOG: catalog, OATS_REMOTE_CACHE: join(room, "cache"), OATS_TMUX_SESSION: `none-${process.pid}`, HOME: home };
     delete env.PI_AGENT_HOME; delete env.OATS_HOME; delete env.OATS_INSTANCE_HOME; delete env.OATS_INSTANCE;
@@ -267,9 +268,11 @@ test("oats okf init --soul probe from the deployment (no home) provisions the ba
     const misnamed = run(["okf", "inspect", "--json"], renamed);
     assert.match(misnamed.err, /no --soul given; running as soul [\w.-]+\/probe,/, misnamed.out + misnamed.err);
 
-    // A package soul (the okf harvester, okf 4.0.0) homes under the agents root like a member
-    // soul: <deployment>/agents/<package>--<soul>/instances/<name>.
-    r = run(["spawn", "oats.okf/knowledge-harvester", "--dir", dep, "--parent", r.json.result.instance, "--name", "okf-harvester-opd", "--no-launch", "--json"]);
+    // A 5.0 package-soul harvester requires a proposal naming an actual source.
+    // It still homes under <agents-root>/<package>--<soul>/instances/<name>.
+    const proposal = join(dep, "proposal.md");
+    writeFileSync(proposal, `# Proposal\n\nSource: instance ${r.json.result.instance}, home ${r.json.result.home}, soul probe\n\nA fixture observation merits review.\n`);
+    r = run(["spawn", "oats.okf/knowledge-harvester", "--dir", dep, "--task-file", proposal, "--relation", "unrelated", "--name", "okf-harvester-opd", "--no-launch", "--json"]);
     assert.equal(r.code, 0, r.out + r.err);
     assert.equal(realpathSync(r.json.result.home), join(dep, "agents", "oats-okf--knowledge-harvester", "instances", "okf-harvester-opd"));
     assert.ok(!existsSync(join(dep, "local-agents")), "nothing is written under the 0.25 local-agents/ base");
