@@ -807,12 +807,17 @@ contract — ranges that don't tile `text` from 0 — a note, nothing rendered),
 (`blockText`; a part cut by the cap may lack its closing one); a part wholly
 past the cap (`start == end == text.length`) shows "Not included: past the size
 limit." The group's label is "Instance"; its top item is "AGENTS.md" with
-"after spawn, with injects" as its second line (`.cap-node-desc`), accessible
+"after spawn, with injects" as its second line (`.cap-node-desc`, the description
+style, not the path's `.cap-node-file`), accessible
 name "AGENTS.md, after spawn, with injects", and its parts count as
 `aria-description` (the reader head says "Composed AGENTS.md").
 That item is expandable and selectable (the twisty only folds;
 the row opens the document); a part's item scrolls the one continuous reader to
-its `section.soul-part`, labelled by its header. **Copy** copies the kernel's
+its `section.soul-part`, labelled by its header. Every part renders as Markdown (`fileView(…, { markdown: true })`: an `inject.txt` is still a slice of
+AGENTS.md; its file is provenance only), and the document's heading ids are renumbered across parts with
+one `createHeadingSlugger` (`views/markdown.mjs`, the same slugging `decorateMarkdown` uses), so they are
+the ids the whole AGENTS.md would give; a part's own `#fragment` links follow its renamed headings.
+**Copy** copies the kernel's
 `text` exactly (markers included); **Open capability** appears only on a
 capability part the page lists, and goes through the page's own
 `openCapability` path. Keys: `composed`, `part:<i>`.

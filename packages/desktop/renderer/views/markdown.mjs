@@ -361,16 +361,25 @@ export function copyCodeBlock(button, doc, { alive = () => true, timers = new Se
   } catch { if (alive()) button.textContent = "copy failed"; }
 }
 
+/* Heading ids as one document numbers them: a heading's text slugged, a repeat
+   taking the next "-<n>". One slugger per document. */
+export function createHeadingSlugger() {
+  const seen = new Map();
+  return text => {
+    const slugBase = text.trim().toLowerCase().replace(/[^\w]+/g, "-").replace(/^-+|-+$/g, "") || "section";
+    const n = seen.get(slugBase) || 0;
+    seen.set(slugBase, n + 1);
+    return n ? `${slugBase}-${n}` : slugBase;
+  };
+}
+
 /* Post-render decoration (plain DOM, after sanitize): slugged heading ids +
    hover anchors (anchors:false skips the "#" links), and a copy button on
    every fenced block. */
 export function decorateMarkdown(root, doc, { anchors = true } = {}) {
-  const seen = new Map();
+  const slugOf = createHeadingSlugger();
   for (const h of root.querySelectorAll("h1, h2, h3, h4")) {
-    const slugBase = h.textContent.trim().toLowerCase().replace(/[^\w]+/g, "-").replace(/^-+|-+$/g, "") || "section";
-    const n = seen.get(slugBase) || 0;
-    seen.set(slugBase, n + 1);
-    const slug = n ? `${slugBase}-${n}` : slugBase;
+    const slug = slugOf(h.textContent);
     h.id = slug;
     if (!anchors) continue;
     const a = doc.createElement("a");

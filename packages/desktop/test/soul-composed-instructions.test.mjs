@@ -292,3 +292,38 @@ test('on the page: the composed group from the inspection, and Open capability t
   const open = section.querySelector('.soul-part-open'); assert.ok(open, 'oats.aweb is one of the soul’s capabilities');
   open.click(); assert.deepEqual(u.opened, [['oats.aweb', 'release-manager', true]]);
 });
+
+test('repeated headings across parts: ids stay unique, a part’s own fragment goes to its own heading, a document-style one resolves', t => {
+  const u = setup(t);
+  u.section.update(row({ composedInstructions: composedAnswer({ blocks: [
+    ['capability:oats.core', '.oats/modules/oats.core/inject.md', '## Usage\n\nFirst.'],
+    ['capability:acme.ops', '.oats/modules/acme.ops/inject.md', '## Usage\n\nSecond: see [usage](#usage) and [the next one](#usage-1).\n\n## Usage\n\nAgain.'],
+    ['capability:acme.more', null, 'Elsewhere: [the third Usage](#usage-2).'],
+  ] }) }));
+  const reader = scrollable(u.$('.cap-contents-reader'));
+  u.item(COMPOSED).querySelector('.cap-node-name').click();
+  const ids = u.$$('.cap-reader-body [id]').map(el => el.id);
+  assert.equal(new Set(ids).size, ids.length, `unique: ${ids}`);
+  const [first, second, third] = u.$$('.soul-part-body h2');
+  assert.deepEqual([first.id, second.id, third.id], ['usage', 'usage-1', 'usage-2'], 'the ids the whole document would give');
+  assert.equal(second.closest('.soul-part').dataset.source, 'capability:acme.ops');
+  const [own, next] = u.$$('.soul-part[data-source="capability:acme.ops"] a');
+  assert.equal(own.getAttribute('href'), '#usage-1', 'the part’s own #usage follows its renamed heading');
+  assert.equal(next.getAttribute('href'), '#usage-2', 'and its own #usage-1 (its second Usage) too');
+  assert.equal(u.$('.soul-part[data-source="capability:acme.more"] a').getAttribute('href'), '#usage-2', 'a part with no headings keeps whole-document lookup');
+  Object.defineProperty(u.$('.cap-reader-head'), 'offsetHeight', { configurable: true, get: () => 32 });
+  [first, second, third].forEach((h, i) => Object.defineProperty(h, 'offsetTop', { configurable: true, get: () => 60 + i * 500 }));
+  own.click(); assert.equal(reader.scrollTop, 560 - 32 - 8, 'it scrolls to the second part’s heading, not the first');
+  // The soul's own file (a single document) keeps the reader's ids as they were.
+  u.item(OWN).querySelector('.cap-node').click(); assert.equal(u.$('.soul-part'), null);
+});
+
+test('a part is Markdown whatever its source file is called (an inject.txt is still a slice of AGENTS.md)', t => {
+  const u = setup(t);
+  u.section.update(row({ composedInstructions: composedAnswer({ blocks: [['capability:acme.ops', '.oats/modules/acme.ops/inject.txt', '## Important instructions\n\nDo **this**.']] }) }));
+  u.item(COMPOSED).querySelector('.cap-node-name').click();
+  const part = u.$('.soul-part[data-source="capability:acme.ops"]');
+  assert.equal(part.querySelector('.soul-part-file').textContent, '.oats/modules/acme.ops/inject.txt', 'the reported file stays as provenance');
+  assert.equal(part.querySelector('h2')?.textContent, 'Important instructions'); assert.equal(part.querySelector('pre'), null);
+  assert.equal(part.querySelector('strong')?.textContent, 'this');
+});

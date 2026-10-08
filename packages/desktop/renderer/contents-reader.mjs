@@ -180,10 +180,12 @@ export function createContentsReader(doc, { reader, head, body, alive, openExter
     if (file.text === null) { body.append(line(missing)); return; }
     body.append(fileView(file));
   }
-  /** A text file `{ path, text }` rendered as the reader shows it (an element for the host to place in the body). */
-  function fileView(file) {
+  /** A text file `{ path, text }` rendered as the reader shows it (an element for the host to place in the body).
+   * `markdown`: render as Markdown whatever the path's extension (a slice of an AGENTS.md is Markdown, whichever file
+   * it came from); by default the path decides. */
+  function fileView(file, { markdown = isMarkdownName(file.path) } = {}) {
     const view = node('div', 'mdv');
-    if (isMarkdownName(file.path)) {
+    if (markdown) {
       const { frontMatter, body: markdown } = splitFrontMatter(file.text);
       if (frontMatter?.entries) view.append(factsTable(frontMatter.entries));
       let html = frontMatter && !frontMatter.entries ? renderCodeHtml(frontMatter.raw, 'front-matter.yaml') : '';

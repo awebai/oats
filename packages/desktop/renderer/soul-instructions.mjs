@@ -16,6 +16,7 @@
  * tree or reader, and `hold()` carries focus and both scroll offsets across the re-append. Every text is
  * untrusted repository content, rendered by the shared reader's strict profile. */
 import { createContentsTree, createContentsReader, sizeText } from './contents-reader.mjs';
+import { createHeadingSlugger } from './views/markdown.mjs';
 
 export const SOUL_INSTRUCTIONS_COPY = Object.freeze({
   title: 'Instructions',
@@ -217,7 +218,7 @@ export function createSoulInstructions(doc, { openExternal = null, canOpenCapabi
     return item;
   }
   /** The Instance group's "AGENTS.md" (parallel to the soul's), "after spawn, with injects" on its second line (the
-   * soul item's path style, in the proportional face: it is prose): selectable (the composed document at its top) and
+   * description style, `cap-node-desc`, as a skill's description in Contents; not the path's mono): selectable (the composed document at its top) and
    * expandable (its parts, in order). The reader's head names it "Composed AGENTS.md". */
   function composedNode() {
     const open_ = expanded.has(COMPOSED), count = SOUL_INSTRUCTIONS_COPY.parts(composed.parts.length);
@@ -265,6 +266,7 @@ export function createSoulInstructions(doc, { openExternal = null, canOpenCapabi
     fileReader.paintHead(SOUL_INSTRUCTIONS_COPY.composed, { bytes: composed.truncated ? null : utf8Bytes(composed.text),
       flag: composed.truncated ? SOUL_INSTRUCTIONS_COPY.truncated : null, actions: [copyButton(composed.text)] });
     body.replaceChildren(...composed.parts.map(partSection));
+    uniqueIds([...body.querySelectorAll(':scope > .soul-part')]);
   }
   function partSection(part, i) {
     const section = node('section', 'soul-part'); section.dataset.part = String(i); section.dataset.source = part.source;
@@ -281,9 +283,28 @@ export function createSoulInstructions(doc, { openExternal = null, canOpenCapabi
       headRow.append(button);
     }
     const content = node('div', 'soul-part-body');
-    content.append(part.past ? fileReader.line(SOUL_INSTRUCTIONS_COPY.pastCap) : fileReader.fileView({ path: part.file || SOUL_INSTRUCTIONS_COPY.file, text: part.text }));
+    content.append(part.past ? fileReader.line(SOUL_INSTRUCTIONS_COPY.pastCap) : fileReader.fileView({ path: part.file || SOUL_INSTRUCTIONS_COPY.file, text: part.text }, { markdown: true }));
     section.append(headRow, content);
     return section;
+  }
+  /** Each part is rendered on its own, so its heading ids are numbered within the part. The composed document
+   * renumbers them in document order with one slugger (`usage`, `usage-1`, `usage-2`: the ids the whole AGENTS.md
+   * would give), and a part's own `#fragment` links follow its renamed headings; any other fragment is looked up
+   * across the whole document, as written. */
+  function uniqueIds(sections) {
+    const slugOf = createHeadingSlugger();
+    for (const section of sections) {
+      const renamed = new Map();
+      for (const h of section.querySelectorAll('.soul-part-body h1, .soul-part-body h2, .soul-part-body h3, .soul-part-body h4')) {
+        const id = slugOf(h.textContent);
+        if (id !== h.id) { renamed.set(h.id, id); h.id = id; }
+      }
+      if (!renamed.size) continue;
+      for (const a of section.querySelectorAll('.soul-part-body a[href^="#"]')) {
+        let id; try { id = decodeURIComponent(a.getAttribute('href').slice(1)); } catch { continue; }
+        if (renamed.has(id)) a.setAttribute('href', `#${encodeURIComponent(renamed.get(id))}`);
+      }
+    }
   }
   /** Copies the kernel's exact text (markers included): what a new instance's AGENTS.md would hold. */
   function copyButton(text) {
