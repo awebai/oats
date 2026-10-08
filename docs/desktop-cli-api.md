@@ -2021,7 +2021,9 @@ oats worktree remove --purpose <p> [--json]
 ([the worktree event](capabilities.md#the-worktree-event)), writes
 `<home>/.oats/trees/<p>.json` and appends a `worktree-added` event. It can run
 for minutes; the hooks' output goes to stderr, and stdout holds only the
-envelope. Its result:
+envelope. A reader that closes either pipe early only stops reading: the add
+runs to its end (and its record to `ready`), the hooks' logs are whole, and
+what could not be printed is dropped. Its result:
 
 ```json
 {"purpose":"docs","path":"/w/agents/dev/instances/dev-1/.work-docs","clone":"/w/docs","remote":"https://github.com/nw/docs.git",

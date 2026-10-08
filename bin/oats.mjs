@@ -1125,6 +1125,12 @@ async function worktreeCmd() {
   const home = homeVariable ? process.env[homeVariable] : enclosingInstanceHome(logicalCwd());
   if (!home) return bail("E_BAD_ARGS", `oats worktree runs from an instance home: run it in the home (or below it), or with $OATS_INSTANCE_HOME set; ${usage}`);
   const W = await import("../lib/worktree.mjs");
+  // A caller that closes its end of stdout or stderr (a tool shell killed, Desktop gone) has only
+  // stopped reading: the add or remove goes on to its consistent end, and what it can no longer
+  // print is dropped. Unhandled, that EPIPE would end this process mid-hook, with no rollback.
+  const readerGone = (e) => { if (e?.code !== "EPIPE" && e?.code !== "ERR_STREAM_DESTROYED") throw e; };
+  process.stdout.on("error", readerGone);
+  process.stderr.on("error", readerGone);
   try {
     if (sub === "remove") {
       for (const f of ["branch", "base", "repo", "preview"]) if (args.includes(`--${f}`)) return bail("E_BAD_ARGS", `oats worktree remove takes only --purpose; ${usage}`);

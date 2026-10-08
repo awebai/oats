@@ -734,7 +734,9 @@ cwd the home); this one differs:
 - stdout and stderr go to `<home>/.oats/logs/worktree-<purpose>-<cap>.log`
   (`worktree-work-<cap>.log` for `./work`), created 0600 and truncated on each
   run. On `oats worktree add` they are also copied to the kernel's stderr,
-  never its stdout: `--json` prints only the envelope. The log holds whatever
+  never its stdout: `--json` prints only the envelope. A caller that closes
+  its end of stderr or stdout (a tool shell killed, Desktop gone) only stops
+  the copy: the hooks and the add run to their end, and the log is whole. The log holds whatever
   the hook printed, so its content never enters any JSON answer, receipt,
   record, marker or instance event: they carry the log's path only. The
   `warning` of the hook's last JSON line is the one piece of its output that

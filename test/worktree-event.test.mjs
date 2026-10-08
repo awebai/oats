@@ -5,14 +5,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn as spawnChild } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CLI, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { listInstances, retireInstance } from "../lib/core.mjs";
 
 /** The hook: appends one JSON line of facts to <OATS_ROOT>/hook-runs.jsonl, then acts on files in
  *  <OATS_ROOT>: `hook-fail` (exit 3), `hook-sleep` (sleep N s, writing its pid first), `hook-env`
- *  (answer env), `hook-warning` (answer a warning), `hook-rm-tree` (remove the tree). */
+ *  (answer env), `hook-warning` (answer a warning), `hook-rm-tree` (remove the tree), `hook-chatter`
+ *  (print 150 numbered lines to each stream over 3 s, writing its pid first). */
 const HOOK = `import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 const root = process.env.OATS_ROOT;
@@ -34,6 +35,11 @@ if (existsSync(join(root, "hook-stubborn"))) {
 if (existsSync(join(root, "hook-sleep"))) {
   writeFileSync(join(root, "hook-sleeping"), String(process.pid));
   await new Promise((r) => setTimeout(r, Number(readFileSync(join(root, "hook-sleep"), "utf8")) * 1000));
+}
+if (existsSync(join(root, "hook-chatter"))) {
+  writeFileSync(join(root, "hook-chattering"), String(process.pid));
+  for (let i = 0; i < 150; i++) { console.log("chatter-out " + i); console.error("chatter-err " + i); await new Promise((r) => setTimeout(r, 20)); }
+  console.log("chatter done");
 }
 if (existsSync(join(root, "hook-fail"))) { console.log(JSON.stringify({ warning: "setup broke: run the install by hand" })); process.exit(3); }
 if (existsSync(join(root, "hook-env"))) { console.log(JSON.stringify({ env: { TEST_X: "1" } })); process.exit(0); }
@@ -223,6 +229,35 @@ function cliChild(fx, args, { cwd, env = {} }) {
   const done = new Promise((resolve) => child.on("close", (status, signal) => resolve({ status, signal, stdout, stderr })));
   return { child, done };
 }
+
+test("add: a caller that closes its ends of stdout and stderr mid-hook only stops reading — the add completes, the log is whole, no hook is left", async (t) => {
+  const fx = deployment(t);
+  const { home } = await fx.spawn("dev", { instance: "dev-pipe", work: "checkout" });
+  writeFileSync(join(fx.root, "hook-chatter"), "");
+  // --json (one envelope on stdout), and text (the answer on stdout, its warnings on stderr, after the hooks).
+  for (const [purpose, mode] of [["feat", ["--json"]], ["text", []]]) {
+    rmSync(join(fx.root, "hook-chattering"), { force: true });
+    const c = spawnChild(process.execPath, [CLI, "worktree", "add", "--purpose", purpose, "--branch", `agents/${purpose}`, "--base", "main", ...mode], { cwd: home, env: { ...fx.env, OATS_INSTANCE_HOME: home }, stdio: ["ignore", "pipe", "pipe"] });
+    const exited = new Promise((r) => c.on("exit", (status, signal) => r({ status, signal })));
+    let early = "";
+    c.stderr.on("data", (b) => { early += b; });
+    assert.ok(await waitFor(() => existsSync(join(fx.root, "hook-chattering"))), `${purpose}: the hook started`);
+    assert.ok(await waitFor(() => early.includes("chatter-err 3")), `${purpose}: its output was streamed to the caller`);
+    const hook = Number(readFileSync(join(fx.root, "hook-chattering"), "utf8"));
+    c.stdout.destroy(); c.stderr.destroy(); // the caller is gone: every later write is EPIPE
+    const { status, signal } = await exited;
+    assert.equal(signal, null, purpose);
+    assert.equal(status, 0, `${purpose}: no uncaught EPIPE — the add ended as it would have (an uncaught exception exits 1)`);
+    const rec = JSON.parse(readFileSync(join(home, ".oats", "trees", `${purpose}.json`), "utf8"));
+    assert.equal(rec.state, "ready", purpose);
+    const log = readFileSync(rec.hooks[0].log, "utf8");
+    for (let i = 0; i < 150; i++) assert.ok(log.includes(`chatter-out ${i}\n`) && log.includes(`chatter-err ${i}\n`), `${purpose}: line ${i} is in the log`);
+    assert.ok(log.includes("chatter done"), `${purpose}: the log holds the hook's whole output`);
+    assert.ok(existsSync(join(home, `.work-${purpose}`)) && registered(fx, join(home, `.work-${purpose}`)), `${purpose}: the tree exists`);
+    assert.notEqual(tipOf(fx, `agents/${purpose}`), null, `${purpose}: the branch exists`);
+    assert.equal(alive(hook), false, `${purpose}: no hook process is left`);
+  }
+});
 
 test("killed parent, add: SIGTERM mid-hook rolls back and exits 143; SIGKILL leaves a record the next add completes, ending the orphaned hook", async (t) => {
   const fx = deployment(t);

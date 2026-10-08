@@ -245,3 +245,35 @@ test("a start that cannot be read is unknown, never gone: liveness says so, and 
   // An empty group is "none" whatever its leader reads as: nothing is left to end.
   assert.equal(terminateRecordedGroup({ hookPgid: 2147483646, hookStart: "ps:x" }), "none");
 });
+
+// A caller that closes its end of stderr while the hooks stream to it: the copy stops, the hook runs
+// on, its log stays whole, and the run's own "error" listener is removed when it ends. Run in a child
+// whose stderr this test closes (the runner alone: the CLI adds its own guard for its final output).
+test("streaming to a stderr the caller closed: the copy stops with a warning, the hook and its log go on, the listener is removed", async (t) => {
+  const { mkdtempSync, writeFileSync, readFileSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "oats-epipe-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(join(dir, "chatter.mjs"), `for (let i = 0; i < 100; i++) { console.error("chatter " + i); await new Promise((r) => setTimeout(r, 20)); }\nconsole.log("chatter done");\n`);
+  const code = `import { runWorktreeHooks } from ${JSON.stringify(HOOKS_MODULE)};
+const before = process.stderr.listenerCount("error");
+const run = await runWorktreeHooks([{ id: "t.chat", command: ${JSON.stringify(`node '${join(dir, "chatter.mjs")}'`)}, required: true, cap: {} }],
+  { envFor: () => process.env, cwd: ${JSON.stringify(dir)}, home: ${JSON.stringify(dir)}, purpose: "p", stream: true });
+console.log(JSON.stringify({ ok: run.receipt[0].ok, log: run.receipt[0].log, warnings: run.warnings, before, after: process.stderr.listenerCount("error") }));`;
+  const c = spawn(process.execPath, ["--input-type=module", "-e", code], { stdio: ["ignore", "pipe", "pipe"] });
+  let out = "", early = "";
+  c.stdout.on("data", (b) => { out += b; });
+  c.stderr.on("data", (b) => { early += b; });
+  for (let i = 0; i < 200 && !early.includes("chatter 3"); i++) await new Promise((r) => setTimeout(r, 20));
+  assert.ok(early.includes("chatter 3"), "the hook's output reached the caller first");
+  c.stderr.destroy();
+  const status = await new Promise((r) => c.on("close", r));
+  assert.equal(status, 0, `no uncaught EPIPE: ${out}`);
+  const r = JSON.parse(out.trim());
+  assert.equal(r.ok, true, "the hook ran to its end");
+  assert.ok(r.warnings.some((w) => w.startsWith("the caller's stderr closed while the worktree hooks ran (EPIPE)")), JSON.stringify(r.warnings));
+  assert.equal(r.after, r.before, "the run's listener is removed");
+  const log = readFileSync(r.log, "utf8");
+  assert.ok(log.includes("chatter 99\n") && log.includes("chatter done"), "the log holds the whole output");
+});
