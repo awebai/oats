@@ -652,6 +652,10 @@ function refusedBeforeHooks(instance) {
   return String.raw`\. No retire hook has run, no recovery was written and nothing was deleted: ${instance} is not retired and its home and work are kept; this retire stopped no session$`;
 }
 
+/** How a refusal after the retire hooks ends, as regular-expression source, for an instance that was
+ *  never launched: what this retire has and has not done by then. */
+const REFUSED_AFTER_HOOKS = String.raw`\. The retire hooks have run; the home, its work and the pre-hook recovery \(if any\) are kept; this retire stopped no session\.$`;
+
 test("E_WORK_PRESERVATION_FAILED names the differing status rows (the first 10, and how many more) in its message and --json details, for the worktree and for a nested repository; the home is kept", () => {
   // Trigger: a core.attributesFile set in the source repository's config (`*.txt text`) over files
   // committed with CRLF, their stat made stale: ` M` (needs normalizing) in the source, clean in the
@@ -3555,9 +3559,9 @@ test("a FIFO in the worktree of a launched instance refuses the retire before it
 });
 
 for (const { leaves, body, code, message } of [
-  { leaves: "and leaves Git's state as it was", body: "", code: "E_WORK_INSPECTION_FAILED", message: UNSUPPORTED_ENTRY },
+  { leaves: "and leaves Git's state as it was", body: "", code: "E_WORK_INSPECTION_FAILED", message: new RegExp(`${UNSUPPORTED_ENTRY_TEXT}${REFUSED_AFTER_HOOKS}`) },
   // The Git state moved, so the work is copied without the proof's read, and the copy meets the entry: the tree copy's own refusal.
-  { leaves: "and also rewrites a tracked file", body: "writeFileSync(join(work, 'tracked.txt'), 'rewritten by the retire hook\\n');", code: "E_WORK_PRESERVATION_FAILED", message: /\/work\/pipe is not a regular file, directory or symlink \(FIFO\)/ },
+  { leaves: "and also rewrites a tracked file", body: "writeFileSync(join(work, 'tracked.txt'), 'rewritten by the retire hook\\n');", code: "E_WORK_PRESERVATION_FAILED", message: new RegExp(String.raw`\/work\/pipe is not a regular file, directory or symlink \(FIFO\).*${REFUSED_AFTER_HOOKS}`) },
 ]) {
   test(`a retire hook that leaves a FIFO in the worktree ${leaves}: the retire refuses with ${code}, and the home, the work and the recovery written before the hooks are all kept`, () => {
     const retire = quietHook(`execFileSync('mkfifo', [join(work, 'pipe')]);
@@ -3572,7 +3576,7 @@ ${body}`);
     assert.notEqual(retired.status, 0, `a worktree that cannot be read was retired: ${retired.stdout}`);
     const error = JSON.parse(retired.stdout).error;
     assert.equal(error.code, code, retired.stdout);
-    assert.match(error.message, message, "the message names the entry");
+    assert.match(error.message, message, "the message names the entry, and says the hooks have run and what is kept");
     assert.equal(hookRan(spawned.home), true, "fixture premise: the retire hook ran to its end");
     // Everything is kept: the home with the hook's write, the work with the entry, and the snapshot taken before the hooks.
     assert.equal(readFileSync(join(spawned.home, "hook-note.txt"), "utf8"), HOOK_BYTES, "the home is kept");
@@ -4096,4 +4100,182 @@ test("#662 a retire's read of an object the repository lacks never fetches it: a
   assert.ok(error.message.includes(oid), `the refusal names the object the copy lacks: ${error.message}`);
   assert.equal(existsSync(marker), false, "no command the repository's configuration names for a fetch was run");
   assert.equal(existsSync(join(spawned.home, "instance.json")), true, "the home is kept");
+});
+
+// ---- #658: the plan's notes fit what the Desktop reads (at most 64, each at most 4096 characters) ----
+
+/** `target`, a directory under `base`, spelled as a path of exactly `length` characters: through
+ *  symbolic links in `base` that each lead back to `base`, so nothing deeper exists on disk. */
+function spelledAt(base, target, length) {
+  const rest = target.slice(base.length + 1);
+  let need = length - base.length - 1 - rest.length; // characters of "<link>/" segments
+  assert.ok(need === 0 || need >= 2, `fixture premise: ${length} characters can be spelled`);
+  const links = [];
+  while (need > 0) {
+    const segment = need > 251 ? (need - 251 < 2 ? 249 : 251) : need;
+    const name = "l".repeat(segment - 1);
+    try { lstatSync(join(base, name)); } catch { symlinkSync(".", join(base, name)); }
+    links.push(name);
+    need -= segment;
+  }
+  const spelled = [base, ...links, rest].join("/");
+  assert.equal(spelled.length, length);
+  assert.equal(realpathSync(spelled), target, "fixture premise: the spelling leads to the target");
+  return spelled;
+}
+/** A retire plan as the CLI answers it, the deployment addressed by `dir`. */
+function planAt(f, instance, dir = f.dep) {
+  const r = spawnSync(process.execPath, [CLI, "retire", instance, "--plan", "--json", "--dir", dir], { cwd: f.dep, encoding: "utf8", env: f.env });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const plan = JSON.parse(r.stdout).result;
+  assert.ok(plan.notes.length <= 64, `at most 64 notes: ${plan.notes.length}`);
+  for (const note of plan.notes) assert.ok(note.length <= 4096, `a note of ${note.length} characters: ${note.slice(0, 200)}…`);
+  return plan;
+}
+const homeRecoveryNote = (plan) => plan.notes.find((n) => n.startsWith("recovery: the home"));
+
+test("the retire plan's recovery note fits 4096 characters: declared roots are listed within a budget and counted past it, and a root too long to list is counted", () => {
+  const f = fixture({ capabilities: identCapability() });
+  const a = spawn(f, "bounded");
+  const baseline = readJson(baselineOf(a.home));
+  const declare = (roots) => write(baselineOf(a.home), JSON.stringify({ ...baseline, disposableHome: roots.map((root) => ({ owner: "acme.ident", root })) }, null, 2) + "\n");
+  const head = `recovery: the home is copied to ${recoveryRootOf(a.home)} before the home is removed, when it changed since spawn`;
+  // No declared root: nothing is said about what is not copied.
+  declare([]);
+  assert.equal(homeRecoveryNote(planAt(f, "dev-bounded")), head);
+  // 16 roots of 302 characters: three fit the list's 1024 characters, the other 13 are counted.
+  const long = Array.from({ length: 16 }, (_, i) => `.r${String(i).padStart(2, "0")}${"x".repeat(298)}`);
+  declare(long);
+  const listed = `${long.slice(0, 3).join(", ")} (acme.ident), and 13 more`;
+  assert.ok(listed.length <= 1024 && `${long.slice(0, 4).join(", ")} (acme.ident), and 12 more`.length > 1024, "fixture premise: three fit the budget, four do not");
+  assert.equal(homeRecoveryNote(planAt(f, "dev-bounded")), `${head}; not copied: ${listed}`);
+  // A root longer than the budget: not even one fits, so the roots are counted.
+  declare([`.h${"x".repeat(1100)}`]);
+  assert.equal(homeRecoveryNote(planAt(f, "dev-bounded")), `${head}; not copied: 1 declared root, too long to list here`);
+  declare([`.h${"x".repeat(1100)}`, ".i"]);
+  assert.equal(homeRecoveryNote(planAt(f, "dev-bounded")), `${head}; not copied: 2 declared roots, too long to list here`);
+});
+
+test("the retire plan's recovery note keeps a long recovery path whole while it fits 4096 characters, shortening the list first, and names where to find a path that does not fit", () => {
+  // The deployment spelled through links in its parent: the plan names the recovery by that spelling.
+  // The three roots acme.ident declares are listed as ".ident, .ident-id-*, .ident-state (acme.ident)".
+  const f = fixture({ capabilities: identCapability() });
+  const a = spawn(f, "deep");
+  const instances = "/agents/dev/instances";
+  const recoveryAt = (dep) => `${dep}${instances}/.oats-retirement/recovery`;
+  const headAt = (dep) => `recovery: the home is copied to ${recoveryAt(dep)} before the home is removed, when it changed since spawn`;
+  const all = "; not copied: .ident, .ident-id-*, .ident-state (acme.ident)";
+  // A note of exactly 4096 characters: the path and every root.
+  const exact = 4096 - headAt("").length - all.length;
+  let dep = spelledAt(f.base, f.dep, exact);
+  assert.equal(`${headAt(dep)}${all}`.length, 4096, "fixture premise: the whole note is 4096 characters");
+  assert.equal(homeRecoveryNote(planAt(f, "dev-deep", dep)), `${headAt(dep)}${all}`);
+  // One character more: the path stays whole and the list gives way.
+  dep = spelledAt(f.base, f.dep, exact + 1);
+  assert.equal(homeRecoveryNote(planAt(f, "dev-deep", dep)), `${headAt(dep)}; not copied: .ident, .ident-id-* (acme.ident), and 1 more`);
+  // A recovery path whose note alone is past 4096 characters (about 4010): never cut, but named by where it is.
+  dep = spelledAt(f.base, f.dep, 4096 - headAt("").length + 1);
+  assert.ok(headAt(dep).length > 4096, "fixture premise: the path alone is too long for the note");
+  const plan = planAt(f, "dev-deep", dep);
+  assert.equal(homeRecoveryNote(plan), `recovery: the home is copied to the recovery directory beside the home before the home is removed, when it changed since spawn (its path is too long for this note: the retire receipt names it as workRecovery.path, and the retire summary prints it)${all}`);
+  assert.equal(plan.notes.some((n) => n.includes(recoveryAt(dep).slice(-200))), false, "no note holds a cut piece of the path");
+  assert.equal(existsSync(recoveryRootOf(a.home)), false, "a plan writes nothing");
+});
+
+// ---- #659: refusals after the retire hooks, and a staging directory that is read-only ----
+
+
+/** A read-only (0555) directory with a file in it, under the ignored cache/ of `work`, as a Go
+ *  module cache is: a recovery copies it with that mode. → a function that makes it writable again,
+ *  so that the fixture can be removed. */
+function readOnlyCache(work) {
+  const dir = join(work, "cache", "modules");
+  write(join(dir, "mod.txt"), "module bytes\n");
+  chmodSync(dir, 0o555);
+  return () => { try { chmodSync(dir, 0o755); } catch { /* gone with the work */ } };
+}
+/** Entries of a recovery root that are not complete recoveries: staging directories (dot-names). */
+const stagingLeft = (home) => (existsSync(recoveryRootOf(home)) ? readdirSync(recoveryRootOf(home)).filter((name) => name.startsWith(".")) : []);
+
+test("a copy that fails verification with a read-only directory in the work refuses with its own cause, not EACCES, and leaves no staging behind: before the hooks and after them", () => {
+  // The fixture's own cleanup runs before a test's after hooks: modes are restored in `finally`.
+  const restore = [];
+  try {
+  // Before the hooks: a tracked file whose status the source repository's attributes make ` M`, which
+  // the recovery does not reproduce (see the E_WORK_PRESERVATION_FAILED status-row test above).
+  const f = fixture();
+  const spawned = spawn(f, "readonly");
+  const work = join(spawned.home, "work");
+  write(join(work, "crlf.txt"), "line\r\n");
+  execFileSync("git", ["-C", work, "add", "crlf.txt"]);
+  execFileSync("git", ["-C", work, "commit", "-qm", "crlf"]);
+  restore.push(readOnlyCache(work));
+  staleUnderTextAttribute(f.repo, f.base, [join(work, "crlf.txt")]);
+  const retired = cli(f, ["retire", "dev-readonly", "--json"]);
+  assert.equal(retired.status, 1, retired.stdout + retired.stderr);
+  const error = JSON.parse(retired.stdout).error;
+  assert.equal(error.code, "E_WORK_PRESERVATION_FAILED", error.message);
+  assert.match(error.message, new RegExp(String.raw`recovered Git index\/status disagreed with the source: crlf\.txt \(source  M, recovery absent\)${refusedBeforeHooks("dev-readonly")}`));
+  assert.doesNotMatch(error.message, /EACCES|permission denied/i);
+  assert.deepEqual(stagingLeft(spawned.home), [], "the staging directory, read-only directory and all, is removed");
+  assert.deepEqual(readdirSync(recoveryRootOf(spawned.home)), [], "and no recovery is written");
+  assert.equal(existsSync(join(work, "cache", "modules", "mod.txt")), true, "the work is kept");
+
+  // After the hooks: nothing to preserve before them; the retire hook makes the same disagreement
+  // (it makes the file's stat stale under attributes set before) and the read-only directory, so
+  // the one recovery is written after the hooks, and fails there.
+  const g = fixture({ capabilities: hookCapability(`import { chmodSync, mkdirSync, utimesSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const work = join(process.env.OATS_INSTANCE_HOME, 'work');
+utimesSync(join(work, 'crlf.txt'), new Date(2020, 0, 1), new Date(2020, 0, 1));
+mkdirSync(join(work, 'cache', 'modules'), { recursive: true });
+writeFileSync(join(work, 'cache', 'modules', 'mod.txt'), 'module bytes\\n');
+chmodSync(join(work, 'cache', 'modules'), 0o555);
+console.log(JSON.stringify({ meta: { retired: true } }));
+`) });
+  const late = spawn(g, "readonly-late");
+  const lateWork = join(late.home, "work");
+  write(join(lateWork, "crlf.txt"), "line\r\n");
+  // An older stat than the index's, so Git does not re-read the file (racily clean) before the hook.
+  utimesSync(join(lateWork, "crlf.txt"), new Date(2019, 0, 1), new Date(2019, 0, 1));
+  execFileSync("git", ["-C", lateWork, "add", "crlf.txt"]);
+  execFileSync("git", ["-C", lateWork, "commit", "-qm", "crlf"]);
+  const attributes = join(g.base, "attributes-late");
+  write(attributes, "*.txt text\n");
+  execFileSync("git", ["-C", g.repo, "config", "core.attributesFile", attributes]);
+  assert.equal(execFileSync("git", ["-C", lateWork, "status", "--porcelain"], { encoding: "utf8" }), "", "fixture premise: nothing to preserve before the hooks");
+  restore.push(() => { try { chmodSync(join(lateWork, "cache", "modules"), 0o755); } catch { /* not made */ } });
+  const lateRetired = cli(g, ["retire", "dev-readonly-late", "--json"]);
+  assert.equal(lateRetired.status, 1, lateRetired.stdout + lateRetired.stderr);
+  const lateError = JSON.parse(lateRetired.stdout).error;
+  assert.equal(lateError.code, "E_WORK_PRESERVATION_FAILED", lateError.message);
+  assert.match(lateError.message, new RegExp(String.raw`recovered Git index\/status disagreed with the source: crlf\.txt \(source  M, recovery absent\)${REFUSED_AFTER_HOOKS}`));
+  assert.doesNotMatch(lateError.message, /EACCES|permission denied/i);
+  assert.deepEqual(readdirSync(recoveryRootOf(late.home)), [], "no staging and no recovery is left");
+  assert.equal(existsSync(join(late.home, "instance.json")), true, "the home is kept");
+  } finally { for (const undo of restore) undo(); }
+});
+
+test("a recovery the retire hooks keep from being completed refuses saying the hooks have run and what is kept, like a refusal before them", () => {
+  // The hook writes the home, so the post-hook pass has a part to add, and occupies the name that part
+  // needs inside the recovery written before the hooks.
+  const f = fixture({ capabilities: hookCapability(`import { readdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+const home = process.env.OATS_INSTANCE_HOME;
+writeFileSync(join(home, 'hook-note.txt'), 'written by the retire hook');
+const root = join(dirname(home), '.oats-retirement', 'recovery');
+for (const name of readdirSync(root)) writeFileSync(join(root, name, 'after-hooks'), 'in the way');
+console.log(JSON.stringify({ meta: { retired: true } }));
+`) });
+  const spawned = spawn(f, "blocked");
+  write(join(spawned.home, "work", "human.txt"), "human bytes\n");
+  const retired = cli(f, ["retire", "dev-blocked", "--json"]);
+  assert.equal(retired.status, 1, retired.stdout + retired.stderr);
+  const error = JSON.parse(retired.stdout).error;
+  assert.equal(error.code, "E_WORK_PRESERVATION_FAILED");
+  assert.match(error.message, new RegExp(String.raw`^retirement work remains at .*; recovery could not be verified: .*after-hooks already exists${REFUSED_AFTER_HOOKS}`));
+  const [recovery] = readdirSync(recoveryRootOf(spawned.home));
+  assert.equal(readFileSync(join(recoveryRootOf(spawned.home), recovery, "repo", "human.txt"), "utf8"), "human bytes\n", "the pre-hook recovery is kept");
+  assert.equal(readJson(join(recoveryRootOf(spawned.home), recovery, "recovery.json")).phase, "before-hooks");
+  assert.equal(readFileSync(join(spawned.home, "work", "human.txt"), "utf8"), "human bytes\n", "the home and its work are kept");
 });

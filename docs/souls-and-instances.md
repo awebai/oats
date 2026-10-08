@@ -699,7 +699,18 @@ Every refusal of the copy made before the hooks, whatever its cause, ends by
 saying what the retire has done by then: no retire hook has run, no recovery
 was written and nothing was deleted, the instance is not retired, its home
 and work are kept, and its session has been stopped, or this retire stopped
-no session. A refusal after the hooks does not say that.
+no session. A refusal of the recovery after the hooks (the copy of what they
+moved, or the one recovery of a home that had nothing to preserve before
+them) ends the same way: the retire hooks have run; the home, its work and
+the pre-hook recovery (if any) are kept; and its session has been stopped, or
+this retire stopped no session.
+
+A copy that fails removes what it staged, so the refusal carries the copy's
+own cause. The copy gives each directory its source's mode, so a read-only
+directory in the work (a Go module cache, for example) is copied read-only;
+the cleanup makes every staged directory writable before it removes them, and
+never replaces the original error. A staging directory that still cannot be
+removed is named in the refusal, to be removed by hand.
 
 A snapshot that holds the home only (the work had nothing to preserve
 before the hooks) has no work copy to stand for it. It gets the work under
@@ -970,6 +981,23 @@ cannot be read, the worktree is recorded `absent`, never `removed`. A
 quarantine retry then keeps `could not verify removal` as an incomplete
 item, which only `--force` clears, as the operator's explicit override.
 
+A plain retire re-homes `work/` (see the extra trees below for where).
+Attached children that use this home's `work/` as their own (their
+`instance.json` says `work: "attached"` and their `work` is a link to
+`<home>/work`) would be left with a dangling link. Each one this retire
+stopped as a recorded child is repointed to the retained worktree: a new link
+is renamed over the old one, so the link is never missing. This is the last
+step before the home is removed, once the worktree is at its new path and
+nothing is left at `work/`, and it also runs when the home is then kept for a
+retry. A relink that fails is a warning in the summary and the receipt's
+`warnings`, with the command to repoint the link by hand; the retire is not
+undone. A child that is not attached, whose link leads elsewhere, or that this
+retire did not stop is not touched. With `--discard-worktree` the worktree is
+removed and an attached child's link dangles. The retire plan names the
+attached children in one note that covers both cases. Only the link changes:
+the child's `instance.json` is not rewritten, and its AGENTS.md and TASK.md
+still name the old path.
+
 #### Extra trees at retire
 
 An instance can hold [extra trees](#extra-trees) in its home beside `work/`.
@@ -1137,7 +1165,10 @@ service agents such as reviewers.
 
 Attached agents are guests: never switch branches or rewrite history, touch
 only what the briefing names, keep commits small and attributable. Retiring
-an attached instance never removes the shared tree. The packaged
+an attached instance never removes the shared tree. When its owner retires
+and the tree is re-homed, the attached instance's `work` link is repointed to
+the tree's new path ([retire](#retire)); its AGENTS.md and TASK.md still name
+the old one. The packaged
 `work-attached` instruction source carries this discipline into each generated instance AGENTS.md.
 
 ### `directory` — independent execution

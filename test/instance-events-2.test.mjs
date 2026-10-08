@@ -131,3 +131,63 @@ test("C′ — an UNKNOWN current incarnation (unreadable instance.json) admits 
   appendFileSync(join(w.home, ".oats-events.jsonl"), JSON.stringify({ eventsApi: 2, at: "2026-01-01T00:00:09.000Z", instance: "dev-1", home: w.home, incarnation: null, producer: "provider.b", kind: "launched", data: { waitingOnYou: true } }) + "\n");
   const r2 = readEvents(w.home); assert.equal(r2.waitingOnYou, null); assert.deepEqual(r2.waitingClaims, []);
 });
+
+// #642: a retired instance answers from the workspace log, which outlives its home.
+const eventsCli = (w, name, extra = []) => {
+  const r = spawnSync(process.execPath, [CLI, "instance", "events", name, "--dir", w.base, "--agents-root", w.root, ...extra, "--json"], { encoding: "utf8", env: { ...process.env, OATS_TMUX_SESSION: "none" } });
+  return { doc: JSON.parse(r.stdout.trim().split("\n").pop()), out: r.stdout + r.stderr };
+};
+/** Spawn-and-retire as the kernel records it: rows to both logs while the home
+ *  lives, the retired row to the workspace log only after the home is gone. */
+function retire(w, agent, name) {
+  const home = join(w.root, agent, "instances", name);
+  mkdirSync(join(w.root, agent, "soul"), { recursive: true }); writeFileSync(join(w.root, agent, "soul", "soul.yaml"), `name: ${agent}\n`);
+  mkdirSync(home, { recursive: true }); writeFileSync(join(home, "instance.json"), JSON.stringify({ agent, instance: name, createdAt: "2026-01-01T00:00:00.000Z" }));
+  appendEvent(home, { kind: "spawned", data: { agent } });
+  rmSync(home, { recursive: true });
+  appendEvent(home, { kind: "retired", data: {} }, { workspaceOnly: true });
+  return home;
+}
+
+test("E — #642: a retired instance answers from its workspace log (home source absent, incarnation null); no log is still E_SESSION_UNKNOWN; a live home is unaffected", (t) => {
+  const w = ws(t);
+  assert.equal(eventsCli(w, "dev-1").doc.error.code, "E_SESSION_UNKNOWN", "no home and no log");
+  const home = retire(w, "dev", "dev-1");
+  let { doc, out } = eventsCli(w, "dev-1");
+  assert.equal(doc.ok, true, out);
+  assert.deepEqual(doc.result, readEvents(home), "exactly readEvents' answer for the removed home");
+  assert.equal(doc.result.home, home); assert.equal(doc.result.incarnation, null);
+  assert.deepEqual(doc.result.integrity.sources.map((s) => s.status), ["absent", "ok"]);
+  assert.deepEqual(doc.result.events.map((e) => e.kind), ["spawned", "retired"]);
+  ({ doc } = eventsCli(w, "dev-1", ["--limit", "1"])); assert.deepEqual(doc.result.events.map((e) => e.kind), ["retired"], "the window applies");
+  // human output: today's format
+  const human = spawnSync(process.execPath, [CLI, "instance", "events", "dev-1", "--dir", w.base, "--agents-root", w.root], { encoding: "utf8", env: { ...process.env, OATS_TMUX_SESSION: "none" } });
+  assert.match(human.stdout, /^dev-1: 2 of 2 event\(s\)\n/, human.stdout + human.stderr);
+  // a live home at the address (re-spawned) answers as before, with its incarnation
+  w.incarnate("2026-02-01T00:00:00.000Z");
+  ({ doc } = eventsCli(w, "dev-1"));
+  assert.equal(doc.result.incarnation, "2026-02-01T00:00:00.000Z"); assert.equal(doc.result.integrity.sources[0].status, "absent", "the new home has no log yet");
+  // a live home under one agent wins over another agent's retired log of the same name
+  retire(w, "ops", "dev-1");
+  ({ doc } = eventsCli(w, "dev-1")); assert.equal(doc.ok, true); assert.equal(doc.result.home, w.home);
+});
+
+test("E′ — #642: two agents' logs for one retired name refuse E_AMBIGUOUS_INSTANCE naming both; --home of a removed home answers when it is <root>/<agent>/instances/<name> with that agent's log, else E_HOME_MISMATCH", (t) => {
+  const w = ws(t);
+  const dev = retire(w, "dev", "dev-1"), ops = retire(w, "ops", "dev-1");
+  let { doc, out } = eventsCli(w, "dev-1");
+  assert.equal(doc.error.code, "E_AMBIGUOUS_INSTANCE", out); assert.match(doc.error.message, /2 .*--home/);
+  assert.deepEqual(doc.error.details.candidates, [{ root: w.root, agent: "dev", home: dev }, { root: w.root, agent: "ops", home: ops }]);
+  ({ doc, out } = eventsCli(w, "dev-1", ["--home", ops]));
+  assert.equal(doc.ok, true, out); assert.equal(doc.result.home, ops); assert.equal(doc.result.incarnation, null);
+  assert.deepEqual(doc.result.events.map((e) => e.data?.agent ?? e.kind), ["ops", "retired"], "the ops instance's rows, not dev's");
+  // a symlinked spelling of the agents root is the same address
+  symlinkSync(w.root, join(w.base, "agents-link"));
+  ({ doc, out } = eventsCli(w, "dev-1", ["--home", join(w.base, "agents-link", "dev", "instances", "dev-1")])); assert.equal(doc.ok, true, out);
+  for (const bad of [
+    join(w.root, "qa", "instances", "dev-1"), // no qa log
+    join(w.root, "dev", "instances", "dev-2"), // not this name
+    join(w.root, "dev", "other", "dev-1"), // not an instances dir
+    join(w.base, "elsewhere", "dev", "instances", "dev-1"), // not under the scope
+  ]) assert.equal(eventsCli(w, "dev-1", ["--home", bad]).doc.error.code, "E_HOME_MISMATCH", bad);
+});

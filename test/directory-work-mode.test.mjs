@@ -288,7 +288,7 @@ console.log(JSON.stringify({meta: {retired: true}}));\n`);
 
   assert.throws(() => retireInstance(f.root, result.instance), (e) => {
     assert.equal(e.code, "E_WORK_PRESERVATION_FAILED");
-    assert.match(e.message, /^retirement work remains at .*; recovery could not be verified: .*after-hooks already exists$/);
+    assert.match(e.message, /^retirement work remains at .*; recovery could not be verified: .*after-hooks already exists\. The retire hooks have run; the home, its work and the pre-hook recovery \(if any\) are kept; this retire stopped no session\.$/);
     return true;
   });
   // The home is kept, with the entry it declared and with what the hook wrote.
@@ -348,7 +348,7 @@ console.log(JSON.stringify({meta: {retired: true}}));\n`);
 
   assert.throws(() => retireInstance(f.root, result.instance), (e) => {
     assert.equal(e.code, "E_WORK_PRESERVATION_FAILED");
-    assert.match(e.message, /^retirement work remains at .*; recovery could not be verified: directory recovery storage was redirected$/);
+    assert.match(e.message, /^retirement work remains at .*; recovery could not be verified: directory recovery storage was redirected\. The retire hooks have run; the home, its work and the pre-hook recovery \(if any\) are kept; this retire stopped no session\.$/);
     return true;
   });
   assert.equal(lstatSync(root).isSymbolicLink(), true, "fixture premise: the hook redirected the storage");
@@ -443,6 +443,60 @@ test("existing Git checkout, worktree, attached and workspace modes keep their l
   retireInstance(f.root, worktree.instance, { discardWorktree: true });
   assert.equal(existsSync(worktree.home), false);
   assert.equal(execFileSync("git", ["-C", f.context, "branch", "--list", worktree.branch], { encoding: "utf8" }).trim().replace(/^[*+] /, ""), worktree.branch, "the worktree's branch is left");
+});
+
+test("a checkout or attached spawn records the branch HEAD names, or null when HEAD is detached or names no branch OATS carries, never \"HEAD\" (#641)", async (t) => {
+  const f = fixture(t, { git: true });
+  /** The branch as the spawn result, instance.json and `status --json` give it: the key's presence and its value. */
+  const recorded = (result) => {
+    const meta = readJson(join(result.home, "instance.json"));
+    const status = cli(f, ["status", "--json"]);
+    assert.equal(status.status, 0, status.stdout + status.stderr);
+    const row = JSON.parse(status.stdout).agents.flatMap((a) => a.instances).find((i) => i.instance === result.instance);
+    const pick = (o) => ("branch" in o ? o.branch : "absent");
+    const seen = { result: pick(result), meta: pick(meta), status: pick(row) };
+    assert.notEqual(meta.branch, "HEAD");
+    return seen;
+  };
+  const same = (value) => ({ result: value, meta: value, status: value });
+
+  const onBranch = cliSpawn(f, ["--work", "checkout", "--repo", ".", "--purpose", "on-branch"]);
+  assert.deepEqual(recorded(onBranch), same(git(f.context, "symbolic-ref", "--short", "HEAD")));
+
+  git(f.context, "checkout", "-q", "--detach");
+  const detached = cliSpawn(f, ["--work", "checkout", "--repo", ".", "--purpose", "detached"]);
+  assert.deepEqual(recorded(detached), same(null), "a detached checkout records null");
+
+  const tree = await f.spawn("tree", { work: "worktree", repo: "." });
+  const treeWork = join(tree.home, "work");
+  const attached = cliSpawn(f, ["--work", "attached", "--repo", ".", "--work-dir", treeWork, "--purpose", "attached"]);
+  assert.deepEqual(recorded(attached), same(tree.branch), "an attached instance records its owner's branch");
+  git(treeWork, "checkout", "-q", "--detach");
+  const attachedDetached = cliSpawn(f, ["--work", "attached", "--repo", ".", "--work-dir", treeWork, "--purpose", "attached-detached"]);
+  assert.deepEqual(recorded(attachedDetached), same(null), "an attached instance on a detached tree records null");
+
+  // A branch whose name is not valid UTF-8. Git stores a loose ref as a file of that name: a
+  // filesystem that refuses such names (APFS) cannot hold this part of the fixture.
+  const probe = Buffer.concat([Buffer.from(join(f.base, "probe-caf")), Buffer.from([0xe9])]);
+  let utf8Only = false;
+  try { writeFileSync(probe, ""); rmSync(probe); } catch (err) { if (err.code !== "EILSEQ") throw err; utf8Only = true; }
+  if (!utf8Only) {
+    const ref = Buffer.concat([Buffer.from("refs/heads/caf"), Buffer.from([0xe9])]);
+    const commit = git(f.context, "rev-parse", "HEAD");
+    execFileSync("git", ["-C", f.context, "update-ref", "--stdin"], { input: Buffer.concat([Buffer.from("update "), ref, Buffer.from(` ${commit}\n`)]), stdio: ["pipe", "pipe", "pipe"] });
+    writeFileSync(join(f.context, ".git", "HEAD"), Buffer.concat([Buffer.from("ref: "), ref, Buffer.from("\n")]));
+    assert.equal(execFileSync("git", ["-C", f.context, "symbolic-ref", "HEAD"]).subarray(0, -1).equals(ref), true, "fixture premise: HEAD names the ref by its bytes");
+    const notUtf8 = cliSpawn(f, ["--work", "checkout", "--repo", ".", "--purpose", "not-utf8"]);
+    assert.deepEqual(recorded(notUtf8), same(null), "a branch whose name is not valid UTF-8 records null");
+  } else t.diagnostic("filesystem refuses non-UTF-8 names (APFS): the not-UTF-8 branch case is covered on Linux");
+
+  // An attached tree whose HEAD cannot be read records no branch at all, as before. Every home
+  // here sits inside the deployment's checkout, so a directory instance's work would read that
+  // checkout's HEAD: a .git that names no repository makes it a tree Git cannot read.
+  const dir = await f.spawn("dir", { work: "directory" });
+  writeFileSync(join(dir.home, "work", ".git"), `gitdir: ${join(f.base, "no-such-repository")}\n`);
+  const attachedDir = cliSpawn(f, ["--work", "attached", "--repo", ".", "--work-dir", join(dir.home, "work"), "--purpose", "attached-dir"]);
+  assert.deepEqual(recorded(attachedDir), { ...same("absent"), result: null }, "a tree whose HEAD cannot be read records no key; the CLI's spawn result always carries one, null");
 });
 
 test("Git-owned home placement still fails closed when Git is unavailable even for explicit directory execution", async (t) => {

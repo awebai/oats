@@ -162,3 +162,34 @@ test("worktreeCommitUnreached, in a repository with a branch whose name is not v
   execFileSync("git", ["-C", repo, "update-ref", "--stdin"], { input: Buffer.concat([Buffer.from("update "), notUtf8, Buffer.from(` ${commit}\n`)]), stdio: ["pipe", "pipe", "pipe"] });
   assert.equal(worktreeCommitUnreached(repo, work).unreached, false, "a commit that branch reaches");
 });
+
+test("a home spawned before #641 that records the branch \"HEAD\" observes no recorded branch and no drift, detached or not; a recorded branch still drifts", () => {
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "oats-head-home-")));
+  temporaryDirectories.push(home);
+  const work = join(home, "work");
+  mkdirSync(work);
+  execFileSync("git", ["init", "--quiet", work], { stdio: ["ignore", "pipe", "pipe"] });
+  git(work, "config", "user.email", "test@example.invalid");
+  git(work, "config", "user.name", "Test");
+  git(work, "symbolic-ref", "HEAD", "refs/heads/main");
+  commitIn(work);
+  const record = (branch) => writeFileSync(join(home, "instance.json"), JSON.stringify({ instance: "dev-1", agent: "dev", work: "checkout", repo: work, ...(branch === undefined ? {} : { branch }) }));
+  const recorded = () => observeInstanceGit(home).recorded;
+
+  record("HEAD");
+  assert.deepEqual(recorded(), { branch: null, repo: work, drift: false }, "on a branch: \"HEAD\" names none");
+  record("main");
+  assert.deepEqual(recorded(), { branch: "main", repo: work, drift: false });
+  record("other");
+  assert.deepEqual(recorded(), { branch: "other", repo: work, drift: true }, "a recorded branch the tree is not on drifts");
+
+  git(work, "checkout", "--quiet", "--detach");
+  record("HEAD");
+  assert.deepEqual(recorded(), { branch: null, repo: work, drift: false }, "detached: \"HEAD\" names none");
+  record(null);
+  assert.deepEqual(recorded(), { branch: null, repo: work, drift: false }, "the null a detached spawn records now");
+  record(undefined);
+  assert.deepEqual(recorded(), { branch: null, repo: work, drift: false }, "no key, as for a tree that was not Git");
+  record("main");
+  assert.deepEqual(recorded(), { branch: "main", repo: work, drift: true }, "a recorded branch drifts when the tree is detached, as before");
+});

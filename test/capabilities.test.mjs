@@ -511,6 +511,72 @@ test("the kernel loader refuses a retirement declaration through the manifest co
   }
   assert.deepEqual(load({ disposable: { work: ["node_modules"] } }).retirement, { disposable: { work: ["node_modules"] } });
   assert.deepEqual(load({ disposable: {} }).retirement, { disposable: {} });
+  // A work root: the grammar spawn records (lib/core.mjs retirementDisposableRoots), refused at the entry's own pointer.
+  for (const value of ["", "/abs", "C:/x", "../x", "a/../b", "a//b", ".", "a/./b"]) {
+    assert.throws(() => load({ disposable: { work: ["ok", value] } }), (e) => {
+      assert.equal(e.pointer, "/retirement/disposable/work/1", JSON.stringify(value));
+      assert.equal(e.message, `capability acme.x manifest retirement.disposable.work entry ${JSON.stringify(value)} must be a relative path under work/ with no empty, "." or ".." segment`);
+      return true;
+    }, `${JSON.stringify(value)} is refused`);
+  }
+  assert.deepEqual(load({ disposable: { work: ["build", "./dist/", "a/b", "a\\c"] } }).retirement.disposable.work, ["build", "./dist/", "a/b", "a\\c"], "accepted as declared: spawn normalizes");
+  // Two entries of one manifest that are one root after normalization, or one inside the other, at the later entry.
+  for (const [roots, at, other] of [
+    [["build", "./build/"], 1, "build"],
+    [["a", "b", "a/b"], 2, "a"],
+    [["a/b", "a"], 1, "a/b"],
+    [["a\\b", "x", "a/b/c"], 2, "a\\b"],
+  ]) {
+    assert.throws(() => load({ disposable: { work: roots } }), (e) => {
+      assert.equal(e.pointer, `/retirement/disposable/work/${at}`, JSON.stringify(roots));
+      assert.equal(e.message, `capability acme.x manifest retirement.disposable.work entry ${JSON.stringify(roots[at])} overlaps entry ${JSON.stringify(other)}: the same root, or one inside the other`);
+      return true;
+    }, `${JSON.stringify(roots)} overlap`);
+  }
+  // A prefix of a name is not a directory above it.
+  assert.deepEqual(load({ disposable: { work: ["build", "build-cache", "a/b", "a/bc"] } }).retirement.disposable.work, ["build", "build-cache", "a/b", "a/bc"]);
+});
+
+// What the manifest cannot see, spawn refuses where it records the work roots (lib/core.mjs
+// retirementDisposableRoots): a declared root that is a symlink in the work, and roots of
+// different capabilities that overlap. Both are a broken capability, and the spawn rolls back.
+test("a worktree spawn refuses a declared work root that is a symlink in the work, or overlapping roots of two capabilities, with E_CAPABILITY_BROKEN", async (t) => {
+  const fx = v2(t, {
+    souls: {
+      linked: { soul: { work: "worktree", capabilities: here("acme.linked") } },
+      dangling: { soul: { work: "worktree", capabilities: here("acme.dangling") } },
+      overlap: { soul: { work: "worktree", capabilities: here("acme.outer", "acme.inner") } },
+    },
+    capabilities: {
+      "acme.linked": cap({ retirement: { disposable: { work: ["cache"] } } }),
+      "acme.dangling": cap({ retirement: { disposable: { work: ["lost"] } } }),
+      "acme.outer": cap({ retirement: { disposable: { work: ["gen"] } } }),
+      "acme.inner": cap({ retirement: { disposable: { work: ["./gen/inner/"] } } }),
+    },
+  });
+  process.env.PATH = fakeHarnesses(fx.base);
+  // A tracked symlink to a directory of the work, so the worktree spawn checks out has it.
+  symlinkSync("souls", join(fx.base, "seed", "cache"));
+  // And one whose target does not exist: a link all the same.
+  symlinkSync("nowhere", join(fx.base, "seed", "lost"));
+  fx.commit({}, "symlinked roots");
+  for (const [soul, name, message] of [
+    ["linked", "linked-1", /^retirement disposable root from acme\.linked is a symlink: cache — spawn rolled back$/],
+    ["dangling", "dangling-1", /^retirement disposable root from acme\.dangling is a symlink: lost — spawn rolled back$/],
+    ["overlap", "overlap-1", /^overlapping retirement disposable roots: gen(\/inner)? — spawn rolled back$/],
+  ]) {
+    await assert.rejects(fx.spawn(soul, { name, work: "worktree" }), (e) => {
+      assert.equal(e.code, "E_CAPABILITY_BROKEN", `${soul}: ${e.code} ${e.message}`);
+      assert.match(e.message, message);
+      return true;
+    }, soul);
+    assert.equal(existsSync(join(fx.root, soul, "instances", name)), false, `${soul}: the spawn rolled back`);
+    // The CLI names the refusal in its JSON error.
+    const r = fx.cli(["spawn", soul, "--name", `${name}-cli`, "--no-launch", "--json"]);
+    assert.notEqual(r.status, 0, `${soul}: ${r.stdout}`);
+    assert.match(r.json().error.message, message, `${soul}: ${r.stdout}`);
+    assert.equal(existsSync(join(fx.root, soul, "instances", `${name}-cli`)), false, `${soul}: the CLI spawn rolled back`);
+  }
 });
 
 test("a hook may set a variable under a declared extra namespace at spawn, and the harness refuses one it did not declare", async (t) => {

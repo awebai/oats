@@ -570,3 +570,86 @@ test("--discard-worktree on a worktree whose branch has no commit yet refuses wi
   assert.equal(headRefHex(work), refHex("refs/heads/fresh"), "the worktree is kept, as it was");
   assert.equal(existsSync(recoveryRootOf(spawned.home)), false, "nothing was written");
 });
+
+// ---- #718: attached children follow a retained worktree ----
+
+/** An attached instance spawned on `owner`'s work (it is the owner's child) → its spawn result. */
+function spawnAttached(f, owner, purpose) {
+  const result = cli(f, ["spawn", "dev", "--purpose", purpose, "--no-launch", "--work", "attached", "--work-dir", join(owner.home, "work"), "--repo", f.repo, "--json"]);
+  assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
+  const spawned = JSON.parse(result.stdout).result;
+  assert.equal(readJson(join(spawned.home, "instance.json")).parentInstance, basename(owner.home), "fixture premise: an attached instance is its owner's child");
+  return spawned;
+}
+const editMeta = (home, edit) => { const path = join(home, "instance.json"); write(path, JSON.stringify(edit(readJson(path)), null, 2) + "\n"); };
+const ATTACHED_NOTE = (names) => `attached child instance(s) ${names} use this home's work/ as their work: a retire that keeps the worktree repoints their work link to it; with --discard-worktree the worktree is removed and their work link will dangle`;
+
+test("a retire that keeps the worktree repoints each attached child it stopped to the retained worktree; a child that is not attached, links elsewhere or was not stopped is left as it was; the plan says so", () => {
+  const f = fixture();
+  const owner = spawn(f, "owner");
+  const ownerName = basename(owner.home);
+  const ownerWork = join(owner.home, "work");
+  const first = spawnAttached(f, owner, "att-one");
+  const second = spawnAttached(f, owner, "att-two");
+  // A child whose work links elsewhere: another instance's work.
+  const other = spawn(f, "other");
+  const elsewhere = spawnAttached(f, owner, "att-elsewhere");
+  rmSync(join(elsewhere.home, "work"));
+  execFileSync("ln", ["-s", join(other.home, "work"), join(elsewhere.home, "work")]);
+  // A child whose link leads to the owner's work, but whose record does not say attached.
+  const unattached = spawnAttached(f, owner, "att-unrecorded");
+  editMeta(unattached.home, (m) => ({ ...m, work: "checkout" }));
+  // An instance attached to the owner's work that is not its child: this retire does not stop it.
+  const stray = spawnAttached(f, owner, "att-stray");
+  editMeta(stray.home, ({ parentInstance: _, ...m }) => m);
+
+  const planned = cli(f, ["retire", ownerName, "--plan", "--json"]);
+  assert.equal(planned.status, 0, planned.stderr);
+  const notes = JSON.parse(planned.stdout).result.notes;
+  assert.deepEqual(notes.filter((n) => n.startsWith("attached child")), [ATTACHED_NOTE(`${basename(first.home)}, ${basename(second.home)}`)]);
+
+  const receipt = retiredReceipt(cli(f, ["retire", ownerName, "--json"]));
+  assert.equal(receipt.retention.worktree, "retained");
+  const movedTo = receipt.retention.movedTo;
+  assert.equal(existsSync(owner.home), false, "the home is removed");
+  for (const kid of [first, second]) {
+    assert.equal(readlinkSync(join(kid.home, "work")), movedTo, `${basename(kid.home)} follows the retained worktree`);
+    assert.equal(realpathSync(join(kid.home, "work")), realpathSync(movedTo));
+    assert.deepEqual(readdirSync(kid.home).filter((n) => n.startsWith(".work.relink-")), [], "no temporary link is left");
+  }
+  assert.equal(readlinkSync(join(elsewhere.home, "work")), join(other.home, "work"), "a link to another tree is not touched");
+  assert.equal(readlinkSync(join(unattached.home, "work")), ownerWork, "an instance whose record does not say attached is not touched");
+  assert.equal(readlinkSync(join(stray.home, "work")), ownerWork, "an instance this retire did not stop is not touched");
+  assert.equal(receipt.warnings, undefined, "nothing failed");
+  assert.deepEqual(Object.keys(receipt.retention).sort(), ["branch", "detachedAt", "movedTo", "recordedBranch", "worktree"], "no new receipt field");
+  assert.equal(readJson(join(first.home, "instance.json")).work, "attached", "instance.json is not rewritten for the relink");
+});
+
+test("with --discard-worktree an attached child's work link is left dangling, as the plan says; a relink that fails is a warning, and the retire is not undone", () => {
+  const f = fixture();
+  const owner = spawn(f, "drop-owner");
+  const kid = spawnAttached(f, owner, "drop-kid");
+  const receipt = retiredReceipt(cli(f, ["retire", basename(owner.home), "--discard-worktree", "--json"]));
+  assert.equal(receipt.retention.worktree, "removed");
+  assert.equal(readlinkSync(join(kid.home, "work")), join(owner.home, "work"), "the link is not repointed");
+  assert.equal(existsSync(join(kid.home, "work")), false, "it dangles");
+
+  // A child whose home cannot be written: its relink fails; the other child is repointed, the owner is retired.
+  const g = fixture();
+  const keeper = spawn(g, "keep-owner");
+  const stuck = spawnAttached(g, keeper, "keep-stuck");
+  const fine = spawnAttached(g, keeper, "keep-fine");
+  chmodSync(stuck.home, 0o555);
+  let text;
+  try { text = cli(g, ["retire", basename(keeper.home)]); }
+  finally { chmodSync(stuck.home, 0o755); }
+  assert.equal(text.status, 0, `${text.stderr}\n${text.stdout}`);
+  assert.equal(existsSync(keeper.home), false, "the retire is not undone");
+  const movedTo = readlinkSync(join(fine.home, "work"));
+  assert.match(movedTo, /\/\.agents\/worktrees\//, "the other child follows the retained worktree");
+  assert.equal(readlinkSync(join(stuck.home, "work")), join(keeper.home, "work"), "the failed child is left as it was");
+  const lines = text.stdout.split("\n");
+  assert.ok(lines.includes(`  child ${basename(fine.home)}: already idle; its work now links to the retained worktree ${movedTo}`), text.stdout);
+  assert.ok(lines.includes(`  child ${basename(stuck.home)}: already idle`), text.stdout);
+  assert.ok(lines.some((l) => l.startsWith(`  WARNING: ${basename(stuck.home)}: its work link could not be repointed to the retained worktree ${movedTo} (`) && l.endsWith(`and still points at ${join(keeper.home, "work")}; repoint it by hand: ln -sfn ${shq(movedTo)} ${shq(join(stuck.home, "work"))}`)), text.stdout);
+});

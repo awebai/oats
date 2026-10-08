@@ -299,17 +299,35 @@ A self-contained package has an `oats.json`:
     `home`, the roots are recorded at spawn. The other work modes do not use
     them.
 
+    A root is read the way spawn records it: a backslash reads as `/`, one
+    leading `./` and one trailing `/` are dropped (`./build/` is `build`).
+    What is left must be a relative path with no empty, `.` or `..` segment
+    (`build`, `node_modules/.cache`). Refused: an empty string, an absolute
+    path (`/x`, `\x`, or a Windows one such as `C:/x`, on every host),
+    `../x`, `a/../b`, `a//b`, `a/./b`, `.`. Two entries of one manifest that
+    overlap, the same root or one inside the other (`build` and `./build/`,
+    `a` and `a/b`), are refused too.
+
+    Spawn alone can see two more cases, and refuses the spawn with
+    `E_CAPABILITY_BROKEN` and rolls it back: a declared root that is a
+    symlink in the work (also one whose target is missing), and roots of
+    different capabilities that overlap. `oats spawn --json` reports these,
+    as other spawn failures, as `E_SPAWN_FAILED` with the same message.
+
   A malformed `retirement` is refused wherever the manifest is read: member
   discovery (`E_WORKSPACE_SCHEMA`), package manifests (`E_PACKAGE_MANIFEST`)
   and the kernel loader refuse the same manifest, with a JSON pointer:
   `/retirement` (no `disposable` map, or a key other than `disposable`,
   `home` and `work`), `/retirement/disposable/<scope>` (not an array of
-  strings) or `/retirement/disposable/home/<i>` (an entry outside the
-  grammar):
+  strings), `/retirement/disposable/home/<i>` (an entry outside the
+  grammar) or `/retirement/disposable/work/<i>` (a root outside the grammar,
+  or one that overlaps an earlier entry):
 
   ```text
   capability <id> manifest retirement.disposable.home entry "<value>" must name one hidden top-level home entry (".name", or ".prefix-*")
   capability <id> manifest retirement.disposable.home entry "<value>" covers a kernel-owned home entry
+  capability <id> manifest retirement.disposable.work entry "<value>" must be a relative path under work/ with no empty, "." or ".." segment
+  capability <id> manifest retirement.disposable.work entry "<value>" overlaps entry "<earlier>": the same root, or one inside the other
   ```
 
   This kernel reads the field. What retire does with the entries is in
