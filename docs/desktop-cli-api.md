@@ -2862,7 +2862,11 @@ A first retire prints the **raw receipt**, not an envelope:
 - `--discard-worktree` removes the worktree, and verifies that it is gone (nothing
   at `work/`, not in `git worktree list`); a removal that did not happen, or
   cannot be verified, refuses with `E_WORK_PRESERVATION_FAILED` and keeps the
-  home, `--force` included. No retire deletes a branch, a
+  home, `--force` included. One exception: with no entry at all at `work/`
+  (a dangling link is an entry) and a repository that cannot be read,
+  `retention.worktree` is `"absent"`, never `"removed"`, and a quarantine
+  retry keeps `could not verify removal` as an incomplete item, which only
+  `--force` clears ([souls-and-instances.md](souls-and-instances.md)). No retire deletes a branch, a
   retried or `--force`d quarantine included: `branchDeleted` is always
   `false`, and `retention.branchDeleted` and `retention.branchDeletionSkipped`
   are not written. `--delete-branch` is refused with `E_BAD_ARGS` (`oats
