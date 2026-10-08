@@ -8,7 +8,7 @@
 // chrome stays a thin rail so nothing is duplicated.
 // (groupInstances is not imported here: the feature branch renders the
 // sidebar roster via clusterInstances — lineage clusters with identity keys.)
-import { currentWorkspace, workspaceGeneration, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange, instanceApiPath, postJson, rowDeployment, httpError,
+import { currentWorkspace, workspaceGeneration, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange, postJson, rowDeployment, httpError,
   switchWorkspace, startWindow, windowState, onWindowState, choosingWorkspaces, chooseWorkspace, refreshChoices } from "./views/common.mjs";
 import { instanceActions, captureInstanceActionMenu } from "./instance-actions.mjs";
 import { instanceActionTarget, sameInstanceActionTarget } from "./instance-action-target.mjs";
@@ -967,7 +967,10 @@ function renderContextRoster(instances) {
               if (!owns()) return;
               mod.preselectHome(instance); await showStage("spawn"); return;
             }
-            return api(instanceApiPath(action, instance), { method: "POST" });
+            // Every menu action is handled above (stop and retire open their plan dialog in
+            // instance-actions.mjs). An action without a handler is refused: no request path is
+            // ever built from an action's name.
+            throw new Error(`Unknown instance action "${action}"`);
           },
           openLifecycle: (operation, instance) => {
             if (currentWorkspace() !== ws || workspaceGeneration() !== rosterGeneration) return;

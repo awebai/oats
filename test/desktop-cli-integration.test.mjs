@@ -440,7 +440,9 @@ test("desktop server: remote roster, souls and harvest stay on the saved host ro
       body: JSON.stringify({ agent: "dev", agentsRoot: "/remote/project/agents", serverId: "host", purpose: "route-conflict" }) });
     assert.equal(collision.status, 200, "the remote launch succeeded even though its route could not be saved");
     assert.deepEqual((await collision.json()).routeConflict, { instance: "dev-t1", existingHome: "/remote/existing" }, "the real HTTP boundary retains the CLI conflict for renderer feedback");
-    assert.equal((await fetch(`${base}/api/chat/dev-one${qualifier}`)).status, 409, "remote transcript never reads a local lookalike path");
+    const remoteFiles = await fetch(`${base}/api/brain/dev?ws=remote%3Ahost-abc`);
+    assert.equal(remoteFiles.status, 409, "a remote agent's files are never read from a local lookalike path");
+    assert.equal((await remoteFiles.json()).code, "E_REMOTE_FILES");
     assert.equal((await fetch(`${base}/api/harvest/dev-one?ws=remote%3Ahost-abc&home=${encodeURIComponent(home)}`, { method: "POST" })).status, 404, "missing server cannot select a remote instance");
     const retireCalls = fake.calls().filter((c) => c.argv[0] === "retire").length;
     fakeCli(dir, { remote: ["roster", "retire"], groups }); // downgrade: no exact-home feature

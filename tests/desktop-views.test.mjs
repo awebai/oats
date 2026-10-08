@@ -110,7 +110,7 @@ test("per-instance requests are workspace-scoped: same-named instance in two wor
   const harvested = [];
   const upstream = createServer((req, res) => {
     const url = new URL(req.url, "http://localhost");
-    const m = url.pathname.match(/^\/api\/(harvest|chat)\/([^/]+)$/);
+    const m = url.pathname.match(/^\/api\/(harvest|start)\/([^/]+)$/);
     const ws = url.searchParams.get("ws");
     const ok = (body) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
     const notFound = () => { res.writeHead(404, { "content-type": "application/json" }); res.end(JSON.stringify({ error: "unknown instance" })); };
@@ -127,16 +127,16 @@ test("per-instance requests are workspace-scoped: same-named instance in two wor
   try {
     common.setWorkspace("wsB");
     // the path builder itself pins the selected workspace on every kind
-    for (const kind of ["chat", "start", "restart", "harvest"]) {
+    for (const kind of ["start", "restart", "harvest"]) {
       const p = common.instanceApiPath(kind, "dev-1");
       assert.match(p, new RegExp(`^/api/${kind}/dev-1\\?ws=wsB$`), `${kind} must carry the selected ws`);
     }
-    assert.equal(common.instanceApiPath("chat", "dev-1", "limit=150"), "/api/chat/dev-1?limit=150&ws=wsB");
+    assert.equal(common.instanceApiPath("restart", "dev-1", "limit=150"), "/api/restart/dev-1?limit=150&ws=wsB");
     // MUTATING request viewed from wsB lands on wsB's instance — never wsA's
     await common.postJson(ctx, common.instanceApiPath("harvest", "dev-1"), {});
     assert.deepEqual(harvested, ["B"], "harvest must resolve only inside the selected workspace");
-    // reads scope identically
-    assert.deepEqual(await common.apiJson(ctx, common.instanceApiPath("chat", "dev-1")), { owner: "B" });
+    // another instance route scopes identically
+    assert.deepEqual(await common.postJson(ctx, common.instanceApiPath("start", "dev-1"), {}), { owner: "B" });
     // an instance that exists only in the OTHER workspace is a strict miss
     common.setWorkspace("wsC");
     await assert.rejects(common.postJson(ctx, common.instanceApiPath("harvest", "dev-1"), {}), /unknown instance/);

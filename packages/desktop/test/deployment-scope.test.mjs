@@ -25,7 +25,7 @@ const CLI = { ok: true, bin: '/oats', version: '0.36.0', features: ['workspace-i
 const HOME = { A: `${A}/agents/dev/instances/dev-a`, B: `${B}/agents/dev/instances/dev-b`, R: '/home/juan/oats/agents/dev/instances/far-a' };
 const enc = encodeURIComponent;
 
-/** The handler with every effect recorded: `effects` (what ran: CLI invocations, chat) and `contexts`
+/** The handler with every effect recorded: `effects` (what ran: CLI invocations) and `contexts`
  * (the workspace and rows the handler built for each boundary). */
 async function harness() {
   const effects = [], contexts = [];
@@ -43,7 +43,6 @@ async function harness() {
     harvestHome: inst => inst.home, dirname: p => p.slice(0, p.lastIndexOf('/')),
     observeMutation: () => {}, refreshRemoteSnapshot: () => {}, remoteLoop: { request: () => {} },
     tmuxTarget: inst => `=${inst.tmux.session}:=${inst.tmux.window}`,
-    chatData: inst => { effects.push({ kind: 'chat', args: [inst.home] }); return { messages: [] }; },
     agentsData: () => ({ agents: [] }), spawnPreviewCache: { invalidate: () => {} }, inspectCache: { invalidate: () => {} }, capabilityCatalogKey: () => null,
     readinessFailure, eventsFailure,
     readinessRequest: (req, getContext) => { seen('readiness', getContext()); return readiness(req, getContext); },
@@ -66,7 +65,6 @@ async function harness() {
 }
 
 const named = [
-  ['chat', 'GET'],
   ['start', 'POST', {}], ['restart', 'POST', {}], ['harvest', 'POST'],
 ];
 const instanceSelector = (deployment, name) => ({ instance: name, agent: 'dev', agentsRoot: `${deployment}/agents`, server: null });
@@ -196,7 +194,7 @@ test('served selectors are view ids and deployment ids; a deployment id survives
   assert.deepEqual([...served].sort(), [V_OATS, V_LAB, L, A, B, R, V].sort());
   const base = 'http://127.0.0.1:4820';
   for (const id of [A, B, R, V]) {
-    for (const path of ['/api/chat/dev-b', '/api/instance-lifecycle', '/api/workspace-readiness', '/api/instance-git', '/api/instance-events']) {
+    for (const path of ['/api/brain/dev', '/api/instance-lifecycle', '/api/workspace-readiness', '/api/instance-git', '/api/instance-events']) {
       assert.equal(apiUrl(`${path}?ws=${enc(id)}`, base, V_OATS, served).searchParams.get('ws'), id, `${path} ${id}`);
     }
   }
@@ -207,9 +205,12 @@ test('served selectors are view ids and deployment ids; a deployment id survives
   h.reset();
   await h.request({ url: `${kept.pathname}${kept.search}`, method: 'POST', body: bodies[0][1] });
   assert.deepEqual(h.contexts.map(c => c.workspace), [null]);
-  const chat = apiUrl(`/api/chat/dev-b?ws=${enc(V_OATS)}&home=${enc(HOME.B)}`, base, B, served);
-  assert.equal(chat.searchParams.get('ws'), V_OATS);
-  const refused = await h.request({ url: `${chat.pathname}${chat.search}` });
+  // Through the proxy, a view id addressed by path to the agent's brain is kept as it is on the body-addressed families.
+  assert.equal(apiUrl(`/api/brain/dev?ws=${enc(V_OATS)}`, base, B, served).searchParams.get('ws'), V_OATS);
+  // A path-addressed instance route: the server refuses the view id at instance resolution and runs nothing.
+  const start = apiUrl(`/api/start/dev-b?ws=${enc(V_OATS)}&home=${enc(HOME.B)}`, base, B, served);
+  assert.equal(start.searchParams.get('ws'), V_OATS);
+  const refused = await h.request({ url: `${start.pathname}${start.search}`, method: 'POST', body: {} });
   assert.equal(refused.status, 404);
   assert.equal(refused.body.error, 'unknown instance "dev-b"', 'refused at instance resolution, not as an unknown route');
   assert.deepEqual(h.effects, []);

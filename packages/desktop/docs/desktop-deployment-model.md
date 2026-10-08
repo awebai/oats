@@ -299,7 +299,7 @@ sidebar's Spawn instance, Quick Open and the soul cards spawn.
 ### Scope per row
 
 - **Instance-addressed** requests go to the row's own deployment,
-  `?ws=<row.deployment.id>`: terminal resolution, chat, start, restart,
+  `?ws=<row.deployment.id>`: terminal resolution, start, restart,
   harvest, lifecycle, readiness, events, Git, the instance's pull request
   and review threads, and capabilities, launch configurations and
   schedules that name a home. The server resolves these

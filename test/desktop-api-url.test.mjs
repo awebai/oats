@@ -12,7 +12,7 @@ const BASE = "http://127.0.0.1:4820";
 
 test("normal API paths stay on the server origin", () => {
   assert.equal(apiUrl("/api/panel", BASE).href, `${BASE}/api/panel`);
-  assert.equal(apiUrl("/api/chat/foo?limit=100", BASE).href, `${BASE}/api/chat/foo?limit=100`);
+  assert.equal(apiUrl("/api/harvest/foo?home=%2Fh", BASE).href, `${BASE}/api/harvest/foo?home=%2Fh`);
 });
 
 test("rejects non-string and non-absolute pathnames", () => {
@@ -57,16 +57,16 @@ test("pins ws on /api/brain/* like the other scoped endpoints", () => {
   assert.equal(apiUrl(`/api/brain/tui-dev?ws=${other}`, BASE, ws, new Set([ws, other])).searchParams.get("ws"), other);
 });
 
-test("pins ws on the whole instance-addressed route family", () => {
+test("pins ws on the path-addressed brain route; the removed chat route is no longer pinned (#627)", () => {
   const ws = "/Users/me/oats", other = "/Users/me/lfx";
-  for (const ep of ["chat", "brain"]) {
-    // omitted ws → fails safe to the verified workspace
-    assert.equal(apiUrl(`/api/${ep}/inst-a`, BASE, ws).searchParams.get("ws"), ws, `${ep}: pin on omission`);
-    // stale/unknown caller ws → overwritten
-    assert.equal(apiUrl(`/api/${ep}/inst-a?ws=/stale`, BASE, ws, new Set([ws, other])).searchParams.get("ws"), ws, `${ep}: stale overwritten`);
-    // server-advertised caller ws → kept (workspace switching)
-    assert.equal(apiUrl(`/api/${ep}/inst-a?ws=${other}`, BASE, ws, new Set([ws, other])).searchParams.get("ws"), other, `${ep}: advertised kept`);
-  }
+  assert.equal(apiUrl("/api/chat/inst-a", BASE, ws).searchParams.get("ws"), null, "chat: no route, nothing pinned");
+  assert.equal(apiUrl("/api/chat/inst-a?ws=/stale", BASE, ws, new Set([ws, other])).searchParams.get("ws"), "/stale", "chat: nothing overwritten");
+  // omitted ws → fails safe to the verified workspace
+  assert.equal(apiUrl("/api/brain/inst-a", BASE, ws).searchParams.get("ws"), ws, "brain: pin on omission");
+  // stale/unknown caller ws → overwritten
+  assert.equal(apiUrl("/api/brain/inst-a?ws=/stale", BASE, ws, new Set([ws, other])).searchParams.get("ws"), ws, "brain: stale overwritten");
+  // server-advertised caller ws → kept (workspace switching)
+  assert.equal(apiUrl(`/api/brain/inst-a?ws=${other}`, BASE, ws, new Set([ws, other])).searchParams.get("ws"), other, "brain: advertised kept");
 });
 
 test("does not pin ws on unscoped endpoints and without a verified id", () => {

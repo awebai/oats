@@ -22,9 +22,9 @@ test('rowDeployment: a tagged row is addressed to its deployment; an untagged ro
   assert.equal(common.rowDeployment({ instance: 'x', deployment: { id: '' } }), VIEW);
 }));
 
-test('instanceApiPath: the chat/start/restart/harvest family goes to the row\'s deployment, not the view', () => withView(() => {
+test('instanceApiPath: the start/restart/harvest family goes to the row\'s deployment, not the view', () => withView(() => {
   const local = row('/Users/juan/awebai/oats-v2');
-  for (const kind of ['chat', 'start', 'restart', 'harvest']) {
+  for (const kind of ['start', 'restart', 'harvest']) {
     const url = new URL(common.instanceApiPath(kind, local), 'http://127.0.0.1');
     assert.equal(url.searchParams.get('ws'), '/Users/juan/awebai/oats-v2', kind);
     assert.equal(url.searchParams.get('home'), local.home, kind);
@@ -32,7 +32,7 @@ test('instanceApiPath: the chat/start/restart/harvest family goes to the row\'s 
   const remote = row('/srv/tsm', { server: 'altair', deployment: { id: 'remote:altair:3f2a00000000', machine: 'altair', path: '/srv/tsm' } });
   const url = new URL(common.instanceApiPath('start', remote), 'http://127.0.0.1');
   assert.deepEqual([url.searchParams.get('ws'), url.searchParams.get('server')], ['remote:altair:3f2a00000000', 'altair']);
-  assert.equal(common.instanceApiPath('chat', 'solo'), `/api/chat/solo?ws=${encodeURIComponent(VIEW)}`, 'a bare name keeps the selected workspace');
+  assert.equal(common.instanceApiPath('harvest', 'solo'), `/api/harvest/solo?ws=${encodeURIComponent(VIEW)}`, 'a bare name keeps the selected workspace');
 }));
 
 test('instance action targets: owned by the view, addressed to the row\'s deployment; descriptors round-trip it', () => {
@@ -72,7 +72,7 @@ test('launch configurations of an instance are read in its deployment while owne
 // The instance-addressed route families, and the renderer modules that address them. Each such request
 // must take its workspace from the row (rowDeployment / a target's deployment / instanceDeployment), never
 // from currentWorkspace() or wsQuery(), which name the view on screen.
-const INSTANCE_ROUTES = /\/api\/(?:instance-(?:git|forge|lifecycle|events|review-threads)|workspace-readiness|chat\/|start\/|restart\/|harvest\/)/;
+const INSTANCE_ROUTES = /\/api\/(?:instance-(?:git|forge|lifecycle|events|review-threads)|workspace-readiness|start\/|restart\/|harvest\/)/;
 const source = (path) => readFileSync(new URL(`../renderer/${path}`, import.meta.url), 'utf8');
 
 test('source pin: no instance-addressed route is composed with the view selector anywhere in the renderer', () => {
