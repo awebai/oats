@@ -186,12 +186,17 @@ test("a home that records no socket reads the default server: a missing socket f
   const meta = join(legacy.home, "instance.json");
   writeFileSync(meta, JSON.stringify({ ...readJson(meta), launched: true }, null, 2) + "\n"); // launched by a kernel before the OATS server
   const never = await makeHome("never"); // --no-launch: no socket, no launch
-  // The default server's socket file is missing: a tmux in front answers so for every call that
-  // names no socket, and hands the others to the fixture's.
-  const front = join(base, "default-missing-bin");
-  mkdirSync(front);
-  writeFileSync(join(front, "tmux"), `#!/bin/sh\ncase " $* " in *" -S "*|*" -L "*) exec ${shq(join(base, "system-bin", "tmux"))} "$@" ;; esac\necho "error connecting to /tmp/tmux-0/default (No such file or directory)" >&2\nexit 1\n`);
-  chmodSync(join(front, "tmux"), 0o755);
+  // The default server's socket file is missing: a tmux in front answers so for calls that name
+  // no socket, and hands the others to the fixture's. `from` is the first read that sees it gone:
+  // has-session, or list-windows after has-session found the session (the file went in between).
+  const fronts = {};
+  for (const from of ["has-session", "list-windows"]) {
+    const dir = fronts[from] = join(base, `default-missing-${from}-bin`);
+    mkdirSync(dir);
+    const passes = from === "list-windows" ? `[ "$1" = has-session ] && exit 0\n` : "";
+    writeFileSync(join(dir, "tmux"), `#!/bin/sh\ncase " $* " in *" -S "*|*" -L "*) exec ${shq(join(base, "system-bin", "tmux"))} "$@" ;; esac\n${passes}echo "error connecting to /tmp/tmux-0/default (No such file or directory)" >&2\nexit 1\n`);
+    chmodSync(join(dir, "tmux"), 0o755);
+  }
   // A /proc where a process works in each home.
   const proc = (name, homes) => {
     const root = join(base, name);
@@ -205,17 +210,20 @@ test("a home that records no socket reads the default server: a missing socket f
     mkdirSync(join(root, "1"), { recursive: true }); symlinkSync("/", join(root, "1", "cwd")); writeFileSync(join(root, "1", "comm"), "init\n"); writeFileSync(join(root, "1", "stat"), "1 (init) S 0 0 0\n");
     return { procRoot: root };
   };
-  const rows = (io) => withPath(`${front}:${process.env.PATH}`, () => fx.inEnv(() => listInstances(fx.root, undefined, io)))
-    .then((agents) => Object.fromEntries(agents.flatMap((a) => a.instances).filter((i) => ["legacy", "never"].includes(i.instance)).map((i) => [i.instance, liveness(i)])));
-  const busy = await rows(proc("proc-busy", [legacy.home, never.home]));
-  assert.equal(busy.legacy.running, null, JSON.stringify(busy));
-  assert.equal(busy.legacy.runtimeState, "unreachable");
-  assert.match(busy.legacy.runtimeError, /No such file or directory\); a process still works in this home \(pid 90000\d sleep\), so its tmux server may still be running without its socket file: tmux recreates a removed socket file when its server process receives SIGUSR1$/);
-  assert.deepEqual(busy.never, { running: false, runtimeState: undefined, runtimeError: undefined }, "a home with no launch is not running, whatever works in it");
-  const blind = await rows(NO_PROC);
-  assert.equal(blind.legacy.runtimeState, "unreachable");
-  assert.match(blind.legacy.runtimeError, /could not be established \(.*no-proc cannot be read \(ENOENT\)\)$/);
-  assert.deepEqual(blind.never, { running: false, runtimeState: undefined, runtimeError: undefined });
-  const idle = await rows(proc("proc-idle", []));
-  assert.deepEqual(idle, { legacy: { running: false, runtimeState: undefined, runtimeError: undefined }, never: { running: false, runtimeState: undefined, runtimeError: undefined } }, "no process in the home: stopped, as after a reboot");
+  const busyProc = proc("proc-busy", [legacy.home, never.home]), idleProc = proc("proc-idle", []);
+  for (const [from, front] of Object.entries(fronts)) {
+    const rows = (io) => withPath(`${front}:${process.env.PATH}`, () => fx.inEnv(() => listInstances(fx.root, undefined, io)))
+      .then((agents) => Object.fromEntries(agents.flatMap((a) => a.instances).filter((i) => ["legacy", "never"].includes(i.instance)).map((i) => [i.instance, liveness(i)])));
+    const busy = await rows(busyProc);
+    assert.equal(busy.legacy.running, null, JSON.stringify(busy));
+    assert.equal(busy.legacy.runtimeState, "unreachable");
+    assert.match(busy.legacy.runtimeError, /No such file or directory\); a process still works in this home \(pid 90000\d sleep\), so its tmux server may still be running without its socket file: tmux recreates a removed socket file when its server process receives SIGUSR1$/);
+    assert.deepEqual(busy.never, { running: false, runtimeState: undefined, runtimeError: undefined }, `${from}: a home with no launch is not running, whatever works in it`);
+    const blind = await rows(NO_PROC);
+    assert.equal(blind.legacy.runtimeState, "unreachable");
+    assert.match(blind.legacy.runtimeError, /could not be established \(.*no-proc cannot be read \(ENOENT\)\)$/);
+    assert.deepEqual(blind.never, { running: false, runtimeState: undefined, runtimeError: undefined });
+    const idle = await rows(idleProc);
+    assert.deepEqual(idle, { legacy: { running: false, runtimeState: undefined, runtimeError: undefined }, never: { running: false, runtimeState: undefined, runtimeError: undefined } }, `${from}: no process in the home: stopped, as after a reboot`);
+  }
 });
