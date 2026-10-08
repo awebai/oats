@@ -311,6 +311,13 @@ its group from the saved routes. State is pulled on every call within
 `--per-target` (default 20 s) of a total `--budget` (default 45 s); a group
 not reached is reported with `E_ROSTER_BUDGET`. `--server <id>` narrows it.
 
+The group's `probe` also relays the host's kernel features (0.49.0,
+`probe.features`): the top-level `features` of the same `status --json`
+answer, never a separate `version --json`, kept only when it is a valid list
+of feature names and otherwise `null` (unknown, as from a host before
+0.49.0); a failed probe has no `features` key
+([the field](desktop-cli-api.md#the-remote-roster-oats-server-roster---json)).
+
 **Harvest** runs the knowledge capability's `okf harvest --json` in the
 instance's saved home on the server and relays its envelope.
 

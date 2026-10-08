@@ -15,9 +15,11 @@ import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { dirname, join, resolve } from "node:path";
 
 import { FAILED_SPAWN_BRANCH_LEFT, spawnInstanceAsync } from "../lib/core.mjs";
-import { attachArgv, checkRemoteSupport, resolveRoute, routeCommand, runRemote, compareSemver, remoteQuote, snapshotPath, sshArgv, validateServer } from "../lib/servers.mjs";
+import { attachArgv, checkRemoteSupport, hostFeatures, resolveRoute, rosterGroups, routeCommand, runRemote, compareSemver, remoteQuote, snapshotPath, sshArgv, validateServer, writeServers } from "../lib/servers.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
+/** This kernel's own features: what a roster relays from a host that runs it (feature server-probe-features). */
+const KERNEL_FEATURES = JSON.parse(execFileSync(process.execPath, [CLI, "version", "--json"], { encoding: "utf8" })).features;
 
 // In-process routes prepare the ssh control directory under OATS_HOME_DIR:
 // never the operator's own ~/.oats. Tests that need their own set and restore it.
@@ -307,7 +309,7 @@ test("oats server roster, okf harvest --server, and the changed-registration gua
     assert.equal(out.groups.length, 1);
     const g = out.groups[0];
     assert.equal(g.server, "build"); assert.equal(g.label, "Build box"); assert.equal(g.registrationPresent, true);
-    assert.deepEqual(g.probe, { ok: true });
+    assert.deepEqual(g.probe, { ok: true, features: KERNEL_FEATURES }, "the host's features, relayed from its status answer");
     assert.equal(typeof g.agentsRoot, "string");
     assert.deepEqual(g.souls.map((s) => s.name), ["dev"]);
     assert.equal(g.souls[0].agentsRoot, g.agentsRoot);
@@ -331,6 +333,7 @@ test("oats server roster, okf harvest --server, and the changed-registration gua
     out = r.json().result;
     const down = out.groups.find((x) => x.server === "down");
     assert.equal(down.probe.ok, false); assert.equal(typeof down.probe.error.message, "string");
+    assert.equal("features" in down.probe, false, "a remote ok:false carries no features key");
     assert.deepEqual(down.instances, []); assert.deepEqual(down.souls, []); assert.deepEqual(down.retireFailures, []);
     r = oats(env, ["server", "roster", "--server", "nope", "--json"]);
     assert.equal(r.json().error.code, "E_SERVER_UNKNOWN");
@@ -588,16 +591,60 @@ else exec ${JSON.stringify(process.execPath)} ${JSON.stringify(CLI)} "$@"; fi
     assert.equal(own.status, 0, own.stderr);
     const hostWorkspace = JSON.parse(own.stdout).workspace;
     assert.equal(typeof hostWorkspace.key, "string", "the host reports its workspace identity");
-    assert.deepEqual(groups.current.probe, { ok: true });
+    assert.deepEqual(groups.current.probe, { ok: true, features: KERNEL_FEATURES });
     assert.deepEqual(groups.current.workspace, hostWorkspace, "relayed verbatim");
     assert.deepEqual(groups.current.instances, []);
-    assert.deepEqual(groups.older.probe, { ok: true });
+    assert.deepEqual(groups.older.probe, { ok: true, features: KERNEL_FEATURES });
     assert.deepEqual(groups.older.workspace, { reachable: true }, "an older host's reachability-only object is relayed as it is");
-    assert.deepEqual(groups.none.probe, { ok: true });
+    assert.deepEqual(groups.none.probe, { ok: true, features: KERNEL_FEATURES });
     assert.equal(groups.none.workspace, null, "a host that reports no workspace relays null");
     assert.equal(groups.down.probe.ok, false);
     assert.equal(groups.down.workspace, null, "an unreachable host relays null");
   } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("roster (feature server-probe-features): a group's probe relays the host's status `features` only when every entry passes, else null; a failed pull has no features key", () => {
+  const prevHomeDir = process.env.OATS_HOME_DIR;
+  process.env.OATS_HOME_DIR = mkdtempSync(join(tmpdir(), "oats-servers-pf-"));
+  try {
+    const status = { root: "/srv/ws/agents", agents: [] };
+    // One group from a fake host answering `status --json` with `answer` (a JS value, or a throw).
+    const probeOf = (answer) => {
+      writeServers({ build: { sshHost: "build-host", workspace: "/srv/ws" } });
+      const exec = () => { if (answer instanceof Error) throw answer; return JSON.stringify(answer); };
+      const out = rosterGroups({ server: "build", io: { execFileSync: exec, serverId: `build-${Math.random()}` } });
+      assert.equal(out.groups.length, 1);
+      return out.groups[0].probe;
+    };
+    const withFeatures = (features) => probeOf({ ...status, features });
+    const valid = ["retire-home", "a", "0", "x2-y3", "a".repeat(64), "retire-home"];
+    assert.deepEqual(withFeatures(valid), { ok: true, features: valid }, "relayed as answered: order and a duplicate kept");
+    assert.deepEqual(probeOf(status), { ok: true, features: null }, "an older host (no key): unknown");
+    assert.deepEqual(withFeatures([]), { ok: true, features: [] }, "[] is a valid answer, not unknown");
+    const exactly256 = Array.from({ length: 256 }, (_, i) => `f${i}`);
+    assert.deepEqual(withFeatures(exactly256).features, exactly256, "256 entries is the limit");
+    for (const [why, features] of [
+      ["null", null], ["a string", "retire-home"], ["an object", { 0: "retire-home" }], ["a number", 1],
+      ["a non-string entry", ["retire-home", 1]], ["an uppercase entry", ["Retire-home"]], ["an entry with a space", ["retire home"]],
+      ["an empty entry", [""]], ["a leading hyphen", ["-retire"]], ["a trailing hyphen", ["retire-"]], ["a double hyphen", ["retire--home"]],
+      ["a 65-character entry", ["a".repeat(65)]], ["257 entries", Array.from({ length: 257 }, (_, i) => `f${i}`)],
+      ["one bad entry among good ones (never filtered)", ["retire-home", "session-start", "Bad", "operations"]],
+    ]) assert.deepEqual(withFeatures(features), { ok: true, features: null }, why);
+    // A failed pull: exactly the error, never a features key.
+    const failed = (answer) => { const p = probeOf(answer); assert.equal(p.ok, false); assert.equal("features" in p, false); return p; };
+    assert.equal(failed(Object.assign(new Error("ssh: connect to host build-host: Connection refused"), { status: 255, stderr: "ssh: connect to host build-host: Connection refused" })).error.code, "E_SSH");
+    assert.deepEqual(failed({ schemaVersion: 1, ok: false, error: { code: "E_NO_DEPLOYMENT", message: "no deployment" } }).error, { code: "E_NO_DEPLOYMENT", message: "no deployment" }, "a remote ok:false is relayed as today");
+    writeServers({ build: { sshHost: "build-host", workspace: "/srv/ws" } });
+    const unreached = rosterGroups({ server: "build", io: { budgetMs: 500, execFileSync: () => { throw new Error("never pulled"); } } }).groups[0].probe;
+    assert.deepEqual(Object.keys(unreached).sort(), ["error", "ok"]); assert.equal(unreached.error.code, "E_ROSTER_BUDGET");
+    // The predicate alone: a result that is not an object, or carries no key, is unknown.
+    for (const result of [undefined, null, "features", 42, ["retire-home"]]) assert.equal(hostFeatures(result), null);
+    const own = { features: ["a"] };
+    assert.notEqual(hostFeatures(own), own.features, "a copy, never the host's own array");
+  } finally {
+    rmSync(process.env.OATS_HOME_DIR, { recursive: true, force: true });
+    if (prevHomeDir === undefined) delete process.env.OATS_HOME_DIR; else process.env.OATS_HOME_DIR = prevHomeDir;
+  }
 });
 
 test("roster budget: slow targets are bounded, healthy results survive, unreached targets are reported", () => {
@@ -627,17 +674,19 @@ test("roster budget: slow targets are bounded, healthy results survive, unreache
     const out = r.json().result;
     assert.ok(elapsed < 14000, `roster took ${elapsed} ms against a 9 s budget`);
     assert.deepEqual(out.groups.map((g) => g.server), ["good", "slow1", "slow2"]);
-    assert.deepEqual(out.groups[0].probe, { ok: true });
+    assert.deepEqual(out.groups[0].probe, { ok: true, features: KERNEL_FEATURES });
     assert.deepEqual(out.groups[0].souls.map((s) => s.name), ["dev"]);
     assert.equal(out.groups[1].probe.ok, false); assert.notEqual(out.groups[1].probe.error.code, "E_ROSTER_BUDGET");
+    assert.equal("features" in out.groups[1].probe, false, "a failed ssh carries no features key");
     assert.equal(out.groups[2].probe.ok, false);
     assert.equal(out.bounds.budgetMs, 9000); assert.equal(out.bounds.perTargetTimeoutMs, 4000);
     // With a budget only one slow target can consume, the last one is
     // reported as not reached rather than dropped or waited for.
     r = oats(env, ["server", "roster", "--json", "--budget", "5000", "--per-target", "4000"]);
     const out2 = r.json().result;
-    assert.deepEqual(out2.groups[0].probe, { ok: true });
+    assert.deepEqual(out2.groups[0].probe, { ok: true, features: KERNEL_FEATURES });
     assert.equal(out2.groups[2].probe.error.code, "E_ROSTER_BUDGET");
+    assert.deepEqual(Object.keys(out2.groups[2].probe).sort(), ["error", "ok"], "budget exhaustion carries no features key");
     assert.equal(out2.bounds.skipped, 1);
     r = oats(env, ["server", "roster", "--json", "--budget", "5"]);
     assert.equal(r.json().error.code, "E_BAD_ARGS");
