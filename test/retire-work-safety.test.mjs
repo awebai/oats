@@ -644,7 +644,7 @@ test("retire preserves a worktree judged under the source repository's status se
 function staleUnderTextAttribute(repo, base, files, patterns = "*.txt text\n") {
   const attributes = join(base, `attributes-${files.length}`);
   write(attributes, patterns);
-  execFileSync("git", ["-C", repo, "config", "core.attributesFile", attributes]);
+  fixtureGit(repo, ["config", "core.attributesFile", attributes]);
   for (const file of files) utimesSync(file, new Date(2020, 0, 1), new Date(2020, 0, 1));
 }
 
@@ -4275,8 +4275,8 @@ test("#827 a copy that fails verification with a read-only directory whose name 
   const spawned = spawn(f, "readonly-name");
   const work = join(spawned.home, "work");
   write(join(work, "crlf.txt"), "line\r\n");
-  execFileSync("git", ["-C", work, "add", "crlf.txt"]);
-  execFileSync("git", ["-C", work, "commit", "-qm", "crlf"]);
+  fixtureGit(work, ["add", "crlf.txt"]);
+  fixtureGit(work, ["commit", "-qm", "crlf"]);
   const cache = join(work, "cache");
   mkdirSync(cache, { recursive: true });
   const dir = under(cache, withByte("modules-", 0x80));
