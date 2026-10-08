@@ -445,7 +445,10 @@ unknown or unreported harness shows "?". Sources and licences are in
   app-owned read-only reader. All lifecycle mutations go through the
   installed CLI via `execFile` with an absolute binary — never a shell.
 - Task text for spawns travels via an owner-only (0600) tempfile, never
-  argv. Harvest always runs in the server-verified instance home.
+  argv. A local start or restart launches only in the server-verified
+  instance home, and a provider operation (a soul's harvest included) is
+  addressed with `--home` to a home the server's roster reports, never a
+  path the caller names.
 - Workspace content is treated as untrusted: symlinked directories never
   widen the file API, and capability packages cannot read outside their
   own tree.

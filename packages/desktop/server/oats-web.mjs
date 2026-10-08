@@ -21,7 +21,6 @@
  *   GET  /api/cli                   CLI discovery status (bin, version, required range, tried, probePath/pathSource/pathError)
  *   POST /api/cli/reprobe           re-run discovery; body { bin? } prioritizes a user-chosen binary
  *   POST /api/window-state          { focused } → the refresh cadence backs off while the window is blurred/hidden
- *   POST /api/harvest/<instance>    the active provider’s harvest operation addressed by the exact --home; the CLI derives the recorded context
  *   GET  /api/brain/<agent>?ws=<id> agent "brain" JSON: soul (AGENTS.md, skills,
  *                                   knowledge tree) + per-instance artifacts (abs paths)
  *   GET  /api/file?path=<abs>       text file content, guarded to workspace roots + agent homes
@@ -1020,13 +1019,14 @@ function resolveInstanceOr(name, wsId, home, server) {
 }
 /* OATSWEB_FINDINST_END */
 
-/* OATSWEB_HARVESTHOME_BEGIN — privileged-cwd containment, extracted by tests.
-   The harvest CLI runs with cwd = the instance home. That home must be
-   DERIVED and VERIFIED, never trusted from roster data alone: it must be the
-   exact home the kernel's current status reported for this instance in a
-   registered local deployment, canonicalize to <...>/instances/<name>, and
-   stay inside that deployment's canonical directory. No layout is named. */
-function harvestHome(inst) {
+/* OATSWEB_VERIFIEDLOCALHOME_BEGIN — local-home containment, extracted by tests.
+   A local start or restart launches in the instance home it names. That home
+   must be DERIVED and VERIFIED, never trusted from roster data alone: it must
+   be the exact home the kernel's current status reported for this instance in
+   a registered local deployment, canonicalize to <...>/instances/<name>, and
+   stay inside that deployment's canonical directory. No layout is named.
+   Returns the canonical home, or null (a remote row has no local home). */
+function verifiedLocalHome(inst) {
   if (!inst?.home || typeof inst.home !== "string" || inst.server) return null;
   let real;
   try { real = realpathSync(inst.home); } catch { return null; }
@@ -1041,7 +1041,7 @@ function harvestHome(inst) {
   }
   return null;
 }
-/* OATSWEB_HARVESTHOME_END */
+/* OATSWEB_VERIFIEDLOCALHOME_END */
 
 /* OATSWEB_TMUXTGT_BEGIN — exact-match anchored tmux target, extracted by
    tests. tmux -t targets are PREFIX-matched by default: in the 3s
@@ -1676,12 +1676,11 @@ const server = createServer(async (req, res) => {
       try { return send(res, 200, { spawned: true, ...(await spawnAgent(body)) }); }
       catch (e) { const { status, body: b } = spawnErrorPayload(e); return send(res, status, b); }
     }
-    const hm = path.match(/^\/api\/(harvest|retire|start|restart)\/([A-Za-z0-9._-]+)$/);
+    const hm = path.match(/^\/api\/(retire|start|restart)\/([A-Za-z0-9._-]+)$/);
     if (hm && req.method === "POST") {
       if (hm[1] === 'retire') return send(res, 409, { code: 'E_PLAN_REQUIRED', error: 'Open a fresh Retire confirmation. Unguarded retirement is unavailable, including remote retirement.' });
-      // Desktop v1 mutation 2: the active provider’s harvest operation, cwd FIXED by this
-      // privileged backend to the RESOLVED instance home — the caller only
-      // names an instance; it can never steer the cwd.
+      // The caller only names an instance: the home a start launches in is the one this privileged
+      // backend RESOLVED (and, for a local row, verified); it can never steer it.
       const r = resolveInstanceOr(hm[2], url.searchParams.get("ws") || undefined, url.searchParams.get("home") || undefined, url.searchParams.get("server") || undefined);
       if (r.error) return send(res, r.error.status, r.error.body);
       const inst = r.inst;
@@ -1692,7 +1691,7 @@ const server = createServer(async (req, res) => {
         if (inst.server) {
           if (!canAddressRemote(inst)) return send(res, 409, { error: unaddressableSentence(inst), code: "E_SNAPSHOT_UNKNOWN" });
           locator.requireRemoteSupport(cliState, "session-start");
-        } else if (!harvestHome(inst)) return send(res, 409, { error: "Instance home is outside the workspace instances layout" });
+        } else if (!verifiedLocalHome(inst)) return send(res, 409, { error: "Instance home is outside the workspace instances layout" });
         const body = await readBody(req);
         const restart = hm[1] === "restart";
         if (restart && !cliState.features?.includes("session-restart")) return send(res, 409, { error: "Update OATS to restart an existing instance", code: "unsupported-start-option" });
@@ -1708,14 +1707,6 @@ const server = createServer(async (req, res) => {
         return env.ok ? send(res, 200, env.result) : send(res, env.error.code === "E_BAD_ARGS" ? 400 : 409, { error: env.error.message, code: env.error.code });
       }
       /* OATSWEB_START_END */
-      const workspace = deployments().find(w => w.id === url.searchParams.get("ws"));
-      const result = await capabilityRequest({ action: "run", selector: { home: inst.home }, operation: "knowledge:harvest" }, {
-        workspace, cli: cliState, localCwd: ctxs[0] ?? homedir(),
-        agents: workspace ? agentsData(workspace.id).agents : [],
-        instances: workspace ? deploymentRows(workspace) : [],
-        cache: inspectCache, // a run invalidates the deployment's held inspections
-      }).finally(() => { if (workspace) spawnPreviewCache.invalidate(workspace.id); });
-      return send(res, 200, result);
     }
     if (req.method === "GET" && path === "/api/file") {
       const r = fileData(url.searchParams.get("path") || "");
@@ -1766,6 +1757,6 @@ void refreshLoop.start();                // the first cycle publishes "pending" 
 reprobeCli().then((s) => {
   console.log(s.ok
     ? `oats-desktop server: oats CLI ${s.version} at ${s.bin} (${s.source})`
-    : `oats-desktop server: no compatible oats CLI found — reads and terminals work; Spawn/Harvest disabled (${(s.tried || []).length} candidate(s) tried)`);
+    : `oats-desktop server: no compatible oats CLI found — reads and terminals work; Spawn, Start and other changes disabled (${(s.tried || []).length} candidate(s) tried)`);
 });
 void remoteLoop.start();                 // coalesced host reads, independent of terminal traffic

@@ -12,7 +12,7 @@ const BASE = "http://127.0.0.1:4820";
 
 test("normal API paths stay on the server origin", () => {
   assert.equal(apiUrl("/api/panel", BASE).href, `${BASE}/api/panel`);
-  assert.equal(apiUrl("/api/harvest/foo?home=%2Fh", BASE).href, `${BASE}/api/harvest/foo?home=%2Fh`);
+  assert.equal(apiUrl("/api/start/foo?home=%2Fh", BASE).href, `${BASE}/api/start/foo?home=%2Fh`);
 });
 
 test("rejects non-string and non-absolute pathnames", () => {
@@ -67,6 +67,24 @@ test("pins ws on the path-addressed brain route; the removed chat route is no lo
   assert.equal(apiUrl("/api/brain/inst-a?ws=/stale", BASE, ws, new Set([ws, other])).searchParams.get("ws"), ws, "brain: stale overwritten");
   // server-advertised caller ws → kept (workspace switching)
   assert.equal(apiUrl(`/api/brain/inst-a?ws=${other}`, BASE, ws, new Set([ws, other])).searchParams.get("ws"), other, "brain: advertised kept");
+});
+
+test("pins ws on the path-addressed start and restart like brain (#818)", () => {
+  const ws = "/Users/me/oats", other = "/Users/me/lfx", remote = "remote:altair:3f2a00000000";
+  const allowed = new Set([ws, other, remote]);
+  for (const ep of ["start", "restart"]) {
+    // omitted ws → fails safe to the verified workspace; the row's qualifiers ride along untouched
+    const pinned = apiUrl(`/api/${ep}/inst-a?home=%2Fh`, BASE, ws);
+    assert.equal(pinned.searchParams.get("ws"), ws, `${ep}: pin on omission`);
+    assert.equal(pinned.searchParams.get("home"), "/h", `${ep}: home kept`);
+    // stale/unknown caller ws → overwritten, with or without an advertised set
+    assert.equal(apiUrl(`/api/${ep}/inst-a?ws=/stale`, BASE, ws, allowed).searchParams.get("ws"), ws, `${ep}: stale overwritten`);
+    assert.equal(apiUrl(`/api/${ep}/inst-a?ws=/stale`, BASE, ws).searchParams.get("ws"), ws, `${ep}: stale overwritten, nothing advertised`);
+    // server-advertised caller ws → kept (a row's own deployment, a remote one included)
+    assert.equal(apiUrl(`/api/${ep}/inst-a?ws=${other}`, BASE, ws, allowed).searchParams.get("ws"), other, `${ep}: advertised kept`);
+    const routed = apiUrl(`/api/${ep}/inst-a?home=%2Fh&server=altair&ws=${encodeURIComponent(remote)}`, BASE, ws, allowed);
+    assert.deepEqual([routed.searchParams.get("ws"), routed.searchParams.get("server"), routed.searchParams.get("home")], [remote, "altair", "/h"], `${ep}: remote kept`);
+  }
 });
 
 test("does not pin ws on unscoped endpoints and without a verified id", () => {

@@ -1,8 +1,8 @@
 /* oats desktop — CLI degradation state (shared, view-independent).
 
    The desktop-dist contract: without a compatible installed `oats` CLI, all
-   reads and existing terminal access keep working, while Spawn and Harvest
-   are disabled behind ONE consistent card showing the detected path/version,
+   reads and existing terminal access keep working, while Spawn, Start and the
+   other changes are disabled behind ONE consistent card showing the detected path/version,
    the required range, **Choose oats…**, **Retry**, a docs link, and a
    copyable install command. Never silently install. Missing tmux is a
    SEPARATE diagnosis — never conflated with CLI compatibility.
@@ -191,7 +191,7 @@ export function cliCard(doc, ctx) {
     el.innerHTML = `
       <div class="cli-head"><span class="glyph" aria-hidden="true">${icon("warning", { size: 14 })}</span> Compatible <code>oats</code> CLI required</div>
       <div class="cli-body">
-        <p class="cli-explanation">Spawn and Harvest run through the installed <code>oats</code> CLI. Reads and
+        <p class="cli-explanation">Spawn, Start and other changes run through the installed <code>oats</code> CLI. Reads and
         terminals keep working without it.</p>
         <div class="cli-kv">
           <span class="k">Detected</span>

@@ -25,10 +25,10 @@ test("relations never connect agents on different servers", () => {
 });
 
 test("remote instance API references preserve the server and canonical home", () => {
-  const url = new URL(instanceApiPath("harvest", first), "http://localhost");
+  const url = new URL(instanceApiPath("start", first), "http://localhost");
   assert.equal(url.searchParams.get("server"), "first");
   assert.equal(url.searchParams.get("home"), first.home);
-  assert.equal(new URL(instanceApiPath("harvest", local), url).searchParams.has("server"), false);
+  assert.equal(new URL(instanceApiPath("start", local), url).searchParams.has("server"), false);
 });
 
 test("the same absolute home on two servers stays two instances for every routed read, plan and terminal", async () => {
