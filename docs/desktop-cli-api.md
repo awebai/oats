@@ -367,7 +367,7 @@ An instance subject, abridged:
 | `teams`, `defaultTeam`, `teamsSource`, `recordedDefaultTeam` | [Where teams appear](#where-teams-appear); `recordedDefaultTeam` is home only |
 | `knowledge` | `{provider, version, operations: [{name, kind, available, reason}]}` for the knowledge slot (`null`s and `[]` when empty) |
 | `instance` | `null` for a soul; the home's facts above. `instructions.sources` lists each composed inject in order |
-| `identity` | home only (absent for a soul): the served identity a messaging provider recorded, `{…, provider}`, or `null` |
+| `identity` | home only (absent for a soul): the served identity a messaging provider recorded, `{…, provider}`, or `null`. Read on every call, so after a start whose launch hook returned new `meta` it is that start's record, not the spawn's |
 | `problems` | below |
 
 **Soul row** (`soulsApi: 2`). For a home it is read from the recorded

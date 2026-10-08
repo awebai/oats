@@ -495,6 +495,13 @@ start (a renewed session grant, for example) leaves the CURRENT one on record. A
 launch hook that answers without `meta` keeps its previous entry; a start whose
 preparation fails changes nothing.
 
+A launch hook's `brief` is not used. A home's instructions (`TASK.md`,
+`AGENTS.md`) are composed once, at spawn, with the spawn hooks' briefs, and no
+start rewrites them. A provider whose state changes at a start records it in
+`meta`. `oats inspect --home <abs> --json` reads the messaging provider's
+current record there as `identity`. A spawn brief that describes such state
+should say it is the state at spawn and point to that command.
+
 A launch hook may do idempotent provider registration on a real start (an
 aweb home registering with the host wake broker, for example). How the
 kernel runs it depends on whether its capability declares **preview
