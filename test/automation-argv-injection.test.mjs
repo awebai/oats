@@ -64,7 +64,10 @@ test("(b) holds when validation is bypassed: the trigger's spawn child gets `--m
   const capture = join(fx.base, "fake-oats.mjs"), log = join(fx.base, "argv.json");
   writeFileSync(capture, `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)));\nconsole.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_CAPTURED", message: "captured" } }));\n`);
   chmodSync(capture, 0o755);
-  await assert.rejects(fx.inEnv(() => T.spawnForEvent(fx.dep, bypassed, ev, { oatsBin: capture, noLaunch: true })), (e) => e.code === "E_CAPTURED");
+  // The tick previews the soul with the real CLI (its stem and messaging capability) and hands that to the spawn.
+  const pv = await fx.inEnv(() => T.previewSoul(fx.dep, bypassed, {}));
+  assert.equal(pv.ok, true, JSON.stringify(pv));
+  await assert.rejects(fx.inEnv(() => T.spawnForEvent(fx.dep, bypassed, ev, { oatsBin: capture, noLaunch: true }, pv)), (e) => e.code === "E_CAPTURED");
   const argv = JSON.parse(readFileSync(log, "utf8"));
   assert.ok(argv.includes(`--model=--task-file=${secret}`), `one token: ${JSON.stringify(argv)}`);
   assert.equal(argv.includes("--model"), false, "never a separate --model followed by the value");
