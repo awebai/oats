@@ -70,9 +70,10 @@ export function leaveEnclosingInstance(dir) {
 // environment says) and `-S <socket>` for a socket inside the fixture. Even a server recreated by the
 // kernel after kill-server uses the empty config and the fixture's shell; `userConfig: true` drops
 // the forced empty config, so a server reads $HOME/.tmux.conf of the fixture's own HOME as a user's
-// server does. The worker drops CLAUDECODE, the marker of the harness session it may run in: a server
-// it starts would otherwise hold it, and the suite asserts that a pane holds none. Returns the function that restores the environment; it also kills the fixture's
-// `oats` server, by socket, and removes the TMUX_TMPDIR.
+// server does. The worker drops CLAUDECODE, the marker of the harness session it may run in: a
+// server it starts would otherwise hold it, and the suite asserts that a pane holds none. Returns
+// the function that restores the environment; it also kills the fixture's `oats` server, by socket,
+// and removes the TMUX_TMPDIR.
 //
 // A server the kernel starts gets the user's login environment, read by running the login shell
 // (lib/login-environment.mjs). A test never runs the operator's: the kernel runs it only for a process

@@ -380,7 +380,8 @@ Nor does a test depend on where or how the suite runs:
   from a Claude Code session: a server the worker starts would hold it.
 - An expected path is built on a canonical fixture base,
   `realpathSync(mkdtempSync(…))`: the platform's temporary directory can be
-  a symlink (`/var` on macOS), and the kernel reports canonical paths.
+  a symlink (`/var` on macOS), and the kernel builds the paths it reports on
+  its working directory, which the OS gives as the physical path.
 - A probe of the host that reads under `HOME` (the scheduler's installed
   unit) runs with the fixture's own `HOME`.
 - A fixture the filesystem may not represent (a file name that is not valid

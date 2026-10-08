@@ -34,7 +34,10 @@ console.log(JSON.stringify({meta: {context: e.OATS_CONTEXT, repo: e.OATS_REPO, r
     capabilities: { "example.worker": { manifest, files } },
   });
   const saved = { ...process.env };
-  let comeBack = () => {};
+  // A worker inside an instance home (a developer agent running the suite from its work tree) is
+  // that instance to the kernel, and a launch then reads its recorded server's environment instead
+  // of the one built below: the fixture leaves it.
+  const comeBack = leaveEnclosingInstance(fx.base);
   t.after(() => {
     comeBack();
     for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
@@ -50,10 +53,6 @@ console.log(JSON.stringify({meta: {context: e.OATS_CONTEXT, repo: e.OATS_REPO, r
   Object.assign(process.env, { HOME: fx.env.HOME, OATS_HOME_DIR: fx.env.OATS_HOME_DIR, OATS_REMOTE_CACHE: fx.env.OATS_REMOTE_CACHE, OATS_TMUX_SESSION: fx.env.OATS_TMUX_SESSION,
     PATH: `${bin}:${gitBin}`, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: join(base, "gitconfig") });
   write(process.env.GIT_CONFIG_GLOBAL, "");
-  // Nor can the working directory: a worker inside an instance home (a developer agent running the
-  // suite from its work tree) is that instance to the kernel, and a launch then reads its recorded
-  // server's environment instead of this one.
-  comeBack = leaveEnclosingInstance(base);
   mkdirSync(bin); mkdirSync(gitBin);
   symlinkSync(process.execPath, join(bin, "node"));
   symlinkSync(GIT, join(gitBin, "git"));

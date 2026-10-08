@@ -34,7 +34,8 @@ function tree(dir) {
 }
 
 async function northwind() {
-  // Canonical, as the kernel reports paths: the platform's temporary directory can be a symlink (/var on macOS).
+  // Canonical: the kernel builds the paths it reports on its working directory, which the OS gives as
+  // the physical path, and the platform's temporary directory can be a symlink (/var on macOS).
   const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-sync-plan-")));
   const fx = await buildNorthwind(join(base, "fx"));
   const catalogFile = join(base, "catalog.json");

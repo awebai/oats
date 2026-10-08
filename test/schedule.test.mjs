@@ -313,7 +313,9 @@ test("wake-at-spawn helpers: flags translate to one object, save binds to the ho
 test("the CLI answers the envelope for add, list, show, update, enable, disable, tick --dry-run, remove and host status", () => {
   const ws = workspace();
   // The host unit is looked for under HOME (~/Library/LaunchAgents, $XDG_CONFIG_HOME/systemd/user):
-  // the fixture's own, where none is installed, never the operator's.
+  // the fixture's own, where none is installed, never the operator's. Whether it is active is still
+  // asked of the host's service manager (launchctl print, systemctl --user): a read, which can answer
+  // true on a host with the unit loaded, so only its type is asserted.
   const hostHome = join(base, "host-home");
   mkdirSync(hostHome, { recursive: true });
   const env = { ...process.env, OATS_HOME_DIR: process.env.OATS_HOME_DIR, HOME: hostHome, XDG_CONFIG_HOME: join(hostHome, ".config") };
