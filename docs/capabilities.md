@@ -761,6 +761,12 @@ cwd the home); this one differs:
   another group. The recovery reports it in a warning, and any leftover
   processes are ended by hand.
 
+**Leave the tree clean.** `oats worktree remove` refuses a tree with
+uncommitted changes (`E_WORKTREE_DIRTY`). So a hook should leave the tree
+clean: an install that does not rewrite the lockfile (`npm ci`, `yarn install
+--immutable`, not a plain `npm install`), and outputs that are gitignored. A
+hook that has to change tracked files says so in its capability's brief.
+
 **Environment.** The standard hook variables above, and:
 
 | Variable | Value |
@@ -807,7 +813,8 @@ own configuration.
    naming the release, not with a schema error.
 3. The blast radius is every soul that composes the capability, on every host
    below the release: one capability can stop every developer soul of a
-   workspace from spawning.
+   workspace from spawning, as in lfx-oats-workspace#22, where one capability
+   took down every developer soul.
 4. To limit it, put the hook in a small capability composed only by the souls
    that need the setup.
 5. Declare it `required` when the tree is unusable without the setup.

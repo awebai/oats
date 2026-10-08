@@ -862,3 +862,28 @@ test("an add killed during its own git step: the recovery ends that git first, s
   assert.equal(tipOf(fx, "agents/feat"), null, "no branch appears late");
   assert.equal(existsSync(join(home, ".work-feat")), false);
 });
+
+test("a git step that fails on its own answers E_GIT_FAILED, not a clone or branch class, and rolls back", async (t) => {
+  const fx = deployment(t, { hookless: true });
+  const { home } = await fx.spawn("dev", { instance: "dev-gitfail", work: "checkout" });
+  // `git worktree add` refuses a path the clone still registers (made, then deleted without a prune).
+  const stale = join(home, ".work-stale");
+  gitIn(fx, fx.member, "worktree", "add", "-q", "--detach", stale);
+  execFileSync("rm", ["-rf", stale]);
+  const r = add(fx, home, "stale");
+  const e = r.json().error;
+  assert.equal(e.code, "E_GIT_FAILED", r.stdout);
+  assert.match(e.message, /^git worktree add failed in /);
+  assert.equal(e.details.rolledBack, true);
+  assert.equal(existsSync(join(home, ".oats", "trees", "stale.json")), false);
+  // `git switch -c` failing while the branch does not exist is git's failure, not E_BRANCH_EXISTS.
+  const real = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8", env: fx.env }).trim();
+  const dir = join(fx.base, "git-switchfail"); mkdirSync(dir);
+  writeFileSync(join(dir, "git"), `#!/bin/sh\ncase " $* " in *" switch "*) echo "fatal: simulated switch failure" >&2; exit 128;; esac\nexec ${JSON.stringify(real)} "$@"\n`, { mode: 0o755 });
+  const sw = wt(fx, home, ["add", "--purpose", "sw", "--branch", "agents/sw", "--base", "main", "--json"], { PATH: `${dir}:${fx.env.PATH}` });
+  const se = sw.json().error;
+  assert.equal(se.code, "E_GIT_FAILED", sw.stdout);
+  assert.match(se.message, /^git switch failed in .*simulated switch failure/);
+  assert.equal(se.details.rolledBack, true);
+  assert.equal(tipOf(fx, "agents/sw"), null);
+});

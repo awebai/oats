@@ -2085,8 +2085,9 @@ A failed `add` reports the same facts about its rollback in `details`:
 | `E_BAD_ARGS` | not run from an instance home; `--dir`, `--home` or `--server`; a missing value; a value starting with `-`; an invalid purpose, branch or base; `remove` of a purpose with no record (a tree made with raw Git is removed with `git worktree remove`) |
 | `E_INSTANCE_RETIRING` | `add` in a quarantined home, or one being retired |
 | `E_CLONE_MISSING` | the repository is not found, or is not a Git repository |
-| `E_CLONE_MISMATCH` | the path is a linked worktree, or the clone has no `origin`; `git worktree add` failed |
-| `E_BRANCH_EXISTS` | the branch exists in the clone; `details.remedy` is `<instance>/<branch>` |
+| `E_CLONE_MISMATCH` | the path is a linked worktree, or the clone has no `origin` |
+| `E_BRANCH_EXISTS` | the branch exists in the clone (before the tree is made, or made by another `add` at the same moment); `details.remedy` is `<instance>/<branch>` |
+| `E_GIT_FAILED` | a Git step failed on its own (`git worktree add`, or `git switch` while the branch does not exist), with Git's message: `git <sub> failed in <dir>: …`; the tree is removed |
 | `E_PLACEMENT_TAKEN` | a `ready` record with another clone, branch or base (`details.differ`); `.work-<p>` with no record, or a file or symbolic link there; an unreadable record |
 | `E_LIFECYCLE_BUSY` | an add of that purpose is still running (pid and start time verified); another add or remove of that purpose holds its claim (`details.lock`); or an interrupted add's rollback could not be completed (`details.owed`) |
 | `E_REMOTE_UNREADABLE` | the fetch of `<base>` from `origin` failed; the tree is removed |

@@ -1193,7 +1193,8 @@ git -C <home>/.work-<p> switch -c <branch> <the fetched commit>
 - The tree starts from the remote's current state, never from a local branch
   of the clone, which may be stale. A fetch that fails is
   `E_REMOTE_UNREADABLE`; a HEAD that is not the fetched commit is
-  `E_BASE_UNKNOWN`. Either way the tree is removed.
+  `E_BASE_UNKNOWN`; any other Git step that fails is `E_GIT_FAILED`, with
+  Git's message. Either way the tree is removed.
 - Creating it moves none of the clone's refs. The fetch runs inside the new
   linked tree, which has its own `FETCH_HEAD`, and `--refmap=` keeps it from
   updating remote-tracking refs. The clone's `FETCH_HEAD`, branches and work
