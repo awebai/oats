@@ -186,7 +186,9 @@ test("nested", ${JSON.stringify(options)}, ${body});
 for (const [how, body, options, failure] of [
   ["throws", `(t) => { const fx = v2Deployment({ t }); record({ base: fx.base }); throw new Error("deliberate failure"); }`, {}, /deliberate failure/],
   ["rejects", `async (t) => { const fx = v2Deployment({ t }); record({ base: fx.base }); await Promise.reject(new Error("deliberate rejection")); }`, {}, /deliberate rejection/],
-  ["hits its timeout", `async (t) => { const fx = v2Deployment({ t }); record({ base: fx.base }); await new Promise(() => {}); }`, { timeout: 1000 }, /timed out after 1000ms/],
+  // The interval keeps the event loop alive until the timeout: with nothing pending, Node 22 cancels
+  // the test as soon as the loop drains, before its timeout fires.
+  ["hits its timeout", `async (t) => { const fx = v2Deployment({ t }); record({ base: fx.base }); const alive = setInterval(() => {}, 100); t.after(() => clearInterval(alive)); await new Promise(() => {}); }`, { timeout: 1000 }, /timed out after 1000ms/],
 ]) {
   test(`#830 v2Deployment({ t }): a test that ${how} leaves no base`, () => {
     const { r, seen, why } = nestedTest(body, options);
