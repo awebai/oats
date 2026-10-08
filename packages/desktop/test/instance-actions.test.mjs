@@ -72,6 +72,41 @@ test('a Herdr-recorded row shows Start disabled with the kernel reason, offers n
   }
 });
 
+test('the shipped menu handler handles every action the menu can invoke and refuses any other, sending nothing (#627)', async () => {
+  // The roster's `invoke` from shell.mjs, run as shipped: only its collaborators are stubbed (the inspect
+  // view's dynamic import included). Each handled action records what it opened; no request may be sent.
+  const source = readFileSync(new URL('../renderer/shell.mjs', import.meta.url), 'utf8');
+  const start = source.indexOf('invoke: async (action, instance) => {'), end = source.indexOf('\n          openLifecycle:', start);
+  assert.ok(start > 0 && end > start, 'the roster menu handler is found in shell.mjs');
+  const handler = source.slice(start + 'invoke: '.length, end).trim().replace(/,$/, '');
+  const opened = [], requests = [];
+  const c = { ws: 'A', rosterGeneration: 1, currentWorkspace: () => 'A', workspaceGeneration: () => 1, actionTarget: {}, menuOwner: () => true,
+    openTerminalTab: () => opened.push('open-split'), instancePrAction: { open: () => opened.push('open-pr') },
+    openInstanceStart: (_, { restart }) => opened.push(restart ? 'restart' : 'start'),
+    tabOpenIntents: { begin: () => () => true }, loadView: async () => ({ preselectHome: () => {} }), showStage: async () => opened.push('inspect'),
+    api: (...args) => requests.push(args), postJson: (...args) => requests.push(args), instanceApiPath: (...args) => requests.push(args) };
+  const invoke = runInNewContext(`(${handler.replace('import("./views/spawn.mjs")', 'loadView("./views/spawn.mjs")')})`, c);
+  // Every action a row's menu passes to invoke, in each launch state, with the shell's extra items.
+  const invoked = new Set();
+  for (const running of [true, false, undefined]) {
+    const dom = menuDom(), doc = dom.window.document, instance = { instance: 'dev', home: '/home/dev', running };
+    const control = instanceActions(doc, instance, { scope: 'A',
+      extra: [{ action: 'open-split', label: 'Open in split' }, { action: 'open-pr', label: 'Open pull request…' }],
+      invoke: (action, row) => { invoked.add(action); return invoke(action, row); },
+      openLifecycle: () => {}, report: (headline, { detail }) => assert.fail(`${headline} ${detail}`) });
+    doc.body.append(control);
+    for (const item of control.querySelectorAll('[data-action]')) await choose(control, item.dataset.action);
+    dom.window.close();
+  }
+  assert.deepEqual([...invoked].sort(), ['inspect', 'open-pr', 'open-split', 'restart', 'start']);
+  assert.deepEqual([...new Set(opened)].sort(), [...invoked].sort(), 'each invoked action reached its own handler');
+  // Anything else is refused: no path is built from the action's name.
+  for (const action of ['harvest', 'chat', 'retire', 'stop', '../panel']) {
+    await assert.rejects(invoke(action, { instance: 'dev', home: '/home/dev' }), { message: `Unknown instance action "${action}"` }, action);
+  }
+  assert.deepEqual(requests, []);
+});
+
 test('frame10 extra actions dispatch registered IDs, refresh reasons/hints on open, and skip disabled entries', async () => {
   const dom = menuDom(), doc = dom.window.document; let available = false, hint = 'first', active;
   const calls = [], dispatched = [];

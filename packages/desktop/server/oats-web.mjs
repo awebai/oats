@@ -1060,79 +1060,6 @@ function tmuxTarget(inst) {
 }
 /* OATSWEB_TMUXTGT_END */
 
-// ---- Chat transcript: parse the runtime's session log into structured turns ----
-// pi:     ~/.pi/agent/sessions/--<home with / -> ->--/<ts>_<id>.jsonl
-// claude: ~/.claude*/projects/<cwd with / -> ->/<uuid>.jsonl
-function latestFile(dir, filter = () => true) {
-  try {
-    return readdirSync(dir).filter((f) => f.endsWith(".jsonl") && filter(f))
-      .map((f) => join(dir, f))
-      .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0];
-  } catch { return undefined; }
-}
-function sessionFileFor(inst) {
-  const home = inst.home;
-  if ((inst.harness || "pi") === "pi") {
-    const dir = join(homedir(), ".pi", "agent", "sessions", `-${home.replace(/\//g, "-")}--`);
-    return { file: latestFile(dir), kind: "pi" };
-  }
-  const enc = home.replace(/\//g, "-");
-  for (const base of [".claude", ".claude-personal", ".claude-work"]) {
-    const dir = join(homedir(), base, "projects", enc);
-    const f = latestFile(dir);
-    if (f) return { file: f, kind: "claude" };
-  }
-  return { file: undefined, kind: "claude" };
-}
-const asText = (blocks, type = "text", key = "text") =>
-  (Array.isArray(blocks) ? blocks : []).filter((b) => b?.type === type).map((b) => b[key] || "").join("\n");
-
-export function parseTranscript(lines, kind) {
-  const turns = [];
-  const callIndex = new Map(); // toolCallId -> tool entry
-  const push = (t) => { turns.push(t); return t; };
-  for (const line of lines) {
-    let d; try { d = JSON.parse(line); } catch { continue; }
-    const msg = kind === "pi" ? (d.type === "message" ? d.message : undefined)
-                              : (d.type === "user" || d.type === "assistant" ? d.message : undefined);
-    if (!msg) continue;
-    const content = Array.isArray(msg.content) ? msg.content : [{ type: "text", text: String(msg.content || "") }];
-    if (msg.role === "user") {
-      // claude folds tool_result into user messages; keep real user text only
-      const toolResults = content.filter((b) => b.type === "tool_result");
-      for (const r of toolResults) {
-        const entry = callIndex.get(r.tool_use_id);
-        if (entry) entry.result = (typeof r.content === "string" ? r.content : asText(r.content)).slice(0, 4000);
-      }
-      const text = asText(content).trim();
-      if (text) push({ role: "user", text, ts: msg.timestamp || d.timestamp });
-    } else if (msg.role === "assistant") {
-      const text = asText(content).trim();
-      const thinking = asText(content, "thinking", "thinking").trim();
-      const tools = [];
-      for (const b of content) {
-        if (b.type !== "toolCall" && b.type !== "tool_use") continue;
-        const entry = { id: b.id, name: b.name, args: b.arguments || b.input || {}, result: null };
-        callIndex.set(b.id, entry);
-        tools.push(entry);
-      }
-      if (text || thinking || tools.length) push({ role: "assistant", text, thinking, tools, ts: msg.timestamp || d.timestamp, model: msg.model });
-    } else if (msg.role === "toolResult") {
-      const entry = callIndex.get(msg.toolCallId);
-      if (entry) entry.result = asText(content).slice(0, 4000);
-    }
-  }
-  return turns;
-}
-function chatData(inst, limit = 120) {
-  const { file, kind } = sessionFileFor(inst);
-  if (!file) return { available: false, kind, turns: [] };
-  let text;
-  try { text = readFileSync(file, "utf8"); } catch { return { available: false, kind, turns: [] }; }
-  const turns = parseTranscript(text.split("\n").filter(Boolean), kind);
-  return { available: true, kind, file, turns: turns.slice(-limit) };
-}
-
 // ---- Agent brain: soul + instance artifacts as absolute paths ----
 // The desktop brain view renders this map; file CONTENT is fetched separately
 // through /api/file (path-guarded there). The soul and its instances are the
@@ -1793,14 +1720,6 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && path === "/api/file") {
       const r = fileData(url.searchParams.get("path") || "");
       return r.error ? send(res, r.code, { error: r.error }) : send(res, 200, r.body);
-    }
-    const m = path.match(/^\/api\/chat\/([A-Za-z0-9._-]+)$/);
-    if (m) {
-      const r = resolveInstanceOr(m[1], url.searchParams.get("ws") || undefined, url.searchParams.get("home") || undefined, url.searchParams.get("server") || undefined);
-      if (r.error) return send(res, r.error.status, r.error.body);
-      const inst = r.inst;
-      if (inst.server) return send(res, 409, { error: "Use the remote agent terminal for this operation", code: "E_REMOTE_TERMINAL" });
-      if (req.method === "GET") return send(res, 200, chatData(inst, Number(url.searchParams.get("limit") || 120)));
     }
     return send(res, 404, { error: "not found" });
   } catch (e) {

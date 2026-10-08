@@ -115,7 +115,7 @@ test("desktop server: POST origin guard rejects hostile/null origins without cra
   } finally { proc.kill(); rmSync(scope, { recursive: true, force: true }); }
 });
 
-test("desktop server: no route reads or types into a pane by instance name (#609)", async (t) => {
+test("desktop server: no route reads a pane, types into it or reads its session log by instance name (#609, #627)", async (t) => {
   const { scope } = northwindDeployment();
   const { port, proc, post, get } = await startServer(scope);
   try {
@@ -128,26 +128,35 @@ test("desktop server: no route reads or types into a pane by instance name (#609
     // One subtest per request, so each removed route reports on its own.
     for (const name of ["x", INSTANCE]) {
       for (const [route, ask] of [
-        ["GET /api/session", () => get(`/api/session/${name}`)],
-        ["POST /api/keys", () => post(`/api/keys/${name}`, { data: "x" }, loopback)],
-        ["POST /api/interrupt", () => post(`/api/interrupt/${name}`, {}, loopback)],
+        [`GET /api/session/${name}`, () => get(`/api/session/${name}`)],
+        [`POST /api/keys/${name}`, () => post(`/api/keys/${name}`, { data: "x" }, loopback)],
+        [`POST /api/interrupt/${name}`, () => post(`/api/interrupt/${name}`, {}, loopback)],
+        [`GET /api/chat/${name}`, () => get(`/api/chat/${name}`)],
+        [`GET /api/chat/${name}?limit=10`, () => get(`/api/chat/${name}?limit=10`)],
+        [`POST /api/chat/${name}`, () => post(`/api/chat/${name}`, {}, loopback)],
       ]) {
-        await t.test(`${route}/${name} answers as an unknown route does`, async () => {
+        await t.test(`${route} answers as an unknown route does`, async () => {
           const answer = await ask();
           assert.equal(answer.status, 404);
           assert.deepEqual(await answer.json(), notFound);
         });
       }
     }
-    // The guards run before routing: an unknown path is still refused to a foreign origin.
-    for (const path of ["/api/keys/x", "/api/interrupt/x"]) {
+    // The guards run before routing: an unknown path is still refused to a foreign origin, and every
+    // path, a GET included, to a non-loopback Host (fetch cannot override Host, so a raw request).
+    for (const path of ["/api/keys/x", "/api/interrupt/x", `/api/chat/${INSTANCE}`]) {
       assert.equal((await post(path, { data: "x" }, { origin: "http://evil.com" })).status, 403, path);
     }
-    // The transcript read of the same family is untouched.
-    const chat = await get(`/api/chat/${INSTANCE}`);
-    assert.equal(chat.status, 200, "GET /api/chat/<instance> still answers");
-    assert.ok(Array.isArray((await chat.json()).turns), "with the transcript's turns");
-    assert.equal((await post(`/api/chat/${INSTANCE}`, {}, loopback)).status, 404, "a POST there was never a route");
+    for (const path of [`/api/chat/${INSTANCE}`, "/api/no-such-route"]) {
+      const hostStatus = await new Promise((resolve, reject) => {
+        const rq = httpRequest({ host: "127.0.0.1", port, path, method: "GET", headers: { host: "evil.com" } }, (rs) => { rs.resume(); resolve(rs.statusCode); });
+        rq.on("error", reject); rq.end();
+      });
+      assert.equal(hostStatus, 403, `${path}: a non-loopback Host is refused before routing`);
+    }
+    // A kept read of an agent's files, by name, still answers.
+    const brain = await get(`/api/brain/${SOUL}`);
+    assert.equal(brain.status, 200, "GET /api/brain/<agent> still answers");
   } finally { proc.kill(); rmSync(scope, { recursive: true, force: true }); }
 });
 

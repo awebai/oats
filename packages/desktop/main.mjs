@@ -797,7 +797,7 @@ function createWindow(workspaceId, record = null) {
     return { action: "deny" };
   });
   // Navigation lock: the window may only ever show our renderer file. Links
-  // in future views (markdown, chat) open externally; everything else is
+  // in future views (markdown) open externally; everything else is
   // denied — a navigated-to page would otherwise inherit the preload bridge.
   win.webContents.on("will-navigate", (event, url) => {
     if (trustedRendererUrl(url, RENDERER_URL)) return;
