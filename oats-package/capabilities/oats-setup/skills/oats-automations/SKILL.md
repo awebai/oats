@@ -113,9 +113,9 @@ running.
   number), so an `opened` and a later `synchronize` of one PR share a slot.
 - **Instance names** are `<stem>-<purpose>` (stem: the soul's agent name as
   a slug). From OATS 0.49.0, a name over 61 characters gets a cut purpose
-  ending in a 6-character hash of the event key, and a soul whose stem is
-  over 54 characters cannot be triggered (`E_INSTANCE_NAME_INVALID` in
-  `oats trigger status`). `oats trigger test <id> --json` shows each
+  ending in a 6-character hash of the event key. When the stem is over 54
+  characters, a name that needs cutting cannot be made, and the event stays
+  pending (`E_INSTANCE_NAME_INVALID` in `oats trigger status`). `oats trigger test <id> --json` shows each
   would-fire event's `instance` and `nameCut`.
 - **`teams`** (optional) becomes the messaging capability's `join=` for the
   spawn (see oats-teams); every label must be declared, and the soul needs a

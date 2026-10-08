@@ -546,3 +546,31 @@ test("perKey counts by subject across keys; an old home without subject holds by
   assert.equal(sync.subject, "1");
   assert.equal(JSON.parse(readFileSync(join(sync.home, ".oats", "trigger-event.json"), "utf8")).subject, "1");
 });
+
+test("the preview carries the trigger's launch selection: an explicit harness overrides an unusable machine default for the preview as for the spawn", async (t) => {
+  const fx = fixture({ local: { souls: { launch: { reviewer: "missing-default" } } } }); t.after(fx.cleanup);
+  ok(fx.cli(["trigger", "add", "--file", writeJson(fx, definition({ spawn: { ...definition().spawn, teams: [], harness: "pi" } })), "--json"]), "trigger add");
+  fx.gh.pulls([pr(1)]);
+  // Control: without the explicit harness, the machine's default (an unknown launch configuration) is refused.
+  fails(fx.cli(["spawn", "reviewer", `--dir=${fx.dep}`, "--preview", "--json"]), "E_LAUNCH_CONFIG_UNKNOWN", "default launch selection");
+  const oats = loggingOats(fx);
+  const r = await tickWith(fx, "2026-09-26T12:00:10Z", { io: { oatsBin: oats.bin } });
+  assert.deepEqual(r.map((x) => x.action), ["fired"], JSON.stringify(r));
+  const [preview] = oats.calls().filter((a) => a.includes("--preview"));
+  assert.ok(preview.includes("--harness=pi"), JSON.stringify(preview));
+});
+
+test("a stem too long even for the preview's numbered name (63) is refused as too long for a triggered spawn, and the event stays pending", async (t) => {
+  const soul = "s".repeat(63);
+  const fx = v2Deployment({ name: "acme", souls: { [soul]: {} } }); t.after(fx.cleanup);
+  fx.gh = fakeGh(join(fx.base, "gh"));
+  fx.env.PATH = `${fx.gh.bin}:${fx.env.PATH}`;
+  ok(fx.cli(["trigger", "add", "--file", writeJson(fx, definition({ spawn: { soul, purpose: "pr-{number}", task: "Review {repo}#{number}.", teams: [] } })), "--json"]), "trigger add");
+  fx.gh.pulls([pr(1)]);
+  const r = await tickWith(fx, "2026-09-26T12:00:10Z");
+  assert.deepEqual(r.map((x) => [x.action, x.code]), [["spawn-failed", "E_INSTANCE_NAME_INVALID"]], JSON.stringify(r));
+  const st = ok(fx.cli(["trigger", "status", "--json"]), "status").triggers[0];
+  assert.equal(st.pending.length, 1);
+  assert.equal(st.lastError.code, "E_INSTANCE_NAME_INVALID");
+  assert.match(st.lastError.message, /^the soul name is too long for a triggered spawn: soul s{63} cannot name even a numbered instance \(.*"s{63}-1" is 65/);
+});

@@ -189,16 +189,19 @@ when the timer cannot reach it.
 - **The instance name** is spawn's own: `<stem>-<purpose>`, where the stem is
   the slug of the soul's agent name (a package soul's is
   `<package>--<soul>`, so its stem is long), read from one `oats spawn <soul>
-  --preview` per trigger per tick in which it fires. Spawn never truncates or
+  --preview` (with the trigger's launch selection) per trigger per tick in
+  which it fires. Spawn never truncates or
   rewrites a name and refuses one over 64 characters, and it adds `-2`, `-3`, …
   when a name is taken, so the trigger keeps its names to **61 characters**,
   three for that suffix. A name that fits is passed exactly as rendered. A
   longer one gets a cut purpose: as much of the rendered purpose as fits, then
   `-` and the first 6 hex characters of SHA-256 over the event key (two events
   of one PR get different names; the same event, re-fired, the same name).
-  When the stem leaves no room even for `-<6 hex>` (a stem over 54
-  characters), the event is not spawned: it stays pending with
-  `lastError.code: E_INSTANCE_NAME_INVALID`, naming the stem and its length.
+  When a name needs cutting and the stem leaves no room even for `-<6 hex>`
+  (a stem over 54 characters), the event is not spawned: it stays pending
+  with `lastError.code: E_INSTANCE_NAME_INVALID`, naming the stem and its
+  length (a stem over 62 characters, too long for the preview's own numbered
+  name, is refused the same way, quoting the preview).
   `oats trigger test <id> --json` shows each would-fire event's `instance` and
   `nameCut`. A failed preview fails the spawn the same way, with its own code.
 - **The event reaches the instance** as `OATS_TRIGGER_EVENT_FILE`
