@@ -160,3 +160,82 @@ test("a timed-out git step: its whole group, a SIGTERM-ignoring member without p
   assert.equal(typeof calls[0]?.gitPid, "number", "the step was recorded before it ran");
   assert.equal(calls.at(-1), null, "and cleared only after its group was gone");
 });
+
+// ---------- the `ps` path of a start time (macOS has no /proc): OATS_TEST_PROCESS_START_PS=1 ----------
+
+const HOOKS_MODULE = new URL("../lib/worktree-hooks.mjs", import.meta.url).href;
+const WORKTREE_MODULE = new URL("../lib/worktree.mjs", import.meta.url).href;
+/** Run `code` (an ES module body) in a child with `env` on top of this process's; → its stdout, trimmed. */
+async function inChild(code, env) {
+  const c = spawn(process.execPath, ["--input-type=module", "-e", code], { env: { ...process.env, ...env }, stdio: ["ignore", "pipe", "pipe"] });
+  let out = "", err = "";
+  c.stdout.on("data", (b) => { out += b; }); c.stderr.on("data", (b) => { err += b; });
+  const status = await new Promise((r) => c.on("close", r));
+  assert.equal(status, 0, err);
+  return out.trim();
+}
+/** The reader environments a macOS `ps -o lstart=` answered four different ways for one pid (a
+ *  maintainer's run): two time zones, the C locale and a German one. */
+const READERS = [{ TZ: "UTC" }, { TZ: "Asia/Tokyo" }, { LC_ALL: "C" }, { LANG: "de_DE.UTF-8", LC_ALL: "de_DE.UTF-8" }];
+const ZONES = [{ TZ: "Pacific/Kiritimati", LANG: "de_DE.UTF-8", LC_ALL: "de_DE.UTF-8" }, { TZ: "America/Los_Angeles", LANG: "C", LC_ALL: "C" }];
+
+test("the ps start token of one process is the same whatever the reader's TZ and locale", async (t) => {
+  const { spawnSync } = await import("node:child_process");
+  const target = spawn("sleep", ["30"], { stdio: "ignore" });
+  t.after(() => { try { target.kill("SIGKILL"); } catch { /* gone */ } });
+  // The environment does matter to `ps` itself: the same process reads differently by reader.
+  const raw = READERS.map((z) => spawnSync("ps", ["-o", "lstart=", "-p", String(target.pid)], { encoding: "utf8", env: { PATH: process.env.PATH, ...z } }).stdout.trim());
+  assert.ok(new Set(raw).size > 1, `this host's ps answers in the reader's environment: ${JSON.stringify(raw)}`);
+  // The kernel's token does not: its `ps` gets only PATH, LC_ALL=C and TZ=UTC, whatever its caller has.
+  const tokens = [];
+  for (const z of READERS) tokens.push(await inChild(`const { processStartToken } = await import(${JSON.stringify(HOOKS_MODULE)}); console.log(processStartToken(${target.pid}));`, { OATS_TEST_PROCESS_START_PS: "1", ...z }));
+  assert.match(tokens[0], /^ps:/, "the ps path was taken");
+  assert.deepEqual(new Set(tokens), new Set([tokens[0]]), `one process, one token: ${JSON.stringify(tokens)}`);
+});
+
+test("a live claim holder is not taken over by a reader in another TZ and locale (ps path)", async (t) => {
+  const { mkdtempSync, existsSync, readFileSync, writeFileSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "oats-claim-tz-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const lock = join(dir, "p.lock"), heldFile = join(dir, "held"), release = join(dir, "release");
+  const busy = `(holder, unknown) => Object.assign(new Error("busy " + (unknown ?? "live")), { code: "E_LIFECYCLE_BUSY" })`;
+  // The holder takes the claim in one zone and keeps it until released.
+  const holder = spawn(process.execPath, ["--input-type=module", "-e", `const { withClaim } = await import(${JSON.stringify(WORKTREE_MODULE)});
+const { existsSync, writeFileSync } = await import("node:fs");
+await withClaim(${JSON.stringify(lock)}, async () => { writeFileSync(${JSON.stringify(heldFile)}, ""); while (!existsSync(${JSON.stringify(release)})) await new Promise((r) => setTimeout(r, 20)); }, { busy: ${busy} });`],
+  { env: { ...process.env, OATS_TEST_PROCESS_START_PS: "1", ...ZONES[0] }, stdio: "ignore" });
+  t.after(() => { try { holder.kill("SIGKILL"); } catch { /* gone */ } });
+  for (let i = 0; i < 400 && !existsSync(heldFile); i++) await new Promise((r) => setTimeout(r, 25));
+  assert.ok(existsSync(heldFile), "the holder holds the claim");
+  const held = readFileSync(lock, "utf8");
+  // A taker in another zone reads the holder as alive: it waits, then is refused; it never takes over.
+  const answer = await inChild(`const { withClaim } = await import(${JSON.stringify(WORKTREE_MODULE)});
+try { await withClaim(${JSON.stringify(lock)}, () => "took", { busy: ${busy}, waitMs: 300 }); console.log("took"); } catch (e) { console.log(e.code + " " + e.message); }`,
+  { OATS_TEST_PROCESS_START_PS: "1", ...ZONES[1] });
+  assert.equal(answer, "E_LIFECYCLE_BUSY busy live");
+  assert.equal(readFileSync(lock, "utf8"), held, "the live holder's claim is untouched");
+  writeFileSync(release, "");
+  await new Promise((r) => holder.on("close", r));
+});
+
+test("a start that cannot be read is unknown, never gone: liveness says so, and its group is not signalled", async (t) => {
+  const { processLiveness, processStart } = await import("../lib/worktree-hooks.mjs");
+  const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { execFileSync } = await import("node:child_process");
+  const own = await testGroup(t, { leaderStays: true });
+  const dir = mkdtempSync(join(tmpdir(), "oats-ps-stub-"));
+  const realPs = execFileSync("sh", ["-c", "command -v ps"], { encoding: "utf8" }).trim();
+  writeFileSync(join(dir, "ps"), `#!/bin/sh\nfor a in "$@"; do [ "$a" = "${own.pgid}" ] && { echo "ps: simulated failure" >&2; exit 2; }; done\nexec ${JSON.stringify(realPs)} "$@"\n`, { mode: 0o755 });
+  const saved = { PATH: process.env.PATH, seam: process.env.OATS_TEST_PROCESS_START_PS };
+  process.env.PATH = `${dir}:${saved.PATH}`; process.env.OATS_TEST_PROCESS_START_PS = "1";
+  t.after(() => { process.env.PATH = saved.PATH; if (saved.seam === undefined) delete process.env.OATS_TEST_PROCESS_START_PS; else process.env.OATS_TEST_PROCESS_START_PS = saved.seam; rmSync(dir, { recursive: true, force: true }); });
+  assert.equal(processStart(own.pgid).state, "unknown");
+  assert.equal(processStart(2147483646).state, "gone", "ps's own 'no such process' is gone");
+  assert.equal(processLiveness({ pid: own.pgid, processStart: own.leaderStart }).state, "unknown");
+  assert.equal(terminateRecordedGroup({ hookPgid: own.pgid, hookStart: own.leaderStart }, 500), "unverified");
+  assert.equal(groupAlive(own.pgid), true, "not signalled");
+});

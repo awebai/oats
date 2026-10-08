@@ -27,7 +27,8 @@ if (existsSync(join(root, "hook-rm-tree"))) rmSync(process.env.OATS_TREE, { recu
 if (existsSync(join(root, "hook-stubborn"))) {
   // A member of the hook's group that ignores SIGTERM: only the SIGKILL ends it.
   const { spawn } = await import("node:child_process");
-  const c = spawn("/bin/sh", ["-c", "trap '' TERM; sleep 60"], { stdio: "ignore" });
+  // One process (exec), so the pid written is the member itself: no child of it can outlive a kill of that pid.
+  const c = spawn("/bin/sh", ["-c", "trap '' TERM; exec sleep 60"], { stdio: "ignore" });
   writeFileSync(join(root, "hook-stubborn-pid"), String(c.pid));
 }
 if (existsSync(join(root, "hook-sleep"))) {
@@ -53,6 +54,11 @@ function deployment(t, { required = true, work = "checkout", hookless = false, l
   const capabilities = hookless ? {} : { "test.setup": { manifest: { hooks }, files: { "hook.mjs": HOOK, ...(lifecycle ? LIFECYCLE : {}) } } };
   const fx = v2Deployment({ souls: { dev: { soul: { work, ...(hookless ? {} : { capabilities: { "test.setup": { from: "here" } } }) } } }, capabilities });
   t.after(fx.cleanup);
+  // The kernel's git keeps the invoker's configuration (private repositories need its credential helpers).
+  // Its tests must not: a system or global helper (macOS Git's osxkeychain) can wait on a prompt nobody
+  // answers. So no system or global config, no prompt, no askpass, and no credential helper.
+  Object.assign(fx.env, { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_TERMINAL_PROMPT: "0", GIT_ASKPASS: "",
+    GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "credential.helper", GIT_CONFIG_VALUE_0: "" });
   const hostPath = process.env.PATH; process.env.PATH = fx.env.PATH; t.after(() => { process.env.PATH = hostPath; });
   return fx;
 }
@@ -404,7 +410,7 @@ process.exit(r.status ?? 1);
   for (const [url, scrubbed] of cases) {
     n++;
     gitIn(fx, fx.member, "remote", "set-url", "origin", url);
-    const r = await runCli(fx, ["worktree", "add", "--purpose", `cred${n}`, "--branch", `agents/cred${n}`, "--base", "main", "--json"], { cwd: home, env: { OATS_INSTANCE_HOME: home, GIT_SSH_COMMAND: sshCjs } });
+    const r = await runCli(fx, ["worktree", "add", "--purpose", `cred${n}`, "--branch", `agents/cred${n}`, "--base", "main", "--json"], { cwd: home, env: { OATS_INSTANCE_HOME: home, GIT_SSH_COMMAND: sshCjs, OATS_TEST_WORKTREE_FETCH_TIMEOUT_MS: "30000" } });
     assert.equal(r.status, 0, `${url}: ${r.stderr}${r.stdout}`);
     const res = JSON.parse(r.stdout.trim().split("\n").pop()).result;
     assert.equal(res.remote, scrubbed);
@@ -800,6 +806,8 @@ test("a killed add whose hook leader exited: the group left behind is never sign
   // The group's leader: the hook itself where /bin/sh execs it (bash), `sh` where it forks (dash).
   const leader = pgidOf(hook);
   const member = Number(readFileSync(join(fx.root, "hook-stubborn-pid"), "utf8"));
+  // The kernel deliberately leaves this group running (its leader is gone, so it cannot be proven to be the
+  // hook's); the test ends what it started, whatever the outcome.
   t.after(() => { for (const pid of [member, hook]) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } } });
   killed.child.kill("SIGKILL");
   await killed.done;
@@ -895,4 +903,97 @@ test("a git step that fails on its own answers E_GIT_FAILED, not a clone or bran
   assert.match(se.message, /^git switch failed in .*simulated switch failure/);
   assert.equal(se.details.rolledBack, true);
   assert.equal(tipOf(fx, "agents/sw"), null);
+});
+
+// ---------- a process whose start cannot be read is never taken for gone ----------
+
+/** A `ps` on PATH that cannot read `pid` (exit 2, an error on stderr) and is the real `ps` for any other
+ *  pid. With OATS_TEST_PROCESS_START_PS=1 the kernel reads start times through it. */
+function unreadablePs(fx, pid) {
+  const real = execFileSync("sh", ["-c", "command -v ps"], { encoding: "utf8" }).trim();
+  const dir = join(fx.base, `ps-unreadable-${pid}`); mkdirSync(dir);
+  writeFileSync(join(dir, "ps"), `#!/bin/sh\nfor a in "$@"; do [ "$a" = "${pid}" ] && { echo "ps: simulated failure" >&2; exit 2; }; done\nexec ${JSON.stringify(real)} "$@"\n`, { mode: 0o755 });
+  return `${dir}:${fx.env.PATH}`;
+}
+/** A live process that is no oats command, standing in for a holder whose start cannot be read; ended by the test. */
+function bystander(t) {
+  const c = spawnChild("sleep", ["60"], { stdio: "ignore" });
+  t.after(() => { try { c.kill("SIGKILL"); } catch { /* gone */ } });
+  return c.pid;
+}
+const SOME_START = "ps:Thu Jan  1 00:00:00 2026";
+
+test("an adder or claim holder whose start cannot be read: add and remove refuse, naming the pid and the exact path to remove, and nothing is removed", async (t) => {
+  const fx = deployment(t, { hookless: true });
+  const { home } = await fx.spawn("dev", { instance: "dev-unk", work: "checkout" });
+  assert.equal(add(fx, home).status, 0);
+  const tree = join(home, ".work-feat");
+  const recPath = join(home, ".oats", "trees", "feat.json");
+  const lock = join(home, ".oats", "trees", "feat.lock");
+  const pid = bystander(t);
+  const env = { OATS_TEST_PROCESS_START_PS: "1", PATH: unreadablePs(fx, pid) };
+  const commands = [["add", "--purpose", "feat", "--branch", "agents/feat", "--base", "main", "--json"], ["remove", "--purpose", "feat", "--json"]];
+  const ready = readFileSync(recPath, "utf8");
+  // A `creating` record naming it: never rolled back.
+  writeFileSync(recPath, JSON.stringify({ ...JSON.parse(ready), state: "creating", pid, processStart: SOME_START, startedAt: "earlier" }));
+  const creating = readFileSync(recPath, "utf8");
+  for (const args of commands) {
+    const r = wt(fx, home, args, env);
+    const e = r.json().error;
+    assert.equal(e.code, "E_LIFECYCLE_BUSY", r.stdout);
+    assert.match(e.message, /cannot be read/);
+    assert.ok(e.message.includes(`pid ${pid},`), e.message);
+    assert.ok(e.message.includes(`remove ${recPath},`), e.message);
+    assert.equal(readFileSync(recPath, "utf8"), creating, `${args[0]}: the record is kept`);
+    assert.ok(existsSync(tree) && registered(fx, tree), `${args[0]}: the tree is kept`);
+  }
+  // A claim naming it: never taken over.
+  writeFileSync(recPath, ready);
+  writeFileSync(lock, JSON.stringify({ pid, processStart: SOME_START, nonce: "c".repeat(32) }));
+  const held = readFileSync(lock, "utf8");
+  for (const args of commands) {
+    const r = wt(fx, home, args, env);
+    const e = r.json().error;
+    assert.equal(e.code, "E_LIFECYCLE_BUSY", r.stdout);
+    assert.ok(e.message.includes(`pid ${pid} `), e.message);
+    assert.ok(e.message.includes(`remove ${lock},`), e.message);
+    assert.equal(e.details.lock, lock);
+    assert.equal(readFileSync(lock, "utf8"), held, `${args[0]}: the claim is kept`);
+    assert.ok(existsSync(tree) && registered(fx, tree), `${args[0]}: the tree is kept`);
+  }
+});
+
+test("a spawn whose start cannot be read: status keeps it in progress, retire refuses naming the pid and `oats retire --force`; --force retires and keeps the branch", async (t) => {
+  const fx = deployment(t, { work: "worktree", lifecycle: true });
+  const { home, orphan } = await killedSpawn(fx, "dev-unk");
+  const orphanGroup = pgidOf(orphan);
+  t.after(() => { try { process.kill(-orphanGroup, "SIGKILL"); } catch { /* gone */ } });
+  const pid = bystander(t);
+  const markerPath = join(home, ".oats-rollback-incomplete.json");
+  const marker = JSON.parse(readFileSync(markerPath, "utf8"));
+  writeFileSync(markerPath, JSON.stringify({ ...marker, inProgress: { ...marker.inProgress, pid, processStart: SOME_START } }));
+  const saved = { PATH: process.env.PATH, seam: process.env.OATS_TEST_PROCESS_START_PS };
+  process.env.PATH = unreadablePs(fx, pid);
+  process.env.OATS_TEST_PROCESS_START_PS = "1";
+  try {
+    const row = (await fx.inEnv(() => listInstances(fx.root, "oats-test-nosuch"))).flatMap((a) => a.instances).find((i) => i.instance === "dev-unk");
+    assert.equal(row.spawnInProgress, true, "unreadable is not gone: still in progress");
+    assert.equal(row.rollbackIncomplete, undefined);
+    await assert.rejects(fx.inEnv(() => retireInstance(fx.root, "dev-unk", { tmuxSession: "oats-test-nosuch" })), (e) => {
+      assert.equal(e.code, "E_LIFECYCLE_BUSY");
+      assert.ok(e.message.includes(`pid ${pid},`) && e.message.includes(SOME_START), e.message);
+      assert.ok(e.message.includes("`oats retire dev-unk --force`"), e.message);
+      return true;
+    });
+    assert.ok(existsSync(home), "nothing was retired");
+    const r = await fx.inEnv(() => retireInstance(fx.root, "dev-unk", { tmuxSession: "oats-test-nosuch", force: true }));
+    assert.ok(r.forcedIncomplete?.some((x) => /branch the failed spawn created is left/.test(x)), JSON.stringify(r));
+    assert.equal(r.spawnCompensation.branchDeleted, false);
+    assert.match(r.spawnCompensation.reason, /could not be verified gone/);
+    assert.ok(r.warnings.some((w) => w.includes(`whether its spawn (pid ${pid}) still runs could not be read`)), JSON.stringify(r.warnings));
+    assert.equal(tipOf(fx, "agents/dev-unk") !== null, true, "the branch is kept");
+  } finally {
+    process.env.PATH = saved.PATH;
+    if (saved.seam === undefined) delete process.env.OATS_TEST_PROCESS_START_PS; else process.env.OATS_TEST_PROCESS_START_PS = saved.seam;
+  }
 });

@@ -327,7 +327,8 @@ operation, a retire or a trigger is given (`OATS_CAPABILITY`, `OATS_LAYER`,
 `OATS_TRIGGER_EVENT_FILE`, `OATS_TEST_LOGIN_SHELL` (a test seam that replaces
 the login shell, honoured only for a process whose `HOME` is not your home
 directory; a launch configuration cannot set it),
-`OATS_TEST_WORKTREE_HOOK_TIMEOUT_MS` (below), a `worktree` hook's tree
+`OATS_TEST_WORKTREE_HOOK_TIMEOUT_MS`, `OATS_TEST_WORKTREE_FETCH_TIMEOUT_MS`
+and `OATS_TEST_PROCESS_START_PS` (below), a `worktree` hook's tree
 (`OATS_TREE`, `OATS_TREE_CLONE`, `OATS_TREE_REMOTE`, `OATS_TREE_MEMBER`,
 `OATS_TREE_BASE`, `OATS_TREE_BASE_OID`, `OATS_PURPOSE`, `OATS_TREE_ORIGIN`), `OATS_TEAM_NAME`, `OATS_TEAM_SCOPE`,
 `OATS_TEAM_ID`, `OATS_TEAM_LABEL`, `OATS_TEAM_LABELS`, `OATS_TEAMS`,
@@ -342,7 +343,11 @@ deployment from its home.
 `OATS_TEST_WORKTREE_HOOK_TIMEOUT_MS` is another test seam, not a setting: a
 positive whole number of milliseconds replaces the fixed 30-minute timeout of
 [`worktree` hooks](capabilities.md#the-worktree-event), so the kernel's own
-tests can reach it. A launch configuration cannot set it. Do not set it in a deployment.
+tests can reach it. `OATS_TEST_WORKTREE_FETCH_TIMEOUT_MS` does the same for the
+10-minute fetch of `oats worktree add`. `OATS_TEST_PROCESS_START_PS=1` makes
+the kernel read a process's start time with `ps`, as on a host without
+`/proc` (macOS), on a host that has it. A launch configuration cannot set
+any of them. Do not set them in a deployment.
 
 **An instance creates an agents' session or window without its own
 environment.** Nothing of an instance's environment reaches a server or a

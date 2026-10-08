@@ -1224,8 +1224,13 @@ and hooks, and fetches and writes nothing.
 | a `creating` record whose process still runs | `E_LIFECYCLE_BUSY` |
 | a `creating` record whose process is gone | the interrupted add is rolled back first, then the add runs fresh |
 
-A process is "still running" only when its pid runs with the recorded start
-time. An `add` that is interrupted (SIGINT, SIGTERM, SIGHUP) while its hooks
+A process is "still running" when its pid runs with the recorded start
+time. It counts as gone only when its pid does not run, or runs with another
+start. When the start cannot be read (for example where `ps` fails), the
+process is never taken for gone. `add` and `remove` refuse with
+`E_LIFECYCLE_BUSY`, naming the pid and the exact file to remove by hand once
+you have checked it: the record `.oats/trees/<p>.json`, or the claim
+`.oats/trees/<p>.lock`. An `add` that is interrupted (SIGINT, SIGTERM, SIGHUP) while its hooks
 run ends the running hook, rolls back and exits 128 + the signal number
 (`E_INTERRUPTED`); one killed outright leaves the `creating` record for the
 next `add` or `remove`. A killed `add` can simply be run again. A required

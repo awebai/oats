@@ -2205,7 +2205,8 @@ its absence.
   `retirePending` when present, and the Desktop facts below.
 - **`spawnInProgress`** (feature `worktree-event`, OATS 0.49.0): `true` while
   a spawn that is running its `worktree` hooks is verifiably alive (its pid
-  runs with the recorded start time). Such a home holds the quarantine marker
+  runs with the recorded start time), or while whether it runs cannot be
+  read (an unreadable start is never taken for gone). Such a home holds the quarantine marker
   with an `inProgress` field ([capabilities.md](capabilities.md#manifest)),
   and its row carries `spawnInProgress: true` and **no**
   `rollbackIncomplete`: a live spawn, not a failed one. Once that process is

@@ -202,6 +202,15 @@ A self-contained package has an `oats.json`:
   - `oats session start` refuses it as any quarantined home
     (`E_INSTANCE_RETIRING`).
 
+  The process's start time is read from `/proc`, or with `ps` (in a fixed
+  `LC_ALL=C`, `TZ=UTC` environment) where there is no `/proc`, as on
+  macOS. A start that cannot be read is never taken to mean the process is
+  gone. `oats status` still shows `spawnInProgress: true`, and `oats retire`
+  refuses with `E_LIFECYCLE_BUSY`, naming the recorded pid and start for a
+  check by hand. Once that check shows the spawn is gone, `oats retire
+  <instance> --force` retires the home and keeps the branch
+  (`spawnCompensation.reason`, `forcedIncomplete`).
+
   Once that process is gone (killed with SIGKILL, or its rollback cut
   short), `oats retire` finishes the spawn's own compensation, in order:
   1. it ends the hook process group the spawn left, only when the group's
