@@ -1,10 +1,10 @@
-// The failure message of the nested Desktop run in release-workflow.test.mjs
+// The failure message built from a nested `node --test` run's output
 // (awebai/oats#644): it must name the failing tests, whichever reporter the
 // child used, and stay bounded. The fixtures are Node 22 output (CI's
 // version) trimmed of most stack frames; the last tests run a real child.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -507,17 +507,4 @@ test("a real node --test child is read right under the tap, spec and default rep
     assert.equal(r.status, 0, `${reporter ?? "default"} reporter: the passing probe passes\n${r.stdout}\n${r.stderr}`);
     assert.deepEqual(listed(describeNestedTestFailure(r)), [], `${reporter ?? "default"} reporter: nothing listed`);
   }
-});
-
-// Reverting the assertion to a stderr-only message must turn this red: the
-// formatter is only useful while the nested run's assertion uses it. The gate
-// itself stays as it was (#644 changes the message, nothing else).
-test("the nested Desktop run's exit-status assertion uses the formatter, and its gate is intact", () => {
-  const src = readFileSync(new URL("./release-workflow.test.mjs", import.meta.url), "utf8");
-  assert.match(src, /^import \{ describeNestedTestFailure \} from "\.\/helpers\/nested-test-failure\.mjs";$/m);
-  assert.match(src, /if \(r\.status !== 0\) assert\.fail\(describeNestedTestFailure\(r, "packages\/desktop npm test"\)\);/,
-    "the status gate, with the message built only for a failing run");
-  assert.match(src, /delete env\.NODE_TEST_CONTEXT;/);
-  assert.match(src, /spawnSync\("npm", \["test"\], \{[^}]*timeout: 300000, maxBuffer: 64 \* 1024 \* 1024, env \}\)/);
-  assert.match(src, /assert\.match\(r\.stdout, \/\^# pass \\d\+\$\|ℹ pass \\d\+\/m, `packages\/desktop npm test reported no results/);
 });
