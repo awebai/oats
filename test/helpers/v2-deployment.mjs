@@ -88,8 +88,18 @@ export function capabilityFiles(id, manifest = {}, files = {}) {
  * In-process kernel calls a test makes itself (session start, retire…) go through
  * fx.inEnv(() => …) so they never see the operator's environment.
  */
-export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilityDirs = {}, workspace = {}, local = {}, files = {}, name = "fixture", t } = {}) {
+export function v2Deployment(opts = {}) {
   const base = fixtureBase("oats-v2-");
+  const ownTmuxTmpdir = isolatedTmuxTmpdir() ? null : privateTmuxTmpdir();
+  // A fixture that fails while it is built removes what it made: no cleanup is registered yet.
+  try { return buildDeployment(base, ownTmuxTmpdir, opts); } catch (e) {
+    if (ownTmuxTmpdir) removeTmuxTmpdir(ownTmuxTmpdir);
+    rmSync(base, { recursive: true, force: true });
+    throw e;
+  }
+}
+
+function buildDeployment(base, ownTmuxTmpdir, { souls = { dev: {} }, capabilities = {}, capabilityDirs = {}, workspace = {}, local = {}, files = {}, name = "fixture", t } = {}) {
   if (/[\s@]/.test(base)) throw new Error(`tmpdir ${base} contains whitespace or @ (repo keys embed it)`);
   const bare = join(base, "remotes", "ws.git");
   const ref = pathToFileURL(bare).href;
@@ -130,7 +140,6 @@ export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilit
   writeFileSync(join(dep, "oats-local.yaml"), YAML.stringify({ schemaVersion: 2, workspace: ref, ...local }, { lineWidth: 0 }));
   const bin = inertHarnessDir(base);
   const cache = join(base, "cache");
-  const ownTmuxTmpdir = isolatedTmuxTmpdir() ? null : privateTmuxTmpdir();
   // The fixture's rules (host-fixture.mjs fixtureEnv: HOME, XDG, git, no proxies, the scheduler
   // stubs), its inert harnesses first on PATH.
   const rules = fixtureRules(base, { home });
@@ -196,7 +205,8 @@ export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilit
   };
   /** What the test ends itself before the leftover check: a process it left running on purpose (a
    *  group the kernel must not signal). Its own t.after would run after the fixture's, too late:
-   *  node:test runs t.after hooks in the order they were added. */
+   *  node:test runs t.after hooks in the order they were added. `fn` is synchronous: cleanup does not
+   *  wait for a promise, so one fails the cleanup by name. */
   const before = [];
   let cleaned = false;
   fx.beforeCleanup = (fn) => {
@@ -211,7 +221,15 @@ export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilit
     if (cleaned) return;
     cleaned = true;
     const errors = [];
-    for (const fn of before) { try { fn(); } catch (e) { errors.push(e); } }
+    for (const fn of before) {
+      try {
+        const r = fn();
+        if (typeof r?.then === "function") {
+          r.then(undefined, () => {}); // the error below reports it, never an unhandled rejection
+          errors.push(new Error("beforeCleanup functions are synchronous: this one returned a promise, which cleanup does not wait for"));
+        }
+      } catch (e) { errors.push(e); }
+    }
     // Its own `oats` server, if a test launched on real tmux: killed by socket, never by name.
     if (ownTmuxTmpdir) removeTmuxTmpdir(ownTmuxTmpdir);
     const saved = process.env;
@@ -220,6 +238,6 @@ export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilit
     rmSync(base, { recursive: true, force: true });
     if (errors.length) throw errors[0];
   };
-  t?.after(() => fx.cleanup());
+  t?.after(fx.cleanup);
   return fx;
 }

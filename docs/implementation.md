@@ -445,8 +445,8 @@ inherits it (awebai/oats#816):
   Nothing is killed, the base is removed, and the failure names each pid and
   command. A test that leaves a process running on purpose (a group the kernel
   must not signal) ends it itself before that check, on failure too, through
-  `fx.beforeCleanup(fn)`: the cleanup runs those functions first, in order, and
-  still runs when one throws. Never end it with a later `t.after`: node:test
+  `fx.beforeCleanup(fn)`: the cleanup runs those synchronous functions first,
+  in order, and still runs when one throws. Never end it with a later `t.after`: node:test
   runs `t.after` hooks in the order they were added, so a hook added after the
   fixture's runs after the check (`test/worktree-event.test.mjs`).
 - **Cleanup even when a test fails.** Pass the test context,
@@ -454,4 +454,5 @@ inherits it (awebai/oats#816):
   `t.after` when it is created, so a test that throws, rejects or times out
   still removes its base (awebai/oats#830). `fx.cleanup` does its work once,
   and later calls return quietly, so an explicit `fx.cleanup()` or a test's own
-  `t.after(fx.cleanup)` can stay beside it.
+  `t.after(fx.cleanup)` can stay beside it. A fixture that fails while it is
+  built removes its base itself.

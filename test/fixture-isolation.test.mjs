@@ -5,7 +5,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, delimiter, dirname, join, sep } from "node:path";
 import { FS_LIMITS, assertNoFixtureProcesses, fixtureBase, fixtureEnv, nameOfLength, pathOfLength } from "./helpers/host-fixture.mjs";
@@ -15,6 +15,7 @@ import { v2Deployment } from "./helpers/v2-deployment.mjs";
 const bases = [];
 const base = (prefix) => { const b = fixtureBase(prefix); bases.push(b); return b; };
 test.after(() => { for (const b of bases) rmSync(b, { recursive: true, force: true }); });
+const endLeftover = (pid) => { if (pid) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } } };
 
 test("#816 fixtureBase: under a long TMPDIR the base is a short /tmp directory, realpath'd once", () => {
   const long = realpathSync(mkdtempSync(join(tmpdir(), "oats-a-temporary-directory-longer-than-twenty-")));
@@ -151,7 +152,7 @@ test("#816 v2Deployment: its base, its children's environment and its in-process
     assert.throws(() => fx.cleanup(), (e) => e.message.includes(`pid ${leftover} sleep`));
     assert.equal(existsSync(fx.base), false, "the base is removed even when the check fails");
   } finally {
-    if (leftover) { try { process.kill(leftover, "SIGKILL"); } catch { /* gone */ } }
+    endLeftover(leftover);
     rmSync(fx.base, { recursive: true, force: true });
   }
 });
@@ -181,7 +182,6 @@ test("nested", ${JSON.stringify(options)}, ${body});
   if (seen.base) bases.push(seen.base); // a base the child left is still removed here
   return { r, seen, why: describeNestedTestFailure(r) };
 }
-const endLeftover = (pid) => { if (pid) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } } };
 
 for (const [how, body, options, failure] of [
   ["throws", `(t) => { const fx = v2Deployment({ t }); record({ base: fx.base }); throw new Error("deliberate failure"); }`, {}, /deliberate failure/],
@@ -257,4 +257,25 @@ test("#830 fx.beforeCleanup: every function runs in order even when one throws, 
   fx.cleanup(); // a cleanup that threw is done: a later call returns quietly
   assert.deepEqual(ran, [1, 2, 3], "and runs nothing again");
   assert.throws(() => fx.beforeCleanup(() => {}), /already cleaned up/, "a function that could no longer run is refused");
+});
+
+test("#830 fx.beforeCleanup: a function is synchronous; one that returns a promise fails the cleanup by name, which still runs", (t) => {
+  const fx = v2Deployment({ t });
+  fx.beforeCleanup(async () => { throw new Error("never seen"); });
+  assert.throws(() => fx.cleanup(), /beforeCleanup functions are synchronous/);
+  assert.equal(existsSync(fx.base), false, "the base is removed");
+});
+
+test("#830 v2Deployment: a fixture whose construction fails removes what it made", () => {
+  // A private short TMPDIR holds the base (fixtureBase uses it), so nothing else's base is counted.
+  const own = realpathSync(mkdtempSync("/tmp/o"));
+  const saved = process.env.TMPDIR;
+  process.env.TMPDIR = own;
+  try {
+    assert.throws(() => v2Deployment({ capabilityDirs: { x: join(own, "no-such-dir") } }), { code: "ENOENT" });
+    assert.deepEqual(readdirSync(own), [], "no base is left");
+  } finally {
+    if (saved === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = saved;
+    rmSync(own, { recursive: true, force: true });
+  }
 });
