@@ -1293,7 +1293,9 @@ oats teams default <label> [--if-absent | --expect <label>] --json
   the same label and the same team id (local or shared) is reuse: the answer
   is `changed: false, reused: true`, so a setup can retry it. The description
   is neither compared nor changed. The same label with another id is
-  `E_TEAM_EXISTS` as above. `reused` appears only on that answer.
+  `E_TEAM_EXISTS` as above. `reused` appears only on that answer. Where local
+  teams are not allowed, `add --no-default` is refused with local-teams-closed
+  like every `add`, before reuse is considered.
 - **`remove`**: a label the local `defaultTeam` names is `E_TEAM_IN_USE
   {label, usedBy: ["defaultTeam"]}`; a shared label is `E_TEAM_SHARED {label,
   at}` (a label in both files can be removed locally); unknown is
@@ -1315,8 +1317,9 @@ oats teams default <label> [--if-absent | --expect <label>] --json
   naming the flag and the usage, before anything is read. `add` takes
   `--team`, `--description`, `--no-default`; `remove` none; `default`
   `--if-absent`, `--expect`; every form `--dir` and `--json`, and the read
-  form `--max-age`. `--help` is the kernel's usage answer, as for every
-  command.
+  form `--max-age` (on a write form, `--max-age` is the kernel's own
+  `E_BAD_ARGS`, as for every write verb). `--help` is the kernel's usage
+  answer, as for every command.
 - A write that would introduce an unknown reference is refused with that
   code; an invalid result is `E_WORKSPACE_SCHEMA`.
 - **Writes** edit `oats-local.yaml` in place and touch only the entries that
