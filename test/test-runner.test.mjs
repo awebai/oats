@@ -43,7 +43,7 @@ syncBuiltinESMExports();\n`);
       assert.equal(call.bin, process.execPath);
       assert.deepEqual(call.args, ["--test", "--test-shard=2/6", "--test-name-pattern=roundtrip",
         "test/**/*.test.mjs", "tests/**/*.test.mjs", "capabilities/**/*.test.mjs",
-        ...(desktopInstalled ? ["packages/**/*.test.mjs", "test/desktop-schedule-roundtrip.integration.mjs"]
+        ...(desktopInstalled ? ["packages/**/*.test.mjs", "test/desktop-schedule-roundtrip.integration.mjs", "tests/desktop-views.integration.mjs"]
           : ["packages/pi/**/*.test.mjs", "packages/record/**/*.test.mjs"]),
         "test/selected.test.mjs"]);
       assert.equal(realpathSync(call.options.cwd), realpathSync(root));
@@ -52,7 +52,7 @@ syncBuiltinESMExports();\n`);
         assert.doesNotMatch(result.stdout, /SKIPPED/);
       } else {
         assert.equal(result.stdout.match(/Desktop suites and root\/Desktop integration coverage were SKIPPED/g)?.length, 2);
-        assert.equal(result.stdout.split("Root integration omitted: test/desktop-schedule-roundtrip.integration.mjs").length - 1, 2);
+        assert.equal(result.stdout.split("Root integration omitted: test/desktop-schedule-roundtrip.integration.mjs, tests/desktop-views.integration.mjs").length - 1, 2);
         assert.match(result.stdout, /cd packages\/desktop && ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci/);
       }
     } finally { rmSync(root, { recursive: true, force: true }); }
