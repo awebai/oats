@@ -101,3 +101,38 @@ test("a recorded hook group whose leader exited is never signalled: unverified, 
   }
   assert.equal(terminateRecordedGroup({ hookPgid: 2147483646, hookStart: "proc:x" }), "none");
 });
+
+test("the purpose claim: taken over from a dead holder (and from a dead takeover), waited for and refused while its holder lives, never removed when unreadable", async (t) => {
+  const { withClaim } = await import("../lib/worktree.mjs");
+  const { mkdtempSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "oats-claim-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const lock = join(dir, "p.lock");
+  const busy = (holder) => Object.assign(new Error(`busy ${holder?.pid ?? "?"}`), { code: "E_LIFECYCLE_BUSY" });
+  const dead = (nonce) => JSON.stringify({ pid: 2147483646, processStart: "proc:gone", nonce });
+  const N1 = "a".repeat(32), N2 = "b".repeat(32);
+
+  assert.equal(withClaim(lock, () => JSON.parse(readFileSync(lock, "utf8")).pid, { busy }), process.pid, "held while fn runs");
+  assert.equal(existsSync(lock), false, "released");
+
+  writeFileSync(lock, dead(N1));
+  assert.equal(withClaim(lock, () => "ran", { busy }), "ran", "a dead holder's claim is taken over");
+  // A takeover that was itself killed: its own claim is taken over in turn.
+  writeFileSync(lock, dead(N1));
+  writeFileSync(`${lock}.reclaim-${N1}`, dead(N2));
+  assert.equal(withClaim(lock, () => "ran", { busy }), "ran");
+  assert.deepEqual(readdirSync(dir), [], "nothing left behind");
+
+  // A live holder (this process, under another holding): waited for, then refused.
+  writeFileSync(lock, JSON.stringify({ ...selfIdentity(), nonce: N2 }));
+  const t0 = Date.now();
+  assert.throws(() => withClaim(lock, () => "ran", { busy, waitMs: 300 }), (e) => e.code === "E_LIFECYCLE_BUSY" && e.message === `busy ${process.pid}`);
+  assert.ok(Date.now() - t0 >= 300, "it waited");
+  assert.equal(JSON.parse(readFileSync(lock, "utf8")).nonce, N2, "a live holder's claim is untouched");
+
+  writeFileSync(lock, "{not json");
+  assert.throws(() => withClaim(lock, () => "ran", { busy }), (e) => e.code === "E_LIFECYCLE_BUSY" && /not a readable claim/.test(e.message));
+  assert.equal(readFileSync(lock, "utf8"), "{not json", "an unreadable claim is never removed");
+});

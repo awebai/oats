@@ -1233,7 +1233,9 @@ branch only when that `add` created it, no worktree has it checked out, and
 it still points where `add` created it. Otherwise the branch is kept, and
 the answer names it with the reason. Two commands on one purpose never act
 at once: each holds the purpose's claim, `.oats/trees/<p>.lock`, while it
-reads and changes the record. The claim is not held while the hooks run. A quarantined
+reads and changes the record. The claim is not held while the hooks run.
+A claim left by a command that was killed is taken over by the next one,
+once its holder (pid and start time) is verified gone. A quarantined
 home or one being retired is refused (`E_INSTANCE_RETIRING`).
 
 **`remove`** runs `git worktree remove` (without `--force`) and `git worktree

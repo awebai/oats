@@ -671,8 +671,7 @@ test("hook output stays in its 0600 log: never in the envelope, the record, the 
 // ---------- review round 1: ownership, serialization, the branch a rollback keeps ----------
 
 /** A `git` on PATH that runs the real one, pausing first at the step `gate` (a JS expression over
- *  `a`, the argv, and `one`, its value of `role`) until `<base>/<release>` exists, after writing
- *  `<base>/<entered>`; `after`, when given, is written once that step's real git returned. Each is
+ *  `a`, the argv) until `<base>/<release>` exists, after writing its own pid to `<base>/<entered>`; `after`, when given, is written once that step's real git returned. Each is
  *  a JS expression for a file name. */
 function gatedGit(fx, name, { gate, entered, release, after = "null" }) {
   const real = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8", env: fx.env }).trim();
@@ -683,7 +682,7 @@ const { spawnSync } = require("node:child_process");
 const a = process.argv.slice(2), base = ${JSON.stringify(fx.base)};
 const gated = ${gate};
 if (gated) {
-  writeFileSync(base + "/" + (${entered}), "");
+  writeFileSync(base + "/" + (${entered}), String(process.pid));
   for (let n = 0; n < 1500 && !existsSync(base + "/" + (${release})); n++) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
 }
 const r = spawnSync(${JSON.stringify(real)}, a, { stdio: "inherit" });
@@ -805,4 +804,32 @@ test("a killed add whose hook leader exited: the group left behind is never sign
   assert.ok(res.warnings.some((w) => w.includes(`hook process group ${leader} was not signalled: its leader exited`)), JSON.stringify(res.warnings));
   assert.equal(alive(member), true, "the leaderless group was not signalled");
   assert.equal(existsSync(join(home, ".work-feat")), false);
+});
+
+test("a recovery killed while it holds the purpose's claim: the next command takes the claim over and completes the rollback", async (t) => {
+  const fx = deployment(t);
+  const { home } = await fx.spawn("dev", { instance: "dev-claim", work: "checkout" });
+  writeFileSync(join(fx.root, "hook-sleep"), "60");
+  const argv = ["worktree", "add", "--purpose", "feat", "--branch", "agents/feat", "--base", "main", "--json"];
+  const first = cliChild(fx, argv, { cwd: home, env: { OATS_INSTANCE_HOME: home } });
+  assert.ok(await waitFor(() => existsSync(join(fx.root, "hook-sleeping"))));
+  first.child.kill("SIGKILL");
+  await first.done;
+  // The recovering add is killed inside its rollback, holding the claim.
+  const path = gatedGit(fx, "claim", { gate: `a.includes("worktree") && a.includes("remove") && a.includes("--force")`, entered: `"recovering"`, release: `"never"` });
+  const recovering = cliChild(fx, argv, { cwd: home, env: { OATS_INSTANCE_HOME: home, PATH: path } });
+  assert.ok(await waitFor(() => existsSync(join(fx.base, "recovering"))));
+  const lock = join(home, ".oats", "trees", "feat.lock");
+  assert.equal(JSON.parse(readFileSync(lock, "utf8")).pid, recovering.child.pid, "the recovering add holds the claim");
+  recovering.child.kill("SIGKILL");
+  await recovering.done;
+  process.kill(Number(readFileSync(join(fx.base, "recovering"), "utf8")), "SIGKILL"); // its gated git, so it never runs late
+  assert.ok(existsSync(lock), "the killed recovery left its claim");
+  const r = wt(fx, home, ["remove", "--purpose", "feat", "--json"]);
+  assert.equal(r.status, 0, r.stdout);
+  assert.equal(r.json().result.rolledBack, true);
+  assert.equal(r.json().result.branchKept, false);
+  assert.equal(existsSync(join(home, ".work-feat")), false);
+  assert.equal(tipOf(fx, "agents/feat"), null);
+  assert.deepEqual(readdirSync(join(home, ".oats", "trees")), [], "no claim, takeover claim or record is left");
 });

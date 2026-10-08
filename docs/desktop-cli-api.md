@@ -2058,10 +2058,12 @@ an unrelated group. Instead `warnings` names it, so that leftover processes
 can be ended by hand.
 
 Every `add` or `remove` that reads a record it may act on holds the
-purpose's claim, `<home>/.oats/trees/<purpose>.lock`. A second command
-waits up to 3 s for it, then answers `E_LIFECYCLE_BUSY`. The claim is never
-taken over from a process that has died: if it is left behind, the message
-names the directory to remove.
+purpose's claim, `<home>/.oats/trees/<purpose>.lock`. The claim is a file
+that names its holder by pid and start time. A second command waits up to
+3 s for a live holder, then answers `E_LIFECYCLE_BUSY` (`details.lock`,
+`details.pid`). A claim whose holder has died, for example one killed in the
+middle of a recovery, is taken over by the next command. So a killed `add`
+or `remove` can always be run again.
 
 A failed `add` reports the same facts about its rollback in `details`:
 `rolledBack`, `branchKept`, `branchKeptReason` and `warnings`.
