@@ -70,7 +70,7 @@ function deployment(t, { required = true, work = "checkout", hookless = false, l
   // order they were added, so a hook added after this one would run after the check: ends run here.
   const ends = [];
   fx.endAtCleanup = (end) => { ends.push(end); };
-  t.after(() => { for (const end of ends) end(); fx.cleanup(); });
+  t.after(() => { try { for (const end of ends) end(); } finally { fx.cleanup(); } });
   // The kernel's git keeps the invoker's configuration (private repositories need its credential helpers).
   // Its tests must not: a system or global helper (macOS Git's osxkeychain) can wait on a prompt nobody
   // answers. So no system or global config, no prompt, no askpass, and no credential helper.
@@ -234,9 +234,12 @@ test("a timed-out hook's group member that ignores SIGTERM is SIGKILLed before t
   writeFileSync(join(fx.root, "hook-stubborn"), "");
   const r = wt(fx, home, ["add", "--purpose", "slow", "--branch", "agents/slow", "--base", "main", "--json"], { OATS_TEST_WORKTREE_HOOK_TIMEOUT_MS: "1500" });
   const stubborn = Number(readFileSync(join(fx.root, "hook-stubborn-pid"), "utf8"));
-  endGroupAfter(fx, Number(readFileSync(join(fx.root, "hook-stubborn-pgid"), "utf8")), stubborn);
+  const pgid = Number(readFileSync(join(fx.root, "hook-stubborn-pgid"), "utf8"));
+  endGroupAfter(fx, pgid, stubborn);
   assert.equal(r.json().error.code, "E_REQUIRED_HOOK_FAILED");
   assert.equal(alive(stubborn), false, "the SIGTERM-ignoring member is gone when add answers");
+  // The kernel ended the whole group, not only that member (the test's own end runs only after this).
+  assert.ok(await waitFor(() => !alive(-pgid), 2000), `the timed-out hook's process group ${pgid} is empty`);
 });
 
 /** The CLI as a child we can signal: → { child, done: Promise<{ status, signal, stdout, stderr }> }. */
