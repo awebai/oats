@@ -208,7 +208,8 @@ test("before `oats sync` a package's capabilities are not in the catalog: UNKNOW
 test("a member capability: the full document at the catalog row's commit; paths relative to the capability; the inject exactly as committed", () => {
   const doc = ok(show("acme.tool"));
   const row = catalogRows.find((r) => r.name === "acme.tool");
-  assert.deepEqual(Object.keys(doc), ["capabilityShowApi", "name", "kind", "repoKey", "package", "version", "commit", "path", "inject", "skills", "problems"]);
+  assert.deepEqual(Object.keys(doc), ["capabilityShowApi", "name", "kind", "repoKey", "package", "version", "commit", "path", "inject", "skills", "problems", "warnings"]);
+  assert.deepEqual(doc.warnings, [], "a capability that declares nothing this kernel ignores: none");
   assert.deepEqual({ api: doc.capabilityShowApi, name: doc.name, kind: doc.kind, repoKey: doc.repoKey, package: doc.package, version: doc.version, path: doc.path },
     { api: 1, name: "acme.tool", kind: "member", repoKey: fx.key, package: null, version: null, path: "capabilities/acme.tool" });
   assert.equal(doc.commit, row.commit, "the catalog row's commit");
@@ -243,7 +244,7 @@ test("a package capability: read at the locked commit; repoKey is the repo it is
   assert.deepEqual(doc.skills.map((s) => s.name), row.skills);
   const file = ok(show("acme-tool", "--package", "acme.pkg", "--file", "skills/tool-skill/SKILL.md"));
   assert.deepEqual(file, { capabilityShowApi: 1, name: "acme-tool", kind: "package", commit: lock.commit,
-    file: { path: "skills/tool-skill/SKILL.md", bytes: size(PKG_SKILL), text: PKG_SKILL, binary: false, truncated: false } });
+    file: { path: "skills/tool-skill/SKILL.md", bytes: size(PKG_SKILL), text: PKG_SKILL, binary: false, truncated: false }, warnings: [] });
 });
 
 test("every catalog row answers, at its commit, with the catalog's skills (null exactly when the catalog's are)", () => {
@@ -324,7 +325,7 @@ test("a skill with 201 files lists the first 200 (codepoint order), filesTruncat
 
 test("--file: a listed file's text, binary, exactly the limit, cut on a code point boundary; the inject; over the read budget refused by the remote", () => {
   const head = { capabilityShowApi: 1, name: "acme.tool", kind: "member", commit: catalogRows.find((r) => r.name === "acme.tool").commit };
-  const file = (path) => { const d = ok(show("acme.tool", "--file", path)); assert.deepEqual(Object.keys(d), ["capabilityShowApi", "name", "kind", "commit", "file"]); assert.deepEqual({ ...d, file: undefined }, { ...head, file: undefined }); assertTextInvariants(d.file, path); return d.file; };
+  const file = (path) => { const d = ok(show("acme.tool", "--file", path)); assert.deepEqual(Object.keys(d), ["capabilityShowApi", "name", "kind", "commit", "file", "warnings"]); assert.deepEqual({ ...d, file: undefined }, { ...head, file: undefined, warnings: [] }); assertTextInvariants(d.file, path); return d.file; };
   assert.deepEqual(file("skills/alpha/ref/nested/deep.md"), { path: "skills/alpha/ref/nested/deep.md", bytes: 5, text: "deep\n", binary: false, truncated: false });
   assert.deepEqual(file("injects/tool.md"), { path: "injects/tool.md", bytes: Buffer.byteLength(INJECT), text: INJECT, binary: false, truncated: false });
   assert.deepEqual(file("skills/beta/data.bin"), { path: "skills/beta/data.bin", bytes: 4, text: null, binary: true, truncated: false });

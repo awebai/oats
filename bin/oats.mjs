@@ -223,7 +223,8 @@ async function doctorComposition(ctx, soulName, ws, bail) {
     const pv = await previewWorkspaceSoul(prepared, root);
     cleanups.push(pv.cleanup);
     const { text, blocks, resolved, oatsCoreDeclared } = await composeSoulInstructions({ deployment, prepared, soulDir: pv.soulDir });
-    return { text, blocks, resolved, oatsCoreDeclared };
+    const { resolutionContractWarnings } = await import("../lib/instance-resolution.mjs");
+    return { text, blocks, resolved, oatsCoreDeclared, warnings: resolutionContractWarnings(prepared.resolution) };
   } catch (e) {
     if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details);
     throw e;
@@ -276,6 +277,41 @@ async function doctorOperator(ws) {
   const unknown = found.find((p) => p.code === "operator-coverage-unknown");
   if (unknown) return { problems: [], information: [`${unknown.code}: ${unknown.message}; ${unknown.remedy}`] };
   return { problems: found.map(({ code, label, message, remedy }) => ({ code, ...(label ? { label } : {}), message, remedy })), information: [] };
+}
+
+/** What the deployment's capabilities declare and this kernel ignores (an unknown hook event), for
+ *  doctor without --soul, OFFLINE like doctorOperator: every capability the cached discovery lists for a
+ *  confirmed member, and every capability of every locked package, from this machine's parsed cache.
+ *  What the cache cannot answer is said to be unchecked (information, `hook-events-unchecked`), never
+ *  read as "no warning". → { warnings: [{ code, capability, path, message }], information } */
+async function doctorHookWarnings(ws) {
+  const { cacheOnlyRemote } = await import("../lib/operator-coverage.mjs");
+  const { discoverOrStandalone } = await import("../lib/instance-resolution.mjs");
+  const { lockedPackageCapabilities } = await import("../lib/resolve.mjs");
+  const { capabilityContractWarnings } = await import("../lib/workspace.mjs");
+  const { locatedContractWarnings } = await import("../lib/capability-contract.mjs");
+  const deployment = dirname(ws.local.path);
+  const remote = cacheOnlyRemote();
+  const remoteOptions = remoteOptionsFromEnv();
+  const warnings = [], information = [];
+  const unchecked = (what, e) => information.push(`hook-events-unchecked: ${what} not checked for hook events this kernel does not run: ${e?.code === "E_REMOTE_UNREADABLE" ? `this machine's cache cannot answer (${e.message})` : `${e?.code ? `${e.code}: ` : ""}${e?.message ?? e}`}; oats sync, then run doctor again`);
+  let lock = null;
+  try { lock = readLockIfPresent(deployment); } catch { lock = null; } // an invalid lock is doctor's own problem, reported above
+  try {
+    const discovery = await discoverOrStandalone(ws.local.value, { lock, deployment, remoteOptions, remote });
+    const members = discovery.members || [];
+    warnings.push(...capabilityContractWarnings(members.filter((m) => m.confirmed || discovery.standalone === true).flatMap((m) => m.capabilities || [])));
+    // The standalone view's own member is unconfirmed by construction, yet read (its capabilities are above).
+    for (const m of discovery.standalone === true ? [] : members.filter((x) => x.confirmed === false && x.reason === "cannot-read")) unchecked(`member ${m.key}'s capabilities were`, { message: m.detail || "it could not be read" });
+  } catch (e) { unchecked("member capabilities were", e); }
+  let catalog = null; try { catalog = officialPackageCatalog(); } catch { catalog = null; }
+  for (const [id, entry] of Object.entries(lock?.packages || {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    try {
+      const { capabilities } = await lockedPackageCapabilities(id, entry, { catalog, remote, remoteOptions });
+      for (const c of capabilities) warnings.push(...locatedContractWarnings(c.manifest, `package:${id}:${c.dir}/oats.json`));
+    } catch (e) { unchecked(`package ${id}'s capabilities were`, e); }
+  }
+  return { warnings, information };
 }
 
 /** Workspace-model v2 doctor data, OFFLINE: the deployment declaration found
@@ -478,6 +514,7 @@ function printWorkspaceInspect(doc) {
   for (const l of LAYERS) console.log(`  ${l} capability: ${doc.layers[l].id || "none"}`);
   for (const c of doc.capabilities) console.log(`  ${c.id}@${c.version || "?"} ${c.from?.kind === "package" ? `package ${c.from.package}` : c.from?.kind === "member" ? `member ${c.from.repoKey}` : ""}${c.operations.length ? `  ops: ${c.operations.map((o) => `${o.name}${o.available ? "" : "(unavailable)"}`).join(", ")}` : ""}`);
   for (const p of doc.problems) console.log(`  ! ${p.code}: ${p.message}`);
+  for (const w of doc.warnings) console.log(`  warning  ${w.code}  ${w.message}`);
   const composed = doc.souls[0].composedInstructions;
   if (composed !== undefined) console.log(composed ? `\nComposed AGENTS.md (a spawn here, resolution ${composed.resolution ?? "?"}${composed.truncated ? ", truncated" : ""}):\n\n${composed.text}` : "\nComposed AGENTS.md: unavailable (see the problems above)");
 }
@@ -652,14 +689,17 @@ async function doctorWorkspaceJson(ctx, soulName, ws) {
   const localTeams = doctorLocalTeams(ws.local.value);
   const schedules = unresolvedScheduleAttempts(dirname(ws.local.path));
   const operator = await doctorOperator(ws);
+  // With --soul, the soul's composition; without, the deployment's capabilities (doctorHookWarnings).
+  const hookEvents = composition ? { warnings: composition.warnings, information: [] } : await doctorHookWarnings(ws);
   const problems = [...legacyLayoutProblems(agentsRoot), readableInstanceHomes(agentsRoot), ...localTeams.problems, ...schedules.problems, ...operator.problems].filter(Boolean);
   return {
     schemaVersion: 1, workspaceApi: 2, context: ctx,
     workspace: { file: ws.local.path, ref: ws.local.workspace },
     workspaceError: ws.localError, lockFile: ws.lockFile, packages: ws.packages, lockError: ws.lockError,
-    information: [...(operationalKnowledgeNote(composition, soulName) ? [operationalKnowledgeNote(composition, soulName)] : []), ...localTeams.information, ...schedules.information, ...operator.information],
+    information: [...(operationalKnowledgeNote(composition, soulName) ? [operationalKnowledgeNote(composition, soulName)] : []), ...localTeams.information, ...schedules.information, ...operator.information, ...hookEvents.information],
     composedInstructions: composition?.text, instructionBlocks: composition?.blocks,
     ...(problems.length ? { problems } : {}),
+    warnings: hookEvents.warnings,
   };
 }
 /** Kernel/bridge version skew (published in lockstep from one tag). */
@@ -699,7 +739,9 @@ async function doctor(dir) {
   for (const p of schedules.problems) console.log(`\n! ${p.code}: ${p.message}`);
   const operator = await doctorOperator(ws);
   for (const p of operator.problems) console.log(`\n! ${p.code}: ${p.message}\n  ${p.remedy}`);
-  for (const line of [...localTeams.information, ...schedules.information, ...operator.information]) console.log(`\nINFO: ${line}`);
+  const hookEvents = composition ? { warnings: composition.warnings, information: [] } : await doctorHookWarnings(ws);
+  for (const w of hookEvents.warnings) console.log(`\nwarning  ${w.code}  ${w.message}`);
+  for (const line of [...localTeams.information, ...schedules.information, ...operator.information, ...hookEvents.information]) console.log(`\nINFO: ${line}`);
   if (soulName) {
     const information = operationalKnowledgeNote(composition, soulName);
     if (information) console.log(`\nINFO: ${information}`);
@@ -1145,6 +1187,7 @@ async function readinessCmd() {
       for (const i of check.items) console.log(`    ${i.status.padEnd(14)} ${i.subject}${i.required ? "" : " (optional)"}${i.reason ? ` — ${i.reason}` : ""}${i.remedy ? `  → ${i.remedy}` : ""}`);
     }
     if (doc.policy) console.log(`  policy: child spawns ${doc.policy.childSpawns.allowed ? "allowed" : "disabled"} (${doc.policy.childSpawns.origin.kind}${doc.policy.childSpawns.enforced ? ", enforced" : ""}); worktrees ${doc.policy.worktrees.allowed === null ? "unknown" : doc.policy.worktrees.allowed ? "allowed" : "not in this work mode"}`);
+    for (const w of doc.warnings) console.log(`  warning  ${w.code}  ${w.message}`);
     for (const n of doc.notes) console.log(`  note: ${n}`);
     return;
   }
@@ -1959,6 +2002,8 @@ async function capabilityShowCmd(bail) {
       process.stdout.write(f.text.endsWith("\n") || f.text === "" ? f.text : `${f.text}\n`);
       if (f.truncated) console.log(`(${f.path}: truncated — ${formatBytes(f.bytes)}, the first ${formatBytes(S.TEXT_LIMIT)} shown)`);
     }
+    // The file's text is stdout's alone: a warning goes to stderr.
+    for (const w of doc.warnings) console.error(`warning  ${w.code}  ${w.message}`);
     return;
   }
   console.log(`${doc.name} — ${doc.kind === "member" ? `member ${doc.repoKey}` : `package ${doc.package} v${doc.version} (${doc.repoKey})`} @ ${short(doc.commit)}, ${doc.path}\n`);
@@ -1976,6 +2021,7 @@ async function capabilityShowCmd(bail) {
     }
   }
   for (const p of doc.problems) console.log(`  problem: ${p.code}${p.path ? ` ${p.path}` : ""} — ${p.message}`);
+  for (const w of doc.warnings) console.log(`  warning  ${w.code}  ${w.message}`);
   console.log(`\n  a file's text: oats capabilities show ${doc.name}${doc.kind === "package" ? ` --package ${doc.package}` : ""} --file <path>`);
 }
 
@@ -2531,6 +2577,7 @@ async function spawnCmd() {
       if (prepared) r.soulFetched = soulFetched;
       if (JSON_MODE) { jsonOk(withObservation(r)); return; }
       console.log(`preview ${r.agent} → ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch} from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}) harness ${r.harness}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}${r.launchConfig ? ` via launch configuration ${r.launchConfig}${r.launchConfigDefault ? ` (this machine's ${r.harness} default)` : ""}` : ""}${r.yolo ? " YOLO" : ""}; nothing was created${soulFetched ? " (the soul source was fetched to a temporary copy, not kept)" : ""}`);
+      for (const w of r.warnings || []) console.log(`  WARNING: ${w}`);
       return;
     }
   } catch (e) {

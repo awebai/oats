@@ -408,6 +408,25 @@ test("a package capability manifest that breaks the kernel contract is E_PACKAGE
     (e) => e.code === "E_PACKAGE_MANIFEST" && e.details.pointer === "/hooks/launch/required" && /hook "launch" cannot be required/.test(e.message));
 });
 
+test("a package capability's unknown hook event (0.49.0): read when not required, E_PACKAGE_MANIFEST when required or malformed", async () => {
+  const declaring = (key, hooks) => {
+    const repo = new FakeRepo(key);
+    const commit = repo.commit("1", {
+      "oats-package/oats-package.json": JSON.stringify({ package: "x.fut", version: "1.0.0", capabilities: ["capabilities/tool"] }),
+      "oats-package/capabilities/tool/oats.json": JSON.stringify({ capability: "x.tool", version: "1.0.0", description: "d", hooks }),
+    });
+    return readPackageManifests(fakeRemote([repo]), repo.url, commit, "oats-package");
+  };
+  for (const [i, declaration] of ["bin/t.mjs", { command: "bin/t.mjs" }, { command: "bin/t.mjs", required: false }].entries()) {
+    const read = await declaring(`github.com/x/fut-${i}`, { spawn: "bin/t.mjs spawn", worktree: declaration });
+    assert.deepEqual(read.capabilities.map((c) => c.name), ["x.tool"], JSON.stringify(declaration));
+  }
+  await assert.rejects(declaring("github.com/x/fut-req", { worktree: { command: "bin/t.mjs", required: true } }),
+    (e) => e.code === "E_PACKAGE_MANIFEST" && e.details.pointer === "/hooks/worktree" && e.message === 'oats-package/capabilities/tool/oats.json#/hooks/worktree: capability x.tool declares unsupported hook "worktree" (soul-scaffold, spawn, retire, launch)');
+  await assert.rejects(declaring("github.com/x/fut-bad", { worktree: { command: "bin/t.mjs", when: "x" } }), (e) => e.code === "E_PACKAGE_MANIFEST" && e.details.pointer === "/hooks/worktree");
+  await assert.rejects(declaring("github.com/x/fut-esc", { worktree: "../t.mjs" }), (e) => e.code === "E_PACKAGE_MANIFEST" && /escapes the capability directory/.test(e.message));
+});
+
 test("a package capability's retirement.disposable.home entry is refused as E_PACKAGE_MANIFEST at the entry's own pointer; sound entries are read", async () => {
   // One package per entry: the first manifest that breaks the contract ends the read.
   const packageDeclaring = (key, home) => {

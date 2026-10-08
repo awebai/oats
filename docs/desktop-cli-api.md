@@ -374,6 +374,7 @@ An instance subject, abridged:
 | `instance` | `null` for a soul; the home's facts above. `instructions.sources` lists each composed inject in order |
 | `identity` | home only (absent for a soul): the served identity a messaging provider recorded, `{…, provider}`, or `null`. Read on every call, so after a start whose launch hook returned new `meta` it is that start's record, not the spawn's |
 | `problems` | below |
+| `warnings` | always present (0.49.0): [capability warnings](#capability-warnings-hook-event-unsupported-oats-0490); for `--home`, `path` is home-relative |
 
 **Soul row** (`soulsApi: 2`). For a home it is read from the recorded
 `soulDir` (`path` and `kind` are `null`); for a soul it is the member's current
@@ -496,6 +497,9 @@ oats readiness (--home <abs> | --soul <name> [--dir <d>]) [--policy] --json
   ready}` (`ready` also needs no subject blocker). `subjectBlockers[]` is
   `{check, subject, status}` for each failing required item not about a
   capability. `notes` is prose.
+- `warnings` (0.49.0) is always present: the
+  [capability warnings](#capability-warnings-hook-event-unsupported-oats-0490)
+  of the subject's capabilities. They are not items and change no status.
 
 **`installed`**, one item per module with `evidence: {from}`. `--home`
 (producer `instance modules`): passes when the home's copy holds `oats.json`
@@ -759,7 +763,10 @@ applies: gate `sync --plan` on `version` 0.44.0 or later, never by trying.
   "no-catalog", catalog, path, message}`), `E_AUTOMATION_SCHEMA` and
   `E_AUTOMATION_DUPLICATE` (with `kind`). A problem never aborts the sync.
 - `warnings[]`: `soul-private-ignored {code, soul, repoKey, path, message}`
-  for a soul.yaml still carrying `private`.
+  for a soul.yaml still carrying `private`; then (0.49.0)
+  `hook-event-unsupported {code, capability, path, message}` per hook event a
+  listed member capability declares and this kernel does not run
+  ([capability warnings](#capability-warnings-hook-event-unsupported-oats-0490)).
 - Errors: `E_LOCAL_MISSING`, `E_WORKSPACE_SCHEMA {path, problems}`,
   `E_REMOTE_UNREADABLE`, `E_LOCK_SCHEMA`, `E_PACKAGE_MISSING`,
   `E_PACKAGE_INTEGRITY`, `E_PACKAGE_MANIFEST`, `E_REPO_REF`, `E_BAD_ARGS`.
@@ -987,6 +994,11 @@ nothing reads a working clone.
   is a list of `{name, path, description, files, filesTruncated}`, each file
   `{path, bytes}`, or `null`. `problems` is a list of `{code, message,
   path}`.
+- `warnings` (0.49.0) is always present, on the show and the `--file`
+  answer: the capability's
+  [capability warnings](#capability-warnings-hook-event-unsupported-oats-0490).
+  Their `path` is the repository-relative form, unlike the paths above. The
+  text form prints them (to stderr with `--file`).
 - With `--max-age` (`0` included) both the show and the `--file` answer gain
   the [`observation`](#observation-reuse-feature-observe-max-age-oats-0311)
   block `{observedAt, reused, localRevision}`.
@@ -1086,6 +1098,37 @@ problems. `--file` prints the text; a binary file prints a one-line note
 instead, and a truncated file prints its text followed by a one-line note.
 
 <a id="desktop-facts-feature-desktop-facts-oats-0290"></a>
+### Capability warnings (`hook-event-unsupported`, OATS 0.49.0)
+
+A capability may declare a hook event this kernel does not run (a newer
+kernel's). It composes, the event never runs, and each answer that shows the
+capability carries one warning per such event
+([capabilities.md](capabilities.md#manifest)):
+
+```json
+{"code":"hook-event-unsupported","capability":"acme.tool",
+ "path":"github.com/acme/agents:capabilities/acme-tool/oats.json#/hooks/worktree",
+ "message":"capability acme.tool declares hook \"worktree\", which this kernel does not run; it is ignored (this kernel runs soul-scaffold, spawn, retire, launch)"}
+```
+
+| Answer | Where | Covers |
+|---|---|---|
+| `oats sync`, `oats workspace status` | `warnings[]`, beside `soul-private-ignored` | every listed member capability |
+| `oats capabilities show` (and `--file`) | `warnings[]`, always present | the capability shown |
+| `oats inspect`, `oats readiness` | `warnings[]`, always present | `--soul`: the soul's resolved modules; `--home`: the home's module copies |
+| `oats doctor --json` | `warnings[]` | `--soul`: the soul's resolved modules; without it, every member capability and every locked package's, from this machine's cache |
+| `oats spawn --preview`, `oats spawn` | `warnings[]`, strings | the message of each, for the soul's resolved modules |
+
+`path` is never an absolute host path. It is `<repoKey>:<dir>/oats.json#<pointer>`
+for a member capability, `package:<id>:<dir>/oats.json#<pointer>` for a
+package capability (`<dir>` relative to the repository), and, for `--home`,
+`.oats/modules/<name>/oats.json#<pointer>`, relative to the home: the copy
+actually read. Without `--soul`, doctor reads only this machine's cache; what
+it cannot answer is one `information[]` line `hook-events-unchecked: <member
+capabilities | package <id>'s capabilities> were not checked …`, never an
+empty list read as "no warning". Older kernels answer no such `warnings` key
+(inspect, readiness, show, doctor) and refuse the capability instead.
+
 ### Desktop facts
 
 Feature `desktop-facts`: facts the kernel reports so the Desktop never derives
@@ -1742,6 +1785,10 @@ it to a temporary copy (`soulFetched: true`).
   cannot be); otherwise `HEAD`. `E_BRANCH_EXISTS` and `E_BASE_UNKNOWN` refuse
   preview and apply alike.
 - `subject` echoes `{soul, agentsRoot, dir}` byte-exact.
+- `warnings`, present only when there is one, is an array of strings: the
+  launch-prompt notice, and (0.49.0) the message of each
+  [capability warning](#capability-warnings-hook-event-unsupported-oats-0490)
+  of the resolved modules. The apply's `warnings` carries the same messages.
 
 **Launch.**
 - `harness`, `model`, `modelSource`, `launchConfig`, `backend`, `yolo`

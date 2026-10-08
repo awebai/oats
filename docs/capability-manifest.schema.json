@@ -261,7 +261,8 @@
         "retire": {"$ref":"#/$defs/OptionalHook"},
         "launch": {"$ref":"#/$defs/OptionalHook"}
       },
-      "additionalProperties": false
+      "additionalProperties": {"$ref":"#/$defs/OptionalHook"},
+      "description": "Lifecycle events to commands. An event this kernel does not run (a newer kernel's) is accepted with a warning and ignored, unless it is declared required: that is refused. Kernels before 0.49.0 refuse every unknown event."
     },
     "settings": {
       "type": "object",
