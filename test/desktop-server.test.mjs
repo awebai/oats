@@ -160,6 +160,38 @@ test("desktop server: no route reads a pane, types into it or reads its session 
   } finally { proc.kill(); rmSync(scope, { recursive: true, force: true }); }
 });
 
+test("desktop server: no dedicated harvest route: POST /api/harvest/<name> answers as an unknown route does (#818)", async (t) => {
+  const { scope, home } = northwindDeployment();
+  const { port, proc, post, calls } = await startServer(scope);
+  try {
+    const loopback = { origin: `http://127.0.0.1:${port}` };
+    const unknown = await post("/api/no-such-route", {}, loopback);
+    assert.equal(unknown.status, 404);
+    const notFound = await unknown.json();
+    assert.deepEqual(notFound, { error: "not found" });
+    // An unknown name and the deployment's own instance, bare and qualified as a row would address it: the
+    // path is no route at all, so nothing resolves the name (an unknown one would answer 'unknown instance').
+    const qualified = `?ws=${encodeURIComponent(scope)}&home=${encodeURIComponent(home)}`;
+    for (const [label, path] of [["an unknown name", "/api/harvest/x"], ["the deployment's own instance", `/api/harvest/${INSTANCE}`],
+      ["the deployment's own instance, qualified by ws and home", `/api/harvest/${INSTANCE}${qualified}`]]) {
+      await t.test(`POST /api/harvest/<name>, ${label}, answers as an unknown route does`, async () => {
+        const answer = await post(path, {}, loopback);
+        assert.equal(answer.status, 404);
+        assert.deepEqual(await answer.json(), notFound);
+      });
+    }
+    assert.equal(calls().some((argv) => argv[0] === "operation"), false, "no provider operation ran");
+    // The guards run before routing: a foreign Origin, and a non-loopback Host (a raw request: fetch cannot set it).
+    assert.equal((await post(`/api/harvest/${INSTANCE}`, {}, { origin: "http://evil.com" })).status, 403);
+    const hostStatus = await new Promise((resolve, reject) => {
+      const rq = httpRequest({ host: "127.0.0.1", port, path: `/api/harvest/${INSTANCE}`, method: "POST",
+        headers: { "content-type": "application/json", host: "evil.com" } }, (rs) => { rs.resume(); resolve(rs.statusCode); });
+      rq.on("error", reject); rq.end("{}");
+    });
+    assert.equal(hostStatus, 403, "a non-loopback Host is refused before routing");
+  } finally { proc.kill(); rmSync(scope, { recursive: true, force: true }); }
+});
+
 test("desktop server: the roster, header and souls are the kernel's status/workspace-status JSON", async () => {
   const { scope, home } = northwindDeployment();
   const { proc, panel, get, calls } = await startServer(scope);
@@ -293,8 +325,8 @@ test("desktop server: /api/brain never returns skills from symlinks escaping the
   } finally { proc.kill(); rmSync(scope, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }); }
 });
 
-test("desktop server: harvestHome admits only the exact kernel-reported home inside its deployment", () => {
-  const src = extractBlock(SRV, "HARVESTHOME");
+test("desktop server: verifiedLocalHome admits only the exact kernel-reported home inside its deployment", () => {
+  const src = extractBlock(SRV, "VERIFIEDLOCALHOME");
   const { scope, home } = northwindDeployment();
   const outside = realpathSync(mkdtempSync(join(tmpdir(), "oatsweb-hh-outside-")));
   const evil = join(outside, "instances", "evil-1"); mkdirSync(evil, { recursive: true });
@@ -303,17 +335,17 @@ test("desktop server: harvestHome admits only the exact kernel-reported home ins
   const snapshot = { byWs: new Map([[scope, { instances: [
     { instance: INSTANCE, home }, { instance: "link-1", home: escaping }, { instance: "evil-1", home: evil },
   ] }]]) };
-  const harvestHome = new Function("realpathSync", "basename", "dirname", "sep", "deployments", "snapshot", `${src}; return harvestHome;`)(
+  const verifiedLocalHome = new Function("realpathSync", "basename", "dirname", "sep", "deployments", "snapshot", `${src}; return verifiedLocalHome;`)(
     realpathSync, basename, dirname, sep, () => [{ id: scope }], snapshot);
   try {
-    assert.equal(harvestHome({ instance: INSTANCE, home }), home, "the reported home is accepted");
-    assert.equal(harvestHome({ instance: "other-1", home: unreported }), null, "an in-layout home the kernel did not report is rejected");
-    assert.equal(harvestHome({ instance: "link-1", home: escaping }), null, "a reported home canonicalizing outside the deployment is rejected");
-    assert.equal(harvestHome({ instance: "evil-1", home: evil }), null, "a reported home outside the deployment is rejected");
-    assert.equal(harvestHome({ instance: "other-name", home }), null, "basename/instance mismatch rejected");
-    assert.equal(harvestHome({ instance: INSTANCE, home, server: "remote" }), null, "remote rows never grant a local cwd");
-    assert.equal(harvestHome({ instance: INSTANCE }), null, "missing home rejected");
-    assert.equal(harvestHome({ instance: INSTANCE, home: 42 }), null, "non-string home rejected");
+    assert.equal(verifiedLocalHome({ instance: INSTANCE, home }), home, "the reported home is accepted");
+    assert.equal(verifiedLocalHome({ instance: "other-1", home: unreported }), null, "an in-layout home the kernel did not report is rejected");
+    assert.equal(verifiedLocalHome({ instance: "link-1", home: escaping }), null, "a reported home canonicalizing outside the deployment is rejected");
+    assert.equal(verifiedLocalHome({ instance: "evil-1", home: evil }), null, "a reported home outside the deployment is rejected");
+    assert.equal(verifiedLocalHome({ instance: "other-name", home }), null, "basename/instance mismatch rejected");
+    assert.equal(verifiedLocalHome({ instance: INSTANCE, home, server: "remote" }), null, "remote rows never grant a local cwd");
+    assert.equal(verifiedLocalHome({ instance: INSTANCE }), null, "missing home rejected");
+    assert.equal(verifiedLocalHome({ instance: INSTANCE, home: 42 }), null, "non-string home rejected");
   } finally { rmSync(scope, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }); }
 });
 

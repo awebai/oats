@@ -143,7 +143,7 @@ test("common: instanceApiPath carries the home qualifier for object refs (merged
     const p2 = common.instanceApiPath("restart", { instance: "dev-1", home: "/h" }, "limit=200");
     assert.equal(p2, `/api/restart/dev-1?limit=200&home=${encodeURIComponent("/h")}&ws=w1`);
     // legacy string ref unchanged
-    assert.equal(common.instanceApiPath("harvest", "solo"), "/api/harvest/solo?ws=w1");
+    assert.equal(common.instanceApiPath("start", "solo"), "/api/start/solo?ws=w1");
   } finally { common.setWorkspace(prev); }
 });
 

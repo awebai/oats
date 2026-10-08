@@ -40,7 +40,7 @@ async function harness() {
     cliState: CLI, cliProbeGeneration: 1, DEBUG: false, BACKGROUND_MAX_AGE: 60,
     adapter: { cliStart: async (bin, args) => { effects.push({ kind: 'start', args: [args] }); return { ok: true, result: { started: true } }; } },
     locator: { requireRemoteSupport: () => {} }, harnessFlag: () => 'harness', canAddressRemote, unaddressableSentence,
-    harvestHome: inst => inst.home, dirname: p => p.slice(0, p.lastIndexOf('/')),
+    verifiedLocalHome: inst => inst.home, dirname: p => p.slice(0, p.lastIndexOf('/')),
     observeMutation: () => {}, refreshRemoteSnapshot: () => {}, remoteLoop: { request: () => {} },
     tmuxTarget: inst => `=${inst.tmux.session}:=${inst.tmux.window}`,
     agentsData: () => ({ agents: [] }), spawnPreviewCache: { invalidate: () => {} }, inspectCache: { invalidate: () => {} }, capabilityCatalogKey: () => null,
@@ -65,7 +65,7 @@ async function harness() {
 }
 
 const named = [
-  ['start', 'POST', {}], ['restart', 'POST', {}], ['harvest', 'POST'],
+  ['start', 'POST', {}], ['restart', 'POST', {}],
 ];
 const instanceSelector = (deployment, name) => ({ instance: name, agent: 'dev', agentsRoot: `${deployment}/agents`, server: null });
 /** The body-addressed families: [path, body for B's dev-b]. */
@@ -107,7 +107,6 @@ test('the row\'s deployment id resolves the named instance routes inside that de
     assert.ok(h.effects.length > 0, kind);
     for (const e of h.effects) assert.ok(JSON.stringify(e.args).includes(HOME.B), `${kind} acted on B's dev-b: ${JSON.stringify(e)}`);
     if (kind === 'start' || kind === 'restart') assert.equal(h.effects[0].args[0].workspaceDir, B);
-    if (kind === 'harvest') assert.deepEqual(h.contexts, [{ route: 'capabilities', workspace: B, homes: [HOME.B] }], 'harvest admits B\'s own rows');
     // Another deployment of the same view does not hold it.
     h.reset();
     const other = await h.request({ url: `/api/${kind}/dev-b?ws=${enc(A)}&home=${enc(HOME.B)}`, method, body });

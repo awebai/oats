@@ -115,7 +115,6 @@ test('the shipped invalidation hooks: every mutation Desktop observes drops the 
   assert.match(block("path === '/api/workspace-teams'", "path === '/api/instance-lifecycle'"), /spawnPreviewCache\.invalidate\(id\)/);
   assert.match(block('path === "/api/launch-configs"', 'path === "/api/forge-connections"'), /\['set', 'remove'\]\.includes\(request\?\.action\)\) spawnPreviewCache\.invalidate\(workspace\.id\)/);
   assert.match(block('path === "/api/capabilities"', "path === '/api/automations'"), /request\?\.action === "run"\) spawnPreviewCache\.invalidate\(workspace\.id\)/);
-  assert.match(block('operation: "knowledge:harvest"', 'return send(res, 200, result)'), /spawnPreviewCache\.invalidate\(workspace\.id\)/);
   assert.match(block('async function reprobeCli(', '\n}\n'), /inspectCache\.clear\(\);.*spawnPreviewCache\.invalidate\(\)/);
   // /api/spawn apply: held previews go when it starts (before the broker runs) and again when it ends.
   const spawn = block('if (req.method === "POST" && path === "/api/spawn")', 'const remoteRequest');

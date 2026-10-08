@@ -110,7 +110,7 @@ test("instance routes: same name across TWO ROOTS in one workspace — home qual
     ["w2", { instances: [{ instance: "dev-1", home: "/other/agents/dev/instances/dev-1" }] }],
   ]));
   // exact home qualifier → precisely that instance (privileged routes:
-  // the harvest cwd and the home a start launches must never be the twin's)
+  // the home a start or restart launches must never be the twin's)
   assert.equal(findInstance("dev-1", "w1", twinA.home), twinA);
   assert.equal(findInstance("dev-1", "w1", twinB.home), twinB);
   // bare name with an intra-workspace twin → AMBIGUOUS sentinel, and the

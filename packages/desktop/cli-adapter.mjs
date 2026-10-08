@@ -20,8 +20,9 @@
 //   * Spawn argv is an ALLOWLIST — purpose/repo/work/harness/model only,
 //     values passed as separate argv entries (no interpolation). Anything
 //     else the renderer sends is dropped, never forwarded.
-//   * Harvest cwd is fixed by the privileged backend to the RESOLVED
-//     instance home (server-side lookup), never a caller path.
+//   * A provider operation names its instance by --home: the home of
+//     exactly one row the server reports (server/capabilities.mjs), never
+//     a caller path.
 import { execFile } from "node:child_process";
 import { mkdtempSync, openSync, writeSync, closeSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

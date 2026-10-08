@@ -267,7 +267,7 @@ test("desktop server: a CLI that prints a valid probe but exits nonzero (or hang
   } finally { r2.proc.kill(); }
 });
 
-test("desktop server: an unguarded local spawn is refused before the CLI; harvest addresses the exact instance home", async () => {
+test("desktop server: an unguarded local spawn is refused before the CLI; a provider's harvest addresses the exact instance home", async () => {
   const dir = mkdtempSync(join(tmpdir(), "oats-climut-"));
   const { bin, calls } = fakeCli(dir, { features: ["operations"], operationsApi: 2 });
   const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" });
@@ -285,26 +285,31 @@ test("desktop server: an unguarded local spawn is refused before the CLI; harves
     assert.equal(r.status, 409);
     assert.equal((await r.json()).code, "E_PLAN_REQUIRED");
     assert.equal(calls().some((c) => c.argv[0] === "spawn"), false, "the CLI is never asked to spawn from an unguarded local body");
-    // ---- harvest: pick a real instance from the panel; the bridge names the
-    // RESOLVED home explicitly and lets the CLI derive its recorded context
+    // ---- harvest is a provider operation run through the generic capabilities route (#818): pick a
+    // real instance from the panel; the bridge names its home explicitly and lets the CLI derive its
+    // recorded context
     const pd = await (await fetch(`http://127.0.0.1:${port}/api/panel`)).json();
     const inst = pd.instances.find((i) => i.home);
-    if (inst) {
-      const hr = await fetch(`http://127.0.0.1:${port}/api/harvest/${encodeURIComponent(inst.instance)}?ws=${encodeURIComponent(pd.workspace.id)}`, { method: "POST" });
-      assert.equal(hr.status, 200, JSON.stringify(await hr.clone().json()));
-      const hb = await hr.json();
-      assert.equal(hb.result.status, "empty");
-      assert.equal(hb.result.processed, true);
-      const harvestCall = calls().find((c) => c.argv[0] === "operation");
-      assert.deepEqual(harvestCall.argv, ["operation", "run", "knowledge:harvest", "--home", inst.home, "--json"]);
-    }
-    // unknown instance → 404, CLI never invoked for it
-    const h404 = await fetch(`http://127.0.0.1:${port}/api/harvest/no-such-instance`, { method: "POST" });
-    assert.equal(h404.status, 404);
+    assert.ok(inst, "the fixture roster has an instance with a home");
+    const run = (home) => fetch(`http://127.0.0.1:${port}/api/capabilities?ws=${encodeURIComponent(pd.workspace.id)}`, { method: "POST",
+      headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "run", selector: { home }, operation: "knowledge:harvest" }) });
+    const hr = await run(inst.home);
+    assert.equal(hr.status, 200, JSON.stringify(await hr.clone().json()));
+    const hb = await hr.json();
+    assert.equal(hb.result.status, "empty");
+    assert.equal(hb.result.processed, true);
+    const harvestCall = calls().find((c) => c.argv[0] === "operation");
+    assert.deepEqual(harvestCall.argv, ["operation", "run", "knowledge:harvest", "--home", inst.home, "--json"]);
+    // a home the roster does not report is refused, and the CLI is never invoked for it
+    const before = calls().length;
+    const unknown = await run(join(dirname(inst.home), "no-such-instance"));
+    assert.equal(unknown.status, 409);
+    assert.equal((await unknown.json()).code, "E_BAD_ARGS");
+    assert.equal(calls().length, before);
   } finally { proc.kill(); }
 });
 
-test("desktop server: a kernel-reported home outside the soul's instances directory cannot steer the harvest cwd (review 53a20c7 blocker)", async () => {
+test("desktop server: a kernel-reported home outside the soul's instances directory cannot steer a start or a provider operation (review 53a20c7 blocker)", async () => {
   // The kernel's status copies instance.json through; a hostile file can make
   // it REPORT a steered home. The Desktop withholds that row (counted in the
   // header), so no privileged route can address it and the CLI never runs there.
@@ -330,9 +335,13 @@ test("desktop server: a kernel-reported home outside the soul's instances direct
     const name = fixture.agents[0].instances[0].instance;
     assert.equal(pd.instances.some((i) => i.home === steerTarget), false, "the steered home is never published");
     assert.deepEqual(pd.deployment.withheld, [{ agent: fixture.agents[0].name, instance: name, reason: "home-outside-soul" }]);
-    const hr = await fetch(`http://127.0.0.1:${port}/api/harvest/${name}?ws=${encodeURIComponent(pd.workspace.id)}`, { method: "POST" });
+    const hr = await fetch(`http://127.0.0.1:${port}/api/start/${name}?ws=${encodeURIComponent(pd.workspace.id)}`, { method: "POST" });
     assert.equal(hr.status, 404, "a withheld row is not addressable");
-    assert.equal(calls().some((c) => c.argv[0] === "operation" || c.argv.includes(steerTarget) || c.cwd === steerTarget), false,
+    const run = await fetch(`http://127.0.0.1:${port}/api/capabilities?ws=${encodeURIComponent(pd.workspace.id)}`, { method: "POST",
+      headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "run", selector: { home: steerTarget }, operation: "knowledge:harvest" }) });
+    assert.equal(run.status, 409, "nor is its steered home");
+    assert.equal((await run.json()).code, "E_BAD_ARGS");
+    assert.equal(calls().some((c) => c.argv[0] === "operation" || c.argv[0] === "session" || c.argv.includes(steerTarget) || c.cwd === steerTarget), false,
       "the steered home never reaches the CLI");
   } finally { proc.kill(); }
 });
@@ -390,7 +399,7 @@ test("desktop server: remote capability survives discovery and HTTP projection i
   } finally { proc.kill(); }
 });
 
-test("desktop server: remote roster, souls and harvest stay on the saved host route", async () => {
+test("desktop server: remote roster, souls and a provider's harvest stay on the saved host route", async () => {
   const dir = mkdtempSync(join(tmpdir(), "oats-remote-roster-"));
   const home = "/remote/project/agents/dev/instances/dev-one";
   const groups = [{ id: "host-abc", server: "host", label: "Remote host", registrationPresent: true,
@@ -419,8 +428,9 @@ test("desktop server: remote roster, souls and harvest stay on the saved host ro
     assert.equal(agents.agents[0].agentsRoot, "/remote/project/agents");
     assert.equal(agents.agents[0].server, "host");
     const qualifier = `?ws=remote%3Ahost-abc&home=${encodeURIComponent(home)}&server=host`;
-    const harvested = await fetch(`${base}/api/harvest/dev-one${qualifier}`, { method: "POST" });
-    assert.equal(harvested.status, 200);
+    const harvested = await fetch(`${base}/api/capabilities?ws=remote%3Ahost-abc`, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "run", selector: { home }, operation: "knowledge:harvest" }) });
+    assert.equal(harvested.status, 200, JSON.stringify(await harvested.clone().json()));
     const call = fake.calls().find((c) => c.argv[0] === "operation");
     assert.deepEqual(call.argv, ["operation", "run", "knowledge:harvest", "--server", "host", "--home", home, "--json"], "saved --server route and the exact remote --home");
     assert.notEqual(call.cwd, home, "remote home must never become a local process cwd");
@@ -443,7 +453,7 @@ test("desktop server: remote roster, souls and harvest stay on the saved host ro
     const remoteFiles = await fetch(`${base}/api/brain/dev?ws=remote%3Ahost-abc`);
     assert.equal(remoteFiles.status, 409, "a remote agent's files are never read from a local lookalike path");
     assert.equal((await remoteFiles.json()).code, "E_REMOTE_FILES");
-    assert.equal((await fetch(`${base}/api/harvest/dev-one?ws=remote%3Ahost-abc&home=${encodeURIComponent(home)}`, { method: "POST" })).status, 404, "missing server cannot select a remote instance");
+    assert.equal((await fetch(`${base}/api/start/dev-one?ws=remote%3Ahost-abc&home=${encodeURIComponent(home)}`, { method: "POST" })).status, 404, "missing server cannot select a remote instance");
     const retireCalls = fake.calls().filter((c) => c.argv[0] === "retire").length;
     fakeCli(dir, { remote: ["roster", "retire"], groups }); // downgrade: no exact-home feature
     await fetch(`${base}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });

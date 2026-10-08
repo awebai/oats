@@ -271,7 +271,7 @@ select.field:disabled { background-color: var(--surface-2); color: var(--faint);
 .oats-view .loading-block { display: flex; align-items: center; gap: 10px; justify-content: center;
                            padding: 48px 0; color: var(--muted); font-size: 13px; }
 
-/* ── cli degradation card (Spawn/Harvest without a compatible oats CLI) ── */
+/* ── cli degradation card (changes without a compatible oats CLI) ── */
 .oats-view .cli-card, .cli-card { background: var(--surface); border: 1px solid var(--warn); border-radius: 12px;
             padding: 14px 16px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 10px;
             max-width: 640px; font-size: 13px; color: var(--fg); }

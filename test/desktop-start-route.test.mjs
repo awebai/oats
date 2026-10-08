@@ -9,7 +9,7 @@ import { canAddressRemote, unaddressableSentence } from "../packages/desktop/ren
 const source = readFileSync(new URL("../packages/desktop/server/oats-web.mjs", import.meta.url), "utf8");
 const block = source.match(/\/\* OATSWEB_START_BEGIN[^]*?\*\/([^]*?)\/\* OATSWEB_START_END \*\//)?.[1];
 assert.ok(block);
-const invoke = new Function("inst", "cliState", "readBody", "harvestHome", "adapter", "locator", "dirname", "harnessFlag", "canAddressRemote", "unaddressableSentence",
+const invoke = new Function("inst", "cliState", "readBody", "verifiedLocalHome", "adapter", "locator", "dirname", "harnessFlag", "canAddressRemote", "unaddressableSentence",
   `return (async () => { const hm = [null, "start"], req = {}, res = {}, ctxs = ["/local"];
    const send = (_, status, body) => ({ status, body });
    const observeMutation = () => {}, refreshRemoteSnapshot = () => {}, url = { searchParams: new URLSearchParams("ws=/local") };
