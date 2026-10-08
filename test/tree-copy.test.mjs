@@ -11,7 +11,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import * as core from "../lib/core.mjs";
-import { copyTreeSafe } from "../lib/tree-copy.mjs";
+import { copyTreeSafe, entriesAsBytes } from "../lib/tree-copy.mjs";
 import { oatsError } from "../lib/errors.mjs";
 
 const write = (file, bytes) => { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, bytes); };
@@ -119,4 +119,47 @@ test("copyTreeSafe: verbatim symlinks, deterministic order, modes after children
   mkdirSync(fifoDir, { recursive: true });
   const mk = spawnSync("mkfifo", [join(fifoDir, "pipe")]);
   if (mk.status === 0) assert.throws(() => copyTreeSafe(fifoDir, join(t, "fifo-dest")), { code: "invalid-source" }, "FIFO");
+});
+
+/** Whether the file system under `dir` stores a name that is not valid UTF-8. Where it does not (APFS)
+ *  the test is skipped with the reason; on Linux that is a failure. */
+function namesAsBytesKept(t, dir) {
+  const probe = Buffer.concat([Buffer.from(join(dir, "probe-caf")), Buffer.from([0xe9])]);
+  try { writeFileSync(probe, ""); rmSync(probe); return true; }
+  catch (e) {
+    const reason = `the file system refuses a name that is not valid UTF-8 (${e.code}), as APFS does`;
+    assert.notEqual(process.platform, "linux", `this test is not skipped on Linux: ${reason}`);
+    t.skip(reason);
+    return false;
+  }
+}
+
+test("copyTreeSafe carries names that are not valid UTF-8 byte for byte, given its paths as strings or as Buffers, in the order of the names' bytes", (t) => {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-tree-copy-bytes-")));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  if (!namesAsBytesKept(t, base)) return;
+  const name = (text, ...bytes) => Buffer.concat([Buffer.from(text), Buffer.from(bytes)]);
+  const at = (...parts) => Buffer.concat(parts.flatMap((part, i) => (i ? [Buffer.from("/"), part] : [part])));
+  const src = Buffer.from(join(base, "src"));
+  mkdirSync(at(src, name("dir-", 0xe9)), { recursive: true });
+  writeFileSync(at(src, name("dir-", 0xe9), name("caf", 0xe9)), "inner\n");
+  writeFileSync(at(src, name("caf", 0xe8)), "e8\n");
+  writeFileSync(at(src, name("caf", 0xe9)), "e9\n");
+  symlinkSync(name("caf", 0xe9), at(src, name("link-", 0x80)));
+  const hexNames = (dir) => readdirSync(dir, { encoding: "buffer" }).map((n) => n.toString("hex")).sort();
+  for (const [what, from, to] of [["strings", join(base, "src"), join(base, "copy-text")], ["Buffers", src, Buffer.from(join(base, "copy-bytes"))]]) {
+    copyTreeSafe(from, to);
+    assert.deepEqual(hexNames(to), hexNames(src), `${what}: every top-level name, byte for byte`);
+    assert.equal(readFileSync(at(Buffer.from(to), name("caf", 0xe9)), "utf8"), "e9\n", `${what}: a file is opened by its own name`);
+    assert.equal(readFileSync(at(Buffer.from(to), name("caf", 0xe8)), "utf8"), "e8\n", `${what}: two names that read alike as text stay two files`);
+    assert.equal(readFileSync(at(Buffer.from(to), name("dir-", 0xe9), name("caf", 0xe9)), "utf8"), "inner\n", `${what}: a directory whose name is not UTF-8 is walked`);
+    assert.equal(readlinkSync(at(Buffer.from(to), name("link-", 0x80)), "buffer").toString("hex"), name("caf", 0xe9).toString("hex"), `${what}: a link named with such a byte keeps its target`);
+    assert.equal(core.exactTreeDigest(to.toString()), core.exactTreeDigest(join(base, "src")), `${what}: the copy digests like its source`);
+  }
+  // The order copyTreeSafe walks a directory in (entriesAsBytes): the names' bytes, compared as bytes.
+  const listed = join(base, "listed");
+  mkdirSync(listed);
+  const names = [name("b"), name("caf", 0xe9), name("a"), name("caf", 0xe8), name("B")];
+  for (const n of names) writeFileSync(at(Buffer.from(listed), n), "");
+  assert.deepEqual(entriesAsBytes(listed).map((e) => e.name.toString("hex")), [name("B"), name("a"), name("b"), name("caf", 0xe8), name("caf", 0xe9)].map((n) => n.toString("hex")), "entries in the order of their bytes (Buffer.compare)");
 });

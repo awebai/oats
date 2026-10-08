@@ -104,3 +104,67 @@ for (const [what, change] of CHANGES) {
     assert.notEqual(core.exactTreeDigest(variant), core.exactTreeDigest(source), `${what} is part of the digest`);
   });
 }
+
+test("a name that is not valid UTF-8: a tree and its copy digest alike, and a change of that one byte moves the digest", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "oats-copy-pair-"));
+  temporaryDirectories.push(root);
+  const named = (dir, byte) => Buffer.concat([Buffer.from(join(dir, "caf")), Buffer.from([byte])]);
+  const source = join(root, "source");
+  mkdirSync(source);
+  try { writeFileSync(named(source, 0xe9), "bytes\n"); }
+  catch (e) {
+    const reason = `the file system refuses a name that is not valid UTF-8 (${e.code}), as APFS does`;
+    assert.notEqual(process.platform, "linux", `this test is not skipped on Linux: ${reason}`);
+    t.skip(reason);
+    return;
+  }
+  const copy = join(root, "copy");
+  copyTreeSafe(source, copy);
+  assert.equal(core.exactTreeDigest(copy), core.exactTreeDigest(source), "the tree and its copy digest alike");
+  renameSync(named(copy, 0xe9), named(copy, 0xe8));
+  assert.notEqual(core.exactTreeDigest(copy), core.exactTreeDigest(source), "one byte of a name that reads alike as text is part of the digest");
+});
+
+// A worktree's byte digest (what a work copy is verified with) leaves out exact paths, never a name: the
+// worktree's own `.git` and that of each repository the copier rebuilds from a clone (awebai/oats#663).
+
+/** A worktree-shaped tree: its own `.git` file, a nested repository whose `.git` is a file, a repository
+ *  inside that one whose `.git` is a gitfile, and a dangling `.git` link in a directory of its own. */
+function worktreeTree(root) {
+  const work = join(root, "work");
+  mkdirSync(join(work, "a", "nested", "inner"), { recursive: true });
+  mkdirSync(join(work, "deep", "b"), { recursive: true });
+  writeFileSync(join(work, ".git"), "gitdir: /elsewhere/worktrees/work\n");
+  writeFileSync(join(work, "a", "nested", ".git"), "gitdir: /elsewhere/nested\n");
+  writeFileSync(join(work, "a", "nested", "file.txt"), "nested\n");
+  writeFileSync(join(work, "a", "nested", "inner", ".git"), "gitdir: /elsewhere/inner-a\n");
+  symlinkSync("missing-a", join(work, "deep", "b", ".git"));
+  return work;
+}
+
+test("worktreeGitPaths is the worktree's own .git and that of each repository the copier rebuilds, as exact paths", () => {
+  const root = mkdtempSync(join(tmpdir(), "oats-copy-pair-"));
+  temporaryDirectories.push(root);
+  const work = worktreeTree(root);
+  assert.deepEqual(core.worktreeGitPaths(work).map((path) => path.toString()), [".git", join("a", "nested", ".git")], "the repository inside the nested one and the dangling link are not in it");
+});
+
+for (const [what, change, moves] of [
+  ["a dangling .git link's target, at depth", (work) => { unlinkSync(join(work, "deep", "b", ".git")); symlinkSync("missing-b", join(work, "deep", "b", ".git")); }, true],
+  ["the gitfile of a repository inside a nested one", (work) => writeFileSync(join(work, "a", "nested", "inner", ".git"), "gitdir: /elsewhere/inner-b\n"), true],
+  ["a file of the nested repository", (work) => writeFileSync(join(work, "a", "nested", "file.txt"), "changed\n"), true],
+  ["the worktree's own .git", (work) => writeFileSync(join(work, ".git"), "gitdir: /another/place\n"), false],
+  ["a rebuilt repository's .git, a file in the source and a directory in the copy", (work) => { rmSync(join(work, "a", "nested", ".git")); mkdirSync(join(work, "a", "nested", ".git", "objects"), { recursive: true }); writeFileSync(join(work, "a", "nested", ".git", "HEAD"), "ref: refs/heads/main\n"); }, false],
+]) {
+  test(`worktreeBytes, with the source's Git directories, ${moves ? "moves" : "does not move"} when ${what} changes`, () => {
+    const root = mkdtempSync(join(tmpdir(), "oats-copy-pair-"));
+    temporaryDirectories.push(root);
+    const work = worktreeTree(root);
+    const gitPaths = core.worktreeGitPaths(work);
+    const copy = join(root, "copy");
+    copyTreeSafe(work, copy);
+    assert.equal(core.worktreeBytes(copy, gitPaths), core.worktreeBytes(work, gitPaths), "fixture premise: the copy digests like its source");
+    change(copy);
+    (moves ? assert.notEqual : assert.equal)(core.worktreeBytes(copy, gitPaths), core.worktreeBytes(work, gitPaths), `${what} ${moves ? "is" : "is not"} part of the digest`);
+  });
+}
