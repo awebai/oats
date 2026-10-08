@@ -200,8 +200,10 @@ when the timer cannot reach it.
   When a name needs cutting and the stem leaves no room even for `-<6 hex>`
   (a stem over 54 characters), the event is not spawned: it stays pending
   with `lastError.code: E_INSTANCE_NAME_INVALID`, naming the stem and its
-  length (a stem over 62 characters, too long for the preview's own numbered
-  name, is refused the same way, quoting the preview).
+  length. A stem over 62 characters is too long even for the preview's own
+  numbered name (`<stem>-1`): it is refused with the same code, as too long
+  for a triggered spawn, and the message quotes the preview's refusal (which
+  names that numbered name and its length, not the stem's).
   `oats trigger test <id> --json` shows each would-fire event's `instance` and
   `nameCut`. A failed preview fails the spawn the same way, with its own code.
 - **The event reaches the instance** as `OATS_TRIGGER_EVENT_FILE`
