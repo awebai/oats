@@ -446,9 +446,10 @@ unknown or unreported harness shows "?". Sources and licences are in
   installed CLI via `execFile` with an absolute binary — never a shell.
 - Task text for spawns travels via an owner-only (0600) tempfile, never
   argv. A local start or restart launches only in the server-verified
-  instance home, and a provider operation (a soul's harvest included) is
-  addressed with `--home` to a home the server's roster reports, never a
-  path the caller names.
+  instance home. A provider operation on an instance (its harvest included)
+  is addressed with `--home` to a home the server's roster reports, and one
+  on a soul to a soul and agents root the server lists, never a path the
+  caller names.
 - Workspace content is treated as untrusted: symlinked directories never
   widen the file API, and capability packages cannot read outside their
   own tree.
