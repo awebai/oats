@@ -4,7 +4,7 @@ import { execFileSync, spawn as spawnProcess, spawnSync } from "node:child_proce
 import { createHash } from "node:crypto";
 import * as nodeFs from "node:fs";
 import { chmodSync, existsSync, lstatSync, lutimesSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, renameSync, rmSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { devNull, tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { capabilityFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { linkExecutables, waitUntil as waitFor } from "./helpers/host-fixture.mjs";
@@ -14,6 +14,20 @@ import { workRecoveryLines } from "../lib/retire-output.mjs";
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const temporaryDirectories = [];
 const fixtureCleanups = [];
+
+/** The environment of the Git commands the test itself runs on its fixtures (fixtureGit, porcelain,
+ *  headOf, nestedRepository): built from PATH alone, so nothing of the operator's reaches them (a global
+ *  or system configuration, its hooks or credential helper, a proxy, GIT_DIR or another repository
+ *  selector). Commits are unsigned, by a test identity. Its HOME is the file's own, removed after it. */
+const fixtureGitHome = mkdtempSync(join(tmpdir(), "oats-retire-git-home-"));
+test.after(() => rmSync(fixtureGitHome, { recursive: true, force: true }));
+const FIXTURE_GIT_ENV = {
+  PATH: process.env.PATH, HOME: fixtureGitHome, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: devNull, GIT_TERMINAL_PROMPT: "0",
+  GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "commit.gpgsign", GIT_CONFIG_VALUE_0: "false",
+  GIT_AUTHOR_NAME: "Test", GIT_AUTHOR_EMAIL: "test@example.invalid", GIT_COMMITTER_NAME: "Test", GIT_COMMITTER_EMAIL: "test@example.invalid",
+};
+/** Git in `repo` (null: none, as for `git init <dir>`) with FIXTURE_GIT_ENV → its stdout, a Buffer unless `encoding`. */
+const fixtureGit = (repo, args, options = {}) => execFileSync("git", [...(repo === null ? [] : ["-C", repo]), ...args], { stdio: ["ignore", "pipe", "pipe"], ...options, env: FIXTURE_GIT_ENV });
 
 function write(path, content, mode) {
   mkdirSync(dirname(path), { recursive: true });
@@ -40,6 +54,10 @@ function fixture({ capabilities = {}, work = "worktree" } = {}) {
   write(join(bin, "pi"), "#!/bin/sh\nexit 0\n", 0o755);
   const env = { ...fx.env, PATH: `${bin}:${fx.env.PATH}` };
   delete env.OATS_TMUX_SESSION; delete env.PI_AGENTS_TMUX_SESSION;
+  // The CLI's own Git (a spawn's `worktree add`, a retire's reads and clones) sees none of the
+  // operator's configuration, hooks, credential helper, proxy or repository selectors either.
+  for (const key of Object.keys(env)) if (key.startsWith("GIT_") || /_proxy$/i.test(key)) delete env[key];
+  Object.assign(env, { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: devNull, GIT_TERMINAL_PROMPT: "0" });
   return { base: fx.base, dep: fx.dep, repo, root: fx.root, env, commit: fx.commit };
 }
 
@@ -492,7 +510,7 @@ test("nested repository recovery is standalone after source repositories disappe
 });
 
 /** Git status as the retire verification reads it. */
-const porcelain = (repo) => execFileSync("git", ["-C", repo, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=matching", "--ignore-submodules=none"], { encoding: "utf8" });
+const porcelain = (repo) => fixtureGit(repo, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=matching", "--ignore-submodules=none"], { encoding: "utf8" });
 /** Work that forces a repository recovery: a local-only branch commit, an untracked file and changed home bytes. */
 function dirtyWork(home) {
   const work = join(home, "work");
@@ -1080,7 +1098,7 @@ function assertBothCopiedAgain(recovery) {
 }
 const statusRowsIn = (status) => status.split("\0").filter(Boolean);
 /** The commit a repository is at. `repo` must be a repository's own top level: Git would otherwise answer for the one around it. */
-const headOf = (repo) => execFileSync("git", ["-C", repo, "rev-parse", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+const headOf = (repo) => fixtureGit(repo, ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 /** Git in `repo`, as text. */
 const gitTextIn = (repo) => (...args) => execFileSync("git", ["-C", repo, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 /** Whether `repo` has the object `oid` (`git cat-file -e`). */
@@ -1285,13 +1303,13 @@ seen.head = git('rev-parse', 'HEAD').trim();`);
 function nestedRepository(work, ...under) {
   const nested = join(work, "human-ignored", ...under, "nested");
   mkdirSync(nested, { recursive: true });
-  execFileSync("git", ["init", "-q", nested]);
-  execFileSync("git", ["-C", nested, "config", "user.email", "test@example.invalid"]);
-  execFileSync("git", ["-C", nested, "config", "user.name", "Test"]);
-  execFileSync("git", ["-C", nested, "config", "maintenance.auto", "false"]);
+  fixtureGit(null, ["init", "-q", nested]);
+  fixtureGit(nested, ["config", "user.email", "test@example.invalid"]);
+  fixtureGit(nested, ["config", "user.name", "Test"]);
+  fixtureGit(nested, ["config", "maintenance.auto", "false"]);
   write(join(nested, "nested.txt"), "nested-commit\n");
-  execFileSync("git", ["-C", nested, "add", "."]);
-  execFileSync("git", ["-C", nested, "commit", "-qm", "nested"]);
+  fixtureGit(nested, ["add", "."]);
+  fixtureGit(nested, ["commit", "-qm", "nested"]);
   return nested;
 }
 const stashListOf = (repo) => execFileSync("git", ["-C", repo, "stash", "list"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
@@ -2400,10 +2418,10 @@ const withByte = (name, byte) => Buffer.concat([Buffer.from(name), Buffer.from([
 const under = (dir, name) => Buffer.concat([Buffer.from(dir), Buffer.from("/"), Buffer.from(name)]);
 /** The names in `dir` that start with `prefix`, as the hex of their bytes, sorted. */
 const namesStartingWith = (dir, prefix) => readdirSync(dir, { encoding: "buffer" }).filter((n) => n.subarray(0, prefix.length).equals(Buffer.from(prefix))).map((n) => n.toString("hex")).sort().join(",");
-/** Commit everything in `repo` (a test identity, never signed). */
+/** Commit everything in `repo` (fixtureGit: a test identity, never signed). */
 const commitAll = (repo, message) => {
-  execFileSync("git", ["-C", repo, "add", "-A"]);
-  execFileSync("git", ["-C", repo, "-c", "commit.gpgsign=false", "-c", "user.email=test@example.invalid", "-c", "user.name=Test", "commit", "-qm", message]);
+  fixtureGit(repo, ["add", "-A"]);
+  fixtureGit(repo, ["commit", "-qm", message]);
 };
 
 test("#656 a worktree with uncommitted deletions of a tracked top-level file, directory and symbolic link, and with top-level renames staged and not: the retire completes, and the copy holds exactly the source's top level", () => {
@@ -2420,7 +2438,7 @@ test("#656 a worktree with uncommitted deletions of a tracked top-level file, di
   rmSync(join(work, "gone-dir"), { recursive: true });
   rmSync(join(work, "gone-link"));
   renameSync(join(work, "moved.txt"), join(work, "moved-to.txt"));
-  execFileSync("git", ["-C", work, "mv", "staged.txt", "staged-to.txt"]);
+  fixtureGit(work, ["mv", "staged.txt", "staged-to.txt"]);
   const statusBefore = porcelain(work);
   for (const row of [" D gone.txt", " D gone-dir/inner.txt", " D gone-link", " D moved.txt", "?? moved-to.txt", "R  staged-to.txt"]) {
     assert.ok(statusRowsIn(statusBefore).includes(row), `fixture premise: the status has ${row}: ${JSON.stringify(statusBefore)}`);
@@ -2447,7 +2465,7 @@ test("#656 #663 a nested repository and a repository inside it, each with an unc
   rmSync(join(nested, "gone-dir"), { recursive: true });
   const inner = join(nested, "inner");
   mkdirSync(inner);
-  execFileSync("git", ["init", "-q", inner]);
+  fixtureGit(null, ["init", "-q", inner]);
   write(join(inner, "kept.txt"), "kept\n");
   write(join(inner, "inner-gone.txt"), "deleted\n");
   commitAll(inner, "inner");
@@ -2477,13 +2495,13 @@ test("#645 a home holding a scratch repository with a branch whose name is not v
   const f = fixture();
   const spawned = spawn(f, "home-name-byte");
   const scratch = join(spawned.home, "scratch");
-  execFileSync("git", ["init", "-q", "--initial-branch=main", scratch]);
+  fixtureGit(null, ["init", "-q", "--initial-branch=main", scratch]);
   write(join(scratch, "a.txt"), "a\n");
   commitAll(scratch, "scratch");
   const head = headOf(scratch);
   const branch = withByte("refs/heads/caf", 0xe9);
   const logs = join(scratch, ".git", "logs", "refs", "heads");
-  const make = () => execFileSync("git", ["-C", scratch, "update-ref", "--create-reflog", "--stdin", "-z"], { input: Buffer.concat([Buffer.from("create "), branch, Buffer.from(`\0${head}\0`)]), stdio: ["pipe", "ignore", "pipe"] });
+  const make = () => fixtureGit(scratch, ["update-ref", "--create-reflog", "--stdin", "-z"], { input: Buffer.concat([Buffer.from("create "), branch, Buffer.from(`\0${head}\0`)]), stdio: ["pipe", "ignore", "pipe"] });
   if (!storedBytes(t, make, () => namesStartingWith(logs, "caf"), withByte("caf", 0xe9).toString("hex"))) return;
   assert.equal(namesStartingWith(join(scratch, ".git", "refs", "heads"), "caf"), withByte("caf", 0xe9).toString("hex"), "fixture premise: the branch's ref is a file of that name");
 
