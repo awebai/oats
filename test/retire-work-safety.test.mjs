@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawn as spawnProcess, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import * as nodeFs from "node:fs";
-import { chmodSync, existsSync, lstatSync, lutimesSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, lutimesSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, renameSync, rmSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { capabilityFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
@@ -1391,8 +1391,9 @@ test("a retire hook that moves only the home, in a worktree that holds a linked 
   assertBothCopiedAgain(recovery);
 });
 
-// A `.git` that is a dangling symbolic link is not a repository, and nothing compares it: the copy
-// carries it as a link, and the digests pass over every entry named `.git`. A directory that holds one
+// A `.git` that is a dangling symbolic link is not a repository: the copy carries it as a link, and the
+// copy's verification holds it like any other entry (#663), since its digest passes over only the
+// worktree's own `.git` and those of the repositories it rebuilds. A directory that holds one
 // is listed as one whose `.git` cannot be read as a repository: no class, but the worktree is not
 // provable, so a change to the home alone can now cause a work-copy attempt before the hooks that main
 // did not make, and any failure of that attempt can refuse the retirement.
@@ -2384,6 +2385,161 @@ test("a clean worktree with a committed file whose name is not UTF-8, and only a
   assert.equal(existsSync(join(recovery.path, "after-hooks")), false, "nothing moved after the snapshot");
   assert.equal(readJson(join(recovery.path, "recovery.json")).phase, "complete");
   assert.equal(existsSync(spawned.home), false, "the home is removed");
+});
+
+// ---- The recovery copy mirrors the tree ----
+// A work copy is a clone with the source's files put over it, so each top level (the worktree's and
+// each nested repository's) is made the source's: an entry the clone checked out that the source no
+// longer has is removed, `.git` aside (#656). Names are carried as bytes (#645).
+
+/** Whether an entry is there, a dangling link included. */
+const entryIsThere = (path) => { try { lstatSync(path); return true; } catch { return false; } };
+/** `name` followed by one byte, as bytes: a name that is not valid UTF-8 for 0x80 and up. */
+const withByte = (name, byte) => Buffer.concat([Buffer.from(name), Buffer.from([byte])]);
+/** `dir`/`name` as bytes. */
+const under = (dir, name) => Buffer.concat([Buffer.from(dir), Buffer.from("/"), Buffer.from(name)]);
+/** The names in `dir` that start with `prefix`, as the hex of their bytes, sorted. */
+const namesStartingWith = (dir, prefix) => readdirSync(dir, { encoding: "buffer" }).filter((n) => n.subarray(0, prefix.length).equals(Buffer.from(prefix))).map((n) => n.toString("hex")).sort().join(",");
+/** Commit everything in `repo` (a test identity, never signed). */
+const commitAll = (repo, message) => {
+  execFileSync("git", ["-C", repo, "add", "-A"]);
+  execFileSync("git", ["-C", repo, "-c", "commit.gpgsign=false", "-c", "user.email=test@example.invalid", "-c", "user.name=Test", "commit", "-qm", message]);
+};
+
+test("#656 a worktree with uncommitted deletions of a tracked top-level file, directory and symbolic link, and with top-level renames staged and not: the retire completes, and the copy holds exactly the source's top level", () => {
+  const f = fixture();
+  const spawned = spawn(f, "top-level-deleted");
+  const work = join(spawned.home, "work");
+  write(join(work, "gone.txt"), "deleted\n");
+  write(join(work, "gone-dir", "inner.txt"), "deleted with its directory\n");
+  symlinkSync("tracked.txt", join(work, "gone-link"));
+  write(join(work, "moved.txt"), "renamed, not staged\n");
+  write(join(work, "staged.txt"), "renamed and staged\n");
+  commitAll(work, "top-level entries to delete");
+  rmSync(join(work, "gone.txt"));
+  rmSync(join(work, "gone-dir"), { recursive: true });
+  rmSync(join(work, "gone-link"));
+  renameSync(join(work, "moved.txt"), join(work, "moved-to.txt"));
+  execFileSync("git", ["-C", work, "mv", "staged.txt", "staged-to.txt"]);
+  const statusBefore = porcelain(work);
+  for (const row of [" D gone.txt", " D gone-dir/inner.txt", " D gone-link", " D moved.txt", "?? moved-to.txt", "R  staged-to.txt"]) {
+    assert.ok(statusRowsIn(statusBefore).includes(row), `fixture premise: the status has ${row}: ${JSON.stringify(statusBefore)}`);
+  }
+
+  const retired = cli(f, ["retire", basename(spawned.home), "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const repo = join(JSON.parse(retired.stdout).workRecovery.path, "repo");
+  for (const name of ["gone.txt", "gone-dir", "gone-link", "moved.txt", "staged.txt"]) assert.equal(entryIsThere(join(repo, name)), false, `the copy does not hold ${name}, which the source deleted or renamed`);
+  assert.equal(readFileSync(join(repo, "moved-to.txt"), "utf8"), "renamed, not staged\n");
+  assert.equal(readFileSync(join(repo, "staged-to.txt"), "utf8"), "renamed and staged\n");
+  assert.equal(porcelain(repo), statusBefore, "the copy's status is the source's");
+  assert.equal(existsSync(spawned.home), false, "the home is removed");
+});
+
+test("#656 #663 a nested repository and a repository inside it, each with an uncommitted deletion of a tracked top-level entry, and a repository there whose .git is a gitfile: the retire completes, each copy holds exactly its source's top level, and the inner ones are carried byte for byte", () => {
+  const f = fixture();
+  const spawned = spawn(f, "nested-deleted");
+  const work = join(spawned.home, "work");
+  const nested = nestedRepository(work);
+  write(join(nested, "gone-dir", "x.txt"), "deleted with its directory\n");
+  commitAll(nested, "a directory to delete");
+  rmSync(join(nested, "nested.txt"));
+  rmSync(join(nested, "gone-dir"), { recursive: true });
+  const inner = join(nested, "inner");
+  mkdirSync(inner);
+  execFileSync("git", ["init", "-q", inner]);
+  write(join(inner, "kept.txt"), "kept\n");
+  write(join(inner, "inner-gone.txt"), "deleted\n");
+  commitAll(inner, "inner");
+  rmSync(join(inner, "inner-gone.txt"));
+  // A repository there whose .git is a gitfile naming no admin directory: the copy carries it as a file.
+  write(join(nested, "linked", ".git"), "gitdir: ../missing-admin\n");
+  write(join(nested, "linked", "file.txt"), "beside a gitfile\n");
+  const nestedBefore = porcelain(nested), innerBefore = porcelain(inner);
+  assert.ok(statusRowsIn(nestedBefore).includes(" D nested.txt") && statusRowsIn(nestedBefore).includes(" D gone-dir/x.txt"), `fixture premise: ${JSON.stringify(nestedBefore)}`);
+  assert.ok(statusRowsIn(innerBefore).includes(" D inner-gone.txt"), `fixture premise: ${JSON.stringify(innerBefore)}`);
+
+  const retired = cli(f, ["retire", basename(spawned.home), "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const copy = nestedUnder(join(JSON.parse(retired.stdout).workRecovery.path, "repo"));
+  assert.equal(entryIsThere(join(copy, "nested.txt")), false, "the nested copy does not hold the file its source deleted");
+  assert.equal(entryIsThere(join(copy, "gone-dir")), false, "nor the directory");
+  assert.equal(porcelain(copy), nestedBefore, "the nested copy's status is its source's");
+  const innerCopy = join(copy, "inner");
+  assert.equal(entryIsThere(join(innerCopy, "inner-gone.txt")), false, "the repository inside it does not hold the file its source deleted");
+  assert.equal(readFileSync(join(innerCopy, "kept.txt"), "utf8"), "kept\n");
+  assert.equal(lstatSync(join(innerCopy, ".git")).isDirectory(), true, "its Git directory is carried as files");
+  assert.equal(porcelain(innerCopy), innerBefore, "and its status is its source's");
+  assert.equal(readFileSync(join(copy, "linked", ".git"), "utf8"), "gitdir: ../missing-admin\n", "the gitfile is carried byte for byte");
+});
+
+test("#645 a home holding a scratch repository with a branch whose name is not valid UTF-8 (its ref and its reflog): the retire completes, and the recovery's home holds both under their names, byte for byte", (t) => {
+  const f = fixture();
+  const spawned = spawn(f, "home-name-byte");
+  const scratch = join(spawned.home, "scratch");
+  execFileSync("git", ["init", "-q", "--initial-branch=main", scratch]);
+  write(join(scratch, "a.txt"), "a\n");
+  commitAll(scratch, "scratch");
+  const head = headOf(scratch);
+  const branch = withByte("refs/heads/caf", 0xe9);
+  const logs = join(scratch, ".git", "logs", "refs", "heads");
+  const make = () => execFileSync("git", ["-C", scratch, "update-ref", "--create-reflog", "--stdin", "-z"], { input: Buffer.concat([Buffer.from("create "), branch, Buffer.from(`\0${head}\0`)]), stdio: ["pipe", "ignore", "pipe"] });
+  if (!storedBytes(t, make, () => namesStartingWith(logs, "caf"), withByte("caf", 0xe9).toString("hex"))) return;
+  assert.equal(namesStartingWith(join(scratch, ".git", "refs", "heads"), "caf"), withByte("caf", 0xe9).toString("hex"), "fixture premise: the branch's ref is a file of that name");
+
+  const retired = cli(f, ["retire", basename(spawned.home), "--json"]);
+  assert.equal(retired.status, 0, `the retire refused for a file's name: ${retired.stderr}\n${retired.stdout}`);
+  const recovery = JSON.parse(retired.stdout).workRecovery;
+  assert.ok(recovery.classes.includes("changed instance-home bytes"), retired.stdout);
+  const copied = join(recovery.path, "home", "scratch", ".git");
+  assert.equal(namesStartingWith(join(copied, "logs", "refs", "heads"), "caf"), withByte("caf", 0xe9).toString("hex"), "the reflog, under its name");
+  assert.equal(readFileSync(under(join(copied, "refs", "heads"), withByte("caf", 0xe9)), "utf8"), `${head}\n`, "the ref, under its name, with its bytes");
+  assert.equal(existsSync(spawned.home), false, "the home is removed");
+});
+
+test("#645 an untracked work file, an ignored output and a file in a nested repository, each named with a byte that is not valid UTF-8: the retire completes, the copy holds each byte for byte, and the outputs count their bytes", (t) => {
+  const f = fixture();
+  const spawned = spawn(f, "work-name-byte");
+  const work = join(spawned.home, "work");
+  const name = withByte("caf", 0xe9);
+  if (!storedBytes(t, () => writeFileSync(under(work, name), "untracked\n"), () => namesStartingWith(work, "caf"), name.toString("hex"))) return;
+  mkdirSync(join(work, "cache"));
+  writeFileSync(under(join(work, "cache"), name), "ignored output\n");
+  const nested = nestedRepository(work);
+  writeFileSync(under(nested, name), "in the nested repository\n");
+  const statusBefore = porcelain(work), nestedBefore = porcelain(nested);
+  assert.deepEqual(statusRowsIn(statusBefore).sort(), ["!! cache/", "!! human-ignored/", "?? caf\uFFFD"], "fixture premise: the untracked file and the two ignored directories");
+
+  const retired = cli(f, ["retire", basename(spawned.home), "--json"]);
+  assert.equal(retired.status, 0, `the retire refused for a file's name: ${retired.stderr}\n${retired.stdout}`);
+  const recovery = JSON.parse(retired.stdout).workRecovery;
+  const repo = join(recovery.path, "repo");
+  assert.equal(readFileSync(under(repo, name), "utf8"), "untracked\n", "the untracked file, under its name");
+  assert.equal(readFileSync(under(join(repo, "cache"), name), "utf8"), "ignored output\n", "the ignored output, under its name");
+  assert.equal(readFileSync(under(nestedUnder(repo), name), "utf8"), "in the nested repository\n", "the nested repository's file, under its name");
+  assert.equal(porcelain(nestedUnder(repo)), nestedBefore, "the nested copy's status is its source's");
+  const outputs = Object.fromEntries(recovery.outputs.paths.map((p) => [p.path, p.bytes]));
+  assert.equal(outputs["caf\uFFFD"], "untracked\n".length, "the untracked file is named as text and counted by its bytes");
+  assert.equal(outputs["cache/"], "ignored output\n".length, "the ignored output is counted by its bytes");
+});
+
+test("#645 a nested repository whose own path is not valid UTF-8: Git cannot be run on that path, so the retire refuses with E_WORK_PRESERVATION_FAILED naming the limit, and nothing is removed", (t) => {
+  const f = fixture();
+  const spawned = spawn(f, "nested-path-byte");
+  const work = join(spawned.home, "work");
+  const parent = join(work, "human-ignored");
+  const made = nestedRepository(work);
+  const odd = under(parent, withByte("caf", 0xe9));
+  if (!storedBytes(t, () => renameSync(made, odd), () => namesStartingWith(parent, "caf"), withByte("caf", 0xe9).toString("hex"))) return;
+
+  const retired = cli(f, ["retire", basename(spawned.home), "--json"]);
+  assert.notEqual(retired.status, 0, retired.stdout);
+  const { error } = JSON.parse(retired.stdout);
+  assert.equal(error.code, "E_WORK_PRESERVATION_FAILED", retired.stdout);
+  assert.match(error.message, /caf\uFFFD has a path that is not valid UTF-8, and Git cannot be run on such a path; rename the directory, then retire again/, error.message);
+  assert.equal(existsSync(join(spawned.home, "instance.json")), true, "the home is kept");
+  assert.equal(readFileSync(under(odd, "nested.txt"), "utf8"), "nested-commit\n", "and the nested repository");
+  assert.equal(lstatSync(under(odd, ".git")).isDirectory(), true);
 });
 
 // The home's instance.json. The spawn baseline compares it without the two fields the kernel writes

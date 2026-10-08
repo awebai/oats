@@ -448,7 +448,14 @@ recovery is a standalone clone that carries the
 repository's local exclude rules (`info/exclude`, a configured
 `core.excludesFile`), its `info/attributes` and the settings that change what
 status reports (`core.fileMode`, `core.ignoreCase`, …), so its Git status
-matches the source's. A recovery that
+matches the source's. Its files are the worktree's, entry for entry: each top
+level of the clone (the worktree's, and each nested repository's) is made the
+source's, so a tracked entry the source deleted or renamed is not left in the
+copy. The copy's verification compares every entry's bytes, leaving out only
+the worktree's own `.git` and those of the nested repositories the copy
+rebuilds from a clone; any other entry named `.git` (a dangling link, or the
+Git directory of a repository inside a nested one, carried as files) is
+compared like any other. A recovery that
 cannot be verified refuses with `E_WORK_PRESERVATION_FAILED` and keeps the
 home. **`--force` does not skip work preservation.** It forces only past a
 missing or unusable cleanup marker and past incomplete hook cleanup
@@ -563,11 +570,14 @@ creates, which do not carry them.
 Every part of that state is compared as its bytes, never as decoded text. A
 ref name, a path in the index or in the status, a file name or the target of
 a symbolic link need not be valid UTF-8, and two states that differ only in
-such bytes are two states. This is what the proof compares, not what a copy
-can hold: a recovery cannot hold a file whose name is not valid UTF-8. A
-copy of a home or a worktree that has one fails, and the retire refuses with
-nothing lost. A clean worktree that has one, with only the home to preserve,
-needs no work copy and retires.
+such bytes are two states. The copier carries names as bytes too: a file of
+the home or of the work whose name is not valid UTF-8 is copied under that
+name, and the retire goes on. Where a name is shown (a receipt's `paths`, a
+message), it is text, with replacement characters for such bytes. One limit
+stays: Git is run on a nested repository by its path, and a path that is not
+valid UTF-8 cannot be given to it, so a nested repository whose own path holds
+such a name refuses the copy with `E_WORK_PRESERVATION_FAILED`, with nothing
+removed; rename that directory, then retire again.
 
 A worktree's tags, stash, exclude rules and settings are kept by the
 repository it belongs to. They are part of the state because a work copy
@@ -589,7 +599,8 @@ file or a link that leads to one is a repository: one made by `git init` or
 a clone, a submodule, or a linked worktree of another repository placed in
 the work. One whose `.git` is a dangling symbolic link, or could not be
 tested, is not read as a repository and counts all the same: the copy
-carries such a link as a link, and no comparison reads it. A repository's
+carries such a link as a link, and the copy's verification holds it as one. A
+repository's
 state is not compared:
 the retire hooks run between the two copies and can change it in ways no read
 of its state covers (its configuration, its objects, what a clone of it is
@@ -650,9 +661,9 @@ source cannot supply (a partial clone that lacks it: the retire never
 fetches from a promisor remote) refuses the copy with
 `E_WORK_PRESERVATION_FAILED`, naming it. So `git stash show stash@{2}` and
 `git checkout -m <path>` work in the copy as in the source. What the copier
-cannot carry at all (a file whose name is not valid UTF-8, an entry that is
-not a file, a directory or a symbolic link) refuses the copy, here as
-anywhere.
+cannot carry at all (an entry that is not a file, a directory or a symbolic
+link, or a nested repository whose path is not valid UTF-8) refuses the copy,
+here as anywhere.
 
 **A worktree that cannot be proven unchanged.** Two things make a worktree
 not provable:
@@ -784,8 +795,6 @@ pre-hook snapshot. The retire's own events are written to the workspace log
 (`<deployment>/.agents/events/`), never to the home's. A home copy is
 verified against the digest the baseline uses, which passes over those
 records: an inherited limit, not an exact verification of the whole home.
-A work copy's verification passes over every entry named `.git`: a dangling
-`.git` symbolic link under the worktree is copied as a link and not verified.
 
 Each part under `after-hooks/` is whole and verified, not a delta, and it is
 verified before the worktree step and before the home is removed.
