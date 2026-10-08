@@ -559,6 +559,6 @@ trigger, not a harvest scheduler or a kernel PR-opened capture hook.
 
 Deployments upgrading from 4.x must settle registered sources before
 changing the pin, then use the 5.0 guard-exempt host-key cleanup before new
-spawns. See the [5.0 cutover sequence](release-notes/v0.48.1.md). Provider
+spawns. See the [5.0 cutover sequence](release-notes/v0.49.0.md#oatsokf-50-cutover--order-matters). Provider
 behaviour remains in the [oats.okf package](https://github.com/awebai/oats-okf);
 none of this adds provider-specific behaviour to the scheduler or kernel.

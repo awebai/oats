@@ -47,7 +47,7 @@ settings:
 ```
 
 Upgrading an existing deployment requires the ordered
-[5.0 cutover](release-notes/v0.48.1.md), not
+[5.0 cutover](release-notes/v0.49.0.md#oatsokf-50-cutover--order-matters), not
 just editing a version line.
 
 ### Bindings document
@@ -269,7 +269,7 @@ selectors and harvest setup switches return actionable removal errors.
 There is no replacement completion/settlement engine. Existing 4.x private
 inputs and open PR obligations must be resolved explicitly under the old
 provider before the pin; they are not deleted or re-imported by 5.0. Follow
-the [ordered cutover](release-notes/v0.48.1.md), including the host cleanup
+the [ordered cutover](release-notes/v0.49.0.md#oatsokf-50-cutover--order-matters), including the host cleanup
 **after** 5.0 sync and **before** new spawns.
 
 ## Without a knowledge capability
