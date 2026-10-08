@@ -323,14 +323,15 @@ install, and the gate requires it. `test/continuous-integration.test.mjs` pins
 that job against `desktop-build`: change how one installs or tests Desktop and
 the other changes with it.
 
-`test/release-workflow.test.mjs` also runs Desktop's `npm test` nested inside
-a root shard. Its results go to the child's stdout, so when the nested run
-fails, the assertion's message is built from that output by
-`test/helpers/nested-test-failure.mjs`. The message names the failing Desktop
-tests (TAP or spec reporter) with their location and error, then gives bounded
-stdout and stderr tails, and its size is capped. It is built only when the run
-failed, and it never throws: if reading the failures fails, the message says so
-and still carries the tails.
+The Desktop suite runs in the root shards and in `desktop-standalone`, and
+`desktop-standalone` is its release gate. `test/release-workflow.test.mjs` no
+longer runs it nested inside a root shard: it checks that the Desktop scripts
+the release invokes exist. `test/helpers/nested-test-failure.mjs` remains the
+way to build a readable failure message from a nested `node --test` run's
+output. The message names the failing tests (TAP or spec reporter) with their
+location and error, then gives bounded stdout and stderr tails, and its size
+is capped. It is built only when the run failed, and it never throws: if
+reading the failures fails, the message says so and still carries the tails.
 
 Cross-package tests that import both the kernel and Desktop belong under root
 `test/`; install dependencies at the root and in `packages/desktop` before

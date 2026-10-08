@@ -7,8 +7,9 @@
 // Root `npm test` discovers those suites through its packages/** glob, so it
 // has to know whether they are loadable before it hands them to node --test.
 //
-// Both the root runner (scripts/run-tests.mjs) and the release-workflow test
-// import this, so the dependency list and the install command have one home.
+// The root runner (scripts/run-tests.mjs) imports this, so the dependency
+// list and the install command have one home; test/test-runner.test.mjs
+// reads the list for its fixtures.
 
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";

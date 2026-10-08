@@ -1,7 +1,7 @@
 // The failure message for a nested `node --test` run, built from the child's
-// spawnSync result. test/release-workflow.test.mjs runs the whole Desktop
-// suite as a child; its results go to stdout, so a message built from stderr
-// alone said `npm test failed:` with nothing after it (awebai/oats#644).
+// spawnSync result. A `node --test` child's results go to its stdout, so a
+// message built from stderr alone said `npm test failed:` with nothing after
+// it (awebai/oats#644).
 //
 // The message names the failing tests first: a 200 s suite's last couple of
 // kilobytes are its summary, not the failure. It understands both reporters
@@ -14,8 +14,8 @@
 //
 // It never throws: a diagnostic must not turn into a failure of its own. If
 // reading the failures throws, the message says so and still carries the
-// tails. Callers build it only for a run that failed (release-workflow's
-// `if (r.status !== 0) assert.fail(…)`), so green output is never parsed.
+// tails. Callers build it only for a run that failed, so green output is
+// never parsed.
 
 export const MAX_FAILURES = 8;
 export const MAX_MESSAGE = 8192;

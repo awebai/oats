@@ -8,9 +8,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
-import { DESKTOP_TEST_DEPS_INSTALL, desktopTestDeps } from "../scripts/desktop-test-deps.mjs";
-import { describeNestedTestFailure } from "./helpers/nested-test-failure.mjs";
 
 const yml = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
 const desktopPkg = JSON.parse(readFileSync(new URL("../packages/desktop/package.json", import.meta.url), "utf8"));
@@ -208,42 +205,16 @@ test("npm publication and GitHub Release are same-tag retryable (idempotent)", (
   assert.ok(ghStep.indexOf("gh release view") < ghStep.indexOf("gh release create"));
 });
 
-test("desktop package scripts invoked by the workflow exist and run", (t) => {
+test("desktop package scripts invoked by the workflow exist", () => {
   // The workflow's desktop-build job runs `npm test` and `npm run dist` in
   // packages/desktop — workflow text matching alone cannot catch a missing
-  // script. `test` is owned here and must exist AND run. `dist`/`dist:smoke`
-  // are the Desktop owner's deliverable on this seam, but the release path is
-  // broken without them — so their presence is asserted UNCONDITIONALLY:
-  // this test stays red until the Desktop owner's electron-builder commit
-  // lands through the feature branch (coordinator-sequenced dependency).
+  // script, so both are asserted here. The Desktop suite itself is not run
+  // here: CI's `desktop-standalone` job (the release's `npm ci && npm test`
+  // inside packages/desktop) is its gate, and the root shards run it too.
+  // `dist`/`dist:smoke` are the Desktop owner's deliverable on this seam, but
+  // the release path is broken without them — so their presence is asserted
+  // UNCONDITIONALLY.
   assert.equal(typeof desktopPkg.scripts.test, "string", "packages/desktop has a test script");
-  // Running it needs packages/desktop's own node_modules, which a root-only
-  // `npm ci` does not create. Both CI lanes install them before `npm test`
-  // (the release lane's install step is asserted above), so this branch is
-  // exercised where it matters; on a checkout without them, report the gap
-  // rather than fail on the checkout's shape. scripts/run-tests.mjs prints
-  // the same notice for the suites it skips for the same reason.
-  const desktop = desktopTestDeps();
-  if (desktop.ok) {
-    // NODE_TEST_CONTEXT must not reach the child. node --test exports it into
-    // every test file's environment; a nested `node --test` that inherits it
-    // warns "run() is being called recursively within a test file. skipping
-    // running files." and exits 0 WITHOUT running anything — which made this
-    // assertion silently vacuous whenever it ran under the root suite.
-    const env = { ...process.env };
-    delete env.NODE_TEST_CONTEXT;
-    // The child's whole output is captured. Without maxBuffer Node kills the
-    // child at 1 MiB of it, with status null and an empty stderr, and the
-    // Desktop suite prints about that much: r.error then says why.
-    const r = spawnSync("npm", ["test"], { cwd: new URL("../packages/desktop", import.meta.url).pathname, encoding: "utf8", timeout: 300000, maxBuffer: 64 * 1024 * 1024, env });
-    // The child's results are on stdout, so the message names the failing
-    // Desktop tests from there, then bounded stdout and stderr tails (#644).
-    // It is built only for a failing run: a passing one is never parsed.
-    if (r.status !== 0) assert.fail(describeNestedTestFailure(r, "packages/desktop npm test"));
-    assert.match(r.stdout, /^# pass \d+$|ℹ pass \d+/m, `packages/desktop npm test reported no results — it did not actually run:\n${r.stdout.slice(-2000)}`);
-  } else {
-    t.diagnostic(`packages/desktop npm test NOT run — dependencies missing (${desktop.missing.join(", ")}); install with ${DESKTOP_TEST_DEPS_INSTALL}`);
-  }
   assert.match(yml, /npm run dist\b/, "workflow invokes npm run dist in packages/desktop");
   assert.equal(typeof desktopPkg.scripts.dist, "string",
     "packages/desktop needs a dist script (electron-builder packaging producing dist/oats-desktop-*) — the release workflow runs `npm run dist` in every desktop matrix leg; this is the Desktop owner's deliverable, landed via feature/desktop-dist");
