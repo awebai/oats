@@ -15,7 +15,7 @@ import { buildNorthwind, moveMember } from "./fixtures/northwind/build.mjs";
 import { inertHarnessPath } from "./helpers/runtime-stub.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
-const READS = "status, workspace status, souls, capabilities, capabilities show, inspect --soul|--home, spawn --preview, and the read forms of teams and soul teams";
+const READS = "status, workspace status, souls, capabilities, capabilities show, inspect --soul|--home, spawn --preview, trigger poll, and the read forms of teams and soul teams";
 const refusedBy = (form) => `--max-age is not accepted by \`oats ${form}\`: only the read verbs reuse observations (${READS})`;
 
 let base, fx, dep, env, home;

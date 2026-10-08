@@ -3,7 +3,7 @@ name: oats-automations
 description: >-
   Use when setting up or changing what an OATS workspace runs without a
   person: triggers (spawn an instance when a GitHub pull request event
-  happens) and schedules (spawn, command or wake on a cron), local to one
+  happens, or an event a capability's trigger source lists) and schedules (spawn, command or wake on a cron), local to one
   machine or declared in the workspace (oats-triggers/, oats-schedules/,
   runsOn, owner); installing the host timer; testing a trigger; or explaining
   why an automation did not run here. Part of the setup and config of an OATS
@@ -17,8 +17,10 @@ The contract is `docs/schedules.md` in the installed kernel ("Kinds",
 
 - a **schedule** spawns an instance, runs an `oats` command or wakes an
   existing instance on a five-field cron with an explicit IANA `tz`;
-- a **trigger** spawns a NEW instance when a GitHub pull
-  request event matches: "when EVENT, spawn SOUL with TASK, in TEAMS".
+- a **trigger** spawns a NEW instance when an event matches: "when EVENT,
+  spawn SOUL with TASK, in TEAMS". The event comes from the built-in
+  `github.pull_request` source or from a **trigger source** a capability
+  declares (`on.source: "<capability>:<source>"`, OATS 0.49.0).
 
 ## One host timer, no daemon
 
@@ -80,6 +82,7 @@ oats schedule update <id> --description=<text>   # the description only, even wh
 oats trigger update <id> --description=<text>    # the description only (local triggers)
 oats trigger list
 oats trigger test <id>                       # dry run: gh auth, repo permissions, soul resolves, teams declared, what would fire
+oats trigger poll <id>                       # a capability source's trigger: run its source once, record nothing
 oats trigger status <id>                     # last poll, pending events, fired keys, live instances, last error
 ```
 
@@ -100,12 +103,13 @@ running.
   "concurrency": { "max": 2, "perKey": 1 } }
 ```
 
-- **Source** `github.pull_request` is the only one: the tick polls open PRs
-  with the host's `gh`. `labels` (all must be present) and `base` filter them.
-  Events: `opened`, `reopened`, `ready_for_review`, `labeled`, `synchronize`.
+- **Source** `github.pull_request`: the tick polls open PRs with the host's
+  `gh`. `labels` (all must be present) and `base` filter them. Events:
+  `opened`, `reopened`, `ready_for_review`, `labeled`, `synchronize`. (A
+  capability's source: see below.)
 - **Templates substitute only** `{repo} {number} {url} {event} {headSha}
-  {trigger}`. A PR's title and body are untrusted and never reach the task;
-  the instance reads them from GitHub.
+  {trigger} {subject} {key}`. A PR's title and body are untrusted and never
+  reach the task; the instance reads them from GitHub.
 - **Delivery is at least once.** A fired key is recorded only after a
   successful spawn, so a crash can spawn an event twice; `perKey: 1` holds the
   second until the first instance retires. The soul must tolerate a second
@@ -123,6 +127,37 @@ running.
   its default team only.
 - The spawned instance gets the event as `OATS_TRIGGER_EVENT_FILE`, and its
   task ends with a "Triggered run" block naming it.
+
+### A trigger on a capability's source
+
+A capability may declare trigger sources in its manifest (`triggerSources`;
+`oats capabilities show <capability>` lists them and any problem). The
+contract is `docs/schedules.md`, "Capability sources".
+
+```json
+{ "id": "harvest-review", "kind": "trigger",
+  "on": { "source": "acme.graph:harvest-branches", "params": { "prefix": "harvest/" },
+          "events": ["opened", "updated"], "poll": "2m" },
+  "spawn": { "soul": "graph-reviewer", "task": "Review branch {subject} of graph {fields.graph}." } }
+```
+
+- `on` takes `params` (strings, the source's parameters) instead of `repo`,
+  `labels` and `base`; `events` are the source's. Templates may name
+  `{trigger} {source} {subject} {event} {key} {url} {fields.<name>}`; the
+  default purpose is `{trigger}-{subject}`.
+- `trigger add` checks the definition against the soul: it must compose the
+  capability, and the source, params, events and fields must be the ones it
+  declares (`E_TRIGGER_SOURCE`, `E_TRIGGER_INVALID`). A later poll that finds
+  them no longer valid shows the trigger as `invalid` in `list` and `status`.
+- **`trigger poll` and `trigger test` execute the capability's source
+  command**, by hand, even on a host that does not trust the trigger or is
+  not its `runsOn`: use them to try a source before trusting it. They record
+  and spawn nothing. The tick alone is gated by trust and placement.
+- A pending event the source stops listing is dropped; a failed poll drops
+  nothing (`status` shows `lastPoll.cause` and what the source said).
+- The source runs under the host timer with only `PATH` and `OATS_HOME_DIR`:
+  its login must live in its own store under `HOME`, not in an exported
+  variable (`trigger test` warns every time).
 
 ## Workspace automations
 

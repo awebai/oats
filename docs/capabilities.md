@@ -353,6 +353,9 @@ A self-contained package has an `oats.json`:
   separate from declaring the package.
 - `environment` lists the exact launch variables the capability may set;
   spawn hook output must be a subset and use the capability vendor prefix.
+- `triggerSources` (optional) declares the capability's
+  [trigger sources](#trigger-sources-triggersources). It is checked only
+  where a source is used, never when the capability loads.
 - Target names never appear in a package manifest.
 
 `capability` is the only manifest identity field; it may also carry
@@ -1264,3 +1267,156 @@ checks in one readiness read share 60 s, and checks the budget does not reach
 are not run (`unknown`, `time-budget-exhausted`). Answer from configuration
 and local state. A provider that must call a remote service should bound that
 call well inside the 30 s.
+
+## Trigger sources (`triggerSources`)
+
+A capability may declare **trigger sources**: each is one of its own commands
+that, at each poll, lists the events that are due now. A
+[trigger](schedules.md#capability-sources) names one as `on.source:
+"<capability>:<source>"`, and the kernel keeps everything after the list:
+event keys, at-least-once recording, pending events, concurrency, the
+instance name, the event file and the spawn.
+
+```json
+"commands": { "review-source": "bin/graph.mjs review-source" },
+"triggerSources": {
+  "harvest-branches": {
+    "command": "review-source",
+    "description": "Ready harvest/* branches, one event per judged head",
+    "events": ["opened", "updated"],
+    "parameters": { "prefix": { "default": "harvest/", "description": "Branch prefix", "pattern": "^[A-Za-z0-9._/-]{1,80}$" } },
+    "fields": { "graph": { "pattern": "^[a-z0-9-]{1,40}$" }, "branch": {} },
+    "urlHosts": ["graph.example.org"]
+  }
+}
+```
+
+- **The source name** is 1 to 40 lowercase letters, digits and dashes,
+  starting with a letter or digit. At most 16 sources.
+- **`command`** names one of `commands`. Its script must resolve to a regular
+  file inside the module directory.
+- **`description`** (optional): one line of at most 200 characters.
+- **`events`**: 1 to 16 distinct names, each 1 to 40 lowercase letters,
+  digits and underscores, starting with a letter.
+- **`parameters`** (optional, at most 16), named with a letter then letters,
+  digits and underscores (at most 40): `{ required?, default?, description?,
+  pattern? }`. A value is a string of at most 200 characters matching
+  `pattern`, by default `^[A-Za-z0-9._/:@ ,*-]{0,200}$`; a `default` must
+  match it too. Parameters reach the source only, never a task.
+- **`fields`** (optional, at most 16, named as parameters): `{ pattern? }`, by
+  default `^[A-Za-z0-9._/:@-]{1,200}$`. A trigger's template may name a
+  declared field as `{fields.<name>}`; the value is the event's, validated.
+- **Patterns** are JavaScript regular expressions with the `u` flag (the flag
+  JSON Schema's `pattern` uses), compiled once and always matched whole: the
+  kernel wraps each as `^(?:…)$`. One that does not compile makes the source
+  malformed.
+- **`urlHosts`** (optional, at most 16): the exact lowercase hostnames an
+  event's `url` may name. With none declared, an event's `url` is invalid.
+  The allow-list lives here, never on an event.
+
+**Containment.** A malformed `triggerSources` **never refuses the
+capability**. It is not part of the manifest contract that spawn, discovery
+and the lock check: they ignore it. It is validated only where a source is
+used, by `trigger add`, a poll, `trigger test` and `trigger poll`, **per
+source**: a malformed source fails only the triggers naming it
+(`E_TRIGGER_SOURCE`, `details: { capability, source, pointer }`, the pointer
+into the manifest), and a well-formed sibling keeps working. A malformed top
+level (not an object, or more than 16 sources) fails every trigger naming the
+capability. `oats capabilities show <name> --json` adds `triggerSources`,
+exactly as declared, and, when the declaration has any, the problems a trigger
+would get as `triggerSourceProblems: [{ source, pointer, message }]`
+(`source` `null` for the top level); it never refuses the command. The
+closed sub-schema is in
+[`capability-manifest.schema.json`](capability-manifest.schema.json); what a
+schema cannot say (a pattern compiles, `command` names a command, a default
+matches its pattern) is checked at use only.
+
+**Schema tooling.** The runtime ignores manifest keys it does not know, but
+until this release the published `capability-manifest.schema.json` was closed
+at the top level (`additionalProperties: false`). A tool validating a manifest
+against an older copy of the schema flags `triggerSources`: the repository's
+own `validate-project`, the package dry-run checks, a provider's CI that pins
+the schema. Validate against this release's schema, or declare the key once
+your tooling uses it. A provider declaring `triggerSources` does not need to
+raise `compatibility.oats`: every workspace-model kernel ignores the key, and
+only the host that runs a trigger naming the source needs this release.
+
+**Invocation.** A poll runs the command's script with `node`, from the
+capability's directory in the deployment's verified module store (the
+capability at its resolved commit, digest-verified, for a member capability
+as for a package one), with the command's words after the script as
+arguments and no shell. The host tick runs it through a child `oats trigger
+poll <id> --max-age 600`; a person, through `oats trigger poll` or `oats
+trigger test` (which **execute the capability's source command** whatever the
+host's trust and the trigger's `runsOn` say: see
+[schedules.md](schedules.md#capability-sources)). A poll records nothing on
+its own; the tick records what it folds.
+
+**Request** — one JSON document on stdin, with exactly these keys:
+
+```json
+{"schemaVersion":1,"phase":"poll","capability":"acme.graph","source":"harvest-branches","trigger":"local/harvest-review",
+ "params":{"prefix":"harvest/"},"settings":{"store":"~/.graph"},
+ "input":{"context":{"kind":"workspace","workspace":"github.com/acme/agents","deployment":"/srv/acme",
+                     "soul":"graph-reviewer","host":"kb-bot-server"}}}
+```
+
+- `trigger` is the qualified trigger id.
+- `params` are the trigger's, with the declared defaults applied (a parameter
+  with neither a value nor a default is absent).
+- `settings` is the merged provider payload the trigger's soul resolves for
+  the capability.
+- `host` is this host's `host.name`, or `null`.
+
+**Environment:** the one a `--soul` [readiness check](#readiness-check-bindingcheck)
+gets, for the trigger's soul: every ambient `OATS_*`, `OAS_*` and `PI_*`
+variable removed, the rest inherited, and the kernel's `OATS_CAPABILITY`,
+`OATS_SETTINGS`, `OATS_SETTINGS_ORIGINS`, `OATS_CLI_BIN`, `OATS_WORKSPACE`,
+the team variables, `OATS_AGENT`, `OATS_SOUL_ID` and `OATS_SOUL`. There is no
+`OATS_INSTANCE` or `OATS_INSTANCE_HOME`, and the kernel passes no credential.
+Under the host timer, the inherited environment is the timer's (only `PATH`
+and `OATS_HOME_DIR`): keep the source's login in its own store under `HOME`,
+not in an exported variable.
+
+**Answer** — exit 0, and exactly one JSON document on stdout, at most 1 MiB
+(whitespace around it is fine; progress text is not):
+
+```json
+{"schemaVersion":1,"phase":"poll","capability":"acme.graph","source":"harvest-branches","ok":true,
+ "result":{"events":[{"key":"harvest/x:9f2c41d","subject":"harvest/x","event":"opened",
+                      "url":"https://graph.example.org/x","fields":{"graph":"kb","branch":"harvest/x"}}],
+           "skipped":[{"subject":"harvest/y","why":"not judged yet"}]}}
+```
+
+- **The envelope** has exactly `schemaVersion, phase, capability, source, ok,
+  result`; `schemaVersion`, `phase`, `capability` and `source` echo the
+  request. `result` is `{ events, skipped? }`, exactly.
+- **A refusal** is `{…, "ok": false, "error": { "code", "message"? }}`.
+- **An event** is `{ key, subject, event, url?, fields? }`: the rules are in
+  [schedules.md](schedules.md#capability-sources). An invalid event is
+  dropped alone; the others go on.
+- **`skipped`** (optional) is `[{ subject, why }]`: what the source looked at
+  and chose not to list, shown in `trigger status` and `trigger test`.
+
+| Outcome | `E_TRIGGER_POLL` `details.cause` | recorded |
+|---|---|---|
+| nonzero exit or a signal | `exit` | nothing; pending events kept |
+| not exactly one JSON document, unknown keys, a wrong echo, a malformed `result`, over 1 MiB | `result` | nothing |
+| more than 500 events, or more than 100 skipped | `too-many-events` | nothing |
+| over 30 s (killed) | `timeout` | nothing |
+| `ok: false` | `refused`, with `details.source: { code, message? }` | nothing |
+| the soul does not resolve | `resolution` | nothing |
+| the trigger's meaning does not hold | (`E_TRIGGER_SOURCE` / `E_TRIGGER_INVALID`) | nothing; the source does not run |
+
+**Your text is untrusted.** A skipped item's `why`, a refusal's `message` and
+its `code` are never composed into a task or any kernel sentence. They are
+kept only in fields that name the source and printed under `source says:`,
+capped (`why` 200 characters, `message` 500, `code` 128) and with every
+control character, line or paragraph separator, bidi control, U+200B,
+U+2060, U+FEFF and tag character replaced by U+FFFD.
+
+**Time.** A source gets at most 30 s and is killed after that; the tick's
+whole poll, resolution included, gets 35 s, and polls run only while they can
+end within 50 s of the tick's start. Answer from a cache or a quick query: a
+source slower than that should cache.
+

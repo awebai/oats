@@ -117,6 +117,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `soul-composed-instructions` | `oats inspect --soul <soul> --instructions` and its `souls[].composedInstructions`: the AGENTS.md a spawn of the soul here would write, with the soul body and each composed block as ranges, OATS 0.46.0 ([`oats inspect`](#oats-inspect---home-----soul----dir----json--operationsapi-2)) | |
 | `teams-conditional-default` | `oats teams default <label> --if-absent \| --expect <label>` and `E_TEAM_DEFAULT_MISMATCH`; `oats teams add … --no-default` and its `reused` answer; `E_TEAM_EXISTS` `observed`; unknown flags on `oats teams` refused, OATS 0.48.0 ([`oats teams`](#oats-teams)). A kernel without it ignores the flags: `--if-absent` there is an unconditional set, so check the feature before passing them | |
 | `worktree-event` | the `worktree` hook event; `oats worktree add\|remove` ([`oats worktree`](#oats-worktree)); `worktreeHooks` on `spawn --preview` and on the spawn result and `spawned` event; `spawnInProgress` on `oats status --json` instance rows; the `worktree-added` event kind; `E_INTERRUPTED` and `E_WORKTREE_DIRTY`, OATS 0.49.0 | |
+| `trigger-sources` | capability-declared trigger sources: `on.source: "<capability>:<source>"` triggers and their added row keys, `oats trigger poll`, `E_TRIGGER_SOURCE`, `E_TRIGGER_POLL` `details.cause`, and `triggerSources`/`triggerSourceProblems` on `oats capabilities show`, OATS 0.49.0 ([`oats trigger`](#oats-trigger)) | `triggerApi: 1` (payload only) |
 | `server-probe-features` | `features` on `oats status --json` (this kernel's own list, as `version --json` answers it), and each `oats server roster --json` group's `probe.features`: the host's list, relayed from that status answer after validation, `null` when unknown, OATS 0.49.0 ([The remote roster](#the-remote-roster-oats-server-roster---json)) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
@@ -220,6 +221,7 @@ oats status | workspace status | souls | capabilities | inspect --soul|--home
      | teams | soul teams <soul>   … --max-age <seconds> --json
 oats spawn <soul> … --preview --max-age <seconds> --json    (feature spawn-preview-max-age)
 oats capabilities show <name> … --max-age <seconds> --json  (feature capability-show)
+oats trigger poll <id> … --max-age <seconds> --json         (feature trigger-sources)
 ```
 
 - **Values:** whole seconds, `0` to `86400`. `0` is live: it reuses nothing.
@@ -279,8 +281,8 @@ oats capabilities show <name> … --max-age <seconds> --json  (feature capabilit
   `E_BAD_ARGS` first), with
   `E_BAD_ARGS` "--max-age is not accepted by \`oats <form>\`: only the read
   verbs reuse observations (status, workspace status, souls, capabilities,
-  capabilities show, inspect --soul|--home, spawn --preview, and the read
-  forms of teams and soul teams)" and,
+  capabilities show, inspect --soul|--home, spawn --preview, trigger poll,
+  and the read forms of teams and soul teams)" and,
   with `--server`, "--max-age cannot be combined with --server: observation
   reuse is local to this machine".
   A capability command's argv (`oats <namespace> …`) is its provider's: the
@@ -1000,6 +1002,15 @@ nothing reads a working clone.
   [capability warnings](#capability-warnings-hook-event-unsupported-oats-0490).
   Their `path` is the repository-relative form, unlike the paths above. The
   text form prints them (to stderr with `--file`).
+- `triggerSources` (feature `trigger-sources`, OATS 0.49.0), after
+  `warnings`, only when the manifest declares the key: the declaration
+  exactly as written, whatever its shape (untrusted text: render it as
+  text). `triggerSourceProblems: [{source, pointer, message}]` follows only
+  when the declaration has problems: the ones a trigger naming a source
+  would get as `E_TRIGGER_SOURCE`, `source` `null` for a top-level problem,
+  `pointer` a JSON pointer into the manifest. A malformed declaration never
+  refuses the command and adds nothing to `problems`
+  ([capabilities.md](capabilities.md#trigger-sources-triggersources)).
 - With `--max-age` (`0` included) both the show and the `--file` answer gain
   the [`observation`](#observation-reuse-feature-observe-max-age-oats-0311)
   block `{observedAt, reused, localRevision}`.
@@ -1094,7 +1105,8 @@ nonzero exit, as for every command: `E_BAD_ARGS`, `E_CAPABILITY_UNKNOWN`,
 (`E_LOCAL_MISSING`, `E_LOCK_SCHEMA`, …).
 
 **Without `--json`** the show prints a short listing for an operator: the
-inject's path and size, each skill with its files and sizes, and the
+inject's path and size, each skill with its files and sizes, the trigger
+sources (name, command, events, description) and their problems, and the
 problems. `--file` prints the text; a binary file prints a one-line note
 instead, and a truncated file prints its text followed by a one-line note.
 
@@ -3566,11 +3578,13 @@ oats schedule update <id> --description=<text> [--dir <d>] --json
 ### `oats trigger`
 
 ```text
-oats trigger list | show <id> | status [<id>] | test <id> | add (--file <json> | --from <package>:<template> [--set k=v]) [--description=<text>] | update <id> --description=<text> | enable <id> | disable <id> | remove <id> --json
+oats trigger list | show <id> | status [<id>] | test <id> | poll <id> [--max-age <s>] | add (--file <json> | --from <package>:<template> [--set k=v]) [--description=<text>] | update <id> --description=<text> | enable <id> | disable <id> | remove <id> --json
 ```
 
 Event-driven spawns. Local definitions live in `oats-schedules.json` (`kind:
-"trigger"`).
+"trigger"`). A trigger's source is the built-in `github.pull_request` or, with
+feature `trigger-sources` (OATS 0.49.0), `<capability>:<source>`, a source a
+capability declares ([schedules.md](schedules.md#capability-sources)).
 
 - `list`: `{triggerApi, scope, host, snapshot, triggers, scheduler}`.
   `show`, `add`, `update`, `enable`, `disable` → `{trigger}`; `remove` → `{removed,
@@ -3582,17 +3596,29 @@ Event-driven spawns. Local definitions live in `oats-schedules.json` (`kind:
   - `id` is always qualified (`local/<id>` or `<member>/<id>`); verbs accept
     `local/<id>` or a bare local id.
   - `on`: `{source: "github.pull_request", repo, events: [opened | reopened |
-    ready_for_review | labeled | synchronize], labels, base?, poll}`.
+    ready_for_review | labeled | synchronize], labels, base?, poll}`, or for a
+    capability source `{source: "<capability>:<source>", params: {<name>:
+    <string>}, events: [<the source's event names>], poll}`.
   - `spawn`: `{soul, purpose, task, teams, launchConfig?, harness?, model?,
     yolo?, backend?}`. `purpose` and `task` template over `{repo}`,
-    `{number}`, `{url}`, `{event}`, `{trigger}`, `{headSha}`. `teams` are
+    `{number}`, `{url}`, `{event}`, `{trigger}`, `{headSha}`, `{subject}` and
+    `{key}`; a capability source's over `{trigger}`, `{source}`, `{subject}`,
+    `{event}`, `{key}`, `{url}` and `{fields.<name>}`. `teams` are
     distinct labels passed as `--provider <messaging cap> join=<labels>`; a
     soul without messaging refuses `E_TRIGGER_TEAMS {soul, teams}`.
   - `template?`: `{package, version, commit, template}`.
   - `lastRun`: `{at, instance, home, event, number, subject, key}`
     (`subject`, 0.49.0: the event's subject, a PR's number as a string;
-    for a run recorded before 0.49.0, its number); `nextDue`: the
-    next poll here, `null` before the first.
+    for a run recorded before 0.49.0, its number; a capability source's
+    run has `number: null`); `nextDue`: the next poll here, `null` before
+    the first.
+  - `invalid?`: `{code, message, field?}` when the stored definition no
+    longer validates, as before. A capability source's trigger whose last
+    meaning check failed at a poll carries `invalid: {code, message, field?,
+    at}` instead (`code` `E_TRIGGER_SOURCE` or `E_TRIGGER_INVALID`; `at` when
+    the check ran), until a good poll. `invalid` always means the trigger
+    itself is invalid; an event the source answered badly is an *invalid
+    event* (`invalidEvents`).
 - `status [<id>]` → `{triggerApi, scope, triggers: [{id, name, enabled,
   runsHere, reason, enabledHere, repo, soul, concurrency: {max, perKey},
   liveCount, live: [{instance, home, repo, number, subject, event}], lastPoll:
@@ -3603,6 +3629,22 @@ Event-driven spawns. Local definitions live in `oats-schedules.json` (`kind:
   `subject` (0.49.0) is the event's subject, the thing `perKey` counts: a
   PR's number, as a string. A record written before 0.49.0 has none, and
   its number is reported.
+- **A capability source's `status` row** (feature `trigger-sources`) has
+  `repo: null`, `number: null` in `pending[]`, `fired[]` and `live[]`, and
+  adds `source: {capability, name}`, `invalidEvents: [{text, rule}]` (the
+  last good poll's, at most 20; `rule` is `shape`, `unknown-key`, `key`,
+  `subject`, `event`, `url`, `fields` or `duplicate-key`, `text` the first
+  200 characters of the event's JSON), `skipped: [{subject, why}]` (the last
+  good poll's, at most 100) and, when its last meaning check failed,
+  `invalid: {code, message, field?, at}`. Its `lastPoll` is `{at, ok: true,
+  events, invalidEvents, skipped, filtered}` (counts) or `{at, ok: false,
+  cause, error, source?}`, and `lastError` may carry the same `source`.
+  `cause` is `exit`, `result`, `too-many-events`, `timeout`, `refused` or
+  `resolution`; `source: {code, message?}` is the source's own refusal.
+  `why`, `source.code` and `source.message` are the source's untrusted text,
+  capped (200, 128, 500 characters) with control, separator, bidi,
+  invisible and tag characters replaced by U+FFFD: render them as text,
+  marked as the source's.
 - `test <id>` → `{triggerApi, id, ok, placement: {runsOn, owner, host,
   runsHere, reason, detail?, enabledHere}, gh: {ok, account,
   credentialSource, reachesHostTimer, note, detail}, repo: {key, readable,
@@ -3617,20 +3659,69 @@ Event-driven spawns. Local definitions live in `oats-schedules.json` (`kind:
   purpose was cut to fit ([schedules.md](schedules.md#triggers)); both are
   `null` when the soul does not resolve or its name is too long for a
   triggered spawn (that error is then in `problems`).
+- **`test <id>` of a capability source's trigger** runs the source (it
+  executes the capability's source command, whatever the host's trust and
+  `runsOn` say) and answers `{triggerApi, id, ok, placement, gh, repo: null,
+  soul, teams, source, wouldFire, problems, warnings, spawned: false}`, no
+  `pollError`. `gh` is `null` unless the trigger has an `owner` (then as
+  above, for the owner's host). `source` is `{capability, name, ok: true,
+  events, invalidEvents, skipped, filtered}`, `{capability, name, ok: false,
+  invalid: {code, message, field?, at}, events: [], invalidEvents: [],
+  skipped: []}` when its meaning fails, or `{capability, name, ok: false,
+  cause, error: {code, message}, source?, events: [], invalidEvents: [],
+  skipped: []}` when the poll fails. `wouldFire` rows are `{key, subject,
+  event, url?, instance, nameCut, held?}`. When the tick would not run the
+  trigger here, `problems` holds `run manually; the tick will not run it
+  here: <reason>` (with the placement's detail). `warnings` always holds
+  "this source's credential may not be visible to the host timer: it runs
+  with only PATH and OATS_HOME_DIR set, so keep the source's login in its
+  own store, not in an exported variable".
+- **`poll <id>`** (feature `trigger-sources`) runs a capability source's
+  trigger's source once, its meaning checked first, and answers
+  `{triggerApi, id, source: {capability, name}, events: [{key, subject,
+  event, url?, fields}], invalidEvents: [{text, rule}], skipped: [{subject,
+  why}], filtered}`, plus `observation` with `--max-age`. `events` are the
+  valid events the trigger selects, `key` as the source wrote it (stored
+  prefixed `<trigger>:`); `filtered` counts the valid events whose `event`
+  the trigger does not select. It records nothing and spawns nothing, but it
+  executes the capability's source command. A failed poll is `E_TRIGGER_POLL`
+  with `details: {cause, source?}`; a meaning failure is `E_TRIGGER_SOURCE`
+  `{capability, source, pointer?}` or `E_TRIGGER_INVALID {field}`; a
+  `github.pull_request` trigger is `E_BAD_ARGS`. Without `--max-age` it
+  observes the members live.
+- **What a `triggerApi: 1` reader sees.** `triggerApi` stays 1. `on.source`
+  is an open string: tell rows apart by it, and gate on `trigger-sources`.
+  The keys above (`source`, `invalidEvents`, `skipped`, a meaning failure's
+  `invalid`, `test`'s `source`) appear only on capability-source rows and
+  are absent, not `null`, on a `github.pull_request` row, whose outputs are
+  exactly as before. On a capability source's rows the PR-only fields are
+  `null` (`repo`, `number`) or absent (`on.repo`, `on.labels`, `on.base`,
+  `wouldFire[].repo`), and `lastPoll` carries the counts above instead of
+  `prs` and `matching`.
 - A triggered instance records `instance.json.trigger`: `{id, key, source,
   repo, number, subject, url, event, headSha, observedAt, eventFile}`
   (`subject` since 0.49.0; `null` when the event had none). Its event file is
   `OATS_TRIGGER_EVENT_FILE`: `{trigger, source, repo, number, subject, url,
-  event, headSha, labels, observedAt, key}`.
+  event, headSha, labels, observedAt, key}`. For a capability source the
+  record has `repo: null`, `number: null`, `headSha: null` and adds `fields`,
+  and the event file is `{trigger, source, subject, event, key, url?,
+  fields, observedAt}`.
 - `update <id> --description=<text>` (feature `automation-descriptions`)
   changes only a local trigger's description; `--description=` (empty)
   removes it. It sets `updatedAt` and leaves fired and pending events
   untouched. `<id>` is `local/<id>` or the bare id; a workspace trigger
   refuses `E_AUTOMATION_WORKSPACE`. Any other flag is `E_BAD_ARGS` ("only
   --description is supported for now"). An older kernel has no `update`.
+- `add` of a capability source's trigger checks its meaning against the
+  soul's resolution before anything is written (`E_TRIGGER_SOURCE`,
+  `E_TRIGGER_INVALID {field}`, or the soul's own resolution error).
 - Errors: `E_TRIGGER_INVALID {field}`, `E_TRIGGER_EXISTS`,
-  `E_TRIGGER_UNKNOWN`, `E_TRIGGER_TEAMS`, `E_TRIGGER_POLL`,
-  `E_TRIGGER_FAILED`, `E_BAD_ARGS`, `E_PACKAGE_MISSING`,
+  `E_TRIGGER_UNKNOWN`, `E_TRIGGER_TEAMS`, `E_TRIGGER_SOURCE {capability,
+  source, pointer?}` (a capability source that is undeclared or malformed,
+  whose capability the soul does not compose, or whose command is not a file
+  inside the capability; `pointer` is a JSON pointer into the manifest),
+  `E_TRIGGER_POLL` (`details.cause` and `details.source` for a capability
+  source), `E_TRIGGER_FAILED`, `E_BAD_ARGS`, `E_PACKAGE_MISSING`,
   `E_PACKAGE_MANIFEST`, `E_LOCAL_MISSING`.
 
 <a id="automations-shared-rows"></a>
@@ -3702,7 +3793,12 @@ registered). `maxConcurrent` is the effective scheduled-job cap (default 5);
   `number`, `subject`, `url`, `instance`, `nameCut`; a dry run previews the
   soul as a tick does, and reports a preview failure or a name that cannot
   fit as `spawn-failed`), `invalid` and
-  `not-here`. A workspace schedule's state key is `<member>~<id>`. A failed
+  `not-here`. A capability source's trigger adds `poll-deferred`
+  (`deadline`: its poll could not end by 50 s after the tick started; it
+  goes first next tick), its `polled` carries `events`, `invalidEvents`,
+  `skipped` and `filtered`, `poll-failed` a `cause`, `invalid` a failed
+  meaning check, and its `would-fire` has no `number`, and no `url` when the
+  event has none. A workspace schedule's state key is `<member>~<id>`. A failed
   snapshot refresh is `{workspace, action: "error", error}`.
 
 <a id="the-harness-rename-feature-harness-oats-0270"></a>

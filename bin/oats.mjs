@@ -98,7 +98,7 @@ const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental"]
  *  probe) and in `status --json`, which a remote roster relays as the host's (feature
  *  server-probe-features, lib/servers.mjs hostFeatures). ONE list for both, emitted at output
  *  time, never stored. A name must pass hostFeatures's check (test/cli-json-contract.test.mjs). */
-const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event"];
+const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources"];
 /** Commands `--server <id>` runs on a registered server. */
 const ROUTED_COMMANDS = new Set(["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "launch-config", "readiness", "instance"]);
 const flag = (name) => {
@@ -1374,7 +1374,7 @@ function sayReadNotices() {
 }
 /** Which kernel command forms take --max-age: THE allow-list (docs/desktop-cli-api.md "Observation reuse").
  *  → null when this form reads with observation reuse, else the E_BAD_ARGS message. `head` is argv before `--`. */
-const MAX_AGE_READS = "status, workspace status, souls, capabilities, capabilities show, inspect --soul|--home, spawn --preview, and the read forms of teams and soul teams";
+const MAX_AGE_READS = "status, workspace status, souls, capabilities, capabilities show, inspect --soul|--home, spawn --preview, trigger poll, and the read forms of teams and soul teams";
 function maxAgeRefusal(command, head) {
   const word = (i) => (head[i] !== undefined && !head[i].startsWith("--") ? head[i] : undefined);
   const refuse = (form) => `--max-age is not accepted by \`oats ${form}\`: only the read verbs reuse observations (${MAX_AGE_READS})`;
@@ -1387,6 +1387,8 @@ function maxAgeRefusal(command, head) {
     case "teams": return word(1) === undefined ? null : refuse(`teams ${word(1)}`);
     // `soul teams` only reads (its edit flags were removed in 0.38.0, and refuse as such).
     case "soul": return word(1) === "teams" ? null : refuse(["soul", word(1)].filter(Boolean).join(" "));
+    // A capability source's poll resolves its soul as a read (the tick's child passes --max-age 600).
+    case "trigger": return word(1) === "poll" ? null : refuse(["trigger", word(1)].filter(Boolean).join(" "));
     default: {
       const sub = ["package", "schedule", "session", "trigger", "automations", "launch-config", "server", "instance", "operation", "pane"].includes(command) ? word(1) : undefined;
       return refuse([command, sub].filter(Boolean).join(" "));
@@ -1728,7 +1730,9 @@ async function addWorkspaceAutomation(desc, { id, body, description }) {
   const content = A.automationFileText(desc, { id, description: description || undefined, runsOn, owner, body });
   const parsed = A.parseAutomationFile(desc, { stem: id, path: `${desc.folder}/${id}.yaml`, bytes: Buffer.from(content), member: name, repoKey: row.key, commit: row.commit });
   if (parsed.problem) bail(parsed.problem.code, parsed.problem.message, { path: parsed.problem.path });
-  await desc.expand(parsed.entry);
+  const def = await desc.expand(parsed.entry);
+  // A capability source's trigger means something only against its soul's resolution: checked before the file is written.
+  if (desc.kind === "trigger") await (await import("../lib/triggers.mjs")).checkAddMeaning(ctx.deploymentDir, def, { remoteOptions: ctx.remoteOptions });
   const sameRepo = (url) => { try { return remoteModule.parseRepoRef(url).key === row.key; } catch { return false; } };
   const at = A.memberCheckoutFor(dirFlag(), desc, id, { sameRepo });
   const file = { member: name, repoKey: row.key, path: `${desc.folder}/${id}.yaml`, content };
@@ -2164,6 +2168,17 @@ async function capabilityShowCmd(bail) {
       for (const f of skill.files ?? []) console.log(`      ${f.path}  ${size(f.bytes)}`);
       if (skill.filesTruncated) console.log(`      … more files (the first ${S.FILES_PER_SKILL} are listed)`);
     }
+  }
+  if (doc.triggerSources !== undefined) {
+    // As declared (a malformed declaration is shown, never refused): names, commands and events, made safe to print.
+    const { safeText } = await import("../lib/refused-text.mjs");
+    const decl = doc.triggerSources && typeof doc.triggerSources === "object" && !Array.isArray(doc.triggerSources) ? doc.triggerSources : null;
+    console.log(decl && Object.keys(decl).length ? "  trigger sources:" : `  trigger sources: ${decl ? "(none)" : "(malformed — see trigger source problems)"}`);
+    for (const [n, src] of Object.entries(decl ?? {})) {
+      const o = src && typeof src === "object" ? src : {};
+      console.log(`    ${safeText(n, 60)}  command ${typeof o.command === "string" ? safeText(o.command, 60) : "?"}  events ${Array.isArray(o.events) ? o.events.map((e) => safeText(String(e), 40)).join(",") : "?"}${typeof o.description === "string" ? `  — ${safeText(o.description, 200)}` : ""}`);
+    }
+    for (const p of doc.triggerSourceProblems ?? []) console.log(`  trigger source problem: ${p.pointer} — ${safeText(p.message, 300)}`);
   }
   for (const p of doc.problems) console.log(`  problem: ${p.code}${p.path ? ` ${p.path}` : ""} — ${p.message}`);
   for (const w of doc.warnings) console.log(`  warning  ${w.code}  ${w.message}`);
@@ -2633,8 +2648,10 @@ async function spawnCmd() {
     if (f !== undefined) {
       if (!existsSync(f)) bail("E_BAD_ARGS", `--trigger-event not found: ${f}`);
       try { triggerEvent = JSON.parse(readFileSync(f, "utf8")); } catch (e) { bail("E_BAD_ARGS", `--trigger-event is not valid JSON: ${e.message}`); }
-      const ok = triggerEvent && typeof triggerEvent === "object" && !Array.isArray(triggerEvent) && typeof triggerEvent.trigger === "string" && typeof triggerEvent.source === "string" && typeof triggerEvent.repo === "string" && Number.isInteger(triggerEvent.number) && typeof triggerEvent.event === "string";
-      if (!ok) bail("E_BAD_ARGS", "--trigger-event must hold { trigger, source, repo, number, url, event, headSha, labels, observedAt }");
+      // A pull-request event names its repo and number; a capability source's, its subject and key.
+      const ok = triggerEvent && typeof triggerEvent === "object" && !Array.isArray(triggerEvent) && typeof triggerEvent.trigger === "string" && typeof triggerEvent.source === "string" && typeof triggerEvent.event === "string"
+        && (triggerEvent.source === "github.pull_request" ? typeof triggerEvent.repo === "string" && Number.isInteger(triggerEvent.number) : typeof triggerEvent.subject === "string" && typeof triggerEvent.key === "string");
+      if (!ok) bail("E_BAD_ARGS", "--trigger-event must hold { trigger, source, repo, number, url, event, headSha, labels, observedAt } (github.pull_request) or { trigger, source, subject, event, key, url?, fields, observedAt } (a capability source)");
     } }
   const relativeRoot = flag("relative-root");
   if (relativeRoot !== undefined && (relativeRoot === true || !String(relativeRoot).trim())) bail("E_BAD_ARGS", "--relative-root needs an agents-root path");
@@ -3045,9 +3062,13 @@ async function triggerCmd() {
   const ws = () => (scope ??= scheduleScopeOf(dirFlag()));
   const out = (result, text) => { if (JSON_MODE) jsonOk(result); else console.log(text ? text(result) : JSON.stringify(result, null, 2)); };
   const needId = () => { if (!id) throw T.triggerError("E_BAD_ARGS", `oats trigger ${sub} <id>`); return id; };
-  const usage = "usage: oats trigger add (--file <trigger.json> | --from <package>:<template> [--set <name>=<value>]… [--id <id>]) [--description=<text>] [--workspace <member> --runs-on <host> --owner <host>/<login>] | update <id> --description=<text> | list | show <id> | enable <id> | disable <id> | remove <id> | test <id> | status [<id>]  [--dir <deployment>] [--json]   (<id>: local/<id> or <member>/<id>)";
+  const usage = "usage: oats trigger add (--file <trigger.json> | --from <package>:<template> [--set <name>=<value>]… [--id <id>]) [--description=<text>] [--workspace <member> --runs-on <host> --owner <host>/<login>] | update <id> --description=<text> | list | show <id> | enable <id> | disable <id> | remove <id> | test <id> | poll <id> [--max-age <s>] | status [<id>]  [--dir <deployment>] [--json]   (<id>: local/<id> or <member>/<id>)";
   const where = (t) => (t.origin?.kind === "workspace" ? (t.runsHere ? `runs here as ${t.owner}` : `${t.reason === "assigned-elsewhere" ? `runs on ${t.runsOn}` : t.reason ?? "disabled here"}`) : t.enabledHere ? "local" : "local, disabled");
-  const line = (t) => `${t.id}  ${where(t)}  ${t.on?.source ?? "?"} ${t.on?.repo ?? "?"} [${(t.on?.events || []).join(",")}]${t.on?.labels?.length ? ` labels ${t.on.labels.join(",")}` : ""} every ${t.on?.poll ?? "?"} → spawn ${t.spawn?.soul ?? "?"}${t.spawn?.teams?.length ? ` in ${t.spawn.teams.join(",")}` : ""}${t.invalid ? `  INVALID: ${t.invalid.message}` : ""}`;
+  // A capability source names its params where the built-in names its repository.
+  const watched = (on) => (T.isCapabilitySource(on?.source) ? `${on.source}${Object.keys(on.params || {}).length ? ` ${Object.entries(on.params).map(([k, v]) => `${k}=${v}`).join(" ")}` : ""}` : `${on?.source ?? "?"} ${on?.repo ?? "?"}`);
+  const line = (t) => `${t.id}  ${where(t)}  ${watched(t.on)} [${(t.on?.events || []).join(",")}]${t.on?.labels?.length ? ` labels ${t.on.labels.join(",")}` : ""} every ${t.on?.poll ?? "?"} → spawn ${t.spawn?.soul ?? "?"}${t.spawn?.teams?.length ? ` in ${t.spawn.teams.join(",")}` : ""}${t.invalid ? `  INVALID: ${t.invalid.message}` : ""}`;
+  // A source's own words are printed only under this label, never as the kernel's (docs/schedules.md).
+  const said = (x) => (x ? `source says: ${x.code}${x.message ? `: ${x.message}` : ""}` : "");
   // The workspace automations of this deployment (the snapshot) placed on this host.
   let actx;
   const ctx = () => (actx ??= scopeAutomations(ws(), {}));
@@ -3075,7 +3096,30 @@ async function triggerCmd() {
         return out({ trigger: T.updateTriggerDescription(ws(), needId(), description, ctx()) }, (r) => line(r.trigger));
       }
       case "remove": return out(T.removeTrigger(ws(), needId(), ctx()), (r) => `removed trigger ${r.removed}${r.live.length ? ` (its live instances keep running: ${r.live.join(", ")})` : ""}`);
-      case "status": return out(T.triggerStatus(ws(), id, ctx()), (r) => r.triggers.map((t) => `${t.id}  last poll ${t.lastPoll ? `${t.lastPoll.at} ${t.lastPoll.ok ? `ok (${t.lastPoll.matching}/${t.lastPoll.prs} PRs match)` : `FAILED: ${t.lastPoll.error}`}` : "never"}  pending ${t.pending.length}  fired ${t.firedTotal}  live ${t.live.map((l) => l.instance).join(",") || "none"}${t.lastError ? `\n    last error ${t.lastError.at}: ${t.lastError.message}` : ""}`).join("\n") || "(no triggers)");
+      case "status": return out(T.triggerStatus(ws(), id, ctx()), (r) => r.triggers.map((t) => {
+        if (!t.source) return `${t.id}  last poll ${t.lastPoll ? `${t.lastPoll.at} ${t.lastPoll.ok ? `ok (${t.lastPoll.matching}/${t.lastPoll.prs} PRs match)` : `FAILED: ${t.lastPoll.error}`}` : "never"}  pending ${t.pending.length}  fired ${t.firedTotal}  live ${t.live.map((l) => l.instance).join(",") || "none"}${t.lastError ? `\n    last error ${t.lastError.at}: ${t.lastError.message}` : ""}`;
+        const lp = t.lastPoll;
+        return [`${t.id}  source ${t.source.capability}:${t.source.name}  last poll ${lp ? `${lp.at} ${lp.ok ? `ok (${lp.events} events, ${lp.invalidEvents} invalid, ${lp.skipped} skipped, ${lp.filtered} filtered)` : `FAILED (${lp.cause ?? "?"}): ${lp.error}`}` : "never"}  pending ${t.pending.length}  fired ${t.firedTotal}  live ${t.live.map((l) => l.instance).join(",") || "none"}`,
+          ...(t.invalid ? [`    INVALID ${t.invalid.at}: ${t.invalid.code}: ${t.invalid.message}`] : []),
+          ...(lp && !lp.ok && lp.source ? [`    ${said(lp.source)}`] : []),
+          ...t.invalidEvents.map((x) => `    invalid event (${x.rule}): ${x.text}`),
+          ...t.skipped.map((x) => `    skipped ${x.subject}, source says: ${x.why}`),
+          ...(t.lastError && !t.invalid ? [`    last error ${t.lastError.at}: ${t.lastError.message}`] : [])].join("\n");
+      }).join("\n") || "(no triggers)");
+      case "poll": {
+        // Runs the capability's source command now (records nothing, spawns nothing). The tick's own
+        // child gets OATS_TRIGGER_POLL_DEADLINE (epoch ms; internal between the tick and its child,
+        // not a contract): its source gets only what is left before it (lib/triggers.mjs pollViaChild).
+        const raw = process.env.OATS_TRIGGER_POLL_DEADLINE;
+        const deadline = raw && /^\d+$/.test(raw) ? Number(raw) : null;
+        const r = await T.pollSource(ws(), needId(), { ctx: ctx(), remoteOptions: remoteOptionsFromEnv(), deadline });
+        if (JSON_MODE) { jsonOk(withObservation(r)); return; }
+        return out(r, (x) => [`trigger ${x.id}: ${x.source.capability}:${x.source.name} listed ${x.events.length} event(s) (nothing recorded, nothing spawned)`,
+          ...x.events.map((ev) => `  ${ev.event} ${ev.subject}  ${ev.key}`),
+          ...(x.filtered ? [`  ${x.filtered} filtered (events the trigger does not select)`] : []),
+          ...x.invalidEvents.map((v) => `  invalid event (${v.rule}): ${v.text}`),
+          ...x.skipped.map((k) => `  skipped ${k.subject}, source says: ${k.why}`)].join("\n"));
+      }
       case "test": {
         let workspaceTeams = null;
         try {
@@ -3085,7 +3129,22 @@ async function triggerCmd() {
           const shared = typeof local.workspace === "string" && !local.standalone ? (await observeWorkspace(local.workspace, { remoteOptions: remoteOptionsFromEnv() })).workspace : null;
           workspaceTeams = [...teamModel(shared, local).labels.keys()];
         } catch { /* reported as unknown (null) */ }
-        return out(T.testTrigger(ws(), needId(), { workspaceTeams, ctx: ctx() }), (r) => [
+        const tested = await T.testTrigger(ws(), needId(), { workspaceTeams, ctx: ctx(), remoteOptions: remoteOptionsFromEnv() });
+        if (tested.source) return out(tested, (r) => [
+          `trigger ${r.id}: ${r.ok ? "ready" : "NOT ready"} (the source ran; nothing was recorded or spawned)`,
+          `  placement  ${r.placement.runsOn ? `runs on ${r.placement.runsOn} as ${r.placement.owner}; this host is ${r.placement.host ?? "(unnamed)"} — ${r.placement.runsHere ? "runs here" : r.placement.reason ?? "disabled here"}` : "local (this host)"}`,
+          ...(r.gh ? [`  gh auth    ${r.gh.ok ? `ok — ${r.gh.account ?? "?"} via ${r.gh.credentialSource}` : `FAILED${r.gh.detail ? ` — ${r.gh.detail}` : ""}`}`] : []),
+          `  source     ${r.source.capability}:${r.source.name} ${r.source.ok ? `listed ${r.source.events.length} event(s), ${r.source.invalidEvents.length} invalid, ${r.source.skipped.length} skipped, ${r.source.filtered} filtered` : r.source.invalid ? `INVALID: ${r.source.invalid.message}` : `FAILED (${r.source.cause ?? "?"}): ${r.source.error.message}`}`,
+          ...(r.source.source ? [`             ${said(r.source.source)}`] : []),
+          ...r.source.invalidEvents.map((v) => `  invalid    (${v.rule}) ${v.text}`),
+          ...r.source.skipped.map((k) => `  skipped    ${k.subject}, source says: ${k.why}`),
+          `  soul       ${r.soul.name} ${r.soul.resolves ? `resolves${r.soul.messaging ? ` (messaging ${r.soul.messaging})` : ""}` : `does NOT resolve: ${r.soul.error.code} ${r.soul.error.message}`}`,
+          `  teams      ${r.teams.requested.join(", ") || "(none)"}${r.teams.undeclared?.length ? `  undeclared: ${r.teams.undeclared.join(", ")}` : ""}`,
+          `  would fire ${r.wouldFire.length ? r.wouldFire.map((w) => `${w.event} ${w.subject}${w.instance ? ` as ${w.instance}` : ""}${w.held ? ` (held: ${w.held})` : ""}`).join(", ") : "nothing now"}`,
+          ...r.problems.map((p) => `  problem    ${p}`),
+          ...(r.warnings ?? []).map((w) => `  warning    ${w}`),
+        ].join("\n"));
+        return out(tested, (r) => [
           `trigger ${r.id}: ${r.ok ? "ready" : "NOT ready"} (nothing was spawned)`,
           `  placement  ${r.placement.runsOn ? `runs on ${r.placement.runsOn} as ${r.placement.owner}; this host is ${r.placement.host ?? "(unnamed)"} — ${r.placement.runsHere ? "runs here" : r.placement.reason ?? "disabled here"}` : "local (this host)"}`,
           `  gh auth    ${r.gh.ok ? `ok — ${r.gh.account ?? "?"} via ${r.gh.credentialSource}` : `FAILED${r.gh.detail ? ` — ${r.gh.detail}` : ""}`}`,
@@ -3128,6 +3187,8 @@ async function triggerCmd() {
           return out(r, printWorkspaceAdd);
         }
         if (spec === undefined) spec = await triggerFromPackage(T, String(from), sets, idFlag);
+        // A capability source's meaning needs the soul's resolution (asynchronous, so here, before the write).
+        await T.checkAddMeaning(ws(), T.validateTrigger({ ...spec, kind: spec?.kind ?? "trigger" }), { remoteOptions: remoteOptionsFromEnv() });
         return out({ trigger: T.addTrigger(ws(), withDescription(spec, description)) }, (r) => `added ${line(r.trigger)}\n(\`oats trigger test ${r.trigger.id}\` checks gh, the repository, the soul and the teams on this host)`);
       }
       default: throw T.triggerError("E_BAD_ARGS", usage);

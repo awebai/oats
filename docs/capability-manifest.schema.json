@@ -248,6 +248,48 @@
         }
       }
     },
+    "triggerSources": {
+      "description": "Trigger sources (#669): each a command of this capability that, at each poll, lists the events due now; a trigger names one as on.source \"<capability>:<source>\". Validated only where a source is used (trigger add, a poll, trigger test and trigger poll), never when the capability loads: a malformed declaration fails the triggers naming it (E_TRIGGER_SOURCE) and nothing else. Checked at use only, not by this schema: every pattern compiles; command names a key of commands; a parameter default matches its pattern. A pattern is ECMA-262 with the u flag, matched anchored as ^(?:…)$; the default parameter value pattern is ^[A-Za-z0-9._/:@ ,*-]{0,200}$ and the default field pattern ^[A-Za-z0-9._/:@-]{1,200}$.",
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": { "pattern": "^[a-z0-9][a-z0-9-]{0,39}$" },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["command", "events"],
+        "additionalProperties": false,
+        "properties": {
+          "command": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "description": "One of this manifest's commands: the source's program, run once per poll (one JSON request on stdin, one JSON answer on stdout)." },
+          "description": { "type": "string", "maxLength": 200, "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]*$" },
+          "events": { "type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,39}$" } },
+          "parameters": {
+            "type": "object",
+            "maxProperties": 16,
+            "propertyNames": { "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,39}$" },
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "required": { "type": "boolean" },
+                "default": { "type": "string", "maxLength": 200 },
+                "description": { "type": "string", "maxLength": 200, "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]*$" },
+                "pattern": { "type": "string", "minLength": 1 }
+              }
+            }
+          },
+          "fields": {
+            "type": "object",
+            "maxProperties": 16,
+            "propertyNames": { "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,39}$" },
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": { "pattern": { "type": "string", "minLength": 1 } }
+            }
+          },
+          "urlHosts": { "type": "array", "maxItems": 16, "uniqueItems": true, "items": { "type": "string", "maxLength": 253, "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$" } }
+        }
+      }
+    },
     "hooks": {
       "type": "object",
       "properties": {

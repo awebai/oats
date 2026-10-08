@@ -159,6 +159,9 @@ const LONG_DESCRIPTION = `${"d".repeat(DESCRIPTION_LIMIT - 2)}â‚¬ and more`;
 const LONG_FRONT_MATTER = `---\nextra: ${"a".repeat(TEXT_LIMIT)}\ndescription: This is valid.\n---\n`;
 const many = Object.fromEntries(Array.from({ length: FILES_PER_SKILL }, (_, i) => [`skills/many/f${String(i).padStart(3, "0")}.md`, `${i}\n`]));
 
+const SOURCES = { branches: { command: "poll", description: "Ready branches", events: ["opened", "updated"], fields: { branch: { pattern: "^harvest/[a-z0-9-]+$" } }, urlHosts: ["graph.example.org"] } };
+const BAD_SOURCES = { good: { command: "poll", events: ["opened"] }, bad: { command: "nope", events: ["Opened"] } };
+
 let pkg, fx, catalogRows;
 test.before(() => {
   pkg = packageRepo();
@@ -191,6 +194,9 @@ test.before(() => {
       "acme.dotgit2": { manifest: { inject: "injects/.GIT" }, files: {} },
       // The package's capability name, also a member's: a name without a selector is ambiguous.
       "acme-tool": { manifest: {}, files: {} },
+      // Trigger sources (#669): shown as declared; a malformed one is a problem of the show, never a refusal.
+      "acme.sources": { manifest: { commands: { poll: "bin/poll.mjs poll" }, triggerSources: SOURCES }, files: { "bin/poll.mjs": "process.exit(0)\n" } },
+      "acme.badsources": { manifest: { commands: { poll: "bin/poll.mjs poll" }, triggerSources: BAD_SOURCES }, files: {} },
     },
   });
 });
@@ -283,6 +289,20 @@ test("inject edge cases: declared but missing, binary, an unsafe declared path â
   assert.deepEqual([unsafe.problems[0].code, unsafe.problems[0].path], ["E_CAPABILITY_MISSING", null], "spawn's code for it");
   assert.ok(unsafe.problems[0].message.includes(JSON.stringify("../outside.md")), "the raw value only inside the message");
   assert.equal(ok(show("acme.many")).inject, null, "no inject declared");
+});
+
+test("triggerSources: shown exactly as declared; a malformed declaration adds triggerSourceProblems and never refuses the show or the catalog", () => {
+  const doc = ok(show("acme.sources"));
+  assert.deepEqual(doc.triggerSources, SOURCES, "as declared, patterns as strings");
+  assert.equal("triggerSourceProblems" in doc, false, "no problems: no key");
+  assert.deepEqual(Object.keys(doc).slice(-2), ["warnings", "triggerSources"], "an added key, after the existing ones");
+  const bad = ok(show("acme.badsources"));
+  assert.deepEqual(bad.triggerSources, BAD_SOURCES);
+  assert.deepEqual(bad.triggerSourceProblems.map((p) => [p.source, p.pointer]), [["bad", "/triggerSources/bad/command"], ["bad", "/triggerSources/bad/events/0"]], "only the malformed source");
+  assert.ok(bad.triggerSourceProblems.every((p) => typeof p.message === "string" && p.message.startsWith('trigger source "bad": ')));
+  assert.deepEqual(bad.problems, [], "the show's own problems are unchanged");
+  assert.ok(catalogRows.some((r) => r.name === "acme.badsources"), "the catalog lists the capability: discovery does not refuse it");
+  assert.equal("triggerSources" in ok(show("acme.many")), false, "a manifest without triggerSources answers exactly as before");
 });
 
 test("manifest paths: a backslash reads as a separator (the answer's paths are safe POSIX, and --file reads them); a `.git` component is an unsafe declaration", () => {
