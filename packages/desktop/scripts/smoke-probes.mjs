@@ -3,9 +3,12 @@
 // synchronous execution previously left every reaper test green).
 //
 // Contract: every probe of the packaged app runs through the injected
-// reaper's runTracked — asynchronous, detached, group-tracked, settled on
-// close. There is NO synchronous execution primitive in this module, and
-// the tests import it to assert the probe call goes through runTracked.
+// reaper — asynchronous, detached, group-tracked. A one-shot probe (the ABI
+// probe, the collector) uses runTracked, settled on close; the long-lived
+// backend uses spawnTracked, and runBackendProbe reaps its group and awaits
+// its exit in a finally, on every path. There is NO synchronous execution
+// primitive in this module, and the tests import it to assert the probes go
+// through the reaper.
 import { mkdtempSync, rmSync } from "node:fs";
 import { createConnection, createServer } from "node:net";
 import { tmpdir } from "node:os";

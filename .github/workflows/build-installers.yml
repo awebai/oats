@@ -66,8 +66,8 @@ jobs:
           node-version: 22
 
       # (No xvfb / display needed: the build-verify smoke runs the static
-      # inventory + strict codesign + node-pty ABI checks, not the packaged
-      # GUI launch — that needs an interactive windowserver an app without
+      # inventory + strict codesign + node-pty ABI checks and the headless
+      # backend/collector run as Node, not the packaged GUI launch — that needs an interactive windowserver an app without
       # Developer ID trust can't get on CI runners and is verified out of
       # band.)
       - name: Install deps (root + packages/desktop)
@@ -106,10 +106,13 @@ jobs:
       # + plausible sizes) + strict deep codesign verification of the packaged
       # .app bundle (macOS legs — unconditional, rejects the v0.18.2
       # partial/absent-signature class) + node-pty under the packaged Electron
-      # ABI. The packaged GUI LAUNCH is skipped (OATS_SMOKE_BUILD_VERIFY
-      # authorizes the skip under CI) — it needs a display ad-hoc-signed apps
-      # don't get on CI runners; the installer BUILD + signature +
-      # native-module ABI are the meaningful evidence here.
+      # ABI + the bundled backend (started as main starts it, answering, then
+      # exiting when its stdin closes) and its liveness collector, run
+      # headless as Node from app.asar. The packaged GUI LAUNCH is skipped
+      # (OATS_SMOKE_BUILD_VERIFY authorizes the skip under CI) — it needs a
+      # display ad-hoc-signed apps don't get on CI runners; the installer
+      # BUILD + signature + native-module ABI + headless backend are the
+      # meaningful evidence here. Not the AppImage's launcher or runtime.
       - name: Installed-artifact smoke (build-verify)
         working-directory: packages/desktop
         env:
