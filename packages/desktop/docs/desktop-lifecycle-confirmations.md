@@ -184,6 +184,12 @@ split. The kernel's retire completes both, through the ordinary plan → apply
 dialog. A row never shows `spawnInProgress` and `rollbackIncomplete` together;
 if both arrive, `rollbackIncomplete` wins.
 
+The retire plan of a `rollbackIncomplete` row says "Branches and pull requests
+are not changed, except a branch an interrupted spawn left with no work, which
+is deleted.": that retire finishes the spawn's compensation, and the result's
+`spawnCompensation` line says whether the branch was deleted or kept. Every
+other retire plan keeps "Branches and pull requests are not changed."
+
 ## UI and ownership
 
 The 420px confirmation surface follows the supplied layout, semantic theme

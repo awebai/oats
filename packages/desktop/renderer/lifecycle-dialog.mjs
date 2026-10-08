@@ -183,7 +183,10 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     lines.push(line('Saves a recovery copy of any uncommitted work, then deletes its home folder.', value.home));
     if (f.workMode === 'worktree') lines.push(line(requested.discardWorktree ? `Deletes its worktree.${b ? ` Branch ${b} stays in the repository.` : ''}`
       : `Keeps its worktree, moved aside${b ? `, on branch ${b}` : ''}.`));
-    lines.push(line('Branches and pull requests are not changed.'));
+    // A home a spawn left (rollbackIncomplete): retire finishes its compensation, which deletes the branch
+    // the spawn created when it holds no work (the result's spawnCompensation says which).
+    lines.push(line(leftover ? 'Branches and pull requests are not changed, except a branch an interrupted spawn left with no work, which is deleted.'
+      : 'Branches and pull requests are not changed.'));
     if (f.children.length) lines.push(line("If a child won't stop, nothing is retired.", undefined, 'lifecycle-note'));
     return list(lines);
   }

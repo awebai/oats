@@ -52,10 +52,23 @@ function mount(t, { apply, row = instance }) {
   const service = createLifecycleBoundary({ invoke: async (_bin, a) => a.phase === 'plan' ? envelope(retirePlan()) : apply(a) });
   const dialog = createLifecycleDialog({ doc, request: (_ws, body) => service(body, () => ctx) });
   t.after(() => { dialog.dispose(); dom.window.close(); });
-  return { doc, async retire() { dialog.open({ operation: 'retire', instance: row, workspace: 'team' }); await tick();
+  return { doc, open: () => dialog.open({ operation: 'retire', instance: row, workspace: 'team' }),
+    async retire() { dialog.open({ operation: 'retire', instance: row, workspace: 'team' }); await tick();
     doc.querySelector('.lifecycle-confirm').click(); await tick(); },
   status: () => doc.querySelector('.lifecycle-dialog [role=status]').textContent, lines: () => [...doc.querySelectorAll('.lifecycle-result li')].map(li => li.textContent) };
 }
+test('the retire plan of a quarantined row says the branch an interrupted spawn left with no work is deleted; others keep today\'s sentence', async t => {
+  const plan = row => { const u = mount(t, { apply: a => envelope(retireReceipt(a)), row });
+    return { u, open: async () => { u.open(); await tick(); return [...u.doc.querySelectorAll('.lifecycle-happen li')].map(li => li.textContent); } }; };
+  const quarantined = await plan({ ...instance, rollbackIncomplete: true }).open();
+  assert.ok(quarantined.includes('Branches and pull requests are not changed, except a branch an interrupted spawn left with no work, which is deleted.'), quarantined.join('|'));
+  assert.equal(quarantined.includes('Branches and pull requests are not changed.'), false);
+  for (const row of [instance, { ...instance, spawnInProgress: true }, { ...instance, retirePending: true }, { ...instance, rollbackIncomplete: 'true' }]) {
+    const lines = await plan(row).open();
+    assert.ok(lines.includes('Branches and pull requests are not changed.'), lines.join('|'));
+    assert.equal(lines.some(line => /interrupted spawn/.test(line)), false, lines.join('|'));
+  }
+});
 const compensated = compensation => a => envelope({ ...retireReceipt(a), spawnCompensation: compensation });
 
 test('the retire result says the interrupted spawn\'s branch was deleted', async t => {
