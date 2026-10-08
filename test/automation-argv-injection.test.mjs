@@ -64,7 +64,14 @@ test("(b) holds when validation is bypassed: the trigger's spawn child gets `--m
   const capture = join(fx.base, "fake-oats.mjs"), log = join(fx.base, "argv.json");
   writeFileSync(capture, `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)));\nconsole.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_CAPTURED", message: "captured" } }));\n`);
   chmodSync(capture, 0o755);
-  await assert.rejects(fx.inEnv(() => T.spawnForEvent(fx.dep, bypassed, ev, { oatsBin: capture, noLaunch: true })), (e) => e.code === "E_CAPTURED");
+  // The tick's preview of the soul carries the same launch selection, as the same one token.
+  assert.equal((await fx.inEnv(() => T.previewSoul(fx.dep, bypassed, { oatsBin: capture }))).error.code, "E_CAPTURED");
+  const previewArgv = JSON.parse(readFileSync(log, "utf8"));
+  assert.ok(previewArgv.includes("--preview") && previewArgv.includes(`--model=--task-file=${secret}`) && !previewArgv.includes("--model"), JSON.stringify(previewArgv));
+  // The spawn itself, handed a preview (here: the valid definition's, from the real CLI).
+  const pv = await fx.inEnv(() => T.previewSoul(fx.dep, T.validateTrigger(trigger()), {}));
+  assert.equal(pv.ok, true, JSON.stringify(pv));
+  await assert.rejects(fx.inEnv(() => T.spawnForEvent(fx.dep, bypassed, ev, { oatsBin: capture, noLaunch: true }, pv)), (e) => e.code === "E_CAPTURED");
   const argv = JSON.parse(readFileSync(log, "utf8"));
   assert.ok(argv.includes(`--model=--task-file=${secret}`), `one token: ${JSON.stringify(argv)}`);
   assert.equal(argv.includes("--model"), false, "never a separate --model followed by the value");
@@ -73,7 +80,7 @@ test("(b) holds when validation is bypassed: the trigger's spawn child gets `--m
   assert.match(taskFiles[0], /^--task-file=.*\/\.agents\/schedules\/tasks\/trigger-kb-review-/, "the only --task-file is the trigger's private task file");
   assert.ok(argv.includes(`--dir=${fx.dep}`) && argv.includes("--purpose=review-pr-7") && argv.includes("--harness=pi"), JSON.stringify(argv));
 
-  // The real CLI, the same argv: refused before anything is created.
+  // The real CLI, the same argv: refused (by the preview, then by the spawn) before anything is created.
   await assert.rejects(fx.inEnv(() => T.spawnForEvent(fx.dep, bypassed, ev, { noLaunch: true })), (e) => e.code === "E_BAD_ARGS" && /not an option/.test(e.message));
   const instances = join(fx.root, "reviewer", "instances");
   assert.equal(existsSync(instances) && readdirSync(instances).length > 0, false, "no instance, so no TASK.md with the secret");

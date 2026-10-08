@@ -6,7 +6,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
+import { createHash } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import YAML from "yaml";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { packageRepo } from "./helpers/package-repo.mjs";
@@ -116,7 +118,9 @@ test("a tick polls with gh, spawns one instance per matching PR (join= for the t
   const eventFile = join(one.home, ".oats", "trigger-event.json");
   assert.equal(meta.trigger.eventFile, eventFile);
   const ev = JSON.parse(readFileSync(eventFile, "utf8"));
-  assert.deepEqual(Object.keys(ev).sort(), ["event", "headSha", "key", "labels", "number", "observedAt", "repo", "source", "trigger", "url"]);
+  assert.deepEqual(Object.keys(ev).sort(), ["event", "headSha", "key", "labels", "number", "observedAt", "repo", "source", "subject", "trigger", "url"]);
+  assert.equal(ev.subject, "1", "a PR's subject is its number, as a string");
+  assert.equal(meta.trigger.subject, "1");
   assert.equal(ev.headSha, pr(1).head.sha);
   assert.equal(meta.launch.env.OATS_TRIGGER_EVENT_FILE, eventFile, "the harness gets OATS_TRIGGER_EVENT_FILE");
   const task = readFileSync(join(one.home, "TASK.md"), "utf8");
@@ -225,7 +229,8 @@ test("oats trigger CLI: add/list/show/disable/enable/remove, test (dry run: gh, 
   assert.equal(report.soul.messaging, "acme-msg");
   assert.deepEqual(report.teams, { requested: ["okf"], undeclared: [], messaging: "acme-msg" });
   assert.deepEqual(report.wouldFire.map((w) => [w.event, w.number]), [["opened", 3]]);
-  assert.deepEqual(Object.keys(report.wouldFire[0]).sort(), ["event", "key", "number", "repo", "url"]);
+  assert.deepEqual(Object.keys(report.wouldFire[0]).sort(), ["event", "instance", "key", "nameCut", "number", "repo", "subject", "url"]);
+  assert.deepEqual([report.wouldFire[0].subject, report.wouldFire[0].instance, report.wouldFire[0].nameCut], ["3", "reviewer-review-pr-3", false], "a short name is not cut");
   assert.equal(homes(fx).length, 0, "test spawns nothing");
   assert.equal(ok(fx.cli(["trigger", "status", "--json"]), "status").triggers[0].lastPoll, null, "test writes no state");
   assert.match(fx.cli(["trigger", "test", "kb-review"]).stdout, /trigger local\/kb-review: ready \(nothing was spawned\)[\s\S]*would fire opened #3/);
@@ -359,4 +364,213 @@ test("triggersMaxConcurrent: absent = per-trigger max only; 1 = two triggers (ma
     writeFileSync(join(hostDir, "registry.json"), JSON.stringify({ version: 1, workspaces: [], triggersMaxConcurrent: 3 }));
     assert.equal(S.readRegistry().triggersMaxConcurrent, 3);
   } finally { if (saved === undefined) delete process.env.OATS_HOME_DIR; else process.env.OATS_HOME_DIR = saved; }
+});
+
+// #669 PR 1: a triggered spawn never fails on instance-name length, and events carry `subject`.
+// Spawn names an instance `<stem>-<slug(purpose)>` (stem: the slug of the soul's agent name) and
+// never rewrites a name; the trigger fits the purpose to 61 characters (3 of 64 are kept for
+// spawn's `-<n>` de-duplication), cutting it to `<head>-<6 hex of SHA-256(event key)>`.
+const sha6 = (key) => createHash("sha256").update(key, "utf8").digest("hex").slice(0, 6);
+
+test("fitPurpose: ≤ 61 is passed unchanged; longer is cut to ≤ 61 ending in -<6 hex of the key>; a stem with no room for the hash is E_INSTANCE_NAME_INVALID", () => {
+  const stem40 = "s".repeat(40);
+  const p = (n) => "p".repeat(n);
+  assert.deepEqual(T.fitPurpose(stem40, p(20), "k"), { purpose: p(20), cut: false }, "exactly 61: not cut");
+  assert.deepEqual(T.fitPurpose("reviewer", "Review-PR-7", "k"), { purpose: "Review-PR-7", cut: false }, "an uncut purpose is passed as rendered, never slugged");
+  for (const n of [21, 23, 39]) { // names of 62, 64 and 80
+    const { purpose, cut } = T.fitPurpose(stem40, p(n), "k");
+    const name = `${stem40}-${purpose}`;
+    assert.equal(cut, true, `${41 + n}`);
+    assert.ok(name.length <= 61, `${41 + n} → ${name.length}`);
+    assert.match(purpose, /-[0-9a-f]{6}$/);
+    assert.equal(purpose, `${p(13)}-${sha6("k")}`, "the head keeps what fits: 61 - 40 - 1 - 7 = 13");
+  }
+  // Room 0 (stem 53): just the hash, no leading dash (a 60-character name). Stem 54: the hash fills
+  // the name exactly (61). Stem 55: no room even for the hash.
+  assert.deepEqual(T.fitPurpose("s".repeat(53), p(10), "k"), { purpose: sha6("k"), cut: true });
+  assert.deepEqual(T.fitPurpose("s".repeat(54), p(10), "k"), { purpose: sha6("k"), cut: true });
+  assert.equal(`${"s".repeat(54)}-${sha6("k")}`.length, 61);
+  assert.throws(() => T.fitPurpose("s".repeat(55), p(10), "k"), (e) => e.code === "E_INSTANCE_NAME_INVALID" && /soul name is too long for a triggered spawn/.test(e.message) && e.message.includes(`"${"s".repeat(55)}" is 55 characters`) && e.details.maxStem === 54);
+  assert.deepEqual(T.fitPurpose("s".repeat(55), "p1", "k"), { purpose: "p1", cut: false }, "a long stem with a purpose that still fits is not refused");
+  // A cut ending on a dash is stripped: never `--`.
+  const dashed = T.fitPurpose(stem40, `${"a".repeat(12)}-${"b".repeat(20)}`, "k").purpose;
+  assert.equal(dashed, `${"a".repeat(12)}-${sha6("k")}`);
+  assert.doesNotMatch(`${stem40}-${dashed}`, /--/);
+  // Deterministic for one key; two keys (two events of one subject) differ.
+  assert.equal(T.fitPurpose(stem40, p(30), "local/t:r#1:opened:x").purpose, T.fitPurpose(stem40, p(30), "local/t:r#1:opened:x").purpose);
+  assert.notEqual(T.fitPurpose(stem40, p(30), "local/t:r#1:opened:x").purpose, T.fitPurpose(stem40, p(30), "local/t:r#1:synchronize:y").purpose);
+  assert.equal(T.TRIGGER_NAME_MAX, 61);
+});
+
+/** A stand-in CLI that logs each argv to `<log>` (one JSON line) and runs the real one. */
+function loggingOats(fx) {
+  const bin = join(fx.base, "logging-oats.mjs"), log = join(fx.base, "oats-argv.log");
+  const real = fileURLToPath(new URL("../bin/oats.mjs", import.meta.url));
+  writeFileSync(bin, `import { appendFileSync } from "node:fs";\nimport { spawnSync } from "node:child_process";\nappendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + "\\n");\nconst r = spawnSync(process.execPath, [${JSON.stringify(real)}, ...process.argv.slice(2)], { stdio: "inherit" });\nprocess.exit(r.status ?? 1);\n`);
+  return { bin, calls: () => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l)) : []) };
+}
+const tickWith = (fx, iso, opts = {}) => fx.inEnv(() => {
+  const path = process.env.PATH;
+  process.env.PATH = fx.env.PATH;
+  try { return T.tickTriggers(fx.dep, { now: new Date(iso), ...opts, io: { noLaunch: true, ...(opts.io || {}) } }); } finally { process.env.PATH = path; }
+});
+
+test("the soul's preview runs once per trigger per tick (not once per event), and a short trigger's --purpose is byte-identical to before", async (t) => {
+  const fx = fixture(); t.after(fx.cleanup);
+  ok(fx.cli(["trigger", "add", "--file", writeJson(fx, definition()), "--json"]), "trigger add");
+  fx.gh.pulls([pr(1), pr(5)]);
+  const oats = loggingOats(fx);
+  const fired = await tickWith(fx, "2026-09-26T12:00:10Z", { io: { oatsBin: oats.bin } });
+  assert.equal(fired.filter((r) => r.action === "fired").length, 2, JSON.stringify(fired));
+  const previews = oats.calls().filter((a) => a.includes("--preview")), spawns = oats.calls().filter((a) => !a.includes("--preview"));
+  assert.equal(previews.length, 1, "one preview for two spawns of one trigger");
+  assert.equal(spawns.length, 2);
+  assert.deepEqual(spawns.map((a) => a.filter((x) => x.startsWith("--purpose="))).sort(), [["--purpose=review-pr-1"], ["--purpose=review-pr-5"]], "the rendered purpose, as before: no cut, no slugging");
+  // A tick that fires nothing (everything already fired) previews nothing.
+  await tickWith(fx, "2026-09-26T12:02:10Z", { io: { oatsBin: oats.bin } });
+  assert.equal(oats.calls().filter((a) => a.includes("--preview")).length, 1);
+});
+
+const LONG_PKG = "acme.knowledge-operations";
+/** A deployment with a package whose souls have long agent names (`<package>--<soul>`):
+ *  pull-request-reviewer's stem is acme-knowledge-operations-pull-request-reviewer (47);
+ *  pull-request-reviewer-for-harvests's is 60, too long for even the hash. */
+function longSoulFixture(t) {
+  const pkg = packageRepo({ id: LONG_PKG, souls: { "pull-request-reviewer": {}, "pull-request-reviewer-for-harvests": {} } });
+  const fx = v2Deployment({ name: "acme", workspace: { packages: { [LONG_PKG]: `${pkg.ref}@v1.0.0` }, teams: { global: { description: "Fixture" } } } });
+  t.after(() => { fx.cleanup(); pkg.cleanup(); });
+  fx.gh = fakeGh(join(fx.base, "gh"));
+  fx.env.PATH = `${fx.gh.bin}:${fx.env.PATH}`;
+  ok(fx.cli(["sync", "--json"]), "sync");
+  return fx;
+}
+const longDef = (soul, extra = {}) => definition({ spawn: { soul: `${LONG_PKG}/${soul}`, purpose: "review-pull-request-{number}", task: "Review {repo}#{number}.", teams: [] }, ...extra });
+
+test("a long package-soul stem: an event that would be named with 70 characters spawns under a cut name (≤ 61, the real home), the tick previews once, and test/status/dry-run report it", async (t) => {
+  const fx = longSoulFixture(t);
+  const stem = "acme-knowledge-operations-pull-request-reviewer";
+  ok(fx.cli(["trigger", "add", "--file", writeJson(fx, longDef("pull-request-reviewer", { concurrency: { max: 2, perKey: 1 } })), "--json"]), "trigger add");
+  fx.gh.pulls([pr(12), pr(13)]);
+  const key = (n) => `local/kb-review:${REPO}#${n}:opened:2026-09-26T10:0${n % 10}:00Z`;
+  assert.equal(`${stem}-review-pull-request-12`.length, 70);
+
+  // Positive control: the purpose the trigger would have passed without the fit fails at spawn.
+  fails(fx.cli(["spawn", `${LONG_PKG}/pull-request-reviewer`, `--dir=${fx.dep}`, "--purpose=review-pull-request-12", "--no-launch", "--json"]), "E_INSTANCE_NAME_INVALID", "unfitted purpose");
+
+  // The dry run computes the same names and spawns nothing, writes nothing.
+  const dry = await tickWith(fx, "2026-09-26T12:00:10Z", { dryRun: true });
+  assert.deepEqual(dry.filter((r) => r.action === "would-fire").map((r) => [r.subject, r.instance, r.nameCut]), [["12", `${stem}-review-${sha6(key(12))}`, true], ["13", `${stem}-review-${sha6(key(13))}`, true]], JSON.stringify(dry));
+  assert.equal(T.readTriggerState(fx.dep).triggers["local/kb-review"], undefined, "a dry run writes no state");
+
+  const oats = loggingOats(fx);
+  const fired = await tickWith(fx, "2026-09-26T12:00:10Z", { io: { oatsBin: oats.bin } });
+  assert.deepEqual(fired.map((r) => r.action), ["fired", "fired"], JSON.stringify(fired));
+  assert.equal(oats.calls().filter((a) => a.includes("--preview")).length, 1, "one preview per trigger per tick");
+  const spawned = T.liveTriggerInstances(fx.dep, "local/kb-review").sort((a, b) => a.number - b.number);
+  assert.equal(spawned.length, 2);
+  for (const [i, n] of [[0, 12], [1, 13]]) {
+    const meta = JSON.parse(readFileSync(join(spawned[i].home, "instance.json"), "utf8"));
+    assert.equal(meta.instance, `${stem}-review-${sha6(key(n))}`);
+    assert.ok(meta.instance.length <= 61 && meta.instance.length <= 64, meta.instance);
+    assert.equal(basename(spawned[i].home), meta.instance, "the real home directory carries the cut name");
+    assert.equal(meta.trigger.subject, String(n));
+  }
+
+  // trigger test: a would-fire row's instance and nameCut (the operator's way to find affected triggers).
+  fx.gh.pulls([pr(12), pr(13), pr(14)]);
+  const report = ok(fx.cli(["trigger", "test", "kb-review", "--json"]), "test");
+  assert.deepEqual(report.wouldFire.map((w) => [w.number, w.subject, w.instance, w.nameCut, Boolean(w.held)]), [[14, "14", `${stem}-review-${sha6(key(14))}`, true, true]], JSON.stringify(report.wouldFire));
+
+  // status and list carry subject: a held event pending, the fired ones, the live ones, lastRun.
+  await tickWith(fx, "2026-09-26T12:02:10Z");
+  const status = ok(fx.cli(["trigger", "status", "kb-review", "--json"]), "status").triggers[0];
+  assert.deepEqual(status.pending.map((p) => [p.number, p.subject]), [[14, "14"]]);
+  assert.deepEqual(status.fired.map((f) => f.subject).sort(), ["12", "13"]);
+  assert.deepEqual(status.live.map((l) => l.subject).sort(), ["12", "13"]);
+  const listed = ok(fx.cli(["trigger", "list", "--json"]), "list").triggers[0];
+  assert.ok(["12", "13"].includes(listed.lastRun.subject), JSON.stringify(listed.lastRun));
+  assert.equal(ok(fx.cli(["trigger", "show", "kb-review", "--json"]), "show").trigger.lastRun.subject, listed.lastRun.subject);
+});
+
+test("a soul whose stem leaves no room even for the hash does not spawn: the event stays pending with lastError E_INSTANCE_NAME_INVALID naming the stem; test and dry run report it", async (t) => {
+  const fx = longSoulFixture(t);
+  const stem = "acme-knowledge-operations-pull-request-reviewer-for-harvests";
+  assert.equal(stem.length, 60);
+  ok(fx.cli(["trigger", "add", "--file", writeJson(fx, longDef("pull-request-reviewer-for-harvests")), "--json"]), "trigger add");
+  fx.gh.pulls([pr(12)]);
+  const dry = await tickWith(fx, "2026-09-26T12:00:10Z", { dryRun: true });
+  assert.deepEqual(dry.map((r) => [r.action, r.code]), [["spawn-failed", "E_INSTANCE_NAME_INVALID"]], JSON.stringify(dry));
+  const r = await tickWith(fx, "2026-09-26T12:00:10Z");
+  assert.deepEqual(r.map((x) => [x.action, x.code]), [["spawn-failed", "E_INSTANCE_NAME_INVALID"]], JSON.stringify(r));
+  const st = ok(fx.cli(["trigger", "status", "--json"]), "status").triggers[0];
+  assert.deepEqual(st.pending.map((p) => [p.number, p.subject]), [[12, "12"]]);
+  assert.deepEqual(Object.values(T.readTriggerState(fx.dep).triggers["local/kb-review"].pending).map((p) => p.subject), ["12"], "the pending state itself carries subject");
+  assert.equal(st.lastError.code, "E_INSTANCE_NAME_INVALID");
+  assert.match(st.lastError.message, /soul name is too long for a triggered spawn/);
+  assert.ok(st.lastError.message.includes(`"${stem}" is 60 characters`), st.lastError.message);
+  assert.equal(T.liveTriggerInstances(fx.dep, "local/kb-review").length, 0);
+  const report = ok(fx.cli(["trigger", "test", "kb-review", "--json"]), "test");
+  assert.equal(report.ok, false);
+  assert.deepEqual(report.wouldFire.map((w) => [w.subject, w.instance, w.nameCut]), [["12", null, null]]);
+  assert.ok(report.problems.some((p) => p.includes(`"${stem}" is 60 characters`)), JSON.stringify(report.problems));
+});
+
+test("perKey counts by subject across keys; an old home without subject holds by its number; an old pending event without subject is processed", async (t) => {
+  const fx = fixture(); t.after(fx.cleanup);
+  ok(fx.cli(["trigger", "add", "--file", writeJson(fx, definition({ on: { ...definition().on, events: ["opened", "synchronize"] }, spawn: { ...definition().spawn, teams: [] }, concurrency: { max: 5, perKey: 1 } })), "--json"]), "trigger add");
+  fx.gh.pulls([pr(1)]);
+  assert.equal((await tick(fx, "2026-09-26T12:00:10Z")).filter((r) => r.action === "fired").length, 1);
+  const [opened] = homes(fx);
+  // A new head: a `synchronize` with another key, same subject "1" — held while the opened review lives.
+  fx.gh.pulls([pr(1, { head: { sha: "b".repeat(40) } })]);
+  const held = await tick(fx, "2026-09-26T12:02:10Z");
+  assert.deepEqual(held.map((r) => r.action), ["held"], JSON.stringify(held));
+  assert.match(held[0].reason, /concurrency\.perKey 1 reached for github\.com\/acme\/knowledge#1/);
+  // An old-format home (no subject in its record) still holds, by its number in the same repo.
+  const metaFile = join(opened.home, "instance.json");
+  const meta = JSON.parse(readFileSync(metaFile, "utf8"));
+  delete meta.trigger.subject;
+  writeFileSync(metaFile, JSON.stringify(meta, null, 2));
+  assert.equal(homes(fx)[0].subject, null);
+  assert.deepEqual((await tick(fx, "2026-09-26T12:04:10Z")).map((r) => r.action), ["held"]);
+  // An old pending event (no subject), once the home is gone: processed, and its spawn records subject.
+  const stateFile = join(fx.dep, ".agents", "schedules", "triggers.json");
+  const state = JSON.parse(readFileSync(stateFile, "utf8"));
+  for (const ev of Object.values(state.triggers["local/kb-review"].pending)) delete ev.subject;
+  writeFileSync(stateFile, JSON.stringify(state, null, 2));
+  rmSync(opened.home, { recursive: true, force: true });
+  const after = await tick(fx, "2026-09-26T12:06:10Z");
+  assert.deepEqual(after.map((r) => r.action), ["fired"], JSON.stringify(after));
+  const [sync] = homes(fx);
+  assert.equal(sync.event, "synchronize");
+  assert.equal(sync.subject, "1");
+  assert.equal(JSON.parse(readFileSync(join(sync.home, ".oats", "trigger-event.json"), "utf8")).subject, "1");
+});
+
+test("the preview carries the trigger's launch selection: an explicit harness overrides an unusable machine default for the preview as for the spawn", async (t) => {
+  const fx = fixture({ local: { souls: { launch: { reviewer: "missing-default" } } } }); t.after(fx.cleanup);
+  ok(fx.cli(["trigger", "add", "--file", writeJson(fx, definition({ spawn: { ...definition().spawn, teams: [], harness: "pi" } })), "--json"]), "trigger add");
+  fx.gh.pulls([pr(1)]);
+  // Control: without the explicit harness, the machine's default (an unknown launch configuration) is refused.
+  fails(fx.cli(["spawn", "reviewer", `--dir=${fx.dep}`, "--preview", "--json"]), "E_LAUNCH_CONFIG_UNKNOWN", "default launch selection");
+  const oats = loggingOats(fx);
+  const r = await tickWith(fx, "2026-09-26T12:00:10Z", { io: { oatsBin: oats.bin } });
+  assert.deepEqual(r.map((x) => x.action), ["fired"], JSON.stringify(r));
+  const [preview] = oats.calls().filter((a) => a.includes("--preview"));
+  assert.ok(preview.includes("--harness=pi"), JSON.stringify(preview));
+});
+
+test("a stem too long even for the preview's numbered name (63) is refused as too long for a triggered spawn, and the event stays pending", async (t) => {
+  const soul = "s".repeat(63);
+  const fx = v2Deployment({ name: "acme", souls: { [soul]: {} } }); t.after(fx.cleanup);
+  fx.gh = fakeGh(join(fx.base, "gh"));
+  fx.env.PATH = `${fx.gh.bin}:${fx.env.PATH}`;
+  ok(fx.cli(["trigger", "add", "--file", writeJson(fx, definition({ spawn: { soul, purpose: "pr-{number}", task: "Review {repo}#{number}.", teams: [] } })), "--json"]), "trigger add");
+  fx.gh.pulls([pr(1)]);
+  const r = await tickWith(fx, "2026-09-26T12:00:10Z");
+  assert.deepEqual(r.map((x) => [x.action, x.code]), [["spawn-failed", "E_INSTANCE_NAME_INVALID"]], JSON.stringify(r));
+  const st = ok(fx.cli(["trigger", "status", "--json"]), "status").triggers[0];
+  assert.equal(st.pending.length, 1);
+  assert.equal(st.lastError.code, "E_INSTANCE_NAME_INVALID");
+  assert.match(st.lastError.message, /^the soul name is too long for a triggered spawn: soul s{63} cannot name even a numbered instance \(.*"s{63}-1" is 65/);
 });

@@ -3276,26 +3276,39 @@ Event-driven spawns. Local definitions live in `oats-schedules.json` (`kind:
     distinct labels passed as `--provider <messaging cap> join=<labels>`; a
     soul without messaging refuses `E_TRIGGER_TEAMS {soul, teams}`.
   - `template?`: `{package, version, commit, template}`.
-  - `lastRun`: `{at, instance, home, event, number, key}`; `nextDue`: the
+  - `lastRun`: `{at, instance, home, event, number, subject, key}`
+    (`subject`, 0.49.0: the event's subject, a PR's number as a string;
+    for a run recorded before 0.49.0, its number); `nextDue`: the
     next poll here, `null` before the first.
 - `status [<id>]` → `{triggerApi, scope, triggers: [{id, name, enabled,
   runsHere, reason, enabledHere, repo, soul, concurrency: {max, perKey},
-  liveCount, live: [{instance, home, repo, number, event}], lastPoll: {at, ok:
-  true, prs, matching} | {at, ok: false, error} | null, nextPollAt, nextDue,
-  pending: [{key, event, number, url, observedAt}], fired: [{key, at,
-  instance, home, event, number}] (newest 50), firedTotal, lastError: {at,
-  code, message, key?} | null}]}`. It writes nothing.
+  liveCount, live: [{instance, home, repo, number, subject, event}], lastPoll:
+  {at, ok: true, prs, matching} | {at, ok: false, error} | null, nextPollAt,
+  nextDue, pending: [{key, event, number, subject, url, observedAt}], fired:
+  [{key, at, instance, home, event, number, subject}] (newest 50), firedTotal,
+  lastError: {at, code, message, key?} | null}]}`. It writes nothing.
+  `subject` (0.49.0) is the event's subject, the thing `perKey` counts: a
+  PR's number, as a string. A record written before 0.49.0 has none, and
+  its number is reported.
 - `test <id>` → `{triggerApi, id, ok, placement: {runsOn, owner, host,
   runsHere, reason, detail?, enabledHere}, gh: {ok, account,
   credentialSource, reachesHostTimer, note, detail}, repo: {key, readable,
   fullName, permissions: {push, maintain, admin}, canMerge} | {key, readable:
   false, error}, soul: {resolves, name, agent, messaging} | {resolves: false,
   name, error}, teams: {requested, undeclared | null, messaging}, wouldFire:
-  [{key, repo, number, event, url, held?}], pollError?, problems, warnings,
-  spawned: false}`. `ok` counts `problems` only; a credential the host timer
-  cannot reach is a warning.
-- A triggered instance records `instance.json.trigger`; its event file is
-  `OATS_TRIGGER_EVENT_FILE`.
+  [{key, repo, number, subject, event, url, instance, nameCut, held?}],
+  pollError?, problems, warnings, spawned: false}`. `ok` counts `problems`
+  only; a credential the host timer cannot reach is a warning. `instance`
+  and `nameCut` (0.49.0) are the name the spawn would be asked to derive
+  (`<stem>-<purpose as passed>`, before spawn's `-<n>`) and whether its
+  purpose was cut to fit ([schedules.md](schedules.md#triggers)); both are
+  `null` when the soul does not resolve or its name is too long for a
+  triggered spawn (that error is then in `problems`).
+- A triggered instance records `instance.json.trigger`: `{id, key, source,
+  repo, number, subject, url, event, headSha, observedAt, eventFile}`
+  (`subject` since 0.49.0; `null` when the event had none). Its event file is
+  `OATS_TRIGGER_EVENT_FILE`: `{trigger, source, repo, number, subject, url,
+  event, headSha, labels, observedAt, key}`.
 - `update <id> --description=<text>` (feature `automation-descriptions`)
   changes only a local trigger's description; `--description=` (empty)
   removes it. It sets `updatedAt` and leaves fired and pending events
@@ -3372,7 +3385,10 @@ registered). `maxConcurrent` is the effective scheduled-job cap (default 5);
 - The tick's `considered[]` holds schedule rows and trigger rows `{workspace,
   trigger, action, …}` with actions `not-due`, `poll-failed`, `polled`
   (`prs`, `matching`), `held`, `fired` (`key`, `instance`, `home`),
-  `spawn-failed` (`key`, `code`, `error`), `would-fire`, `invalid` and
+  `spawn-failed` (`key`, `code`, `error`), `would-fire` (`key`, `event`,
+  `number`, `subject`, `url`, `instance`, `nameCut`; a dry run previews the
+  soul as a tick does, and reports a preview failure or a name that cannot
+  fit as `spawn-failed`), `invalid` and
   `not-here`. A workspace schedule's state key is `<member>~<id>`. A failed
   snapshot refresh is `{workspace, action: "error", error}`.
 
