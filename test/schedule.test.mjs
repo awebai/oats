@@ -312,7 +312,11 @@ test("wake-at-spawn helpers: flags translate to one object, save binds to the ho
 
 test("the CLI answers the envelope for add, list, show, update, enable, disable, tick --dry-run, remove and host status", () => {
   const ws = workspace();
-  const env = { ...process.env, OATS_HOME_DIR: process.env.OATS_HOME_DIR };
+  // The host unit is looked for under HOME (~/Library/LaunchAgents, $XDG_CONFIG_HOME/systemd/user):
+  // the fixture's own, where none is installed, never the operator's.
+  const hostHome = join(base, "host-home");
+  mkdirSync(hostHome, { recursive: true });
+  const env = { ...process.env, OATS_HOME_DIR: process.env.OATS_HOME_DIR, HOME: hostHome, XDG_CONFIG_HOME: join(hostHome, ".config") };
   const run = (...a) => { const r = execFileSync(process.execPath, [bin, "schedule", ...a, "--dir", ws, "--json"], { encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] }); return JSON.parse(r.trim().split("\n").pop()); };
   const spec = join(base, "spec.json");
   writeFileSync(spec, JSON.stringify({ id: "nightly", cron: "0 3 * * *", tz: "Europe/Madrid", kind: "spawn", agent: "dev", task: "Nightly sweep.", harness: "claude", yolo: true, description: "Sweeps the release branch every night" }));
