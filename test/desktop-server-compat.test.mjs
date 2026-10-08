@@ -10,6 +10,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serverCompatible, selectServer, ensureServerOnPort } from "../packages/desktop/server-compat.mjs";
+import { matchWorkspaceDirs } from "../packages/desktop/workspace-registry.mjs";
+import { buildViews } from "../packages/desktop/server/workspace-views.mjs";
 import { spawn } from "node:child_process";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -183,6 +185,24 @@ test("same capability and version, other workspace → still 'not the requested 
   try {
     const choice = await selectAgainst(`http://127.0.0.1:${server.address().port}`, () => null);
     assert.deepEqual(choice, { action: "spawn", portOccupied: true, reason: "serves other — not the requested workspace" });
+  } finally { server.close(); }
+});
+
+test("same capability and version serving the requested deployment attached to a workspace identity → reuse (#807)", async () => {
+  // The panel lists the attached view by ws:<hash>, with the deployment's path in `deployments`.
+  const workspaces = buildViews([{ id: "/srv/acme", name: "acme", local: true, attach: { key: "acme.example/agents", team: "default:acme" } }]);
+  const server = createServer((req, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    req.url.startsWith("/api/panel")
+      ? res.end(JSON.stringify({ workspaces, instances: [] }))
+      : res.end(JSON.stringify(LOCAL));
+  });
+  await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
+  try {
+    const choice = await selectAgainst(`http://127.0.0.1:${server.address().port}`,
+      (ws) => matchWorkspaceDirs(["/srv/acme"], ws));
+    assert.match(workspaces[0].id, /^ws:/);
+    assert.deepEqual(choice, { action: "reuse", wsId: workspaces[0].id });
   } finally { server.close(); }
 });
 

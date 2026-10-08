@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, mkdirSync, existsSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { restoreWorkspaceDirs, saveWorkspaceDirs, matchWorkspaceDirs, createAddExecutor, startupOpenSet } from "../workspace-registry.mjs";
+import { buildViews } from "../server/workspace-views.mjs";
 
 const validate = (p) => {
   if (p === "/missing") throw new Error("ENOENT");
@@ -37,6 +38,22 @@ test("a compatible backend serving only the launch workspace cannot hide restore
   assert.equal(matchWorkspaceDirs(dirs, [{ id: "/second" }, { id: "/team" }]), "/team");
   assert.equal(matchWorkspaceDirs(["/team/member"], [{ id: "/team" }]), "/team");
   assert.equal(matchWorkspaceDirs(["/team-other"], [{ id: "/team" }]), null);
+});
+
+test("an attached deployment matches the view that serves it, by its path in deployments (#807)", () => {
+  const views = buildViews([
+    { id: "/team", name: "team", local: true, attach: { key: "acme.example/agents", team: "default:acme" } },
+    { id: "/loose", name: "loose", local: true },
+  ]);
+  const attached = views.find((v) => !v.unattached);
+  assert.match(attached.id, /^ws:/, "an attached view is selected by ws:<hash>, not by its path");
+  assert.deepEqual(attached.deployments, ["/team"]);
+  assert.equal(matchWorkspaceDirs(["/team"], views), attached.id, "its deployment's own path");
+  assert.equal(matchWorkspaceDirs(["/team/member"], views), attached.id, "a directory under it");
+  assert.equal(matchWorkspaceDirs(["/team-other"], views), null, "a shared prefix is not a parent, through deployments too");
+  assert.equal(matchWorkspaceDirs(["/team", "/loose"], views), attached.id, "attached and unattached, both served");
+  assert.equal(matchWorkspaceDirs(["/loose", "/team"], views), "/loose", "the first directory's view is the selector");
+  assert.equal(matchWorkspaceDirs(["/team", "/unserved"], views), null, "one unserved directory leaves nothing to reuse");
 });
 
 test("successful adds survive restart; failed readiness and storage writes preserve the last open set", async () => {

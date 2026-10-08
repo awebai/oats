@@ -186,10 +186,14 @@ export function createPerformAdd(io) {
   };
 }
 
-/** Reuse a backend only when it covers the whole restored open set. */
+/** Reuse a backend only when it covers the whole restored open set. A directory is
+ * covered by a view whose `id` or one of whose `deployments` is it or an ancestor of it:
+ * an attached view's id is `ws:<hash>`, and its local deployments are listed by path
+ * (#807). Answers the first covered view's id, the selector callers use. */
 export function matchWorkspaceDirs(dirs, workspaces) {
+  const covers = (entry, path) => typeof entry === "string" && (path === entry || path.startsWith(`${entry}/`));
   const matches = dirs.map((path) => workspaces.find((w) =>
-    path === w.id || path.startsWith(`${w.id}/`))?.id);
+    [w.id, ...(w.deployments || [])].some((entry) => covers(entry, path)))?.id);
   return matches.length && matches.every(Boolean) ? matches[0] : null;
 }
 
