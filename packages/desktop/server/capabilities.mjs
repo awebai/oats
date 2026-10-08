@@ -4,6 +4,7 @@ import { cliCapability, operationArgs } from '../cli-adapter.mjs';
 import { inspectKey } from './inspect-cache.mjs';
 import { observationData } from '../deployment-data.mjs';
 import { OBSERVE_MAX_AGE_FEATURE } from '../renderer/deployment-contract.mjs';
+import { hostComposes } from '../renderer/composed-gate.mjs';
 import { canAddressRemote, unaddressableSentence, hostReason, shownLabel, unroutableReason } from '../renderer/remote-address.mjs';
 
 const fail = (message, code = 'E_BAD_ARGS') => { throw Object.assign(new Error(message), { code }); };
@@ -39,9 +40,11 @@ export async function capabilityRequest(request, { workspace, cli, agents = [], 
   if (request.refresh !== undefined && (action !== 'inspect' || typeof request.refresh !== 'boolean')) fail('Invalid refresh flag');
   const refresh = request.refresh === true;
   // instructions (feature soul-composed-instructions): a soul's composed AGENTS.md, inspect of a soul only. The
-  // adapter sends it only to a CLI whose probe advertises it; it never routes to a server (that host's probe is not held).
+  // adapter sends it only to a CLI whose probe advertises it. Routed, it travels only when this server's roster row
+  // for the workspace says the host composes (composed-gate.mjs: the host's own probe.features, relayed by a CLI with
+  // server-probe-features); otherwise it is dropped and the read is today's. The renderer's ask is never the proof.
   if (request.instructions !== undefined && (action !== 'inspect' || typeof request.instructions !== 'boolean' || selector.soul === undefined)) fail('Invalid instructions flag');
-  const instructions = request.instructions === true && !server;
+  const instructions = request.instructions === true && (!server || hostComposes(cli, workspace.group));
   let soul, agentsRoot, home, key;
   let context = workspace.scope;
   if (selector.home !== undefined) {

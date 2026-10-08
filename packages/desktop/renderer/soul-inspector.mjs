@@ -35,7 +35,8 @@ import { layerLabel } from './workspace-catalog.mjs';
 import { shownLaunch, launchHarnessName, launchModelText, launchFromText, launchAtText, declaredText, preferenceText, declaredDiffers } from './launch-view.mjs';
 import { createDataState, skeletonBlock, skeleton, captureFocusState } from './loading.mjs';
 import { createDeploymentScopeLine } from './deployment-scope-line.mjs';
-import { createSoulInstructions, composedSupported } from './soul-instructions.mjs';
+import { createSoulInstructions } from './soul-instructions.mjs';
+import { composedSupported, routedComposedSupported } from './composed-gate.mjs';
 
 
 const HARNESS_NAMES = { pi: 'Pi', claude: 'Claude Code', codex: 'Codex' };
@@ -424,10 +425,13 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       syncAvailability(); // stale: the mutations wait, with the reason
     }
   }
-  /** The soul page asks for the composed AGENTS.md (feature soul-composed-instructions) of a soul inspected on this
-   * computer: a remote host's probe is not known here, and a host without the feature refuses the flag. */
+  /** The soul page asks for the composed AGENTS.md (feature soul-composed-instructions, composed-gate.mjs): a soul on
+   * this computer when its CLI composes; a routed soul only when that CLI also relays the hosts' own features
+   * (server-probe-features). Whether that host composes is the server's call, from the roster row it holds:
+   * it drops the flag for a host whose list does not name the feature, and the page shows the own AGENTS.md. */
   function composedWanted(next) {
-    return layout === 'page' && !!next?.agent && !next.agent.remote && !next.agent.server && composedSupported(cliStatus());
+    if (layout !== 'page' || !next?.agent) return false;
+    return next.agent.remote || next.agent.server ? routedComposedSupported(cliStatus()) : composedSupported(cliStatus());
   }
   function facts(entries, parent = content) {
     const dl = node('dl', undefined, 'inspector-facts');

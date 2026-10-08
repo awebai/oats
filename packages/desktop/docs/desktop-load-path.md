@@ -130,8 +130,10 @@ else in `workspace status` changes it.
   changed on the messaging side, the launch choice this machine would make
   now). Keys: `inspect --soul` → (deployment, server, soul, agents root,
   capabilities key, `instructions`): the soul page's read with the composed
-  AGENTS.md (`instructions: true`, a soul inspect only, local only, sent to the
-  CLI as `--instructions` when its probe lists `soul-composed-instructions`) is
+  AGENTS.md (`instructions: true`, a soul inspect only, sent to the CLI as
+  `--instructions` when its probe lists `soul-composed-instructions`; routed,
+  only when the held roster row's `probe.features` lists it too, else dropped
+  before the key is made: `renderer/composed-gate.mjs`) is
   another entry than the sidebar's plain read of the same soul;
   `inspect --home` → (deployment, server, home, instance, and the status row's
   identity and drift facts: createdAt, startedAt, soul, modules), so a retire,
