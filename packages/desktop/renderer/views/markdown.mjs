@@ -362,14 +362,18 @@ export function copyCodeBlock(button, doc, { alive = () => true, timers = new Se
 }
 
 /* Heading ids as one document numbers them: a heading's text slugged, a repeat
-   taking the next "-<n>". One slugger per document. */
+   taking the next "-<n>" that no earlier heading took ("Usage", "Usage",
+   "Usage 1" are usage, usage-1, usage-1-1, as GitHub numbers them). One slugger
+   per document. */
 export function createHeadingSlugger() {
-  const seen = new Map();
+  const counts = new Map(), used = new Set();
   return text => {
     const slugBase = text.trim().toLowerCase().replace(/[^\w]+/g, "-").replace(/^-+|-+$/g, "") || "section";
-    const n = seen.get(slugBase) || 0;
-    seen.set(slugBase, n + 1);
-    return n ? `${slugBase}-${n}` : slugBase;
+    let n = counts.get(slugBase) || 0;
+    let slug = n ? `${slugBase}-${n}` : slugBase;
+    while (used.has(slug)) slug = `${slugBase}-${++n}`;
+    counts.set(slugBase, n + 1); used.add(slug);
+    return slug;
   };
 }
 

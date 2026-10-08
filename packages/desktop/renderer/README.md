@@ -815,7 +815,8 @@ That item is expandable and selectable (the twisty only folds;
 the row opens the document); a part's item scrolls the one continuous reader to
 its `section.soul-part`, labelled by its header. Every part renders as Markdown (`fileView(…, { markdown: true })`: an `inject.txt` is still a slice of
 AGENTS.md; its file is provenance only), and the document's heading ids are renumbered across parts with
-one `createHeadingSlugger` (`views/markdown.mjs`, the same slugging `decorateMarkdown` uses), so they are
+one `createHeadingSlugger` (`views/markdown.mjs`, the same slugging `decorateMarkdown` uses; a suffix
+never reuses an id already emitted, so "Usage", "Usage", "Usage 1" are usage, usage-1, usage-1-1), so they are
 the ids the whole AGENTS.md would give; a part's own `#fragment` links follow its renamed headings.
 **Copy** copies the kernel's
 `text` exactly (markers included); **Open capability** appears only on a

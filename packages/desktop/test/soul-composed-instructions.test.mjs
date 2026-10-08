@@ -318,6 +318,23 @@ test('repeated headings across parts: ids stay unique, a part’s own fragment g
   u.item(OWN).querySelector('.cap-node').click(); assert.equal(u.$('.soul-part'), null);
 });
 
+test('a generated suffix never takes an id a later heading needs: every id is unique, and each part’s link stays in its part', t => {
+  const u = setup(t);
+  u.section.update(row({ composedInstructions: composedAnswer({ blocks: [
+    ['capability:oats.core', null, '## Usage\n\nOne.\n\n## Usage\n\nTwo.'],
+    ['capability:acme.ops', null, '## Usage 1\n\n[Return](#usage-1).'],
+  ] }) }));
+  const reader = scrollable(u.$('.cap-contents-reader'));
+  u.item(COMPOSED).querySelector('.cap-node-name').click();
+  const heads = u.$$('.soul-part-body h2');
+  assert.deepEqual(heads.map(h => h.id), ['usage', 'usage-1', 'usage-1-1']);
+  const link = u.$('.soul-part[data-source="capability:acme.ops"] a');
+  assert.equal(link.getAttribute('href'), '#usage-1-1', 'B’s #usage-1 is its own "Usage 1"');
+  Object.defineProperty(u.$('.cap-reader-head'), 'offsetHeight', { configurable: true, get: () => 32 });
+  heads.forEach((h, i) => Object.defineProperty(h, 'offsetTop', { configurable: true, get: () => 60 + i * 500 }));
+  link.click(); assert.equal(reader.scrollTop, 1060 - 32 - 8, 'it scrolls to B’s heading, not A’s second Usage');
+});
+
 test('a part is Markdown whatever its source file is called (an inject.txt is still a slice of AGENTS.md)', t => {
   const u = setup(t);
   u.section.update(row({ composedInstructions: composedAnswer({ blocks: [['capability:acme.ops', '.oats/modules/acme.ops/inject.txt', '## Important instructions\n\nDo **this**.']] }) }));
