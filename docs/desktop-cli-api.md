@@ -2747,7 +2747,9 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   `<agents root>/<agent>/instances/<instance>` (compared by real path, so a
   symlinked spelling of the root is the same address) and
   `<deployment>/.agents/events/<agent>--<instance>.jsonl` exists; the agent
-  is taken from the path. Any other removed `--home` is `E_HOME_MISMATCH`.
+  is taken from the path. The logs are read from the scope's spelling of the
+  home, and the answer's `home` (and each row's) is the `--home` as given.
+  Any other removed `--home` is `E_HOME_MISMATCH`.
   The answer has the same shape as a live home's: the `home` source is
   `absent`, and `incarnation` is `null` (no `instance.json` remains), so
   `waitingOnYou` is `null` and `waitingClaims` is empty. The rows keep the
@@ -3017,10 +3019,14 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   64 of them, the limits the Desktop reads (0.49.0, #658). The extra trees
   are the only notes whose number is not fixed: when they would pass 64, the
   last tree note kept says `and N more extra worktrees (facts.extraWorktrees
-  in the plan JSON lists every one)`.
+  in the plan JSON lists every one)`. A note never cuts a name or a path:
+  the drift note gives way, longest name first, to a pointer to
+  `facts.work.branch` or `facts.recordedBranch`; a session note whose reason
+  is too long (a process's command line, a tmux error) points to
+  `facts.session.note`.
 - A worktree-mode plan whose recorded children include attached instances
   that use this home's `work/` (`instance.json` `work: "attached"`, `work` a
-  link to `<home>/work`) has one note naming them (0.49.0, #718): `attached
+  link to `<home>/work`, directly or through another link) has one note naming them (0.49.0, #718): `attached
   child instance(s) <names> use this home's work/ as their work: a retire
   that keeps the worktree repoints their work link to it; with
   --discard-worktree the worktree is removed and their work link will

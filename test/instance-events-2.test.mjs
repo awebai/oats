@@ -184,6 +184,16 @@ test("E′ — #642: two agents' logs for one retired name refuse E_AMBIGUOUS_IN
   // a symlinked spelling of the agents root is the same address
   symlinkSync(w.root, join(w.base, "agents-link"));
   ({ doc, out } = eventsCli(w, "dev-1", ["--home", join(w.base, "agents-link", "dev", "instances", "dev-1")])); assert.equal(doc.ok, true, out);
+  // also one in another directory, outside the deployment: its rows are the deployment's, and the
+  // answer names the home as --home spelled it
+  mkdirSync(join(w.base, "elsewhere-parent"), { recursive: true });
+  symlinkSync(w.root, join(w.base, "elsewhere-parent", "agents-alias"));
+  const aliased = join(w.base, "elsewhere-parent", "agents-alias", "dev", "instances", "dev-1");
+  ({ doc, out } = eventsCli(w, "dev-1", ["--home", aliased]));
+  assert.equal(doc.ok, true, out);
+  assert.deepEqual(doc.result, { ...readEvents(dev), home: aliased, events: readEvents(dev).events.map((e) => ({ ...e, home: aliased })) }, "the deployment's log, under the caller's spelling");
+  assert.deepEqual(doc.result.integrity.sources.map((x) => x.status), ["absent", "ok"]);
+  assert.equal(doc.result.count, 2);
   for (const bad of [
     join(w.root, "qa", "instances", "dev-1"), // no qa log
     join(w.root, "dev", "instances", "dev-2"), // not this name

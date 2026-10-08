@@ -10,6 +10,7 @@ import { capabilityFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { fixtureBase, fixtureEnv, linkExecutables, waitUntil as waitFor } from "./helpers/host-fixture.mjs";
 import { fingerprintTree, statusDisagreement, storedTreeDigest } from "../lib/core.mjs";
 import { workRecoveryLines } from "../lib/retire-output.mjs";
+import { lifecyclePlan } from "../packages/desktop/renderer/lifecycle-contract.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const temporaryDirectories = [];
@@ -4281,4 +4282,21 @@ console.log(JSON.stringify({ meta: { retired: true } }));
   assert.equal(readFileSync(join(recoveryRootOf(spawned.home), recovery, "repo", "human.txt"), "utf8"), "human bytes\n", "the pre-hook recovery is kept");
   assert.equal(readJson(join(recoveryRootOf(spawned.home), recovery, "recovery.json")).phase, "before-hooks");
   assert.equal(readFileSync(join(spawned.home, "work", "human.txt"), "utf8"), "human bytes\n", "the home and its work are kept");
+});
+
+test("the retire plan's drift note fits 4096 characters with two long branch names, and the Desktop's own reader accepts the plan", () => {
+  const f = fixture();
+  const a = spawn(f, "drift");
+  const work = join(a.home, "work");
+  // Two valid branch names of 2291 characters each (12 components of 190): each fits its own field, not both one note.
+  const long = (c) => Array.from({ length: 12 }, (_, i) => `${c}${i}`.padEnd(190, c)).join("/");
+  execFileSync("git", ["-C", work, "switch", "--quiet", "-c", long("a")]);
+  const metaPath = join(a.home, "instance.json");
+  write(metaPath, JSON.stringify({ ...readJson(metaPath), branch: long("b") }, null, 2) + "\n");
+  const plan = planAt(f, "dev-drift");
+  assert.equal(plan.facts.work.branch, long("a"));
+  assert.equal(plan.facts.recordedBranch, long("b"));
+  assert.deepEqual(plan.notes.filter((n) => n.startsWith("the worktree is")), [`the worktree is on the branch facts.work.branch in the plan JSON names, not the recorded ${long("b")}`],
+    "the longer part gives way to a pointer, the other stays whole");
+  assert.ok(lifecyclePlan(plan, { instance: plan.instance, home: plan.home }, "retire", {}), "the Desktop reads the plan");
 });

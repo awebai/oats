@@ -984,7 +984,10 @@ item, which only `--force` clears, as the operator's explicit override.
 A plain retire re-homes `work/` (see the extra trees below for where).
 Attached children that use this home's `work/` as their own (their
 `instance.json` says `work: "attached"` and their `work` is a link to
-`<home>/work`) would be left with a dangling link. Each one this retire
+`<home>/work`, directly or through an alias of it given as `--work-dir`)
+would be left with a dangling link. The retire finds them before it moves
+the worktree, and repoints a child only if its link is still the one it
+found. Each one this retire
 stopped as a recorded child is repointed to the retained worktree: a new link
 is renamed over the old one, so the link is never missing. This is the last
 step before the home is removed, once the worktree is at its new path and
@@ -1074,8 +1077,10 @@ removed. The fields are in
 A retire can leave two things behind outside the removed home: a recovery
 copy and a retained worktree. Nothing in OATS removes either; each stays
 until you remove it. What follows are facts to decide with, not a judgement
-that anything is safe to delete: the uncommitted and untracked bytes in a
-recovery exist nowhere else, by definition.
+that anything is safe to delete. The uncommitted and untracked bytes in a
+recovery are in no commit: a retained worktree or the source may still hold
+them, or the recovery may be the only copy, so inspect them before you
+remove it.
 
 **Recovery copies** are at
 `<instances>/.oats-retirement/recovery/<instance>-<random>/`, beside the

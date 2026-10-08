@@ -653,3 +653,23 @@ test("with --discard-worktree an attached child's work link is left dangling, as
   assert.ok(lines.includes(`  child ${basename(stuck.home)}: already idle`), text.stdout);
   assert.ok(lines.some((l) => l.startsWith(`  WARNING: ${basename(stuck.home)}: its work link could not be repointed to the retained worktree ${movedTo} (`) && l.endsWith(`and still points at ${join(keeper.home, "work")}; repoint it by hand: ln -sfn ${shq(movedTo)} ${shq(join(stuck.home, "work"))}`)), text.stdout);
 });
+
+test("an attached child whose --work-dir was an alias of the owner's work follows the retained worktree too, and the plan names it", () => {
+  const f = fixture();
+  const owner = spawn(f, "alias-owner");
+  const alias = join(f.base, "shared-tree");
+  execFileSync("ln", ["-s", join(owner.home, "work"), alias]);
+  const spawned = cli(f, ["spawn", "dev", "--purpose", "alias-kid", "--no-launch", "--work", "attached", "--work-dir", alias, "--repo", f.repo, "--json"]);
+  assert.equal(spawned.status, 0, `${spawned.stderr}\n${spawned.stdout}`);
+  const kid = JSON.parse(spawned.stdout).result;
+  assert.equal(readJson(join(kid.home, "instance.json")).parentInstance, basename(owner.home), "fixture premise: the owner's child");
+  assert.equal(readlinkSync(join(kid.home, "work")), alias, "fixture premise: the child's link names the alias");
+  const planned = cli(f, ["retire", basename(owner.home), "--plan", "--json"]);
+  assert.equal(planned.status, 0, planned.stderr);
+  assert.deepEqual(JSON.parse(planned.stdout).result.notes.filter((n) => n.startsWith("attached child")), [ATTACHED_NOTE(basename(kid.home))]);
+  const receipt = retiredReceipt(cli(f, ["retire", basename(owner.home), "--json"]));
+  assert.equal(receipt.retention.worktree, "retained");
+  assert.equal(readlinkSync(join(kid.home, "work")), receipt.retention.movedTo, "the child follows the retained worktree");
+  assert.equal(existsSync(join(kid.home, "work")), true, "and its work resolves");
+  assert.equal(receipt.warnings, undefined);
+});
