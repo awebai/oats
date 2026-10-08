@@ -1,14 +1,15 @@
 ---
 name: knowledge-theory
 description: >-
-  OKF promotion doctrine for knowledge-operations souls: what belongs in a
-  soul's OKF knowledge base and what does not (decision versus description),
-  the accept and reject lists, the two-part test, one canonical home,
-  supersession, human-accepted decisions, slow state and exclusions. Use when
-  judging whether captured instance evidence should be promoted, when
-  reviewing a harvest PR, or when deciding whether a concept should be merged,
-  superseded or dropped. Not the oats.knowledge-theory capability for
-  capability authors; not the working-soul capture skill
+  OKF promotion doctrine for working souls that propose knowledge and the
+  knowledge-operations souls that judge it: what belongs in a soul's OKF
+  knowledge base and what does not (decision versus description), the accept
+  and reject lists, the two-part test, one canonical home, supersession,
+  human-accepted decisions, slow state and exclusions. Use when deciding
+  whether instance knowledge is worth proposing at a checkpoint, when judging
+  a proposal, when reviewing a harvest PR, or when deciding whether a concept
+  should be merged, superseded or dropped. Not the oats.knowledge-theory
+  capability for capability authors; not the capture craft
   (okf-instance-knowledge).
 ---
 
@@ -112,7 +113,7 @@ A judge drops these, however well written.
 
 ### 3.4 The two-part test
 
-For every candidate the judge (harvester or maintainer) asks:
+For every candidate the judge (the proposing agent, the harvester or the maintainer) asks:
 
 1. **Would a future instance of this soul act differently for knowing it?**
 2. **Could it NOT have found this by reading the repository?**
@@ -151,7 +152,7 @@ Route every claim to ONE canonical concept; merge or supersede rather than
 copy. Consult the existing indexes first, across nodes as necessary.
 Repository-wide facts already authoritative in repository docs get pointers,
 not duplicates. A claim whose right home is a node the source does not own is
-dropped from that run with an explicit reason for the owner to review; it is
+dropped from that harvest with an explicit reason for the owner to review; it is
 never silently written into another node. There is no indefinite ownerless
 inbox queue.
 
@@ -178,15 +179,16 @@ review.
 ## Exclusions
 
 Never promote secrets or credentials, or verbatim third-party messages.
-Captured private evidence is not publication permission. Drop tool noise, task
+Private evidence (a proposal, a note, a session) is not publication permission. Drop tool noise, task
 residue, code descriptions and duplicates. Do not quote third-party text just
 because it appears in a source record. Preserve verified, generalized
 conclusions only.
 
 ## Provenance
 
-Every promoted or merged concept cites where it came from: the durable input
-id, and for transcript evidence the turn ids it relied on. Provenance is what
+Every promoted or merged concept cites where it came from: the proposal and
+the source notes it relied on (an oats.okf 4.x harvest cited the durable input
+id and the transcript turn ids). Provenance is what
 lets a later judge (and a human) check the claim instead of trusting it. Do
 not put copied home paths, account details, machine state or secrets in
 reusable knowledge.

@@ -1,20 +1,21 @@
 {
   "capability": "oats.okf-harvest",
   "command": "okf-harvest",
-  "version": "4.1.1",
+  "version": "5.0.0",
   "compatibility": {
     "oats": ">=0.29.0"
   },
-  "description": "The OKF knowledge harvester: judges one source instance's captured notes and session transcript by the OKF promotion doctrine, opens the labelled harvest PR with its provenance block, and stays alive until the PR is merged or closed.",
+  "description": "The OKF knowledge harvester: judges one working instance's knowledge proposal by the OKF promotion doctrine against the source's own records (instance, soul declaration, bindings), opens one labelled harvest PR on the owned nodes with a v2 provenance block using Git and gh, hands it over and retires (the knowledge maintainer reviews the PR).",
   "requires": [
-    { "command": "gh", "why": "read the harvest PR's state (harvest-status)" }
-  ],
-  "settings": {
-    "harvester-max-age": {
-      "default": "7d",
-      "description": "How long a harvester stays alive waiting for its PR (a duration like 7d, 48h or 90m, or seconds). At max-age it tells its operator and retires; it never closes the PR."
+    {
+      "command": "git",
+      "why": "clone the accepted knowledge base, branch, commit and push"
+    },
+    {
+      "command": "gh",
+      "why": "find open or recent harvest PRs, and open the labelled harvest PR"
     }
-  },
+  ],
   "skills": [
     "skills"
   ],
@@ -22,5 +23,11 @@
   "commands": {
     "complete": "bin/okf-harvest.mjs complete",
     "harvest-status": "bin/okf-harvest.mjs harvest-status"
+  },
+  "hooks": {
+    "spawn": {
+      "command": "bin/okf-harvest.mjs spawn",
+      "required": true
+    }
   }
 }

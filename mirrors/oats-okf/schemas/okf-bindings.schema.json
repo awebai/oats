@@ -15,18 +15,6 @@
       "type": "string",
       "minLength": 1
     },
-    "cron": {
-      "type": "string",
-      "default": "*/15 * * * *",
-      "minLength": 1,
-      "pattern": "\\S"
-    },
-    "tz": {
-      "type": "string",
-      "default": "UTC",
-      "minLength": 1,
-      "pattern": "\\S"
-    },
     "bases": {
       "type": "object",
       "minProperties": 1,

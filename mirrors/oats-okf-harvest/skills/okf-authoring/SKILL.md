@@ -121,31 +121,27 @@ captured ProviderBinding as execution authority:
   `payload.bindings`. Workspace, adoption, and operator values remain separate
   inputs to the shared resolver; OKF does not select their precedence.
 - Durable placement is explicit selected settings: physical absolute
-  `bindings-file` and `state-dir`, plus selected `harvest-runtime`, optional
-  `harvest-model` and optional `git-timeout` (seconds for remote Git
-  operations, default 600). Never derive state from an instance home.
+  `bindings-file` and `state-dir`, plus optional `git-timeout` (seconds for
+  remote Git operations, default 600). Never derive state from an instance
+  home.
 - Provider codecs run only after exact retained executable approval. Their
   populated binding is not proof of readiness, enrollment, credentials, privacy
   or publication authority. Respect typed non-ready results.
-- Captured source descriptors freeze binding/runtime/source identity. Later
-  reads and workers use those bytes after source/config deletion. Never replace
-  them with today's soul, workspace, settings or bindings file.
-- `responsibleHuman: null` means messaging was explicitly disabled. Missing is
-  unknown, not disabled.
-- New captured source schedules are definition v2 with `capture`, explicit
-  deployment/resolution selectors and saved `--json`; they do not use `--soul`.
+- oats.okf 5.0 keeps no source descriptors, captured custody or harvest
+  workers: knowledge is proposed at checkpoints and a harvester opens a
+  reviewed PR. No source gets a scheduler job.
 - Captured `setup`, `init`, `migrate`, and `unlock` are deliberate refusals.
   Provisioning/migration remains a separate explicit operator path.
 
 The broker-owned `binding-normalize`, `binding-bind`, and `binding-check`
 manifest commands are not manual recipes. Do not invoke them from a working
-agent or copy transient `OATS_BINDING_FILE`/`OATS_SOURCE_RECEIPT_FILE` paths.
-Those private mode-0600 files exist only for one synchronous captured invocation.
+agent or copy a transient `OATS_BINDING_FILE` path. That private mode-0600
+file exists only for one synchronous invocation.
 
 ## External bases and native tools
 
-A harvester stages writes with native file tools only under the roots listed
-in work/staging.json. A maintainer amends a PR branch in its own checkout.
-Either way, validate the WHOLE base, not an isolated node: absolute Markdown
-links can cross node boundaries. The harvester's completion command validates
-again and refuses any errors or producer warnings.
+A harvester edits only the owned nodes in its own clone of the accepted
+base. A maintainer amends a PR branch in its own checkout. Either way,
+validate the WHOLE base with `--strict`, not an isolated node: absolute
+Markdown links can cross node boundaries. Publish nothing that has errors or
+producer warnings.

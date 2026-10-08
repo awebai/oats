@@ -9,8 +9,8 @@
 //      launched,warnings,tmux,...}} with no progress contamination on stdout.
 //   * every `--json` failure prints one envelope object
 //     {"schemaVersion":1,"ok":false,"error":{code,message}} on stdout, exits nonzero.
-//   * v2 `oats okf harvest --json` reports durable run status and worker identity;
-//     scaffold-only execution is a mandatory success path, never launch-or-fail.
+//   * oats.okf 5.0 removed harvest answers one E_REMOVED envelope;
+//     explicit proposal spawns return the normal scaffold-only spawn envelope.
 import test from "node:test";
 import { fixture as okfFixture } from "./helpers/okf-v2.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
@@ -138,36 +138,38 @@ test("oats spawn --json failures are one stdout envelope, stable codes, nonzero 
   assert.match(rootless.error.message, /oats sync/);
 });
 
-test("okf harvest --json: no unprocessed input reports an empty durable queue", t => {
-  const f = okfFixture(t);
-  const r = f.direct(["harvest", "--no-launch"]);
-  assert.deepEqual(parseOnly(r.stdout), { schemaVersion: 1, ok: true, result: { status: "empty", processed: true } });
+test("removed okf harvest --json answers E_REMOVED, not an invented empty durable queue", t => {
+  const f = okfFixture(t), r = f.direct(["harvest", "--no-launch"], { status: 1 });
+  const doc = parseOnly(r.stdout);
+  assert.equal(doc.schemaVersion, 1); assert.equal(doc.ok, false);
+  assert.equal(doc.error.code, "E_REMOVED"); assert.equal(doc.result, undefined);
+  assert.match(doc.error.message, /proposal|propose/);
 });
 
-test("okf harvest --json: actual directory worker identity through the public CLI boundary", t => {
-  const f = okfFixture(t);
-  write(join(f.home, "notes/a-note.md"), "---\ntype: Lesson\n---\n\nA durable observation.\n");
-  const r = f.raw(["okf", "harvest", "--home", f.home, "--no-launch", "--soul", "source", "--json"]);
+test("a proposal's actual no-launch harvester identity crosses the public CLI JSON boundary", t => {
+  const f = okfFixture(t), file = f.proposal();
+  const r = f.raw(["spawn", "oats.okf/knowledge-harvester", "--task-file", file, "--relation", "unrelated", "--name", "okf-harvester-json", "--no-launch", "--json"], f.as(f.source));
   assert.equal(r.status, 0, r.stdout + r.stderr);
   const doc = parseOnly(r.stdout);
-  assert.equal(doc.ok, true); assert.equal(doc.result.status, "ready");
-  assert.equal(doc.result.instance, `okf-harvester-${doc.result.run}`, "okf 4.0.0: the package-soul harvester's exact name");
+  assert.equal(doc.schemaVersion, 1); assert.equal(doc.ok, true);
+  assert.equal(doc.result.instance, "okf-harvester-json");
   const meta = JSON.parse(readFileSync(join(doc.result.home, "instance.json"), "utf8"));
   assert.equal(meta.work, "directory"); assert.equal(meta.launched, false);
-  assert.ok(existsSync(join(doc.result.home, "work/input.json")));
-  assert.ok(existsSync(join(doc.result.home, "work/staging.json")));
-  f.complete(doc.result, f.judgment(doc.result, { drop: true }));
+  assert.equal(meta.parentInstance, undefined); assert.equal(meta.spawnOrigin, "operator");
+  assert.equal(existsSync(join(doc.result.home, "work/input.json")), false);
+  assert.equal(existsSync(join(doc.result.home, "work/staging.json")), false);
+  assert.ok(readFileSync(join(doc.result.home, "TASK.md"), "utf8").includes(readFileSync(file, "utf8").trim()));
   f.retire(doc.result.instance); f.retire(f.source.instance);
 });
 
-test("okf refuses a missing absolute OATS_CLI_BIN without private imports or PATH fallback", t => {
+test("removed harvest refuses before needing a kernel binary, with no PATH fallback or consumed notes", t => {
   const f = okfFixture(t);
   write(join(f.home, "notes/a-note.md"), "Preserve the source note.\n");
   const r = f.direct(["harvest", "--no-launch"], { environment: { OATS_CLI_BIN: undefined }, status: 1 });
   const doc = parseOnly(r.stdout);
-  assert.equal(doc.ok, false); assert.equal(doc.error.code, "E_RUNTIME");
-  assert.match(doc.error.message, /absolute OATS_CLI_BIN/);
-  assert.ok(existsSync(join(f.home, "notes/a-note.md")));
+  assert.equal(doc.ok, false); assert.equal(doc.error.code, "E_REMOVED");
+  assert.equal(readFileSync(join(f.home, "notes/a-note.md"), "utf8"), "Preserve the source note.\n");
+  assert.equal(existsSync(join(f.base, "state/sources")), false);
 });
 
 // ---- end-to-end capability dispatch: `oats <ns> <cmd> --json` boundary ----
@@ -271,17 +273,18 @@ test("capability dispatch --json: broken manifests and malformed command values 
   assert.equal(parseOnly(r.stdout).error.code, "E_UNKNOWN_COMMAND");
 });
 
-test("oats okf harvest --json end-to-end dispatch and explicit invalid settings", t => {
+test("removed okf harvest dispatch and explicit invalid settings each return one JSON failure", t => {
   const f = okfFixture(t);
-  const r = f.raw(["okf", "harvest", "--home", f.home, "--no-launch", "--soul", "source", "--json"]);
-  assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.deepEqual(parseOnly(r.stdout), { schemaVersion: 1, ok: true, result: { status: "empty", processed: true } });
-  // init reads settings even for an already registered source (harvest resumes
-  // frozen bindings by design, rather than trusting a changed environment).
+  const r = f.raw(["okf", "harvest", "--json"], f.as(f.source));
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.equal(parseOnly(r.stdout).error.code, "E_REMOVED");
+  // Malformed settings still fail; old host runtime/model keys are removed,
+  // not runtime choices that 5.0 attempts to interpret.
   const malformed = f.direct(["init", "--base", "project"], { environment: { OATS_SETTINGS: "{broken" }, status: 1 });
   assert.equal(parseOnly(malformed.stdout).ok, false);
   const unsupported = f.direct(["init", "--base", "project"], { environment: { OATS_SETTINGS: JSON.stringify({ "bindings-file": f.bindings, "harvest-runtime": "unsupported" }) }, status: 1 });
   const diagnostic = parseOnly(unsupported.stdout).error;
-  assert.equal(diagnostic.code, "E_CONFIG");
-  assert.match(diagnostic.message, /invalid harvest-runtime/);
+  assert.equal(diagnostic.code, "E_REMOVED");
+  assert.match(diagnostic.message, /^harvest-runtime from an unknown origin was removed in oats\.okf 5\.0/);
+  assert.match(diagnostic.message, /setup --remove-legacy-settings/);
 });

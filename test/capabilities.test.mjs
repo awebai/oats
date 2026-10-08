@@ -1437,11 +1437,11 @@ test("traversal names are rejected: --parent and retire cannot reach outside ins
 });
 
 test("OKF service agents stay memory-less: the harvester package soul composes its own capability only and is never a knowledge source", async t => {
-  // okf 4.0.0: the harvester is the package soul oats.okf/knowledge-harvester (knowledge: none,
-  // oats.okf-harvest from its package), no longer a capability agent of oats.okf.
-  const f = okfFixture(t);
-  const sources = () => readdirSync(join(f.base, "state", "sources")).sort();
-  const before = sources();
+  // 5.0 requires an actual recorded source proposal even though the harvester
+  // itself is knowledge:none. Generic kernel relation choices do not alter composition.
+  const f = okfFixture(t), proposal = f.proposal({ file: join(f.base, "proposal.md") });
+  const sources = () => existsSync(join(f.base, "state", "sources"));
+  assert.equal(sources(), false);
   const check = (worker, how) => {
     for (const p of ["STATE.md", "notes", ".okf-source.json"]) assert.equal(existsSync(join(worker.home, p)), false, `${how}: no ${p}`);
     assert.doesNotMatch(readFileSync(join(worker.home, "AGENTS.md"), "utf8"), /Knowledge: OKF|oats:capability:oats\.okf -->/, `${how}: no memory protocol`);
@@ -1450,15 +1450,17 @@ test("OKF service agents stay memory-less: the harvester package soul composes i
     assert.equal(meta.agent, "oats-okf--knowledge-harvester");
     assert.ok(existsSync(join(worker.home, ".oats", "modules", "oats.okf-harvest", "oats.json")), `${how}: the module is materialized`);
     assert.equal(existsSync(join(worker.home, ".aw")), false, `${how}: no messaging identity`);
-    assert.deepEqual(sources(), before, `${how}: never registered as a knowledge source`);
+    assert.equal(sources(), false, `${how}: never registered as a knowledge source`);
   };
-  const withParent = f.cli(["spawn", "oats.okf/knowledge-harvester", "--name", "okf-harvester-anchored", "--parent", f.source.instance, "--harness", "pi", "--no-launch", "--json"]);
+  const withParent = f.cli(["spawn", "oats.okf/knowledge-harvester", "--task-file", proposal, "--name", "okf-harvester-anchored", "--parent", f.source.instance, "--harness", "pi", "--no-launch", "--json"]);
   check(withParent, "with a parent");
   f.retire(withParent.instance);
-  f.retire(f.source.instance);
-  const orphan = f.cli(["spawn", "oats.okf/knowledge-harvester", "--name", "okf-harvester-orphan", "--harness", "pi", "--no-launch", "--json"]);
+  const orphan = f.cli(["spawn", "oats.okf/knowledge-harvester", "--task-file", proposal, "--name", "okf-harvester-orphan", "--relation", "unrelated", "--harness", "pi", "--no-launch", "--json"]);
   check(orphan, "no parent");
-  f.retire(orphan.instance);
+  f.retire(orphan.instance); f.retire(f.source.instance);
+  const gone = f.raw(["spawn", "oats.okf/knowledge-harvester", "--task-file", proposal, "--name", "okf-harvester-gone", "--relation", "unrelated", "--no-launch", "--json"]);
+  assert.equal(gone.status, 1); assert.match(gone.stdout + gone.stderr, /E_SOURCE/);
+  assert.equal(existsSync(join(f.context, "agents/oats-okf--knowledge-harvester/instances/okf-harvester-gone")), false, "a gone source cannot admit a new harvester");
 });
 
 // ---------- canonical deployment root (instance homes never in a linked worktree) ----------
@@ -3065,7 +3067,7 @@ test("a REAL spawned package soul gets the boundary and keeps its own report pat
     "and the boundary must not forbid the temp file that instruction requires");
 });
 
-// Notes and `oats okf harvest` come from the oats.okf capability. An instance
+// Notes and checkpoint proposals come from the oats.okf capability. An instance
 // without it has neither, and a capability service agent has its knowledge layer
 // SUPPRESSED by design — the shipped reviewer is told in its own soul not to
 // write notes/ and not to run any harvest. So the kernel-composed blocks must
@@ -3075,7 +3077,7 @@ test("a REAL spawned package soul gets the boundary and keeps its own report pat
 // PRESCRIPTION, not mention: naming "harvesters" as a kind of service agent is
 // fine; telling an instance to write `notes/`, run a harvest, or promising how
 // its promotions are delivered is what only the knowledge layer may do.
-const KNOWLEDGE_PROTOCOL = /notes\/|okf harvest|memory promotion|harvester(,? which| that)? promot|promot\w* (it |them |your learnings )?(in)?to (its|your|the) soul|knowledge (promotion|updates) (arrive|are delivered)/i;
+const KNOWLEDGE_PROTOCOL = /notes\/|okf harvest|oats spawn oats\.okf\/knowledge-harvester|memory promotion|harvester(,? which| that)? promot|promot\w* (it |them |your learnings )?(in)?to (its|your|the) soul|knowledge (promotion|updates) (arrive|are delivered)/i;
 
 test("kernel-composed blocks never prescribe a knowledge protocol they cannot guarantee (reviewer-focus-b512782)", async (t) => {
   // No oats.okf capability anywhere in this deployment (knowledge: none): whatever
@@ -3097,7 +3099,7 @@ test("kernel-composed blocks never prescribe a knowledge protocol they cannot gu
 test("with the knowledge layer active, ONE block owns the protocol (reviewer-focus-b512782)", async (t) => {
   // The REAL oats.okf bound to the knowledge slot (test/helpers/okf-v2.mjs), and a
   // persistent soul spawned in every work mode.
-  const f = okfFixture(t, { register: false });
+  const f = okfFixture(t, { spawnSource: false });
   const spawn = (mode, ...extra) => f.cli(["spawn", "source", "--purpose", mode, "--work", mode, "--harness", "pi", "--no-launch", "--json", ...extra]);
   const owner = spawn("checkout", "--repo", f.fx.member);
   const homes = {
@@ -3125,24 +3127,21 @@ test("with the knowledge layer active, ONE block owns the protocol (reviewer-foc
     "assigned soul-maintenance work is distinguished from promotion of learnings");
 });
 
-test("harvest briefing and staged inputs give an actual independent worker its completion custody", t => {
+test("checkpoint briefing and package skills give an independent harvester the proposal, not completion custody", t => {
   const f = okfFixture(t);
   write(join(f.home, "notes/lesson.md"), "A durable source observation.\n");
-  const run = f.run();
+  assert.match(readFileSync(join(f.home, "TASK.md"), "utf8"), /oats spawn oats\.okf\/knowledge-harvester --task-file <proposal> --relation unrelated/);
+  const file = f.proposal(), run = f.propose({ file });
   assert.equal(lstatSync(join(run.home, "work")).isSymbolicLink(), false);
-  const task = readFileSync(join(run.home, "TASK.md"), "utf8");
-  assert.match(task, /Never attach to or interview the source/);
-  // okf 4.0.0: the package-soul harvester completes through its own capability (oats.okf-harvest),
-  // keeps its home on failure and stays alive until its PR is merged or closed (okf 4.0.2: no okf team).
-  assert.match(task, /'oats' 'okf-harvest' 'complete' '--source'/);
-  assert.match(task, /On failure keep your home and report it/);
-  assert.match(task, /stay alive until your PR is merged or closed/); assert.doesNotMatch(task, /okf team/);
-  assert.ok(existsSync(join(run.home, "work/input.json")));
-  assert.ok(existsSync(join(run.home, "work/staging.json")));
-  const result = f.complete(run, f.judgment(run, { drop: true }));
-  assert.equal(result.processed, true); assert.equal(result.receipts.project.status, "no-change");
-  assert.ok(existsSync(join(f.home, "notes/lesson.md")), "completion never deletes source notes");
-  f.retire(run.instance); f.retire(f.source.instance);
+  assert.ok(readFileSync(join(run.home, "TASK.md"), "utf8").includes(readFileSync(file, "utf8").trim()));
+  const skill = readFileSync(join(run.home, ".agents/skills/knowledge-harvest/SKILL.md"), "utf8");
+  assert.match(skill, /commit -F/); assert.match(skill, /--title 'OKF knowledge proposal'/);
+  assert.match(skill, /retire/);
+  assert.equal(existsSync(join(run.home, "work/input.json")), false);
+  assert.equal(existsSync(join(run.home, "work/staging.json")), false);
+  f.retire(run.instance);
+  assert.equal(readFileSync(join(f.home, "notes/lesson.md"), "utf8"), "A durable source observation.\n", "harvester lifecycle never deletes source notes");
+  f.retire(f.source.instance);
 });
 
 test("the package mirrors respect the actual public kernel module boundary", async () => {

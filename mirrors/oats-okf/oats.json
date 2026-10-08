@@ -1,34 +1,14 @@
 {
   "capability": "oats.okf",
   "command": "okf",
-  "version": "4.1.1",
+  "version": "5.0.0",
   "compatibility": {
     "oats": ">=0.29.0"
   },
   "layer": "knowledge",
-  "description": "The OKF knowledge slot for working souls: consult the soul's accepted OKF bases remotely (no per-instance copy), keep instance knowledge with judgment, and \u2014 when the deployment switches harvest on \u2014 hand each instance's notes and session to the knowledge harvester through durable custody.",
+  "description": "The OKF knowledge slot for working souls: consult the soul's accepted OKF bases remotely (no per-instance copy), keep instance knowledge with judgment, and at important checkpoints propose durable knowledge by spawning the oats.okf/knowledge-harvester package soul with a short, self-contained proposal.",
   "requires": [],
   "settings": {
-    "harvest": {
-      "default": "off",
-      "values": [
-        "on",
-        "off"
-      ],
-      "description": "Whether this deployment harvests: on or off (default off). A host fact, set in oats-local.yaml settings.oats.okf.harvest (`oats okf setup --harvest on|off`). A soul may only opt out, with knowledge: { harvest: off }, and that opt-out is absolute. Off means no source registration, no capture and no custody; the harvest-review trigger is independent of it."
-    },
-    "harvest-runtime": {
-      "default": "pi",
-      "values": [
-        "pi",
-        "claude",
-        "codex"
-      ],
-      "description": "Harness for the knowledge harvester (the oats.okf/knowledge-harvester package soul), independent of the source instance's harness."
-    },
-    "harvest-model": {
-      "description": "Optional model pin for the selected harvest runtime, for example to use a cheaper model: a Pi provider/model or a native Claude/Codex model. When omitted, each harness uses its configured default."
-    },
     "bindings-file": {
       "description": "Absolute host-owned path identifying the version:1 bindings document. Portable binding preparation captures the selected document payload and never rereads this path."
     },
@@ -78,12 +58,10 @@
       "setting bindings-file must be a normalized absolute host path",
       "setting state-dir is required (absolute host path)",
       "setting state-dir must be a normalized absolute host path",
-      "setting harvest-runtime is required (pi, claude or codex)",
-      "setting harvest-runtime must be pi, claude or codex",
-      "setting harvest-model must be null or a non-empty string",
       "check action is not an admitted knowledge operation",
       "OKF settings missing bindings-file: set settings.oats.okf bindings-file, or deactivate oats.okf",
       "OKF soul declaration missing: create okf.json for this soul, or deactivate oats.okf",
+      "E_REMOVED: OKF binding payloadVersion 1 (harvest runtime/model) was removed in oats.okf 5.0; respawn to bind with oats.okf 5 (the harvester uses the kernel's own harness and model)",
       "OKF binding missing or invalid: provision soul OKF declaration and bindings file, or deactivate oats.okf",
       "OKF bindings file missing or invalid: repair configured bindings file, or deactivate oats.okf",
       "more than 64 git knowledge bases declared",
@@ -91,14 +69,14 @@
       "declared knowledge base is not a validated knowledge tree",
       "knowledge base owner or remote custody requirement not met",
       "staged git source does not match the declared knowledge base",
-      "harvest runtime command is not installed on this host",
-      "harvest runtime is not qualified: install/configure the selected harvest runtime or set harvest off",
+      "declared knowledge nodes do not resolve in the accepted bases",
       "okf base <alias>: cached <cached>, accepted is now <accepted>; the next okf read refreshes it (or run `oats okf bases --fresh`)",
       "okf base <alias>: <repository> unreachable; readers serve the cached <cached> fetched <fetchedAt>",
       "okf base <alias> is not cached on this host yet: run `oats okf bases` (a spawn primes it)",
       "okf base <alias>: cached <cached> not yet validated on this host: run `oats okf bases`",
       "okf base <alias>: <repository> <acceptedBranch> unreachable (<reason>)",
-      "okf base <alias>: harvest runtime check skipped node resolution because the base is not cached",
+      "okf base <alias>: declared node check skipped because the base is not cached",
+      "E_REMOVED: <setting> <origin> was removed in oats.okf 5.0; <remedy>",
       "okf base <alias> not primed: <reason>; run `oats okf bases`"
     ]
   },
@@ -111,20 +89,7 @@
     "soul-scaffold": "bin/oats-okf.mjs soul-scaffold",
     "spawn": {
       "command": "bin/oats-okf.mjs spawn",
-      "required": true,
-      "inputs": {
-        "sourceReceipt": {
-          "version": 1
-        }
-      }
-    },
-    "retire": {
-      "command": "bin/oats-okf.mjs retire",
-      "inputs": {
-        "sourceReceipt": {
-          "version": 1
-        }
-      }
+      "required": true
     }
   },
   "operations": {
@@ -132,27 +97,13 @@
       "kind": "view",
       "command": "inspect",
       "context": "home",
-      "description": "Inspect matching live working-memory documents, durable receipts, bindings, the accepted resolution, any legacy local view and scheduler health."
+      "description": "Inspect the instance's working-memory documents, its declaration, the bases it reads, and any legacy local view."
     },
     "harvest": {
       "kind": "action",
       "command": "harvest",
       "context": "home",
-      "description": "Capture this source into durable custody and request an independent worker.",
-      "args": [
-        {
-          "name": "native-request",
-          "flag": "--native-request",
-          "required": false,
-          "description": "Captured operations require an explicit absolute backend-only native request JSON; provider owns the worker task."
-        },
-        {
-          "name": "worker-mode",
-          "flag": "--worker-mode",
-          "required": false,
-          "description": "Captured worker mode: prepare or launch (default launch); legacy behavior is unchanged when absent."
-        }
-      ]
+      "description": "Removed in oats.okf 5.0: refuses with E_REMOVED and the new way (a proposal and a direct oats.okf/knowledge-harvester spawn). Kept declared so an old caller gets that answer, not an unknown operation."
     }
   }
 }

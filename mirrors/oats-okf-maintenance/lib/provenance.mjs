@@ -1,6 +1,10 @@
-// The okf-harvest provenance block (plan C3), as the maintainer reads it from a
-// PR body. The body is untrusted: the block is parsed strictly, every field is
+// The okf-harvest provenance block, as the maintainer reads it from a PR body.
+// The body is untrusted: the block is parsed strictly, every field is
 // shape-checked, and the result is data — strings to verify, never commands.
+// version 1: an oats.okf 4.x harvest run (run id, captured input ids).
+// version 2 (oats.okf 5.0): a proposal harvest, with no run or input ids: the
+// source, the harvester and the evidence it relied on, as instance-relative
+// note refs (sha256 only for a note the harvester actually read).
 const FENCE = /^```okf-harvest[ \t]*\r?\n([\s\S]*?)\r?\n```[ \t]*$/m;
 const obj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const str = (v, max = 256) => typeof v === 'string' && v.length > 0 && v.length <= max && !/[\u0000-\u001f\u007f]/.test(v);
@@ -8,6 +12,7 @@ const NODE = /^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*$/;
 /** A base root as a repository-relative directory: no `..`, absolute, backslash or empty segment. */
 export const safeRoot = (r) => r === '.' || (typeof r === 'string' && !r.startsWith('/') && !r.includes('\\') && r.split('/').every((s) => s && s !== '.' && s !== '..'));
 
+const note = (n) => typeof n === 'string' && n.length <= 512 && /^notes\/[A-Za-z0-9._\/-]+\.md$/.test(n) && n.split('/').every((seg) => seg && seg !== '.' && seg !== '..');
 /** → { valid, problems[], value|null } for the FIRST okf-harvest block in `body`. */
 export function parseProvenance(body) {
   const problems = [];
@@ -20,21 +25,31 @@ export function parseProvenance(body) {
   const need = (cond, what) => { if (!cond) problems.push(what); return cond; };
   const only = (value, keys, at) => { for (const k of Object.keys(value)) if (!keys.includes(k)) problems.push(`${at}: unknown key ${JSON.stringify(k).slice(0, 80)}`); };
   if (!need(obj(v), 'provenance must be an object')) return { valid: false, problems, value: null };
-  only(v, ['version', 'run', 'input', 'source', 'tasks', 'harvester'], 'provenance');
-  need(v.version === 1, 'version must be 1');
-  need(typeof v.run === 'string' && /^[0-9a-f-]{36}$/.test(v.run), 'run must be a run id');
-  need(Array.isArray(v.input) && v.input.length > 0 && v.input.length <= 1000 && v.input.every((i) => typeof i === 'string' && /^[0-9a-f]{64}$/.test(i)), 'input must be a non-empty list of 64-hex input ids');
+  if (!need(v.version === 1 || v.version === 2, 'version must be 1 or 2')) return { valid: false, problems, value: null };
+  if (v.version === 1) {
+    only(v, ['version', 'run', 'input', 'source', 'tasks', 'harvester'], 'provenance');
+    need(typeof v.run === 'string' && /^[0-9a-f-]{36}$/.test(v.run), 'run must be a run id');
+    need(Array.isArray(v.input) && v.input.length > 0 && v.input.length <= 1000 && v.input.every((i) => typeof i === 'string' && /^[0-9a-f]{64}$/.test(i)), 'input must be a non-empty list of 64-hex input ids');
+  } else {
+    only(v, ['version', 'source', 'evidence', 'tasks', 'harvester'], 'provenance');
+    need(Array.isArray(v.evidence) && v.evidence.length <= 100 && v.evidence.every((e) => obj(e) && Object.keys(e).every((k) => ['note', 'sha256'].includes(k))
+      && note(e.note) && (e.sha256 === undefined || (typeof e.sha256 === 'string' && /^[0-9a-f]{64}$/.test(e.sha256)))),
+    'evidence must be a list of up to 100 {note: notes/<path>.md, sha256?: 64-hex}');
+  }
   if (need(obj(v.source), 'source must be an object')) {
     const s = v.source;
-    only(s, ['soul', 'soulId', 'owner', 'instance', 'ownedNodes', 'readNodes', 'bases'], 'source');
-    // okf 4.0.1: the source's okf.json owner (what okf-base.json nodes record); optional for 4.0.0 PRs.
-    need(s.owner === undefined || s.owner === null || str(s.owner, 128), 'source.owner must be a string or null');
+    only(s, v.version === 1 ? ['soul', 'soulId', 'owner', 'instance', 'ownedNodes', 'readNodes', 'bases'] : ['soul', 'owner', 'instance', 'ownedNodes', 'readNodes', 'bases'], 'source');
+    // okf 4.0.1: the source's okf.json owner (what okf-base.json nodes record); optional for 4.0.0 PRs, required in v2.
+    if (v.version === 1) need(s.owner === undefined || s.owner === null || str(s.owner, 128), 'source.owner must be a string or null');
+    else need(str(s.owner, 128), 'source.owner must be the source soul\'s okf.json owner');
     need(str(s.soul, 128), 'source.soul must be a name');
-    need(s.soulId === null || str(s.soulId, 512), 'source.soulId must be a string or null');
+    if (v.version === 1) need(s.soulId === null || str(s.soulId, 512), 'source.soulId must be a string or null');
     need(str(s.instance, 128), 'source.instance must be a name');
     for (const k of ['ownedNodes', 'readNodes']) need(Array.isArray(s[k]) && s[k].length <= 256 && s[k].every((n) => typeof n === 'string' && NODE.test(n)), `source.${k} must be a list of base/node`);
     need(Array.isArray(s.bases) && s.bases.length <= 64 && s.bases.every((b) => obj(b) && Object.keys(b).every((k) => ['alias', 'id', 'kind', 'root', 'repository'].includes(k)) && str(b.alias, 64) && str(b.id, 128) && ['git', 'directory'].includes(b.kind) && (b.root === undefined || str(b.root, 512)) && (b.repository === undefined || str(b.repository, 512))), 'source.bases must be a list of {alias, id, kind, root?, repository?}');
     need(!Array.isArray(s.bases) || s.bases.every((b) => !obj(b) || b.root === undefined || safeRoot(b.root)), 'source.bases[].root must be a relative directory without ..');
+    // v2 publishes no machine path: a base's repository is its GitHub owner/repo.
+    if (v.version === 2) need(!Array.isArray(s.bases) || s.bases.every((b) => !obj(b) || b.repository === undefined || (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(b.repository) && b.repository.split('/').every((x) => x !== '.' && x !== '..'))), 'source.bases[].repository must be the GitHub owner/repo, never a path or URL');
   }
   if (need(obj(v.tasks), 'tasks must be an object')) {
     only(v.tasks, ['provider', 'refs'], 'tasks');

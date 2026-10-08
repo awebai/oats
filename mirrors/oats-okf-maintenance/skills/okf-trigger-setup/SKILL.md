@@ -29,8 +29,8 @@ machine, acting as one GitHub account, and that account must be able to
 - **The host (`runsOn`)** is the one machine that runs the trigger, named by
   its `oats-local.yaml` `host: { name: <slug> }`, and logged in with `gh` as
   that account.
-- **The harvest switch is independent**: a review host need not harvest (its
-  `harvest` setting can stay `off`), and a harvesting host need not review.
+- **Harvesters run anywhere**: working agents spawn a harvester for each
+  proposal in their own deployment; the review host need not be one of them.
 
 ## 2. The self-approval limit
 
@@ -108,9 +108,15 @@ local trigger on one host.
 
 ```sh
 oats trigger test <member>/okf-harvest-review   # or: oats trigger test okf-harvest-review (local)
-oats schedule host install                      # the host timer, if the test says it is missing
+oats schedule host install                      # the host tick, if the test says it is missing
 oats trigger status
 ```
+
+- **Why a schedule command here:** the shared host tick that
+  `oats schedule host install` installs is what polls PR triggers such as this
+  one ([OATS v0.41.0 schedules, Triggers](https://github.com/awebai/oats/blob/v0.41.0/docs/schedules.md)).
+  Run it for this review trigger only. It adds no scheduler job, and harvest
+  needs no timer: working agents propose at their checkpoints.
 
 - `oats trigger test` checks gh auth and where its credential comes from, the
   repository and your merge permissions, the soul, its messaging capability,
@@ -124,8 +130,8 @@ oats trigger status
 
 ## 7. Labels
 
-Harvest PRs carry `okf-harvest` (the harvester's completion creates the label
-if the repository lacks it). The maintainer adds `okf-needs-human` when a PR
+Harvest PRs carry `okf-harvest` (the harvester creates the label if the
+repository lacks it). The maintainer adds `okf-needs-human` when a PR
 would supersede a human-accepted decision. To pre-create both:
 
 ```sh

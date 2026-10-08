@@ -147,7 +147,10 @@ homes, logs, notes, branches and messaging identities are local.
 ### `instance.json`: provenance is recorded, not declared
 
 Besides the instance's identity, repository, branch, lineage, launch recipe and
-composed skills and instructions, a spawn records:
+composed skills and instructions, a spawn records provenance. The following is a
+**historical 4.x-spawned home**, not the settings to use for new oats.okf 5.0
+spawns: its version and provider payload remain recorded after a pin changes.
+For current settings and the respawn/cleanup sequence, see [knowledge.md](knowledge.md).
 
 ```json
 {

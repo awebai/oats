@@ -4,11 +4,12 @@ description: >-
   Keeping this instance's own knowledge (STATE.md, log.md, notes/) with
   judgment: the capture test, what is worth writing down and what is not,
   one concept per note with type, claim, why, evidence and generality, when to
-  write (at the decision, before compaction, before a task boundary), and how
-  a note cites the soul knowledge it confirms or contradicts. Use at the start
-  of every task, when a decision is taken or rejected, when something costs
-  effort to find out, when a human corrects you, before compaction, and
-  before finishing a task.
+  write (at the decision, before compaction, before a task boundary, at a
+  checkpoint), and how a note cites the soul knowledge it confirms or
+  contradicts. Use at the start of every task, when a
+  decision is taken or rejected, when something costs effort to find out,
+  when a human corrects you, before compaction, at a checkpoint, and before
+  finishing a task.
 ---
 
 # Instance knowledge
@@ -22,18 +23,17 @@ happened, and what you learned. It lives in instance home (not ./work):
   history.
 - **notes/**: **one concept per insight**, one Markdown file each.
 
-Your future self reads it after compaction. When harvest is on, the knowledge
-harvester reads it with your session transcript and decides what becomes soul
-knowledge. Write for both.
+Your future self reads it after compaction, and, when your soul proposes
+knowledge, a judge may read the notes a proposal names. Write for both.
 
 ## The capture test
 
-> Would my future self after compaction, or the harvester judging this
-> session, decide or act better for having it — and is it absent from the
-> code, the tracker and the repository docs?
+> Would my future self after compaction, or a judge of what my soul should
+> know, decide or act better for having it — and is it absent from the code,
+> the tracker and the repository docs?
 
 Both halves must hold. The capture bar is lower than the promotion bar: you
-capture what might matter; the harvester promotes what does. Do not
+capture what might matter; promotion is a later, stricter judgment. Do not
 self-censor a real decision because it might not be promoted.
 
 ## Capture
@@ -78,10 +78,10 @@ Relates to: oats/expert/decisions/retries.md@5b6a9cab (refines it).
 
 - A one-line claim in `description`; the *why* in the body.
 - Evidence and provenance: what was observed, when, from what.
-- **Generality** tells the harvester whether you think it outlives the task.
+- **Generality** says whether you think it outlives the task.
 - A note that confirms, refines or contradicts soul knowledge **cites it**
   (`alias/node/concept.md@<short-oid>`, from `oats okf`'s receipt). That is
-  what lets the harvester situate it.
+  what lets a later judge situate it.
 
 ## When
 
@@ -89,8 +89,19 @@ Relates to: oats/expert/decisions/retries.md@5b6a9cab (refines it).
   lost its why.
 - **Before compaction** and **before a task boundary**: update STATE.md and
   log.md, and write the notes you have been meaning to write.
+- **At an important checkpoint** (a decision made, a PR opened or handed
+  over, a task finished): first update STATE.md, log.md and the relevant
+  notes; then follow your briefing on proposing (below).
 - **Consult first**: before writing a note, check notes/ and `oats okf search`
   so you refine or cite rather than duplicate.
+
+## Proposing knowledge
+
+Soul knowledge changes only through a reviewed PR; you never write it. Whether
+your soul proposes what you learned, and exactly how, is in your spawn
+briefing (TASK.md). Follow it when it is there. A soul can opt out
+(`knowledge: { harvest: off }`); then, and whenever your briefing gives no
+such instruction, never propose knowledge.
 
 ## The theory, briefly
 

@@ -1,7 +1,7 @@
 {
   "capability": "oats.okf-maintenance",
   "command": "okf-maintenance",
-  "version": "4.1.1",
+  "version": "5.0.0",
   "compatibility": {
     "oats": ">=0.29.0"
   },

@@ -40,7 +40,7 @@ arrives from.
 ```yaml
 # oats-workspace.yaml: one default per slot, for every soul
 packages:
-  oats.okf: v4.1.1
+  oats.okf: v5.0.0
   oats.aweb: v1.21.1
   oats.linear: v1.0.1
   oats.jira: v1.0.1
@@ -78,15 +78,17 @@ operations in full.
 
 | Slot | Provider | Needs on the host | Documentation |
 | --- | --- | --- | --- |
-| `knowledge` | `oats.okf` | `settings.oats.okf.bindings-file` and `state-dir` (absolute paths) in `oats-local.yaml`; `git` and `gh` for Git-backed bases; the harvest harness (`harvest-runtime`: `pi`, `claude` or `codex`) when harvest is on | [awebai/oats-okf](https://github.com/awebai/oats-okf), [knowledge.md](knowledge.md) |
+| `knowledge` | `oats.okf` | `settings.oats.okf.bindings-file` and `state-dir` (absolute paths) in `oats-local.yaml`; `git` for Git-backed consultation, `git` and `gh` for proposal/review PRs; ordinary kernel/harness selection, no provider harvest-runtime setting | [awebai/oats-okf](https://github.com/awebai/oats-okf), [knowledge.md](knowledge.md) |
 | `messaging` | `oats.aweb` | the `aw` CLI at 1.36.13 or later; for channel delivery, `@awebai/pi` in pi or the `aweb-channel` plugin in Claude Code; host-only `root`, `roots` and `residents` in `oats-local.yaml` | [awebai/oats-aweb](https://github.com/awebai/oats-aweb) |
 | `tasks` | `oats.jira` | `acli`, authenticated to the Jira site; `site` and `project` in the soul's `tasks:` payload or `settings.oats.jira` | [awebai/oats-jira](https://github.com/awebai/oats-jira) |
 | `tasks` | `oats.linear` | `LINEAR_API_KEY` in the environment (never in OATS config); `team` (and optionally `project`) in the soul's `tasks:` payload or `settings.oats.linear` | [awebai/oats-linear](https://github.com/awebai/oats-linear) |
 
 - **`oats.okf`** consults the soul's external OKF bases, keeps instance
-  knowledge, and, where the host switches harvest on, hands each instance's
-  notes and session to the `knowledge-harvester` package soul; the
-  `knowledge-maintainer` package soul reviews the resulting PRs.
+  knowledge, and briefs eligible working instances to propose durable claims
+  at checkpoints by directly spawning `oats.okf/knowledge-harvester`. The
+  soul-only `knowledge: { harvest: off }` forbids harvest while retaining
+  consultation. No host switch or automatic transcript/retire capture remains;
+  `knowledge-maintainer` reviews the resulting Git PRs.
 - **`oats.aweb`** mints a messaging identity for each instance at spawn and
   removes it at retire, contributes the aweb messaging skills, and wires the
   channel so sessions are woken by mail. Under `delivery: channel`, Claude Code

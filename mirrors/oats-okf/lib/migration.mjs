@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { fs, join, dirname, resolve, safePath, readJSON, save, atomic, tree, materialize, digest, hash, overlaps, withLock, fail, identifier } from './io.mjs';
+import { fs, join, dirname, resolve, safePath, readJSON, save, tree, materialize, digest, hash, overlaps, withLock, fail, identifier } from './io.mjs';
 import { metadata, noGit, validateDeclaration, loadBindings, resolveNodes, splitRef } from './config.mjs';
 import { stageBase, validateBase, baseLock, journalPath, gitPublish, directoryPublish } from './stores.mjs';
 const b64=s=>Buffer.from(s).toString('base64');
@@ -122,16 +122,4 @@ export function cutoverMigration(file,soul) {
   if(live===m.legacy) fs.renameSync(m.legacy,savedOriginal);
   save(declarationFile,decl);fs.rmSync(join(soul,'.okf-cutover.json'));m.cutover.status='complete';save(file,m);
   return {status:'complete',backup:join(dirname(file),'original'),next:'Update old soul/knowledge references in soul instructions to knowledge/bases/<alias>/<node>. Skills are unchanged.'};
-}
-
-export function migrateSource(bindings, home) {
-  home=safePath(home);
-  if(overlaps(home,bindings.stateDir)) fail('E_PATH','legacy source overlaps durable state');
-  const files={};
-  for(const name of ['STATE.md','log.md','.okf-harvest-record.json','.okf-harvest-record.next.json']) if(fs.existsSync(join(home,name))) {safePath(join(home,name));files[name]=fs.readFileSync(join(home,name)).toString('base64');}
-  if(fs.existsSync(join(home,'notes'))) for(const [p,b] of Object.entries(tree(join(home,'notes')))) files['notes/'+p]=b;
-  const id=randomUUID(),file=join(bindings.stateDir,'migrations',id,'legacy-source.json');
-  save(file,{version:1,home,files,digest:digest(files)});
-  save(join(home,'.okf-v1-migration.json'),{version:1,backup:file,digest:digest(files)});
-  return {status:'preserved',backup:file,next:'Migrate any soul/knowledge bundle first; harvest re-registers this source and captures all visible evidence. Old v1 cursors are preserved, NOT accepted as v2 processing proof.'};
 }
