@@ -997,3 +997,134 @@ test("a spawn whose start cannot be read: status keeps it in progress, retire re
     if (saved.seam === undefined) delete process.env.OATS_TEST_PROCESS_START_PS; else process.env.OATS_TEST_PROCESS_START_PS = saved.seam;
   }
 });
+
+// A recorded git step or hook group with members whose leader's start cannot be read may be that
+// step, still running: it is never signalled, and never taken for gone. What names it (the claim, the
+// record, the marker) is kept, and the refusal names the group, its recorded start and the way out.
+const endGroupByHand = async (pgid) => { process.kill(-pgid, "SIGTERM"); assert.ok(await waitFor(() => !alive(pgid), 5000)); };
+
+test("a killed recovery's git step whose start cannot be read: the next add refuses, keeping the claim and that git; once it is ended by hand, the add completes", async (t) => {
+  const fx = deployment(t);
+  const { home } = await fx.spawn("dev", { instance: "dev-unkgit", work: "checkout" });
+  writeFileSync(join(fx.root, "hook-sleep"), "60");
+  const argv = ["worktree", "add", "--purpose", "feat", "--branch", "agents/feat", "--base", "main", "--json"];
+  const first = cliChild(fx, argv, { cwd: home, env: { OATS_INSTANCE_HOME: home } });
+  assert.ok(await waitFor(() => existsSync(join(fx.root, "hook-sleeping"))));
+  first.child.kill("SIGKILL");
+  await first.done;
+  const path = gatedGit(fx, "unkgit", { gate: `a.includes("worktree") && a.includes("remove") && a.includes("--force")`, entered: `"recovering"`, release: `"release-old-git"`, after: `"old-git-done"` });
+  const recovering = cliChild(fx, argv, { cwd: home, env: { OATS_INSTANCE_HOME: home, PATH: path } });
+  assert.ok(await waitFor(() => existsSync(join(fx.base, "recovering"))));
+  const oldGit = Number(readFileSync(join(fx.base, "recovering"), "utf8"));
+  t.after(() => { try { process.kill(-oldGit, "SIGKILL"); } catch { /* gone */ } });
+  recovering.child.kill("SIGKILL");
+  await recovering.done;
+  const lock = join(home, ".oats", "trees", "feat.lock");
+  const held = readFileSync(lock, "utf8");
+  assert.equal(JSON.parse(held).gitPid, oldGit);
+  execFileSync("rm", [join(fx.root, "hook-sleep")]);
+  // The claim's holder is gone (read normally); only its git step's start cannot be read.
+  const env = { OATS_TEST_PROCESS_START_PS: "1", PATH: unreadablePs(fx, oldGit) };
+  const r = wt(fx, home, argv.slice(1), env);
+  const e = r.json().error;
+  assert.equal(e.code, "E_LIFECYCLE_BUSY", r.stdout);
+  for (const part of [`git process group ${oldGit} (leader pid ${oldGit}, recorded start ${JSON.parse(held).gitStart})`, "ps: simulated failure", "was not signalled", `${lock} is kept`, `kill -TERM -- -${oldGit}`, `remove ${lock} and retry`]) assert.ok(e.message.includes(part), `${part}: ${e.message}`);
+  assert.equal(e.details.gitPid, oldGit);
+  assert.equal(e.details.lock, lock);
+  assert.equal(readFileSync(lock, "utf8"), held, "the claim is kept");
+  assert.equal(alive(oldGit), true, "that git is not signalled");
+  assert.ok(existsSync(join(home, ".work-feat")) && registered(fx, join(home, ".work-feat")), "nothing was rolled back");
+  // The way out it names: end that group by hand, and retry (ps still failing for that pid).
+  await endGroupByHand(oldGit);
+  const again = wt(fx, home, argv.slice(1), env);
+  assert.equal(again.status, 0, again.stdout + again.stderr);
+  assert.equal(again.json().result.state, "ready");
+  assert.equal(existsSync(join(fx.base, "old-git-done")), false, "the old git never ran its removal");
+  assert.deepEqual(readdirSync(join(home, ".oats", "trees")).sort(), ["feat.json"]);
+});
+
+test("an interrupted add's git step or hook group whose start cannot be read: add and remove refuse, keeping the record, the tree and that process; once it is ended by hand, the rollback completes", async (t) => {
+  const fx = deployment(t);
+  const { home } = await fx.spawn("dev", { instance: "dev-unkrec", work: "checkout" });
+  const recPath = (p) => join(home, ".oats", "trees", `${p}.json`);
+  const check = (r, { pgid, start, what, purpose }) => {
+    const e = r.json().error;
+    assert.equal(e.code, "E_LIFECYCLE_BUSY", r.stdout);
+    for (const part of [`${what} process group ${pgid} (leader pid ${pgid}, recorded start ${start})`, "ps: simulated failure", "was not signalled", "nothing was rolled back", `kill -TERM -- -${pgid}`, `remove ${recPath(purpose)},`]) assert.ok(e.message.includes(part), `${part}: ${e.message}`);
+  };
+  // A git step: the add killed inside its `git switch -c`.
+  const path = gatedGit(fx, "unkrec", { gate: `a.includes("switch") && a.includes("-c")`, entered: `"switching"`, release: `"release-switch"`, after: `"switch-done"` });
+  const killed = cliChild(fx, ["worktree", "add", "--purpose", "sw", "--branch", "agents/sw", "--base", "main", "--json"], { cwd: home, env: { OATS_INSTANCE_HOME: home, PATH: path } });
+  assert.ok(await waitFor(() => existsSync(join(fx.base, "switching"))));
+  const switchGit = Number(readFileSync(join(fx.base, "switching"), "utf8"));
+  t.after(() => { try { process.kill(-switchGit, "SIGKILL"); } catch { /* gone */ } });
+  killed.child.kill("SIGKILL");
+  await killed.done;
+  const swRec = readFileSync(recPath("sw"), "utf8");
+  let env = { OATS_TEST_PROCESS_START_PS: "1", PATH: unreadablePs(fx, switchGit) };
+  for (const args of [["add", "--purpose", "sw", "--branch", "agents/sw", "--base", "main", "--json"], ["remove", "--purpose", "sw", "--json"]]) {
+    check(wt(fx, home, args, env), { pgid: switchGit, start: JSON.parse(swRec).gitStart, what: "git", purpose: "sw" });
+    assert.equal(readFileSync(recPath("sw"), "utf8"), swRec, `${args[0]}: the record is kept`);
+    assert.equal(alive(switchGit), true, `${args[0]}: that git is not signalled`);
+    assert.ok(existsSync(join(home, ".work-sw")), `${args[0]}: the tree is kept`);
+  }
+  await endGroupByHand(switchGit);
+  const swDone = wt(fx, home, ["remove", "--purpose", "sw", "--json"], env);
+  assert.equal(swDone.status, 0, swDone.stdout);
+  assert.equal(swDone.json().result.rolledBack, true);
+  assert.equal(existsSync(join(fx.base, "switch-done")), false, "the switch never ran");
+  assert.equal(tipOf(fx, "agents/sw"), null);
+
+  // A hook group: the add killed while its hook runs.
+  writeFileSync(join(fx.root, "hook-sleep"), "60");
+  const hooked = cliChild(fx, ["worktree", "add", "--purpose", "hk", "--branch", "agents/hk", "--base", "main", "--json"], { cwd: home, env: { OATS_INSTANCE_HOME: home } });
+  assert.ok(await waitFor(() => existsSync(join(fx.root, "hook-sleeping"))));
+  hooked.child.kill("SIGKILL");
+  await hooked.done;
+  const hkRec = readFileSync(recPath("hk"), "utf8");
+  const { hookPgid, hookStart } = JSON.parse(hkRec);
+  t.after(() => { try { process.kill(-hookPgid, "SIGKILL"); } catch { /* gone */ } });
+  execFileSync("rm", [join(fx.root, "hook-sleep")]);
+  env = { OATS_TEST_PROCESS_START_PS: "1", PATH: unreadablePs(fx, hookPgid) };
+  for (const args of [["add", "--purpose", "hk", "--branch", "agents/hk", "--base", "main", "--json"], ["remove", "--purpose", "hk", "--json"]]) {
+    check(wt(fx, home, args, env), { pgid: hookPgid, start: hookStart, what: "hook", purpose: "hk" });
+    assert.equal(readFileSync(recPath("hk"), "utf8"), hkRec, `${args[0]}: the record is kept`);
+    assert.equal(alive(hookPgid), true, `${args[0]}: the hook group is not signalled`);
+    assert.ok(existsSync(join(home, ".work-hk")), `${args[0]}: the tree is kept`);
+  }
+  await endGroupByHand(hookPgid);
+  const hkDone = wt(fx, home, ["add", "--purpose", "hk", "--branch", "agents/hk", "--base", "main", "--json"], env);
+  assert.equal(hkDone.status, 0, hkDone.stdout + hkDone.stderr);
+  assert.equal(hkDone.json().result.state, "ready");
+});
+
+test("a killed spawn's hook group whose start cannot be read: retire refuses naming it and `oats retire --force`, never signalling it; --force retires and keeps the branch", async (t) => {
+  const fx = deployment(t, { work: "worktree", lifecycle: true });
+  const { home, orphan } = await killedSpawn(fx, "dev-unkhook");
+  const group = pgidOf(orphan);
+  t.after(() => { try { process.kill(-group, "SIGKILL"); } catch { /* gone */ } });
+  const { hookStart } = JSON.parse(readFileSync(join(home, ".oats-rollback-incomplete.json"), "utf8")).inProgress;
+  const saved = { PATH: process.env.PATH, seam: process.env.OATS_TEST_PROCESS_START_PS };
+  process.env.PATH = unreadablePs(fx, group);
+  process.env.OATS_TEST_PROCESS_START_PS = "1";
+  try {
+    await assert.rejects(fx.inEnv(() => retireInstance(fx.root, "dev-unkhook", { tmuxSession: "oats-test-nosuch" })), (e) => {
+      assert.equal(e.code, "E_LIFECYCLE_BUSY");
+      for (const part of [`hook process group ${group} (leader pid ${group}, recorded start ${hookStart})`, "was not signalled", `kill -TERM -- -${group}`, "`oats retire dev-unkhook --force`"]) assert.ok(e.message.includes(part), `${part}: ${e.message}`);
+      assert.equal(e.details.hookPgid, group);
+      assert.equal(e.details.remedy, "oats retire dev-unkhook --force");
+      return true;
+    });
+    assert.ok(existsSync(home), "nothing was retired");
+    assert.equal(alive(orphan), true, "the hook group is not signalled");
+    const r = await fx.inEnv(() => retireInstance(fx.root, "dev-unkhook", { tmuxSession: "oats-test-nosuch", force: true }));
+    assert.equal(r.spawnCompensation.branchDeleted, false);
+    assert.match(r.spawnCompensation.reason, /could not be verified gone/);
+    assert.ok(r.warnings.some((w) => w.includes(`hook process group ${group}`) && w.includes("its branch is kept")), JSON.stringify(r.warnings));
+    assert.equal(alive(orphan), true, "--force does not signal it either");
+    assert.equal(tipOf(fx, "agents/dev-unkhook") !== null, true, "the branch is kept");
+  } finally {
+    process.env.PATH = saved.PATH;
+    if (saved.seam === undefined) delete process.env.OATS_TEST_PROCESS_START_PS; else process.env.OATS_TEST_PROCESS_START_PS = saved.seam;
+  }
+});

@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { manifestContractProblems } from "../lib/capability-contract.mjs";
-import { processStartToken, scrubRemoteUrl, selfIdentity, terminateRecordedGroup, verifiedAlive, worktreeHooksOf, worktreeHookTimeoutMs, WORKTREE_HOOK_TIMEOUT_MS, interruptExitStatus } from "../lib/worktree-hooks.mjs";
+import { processStartToken, scrubRemoteUrl, selfIdentity, terminateRecordedGroup, unknownGroupNote, verifiedAlive, worktreeHooksOf, worktreeHookTimeoutMs, WORKTREE_HOOK_TIMEOUT_MS, interruptExitStatus } from "../lib/worktree-hooks.mjs";
 
 const problems = (hooks) => manifestContractProblems({ capability: "acme.tool", hooks }).map((p) => `${p.pointer}: ${p.message}`);
 
@@ -236,6 +236,12 @@ test("a start that cannot be read is unknown, never gone: liveness says so, and 
   assert.equal(processStart(own.pgid).state, "unknown");
   assert.equal(processStart(2147483646).state, "gone", "ps's own 'no such process' is gone");
   assert.equal(processLiveness({ pid: own.pgid, processStart: own.leaderStart }).state, "unknown");
-  assert.equal(terminateRecordedGroup({ hookPgid: own.pgid, hookStart: own.leaderStart }, 500), "unverified");
+  // Unknown, not "unverified" (a leader known to be gone): its callers refuse instead of warning and going on.
+  assert.equal(terminateRecordedGroup({ hookPgid: own.pgid, hookStart: own.leaderStart }, 500), "unknown");
   assert.equal(groupAlive(own.pgid), true, "not signalled");
+  const note = unknownGroupNote({ hookPgid: own.pgid, hookStart: own.leaderStart }, "git");
+  for (const part of [`git process group ${own.pgid} (leader pid ${own.pgid}, recorded start ${own.leaderStart})`, "ps: simulated failure", "not signalled"]) assert.ok(note.includes(part), `${part}: ${note}`);
+  assert.ok(!note.includes("exited"), "it never says the leader exited");
+  // An empty group is "none" whatever its leader reads as: nothing is left to end.
+  assert.equal(terminateRecordedGroup({ hookPgid: 2147483646, hookStart: "ps:x" }), "none");
 });

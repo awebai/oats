@@ -768,7 +768,15 @@ cwd the home); this one differs:
   while the group's leader runs with its recorded start time. A group whose
   leader has exited is never signalled, because its id may already belong to
   another group. The recovery reports it in a warning, and any leftover
-  processes are ended by hand.
+  processes are ended by hand. A group that still has members while its
+  leader's start cannot be read (where `ps` fails) is not signalled either,
+  and the recovery does not go on past it: the leader may still be that hook,
+  or that git step. `add`, `remove` and `oats retire` refuse with
+  `E_LIFECYCLE_BUSY` and keep the record, naming the group, its recorded
+  start and the way out: check the group by hand and, if it is that hook or
+  git step, end it (`kill -TERM -- -<pgid>`) and retry. If it is not, remove
+  the record named in the message (for `add` and `remove`), or run `oats retire
+  <instance> --force`, which then keeps the branch.
 
 **Leave the tree clean.** `oats worktree remove` refuses a tree with
 uncommitted changes (`E_WORKTREE_DIRTY`). So a hook should leave the tree

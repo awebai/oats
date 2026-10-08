@@ -2077,6 +2077,16 @@ step that times out is cleared from the record only once its whole process
 group is gone. A git step that cannot be ended keeps the claim, or the
 record, and the command answers `E_LIFECYCLE_BUSY`.
 
+A recorded hook group or git step that still has members while its leader's
+start cannot be read (where `ps` fails) is never signalled and never passed
+over: the leader may still be that hook or git step. The command answers
+`E_LIFECYCLE_BUSY`, keeping the claim or the record and touching nothing
+else. Its message names the group, its recorded start, why the start cannot
+be read and the way out: check the group by hand; if it is that step, end it
+(`kill -TERM -- -<pgid>`) and retry; if it is not, remove the claim or the
+record it names (a record with what that add left) and retry. A claim's refusal
+carries `details.gitPid` and `details.gitStart`.
+
 A failed `add` reports the same facts about its rollback in `details`:
 `rolledBack`, `branchKept`, `branchKeptReason` and `warnings`.
 

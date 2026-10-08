@@ -1230,7 +1230,10 @@ start. When the start cannot be read (for example where `ps` fails), the
 process is never taken for gone. `add` and `remove` refuse with
 `E_LIFECYCLE_BUSY`, naming the pid and the exact file to remove by hand once
 you have checked it: the record `.oats/trees/<p>.json`, or the claim
-`.oats/trees/<p>.lock`. An `add` that is interrupted (SIGINT, SIGTERM, SIGHUP) while its hooks
+`.oats/trees/<p>.lock`. The same holds for a hook or git step the killed
+command left running: when its leader's start cannot be read, it is not
+signalled, nothing is rolled back, and the refusal names its process group
+and the way out (`kill -TERM -- -<pgid>` once checked, then retry). An `add` that is interrupted (SIGINT, SIGTERM, SIGHUP) while its hooks
 run ends the running hook, rolls back and exits 128 + the signal number
 (`E_INTERRUPTED`); one killed outright leaves the `creating` record for the
 next `add` or `remove`. A killed `add` can simply be run again. A required
