@@ -637,6 +637,16 @@ test("roster (feature server-probe-features): a group's probe relays the host's 
     writeServers({ build: { sshHost: "build-host", workspace: "/srv/ws" } });
     const unreached = rosterGroups({ server: "build", io: { budgetMs: 500, execFileSync: () => { throw new Error("never pulled"); } } }).groups[0].probe;
     assert.deepEqual(Object.keys(unreached).sort(), ["error", "ok"]); assert.equal(unreached.error.code, "E_ROSTER_BUDGET");
+    // A success envelope whose result is not an object is unknown too, and never sinks a healthy group.
+    for (const [why, answer] of [["result null", { schemaVersion: 1, ok: true, result: null }], ["result omitted", { schemaVersion: 1, ok: true }],
+      ["result a string", { schemaVersion: 1, ok: true, result: "x" }], ["result a number", { schemaVersion: 1, ok: true, result: 7 }], ["result an array", { schemaVersion: 1, ok: true, result: ["retire-home"] }]]) {
+      writeServers({ odd: { sshHost: "odd-host", workspace: "/srv/odd" }, healthy: { sshHost: "healthy-host", workspace: "/srv/healthy" } });
+      const exec = (_bin, argv) => JSON.stringify(argv.join(" ").includes("odd-host") ? answer : { root: "/srv/healthy/agents", agents: [], features: ["session-start"] });
+      const groups = Object.fromEntries(rosterGroups({ io: { execFileSync: exec, serverId: `pair-${Math.random()}` } }).groups.map((g) => [g.server, g]));
+      assert.deepEqual(groups.odd.probe, { ok: true, features: null }, why);
+      assert.deepEqual(groups.odd.instances, [], why);
+      assert.deepEqual(groups.healthy.probe, { ok: true, features: ["session-start"] }, `${why}: the healthy group survives`);
+    }
     // The predicate alone: a result that is not an object, or carries no key, is unknown.
     for (const result of [undefined, null, "features", 42, ["retire-home"]]) assert.equal(hostFeatures(result), null);
     const own = { features: ["a"] };
