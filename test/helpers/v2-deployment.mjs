@@ -22,7 +22,7 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import YAML from "yaml";
 import { inertHarnessDir } from "./runtime-stub.mjs";
-import { applyFixtureRules, assertNoFixtureProcesses, fixtureBase, fixtureEnv, isolatedTmuxTmpdir, noLoginShell, privateTmuxTmpdir, removeTmuxTmpdir } from "./host-fixture.mjs";
+import { applyFixtureRules, assertNoFixtureProcesses, fixtureBase, fixtureEnv, fixtureRules, isolatedTmuxTmpdir, noLoginShell, privateTmuxTmpdir, removeTmuxTmpdir } from "./host-fixture.mjs";
 
 export const CLI = resolve(new URL("../../bin/oats.mjs", import.meta.url).pathname);
 const IDENTITY = ["TMUX", "TMUX_PANE", "OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "OATS_AGENT", "OATS_SOUL", "OATS_SOUL_ID", "OATS_ROOT", "OATS_CONTEXT", "OATS_WORKSPACE",
@@ -131,7 +131,8 @@ export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilit
   const ownTmuxTmpdir = isolatedTmuxTmpdir() ? null : privateTmuxTmpdir();
   // The fixture's rules (host-fixture.mjs fixtureEnv: HOME, XDG, git, no proxies, the scheduler
   // stubs), its inert harnesses first on PATH.
-  const env = fixtureEnv(base, { extra: { OATS_HOME_DIR: join(base, "oats-home"), OATS_REMOTE_CACHE: cache,
+  const rules = fixtureRules(base, { home });
+  const env = fixtureEnv(base, { rules, extra: { OATS_HOME_DIR: join(base, "oats-home"), OATS_REMOTE_CACHE: cache,
     OATS_TMUX_SESSION: `none-${process.pid}`, PI_AGENTS_TMUX_SESSION: `none-${process.pid}`, TMUX_TMPDIR: ownTmuxTmpdir ?? isolatedTmuxTmpdir(),
     // Never the operator's login shell (host-fixture.mjs isolateSessionEnvironment says why).
     OATS_TEST_LOGIN_SHELL: process.env.OATS_TEST_LOGIN_SHELL ?? noLoginShell(base) } });
@@ -154,7 +155,7 @@ export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilit
    *  is kept. Every in-process kernel call goes through here, so a test can never reach
    *  the operator's own tmux server or deployment. */
   const fixtureProcessEnv = () => {
-    const next = applyFixtureRules({ ...process.env }, base, { home });
+    const next = applyFixtureRules({ ...process.env }, rules);
     for (const k of ["HOME", "OATS_HOME_DIR", "OATS_REMOTE_CACHE", "OATS_TMUX_SESSION", "PI_AGENTS_TMUX_SESSION", "TMUX_TMPDIR"]) next[k] = env[k];
     next.OATS_TEST_LOGIN_SHELL ??= env.OATS_TEST_LOGIN_SHELL;
     for (const k of IDENTITY) delete next[k];

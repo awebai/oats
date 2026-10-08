@@ -76,6 +76,7 @@ function schedulerStubs(base) {
   const bin = join(base, "fixture-bin");
   mkdirSync(bin, { recursive: true });
   for (const name of ["launchctl", "systemctl"]) {
+    if (existsSync(join(bin, name))) continue; // never rewritten under a child that may be running it
     writeFileSync(join(bin, name), "#!/bin/sh\necho inactive\nexit 3\n");
     chmodSync(join(bin, name), 0o755);
   }
@@ -92,21 +93,25 @@ function isolatedHomeAndGit(home) {
   for (const dir of [home, ...Object.values(xdg)]) mkdirSync(dir, { recursive: true });
   return { HOME: home, ...xdg, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_TERMINAL_PROMPT: "0" };
 }
-/** Apply the fixture's rules to an environment in place: what it never inherits removed, its HOME,
- *  XDG and git set, and its scheduler stubs ahead on PATH (once). */
-export function applyFixtureRules(env, base, { home = join(base, "home") } = {}) {
+/** A fixture's rules, made once: its HOME and XDG directories and its scheduler stubs are created
+ *  here, and nowhere else. */
+export function fixtureRules(base, { home = join(base, "home") } = {}) {
+  return { set: isolatedHomeAndGit(home), stubs: schedulerStubs(base) };
+}
+/** Apply a fixture's rules to an environment in place, creating nothing: what it never inherits
+ *  removed, its HOME, XDG and git set, and its scheduler stubs ahead on PATH (once). */
+export function applyFixtureRules(env, rules) {
   for (const key of Object.keys(env)) if (dropped(key)) delete env[key];
-  Object.assign(env, isolatedHomeAndGit(home));
-  const stubs = schedulerStubs(base);
+  Object.assign(env, rules.set);
   const path = (env.PATH || "").split(delimiter).filter(Boolean);
-  if (!path.includes(stubs)) env.PATH = [stubs, ...path].join(delimiter);
+  if (!path.includes(rules.stubs)) env.PATH = [rules.stubs, ...path].join(delimiter);
   return env;
 }
 /** The environment for every child a fixture starts: this process's, with the fixture's rules
  *  applied, then `extra`. tmux isolation is isolateSessionEnvironment's, which suites that start
  *  sessions install first; this composes with it. */
-export function fixtureEnv(base, { extra = {} } = {}) {
-  return { ...applyFixtureRules({ ...process.env }, base), ...extra };
+export function fixtureEnv(base, { extra = {}, rules = fixtureRules(base) } = {}) {
+  return { ...applyFixtureRules({ ...process.env }, rules), ...extra };
 }
 
 /** The host's lsof, found once when this module loads (on the PATH it loads with, else where macOS
@@ -134,7 +139,7 @@ export function assertNoFixtureProcesses(base, { settleMs = 2000 } = {}) {
     scan = LSOF ? processesInHome(base, { exec: (cmd, args, opts) => execFileSync(cmd === "lsof" ? LSOF : cmd, args, opts) }) : { ok: false, error: "lsof is not installed" };
     if (!scan.ok) throw new Error(`cannot check for processes left in the fixture ${base}: ${scan.error} (lsof is a prerequisite of the test suite, awebai/oats#783)`);
     if (!scan.processes.length || Date.now() >= deadline) break;
-    execFileSync("sleep", ["0.1"]);
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100); // a wait that starts no process: PATH may hold none
   }
   if (scan.processes.length) throw new Error(`processes still work in the fixture ${base} after its test: ${scan.processes.map((p) => `pid ${p.pid} ${p.command}`).join(", ")}`);
 }

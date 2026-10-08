@@ -5,7 +5,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, delimiter, dirname, join, sep } from "node:path";
 import { FS_LIMITS, assertNoFixtureProcesses, fixtureBase, fixtureEnv, nameOfLength, pathOfLength } from "./helpers/host-fixture.mjs";
@@ -115,8 +115,21 @@ test("#816 assertNoFixtureProcesses: works whatever PATH the test gives the kern
   const saved = process.env.PATH;
   process.env.PATH = join(b, "no-tools");
   try {
-    assert.throws(() => assertNoFixtureProcesses(b, { settleMs: 200 }), (e) => e.message.includes(`pid ${pid} sleep`));
+    // A settle long enough that the check waits between scans at least once, on any host.
+    assert.throws(() => assertNoFixtureProcesses(b, { settleMs: 5000 }), (e) => e.message.includes(`pid ${pid} sleep`));
   } finally { process.env.PATH = saved; process.kill(pid, "SIGKILL"); }
+});
+
+test("#816 v2Deployment: an in-process call creates nothing, before or after cleanup, and leaves the scheduler stubs as they are", async () => {
+  const fx = v2Deployment();
+  try {
+    const stub = join(fx.base, "fixture-bin", "launchctl");
+    const before = statSync(stub).mtimeMs;
+    await fx.inEnv(() => {});
+    assert.equal(statSync(stub).mtimeMs, before, "the stub is not rewritten");
+  } finally { fx.cleanup(); }
+  await fx.inEnv(() => {});
+  assert.equal(existsSync(fx.base), false, "nothing is recreated under a removed base");
 });
 
 test("#816 v2Deployment: its base, its children's environment and its in-process calls follow the fixture rules, and its cleanup checks for leftover processes", async () => {

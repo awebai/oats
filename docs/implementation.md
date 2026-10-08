@@ -404,7 +404,8 @@ Nor does a test depend on where or how the suite runs:
 A kernel suite is green on Linux CI **and** on a Mac with a loaded schedule
 unit, a live operator tmux server and Apple git, run from inside an instance
 home. A pull request that could not be run there says so in its hand-over. The
-suite's own prerequisites are git ≥ 2.45, lsof and tmux (awebai/oats#783). The
+suite's own prerequisites are Node ≥ 22.12 (the leftover check loads the kernel
+with `require`), git ≥ 2.45, lsof and tmux (awebai/oats#783). The
 helpers in `test/helpers/host-fixture.mjs` hold the host isolation, and the
 shared fixture (`v2Deployment`) applies all of it, so a suite built on it
 inherits it (awebai/oats#816):
