@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync, execFile } from "node:child_process";
+import { execFileSync, execFile, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
@@ -128,6 +128,23 @@ function heldWindow(f, window = f.meta.instance) {
   return harnessReady(f, window);
 }
 const pendingFor = (f, target, fields = {}) => ({ id: `test-${f.meta.instance}`, target, command: f.command, model: null, startedAt: "2026-09-06T00:00:00.000Z", ...fields });
+
+// #762: a missing receipt says where it was looked for, why it can be missing and what to do.
+test("a home without its session receipt is refused naming the receipt path, the oats status spelling first, and the retire remedy; an unreadable instance.json keeps its own message", async () => {
+  const f = await makeHome("noreceipt"); rmSync(f.baselinePath);
+  const missing = (e) => e.code === "E_RUNTIME_ENDPOINT_UNKNOWN" && e.message.includes(`no session receipt for ${f.home} at ${f.baselinePath}`)
+    && /First address the home exactly as `oats status` prints it/.test(e.message)
+    && e.message.includes("`oats retire noreceipt --plan` and `oats retire noreceipt`");
+  assert.throws(() => inspectInstanceSession(f.home), missing);
+  assert.throws(() => startInstanceSession(f.home), missing);
+  const run = spawnSync(process.execPath, [bin, "session", "inspect", "--home", f.home, "--json"], { encoding: "utf8" });
+  assert.equal(run.status, 1, run.stdout + run.stderr);
+  const cli = JSON.parse(run.stdout);
+  assert.equal(cli.error.code, "E_RUNTIME_ENDPOINT_UNKNOWN"); assert.ok(cli.error.message.includes(f.baselinePath), cli.error.message);
+  // The receipt is there and instance.json is not valid JSON: that failure keeps its own message.
+  const g = await makeHome("badmeta"); writeFileSync(join(g.home, "instance.json"), "{not json\n");
+  assert.throws(() => inspectInstanceSession(g.home), (e) => e.code === "E_RUNTIME_ENDPOINT_UNKNOWN" && e.message.startsWith(`cannot read session receipt for ${g.home}: `) && !e.message.includes("oats status"));
+});
 
 test("refusals happen before any mutation", async () => {
   assert.throws(() => startInstanceSession("relative/home"), (e) => e.code === "E_BAD_ARGS");
