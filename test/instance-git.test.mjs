@@ -190,6 +190,24 @@ test("hardening: configured external diff/textconv/fsmonitor helpers NEVER execu
   assert.notEqual(g2.observation.indexRevision, idx); assert.ok(!g2.files.some((f) => f.id === id("README.md")));
 });
 
+// GIT_NO_LAZY_FETCH is Git 2.44's; an older Git ignores it, and there is no protection to test.
+const [gitMajor, gitMinor] = (/(\d+)\.(\d+)/.exec(execFileSync("git", ["--version"], { encoding: "utf8" })) || []).slice(1).map(Number);
+const gitHasNoLazyFetch = gitMajor > 2 || (gitMajor === 2 && gitMinor >= 44);
+test("hardening: an object the repository lacks is never fetched, so a promisor remote its configuration names never runs; the observation fails instead", { skip: !gitHasNoLazyFetch && "Git before 2.44 has no GIT_NO_LAZY_FETCH" }, () => {
+  const work = repo(join(base, "r-lazy"));
+  write(join(work, "later.txt"), "later\n"); git(work, "add", "later.txt"); git(work, "commit", "-qm", "a commit only this repository has");
+  const head = git(work, "rev-parse", "HEAD");
+  rmSync(join(work, ".git", "objects", head.slice(0, 2), head.slice(2)));
+  const sentinel = join(base, "r-lazy-helper-ran");
+  const helper = join(base, "r-lazy-helper.sh"); writeFileSync(helper, `#!/bin/sh\ntouch '${sentinel}'\nexit 1\n`, { mode: 0o700 });
+  // Hostile repo-local config: a fetch of a missing object would run the helper.
+  git(work, "config", "remote.attack.url", `ext::${helper}`); git(work, "config", "remote.attack.promisor", "true"); git(work, "config", "protocol.ext.allow", "always");
+  const { ws } = scope("s-lazy", { work });
+  const g = oats(["instance", "git", "dev-1", "--dir", ws]);
+  assert.notEqual(g.status, 0, "the observation fails: the commit is missing");
+  assert.equal(existsSync(sentinel), false, "no command the repository's configuration names for a fetch was run");
+});
+
 test("remote url parsing: ssh scp-like, ssh://, https with user, .git suffix, ports; local paths and junk are null", () => {
   assert.deepEqual(parseRemoteUrl("git@github.com:awebai/oats.git"), { host: "github.com", path: "awebai/oats" });
   assert.deepEqual(parseRemoteUrl("https://github.com/awebai/oats.git"), { host: "github.com", path: "awebai/oats" });

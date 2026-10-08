@@ -2472,8 +2472,11 @@ readOnly: {helpers: "disabled", optionalLocks: "off", objectsWritten: 0}}`.
 - `against` is the observed revision (the working tree against that commit,
   index included) or `"empty"` for an untracked file. A binary file has an
   empty patch; over 256 KiB, `truncated: true`.
-- The read runs without external diff, textconv, fsmonitor, hooks, the
-  caller's Git environment or global config, and writes nothing (`readOnly`).
+- The read runs without external diff, textconv, fsmonitor, hooks, lazy
+  fetch, the caller's Git environment or global config, and writes nothing
+  (`readOnly`). An object a partial clone lacks is not fetched: the read
+  fails with `E_GIT_FAILED` (with Git 2.44 or later; an older Git ignores
+  `GIT_NO_LAZY_FETCH`).
 - If HEAD or the index moved, the id is not in the current observation, or
   anything moved during the read: `E_STALE_OBSERVATION` with
   `details.observation`. Re-observe; never render a diff of another tree.
@@ -2859,7 +2862,14 @@ A first retire prints the **raw receipt**, not an envelope:
   entry is gone is never touched: it is an incomplete item (`git worktree
   <path>: its admin entry is missing; …`), and `--force` refuses it with
   `E_WORK_PRESERVATION_FAILED`.
-- `--discard-worktree` removes the worktree. No retire deletes a branch, a
+- `--discard-worktree` removes the worktree, and verifies that it is gone (nothing
+  at `work/`, not in `git worktree list`); a removal that did not happen, or
+  cannot be verified, refuses with `E_WORK_PRESERVATION_FAILED` and keeps the
+  home, `--force` included. One exception: with no entry at all at `work/`
+  (a dangling link is an entry) and a repository that cannot be read,
+  `retention.worktree` is `"absent"`, never `"removed"`, and a quarantine
+  retry keeps `could not verify removal` as an incomplete item, which only
+  `--force` clears ([souls-and-instances.md](souls-and-instances.md)). No retire deletes a branch, a
   retried or `--force`d quarantine included: `branchDeleted` is always
   `false`, and `retention.branchDeleted` and `retention.branchDeletionSkipped`
   are not written. `--delete-branch` is refused with `E_BAD_ARGS` (`oats
@@ -3001,7 +3011,9 @@ Refusals (envelopes): `E_PLAN_STALE`, `E_CHILDREN_RUNNING`,
 `E_WORK_PRESERVATION_FAILED` (the home is kept; retry, or
 `--discard-worktree` when it is `work/` that could not be re-homed: it does
 not apply to an extra tree), `E_WORK_INSPECTION_FAILED` (the home is kept; the
-message names the entry or the state that could not be read),
+message names the entry or the state that could not be read, or the directory
+Git reads as the top level of a `work/` whose `core.worktree` names another
+one),
 `E_SESSION_UNKNOWN`, `E_AMBIGUOUS_INSTANCE`,
 `E_NO_ROOT`, `E_LIFECYCLE_FAILED`. A recovery whose Git status disagrees with
 the source's carries `details: {home, statusDisagreement: {repo, rows: [{path,

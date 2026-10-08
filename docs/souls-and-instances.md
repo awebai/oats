@@ -509,6 +509,50 @@ equality:
   repository or deletes a branch, and a commit of the worktree that no ref
   reaches is preserved before the worktree is removed.
 
+**How the retire runs Git.** Every Git command the retire runs on the work,
+its repository, a repository under the work and a recovery clone is run
+from argv, without a shell, with `--no-optional-locks` and
+`GIT_OPTIONAL_LOCKS=0`, so a `git status` never refreshes, and so never
+rewrites, the index it inspects. It also runs with `-c core.fsmonitor=false`,
+`-c core.hooksPath=/dev/null` and `-c diff.external=`, so no fsmonitor, hook
+or external diff that the repository's own configuration names runs, and
+with `GIT_NO_LAZY_FETCH=1`: an object the repository lacks (a promisor
+repository's) is a read that fails, never a fetch through the remote, remote
+helper, ssh command or credential helper its configuration names. That
+protection needs Git 2.44 or later; an older Git ignores the variable, so it
+gets none, and nothing else changes. The
+caller's repository-local Git variables are not passed: Git's own list
+(`git rev-parse --local-env-vars`: `GIT_DIR`, `GIT_WORK_TREE`,
+`GIT_INDEX_FILE`, `GIT_COMMON_DIR`, the object directories, `GIT_CONFIG`,
+`GIT_CONFIG_PARAMETERS` and the others), and `GIT_CONFIG_COUNT` with its
+`GIT_CONFIG_KEY_<n>` and `GIT_CONFIG_VALUE_<n>` pairs. A read that names
+its own index (the index the copy carries) keeps it. The operator's global
+and system configuration are still read: the spawn baseline was taken under
+them, and without them a status can read differently (a global
+`core.excludesFile`, `core.autocrlf`, a filter), which would add a copy
+attempt to every existing instance's retire. They are the operator's own;
+what the retire guards against is configuration the retired agent could
+write. One limit remains: a filter driver that the repository's own
+configuration names and its `.gitattributes` select can still run during
+`git status`. Turning it off would change what status reports.
+
+**A worktree whose top level is another directory.** A worktree's
+per-worktree configuration can set `core.worktree` to a directory other
+than `<home>/work`. Git's status then describes that other directory, while
+the retire reads, copies and removes `<home>/work`. So before any status is
+trusted, in each of its three inspections, the retire checks that Git's top
+level for `work/` (`git rev-parse --show-toplevel`) is `<home>/work`. The
+two are compared in their on-disk spelling: a path reached through a
+symbolic link, or spelled in another letter case on a case-insensitive
+filesystem, is the same path. Any other top level, or one that cannot be
+read, refuses with `E_WORK_INSPECTION_FAILED`, naming both paths. The first
+inspection runs before the session is stopped and before any retire hook:
+nothing was stopped, run or removed. At the inspection before the hooks the
+refusal says that no retire hook has run and nothing was deleted, and
+whether the session has been stopped. After the hooks it says that they
+have run, that the home, its work and the pre-hook recovery (if any) are
+kept, and whether the session has been stopped.
+
 The permission bits of the home directory and of the worktree directory
 themselves are not compared: their copies are made in directories the copier
 creates, which do not carry them.
@@ -843,6 +887,25 @@ commit yet cannot be read that way: a retire that would remove it, or that
 has work of it to copy, refuses with `E_WORK_INSPECTION_FAILED` and removes
 nothing.
 
+The `work/` step runs helper-free, as the extra-tree step does (no
+fsmonitor, hooks, external diff or lazy fetch that the repository's
+configuration names, and none of the caller's Git environment). It names the repository by its
+common Git directory, read once from the repository the instance was spawned
+from. That covers the default re-home (`git worktree move`), the removal
+(`git worktree remove --force` and `git worktree prune`) and a quarantine
+retry's checks. A removal is verified: nothing is left at `work/`, and the
+repository's `git worktree list` does not name it. A removal that did not
+happen, or that cannot be shown to have happened, refuses with
+`E_WORK_PRESERVATION_FAILED` and keeps the home, `--force` included. That
+includes a removal Git refuses (a locked worktree, for example): such a worktree is no longer deleted with the home, and no
+admin entry is left behind. The refusal says what was done: the retire hooks
+have run, the home is kept with any recovery the retire wrote, and whether
+the session has been stopped. One exception: when nothing is at `work/`
+(no entry at all: a dangling symbolic link is an entry) and the repository
+cannot be read, the worktree is recorded `absent`, never `removed`. A
+quarantine retry then keeps `could not verify removal` as an incomplete
+item, which only `--force` clears, as the operator's explicit override.
+
 #### Extra trees at retire
 
 An instance can hold [extra trees](#extra-trees) in its home beside `work/`.
@@ -878,7 +941,8 @@ leaves `work/` untouched. For each tree:
   `refs/worktree/` refs do not count: they go with its admin entry). The retire runs `git worktree remove` (without
   `--force`) and `git worktree prune`, and verifies that the tree is gone from
   `git worktree list`. Every Git command of this step runs helper-free (no
-  fsmonitor, hooks or external diff the repository's configuration names). Its branch is never deleted: a commit on the branch that
+  fsmonitor, hooks, external diff or lazy fetch the repository's configuration names),
+  as the `work/` step's do. Its branch is never deleted: a commit on the branch that
   was not pushed stays in the clone, on that branch.
 - **Any other tree is re-homed**, as `work/` is by default: `git worktree
   move` to `<deployment>/.agents/worktrees/<repo>/<leaf>`, where `<leaf>` is

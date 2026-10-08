@@ -6,7 +6,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { accessSync, constants, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { accessSync, constants, existsSync, lstatSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, isAbsolute, join } from "node:path";
 import { FAILED_SPAWN_BRANCH_LEFT, listInstances, retireInstance } from "../lib/core.mjs";
@@ -97,7 +97,7 @@ test("(b) once nothing is outstanding, the retry removes the worktree with --dis
   assert.equal(w.branchTip(), w.tip, "no retire deletes a branch");
 });
 
-test("(b) a removal that fails in the retry is not attempted again: a HEAD that moved meanwhile keeps its worktree, and the retry stays incomplete", async (t) => {
+test("(b) a removal that fails in the retry refuses and is not attempted again: a HEAD that moved meanwhile keeps its worktree and the home", async (t) => {
   const w = await stubbornInstance(t, "dev-moved");
   await w.retire({ discardWorktree: true });
   w.settle();
@@ -123,14 +123,17 @@ exec ${q(real)} "$@"
 `, { mode: 0o755 });
   process.env.PATH = `${bin}${delimiter}${process.env.PATH}`; // stubbornInstance restores the host's PATH
 
-  const r = await w.retire({ discardWorktree: true });
+  // The removal is verified (awebai/oats#679): one that did not happen is a refusal, never a removed worktree.
+  await assert.rejects(w.retire({ discardWorktree: true }), (e) => e.code === "E_WORK_PRESERVATION_FAILED"
+    && e.message.includes(`the worktree at ${w.work} could not be removed, or its removal could not be verified`)
+    && e.message.includes("The retire hooks have run; the home is kept"));
   assert.equal(existsSync(marker), true, "fixture premise: the retry asked Git to remove the worktree, and HEAD moved");
   const moved = readFileSync(marker, "utf8").trim();
   assert.notEqual(moved, w.tip, "fixture premise: HEAD is at another commit than the one that was inspected");
   assert.equal(w.git("-C", w.work, "rev-parse", "HEAD"), moved, "the worktree is kept, at the commit HEAD moved to");
   assert.ok(w.registered().includes(realpathSync(w.work)), "and is still registered");
-  assert.ok(r.rollbackIncomplete?.includes(`git worktree ${realpathSync(w.work)}: still registered`), JSON.stringify(r.rollbackIncomplete));
   assert.equal(existsSync(join(w.home, "instance.json")), true, "the home is kept for the next retry");
+  assert.equal(existsSync(join(w.home, ".oats-rollback-incomplete.json")), true, "and so is its quarantine");
 });
 
 test("a retry of a quarantine that owes its branch stays incomplete while the branch exists or cannot be shown gone, with a fixed item that names no branch; it completes once Git has deleted the branch", async (t) => {
@@ -207,6 +210,42 @@ test("(b) a quarantined worktree that is already gone is reported absent, never 
   assert.ok(r.rollbackIncomplete?.length, "the hook is still outstanding");
   assert.ok(!r.rollbackIncomplete.some((m) => m.includes("kept for the retry")), JSON.stringify(r.rollbackIncomplete));
   assert.equal(r.retention?.worktree, "absent");
+});
+
+// awebai/oats#679: a removal is verified. Its one exception: nothing at work/ (lstat finds no entry) and a
+// repository that cannot be read is recorded absent, never removed, and the quarantine keeps it unverified.
+/** A quarantine whose retry removes the worktree (--discard-worktree), with work/ already gone, then `entry`
+ *  put at work/, and the repository moved where meta.repo no longer finds it. */
+async function goneWithUnreadableRepository(t, name, entry = () => {}) {
+  const w = await stubbornInstance(t, name);
+  await w.retire({ discardWorktree: true });
+  w.settle();
+  w.git("-C", w.meta.repo, "worktree", "remove", "--force", w.work);
+  entry(w);
+  renameSync(w.meta.repo, `${w.meta.repo}-moved`);
+  return w;
+}
+
+test("(b) a removal owed where work/ is gone and the repository cannot be read is recorded absent, never removed; the retry stays incomplete until --force overrides it", async (t) => {
+  const w = await goneWithUnreadableRepository(t, "dev-unreadable");
+  const item = `git worktree ${join(realpathSync(w.home), "work")}: could not verify removal (`;
+  const r = await w.retire({ discardWorktree: true });
+  assert.equal(r.retention?.worktree, "absent");
+  assert.ok(r.rollbackIncomplete?.some((m) => m.startsWith(item)), JSON.stringify(r.rollbackIncomplete));
+  assert.equal(existsSync(join(w.home, "instance.json")), true, "the home is kept for the next retry");
+  const forced = await w.retire({ discardWorktree: true, force: true });
+  assert.equal(forced.retention?.worktree, "absent");
+  assert.ok(forced.forcedIncomplete?.some((m) => m.startsWith(item)), JSON.stringify(forced.forcedIncomplete));
+  assert.equal(existsSync(w.home), false, "--force removes the home, as the operator's override");
+});
+
+test("(b) a dangling symbolic link at work/ is not absent: with the repository unreadable, the owed removal refuses, --force included, and the link and the home are kept", async (t) => {
+  const w = await goneWithUnreadableRepository(t, "dev-dangling", (w) => symlinkSync(join(w.fx.base, "nowhere"), w.work));
+  for (const o of [{ discardWorktree: true }, { discardWorktree: true, force: true }]) {
+    await assert.rejects(w.retire(o), (e) => e.code === "E_WORK_PRESERVATION_FAILED" && e.message.includes(`the worktree at ${w.work} could not be removed, or its removal could not be verified`));
+    assert.equal(lstatSync(w.work).isSymbolicLink(), true, "the link is kept");
+    assert.equal(existsSync(join(w.home, "instance.json")), true, "and so is the home");
+  }
 });
 
 test("--force with an incomplete hook retains the worktree before the home goes: no admin entry is left dangling", async (t) => {
