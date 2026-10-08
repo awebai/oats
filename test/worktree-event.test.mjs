@@ -563,9 +563,12 @@ test("spawn: a required worktree hook failure fails the spawn closed — retire 
   assert.notEqual(r.status, 0);
   const err = r.json().error;
   assert.match(err.message, /test\.setup worktree hook \(declared required\): setup broke/);
-  assert.match(err.message, /worktree-work-test\.setup\.log/);
   assert.match(err.message, /spawn rolled back/);
   const home = join(fx.root, "dev", "instances", "dev-sf");
+  // Its log was in the home the rollback removed: never named, and how to see that output instead.
+  assert.ok(!err.message.includes(home), err.message);
+  assert.doesNotMatch(err.message, /worktree-work-test\.setup\.log/);
+  assert.ok(err.message.includes("the worktree hooks' output was logged in the instance home, which the rollback removed: run the setup in an existing instance with `oats worktree add` to see it"), err.message);
   assert.equal(existsSync(home), false, "the home is deleted");
   assert.equal(tipOf(fx, "agents/dev-sf"), null, "the branch is deleted");
   assert.equal(registered(fx, join(home, "work")), false);
@@ -591,6 +594,20 @@ test("spawn: when its own start time cannot be read it refuses before any worktr
   assert.equal(registered(fx, join(home, "work")), false, "git worktree list does not list the tree");
   assert.equal(tipOf(fx, "agents/dev-self"), null, "the branch is deleted");
   assert.equal(existsSync(join(home, ".oats-rollback-incomplete.json")), false, "no marker is left");
+});
+
+test("spawn: a rolled-back spawn's worktree hook entries carry log: null (the home that held the logs is gone), and no log content", async (t) => {
+  const fx = deployment(t, { work: "worktree", lifecycle: true });
+  writeFileSync(join(fx.root, "hook-fail"), "");
+  const home = join(fx.root, "dev", "instances", "dev-nolog");
+  await assert.rejects(fx.spawn("dev", { instance: "dev-nolog", work: "worktree" }), (e) => {
+    assert.equal(e.code, "E_REQUIRED_HOOK_FAILED");
+    assert.deepEqual(e.details.hooks.map((h) => [h.capability, h.ok, h.log]), [["test.setup", false, null]]);
+    assert.ok(!e.message.includes(home) && !JSON.stringify(e.details).includes(home), `no path under the removed home: ${e.message}`);
+    assert.ok(!/SECRET-MARKER|hook says hello/.test(e.message + JSON.stringify(e.details)), "no log content");
+    return true;
+  });
+  assert.equal(existsSync(home), false);
 });
 
 test("killed parent, spawn: SIGTERM mid-hook rolls back and exits 143 with E_INTERRUPTED", async (t) => {

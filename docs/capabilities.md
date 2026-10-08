@@ -751,7 +751,11 @@ cwd the home); this one differs:
   A required one (`{ command, required: true }`) fails closed:
   - at spawn, it fails the spawn through the required-hook rollback above
     (retire hooks compensate in reverse, the worktree-mode Git state is
-    removed and verified, and the home is deleted, or kept as a quarantine);
+    removed and verified, and the home is deleted, or kept as a quarantine).
+    The hook's log was in that home: once it is deleted, the answer names
+    no log path (each `details.hooks` entry's `log` is `null`) and says to run
+    the setup with `oats worktree add` in an existing instance to see its
+    output; a quarantined home keeps its logs, and the answer names them;
   - at `oats worktree add`, the tree is removed. The branch is deleted only
     when that `add` created it, no worktree has it checked out, and it is
     still where `add` created it.
