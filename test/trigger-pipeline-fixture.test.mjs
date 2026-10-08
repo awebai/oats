@@ -82,21 +82,21 @@ function deployment(t, opts = {}) {
   return fx;
 }
 
-/** The variables v2Deployment isolates (HOME, the OATS home and remote cache, tmux). */
-const ISOLATED = ["HOME", "OATS_HOME_DIR", "OATS_REMOTE_CACHE", "OATS_TMUX_SESSION", "PI_AGENTS_TMUX_SESSION", "TMUX_TMPDIR"];
+/** The variables v2Deployment isolates (HOME, the OATS home and remote cache, tmux, and git that
+ *  reads no host configuration). */
+const ISOLATED = ["HOME", "OATS_HOME_DIR", "OATS_REMOTE_CACHE", "OATS_TMUX_SESSION", "PI_AGENTS_TMUX_SESSION", "TMUX_TMPDIR", "GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_GLOBAL", "GIT_TERMINAL_PROMPT"];
 
 /** The fixture's whole environment, built explicitly rather than as the host's plus overrides
  *  (awebai/oats#799: CI's XDG_CONFIG_HOME leaked into the timer's unit path): v2Deployment's
  *  isolation, a login shell that cannot run (never a host's OATS_TEST_LOGIN_SHELL), the XDG base
  *  directories and TMPDIR under the fixture's HOME and base, a C locale, and the
- *  host's PATH behind the fake `gh` and a host scheduler that is never active (`systemctl` and
+ *  host's PATH behind the fake `gh` and v2Deployment's scheduler stubs, never active (`systemctl` and
  *  `launchctl`, so `trigger list` never asks the host's own service manager). Nothing else of the
  *  host's (a user bus, GH_*, GIT_*, OATS_*, NODE_*) reaches a child or an in-process tick. */
 function isolate(fx) {
-  for (const name of ["systemctl", "launchctl"]) { writeFileSync(join(fx.gh.bin, name), "#!/bin/sh\necho inactive\nexit 3\n"); chmodSync(join(fx.gh.bin, name), 0o755); }
   const home = fx.env.HOME;
   const env = { ...Object.fromEntries(ISOLATED.filter((k) => fx.env[k] !== undefined).map((k) => [k, fx.env[k]])),
-    PATH: `${fx.gh.bin}:${fx.env.PATH}`, // v2Deployment's: its inert harnesses, then the host's tools
+    PATH: `${fx.gh.bin}:${fx.env.PATH}`, // v2Deployment's: its inert harnesses, its scheduler stubs, then the host's tools
     XDG_CONFIG_HOME: join(home, ".config"), XDG_CACHE_HOME: join(home, ".cache"), XDG_DATA_HOME: join(home, ".local", "share"), XDG_STATE_HOME: join(home, ".local", "state"),
     OATS_TEST_LOGIN_SHELL: noLoginShell(fx.base), TMPDIR: join(fx.base, "tmp"), LANG: "C", LC_ALL: "C" };
   mkdirSync(env.TMPDIR, { recursive: true });

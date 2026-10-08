@@ -400,3 +400,43 @@ Nor does a test depend on where or how the suite runs:
 - A fixture the filesystem may not represent (a file name that is not valid
   UTF-8, which APFS refuses) is probed in the fixture directory and skipped
   with its reason only when refused; Linux CI runs it.
+
+A kernel suite is green on Linux CI **and** on a Mac with a loaded schedule
+unit, a live operator tmux server and Apple git, run from inside an instance
+home. A pull request that could not be run there says so in its hand-over. The
+suite's own prerequisites are git ≥ 2.45, lsof and tmux (awebai/oats#783). The
+helpers in `test/helpers/host-fixture.mjs` hold the host isolation, and the
+shared fixture (`v2Deployment`) applies all of it, so a suite built on it
+inherits it (awebai/oats#816):
+
+- **A short base.** `fixtureBase(prefix)` makes the fixture directory under
+  the platform's temporary directory, or under `/tmp` when that is longer than
+  20 characters (macOS's `/private/var/folders/…/T/` is about 49), as its
+  realpath, taken once.
+- **Names and paths sized from the base.** `nameOfLength(base, n)` (a file
+  name or branch segment) and `pathOfLength(base, n)` (an absolute path under
+  the base, `n` characters in all) are capped below NAME_MAX and PATH_MAX of
+  the platform (255/1024 on macOS, 255/4096 on Linux), measured from the
+  actual base. A "too long" test then exercises the kernel's bound, never the
+  filesystem's.
+- **An explicit environment for every child.** `fixtureEnv(base)` is what
+  every child the fixture starts gets, and `fx.inEnv` applies the same rules
+  to the test process for an in-process kernel call. It sets `HOME` and the XDG
+  base directories under the base, and `GIT_CONFIG_NOSYSTEM=1`,
+  `GIT_CONFIG_GLOBAL=/dev/null` and `GIT_TERMINAL_PROMPT=0`, so no host git
+  configuration or credential helper is read. It removes every `*_PROXY`,
+  `CLAUDECODE` and git configuration passed through the environment. PATH
+  starts with `launchctl` and `systemctl` stubs that answer as a service
+  manager with nothing loaded. A test that needs another answer puts its own
+  stub ahead of them.
+- **The same rules under real tmux.** `isolateSessionEnvironment` applies the
+  same git, XDG and proxy rules. Its PATH stays its own small set of tools, so
+  no host service manager is reachable at all.
+- **No leftover processes.** The fixture's cleanup fails when a process still
+  works in its base: `assertNoFixtureProcesses(base)`, over the kernel's own
+  `processesInHome` (lsof). It catches a hook's or a CLI's grandchild that
+  outlived the test, once its parent has exited. The scan leaves out its caller
+  and the caller's direct children, so a test's own forgotten child is not
+  found here: that is the test's bug to fix. A process still exiting gets 2 s.
+  Nothing is killed, the base is removed, and the failure names each pid and
+  command.
