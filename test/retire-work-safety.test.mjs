@@ -2740,9 +2740,10 @@ writeFileSync(join(pair, 'a'), Buffer.concat([readFileSync(join(pair, 'a')), Buf
 unlinkSync(join(pair, 'b'));`;
 const PAIR_IMPORTS = "import { readFileSync, unlinkSync } from 'node:fs';";
 /** The fixture premise of these tests, on two temporary trees: with the pair at `under`, the stored
- *  digest (fingerprintTree) of the two files and of the one merged file is the same. → the glue. */
-function storedDigestReadsThePairAlike(under) {
-  const two = mkdtempSync(join(tmpdir(), "oats-pair-two-")), one = mkdtempSync(join(tmpdir(), "oats-pair-one-"));
+ *  digest (fingerprintTree) of the two files and of the one merged file is the same. → the glue.
+ *  `directory(prefix)` makes each tree (fixtureBase, for a test that takes the shared fixture base). */
+function storedDigestReadsThePairAlike(under, { directory = (prefix) => mkdtempSync(join(tmpdir(), prefix)) } = {}) {
+  const two = directory("oats-pair-two-"), one = directory("oats-pair-one-");
   temporaryDirectories.push(two, one);
   writePair(join(two, ...under));
   const glue = pairGlue(join(two, ...under), under);
@@ -3072,7 +3073,7 @@ test("the stored digest of version 2 is the one spelled out here: entries in the
 });
 
 test("two trees the legacy stored digest reads alike (a file whose bytes spell the entry after it, and those two entries) have two stored digests of version 2", () => {
-  const glue = storedDigestReadsThePairAlike(["pair"]);
+  const glue = storedDigestReadsThePairAlike(["pair"], { directory: fixtureBase });
   const [two, one] = temporaryDirectories.slice(-2);
   assert.ok(readFileSync(join(one, "pair", "a"), "utf8").includes(glue), "fixture premise: the one tree holds the merged file");
   assert.notEqual(storedTreeDigest(one, 2), storedTreeDigest(two, 2), "the length of a's bytes tells the two apart");
