@@ -72,6 +72,15 @@ test("#780 T1: a home spawned through its canonical spelling is found through an
   assert.equal(other.present, false);
 });
 
+test("#780: a home addressed with its own name in another case finds its receipt", FOLDS, async () => {
+  const home = await spawnHome("t9");
+  const renamed = join(dirname(home), "T9");
+  assert.equal(inspectInstanceSession(renamed).state, "not-launched");
+  assert.equal(inspectInstanceSession(upper(renamed)).state, "not-launched");
+  declareDisposable(home);
+  assert.deepEqual(retirementRecoveryFacts(renamed).disposableHome, [{ owner: "acme.ident", root: ".ident" }]);
+});
+
 test("#780: a spawn through a non-canonical spelling keys its receipt by the canonical one and records it", FOLDS, () => {
   const r = fx.cli(["spawn", "dev", "--name", "t1b", "--no-launch", "--dir", upper(fx.dep), "--json"]);
   assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -90,7 +99,7 @@ test("#780 T2: a receipt an earlier kernel wrote under the spawn's spelling is f
   assert.equal(inspectInstanceSession(legacy).state, "not-launched", "the spawn's own spelling finds its receipt");
   // The documented limit: a spelling that is neither the receipt's nor the canonical one misses it.
   // The canonical spelling's legacy key is its canonical key, so it names one path; a third spelling names both.
-  assert.throws(() => inspectInstanceSession(home), missingNaming(receiptAt(home)));
+  assert.throws(() => inspectInstanceSession(home), (e) => missingNaming(receiptAt(home))(e) && !e.message.includes("nor at"));
   assert.throws(() => inspectInstanceSession(title(home)), missingNaming(receiptAt(home), receiptAt(title(home))));
   assert.deepEqual(receiptFiles(home), before, "reading neither moved, copied nor wrote a receipt");
   assert.equal(readJson(receiptAt(legacy)).home, legacy, "the legacy receipt is untouched");
