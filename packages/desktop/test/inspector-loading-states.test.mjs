@@ -235,6 +235,58 @@ test('a remote instance: a relayed host refusal shows as the context panel words
   assert.equal(u.content().querySelector('.loading-failed-message').textContent, "Couldn't reach Build box.");
 });
 
+// #680: the instance's Teams card relays a host's refusal of its own operations (list, Refresh, join, leave) as the
+// context panel's card does (instance-teams.mjs): relayedFailure(error, serverLabel(row), 'teams'). A local row's stays as it came.
+test('a remote instance\'s Teams card: a host refusal of list, Refresh, join or leave shows as the context panel\'s card words it — the teams sentence for E_REMOTE_INCOMPATIBLE, the headline otherwise; code and kernel message under Details; a local row\'s refusal as it came', async t => {
+  const remoteSelection = { instance: { ...homeSelection.instance, server: 'build', repoName: 'Build box' }, selector: homeSelection.selector };
+  const run = op => r => r.body.action === 'run' && r.body.operation === op;
+  const ssh = () => refusal('E_SSH', 'ssh: connect refused', { reason: { code: 'E_SSH', message: "Couldn't reach Build box.", detail: 'ssh: connect refused', remote: true } });
+  const incompatible = () => refusal('E_REMOTE_INCOMPATIBLE', 'old', { reason: { code: 'E_REMOTE_INCOMPATIBLE', message: "Build box runs an OATS that can't do this yet.", detail: null, remote: true } });
+  const teamsSentence = "Build box runs an OATS that can't show this instance's teams here (it needs the operations feature). Update OATS on Build box.";
+  // One eligible team not joined, so the card offers Join beside engineering's Leave.
+  const offered = structuredClone(teamsRun); offered.result.eligible.push({ label: 'design', team: 'northwind:design', joined: false });
+  const card = u => u.content().querySelector('.teams-panel');
+  const said = (box, headline, code, detail) => {
+    assert.ok(box, 'the card shows the refusal');
+    assert.equal(box.querySelector('p').textContent, headline);
+    const line = box.querySelector('details pre');
+    assert.equal(line.textContent, detail ? `${code}: ${detail}` : code);
+    assert.equal(line.querySelector('bdi')?.textContent ?? null, detail ?? null, 'the kernel\'s message alone in a <bdi>, or none');
+  };
+
+  // The list: the card's first read.
+  const u = mount(t);
+  void u.inspector.show(remoteSelection); await u.resolve(home);
+  await u.reject(ssh(), run('messaging:teams'));
+  said(card(u).querySelector('.teams-problem'), "Couldn't reach Build box.", 'E_SSH', 'ssh: connect refused');
+  // Its Retry, then the card's Refresh: the same relayed form.
+  button(card(u), 'Retry').click(); await u.reject(incompatible(), run('messaging:teams'));
+  said(card(u).querySelector('.teams-problem'), teamsSentence, 'E_REMOTE_INCOMPATIBLE', null);
+  button(card(u), 'Retry').click(); await u.resolve(offered, run('messaging:teams'));
+  card(u).querySelector('.teams-refresh').click(); await u.reject(ssh(), run('messaging:teams'));
+  said(card(u).querySelector('.teams-problem'), "Couldn't reach Build box.", 'E_SSH', 'ssh: connect refused');
+
+  // Join, then leave: the refusal under the team's row (the re-read after it lands clean).
+  button(card(u), 'Retry').click(); await u.resolve(offered, run('messaging:teams'));
+  card(u).querySelector('[data-team-action="join"][data-team="design"]').click();
+  await u.reject(incompatible(), run('messaging:join')); await u.resolve(offered, run('messaging:teams'));
+  said(card(u).querySelector('.teams-problem'), teamsSentence, 'E_REMOTE_INCOMPATIBLE', null);
+  card(u).querySelector('[data-team-action="leave"][data-team="engineering"]').click();
+  await u.reject(ssh(), run('messaging:leave')); await u.resolve(offered, run('messaging:teams'));
+  said(card(u).querySelector('.teams-problem'), "Couldn't reach Build box.", 'E_SSH', 'ssh: connect refused');
+
+  // A local row: the provider's refusal as it came (no relay, no detail).
+  const v = mount(t);
+  void v.inspector.show(homeSelection); await v.resolve(home);
+  await v.reject(refusal('E_PROVIDER', 'provider said no'), run('messaging:teams'));
+  said(card(v).querySelector('.teams-problem'), 'provider said no', 'E_PROVIDER', null);
+  button(card(v), 'Retry').click(); await v.resolve(offered, run('messaging:teams'));
+  card(v).querySelector('[data-team-action="join"][data-team="design"]').click();
+  // Even a relayed-shaped refusal is not reworded for a local row.
+  await v.reject(incompatible(), run('messaging:join')); await v.resolve(offered, run('messaging:teams'));
+  said(card(v).querySelector('.teams-problem'), 'old', 'E_REMOTE_INCOMPATIBLE', null);
+});
+
 test('an unreadable inspection (operationsApi 1) is a failure with the existing sentence, not a skeleton forever', async t => {
   const u = mount(t);
   void u.inspector.show(soulSelection);
