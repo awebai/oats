@@ -459,21 +459,28 @@ test("a checkout or attached spawn records the branch HEAD names, or null when H
     return seen;
   };
   const same = (value) => ({ result: value, meta: value, status: value });
+  /** The work line of the instance's TASK.md: with a branch, worded as it always was. */
+  const workLine = (result) => readFileSync(join(result.home, "TASK.md"), "utf8").split("\n").find((l) => l.startsWith("- Work tree: ./work"));
+  const NO_BRANCH = "no branch that OATS can name, e.g. a detached HEAD";
 
   const onBranch = cliSpawn(f, ["--work", "checkout", "--repo", ".", "--purpose", "on-branch"]);
   assert.deepEqual(recorded(onBranch), same(git(f.context, "symbolic-ref", "--short", "HEAD")));
+  assert.ok(workLine(onBranch).endsWith(`work on the currently checked-out branch (${onBranch.branch}) and do not switch branches without being asked`), workLine(onBranch));
 
   git(f.context, "checkout", "-q", "--detach");
   const detached = cliSpawn(f, ["--work", "checkout", "--repo", ".", "--purpose", "detached"]);
   assert.deepEqual(recorded(detached), same(null), "a detached checkout records null");
+  assert.ok(workLine(detached).endsWith(`work on what is checked out (${NO_BRANCH}) and do not switch branches without being asked`), workLine(detached));
 
   const tree = await f.spawn("tree", { work: "worktree", repo: "." });
   const treeWork = join(tree.home, "work");
   const attached = cliSpawn(f, ["--work", "attached", "--repo", ".", "--work-dir", treeWork, "--purpose", "attached"]);
   assert.deepEqual(recorded(attached), same(tree.branch), "an attached instance records its owner's branch");
+  assert.ok(workLine(attached).includes(`(${treeWork}, branch ${tree.branch}) — you share it`), workLine(attached));
   git(treeWork, "checkout", "-q", "--detach");
   const attachedDetached = cliSpawn(f, ["--work", "attached", "--repo", ".", "--work-dir", treeWork, "--purpose", "attached-detached"]);
   assert.deepEqual(recorded(attachedDetached), same(null), "an attached instance on a detached tree records null");
+  assert.ok(workLine(attachedDetached).includes(`(${treeWork}, ${NO_BRANCH}) — you share it`), workLine(attachedDetached));
 
   // A branch whose name is not valid UTF-8. Git stores a loose ref as a file of that name: a
   // filesystem that refuses such names (APFS) cannot hold this part of the fixture.
