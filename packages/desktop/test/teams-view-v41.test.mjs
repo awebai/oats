@@ -101,7 +101,7 @@ test('the board\'s measures and the shared control rules, in the page\'s own CSS
   assert.match(rule('.computer-teams .ct-pill'), /border-radius:10px; background:var\(--sel\); color:var\(--accent\); font-size:10.5px; font-weight:650/);
   assert.match(rule('.computer-teams .ct-label'), /font-size:14.5px; font-weight:650/);
   assert.match(rule('.computer-teams .ct-marks .identity-mark'), /width:22px; height:22px;.*border:1.5px solid var\(--surface\)/);
-  assert.match(rule('.computer-teams .ct-marks .identity-mark + .identity-mark'), /margin-left:-6px/);
+  assert.match(rule('.computer-teams .ct-marks .identity-mark + .identity-mark'), /margin-left:-1px/);
   assert.match(rule('.computer-teams .ct-empty'), /padding:16px 18px; border:1px dashed var\(--tree-line\); border-radius:10px; color:var\(--muted\); font-size:12.5px/);
   assert.match(rule('.oats-view .computer-teams button.ct-link'), /border:0;.*background:none; color:var\(--accent\)/);
   // Rule 2 is the shell's (theme.css :focus-visible): the page adds no focus rule of its own for its buttons.

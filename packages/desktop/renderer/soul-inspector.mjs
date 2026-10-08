@@ -35,6 +35,7 @@ import { layerLabel } from './workspace-catalog.mjs';
 import { shownLaunch, launchHarnessName, launchModelText, launchFromText, launchAtText, declaredText, preferenceText, declaredDiffers } from './launch-view.mjs';
 import { createDataState, skeletonBlock, skeleton, captureFocusState } from './loading.mjs';
 import { createDeploymentScopeLine } from './deployment-scope-line.mjs';
+import { createSoulInstructions } from './soul-instructions.mjs';
 
 
 const HARNESS_NAMES = { pi: 'Pi', claude: 'Claude Code', codex: 'Codex' };
@@ -213,6 +214,8 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
   let alive = true, serial = 0, subject = 0, operationSerial = 0, selectionGen = null, selection, data, teamsPanel = null, teamsHere = null;
   // The loading controller of the shown subject (loading.mjs), and the signature of what the content paints.
   let loading = null, painted = null, scopeLine = null; // scopeLine: "On <primary deployment>" (#482)
+  // The soul page's Instructions section (soul-instructions.mjs): one controller per subject, re-appended by every repaint.
+  let instructionsSection = null;
   // The controller's clock (tests inject one); createDataState's defaults apply on undefined.
   const timers = { now: clock.now, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout };
   const pendingOperations = new WeakMap();
@@ -289,7 +292,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     container.hidden = false;
     if (presentation) presentation.setPresent(true);
     else if (layout !== 'page') container.parentElement?.classList.add('inspecting'); // the page replaces the list; no side column
-    subject++; scopeLine?.dispose(); scopeLine = createDeploymentScopeLine(doc, { inline: layout === 'page' }); readiness?.dispose(); readiness = null; loading?.dispose(); loading = null; painted = null; teamsHere?.dispose(); teamsHere = null;
+    subject++; scopeLine?.dispose(); scopeLine = createDeploymentScopeLine(doc, { inline: layout === 'page' }); readiness?.dispose(); readiness = null; loading?.dispose(); loading = null; painted = null; teamsHere?.dispose(); teamsHere = null; instructionsSection?.dispose(); instructionsSection = null;
     container.replaceChildren();
     const head = node('div', undefined, 'inspector-head');
     container.classList.toggle('soul-page', layout === 'page');
@@ -323,6 +326,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       if (selection.agent) { renderSoulActions(column); renderSoulRoster(); }
       // "Teams here" reads `oats soul teams` in parallel with `inspect`, not after it.
       if (selection.agent) ensureTeamsHere();
+      if (selection.agent) instructionsSection = createSoulInstructions(doc, { openExternal: typeof ctx?.openExternal === 'function' ? url => { if (alive) ctx.openExternal(url); } : null });
       return;
     }
     headActions = null; facts$ = null; side = null;
@@ -353,7 +357,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     if (alive) reset(restoreFocus);
   }
   function reset(restoreFocus = false) {
-    serial++; subject++; scopeLine?.dispose(); scopeLine = null; selection = null; selectionGen = null; data = null; teamsPanel = null; teamsHere?.dispose(); teamsHere = null; container.hidden = true;
+    serial++; subject++; scopeLine?.dispose(); scopeLine = null; selection = null; selectionGen = null; data = null; teamsPanel = null; teamsHere?.dispose(); teamsHere = null; instructionsSection?.dispose(); instructionsSection = null; container.hidden = true;
     readiness?.dispose(); readiness = null; loading?.dispose(); loading = null; painted = null;
     container.replaceChildren();
     if (presentation) presentation.setPresent(false);
@@ -430,6 +434,8 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
   }
   function render(inspected) {
     operationSerial++; teamsPanel = null;
+    // Instructions is re-appended below: detaching it drops its focus and scroll, so hold them first.
+    const keepInstructions = instructionsSection?.hold();
     content.replaceChildren();
     // The side column keeps "Teams here" (created with the frame; its own read); the rest is repainted.
     if (side) for (const child of [...side.children]) if (child !== teamsHere?.element) child.remove();
@@ -473,6 +479,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     } else content.append(node('p', 'The kernel did not report this soul. Refresh to retry.', 'muted'));
     // Operations run on a live home: a soul shows none (human, F7); an instance lists what it can run.
     if (inspected.subject.kind === 'instance') renderOperations(inspected);
+    keepInstructions?.();
   }
   function section(title) { const h = node('h3', title, 'inspector-section'); content.append(h); return h; }
   function card(entries, parent = content) { const box = node('div', undefined, 'inspector-card'); facts(entries, box); parent.append(box); return box; }
@@ -676,6 +683,8 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     const composition = pageSection(doc, 'Capabilities', 'workspace defaults → team defaults → this soul · later wins');
     const table = node('div', undefined, 'inspector-capability-table'); composition.append(table); content.append(composition);
     if (typeof capabilityTable === 'function') capabilityTable(table, entries, { soul: selection.agent });
+    // Instructions (spec D): what the soul tells its instances, from this inspection (no read of its own).
+    if (instructionsSection) { instructionsSection.update(soul); content.append(instructionsSection.element); }
     // Beside: its teams (joining is per instance) and its knowledge nodes. Team model v2
     // (kernel feature team-model-2): "Teams here", this computer's membership, editable — created
     // with the frame so its read ran beside `inspect`; ensured here for a CLI probe that settled since.

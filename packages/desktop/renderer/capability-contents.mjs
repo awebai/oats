@@ -13,8 +13,7 @@
  * focus never move on a background repaint: the tree is rebuilt only when the answer changed, focus is
  * found again by `data-focus-key`, and the open file stays open while it is still listed. */
 import { capabilityShowSupported, capabilitySelector, capabilityShowData, capabilityFileData, listedFiles, skillFilePath, skillRelativePath, CAPABILITY_SHOW_UNREADABLE } from './capability-show-contract.mjs';
-import { renderMarkdownHtml, renderCodeHtml, isMarkdownName, decorateMarkdown, copyCodeBlock } from './views/markdown.mjs';
-import { splitFrontMatter } from './front-matter.mjs';
+import { contentsCardCSS, sizeText, firstSentence, createContentsTree, createContentsReader } from './contents-reader.mjs';
 import { createDataState, skeleton, captureFocusState } from './loading.mjs';
 
 export const CONTENTS_COPY = Object.freeze({
@@ -38,86 +37,12 @@ export const CONTENTS_COPY = Object.freeze({
   moved: 'The capability changed while it was read. Its contents are read again when the list is refreshed.',
 });
 
-export const capabilityContentsCSS = `
-/* The section's own display rules (grid, flex) would beat the HTML hidden attribute: hidden always wins here. */
-.cap-contents-section [hidden] { display:none !important; }
-.cap-contents-gate { margin:0; color:var(--muted); font-size:12.5px; }
-.cap-contents { display:grid; grid-template-columns:220px minmax(0,1fr); height:min(70vh, 720px); min-width:0; background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
-.cap-contents-nav { min-height:0; overflow:auto; padding:10px 8px 12px; border-right:1px solid var(--border); box-sizing:border-box; font-size:12px; }
-/* The reader is the Markdown viewer's own ground (--bg): its text, link and code colours are the ones the viewer's contrast checks cover. */
-.cap-contents-reader { position:relative; min-height:0; min-width:0; overflow:auto; box-sizing:border-box; background:var(--bg); color:var(--fg); }
-@container (max-width: 860px) {
-  .cap-contents { grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); }
-  .cap-contents-nav { max-height:200px; border-right:0; border-bottom:1px solid var(--border); }
-}
-.cap-contents-problems { display:flex; flex-direction:column; gap:6px; margin:0 4px 10px; }
-.cap-contents-problem { margin:0; color:var(--muted); font-size:11.5px; line-height:1.45; overflow-wrap:anywhere; }
-.cap-contents-problem .mono { font-family:var(--mono,monospace); color:var(--fg); }
-.cap-contents-group-label { margin:6px 6px 4px; color:var(--muted); font-size:10.5px; font-weight:650; letter-spacing:.05em; text-transform:uppercase; }
-.cap-contents-group-label:not(:first-child) { margin-top:14px; }
-.cap-contents-note { margin:2px 6px; color:var(--muted); font-size:12px; }
-.cap-tree, .cap-tree ul { list-style:none; margin:0; padding:0; }
-.cap-tree li[role=treeitem] { outline:none; }
-.cap-node { display:flex; align-items:flex-start; gap:4px; min-width:0; padding:4px 6px; border-radius:6px; cursor:pointer; color:var(--fg); }
-.cap-node:hover { background:var(--surface-2); }
-.cap-tree li[role=treeitem]:focus-visible > .cap-node { outline:1px solid var(--accent); outline-offset:-1px; background:var(--sel); }
-.cap-tree li[aria-selected=true] > .cap-node { background:var(--sel); }
-.cap-node-twisty { flex:none; width:12px; margin-top:1px; color:var(--muted); font-size:10px; text-align:center; }
-.cap-node-copy { display:flex; flex-direction:column; gap:1px; min-width:0; }
-.cap-node-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.cap-node-name.mono, .cap-node-file { font-family:var(--mono,monospace); }
-.cap-node-file, .cap-node-desc { color:var(--muted); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-/* A skill's files (a group inside a skill item; the top-level groups are Instructions and Skills): indented, monospace. */
-.cap-tree [role=treeitem] [role=group] .cap-node { padding-left:22px; font-family:var(--mono,monospace); font-size:11.5px; }
-.cap-tree .cap-more { padding:3px 6px 3px 22px; color:var(--muted); font-size:11px; }
-.cap-reader-head { position:sticky; top:0; z-index:1; display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 12px; padding:8px 16px; border-bottom:1px solid var(--border); background:var(--bg); font-size:11.5px; }
-.cap-reader-path { color:var(--fg); font:600 11.5px var(--mono,monospace); overflow-wrap:anywhere; }
-.cap-reader-size { color:var(--muted); }
-.cap-reader-flag { color:var(--warn); font-weight:600; }
-.cap-reader-body { padding:14px 18px 24px; }
-.cap-reader-body > .loading-failed { margin:0; }
-.cap-reader-line { margin:0; color:var(--muted); font-size:12.5px; }
-.cap-reader-skeleton { display:flex; flex-direction:column; gap:10px; }
-.cap-reader-skeleton .skeleton-line { height:11px; width:80%; }
-.cap-reader-skeleton .skeleton-line:nth-child(3n) { width:55%; }
-.cap-nav-skeleton { display:flex; flex-direction:column; gap:10px; padding:6px; }
-.cap-nav-skeleton .skeleton-line { height:11px; width:75%; }
-.cap-nav-skeleton .skeleton-line:nth-child(2n) { width:55%; }
-.cap-contents-nav > .loading-failed, .cap-contents-reader .loading-failed { margin:6px; }
-/* The viewer's reader (.mdv, views/markdown.mjs) sized for a pane: its colours and code styles are the viewer's own. */
-.cap-reader-body .mdv { max-width:none; margin:0; padding:0; font-size:13px; line-height:1.6; overflow-wrap:anywhere; }
-/* A file is read inside the page: its headings stay below the page's own title (20px), its code at the page's 12px. */
-.cap-reader-body .mdv h1 { font-size:1.35em; }
-.cap-reader-body .mdv h2 { font-size:1.18em; }
-.cap-reader-body .mdv h3, .cap-reader-body .mdv h4 { font-size:1.04em; }
-.cap-reader-body .mdv code { font-size:12px; }
-.cap-reader-body .mdv pre.md-code { white-space:pre-wrap; overflow-wrap:anywhere; }
-.cap-reader-body .mdv > :first-child { margin-top:0; }
-.cap-fm { width:100%; margin:0 0 16px; border-collapse:collapse; font-size:12px; }
-/* The facts table sits inside .mdv: none of the viewer's Markdown-table chrome (block display, cell borders, a tinted head). */
-.cap-reader-body .mdv table.cap-fm { display:table; }
-.cap-reader-body .mdv .cap-fm th, .cap-reader-body .mdv .cap-fm td { border:0; background:none; }
-.cap-fm th { width:1%; padding:5px 14px 5px 0; color:var(--muted); font-weight:500; text-align:left; vertical-align:top; white-space:nowrap; }
-.cap-fm td { padding:5px 0; color:var(--fg); vertical-align:top; overflow-wrap:anywhere; white-space:pre-wrap; }
-.cap-reader-body .mdv .cap-fm tr + tr > * { border-top:1px solid var(--tag-bg); }
-`;
+/** The Contents card's grammar (contents-reader.mjs), shared with the soul page's Instructions. */
+export const capabilityContentsCSS = contentsCardCSS;
 
 const isSkillMd = (skill, file) => file.path === `${skill.path}/SKILL.md`;
 const shortCommit = v => typeof v === 'string' && /^[0-9a-f]{40}$/i.test(v) ? v.slice(0, 7) : null;
-/** "812 B" / "4.2 KiB" / "1.3 MiB"; null when unknown. */
-export function sizeText(bytes) {
-  if (!Number.isSafeInteger(bytes) || bytes < 0) return null;
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1).replace(/\.0$/, '')} KiB`;
-  return `${(bytes / 1024 / 1024).toFixed(1).replace(/\.0$/, '')} MiB`;
-}
-/** A description's first sentence (the navigation's second line); the full text goes in the title. */
-export function firstSentence(text) {
-  if (typeof text !== 'string') return '';
-  const flat = text.replace(/\s+/g, ' ').trim();
-  const m = /^(.+?[.!?])(?=\s|$)/.exec(flat);
-  return m ? m[1] : flat;
-}
+export { sizeText, firstSentence };
 
 /** What the section shows for a page subject, before any read: a gate line, the pending skeleton, or a
  * selector to read. `row`: the catalog row (or the merged row a soul page opens); `cli`: the probe. */
@@ -167,7 +92,7 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
   element.append(heading, gate, card);
 
   let alive = true, subjectKey = null, identityKey = null, selector = null, rowCommit = null, show = null, files = new Map();
-  let selected = null, readerPath = null, focusKey = null, expanded = new Set(), showTicket = 0, fileTicket = 0, rendered = null;
+  let selected = null, readerPath = null, expanded = new Set(), showTicket = 0, fileTicket = 0, rendered = null;
 
   const navState = createDataState({ doc, noun: 'contents', region: nav, skeletonHost: navBody, indicatorHost: navNotice,
     skeleton: () => { const block = node('div', 'cap-nav-skeleton'); block.setAttribute('aria-hidden', 'true'); for (let i = 0; i < 6; i++) block.append(skeleton(doc, 'line')); return block; },
@@ -175,6 +100,17 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
   const fileState = createDataState({ doc, noun: 'file', region: reader, skeletonHost: body,
     skeleton: () => { const block = node('div', 'cap-reader-skeleton'); block.setAttribute('aria-hidden', 'true'); for (let i = 0; i < 7; i++) block.append(skeleton(doc, 'line')); return block; },
     onRetry: () => { if (selected) open(selected, { force: true }); }, focusFallback: () => nav.querySelector('[role=treeitem][tabindex="0"]') || reader });
+  // The shared tree model (Enter/Space toggle a skill, open a file) and reader (contents-reader.mjs).
+  const keys = createContentsTree(nav, { selected: () => selected,
+    activate: item => { if (item.dataset.skill) keys.toggle(item); else if (item.dataset.path) open(item.dataset.path); },
+    onExpand: (item, value) => { if (value) expanded.add(item.dataset.skill); else expanded.delete(item.dataset.skill); } });
+  const fileReader = createContentsReader(doc, { reader, head, body, alive: () => alive, openExternal,
+    isLocal: path => files.has(path),
+    openLocal: path => {
+      const parent = files.get(path);
+      if (parent?.kind === 'skill' && !expanded.has(parent.skill.path)) keys.setExpanded([...nav.querySelectorAll('[role=treeitem][data-skill]')].find(i => i.dataset.skill === parent.skill.path), true);
+      open(path);
+    } });
 
   function showGate(text) {
     subjectKey = identityKey = null; selector = show = null; files = new Map(); showTicket++; fileTicket++;
@@ -260,7 +196,7 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
     // not tree items. Order: Instructions, then Skills.
     const uid = `cap-contents-${++instances}`;
     const tree = node('ul', 'cap-tree'); tree.setAttribute('role', 'tree'); tree.setAttribute('aria-label', `Files of ${show.name}`);
-    tree.addEventListener('keydown', onTreeKey);
+    tree.addEventListener('keydown', keys.onKey);
     const group = (id, label) => {
       const wrap = node('li'); wrap.setAttribute('role', 'none');
       const title = node('div', 'cap-contents-group-label', label); title.id = id;
@@ -277,7 +213,7 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
     if (show.skills?.length) { const items = group(`${uid}-skills`, 'Skills'); for (const skill of show.skills) items.append(skillNode(skill)); }
     if (tree.childElementCount) navBody.append(tree);
     if (!show.skills?.length) navBody.append(...note('Skills', show.skills === null ? CONTENTS_COPY.skillsUnlistable : CONTENTS_COPY.noSkills));
-    syncRoving();
+    keys.syncRoving();
     restore();
   }
   function leaf(path, content, { level, label }) {
@@ -286,7 +222,7 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
     item.dataset.path = path; item.dataset.focusKey = `file:${path}`; item.tabIndex = -1;
     const row = node('div', 'cap-node'); const twisty = node('span', 'cap-node-twisty'); twisty.setAttribute('aria-hidden', 'true');
     const copy = node('span', 'cap-node-copy'); copy.append(...content); row.append(twisty, copy); item.append(row);
-    row.addEventListener('click', () => { focusItem(item); open(path); });
+    row.addEventListener('click', () => { keys.focusItem(item); open(path); });
     return item;
   }
   function skillNode(skill) {
@@ -310,7 +246,7 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
     }
     if (skill.filesTruncated) { const more = node('li', 'cap-more', CONTENTS_COPY.moreFiles); more.setAttribute('role', 'none'); more.setAttribute('aria-hidden', 'true'); children.append(more); }
     item.append(children);
-    row.addEventListener('click', () => { focusItem(item); toggle(item); });
+    row.addEventListener('click', () => { keys.focusItem(item); keys.toggle(item); });
     return item;
   }
   /** A skill whose directory could not be listed (a problem names it): a reachable item that opens nothing. */
@@ -322,62 +258,19 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
     const twisty = node('span', 'cap-node-twisty'); twisty.setAttribute('aria-hidden', 'true');
     const copy = node('span', 'cap-node-copy'); copy.append(node('span', 'cap-node-name mono', skill.name), node('span', 'cap-node-desc', CONTENTS_COPY.skillUnlisted));
     row.append(twisty, copy); item.append(row);
-    row.addEventListener('click', () => focusItem(item));
+    row.addEventListener('click', () => keys.focusItem(item));
     return item;
   }
-  const visibleItems = () => [...nav.querySelectorAll('[role=treeitem]')].filter(item => !item.parentElement.closest('[role=treeitem][aria-expanded=false]'));
-  /** One tab stop: the focused item, else the open file's, else the first visible one. */
-  function syncRoving(target = null) {
-    const items = visibleItems();
-    const stop = target || items.find(i => focusKey && i.dataset.focusKey === focusKey) || items.find(i => i.dataset.path === selected) || items[0] || null;
-    for (const item of nav.querySelectorAll('[role=treeitem]')) item.tabIndex = item === stop ? 0 : -1;
-  }
-  function focusItem(item) { focusKey = item.dataset.focusKey; syncRoving(item); item.focus({ preventScroll: false }); }
-  function setExpanded(item, value) {
-    if (!item?.dataset.skill || !item.hasAttribute('aria-expanded')) return;
-    if (value) expanded.add(item.dataset.skill); else expanded.delete(item.dataset.skill);
-    item.setAttribute('aria-expanded', String(value));
-    item.querySelector(':scope > ul[role=group]').hidden = !value;
-    item.querySelector(':scope > .cap-node .cap-node-twisty').textContent = value ? '▾' : '▸';
-    syncRoving(nav.contains(doc.activeElement) ? doc.activeElement.closest('[role=treeitem]') : null);
-  }
-  const toggle = item => setExpanded(item, item.getAttribute('aria-expanded') !== 'true');
-  function onTreeKey(event) {
-    const item = event.target.closest?.('[role=treeitem]'); if (!item || event.altKey || event.ctrlKey || event.metaKey) return;
-    const items = visibleItems(), at = items.indexOf(item), skill = !!item.dataset.skill, isOpen = item.getAttribute('aria-expanded') === 'true';
-    const go = target => { if (target) focusItem(target); };
-    switch (event.key) {
-      case 'ArrowDown': go(items[at + 1]); break;
-      case 'ArrowUp': go(items[at - 1]); break;
-      case 'Home': go(items[0]); break;
-      case 'End': go(items[items.length - 1]); break;
-      case 'ArrowRight': if (skill && !isOpen) setExpanded(item, true); else if (skill) go(item.querySelector('[role=treeitem]')); else return; break;
-      case 'ArrowLeft': if (skill && isOpen) setExpanded(item, false); else if (!skill && item.getAttribute('aria-level') === '2') go(item.parentElement.closest('[role=treeitem]')); else return; break;
-      case 'Enter': case ' ': if (skill) toggle(item); else if (item.dataset.path) open(item.dataset.path); break;
-      default: return;
-    }
-    event.preventDefault(); event.stopPropagation();
-  }
-  function markSelected() {
-    for (const item of nav.querySelectorAll('[role=treeitem][data-path]')) item.setAttribute('aria-selected', String(item.dataset.path === selected));
-    syncRoving(nav.contains(doc.activeElement) ? doc.activeElement.closest('[role=treeitem]') : null);
-  }
-
   /* ── reader ──────────────────────────────────────────────────────────── */
-  function clearReader() { readerPath = null; fileTicket++; head.hidden = true; head.replaceChildren(); body.replaceChildren(); fileState.reset(); }
-  function paintHead(path, bytes, truncated) {
-    head.replaceChildren(node('span', 'cap-reader-path', path));
-    const size = sizeText(bytes); if (size) head.append(node('span', 'cap-reader-size', size));
-    if (truncated) head.append(node('span', 'cap-reader-flag', CONTENTS_COPY.truncated));
-    head.hidden = false;
-  }
-  const line = text => node('p', 'cap-reader-line', text);
+  function clearReader() { readerPath = null; fileTicket++; fileReader.clear(); fileState.reset(); }
+  const paintHead = (path, bytes, truncated) => fileReader.paintHead(path, { bytes, flag: truncated ? CONTENTS_COPY.truncated : null });
+  const line = fileReader.line;
   /** Open a listed file in the reader (and select it on the left). `force`: read again even when it is the one shown. */
   function open(path, { force = false } = {}) {
     if (!alive) return;
     if (!path) { clearReader(); body.append(line(CONTENTS_COPY.empty)); return; }
     const listed = files.get(path); if (!listed) return;
-    selected = path; markSelected();
+    selected = path; keys.markSelected();
     if (readerPath === path && !force) return;
     // A Retry of the file on screen keeps its failed block (and the Retry's focus) until the read settles.
     const retrying = readerPath === path && fileState.settled === 'failed';
@@ -402,76 +295,10 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
     });
   }
   function paintFile(file) {
-    body.replaceChildren();
-    if (file.binary) { body.append(line(CONTENTS_COPY.binary)); return; }
-    if (file.text === null) {
-      // Missing, over the kernel's budget, or not a safe path (path null): its problem says why, verbatim.
-      const problem = show?.problems.find(p => p.path === file.path);
-      body.append(line(problem ? problem.message : CONTENTS_COPY.notAvailable)); return;
-    }
-    const view = node('div', 'mdv');
-    if (isMarkdownName(file.path)) {
-      const { frontMatter, body: markdown } = splitFrontMatter(file.text);
-      if (frontMatter?.entries) view.append(factsTable(frontMatter.entries));
-      let html = frontMatter && !frontMatter.entries ? renderCodeHtml(frontMatter.raw, 'front-matter.yaml') : '';
-      html += renderMarkdownHtml(markdown, doc, { path: `/${file.path}`, rootedLinks: false, strict: true });
-      const content = node('div'); content.innerHTML = html; view.append(...content.childNodes);
-      decorateMarkdown(view, doc, { anchors: false });
-      settleLinks(view);
-    } else {
-      view.innerHTML = renderCodeHtml(file.text, file.path);
-      decorateMarkdown(view, doc, { anchors: false });
-    }
-    body.append(view);
+    // Missing, over the kernel's budget, or not a safe path (path null): its problem says why, verbatim.
+    const problem = file.text === null ? show?.problems.find(p => p.path === file.path) : null;
+    fileReader.paintFile(file, { missing: problem ? problem.message : CONTENTS_COPY.notAvailable, binary: CONTENTS_COPY.binary });
   }
-  function factsTable(entries) {
-    const table = node('table', 'cap-fm'); table.setAttribute('aria-label', 'Front matter');
-    const rows = node('tbody');
-    for (const [key, value] of entries) {
-      const tr = node('tr'); tr.append(node('th', null, key), node('td', null, Array.isArray(value) ? value.join(', ') : value.replace(/\n+$/, '')));
-      tr.firstChild.setAttribute('scope', 'row'); rows.append(tr);
-    }
-    table.append(rows); return table;
-  }
-  /** Links: a listed file of this capability opens here; https goes out through openExternal; an in-document
-   * fragment scrolls the reader; anything else becomes its text (inert, and nothing is fetched). */
-  function settleLinks(root) {
-    for (const a of [...root.querySelectorAll('a')]) {
-      const local = a.getAttribute('data-open-file');
-      if (local !== null) {
-        const path = local.replace(/^\/+/, '');
-        if (files.has(path)) { a.dataset.capPath = path; a.setAttribute('href', '#'); a.removeAttribute('data-open-file'); continue; }
-      } else {
-        const href = a.getAttribute('href') || '';
-        if (href.startsWith('#') && href.length > 1) continue;
-        if (/^https:\/\//i.test(href) && typeof openExternal === 'function') { a.removeAttribute('target'); continue; }
-      }
-      a.replaceWith(...a.childNodes);
-    }
-  }
-  const copyTimers = new Set();
-  function onReaderClick(event) {
-    const copy = event.target.closest?.('.md-copy');
-    if (copy && body.contains(copy)) { if (event.type === 'click') copyCodeBlock(copy, doc, { alive: () => alive, timers: copyTimers }); return; }
-    const a = event.target.closest?.('a'); if (!a || !body.contains(a)) return;
-    event.preventDefault();
-    if (event.type === 'auxclick') return;
-    if (a.dataset.capPath) {
-      const path = a.dataset.capPath, parent = files.get(path);
-      if (parent?.kind === 'skill' && !expanded.has(parent.skill.path)) setExpanded([...nav.querySelectorAll('[role=treeitem][data-skill]')].find(i => i.dataset.skill === parent.skill.path), true);
-      open(path); return;
-    }
-    const href = a.getAttribute('href') || '';
-    if (href.startsWith('#')) {
-      let id; try { id = decodeURIComponent(href.slice(1)); } catch { return; }
-      const target = [...body.querySelectorAll('[id]')].find(el => el.id === id);
-      if (target) reader.scrollTop = Math.max(0, target.offsetTop - head.offsetHeight - 8);
-      return;
-    }
-    if (/^https:\/\//i.test(href)) openExternal?.(href);
-  }
-  body.addEventListener('click', onReaderClick);
-  body.addEventListener('auxclick', onReaderClick);
 
   return {
     element, update,
@@ -488,7 +315,7 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
       };
     },
     get selected() { return selected; },
-    dispose() { alive = false; showTicket++; fileTicket++; for (const timer of copyTimers) clearTimeout(timer); copyTimers.clear(); navState.dispose(); fileState.dispose(); body.removeEventListener('click', onReaderClick); body.removeEventListener('auxclick', onReaderClick); },
+    dispose() { alive = false; showTicket++; fileTicket++; fileReader.dispose(); navState.dispose(); fileState.dispose(); },
   };
 }
 /** Codes after which the catalog row is re-read: the kernel no longer knows the capability, or it moved. */

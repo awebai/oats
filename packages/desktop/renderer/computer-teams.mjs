@@ -96,7 +96,8 @@ export const computerTeamsCSS = `
 .computer-teams .ct-inst { display:flex; align-items:center; gap:8px; }
 .computer-teams .ct-marks { display:flex; }
 .computer-teams .ct-marks .identity-mark { width:22px; height:22px; border-radius:6px; border:1.5px solid var(--surface); font-size:10px; font-weight:700; }
-.computer-teams .ct-marks .identity-mark + .identity-mark { margin-left:-6px; }
+/* Two-letter marks fill their tile: overlap by 1px only, so no letter hides under the next tile. */
+.computer-teams .ct-marks .identity-mark + .identity-mark { margin-left:-1px; }
 .computer-teams .ct-count { color:var(--fg); font-size:12px; font-weight:600; white-space:nowrap; }
 .computer-teams .ct-note { color:var(--muted); font-size:11.5px; line-height:1.45; text-align:right; }
 .computer-teams .ct-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; }

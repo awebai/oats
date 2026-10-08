@@ -84,7 +84,7 @@ test('the members: overlapping soul tiles (at most three) and "N members" only f
   const u = await mount(t, () => mapped(), { readMembers: async () => route(rows) });
   const mine = u.row('mine').querySelector('.ct-side');
   assert.equal(mine.querySelector('.ct-count').textContent, '4 members');
-  assert.deepEqual([...mine.querySelectorAll('.ct-marks .identity-mark')].map(m => m.textContent), ['R', 'R', 'W'], 'three tiles at most, the soul monograms');
+  assert.deepEqual([...mine.querySelectorAll('.ct-marks .identity-mark')].map(m => m.textContent), ['RM', 'RM', 'WR'], 'three tiles at most, the soul marks');
   assert.equal(mine.querySelector('.ct-note').textContent, 'every instance joins its default team');
   const eng = u.row('engineering').querySelector('.ct-side');
   assert.equal(eng.querySelector('.ct-count').textContent, '1 member'); assert.equal(eng.querySelector('.ct-note'), null, 'only the default team says why');

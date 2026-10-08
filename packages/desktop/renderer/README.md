@@ -761,7 +761,12 @@ through `views/markdown.mjs` in its strict profile (front matter through
 `front-matter.mjs` as a facts table, or as YAML code when outside its subset)
 and everything else as highlighted code; links are settled after rendering
 (`settleLinks`): a listed file, `https:` through `openExternal`, `#fragment`,
-or plain text. `E_CAPABILITY_FILE_UNKNOWN` and `E_REMOTE_FILE_OVERSIZE` are
+or plain text. The card's CSS, the tree's keyboard model
+(`createContentsTree`: roving tab stop, arrows, Home/End, Right/Left
+expand/collapse or enter/climb, Enter/Space call the host's `activate`) and the
+reader (`createContentsReader`: sticky head, file rendering, link settling,
+copy buttons) live in `contents-reader.mjs`, shared with the soul page's
+Instructions; the host decides what is listed, read and opened. `E_CAPABILITY_FILE_UNKNOWN` and `E_REMOTE_FILE_OVERSIZE` are
 muted lines, not failures. The reader sits on `--bg`, the viewer's own ground,
 so the viewer's checked colours hold, with a type scale kept under the page's
 own (headings below the 20px title, code at 12px). The page's *Provides* is one
@@ -769,6 +774,22 @@ compact card (`providesSection`): a row per kind (Skills, Commands, Hooks; from
 a soul, Commands and Settings) with every name its own code chip, wrapping.
 `paintCapabilityPage` renders the page's facts and Contents from the same
 current catalog row (`contentsRow`), so a refresh moves them together.
+
+**The soul page's Instructions (spec D).** `soul-instructions.mjs`, after
+Capabilities on the soul page only (not the 340px inspector, not an
+instance): the soul's own AGENTS.md from the inspection the page already
+read (`souls[0].instructions` = `{ file, text, truncated }`, no request of
+its own), in the Contents card's grammar through `contents-reader.mjs`. The
+path shown is `<souls[0].path>/AGENTS.md` (`path` is the soul's directory in
+its repository), else just `AGENTS.md`; the absolute `file` is a host cache
+path and is never shown. `text: null` (or no `instructions`) is the reader
+line "This soul's AGENTS.md could not be read."; `truncated` is the head's
+flag, worded for the inspection's 200,000-character cap. The inspector
+creates one controller per subject in `frame()` (disposed with the subject)
+and `render()` re-appends its element after taking `hold()` before
+`content.replaceChildren()`, so a repaint keeps focus and both scroll
+offsets; `update(soul)` repaints its tree or reader only when what they show
+changed. The tree's focus key is `instructions:own`.
 
 **Core capabilities and Capabilities read as one system.** Wherever the two
 sections appear (the soul page, the inspector's *Modules as spawned*, the

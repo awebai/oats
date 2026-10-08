@@ -202,7 +202,7 @@ test('W5: the capability table follows the v4 grid — 32px head, 48px rows, mon
   assert.equal(u.css('.catalog-table').gap, '6px');
   assert.match(u.css('.catalog-name').font, /650 13px var\(--mono/, 'mono 13px names');
   const shipped = [...u.doc.querySelectorAll('style')].map(style => style.textContent).join('\n');
-  assert.match(shipped, /\.catalog-used-marks \.identity-mark \{ width:20px; height:20px; margin-left:-5px; border-radius:6px;/, '20px used-by marks');
+  assert.match(shipped, /\.catalog-used-marks \.identity-mark \{ width:20px; height:20px; margin-left:-1px; border-radius:6px;/, '20px used-by marks');
   assert.equal(u.get('.catalog-cap .identity-mark'), null, 'no capability monogram in the table');
   assert.equal(u.css('.capability-nav button').borderRadius, '6px', 'segments of one group (rule 1), not pills');
   assert.equal(u.get('.workspace-discovery').querySelectorAll('select').length, 0, 'no Team or Repo dropdown');

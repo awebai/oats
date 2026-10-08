@@ -58,7 +58,7 @@ test('scoped layout: no chooser, the identity header names the soul and where it
   const title = u.q('h2#spawn-dialog-title');
   assert.equal(title.textContent, 'Spawn release-manager'); assert.equal(u.ui.dialog.getAttribute('aria-labelledby'), 'spawn-dialog-title');
   assert.equal(u.text('.spawn-context'), 'from agents · in northwind', 'a member soul: its repository');
-  const mark = u.q('.spawn-dialog-head .identity-mark'); assert.ok(mark && !u.hidden(mark), 'the soul mark'); assert.equal(mark.textContent, 'R');
+  const mark = u.q('.spawn-dialog-head .identity-mark'); assert.ok(mark && !u.hidden(mark), 'the soul mark'); assert.equal(mark.textContent, 'RM');
   const change = u.q('button.spawn-change-soul'); assert.equal(change.type, 'button'); assert.equal(change.textContent, 'Change soul'); assert.equal(u.hidden(change), false);
   assert.equal(u.style(change).color, 'var(--accent)'); assert.equal(u.style(change).borderStyle || u.style(change).border, u.style(change).borderStyle ? 'none' : '0');
   assert.equal(u.q('.close-act').getAttribute('aria-label'), 'Close spawn dialog');

@@ -159,9 +159,9 @@ test('used by: "Not used" / "N soul(s)" with at most three tiles / "Every soul" 
   assert.equal(u.css(count('oats.jira')).color, 'var(--muted)'); assert.equal(count('oats.jira').title, 'No instance carries it yet');
   assert.equal(u.$('.catalog-table').textContent.includes('—'), false, 'never the bare dash');
   const marks = u.css(used('oats.aweb').querySelector('.identity-mark'));
-  assert.equal(marks.width, '20px'); assert.equal(marks.marginLeft, '-5px');
+  assert.equal(marks.width, '20px'); assert.equal(marks.marginLeft, '-1px');
   // jsdom does not compute a border shorthand holding var(): read the ring from the sheet.
-  assert.match(catalogCSS, /\.catalog-used-marks \.identity-mark \{ width:20px; height:20px; margin-left:-5px;[^}]*border:1\.5px solid var\(--surface\)/);
+  assert.match(catalogCSS, /\.catalog-used-marks \.identity-mark \{ width:20px; height:20px; margin-left:-1px;[^}]*border:1\.5px solid var\(--surface\)/);
 });
 
 test('without reported defaults nothing is claimed: a declared name still reads from the roster', t => {
