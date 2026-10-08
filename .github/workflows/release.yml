@@ -258,7 +258,8 @@ jobs:
       # inventory + strict deep codesign verification of the packaged .app
       # (macOS legs — unconditional; rejects the v0.18.2 partial/absent
       # signature class) + spawn-helper mode + node-pty under the packaged
-      # Electron ABI. GUI launch is operator/maintainer-owned post-publish
+      # Electron ABI + the bundled backend and its liveness collector run
+      # headless as Node from app.asar (dist-smoke phase 4). GUI launch is operator/maintainer-owned post-publish
       # acceptance; headless CI has no reliable interactive windowserver for
       # apps without Developer ID trust.
       - name: Installed-artifact smoke (build-verify)

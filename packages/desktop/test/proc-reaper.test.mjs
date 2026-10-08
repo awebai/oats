@@ -11,6 +11,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { spawn, execFileSync } from "node:child_process";
+import { realpathSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { createReaper } from "../scripts/proc-reaper.mjs";
 
 let nextPid = 51000;
@@ -94,6 +96,20 @@ test("runTracked settles on CLOSE, not exit — data between exit and close is c
   assert.equal(result.stdout, "partial PTY_OK", "post-exit data captured");
   assert.equal(result.stderr, "progress noise", "stderr drained");
   assert.equal(result.code, 0);
+});
+
+test("runTracked: input is the child's whole stdin, cwd is its directory, and the result names its pid", async () => {
+  const r = createReaper({ spawn });
+  const dir = realpathSync(tmpdir());
+  const res = await r.runTracked(process.execPath, ["-e", "let s = ''; process.stdin.on('data', (d) => { s += d; }).on('end', () => process.stdout.write(process.cwd() + ' ' + s.toUpperCase()));"],
+    { timeout: 10000, cwd: dir, input: "rows" });
+  assert.equal(res.stdout, `${dir} ROWS`);
+  assert.equal(res.code, 0);
+  assert.ok(Number.isInteger(res.pid) && res.pid > 0, "the leader's pid");
+  assert.equal(r.pendingGroups().size, 0);
+  // Without input, stdin is /dev/null: EOF at once.
+  const none = await r.runTracked(process.execPath, ["-e", "process.stdin.on('data', () => {}).on('end', () => process.stdout.write('eof'))"], { timeout: 10000 });
+  assert.equal(none.stdout, "eof");
 });
 
 // ---- real-process regression: leader exits while a descendant remains ------
@@ -211,6 +227,7 @@ test("smoke source contract: dist-smoke has no synchronous child execution and p
   const src = readFileSync(new URL("../scripts/dist-smoke.mjs", import.meta.url), "utf8");
   assert.ok(!/execFileSync|execSync|spawnSync/.test(src), "no synchronous child execution in the smoke (blocks signal handlers/watchdog)");
   assert.match(src, /runAbiProbe\(reaper/, "ABI probe goes through the contract runner with the reaper");
+  assert.match(src, /runBackendProbe\(reaper/, "the headless backend phase goes through the contract runner with the reaper");
   const probes = readFileSync(new URL("../scripts/smoke-probes.mjs", import.meta.url), "utf8");
   assert.ok(!/execFileSync|execSync|spawnSync/.test(probes), "no synchronous execution in the probe runner either");
 });

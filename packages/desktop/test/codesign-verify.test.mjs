@@ -158,8 +158,11 @@ test("dist-smoke wires the codesign gate unconditionally on darwin (no env skip)
   assert.equal(m[1], `process.platform === "darwin"`, "codesign phase guarded by platform ONLY");
   assert.ok(!/OATS_SMOKE[A-Z_]*[^\n]*verifyAppSignature|verifyAppSignature[^\n]*OATS_SMOKE/.test(src),
     "no OATS_SMOKE_* flag on the codesign line");
-  // the codesign phase must run BEFORE the launch-skip branching
-  assert.ok(src.indexOf("verifyAppSignature") < src.indexOf("OATS_SMOKE_SKIP_LAUNCH"),
+  // the codesign phase must run BEFORE the launch-skip branching (the call
+  // and the env read, not their first mention: the header names both)
+  const gate = src.indexOf("await verifyAppSignature(reaper"), skip = src.indexOf("process.env.OATS_SMOKE_SKIP_LAUNCH");
+  assert.ok(gate > 0 && skip > 0, "both the gate call and the launch-skip read are present");
+  assert.ok(gate < skip,
     "codesign gate precedes the launch-skip logic — skip flags cannot reach it");
 });
 

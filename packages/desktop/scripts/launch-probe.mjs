@@ -14,6 +14,12 @@ export const PHASE_BUDGET_MS = {
   // Rosetta's first x64 translation/start on a fresh arm64 CI runner can
   // exceed 30s. Keep one bounded phase budget that covers native + Rosetta.
   abiProbe: 90_000,
+  // The headless backend phase (smoke-probes.mjs runBackendProbe): the
+  // packaged backend's first answer (a cold start, under Rosetta on the x64
+  // leg), its exit once its stdin closes (#698's lifeline), the collector run.
+  backendReady: 90_000,
+  backendExit: 15_000,
+  collector: 60_000,
   launchReady: 90_000,
   cdpEvaluate: 20_000,
 };
