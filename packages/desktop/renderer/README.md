@@ -791,13 +791,22 @@ and `render()` re-appends its element after taking `hold()` before
 offsets; `update(soul)` repaints its tree or reader only when what they show
 changed. The tree's focus key is `instructions:own`.
 
-**The composed AGENTS.md (spec D, B2).** On the soul page of a local soul,
-when the CLI's probe advertises `soul-composed-instructions`
+**The composed AGENTS.md (spec D, B2; routed, spec R part RD).** The gate is
+`composed-gate.mjs` (DOM-free, shared with the server). On the soul page of a
+local soul, when the CLI's probe advertises `soul-composed-instructions`
 (`composedSupported`), the inspect request carries `instructions: true`
-(`composedWanted` in `soul-inspector.mjs`; never the sidebar, never a remote or
-server soul, whose host probe this app does not hold). The server accepts that
-one boolean on a soul inspect only, drops it for a routed workspace, and keys
-the cache on it; the adapter appends `--instructions` only when the probe's
+(`composedWanted` in `soul-inspector.mjs`; never the sidebar). On a routed
+soul's page (`agent.remote` or `agent.server`) it asks only when the CLI also
+advertises `server-probe-features` (`routedComposedSupported`): that CLI's
+roster relays each host's own features as the group's `probe.features`. The
+server accepts that one boolean on a soul inspect only and keys the cache on
+it; for a routed workspace it keeps it only when the roster group it holds for
+that workspace says the host composes (`hostComposes`: `probe.ok` and an
+array `probe.features` naming the feature; `null`, a missing key or a failed
+pull is unknown, and unknown is not supported), else drops it, so the read is
+exactly the plain one. The renderer's ask is never the proof, nothing is
+decided from `E_REMOTE_INCOMPATIBLE`, and nothing probes. The adapter appends
+`--instructions` (after `--server` and the soul target) only when the probe's
 features list it. `composedOf(soul)` decodes `souls[0].composedInstructions`:
 `undefined` (key absent: no group), `null` (cannot be composed here: a note,
 the problem shows with the page's others), `false` (an answer that breaks the

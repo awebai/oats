@@ -42,9 +42,8 @@ export const SOUL_INSTRUCTIONS_COPY = Object.freeze({
   cannotCompose: "Can't be composed here: see the problem above.",
   cannotRead: "This OATS answered composed instructions this Desktop can't read.",
 });
-export const COMPOSED_FEATURE = 'soul-composed-instructions';
-/** The CLI composes a soul's AGENTS.md on request (`inspect --soul --instructions`). */
-export const composedSupported = cli => !!cli?.ok && Array.isArray(cli.features) && cli.features.includes(COMPOSED_FEATURE);
+/** When the page asks for the composed AGENTS.md: composed-gate.mjs (shared with the server). */
+export { COMPOSED_FEATURE, composedSupported } from './composed-gate.mjs';
 
 export const soulInstructionsCSS = `
 /* A part's file and nav labels: the soul's parts are prose labels, a capability's its id (monospace). */

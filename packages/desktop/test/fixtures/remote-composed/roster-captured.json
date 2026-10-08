@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "groups": [
+      {
+        "id": "build:0123456789ab",
+        "server": "build",
+        "label": "Build box",
+        "registrationPresent": true,
+        "target": {
+          "sshHost": "build.example",
+          "workspace": "/srv/northwind",
+          "oatsPath": "oats",
+          "path": "/srv/northwind"
+        },
+        "probe": {
+          "ok": true,
+          "features": null
+        },
+        "agentsRoot": "/srv/northwind/agents",
+        "workspace": {
+          "reachable": true,
+          "key": "local//srv/northwind/workspace.git",
+          "ref": "main",
+          "keyFrom": "workspace",
+          "standalone": false,
+          "defaultTeam": {
+            "label": "engineering",
+            "team": "default:northwind.example"
+          },
+          "teams": {
+            "engineering": "default:northwind.example"
+          },
+          "teamsFrom": "observed"
+        },
+        "souls": [
+          {
+            "name": "release-manager",
+            "work": "directory",
+            "description": "Ships releases",
+            "agentsRoot": "/srv/northwind/agents"
+          }
+        ],
+        "instances": [],
+        "retireFailures": []
+      }
+    ],
+    "bounds": {
+      "budgetMs": 45000,
+      "perTargetTimeoutMs": 20000,
+      "elapsedMs": 9482,
+      "skipped": 0
+    }
+  }
+}

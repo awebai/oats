@@ -518,9 +518,10 @@ export async function cliCapability(bin, { action, context, server, soul, agents
   // Reuse is local only: the kernel refuses --max-age with --server (E_BAD_ARGS), so a routed inspect never carries it.
   if (server && maxAge !== undefined) bad('Observation age does not route to a server');
   if (!validMaxAge(maxAge)) bad('Invalid observation age');
-  // --instructions (feature soul-composed-instructions) composes a soul's AGENTS.md: inspect --soul only, never routed
-  // (a host without the feature refuses it); a CLI that does not advertise it gets the flagless argv.
-  if (instructions && (action !== 'inspect' || !soul || home || server)) bad('Composed instructions belong to a local soul inspection');
+  // --instructions (feature soul-composed-instructions) composes a soul's AGENTS.md: inspect --soul only; a CLI that
+  // does not advertise it gets the flagless argv. Routed with --server, the caller asks only for a host whose roster
+  // row names the feature (server/capabilities.mjs, composed-gate.mjs): a host without it refuses the flag.
+  if (instructions && (action !== 'inspect' || !soul || home)) bad('Composed instructions belong to a soul inspection');
   const composed = instructions && Array.isArray(features) && features.includes('soul-composed-instructions') ? ['--instructions'] : [];
   return await runJson(bin, [...argv, ...target, ...composed, ...maxAgeArgv(features, maxAge), '--json'], {
     cwd: localCwd, exec: io.exec, timeout: io.timeout ?? (action === 'run' ? 300_000 : ENVELOPE_TIMEOUT_MS),

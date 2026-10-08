@@ -49,11 +49,12 @@ test('adapter: --instructions goes after the soul target and only to a CLI adver
     await cliCapability('/b/oats', { ...soulArgs, instructions: true, features }, given);
     assert.deepEqual(given.calls, plain.calls, 'an undeclared CLI gets the flagless argv');
   }
-  for (const bad of [{ action: 'inspect', home: '/h', localCwd: '/h' }, { ...soulArgs, server: 'hetzner', localCwd: '/l' }, { action: 'run', home: '/h', localCwd: '/h', operation: 'knowledge:harvest' }])
+  // Routed with --server it goes too (the server asks only for a host that composes: remote-composed-gating.test.mjs).
+  for (const bad of [{ action: 'inspect', home: '/h', localCwd: '/h' }, { action: 'run', home: '/h', localCwd: '/h', operation: 'knowledge:harvest' }])
     await assert.rejects(cliCapability('/b/oats', { ...bad, instructions: true, features: [FEATURE] }, { exec: assert.fail }), { code: 'E_BAD_ARGS' }, JSON.stringify(bad));
 });
 
-test('server: one optional boolean, a soul inspect only; never routed; the cache key includes it', async () => {
+test('server: one optional boolean, a soul inspect only; the cache key includes it; not routed without the hosts\u2019 features', async () => {
   const cli = { ok: true, operationsApi: 2, bin: '/b/oats', features: [FEATURE], remote: ['operations'] };
   const agents = [{ name: 'dev', agentsRoot: `${context}/agents` }], instances = [{ instance: 'dev-1', home: '/h' }];
   const calls = [], invoke = async (_bin, options) => { calls.push(options); return JSON.parse(envelope({ subject: { kind: 'soul' } })); };
@@ -72,7 +73,7 @@ test('server: one optional boolean, a soul inspect only; never routed; the cache
   const remote = { id: 'remote:hetzner', scope: '/remote/member', remote: true, server: 'hetzner', registrationPresent: true };
   await capabilityRequest({ action: 'inspect', selector: { soul: 'dev', agentsRoot: '/remote/member/agents' }, instructions: true },
     { workspace: remote, cli, agents: [{ name: 'dev', agentsRoot: '/remote/member/agents' }], instances: [], localCwd: '/l', invoke });
-  assert.equal(Object.hasOwn(calls[0], 'instructions'), false, 'a remote host’s probe is not held here: never routed');
+  assert.equal(Object.hasOwn(calls[0], 'instructions'), false, 'a CLI without server-probe-features: the host’s features are not held, never routed');
 });
 
 /* ── the contract's decoder ──────────────────────────────────────────── */
@@ -275,10 +276,17 @@ async function page(t, { layout = 'page', agent = {}, features = [FEATURE], answ
   return { el, bodies, opened, inspector };
 }
 
-test('the soul page asks for the composed AGENTS.md only with the feature; the sidebar and a remote soul never do', async t => {
+test('the soul page asks for the composed AGENTS.md only with the feature; the sidebar never does; a remote soul only with server-probe-features', async t => {
   const flagged = await page(t);
   assert.deepEqual(flagged.bodies, [{ action: 'inspect', selector: { soul: 'release-manager', agentsRoot }, instructions: true }]);
-  for (const [label, options] of [['no feature', { features: [] }], ['sidebar', { layout: 'sidebar' }], ['remote soul', { agent: { remote: true, server: 'hetzner' } }]]) {
+  // A routed soul: the page asks when this CLI relays the hosts' features; whether the host composes is the server's call.
+  for (const agent of [{ remote: true, server: 'hetzner' }, { server: 'hetzner' }]) {
+    const routed = await page(t, { agent, features: [FEATURE, 'server-probe-features'] });
+    assert.deepEqual(routed.bodies, [{ action: 'inspect', selector: { soul: 'release-manager', agentsRoot }, instructions: true }], JSON.stringify(agent));
+  }
+  for (const [label, options] of [['no feature', { features: [] }], ['sidebar', { layout: 'sidebar' }], ['remote soul', { agent: { remote: true, server: 'hetzner' } }],
+    ['remote soul, relays but does not compose', { agent: { remote: true, server: 'hetzner' }, features: ['server-probe-features'] }],
+    ['remote soul in the sidebar', { layout: 'sidebar', agent: { remote: true, server: 'hetzner' }, features: [FEATURE, 'server-probe-features'] }]]) {
     const u = await page(t, options);
     assert.equal(u.bodies.some(b => Object.hasOwn(b, 'instructions')), false, label);
   }

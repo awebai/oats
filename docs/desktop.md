@@ -183,10 +183,13 @@ order). Open it to read the whole document; choose a part to go to it. Each
 part's header says where it comes from (**From this soul** or **Injected by …**)
 and names its file; a capability's part has **Open capability**, and **Copy
 composed AGENTS.md** copies the exact file. When the soul can't be composed
-here, the group says so and the problem shows at the top of the page. The
-composed view is for souls on this computer only: the page of a soul on another
-machine (a server workspace) shows only the soul's own `AGENTS.md`, with no
-**Instance** group.
+here, the group says so and the problem shows at the top of the page. For a
+soul on another machine (a server workspace), the page shows the composed file
+when that machine supports it: this computer's OATS must be 0.49.0 or later, to
+pass on what each server reports about itself, and the server's OATS must say
+it composes a soul's instructions (0.49.0 and later report this). Until a
+server reports it (an older server, or one whose last read failed), its soul
+pages show only the soul's own `AGENTS.md`, with no **Instance** group.
 
 The **Spawn** dialog's left column, **What will be created**, starts with the
 new instance's name and its home. Then come where it works, its harness and
