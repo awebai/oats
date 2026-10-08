@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { DESKTOP_TEST_DEPS_INSTALL, desktopTestDeps } from "../scripts/desktop-test-deps.mjs";
+import { describeNestedTestFailure } from "./helpers/nested-test-failure.mjs";
 
 const yml = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
 const desktopPkg = JSON.parse(readFileSync(new URL("../packages/desktop/package.json", import.meta.url), "utf8"));
@@ -235,7 +236,10 @@ test("desktop package scripts invoked by the workflow exist and run", (t) => {
     // child at 1 MiB of it, with status null and an empty stderr, and the
     // Desktop suite prints about that much: r.error then says why.
     const r = spawnSync("npm", ["test"], { cwd: new URL("../packages/desktop", import.meta.url).pathname, encoding: "utf8", timeout: 300000, maxBuffer: 64 * 1024 * 1024, env });
-    assert.equal(r.status, 0, `packages/desktop npm test failed${r.error ? ` (${r.error.message})` : ""}:\n${r.stderr?.slice(-2000)}`);
+    // The child's results are on stdout, so the message names the failing
+    // Desktop tests from there, then bounded stdout and stderr tails (#644).
+    // It is built only for a failing run: a passing one is never parsed.
+    if (r.status !== 0) assert.fail(describeNestedTestFailure(r, "packages/desktop npm test"));
     assert.match(r.stdout, /^# pass \d+$|ℹ pass \d+/m, `packages/desktop npm test reported no results — it did not actually run:\n${r.stdout.slice(-2000)}`);
   } else {
     t.diagnostic(`packages/desktop npm test NOT run — dependencies missing (${desktop.missing.join(", ")}); install with ${DESKTOP_TEST_DEPS_INSTALL}`);
