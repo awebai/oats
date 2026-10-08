@@ -187,8 +187,11 @@ if both arrive, `rollbackIncomplete` wins.
 The retire plan of a `rollbackIncomplete` row says "Branches and pull requests
 are not changed, except a branch an interrupted spawn left with no work, which
 is deleted.": that retire finishes the spawn's compensation, and the result's
-`spawnCompensation` line says whether the branch was deleted or kept. Every
-other retire plan keeps "Branches and pull requests are not changed."
+`spawnCompensation` line says whether the branch was deleted or kept. With
+**Also delete the worktree** checked, its plan line and warning drop "Branch
+… stays in the repository.", so that sentence is the plan's only word on
+branches (the kernel deletes the branch only when the worktree is removed).
+Every other retire plan keeps "Branches and pull requests are not changed."
 
 ## UI and ownership
 

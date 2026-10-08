@@ -181,7 +181,7 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
       children.title = f.children.map(c => c.home).join('\n'); lines.push(children);
     }
     lines.push(line('Saves a recovery copy of any uncommitted work, then deletes its home folder.', value.home));
-    if (f.workMode === 'worktree') lines.push(line(requested.discardWorktree ? `Deletes its worktree.${b ? ` Branch ${b} stays in the repository.` : ''}`
+    if (f.workMode === 'worktree') lines.push(line(requested.discardWorktree ? `Deletes its worktree.${stays(b)}`
       : `Keeps its worktree, moved aside${b ? `, on branch ${b}` : ''}.`));
     // A home a spawn left (rollbackIncomplete): retire finishes its compensation, which deletes the branch
     // the spawn created when it holds no work (the result's spawnCompensation says which).
@@ -210,11 +210,14 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
   }
   /** The warning under a checked "Also delete the worktree": in words, not colour alone. */
   function discardWarning(value) {
-    const f = value.facts, b = branchOf(f), n = f.work.observed ? f.work.changed + f.work.untracked : null;
+    const f = value.facts, n = f.work.observed ? f.work.changed + f.work.untracked : null;
     const including = n === null ? ', including uncommitted changes, if any (a recovery copy is saved first)'
       : n ? `, including ${plural(n, 'uncommitted change')} (a recovery copy is saved first)` : '';
-    return `Deletes the worktree folder${including}.${b ? ` Branch ${b} stays in the repository.` : ''}`;
+    return `Deletes the worktree folder${including}.${stays(branchOf(f))}`;
   }
+  /** Deleting the worktree keeps its branch, except on a leftover row: there the kernel deletes the branch the
+   * interrupted spawn created when it holds no work, so the plan's next line is the only word on branches. */
+  const stays = b => b && !leftover ? ` Branch ${b} stays in the repository.` : '';
   /** What a PR row is correlated to: the observed revision and branch, and the remote's host and path. Null
    * when the work is not observed (no PR row then). The connection account is held beside it, on the link. */
   const correlation = value => value?.action === 'retire' && value.facts.work.observed

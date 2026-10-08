@@ -69,6 +69,25 @@ test('the retire plan of a quarantined row says the branch an interrupted spawn 
     assert.equal(lines.some(line => /interrupted spawn/.test(line)), false, lines.join('|'));
   }
 });
+
+test('with "Also delete the worktree", a quarantined row\'s plan never says its branch stays; others still do', async t => {
+  const SPARED = 'Branches and pull requests are not changed, except a branch an interrupted spawn left with no work, which is deleted.';
+  const discarded = async row => {
+    const u = mount(t, { apply: a => envelope(retireReceipt(a)), row }); u.open(); await tick();
+    const discard = u.doc.querySelectorAll('.lifecycle-options input')[1];
+    discard.checked = true; discard.dispatchEvent(new u.doc.defaultView.Event('change')); await tick();
+    return { lines: [...u.doc.querySelectorAll('.lifecycle-happen li')].map(li => li.textContent), warning: u.doc.querySelector('.lifecycle-warning').textContent };
+  };
+  const quarantined = await discarded({ ...instance, rollbackIncomplete: true });
+  assert.ok(quarantined.lines.includes('Deletes its worktree.'), quarantined.lines.join('|'));
+  assert.equal(quarantined.lines.at(quarantined.lines.indexOf('Deletes its worktree.') + 1), SPARED, 'the next line is the only word on branches');
+  assert.doesNotMatch(quarantined.lines.join('|') + quarantined.warning, /stays in the repository/);
+  assert.match(quarantined.warning, /^Deletes the worktree folder/);
+  const ordinary = await discarded(instance);
+  assert.ok(ordinary.lines.includes('Deletes its worktree. Branch feat/work stays in the repository.'), ordinary.lines.join('|'));
+  assert.ok(ordinary.lines.includes('Branches and pull requests are not changed.'), ordinary.lines.join('|'));
+  assert.match(ordinary.warning, /Branch feat\/work stays in the repository\.$/);
+});
 const compensated = compensation => a => envelope({ ...retireReceipt(a), spawnCompensation: compensation });
 
 test('the retire result says the interrupted spawn\'s branch was deleted', async t => {
