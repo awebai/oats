@@ -480,6 +480,20 @@ grants remain requested upstream (#80), not delivered here. Existing captured
 provider modules/settings do not change automatically when this version ships.
 LOCAL identities are unchanged; there is no timer or background renewal.
 
+With the provider 1.23.2 composition (#76), install an app from
+the selected LOCAL or GLOBAL resident home: installation approves it for that
+resident. Host plugin bytes (`AW_HOME/plugins` or `HOME/.aw/plugins`) alone are
+not resident approval; never install/update/remove from a grant home. Only the
+next successful `renew: launch` mint's actual receipt establishes the worker's
+new snapshot; `renew: off` retains the old snapshot on restart. Comms is the
+at-spawn snapshot (app IDs, tool counts and skip codes only); `oats inspect --home <home> --json` shows the current recorded
+grant. Preview requires selected-kernel warning projection (tested OATS 0.47.0
+`e6e75ed8ba5a0a07a4b3e26fc627cac9064c730b`, not an earliest-release claim);
+older preview without it is unreported, not empty. Its warning labels retained
+inventory and pending renewal unknown;
+unavailable inventory is not no authority or readiness. This grants no automatic
+installation/relaunch permission and does not expand LOCAL app access.
+
 Read [A GLOBAL resident in an existing hosted team](references/existing-team-global-resident.md)
 for the fresh/reuse card, versioned commands, protected output, diagnostic and
 custody checkpoints. Setup has no `--global`; GLOBAL spawn consumes a provisioned
