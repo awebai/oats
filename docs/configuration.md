@@ -146,11 +146,25 @@ development mode, and qualifies only Claude 2.1.289 on `darwin-arm64`.
 
 1. `oats spawn <soul> --preview` shows `settings.oats.aweb.claudeChannelMode:
    approved` and `delivery: channel`.
-2. The started session shows no development prompt, and its banner says
-   `Channels (experimental) messages from plugin:aweb-channel@awebai-marketplace inject directly in this session · restart without --channels to stop`.
-3. The banner does not say `not on the approved channels allowlist`,
-   `not on your org's approved channels list` or `blocked by org policy`.
+2. The started session shows no development prompt, and its banner shows
+   “Channels (experimental) messages from plugin:aweb-channel@awebai-marketplace
+   inject directly in this session”, followed by “restart without --channels
+   to stop”. At normal terminal widths the banner wraps over two rows: look
+   for each part, not for one string.
+3. The banner says none of `not on the approved channels allowlist`,
+   `not on your org's approved channels list`, `blocked by org policy` or
+   `plugin not installed`.
 4. Receive is proven only by the `/oats-aweb` nonce exchange.
+
+**Failure banners**, their cause and remedy:
+
+| What the session shows | Cause | Remedy |
+|---|---|---|
+| `not on the approved channels allowlist` | the effective managed policy has no `allowedChannelPlugins` (no file, the file not read, or the key missing), so Anthropic's default list applied | write or fix the file |
+| `not on your org's approved channels list` | the effective policy has an `allowedChannelPlugins` without this plugin and marketplace pair: the names in the file are wrong, or a higher source (server-managed settings or MDM) supplies its own list | fix the entry, or have the organization admin add it |
+| `blocked by org policy` (then “Inbound messages will be silently dropped”) | the effective policy lacks `channelsEnabled: true`, which Team/Enterprise subscribers need, and API-key use whenever any managed policy exists | add the key, or have the organization admin set it |
+| `plugin:aweb-channel@awebai-marketplace · plugin not installed` | the plugin is not installed in the launch's Claude config directory | install and enable it there |
+| the development prompt still appears | the home started in development mode, not approved: the host setting is missing, or the home was spawned before the change | set `claudeChannelMode: approved`, then respawn the home |
 
 **Limits.** Channels are an Anthropic research preview. Anthropic's
 account-level feature flag gates channels on every route. The allowlist

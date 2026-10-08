@@ -201,25 +201,33 @@ as part of setup without the operator's word.
 
 1. The spawn preview shows `settings.oats.aweb.claudeChannelMode: approved`
    and `delivery: channel`.
-2. The started session shows no development prompt, and its banner says
-   `Channels (experimental) messages from plugin:aweb-channel@awebai-marketplace inject directly in this session · restart without --channels to stop`.
-3. The banner does not say `not on the approved channels allowlist`,
-   `not on your org's approved channels list` or `blocked by org policy`.
+2. The started session shows no development prompt, and its banner shows
+   “Channels (experimental) messages from plugin:aweb-channel@awebai-marketplace
+   inject directly in this session”, followed by “restart without --channels
+   to stop”. At normal terminal widths the banner wraps over two rows: look
+   for each part, not for one string.
+3. The banner says none of `not on the approved channels allowlist`,
+   `not on your org's approved channels list`, `blocked by org policy` or
+   `plugin not installed`.
 4. Receive is proven only by the `/oats-aweb` nonce exchange.
 
 **Next:** return to `/oats-onboarding` card 4's sync.
 
-**Failure → remedy:** the banner says `not on the approved channels
-allowlist`, `not on your org's approved channels list` or `blocked by org
-policy`, or the development prompt still appears: Claude did not admit the
-plugin. Check, in order: the preview shows `claudeChannelMode: approved` (else
-fix step 4 and respawn); whether server-managed settings or MDM govern the
-account (then the organization admin sets the two keys there); the file is at
-the OS's path, owned by root, mode 0644, valid JSON with both keys and the
-exact plugin and marketplace names; the plugin is installed and enabled from
-`awebai-marketplace` in the launch's config directory; the home was spawned
-before the change (respawn it). The admitted banner without a completed nonce
-exchange is not receive: `/oats-aweb` §4.
+**Failure → cause → remedy:**
+
+| What the session shows | Cause | Remedy |
+|---|---|---|
+| `not on the approved channels allowlist` | the effective managed policy has no `allowedChannelPlugins` (no file, the file not read, or the key missing), so Anthropic's default list applied | write or fix the file (steps 1–2) |
+| `not on your org's approved channels list` | the effective policy has an `allowedChannelPlugins` without this plugin and marketplace pair: the names in the file are wrong, or a higher source (server-managed settings or MDM) supplies its own list | fix the entry, or have the organization admin add it |
+| `blocked by org policy` (then “Inbound messages will be silently dropped”) | the effective policy lacks `channelsEnabled: true`, which Team/Enterprise subscribers need, and API-key use whenever any managed policy exists | add the key, or have the organization admin set it |
+| `plugin:aweb-channel@awebai-marketplace · plugin not installed` | the plugin is not installed in the launch's Claude config directory | step 3 |
+| the development prompt still appears | the home started in development mode, not approved: the host setting is missing, or the home was spawned before the change | step 4, then respawn the home |
+
+When unsure, check in order: the preview's mode; which managed-policy source
+governs the account; the file (the OS's path, root, 0644, valid JSON, both
+keys, exact plugin and marketplace names); the plugin in the launch's config
+directory. The admitted banner without a completed nonce exchange is not
+receive: `/oats-aweb` §4.
 
 **Limits:** channels are an Anthropic research preview, and Anthropic's
 account-level feature flag gates them on every route; neither is an OATS
