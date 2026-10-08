@@ -82,11 +82,13 @@ export function capabilityFiles(id, manifest = {}, files = {}) {
  *   workspace     extra oats-workspace.yaml keys, merged over the base (defaults: messaging/tasks/knowledge none)
  *   local         extra oats-local.yaml keys (launch-configs, settings, clones…)
  *   files         any other repo files
- * → { base, dep, root, repo, key, ref, member, env, remoteOptions, inEnv, prepare, spawn, cli, commit, cleanup }
+ *   t             the test context: the fixture registers t.after(fx.cleanup) at creation, so a test that
+ *                 fails, rejects or times out still removes its base (awebai/oats#830)
+ * → { base, dep, root, repo, key, ref, member, env, remoteOptions, inEnv, prepare, spawn, cli, commit, beforeCleanup, cleanup }
  * In-process kernel calls a test makes itself (session start, retire…) go through
  * fx.inEnv(() => …) so they never see the operator's environment.
  */
-export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilityDirs = {}, workspace = {}, local = {}, files = {}, name = "fixture" } = {}) {
+export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilityDirs = {}, workspace = {}, local = {}, files = {}, name = "fixture", t } = {}) {
   const base = fixtureBase("oats-v2-");
   if (/[\s@]/.test(base)) throw new Error(`tmpdir ${base} contains whitespace or @ (repo keys embed it)`);
   const bare = join(base, "remotes", "ws.git");
@@ -192,18 +194,32 @@ export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilit
     const r = spawnSync(process.execPath, [CLI, ...args], { cwd, env: { ...env, ...extra }, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
     return { ...r, json: () => JSON.parse(r.stdout.trim().split("\n").pop()) };
   };
-  /** Kills the fixture's own `oats` server, checks that no process it started still works in the
-   *  base (host-fixture.mjs assertNoFixtureProcesses), removes the base whatever the check found,
-   *  then fails naming what was left. */
+  /** What the test ends itself before the leftover check: a process it left running on purpose (a
+   *  group the kernel must not signal). Its own t.after would run after the fixture's, too late:
+   *  node:test runs t.after hooks in the order they were added. */
+  const before = [];
+  let cleaned = false;
+  fx.beforeCleanup = (fn) => {
+    if (cleaned) throw new Error(`the fixture ${base} is already cleaned up: a function registered now would never run`);
+    before.push(fn);
+  };
+  /** Runs the beforeCleanup functions in order, kills the fixture's own `oats` server, checks that no
+   *  process it started still works in the base (host-fixture.mjs assertNoFixtureProcesses), removes
+   *  the base whatever the check found, then throws the first error: a beforeCleanup function's, then
+   *  the check's, naming what was left. Only the first call does this; a later one returns quietly. */
   fx.cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    const errors = [];
+    for (const fn of before) { try { fn(); } catch (e) { errors.push(e); } }
     // Its own `oats` server, if a test launched on real tmux: killed by socket, never by name.
     if (ownTmuxTmpdir) removeTmuxTmpdir(ownTmuxTmpdir);
-    let leftover;
     const saved = process.env;
     process.env = fixtureProcessEnv(); // as fx.inEnv: the check may be what first loads the kernel
-    try { assertNoFixtureProcesses(base); } catch (e) { leftover = e; } finally { process.env = saved; }
+    try { assertNoFixtureProcesses(base); } catch (e) { errors.push(e); } finally { process.env = saved; }
     rmSync(base, { recursive: true, force: true });
-    if (leftover) throw leftover;
+    if (errors.length) throw errors[0];
   };
+  t?.after(() => fx.cleanup());
   return fx;
 }

@@ -64,13 +64,7 @@ const pgidOf = (pid) => Number(execFileSync("ps", ["-o", "pgid=", "-p", String(p
 function deployment(t, { required = true, work = "checkout", hookless = false, lifecycle = false, requiredSpawn = false } = {}) {
   const hooks = { worktree: required ? { command: HOOK_COMMAND, required: true } : HOOK_COMMAND, ...(lifecycle ? { spawn: requiredSpawn ? { command: "spawn.mjs", required: true } : "spawn.mjs", retire: "retire.mjs" } : {}) };
   const capabilities = hookless ? {} : { "test.setup": { manifest: { hooks }, files: { "hook.mjs": HOOK, ...(lifecycle ? LIFECYCLE : {}) } } };
-  const fx = v2Deployment({ souls: { dev: { soul: { work, ...(hookless ? {} : { capabilities: { "test.setup": { from: "here" } } }) } } }, capabilities });
-  // What the test started itself, and may leave running on purpose (a group the kernel must not signal),
-  // it ends before the fixture's leftover check (awebai/oats#828). node:test runs t.after hooks in the
-  // order they were added, so a hook added after this one would run after the check: ends run here.
-  const ends = [];
-  fx.endAtCleanup = (end) => { ends.push(end); };
-  t.after(() => { try { for (const end of ends) end(); } finally { fx.cleanup(); } });
+  const fx = v2Deployment({ souls: { dev: { soul: { work, ...(hookless ? {} : { capabilities: { "test.setup": { from: "here" } } }) } } }, capabilities, t });
   // The kernel's git keeps the invoker's configuration (private repositories need its credential helpers).
   // Its tests must not: a system or global helper (macOS Git's osxkeychain) can wait on a prompt nobody
   // answers. So no system or global config, no prompt, no askpass, and no credential helper.
@@ -203,10 +197,10 @@ test("a hook answer's warning is reported and the rest of the answer is ignored"
 });
 
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
-/** When the test ends, before the fixture's leftover check, SIGKILL the whole process group `pgid` and each
- *  of `pids`: a test ends every process it started, a child its hook forked (one that ignores SIGTERM
- *  included), whatever the kernel did. */
-const endGroupAfter = (fx, pgid, ...pids) => fx.endAtCleanup(() => {
+/** When the test ends, before the fixture's leftover check (awebai/oats#828), SIGKILL the whole process
+ *  group `pgid` and each of `pids`: a test ends every process it started, a child its hook forked (one
+ *  that ignores SIGTERM included), whatever the kernel did. */
+const endGroupAfter = (fx, pgid, ...pids) => fx.beforeCleanup(() => {
   try { process.kill(-pgid, "SIGKILL"); } catch { /* gone */ }
   for (const pid of pids) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } }
 });

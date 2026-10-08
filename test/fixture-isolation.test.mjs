@@ -121,8 +121,8 @@ test("#816 assertNoFixtureProcesses: works whatever PATH the test gives the kern
   } finally { process.env.PATH = saved; process.kill(pid, "SIGKILL"); }
 });
 
-test("#816 v2Deployment: an in-process call creates nothing, before or after cleanup, and leaves the scheduler stubs as they are", async () => {
-  const fx = v2Deployment();
+test("#816 v2Deployment: an in-process call creates nothing, before or after cleanup, and leaves the scheduler stubs as they are", async (t) => {
+  const fx = v2Deployment({ t });
   try {
     const stub = join(fx.base, "fixture-bin", "launchctl");
     const before = statSync(stub).mtimeMs;
@@ -133,8 +133,8 @@ test("#816 v2Deployment: an in-process call creates nothing, before or after cle
   assert.equal(existsSync(fx.base), false, "nothing is recreated under a removed base");
 });
 
-test("#816 v2Deployment: its base, its children's environment and its in-process calls follow the fixture rules, and its cleanup checks for leftover processes", async () => {
-  const fx = v2Deployment();
+test("#816 v2Deployment: its base, its children's environment and its in-process calls follow the fixture rules, and its cleanup checks for leftover processes", async (t) => {
+  const fx = v2Deployment({ t });
   let leftover;
   try {
     assert.ok(fx.base.length < 40, fx.base);
@@ -245,9 +245,8 @@ test("#830 fx.beforeCleanup: the same process ended by a t.after added after the
   } finally { endLeftover(seen.pid); }
 });
 
-test("#830 fx.beforeCleanup: every function runs in order even when one throws, the cleanup still runs, then the first error is thrown", () => {
-  const fx = v2Deployment();
-  bases.push(fx.base);
+test("#830 fx.beforeCleanup: every function runs in order even when one throws, the cleanup still runs, then the first error is thrown", (t) => {
+  const fx = v2Deployment({ t });
   const ran = [];
   fx.beforeCleanup(() => { ran.push(1); throw new Error("first"); });
   fx.beforeCleanup(() => { ran.push(2); throw new Error("second"); });
