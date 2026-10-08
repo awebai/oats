@@ -8,6 +8,7 @@ import { devNull, tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { capabilityFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { fixtureBase, fixtureEnv, linkExecutables, waitUntil as waitFor } from "./helpers/host-fixture.mjs";
+import { pathLimitSkip } from "./helpers/path-limit.mjs";
 import { fingerprintTree, statusDisagreement, storedTreeDigest } from "../lib/core.mjs";
 import { workRecoveryLines } from "../lib/retire-output.mjs";
 import { lifecyclePlan } from "../packages/desktop/renderer/lifecycle-contract.mjs";
@@ -4160,7 +4161,7 @@ test("the retire plan's recovery note fits 4096 characters: declared roots are l
   assert.equal(homeRecoveryNote(planAt(f, "dev-bounded")), `${head}; not copied: 2 declared roots, too long to list here`);
 });
 
-test("the retire plan's recovery note keeps a long recovery path whole while it fits 4096 characters, shortening the list first, and names where to find a path that does not fit", () => {
+test("the retire plan's recovery note keeps a long recovery path whole while it fits 4096 characters, shortening the list first, and names where to find a path that does not fit", (t) => {
   // The deployment spelled through links in its parent: the plan names the recovery by that spelling.
   // The three roots acme.ident declares are listed as ".ident, .ident-id-*, .ident-state (acme.ident)".
   const f = fixture({ capabilities: identCapability() });
@@ -4169,6 +4170,9 @@ test("the retire plan's recovery note keeps a long recovery path whole while it 
   const recoveryAt = (dep) => `${dep}${instances}/.oats-retirement/recovery`;
   const headAt = (dep) => `recovery: the home is copied to ${recoveryAt(dep)} before the home is removed, when it changed since spawn`;
   const all = "; not copied: .ident, .ident-id-*, .ident-state (acme.ident)";
+  // The longest path the plan opens: the home's instance.json, under the deployment spelled for the longest note.
+  const skip = pathLimitSkip(4096 - headAt("").length + 1 + `${instances}/dev-deep/instance.json`.length, f.base);
+  if (skip) { t.skip(skip); return; }
   // A note of exactly 4096 characters: the path and every root.
   const exact = 4096 - headAt("").length - all.length;
   let dep = spelledAt(f.base, f.dep, exact);
@@ -4284,12 +4288,15 @@ console.log(JSON.stringify({ meta: { retired: true } }));
   assert.equal(readFileSync(join(spawned.home, "work", "human.txt"), "utf8"), "human bytes\n", "the home and its work are kept");
 });
 
-test("the retire plan's drift note fits 4096 characters with two long branch names, and the Desktop's own reader accepts the plan", () => {
+test("the retire plan's drift note fits 4096 characters with two long branch names, and the Desktop's own reader accepts the plan", (t) => {
   const f = fixture();
   const a = spawn(f, "drift");
   const work = join(a.home, "work");
   // Two valid branch names of 2291 characters each (12 components of 190): each fits its own field, not both one note.
   const long = (c) => Array.from({ length: 12 }, (_, i) => `${c}${i}`.padEnd(190, c)).join("/");
+  // Git writes the branch as refs/heads/<name>.lock: a path that macOS does not open.
+  const skip = pathLimitSkip(join(f.repo, ".git", "refs", "heads", `${long("a")}.lock`).length, f.base);
+  if (skip) { t.skip(skip); return; }
   execFileSync("git", ["-C", work, "switch", "--quiet", "-c", long("a")]);
   const metaPath = join(a.home, "instance.json");
   write(metaPath, JSON.stringify({ ...readJson(metaPath), branch: long("b") }, null, 2) + "\n");

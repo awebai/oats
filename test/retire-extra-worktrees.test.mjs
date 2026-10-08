@@ -10,6 +10,7 @@ import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { completeDeferredRetirement, retireInstance } from "../lib/core.mjs";
+import { pathLimitSkip } from "./helpers/path-limit.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 /** A capability whose retire hook records that it ran (`<root>/retire-hook-ran`) and, when the home holds
@@ -409,6 +410,9 @@ const LONG_BRANCH = Array.from({ length: 16 }, (_, i) => `${String(i).padStart(2
 
 test("a tree whose branch name is too long for its note: the note keeps the tree's path and names the plan JSON for its HEAD, and the re-home target as well when it is re-homed", async (t) => {
   const w = await instance(t, "dev-longbranch");
+  // Git writes the longer branch as refs/heads/<name>.lock: a path that macOS does not open.
+  const skip = pathLimitSkip(join(w.fx.member, ".git", "refs", "heads", `${LONG_BRANCH}-d.lock`).length, dirname(w.fx.member));
+  if (skip) { t.skip(skip); return; }
   const clean = w.tree("clean", LONG_BRANCH);
   const dirty = w.tree("dirty", `${LONG_BRANCH}-d`);
   writeFileSync(join(dirty, "x.txt"), "x\n");
@@ -447,6 +451,9 @@ test("a tree whose path alone is too long for its note is named by where it is l
   // them: the full note is the shortest one, `rest` characters beside the path.
   const full = (path) => `extra worktree ${path} (branch agents/deep) is clean and would be removed; its branch and commits stay in ${w.fx.member}`;
   const rest = full("").length;
+  // The longest path the plan opens: the .git of the tree whose path is one character too long.
+  const skip = pathLimitSkip(4096 - rest + 1 + "/.git".length, base);
+  if (skip) { t.skip(skip); return; }
   // A note of exactly 4096 characters: whole.
   let dep = spelled(4096 - rest - treeAt("").length);
   let plan = planAt(dep);
