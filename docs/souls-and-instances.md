@@ -699,7 +699,18 @@ Every refusal of the copy made before the hooks, whatever its cause, ends by
 saying what the retire has done by then: no retire hook has run, no recovery
 was written and nothing was deleted, the instance is not retired, its home
 and work are kept, and its session has been stopped, or this retire stopped
-no session. A refusal after the hooks does not say that.
+no session. A refusal of the recovery after the hooks (the copy of what they
+moved, or the one recovery of a home that had nothing to preserve before
+them) ends the same way: the retire hooks have run; the home, its work and
+the pre-hook recovery (if any) are kept; and its session has been stopped, or
+this retire stopped no session.
+
+A copy that fails removes what it staged, so the refusal carries the copy's
+own cause. The copy gives each directory its source's mode, so a read-only
+directory in the work (a Go module cache, for example) is copied read-only;
+the cleanup makes every staged directory writable before it removes them, and
+never replaces the original error. A staging directory that still cannot be
+removed is named in the refusal, to be removed by hand.
 
 A snapshot that holds the home only (the work had nothing to preserve
 before the hooks) has no work copy to stand for it. It gets the work under
@@ -970,6 +981,26 @@ cannot be read, the worktree is recorded `absent`, never `removed`. A
 quarantine retry then keeps `could not verify removal` as an incomplete
 item, which only `--force` clears, as the operator's explicit override.
 
+A plain retire re-homes `work/` (see the extra trees below for where).
+Attached children that use this home's `work/` as their own (their
+`instance.json` says `work: "attached"` and their `work` is a link to
+`<home>/work`, directly or through an alias of it given as `--work-dir`)
+would be left with a dangling link. The retire finds them before it moves
+the worktree, and repoints a child only if its link is still the one it
+found. Each one this retire
+stopped as a recorded child is repointed to the retained worktree: a new link
+is renamed over the old one, so the link is never missing. This is the last
+step before the home is removed, once the worktree is at its new path and
+nothing is left at `work/`, and it also runs when the home is then kept for a
+retry. A relink that fails is a warning in the summary and the receipt's
+`warnings`, with the command to repoint the link by hand; the retire is not
+undone. A child that is not attached, whose link leads elsewhere, or that this
+retire did not stop is not touched. With `--discard-worktree` the worktree is
+removed and an attached child's link dangles. The retire plan names the
+attached children in one note that covers both cases. Only the link changes:
+the child's `instance.json` is not rewritten, and its AGENTS.md and TASK.md
+still name the old path.
+
 #### Extra trees at retire
 
 An instance can hold [extra trees](#extra-trees) in its home beside `work/`.
@@ -1040,6 +1071,64 @@ keeping the home, rather than move or remove a tree in a way the plan did
 not say. The retire hooks have run by then, and no tree was moved or
 removed. The fields are in
 [the CLI API](desktop-cli-api.md#retire).
+
+#### After a retire: inspect, restore, dispose
+
+A retire can leave two things behind outside the removed home: a recovery
+copy and a retained worktree. Nothing in OATS removes either; each stays
+until you remove it. What follows are facts to decide with, not a judgement
+that anything is safe to delete. The uncommitted and untracked bytes in a
+recovery are in no commit: a retained worktree or the source may still hold
+them, or the recovery may be the only copy, so inspect them before you
+remove it.
+
+**Recovery copies** are at
+`<instances>/.oats-retirement/recovery/<instance>-<random>/`, beside the
+homes of the agent the instance belonged to. The retire summary prints the
+path, the receipt names it as `workRecovery.path`, and the `retired` event
+in the workspace log keeps it as `data.workRecovery`, so `oats instance
+events <instance>` still shows it after the home is gone. Its
+`recovery.json` says what it holds:
+
+- `phase`: `"complete"` once the check after the retire hooks concluded;
+  `"before-hooks"` when the retire stopped before that, which still leaves a
+  complete, verified snapshot of the state before the hooks.
+- `classes`: what was preserved (`changed instance-home bytes`, `untracked
+  or ignored worktree bytes`, `directory work bytes`, …).
+- `afterHooks`: `{home, work}`, present when the hooks changed something
+  and `after-hooks/` holds a second copy of that part.
+- `home`, `outputs` and `notCopied`: the home entries copied, the untracked
+  or ignored outputs copied, and the declared entries left out.
+
+To inspect one, read `recovery.json`, then the parts. `repo/` is a
+standalone clone of a worktree instance's repository with its uncommitted
+state in place: `git -C <recovery>/repo status`, `git -C <recovery>/repo
+log`, `git -C <recovery>/repo stash list`. `work/` is a directory
+instance's work, `home/` the copied home (notes, `STATE.md`, …), and
+`after-hooks/` the parts as the retire hooks left them.
+
+To restore from one, take what you need back into the source repository or
+wherever it belongs. Commits: fetch the branch from the recovery's clone
+under a new name, so that nothing in the source repository is overwritten:
+`git -C <source repository> fetch <recovery>/repo <branch>:refs/heads/<new
+branch>`. Uncommitted files: copy them back, or commit them in the
+recovery's clone first and fetch that branch (the recovery then no longer
+holds the state exactly as it was taken). Home files: copy them from
+`home/`.
+
+To dispose of one, once its contents are settled elsewhere, remove the
+directory by hand. A copy keeps the modes of what it copied, so a read-only
+directory from the work is read-only there too: `chmod -R u+w <recovery>`,
+then `rm -rf <recovery>`.
+
+**Retained worktrees** are at `<deployment>/.agents/worktrees/<repo>/<leaf>`
+(see [extra trees at retire](#extra-trees-at-retire) for the leaf). They are
+ordinary linked worktrees of the source repository, with their uncommitted
+state intact: `git -C <source repository> worktree list` lists them. Once
+the branch is merged or pushed and nothing uncommitted in the tree is still
+wanted, `git -C <source repository> worktree remove <path>` removes it; Git
+refuses a tree with uncommitted changes unless you pass `--force`. Its
+branch stays in the repository either way.
 
 ## Work modes
 
@@ -1137,7 +1226,10 @@ service agents such as reviewers.
 
 Attached agents are guests: never switch branches or rewrite history, touch
 only what the briefing names, keep commits small and attributable. Retiring
-an attached instance never removes the shared tree. The packaged
+an attached instance never removes the shared tree. When its owner retires
+and the tree is re-homed, the attached instance's `work` link is repointed to
+the tree's new path ([retire](#retire)); its AGENTS.md and TASK.md still name
+the old one. The packaged
 `work-attached` instruction source carries this discipline into each generated instance AGENTS.md.
 
 ### `directory` — independent execution

@@ -328,10 +328,15 @@
             },
             "work": {
               "type": "array",
-              "description": "Relative roots under work/ that a worktree instance's capability generates. Their untracked or ignored bytes do not count as the instance's untracked or ignored worktree bytes; they are still copied when a recovery copy is made.",
+              "description": "Relative roots under work/ that a worktree instance's capability generates. Their untracked or ignored bytes do not count as the instance's untracked or ignored worktree bytes; they are still copied when a recovery copy is made. A backslash reads as /, one leading ./ and one trailing / are dropped, and what is left must be a relative path with no empty, . or .. segment; an absolute path (/x, C:/x) is refused. Two entries of one manifest that overlap (the same root, or one inside the other) are refused; spawn also refuses roots of different capabilities that overlap, and a root that is a symlink in the work.",
               "items": {
                 "type": "string",
-                "minLength": 1
+                "minLength": 1,
+                "pattern": "^(?:\\.[/\\\\])?(?!\\.{1,2}(?:[/\\\\]|$))[^/\\\\]+(?:[/\\\\](?!\\.{1,2}(?:[/\\\\]|$))[^/\\\\]+)*[/\\\\]?$",
+                "not": {
+                  "description": "A Windows absolute path is refused on every host.",
+                  "pattern": "^[A-Za-z]:[/\\\\]"
+                }
               }
             }
           },

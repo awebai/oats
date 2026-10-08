@@ -19,7 +19,7 @@
  * `init` / `use` / `install` / `restore` / `list` / `catalog` / `remove` /
  * `migrate` / `trust` / `inject` are gone with the installed-capability tier.
  */
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readSync, readdirSync, realpathSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readSync, readdirSync, readlinkSync, realpathSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { constants as osConstants, homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
@@ -1158,6 +1158,35 @@ async function worktreeCmd() {
   }
 }
 
+/** realpath of `p`, or of its nearest existing ancestor with the rest re-appended:
+ *  how lib/instance-events.mjs names a removed home (realOrNearest). */
+function realOrNearestPath(p) {
+  let d = resolve(p); const tail = [];
+  while (!existsSync(d) && dirname(d) !== d) { tail.unshift(basename(d)); d = dirname(d); }
+  try { return join(realpathSync(d), ...tail); } catch { return resolve(p); }
+}
+/** #642: the addresses of a RETIRED instance `name` under `root`, from the
+ *  workspace logs that outlive its home (<deployment>/.agents/events/
+ *  <agent>--<name>.jsonl), as `{ root, agent, home }` like resolveInstance's
+ *  candidates. Asked only when no live home resolves. A `home` (the --home
+ *  claim) counts only when it is <root>/<agent>/instances/<name> by real path
+ *  and that agent's log exists; the agent is then read from the path, never
+ *  from the log's file name, and the row carries the claim as `asked` while
+ *  `home` is the scope's spelling, from which the logs are found (an alias of
+ *  the agents root elsewhere would lead readEvents to another deployment). */
+function retiredInstanceAddresses(root, name, home) {
+  const events = join(workspaceOf(root), ".agents", "events"), suffix = `--${name}.jsonl`;
+  const logged = (agent) => { try { return lstatSync(join(events, `${agent}${suffix}`)).isFile(); } catch { return false; } };
+  if (home !== undefined) {
+    const h = resolve(home), agent = basename(dirname(dirname(h)));
+    const ok = basename(h) === name && basename(dirname(h)) === "instances" && agent && realOrNearestPath(h) === realOrNearestPath(join(root, agent, "instances", name)) && logged(agent);
+    return ok ? [{ root, agent, home: join(root, agent, "instances", name), asked: home }] : [];
+  }
+  let entries; try { entries = readdirSync(events, { withFileTypes: true }); } catch { return []; }
+  return entries.filter((e) => e.isFile() && e.name.endsWith(suffix) && e.name.length > suffix.length).map((e) => e.name.slice(0, -suffix.length)).sort()
+    .map((agent) => ({ root, agent, home: join(root, agent, "instances", name) }));
+}
+
 /** `oats instance <git|diff> <instance>` — K1: read-only Git observation of one
  *  instance's work tree. The instance is addressed qualified: an explicit
  *  --home, or a name under the --dir scope (team roots included) that resolves
@@ -1179,8 +1208,21 @@ function instanceCmd() {
       const { resolveInstance } = await_import_lifecycle();
       // K7b: --home is an ADDRESS claim, checked like K1 — it must be a home of
       // exactly this name under the scope (E_HOME_MISMATCH otherwise).
-      const home = resolveInstance(dirFlag(), root, name, homeOpt ? { home: homeOpt } : {}).home;
-      const ev = readEvents(home, { ...(limit !== undefined ? { limit: Math.max(1, Math.min(2000, Number(limit) || 200)) } : {}), ...(since ? { since } : {}) });
+      let home, asked;
+      try { home = resolveInstance(dirFlag(), root, name, homeOpt ? { home: homeOpt } : {}).home; }
+      catch (e) {
+        // #642: no live home — a retired instance still answers from the
+        // workspace log, which outlives its home (home source absent,
+        // incarnation null). A live home never reaches this.
+        const gone = homeOpt ? e.code === "E_HOME_MISMATCH" && !existsSync(homeOpt) : e.code === "E_SESSION_UNKNOWN";
+        const candidates = gone ? retiredInstanceAddresses(root, name, homeOpt) : [];
+        if (candidates.length > 1) return bail("E_AMBIGUOUS_INSTANCE", `retired instance ${JSON.stringify(name)} has ${candidates.length} workspace logs (one per agent); pass --home <abs>`, { candidates });
+        if (!candidates.length) throw e;
+        home = candidates[0].home;
+        // The logs are found from the scope's spelling; the answer names the home as --home spelled it.
+        asked = candidates[0].asked;
+      }
+      const ev = readEvents(home, { ...(limit !== undefined ? { limit: Math.max(1, Math.min(2000, Number(limit) || 200)) } : {}), ...(since ? { since } : {}), ...(asked !== undefined ? { asked } : {}) });
       if (JSON_MODE) { jsonOk(ev); return; }
       console.log(`${ev.instance}: ${ev.returned} of ${ev.count} event(s)${ev.truncated ? " (window truncated)" : ""}${ev.waitingOnYou ? ` — waiting on you since ${ev.waitingOnYou.since} (${ev.waitingOnYou.producer})` : ""}`);
       for (const e of ev.events) console.log(`  ${e.at ?? "?"}  ${e.kind.padEnd(20)} ${e.producer}${e.data ? `  ${JSON.stringify(e.data).slice(0, 120)}` : ""}`);
@@ -2870,7 +2912,9 @@ function retireCmd() {
     process.exit(1);
   }
   console.log(`Retired ${r.retired} (agent ${r.agent})${r.worktreeRemoved ? ", worktree removed" : ""}`);
-  for (const k of r.childrenStopped || []) console.log(`  child ${k.instance}: ${k.alreadyIdle ? "already idle" : "stopped"}`);
+  // An attached child the retire repointed to the retained worktree (#718), as its link now reads.
+  const followsWorktree = (k) => { if (r.retention?.worktree !== "retained") return false; try { return readlinkSync(join(k.home, "work")) === r.retention.movedTo; } catch { return false; } };
+  for (const k of r.childrenStopped || []) console.log(`  child ${k.instance}: ${k.alreadyIdle ? "already idle" : "stopped"}${followsWorktree(k) ? `; its work now links to the retained worktree ${r.retention.movedTo}` : ""}`);
   // Preserving work and not saying so leaves the operator believing it is gone,
   // which is most of the harm of deleting it. Name the classes and the path.
   for (const line of workRecoveryLines(r)) console.log(line);

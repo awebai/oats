@@ -2153,6 +2153,15 @@ the keyed-spawn fields `decision`, `spawnIdempotencyKey`, `spawnCompleted` and
   the copy at `<home>/.oats/modules/<cap>/`. Module skills are copied flat to
   `<home>/.agents/skills/<skill>/` (homes spawned by 0.30.1 or earlier keep
   `<home>/.agents/skills/<cap>/<skill>/`).
+- `branch`: for a worktree instance, the branch its worktree was created on.
+  For an attached or checkout instance, the branch the tree's HEAD named at
+  the spawn, or `null` when HEAD was detached or named a ref OATS carries no
+  branch name for (one whose name is not valid UTF-8); never the word
+  `"HEAD"`. The key is absent when the tree's HEAD could not be read, and for
+  directory and workspace instances. A home spawned before 0.49.0 may record
+  `"HEAD"` for a detached tree; [`oats instance git`](#instance-git-state-oats-instance-gitdiff-instancegitapi-1-oats-0247)
+  reads it as no recorded branch. The roster row and the spawn result carry
+  the same value (the spawn result has `null` where the key is absent).
 - `base` (a worktree instance): `{ref, oid}`, the commit its branch started
   at, as the spawn result states it (see Placement under the spawn preview).
 - `providers.<cap>`: the merged payload (`{}` when none).
@@ -2584,6 +2593,11 @@ tree: `E_NO_WORKTREE`.
 
 - `observation.revision` is the HEAD oid (or `unborn`); `branch` is `null`
   when detached.
+- `recorded` is what the spawn recorded in `instance.json`: `branch` (`null`
+  when none was recorded) and `repo`. `drift` is `true` only when a branch
+  was recorded and the tree is not on it. A home spawned before 0.49.0 may
+  record the word `"HEAD"` for a detached attached or checkout tree; no
+  branch has that name, so it reads as `branch: null` with `drift: false`.
 - `upstream` without one is all `null` (unknown, not zero). `base` compares
   with the default branch's merge-base; `source` is `origin/HEAD` or
   `well-known`; none found is all `null` plus a note.
@@ -2689,8 +2703,8 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
 - **Incarnation.** Each row carries the writing home's `createdAt` (or
   `null` for old rows); the top-level `incarnation` is the current home's (or
   `null`). Earlier incarnations are returned as this address's history.
-- **Address.** `--home` must be a home of `<instance>` (`E_HOME_MISMATCH`).
-  A home has one address in storage, its real path (since 0.40.2): rows are
+- **Address.** `--home` must be a home of `<instance>` (`E_HOME_MISMATCH`),
+  or a retired one (below). A home has one address in storage, its real path (since 0.40.2): rows are
   written and matched under it, whatever spelling a writer or reader used (a
   deployment reached through a symlink, a symlinked agents root). The answer
   keeps the spelling it was asked in: the top-level `home` and every
@@ -2719,6 +2733,27 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
     `oats status --dir <symlink>` could not see, are read now. They cannot
     surface a stale claim: such a session wrote its clears and its session
     boundaries under the real path too, so that history is complete.
+- **A retired instance** (#642) answers from its workspace log, which
+  outlives the home. This applies only when no live home resolves: a live
+  home of `<instance>` under the scope is always answered as above. Without
+  `--home`, the kernel lists `<deployment>/.agents/events/*--<instance>.jsonl`
+  (the deployment is the directory holding the scope's agents root) and takes
+  the agent from the file name. One log answers for
+  `<agents root>/<agent>/instances/<instance>`. Several (one name retired
+  under two agents) refuse with `E_AMBIGUOUS_INSTANCE`, the message naming
+  the count and asking for `--home`, and `details.candidates[]` listing each
+  as `{root, agent, home}`. No log is `E_SESSION_UNKNOWN`, as before. A
+  `--home` naming a removed home answers only when it is
+  `<agents root>/<agent>/instances/<instance>` (compared by real path, so a
+  symlinked spelling of the root is the same address) and
+  `<deployment>/.agents/events/<agent>--<instance>.jsonl` exists; the agent
+  is taken from the path. The logs are read from the scope's spelling of the
+  home, and the answer's `home` (and each row's) is the `--home` as given.
+  Any other removed `--home` is `E_HOME_MISMATCH`.
+  The answer has the same shape as a live home's: the `home` source is
+  `absent`, and `incarnation` is `null` (no `instance.json` remains), so
+  `waitingOnYou` is `null` and `waitingClaims` is empty. The rows keep the
+  incarnation they were written with.
 - **Window.** `count` is the rows after `--since`; `returned` the window
   (`--limit`, default 200, 1–2000); `truncated` means rows were cut or a
   source was a tail. `lastEvent` is `{kind, at, producer, incarnation}` of
@@ -2940,7 +2975,13 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   (`retirement.disposable.home`): `not copied: <roots> (<capability>)`, the
   roots as written in the manifest, in the order the baseline stores them
   (sorted by capability, then root), one group per capability, groups
-  separated by `; `. At most 16 roots are listed, then `, and N more`.
+  separated by `; `. At most 16 roots are listed, and only as many as fit in
+  about 1024 characters; the rest are `, and N more`. When not even one
+  fits, the tail is `not copied: N declared roots, too long to list here`.
+  The recovery path is never cut: when it is too long for the note, the
+  note reads `recovery: the home is copied to the recovery directory beside
+  the home … (its path is too long for this note: the retire receipt names
+  it as workRecovery.path, and the retire summary prints it)`.
   The second is the line above in worktree mode, `recovery: work/ is copied
   there when it is not empty` in directory mode, and absent in checkout,
   attached and workspace modes. They are strings in `notes`: no other key
@@ -2963,12 +3004,37 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   - `reason`: `null` for `"remove"`, why the tree is not clean for
     `"retain"`, why it is refused for `"refuse"`.
 
-  `notes` also carries one string per tree that says the same. The trees are
+  `notes` also carries one string per tree that says the same. When one is
+  too long for a note, its longest parts (branch, repository, target,
+  reason) are replaced, longest first, by a pointer to `facts.extraWorktrees`;
+  the tree's path stays whole, or, when the path alone is too long, the note
+  says `an extra worktree whose path is too long for this note …;
+  facts.extraWorktrees in the plan JSON lists it`. The trees are
   part of `planRevision`: a tree created, removed, dirtied or cleaned between
   the plan and the apply, or a change of its disposition or target (another
   directory taking the `<leaf>-N` it would move to, for example), refuses a
   guarded apply with `E_PLAN_STALE` before anything runs. A reader that does
   not know the key can ignore it; the `notes` strings say the same.
+- Every string in `notes` is at most 4096 characters, and a plan has at most
+  64 of them, the limits the Desktop reads (0.49.0, #658). The extra trees
+  are the only notes whose number is not fixed: when they would pass 64, the
+  last tree note kept says `and N more extra worktrees (facts.extraWorktrees
+  in the plan JSON lists every one)`. A note never cuts a name or a path:
+  the drift note gives way, longest name first, to a pointer to
+  `facts.work.branch` or `facts.recordedBranch`; a session note whose reason
+  is too long (a process's command line, a tmux error) points to
+  `facts.session.note`.
+- A worktree-mode plan whose recorded children include attached instances
+  that use this home's `work/` (`instance.json` `work: "attached"`, `work` a
+  link to `<home>/work`, directly or through another link) has one note naming them (0.49.0, #718): `attached
+  child instance(s) <names> use this home's work/ as their work: a retire
+  that keeps the worktree repoints their work link to it; with
+  --discard-worktree the worktree is removed and their work link will
+  dangle`. It holds for either choice; no other key changes. A relink that
+  fails is a string in the receipt's `warnings`.
+- `facts.recordedBranch` is `null` where the home records the word `"HEAD"`
+  (a detached checkout or attached spawn before 0.49.0, #641): it is not a
+  branch name, so `facts.work.drift` is `false` for it as well.
 
 Plain `retire` keeps a worktree-mode instance's work: the worktree is moved
 (`git worktree move`) to `<deployment>/.agents/worktrees/<repo>/<branch>` (a

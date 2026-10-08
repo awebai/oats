@@ -7,9 +7,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { completeDeferredRetirement, retireInstance } from "../lib/core.mjs";
+import { pathLimitSkip } from "./helpers/path-limit.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 /** A capability whose retire hook records that it ran (`<root>/retire-hook-ran`) and, when the home holds
@@ -393,4 +394,97 @@ test("a tree made by `oats worktree add` (#796) is retired exactly like a raw-gi
   assert.equal(existsSync(w.home), false);
   assert.equal(w.registered(path), false);
   assert.equal(w.branchTip("agents/dev-added-x"), tip, "its branch stays in the clone");
+});
+
+// ---- #658: each tree's note fits what the Desktop reads (at most 64 notes, each at most 4096 characters) ----
+
+const SEE = "facts.extraWorktrees in the plan JSON";
+/** The plan's notes, each checked against the Desktop's limits. */
+function boundedNotes(plan) {
+  assert.ok(plan.notes.length <= 64, `at most 64 notes: ${plan.notes.length}`);
+  for (const note of plan.notes) assert.ok(note.length <= 4096, `a note of ${note.length} characters: ${note.slice(0, 200)}…`);
+  return plan.notes;
+}
+/** A branch name of about 3900 characters, in components Git can store as files. */
+const LONG_BRANCH = Array.from({ length: 16 }, (_, i) => `${String(i).padStart(2, "0")}${"b".repeat(243)}`).join("/");
+
+test("a tree whose branch name is too long for its note: the note keeps the tree's path and names the plan JSON for its HEAD, and the re-home target as well when it is re-homed", async (t) => {
+  const w = await instance(t, "dev-longbranch");
+  // Git writes the longer branch as refs/heads/<name>.lock: a path that macOS does not open.
+  const skip = pathLimitSkip(join(w.fx.member, ".git", "refs", "heads", `${LONG_BRANCH}-d.lock`).length, dirname(w.fx.member));
+  if (skip) { t.skip(skip); return; }
+  const clean = w.tree("clean", LONG_BRANCH);
+  const dirty = w.tree("dirty", `${LONG_BRANCH}-d`);
+  writeFileSync(join(dirty, "x.txt"), "x\n");
+  const plan = w.plan();
+  const notes = boundedNotes(plan);
+  const rows = Object.fromEntries(plan.facts.extraWorktrees.map((r) => [r.path, r]));
+  assert.equal(rows[clean].branch, LONG_BRANCH, "the plan JSON has the whole name");
+  assert.ok(`extra worktree ${clean} (branch ${LONG_BRANCH}) is clean and would be removed; its branch and commits stay in ${w.fx.member}`.length > 4096, "fixture premise: the full note is too long");
+  assert.ok(notes.includes(`extra worktree ${clean} (its HEAD: see ${SEE}) is clean and would be removed; its branch and commits stay in ${w.fx.member}`), notes.join("\n"));
+  // Re-homed: the target (named after the branch) is longest and goes first, then the HEAD; the reason stays.
+  assert.equal(rows[dirty].disposition, "retain");
+  assert.ok(notes.includes(`extra worktree ${dirty} (its HEAD: see ${SEE}) would be re-homed to the path ${SEE} names: ${rows[dirty].reason}`), notes.join("\n"));
+});
+
+test("a tree whose path alone is too long for its note is named by where it is listed, and a path that fits is never cut", async (t) => {
+  const w = await instance(t, "dev-deeptree");
+  const base = dirname(w.fx.dep);
+  // The deployment spelled through links in its parent that lead back to it: the plan's paths are that spelling.
+  const spelled = (length) => {
+    let need = length - w.fx.dep.length;
+    const links = [];
+    while (need > 0) {
+      const segment = need > 251 ? (need - 251 < 2 ? 249 : 251) : need;
+      const name = "l".repeat(segment - 1);
+      try { lstatSync(join(base, name)); } catch { symlinkSync(".", join(base, name)); }
+      links.push(name); need -= segment;
+    }
+    const dep = [base, ...links, "deployment"].join("/");
+    assert.equal(dep.length, length); assert.equal(realpathSync(dep), w.fx.dep);
+    return dep;
+  };
+  w.tree("deep", "agents/deep");
+  const planAt = (dep) => { const p = w.fx.cli(["retire", "dev-deeptree", "--plan", "--json", "--dir", dep]); assert.equal(p.status, 0, p.stderr + p.stdout); return p.json().result; };
+  const treeAt = (dep) => `${dep}/agents/dev/instances/dev-deeptree/.work-deep`;
+  // The tree's other parts are short here, shorter than the pointers to the plan JSON that would replace
+  // them: the full note is the shortest one, `rest` characters beside the path.
+  const full = (path) => `extra worktree ${path} (branch agents/deep) is clean and would be removed; its branch and commits stay in ${w.fx.member}`;
+  const rest = full("").length;
+  // The longest path the plan opens: the .git of the tree whose path is one character too long.
+  const skip = pathLimitSkip(4096 - rest + 1 + "/.git".length, base);
+  if (skip) { t.skip(skip); return; }
+  // A note of exactly 4096 characters: whole.
+  let dep = spelled(4096 - rest - treeAt("").length);
+  let plan = planAt(dep);
+  assert.equal(plan.facts.extraWorktrees[0].path, treeAt(dep));
+  assert.equal(plan.facts.extraWorktrees[0].disposition, "remove", JSON.stringify(plan.facts.extraWorktrees[0]));
+  assert.equal(full(treeAt(dep)).length, 4096, "fixture premise");
+  assert.ok(boundedNotes(plan).includes(full(treeAt(dep))), plan.notes.join("\n"));
+  // One character more: the note says the path is too long and where the tree is listed.
+  dep = spelled(4096 - rest - treeAt("").length + 1);
+  plan = planAt(dep);
+  assert.equal(plan.facts.extraWorktrees[0].path, treeAt(dep), "the plan JSON has the whole path");
+  const notes = boundedNotes(plan);
+  assert.ok(notes.includes(`an extra worktree whose path is too long for this note would be removed; ${SEE} lists it`), notes.join("\n"));
+  assert.equal(notes.some((n) => n.includes(".work-deep")), false, "no note holds a cut piece of the path");
+});
+
+test("more extra trees than 64 notes hold: the last tree note counts the rest, and the plan JSON lists every tree", async (t) => {
+  const w = await instance(t, "dev-manytrees");
+  const commit = w.git(w.fx.member, "rev-parse", "HEAD");
+  const paths = Array.from({ length: 70 }, (_, i) => {
+    const path = join(w.home, `.work-${String(i).padStart(2, "0")}`);
+    w.git(w.fx.member, "worktree", "add", "-q", "-b", `agents/many-${i}`, path, commit);
+    return path;
+  });
+  const plan = w.plan();
+  const notes = boundedNotes(plan);
+  assert.equal(notes.length, 64, "the cap is reached exactly");
+  assert.deepEqual(plan.facts.extraWorktrees.map((r) => r.path), paths, "the plan JSON lists all 70");
+  const shown = notes.filter((n) => n.startsWith("extra worktree "));
+  assert.deepEqual(shown.map((n) => n.split(" ")[2]), paths.slice(0, shown.length), "the first trees, in order");
+  const more = notes.indexOf(notes.find((n) => n.startsWith("and ")));
+  assert.equal(notes[more], `and ${70 - shown.length} more extra worktrees (${SEE} lists every one)`);
+  assert.equal(more, notes.indexOf(shown.at(-1)) + 1, "right after the last tree note");
 });
