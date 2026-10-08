@@ -277,3 +277,26 @@ test("spawn warnings stay inside the Desktop receipt's bounds, and a same-key re
   assert.deepEqual(replayed.warnings, spawned.warnings.slice(0, 32), "the replay answers the same contract warnings (it runs nothing again)");
   assert.ok(spawnCreationReceipt(replayed, { target, preview }));
 });
+
+// `workspace:` may name a member (docs/workspaces.md): doctor follows its cached backlink to the host, as
+// discovery does; with no host this machine has read, the member's own capabilities, and the other members
+// unchecked.
+test("doctor follows a member named as the workspace to its host, from the cache", (t) => {
+  const pair = ({ hostReadable }) => {
+    const member = v2Deployment({ capabilities: { "acme.fut": { manifest: { hooks: { worktree: "bin/mark.mjs" } }, files: { "bin/mark.mjs": mark } } } });
+    const host = v2Deployment({ workspace: { members: [member.ref] } });
+    t.after(() => { member.cleanup(); host.cleanup(); });
+    member.commit({ "oats-workspace.yaml": null, "oats-membership.yaml": { yaml: { schemaVersion: 2, workspace: host.ref } } });
+    if (!hostReadable) rmSync(host.repo, { recursive: true, force: true });
+    const at = `${member.key}:capabilities/acme.fut/oats.json#/hooks/worktree`;
+    assert.deepEqual(ok(member.cli(["sync", "--json"])).json().result.warnings.map((w) => w.path), [at], "discovery lists the member's capability");
+    const d = JSON.parse(ok(member.cli(["doctor", "--json"])).stdout);
+    return { at, warnings: d.warnings.map((w) => w.path), unchecked: d.information.filter((l) => l.startsWith("hook-events-unchecked:")) };
+  };
+  const followed = pair({ hostReadable: true });
+  assert.deepEqual({ warnings: followed.warnings, unchecked: followed.unchecked }, { warnings: [followed.at], unchecked: [] }, "the host's members, as discovery reads them");
+  const alone = pair({ hostReadable: false });
+  assert.deepEqual(alone.warnings, [alone.at], "the member's own capabilities");
+  assert.equal(alone.unchecked.length, 1, alone.unchecked.join("\n"));
+  assert.match(alone.unchecked[0], /^hook-events-unchecked: the workspace's other members' capabilities were not checked for hook events this kernel does not run: /);
+});

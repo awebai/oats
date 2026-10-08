@@ -312,7 +312,27 @@ async function doctorHookWarnings(ws) {
   } else {
     let observed = null;
     try { observed = await observeWorkspace(local.workspace, { remote }); }
-    catch (e) { unchecked("member capabilities were", e); }
+    catch (e) {
+      if (e?.code !== "E_WORKSPACE_SCHEMA" || e?.details?.notAHost !== true) unchecked("member capabilities were", e);
+      else {
+        // `workspace:` names a member (docs/workspaces.md), as discovery follows it: its host, from the
+        // member's cached oats-membership.yaml. Without the host (unreadable, or never read here), the
+        // member's own capabilities (discovery's standalone view), and the other members unchecked.
+        const member = local.workspace;
+        let backlink;
+        try { const { commit } = await remote.observeRemote(member); backlink = await remote.memoAtCommit(member, commit, "membership", () => undefined); }
+        catch (miss) { backlink = { miss }; }
+        if (backlink && !backlink.miss && backlink.kind !== "ok") unchecked("member capabilities were", e);
+        else {
+          try { if (backlink.miss) throw backlink.miss; observed = await observeWorkspace(backlink.value.workspace, { remote }); }
+          catch (host) {
+            try { warnings.push(...capabilityContractWarnings(await memberCapabilities(member))); }
+            catch (own) { unchecked(`member ${member}'s capabilities were`, own); }
+            unchecked("the workspace's other members' capabilities were", host);
+          }
+        }
+      }
+    }
     for (const ref of observed?.workspace?.members || []) {
       try {
         const membership = await confirmMembership(observed, ref, { remote });
