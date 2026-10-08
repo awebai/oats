@@ -1,7 +1,8 @@
 // Spec R, part RD: a routed soul page's composed AGENTS.md. `instructions` reaches `inspect --server` only when this
 // computer's CLI advertises soul-composed-instructions and server-probe-features AND the roster row the server holds
 // for that workspace has `probe.features` (an array) naming soul-composed-instructions. Unknown is not supported.
-// The roster is a hand-written fixture in the agreed kernel shape (fixtures/remote-composed/README.md).
+// The rosters (fixtures/remote-composed/README.md): a redacted real capture from a kernel at the #795 merge commit
+// (an older host: features null), and hand-written groups on its shape for the other cases.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -11,7 +12,9 @@ import { createInspectCache } from '../server/inspect-cache.mjs';
 import { remoteWorkspace, remoteAgents } from '../server/remote-roster.mjs';
 import { composedSupported, routedComposedSupported, hostComposes, COMPOSED_FEATURE, PROBE_FEATURES_FEATURE } from '../renderer/composed-gate.mjs';
 
-const roster = JSON.parse(readFileSync(new URL('./fixtures/remote-composed/roster.json', import.meta.url), 'utf8')).result.groups;
+const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/remote-composed/${name}`, import.meta.url), 'utf8'));
+const roster = fixture('roster.json').result.groups;
+const captured = fixture('roster-captured.json').result.groups[0];
 const group = id => structuredClone(roster.find(g => g.id === id));
 const BASE = ['operations', 'observe-max-age'];
 const cliWith = features => ({ ok: true, operationsApi: 2, bin: '/b/oats', features: [...BASE, ...features], remote: ['operations', 'roster'] });
@@ -42,6 +45,26 @@ test('gate: the truth table (local/routed × this CLI’s features × the host�
   assert.equal(hostComposes(NEW_CLI, { probe: { ok: false, features: [COMPOSED_FEATURE] } }), false);
   assert.equal(hostComposes({ ...NEW_CLI, ok: false }, group('g-composes')), false, 'no usable CLI');
   for (const g of [null, undefined, {}, { probe: null }]) assert.equal(hostComposes(NEW_CLI, g), false, JSON.stringify(g));
+});
+
+test('fixtures: the hand-written groups have the captured group’s shape; the captured host is unknown', () => {
+  const keys = v => Object.keys(v).sort();
+  assert.deepEqual(captured.probe, { ok: true, features: null }, 'captured from an older host');
+  for (const g of roster) {
+    assert.deepEqual(keys(g), keys(captured), g.id);
+    for (const part of ['target', 'workspace']) assert.deepEqual(keys(g[part]), keys(captured[part]), `${g.id} ${part}`);
+    assert.deepEqual(keys(g.souls[0]), keys(captured.souls[0]), `${g.id} souls`);
+    // A good pull always has a features key (array or null); a failed one has none (RK).
+    assert.deepEqual(keys(g.probe), g.probe.ok ? ['features', 'ok'] : ['error', 'ok'], `${g.id} probe`);
+  }
+  assert.equal(hostComposes(NEW_CLI, captured), false);
+});
+
+test('server: the captured roster row (an older host) gets today’s argv', async () => {
+  const workspace = remoteWorkspace(structuredClone(captured)), agents = remoteAgents(structuredClone(captured));
+  const flagged = await argvFor({ cli: NEW_CLI, workspace, agents, instructions: true });
+  assert.deepEqual(flagged, ['inspect', '--dir', '/srv/northwind', '--server', 'build', '--soul', 'release-manager', '--agents-root', '/srv/northwind/agents', '--json']);
+  assert.deepEqual(flagged, await argvFor({ cli: NEW_CLI, workspace, agents }));
 });
 
 test('server: a routed soul inspect carries --instructions only for a host whose held row names the feature', async () => {

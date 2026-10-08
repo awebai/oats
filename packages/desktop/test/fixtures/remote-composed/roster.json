@@ -3,36 +3,233 @@
   "ok": true,
   "result": {
     "groups": [
-      { "id": "g-composes", "server": "build", "label": "Build box", "registrationPresent": true,
-        "target": { "sshHost": "build.example", "workspace": "/srv/northwind" },
-        "probe": { "ok": true, "features": ["operations", "observe-max-age", "soul-composed-instructions", "server-probe-features"] },
-        "agentsRoot": "/srv/northwind/agents", "workspace": null,
-        "souls": [{ "name": "release-manager", "agentsRoot": "/srv/northwind/agents", "description": "Ships releases" }],
-        "instances": [], "retireFailures": [] },
-      { "id": "g-other", "server": "lab", "label": "Lab", "registrationPresent": true,
-        "target": { "sshHost": "lab.example", "workspace": "/srv/lab" },
-        "probe": { "ok": true, "features": ["operations", "observe-max-age"] },
-        "agentsRoot": "/srv/lab/agents", "workspace": null,
-        "souls": [{ "name": "release-manager", "agentsRoot": "/srv/lab/agents", "description": "" }],
-        "instances": [], "retireFailures": [] },
-      { "id": "g-none", "server": "bare", "label": "Bare", "registrationPresent": true,
-        "target": { "sshHost": "bare.example", "workspace": "/srv/bare" },
-        "probe": { "ok": true, "features": [] },
-        "agentsRoot": "/srv/bare/agents", "workspace": null,
-        "souls": [{ "name": "release-manager", "agentsRoot": "/srv/bare/agents", "description": "" }],
-        "instances": [], "retireFailures": [] },
-      { "id": "g-older", "server": "old", "label": "Old host", "registrationPresent": true,
-        "target": { "sshHost": "old.example", "workspace": "/srv/old" },
-        "probe": { "ok": true, "features": null },
-        "agentsRoot": "/srv/old/agents", "workspace": null,
-        "souls": [{ "name": "release-manager", "agentsRoot": "/srv/old/agents", "description": "" }],
-        "instances": [], "retireFailures": [] },
-      { "id": "g-failed", "server": "down", "label": "Down", "registrationPresent": true,
-        "target": { "sshHost": "down.example", "workspace": "/srv/down" },
-        "probe": { "ok": false, "error": { "code": "E_SSH", "message": "ssh: connect to host down.example port 22: Connection refused" } },
-        "agentsRoot": "/srv/down/agents", "workspace": null,
-        "souls": [{ "name": "release-manager", "agentsRoot": "/srv/down/agents", "description": "" }],
-        "instances": [], "retireFailures": [] }
-    ]
+      {
+        "id": "g-composes",
+        "server": "build",
+        "label": "Build box",
+        "registrationPresent": true,
+        "target": {
+          "sshHost": "build.example",
+          "workspace": "/srv/northwind",
+          "oatsPath": "oats",
+          "path": "/srv/northwind"
+        },
+        "probe": {
+          "ok": true,
+          "features": [
+            "operations",
+            "observe-max-age",
+            "soul-composed-instructions",
+            "server-probe-features"
+          ]
+        },
+        "agentsRoot": "/srv/northwind/agents",
+        "workspace": {
+          "reachable": true,
+          "key": "local//srv/northwind/workspace.git",
+          "ref": "main",
+          "keyFrom": "workspace",
+          "standalone": false,
+          "defaultTeam": {
+            "label": "engineering",
+            "team": "default:northwind.example"
+          },
+          "teams": {
+            "engineering": "default:northwind.example"
+          },
+          "teamsFrom": "observed"
+        },
+        "souls": [
+          {
+            "name": "release-manager",
+            "work": "directory",
+            "description": "Ships releases",
+            "agentsRoot": "/srv/northwind/agents"
+          }
+        ],
+        "instances": [],
+        "retireFailures": []
+      },
+      {
+        "id": "g-other",
+        "server": "lab",
+        "label": "Lab",
+        "registrationPresent": true,
+        "target": {
+          "sshHost": "lab.example",
+          "workspace": "/srv/lab",
+          "oatsPath": "oats",
+          "path": "/srv/lab"
+        },
+        "probe": {
+          "ok": true,
+          "features": [
+            "operations",
+            "observe-max-age"
+          ]
+        },
+        "agentsRoot": "/srv/lab/agents",
+        "workspace": {
+          "reachable": true,
+          "key": "local//srv/lab/workspace.git",
+          "ref": "main",
+          "keyFrom": "workspace",
+          "standalone": false,
+          "defaultTeam": {
+            "label": "engineering",
+            "team": "default:northwind.example"
+          },
+          "teams": {
+            "engineering": "default:northwind.example"
+          },
+          "teamsFrom": "observed"
+        },
+        "souls": [
+          {
+            "name": "release-manager",
+            "work": "directory",
+            "description": "",
+            "agentsRoot": "/srv/lab/agents"
+          }
+        ],
+        "instances": [],
+        "retireFailures": []
+      },
+      {
+        "id": "g-none",
+        "server": "bare",
+        "label": "Bare",
+        "registrationPresent": true,
+        "target": {
+          "sshHost": "bare.example",
+          "workspace": "/srv/bare",
+          "oatsPath": "oats",
+          "path": "/srv/bare"
+        },
+        "probe": {
+          "ok": true,
+          "features": []
+        },
+        "agentsRoot": "/srv/bare/agents",
+        "workspace": {
+          "reachable": true,
+          "key": "local//srv/bare/workspace.git",
+          "ref": "main",
+          "keyFrom": "workspace",
+          "standalone": false,
+          "defaultTeam": {
+            "label": "engineering",
+            "team": "default:northwind.example"
+          },
+          "teams": {
+            "engineering": "default:northwind.example"
+          },
+          "teamsFrom": "observed"
+        },
+        "souls": [
+          {
+            "name": "release-manager",
+            "work": "directory",
+            "description": "",
+            "agentsRoot": "/srv/bare/agents"
+          }
+        ],
+        "instances": [],
+        "retireFailures": []
+      },
+      {
+        "id": "g-older",
+        "server": "old",
+        "label": "Old host",
+        "registrationPresent": true,
+        "target": {
+          "sshHost": "old.example",
+          "workspace": "/srv/old",
+          "oatsPath": "oats",
+          "path": "/srv/old"
+        },
+        "probe": {
+          "ok": true,
+          "features": null
+        },
+        "agentsRoot": "/srv/old/agents",
+        "workspace": {
+          "reachable": true,
+          "key": "local//srv/old/workspace.git",
+          "ref": "main",
+          "keyFrom": "workspace",
+          "standalone": false,
+          "defaultTeam": {
+            "label": "engineering",
+            "team": "default:northwind.example"
+          },
+          "teams": {
+            "engineering": "default:northwind.example"
+          },
+          "teamsFrom": "observed"
+        },
+        "souls": [
+          {
+            "name": "release-manager",
+            "work": "directory",
+            "description": "",
+            "agentsRoot": "/srv/old/agents"
+          }
+        ],
+        "instances": [],
+        "retireFailures": []
+      },
+      {
+        "id": "g-failed",
+        "server": "down",
+        "label": "Down",
+        "registrationPresent": true,
+        "target": {
+          "sshHost": "down.example",
+          "workspace": "/srv/down",
+          "oatsPath": "oats",
+          "path": "/srv/down"
+        },
+        "probe": {
+          "ok": false,
+          "error": {
+            "code": "E_SSH",
+            "message": "ssh: connect to host down.example port 22: Connection refused"
+          }
+        },
+        "agentsRoot": "/srv/down/agents",
+        "workspace": {
+          "reachable": true,
+          "key": "local//srv/down/workspace.git",
+          "ref": "main",
+          "keyFrom": "workspace",
+          "standalone": false,
+          "defaultTeam": {
+            "label": "engineering",
+            "team": "default:northwind.example"
+          },
+          "teams": {
+            "engineering": "default:northwind.example"
+          },
+          "teamsFrom": "observed"
+        },
+        "souls": [
+          {
+            "name": "release-manager",
+            "work": "directory",
+            "description": "",
+            "agentsRoot": "/srv/down/agents"
+          }
+        ],
+        "instances": [],
+        "retireFailures": []
+      }
+    ],
+    "bounds": {
+      "budgetMs": 45000,
+      "perTargetTimeoutMs": 20000,
+      "elapsedMs": 9482,
+      "skipped": 0
+    }
   }
 }
