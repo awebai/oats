@@ -109,6 +109,15 @@ export function fixtureEnv(base, { extra = {} } = {}) {
   return { ...applyFixtureRules({ ...process.env }, base), ...extra };
 }
 
+/** The host's lsof, found once when this module loads (on the PATH it loads with, else where macOS
+ *  and Debian install it): the leftover check is the harness's, whatever PATH a test gives the kernel
+ *  it exercises. */
+const LSOF = (() => {
+  for (const dir of [...(process.env.PATH || "").split(delimiter).filter(isAbsolute), "/usr/sbin", "/usr/bin"]) {
+    try { accessSync(join(dir, "lsof"), constants.X_OK); return join(dir, "lsof"); } catch { /* next */ }
+  }
+  return null;
+})();
 /** Fail when a process still works in the fixture base: a hook's or a CLI's grandchild that outlived
  *  the test (awebai/oats#801). Uses the kernel's own scan (processesInHome, over lsof: a prerequisite
  *  of the suite, awebai/oats#783), which leaves out its caller and the caller's direct children. A
@@ -122,7 +131,7 @@ export function assertNoFixtureProcesses(base, { settleMs = 2000 } = {}) {
   const deadline = Date.now() + settleMs;
   let scan;
   while (true) {
-    scan = processesInHome(base);
+    scan = LSOF ? processesInHome(base, { exec: (cmd, args, opts) => execFileSync(cmd === "lsof" ? LSOF : cmd, args, opts) }) : { ok: false, error: "lsof is not installed" };
     if (!scan.ok) throw new Error(`cannot check for processes left in the fixture ${base}: ${scan.error} (lsof is a prerequisite of the test suite, awebai/oats#783)`);
     if (!scan.processes.length || Date.now() >= deadline) break;
     execFileSync("sleep", ["0.1"]);

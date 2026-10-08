@@ -109,6 +109,16 @@ test("#816 assertNoFixtureProcesses: fails naming a process left working in the 
   assertNoFixtureProcesses(b);
 });
 
+test("#816 assertNoFixtureProcesses: works whatever PATH the test gives the kernel, one without lsof included", () => {
+  const b = base("oats-q-");
+  const pid = Number(execFileSync("sh", ["-c", `(cd "$1" && exec sleep 600) >/dev/null 2>&1 & echo $!`, "sh", b], { encoding: "utf8" }).trim());
+  const saved = process.env.PATH;
+  process.env.PATH = join(b, "no-tools");
+  try {
+    assert.throws(() => assertNoFixtureProcesses(b, { settleMs: 200 }), (e) => e.message.includes(`pid ${pid} sleep`));
+  } finally { process.env.PATH = saved; process.kill(pid, "SIGKILL"); }
+});
+
 test("#816 v2Deployment: its base, its children's environment and its in-process calls follow the fixture rules, and its cleanup checks for leftover processes", async () => {
   const fx = v2Deployment();
   let leftover;
