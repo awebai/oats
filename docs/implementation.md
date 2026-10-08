@@ -321,6 +321,13 @@ install, and the gate requires it. `test/continuous-integration.test.mjs` pins
 that job against `desktop-build`: change how one installs or tests Desktop and
 the other changes with it.
 
+`test/release-workflow.test.mjs` also runs Desktop's `npm test` nested inside
+a root shard. Its results go to the child's stdout, so when the nested run
+fails, the assertion's message is built from that output by
+`test/helpers/nested-test-failure.mjs`. The message names the failing Desktop
+tests (TAP or spec reporter) with their location and error, then gives bounded
+stdout and stderr tails, and its size is capped.
+
 Cross-package tests that import both the kernel and Desktop belong under root
 `test/`; install dependencies at the root and in `packages/desktop` before
 running those tests. The schedule
