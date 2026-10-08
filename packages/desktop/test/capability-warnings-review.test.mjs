@@ -30,26 +30,33 @@ const TOOL = { code: 'hook-event-unsupported', capability: CAP, path: `local//fi
 const ELSEWHERE = { ...TOOL, capability: 'acme.elsewhere', path: 'package:acme:capabilities/x/oats.json#/hooks/on-merge', message: 'capability acme.elsewhere declares hook "on-merge"' };
 // Readiness (readinessApi 2) and inspection (operationsApi 2) both advertised: the sidebar shows an instance's readiness.
 const HOST_CLI = { ...readiness.cli, operationsApi: 2, features: [...readiness.cli.features, 'operations'], relations: true };
+// The multi-deployment host also shows a capability's Contents (feature capability-show).
+const SCOPED_CLI = { ...HOST_CLI, features: [...HOST_CLI.features, 'capability-show'], capabilityShowApi: 1 };
 
-async function workspaceHost(t) {
+// `scope`: a multi-deployment view (#482) — the view `team` whose primary is `primary`, the instance tagged with its own
+// deployment (and a server, for a remote row). Without it, the single-deployment view the other tests use.
+async function workspaceHost(t, scope = null) {
   const dom = new JSDOM('<!doctype html><html><body><div id="stage"></div></body></html>', { url: 'http://localhost', pretendToBeVisual: true });
   const doc = dom.window.document;
   const saved = { document: globalThis.document, window: globalThis.window, setInterval: globalThis.setInterval, ws: currentWorkspace() };
   globalThis.document = doc; globalThis.window = dom.window; globalThis.setInterval = () => 0;
-  const home = readiness.instance, calls = [];
+  const home = scope ? { ...readiness.instance, deployment: { id: scope.deployment }, ...(scope.server ? { server: scope.server } : {}) } : readiness.instance, calls = [];
+  // Readiness echoes the deployment it read: the instance's own (soul-inspector syncReadiness).
+  const readTarget = scope ? { ...readiness.instanceTarget, workspace: scope.deployment } : readiness.instanceTarget;
   const ctx = {
     hasWorkspaceSwitcher: true, openBrain() {}, openView() {},
     api: async (path, opts = {}) => {
       const body = opts.body ? JSON.parse(opts.body) : undefined; calls.push({ path, body });
-      if (path === '/api/cli') return HOST_CLI;
+      if (path === '/api/cli') return scope ? SCOPED_CLI : HOST_CLI;
       if (path.startsWith('/api/agents')) return { agents: [{ ...readiness.soul, runtime: 'pi', work: 'worktree' }] };
-      if (path.startsWith('/api/panel')) return { workspace: { id: currentWorkspace() }, workspaces: [], instances: [{ ...home, running: true }] };
+      if (path.startsWith('/api/panel')) return { workspace: scope ? { id: currentWorkspace(), primary: scope.primary, deployments: ['deployment-A', 'deployment-B'] } : { id: currentWorkspace() }, workspaces: [], instances: [{ ...home, running: true }] };
       if (path.startsWith('/api/workspace-readiness')) {
-        return readiness.view(readiness.instanceTarget, { ...readiness.data(readiness.instanceTarget), warnings: [TOOL, ELSEWHERE] });
+        return readiness.view(readTarget, { ...readiness.data(readTarget), warnings: [TOOL, ELSEWHERE] });
       }
       // The capability page's Contents (`capabilities show`) stays in flight: the destination is the page itself.
       if (path.startsWith('/api/capabilities')) return body?.action === 'show' ? new Promise(() => {}) : homeInspection(home.home, { instance: home.instance, soul: home.agent });
-      if (path.startsWith('/api/workspace-sync')) return new Promise(() => {});
+      // A scoped host reads the catalog (the capability page's row, whose selector `capabilities show` takes).
+      if (path.startsWith('/api/workspace-sync')) return scope ? catalogAnswer() : new Promise(() => {});
       if (path.startsWith('/api/servers')) return { servers: [] };
       return {};
     },
@@ -60,7 +67,7 @@ async function workspaceHost(t) {
     dom.window.close();
   });
   setWorkspace(readiness.workspace.id); resetCliStateForTests();
-  await refreshCli({ api: async () => HOST_CLI });
+  await refreshCli({ api: async () => scope ? SCOPED_CLI : HOST_CLI });
   spawn.mount(doc.querySelector('#stage'), ctx); await settle();
   return { dom, doc, calls, home,
     // Open the instance in the sidebar inspector (the Workspace's own handoff).
@@ -206,3 +213,41 @@ test('Sources: an unrelated roster repaint keeps an open warning\'s Details open
   assert.equal(u.byMessage(HOUSE_AGENTS.message), undefined, 'the old message is gone');
   assert.equal(details.isConnected, false, 'the list was rebuilt');
 });
+
+// Review round 2: the capability page reads the view's PRIMARY deployment (the catalog, `capabilities show` scoped by
+// the view), so an instance's warning opens it only when that instance is on this computer in the primary deployment.
+// In another deployment, or on a server, there is no Open capability: never the primary's capability of the same name.
+test('sidebar readiness in a multi-deployment view: Open capability only for an instance in the primary deployment; the page reads that deployment', async t => {
+  const u = await workspaceHost(t, { primary: 'deployment-A', deployment: 'deployment-A' });
+  await u.select();
+  const view = u.doc.querySelector('#workspace-inspector .readiness-view');
+  assert.ok(view, 'readiness shows');
+  // The readiness and the inspection were read in the instance's own deployment.
+  assert.ok(u.calls.some(c => c.path.startsWith('/api/workspace-readiness') && c.path.includes('ws=deployment-A')), 'readiness read in deployment-A');
+  const open = view.querySelector('.readiness-warnings button.cap-warning-open');
+  assert.ok(open, 'in the primary deployment: Open capability');
+  open.click(); await settle();
+  assert.equal(u.doc.querySelector('.workspace-cap-page').hidden, false, 'the capability page is shown');
+  // Its Contents is read through the view, which the server resolves to the primary deployment: the instance's own.
+  const shows = u.calls.filter(c => c.path.startsWith('/api/capabilities') && c.body?.action === 'show');
+  assert.equal(shows.length, 1); assert.equal(shows[0].body.capability.name, CAP);
+  assert.equal(new URL(shows[0].path, 'http://x').searchParams.get('ws'), 'team', 'the view, whose primary is deployment-A');
+});
+
+for (const [label, scope] of [['another deployment of the view', { primary: 'deployment-A', deployment: 'deployment-B' }],
+  ['a server', { primary: 'deployment-A', deployment: 'deployment-A', server: 'build-box' }]]) {
+  test(`sidebar readiness for an instance in ${label}: the warning shows, with no Open capability, and no capability is read`, async t => {
+    const u = await workspaceHost(t, scope);
+    await u.select();
+    const view = u.doc.querySelector('#workspace-inspector .readiness-view');
+    if (scope.server && !view?.querySelector('.readiness-warnings')) {
+      // A remote row may be refused before readiness reads (remote-address.mjs): then there is no warning to open at all.
+      assert.equal(u.doc.querySelector('#workspace-inspector button.cap-warning-open'), null);
+      return;
+    }
+    const items = [...view.querySelectorAll('.readiness-warnings .cap-warning')];
+    assert.equal(items.length, 2, 'the warnings still show');
+    assert.equal(view.querySelector('button.cap-warning-open'), null, 'nothing to open: the page would read the primary deployment');
+    assert.equal(u.calls.filter(c => c.body?.action === 'show').length, 0, 'no capability is read');
+  });
+}

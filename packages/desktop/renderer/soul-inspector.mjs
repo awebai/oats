@@ -473,7 +473,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     for (const p of inspected.problems) problem(p);
     const soul = inspected.souls[0] ?? null;
     // Capability warnings (0.49.0): a soul's, below its problems (an instance's are its readiness view's, which reads this lookup).
-    warningTargets = typeof openCapability === 'function' && soul ? capabilityTargets(coreEntries(inspected, { layersFrom: layersFrom(), facts: desktopFacts(cliStatus()) }),
+    warningTargets = typeof openCapability === 'function' && soul && pageScoped() ? capabilityTargets(coreEntries(inspected, { layersFrom: layersFrom(), facts: desktopFacts(cliStatus()) }),
       compositionEntries(inspected, soul, { facts: desktopFacts(cliStatus()) })) : new Map();
     if (inspected.subject.kind === 'soul') renderSoulWarnings(inspected);
     if (inspected.subject.kind === 'instance') {
@@ -513,6 +513,13 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     // Operations run on a live home: a soul shows none (human, F7); an instance lists what it can run.
     if (inspected.subject.kind === 'instance') renderOperations(inspected);
     keepInstructions?.();
+  }
+  /** Whether the capability page can show this subject's capabilities: it reads the view's primary deployment (#482), so
+   * a soul (always there) or an instance on this computer in that deployment. An instance in another deployment, or on a
+   * server, gets no Open capability rather than the primary's capability of the same name. */
+  function pageScoped() {
+    const ref = selection?.instance, w = workspace();
+    return !ref || (!ref.server && !!w && rowDeployment(ref) === (w.primary || w.id));
   }
   /** The shown inspection's capabilities by id, each with its core or composition entry: an "Open capability" (a composed
    * part's, a capability warning's) takes the tables' own path. */

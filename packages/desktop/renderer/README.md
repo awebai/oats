@@ -799,7 +799,10 @@ instructions' path; prefix `soul-warning`), readiness (`readinessData.warnings`,
 after the four checks, apart from a provider's own `result.warnings`;
 `createReadinessView({canOpenCapability, openCapability})` from the inspector;
 in the Workspace sidebar, where readiness shows, Open capability opens the page
-as the Capabilities table does, Back to the list; `readiness-warning`), the instance Soul tab (compact,
+as the Capabilities table does, Back to the list, and only for an instance on
+this computer in the view's primary deployment, the one the page reads (#482;
+another deployment's or a server's instance shows its warnings without it);
+`readiness-warning`), the instance Soul tab (compact,
 no Open capability: the context panel navigates nowhere, `soul-tab-warning`),
 the spawn preview (lines only, after the launch prompts) and Workspace ›
 Sources (every non-team workspace warning, its remedy a muted line; Open
