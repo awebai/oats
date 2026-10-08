@@ -763,9 +763,9 @@ declared them gains no exclusion from a package update, and is copied whole.
 Retire stops the harness through the home's session receipt, kept beside the
 home in the instances directory's `.oats-retirement/baselines/` and keyed by
 the home's path. First address the home exactly as `oats status` prints it: a
-different spelling of its path (letter case, a symlink, a deployment directory
-moved since the spawn) looks for the receipt elsewhere. A home can also be
-without its receipt because it was spawned before 0.25.9, it was copied, the
+different spelling of its path (letter case, a deployment directory moved
+since the spawn) looks for the receipt elsewhere. A home can also be without
+its receipt because it was spawned before 0.25.9, it was copied, the
 `.oats-retirement` beside it was removed, or its creation did not finish;
 `session inspect`, `start` and `restart` then refuse with
 `E_RUNTIME_ENDPOINT_UNKNOWN` naming the receipt path they looked for. Such a
