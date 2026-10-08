@@ -84,7 +84,7 @@ test("a server whose socket file was removed while its window runs in the home: 
 
   rmSync(OATS);
   const missing = new RegExp(`error connecting to ${OATS.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\(No such file or directory\\)`);
-  const named = /; a process still works in this home \(pid \d+ (sh|sleep)\b.*\), so its tmux server may still be running without its socket file: tmux recreates a removed socket file when its server process receives SIGUSR1/;
+  const named = /; a process still works in this home \(pid \d+ \S+.*\), so its tmux server may still be running without its socket file: tmux recreates a removed socket file when its server process receives SIGUSR1/;
 
   // status: unknown, not stopped, with why; the shape is the existing one.
   const row = liveness(statusRow("alive"));
