@@ -1061,15 +1061,23 @@ a `--repo` that is not a clone of the soul's repository starts at its `HEAD`.
 The spawn result and `instance.json` record the start point as
 `base: {ref, oid}`.
 
+After the spawn hooks succeed, the spawn fires the
+[`worktree` event](capabilities.md#the-worktree-event) for `work/`: the
+`worktree` hook of each capability the soul composes runs once, with `work/`
+as its cwd, inside the spawn's transaction. A required one that fails rolls
+the spawn back. The spawn result and the `spawned` event carry their receipt
+as `worktreeHooks`. A spawn whose capabilities declare no such hook runs no
+setup. No other work mode fires the event.
+
 Use this for agents that will edit code or docs independently.
 
 Rules:
 
 - Build, test, and commit from `work/`, on your own branch.
 - Never work in a shared checkout (the repo's main checkout, or any clone
-  others use): do not edit, commit or switch branches there. Against a clone,
-  run only `git worktree add` and `git worktree remove`, as in
-  [extra trees](#extra-trees).
+  others use): do not edit, commit or switch branches there. A clone is
+  touched only through `oats worktree add` and `oats worktree remove`
+  ([extra trees](#extra-trees)).
 - Everything you change happens in `work/` or in your extra trees.
 - Leave your branch and the worktree list clean when your task closes.
 
@@ -1148,44 +1156,137 @@ The instance records no branch: the workspace is not a Git tree.
 An instance in `worktree` or `checkout` mode can create extra trees: linked
 Git worktrees in its home, beside `work/`. It does so when the work needs
 another branch, or another repository of the deployment (one task that
-touches several repositories). The `worktree` and `checkout` briefings give
-the command; the `workspace`, `directory` and `attached` briefings do not.
-There is no `oats` command for it.
+touches several repositories). The `worktree` and `checkout` briefings teach
+it; the `workspace`, `directory` and `attached` briefings do not.
 
-`<clone>` is any clone of the deployment (`oats-local.yaml` `clones:`, or
-`<deployment>/<repo>`), `origin` is its remote for that repository, and
-`<base>` is the remote branch the work starts from (the branch itself, to
-rework an existing one):
+```text
+oats worktree add --purpose <p> --branch <b> --base <remote-branch>
+                  [--repo <member key|clone path>] [--preview] [--json]
+oats worktree remove --purpose <p> [--json]
+```
+
+Both run from an instance home: the home `$OATS_INSTANCE_HOME` (or
+`$OATS_HOME`) names, else the home that encloses the working directory.
+`--dir`, `--home` and `--server` are refused (`E_BAD_ARGS`). The tree is
+`<home>/.work-<p>`.
+
+**Arguments.** Each is checked before anything is written; a value that
+starts with `-` is refused (`E_BAD_ARGS`), because Git would read it as an
+option.
+
+- `--purpose`: a slug, as an instance name (lowercase letters, digits and
+  `-`, at most 64 characters).
+- `--branch`: a valid branch name that does not exist in the clone
+  (`E_BRANCH_EXISTS`, with the remedy `<instance>/<branch>`). It follows the
+  repository's own naming rules, else `agents/<instance>-<purpose>`. `add`
+  never resets a branch: there is no `-C` or `-B`.
+- `--base`: the remote branch the work starts from (the branch itself, to
+  rework an existing one).
+- `--repo`: the instance's repository by default. A member key is looked up
+  as a spawn looks up a clone (`oats-local.yaml` `clones:`, then
+  `<deployment>/<member name>`; `E_CLONE_MISSING` when there is none). A path
+  (absolute, or starting with `.` or `~`) is used as given. It must be a
+  clone, not a linked worktree (`E_CLONE_MISMATCH`), and have an `origin`
+  remote (`E_CLONE_MISMATCH`). Not a Git repository: `E_CLONE_MISSING`.
+
+**What `add` does.** It writes a record, `<home>/.oats/trees/<p>.json`, in
+state `creating`, with its own pid and start time. Then it runs, as argument
+vectors with no shell:
 
 ```bash
-git -C <clone> worktree add --detach "$OATS_INSTANCE_HOME/.work-<purpose>"
-git -C "$OATS_INSTANCE_HOME/.work-<purpose>" fetch --refmap= origin <base>
-git -C "$OATS_INSTANCE_HOME/.work-<purpose>" switch -c <branch> FETCH_HEAD
+git -C <clone> worktree add --detach <home>/.work-<p>
+git -C <home>/.work-<p> fetch --refmap= origin <base>
+git -C <home>/.work-<p> switch -c <branch> <the fetched commit>
 ```
 
 - The tree starts from the remote's current state, never from a local branch
-  of the clone, which may be stale.
+  of the clone, which may be stale. A fetch that fails is
+  `E_REMOTE_UNREADABLE`; a HEAD that is not the fetched commit is
+  `E_BASE_UNKNOWN`; any other Git step that fails is `E_GIT_FAILED`, with
+  Git's message. Either way the tree is removed.
 - Creating it moves none of the clone's refs. The fetch runs inside the new
   linked tree, which has its own `FETCH_HEAD`, and `--refmap=` keeps it from
   updating remote-tracking refs. The clone's `FETCH_HEAD`, branches and work
   tree are not touched, so creation does not race with others who use the
   clone. The fetched objects go to the repository's shared object store.
+- Then it fires the [`worktree` event](capabilities.md#the-worktree-event):
+  the `worktree` hook of each capability the instance composes, with the
+  tree as cwd. Their output goes to stderr and to
+  `<home>/.oats/logs/worktree-<p>-<cap>.log`. This may take minutes; an
+  instance without such a capability runs no setup.
+- Last, it marks the record `ready` (with the base commit and the hooks'
+  receipt) and appends a `worktree-added` instance event.
+
+The answer (`--json`: one envelope on stdout) is the receipt: `purpose`,
+`path`, `clone`, `remote`, `member`, `branch`, `base`, `baseOid`, `state`,
+`hooks` (`[{capability, ok, required, log, exitCode, …}]`), `record`,
+`resumed` and `warnings`. `--preview` resolves the clone, path, branch, base
+and hooks, and fetches and writes nothing.
+
+**Running it again.**
+
+| Found | Result |
+|---|---|
+| a `ready` record with the same clone, branch and base | nothing is run; the recorded receipt, `resumed: true` |
+| a `ready` record that differs | `E_PLACEMENT_TAKEN`, naming the fields that differ |
+| `.work-<p>` with no record (made with raw Git), or a file or symbolic link there | `E_PLACEMENT_TAKEN`; use another purpose, or `git worktree remove` that tree |
+| a `creating` record whose process still runs | `E_LIFECYCLE_BUSY` |
+| a `creating` record whose process is gone | the interrupted add is rolled back first, then the add runs fresh |
+
+A process is "still running" when its pid runs with the recorded start
+time. It counts as gone only when its pid does not run (the operating
+system says no such process: `kill -0` fails with ESRCH), or runs with another
+start. When the start cannot be read (for example where `ps` fails), the
+process is never taken for gone. `add` and `remove` refuse with
+`E_LIFECYCLE_BUSY`, naming the pid and the exact file to remove by hand once
+you have checked it: the record `.oats/trees/<p>.json`, or the claim
+`.oats/trees/<p>.lock`. The same holds for a hook or git step the killed
+command left running: when its leader's start cannot be read, it is not
+signalled, nothing is rolled back, and the refusal names its process group
+and the way out (`kill -TERM -- -<pgid>` once checked, then retry). An `add` that is interrupted (SIGINT, SIGTERM, SIGHUP) while its hooks
+run ends the running hook, rolls back and exits 128 + the signal number
+(`E_INTERRUPTED`); one killed outright leaves the `creating` record for the
+next `add` or `remove`. A killed `add` can simply be run again. A required
+hook that fails removes the tree (`E_REQUIRED_HOOK_FAILED`). It deletes the
+branch only when that `add` created it, no worktree has it checked out, and
+it still points where `add` created it. Otherwise the branch is kept, and
+the answer names it with the reason. Two commands on one purpose never act
+at once: each holds the purpose's claim, `.oats/trees/<p>.lock`, while it
+reads and changes the record. The claim is not held while the hooks run.
+A claim left by a command that was killed is taken over by the next one,
+once its holder (pid and start time) is verified gone. Any git step the
+killed command left running is ended first, so it cannot finish late on
+the new tree. A quarantined
+home or one being retired is refused (`E_INSTANCE_RETIRING`).
+
+**`remove`** runs `git worktree remove` (without `--force`) and `git worktree
+prune` on a tree `add` recorded, then drops the record. It keeps the branch
+and fires no hook. Git refuses a tree with uncommitted or untracked work:
+that is `E_WORKTREE_DIRTY`, with Git's message, and the record is kept;
+commit and push the work, or discard it, then run `remove` again. A purpose
+with no record is `E_BAD_ARGS`: remove a tree made another way with
+`git worktree remove`. Any other refusal is `E_WORK_PRESERVATION_FAILED`,
+and nothing is removed. On a `creating` record whose process is gone, `remove`
+completes the rollback instead. Its answer then says whether the branch was
+kept (`branchKept`, `branchKeptReason`).
+
+**Working in the tree.**
+
 - `git switch` needs Git 2.23 or later.
-- `<branch>` follows the repository's own naming rules, else
-  `agents/<instance>-<purpose>`. If that branch already exists in the clone,
-  `switch -c` refuses: use `<instance>/<branch>`. Never `-C` or `-B`, which
-  reset a branch someone else may own.
 - The tree has no upstream. Push with `git push origin HEAD:<remote-branch>`
   (`<base>` when reworking an existing branch). A push does update the
   clone's `refs/remotes/origin/<remote-branch>`, as any push does.
 - Before the task closes, merge each extra tree into the PR branch, or push
-  its branch and name it in the hand-back; then
-  `git -C <clone> worktree remove "$OATS_INSTANCE_HOME/.work-<purpose>"`.
+  its branch and name it in the hand-back; then `oats worktree remove
+  --purpose <p>`.
 
 `$OATS_INSTANCE_HOME` is set in every harness session OATS launches (Claude
-Code, Codex, pi), not only in hooks. Retirement removes a clean extra tree
-and re-homes one that holds work, but the briefing tells the agent not to
-rely on it: see [extra trees at retire](#extra-trees-at-retire).
+Code, Codex, pi), not only in hooks. A tree `add` made is an ordinary extra
+tree to retirement, like one made with raw Git: retirement removes a clean
+extra tree and re-homes one that holds work, but the briefing tells the agent
+not to rely on it: see [extra trees at retire](#extra-trees-at-retire). The
+tree records and hook logs under `<home>/.oats/` are kernel receipts: they
+never count as changed instance-home bytes at retire.
 
 ## Agents root
 

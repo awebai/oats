@@ -90,14 +90,14 @@ function expandInlineValues(argv) {
 const { argv: args, problem: argvProblem, inline: inlineValues } = expandInlineValues(rawArgs);
 let cmd = args[0];
 const HELP_WORDS = new Set(["help", "--help", "-h"]);
-const KERNEL_COMMANDS = new Set(["harness", "automations", "trigger", "capture", "capabilities", "doctor", "inspect", "instance", "operation", "package", "readiness", "souls", "soul", "teams", "launch-config", "experimental", "onboard", "pane", "recall", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "sync", "update", "version", "workspace"]);
+const KERNEL_COMMANDS = new Set(["harness", "automations", "trigger", "capture", "capabilities", "doctor", "inspect", "instance", "operation", "package", "readiness", "souls", "soul", "teams", "launch-config", "experimental", "onboard", "pane", "recall", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "sync", "update", "version", "workspace", "worktree"]);
 /** Commands whose argv another parser reads (packages/record and packages/experimental parse process.argv). */
 const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental"]);
 /** The kernel features this binary implements: `features` in `version --json` (the Desktop API v1
  *  probe) and in `status --json`, which a remote roster relays as the host's (feature
  *  server-probe-features, lib/servers.mjs hostFeatures). ONE list for both, emitted at output
  *  time, never stored. A name must pass hostFeatures's check (test/cli-json-contract.test.mjs). */
-const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features"];
+const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event"];
 /** Commands `--server <id>` runs on a registered server. */
 const ROUTED_COMMANDS = new Set(["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "launch-config", "readiness", "instance"]);
 const flag = (name) => {
@@ -1106,6 +1106,56 @@ function instanceWaitingCmd(sub, bail) {
     const w = r.waitingOnYou;
     console.log(`${r.instance}: ${r.changed ? "recorded" : "unchanged"} — ${r.producer} ${w ? `needs input (${w.reason})${w.message ? `: ${w.message}` : ""}` : "not waiting"}`);
   } catch (e) { return bail(e.code || "E_EVENTS_FAILED", e.message, e.candidates ? { candidates: e.candidates } : undefined); }
+}
+
+/** `oats worktree add|remove` (#796, feature worktree-event): an instance's extra trees,
+ *  `<home>/.work-<purpose>`, made from its home (lib/worktree.mjs). The home is
+ *  $OATS_INSTANCE_HOME (or $OATS_HOME), else the home enclosing the working directory.
+ *  `add` streams the worktree hooks' output to stderr; stdout holds only the answer
+ *  (one envelope with --json). An interrupt exits 128+signal after the rollback. */
+async function worktreeCmd() {
+  const bail = (code, msg, details, exit) => (JSON_MODE ? jsonFail(code, msg, details, exit) : die(msg, exit));
+  const sub = args[1];
+  const usage = "usage: oats worktree add --purpose <p> --branch <b> --base <remote-branch> [--repo <member key|clone path>] [--preview] [--json] | oats worktree remove --purpose <p> [--json]";
+  if (!["add", "remove"].includes(sub)) return bail("E_BAD_ARGS", usage);
+  if (flag("server") !== undefined) return bail("E_BAD_ARGS", "oats worktree runs in an instance home on this machine; --server is not accepted");
+  for (const f of ["dir", "home"]) if (args.includes(`--${f}`)) return bail("E_BAD_ARGS", `oats worktree has no --${f}: it acts on the instance home it runs in; ${usage}`);
+  const value = (name) => { const v = flag(name); if (v === true) throw Object.assign(new Error(`--${name} needs a value`), { code: "E_BAD_ARGS" }); return v === undefined ? undefined : String(v); };
+  const homeVariable = ["OATS_INSTANCE_HOME", "OATS_HOME"].find((name) => process.env[name]);
+  const home = homeVariable ? process.env[homeVariable] : enclosingInstanceHome(logicalCwd());
+  if (!home) return bail("E_BAD_ARGS", `oats worktree runs from an instance home: run it in the home (or below it), or with $OATS_INSTANCE_HOME set; ${usage}`);
+  const W = await import("../lib/worktree.mjs");
+  // A caller that closes its end of stdout or stderr (a tool shell killed, Desktop gone) has only
+  // stopped reading: the add or remove goes on to its consistent end, and what it can no longer
+  // print is dropped. Unhandled, that EPIPE would end this process mid-hook, with no rollback.
+  const readerGone = (e) => { if (e?.code !== "EPIPE" && e?.code !== "ERR_STREAM_DESTROYED") throw e; };
+  process.stdout.on("error", readerGone);
+  process.stderr.on("error", readerGone);
+  try {
+    if (sub === "remove") {
+      for (const f of ["branch", "base", "repo", "preview"]) if (args.includes(`--${f}`)) return bail("E_BAD_ARGS", `oats worktree remove takes only --purpose; ${usage}`);
+      const r = await W.worktreeRemove(resolve(home), { purpose: value("purpose") });
+      if (JSON_MODE) { jsonOk(r); return; }
+      console.log(r.rolledBack
+        ? `rolled back the interrupted add of ${r.path}; branch ${r.branch} ${r.branchKept ? `kept${r.branchKeptReason ? ` (${r.branchKeptReason})` : ""}` : "not left behind"}`
+        : `removed ${r.path}; branch ${r.branch} kept`);
+      for (const w of r.warnings || []) console.error(`oats: warning: ${w}`);
+      return;
+    }
+    const r = await W.worktreeAdd(resolve(home), { purpose: value("purpose"), branch: value("branch"), base: value("base"), repo: value("repo"), preview: args.includes("--preview") });
+    if (JSON_MODE) { jsonOk(r); return; }
+    if (r.preview) {
+      console.log(`preview ${r.path} from ${r.clone} (origin ${r.remote || "?"}): branch ${r.branch} at origin's ${r.base}${r.resume === "noop" ? " — already made: add is a no-op" : r.resume === "recover" ? " — an interrupted add is rolled back first" : ""}; nothing was fetched or written`);
+      const hooks = r.resume === "noop" ? [] : r.hooks;
+      console.log(hooks.length ? `worktree hooks: ${hooks.map((h) => `${h.capability}${h.required ? " (required)" : ""}`).join(", ")}` : "worktree hooks: none");
+      return;
+    }
+    console.log(r.resumed ? `${r.path} is already made (branch ${r.branch} from ${r.base} @ ${String(r.baseOid).slice(0, 12)}); nothing was run` : `made ${r.path}: branch ${r.branch} from origin's ${r.base} @ ${String(r.baseOid).slice(0, 12)}${r.hooks.length ? `; worktree hooks: ${r.hooks.map((h) => `${h.capability} ${h.ok ? "ok" : "FAILED"}`).join(", ")}` : ""}`);
+    for (const w of r.warnings || []) console.error(`oats: warning: ${w}`);
+  } catch (e) {
+    if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details, e.exitStatus);
+    throw e;
+  }
 }
 
 /** `oats instance <git|diff> <instance>` — K1: read-only Git observation of one
@@ -2392,7 +2442,7 @@ function herdrSpawnFlag() {
 }
 async function spawnCmd() {
   // JSON mode: contract envelope, stable error codes, stderr-only progress.
-  const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
+  const bail = (code, msg, details, exit) => (JSON_MODE ? jsonFail(code, msg, details, exit) : die(msg, exit));
   const note = (msg) => (JSON_MODE ? console.error(msg) : console.log(msg));
   const yolo = yoloFlag();
   { const herdr = herdrSpawnFlag(); if (herdr) { const e = herdrSettingRemoved(`${herdr} was given`); bail(e.code, e.message); } }
@@ -2620,6 +2670,7 @@ async function spawnCmd() {
       if (prepared) r.soulFetched = soulFetched;
       if (JSON_MODE) { jsonOk(withObservation(r)); return; }
       console.log(`preview ${r.agent} → ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch} from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}) harness ${r.harness}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}${r.launchConfig ? ` via launch configuration ${r.launchConfig}${r.launchConfigDefault ? ` (this machine's ${r.harness} default)` : ""}` : ""}${r.yolo ? " YOLO" : ""}; nothing was created${soulFetched ? " (the soul source was fetched to a temporary copy, not kept)" : ""}`);
+      if (Array.isArray(r.worktreeHooks)) console.log(r.worktreeHooks.length ? `worktree hooks: ${r.worktreeHooks.map((h) => `${h.capability}${h.required ? " (required)" : ""}`).join(", ")}` : "worktree hooks: none");
       for (const w of r.warnings || []) console.log(`  WARNING: ${w}`);
       return;
     }
@@ -2638,6 +2689,12 @@ async function spawnCmd() {
     if (e?.code === "E_REQUIREMENT_INACTIVE") { bail(e.code, e.message, { soul: e.soul, capabilities: e.capabilities, context: e.context, remedy: e.remedy }); throw e; }
     if (e?.code === "E_CHILD_SPAWNS_DISABLED") { bail(e.code, e.message, { parent: e.parent, policy: e.policy }); throw e; }
     if (["E_BRANCH_EXISTS", "E_BASE_UNKNOWN"].includes(e?.code)) { bail(e.code, e.message); throw e; }
+    // #796: interrupted while its worktree hooks ran: rolled back (the message says how far), 128+signal.
+    if (e?.code === "E_INTERRUPTED") { bail(e.code, e.message, e.details, e.exitStatus); throw e; }
+    // A required spawn or worktree hook that failed, or answered outside its environment contract, keeps
+    // its typed code: the hooks' receipt (`details.hooks`, paths only) and `unconfirmed` when the rollback
+    // could not confirm its effects. Never `home`: a consumer reads that as retained effects.
+    if (e?.code === "E_REQUIRED_HOOK_FAILED" || e?.code === "E_HOOK_ENVIRONMENT_CONTRACT") { bail(e.code, e.message, { hooks: e.details?.hooks ?? [], ...(e.details?.unconfirmed === true ? { unconfirmed: true } : {}) }); throw e; }
     // The observed base could not be fetched into the clone: the clone, the repository and the commit travel along.
     if (e?.code === "E_REMOTE_UNREADABLE" && e.details?.commit) { bail(e.code, e.message, e.details); throw e; }
     // K6b: the confirmed decision drifted — the fresh decision travels with the refusal so a GUI re-previews.
@@ -2678,12 +2735,15 @@ async function spawnCmd() {
       ...(r.decision ? { decision: r.decision } : {}), ...(r.replayed !== undefined ? { replayed: r.replayed } : {}),
       ...(r.wake !== undefined ? { wake: r.wake } : {}), // {requested, saved|null, error}: saved:null = outcome not recorded
       launchConfig: r.launch?.launchConfig ?? null, launch: r.launch || null, // already redacted by the kernel
+      // #796: the worktree hooks this spawn ran, with their logs; only when it ran any.
+      ...(r.worktreeHooks ? { worktreeHooks: r.worktreeHooks } : {}),
     });
     return;
   }
   console.log(`Spawned ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch}` : ""})${r.launched ? ` — tmux window "${r.tmux.window}"` : " — not launched"}`);
   console.log(`  home:   ${shortPath(r.home)}`);
   if (r.base) console.log(`  base:   ${r.base.oid.slice(0, 12)} (${r.base.ref === r.workspace?.soul?.repoKey ? `observed head of ${r.base.ref}` : r.base.ref})`);
+  for (const h of r.worktreeHooks || []) console.log(`  setup:  ${h.capability} worktree hook ${h.ok ? "ok" : "FAILED"} (log: ${shortPath(h.log)})`);
   if (wakeSchedule) console.log(`  wake:   schedule ${wakeSchedule.id} (${wakeSchedule.cron} ${wakeSchedule.tz}), next ${wakeSchedule.nextRun || "disabled"}`);
   if (wakeScheduleError) console.error(`  wake:   NOT saved — ${wakeScheduleError.message} (the instance is created and launched; add the wake by hand with oats schedule add)`);
   if (!r.launched) console.log(`  launch: oats session start --home ${shellQuote(r.home)}`);
@@ -4098,6 +4158,7 @@ else if (cmd === "update") {
 else if (cmd === "harness") harnessTrustCmd();
 else if (cmd === "readiness") await readinessCmd();
 else if (cmd === "instance") instanceCmd();
+else if (cmd === "worktree") await worktreeCmd();
 else if (cmd === "root") console.log(resolve(new URL("..", import.meta.url).pathname));
 else if (cmd === "sync") await syncCmd();
 else if (cmd === "package") await packageCmd();
@@ -4384,6 +4445,15 @@ Usage:
   oats instance stop <instance> --apply --plan-revision <rev> --idempotency-key <key>
                                              quiesce (SIGTERM, bounded, never escalated),
                                              children first; home/work/launch retained
+  oats worktree add --purpose <p> --branch <b> --base <remote-branch>  from an instance home: make the
+      [--repo <member key|clone path>]      extra tree <home>/.work-<p> on a new branch at origin's
+      [--preview] [--json]                  <base> (the clone's refs are not moved), then run the
+                                            worktree hooks of the home's capabilities (they may take
+                                            minutes; their output goes to stderr and .oats/logs/);
+                                            again with the same arguments: a no-op; --preview:
+                                            the clone, path, branch, base and hooks, nothing done
+  oats worktree remove --purpose <p> [--json]  git worktree remove of a tree made by add (a dirty
+                                            tree is refused: E_WORKTREE_DIRTY); the branch is kept
   oats readiness (--soul <n> | --home <abs>) [--policy] [--json]
                                              readinessApi 2 for a soul or an instance home:
                                              installed | configured | member | providers, each

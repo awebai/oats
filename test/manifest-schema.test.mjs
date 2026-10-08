@@ -131,11 +131,13 @@ test("an unknown hook event: the schema and the contract accept it unless it is 
     }
   }
   // Every approved event keeps its verdicts, and is never a warning.
-  for (const event of ["soul-scaffold", "spawn", "retire", "launch"]) {
+  // `required` is allowed on spawn and worktree only (#796).
+  for (const event of ["soul-scaffold", "spawn", "retire", "launch", "worktree"]) {
+    const requirable = event === "spawn" || event === "worktree";
     assert.deepEqual(manifestContract({ ...base, hooks: { [event]: "bin/h.mjs" } }), { problems: [], warnings: [] }, event);
     const required = manifestContract({ ...base, hooks: { [event]: { command: "bin/h.mjs", required: true } } });
-    assert.equal(required.problems.length === 0, event === "spawn", `${event} required`);
-    assert.equal(validate({ ...base, hooks: { [event]: { command: "bin/h.mjs", required: true } } }), event === "spawn", `schema: ${event} required`);
+    assert.equal(required.problems.length === 0, requirable, `${event} required`);
+    assert.equal(validate({ ...base, hooks: { [event]: { command: "bin/h.mjs", required: true } } }), requirable, `schema: ${event} required`);
   }
   // Several unknown events beside a known one: one warning each, the known one runs as before.
   assert.deepEqual(manifestContract({ ...base, hooks: { spawn: "bin/h.mjs", a: "bin/a.mjs", "b/c": "bin/b.mjs" } }).warnings.map((w) => w.pointer), ["/hooks/a", "/hooks/b~1c"]);

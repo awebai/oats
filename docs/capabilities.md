@@ -94,12 +94,16 @@ A self-contained package has an `oats.json`:
   slot.
 - `skills` entries can be skill directories or roots containing skills.
 - `inject` is optional instance instruction Markdown.
-- The hooks are `spawn`, `launch` and `retire`. A hook is a
+- The hooks are `spawn`, `launch`, `retire` and `worktree`
+  ([The worktree event](#the-worktree-event)). A hook is a
   command string, or `{ command, required }`. `required: true` is valid **only
-  on `spawn`**: the hook's failure then fails the spawn and rolls it back,
+  on `spawn` and `worktree`**: a required spawn hook's failure fails the spawn
+  and rolls it back,
   instead of producing an instance whose capability never configured itself —
   an aweb identity that could not be minted leaves an agent believing it can be
-  woken by mail. Every other hook stays best-effort and only warns, so advisory
+  woken by mail. A required `worktree` hook's failure fails the spawn the same
+  way, or removes the tree `oats worktree add` made. Every other hook stays
+  best-effort and only warns, so advisory
   work never becomes a spawn blocker. `launch` and `retire` cannot be
   required: they run outside a spawn transaction, so there is no moment to
   enforce them. A `soul-scaffold` hook is tolerated and ignored.
@@ -148,7 +152,8 @@ A self-contained package has an `oats.json`:
   `oats status` reports it as retained state rather than a live instance, and
   `oats retire <instance>` retries the cleanup — re-running the retire hooks and
   the worktree removal, verifying both, and verifying (never deleting) the
-  branch: no retire deletes a branch. While the branch the failed spawn created
+  branch: no retire deletes a branch, with one exception, a spawn killed while
+  its `worktree` hooks ran (below). While the branch the failed spawn created
   is still there, the retry stays incomplete with the item `the branch the
   failed spawn created is left: OATS does not delete it. Inspect it and delete
   it with Git if it is not wanted, then retry`. The item names no branch: the
@@ -177,6 +182,60 @@ A self-contained package has an `oats.json`:
   success, and every Git step it records must be re-run and verified. A retry that resolves no
   capabilities — a hand-edited descriptor, or config drift since the spawn — is an
   incomplete cleanup, not a clean one, and the home stays.
+- **A spawn in progress** (0.49.0). A `work: worktree` spawn that fires
+  [`worktree` hooks](#the-worktree-event) writes the same marker just before
+  the first of them, so a parent killed while they run (SIGKILL included)
+  leaves a home `oats retire` can clean up. Its `outstanding` holds the retire
+  hooks of the capabilities whose spawn hooks ran, plus the Git steps
+  `worktree` and `branch`. It adds an optional top-level `inProgress: { pid,
+  processStart, startedAt, branch, baseOid, hookPgid?, hookStart? }`: the
+  spawning process, identified by its pid and start time, the branch the spawn
+  created and the commit it created it at, and the process group of the hook
+  running. The spawn removes the marker once its final `instance.json` and
+  baseline are written; a failure's compensation replaces it in one rename.
+  Such a marker satisfies every rule above, so a reader that does not know
+  `inProgress` reads it as a quarantine. While the spawning process is
+  verifiably alive (its pid runs with the recorded start time):
+  - `oats status` gives the home's row `spawnInProgress: true` and no
+    `rollbackIncomplete`;
+  - `oats retire` refuses with `E_LIFECYCLE_BUSY`, `--force` included;
+  - `oats session start` refuses it as any quarantined home
+    (`E_INSTANCE_RETIRING`).
+
+  Whether the process exists is the operating system's answer (`kill -0`:
+  "no such process" is gone, another user's process exists), the same on
+  every host. Only then is its start time read: from `/proc`, or with `ps`
+  (in a fixed `LC_ALL=C`, `TZ=UTC` environment) where there is no `/proc`,
+  as on macOS. A start that cannot be read is never taken to mean the process is
+  gone, nor shown as alive: `oats status` shows the quarantine
+  (`rollbackIncomplete`, whose `inProgress` names the pid), and `oats retire`
+  refuses with `E_LIFECYCLE_BUSY`, naming the recorded pid and start for a
+  check by hand. Once that check shows the spawn is gone, `oats retire
+  <instance> --force` retires the home and keeps the branch
+  (`spawnCompensation.reason`, `forcedIncomplete`).
+
+  Once that process is gone (killed with SIGKILL, or its rollback cut
+  short), `oats retire` finishes the spawn's own compensation, in order:
+  1. it ends the hook process group the spawn left, only when the group's
+     leader runs with its recorded start time. A group whose leader has
+     exited is not signalled, and a warning names it;
+  2. it runs the owed retire hooks;
+  3. it removes the worktree and verifies the removal;
+  4. only then, it deletes `inProgress.branch` with an atomic
+     compare-and-delete at `inProgress.baseOid` (`git update-ref -d
+     refs/heads/<b> <baseOid>`).
+
+  This is the one exception to "no retire deletes a branch": a branch still
+  at the commit it was created at holds no work. Retire does not delete it,
+  and falls back to the "branch left" item above naming the branch (the home
+  is retained), when its tip moved, when it is checked out in any worktree,
+  or when its ref cannot be read. Every other quarantine keeps its branch.
+  The retire result's `branchDeleted` means exactly "retire's own
+  `--delete-branch`" (refused, so always `false`), not whether a branch was
+  deleted. This step is reported in the additive `spawnCompensation`, the one
+  place a retire's branch deletion is reported: `{ branch, branchDeleted:
+  true }`, or `{ branch, branchDeleted: false, reason }`, present only when
+  the step was reached.
 - Because some cleanups can never succeed (a capability offering no way to undo its
   own setup, a permanently unreachable remote), **`--force` also overrides
   retention**: the home is removed, and everything still outstanding is printed as
@@ -471,7 +530,8 @@ A spawn hook also gets `OATS_TASK`, `OATS_REPO`, `OATS_BRANCH`, `OATS_WORK`,
 `OATS_TRIGGER_EVENT_FILE`. A launch hook also gets `OATS_HARNESS` and
 `OATS_PREVIOUS_HARNESS`, and `OATS_LAUNCH_PREVIEW=1` when it runs for a
 preview (only a preview-aware hook does, below); on a real run
-`OATS_LAUNCH_PREVIEW` is not set.
+`OATS_LAUNCH_PREVIEW` is not set. A worktree hook also gets the tree
+variables of [The worktree event](#the-worktree-event).
 
 A dispatched command (`oats <namespace> <command>`, from an instance home or
 from the deployment directory) receives:
@@ -513,7 +573,8 @@ a home with none recorded gives `{}`. A final JSON line may return `meta`,
 `brief`, `warning`, or harness-specific `launch` arguments; a preview-aware
 launch hook's preview answer may add `volatileEnv` (below). A **spawn or
 launch hook** may also return an `env` object for the launched process;
-returning `env` from a retire hook is an explicit contract error.
+returning `env` from a retire or [worktree](#the-worktree-event) hook is an
+explicit contract error.
 
 A **launch hook** runs at every start and restart of a home for each provider
 recorded at spawn (under its recorded settings). Its `launch` arguments and
@@ -644,6 +705,145 @@ and must not be encoded into this persisted spawn command.
 Spawn order is by capability name; retirement reverses successful
 spawn order. Hooks run from the instance's own copy
 (`<home>/.oats/modules/<cap>/`).
+
+### The worktree event
+
+`OATS_EVENT=worktree` (OATS 0.49.0) lets a capability set up a Git tree the
+kernel has just created: install dependencies, link environment files, pin
+a toolchain. The kernel runs only the hooks of the instance's own
+capabilities; it runs no code from the repository.
+
+**When it fires.** Once for each tree the kernel creates:
+
+- `./work` of a `work: worktree` spawn, after the spawn hooks succeed and
+  inside the spawn's transaction;
+- each extra tree `oats worktree add` makes
+  ([extra trees](souls-and-instances.md#extra-trees)).
+
+It never fires for a `checkout`, `attached`, `workspace` or `directory`
+`./work`, for a tree made with raw Git, or at start, restart, resume or
+retire. `oats worktree remove` fires no hook. An `add` that finds its tree
+already made (same clone, branch and base) runs no hook again.
+
+**How it runs.** Hooks run in capability-name order, from the module copy,
+like every hook. Other events keep their own behaviour (120 s, buffered,
+cwd the home); this one differs:
+
+- **cwd is the new tree.** `OATS_TREE` names it too.
+- stdin is `/dev/null`, with no terminal.
+- The hook is started detached, in its own process group, so a timeout or an
+  interrupt ends the whole group.
+- stdout and stderr go to `<home>/.oats/logs/worktree-<purpose>-<cap>.log`
+  (`worktree-work-<cap>.log` for `./work`), created 0600 and truncated on each
+  run. On `oats worktree add` they are also copied to the kernel's stderr,
+  never its stdout: `--json` prints only the envelope. A caller that closes
+  its end of stderr or stdout (a tool shell killed, Desktop gone) only stops
+  the copy: the hooks and the add run to their end, and the log is whole. The log holds whatever
+  the hook printed, so its content never enters any JSON answer, receipt,
+  record, marker or instance event: they carry the log's path only. The
+  `warning` of the hook's last JSON line is the one piece of its output that
+  may surface.
+- The timeout is 30 minutes, fixed. At the timeout the kernel sends the group
+  SIGTERM, then SIGKILL after a short grace.
+- The result is the exit status. Of the last stdout line's JSON only
+  `warning` is read. Returning `env` is a contract error
+  (`E_HOOK_ENVIRONMENT_CONTRACT`), as at retire; `meta`, `brief` and `launch`
+  are ignored.
+- A non-required hook that fails or times out is a warning; the tree is kept.
+  A required one (`{ command, required: true }`) fails closed:
+  - at spawn, it fails the spawn through the required-hook rollback above
+    (retire hooks compensate in reverse, the worktree-mode Git state is
+    removed and verified, and the home is deleted, or kept as a quarantine).
+    The hook's log was in that home: once it is deleted, the answer names
+    no log path (each `details.hooks` entry's `log` is `null`) and says to run
+    the setup with `oats worktree add` in an existing instance to see its
+    output; a quarantined home keeps its logs, and the answer names them;
+  - at `oats worktree add`, the tree is removed. The branch is deleted only
+    when that `add` created it, no worktree has it checked out, and it is
+    still where `add` created it.
+
+  Both exit nonzero, naming the capability and its log. `oats worktree add`
+  refuses with `E_REQUIRED_HOOK_FAILED` (`E_HOOK_ENVIRONMENT_CONTRACT` for an
+  `env` answer); `oats spawn` fails as for a required spawn hook.
+- A hook that removes or moves the tree fails the check that follows the
+  hooks: a failure when any hook is required, else a warning.
+- SIGINT, SIGTERM or SIGHUP to the kernel while the hooks run ends the running
+  hook's group, rolls back as for a required failure, and exits 128 + the
+  signal number with `E_INTERRUPTED`. A parent killed with SIGKILL leaves a
+  record the next command completes: the `creating` tree record for `add`
+  (the next `oats worktree add` or `remove` of that purpose rolls it back), or
+  the spawn's [in-progress marker](#manifest) for a spawn (`oats retire`).
+  That recovery signals the hook process group the killed parent left only
+  while the group's leader runs with its recorded start time. A group whose
+  leader has exited is never signalled, because its id may already belong to
+  another group. The recovery reports it in a warning, and any leftover
+  processes are ended by hand. A group that still has members while its
+  leader's start cannot be read (where `ps` fails) is not signalled either,
+  and the recovery does not go on past it: the leader may still be that hook,
+  or that git step. `add`, `remove` and `oats retire` refuse with
+  `E_LIFECYCLE_BUSY` and keep the record, naming the group, its recorded
+  start and the way out: check the group by hand and, if it is that hook or
+  git step, end it (`kill -TERM -- -<pgid>`) and retry. If it is not, remove
+  the record named in the message (for `add` and `remove`), or run `oats retire
+  <instance> --force`, which then keeps the branch.
+
+**Leave the tree clean.** `oats worktree remove` refuses a tree with
+uncommitted changes (`E_WORKTREE_DIRTY`). So a hook should leave the tree
+clean: an install that does not rewrite the lockfile (`npm ci`, `yarn install
+--immutable`, not a plain `npm install`), and outputs that are gitignored. A
+hook that has to change tracked files says so in its capability's brief.
+
+**Environment.** The standard hook variables above, and:
+
+| Variable | Value |
+|---|---|
+| `OATS_TREE` | the absolute canonical path of the new tree |
+| `OATS_TREE_CLONE` | the absolute path of the clone the tree was added from |
+| `OATS_TREE_REMOTE` | the clone's `origin` URL, without credentials (below) |
+| `OATS_TREE_MEMBER` | the member repository key, or empty (below) |
+| `OATS_BRANCH` | the branch the tree was created on |
+| `OATS_TREE_BASE` | the base as given: `--base`, or the spawn's planned base ref |
+| `OATS_TREE_BASE_OID` | the commit the tree's HEAD is at when the hook starts |
+| `OATS_PURPOSE` | the `--purpose`; empty for `./work` |
+| `OATS_TREE_ORIGIN` | `spawn` or `add` |
+
+`OATS_TREE_MEMBER` is never inferred over the network:
+
+- `oats worktree add --repo <key>`: that key;
+- `oats worktree add` without `--repo`: the soul's member key, when the
+  clone's local remotes name that repository;
+- `oats worktree add --repo <path>`: empty;
+- a spawn: the soul's member key, when the clone is a clone of the soul's
+  repository; else empty.
+
+`OATS_TREE_REMOTE` never carries a credential. For a URL-style remote
+(`scheme://userinfo@host/...`), the whole userinfo (`user:password@` or
+`token@`) is dropped; for an scp-style remote (`user@host:path`), the `user@`
+is dropped. `https://user:tok@host/org/r.git` becomes
+`https://host/org/r.git`, and `git@host:org/r.git` becomes `host:org/r.git`.
+The kernel records, prints, logs and passes on only this form: the hook
+environment, the tree record, the instance event and the receipt.
+
+**The environment is inherited.** As for every hook, the hook runs with the
+environment of whoever ran the command; inside an instance session that is
+the session's own. The kernel adds no credentials. A hook that needs a
+registry token or a deploy key gets it from that environment, or from its
+own configuration.
+
+**Adoption.** A kernel before 0.49.0 refuses a manifest that declares
+`hooks.worktree`, and with it the whole capability. In order:
+
+1. Upgrade the kernel on **every host that composes the capability**.
+2. Only then declare `hooks.worktree`, with `compatibility.oats:
+   ">=0.49.0"`, so an older host refuses with `E_CAPABILITY_INCOMPATIBLE`
+   naming the release, not with a schema error.
+3. The blast radius is every soul that composes the capability, on every host
+   below the release: one capability can stop every developer soul of a
+   workspace from spawning, as in lfx-oats-workspace#22, where one capability
+   took down every developer soul.
+4. To limit it, put the hook in a small capability composed only by the souls
+   that need the setup.
+5. Declare it `required` when the tree is unusable without the setup.
 
 ## Official packages
 

@@ -377,3 +377,20 @@ test("the step does not depend on the work mode: a directory-mode home's extra t
 });
 
 function rmFile(p) { execFileSync("rm", ["-f", p]); }
+
+test("a tree made by `oats worktree add` (#796) is retired exactly like a raw-git one; its record is not changed home bytes", async (t) => {
+  const w = await instance(t, "dev-added");
+  const add = w.fx.cli(["worktree", "add", "--purpose", "added", "--branch", "agents/dev-added-x", "--base", "main", "--json"], { cwd: w.home, env: { OATS_INSTANCE_HOME: w.home } });
+  assert.equal(add.status, 0, add.stderr + add.stdout);
+  const path = join(w.home, ".work-added");
+  assert.ok(existsSync(join(w.home, ".oats", "trees", "added.json")), "add recorded the tree");
+  const plan = w.plan();
+  assert.deepEqual(plan.facts.extraWorktrees, [{ path, repo: w.fx.member, branch: "agents/dev-added-x", detachedAt: null, disposition: "remove", movedTo: null, reason: null }]);
+  const tip = w.branchTip("agents/dev-added-x");
+  const r = await w.retire();
+  assert.equal(r.extraWorktrees[0].outcome, "removed");
+  assert.equal(r.workRecovery?.classes?.includes("changed instance-home bytes") ?? false, false, JSON.stringify(r.workRecovery));
+  assert.equal(existsSync(w.home), false);
+  assert.equal(w.registered(path), false);
+  assert.equal(w.branchTip("agents/dev-added-x"), tip, "its branch stays in the clone");
+});

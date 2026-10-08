@@ -2,18 +2,20 @@
 // tells an agent how to make a tree of its own for another branch or repository. These tests hold
 // that section to two things: it is the same text in both injects (and so in every composed
 // AGENTS.md of those modes), and its commands do what the prose around them says — run verbatim, as
-// shell lines taken from the inject itself, against a hermetic upstream and clone:
+// the command lines taken from the inject itself (`oats worktree add|remove`, #796), from a real
+// instance home of a scratch deployment whose member clone has a bare origin:
 //   - the tree starts from the remote's current state even when the clone's remote-tracking refs
 //     are stale, and creating it moves none of the clone's refs beyond the new branch;
-//   - `switch -c` refuses a branch name that already exists in the clone;
+//   - `add` refuses a branch name that already exists in the clone;
 //   - reworking an existing remote branch under `<instance>/<branch>` and pushing with
 //     `HEAD:<remote-branch>` changes that one remote branch and nothing else.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const ROOT = resolve(new URL("..", import.meta.url).pathname);
 const HEADING = "### Extra trees";
@@ -27,13 +29,14 @@ const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 /** The briefing's commands, read from the inject text rather than retyped here. */
 function briefingCommands() {
   const section = sectionOf(injectText("worktree"));
-  const create = section.split("\n").filter((line) => line.startsWith("    git ")).map((line) => line.slice(4));
-  const remove = section.match(/`(git -C <clone> worktree remove [^`]+)`/)?.[1];
+  const create = section.split("\n").filter((line) => line.startsWith("    oats ")).map((line) => line.slice(4));
+  const remove = section.match(/`(oats worktree remove [^`]+)`/)?.[1];
   const push = section.match(/`(git push origin HEAD:<remote-branch>)`/)?.[1];
-  assert.equal(create.length, 3, "the briefing has three indented create commands");
-  assert.ok(remove, "the briefing names its worktree remove command");
+  assert.equal(create.length, 1, "the briefing has one indented create command");
+  assert.match(create[0], /^oats worktree add /);
+  assert.ok(remove, "the briefing names its remove command");
   assert.ok(push, "the briefing names its push command");
-  return { create, remove, push };
+  return { create: create[0], remove, push };
 }
 
 const cleanups = [];
@@ -41,33 +44,22 @@ test.afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup();
 });
 
-/** A scratch world: a bare upstream on main, a seed repo that pushes to it, a clone, an instance home. */
-function world() {
+/** A scratch world: a deployment whose member clone (`clone`) has a bare `upstream` as origin, a seed
+ *  repo that pushes to it behind the clone's back, and an instance home (checkout mode, no capability). */
+async function world(t) {
+  const fx = v2Deployment({ souls: { dev: { soul: { work: "checkout" } } } });
+  cleanups.push(fx.cleanup);
+  const hostPath = process.env.PATH; process.env.PATH = fx.env.PATH; t.after(() => { process.env.PATH = hostPath; });
+  const { home } = await fx.spawn("dev", { instance: "inst", work: "checkout" });
   const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-extra-trees-")));
   cleanups.push(() => rmSync(base, { recursive: true, force: true }));
-  const env = {
-    PATH: process.env.PATH,
-    HOME: base,
-    LANG: "C",
-    GIT_CONFIG_GLOBAL: "/dev/null",
-    GIT_CONFIG_NOSYSTEM: "1",
-    GIT_TERMINAL_PROMPT: "0",
-    GIT_AUTHOR_NAME: "Test",
-    GIT_AUTHOR_EMAIL: "test@example.invalid",
-    GIT_COMMITTER_NAME: "Test",
-    GIT_COMMITTER_EMAIL: "test@example.invalid",
-    OATS_INSTANCE_HOME: join(base, "home"),
-  };
+  const env = { ...fx.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0",
+    GIT_AUTHOR_NAME: "Test", GIT_AUTHOR_EMAIL: "test@example.invalid", GIT_COMMITTER_NAME: "Test", GIT_COMMITTER_EMAIL: "test@example.invalid" };
   const git = (...args) => execFileSync("git", args, { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-  const upstream = join(base, "upstream.git");
-  const seed = join(base, "seed");
-  const clone = join(base, "clone");
-  mkdirSync(env.OATS_INSTANCE_HOME, { recursive: true });
-  git("init", "-q", "--bare", "-b", "main", upstream);
-  git("init", "-q", "-b", "main", seed);
-  git("-C", seed, "remote", "add", "origin", upstream);
+  const upstream = fx.repo, clone = fx.member, seed = join(base, "seed");
+  git("clone", "-q", upstream, seed);
   let n = 0;
-  /** Commit on the seed's current branch and push it to upstream; returns the commit. */
+  /** Commit on the seed's current branch and push it to upstream (the clone does not fetch); returns the commit. */
   const seedCommit = (branch) => {
     writeFileSync(join(seed, "file.txt"), `change ${++n}\n`);
     git("-C", seed, "add", "file.txt");
@@ -75,16 +67,17 @@ function world() {
     git("-C", seed, "push", "-q", "origin", `HEAD:refs/heads/${branch}`);
     return git("-C", seed, "rev-parse", "HEAD").trim();
   };
-  /** Run one briefing line through /bin/sh, its placeholders substituted. */
-  const sh = (line, values) => {
-    let cmd = line.replaceAll("<clone>", shq(clone));
+  /** Run one briefing line from the home, its placeholders substituted: `oats …` through the real CLI, else /bin/sh. */
+  const run = (line, values, cwd = home) => {
+    let cmd = line;
     for (const [name, value] of Object.entries(values)) cmd = cmd.replaceAll(`<${name}>`, value);
     assert.doesNotMatch(cmd, /<[a-z-]+>/, `every placeholder is substituted in: ${cmd}`);
-    return spawnSync("/bin/sh", ["-c", cmd], { env, encoding: "utf8" });
+    if (cmd.startsWith("oats ")) return fx.cli([...cmd.slice(5).split(/\s+/), "--json"], { cwd, env: { OATS_INSTANCE_HOME: home } });
+    return spawnSync("/bin/sh", ["-c", `cd ${shq(cwd)} && ${cmd}`], { env, encoding: "utf8" });
   };
   const ok = (result) => assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
   const refs = (repo, ...patterns) => git("-C", repo, "for-each-ref", ...patterns);
-  return { base, env, git, upstream, seed, clone, seedCommit, sh, ok, refs, tree: (purpose) => join(env.OATS_INSTANCE_HOME, `.work-${purpose}`) };
+  return { base, env, git, upstream, seed, clone, home, seedCommit, run, ok, refs, tree: (purpose) => join(home, `.work-${purpose}`) };
 }
 
 const lines = (text) => text.split("\n").filter(Boolean);
@@ -104,17 +97,15 @@ test("every composed worktree and checkout golden carries the shared section wit
   for (const name of cases) {
     const agents = readFileSync(join(ROOT, "test", "golden", name, "AGENTS.md"), "utf8");
     assert.ok(agents.includes(section), `${name}/AGENTS.md contains the Extra trees section verbatim`);
-    for (const literal of ['"$OATS_INSTANCE_HOME/.work-<purpose>"', "git -C <clone> worktree add --detach", "fetch --refmap= origin <base>", "switch -c <branch> FETCH_HEAD", "git push origin HEAD:<remote-branch>"]) {
+    for (const literal of ["oats worktree add --purpose <purpose> --branch <branch> --base <base>", "oats worktree remove --purpose <purpose>", "git push origin HEAD:<remote-branch>"]) {
       assert.ok(agents.includes(literal), `${name}/AGENTS.md keeps ${literal}`);
     }
   }
 });
 
-test("a fresh extra tree starts from the remote's tip, not the clone's stale origin/main, and moves no clone ref", () => {
+test("a fresh extra tree starts from the remote's tip, not the clone's stale origin/main, and moves no clone ref", async (t) => {
   const { create, remove } = briefingCommands();
-  const w = world();
-  w.seedCommit("main");
-  w.git("clone", "-q", w.upstream, w.clone);
+  const w = await world(t);
   const tip = w.seedCommit("main"); // the clone's origin/main is now stale
   const stale = w.git("-C", w.clone, "rev-parse", "origin/main").trim();
   assert.notEqual(stale, tip);
@@ -123,7 +114,7 @@ test("a fresh extra tree starts from the remote's tip, not the clone's stale ori
   const fetchHeadBefore = existsSync(clonesFetchHead) ? readFileSync(clonesFetchHead) : null;
   const refsBefore = w.refs(w.clone, "refs/heads", "refs/remotes");
   const values = { purpose: "x", base: "main", branch: "agents/inst-x" };
-  for (const line of create) w.ok(w.sh(line, values));
+  w.ok(w.run(create, values));
 
   const tree = w.tree("x");
   assert.equal(w.git("-C", tree, "rev-parse", "HEAD").trim(), tip, "the tree is at the upstream tip");
@@ -136,46 +127,41 @@ test("a fresh extra tree starts from the remote's tip, not the clone's stale ori
   if (fetchHeadBefore === null) assert.equal(existsSync(clonesFetchHead), false, "the clone's own FETCH_HEAD is not written");
   else assert.deepEqual(readFileSync(clonesFetchHead), fetchHeadBefore, "the clone's own FETCH_HEAD is unchanged");
 
-  w.ok(w.sh(remove, values));
+  w.ok(w.run(remove, values));
   const list = w.git("-C", w.clone, "worktree", "list", "--porcelain", "-z");
   assert.equal(list.includes(tree), false, "the clone no longer lists the tree");
   assert.equal(existsSync(tree), false);
 });
 
-test("switch -c refuses a branch name that already exists in the clone, and leaves that branch alone", () => {
-  const { create, remove } = briefingCommands();
-  const w = world();
-  w.seedCommit("main");
-  w.git("clone", "-q", w.upstream, w.clone);
+test("add refuses a branch name that already exists in the clone, and leaves that branch alone", async (t) => {
+  const { create } = briefingCommands();
+  const w = await world(t);
   w.seedCommit("main");
   w.git("-C", w.clone, "branch", "agents/inst-x", "origin/main");
   const existing = w.git("-C", w.clone, "rev-parse", "refs/heads/agents/inst-x").trim();
 
   const values = { purpose: "x", base: "main", branch: "agents/inst-x" };
-  w.ok(w.sh(create[0], values));
-  w.ok(w.sh(create[1], values));
-  const refused = w.sh(create[2], values);
-  assert.notEqual(refused.status, 0, "switch -c fails on an existing branch name");
-  assert.match(refused.stderr, /already exists/, "it fails because the branch exists");
+  const refused = w.run(create, values);
+  assert.notEqual(refused.status, 0, "add fails on an existing branch name");
+  assert.equal(refused.json().error.code, "E_BRANCH_EXISTS", "it fails because the branch exists");
+  assert.match(refused.json().error.message, /inst\/agents\/inst-x/, "and names the <instance>/<branch> remedy");
   assert.equal(w.git("-C", w.clone, "rev-parse", "refs/heads/agents/inst-x").trim(), existing, "the existing branch did not move");
-
-  w.ok(w.sh(remove, values));
+  assert.equal(existsSync(w.tree("x")), false, "nothing was made");
 });
 
-test("reworking an existing remote branch as <instance>/<branch> and pushing HEAD:<remote-branch> changes only that remote branch", () => {
+test("reworking an existing remote branch as <instance>/<branch> and pushing HEAD:<remote-branch> changes only that remote branch", async (t) => {
   const { create, push } = briefingCommands();
-  const w = world();
-  w.seedCommit("main");
+  const w = await world(t);
   w.git("-C", w.seed, "switch", "-q", "-c", "feature");
   w.seedCommit("feature");
-  w.git("clone", "-q", w.upstream, w.clone);
+  w.git("-C", w.clone, "fetch", "-q", "origin");
   w.git("-C", w.clone, "branch", "feature", "origin/feature"); // the name collides with the remote branch
   const featureTip = w.seedCommit("feature"); // and the clone is stale against it
 
   const cloneBefore = w.refs(w.clone, "refs/heads", "refs/remotes");
   const localFeature = w.git("-C", w.clone, "rev-parse", "refs/heads/feature").trim();
   const values = { purpose: "feature", base: "feature", branch: "inst/feature" };
-  for (const line of create) w.ok(w.sh(line, values));
+  w.ok(w.run(create, values));
   const tree = w.tree("feature");
   assert.equal(w.git("-C", tree, "rev-parse", "HEAD").trim(), featureTip);
 
@@ -185,7 +171,7 @@ test("reworking an existing remote branch as <instance>/<branch> and pushing HEA
   const pushed = w.git("-C", tree, "rev-parse", "HEAD").trim();
 
   const upstreamBefore = w.refs(w.upstream);
-  w.ok(w.sh(`cd ${shq(tree)} && ${push}`, { "remote-branch": "feature" }));
+  w.ok(w.run(push, { "remote-branch": "feature" }, tree));
 
   const upstreamOld = lines(upstreamBefore), upstreamNew = lines(w.refs(w.upstream));
   assert.deepEqual(upstreamOld.filter((line) => !upstreamNew.includes(line)), [`${featureTip} commit\trefs/heads/feature`]);
