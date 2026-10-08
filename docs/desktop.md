@@ -45,6 +45,15 @@ it, but opening a terminal will fail until tmux is installed. The DEB
 declares the dependency; for the AppImage install it yourself
 (`apt install tmux`, `dnf install tmux`, …) and verify with `tmux -V`.
 
+The AppImage mounts itself with FUSE, which some current distributions
+don't install. Without it, start the AppImage with
+`--appimage-extract-and-run`. Don't extract the image and run its `AppRun`
+yourself: started that way, Desktop can't tell which entries in `PATH`,
+`XDG_DATA_DIRS`, `LD_LIBRARY_PATH` and `GSETTINGS_SCHEMA_DIR` the image
+added, so the programs it starts keep them, among them the tmux server it
+starts and every agent pane on it (see
+[the environment of the programs Desktop starts](../packages/desktop/README.md#the-environment-of-the-programs-desktop-starts)).
+
 ### The `oats` CLI
 
 Reads (roster, hierarchy, files, terminals) work with no CLI at all.
