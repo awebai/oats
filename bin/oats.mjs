@@ -30,7 +30,7 @@ import {
   LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
   officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, isCapturedHome, capturedHomeRefusal, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
-  findInstanceHome, findInstanceHomes, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, stableSoulId, preparedSoulIdOf, recordedKernelBin, launchConfigsAt, launchPromptPolicyAt, LAUNCH_PROMPT_UPDATE_WARNING, launchReportFor, explicitInstanceName, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
+  findInstanceHome, findInstanceHomes, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, stableSoulId, preparedSoulIdOf, recordedKernelBin, launchConfigsAt, launchPromptPolicyAt, LAUNCH_PROMPT_UPDATE_WARNING, launchReportFor, explicitInstanceName, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
   FAILED_SPAWN_BRANCH_LEFT, RETIRE_DELETE_BRANCH_REFUSED,
 } from "../lib/core.mjs";
 import {
@@ -53,7 +53,7 @@ import { hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/sched
 import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } from "../lib/attachments.mjs";
 
 import { observeInstanceGit, diffInstanceFile } from "../lib/instance-git.mjs";
-import { planStop, applyStop, planRetire, resolveInstance as resolveInstanceForCli } from "../lib/instance-lifecycle.mjs";
+import { planStop, applyStop, planRetire, descendantsOf, resolveInstance as resolveInstanceForCli } from "../lib/instance-lifecycle.mjs";
 import { extraWorktreeLines, formatBytes, workRecoveryLines } from "../lib/retire-output.mjs";
 const await_import_lifecycle = () => ({ resolveInstance: resolveInstanceForCli });
 import { homeTarget, soulTarget, isWorkspaceContext, inspectDocument, withComposedInstructions, readinessDocument, policyOf, policySoul, manifestMissingRequires, INSPECT_OPERATIONS_API } from "../lib/instance-inspect.mjs";
@@ -2612,35 +2612,41 @@ function retireCmd() {
   const planRev = flag("plan-revision"), idemKey = flag("idempotency-key");
   if (planRev === true || idemKey === true) die("--plan-revision and --idempotency-key need values");
   if ((planRev !== undefined) !== (idemKey !== undefined)) die("--plan-revision and --idempotency-key go together");
-  let replayPath = null, childrenStopped = null, plannedExtraWorktrees;
+  // What the plan says about recorded children holds on every apply path: the
+  // retirement stops them first and keeps them (retireInstance, once it has
+  // resolved the home). A guarded apply acts on the children of the plan it
+  // revalidated; a plain or --self retire computes them as the plan does, and
+  // passes none when there are none.
+  let replayPath = null, plannedExtraWorktrees, fresh, children;
   if (planRev !== undefined) {
     if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(idemKey)) die("--idempotency-key: 1-128 chars of [A-Za-z0-9._:-]");
     // Replay first: after a successful retire the home is gone, so the receipt
     // (beside the instances dir, keyed by the idempotency key) is the answer.
     const replay = (dir) => { const p = join(dir, `.oats-retire-receipt.${idemKey}.json`); if (!existsSync(p)) return false; try { const prior = JSON.parse(readFileSync(p, "utf8")); if (prior.retired !== name) return false; if (args.includes("--json")) jsonOk({ ...prior, replayed: true }); else console.log(`retire ${name}: replayed receipt for key ${idemKey}`); return true; } catch { return false; } };
     for (const a of listAgents(root)) if (replay(join(a._dir, "instances"))) return;
-    let fresh;
     try { fresh = planRetire(dirFlag(), root, name, { home: homeFlag }); } catch (e) { return args.includes("--json") ? jsonFail(e.code || "E_LIFECYCLE_FAILED", e.message, e.details) : die(e.message); }
     replayPath = join(dirname(fresh.home), `.oats-retire-receipt.${idemKey}.json`);
     // The extra trees the confirmed plan names, as it names them: the retire refuses as stale rather than
     // move or remove one that no longer reads that way when it gets to them.
     plannedExtraWorktrees = fresh.facts.extraWorktrees;
     if (fresh.planRevision !== planRev) return args.includes("--json") ? jsonFail("E_PLAN_STALE", `the retire plan changed since it was shown (${planRev} → ${fresh.planRevision}); review the fresh plan`, { plan: fresh }) : die(`the retire plan changed since it was shown; re-run oats retire ${name} --plan`);
-    // The plan promised: recorded children are STOPPED first (bounded, never
-    // escalated) and retained. A child still running after the grace refuses
-    // the retirement — nothing is retired, the receipt names the pid.
-    childrenStopped = [];
-    for (const kid of fresh.facts.children) {
-      try { const s = stopInstanceSession(kid.home, {}); childrenStopped.push({ instance: kid.instance, home: kid.home, ok: true, stopped: s.stopped, alreadyIdle: s.alreadyIdle }); }
-      catch (e) { childrenStopped.push({ instance: kid.instance, home: kid.home, ok: false, code: e.code || "E_SESSION_STOP_FAILED", message: e.message, stillRunning: e.receipt?.stillRunning ?? null }); }
-    }
-    const running = childrenStopped.filter((k) => !k.ok);
-    if (running.length) return args.includes("--json") ? jsonFail("E_CHILDREN_RUNNING", `${running.map((k) => k.instance).join(", ")} ${running.length === 1 ? "is" : "are"} still running after a bounded stop; nothing was retired and nothing was escalated`, { childrenStopped, plan: fresh }) : die(`children still running: ${running.map((k) => k.instance).join(", ")}; nothing retired`);
+    children = fresh.facts.children;
+  } else {
+    const recorded = descendantsOf(root, name);
+    if (recorded.length) children = recorded;
   }
   let r;
-  try { r = retireInstance(root, name, { home: homeFlag, self: isSelf, discardWorktree: args.includes("--discard-worktree"), keepDir: args.includes("--keep-dir"), force: args.includes("--force"), ...(plannedExtraWorktrees ? { plannedExtraWorktrees } : {}) }); }
-  catch (e) { if (!e?.code) throw e; return args.includes("--json") ? jsonFail(e.code, e.message, e.candidates ? { ...e.details, candidates: e.candidates } : e.details) : die(e.message); }
-  if (childrenStopped) r.childrenStopped = childrenStopped;
+  try { r = retireInstance(root, name, { home: homeFlag, self: isSelf, discardWorktree: args.includes("--discard-worktree"), keepDir: args.includes("--keep-dir"), force: args.includes("--force"), ...(plannedExtraWorktrees ? { plannedExtraWorktrees } : {}), ...(children ? { children } : {}) }); }
+  catch (e) {
+    if (!e?.code) throw e;
+    // A child still running (or whose stop could not be established) refused the retirement: the
+    // guarded apply returns the plan it acted on, and the text names each child's reason.
+    if (e.code === "E_CHILDREN_RUNNING") {
+      const running = e.details.childrenStopped.filter((k) => !k.ok);
+      return args.includes("--json") ? jsonFail(e.code, e.message, { ...e.details, ...(planRev !== undefined ? { plan: fresh } : {}) }) : die(`children still running: ${running.map((k) => `${k.instance} (${k.code})`).join(", ")}; nothing retired`);
+    }
+    return args.includes("--json") ? jsonFail(e.code, e.message, e.candidates ? { ...e.details, candidates: e.candidates } : e.details) : die(e.message);
+  }
   if (replayPath) { r.planRevision = planRev; r.idempotencyKey = idemKey; r.replayed = false; try { writeFileAtomic(replayPath, JSON.stringify(r, null, 2)); } catch { /* receipt is evidence, not authority */ } }
   // A retired home's wake jobs are forgotten (definitions only; nothing is
   // stopped by this); a deferred self-retire keeps them until the home is gone.
@@ -2677,6 +2683,7 @@ function retireCmd() {
     process.exit(1);
   }
   console.log(`Retired ${r.retired} (agent ${r.agent})${r.worktreeRemoved ? ", worktree removed" : ""}`);
+  for (const k of r.childrenStopped || []) console.log(`  child ${k.instance}: ${k.alreadyIdle ? "already idle" : "stopped"}`);
   // Preserving work and not saying so leaves the operator believing it is gone,
   // which is most of the harm of deleting it. Name the classes and the path.
   for (const line of workRecoveryLines(r)) console.log(line);

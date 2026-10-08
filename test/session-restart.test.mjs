@@ -551,6 +551,107 @@ test("K3 pins: guarded retire STOPS recorded children first and refuses (E_CHILD
   rmSync(twinDir, { recursive: true, force: true });
 });
 
+// #778: every apply path of `oats retire` does what its plan says about recorded children: stopped
+// first (bounded, never escalated) and kept; one still running refuses the retirement.
+const kidHome = async (name, parent, { exe = "polite", ...spawn } = {}) => {
+  const h = await makeHome(name, { command: renderFor(homeOf(name), name, join(binDir, exe)), launch: recipeFor(homeOf(name), name, { executable: join(binDir, exe) }), ...spawn });
+  const m = readJson(join(h.home, "instance.json")); m.parentInstance = parent; write(join(h.home, "instance.json"), JSON.stringify(m, null, 2) + "\n");
+  return h;
+};
+const launched = async (...homes) => { for (const h of homes) { startInstanceSession(h, { env: env() }); assert.ok(await waitFor(() => runningPid(h) !== null)); } };
+const eventKinds = (home) => readEvents(home).events.map((e) => e.kind);
+
+test("#778 T1: plain retire stops recorded children (attached included) as its plan says, keeps them, and names them in the receipt and the text", async () => {
+  const parent = await kidHome("c778-parent", null);
+  const kid = await kidHome("c778-kid", "c778-parent");
+  const attached = await kidHome("c778-attached", "c778-parent", { work: "attached", workDir: join(parent.home, "work") });
+  await launched(parent.home, kid.home, attached.home);
+  const plan = oats(["retire", "c778-parent", "--plan", "--dir", repo]).json.result;
+  assert.deepEqual(plan.facts.children.map((c) => c.instance).sort(), ["c778-attached", "c778-kid"]);
+  assert.ok(plan.notes.some((n) => /recorded child instance\(s\) are stopped first/.test(n)), JSON.stringify(plan.notes));
+  const r = spawnSync(process.execPath, [CLI, "retire", "c778-parent", "--dir", repo], { encoding: "utf8", env: env() });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  for (const name of ["c778-kid", "c778-attached"]) assert.match(r.stdout, new RegExp(`^  child ${name}: stopped$`, "m"), r.stdout);
+  assert.equal(existsSync(parent.home), false, "the parent is retired");
+  for (const h of [kid.home, attached.home]) {
+    assert.ok(await waitFor(() => runningPid(h) === null, "child stopped"));
+    assert.ok(existsSync(h), "the child is kept");
+    assert.ok(eventKinds(h).includes("stopped"), JSON.stringify(eventKinds(h)));
+  }
+  // The JSON receipt carries the same outcome, deepest first.
+  const again = await kidHome("c778-parent-j", null), jkid = await kidHome("c778-kid-j", "c778-parent-j");
+  await launched(again.home, jkid.home);
+  const j = oats(["retire", "c778-parent-j", "--dir", repo]);
+  assert.equal(j.status, 0, j.stdout + j.stderr);
+  assert.deepEqual(j.json.childrenStopped.map(({ instance, ok, stopped, alreadyIdle }) => ({ instance, ok, stopped, alreadyIdle })), [{ instance: "c778-kid-j", ok: true, stopped: true, alreadyIdle: false }]);
+  assert.ok(existsSync(jkid.home) && runningPid(jkid.home) === null);
+});
+
+test("#778 T2: plain retire refuses (E_CHILDREN_RUNNING, nothing retired, not bypassed by --force) when a child ignores SIGTERM", async () => {
+  const parent = await kidHome("c778-p2", null), kid = await kidHome("c778-k2", "c778-p2", { exe: "stubborn" });
+  await launched(parent.home, kid.home);
+  const kidPid = runningPid(kid.home);
+  const refused = oats(["retire", "c778-p2", "--force", "--dir", repo]);
+  assert.equal(refused.status, 1, refused.stdout + refused.stderr);
+  assert.equal(refused.json.error.code, "E_CHILDREN_RUNNING");
+  const [k] = refused.json.error.details.childrenStopped;
+  assert.equal(k.instance, "c778-k2"); assert.equal(k.ok, false); assert.equal(k.code, "E_SESSION_STOP_FAILED"); assert.deepEqual(k.stillRunning, [kidPid]);
+  assert.equal(refused.json.error.details.plan, undefined, "the plan travels only with a guarded apply");
+  assert.ok(existsSync(parent.home) && existsSync(join(parent.home, "work")) && runningPid(parent.home) !== null, "nothing retired: the parent still runs");
+  assert.equal(runningPid(kid.home), kidPid, "nothing escalated");
+  assert.ok(eventKinds(kid.home).includes("stop-refused"), JSON.stringify(eventKinds(kid.home)));
+  assert.ok(!eventKinds(parent.home).includes("retired"));
+  // The text names the child and why it counts as running.
+  const text = spawnSync(process.execPath, [CLI, "retire", "c778-p2", "--dir", repo], { encoding: "utf8", env: env() });
+  assert.notEqual(text.status, 0);
+  assert.match(text.stderr, /children still running: c778-k2 \(E_SESSION_STOP_FAILED\); nothing retired/, text.stderr);
+  process.kill(kidPid, "SIGKILL"); await waitFor(() => runningPid(kid.home) === null, "test cleanup");
+  assert.equal(oats(["retire", "c778-p2", "--dir", repo]).status, 0, "retires once the child is stopped");
+});
+
+test("#778 T3: plain retire with an already idle child succeeds and leaves the child untouched", async () => {
+  const parent = await kidHome("c778-p3", null), kid = await kidHome("c778-k3", "c778-p3");
+  await launched(parent.home);
+  const before = eventKinds(kid.home);
+  const r = oats(["retire", "c778-p3", "--dir", repo]);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual(r.json.childrenStopped.map(({ instance, ok, stopped, alreadyIdle }) => ({ instance, ok, stopped, alreadyIdle })), [{ instance: "c778-k3", ok: true, stopped: false, alreadyIdle: true }]);
+  assert.ok(existsSync(kid.home)); assert.deepEqual(eventKinds(kid.home), before, "no event for an idle child");
+  // A retire without recorded children carries no childrenStopped at all.
+  const lone = await kidHome("c778-lone", null); await launched(lone.home);
+  const l = oats(["retire", "c778-lone", "--dir", repo]);
+  assert.equal(l.status, 0, l.stdout + l.stderr); assert.equal(Object.hasOwn(l.json, "childrenStopped"), false);
+});
+
+test("#778 T4: a deferred --self retirement stops recorded children before it retires the caller; a refusing child fails the completion and keeps the home", async () => {
+  const selfRetire = (name, home) => spawnSync(process.execPath, [CLI, "retire", name, "--self", "--dir", repo, "--json"], { encoding: "utf8", env: { ...env(), OATS_INSTANCE: name, OATS_INSTANCE_HOME: home } });
+  const parent = await kidHome("c778-p4", null), kid = await kidHome("c778-k4", "c778-p4");
+  await launched(parent.home, kid.home);
+  const s = selfRetire("c778-p4", parent.home);
+  assert.equal(s.status, 0, s.stdout + s.stderr);
+  const scheduled = JSON.parse(s.stdout); assert.equal(scheduled.deferred, true);
+  assert.ok(await waitUntil(() => !existsSync(parent.home), "the deferred completion", 60000));
+  assert.equal(existsSync(scheduled.resultPath), false, "a successful completion leaves no result file");
+  assert.ok(existsSync(kid.home) && runningPid(kid.home) === null, "the child is stopped and kept");
+  assert.ok(eventKinds(kid.home).includes("stopped"), JSON.stringify(eventKinds(kid.home)));
+  // A child that ignores SIGTERM: the completion refuses before it quiesces the caller.
+  const p5 = await kidHome("c778-p5", null), k5 = await kidHome("c778-k5", "c778-p5", { exe: "stubborn" });
+  await launched(p5.home, k5.home);
+  const k5Pid = runningPid(k5.home);
+  const s5 = selfRetire("c778-p5", p5.home);
+  assert.equal(s5.status, 0, s5.stdout + s5.stderr);
+  const { resultPath, pendingMarker } = JSON.parse(s5.stdout);
+  assert.ok(await waitUntil(() => existsSync(resultPath), "the completion's failure result", 60000));
+  const result = readJson(resultPath);
+  assert.equal(result.ok, false); assert.equal(result.error.code, "E_CHILDREN_RUNNING");
+  assert.deepEqual(result.childrenStopped.map(({ instance, ok, stillRunning }) => ({ instance, ok, stillRunning })), [{ instance: "c778-k5", ok: false, stillRunning: [k5Pid] }]);
+  assert.match(result.retry, /^oats retire c778-p5/);
+  assert.ok(existsSync(p5.home) && existsSync(pendingMarker), "the home and the pending marker are kept");
+  assert.ok(runningPid(p5.home) !== null, "the caller was not quiesced");
+  process.kill(k5Pid, "SIGKILL"); await waitFor(() => runningPid(k5.home) === null, "test cleanup");
+  assert.equal(oats(["retire", "c778-p5", "--dir", repo]).status, 0, "an external retry completes it");
+});
+
 test("session recompose is removed (0.26): E_UNKNOWN_COMMAND naming the re-spawn, and the feature is no longer advertised", async () => {
   const h = await makeHome("recompose-gone");
   const cli = oats(["session", "recompose", "--home", h.home, "--dry-run"]);
