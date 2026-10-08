@@ -287,3 +287,22 @@ test('retained launch outcomes survive broker and renderer projection; repeat ne
     assert.doesNotMatch(JSON.stringify(view), /PRIVATE/);
   }
 });
+test('#802 review: the hook bound is the preview\'s module bound: 65 and 256 hooks keep their deadline, and a valid preview is never given a silent 60 s', async () => {
+  const example = applyPreview(target).modules[0];
+  for (const [n, want] of [[65, 120000 + 65 * 1800000], [256, 120000 + 256 * 1800000]]) {
+    const preview = applyPreview(target);
+    preview.modules = Array.from({ length: n }, (_, i) => ({ ...structuredClone(example), name: `setup-${i}` }));
+    preview.worktreeHooks = preview.modules.map(m => ({ capability: m.name, required: true }));
+    const f = fixture({ read: async () => ({ status: 'available', data: preview }) });
+    f.c.cli.features = [...f.c.cli.features, 'worktree-event'];
+    const p = await f.send(prepare());
+    assert.equal(p.status, 'prepared'); assert.equal(p.preview.worktreeHooks.length, n); assert.equal(p.applyWithinMs, want);
+  }
+  // Beyond the module bound the preview itself is refused (its modules do not fit), so no hooked spawn runs on 60 s.
+  const preview = applyPreview(target);
+  preview.modules = Array.from({ length: 257 }, (_, i) => ({ ...structuredClone(example), name: `setup-${i}` }));
+  preview.worktreeHooks = preview.modules.map(m => ({ capability: m.name, required: true }));
+  const f = fixture({ read: async () => ({ status: 'available', data: preview }) });
+  f.c.cli.features = [...f.c.cli.features, 'worktree-event'];
+  assert.notEqual((await f.send(prepare())).status, 'prepared');
+});

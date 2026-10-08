@@ -254,9 +254,11 @@ function launchPromptAnswersOf(v) {
 /** The capabilities whose `worktree` hook this spawn would run, in order (feature worktree-event,
  * OATS 0.49.0): [{capability, required}]. Read tolerantly, unlike the rest of the preview: anything
  * else (null, absent, malformed) is undefined, never a refused preview. The apply's CLI deadline and
- * the dialog's Setup fact read it. */
+ * the dialog's Setup fact read it. Bounded like the preview's modules (MAX_HOOKS): a spawn runs at most one
+ * `worktree` hook per capability it composes. */
+export const MAX_HOOKS = MODULES_MAX;
 export function worktreeHooksOf(v) {
-  if (!Array.isArray(v) || v.length > 64) return undefined;
+  if (!Array.isArray(v) || v.length > MAX_HOOKS) return undefined;
   const out = [];
   for (const h of v) {
     if (!record(h) || typeof h.capability !== 'string' || !h.capability || !safe(h.capability, 256) || typeof h.required !== 'boolean') return undefined;

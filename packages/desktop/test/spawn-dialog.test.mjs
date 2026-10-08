@@ -606,3 +606,11 @@ for (const [code, words] of [['E_INTERRUPTED', /^The spawn of release-manager-ap
     }
   });
 }
+test('#802 review: past its deadline a pending spawn reads Outcome unknown in the dialog, with Check result', async t => {
+  let clock = 1000; const realNow = Date.now; Date.now = () => clock; t.after(() => { Date.now = realNow; });
+  const u = await mountSpawn(t, { apply: () => new Promise(() => {}), brokerTimer: fn => { setImmediate(() => { clock += 100000; fn(); }); return () => {}; } });
+  await u.open(); await u.type('.fpurpose', 'api-v2'); await u.spawn(); await settle();
+  assert.equal(u.q('.fstatus').dataset.code, 'E_OUTCOME_UNKNOWN');
+  assert.match(u.text('.fstatus'), /couldn’t confirm whether the instance was created/);
+  assert.equal(u.text('.fspawn'), 'Check result');
+});

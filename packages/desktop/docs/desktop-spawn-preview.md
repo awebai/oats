@@ -275,9 +275,14 @@ the spawn back.
 - **Concurrency.** At most 4 applies run at once backend-wide, one per workspace
   and soul, so one 30-minute spawn does not make every other spawn `E_BUSY`. The
   32-record and 8 MiB bounds stay.
-- **A kill keeps its envelope.** If our deadline does kill the CLI and its stdout
-  holds a complete envelope (the kernel prints `E_INTERRUPTED` after SIGTERM),
-  that envelope is the outcome; only with none is it `E_CLI_TIMEOUT` (unknown).
+- **A kill keeps its envelope.** For a `worktree-event` CLI the deadline is the
+  transport's own timer, not `execFile`'s (whose timeout destroys the child's
+  output before signalling it): at the deadline the CLI gets SIGTERM with its
+  output still read, and SIGKILL only if it still runs 20 s later
+  (`SIGTERM_GRACE_MS`). A complete envelope on stdout (the kernel prints
+  `E_INTERRUPTED` after its rollback) is the outcome, failure or success (the
+  broker still qualifies a receipt); only with none is it `E_CLI_TIMEOUT`
+  (unknown). An older CLI keeps `execFile`'s timeout.
 - **Rolled back is known.** A dispatched failure with `E_INTERRUPTED`,
   `E_REQUIRED_HOOK_FAILED` or `E_HOOK_ENVIRONMENT_CONTRACT` and no
   `details.unconfirmed: true` was compensated by the kernel: **refused, nothing

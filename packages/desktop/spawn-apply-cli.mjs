@@ -11,6 +11,9 @@ import { spawnApplySupported, spawnApplyChoicesSupported, spawnPrepareInput, spa
 const failure = (code, started = false) => ({ started, envelope: { schemaVersion: 1, ok: false, error: spawnApplyReason(code) } });
 const named = v => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(v);
 const worktreeEvent = cli => Array.isArray(cli?.features) && cli.features.includes('worktree-event');
+/** After our deadline's SIGTERM, a worktree-event kernel rolls the spawn back and prints its envelope;
+ * a CLI still running this long after it is killed (SIGKILL) and its outcome is unknown. */
+export const SIGTERM_GRACE_MS = 20000;
 function refusal(doc, cli) {
   // worktree-event: the three rolled-back codes keep the kernel's own message (it names the
   // capability and its log), and whether its compensation was confirmed.
@@ -60,21 +63,39 @@ export async function cliSpawnApply(cli, options = {}, io = {}) {
     // too, so even a re-entrant injected dependency cannot downgrade the mode.
     if (!spawnApplySupported(cli)) return failure('E_APPLY_UNAVAILABLE');
     if (!spawnApplyChoicesSupported(cli, choices, !!input.wake)) return failure('E_UNSUPPORTED_OPTION');
+    // worktree-event: the deadline is ours, not execFile's. execFile's own timeout destroys the child's
+    // output before it signals it, which would lose the envelope a kernel prints after our SIGTERM
+    // (E_INTERRUPTED, once its rollback is done). So: SIGTERM at the deadline with the output still read,
+    // and SIGKILL only if the CLI is still running SIGTERM_GRACE_MS later. Older kernels keep execFile's.
+    const own = worktreeEvent(cli), timer = io.timer ?? ((fn, ms) => { const t = setTimeout(fn, ms); return () => clearTimeout(t); });
+    const limit = io.timeoutMs ?? timeout, grace = io.graceMs ?? SIGTERM_GRACE_MS;
     return await new Promise(resolve => {
+      let expired = false, settled = false, cancelDeadline = () => {}, cancelGrace = () => {};
       try {
         started = true;
-        (io.exec ?? execFile)(cli.bin, argv, { cwd: target.context, env, shell: false, encoding: 'utf8', timeout, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+        const child = (io.exec ?? execFile)(cli.bin, argv, { cwd: target.context, env, shell: false, encoding: 'utf8', ...(own ? {} : { timeout: limit }), maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+          settled = true; cancelDeadline(); cancelGrace();
           if (err?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' || typeof stdout === 'string' && Buffer.byteLength(stdout) > 4 * 1024 * 1024) return resolve(failure('E_CLI_OUTPUT_LIMIT', true));
-          // Our deadline's SIGTERM: a worktree-event kernel answers it (E_INTERRUPTED, after its
-          // rollback), so a complete envelope on stdout is the outcome. Only without one is it unknown.
-          if (err?.killed && !worktreeEvent(cli)) return resolve(failure('E_CLI_TIMEOUT', true));
+          if (err?.killed && !own) return resolve(failure('E_CLI_TIMEOUT', true));
           const doc = typeof stdout === 'string' ? parseEnvelope(stdout) : null;
-          if (err?.killed && !doc) return resolve(failure('E_CLI_TIMEOUT', true));
+          // Killed by our deadline: a complete envelope on stdout is the outcome (failure or success,
+          // which the broker still qualifies). Only without one is it unknown.
+          if (expired || err?.killed) {
+            if (!doc) return resolve(failure('E_CLI_TIMEOUT', true));
+            return resolve(doc.ok === false ? refusal(doc, cli) : { started: true, envelope: doc });
+          }
           if (doc?.ok === false) return resolve(refusal(doc, cli));
           if (err) return resolve(failure('E_CLI_FAILED', true));
           resolve(doc?.ok === true ? { started: true, envelope: doc } : failure('E_CLI_PROTOCOL', true));
         });
-      } catch { resolve(failure('E_CLI_FAILED', true)); }
+        if (own && !settled) cancelDeadline = timer(() => {
+          expired = true;
+          try { child?.kill('SIGTERM'); } catch { /* already gone */ }
+          cancelGrace = timer(() => {
+            try { child?.stdout?.destroy(); child?.stderr?.destroy(); child?.kill('SIGKILL'); } catch { /* already gone */ }
+          }, grace);
+        }, limit);
+      } catch { cancelDeadline(); cancelGrace(); resolve(failure('E_CLI_FAILED', true)); }
     });
   } catch { return failure(started ? 'E_CLI_FAILED' : 'E_INPUT_PREPARATION', started); }
   finally { wakeFile?.cleanup(); taskFile?.cleanup(); }

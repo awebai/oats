@@ -1,7 +1,7 @@
 /** Confirmed K6d input/data boundary. No kernel resolution or renderer key authority. */
 import { retainedSpawnDetails } from './launch-prompt-outcome.mjs';
 import { harnessOf } from './harness-names.mjs';
-import { record, previewSupported, previewSelector, previewChoices, previewTarget, previewData, previewFailure } from './spawn-preview-contract.mjs';
+import { record, previewSupported, previewSelector, previewChoices, previewTarget, previewData, previewFailure, MAX_HOOKS } from './spawn-preview-contract.mjs';
 import { spawnDecision, sameSpawnDecision } from './spawn-decision.mjs';
 const exact = (v, keys) => record(v) && Object.keys(v).every(k => keys.includes(k));
 const bytes = v => new TextEncoder().encode(v).byteLength;
@@ -21,9 +21,9 @@ export function spawnApplyDeadlineMs(cli, preview) {
   const n = Array.isArray(cli?.features) && cli.features.includes('worktree-event') && Array.isArray(preview?.worktreeHooks) ? preview.worktreeHooks.length : 0;
   return n > 0 ? SPAWN_APPLY_MS + n * WORKTREE_HOOK_MS + SPAWN_APPLY_MS : SPAWN_APPLY_MS;
 }
-/** Whether a deadline is one spawnApplyDeadlineMs can produce (at most 64 hooks). */
+/** Whether a deadline is one spawnApplyDeadlineMs can produce (at most MAX_HOOKS hooks). */
 export const spawnApplyDeadline = v => v === SPAWN_APPLY_MS
-  || Number.isSafeInteger(v) && v > 2 * SPAWN_APPLY_MS && (v - 2 * SPAWN_APPLY_MS) % WORKTREE_HOOK_MS === 0 && (v - 2 * SPAWN_APPLY_MS) / WORKTREE_HOOK_MS <= 64;
+  || Number.isSafeInteger(v) && v > 2 * SPAWN_APPLY_MS && (v - 2 * SPAWN_APPLY_MS) % WORKTREE_HOOK_MS === 0 && (v - 2 * SPAWN_APPLY_MS) / WORKTREE_HOOK_MS <= MAX_HOOKS;
 export function spawnApplyChoicesSupported(cli, choices, wakeRequested = false) {
   const has = (values, value) => Array.isArray(values) && values.includes(value);
   return !!choices && (!choices.harness || has(cli?.harnesses, choices.harness))

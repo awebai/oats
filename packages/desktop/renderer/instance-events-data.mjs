@@ -30,7 +30,7 @@ const tolerantText = v => typeof v === 'string' && !!v && v.length <= 4096 ? det
  * log}]`, `log` the hook's log file or null (a rolled-back spawn's log is removed). Anything malformed, the value
  * or one entry, is undefined: the fact is dropped, never the read. Idempotent, so the renderer's re-read agrees. */
 export function hookReceipt(v) {
-  if (!Array.isArray(v) || !v.length || v.length > 64) return undefined;
+  if (!Array.isArray(v) || !v.length || v.length > 256) return undefined;
   const out = [];
   for (const h of v) {
     if (!record(h) || typeof h.ok !== 'boolean' || tolerantText(h.capability) === undefined

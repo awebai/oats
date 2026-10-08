@@ -1440,6 +1440,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
         view = await request({ action: 'result', spawnRef: intent.spawnRef });
         if (!view) return;
       }
+      // Past the deadline and still pending: the outcome is unknown, with Check result (as the store does).
+      if (view.status === 'pending') { phase = 'unknown'; showProblem(spawnApplyReason('E_OUTCOME_UNKNOWN'), 'spawn'); return; }
       phase = view.status;
       const named = intent?.preview?.instance ?? shown?.data?.instance ?? '';
       if (['complete', 'partial'].includes(phase)) {
@@ -1448,8 +1450,6 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       } else if (phase === 'incomplete') {
         const problem = spawnProblem(view.reason, 'spawn');
         setStatus(retainedSpawnMessage(view.incomplete), true, problem);
-      } else if (phase === 'pending') {
-        setStatus('The spawn is still running. Check result again in a moment; nothing else was started.');
       } else if (phase === 'unknown' && ROLLED_BACK_CODES.includes(view.reason?.code)) {
         // #802: rolled back, its cleanup owed: retiring the quarantined home completes it; a re-apply cannot.
         intent = null; submitted = false; phase = 'idle';

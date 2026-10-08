@@ -44,7 +44,7 @@ for (const [label, value] of [['a string', 'nw-setup'], ['an object', { capabili
   ['an entry without ok', [{ capability: 'x', log: LOG }]], ['an entry whose ok is a string', [{ capability: 'x', ok: 'true', log: LOG }]],
   ['an entry without capability', [{ ok: true, log: LOG }]], ['an empty capability', [{ capability: '', ok: true, log: LOG }]],
   ['a log that is a number', [{ capability: 'x', ok: true, log: 7 }]], ['an over-long capability', [{ capability: 'x'.repeat(4097), ok: true, log: null }]],
-  ['one malformed entry among good ones', [...hooks(), 'nw-extra']], ['too many entries', Array.from({ length: 65 }, () => ({ capability: 'x', ok: true, log: null }))],
+  ['one malformed entry among good ones', [...hooks(), 'nw-extra']], ['too many entries', Array.from({ length: 257 }, () => ({ capability: 'x', ok: true, log: null }))],
 ]) test(`a malformed receipt (${label}) drops the Setup fact and never the read`, () => {
   for (const row of [added({ hooks: value }), spawned({ worktreeHooks: value })]) {
     const [out, again] = both([row]);
@@ -121,4 +121,9 @@ test('a row with a malformed receipt still renders, without Setup', async t => {
   assert.equal(u.host.querySelector('.events-rows strong').textContent, 'Worktree added');
   assert.equal(factsOf(u.host).some(([term]) => term === 'Setup'), false);
   assert.match(u.host.textContent, /Purposedocs/);
+});
+test('#802 review: a receipt within the preview\'s module bound (65 entries) keeps its Setup fact', () => {
+  const many = Array.from({ length: 65 }, (_, i) => ({ capability: `nw-${i}`, ok: true, log: null }));
+  const [out] = both([added({ hooks: many })]);
+  assert.equal(out.events[0].data.hooks.length, 65);
 });
