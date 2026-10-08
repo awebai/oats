@@ -621,6 +621,11 @@ test("#778 T3: plain retire with an already idle child succeeds and leaves the c
   const lone = await kidHome("c778-lone", null); await launched(lone.home);
   const l = oats(["retire", "c778-lone", "--dir", repo]);
   assert.equal(l.status, 0, l.stdout + l.stderr); assert.equal(Object.hasOwn(l.json, "childrenStopped"), false);
+  // A guarded receipt always carries it: the Desktop rejects a receipt without the array.
+  const g = await kidHome("c778-guarded-lone", null); await launched(g.home);
+  const gp = oats(["retire", "c778-guarded-lone", "--plan", "--dir", repo]).json.result;
+  const gr = oats(["retire", "c778-guarded-lone", "--plan-revision", gp.planRevision, "--idempotency-key", "c778-g", "--dir", repo]);
+  assert.equal(gr.status, 0, gr.stdout + gr.stderr); assert.deepEqual(gr.json.childrenStopped, []);
 });
 
 test("#778 T4: a deferred --self retirement stops recorded children before it retires the caller; a refusing child fails the completion and keeps the home", async () => {
@@ -634,6 +639,16 @@ test("#778 T4: a deferred --self retirement stops recorded children before it re
   assert.equal(existsSync(scheduled.resultPath), false, "a successful completion leaves no result file");
   assert.ok(existsSync(kid.home) && runningPid(kid.home) === null, "the child is stopped and kept");
   assert.ok(eventKinds(kid.home).includes("stopped"), JSON.stringify(eventKinds(kid.home)));
+  // A child recorded when the retirement was scheduled and retired before the completion runs is
+  // no longer a child: it neither refuses the retirement nor counts as running.
+  const p6 = await kidHome("c778-p6", null), k6 = await kidHome("c778-k6", "c778-p6");
+  await launched(p6.home);
+  const s6 = selfRetire("c778-p6", p6.home);
+  assert.equal(s6.status, 0, s6.stdout + s6.stderr);
+  const r6 = oats(["retire", "c778-k6", "--dir", repo]); assert.equal(r6.status, 0, r6.stdout + r6.stderr);
+  assert.equal(existsSync(k6.home), false);
+  assert.ok(await waitUntil(() => !existsSync(p6.home) || existsSync(JSON.parse(s6.stdout).resultPath), "the deferred completion", 60000));
+  assert.equal(existsSync(p6.home), false, existsSync(JSON.parse(s6.stdout).resultPath) ? readFileSync(JSON.parse(s6.stdout).resultPath, "utf8") : "");
   // A child that ignores SIGTERM: the completion refuses before it quiesces the caller.
   const p5 = await kidHome("c778-p5", null), k5 = await kidHome("c778-k5", "c778-p5", { exe: "stubborn" });
   await launched(p5.home, k5.home);

@@ -2861,8 +2861,9 @@ grace, or whose stop could not be established (`E_SESSION_UNAVAILABLE`,
 `E_CHILDREN_RUNNING {childrenStopped}` (the text form names each child and its
 `code`). **`--force` does not bypass it**: `--force` covers incomplete
 cleanup, not a running child. A `--self` retirement stops the children
-recorded when it was scheduled, in its detached completion before it stops
-the caller; a refusal there leaves the caller's window and home in place and
+recorded when it was scheduled that are still instances (a child retired in
+between is skipped), in its detached completion before it stops the caller;
+a refusal there leaves the caller's window and home in place and
 writes `{ok: false, error: {code: "E_CHILDREN_RUNNING"}, childrenStopped,
 retry}` to `resultPath`. Before 0.47.1 only a guarded apply stopped children.
 
