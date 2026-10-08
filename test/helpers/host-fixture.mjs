@@ -70,7 +70,8 @@ export function leaveEnclosingInstance(dir) {
 // environment says) and `-S <socket>` for a socket inside the fixture. Even a server recreated by the
 // kernel after kill-server uses the empty config and the fixture's shell; `userConfig: true` drops
 // the forced empty config, so a server reads $HOME/.tmux.conf of the fixture's own HOME as a user's
-// server does. Returns the function that restores the environment; it also kills the fixture's
+// server does. The worker drops CLAUDECODE, the marker of the harness session it may run in: a server
+// it starts would otherwise hold it, and the suite asserts that a pane holds none. Returns the function that restores the environment; it also kills the fixture's
 // `oats` server, by socket, and removes the TMUX_TMPDIR.
 //
 // A server the kernel starts gets the user's login environment, read by running the login shell
@@ -126,7 +127,7 @@ exec ${quote(tmux)}${userConfig ? "" : " -f /dev/null"} "$@"
   const config = join(home, ".config");
   mkdirSync(config, { recursive: true });
   for (const key of Object.keys(process.env)) {
-    if (/^(OATS_|PI_AGENT)/.test(key) || ["TMUX", "TMUX_PANE", "ENV", "BASH_ENV", "COLORFGBG"].includes(key)) delete process.env[key];
+    if (/^(OATS_|PI_AGENT)/.test(key) || ["TMUX", "TMUX_PANE", "ENV", "BASH_ENV", "COLORFGBG", "CLAUDECODE"].includes(key)) delete process.env[key];
   }
   Object.assign(process.env, { HOME: home, XDG_CONFIG_HOME: config, ZDOTDIR: home, SHELL: "/bin/sh", PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), TMUX_TMPDIR: tmuxTmpdir, OATS_TEST_LOGIN_SHELL: noLoginShell(base) });
   // Neither the environment (above) nor the working directory makes this worker an OATS instance.
