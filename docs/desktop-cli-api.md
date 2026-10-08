@@ -2043,8 +2043,28 @@ envelope. Its result:
   `resume: "noop"` and `hooksToRun: []`.
 
 `remove` answers `{purpose, path, removed: true, rolledBack, branch,
-branchKept}`: `rolledBack: true` (and `branchKept: false`) when it completed
-an interrupted add's rollback.
+branchKept, branchKeptReason?, warnings?}`. After removing a `ready` tree,
+`rolledBack` is `false` and `branchKept` is `true`. When it completed an
+interrupted add's rollback, `rolledBack` is `true` and `branchKept` says
+whether the branch still exists. The rollback deletes the branch only when
+that add created it, no worktree has it checked out, and it still points at
+the commit the add created it at. A branch kept for one of those reasons is
+named in `branchKeptReason`, and is not debt.
+
+The rollback signals a hook process group that the interrupted add left only
+when the group's leader is alive with its recorded start time. A group whose
+leader has exited is never signalled, because its id may already belong to
+an unrelated group. Instead `warnings` names it, so that leftover processes
+can be ended by hand.
+
+Every `add` or `remove` that reads a record it may act on holds the
+purpose's claim, `<home>/.oats/trees/<purpose>.lock`. A second command
+waits up to 3 s for it, then answers `E_LIFECYCLE_BUSY`. The claim is never
+taken over from a process that has died: if it is left behind, the message
+names the directory to remove.
+
+A failed `add` reports the same facts about its rollback in `details`:
+`rolledBack`, `branchKept`, `branchKeptReason` and `warnings`.
 
 | Code | When |
 |---|---|
@@ -2054,7 +2074,7 @@ an interrupted add's rollback.
 | `E_CLONE_MISMATCH` | the path is a linked worktree, or the clone has no `origin`; `git worktree add` failed |
 | `E_BRANCH_EXISTS` | the branch exists in the clone; `details.remedy` is `<instance>/<branch>` |
 | `E_PLACEMENT_TAKEN` | a `ready` record with another clone, branch or base (`details.differ`); `.work-<p>` with no record, or a file or symbolic link there; an unreadable record |
-| `E_LIFECYCLE_BUSY` | an add of that purpose is still running (pid and start time verified), or an interrupted add's rollback could not be completed (`details.owed`) |
+| `E_LIFECYCLE_BUSY` | an add of that purpose is still running (pid and start time verified); another add or remove of that purpose holds its claim (`details.lock`); or an interrupted add's rollback could not be completed (`details.owed`) |
 | `E_REMOTE_UNREADABLE` | the fetch of `<base>` from `origin` failed; the tree is removed |
 | `E_BASE_UNKNOWN` | the new HEAD is not the fetched commit; the message names both |
 | `E_REQUIRED_HOOK_FAILED`, `E_HOOK_ENVIRONMENT_CONTRACT` | a required `worktree` hook failed or timed out, or a hook answered `env`; the tree is removed (`details.hooks`, `details.rolledBack`) |

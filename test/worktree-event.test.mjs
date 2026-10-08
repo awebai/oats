@@ -667,3 +667,142 @@ test("hook output stays in its 0600 log: never in the envelope, the record, the 
   const ended = await running.done;
   assert.doesNotMatch(ended.stdout, SECRET, "the interrupted spawn's envelope");
 });
+
+// ---------- review round 1: ownership, serialization, the branch a rollback keeps ----------
+
+/** A `git` on PATH that runs the real one, pausing first at the step `gate` (a JS expression over
+ *  `a`, the argv, and `one`, its value of `role`) until `<base>/<release>` exists, after writing
+ *  `<base>/<entered>`; `after`, when given, is written once that step's real git returned. Each is
+ *  a JS expression for a file name. */
+function gatedGit(fx, name, { gate, entered, release, after = "null" }) {
+  const real = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8", env: fx.env }).trim();
+  const dir = join(fx.base, `git-${name}`); mkdirSync(dir);
+  writeFileSync(join(dir, "git"), `#!${process.execPath}
+const { existsSync, writeFileSync } = require("node:fs");
+const { spawnSync } = require("node:child_process");
+const a = process.argv.slice(2), base = ${JSON.stringify(fx.base)};
+const gated = ${gate};
+if (gated) {
+  writeFileSync(base + "/" + (${entered}), "");
+  for (let n = 0; n < 1500 && !existsSync(base + "/" + (${release})); n++) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+}
+const r = spawnSync(${JSON.stringify(real)}, a, { stdio: "inherit" });
+if (gated && (${after})) writeFileSync(base + "/" + (${after}), "");
+process.exit(r.status ?? 1);
+`, { mode: 0o700 });
+  return `${dir}:${fx.env.PATH}`;
+}
+/** A dead adder's record, as a SIGKILL leaves it: the ready record turned back into `creating`. */
+function asKilledAdd(home, purpose, drop = []) {
+  const p = join(home, ".oats", "trees", `${purpose}.json`);
+  const rec = JSON.parse(readFileSync(p, "utf8"));
+  for (const k of drop) delete rec[k];
+  writeFileSync(p, JSON.stringify({ ...rec, state: "creating", pid: 2147483647, processStart: "proc:gone", startedAt: "earlier" }));
+}
+
+test("two adds racing for one branch: the loser's rollback keeps the winner's branch, and says why", async (t) => {
+  const fx = deployment(t, { hookless: true });
+  const { home } = await fx.spawn("dev", { instance: "dev-race", work: "checkout" });
+  const argv = (p) => ["worktree", "add", "--purpose", p, "--branch", "agents/shared", "--base", "main", "--json"];
+  // Both pass the branch precheck: "one" runs its switch only once "two" reached its own, and "two" only after "one" made the branch.
+  const one1 = `a[1].endsWith(".work-one")`;
+  const path = gatedGit(fx, "race", { gate: `a.includes("switch") && a.includes("-c")`,
+    entered: `${one1} ? "one-at-switch" : "two-at-switch"`, release: `${one1} ? "two-at-switch" : "one-done"`, after: `${one1} ? "one-done" : null` });
+  const one = cliChild(fx, argv("one"), { cwd: home, env: { OATS_INSTANCE_HOME: home, PATH: path } });
+  const two = cliChild(fx, argv("two"), { cwd: home, env: { OATS_INSTANCE_HOME: home, PATH: path } });
+  const [r1, r2] = await Promise.all([one.done, two.done]);
+  assert.equal(r1.status, 0, r1.stderr + r1.stdout);
+  const lost = JSON.parse(r2.stdout.trim().split("\n").pop()).error;
+  assert.equal(lost.code, "E_BRANCH_EXISTS");
+  assert.equal(lost.details.rolledBack, true);
+  assert.equal(lost.details.branchKept, true);
+  assert.match(lost.details.branchKeptReason, /not proven/);
+  const winner = join(home, ".work-one");
+  assert.equal(tipOf(fx, "agents/shared"), originMain(fx), "the winner's branch is still there");
+  assert.equal(gitIn(fx, winner, "symbolic-ref", "HEAD"), "refs/heads/agents/shared");
+  assert.equal(gitIn(fx, winner, "status", "--porcelain"), "", "the winner's tree is clean, not every file staged as new");
+  assert.equal(existsSync(join(home, ".work-two")), false);
+});
+
+test("recoveries of one purpose are serialized: a remove that cannot claim it is busy, and never touches the tree the add then made", async (t) => {
+  const fx = deployment(t);
+  const { home } = await fx.spawn("dev", { instance: "dev-ser", work: "checkout" });
+  writeFileSync(join(fx.root, "hook-sleep"), "60");
+  const killed = cliChild(fx, ["worktree", "add", "--purpose", "feat", "--branch", "agents/feat", "--base", "main", "--json"], { cwd: home, env: { OATS_INSTANCE_HOME: home } });
+  assert.ok(await waitFor(() => existsSync(join(fx.root, "hook-sleeping"))));
+  killed.child.kill("SIGKILL");
+  await killed.done;
+  execFileSync("rm", [join(fx.root, "hook-sleep")]);
+  // The recovering add holds the claim inside its rollback's `git worktree remove --force`.
+  const path = gatedGit(fx, "ser", { gate: `a.includes("worktree") && a.includes("remove") && a.includes("--force")`, entered: `"recovering"`, release: `"release-add"` });
+  const recovering = cliChild(fx, ["worktree", "add", "--purpose", "feat", "--branch", "agents/feat", "--base", "main", "--json"], { cwd: home, env: { OATS_INSTANCE_HOME: home, PATH: path } });
+  assert.ok(await waitFor(() => existsSync(join(fx.base, "recovering"))));
+  const stale = wt(fx, home, ["remove", "--purpose", "feat", "--json"]);
+  assert.equal(stale.json().error.code, "E_LIFECYCLE_BUSY", stale.stdout);
+  assert.equal(stale.json().error.details.lock, join(home, ".oats", "trees", "feat.lock"));
+  writeFileSync(join(fx.base, "release-add"), "");
+  const done = await recovering.done;
+  assert.equal(done.status, 0, done.stderr + done.stdout);
+  const tree = join(home, ".work-feat");
+  writeFileSync(join(tree, "authored-after-success.txt"), "work\n");
+  const later = wt(fx, home, ["remove", "--purpose", "feat", "--json"]);
+  assert.equal(later.json().error.code, "E_WORKTREE_DIRTY", "a ready tree is removed only as git allows");
+  assert.ok(existsSync(join(tree, "authored-after-success.txt")), "the work in the fresh tree survives");
+  assert.equal(existsSync(join(home, ".oats", "trees", "feat.lock")), false, "the claim is released");
+});
+
+test("an interrupted add's rollback: deletes a branch only its add created, and reports one it keeps (moved, checked out)", async (t) => {
+  const fx = deployment(t, { hookless: true });
+  const { home } = await fx.spawn("dev", { instance: "dev-own", work: "checkout" });
+  // Killed between `git switch -c` and the record saying so: the tree's own HEAD proves the add made the branch.
+  assert.equal(add(fx, home, "window").status, 0);
+  asKilledAdd(home, "window", ["branchCreated"]);
+  const window = wt(fx, home, ["remove", "--purpose", "window", "--json"]).json().result;
+  assert.equal(window.rolledBack, true);
+  assert.equal(window.branchKept, false);
+  assert.equal(tipOf(fx, "agents/window"), null);
+  // A commit on the branch: kept, and the answer says so.
+  assert.equal(add(fx, home, "moved").status, 0);
+  gitIn(fx, join(home, ".work-moved"), "commit", "--allow-empty", "-qm", "made by a hook");
+  const moved = tipOf(fx, "agents/moved");
+  asKilledAdd(home, "moved");
+  const kept = wt(fx, home, ["remove", "--purpose", "moved", "--json"]);
+  assert.equal(kept.status, 0, kept.stdout);
+  assert.equal(kept.json().result.branchKept, true);
+  assert.match(kept.json().result.branchKeptReason, /tip moved/);
+  assert.equal(tipOf(fx, "agents/moved"), moved);
+  assert.equal(existsSync(join(home, ".oats", "trees", "moved.json")), false, "a branch kept on purpose is not owed: the record is gone");
+  // Checked out in another worktree: kept.
+  assert.equal(add(fx, home, "shared").status, 0);
+  const other = join(fx.base, "other-tree");
+  gitIn(fx, fx.member, "worktree", "add", "-q", "--force", other, "agents/shared");
+  asKilledAdd(home, "shared");
+  const out = wt(fx, home, ["remove", "--purpose", "shared"]);
+  assert.equal(out.status, 0, out.stderr);
+  assert.match(out.stdout, /branch agents\/shared kept \(it is checked out in a worktree\)/);
+  assert.equal(tipOf(fx, "agents/shared"), originMain(fx));
+});
+
+test("a killed add whose hook leader exited: the group left behind is never signalled, the warning names it, the rollback completes", async (t) => {
+  const fx = deployment(t);
+  const { home } = await fx.spawn("dev", { instance: "dev-lead", work: "checkout" });
+  writeFileSync(join(fx.root, "hook-stubborn"), "");
+  writeFileSync(join(fx.root, "hook-sleep"), "60");
+  const killed = cliChild(fx, ["worktree", "add", "--purpose", "feat", "--branch", "agents/feat", "--base", "main", "--json"], { cwd: home, env: { OATS_INSTANCE_HOME: home } });
+  assert.ok(await waitFor(() => existsSync(join(fx.root, "hook-sleeping"))));
+  const leader = Number(readFileSync(join(fx.root, "hook-sleeping"), "utf8"));
+  const member = Number(readFileSync(join(fx.root, "hook-stubborn-pid"), "utf8"));
+  t.after(() => { try { process.kill(member, "SIGKILL"); } catch { /* gone */ } });
+  killed.child.kill("SIGKILL");
+  await killed.done;
+  assert.equal(JSON.parse(readFileSync(join(home, ".oats", "trees", "feat.json"), "utf8")).hookPgid, leader);
+  process.kill(leader, "SIGKILL");
+  assert.ok(await waitFor(() => !alive(leader), 5000));
+  const r = wt(fx, home, ["remove", "--purpose", "feat", "--json"]);
+  assert.equal(r.status, 0, r.stdout);
+  const res = r.json().result;
+  assert.equal(res.rolledBack, true);
+  assert.ok(res.warnings.some((w) => w.includes(`hook process group ${leader} was not signalled: its leader exited`)), JSON.stringify(res.warnings));
+  assert.equal(alive(member), true, "the leaderless group was not signalled");
+  assert.equal(existsSync(join(home, ".work-feat")), false);
+});

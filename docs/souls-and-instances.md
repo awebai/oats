@@ -1228,8 +1228,12 @@ time. An `add` that is interrupted (SIGINT, SIGTERM, SIGHUP) while its hooks
 run ends the running hook, rolls back and exits 128 + the signal number
 (`E_INTERRUPTED`); one killed outright leaves the `creating` record for the
 next `add` or `remove`. A killed `add` can simply be run again. A required
-hook that fails removes the tree and deletes the branch, but only while it
-still points where `add` created it (`E_REQUIRED_HOOK_FAILED`). A quarantined
+hook that fails removes the tree (`E_REQUIRED_HOOK_FAILED`). It deletes the
+branch only when that `add` created it, no worktree has it checked out, and
+it still points where `add` created it. Otherwise the branch is kept, and
+the answer names it with the reason. Two commands on one purpose never act
+at once: each holds the purpose's claim, `.oats/trees/<p>.lock`, while it
+reads and changes the record. The claim is not held while the hooks run. A quarantined
 home or one being retired is refused (`E_INSTANCE_RETIRING`).
 
 **`remove`** runs `git worktree remove` (without `--force`) and `git worktree
@@ -1240,7 +1244,8 @@ commit and push the work, or discard it, then run `remove` again. A purpose
 with no record is `E_BAD_ARGS`: remove a tree made another way with
 `git worktree remove`. Any other refusal is `E_WORK_PRESERVATION_FAILED`,
 and nothing is removed. On a `creating` record whose process is gone, `remove`
-completes the rollback instead.
+completes the rollback instead. Its answer then says whether the branch was
+kept (`branchKept`, `branchKeptReason`).
 
 **Working in the tree.**
 

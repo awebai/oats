@@ -204,8 +204,9 @@ A self-contained package has an `oats.json`:
 
   Once that process is gone (killed with SIGKILL, or its rollback cut
   short), `oats retire` finishes the spawn's own compensation, in order:
-  1. it ends the hook process group the spawn left, only when that group is
-     verifiably the recorded one;
+  1. it ends the hook process group the spawn left, only when the group's
+     leader runs with its recorded start time. A group whose leader has
+     exited is not signalled, and a warning names it;
   2. it runs the owed retire hooks;
   3. it removes the worktree and verifies the removal;
   4. only then, it deletes `inProgress.branch` with an atomic
@@ -739,8 +740,9 @@ cwd the home); this one differs:
   - at spawn, it fails the spawn through the required-hook rollback above
     (retire hooks compensate in reverse, the worktree-mode Git state is
     removed and verified, and the home is deleted, or kept as a quarantine);
-  - at `oats worktree add`, the tree is removed and the branch deleted only if
-    it is still where `add` created it.
+  - at `oats worktree add`, the tree is removed. The branch is deleted only
+    when that `add` created it, no worktree has it checked out, and it is
+    still where `add` created it.
 
   Both exit nonzero, naming the capability and its log. `oats worktree add`
   refuses with `E_REQUIRED_HOOK_FAILED` (`E_HOOK_ENVIRONMENT_CONTRACT` for an
@@ -753,6 +755,11 @@ cwd the home); this one differs:
   record the next command completes: the `creating` tree record for `add`
   (the next `oats worktree add` or `remove` of that purpose rolls it back), or
   the spawn's [in-progress marker](#manifest) for a spawn (`oats retire`).
+  That recovery signals the hook process group the killed parent left only
+  while the group's leader runs with its recorded start time. A group whose
+  leader has exited is never signalled, because its id may already belong to
+  another group. The recovery reports it in a warning, and any leftover
+  processes are ended by hand.
 
 **Environment.** The standard hook variables above, and:
 
