@@ -19,7 +19,7 @@ const root = process.env.OATS_ROOT;
 let stdin = "";
 try { stdin = readFileSync(0, "utf8"); } catch (e) { stdin = "ERR:" + e.code; }
 const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith("OATS_")));
-appendFileSync(join(root, "hook-runs.jsonl"), JSON.stringify({ cwd: process.cwd(), stdin, tty: process.stdin.isTTY === true, env, pgid: process.pid, spawnRanBefore: existsSync(join(root, "spawn-ran")) }) + "\\n");
+appendFileSync(join(root, "hook-runs.jsonl"), JSON.stringify({ cwd: process.cwd(), stdin, tty: process.stdin.isTTY === true, env, pid: process.pid, spawnRanBefore: existsSync(join(root, "spawn-ran")) }) + "\\n");
 console.log("hook says hello on stdout");
 console.log("SECRET-MARKER-OUT"); console.error("SECRET-MARKER-ERR");
 console.error("hook says hello on stderr");
@@ -41,8 +41,15 @@ if (existsSync(join(root, "hook-warning"))) { console.log(JSON.stringify({ warni
 
 const LIFECYCLE = { "spawn.mjs": `import { appendFileSync } from "node:fs"; import { join } from "node:path"; appendFileSync(join(process.env.OATS_ROOT, "spawn-ran"), "x\\n"); console.log(JSON.stringify({ meta: { made: true } }));\n`,
   "retire.mjs": `import { appendFileSync } from "node:fs"; import { join } from "node:path"; appendFileSync(join(process.env.OATS_ROOT, "retire-ran"), process.env.OATS_INSTANCE + "\\n"); console.log(JSON.stringify({ meta: { retired: true } }));\n` };
+/** The kernel runs a hook as `/bin/sh -c "node '<script>'"`. bash execs that single command in place, so
+ *  the hook's own pid leads its group; dash forks it, so `sh` leads the group and the hook is its child.
+ *  OATS_TEST_FORK_HOOK_SHELL=1 gives the fixture's hook dash's shape under any /bin/sh (`hook.mjs ; exit $?`
+ *  makes every shell fork). The tests never assume the hook's pid is its group's: they read it (pgidOf). */
+const HOOK_COMMAND = process.env.OATS_TEST_FORK_HOOK_SHELL === "1" ? "hook.mjs ; exit $?" : "hook.mjs";
+/** A process's group id, as `ps` reports it (Linux and macOS). */
+const pgidOf = (pid) => Number(execFileSync("ps", ["-o", "pgid=", "-p", String(pid)], { encoding: "utf8" }).trim());
 function deployment(t, { required = true, work = "checkout", hookless = false, lifecycle = false } = {}) {
-  const hooks = { worktree: required ? { command: "hook.mjs", required: true } : "hook.mjs", ...(lifecycle ? { spawn: "spawn.mjs", retire: "retire.mjs" } : {}) };
+  const hooks = { worktree: required ? { command: HOOK_COMMAND, required: true } : HOOK_COMMAND, ...(lifecycle ? { spawn: "spawn.mjs", retire: "retire.mjs" } : {}) };
   const capabilities = hookless ? {} : { "test.setup": { manifest: { hooks }, files: { "hook.mjs": HOOK, ...(lifecycle ? LIFECYCLE : {}) } } };
   const fx = v2Deployment({ souls: { dev: { soul: { work, ...(hookless ? {} : { capabilities: { "test.setup": { from: "here" } } }) } } }, capabilities });
   t.after(fx.cleanup);
@@ -239,7 +246,7 @@ test("killed parent, add: SIGTERM mid-hook rolls back and exits 143; SIGKILL lea
   await kill.done;
   const rec = JSON.parse(readFileSync(join(home, ".oats", "trees", "gone.json"), "utf8"));
   assert.equal(rec.state, "creating");
-  assert.equal(rec.hookPgid, orphan, "the record names the hook's group");
+  assert.equal(rec.hookPgid, pgidOf(orphan), "the record names the hook's group");
   assert.equal(alive(orphan), true, "the hook outlived its parent");
   assert.ok(existsSync(join(home, ".work-gone")));
   // The next add of that purpose finishes the rollback (ending the orphan) and proceeds fresh.
@@ -550,7 +557,7 @@ test("killed parent, spawn: while alive the home reads as a spawn in progress an
   const home = join(fx.root, "dev", "instances", "dev-sk");
   const marker = JSON.parse(readFileSync(join(home, ".oats-rollback-incomplete.json"), "utf8"));
   assert.equal(marker.inProgress.pid, sp.child.pid);
-  assert.equal(marker.inProgress.hookPgid, orphan);
+  assert.equal(marker.inProgress.hookPgid, pgidOf(orphan));
   assert.deepEqual(marker.cleanup.outstanding, { hooks: ["test.setup"], git: ["worktree", "branch"] });
   const rowOf = async () => (await fx.inEnv(() => listInstances(fx.root, "oats-test-nosuch"))).flatMap((a) => a.instances).find((i) => i.instance === "dev-sk");
   const live = await rowOf();
@@ -789,9 +796,11 @@ test("a killed add whose hook leader exited: the group left behind is never sign
   writeFileSync(join(fx.root, "hook-sleep"), "60");
   const killed = cliChild(fx, ["worktree", "add", "--purpose", "feat", "--branch", "agents/feat", "--base", "main", "--json"], { cwd: home, env: { OATS_INSTANCE_HOME: home } });
   assert.ok(await waitFor(() => existsSync(join(fx.root, "hook-sleeping"))));
-  const leader = Number(readFileSync(join(fx.root, "hook-sleeping"), "utf8"));
+  const hook = Number(readFileSync(join(fx.root, "hook-sleeping"), "utf8"));
+  // The group's leader: the hook itself where /bin/sh execs it (bash), `sh` where it forks (dash).
+  const leader = pgidOf(hook);
   const member = Number(readFileSync(join(fx.root, "hook-stubborn-pid"), "utf8"));
-  t.after(() => { try { process.kill(member, "SIGKILL"); } catch { /* gone */ } });
+  t.after(() => { for (const pid of [member, hook]) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } } });
   killed.child.kill("SIGKILL");
   await killed.done;
   assert.equal(JSON.parse(readFileSync(join(home, ".oats", "trees", "feat.json"), "utf8")).hookPgid, leader);
