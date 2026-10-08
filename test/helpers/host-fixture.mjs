@@ -2,7 +2,9 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { accessSync, chmodSync, constants, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { delimiter, dirname, isAbsolute, join } from "node:path";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import { delimiter, dirname, isAbsolute, join, sep } from "node:path";
 
 const quote = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 
@@ -22,6 +24,124 @@ function executable(name) {
 export function linkExecutables(bin, names) {
   mkdirSync(bin, { recursive: true });
   for (const name of names) symlinkSync(executable(name), join(bin, name));
+}
+
+// ---- the fixture base, its names, its environment and its leftovers (awebai/oats#816) -----------
+// A fixture assumes nothing of the host it runs on: not a short temporary directory, not a bare
+// environment, not an idle service manager. A kernel suite is green on Linux CI and on a Mac with a
+// loaded schedule unit, a live operator tmux server and Apple git (docs/implementation.md).
+
+/** A tmpdir() longer than this (macOS: /private/var/folders/…/T/, about 49 characters) leaves too
+ *  little of a socket path's ~104 bytes, and of NAME_MAX/PATH_MAX for long names: the base goes
+ *  under /tmp instead. */
+const SHORT_TMPDIR = 20;
+/** A new fixture base: a fresh directory under tmpdir(), or under /tmp when tmpdir() is long, as its
+ *  realpath (taken once: /private/tmp and /private/var on macOS). */
+export function fixtureBase(prefix = "oats-") {
+  const parent = tmpdir().length > SHORT_TMPDIR ? "/tmp" : tmpdir();
+  return realpathSync(mkdtempSync(join(parent, prefix)));
+}
+
+/** NAME_MAX and PATH_MAX of the platform's usual filesystems, from a table, not a native call. */
+export const FS_LIMITS = process.platform === "darwin" ? { name: 255, path: 1024 } : { name: 255, path: 4096 };
+/** Room every name and path leaves for what git and the kernel append (`.lock`, a temporary suffix). */
+const MARGIN = 16;
+/** A name (a file name or a branch segment) of `n` characters, capped below NAME_MAX and below
+ *  what `base` leaves of PATH_MAX: a "too long" test then exercises the kernel's own bound,
+ *  never the filesystem's. */
+export function nameOfLength(base, n, char = "n") {
+  return char.repeat(Math.max(1, Math.min(n, FS_LIMITS.name - MARGIN, FS_LIMITS.path - base.length - 1 - MARGIN)));
+}
+/** An absolute path under `base` of `n` characters in all, capped below PATH_MAX, built from
+ *  segments each within NAME_MAX. Measured from the actual base, so it is the same length on
+ *  every host. */
+export function pathOfLength(base, n, char = "p") {
+  const total = Math.min(n, FS_LIMITS.path - MARGIN);
+  if (total <= base.length + 1) throw new Error(`a path of ${n} characters is not longer than the base ${base}`);
+  const segment = FS_LIMITS.name - 2 * MARGIN;
+  let path = base;
+  while (path.length < total) {
+    const left = total - path.length - 1;
+    // Never leave a remainder too short for a segment of its own.
+    const take = left > segment ? (left - segment < 2 ? segment - 2 : segment) : left;
+    path += sep + char.repeat(take);
+  }
+  return path;
+}
+
+/** The fixture's `launchctl` and `systemctl`: the host's service manager is never asked, and they
+ *  answer as one with nothing loaded (awebai/oats#799). A test that needs another answer puts its
+ *  own ahead of these on PATH. */
+function schedulerStubs(base) {
+  const bin = join(base, "fixture-bin");
+  mkdirSync(bin, { recursive: true });
+  for (const name of ["launchctl", "systemctl"]) {
+    if (existsSync(join(bin, name))) continue; // never rewritten under a child that may be running it
+    writeFileSync(join(bin, name), "#!/bin/sh\necho inactive\nexit 3\n");
+    chmodSync(join(bin, name), 0o755);
+  }
+  return bin;
+}
+/** Names a fixture child never inherits: proxies (a fetch to a fixture's local server must not go
+ *  through the host's), the harness session marker, and git configuration passed through the
+ *  environment (a credential helper, an askpass). */
+const dropped = (key) => /_proxy$/i.test(key) || key === "CLAUDECODE" || /^GIT_CONFIG_(PARAMETERS|COUNT|KEY_\d+|VALUE_\d+)$/.test(key) || key === "GIT_ASKPASS";
+/** HOME and the XDG base directories under `home`, and git that reads no host configuration file
+ *  and never prompts. */
+function isolatedHomeAndGit(home) {
+  const xdg = { XDG_CONFIG_HOME: join(home, ".config"), XDG_DATA_HOME: join(home, ".local", "share"), XDG_STATE_HOME: join(home, ".local", "state"), XDG_CACHE_HOME: join(home, ".cache") };
+  for (const dir of [home, ...Object.values(xdg)]) mkdirSync(dir, { recursive: true });
+  return { HOME: home, ...xdg, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_TERMINAL_PROMPT: "0" };
+}
+/** A fixture's rules, made once: its HOME and XDG directories and its scheduler stubs are created
+ *  here, and nowhere else. */
+export function fixtureRules(base, { home = join(base, "home") } = {}) {
+  return { set: isolatedHomeAndGit(home), stubs: schedulerStubs(base) };
+}
+/** Apply a fixture's rules to an environment in place, creating nothing: what it never inherits
+ *  removed, its HOME, XDG and git set, and its scheduler stubs ahead on PATH (once). */
+export function applyFixtureRules(env, rules) {
+  for (const key of Object.keys(env)) if (dropped(key)) delete env[key];
+  Object.assign(env, rules.set);
+  const path = (env.PATH || "").split(delimiter).filter(Boolean);
+  if (!path.includes(rules.stubs)) env.PATH = [rules.stubs, ...path].join(delimiter);
+  return env;
+}
+/** The environment for every child a fixture starts: this process's, with the fixture's rules
+ *  applied, then `extra`. tmux isolation is isolateSessionEnvironment's, which suites that start
+ *  sessions install first; this composes with it. */
+export function fixtureEnv(base, { extra = {}, rules = fixtureRules(base) } = {}) {
+  return { ...applyFixtureRules({ ...process.env }, rules), ...extra };
+}
+
+/** The host's lsof, found once when this module loads (on the PATH it loads with, else where macOS
+ *  and Debian install it): the leftover check is the harness's, whatever PATH a test gives the kernel
+ *  it exercises. */
+const LSOF = (() => {
+  for (const dir of [...(process.env.PATH || "").split(delimiter).filter(isAbsolute), "/usr/sbin", "/usr/bin"]) {
+    try { accessSync(join(dir, "lsof"), constants.X_OK); return join(dir, "lsof"); } catch { /* next */ }
+  }
+  return null;
+})();
+/** Fail when a process still works in the fixture base: a hook's or a CLI's grandchild that outlived
+ *  the test (awebai/oats#801). Uses the kernel's own scan (processesInHome, over lsof: a prerequisite
+ *  of the suite, awebai/oats#783), which leaves out its caller and the caller's direct children. A
+ *  grandchild whose parent has exited is reparented, and is found. A test's own forgotten direct
+ *  child is that test's own bug: it is not found here. A process still exiting gets `settleMs` to
+ *  go; nothing is killed. The failure names each pid and command. */
+export function assertNoFixtureProcesses(base, { settleMs = 2000 } = {}) {
+  // Loaded here, not imported: the kernel reads some defaults from the environment when it loads,
+  // and a helper must not load it earlier, under another environment, than a suite would.
+  const { processesInHome } = createRequire(import.meta.url)("../../lib/core.mjs");
+  const deadline = Date.now() + settleMs;
+  let scan;
+  while (true) {
+    scan = LSOF ? processesInHome(base, { exec: (cmd, args, opts) => execFileSync(cmd === "lsof" ? LSOF : cmd, args, opts) }) : { ok: false, error: "lsof is not installed" };
+    if (!scan.ok) throw new Error(`cannot check for processes left in the fixture ${base}: ${scan.error} (lsof is a prerequisite of the test suite, awebai/oats#783)`);
+    if (!scan.processes.length || Date.now() >= deadline) break;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100); // a wait that starts no process: PATH may hold none
+  }
+  if (scan.processes.length) throw new Error(`processes still work in the fixture ${base} after its test: ${scan.processes.map((p) => `pid ${p.pid} ${p.command}`).join(", ")}`);
 }
 
 // ---- tmux isolation --------------------------------------------------------------------------
@@ -128,9 +248,11 @@ exec ${quote(tmux)}${userConfig ? "" : " -f /dev/null"} "$@"
   const config = join(home, ".config");
   mkdirSync(config, { recursive: true });
   for (const key of Object.keys(process.env)) {
-    if (/^(OATS_|PI_AGENT)/.test(key) || ["TMUX", "TMUX_PANE", "ENV", "BASH_ENV", "COLORFGBG", "CLAUDECODE"].includes(key)) delete process.env[key];
+    if (/^(OATS_|PI_AGENT)/.test(key) || ["TMUX", "TMUX_PANE", "ENV", "BASH_ENV", "COLORFGBG", "CLAUDECODE"].includes(key) || dropped(key)) delete process.env[key];
   }
-  Object.assign(process.env, { HOME: home, XDG_CONFIG_HOME: config, ZDOTDIR: home, SHELL: "/bin/sh", PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), TMUX_TMPDIR: tmuxTmpdir, OATS_TEST_LOGIN_SHELL: noLoginShell(base) });
+  // The fixture's git and XDG rules (fixtureEnv's), with HOME as this worker's; PATH stays system-bin
+  // only, so no host service manager is reachable at all.
+  Object.assign(process.env, isolatedHomeAndGit(home), { XDG_CONFIG_HOME: config, ZDOTDIR: home, SHELL: "/bin/sh", PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), TMUX_TMPDIR: tmuxTmpdir, OATS_TEST_LOGIN_SHELL: noLoginShell(base) });
   // Neither the environment (above) nor the working directory makes this worker an OATS instance.
   const comeBack = leaveEnclosingInstance(base);
   isolatedTmpdir = tmuxTmpdir;

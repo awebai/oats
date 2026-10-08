@@ -16,13 +16,13 @@
 // fixture's own, never the operator's. Inside a session environment (isolateSessionEnvironment, which
 // must be installed first) that environment's TMUX_TMPDIR is used, so both name one `oats` server.
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir, devNull } from "node:os";
+import { chmodSync, cpSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { devNull } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import YAML from "yaml";
 import { inertHarnessDir } from "./runtime-stub.mjs";
-import { isolatedTmuxTmpdir, noLoginShell, privateTmuxTmpdir, removeTmuxTmpdir } from "./host-fixture.mjs";
+import { applyFixtureRules, assertNoFixtureProcesses, fixtureBase, fixtureEnv, fixtureRules, isolatedTmuxTmpdir, noLoginShell, privateTmuxTmpdir, removeTmuxTmpdir } from "./host-fixture.mjs";
 
 export const CLI = resolve(new URL("../../bin/oats.mjs", import.meta.url).pathname);
 const IDENTITY = ["TMUX", "TMUX_PANE", "OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "OATS_AGENT", "OATS_SOUL", "OATS_SOUL_ID", "OATS_ROOT", "OATS_CONTEXT", "OATS_WORKSPACE",
@@ -87,7 +87,7 @@ export function capabilityFiles(id, manifest = {}, files = {}) {
  * fx.inEnv(() => …) so they never see the operator's environment.
  */
 export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilityDirs = {}, workspace = {}, local = {}, files = {}, name = "fixture" } = {}) {
-  const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-v2-")));
+  const base = fixtureBase("oats-v2-");
   if (/[\s@]/.test(base)) throw new Error(`tmpdir ${base} contains whitespace or @ (repo keys embed it)`);
   const bare = join(base, "remotes", "ws.git");
   const ref = pathToFileURL(bare).href;
@@ -129,10 +129,14 @@ export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilit
   const bin = inertHarnessDir(base);
   const cache = join(base, "cache");
   const ownTmuxTmpdir = isolatedTmuxTmpdir() ? null : privateTmuxTmpdir();
-  const env = { ...process.env, HOME: home, OATS_HOME_DIR: join(base, "oats-home"), OATS_REMOTE_CACHE: cache, PATH: `${bin}:${process.env.PATH}`,
+  // The fixture's rules (host-fixture.mjs fixtureEnv: HOME, XDG, git, no proxies, the scheduler
+  // stubs), its inert harnesses first on PATH.
+  const rules = fixtureRules(base, { home });
+  const env = fixtureEnv(base, { rules, extra: { OATS_HOME_DIR: join(base, "oats-home"), OATS_REMOTE_CACHE: cache,
     OATS_TMUX_SESSION: `none-${process.pid}`, PI_AGENTS_TMUX_SESSION: `none-${process.pid}`, TMUX_TMPDIR: ownTmuxTmpdir ?? isolatedTmuxTmpdir(),
     // Never the operator's login shell (host-fixture.mjs isolateSessionEnvironment says why).
-    OATS_TEST_LOGIN_SHELL: process.env.OATS_TEST_LOGIN_SHELL ?? noLoginShell(base) };
+    OATS_TEST_LOGIN_SHELL: process.env.OATS_TEST_LOGIN_SHELL ?? noLoginShell(base) } });
+  env.PATH = `${bin}:${env.PATH}`;
   for (const k of IDENTITY) delete env[k];
   const remoteOptions = { cacheDir: cache };
 
@@ -150,13 +154,16 @@ export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilit
    *  ambient instance identity or TMUX. Everything else the test set (its own PATH with fakes, switches)
    *  is kept. Every in-process kernel call goes through here, so a test can never reach
    *  the operator's own tmux server or deployment. */
-  fx.inEnv = async (fn) => {
-    const saved = process.env;
-    const next = { ...saved };
+  const fixtureProcessEnv = () => {
+    const next = applyFixtureRules({ ...process.env }, rules);
     for (const k of ["HOME", "OATS_HOME_DIR", "OATS_REMOTE_CACHE", "OATS_TMUX_SESSION", "PI_AGENTS_TMUX_SESSION", "TMUX_TMPDIR"]) next[k] = env[k];
     next.OATS_TEST_LOGIN_SHELL ??= env.OATS_TEST_LOGIN_SHELL;
     for (const k of IDENTITY) delete next[k];
-    process.env = next;
+    return next;
+  };
+  fx.inEnv = async (fn) => {
+    const saved = process.env;
+    process.env = fixtureProcessEnv();
     try { return await fn(); } finally { process.env = saved; }
   };
   /** What bin/oats.mjs hands spawnInstanceAsync for a soul: the prepared resolution and the fetched soul. */
@@ -185,10 +192,18 @@ export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilit
     const r = spawnSync(process.execPath, [CLI, ...args], { cwd, env: { ...env, ...extra }, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
     return { ...r, json: () => JSON.parse(r.stdout.trim().split("\n").pop()) };
   };
+  /** Kills the fixture's own `oats` server, checks that no process it started still works in the
+   *  base (host-fixture.mjs assertNoFixtureProcesses), removes the base whatever the check found,
+   *  then fails naming what was left. */
   fx.cleanup = () => {
     // Its own `oats` server, if a test launched on real tmux: killed by socket, never by name.
     if (ownTmuxTmpdir) removeTmuxTmpdir(ownTmuxTmpdir);
+    let leftover;
+    const saved = process.env;
+    process.env = fixtureProcessEnv(); // as fx.inEnv: the check may be what first loads the kernel
+    try { assertNoFixtureProcesses(base); } catch (e) { leftover = e; } finally { process.env = saved; }
     rmSync(base, { recursive: true, force: true });
+    if (leftover) throw leftover;
   };
   return fx;
 }
