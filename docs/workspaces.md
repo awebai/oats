@@ -421,10 +421,25 @@ the workspace). A soul's teams are edited by a PR to `oats-workspace.yaml`:
 ```
 oats teams [--json]                                  # the teams, ids, the default, localTeams, the workspace's souls:, problems
 oats teams add <label> --team <id> [--description d] # declare a local team (the first one becomes the local default)
+oats teams add <label> --team <id> --no-default      # the mapping only; the same label and id again is reuse
 oats teams remove <label>                            # refused while it is the local default (E_TEAM_IN_USE) or shared (E_TEAM_SHARED)
 oats teams default <label>                           # the local default
+oats teams default <label> --if-absent               # ... only where there is no effective default
+oats teams default <label> --expect <label0>         # ... only where the effective default is <label0>
 oats soul teams <soul>|'*' [--json]                  # a soul's default and teams here, and which souls: key gave them
 ```
+
+`--if-absent` and `--expect` make a setup safe to run against a deployment
+whose default it has not chosen: the condition is the effective default that
+`oats teams` reports (the local one, else the workspace's), judged when the
+file is written, and a failed one (`E_TEAM_DEFAULT_MISMATCH`) reports what it
+found and writes nothing. A soul's `souls:` default is not the deployment's
+default and is not looked at. Concurrent `oats teams` writes on one deployment
+are serialized, so of two racing conditional writes the later one refuses;
+hand edits to `oats-local.yaml` and changes to `oats-workspace.yaml` are not
+serialized with them. Each form refuses a flag it does not take (`E_USAGE`).
+Callers check for the feature `teams-conditional-default` in `oats version
+--json` first: an older kernel ignores these flags.
 
 The messaging provider's own setup creates provider teams (see the provider's
 documentation). The spawn preview, `inspect` and `oats souls` report a soul's
