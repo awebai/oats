@@ -537,6 +537,27 @@ test("spawn: a required worktree hook failure fails the spawn closed — retire 
   assert.match(readFileSync(join(fx.root, "retire-ran"), "utf8"), /dev-sf/, "the retire hook compensated");
 });
 
+test("spawn: when its own start time cannot be read it refuses before any worktree hook, inside the transaction — retire hooks compensate, the tree, the branch, the home and the marker are gone", async (t) => {
+  const fx = deployment(t, { work: "worktree", lifecycle: true });
+  // A `ps` that cannot read its caller's own pid (the spawning kernel's) and is the real one otherwise.
+  const real = execFileSync("sh", ["-c", "command -v ps"], { encoding: "utf8" }).trim();
+  const dir = join(fx.base, "ps-unreadable-self"); mkdirSync(dir);
+  writeFileSync(join(dir, "ps"), `#!/bin/sh\nfor a in "$@"; do [ "$a" = "$PPID" ] && { echo "ps: simulated failure" >&2; exit 2; }; done\nexec ${JSON.stringify(real)} "$@"\n`, { mode: 0o755 });
+  const r = fx.cli(spawnArgs("dev-self"), { env: { OATS_TEST_PROCESS_START_PS: "1", PATH: `${dir}:${fx.env.PATH}` } });
+  assert.notEqual(r.status, 0);
+  const err = r.json().error;
+  assert.equal(err.code, "E_SPAWN_FAILED", r.stdout);
+  assert.match(err.message, /start time cannot be read.*no worktree hook ran/);
+  assert.deepEqual(runs(fx), [], "the worktree hook never ran");
+  assert.match(readFileSync(join(fx.root, "spawn-ran"), "utf8"), /x/, "the spawn hooks had run");
+  assert.match(readFileSync(join(fx.root, "retire-ran"), "utf8"), /dev-self/, "the retire hook compensated");
+  const home = join(fx.root, "dev", "instances", "dev-self");
+  assert.equal(existsSync(home), false, "the home is deleted");
+  assert.equal(registered(fx, join(home, "work")), false, "git worktree list does not list the tree");
+  assert.equal(tipOf(fx, "agents/dev-self"), null, "the branch is deleted");
+  assert.equal(existsSync(join(home, ".oats-rollback-incomplete.json")), false, "no marker is left");
+});
+
 test("killed parent, spawn: SIGTERM mid-hook rolls back and exits 143 with E_INTERRUPTED", async (t) => {
   const fx = deployment(t, { work: "worktree", lifecycle: true });
   writeFileSync(join(fx.root, "hook-sleep"), "60");
