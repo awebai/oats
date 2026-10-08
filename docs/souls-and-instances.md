@@ -719,7 +719,11 @@ A worktree whose `git status` fails refuses the retire with
 `E_WORK_INSPECTION_FAILED` at the first inspection: no recovery was written,
 nothing was deleted, and the retire has not stopped the instance's session.
 A directory in place of `info/exclude`, or of the file `core.excludesFile`
-names, is such a case: Git itself refuses to use it. Any other read of the
+names, is such a case: Git itself refuses to use it. So is an untracked or
+ignored path that the comparison with a spawn baseline of 0.49.0 or later
+cannot read, such as an ignored directory with an entry under it that has
+no permission: the message names the path and the reason, and says that
+nothing was stopped, run or removed. Any other read of the
 state that fails does not refuse here: it makes the worktree not provable,
 as described above.
 
@@ -793,8 +797,34 @@ spawn baseline, which decides whether the home has anything to preserve at
 all. When a hook moved only the work, the recovery holds them as of the
 pre-hook snapshot. The retire's own events are written to the workspace log
 (`<deployment>/.agents/events/`), never to the home's. A home copy is
-verified against the digest the baseline uses, which passes over those
-records: an inherited limit, not an exact verification of the whole home.
+verified against its source, in the same run, with the digest a spawn
+baseline is written with (below), which passes over those records and over
+the kernel's own fields of `instance.json`: it is not an exact verification
+of the whole home.
+
+**What the spawn baseline compares.** Whether the home, and a worktree's
+untracked and ignored files, have anything to preserve is decided against
+two digests the spawn baseline stores: one of the home (without `work/`, the
+provider-owned entries declared at spawn, the kernel's records above, and
+the fields the kernel writes into `instance.json` after spawn), and one of
+the worktree's untracked and ignored paths outside the roots a capability
+declared disposable. A spawn by 0.49.0 or later records `digestVersion: 2`
+in the baseline, and its digests order entries by the bytes of their names,
+so no locale changes them; they hold the length of every name, file and link
+target, so two different trees never give the same digest; and they take the
+untracked and ignored paths from Git's status as bytes and test each without
+following a link, so a file whose name is not valid UTF-8 is read by its own
+name, and a symbolic link is compared by its target whether or not that
+target exists. A baseline written before 0.49.0 keeps the old digests until
+the instance is respawned, and a retire compares it with them exactly as
+before. Those order names by the locale, so a retire under another locale
+than the spawn's can read an unchanged home as changed, which adds a copy
+attempt; they hold no lengths; and they read an untracked or ignored path
+that is a dangling symbolic link, or whose name is not valid UTF-8, as
+missing whatever it holds, so a change to such a path alone is not
+preserved. A baseline whose `digestVersion` this kernel does not know is
+compared with nothing: the home and the untracked and ignored files count as
+changed.
 
 Each part under `after-hooks/` is whole and verified, not a delta, and it is
 verified before the worktree step and before the home is removed.
