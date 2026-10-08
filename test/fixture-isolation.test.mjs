@@ -5,10 +5,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, delimiter, dirname, join, sep } from "node:path";
 import { FS_LIMITS, assertNoFixtureProcesses, fixtureBase, fixtureEnv, nameOfLength, pathOfLength } from "./helpers/host-fixture.mjs";
+import { describeNestedTestFailure } from "./helpers/nested-test-failure.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const bases = [];
@@ -153,4 +154,108 @@ test("#816 v2Deployment: its base, its children's environment and its in-process
     if (leftover) { try { process.kill(leftover, "SIGKILL"); } catch { /* gone */ } }
     rmSync(fx.base, { recursive: true, force: true });
   }
+});
+
+// awebai/oats#830: the fixture registers its own cleanup on the test context it is given, so a test
+// that fails or is cut short still removes its base. A failing test cannot be observed from inside
+// itself: each case runs as the one test of a child `node --test`, which records what it made.
+const V2_DEPLOYMENT = new URL("./helpers/v2-deployment.mjs", import.meta.url).href;
+function nestedTest(body, options = {}) {
+  const dir = base("oats-c-");
+  const file = join(dir, "nested.test.mjs");
+  const record = join(dir, "record.json");
+  writeFileSync(file, `import test from "node:test";
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
+import { v2Deployment } from ${JSON.stringify(V2_DEPLOYMENT)};
+const record = (seen) => writeFileSync(${JSON.stringify(record)}, JSON.stringify(seen));
+// A process left working in \`cwd\`, not the test's child: the leftover check finds it.
+const leaveSleep = (cwd) => Number(execFileSync("sh", ["-c", '(cd "$1" && exec sleep 600) >/dev/null 2>&1 & echo $!', "sh", cwd], { encoding: "utf8" }).trim());
+test("nested", ${JSON.stringify(options)}, ${body});
+`);
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT; // never let a nested node --test think it is recursive
+  const r = spawnSync(process.execPath, ["--test", "--test-reporter=tap", file], { env, encoding: "utf8", timeout: 120000 });
+  const seen = existsSync(record) ? JSON.parse(readFileSync(record, "utf8")) : {};
+  if (seen.base) bases.push(seen.base); // a base the child left is still removed here
+  return { r, seen, why: describeNestedTestFailure(r) };
+}
+const endLeftover = (pid) => { if (pid) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } } };
+
+for (const [how, body, options, failure] of [
+  ["throws", `(t) => { const fx = v2Deployment({ t }); record({ base: fx.base }); throw new Error("deliberate failure"); }`, {}, /deliberate failure/],
+  ["rejects", `async (t) => { const fx = v2Deployment({ t }); record({ base: fx.base }); await Promise.reject(new Error("deliberate rejection")); }`, {}, /deliberate rejection/],
+  ["hits its timeout", `async (t) => { const fx = v2Deployment({ t }); record({ base: fx.base }); await new Promise(() => {}); }`, { timeout: 1000 }, /timed out after 1000ms/],
+]) {
+  test(`#830 v2Deployment({ t }): a test that ${how} leaves no base`, () => {
+    const { r, seen, why } = nestedTest(body, options);
+    assert.equal(r.status, 1, `the child test fails, as intended\n${why}`);
+    assert.match(r.stdout, failure, why);
+    assert.doesNotMatch(r.stdout, /processes still work in the fixture/, why);
+    assert.ok(seen.base, `the child recorded its base\n${why}`);
+    assert.equal(existsSync(seen.base), false, `the failed test's base ${seen.base} is removed`);
+  });
+}
+
+test("#830 v2Deployment({ t }): an explicit fx.cleanup() and the test's own t.after(fx.cleanup) run with the registered one: one check, no error", () => {
+  // The first cleanup fails on a leftover. A second check would find it again (a scan still sees a
+  // process whose cwd was removed), so a child that passes ran one.
+  const { r, seen, why } = nestedTest(`(t) => {
+    const fx = v2Deployment({ t });
+    t.after(fx.cleanup);
+    const pid = leaveSleep(fx.dep);
+    record({ base: fx.base, pid });
+    assert.throws(() => fx.cleanup(), (e) => e.message.includes(\`pid \${pid} sleep\`));
+    fx.cleanup();
+  }`);
+  try {
+    assert.equal(r.status, 0, why);
+    assert.ok(seen.pid, why);
+    assert.equal(existsSync(seen.base), false);
+  } finally { endLeftover(seen.pid); }
+});
+
+test("#830 fx.beforeCleanup: a process the test left on purpose, ended through it, passes the check", () => {
+  const { r, seen, why } = nestedTest(`(t) => {
+    const fx = v2Deployment({ t });
+    const pid = leaveSleep(fx.dep);
+    record({ base: fx.base, pid });
+    fx.beforeCleanup(() => process.kill(pid, "SIGKILL"));
+  }`);
+  try {
+    assert.equal(r.status, 0, why);
+    assert.ok(seen.pid, why);
+    assert.equal(existsSync(seen.base), false);
+  } finally { endLeftover(seen.pid); }
+});
+
+test("#830 fx.beforeCleanup: the same process ended by a t.after added after the fixture fails the check, which runs first", () => {
+  const { r, seen, why } = nestedTest(`(t) => {
+    const fx = v2Deployment({ t });
+    const pid = leaveSleep(fx.dep);
+    record({ base: fx.base, pid });
+    t.after(() => process.kill(pid, "SIGKILL"));
+  }`);
+  try {
+    assert.equal(r.status, 1, why);
+    assert.ok(seen.pid, why);
+    assert.match(r.stdout, new RegExp(`processes still work in the fixture .*pid ${seen.pid} sleep`), why);
+    assert.equal(existsSync(seen.base), false);
+  } finally { endLeftover(seen.pid); }
+});
+
+test("#830 fx.beforeCleanup: every function runs in order even when one throws, the cleanup still runs, then the first error is thrown", () => {
+  const fx = v2Deployment();
+  bases.push(fx.base);
+  const ran = [];
+  fx.beforeCleanup(() => { ran.push(1); throw new Error("first"); });
+  fx.beforeCleanup(() => { ran.push(2); throw new Error("second"); });
+  fx.beforeCleanup(() => { ran.push(3); });
+  assert.throws(() => fx.cleanup(), { message: "first" });
+  assert.deepEqual(ran, [1, 2, 3]);
+  assert.equal(existsSync(fx.base), false, "the base is removed");
+  fx.cleanup(); // a cleanup that threw is done: a later call returns quietly
+  assert.deepEqual(ran, [1, 2, 3], "and runs nothing again");
+  assert.throws(() => fx.beforeCleanup(() => {}), /already cleaned up/, "a function that could no longer run is refused");
 });
