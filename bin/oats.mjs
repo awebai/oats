@@ -2691,6 +2691,10 @@ async function spawnCmd() {
     if (["E_BRANCH_EXISTS", "E_BASE_UNKNOWN"].includes(e?.code)) { bail(e.code, e.message); throw e; }
     // #796: interrupted while its worktree hooks ran: rolled back (the message says how far), 128+signal.
     if (e?.code === "E_INTERRUPTED") { bail(e.code, e.message, e.details, e.exitStatus); throw e; }
+    // A required spawn or worktree hook that failed, or answered outside its environment contract, keeps
+    // its typed code: the hooks' receipt (`details.hooks`, paths only) and `unconfirmed` when the rollback
+    // could not confirm its effects. Never `home`: a consumer reads that as retained effects.
+    if (e?.code === "E_REQUIRED_HOOK_FAILED" || e?.code === "E_HOOK_ENVIRONMENT_CONTRACT") { bail(e.code, e.message, { hooks: e.details?.hooks ?? [], ...(e.details?.unconfirmed === true ? { unconfirmed: true } : {}) }); throw e; }
     // The observed base could not be fetched into the clone: the clone, the repository and the commit travel along.
     if (e?.code === "E_REMOTE_UNREADABLE" && e.details?.commit) { bail(e.code, e.message, e.details); throw e; }
     // K6b: the confirmed decision drifted — the fresh decision travels with the refusal so a GUI re-previews.

@@ -46,7 +46,10 @@ if (existsSync(join(root, "hook-env"))) { console.log(JSON.stringify({ env: { TE
 if (existsSync(join(root, "hook-warning"))) { console.log(JSON.stringify({ warning: "node_modules is large", meta: { ignored: true } })); process.exit(0); }
 `;
 
-const LIFECYCLE = { "spawn.mjs": `import { appendFileSync } from "node:fs"; import { join } from "node:path"; appendFileSync(join(process.env.OATS_ROOT, "spawn-ran"), "x\\n"); console.log(JSON.stringify({ meta: { made: true } }));\n`,
+const LIFECYCLE = { "spawn.mjs": `import { appendFileSync, existsSync } from "node:fs"; import { join } from "node:path"; const root = process.env.OATS_ROOT; appendFileSync(join(root, "spawn-ran"), "x\\n");
+if (existsSync(join(root, "spawn-fail"))) { console.log(JSON.stringify({ warning: "spawn setup broke", meta: { made: true } })); process.exit(4); }
+if (existsSync(join(root, "spawn-env"))) { console.log(JSON.stringify({ env: { OATS_X: "1" }, meta: { made: true } })); process.exit(0); }
+console.log(JSON.stringify({ meta: { made: true } }));\n`,
   "retire.mjs": `import { appendFileSync } from "node:fs"; import { join } from "node:path"; appendFileSync(join(process.env.OATS_ROOT, "retire-ran"), process.env.OATS_INSTANCE + "\\n"); console.log(JSON.stringify({ meta: { retired: true } }));\n` };
 /** The kernel runs a hook as `/bin/sh -c "node '<script>'"`. bash execs that single command in place, so
  *  the hook's own pid leads its group; dash forks it, so `sh` leads the group and the hook is its child.
@@ -55,8 +58,8 @@ const LIFECYCLE = { "spawn.mjs": `import { appendFileSync } from "node:fs"; impo
 const HOOK_COMMAND = process.env.OATS_TEST_FORK_HOOK_SHELL === "1" ? "hook.mjs ; exit $?" : "hook.mjs";
 /** A process's group id, as `ps` reports it (Linux and macOS). */
 const pgidOf = (pid) => Number(execFileSync("ps", ["-o", "pgid=", "-p", String(pid)], { encoding: "utf8" }).trim());
-function deployment(t, { required = true, work = "checkout", hookless = false, lifecycle = false } = {}) {
-  const hooks = { worktree: required ? { command: HOOK_COMMAND, required: true } : HOOK_COMMAND, ...(lifecycle ? { spawn: "spawn.mjs", retire: "retire.mjs" } : {}) };
+function deployment(t, { required = true, work = "checkout", hookless = false, lifecycle = false, requiredSpawn = false } = {}) {
+  const hooks = { worktree: required ? { command: HOOK_COMMAND, required: true } : HOOK_COMMAND, ...(lifecycle ? { spawn: requiredSpawn ? { command: "spawn.mjs", required: true } : "spawn.mjs", retire: "retire.mjs" } : {}) };
   const capabilities = hookless ? {} : { "test.setup": { manifest: { hooks }, files: { "hook.mjs": HOOK, ...(lifecycle ? LIFECYCLE : {}) } } };
   const fx = v2Deployment({ souls: { dev: { soul: { work, ...(hookless ? {} : { capabilities: { "test.setup": { from: "here" } } }) } } }, capabilities });
   t.after(fx.cleanup);
@@ -608,6 +611,33 @@ test("spawn: a rolled-back spawn's worktree hook entries carry log: null (the ho
     return true;
   });
   assert.equal(existsSync(home), false);
+});
+
+test("spawn's CLI answer keeps a required hook's typed code — spawn and worktree hooks, E_REQUIRED_HOOK_FAILED and E_HOOK_ENVIRONMENT_CONTRACT — with details.hooks and never home", async (t) => {
+  const fx = deployment(t, { work: "worktree", lifecycle: true, requiredSpawn: true });
+  const cases = [
+    ["spawn-fail", "E_REQUIRED_HOOK_FAILED", /^a capability this soul activates could not configure itself:\n  test\.setup spawn hook \(declared required\): spawn setup broke/, [{ capability: "test.setup", ok: false, required: true, log: null }]],
+    ["spawn-env", "E_HOOK_ENVIRONMENT_CONTRACT", /^a capability this soul activates could not configure itself:\n  test\.setup spawn environment contract: test\.setup hook env name OATS_X collides with a reserved core variable/, [{ capability: "test.setup", ok: false, required: true, log: null, contract: "environment" }]],
+    ["hook-fail", "E_REQUIRED_HOOK_FAILED", /^a capability could not set up the new worktree:\n  test\.setup worktree hook \(declared required\): setup broke: run the install by hand — exited 3/, [{ capability: "test.setup", ok: false, required: true, log: null, exitCode: 3 }]],
+    ["hook-env", "E_HOOK_ENVIRONMENT_CONTRACT", /^a capability could not set up the new worktree:\n  test\.setup worktree environment contract: returned env/, [{ capability: "test.setup", ok: false, required: true, log: null, exitCode: 0, contract: "environment" }]],
+  ];
+  for (const [control, code, message, hooks] of cases) {
+    writeFileSync(join(fx.root, control), "");
+    const name = `dev-${control}`;
+    const r = fx.cli(spawnArgs(name));
+    rmSync(join(fx.root, control));
+    assert.equal(r.status, 1, `${control}: ${r.stdout}`);
+    const env = r.json();
+    assert.deepEqual(Object.keys(env).filter((k) => k !== "warnings"), ["schemaVersion", "ok", "error"], control);
+    assert.equal(env.ok, false);
+    assert.deepEqual(Object.keys(env.error), ["code", "message", "details"], control);
+    assert.equal(env.error.code, code, `${control}: ${env.error.message}`);
+    assert.match(env.error.message, message, control);
+    assert.match(env.error.message, /spawn rolled back/, control);
+    assert.deepEqual(env.error.details, { hooks }, `${control}: the whole details, a clean rollback (no unconfirmed, no home)`);
+    assert.equal(existsSync(join(fx.root, "dev", "instances", name)), false, `${control}: the home is gone`);
+    assert.equal(tipOf(fx, `agents/${name}`), null, `${control}: the branch is gone`);
+  }
 });
 
 test("killed parent, spawn: SIGTERM mid-hook rolls back and exits 143 with E_INTERRUPTED", async (t) => {

@@ -96,7 +96,8 @@ test('5.0 spawn rejects relative bindings and a missing owner declaration withou
   const config = f.localFile, before = fs.readFileSync(config, 'utf8');
   assert.ok(before.includes(f.bindings)); write(config, before.replace(f.bindings, 'bindings.json'));
   let r = f.raw(['spawn', 'source', '--purpose', 'relative', '--no-launch', '--json']);
-  assert.equal(r.status, 1); assert.equal(JSON.parse(r.stdout).error.code, 'E_SPAWN_FAILED');
+  assert.equal(r.status, 1); assert.equal(JSON.parse(r.stdout).error.code, 'E_REQUIRED_HOOK_FAILED', 'a required spawn hook keeps its typed code (0.49.0)');
+  assert.deepEqual(JSON.parse(r.stdout).error.details, { hooks: [{ capability: 'oats.okf', ok: false, required: true, log: null }] });
   assert.match(JSON.parse(r.stdout).error.message, /absolute bindings-file/);
   write(config, before); f.fx.commit({ 'souls/source/okf.json': null }, 'drop owner declaration');
   r = f.raw(['spawn', 'source', '--purpose', 'ownerless', '--no-launch', '--json']);

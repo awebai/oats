@@ -2200,8 +2200,10 @@ test("a clean rollback reports no verification problems (probe stderr regression
     assert.equal(cli.status, 1, cli.stdout + cli.stderr);
     const failure = cli.json();
     assert.equal(failure.ok, false);
-    assert.equal(failure.error.code, "E_SPAWN_FAILED");
-    assert.equal(failure.error.details?.unconfirmed, undefined);
+    // A required spawn hook's failure keeps its typed code (0.49.0; E_SPAWN_FAILED before), with the
+    // hooks' receipt; a clean rollback carries no `unconfirmed` and never `home`.
+    assert.equal(failure.error.code, "E_REQUIRED_HOOK_FAILED");
+    assert.deepEqual(failure.error.details, { hooks: [{ capability: "acme.chan", ok: false, required: true, log: null }] });
     assert.match(failure.error.message, /spawn rolled back/);
     assert.equal(existsSync(join(root, "dev", "instances", "dev-cleanrb-cli")), false);
   } finally { process.env.PATH = oldPath; }
@@ -2350,8 +2352,9 @@ console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed
     assert.equal(cli.status, 1, cli.stdout + cli.stderr);
     const failure = cli.json();
     assert.equal(failure.ok, false);
-    assert.equal(failure.error.code, "E_SPAWN_FAILED");
-    assert.equal(failure.error.details?.unconfirmed, true);
+    // The typed code keeps `unconfirmed` beside the hooks' receipt (0.49.0; E_SPAWN_FAILED before).
+    assert.equal(failure.error.code, "E_REQUIRED_HOOK_FAILED");
+    assert.deepEqual(failure.error.details, { hooks: [{ capability: "acme.chan", ok: false, required: true, log: null }], unconfirmed: true });
     assert.equal(existsSync(join(root, "dev", "instances", "dev-badcomp-cli", ".oats-rollback-incomplete.json")), true);
   } finally { process.env.PATH = oldPath; }
 });

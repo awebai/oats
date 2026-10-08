@@ -1995,7 +1995,9 @@ Feature `spawn-name`. `--name <slug>` is the exact name, with no prefix.
 | `E_LAUNCH_SHIM` | | the home's `oats` (`<home>/.oats/bin/oats`) cannot be written; the spawn is rolled back |
 | `E_SCHEDULE_INVALID` | | a bad wake (`--wake-json`, `--wake-file`, `--wake-*`) |
 | `E_INTERRUPTED` | `{signal, hooks}` | SIGINT, SIGTERM or SIGHUP while the spawn's `worktree` hooks ran (feature `worktree-event`): the running hook's process group is ended, the spawn is rolled back as for a required hook failure, and the process exits 128 + the signal number |
-| `E_SPAWN_FAILED` | `{unconfirmed: true}` when compensation cannot finish | anything else, a failed required `worktree` hook included |
+| `E_REQUIRED_HOOK_FAILED` | `{hooks}`, plus `unconfirmed: true` when compensation cannot finish | a required `spawn` or `worktree` hook failed or timed out; the spawn is rolled back. `hooks` holds the receipt of the event that failed: one entry per hook that ran, `{capability, ok, required, log, exitCode?, signal?, timedOut?, contract?}`, paths only. `log` is `null` for a spawn hook (it keeps no log) and once the rollback removed the home; a retained home keeps a `worktree` hook's log path. Never `home`. Before 0.49.0 a required spawn hook's failure answered `E_SPAWN_FAILED` |
+| `E_HOOK_ENVIRONMENT_CONTRACT` | the same as `E_REQUIRED_HOOK_FAILED`, the failed entry with `contract: "environment"` | a `spawn` hook answered an `env` its manifest does not allow, or a `worktree` hook answered `env` at all |
+| `E_SPAWN_FAILED` | `{unconfirmed: true}` when compensation cannot finish | anything else |
 
 Spawn failure envelopes carry `error.details.unconfirmed: true` when an existing
 keyed spawn is incomplete (`E_SPAWN_INCOMPLETE`) or compensation cannot confirm

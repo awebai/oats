@@ -688,7 +688,10 @@ test("0.25.4 quarantine retry: a workspace home retained after a required spawn-
     writeFileSync(join(dep, "FAIL"), "1");
     r = oats(["spawn", "release-manager", "--dir", dep, "--agents-root", join(dep, "agents"), "--purpose", "q", "--work", "checkout", "--no-launch", "--json"], { cwd: dep, env, base });
     assert.equal(r.status, 1, r.stdout);
-    assert.equal(envelope(r).error.code, "E_SPAWN_FAILED");
+    assert.equal(envelope(r).error.code, "E_REQUIRED_HOOK_FAILED", "a required spawn hook's failure keeps its typed code (0.49.0)");
+    assert.equal(envelope(r).error.details.unconfirmed, true, "a quarantined home's effects are unconfirmed");
+    assert.ok(envelope(r).error.details.hooks.some((h) => h.capability === "oats.okf" && h.ok === false && h.log === null), JSON.stringify(envelope(r).error.details));
+    assert.equal(envelope(r).error.details.home, undefined);
     const home = join(dep, "agents", "release-manager", "instances", "release-manager-q");
     assert.ok(existsSync(join(home, ".oats-rollback-incomplete.json")), "home quarantined");
     const stub = JSON.parse(readFileSync(join(home, "instance.json"), "utf8"));
