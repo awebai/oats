@@ -44,7 +44,7 @@ function roster(rows, { server = "build" } = {}) {
   const exec = (_bin, argv) => (String(argv.at(-1)).endsWith("version --json") ? JSON.stringify(PROBE) : JSON.stringify(status));
   try {
     const out = rosterGroups({ server, io: { execFileSync: exec, serverId: `${server}-${Math.random()}` } });
-    assert.equal(out.groups.length, 1); assert.deepEqual(out.groups[0].probe, { ok: true });
+    assert.equal(out.groups.length, 1); assert.deepEqual(out.groups[0].probe, { ok: true, features: null }, "a status without features: unknown");
     return out.groups[0];
   } finally { rmSync(snapDir, { recursive: true, force: true }); }
 }

@@ -42,7 +42,8 @@ see the [official catalog](official-catalog.md) for current pins.
              "team-model-3","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts","launch-preference",
              "preview-composed-from","observe-max-age","spawn-preview-max-age","launch-config-default","capability-show","capture-file",
              "workspace-identity","server-connect","capability-route","servers-per-workspace","operator-default-soul","waiting-on-you",
-             "automation-descriptions","souls-capabilities","soul-composed-instructions","teams-conditional-default"],
+             "automation-descriptions","souls-capabilities","soul-composed-instructions","teams-conditional-default",
+             "server-probe-features"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
@@ -115,6 +116,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `souls-capabilities` | `capabilities` on `oats souls --json` rows: the capabilities each soul composes, keyed like `oats capabilities` rows, with `from`, OATS 0.45.0 ([`oats capabilities` and `oats souls`](#oats-capabilities---dir---json--capabilitiesapi-1--oats-souls---dir---json--soulsapi-1)) | |
 | `soul-composed-instructions` | `oats inspect --soul <soul> --instructions` and its `souls[].composedInstructions`: the AGENTS.md a spawn of the soul here would write, with the soul body and each composed block as ranges, OATS 0.46.0 ([`oats inspect`](#oats-inspect---home-----soul----dir----json--operationsapi-2)) | |
 | `teams-conditional-default` | `oats teams default <label> --if-absent \| --expect <label>` and `E_TEAM_DEFAULT_MISMATCH`; `oats teams add … --no-default` and its `reused` answer; `E_TEAM_EXISTS` `observed`; unknown flags on `oats teams` refused, OATS 0.48.0 ([`oats teams`](#oats-teams)). A kernel without it ignores the flags: `--if-absent` there is an unconditional set, so check the feature before passing them | |
+| `server-probe-features` | `features` on `oats status --json` (this kernel's own list, as `version --json` answers it), and each `oats server roster --json` group's `probe.features`: the host's list, relayed from that status answer after validation, `null` when unknown, OATS 0.49.0 ([The remote roster](#the-remote-roster-oats-server-roster---json)) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -2003,8 +2005,10 @@ the keyed-spawn fields `decision`, `spawnIdempotencyKey`, `spawnCompleted` and
 oats status [--dir <d>] [--max-age <s>] --json
 ```
 
-Not an envelope: `{root, agents, observation?, workspace?, problems?, warnings?}`
+Not an envelope: `{root, agents, observation?, features, workspace?, problems?, warnings?}`
 (`observation` only with [`--max-age`](#observation-reuse-feature-observe-max-age-oats-0311)).
+It carries no `schemaVersion`: a remote caller recognizes the bare roster by
+its absence.
 
 ```json
 {"root":"/w/agents",
@@ -2015,6 +2019,7 @@ Not an envelope: `{root, agents, observation?, workspace?, problems?, warnings?}
                           "modules":[{"name":"oats.okf","from":{"kind":"package","package":"oats.okf","version":"2.1.3","commit":"ab897841…","integrity":"sha256-bada35…","repoKey":"github.com/awebai/oats-okf"},
                                       "commit":"ab897841…","current":{"commit":"ab897841…","version":"2.1.3"},"status":"current"}],
                           "soul":{"repoKey":"github.com/nw/agents","commit":"66566512…","current":"66566512…","status":"current"}}]}],
+ "features":["retire-home","session-start","…","server-probe-features"],
  "workspace":{"reachable":true,"key":"github.com/nw/agents","ref":"git:github.com/nw/agents","keyFrom":"workspace","standalone":false,"defaultTeam":{"label":"eng","team":"eng:nw.aweb.ai"},
               "teams":{"eng":"eng:nw.aweb.ai","mine":"mine:ana.aweb.ai","ops":null},"teamsFrom":"observed"}}
 ```
@@ -2062,6 +2067,12 @@ Not an envelope: `{root, agents, observation?, workspace?, problems?, warnings?}
   message}` (modules then stay the recorded map), plus the deployment's
   [workspace identity](#workspace-identity-feature-workspace-identity-oats-0360)
   either way. Absent without `oats-local.yaml`.
+- **`features`** (feature `server-probe-features`, OATS 0.49.0): the
+  running kernel's own feature list, the same array as `version --json`
+  `features`, so a [remote roster](#the-remote-roster-oats-server-roster---json)
+  relays a host's features from the status answer it already pulls. It is
+  emitted at output time, never part of a reused observation. A kernel
+  before 0.49.0 omits it.
 - `problems`: the legacy-home rows ([dispatch errors](#dispatch-errors)).
   `warnings`: envelope warnings. `--team` is `E_BAD_ARGS` (an envelope).
 
@@ -2141,7 +2152,7 @@ route target:
 ```json
 {"id":"build:3f2a…","server":"build","label":"Build box","registrationPresent":true,
  "target":{"sshHost":"build-host","workspace":"/srv/team","oatsPath":"oats"},
- "probe":{"ok":true},"agentsRoot":"/srv/team/agents",
+ "probe":{"ok":true,"features":["retire-home","session-start","…","server-probe-features"]},"agentsRoot":"/srv/team/agents",
  "workspace":{"reachable":true,"key":"github.com/acme/team","ref":"git:github.com/acme/team","keyFrom":"workspace","standalone":false,"defaultTeam":{"label":"default","team":"acme:team"},
               "teams":{"default":"acme:team"},"teamsFrom":"observed"},
  "souls":[{"name":"dev","harness":"claude","work":"worktree","agentsRoot":"/srv/team/agents"}],
@@ -2159,6 +2170,22 @@ route target:
  "retireFailures":[]}
 ```
 
+- **`probe`**: `{ok: true, features}` when the host's `status --json` was
+  pulled, else `{ok: false, error: {code, message}}` (ssh failed, the host
+  answered `ok: false`, or `E_ROSTER_BUDGET`: the roster's budget ran out
+  before this target), with no `features` key.
+- **`probe.features`** (feature `server-probe-features`, OATS 0.49.0): the
+  host's kernel features, relayed from the top-level `features` of its
+  [`status --json`](#the-roster-oats-status---json), never probed: the roster
+  runs no `version --json` and stores nothing. The answer is untrusted, so it
+  is relayed only when it is an array of at most 256 entries, each a string
+  of at most 64 characters matching `^[a-z0-9]+(?:-[a-z0-9]+)*$`; then it is
+  the host's list as answered (order and any duplicate kept). Anything else,
+  even one bad entry among good ones, is `null`: never a filtered list. A
+  host before 0.49.0 omits the key, so its group reads `null` too, whatever
+  its version. Read it as `Array.isArray(probe?.features)`: not an array
+  means unknown; `[]` is a valid answer (a host with no features), not
+  unknown.
 - **`workspace`** (feature `workspace-identity`, OATS 0.36.0): the host's
   own `status --json` [`workspace` object](#workspace-identity-feature-workspace-identity-oats-0360),
   relayed verbatim, or `null` when the host reports none (a deployment

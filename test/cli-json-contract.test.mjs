@@ -20,6 +20,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { inertHarnessPath } from "./helpers/runtime-stub.mjs";
+import { hostFeatures } from "../lib/servers.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const PKG_VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
@@ -65,9 +66,9 @@ test("oats version --json emits the exact Desktop API v1 probe payload", () => {
   const r = spawnSync(process.execPath, [CLI, "version", "--json"], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
   const doc = parseOnly(r.stdout);
-  assert.deepEqual(doc, { schemaVersion: 1, name: "@awebai/oats", version: PKG_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2","spawn-idempotency","spawn-idempotency-2","spawn-apply-2","workspace-v2","instance-modules","spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default"], automationsApi: 1, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: 2, operationsApi: 2, capabilityShowApi: 1 });
+  assert.deepEqual(doc, { schemaVersion: 1, name: "@awebai/oats", version: PKG_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2","spawn-idempotency","spawn-idempotency-2","spawn-apply-2","workspace-v2","instance-modules","spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features"], automationsApi: 1, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: 2, operationsApi: 2, capabilityShowApi: 1 });
   // key order is part of the published fixture — Desktop probes with string compare fallback
-  assert.equal(r.stdout.trim(), `{"schemaVersion":1,"name":"@awebai/oats","version":"${PKG_VERSION}","desktopApi":1,"harnesses":["pi","claude","codex"],"sessionBackends":["tmux"],"launchOptions":["yolo"],"remote":["spawn","retire","status","session","session-start","session-restart","launch-config","roster","harvest","schedule","session-upload","operations","readiness","instance-events","instance-git","lifecycle-plans"],"features":["retire-home","session-start","session-restart","launch-config","schedule","schedule-host-caps","session-upload","operations","instance-git","instance-git-remote","souls-declarations","lifecycle-plans","retire-retention","readiness","spawn-preview","instance-events","instance-events-2","schedule-history","schedule-read-2","spawn-preview-2","spawn-idempotency","spawn-idempotency-2","spawn-apply-2","workspace-v2","instance-modules","spawn-provider-payload","served-identity","packages-no-approval","spawn-name","settings-origins","team-model-3","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts","launch-preference","preview-composed-from","observe-max-age","spawn-preview-max-age","launch-config-default","capability-show","capture-file","workspace-identity","server-connect","capability-route","servers-per-workspace","operator-default-soul","waiting-on-you","automation-descriptions","souls-capabilities","soul-composed-instructions","teams-conditional-default"],"automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,"readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,"capabilityShowApi":1}`);
+  assert.equal(r.stdout.trim(), `{"schemaVersion":1,"name":"@awebai/oats","version":"${PKG_VERSION}","desktopApi":1,"harnesses":["pi","claude","codex"],"sessionBackends":["tmux"],"launchOptions":["yolo"],"remote":["spawn","retire","status","session","session-start","session-restart","launch-config","roster","harvest","schedule","session-upload","operations","readiness","instance-events","instance-git","lifecycle-plans"],"features":["retire-home","session-start","session-restart","launch-config","schedule","schedule-host-caps","session-upload","operations","instance-git","instance-git-remote","souls-declarations","lifecycle-plans","retire-retention","readiness","spawn-preview","instance-events","instance-events-2","schedule-history","schedule-read-2","spawn-preview-2","spawn-idempotency","spawn-idempotency-2","spawn-apply-2","workspace-v2","instance-modules","spawn-provider-payload","served-identity","packages-no-approval","spawn-name","settings-origins","team-model-3","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts","launch-preference","preview-composed-from","observe-max-age","spawn-preview-max-age","launch-config-default","capability-show","capture-file","workspace-identity","server-connect","capability-route","servers-per-workspace","operator-default-soul","waiting-on-you","automation-descriptions","souls-capabilities","soul-composed-instructions","teams-conditional-default","server-probe-features"],"automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,"readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,"capabilityShowApi":1}`);
 });
 
 test("oats status reads a workspace soul.yaml with its real shape: nested capabilities stay a map, schemaVersion stays a number", async (t) => {
@@ -82,6 +83,36 @@ test("oats status reads a workspace soul.yaml with its real shape: nested capabi
   assert.equal(dev.private, true);
   assert.equal(dev.work, "directory");
   assert.deepEqual(dev.instances.map((i) => i.instance), ["dev-1"]);
+});
+
+test("oats status --json carries this kernel's features, the same list as version --json, with and without --max-age (feature server-probe-features)", async (t) => {
+  const fx = v2Deployment();
+  t.after(() => fx.cleanup());
+  await fx.spawn("dev");
+  const { features } = JSON.parse(fx.cli(["version", "--json"]).stdout);
+  assert.ok(features.includes("server-probe-features"));
+  // Every name a roster would relay from a host running this kernel passes the roster's own check:
+  // the predicate and the list cannot drift apart.
+  assert.deepEqual(hostFeatures({ features }), features);
+  for (const name of features) assert.deepEqual(hostFeatures({ features: [name] }), [name], name);
+  const plain = fx.cli(["status", "--json"]);
+  assert.equal(plain.status, 0, plain.stderr);
+  const doc = JSON.parse(plain.stdout);
+  assert.deepEqual(doc.features, features);
+  assert.equal(doc.schemaVersion, undefined, "status stays the bare roster a remote envelope parser recognizes");
+  // Observation reuse: a fresh observation, then one reused from it; both carry the running kernel's list.
+  for (const maxAge of ["0", "600"]) {
+    const r = fx.cli(["status", "--json", "--max-age", maxAge]);
+    assert.equal(r.status, 0, r.stderr);
+    const reused = JSON.parse(r.stdout);
+    assert.ok(reused.observation, "the observation block is there");
+    assert.deepEqual(reused.features, features, `--max-age ${maxAge}`);
+    assert.equal("features" in reused.observation, false);
+  }
+  // The human output is unchanged: no feature list.
+  const human = fx.cli(["status"]);
+  assert.equal(human.status, 0, human.stderr);
+  assert.doesNotMatch(human.stdout, /server-probe-features|retire-home/);
 });
 
 test("oats version human output stays ergonomic and mentions the version", () => {

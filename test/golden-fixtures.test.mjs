@@ -109,6 +109,11 @@
 //     the launch path (lib/core.mjs:5791), and every case here is --no-launch.
 //   - module digests (instance.json `modules.<id>.digest`) are content hashes of
 //     the stub trees, whose bytes are fixed here: stable, frozen as they are.
+//   - status.json `features` (feature server-probe-features): the kernel's own
+//     feature list, which every new feature extends. It is replaced by the string
+//     <features> when present, so its presence stays frozen and a new feature
+//     edits no golden; test/cli-json-contract.test.mjs pins its value (status
+//     `features` deep-equals version `features`).
 //
 // The stub retire hook deliberately reports itself through its returned `meta`
 // rather than by writing a file into the instance home. A file written after the
@@ -531,6 +536,7 @@ function orderStatus(stdout) {
   const byKey = (key) => (a, b) => (a[key] < b[key] ? -1 : a[key] > b[key] ? 1 : 0);
   doc.agents.sort(byKey("name"));
   for (const a of doc.agents) (a.instances || []).sort(byKey("instance"));
+  if (Object.hasOwn(doc, "features")) doc.features = "<features>";
   return `${JSON.stringify(doc, null, 2)}\n`;
 }
 

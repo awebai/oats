@@ -309,6 +309,10 @@ from" line and "older build" chip show the facts the server relays. Only its pul
 computer's clones. Every command goes to the server by the instance's home (`--server <id> --home
 <path>`), never by a bare name. Stop and Retire show the plan the server makes, and confirm
 against it.
+When this computer's OATS advertises `server-probe-features` (0.49.0), each server's roster group
+also carries the features of the server's own OATS, as its `oats status` reports them
+([`probe.features`](desktop-cli-api.md#the-remote-roster-oats-server-roster---json)); a server
+before 0.49.0 reports none, so they read as unknown.
 
 A read waits for the server: the view says "Reading from <server>…", and gives up after about
 45 seconds with "Couldn't reach <server>." When the server refuses, you see its code and message;

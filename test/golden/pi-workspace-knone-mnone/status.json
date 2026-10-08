@@ -166,6 +166,7 @@
       }
     }
   ],
+  "features": "<features>",
   "workspace": {
     "reachable": true,
     "key": "local/<base>/remotes/ws.git",
