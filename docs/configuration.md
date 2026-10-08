@@ -101,6 +101,12 @@ default. A home not yet created uses its resolved existing directory ancestor
 plus its intended suffix; launch checks the created home's identity again.
 No existing home is enabled automatically. Removing an entry disables consent
 for future launches.
+On a case-insensitive filesystem (the macOS default) one home has several
+letter-case spellings, and a key in any of them is valid. A key spelled exactly
+as the home is launched decides. Otherwise the single key naming the same
+directory decides, and `consentSource` points at that key. Several keys naming
+it in different case, with none spelled exactly, decide nothing: no consent.
+Consent never reaches another directory.
 
 The sole confirmation covered is Claude's development-channel prompt for
 `plugin:aweb-channel@awebai-marketplace`. The provider's `claudeChannelMode`
