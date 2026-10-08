@@ -474,7 +474,10 @@ rewrite a file that was already modified, and the row stays the same. In
 directory mode the work state is the bytes of `work/`, with the permission
 bits of each entry and of `work/` itself. In worktree mode it
 is what a work copy of the worktree holds, each file read where the copy
-reads it:
+reads it. The copier reads the paths Git prints for it (the Git directory,
+the common directory, `core.excludesFile`, the top level) exactly as Git
+prints them, white space included, and a worktree's `.git` file as Git
+parses it, so it copies the files Git reads:
 
 - its Git status, the ref its HEAD is on and the commit, and, when the copy
   is made detached, the branch the repository's own HEAD is on;
@@ -615,16 +618,36 @@ holds of each kind:
 
 | Of the nested repository | The copy holds |
 |---|---|
-| the branch `HEAD` is on | the branch and its commits |
-| every other branch | its commits, without the branch name: `git fsck --unreachable` in the copy lists them |
+| `HEAD` | on the same branch, or detached at the same commit when the source's is detached (or on a ref that is not a branch, or on a branch whose name is not UTF-8) |
+| every local branch | the branch under its name, at its commit |
+| the reflogs of `HEAD` and of each branch | branch and `HEAD` reflogs are carried, with every commit they name |
 | tags | the tags and what they name |
-| the stash | its latest entry and the stash's log; the commits of older entries are not there |
-| remote-tracking refs, notes, any other namespace | nothing beyond what a branch or a tag reaches |
+| the stash | every entry the stash's log names, and the log |
+| the index | the index, with every blob its entries and its resolve-undo records name |
+| its local configuration | only the status settings (`core.fileMode`, `core.ignoreCase`, `core.precomposeUnicode`, `core.symlinks`, `core.autocrlf`, `core.eol`); remotes, `branch.*` upstreams, `user.*` and everything else are dropped |
+| remote-tracking refs, notes, any other namespace | nothing beyond what a branch, a tag or a log reaches |
 | a repository inside it | its files, its Git directory included, as plain files |
 
-A commit the copy holds without a name is lost to `git gc` in the copy.
-`git fsck --unreachable` in the copy lists such commits, and
-`git branch <name> <commit>` there gives one a name again. What the copier
+The local configuration is dropped on purpose: a recovery must be inert to
+inspect. A repository's configuration can name programs Git runs
+(`core.hooksPath`, `core.fsmonitor`, `include.path`, a credential helper, a
+diff, textconv or filter driver), which would run when an operator later runs
+Git in the recovery. Set by hand in the recovery only what you trust.
+
+**Every object the copy's Git metadata names is in it.** For the worktree's
+copy and for each nested repository's alike, the copier collects what the
+Git metadata it carries names: every commit the stash's log names (the new
+id of each entry, as `git log -g refs/stash` shows them), for a nested
+repository every commit its `HEAD` and branch reflogs name, and every blob
+the copied index's entries and resolve-undo records name (a gitlink names
+another repository's commit and is left out). It asks which of them the
+copy lacks, fetches the missing commits from the source by id and copies
+the missing blobs by content (a staged blob or a resolved conflict's side
+can be in no commit), then checks the whole set again. An object the
+source cannot supply (a partial clone that lacks it: the retire never
+fetches from a promisor remote) refuses the copy with
+`E_WORK_PRESERVATION_FAILED`, naming it. So `git stash show stash@{2}` and
+`git checkout -m <path>` work in the copy as in the source. What the copier
 cannot carry at all (a file whose name is not valid UTF-8, an entry that is
 not a file, a directory or a symbolic link) refuses the copy, here as
 anywhere.
