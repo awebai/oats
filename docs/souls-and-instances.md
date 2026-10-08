@@ -719,7 +719,11 @@ A worktree whose `git status` fails refuses the retire with
 `E_WORK_INSPECTION_FAILED` at the first inspection: no recovery was written,
 nothing was deleted, and the retire has not stopped the instance's session.
 A directory in place of `info/exclude`, or of the file `core.excludesFile`
-names, is such a case: Git itself refuses to use it. Any other read of the
+names, is such a case: Git itself refuses to use it. So is an untracked or
+ignored path that the comparison with a spawn baseline of 0.49.0 or later
+cannot read, such as an ignored directory with an entry under it that has
+no permission: the message names the path and the reason, and says that
+nothing was stopped, run or removed. Any other read of the
 state that fails does not refuse here: it makes the worktree not provable,
 as described above.
 

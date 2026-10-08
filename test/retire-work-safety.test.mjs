@@ -3234,6 +3234,35 @@ test("a baseline whose digestVersion this kernel does not take matches no digest
   assert.deepEqual(recovery?.classes, ["changed instance-home bytes", "untracked or ignored worktree bytes"], "not unknown provenance: the baseline's version still holds");
 });
 
+test("an ignored directory with an entry the retire cannot read refuses the retire at its first inspection, before any retire hook, with E_WORK_INSPECTION_FAILED naming the path and saying that nothing was stopped, run or removed", (t) => {
+  // Git lists the ignored directory whole (`!! cache/`), so the digest reads it, and meets a directory
+  // of mode 000 under it. A directory of mode 000 that is not under such a row Git does not list at
+  // all: it prints a warning, and its paths leave the status, which the class sees.
+  if (process.getuid?.() === 0) {
+    t.skip("root reads a directory of mode 000, so the case cannot be built");
+    return;
+  }
+  const f = fixture({ capabilities: { ...seedingCapability(), ...hookCapability(quietHook("")) } });
+  const { spawned, work } = spawnSeeded(f, "unreadable");
+  const locked = join(work, "cache", "locked");
+  write(join(locked, "inside.txt"), "bytes\n");
+  chmodSync(locked, 0o000);
+  try {
+    assert.match(fixtureGit(work, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=matching"]).toString("utf8"), /!! cache\/\0/, "fixture premise: Git lists the ignored directory whole");
+    const retired = cli(f, ["retire", basename(spawned.home), "--json"]);
+    assert.notEqual(retired.status, 0, `an ignored directory that cannot be read was retired: ${retired.stdout}`);
+    const error = JSON.parse(retired.stdout).error;
+    assert.equal(error.code, "E_WORK_INSPECTION_FAILED", retired.stdout);
+    assert.match(error.message, new RegExp(`^could not inspect ${join(work, "cache").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}: EACCES\\b.*\\. Nothing was stopped, run or removed\\.$`), "the message names the path and the reason, and says what the retire did not do");
+    assert.equal(hookRan(spawned.home), false, "no retire hook ran");
+    assert.equal(existsSync(recoveryRootOf(spawned.home)), false, "no recovery was written");
+    assert.equal(existsSync(spawned.home), true, "the home is kept");
+    assert.equal(readFileSync(join(work, "scratch.txt"), "utf8"), "scratch\n", "the work is kept");
+  } finally {
+    chmodSync(locked, 0o755);
+  }
+});
+
 /** Whether a quietHook retire hook ran to its end for this home. */
 const hookRan = (home) => existsSync(join(dirname(home), `hook-saw-${basename(home)}`));
 
