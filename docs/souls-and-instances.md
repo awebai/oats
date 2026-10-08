@@ -1111,8 +1111,9 @@ link. A fact doctor can't read is said on its line.
   repository whose configuration names a content filter (`filter.<driver>.clean`
   or `.process`), because the status would run it: the line says `clean:
   unknown` and names the filter. The status never enters a submodule: it
-  compares only the commit each one is at, and the line says `submodule work
-  trees not read`. An entry that isn't a registered worktree is listed and
+  compares only the commit each one is at. A tree with a submodule is then
+  `clean: unknown (submodule work trees not read)`, or `not clean` when the
+  rest of it is, with `submodule work trees not read` after it. An entry that isn't a registered worktree is listed and
   says why.
 - Both end with the reachability fact for the HEAD commit. It is checked in the
   source repository against every ref but the tree's own branch:

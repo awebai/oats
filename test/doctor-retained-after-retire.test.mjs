@@ -161,20 +161,23 @@ test("a status that would run the repository's content filter is not asked for",
   const { fx, wtA, } = leftovers(t);
   const marker = join(fx.base, "filter-ran");
   // A clean and a process filter, named by committed attributes, for files whose stat moved.
-  writeFileSync(join(wtA, ".gitattributes"), "*.txt filter=probe\n*.dat filter=proc\n");
+  // A driver's name may hold any character: U+2028 too.
+  writeFileSync(join(wtA, ".gitattributes"), "*.txt filter=probe\n*.dat filter=proc\n*.md filter=pro\u2028be\n");
   writeFileSync(join(wtA, "a.txt"), "a\n");
   writeFileSync(join(wtA, "b.dat"), "b\n");
-  git(wtA, "add", ".gitattributes", "a.txt", "b.dat");
+  writeFileSync(join(wtA, "c.md"), "c\n");
+  git(wtA, "add", ".gitattributes", "a.txt", "b.dat", "c.md");
   git(wtA, "commit", "-qm", "filtered files");
   git(fx.member, "config", "--unset", "core.fsmonitor");
   git(fx.member, "config", "filter.probe.clean", markerScript(fx, "clean-filter", marker));
   git(fx.member, "config", "filter.proc.process", markerScript(fx, "process-filter", marker));
+  git(fx.member, "config", "filter.pro\u2028be.clean", markerScript(fx, "separator-filter", marker));
   const later = new Date(Date.now() + 60_000);
-  for (const file of [join(wtA, "a.txt"), join(wtA, "b.dat")]) utimesSync(file, later, later);
+  for (const file of [join(wtA, "a.txt"), join(wtA, "b.dat"), join(wtA, "c.md")]) utimesSync(file, later, later);
 
   const doc = doctorJson(fx);
   const line = doc.information.find((l) => l.startsWith(`retained-worktree: ${wtA}:`));
-  assert.match(line, /; branch agents\/a; clean: unknown \(its repository configures a content filter that doctor does not run: filter\.probe, filter\.proc\); commits: 1 not reachable from any other ref$/);
+  assert.match(line, /; branch agents\/a; clean: unknown \(its repository configures a content filter that doctor does not run: filter\.probe, filter\.proc, filter\.pro\\u2028be\); commits: 1 not reachable from any other ref$/);
   assert.equal(existsSync(marker), false, "no filter ran");
   // The fixture is hostile for real: a plain status runs the filter.
   git(wtA, "status", "--porcelain");
@@ -194,11 +197,16 @@ test("a status never enters a submodule, whose own configuration may name a filt
   git(wtB, "-c", "protocol.file.allow=always", "submodule", "add", "-q", sub, "sub");
   git(wtB, "commit", "-qm", "submodule");
   git(join(wtB, "sub"), "config", "filter.inner.clean", markerScript(fx, "inner-filter", marker));
-  const later = new Date(Date.now() + 60_000);
-  utimesSync(join(wtB, "sub", "c.txt"), later, later);
+  // The submodule's work tree is dirty: what it holds is not read, so the tree is not known clean.
+  // The same size, so that Git compares the bytes, through the filter, under a plain status.
+  writeFileSync(join(wtB, "sub", "c.txt"), "d\n");
 
-  const doc = doctorJson(fx);
-  assert.ok(doc.information.includes(`retained-worktree: ${wtB}: repository ${fx.member}; branch agents/b; clean; submodule work trees not read; commits: 3 not reachable from any other ref`), doc.information.join("\n"));
+  let doc = doctorJson(fx);
+  assert.ok(doc.information.includes(`retained-worktree: ${wtB}: repository ${fx.member}; branch agents/b; clean: unknown (submodule work trees not read); commits: 3 not reachable from any other ref`), doc.information.join("\n"));
+  // The rest of the tree is not clean: that is known, and the submodules are still not read.
+  writeFileSync(join(wtB, "notes.txt"), "untracked\n");
+  doc = doctorJson(fx);
+  assert.ok(doc.information.includes(`retained-worktree: ${wtB}: repository ${fx.member}; branch agents/b; not clean; uncommitted: untracked files; submodule work trees not read; commits: 3 not reachable from any other ref`), doc.information.join("\n"));
   assert.equal(existsSync(marker), false, "the submodule's filter never ran");
   // The fixture is hostile for real: a plain status enters the submodule and runs it.
   git(wtB, "status", "--porcelain");
@@ -233,4 +241,31 @@ test("directories that can't be listed are counted against the 50 lines and summ
   assert.equal(lines[1], `retained-worktree: ${join(root, "ws", "file")}: not a directory`);
   assert.equal(lines[2], `retained-worktree: ${locked[0]} could not be listed (EACCES)`);
   assert.equal(lines.at(-1), "retained-worktree: … and 2 more");
+});
+
+test("ref names are compared by their bytes: U+FFFD is a valid name, and names that aren't UTF-8 stay apart", (t) => {
+  const { fx } = leftovers(t);
+  const root = join(fx.dep, ".agents", "worktrees", "ws");
+  const valid = join(root, "valid"), invalid = join(root, "invalid");
+  git(fx.member, "worktree", "add", "-q", "-b", "kept\uFFFD", valid);
+  git(valid, "commit", "-q", "--allow-empty", "-m", "only on kept\uFFFD");
+  git(fx.member, "worktree", "add", "-q", "--detach", invalid);
+  git(invalid, "commit", "-q", "--allow-empty", "-m", "only on k<ff>");
+  const commit = git(invalid, "rev-parse", "HEAD");
+  // Names that are not UTF-8, in packed-refs (no file system has to hold them as file names):
+  // k<ff> is the tree's own branch; k<fe>, which decodes to the same text, is another ref.
+  const own = Buffer.from([0x6b, 0xff]), other = Buffer.from([0x6b, 0xfe]);
+  const packed = join(fx.member, ".git", "packed-refs");
+  const line = (name) => Buffer.concat([Buffer.from(`${commit} refs/heads/`), name, Buffer.from("\n")]);
+  // Appended out of order: the header no longer says `sorted`, so Git sorts it when it reads it.
+  const unsorted = () => Buffer.from(readFileSync(packed, "latin1").replace(/^(# pack-refs with:.*) sorted /, "$1 "), "latin1");
+  writeFileSync(packed, Buffer.concat([existsSync(packed) ? unsorted() : Buffer.alloc(0), line(own)]));
+  writeFileSync(join(fx.member, ".git", "worktrees", "invalid", "HEAD"), Buffer.concat([Buffer.from("ref: refs/heads/"), own, Buffer.from("\n")]));
+
+  let doc = doctorJson(fx);
+  assert.ok(doc.information.includes(`retained-worktree: ${valid}: repository ${fx.member}; branch kept\uFFFD; clean; commits: 1 not reachable from any other ref`), doc.information.join("\n"));
+  assert.ok(doc.information.includes(`retained-worktree: ${invalid}: repository ${fx.member}; branch k\uFFFD; clean; commits: 1 not reachable from any other ref`), doc.information.join("\n"));
+  writeFileSync(packed, Buffer.concat([unsorted(), line(other)]));
+  doc = doctorJson(fx);
+  assert.ok(doc.information.includes(`retained-worktree: ${invalid}: repository ${fx.member}; branch k\uFFFD; clean; commits: all reachable from k\uFFFD`), doc.information.join("\n"));
 });
