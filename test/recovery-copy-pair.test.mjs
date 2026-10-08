@@ -168,3 +168,23 @@ for (const [what, change, moves] of [
     (moves ? assert.notEqual : assert.equal)(core.worktreeBytes(copy, gitPaths), core.worktreeBytes(work, gitPaths), `${what} ${moves ? "is" : "is not"} part of the digest`);
   });
 }
+
+// The home copy's verification compares source and copy with the stored digest of version 2
+// (storedTreeDigest), in the same run, whatever the spawn baseline holds. It is the copier's pair too,
+// but for the bits of the copied path itself, which the stored digest never holds.
+test("the stored digest of version 2 is the copier's pair: a tree and its copy digest alike, and each change but the copied path's own bits moves it", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "oats-copy-pair-"));
+  temporaryDirectories.push(root);
+  if (!oddModesKept(t, root)) return;
+  const source = oddTree(root);
+  const copy = join(root, "copy");
+  copyTreeSafe(source, copy);
+  assert.equal(core.storedTreeDigest(copy, 2), core.storedTreeDigest(source, 2), "a tree and its copy digest alike");
+  for (const [n, [what, change]] of CHANGES.entries()) {
+    const variant = join(root, `variant-${n}`);
+    copyTreeSafe(source, variant);
+    change(variant);
+    const own = what === "the permission bits of the copied path itself";
+    (own ? assert.equal : assert.notEqual)(core.storedTreeDigest(variant, 2), core.storedTreeDigest(source, 2), `${what} ${own ? "is not" : "is"} part of the stored digest`);
+  }
+});

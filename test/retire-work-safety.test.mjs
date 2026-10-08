@@ -8,7 +8,7 @@ import { devNull, tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { capabilityFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { linkExecutables, waitUntil as waitFor } from "./helpers/host-fixture.mjs";
-import { fingerprintTree, statusDisagreement } from "../lib/core.mjs";
+import { fingerprintTree, statusDisagreement, storedTreeDigest } from "../lib/core.mjs";
 import { workRecoveryLines } from "../lib/retire-output.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
@@ -2713,10 +2713,11 @@ test("fingerprintTree of an instance home tells apart two instance.json files th
 });
 
 // ---- Two trees that the stored digest reads alike ----
-// The digest a spawn baseline is stored with frames an entry as its path, NUL, its mode, NUL, its
-// kind, NUL, and for a file its bytes and NUL, with no length. So a file whose bytes spell the entry
-// that follows it reads like the two files. A stored digest cannot change. The proof that the retire
-// hooks left a part as it was must not read the two alike.
+// The legacy digest a spawn baseline was stored with before 0.49.0 (fingerprintTree) frames an entry as
+// its path, NUL, its mode, NUL, its kind, NUL, and for a file its bytes and NUL, with no length. So a
+// file whose bytes spell the entry that follows it reads like the two files. Such a baseline is still
+// compared with it, so it cannot change. The proof that the retire hooks left a part as it was must not
+// read the two alike.
 
 const PAIR_A = "the first file\n", PAIR_B = "the second file\n";
 /** Write the files `a` and `b` into `dir`, each with the mode 0644. */
@@ -3037,6 +3038,200 @@ test("fingerprintTree's digest of a tree whose names are all valid UTF-8 is the 
   if ((lstatSync(join(root, "link")).mode & 0o7777) !== 0o777) nodeFs.lchmodSync?.(join(root, "link"), 0o777);
   assert.equal(lstatSync(join(root, "link")).mode & 0o7777, 0o777, "fixture premise: the link's permission bits are 0777");
   assert.equal(fingerprintTree(root), "sha256:612e407ca91d0e9258ab0cc9d929db7bbc9e6b6d81179a74ce745dcd7638e71a");
+});
+
+// ---- The stored digests' version (#660, #661) ----
+// A spawn baseline written by this kernel says `digestVersion: 2`: its stored digests order entries by the
+// bytes of their names, frame every field whose length is not fixed with that length, and take the
+// untracked and ignored paths from the status's bytes, each tested with lstat. A baseline without the
+// field holds the legacy digests, and is compared with them as before.
+
+test("the stored digest of version 2 is the one spelled out here: entries in the order of their names' bytes, each field whose length is not fixed framed with its length", () => {
+  // A spawn baseline holds this digest, so it never changes. Per entry: its path's length, NUL, its path,
+  // its permission bits in decimal, NUL, then "file" NUL and its bytes' length, NUL, its bytes, or "link"
+  // NUL and its target the same way, or "dir" NUL followed by its entries; after "tree" NUL for the root.
+  const root = mkdtempSync(join(tmpdir(), "oats-fingerprint-v2-"));
+  temporaryDirectories.push(root);
+  for (const [name, content, mode] of [["a.txt", "alpha\n", 0o644], [join("dir", "inner.txt"), "inner\n", 0o640], ["zé.txt", "zed\n", 0o600]]) {
+    write(join(root, name), content);
+    chmodSync(join(root, name), mode);
+  }
+  chmodSync(join(root, "dir"), 0o755);
+  symlinkSync("a.txt", join(root, "link"));
+  if ((lstatSync(join(root, "link")).mode & 0o7777) !== 0o777) nodeFs.lchmodSync?.(join(root, "link"), 0o777);
+  assert.equal(lstatSync(join(root, "link")).mode & 0o7777, 0o777, "fixture premise: the link's permission bits are 0777");
+  const stream = Buffer.concat([
+    "tree\0",
+    "5\0a.txt", "420\0", "file\0", "6\0alpha\n",
+    "3\0dir", "493\0", "dir\0",
+    `${join("dir", "inner.txt").length}\0${join("dir", "inner.txt")}`, "416\0", "file\0", "6\0inner\n",
+    "4\0link", "511\0", "link\0", "5\0a.txt",
+    "7\0zé.txt", "384\0", "file\0", "4\0zed\n",
+  ].map((part) => Buffer.from(part)));
+  assert.equal(storedTreeDigest(root, 2), `sha256:${createHash("sha256").update(stream).digest("hex")}`);
+});
+
+test("two trees the legacy stored digest reads alike (a file whose bytes spell the entry after it, and those two entries) have two stored digests of version 2", () => {
+  const glue = storedDigestReadsThePairAlike(["pair"]);
+  const [two, one] = temporaryDirectories.slice(-2);
+  assert.ok(readFileSync(join(one, "pair", "a"), "utf8").includes(glue), "fixture premise: the one tree holds the merged file");
+  assert.notEqual(storedTreeDigest(one, 2), storedTreeDigest(two, 2), "the length of a's bytes tells the two apart");
+});
+
+test("the stored digest of version 2 is the same under every locale, where the legacy digest's order follows the locale", (t) => {
+  // Under Node, LC_ALL=C orders as en-US does, so locales whose collation differs from it name the case:
+  // Swedish sorts ä after z, Danish sorts aa after ä, English sorts both before z.
+  const root = mkdtempSync(join(tmpdir(), "oats-fingerprint-locale-"));
+  temporaryDirectories.push(root);
+  for (const name of ["z.txt", "ä.txt", "aa.txt", "B.txt", "a.txt"]) write(join(root, name), `${name}\n`);
+  const core = new URL("../lib/core.mjs", import.meta.url).href;
+  const script = `const { fingerprintTree, storedTreeDigest } = await import(${JSON.stringify(core)});
+console.log(JSON.stringify({ locale: new Intl.Collator().resolvedOptions().locale, legacy: fingerprintTree(process.argv[1]), v2: storedTreeDigest(process.argv[1], 2) }));`;
+  const under = (locale) => {
+    const r = spawnSync(process.execPath, ["--input-type=module", "-e", script, root], { encoding: "utf8", env: { PATH: process.env.PATH, HOME: fixtureGitHome, LC_ALL: locale, LANG: locale } });
+    assert.equal(r.status, 0, r.stderr);
+    return { asked: locale, ...JSON.parse(r.stdout) };
+  };
+  const runs = ["C", "en_US.UTF-8", "sv_SE.UTF-8", "da_DK.UTF-8"].map(under);
+  if (new Set(runs.map((r) => r.legacy)).size < 2) {
+    t.skip(`this Node orders the names alike under every locale tried (${runs.map((r) => `${r.asked} → ${r.locale}`).join(", ")}): its ICU has no collation data for them`);
+    return;
+  }
+  assert.deepEqual(runs.map((r) => r.v2), runs.map(() => runs[0].v2), "one tree, one digest of version 2, whatever the locale");
+});
+
+/** A capability whose spawn hook leaves, in the worktree, before the spawn baseline is taken: an
+ *  untracked file, an ignored directory with a file, an untracked link whose target does not exist, an
+ *  untracked file whose name is not valid UTF-8 (where the file system takes such a name), and two
+ *  files in an ignored directory. Its meta says whether the odd name was written. */
+const SEEDED_ODD_NAME = Buffer.concat([Buffer.from("caf"), Buffer.from([0xe9]), Buffer.from(".txt")]);
+const SEEDS_WORK = `import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const work = join(process.env.OATS_INSTANCE_HOME, 'work');
+writeFileSync(join(work, 'scratch.txt'), 'scratch\\n');
+mkdirSync(join(work, 'cache'), { recursive: true });
+writeFileSync(join(work, 'cache', 'build.txt'), 'built\\n');
+symlinkSync('missing-a', join(work, 'dangling'));
+mkdirSync(join(work, 'human-ignored', 'pair'), { recursive: true });
+for (const [name, bytes] of [['a', ${JSON.stringify(PAIR_A)}], ['b', ${JSON.stringify(PAIR_B)}]]) { writeFileSync(join(work, 'human-ignored', 'pair', name), bytes); chmodSync(join(work, 'human-ignored', 'pair', name), 0o644); }
+let odd = 'written';
+try { writeFileSync(Buffer.concat([Buffer.from(work + '/'), Buffer.from(${JSON.stringify([...SEEDED_ODD_NAME])})]), 'odd\\n'); }
+catch (e) { odd = e.code || String(e); }
+console.log(JSON.stringify({ meta: { odd } }));
+`;
+const seedingCapability = () => ({ "acme.seed": { manifest: { description: "leaves untracked and ignored bytes in the work at spawn", hooks: { spawn: "spawn.mjs" } }, files: { "spawn.mjs": SEEDS_WORK } } });
+/** Spawn an instance whose work the spawn hook seeded → { spawned, work, odd } (`odd`: the odd-named
+ *  file's path as bytes, or null with the reason where the file system refused the name). */
+function spawnSeeded(f, purpose) {
+  const spawned = spawn(f, purpose);
+  const work = join(spawned.home, "work");
+  assert.equal(readlinkSync(join(work, "dangling")), "missing-a", "fixture premise: the spawn hook left the dangling link");
+  const odd = readdirSync(work, { encoding: "buffer" }).some((name) => name.equals(SEEDED_ODD_NAME)) ? Buffer.concat([Buffer.from(`${work}/`), SEEDED_ODD_NAME]) : null;
+  return { spawned, work, odd, oddRefused: odd ? undefined : `the file system refused a name that is not valid UTF-8, as APFS does` };
+}
+const retireJson = (f, instance) => {
+  const retired = cli(f, ["retire", instance, "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  return JSON.parse(retired.stdout);
+};
+/** The legacy generatedWorkFingerprint, spelled out from the kernel before 0.49.0: the status decoded as
+ *  text, its `??` and `!!` paths sorted as text, each hashed as its path, NUL, then "missing" NUL where
+ *  existsSync is false, else its legacy stored digest and NUL. */
+function legacyGeneratedWorkFingerprint(work) {
+  const status = fixtureGit(work, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=matching", "--ignore-submodules=none"]).toString("utf8");
+  const paths = status.split("\0").filter((row) => row.startsWith("?? ") || row.startsWith("!! ")).map((row) => row.slice(3)).sort();
+  const hash = createHash("sha256");
+  for (const rel of paths) {
+    hash.update(rel); hash.update("\0");
+    if (!existsSync(join(work, rel))) { hash.update("missing\0"); continue; }
+    hash.update(fingerprintTree(join(work, rel))); hash.update("\0");
+  }
+  return `sha256:${hash.digest("hex")}`;
+}
+/** Rewrite a home's spawn baseline as a kernel before 0.49.0 wrote it: no `digestVersion`, and the
+ *  legacy digests of the home and of the work as they are now. */
+function rewriteAsLegacyBaseline(home) {
+  const path = baselineOf(home);
+  const { digestVersion, ...baseline } = readJson(path);
+  assert.equal(digestVersion, 2, "fixture premise: the spawn wrote digest version 2");
+  baseline.homeFingerprint = fingerprintTree(home, { excludeRoot: new Set(["work"]), instanceHome: true });
+  baseline.generatedWorkFingerprint = legacyGeneratedWorkFingerprint(join(home, "work"));
+  writeFileSync(path, JSON.stringify(baseline, null, 2) + "\n", { mode: 0o600 });
+}
+
+test("a new spawn's baseline says digestVersion 2 beside version 2, and with untracked and ignored bytes, a dangling link and a name that is not UTF-8 there since the spawn, a retire that changed nothing has no class and writes no recovery", () => {
+  const f = fixture({ capabilities: seedingCapability() });
+  const { spawned } = spawnSeeded(f, "seeded");
+  const baseline = readJson(baselineOf(spawned.home));
+  assert.equal(baseline.version, 2, "RETIRE_BASELINE_VERSION is not bumped");
+  assert.equal(baseline.digestVersion, 2);
+  const result = retireJson(f, "dev-seeded");
+  assert.equal(result.workRecovery, undefined, "spawn and the class agree on every seeded path");
+  assert.equal(existsSync(spawned.home), false);
+});
+
+test("an untracked symbolic link whose missing target changes adds the untracked and ignored class, and the recovery holds the new target", () => {
+  const f = fixture({ capabilities: seedingCapability() });
+  const { work } = spawnSeeded(f, "dangling");
+  rmSync(join(work, "dangling"));
+  symlinkSync("missing-b", join(work, "dangling"));
+  const recovery = retireJson(f, "dev-dangling").workRecovery;
+  assert.deepEqual(recovery?.classes, ["untracked or ignored worktree bytes"]);
+  assert.equal(readlinkSync(join(recovery.path, "repo", "dangling")), "missing-b");
+});
+
+test("an untracked file whose name is not valid UTF-8 and whose bytes change adds the untracked and ignored class, and the recovery holds the new bytes", (t) => {
+  const f = fixture({ capabilities: seedingCapability() });
+  const { work, odd, oddRefused } = spawnSeeded(f, "odd-name");
+  if (!odd) {
+    assert.notEqual(process.platform, "linux", `this test is not skipped on Linux: ${oddRefused}`);
+    t.skip(oddRefused);
+    return;
+  }
+  assert.equal(existsSync(join(work, SEEDED_ODD_NAME.toString("utf8"))), false, "fixture premise: the name read as text names no file");
+  writeFileSync(odd, "changed\n");
+  const recovery = retireJson(f, "dev-odd-name").workRecovery;
+  assert.deepEqual(recovery?.classes, ["untracked or ignored worktree bytes"]);
+  assert.equal(readFileSync(Buffer.concat([Buffer.from(`${join(recovery.path, "repo")}/`), SEEDED_ODD_NAME]), "utf8"), "changed\n");
+});
+
+test("two ignored files replaced by one whose bytes spell the second entry, which the legacy digest reads alike, add the untracked and ignored class", () => {
+  const f = fixture({ capabilities: seedingCapability() });
+  const { work } = spawnSeeded(f, "pair");
+  const pair = join(work, "human-ignored", "pair");
+  // The legacy digest is taken of the status path, `human-ignored/`, so the glue names `pair/b`.
+  const glue = pairGlue(pair, ["pair"]);
+  const before = fingerprintTree(join(work, "human-ignored"));
+  writeFileSync(join(pair, "a"), mergedPair(glue));
+  rmSync(join(pair, "b"));
+  assert.equal(fingerprintTree(join(work, "human-ignored")), before, "fixture premise: the legacy digest reads the two layouts alike");
+  const recovery = retireJson(f, "dev-pair").workRecovery;
+  assert.deepEqual(recovery?.classes, ["untracked or ignored worktree bytes"]);
+  assertMerged(join(recovery.path, "repo", "human-ignored", "pair"), glue, "the recovery");
+});
+
+test("a baseline written before 0.49.0, without digestVersion, is compared with the legacy digests: with no change no class fires, and a changed untracked file still adds its class", () => {
+  const f = fixture({ capabilities: seedingCapability() });
+  const clean = spawnSeeded(f, "legacy-clean");
+  rewriteAsLegacyBaseline(clean.spawned.home);
+  assert.equal(Object.hasOwn(readJson(baselineOf(clean.spawned.home)), "digestVersion"), false, "fixture premise: a legacy baseline");
+  assert.equal(retireJson(f, "dev-legacy-clean").workRecovery, undefined, "an unchanged instance with a legacy baseline retires with no class");
+
+  const changed = spawnSeeded(f, "legacy-changed");
+  rewriteAsLegacyBaseline(changed.spawned.home);
+  writeFileSync(join(changed.work, "scratch.txt"), "changed\n");
+  const recovery = retireJson(f, "dev-legacy-changed").workRecovery;
+  assert.deepEqual(recovery?.classes, ["untracked or ignored worktree bytes"], "the legacy comparison still sees what it saw");
+  assert.equal(readFileSync(join(recovery.path, "repo", "scratch.txt"), "utf8"), "changed\n");
+});
+
+test("a baseline whose digestVersion this kernel does not take matches no digest: the home and the untracked and ignored classes fire, and its authority still holds", () => {
+  const f = fixture({ capabilities: seedingCapability() });
+  const { spawned } = spawnSeeded(f, "future");
+  const path = baselineOf(spawned.home);
+  writeFileSync(path, JSON.stringify({ ...readJson(path), digestVersion: 3 }, null, 2) + "\n", { mode: 0o600 });
+  const recovery = retireJson(f, "dev-future").workRecovery;
+  assert.deepEqual(recovery?.classes, ["changed instance-home bytes", "untracked or ignored worktree bytes"], "not unknown provenance: the baseline's version still holds");
 });
 
 /** Whether a quietHook retire hook ran to its end for this home. */
