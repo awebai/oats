@@ -55,6 +55,7 @@ import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_
 import { observeInstanceGit, diffInstanceFile } from "../lib/instance-git.mjs";
 import { planStop, applyStop, planRetire, descendantsOf, resolveInstance as resolveInstanceForCli } from "../lib/instance-lifecycle.mjs";
 import { extraWorktreeLines, formatBytes, workRecoveryLines } from "../lib/retire-output.mjs";
+import { retainedRecoveryLines, retainedWorktreeLines, retainedWorktrees } from "../lib/retained-after-retire.mjs";
 const await_import_lifecycle = () => ({ resolveInstance: resolveInstanceForCli });
 import { homeTarget, soulTarget, isWorkspaceContext, inspectDocument, withComposedInstructions, readinessDocument, policyOf, policySoul, manifestMissingRequires, INSPECT_OPERATIONS_API } from "../lib/instance-inspect.mjs";
 import { readEvents, setWaiting, incarnationOf } from "../lib/instance-events.mjs";
@@ -726,6 +727,14 @@ async function doctorJson(dir) {
 function legacyLayoutProblems(root) {
   return [legacyLocalAgents(root), legacyCapturedHomes(root)].filter(Boolean);
 }
+/** What retires left in the deployment (#703 part 2a), read-only: the
+ *  `retained-recovery:` and `retained-worktree:` information lines, as one
+ *  block per kind (a count line, then one line per item). */
+function doctorRetained(ws) {
+  const deployment = dirname(ws.local.path);
+  const kept = retainedWorktrees(deployment);
+  return [retainedRecoveryLines(join(deployment, "agents"), kept), retainedWorktreeLines(kept)].filter((block) => block.length);
+}
 async function doctorWorkspaceJson(ctx, soulName, ws) {
   const composition = await doctorComposition(ctx, soulName, ws, (code, msg, details) => jsonFail(code, msg, details));
   const agentsRoot = join(dirname(ws.local.path), "agents");
@@ -739,7 +748,7 @@ async function doctorWorkspaceJson(ctx, soulName, ws) {
     schemaVersion: 1, workspaceApi: 2, context: ctx,
     workspace: { file: ws.local.path, ref: ws.local.workspace },
     workspaceError: ws.localError, lockFile: ws.lockFile, packages: ws.packages, lockError: ws.lockError,
-    information: [...(operationalKnowledgeNote(composition, soulName) ? [operationalKnowledgeNote(composition, soulName)] : []), ...localTeams.information, ...schedules.information, ...operator.information, ...hookEvents.information],
+    information: [...(operationalKnowledgeNote(composition, soulName) ? [operationalKnowledgeNote(composition, soulName)] : []), ...localTeams.information, ...schedules.information, ...operator.information, ...hookEvents.information, ...doctorRetained(ws).flat()],
     composedInstructions: composition?.text, instructionBlocks: composition?.blocks,
     ...(problems.length ? { problems } : {}),
     warnings: hookEvents.warnings,
@@ -785,6 +794,7 @@ async function doctor(dir) {
   const hookEvents = composition ? { warnings: composition.warnings, information: [] } : await doctorHookWarnings(ws);
   for (const w of hookEvents.warnings) console.log(`\nwarning  ${w.code}  ${w.message}`);
   for (const line of [...localTeams.information, ...schedules.information, ...operator.information, ...hookEvents.information]) console.log(`\nINFO: ${line}`);
+  for (const block of doctorRetained(ws)) console.log(`\n${block.map((line) => `INFO: ${line}`).join("\n")}`);
   if (soulName) {
     const information = operationalKnowledgeNote(composition, soulName);
     if (information) console.log(`\nINFO: ${information}`);

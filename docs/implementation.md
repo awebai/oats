@@ -68,6 +68,7 @@ published to npm. Its developer docs are in
 | `login-environment.mjs` | the user's login environment a server OATS starts gets: the login shell's answer as one nonce-framed block on its stdout, bounded and accepted only whole ([execution targets](execution-targets.md#the-servers-start-environment)) |
 | `capability-contract.mjs`, `provider-binding.mjs` | manifest validation (launch environment, hooks, `retirement`) as problems and warnings (`manifestContract`: an unknown, non-required hook event is a warning every reader reports), the hook environment rules, the readiness wire |
 | `retire-output.mjs` | the lines `oats retire` prints for preserved work, one function for the local and the remote path |
+| `retained-after-retire.mjs` | what retires left behind (recovery copies, retained worktrees) as `oats doctor` information lines: read-only, Git through `instance-git.mjs`'s helper-free reads |
 | `servers.mjs` | routing commands to a registered server |
 | `launch-prompt-evidence.mjs` | private bounded storage of exact post-answer unmatched or structurally completed frames, original-home identity checks and receipt-last publication; no terminal operations or public raw text |
 | `launch-prompt-completion.mjs` | pure, qualified post-answer completion reporting using a finite bottom input/footer table and 21 question markers; never an input matcher |

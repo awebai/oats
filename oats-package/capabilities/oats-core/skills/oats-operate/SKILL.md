@@ -128,6 +128,7 @@ oats capabilities            # capabilities, member or package, with origin
 oats instance events <instance>          # what happened to an instance, as recorded
 oats instance git <instance>             # its work tree: branch, status, ahead/behind
 oats doctor                  # this deployment's local file and lock, plus diagnostics
+                             # and what retires left (recovery copies, retained worktrees)
 ```
 
 ## Spawn: preview, then apply
