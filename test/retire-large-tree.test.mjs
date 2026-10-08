@@ -15,20 +15,40 @@ import { findAgent, retireInstance, spawnInstance } from "../lib/core.mjs";
 
 function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, c); }
 
-// Always on: the source contract. Every execFileSync("git", ...) between the
-// retirement inspection helpers and retireInstance carries the bound; a new
-// call added without it is exactly the regression, and it must fail here
-// before it fails on someone's 9,500-file tree.
+// Always on: the source contract. The retirement path runs Git through
+// retireGit and retireGitProbe (lib/core.mjs), which carry the bound; any
+// direct execFileSync("git", ...) or spawnSync("git", ...) left between the
+// retirement inspection helpers and the end of retireInstance carries it too.
+// A new call added without it is exactly the regression, and it must fail
+// here before it fails on someone's 9,500-file tree. The retire's Git through
+// lib/instance-git.mjs (gitRead, gitRepoRead, gitRepoRun, the HEAD reads) is
+// bounded by that module's own GIT_MAX_BUFFER, 64 MiB: what it reads there is
+// small (a HEAD, a worktree list: `worktree list --porcelain -z` prints a few
+// hundred bytes per worktree), apart from an extra tree's status, which that
+// bound covers as it does for `oats instance git`.
 test("every git call on the retirement path carries GIT_MAX_BUFFER", () => {
   const src = readFileSync(new URL("../lib/core.mjs", import.meta.url), "utf8");
+  const gitCalls = (text) => text.match(/(?:execFileSync|spawnSync)\("git",[\s\S]*?\)(?=;|\.trim\(\)|\.toString\(|\s*\)|,\s*\{)/g) || [];
+  // The helpers: each runs Git once, with the bound.
+  const helperStart = src.indexOf("function retireGit(");
+  const helperEnd = src.indexOf("\n}\n", src.indexOf("function retireGitProbe("));
+  assert.ok(helperStart > 0 && helperEnd > helperStart, "retireGit and retireGitProbe located");
+  const helpers = src.slice(helperStart, helperEnd);
+  const helperCalls = helpers.match(/(?:execFileSync|spawnSync)\("git",[\s\S]*?\}\)/g) || [];
+  assert.equal(helperCalls.length, 2, "retireGit and retireGitProbe each run Git once");
+  for (const call of helperCalls) assert.match(call, /maxBuffer: GIT_MAX_BUFFER/);
+  // The retirement section: the inspection helpers through the end of retireInstance.
   const start = src.indexOf("function fingerprintTree(");
-  const end = src.indexOf("export function retireInstance(");
-  assert.ok(start > 0 && end > start, "retirement section located");
+  const retire = src.indexOf("export function retireInstance(");
+  const after = src.slice(retire + 1).search(/^(?:export )?(?:async )?function /m);
+  const end = after < 0 ? src.length : retire + 1 + after;
+  assert.ok(start > 0 && retire > start && end > retire, "retirement section located");
   const section = src.slice(start, end);
-  const calls = section.match(/execFileSync\("git",[\s\S]*?\)(?=;|\.trim\(\)|\.toString\(|\s*\)|,\s*\{)/g) || [];
-  assert.ok(calls.length >= 15, `expected the retirement section's git calls, found ${calls.length}`);
-  const unbounded = calls.filter((c) => !c.includes("GIT_MAX_BUFFER"));
+  const unbounded = gitCalls(section).filter((c) => !c.includes("GIT_MAX_BUFFER"));
   assert.deepEqual(unbounded, [], "git calls on the retirement path without the bound");
+  // Not vacuous: the section does run Git, through the helpers.
+  const viaHelpers = section.match(/\bretireGit(?:Probe)?\(/g) || [];
+  assert.ok(viaHelpers.length >= 20, `expected the retirement section's git calls through retireGit, found ${viaHelpers.length}`);
 });
 
 // Opt in (OATS_SLOW_TESTS=1): the real thing, about three minutes of git and
