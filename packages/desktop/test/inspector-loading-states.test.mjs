@@ -241,7 +241,7 @@ test('a remote instance\'s Teams card: a host refusal of list, Refresh, join or 
   const remoteSelection = { instance: { ...homeSelection.instance, server: 'build', repoName: 'Build box' }, selector: homeSelection.selector };
   const run = op => r => r.body.action === 'run' && r.body.operation === op;
   const ssh = () => refusal('E_SSH', 'ssh: connect refused', { reason: { code: 'E_SSH', message: "Couldn't reach Build box.", detail: 'ssh: connect refused', remote: true } });
-  const incompatible = () => refusal('E_REMOTE_INCOMPATIBLE', 'old', { reason: { code: 'E_REMOTE_INCOMPATIBLE', message: "Build box runs an OATS that can't do this yet.", detail: null, remote: true } });
+  const incompatible = (detail = null) => refusal('E_REMOTE_INCOMPATIBLE', detail ?? 'old', { reason: { code: 'E_REMOTE_INCOMPATIBLE', message: "Build box runs an OATS that can't do this yet.", detail, remote: true } });
   const teamsSentence = "Build box runs an OATS that can't show this instance's teams here (it needs the operations feature). Update OATS on Build box.";
   // One eligible team not joined, so the card offers Join beside engineering's Leave.
   const offered = structuredClone(teamsRun); offered.result.eligible.push({ label: 'design', team: 'northwind:design', joined: false });
@@ -269,8 +269,8 @@ test('a remote instance\'s Teams card: a host refusal of list, Refresh, join or 
   // Join, then leave: the refusal under the team's row (the re-read after it lands clean).
   button(card(u), 'Retry').click(); await u.resolve(offered, run('messaging:teams'));
   card(u).querySelector('[data-team-action="join"][data-team="design"]').click();
-  await u.reject(incompatible(), run('messaging:join')); await u.resolve(offered, run('messaging:teams'));
-  said(card(u).querySelector('.teams-problem'), teamsSentence, 'E_REMOTE_INCOMPATIBLE', null);
+  await u.reject(incompatible('needs operations'), run('messaging:join')); await u.resolve(offered, run('messaging:teams'));
+  said(card(u).querySelector('.teams-problem'), teamsSentence, 'E_REMOTE_INCOMPATIBLE', 'needs operations');
   card(u).querySelector('[data-team-action="leave"][data-team="engineering"]').click();
   await u.reject(ssh(), run('messaging:leave')); await u.resolve(offered, run('messaging:teams'));
   said(card(u).querySelector('.teams-problem'), "Couldn't reach Build box.", 'E_SSH', 'ssh: connect refused');
