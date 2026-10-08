@@ -67,7 +67,11 @@ The shell has three navigation contexts:
   [docs/desktop-deployment-model.md](docs/desktop-deployment-model.md); when
   the kernel is asked and what the server holds between asks is
   [docs/desktop-load-path.md](docs/desktop-load-path.md).
-  Binds 127.0.0.1 only — it can type into your terminals. What the programs it
+  Binds 127.0.0.1 only — it can type into your terminals. A server the app
+  starts ends with the app, however main ends: its stdin is a pipe only main
+  holds, and with `--exit-on-stdin-close` the server exits at its EOF
+  (`server-host.mjs`, `serverSpawnSpec`). A server started by hand has no such
+  tie. What the programs it
   starts receive is [below](#the-environment-of-the-programs-desktop-starts).
 - `preload.cjs` — contextBridge surface (`window.oatsDesktop`); renderer runs
   with contextIsolation on, nodeIntegration off.

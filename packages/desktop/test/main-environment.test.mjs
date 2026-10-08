@@ -11,6 +11,7 @@ import { createTerminalIo } from "../terminal-io.mjs";
 import { resolveLoginPath } from "../login-path.mjs";
 import { forgeEnvironment } from "../forge-cli.mjs";
 import { cliWorkspace } from "../workspace-cli.mjs";
+import { serverSpawnSpec } from "../server-host.mjs";
 import { desktopEnvironment, assertUserEnvironment, USER_PATH } from "./helpers/desktop-environment.mjs";
 
 const MOUNT = "/tmp/.mount_oats-dXyZ789";
@@ -142,8 +143,14 @@ test("main starts the backend with its whole environment and the Node-mode flag:
   const start = main.indexOf("spawnChild: (dirs, onPort) => {"), end = main.indexOf("return child;", start);
   assert.ok(start >= 0 && end > start, "main.mjs defines spawnChild");
   const block = main.slice(start, end);
-  assert.ok(block.includes("spawn(process.execPath, [bin, "), "the backend is started by the executable's absolute path");
-  assert.ok(block.includes('env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },'));
+  assert.ok(block.includes("serverSpawnSpec({ execPath: process.execPath, bin, "), "the backend is started by the executable's absolute path");
+  assert.ok(block.includes("env: process.env });"), "with main's whole environment");
+  assert.ok(block.includes("spawn(spec.command, spec.args, spec.options)"), "exactly as the spec says");
+  const env = desktopEnvironment();
+  const spec = serverSpawnSpec({ execPath: "/opt/OATS/oats-desktop", bin: "/opt/OATS/server/oats-web.mjs", dirs: [], port: 4820,
+    pathSource: "login-shell", remoteIdentityFile: "/fixture/remote.json", home: "/home/fixture", env });
+  assert.equal(spec.command, "/opt/OATS/oats-desktop");
+  assert.deepEqual(spec.options.env, { ...env, ELECTRON_RUN_AS_NODE: "1" }, "whole, plus the Node-mode flag");
 });
 
 test("main's own tmux calls (the orphan-viewer sweep) pass the cleaned environment, computed at the call", () => {

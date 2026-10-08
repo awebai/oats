@@ -113,6 +113,79 @@ test("spawn decisions carry the portOccupied discriminator (not reason strings)"
   } finally { server.close(); }
 });
 
+// #698: this app's own server at another version (another installed Desktop, a dev checkout, or one
+// an earlier Desktop left running) is reported as exactly that, whatever it serves — never as "not
+// the requested workspace" — and left running: the reuse rule is unchanged and nothing is stopped.
+const OTHER_VERSION = "0.0.1-older";
+async function otherVersionServer(workspaces) {
+  const seen = [];
+  const server = createServer((req, res) => {
+    seen.push(`${req.method} ${req.url}`);
+    res.writeHead(200, { "content-type": "application/json" });
+    req.url.startsWith("/api/panel")
+      ? res.end(JSON.stringify({ workspaces, instances: [] }))
+      : req.url.startsWith("/api/version")
+        ? res.end(JSON.stringify({ capability: LOCAL.capability, version: OTHER_VERSION }))
+        : res.end("{}");
+  });
+  await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
+  return { server, seen, url: `http://127.0.0.1:${server.address().port}` };
+}
+
+for (const [label, matchWorkspace] of [["not covering our workspace", () => null], ["covering our workspace", (ws) => ws[0]?.id || null]]) {
+  test(`same-capability server at another version, ${label} → a version reason, port occupied, left running`, async () => {
+    const { server, seen, url } = await otherVersionServer([{ id: "/w", name: "w" }]);
+    try {
+      const choice = await selectAgainst(url, matchWorkspace);
+      assert.equal(choice.action, "spawn", "another version is never reused");
+      assert.equal(choice.portOccupied, true, "the port stays taken: the caller moves");
+      assert.ok(choice.reason.includes(OTHER_VERSION) && choice.reason.includes(LOCAL.version), choice.reason);
+      assert.match(choice.reason, /not started by this app/);
+      assert.match(choice.reason, /left running/);
+      assert.doesNotMatch(choice.reason, /not the requested workspace/);
+      assert.ok(seen.every((r) => r.startsWith("GET ")), "only read: nothing is posted to it");
+      assert.equal((await fetch(`${url}/api/panel`)).ok, true, "still answering");
+    } finally { server.close(); }
+  });
+}
+
+test("ensureServerOnPort: the startup log names both versions, that the server is left running, and the port used instead", async () => {
+  const { server, url } = await otherVersionServer([{ id: "/other", name: "other" }]);
+  const logs = [], calls = [];
+  try {
+    const r = await ensureServerOnPort({
+      panelWorkspaces: async () => (await (await fetch(`${url}/api/panel`)).json()).workspaces,
+      probeVersion: async () => { const v = await fetch(`${url}/api/version`); return { ok: v.ok, status: v.status, body: await v.json() }; },
+      matchWorkspace: () => null,
+      local: LOCAL,
+      port: 4820,
+      freePort: async (from) => { calls.push(["freePort", from]); return 4823; },
+      spawnServer: (p) => calls.push(["spawn", p]),
+      log: (m) => logs.push(m),
+    });
+    assert.deepEqual(r, { spawned: true, port: 4823, wsId: null });
+    assert.deepEqual(calls, [["freePort", 4821], ["spawn", 4823]]);
+    assert.equal(logs.length, 1);
+    assert.equal(logs[0], `server on 4820 — this app's server at version ${OTHER_VERSION} (this app is ${LOCAL.version}), `
+      + "not started by this app — left running — starting a dedicated one on 4823");
+    assert.equal((await fetch(`${url}/api/version`)).ok, true, "the other version still answers");
+  } finally { server.close(); }
+});
+
+test("same capability and version, other workspace → still 'not the requested workspace'", async () => {
+  const server = createServer((req, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    req.url.startsWith("/api/panel")
+      ? res.end(JSON.stringify({ workspaces: [{ id: "/other", name: "other" }], instances: [] }))
+      : res.end(JSON.stringify(LOCAL));
+  });
+  await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
+  try {
+    const choice = await selectAgainst(`http://127.0.0.1:${server.address().port}`, () => null);
+    assert.deepEqual(choice, { action: "spawn", portOccupied: true, reason: "serves other — not the requested workspace" });
+  } finally { server.close(); }
+});
+
 // ensureServerOnPort: the CONSUMER of the discriminator (review srvcompat3 —
 // proving the emitter is not enough; review srvcompat4 — the decision is
 // INJECTED with arbitrary reason text so a consumer keying on any reason

@@ -115,6 +115,8 @@ let remoteCollecting = false;
 const ctxs = [...new Set(flagAll("dir").map((d) => resolve(String(d))))];
 const port = Number(flag("port") || 4820);
 const DEBUG = flag("debug") === true || process.env.OATSWEB_DEBUG === "1";
+/* Internal (#698): stdin is the owner lifeline from Desktop's main (server-host.mjs); exit at its EOF. */
+const EXIT_ON_STDIN_CLOSE = args.includes("--exit-on-stdin-close");
 
 /* The remembered remote identities and the roster's answered state (server/remote-identity.mjs). */
 const remoteIdentities = createRemoteIdentityStore({ file: typeof flag("remote-identity") === "string" ? flag("remote-identity") : null });
@@ -1820,6 +1822,27 @@ server.listen(port, "127.0.0.1", () => {
   console.log(`oats-desktop server — API at ${addr}  (workspaces: ${deployments().map((w) => w.name).join(", ") || "none"})`);
   console.log("Bound to 127.0.0.1 only. This process can type into your agent terminals — do not expose it.");
 });
+// The owner lifeline (#698): Desktop's main holds the only write end of this
+// process's stdin and never writes to it, so EOF, close or an error there means
+// main has ended, by quit, crash or SIGKILL alike. Stop listening (without
+// waiting on keep-alive sockets) and exit. CLI children in flight get no
+// signal, as on the quit path. Without the flag stdin is never read, so a
+// server started by hand behaves as before, whatever its stdin.
+if (EXIT_ON_STDIN_CLOSE) {
+  let ownerGone = false;
+  const onOwnerGone = (how) => {
+    if (ownerGone) return;
+    ownerGone = true;
+    console.log(`oats-desktop server: the app that started it has ended (stdin ${how}) — exiting`);
+    server.close();
+    server.closeAllConnections();
+    process.exit(0);
+  };
+  process.stdin.on("data", () => { /* never written; read only to see its end */ });
+  process.stdin.once("end", () => onOwnerGone("closed"));
+  process.stdin.once("close", () => onOwnerGone("closed"));
+  process.stdin.once("error", (e) => onOwnerGone(`error ${e.code || e.message}`));
+}
 void refreshLoop.start();                // the first cycle publishes "pending" until the CLI probe settles
 reprobeCli().then((s) => {
   console.log(s.ok
