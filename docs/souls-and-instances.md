@@ -762,9 +762,13 @@ declared them gains no exclusion from a package update, and is copied whole.
 
 Retire stops the harness through the home's session receipt, kept beside the
 home in the instances directory's `.oats-retirement/baselines/` and keyed by
-the home's path. First address the home exactly as `oats status` prints it: a
-different spelling of its path (letter case, a deployment directory moved
-since the spawn) looks for the receipt elsewhere. A home can also be without
+the home's path as it is on disk: on a case-insensitive filesystem (the macOS
+default) every letter-case spelling of the path finds it. First address the
+home exactly as `oats status` prints it: a deployment directory moved since the
+spawn looks for the receipt elsewhere. So does a letter-case spelling other
+than the spawn's for a home spawned before 0.49.0, whose receipt is keyed by
+the spawn's spelling and found from that spelling (or from the on-disk one,
+when the two are the same). A home can also be without
 its receipt because it was spawned before 0.25.9, it was copied, the
 `.oats-retirement` beside it was removed, or its creation did not finish;
 `session inspect`, `start` and `restart` then refuse with

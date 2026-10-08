@@ -745,7 +745,9 @@ oats session attach --home /abs/home
   `stopped` for an absent or dead terminal, or `not-launched`. An unavailable
   backend is an error (`E_SESSION_UNAVAILABLE`), never a stopped result.
   A home without its session receipt is refused with
-  `E_RUNTIME_ENDPOINT_UNKNOWN`, naming the receipt path it looked for; what
+  `E_RUNTIME_ENDPOINT_UNKNOWN`, naming the receipt path it looked for (and, for a
+  spelling that differs from the on-disk one, the path a kernel before 0.49.0
+  used for that spelling); what
   to do is in [souls and instances](souls-and-instances.md#retire).
   Beside `state`, `waitingOnYou` (feature `waiting-on-you`) is a producer's
   live claim that the instance needs input from a human, `{since, producer,
