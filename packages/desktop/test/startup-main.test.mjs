@@ -1,6 +1,7 @@
 // A Finder launch (cwd `/`, no --dir) runs main's shipped startup in a vm (#518): the real registry,
 // records and window code over a real userData folder and real deployment folders, with Electron and
-// the backend process faked at their boundary. What the backend is spawned with (argv and cwd), the
+// the backend process faked at their boundary. What the backend is spawned with (argv, cwd and stdio, through
+// the real serverSpawnSpec), the
 // window it opens and what is written to workspace-open.json and windows.json are asserted.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,6 +16,7 @@ import { trustedForgeFrame } from '../forge-proxy.mjs';
 import { validWorkspaceId } from '../renderer/workspace-id.mjs';
 import { workspaceHash, trustedRendererUrl } from '../renderer/window-binding.mjs';
 import { fakeWindowClass } from './helpers/fake-window.mjs';
+import { serverSpawnSpec, LIFELINE_FLAG } from '../server-host.mjs';
 
 const RENDERER = 'file:///app/renderer/index.html';
 const HERE = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
@@ -55,8 +57,12 @@ async function launch(m, { launch: WORKSPACE = '/', openSet, windowsFile } = {})
     BrowserWindow: Object.assign(FakeWindow, { fromWebContents: (wc) => FakeWindow.all.find((w) => w.webContents === wc), getAllWindows: () => FakeWindow.all }),
     ipcMain: { handle: (name, fn) => handlers.set(name, fn) }, screen: { getAllDisplays: () => [{ workArea: { x: 0, y: 25, width: 1440, height: 875 } }] },
     Menu: {}, shell: {}, console: { log: (m) => logs.push(m), error: (m) => logs.push(m) },
-    // The backend process, at its boundary: what main spawns it with is recorded.
-    spawn: (bin, args, options) => { spawned.push({ bin, args: [...args], cwd: options.cwd }); return { stdout: { on() {} }, stderr: { on() {} } }; },
+    // The backend process, at its boundary: what main spawns it with is recorded. The spec is the real one.
+    serverSpawnSpec,
+    spawn: (bin, args, options) => {
+      spawned.push({ bin, args: [...args], cwd: options.cwd, stdio: [...options.stdio] });
+      return { stdin: { on() {} }, stdout: { on() {} }, stderr: { on() {} } };
+    },
     process: { execPath: '/app/OATS Desktop', env: {} }, homedir: () => m.home, readCliChoice: () => null, loginPath: { source: 'login-shell', error: null },
     REMOTE_IDENTITY_FILE: () => join(m.userData, 'remote-identity.json'), HERE,
     // The real code main runs at startup.
@@ -94,6 +100,19 @@ async function panelWorkspaces() {
     { sender: Object.assign(win.webContents, { isDestroyed: () => false }), senderFrame: win.webContents.mainFrame }, id, { focus: false, initial: true })));
   return { spawned, windows: FakeWindow.all, main, claim, logs, openFile: read('workspace-open.json'), windowsFile: read('windows.json') };
 }
+
+test('main spawns the backend with its stdin as the owner lifeline: a pipe, and the flag (#698)', async () => {
+  const m = machine();
+  try {
+    const r = await launch(m, { launch: m.deployment });
+    assert.equal(r.spawned.length, 1, 'one backend');
+    const { bin, args, stdio } = r.spawned[0];
+    assert.equal(bin, '/app/OATS Desktop', 'the executable, run as Node');
+    assert.deepEqual(args.slice(0, 4), [join(HERE, 'server', 'oats-web.mjs'), 'start', '--port', '4821']);
+    assert.ok(args.includes(LIFELINE_FLAG), `the server is told stdin is its lifeline: ${args.join(' ')}`);
+    assert.deepEqual(stdio, ['pipe', 'pipe', 'pipe'], 'stdin a pipe main holds, never "ignore"');
+  } finally { rmSync(m.root, { recursive: true, force: true }); }
+});
 
 const record = (workspace, deployments) => ({ workspace, deployments, bounds: { x: 80, y: 60, width: 1200, height: 800 }, maximized: false });
 const mentionsSlash = (value) => JSON.stringify(value ?? null).includes('"/"');
