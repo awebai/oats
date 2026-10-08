@@ -1069,6 +1069,62 @@ not say. The retire hooks have run by then, and no tree was moved or
 removed. The fields are in
 [the CLI API](desktop-cli-api.md#retire).
 
+#### After a retire: inspect, restore, dispose
+
+A retire can leave two things behind outside the removed home: a recovery
+copy and a retained worktree. Nothing in OATS removes either; each stays
+until you remove it. What follows are facts to decide with, not a judgement
+that anything is safe to delete: the uncommitted and untracked bytes in a
+recovery exist nowhere else, by definition.
+
+**Recovery copies** are at
+`<instances>/.oats-retirement/recovery/<instance>-<random>/`, beside the
+homes of the agent the instance belonged to. The retire summary prints the
+path, the receipt names it as `workRecovery.path`, and the `retired` event
+in the workspace log keeps it as `data.workRecovery`, so `oats instance
+events <instance>` still shows it after the home is gone. Its
+`recovery.json` says what it holds:
+
+- `phase`: `"complete"` once the check after the retire hooks concluded;
+  `"before-hooks"` when the retire stopped before that, which still leaves a
+  complete, verified snapshot of the state before the hooks.
+- `classes`: what was preserved (`changed instance-home bytes`, `untracked
+  or ignored worktree bytes`, `directory work bytes`, …).
+- `afterHooks`: `{home, work}`, present when the hooks changed something
+  and `after-hooks/` holds a second copy of that part.
+- `home`, `outputs` and `notCopied`: the home entries copied, the untracked
+  or ignored outputs copied, and the declared entries left out.
+
+To inspect one, read `recovery.json`, then the parts. `repo/` is a
+standalone clone of a worktree instance's repository with its uncommitted
+state in place: `git -C <recovery>/repo status`, `git -C <recovery>/repo
+log`, `git -C <recovery>/repo stash list`. `work/` is a directory
+instance's work, `home/` the copied home (notes, `STATE.md`, …), and
+`after-hooks/` the parts as the retire hooks left them.
+
+To restore from one, take what you need back into the source repository or
+wherever it belongs. Commits: fetch the branch from the recovery's clone
+under a new name, so that nothing in the source repository is overwritten:
+`git -C <source repository> fetch <recovery>/repo <branch>:refs/heads/<new
+branch>`. Uncommitted files: copy them back, or commit them in the
+recovery's clone first and fetch that branch (the recovery then no longer
+holds the state exactly as it was taken). Home files: copy them from
+`home/`.
+
+To dispose of one, once its contents are settled elsewhere, remove the
+directory by hand. A copy keeps the modes of what it copied, so a read-only
+directory from the work is read-only there too: `chmod -R u+w <recovery>`,
+then `rm -rf <recovery>`.
+
+**Retained worktrees** are at `<deployment>/.agents/worktrees/<repo>/<leaf>`
+(see [extra trees at retire](#extra-trees-at-retire) for the leaf). They are
+ordinary linked worktrees of the source repository, with their uncommitted
+state intact: `git -C <source repository> worktree list` lists them. Once
+the branch is merged or pushed and nothing uncommitted in the tree is still
+wanted, `git -C <source repository> worktree remove <path>` removes it; Git
+refuses a tree with uncommitted changes unless you pass `--force`. Its
+branch stays in the repository either way.
+
 ## Work modes
 
 A work mode decides what `./work` points at and what discipline the agent must

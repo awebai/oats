@@ -3889,6 +3889,7 @@ test("the recovery lines are one function for the local and the remote path: a h
     "  copied outputs: scratch/ (1.0 KiB), note.txt (12 B) — 1.0 KiB in total",
     "Work that was not committed has been preserved: directory work bytes",
     "  /r/dev-1-BBB (2.0 KiB)",
+    "  to inspect, restore or dispose of a recovery: see docs/souls-and-instances.md#after-a-retire-inspect-restore-dispose",
   ]);
   assert.deepEqual(workRecoveryLines(historical, { host: "build.example" }), [
     "Work that was not committed has been preserved on build.example: changed instance-home bytes, directory work bytes",
@@ -3896,6 +3897,7 @@ test("the recovery lines are one function for the local and the remote path: a h
     "  copied outputs: scratch/ (1.0 KiB), note.txt (12 B) — 1.0 KiB in total",
     "Work that was not committed has been preserved on build.example: directory work bytes",
     "  /r/dev-1-BBB (2.0 KiB)",
+    "  to inspect, restore or dispose of a recovery: see docs/souls-and-instances.md#after-a-retire-inspect-restore-dispose",
   ]);
   const current = { retired: "dev-1", workRecovery: {
     path: "/r/dev-1-CCC", classes: ["changed instance-home bytes", "untracked or ignored worktree bytes"], bytes: 3 * 1024 * 1024,
@@ -3911,10 +3913,11 @@ test("the recovery lines are one function for the local and the remote path: a h
     "  copied outputs: scratch/ (1.0 KiB) — 1.0 KiB in total",
     "  not copied: .ident (acme.ident); .aw, .oats-aweb (oats.aweb)",
     "  after the retire hooks: home copied again under after-hooks/",
+    "  to inspect, restore or dispose of a recovery: see docs/souls-and-instances.md#after-a-retire-inspect-restore-dispose",
   ];
   assert.deepEqual(workRecoveryLines(current), block("Work that was not committed has been preserved: changed instance-home bytes, untracked or ignored worktree bytes"));
   assert.deepEqual(workRecoveryLines(current, { host: "build.example" }), block("Work that was not committed has been preserved on build.example: changed instance-home bytes, untracked or ignored worktree bytes"));
-  const variant = (afterHooks) => workRecoveryLines({ workRecovery: { path: "/r/x", classes: ["directory work bytes"], afterHooks } }).at(-1);
+  const variant = (afterHooks) => workRecoveryLines({ workRecovery: { path: "/r/x", classes: ["directory work bytes"], afterHooks } }).at(-2);
   assert.equal(variant({ home: false, work: true }), "  after the retire hooks: work copied again under after-hooks/");
   assert.equal(variant({ home: true, work: true }), "  after the retire hooks: home and work copied again under after-hooks/");
   assert.equal(variant(undefined), "  /r/x");
