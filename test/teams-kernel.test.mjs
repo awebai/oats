@@ -8,6 +8,7 @@
 // is the provider's explicit act, and only an eligible one (an OATS_TEAMS row).
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -67,8 +68,8 @@ test("oats teams: the deployment's teams, the workspace's souls:; add (the first
   assert.deepEqual(doc.defaultTeam, { label: "mine", team: "mine:me.aweb.ai", from: "deployment" }, "the first team added becomes the default");
   assert.deepEqual(localYaml(fx).teams, { mine: { team: "mine:me.aweb.ai", description: "Mine" } });
   assert.match(readFileSync(join(fx.dep, "oats-local.yaml"), "utf8"), /# a comment the verbs keep/, "the rest of the file is kept");
-  assert.deepEqual(refused(fx.cli(["teams", "add", "oats", "--team", "x:y", "--json"]), "E_TEAM_EXISTS", "add a shared label").details, { label: "oats", from: "shared" });
-  assert.deepEqual(refused(fx.cli(["teams", "add", "mine", "--team", "x:y", "--json"]), "E_TEAM_EXISTS", "add twice").details, { label: "mine", from: "local" });
+  assert.deepEqual(refused(fx.cli(["teams", "add", "oats", "--team", "x:y", "--json"]), "E_TEAM_EXISTS", "add a shared label").details, { label: "oats", from: "shared", observed: { label: "oats", team: "oats:oats.aweb.ai", from: "shared" } });
+  assert.deepEqual(refused(fx.cli(["teams", "add", "mine", "--team", "x:y", "--json"]), "E_TEAM_EXISTS", "add twice").details, { label: "mine", from: "local", observed: { label: "mine", team: "mine:me.aweb.ai", from: "local" } });
   ok(fx.cli(["teams", "add", "spare", "--team", "spare:me.aweb.ai", "--json"]), "add a second");
   // A hostile provider id never reaches oats-local.yaml (the provider's argv later): the kernel's safety rule.
   const localBefore = readFileSync(join(fx.dep, "oats-local.yaml"), "utf8");
@@ -327,4 +328,107 @@ test("an existing home refuses the removed local team keys like every other read
   }
   writeFileSync(localFile, original);
   ok(fx.cli(["chat", "teams", "--json"], { cwd: home, env: { OATS_INSTANCE_HOME: home } }), "migrated: the provider runs again");
+});
+
+/* ── awebai/oats#771: the conditional default and mapping-only add on the existing verbs ── */
+
+const CLI = join(fileURLToPath(new URL("..", import.meta.url)), "bin", "oats.mjs");
+/** The real CLI as a child process that runs concurrently with others (fx.cli is synchronous). */
+const cliAsync = (fx, args) => new Promise((resolveRun) => {
+  const child = spawn(process.execPath, [CLI, ...args], { cwd: fx.dep, env: fx.env });
+  let stdout = "", stderr = "";
+  child.stdout.on("data", (c) => (stdout += c)); child.stderr.on("data", (c) => (stderr += c));
+  child.on("close", (status) => resolveRun({ status, stdout, stderr, json: () => JSON.parse(stdout.trim().split("\n").pop()) }));
+});
+const localText = (fx) => readFileSync(join(fx.dep, "oats-local.yaml"), "utf8");
+const BASE_LOCAL = (fx) => localText(fx).replace(/\n(teams|defaultTeam):[\s\S]*$/, "\n");
+const withLocalTeams = (fx, base, defaultTeam = null) => writeFileSync(join(fx.dep, "oats-local.yaml"),
+  `${base}teams:\n  alpha: { team: "alpha:me.aweb.ai" }\n  beta: { team: "beta:me.aweb.ai" }\n${defaultTeam ? `defaultTeam: ${defaultTeam}\n` : ""}`);
+
+test("oats teams default --if-absent / --expect and add --no-default: the CLI's answers and refusals; feature teams-conditional-default", (t) => {
+  const fx = fixture(); t.after(fx.cleanup);
+  assert.ok(fx.cli(["version", "--json"]).json().features.includes("teams-conditional-default"));
+  const base = BASE_LOCAL(fx);
+
+  let doc = ok(fx.cli(["teams", "add", "alpha", "--team", "alpha:me.aweb.ai", "--no-default", "--json"]), "add --no-default");
+  assert.deepEqual([doc.changed, doc.reused, doc.defaultTeam], [true, undefined, null]);
+  assert.equal(localYaml(fx).defaultTeam, undefined);
+  doc = ok(fx.cli(["teams", "add", "alpha", "--team", "alpha:me.aweb.ai", "--no-default", "--json"]), "add --no-default again");
+  assert.deepEqual([doc.changed, doc.reused], [false, true]);
+  assert.deepEqual(refused(fx.cli(["teams", "add", "alpha", "--team", "other:me.aweb.ai", "--no-default", "--json"]), "E_TEAM_EXISTS", "another id").details,
+    { label: "alpha", from: "local", observed: { label: "alpha", team: "alpha:me.aweb.ai", from: "local" } });
+  const text = fx.cli(["teams", "add", "alpha", "--team", "alpha:me.aweb.ai", "--no-default"]);
+  assert.equal(text.status, 0, text.stderr); assert.match(text.stdout, /already declared with that id|Nothing to change/);
+
+  doc = ok(fx.cli(["teams", "default", "alpha", "--if-absent", "--json"]), "--if-absent with no default");
+  assert.deepEqual([doc.changed, doc.defaultTeam], [true, { label: "alpha", team: "alpha:me.aweb.ai", from: "deployment" }]);
+  ok(fx.cli(["teams", "add", "beta", "--team", "beta:me.aweb.ai", "--json"]), "plain add");
+  let before = localText(fx);
+  const e = refused(fx.cli(["teams", "default", "beta", "--if-absent", "--json"]), "E_TEAM_DEFAULT_MISMATCH", "--if-absent over a default");
+  assert.deepEqual(e.details, { expected: { absent: true }, observed: { label: "alpha", team: "alpha:me.aweb.ai", from: "deployment" } });
+  refused(fx.cli(["teams", "default", "beta", "--expect", "oats", "--json"]), "E_TEAM_DEFAULT_MISMATCH", "--expect another");
+  refused(fx.cli(["teams", "default", "beta", "--if-absent", "--expect", "alpha", "--json"]), "E_BAD_ARGS", "both");
+  refused(fx.cli(["teams", "default", "beta", "--expect", "--json"]), "E_BAD_ARGS", "--expect without a value");
+  const plain = fx.cli(["teams", "default", "beta", "--if-absent"]);
+  assert.notEqual(plain.status, 0); assert.match(plain.stderr, /the default team is alpha/);
+  assert.equal(localText(fx), before, "no refusal wrote");
+  doc = ok(fx.cli(["teams", "default", "beta", "--expect", "alpha", "--json"]), "--expect the current default");
+  assert.deepEqual(doc.defaultTeam.label, "beta");
+
+  // The workspace's default is the effective default where the local file has none.
+  withLocalTeams(fx, base);
+  setWorkspace(fx, { defaultTeam: "oats" });
+  assert.deepEqual(refused(fx.cli(["teams", "default", "alpha", "--if-absent", "--json"]), "E_TEAM_DEFAULT_MISMATCH", "workspace default").details.observed,
+    { label: "oats", team: "oats:oats.aweb.ai", from: "workspace" });
+  assert.equal(ok(fx.cli(["teams", "default", "alpha", "--expect", "oats", "--json"]), "--expect the workspace's").defaultTeam.from, "deployment");
+});
+
+test("oats teams rejects a flag it does not take (E_USAGE naming it, nothing written); --dir, --json, the read form's --max-age and the kernel's --help are kept", (t) => {
+  const fx = fixture(); t.after(fx.cleanup);
+  withLocalTeams(fx, BASE_LOCAL(fx), "alpha");
+  const before = localText(fx);
+  for (const [flagGiven, argv] of [
+    ["--if-absent", ["teams", "--if-absent"]], ["--server", ["teams", "--server", "x"]], ["-x", ["teams", "-x"]],
+    ["--if-absent", ["teams", "add", "gamma", "--team", "gamma:me.aweb.ai", "--if-absent"]],
+    ["--bogus", ["teams", "add", "gamma", "--team", "gamma:me.aweb.ai", "--bogus"]],
+    ["--no-default", ["teams", "remove", "beta", "--no-default"]],
+    ["--no-default", ["teams", "default", "beta", "--no-default"]], ["--team", ["teams", "default", "beta", "--team", "x:y"]],
+    ["--server", ["teams", "default", "beta", "--server", "s"]],
+  ]) {
+    const err = refused(fx.cli([...argv, "--json"]), "E_USAGE", argv.join(" "));
+    assert.ok(err.message.includes(flagGiven), `${argv.join(" ")}: ${err.message}`);
+    assert.match(err.message, /usage: oats teams/);
+    assert.deepEqual(err.details, { flag: flagGiven });
+  }
+  // --help/-h after any kernel command is that command's usage (exit 0) before dispatch: teams keeps it.
+  for (const argv of [["teams", "--help"], ["teams", "default", "beta", "--if-absent", "-h"]]) {
+    assert.deepEqual(ok(fx.cli([...argv, "--json"]), argv.join(" ")).command, "teams");
+    const text = fx.cli(argv);
+    assert.equal(text.status, 0, text.stderr); assert.match(text.stdout, /oats teams/);
+  }
+  assert.equal(localText(fx), before, "nothing was written");
+  // The global flags each form keeps.
+  ok(fx.cli(["teams", "--dir", fx.dep, "--json"], { cwd: fx.base }), "read with --dir");
+  ok(fx.cli(["teams", "--max-age", "60", "--json"]), "read with --max-age");
+  ok(fx.cli(["teams", "remove", "beta", "--dir", fx.dep, "--json"], { cwd: fx.base }), "remove with --dir");
+  ok(fx.cli(["teams", "add", "beta", "--team", "beta:me.aweb.ai", "--description", "B", "--no-default", "--dir", fx.dep, "--json"], { cwd: fx.base }), "add with every flag");
+  ok(fx.cli(["teams", "default", "beta", "--expect", "alpha", "--dir", fx.dep, "--json"], { cwd: fx.base }), "default with --dir");
+  refused(fx.cli(["teams", "remove", "beta", "--max-age", "5", "--json"]), "E_BAD_ARGS", "--max-age on a mutation keeps its own refusal");
+});
+
+test("two processes racing `default --if-absent` with different labels: exactly one wins, the other is E_TEAM_DEFAULT_MISMATCH, the file holds the winner", async (t) => {
+  const fx = fixture(); t.after(fx.cleanup);
+  const base = BASE_LOCAL(fx);
+  for (let round = 0; round < 4; round++) {
+    withLocalTeams(fx, base);
+    const runs = await Promise.all(["alpha", "beta"].map((label) => cliAsync(fx, ["teams", "default", label, "--if-absent", "--json"])));
+    const answers = runs.map((r) => r.json());
+    const winners = answers.filter((a) => a.ok);
+    assert.equal(winners.length, 1, `round ${round}: exactly one wins: ${runs.map((r) => r.stdout).join(" | ")}`);
+    const loser = answers.find((a) => !a.ok);
+    assert.equal(loser.error.code, "E_TEAM_DEFAULT_MISMATCH", `round ${round}: ${JSON.stringify(loser)}`);
+    const won = winners[0].result.defaultTeam.label;
+    assert.equal(loser.error.details.observed.label, won, "the loser saw the winner's default");
+    assert.equal(localYaml(fx).defaultTeam, won, "the file holds the winner");
+  }
 });
