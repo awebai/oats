@@ -482,8 +482,10 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       // Teams first (join/leave), then the instance, the soul it came from, and the as-spawned detail.
       const teams = teamsOperations(inspected);
       if (teams) {
-        section('Teams'); const id = subject, gen = selectionGen;
-        teamsPanel = createTeamsPanel(content, { operations: teams, selector: selection.selector, request, heading: false,
+        section('Teams'); const id = subject, gen = selectionGen, instance = selection.instance, label = serverLabel(instance);
+        // A remote host's refusal of a teams operation shows as relayed, as the context panel's card words it (instance-teams.mjs).
+        const relayed = body => request(body).catch(error => { throw instance?.server ? relayedFailure(error, label, 'teams') : error; });
+        teamsPanel = createTeamsPanel(content, { operations: teams, selector: selection.selector, request: relayed, heading: false,
           owns: () => ownsSubject(id, gen) && selectionGen === workspaceGeneration(), available,
           mutable: () => !stale(), mutableReason: INSPECTION_STALE_TITLE }); // join/leave wait while the inspection is stale
       }
