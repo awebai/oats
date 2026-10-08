@@ -17,6 +17,7 @@ or workspace membership alone does not make a package official.
 | `oats.cloning` | `v1.0.1` | `oats.cloning` | `cloner` |
 | `oats.jira` | `v1.0.1` | `oats.jira` (tasks) | |
 | `oats.linear` | `v1.0.1` | `oats.linear` (tasks) | |
+| `oats.apps` | `v1.0.0` | `oats.folio`, `oats.library` | |
 
 Each package lives in its own `awebai/oats-*` repository except
 `oats.framework`, whose payload root is `oats-package/` here. A capability id
