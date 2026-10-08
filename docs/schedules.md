@@ -61,8 +61,8 @@ the rule is refused, `E_SCHEDULE_INVALID` or `E_TRIGGER_INVALID` with `field:
 "description"`; a workspace file's header that breaks it is only a warning
 (see [the header](#workspace-triggers-and-schedules)). It is stored as given
 and is informational only: it never reaches a run's argv, environment, task,
-template or reconcile. A capability that registers jobs (knowledge harvest's
-`run-source` jobs) sets it so that its command jobs can be told apart. Set it
+template or reconcile. A capability that registers command jobs can set it
+so operators can tell those jobs apart; oats.okf 5.0 registers none. Set it
 in the definition or with `--description=<text>` on `add`; change only it with
 `update <id> --description=<text>` (see [Commands](#commands)). Local triggers
 take it from OATS 0.43.0 (feature `automation-descriptions`); an older kernel

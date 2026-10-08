@@ -355,8 +355,13 @@ try {
   assert.deepEqual(storeEntries.map((n) => n.replace(/@[0-9a-f]{12}$/, "@<commit12>")), ["oats.okf@<commit12>"], `module store: ${storeEntries.join(", ")}`);
   assert.equal(storeEntries[0].slice("oats.okf@".length), locked.packages["oats.okf"].commit.slice(0, 12), "the store copy is the LOCKED commit");
   assert.ok(existsSync(join(deployment, ".oats", "modules", storeEntries[0], "bin", "oats-okf.mjs")), "the store copy carries the executable that ran");
+  // The generic kernel keeps native-record/retirement bookkeeping beside
+  // homes even after a refused spawn. Exclude ONLY those two known directories,
+  // not arbitrary dot-prefixed homes or an unexpected retained instance.
+  const instanceNames = root => (existsSync(root) ? readdirSync(root) : [])
+    .filter(name => ![".oats-native-record", ".oats-retirement"].includes(name)).sort();
   const probeInstances = join(agentsRoot, "probe", "instances");
-  assert.deepEqual(existsSync(probeInstances) ? readdirSync(probeInstances) : [], [], "guard and init left no instance home");
+  assert.deepEqual(instanceNames(probeInstances), [], "guard and init left no instance home");
 
   // ---- spawn the OKF probe through the packed CLI, scaffold only.
   const spawned = boundary(["spawn", "probe", "--dir", deployment, "--agents-root", agentsRoot, "--purpose", "packed", "--no-launch", "--json"]);
@@ -453,7 +458,7 @@ try {
   const proposal = `# Knowledge proposal\n\nSource: instance ${spawned.instance}, home ${probeHome}, soul probe\n\n## What and why\nWorking-memory inspections must preserve complete Unicode documents so a reviewer does not judge truncated evidence.\n\n## Evidence\nThe packed fixture compares all three document bodies.\n\n## Backing notes\n- notes/live.md\n`;
   write(join(probeHome, "proposals/checkpoint.md"), proposal);
   const harvesterRoot = join(agentsRoot, "oats-okf--knowledge-harvester", "instances");
-  const harvesterHomes = () => existsSync(harvesterRoot) ? readdirSync(harvesterRoot).sort() : [];
+  const harvesterHomes = () => instanceNames(harvesterRoot);
   const spawnHarvester = (file, options = inHome) => cliRun(["spawn", "oats.okf/knowledge-harvester", "--task-file", file, "--relation", "unrelated", "--no-launch", "--json"], options);
   write(join(probeHome, "proposals/invalid.md"), "# Not a proposal\nNo Source line.\n");
   const invalid = spawnHarvester("proposals/invalid.md", { ...inHome, expectExit: 1 });

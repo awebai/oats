@@ -55,7 +55,7 @@ members:                                   # repo refs, NO @revision (E_WORKSPAC
 
 packages:                                  # the ONLY versioned things
   oats.framework: v1.8.0                   # bare version → resolves through the official catalog
-  oats.okf: v4.1.1
+  oats.okf: v5.0.0
   acme.tools: git:github.com/acme/tools@v0.4.0   # outside the catalog → git:<repo>@<tag|OID>; still a package
 
 teams:                                     # SHARED teams: the same provider team for everyone
@@ -456,7 +456,7 @@ Why it is shaped this way: [team model 3](design/2026-10-02-team-model-3.md).
 
 | What it is | Where | Example |
 |---|---|---|
-| True of every instance of the soul | `soul.yaml` → `knowledge:` / `messaging:` / `tasks:` | `messaging: { channels: [acme-eng] }`; `knowledge: { harvest-runtime: claude }` |
+| True of every instance of the soul | `soul.yaml` → `knowledge:` / `messaging:` / `tasks:` | `messaging: { channels: [acme-eng] }`; `knowledge: { harvest: off }` |
 | A fact about this machine | `oats-local.yaml` → `settings.<cap>.<key>` (absolute paths are refused in the workspace file) | `settings.oats.okf.state-dir: /Users/ana/.oats/okf` |
 | A fact about **this spawn** | `oats spawn … --provider <cap> key=value` (repeatable; dotted keys nest) → `instance.json.providers.<cap>` | `--provider oats.aweb identity.source=/abs/path/to/retained/.aw` |
 

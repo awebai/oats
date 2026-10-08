@@ -285,6 +285,6 @@ test("removed okf harvest dispatch and explicit invalid settings each return one
   const unsupported = f.direct(["init", "--base", "project"], { environment: { OATS_SETTINGS: JSON.stringify({ "bindings-file": f.bindings, "harvest-runtime": "unsupported" }) }, status: 1 });
   const diagnostic = parseOnly(unsupported.stdout).error;
   assert.equal(diagnostic.code, "E_REMOVED");
-  assert.match(diagnostic.message, /settings\.oats\.okf\.harvest-runtime/);
+  assert.match(diagnostic.message, /^harvest-runtime from an unknown origin was removed in oats\.okf 5\.0/);
   assert.match(diagnostic.message, /setup --remove-legacy-settings/);
 });

@@ -22,7 +22,9 @@ kernel emits it.
 Conventions: paths are absolute; a `commit` is a full 40-hex id; `integrity`
 and `digest` are `sha256-<hex>`; times are ISO-8601 UTC; repository keys are
 canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
-`/w` as the deployment and shorten ids and digests with `…`.
+`/w` as the deployment and shorten ids and digests with `…`. Package versions
+in example payloads are illustrative snapshots, not deployment pin advice;
+see the [official catalog](official-catalog.md) for current pins.
 
 ## The probe
 
