@@ -132,9 +132,9 @@ report it, and do not answer from memory or from an old `./knowledge/`.
   refused (`E_PATH`).
 - Never bulk-`cat` a whole node or loop `cat` over `ls` output. Index first,
   then follow the few relevant links.
-- Don't edit knowledge. The write path is notes/ → the knowledge harvester →
-  a reviewed PR (or a directory publication). Write insights to notes/ (the
-  okf-instance-knowledge skill), not into a base.
+- Don't edit knowledge: accepted knowledge changes only through a reviewed
+  PR. Write insights to notes/ (the okf-instance-knowledge skill), not into a
+  base.
 - `oats okf refresh` and `read` are gone (`E_REMOVED`): every read already sees the
   accepted state.
 - `cat` reads `.md` files only (`E_NOT_MARKDOWN` otherwise); `E_NOT_FOUND`

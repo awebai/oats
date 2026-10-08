@@ -507,35 +507,32 @@ to its home.
 fails, the spawn result still carries the instance receipt, plus
 `wakeScheduleError` and a warning.
 
-## Knowledge harvest jobs
+## Knowledge harvest and review
 
-oats.okf uses both mechanisms. The flow, the harvest switch and the package
-souls are described in [knowledge.md](knowledge.md#knowledge-operations).
+**oats.okf 5.0 does not schedule harvest jobs.** At important checkpoints a
+working instance updates its notes, writes its own proposal (what to save,
+why, and backing notes), and directly spawns the package harvester:
 
-- **Harvest.** A source exists only where harvest is on (`oats-local.yaml`
-  `settings.oats.okf.harvest: on`; default off). oats.okf then registers one
-  local **command job per source**, `okf-<source id>`, which runs from the
-  deployment with argv equivalent to:
+```sh
+oats spawn oats.okf/knowledge-harvester --task-file <proposal> --relation unrelated
+```
 
-  ```text
-  oats okf run-source --source /absolute/state/sources/UUID/source.json --soul domain-expert --json
-  ```
+The unrelated harvester can outlive the proposing instance. It checks the
+recorded source and its soul opt-out, accepted knowledge and open/recent
+harvest PRs, then proposes an owned-node change through a normal reviewed
+Git PR. Retirement does not automatically capture or harvest anything.
+There is no host harvest switch, per-source command job, run-source command
+or capture/drain/worker engine. The soul-only `knowledge: { harvest: off }`
+keeps consultation while forbidding harvest of that soul's material.
 
-  The job spawns the package soul `oats.okf/knowledge-harvester`. The source's
-  evidence lives outside its home, so the job keeps working after the source
-  instance retires; once a retired source is drained, oats.okf removes the
-  job. Registration never re-enables a disabled job.
-  `oats schedule disable okf-<source id>` is the emergency brake for one
-  source.
-- **Review.** Each harvest PR is reviewed by a new
-  `oats.okf/knowledge-maintainer`, spawned by a trigger from the package
-  template `oats.okf:harvest-review`: a workspace file
-  (`oats-triggers/okf-harvest-review.yaml`) or a local `oats trigger add
-  --from oats.okf:harvest-review`.
+**Review still uses a trigger.** Each harvest PR can be reviewed by
+`oats.okf/knowledge-maintainer`, spawned from the package template
+`oats.okf:harvest-review`: a workspace trigger file or a local
+`oats trigger add --from oats.okf:harvest-review`. This is a PR-review
+trigger, not a harvest scheduler or a kernel PR-opened capture hook.
 
-Registering a source never installs the host timer. `oats okf inspect
---source <source.json> --soul <soul>` reports the job and whether the timer is
-actually active; `oats okf setup --source <source.json> --soul <soul>
---install-host` installs it, and `--disable` disables the job without
-stopping a running worker. The scheduler's launch receipts do not replace
-oats.okf's own processing, delivery and acceptance receipts.
+Deployments upgrading from 4.x must settle registered sources before
+changing the pin, then use the 5.0 guard-exempt host-key cleanup before new
+spawns. See the [5.0 cutover sequence](release-notes/v0.48.1.md). Provider
+behaviour remains in the [oats.okf package](https://github.com/awebai/oats-okf);
+none of this adds provider-specific behaviour to the scheduler or kernel.

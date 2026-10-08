@@ -5,6 +5,10 @@ import { validateRepositoryLocator } from './source-contract.mjs';
 
 export const KNOWLEDGE_CONTRACT='oats.okf.locations';
 export const KNOWLEDGE_CONTRACT_VERSION=1;
+/** okf 5.0.0: the bound payload (ProviderBinding1 payloadVersion) is 2: it no
+ *  longer carries the 4.x harvest `execution` (runtime/model). Declarations
+ *  and the normalized model stay at contract version 1. */
+export const KNOWLEDGE_PAYLOAD_VERSION=2;
 const candidateKinds=new Set(['workspace-default','import-adoption','operator']);
 const obj=value=>value && typeof value==='object' && !Array.isArray(value);
 const pointerKey=value=>String(value).replace(/~/g,'~0').replace(/\//g,'~1');
@@ -143,7 +147,7 @@ export function bindKnowledgeDomain({model,choices}) {
   const ownKeys=new Set();for(const entry of owns) {const key=`${entry.store}/${entry.node}`;if(ownKeys.has(key)) fail('E_OWNER',`duplicate resolved knowledge steward: ${key}`);ownKeys.add(key);}
   for(const entry of [...model.reads,...model.owns]) provenance.push(clone(entry.origin));
   const unique=[];for(const item of provenance) if(!unique.some(prior=>sameJson(prior,item))) unique.push(item);
-  return {contract:KNOWLEDGE_CONTRACT,version:KNOWLEDGE_CONTRACT_VERSION,payload:{owner:model.owner,stores,reads,owns},credentialRefs:{},provenance:unique};
+  return {contract:KNOWLEDGE_CONTRACT,version:KNOWLEDGE_PAYLOAD_VERSION,payload:{owner:model.owner,stores,reads,owns},credentialRefs:{},provenance:unique};
 }
 
 function absolutePath(value,label) {

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://oats.dev/schemas/okf-portable-payload.schema.json",
-  "title": "OATS OKF effective portable binding payload",
+  "title": "OATS OKF effective portable binding payload (payloadVersion 2, oats.okf 5.0)",
   "$defs": {
     "identifier": {
       "type": "string",
@@ -54,7 +54,7 @@
     }
   },
   "type": "object",
-  "required": ["owner", "stores", "reads", "owns", "runtime", "execution"],
+  "required": ["owner", "stores", "reads", "owns", "runtime"],
   "properties": {
     "owner": {"$ref": "#/$defs/identifier"},
     "stores": {
@@ -96,15 +96,6 @@
           },
           "additionalProperties": false
         }
-      },
-      "additionalProperties": false
-    },
-    "execution": {
-      "type": "object",
-      "required": ["runtime", "model"],
-      "properties": {
-        "runtime": {"oneOf": [{"const": "pi"}, {"const": "claude"}, {"const": "codex"}]},
-        "model": {"oneOf": [{"type": "null"}, {"type": "string", "minLength": 1}]}
       },
       "additionalProperties": false
     }

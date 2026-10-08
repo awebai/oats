@@ -5,17 +5,18 @@ import { fs, safePath, displayRepo, redactUrls } from './io.mjs';
 import {
   KNOWLEDGE_CONTRACT,
   KNOWLEDGE_CONTRACT_VERSION,
+  KNOWLEDGE_PAYLOAD_VERSION,
   bindKnowledgeDomain,
   bindingChoiceKey,
-  checkKnowledgeRuntime,
   normalizeKnowledgeBindingCandidates,
   normalizeKnowledgeDeclaration,
   renderKnowledgeRuntime,
   sameJson,
 } from './portable-binding.mjs';
-import { declaration as soulDeclaration, loadBindings, validateBindings } from './config.mjs';
+import { declaration as soulDeclaration, loadBindings, validateBindings, validateDeclaration, resolveNodes } from './config.mjs';
 import { gitEnv, validateBase } from './stores.mjs';
 import { acceptedCommit, cacheDir, usableCache, verdict } from './consult.mjs';
+import { legacySettings, withoutDefaults, REMOVED_TEMPLATE } from './legacy-settings.mjs';
 
 export const BINDING_WIRE_LIMITS=Object.freeze({bytes:1024*1024,depth:32,entries:16384});
 const CAPABILITY='oats.okf',SLOT='knowledge';
@@ -28,19 +29,25 @@ const wireError=code=>{throw Object.assign(new Error(code),{wireCode:code});};
 // Private diagnostic marker and closed literal vocabulary. Never serialize a
 // caught exception's message, supplied value, path, alias or unknown key.
 const settingDiagnostic=Symbol('runtime-setting-diagnostic');
+const V1_REMOVED='E_REMOVED: OKF binding payloadVersion 1 (harvest runtime/model) was removed in oats.okf 5.0; respawn to bind with oats.okf 5 (the harvester uses the kernel\'s own harness and model)';
 const settingMessages=Object.freeze({
   'bindings-file:missing':'setting bindings-file is required (absolute host path)',
   'bindings-file:invalid':'setting bindings-file must be a normalized absolute host path',
   'state-dir:missing':'setting state-dir is required (absolute host path)',
   'state-dir:invalid':'setting state-dir must be a normalized absolute host path',
-  'harvest-runtime:missing':'setting harvest-runtime is required (pi, claude or codex)',
-  'harvest-runtime:invalid':'setting harvest-runtime must be pi, claude or codex',
-  'harvest-model:invalid':'setting harvest-model must be null or a non-empty string',
 });
+// okf 5.0.0: a forwarded harvest/harvest-runtime/harvest-model answers the
+// same E_REMOVED sentence as the commands, rendered from the closed
+// `setting:removed` template with the kernel's own origin (never a value).
+const removedMessage=(settings)=>{
+  const found=legacySettings({OATS_SETTINGS:JSON.stringify(settings),OATS_SETTINGS_ORIGINS:process.env.OATS_SETTINGS_ORIGINS});
+  return found.length?found.map(f=>renderTemplate('setting:removed',f)).join(' '):null;
+};
 function settingError(reason) {
   if(!Object.hasOwn(settingMessages,reason)) wireError('invalid-binding');
   throw Object.assign(new Error('needs-configuration'),{wireCode:'needs-configuration',[settingDiagnostic]:settingMessages[reason]});
 }
+function removedError(message) {throw Object.assign(new Error('needs-configuration'),{wireCode:'needs-configuration',[settingDiagnostic]:message});}
 function keys(value,allowed,required,label) {
   if(!obj(value)) wireError('invalid-binding');
   for(const key of Object.keys(value)) if(!allowed.includes(key)) wireError('invalid-binding');
@@ -115,19 +122,16 @@ function contract(value,{required=false}={}) {
   return value;
 }
 function runtimeSettings(settings) {
-  // `harvest` (on|off) is read by the lifecycle hooks, not bound: accept it here
-  // so a deployment can set it, and refuse any other value.
-  keys(settings,['bindings-file','state-dir','harvest-runtime','harvest-model','harvest'],[], 'OKF settings');
-  if(settings.harvest!==undefined && !['on','off'].includes(settings.harvest)) wireError('invalid-binding');
-  const descriptorFile=settings['bindings-file'],stateDir=settings['state-dir'],runtime=settings['harvest-runtime'],model=settings['harvest-model'] ?? null;
+  if(obj(settings)) {const removed=removedMessage(settings);if(removed) removedError(removed);}
+  // A 4.x manifest default is dropped; `harvest` left can only be the soul's own opt-out (off).
+  settings=withoutDefaults(settings);
+  keys(settings,['bindings-file','state-dir','harvest'],[], 'OKF settings');
+  const descriptorFile=settings['bindings-file'],stateDir=settings['state-dir'];
   for(const name of ['bindings-file','state-dir']) {
     if(settings[name]===undefined) settingError(`${name}:missing`);
     if(!absolute(settings[name])) settingError(`${name}:invalid`);
   }
-  if(runtime===undefined) settingError('harvest-runtime:missing');
-  if(!['pi','claude','codex'].includes(runtime)) settingError('harvest-runtime:invalid');
-  if(model!==null && (typeof model!=='string' || !model.trim())) settingError('harvest-model:invalid');
-  return {descriptorFile,stateDir,execution:{runtime,model}};
+  return {descriptorFile,stateDir};
 }
 // Shared maps contain other providers' opaque values. Ownership comes from
 // this source's declared/default/required knowledge addresses, not from a value
@@ -188,36 +192,34 @@ function choiceMap(value) {
 function bindPhase(req) {
   keys(req.input,['model','choices','context'],['model','choices','context'],'bind input');if(!obj(req.input.context)) wireError('invalid-binding');
   keys(req.input.model,['domain','runtime'],['domain','runtime'],'OKF binding model');
-  keys(req.input.model.runtime,['stateDir','descriptorFile','execution'],['stateDir','descriptorFile','execution'],'OKF runtime model');
+  keys(req.input.model.runtime,['stateDir','descriptorFile'],['stateDir','descriptorFile'],'OKF runtime model');
   let bound;try{bound=bindKnowledgeDomain({model:req.input.model.domain,choices:choiceMap(req.input.choices)});}catch(error){if(/unresolved knowledge binding/.test(error.message)) wireError('needs-configuration');throw error;}
   const runtime=renderKnowledgeRuntime({domain:bound.payload,...req.input.model.runtime});
-  return {payloadContract:bound.contract,payloadVersion:bound.version,payload:{...bound.payload,runtime,execution:req.input.model.runtime.execution},credentialRefs:bound.credentialRefs,provenance:bound.provenance};
+  return {payloadContract:bound.contract,payloadVersion:bound.version,payload:{...bound.payload,runtime},credentialRefs:bound.credentialRefs,provenance:bound.provenance};
 }
 function bindingPayload(binding,{diagnoseSettings=false}={}) {
   keys(binding,['schemaVersion','capability','payloadContract','payloadVersion','payload','credentialRefs','provenance'],['schemaVersion','capability','payloadContract','payloadVersion','payload','credentialRefs','provenance'],'provider binding');
-  if(binding.schemaVersion!==1 || binding.capability!==CAPABILITY || binding.payloadContract!==KNOWLEDGE_CONTRACT || binding.payloadVersion!==KNOWLEDGE_CONTRACT_VERSION || !Array.isArray(binding.provenance)) wireError('invalid-binding');
+  if(binding.schemaVersion===1 && binding.capability===CAPABILITY && binding.payloadContract===KNOWLEDGE_CONTRACT && binding.payloadVersion===1) throw Object.assign(new Error(V1_REMOVED),{code:'E_REMOVED',wireCode:'needs-configuration',v1:true});
+  if(binding.schemaVersion!==1 || binding.capability!==CAPABILITY || binding.payloadContract!==KNOWLEDGE_CONTRACT || binding.payloadVersion!==KNOWLEDGE_PAYLOAD_VERSION || !Array.isArray(binding.provenance)) wireError('invalid-binding');
   if(!obj(binding.credentialRefs) || Object.keys(binding.credentialRefs).length) wireError('invalid-binding');
-  keys(binding.payload,['owner','stores','reads','owns','runtime','execution'],['owner','stores','reads','owns','runtime','execution'],'OKF binding payload');
+  keys(binding.payload,['owner','stores','reads','owns','runtime'],['owner','stores','reads','owns','runtime'],'OKF binding payload');
   const domain={owner:binding.payload.owner,stores:binding.payload.stores,reads:binding.payload.reads,owns:binding.payload.owns};
   if(diagnoseSettings) {
     const bound=binding.payload;
-    if(!obj(bound.runtime) || !obj(bound.runtime.bindings) || !obj(bound.execution)) wireError('invalid-binding');
+    if(!obj(bound.runtime) || !obj(bound.runtime.bindings)) wireError('invalid-binding');
     // Check the retained values, not mutable request settings. Existing full
-    // envelope/canonical-runtime/execution guards still run below on success.
-    runtimeSettings({'bindings-file':bound.runtime.descriptorFile,'state-dir':bound.runtime.bindings.stateDir,
-      'harvest-runtime':bound.execution.runtime,'harvest-model':bound.execution.model});
+    // envelope/canonical-runtime guards still run below on success.
+    runtimeSettings({'bindings-file':bound.runtime.descriptorFile,'state-dir':bound.runtime.bindings.stateDir});
   }
   const runtime=renderKnowledgeRuntime({domain,stateDir:binding.payload.runtime?.bindings?.stateDir,descriptorFile:binding.payload.runtime?.descriptorFile});
   if(!sameJson(runtime,binding.payload.runtime)) wireError('invalid-binding');
-  keys(binding.payload.execution,['runtime','model'],['runtime','model'],'OKF worker execution');
-  if(!['pi','claude','codex'].includes(binding.payload.execution.runtime) || (binding.payload.execution.model!==null && (typeof binding.payload.execution.model!=='string' || !binding.payload.execution.model.trim()))) wireError('invalid-binding');
-  return {domain,runtime,execution:binding.payload.execution};
+  return {domain,runtime};
 }
 
-/** Pure projection for durable source registration and later source-free work. */
+/** Pure projection of a bound payload: what an instance consults. */
 export function sourceRuntimeFromKnowledgeBinding(binding) {
-  const {domain,runtime,execution}=bindingPayload(binding);
-  return {owner:domain.owner,bindings:{file:runtime.descriptorFile,...runtime.bindings},decl:runtime.declaration,execution:{...execution}};
+  const {domain,runtime}=bindingPayload(binding);
+  return {owner:domain.owner,bindings:{file:runtime.descriptorFile,...runtime.bindings},decl:runtime.declaration};
 }
 
 const invocationError=()=>{throw Object.assign(new Error('invalid captured provider binding snapshot'),{code:'E_BINDING'});};
@@ -240,12 +242,14 @@ export function readPrivateInvocationJson(file) {
   finally {if(fd!==undefined) fs.closeSync(fd);}
 }
 
-/** Load only the parent-owned transient ProviderBinding1 snapshot when present.
- * Absence is an explicit legacy mode; every present-file defect fails closed. */
+/** Load a private ProviderBinding1 snapshot (OATS_BINDING_FILE) when one is
+ * named. The released kernel (0.44) names none: the usual path is the soul's
+ * declaration and the bindings file. A present file fails closed on any
+ * defect; a 4.x payloadVersion 1 snapshot is E_REMOVED. */
 export function loadInvocationKnowledgeBinding(env=process.env) {
   if(!Object.hasOwn(env,'OATS_BINDING_FILE')) return {kind:'legacy'};
   const file=env.OATS_BINDING_FILE,binding=readPrivateInvocationJson(file);
-  let runtime;try{runtime=sourceRuntimeFromKnowledgeBinding(binding);}catch{invocationError();}
+  let runtime;try{runtime=sourceRuntimeFromKnowledgeBinding(binding);}catch(error){if(error?.v1) throw error;invocationError();}
   return {kind:'captured',file,binding,runtime};
 }
 // Closed vocabulary of check-phase reasons: one fixed literal per cause, so the
@@ -256,9 +260,7 @@ const checkReasons=Object.freeze({
   'action:not-admitted':'check action is not an admitted knowledge operation',
   'settings:missing':'OKF settings missing bindings-file: set settings.oats.okf bindings-file, or deactivate oats.okf',
   'soul:missing':'OKF soul declaration missing: create okf.json for this soul, or deactivate oats.okf',
-  'harvest-runtime:missing':settingMessages['harvest-runtime:missing'],
-  'harvest-runtime:invalid':settingMessages['harvest-runtime:invalid'],
-  'harvest-model:invalid':settingMessages['harvest-model:invalid'],
+  'binding:v1-removed':V1_REMOVED,
   'binding:not-configured':'OKF binding missing or invalid: provision soul OKF declaration and bindings file, or deactivate oats.okf',
   'bindings:invalid':'OKF bindings file missing or invalid: repair configured bindings file, or deactivate oats.okf',
   'bases:too-many':'more than 64 git knowledge bases declared',
@@ -266,8 +268,7 @@ const checkReasons=Object.freeze({
   'base:not-validated':'declared knowledge base is not a validated knowledge tree',
   'base:owner-unmet':'knowledge base owner or remote custody requirement not met',
   'base:source-mismatch':'staged git source does not match the declared knowledge base',
-  'runtime:command-missing':'harvest runtime command is not installed on this host',
-  'runtime:not-qualified':'harvest runtime is not qualified: install/configure the selected harvest runtime or set harvest off',
+  'declaration:unresolved':'declared knowledge nodes do not resolve in the accepted bases',
 });
 const checkReasonTemplates=Object.freeze({
   'cache-stale':'okf base <alias>: cached <cached>, accepted is now <accepted>; the next okf read refreshes it (or run `oats okf bases --fresh`)',
@@ -275,7 +276,8 @@ const checkReasonTemplates=Object.freeze({
   'cache-not-primed':'okf base <alias> is not cached on this host yet: run `oats okf bases` (a spawn primes it)',
   'cache-not-validated':'okf base <alias>: cached <cached> not yet validated on this host: run `oats okf bases`',
   'base-unreachable:cold':'okf base <alias>: <repository> <acceptedBranch> unreachable (<reason>)',
-  'base-unresolved':'okf base <alias>: harvest runtime check skipped node resolution because the base is not cached',
+  'base-unresolved':'okf base <alias>: declared node check skipped because the base is not cached',
+  'setting:removed':`E_REMOVED: ${REMOVED_TEMPLATE}`,
   'base-not-primed:spawn':'okf base <alias> not primed: <reason>; run `oats okf bases`',
 });
 function renderTemplate(name,values={}) {
@@ -299,15 +301,10 @@ function providerActionName(action) {
   return null;
 }
 function readinessRuntime(settings,env=process.env) {
+  if(settings.schemaVersion===undefined) {const removed=removedMessage(settings);if(removed) return {problem:{code:'needs-configuration',message:removed}};}
   if(Object.hasOwn(settings,'bindings-file')) {
     try {
       if(typeof settings['bindings-file']!=='string' || !absolute(settings['bindings-file'])) return {problem:problem('needs-configuration','settings:missing')};
-      if(settings.harvest!==undefined && !['on','off'].includes(settings.harvest)) return {problem:problem('needs-configuration','runtime:not-qualified')};
-      if(settings.harvest!=='off') {
-        if(settings['harvest-runtime']===undefined) return {problem:problem('needs-configuration','harvest-runtime:missing')};
-        if(!['pi','claude','codex'].includes(settings['harvest-runtime'])) return {problem:problem('needs-configuration','harvest-runtime:invalid')};
-        if(settings['harvest-model']!==undefined && (typeof settings['harvest-model']!=='string' || !settings['harvest-model'].trim())) return {problem:problem('needs-configuration','harvest-model:invalid')};
-      }
       const bindings=loadBindings(settings['bindings-file']);
       if(!env.OATS_SOUL) return {problem:problem('needs-configuration','soul:missing')};
       const decl=soulDeclaration(env.OATS_SOUL);
@@ -320,7 +317,11 @@ function readinessRuntime(settings,env=process.env) {
   }
   if(settings.schemaVersion!==undefined) {
     try { return {runtime:bindingPayload(settings,{diagnoseSettings:true}).runtime}; }
-    catch(error) {if(['invalid-binding','needs-configuration'].includes(error?.wireCode)) return {problem:problem('needs-configuration','binding:not-configured')};throw error;}
+    catch(error) {
+      if(error?.v1) return {problem:problem('needs-configuration','binding:v1-removed')};
+      if(['invalid-binding','needs-configuration'].includes(error?.wireCode)) return {problem:problem('needs-configuration','binding:not-configured')};
+      throw error;
+    }
   }
   return {problem:problem('needs-configuration','settings:missing')};
 }
@@ -359,11 +360,10 @@ function lsRemote(base) {
   });
 }
 function checkError(error,stage) {
-  if(error.code==='E_COMMAND' && stage==='runtime') return {status:'needs-configuration',problem:problem('needs-configuration','runtime:command-missing')};
   if(error.code==='E_COMMAND') return {status:'unavailable',problem:problem('provider-unavailable')};
   if(error.code==='E_OWNER') return {status:'needs-configuration',problem:problem('provider-not-qualified','base:owner-unmet')};
   if(error.code==='E_CONFIRM') return {status:'needs-configuration',problem:problem('provider-not-qualified','base:source-mismatch')};
-  if(stage==='runtime') return {status:'needs-configuration',problem:problem('needs-configuration','runtime:not-qualified')};
+  if(stage==='declaration') return {status:'needs-configuration',problem:problem('needs-configuration','declaration:unresolved')};
   if(['E_BASE','E_VALIDATION','E_DIRECTORY_GIT','E_PATH','E_ID','E_CONFIG'].includes(error.code)) return {status:'needs-configuration',problem:problem('provider-not-qualified',stage==='stage'?'base:stage-failed':'base:not-validated')};
   return {status:'unavailable',problem:problem('provider-unavailable')};
 }
@@ -413,12 +413,12 @@ async function checkPhase(req) {
       if(probe.commit!==commit) warnings.push(warning('cache-stale','cache-stale',{alias,cached:shortOid(commit),accepted:shortOid(probe.commit)}));
     } else warnings.push(warning('base-unreachable','base-unreachable:warm',{alias,repository:displayRepo(base.repository),cached:shortOid(commit),fetchedAt:state.fetchedAt}));
   }
-  if(req.settings.harvest!=='off') {
-    for(const alias of unresolved) warnings.push(warning('base-unresolved','base-unresolved',{alias}));
-    const rendered=unresolved.length?{...runtime,declaration:{...runtime.declaration,owns:runtime.declaration.owns.filter(ref=>!unresolved.includes(ref.split('/')[0])),reads:runtime.declaration.reads.filter(ref=>!unresolved.includes(ref.split('/')[0]))}}:runtime;
-    try { checkKnowledgeRuntime({rendered,accepted}); }
-    catch(error) { const out=checkError(error,'runtime');problems.push(out.problem); }
-  }
+  for(const alias of unresolved) warnings.push(warning('base-unresolved','base-unresolved',{alias}));
+  // The soul's declared nodes resolve in the accepted bases it can read now
+  // (by the bindings' own aliases; a base not cached yet is skipped above).
+  const resolvable=ref=>!unresolved.includes(ref.split('/')[0]);
+  try { const decl=validateDeclaration(runtime.declaration);resolveNodes({...decl,owns:decl.owns.filter(resolvable),reads:decl.reads.filter(resolvable)},bindings,accepted); }
+  catch(error) { const out=checkError(error,'declaration');problems.push(out.problem); }
   const result={status:statusOf(problems),problems};
   if(warnings.length) result.warnings=warnings;
   return result;
@@ -434,8 +434,10 @@ export async function handleBindingRequest(phase,value) {
 function response(phase,body) {return {schemaVersion:1,phase,slot:SLOT,capability:CAPABILITY,...body};}
 function errorCode(error) {if(errorCodes.has(error?.wireCode)) return error.wireCode;if(error?.code==='E_OWNER') return 'requirement-conflict';return 'invalid-binding';}
 function errorProblem(error) {
-  const code=errorCode(error),message=error?.[settingDiagnostic];
-  return {code,...(code==='needs-configuration' && Object.values(settingMessages).includes(message)?{message}:{})};
+  // The private symbol is set only by settingError (closed literals) and
+  // removedError (the `setting:removed` template, rendered), never by a caught message.
+  const code=errorCode(error),message=error?.v1?V1_REMOVED:error?.[settingDiagnostic];
+  return {code,...(code==='needs-configuration' && typeof message==='string'?{message}:{})};
 }
 function enforceOutputLimits(value,depth=1,state={entries:0}) {
   if(depth>BINDING_WIRE_LIMITS.depth) wireError('provider-not-qualified');

@@ -1,4 +1,5 @@
 import { isAbsolute } from 'node:path';
+import { refuseLegacySettings, withoutDefaults } from './legacy-settings.mjs';
 import { fs, join, resolve, dirname, fail, readJSON, safePath, relPath, identifier, overlaps, hash, embedsCredential } from './io.mjs';
 const obj = v => v && typeof v === 'object' && !Array.isArray(v);
 function keys(value, allowed, label, code='E_CONFIG') {
@@ -6,14 +7,14 @@ function keys(value, allowed, label, code='E_CONFIG') {
   for(const key of Object.keys(value)) if(!allowed.includes(key)) fail(code, `unknown ${label} property: ${key}`);
 }
 export function settings() {
-  const s = JSON.parse(process.env.OATS_SETTINGS || '{}');
-  keys(s,['bindings-file','state-dir','harvest-runtime','harvest-model','git-timeout','consult-max-age','harvest'],'OATS_SETTINGS');
-  if(s.harvest!==undefined && !['on','off'].includes(s.harvest)) fail('E_CONFIG','harvest must be on or off');
+  refuseLegacySettings(); // okf 5.0: a forwarded harvest/harvest-runtime/harvest-model names its fix first
+  // A 4.x manifest default (harvest off, harvest-runtime pi) is dropped, never a 5.0 setting;
+  // `harvest` left here can only be the soul's own opt-out (off): refuseLegacySettings refused any other.
+  const s = withoutDefaults(JSON.parse(process.env.OATS_SETTINGS || '{}'));
+  keys(s,['bindings-file','state-dir','git-timeout','consult-max-age','harvest'],'OATS_SETTINGS');
   if(s['git-timeout']!==undefined && (!Number.isInteger(s['git-timeout']) || s['git-timeout']<1)) fail('E_CONFIG','git-timeout must be a positive integer number of seconds');
   if(s['consult-max-age']!==undefined && (!Number.isInteger(s['consult-max-age']) || s['consult-max-age']<0)) fail('E_CONFIG','consult-max-age must be a non-negative integer number of seconds');
   if(s['state-dir']!==undefined && (typeof s['state-dir']!=='string' || !isAbsolute(s['state-dir']) || resolve(s['state-dir'])!==s['state-dir'])) fail('E_CONFIG','state-dir must be a normalized absolute path');
-  if(s['harvest-runtime']!==undefined && !['pi','claude','codex'].includes(s['harvest-runtime'])) fail('E_CONFIG','invalid harvest-runtime');
-  if(s['harvest-model']!==undefined && (typeof s['harvest-model']!=='string' || !s['harvest-model'].trim())) fail('E_CONFIG','harvest-model must be a nonempty string');
   return s;
 }
 /** Time budget for Git operations that talk to a remote (clone, fetch, push,
@@ -28,10 +29,14 @@ export function noGit(path) {
     if (dirname(p) === p) break;
   }
 }
+/** okf 4.2.0 removed harvest schedules; a live bindings document with the
+ *  old cron/tz fields is refused with the fix. */
+export const SCHEDULE_REMOVED = 'oats.okf harvests no schedule since 4.2: remove cron/tz from the bindings file, and remove each okf-<source id> job okf <= 4.1 created with oats schedule remove <id> --dir <deployment> (README#upgrading-from-41).';
 export function validateBindings(doc, file, { sourceHome, sourceWork } = {}) {
   keys(doc,['version','stateDir','bases','cron','tz'],'bindings');
   if (!obj(doc) || doc.version !== 1 || !obj(doc.bases) || !Object.keys(doc.bases).length || (typeof doc.stateDir !== 'string' || !doc.stateDir)) fail('E_CONFIG', 'bindings require {version:1,stateDir,bases}');
-  for(const key of ['cron','tz']) if(doc[key]!==undefined && (typeof doc[key]!=='string' || !doc[key].trim())) fail('E_CONFIG', `${key} must be a nonempty string`);
+  const legacy = ['cron','tz'].filter(key => Object.hasOwn(doc, key));
+  if (legacy.length) fail('E_HARVEST_SCHEDULE_REMOVED', `${file}: ${legacy.join(' and ')} ${legacy.length > 1 ? 'are' : 'is'} no longer supported. ${SCHEDULE_REMOVED}`);
   const stateDir = safePath(resolve(dirname(file), doc.stateDir));
   const bases = {}; const ids = new Set(); const paths = [];
   for (const [alias, raw] of Object.entries(doc.bases)) {
@@ -68,7 +73,7 @@ export function validateBindings(doc, file, { sourceHome, sourceWork } = {}) {
   for(let i=0;i<gitBases.length;i++) for(let j=0;j<i;j++) if(gitBases[i].repository===gitBases[j].repository && overlaps(resolve('/',gitBases[i].root),resolve('/',gitBases[j].root))) fail('E_PATH','overlapping Git base namespaces');
   for (const p of [sourceHome,sourceWork].filter(Boolean)) if(overlaps(stateDir,p)) fail('E_PATH','state overlaps source home/work');
   if(overlaps(stateDir,file) || paths.some(p=>overlaps(p,file))) fail('E_PATH','bindings document must be outside state and bases');
-  return { version:1, stateDir, bases, cron:doc.cron?.trim() ?? '*/15 * * * *', tz:doc.tz?.trim() ?? 'UTC' };
+  return { version:1, stateDir, bases };
 }
 export function loadBindings(file = settings()['bindings-file'], opts = {}) {
   if(typeof file !== 'string' || !isAbsolute(file)) fail('E_CONFIG','set one absolute bindings-file; explicit provisioning/migration is required');
@@ -76,8 +81,8 @@ export function loadBindings(file = settings()['bindings-file'], opts = {}) {
 }
 export function declaration(soul) {
   if(fs.existsSync(join(soul,'.okf-cutover.json'))) fail('E_MIGRATION','incomplete explicit migration cutover: rerun its recorded migrate --cutover command');
-  if(fs.existsSync(join(soul,'knowledge'))) fail('E_MIGRATION','legacy soul/knowledge exists: use oats okf migrate to preserve and stage it, then explicit cutover; no automatic loss');
-  if(!fs.existsSync(join(soul,'okf.json'))) fail('E_CONFIG',`soul has no okf.json: this soul reads/owns no knowledge yet. Provision it explicitly (oats okf init, or oats okf migrate for a legacy soul), or deactivate oats.okf for this soul; nothing was created`);
+  if(fs.existsSync(join(soul,'knowledge'))) fail('E_MIGRATION','legacy soul/knowledge exists: use oats okf migrate --soul <soul> to preserve and stage it, then explicit cutover; no automatic loss');
+  if(!fs.existsSync(join(soul,'okf.json'))) fail('E_CONFIG',`soul has no okf.json: this soul reads/owns no knowledge yet. Provision it explicitly (oats okf init --soul <soul>, or oats okf migrate --soul <soul> for a legacy soul), or deactivate oats.okf for this soul; nothing was created`);
   return validateDeclaration(readJSON(join(soul,'okf.json')));
 }
 export function validateDeclaration(d) {

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { fs, join, dirname, safePath, readJSON, save, atomic, tree, materialize, digest, hash, withLock, exec, cleanEnv, fail, relPath, overlaps, resolve, within, redactUrls, displayRepo } from './io.mjs';
+import { fs, join, dirname, safePath, readJSON, atomic, tree, materialize, digest, hash, withLock, exec, cleanEnv, fail, relPath, overlaps, resolve, within, redactUrls, displayRepo } from './io.mjs';
 import { metadata, noGit, gitTimeoutMs } from './config.mjs';
 const validator = fileURLToPath(new URL('./okf-validate.mjs', import.meta.url));
 // Never let local replace refs reinterpret frozen OIDs, including inside Git's
@@ -393,21 +393,6 @@ function fetchAccepted(base,cwd) {
   git(cwd,['fetch','origin',`refs/heads/${base.acceptedBranch}`],{timeout:gitTimeoutMs()});
   return git(cwd,['rev-parse','FETCH_HEAD']);
 }
-/** The accepted head of a staged Git base whose root still holds the judged
- *  bytes; E_BASELINE when they changed. A base staged in a checkout that is
- *  gone is staged afresh to compare. */
-export function confirmGitBaseline(base,stage,{alias=base.id}={}) {
-  if(stage.checkout && fs.existsSync(join(stage.checkout,'.git'))) {
-    let head;
-    try { head=fetchAccepted(base,stage.checkout); } catch(e) { unavailable(base,alias,'fetch',e); }
-    if(rootUnchanged(base,stage,stage.checkout,head)) return head;
-  } else {
-    const scratch=fs.mkdtempSync(join(fs.realpathSync(tmpdir()),'oats-okf-baseline-'));
-    try { const current=stageBase(base,join(scratch,'base'),{alias});if(current.digest===stage.digest) return current.head; }
-    finally { fs.rmSync(scratch,{recursive:true,force:true}); }
-  }
-  fail('E_BASELINE','accepted base changed; rejudge on fresh baseline');
-}
 /** Whether `pr` is this publication's PR: its branch into the accepted
  *  branch, a real identity, and the known identity when there is one. The
  *  caller decides what its head must be. */
@@ -559,33 +544,4 @@ export function gitPublish(base, stage, proposal, receipt, persist, {beforePubli
   if(pr.state==='CLOSED' && !pr.mergedAt) {receipt.status='rejected';persist();fail('E_PR','PR closed without merge; retained proposal requires operator review');}
   if(pr.mergedAt) acceptMerged(base,cwd,branch,receipt,pr,persist,fetchAccepted(base,cwd));
   return receipt;
-}
-
-export function recoveryStage(base, stage, proposal, dest) {
-  clone(base,dest,stage.head);
-  const root=join(dest,base.root);
-  for(const p of Object.keys(proposal.before)) if(!(p in proposal.after)) fs.rmSync(safePath(join(root,p)),{force:true});
-  materialize(root,proposal.after);validateBase(root,base);
-  return {...stage,root,checkout:dest};
-}
-
-// Remote-read-only recovery gate. --repo makes this independent of any deleted
-// worker checkout. The caller durably saves first observations separately from
-// historical receipts, even if a later gate prevents recovery from completing.
-export function gitRecoveryState(base,receipt,cwd,{identity=receipt.pr,onObserve=()=>{}}={}) {
-  if(['accepted','no-change'].includes(receipt.status)) return 'settled';
-  if(!receipt.branch) return 'unresolved';
-  const rows=prRows(base,receipt.branch,cwd,{identity,allBases:true});
-  if(!rows.length) {
-    if(identity || ['delivered','rejected'].includes(receipt.status)) fail('E_RECOVERY','known PR missing; reconcile custody before rejudging');
-    return 'unresolved';
-  }
-  const pr=rows[0];
-  if(rows.length!==1 || ![identity,receipt.pr].every(known=>prMatches(pr,base,receipt.branch,known)) || !['OPEN','CLOSED','MERGED'].includes(pr.state) || (pr.state==='MERGED' && !pr.mergedAt)) fail('E_RECOVERY','actual PR identity/head/base could not be uniquely verified for recovery');
-  // A maintainer's amend+merge moves the head: complete records that merge,
-  // and merged inputs are never rejudged.
-  if(pr.headRefOid!==receipt.commit && pr.mergedAt) fail('E_RECOVERY',`PR ${pr.url} was merged at an amended head ${pr.headRefOid}: run complete to record its acceptance; merged inputs are never rejudged`);
-  if(pr.headRefOid!==receipt.commit) fail('E_RECOVERY','actual PR identity/head/base could not be uniquely verified for recovery');
-  onObserve(pr);
-  return pr.state==='CLOSED' && !pr.mergedAt?'unresolved':'settled';
 }

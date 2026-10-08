@@ -19,6 +19,10 @@ The work mode:
   links; do not bulk-load.
 - **Before compaction and before a task boundary:** update STATE.md, log.md
   and notes/ first, so your future self can continue.
+- **At an important checkpoint**—a decision made, a PR opened or handed
+  over, a task finished—first update STATE.md, log.md and relevant notes.
+  Whether and how you propose knowledge is in your spawn briefing (TASK.md):
+  follow it exactly, and without that instruction never propose.
 - **Every so often while working, and always before a design decision or
   before re-deriving something:** `oats okf search` / `cat` the relevant
   concepts and re-read your own notes. Consult prior decisions before
@@ -34,7 +38,8 @@ contradict soul knowledge (flag those as candidate supersessions). Not code
 descriptions, command logs, retries, secrets, verbatim third-party messages,
 or what the tracker and docs already hold. One concept per note in notes/;
 STATE.md is the current picture (rewritten); log.md is dated events
-(append-only). The knowledge harvester, not you, decides what is promoted.
+(append-only). Soul knowledge changes only through a reviewed PR. Load
+**knowledge-theory** for what is worth keeping.
 
 **Never write accepted knowledge or soul knowledge.** This is an instruction
 boundary, not a filesystem sandbox. Skills remain curated soul artifacts.

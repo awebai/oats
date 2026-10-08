@@ -1,6 +1,4 @@
-import { fs, join, dirname, safePath, fail, oats } from './io.mjs';
-import { markerPath, loadStatus } from './sources.mjs';
-import { qualifiedSoulIdentity } from './source-contract.mjs';
+import { fs, join, safePath, fail } from './io.mjs';
 
 // Keep the v1 labeled-document contract, including its explicit per-document
 // preview cap. The JSON envelope itself must drain in full through stdout.
@@ -22,36 +20,6 @@ function regular(file, limit) {
     if(truncated && text.endsWith('\uFFFD')) text=text.slice(0,-1);
     return {text,...(truncated?{truncated:true,bytes:opened.size}:{})};
   } finally {fs.closeSync(fd);}
-}
-function identityJSON(text,label) {
-  // JSON.parse diagnostics may include raw input from a replacement home.
-  // Report the failed verification, never those untrusted bytes.
-  try {return JSON.parse(text);} catch {fail('E_SOURCE',`invalid ${label} JSON in source home`);}
-}
-function liveHome(source,status) {
-  if(status.retired) return {available:false,reason:'retired'};
-  try {
-    safePath(source.home);
-    const stat=fs.lstatSync(source.home);
-    if(!stat.isDirectory()) return {available:false,reason:'identity-mismatch'};
-    const marker=regular(markerPath(source.home));
-    if(!marker) return {available:false,reason:'missing-marker'};
-    const m=identityJSON(marker.text,'source marker');
-    // Never load a replacement descriptor or trust the invoking home/env when
-    // inspecting an explicitly selected durable source.
-    if(m?.version!==1 || m.id!==source.id || m.source!==source.file) return {available:false,reason:'identity-mismatch'};
-    const metadata=regular(join(source.home,'instance.json'));
-    if(metadata) {
-      const meta=identityJSON(metadata.text,'instance metadata');
-      if(meta?.instance!==source.instance || meta.agent!==source.agent) return {available:false,reason:'identity-mismatch'};
-    }
-    return {available:true,reason:'live',dev:stat.dev,ino:stat.ino};
-  } catch(e) {
-    if(missing(e)) return {available:false,reason:'missing-home'};
-    // Unsafe/unreadable identity is not proof of a live source. Durable state
-    // remains inspectable, but no document from that home may be returned.
-    return {available:false,reason:'unverified-home',error:{code:e.code || 'E_SOURCE',message:e.message}};
-  }
 }
 /** The home's working memory (STATE.md, log.md, notes/*.md), each capped. */
 function homeDocuments(home) {
@@ -79,60 +47,16 @@ function homeDocuments(home) {
   } catch(e) {error=e;}
   return {documents,error};
 }
-export function workingDocuments(source,status=loadStatus(source)) {
-  const before=liveHome(source,status),observedAt=new Date().toISOString();
-  const unavailable=state=>({liveMemory:{available:false,reason:state.reason,observedAt,...(state.error?{error:state.error}:{})},documents:[]});
-  if(!before.available) return unavailable(before);
-  const {documents,error}=homeDocuments(source.home);
-  const after=liveHome(source,loadStatus(source));
-  if(!after.available) return unavailable(after);
-  if(before.dev!==after.dev || before.ino!==after.ino) return unavailable({reason:'home-changed'});
-  if(error) fail(error.code==='E_PATH'?'E_PATH':'E_INSPECT_FAILED',error.message);
-  return {liveMemory:{available:true,reason:'live',observedAt},documents};
-}
-export function capturedAuthority(source) {
-  const fields=['registration','providerBinding','sourceIdentity','executionBinding','responsibleHuman'],present=fields.filter(key=>Object.hasOwn(source,key));
-  const base={schemaVersion:1};
-  if(!present.length) return {...base,registration:'legacy',capture:'unknown',migrationRequired:true,responsibleHuman:{status:'unknown'}};
-  const binding=source.executionBinding,identity=source.sourceIdentity,complete=source.registration?.schemaVersion===1 && source.registration.kind==='captured'
-    && source.providerBinding && typeof source.providerBinding==='object' && identity && typeof identity==='object' && !Array.isArray(identity)
-    && binding?.schemaVersion===1 && typeof binding.deployment==='string' && binding.resolution?.schemaVersion===1 && typeof binding.resolution.id==='string'
-    && Object.hasOwn(source,'responsibleHuman');
-  const invalid={...base,registration:'invalid',capture:'invalid',migrationRequired:true,responsibleHuman:{status:'unknown'}};
-  if(!complete) return invalid;
-  try {if(Buffer.byteLength(JSON.stringify({identity,binding}))>64*1024) return invalid;qualifiedSoulIdentity(identity);} catch {return invalid;}
-  return {...base,registration:'captured',capture:'recorded',migrationRequired:false,sourceIdentity:JSON.parse(JSON.stringify(identity)),executionBinding:JSON.parse(JSON.stringify(binding)),
-    responsibleHuman:{status:source.responsibleHuman===null?'disabled':'specified'}};
-}
-/** A ./knowledge/ snapshot written by okf 2.x. okf 3.0.0 never reads it
- *  (knowledge is consulted remotely) and never deletes it. */
-export function legacyLocalView(source,status=loadStatus(source)) {
-  if(!liveHome(source,status).available) return null;
-  const path=join(safePath(source.home),'knowledge');let stat;
-  try {stat=fs.lstatSync(path);} catch(e) {if(missing(e)) return null;throw e;} // never follow it
-  return {status:'legacy-local-view',path,ignored:true,...(stat.isSymbolicLink()?{symlink:true}:{}),note:'okf 3.0.0 ignores this okf 2.x snapshot and reads knowledge remotely; it is safe to delete by hand'};
-}
+/** okf 5.0.0: what an instance consults (its declaration and the bases it
+ *  reads) and its own working memory. There is no source, custody or harvest
+ *  to report; `oats okf bases` shows the accepted state it reads. */
 export function inspect(source) {
-  const status=loadStatus(source),working=workingDocuments(source,status),legacy=legacyLocalView(source,status);
-  let health;try {health=oats(['schedule','list','--dir',source.context,'--json'],source.context).scheduler;} catch(e) {health={active:false,error:e.message};}
-  const documents=[...working.documents,{label:'Durable processing receipts',kind:'text',path:join(dirname(source.file),'status.json'),text:JSON.stringify(status,null,2)}];
-  return {
-    summary:`OKF ${source.id}: ${status.captured.inputs.length-status.processed.length} unprocessed inputs; ${status.retired?'source retired':'source not retired'}; ${working.liveMemory.available?`${working.documents.length} working-memory documents`:`live memory unavailable (${working.liveMemory.reason})`}${legacy?'; legacy-local-view ./knowledge/ (ignored, safe to delete)':''}`,
-    source:source.file,owns:source.decl.owns,reads:source.decl.reads,bases:source.bindings.bases,authority:capturedAuthority(source),
-    acceptedView:source.acceptedView,legacyLocalView:legacy,status,scheduler:health,liveMemory:working.liveMemory,documents
-  };
-}
-/** okf 4.0.3: inspect a harvest-off home (consultSource): its declaration, the
- *  bases it reads, and its own working memory. There is no source, custody or
- *  schedule to report; `oats okf bases` shows the accepted state it reads. */
-export function inspectConsultOnly(source) {
   const {documents,error}=homeDocuments(source.home),observedAt=new Date().toISOString();
   if(error) fail(error.code==='E_PATH'?'E_PATH':'E_INSPECT_FAILED',error.message);
   const path=join(source.home,'knowledge');let legacy=null;
   try {const stat=fs.lstatSync(path);legacy={status:'legacy-local-view',path,ignored:true,...(stat.isSymbolicLink()?{symlink:true}:{}),note:'okf 3.0.0 ignores this okf 2.x snapshot and reads knowledge remotely; it is safe to delete by hand'};} catch(e) {if(!missing(e)) throw e;}
   return {
-    summary:`OKF harvest off for this instance (${source.harvest.reason}): no source is registered and nothing is captured; ${documents.length} working-memory documents${legacy?'; legacy-local-view ./knowledge/ (ignored, safe to delete)':''}`,
-    source:null,harvest:source.harvest,owns:source.decl.owns,reads:source.decl.reads,bases:source.bindings.bases,
-    acceptedView:null,legacyLocalView:legacy,status:null,scheduler:null,liveMemory:{available:true,reason:'live',observedAt},documents
+    summary:`OKF: owns ${source.decl.owns.join(', ') || 'none'}; ${documents.length} working-memory documents${legacy?'; legacy-local-view ./knowledge/ (ignored, safe to delete)':''}`,
+    owns:source.decl.owns,reads:source.decl.reads,bases:source.bindings.bases,legacyLocalView:legacy,liveMemory:{available:true,reason:'live',observedAt},documents
   };
 }

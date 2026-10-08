@@ -1,157 +1,91 @@
 #!/usr/bin/env node
-// oats.okf-harvest: the harvester's two commands. Both are thin: the delivery
-// code lives in oats.okf (a capability module is fetched per directory, so it
-// cannot import oats.okf's lib), and `complete` runs the source's frozen
-// `oats okf complete` from the source deployment, never from this home.
-import { spawnSync } from 'node:child_process';
-import { readFileSync, lstatSync } from 'node:fs';
-import { hostname } from 'node:os';
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+// oats.okf-harvest 5.0.0: a harvester judges ONE proposal (its TASK.md) and
+// publishes with plain Git and gh (skill knowledge-harvest). It has no
+// delivery commands: the 4.x `complete` and `harvest-status` refuse, so an old
+// 4.x TASK or worker protocol in a 5.0 harvester never runs a completion.
+//
+// Its one piece of code is the required spawn hook: before a harvester exists,
+// it checks the source the proposal names against the deployment's own record
+// and refuses a source whose recorded soul opts out (knowledge: { harvest: off })
+// or whose record cannot be established. Instructions alone are not
+// enforcement. A matching record proves consistency, not authorship.
+import { lstatSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const HELP = `oats okf-harvest complete --source FILE --run ID --judgment ABS_FILE [--json]
-oats okf-harvest harvest-status --source FILE --run ID [--json]
-complete runs the source's frozen \`oats okf complete\` in its deployment (the
-only delivery path): it persists the judgment, then delivers in the background,
-answering \`delivering\` when delivery outlasts the 30 s it waits. harvest-status reports each PR's state and what to do:
-stay, retire or max-age (setting harvester-max-age, default 7d).
+const HELP = `oats.okf-harvest 5.0 has no commands of its own: a harvester follows the
+knowledge-harvest skill (read the proposal and the named source's records,
+judge, publish one labelled PR with git and gh, hand over, retire).
+oats okf-harvest complete | harvest-status   removed in 5.0 (E_REMOVED)
 `;
-const fail = (code, message, extra = {}) => { throw Object.assign(new Error(message), { code, ...extra }); };
-const IDENTITY = /^(OATS_(?!HOME_DIR$|PACKAGE_CATALOG$)|PI_AGENT|GIT_)/;
+export const REMOVED = 'was removed in oats.okf 5.0: there are no harvest runs, custody or delivery to complete. A 5.0 harvester judges the proposal in its TASK.md and opens the PR itself (skill knowledge-harvest). A 4.x TASK (one naming a source descriptor and a run) cannot be processed by 5.0: report it to your operator and retire; nothing was delivered';
+const fail = (code, message) => { throw Object.assign(new Error(message), { code }); };
+const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const real = (p) => { try { return realpathSync(String(p)); } catch { return null; } };
+const file = (p) => { try { const s = lstatSync(p); return s.isFile() && !s.isSymbolicLink(); } catch { return false; } };
 
-export function parseFlags(args, allowed) {
-  const flags = {};
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (!a.startsWith('--')) fail('E_USAGE', `unexpected argument ${a}`);
-    const k = a.slice(2);
-    if (k in flags) fail('E_USAGE', `duplicate --${k}`);
-    if (!allowed.includes(k)) fail('E_USAGE', `unknown flag --${k}`);
-    if (k === 'json') { flags.json = true; continue; }
-    if (!args[i + 1] || args[i + 1].startsWith('--')) fail('E_USAGE', `--${k} needs a value`);
-    flags[k] = args[++i];
+/** The proposal's source, checked against the deployment's record. → { instance, soul, agent }. */
+export function checkSource({ task = '', deployment } = {}) {
+  // Exactly one Source line: with two, which one names the source is ambiguous.
+  if ((String(task).match(/^Source:/gm) || []).length > 1) fail('E_SOURCE', 'the proposal has more than one `Source:` line; exactly one names the source');
+  const m = /^Source:\s*instance\s+(\S+?),\s*home\s+(\S+?),\s*soul\s+(\S+?)\s*$/m.exec(task);
+  if (!m) fail('E_SOURCE', 'the task is not an oats.okf 5.0 proposal: it has no `Source: instance <name>, home <path>, soul <name>` line; a harvester is spawned only on a proposal');
+  const [, instance, home, soul] = m;
+  if (!NAME.test(instance) || !NAME.test(soul)) fail('E_SOURCE', 'the proposal\'s source instance and soul must be plain names');
+  if (typeof deployment !== 'string' || !isAbsolute(deployment)) fail('E_SOURCE', 'the deployment is unknown (no absolute OATS_WORKSPACE), so the source cannot be checked');
+  // The exact record directory: never a retirement copy (dot directories) or a guess by basename.
+  let agents; try { agents = readdirSync(join(deployment, 'agents')).filter((a) => !a.startsWith('.')); } catch { agents = []; }
+  const records = agents.map((a) => ({ agent: a, path: join(deployment, 'agents', a, 'instances', instance, 'instance.json') })).filter((r) => file(r.path));
+  if (records.length !== 1) fail('E_SOURCE', records.length ? `more than one record names source instance ${instance}; its authority cannot be established` : `no record of source instance ${instance} in this deployment (retired?); its authority cannot be established`);
+  let record; try { record = JSON.parse(readFileSync(records[0].path, 'utf8')); } catch { fail('E_SOURCE', `the record of source instance ${instance} is unreadable`); }
+  if (record?.instance !== instance || resolve(String(record.home)) !== resolve(home) || real(record.home) !== real(dirname(records[0].path))) fail('E_SOURCE', `the record of source instance ${instance} does not match the proposal's home`);
+  if (typeof record.soulDir !== 'string' || !isAbsolute(record.soulDir) || !file(join(record.soulDir, 'soul.yaml'))) fail('E_SOURCE', `the recorded soul of source instance ${instance} is unreadable`);
+  const soulYaml = readFileSync(join(record.soulDir, 'soul.yaml'), 'utf8');
+  if (/^name:\s*['"]?([^'"\s#]+)/m.exec(soulYaml)?.[1] !== soul) fail('E_SOURCE', `the recorded soul of source instance ${instance} is not ${soul}`);
+  const okf = record.providers?.['oats.okf'];
+  if (!okf || typeof okf !== 'object') fail('E_SOURCE', `source instance ${instance} has no oats.okf knowledge slot`);
+  // The recorded soul itself: any `harvest: off` there refuses (fail closed),
+  // even when a host or default value masked it in the settings.
+  const optedOut = `the soul of source instance ${instance} opts out of harvest (knowledge: { harvest: off }, or a "harvest: off" anywhere in its soul.yaml): its knowledge is not harvested`;
+  if (/\bharvest\s*:\s*['"]?off\b/.test(soulYaml)) fail('E_OPTED_OUT', optedOut);
+  // What the kernel handed oats.okf, judged by its RECORDED origin (the record's
+  // capability entry): a 4.x manifest default (harvest off, harvest-runtime pi)
+  // is nobody's decision; a soul `off` is the opt-out; any other legacy key, or
+  // one with no recorded origin, means the source's authority is not established.
+  const origins = [record.capabilities, record.capabilityRuntime].flatMap((l) => (Array.isArray(l) ? l : [])).find((c) => c?.id === 'oats.okf')?.settingsOrigins;
+  for (const key of ['harvest', 'harvest-runtime', 'harvest-model'].filter((k) => Object.hasOwn(okf, k))) {
+    const kind = origins?.[`/${key}`]?.kind;
+    if (kind === 'manifest-default') continue;
+    if (key === 'harvest' && okf.harvest === 'off' && kind === 'soul') fail('E_OPTED_OUT', optedOut);
+    fail('E_SOURCE', typeof kind === 'string'
+      ? `the record of source instance ${instance} sets oats.okf ${key} from ${kind}, a setting removed in oats.okf 5.0 that the source itself refuses; its authority cannot be established`
+      : `the record of source instance ${instance} sets oats.okf ${key} with no recorded origin, so whether its soul opts out cannot be established`);
   }
-  return flags;
+  return { instance, soul, agent: records[0].agent };
 }
-const readJson = (file, what) => {
-  try { return JSON.parse(readFileSync(file, 'utf8')); } catch (e) { fail('E_SOURCE', `${what} is unreadable: ${file} (${e.code || e.message})`); }
-};
-/** The frozen source descriptor: <stateDir>/sources/<uuid>/source.json. */
-export function readSource(file) {
-  if (typeof file !== 'string' || !isAbsolute(file) || resolve(file) !== file) fail('E_USAGE', '--source must be an absolute descriptor path');
-  if (basename(file) !== 'source.json' || !/^[0-9a-f-]{36}$/.test(basename(dirname(file))) || basename(dirname(dirname(file))) !== 'sources') fail('E_SOURCE', 'not an OKF source descriptor path (<stateDir>/sources/<id>/source.json)');
-  if (lstatSync(file, { throwIfNoEntry: false })?.isFile() !== true) fail('E_SOURCE', `source descriptor missing: ${file}`);
-  const s = readJson(file, 'source descriptor');
-  if (s?.version !== 1 || s.id !== basename(dirname(file)) || typeof s.context !== 'string' || !isAbsolute(s.context) || typeof s.agent !== 'string') fail('E_SOURCE', 'invalid source descriptor');
-  return s;
-}
-export function readRun(source, file, id) {
-  if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id)) fail('E_USAGE', '--run must be a run id');
-  const run = readJson(join(dirname(file), 'runs', id, 'run.json'), 'run');
-  if (run?.id !== id || run.source !== source.id) fail('E_RUN', 'run identity mismatch');
-  return run;
-}
-/** The completion argv, exactly as oats.okf's completionArgv freezes it. */
-export function completionArgv(source, file, run, judgment) {
-  const tail = ['okf', 'complete', '--source', file, '--run', run, '--judgment', judgment];
-  const e = source.executionBinding;
-  if (e !== undefined) {
-    if (e?.schemaVersion !== 1 || typeof e.deployment !== 'string' || !isAbsolute(e.deployment) || !/^sha256-[a-f0-9]{64}$/.test(e.resolution?.id || '')) fail('E_SOURCE', 'invalid captured completion execution binding');
-    return ['--deployment', e.deployment, '--resolution', e.resolution.id, ...tail, '--json'];
-  }
-  return [...tail, '--soul', source.agent, '--json'];
-}
-// A refusal meaning oats.okf cannot run for the source soul in its deployment.
-const INACTIVE = new Set(['E_CAPABILITY_INACTIVE', 'E_CAPABILITY_BLOCKED', 'E_CAPABILITY_MISSING', 'E_PACKAGE_MISSING', 'E_PACKAGE_INTEGRITY', 'E_SOUL_UNKNOWN', 'E_SOUL_DISABLED', 'E_UNKNOWN_COMMAND']);
-export function complete(flags, env = process.env) {
-  for (const k of ['source', 'run', 'judgment']) if (!flags[k]) fail('E_USAGE', `--${k} is required`);
-  if (!isAbsolute(flags.judgment)) fail('E_USAGE', '--judgment must be an absolute path');
-  const source = readSource(flags.source);
-  readRun(source, flags.source, flags.run);
-  const cli = env.OATS_CLI_BIN;
-  if (!cli || !isAbsolute(cli)) fail('E_RUNTIME', 'absolute OATS_CLI_BIN required; never resolve oats on PATH');
-  const clean = Object.fromEntries(Object.entries(env).filter(([k]) => !IDENTITY.test(k)));
-  const argv = completionArgv(source, flags.source, flags.run, flags.judgment);
-  const r = spawnSync(cli, argv, { cwd: source.context, env: clean, encoding: 'utf8', timeout: 30 * 60 * 1000, maxBuffer: 16 * 1024 * 1024 });
-  let answer; try { answer = JSON.parse(r.stdout); } catch { /* below */ }
-  if (answer?.schemaVersion === 1 && answer.ok === true) return { deployment: source.context, ...answer.result };
-  const code = answer?.error?.code || 'E_COMPLETE', message = answer?.error?.message || (r.error?.message || r.stderr || `exit ${r.status}`).trim();
-  if (INACTIVE.has(code)) fail('E_SOURCE_INACTIVE', `oats.okf cannot run for source soul ${source.agent} in ${source.context} (${code}: ${message}). Nothing was published: report this to your operator, and stay.`, { cause: code });
-  fail(code, `${message} (completion ran in ${source.context}; keep your home and report)`);
-}
-/** "7d" | "48h" | "90m" | seconds → milliseconds. */
-export function maxAgeMs(value) {
-  if (value === undefined || value === null) return 7 * 86400000;
-  if (Number.isInteger(value) && value > 0) return value * 1000;
-  const m = /^(\d+)(m|h|d)$/.exec(String(value));
-  if (!m || Number(m[1]) < 1) fail('E_CONFIG', 'harvester-max-age must be a duration like 7d, 48h or 90m, or a positive number of seconds');
-  return Number(m[1]) * { m: 60000, h: 3600000, d: 86400000 }[m[2]];
-}
-function settings(env) {
-  let s; try { s = JSON.parse(env.OATS_SETTINGS || '{}'); } catch { fail('E_CONFIG', 'OATS_SETTINGS is not JSON'); }
-  return s && typeof s === 'object' ? s : {};
-}
-function prState(pr, env) {
-  const r = spawnSync('gh', ['pr', 'view', pr.url, '--json', 'state,mergedAt,closedAt,url,number'], { encoding: 'utf8', timeout: 60000, env: Object.fromEntries(Object.entries(env).filter(([k]) => !IDENTITY.test(k))) });
-  if (r.status !== 0) return { url: pr.url, number: pr.number, state: 'UNKNOWN', error: (r.stderr || r.error?.message || `exit ${r.status}`).trim() };
-  const v = JSON.parse(r.stdout);
-  return { url: v.url, number: v.number, state: v.state, mergedAt: v.mergedAt || null, closedAt: v.closedAt || null };
-}
-const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
-const RESUME = 'run the complete command again to resume (it reuses your persisted judgment)';
-/** Why a judged run is not delivered yet, from its background delivery record. */
-function deliveryReason(delivery, pending) {
-  const live = ['starting', 'running'].includes(delivery?.state) && delivery.host === hostname() && alive(delivery.pid);
-  if (live) return `delivery in progress (${delivery.step || delivery.state})`;
-  if (delivery?.state === 'failed') {
-    const { code, message } = delivery.error ?? {};
-    return `delivery failed: ${code}: ${message}; ${code === 'E_BASELINE' ? 'the accepted base changed under your judgment: report it to your operator, who rejudges with oats okf retry --rejudge' : RESUME}`;
-  }
-  if (['starting', 'running'].includes(delivery?.state)) return `delivery stopped at "${delivery.step || delivery.state}"; ${RESUME}`;
-  return `destinations not delivered: ${pending.join(', ')}; ${RESUME}`;
-}
-export function harvestStatus(flags, env = process.env, { now = Date.now(), view = prState } = {}) {
-  for (const k of ['source', 'run']) if (!flags[k]) fail('E_USAGE', `--${k} is required`);
-  const source = readSource(flags.source), run = readRun(source, flags.source, flags.run);
-  const limit = maxAgeMs(settings(env)['harvester-max-age']);
-  const age = now - Date.parse(run.created);
-  const receipts = run.receipts && typeof run.receipts === 'object' ? run.receipts : {};
-  const destinations = Object.entries(receipts).map(([alias, r]) => {
-    if (r?.pr?.url) return { alias, receipt: r.status, pr: view(r.pr, env) };
-    return { alias, receipt: r?.status ?? null, pr: null };
-  });
-  const judged = !!run.judgment, delivery = run.delivery ?? null;
-  let action, reason;
-  const open = destinations.filter((d) => d.pr && !['MERGED', 'CLOSED'].includes(d.pr.state));
-  // A judged destination gets its receipt only once delivery confirms its baseline.
-  const pending = [...destinations.filter((d) => !d.pr && !['no-change', 'accepted'].includes(d.receipt)).map((d) => d.alias),
-    ...Object.keys(run.proposals ?? {}).filter((alias) => !Object.hasOwn(receipts, alias))];
-  if (!judged || pending.length) { action = age >= limit ? 'max-age' : 'stay'; reason = !judged ? 'the run is not completed yet' : deliveryReason(delivery, pending); }
-  else if (open.length) { action = age >= limit ? 'max-age' : 'stay'; reason = `open PR: ${open.map((d) => d.pr.url).join(', ')}`; }
-  else { action = 'retire'; reason = destinations.some((d) => d.pr) ? 'every PR is merged or closed' : 'no PR was needed (no-change or directory publication)'; }
-  if (action === 'max-age') reason += `; older than harvester-max-age (${Math.round(limit / 3600000)}h): tell your operator and retire, never close the PR`;
-  return { run: run.id, status: run.status, ageSeconds: Math.round(age / 1000), maxAgeSeconds: limit / 1000, destinations, delivery, action, reason };
-}
-function text(event, r) {
-  if (event === 'harvest-status') return [`run ${r.run} (${r.status}): ${r.action} — ${r.reason}`, ...r.destinations.map((d) => `  ${d.alias}: ${d.pr ? `${d.pr.state} ${d.pr.url}` : d.receipt}`)].join('\n');
-  return `completed run ${r.run}: ${r.status}${Object.entries(r.receipts || {}).map(([a, x]) => `\n  ${a}: ${x.status}${x.pr?.url ? ` ${x.pr.url}` : ''}`).join('')}${r.next ? `\n${r.next}` : ''}`;
-}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const args = process.argv.slice(2), event = args[0];
-  if (!event || args.includes('--help') || args.includes('-h')) process.stdout.write(HELP);
-  else {
-    const json = args.includes('--json');
+  const args = process.argv.slice(2), event = process.env.OATS_EVENT || args[0];
+  if (event === 'spawn') {
+    // Hook answer: JSON on stdout; a failure exits 1, and the required hook refuses the spawn.
+    // No meta either way: the check reads files and creates nothing, and the
+    // kernel keeps meta as the receipt of external state (a spawn rolled back
+    // after this capability, which has no retire hook, reported meta is
+    // quarantined). The record keeps no source name: no link to the proposer.
     try {
-      let result;
-      if (event === 'complete') result = complete(parseFlags(args.slice(1), ['source', 'run', 'judgment', 'json']));
-      else if (event === 'harvest-status') result = harvestStatus(parseFlags(args.slice(1), ['source', 'run', 'json']));
-      else fail('E_USAGE', `unknown command ${event}; see --help`);
-      process.stdout.write((json ? JSON.stringify({ schemaVersion: 1, ok: true, result }) : text(event, result)) + '\n');
+      checkSource({ task: process.env.OATS_TASK, deployment: process.env.OATS_WORKSPACE });
+      process.stdout.write('{}\n');
     } catch (e) {
-      const code = e.code || 'E_OKF_HARVEST';
-      if (json) process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: false, error: { code, message: e.message } }) + '\n');
-      else process.stderr.write(`oats okf-harvest ${event}: ${code}: ${e.message}\n`);
+      process.stdout.write(JSON.stringify({ warning: `oats-okf-harvest ${e.code || 'E_SOURCE'}: ${e.message}` }) + '\n');
       process.exitCode = 1;
     }
+  } else if (!event || args.includes('--help') || args.includes('-h')) process.stdout.write(HELP);
+  else {
+    const error = ['complete', 'harvest-status'].includes(event)
+      ? { code: 'E_REMOVED', message: `oats okf-harvest ${event} ${REMOVED}` }
+      : { code: 'E_USAGE', message: `unknown command ${event}; see --help` };
+    if (args.includes('--json')) process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: false, error }) + '\n');
+    else process.stderr.write(`oats okf-harvest ${event}: ${error.code}: ${error.message}\n`);
+    process.exitCode = 1;
   }
 }

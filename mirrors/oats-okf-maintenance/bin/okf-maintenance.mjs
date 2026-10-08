@@ -109,6 +109,8 @@ export function reviewContext(flags, env = process.env, { view = viewPr, git = g
     `git clone https://${ref.host}/${ref.repo}.git ./work/kb && cd ./work/kb && gh pr checkout ${pr.number}`,
     `git diff --stat origin/${pr.baseRefName}...HEAD`,
     ...(p ? [`read the owned nodes' index.md and neighbours: ${p.source.ownedNodes.join(', ') || '(none)'}`, `read the source's read nodes for context: ${p.source.readNodes.join(', ') || '(none)'}`] : ['no valid provenance: review it as an unprovenanced change (request changes or close)']),
+    // v2 evidence names the source's own notes; the PR body carries the claims they back.
+    ...(p?.version === 2 ? [`the claims and their evidence are in the PR body; the harvester relied on: ${p.evidence.map((e) => `${e.note}${e.sha256 ? ` (sha256 ${e.sha256.slice(0, 12)})` : ' (not read)'}`).join(', ') || '(no notes)'}`] : []),
   ];
   const result = {
     pr: { repo: ref.repo, number: pr.number, url: pr.url, state: pr.state, draft: pr.isDraft === true, head: pr.headRefName, headSha: pr.headRefOid, base: pr.baseRefName, labels, mergedAt: pr.mergedAt || null, closedAt: pr.closedAt || null },
@@ -120,6 +122,7 @@ export function reviewContext(flags, env = process.env, { view = viewPr, git = g
     provenance: { valid: provenance.valid, problems: provenance.problems, value: p },
     tasks: p ? { provider: p.tasks.provider, refs: p.tasks.refs, note: p.tasks.provider ? `read these through your tasks capability if it is ${p.tasks.provider}; otherwise record tasks: "unavailable"` : 'no tasks provider recorded: record tasks: "unavailable"' } : null,
     harvester: p ? p.harvester : null,
+    evidence: p?.version === 2 ? p.evidence : null,
     reading,
   };
   if (flags.checkout) result.checkout = checkoutFacts(flags.checkout, pr, p, git);
@@ -130,19 +133,28 @@ export function notifyHarvester(flags, env = process.env, { view = viewPr } = {}
   const ref = resolveRef(flags), pr = view(ref, env), provenance = parseProvenance(pr.body);
   if (!provenance.valid) fail('E_PROVENANCE', `the PR has no valid provenance, so its harvester is unknown: ${provenance.problems.join('; ')}`);
   const h = provenance.value.harvester;
-  const body = flags.body ?? {
+  // okf 5.0 (v2): the harvester retired after handing over its PR, and nothing
+  // settles back into a source: the notice is information, with no callback.
+  const body = flags.body ?? (provenance.value.version === 2 ? {
+    merged: `Your harvest PR ${pr.url} is merged. Nothing else is needed.`,
+    closed: `Your harvest PR ${pr.url} was closed without merge; see the okf-review comment for the reason.`,
+    question: `A question on your harvest PR ${pr.url}: see the okf-review comment.`,
+    'amend-request': `An amendment request on your harvest PR ${pr.url}: see the okf-review comment.`,
+    amended: `I amended your harvest PR ${pr.url}; see the okf-review comment.`,
+  } : {
     merged: `Your harvest PR ${pr.url} is merged. Confirm with oats okf-harvest harvest-status, then retire.`,
     closed: `Your harvest PR ${pr.url} was closed without merge; see the okf-review comment for the reason. Confirm with oats okf-harvest harvest-status, then retire.`,
     question: `A question on your harvest PR ${pr.url}: see the okf-review comment.`,
     'amend-request': `An amendment request on your harvest PR ${pr.url}: see the okf-review comment and reply with the change you would make.`,
     amended: `I amended your harvest PR ${pr.url}; see the okf-review comment.`,
-  }[flags.state];
-  return { to: h.alias || h.instance, instance: h.instance, alias: h.alias, subject: `okf: ${flags.state} ${pr.url}`, body, send: 'send this with your messaging capability' };
+  })[flags.state];
+  return { to: h.alias || h.instance, instance: h.instance, alias: h.alias, subject: `okf: ${flags.state} ${pr.url}`, body, send: provenance.value.version === 2 ? 'optional: a 5.0 harvester retires after handoff, so this may go unread; the okf-review comment is the record' : 'send this with your messaging capability' };
 }
 function text(event, r) {
   if (event === 'notify-harvester') return `to: ${r.to}\nsubject: ${r.subject}\n\n${r.body}`;
   const lines = [`${r.pr.url} ${r.pr.state}${r.pr.draft ? ' (draft)' : ''} ${r.pr.head}@${String(r.pr.headSha).slice(0, 12)} → ${r.pr.base} [${r.pr.labels.join(', ')}]`];
-  lines.push(r.provenance.valid ? `provenance: run ${r.provenance.value.run}, source ${r.provenance.value.source.soul}/${r.provenance.value.source.instance}, harvester ${r.harvester.alias || r.harvester.instance}` : `provenance INVALID: ${r.provenance.problems.join('; ')}`);
+  const v = r.provenance.value;
+  lines.push(r.provenance.valid ? `provenance v${v.version}: ${v.version === 1 ? `run ${v.run}, ` : ''}source ${v.source.soul}/${v.source.instance}, harvester ${r.harvester.alias || r.harvester.instance}` : `provenance INVALID: ${r.provenance.problems.join('; ')}`);
   if (r.tasks) lines.push(`tasks: ${r.tasks.refs.join(', ') || '(none)'} — ${r.tasks.note}`);
   if (r.blocked) lines.push(`BLOCKED: ${r.blocked} — the okf-needs-human label is a hard stop: do not review, amend, merge or close; only a human removes it`);
   lines.push('reading list:', ...r.reading.map((x) => `  - ${x}`));
