@@ -138,7 +138,14 @@ export function workspaceStatusData(document, deployment) {
     external: array(data.external).map(row => fields(row, ['source', 'soul', 'team'])),
     problems: problemRows(data.problems), // warnings[] since kernel #185 (for example an unmapped team label); absent before.
     // 0.30 automation trust adds automation-untrusted {kind, id, remedy} and automation-trust-stale {entry}.
-    warnings: own(data, 'warnings') ? array(data.warnings).map(row => fields(row, ['code', 'message', 'label', 'soul', 'repoKey', 'kind', 'id', 'remedy', 'entry'])) : [] });
+    warnings: own(data, 'warnings') ? array(data.warnings).map(warningRow) : [] });
+}
+/** One workspace warning. 0.49.0's hook-event-unsupported adds `capability` and `path`: kept when text, else
+ * dropped, never refusing the status (the earlier keys stay strict). */
+function warningRow(row) {
+  const out = fields(row, ['code', 'message', 'label', 'soul', 'repoKey', 'kind', 'id', 'remedy', 'entry']);
+  for (const key of ['capability', 'path']) if (text(row[key])) out[key] = row[key];
+  return out;
 }
 
 /** The kernel's observation provenance (feature observe-max-age): `observation` sits at the

@@ -5,6 +5,8 @@
  * grows (docs/desktop-cli-api.md "Workspace triggers and schedules"), only this
  * file changes. */
 
+import { displayLine, DETAIL_WITHHELD } from './display-text.mjs';
+
 const text = v => typeof v === 'string' && v ? v : null;
 const list = v => Array.isArray(v) ? v : [];
 const record = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -258,31 +260,72 @@ export function soulOriginText(origin) {
   return { short: String(origin.kind), long: String(origin.kind) };
 }
 
+const PULL_REQUEST = 'github.pull_request';
+/** A trigger event's name for display (0.49 `subject`): its `subject` (a string), else its `number`, as
+ * `#42` only for a `github.pull_request` source (`source`: the list row's `on.source`; status rows carry no
+ * `on`); else its `key`; else null. Never "#null": a null number is absent. Display-only (displayLine). */
+export function eventLabel(entry, source) {
+  if (!record(entry)) return null;
+  const name = displayLine(entry.subject) ?? (Number.isSafeInteger(entry.number) && entry.number > 0 ? String(entry.number) : null);
+  if (name) return source === PULL_REQUEST && name !== DETAIL_WITHHELD ? `#${name}` : name;
+  return displayLine(entry.key);
+}
+/** An event kind in words ("ready for review"), filtered for display. */
+const eventWords = v => displayLine(v)?.replace(/_/g, ' ') ?? null;
+
 /** `oats trigger test --json` or `oats schedule test --json` → one shape for the Test result card:
- * { ok, problems: [string], warnings: [string], wouldFire: [..] | null, nextDue, soul, account }. */
-export function testResult(json, kind) {
+ * { ok, problems: [string], warnings: [string], wouldFire: [{ key, label, instance, nameCut, held }] | null, nextDue, soul, account }.
+ * wouldFire (0.49): `instance` is the name the spawn would be asked to derive (null when unknown), `nameCut`
+ * whether its purpose was cut to fit; an entry with nothing to name it by is skipped. */
+export function testResult(json, kind, { source = null } = {}) {
   const t = kind === 'schedule' && record(json?.test) ? json.test : json;
   if (!record(t)) return null;
   const strings = v => list(v).map(p => typeof p === 'string' ? p : text(p?.message) || text(p?.code)).filter(Boolean);
   const soulOk = record(t.soul) ? { resolves: t.soul.resolves !== false, error: text(t.soul.error?.message) || text(t.soul.error) } : null;
+  const fire = f => { const label = eventLabel(f, source), instance = record(f) ? displayLine(f.instance) : null; return label ? { key: text(f.key), label, instance, nameCut: !!instance && f.nameCut === true, held: f.held === true } : null; };
   return {
     ok: t.ok === true, problems: strings(t.problems), warnings: strings(t.warnings),
-    wouldFire: Array.isArray(t.wouldFire) ? t.wouldFire.filter(record) : null,
+    wouldFire: Array.isArray(t.wouldFire) ? t.wouldFire.map(fire).filter(Boolean) : null,
     nextDue: text(t.nextDue), soul: soulOk,
     account: text(t.gh?.account),
   };
 }
 
-/** One trigger's `oats trigger status --json` row → the detail page's history facts. */
-export function triggerStatus(json, id) {
+/** One fired trigger event (a `status` fired row, or a list row's `lastRun`) → { key, at, outcome, event, label, instance }. */
+export function firedEntry(raw, source = null) {
+  if (!record(raw)) return null;
+  return { key: text(raw.key), at: text(raw.at), outcome: text(raw.outcome), event: eventWords(raw.event), label: eventLabel(raw, source), instance: displayLine(raw.instance) };
+}
+const count = v => Number.isSafeInteger(v) && v >= 0;
+/** `lastPoll` → { at, ok: true, prs, matching } | { at, ok: false, error } | null (absent or malformed). */
+function lastPoll(raw) {
+  if (!record(raw) || !Number.isFinite(Date.parse(text(raw.at) || ''))) return null;
+  if (raw.ok === true) return count(raw.prs) && count(raw.matching) ? { at: raw.at, ok: true, prs: raw.prs, matching: raw.matching } : null;
+  if (raw.ok !== false) return null;
+  const e = raw.error;
+  return { at: raw.at, ok: false, error: displayLine(typeof e === 'string' ? e : record(e) ? e.message : null) ?? (record(e) ? displayLine(e.code) : null) };
+}
+/** The time an event was observed, for sorting: unparseable sorts last. */
+const observed = e => { const t = Date.parse(e.observedAt || ''); return Number.isFinite(t) ? t : -Infinity; };
+
+/** One trigger's `oats trigger status --json` row → the detail page's history facts, every kernel string
+ * filtered for display and every malformed entry skipped (an older kernel's fields are simply absent):
+ * fired: [firedEntry], live: [{ instance, label, event }], pending: [{ key, label, event, observedAt }]
+ * newest observed first (kernel order among ties), lastPoll (see above), lastError: { at, code, message, key } | null.
+ * `source` (the list row's `on.source`) decides the `#` of a label. */
+export function triggerStatus(json, id, { source = null } = {}) {
   const row = list(json?.triggers).find(r => record(r) && (r.id === id || r.qualifiedId === id));
   if (!row) return null;
+  const live = list(row.live).filter(record).map(e => ({ instance: displayLine(e.instance), label: eventLabel(e, source), event: eventWords(e.event) })).filter(e => e.instance || e.label);
+  const pending = list(row.pending).filter(record).map(e => ({ key: text(e.key), label: eventLabel(e, source), event: eventWords(e.event), observedAt: text(e.observedAt) }))
+    .filter(e => e.label).sort((a, b) => observed(b) - observed(a) || 0);
+  const err = record(row.lastError) ? { at: text(row.lastError.at), code: displayLine(row.lastError.code), message: displayLine(row.lastError.message), key: text(row.lastError.key) } : null;
   return {
-    fired: list(row.fired).filter(record), firedTotal: Number.isInteger(row.firedTotal) ? row.firedTotal : null,
-    live: list(row.live).filter(record), liveCount: Number.isInteger(row.liveCount) ? row.liveCount : null,
+    fired: list(row.fired).map(e => firedEntry(e, source)).filter(Boolean), firedTotal: Number.isInteger(row.firedTotal) ? row.firedTotal : null,
+    live, liveCount: Number.isInteger(row.liveCount) ? row.liveCount : null,
     max: Number.isInteger(row.concurrency?.max) ? row.concurrency.max : null,
-    pending: list(row.pending).filter(record), lastPoll: record(row.lastPoll) ? row.lastPoll : null,
-    lastError: record(row.lastError) ? row.lastError : null,
+    pending, lastPoll: lastPoll(row.lastPoll),
+    lastError: err && (err.code || err.message) ? err : null,
   };
 }
 

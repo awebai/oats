@@ -89,6 +89,17 @@ caller revalidates its admission and CLI identity after success **or** rejection
   (advisory); for a home the recorded, enforced policy. Lifecycle authority,
   **not an OS sandbox**.
 - Remedies are inert display text, never executed or pasted into a terminal.
+- **Capability warnings** (OATS 0.49.0): the document's top-level `warnings[]`,
+  `{code, capability, path, message}` (`hook-event-unsupported`: a capability
+  declares a hook event this kernel does not run; it composes and that hook
+  never runs). They are not the per-item provider `result.warnings` above and
+  show apart from them: after the four checks, under **Warnings**, with the
+  shared warnings list (`capability-warnings.mjs`, the soul page's own). Each
+  names its capability, keeps its code and path under Details, and has **Open
+  capability** when the inspector's capability tables list it. They never
+  change a check, the summary or Ready. The projection is tolerant: a
+  malformed entry is skipped and never fails the document; a missing key (an
+  older kernel) shows nothing.
 
 Removed with the classic model (never rendered): `trusted` and signatures
 (declaring a package is the trust decision), `enrolled`, the scope subject, and

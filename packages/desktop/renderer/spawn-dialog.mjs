@@ -28,6 +28,7 @@ import { sameSpawnDecision } from './spawn-decision.mjs';
 import { spawnProblem } from './spawn-messages.mjs';
 import { wakeScheduleFields } from './wake-schedule-fields.mjs';
 import { iconElement } from './shell-icons.mjs';
+import { createWarningsList, capabilityWarningsCSS, WARNINGS_COPY } from './capability-warnings.mjs';
 import { shownLaunch, launchHarnessName, launchModelText, launchFromText, preferenceText, declaredDiffers } from './launch-view.mjs';
 import { createSpawnDeploymentField, spawnDeployments } from './spawn-deployment-field.mjs';
 import { openAddMachineDialog } from './add-machine-dialog.mjs';
@@ -305,6 +306,9 @@ export const spawnDialogCSS = `
  .spawn-footer { padding:10px 14px; }
  .spawn-relationship-row .frelto { flex-basis:100%; }
 }
+/* Capability warnings (0.49.0): the shared list under its own title, at the facts' end. */
+.spawn-preview-warnings { display:flex; flex-direction:column; gap:6px; min-width:0; }
+${capabilityWarningsCSS}
 `;
 
 const node = (doc, tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
@@ -1212,6 +1216,9 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
         if (policy.consentSource) note.append(el('dt', 'Prompt consent source'), el('dd', policy.consentSource, 'mono'));
         factsBody.append(note);
       }
+      // Capability warnings (0.49.0): the kernel's strings, each line as text (no Details, no Open capability); they block nothing.
+      const warnings = createWarningsList(doc, data.warnings, { lines: true });
+      if (warnings) { const box = el('div', undefined, 'spawn-preview-warnings'); box.append(el('h4', WARNINGS_COPY.title, 'spawn-preview-title'), warnings); factsBody.append(box); }
     }
     // Core capabilities and Capabilities exist only when the preview carries `modules`; redrawn only when those change.
     const modules = state.kind === 'data' ? JSON.stringify(data.modules ?? null) : '';

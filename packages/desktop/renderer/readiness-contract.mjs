@@ -5,6 +5,7 @@
 import { effectiveOf, REPORT_FROM } from './launch-contract.mjs';
 import { defaultTeamOf } from './team-rows.mjs';
 import { remoteReason } from './remote-address.mjs';
+import { warningsOf } from './capability-warnings-contract.mjs';
 export const READINESS_API = 2;
 export const CHECKS = ['installed', 'configured', 'member', 'providers'];
 export const record = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -153,6 +154,9 @@ export function readinessData(v, target) {
     if (!Array.isArray(v.notes) || v.notes.length > 64) return null;
     return { readinessApi: READINESS_API, subject, at: v.at, checks,
       summary: { ready: s.ready, required: s.required, pass: s.pass, fail: s.fail, unknown: s.unknown },
-      policy: policy(v.policy), notes: v.notes.map(n => text(n)) };
+      policy: policy(v.policy), notes: v.notes.map(n => text(n)),
+      // Capability warnings (0.49.0): tolerant (a malformed list reads as none, never refuses the document), idempotent
+      // (the server projects, the renderer projects again), and outside the summary: they never change ready or a count.
+      warnings: warningsOf(v.warnings) };
   } catch { return null; }
 }

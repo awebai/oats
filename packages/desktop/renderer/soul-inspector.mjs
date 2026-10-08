@@ -37,6 +37,8 @@ import { createDataState, skeletonBlock, skeleton, captureFocusState } from './l
 import { createDeploymentScopeLine } from './deployment-scope-line.mjs';
 import { createSoulInstructions } from './soul-instructions.mjs';
 import { composedSupported, routedComposedSupported } from './composed-gate.mjs';
+import { warningsOf } from './capability-warnings-contract.mjs';
+import { createWarningsList, WARNINGS_COPY } from './capability-warnings.mjs';
 
 
 const HARNESS_NAMES = { pi: 'Pi', claude: 'Claude Code', codex: 'Codex' };
@@ -219,6 +221,9 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
   // `instructionCapabilities`: the shown inspection's capabilities by id, each with its core or composition entry, so a
   // composed part's "Open capability" takes the tables' own path.
   let instructionsSection = null, instructionCapabilities = new Map();
+  // `warningTargets`: the same lookup for a capability warning's Open capability (the soul's own list, an instance's
+  // readiness), from the shown inspection; empty where the host opens no capability.
+  let warningTargets = new Map();
   // The controller's clock (tests inject one); createDataState's defaults apply on undefined.
   const timers = { now: clock.now, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout };
   const pendingOperations = new WeakMap();
@@ -295,7 +300,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     container.hidden = false;
     if (presentation) presentation.setPresent(true);
     else if (layout !== 'page') container.parentElement?.classList.add('inspecting'); // the page replaces the list; no side column
-    subject++; scopeLine?.dispose(); scopeLine = createDeploymentScopeLine(doc, { inline: layout === 'page' }); readiness?.dispose(); readiness = null; loading?.dispose(); loading = null; painted = null; teamsHere?.dispose(); teamsHere = null; instructionsSection?.dispose(); instructionsSection = null;
+    subject++; warningTargets = new Map(); scopeLine?.dispose(); scopeLine = createDeploymentScopeLine(doc, { inline: layout === 'page' }); readiness?.dispose(); readiness = null; loading?.dispose(); loading = null; painted = null; teamsHere?.dispose(); teamsHere = null; instructionsSection?.dispose(); instructionsSection = null;
     container.replaceChildren();
     const head = node('div', undefined, 'inspector-head');
     container.classList.toggle('soul-page', layout === 'page');
@@ -358,7 +363,12 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     const withReadiness = !selection.agent;
     container.append(head, notice, ...(selection.agent ? [scopeLine.element] : []), summary, status, ...(withReadiness ? [readinessHost] : []), content);
     loading = createLoading(refreshing); loading.bindRefresh(refresh, () => { void show(selection, { user: true }); });
-    readiness = withReadiness ? createReadinessView(readinessHost, { ctx, compact: true }) : null; syncReadiness();
+    // A capability warning's Open capability resolves against this subject's inspection (warningTargets), checked at click time.
+    const id = subject, gen = selectionGen;
+    readiness = withReadiness ? createReadinessView(readinessHost, { ctx, compact: true,
+      canOpenCapability: name => typeof openCapability === 'function' && warningTargets.has(name),
+      openCapability: typeof openCapability === 'function' ? name => { const found = warningTargets.get(name); if (found && ownsSubject(id, gen)) openCapability(found.cap, selection.agent ?? null, found.entry); } : null }) : null;
+    syncReadiness();
     rosterColumn = null;
     if (selection.agent) { renderSoulActions(null); renderSoulRoster(); }
   }
@@ -368,7 +378,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     if (alive) reset(restoreFocus);
   }
   function reset(restoreFocus = false) {
-    serial++; subject++; scopeLine?.dispose(); scopeLine = null; selection = null; selectionGen = null; data = null; teamsPanel = null; teamsHere?.dispose(); teamsHere = null; instructionsSection?.dispose(); instructionsSection = null; container.hidden = true;
+    serial++; subject++; warningTargets = new Map(); scopeLine?.dispose(); scopeLine = null; selection = null; selectionGen = null; data = null; teamsPanel = null; teamsHere?.dispose(); teamsHere = null; instructionsSection?.dispose(); instructionsSection = null; container.hidden = true;
     readiness?.dispose(); readiness = null; loading?.dispose(); loading = null; painted = null;
     container.replaceChildren();
     if (presentation) presentation.setPresent(false);
@@ -462,6 +472,10 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     facts$?.querySelector('[data-fact="harness"]')?.remove(); facts$?.parentElement?.querySelector('[data-launch-notes]')?.remove();
     for (const p of inspected.problems) problem(p);
     const soul = inspected.souls[0] ?? null;
+    // Capability warnings (0.49.0): a soul's, below its problems (an instance's are its readiness view's, which reads this lookup).
+    warningTargets = typeof openCapability === 'function' && soul ? capabilityTargets(coreEntries(inspected, { layersFrom: layersFrom(), facts: desktopFacts(cliStatus()) }),
+      compositionEntries(inspected, soul, { facts: desktopFacts(cliStatus()) })) : new Map();
+    if (inspected.subject.kind === 'soul') renderSoulWarnings(inspected);
     if (inspected.subject.kind === 'instance') {
       summary.replaceChildren();
       content.append(node('p', 'As spawned: an instance never changes under itself. A newer soul or module needs a new instance.', 'muted'));
@@ -499,6 +513,25 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     // Operations run on a live home: a soul shows none (human, F7); an instance lists what it can run.
     if (inspected.subject.kind === 'instance') renderOperations(inspected);
     keepInstructions?.();
+  }
+  /** The shown inspection's capabilities by id, each with its core or composition entry: an "Open capability" (a composed
+   * part's, a capability warning's) takes the tables' own path. */
+  function capabilityTargets(coreRows, entries) {
+    return new Map([...coreRows.filter(entry => entry.id && entry.cap).map(entry => [entry.id, { cap: entry.cap, entry }]),
+      ...entries.filter(entry => entry.cap?.id).map(entry => [entry.cap.id, { cap: entry.cap, entry }])]);
+  }
+  /** A soul's capability warnings (capability-warnings.mjs) under "Warnings" in the layout's section style; none, no
+   * section. Each names its capability; Open capability shows where the host opens capabilities and the name resolves
+   * against this inspection, checked again at click time (the subject, the workspace). */
+  function renderSoulWarnings(inspected) {
+    const warnings = Array.isArray(inspected.warnings) && inspected.warnings.length ? warningsOf(inspected.warnings) : [];
+    if (!warnings.length) return;
+    const id = subject, gen = selectionGen, targets = warningTargets;
+    const list = createWarningsList(doc, warnings, { showCapability: true, focusKey: 'soul-warning', canOpen: name => targets.has(name),
+      open: typeof openCapability === 'function' ? name => { const found = targets.get(name); if (found && ownsSubject(id, gen) && list.isConnected) openCapability(found.cap, selection.agent, found.entry); } : null });
+    if (!list) return;
+    if (layout === 'page') { const box = pageSection(doc, WARNINGS_COPY.title); box.classList.add('inspector-warnings'); box.append(list); content.append(box); }
+    else { section(WARNINGS_COPY.title); content.append(list); }
   }
   function section(title) { const h = node('h3', title, 'inspector-section'); content.append(h); return h; }
   function card(entries, parent = content) { const box = node('div', undefined, 'inspector-card'); facts(entries, box); parent.append(box); return box; }
@@ -703,8 +736,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     const table = node('div', undefined, 'inspector-capability-table'); composition.append(table); content.append(composition);
     if (typeof capabilityTable === 'function') capabilityTable(table, entries, { soul: selection.agent });
     // Instructions (spec D): what the soul tells its instances, from this inspection (no read of its own).
-    instructionCapabilities = new Map([...coreRows.filter(entry => entry.id && entry.cap).map(entry => [entry.id, { cap: entry.cap, entry }]),
-      ...entries.filter(entry => entry.cap?.id).map(entry => [entry.cap.id, { cap: entry.cap, entry }])]);
+    instructionCapabilities = capabilityTargets(coreRows, entries);
     if (instructionsSection) { instructionsSection.update(soul); content.append(instructionsSection.element); }
     // Beside: its teams (joining is per instance) and its knowledge nodes. Team model v2
     // (kernel feature team-model-2): "Teams here", this computer's membership, editable — created

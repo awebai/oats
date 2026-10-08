@@ -234,7 +234,8 @@ The private adapter's `{started,envelope}` records possible dispatch, not creati
 or rollback. The broker must qualify success: full returned decision equals the
 confirmed decision (including effective), exact soul/name/home/work/repo/branch
 and model/harness facts, and typed launched/replayed fields. Raw recipes, attach
-commands, task content and warning text are dropped; only warning count crosses.
+commands, task content and warning text are dropped; only warning count crosses
+(the preview shows the warnings before the press: see the preview column, Warnings).
 Malformed/mismatched receipts, transport loss and ambiguous post-dispatch failures
 are **unknown**, not permission for a fresh spawn/key. A timeout does not prove
 rollback or stop an already launched agent.
@@ -291,6 +292,13 @@ The column reads top to bottom:
 3. **Launch prompts**, when the preview reports them: a full-width muted note
    after the facts, holding the policy sentence and its consent source verbatim
    (see Launch-prompt diagnostics).
+4. **Warnings**, when the preview's `warnings` (OATS 0.49.0: strings, one per
+   capability warning such as `hook-event-unsupported`, each at most 32 lines)
+   holds any: a list after the launch prompts, each warning marked by the word
+   "Warning" and an icon, then each of its lines as text, filtered by
+   `displayLine`. No Details and no Open capability: a preview warning is only
+   its message. A warning never blocks the spawn or changes the footer. At most
+   32 show, then "and N more". An older kernel sends none, and nothing shows.
 
 The footer keeps **Cancel** and **Spawn** together, right-aligned on one line, at
 every width. The status beside them yields first: its text wraps, or the status
