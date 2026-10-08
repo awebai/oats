@@ -4,6 +4,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { findAgent, fingerprintTree, listInstances, RETIRE_DELETE_BRANCH_REFUSED, retireInstance, spawnInstanceAsync, startInstanceSession } from "../lib/core.mjs";
+import { leaveEnclosingInstance } from "./helpers/host-fixture.mjs";
 import { git, v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const CLI = realpathSync(new URL("../bin/oats.mjs", import.meta.url));
@@ -33,7 +34,12 @@ console.log(JSON.stringify({meta: {context: e.OATS_CONTEXT, repo: e.OATS_REPO, r
     capabilities: { "example.worker": { manifest, files } },
   });
   const saved = { ...process.env };
+  // A worker inside an instance home (a developer agent running the suite from its work tree) is
+  // that instance to the kernel, and a launch then reads its recorded server's environment instead
+  // of the one built below: the fixture leaves it.
+  const comeBack = leaveEnclosingInstance(fx.base);
   t.after(() => {
+    comeBack();
     for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
     Object.assign(process.env, saved);
     fx.cleanup();

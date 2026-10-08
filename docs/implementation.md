@@ -368,3 +368,22 @@ and acts on every existing session through its recorded socket
   `list-windows`, `new-window` (a window id) and `set-option`.
 - A server a test starts is killed by its socket, never by name and never
   with a bare `tmux kill-server`.
+
+Nor does a test depend on where or how the suite runs:
+
+- A worker whose working directory is inside an instance home (a developer
+  agent running the suite from its work tree) is that instance to the
+  kernel. `isolateSessionEnvironment` leaves it; a fixture that builds its
+  environment itself calls `leaveEnclosingInstance(base)` and moves back
+  when it is done.
+- `isolateSessionEnvironment` drops `CLAUDECODE`, which a worker inherits
+  from a Claude Code session: a server the worker starts would hold it.
+- An expected path is built on a canonical fixture base,
+  `realpathSync(mkdtempSync(…))`: the platform's temporary directory can be
+  a symlink (`/var` on macOS), and the kernel builds the paths it reports on
+  its working directory, which the OS gives as the physical path.
+- A probe of the host that reads under `HOME` (the scheduler's installed
+  unit) runs with the fixture's own `HOME`.
+- A fixture the filesystem may not represent (a file name that is not valid
+  UTF-8, which APFS refuses) is probed in the fixture directory and skipped
+  with its reason only when refused; Linux CI runs it.

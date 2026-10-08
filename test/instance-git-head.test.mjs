@@ -133,8 +133,17 @@ test("assertSameWorktreeHead passes the same commit with the same ref's bytes, o
   assert.throws(() => assertSameWorktreeHead(undefined, detached(A)), moved, "a HEAD the final inspection did not read");
 });
 
-test("worktreeCommitUnreached, in a repository with a branch whose name is not valid UTF-8 and a damaged ref file: decided both ways, and nothing refuses", () => {
+test("worktreeCommitUnreached, in a repository with a branch whose name is not valid UTF-8 and a damaged ref file: decided both ways, and nothing refuses", (t) => {
   const repo = repository();
+  // Git stores a loose ref as a file of that name: a filesystem that refuses names that are not
+  // valid UTF-8 (APFS) cannot hold this fixture.
+  const probe = Buffer.concat([Buffer.from(join(repo, "probe-caf")), Buffer.from([0xe9])]);
+  try { writeFileSync(probe, ""); rmSync(probe); }
+  catch (e) {
+    if (e.code !== "EILSEQ") throw e;
+    t.skip("filesystem refuses non-UTF-8 names (APFS); covered on Linux CI");
+    return;
+  }
   git(repo, "symbolic-ref", "HEAD", "refs/heads/main");
   const base = commitIn(repo);
   const notUtf8 = Buffer.concat([Buffer.from("refs/heads/caf"), Buffer.from([0xe9])]);

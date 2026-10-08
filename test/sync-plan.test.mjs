@@ -5,7 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { buildNorthwind } from "./fixtures/northwind/build.mjs";
@@ -34,7 +34,9 @@ function tree(dir) {
 }
 
 async function northwind() {
-  const base = mkdtempSync(join(tmpdir(), "oats-sync-plan-"));
+  // Canonical: the kernel builds the paths it reports on its working directory, which the OS gives as
+  // the physical path, and the platform's temporary directory can be a symlink (/var on macOS).
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-sync-plan-")));
   const fx = await buildNorthwind(join(base, "fx"));
   const catalogFile = join(base, "catalog.json");
   writeFileSync(catalogFile, JSON.stringify({ packages: fx.catalog }, null, 2));

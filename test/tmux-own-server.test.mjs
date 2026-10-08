@@ -281,8 +281,10 @@ test("a selected start or restart that reuses its recorded pane on another serve
     const tmux = { session: SESSION, window: name, socket: OTHER };
     writeFileSync(join(home, "instance.json"), JSON.stringify({ ...readJson(join(home, "instance.json")), tmux, launched: true }, null, 2) + "\n");
     writeFileSync(baselineOf(home), JSON.stringify({ ...readJson(baselineOf(home)), runtime: { launched: true, tmux } }, null, 2) + "\n", { mode: 0o600 });
-    tmuxOn(OTHER, "new-window", "-d", "-t", `=${SESSION}:`, "-n", name, "-c", home, "/bin/sh");
-    await waitUntil(() => tmuxOn(OTHER, "display-message", "-p", "-t", `=${SESSION}:=${name}`, "#{pane_current_command}") === "sh", `${name}'s pane is a shell`);
+    // tmux names a pane's command after its process: bash is "bash" everywhere, while /bin/sh is "sh"
+    // on Linux and "bash" on macOS, whose /bin/sh runs bash.
+    tmuxOn(OTHER, "new-window", "-d", "-t", `=${SESSION}:`, "-n", name, "-c", home, join(base, "system-bin", "bash"));
+    await waitUntil(() => tmuxOn(OTHER, "display-message", "-p", "-t", `=${SESSION}:=${name}`, "#{pane_current_command}") === "bash", `${name}'s pane is a shell`);
     return home;
   };
   const reusedOnOther = async (home, r) => {
