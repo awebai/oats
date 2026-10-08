@@ -2213,15 +2213,16 @@ its absence.
   in the row),
   `identity` when a provider recorded one, `rollbackIncomplete` and
   `retirePending` when present, and the Desktop facts below.
-- **`spawnInProgress`** (feature `worktree-event`, OATS 0.49.0): `true` while
-  a spawn that is running its `worktree` hooks is verifiably alive (its pid
-  runs with the recorded start time), or while whether it runs cannot be
-  read (an unreadable start is never taken for gone). Such a home holds the quarantine marker
+- **`spawnInProgress`** (feature `worktree-event`, OATS 0.49.0): `true` only
+  while a spawn that is running its `worktree` hooks is verifiably alive (its
+  pid runs with the recorded start time). Such a home holds the quarantine marker
   with an `inProgress` field ([capabilities.md](capabilities.md#manifest)),
   and its row carries `spawnInProgress: true` and **no**
   `rollbackIncomplete`: a live spawn, not a failed one. Once that process is
-  gone, the row carries `rollbackIncomplete` as for any quarantine. Absent
-  otherwise, and from older kernels.
+  gone, or when its start time cannot be read (where `ps` fails), the row
+  carries `rollbackIncomplete` as for any quarantine, its `inProgress` naming
+  the pid; retire still refuses an unreadable one with `E_LIFECYCLE_BUSY`
+  until `--force`. Absent otherwise, and from older kernels.
 - **`waitingOnYou`** (feature `waiting-on-you`): `{since, producer, reason,
   message}` when the row is `running: true` and a producer holds a live claim
   that the instance needs input from a human, else `null` (unknown, not "not
@@ -3175,7 +3176,9 @@ one),
 `E_SESSION_UNKNOWN`, `E_AMBIGUOUS_INSTANCE`,
 `E_NO_ROOT`, `E_LIFECYCLE_FAILED`, `E_LIFECYCLE_BUSY` (feature
 `worktree-event`: the home is a spawn still running its `worktree` hooks, a
-row with `spawnInProgress: true`; `--force` included). A recovery whose Git status disagrees with
+row with `spawnInProgress: true`, `--force` included; or one whose start time
+cannot be read, a `rollbackIncomplete` row, until `--force`; or a hook or git
+group whose leader's start cannot be read, until `--force`). A recovery whose Git status disagrees with
 the source's carries `details: {home, statusDisagreement: {repo, rows: [{path,
 source, recovery}], total}}` (the first 10 paths). Usage errors are text on
 stderr, not envelopes.

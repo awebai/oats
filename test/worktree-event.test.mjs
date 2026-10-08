@@ -963,7 +963,7 @@ test("an adder or claim holder whose start cannot be read: add and remove refuse
   }
 });
 
-test("a spawn whose start cannot be read: status keeps it in progress, retire refuses naming the pid and `oats retire --force`; --force retires and keeps the branch", async (t) => {
+test("a spawn whose start cannot be read: status shows the quarantine, not in progress; retire refuses naming the pid and `oats retire --force`; --force retires and keeps the branch", async (t) => {
   const fx = deployment(t, { work: "worktree", lifecycle: true });
   const { home, orphan } = await killedSpawn(fx, "dev-unk");
   const orphanGroup = pgidOf(orphan);
@@ -977,8 +977,9 @@ test("a spawn whose start cannot be read: status keeps it in progress, retire re
   process.env.OATS_TEST_PROCESS_START_PS = "1";
   try {
     const row = (await fx.inEnv(() => listInstances(fx.root, "oats-test-nosuch"))).flatMap((a) => a.instances).find((i) => i.instance === "dev-unk");
-    assert.equal(row.spawnInProgress, true, "unreadable is not gone: still in progress");
-    assert.equal(row.rollbackIncomplete, undefined);
+    // Not shown in progress (a host that never reads it would say "setting up" forever): the quarantine, naming the pid.
+    assert.equal(row.spawnInProgress, undefined, "unreadable is not shown as alive");
+    assert.equal(row.rollbackIncomplete?.inProgress?.pid, pid, "the row shows the quarantine, its inProgress naming the pid");
     await assert.rejects(fx.inEnv(() => retireInstance(fx.root, "dev-unk", { tmuxSession: "oats-test-nosuch" })), (e) => {
       assert.equal(e.code, "E_LIFECYCLE_BUSY");
       assert.ok(e.message.includes(`pid ${pid},`) && e.message.includes(SOME_START), e.message);
