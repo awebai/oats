@@ -105,13 +105,15 @@ is skipped.
   source; with neither, the event `key`. Used for waiting, live and fired
   events, the list row's last fire and the Test card. Never `#null`; a `null`
   repo omits the Repo fact.
-- **Recent fires** shows, in order: *Last poll* (`<time>: <prs> pull requests,
-  <matching> matching`, or `<time> failed: <error>`; nothing when `lastPoll`
-  is absent or malformed, and the counts must be non-negative safe integers);
-  *Last error* (the message, then the code in mono); *Waiting* (`pending`,
-  newest `observedAt` first, an unparseable time last, kernel order among
-  ties; at most 10, then "and N more"); *Live now* (`live`: instance and
-  label); then the fires.
+- **Recent fires** shows, in order: *Last poll* (`<time>: <prs> pull
+  request(s), <matching> matching`, or `<time> failed: <error>`; nothing when
+  `lastPoll` is absent or malformed, and the counts must be non-negative safe
+  integers); *Last error* (the message, then the code in mono); *Waiting*
+  (`pending`, newest `observedAt` first, an unparseable time last, kernel
+  order among ties; at most 10, then "and N more"); *Live now* (`live`);
+  then the fires. Every event in these lists reads in one order: its label,
+  its event, then its instance (`#1 · opened · dev-review-pr-1`; a waiting
+  event has no instance). A schedule's runs lead with their outcome.
 - **The Test card** lists each `wouldFire` entry as `<label> → <instance>`
   (the name the spawn would be asked to derive), "(held)" when held, and
   "name shortened to fit" with an `aria-description` (and title) when

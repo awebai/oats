@@ -498,6 +498,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
       if (st.lastError.code) p.append(st.lastError.message ? ' ' : '', node('code', st.lastError.code, 'auto-mono'));
       history.append(p);
     }
+    // One order in every list of the section: the event's label, its kind, then the instance (Waiting has none).
     const eventText = e => [e.label, e.event].filter(Boolean).join(' · ');
     if (st?.pending.length) {
       const waiting = node('ul', undefined, 'auto-list auto-runs'); waiting.setAttribute('aria-label', 'Waiting');
@@ -507,7 +508,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     }
     if (st?.live.length) {
       const live = node('ul', undefined, 'auto-list auto-live'); live.setAttribute('aria-label', 'Live now');
-      for (const e of st.live) { const li = node('li'); if (e.instance) li.append(node('span', e.instance, 'auto-mono')); const what = eventText(e); if (what) li.append(e.instance ? ` · ${what}` : what); live.append(li); }
+      for (const e of st.live) { const li = node('li'), what = eventText(e); if (what) li.append(what); if (e.instance) li.append(what ? ' · ' : '', node('span', e.instance, 'auto-mono')); live.append(li); }
       history.append(node('p', 'Live now', 'auto-list-head'), live);
     }
     // A trigger's fires are read through firedEntry (labels by subject); a schedule's runs as recorded.
@@ -516,7 +517,10 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     if (items.length && (st?.pending.length || st?.live.length)) history.append(node('p', 'Fired', 'auto-list-head'));
     for (const r of items.slice(0, 10)) {
       const line = node('div', undefined, 'auto-run');
-      line.append(timeEl(r.at || r.startedAt || r.scheduledFor), node('span', [r.outcome ? OUTCOMES[r.outcome] || r.outcome : null, r.event, r.label, r.instance].filter(Boolean).join(' · ') || 'Recorded'));
+      const outcome = r.outcome ? OUTCOMES[r.outcome] || r.outcome : null;
+      // A trigger's fire in the section's order (label, event, instance); a schedule's run leads with its outcome.
+      const parts = kind === 'trigger' ? [r.label, r.event, r.instance, outcome] : [outcome, r.event, r.label, r.instance];
+      line.append(timeEl(r.at || r.startedAt || r.scheduledFor), node('span', parts.filter(Boolean).join(' · ') || 'Recorded'));
       history.append(line);
     }
     if (!items.length) history.append(node('p', row.runsHere ? 'Not run yet on this computer.' : 'Runs are recorded on the computer that runs it.', 'page-note'));

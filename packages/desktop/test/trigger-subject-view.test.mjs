@@ -51,9 +51,9 @@ test('the trigger page: last poll, the last error with its code in mono, events 
   assert.deepEqual(rows.slice(0, 3), ['19 min ago#12 · ready for review', '20 min ago#11 · opened', '21 min ago#10 · ready for review'], 'newest observed first');
   assert.match(fires.textContent, /and 2 more/);
   assert.match(fires.textContent, /1 of 2 live now · 3 fired in all · 12 waiting/);
-  assert.deepEqual([...fires.querySelectorAll('ul[aria-label="Live now"] li')].map(li => li.textContent), ['pr-review-storefront-41 · #41 · opened']);
+  assert.deepEqual([...fires.querySelectorAll('ul[aria-label="Live now"] li')].map(li => li.textContent), ['#41 · opened · pr-review-storefront-41']);
   assert.equal(fires.querySelector('ul[aria-label="Live now"] .auto-mono').textContent, 'pr-review-storefront-41');
-  assert.match([...fires.querySelectorAll('.auto-run')].at(-1).textContent, /^8 min ago.*ready for review · #40 · pr-review-storefront-40$/, 'a fire is named by its subject');
+  assert.match([...fires.querySelectorAll('.auto-run')].at(-1).textContent, /^8 min ago#40 · ready for review · pr-review-storefront-40$/, 'a fire is named by its subject');
   assert.ok(!/null|undefined/.test(fires.textContent));
 });
 
@@ -67,7 +67,13 @@ test('a failed poll says so; an older kernel shows none of the new lines', async
   const section = v.$('.page-section[data-section="Recent fires"]');
   assert.equal(section.querySelectorAll('.auto-test-line').length, 0); assert.equal(section.querySelector('ul[aria-label="Waiting"]'), null);
   assert.deepEqual([...section.querySelectorAll('ul[aria-label="Live now"] li')].map(li => li.textContent), ['#41'], 'a pre-0.49 live entry by its number');
-  assert.match(section.textContent, /8 min agoopened · #41$/, 'today\'s rendering');
+  assert.match(section.textContent, /8 min ago#41 · opened$/, 'a pre-0.49 fire by its number, in the section\'s order');
+});
+
+test('the last poll counts one pull request in the singular', async t => {
+  const one = structuredClone(STATUS); Object.assign(one.triggers[0], { lastPoll: { at: at(1), ok: true, prs: 1, matching: 1 } });
+  const u = mount(t, { status: async () => one }); await openPage(u);
+  assert.equal(u.$('.page-section[data-section="Recent fires"] .auto-test-line').textContent, 'Last poll 1 min ago: 1 pull request, 1 matching');
 });
 
 test('the Test card: each event that would fire, the instance it would derive, and a shortened name described', async t => {
@@ -105,7 +111,7 @@ test('a non-pull-request source shows no #; repo null shows no Repo fact and nev
   assert.equal(Object.hasOwn(facts, 'Repo'), false, 'repo null: the fact is omitted');
   const fires = u.$('.page-section[data-section="Recent fires"]');
   assert.deepEqual([...fires.querySelectorAll('ul[aria-label="Waiting"] li span')].map(s => s.textContent), ['cap:v9 · published', 'v8 · published'], 'no subject and no number: the key');
-  assert.deepEqual([...fires.querySelectorAll('ul[aria-label="Live now"] li')].map(li => li.textContent), ['rel-7 · v7 · published']);
+  assert.deepEqual([...fires.querySelectorAll('ul[aria-label="Live now"] li')].map(li => li.textContent), ['v7 · published · rel-7']);
   assert.ok(!/#|null/.test(fires.textContent), fires.textContent);
   u.$('.page-bar-actions button[data-verb=test]').click(); await tick(); await tick();
   assert.deepEqual([...u.$$('ul[aria-label="Would fire now"] li')].map(li => li.textContent), ['v8 → rel-v8']);
