@@ -252,6 +252,21 @@ function launchPromptAnswersOf(v) {
     || !(v.consentSource === null || safe(v.consentSource) && !!v.consentSource)) return null;
   return { awebDevelopmentChannel: v.awebDevelopmentChannel, consentSource: v.consentSource };
 }
+/** The capabilities whose `worktree` hook this spawn would run, in order (feature worktree-event,
+ * OATS 0.49.0): [{capability, required}]. Read tolerantly, unlike the rest of the preview: anything
+ * else (null, absent, malformed) is undefined, never a refused preview. The apply's CLI deadline and
+ * the dialog's Setup fact read it. Bounded like the preview's modules (MAX_HOOKS): a spawn runs at most one
+ * `worktree` hook per capability it composes. */
+export const MAX_HOOKS = MODULES_MAX;
+export function worktreeHooksOf(v) {
+  if (!Array.isArray(v) || v.length > MAX_HOOKS) return undefined;
+  const out = [];
+  for (const h of v) {
+    if (!record(h) || typeof h.capability !== 'string' || !h.capability || !safe(h.capability, 256) || typeof h.required !== 'boolean') return undefined;
+    out.push({ capability: h.capability, required: h.required });
+  }
+  return out;
+}
 export function previewData(v, expected, { composedFrom = false } = {}) {
   const t = previewTarget(expected);
   if (!t || !record(v) || v.spawnPreviewApi !== 2 || v.preview !== true || !record(v.subject)
@@ -278,12 +293,13 @@ export function previewData(v, expected, { composedFrom = false } = {}) {
   const launch = Object.hasOwn(v, 'launch') ? launchOf(v.launch, PREVIEW_FROM) : undefined;
   const launchPromptAnswers = Object.hasOwn(v, 'launchPromptAnswers') ? launchPromptAnswersOf(v.launchPromptAnswers) : undefined;
   if (launchPromptAnswers === null) return null;
+  const worktreeHooks = worktreeHooksOf(v.worktreeHooks);
   // Only reports carry `problem`: a preview that would hit one refuses with the error instead.
   if (Object.hasOwn(v, 'launch') && (launch === undefined || launch.problem !== null || launch.effective.harness !== e.harness || launch.effective.model !== e.model
     || launch.effective.launchConfig !== e.launchConfig)) return null;
   return { spawnPreviewApi: 2, preview: true, subject: { soul: v.subject.soul, agentsRoot: v.subject.agentsRoot, dir: v.subject.dir },
     decision: d, resolution: d.resolution, instance: d.instance, home: d.home, branch: d.branch, base: base ? { ...base } : null,
-    repo: e.repo, work: e.work, worktree: v.worktree, harness: e.harness, model: e.model, modelSource: v.modelSource, relation: e.relation?.kind ?? null,
+    repo: e.repo, work: e.work, worktree: v.worktree, ...(worktreeHooks ? { worktreeHooks } : {}), harness: e.harness, model: e.model, modelSource: v.modelSource, relation: e.relation?.kind ?? null,
     launchConfig: e.launchConfig, yolo: e.yolo, backend: e.backend, team: v.team ?? null,
     backendStatus: { name: v.backendStatus.name, installed: v.backendStatus.installed, started: false },
     preflight: { status: v.preflight.status, budgetMs: v.preflight.budgetMs, elapsedMs: v.preflight.elapsedMs }, messaging, teams, modules,

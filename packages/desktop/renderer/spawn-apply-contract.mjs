@@ -1,7 +1,7 @@
 /** Confirmed K6d input/data boundary. No kernel resolution or renderer key authority. */
 import { retainedSpawnDetails } from './launch-prompt-outcome.mjs';
 import { harnessOf } from './harness-names.mjs';
-import { record, previewSupported, previewSelector, previewChoices, previewTarget, previewData, previewFailure } from './spawn-preview-contract.mjs';
+import { record, previewSupported, previewSelector, previewChoices, previewTarget, previewData, previewFailure, MAX_HOOKS } from './spawn-preview-contract.mjs';
 import { spawnDecision, sameSpawnDecision } from './spawn-decision.mjs';
 const exact = (v, keys) => record(v) && Object.keys(v).every(k => keys.includes(k));
 const bytes = v => new TextEncoder().encode(v).byteLength;
@@ -12,6 +12,18 @@ export const spawnReference = v => typeof v === 'string' && /^[a-f0-9]{64}$/.tes
 export const spawnApplySupported = cli => previewSupported(cli) && cli.spawnApplyApi === 1
   && cli.features.length <= 128 && cli.features.every(f => typeof f === 'string')
   && cli.features.includes('spawn-apply-2') && cli.features.includes('spawn-idempotency-2');
+/** The apply's CLI deadline. 60 s, unless the CLI declares feature worktree-event and the confirmed
+ * preview runs n > 0 `worktree` hooks: the kernel bounds each at 30 minutes, so 60 s + n × 30 min + 60 s.
+ * Derived from the preview the operator confirmed, never reread. */
+export const SPAWN_APPLY_MS = 60000;
+export const WORKTREE_HOOK_MS = 30 * 60000;
+export function spawnApplyDeadlineMs(cli, preview) {
+  const n = Array.isArray(cli?.features) && cli.features.includes('worktree-event') && Array.isArray(preview?.worktreeHooks) ? preview.worktreeHooks.length : 0;
+  return n > 0 ? SPAWN_APPLY_MS + n * WORKTREE_HOOK_MS + SPAWN_APPLY_MS : SPAWN_APPLY_MS;
+}
+/** Whether a deadline is one spawnApplyDeadlineMs can produce (at most MAX_HOOKS hooks). */
+export const spawnApplyDeadline = v => v === SPAWN_APPLY_MS
+  || Number.isSafeInteger(v) && v > 2 * SPAWN_APPLY_MS && (v - 2 * SPAWN_APPLY_MS) % WORKTREE_HOOK_MS === 0 && (v - 2 * SPAWN_APPLY_MS) / WORKTREE_HOOK_MS <= MAX_HOOKS;
 export function spawnApplyChoicesSupported(cli, choices, wakeRequested = false) {
   const has = (values, value) => Array.isArray(values) && values.includes(value);
   return !!choices && (!choices.harness || has(cli?.harnesses, choices.harness))
@@ -94,7 +106,7 @@ export function spawnApplyView(v, expected = {}) {
     || target && expected.selector && (target.selector.soul !== expected.selector.soul || target.selector.agentsRoot !== expected.selector.agentsRoot)
     || v.spawnRef !== null && !spawnReference(v.spawnRef) || expected.ref && v.spawnRef !== null && v.spawnRef !== expected.ref) return null;
   if (['unavailable', 'refused', 'unknown', 'stale', 'incomplete'].includes(v.status)) {
-    const out = spawnApplyFailure(v.reason?.code, { target, spawnRef: v.spawnRef, status: v.status });
+    const out = spawnApplyFailure(v.reason?.code, { target, spawnRef: v.spawnRef, status: v.status, message: v.reason?.message });
     if (v.status === 'incomplete') {
       const incomplete = retainedSpawnDetails(v.incomplete);
       if (v.reason?.code !== 'E_SPAWN_INCOMPLETE' || !target || !incomplete) return null;
@@ -116,8 +128,11 @@ export function spawnApplyView(v, expected = {}) {
     if ((v.status === 'partial') !== partial) return null;
     if (partial) reason = receipt.wake.error ?? { code: 'E_WAKE_OUTCOME_UNKNOWN', message: WAKE_OUTCOME_UNKNOWN };
   }
+  // The CLI deadline the broker set from this preview (spawnApplyDeadlineMs): the renderer follows a
+  // `pending` apply for this long (plus a margin). Absent from an older backend.
+  const applyWithinMs = spawnApplyDeadline(v.applyWithinMs) ? v.applyWithinMs : undefined;
   return { spawnApplyViewApi: 1, status: v.status, target, spawnRef: v.spawnRef, preview, wakeRequested: v.wakeRequested,
-    receipt, reason, ...(v.repeated === true ? { repeated: true } : {}) };
+    receipt, reason, ...(applyWithinMs ? { applyWithinMs } : {}), ...(v.repeated === true ? { repeated: true } : {}) };
 }
 const errors = {
   E_APPLY_UNAVAILABLE: 'Confirmed spawn requires preview API 2, apply API 1 and advertised spawn-preview-2, spawn-apply-2 and spawn-idempotency-2.',
@@ -142,15 +157,27 @@ const errors = {
   E_CLI_TIMEOUT: 'The spawn command timed out. Creation may already have happened; do not start a new confirmation to retry it.',
   E_CLI_OUTPUT_LIMIT: 'The spawn command exceeded its output limit. Its creation outcome is unconfirmed.',
   E_INPUT_PREPARATION: 'Private spawn instruction files could not be prepared; no CLI was invoked.',
+  E_INTERRUPTED: 'The spawn was interrupted while its worktree hooks ran.',
+  E_REQUIRED_HOOK_FAILED: 'A required worktree hook failed.',
+  E_HOOK_ENVIRONMENT_CONTRACT: 'A worktree hook broke the hook environment contract.',
 };
-export function spawnApplyReason(code) {
+/** Feature worktree-event: a dispatched spawn failure with one of these codes and no
+ * `details.unconfirmed: true` was rolled back by the kernel (confirmed compensation): nothing
+ * was created. With the marker its cleanup is owed. Only these three; every other code keeps
+ * the unknown-unless-proven rule. */
+export const ROLLED_BACK_CODES = ['E_INTERRUPTED', 'E_REQUIRED_HOOK_FAILED', 'E_HOOK_ENVIRONMENT_CONTRACT'];
+/** The kernel's message travels only for ROLLED_BACK_CODES (it names the capability and its log);
+ * bounded here, and shown through displayLine. */
+const kernelText = v => typeof v === 'string' && !!v.trim() && v.length <= 4096 && !v.includes('\0');
+export function spawnApplyReason(code, kernelMessage) {
   if (typeof code !== 'string') code = 'E_CLI_FAILED';
+  if (ROLLED_BACK_CODES.includes(code)) return { code, message: kernelText(kernelMessage) ? kernelMessage : errors[code] };
   if (Object.hasOwn(errors, code)) return { code, message: errors[code] };
   const reason = previewFailure(code).reason;
   return reason.code === code && code !== 'E_CLI_FAILED' ? reason : { code: 'E_CLI_FAILED', message: errors.E_CLI_FAILED };
 }
-export function spawnApplyFailure(code, { target = null, spawnRef = null, status = 'unavailable' } = {}) {
+export function spawnApplyFailure(code, { target = null, spawnRef = null, status = 'unavailable', message } = {}) {
   return { spawnApplyViewApi: 1, status: ['unavailable', 'unknown', 'refused', 'stale', 'incomplete'].includes(status) ? status : 'unavailable',
     target: previewTarget(target), spawnRef: spawnReference(spawnRef) ? spawnRef : null,
-    preview: null, receipt: null, reason: spawnApplyReason(code) };
+    preview: null, receipt: null, reason: spawnApplyReason(code, message) };
 }

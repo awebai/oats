@@ -70,7 +70,7 @@ import {
   collapseKey, hasInstanceChildren, instanceRepoLabel, treeConnectors, filterInstanceTree, instanceMatchesFilter, instanceVisibleInTree, waitingRollup,
   captureTreeRenderState, rosterResponseOwns, clusterSeparator, renderRosterCount,
   instanceId, rosterParentId, terminalKey, resolveTerminalOpen,
-  createRosterLoading, rosterSignature, markStaleControl, staleBlocked, ROSTER_STALE_TITLE,
+  createRosterLoading, rosterSignature, markStaleControl, staleBlocked, ROSTER_STALE_TITLE, heldHome,
 } from "./instance-tree.mjs";
 import {
   tabVisibleInContext, canActivateTab,
@@ -757,16 +757,28 @@ function renderContextRoster(instances) {
   }
   listEl.innerHTML = "";
   // Background spawns (Spec C): this workspace's pending rows join the layout where the real row will
-  // stand (its relation), so the real row replaces them in place. A row the roster already reports is
-  // the real one. The count above stays the kernel's observation only.
+  // stand (its relation), so the real row replaces them in place. #802: while its job is in flight
+  // (spawning, checking) a row the roster reports for its home is still drawn as the pending row, with
+  // the roster's facts and the pending row's treatment, so it never flashes to a stopped instance with
+  // actions; once the job is not in flight the reported row is the real one. A row the kernel reports
+  // `rollbackIncomplete` is the real one at once: the spawn is gone, and its Retire is the way on. The
+  // count above stays the kernel's observation only.
+  const jobs = ws && ws === currentWorkspace() ? spawnJobs.rows(ws) : [];
+  // Only what the kernel decided (name, home, soul, relation): never a guessed runtime state.
+  const decided = jobs.map((p) => ({ instance: p.instance, agent: p.agent, agentsRoot: p.agentsRoot, home: p.home,
+    ...(p.parentInstance ? { parentInstance: p.parentInstance } : {}), ...(p.siblingInstance ? { siblingInstance: p.siblingInstance } : {}),
+    ...(p.deployment ? { deployment: p.deployment } : {}), pendingSpawn: p }));
+  const inFlight = new Map(decided.filter((d) => ["spawning", "checking"].includes(d.pendingSpawn.pending)).map((d) => [instanceId(d), d.pendingSpawn]));
   const reported = new Set(instances.map(instanceId));
-  const spawning = ws && ws === currentWorkspace() ? spawnJobs.rows(ws)
-    // Only what the kernel decided (name, home, soul, relation): never a guessed runtime state.
-    .map((p) => ({ instance: p.instance, agent: p.agent, agentsRoot: p.agentsRoot, home: p.home,
-      ...(p.parentInstance ? { parentInstance: p.parentInstance } : {}), ...(p.siblingInstance ? { siblingInstance: p.siblingInstance } : {}),
-      ...(p.deployment ? { deployment: p.deployment } : {}), pendingSpawn: p }))
-    .filter((p) => !reported.has(instanceId(p))) : [];
+  if (inFlight.size) instances = instances.map((i) => inFlight.has(instanceId(i)) && !i.rollbackIncomplete
+    ? { ...i, pendingSpawn: inFlight.get(instanceId(i)), reportedSpawn: true } : i);
+  const spawning = decided.filter((p) => !reported.has(instanceId(p)));
   if (spawning.length) instances = [...instances, ...spawning];
+  // "since <local time>" on a row setting up its worktree: the start of a job of this window for its home, if any.
+  const spawnStart = (i) => {
+    const job = i.pendingSpawn || jobs.find((p) => p.home === i.home && p.agentsRoot === i.agentsRoot);
+    return Number.isFinite(job?.startedAt) ? job.startedAt : null;
+  };
   const matching = filterInstanceTree(instances, contextFilter);
   const rosterGeneration = workspaceGeneration();
   const filtering = !!contextFilter.trim();
@@ -816,7 +828,9 @@ function renderContextRoster(instances) {
     for (const cluster of group.clusters) {
       const items = cluster.instances;
       for (const i of items) {
-        if (i.pendingSpawn) { listEl.append(pendingSpawnRow(i, items, instances)); continue; }
+        // #802: a home the roster reports setting up its worktree (spawned here or anywhere) wears the pending row's treatment too.
+        const held = heldHome(i);
+        if (i.pendingSpawn || held?.kind === "spawning") { listEl.append(pendingSpawnRow(i, items, instances, spawnStart(i))); continue; }
         const rowWrap = document.createElement("div");
         rowWrap.className = "ctx-tree-row";
         rowWrap.style.setProperty("--depth", String(i.depth || 0));
@@ -855,17 +869,22 @@ function renderContextRoster(instances) {
         // focusable (aria-disabled, spec F): its row tools — the actions menu's Inspect/Stop/Retire — must
         // stay reachable from the keyboard. Its activation does nothing and says why.
         const unavailable = i.running == null || !canAddressRemote(i);
-        if (unavailable) { row.setAttribute("aria-disabled", "true"); row.classList.add("unavailable"); }
+        // #802: a home a spawn or a retire left half cleaned (held: the spawning one drew above) opens and starts
+        // nothing either; its actions menu offers Retire only.
+        if (unavailable || held) { row.setAttribute("aria-disabled", "true"); row.classList.add("unavailable"); }
         // Why it can't open: a short label on the meta line, the full sentence as its title and description.
         const reason = rowReason(i);
-        const why = reason?.sentence || i.runtimeError || (i.running ? `Open ${i.instance} terminal` : `Start ${i.instance}`);
+        const why = reason?.sentence || held?.sentence(i.instance) || i.runtimeError || (i.running ? `Open ${i.instance} terminal` : `Start ${i.instance}`);
         // Workspace v4: an enabled row explains itself in the hover/focus card; an unavailable one keeps its reason as a title.
-        const pr = i.server || i.remote ? null : rosterPrs.get(i.home);
+        const pr = held || i.server || i.remote ? null : rosterPrs.get(i.home);
         const heldStale = rowHeldStale(i);
         // Needs input: this row's own claim (waitingClaim is the only gate), and the waiting rows hidden under it.
         const claim = waitingClaim(i, { stale: heldStale }), below = waitingBelow.get(instanceId(i)) || [];
         if (unavailable) { const said = why + waitingSentence(claim, below, Date.now()); row.title = said; row.setAttribute("aria-description", said); }
-        else rosterTip.bind(row, () => rosterTipFacts(i, why, pr, { below, stale: heldStale }));
+        else {
+          rosterTip.bind(row, () => rosterTipFacts(i, why, pr, { below, stale: heldStale }));
+          if (held) row.setAttribute("aria-description", why);
+        }
         const dot = document.createElement("span");
         dot.className = `ctx-dot ${state === "running" ? "on" : state === "stopped" ? "off" : "unknown"}`;
         const copy = document.createElement("span");
@@ -885,6 +904,14 @@ function renderContextRoster(instances) {
           meta.textContent = ""; meta.classList.add("ctx-meta-pr"); meta.append(lead, prChip(document, pr));
           if (rest) { const tail = document.createElement("span"); tail.className = "ctx-meta-tail"; tail.textContent = rest; meta.append(tail); }
         }
+        // #802: a quarantined home reads its state (text, never colour alone) and what finishes it, muted; its
+        // repository and branch stay in the hover card.
+        const heldLines = [];
+        if (held) {
+          meta.className = "ctx-meta ctx-spawn-state"; meta.removeAttribute("title"); meta.textContent = held.state;
+          const hint = document.createElement("span"); hint.className = "ctx-meta ctx-held-hint"; hint.textContent = held.hint;
+          heldLines.push(hint);
+        }
         // Spec E: a spawn the operator was not taken to says New (text and a dot, never colour alone)
         // until its row is opened, or its tab is (the first paint where it is the active row).
         if (isActive) spawnJobs.seen?.(ws, i);
@@ -900,8 +927,8 @@ function renderContextRoster(instances) {
             const markDot = document.createElement("span"); markDot.className = "ctx-new-dot"; markDot.setAttribute("aria-hidden", "true");
             mark.append(markDot, "New"); line.append(mark);
           }
-          copy.append(line, meta);
-        } else copy.append(name, meta);
+          copy.append(line, meta, ...heldLines);
+        } else copy.append(name, meta, ...heldLines);
         row.append(dot, copy);
         if (typeof i.harness === "string" && i.harness) {
           const runtime = createRuntimeBadge(document, i.harness);
@@ -916,7 +943,7 @@ function renderContextRoster(instances) {
         // A row of a stale deployment (#482: its last re-read failed) is held the same way.
         const staleStart = heldStale && !i.running;
         if (staleStart) { row.title = ROSTER_STALE_TITLE; row.setAttribute("aria-description", ROSTER_STALE_TITLE); }
-        row.addEventListener("click", () => { if (staleStart || unavailable) return; spawnJobs.seen?.(ws, i); i.running ? openTerminalTab(i) : openInstanceStart(i); });
+        row.addEventListener("click", () => { if (staleStart || unavailable || held) return; spawnJobs.seen?.(ws, i); i.running ? openTerminalTab(i) : openInstanceStart(i); });
         // full keyboard tree operability (roving tabindex; policy in
         // roster-keys.mjs). Enter is the button's native activation.
         row.dataset.rosterChildren = hasChildren ? "1" : "0";
@@ -934,7 +961,7 @@ function renderContextRoster(instances) {
           open.addEventListener("click", () => ctx.openExternal(pr.url));
           tools.append(open);
         }
-        if (i.running === false) {
+        if (i.running === false && !held) {
           const start = document.createElement("button"); start.className = "act ctx-start";
           start.textContent = "Start…"; start.setAttribute("aria-label", `Start ${i.instance}`);
           start.disabled = !canAddressRemote(i);
@@ -1015,11 +1042,17 @@ function renderContextRoster(instances) {
 /* A pending spawn's row (Spec C): "Spawning…" text and a spinner (never colour alone), announced once;
    it opens nothing and has no instance actions until the real row replaces it. It keeps the real row's
    identity (data-tree-instance), so a focused pending row stays focused across the replacement. An
-   unknown outcome reads "Outcome unknown" with a visible Check result (the existing result action). */
-function pendingSpawnRow(i, items, instances) {
-  const p = i.pendingSpawn, unknown = p.pending !== "spawning", checking = p.pending === "checking";
+   unknown outcome reads "Outcome unknown" with a visible Check result (the existing result action).
+   #802: a home the roster reports setting up its worktree (spawnInProgress, this window's job or a spawn
+   made anywhere) reads "Setting up worktree…" in the same treatment, with no tools, and "since <local
+   time>" when a job of this window knows its start (`startedAt`). A row the roster reports (a held home,
+   or an in-flight job's home) explains itself in the hover card, with the roster's facts. */
+function pendingSpawnRow(i, items, instances, startedAt = null) {
+  const p = i.pendingSpawn ?? null, held = heldHome(i), settingUp = held?.kind === "spawning";
+  const unknown = !settingUp && !!p && p.pending !== "spawning", checking = unknown && p.pending === "checking";
+  const reported = !p || !!i.reportedSpawn;
   const rowWrap = document.createElement("div");
-  rowWrap.className = "ctx-tree-row ctx-spawn-row" + (unknown ? " ctx-spawn-unknown" : "") + (p.revealed ? " ctx-spawn-revealed" : "");
+  rowWrap.className = "ctx-tree-row ctx-spawn-row" + (unknown ? " ctx-spawn-unknown" : "") + (p?.revealed ? " ctx-spawn-revealed" : "");
   rowWrap.style.setProperty("--depth", String(i.depth || 0));
   const guides = document.createElement("span");
   guides.className = "ctx-guides";
@@ -1039,9 +1072,11 @@ function pendingSpawnRow(i, items, instances) {
   row.dataset.rosterCollapsed = "0";
   if (!instanceMatchesFilter(i, contextFilter)) row.dataset.filterContext = "true";
   row.setAttribute("aria-disabled", "true");
-  const why = unknown ? `The outcome of spawning ${i.instance} is not known yet. Check result asks again.`
-    : `${i.instance} is being spawned. It opens once the roster reports it.`;
-  row.title = why; row.setAttribute("aria-description", why);
+  const why = settingUp ? held.sentence(i.instance) : unknown ? `The outcome of spawning ${i.instance} is not known yet. Check result asks again.`
+    : reported ? `${i.instance} is being spawned. It opens once the spawn finishes.` : `${i.instance} is being spawned. It opens once the roster reports it.`;
+  row.setAttribute("aria-description", why);
+  if (reported) rosterTip.bind(row, () => rosterTipFacts(i, why, null, {}));
+  else row.title = why;
   const mark = document.createElement("span");
   mark.setAttribute("aria-hidden", "true");
   mark.className = unknown && !checking ? "ctx-dot unknown" : "ctx-spawn-spinner";
@@ -1052,8 +1087,10 @@ function pendingSpawnRow(i, items, instances) {
   name.textContent = i.instance;
   const meta = document.createElement("span");
   meta.className = "ctx-meta ctx-spawn-state";
-  meta.textContent = checking ? "Checking result…" : unknown ? "Outcome unknown" : "Spawning…";
+  meta.textContent = settingUp ? held.state : checking ? "Checking result…" : unknown ? "Outcome unknown" : "Spawning…";
   copy.append(name, meta);
+  const since = settingUp && startedAt !== null ? waitingClock(startedAt) : "";
+  if (since) { const line = document.createElement("span"); line.className = "ctx-meta ctx-held-hint ctx-spawn-since"; line.textContent = `since ${since}`; copy.append(line); }
   row.append(mark, copy);
   row.tabIndex = -1;
   row.addEventListener("keydown", onRosterRowKey);
@@ -1071,7 +1108,7 @@ function pendingSpawnRow(i, items, instances) {
     tools.append(check);
     rowWrap.append(tools);
   }
-  if (spawnJobs.announce(p.id)) announceSpawn(`Spawning ${i.instance}…`);
+  if (p && spawnJobs.announce(p.id)) announceSpawn(`Spawning ${i.instance}…`);
   return rowWrap;
 }
 

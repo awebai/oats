@@ -91,13 +91,21 @@ test("announced once through a polite live region", async t => {
   assert.equal(u.live().textContent, "", "a repaint never announces it again");
 });
 
-test("the real row replaces the pending one in place and keeps its focus", async t => {
+test("#802: while its job is in flight the reported row keeps the pending presentation; then the real row replaces it in place and keeps its focus", async t => {
   let rows = [pending()];
   const u = fixture(t, () => rows);
   u.render(roster);
   u.row("dev-new").focus();
-  const real = [...roster, instance("dev-new", "root")];
-  u.render(real); // the store still lists it until observe(); a reported row wins
+  const real = [...roster, instance("dev-new", "root", { running: false })];
+  u.render(real); // the job is still spawning: the roster's row is drawn as the pending one, never a stopped row with actions
+  assert.equal(u.list.querySelectorAll(".ctx-inst").length, 4, "never both");
+  const held = u.row("dev-new");
+  assert.equal(held.classList.contains("pending"), true); assert.equal(held.querySelector(".ctx-spawn-state").textContent, "Spawning…");
+  assert.equal(held.closest(".ctx-tree-row").querySelector(".ctx-row-tools"), null, "no Start, no actions");
+  assert.equal(u.doc.activeElement, held, "focus kept");
+  held.click(); // openTerminalTab / openInstanceStart would fail the test
+  rows = [pending({ pending: "unknown" })]; // no longer in flight: the reported row is the real one
+  u.render(real);
   assert.equal(u.list.querySelectorAll(".ctx-inst").length, 4, "never both");
   const replaced = u.row("dev-new");
   assert.equal(replaced.classList.contains("pending"), false);

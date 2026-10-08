@@ -114,6 +114,24 @@ status; it does not cancel the dispatched operation or signal its process.
   was kept before trying again.") while that branch exists, and Retire
   can no longer complete it: the person checks the branch and deletes it with
   Git, then removes the home again.
+- **The one exception** (feature `worktree-event`, OATS 0.49.0): retiring the
+  home of a spawn killed while its `worktree` hooks ran can finish that spawn's
+  own compensation and delete the branch it created, when the branch still
+  points at its creation commit. The kernel reports it only in the additive
+  `spawnCompensation` (`{branch, branchDeleted: true}` or `{branch,
+  branchDeleted: false, reason}`), never in `branchDeleted`, so the strict rule
+  above is unchanged. It is projected tolerantly (`spawnCompensationOf` in
+  `renderer/lifecycle-contract.mjs`: anything malformed is ignored, never a
+  refused receipt) and shown as one result line: "Branch <branch> deleted: an
+  interrupted spawn left it, and it held no work." or "Branch <branch> kept:
+  <reason>", branch and reason through `displayLine`.
+- `E_LIFECYCLE_BUSY` keeps its sentence, with one exception: a retire the
+  kernel refuses as busy for a row with `rollbackIncomplete` says "OATS can't
+  confirm that the spawn which left this home has stopped, so it won't retire it
+  yet. Check the process it names, then retire it from the CLI with --force.",
+  with the kernel's message (it names the process) under it. Desktop offers no
+  `--force`. Desktop's own busy (an apply slot or the plan cap) carries no kernel
+  message and keeps today's sentence.
 - `E_PLAN_STALE` displays the validated producer's fresh plan and a new reference;
   the operator must explicitly confirm again. It never auto-applies.
 - Preservation/cleanup failure may follow earlier effects. Render retained/partial
@@ -146,6 +164,34 @@ The kernel's Stop replay horizon is per key while its home exists. Retire
 receipts live beside the instances directory and survive home removal. Desktop
 cannot make those horizons stronger. Plan reads mutate no instance/session or
 worktree; the kernel may append its documented `retire-planned` audit event.
+
+## Quarantined and spawning rows
+
+The roster says what a home is when it is not an ordinary instance, in text
+(never colour alone):
+
+- `spawnInProgress` (feature `worktree-event`): a spawn still running its
+  `worktree` hooks, verified alive. **Setting up worktree…**, no actions at
+  all (no Start, Stop, Retire or split; activating it opens nothing); its hover
+  card's status is "Spawning (setting up worktree)". The kernel refuses its
+  retire anyway (`E_LIFECYCLE_BUSY`).
+- `rollbackIncomplete`: **Spawn didn't finish**, muted "Retire it to clean up".
+- `retirePending`: **Retire didn't finish**, muted "Retire it again to
+  complete".
+
+The two quarantined states offer **Retire instance…** only: no Start, Stop or
+split. The kernel's retire completes both, through the ordinary plan → apply
+dialog. A row never shows `spawnInProgress` and `rollbackIncomplete` together;
+if both arrive, `rollbackIncomplete` wins.
+
+The retire plan of a `rollbackIncomplete` row says "Branches and pull requests
+are not changed, except a branch an interrupted spawn left with no work, which
+is deleted.": that retire finishes the spawn's compensation, and the result's
+`spawnCompensation` line says whether the branch was deleted or kept. With
+**Also delete the worktree** checked, its plan line and warning drop "Branch
+… stays in the repository.", so that sentence is the plan's only word on
+branches (the kernel deletes the branch only when the worktree is removed).
+Every other retire plan keeps "Branches and pull requests are not changed."
 
 ## UI and ownership
 

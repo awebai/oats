@@ -1,5 +1,5 @@
 /** Keyboard-accessible lifecycle actions, independent of terminal liveness. */
-import { instanceId } from "./instance-tree.mjs";
+import { instanceId, heldHome } from "./instance-tree.mjs";
 import { iconElement } from "./shell-icons.mjs";
 import { unsupportedSession } from "./instance-presentation.mjs";
 import { canAddressRemote, rowReason } from "./remote-address.mjs";
@@ -155,8 +155,12 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
       }
     }
   }
-  const descriptors = [...extra, ...[["inspect", "Knowledge & capabilities…"], ...launchAction, ['stop', 'Stop…'], ["retire", "Retire instance…"]]
-    .map(([action, label, reason]) => ({ action, label, ...(reason ? { reason } : {}) }))];
+  // #802: a home the kernel holds offers no Start, Stop or split: Retire only when a spawn or a retire left it
+  // half cleaned (the kernel's retire completes it), nothing while its spawn sets up the worktree.
+  const held = heldHome(instance);
+  const descriptors = held ? (held.retire ? [{ action: 'retire', label: 'Retire instance…' }] : [])
+    : [...extra, ...[["inspect", "Knowledge & capabilities…"], ...launchAction, ['stop', 'Stop…'], ["retire", "Retire instance…"]]
+      .map(([action, label, reason]) => ({ action, label, ...(reason ? { reason } : {}) }))];
   for (const descriptor of descriptors) {
     const { action, label, reason, actionId } = descriptor;
     const item = doc.createElement("button"); item.type = "button"; item.tabIndex = -1;
@@ -174,6 +178,8 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
     items.push(item); menu.append(item);
   }
   syncOptions();
+  // A spawning home has no actions at all: the trigger says why instead of opening an empty menu.
+  if (!descriptors.length && !unrouted) { trigger.disabled = true; trigger.title = held.sentence(instance.instance); }
   wrapper.append(trigger, menu);
   return wrapper;
 }

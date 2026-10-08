@@ -5,6 +5,8 @@
  * dialog shows the operator one sentence about what happened and what to do;
  * the code and the technical message stay available behind "Details" for
  * troubleshooting. Wording only: no decision here depends on the text. */
+import { displayLine } from './display-text.mjs';
+import { ROLLED_BACK_CODES } from './spawn-apply-contract.mjs';
 
 const COMMON = {
   E_BAD_ARGS: 'Some of these values can’t be used. Check the name and Developer settings.',
@@ -88,4 +90,26 @@ export function catalogProblem(catalog) {
   if (catalog.reason) parts.push('OATS couldn’t load this workspace’s souls, so the list may be out of date. Sync the workspace and try again.');
   if (catalog.ambiguous?.length) parts.push(`Not offered because two repositories declare the same name: ${catalog.ambiguous.join(', ')}.`);
   return parts.join(' ');
+}
+
+/** Feature worktree-event (#802): the kernel rolled the spawn back (E_INTERRUPTED,
+ * E_REQUIRED_HOOK_FAILED, E_HOOK_ENVIRONMENT_CONTRACT without `unconfirmed`), so nothing
+ * was created; or its cleanup is owed (the same codes with it). The kernel's message names
+ * the capability and its log: it goes under Details, through displayLine. */
+export function rolledBackProblem(reason, instance) {
+  const code = reason?.code;
+  if (!ROLLED_BACK_CODES.includes(code)) return null;
+  const text = code === 'E_INTERRUPTED'
+    ? `The spawn of ${instance} was interrupted while its worktree was being set up, and was rolled back. Nothing was created.`
+    : `A capability couldn’t set up the worktree for ${instance}, so the spawn was rolled back. Nothing was created.`;
+  return { text, code, detail: kernelDetail(code, reason.message) };
+}
+export function cleanupOwedProblem(reason, instance) {
+  if (!ROLLED_BACK_CODES.includes(reason?.code)) return null;
+  return { text: `The spawn of ${instance} was stopped, but its cleanup didn’t finish. Retire ${instance} from the roster to complete it.`,
+    code: reason.code, detail: kernelDetail(reason.code, reason.message) };
+}
+function kernelDetail(code, message) {
+  const line = displayLine(message);
+  return line ? `${code} · ${line}` : code;
 }

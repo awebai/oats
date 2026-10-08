@@ -11,7 +11,8 @@ const nullableDetail = (v, max) => v === null ? null : detail(v, max);
 export const EVENT_TITLES = Object.freeze({ spawned: 'Spawned', launched: 'Launched', restarted: 'Restarted', stopped: 'Stopped',
   'stop-refused': 'Stop refused', 'retire-planned': 'Retirement planned', retired: 'Retired',
   'worktree-retained': 'Worktree retained', 'worktree-removed': 'Worktree removed', 'branch-deleted': 'Branch deleted',
-  'child-spawn-refused': 'Child spawn refused', 'launch-prompt': 'Launch prompt', recomposed: 'Instructions recomposed', waiting: 'Waiting claim' });
+  'child-spawn-refused': 'Child spawn refused', 'launch-prompt': 'Launch prompt', recomposed: 'Instructions recomposed', waiting: 'Waiting claim',
+  'worktree-added': 'Worktree added' });
 const strings = {
   spawned: ['agent', 'work', 'branch', 'model', 'parentInstance', 'relation'], launched: ['backend', 'launchConfig'],
   restarted: ['phase', 'signal'], stopped: ['signal', 'state'], 'stop-refused': ['phase', 'signal', 'state'],
@@ -21,6 +22,23 @@ const strings = {
 };
 const numbers = { restarted: ['waitedMs'], stopped: ['waitedMs'], 'stop-refused': ['waitedMs'], 'retire-planned': ['children', 'dirty'], recomposed: ['blocks'] };
 const booleans = { spawned: ['launched'], retired: ['keepDir', 'self', 'quarantine'] };
+/** Read tolerantly, outside the listed keys above (which refuse the read when malformed): a malformed value
+ * drops only its own fact. `worktree-added` (0.49.0): an extra tree `oats worktree add` made. */
+const tolerant = { 'worktree-added': ['purpose', 'path', 'branch', 'base', 'member'] };
+const tolerantText = v => typeof v === 'string' && !!v && v.length <= 4096 ? detail(v, 4096) : undefined;
+/** A `worktree` hooks' receipt (`worktree-added` `hooks`, `spawned` `worktreeHooks`, 0.49.0) as `[{capability, ok,
+ * log}]`, `log` the hook's log file or null (a rolled-back spawn's log is removed). Anything malformed, the value
+ * or one entry, is undefined: the fact is dropped, never the read. Idempotent, so the renderer's re-read agrees. */
+export function hookReceipt(v) {
+  if (!Array.isArray(v) || !v.length || v.length > 256) return undefined;
+  const out = [];
+  for (const h of v) {
+    if (!record(h) || typeof h.ok !== 'boolean' || tolerantText(h.capability) === undefined
+      || !(h.log == null || tolerantText(h.log) !== undefined)) return undefined;
+    out.push({ capability: tolerantText(h.capability), ok: h.ok, log: h.log == null ? null : tolerantText(h.log) });
+  }
+  return out;
+}
 const keysFor = (table, kind) => Object.hasOwn(table, kind) ? table[kind] : [];
 function facts(kind, v, publicView) {
   if (v === undefined) return {};
@@ -38,6 +56,10 @@ function facts(kind, v, publicView) {
     out[key] = v[key];
   }
   if (Object.hasOwn(v, 'reason')) out.reason = nullableDetail(v.reason);
+  for (const key of keysFor(tolerant, kind)) { const fact = tolerantText(v[key]); if (fact !== undefined) out[key] = fact; }
+  const hooks = kind === 'worktree-added' ? 'hooks' : kind === 'spawned' ? 'worktreeHooks' : null;
+  const receipt = hooks && hookReceipt(v[hooks]);
+  if (receipt) out[hooks] = receipt;
   // A waiting claim's note (K's `waiting` rows): the claim rule — absent stays absent, malformed is null.
   if (kind === 'waiting' && Object.hasOwn(v, 'message')) out.message = waitingMessage(v.message);
   if (['stopped', 'stop-refused', 'restarted'].includes(kind)) {

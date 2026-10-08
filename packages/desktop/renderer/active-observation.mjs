@@ -23,6 +23,9 @@ export function projectActivePanel(panel) {
       ...(typeof raw.addressable === 'boolean' ? { addressable: raw.addressable } : {}), savedRoute: raw.savedRoute === true,
       missingRemotely: raw.missingRemotely === true, serverUnreached: raw.serverUnreached === true,
       createdAt: eventsTimestamp(raw.createdAt) ? raw.createdAt : null };
+    // #802: the kernel's hold on the home (a spawn setting up its worktree, a home left half cleaned), as /api/panel
+    // forwards it (true only): instance-tree.mjs heldHome gates the canvas's actions on it.
+    for (const key of ['spawnInProgress', 'rollbackIncomplete', 'retirePending']) if (raw[key] === true) instance[key] = true;
     for (const key of [...identityFields, ...displayed, ...reported]) instance[key] = text(raw[key]);
     for (const key of ['parentInstance', 'siblingInstance']) instance[key] = typeof raw[key] === 'string' ? raw[key] : '';
     const id = instanceId(instance);

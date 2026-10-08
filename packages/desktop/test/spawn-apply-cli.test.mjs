@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { cliSpawnApply } from '../spawn-apply-cli.mjs';
+import { execFile } from 'node:child_process';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { spawnDecision } from '../renderer/spawn-decision.mjs';
 import { cli, target, anchor, data, tick, DEPLOYMENT, ROOT } from './helpers/spawn-preview-fixture.mjs';
 const capable = () => ({ ...structuredClone(cli), spawnApplyApi: 1, features: [...cli.features, 'spawn-apply-2', 'spawn-idempotency-2', 'schedule'] });
@@ -173,4 +177,90 @@ test('malformed additive diagnostics do not erase retained CLI failure', async (
   const f = fixture({ exec: (_b, _a, _o, done) => done(null, JSON.stringify({ schemaVersion: 1, ok: false, error: { code: 'E_SPAWN_INCOMPLETE', details: d } })) });
   const r = await cliSpawnApply(capable(), options(), f.io);
   assert.equal(r.envelope.error.code, 'E_SPAWN_INCOMPLETE'); assert.equal(r.envelope.error.details.launchPrompts.status, 'unknown');
+});
+test('#802: the broker passes the CLI deadline in; only a deadline spawnApplyDeadlineMs can produce crosses', async () => {
+  for (const deadlineMs of [60000, 1920000, 3720000, 120000 + 65 * 1800000, 120000 + 256 * 1800000]) {
+    const f = fixture(); await cliSpawnApply(capable(), options({ deadlineMs }), f.io);
+    assert.equal(f.calls[0].opts.timeout, deadlineMs);
+  }
+  for (const deadlineMs of [0, 59999, 61000, 1920001, '1920000', Infinity, 120000 + 257 * 1800000]) {
+    const f = fixture(), result = await cliSpawnApply(capable(), options({ deadlineMs }), f.io);
+    assert.equal(result.started, false); assert.equal(result.envelope.error.code, 'E_BAD_ARGS'); assert.equal(f.calls.length, 0);
+  }
+});
+const killed = () => Object.assign(Error('killed'), { killed: true, signal: 'SIGTERM', code: null });
+const interrupted = (details = { signal: 'SIGTERM', hooks: [] }) => ({ schemaVersion: 1, ok: false,
+  error: { code: 'E_INTERRUPTED', message: 'the spawn was interrupted by SIGTERM while its worktree hooks ran; the running hook\'s process group was ended — spawn rolled back', details } });
+test('#802: killed by our deadline, a worktree-event CLI\'s envelope on stdout is the outcome; without one it is E_CLI_TIMEOUT', async () => {
+  const c = { ...capable(), features: [...capable().features, 'worktree-event'] };
+  let f = fixture({ exec: (_b, _a, _o, done) => done(killed(), JSON.stringify(interrupted())) });
+  let result = await cliSpawnApply(c, options({ deadlineMs: 1920000 }), f.io);
+  assert.equal(result.started, true); assert.equal(result.envelope.error.code, 'E_INTERRUPTED');
+  assert.match(result.envelope.error.message, /interrupted by SIGTERM/, 'the kernel\'s own message travels for a rolled-back code');
+  assert.equal(result.envelope.error.details, undefined, 'signal and hooks stay with the kernel; only the unconfirmed marker crosses');
+  f = fixture({ exec: (_b, _a, _o, done) => done(killed(), JSON.stringify(interrupted({ signal: 'SIGTERM', unconfirmed: true }))) });
+  result = await cliSpawnApply(c, options(), f.io);
+  assert.deepEqual(result.envelope.error.details, { unconfirmed: true });
+  for (const stdout of ['', '{"schemaVersion":1,"ok":fal', 'progress\n']) {
+    f = fixture({ exec: (_b, _a, _o, done) => done(killed(), stdout) });
+    result = await cliSpawnApply(c, options(), f.io);
+    assert.equal(result.started, true); assert.equal(result.envelope.error.code, 'E_CLI_TIMEOUT');
+  }
+  // Without the feature: today's rule, a kill is unknown whatever stdout holds.
+  f = fixture({ exec: (_b, _a, _o, done) => done(killed(), JSON.stringify(interrupted())) });
+  result = await cliSpawnApply(capable(), options(), f.io);
+  assert.equal(result.envelope.error.code, 'E_CLI_TIMEOUT');
+});
+test('#802: a rolled-back code keeps the kernel message only with worktree-event; without it the code is not known here', async () => {
+  for (const code of ['E_INTERRUPTED', 'E_REQUIRED_HOOK_FAILED', 'E_HOOK_ENVIRONMENT_CONTRACT']) {
+    const doc = { schemaVersion: 1, ok: false, error: { code, message: `${code} kernel words`, details: { hooks: [{ capability: 'x' }] } } };
+    let f = fixture({ exec: (_b, _a, _o, done) => done(Object.assign(Error('exit 1'), { code: 1 }), JSON.stringify(doc)) });
+    let result = await cliSpawnApply({ ...capable(), features: [...capable().features, 'worktree-event'] }, options(), f.io);
+    assert.deepEqual(result.envelope.error, { code, message: `${code} kernel words` });
+    f = fixture({ exec: (_b, _a, _o, done) => done(Object.assign(Error('exit 1'), { code: 1 }), JSON.stringify(doc)) });
+    result = await cliSpawnApply(capable(), options(), f.io);
+    assert.notEqual(result.envelope.error.message, `${code} kernel words`);
+  }
+});
+// #802 review: execFile's own timeout destroys the child's output before it signals it, so the deadline of a
+// worktree-event CLI is ours. These run REAL short-lived subprocesses through node:child_process.execFile.
+const realChild = (body, t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'spawn-apply-cli-')); t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const script = join(dir, 'cli.mjs'), ready = join(dir, 'ready'); writeFileSync(script, body);
+  const exec = (_bin, _argv, opts, done) => execFile(process.execPath, [script, ready], { ...opts, cwd: dir }, done);
+  // The deadline fires only once the child has its SIGTERM handler (it writes `ready`): never a race with its start.
+  const timer = (fn, ms) => { let stop = false; const tick = () => { if (stop) return; if (existsSync(ready)) setTimeout(() => { if (!stop) fn(); }, ms); else setTimeout(tick, 10); }; tick(); return () => { stop = true; }; };
+  return { exec, timer };
+};
+const onTerm = out => `import { writeFileSync } from 'node:fs';
+process.on('SIGTERM', () => { ${out ? `process.stdout.write(${JSON.stringify(JSON.stringify(out))} + '\\n', () => process.exit(143));` : ''} });
+writeFileSync(process.argv[2], 'ready'); setInterval(() => {}, 1000);`;
+const hooked = () => ({ ...capable(), features: [...capable().features, 'worktree-event'] });
+test('#802 (real subprocess): at our deadline a worktree-event CLI gets SIGTERM with its output still read; its E_INTERRUPTED envelope is the outcome', async t => {
+  const child = realChild(onTerm(interrupted()), t), f = fixture({ exec: child.exec });
+  const result = await cliSpawnApply(hooked(), options({ deadlineMs: 1920000 }), { ...f.io, timer: child.timer, timeoutMs: 50, graceMs: 5000 });
+  assert.equal(result.started, true); assert.equal(result.envelope.error.code, 'E_INTERRUPTED');
+  assert.match(result.envelope.error.message, /interrupted by SIGTERM/);
+  assert.equal(f.calls[0].opts.timeout, undefined, 'not execFile\'s timeout, which destroys the output first');
+});
+test('#802 (real subprocess): a complete success envelope printed after our SIGTERM is forwarded for the broker to qualify', async t => {
+  const child = realChild(onTerm(ok), t), f = fixture({ exec: child.exec });
+  const result = await cliSpawnApply(hooked(), options(), { ...f.io, timer: child.timer, timeoutMs: 50, graceMs: 5000 });
+  assert.equal(result.started, true); assert.deepEqual(result.envelope, ok);
+});
+test('#802 (real subprocess): a CLI that outlives SIGTERM by the grace period is killed, and with no envelope the outcome is E_CLI_TIMEOUT', async t => {
+  const child = realChild(onTerm(null), t), f = fixture({ exec: child.exec });
+  const result = await cliSpawnApply(hooked(), options(), { ...f.io, timer: child.timer, timeoutMs: 50, graceMs: 300 });
+  assert.equal(result.started, true); assert.equal(result.envelope.error.code, 'E_CLI_TIMEOUT');
+});
+test('#802 (real subprocess): an older CLI keeps execFile\'s timeout: a kill is E_CLI_TIMEOUT whatever it prints', async t => {
+  const f = fixture({ exec: realChild(onTerm(interrupted()), t).exec });
+  const result = await cliSpawnApply(capable(), options(), { ...f.io, timeoutMs: 200 });
+  assert.equal(f.calls[0].opts.timeout, 200);
+  assert.equal(result.envelope.error.code, 'E_CLI_TIMEOUT');
+});
+test('#802: a CLI that finishes before the deadline arms no signal', async () => {
+  let armed = 0; const f = fixture();
+  await cliSpawnApply(hooked(), options(), { ...f.io, timer: () => { armed++; return () => {}; } });
+  assert.equal(armed, 0);
 });

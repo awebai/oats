@@ -582,3 +582,35 @@ test('Where to run a server: while its rows are still being read, a relation pic
   assert.equal(u.q('.frelto').value, '', 'a local pick does not carry over'); assert.equal(u.q('.fspawn').disabled, true, 'a relation still needs a pick');
   await u.change('.frelto', 'far-lead'); assert.equal(u.q('.fspawn').disabled, false);
 });
+
+// #802: the in-dialog local path (the view harness) follows a pending apply like the background store does.
+test('#802: an apply that answers pending is followed with result until it completes, in the dialog too', async t => {
+  const gate = deferred(); let u;
+  u = await mountSpawn(t, { brokerTimer: fn => { setImmediate(fn); return () => {}; }, apply: async args => { await gate.promise; return applyThatRuns(u)(args); } });
+  await u.open(); await u.type('.fpurpose', 'api-v2');
+  u.q('.fspawn').click(); await settle(); await settle();
+  assert.match(u.text('.fstatus'), /Spawning…/); assert.ok(u.spawns().some(b => b.action === 'result'), 'it reads result while pending');
+  gate.resolve(); for (let i = 0; i < 20 && u.opens.length === 0; i++) await settle();
+  assert.equal(u.applied.length, 1, 'never applied twice'); assert.equal(u.opens.length, 1);
+});
+for (const [code, words] of [['E_INTERRUPTED', /^The spawn of release-manager-api-v2 was interrupted while its worktree was being set up, and was rolled back\. Nothing was created\./],
+  ['E_REQUIRED_HOOK_FAILED', /^A capability couldn’t set up the worktree for release-manager-api-v2, so the spawn was rolled back\. Nothing was created\./]]) {
+  test(`#802: ${code} reads rolled back in the dialog with worktree-event, and today's unknown without it`, async t => {
+    for (const feature of [true, false]) {
+      const c = structuredClone(CLI); if (feature) c.features = [...c.features, 'worktree-event'];
+      const u = await mountSpawn(t, { cli: c, apply: () => ({ started: true, envelope: { schemaVersion: 1, ok: false, error: { code, message: 'nw-setup failed (log: /x.log)' } } }) });
+      await u.open(); await u.type('.fpurpose', 'api-v2'); await u.spawn();
+      if (feature) { assert.match(u.text('.fstatus'), words); assert.equal(u.q('.fspawn').textContent, 'Spawn'); }
+      else assert.equal(u.q('.fstatus').dataset.code, 'E_OUTCOME_UNKNOWN');
+      u.close?.();
+    }
+  });
+}
+test('#802 review: past its deadline a pending spawn reads Outcome unknown in the dialog, with Check result', async t => {
+  let clock = 1000; const realNow = Date.now; Date.now = () => clock; t.after(() => { Date.now = realNow; });
+  const u = await mountSpawn(t, { apply: () => new Promise(() => {}), brokerTimer: fn => { setImmediate(() => { clock += 100000; fn(); }); return () => {}; } });
+  await u.open(); await u.type('.fpurpose', 'api-v2'); await u.spawn(); await settle();
+  assert.equal(u.q('.fstatus').dataset.code, 'E_OUTCOME_UNKNOWN');
+  assert.match(u.text('.fstatus'), /couldn’t confirm whether the instance was created/);
+  assert.equal(u.text('.fspawn'), 'Check result');
+});

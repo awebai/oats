@@ -5,7 +5,7 @@
 import { prText } from './roster-pr.mjs';
 import { createRuntimeBadge, harnessName } from './identity-marks.mjs';
 import { runtimeState } from './instance-presentation.mjs';
-import { instanceRepoLabel } from './instance-tree.mjs';
+import { instanceRepoLabel, heldHome } from './instance-tree.mjs';
 import { waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText } from './waiting-on-you.mjs';
 
 export const rosterTipCSS = `
@@ -29,6 +29,10 @@ export const rosterTipCSS = `
 export function rosterTipFacts(instance, why = '', pr = null, { below = [], now = Date.now(), stale = false } = {}) {
   const text = v => typeof v === 'string' && v ? v : null;
   const state = runtimeState(instance), claim = waitingClaim(instance, { stale });
+  // #802: a home the kernel holds says so ("Spawning (setting up worktree)", "Spawn didn't finish"…); the home
+  // of a spawn still in flight (the roster draws it as its pending row) is spawning, whatever else its row reports.
+  const hold = heldHome(instance);
+  const held = instance.pendingSpawn && hold?.kind !== 'spawning' ? 'Spawning' : hold?.status ?? null;
   return {
     name: instance.instance,
     rows: [
@@ -36,7 +40,7 @@ export function rosterTipFacts(instance, why = '', pr = null, { below = [], now 
       ['Repo', text(instanceRepoLabel(instance)), 'mono'],
       ['Branch', text(instance.branch), 'mono'],
       ['Harness', text(instance.harness) ? { harness: instance.harness, model: text(instance.model) } : null],
-      ['Status', [state === 'unknown' ? 'status unknown' : state, text(instance.runtimeError)].filter(Boolean).join(' · ')],
+      ['Status', held ?? [state === 'unknown' ? 'status unknown' : state, text(instance.runtimeError)].filter(Boolean).join(' · ')],
       ['Waiting', claim ? `${waitingLabel(claim)} · ${waitedText(claim.since, now)} (since ${waitingClock(claim.since, now)})` : null],
       // Text only (the card sets textContent): never parsed, never linkified.
       ['Message', claim?.message ?? null],

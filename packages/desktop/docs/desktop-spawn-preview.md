@@ -191,8 +191,10 @@ recipes and unknown trees are not exposed. Missing/mismatched data is not empty 
    an opaque server-owned `spawnRef`. Each requester gets a separate ref even if
    the underlying observation coalesces. Prepare neither creates files nor spawns.
 2. **apply:** `{action:"apply",spawnRef}` only. No caller key, revision, target or
-   changed payload. Re-admit context/CLI/soul/anchor, synchronously reserve the one
-   backend-wide apply slot, and mint a separate64-hex key on **first confirmation**.
+   changed payload. Re-admit context/CLI/soul/anchor, synchronously reserve one of
+   at most **4** backend-wide apply slots (one per workspace and soul: a second
+   apply of that soul answers `E_BUSY`, as does a fifth apply anywhere), and mint a
+   separate64-hex key on **first confirmation**.
    Every allowed retry retains this exact original intent/key/revision.
 3. **result:** `{action:"result",spawnRef}` only. Reads retained state, never
    invokes a CLI, re-previews, mints a key or guesses success from names.
@@ -227,8 +229,10 @@ attempted on all construction/settlement/error paths. Retries use new owned path
 same bytes, not expired temp paths. `PI_AGENTS_ROOT`, `OATS_DEPLOYMENT`,
 `OATS_RESOLUTION` and test-only `OATS_PREVIEW_PREFLIGHT_BUDGET_MS` are stripped.
 No shell, renderer recipe/env, direct kernel fallback, automatic acquire/trust,
-`--no-launch`, or task text in argv/logs/replies. **60s / 4MiB CLI,65s proxy**;
-result lookup has a short10s proxy deadline, prepare35s.
+`--no-launch`, or task text in argv/logs/replies. **4MiB CLI** output; the CLI
+deadline is the broker's, from the confirmed preview (Long spawns, below), and the
+`apply` request **answers within 50 s**, so the proxy's **65 s** never fires on a
+healthy spawn; result lookup has a short10s proxy deadline, prepare35s.
 
 The private adapter's `{started,envelope}` records possible dispatch, not creation
 or rollback. The broker must qualify success: full returned decision equals the
@@ -252,6 +256,48 @@ rollback or stop an already launched agent.
   **“Agent created; wake outcome unavailable — check Schedules”**. No inference
   from absence, and no raw provider error message. An explicit first-response
   `wakeScheduleError` can still establish a save failure if home recording failed.
+
+### Long spawns (`worktree` hooks, #802)
+
+From OATS 0.49.0 (feature `worktree-event`) a capability's `worktree` hook can set
+up `./work` during the spawn, for up to 30 minutes per hook. The Desktop must not
+be what ends it: a kernel answers our SIGTERM by interrupting the hooks and rolling
+the spawn back.
+
+- **Deadline.** With `worktree-event` and a confirmed preview whose
+  `worktreeHooks` is a non-empty array of n hooks, the CLI deadline is
+  **60 s + n × 30 min + 60 s** (`spawnApplyDeadlineMs`); otherwise **60 s**. The
+  broker derives it at prepare from the preview the operator confirmed, reports it
+  as `applyWithinMs` on its views and passes it to the CLI, which rereads nothing.
+- **`pending` from apply.** The `apply` request answers within 50 s: the outcome if
+  the CLI settled, else the `pending` view. The CLI keeps running in the broker,
+  which owns the job by `spawnRef`; `result` reads its outcome when it settles, and
+  the route refreshes the roster then.
+- **Concurrency.** At most 4 applies run at once backend-wide, one per workspace
+  and soul, so one 30-minute spawn does not make every other spawn `E_BUSY`. The
+  32-record and 8 MiB bounds stay.
+- **A kill keeps its envelope.** For a `worktree-event` CLI the deadline is the
+  transport's own timer, not `execFile`'s (whose timeout destroys the child's
+  output before signalling it): at the deadline the CLI gets SIGTERM with its
+  output still read, and SIGKILL only if it still runs 20 s later
+  (`SIGTERM_GRACE_MS`). A complete envelope on stdout (the kernel prints
+  `E_INTERRUPTED` after its rollback) is the outcome, failure or success (the
+  broker still qualifies a receipt); only with none is it `E_CLI_TIMEOUT`
+  (unknown). An older CLI keeps `execFile`'s timeout.
+- **Rolled back is known.** A dispatched failure with `E_INTERRUPTED`,
+  `E_REQUIRED_HOOK_FAILED` or `E_HOOK_ENVIRONMENT_CONTRACT` and no
+  `details.unconfirmed: true` was compensated by the kernel: **refused, nothing
+  created**, with the kernel's message (it names the capability and its log). With
+  the marker, its cleanup is owed: **unknown**, final (a re-apply of the same key
+  cannot finish it; retiring the quarantined home does). Only these three codes:
+  every other failure keeps the unknown-unless-proven rule above, `E_SPAWN_FAILED`
+  included.
+- Without `worktree-event` all of this is today's behaviour: 60 s, a kill is
+  unknown, and the three codes are not interpreted.
+- **Server spawns.** A spawn on an execution server (`--server`) keeps the legacy
+  path: 60 s, no preview, no Check result. A server spawn whose worktree hooks take
+  more than about a minute is not yet supported from the Desktop; use the CLI on
+  the server.
 
 ## Recovery limits and modal ownership
 
@@ -284,6 +330,12 @@ The column reads top to bottom:
      naming the other teams in `teams`.
    - **Relationship.** Shown only when the spawn is not independent: "child of
      `<anchor>`".
+   - **Setup.** Shown only when the preview's `worktreeHooks` is a non-empty
+     array: the capabilities whose `worktree` hook will set up `./work`, in the
+     order they run, "(required)" after required ones, then the muted line "Runs
+     after the worktree is made. Can take several minutes." The preview reader
+     projects `worktreeHooks` tolerantly: anything malformed reads as absent and
+     never refuses the preview.
    - **Runs on.** Shown with two or more deployments; in the loading and refusal
      states it shows alone.
 
@@ -412,7 +464,13 @@ stands still under reduced motion), is `aria-disabled` with no instance actions
 and no hover card, and is announced once through the roster's polite live
 region. It carries the real row's identity (`data-tree-instance` is the decided
 home), so when the roster reports that home the real row replaces it in place
-and a focused pending row stays focused. The head's count stays the kernel's
+and a focused pending row stays focused. While the job is in flight, a reported
+row for its home keeps the pending presentation: **Setting up worktree…** when the
+roster says `spawnInProgress` (the spawn is running its `worktree` hooks, verified
+alive), else **Spawning…**, so it never flashes to a stopped instance with
+actions. Any roster row with `spawnInProgress`, whoever spawned it, reads
+**Setting up worktree…** the same way, with a muted "since <local time>" when a
+job of this window knows its start, and offers no actions. The head's count stays the kernel's
 observation; pending rows are not counted. While a created instance is awaited
 the shell reads the roster every 700 ms (the dialog's former pace) instead of
 every 4 s.
@@ -422,7 +480,8 @@ window's `sessionStorage` until its outcome has been reported: while in flight o
 unknown, a failure until it is dismissed or reopened, and any other outcome until
 its notification is posted (an outcome settled while another workspace is on
 screen is held, and settling is not reporting). It is kept as `{workspace,
-deployment, spawnRef, soul, selector, instance, home, placement, startedAt}`:
+deployment, spawnRef, soul, selector, instance, home, placement, startedAt,
+deadline}`:
 `workspace` is the view that owns the job (its pending row, its notices) and
 `deployment` the one it spawns in, which every `/api/spawn` request and checked
 reply is addressed to (#482; an entry without it is addressed to its view, as
@@ -430,14 +489,18 @@ before). Never the opening
 instruction, and never the idempotency key, which the renderer does not hold (the
 server keeps a `spawnRef` 30 minutes after it settles, bound to the workspace scope,
 not to a frame). After a reload the store brings each one back as a pending row and
-reads the existing `result` action (every 2 s while the server says pending, for up
-to the 65 s apply deadline, then **Outcome unknown**); the outcome is reported like
+reads the existing `result` action (every 2 s while the server says pending, until
+the job's own `deadline`, then **Outcome unknown**); the outcome is reported like
 any other, held for its workspace like any other, and the entry dropped once
 reported. A recovered failure's **Reopen spawn** restores the
 soul and the exact name only. If the backend itself restarted, its records are gone:
 the job reads **Outcome unknown** with Check result, never a guess. Closing the window
 or quitting Desktop (a new session) loses the entries; a created instance still
-appears through the roster as usual, but a failure is then not reported. A refusal
+appears through the roster as usual, but a failure is then not reported. The
+server sends no signal to a running `oats spawn` child when it exits, so a spawn in
+flight completes (at worst the CLI exits 1 after the instance exists, its progress
+output having lost its pipe); its owner-only `/tmp/oats-desktop-task-*` directory
+stays behind, since the cleanup never runs. A refusal
 before apply (no `spawnRef` yet) and a record past the server's 30 minutes (read
 as **Outcome unknown**) are the other limits.
 
@@ -452,7 +515,10 @@ operator's attention still does:
 | `incomplete` | "<name> was created but didn't finish starting. Open it from the instance list instead of spawning again." |
 | Created, not launched | "Created <name> — not launched. Open its session from the roster." |
 | Refused or failed (nothing was created) | The row goes, and a sticky notification gives the reason (the `spawnProblem` text, Details behind a disclosure) with **Reopen spawn** ("Reopen spawn for <name>"), which reopens the dialog for that soul with the whole draft restored. Only `E_DECISION_STALE`, or a prepared decision that differs from the one the operator saw, reads "These values changed since you last looked. Reopen spawn to check them."; `E_IDEMPOTENCY_CONFLICT`, `E_PLACEMENT_TAKEN`, `E_INSTANCE_NAME_TAKEN` and every other refusal keep their own words. |
-| `unknown` / `pending` | The row stays, reading **Outcome unknown**, with a visible **Check result** button ("Check result for <name>") that runs the recovery above. The notification says it once. The row never silently disappears. |
+| `pending` | The CLI is still running (a long spawn, above). The row stays **Spawning…** (or **Setting up worktree…** once the roster reports the home) and the job reads `result` every 2 s until the outcome settles. Past the job's deadline (the CLI deadline plus 30 s, from the press) it reads **Outcome unknown**, as below. |
+| Rolled back (`worktree-event`) | `E_INTERRUPTED`: "The spawn of <name> was interrupted while its worktree was being set up, and was rolled back. Nothing was created." `E_REQUIRED_HOOK_FAILED` / `E_HOOK_ENVIRONMENT_CONTRACT`: "A capability couldn't set up the worktree for <name>, so the spawn was rolled back. Nothing was created." Both as a failure (the row goes; sticky, **Reopen spawn**), with the kernel's message under Details. |
+| Cleanup owed (the same codes with `unconfirmed`) | "The spawn of <name> was stopped, but its cleanup didn't finish. Retire <name> from the roster to complete it.", the kernel's message under Details. The pending row goes: the roster's own row (**Spawn didn't finish**) offers Retire, which completes it. No Check result. |
+| `unknown` | The row stays, reading **Outcome unknown**, with a visible **Check result** button ("Check result for <name>") that runs the recovery above. The notification says it once. The row never silently disappears. |
 
 **Never a yank** (`renderer/spawn-follow.mjs`). Taking the operator to the new
 instance must never take them from something they are doing, and they are doing

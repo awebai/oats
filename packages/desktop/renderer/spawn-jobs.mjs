@@ -15,12 +15,18 @@
  * workspace is on screen, then posted on return. Pending rows are Desktop-local.
  *
  * Reload (Spec D, #383): with a `storage` (the shell passes sessionStorage), every submitted job is kept
- * as { workspace, deployment, spawnRef, soul, selector, instance, home, placement, startedAt } until its outcome has
+ * as { workspace, deployment, spawnRef, soul, selector, instance, home, placement, startedAt, deadline } until its outcome has
  * been reported: in flight, unknown, failed (until dismissed or reopened), or settled with a notice still
  * held for its workspace. Never its opening instruction or a key (the renderer never holds the idempotency
  * key; spawnRef is the server's opaque handle, kept 30 min after it settles). After a window reload,
  * recover() brings each back as a pending row and reads the existing `result` action, so settling and
  * reporting stay separate events across a reload.
+ *
+ * Long spawns (#802): `apply` answers `pending` when the CLI is still running after 50 s (a spawn whose
+ * `worktree` hooks set up ./work can run for up to 30 minutes per hook). The job then reads `result`
+ * every RECOVER_POLL_MS until the outcome settles or its own deadline passes: the CLI deadline the broker
+ * set from the confirmed preview (`applyWithinMs`) plus FOLLOW_MARGIN_MS, from the press, kept as an
+ * absolute time (`deadline`) so a reload follows the same deadline. Past it the outcome reads unknown.
  *
  * Deployments (#482): a job is OWNED by its workspace view (`workspace`: is that view on screen, where
  * its pending row and notices belong) and ADDRESSED to the deployment it spawns in (`deployment`: every
@@ -28,9 +34,9 @@
  * A created spawn records its deployment as the view's last used (the spawn dialog's default).
  * `rehome(map)` moves owners onto views (workspace-rehome.mjs); a job's address never changes. */
 import { retainedSpawnMessage } from './launch-prompt-outcome.mjs';
-import { spawnApplyView, spawnApplyReason } from './spawn-apply-contract.mjs';
+import { spawnApplyView, spawnApplyReason, SPAWN_APPLY_MS, ROLLED_BACK_CODES } from './spawn-apply-contract.mjs';
 import { sameSpawnDecision } from './spawn-decision.mjs';
-import { spawnProblem } from './spawn-messages.mjs';
+import { spawnProblem, rolledBackProblem, cleanupOwedProblem } from './spawn-messages.mjs';
 import { rememberSpawnDeployment } from './spawn-deployment-field.mjs';
 
 /** How long a created instance may take to appear in the roster before the row goes and the
@@ -38,9 +44,13 @@ import { rememberSpawnDeployment } from './spawn-deployment-field.mjs';
 export const SPAWN_VISIBLE_WITHIN_MS = 14000;
 export const DRIFT_TEXT = 'These values changed since you last looked. Reopen spawn to check them.';
 export const SPAWN_STORAGE_KEY = 'oats.spawnJobs.v1';
-/** A recovered job reads `result` this often while the server says pending, for up to the apply deadline. */
+/** A pending job reads `result` this often while the server says pending, until its deadline. */
 export const RECOVER_POLL_MS = 2000;
-export const RECOVER_WITHIN_MS = 65000;
+/** A job's deadline is the broker's CLI deadline (applyWithinMs) plus this margin, from the press. */
+export const FOLLOW_MARGIN_MS = 30000;
+/** The CLI deadline of a spawn without `worktree` hooks: a reply without applyWithinMs, and a stored
+ * job without a deadline (kept by an older Desktop), follow this. */
+export const RECOVER_WITHIN_MS = SPAWN_APPLY_MS + FOLLOW_MARGIN_MS;
 const PENDING_TEXT = 'The spawn is still running. Check result again in a moment; nothing else was started.';
 const FLIGHT = ['spawning', 'checking'];
 
@@ -88,7 +98,8 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
   function save() {
     if (!alive || !storage) return;
     const kept = [...jobs.values()].filter(j => j.spawnRef && unreported(j))
-      .map(j => ({ workspace: j.workspace, deployment: j.deployment, spawnRef: j.spawnRef, soul: j.soul, selector: j.selector, instance: j.instance, home: j.home, placement: j.placement, startedAt: j.startedAt }));
+      .map(j => ({ workspace: j.workspace, deployment: j.deployment, spawnRef: j.spawnRef, soul: j.soul, selector: j.selector, instance: j.instance, home: j.home, placement: j.placement, startedAt: j.startedAt,
+        ...(Number.isFinite(j.deadline) ? { deadline: j.deadline } : {}) }));
     try { if (kept.length) storage.setItem(SPAWN_STORAGE_KEY, JSON.stringify(kept)); else storage.removeItem(SPAWN_STORAGE_KEY); } catch { /* storage is a convenience */ }
   }
   const changed = () => {
@@ -158,10 +169,21 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
   }
   /** A refusal before anything was applied, or one the kernel reports: the kernel's reason, and that nothing was created. */
   function refuseWith(job, problem) { refuse(job, /Nothing was created/.test(problem.text) ? problem.text : `${problem.text} Nothing was created.`, problem); }
+  /** #802: a rolled-back spawn whose cleanup is owed. Its outcome is not a creation; the home is quarantined,
+   * and the roster's own row (Spawn didn't finish) offers Retire, which completes it. No Check result: a
+   * re-apply of the same key cannot finish it. The pending row goes once the notice is out. */
+  function owed(job, problem) {
+    job.state = 'done'; changed();
+    job.notice = { message: problem.text, options: details(problem), sticky: false, posted: false, handle: null };
+    deliver(job);
+  }
   function settle(job, view) {
     if (['complete', 'partial', 'incomplete'].includes(view.status)) return created(job, view);
-    if (view.status === 'pending') return unknown(job, null, 'The spawn is still running. Check result again in a moment; nothing else was started.');
+    // #802: still running in the broker: follow `result` until the job's deadline.
+    if (view.status === 'pending') return now() < job.deadline ? follow(job) : unknown(job, null, PENDING_TEXT);
+    if (view.status === 'unknown' && ROLLED_BACK_CODES.includes(view.reason?.code)) return owed(job, cleanupOwedProblem(view.reason, job.instance));
     if (view.status === 'unknown') return unknown(job);
+    if (view.status === 'refused' && ROLLED_BACK_CODES.includes(view.reason?.code)) { const problem = rolledBackProblem(view.reason, job.instance); return refuse(job, problem.text, problem); }
     if (view.status === 'prepared') return refuse(job, 'That spawn was never submitted. Reopen spawn to spawn with these values.');
     // E_INTENT_EXPIRED: the record is gone (a backend restart): not proof of anything — stay unknown.
     if (view.reason?.code === 'E_INTENT_EXPIRED' && job.submitted) return unknown(job, view.reason);
@@ -184,7 +206,8 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
       if (prepared.status !== 'prepared') return refuseWith(job, spawnProblem(prepared.reason, 'spawn'));
       // Apply only the decision the operator saw; the kernel's --expect-decision guards it again at apply.
       if (!sameSpawnDecision(prepared.preview.decision, job.decision)) return refuse(job, DRIFT_TEXT);
-      job.prepared = prepared; job.spawnRef = prepared.spawnRef; job.submitted = true; save();
+      job.prepared = prepared; job.spawnRef = prepared.spawnRef; job.submitted = true;
+      job.deadline = now() + (prepared.applyWithinMs ?? SPAWN_APPLY_MS) + FOLLOW_MARGIN_MS; save();
       const view = await request(job, { action: 'apply', spawnRef: job.spawnRef });
       if (view) settle(job, view);
     } catch (error) {
@@ -194,20 +217,29 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
     }
   }
 
-  /** A job recovered after a reload: read `result` while the server says pending, then settle it. */
+  /** A pending job (an apply that answered `pending`, or one recovered after a reload): read `result` every
+   * pollMs while the server says pending, until the job's deadline, then settle it. */
   async function follow(job) {
+    if (job.state !== 'spawning') { job.state = 'spawning'; changed(); }
     try {
       for (;;) {
+        if (now() >= job.deadline) return unknown(job, null, PENDING_TEXT);
+        await sleep(pollMs);
+        if (!live(job)) return;
         const view = await request(job, { action: 'result', spawnRef: job.spawnRef });
         if (!view) return;
         if (view.status !== 'pending') return settle(job, view);
-        if (now() - job.recoveredAt >= recoverWithinMs) return unknown(job, null, PENDING_TEXT);
-        await sleep(pollMs);
-        if (!live(job)) return;
       }
     } catch { if (live(job)) unknown(job); }
   }
-  const text = (v, max = 4096) => typeof v === 'string' && v.length > 0 && v.length <= max;
+  /** After a reload: read `result` at once; a pending one is followed to the stored deadline. */
+  async function recoverOne(job) {
+    try {
+      const view = await request(job, { action: 'result', spawnRef: job.spawnRef });
+      if (view) settle(job, view);
+    } catch { if (live(job)) unknown(job); }
+  }
+  const text =(v, max = 4096) => typeof v === 'string' && v.length > 0 && v.length <= max;
 
   return {
     /** Take a confirmed press over: { token, workspace (the view), deployment?, soul, selector, input, decision, placement, draft }.
@@ -229,6 +261,7 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
       return [...jobs.values()].filter(j => j.workspace === workspace && ['spawning', 'checking', 'unknown', 'created'].includes(j.state))
         .map(j => ({ id: j.id, instance: j.instance, home: j.home, agent: j.soul?.name, agentsRoot: j.selector?.agentsRoot, ...j.placement,
           deployment: { id: j.deployment }, // the roster groups a pending row under its deployment
+          startedAt: j.startedAt, // #802: a row setting up its worktree says since when
           pending: j.state === 'unknown' ? 'unknown' : j.state === 'checking' ? 'checking' : 'spawning', ...(j.revealed ? { revealed: true } : {}) }));
     },
     /** Spec E: the pending row of the spawn just pressed is highlighted (the shell reveals it). */
@@ -300,9 +333,11 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
           selector: { soul: e.selector.soul, agentsRoot: e.selector.agentsRoot }, input: null, decision: null, instance: e.instance, home: e.home, placement,
           // Reopen after a reload restores the soul and the exact name; the opening instruction is never stored.
           draft: { layout: 'scoped', restore: { choices: { name: e.instance } } }, state: 'spawning', submitted: true, spawnRef: e.spawnRef,
-          prepared: null, notice: null, announced: false, startedAt: Number.isFinite(e.startedAt) ? e.startedAt : now(), recoveredAt: now(), recovered: true };
+          prepared: null, notice: null, announced: false, startedAt: Number.isFinite(e.startedAt) ? e.startedAt : now(), recovered: true,
+          // The deadline kept at the press (#802); an entry without one follows the ordinary apply's.
+          deadline: Number.isFinite(e.deadline) ? e.deadline : now() + recoverWithinMs };
         jobs.set(job.id, job); n++;
-        void follow(job);
+        void recoverOne(job);
       }
       if (n) changed(); else save();
       return n;
