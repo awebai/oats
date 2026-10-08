@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
 import * as packages from "../lib/packages.mjs";
+import { APPROVED_HOOKS } from "../lib/capability-contract.mjs";
 import { DISPOSABLE_HOME_ACCEPTED, DISPOSABLE_HOME_REFUSED, disposableHomeRefusal } from "./helpers/disposable-home.mjs";
 import {
   classifyPackageValue, packageProviding, parsePackageRequest,
@@ -406,6 +407,25 @@ test("a package capability manifest that breaks the kernel contract is E_PACKAGE
   bad.tag("v1.0.0", c);
   await assert.rejects(readPackageManifests(fakeRemote([bad]), bad.url, c, "oats-package"),
     (e) => e.code === "E_PACKAGE_MANIFEST" && e.details.pointer === "/hooks/launch/required" && /hook "launch" cannot be required/.test(e.message));
+});
+
+test("a package capability's unknown hook event (0.49.0): read when not required, E_PACKAGE_MANIFEST when required or malformed", async () => {
+  const declaring = (key, hooks) => {
+    const repo = new FakeRepo(key);
+    const commit = repo.commit("1", {
+      "oats-package/oats-package.json": JSON.stringify({ package: "x.fut", version: "1.0.0", capabilities: ["capabilities/tool"] }),
+      "oats-package/capabilities/tool/oats.json": JSON.stringify({ capability: "x.tool", version: "1.0.0", description: "d", hooks }),
+    });
+    return readPackageManifests(fakeRemote([repo]), repo.url, commit, "oats-package");
+  };
+  for (const [i, declaration] of ["bin/t.mjs", { command: "bin/t.mjs" }, { command: "bin/t.mjs", required: false }].entries()) {
+    const read = await declaring(`github.com/x/fut-${i}`, { spawn: "bin/t.mjs spawn", "future-other": declaration });
+    assert.deepEqual(read.capabilities.map((c) => c.name), ["x.tool"], JSON.stringify(declaration));
+  }
+  await assert.rejects(declaring("github.com/x/fut-req", { "future-other": { command: "bin/t.mjs", required: true } }),
+    (e) => e.code === "E_PACKAGE_MANIFEST" && e.details.pointer === "/hooks/future-other" && e.message === `oats-package/capabilities/tool/oats.json#/hooks/future-other: capability x.tool declares unsupported hook "future-other" (${[...APPROVED_HOOKS].join(", ")})`);
+  await assert.rejects(declaring("github.com/x/fut-bad", { "future-other": { command: "bin/t.mjs", when: "x" } }), (e) => e.code === "E_PACKAGE_MANIFEST" && e.details.pointer === "/hooks/future-other");
+  await assert.rejects(declaring("github.com/x/fut-esc", { "future-other": "../t.mjs" }), (e) => e.code === "E_PACKAGE_MANIFEST" && /escapes the capability directory/.test(e.message));
 });
 
 test("a package capability's retirement.disposable.home entry is refused as E_PACKAGE_MANIFEST at the entry's own pointer; sound entries are read", async () => {

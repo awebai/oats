@@ -88,3 +88,55 @@ test("the schema and the manifest contract give the same verdict on a retirement
   // records the roots at spawn (lib/core.mjs retirementDisposableRoots), not in the contract.
   assert.equal(bySchema({ disposable: { work: [""] } }), false, "a work root is a non-empty string");
 });
+
+// Forward-tolerant hook events (0.49.0): an event this kernel does not run is a warning when it is not
+// required and a refusal when it is. The schema accepts the same additional events with the same shape.
+test("an unknown hook event: the schema and the contract accept it unless it is required, and the contract warns that it does not run", async () => {
+  const { default: Ajv2020 } = await import("ajv/dist/2020.js");
+  const { APPROVED_HOOKS, manifestContract } = await import("../lib/capability-contract.mjs");
+  const kernelEvents = [...APPROVED_HOOKS].join(", ");
+  const root = resolve(new URL("..", import.meta.url).pathname);
+  const schema = JSON.parse(readFileSync(join(root, "docs", "capability-manifest.schema.json"), "utf8"));
+  const validate = new Ajv2020({ strict: false, allowUnionTypes: true }).compile(schema);
+  const base = { capability: "acme.x", version: "1.0.0", compatibility: { oats: ">=0.6.2" }, description: "x" };
+  const warning = (event) => ({ code: "hook-event-unsupported", pointer: `/hooks/${event}`,
+    message: `capability acme.x declares hook "${event}", which this kernel does not run; it is ignored (this kernel runs ${kernelEvents})` });
+  for (const [declaration, sound] of [
+    ["bin/h.mjs", true],
+    [{ command: "bin/h.mjs" }, true],
+    [{ command: "bin/h.mjs", required: false }, true],
+    [{ command: "bin/h.mjs", inputs: { sourceReceipt: { version: 1 } } }, true],
+    [{ command: "bin/h.mjs", required: true }, false],
+    [{ command: "bin/h.mjs", required: "yes" }, false],
+    [{ command: "bin/h.mjs", when: "always" }, false],
+    [{ required: false }, false],
+    [{ command: 7 }, false],
+    [7, false],
+  ]) {
+    const hooks = { "future-event": declaration };
+    const contract = manifestContract({ ...base, hooks });
+    assert.equal(validate({ ...base, hooks }), sound, `schema: ${JSON.stringify(declaration)} ${JSON.stringify(validate.errors)}`);
+    assert.equal(contract.problems.length === 0, sound, `contract: ${JSON.stringify(declaration)} ${JSON.stringify(contract.problems)}`);
+    assert.deepEqual(contract.warnings, sound ? [warning("future-event")] : [], `a sound unknown event is one warning, a refused one none: ${JSON.stringify(declaration)}`);
+  }
+  // Required: refused with the message and pointer it had before 0.49.0.
+  assert.deepEqual(manifestContractProblems({ ...base, hooks: { "future-other": { command: "bin/h.mjs", required: true } } }),
+    [{ pointer: "/hooks/future-other", message: `capability acme.x declares unsupported hook "future-other" (${kernelEvents})` }]);
+  // The contract alone refuses an empty command and a script outside the capability, for an unknown event as for a known one.
+  for (const event of ["future-event", "launch"]) {
+    for (const [declaration, why] of [[" ", /must be a command string/], [{ command: "" }, /must be a command string/], ["../out.mjs", /escapes the capability directory/], [{ command: "/abs.mjs" }, /escapes the capability directory/]]) {
+      const contract = manifestContract({ ...base, hooks: { [event]: declaration } });
+      assert.match(contract.problems.map((p) => p.message).join("\n"), why, `${event}: ${JSON.stringify(declaration)}`);
+      assert.deepEqual(contract.warnings, [], `${event}: a refused declaration is no warning`);
+    }
+  }
+  // Every approved event keeps its verdicts, and is never a warning.
+  for (const event of ["soul-scaffold", "spawn", "retire", "launch"]) {
+    assert.deepEqual(manifestContract({ ...base, hooks: { [event]: "bin/h.mjs" } }), { problems: [], warnings: [] }, event);
+    const required = manifestContract({ ...base, hooks: { [event]: { command: "bin/h.mjs", required: true } } });
+    assert.equal(required.problems.length === 0, event === "spawn", `${event} required`);
+    assert.equal(validate({ ...base, hooks: { [event]: { command: "bin/h.mjs", required: true } } }), event === "spawn", `schema: ${event} required`);
+  }
+  // Several unknown events beside a known one: one warning each, the known one runs as before.
+  assert.deepEqual(manifestContract({ ...base, hooks: { spawn: "bin/h.mjs", a: "bin/a.mjs", "b/c": "bin/b.mjs" } }).warnings.map((w) => w.pointer), ["/hooks/a", "/hooks/b~1c"]);
+});

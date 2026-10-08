@@ -103,6 +103,36 @@ A self-contained package has an `oats.json`:
   work never becomes a spawn blocker. `launch` and `retire` cannot be
   required: they run outside a spawn transaction, so there is no moment to
   enforce them. A `soul-scaffold` hook is tolerated and ignored.
+- An **event this kernel does not run** (a newer kernel's) is accepted from
+  0.49.0 on, so a capability that adopts a new event keeps composing on an
+  older host. Declared as a command string, `{ command }` or
+  `{ command, required: false }`, it is ignored and never runs, and the
+  capability carries the warning `hook-event-unsupported`: `capability <id>
+  declares hook "<event>", which this kernel does not run`. Declared
+  `required: true`, it is refused (`declares unsupported hook`), because
+  skipping a hook its author declared essential would fail open. The
+  tolerance covers the event's name only: its declaration is checked as for a
+  known event (a non-empty command, no unknown keys, a boolean `required`, a
+  script inside the capability), and a malformed one is refused. It helps
+  from 0.49.0 on only: a kernel before 0.49.0 refuses every unknown event, so
+  a capability that must load there declares only the events it runs.
+- The warning is `{code: "hook-event-unsupported", capability, path,
+  message}`. It appears in `oats sync` and `oats workspace status`, `oats
+  capabilities show`, `oats inspect`, `oats readiness` and `oats doctor` (in
+  their `warnings`), and as its message in the `warnings` strings of `oats
+  spawn --preview` and `oats spawn` (clipped to fit their receipt), in JSON and in text
+  ([desktop-cli-api.md](desktop-cli-api.md#capability-warnings-hook-event-unsupported-oats-0490)).
+  `path` names the manifest that was read, in one of two forms, never an
+  absolute host path:
+
+  | Read from | `path` | Commands |
+  |---|---|---|
+  | the workspace (a member's or a package's manifest) | `<repoKey>:<dir>/oats.json#/hooks/<event>`, or `package:<id>:<dir>/oats.json#/hooks/<event>`; `<dir>` relative to the repository | sync, workspace status, capabilities show, inspect and readiness `--soul`, doctor, spawn |
+  | an instance home's module copy | `.oats/modules/<name>/oats.json#/hooks/<event>`, relative to the home | inspect and readiness `--home` |
+
+  Doctor without `--soul` reads every member and locked package capability
+  from this machine's cache only. What the cache cannot answer is reported as
+  unchecked (`hook-events-unchecked` in its information), never as no warning.
 - A capability declaring a **required** spawn hook should declare a `retire` hook
   too. Without one, OATS has no way to undo what the spawn hook did and no way to
   know whether it did anything, so a failure quarantines the home rather than
