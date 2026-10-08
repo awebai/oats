@@ -54,6 +54,7 @@ import { runCapturedNative } from "../lib/captured-native.mjs";
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
 import { setupUsernameDefault } from '../lib/setup-team-default.mjs';
 import { AW_MIN, NO_TEAMS_MESSAGE, grantYamlCustodySocket, parseBindingJson, readAwVersion, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
+import { grantAppInventory, grantInventoryAdvisory, INVENTORY_ERROR } from "../lib/grant-app-inventory.mjs";
 import { resolveGrantTTL } from "../lib/grant-duration.mjs";
 import { custodyPreflight } from "../lib/grant-custody.mjs";
 import { selectClaudeChannel, brokerDelivers, recordedRuntime, recordedStart, statusListsHome, wakeRegistration } from "../lib/wake-receive.mjs";
@@ -758,7 +759,7 @@ function checkedRenewMode() {
 }
 function globalGrantRenew(oldMeta) {
   const ttl = identityMode === "global" || oldMeta.identity?.mode === "global" ? checkedGrantTTL() : undefined;
-  if (checkedRenewMode() === "off") out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta) });
+  if (checkedRenewMode() === "off") out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta), ...(oldMeta.identity?.mode === "global" ? { warning: grantInventoryAdvisory(oldMeta.identity.grant, { retained: true }) } : {}) });
   if (oldMeta.identity?.mode !== "global" || !oldMeta.identity?.grant?.id) out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta) });
   const resident = String(identitySettings.resident || oldMeta.identity.resident || "");
   const custody = resolveResidentCustody(resident);
@@ -784,7 +785,7 @@ function globalGrantRenew(oldMeta) {
   const { grantId, expiresAt, mintedTeam, alias: mintedAlias, address } = parsed;
   const recovered = recoverGrantHome(grantHome);
   const alias = recovered.subjectAlias || mintedAlias || oldMeta.identity.alias || resident;
-  const newMeta = { ...oldMeta, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address: address || oldMeta.identity.address || null, resident, grant: { id: grantId, expiresAt, scopes, home: grantHome } }) };
+  const newMeta = { ...oldMeta, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address: address || oldMeta.identity.address || null, resident, grant: { id: grantId, expiresAt, scopes, home: grantHome, ...grantAppInventory(parsed.minted) } }) };
   if (mintedTeam !== team) {
     try { revokeGrant(custody, grantId); } catch { /* minted mismatch expires by TTL if revoke fails */ }
     try { rmSync(grantHome, { recursive: true, force: true }); } catch { /* best effort */ }
@@ -808,7 +809,7 @@ function globalGrantRenew(oldMeta) {
   let warning;
   try { revokeGrant(custody, oldMeta.identity.grant.id); }
   catch (e) { warning = `oats-aweb: previous grant ${oldMeta.identity.grant.id} was not revoked (${e.message || e}); new grant ${grantId} is kept and the previous grant still expires at ${oldMeta.identity.grant.expiresAt || "its TTL"}`; }
-  out({ meta: newMeta, ...retainedLaunchOutput(newMeta, grantHome), ...(warning ? { warning } : {}) });
+  out({ meta: newMeta, ...retainedLaunchOutput(newMeta, grantHome), warning: [warning, grantInventoryAdvisory(newMeta.identity.grant)].filter(Boolean).join(" | ") });
 }
 function globalGrantSpawn() {
   const ttl = checkedGrantTTL();
@@ -841,7 +842,7 @@ function globalGrantSpawn() {
     const { grantId, expiresAt, mintedTeam, alias: mintedAlias, address } = validateMintedGrant(minted, grantHome);
     const recovered = recoverGrantHome(grantHome);
     const alias = recovered.subjectAlias || mintedAlias || resident;
-    meta = startedMeta({ defaultTeam: { label: defaultTeamLabel(), team: mintedTeam, from: defaultTeamFromEnv() }, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address, resident, grant: { id: grantId, expiresAt, scopes, home: grantHome } }) });
+    meta = startedMeta({ defaultTeam: { label: defaultTeamLabel(), team: mintedTeam, from: defaultTeamFromEnv() }, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address, resident, grant: { id: grantId, expiresAt, scopes, home: grantHome, ...grantAppInventory(minted) } }) });
     if (mintedTeam !== team) {
       try { revokeGrant(custody, grantId); failAfterMint(`minted grant team ${mintedTeam} differs from ${team}; the grant was revoked and nothing was kept`); }
       catch (e) { failAfterMint(`minted grant team ${mintedTeam} differs from ${team}; revoke failed: ${e.message || e}`); }
@@ -860,12 +861,12 @@ function globalGrantSpawn() {
         catch (revokeError) { failAfterMint(`session delivery registration failed for minted grant ${grantId}: ${e.message || e}; revoke failed: ${revokeError.message || revokeError}`); }
       }
     }
-    const warnings = [...teamWarnings, ...preflight.warnings];
+    const warnings = [...teamWarnings, ...preflight.warnings, ...(meta.identity.grant.appInventoryError ? [INVENTORY_ERROR] : [])];
     const e2eeBrief = preflight.warnings.length ? ` Warning: ${preflight.warnings.join(" ")}` : "";
     out({
       meta,
       env,
-      brief: `Comms: you act as resident aweb identity "${alias}" on team ${mintedTeam} through a session grant for ${resident}; scopes: ${scopes.join(", ")}; expires: ${expiresAt}. Root keys are not in this home, and identity lifecycle commands are not yours to run; your grant home is attached to the resident's custody service. At session start, run \`aw whoami\`, then \`aw mail inbox\` and \`aw chat pending\`; do not run \`aw workspace status\` or \`aw id show\` from this grant seat. Grant inspection (\`aw id grant list/show\`) runs from the resident custody \`.aw\`, not from this grant home. If a message you sent shows unverified at the receiver, report it, do not retry.${e2eeBrief}${deliveryBrief} Use \`aw mail\`/\`aw chat\` for messaging (see the aweb-messaging skill); coordination stays in your deployment's task layer.`, 
+      brief: `Comms: you act as resident aweb identity "${alias}" on team ${mintedTeam} through a session grant for ${resident}; scopes: ${scopes.join(", ")}; expires: ${expiresAt}. ${grantInventoryAdvisory(meta.identity.grant)} This Comms snapshot is fixed at spawn; use \`oats inspect --home <home> --json\` for the current recorded grant. Root keys are not in this home, and identity lifecycle commands are not yours to run; your grant home is attached to the resident's custody service. At session start, run \`aw whoami\`, then \`aw mail inbox\` and \`aw chat pending\`; do not run \`aw workspace status\` or \`aw id show\` from this grant seat. Grant inspection (\`aw id grant list/show\`) runs from the resident custody \`.aw\`, not from this grant home. If a message you sent shows unverified at the receiver, report it, do not retry.${e2eeBrief}${deliveryBrief} Use \`aw mail\`/\`aw chat\` for messaging (see the aweb-messaging skill); coordination stays in your deployment's task layer.`,
       ...(launch ? { launch } : {}),
       ...(warnings.length ? { warning: warnings.join(" | ") } : {}),
     });
@@ -1552,7 +1553,7 @@ if (event === "launch") {
   // takes its value from the real pass and leaves it out of the comparison.
   if (process.env.OATS_LAUNCH_PREVIEW === "1") {
     const renews = renewalPath && checkedRenewMode() === "launch" && started.identity?.mode === "global" && !!started.identity?.grant?.id;
-    out({ ...retainedLaunchOutput(started), ...(renews ? { volatileEnv: ["AWEB_IDENTITY_HOME"] } : {}) });
+    out({ ...retainedLaunchOutput(started), ...(globalLaunch ? { warning: grantInventoryAdvisory(started.identity?.grant, { retained: true, pending: renews }) } : {}), ...(renews ? { volatileEnv: ["AWEB_IDENTITY_HOME"] } : {}) });
   }
   syncPrimaryDelivery(primaryIdentityHomeOf(started));
   if (renewalPath) globalGrantRenew(started);
