@@ -7,7 +7,7 @@ import { chmodSync, existsSync, lstatSync, lutimesSync, mkdirSync, mkdtempSync, 
 import { devNull, tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { capabilityFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
-import { linkExecutables, waitUntil as waitFor } from "./helpers/host-fixture.mjs";
+import { fixtureBase, fixtureEnv, linkExecutables, waitUntil as waitFor } from "./helpers/host-fixture.mjs";
 import { fingerprintTree, statusDisagreement, storedTreeDigest } from "../lib/core.mjs";
 import { workRecoveryLines } from "../lib/retire-output.mjs";
 
@@ -3050,7 +3050,7 @@ test("the stored digest of version 2 is the one spelled out here: entries in the
   // A spawn baseline holds this digest, so it never changes. Per entry: its path's length, NUL, its path,
   // its permission bits in decimal, NUL, then "file" NUL and its bytes' length, NUL, its bytes, or "link"
   // NUL and its target the same way, or "dir" NUL followed by its entries; after "tree" NUL for the root.
-  const root = mkdtempSync(join(tmpdir(), "oats-fingerprint-v2-"));
+  const root = fixtureBase("oats-fingerprint-v2-");
   temporaryDirectories.push(root);
   for (const [name, content, mode] of [["a.txt", "alpha\n", 0o644], [join("dir", "inner.txt"), "inner\n", 0o640], ["zé.txt", "zed\n", 0o600]]) {
     write(join(root, name), content);
@@ -3081,14 +3081,15 @@ test("two trees the legacy stored digest reads alike (a file whose bytes spell t
 test("the stored digest of version 2 is the same under every locale, where the legacy digest's order follows the locale", (t) => {
   // Under Node, LC_ALL=C orders as en-US does, so locales whose collation differs from it name the case:
   // Swedish sorts ä after z, Danish sorts aa after ä, English sorts both before z.
-  const root = mkdtempSync(join(tmpdir(), "oats-fingerprint-locale-"));
-  temporaryDirectories.push(root);
+  const base = fixtureBase("oats-fingerprint-locale-");
+  temporaryDirectories.push(base);
+  const root = join(base, "tree");
   for (const name of ["z.txt", "ä.txt", "aa.txt", "B.txt", "a.txt"]) write(join(root, name), `${name}\n`);
   const core = new URL("../lib/core.mjs", import.meta.url).href;
   const script = `const { fingerprintTree, storedTreeDigest } = await import(${JSON.stringify(core)});
 console.log(JSON.stringify({ locale: new Intl.Collator().resolvedOptions().locale, legacy: fingerprintTree(process.argv[1]), v2: storedTreeDigest(process.argv[1], 2) }));`;
   const under = (locale) => {
-    const r = spawnSync(process.execPath, ["--input-type=module", "-e", script, root], { encoding: "utf8", env: { PATH: process.env.PATH, HOME: fixtureGitHome, LC_ALL: locale, LANG: locale } });
+    const r = spawnSync(process.execPath, ["--input-type=module", "-e", script, root], { encoding: "utf8", env: fixtureEnv(base, { extra: { LC_ALL: locale, LANG: locale } }) });
     assert.equal(r.status, 0, r.stderr);
     return { asked: locale, ...JSON.parse(r.stdout) };
   };

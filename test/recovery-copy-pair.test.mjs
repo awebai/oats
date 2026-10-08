@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as core from "../lib/core.mjs";
 import { copyTreeSafe } from "../lib/tree-copy.mjs";
+import { fixtureBase } from "./helpers/host-fixture.mjs";
 
 const temporaryDirectories = [];
 test.afterEach(() => {
@@ -173,7 +174,7 @@ for (const [what, change, moves] of [
 // (storedTreeDigest), in the same run, whatever the spawn baseline holds. It is the copier's pair too,
 // but for the bits of the copied path itself, which the stored digest never holds.
 test("the stored digest of version 2 is the copier's pair: a tree and its copy digest alike, and each change but the copied path's own bits moves it", (t) => {
-  const root = mkdtempSync(join(tmpdir(), "oats-copy-pair-"));
+  const root = fixtureBase("oats-copy-pair-");
   temporaryDirectories.push(root);
   if (!oddModesKept(t, root)) return;
   const source = oddTree(root);
