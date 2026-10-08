@@ -80,6 +80,15 @@ process.stderr.write('no server running on /nonexistent/tmux-socket\\n');
 process.exit(1);
 `;
 
+/** The rows of a JSON-lines log a fake appends to while a test polls it. Only lines ended by '\n'
+ * are parsed: a reader can meet an append under way (one appendFileSync of a large row is not
+ * atomic to a reader), and its unterminated tail is "not yet", seen on a later poll. A terminated
+ * line that does not parse still throws: that is a bug in the fake, not a race. */
+export function loggedRows(file) {
+  const text = readFileSync(file, 'utf8');
+  return text.slice(0, text.lastIndexOf('\n') + 1).split('\n').filter(Boolean).map(line => JSON.parse(line));
+}
+
 async function freePort() {
   const socket = createServer(); socket.listen(0, '127.0.0.1'); await once(socket, 'listening');
   const port = socket.address().port; await new Promise(resolve => socket.close(resolve));
@@ -136,8 +145,7 @@ export async function startLoadPathServer({ probe = v => v, gated = [], extra = 
    * `env` too under `recordEnvironment`. */
   const calls = () => {
     const byId = new Map();
-    for (const line of readFileSync(log, 'utf8').split('\n').filter(Boolean)) {
-      const row = JSON.parse(line);
+    for (const row of loggedRows(log)) {
       if (row.phase === 'start') byId.set(row.id, { id: row.id, verb: row.verb, argv: row.argv, start: row.start, end: null, ...(row.env ? { env: row.env } : {}) });
       else if (byId.has(row.id)) byId.get(row.id).end = row.end;
     }
@@ -159,7 +167,7 @@ export async function startLoadPathServer({ probe = v => v, gated = [], extra = 
     /** The directory that holds the fakes, as `env` was given it. */
     dir: temp,
     /** Every start of the fake tmux so far: { argv, env }. */
-    tmuxCalls: () => readFileSync(tmuxLog, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line)),
+    tmuxCalls: () => loggedRows(tmuxLog),
     /** The HTTP status and body of a GET, for refusals. */
     async getStatus(path) { const response = await fetch(base + path); return { status: response.status, body: await response.json() }; },
     /** Change the fake's config for every invocation from now on. */

@@ -7,12 +7,32 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
+import { mkdtempSync as makeTempDir, realpathSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
+import { tmpdir as systemTmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmuxAttachTarget, openTerm, sweepViewers, LOCKED_TABLE_BINDINGS } from "../packages/desktop/tmux-target.mjs";
+import { isolateSessionEnvironment, isolatedTmuxTmpdir } from "./helpers/host-fixture.mjs";
 
 const RENDERER_PKG = join(dirname(fileURLToPath(import.meta.url)), "..", "packages", "desktop");
+
+/** For a live test that does not address its own -S socket: install the fixture's private tmux
+ * (isolateSessionEnvironment) for this test only, restored after it whatever its outcome. Its wrapper
+ * is the only tmux on PATH and refuses a call that names no fixture server, so a call that would
+ * reach the operator's default server fails the test. Returns the arguments that select the
+ * fixture's server, or null when tmux is not installed (the test is skipped). */
+function privateTmuxServer(t) {
+  const probe = spawnSync("tmux", ["-V"], { encoding: "utf8" });
+  if (probe.error || probe.status !== 0) { t.skip("tmux not available"); return null; }
+  const base = realpathSync(makeTempDir(join(systemTmpdir(), "oats-tgt-")));
+  const restore = isolateSessionEnvironment(base);
+  t.after(() => { restore(); rmSync(base, { recursive: true, force: true }); });
+  assert.ok(isolatedTmuxTmpdir(), "the fixture's tmux isolation is installed");
+  assert.match(spawnSync("tmux", ["list-sessions"], { encoding: "utf8" }).stderr, /test tmux refused a non-fixture socket/,
+    "a call naming no fixture server is refused, not sent to the default server");
+  return ["-L", "oats"];
+}
 
 test("anchors both components: =session:=window", () => {
   assert.equal(tmuxAttachTarget("pi-agents", "reviewer-1"), "=pi-agents:=reviewer-1");
@@ -120,74 +140,74 @@ test("sweepViewers: kills only dead-pid oatsdesk sessions", () => {
 });
 
 test("live tmux: anchored target rejects a missing exact window instead of prefix-matching", (t) => {
-  const probe = spawnSync("tmux", ["-V"], { encoding: "utf8" });
-  if (probe.error || probe.status !== 0) return t.skip("tmux not available");
+  const server = privateTmuxServer(t);
+  if (!server) return;
   const session = `oatstgt${process.pid}`;
   try {
-    execFileSync("tmux", ["new-session", "-d", "-s", session, "-n", "reviewer-15c135c", "sh"], { timeout: 5000 });
+    execFileSync("tmux", [...server, "new-session", "-d", "-s", session, "-n", "reviewer-15c135c", "sh"], { timeout: 5000 });
     // Unanchored "session:reviewer-1" would PREFIX-MATCH the live
     // "reviewer-15c135c" window — the wrong-agent hazard.
-    const unanchored = spawnSync("tmux", ["list-panes", "-t", `${session}:reviewer-1`], { encoding: "utf8", timeout: 5000 });
+    const unanchored = spawnSync("tmux", [...server, "list-panes", "-t", `${session}:reviewer-1`], { encoding: "utf8", timeout: 5000 });
     // Anchored form must refuse: no exact "reviewer-1" window exists. This
     // is what makes openTerm's preflight (which runs exactly this
     // list-panes check) reject a missing exact target.
-    const anchored = spawnSync("tmux", ["list-panes", "-t", tmuxAttachTarget(session, "reviewer-1")], { encoding: "utf8", timeout: 5000 });
+    const anchored = spawnSync("tmux", [...server, "list-panes", "-t", tmuxAttachTarget(session, "reviewer-1")], { encoding: "utf8", timeout: 5000 });
     assert.notEqual(anchored.status, 0, "anchored target must NOT resolve a prefix match");
     if (unanchored.status === 0) {
       // this tmux prefix-matches (the hazard is real on this box) — the
       // anchored form above is what protects us; nothing more to assert.
     }
     // And the anchored form still resolves the EXACT window.
-    const exact = spawnSync("tmux", ["list-panes", "-t", tmuxAttachTarget(session, "reviewer-15c135c")], { encoding: "utf8", timeout: 5000 });
+    const exact = spawnSync("tmux", [...server, "list-panes", "-t", tmuxAttachTarget(session, "reviewer-15c135c")], { encoding: "utf8", timeout: 5000 });
     assert.equal(exact.status, 0, "anchored exact target resolves");
   } finally {
-    spawnSync("tmux", ["kill-session", "-t", `=${session}`], { timeout: 5000 });
+    spawnSync("tmux", [...server, "kill-session", "-t", `=${session}`], { timeout: 5000 });
   }
 });
 
 test("live tmux: linked-window viewer — source window death terminates the viewer, never activates a sibling", (t) => {
   // reviewer-936f9a3 regression (a): live A+B; viewer on A; destroy A →
   // viewer/pty target dies (NEVER activates B); B and the source survive.
-  const probe = spawnSync("tmux", ["-V"], { encoding: "utf8" });
-  if (probe.error || probe.status !== 0) return t.skip("tmux not available");
+  const server = privateTmuxServer(t);
+  if (!server) return;
   const src = `oatslwsrc${process.pid}`;
   let viewer = null;
   try {
-    execFileSync("tmux", ["new-session", "-d", "-s", src, "-n", "instA", "sh"], { timeout: 5000 });
-    execFileSync("tmux", ["new-window", "-t", `=${src}`, "-n", "instB", "sh"], { timeout: 5000 });
+    execFileSync("tmux", [...server, "new-session", "-d", "-s", src, "-n", "instA", "sh"], { timeout: 5000 });
+    execFileSync("tmux", [...server, "new-window", "-t", `=${src}`, "-n", "instB", "sh"], { timeout: 5000 });
 
     const r = openTerm({ session: src, window: "instA" }, {
-      preflight: (target) => execFileSync("tmux", ["list-panes", "-t", target], { stdio: "ignore", timeout: 5000 }),
-      tmux: (args) => execFileSync("tmux", args, { stdio: "ignore", timeout: 5000 }),
-      tmuxOut: (args) => execFileSync("tmux", args, { encoding: "utf8", timeout: 5000 }).trim(),
+      preflight: (target) => execFileSync("tmux", [...server, "list-panes", "-t", target], { stdio: "ignore", timeout: 5000 }),
+      tmux: (args) => execFileSync("tmux", [...server, ...args], { stdio: "ignore", timeout: 5000 }),
+      tmuxOut: (args) => execFileSync("tmux", [...server, ...args], { encoding: "utf8", timeout: 5000 }).trim(),
       spawnPty: (target) => ({ target }),
     });
     viewer = r.viewer;
     assert.equal(r.pty.target, `=${viewer}`, "pty attaches to the viewer session");
-    const vwins = spawnSync("tmux", ["list-windows", "-t", `=${viewer}`, "-F", "#{window_name}"], { encoding: "utf8", timeout: 5000 }).stdout.trim().split("\n");
+    const vwins = spawnSync("tmux", [...server, "list-windows", "-t", `=${viewer}`, "-F", "#{window_name}"], { encoding: "utf8", timeout: 5000 }).stdout.trim().split("\n");
     assert.deepEqual(vwins, ["instA"], "viewer contains ONLY the linked window");
 
     // membership isolation: source window switches don't affect the viewer
-    execFileSync("tmux", ["select-window", "-t", `=${src}:=instB`], { timeout: 5000 });
-    const vactive = spawnSync("tmux", ["list-windows", "-t", `=${viewer}`, "-F", "#{window_name} #{?window_active,A,}"], { encoding: "utf8", timeout: 5000 }).stdout;
+    execFileSync("tmux", [...server, "select-window", "-t", `=${src}:=instB`], { timeout: 5000 });
+    const vactive = spawnSync("tmux", [...server, "list-windows", "-t", `=${viewer}`, "-F", "#{window_name} #{?window_active,A,}"], { encoding: "utf8", timeout: 5000 }).stdout;
     assert.match(vactive, /instA A/, "viewer still on instA");
 
     // THE escape: retire (kill) source instA — viewer must DIE, never show instB
-    execFileSync("tmux", ["kill-window", "-t", `=${src}:=instA`], { timeout: 5000 });
+    execFileSync("tmux", [...server, "kill-window", "-t", `=${src}:=instA`], { timeout: 5000 });
     let alive = true;
     for (let i = 0; i < 20 && alive; i++) {
-      alive = spawnSync("tmux", ["has-session", "-t", `=${viewer}`], { timeout: 5000 }).status === 0;
-      if (alive) { const w = spawnSync("tmux", ["list-windows", "-t", `=${viewer}`, "-F", "#{window_name}"], { encoding: "utf8", timeout: 5000 }).stdout; assert.ok(!w.includes("instB"), "viewer must NEVER contain/activate instB"); }
+      alive = spawnSync("tmux", [...server, "has-session", "-t", `=${viewer}`], { timeout: 5000 }).status === 0;
+      if (alive) { const w = spawnSync("tmux", [...server, "list-windows", "-t", `=${viewer}`, "-F", "#{window_name}"], { encoding: "utf8", timeout: 5000 }).stdout; assert.ok(!w.includes("instB"), "viewer must NEVER contain/activate instB"); }
     }
     assert.equal(alive, false, "viewer terminated when its only (linked) window died");
     viewer = null;
-    const sessions = spawnSync("tmux", ["list-sessions", "-F", "#{session_name}"], { encoding: "utf8", timeout: 5000 }).stdout;
+    const sessions = spawnSync("tmux", [...server, "list-sessions", "-F", "#{session_name}"], { encoding: "utf8", timeout: 5000 }).stdout;
     assert.ok(sessions.includes(src), "source session survives");
-    const windows = spawnSync("tmux", ["list-windows", "-t", `=${src}`, "-F", "#{window_name}"], { encoding: "utf8", timeout: 5000 }).stdout;
+    const windows = spawnSync("tmux", [...server, "list-windows", "-t", `=${src}`, "-F", "#{window_name}"], { encoding: "utf8", timeout: 5000 }).stdout;
     assert.ok(windows.includes("instB"), "sibling window B survives");
   } finally {
-    if (viewer) spawnSync("tmux", ["kill-session", "-t", `=${viewer}`], { timeout: 5000 });
-    spawnSync("tmux", ["kill-session", "-t", `=${src}`], { timeout: 5000 });
+    if (viewer) spawnSync("tmux", [...server, "kill-session", "-t", `=${viewer}`], { timeout: 5000 });
+    spawnSync("tmux", [...server, "kill-session", "-t", `=${src}`], { timeout: 5000 });
   }
 });
 
@@ -195,39 +215,39 @@ test("live tmux: viewer key path cannot leave the linked window; viewer kill spa
   // reviewer-936f9a3 regression (b): window-management keys are inert in the
   // viewer (prefix None + locked key-table), and teardown never touches the
   // source. Driven via send-keys of the default prefix + window-nav keys.
-  const probe = spawnSync("tmux", ["-V"], { encoding: "utf8" });
-  if (probe.error || probe.status !== 0) return t.skip("tmux not available");
+  const server = privateTmuxServer(t);
+  if (!server) return;
   const src = `oatslwsrc2${process.pid}`;
   let viewer = null;
   try {
-    execFileSync("tmux", ["new-session", "-d", "-s", src, "-n", "instA", "sh"], { timeout: 5000 });
-    execFileSync("tmux", ["new-window", "-t", `=${src}`, "-n", "instB", "sh"], { timeout: 5000 });
+    execFileSync("tmux", [...server, "new-session", "-d", "-s", src, "-n", "instA", "sh"], { timeout: 5000 });
+    execFileSync("tmux", [...server, "new-window", "-t", `=${src}`, "-n", "instB", "sh"], { timeout: 5000 });
     const r = openTerm({ session: src, window: "instA" }, {
-      preflight: (target) => execFileSync("tmux", ["list-panes", "-t", target], { stdio: "ignore", timeout: 5000 }),
-      tmux: (args) => execFileSync("tmux", args, { stdio: "ignore", timeout: 5000 }),
-      tmuxOut: (args) => execFileSync("tmux", args, { encoding: "utf8", timeout: 5000 }).trim(),
+      preflight: (target) => execFileSync("tmux", [...server, "list-panes", "-t", target], { stdio: "ignore", timeout: 5000 }),
+      tmux: (args) => execFileSync("tmux", [...server, ...args], { stdio: "ignore", timeout: 5000 }),
+      tmuxOut: (args) => execFileSync("tmux", [...server, ...args], { encoding: "utf8", timeout: 5000 }).trim(),
       spawnPty: (target) => ({ target }),
     });
     viewer = r.viewer;
     // prefix and key-table are locked
-    const opts = spawnSync("tmux", ["show-options", "-t", viewer], { encoding: "utf8", timeout: 5000 }).stdout;
+    const opts = spawnSync("tmux", [...server, "show-options", "-t", viewer], { encoding: "utf8", timeout: 5000 }).stdout;
     assert.match(opts, /prefix None/, "prefix disabled");
     assert.match(opts, /key-table oatsdesk-locked/, "nonexistent key table");
     // attempt window-management via the (disabled) prefix path: C-b n / C-b l /
     // C-b c / C-b 1 — with prefix None these are raw bytes to the pane, not commands
     for (const keys of [["C-b", "n"], ["C-b", "l"], ["C-b", "c"], ["C-b", "1"]]) {
-      spawnSync("tmux", ["send-keys", "-t", `=${viewer}`, ...keys], { timeout: 5000 });
+      spawnSync("tmux", [...server, "send-keys", "-t", `=${viewer}`, ...keys], { timeout: 5000 });
     }
-    const wins = spawnSync("tmux", ["list-windows", "-t", `=${viewer}`, "-F", "#{window_name}"], { encoding: "utf8", timeout: 5000 }).stdout.trim().split("\n");
+    const wins = spawnSync("tmux", [...server, "list-windows", "-t", `=${viewer}`, "-F", "#{window_name}"], { encoding: "utf8", timeout: 5000 }).stdout.trim().split("\n");
     assert.deepEqual(wins, ["instA"], "no nav/new escaped the linked window (no new/other windows)");
     // teardown: killing the viewer spares the source and both its windows
     r.killViewer();
     viewer = null;
-    const windows = spawnSync("tmux", ["list-windows", "-t", `=${src}`, "-F", "#{window_name}"], { encoding: "utf8", timeout: 5000 }).stdout;
+    const windows = spawnSync("tmux", [...server, "list-windows", "-t", `=${src}`, "-F", "#{window_name}"], { encoding: "utf8", timeout: 5000 }).stdout;
     assert.ok(windows.includes("instA") && windows.includes("instB"), "source windows survive viewer kill");
   } finally {
-    if (viewer) spawnSync("tmux", ["kill-session", "-t", `=${viewer}`], { timeout: 5000 });
-    spawnSync("tmux", ["kill-session", "-t", `=${src}`], { timeout: 5000 });
+    if (viewer) spawnSync("tmux", [...server, "kill-session", "-t", `=${viewer}`], { timeout: 5000 });
+    spawnSync("tmux", [...server, "kill-session", "-t", `=${src}`], { timeout: 5000 });
   }
 });
 
