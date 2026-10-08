@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
 import * as packages from "../lib/packages.mjs";
+import { APPROVED_HOOKS } from "../lib/capability-contract.mjs";
 import { DISPOSABLE_HOME_ACCEPTED, DISPOSABLE_HOME_REFUSED, disposableHomeRefusal } from "./helpers/disposable-home.mjs";
 import {
   classifyPackageValue, packageProviding, parsePackageRequest,
@@ -418,13 +419,13 @@ test("a package capability's unknown hook event (0.49.0): read when not required
     return readPackageManifests(fakeRemote([repo]), repo.url, commit, "oats-package");
   };
   for (const [i, declaration] of ["bin/t.mjs", { command: "bin/t.mjs" }, { command: "bin/t.mjs", required: false }].entries()) {
-    const read = await declaring(`github.com/x/fut-${i}`, { spawn: "bin/t.mjs spawn", worktree: declaration });
+    const read = await declaring(`github.com/x/fut-${i}`, { spawn: "bin/t.mjs spawn", "future-other": declaration });
     assert.deepEqual(read.capabilities.map((c) => c.name), ["x.tool"], JSON.stringify(declaration));
   }
-  await assert.rejects(declaring("github.com/x/fut-req", { worktree: { command: "bin/t.mjs", required: true } }),
-    (e) => e.code === "E_PACKAGE_MANIFEST" && e.details.pointer === "/hooks/worktree" && e.message === 'oats-package/capabilities/tool/oats.json#/hooks/worktree: capability x.tool declares unsupported hook "worktree" (soul-scaffold, spawn, retire, launch)');
-  await assert.rejects(declaring("github.com/x/fut-bad", { worktree: { command: "bin/t.mjs", when: "x" } }), (e) => e.code === "E_PACKAGE_MANIFEST" && e.details.pointer === "/hooks/worktree");
-  await assert.rejects(declaring("github.com/x/fut-esc", { worktree: "../t.mjs" }), (e) => e.code === "E_PACKAGE_MANIFEST" && /escapes the capability directory/.test(e.message));
+  await assert.rejects(declaring("github.com/x/fut-req", { "future-other": { command: "bin/t.mjs", required: true } }),
+    (e) => e.code === "E_PACKAGE_MANIFEST" && e.details.pointer === "/hooks/future-other" && e.message === `oats-package/capabilities/tool/oats.json#/hooks/future-other: capability x.tool declares unsupported hook "future-other" (${[...APPROVED_HOOKS].join(", ")})`);
+  await assert.rejects(declaring("github.com/x/fut-bad", { "future-other": { command: "bin/t.mjs", when: "x" } }), (e) => e.code === "E_PACKAGE_MANIFEST" && e.details.pointer === "/hooks/future-other");
+  await assert.rejects(declaring("github.com/x/fut-esc", { "future-other": "../t.mjs" }), (e) => e.code === "E_PACKAGE_MANIFEST" && /escapes the capability directory/.test(e.message));
 });
 
 test("a package capability's retirement.disposable.home entry is refused as E_PACKAGE_MANIFEST at the entry's own pointer; sound entries are read", async () => {

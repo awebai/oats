@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { startInstanceSession } from "../lib/core.mjs";
+import { APPROVED_HOOKS } from "../lib/capability-contract.mjs";
 import { isolateSessionEnvironment, oatsSocket, waitUntil } from "./helpers/host-fixture.mjs";
 import { CLI, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { packageRepo } from "./helpers/package-repo.mjs";
@@ -39,9 +40,10 @@ const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
 const MARKS = join(base, "hook-runs.log");
 const mark = `import { appendFileSync } from "node:fs";\nappendFileSync(${JSON.stringify(MARKS)}, process.argv[2] + "\\n");\nprocess.stdout.write("{}\\n");\n`;
 const runs = () => (existsSync(MARKS) ? readFileSync(MARKS, "utf8").split("\n").filter(Boolean) : []);
-const UNKNOWN = ["future-event", "worktree"];
+const UNKNOWN = ["future-event", "future-other"];
 
-const KERNEL_EVENTS = "soul-scaffold, spawn, retire, launch";
+// The events this kernel runs, as its messages list them (a later kernel adds to them).
+const KERNEL_EVENTS = [...APPROVED_HOOKS].join(", ");
 const warningMessage = (id, event) => `capability ${id} declares hook "${event}", which this kernel does not run; it is ignored (this kernel runs ${KERNEL_EVENTS})`;
 
 const pkg = packageRepo({
@@ -61,9 +63,9 @@ const fx = v2Deployment({
   capabilities: {
     "acme.fut": { manifest: { launchPreview: true, inject: "inject.md", hooks: {
       spawn: "bin/mark.mjs spawn", launch: "bin/mark.mjs launch", retire: "bin/mark.mjs retire",
-      "future-event": "bin/mark.mjs future-event", worktree: { command: "bin/mark.mjs worktree", required: false },
+      "future-event": "bin/mark.mjs future-event", "future-other": { command: "bin/mark.mjs future-other", required: false },
     } }, files: { "bin/mark.mjs": mark, "inject.md": "## acme.fut\n" } },
-    "acme.req": { manifest: { hooks: { worktree: { command: "bin/mark.mjs worktree", required: true } } }, files: { "bin/mark.mjs": mark } },
+    "acme.req": { manifest: { hooks: { "future-other": { command: "bin/mark.mjs future-other", required: true } } }, files: { "bin/mark.mjs": mark } },
     "acme.bad": { manifest: { hooks: { "future-event": { command: "bin/mark.mjs", when: "always" } } }, files: { "bin/mark.mjs": mark } },
     "acme.empty": { manifest: { hooks: { "future-event": { command: " " } } }, files: {} },
     "acme.flag": { manifest: { hooks: { "future-event": { command: "bin/mark.mjs", required: "yes" } } }, files: { "bin/mark.mjs": mark } },
@@ -88,7 +90,7 @@ test("discovery lists a capability with an unknown, non-required event, and warn
   assert.deepEqual(status.warnings.filter((w) => w.code === "hook-event-unsupported"), memberWarnings, "one warning per unknown event, at its pointer");
   const problems = (id) => status.problems.filter((p) => p.path.startsWith(`capabilities/${id}/`)).map((p) => ({ code: p.code, path: p.path, message: p.message }));
   assert.deepEqual(problems("acme.fut"), [], "not a problem");
-  assert.deepEqual(problems("acme.req"), [{ code: "E_WORKSPACE_SCHEMA", path: "capabilities/acme.req/oats.json#/hooks/worktree", message: `capability acme.req declares unsupported hook "worktree" (${KERNEL_EVENTS})` }],
+  assert.deepEqual(problems("acme.req"), [{ code: "E_WORKSPACE_SCHEMA", path: "capabilities/acme.req/oats.json#/hooks/future-other", message: `capability acme.req declares unsupported hook "future-other" (${KERNEL_EVENTS})` }],
     "required: refused exactly as before 0.49.0");
   assert.match(problems("acme.bad").map((p) => p.message).join(), /hook "future-event" must be a command string or \{ command, required, inputs \} \(unknown: when\)/);
   assert.match(problems("acme.empty").map((p) => p.message).join(), /hook "future-event" must be a command string/);
@@ -104,7 +106,7 @@ test("a soul composing the required unknown event is refused with the manifest p
   const e = r.json().error;
   assert.equal(e.code, "E_WORKSPACE_SCHEMA");
   assert.equal(e.details.reason, "manifest-contract");
-  assert.match(e.message, /capabilities\/acme\.req\/oats\.json#\/hooks\/worktree: capability acme\.req declares unsupported hook "worktree"/);
+  assert.match(e.message, /capabilities\/acme\.req\/oats\.json#\/hooks\/future-other: capability acme\.req declares unsupported hook "future-other"/);
 });
 
 test("capabilities show: a member's and a package's warnings, in JSON and text, and the Desktop reads both answers", () => {
@@ -224,13 +226,13 @@ test("spawn --preview and the spawn warn, and the Desktop reads both; the unknow
 // capabilities' warnings, and a standalone deployment reads its own repository's cached enumeration.
 test("doctor keeps what the cache can answer: a partial cache, and a standalone deployment", (t) => {
   const own = packageRepo({});
-  const part = v2Deployment({ capabilities: { "acme.fut": { manifest: { hooks: { worktree: "bin/mark.mjs" } }, files: { "bin/mark.mjs": mark } } },
+  const part = v2Deployment({ capabilities: { "acme.fut": { manifest: { hooks: { "future-other": "bin/mark.mjs" } }, files: { "bin/mark.mjs": mark } } },
     workspace: { packages: { "acme.pkg": `${own.ref}@v1.0.0` } } });
   t.after(() => { part.cleanup(); own.cleanup(); });
   ok(part.cli(["sync", "--json"]));
   const doctor = () => JSON.parse(ok(part.cli(["doctor", "--json"])).stdout);
   const summary = (d) => ({ warnings: d.warnings.map((w) => w.path), unchecked: d.information.filter((l) => l.startsWith("hook-events-unchecked:")) });
-  const expected = { warnings: [`${part.key}:capabilities/acme.fut/oats.json#/hooks/worktree`], unchecked: [] };
+  const expected = { warnings: [`${part.key}:capabilities/acme.fut/oats.json#/hooks/future-other`], unchecked: [] };
   assert.deepEqual(summary(doctor()), expected);
   const parsed = join(part.base, "cache", ".parsed");
   let removed = 0;
@@ -283,12 +285,12 @@ test("spawn warnings stay inside the Desktop receipt's bounds, and a same-key re
 // unchecked.
 test("doctor follows a member named as the workspace to its host, from the cache", (t) => {
   const pair = ({ hostReadable }) => {
-    const member = v2Deployment({ capabilities: { "acme.fut": { manifest: { hooks: { worktree: "bin/mark.mjs" } }, files: { "bin/mark.mjs": mark } } } });
+    const member = v2Deployment({ capabilities: { "acme.fut": { manifest: { hooks: { "future-other": "bin/mark.mjs" } }, files: { "bin/mark.mjs": mark } } } });
     const host = v2Deployment({ workspace: { members: [member.ref] } });
     t.after(() => { member.cleanup(); host.cleanup(); });
     member.commit({ "oats-workspace.yaml": null, "oats-membership.yaml": { yaml: { schemaVersion: 2, workspace: host.ref } } });
     if (!hostReadable) rmSync(host.repo, { recursive: true, force: true });
-    const at = `${member.key}:capabilities/acme.fut/oats.json#/hooks/worktree`;
+    const at = `${member.key}:capabilities/acme.fut/oats.json#/hooks/future-other`;
     assert.deepEqual(ok(member.cli(["sync", "--json"])).json().result.warnings.map((w) => w.path), [at], "discovery lists the member's capability");
     const d = JSON.parse(ok(member.cli(["doctor", "--json"])).stdout);
     return { at, warnings: d.warnings.map((w) => w.path), unchecked: d.information.filter((l) => l.startsWith("hook-events-unchecked:")) };

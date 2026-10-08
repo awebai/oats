@@ -93,13 +93,14 @@ test("the schema and the manifest contract give the same verdict on a retirement
 // required and a refusal when it is. The schema accepts the same additional events with the same shape.
 test("an unknown hook event: the schema and the contract accept it unless it is required, and the contract warns that it does not run", async () => {
   const { default: Ajv2020 } = await import("ajv/dist/2020.js");
-  const { manifestContract } = await import("../lib/capability-contract.mjs");
+  const { APPROVED_HOOKS, manifestContract } = await import("../lib/capability-contract.mjs");
+  const kernelEvents = [...APPROVED_HOOKS].join(", ");
   const root = resolve(new URL("..", import.meta.url).pathname);
   const schema = JSON.parse(readFileSync(join(root, "docs", "capability-manifest.schema.json"), "utf8"));
   const validate = new Ajv2020({ strict: false, allowUnionTypes: true }).compile(schema);
   const base = { capability: "acme.x", version: "1.0.0", compatibility: { oats: ">=0.6.2" }, description: "x" };
   const warning = (event) => ({ code: "hook-event-unsupported", pointer: `/hooks/${event}`,
-    message: `capability acme.x declares hook "${event}", which this kernel does not run; it is ignored (this kernel runs soul-scaffold, spawn, retire, launch)` });
+    message: `capability acme.x declares hook "${event}", which this kernel does not run; it is ignored (this kernel runs ${kernelEvents})` });
   for (const [declaration, sound] of [
     ["bin/h.mjs", true],
     [{ command: "bin/h.mjs" }, true],
@@ -119,8 +120,8 @@ test("an unknown hook event: the schema and the contract accept it unless it is 
     assert.deepEqual(contract.warnings, sound ? [warning("future-event")] : [], `a sound unknown event is one warning, a refused one none: ${JSON.stringify(declaration)}`);
   }
   // Required: refused with the message and pointer it had before 0.49.0.
-  assert.deepEqual(manifestContractProblems({ ...base, hooks: { worktree: { command: "bin/h.mjs", required: true } } }),
-    [{ pointer: "/hooks/worktree", message: 'capability acme.x declares unsupported hook "worktree" (soul-scaffold, spawn, retire, launch)' }]);
+  assert.deepEqual(manifestContractProblems({ ...base, hooks: { "future-other": { command: "bin/h.mjs", required: true } } }),
+    [{ pointer: "/hooks/future-other", message: `capability acme.x declares unsupported hook "future-other" (${kernelEvents})` }]);
   // The contract alone refuses an empty command and a script outside the capability, for an unknown event as for a known one.
   for (const event of ["future-event", "launch"]) {
     for (const [declaration, why] of [[" ", /must be a command string/], [{ command: "" }, /must be a command string/], ["../out.mjs", /escapes the capability directory/], [{ command: "/abs.mjs" }, /escapes the capability directory/]]) {

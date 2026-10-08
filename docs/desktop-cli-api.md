@@ -1107,8 +1107,8 @@ capability carries one warning per such event
 
 ```json
 {"code":"hook-event-unsupported","capability":"acme.tool",
- "path":"github.com/acme/agents:capabilities/acme-tool/oats.json#/hooks/worktree",
- "message":"capability acme.tool declares hook \"worktree\", which this kernel does not run; it is ignored (this kernel runs soul-scaffold, spawn, retire, launch)"}
+ "path":"github.com/acme/agents:capabilities/acme-tool/oats.json#/hooks/on-merge",
+ "message":"capability acme.tool declares hook \"on-merge\", which this kernel does not run; it is ignored (this kernel runs soul-scaffold, spawn, retire, launch)"}
 ```
 
 | Answer | Where | Covers |
