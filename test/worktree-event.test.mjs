@@ -4,7 +4,7 @@
 // return env. Every `add` runs through the real CLI from the instance home.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync, spawn as spawnChild } from "node:child_process";
+import { execFileSync, spawnSync, spawn as spawnChild } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CLI, v2Deployment } from "./helpers/v2-deployment.mjs";
@@ -31,6 +31,9 @@ if (existsSync(join(root, "hook-stubborn"))) {
   // One process (exec), so the pid written is the member itself: no child of it can outlive a kill of that pid.
   const c = spawn("/bin/sh", ["-c", "trap '' TERM; exec sleep 60"], { stdio: "ignore" });
   writeFileSync(join(root, "hook-stubborn-pid"), String(c.pid));
+  // Its group (the hook's own), so a test can end the whole group whatever the kernel did.
+  const { execFileSync } = await import("node:child_process");
+  writeFileSync(join(root, "hook-stubborn-pgid"), execFileSync("ps", ["-o", "pgid=", "-p", String(c.pid)], { encoding: "utf8" }).trim());
 }
 if (existsSync(join(root, "hook-sleep"))) {
   writeFileSync(join(root, "hook-sleeping"), String(process.pid));
@@ -195,6 +198,12 @@ test("a hook answer's warning is reported and the rest of the answer is ignored"
 });
 
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+/** When `t` ends, SIGKILL the whole process group `pgid` and each of `pids`: a test ends every process it
+ *  started, a child its hook forked (one that ignores SIGTERM included), whatever the kernel did. */
+const endGroupAfter = (t, pgid, ...pids) => t.after(() => {
+  try { process.kill(-pgid, "SIGKILL"); } catch { /* gone */ }
+  for (const pid of pids) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } }
+});
 const waitFor = async (cond, ms = 20000) => { const end = Date.now() + ms; while (Date.now() < end) { if (cond()) return true; await new Promise((r) => setTimeout(r, 50)); } return false; };
 
 test("a hook past the timeout has its process group ended and fails as a required hook", async (t) => {
@@ -218,8 +227,9 @@ test("a timed-out hook's group member that ignores SIGTERM is SIGKILLed before t
   writeFileSync(join(fx.root, "hook-sleep"), "60");
   writeFileSync(join(fx.root, "hook-stubborn"), "");
   const r = wt(fx, home, ["add", "--purpose", "slow", "--branch", "agents/slow", "--base", "main", "--json"], { OATS_TEST_WORKTREE_HOOK_TIMEOUT_MS: "1500" });
-  assert.equal(r.json().error.code, "E_REQUIRED_HOOK_FAILED");
   const stubborn = Number(readFileSync(join(fx.root, "hook-stubborn-pid"), "utf8"));
+  endGroupAfter(t, Number(readFileSync(join(fx.root, "hook-stubborn-pgid"), "utf8")), stubborn);
+  assert.equal(r.json().error.code, "E_REQUIRED_HOOK_FAILED");
   assert.equal(alive(stubborn), false, "the SIGTERM-ignoring member is gone when add answers");
 });
 
@@ -400,7 +410,7 @@ async function httpGit(t, bare) {
   const { spawn } = await import("node:child_process");
   const server = createServer((req, res) => {
     const u = new URL(req.url, "http://x");
-    const cgi = spawn("git", ["http-backend"], { env: { ...process.env, GIT_PROJECT_ROOT: join(bare, ".."), GIT_HTTP_EXPORT_ALL: "1", PATH_INFO: u.pathname.replace(/^\/[^/]+/, ""), QUERY_STRING: u.search.slice(1), REQUEST_METHOD: req.method, CONTENT_TYPE: req.headers["content-type"] ?? "", REMOTE_ADDR: "127.0.0.1", GIT_HTTP_MAX_REQUEST_BUFFER: "100M" } });
+    const cgi = spawn("git", ["http-backend"], { env: { PATH: process.env.PATH, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_PROJECT_ROOT: join(bare, ".."), GIT_HTTP_EXPORT_ALL: "1", PATH_INFO: u.pathname.replace(/^\/[^/]+/, ""), QUERY_STRING: u.search.slice(1), REQUEST_METHOD: req.method, CONTENT_TYPE: req.headers["content-type"] ?? "", REMOTE_ADDR: "127.0.0.1", GIT_HTTP_MAX_REQUEST_BUFFER: "100M" } });
     req.pipe(cgi.stdin);
     let head = Buffer.alloc(0), headed = false;
     cgi.stdout.on("data", (chunk) => {
@@ -808,12 +818,22 @@ process.exit(r.status ?? 1);
   return `${dir}:${fx.env.PATH}`;
 }
 /** A dead adder's record, as a SIGKILL leaves it: the ready record turned back into `creating`. */
-function asKilledAdd(home, purpose, drop = []) {
+function asKilledAdd(home, purpose, drop = [], pid = 2147483647) {
   const p = join(home, ".oats", "trees", `${purpose}.json`);
   const rec = JSON.parse(readFileSync(p, "utf8"));
   for (const k of drop) delete rec[k];
-  writeFileSync(p, JSON.stringify({ ...rec, state: "creating", pid: 2147483647, processStart: "proc:gone", startedAt: "earlier" }));
+  writeFileSync(p, JSON.stringify({ ...rec, state: "creating", pid, processStart: "proc:gone", startedAt: "earlier" }));
 }
+/** A `ps` in macOS's shape: for a pid that does not exist it prints an error and exits 1 (procps exits 1
+ *  silently); for any other pid it is the real `ps`. → the environment that reads start times through it. */
+function macPsEnv(fx) {
+  const real = execFileSync("sh", ["-c", "command -v ps"], { encoding: "utf8" }).trim();
+  const dir = join(fx.base, "ps-mac"); mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "ps"), `#!/bin/sh\nout=$(${JSON.stringify(real)} "$@" 2>/dev/null) || { echo "ps: process id not found (simulated macOS)" >&2; exit 1; }\nprintf '%s\\n' "$out"\n`, { mode: 0o755 });
+  return { OATS_TEST_PROCESS_START_PS: "1", PATH: `${dir}:${fx.env.PATH}` };
+}
+/** A real pid whose process has exited and been reaped. */
+const exitedPid = () => spawnSync(process.execPath, ["-e", ""], { env: { PATH: process.env.PATH } }).pid;
 
 test("two adds racing for one branch: the loser's rollback keeps the winner's branch, and says why", async (t) => {
   const fx = deployment(t, { hookless: true });
@@ -866,33 +886,37 @@ test("recoveries of one purpose are serialized: a remove that cannot claim it is
   assert.equal(existsSync(join(home, ".oats", "trees", "feat.lock")), false, "the claim is released");
 });
 
-test("an interrupted add's rollback: deletes a branch only its add created, and reports one it keeps (moved, checked out)", async (t) => {
+for (const shape of ["this host's reader", "a ps in macOS's shape"]) test(`an interrupted add's rollback (${shape}): deletes a branch only its add created, and reports one it keeps (moved, checked out)`, async (t) => {
   const fx = deployment(t, { hookless: true });
   const { home } = await fx.spawn("dev", { instance: "dev-own", work: "checkout" });
+  const extra = shape === "this host's reader" ? {} : macPsEnv(fx);
+  const run = (args) => wt(fx, home, args, extra);
+  const addP = (p) => run(["add", "--purpose", p, "--branch", `agents/${p}`, "--base", "main", "--json"]);
+  const dead = exitedPid();
   // Killed between `git switch -c` and the record saying so: the tree's own HEAD proves the add made the branch.
-  assert.equal(add(fx, home, "window").status, 0);
-  asKilledAdd(home, "window", ["branchCreated"]);
-  const window = wt(fx, home, ["remove", "--purpose", "window", "--json"]).json().result;
-  assert.equal(window.rolledBack, true);
+  assert.equal(addP("window").status, 0);
+  asKilledAdd(home, "window", ["branchCreated"], dead);
+  const window = run(["remove", "--purpose", "window", "--json"]).json().result;
+  assert.equal(window?.rolledBack, true, "a dead adder (an exited pid) is gone, so its add is rolled back");
   assert.equal(window.branchKept, false);
   assert.equal(tipOf(fx, "agents/window"), null);
   // A commit on the branch: kept, and the answer says so.
-  assert.equal(add(fx, home, "moved").status, 0);
+  assert.equal(addP("moved").status, 0);
   gitIn(fx, join(home, ".work-moved"), "commit", "--allow-empty", "-qm", "made by a hook");
   const moved = tipOf(fx, "agents/moved");
-  asKilledAdd(home, "moved");
-  const kept = wt(fx, home, ["remove", "--purpose", "moved", "--json"]);
+  asKilledAdd(home, "moved", [], dead);
+  const kept = run(["remove", "--purpose", "moved", "--json"]);
   assert.equal(kept.status, 0, kept.stdout);
   assert.equal(kept.json().result.branchKept, true);
   assert.match(kept.json().result.branchKeptReason, /tip moved/);
   assert.equal(tipOf(fx, "agents/moved"), moved);
   assert.equal(existsSync(join(home, ".oats", "trees", "moved.json")), false, "a branch kept on purpose is not owed: the record is gone");
   // Checked out in another worktree: kept.
-  assert.equal(add(fx, home, "shared").status, 0);
+  assert.equal(addP("shared").status, 0);
   const other = join(fx.base, "other-tree");
   gitIn(fx, fx.member, "worktree", "add", "-q", "--force", other, "agents/shared");
   asKilledAdd(home, "shared");
-  const out = wt(fx, home, ["remove", "--purpose", "shared"]);
+  const out = run(["remove", "--purpose", "shared"]);
   assert.equal(out.status, 0, out.stderr);
   assert.match(out.stdout, /branch agents\/shared kept \(it is checked out in a worktree\)/);
   assert.equal(tipOf(fx, "agents/shared"), originMain(fx));
@@ -911,7 +935,7 @@ test("a killed add whose hook leader exited: the group left behind is never sign
   const member = Number(readFileSync(join(fx.root, "hook-stubborn-pid"), "utf8"));
   // The kernel deliberately leaves this group running (its leader is gone, so it cannot be proven to be the
   // hook's); the test ends what it started, whatever the outcome.
-  t.after(() => { for (const pid of [member, hook]) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } } });
+  endGroupAfter(t, leader, member, hook);
   killed.child.kill("SIGKILL");
   await killed.done;
   assert.equal(JSON.parse(readFileSync(join(home, ".oats", "trees", "feat.json"), "utf8")).hookPgid, leader);
@@ -1020,8 +1044,8 @@ function unreadablePs(fx, pid) {
 }
 /** A live process that is no oats command, standing in for a holder whose start cannot be read; ended by the test. */
 function bystander(t) {
-  const c = spawnChild("sleep", ["60"], { stdio: "ignore" });
-  t.after(() => { try { c.kill("SIGKILL"); } catch { /* gone */ } });
+  const c = spawnChild("sleep", ["60"], { detached: true, stdio: "ignore" });
+  endGroupAfter(t, c.pid);
   return c.pid;
 }
 const SOME_START = "ps:Thu Jan  1 00:00:00 2026";

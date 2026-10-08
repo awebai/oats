@@ -1225,7 +1225,8 @@ and hooks, and fetches and writes nothing.
 | a `creating` record whose process is gone | the interrupted add is rolled back first, then the add runs fresh |
 
 A process is "still running" when its pid runs with the recorded start
-time. It counts as gone only when its pid does not run, or runs with another
+time. It counts as gone only when its pid does not run (the operating
+system says no such process: `kill -0` fails with ESRCH), or runs with another
 start. When the start cannot be read (for example where `ps` fails), the
 process is never taken for gone. `add` and `remove` refuse with
 `E_LIFECYCLE_BUSY`, naming the pid and the exact file to remove by hand once

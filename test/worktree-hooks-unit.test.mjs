@@ -102,7 +102,44 @@ test("a recorded hook group whose leader exited is never signalled: unverified, 
   assert.equal(terminateRecordedGroup({ hookPgid: 2147483646, hookStart: "proc:x" }), "none");
 });
 
-test("the purpose claim: taken over from a dead holder (and from a dead takeover), waited for and refused while its holder lives, never removed when unreadable", async (t) => {
+/** A `ps` in macOS's shape: for a pid that does not exist it prints an error and exits 1 (procps exits 1
+ *  with nothing on stdout or stderr); for any other pid it is the real `ps`. Put on PATH with
+ *  OATS_TEST_PROCESS_START_PS=1 (the kernel reads start times through it) until `t` ends. */
+async function macPs(t) {
+  const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { execFileSync } = await import("node:child_process");
+  const dir = mkdtempSync(join(tmpdir(), "oats-mac-ps-"));
+  const real = execFileSync("sh", ["-c", "command -v ps"], { encoding: "utf8" }).trim();
+  writeFileSync(join(dir, "ps"), `#!/bin/sh\nout=$(${JSON.stringify(real)} "$@" 2>/dev/null) || { echo "ps: process id not found (simulated macOS)" >&2; exit 1; }\nprintf '%s\\n' "$out"\n`, { mode: 0o755 });
+  const saved = { PATH: process.env.PATH, seam: process.env.OATS_TEST_PROCESS_START_PS };
+  process.env.PATH = `${dir}:${saved.PATH}`; process.env.OATS_TEST_PROCESS_START_PS = "1";
+  t.after(() => { process.env.PATH = saved.PATH; if (saved.seam === undefined) delete process.env.OATS_TEST_PROCESS_START_PS; else process.env.OATS_TEST_PROCESS_START_PS = saved.seam; rmSync(dir, { recursive: true, force: true }); });
+}
+/** A real pid whose process has exited and been reaped. */
+const exitedPid = async () => { const { spawnSync } = await import("node:child_process"); return spawnSync(process.execPath, ["-e", ""], { env: { PATH: process.env.PATH } }).pid; };
+const isRoot = typeof process.getuid === "function" && process.getuid() === 0;
+
+test("whether a pid exists is the kernel's answer (kill 0), the same on /proc and on a ps in macOS's shape", async (t) => {
+  const { processStart } = await import("../lib/worktree-hooks.mjs");
+  const { existsSync } = await import("node:fs");
+  const dead = await exitedPid();
+  const check = (shape) => {
+    assert.deepEqual(processStart(dead), { state: "gone" }, `${shape}: an exited, reaped pid is gone`);
+    assert.deepEqual(processStart(2147483646), { state: "gone" }, `${shape}: a pid never used is gone`);
+    assert.equal(processStart(process.pid).state, "alive", `${shape}: a live pid is alive`);
+    // Another user's process: kill 0 answers EPERM, which is "exists", never gone.
+    if (!isRoot) assert.equal(processStart(1).state, "alive", `${shape}: pid 1 (EPERM) is alive`);
+  };
+  if (existsSync("/proc/self/stat") && process.env.OATS_TEST_PROCESS_START_PS !== "1") check("/proc");
+  await macPs(t);
+  assert.match(processStart(process.pid).token, /^ps:/, "the ps path is the one read");
+  check("macOS ps");
+});
+
+for (const shape of ["this host's reader", "a ps in macOS's shape"]) test(`the purpose claim (${shape}): taken over from a dead holder (and from a dead takeover), waited for and refused while its holder lives, never removed when unreadable`, async (t) => {
+  if (shape !== "this host's reader") await macPs(t);
   const { withClaim } = await import("../lib/worktree.mjs");
   const { mkdtempSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
@@ -111,7 +148,8 @@ test("the purpose claim: taken over from a dead holder (and from a dead takeover
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const lock = join(dir, "p.lock");
   const busy = (holder) => Object.assign(new Error(`busy ${holder?.pid ?? "?"}`), { code: "E_LIFECYCLE_BUSY" });
-  const dead = (nonce) => JSON.stringify({ pid: 2147483646, processStart: "proc:gone", nonce });
+  const gone = await exitedPid();
+  const dead = (nonce, pid = gone) => JSON.stringify({ pid, processStart: "proc:gone", nonce });
   const N1 = "a".repeat(32), N2 = "b".repeat(32);
 
   assert.equal(await withClaim(lock, () => JSON.parse(readFileSync(lock, "utf8")).pid, { busy }), process.pid, "held while fn runs");
@@ -121,7 +159,7 @@ test("the purpose claim: taken over from a dead holder (and from a dead takeover
   assert.equal(await withClaim(lock, () => "ran", { busy }), "ran", "a dead holder's claim is taken over");
   // A takeover that was itself killed: its own claim is taken over in turn.
   writeFileSync(lock, dead(N1));
-  writeFileSync(`${lock}.reclaim-${N1}`, dead(N2));
+  writeFileSync(`${lock}.reclaim-${N1}`, dead(N2, 2147483646));
   assert.equal(await withClaim(lock, () => "ran", { busy }), "ran");
   assert.deepEqual(readdirSync(dir), [], "nothing left behind");
 
@@ -149,8 +187,9 @@ test("a timed-out git step: its whole group, a SIGTERM-ignoring member without p
   const hostPath = process.env.PATH;
   process.env.PATH = `${dir}:${hostPath}`;
   let member = null;
-  t.after(() => { process.env.PATH = hostPath; if (member) { try { process.kill(member, "SIGKILL"); } catch { /* gone */ } } rmSync(dir, { recursive: true, force: true }); });
   const calls = [];
+  // The step's whole group (its leader is the recorded gitPid) and the member, whatever the kernel did.
+  t.after(() => { process.env.PATH = hostPath; for (const id of [-calls[0]?.gitPid, member]) { if (id) { try { process.kill(id, "SIGKILL"); } catch { /* gone */ } } } rmSync(dir, { recursive: true, force: true }); });
   const r = await trackedGit(["status"], { track: (g) => calls.push(g), timeout: 500 });
   member = Number(readFileSync(memberFile, "utf8"));
   const memberAlive = (() => { try { process.kill(member, 0); return true; } catch { return false; } })();
@@ -167,7 +206,7 @@ const HOOKS_MODULE = new URL("../lib/worktree-hooks.mjs", import.meta.url).href;
 const WORKTREE_MODULE = new URL("../lib/worktree.mjs", import.meta.url).href;
 /** Run `code` (an ES module body) in a child with `env` on top of this process's; → its stdout, trimmed. */
 async function inChild(code, env) {
-  const c = spawn(process.execPath, ["--input-type=module", "-e", code], { env: { ...process.env, ...env }, stdio: ["ignore", "pipe", "pipe"] });
+  const c = spawn(process.execPath, ["--input-type=module", "-e", code], { env: { PATH: process.env.PATH, ...env }, stdio: ["ignore", "pipe", "pipe"] });
   let out = "", err = "";
   c.stdout.on("data", (b) => { out += b; }); c.stderr.on("data", (b) => { err += b; });
   const status = await new Promise((r) => c.on("close", r));
@@ -181,8 +220,8 @@ const ZONES = [{ TZ: "Pacific/Kiritimati", LANG: "de_DE.UTF-8", LC_ALL: "de_DE.U
 
 test("the ps start token of one process is the same whatever the reader's TZ and locale", async (t) => {
   const { spawnSync } = await import("node:child_process");
-  const target = spawn("sleep", ["30"], { stdio: "ignore" });
-  t.after(() => { try { target.kill("SIGKILL"); } catch { /* gone */ } });
+  const target = spawn("sleep", ["30"], { detached: true, stdio: "ignore" });
+  t.after(() => { try { process.kill(-target.pid, "SIGKILL"); } catch { /* gone */ } });
   // The environment does matter to `ps` itself: the same process reads differently by reader.
   const raw = READERS.map((z) => spawnSync("ps", ["-o", "lstart=", "-p", String(target.pid)], { encoding: "utf8", env: { PATH: process.env.PATH, ...z } }).stdout.trim());
   assert.ok(new Set(raw).size > 1, `this host's ps answers in the reader's environment: ${JSON.stringify(raw)}`);
@@ -205,7 +244,7 @@ test("a live claim holder is not taken over by a reader in another TZ and locale
   const holder = spawn(process.execPath, ["--input-type=module", "-e", `const { withClaim } = await import(${JSON.stringify(WORKTREE_MODULE)});
 const { existsSync, writeFileSync } = await import("node:fs");
 await withClaim(${JSON.stringify(lock)}, async () => { writeFileSync(${JSON.stringify(heldFile)}, ""); while (!existsSync(${JSON.stringify(release)})) await new Promise((r) => setTimeout(r, 20)); }, { busy: ${busy} });`],
-  { env: { ...process.env, OATS_TEST_PROCESS_START_PS: "1", ...ZONES[0] }, stdio: "ignore" });
+  { env: { PATH: process.env.PATH, OATS_TEST_PROCESS_START_PS: "1", ...ZONES[0] }, stdio: "ignore" });
   t.after(() => { try { holder.kill("SIGKILL"); } catch { /* gone */ } });
   for (let i = 0; i < 400 && !existsSync(heldFile); i++) await new Promise((r) => setTimeout(r, 25));
   assert.ok(existsSync(heldFile), "the holder holds the claim");
@@ -234,7 +273,7 @@ test("a start that cannot be read is unknown, never gone: liveness says so, and 
   process.env.PATH = `${dir}:${saved.PATH}`; process.env.OATS_TEST_PROCESS_START_PS = "1";
   t.after(() => { process.env.PATH = saved.PATH; if (saved.seam === undefined) delete process.env.OATS_TEST_PROCESS_START_PS; else process.env.OATS_TEST_PROCESS_START_PS = saved.seam; rmSync(dir, { recursive: true, force: true }); });
   assert.equal(processStart(own.pgid).state, "unknown");
-  assert.equal(processStart(2147483646).state, "gone", "ps's own 'no such process' is gone");
+  assert.equal(processStart(2147483646).state, "gone", "a pid kill 0 does not find is gone, whatever ps says");
   assert.equal(processLiveness({ pid: own.pgid, processStart: own.leaderStart }).state, "unknown");
   // Unknown, not "unverified" (a leader known to be gone): its callers refuse instead of warning and going on.
   assert.equal(terminateRecordedGroup({ hookPgid: own.pgid, hookStart: own.leaderStart }, 500), "unknown");
@@ -261,7 +300,7 @@ const before = process.stderr.listenerCount("error");
 const run = await runWorktreeHooks([{ id: "t.chat", command: ${JSON.stringify(`node '${join(dir, "chatter.mjs")}'`)}, required: true, cap: {} }],
   { envFor: () => process.env, cwd: ${JSON.stringify(dir)}, home: ${JSON.stringify(dir)}, purpose: "p", stream: true });
 console.log(JSON.stringify({ ok: run.receipt[0].ok, log: run.receipt[0].log, warnings: run.warnings, before, after: process.stderr.listenerCount("error") }));`;
-  const c = spawn(process.execPath, ["--input-type=module", "-e", code], { stdio: ["ignore", "pipe", "pipe"] });
+  const c = spawn(process.execPath, ["--input-type=module", "-e", code], { env: { PATH: process.env.PATH }, stdio: ["ignore", "pipe", "pipe"] });
   let out = "", early = "";
   c.stdout.on("data", (b) => { out += b; });
   c.stderr.on("data", (b) => { early += b; });
