@@ -65,7 +65,12 @@ function deployment(t, { required = true, work = "checkout", hookless = false, l
   const hooks = { worktree: required ? { command: HOOK_COMMAND, required: true } : HOOK_COMMAND, ...(lifecycle ? { spawn: requiredSpawn ? { command: "spawn.mjs", required: true } : "spawn.mjs", retire: "retire.mjs" } : {}) };
   const capabilities = hookless ? {} : { "test.setup": { manifest: { hooks }, files: { "hook.mjs": HOOK, ...(lifecycle ? LIFECYCLE : {}) } } };
   const fx = v2Deployment({ souls: { dev: { soul: { work, ...(hookless ? {} : { capabilities: { "test.setup": { from: "here" } } }) } } }, capabilities });
-  t.after(fx.cleanup);
+  // What the test started itself, and may leave running on purpose (a group the kernel must not signal),
+  // it ends before the fixture's leftover check (awebai/oats#828). node:test runs t.after hooks in the
+  // order they were added, so a hook added after this one would run after the check: ends run here.
+  const ends = [];
+  fx.endAtCleanup = (end) => { ends.push(end); };
+  t.after(() => { try { for (const end of ends) end(); } finally { fx.cleanup(); } });
   // The kernel's git keeps the invoker's configuration (private repositories need its credential helpers).
   // Its tests must not: a system or global helper (macOS Git's osxkeychain) can wait on a prompt nobody
   // answers. So no system or global config, no prompt, no askpass, and no credential helper.
@@ -198,9 +203,10 @@ test("a hook answer's warning is reported and the rest of the answer is ignored"
 });
 
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
-/** When `t` ends, SIGKILL the whole process group `pgid` and each of `pids`: a test ends every process it
- *  started, a child its hook forked (one that ignores SIGTERM included), whatever the kernel did. */
-const endGroupAfter = (t, pgid, ...pids) => t.after(() => {
+/** When the test ends, before the fixture's leftover check, SIGKILL the whole process group `pgid` and each
+ *  of `pids`: a test ends every process it started, a child its hook forked (one that ignores SIGTERM
+ *  included), whatever the kernel did. */
+const endGroupAfter = (fx, pgid, ...pids) => fx.endAtCleanup(() => {
   try { process.kill(-pgid, "SIGKILL"); } catch { /* gone */ }
   for (const pid of pids) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } }
 });
@@ -228,9 +234,12 @@ test("a timed-out hook's group member that ignores SIGTERM is SIGKILLed before t
   writeFileSync(join(fx.root, "hook-stubborn"), "");
   const r = wt(fx, home, ["add", "--purpose", "slow", "--branch", "agents/slow", "--base", "main", "--json"], { OATS_TEST_WORKTREE_HOOK_TIMEOUT_MS: "1500" });
   const stubborn = Number(readFileSync(join(fx.root, "hook-stubborn-pid"), "utf8"));
-  endGroupAfter(t, Number(readFileSync(join(fx.root, "hook-stubborn-pgid"), "utf8")), stubborn);
+  const pgid = Number(readFileSync(join(fx.root, "hook-stubborn-pgid"), "utf8"));
+  endGroupAfter(fx, pgid, stubborn);
   assert.equal(r.json().error.code, "E_REQUIRED_HOOK_FAILED");
   assert.equal(alive(stubborn), false, "the SIGTERM-ignoring member is gone when add answers");
+  // The kernel ended the whole group, not only that member (the test's own end runs only after this).
+  assert.ok(await waitFor(() => !alive(-pgid), 2000), `the timed-out hook's process group ${pgid} is empty`);
 });
 
 /** The CLI as a child we can signal: → { child, done: Promise<{ status, signal, stdout, stderr }> }. */
@@ -935,7 +944,7 @@ test("a killed add whose hook leader exited: the group left behind is never sign
   const member = Number(readFileSync(join(fx.root, "hook-stubborn-pid"), "utf8"));
   // The kernel deliberately leaves this group running (its leader is gone, so it cannot be proven to be the
   // hook's); the test ends what it started, whatever the outcome.
-  endGroupAfter(t, leader, member, hook);
+  endGroupAfter(fx, leader, member, hook);
   killed.child.kill("SIGKILL");
   await killed.done;
   assert.equal(JSON.parse(readFileSync(join(home, ".oats", "trees", "feat.json"), "utf8")).hookPgid, leader);
@@ -1043,9 +1052,9 @@ function unreadablePs(fx, pid) {
   return `${dir}:${fx.env.PATH}`;
 }
 /** A live process that is no oats command, standing in for a holder whose start cannot be read; ended by the test. */
-function bystander(t) {
+function bystander(fx) {
   const c = spawnChild("sleep", ["60"], { detached: true, stdio: "ignore" });
-  endGroupAfter(t, c.pid);
+  endGroupAfter(fx, c.pid);
   return c.pid;
 }
 const SOME_START = "ps:Thu Jan  1 00:00:00 2026";
@@ -1057,7 +1066,7 @@ test("an adder or claim holder whose start cannot be read: add and remove refuse
   const tree = join(home, ".work-feat");
   const recPath = join(home, ".oats", "trees", "feat.json");
   const lock = join(home, ".oats", "trees", "feat.lock");
-  const pid = bystander(t);
+  const pid = bystander(fx);
   const env = { OATS_TEST_PROCESS_START_PS: "1", PATH: unreadablePs(fx, pid) };
   const commands = [["add", "--purpose", "feat", "--branch", "agents/feat", "--base", "main", "--json"], ["remove", "--purpose", "feat", "--json"]];
   const ready = readFileSync(recPath, "utf8");
@@ -1094,8 +1103,8 @@ test("a spawn whose start cannot be read: status shows the quarantine, not in pr
   const fx = deployment(t, { work: "worktree", lifecycle: true });
   const { home, orphan } = await killedSpawn(fx, "dev-unk");
   const orphanGroup = pgidOf(orphan);
-  t.after(() => { try { process.kill(-orphanGroup, "SIGKILL"); } catch { /* gone */ } });
-  const pid = bystander(t);
+  endGroupAfter(fx, orphanGroup);
+  const pid = bystander(fx);
   const markerPath = join(home, ".oats-rollback-incomplete.json");
   const marker = JSON.parse(readFileSync(markerPath, "utf8"));
   writeFileSync(markerPath, JSON.stringify({ ...marker, inProgress: { ...marker.inProgress, pid, processStart: SOME_START } }));
@@ -1144,7 +1153,7 @@ test("a killed recovery's git step whose start cannot be read: the next add refu
   const recovering = cliChild(fx, argv, { cwd: home, env: { OATS_INSTANCE_HOME: home, PATH: path } });
   assert.ok(await waitFor(() => existsSync(join(fx.base, "recovering"))));
   const oldGit = Number(readFileSync(join(fx.base, "recovering"), "utf8"));
-  t.after(() => { try { process.kill(-oldGit, "SIGKILL"); } catch { /* gone */ } });
+  endGroupAfter(fx, oldGit);
   recovering.child.kill("SIGKILL");
   await recovering.done;
   const lock = join(home, ".oats", "trees", "feat.lock");
@@ -1185,7 +1194,7 @@ test("an interrupted add's git step or hook group whose start cannot be read: ad
   const killed = cliChild(fx, ["worktree", "add", "--purpose", "sw", "--branch", "agents/sw", "--base", "main", "--json"], { cwd: home, env: { OATS_INSTANCE_HOME: home, PATH: path } });
   assert.ok(await waitFor(() => existsSync(join(fx.base, "switching"))));
   const switchGit = Number(readFileSync(join(fx.base, "switching"), "utf8"));
-  t.after(() => { try { process.kill(-switchGit, "SIGKILL"); } catch { /* gone */ } });
+  endGroupAfter(fx, switchGit);
   killed.child.kill("SIGKILL");
   await killed.done;
   const swRec = readFileSync(recPath("sw"), "utf8");
@@ -1211,7 +1220,7 @@ test("an interrupted add's git step or hook group whose start cannot be read: ad
   await hooked.done;
   const hkRec = readFileSync(recPath("hk"), "utf8");
   const { hookPgid, hookStart } = JSON.parse(hkRec);
-  t.after(() => { try { process.kill(-hookPgid, "SIGKILL"); } catch { /* gone */ } });
+  endGroupAfter(fx, hookPgid);
   execFileSync("rm", [join(fx.root, "hook-sleep")]);
   env = { OATS_TEST_PROCESS_START_PS: "1", PATH: unreadablePs(fx, hookPgid) };
   for (const args of [["add", "--purpose", "hk", "--branch", "agents/hk", "--base", "main", "--json"], ["remove", "--purpose", "hk", "--json"]]) {
@@ -1230,7 +1239,7 @@ test("a killed spawn's hook group whose start cannot be read: retire refuses nam
   const fx = deployment(t, { work: "worktree", lifecycle: true });
   const { home, orphan } = await killedSpawn(fx, "dev-unkhook");
   const group = pgidOf(orphan);
-  t.after(() => { try { process.kill(-group, "SIGKILL"); } catch { /* gone */ } });
+  endGroupAfter(fx, group);
   const { hookStart } = JSON.parse(readFileSync(join(home, ".oats-rollback-incomplete.json"), "utf8")).inProgress;
   const saved = { PATH: process.env.PATH, seam: process.env.OATS_TEST_PROCESS_START_PS };
   process.env.PATH = unreadablePs(fx, group);
