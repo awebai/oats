@@ -166,6 +166,9 @@ when your task or your human says so. Retirement runs every module's retire
 hook (identities, scheduled jobs) and retains a worktree with work in it
 unless told to discard. An extra tree in the home is removed when it is
 clean and retained when it holds work; discarding does not apply to it.
+Retiring an instance stops its recorded children first and keeps them; if one
+will not stop, retire refuses with `E_CHILDREN_RUNNING` and retires nothing
+(`--force` does not bypass it), including your own `--self` retirement.
 
 ## Asking for a human's attention
 

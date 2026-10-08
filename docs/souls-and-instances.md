@@ -431,6 +431,13 @@ takes a final capture of notes and the session record into durable custody; an
 incomplete capture keeps the home for a retry. Retirement never waits for a
 model or GitHub: processing continues after the home is gone.
 
+Recorded children (the instances whose recorded parent chain reaches this
+one) are stopped first, never escalated, and kept: their homes stay. If one is
+still running after the grace, or its stop cannot be established, retire
+refuses with `E_CHILDREN_RUNNING` and retires nothing; `--force` does not
+bypass it. This holds for plain, guarded and `--self` retires alike
+([desktop-cli-api.md](desktop-cli-api.md)).
+
 Before any retire hook runs, retire preserves the instance's uncommitted and
 unmerged work: a verified recovery under `.oats-retirement/recovery/`, named in
 the summary. One retire writes at most one recovery directory. A worktree

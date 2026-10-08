@@ -2848,14 +2848,32 @@ A first retire prints the **raw receipt**, not an envelope:
   pendingMarker, resultPath, logPath, completesInSec, completionPid}`, or
   `{…, alreadyScheduled: true, requestedAt}`.
 
+**Recorded children**, on every apply (plain, guarded and `--self`), as the
+plan says: each child the plan lists is stopped first (bounded SIGTERM,
+never escalated) and kept, once the retire has resolved the home and before
+the instance's own session is stopped. `childrenStopped[]` lists them,
+deepest first, as `{instance, home, ok: true, stopped, alreadyIdle}` or
+`{instance, home, ok: false, code, message, stillRunning}`. A plain or
+`--self` receipt carries it only when there are children; a guarded receipt
+always does (`[]` when there are none). One child still running after the
+grace, or whose stop could not be established (`E_SESSION_UNAVAILABLE`,
+`E_INSTANCE_RETIRING`, …), refuses everything: nothing is retired, exit 1,
+`E_CHILDREN_RUNNING {childrenStopped}` (the text form names each child and its
+`code`). **`--force` does not bypass it**: `--force` covers incomplete
+cleanup, not a running child. A `--self` retirement stops the children
+recorded when it was scheduled that are still instances (a child retired in
+between is skipped), in its detached completion before it stops the caller;
+a refusal there leaves the caller's window and home in place and
+writes `{ok: false, error: {code: "E_CHILDREN_RUNNING"}, childrenStopped,
+retry}` to `resultPath`. Before 0.48.0 only a guarded apply stopped children.
+
 **Guarded apply** (what the Desktop sends): `--plan-revision` and
 `--idempotency-key` together.
 - A used key replays its receipt as an **envelope** with `replayed: true`
   (receipts live beside the instances directory and outlive the home).
 - The revision is checked against a fresh plan: `E_PLAN_STALE {plan}`.
-- Children are stopped first (never escalated) and kept; `childrenStopped[]`
-  lists them. One still running refuses everything: `E_CHILDREN_RUNNING
-  {childrenStopped, plan}`.
+- The children stopped are those of the revalidated plan, and a refusal
+  carries it: `E_CHILDREN_RUNNING {childrenStopped, plan}`.
 - A first guarded retire prints the raw receipt with `planRevision`,
   `idempotencyKey` and `replayed: false`.
 
