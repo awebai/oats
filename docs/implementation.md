@@ -442,4 +442,8 @@ inherits it (awebai/oats#816):
   and the caller's direct children, so a test's own forgotten child is not
   found here: that is the test's bug to fix. A process still exiting gets 2 s.
   Nothing is killed, the base is removed, and the failure names each pid and
-  command.
+  command. A test that leaves a process running on purpose (a group the kernel
+  must not signal) ends it itself before that check, on failure too: node:test
+  runs `t.after` hooks in the order they were added, so its own hook added
+  after `t.after(fx.cleanup)` runs too late (`test/worktree-event.test.mjs`
+  ends them inside its cleanup hook, ahead of `fx.cleanup`).
