@@ -204,3 +204,12 @@ test("the probe refuses to run without the reaper's group-tracked primitives", a
     assert.match(r.detail, /requires a reaper with spawnTracked, runTracked and reapGroup/);
   }
 });
+
+test("dist-smoke runs the phase after the ABI probe and before the launch skip, so CI's build-verify runs reach it", () => {
+  const src = readFileSync(new URL("../scripts/dist-smoke.mjs", import.meta.url), "utf8");
+  const abi = src.indexOf("await runAbiProbe(reaper"), backend = src.indexOf("await runBackendProbe(reaper"), skip = src.indexOf("process.env.OATS_SMOKE_SKIP_LAUNCH");
+  assert.ok(abi > 0 && backend > 0 && skip > 0, "all three are present");
+  assert.ok(abi < backend && backend < skip, "ABI probe, then the backend phase, then the launch skip");
+  assert.match(src, /bin: join\(server, "oats-web\.mjs"\), collector: join\(server, "liveness-main\.mjs"\)/, "the asar's backend and collector entries");
+  assert.match(src, /const server = join\(app\.resources, "app\.asar", "server"\);/, "from app.asar");
+});
