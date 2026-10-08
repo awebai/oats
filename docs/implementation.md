@@ -370,6 +370,10 @@ and acts on every existing session through its recorded socket
   fixture, with no user configuration unless the test asks for it;
   `oatsSocket()` is the socket `-L oats` resolves to there. Its restore
   function kills that server, by socket.
+- A test may instead start its own server on a private socket it creates
+  under the temporary directory (`tmux -S <socket>`) and kill that server by
+  its socket, as the older live tests in `test/desktop-tmux-target.test.mjs`
+  (base-index, wheel, drag, Slice G) do.
 - The shared fixture (`test/helpers/v2-deployment.mjs`) gives every command
   it runs a private `TMUX_TMPDIR` too, so a test with a fake `tmux` on `PATH`
   cannot reach a real server either. A fake answers what the kernel asks:
