@@ -2073,8 +2073,9 @@ first ends a recorded git step that still runs, signalling it only while its
 leader runs with the recorded start time (SIGTERM, which git answers by
 removing its lock files, then SIGKILL). Only then does it act, so a dead
 command's git never finishes late on a tree or branch made after it. A git
-step that cannot be ended keeps the claim, or the record, and the command
-answers `E_LIFECYCLE_BUSY`.
+step that times out is cleared from the record only once its whole process
+group is gone. A git step that cannot be ended keeps the claim, or the
+record, and the command answers `E_LIFECYCLE_BUSY`.
 
 A failed `add` reports the same facts about its rollback in `details`:
 `rolledBack`, `branchKept`, `branchKeptReason` and `warnings`.

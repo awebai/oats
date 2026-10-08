@@ -136,3 +136,27 @@ test("the purpose claim: taken over from a dead holder (and from a dead takeover
   await assert.rejects(withClaim(lock, () => "ran", { busy }), (e) => e.code === "E_LIFECYCLE_BUSY" && /not a readable claim/.test(e.message));
   assert.equal(readFileSync(lock, "utf8"), "{not json", "an unreadable claim is never removed");
 });
+
+test("a timed-out git step: its whole group, a SIGTERM-ignoring member without pipes included, is ended before its identity is cleared", async (t) => {
+  const { trackedGit } = await import("../lib/worktree.mjs");
+  const { mkdtempSync, readFileSync, writeFileSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "oats-tracked-git-"));
+  const memberFile = join(dir, "member");
+  // A `git` that leaves a member ignoring SIGTERM, holding no pipe, then waits to be ended.
+  writeFileSync(join(dir, "git"), `#!/bin/sh\n(trap '' TERM; exec sleep 60) </dev/null >/dev/null 2>&1 &\necho $! > ${JSON.stringify(memberFile)}\nexec sleep 60\n`, { mode: 0o755 });
+  const hostPath = process.env.PATH;
+  process.env.PATH = `${dir}:${hostPath}`;
+  let member = null;
+  t.after(() => { process.env.PATH = hostPath; if (member) { try { process.kill(member, "SIGKILL"); } catch { /* gone */ } } rmSync(dir, { recursive: true, force: true }); });
+  const calls = [];
+  const r = await trackedGit(["status"], { track: (g) => calls.push(g), timeout: 500 });
+  member = Number(readFileSync(memberFile, "utf8"));
+  const memberAlive = (() => { try { process.kill(member, 0); return true; } catch { return false; } })();
+  assert.equal(memberAlive, false, "the member is gone when the step answers");
+  assert.equal(r.ok, false);
+  assert.match(r.err, /timed out/);
+  assert.equal(typeof calls[0]?.gitPid, "number", "the step was recorded before it ran");
+  assert.equal(calls.at(-1), null, "and cleared only after its group was gone");
+});
