@@ -48,8 +48,8 @@ function fixture({ capabilities = {}, work = "worktree" } = {}) {
   // fx.cleanup also removes the fixture's private TMUX_TMPDIR, which lives outside fx.base.
   fixtureCleanups.push(fx.cleanup);
   const repo = fx.member;
-  execFileSync("git", ["-C", repo, "config", "user.email", "test@example.invalid"]);
-  execFileSync("git", ["-C", repo, "config", "user.name", "Test"]);
+  fixtureGit(repo, ["config", "user.email", "test@example.invalid"]);
+  fixtureGit(repo, ["config", "user.name", "Test"]);
   const bin = join(fx.base, "bin");
   write(join(bin, "pi"), "#!/bin/sh\nexit 0\n", 0o755);
   const env = { ...fx.env, PATH: `${bin}:${fx.env.PATH}` };
