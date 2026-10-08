@@ -55,10 +55,16 @@ export function createReaper(io = {}) {
    * ac366f9: the ABI probe's PTY_OK could arrive after exit). stderr is
    * consumed too so a chatty child can never back-pressure itself into a
    * hang. Group reaping still happens at exit (descendants must not
-   * outlive the leader's window). */
-  function runTracked(exe, args, { timeout, env } = {}) {
+   * outlive the leader's window). `input`, when given, is the child's whole
+   * stdin (written, then ended); without it stdin is /dev/null. The result
+   * carries the leader's pid so a caller can check it is gone. */
+  function runTracked(exe, args, { timeout, env, cwd, input } = {}) {
     return new Promise((resolve) => {
-      const c = spawnTracked(exe, args, { stdio: ["ignore", "pipe", "pipe"], env });
+      const c = spawnTracked(exe, args, { stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"], env, cwd });
+      if (input !== undefined) {
+        c.stdin?.on("error", () => { /* the child is gone; its exit is reported */ });
+        c.stdin?.end(input);
+      }
       let stdout = "", stderr = "", timedOut = false, exitCode = null;
       c.stdout?.on("data", (d) => { stdout += d; });
       c.stderr?.on("data", (d) => { stderr += d; });
@@ -69,9 +75,9 @@ export function createReaper(io = {}) {
       });
       c.on("close", (code) => {
         clearTimeout(t);
-        resolve({ stdout, stderr, code: exitCode ?? code, timedOut });
+        resolve({ stdout, stderr, code: exitCode ?? code, timedOut, pid: c.pid });
       });
-      c.on("error", () => { clearTimeout(t); reapGroup(c); resolve({ stdout, stderr, code: -1, timedOut }); });
+      c.on("error", () => { clearTimeout(t); reapGroup(c); resolve({ stdout, stderr, code: -1, timedOut, pid: c.pid }); });
     });
   }
 
