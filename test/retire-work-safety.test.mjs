@@ -3448,3 +3448,28 @@ test("#679 --discard-worktree that Git refuses (a locked worktree) is a refusal:
     assert.equal(existsSync(join(spawned.home, "instance.json")), true, "the home is kept");
   }
 });
+
+// GIT_NO_LAZY_FETCH is Git 2.44's; an older Git ignores it, and the retire then has no protection to test.
+const [gitMajor, gitMinor] = (/(\d+)\.(\d+)/.exec(execFileSync("git", ["--version"], { encoding: "utf8" })) || []).slice(1).map(Number);
+const gitHasNoLazyFetch = gitMajor > 2 || (gitMajor === 2 && gitMinor >= 44);
+test("#662 a retire's read of an object the repository lacks never fetches it: a promisor remote that the work's own configuration names does not run, and the copy refuses", { skip: !gitHasNoLazyFetch && "Git before 2.44 has no GIT_NO_LAZY_FETCH" }, () => {
+  const f = fixture();
+  const spawned = spawn(f, "lazy");
+  const work = join(spawned.home, "work");
+  const git = (...args) => execFileSync("git", ["-C", work, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  write(join(work, "staged.txt"), "staged content no commit has\n");
+  git("add", "staged.txt");
+  const oid = git("rev-parse", ":staged.txt");
+  rmSync(join(git("rev-parse", "--path-format=absolute", "--git-common-dir"), "objects", oid.slice(0, 2), oid.slice(2)));
+  const marker = join(f.base, "remote-helper-ran");
+  const helper = join(f.base, "remote-helper");
+  write(helper, `#!/bin/sh\ntouch '${marker}'\nexit 1\n`, 0o755);
+  git("config", "remote.attack.url", `ext::${helper}`);
+  git("config", "remote.attack.promisor", "true");
+  git("config", "protocol.ext.allow", "always");
+  const retired = cli(f, ["retire", "dev-lazy", "--json"]);
+  assert.notEqual(retired.status, 0, retired.stdout);
+  assert.equal(JSON.parse(retired.stdout).error.code, "E_WORK_PRESERVATION_FAILED", retired.stdout);
+  assert.equal(existsSync(marker), false, "no command the repository's configuration names for a fetch was run");
+  assert.equal(existsSync(join(spawned.home, "instance.json")), true, "the home is kept");
+});

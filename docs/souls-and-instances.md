@@ -515,7 +515,12 @@ from argv, without a shell, with `--no-optional-locks` and
 `GIT_OPTIONAL_LOCKS=0`, so a `git status` never refreshes, and so never
 rewrites, the index it inspects. It also runs with `-c core.fsmonitor=false`,
 `-c core.hooksPath=/dev/null` and `-c diff.external=`, so no fsmonitor, hook
-or external diff that the repository's own configuration names runs. The
+or external diff that the repository's own configuration names runs, and
+with `GIT_NO_LAZY_FETCH=1`: an object the repository lacks (a promisor
+repository's) is a read that fails, never a fetch through the remote, remote
+helper, ssh command or credential helper its configuration names. That
+protection needs Git 2.44 or later; an older Git ignores the variable, so it
+gets none, and nothing else changes. The
 caller's repository-local Git variables are not passed: Git's own list
 (`git rev-parse --local-env-vars`: `GIT_DIR`, `GIT_WORK_TREE`,
 `GIT_INDEX_FILE`, `GIT_COMMON_DIR`, the object directories, `GIT_CONFIG`,
@@ -883,8 +888,8 @@ has work of it to copy, refuses with `E_WORK_INSPECTION_FAILED` and removes
 nothing.
 
 The `work/` step runs helper-free, as the extra-tree step does (no
-fsmonitor, hooks or external diff that the repository's configuration names,
-and none of the caller's Git environment). It names the repository by its
+fsmonitor, hooks, external diff or lazy fetch that the repository's
+configuration names, and none of the caller's Git environment). It names the repository by its
 common Git directory, read once from the repository the instance was spawned
 from. That covers the default re-home (`git worktree move`), the removal
 (`git worktree remove --force` and `git worktree prune`) and a quarantine
@@ -936,7 +941,7 @@ leaves `work/` untouched. For each tree:
   `refs/worktree/` refs do not count: they go with its admin entry). The retire runs `git worktree remove` (without
   `--force`) and `git worktree prune`, and verifies that the tree is gone from
   `git worktree list`. Every Git command of this step runs helper-free (no
-  fsmonitor, hooks or external diff the repository's configuration names),
+  fsmonitor, hooks, external diff or lazy fetch the repository's configuration names),
   as the `work/` step's do. Its branch is never deleted: a commit on the branch that
   was not pushed stays in the clone, on that branch.
 - **Any other tree is re-homed**, as `work/` is by default: `git worktree

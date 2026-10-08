@@ -2472,8 +2472,11 @@ readOnly: {helpers: "disabled", optionalLocks: "off", objectsWritten: 0}}`.
 - `against` is the observed revision (the working tree against that commit,
   index included) or `"empty"` for an untracked file. A binary file has an
   empty patch; over 256 KiB, `truncated: true`.
-- The read runs without external diff, textconv, fsmonitor, hooks, the
-  caller's Git environment or global config, and writes nothing (`readOnly`).
+- The read runs without external diff, textconv, fsmonitor, hooks, lazy
+  fetch, the caller's Git environment or global config, and writes nothing
+  (`readOnly`). An object a partial clone lacks is not fetched: the read
+  fails with `E_GIT_FAILED` (with Git 2.44 or later; an older Git ignores
+  `GIT_NO_LAZY_FETCH`).
 - If HEAD or the index moved, the id is not in the current observation, or
   anything moved during the read: `E_STALE_OBSERVATION` with
   `details.observation`. Re-observe; never render a diff of another tree.
