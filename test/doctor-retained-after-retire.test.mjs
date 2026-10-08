@@ -148,3 +148,89 @@ test("each kind shows at most 50 items, then how many more; a staging copy and a
   assert.deepEqual(retainedWorktreeLines(kept).slice(1), [`retained-worktree: ${join(base, ".agents", "worktrees", "ws", "file")}: not a directory`]);
   assert.deepEqual(retainedRecoveryLines(join(base, "nothing"), { trees: [], unreadable: [] }), [], "nothing to say: no lines");
 });
+
+/** A script that appends to `marker` whenever Git runs it, then passes its input through. */
+function markerScript(fx, name, marker) {
+  const path = join(fx.base, name);
+  writeFileSync(path, `#!/bin/sh\necho ran >> '${marker}'\ncat\n`);
+  chmodSync(path, 0o755);
+  return path;
+}
+
+test("a status that would run the repository's content filter is not asked for", (t) => {
+  const { fx, wtA, } = leftovers(t);
+  const marker = join(fx.base, "filter-ran");
+  // A clean and a process filter, named by committed attributes, for files whose stat moved.
+  writeFileSync(join(wtA, ".gitattributes"), "*.txt filter=probe\n*.dat filter=proc\n");
+  writeFileSync(join(wtA, "a.txt"), "a\n");
+  writeFileSync(join(wtA, "b.dat"), "b\n");
+  git(wtA, "add", ".gitattributes", "a.txt", "b.dat");
+  git(wtA, "commit", "-qm", "filtered files");
+  git(fx.member, "config", "--unset", "core.fsmonitor");
+  git(fx.member, "config", "filter.probe.clean", markerScript(fx, "clean-filter", marker));
+  git(fx.member, "config", "filter.proc.process", markerScript(fx, "process-filter", marker));
+  const later = new Date(Date.now() + 60_000);
+  for (const file of [join(wtA, "a.txt"), join(wtA, "b.dat")]) utimesSync(file, later, later);
+
+  const doc = doctorJson(fx);
+  const line = doc.information.find((l) => l.startsWith(`retained-worktree: ${wtA}:`));
+  assert.match(line, /; branch agents\/a; clean: unknown \(its repository configures a content filter that doctor does not run: filter\.probe, filter\.proc\); commits: 1 not reachable from any other ref$/);
+  assert.equal(existsSync(marker), false, "no filter ran");
+  // The fixture is hostile for real: a plain status runs the filter.
+  git(wtA, "status", "--porcelain");
+  assert.equal(existsSync(marker), true, "the fixture's filter runs under a plain git status");
+});
+
+test("a status never enters a submodule, whose own configuration may name a filter", (t) => {
+  const { fx, wtB, } = leftovers(t);
+  const marker = join(fx.base, "filter-ran");
+  git(fx.member, "config", "--unset", "core.fsmonitor");
+  const sub = join(fx.base, "sub");
+  git(fx.base, "init", "-q", sub);
+  writeFileSync(join(sub, ".gitattributes"), "*.txt filter=inner\n");
+  writeFileSync(join(sub, "c.txt"), "c\n");
+  git(sub, "add", "-A");
+  git(sub, "commit", "-qm", "sub");
+  git(wtB, "-c", "protocol.file.allow=always", "submodule", "add", "-q", sub, "sub");
+  git(wtB, "commit", "-qm", "submodule");
+  git(join(wtB, "sub"), "config", "filter.inner.clean", markerScript(fx, "inner-filter", marker));
+  const later = new Date(Date.now() + 60_000);
+  utimesSync(join(wtB, "sub", "c.txt"), later, later);
+
+  const doc = doctorJson(fx);
+  assert.ok(doc.information.includes(`retained-worktree: ${wtB}: repository ${fx.member}; branch agents/b; clean; submodule work trees not read; commits: 3 not reachable from any other ref`), doc.information.join("\n"));
+  assert.equal(existsSync(marker), false, "the submodule's filter never ran");
+  // The fixture is hostile for real: a plain status enters the submodule and runs it.
+  git(wtB, "status", "--porcelain");
+  assert.equal(existsSync(marker), true, "the submodule's filter runs under a plain git status");
+});
+
+test("a branch name is compared exactly: one ending in U+00A0 is the tree's own branch, not another ref", (t) => {
+  const { fx } = leftovers(t);
+  const kept = join(fx.dep, ".agents", "worktrees", "ws", "kept");
+  git(fx.member, "worktree", "add", "-q", "-b", "kept ", kept);
+  git(kept, "commit", "-q", "--allow-empty", "-m", "only on kept");
+  const doc = doctorJson(fx);
+  assert.ok(doc.information.includes(`retained-worktree: ${kept}: repository ${fx.member}; branch kept ; clean; commits: 1 not reachable from any other ref`), doc.information.join("\n"));
+});
+
+test("directories that can't be listed are counted against the 50 lines and summed up in the count line", { skip: process.getuid?.() === 0 ? "root can list a directory with mode 000" : false }, (t) => {
+  const base = fixtureBase("oats-retained-");
+  const root = join(base, ".agents", "worktrees");
+  const locked = [];
+  t.after(() => { for (const dir of locked) chmodSync(dir, 0o700); rmSync(base, { recursive: true, force: true }); });
+  mkdirSync(join(root, "ws"), { recursive: true });
+  writeFileSync(join(root, "ws", "file"), "x");
+  for (let i = 0; i < RETAINED_LINES_MAX + 1; i++) {
+    const dir = join(root, `repo-${String(i).padStart(3, "0")}`);
+    mkdirSync(dir);
+    chmodSync(dir, 0o000);
+    locked.push(dir);
+  }
+  const lines = retainedWorktreeLines(retainedWorktrees(base));
+  assert.equal(lines.length, 1 + RETAINED_LINES_MAX + 1);
+  assert.match(lines[0], new RegExp(`^retained-worktree: 1 retained worktree that retires left in this deployment; ${RETAINED_LINES_MAX + 1} directories could not be listed, and what they hold is not counted; `));
+  assert.equal(lines[1], `retained-worktree: ${join(root, "ws", "file")}: not a directory`);
+  assert.equal(lines[2], `retained-worktree: ${locked[0]} could not be listed (EACCES)`);
+  assert.equal(lines.at(-1), "retained-worktree: … and 2 more");
+});

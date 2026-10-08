@@ -1107,8 +1107,13 @@ link. A fact doctor can't read is said on its line.
 - A retained worktree line gives the path, the repository, the branch (or
   `detached at <commit>`), and `clean` or `not clean; uncommitted: <classes>`
   (staged or unstaged changes, conflicts, untracked or ignored files, an
-  operation in progress). An entry that isn't a registered worktree is listed
-  and says why.
+  operation in progress). Doctor doesn't ask Git for the status of a
+  repository whose configuration names a content filter (`filter.<driver>.clean`
+  or `.process`), because the status would run it: the line says `clean:
+  unknown` and names the filter. The status never enters a submodule: it
+  compares only the commit each one is at, and the line says `submodule work
+  trees not read`. An entry that isn't a registered worktree is listed and
+  says why.
 - Both end with the reachability fact for the HEAD commit. It is checked in the
   source repository against every ref but the tree's own branch:
   `commits: all reachable from <ref>`, `commits: <n> not reachable from any
