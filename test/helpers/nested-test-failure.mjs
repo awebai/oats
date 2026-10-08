@@ -141,8 +141,10 @@ function precedingDiagnostics(lines, i) {
 
 // spec: the `✖ failing tests:` summary lists each leaf failure as an optional
 // `test at <location>` line, a `✖ name (duration)` line and its indented
-// error. Without the summary, the tree's `✖` lines are all there is; a `✖`
-// that closes a `▶` group at the same depth is a parent, not a failure.
+// error. Without the summary, the tree's `✖` lines are all there is. A `✖`
+// that closes a `▶` group at the same depth is a parent: listed when nothing
+// inside it failed (its own body or hook did), skipped when a descendant
+// already names the failure.
 function parseSpecFailures(out) {
   const lines = out.split("\n");
   const start = lines.findIndex((l) => /^✖ failing tests:\s*$/.test(l));
@@ -174,13 +176,17 @@ function specSummaryFailures(lines) {
 }
 
 function specTreeFailures(lines) {
-  const groups = new Set();
+  const open = [];
   const failures = [];
   for (const line of lines) {
     const g = line.match(/^( *)▶ (.*)$/);
-    if (g) { groups.add(`${g[1].length}:${g[2]}`); continue; }
-    const x = line.match(/^( *)✖ (.*?)(?: \([\d.]+m?s\))?$/);
-    if (x && !groups.has(`${x[1].length}:${x[2]}`)) failures.push({ name: x[2], location: null, error: "" });
+    if (g) { open.push({ depth: g[1].length, name: g[2], failuresBefore: failures.length }); continue; }
+    const x = line.match(/^( *)([✔✖]) (.*?)(?: \([\d.]+m?s\))?$/);
+    if (!x) continue;
+    const [, { length: depth }, mark, name] = x;
+    while (open.length && open.at(-1).depth > depth) open.pop();
+    const group = open.at(-1)?.depth === depth && open.at(-1).name === name ? open.pop() : null;
+    if (mark === "✖" && (!group || failures.length === group.failuresBefore)) failures.push({ name, location: null, error: "" });
   }
   return failures;
 }

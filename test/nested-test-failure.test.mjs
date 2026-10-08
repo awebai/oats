@@ -257,7 +257,29 @@ test("a spec-reporter run names the failures from its failing-tests summary", ()
 test("a spec-reporter run that died before its summary still names its ✖ leaves", () => {
   const cut = SPEC.slice(0, SPEC.indexOf("ℹ tests"));
   const m = describeNestedTestFailure({ status: 1, stdout: cut, stderr: "" });
-  assert.deepEqual(listed(m), ["✖ top fails", "✖ inner fails"], "the ✖ closing the ▶ suite group is a parent, not a failure");
+  assert.deepEqual(listed(m), ["✖ top fails", "✖ inner fails"], "the ✖ closing the ▶ suite group repeats its failing leaf");
+});
+
+test("a spec-reporter run that died before its summary names a parent that failed on its own", () => {
+  // Node 22 output: a parent's body throws after its subtests passed, a later
+  // group fails through a leaf, then output enough to push both out of the tail.
+  const stdout = `${NPM}▶ parent body fails
+  ✔ leaf passes (4.259711ms)
+  ▶ nested ok
+    ✔ deeper passes (0.2ms)
+  ✔ nested ok (0.5ms)
+✖ parent body fails (13.212652ms)
+▶ outer
+  ▶ inner
+    ✖ leaf fails (1ms)
+  ✖ inner (1.2ms)
+  ✔ sibling passes (0.1ms)
+✖ outer (2ms)
+✔ after (0.1ms)
+${"padding line\n".repeat(2000)}`;
+  const m = describeNestedTestFailure({ status: null, signal: "SIGTERM", error: new Error("spawnSync npm ETIMEDOUT"), stdout, stderr: "" });
+  assert.deepEqual(listed(m), ["✖ parent body fails", "✖ leaf fails"]);
+  assert.doesNotMatch(m.slice(m.indexOf("--- stdout tail ---")), /parent body fails/, "only the failures section names it");
 });
 
 test("an empty stdout with r.error set (maxBuffer, timeout) says why, and that no test could be read", () => {
