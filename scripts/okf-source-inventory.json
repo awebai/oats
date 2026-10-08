@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedBy": "scripts/check-okf-mirror.mjs --generate --source <standalone-repository>",
+  "generatedBy": "scripts/check-okf-mirror.mjs --finalize --source <standalone-repository> --final-tag <tag> --final-commit <full-oid>",
   "distributionPath": "oats-package",
   "capabilityPaths": [
     "capabilities/oats-okf",
@@ -15,17 +15,19 @@
   "version": "5.0.0",
   "source": {
     "repository": "https://github.com/awebai/oats-okf.git",
-    "branch": "agents/oats-okf-expert-proposal-harvest-5",
-    "head": "842525997407b565e2e2adf2eda71caefb8d3437",
+    "branch": "agents/oats-okf-expert-okf5-release-reference",
+    "head": "12db77492d92154099e7f1aad60a98b1d47f6631",
     "dirty": false,
     "workingTreeStatus": []
   },
   "release": {
-    "status": "pending",
-    "finalMergedCommit": null,
+    "status": "published",
+    "finalMergedCommit": "12db77492d92154099e7f1aad60a98b1d47f6631",
     "plannedTag": "v5.0.0",
-    "finalTag": null,
-    "published": false
+    "finalTag": "v5.0.0",
+    "published": true,
+    "remote": "origin",
+    "tagObject": "136701293432b8bb8ed23f114f88fbf0504c2363"
   },
   "distributionManifestText": "{\n  \"package\": \"oats.okf\",\n  \"version\": \"5.0.0\",\n  \"description\": \"Official OATS knowledge operations on Open Knowledge Format bases: the working-soul knowledge slot (consultation and instance knowledge), the knowledge harvester and maintainer capabilities and package souls, and the harvest-review trigger template.\",\n  \"compatibility\": {\n    \"oats\": \">=0.29.0\"\n  },\n  \"capabilities\": [\n    \"capabilities/oats-okf\",\n    \"capabilities/oats-okf-harvest\",\n    \"capabilities/oats-okf-maintenance\"\n  ],\n  \"souls\": [\n    \"souls/knowledge-harvester\",\n    \"souls/knowledge-maintainer\"\n  ],\n  \"triggers\": [\n    { \"id\": \"harvest-review\", \"file\": \"triggers/harvest-review.json\" }\n  ]\n}\n",
   "distributionManifestSha256": "d0732ef9d6995e144ea0b1f6b55af152294d06ba12e132d5bfe2b0d47b1196f1",
@@ -476,5 +478,7 @@
       "text": "{\n  \"parameters\": {\n    \"repo\": { \"path\": \"on.repo\", \"required\": true, \"description\": \"the knowledge-base repository, github.com/<owner>/<repo>\" },\n    \"base\": { \"path\": \"on.base\", \"default\": \"main\", \"description\": \"the knowledge base's accepted branch\" },\n    \"harness\": { \"path\": \"spawn.harness\", \"default\": \"claude\", \"description\": \"the maintainer's harness: pi, claude or codex\" },\n    \"model\": { \"path\": \"spawn.model\", \"default\": \"opus\", \"description\": \"the maintainer's model\" }\n  },\n  \"definition\": {\n    \"id\": \"okf-harvest-review\",\n    \"enabled\": true,\n    \"kind\": \"trigger\",\n    \"on\": {\n      \"source\": \"github.pull_request\",\n      \"events\": [\"opened\", \"reopened\", \"ready_for_review\"],\n      \"labels\": [\"okf-harvest\"],\n      \"poll\": \"2m\"\n    },\n    \"spawn\": {\n      \"soul\": \"oats.okf/knowledge-maintainer\",\n      \"purpose\": \"review-pr-{number}\",\n      \"task\": \"Review knowledge-base PR {repo}#{number} ({url}). Load the knowledge-review skill first.\"\n    },\n    \"concurrency\": { \"max\": 2, \"perKey\": 1 }\n  }\n}\n"
     }
   ],
-  "snapshotSha256": "61fa2e75e60159126523a6e75ad5c2a488bdb35047997a4c0ec85e7f4f2fb55e"
+  "snapshotSha256": "473cc89f0cc93c9d29e81a859eb39ec64979e1cae331544fb00fe35614a843e9",
+  "distributionManifestMode": "100644",
+  "distributionLicenseMode": "100644"
 }

@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
-  chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync,
+  chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, readdirSync, realpathSync, rmSync, writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
@@ -135,7 +135,7 @@ try {
   const pinnedRef = packedCatalog.packages?.["oats.okf"]?.ref;
   const mirroredVersion = readJson(join(payload, "capabilities/oats-okf/oats.json")).version;
   assert.equal(pinnedRef, `v${mirroredVersion}`, "okf mirror and packed official catalog version drift");
-  assert.equal(mirroredVersion, "4.1.1");
+  assert.equal(mirroredVersion, "5.0.0");
   // The PACKED tarball's catalog carries this release's provider pins, each equal to the checkout's mirror of it.
   for (const [id, slug, version] of [["oats.aweb", "oats-aweb", "1.23.2"], ["oats.engineering", "oats-developer", "1.9.0"], ["oats.cloning", "oats-cloning", "1.0.1"], ["oats.apps", "oats-folio", "1.0.0"], ["oats.apps", "oats-library", "1.0.0"]]) {
     const mirrored = readJson(join(repo, "mirrors", slug, "oats.json")).version;
@@ -216,6 +216,9 @@ try {
   write(join(soulsDir, "probe/AGENTS.md"), canonical);
   write(join(soulsDir, "probe/okf.json"), JSON.stringify({ version: 1, owner: "smoke-owner", owns: ["project/expert"], reads: [] }));
   write(join(soulsDir, "probe/skills/private/SKILL.md"), "---\nname: private\ndescription: Packed private smoke skill.\n---\n# Private\n");
+  write(join(soulsDir, "quiet/soul.yaml"), "schemaVersion: 2\nname: quiet\ndescription: Consult-only smoke probe\nwork: directory\nknowledge: { harvest: off }\n");
+  write(join(soulsDir, "quiet/AGENTS.md"), "# Quiet\nConsultation only.\n");
+  write(join(soulsDir, "quiet/okf.json"), JSON.stringify({ version: 1, owner: "smoke-owner", owns: [], reads: ["project/expert"] }));
   // A soul that opts out of the knowledge default and pulls the optional theory
   // from the oats.framework package (a package without executables).
   write(join(soulsDir, "author/soul.yaml"), "schemaVersion: 2\nname: author\ndescription: Knowledge theory author\nwork: directory\nknowledge: none\ncapabilities:\n  oats.knowledge-theory: { from: package }\n");
@@ -226,7 +229,8 @@ try {
   const bindings = join(room, "okf-bindings.json");
   const accepted = join(room, "accepted"); // created by `okf init`, never pre-seeded
   // Explicit bindings and stable owner: state-dir/bases live in the bindings
-  // document; the manifest's `bindings-file` setting is the only host value.
+  // document. An explicit legacy host key deliberately exercises the 5.0 guard
+  // after sync, followed by its guard-exempt cleanup before normal spawns.
   write(bindings, JSON.stringify({ version: 1, stateDir: join(room, "okf-state"), bases: {
     project: { id: "smoke-base", kind: "directory", path: accepted },
   } }));
@@ -316,6 +320,27 @@ try {
   const helpDefault = cliRun(["okf", "--help", "--json"]);
   assert.match(helpDefault.stderr, /oats okf: no --soul given; running as soul [\w.-]+\/probe, the first soul of this deployment that provides "okf"/, helpDefault.stderr);
   assert.deepEqual(JSON.parse(helpDefault.stdout), JSON.parse(cli(["okf", "--help", "--soul", "probe", "--json"])), "without --soul the dispatch resolves as --soul probe");
+  // The 5.0 package is synced, but the explicit old host key still blocks use.
+  // Both a command and a new spawn must name the supported cleanup remedy.
+  const localFile = join(deployment, "oats-local.yaml");
+  const legacyBytes = readFileSync(localFile), legacyMode = lstatSync(localFile).mode & 0o777;
+  const guarded = JSON.parse(cli(["okf", "inspect", "--soul", "probe", "--json"], { expectExit: 1 }));
+  assert.equal(guarded.error.code, "E_REMOVED");
+  assert.match(guarded.error.message, /settings\.oats\.okf\.harvest from host/);
+  assert.ok(guarded.error.message.includes("setup --remove-legacy-settings"));
+  const blocked = cliRun(["spawn", "probe", "--name", "blocked-before-cleanup", "--no-launch", "--json"], { expectExit: 1 });
+  assert.match(blocked.stdout + blocked.stderr, /E_REMOVED/);
+  assert.ok((blocked.stdout + blocked.stderr).includes("setup --remove-legacy-settings"));
+  assert.ok(!existsSync(join(agentsRoot, "probe", "instances", "blocked-before-cleanup")), "guard failure leaves no instance home");
+  const cleanupArgs = ["okf", "setup", "--remove-legacy-settings", "--soul", "probe"];
+  const planned = boundary([...cleanupArgs, "--plan", "--json"]);
+  assert.deepEqual(planned, { file: localFile, removed: ["settings.oats.okf.harvest"], plan: true, written: false });
+  assert.deepEqual(readFileSync(localFile), legacyBytes, "cleanup plan changes no bytes");
+  assert.deepEqual(boundary([...cleanupArgs, "--json"]), { file: localFile, removed: ["settings.oats.okf.harvest"], written: true });
+  assert.equal(readFileSync(localFile, "utf8"), legacyBytes.toString().replace('    harvest: "on"\n', ''), "only the explicit legacy line is removed");
+  assert.equal(lstatSync(localFile).mode & 0o777, legacyMode, "cleanup preserves file permissions");
+  assert.deepEqual(boundary([...cleanupArgs, "--json"]), { file: localFile, removed: [], written: false }, "cleanup is idempotent");
+
   // The init itself, without --soul: the default soul's run is the real one.
   const defaultInit = cliRun(["okf", "init", "--base", "project", "--nodes", nodes, "--confirm", "--json"]);
   assert.match(defaultInit.stderr, /no --soul given; running as soul [\w.-]+\/probe,/, defaultInit.stderr);
@@ -330,7 +355,8 @@ try {
   assert.deepEqual(storeEntries.map((n) => n.replace(/@[0-9a-f]{12}$/, "@<commit12>")), ["oats.okf@<commit12>"], `module store: ${storeEntries.join(", ")}`);
   assert.equal(storeEntries[0].slice("oats.okf@".length), locked.packages["oats.okf"].commit.slice(0, 12), "the store copy is the LOCKED commit");
   assert.ok(existsSync(join(deployment, ".oats", "modules", storeEntries[0], "bin", "oats-okf.mjs")), "the store copy carries the executable that ran");
-  assert.ok(!existsSync(join(agentsRoot, "probe", "instances")), "init ran before any instance existed");
+  const probeInstances = join(agentsRoot, "probe", "instances");
+  assert.deepEqual(existsSync(probeInstances) ? readdirSync(probeInstances) : [], [], "guard and init left no instance home");
 
   // ---- spawn the OKF probe through the packed CLI, scaffold only.
   const spawned = boundary(["spawn", "probe", "--dir", deployment, "--agents-root", agentsRoot, "--purpose", "packed", "--no-launch", "--json"]);
@@ -345,7 +371,8 @@ try {
   assert.equal(meta.modules["oats.okf"].from.package, "oats.okf");
   const okfRow = meta.capabilities.find((c) => c.id === "oats.okf");
   assert.ok(okfRow, "instance.json.capabilities lists oats.okf");
-  assert.deepEqual([...okfRow.hooks].sort(), ["retire", "soul-scaffold", "spawn"], "capability row carries its hooks");
+  assert.deepEqual([...okfRow.hooks].sort(), ["soul-scaffold", "spawn"], "5.0 has no retire capture hook");
+  assert.equal(meta.capabilityMeta?.["oats.okf"], undefined, "the spawn hook creates no external custody or compensation debt");
   assert.equal(okfRow.settings?.["bindings-file"], bindings, "effective settings come from oats-local.yaml");
   const okfModule = join(probeHome, ".oats/modules/oats.okf");
   assert.equal(readJson(join(okfModule, "oats.json")).hooks.spawn.required, true);
@@ -358,10 +385,10 @@ try {
   // beside each module's, one level deep where the harness discovers them.
   const skillsRoot = join(probeHome, ".agents", "skills");
   const skills = readdirSync(skillsRoot).sort();
-  assert.deepEqual(skills, ["okf-consultation", "okf-instance-knowledge", "private"], "oats.okf 4.0.0's two skills plus the soul's private skill, flat");
+  assert.deepEqual(skills, ["knowledge-theory", "okf-consultation", "okf-instance-knowledge", "private"], "5.0 consultation, instance knowledge and theory plus the private skill, flat");
   for (const name of skills) assert.ok(existsSync(join(skillsRoot, name, "SKILL.md")) && existsSync(join(probeHome, ".claude", "skills", name, "SKILL.md")), `${name}/SKILL.md one level deep, also through .claude/skills`);
   // The soul's own skill and each module skill by its `module:<cap>` source (record order is not a contract).
-  assert.deepEqual(meta.skills.map((s) => [s.name, s.source]).sort(), [["okf-consultation", "module:oats.okf"], ["okf-instance-knowledge", "module:oats.okf"], ["private", "soul"]]);
+  assert.deepEqual(meta.skills.map((s) => [s.name, s.source]).sort(), [["knowledge-theory", "module:oats.okf"], ["okf-consultation", "module:oats.okf"], ["okf-instance-knowledge", "module:oats.okf"], ["private", "soul"]]);
   assert.equal(lstatSync(join(probeHome, "AGENTS.md")).isSymbolicLink(), false);
   assert.equal(readlinkSync(join(probeHome, "CLAUDE.md")), "AGENTS.md");
   const composed = readFileSync(join(probeHome, "AGENTS.md"), "utf8");
@@ -370,8 +397,9 @@ try {
   assert.equal(readFileSync(join(agentsRoot, "probe/soul/AGENTS.md"), "utf8"), canonical, "the fetched soul copy is the member's soul");
   assert.doesNotMatch(meta.command, /--no-skills/, "the launch command must let the harness load the materialized skills");
   assert.ok(meta.command.includes(join(probeHome, "AGENTS.md")), meta.command);
-  const marker = readJson(join(probeHome, ".okf-source.json"));
-  assert.ok(existsSync(marker.source), "required spawn hook registered durable source");
+  assert.ok(!existsSync(join(probeHome, ".okf-source.json")), "5.0 never registers a durable source");
+  assert.ok(!existsSync(join(room, "okf-state", "sources")), "no source custody created");
+  assert.match(readFileSync(join(probeHome, "TASK.md"), "utf8"), /oats spawn oats\.okf\/knowledge-harvester --task-file <proposal> --relation unrelated/);
   assert.ok(!existsSync(join(probeHome, "knowledge")), "okf 3.0.0 materializes no ./knowledge/ view: instances consult the accepted state");
   const doctor = JSON.parse(cli(["doctor", deployment, "--json"]));
   assert.equal(doctor.lockError ?? null, null);
@@ -396,14 +424,12 @@ try {
   // Scope commands (no home) run from the source home with its identity: the
   // dispatcher resolves the capability from that instance's materialized modules.
   const inHome = { cwd: probeHome, identity: true };
-  const inspectSource = () => boundary(["okf", "inspect", "--source", marker.source, "--soul", "probe", "--json"], inHome);
   const discovered = boundary(["inspect", "--home", probeHome, "--json"]);
   assert.equal(discovered.knowledge.provider, "oats.okf");
   assert.equal(discovered.knowledge.operations.find((op) => op.name === "inspect").available, true);
   for (const result of [
     boundary(["okf", "inspect", "--json"], inHome),
     boundary(["operation", "run", "knowledge:inspect", "--home", probeHome, "--json"]).result,
-    inspectSource(),
   ]) {
     assert.equal(result.liveMemory.available, true);
     assert.deepEqual(result.documents.slice(0, 3).map(({ label, kind, text, truncated }) => [label, kind, text, truncated]), [
@@ -411,91 +437,83 @@ try {
       ["Log (log.md)", "markdown", largeLog, undefined],
       ["Pending note: live.md", "markdown", largeNote, undefined],
     ]);
-    assert.equal(result.documents.at(-1).label, "Durable processing receipts");
-    assert.ok(result.acceptedView.project.digest);
+    assert.equal(result.documents.length, 3, "only the home's working memory, no invented processing receipts");
+    assert.deepEqual(result.owns, ["project/expert"]);
+    assert.equal(result.bases.project.kind, "directory");
   }
-  // A scope command needs SOME materialized module set to dispatch from; keep a
-  // pristine module copy for after the source home is gone.
-  const scopeHome = join(room, "scope-home");
-  cpSync(probeHome, scopeHome, { recursive: true, verbatimSymlinks: true });
-  for (const f of ["STATE.md", "log.md", "notes", ".okf-source.json", "knowledge"]) rmSync(join(scopeHome, f), { recursive: true, force: true });
-  const inScope = { cwd: scopeHome, identity: true };
-  const scopeInspect = () => boundary(["okf", "inspect", "--source", marker.source, "--soul", "probe", "--json"], inScope);
-  const preservedHome = join(room, "temporarily-missing-source");
-  renameSync(probeHome, preservedHome);
-  assert.equal(scopeInspect().liveMemory.reason, "missing-home");
-  write(join(probeHome, "STATE.md"), "DO_NOT_EXPOSE_REUSED_HOME");
-  write(join(probeHome, ".okf-source.json"), JSON.stringify({ version: 1, id: "00000000-0000-0000-0000-000000000000", source: marker.source }));
-  const reused = scopeInspect();
-  assert.equal(reused.liveMemory.reason, "identity-mismatch");
-  assert.equal(reused.documents.length, 1);
-  assert.doesNotMatch(JSON.stringify(reused), /DO_NOT_EXPOSE_REUSED_HOME/);
-  rmSync(probeHome, { recursive: true });
-  renameSync(preservedHome, probeHome);
-
-  const retiredProbe = retire(spawned.instance, probeHome);
-  assert.equal(retiredProbe.capabilityMeta["oats.okf"].capture.complete, true, "retire hook captured the source before removal");
-  assert.equal(retiredProbe.capabilityMeta["oats.okf"].capture.inputs, 1);
-  const durable = scopeInspect();
-  assert.equal(durable.liveMemory.reason, "retired");
-  assert.equal(durable.status.retired, true);
-  assert.equal(durable.status.lastCapture.complete, true);
-  assert.equal(durable.documents.length, 1);
-  const refresh = JSON.parse(cli(["okf", "refresh", "--source", marker.source, "--soul", "probe", "--json"], { ...inScope, expectExit: 1 }));
-  assert.equal(refresh.error.code, "E_REMOVED", "okf 3.0.0 has no views to refresh");
-  // okf 4.0.0 removed `read` (a 3.0.0 alias of `cat`).
-  const read = JSON.parse(cli(["okf", "read", "--source", marker.source, "--base", "project", "--path", "expert/index.md", "--soul", "probe", "--json"], { ...inScope, expectExit: 1 }));
-  assert.equal(read.error.code, "E_REMOVED", "okf 4.0.0 removed read"); // `cat` is exercised below, from a fresh home
-
-  // No source home exists. The real capability asks the installed public CLI
-  // for its own independent directory worker, then stages durable evidence.
-  // okf 4.0.0: the harvester is the PACKAGE SOUL oats.okf/knowledge-harvester (spawned by
-  // `oats spawn oats.okf/knowledge-harvester --name okf-harvester-<run>`), resolved from the
-  // deployment's lock and homed under <deployment>/agents/oats-okf--knowledge-harvester/instances/.
-  const requested = boundary(["okf", "run-source", "--source", marker.source, "--manual", "--no-launch", "--soul", "probe", "--json"], inScope);
-  assert.equal(requested.status, "ready");
+  // There is no source-scoped inspector or completion engine to fall back to.
+  // The replacement contract is an explicit refusal, never reads of an old home.
+  for (const args of [["inspect", "--source", join(room, "missing-source.json")], ["run-source"], ["complete"], ["harvest"], ["refresh"], ["read"]]) {
+    const refused = JSON.parse(cli(["okf", ...args, "--json"], { ...inHome, expectExit: 1 }));
+    assert.equal(refused.error.code, "E_REMOVED", JSON.stringify(refused));
+  }
+  const baseline = readFileSync(join(accepted, "expert/index.md"), "utf8");
+  assert.equal(boundary(["okf", "cat", "--base", "project", "expert/index.md", "--json"], inHome).text, baseline);
+  const acceptedBefore = fingerprint(accepted), sourceBefore = readFileSync(join(probeHome, "instance.json"));
+  const proposal = `# Knowledge proposal\n\nSource: instance ${spawned.instance}, home ${probeHome}, soul probe\n\n## What and why\nWorking-memory inspections must preserve complete Unicode documents so a reviewer does not judge truncated evidence.\n\n## Evidence\nThe packed fixture compares all three document bodies.\n\n## Backing notes\n- notes/live.md\n`;
+  write(join(probeHome, "proposals/checkpoint.md"), proposal);
+  const harvesterRoot = join(agentsRoot, "oats-okf--knowledge-harvester", "instances");
+  const harvesterHomes = () => existsSync(harvesterRoot) ? readdirSync(harvesterRoot).sort() : [];
+  const spawnHarvester = (file, options = inHome) => cliRun(["spawn", "oats.okf/knowledge-harvester", "--task-file", file, "--relation", "unrelated", "--no-launch", "--json"], options);
+  write(join(probeHome, "proposals/invalid.md"), "# Not a proposal\nNo Source line.\n");
+  const invalid = spawnHarvester("proposals/invalid.md", { ...inHome, expectExit: 1 });
+  assert.match(invalid.stdout + invalid.stderr, /E_SOURCE/);
+  assert.deepEqual(harvesterHomes(), [], "invalid proposal leaves no retained harvester home");
+  const requestedEnvelope = JSON.parse(spawnHarvester("proposals/checkpoint.md").stdout);
+  assert.equal(requestedEnvelope.ok, true);
+  const requested = requestedEnvelope.result;
   const workerMeta = readJson(join(requested.home, "instance.json"));
   assert.equal(workerMeta.launched, false);
   assert.equal(workerMeta.work, "directory");
   assert.equal(workerMeta.agent, "oats-okf--knowledge-harvester");
-  assert.equal(workerMeta.instance, `okf-harvester-${requested.run}`);
-  assert.equal(dirname(dirname(realpathSync(requested.home))), realpathSync(join(agentsRoot, "oats-okf--knowledge-harvester")), "a package soul homes under the agents root");
-  assert.equal(lstatSync(join(requested.home, "work")).isSymbolicLink(), false);
-  assert.ok(!existsSync(join(requested.home, ".okf-source.json")), "service worker must not become another working-memory source");
-  const workerWork = join(requested.home, "work");
-  const input = readJson(join(workerWork, "input.json"));
-  assert.equal(input.inputs.length, 1);
-  assert.equal(input.inputs[0].text, largeNote, "full note survived source deletion into durable worker custody");
-  const inputId = input.inputs[0].id;
-  const stage = readJson(join(workerWork, "staging.json")).project.root;
-  const concept = "---\ntype: Decision\ntitle: Explicit custody\ndescription: Why explicit custody was chosen.\n---\n\nHuman accepted explicit custody to avoid silent fallback.\n" + `Evidence: OKF input ${inputId}.\n`;
-  write(join(stage, "expert/decision.md"), concept);
-  write(join(stage, "expert/index.md"), readFileSync(join(stage, "expert/index.md"), "utf8") + "* [Explicit custody](decision.md) - Why explicit custody was chosen.\n");
-  const judgment = join(workerWork, "judgment.json");
-  write(judgment, JSON.stringify({ version: 1, exclusionsReviewed: true, outcomes: [{ input: inputId, verdict: "promote", reason: "Accepted rationale, not a code description.", concepts: [{ base: "project", path: "expert/decision.md" }] }] }));
-  const completed = boundary(["okf", "complete", "--source", marker.source, "--run", requested.run, "--judgment", judgment, "--soul", "probe", "--json"], inScope);
-  assert.equal(completed.receipts.project.status, "accepted");
-  assert.equal(completed.processed, true);
-  assert.equal(readFileSync(join(accepted, "expert/decision.md"), "utf8"), concept);
-  assert.deepEqual(boundary(["okf", "complete", "--source", marker.source, "--run", requested.run, "--soul", "probe", "--json"], inScope), completed, "completion receipt is idempotent");
-  // A package soul homes under <deployment>/agents/<package>--<soul>/instances/; retire through that agents root.
+  assert.equal(dirname(dirname(realpathSync(requested.home))), realpathSync(join(agentsRoot, "oats-okf--knowledge-harvester")), "package-soul harvester homes under the agents root");
+  for (const key of ["parentInstance", "siblingInstance", "relation", "relativeTo"]) assert.equal(workerMeta[key], undefined, `${key}: unrelated is top-level`);
+  assert.equal(workerMeta.spawnOrigin, "operator");
+  assert.deepEqual(readFileSync(join(probeHome, "instance.json")), sourceBefore, "proposal spawn does not change source lineage");
+  assert.equal(workerMeta.capabilityMeta?.["oats.okf-harvest"], undefined, "source gate creates no compensation debt");
+  assert.deepEqual(Object.keys(workerMeta.modules), ["oats.okf-harvest"], "harvester is knowledge:none with its own capability");
+  assert.equal(workerMeta.modules["oats.okf-harvest"].commit, okfCommit);
+  assert.deepEqual(payloadEntries(join(requested.home, ".oats/modules/oats.okf-harvest")), capabilityEntries(inventory, "capabilities/oats-okf-harvest"));
+  assert.equal(readJson(join(requested.home, ".oats/modules/oats.okf-harvest/oats.json")).hooks.spawn.required, true);
+  for (const name of ["STATE.md", "log.md", "notes", ".okf-source.json", "work/input.json", "work/staging.json"]) assert.ok(!existsSync(join(requested.home, name)), `harvester has no automatic ${name}`);
+  assert.ok(readFileSync(join(requested.home, "TASK.md"), "utf8").includes(proposal.trim()), "the harvester receives the author's own proposal");
+  checkOkfModule();
+
+  // A real opted-out soul consults normally, receives no proposal direction and
+  // is refused by the harvester's required source gate, with no extra home.
+  const quiet = boundary(["spawn", "quiet", "--purpose", "packed", "--no-launch", "--json"]);
+  const quietInHome = { cwd: quiet.home, identity: true };
+  assert.equal(boundary(["okf", "cat", "--base", "project", "expert/index.md", "--json"], quietInHome).text, baseline);
+  assert.doesNotMatch(readFileSync(join(quiet.home, "TASK.md"), "utf8"), /oats spawn oats\.okf\/knowledge-harvester/);
+  write(join(quiet.home, "proposal.md"), `# Forbidden proposal\n\nSource: instance ${quiet.instance}, home ${quiet.home}, soul quiet\n\nThis source opted out.\n`);
+  const beforeRefusal = harvesterHomes();
+  const optedOut = spawnHarvester("proposal.md", { ...quietInHome, expectExit: 1 });
+  assert.match(optedOut.stdout + optedOut.stderr, /E_OPTED_OUT/);
+  assert.deepEqual(harvesterHomes(), beforeRefusal, "opted-out proposal leaves no extra harvester home");
+  retire(quiet.instance, quiet.home);
+
+  // Retirement does not capture or publish. The already admitted unrelated
+  // harvester survives the source, carrying the self-contained proposal only.
+  const retiredProbe = retire(spawned.instance, probeHome);
+  assert.equal(retiredProbe.capabilityMeta?.["oats.okf"], undefined, "no automatic retire capture");
+  assert.ok(existsSync(requested.home), "unrelated harvester survives source retirement");
+  assert.ok(readFileSync(join(requested.home, "TASK.md"), "utf8").includes(proposal.trim()));
+  assert.ok(!existsSync(join(room, "okf-state", "sources")), "no durable source engine at retirement");
+  assert.deepEqual(fingerprint(accepted), acceptedBefore, "no model or PR acceptance: accepted knowledge is unchanged");
+  // Also exercise the packed public API against the independent scaffold.
   core.retireInstance(agentsRoot, requested.instance, { home: requested.home });
-  assert.ok(!existsSync(requested.home), "independent scaffold-only worker retired");
-  // A fresh reader of the same soul sees the accepted concept; its modules are
-  // materialized again from the cache — the source fixture no longer exists.
+  assert.ok(!existsSync(requested.home), "independent no-launch harvester retired");
   const fresh = boundary(["spawn", "probe", "--dir", deployment, "--agents-root", agentsRoot, "--purpose", "fresh", "--no-launch", "--json"]);
   const freshHome = realpathSync(fresh.home);
-  assert.ok(!existsSync(join(freshHome, "knowledge")), "no ./knowledge/ view in the fresh home");
-  assert.equal(boundary(["okf", "cat", "--base", "project", "expert/decision.md", "--fresh", "--json"], { cwd: freshHome, identity: true }).text, concept, "the fresh reader consults the accepted concept");
+  assert.ok(!existsSync(join(freshHome, "knowledge")), "fresh reader has no local knowledge view");
+  assert.equal(boundary(["okf", "cat", "--base", "project", "expert/index.md", "--fresh", "--json"], { cwd: freshHome, identity: true }).text, baseline, "fresh reader consults accepted bytes, not a fabricated completion");
   assert.equal(readJson(join(freshHome, "instance.json")).modules["oats.okf"].commit, okfCommit);
   assert.deepEqual(payloadEntries(join(freshHome, ".oats/modules/oats.okf")), capabilityEntries(inventory));
   retire(fresh.instance, freshHome);
-  assert.notEqual(boundary(["schedule", "list", "--dir", deployment, "--json"]).scheduler.active, true);
+  const schedules = boundary(["schedule", "list", "--dir", deployment, "--json"]);
+  assert.notEqual(schedules.scheduler.active, true);
+  assert.deepEqual(schedules.schedules, [], "the provider created no scheduled harvest jobs");
   assert.deepEqual(readJson(lockPath), locked, "lifecycle never mutates the lock");
-  // Module copies are per-instance and gone with their homes; the lock is the
-  // durable trust record and the scope copy's module set is still pristine.
-  assert.deepEqual(payloadEntries(join(scopeHome, ".oats/modules/oats.okf")), capabilityEntries(inventory), "lifecycle never mutates a materialized module");
-  rmSync(scopeHome, { recursive: true });
 
   // ---- Optional theory from the oats.framework package: a soul that opts out
   // of the knowledge default and pulls oats.knowledge-theory from the package.
@@ -558,8 +576,9 @@ try {
     okf: { version: mirroredVersion, catalogRef: pinnedRef, excludedFromNpm: true,
       acquiredFromVerifiedGit: true, exactCommit: okfCommit, sourceRemoved: true,
       trackedSourceAliasPreserved: true, moduleMatchesInventory: true, requiredHooks: true, dispatchFromModules: true, largePipedInspection: true,
-      sourceCustody: true, independentWorker: true, acceptedCompletion: true,
-      scaffoldedAndRetired: ["source", "worker", "fresh-reader"], liveLaunches: 0,
+      legacyKeyGuardAndCleanup: true, proposalGate: true, optedOutSourceRefused: true,
+      independentHarvester: true, automaticCapture: false, acceptedKnowledgeUnchanged: true,
+      scaffoldedAndRetired: ["source", "harvester", "opted-out-reader", "fresh-reader"], liveLaunches: 0,
       operatorDispatchFromDeployment: { command: "okf init --soul probe", store: storeEntries[0], soulRequired: true } },
     optionalTheory: { package: distribution.package, excludedFromNpm: true, acquiredFromGitFixture: true, exactCommit: theoryCommit, sourceRemoved: true,
       references: expectedClosure.length - 1, trackedSourceAliasPreserved: true, scaffoldedAndRetired: theoryProbes, liveLaunches: 0 },
