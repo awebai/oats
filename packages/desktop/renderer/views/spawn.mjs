@@ -464,7 +464,10 @@ ${spawnDialogCSS}</style>
     schedule: agent => { if (canLaunchSoul(s, agent)) { preselectSchedule(agent); preselectAutomationsTab("schedule"); ctx.openView?.("automations"); } },
   };
   // Instances: the right-panel sidebar (it sits beside a running terminal).
-  s.inspector = createSoulInspector(inspectorElement, { ...inspectorOptions, presentation: s.presentation });
+  s.inspector = createSoulInspector(inspectorElement, { ...inspectorOptions, presentation: s.presentation,
+    // A capability warning's Open capability (readiness): the capability's page, as the Capabilities table opens it
+    // (Back returns to the list; the sidebar's subject is not a soul page to return to).
+    openCapability: cap => openCapability(s, capabilityRow(cap)) });
   // Souls: a full page in the Workspace view, "← Souls" back to the grid.
   s.page = createSoulInspector(s.q("workspace-soul-page"), {
     ...inspectorOptions, layout: "page", backLabel: "Souls",

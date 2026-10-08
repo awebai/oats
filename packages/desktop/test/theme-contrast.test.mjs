@@ -1626,14 +1626,14 @@ import { createWarningsList, capabilityWarningsCSS } from '../renderer/capabilit
 import { instanceSoulCSS } from '../renderer/instance-soul.mjs';
 for (const [name] of palettes) test(`${name}: the capability warnings list meets computed AA on every surface that shows it`, () => {
   const hosts = [
-    ['capability page', '<div class="oats-view"><div class="workspace-page"><section class="page-section cap-contents-section"><div class="cap-contents-warnings" id="host"></div></section></div></div>', [inspectorCSS, capabilityContentsCSS]],
+    ['capability page', '<div class="oats-view"><div class="workspace-page"><section class="page-section cap-contents-section"><div class="cap-contents-warnings" id="host"><h4 class="cap-contents-warnings-title">Warnings</h4></div></section></div></div>', [inspectorCSS, capabilityContentsCSS], false, [['.cap-contents-warnings-title', 'muted']]],
     ['soul page', '<div class="oats-view"><div class="workspace-page soul-page"><div class="inspector-content inspector-main" id="host"></div></div></div>', [inspectorCSS, pageCardCSS]],
     ['readiness (sidebar)', '<div class="oats-view"><div class="soul-inspector"><div class="readiness-view"><section class="readiness-warnings" id="host"></section></div></div></div>', [inspectorCSS]],
     ['instance Soul tab', '<aside id="context-panel" class="context-panel"><div class="soul-tab"><section class="soul-tab-section soul-tab-warnings" id="host"></section></div></aside>', [contextPanelCSS, instanceSoulCSS]],
     ['spawn preview', '<div class="spawn-modal"><div class="spawn-dialog"><div class="spawn-preview"><div class="spawn-preview-warnings" id="host"></div></div></div></div>', [spawnDialogCSS], true],
     ['Workspace › Sources', '<main class="oats-view"><div class="workspace-discovery"><div class="catalog-notes" id="host"></div></div></main>', [discoveryCSS]],
   ];
-  for (const [surface, html, sources, lines = false] of hosts) {
+  for (const [surface, html, sources, lines = false, own = []] of hosts) {
     const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body>${html}</body></html>`), doc = dom.window.document;
     for (const source of [css, ...sources]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
     // Every host's CSS carries the list's own rules (the component's CSS is composed into each).
@@ -1644,7 +1644,7 @@ for (const [name] of palettes) test(`${name}: the capability warnings list meets
     const root = dom.window.getComputedStyle(doc.documentElement);
     const ground = el => { for (let x = el; x; x = x.parentElement) { const s = dom.window.getComputedStyle(x), m = /var\(--([\w-]+)\)/.exec(`${s.background} ${s.backgroundColor}`); if (m) return m[1]; } return 'bg'; };
     const parts = [['.cap-warning-label', 'warn'], ['.cap-warning-message', 'fg'], ['.cap-warnings-more', 'muted'],
-      ...(lines ? [] : [['.cap-warning-capability', 'muted'], ['.cap-warning-note', 'muted'], ['.cap-warning-details > summary', 'muted'], ['.cap-warning-details dt', 'muted'], ['.cap-warning-details dd', 'fg']])];
+      ...own, ...(lines ? [] : [['.cap-warning-capability', 'muted'], ['.cap-warning-note', 'muted'], ['.cap-warning-details > summary', 'muted'], ['.cap-warning-details dt', 'muted'], ['.cap-warning-details dd', 'fg']])];
     for (const [selector, fg] of parts) {
       const el = doc.querySelector(selector); assert.ok(el, `${surface}: ${selector}`);
       const color = dom.window.getComputedStyle(el).color;

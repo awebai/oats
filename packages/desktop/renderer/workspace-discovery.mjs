@@ -189,6 +189,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   let alive = true, serial = 0, rosterGen = null, workspace = null, deployment = null, instances = [], tab = 'souls';
   // `repo`: the Workspace owned repository pill (a group key; null = All), remembered while the subject stays.
   let catalog = null, loading = false, failure = '', repo = null, rendered = null;
+  let warningsDrawn = { signature: null, element: null }; // Sources' warnings list, kept while it is unchanged
   let setupView = 'list', query = '', setupMember = null, souls = [];
   // The Souls tab's count: a number, 'pending' (a pill reserving its width) or null (a failed roster read: nothing, still).
   let soulsCount = 'pending';
@@ -412,17 +413,22 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
       // The kernel's workspace warnings, through the one warnings list (capability-warnings.mjs); a team's
       // warning is said on the Teams tab. A remedy (0.30 automation-untrusted: the oats-local.yaml line to add)
       // is a muted line under its message. Open capability once the catalog lists the warning's capability.
+      // Each warning keeps its own catalog row: two warnings may name two capabilities of one name (another member, a
+      // package), each told apart by its path.
       const remedies = new Map(), opens = new Map();
       const shown = list(s?.warnings).flatMap(raw => {
         const w = teamWarning(raw) ? null : warningOf(raw); if (!w) return [];
         remedies.set(w, displayLine(raw.remedy));
         const row = w.capability && catalog ? warnedRow(catalog.capabilities, w.capability, w.path) : null;
-        // Two warnings of one name that resolve to different rows: neither is guessed.
-        if (row) opens.set(w.capability, opens.has(w.capability) && opens.get(w.capability) !== row ? null : row);
+        if (row) opens.set(w, row);
         return [w];
       });
-      const warned = createWarningsList(doc, shown, { showCapability: true, focusKey: 'ws-warning', after: w => remedies.get(w) ?? null,
-        canOpen: name => !!opens.get(name), open: typeof onOpenCapability === 'function' ? name => onOpenCapability(opens.get(name)) : null });
+      // An unchanged list is the same element (a roster poll repaints the tab): its open Details stay open.
+      const signature = JSON.stringify(shown.map(w => [w, remedies.get(w), opens.has(w) ? [opens.get(w).kind, opens.get(w).repoKey ?? opens.get(w).package ?? null] : null]));
+      if (signature !== warningsDrawn.signature) warningsDrawn = { signature, element: createWarningsList(doc, shown, { showCapability: true, focusKey: 'ws-warning', after: w => remedies.get(w) ?? null,
+        // Open capability takes the catalog row as it is when pressed: an unchanged list outlives the render that drew it.
+        canOpen: (name, w) => opens.has(w), open: typeof onOpenCapability === 'function' ? (name, w) => { const row = catalog ? warnedRow(catalog.capabilities, name, w.path) : null; if (row) onOpenCapability(row); } : null }) };
+      const warned = warningsDrawn.element;
       if (warned) { notes.append(warned); restoreNotes(); }
       renderSetup(body, { status: s, instances, souls, cli: cliStatus(), view: setupView, selected: setupMember,
         onSelect: key => selectMember(key), onOpenRepo: openRepo, onOpenPackages: openPackages, openExternal: url => ctx.openExternal?.(url), machines: machinesCard() }); return;

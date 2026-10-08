@@ -82,7 +82,7 @@ test('capability page: a Warnings block above the card, no capability name, no O
   const block = u.$('.cap-contents-warnings');
   assert.equal(block.hidden, false);
   assert.equal(block.nextElementSibling, u.$('.cap-contents'), 'above the two-pane card');
-  assert.equal(block.querySelector('h4.page-section-title').textContent, 'Warnings');
+  assert.equal(block.querySelector('h4.cap-contents-warnings-title').textContent, 'Warnings');
   assert.equal(block.querySelectorAll('.cap-warning').length, 2);
   assert.equal(block.querySelector('button'), null, 'no Open capability: every warning is about this page');
   assert.equal(block.querySelector('.cap-warning-capability'), null);

@@ -44,6 +44,8 @@ export const CONTENTS_COPY = Object.freeze({
 /** The Contents card's grammar (contents-reader.mjs), shared with the soul page's Instructions, and the warnings above it. */
 export const capabilityContentsCSS = `${contentsCardCSS}${capabilityWarningsCSS}
 .cap-contents-warnings { display:flex; flex-direction:column; gap:8px; min-width:0; }
+/* A part of Contents, not a section of its own: the card's group-label grammar, not the section title's. */
+.cap-contents-warnings-title { margin:0; color:var(--muted); font-size:10.5px; font-weight:650; letter-spacing:.05em; text-transform:uppercase; }
 `;
 
 const isSkillMd = (skill, file) => file.path === `${skill.path}/SKILL.md`;
@@ -191,7 +193,7 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
   function paintWarnings() {
     const restore = captureFocusState(warnings, { scroller: null });
     const list = createWarningsList(doc, show.warnings, { focusKey: 'cap-warning' });
-    warnings.replaceChildren(...(list ? [node('h4', 'page-section-title', WARNINGS_COPY.title), list] : [])); warnings.hidden = !list;
+    warnings.replaceChildren(...(list ? [node('h4', 'cap-contents-warnings-title', WARNINGS_COPY.title), list] : [])); warnings.hidden = !list;
     restore();
   }
   function clearWarnings() { renderedWarnings = null; warnings.replaceChildren(); warnings.hidden = true; }

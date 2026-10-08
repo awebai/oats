@@ -32,7 +32,7 @@ export const capabilityWarningsCSS = `
 .cap-warning-note { margin:0; color:var(--muted); font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
 .cap-warning-foot { display:flex; flex-wrap:wrap; align-items:flex-start; gap:4px 10px; min-width:0; }
 .cap-warning-details { min-width:0; color:var(--muted); font-size:11.5px; }
-.cap-warning-details > summary { cursor:pointer; color:var(--muted); }
+.cap-warning-details > summary { width:fit-content; cursor:pointer; color:var(--muted); } /* the focus ring hugs the word */
 .cap-warning-details dl { display:grid; grid-template-columns:auto minmax(0,1fr); gap:2px 8px; margin:4px 0 0; }
 .cap-warning-details dt { color:var(--muted); }
 .cap-warning-details dd { margin:0; min-width:0; color:var(--fg); font-family:var(--mono, ui-monospace, Menlo, monospace); overflow-wrap:anywhere; }
@@ -49,8 +49,9 @@ export const capabilityWarningsCSS = `
  * @param {boolean} [o.lines]  the spawn preview's strings: each line as text, no Details, no Open capability
  * @param {boolean} [o.compact]  the narrower surfaces (the instance Soul tab, the sidebar)
  * @param {boolean} [o.showCapability]  name each warning's capability (a surface that shows several)
- * @param {(name: string) => boolean} [o.canOpen]  whether Open capability resolves for that name here
- * @param {(name: string) => void} [o.open]  opens it (the surface's own route)
+ * @param {(name: string, warning: object) => boolean} [o.canOpen]  whether Open capability resolves here, for that name and
+ *   that warning (two warnings may name two capabilities of one name, told apart by their paths)
+ * @param {(name: string, warning: object) => void} [o.open]  opens it (the surface's own route)
  * @param {string} [o.focusKey]  the prefix of the controls' focus keys, unique on the surface
  * @param {(warning: object) => string|null} [o.after]  a muted line under a warning's message (a Sources remedy)
  */
@@ -78,12 +79,12 @@ export function createWarningsList(doc, warnings, { lines = false, compact = fal
       if (w.path) facts.append(node('dt', null, WARNINGS_COPY.path), node('dd', null, w.path));
       details.append(summary, facts); foot.append(details);
     }
-    if (w.capability && typeof open === 'function' && canOpen(w.capability)) {
+    if (w.capability && typeof open === 'function' && canOpen(w.capability, w)) {
       const button = node('button', 'act cap-warning-open', WARNINGS_COPY.open); button.type = 'button';
       // Several warnings may each have one: the accessible name says which capability (the visible text leads it).
       button.setAttribute('aria-label', `${WARNINGS_COPY.open} ${w.capability}`);
       button.dataset.focusKey = `${focusKey}:${i}:open`;
-      const name = w.capability; button.addEventListener('click', () => open(name));
+      const name = w.capability; button.addEventListener('click', () => open(name, w));
       foot.append(button);
     }
     if (foot.childElementCount) item.append(foot);

@@ -797,13 +797,16 @@ capability page's Contents (a block above the card, no Open capability:
 **Open capability** through the inspector's `capabilityTargets`, the composed
 instructions' path; prefix `soul-warning`), readiness (`readinessData.warnings`,
 after the four checks, apart from a provider's own `result.warnings`;
-`createReadinessView({canOpenCapability, openCapability})` from the inspector,
-inert today: readiness shows in the sidebar, whose host opens no capability;
-`readiness-warning`), the instance Soul tab (compact,
+`createReadinessView({canOpenCapability, openCapability})` from the inspector;
+in the Workspace sidebar, where readiness shows, Open capability opens the page
+as the Capabilities table does, Back to the list; `readiness-warning`), the instance Soul tab (compact,
 no Open capability: the context panel navigates nowhere, `soul-tab-warning`),
 the spawn preview (lines only, after the launch prompts) and Workspace ›
 Sources (every non-team workspace warning, its remedy a muted line; Open
-capability when the catalog lists the name, `ws-warning`; `workspaceStatusData`
+capability when the catalog lists the name, each warning resolving its own row
+by its path, so two capabilities of one name each open theirs; an unchanged list
+is kept as the same element, so a roster repaint leaves an open Details open;
+`ws-warning`; `workspaceStatusData`
 keeps `capability` and `path` only when they are text). The contrast test holds
 the list on each host's real ground.
 
