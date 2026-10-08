@@ -387,6 +387,78 @@ test at p.test.mjs:6:1
   assert.deepEqual(listed(describeNestedTestFailure({ status: 1, stdout: failing.slice(0, failing.indexOf("\n✖ failing tests:")), stderr: "" })), ["✖ real failure"]);
 });
 
+// Node 22 output for real failures whose names look like a duration and a
+// directive, next to a genuine TODO. The reporter's own suffix is the last one.
+test("a failing test whose name holds `(100ms) # x` is still a failure, in TAP, the spec summary and the spec tree", () => {
+  const tap = `${NPM}TAP version 13
+# Subtest: times out (100ms) \\# regression
+not ok 1 - times out (100ms) \\# regression
+  ---
+  duration_ms: 4.49
+  type: 'test'
+  location: '${T}/d.test.mjs:2:1'
+  failureType: 'testCodeFailure'
+  error: 'actual failure'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: named \\# TODO but real
+not ok 2 - named \\# TODO but real
+  ---
+  duration_ms: 0.83
+  type: 'test'
+  location: '${T}/d.test.mjs:3:1'
+  failureType: 'testCodeFailure'
+  error: 'real too'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: todo failing
+not ok 3 - todo failing # TODO later
+  ---
+  duration_ms: 0.3
+  type: 'test'
+  location: '${T}/d.test.mjs:4:1'
+  failureType: 'testCodeFailure'
+  error: 'todo boom'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..3
+${TAP_SUMMARY(0, 2)}`;
+  assert.deepEqual(listed(describeNestedTestFailure({ status: 1, stdout: tap, stderr: "" })), [
+    `✖ times out (100ms) # regression  (${T}/d.test.mjs:2:1)`,
+    `✖ named # TODO but real  (${T}/d.test.mjs:3:1)`,
+  ]);
+  const tree = `${NPM}✖ times out (100ms) # regression (4.492894ms)
+✖ named # TODO but real (0.832112ms)
+✖ todo failing (0.319575ms) # later
+⚠ todo failing on 26 (0.13ms) # later
+ℹ fail 2
+`;
+  const summary = `
+✖ failing tests:
+
+test at test/d.test.mjs:2:1
+✖ times out (100ms) # regression (4.492894ms)
+  Error: actual failure
+
+test at test/d.test.mjs:3:1
+✖ named # TODO but real (0.832112ms)
+  Error: real too
+
+test at test/d.test.mjs:4:1
+✖ todo failing (0.319575ms) # later
+  Error: todo boom
+`;
+  assert.deepEqual(listed(describeNestedTestFailure({ status: 1, stdout: tree + summary, stderr: "" })), [
+    "✖ times out (100ms) # regression  (test/d.test.mjs:2:1)",
+    "✖ named # TODO but real  (test/d.test.mjs:3:1)",
+  ]);
+  assert.match(failuresOf(describeNestedTestFailure({ status: 1, stdout: tree + summary, stderr: "" })), /regression[^]*Error: actual failure/);
+  assert.deepEqual(listed(describeNestedTestFailure({ status: 1, stdout: tree, stderr: "" })), [
+    "✖ times out (100ms) # regression",
+    "✖ named # TODO but real",
+  ]);
+});
+
 test("a parser that throws still yields a bounded message with the tails, and so does a hostile result", () => {
   const r = { status: 1, error: new Error("spawnSync npm ETIMEDOUT"), stdout: `${"o".repeat(20000)}\nlast stdout line\n`, stderr: "last stderr line\n" };
   const m = describeNestedTestFailure(r, "packages/desktop npm test", { readFailures: () => { throw new TypeError("x".repeat(5000)); } });

@@ -179,8 +179,17 @@ function precedingDiagnostics(lines, i) {
 // already names the failure.
 // One spec result line: mark, name, then `(duration)` and, for a skip or a
 // TODO, ` # reason`. A test that failed has no reason; a ✖ or ⚠ (Node 23+)
-// with one is a TODO, which does not fail the run.
-const SPEC_RESULT = /^([✔✖⚠﹣]) (.*?)(?: \([\d.]+m?s\)(?: # (.*))?)?$/;
+// with one is a TODO, which does not fail the run. A name can itself hold
+// `(100ms) # x`, so the reporter's duration is the LAST one on the line (the
+// greedy name). A TODO whose reason holds a duration then reads as a failure:
+// listing a TODO beats losing a failure.
+const SPEC_TIMED = /^([✔✖⚠﹣]) (.*) \([\d.]+m?s\)(?: # (.*))?$/;
+const SPEC_UNTIMED = /^([✔✖⚠﹣]) (.*)$/;
+
+function specResult(line) {
+  const m = line.match(SPEC_TIMED) ?? line.match(SPEC_UNTIMED);
+  return m && { mark: m[1], name: m[2], directive: m[3] };
+}
 
 function parseSpecFailures(out) {
   const lines = out.split("\n");
@@ -194,14 +203,14 @@ function specSummaryFailures(lines) {
   let current = null;
   for (const line of lines) {
     const at = line.match(/^test at (.+)$/);
-    const x = line.match(SPEC_RESULT);
+    const x = specResult(line);
     if (at) {
       location = at[1].trim();
-    } else if (x && "✖⚠".includes(x[1])) {
-      current = { name: x[2], location, body: [] };
+    } else if (x && "✖⚠".includes(x.mark)) {
+      current = { name: x.name, location, body: [] };
       // The summary lists a failing TODO too; its reason marks it, and it is
       // not a failure. It still takes its body lines.
-      if (x[3] === undefined) failures.push(current);
+      if (x.directive === undefined) failures.push(current);
       location = null;
     } else if (current) {
       current.body.push(line.replace(/^ {2}/, ""));
@@ -221,9 +230,9 @@ function specTreeFailures(lines) {
     const g = line.match(/^( *)▶ (.*)$/);
     if (g) { open.push({ depth: g[1].length, name: g[2], failuresBefore: failures.length }); continue; }
     const indent = line.match(/^ */)[0].length;
-    const x = line.slice(indent).match(SPEC_RESULT);
+    const x = specResult(line.slice(indent));
     if (!x) continue;
-    const [, mark, name, directive] = x;
+    const { mark, name, directive } = x;
     while (open.length && open.at(-1).depth > indent) open.pop();
     const group = open.at(-1)?.depth === indent && open.at(-1).name === name ? open.pop() : null;
     if (mark === "✖" && directive === undefined && (!group || failures.length === group.failuresBefore)) failures.push({ name, location: null, error: "" });
