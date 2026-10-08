@@ -69,9 +69,10 @@ ${groupHeadingCSS}.source-chip { display:inline-flex; align-items:center; gap:7p
 .source-chip.boxed { height:24px; padding:0 8px; border:1px solid var(--border); border-radius:6px; background:var(--surface); font-size:11.5px; box-sizing:border-box; }
 .source-note { color:var(--warn); font:600 11px var(--sans,system-ui); white-space:nowrap; }
 .catalog-used { display:flex; align-items:center; gap:6px; min-width:0; }
-.catalog-used-marks { display:flex; flex:none; padding-left:5px; }
+/* Two-letter marks fill their tile: the stack overlaps by 1px only (the --surface border still separates tiles), so no letter hides under the next. */
+.catalog-used-marks { display:flex; flex:none; padding-left:1px; }
 .catalog-used-marks:empty { display:none; }
-.catalog-used-marks .identity-mark { width:20px; height:20px; margin-left:-5px; border-radius:6px; border:1.5px solid var(--surface); font-size:9px; font-weight:700; box-sizing:border-box; }
+.catalog-used-marks .identity-mark { width:20px; height:20px; margin-left:-1px; border-radius:6px; border:1.5px solid var(--surface); font-size:9px; font-weight:700; box-sizing:border-box; }
 .catalog-used-count { color:var(--fg); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .catalog-used-count.none { color:var(--muted); }
 .catalog-empty { margin:0; padding:24px 16px; color:var(--muted); line-height:1.5; }
