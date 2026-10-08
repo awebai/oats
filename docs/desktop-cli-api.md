@@ -2961,8 +2961,9 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   true, note}` when the session is observably gone: instance.json records no
   launch, or the recorded tmux server is not running, or the recorded window
   is gone and no pane on that server works in the home, and in every case no
-  live process on the host has its working directory in the home (`lsof`; a
-  scan that cannot run counts as not absent). Retire then proceeds
+  live process on the host has its working directory in the home
+  ([the process scan](souls-and-instances.md#the-process-scan): `/proc` on
+  Linux, `lsof` elsewhere; a scan that cannot run counts as not absent). Retire then proceeds
   without quiescing (hooks run, work is preserved). Otherwise it stays
   `unestablished`, with a `note` saying why, and retire refuses with
   `E_RUNTIME_ENDPOINT_UNKNOWN`, `--force` included. `notes` repeats either

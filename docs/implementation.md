@@ -409,7 +409,8 @@ A kernel suite is green on Linux CI **and** on a Mac with a loaded schedule
 unit, a live operator tmux server and Apple git, run from inside an instance
 home. A pull request that could not be run there says so in its hand-over. The
 suite's own prerequisites are Node ≥ 22.12 (the leftover check loads the kernel
-with `require`), git ≥ 2.45, lsof and tmux (awebai/oats#783). The
+with `require`), git ≥ 2.45, tmux, and lsof where `/proc` cannot be read
+(awebai/oats#783, #625). The
 helpers in `test/helpers/host-fixture.mjs` hold the host isolation, and the
 shared fixture (`v2Deployment`) applies all of it, so a suite built on it
 inherits it (awebai/oats#816):
@@ -439,7 +440,7 @@ inherits it (awebai/oats#816):
   no host service manager is reachable at all.
 - **No leftover processes.** The fixture's cleanup fails when a process still
   works in its base: `assertNoFixtureProcesses(base)`, over the kernel's own
-  `processesInHome` (lsof). It catches a hook's or a CLI's grandchild that
+  `processesInHome` (`/proc` on Linux, lsof where `/proc` is absent). It catches a hook's or a CLI's grandchild that
   outlived the test, once its parent has exited. The scan leaves out its caller
   and the caller's direct children, so a test's own forgotten child is not
   found here: that is the test's bug to fix. A process still exiting gets 2 s.

@@ -14,6 +14,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { basename, dirname, join, resolve } from "node:path";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { linkExecutables, waitUntil } from "./helpers/host-fixture.mjs";
+import { processScanAvailability } from "../lib/core.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const SESSION = "oats-agents";
@@ -176,17 +177,21 @@ test("retire of a launched instance is refused when the socket file is gone but 
   assert.ok(alive(server), "the server still runs");
 });
 
-test("retire of a launched instance is refused when the socket file is gone and the process scan cannot run", () => {
+// A host that reads /proc scans whatever PATH holds, so a scan that cannot run, or lsof cut off, is
+// built only where the scan is lsof's; the scan that cannot run is covered in-process
+// (test/processes-in-home.test.mjs) (#625).
+const LSOF_ONLY = processScanAvailability().mechanism === "proc" && "this host reads /proc, which no PATH removes";
+test("retire of a launched instance is refused when the socket file is gone and the process scan cannot run", { skip: LSOF_ONLY }, () => {
   const f = fixture();
   const launched = launchedHome(f, "scan-cannot-run", join(f.base, "tmux.sock"));
   // tmux and what retire itself runs, without lsof: whether a process works in the home is unknown, never none.
   const bin = join(f.base, "no-lsof-bin");
   linkExecutables(bin, ["node", "git", "tmux"]);
   f.env = { ...f.env, PATH: bin };
-  refused(f, launched, /No such file or directory\); whether a process still works in this home could not be established \(lsof is not on PATH\)/);
+  refused(f, launched, /No such file or directory\); whether a process still works in this home could not be established \(lsof is not on PATH; install lsof\)/);
 });
 
-test("retire of a launched instance is refused when the socket file is gone and the process scan was cut off before it listed the home", () => {
+test("retire of a launched instance is refused when the socket file is gone and the process scan was cut off before it listed the home", { skip: LSOF_ONLY }, () => {
   const f = fixture();
   const socket = join(f.base, "tmux.sock");
   const launched = launchedHome(f, "scan-cut-off", socket);
