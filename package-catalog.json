@@ -36,6 +36,11 @@
       "ref": "v1.0.1",
       "path": "oats-package"
     },
+    "oats.apps": {
+      "url": "https://github.com/awebai/oats-apps.git",
+      "ref": "v1.0.0",
+      "path": "oats-package"
+    },
     "oats.framework": {
       "url": "https://github.com/awebai/oats.git",
       "ref": "oats-framework/v1.8.0",
@@ -71,6 +76,8 @@
     "oats.engineering-expert": "oats.engineering",
     "oats.developer": "oats.engineering",
     "oats.code-review": "oats.engineering",
-    "oats.maintainer": "oats.engineering"
+    "oats.maintainer": "oats.engineering",
+    "oats.folio": "oats.apps",
+    "oats.library": "oats.apps"
   }
 }

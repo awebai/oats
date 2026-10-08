@@ -1,0 +1,18 @@
+{
+  "capability": "oats.library",
+  "version": "1.0.0",
+  "description": "Curated Library guidance for public discovery and authorized private profile workflows.",
+  "compatibility": {
+    "oats": ">=0.47.0"
+  },
+  "requires": [
+    {
+      "command": "aw",
+      "why": "App workflows require aw >=1.36.26 and resident approval; command presence alone does not verify version or delegation."
+    }
+  ],
+  "inject": "injects/library.md",
+  "skills": [
+    "skills/library"
+  ]
+}
