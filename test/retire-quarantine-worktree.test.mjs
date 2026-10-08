@@ -97,7 +97,7 @@ test("(b) once nothing is outstanding, the retry removes the worktree with --dis
   assert.equal(w.branchTip(), w.tip, "no retire deletes a branch");
 });
 
-test("(b) a removal that fails in the retry is not attempted again: a HEAD that moved meanwhile keeps its worktree, and the retry stays incomplete", async (t) => {
+test("(b) a removal that fails in the retry refuses and is not attempted again: a HEAD that moved meanwhile keeps its worktree and the home", async (t) => {
   const w = await stubbornInstance(t, "dev-moved");
   await w.retire({ discardWorktree: true });
   w.settle();
@@ -123,14 +123,17 @@ exec ${q(real)} "$@"
 `, { mode: 0o755 });
   process.env.PATH = `${bin}${delimiter}${process.env.PATH}`; // stubbornInstance restores the host's PATH
 
-  const r = await w.retire({ discardWorktree: true });
+  // The removal is verified (awebai/oats#679): one that did not happen is a refusal, never a removed worktree.
+  await assert.rejects(w.retire({ discardWorktree: true }), (e) => e.code === "E_WORK_PRESERVATION_FAILED"
+    && e.message.includes(`the worktree at ${w.work} could not be removed, or its removal could not be verified`)
+    && e.message.includes("The retire hooks have run; the home is kept"));
   assert.equal(existsSync(marker), true, "fixture premise: the retry asked Git to remove the worktree, and HEAD moved");
   const moved = readFileSync(marker, "utf8").trim();
   assert.notEqual(moved, w.tip, "fixture premise: HEAD is at another commit than the one that was inspected");
   assert.equal(w.git("-C", w.work, "rev-parse", "HEAD"), moved, "the worktree is kept, at the commit HEAD moved to");
   assert.ok(w.registered().includes(realpathSync(w.work)), "and is still registered");
-  assert.ok(r.rollbackIncomplete?.includes(`git worktree ${realpathSync(w.work)}: still registered`), JSON.stringify(r.rollbackIncomplete));
   assert.equal(existsSync(join(w.home, "instance.json")), true, "the home is kept for the next retry");
+  assert.equal(existsSync(join(w.home, ".oats-rollback-incomplete.json")), true, "and so is its quarantine");
 });
 
 test("a retry of a quarantine that owes its branch stays incomplete while the branch exists or cannot be shown gone, with a fixed item that names no branch; it completes once Git has deleted the branch", async (t) => {
