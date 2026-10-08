@@ -1117,7 +1117,7 @@ capability carries one warning per such event
 | `oats capabilities show` (and `--file`) | `warnings[]`, always present | the capability shown |
 | `oats inspect`, `oats readiness` | `warnings[]`, always present | `--soul`: the soul's resolved modules; `--home`: the home's module copies |
 | `oats doctor --json` | `warnings[]` | `--soul`: the soul's resolved modules; without it, every member capability and every locked package's, from this machine's cache |
-| `oats spawn --preview`, `oats spawn` | `warnings[]`, strings | the message of each, for the soul's resolved modules |
+| `oats spawn --preview`, `oats spawn` | `warnings[]`, strings | the message of each, for the soul's resolved modules, each at most 1000 characters and at most 32 lines (past that, one line naming how many more); a same-key replay answers them from the home's module copies |
 
 `path` is never an absolute host path. It is `<repoKey>:<dir>/oats.json#<pointer>`
 for a member capability, `package:<id>:<dir>/oats.json#<pointer>` for a

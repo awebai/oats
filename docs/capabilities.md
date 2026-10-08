@@ -120,7 +120,7 @@ A self-contained package has an `oats.json`:
   message}`. It appears in `oats sync` and `oats workspace status`, `oats
   capabilities show`, `oats inspect`, `oats readiness` and `oats doctor` (in
   their `warnings`), and as its message in the `warnings` strings of `oats
-  spawn --preview` and `oats spawn`, in JSON and in text
+  spawn --preview` and `oats spawn` (clipped to fit their receipt), in JSON and in text
   ([desktop-cli-api.md](desktop-cli-api.md#capability-warnings-hook-event-unsupported-oats-0490)).
   `path` names the manifest that was read, in one of two forms, never an
   absolute host path:

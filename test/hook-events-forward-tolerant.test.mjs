@@ -7,7 +7,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
@@ -218,4 +218,62 @@ test("spawn --preview and the spawn warn, and the Desktop reads both; the unknow
   assert.equal(retired.status, 0, retired.stdout + retired.stderr);
   assert.ok(runs().includes("retire"), `the retire hook ran: ${runs()}`);
   for (const event of UNKNOWN) assert.equal(runs().includes(event), false, `${event} never ran: ${runs()}`);
+});
+
+// Each source doctor reads is read on its own: an unrelated cache miss (a package soul) leaves the member
+// capabilities' warnings, and a standalone deployment reads its own repository's cached enumeration.
+test("doctor keeps what the cache can answer: a partial cache, and a standalone deployment", (t) => {
+  const own = packageRepo({});
+  const part = v2Deployment({ capabilities: { "acme.fut": { manifest: { hooks: { worktree: "bin/mark.mjs" } }, files: { "bin/mark.mjs": mark } } },
+    workspace: { packages: { "acme.pkg": `${own.ref}@v1.0.0` } } });
+  t.after(() => { part.cleanup(); own.cleanup(); });
+  ok(part.cli(["sync", "--json"]));
+  const doctor = () => JSON.parse(ok(part.cli(["doctor", "--json"])).stdout);
+  const summary = (d) => ({ warnings: d.warnings.map((w) => w.path), unchecked: d.information.filter((l) => l.startsWith("hook-events-unchecked:")) });
+  const expected = { warnings: [`${part.key}:capabilities/acme.fut/oats.json#/hooks/worktree`], unchecked: [] };
+  assert.deepEqual(summary(doctor()), expected);
+  const parsed = join(part.base, "cache", ".parsed");
+  let removed = 0;
+  for (const rel of readdirSync(parsed, { recursive: true })) {
+    if (!String(rel).endsWith(".json")) continue;
+    const file = join(parsed, String(rel));
+    if (String(readJson(file).item).startsWith("package-soul\0")) { rmSync(file); removed++; }
+  }
+  assert.ok(removed > 0, "the package soul's cache item was there to remove");
+  assert.deepEqual(summary(doctor()), expected, "an unrelated miss does not hide the member's warnings");
+  writeFileSync(join(part.dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${part.ref}\nstandalone: ${part.ref}\n`);
+  ok(part.cli(["sync", "--json"]));
+  assert.deepEqual(summary(doctor()), expected, "standalone: its own repository's capabilities");
+});
+
+// The spawn's warnings are strings the Desktop reads as at most 512 of at most 4096 characters, and a
+// hook event's name is unbounded: the spawn clips each message and caps how many it carries; inspect
+// lists every one, unclipped. A same-key retry answers the same warnings, from the home's module copies.
+test("spawn warnings stay inside the Desktop receipt's bounds, and a same-key replay carries them", (t) => {
+  const long = "e".repeat(5000);
+  const events = Object.fromEntries([long, ...Array.from({ length: 39 }, (_, i) => `future-${String(i).padStart(2, "0")}`)].map((e) => [e, "bin/mark.mjs"]));
+  const many = v2Deployment({ souls: { dev: { soul: { capabilities: { "acme.many": { from: "here" } } } } },
+    capabilities: { "acme.many": { manifest: { hooks: events }, files: { "bin/mark.mjs": mark } } },
+    local: { "launch-configs": { polite: { harness: "claude", executable: join(binDir, "polite") } } } });
+  t.after(() => many.cleanup());
+  ok(many.cli(["sync", "--json"]));
+  const target = { workspace: many.key, context: many.dep, selector: { soul: "dev", agentsRoot: many.root } };
+  const run = (args) => ok(many.cli([...args, "--json"])).json().result;
+  const preview = run(["spawn", "dev", "--dir", many.dep, "--agents-root", many.root, "--preview", "--purpose", "many", "--launch-config", "polite"]);
+  assert.ok(previewData(preview, target));
+  assert.equal(preview.warnings.length, 32, "31 messages, then one line naming the rest");
+  assert.equal(preview.warnings[31], "9 more hook events this kernel does not run are ignored (oats inspect lists every one)");
+  assert.ok(preview.warnings.every((w) => w.length <= 1000), "each message clipped");
+  const apply = ["spawn", "dev", "--dir", many.dep, "--agents-root", many.root, "--purpose", "many", "--launch-config", "polite", "--no-launch", "--expect-decision", preview.decision.revision, "--idempotency-key", "k-1"];
+  const spawned = run(apply);
+  assert.deepEqual(spawned.warnings.slice(0, 32), preview.warnings, "the preview's messages, before the spawn's own (a harness's folder trust)");
+  assert.ok(spawnCreationReceipt(spawned, { target, preview }), "the Desktop's apply reader accepts the receipt");
+  const inspected = run(["inspect", "--home", spawned.home]);
+  assert.equal(inspected.warnings.length, 40, "inspect lists every one");
+  assert.ok(inspected.warnings.some((w) => w.message.includes(long)), "unclipped");
+  const replayed = run(apply);
+  assert.equal(replayed.replayed, true);
+  assert.equal(replayed.warnings.length, 32);
+  assert.deepEqual(replayed.warnings, spawned.warnings.slice(0, 32), "the replay answers the same contract warnings (it runs nothing again)");
+  assert.ok(spawnCreationReceipt(replayed, { target, preview }));
 });

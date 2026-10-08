@@ -280,30 +280,53 @@ async function doctorOperator(ws) {
 }
 
 /** What the deployment's capabilities declare and this kernel ignores (an unknown hook event), for
- *  doctor without --soul, OFFLINE like doctorOperator: every capability the cached discovery lists for a
- *  confirmed member, and every capability of every locked package, from this machine's parsed cache.
- *  What the cache cannot answer is said to be unchecked (information, `hook-events-unchecked`), never
- *  read as "no warning". → { warnings: [{ code, capability, path, message }], information } */
+ *  doctor without --soul, OFFLINE like doctorOperator, from this machine's parsed cache: each member's
+ *  capabilities as `oats sync` enumerated them (the workspace's members confirmed by the cached
+ *  membership; a standalone deployment's own repository), and every capability of every locked package.
+ *  Each source is read on its own, so one the cache cannot answer leaves the others' warnings, and is
+ *  said to be unchecked (information, `hook-events-unchecked`), never read as "no warning".
+ *  → { warnings: [{ code, capability, path, message }], information } */
 async function doctorHookWarnings(ws) {
   const { cacheOnlyRemote } = await import("../lib/operator-coverage.mjs");
-  const { discoverOrStandalone } = await import("../lib/instance-resolution.mjs");
   const { lockedPackageCapabilities } = await import("../lib/resolve.mjs");
-  const { capabilityContractWarnings } = await import("../lib/workspace.mjs");
+  const { capabilityContractWarnings, confirmMembership, observeWorkspace } = await import("../lib/workspace.mjs");
   const { locatedContractWarnings } = await import("../lib/capability-contract.mjs");
   const deployment = dirname(ws.local.path);
-  const remote = cacheOnlyRemote();
+  const local = ws.local.value;
+  const { bindRemote } = await import("../lib/packages.mjs");
   const remoteOptions = remoteOptionsFromEnv();
+  // This machine's cache directory travels with every read (discovery binds it the same way).
+  const remote = bindRemote(cacheOnlyRemote(), remoteOptions);
   const warnings = [], information = [];
   const unchecked = (what, e) => information.push(`hook-events-unchecked: ${what} not checked for hook events this kernel does not run: ${e?.code === "E_REMOTE_UNREADABLE" ? `this machine's cache cannot answer (${e.message})` : `${e?.code ? `${e.code}: ` : ""}${e?.message ?? e}`}; oats sync, then run doctor again`);
+  // A member's capabilities as its enumeration at the observed commit lists them (lib/workspace.mjs enumerateRepo).
+  const memberCapabilities = async (ref) => {
+    const { commit } = await remote.observeRemote(ref);
+    // The cache-only remote never computes; the compute argument keeps bindRemote's options in place.
+    return (await remote.memoAtCommit(ref, commit, "enumerate", () => undefined)).capabilities || [];
+  };
+  const standalone = typeof local.standalone === "string" && local.standalone !== "" ? local.standalone : null;
+  if (standalone) {
+    try { warnings.push(...capabilityContractWarnings(await memberCapabilities(standalone))); }
+    catch (e) { unchecked(`member ${standalone}'s capabilities were`, e); }
+  } else {
+    let observed = null;
+    try { observed = await observeWorkspace(local.workspace, { remote }); }
+    catch (e) { unchecked("member capabilities were", e); }
+    for (const ref of observed?.workspace?.members || []) {
+      try {
+        const membership = await confirmMembership(observed, ref, { remote });
+        if (!membership.confirmed) {
+          // Not a member: discovery lists none of its capabilities. Not read: unchecked.
+          if (membership.reason === "cannot-read") unchecked(`member ${membership.key}'s capabilities were`, { code: "E_REMOTE_UNREADABLE", message: membership.detail });
+          continue;
+        }
+        warnings.push(...capabilityContractWarnings(await memberCapabilities(ref)));
+      } catch (e) { unchecked(`member ${ref}'s capabilities were`, e); }
+    }
+  }
   let lock = null;
   try { lock = readLockIfPresent(deployment); } catch { lock = null; } // an invalid lock is doctor's own problem, reported above
-  try {
-    const discovery = await discoverOrStandalone(ws.local.value, { lock, deployment, remoteOptions, remote });
-    const members = discovery.members || [];
-    warnings.push(...capabilityContractWarnings(members.filter((m) => m.confirmed || discovery.standalone === true).flatMap((m) => m.capabilities || [])));
-    // The standalone view's own member is unconfirmed by construction, yet read (its capabilities are above).
-    for (const m of discovery.standalone === true ? [] : members.filter((x) => x.confirmed === false && x.reason === "cannot-read")) unchecked(`member ${m.key}'s capabilities were`, { message: m.detail || "it could not be read" });
-  } catch (e) { unchecked("member capabilities were", e); }
   let catalog = null; try { catalog = officialPackageCatalog(); } catch { catalog = null; }
   for (const [id, entry] of Object.entries(lock?.packages || {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
     try {
