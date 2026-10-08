@@ -40,7 +40,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
              "team-model-3","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts","launch-preference",
              "preview-composed-from","observe-max-age","spawn-preview-max-age","launch-config-default","capability-show","capture-file",
              "workspace-identity","server-connect","capability-route","servers-per-workspace","operator-default-soul","waiting-on-you",
-             "automation-descriptions","souls-capabilities","soul-composed-instructions"],
+             "automation-descriptions","souls-capabilities","soul-composed-instructions","teams-conditional-default"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
@@ -112,6 +112,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
 | `automation-descriptions` | a `description` on every trigger and schedule row, local or workspace, by one rule; `oats schedule update <id> --description=<text>` (the description only) and `oats trigger update <id> --description=<text>`; `--description=<text>` on `schedule add` and `trigger add`, OATS 0.43.0 ([Shared row fields](#automations-shared-rows)) | |
 | `souls-capabilities` | `capabilities` on `oats souls --json` rows: the capabilities each soul composes, keyed like `oats capabilities` rows, with `from`, OATS 0.45.0 ([`oats capabilities` and `oats souls`](#oats-capabilities---dir---json--capabilitiesapi-1--oats-souls---dir---json--soulsapi-1)) | |
 | `soul-composed-instructions` | `oats inspect --soul <soul> --instructions` and its `souls[].composedInstructions`: the AGENTS.md a spawn of the soul here would write, with the soul body and each composed block as ranges, OATS 0.46.0 ([`oats inspect`](#oats-inspect---home-----soul----dir----json--operationsapi-2)) | |
+| `teams-conditional-default` | `oats teams default <label> --if-absent \| --expect <label>` and `E_TEAM_DEFAULT_MISMATCH`; `oats teams add … --no-default` and its `reused` answer; `E_TEAM_EXISTS` `observed`; unknown flags on `oats teams` refused, OATS 0.48.0 ([`oats teams`](#oats-teams)). A kernel without it ignores the flags: `--if-absent` there is an unconditional set, so check the feature before passing them | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -1250,9 +1251,9 @@ unknown.
 
 ```text
 oats teams [--dir <d>] [--max-age <s>] --json
-oats teams add <label> --team <id> [--description <d>] --json
+oats teams add <label> --team <id> [--description <d>] [--no-default] --json
 oats teams remove <label> --json
-oats teams default <label> --json
+oats teams default <label> [--if-absent | --expect <label>] --json
 ```
 
 ```json
@@ -1284,13 +1285,41 @@ oats teams default <label> --json
   still runs there: taking local teams away is the last step of committing
   them in the workspace.
 - **`add`**: the first team added also becomes the local `defaultTeam`. A
-  label already declared is `E_TEAM_EXISTS {label, from}`; a bad label or no
-  `--team` is `E_BAD_ARGS`.
+  label already declared is `E_TEAM_EXISTS {label, from, observed: {label,
+  team, from}}` (`observed` is the declared mapping; `from` is `"local"` or
+  `"shared"`); a bad label or no `--team` is `E_BAD_ARGS`.
+- **`add --no-default`** (feature `teams-conditional-default`) writes the
+  mapping and never touches `defaultTeam`. A mapping already declared with
+  the same label and the same team id (local or shared) is reuse: the answer
+  is `changed: false, reused: true`, so a setup can retry it. The description
+  is neither compared nor changed. The same label with another id is
+  `E_TEAM_EXISTS` as above. `reused` appears only on that answer. Where local
+  teams are not allowed, `add --no-default` is refused with local-teams-closed
+  like every `add`, before reuse is considered.
 - **`remove`**: a label the local `defaultTeam` names is `E_TEAM_IN_USE
   {label, usedBy: ["defaultTeam"]}`; a shared label is `E_TEAM_SHARED {label,
   at}` (a label in both files can be removed locally); unknown is
   `E_TEAM_UNKNOWN {label}`.
 - **`default`**: any declared label, else `E_TEAM_UNKNOWN`.
+- **`default --if-absent`** sets it only where the deployment has no effective
+  default (this document's `defaultTeam` is `null`); **`default --expect
+  <label0>`** only where the effective default's label is `<label0>`, local
+  or inherited from the workspace (feature `teams-conditional-default`). The
+  two together are `E_BAD_ARGS`. A failed condition is `E_TEAM_DEFAULT_MISMATCH
+  {expected: {absent: true} | {label}, observed}`, `observed` being the
+  `defaultTeam` exactly as this document reports it (or `null`); nothing was
+  written. A soul's `souls:` default is not the deployment's and is not
+  looked at. The refusals above run first, in order: `E_BAD_ARGS`,
+  local-teams-closed, `E_TEAM_UNKNOWN`, then the condition. When the
+  condition holds and `<label>` already is the local default, `changed` is
+  `false`.
+- **Flags**: each form refuses a flag it does not take with `E_USAGE {flag}`,
+  naming the flag and the usage, before anything is read. `add` takes
+  `--team`, `--description`, `--no-default`; `remove` none; `default`
+  `--if-absent`, `--expect`; every form `--dir` and `--json`, and the read
+  form `--max-age` (on a write form, `--max-age` is the kernel's own
+  `E_BAD_ARGS`, as for every write verb). `--help` is the kernel's usage
+  answer, as for every command.
 - A write that would introduce an unknown reference is refused with that
   code; an invalid result is `E_WORKSPACE_SCHEMA`.
 - **Writes** edit `oats-local.yaml` in place and touch only the entries that
@@ -1298,7 +1327,22 @@ oats teams default <label> --json
   entries, are kept. Each verb re-reads the file and judges its refusals on it
   as it is now, and writes only if the file did not change meanwhile (else it
   redoes the edit on the new content). A file that keeps changing is
-  `E_LOCAL_CHANGED {path}`; nothing was written.
+  `E_LOCAL_CHANGED {path}`; nothing was written. The condition of `--if-absent`
+  and `--expect` is judged the same way, on the file as it is now and again on
+  every redo.
+- **Concurrency.** Every `add`, `remove` and `default` holds
+  `<deployment>/.agents/locks/local.lock` for its whole read-compare-write.
+  Among concurrent `oats teams` writers on one deployment, a conditional write
+  therefore never overwrites a default another of them set: when two race, the
+  later one sees the earlier result and refuses with
+  `E_TEAM_DEFAULT_MISMATCH`. A lock still held after 5 s is `E_LOCAL_BUSY
+  {path, lock}`, naming the directory to remove when no oats process is
+  editing; nothing was written. The limits: a person or tool editing
+  `oats-local.yaml` directly does not take the lock (the content compare still
+  catches most such edits, but not one landing between the compare and the
+  rename), and changes to the committed `oats-workspace.yaml` (a pull, a
+  merge) are not serialized with it: the condition reads the workspace file
+  when it is judged, and that is the only promise.
 
 <a id="oats-soul-teams"></a>
 ### `oats soul teams`

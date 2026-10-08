@@ -2,13 +2,14 @@
 // everything the edit does not change) and from the file as it is NOW (never the command's snapshot).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import YAML from "yaml";
 import { teamsAdd, teamsDefault, teamsRemove } from "../lib/teams-verbs.mjs";
 
 const HEAD = "schemaVersion: 2\nworkspace: git:github.com/acme/agents\n";
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const WORKSPACE = { schemaVersion: 2, name: "acme", teams: { oats: { team: "oats:oats.aweb.ai" } }, localTeams: true };
 function fixture(t, text, workspace = WORKSPACE) {
   const dir = mkdtempSync(join(tmpdir(), "oats-teams-verbs-")); t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -79,4 +80,132 @@ test("where the workspace does not allow local teams, add and default are refuse
   // The standalone view (no workspace file) has no workspace rules.
   const fx = fixture(t, "", null);
   assert.equal(teamsAdd(fx.ctx(), "mine", { team: "mine:me.aweb.ai" }).changed, true);
+});
+
+/* ── conditional default (--if-absent / --expect) and mapping-only add (--no-default), awebai/oats#771 ── */
+
+const MINE = "teams:\n  mine: { team: \"mine:me.aweb.ai\" }\n  spare: { team: \"spare:me.aweb.ai\" }\n";
+const WS_DEFAULT = { ...WORKSPACE, defaultTeam: "oats" };
+const mismatch = (expected, observed) => (e) => {
+  assert.deepEqual([e.code, e.details], ["E_TEAM_DEFAULT_MISMATCH", { expected, observed }]);
+  return true;
+};
+
+test("default --if-absent sets the default only where there is no effective default", (t) => {
+  const fx = fixture(t, MINE);
+  const r = teamsDefault(fx.ctx(), "spare", { ifAbsent: true });
+  assert.equal(r.changed, true);
+  assert.equal(YAML.parse(fx.text()).defaultTeam, "spare");
+});
+
+test("default --if-absent over an established local default refuses, naming it and its source, and writes nothing", (t) => {
+  const fx = fixture(t, `${MINE}defaultTeam: mine\n`);
+  const before = fx.text();
+  assert.throws(() => teamsDefault(fx.ctx(), "spare", { ifAbsent: true }), (e) => {
+    mismatch({ absent: true }, { label: "mine", team: "mine:me.aweb.ai", from: "deployment" })(e);
+    assert.match(e.message, /\bmine\b/); assert.match(e.message, /deployment/); assert.match(e.message, /nothing was written/);
+    return true;
+  });
+  assert.equal(fx.text(), before, "byte-identical");
+});
+
+test("an inherited workspace default: --if-absent refuses (from workspace); --expect <its label> sets the local default", (t) => {
+  const fx = fixture(t, MINE, WS_DEFAULT);
+  const before = fx.text();
+  assert.throws(() => teamsDefault(fx.ctx(), "mine", { ifAbsent: true }), (e) => {
+    mismatch({ absent: true }, { label: "oats", team: "oats:oats.aweb.ai", from: "workspace" })(e);
+    assert.match(e.message, /\boats\b/); assert.match(e.message, /workspace/);
+    return true;
+  });
+  assert.equal(fx.text(), before);
+  assert.equal(teamsDefault(fx.ctx(), "mine", { expect: "oats" }).changed, true);
+  assert.equal(YAML.parse(fx.text()).defaultTeam, "mine");
+});
+
+test("default --expect: a mismatch (or no default at all) refuses and writes nothing; a match already in place is changed: false", (t) => {
+  const fx = fixture(t, `${MINE}defaultTeam: mine\n`);
+  const before = fx.text();
+  assert.throws(() => teamsDefault(fx.ctx(), "spare", { expect: "oats" }), mismatch({ label: "oats" }, { label: "mine", team: "mine:me.aweb.ai", from: "deployment" }));
+  assert.equal(fx.text(), before);
+  assert.equal(teamsDefault(fx.ctx(), "mine", { expect: "mine" }).changed, false);
+  assert.equal(fx.text(), before);
+  const none = fixture(t, MINE);
+  const noneBefore = none.text();
+  assert.throws(() => teamsDefault(none.ctx(), "mine", { expect: "mine" }), mismatch({ label: "mine" }, null));
+  assert.equal(none.text(), noneBefore);
+});
+
+test("default: --if-absent and --expect together are E_BAD_ARGS", (t) => {
+  const fx = fixture(t, MINE);
+  const before = fx.text();
+  assert.throws(() => teamsDefault(fx.ctx(), "mine", { ifAbsent: true, expect: "mine" }), (e) => e.code === "E_BAD_ARGS");
+  assert.equal(fx.text(), before);
+});
+
+test("the existing refusals run before the precondition: local-teams-closed, then E_TEAM_UNKNOWN", (t) => {
+  const closed = fixture(t, "", { ...WS_DEFAULT, localTeams: false });
+  const before = closed.text();
+  assert.throws(() => teamsDefault(closed.ctx(), "oats", { ifAbsent: true }), (e) => e.code === "E_WORKSPACE_SCHEMA" && e.details.reason === "local-teams-closed");
+  assert.throws(() => teamsDefault(closed.ctx(), "oats", { expect: "nope" }), (e) => e.code === "E_WORKSPACE_SCHEMA" && e.details.reason === "local-teams-closed");
+  assert.equal(closed.text(), before);
+  const fx = fixture(t, `${MINE}defaultTeam: mine\n`);
+  assert.throws(() => teamsDefault(fx.ctx(), "ghost", { ifAbsent: true }), (e) => e.code === "E_TEAM_UNKNOWN");
+});
+
+test("the precondition is judged on the file as it is NOW, never the command's snapshot", (t) => {
+  const fx = fixture(t, MINE);
+  const stale = fx.ctx();
+  teamsDefault(fx.ctx(), "mine");
+  assert.throws(() => teamsDefault(stale, "spare", { ifAbsent: true }), mismatch({ absent: true }, { label: "mine", team: "mine:me.aweb.ai", from: "deployment" }));
+  assert.equal(YAML.parse(fx.text()).defaultTeam, "mine");
+});
+
+test("add --no-default writes the mapping and never the default; an exact repeat (local or shared) is reuse; another id is E_TEAM_EXISTS with observed", (t) => {
+  const fx = fixture(t, "");
+  const r = teamsAdd(fx.ctx(), "mine", { team: "mine:me.aweb.ai", noDefault: true });
+  assert.deepEqual([r.changed, r.reused], [true, undefined]);
+  assert.deepEqual(YAML.parse(fx.text()).teams, { mine: { team: "mine:me.aweb.ai" } });
+  assert.equal(YAML.parse(fx.text()).defaultTeam, undefined, "no default written even where none is in effect");
+  const before = fx.text();
+  for (const [label, team] of [["mine", "mine:me.aweb.ai"], ["oats", "oats:oats.aweb.ai"]]) {
+    const again = teamsAdd(fx.ctx(), label, { team, noDefault: true });
+    assert.deepEqual([again.changed, again.reused], [false, true], `${label}: reuse`);
+  }
+  assert.equal(fx.text(), before);
+  assert.throws(() => teamsAdd(fx.ctx(), "mine", { team: "other:me.aweb.ai", noDefault: true }), (e) => {
+    assert.deepEqual([e.code, e.details], ["E_TEAM_EXISTS", { label: "mine", from: "local", observed: { label: "mine", team: "mine:me.aweb.ai", from: "local" } }]);
+    return true;
+  });
+  assert.throws(() => teamsAdd(fx.ctx(), "oats", { team: "other:x.aweb.ai", noDefault: true }), (e) => e.code === "E_TEAM_EXISTS" && same(e.details.observed, { label: "oats", team: "oats:oats.aweb.ai", from: "shared" }));
+  assert.equal(fx.text(), before);
+});
+
+test("plain add and default are unchanged: the first add becomes the default, even over a workspace default; an exact duplicate is E_TEAM_EXISTS", (t) => {
+  const fx = fixture(t, "", WS_DEFAULT);
+  assert.equal(teamsAdd(fx.ctx(), "mine", { team: "mine:me.aweb.ai" }).changed, true);
+  assert.equal(YAML.parse(fx.text()).defaultTeam, "mine");
+  assert.throws(() => teamsAdd(fx.ctx(), "mine", { team: "mine:me.aweb.ai" }), (e) => e.code === "E_TEAM_EXISTS");
+  assert.throws(() => teamsAdd(fx.ctx(), "oats", { team: "oats:oats.aweb.ai" }), (e) => e.code === "E_TEAM_EXISTS");
+  teamsAdd(fx.ctx(), "spare", { team: "spare:me.aweb.ai" });
+  assert.equal(teamsDefault(fx.ctx(), "spare").changed, true);
+  assert.equal(YAML.parse(fx.text()).defaultTeam, "spare");
+});
+
+test("every mutation runs under <deployment>/.agents/locks/local.lock: one held elsewhere is E_LOCAL_BUSY, nothing written, the lock left alone", (t) => {
+  const fx = fixture(t, MINE);
+  const lock = join(fx.ctx().deployment, ".agents", "locks", "local.lock");
+  mkdirSync(lock, { recursive: true });
+  writeFileSync(join(lock, "owner.json"), JSON.stringify({ pid: process.pid, at: new Date().toISOString(), what: "a test" }));
+  const before = fx.text();
+  assert.throws(() => teamsDefault(fx.ctx(), "mine", { ifAbsent: true }), (e) => {
+    assert.equal(e.code, "E_LOCAL_BUSY");
+    assert.ok(e.message.includes(lock), e.message);
+    assert.match(e.message, /nothing was (written|changed)/);
+    return true;
+  });
+  assert.equal(fx.text(), before);
+  assert.ok(existsSync(join(lock, "owner.json")), "the holder's lock is not touched");
+  rmSync(lock, { recursive: true });
+  assert.equal(teamsRemove(fx.ctx(), "spare").changed, true);
+  assert.equal(existsSync(lock), false, "released after the write");
 });

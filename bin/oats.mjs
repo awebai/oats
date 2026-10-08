@@ -61,7 +61,7 @@ import { readEvents, setWaiting, incarnationOf } from "../lib/instance-events.mj
 
 const rawArgs = process.argv.slice(2);
 /** The kernel's switches: a value never rides one (`--yolo=false` must not turn yolo on). */
-const KERNEL_SWITCHES = new Set(["allow-child-spawns", "apply", "check", "clear", "delete-branch", "discard-worktree", "dry-run", "ephemeral", "force", "help", "host", "install-oats", "instructions", "json", "keep-dir", "keep-env", "no-child-spawns", "no-launch", "no-recursive", "no-yolo", "plan", "policy", "preview", "print", "replace", "self", "verbose", "yes", "yolo"]);
+const KERNEL_SWITCHES = new Set(["allow-child-spawns", "apply", "check", "clear", "delete-branch", "discard-worktree", "dry-run", "ephemeral", "force", "help", "host", "if-absent", "install-oats", "instructions", "json", "keep-dir", "keep-env", "no-child-spawns", "no-default", "no-launch", "no-recursive", "no-yolo", "plan", "policy", "preview", "print", "replace", "self", "verbose", "yes", "yolo"]);
 /** `--flag=value` is `--flag value`: every kernel reader (flag(), valueFlag(), the onboard and
  *  routed-command loops) then applies the spaced form's validation to it. `problem` is an empty
  *  `--flag=`, a switch given a value, or a value that is itself an option (`--model=--yolo`):
@@ -1775,26 +1775,55 @@ async function teamsContext(bail) {
 }
 const positional = (i) => (args[i] !== undefined && !args[i].startsWith("--") ? args[i] : undefined);
 
-/** `oats teams [--json] | add <label> --team <id> [--description <d>] | remove <label> | default <label>` —
- *  this deployment's teams (team model 3). Config only: never a provider call. */
+/** The flags each `oats teams` form takes (value flags → true), beyond the global `--dir` and `--json`.
+ *  Anything else is refused, never ignored: a kernel that ignored `--if-absent` would set unconditionally. */
+const TEAMS_FLAGS = {
+  "": { "--max-age": true },
+  add: { "--team": true, "--description": true, "--no-default": false },
+  remove: {},
+  default: { "--if-absent": false, "--expect": true },
+};
+/** The first flag `oats teams <sub>` does not take, or undefined. A value flag's value is skipped as flag()
+ *  reads it (the next word unless it starts with `--`). */
+function teamsUnknownFlag(sub) {
+  const takes = { "--dir": true, "--json": false, ...TEAMS_FLAGS[sub ?? ""] };
+  for (let i = 1; i < args.length; i++) {
+    const a = args[i];
+    if (!a.startsWith("-")) continue;
+    if (!Object.hasOwn(takes, a)) return a;
+    if (takes[a] && args[i + 1] !== undefined && !args[i + 1].startsWith("--")) i++;
+  }
+  return undefined;
+}
+
+/** `oats teams [--json] | add <label> --team <id> [--description <d>] [--no-default] | remove <label> |
+ *  default <label> [--if-absent | --expect <label>]` — this deployment's teams (team model 3). Config only:
+ *  never a provider call. */
 async function teamsCmd() {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
-  const usage = "usage: oats teams [--json] | oats teams add <label> --team <id> [--description <d>] | oats teams remove <label> | oats teams default <label>  [--dir <deployment>] [--json]";
-  const sub = positional(1);
+  const usage = "usage: oats teams [--json] | oats teams add <label> --team <id> [--description <d>] [--no-default] | oats teams remove <label> | oats teams default <label> [--if-absent | --expect <label>]  [--dir <deployment>] [--json]";
+  // A single-dash word (`-x`) is a flag, never the subcommand: teamsUnknownFlag names it.
+  const sub = positional(1)?.startsWith("-") ? undefined : positional(1);
   if (sub !== undefined && !["add", "remove", "default"].includes(sub)) bail("E_USAGE", usage);
+  const unknown = teamsUnknownFlag(sub);
+  if (unknown !== undefined) {
+    const form = sub ? `oats teams ${sub}` : "oats teams";
+    bail("E_USAGE", `${form} does not take ${unknown} (an option this kernel does not know may need a newer kernel; nothing was changed) — ${usage}`, { flag: unknown });
+  }
   const label = sub ? positional(2) : undefined;
   if (sub && label === undefined) bail("E_BAD_ARGS", `oats teams ${sub} needs a team label — ${usage}`);
   const ctx = await teamsContext(bail);
   const V = await import("../lib/teams-verbs.mjs");
   let result = null;
   try {
-    if (sub === "add") result = V.teamsAdd(ctx, label, { team: valueFlag("team"), description: valueFlag("description") });
+    if (sub === "add") result = V.teamsAdd(ctx, label, { team: valueFlag("team"), description: valueFlag("description"), noDefault: args.includes("--no-default") });
     else if (sub === "remove") result = V.teamsRemove(ctx, label);
-    else if (sub === "default") result = V.teamsDefault(ctx, label);
+    else if (sub === "default") result = V.teamsDefault(ctx, label, { ifAbsent: args.includes("--if-absent"), expect: valueFlag("expect") });
   } catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details); throw e; }
   const doc = V.teamsDocument(result ? { ...ctx, local: result.local } : ctx);
-  if (JSON_MODE) { jsonOk(result ? { ...doc, changed: result.changed } : withObservation(doc)); return; }
-  if (result) console.log(result.changed ? `${sub === "add" ? `Declared team ${label}` : sub === "remove" ? `Removed team ${label}` : `The default team is now ${label}`} in ${shortPath(ctx.localPath)}` : "Nothing to change");
+  if (JSON_MODE) { jsonOk(result ? { ...doc, changed: result.changed, ...(result.reused ? { reused: true } : {}) } : withObservation(doc)); return; }
+  if (result?.reused) console.log(`Team ${label} is already declared with that id: nothing to change`);
+  else if (result) console.log(result.changed ? `${sub === "add" ? `Declared team ${label}` : sub === "remove" ? `Removed team ${label}` : `The default team is now ${label}`} in ${shortPath(ctx.localPath)}` : "Nothing to change");
   console.log(`default   ${doc.defaultTeam ? `${doc.defaultTeam.label} (${doc.defaultTeam.from})` : "(none)"}`);
   console.log(`local     ${doc.localTeams === null ? "allowed (standalone)" : doc.localTeams ? "allowed (localTeams: true)" : "not allowed"}`);
   if (!doc.teams.length) console.log("teams     (none: `oats aweb setup` creates them, or `oats teams add <label> --team <id>`)");
@@ -3421,7 +3450,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capabilityShowApi: 1 }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capabilityShowApi: 1 }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -4224,10 +4253,14 @@ Usage:
       [--max-age <s>]                       (souls have no private mode), with origin
                                             (member <key> @ <commit> | package <id> v<ver>) and its
                                             teams on this deployment
-  oats teams [--json] | add <label> --team <id> [--description <d>] | remove <label>
-      | default <label>  [--dir <d>]        this deployment's teams (shared + local), the
+  oats teams [--json] | add <label> --team <id> [--description <d>] [--no-default] | remove <label>
+      | default <label> [--if-absent | --expect <label>]
+      [--dir <d>]                           this deployment's teams (shared + local), the
       [--max-age <s>] (the read form only)  default, the workspace's souls:; add/remove/default
-                                            edit oats-local.yaml (only with localTeams: true)
+                                            edit oats-local.yaml (only with localTeams: true);
+                                            --no-default: the mapping only (an exact repeat is
+                                            reuse); --if-absent / --expect: set the default only
+                                            where there is none / it is <label>
   oats soul teams <soul>|'*' [--dir <d>]    which teams a soul may join here, its default, and
       [--max-age <s>] [--json]              why (the workspace's souls: and local teams)
   oats instance git <instance> [--home <abs>] [--dir <d>] [--json]
