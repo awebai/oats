@@ -915,7 +915,8 @@ only the harness); a tmux server that lost its socket file still runs, and
 recreates the socket when its process is sent `SIGUSR1`. A
 [process scan](#the-process-scan) that cannot run or does not complete (a
 timeout, for example) refuses the same way, also for a home without its
-receipt.
+receipt. Status, start and stop apply the same rule to a missing socket file
+([Sessions](execution-targets.md#missing-socket)).
 
 <a id="the-process-scan"></a>
 **The process scan.** "No process works in the home" comes from one scan of
@@ -925,7 +926,8 @@ runs `lsof`. A Linux host whose `/proc/self/cwd` cannot be read uses `lsof`
 too. On a host with neither, `oats doctor` says so in a
 `process-scan-unavailable` information line, and retire refuses where it must
 rule out a live process (a home without its session receipt, a missing
-recorded tmux socket, a Herdr home): install `lsof`. The scan sees only the
+recorded tmux socket, a Herdr home), as do session start and stop when a
+recorded tmux socket is missing: install `lsof`. The scan sees only the
 processes this user may inspect: a process of another user, or a
 non-dumpable one of the same user (such as `ssh-agent`), is not seen by
 either mechanism, so one of those working in the home does not stop a

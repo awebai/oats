@@ -342,8 +342,8 @@ function fixture(kase) {
   // PATH (which(), lib/core.mjs:5646), and claude's model translation is pure.
   write(join(bin, "claude"), "#!/bin/sh\nexit 0\n", 0o755);
   // `tmux` is never executed by spawn or retire under --no-launch either, but
-  // `oats status` reads the roster through tmuxWindows() (lib/core.mjs:4880),
-  // which shells out to `tmux has-session`. A stub keeps that read off the
+  // `oats status` reads the roster through the default server's
+  // `tmux list-windows` (defaultTmuxWindows, lib/core.mjs). A stub keeps that read off the
   // developer's real server: no session, so nothing is ever reported RUNNING.
   write(join(bin, "tmux"), "#!/bin/sh\nexit 1\n", 0o755);
   // `pi` IS executed, by exactly one probe. resolveModelPreference runs

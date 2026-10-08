@@ -211,6 +211,8 @@ export function isolateSessionEnvironment(base, { userConfig = false } = {}) {
   const tmux = executable("tmux");
   const bin = join(base, "system-bin");
   linkExecutables(bin, ["node", "sh", "bash", "cat", "env", "sleep", "git", "which", "ps"]);
+  // The kernel's process scan runs lsof where it cannot read /proc (macOS): the host's, when it has one.
+  if (LSOF) symlinkSync(LSOF, join(bin, "lsof"));
   const tmuxTmpdir = privateTmuxTmpdir();
   ensureOatsSocketDir(tmuxTmpdir);
   const wrapper = join(bin, "tmux");

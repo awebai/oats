@@ -177,9 +177,35 @@ test("retire of a launched instance is refused when the socket file is gone but 
   assert.ok(alive(server), "the server still runs");
 });
 
+/** The CLI's tmux answers every call as an older tmux does when the socket file is missing
+ *  (`failed to connect to server: No such file or directory`): no client reaches the server, which
+ *  the test's own tmux (its PATH, not the CLI's) still reaches. */
+function olderTmuxMissingSocket(f) {
+  const bin = join(f.base, "older-tmux-bin");
+  write(join(bin, "tmux"), "#!/bin/sh\necho 'failed to connect to server: No such file or directory' >&2\nexit 1\n", { mode: 0o755 });
+  f.env = { ...f.env, PATH: `${bin}:${f.env.PATH}` };
+}
+
+test("retire of a launched instance is refused when an older tmux reports its socket file missing and a process still works in the home", () => {
+  const f = fixture();
+  const socket = join(f.base, "tmux.sock");
+  const launched = launchedHome(f, "older-tmux-busy", socket);
+  const server = startServer(socket, launched.instance, { cwd: launched.home });
+  olderTmuxMissingSocket(f);
+  refused(f, launched, /failed to connect to server: No such file or directory; a process still works in this home \(pid \d+ .*SIGUSR1/);
+  assert.ok(alive(server), "the server still runs");
+});
+
+test("retire of a launched instance succeeds when an older tmux reports its socket file missing and no process works in the home", () => {
+  const f = fixture();
+  const launched = launchedHome(f, "older-tmux-idle", join(f.base, "tmux.sock"));
+  olderTmuxMissingSocket(f);
+  retired(f, launched);
+});
+
 // A host that reads /proc scans whatever PATH holds, so a scan that cannot run, or lsof cut off, is
 // built only where the scan is lsof's; the scan that cannot run is covered in-process
-// (test/processes-in-home.test.mjs) (#625).
+// (test/processes-in-home.test.mjs, test/tmux-missing-socket.test.mjs) (#625).
 const LSOF_ONLY = processScanAvailability().mechanism === "proc" && "this host reads /proc, which no PATH removes";
 test("retire of a launched instance is refused when the socket file is gone and the process scan cannot run", { skip: LSOF_ONLY }, () => {
   const f = fixture();
