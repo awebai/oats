@@ -6,6 +6,7 @@ import { absolute } from './readiness-contract.mjs';
 import { eventsSelector, eventsSupported, eventsTarget, eventsFailure, eventsTimestamp } from './instance-events-contract.mjs';
 import { codeLineNodes, readingFrom, remoteReason } from './remote-address.mjs';
 import { eventsData, eventsIncomplete, eventIncarnation, EVENT_TITLES } from './instance-events-data.mjs';
+import { displayLine } from './display-text.mjs';
 export const instanceEventsCSS = `
 .events-view { color:var(--fg); margin-top:10px; padding-top:10px; border-top:1px solid var(--border); font-size:11px; line-height:1.5; }
 .events-view h3 { font-size:12px; margin:0 0 6px; }
@@ -21,6 +22,8 @@ export const instanceEventsCSS = `
 .events-facts { margin:4px 0; }
 .events-facts dt { color:var(--muted); }
 .events-facts dd { margin:0 0 3px; }
+.events-setup { display:block; }
+.events-path { display:block; color:var(--muted); }
 .events-claims { padding-left:18px; margin:8px 0; }
 `;
 const UNKNOWN = 'Activity: unknown · Waiting on you: unknown';
@@ -33,7 +36,10 @@ const labels = { agent: 'Soul', work: 'Work mode', branch: 'Branch', harness: 'H
   keepDir: 'Home retained', self: 'Self retirement', quarantine: 'Quarantine', workRecovery: 'Recovery path', movedTo: 'Retained path',
   recordedBranch: 'Recorded branch', child: 'Child', previous: 'Previous composition path', soulDir: 'Soul path', blocks: 'Blocks',
   waitingOnYou: 'Waiting claim', reason: 'Reported reason', message: 'Note',
-  status: 'Reported outcome', class: 'Prompt class', action: 'Launch action', consentSource: 'Consent source' };
+  status: 'Reported outcome', class: 'Prompt class', action: 'Launch action', consentSource: 'Consent source',
+  purpose: 'Purpose', path: 'Path', base: 'Base', member: 'Member' };
+/** The facts of a kind new in 0.49.0, each shown through displayLine. */
+const LINE_KINDS = new Set(['worktree-added']);
 
 export function createInstanceEventsView(host, { ctx, selection, owner = () => true, summary, layout = () => {},
   cli = cliStatus, subscribeCli = onCliChange, generation = workspaceGeneration,
@@ -123,9 +129,20 @@ export function createInstanceEventsView(host, { ctx, selection, owner = () => t
       const facts = node('dl', undefined, 'events-facts');
       for (const [name, fact] of Object.entries(row.data)) {
         if (name === 'policy') { facts.append(node('dt', 'Reported child policy'), node('dd', `${fact.allowed ? 'allowed' : 'not allowed'} · ${fact.origin.kind}`)); continue; }
+        // A `worktree` hooks' receipt: one line per hook, its log file (when it is kept) as a path beneath.
+        if (name === 'hooks' || name === 'worktreeHooks') {
+          const dd = node('dd');
+          for (const h of fact) {
+            dd.append(node('span', `${displayLine(h.capability) ?? ''}: ${h.ok ? 'done' : 'failed (continuing)'}`, 'events-setup'));
+            const log = displayLine(h.log);
+            if (log) dd.append(node('span', log, 'events-path'));
+          }
+          facts.append(node('dt', 'Setup'), dd); continue;
+        }
         if (!Object.hasOwn(labels, name)) continue;
         // A waiting claim set (true) or cleared (false), in words.
-        const text = fact === null ? 'not reported' : name === 'waitingOnYou' ? (fact ? 'claimed' : 'cleared') : String(fact);
+        const text = fact === null ? 'not reported' : name === 'waitingOnYou' ? (fact ? 'claimed' : 'cleared')
+          : LINE_KINDS.has(row.kind) ? displayLine(fact) ?? '' : String(fact);
         facts.append(node('dt', labels[name]), node('dd', text));
       }
       item.append(facts); rows.append(item);

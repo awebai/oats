@@ -18,14 +18,16 @@
  * under a new one. */
 import { retainedSpawnMessage } from './launch-prompt-outcome.mjs';
 import { harnessOf } from './harness-names.mjs';
+import { displayLine } from './display-text.mjs';
 import { createSoulMark, createRuntimeBadge } from './identity-marks.mjs';
 import { distinguishingRootTags } from './instance-tree.mjs';
 import { createChoicePopup } from './choice-popup.mjs';
 import { postJson, workspaceGeneration, wsQuery } from './views/common.mjs';
 import { previewSupported, previewChoices, previewData, previewTarget, previewFailure, INSTANCE_NAME_MAX } from './spawn-preview-contract.mjs';
-import { spawnApplySupported, spawnPrepareInput, spawnApplyView, spawnApplyReason } from './spawn-apply-contract.mjs';
+import { spawnApplySupported, spawnPrepareInput, spawnApplyView, spawnApplyReason, SPAWN_APPLY_MS, ROLLED_BACK_CODES } from './spawn-apply-contract.mjs';
 import { sameSpawnDecision } from './spawn-decision.mjs';
-import { spawnProblem } from './spawn-messages.mjs';
+import { spawnProblem, rolledBackProblem, cleanupOwedProblem } from './spawn-messages.mjs';
+import { RECOVER_POLL_MS, FOLLOW_MARGIN_MS } from './spawn-jobs.mjs';
 import { wakeScheduleFields } from './wake-schedule-fields.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { shownLaunch, launchHarnessName, launchModelText, launchFromText, preferenceText, declaredDiffers } from './launch-view.mjs';
@@ -586,13 +588,14 @@ function composeChooser(doc, { soul, agents, canChoose, choose, query, note }) {
  *                 flight in this window, else null. The press stays disabled and a polite line says so, with a
  *                 link to its pending row; the host calls syncInFlight() when the store changes.
  *               backfillDelay — #517: ms between list reads while the server learns unknown keys (BACKFILL_POLL_MS).
+ *               pollDelay — #802: ms between `result` reads while a submitted spawn is pending (RECOVER_POLL_MS).
  *               deployments() — #482: the view's deployments (/api/panel `deployments`). With two or more the
  *                 Deployment field (spawn-deployment-field.mjs) chooses where to spawn; every spawn request
  *                 addresses a deployment, never the view.
  */
 export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, instances, canChoose, choose, close, owns,
   draft = {}, catalogNote = '', onCreated = async () => {}, remoteSpawn = async () => {}, servers = [], serverFacts = () => [], serverRows = async () => [],
-  delay: debounce = PREVIEW_DEBOUNCE_MS, busyDelay = PREVIEW_BUSY_RETRY_MS, backfillDelay = BACKFILL_POLL_MS, layout = 'picker', handoff = null, spawnInFlight = null, deployments = () => [] }) {
+  delay: debounce = PREVIEW_DEBOUNCE_MS, busyDelay = PREVIEW_BUSY_RETRY_MS, backfillDelay = BACKFILL_POLL_MS, pollDelay = RECOVER_POLL_MS, layout = 'picker', handoff = null, spawnInFlight = null, deployments = () => [] }) {
   const doc = modal.ownerDocument, el = (tag, text, cls) => node(doc, tag, text, cls);
   const titleId = 'spawn-dialog-title';
   const dialog = el('section', undefined, 'spawn-dialog');
@@ -893,6 +896,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   let pressed = null;
   // Spec C: this dialog's one handoff (single-flight: the store refuses a token it has seen).
   const handoffToken = {}; let handedOff = false;
+  // followUntil (#802): until when a pending submitted spawn is followed (the broker's CLI deadline + 30 s, from the press).
+  let followUntil = 0;
   let flight = null, phase = 'idle', intent = null, submitted = false, delivered = false, modelsReq = 0, configsReq = 0, remoteBusy = false, modelsFor = null;
   let notice = null; // a refusal from the last Spawn stays visible until the operator edits
   const current = () => alive && owns() && mount === workspaceGeneration();
@@ -1201,6 +1206,9 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       else if (data.defaultTeam === undefined && typeof data.team === 'string' && data.team) fact('Team', data.team);
       const relation = relationText(data);
       if (relation) fact('Relationship', relation);
+      // The capabilities whose `worktree` hook sets up ./work, in the order they run ([] or absent: none).
+      const hooks = (data.worktreeHooks ?? []).map(h => `${displayLine(h.capability) ?? ''}${h.required ? ' (required)' : ''}`);
+      if (hooks.length) fact('Setup', doc.createTextNode(hooks.join(', ')), sub('Runs after the worktree is made. Can take several minutes.'));
       runsOnFact();
       factsBody.append(identity, facts);
       if (data.launchPromptAnswers) {
@@ -1420,10 +1428,20 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
           setStatus('These values changed since you last looked. Check them and press Spawn again.'); return;
         }
         intent = prepared; submitted = true; phase = 'submitting';
+        followUntil = Date.now() + (prepared.applyWithinMs ?? SPAWN_APPLY_MS) + FOLLOW_MARGIN_MS;
         view = await request({ action: 'apply', spawnRef: intent.spawnRef });
         if (!view) return;
       }
+      // #802: still running in the broker (a long spawn): read `result` until it settles or the deadline passes.
+      while (view.status === 'pending' && Date.now() < followUntil) {
+        phase = 'pending'; setStatus('Spawning…'); syncButton();
+        await new Promise(resolve => setTimeout(resolve, pollDelay));
+        if (!valid()) return;
+        view = await request({ action: 'result', spawnRef: intent.spawnRef });
+        if (!view) return;
+      }
       phase = view.status;
+      const named = intent?.preview?.instance ?? shown?.data?.instance ?? '';
       if (['complete', 'partial'].includes(phase)) {
         setStatus(view.reason?.message || `Created ${view.receipt.instance}${view.receipt.launched ? '' : ' — not launched'}.`, phase === 'partial');
         if (!delivered) { delivered = true; deploymentField?.remember(); await onCreated(view, () => current() && owner === mount); }
@@ -1432,8 +1450,18 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
         setStatus(retainedSpawnMessage(view.incomplete), true, problem);
       } else if (phase === 'pending') {
         setStatus('The spawn is still running. Check result again in a moment; nothing else was started.');
+      } else if (phase === 'unknown' && ROLLED_BACK_CODES.includes(view.reason?.code)) {
+        // #802: rolled back, its cleanup owed: retiring the quarantined home completes it; a re-apply cannot.
+        intent = null; submitted = false; phase = 'idle';
+        const problem = cleanupOwedProblem(view.reason, named);
+        notice = problem; setStatus(problem.text, true, problem);
       } else if (phase === 'unknown') {
         showProblem(spawnApplyReason('E_OUTCOME_UNKNOWN'), 'spawn');
+      } else if (ROLLED_BACK_CODES.includes(view.reason?.code)) {
+        // #802: the kernel rolled the spawn back: nothing was created.
+        intent = null; submitted = false; phase = 'idle';
+        notice = rolledBackProblem(view.reason, named);
+        setStatus(notice.text, true, notice); schedule(0);
       } else {
         // Refused or stale: nothing was created. Read the current values again.
         intent = null; submitted = false; phase = 'idle';

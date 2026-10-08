@@ -3,6 +3,7 @@ import { iconElement } from './shell-icons.mjs';
 import { ageText } from './age-text.mjs';
 import { createSoulMark, createRuntimeBadge, harnessName } from './identity-marks.mjs';
 import { unsupportedSession } from './instance-presentation.mjs';
+import { heldHome } from './instance-tree.mjs';
 import { canAddressRemote, serverLabel, shownLabel, unaddressableSentence } from './remote-address.mjs';
 /** Shell-owned contextual surface. Optional Git reads are delegated to an
  * injected controller; this host performs no IO, lookup or lifecycle actions. */
@@ -660,7 +661,11 @@ export function createContextPanel({
     createdLine.hidden = !startedLine.hidden || fields.get('createdAt').textContent === 'Not reported';
     session.hidden = !harness && !tmux && createdLine.hidden && startedLine.hidden;
     const running = instance.running === true, stopped = instance.running === false, unsupported = unsupportedSession(instance);
-    restartControl.hidden = !running; startControl.hidden = !stopped && !unsupported; stopControl.hidden = !running;
+    // #802: a home the kernel holds offers no Start, Restart or Stop; Retire only when a spawn or a retire left it
+    // half cleaned, nothing while its spawn sets up the worktree (the roster menu's rule, heldHome).
+    const held = heldHome(instance);
+    restartControl.hidden = !running || !!held; startControl.hidden = (!stopped && !unsupported) || !!held; stopControl.hidden = !running || !!held;
+    retireControl.hidden = !!held && !held.retire;
     for (const b of [restartControl, startControl, stopControl, retireControl]) b.disabled = !canAddressRemote(instance);
     // A Herdr-recorded instance cannot start: Start stays visible, disabled, with the kernel's reason.
     if (unsupported) startControl.disabled = true;

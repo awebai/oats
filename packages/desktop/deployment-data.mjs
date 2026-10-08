@@ -203,6 +203,9 @@ export function deploymentStatusData(document, deployment) {
       if (own(instance, 'sessionTarget')) row.sessionTarget = sessionTarget(instance.sessionTarget);
       if (own(instance, 'retirePending')) row.retirePending = true;
       if (own(instance, 'rollbackIncomplete')) row.rollbackIncomplete = true;
+      // #802 (feature worktree-event): a spawn running its worktree hooks, verifiably alive. Boolean true only;
+      // any other value is dropped, never checked: the row stays an ordinary one.
+      if (own(instance, 'spawnInProgress') && instance.spawnInProgress === true) row.spawnInProgress = true;
       if (own(instance, 'modules')) row.modules = modules(instance.modules);
       if (own(instance, 'soul')) row.soul = soulSource(instance.soul);
       if (own(instance, 'workspace')) row.workspace = recordedWorkspace(instance.workspace);

@@ -273,6 +273,29 @@ export function instanceRepoLabel(instance) {
   return String(path).split("/").filter(Boolean).at(-1) || "workspace";
 }
 
+/* ── homes the kernel holds (#802) ── */
+
+const HELD_HOMES = Object.freeze({
+  spawning: { state: "Setting up worktree…", status: "Spawning (setting up worktree)", retire: false,
+    sentence: name => `${name} is setting up its worktree. It opens once the spawn finishes.` },
+  "spawn-incomplete": { state: "Spawn didn't finish", hint: "Retire it to clean up", status: "Spawn didn't finish", retire: true,
+    sentence: name => `The spawn of ${name} didn't finish. Retire it to clean up.` },
+  "retire-incomplete": { state: "Retire didn't finish", hint: "Retire it again to complete", status: "Retire didn't finish", retire: true,
+    sentence: name => `The retire of ${name} didn't finish. Retire it again to complete.` },
+});
+/** What the kernel's roster row says holds this home, or null (#802): `spawning` while a spawn that
+ * runs its worktree hooks is verifiably alive (`spawnInProgress: true`), `spawn-incomplete` when a
+ * spawn left it for retire to clean up (`rollbackIncomplete`), `retire-incomplete` when a retire did
+ * (`retirePending`). rollbackIncomplete wins over spawnInProgress (the spawn is gone, not live), and a
+ * live spawn over retirePending (the kernel refuses to retire it). Every surface draws such a row from
+ * this: a spawning one starts, stops, retires and splits nothing; a quarantined one (`retire`) offers
+ * Retire only. `state` is the row's text, `hint` its muted line, `status` the hover card's Status. */
+export function heldHome(instance) {
+  const kind = !instance ? null : instance.rollbackIncomplete ? "spawn-incomplete"
+    : instance.spawnInProgress === true ? "spawning" : instance.retirePending ? "retire-incomplete" : null;
+  return kind ? { kind, ...HELD_HOMES[kind] } : null;
+}
+
 /* ── roster grouping: repo → agent family (soul), with sort modes ── */
 
 export const ROSTER_SORTS = [

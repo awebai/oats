@@ -201,11 +201,13 @@ test('store: an outcome is held while another workspace is on screen and posted 
 });
 
 // The store on the real broker (the kernel captures), for outcomes the dialog cannot reach by typing.
-function brokerStore({ apply, wake = null, ...overrides } = {}) {
-  const context = () => ({ workspace: { id: 'northwind', scope: DEPLOYMENT }, cli: structuredClone(CLI), agents: catalogAgents(), instances: [] });
-  const read = createSpawnPreviewBoundary({ invoke: async (_c, { target, choices }) => kernel(kernelPreviewName(target.selector.soul, choices)) });
+function brokerStore({ apply, wake = null, worktreeEvent = false, hooks, broker: brokerOptions = {}, ...overrides } = {}) {
+  const cli = { ...structuredClone(CLI), features: [...CLI.features, ...(worktreeEvent ? ['worktree-event'] : [])] };
+  const context = () => ({ workspace: { id: 'northwind', scope: DEPLOYMENT }, cli: structuredClone(cli), agents: catalogAgents(), instances: [] });
+  const preview = (target, choices) => { const k = kernel(kernelPreviewName(target.selector.soul, choices)); if (hooks) k.result.worktreeHooks = hooks; return k; };
+  const read = createSpawnPreviewBoundary({ invoke: async (_c, { target, choices }) => preview(target, choices) });
   let ids = 0;
-  const broker = createSpawnApplyBoundary({ mint: () => (++ids).toString(16).padStart(64, '0'), read, invoke: async args => apply(args) });
+  const broker = createSpawnApplyBoundary({ mint: () => (++ids).toString(16).padStart(64, '0'), read, invoke: async args => apply(args), ...brokerOptions });
   const selector = { soul: 'release-manager', agentsRoot: ROOT };
   const t = store({ post: async (_ws, body) => broker(body, context), currentWorkspace: () => 'northwind', ...overrides });
   const id = t.s.submit({ token: {}, workspace: 'northwind', soul: { name: 'release-manager', agentsRoot: ROOT }, selector,
@@ -453,19 +455,35 @@ test('Spec D: a recovered spawn whose record is gone (the backend restarted) sta
   gate.resolve(); await settle(5);
 });
 
-test('Spec D: a recovered spawn the server still reports pending past the apply deadline becomes unknown', async () => {
+test('Spec D / #802: a recovered spawn the server still reports pending past its stored deadline becomes unknown', async () => {
   const gate = deferred();
-  let clock = 0;
+  let clock = 1000;
   const rig = reloadRig(async () => { await gate.promise; return receipt(); });
   const storage = memoryStorage();
-  const before = rig.window(storage);
+  const before = rig.window(storage, { now: () => clock });
   rig.submit(before.s); await settle(10);
+  assert.equal(JSON.parse(storage.raw())[0].deadline, 1000 + 60000 + 30000, 'the press keeps its deadline: the CLI deadline plus 30 s, absolute');
   before.s.dispose();
-  const after = rig.window(storage, { now: () => clock, recoverWithinMs: 1000, sleep: async () => { clock += 600; await settle(1); } });
-  after.s.recover(); await settle(20);
+  const sleeps = [];
+  const after = rig.window(storage, { now: () => clock, sleep: async ms => { sleeps.push(ms); clock += 20000; await settle(1); } });
+  after.s.recover(); await settle(40);
   assert.equal(after.s.rows('northwind')[0].pending, 'unknown');
   assert.match(after.notes[0].message, /still running/);
+  assert.ok(clock >= 91000 && clock < 91000 + 20000, 'it followed until the stored deadline, not a fixed recovery window');
+  assert.ok(sleeps.every(ms => ms === 2000), 'result is read every 2 s');
   gate.resolve(); await settle(5);
+});
+
+test('Spec D: a stored job without a deadline (an older Desktop) follows the ordinary apply deadline from its recovery', async () => {
+  let clock = 5000;
+  const storage = memoryStorage();
+  storage.setItem(SPAWN_STORAGE_KEY, JSON.stringify([{ workspace: 'northwind', deployment: 'northwind', spawnRef: 'a'.repeat(64), soul: { name: 'release-manager', agentsRoot: ROOT },
+    selector: { soul: 'release-manager', agentsRoot: ROOT }, instance: 'release-manager-api-v2', home: `${ROOT}/release-manager/instances/release-manager-api-v2`, placement: {}, startedAt: 1 }]));
+  const { s } = store({ storage, now: () => clock, currentWorkspace: () => 'northwind',
+    post: async (_ws, body) => ({ spawnApplyViewApi: 1, status: 'unavailable', target: null, spawnRef: null, preview: null, receipt: null, reason: { code: 'E_INTERRUPTED' }, body }) });
+  assert.equal(s.recover(), 1);
+  assert.equal(JSON.parse(storage.raw())[0].deadline, 5000 + 90000);
+  await settle(5);
 });
 
 test('Spec D: storage that throws or holds junk never breaks the store', async () => {
@@ -487,5 +505,85 @@ test('store: retained prompt outcome explains reason/recovery without Reopen spa
     assert.match(notes[0].message, status === 'blocked' ? /blocked: unexpected prompt/ : /audit failed after possible input/);
     assert.match(notes[0].message, /Inspect its existing pane, then use oats session start --home/);
     assert.equal(reopenButton(notes[0]), undefined); assert.equal(s.rows('northwind').length, 1);
+  }
+});
+
+// ── #802: long spawns ──────────────────────────────────────────────────────
+
+function manualTimer() {
+  const armed = [];
+  return { armed, timer: (fn, ms) => { const t = { fn, ms, cleared: false }; armed.push(t); return () => { t.cleared = true; }; },
+    fire: () => { for (const t of armed.splice(0)) if (!t.cleared) t.fn(); } };
+}
+
+test('#802: an apply that answers pending is followed with result every 2 s until it completes; nothing is applied twice', async () => {
+  const gate = deferred(), clock = manualTimer(), sleeps = [];
+  const t = brokerStore({ apply: async () => { await gate.promise; return receipt(); }, broker: { timer: clock.timer }, sleep: async ms => { sleeps.push(ms); await settle(1); } });
+  const jobs = t.s;
+  await settle(10);
+  clock.fire(); await settle(10); // the broker's 50 s: apply answers pending
+  assert.equal(jobs.rows('northwind')[0].pending, 'spawning', 'still Spawning…, never Outcome unknown while it runs');
+  assert.equal(t.notes.length, 0, 'no notice while it runs');
+  assert.ok(jobs.inFlight('northwind', { name: 'release-manager', agentsRoot: ROOT }));
+  gate.resolve(); await settle(20);
+  assert.ok(sleeps.length >= 1 && sleeps.every(ms => ms === 2000));
+  assert.equal(jobs.settling('northwind'), true, 'complete: waiting for the roster, as before');
+  jobs.observe('northwind', [realRow()]);
+  assert.equal(t.spawned.length, 1); assert.equal(jobs.size(), 0);
+  });
+
+test('#802: a pending apply is followed until its own deadline (the preview\'s CLI deadline + 30 s), then reads Outcome unknown', async () => {
+  const clock = manualTimer();
+  let now = 0;
+  const storage = memoryStorage();
+  const t = brokerStore({ worktreeEvent: true, hooks: [{ capability: 'nw-setup', required: true }], storage, now: () => now,
+    apply: () => new Promise(() => {}), broker: { timer: clock.timer }, sleep: async () => { now += 600000; await settle(1); } });
+  await settle(10);
+  assert.equal(JSON.parse(storage.raw())[0].deadline, 1920000 + 30000, 'one hook: 60 s + 30 min + 60 s, plus 30 s');
+  clock.fire(); await settle(40);
+  const [row] = t.s.rows('northwind');
+  assert.equal(row.pending, 'unknown'); assert.match(t.notes[0].message, /still running/);
+  assert.ok(now >= 1950000 && now < 1950000 + 600000);
+});
+
+test('#802: rows carry the job\'s start, for the roster\'s “since” line', async () => {
+  const { s } = store({ now: () => 1234, post: async () => new Promise(() => {}) });
+  s.submit(spec());
+  assert.equal(s.rows('A')[0].startedAt, 1234);
+});
+
+for (const [code, words] of [['E_INTERRUPTED', /^The spawn of release-manager-api-v2 was interrupted while its worktree was being set up, and was rolled back\. Nothing was created\.$/],
+  ['E_REQUIRED_HOOK_FAILED', /^A capability couldn’t set up the worktree for release-manager-api-v2, so the spawn was rolled back\. Nothing was created\.$/],
+  ['E_HOOK_ENVIRONMENT_CONTRACT', /^A capability couldn’t set up the worktree for release-manager-api-v2, so the spawn was rolled back\. Nothing was created\.$/]]) {
+  test(`#802: ${code} without unconfirmed is a known rollback: the failure notice with Reopen spawn, the kernel's words under Details`, async () => {
+    const reopened = [];
+    const message = `a capability could not set up the new worktree:\n  nw-setup worktree hook (declared required): exited 3 (log: /h/.oats/logs/w.log) — spawn rolled back`;
+    const { s, notes } = brokerStore({ worktreeEvent: true, reopen: job => reopened.push(job),
+      apply: () => ({ started: true, envelope: { schemaVersion: 1, ok: false, error: { code, message } } }) });
+    await settle(20);
+    assert.equal(s.rows('northwind').length, 0, 'nothing was created: the row goes');
+    assert.equal(notes.length, 1); assert.match(notes[0].message, words);
+    assert.equal(notes[0].options.detail, `${code} · a capability could not set up the new worktree: nw-setup worktree hook (declared required): exited 3 (log: /h/.oats/logs/w.log) — spawn rolled back`, 'one line, through displayLine');
+    assert.ok(reopenButton(notes[0]));
+    await reopenButton(notes[0]).activate(); assert.equal(reopened.length, 1);
+  });
+  test(`#802: ${code} with unconfirmed is cleanup owed: it says Retire completes it, with no Check result or Reopen`, async () => {
+    const { s, notes } = brokerStore({ worktreeEvent: true,
+      apply: () => ({ started: true, envelope: { schemaVersion: 1, ok: false, error: { code, message: 'rollback INCOMPLETE', details: { unconfirmed: true } } } }) });
+    await settle(20);
+    assert.equal(notes.length, 1);
+    assert.equal(notes[0].message, 'The spawn of release-manager-api-v2 was stopped, but its cleanup didn’t finish. Retire release-manager-api-v2 from the roster to complete it.');
+    assert.equal(notes[0].options.detail, `${code} · rollback INCOMPLETE`);
+    assert.equal(reopenButton(notes[0]), undefined);
+    assert.equal(s.rows('northwind').length, 0, 'the roster\'s own quarantined row offers Retire');
+    assert.equal(s.size(), 0);
+  });
+}
+
+test('#802: without worktree-event, or for E_SPAWN_FAILED, today\'s handling: Outcome unknown', async () => {
+  for (const [feature, code] of [[false, 'E_INTERRUPTED'], [true, 'E_SPAWN_FAILED']]) {
+    const { s, notes } = brokerStore({ worktreeEvent: feature, apply: () => ({ started: true, envelope: { schemaVersion: 1, ok: false, error: { code, message: 'x' } } }) });
+    await settle(20);
+    assert.equal(s.rows('northwind')[0].pending, 'unknown'); assert.doesNotMatch(notes[0].message, /rolled back/);
   }
 });

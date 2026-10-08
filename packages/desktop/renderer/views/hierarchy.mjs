@@ -49,7 +49,7 @@ import { computeClusters, siblingEdges } from "./clusters.mjs";
 import { runtimeState, runtimeCounts, unsupportedSession } from "../instance-presentation.mjs";
 import { serverLabel } from "../remote-address.mjs";
 import { createInstanceEventsView, instanceEventsCSS } from "../instance-events-view.mjs";
-import { instanceId, resolveLinkId } from "../instance-tree.mjs";
+import { instanceId, resolveLinkId, heldHome } from "../instance-tree.mjs";
 import { projectActivePanel, activeSignature, activeTargetLabel, canAddressInstance, BRAIN_UNAVAILABLE } from "../active-observation.mjs";
 import {
   apiJson, ensureTheme,
@@ -937,7 +937,8 @@ function placeSections(s) {
 }
 
 function nodeEl(s, n, wsName) {
-  const i = n.inst, id = n.id ?? instanceId(i), status = runtimeState(i);
+  // #802: a home the kernel holds names its state ("Setting up worktree…", "Spawn didn't finish"…) in words.
+  const i = n.inst, id = n.id ?? instanceId(i), status = runtimeState(i), held = heldHome(i);
   const d = node(s, 'div', undefined, 'hnode' + (status === 'stopped' ? ' idle' : status === 'unknown' ? ' unknown' : ''));
   s.nodeIds ||= new Map();
   if (!s.nodeIds.has(id)) s.nodeIds.set(id, `${s.domId || 'active'}-node-${s.nextNodeId = (s.nextNodeId || 0) + 1}`);
@@ -945,12 +946,12 @@ function nodeEl(s, n, wsName) {
   d.style.left = `${n.fx}px`; d.style.top = `${n.fy}px`;
   d.setAttribute('role', 'treeitem'); d.setAttribute('aria-level', String((n.depth || 0) + 1));
   const target = activeTargetLabel(i, s.panel.instances);
-  d.setAttribute('aria-label', `${i.instance}, ${status}${target ? `, ${target}` : ''}`);
+  d.setAttribute('aria-label', `${i.instance}, ${held?.status ?? status}${target ? `, ${target}` : ''}`);
   d.dataset.name = i.instance; d.dataset.id = id;
   const name = node(s, 'div', undefined, 'hname');
   const dot = node(s, 'span', undefined, `hdot ${status === 'running' ? 'on' : status === 'stopped' ? 'off' : 'unknown'}`); dot.setAttribute('aria-hidden', 'true');
   name.append(dot, node(s, 'span', i.instance, 'nm'));
-  const metadata = [target, i.repoName || 'Context not reported', i.harness || 'Harness not reported', i.branch || '', status === 'unknown' ? 'state unknown' : ''].filter(Boolean).join(' · ');
+  const metadata = [target, i.repoName || 'Context not reported', i.harness || 'Harness not reported', i.branch || '', status === 'unknown' ? 'state unknown' : '', held?.state || ''].filter(Boolean).join(' · ');
   d.append(name, node(s, 'div', metadata, 'hmeta'));
   d.title = `${i.instance}\n${metadata}\nHome: ${i.home || 'not reported'}\nRoot: ${i.agentsRoot || 'not reported'}`;
   const current = () => dataCurrent(s) && visibleOwner(s, d) && !s.pending && s.nodeEls.get(id)?.el === d;
@@ -993,7 +994,8 @@ function selectedInstance(s, id) {
 }
 function invokeInstance(s, id, action) {
   const i = selectedInstance(s, id);
-  if (!rowActionsCurrent(s, i) || !visibleOwner(s) || !canAddressInstance(i)) return;
+  // #802: a held home (spawning, or left half cleaned) starts, restarts and opens nothing.
+  if (!rowActionsCurrent(s, i) || !visibleOwner(s) || !canAddressInstance(i) || heldHome(i)) return;
   const call = action === 'terminal' && i.running === true && s.ctx.openTerminal ? () => s.ctx.openTerminal({
     instance: i.instance, home: i.home || undefined, agentsRoot: i.agentsRoot || undefined, ...(i.server ? { server: i.server } : {}),
   }) : action === 'start' && i.running === false && s.ctx.startInstance ? () => s.ctx.startInstance(i)
@@ -1264,16 +1266,17 @@ function updatePop(s) {
   setText(pop.querySelector('.pname'), i.instance);
   const identity = pop.querySelector('.pidentity'); identity.hidden = !activeTargetLabel(i, s.panel.instances);
   setText(identity, `Host: ${i.server || (i.remote ? 'not reported' : 'local')} · Root: ${i.agentsRoot || 'not reported'} · Home: ${i.home || 'not reported'}`);
-  setText(pop.querySelector('.pstate'), `Reported state: ${runtimeState(i)}${s.stale || rowStale(i, s.panel.deployments) ? ' (last observation)' : ''}`);
+  const held = heldHome(i);
+  setText(pop.querySelector('.pstate'), `Reported state: ${held?.status ?? runtimeState(i)}${s.stale || rowStale(i, s.panel.deployments) ? ' (last observation)' : ''}`);
   setText(pop.querySelector('.rt'), i.harness || 'Harness not reported');
   setText(pop.querySelector('.pbranch'), i.branch ? `Reported branch: ${i.branch}` : 'Branch not reported');
-  const allowed = rowActionsCurrent(s, i) && canAddressInstance(i);
+  const allowed = rowActionsCurrent(s, i) && canAddressInstance(i) && !held;
   const terminal = pop.querySelector('.pterm');
   setText(terminal, i.running === false ? 'Start…' : 'Terminal');
   terminal.disabled = !allowed || (i.running === true ? !s.ctx.openTerminal : i.running === false ? !s.ctx.startInstance : true);
   const unsupported = unsupportedSession(i);
-  terminal.title = unsupported || (terminal.disabled ? 'Requires a current, addressed instance with known runtime state and an available route.' : i.running === false ? 'Open the existing Start dialog' : 'Open this exact instance terminal');
-  const restart = pop.querySelector('.prestart'); if (restart) { restart.disabled = !allowed || i.running !== true; restart.title = unsupported || ''; }
+  terminal.title = unsupported || held?.sentence(i.instance) || (terminal.disabled ? 'Requires a current, addressed instance with known runtime state and an available route.' : i.running === false ? 'Open the existing Start dialog' : 'Open this exact instance terminal');
+  const restart = pop.querySelector('.prestart'); if (restart) { restart.disabled = !allowed || i.running !== true; restart.title = unsupported || held?.sentence(i.instance) || ''; }
   s.activity?.sync();
   positionPop(s);
 }

@@ -65,6 +65,7 @@ export async function mountSpawn(t, options = {}) {
   const previewBoundary = createSpawnPreviewBoundary({ invoke: async (c, args) => kernelInvoke(c, args) });
   let ids = 0;
   const broker = createSpawnApplyBoundary({ mint: () => (++ids).toString(16).padStart(64, '0'), read: previewBoundary,
+    ...(options.brokerTimer ? { timer: options.brokerTimer } : {}), // #802: the apply's answer-within timer
     invoke: async (c, args) => {
       applied.push(structuredClone(args));
       if (options.apply) return options.apply(args);
@@ -76,7 +77,7 @@ export async function mountSpawn(t, options = {}) {
     ...(options.deployments ? { deployments: options.deployments } : {}),
     deployment: { status: 'observed', root: `${northwindDir}/agents`, workspace: workspaceStatusData(northwind, northwindDir).workspace,
       workspaceStatus: workspaceStatusData(northwind, northwindDir), reachable: { reachable: true } } });
-  const ctx = { hasWorkspaceSwitcher: true, spawnTiming: { previewDelay: options.previewDelay ?? 0, busyDelay: options.busyDelay ?? 0, backfillDelay: 0, wait: { tries: 3, delayMs: 0, sleep: options.sleep ?? (async () => {}) } },
+  const ctx = { hasWorkspaceSwitcher: true, spawnTiming: { previewDelay: options.previewDelay ?? 0, busyDelay: options.busyDelay ?? 0, backfillDelay: 0, pollDelay: 0, wait: { tries: 3, delayMs: 0, sleep: options.sleep ?? (async () => {}) } },
     api: async (path, opts = {}) => {
       const body = opts.body ? JSON.parse(opts.body) : undefined; calls.push({ path, body, method: opts.method || 'GET' });
       if (path === '/api/cli') return cli;

@@ -404,6 +404,8 @@ function projectPanelInstance(i) {
     ...(i.identityAddress !== undefined ? { identityAddress: i.identityAddress } : {}),
     ...(i.retirePending ? { retirePending: true } : {}),
     ...(i.rollbackIncomplete ? { rollbackIncomplete: true } : {}),
+    // #802: a spawn setting up its worktree (deployment-data.mjs keeps it as true only).
+    ...(i.spawnInProgress === true ? { spawnInProgress: true } : {}),
     ...(i.captured ? { captured: true } : {}),
     // Needs input (PR K): the validated claim (or null, unknown) as status reported it; absent stays absent.
     // Desktop liveness is merged before projection, so running/runtimeState beside it are Desktop's.
@@ -1727,7 +1729,9 @@ const server = createServer(async (req, res) => {
         // previews go when it starts, and again when it ends (observeMutation), so a preview read meanwhile
         // never refills them with the pre-spawn answer (the cache's flight clock).
         if (body.action === 'apply') { try { spawnPreviewCache.invalidate(url.searchParams.get('ws')); } catch { /* never blocks the apply */ } }
-        const result = await spawnApplyRequest(body, getContext);
+        // An apply that answered `pending` keeps its CLI running in the broker: refresh again when it settles.
+        const refresh = () => { try { spawnPreviewCache.invalidate(url.searchParams.get('ws')); observeMutation(url.searchParams.get('ws')); } catch { /* a refresh must not erase a spawn receipt */ } };
+        const result = await spawnApplyRequest(body, getContext, { settled: refresh });
         if (body.action === 'apply') { try { observeMutation(url.searchParams.get('ws')); } catch { /* a refresh must not erase a spawn receipt */ } }
         return send(res, 200, result);
       }

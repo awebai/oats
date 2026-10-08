@@ -195,7 +195,19 @@ The **Spawn** dialog's left column, **What will be created**, starts with the
 new instance's name and its home. Then come where it works, its harness and
 model (with where that choice came from), its default team and the teams it may
 also join, and its relationship when it has one. Under them are its core
-capabilities and its other capabilities. Every dropdown in the app has the
+capabilities and its other capabilities.
+
+When capabilities set up the new worktree (OATS 0.49.0 and later), **Setup**
+names them, in the order they run, and says this can take several minutes. Such
+a spawn may run for a long time: its roster row reads **Setting up worktree…**
+until the worktree is ready, and offers no actions meanwhile. If the spawn was
+interrupted or a capability couldn't set up the worktree, the spawn was rolled
+back, and the notification says that nothing was created. A home whose spawn
+didn't finish its cleanup reads **Spawn didn't finish**, and one whose retire
+didn't finish reads **Retire didn't finish**; both offer only **Retire
+instance…**, which completes them. A server spawn whose worktree hooks take
+more than about a minute is not yet supported from the Desktop; use the CLI on
+the server. Every dropdown in the app has the
 same themed look, and its open list follows the light or dark theme.
 
 ## One workspace, several machines

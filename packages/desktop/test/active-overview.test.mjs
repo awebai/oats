@@ -388,3 +388,23 @@ test('a Deployments stage mounted in a window that is already unfocused starts a
   for (let n = 0; n < 6; n++) { s.poll(); await tick(); }
   assert.equal(reads(), before, 'no read every 4 s');
 });
+
+test('#802: a held home on the canvas names its state and starts, restarts or opens nothing', async t => {
+  const roster = [instance('spawning', { running: false, spawnInProgress: true }), instance('left', { running: true, rollbackIncomplete: true }),
+    instance('both', { running: false, spawnInProgress: true, rollbackIncomplete: true })];
+  const u = await setup(t, { instances: roster });
+  const node = name => u.nodes().find(n => n.dataset.name === name);
+  assert.match(node('spawning').getAttribute('aria-label'), /^spawning, Spawning \(setting up worktree\)/);
+  assert.match(node('spawning').querySelector('.hmeta').textContent, /Setting up worktree…/);
+  assert.match(node('left').getAttribute('aria-label'), /^left, Spawn didn't finish/);
+  assert.match(node('both').getAttribute('aria-label'), /^both, Spawn didn't finish/, 'rollbackIncomplete wins');
+  for (const name of ['spawning', 'left']) {
+    u.mouse(node(name), 'click');
+    const terminal = u.one('.pterm');
+    assert.equal(terminal.disabled, true, `${name}: no Start or Terminal`);
+    assert.equal(u.one('.prestart').disabled, true, `${name}: no Restart`);
+    terminal.dispatchEvent(new u.dom.window.Event('click')); u.mouse(node(name), 'dblclick');
+  }
+  assert.match(u.one('.pstate').textContent, /Reported state: Spawn didn't finish/);
+  assert.equal(u.opened.length + u.started.length + u.restarted.length, 0, 'nothing opened or started');
+});

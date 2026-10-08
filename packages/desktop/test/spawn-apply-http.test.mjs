@@ -14,14 +14,16 @@ import { deploymentDoubles } from './helpers/deployment-doubles.mjs';
 const ref = 'a'.repeat(64);
 const prepared = () => ({ spawnApplyViewApi: 1, status: 'prepared', target, spawnRef: ref, preview: applyPreview(target), wakeRequested: false, receipt: null, reason: null });
 const draft = () => ({ action: 'prepare', selector, choices: {}, task: 'PRIVATE task' });
-function http() {
+function http({ invoke, timer } = {}) {
   const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const start = source.indexOf('const send = (res, code, body, type'), end = source.indexOf('\nserver.on("error",');
   const c = applyContext(), reads = [], calls = [], serverSpawns = [], order = []; let nonce = 0;
   const broker = createSpawnApplyBoundary({ mint: () => (++nonce).toString(16).padStart(64, '0'),
     read: request => { reads.push(request); return { status: 'available', data: applyPreview(target) }; },
-    invoke: (_cli, args) => { calls.push(args); order.push('invoke'); return { started: true, envelope: envelope(creation(applyPreview(args.target))) }; } });
+    ...(timer ? { timer } : {}),
+    invoke: (_cli, args) => { calls.push(args); order.push('invoke'); return invoke ? invoke(args) : { started: true, envelope: envelope(creation(applyPreview(args.target))) }; } });
   const deps = { createServer: fn => fn, spawnApplyFailure, spawnApplyRequest: broker, spawnPreviewCache: { invalidate: ws => order.push(`invalidate:${ws}`) },
+    observeMutation: ws => order.push(`observe:${ws}`),
     spawnAgent: async body => { serverSpawns.push(body); return { instance: 'dev-1', home: '/fixture/dev-1', agent: 'dev', launched: true }; },
     spawnErrorPayload: () => assert.fail('unexpected execution-server error'), ...deploymentDoubles(() => [c.workspace]), cliState: c.cli,
     agentsData: () => ({ agents: c.agents }), snapshot: { byWs: new Map([['northwind', { instances: c.instances }]]) } };
@@ -130,4 +132,17 @@ test('Spec C: an apply drops the workspace\'s held previews before the kernel ru
   assert.deepEqual(h.order, [], 'prepare invalidates nothing');
   await h.request({ body: { action: 'apply', spawnRef: prepared.body.spawnRef } });
   assert.deepEqual(h.order.slice(0, 2), ['invalidate:northwind', 'invoke']);
+});
+test('#802: an apply that answered pending refreshes again (held previews, the roster) when its CLI settles', async () => {
+  const gate = deferred(); let fire;
+  const h = http({ invoke: () => gate.promise, timer: fn => { fire = fn; return () => {}; } });
+  const p = (await h.request()).body;
+  const answer = h.request({ body: { action: 'apply', spawnRef: p.spawnRef } });
+  await new Promise(resolve => setImmediate(resolve)); fire();
+  assert.equal((await answer).body.status, 'pending');
+  assert.deepEqual(h.order, ['invalidate:northwind', 'invoke', 'observe:northwind']);
+  gate.resolve({ started: true, envelope: envelope(creation(applyPreview(target))) });
+  await new Promise(resolve => setImmediate(resolve)); await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(h.order.slice(3), ['invalidate:northwind', 'observe:northwind'], 'the late outcome refreshes once more');
+  assert.equal((await h.request({ body: { action: 'result', spawnRef: p.spawnRef } })).body.status, 'complete');
 });

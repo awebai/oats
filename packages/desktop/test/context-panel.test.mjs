@@ -474,3 +474,18 @@ test('kernel-shaped remote rows: a listed row whose host reports null says "does
   u.select(known);
   assert.equal(section.hidden, false); assert.equal(note.hidden, true);
 });
+
+test('#802: a held home: a spawning one shows no lifecycle control, a quarantined one Retire only', t => {
+  const u = fixture(t), control = op => u.query(`[data-lifecycle="${op}"]`);
+  const shown = () => ['restart', 'start', 'stop', 'retire'].filter(op => !control(op).hidden);
+  u.select(instance('/A/s1', { running: false, spawnInProgress: true }));
+  assert.deepEqual(shown(), [], 'setting up its worktree: no Start, Stop or Retire');
+  u.select(instance('/A/q1', { running: false, rollbackIncomplete: true }));
+  assert.deepEqual(shown(), ['retire'], "a spawn that didn't finish: Retire only");
+  u.select(instance('/A/q2', { running: true, retirePending: true }));
+  assert.deepEqual(shown(), ['retire'], "a retire that didn't finish: Retire only, even with a live session");
+  u.select(instance('/A/q3', { running: false, spawnInProgress: true, rollbackIncomplete: true }));
+  assert.deepEqual(shown(), ['retire'], 'rollbackIncomplete wins');
+  u.select(instance('/A/t1', { running: false }));
+  assert.deepEqual(shown(), ['start', 'retire'], 'an ordinary stopped row is unchanged');
+});

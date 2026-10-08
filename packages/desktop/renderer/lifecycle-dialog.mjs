@@ -4,7 +4,7 @@ import { lifecyclePlan, lifecycleOptions, planReference, lifecycleReason, lifecy
 import { projectedPullRequest } from './forge-contract.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { codeLineNodes, readingFrom, remoteReason, serverLabel } from './remote-address.mjs';
-import { cleanLine } from './display-text.mjs';
+import { cleanLine, displayLine } from './display-text.mjs';
 import { skeleton, observedAgeText, AGE_TICK_MS } from './loading.mjs';
 export const lifecycleCSS = `
 .lifecycle-dialog { width:min(420px,calc(100vw - 32px)); max-height:88vh; overflow:auto; display:flex; flex-direction:column; gap:14px; padding:20px; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--fg); box-shadow:var(--shadow-popover); font-size:12.5px; }
@@ -58,6 +58,8 @@ const workText = w => !w.observed ? "Unknown (couldn't be checked)" : !w.changed
   : [w.changed && `${w.changed} changed`, w.untracked && `${w.untracked} untracked`].filter(Boolean).join(', ');
 /** The worktree's branch as observed, else the one recorded at spawn; null when detached or unknown. */
 const branchOf = f => f.work.observed ? f.work.branch : f.recordedBranch;
+/** A retire the kernel refuses as busy for a home a spawn left (`rollbackIncomplete`): the spawn may still run. */
+const LEFTOVER_BUSY = "OATS can't confirm that the spawn which left this home has stopped, so it won't retire it yet. Check the process it names, then retire it from the CLI with --force.";
 const ambiguousText = v => `Not included: ${v.instance} (another instance has the same parent name, so OATS can't tell whose child it is).`;
 let dialogs = 0;
 /** A fresh explicit confirmation every time; no Don't-ask-again bypass.
@@ -68,6 +70,8 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
   subscribeWorkspace = () => () => {}, subscribeConnections = () => () => {}, connectionGeneration = () => 0,
   onIntent = () => {}, applyFocus = fn => fn(), onSettled = () => {}, openExternal = () => {}, fallbackFocus = () => null } = {}) {
   let alive = true, overlay = null, ui = null, target = null, operation = null, choices = null, plan = null, planRef = null, server = null;
+  // The row the dialog was opened for is a home a failed spawn left (quarantined, `rollbackIncomplete`).
+  let leftover = false;
   let life = 0, ticket = 0, applying = false, restore = null, submission = null, phase = null, shown = null, ticker = null;
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
   const capture = () => ({ life, ticket, generation: generation(), target, overlay });
@@ -146,6 +150,11 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
    * message in Details when there is one to show. */
   function refusal(reason) {
     const remote = remoteReason(reason), shownReason = remote || localDetail(reason);
+    // The kernel's own busy refusal (it carries the kernel's message; Desktop's own busy does not) for a home
+    // a spawn left: its sentence, and the kernel's message, which names the process, shown under it.
+    if (!remote && shownReason && reason.code === 'E_LIFECYCLE_BUSY' && retire() && leftover) {
+      say(LEFTOVER_BUSY); const p = node('p'); p.append(node('bdi', shownReason.detail)); ui.result.append(p); return;
+    }
     say(remote ? remote.message : lifecycleReason(reason?.code).message);
     if (shownReason) details(ui.result, shownReason);
   }
@@ -308,7 +317,15 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
       line(receipt.removedDir ? 'Home folder deleted.' : 'Home folder kept.', receipt.removedDir ? undefined : receipt.retainedHome ?? undefined),
       r?.worktree === 'retained' && line('Worktree kept at', r.movedTo), r?.worktree === 'removed' && line('Worktree deleted.'),
       receipt.recoveryPath && line('Recovery copy saved at', receipt.recoveryPath),
+      compensated(receipt.spawnCompensation),
       receipt.incomplete && line("Cleanup didn't finish.")]);
+  }
+  /** The branch an interrupted spawn left, which this retire deleted or kept (spawnCompensation); else nothing. */
+  function compensated(c) {
+    const branch = displayLine(c?.branch);
+    if (!branch) return null;
+    return line(c.branchDeleted ? `Branch ${branch} deleted: an interrupted spawn left it, and it held no work.`
+      : `Branch ${branch} kept: ${displayLine(c.reason) ?? 'no reason given'}`);
   }
   async function apply(retry = false) {
     if (!overlay || applying || (retry ? !submission || phase !== 'result' : phase !== 'review' || !plan || !planRef || !lifecycleChoicesApplicable(plan, choices))) return;
@@ -375,7 +392,7 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     close({ restoreFocus: false }); if (!alive || !['stop', 'retire'].includes(next)) return;
     target = gitTarget({ workspace, instance: instance?.instance, agent: instance?.agent, agentsRoot: instance?.agentsRoot, home: instance?.home, server: instance?.server ?? null });
     if (!target) return;
-    server = target.server ? serverLabel(instance) : null;
+    server = target.server ? serverLabel(instance) : null; leftover = instance?.rollbackIncomplete === true;
     onIntent(); restore = takePickerFocusReturn(doc); life++; operation = next;
     choices = next === 'stop' ? { recursive: true } : { discardWorktree: false };
     const id = `lifecycle-${++dialogs}`;

@@ -59,6 +59,21 @@ same bounded, redacted scalar projection. Pane/PID identity, signature data and
 other receipt payloads are not forwarded. A submitted answer is historical
 input evidence, not readiness or permission to retry a key.
 
+`worktree-added` rows (OATS 0.49.0, feature `worktree-event`: `oats worktree
+add` made an extra tree) are titled "Worktree added", with the facts purpose,
+path, branch, base and member, and **Setup**: one line per entry of the
+`worktree` hooks' receipt (`data.hooks`), "<capability>: done" or
+"<capability>: failed (continuing)", with the hook's `log` as a muted path line
+beneath (none when `log` is `null`: a rolled-back spawn's log is removed). A
+required failure never reaches an event, because the tree is removed then.
+`spawned` rows gain the same **Setup** fact from `data.worktreeHooks`, present
+only when the spawn ran `worktree` hooks. These keys are read tolerantly,
+outside the listed keys that refuse a malformed read (`instance-events-data.mjs`:
+the `tolerant` table and `hookReceipt`): a malformed value drops its own fact,
+and a malformed receipt (the value, or any one entry) drops the whole Setup fact
+rather than hide one hook; neither refuses the read. All of it is shown through
+`displayLine`.
+
 A claim may carry a `message`: 1 to 200 code points (not UTF-16 units), with
 none of an exact refused set: control characters (C0, DEL, C1), U+2028/U+2029,
 the bidi embeddings, overrides and isolates (U+202A–202E, U+2066–2069), the

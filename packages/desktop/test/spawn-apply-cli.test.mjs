@@ -174,3 +174,47 @@ test('malformed additive diagnostics do not erase retained CLI failure', async (
   const r = await cliSpawnApply(capable(), options(), f.io);
   assert.equal(r.envelope.error.code, 'E_SPAWN_INCOMPLETE'); assert.equal(r.envelope.error.details.launchPrompts.status, 'unknown');
 });
+test('#802: the broker passes the CLI deadline in; only a deadline spawnApplyDeadlineMs can produce crosses', async () => {
+  for (const deadlineMs of [60000, 1920000, 3720000]) {
+    const f = fixture(); await cliSpawnApply(capable(), options({ deadlineMs }), f.io);
+    assert.equal(f.calls[0].opts.timeout, deadlineMs);
+  }
+  for (const deadlineMs of [0, 59999, 61000, 1920001, '1920000', Infinity, 120000 + 65 * 1800000]) {
+    const f = fixture(), result = await cliSpawnApply(capable(), options({ deadlineMs }), f.io);
+    assert.equal(result.started, false); assert.equal(result.envelope.error.code, 'E_BAD_ARGS'); assert.equal(f.calls.length, 0);
+  }
+});
+const killed = () => Object.assign(Error('killed'), { killed: true, signal: 'SIGTERM', code: null });
+const interrupted = (details = { signal: 'SIGTERM', hooks: [] }) => ({ schemaVersion: 1, ok: false,
+  error: { code: 'E_INTERRUPTED', message: 'the spawn was interrupted by SIGTERM while its worktree hooks ran; the running hook\'s process group was ended — spawn rolled back', details } });
+test('#802: killed by our deadline, a worktree-event CLI\'s envelope on stdout is the outcome; without one it is E_CLI_TIMEOUT', async () => {
+  const c = { ...capable(), features: [...capable().features, 'worktree-event'] };
+  let f = fixture({ exec: (_b, _a, _o, done) => done(killed(), JSON.stringify(interrupted())) });
+  let result = await cliSpawnApply(c, options({ deadlineMs: 1920000 }), f.io);
+  assert.equal(result.started, true); assert.equal(result.envelope.error.code, 'E_INTERRUPTED');
+  assert.match(result.envelope.error.message, /interrupted by SIGTERM/, 'the kernel\'s own message travels for a rolled-back code');
+  assert.equal(result.envelope.error.details, undefined, 'signal and hooks stay with the kernel; only the unconfirmed marker crosses');
+  f = fixture({ exec: (_b, _a, _o, done) => done(killed(), JSON.stringify(interrupted({ signal: 'SIGTERM', unconfirmed: true }))) });
+  result = await cliSpawnApply(c, options(), f.io);
+  assert.deepEqual(result.envelope.error.details, { unconfirmed: true });
+  for (const stdout of ['', '{"schemaVersion":1,"ok":fal', 'progress\n']) {
+    f = fixture({ exec: (_b, _a, _o, done) => done(killed(), stdout) });
+    result = await cliSpawnApply(c, options(), f.io);
+    assert.equal(result.started, true); assert.equal(result.envelope.error.code, 'E_CLI_TIMEOUT');
+  }
+  // Without the feature: today's rule, a kill is unknown whatever stdout holds.
+  f = fixture({ exec: (_b, _a, _o, done) => done(killed(), JSON.stringify(interrupted())) });
+  result = await cliSpawnApply(capable(), options(), f.io);
+  assert.equal(result.envelope.error.code, 'E_CLI_TIMEOUT');
+});
+test('#802: a rolled-back code keeps the kernel message only with worktree-event; without it the code is not known here', async () => {
+  for (const code of ['E_INTERRUPTED', 'E_REQUIRED_HOOK_FAILED', 'E_HOOK_ENVIRONMENT_CONTRACT']) {
+    const doc = { schemaVersion: 1, ok: false, error: { code, message: `${code} kernel words`, details: { hooks: [{ capability: 'x' }] } } };
+    let f = fixture({ exec: (_b, _a, _o, done) => done(Object.assign(Error('exit 1'), { code: 1 }), JSON.stringify(doc)) });
+    let result = await cliSpawnApply({ ...capable(), features: [...capable().features, 'worktree-event'] }, options(), f.io);
+    assert.deepEqual(result.envelope.error, { code, message: `${code} kernel words` });
+    f = fixture({ exec: (_b, _a, _o, done) => done(Object.assign(Error('exit 1'), { code: 1 }), JSON.stringify(doc)) });
+    result = await cliSpawnApply(capable(), options(), f.io);
+    assert.notEqual(result.envelope.error.message, `${code} kernel words`);
+  }
+});

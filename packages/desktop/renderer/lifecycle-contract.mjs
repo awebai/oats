@@ -136,10 +136,21 @@ export function stoppedTargets(value, expected, withState = false) {
   });
   return result.some(v => !v) ? null : result;
 }
+/** The one branch deletion a retire reports (feature `worktree-event`, 0.49.0): it finished the compensation of a
+ * spawn killed while its `worktree` hooks ran. `{branch, branchDeleted: true}`, or `{branch, branchDeleted: false,
+ * reason}`. Additive and read tolerantly: anything else is ignored (null), never a refused receipt. Its text is
+ * the kernel's, raw: shown only through displayLine. It is not retire's own `branchDeleted`, which stays refused. */
+export function spawnCompensationOf(v) {
+  const label = (x, max) => typeof x === 'string' && !!x && x.length <= max;
+  if (!object(v) || !label(v.branch, 1024) || typeof v.branchDeleted !== 'boolean') return null;
+  if (v.branchDeleted) return { branch: v.branch, branchDeleted: true };
+  return label(v.reason, 4096) ? { branch: v.branch, branchDeleted: false, reason: v.reason } : null;
+}
 /** `server`: the request was routed there. The routed retire's result then may also carry `server`
  * and `target` (its route); a local result carrying them is refused.
  * Desktop asks for no branch deletion, so a retire result that reports one, or a skipped one, is not the
- * answer to its request and is refused whole, a deferred one too: nothing of it is projected. */
+ * answer to its request and is refused whole, a deferred one too: nothing of it is projected. The kernel's one
+ * exception, an interrupted spawn's branch (`spawnCompensation`), is not such a report: it is projected. */
 export function lifecycleReceipt(v, plan, key, { server = null } = {}) {
   if (!object(v) || v.idempotencyKey !== key || v.planRevision !== plan.planRevision || typeof v.replayed !== 'boolean') return null;
   if (!server ? Object.hasOwn(v, 'server') || Object.hasOwn(v, 'target')
@@ -169,11 +180,11 @@ export function lifecycleReceipt(v, plan, key, { server = null } = {}) {
     retention = { worktree: r.worktree, branch: r.branch, recordedBranch: r.recordedBranch,
       ...(r.worktree === 'retained' ? { movedTo: r.movedTo, detachedAt: r.detachedAt } : {}) };
   }
-  const recovery = v.workRecovery?.path;
+  const recovery = v.workRecovery?.path, compensation = spawnCompensationOf(v.spawnCompensation);
   return { action: 'retire', instance: plan.instance, home: plan.home, planRevision: v.planRevision, replayed: v.replayed,
     removedDir: v.removedDir, worktreeRemoved: v.worktreeRemoved, retention, childrenStopped,
     incomplete: !!v.rollbackIncomplete?.length, retainedHome: v.retainedHome ?? null,
-    recoveryPath: absolute(recovery) ? recovery : null };
+    recoveryPath: absolute(recovery) ? recovery : null, ...(compensation ? { spawnCompensation: compensation } : {}) };
 }
 /** Validate the public projection without exposing the server's private key. */
 export function publicLifecycleReceipt(v, plan) {
