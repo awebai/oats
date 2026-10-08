@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import * as nodeFs from "node:fs";
 import { chmodSync, existsSync, lstatSync, lutimesSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { capabilityFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { linkExecutables, waitUntil as waitFor } from "./helpers/host-fixture.mjs";
 import { fingerprintTree, statusDisagreement } from "../lib/core.mjs";
@@ -3323,4 +3323,128 @@ test("the retire plan says where a recovery would be written and what is declare
     `recovery: the home is copied to ${recoveryRootOf(b.home)} before the home is removed, when it changed since spawn`,
     "recovery: work/ is copied there when it is not empty",
   ]);
+});
+
+// awebai/oats#648: a worktree whose top level is not <home>/work is refused before its status is trusted.
+const RETIRE_MARKS_RAN = "import {writeFileSync} from 'node:fs'; import {basename, dirname, join} from 'node:path'; writeFileSync(join(dirname(process.env.OATS_HOME), `retire-hook-ran-${basename(process.env.OATS_HOME)}`), 'ran\\n'); console.log(JSON.stringify({meta:{retired:true}}));\n";
+const retireHookRan = (home) => existsSync(join(dirname(home), `retire-hook-ran-${basename(home)}`));
+const registeredWorktrees = (repo) => execFileSync("git", ["-C", repo, "worktree", "list", "--porcelain"], { encoding: "utf8" }).split("\n").filter((l) => l.startsWith("worktree ")).map((l) => l.slice("worktree ".length));
+/** Point work/'s per-worktree core.worktree at another directory, as an agent could. */
+function redirectWorktree(f, work) {
+  const elsewhere = join(f.base, "elsewhere");
+  mkdirSync(elsewhere, { recursive: true });
+  execFileSync("git", ["-C", work, "config", "extensions.worktreeConfig", "true"]);
+  execFileSync("git", ["-C", work, "config", "--worktree", "core.worktree", elsewhere]);
+  return elsewhere;
+}
+
+test("#648 a worktree whose core.worktree names another directory is refused by the first inspection: nothing was stopped, run or removed, and the error names both directories", () => {
+  const f = fixture({ capabilities: hookCapability(RETIRE_MARKS_RAN) });
+  const spawned = spawn(f, "elsewhere");
+  const work = join(spawned.home, "work");
+  write(join(work, "wip.txt"), "uncommitted work the other directory's status does not show\n");
+  const elsewhere = redirectWorktree(f, work);
+  for (const flags of [[], ["--discard-worktree"], ["--force"]]) {
+    const retired = cli(f, ["retire", "dev-elsewhere", ...flags, "--json"]);
+    assert.notEqual(retired.status, 0, retired.stdout);
+    const { error } = JSON.parse(retired.stdout);
+    assert.equal(error.code, "E_WORK_INSPECTION_FAILED", retired.stdout);
+    assert.ok(error.message.includes(work) && error.message.includes(realpathSync(elsewhere)), error.message);
+    assert.match(error.message, /Nothing was stopped, run or removed\.$/);
+  }
+  assert.equal(retireHookRan(spawned.home), false, "no retire hook ran");
+  assert.equal(readFileSync(join(work, "wip.txt"), "utf8"), "uncommitted work the other directory's status does not show\n");
+  assert.equal(existsSync(join(spawned.home, "instance.json")), true, "the home is kept");
+  assert.ok(registeredWorktrees(f.repo).includes(realpathSync(work)), "the worktree is still registered");
+  assert.equal(existsSync(recoveryRootOf(spawned.home)) && readdirSync(recoveryRootOf(spawned.home)).length > 0, false, "no recovery was written");
+});
+
+test("#648 a retire hook that points core.worktree at another directory is refused by the inspection after the hooks: the home, the work and the pre-hook recovery are kept", () => {
+  const hook = `import { execFileSync } from 'node:child_process'; import { mkdirSync } from 'node:fs'; import { join } from 'node:path';
+const work = join(process.env.OATS_INSTANCE_HOME, 'work'), elsewhere = join(process.env.OATS_INSTANCE_HOME, '..', 'elsewhere-after-hooks');
+mkdirSync(elsewhere, { recursive: true });
+execFileSync('git', ['-C', work, 'config', 'extensions.worktreeConfig', 'true']);
+execFileSync('git', ['-C', work, 'config', '--worktree', 'core.worktree', elsewhere]);
+console.log(JSON.stringify({ meta: { retired: true } }));
+`;
+  const f = fixture({ capabilities: hookCapability(hook) });
+  const spawned = spawn(f, "late-elsewhere");
+  const work = join(spawned.home, "work");
+  write(join(work, "wip.txt"), "uncommitted\n");
+  const retired = cli(f, ["retire", "dev-late-elsewhere", "--json"]);
+  assert.notEqual(retired.status, 0, retired.stdout);
+  const { error } = JSON.parse(retired.stdout);
+  assert.equal(error.code, "E_WORK_INSPECTION_FAILED", retired.stdout);
+  assert.ok(error.message.includes(work), error.message);
+  assert.ok(error.message.endsWith("The retire hooks have run; the home, its work and the pre-hook recovery (if any) are kept; this retire stopped no session."), error.message);
+  assert.equal(readFileSync(join(work, "wip.txt"), "utf8"), "uncommitted\n");
+  assert.equal(existsSync(join(spawned.home, "instance.json")), true, "the home is kept");
+  assert.ok(registeredWorktrees(f.repo).includes(realpathSync(work)), "the worktree is still registered");
+});
+
+test("#648 a work/ reached through a symbolic link is the same directory: the retire goes on", () => {
+  const f = fixture();
+  const spawned = spawn(f, "linked");
+  write(join(spawned.home, "work", "wip.txt"), "uncommitted\n");
+  // The deployment through a link: the home, and so work/, are spelled through it, while Git reports the real path.
+  const link = join(f.base, "deployment-link");
+  symlinkSync(f.dep, link);
+  const retired = spawnSync(process.execPath, [CLI, "retire", "dev-linked", "--home", join(link, relative(f.dep, spawned.home)), "--json", "--dir", link], { cwd: link, encoding: "utf8", env: f.env });
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const r = JSON.parse(retired.stdout);
+  assert.equal(r.retention.worktree, "retained");
+  assert.equal(readFileSync(join(r.retention.movedTo, "wip.txt"), "utf8"), "uncommitted\n");
+  assert.equal(existsSync(spawned.home), false);
+});
+
+// awebai/oats#662: the operator's repository-local Git variables do not redirect what the retire reads.
+for (const variable of ["GIT_INDEX_FILE", "GIT_DIR"]) {
+  test(`an inherited ${variable} does not redirect the retire's reads: a clean worktree retires with no recovery`, () => {
+    const f = fixture();
+    const spawned = spawn(f, `env-${variable.toLowerCase().replace(/_/g, "-")}`);
+    const foreign = join(f.base, "foreign");
+    execFileSync("git", ["init", "-q", foreign]);
+    f.env[variable] = variable === "GIT_DIR" ? join(foreign, ".git") : join(f.base, "foreign-index");
+    const retired = cli(f, ["retire", spawned.instance, "--json"]);
+    assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+    const r = JSON.parse(retired.stdout);
+    assert.equal(r.workRecovery, undefined, JSON.stringify(r.workRecovery));
+    assert.equal(r.retention.worktree, "retained");
+    assert.equal(existsSync(spawned.home), false);
+  });
+}
+
+test("#662 the retire's status reads leave the inspected index as it was: a file whose stat changed, not its bytes, is not refreshed into the index", () => {
+  const f = fixture();
+  const spawned = spawn(f, "stat");
+  const work = join(spawned.home, "work");
+  const index = join(execFileSync("git", ["-C", work, "rev-parse", "--absolute-git-dir"], { encoding: "utf8" }).trim(), "index");
+  // Git would refresh this entry's cached stat data, and so rewrite the index, on a status with optional locks.
+  const past = new Date("2020-01-01T00:00:00Z");
+  utimesSync(join(work, "tracked.txt"), past, past);
+  const before = readFileSync(index);
+  const retired = cli(f, ["retire", "dev-stat", "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const r = JSON.parse(retired.stdout);
+  assert.equal(r.workRecovery, undefined);
+  // The worktree was re-homed; its admin directory, and so its index, did not move.
+  assert.ok(readFileSync(index).equals(before), "the index bytes are unchanged");
+});
+
+test("#679 --discard-worktree that Git refuses (a locked worktree) is a refusal: the worktree is there and registered, the home is kept, --force included", () => {
+  const f = fixture();
+  const spawned = spawn(f, "locked-work");
+  const work = join(spawned.home, "work");
+  execFileSync("git", ["-C", f.repo, "worktree", "lock", "--reason", "in use", work]);
+  for (const flags of [["--discard-worktree"], ["--discard-worktree", "--force"]]) {
+    const retired = cli(f, ["retire", "dev-locked-work", ...flags, "--json"]);
+    assert.notEqual(retired.status, 0, retired.stdout);
+    const { error } = JSON.parse(retired.stdout);
+    assert.equal(error.code, "E_WORK_PRESERVATION_FAILED", retired.stdout);
+    assert.ok(error.message.includes(`the worktree at ${work} could not be removed, or its removal could not be verified`), error.message);
+    assert.match(error.message, /The retire hooks have run; the home is kept/);
+    assert.equal(existsSync(join(work, "tracked.txt")), true, "the worktree is there");
+    assert.ok(registeredWorktrees(f.repo).includes(realpathSync(work)), "and registered");
+    assert.equal(existsSync(join(spawned.home, "instance.json")), true, "the home is kept");
+  }
 });

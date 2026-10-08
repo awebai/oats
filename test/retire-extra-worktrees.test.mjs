@@ -150,6 +150,40 @@ test("the retire's Git commands run helper-free: a repository's core.fsmonitor d
   assert.equal(existsSync(marker), false, "no helper the repository names was run");
 });
 
+/** A core.fsmonitor in the repository that work/ belongs to, which leaves `<base>/fsmonitor-ran` when Git runs it. */
+function fsmonitorMarker(w) {
+  const marker = join(w.fx.base, "fsmonitor-ran");
+  const script = join(w.fx.base, "fsmonitor.sh");
+  writeFileSync(script, `#!/bin/sh\ntouch '${marker}'\n`); chmodSync(script, 0o755);
+  w.git(w.fx.member, "config", "core.fsmonitor", script);
+  return marker;
+}
+
+// awebai/oats#679 and #662: the work/ step, the inspection's status reads and the copy's reads of the work run
+// no helper the repository names either. work/ holds uncommitted work, so the copier reads it too.
+for (const discardWorktree of [false, true]) {
+  test(`work/ ${discardWorktree ? "removed with --discard-worktree" : "re-homed by default"}: the repository's core.fsmonitor runs neither in the inspection, the copy nor the step`, async (t) => {
+    const w = await instance(t, discardWorktree ? "dev-fsm-discard" : "dev-fsm-rehome");
+    const marker = fsmonitorMarker(w);
+    writeFileSync(join(w.home, "work", "wip.txt"), "uncommitted\n");
+    const r = await w.retire({ discardWorktree });
+    assert.equal(r.retention.worktree, discardWorktree ? "removed" : "retained");
+    assert.ok(r.workRecovery, "the uncommitted work was copied");
+    assert.equal(existsSync(join(w.home, "work")), false);
+    assert.equal(existsSync(marker), false, "no helper the repository names was run");
+  });
+}
+
+test("the first inspection's status of work/ runs no helper the repository names: a retire that refuses right after it (a locked extra tree) leaves no fsmonitor trace", async (t) => {
+  const w = await instance(t, "dev-fsm-inspect");
+  const path = w.tree("locked", "agents/fsm-locked");
+  w.git(w.fx.member, "worktree", "lock", path);
+  const marker = fsmonitorMarker(w);
+  writeFileSync(join(w.home, "work", "wip.txt"), "uncommitted\n");
+  await assert.rejects(() => w.retire(), (e) => e.code === "E_WORK_PRESERVATION_FAILED" && /nothing was run or removed/.test(e.message));
+  assert.equal(existsSync(marker), false, "the inspection's git status did not run the fsmonitor");
+});
+
 test("a rebase in progress on an otherwise clean tree re-homes it", async (t) => {
   const w = await instance(t, "dev-rebase");
   const path = w.tree("rebase", "agents/rebase");

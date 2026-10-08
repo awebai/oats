@@ -2859,7 +2859,10 @@ A first retire prints the **raw receipt**, not an envelope:
   entry is gone is never touched: it is an incomplete item (`git worktree
   <path>: its admin entry is missing; …`), and `--force` refuses it with
   `E_WORK_PRESERVATION_FAILED`.
-- `--discard-worktree` removes the worktree. No retire deletes a branch, a
+- `--discard-worktree` removes the worktree, and verifies that it is gone (nothing
+  at `work/`, not in `git worktree list`); a removal that did not happen, or
+  cannot be verified, refuses with `E_WORK_PRESERVATION_FAILED` and keeps the
+  home, `--force` included. No retire deletes a branch, a
   retried or `--force`d quarantine included: `branchDeleted` is always
   `false`, and `retention.branchDeleted` and `retention.branchDeletionSkipped`
   are not written. `--delete-branch` is refused with `E_BAD_ARGS` (`oats
@@ -3001,7 +3004,9 @@ Refusals (envelopes): `E_PLAN_STALE`, `E_CHILDREN_RUNNING`,
 `E_WORK_PRESERVATION_FAILED` (the home is kept; retry, or
 `--discard-worktree` when it is `work/` that could not be re-homed: it does
 not apply to an extra tree), `E_WORK_INSPECTION_FAILED` (the home is kept; the
-message names the entry or the state that could not be read),
+message names the entry or the state that could not be read, or the directory
+Git reads as the top level of a `work/` whose `core.worktree` names another
+one),
 `E_SESSION_UNKNOWN`, `E_AMBIGUOUS_INSTANCE`,
 `E_NO_ROOT`, `E_LIFECYCLE_FAILED`. A recovery whose Git status disagrees with
 the source's carries `details: {home, statusDisagreement: {repo, rows: [{path,
