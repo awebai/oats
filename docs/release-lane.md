@@ -247,7 +247,9 @@ When the diff is not empty:
 3. **The pin**, in the kernel release-prep PR: `package-catalog.json`
    (`ref`), `oats-workspace.yaml`, and the version literals in
    `docs/official-catalog.md`, `docs/packages.md`, `docs/workspaces.md`,
-   `skills/oats-getting-started/SKILL.md`, `test/release-packaging.test.mjs`
-   and `scripts/clean-room-smoke.mjs`. The pin cannot ride the first PR: the
-   clean-room smoke resolves the tag, and the tag needs the bumped manifest
-   on `main`.
+   `skills/oats-getting-started/SKILL.md` and
+   `test/release-packaging.test.mjs`. The pin does not ride the first PR: no
+   check in CI resolves the catalog's ref (the clean-room smoke tags its own
+   copy of `oats-package/`), so the pin's reviewer confirms that the tag
+   exists on the remote and names the first PR's merge commit, and the tag
+   needs the bumped manifest on `main` first.
