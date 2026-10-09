@@ -644,7 +644,7 @@ test("retire preserves a worktree judged under the source repository's status se
 function staleUnderTextAttribute(repo, base, files, patterns = "*.txt text\n") {
   const attributes = join(base, `attributes-${files.length}`);
   write(attributes, patterns);
-  execFileSync("git", ["-C", repo, "config", "core.attributesFile", attributes]);
+  fixtureGit(repo, ["config", "core.attributesFile", attributes]);
   for (const file of files) utimesSync(file, new Date(2020, 0, 1), new Date(2020, 0, 1));
 }
 
@@ -4262,6 +4262,39 @@ console.log(JSON.stringify({ meta: { retired: true } }));
   assert.deepEqual(readdirSync(recoveryRootOf(late.home)), [], "no staging and no recovery is left");
   assert.equal(existsSync(join(late.home, "instance.json")), true, "the home is kept");
   } finally { for (const undo of restore) undo(); }
+});
+
+test("#827 a copy that fails verification with a read-only directory whose name is not UTF-8 refuses with its own cause and leaves no staging behind", (t) => {
+  // The copier carries names as bytes (#825); the clean-up reaches the directory by the same bytes,
+  // or it is not made writable and the staging is left.
+  if (process.getuid?.() === 0) {
+    t.skip("root unlinks inside a directory of mode 0555, so the case cannot be built");
+    return;
+  }
+  const f = fixture();
+  const spawned = spawn(f, "readonly-name");
+  const work = join(spawned.home, "work");
+  write(join(work, "crlf.txt"), "line\r\n");
+  fixtureGit(work, ["add", "crlf.txt"]);
+  fixtureGit(work, ["commit", "-qm", "crlf"]);
+  const cache = join(work, "cache");
+  mkdirSync(cache, { recursive: true });
+  const dir = under(cache, withByte("modules-", 0x80));
+  if (!storedBytes(t, () => mkdirSync(dir), () => namesStartingWith(cache, "modules-"), withByte("modules-", 0x80).toString("hex"))) return;
+  writeFileSync(under(dir, "mod.txt"), "module bytes\n");
+  chmodSync(dir, 0o555);
+  try {
+    staleUnderTextAttribute(f.repo, f.base, [join(work, "crlf.txt")]);
+    const retired = cli(f, ["retire", "dev-readonly-name", "--json"]);
+    assert.equal(retired.status, 1, retired.stdout + retired.stderr);
+    const error = JSON.parse(retired.stdout).error;
+    assert.equal(error.code, "E_WORK_PRESERVATION_FAILED", error.message);
+    assert.match(error.message, new RegExp(String.raw`recovered Git index\/status disagreed with the source: crlf\.txt \(source  M, recovery absent\)${refusedBeforeHooks("dev-readonly-name")}`));
+    assert.doesNotMatch(error.message, /could not be removed/, "the refusal names no partial copy");
+    assert.deepEqual(stagingLeft(spawned.home), [], "the staging directory, read-only directory and all, is removed");
+    assert.deepEqual(readdirSync(recoveryRootOf(spawned.home)), [], "and no recovery is written");
+    assert.equal(readFileSync(under(dir, "mod.txt"), "utf8"), "module bytes\n", "the work is kept");
+  } finally { try { chmodSync(dir, 0o755); } catch { /* gone with the work */ } }
 });
 
 test("a recovery the retire hooks keep from being completed refuses saying the hooks have run and what is kept, like a refusal before them", () => {
