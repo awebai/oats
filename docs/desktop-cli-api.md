@@ -3038,7 +3038,10 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
 
 Plain `retire` keeps a worktree-mode instance's work: the worktree is moved
 (`git worktree move`) to `<deployment>/.agents/worktrees/<repo>/<branch>` (a
-`-2` suffix if taken; `detached-<oid12>` when detached), state intact. An
+`-2` suffix if taken; `detached-<oid12>` when detached), state intact. The
+`<branch>` leaf is the branch flattened to one path component, and a long one
+is cut and hashed to fit NAME_MAX
+([souls-and-instances.md](souls-and-instances.md#extra-trees-at-retire)). An
 extra tree that is not clean is moved the same way; a clean one is removed.
 
 ```text

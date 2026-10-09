@@ -1044,6 +1044,15 @@ leaves `work/` untouched. For each tree:
   the branch name with characters outside `A-Za-z0-9._-` replaced by `-`, or
   `detached-<12 hex>` when HEAD is detached. A target that exists gets `-2`,
   `-3`, and so on. A tree whose HEAD cannot be read is re-homed too.
+  `work/` is re-homed under the same rule.
+
+  The leaf is one path component, so it is bounded: at most 231 bytes before
+  its `-N` (NAME_MAX, 255, less a 16-byte margin and 8 bytes kept for `-N`;
+  the leaf is ASCII, so bytes are characters). A leaf that fits is the
+  flattened branch as it is. A longer one, from a long branch, is cut to 224
+  bytes, its trailing `-` trimmed, and followed by `-` and the first 6 hex of
+  the SHA-256 of the full branch name, so two branches that share a long
+  prefix get different leaves. The plan's `movedTo` is the same name.
 - **A tree the retire cannot handle refuses it.** A locked tree (`git worktree
   lock`) refuses before anything runs: a retire that would remove the home
   finds the lock in its first inspection, before the session is stopped and
