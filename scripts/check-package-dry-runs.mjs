@@ -13,7 +13,7 @@ export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // not silently fall between hand-maintained one-level globs.
 export const JS_ROOTS = [
   "bin", "lib", "capabilities", "mirrors", "oats-package", "packages/record/bin",
-  "packages/record/lib", "packages/pi/extension", "scripts",
+  "packages/record/lib", "packages/pi/extension", "packages/client", "scripts",
 ];
 export function shippedJavaScript(root = ROOT) {
   const files = [];
