@@ -248,8 +248,13 @@ never one click:
   is read again, and Test now opens the confirm. No result card.
 - A one-click test of such a stale row can also get the kernel's normal
   answer about the source (a failed check: no capability code runs to say
-  so). The result is kept, and the list is read again once so the page is the
-  capability source's; no second test is sent.
+  so). The list is read again once so the page is the capability source's; no
+  second test is sent. That read keeps the result when it is the read that is
+  applied and it finds the row at the source the answer names, as the first
+  source change since the press. A read that was superseded or that failed
+  keeps nothing, and a later source change drops the result like any other.
+  Focus returns to Test, which the press disabled, unless the operator moved
+  on; it never goes to the result.
 
 **The Test result card** of a capability source (`testResult` adds `source`)
 leads the side column and speaks of the source first: "The source answered:

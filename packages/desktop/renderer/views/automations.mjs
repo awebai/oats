@@ -261,7 +261,9 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
   const notices = node('div'), listHost = node('div');
   body.append(notices, toolbar, listHost);
 
-  async function refresh() {
+  // `keep` ({ id, gen, read }): a Test answer that outlives the source change THIS read reconciles (see perform). It is
+  // put back only here, where this read is the one applied: a read that was superseded, or that failed, keeps nothing.
+  async function refresh({ keep = null } = {}) {
     const id = ++serial; loading = true; failure = ''; render();
     let reread = null;
     try {
@@ -272,7 +274,12 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
       // so its status is read again and a Test result kept for it is dropped.
       if (sources) for (const row of next.rows) {
         const source = typeof row.on?.source === 'string' ? row.on.source : null;
-        if (lastSources.has(row.id) && lastSources.get(row.id) !== source) { statuses.delete(row.id); tests.delete(row.id); sourceGens.set(row.id, genOf(row.id) + 1); statusTickets.set(row.id, (statusTickets.get(row.id) || 0) + 1); if (openId === row.id) reread = row.id; }
+        if (lastSources.has(row.id) && lastSources.get(row.id) !== source) {
+          // The answer is this row's again when this is the first change since it was asked for, and to the source it names.
+          const now = capabilitySource(row.on), kept = keep?.id === row.id && keep.gen === genOf(row.id) && !!now && now.capability === keep.read.source.capability && now.name === keep.read.source.name;
+          statuses.delete(row.id); tests.delete(row.id); sourceGens.set(row.id, genOf(row.id) + 1); statusTickets.set(row.id, (statusTickets.get(row.id) || 0) + 1); if (openId === row.id) reread = row.id;
+          if (kept) tests.set(row.id, keep.read);
+        }
         lastSources.set(row.id, source);
       }
       data = next;
@@ -283,6 +290,10 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     if (!act || busy) return;
     // A capability source's Test is never one click: it goes through its confirm (runConfirmed), from every entry.
     if (verb === 'test' && sourceOf(row)) { openConfirm(row); return; }
+    // The press disables Test while it runs, which drops focus: where the row is re-read below, it goes back to Test
+    // when the press came from there and the operator has not moved on.
+    const fromTest = doc.activeElement?.dataset?.autoFocus === 'test' && openId === row.id;
+    const backToTest = () => { if (alive && fromTest && openId === row.id && (!doc.activeElement || doc.activeElement === doc.body)) focusKey('test'); };
     busy = true; ranNothing = null; render();
     // A test's answer is the answer about the source it was asked for: one that lands after the row's source
     // changed (success or failure) leaves no result.
@@ -295,8 +306,8 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
           const read = testResult(result, kind, { source: row.on?.source }) || { ok: false, error: `This OATS did not answer a ${noun} test.` };
           tests.set(row.id, read);
           // The kernel answered about a capability source (a check that failed: no capability code ran), yet the row on
-          // screen is not one: the list is older than the definition. The row is read again below, and this answer,
-          // which the kernel gave for this trigger, is kept.
+          // screen is not one: the list is older than the definition. The row is read again below, and that read
+          // keeps this answer, which the kernel gave for this trigger, when it finds the row at the source it names.
           if (sources && read.source && !sourceOf(row)) stale = read;
         }
       } else { onResult?.(verb, row, result); await refresh(); }
@@ -312,9 +323,8 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
       if (alive) {
         busy = false; render();
         if (unconfirmed) { await refresh(); if (alive && openId === row.id && (!doc.activeElement || doc.activeElement === doc.body)) focusKey('test'); }
-        // One re-read of the list, never a second test. The refresh drops what it held for the row's old source; the
-        // answer just given is about the row as it is now, so it goes back. Focus is left where it was.
-        else if (stale) { await refresh(); if (alive && rowById(row.id) && !tests.has(row.id)) { tests.set(row.id, stale); render(); } }
+        // One re-read of the list, never a second test. Focus goes back to Test, never to the result.
+        else if (stale) { backToTest(); await refresh({ keep: { id: row.id, gen, read: stale } }); backToTest(); }
       }
     }
   }
