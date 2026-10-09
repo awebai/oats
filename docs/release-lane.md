@@ -248,8 +248,12 @@ When the diff is not empty:
    (`ref`), `oats-workspace.yaml`, and the version literals in
    `docs/official-catalog.md`, `docs/packages.md`, `docs/workspaces.md`,
    `skills/oats-getting-started/SKILL.md` and
-   `test/release-packaging.test.mjs`. The pin does not ride the first PR: no
-   check in CI resolves the catalog's ref (the clean-room smoke tags its own
-   copy of `oats-package/`), so the pin's reviewer confirms that the tag
-   exists on the remote and names the first PR's merge commit, and the tag
-   needs the bumped manifest on `main` first.
+   `test/release-packaging.test.mjs`. The pin does not ride the first PR:
+   the tag needs the bumped manifest on `main` first, and CI reads the
+   catalog's ref from the remote. Two tests in
+   `test/hook-events-forward-tolerant.test.mjs` sync a deployment that takes
+   the official catalog's packages, so the pin's CI fails with
+   `E_REMOTE_UNREADABLE` until the tag is pushed. (The clean-room smoke does
+   not read it: it tags its own copy of `oats-package/`.) A green CI proves
+   that the tag exists, not which commit it names: the pin's reviewer
+   confirms on the remote that it names the first PR's merge commit.
