@@ -32,9 +32,9 @@ function run(env, args) {
 }
 const json = (r) => { try { return JSON.parse(r.stdout); } catch { assert.fail(`not JSON (exit ${r.status}): ${r.stdout}\n${r.stderr}`); } };
 
-test("workspace status and status answer within the budget; a member that never answers is a timeout row, its git gone", { timeout: 120_000 }, async () => {
+test("workspace status and status answer within the budget; a member that never answers is a timeout row, its git gone", { timeout: 120_000 }, async (t) => {
   const server = await silentServer();
-  const fx = v2Deployment();
+  const fx = v2Deployment({ t });
   try {
     // The workspace's members: itself and a member whose host never answers.
     fx.commit({ "oats-workspace.yaml": { yaml: { schemaVersion: 2, name: "fixture", members: [fx.ref, SLOW], teams: { global: { description: "Fixture team" } }, defaults: { knowledge: "none", messaging: "none", tasks: "none" } } } });
@@ -66,8 +66,8 @@ test("workspace status and status answer within the budget; a member that never 
   } finally { server.close(); }
 });
 
-test("only status and workspace status have a budget: under a 1 ms one they time out, while souls, spawn (preview and apply) and sync read with no deadline", { timeout: 180_000 }, async () => {
-  const fx = v2Deployment();
+test("only status and workspace status have a budget: under a 1 ms one they time out, while souls, spawn (preview and apply) and sync read with no deadline", { timeout: 180_000 }, async (t) => {
+  const fx = v2Deployment({ t });
   const env = { ...fx.env, OATS_READ_REMOTE_BUDGET_MS: "1" };
   const ws = await run(env, ["workspace", "status", "--dir", fx.dep, "--json"]);
   const failed = json(ws);
