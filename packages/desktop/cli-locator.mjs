@@ -13,7 +13,7 @@
 // Every candidate is canonicalized to an absolute executable and accepted
 // ONLY if executable and `<bin> version --json` returns the v1 probe:
 //   {"schemaVersion":1,"name":"@awebai/oats","version":"0.24.x","desktopApi":1}
-// Desktop accepts desktopApi === 1 and semver >=0.25.8 <0.50.0 (the band is
+// Desktop accepts desktopApi === 1 and semver >=0.25.8 <0.51.0 (the band is
 // spelled ONCE, in ACCEPT_RANGE below — this line only paraphrases it).
 // API version — not source adjacency — is authoritative.
 //
@@ -54,7 +54,7 @@ export const DESKTOP_API = 1;
 // carry a `description` for every kind and `<kind> update <id> --description`
 // sets one (feature `automation-descriptions`, which gates the Desktop's
 // summary writes). The Desktop v1 surface is otherwise unchanged.
-export const ACCEPT_RANGE = { min: [0, 25, 8], maxExclusive: [0, 50, 0] };
+export const ACCEPT_RANGE = { min: [0, 25, 8], maxExclusive: [0, 51, 0] };
 /** The band as humans read it — derived, never hand-spelled, so the probe
  * rejection reason, the backend's /api status and the degradation card can
  * never disagree with the numbers actually enforced above. */
