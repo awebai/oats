@@ -158,3 +158,23 @@ jobs:
           name: installers-${{ matrix.os }}-${{ matrix.arch }}
           path: packages/desktop/dist/oats-desktop-*
           if-no-files-found: error
+
+      # SPIKE (#855, never merged), Linux leg only: the one claim the steps
+      # above cannot show. The packaged WINDOW loads the shared home: the page,
+      # over file:// under its CSP, imports ../../client/ from
+      # app.asar/renderer/. This is the same smoke WITH its launch phase (5),
+      # unchanged, on a virtual display: neither OATS_SMOKE_SKIP_LAUNCH nor
+      # OATS_SMOKE_BUILD_VERIFY is set here. `SHELL_OK nav=N` means shell.mjs
+      # ran, and it statically imports two re-exports into the shared home; a
+      # module graph with one file that does not load does not run at all. Last,
+      # after the upload, so a red launch leaves the build-verify evidence and
+      # the artifacts as they are. Not on macOS: no window comes up there (see
+      # the note above the install step).
+      - name: "Spike: the packaged window loads the shared home (smoke with the launch phase, Linux only)"
+        if: runner.os == 'Linux'
+        working-directory: packages/desktop
+        env:
+          OATS_SMOKE_TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          command -v xvfb-run >/dev/null || { sudo apt-get update && sudo apt-get install -y xvfb; }
+          xvfb-run -a npm run dist:smoke
