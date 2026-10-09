@@ -87,7 +87,7 @@ test('cleanLine: a string the filter would return unchanged, and nothing else', 
 
 test('the set has one definition; the withholding pattern is the one remote reasons use today; both are stateless', () => {
   assert.equal(NOT_NOTE_TEXT.global, false); assert.equal(UNSAFE.global, false);
-  const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), 'utf8');
+  const read = name => readFileSync(new URL(`../../client/${name}`, import.meta.url), 'utf8');
   assert.match(read('waiting-on-you.mjs'), /import \{ NOT_NOTE_TEXT \} from '\.\/display-text\.mjs'/);
   assert.doesNotMatch(read('waiting-on-you.mjs'), /\\p\{Cc\}/, 'waiting-on-you.mjs defines no set of its own');
   assert.equal(UNSAFE.flags, 'i');

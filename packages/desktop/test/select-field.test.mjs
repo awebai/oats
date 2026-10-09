@@ -90,6 +90,8 @@ test("every native select in the renderer is a .field select (none keeps a per-p
     }
   };
   walk("");
+  // The renderer modules that moved to the shared home (packages/client); `read` resolves from renderer/.
+  walk("../../client/");
   let seen = 0;
   for (const file of files) {
     const source = read(file);
