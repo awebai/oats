@@ -203,6 +203,10 @@ test("superseded pushes: only the newest head's synchronize stays pending for a 
 test("oats trigger CLI: add/list/show/disable/enable/remove, test (dry run: gh, repo permissions, soul, teams, would-fire), schedules stay separate", async (t) => {
   const fx = fixture(); t.after(fx.cleanup);
   const file = writeJson(fx, definition());
+  // The confirmation says what `trigger test` checks for the built-in source.
+  const added = fx.cli(["trigger", "add", "--file", file]);
+  assert.match(added.stdout, /^added local\/kb-review .*\n\(`oats trigger test local\/kb-review` checks gh, the repository, the soul and the teams on this host\)\n$/, added.stdout + added.stderr);
+  ok(fx.cli(["trigger", "remove", "kb-review", "--json"]), "remove the one added in text mode");
   ok(fx.cli(["trigger", "add", "--file", file, "--json"]), "add");
   fails(fx.cli(["trigger", "add", "--file", file, "--json"]), "E_TRIGGER_EXISTS", "add twice");
   fails(fx.cli(["trigger", "add", "--file", writeJson(fx, definition({ id: "bad", spawn: { ...definition().spawn, task: "{title}" } })), "--json"]), "E_TRIGGER_INVALID", "title templated");

@@ -290,6 +290,20 @@ overrides it; a workspace trigger made `from:` it shows its file header's
 description, else the template's. A kernel before 0.43.0 refuses the key, so
 a package whose template sets it needs `compatibility.oats: ">=0.43.0"`.
 
+A template may name a capability's trigger source (feature
+`trigger-sources`): its
+`definition.on` is `{ source: "<capability>:<source>", params?, events,
+poll? }`, and a parameter's `path` may point into `on.params` (for example
+`on.params.prefix`). `add --from` checks what it means against the soul it
+spawns, as for any capability-source trigger
+([schedules.md](schedules.md#capability-sources)). A package does **not**
+raise `compatibility.oats` for such a template: a template is read only by
+`add --from`, so a kernel without feature `trigger-sources` refuses that one
+`add --from` (`E_TRIGGER_INVALID` on `on.source`, or on `on.params` when the
+template sets it), reports a workspace trigger made from it as a problem of
+its snapshot, and uses the package's capabilities and souls as before. A
+floor would refuse them all on every older host.
+
 ## Compatibility floors
 
 A soul may state floors on package versions — constraints, not sources:

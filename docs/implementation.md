@@ -58,6 +58,8 @@ published to npm. Its developer docs are in
 | `soul-composition.mjs` | the instructions a spawn of a soul would write, composed without a spawn (kernel half + materialize into a scratch home): the one path behind `doctor --soul` and `inspect --soul --instructions` |
 | `teams.mjs`, `teams-verbs.mjs` | the team model and the `oats teams` verbs |
 | `schedule.mjs`, `schedule-host.mjs`, `triggers.mjs`, `automations.mjs` | schedules, triggers and the host timer |
+| `trigger-sources.mjs` | a capability's `triggerSources`: the use-time validator (per source, never from the manifest contract or discovery) and the source wire's answer and event rules; `triggers.mjs` runs a source with `instance-inspect.mjs`'s `runModuleCommand`, the provider-check runner |
+| `refused-text.mjs` | the one set of characters the kernel never stores or prints in text it did not write (`REFUSED_TEXT`), and `safeText`, which replaces them |
 | `schedule-command.mjs`, `schedule-command-child.mjs` | synchronous scheduler adapter and asynchronous child supervisor: bounded output, TERM/KILL escalation and observed exit; no changes to synchronous tick/lock callbacks |
 | `operator-dispatch.mjs` | capability commands run from a deployment, and its module store |
 | `operator-coverage.mjs` | whether a soul the workspace offers composes `oats.setup`, for the workspace and each team (readiness and doctor warnings), and the cache-only remote offline doctor resolves through |
