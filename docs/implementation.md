@@ -387,6 +387,13 @@ and acts on every existing session through its recorded socket
   `list-windows`, `new-window` (a window id) and `set-option`.
 - A server a test starts is killed by its socket, never by name and never
   with a bare `tmux kill-server`.
+- A test that needs a terminal (an attached tmux client, a key press) runs
+  the command in a pane of a second private server and types at that pane
+  with `send-keys`; the pane's shell records the exit status
+  (`test/session-attach-detach-key.test.mjs`). A mouse report is sent as the
+  bytes a terminal sends (`send-keys -l`). A pane program that must show the
+  keys it reads puts its terminal in raw mode first: in cooked mode a control
+  byte is a signal or an edit, not input.
 
 Nor does a test depend on where or how the suite runs:
 
