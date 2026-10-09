@@ -1,5 +1,5 @@
 import { isAbsolute } from "node:path";
-import { cliEnvironment } from "./cli-environment.mjs";
+import { cliEnvironment } from "../client/cli-environment.mjs";
 
 export function tmuxSocketArgs(socket) {
   if (socket === undefined || socket === null || socket === "") return ["-u"];

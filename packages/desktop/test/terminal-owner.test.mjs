@@ -5,7 +5,7 @@ import { createTerminalOwnerBroker, installTerminalHandlers } from '../terminal-
 import { MAX_TERMINALS } from '../terminal-registry.mjs';
 import { admitTerminalTarget } from '../terminal-target.mjs';
 import { workspaceHash } from '../renderer/window-binding.mjs';
-import { TERM_READY_MS, TERM_READY_BYTES, TERM_CLOSE_MS, HERDR_REMOVED, terminalHandle, terminalFailure } from '../renderer/terminal-contract.mjs';
+import { TERM_READY_MS, TERM_READY_BYTES, TERM_CLOSE_MS, HERDR_REMOVED, terminalHandle, terminalFailure } from '../../client/terminal-contract.mjs';
 
 const url = 'file:///memory/renderer/index.html';
 const drain = async () => { for (let n = 0; n < 12; n++) await Promise.resolve(); };

@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { statSync, readFileSync, existsSync } from "node:fs";
 import {
   parseEnvelope, spawnArgv, writeTaskFile, cliSpawn, cliCapability,
-} from "../cli-adapter.mjs";
+} from "../../client/cli-adapter.mjs";
 
 const OK = (result) => JSON.stringify({ schemaVersion: 1, ok: true, result });
 const ERR = (code, message) => JSON.stringify({ schemaVersion: 1, ok: false, error: { code, message } });

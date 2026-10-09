@@ -1,9 +1,9 @@
 // Remote terminal addressing is an installed-CLI operation, never a renderer
 // supplied SSH command, executable path, socket or server registration.
-import { requireRemoteSupport } from "./cli-locator.mjs";
+import { requireRemoteSupport } from "../client/cli-locator.mjs";
 import { runTerminalCommand } from './terminal-exec.mjs';
-import { HERDR_REMOVED } from './renderer/terminal-contract.mjs';
-import { cliEnvironment } from './cli-environment.mjs';
+import { HERDR_REMOVED } from '../client/terminal-contract.mjs';
+import { cliEnvironment } from '../client/cli-environment.mjs';
 
 const coded = (code, message) => Object.assign(new Error(message), { code });
 const herdrRemoved = message => coded('E_HERDR_REMOVED', message);

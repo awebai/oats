@@ -26,7 +26,7 @@
  *
  * The catalog reads carry a latest-intent token: a reply after dispose() or a newer read is dropped. */
 import { apiJson } from './views/common.mjs';
-import { deploymentLabel, machineLabels, THIS_MACHINE } from './deployment-label.mjs';
+import { deploymentLabel, machineLabels, THIS_MACHINE } from '../../client/deployment-label.mjs';
 import { deploymentState } from './view-deployments.mjs';
 import { createChoicePopup } from './choice-popup.mjs';
 import { validWorkspaceId as validId } from './workspace-id.mjs';

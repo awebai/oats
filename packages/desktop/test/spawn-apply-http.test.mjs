@@ -7,7 +7,7 @@ import { withWindowGlobals } from './helpers/main-window-globals.mjs';
 import { apiUrl, classifyApiRoute } from '../api-url.mjs';
 import { proxySpawnApply } from '../spawn-apply-proxy.mjs';
 import { createSpawnApplyBoundary } from '../server/spawn-apply.mjs';
-import { spawnApplyFailure, spawnApplyView } from '../renderer/spawn-apply-contract.mjs';
+import { spawnApplyFailure, spawnApplyView } from '../../client/spawn-apply-contract.mjs';
 import { selector, target, deferred } from './helpers/spawn-preview-fixture.mjs';
 import { applyContext, applyPreview, creation, envelope } from './helpers/spawn-apply-fixture.mjs';
 import { deploymentDoubles } from './helpers/deployment-doubles.mjs';

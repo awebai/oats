@@ -7,11 +7,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { teamsDocument, soulTeams, defaultTeamText } from '../renderer/teams-panel.mjs';
-import { teamRow } from '../renderer/team-rows.mjs';
-import { previewData } from '../renderer/spawn-preview-contract.mjs';
-import { workspaceStatusData, deploymentStatusData, capabilitiesData, soulsData } from '../deployment-data.mjs';
-import { inspectData } from '../renderer/inspect-contract.mjs';
-import { readinessData } from '../renderer/readiness-contract.mjs';
+import { teamRow } from '../../client/team-rows.mjs';
+import { previewData } from '../../client/spawn-preview-contract.mjs';
+import { workspaceStatusData, deploymentStatusData, capabilitiesData, soulsData } from '../../client/deployment-data.mjs';
+import { inspectData } from '../../client/inspect-contract.mjs';
+import { readinessData } from '../../client/readiness-contract.mjs';
 import { data as readinessCapture, target as readinessTarget } from './helpers/readiness-fixture.mjs';
 import { target } from './helpers/spawn-preview-fixture.mjs';
 

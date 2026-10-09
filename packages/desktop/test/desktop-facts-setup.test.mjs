@@ -6,7 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { workspaceStatusData } from '../deployment-data.mjs';
+import { workspaceStatusData } from '../../client/deployment-data.mjs';
 import { renderSetup, setupCSS, teamsBox } from '../renderer/workspace-setup.mjs';
 
 const DEPLOYMENT = '/fixture/base/northwind-workspace';

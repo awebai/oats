@@ -27,9 +27,9 @@ import { execFile } from "node:child_process";
 import { mkdtempSync, openSync, writeSync, closeSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
-import { gitFileId, gitRevision, gitIndexRevision, gitObservation } from './renderer/instance-git-contract.mjs';
-import { validMaxAge, maxAgeArgv } from './renderer/deployment-contract.mjs';
-import { MACHINE_ID, machineFieldProblem } from './renderer/machine-contract.mjs';
+import { gitFileId, gitRevision, gitIndexRevision, gitObservation } from './instance-git-contract.mjs';
+import { validMaxAge, maxAgeArgv } from './deployment-contract.mjs';
+import { MACHINE_ID, machineFieldProblem } from './machine-contract.mjs';
 
 const ENVELOPE_TIMEOUT_MS = 60_000;
 

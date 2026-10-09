@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { createContextPanel, contextPanelCSS } from '../renderer/context-panel.mjs';
 import { createInstanceGitPanel } from '../renderer/instance-git.mjs';
-import { gitTargetKey } from '../renderer/instance-git-contract.mjs';
+import { gitTargetKey } from '../../client/instance-git-contract.mjs';
 import { pullRequest } from '../renderer/forge-contract.mjs';
 import { ghUnresolvedThreads } from '../forge-cli.mjs';
 import { cli, output } from './helpers/forge-fixture.mjs';

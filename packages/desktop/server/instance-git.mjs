@@ -1,11 +1,11 @@
 /** K1 admission boundary for the hardened, installed CLI.
  * All authority comes from an exact server-owned workspace/roster record. */
-import { admitInstance, instanceSelector, absolute } from './instance-admission.mjs';
-import { cliInstanceGit, gitReadFailure } from '../cli-adapter.mjs';
-import { parseSemver } from '../cli-locator.mjs';
+import { admitInstance, instanceSelector, absolute } from '../../client/instance-admission.mjs';
+import { cliInstanceGit, gitReadFailure } from '../../client/cli-adapter.mjs';
+import { parseSemver } from '../../client/cli-locator.mjs';
 import { forgeObservation } from './forge-observation.mjs';
-import { hostReason } from '../renderer/remote-address.mjs';
-import { INSTANCE_GIT_MINIMUM_VERSION, gitFileId, gitRevision, gitIndexRevision, gitState, gitDiff } from '../renderer/instance-git-contract.mjs';
+import { hostReason } from '../../client/remote-address.mjs';
+import { INSTANCE_GIT_MINIMUM_VERSION, gitFileId, gitRevision, gitIndexRevision, gitState, gitDiff } from '../../client/instance-git-contract.mjs';
 
 const object = v => !!v && typeof v === 'object' && !Array.isArray(v);
 const localMessages = {

@@ -2,7 +2,7 @@
  * streaming response byte cap, and independent public DTO reprojection. */
 import { apiUrl, apiInit } from './api-url.mjs';
 import { trustedForgeFrame } from './forge-proxy.mjs';
-import { eventsRequest, eventsTarget, eventsFailure } from './renderer/instance-events-contract.mjs';
+import { eventsRequest, eventsTarget, eventsFailure } from '../client/instance-events-contract.mjs';
 import { eventsData } from './renderer/instance-events-data.mjs';
 /** A read may be routed to a server (a 45 s CLI deadline): 50 s lets it report itself. */
 export const EVENTS_PROXY_TIMEOUT = 50_000;

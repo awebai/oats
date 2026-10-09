@@ -10,8 +10,8 @@
  *
  * Gated on the probe (features servers-per-workspace and server-connect, capability-route for the
  * messaging step); without them `forScope` answers null and the caller keeps today's list. */
-import { machinesGated, awebConnectGated, machineFieldProblem, MACHINE_ID, MACHINE_SCOPE_REASONS } from '../renderer/machine-contract.mjs';
-import { mapBounded } from './deployment-observer.mjs';
+import { machinesGated, awebConnectGated, machineFieldProblem, MACHINE_ID, MACHINE_SCOPE_REASONS } from '../../client/machine-contract.mjs';
+import { mapBounded } from '../../client/deployment-observer.mjs';
 
 /** Unknown keys checked at once by the backfill. */
 export const BACKFILL_CONCURRENCY = 2;

@@ -1,9 +1,9 @@
 /** Native deployment observations with bounded admission and both-outcome
  * ownership. No cache, queued work, reader fallback or generation conversion. */
 import { isAbsolute, resolve } from 'node:path';
-import { cliDeploymentRead } from '../deployment-read-cli.mjs';
-import { deploymentStatusData, workspaceStatusData, observationData } from '../deployment-data.mjs';
-import { deploymentReadGate, deploymentFailure, validMaxAge } from '../renderer/deployment-contract.mjs';
+import { cliDeploymentRead } from './deployment-read-cli.mjs';
+import { deploymentStatusData, workspaceStatusData, observationData } from './deployment-data.mjs';
+import { deploymentReadGate, deploymentFailure, validMaxAge } from './deployment-contract.mjs';
 export const MAX_DEPLOYMENT_OBSERVATIONS = 2; // each owns at most two CLI reads
 
 /** Run `fn` over `items` with at most `limit` calls in flight, first come first served; results keep

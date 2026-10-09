@@ -2,7 +2,7 @@
 import { execFile } from 'node:child_process';
 import { isAbsolute } from 'node:path';
 import { parseEnvelope, parseRetireEnvelope } from './cli-adapter.mjs';
-import { object, lifecycleOptions, planRevision } from './renderer/lifecycle-contract.mjs';
+import { object, lifecycleOptions, planRevision } from './lifecycle-contract.mjs';
 const absolute = v => typeof v === 'string' && isAbsolute(v) && !v.includes('\0');
 const key = v => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(v);
 const failure = code => ({ schemaVersion: 1, ok: false, error: { code } });

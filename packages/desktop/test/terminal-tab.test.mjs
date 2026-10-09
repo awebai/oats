@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { createTerminalTab } from "../renderer/terminal-tab.mjs";
 import { handle, opened, ready, confirmed } from './helpers/terminal-wire.mjs';
-import { terminalFailure } from '../renderer/terminal-contract.mjs';
+import { terminalFailure } from '../../client/terminal-contract.mjs';
 
 function deferred() {
   let resolve, reject;

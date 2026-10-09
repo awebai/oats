@@ -9,7 +9,7 @@ import { iconElement } from './shell-icons.mjs';
 import { capabilitySource, capabilityUse, capabilityRow, memberNames, layerLabel, sourceChip, soulsUsing, rosterAgentName } from './workspace-catalog.mjs';
 import { skeleton, noticeElement, updateNotice, failedElement, updateFailed, isOldObservation, ROSTER_STALE_TITLE, SOULS_STALE_TITLE } from './loading.mjs';
 import { createDeploymentScopeLine } from './deployment-scope-line.mjs';
-import { displayLine } from './display-text.mjs';
+import { displayLine } from '../../client/display-text.mjs';
 import { sourceQuote, LEAD_INS } from './source-quote.mjs';
 
 /** Each host's "On <deployment>" line (#482): a re-render replaces it. */

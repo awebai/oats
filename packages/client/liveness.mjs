@@ -4,7 +4,7 @@
  * of the serving process is liveness-main.mjs (see oats-web.mjs), so a slow
  * terminal server cannot stall request handling. */
 import { createTmuxStatusReader, DEFAULT_TMUX_SESSION } from './tmux-status.mjs';
-import { unsupportedSession } from '../renderer/instance-presentation.mjs';
+import { unsupportedSession } from './instance-presentation.mjs';
 
 export { DEFAULT_TMUX_SESSION };
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);

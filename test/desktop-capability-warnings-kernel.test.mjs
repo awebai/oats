@@ -11,17 +11,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { cliWorkspace } from '../packages/desktop/workspace-cli.mjs';
-import { cliCapability } from '../packages/desktop/cli-adapter.mjs';
+import { cliWorkspace } from '../packages/client/workspace-cli.mjs';
+import { cliCapability } from '../packages/client/cli-adapter.mjs';
 import { cliReadiness } from '../packages/desktop/readiness-cli.mjs';
-import { cliSpawnPreview } from '../packages/desktop/spawn-preview-cli.mjs';
-import { cliDeploymentRead } from '../packages/desktop/deployment-read-cli.mjs';
-import { workspaceStatusData } from '../packages/desktop/deployment-data.mjs';
-import { capabilityShowData } from '../packages/desktop/renderer/capability-show-contract.mjs';
-import { inspectData } from '../packages/desktop/renderer/inspect-contract.mjs';
-import { readinessData } from '../packages/desktop/renderer/readiness-contract.mjs';
-import { previewData, previewComposedFrom } from '../packages/desktop/renderer/spawn-preview-contract.mjs';
-import { warningsOf, previewWarningsOf } from '../packages/desktop/renderer/capability-warnings-contract.mjs';
+import { cliSpawnPreview } from '../packages/client/spawn-preview-cli.mjs';
+import { cliDeploymentRead } from '../packages/client/deployment-read-cli.mjs';
+import { workspaceStatusData } from '../packages/client/deployment-data.mjs';
+import { capabilityShowData } from '../packages/client/capability-show-contract.mjs';
+import { inspectData } from '../packages/client/inspect-contract.mjs';
+import { readinessData } from '../packages/client/readiness-contract.mjs';
+import { previewData, previewComposedFrom } from '../packages/client/spawn-preview-contract.mjs';
+import { warningsOf, previewWarningsOf } from '../packages/client/capability-warnings-contract.mjs';
 import { v2Deployment, CLI } from './helpers/v2-deployment.mjs';
 import { APPROVED_HOOKS } from '../lib/capability-contract.mjs';
 

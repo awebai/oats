@@ -1,7 +1,7 @@
 /** K6 read-only IPC. No fallback, task forwarding or mutation result handling. */
 import { apiUrl, apiInit } from './api-url.mjs';
 import { trustedForgeFrame } from './forge-proxy.mjs';
-import { previewFailure, previewTarget, previewData } from './renderer/spawn-preview-contract.mjs';
+import { previewFailure, previewTarget, previewData } from '../client/spawn-preview-contract.mjs';
 export async function proxySpawnPreview(event, path, opts, { rendererURL, connection, fetch: fetcher = globalThis.fetch } = {}) {
   const reply = (code, status = 503) => ({ ok: false, status, body: previewFailure(code) });
   let frame; try { frame = event?.senderFrame; } catch { return reply('E_FORBIDDEN_FRAME', 403); }

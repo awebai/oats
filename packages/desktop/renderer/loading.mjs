@@ -17,7 +17,7 @@
  * the age line and the Retry wiring. The surface owns its latest-intent
  * tokens: it calls begin()/succeed()/fail() only for the read it still owns.
  * Wording is fixed here so no surface drifts. No framework: vanilla DOM. */
-import { codeLineNodes, kernelCode } from './remote-address.mjs';
+import { codeLineNodes, kernelCode } from '../../client/remote-address.mjs';
 
 export const PENDING_DELAY_MS = 150;
 export const REFRESHING_DELAY_MS = 400;

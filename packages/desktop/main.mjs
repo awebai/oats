@@ -23,21 +23,21 @@ import { forgeProxyOptions, FORGE_EPOCH_HEADER, installForgeAuthHandlers, truste
 import { createGhRunner, forgeEnvironment } from "./forge-cli.mjs";
 import { createForgeAuthBroker, verifyAuthCli } from "./forge-auth.mjs";
 import { forgeFailure } from "./renderer/forge-contract.mjs";
-import { lifecycleFailure } from './renderer/lifecycle-contract.mjs';
+import { lifecycleFailure } from '../client/lifecycle-contract.mjs';
 import { sweepViewers } from "./tmux-target.mjs";
 import { tmuxSocketArgs } from "./local-tmux-io.mjs";
 import { createTerminalOwnerBroker, installTerminalHandlers } from './terminal-owner.mjs';
 import { createTerminalIo } from './terminal-io.mjs';
 import { ensureServerOnPort, serverCompatible } from "./server-compat.mjs";
 import { createServerHost, createServerAdapter, serverSpawnSpec } from "./server-host.mjs";
-import { cliWorkspace, validWorkspaceRef } from "./workspace-cli.mjs";
-import { onboardData } from "./deployment-data.mjs";
+import { cliWorkspace, validWorkspaceRef } from "../client/workspace-cli.mjs";
+import { onboardData } from "../client/deployment-data.mjs";
 import { validateWorkspace, workspaceSuggestions, parseRecents, pushRecent, decideAdd, createGenerations, createAddExecutor, restoreWorkspaceDirs, saveWorkspaceDirs, commitOpenSet, startupOpenSet, matchWorkspaceDirs, createOnboardOffers, createOnboardExecutor,
   savedWorkspacePaths, persistableDirs, stageDirs, pickedFolderChoices, deploymentsInside, createPerformAdd, createSuggestionCalls } from "./workspace-registry.mjs";
 import { workspaceNotServed } from "./renderer/deployment-header.mjs";
 import { appMenuTemplate } from "./app-menu.mjs";
 import { resolveLoginPath } from "./login-path.mjs";
-import { cliEnvironment } from "./cli-environment.mjs";
+import { cliEnvironment } from "../client/cli-environment.mjs";
 import { pickerDefaultPath, workspacePickerCandidates, cliPickerCandidates, parseLastWorkspaceParent, lastWorkspaceParentState } from "./picker-default-path.mjs";
 import { proxyReadiness } from './readiness-proxy.mjs';
 import { proxySpawnPreview } from './spawn-preview-proxy.mjs';

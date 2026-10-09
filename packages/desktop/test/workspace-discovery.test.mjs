@@ -8,8 +8,8 @@ import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 import { refreshCli, resetCliStateForTests } from '../renderer/views/cli-status.mjs';
 import { createWorkspaceDiscovery } from '../renderer/workspace-discovery.mjs';
 import { soulInspection, homeInspection } from './helpers/inspect-fixture.mjs';
-import { remotePanel } from '../server/remote-roster.mjs';
-import { workspaceStatusData } from '../deployment-data.mjs';
+import { remotePanel } from '../../client/remote-roster.mjs';
+import { workspaceStatusData } from '../../client/deployment-data.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };

@@ -11,7 +11,7 @@ import { createSpawnJobs } from '../../renderer/spawn-jobs.mjs';
 import { refreshCli } from '../../renderer/views/cli-status.mjs';
 import { createSpawnPreviewBoundary } from '../../server/spawn-preview.mjs';
 import { createSpawnApplyBoundary } from '../../server/spawn-apply.mjs';
-import { soulsData, workspaceStatusData } from '../../deployment-data.mjs';
+import { soulsData, workspaceStatusData } from '../../../client/deployment-data.mjs';
 import { cli as CLI, kernel, DEPLOYMENT, ROOT, anchor, anchorHome, deferred } from './spawn-preview-fixture.mjs';
 import { creation } from './spawn-apply-fixture.mjs';
 export { deferred, kernel, DEPLOYMENT, ROOT };

@@ -8,8 +8,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { cliWorkspace, workspaceArgv, validWorkspaceRef, WORKSPACE_READ_TIMEOUT, WORKSPACE_WRITE_TIMEOUT, WORKSPACE_MAX_BUFFER, WORKSPACE_ACTIONS } from '../workspace-cli.mjs';
-import { syncData, capabilitiesData, onboardData } from '../deployment-data.mjs';
+import { cliWorkspace, workspaceArgv, validWorkspaceRef, WORKSPACE_READ_TIMEOUT, WORKSPACE_WRITE_TIMEOUT, WORKSPACE_MAX_BUFFER, WORKSPACE_ACTIONS } from '../../client/workspace-cli.mjs';
+import { syncData, capabilitiesData, onboardData } from '../../client/deployment-data.mjs';
 import { createWorkspaceSyncBoundary } from '../server/workspace-sync.mjs';
 import { deploymentDoubles } from './helpers/deployment-doubles.mjs';
 

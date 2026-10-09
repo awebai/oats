@@ -1,6 +1,6 @@
 // CLI locator (packages/desktop/cli-locator.mjs) — Desktop CLI API v1
 // discovery order, canonicalization, acceptance, and stable diagnostics.
-import { requireRemoteSupport } from "../cli-locator.mjs";
+import { requireRemoteSupport } from "../../client/cli-locator.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { delimiter } from "node:path";
@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import {
   acceptProbe, parseSemver, parseProbeStdout, candidates, discover, DESKTOP_API,
   ACCEPT_RANGE, ACCEPT_RANGE_TEXT,
-} from "../cli-locator.mjs";
+} from "../../client/cli-locator.mjs";
 
 const PROBE = (v = "0.25.8") => ({ schemaVersion: 1, name: "@awebai/oats", version: v, desktopApi: 1 });
 
@@ -250,7 +250,7 @@ test(`DESKTOP_API is ${1} (bump requires a contract revision)`, () => {
 /* ── spawn-time relations capability gate (review f921f7d) ── */
 
 test("supportsRelations: older accepted v1 CLIs are NOT relation-capable", async () => {
-  const { supportsRelations, RELATIONS_MIN } = await import("../cli-locator.mjs");
+  const { supportsRelations, RELATIONS_MIN } = await import("../../client/cli-locator.mjs");
   const min = RELATIONS_MIN.join(".");
   assert.equal(supportsRelations("0.18.0"), false, "pre-relations v1 release");
   assert.equal(supportsRelations("0.18.2"), false, "pre-relations v1 release");
@@ -262,7 +262,7 @@ test("supportsRelations: older accepted v1 CLIs are NOT relation-capable", async
 });
 
 test("relationSupportError: related spawns fail closed on old v1 CLIs, plain spawns unaffected", async () => {
-  const { relationSupportError, RELATIONS_MIN } = await import("../cli-locator.mjs");
+  const { relationSupportError, RELATIONS_MIN } = await import("../../client/cli-locator.mjs");
   const oldCli = { ok: true, version: "0.18.0" };
   const newCli = { ok: true, version: RELATIONS_MIN.join(".") };
   // an older v1 CLI ignores unknown spawn options and reports success —
@@ -285,7 +285,7 @@ test("relationSupportError: related spawns fail closed on old v1 CLIs, plain spa
 });
 
 test("relations floor also covers --relative-root: the last pre-addition releases are NOT relation-capable (review cbd5bb3)", async () => {
-  const { supportsRelations, relationSupportError, RELATIONS_MIN } = await import("../cli-locator.mjs");
+  const { supportsRelations, relationSupportError, RELATIONS_MIN } = await import("../../client/cli-locator.mjs");
   // 0.18.5 is the last released CLI predating BOTH the relation flags and
   // the --relative-root qualifier (it shipped from a branch WITHOUT the
   // feature); older v1 CLIs ignore unknown spawn options, so an accepted

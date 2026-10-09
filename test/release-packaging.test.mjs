@@ -9,7 +9,7 @@ import {
 } from "../scripts/check-package-dry-runs.mjs";
 import { EXPERT_PATH, checkKnowledgeTheoryPackage, treeFiles } from "../scripts/check-knowledge-theory-package.mjs";
 import { MIRROR_PATHS } from "../scripts/check-okf-mirror.mjs";
-import { acceptProbe } from "../packages/desktop/cli-locator.mjs";
+import { acceptProbe } from "../packages/client/cli-locator.mjs";
 
 function scratch(t) {
   const root = mkdtempSync(join(tmpdir(), "oats-release-packaging-"));

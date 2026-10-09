@@ -14,7 +14,7 @@ import { JSDOM } from 'jsdom';
 import { createSoulInspector, inspectorCSS, INSPECTION_STALE_TITLE } from '../renderer/soul-inspector.mjs';
 import { setWorkspace, currentWorkspace } from '../renderer/views/common.mjs';
 import { refreshCli, resetCliStateForTests } from '../renderer/views/cli-status.mjs';
-import { soulTeamsData } from '../deployment-data.mjs';
+import { soulTeamsData } from '../../client/deployment-data.mjs';
 import { PENDING_DELAY_MS, REFRESHING_DELAY_MS } from '../renderer/loading.mjs';
 
 const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/f7/${name}.json`, import.meta.url), 'utf8'));

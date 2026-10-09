@@ -5,7 +5,7 @@ import { JSDOM } from 'jsdom';
 import { mountAutomationsPage } from '../renderer/views/automations.mjs';
 import { setWorkspace, currentWorkspace } from '../renderer/views/common.mjs';
 import { automationsRequest } from '../server/automations.mjs';
-import { cliAutomation, TRIGGER_RUN_SOURCE_FLAG } from '../cli-adapter.mjs';
+import { cliAutomation, TRIGGER_RUN_SOURCE_FLAG } from '../../client/cli-adapter.mjs';
 
 // A capability source's Test is an informed second press (#669 2b item 7; decided by both maintainers). The whole
 // path is under test: the Triggers page (mountAutomationsPage) posts through `ctx.api`, which here answers with the

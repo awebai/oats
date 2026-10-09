@@ -1,9 +1,9 @@
 /** Exact admitted offline K5 read. Process slots are reserved before await. */
 import { dirname } from 'node:path';
 import { cliReadiness } from '../readiness-cli.mjs';
-import { admitInstance } from './instance-admission.mjs';
-import { absolute, record, readinessSelector, readinessSupported, readinessFailure, readinessMessage, readinessData } from '../renderer/readiness-contract.mjs';
-import { hostReason } from '../renderer/remote-address.mjs';
+import { admitInstance } from '../../client/instance-admission.mjs';
+import { absolute, record, readinessSelector, readinessSupported, readinessFailure, readinessMessage, readinessData } from '../../client/readiness-contract.mjs';
+import { hostReason } from '../../client/remote-address.mjs';
 const flights = new Set(); // one owning-process cap, not one cap per renderer/workspace
 const pendingByInvoker = new WeakMap();
 function admit(selector, { workspace: w, cli, agents = [], instances = [], localCwd } = {}) {

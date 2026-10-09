@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync, statSync } from "node:fs";
 import { JSDOM } from "jsdom";
-import { cliSchedule, cliSpawn } from "../cli-adapter.mjs";
+import { cliSchedule, cliSpawn } from "../../client/cli-adapter.mjs";
 import { scheduleRequest } from "../server/schedules.mjs";
 import { scheduleOutcome } from "../renderer/views/schedules.mjs";
 import { wakeScheduleFields } from "../renderer/wake-schedule-fields.mjs";

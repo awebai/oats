@@ -2,9 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { requireRemoteSupport } from "../packages/desktop/cli-locator.mjs";
-import { harnessFlag } from "../packages/desktop/renderer/harness-names.mjs";
-import { canAddressRemote, unaddressableSentence } from "../packages/desktop/renderer/remote-address.mjs";
+import { requireRemoteSupport } from "../packages/client/cli-locator.mjs";
+import { harnessFlag } from "../packages/client/harness-names.mjs";
+import { canAddressRemote, unaddressableSentence } from "../packages/client/remote-address.mjs";
 
 const source = readFileSync(new URL("../packages/desktop/server/oats-web.mjs", import.meta.url), "utf8");
 const block = source.match(/\/\* OATSWEB_START_BEGIN[^]*?\*\/([^]*?)\/\* OATSWEB_START_END \*\//)?.[1];

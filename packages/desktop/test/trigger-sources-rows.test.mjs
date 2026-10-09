@@ -5,7 +5,7 @@ import {
   automationRows, triggerStatus, testResult, onSummary, taskParts, taskFields, capabilitySource, sourceLabel, sourceParams, sourceCheck,
   causeWords, ruleWords, triggerSourcesSupported, TASK_FIELDS, PARAMS_SHOWN,
 } from '../renderer/automation-rows.mjs';
-import { MAX_DISPLAY_LINE, DETAIL_WITHHELD } from '../renderer/display-text.mjs';
+import { MAX_DISPLAY_LINE, DETAIL_WITHHELD } from '../../client/display-text.mjs';
 
 // Capability trigger sources (feature `trigger-sources`, #669 2b), read by the Desktop's readers. Every fixture is
 // a REAL answer of a kernel that declares the feature: fixtures/trigger-sources/provenance.json names the

@@ -4,8 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { waitingOnYouData, waitingMessage, waitingClaim, waitingLabel, waitedText, waitingClock, waitingNames,
-  waitingBelowText, waitingSentence } from '../renderer/waiting-on-you.mjs';
-import { EVENTS_WITHHELD, eventsDetail } from '../renderer/instance-events-contract.mjs';
+  waitingBelowText, waitingSentence } from '../../client/waiting-on-you.mjs';
+import { EVENTS_WITHHELD, eventsDetail } from '../../client/instance-events-contract.mjs';
 import { collapseKey, instanceId, waitingRollup } from '../renderer/instance-tree.mjs';
 
 const since = '2026-10-03T10:00:00.000Z';

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSpawnApplyBoundary } from '../server/spawn-apply.mjs';
-import { spawnCreationReceipt, spawnWakeOutcome, WAKE_OUTCOME_UNKNOWN } from '../renderer/spawn-apply-contract.mjs';
+import { spawnCreationReceipt, spawnWakeOutcome, WAKE_OUTCOME_UNKNOWN } from '../../client/spawn-apply-contract.mjs';
 import { selector, target, anchor, deferred, tick, DEPLOYMENT } from './helpers/spawn-preview-fixture.mjs';
 import { applyContext, applyPreview, creation, envelope } from './helpers/spawn-apply-fixture.mjs';
 const wake = { cron: '0 * * * *', tz: 'UTC', message: 'PRIVATE wake' };
@@ -272,7 +272,7 @@ test('wake projector rejects contradictions and safe receipt never leaks raw pro
 
 test('retained launch outcomes survive broker and renderer projection; repeat never invokes again', async () => {
   const { retained } = await import('./helpers/launch-prompt-fixture.mjs');
-  const { spawnApplyView } = await import('../renderer/spawn-apply-contract.mjs');
+  const { spawnApplyView } = await import('../../client/spawn-apply-contract.mjs');
   for (const status of ['blocked', 'incomplete', 'malformed']) {
     const d = retained(applyPreview(target).decision, status);
     if (status === 'malformed') { d.launchPrompts = null; d.target = {}; }

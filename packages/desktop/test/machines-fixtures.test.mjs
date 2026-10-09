@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { connectOutcome, registerReached, stepCommands, AWEB_STEPS } from '../renderer/machine-contract.mjs';
+import { connectOutcome, registerReached, stepCommands, AWEB_STEPS } from '../../client/machine-contract.mjs';
 import { createMachines } from '../server/machines.mjs';
 import { openAddMachineDialog } from '../renderer/add-machine-dialog.mjs';
 

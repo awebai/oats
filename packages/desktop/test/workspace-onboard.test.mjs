@@ -6,8 +6,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createOnboardOffers, createOnboardExecutor, MAX_ONBOARD_OFFERS } from '../workspace-registry.mjs';
-import { cliWorkspace, validWorkspaceRef } from '../workspace-cli.mjs';
-import { onboardData } from '../deployment-data.mjs';
+import { cliWorkspace, validWorkspaceRef } from '../../client/workspace-cli.mjs';
+import { onboardData } from '../../client/deployment-data.mjs';
 
 // Documents captured from main's kernel (packages-no-approval).
 const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/f2/${name}.json`, import.meta.url), 'utf8'));

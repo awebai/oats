@@ -9,7 +9,7 @@ import * as spawn from '../renderer/views/spawn.mjs';
 import { currentWorkspace, setWorkspace, workspaceGeneration } from '../renderer/views/common.mjs';
 import { soulInspection, homeInspection } from './helpers/inspect-fixture.mjs';
 import { refreshCli } from '../renderer/views/cli-status.mjs';
-import { workspaceStatusData } from '../deployment-data.mjs';
+import { workspaceStatusData } from '../../client/deployment-data.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };

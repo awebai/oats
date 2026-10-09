@@ -2,7 +2,7 @@
  * branch/URL synthesis, persistent cache or lifecycle/terminal action. */
 import { postJson } from './views/common.mjs';
 import { instanceActionTarget } from './instance-action-target.mjs';
-import { gitTarget, gitTargetKey, gitState } from './instance-git-contract.mjs';
+import { gitTarget, gitTargetKey, gitState } from '../../client/instance-git-contract.mjs';
 import { FORGE_API, ref, projectedPullRequest, forgeReason } from './forge-contract.mjs';
 export function createInstancePrAction({ ctx, beginIntent, currentTarget, generation, connectionGeneration, report, openExternal }) {
   let serial = 0, alive = true;
