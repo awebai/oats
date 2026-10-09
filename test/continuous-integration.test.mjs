@@ -78,5 +78,19 @@ test("pull-request CI runs the Desktop suite with only packages/desktop installe
   assert.equal(using(job, "setup-node").with["node-version"], using(build, "setup-node").with["node-version"]);
   for (const checkout of [using(job, "checkout"), using(build, "checkout")]) {
     assert.equal(checkout.with?.["fetch-depth"], undefined, "both check out shallow: history a Desktop test needs is missing at the tag too");
+    // "Desktop only" is what is INSTALLED, not what is checked out. The Desktop imports the shared
+    // home (packages/client) by relative path and its suite reads it, so both jobs check out the
+    // whole tree: a checkout narrowed to packages/desktop would have no ../client.
+    assert.equal(checkout.with?.["sparse-checkout"], undefined, "both check out the whole repository: packages/client is beside packages/desktop");
+    assert.equal(checkout.with?.path, undefined, "both check out at the workspace root, so packages/desktop/../client is packages/client");
   }
+  for (const part of [job, build]) {
+    for (const step of part.steps.filter((entry) => entry["working-directory"])) {
+      assert.equal(step["working-directory"], DESKTOP, "the Desktop jobs run from packages/desktop, from where ../client is the shared home");
+    }
+  }
+  // Pull-request CI has no path filter: a change to packages/client alone runs the Desktop suite too.
+  const pullRequest = read("pull-request.yml");
+  assert.equal(pullRequest.on.pull_request.paths, undefined);
+  assert.equal(pullRequest.on.pull_request["paths-ignore"], undefined);
 });
