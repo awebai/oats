@@ -39,7 +39,12 @@
     "packages/record/docs/",
     "packages/record/test/vectors/",
     "packages/record/README.md",
-    "packages/record/package.json"
+    "packages/record/package.json",
+    "packages/client/",
+    "packages/tui/bin/",
+    "packages/tui/lib/",
+    "packages/tui/README.md",
+    "packages/tui/package.json"
   ],
   "dependencies": {
     "@awebai/pi": "^0.2.1",

@@ -569,6 +569,20 @@ try {
   }
   theoryProbes.push("package-soul/knowledge-theory-expert");
   assert.deepEqual(readJson(lockPath), locked, "theory spawns never mutate the lock");
+
+  // The terminal client (`oats tui`, packages/tui), from the installed package. With no terminal
+  // it loads its whole module graph, the shared reader in packages/client included, BEFORE it
+  // refuses: a module missing from the package's `files` fails here as a module that cannot be
+  // found, where an import-graph test on a checkout would pass. Nothing is drawn: no escape byte
+  // goes to a stream that is not a terminal.
+  const tui = cliRun(["tui"], { expectExit: 1 });
+  assert.equal(tui.stderr, "oats: `oats tui` needs a terminal on stdin and stdout (E_NO_TERMINAL); `oats status` prints the instances once\n");
+  assert.equal(tui.stdout, "", "nothing on stdout without a terminal");
+  const tuiJson = cliRun(["tui", "--json"], { expectExit: 1 });
+  assert.deepEqual(JSON.parse(tuiJson.stdout), { schemaVersion: 1, ok: false, error: { code: "E_BAD_ARGS", message: "oats tui is interactive and has no --json form; `oats status --json` is the machine view" } });
+  for (const file of ["packages/tui/bin/tui.mjs", "packages/tui/lib/client.mjs", "packages/client/display-text.mjs"]) assert.ok(existsSync(join(kernelRoot, file)), `the installed package holds ${file}`);
+  assert.ok(!existsSync(join(kernelRoot, "packages/tui/test")) && !existsSync(join(kernelRoot, "packages/client/test")), "the clients' tests are not installed");
+
   assert.ok(!existsSync(env.OATS_SMOKE_UNEXPECTED_EXEC), "a runtime/backend/host scheduler was invoked");
 
   console.log(JSON.stringify({
@@ -587,6 +601,7 @@ try {
       operatorDispatchFromDeployment: { command: "okf init --soul probe", store: storeEntries[0], soulRequired: true } },
     optionalTheory: { package: distribution.package, excludedFromNpm: true, acquiredFromGitFixture: true, exactCommit: theoryCommit, sourceRemoved: true,
       references: expectedClosure.length - 1, trackedSourceAliasPreserved: true, scaffoldedAndRetired: theoryProbes, liveLaunches: 0 },
+    tui: { noTerminalRefusal: "E_NO_TERMINAL", jsonRefusal: "E_BAD_ARGS", moduleGraphLoadedFromPackage: true, testsInstalled: false },
   }, null, 2));
 } finally {
   if (keep) console.error(`OATS_KEEP_SMOKE=1: retained ${room}`);
