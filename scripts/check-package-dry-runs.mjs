@@ -13,7 +13,8 @@ export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // not silently fall between hand-maintained one-level globs.
 export const JS_ROOTS = [
   "bin", "lib", "capabilities", "mirrors", "oats-package", "packages/record/bin",
-  "packages/record/lib", "packages/pi/extension", "scripts",
+  "packages/record/lib", "packages/pi/extension", "packages/client", "packages/tui/bin",
+  "packages/tui/lib", "scripts",
 ];
 export function shippedJavaScript(root = ROOT) {
   const files = [];
@@ -62,6 +63,8 @@ export function checkKernelPackFiles(pack, root = ROOT) {
   const files = requireFiles(pack, [
     "bin/oats.mjs", "lib/core.mjs", "lib/tmux-config.mjs", "docs/capabilities.md", "docs/capability-manifest.schema.json",
     "package-catalog.json", "package.json", "packages/record/bin/capture.mjs", "packages/record/bin/recall.mjs",
+    // The terminal client (`oats tui`) and the one shared reader it imports: both inside this package.
+    "packages/tui/bin/tui.mjs", "packages/tui/lib/client.mjs", "packages/client/display-text.mjs",
     ...canonicalFiles,
   ]);
   for (const path of files) {
@@ -74,6 +77,10 @@ export function checkKernelPackFiles(pack, root = ROOT) {
     }
     if (/^(?:capabilities|mirrors)(?:\/|$)/.test(path)) {
       throw new Error(`kernel tarball contains Git-only capability file ${path}`);
+    }
+    // The clients' tests run from a checkout; an entry of `files` wide enough to pack them is a defect.
+    if (/^packages\/(?:tui|client)\/test(?:\/|$)/.test(path)) {
+      throw new Error(`kernel tarball contains a test file ${path}`);
     }
   }
   return files;

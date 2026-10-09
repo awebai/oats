@@ -60,14 +60,15 @@ test("v2 preparation aligns standalone OKF and Git-only theory catalog pins", ()
 test("syntax inventory recurses through new capability libs, record and package scripts without Git", (t) => {
   const root = scratch(t);
   write(join(root, "package.json"), '{"type":"module"}\n');
-  const files = ["bin/oats.mjs", "lib/core.mjs", "capabilities/provider/lib/nested/io.mjs", "capabilities/provider/scripts/nested/check.js", "mirrors/provider/lib/nested/io.mjs", "oats-package/capabilities/theory/lib/deep/entry.mjs", "oats-package/prepare.cjs", "packages/record/lib/capture/deep.mjs", "packages/record/bin/recall.mjs", "packages/pi/extension/core-loader.mjs", "scripts/pack/new-gate.mjs"];
+  const files = ["bin/oats.mjs", "lib/core.mjs", "capabilities/provider/lib/nested/io.mjs", "capabilities/provider/scripts/nested/check.js", "mirrors/provider/lib/nested/io.mjs", "oats-package/capabilities/theory/lib/deep/entry.mjs", "oats-package/prepare.cjs", "packages/record/lib/capture/deep.mjs", "packages/record/bin/recall.mjs", "packages/pi/extension/core-loader.mjs", "packages/client/display-text.mjs", "packages/tui/bin/tui.mjs", "packages/tui/lib/term/deep/keys.mjs", "scripts/pack/new-gate.mjs"];
   for (const file of files) write(join(root, file), "console.log('valid');\n");
-  for (const file of [".agents/ignored.mjs", "agents/fixture/state.mjs", "capabilities/provider/node_modules/dep/broken.mjs", "oats-package/.agents/scratch.mjs"]) write(join(root, file), "export const = broken;\n");
+  // packages/tui/test is not a root of the inventory: the TUI's tests are never shipped.
+  for (const file of [".agents/ignored.mjs", "agents/fixture/state.mjs", "capabilities/provider/node_modules/dep/broken.mjs", "oats-package/.agents/scratch.mjs", "packages/tui/test/broken.test.mjs"]) write(join(root, file), "export const = broken;\n");
   const outside = join(root, "outside"); write(join(outside, "broken.mjs"), "export const = broken;\n");
   symlinkSync(outside, join(root, "capabilities/link"));
   assert.deepEqual(shippedJavaScript(root), files.sort());
   assert.equal(checkJavaScript(root), files.length);
-  for (const file of files.filter((f) => /capabilities|mirrors|record|scripts/.test(f))) {
+  for (const file of files.filter((f) => /capabilities|mirrors|record|client|tui|scripts/.test(f))) {
     write(join(root, file), "export const = broken;\n");
     assert.throws(() => checkJavaScript(root), (error) => error.message.includes(`syntax error in ${file}`), `must check ${file}`);
     write(join(root, file), "console.log('valid');\n");
@@ -78,7 +79,8 @@ test("actual npm inventory ships public docs but no partial optional package, ca
   const [pack] = JSON.parse(execFileSync("npm", ["pack", "--dry-run", "--json"], { cwd: ROOT, encoding: "utf8" }));
   const files = checkKernelPackFiles(pack);
   const canonical = ["docs/knowledge-capability-authoring.md", ...treeFiles(join(ROOT, "docs/knowledge-reference")).map((file) => `docs/knowledge-reference/${file}`)];
-  for (const file of ["bin/oats.mjs", "package-catalog.json", ...canonical]) {
+  // The terminal client and the shared reader it imports ship inside the kernel package.
+  for (const file of ["bin/oats.mjs", "package-catalog.json", "packages/tui/bin/tui.mjs", "packages/tui/lib/client.mjs", "packages/client/display-text.mjs", ...canonical]) {
     assert.ok(files.has(file));
     assert.throws(() => checkKernelPackFiles({ ...pack, files: pack.files.filter((f) => f.path !== file) }), (error) => error.message.includes(`missing ${file}`));
   }
@@ -97,6 +99,15 @@ test("actual npm inventory ships public docs but no partial optional package, ca
   }
   for (const path of ["agents/live/soul/AGENTS.md", "oats-config.yaml", "oats-lock.json", "capabilities/example/.agents/state.json", "capabilities/example/agents/expert/instances/live/instance.json"]) {
     assert.throws(() => checkKernelPackFiles({ ...pack, files: [...pack.files, { path }] }), /leaks non-runtime/);
+  }
+  // Every module of the terminal client is packed, and none of its tests or the shared home's.
+  const tuiModules = shippedJavaScript().filter((path) => path.startsWith("packages/tui/"));
+  assert.ok(tuiModules.length >= 10 && tuiModules.every((path) => files.has(path)), "every packages/tui module is in the tarball");
+  assert.ok(files.has("packages/tui/README.md") && files.has("packages/tui/package.json"));
+  assert.deepEqual([...files].filter((path) => /^packages\/(?:tui|client)\/test(?:\/|$)/.test(path)), []);
+  assert.deepEqual([...files].filter((path) => path.startsWith("packages/client/") && !path.endsWith(".mjs")), [], "the shared home ships modules only");
+  for (const path of ["packages/tui/test/keys.test.mjs", "packages/tui/test/helpers.mjs", "packages/client/test/display-text.test.mjs"]) {
+    assert.throws(() => checkKernelPackFiles({ ...pack, files: [...pack.files, { path }] }), (error) => error.message.includes(`contains a test file ${path}`));
   }
   // The separate Git payload remains full and canonical, including its SOURCE
   // alias. No npm hooks, duplicate CLAUDE.md, or acquisition-time alias repair.

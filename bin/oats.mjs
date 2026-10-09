@@ -91,9 +91,9 @@ function expandInlineValues(argv) {
 const { argv: args, problem: argvProblem, inline: inlineValues } = expandInlineValues(rawArgs);
 let cmd = args[0];
 const HELP_WORDS = new Set(["help", "--help", "-h"]);
-const KERNEL_COMMANDS = new Set(["harness", "automations", "trigger", "capture", "capabilities", "doctor", "inspect", "instance", "operation", "package", "readiness", "souls", "soul", "teams", "launch-config", "experimental", "onboard", "pane", "recall", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "sync", "update", "version", "workspace", "worktree"]);
-/** Commands whose argv another parser reads (packages/record and packages/experimental parse process.argv). */
-const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental"]);
+const KERNEL_COMMANDS = new Set(["harness", "automations", "trigger", "capture", "capabilities", "doctor", "inspect", "instance", "operation", "package", "readiness", "souls", "soul", "teams", "launch-config", "experimental", "onboard", "pane", "recall", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "sync", "tui", "update", "version", "workspace", "worktree"]);
+/** Commands whose argv another parser reads (packages/record, packages/experimental and packages/tui parse process.argv). */
+const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental", "tui"]);
 /** The kernel features this binary implements: `features` in `version --json` (the Desktop API v1
  *  probe) and in `status --json`, which a remote roster relays as the host's (feature
  *  server-probe-features, lib/servers.mjs hostFeatures). ONE list for both, emitted at output
@@ -3275,7 +3275,18 @@ async function sessionCmd() {
 }
 
 async function paneCmd() {
-  die("`oats pane` has been retired — the OATS Desktop app (packages/desktop) is the control panel now.");
+  die("`oats pane` has been retired — the OATS Desktop app (packages/desktop) is the control panel now; in a terminal, `oats tui` (preview).");
+}
+
+/** `oats tui` (preview, docs/tui.md): the terminal client, shipped inside this package as
+ *  packages/tui. It is interactive, so `--json` is refused here, before anything is loaded.
+ *  This is the ONLY import of packages/tui in the kernel and the CLI, and it is dynamic: a broken
+ *  TUI cannot break another word, and no other word pays for loading it (test/tui-boundary.test.mjs).
+ *  packages/tui parses process.argv itself, so the word is spliced out first, as for the record. */
+async function tuiCmd() {
+  if (args.includes("--json")) return cmdFail("E_BAD_ARGS", "oats tui is interactive and has no --json form; `oats status --json` is the machine view");
+  process.argv.splice(2, 1);
+  await import(new URL("../packages/tui/bin/tui.mjs", import.meta.url));
 }
 
 /** `oats onboard [<dir>] --workspace <repo ref> [--json]` — workspace model v2 (decision 9).
@@ -4295,6 +4306,7 @@ else if (cmd === "teams") await teamsCmd();
 else if (cmd === "soul") await soulCmd();
 else if (cmd === "status") await status();
 else if (cmd === "pane") await paneCmd();
+else if (cmd === "tui") await tuiCmd();
 else if (cmd === "version" || cmd === "--version" || cmd === "-v") versionCmd();
 // Same rule as the inner catch: a typed CLI failure surfaces with its own code
 // through the shared boundary, never re-badged as a spawn-mechanism failure.
@@ -4357,6 +4369,9 @@ Usage:
                                             Desktop CLI API v1 probe payload
   oats status [--json]                       agents, souls, running instances
       [--max-age <s>]                        reuse head observations up to <s> s old (below)
+  oats tui [--ascii]                         PREVIEW: the full-screen terminal client (docs/tui.md);
+                                            ? help, q quit. Needs a terminal on stdin and stdout
+                                            and has no --json form; --ascii = ASCII rules and marks
   oats server add <id> --ssh <alias>         register another machine's OATS (OpenSSH alias,
       --workspace </abs/path> [--oats <p>]   remote workspace, remote oats path; no keys stored;
       [--path <dir:dir>]                    --path = dirs prepended to the remote PATH, e.g. ~/.local/bin)
