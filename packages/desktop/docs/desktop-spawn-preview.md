@@ -119,7 +119,7 @@ API2, `preview:true`, byte-exact `subject{soul,agentsRoot,dir}` and consistent
 K6d additionally reports `decision.effective {repo,work,harness,model,launchConfig,
 yolo,backend,childSpawns,relation}` (a released kernel without feature `harness`
 reports `runtime`; the Desktop reads either and sends `--harness` or `--runtime`
-by the feature: renderer/harness-names.mjs). Child policy is boolean; relation is null or
+by the feature: packages/client/harness-names.mjs). Child policy is boolean; relation is null or
 `{kind,anchor{instance,agentsRoot}}`; model/config/yolo can be null. Old API2 READ
 without effective remains an observation, never a synthesized executable plan.
 

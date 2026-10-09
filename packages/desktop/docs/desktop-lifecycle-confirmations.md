@@ -121,7 +121,7 @@ status; it does not cancel the dispatched operation or signal its process.
   `spawnCompensation` (`{branch, branchDeleted: true}` or `{branch,
   branchDeleted: false, reason}`), never in `branchDeleted`, so the strict rule
   above is unchanged. It is projected tolerantly (`spawnCompensationOf` in
-  `renderer/lifecycle-contract.mjs`: anything malformed is ignored, never a
+  `packages/client/lifecycle-contract.mjs`: anything malformed is ignored, never a
   refused receipt) and shown as one result line: "Branch <branch> deleted: an
   interrupted spawn left it, and it held no work." or "Branch <branch> kept:
   <reason>", branch and reason through `displayLine`.
@@ -143,7 +143,7 @@ status; it does not cancel the dispatched operation or signal its process.
   the remedy) is in Details, for a local refusal and a remote one alike.
 - Unknown errors, malformed receipts and timeouts are closed local messages.
   An error envelope's `message` renders only through the display filter
-  (`renderer/display-text.mjs`; see
+  (`packages/client/display-text.mjs`; see
   [desktop-deployment-model.md](desktop-deployment-model.md#remote-rows)), in
   the dialog's Details as `CODE: message`, under Desktop's fixed sentence for
   the code. The headline is never the CLI's text. A local failure carries the

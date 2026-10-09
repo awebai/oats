@@ -101,7 +101,7 @@ version. Without it, `observeDeployment` drops the field from every local row.
 A remote row carries it only when the remote kernel reported it. Desktop
 validates the field and never synthesizes it.
 
-- **Validation** (`renderer/waiting-on-you.mjs`, `waitingOnYouData`) never
+- **Validation** (`packages/client/waiting-on-you.mjs`, `waitingOnYouData`) never
   throws and never fails the roster. Only an invalid `since` or `producer`
   drops a claim, which then reads as `null` (unknown). A missing or malformed
   `reason` becomes `null`, because the raw reason is never rendered. A
@@ -110,9 +110,9 @@ validates the field and never synthesizes it.
   row, the card and the tab then show the reason in words and never
   `[Detail withheld]`. The activity view keeps that marker for the same
   note. `waitingMessage` is the validator both share: it returns the marker
-  (`EVENTS_WITHHELD`, its one literal, in `instance-events-contract.mjs`),
+  (`EVENTS_WITHHELD`, its one literal, in `packages/client/instance-events-contract.mjs`),
   and "not null" is the kernel's validity answer, which a test pins.
-  `deployment-data.mjs` and `remotePanel` both validate through it. The
+  `packages/client/deployment-data.mjs` and `remotePanel` both validate through it. The
   module is the claim contract only: the server imports it, so it imports
   contract modules and nothing else (a test pins its imports). The tree
   roll-up lives in `renderer/instance-tree.mjs`.

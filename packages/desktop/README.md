@@ -61,7 +61,7 @@ The shell has three navigation contexts:
   `node:http` server exposing the `/api/*` surface (roster, spawn, brain,
   session capture, keys, file). The deployment model is the installed kernel's
   JSON: `oats status --json` (roster) and `oats workspace status --json`
-  (workspace header), read by `server/deployment-observer.mjs` — the app reads
+  (workspace header), read by `packages/client/deployment-observer.mjs` — the app reads
   no deployment file and never imports the framework kernel; lifecycle
   mutations require a compatible installed `oats` CLI. See
   [docs/desktop-deployment-model.md](docs/desktop-deployment-model.md); when
@@ -96,6 +96,50 @@ The shell has three navigation contexts:
   `build-vendor.mjs` (postinstall) because its `es/` entry is a
   dual-package CJS shim browsers cannot load.
 
+### The shared home (`packages/client/`)
+
+The modules that read the kernel's JSON are not in this package: the CLI
+adapters (`cli-adapter.mjs`, `workspace-cli.mjs`, `deployment-read-cli.mjs`),
+the contract decoders (`*-contract.mjs`, `deployment-data.mjs`) and the
+liveness collector. They are in `packages/client/`, beside this directory, so
+that another client of the kernel can import the same readers. Main, the
+backend and the page import them by a plain relative path (`../client/`,
+`../../client/` from `server/` and `renderer/`, `../../../client/` from
+`renderer/views/`). Nothing copies, builds or installs them.
+
+- **What it holds.** `.mjs` modules and nothing else, in one flat directory:
+  no test, fixture, script or manifest, and no subdirectory. A module there
+  imports `node:` builtins and its own siblings only: no third-party package
+  and no Electron, as a module or as a runtime. Two files are a program, not
+  a library: `liveness-main.mjs` is the collector's entry and
+  `own-environment.mjs` is its first import
+  ([below](#the-environment-of-the-programs-desktop-starts)); no other module
+  there imports either.
+- **Where it is in the installed app.** The builder places it beside
+  `app.asar`, as `client/` in the resources directory (`extraResources` in
+  `electron-builder.config.cjs`): `Contents/Resources/client/` in the macOS
+  bundle, `resources/client/` on Linux. From inside the asar `../client/` is
+  then the same relative path as in the repository, which is why one specifier
+  works in both. On macOS the files are sealed resources of the bundle: the
+  ad-hoc signature covers them, and strict verification fails if one is
+  changed, added or removed.
+- **What it costs.** These files are outside the asar. Electron's asar
+  integrity validation and its load-only-from-asar fuse cover what is in
+  `app.asar`, and the app turns neither on. If one of them is ever turned on,
+  the shared home is outside what it covers, and the layout has to change to
+  one that puts these modules inside the asar.
+- **What holds it in place.** `test/inventory.test.mjs` reads every file the
+  builder ships and follows each path it reaches: the path must be shipped, or
+  be in a directory the builder places at the same relative position as in the
+  repository. The same test pins what the directory may hold and import. The
+  installed-artifact smoke (`scripts/dist-smoke.mjs`) compares the packaged
+  `client/` with the repository's directory, runs the backend and the
+  collector from the package, and loads every module main imports under the
+  packaged executable; where it launches the window, the page's own imports
+  are the proof. The development harness serves the directory at `/client/`
+  (`renderer/harness-server.mjs`), where a browser lands when a renderer
+  module climbs above the harness's root.
+
 ### The environment of the programs Desktop starts
 
 A program Desktop starts gets the user's environment: nothing Desktop or its
@@ -108,8 +152,8 @@ It matters because a tmux server takes its environment from the program that
 creates it (the oats CLI on a spawn or a start, or `tmux` itself), and every
 pane on that server then has it.
 
-The rule is one function, `cliEnvironment(source)` in `cli-environment.mjs`,
-which imports nothing:
+The rule is one function, `cliEnvironment(source)` in
+`packages/client/cli-environment.mjs`, which imports nothing:
 
 - `ELECTRON_RUN_AS_NODE` (main sets it for the backend) and `CHROME_DESKTOP`
   (Electron sets it on Linux) are removed.
@@ -124,10 +168,10 @@ which imports nothing:
 Where it is applied:
 
 - **A process that runs as Node cleans itself first.** The first import of
-  `server/oats-web.mjs` and of `server/liveness-main.mjs` is
-  `server/own-environment.mjs`, which changes `process.env` in place. It has
+  `server/oats-web.mjs` and of `packages/client/liveness-main.mjs` is
+  `packages/client/own-environment.mjs`, which changes `process.env` in place. It has
   to be an import, and the first one: modules take their environment when they
-  are loaded (`server/forge.mjs`, `server/tmux-status.mjs`), and a module's
+  are loaded (`server/forge.mjs`, `packages/client/tmux-status.mjs`), and a module's
   imports are evaluated in order, each completely before the next. So
   `own-environment.mjs` and `cli-environment.mjs` must keep no other imports
   and no top-level `await`, and nothing may import an entry module or be

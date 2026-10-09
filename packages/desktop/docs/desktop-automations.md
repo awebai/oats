@@ -34,7 +34,7 @@ for a trigger's `test`, and only when the CLI declares `trigger-sources`;
 anything else is `E_BAD_ARGS` before any CLI runs, in the server and again in
 `cliAutomation`, which is told the probe's `features` by its caller (it never
 probes) and refuses the key without the feature. The flag is spelled in one
-place (`TRIGGER_RUN_SOURCE_FLAG` in `cli-adapter.mjs`) and composed there from
+place (`TRIGGER_RUN_SOURCE_FLAG` in `packages/client/cli-adapter.mjs`) and composed there from
 the boolean: the renderer never passes argv. Without the flag the kernel executes nothing for a capability
 source and answers `E_TRIGGER_SOURCE_RUN`. Only the confirm's **Run test**
 sets the key ([Capability trigger sources](#capability-trigger-sources-feature-trigger-sources)).
