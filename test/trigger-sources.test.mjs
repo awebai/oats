@@ -489,8 +489,9 @@ test("a manual run of a capability source needs --run-source: without it test an
   for (const extra of [[], ["--run-source"]]) assert.equal(json(fx, ["trigger", "poll", "local/kb", ...extra]).doc.error.code, "E_BAD_ARGS");
   assert.equal(fx.runs().length, ran);
 
-  // The tick still polls: its own child passes the flag, and trust gates the tick as before.
-  const ticked = tick(fx, { ctx: true });
+  // The tick still polls: its own child passes the flag, and trust gates the tick as before. (Two
+  // real polls in one tick: each child is given 20 s, so the second still fits the tick's 50 s on a slow host.)
+  const ticked = tick(fx, { ctx: true, io: { sourceChildMs: 20_000 } });
   assert.deepEqual(ticked.filter((r) => r.trigger !== "local/kb").map((r) => [r.trigger, r.action]).sort(), [["local/harvest", "fired"], ["ws/here", "fired"], ["ws/untrusted", "not-here"]], JSON.stringify(ticked));
   assert.deepEqual(fx.runs().slice(ran).map((r) => r.request.trigger).sort(), ["local/harvest", "ws/here"]);
 });
