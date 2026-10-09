@@ -3075,7 +3075,8 @@ async function triggerCmd() {
   const where = (t) => (t.origin?.kind === "workspace" ? (t.runsHere ? `runs here as ${t.owner}` : `${t.reason === "assigned-elsewhere" ? `runs on ${t.runsOn}` : t.reason ?? "disabled here"}`) : t.enabledHere ? "local" : "local, disabled");
   // A capability source names its params where the built-in names its repository.
   const watched = (on) => (T.isCapabilitySource(on?.source) ? `${on.source}${Object.keys(on.params || {}).length ? ` ${Object.entries(on.params).map(([k, v]) => `${shown(k, 40)}=${shown(v, 200)}`).join(" ")}` : ""}` : `${on?.source ?? "?"} ${on?.repo ?? "?"}`);
-  const line = (t) => `${t.id}  ${where(t)}  ${watched(t.on)} [${T.isCapabilitySource(t.on?.source) ? shown((t.on?.events || []).join(","), 700) : (t.on?.events || []).join(",")}]${t.on?.labels?.length ? ` labels ${t.on.labels.join(",")}` : ""} every ${t.on?.poll ?? "?"} → spawn ${t.spawn?.soul ?? "?"}${t.spawn?.teams?.length ? ` in ${t.spawn.teams.join(",")}` : ""}${t.invalid ? `  INVALID: ${t.invalid.message}` : ""}`;
+  // One row, one line, whatever an invalid stored definition holds (its id, labels and soul are as written too).
+  const line = (t) => safeText(`${t.id}  ${where(t)}  ${watched(t.on)} [${T.isCapabilitySource(t.on?.source) ? shown((t.on?.events || []).join(","), 700) : (t.on?.events || []).join(",")}]${t.on?.labels?.length ? ` labels ${t.on.labels.join(",")}` : ""} every ${t.on?.poll ?? "?"} → spawn ${t.spawn?.soul ?? "?"}${t.spawn?.teams?.length ? ` in ${t.spawn.teams.join(",")}` : ""}${t.invalid ? `  INVALID: ${t.invalid.message}` : ""}`, 8000);
   // A source's own words are printed only under this label, never as the kernel's (docs/schedules.md).
   const said = (x) => (x ? `source says: ${x.code}${x.message ? `: ${x.message}` : ""}` : "");
   // The workspace automations of this deployment (the snapshot) placed on this host.

@@ -496,7 +496,7 @@ test("a manual run of a capability source needs --run-source: without it test an
   assert.deepEqual(fx.runs().slice(ran).map((r) => r.request.trigger).sort(), ["local/harvest", "ws/here"]);
 });
 
-test("a stored definition whose params carry control, bidi or tag characters is refused, and its row still prints none of them: list replaces them, show escapes them, the JSON keeps the value", (t) => {
+test("a stored definition whose param values or names carry control, bidi or tag characters is refused, and nothing printed of it carries them: the row, its INVALID diagnostic and the text errors replace them, show escapes them, the JSON keeps the value", (t) => {
   const fx = sourceDeployment(t);
   addOk(fx);
   // A definition nobody validated on the way in: a copied or shared oats-schedules.json.
@@ -528,6 +528,43 @@ test("a stored definition whose params carry control, bidi or tag characters is 
   // No tick polls an invalid trigger, and by hand it is refused as invalid, flag or no flag.
   assert.deepEqual(tick(fx).map((r) => r.action), ["invalid"]);
   for (const verb of ["test", "poll"]) for (const extra of [[], ["--run-source"]]) assert.equal(json(fx, ["trigger", verb, "local/harvest", ...extra]).doc.error.code, "E_TRIGGER_INVALID");
+  assert.equal(fx.runs().length, 0);
+
+  // A bad param NAME alone, its value fine: the refusal names the field, so the kernel's own
+  // sentence would carry it. The sentence is safe wherever it is printed; `field` stays as written.
+  const name = "k\x1b[31mRED\nFORGED-LINE‮";
+  doc.jobs.harvest.on.params = { prefix: "harvest/", [name]: "v" };
+  writeFileSync(file, JSON.stringify(doc, null, 2));
+  const named = listRow(fx);
+  assert.deepEqual([named.invalid.code, named.invalid.field, Object.keys(named.on.params)], ["E_TRIGGER_INVALID", `on.params.${name}`, ["prefix", name]]);
+  assert.doesNotMatch(named.invalid.message, REFUSED_TEXT);
+  assert.ok(named.invalid.message.startsWith("on.params.k�[31mRED�FORGED-LINE�: a parameter name"), named.invalid.message);
+  const text = fx.cli(["trigger", "list"]).stdout;
+  assert.doesNotMatch(text.trimEnd(), REFUSED_TEXT, "the row and its INVALID diagnostic are one safe line");
+  assert.match(text, /^local\/harvest .* prefix=harvest\/ k�\[31mRED�FORGED-LINE�=v \[opened,updated\].*INVALID: on\.params\.k�\[31mRED�FORGED-LINE�: a parameter name/);
+  for (const verb of ["test", "poll"]) for (const extra of [[], ["--run-source"]]) {
+    const failed = fx.cli(["trigger", verb, "local/harvest", ...extra]);
+    assert.notEqual(failed.status, 0);
+    assert.doesNotMatch((failed.stdout + failed.stderr).replaceAll("\n", " "), REFUSED_TEXT, `trigger ${verb}'s text error`);
+    assert.ok(!(failed.stdout + failed.stderr).includes("\nFORGED-LINE"));
+    const asJson = json(fx, ["trigger", verb, "local/harvest", ...extra]).doc;
+    assert.equal(asJson.error.code, "E_TRIGGER_INVALID");
+    assert.doesNotMatch(asJson.error.message, REFUSED_TEXT);
+  }
+  for (const args of [["trigger", "status"], ["trigger", "show", "local/harvest"], ["trigger", "disable", "local/harvest"], ["trigger", "enable", "local/harvest"]]) {
+    const r = fx.cli(args);
+    assert.doesNotMatch((r.stdout + r.stderr).replaceAll("\n", ""), REFUSED_TEXT, args.join(" "));
+    assert.ok(!(r.stdout + r.stderr).includes("\nFORGED-LINE"), args.join(" "));
+  }
+  // The same holds for a key the validator does not know, and for whatever else the row prints as written.
+  doc.jobs.harvest.on.params = { prefix: "harvest/" };
+  doc.jobs.harvest.spawn = { ...doc.jobs.harvest.spawn, ["x\x1b\nFORGED-LINE"]: 1, soul: "reviewer" };
+  doc.jobs.harvest.on.poll = "1m\x1b[2J";
+  writeFileSync(file, JSON.stringify(doc, null, 2));
+  const unknown = fx.cli(["trigger", "list"]).stdout;
+  assert.doesNotMatch(unknown.trimEnd(), REFUSED_TEXT);
+  assert.match(unknown, /INVALID: /);
+  assert.equal(unknown.trim().split("\n").length, 1);
   assert.equal(fx.runs().length, 0);
 });
 

@@ -278,9 +278,10 @@ keeps everything after the list.
   `on.params.<name>`) whatever the source's pattern admits. A stored
   definition that carries one anyway (a file nobody validated on the way in)
   is listed as invalid, and its text never reaches a terminal as written:
-  `trigger list` and `status` print each param with those characters
-  replaced by U+FFFD, and `trigger show` prints its JSON with them escaped.
-  `--json` answers the value as stored. `events` lists 1 to 16 distinct
+  `trigger list` prints its row, and the refusal its sentence (`INVALID:
+  …`, a text error), with those characters replaced by U+FFFD, and `trigger
+  show` prints its JSON with them escaped. `--json` answers the value, and
+  the refusal's `field`, as stored. `events` lists 1 to 16 distinct
   event names of the source.
 - **Templates** may name `{trigger} {source} {subject} {event} {key} {url}
   {fields.<name>}` (a field the source declares). `{key}` is the stored key,
