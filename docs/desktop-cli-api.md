@@ -3680,10 +3680,10 @@ capability declares ([schedules.md](schedules.md#capability-sources)).
   `pollError`. `gh` is `null` unless the trigger has an `owner` (then as
   above, for the owner's host). `source` is `{capability, name, ok: true,
   events, invalidEvents, skipped, filtered}`, `{capability, name, ok: false,
-  invalid: {code, message, field?, at}, events: [], invalidEvents: [],
-  skipped: []}` when its meaning fails, or `{capability, name, ok: false,
-  cause, error: {code, message}, source?, events: [], invalidEvents: [],
-  skipped: []}` when the poll fails. `wouldFire` rows are `{key, subject,
+  filtered: 0, invalid: {code, message, field?, at}, events: [],
+  invalidEvents: [], skipped: []}` when its meaning fails, or `{capability,
+  name, ok: false, filtered: 0, cause, error: {code, message}, source?,
+  events: [], invalidEvents: [], skipped: []}` when the poll fails. `wouldFire` rows are `{key, subject,
   event, url?, instance, nameCut, held?}`. When the tick would not run the
   trigger here, `problems` holds `run manually; the tick will not run it
   here: <reason>` (with the placement's detail). `warnings` always holds

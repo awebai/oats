@@ -299,10 +299,10 @@ spawns, as for any capability-source trigger
 ([schedules.md](schedules.md#capability-sources)). A package does **not**
 raise `compatibility.oats` for such a template: a template is read only by
 `add --from`, so a kernel without feature `trigger-sources` refuses that one
-`add --from` (`E_TRIGGER_INVALID` on `on.source`), reports a workspace
-trigger made from it as a problem of its snapshot, and uses the package's
-capabilities and souls as before. A floor would refuse them all on every
-older host.
+`add --from` (`E_TRIGGER_INVALID` on `on.source`, or on `on.params` when the
+template sets it), reports a workspace trigger made from it as a problem of
+its snapshot, and uses the package's capabilities and souls as before. A
+floor would refuse them all on every older host.
 
 ## Compatibility floors
 

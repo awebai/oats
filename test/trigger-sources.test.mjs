@@ -409,7 +409,11 @@ test("workspace placement: the tick never runs a source placed elsewhere or untr
 
 test("trigger test and trigger poll run the source and write nothing; poll observes live, --max-age only where allowed; the credential warning; text modes (LFX 12)", (t) => {
   const fx = sourceDeployment(t);
-  addOk(fx);
+  // The confirmation says what `trigger test` does for a capability source: it runs the source's command.
+  const file = join(fx.base, "trigger-harvest.json");
+  writeFileSync(file, JSON.stringify(definition()));
+  const added = fx.cli(["trigger", "add", "--file", file]);
+  assert.match(added.stdout, /^added local\/harvest .*\n\(`oats trigger test local\/harvest` runs acme\.graph:harvest-branches's source command on this host and checks the soul and the teams\)\n$/, added.stdout + added.stderr);
   fx.control({ result: { events: [] } });
   tick(fx);
   const files = () => [statePath(fx), join(fx.dep, "oats-schedules.json")].map((f) => readFileSync(f, "utf8"));

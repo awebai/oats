@@ -414,6 +414,13 @@ delivery, more than 500 current events (the source filters), firing again
 without a stamp in the key, batching or fan-in, and a source slower than 30 s
 (it caches).
 
+**On a deployment an older kernel also reads**, that kernel refuses a
+capability source's trigger (`E_TRIGGER_INVALID`), as it does any source it
+does not know. Its message names `on.params`, not `on.source`
+(`on.params: unknown key (allowed: source, repo, events, labels, base,
+poll)`): `trigger add` stores `on.params` even when the definition gives none
+(`{}`), and that kernel checks the keys of `on` before the source.
+
 ## Workspace triggers and schedules
 
 Anything a team relies on belongs in a confirmed member repository, shared

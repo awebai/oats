@@ -3189,7 +3189,7 @@ async function triggerCmd() {
         if (spec === undefined) spec = await triggerFromPackage(T, String(from), sets, idFlag);
         // A capability source's meaning needs the soul's resolution (asynchronous, so here, before the write).
         await T.checkAddMeaning(ws(), T.validateTrigger({ ...spec, kind: spec?.kind ?? "trigger" }), { remoteOptions: remoteOptionsFromEnv() });
-        return out({ trigger: T.addTrigger(ws(), withDescription(spec, description)) }, (r) => `added ${line(r.trigger)}\n(\`oats trigger test ${r.trigger.id}\` checks gh, the repository, the soul and the teams on this host)`);
+        return out({ trigger: T.addTrigger(ws(), withDescription(spec, description)) }, (r) => `added ${line(r.trigger)}\n(\`oats trigger test ${r.trigger.id}\` ${T.isCapabilitySource(r.trigger.on?.source) ? `runs ${r.trigger.on.source}'s source command on this host and checks the soul and the teams` : "checks gh, the repository, the soul and the teams on this host"})`);
       }
       default: throw T.triggerError("E_BAD_ARGS", usage);
     }
@@ -4406,9 +4406,10 @@ Usage:
   oats schedule add|update <id> … --description=<text>   a one-line summary (1-200 characters)
   oats schedule update <id> --description=<text>   change only it (--description= clears it)
   oats trigger add (--file <json> | --from <package>:<template> [--set k=v]) | list | show | enable
-      | disable | remove <id> | test <id> | status [<id>]   event-driven spawns (github.pull_request
-                                                polled with the host's gh by the schedule tick;
-                                                see docs/schedules.md#triggers)
+      | disable | remove <id> | test <id> | poll <id> | status [<id>]   event-driven spawns, polled
+                                                by the schedule tick: github.pull_request (the
+                                                host's gh) or a capability's <capability>:<source>;
+                                                see docs/schedules.md#triggers
   oats trigger add … --description=<text>    a one-line summary (1-200 characters)
   oats trigger update <id> --description=<text>   change only it (--description= clears it)
   oats trigger|schedule add … --workspace <member> --runs-on <host> --owner <host>/<login>
