@@ -3718,8 +3718,11 @@ capability declares ([schedules.md](schedules.md#capability-sources)).
   source's trigger: `E_TRIGGER_SOURCE_RUN`, `ok: false`, a non-zero exit,
   `details: {capability, source, flag: "--run-source"}`, and a message
   naming the command to run again (`oats trigger test|poll <id>
-  --run-source`). Nothing of the capability has executed and nothing has
-  been written, the capability's directory in the module store included. The
+  --run-source`), and the trigger's `runsOn` when that is another host: it
+  holds only the id, the capability and source names and `runsOn`, never
+  text of the source's. Nothing of the capability has executed and nothing
+  has been written in the deployment, the soul's copy under `agents/` and
+  the capability's directory in the module store included. The
   order is fixed: a valid definition (`E_TRIGGER_INVALID`), then its meaning
   and the soul's resolution (`E_TRIGGER_SOURCE`, `E_TRIGGER_INVALID
   {field}`, `E_TRIGGER_POLL` `cause: "resolution"`), then this gate, then

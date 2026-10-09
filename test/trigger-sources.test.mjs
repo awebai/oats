@@ -415,23 +415,29 @@ test("a manual run of a capability source needs --run-source: without it test an
     on: { source: SOURCE, events: ["opened"], poll: "1m" }, spawn: { soul: "reviewer", task: "Review {subject}." } } };
   const fx = sourceDeployment(t, {
     local: { host: { name: "kb-host" }, automations: { trust: ["ws/here"] } },
-    files: { "oats-triggers/here.yaml": wsTrigger, "oats-triggers/untrusted.yaml": wsTrigger },
+    files: { "oats-triggers/here.yaml": wsTrigger, "oats-triggers/untrusted.yaml": wsTrigger, "oats-triggers/elsewhere.yaml": { yaml: { ...wsTrigger.yaml, runsOn: "other-host" } } },
   });
   assert.equal(fx.cli(["sync", "--json"]).json().ok, true);
   addOk(fx);
   fx.control({ result: { events: [ev("harvest/w:h1", "harvest/w")] } });
-  // Everything under a directory: path, and size for a file. The module store is where a run would write first.
-  const listing = (dir) => (existsSync(dir) ? readdirSync(dir, { recursive: true, withFileTypes: true }).map((d) => `${join(d.parentPath, d.name)}${d.isFile() ? `:${statSync(join(d.parentPath, d.name)).size}` : "/"}`).sort() : null);
-  const written = () => ({ modules: listing(join(fx.dep, ".oats", "modules")), state: existsSync(statePath(fx)) ? readFileSync(statePath(fx), "utf8") : null, homes: homes(fx).length });
+  // Everything in the deployment but its clones' Git internals (a fetch is an observation, not a
+  // write of this command's): each path, and a file's size. A run writes the soul's per-commit copy
+  // under agents/ and the capability's tree under .oats/modules; a refused one, neither.
+  const listing = () => readdirSync(fx.dep, { recursive: true, withFileTypes: true }).map((d) => [join(d.parentPath, d.name), d]).filter(([f]) => !f.includes("/.git/"))
+    .map(([f, d]) => `${f.slice(fx.dep.length)}${d.isFile() ? `:${statSync(f).size}` : "/"}`).sort();
+  const written = () => ({ tree: listing(), state: existsSync(statePath(fx)) ? readFileSync(statePath(fx), "utf8") : null, homes: homes(fx).length });
   const before = written();
-  const rows = ["local/harvest", "ws/here", "ws/untrusted"];
+  // Nothing has materialised the soul or the capability yet: this is the state a refusal must leave.
+  assert.deepEqual(before.tree.filter((f) => /^\/agents\/reviewer\/|^\/\.oats\/modules\//.test(f)), []);
+  const rows = ["local/harvest", "ws/here", "ws/untrusted", "ws/elsewhere"];
 
   // Without the flag: refused, for both verbs, on the local row, the trusted row and the untrusted one.
   for (const id of rows) for (const verb of ["test", "poll"]) {
     const { r, doc } = json(fx, ["trigger", verb, id]);
     assert.notEqual(r.status, 0, `${verb} ${id}: a non-zero exit`);
     assert.deepEqual([doc.ok, doc.error.code, doc.error.details], [false, "E_TRIGGER_SOURCE_RUN", { capability: "acme.graph", source: "harvest-branches", flag: "--run-source" }], `${verb} ${id}`);
-    assert.ok(doc.error.message.includes(`${id} watches acme.graph:harvest-branches`) && doc.error.message.endsWith(`To run it: oats trigger ${verb} ${id} --run-source`), doc.error.message);
+    // The maintainers' wording, word for word: the other host is named only when runsOn is set and is not this host.
+    assert.equal(doc.error.message, `${id} watches acme.graph:harvest-branches: a ${verb} runs that capability's source command on this host${id === "ws/elsewhere" ? ", not on other-host" : ""}, and nothing ran. Run it once, without trusting the trigger: oats trigger ${verb} ${id} --run-source`);
     const text = fx.cli(["trigger", verb, id]);
     assert.notEqual(text.status, 0);
     assert.match(text.stderr, new RegExp(`oats trigger ${verb} ${id} --run-source`));
@@ -441,7 +447,7 @@ test("a manual run of a capability source needs --run-source: without it test an
   assert.notEqual(valued.status, 0);
   assert.match(valued.stdout + valued.stderr, /--run-source takes no value/);
   assert.equal(fx.runs().length, 0, "the source never ran");
-  assert.deepEqual(written(), before, "nothing written: no module tree, no state, no home");
+  assert.deepEqual(written(), before, "nothing written anywhere in the deployment: no soul copy, no module tree, no state, no home");
 
   // A meaning failure answers before the gate: no flag is needed to see it, and nothing runs.
   addOk(fx, definition({ id: "moved" }));
@@ -453,6 +459,11 @@ test("a manual run of a capability source needs --run-source: without it test an
   assert.equal(fx.runs().length, 0);
   fx.commit({ "capabilities/acme.graph/oats.json": { json: { capability: "acme.graph", version: "0.0.0-workspace", description: "acme.graph fixture capability.", compatibility: { oats: ">=0.24.0" }, ...capabilityManifest() } } }, "restore the source");
   assert.equal(fx.cli(["trigger", "remove", "local/moved", "--json"]).json().ok, true);
+  // The soul's commit moved twice meanwhile: a refusal at a commit nothing has materialised writes nothing either.
+  const moved = written();
+  for (const verb of ["test", "poll"]) assert.equal(json(fx, ["trigger", verb, "local/harvest"]).doc.error.code, "E_TRIGGER_SOURCE_RUN");
+  assert.deepEqual(written(), moved);
+  assert.deepEqual(moved.tree.filter((f) => /^\/agents\/reviewer\/|^\/\.oats\/modules\//.test(f)), [], "still nothing materialised");
 
   // With the flag the source runs, whatever this host's trust says: the caller's intent, not consent.
   let ran = 0;
@@ -463,8 +474,9 @@ test("a manual run of a capability source needs --run-source: without it test an
     assert.equal(fx.runs().length, ++ran, `${verb} ${id} --run-source ran the source`);
     assert.equal(fx.runs().at(-1).request.trigger, id);
   }
-  assert.notDeepEqual(written().modules, before.modules, "a run materialises the capability's tree");
-  assert.deepEqual([written().state, written().homes], [before.state, before.homes], "and still records nothing");
+  const after = written();
+  assert.ok(after.tree.some((f) => /^\/\.oats\/modules\/acme\.graph@[0-9a-f]+\/bin\/source\.mjs:/.test(f)) && after.tree.some((f) => /^\/agents\/reviewer\/souls\/[0-9a-f]+\/soul\.yaml:/.test(f)), "a run materialises the soul's copy and the capability's tree");
+  assert.deepEqual([after.state, after.homes], [moved.state, moved.homes], "and still records nothing");
 
   // The built-in: test is the same answer with and without the flag; poll is not its verb, with or without.
   const pr = join(fx.base, "trigger-kb.json");
@@ -481,6 +493,41 @@ test("a manual run of a capability source needs --run-source: without it test an
   const ticked = tick(fx, { ctx: true });
   assert.deepEqual(ticked.filter((r) => r.trigger !== "local/kb").map((r) => [r.trigger, r.action]).sort(), [["local/harvest", "fired"], ["ws/here", "fired"], ["ws/untrusted", "not-here"]], JSON.stringify(ticked));
   assert.deepEqual(fx.runs().slice(ran).map((r) => r.request.trigger).sort(), ["local/harvest", "ws/here"]);
+});
+
+test("a stored definition whose params carry control, bidi or tag characters is refused, and its row still prints none of them: list replaces them, show escapes them, the JSON keeps the value", (t) => {
+  const fx = sourceDeployment(t);
+  addOk(fx);
+  // A definition nobody validated on the way in: a copied or shared oats-schedules.json.
+  const file = join(fx.dep, "oats-schedules.json");
+  const doc = JSON.parse(readFileSync(file, "utf8"));
+  const prefix = "harvest/\x1b[31mRED\nFORGED-LINE ‮evil\u{E0041}\u0085";
+  doc.jobs.harvest.on.params = { prefix, ["k‮y"]: "v" };
+  writeFileSync(file, JSON.stringify(doc, null, 2));
+  // trigger add refuses the same value outright.
+  const refused = add(fx, definition({ id: "other", on: { params: { prefix } } })).json();
+  assert.deepEqual([refused.ok, refused.error.code, refused.error.details.field], [false, "E_TRIGGER_INVALID", "on.params.prefix"]);
+  assert.doesNotMatch(refused.error.message, REFUSED_TEXT);
+  // The stored one is invalid, and listed: its row's text carries no refused character at all.
+  const row = listRow(fx);
+  assert.deepEqual([row.invalid.code, row.on.params.prefix], ["E_TRIGGER_INVALID", prefix], "the JSON is data: the value as stored");
+  for (const args of [["trigger", "list"], ["trigger", "status"], ["trigger", "show", "local/harvest"], ["trigger", "disable", "local/harvest"], ["trigger", "enable", "local/harvest"]]) {
+    const r = fx.cli(args);
+    assert.equal(r.status, 0, args.join(" ") + r.stderr);
+    for (const out of [r.stdout, r.stderr]) assert.doesNotMatch(out.replaceAll("\n", ""), REFUSED_TEXT, `${args.join(" ")} prints no refused character`);
+    assert.ok(!r.stdout.includes("\nFORGED-LINE"), `${args.join(" ")} prints no forged line`);
+  }
+  const listed = fx.cli(["trigger", "list"]).stdout;
+  assert.match(listed, /^local\/harvest .*acme\.graph:harvest-branches prefix=harvest\/�\[31mRED�FORGED-LINE �evil�� k�y=v \[opened,updated\].*INVALID: on\.params\./m);
+  assert.equal(listed.trim().split("\n").length, 1, "one row, one line");
+  // show's text is the JSON with the refused characters escaped: the same document.
+  const shown = fx.cli(["trigger", "show", "local/harvest"]).stdout;
+  assert.ok(shown.includes("\\u202e") && shown.includes("\\udb40\\udc41") && shown.includes("\\u0085"));
+  assert.deepEqual(JSON.parse(shown).trigger.on.params, { prefix, ["k‮y"]: "v" });
+  // No tick polls an invalid trigger, and by hand it is refused as invalid, flag or no flag.
+  assert.deepEqual(tick(fx).map((r) => r.action), ["invalid"]);
+  for (const verb of ["test", "poll"]) for (const extra of [[], ["--run-source"]]) assert.equal(json(fx, ["trigger", verb, "local/harvest", ...extra]).doc.error.code, "E_TRIGGER_INVALID");
+  assert.equal(fx.runs().length, 0);
 });
 
 test("spawn --trigger-event: a capability source's fields, when present, are a plain object of strings", (t) => {

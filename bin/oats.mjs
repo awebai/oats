@@ -3061,15 +3061,21 @@ async function triggerCmd() {
   const sub = args[1];
   const id = args[2] && !args[2].startsWith("--") ? args[2] : undefined;
   const T = await import("../lib/triggers.mjs");
+  const { REFUSED_TEXT, safeText } = await import("../lib/refused-text.mjs");
   let scope;
   const ws = () => (scope ??= scheduleScopeOf(dirFlag()));
-  const out = (result, text) => { if (JSON_MODE) jsonOk(result); else console.log(text ? text(result) : JSON.stringify(result, null, 2)); };
+  // A stored definition that fails validation is still listed and shown, as it was written: what a
+  // terminal gets of it never carries a refused character. In a row's text it is replaced (`shown`);
+  // in the JSON `show` prints as text it is escaped (\uXXXX; the layout's own newlines stay), so the document's value is unchanged.
+  const shown = (v, max) => safeText(typeof v === "string" ? v : JSON.stringify(v) ?? String(v), max);
+  const escaped = (json) => json.replace(new RegExp(REFUSED_TEXT.source, "gu"), (c) => (c === "\n" ? c : Array.from({ length: c.length }, (_, i) => `\\u${c.charCodeAt(i).toString(16).padStart(4, "0")}`).join("")));
+  const out = (result, text) => { if (JSON_MODE) jsonOk(result); else console.log(text ? text(result) : escaped(JSON.stringify(result, null, 2))); };
   const needId = () => { if (!id) throw T.triggerError("E_BAD_ARGS", `oats trigger ${sub} <id>`); return id; };
   const usage = "usage: oats trigger add (--file <trigger.json> | --from <package>:<template> [--set <name>=<value>]… [--id <id>]) [--description=<text>] [--workspace <member> --runs-on <host> --owner <host>/<login>] | update <id> --description=<text> | list | show <id> | enable <id> | disable <id> | remove <id> | test <id> [--run-source] | poll <id> --run-source [--max-age <s>] | status [<id>]  [--dir <deployment>] [--json]   (<id>: local/<id> or <member>/<id>; --run-source: run a capability source's command on this host, which test and poll do only when asked)";
   const where = (t) => (t.origin?.kind === "workspace" ? (t.runsHere ? `runs here as ${t.owner}` : `${t.reason === "assigned-elsewhere" ? `runs on ${t.runsOn}` : t.reason ?? "disabled here"}`) : t.enabledHere ? "local" : "local, disabled");
   // A capability source names its params where the built-in names its repository.
-  const watched = (on) => (T.isCapabilitySource(on?.source) ? `${on.source}${Object.keys(on.params || {}).length ? ` ${Object.entries(on.params).map(([k, v]) => `${k}=${v}`).join(" ")}` : ""}` : `${on?.source ?? "?"} ${on?.repo ?? "?"}`);
-  const line = (t) => `${t.id}  ${where(t)}  ${watched(t.on)} [${(t.on?.events || []).join(",")}]${t.on?.labels?.length ? ` labels ${t.on.labels.join(",")}` : ""} every ${t.on?.poll ?? "?"} → spawn ${t.spawn?.soul ?? "?"}${t.spawn?.teams?.length ? ` in ${t.spawn.teams.join(",")}` : ""}${t.invalid ? `  INVALID: ${t.invalid.message}` : ""}`;
+  const watched = (on) => (T.isCapabilitySource(on?.source) ? `${on.source}${Object.keys(on.params || {}).length ? ` ${Object.entries(on.params).map(([k, v]) => `${shown(k, 40)}=${shown(v, 200)}`).join(" ")}` : ""}` : `${on?.source ?? "?"} ${on?.repo ?? "?"}`);
+  const line = (t) => `${t.id}  ${where(t)}  ${watched(t.on)} [${T.isCapabilitySource(t.on?.source) ? shown((t.on?.events || []).join(","), 700) : (t.on?.events || []).join(",")}]${t.on?.labels?.length ? ` labels ${t.on.labels.join(",")}` : ""} every ${t.on?.poll ?? "?"} → spawn ${t.spawn?.soul ?? "?"}${t.spawn?.teams?.length ? ` in ${t.spawn.teams.join(",")}` : ""}${t.invalid ? `  INVALID: ${t.invalid.message}` : ""}`;
   // A source's own words are printed only under this label, never as the kernel's (docs/schedules.md).
   const said = (x) => (x ? `source says: ${x.code}${x.message ? `: ${x.message}` : ""}` : "");
   // The workspace automations of this deployment (the snapshot) placed on this host.

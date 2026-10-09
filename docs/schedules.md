@@ -275,8 +275,12 @@ keeps everything after the list.
   to the source only, never into a task. A value carrying a control
   character, a line or paragraph separator, a bidi control, U+200B, U+2060,
   U+FEFF or a tag character is refused (`E_TRIGGER_INVALID`,
-  `on.params.<name>`) whatever the source's pattern admits, so a definition
-  is safe to print wherever it is listed. `events` lists 1 to 16 distinct
+  `on.params.<name>`) whatever the source's pattern admits. A stored
+  definition that carries one anyway (a file nobody validated on the way in)
+  is listed as invalid, and its text never reaches a terminal as written:
+  `trigger list` and `status` print each param with those characters
+  replaced by U+FFFD, and `trigger show` prints its JSON with them escaped.
+  `--json` answers the value as stored. `events` lists 1 to 16 distinct
   event names of the source.
 - **Templates** may name `{trigger} {source} {subject} {event} {key} {url}
   {fields.<name>}` (a field the source declares). `{key}` is the stored key,
@@ -377,9 +381,11 @@ keeps everything after the list.
   provider code*. So neither runs it unless asked in so many words:
   - **Without the flag** both are refused with `E_TRIGGER_SOURCE_RUN`
     (`details: { capability, source, flag: "--run-source" }`, a non-zero
-    exit), and the message names the command to run again. Nothing of the
-    capability has executed and nothing has been written, not even the
-    capability's directory in the module store. The definition and its
+    exit), and the message names the command to run again (and the
+    trigger's `runsOn` host, when that is another host). Nothing of the
+    capability has executed and nothing has been written in the deployment,
+    not even the soul's copy under `agents/` or the capability's directory in
+    the module store. The definition and its
     meaning are checked first, so a trigger that is invalid or whose meaning
     fails answers that, with or without the flag: `trigger poll` as its
     error, `trigger test` inside its answer (`source.ok: false`).
