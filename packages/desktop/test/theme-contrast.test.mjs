@@ -52,7 +52,8 @@ function shippedStyleSources(dir = renderer) {
   }
   return chunks;
 }
-const shipped = shippedStyleSources();
+// With the renderer modules that moved to the shared home (packages/client): the page loads them too.
+const shipped = [...shippedStyleSources(), ...shippedStyleSources(new URL("../../client/", renderer))];
 const allStyles = shipped.map(({ path, text }) => `\n/* ${path} */\n${text}`).join("");
 
 function tokens(block) {
