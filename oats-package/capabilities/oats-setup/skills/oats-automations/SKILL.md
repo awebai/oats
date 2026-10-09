@@ -156,9 +156,10 @@ contract is `docs/schedules.md`, "Capability sources".
   source before trusting it. They record and spawn nothing. Without
   `--run-source` both are refused (`E_TRIGGER_SOURCE_RUN`; nothing ran,
   nothing was written) and the message gives the command to run again. The
-  flag is your intent to run provider code here, never trust consent: the
-  tick alone is gated by trust and placement, exactly as before. Pass it
-  only when the task or your human asked for the source to run.
+  flag is caller intent, never trust consent: it says you mean to run
+  provider code here, now, and the tick alone is gated by trust and
+  placement, exactly as before. Pass it only when the task or your human
+  asked for the source to run.
 - A pending event the source stops listing is dropped; a failed poll drops
   nothing (`status` shows `lastPoll.cause` and what the source said).
 - The source runs under the host timer with only `PATH` and `OATS_HOME_DIR`:
