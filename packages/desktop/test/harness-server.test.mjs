@@ -23,6 +23,17 @@ test("harness-server: serves renderer files and /node_modules ESM, guards traver
     assert.equal((await get("/node_modules/dompurify/dist/purify.es.mjs")).status, 200, "dompurify ESM serves");
     assert.equal((await get("/node_modules/%2e%2e/package.json")).status, 404, "encoded traversal out of node_modules rejected");
     assert.equal((await get("/%2e%2e/package.json")).status, 404, "encoded traversal out of renderer rejected");
+    // A renderer module that moved to the shared home (packages/client) left a re-export of
+    // ../../client/x.mjs. The renderer is this server's root, so the browser clamps that to /client/x.mjs.
+    const shim = await get("/harness-names.mjs");
+    assert.equal(await shim.text(), 'export * from "../../client/harness-names.mjs";\n');
+    const shared = new URL("../../client/harness-names.mjs", `http://127.0.0.1:${port}/harness-names.mjs`);
+    assert.equal(shared.pathname, "/client/harness-names.mjs");
+    const moved = await get(shared.pathname);
+    assert.equal(moved.status, 200, "the shared home serves through /client");
+    assert.ok((moved.headers.get("content-type") || "").includes("text/javascript"), "ESM content-type");
+    assert.match(await moved.text(), /export const HARNESSES/);
+    assert.equal((await get("/client/%2e%2e/desktop/package.json")).status, 404, "encoded traversal out of the shared home rejected");
     // fetch cannot forge Host — raw request for the rebinding case
     const hostile = await new Promise((resolve, reject) => {
       const rq = httpRequest({ host: "127.0.0.1", port, path: "/", headers: { host: "evil.example" } }, (rs) => resolve(rs.statusCode));

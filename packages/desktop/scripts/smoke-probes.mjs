@@ -71,6 +71,39 @@ export async function runAbiProbe(reaper, appExe, asarMainPath, {
   return { ok: true, detail: `node-pty loads and spawns under the packaged Electron ABI${mode} (via app.asar)` };
 }
 
+/**
+ * What MAIN loads from the shared home (packages/client, beside app.asar). Main itself needs a
+ * display, so modules of its import graph at the asar's top level that reach the shared home are
+ * imported as Node under the packaged executable: the same loader main has, resolving the same
+ * `../client/` from the same directory. `modules` maps a path inside the asar to an export it
+ * must have.
+ * `reaper` MUST provide runTracked. Returns { ok, detail }.
+ */
+export async function runSharedHomeProbe(reaper, appExe, asar, {
+  modules, timeout = 30000, env = process.env, targetArch,
+  platform = process.platform, hostArch = process.arch,
+} = {}) {
+  if (typeof reaper?.runTracked !== "function") {
+    return { ok: false, detail: "probe runner requires a reaper with runTracked (async group-tracked execution is the contract)" };
+  }
+  const source = `
+    const { join } = require("node:path");
+    const { pathToFileURL } = require("node:url");
+    Promise.all(${JSON.stringify(Object.entries(modules))}.map(([file, name]) =>
+      import(pathToFileURL(join(${JSON.stringify(asar)}, file)).href).then((m) => { if (!(name in m)) throw new Error(file + " has no export " + name); })))
+      .then(() => { console.log("SHARED_HOME_OK"); }, (e) => { console.error(e.message); process.exit(1); });
+  `;
+  const { exe, args, rosetta } = packagedNode(appExe, ["-e", source], { targetArch, platform, hostArch });
+  const r = await reaper.runTracked(exe, args, { timeout, env: { ...env, ELECTRON_RUN_AS_NODE: "1" } });
+  const mode = rosetta ? " under Rosetta x86_64" : "";
+  if (r.timedOut) return { ok: false, detail: `shared-home probe${mode} timed out (group killed)` };
+  if (r.code !== 0 || !String(r.stdout).includes("SHARED_HOME_OK")) {
+    const combined = `${String(r.stdout)}\n${String(r.stderr || "")}`.trim().slice(-800);
+    return { ok: false, detail: `shared-home probe${mode} failed (exit ${r.code}): ${combined}` };
+  }
+  return { ok: true, detail: `modules of main's import graph load the shared home from the asar's top level (${Object.keys(modules).join(", ")} → ../client/) as Node under the packaged executable${mode}` };
+}
+
 /** As the hermetic tests start the backend: no oats CLI is discoverable, no login shell runs. */
 export const NO_CLI_ENV = Object.freeze({ OATS_DESKTOP_OATS_BIN: "", PATH: "/nonexistent", SHELL: "/bin/false" });
 

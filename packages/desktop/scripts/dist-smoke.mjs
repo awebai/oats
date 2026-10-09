@@ -15,9 +15,10 @@
 //   4. headless, as Node under the packaged executable: the bundled backend
 //      (app.asar/server/oats-web.mjs) started through main's own spawn spec
 //      answers GET /api/cli and exits when its stdin closes (#698's
-//      lifeline), and the liveness collector (app.asar/server/
-//      liveness-main.mjs) answers [] to [] — their whole import graphs, from
-//      the asar. No GUI, and on Linux not the AppImage's launcher or runtime;
+//      lifeline), and the liveness collector (client/liveness-main.mjs,
+//      beside app.asar) answers [] to [] — their whole import graphs, from
+//      the asar and the shared home (packages/client, placed beside the asar
+//      as client/). No GUI, and on Linux not the AppImage's launcher or runtime;
 //   5. the packaged app bundle launches and its renderer reaches the shell
 //      (CDP probe), which also proves main spawned the bundled server and it
 //      answered — i.e. no source-checkout dependency.
@@ -33,7 +34,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createReaper } from "./proc-reaper.mjs";
-import { runAbiProbe, runBackendProbe } from "./smoke-probes.mjs";
+import { runAbiProbe, runBackendProbe, runSharedHomeProbe } from "./smoke-probes.mjs";
 import { verifyAppSignature } from "./codesign-verify.mjs";
 import { WATCHDOG_MS, PHASE_BUDGET_MS, boundedTail, readDevToolsPort, awaitClose } from "./launch-probe.mjs";
 
@@ -144,17 +145,42 @@ if (process.platform === "darwin") {
 // on the macOS x64 cross-build, as phase 3) against the asar's server entries:
 // the backend started exactly as main starts it (serverSpawnSpec), with no CLI
 // discoverable, then its stdin closed as when main ends; then the collector the
-// backend starts (oats-web.mjs: LIVENESS). The runner (scripts/smoke-probes.mjs)
+// backend starts (oats-web.mjs: LIVENESS), which is in the shared home beside the
+// asar, where the backend's own ../../client/ resolves. The runner (scripts/smoke-probes.mjs)
 // goes through the reaper only and reaps every process on every path.
 {
   const server = join(app.resources, "app.asar", "server");
   const r = await runBackendProbe(reaper, app.exe, {
-    bin: join(server, "oats-web.mjs"), collector: join(server, "liveness-main.mjs"),
+    bin: join(server, "oats-web.mjs"), collector: join(app.resources, "client", "liveness-main.mjs"),
     readyMs: PHASE_BUDGET_MS.backendReady, exitMs: PHASE_BUDGET_MS.backendExit, collectorMs: PHASE_BUDGET_MS.collector,
     targetArch: process.env.OATS_SMOKE_TARGET_ARCH || process.arch,
   });
   if (!r.ok) fail(r.detail);
   for (const line of r.lines) ok(line);
+}
+
+// ---- 4b. what main loads from the shared home, from app.asar's top level ----
+// The backend and the collector above reach the shared home from app.asar/server
+// (../../client/). Main reaches it from the asar's top level (../client/) and
+// cannot run without a display, so the modules it imports directly through
+// which it reaches the shared home (all six of the home's modules in its graph)
+// are loaded as Node under the packaged executable. Only main.mjs itself, which
+// imports electron, is left out.
+const MAIN_REACHES_SHARED_HOME = {
+  "cli-environment.mjs": "cliEnvironment",     // → ../client/cli-environment.mjs
+  "forge-cli.mjs": "createGhRunner",           // → cli-environment.mjs
+  "terminal-owner.mjs": "installTerminalHandlers", // → renderer/terminal-contract.mjs
+  "terminal-io.mjs": "createTerminalIo",       // → … cli-locator.mjs → renderer/harness-names.mjs
+  "workspace-cli.mjs": "WORKSPACE_ACTIONS",    // → renderer/deployment-contract.mjs, … display-text.mjs
+  "deployment-data.mjs": "deploymentStatusData", // → … renderer/instance-presentation.mjs
+};
+{
+  const r = await runSharedHomeProbe(reaper, app.exe, join(app.resources, "app.asar"), {
+    modules: MAIN_REACHES_SHARED_HOME,
+    timeout: PHASE_BUDGET_MS.abiProbe, targetArch: process.env.OATS_SMOKE_TARGET_ARCH || process.arch,
+  });
+  if (!r.ok) fail(r.detail);
+  ok(r.detail);
 }
 
 // ---- 5. packaged app launches and the renderer reaches the shell ------------

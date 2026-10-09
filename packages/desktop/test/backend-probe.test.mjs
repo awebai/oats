@@ -1,6 +1,7 @@
 // The smoke's headless backend phase (scripts/smoke-probes.mjs runBackendProbe, #634), run
 // against the SOURCE tree under plain Node: process.execPath stands in for the packaged
-// executable, server/oats-web.mjs and server/liveness-main.mjs for the asar's entries. The
+// executable, server/oats-web.mjs for the asar's entry and ../client/liveness-main.mjs for the
+// collector beside it (the shared home, packages/client). The
 // backend is started through the real serverSpawnSpec, with no CLI discoverable. Failure paths
 // use tiny fixture servers started through the same spec (they read --port from its argv), or
 // the real server with the lifeline flag dropped from the spec. Every process goes through a
@@ -13,12 +14,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createReaper } from "../scripts/proc-reaper.mjs";
-import { runBackendProbe, packagedNode, NO_CLI_ENV } from "../scripts/smoke-probes.mjs";
+import { runBackendProbe, runSharedHomeProbe, packagedNode, NO_CLI_ENV } from "../scripts/smoke-probes.mjs";
 import { serverSpawnSpec, LIFELINE_FLAG } from "../server-host.mjs";
 
 const SERVER = fileURLToPath(new URL("../server/", import.meta.url));
 const BIN = join(SERVER, "oats-web.mjs");
-const COLLECTOR = join(SERVER, "liveness-main.mjs");
+const COLLECTOR = fileURLToPath(new URL("../../client/liveness-main.mjs", import.meta.url));
 const EXE = process.execPath;
 
 /** A pid that is running: signal 0 reaches it and (on Linux) it is not a zombie awaiting its reaper. */
@@ -205,11 +206,30 @@ test("the probe refuses to run without the reaper's group-tracked primitives", a
   }
 });
 
+test("the shared-home probe: main's top-level imports load ../client/ under the executable; a missing module or export fails it", async (t) => {
+  // The source tree stands in for the asar: its top level is where main and these modules are.
+  const reaper = reaperFor(t), top = fileURLToPath(new URL("../", import.meta.url));
+  const good = await runSharedHomeProbe(reaper, EXE, top, { modules: { "cli-environment.mjs": "cliEnvironment", "remote-target.mjs": "prepareRemoteTerm" } });
+  assert.equal(good.ok, true, good.detail);
+  assert.match(good.detail, /cli-environment\.mjs, remote-target\.mjs → \.\.\/client\//);
+  const noExport = await runSharedHomeProbe(reaper, EXE, top, { modules: { "cli-environment.mjs": "nope" } });
+  assert.equal(noExport.ok, false);
+  assert.match(noExport.detail, /^shared-home probe failed \(exit 1\): cli-environment\.mjs has no export nope/);
+  const at = fixtures(t, { "shim.mjs": 'export * from "../client/absent.mjs";\n' });
+  const absent = await runSharedHomeProbe(reaper, EXE, join(at("shim.mjs"), ".."), { modules: { "shim.mjs": "x" } });
+  assert.equal(absent.ok, false);
+  assert.match(absent.detail, /Cannot find module .*client\/absent\.mjs/);
+  assert.equal((await runSharedHomeProbe({}, EXE, top, { modules: {} })).ok, false, "a reaper without runTracked is refused");
+  const src = readFileSync(new URL("../scripts/dist-smoke.mjs", import.meta.url), "utf8");
+  const backend = src.indexOf("await runBackendProbe(reaper"), shared = src.indexOf("await runSharedHomeProbe(reaper"), skip = src.indexOf("process.env.OATS_SMOKE_SKIP_LAUNCH");
+  assert.ok(backend > 0 && backend < shared && shared < skip, "dist-smoke runs it after the backend phase and before the launch skip");
+});
+
 test("dist-smoke runs the phase after the ABI probe and before the launch skip, so CI's build-verify runs reach it", () => {
   const src = readFileSync(new URL("../scripts/dist-smoke.mjs", import.meta.url), "utf8");
   const abi = src.indexOf("await runAbiProbe(reaper"), backend = src.indexOf("await runBackendProbe(reaper"), skip = src.indexOf("process.env.OATS_SMOKE_SKIP_LAUNCH");
   assert.ok(abi > 0 && backend > 0 && skip > 0, "all three are present");
   assert.ok(abi < backend && backend < skip, "ABI probe, then the backend phase, then the launch skip");
-  assert.match(src, /bin: join\(server, "oats-web\.mjs"\), collector: join\(server, "liveness-main\.mjs"\)/, "the asar's backend and collector entries");
+  assert.match(src, /bin: join\(server, "oats-web\.mjs"\), collector: join\(app\.resources, "client", "liveness-main\.mjs"\)/, "the asar's backend entry, and the collector's in the shared home beside the asar");
   assert.match(src, /const server = join\(app\.resources, "app\.asar", "server"\);/, "from app.asar");
 });

@@ -12,6 +12,9 @@ on:
   pull_request:
     paths:
       - "packages/desktop/**"
+      # The shared home the app imports by relative path and ships beside
+      # app.asar: a change there changes every installer.
+      - "packages/client/**"
       - ".github/workflows/**"
 
 # Verify-only: read the repo, write nothing. No publish/release/attestation
@@ -101,6 +104,33 @@ jobs:
           [ -n "$APP" ] || { echo "::error::no packaged .app found under dist/"; exit 1; }
           echo "strict deep codesign verification: $APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
+
+      # SPIKE (#855, never merged): the shared home (packages/client) must be
+      # in every distributable, beside app.asar, with every module the
+      # repository's directory has; on macOS, sealed by the bundle signature.
+      # The smoke below then LOADS it from the unpacked build. The DMG is not
+      # opened: it is made from the same .app the ZIP is.
+      - name: "Spike: the distributables carry the shared home beside app.asar"
+        working-directory: packages/desktop
+        run: |
+          want="$(ls ../client/*.mjs | wc -l | tr -d ' ')"
+          check() {
+            echo "$1: $2 of $want shared-home modules"
+            [ "$2" = "$want" ] || { echo "::error::$1 carries $2 of $want shared-home modules"; exit 1; }
+          }
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            check "unpacked build (resources/client)" "$(ls dist/linux-unpacked/resources/client/*.mjs | wc -l | tr -d ' ')"
+            check "DEB" "$(dpkg-deb -c dist/oats-desktop-*.deb | grep -c '/resources/client/[^/]*\.mjs$')"
+            chmod +x dist/oats-desktop-*.AppImage
+            IMAGE="$(ls "$PWD"/dist/oats-desktop-*.AppImage)"
+            (cd "$RUNNER_TEMP" && "$IMAGE" --appimage-extract 'resources/client/*' >/dev/null)
+            check "AppImage" "$(ls "$RUNNER_TEMP"/squashfs-root/resources/client/*.mjs | wc -l | tr -d ' ')"
+          else
+            APP="$(find dist -maxdepth 2 -name '*.app' -print -quit)"
+            check ".app (Contents/Resources/client)" "$(ls "$APP"/Contents/Resources/client/*.mjs | wc -l | tr -d ' ')"
+            check "ZIP" "$(unzip -Z1 dist/oats-desktop-*.zip | grep -c '/Contents/Resources/client/[^/]*\.mjs$')"
+            check "signature seal (CodeResources)" "$(grep -o '<key>Resources/client/[^/<]*\.mjs</key>' "$APP/Contents/_CodeSignature/CodeResources" | sort -u | wc -l | tr -d ' ')"
+          fi
 
       # Installed-artifact smoke, BUILD-VERIFY mode: inventory (artifact names
       # + plausible sizes) + strict deep codesign verification of the packaged

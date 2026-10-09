@@ -181,26 +181,37 @@ test('the locator carries only an integer workspaceApi 2 from the probe into the
 
 test('every package-root module the bundled server imports (transitively) is in the packaged file list', () => {
   const pkg = new URL('../', import.meta.url);
+  const home = new URL('../client/', pkg);
   const config = readFileSync(new URL('electron-builder.config.cjs', pkg), 'utf8');
-  const seen = new Set(), rootModules = new Set();
+  const seen = new Set(), rootModules = new Set(), shared = new Set();
   const visit = url => {
     if (seen.has(url.href)) return; seen.add(url.href);
     const source = readFileSync(url, 'utf8');
-    for (const [, spec] of source.matchAll(/^import[^'"]*['"](\.{1,2}\/[^'"]+)['"]/gm)) {
+    // Imports, and the re-exports that the modules moved to the shared home left at their old paths.
+    for (const [, spec] of source.matchAll(/^(?:import|export)\b[^'";]*['"](\.{1,2}\/[^'"]+)['"]/gm)) {
       const next = new URL(spec, url);
-      const rel = next.href.slice(pkg.href.length);
-      if (!rel.includes('/')) rootModules.add(rel);
-      if (rel.endsWith('.mjs')) visit(next);
+      if (next.href.startsWith(home.href)) shared.add(next.href.slice(home.href.length));
+      else {
+        assert.ok(next.href.startsWith(pkg.href), `${spec} (from ${url.href.slice(pkg.href.length)}) is in the package or in the shared home`);
+        const rel = next.href.slice(pkg.href.length);
+        if (!rel.includes('/')) rootModules.add(rel);
+      }
+      if (next.pathname.endsWith('.mjs')) visit(next);
     }
   };
   visit(new URL('server/oats-web.mjs', pkg));
   // The collector's entry module is started by a path, not imported: the walk above cannot reach it.
-  assert.ok(/^const LIVENESS = join\(HERE, "liveness-main\.mjs"\);$/m.test(readFileSync(new URL('server/oats-web.mjs', pkg), 'utf8')), 'the backend starts server/liveness-main.mjs');
-  visit(new URL('server/liveness-main.mjs', pkg));
-  assert.ok(rootModules.has('deployment-read-cli.mjs') && rootModules.has('deployment-data.mjs') && rootModules.has('cli-environment.mjs'));
+  assert.ok(/^const LIVENESS = join\(HERE, "\.\.", "\.\.", "client", "liveness-main\.mjs"\);$/m.test(readFileSync(new URL('server/oats-web.mjs', pkg), 'utf8')), 'the backend starts ../client/liveness-main.mjs');
+  visit(new URL('liveness-main.mjs', home));
+  assert.ok(rootModules.has('deployment-read-cli.mjs') && rootModules.has('deployment-data.mjs'));
   for (const file of rootModules) assert.ok(config.includes(`"${file}"`), `${file} is packaged`);
-  // server/ ships by its pattern: the entry and the module that cleans a Node-mode process's environment are under it, and no exclusion names them.
-  for (const file of ['server/liveness-main.mjs', 'server/own-environment.mjs']) assert.ok(seen.has(new URL(file, pkg).href), `${file} exists and is loaded`);
+  // The shared home ships whole, flat, beside the asar (test/inventory.test.mjs pins where): what the
+  // server reaches there, cli-environment.mjs among it, is a module directly in it.
+  assert.ok(shared.has('deployment-read-cli.mjs') && shared.has('cli-environment.mjs') && shared.has('own-environment.mjs'));
+  for (const file of shared) assert.ok(!file.includes('/') && file.endsWith('.mjs'), `${file} is a module directly in the shared home`);
+  assert.deepEqual(builder.extraResources, [{ from: '../client', to: 'client', filter: ['**/*.mjs'] }]);
+  // server/ ships by its pattern: the re-export of the module that cleans a Node-mode process's environment is under it, and no exclusion names it.
+  for (const url of [new URL('liveness-main.mjs', home), new URL('own-environment.mjs', home), new URL('server/own-environment.mjs', pkg)]) assert.ok(seen.has(url.href), `${url.pathname} exists and is loaded`);
   assert.ok(builder.files.includes('server/**/*'));
   assert.deepEqual(builder.files.filter(pattern => pattern.startsWith('!') && pattern.includes('server/')), []);
 });

@@ -68,6 +68,12 @@ module.exports = {
     "!**/*.test.mjs",
     "!**/.DS_Store",
   ],
+  // The shared home (packages/client: the kernel readers the Desktop shares with other clients)
+  // is placed BESIDE app.asar, as <resources>/client. From inside the asar `../client/` is then
+  // the same relative path as from this directory in the repository, so shipped modules import
+  // it by one plain relative specifier and no copy or install step exists. `from` and `to` are
+  // pinned to each other by test/inventory.test.mjs: change neither alone.
+  extraResources: [{ from: "../client", to: "client", filter: ["**/*.mjs"] }],
   // node-pty is a native dep: electron-builder runs its own beforeBuild
   // rebuild against the bundled Electron ABI (npmRebuild default true);
   // asarUnpack keeps the prebuilt spawn-helper executable on disk where
