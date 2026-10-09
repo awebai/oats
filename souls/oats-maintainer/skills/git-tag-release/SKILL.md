@@ -42,3 +42,20 @@ In an exact-commit checkout, read `.github/workflows/release.yml`, `docs/release
 - The workflow's last step opens the version-bump PR (root, pi and Desktop manifests) to
   `main`. It runs after publication: when it fails, both npm versions and the Desktop
   Release are already out, and the bump PR is opened by hand.
+
+## The framework package
+`oats.framework` (the `oats-package/` directory) releases from its own tag line,
+`oats-framework/v<version>`, not from the kernel's tag. **A kernel release whose PRs
+touched `oats-package/` ships a framework bump in the same release**; otherwise the
+kernel ships behaviour whose skill text reaches no deployment.
+
+- When you plan the release, diff `oats-package/` between the last `oats-framework/` tag
+  and `main`, plus the PRs still to merge. An empty diff needs nothing.
+- Otherwise the release has two prep PRs. The first bumps the changed capabilities and
+  the package, with its notes entry; tag its merge commit `oats-framework/v<version>`.
+  The kernel prep PR then pins that version: the catalog ref, `oats-workspace.yaml`, and
+  the version literals in the docs, tests and smoke script.
+- In the first PR, read every skill line added since the last framework tag: a command or
+  behaviour that an admitted older kernel lacks names its version ("from OATS 0.49.0").
+  Guidance text alone never raises a capability's floor.
+- `docs/release-lane.md`, "Releasing `oats.framework`", is the procedure.
