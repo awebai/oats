@@ -9,7 +9,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { capabilityFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { fixtureBase, fixtureEnv, linkExecutables, waitUntil as waitFor } from "./helpers/host-fixture.mjs";
 import { pathLimitSkip } from "./helpers/path-limit.mjs";
-import { fingerprintTree, statusDisagreement, storedTreeDigest } from "../lib/core.mjs";
+import { fingerprintTree, processScanAvailability, statusDisagreement, storedTreeDigest } from "../lib/core.mjs";
 import { workRecoveryLines } from "../lib/retire-output.mjs";
 import { lifecyclePlan } from "../packages/desktop/renderer/lifecycle-contract.mjs";
 
@@ -416,7 +416,7 @@ test("0.30 a home without its session receipt (before 0.25.9) retires when its s
   } finally { try { tmux("kill-server"); } catch { /* not running */ } }
 });
 
-test("0.30 a home without its session receipt is absent only when no live process works in it: a process on no tmux at all refuses (named by pid), with or without a recorded launch, --force included; a failed process scan refuses as ambiguous", async () => {
+test("0.30 a home without its session receipt is absent only when no live process works in it: a process on no tmux at all refuses (named by pid), with or without a recorded launch, --force included; a failed process scan refuses as ambiguous", async (t) => {
   const hook = "import {writeFileSync} from 'node:fs'; import {basename, dirname, join} from 'node:path'; writeFileSync(join(dirname(process.env.OATS_HOME), `retire-hook-ran-${basename(process.env.OATS_HOME)}`), 'ran\\n'); console.log(JSON.stringify({meta:{retired:true}}));\n";
   const f = fixture({ capabilities: { "acme.undo": { manifest: { description: "undo", hooks: { retire: "hook.mjs" } }, files: { "hook.mjs": hook } } } });
   const socket = join(f.base, "gone-tmux.sock");
@@ -459,15 +459,20 @@ test("0.30 a home without its session receipt is absent only when no live proces
       assert.equal(r.status, 0, r.stdout + r.stderr);
       assert.equal(existsSync(home.home), false); assert.ok(hookRan(home.home));
     }
-    // (d) the scan cannot run (no lsof on PATH): ambiguous, refused, --force included.
-    const blind = legacy("blind", { launched: false });
-    const bin = join(f.base, "no-lsof-bin");
-    linkExecutables(bin, ["node", "git"]);
-    const saved = f.env.PATH;
-    f.env.PATH = `${join(f.base, "bin")}:${bin}`;
-    try { for (const extra of [[], ["--force"]]) refusedWith(blind.instance, extra, /could not scan for a process working in this home \(lsof is not on PATH\)/); }
-    finally { f.env.PATH = saved; }
-    assert.equal(existsSync(blind.home), true); assert.equal(hookRan(blind.home), false);
+    // (d) the scan cannot run (no lsof on PATH, where /proc cannot be read): ambiguous, refused,
+    // --force included. A host that reads /proc scans whatever PATH holds; there the scan that cannot
+    // run is covered in-process (test/processes-in-home.test.mjs).
+    if (processScanAvailability().mechanism === "proc") t.diagnostic("(d) not built: this host reads /proc, which no PATH removes");
+    else {
+      const blind = legacy("blind", { launched: false });
+      const bin = join(f.base, "no-lsof-bin");
+      linkExecutables(bin, ["node", "git"]);
+      const saved = f.env.PATH;
+      f.env.PATH = `${join(f.base, "bin")}:${bin}`;
+      try { for (const extra of [[], ["--force"]]) refusedWith(blind.instance, extra, /could not scan for a process working in this home \(lsof is not on PATH; install lsof\)/); }
+      finally { f.env.PATH = saved; }
+      assert.equal(existsSync(blind.home), true); assert.equal(hookRan(blind.home), false);
+    }
   } finally { for (const c of children) try { c.kill("SIGKILL"); } catch { /* gone */ } }
 });
 

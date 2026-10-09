@@ -116,7 +116,7 @@ export function fixtureEnv(base, { extra = {}, rules = fixtureRules(base) } = {}
 
 /** The host's lsof, found once when this module loads (on the PATH it loads with, else where macOS
  *  and Debian install it): the leftover check is the harness's, whatever PATH a test gives the kernel
- *  it exercises. */
+ *  it exercises. Used only where the kernel cannot read /proc (awebai/oats#625). */
 const LSOF = (() => {
   for (const dir of [...(process.env.PATH || "").split(delimiter).filter(isAbsolute), "/usr/sbin", "/usr/bin"]) {
     try { accessSync(join(dir, "lsof"), constants.X_OK); return join(dir, "lsof"); } catch { /* next */ }
@@ -124,20 +124,25 @@ const LSOF = (() => {
   return null;
 })();
 /** Fail when a process still works in the fixture base: a hook's or a CLI's grandchild that outlived
- *  the test (awebai/oats#801). Uses the kernel's own scan (processesInHome, over lsof: a prerequisite
- *  of the suite, awebai/oats#783), which leaves out its caller and the caller's direct children. A
+ *  the test (awebai/oats#801). Uses the kernel's own scan (processesInHome: /proc on Linux, else lsof,
+ *  a prerequisite of the suite there, awebai/oats#783, #625), which leaves out its caller and the
+ *  caller's direct children. A
  *  grandchild whose parent has exited is reparented, and is found. A test's own forgotten direct
  *  child is that test's own bug: it is not found here. A process still exiting gets `settleMs` to
  *  go; nothing is killed. The failure names each pid and command. */
 export function assertNoFixtureProcesses(base, { settleMs = 2000 } = {}) {
   // Loaded here, not imported: the kernel reads some defaults from the environment when it loads,
   // and a helper must not load it earlier, under another environment, than a suite would.
-  const { processesInHome } = createRequire(import.meta.url)("../../lib/core.mjs");
+  const { processesInHome, processScanAvailability } = createRequire(import.meta.url)("../../lib/core.mjs");
+  // /proc does not depend on PATH; lsof is the one found when this module loaded.
+  const proc = processScanAvailability().mechanism === "proc";
   const deadline = Date.now() + settleMs;
   let scan;
   while (true) {
-    scan = LSOF ? processesInHome(base, { exec: (cmd, args, opts) => execFileSync(cmd === "lsof" ? LSOF : cmd, args, opts) }) : { ok: false, error: "lsof is not installed" };
-    if (!scan.ok) throw new Error(`cannot check for processes left in the fixture ${base}: ${scan.error} (lsof is a prerequisite of the test suite, awebai/oats#783)`);
+    scan = proc ? processesInHome(base)
+      : LSOF ? processesInHome(base, { exec: (cmd, args, opts) => execFileSync(cmd === "lsof" ? LSOF : cmd, args, opts) })
+      : { ok: false, error: "lsof is not installed" };
+    if (!scan.ok) throw new Error(`cannot check for processes left in the fixture ${base}: ${scan.error} (where /proc cannot be read, lsof is a prerequisite of the test suite, awebai/oats#783)`);
     if (!scan.processes.length || Date.now() >= deadline) break;
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100); // a wait that starts no process: PATH may hold none
   }
@@ -206,6 +211,8 @@ export function isolateSessionEnvironment(base, { userConfig = false } = {}) {
   const tmux = executable("tmux");
   const bin = join(base, "system-bin");
   linkExecutables(bin, ["node", "sh", "bash", "cat", "env", "sleep", "git", "which", "ps"]);
+  // The kernel's process scan runs lsof where it cannot read /proc (macOS): the host's, when it has one.
+  if (LSOF) symlinkSync(LSOF, join(bin, "lsof"));
   const tmuxTmpdir = privateTmuxTmpdir();
   ensureOatsSocketDir(tmuxTmpdir);
   const wrapper = join(bin, "tmux");

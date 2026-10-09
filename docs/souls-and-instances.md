@@ -901,8 +901,8 @@ or the recorded window is gone and no pane on that server works in the home;
 and, always, no live process on this host works in the home (a harness
 started by hand elsewhere counts). Retire then runs its hooks and preserves
 its work as usual. If the recorded window is still there, a pane or a process
-works in the home (the refusal names its pid), or the process scan (`lsof`)
-cannot run, retire refuses with
+works in the home (the refusal names its pid), or the
+[process scan](#the-process-scan) cannot run, retire refuses with
 `E_RUNTIME_ENDPOINT_UNKNOWN`, even with `--force`: stop that session yourself,
 then retire again. `oats retire <instance> --plan` says which case applies.
 
@@ -912,11 +912,28 @@ home. When the recorded server cannot be reached because its socket file is
 missing (after a reboot), retire proceeds only when no process on this host
 works in the home (any process whose working directory is in the home, not
 only the harness); a tmux server that lost its socket file still runs, and
-recreates the socket when its process is sent `SIGUSR1`. That check needs
-`lsof`: on a host without it, a retire whose recorded socket file is missing
-is refused, and the message says that `lsof` is missing; install it, then
-retire. A scan that does not complete (a timeout, for example) refuses the
-same way, also for a home without its receipt.
+recreates the socket when its process is sent `SIGUSR1`. A
+[process scan](#the-process-scan) that cannot run or does not complete (a
+timeout, for example) refuses the same way, also for a home without its
+receipt. Status, start and stop apply the same rule to a missing socket file
+([Sessions](execution-targets.md#missing-socket)).
+
+<a id="the-process-scan"></a>
+**The process scan.** "No process works in the home" comes from one scan of
+the host's processes and their working directories. On Linux it reads
+`/proc` (each process's `cwd` link, `comm` and `stat`); elsewhere (macOS) it
+runs `lsof`. A Linux host whose `/proc/self/cwd` cannot be read uses `lsof`
+too. On a host with neither, `oats doctor` says so in a
+`process-scan-unavailable` information line, and retire refuses where it must
+rule out a live process (a home without its session receipt, a missing
+recorded tmux socket, a Herdr home), as do session start and stop when a
+recorded tmux socket is missing: install `lsof`. The scan sees only the
+processes this user may inspect: a process of another user, or a
+non-dumpable one of the same user (such as `ssh-agent`), is not seen by
+either mechanism, so one of those working in the home does not stop a
+retire. Refusing whenever such a process exists would refuse on every host
+(root daemons, `ssh-agent`). The harness OATS launches runs as the user and
+can be inspected, and it is the process the scan exists to find.
 
 `oats retire <instance> --self` lets an instance retire itself when the human
 or briefing says it is done. A live harness cannot give a stable final

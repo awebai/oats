@@ -486,12 +486,33 @@ tmux -L oats kill-server                         # replace it: ends EVERY sessio
 - `-L oats` reaches the server of the environment you type it in
   (`TMUX_TMPDIR`). For the server an instance is on, use the socket from its
   row in `oats status --json`: `tmux -S <socket> …`.
-- A tmux server whose socket file is missing or does not answer reads as not
-  reachable, which is not proof that it exited: status, start and stop read
-  that state as stopped
-  ([#624](https://github.com/awebai/oats/issues/624)). That is an existing
-  limit of every tmux server OATS uses, not of the `oats` server in
-  particular.
+- <a id="missing-socket"></a>A tmux server whose socket file is missing
+  (`error connecting to <socket> (No such file or directory)`) is not proof
+  that it exited: a server outlives its removed socket file (a
+  temporary-files cleaner, a removed socket directory), and tmux gives the
+  same words after a reboot, when the server is gone. So OATS reads it as
+  stopped only when no process works in the instance's home
+  ([the process scan](souls-and-instances.md#the-process-scan)): the row is
+  not running and a start creates the window again, as after a reboot. When
+  a process works there, or the scan cannot run, the state is not
+  established: `oats status` shows the row `running: null` with
+  `runtimeState: "unreachable"` and a `runtimeError` that names the
+  processes (pid and program, at most five) or the scan's error;
+  `oats session start` and `restart` refuse with `E_SESSION_UNKNOWN` and
+  create no server at that path; `oats instance stop` refuses with
+  `E_SESSION_UNAVAILABLE`, never "already idle". tmux recreates a removed
+  socket file when its server process receives `SIGUSR1`
+  (`kill -USR1 <pid of that tmux server>`); OATS names that and never sends
+  it. Any process working in the
+  home counts, a shell left in that directory included, as for retire: the
+  message names its pid and program, so end it or leave the directory. A
+  socket file no server listens on (`no server running on <socket>`) is
+  definitive: stopped, with no scan
+  ([#624](https://github.com/awebai/oats/issues/624)). This holds for every
+  tmux server OATS reads, not only the `oats` server, and for a home that
+  records no socket and reads your default server. A home that records
+  neither a socket nor a launch (`--no-launch`) reads as not running
+  whatever works in it.
 
 <a id="existing-instances"></a>
 #### Existing instances
@@ -582,6 +603,8 @@ included, opens on [the OATS tmux server](#the-oats-tmux-server).
   pane is reused in place. A missing window, or one whose tmux server cannot
   be reached, is created again on the OATS tmux server, and the start warns when that is
   not the server the home recorded ([Existing instances](#existing-instances)).
+  A server whose socket file is missing counts as gone only when no process
+  works in the home ([missing socket file](#missing-socket)).
 - A state that cannot be established is refused (`E_SESSION_UNKNOWN`). Two
   starts of one home serialize (`E_SESSION_START_BUSY`). A home being retired
   is refused (`E_INSTANCE_RETIRING`).
@@ -743,7 +766,10 @@ children and uncommitted work, with a `planRevision`. `--apply --plan-revision
 <rev> --idempotency-key <key>` stops the instance and its recorded children
 first (`--no-recursive` stops only the instance), with the same bounded
 SIGTERM. Restart the instance later with `oats session start` or
-`oats session restart`.
+`oats session restart`. An instance whose recorded tmux socket file is
+missing while a process works in its home, or the process scan cannot run,
+is not reported idle: its result is `E_SESSION_UNAVAILABLE` and nothing is
+stopped ([missing socket file](#missing-socket)).
 
 ### Inspect, input and attach
 

@@ -2226,7 +2226,11 @@ its absence.
   claim is kept as `recordedHome`/`recordedInstance`), `running` (read from
   the row's recorded tmux socket and session, never the caller's `$TMUX`;
   `null` with `runtimeState: "unreachable"` and the tmux error as
-  `runtimeError` when that server cannot be read; `null` for a home a
+  `runtimeError` when that server cannot be read, and also when its socket
+  file is missing while a process works in the home or the process scan
+  cannot run, `runtimeError` then naming the processes or the scan's error
+  ([#624](execution-targets.md#missing-socket); with no process in the home
+  a missing socket file reads `false`, as after a reboot); `null` for a home a
   Herdr-era kernel recorded, with `runtimeState: "unsupported"` and
   `runtimeError: "E_HERDR_REMOVED: …"`, the recorded `sessionTarget` staying
   in the row),
@@ -2923,7 +2927,10 @@ the instance back.
   idempotencyKey, planRevision, at, ok, results, retained: ["home", "work",
   "transcript", "launch"], replayed: false}`. A result is `{instance, home,
   ok: true, stopped, alreadyIdle, state}` or `{instance, home, ok: false,
-  code, message, stillRunning: [pid]}`.
+  code, message, stillRunning: [pid]}`. `code` is `E_SESSION_UNAVAILABLE` when
+  whether the instance runs cannot be established, among them a recorded
+  tmux socket file that is missing while a process works in the home
+  ([#624](execution-targets.md#missing-socket)): never `alreadyIdle`.
 - `ok: false`: at least one target still runs (text mode exits 1).
 - A replay is the stored receipt (`<home>/.oats-stop-receipt.<key>.json`)
   with `replayed: true`.
@@ -2961,8 +2968,9 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   true, note}` when the session is observably gone: instance.json records no
   launch, or the recorded tmux server is not running, or the recorded window
   is gone and no pane on that server works in the home, and in every case no
-  live process on the host has its working directory in the home (`lsof`; a
-  scan that cannot run counts as not absent). Retire then proceeds
+  live process on the host has its working directory in the home
+  ([the process scan](souls-and-instances.md#the-process-scan): `/proc` on
+  Linux, `lsof` elsewhere; a scan that cannot run counts as not absent). Retire then proceeds
   without quiescing (hooks run, work is preserved). Otherwise it stays
   `unestablished`, with a `note` saying why, and retire refuses with
   `E_RUNTIME_ENDPOINT_UNKNOWN`, `--force` included. `notes` repeats either
@@ -3347,6 +3355,10 @@ selection flags. See [the start workflow](desktop-instance-start.md).
   `E_SESSION_UNKNOWN`, the receipt kept, nothing started. The message names
   that target and the way out: stop it, then `oats session restart`, which
   goes ahead once that target no longer runs. Never edit or remove a receipt by hand.
+- A recorded tmux socket file that is missing while a process works in the
+  home, or the process scan cannot run, is not a stopped server:
+  `E_SESSION_UNKNOWN`, nothing started and no server created at that path
+  ([#624](execution-targets.md#missing-socket)).
 - A lost response does not mean the launch failed: check status before a
   retry. A remote home's saved route names its execution host.
 - Errors: `E_BAD_ARGS`, `E_SESSION_UNKNOWN`, `E_UNSUPPORTED_MODE`,
