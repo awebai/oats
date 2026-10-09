@@ -54,9 +54,10 @@ kernel ships behaviour whose skill text reaches no deployment.
 - Otherwise the release has two prep PRs. The first bumps the changed capabilities and
   the package, with its notes entry; tag its merge commit `oats-framework/v<version>`.
   The kernel prep PR then pins that version: the catalog ref, `oats-workspace.yaml`, and
-  the version literals in the docs and tests. No check in CI resolves the catalog's ref:
-  before the pin merges, confirm on the remote that the tag exists and names the first
-  PR's merge commit.
+  the version literals in the docs and tests. Push the tag before the pin's CI runs: two
+  kernel tests read the catalog's ref from the remote and fail until it exists. A green
+  CI proves the tag exists, not which commit it names: before the pin merges, confirm on
+  the remote that it names the first PR's merge commit.
 - In the first PR, read every skill line added since the last framework tag: a command or
   behaviour that an admitted older kernel lacks names its version ("from OATS 0.49.0").
   Guidance text alone never raises a capability's floor.
