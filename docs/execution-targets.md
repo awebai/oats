@@ -892,7 +892,7 @@ oats session attach --home /abs/home --detach-key 'C-\'
   | How the command ended | Status |
   |---|---|
   | Left by the detach key (the agent keeps running) | 20 |
-  | The viewer ended without the key: the agent's window ended, or `oats` itself was stopped by SIGHUP, SIGTERM or SIGINT and closed the viewer (as today) | 0 |
+  | The viewer ended without the key: the agent's window ended, or `oats` itself was stopped by SIGHUP, SIGTERM or SIGINT and closed the viewer | 0 |
   | A refusal (bad arguments, not launched, session gone), or tmux failing under the viewer (its server exited) | 1 |
 
   20 is answered only when the key's own binding ran, and only by a kernel
