@@ -50,7 +50,7 @@ see the [official catalog](official-catalog.md) for current pins.
 ```
 
 - The Desktop accepts `desktopApi === 1` and a released `version` inside
-  `ACCEPT_RANGE` (`packages/desktop/cli-locator.mjs`); a prerelease is never
+  `ACCEPT_RANGE` (`packages/client/cli-locator.mjs`); a prerelease is never
   accepted. The real gate is the feature list; its minimum is
   `packages-no-approval`.
 - `harnesses` is what `--harness` accepts; `sessionBackends` what `--backend`

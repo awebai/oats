@@ -581,7 +581,7 @@ come from every view holding a remote deployment (`serverFacts`, since
 group's deployment only (`serverRows`).
 
 Problems read as one plain sentence about what happened and what to do
-(`spawn-messages.mjs`, keyed by the contract's stable code). The code and the
+(`packages/client/spawn-messages.mjs`, keyed by the contract's stable code). The code and the
 technical or kernel text — paths, hashes, the `git clone` remedy — stay
 behind a **Details** toggle and in `data-code`; no decision depends on wording.
 
@@ -596,7 +596,7 @@ inspector.
 selected **soul** (`--soul`, what a spawn of it resolves now) or the selected
 **instance** (`--home`, as spawned — an instance never changes under itself).
 There is no scope subject. The gate is the probe integer `operationsApi === 2`
-(`inspect-contract.mjs`); a 0.25 kernel gets the "update OATS" line and no
+(`packages/client/inspect-contract.mjs`); a 0.25 kernel gets the "update OATS" line and no
 request. The response must name exactly the selected subject, or it is not
 rendered The payload's own integer is checked too: a classic scope
 still answers `operationsApi: 1`, which the inspector names ("still uses the
@@ -746,7 +746,7 @@ Provides on every rebuild (`hold()` puts focus and both panes' scroll back),
 so a catalog repaint never touches what is open. `update()` takes the
 CATALOG row (from a soul page, the catalog's row, not the resolved one): its
 selector (`--member repoKey` / `--package id`) and commit key the subject; an
-unchanged subject reads nothing. The decoder (`capability-show-contract.mjs`,
+unchanged subject reads nothing. The decoder (`packages/client/capability-show-contract.mjs`,
 shared with the server) refuses a whole answer it cannot read. Every path is
 relative to the capability directory (a skill's files too; the tree shows
 them relative to the skill). The show read and each file read carry tickets
@@ -835,7 +835,7 @@ that show it carry `warnings[]` (`{code, capability, path, message}`; strings in
 changes a ready state or an attention count (the Sources tab's count already
 counts every non-team workspace warning, unchanged). Two modules, used by every
 surface:
-`capability-warnings-contract.mjs` (pure, imported by the server: `warningsOf`,
+`packages/client/capability-warnings-contract.mjs` (pure, imported by the server: `warningsOf`,
 `previewWarningsOf`, `warningsShown`) projects tolerantly (a missing or
 malformed list is none, a malformed entry is skipped, nothing refuses its
 document) and idempotently (every string is already a `displayLine`, so the
@@ -969,7 +969,7 @@ the same one read per selection, never a poll. The Soul tab says "Reading from
 `unroutableReason`, each as the failed block with nothing sent. A host's
 refusal arrives as the route's relayed `reason` (`/api/capabilities` attaches
 `hostReason`, `apiJson`/`httpError` keep it only through `remoteReason`), and
-`relayedFailure` (`remote-address.mjs`) turns it into the failed block: the
+`relayedFailure` (`packages/client/remote-address.mjs`) turns it into the failed block: the
 headline, or for `E_REMOTE_INCOMPATIBLE` the section's own
 `incompatibleSentence`, with the code and the kernel's message under Details.
 The Teams card's own provider operations (its list, Refresh, join/leave) relay
@@ -1049,7 +1049,7 @@ the panel on an instance.
 
 Every fact comes from the installed kernel; the Desktop parses no deployment
 file and resolves nothing itself (`workspace-discovery.mjs`, `workspace-catalog.mjs`,
-`workspace-sync-view.mjs`, server `server/workspace-sync.mjs`, `workspace-cli.mjs`).
+`workspace-sync-view.mjs`, server `server/workspace-sync.mjs`, `packages/client/workspace-cli.mjs`).
 Gate: `version --json` advertises `workspace-v2` with `workspaceApi: 2`; a remote
 workspace is observed through its server and never synced from here.
 
@@ -1074,7 +1074,7 @@ workspace is observed through its server and never synced from here.
   - With the kernel feature `souls-capabilities` (`soulsComposition`): the
     souls whose composition includes the capability. Every `oats souls` row's
     `capabilities` entry (`{name, kind, repoKey|package, from}`, read only by
-    `deployment-data.mjs soulCapabilitiesOf`) is joined to the catalog row on
+    `packages/client/deployment-data.mjs soulCapabilitiesOf`) is joined to the catalog row on
     name, kind and repository or package (`composes` / `soulsUsing`). A soul
     whose `capabilities` is `null` (not spawnable) is not counted.
   - Without it: the souls whose instances record the module (`capabilityUse`).

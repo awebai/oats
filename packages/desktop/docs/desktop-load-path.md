@@ -9,13 +9,13 @@ asks it and *what it keeps*.
 
 One cycle reads every registered deployment (`observeDeployment` each),
 at most `MAX_DEPLOYMENT_OBSERVATIONS` (2) at a time, first come first served
-(`mapBounded`, `server/deployment-observer.mjs`): the bound is the observer's
+(`mapBounded`, `packages/client/deployment-observer.mjs`): the bound is the observer's
 own admission, so no deployment is refused for being third. An empty
 deployment (no souls, no instances) is an observation like any other: it is
 published as `observed` with no instances, never left `pending`. For each:
 
 1. `oats status` and `oats workspace status` run together
-   (`server/deployment-observer.mjs`). On a **cold** cycle — nothing held for
+   (`packages/client/deployment-observer.mjs`). On a **cold** cycle — nothing held for
    the deployment, or only a failure past its retry window — `oats souls` and
    `oats capabilities` start in the same tick, *unbound*: their key is not
    known until the workspace status lands.
@@ -153,7 +153,7 @@ else in `workspace status` changes it.
 
 ## Cadence and window state
 
-`server/refresh-loop.mjs` owns when a cycle runs: the next one starts a fixed
+`packages/client/refresh-loop.mjs` owns when a cycle runs: the next one starts a fixed
 interval **after** the previous completed — 5 s while a window is focused,
 30 s while every window is blurred or hidden — so a slow kernel is never asked
 twice at once and an idle app costs little. A cycle requested during a cycle
@@ -180,7 +180,7 @@ show nothing new.
 
 A window focus re-probes the CLI (`POST /api/cli/reprobe`). The probe
 generation — the revision every pending deployment read is admitted under —
-moves only when `probeSignature` (`renderer/cli-probe-contract.mjs`:
+moves only when `probeSignature` (`packages/client/cli-probe-contract.mjs`:
 everything but `probedAt`, `tried`, `source`) changes. An unchanged probe
 updates the diagnostics in place, cancels nothing and wipes nothing. The
 renderer's `cli-status.mjs` applies the same rule before notifying its
@@ -191,7 +191,7 @@ integer or remote list still invalidates as before.
 ## `--max-age` (kernel feature `observe-max-age`)
 
 When the probe declares the feature, the read adapters
-(`deployment-read-cli.mjs`, `workspace-cli.mjs`, `cli-adapter.mjs
+(in `packages/client/`: `deployment-read-cli.mjs`, `workspace-cli.mjs`, `cli-adapter.mjs
 cliCapability`) append `--max-age <seconds>` to status, workspace status,
 souls, capabilities and inspect: `0` for the first cycle of a deployment
 (admission), a mutation's follow-up and any `refresh: true`; `60` for
@@ -199,7 +199,7 @@ background cycles, key-change re-reads, inspect cache misses and the focus
 prompt cycle. Without the feature the argv is byte-identical to the flagless
 one whatever the caller asked. Reuse is local only: a routed call (`--server`)
 never carries the flag, and mutating verbs refuse the option
-(`renderer/deployment-contract.mjs`: `maxAgeArgv`, `validMaxAge`). The kernel
+(`packages/client/deployment-contract.mjs`: `maxAgeArgv`, `validMaxAge`). The kernel
 reports `observation` only when the flag was passed; otherwise `observedAt` is
 the read's completion time.
 
