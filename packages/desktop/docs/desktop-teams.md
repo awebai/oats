@@ -2,7 +2,7 @@
 
 The Desktop reads and edits a deployment's teams through the kernel verbs `oats teams` and
 `oats soul teams`, on a CLI with feature `team-model-2` (OATS 0.30–0.37) or `team-model-3` (OATS
-0.38; `teamModelOf` in `renderer/team-rows.mjs`). The kernel is the only writer of
+0.38; `teamModelOf` in `packages/client/team-rows.mjs`). The kernel is the only writer of
 `oats-local.yaml`; the Desktop server never writes that file (or `oats-workspace.yaml`) itself.
 
 **Team model 3** ([design](../../../docs/design/2026-10-02-team-model-3.md), the shapes in

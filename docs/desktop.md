@@ -501,10 +501,13 @@ Developer docs live in [`packages/desktop/README.md`](../packages/desktop/README
 (electron-builder; macOS ad-hoc signed — not Developer ID, not notarized —
 certificate auto-discovery disabled) and
 `npm run dist:smoke` verifies the packed artifact. Build/release CI uses the
-marked build-verify mode (inventory + strict codesign verification +
-node-pty ABI + a headless run of the bundled backend and its liveness
-collector from `app.asar`, no GUI launch); a local
-interactive run may also exercise the launch phase. The headless run starts
-the backend as the app does, checks that it answers and that it exits when its
-stdin closes, and runs the collector once; it does not exercise the GUI or,
-on Linux, the AppImage's launcher and runtime.
+marked build-verify mode on every leg (inventory + strict codesign
+verification + node-pty ABI + a headless run of the bundled backend, of its
+liveness collector and of every module main imports, from `app.asar` and the
+`client/` directory beside it, no GUI launch). The Linux leg then runs the
+smoke once more with its launch phase, under a virtual display; no macOS leg
+launches the window. A local interactive run may also exercise the launch
+phase. The headless run starts the backend as the app does, checks that it
+answers and that it exits when its stdin closes, and runs the collector once;
+it does not exercise the GUI or, on Linux, the AppImage's launcher and
+runtime.

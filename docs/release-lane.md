@@ -125,6 +125,11 @@ Everything after `build` reads `MANIFEST.json` and the files already staged:
   does not run.
 - **Legs for hosts you do not have.** The Linux AppImage/DEB need a Linux
   host; the lane says so and `stage` lists what is missing.
+- **The packaged window launch.** `release.yml` launches the packaged window
+  on its Linux leg, under xvfb. The lane's `desktop` phase launches nothing on
+  any host, so a lane release reports the Linux launch check as not run. The
+  obligation stays open until a hosted run (pushing the tag runs
+  `release.yml`) or a person's launch covers it.
 
 ## How it relates to `release.yml`
 
@@ -150,11 +155,16 @@ The macOS x64 leg cross-builds on macos-14 and installs Rosetta 2 so that its
 x64 Electron + node-pty ABI probe really executes; a wrong-architecture
 native module fails that leg.
 
-CI does **not** gate the packaged GUI launch: ad-hoc-signed, non-notarized
-Electron apps do not
-have a reliable interactive windowserver in headless CI. Post-publish launch
-acceptance is therefore owned by the operator/maintainer, using the actual
-released installers (not a source checkout):
+CI launches the packaged window on the Linux leg only: `release.yml` and
+`build-installers.yml` run the smoke once more with its launch phase, under
+xvfb, and a window that does not reach the shell fails the leg. That is the
+unpacked Linux build, not an installed AppImage or DEB. CI does **not** gate
+the macOS launch: ad-hoc-signed, non-notarized Electron apps do not
+have a reliable interactive windowserver in headless CI. The lane does not
+launch the window: see
+[What the lane cannot produce](#what-the-lane-cannot-produce). Post-publish
+launch acceptance is therefore owned by the operator/maintainer, using the
+actual released installers (not a source checkout):
 
 1. Verify the asset checksum/attestation, install it outside the source tree,
    and on macOS use right-click → **Open** for the Gatekeeper step (ad-hoc
