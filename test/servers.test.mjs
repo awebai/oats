@@ -890,6 +890,34 @@ test("routed session attach --detach-key: the key travels, one quoted word, only
       assert.equal(r.stdout, "", `${what}: no argv is printed for a host that would ignore the flag`);
       assert.deepEqual(words(), [probeWord(oldOats)], what);
     }
+    // A name with no saved route here is resolved through the host's roster. With a key the
+    // feature is asked first: the host without it gets the probe alone, whether its roster holds
+    // the name (dev-dk, whose saved route belongs to the other registration) or not.
+    for (const name of ["dev-dk", "not-on-the-roster"]) for (const print of [[], ["--print"]]) {
+      const what = `--instance ${name} ${print.join(" ")}`;
+      reset();
+      r = oats(env, ["session", "attach", "--server", "old", "--instance", name, "--detach-key", DETACH_KEY, ...print, "--json"]);
+      assert.equal(r.status, 1, `${what}: ${r.stderr}${r.stdout}`);
+      assert.deepEqual(r.json(), { schemaVersion: 1, ok: false, error: { code: "E_REMOTE_INCOMPATIBLE", message, details: { feature: DETACH_FEATURE } } }, what);
+      assert.deepEqual(words(), [probeWord(oldOats)], `${what}: the version probe and nothing else, the roster was not read`);
+    }
+    // Without a key that name is resolved as before, the roster read first and no probe under --print.
+    reset();
+    r = oats(env, ["session", "attach", "--server", "old", "--instance", "dev-dk", "--print"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(words().length, 1);
+    assert.match(words()[0], / status --json --dir /);
+    assert.equal(shellWords(r.stdout.trim()).at(-1), attachWord(oldOats));
+    // On the advertising host: the probe, then the roster, then the attach with the key.
+    reset();
+    r = oats(env, ["server", "forget", "build", "--instance", "dev-dk", "--json"]); assert.equal(r.status, 0, r.stderr + r.stdout);
+    reset();
+    r = oats(env, ["session", "attach", "--server", "build", "--instance", "dev-dk", "--detach-key", DETACH_KEY, "--print"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(words().length, 2, words().join(" | "));
+    assert.equal(words()[0], probeWord(CLI));
+    assert.match(words()[1], / status --json --dir /);
+    assert.equal(shellWords(r.stdout.trim()).at(-1), attachWord(CLI, "--detach-key", DETACH_KEY));
     // Without a key that host is attached as before: nothing is asked of it under --print.
     reset();
     r = oats(env, ["session", "attach", "--server", "old", "--home", home, "--print"]);
@@ -1001,17 +1029,20 @@ test("attachArgv with a detach key: validated before anything is asked of the ho
   const server = { id: "build", sshHost: "h", workspace: "/w", oatsPath: "oats" };
   const home = "/srv/dk/agents/dev/instances/dev-dk";
   const probe = (features, remote) => ({ schemaVersion: 1, name: "@awebai/oats", version: "0.50.0", desktopApi: 1, harnesses: ["pi"], sessionBackends: ["tmux"], launchOptions: [], remote, features });
-  /** A host: every remote command word it was sent, the version probe included. */
-  const host = (features, remote = ["spawn", "status", "session"]) => {
+  /** A host: every remote command word it was sent, the version probe included. Its roster, when
+   *  it has one, holds the instance dev-dk at `home`. */
+  const host = (features, remote = ["spawn", "status", "session"], { roster = false } = {}) => {
     const sent = [];
     const exec = (bin, argv) => {
       const word = String(argv.at(-1));
       sent.push(word);
       if (word.includes("version --json")) return JSON.stringify(probe(features, remote));
+      if (roster && word.includes("status --json")) return JSON.stringify({ root: "/srv/dk/agents", agents: [{ name: "dev", instances: [{ instance: "dev-dk", home }] }] });
       throw new Error(`unexpected remote call: ${word}`);
     };
     return { sent, io: { server, execFileSync: exec } };
   };
+  const ROSTER = "oats status --json --dir /w";
   const PROBE = "oats version --json";
   const plainWord = `oats session attach --home ${home}`;
   const keyedWord = `${plainWord} --detach-key 'C-\\'`;
@@ -1055,6 +1086,26 @@ test("attachArgv with a detach key: validated before anything is asked of the ho
     h = host(["operations", "session-attach"]);
     assert.throws(() => attachArgv("build", { home, detachKey: DETACH_KEY }, { ...h.io, skipVersionCheck }), refused);
     assert.deepEqual(h.sent, [PROBE], `skipVersionCheck ${skipVersionCheck}`);
+    // A name with no saved route here would be resolved through the host's roster: with a key the
+    // feature is asked first, so the host without it is sent the probe and never the roster read,
+    // whether or not its roster holds the name.
+    for (const name of ["dev-dk", "not-on-the-roster"]) {
+      h = host(["operations"], undefined, { roster: true });
+      assert.throws(() => attachArgv("build", { instance: name, detachKey: DETACH_KEY }, { ...h.io, skipVersionCheck }), refused, name);
+      assert.deepEqual(h.sent, [PROBE], `${name}, skipVersionCheck ${skipVersionCheck}`);
+    }
+    // A host with the feature: the probe, once, then the roster; the name it holds is attached
+    // with the key, and one it does not hold is unknown as it is without a key.
+    h = host([DETACH_FEATURE], undefined, { roster: true });
+    assert.equal(attachArgv("build", { instance: "dev-dk", detachKey: DETACH_KEY }, { ...h.io, skipVersionCheck }).argv.at(-1), keyedWord);
+    assert.deepEqual(h.sent, [PROBE, ROSTER], `skipVersionCheck ${skipVersionCheck}`);
+    h = host([DETACH_FEATURE], undefined, { roster: true });
+    assert.throws(() => attachArgv("build", { instance: "not-on-the-roster", detachKey: DETACH_KEY }, { ...h.io, skipVersionCheck }), (e) => e.code === "E_SNAPSHOT_UNKNOWN");
+    assert.deepEqual(h.sent, [PROBE, ROSTER]);
+    // Without a key the roster is read first, as before, and the probe only where it always was.
+    h = host(["operations"], undefined, { roster: true });
+    assert.equal(attachArgv("build", { instance: "dev-dk" }, { ...h.io, skipVersionCheck }).argv.at(-1), plainWord);
+    assert.deepEqual(h.sent, skipVersionCheck ? [ROSTER] : [ROSTER, PROBE]);
     // A host that has neither the feature nor the session commands gets the same refusal: the
     // roster read behind the older refusal's hint is not sent.
     h = host([], ["spawn", "status"]);
