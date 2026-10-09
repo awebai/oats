@@ -316,8 +316,12 @@ keeps everything after the list.
   not select is **filtered** (counted, not invalid). `url` (optional): an
   `https:` URL of at most 500 characters, without user or password, whose
   host is one of the source's `urlHosts` (with none declared, every `url` is
-  invalid). `fields` (optional): declared names only, each a string matching
-  its pattern. Any other key makes the event invalid, and so does a key the
+  invalid); the string itself must be printable ASCII with no space
+  (`0x21`–`0x7e`), since it is stored and rendered as written. `fields`
+  (optional): declared names only, each a string matching its pattern; a
+  value carrying a control character, a line or paragraph separator, a bidi
+  control, U+200B, U+2060, U+FEFF or a tag character is invalid whatever its
+  pattern admits. Any other key makes the event invalid, and so does a key the
   same answer already listed (the first is kept). An **invalid event** is
   dropped alone and the others go on; the poll lists it in `invalidEvents` as
   `{ text, rule }` (its JSON, at most 200 characters, cut with `…`), and `status` keeps

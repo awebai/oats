@@ -290,14 +290,15 @@ overrides it; a workspace trigger made `from:` it shows its file header's
 description, else the template's. A kernel before 0.43.0 refuses the key, so
 a package whose template sets it needs `compatibility.oats: ">=0.43.0"`.
 
-A template may name a capability's trigger source (OATS 0.49.0): its
+A template may name a capability's trigger source (feature
+`trigger-sources`): its
 `definition.on` is `{ source: "<capability>:<source>", params?, events,
 poll? }`, and a parameter's `path` may point into `on.params` (for example
 `on.params.prefix`). `add --from` checks what it means against the soul it
 spawns, as for any capability-source trigger
-([schedules.md](schedules.md#capability-sources)). A kernel before 0.49.0
+([schedules.md](schedules.md#capability-sources)). A kernel before OATS 0.50.0
 refuses the source, so a package whose template names one needs
-`compatibility.oats: ">=0.49.0"`.
+`compatibility.oats: ">=0.50.0"`.
 
 ## Compatibility floors
 

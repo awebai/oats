@@ -1306,13 +1306,18 @@ instance name, the event file and the spawn.
 - **`fields`** (optional, at most 16, named as parameters): `{ pattern? }`, by
   default `^[A-Za-z0-9._/:@-]{1,200}$`. A trigger's template may name a
   declared field as `{fields.<name>}`; the value is the event's, validated.
+  Whatever the pattern admits (`.*` included), a value carrying a control
+  character, a line or paragraph separator, a bidi control, U+200B, U+2060,
+  U+FEFF or a tag character makes its event invalid.
 - **Patterns** are JavaScript regular expressions with the `u` flag (the flag
   JSON Schema's `pattern` uses), compiled once and always matched whole: the
   kernel wraps each as `^(?:…)$`. One that does not compile makes the source
   malformed.
 - **`urlHosts`** (optional, at most 16): the exact lowercase hostnames an
   event's `url` may name. With none declared, an event's `url` is invalid.
-  The allow-list lives here, never on an event.
+  The allow-list lives here, never on an event. An event's `url` must also be
+  printable ASCII with no space (`0x21`–`0x7e`) as written: percent-encode
+  anything else.
 
 **Containment.** A malformed `triggerSources` **never refuses the
 capability**. It is not part of the manifest contract that spawn, discovery
@@ -1413,7 +1418,11 @@ its `code` are never composed into a task or any kernel sentence. They are
 kept only in fields that name the source and printed under `source says:`,
 capped (`why` 200 characters, `message` 500, `code` 128) and with every
 control character, line or paragraph separator, bidi control, U+200B,
-U+2060, U+FEFF and tag character replaced by U+FFFD.
+U+2060, U+FEFF and tag character replaced by U+FFFD. What a task may carry
+(`{subject}`, `{key}`, `{url}`, `{fields.<name>}`) is refused rather than
+replaced: an event whose `url` is not printable ASCII, or whose field value
+carries one of those characters whatever its pattern admits, is an invalid
+event.
 
 **Time.** A source gets at most 30 s and is killed after that; the tick's
 whole poll, resolution included, gets 35 s, and polls run only while they can

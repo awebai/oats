@@ -20,7 +20,7 @@ The contract is `docs/schedules.md` in the installed kernel ("Kinds",
 - a **trigger** spawns a NEW instance when an event matches: "when EVENT,
   spawn SOUL with TASK, in TEAMS". The event comes from the built-in
   `github.pull_request` source or from a **trigger source** a capability
-  declares (`on.source: "<capability>:<source>"`, OATS 0.49.0).
+  declares (`on.source: "<capability>:<source>"`, OATS 0.50.0).
 
 ## One host timer, no daemon
 

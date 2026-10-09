@@ -117,7 +117,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `soul-composed-instructions` | `oats inspect --soul <soul> --instructions` and its `souls[].composedInstructions`: the AGENTS.md a spawn of the soul here would write, with the soul body and each composed block as ranges, OATS 0.46.0 ([`oats inspect`](#oats-inspect---home-----soul----dir----json--operationsapi-2)) | |
 | `teams-conditional-default` | `oats teams default <label> --if-absent \| --expect <label>` and `E_TEAM_DEFAULT_MISMATCH`; `oats teams add … --no-default` and its `reused` answer; `E_TEAM_EXISTS` `observed`; unknown flags on `oats teams` refused, OATS 0.48.0 ([`oats teams`](#oats-teams)). A kernel without it ignores the flags: `--if-absent` there is an unconditional set, so check the feature before passing them | |
 | `worktree-event` | the `worktree` hook event; `oats worktree add\|remove` ([`oats worktree`](#oats-worktree)); `worktreeHooks` on `spawn --preview` and on the spawn result and `spawned` event; `spawnInProgress` on `oats status --json` instance rows; the `worktree-added` event kind; `E_INTERRUPTED` and `E_WORKTREE_DIRTY`, OATS 0.49.0 | |
-| `trigger-sources` | capability-declared trigger sources: `on.source: "<capability>:<source>"` triggers and their added row keys, `oats trigger poll`, `E_TRIGGER_SOURCE`, `E_TRIGGER_POLL` `details.cause`, and `triggerSources`/`triggerSourceProblems` on `oats capabilities show`, OATS 0.49.0 ([`oats trigger`](#oats-trigger)) | `triggerApi: 1` (payload only) |
+| `trigger-sources` | capability-declared trigger sources: `on.source: "<capability>:<source>"` triggers and their added row keys, `oats trigger poll`, `E_TRIGGER_SOURCE`, `E_TRIGGER_POLL` `details.cause`, and `triggerSources`/`triggerSourceProblems` on `oats capabilities show`, OATS 0.50.0 ([`oats trigger`](#oats-trigger)) | `triggerApi: 1` (payload only) |
 | `server-probe-features` | `features` on `oats status --json` (this kernel's own list, as `version --json` answers it), and each `oats server roster --json` group's `probe.features`: the host's list, relayed from that status answer after validation, `null` when unknown, OATS 0.49.0 ([The remote roster](#the-remote-roster-oats-server-roster---json)) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
@@ -1002,7 +1002,7 @@ nothing reads a working clone.
   [capability warnings](#capability-warnings-hook-event-unsupported-oats-0490).
   Their `path` is the repository-relative form, unlike the paths above. The
   text form prints them (to stderr with `--file`).
-- `triggerSources` (feature `trigger-sources`, OATS 0.49.0), after
+- `triggerSources` (feature `trigger-sources`), after
   `warnings`, only when the manifest declares the key: the declaration
   exactly as written, whatever its shape (untrusted text: render it as
   text). `triggerSourceProblems: [{source, pointer, message}]` follows only
@@ -3583,7 +3583,7 @@ oats trigger list | show <id> | status [<id>] | test <id> | poll <id> [--max-age
 
 Event-driven spawns. Local definitions live in `oats-schedules.json` (`kind:
 "trigger"`). A trigger's source is the built-in `github.pull_request` or, with
-feature `trigger-sources` (OATS 0.49.0), `<capability>:<source>`, a source a
+feature `trigger-sources`, `<capability>:<source>`, a source a
 capability declares ([schedules.md](schedules.md#capability-sources)).
 
 - `list`: `{triggerApi, scope, host, snapshot, triggers, scheduler}`.
@@ -3645,6 +3645,17 @@ capability declares ([schedules.md](schedules.md#capability-sources)).
   capped (200, 128, 500 characters) with control, separator, bidi,
   invisible and tag characters replaced by U+FFFD: render them as text,
   marked as the source's.
+  - **Presence and staleness.** `source`, `invalidEvents` and `skipped` are
+    always present on a capability source's status row. The two lists are
+    `[]` until the trigger's first good poll and hold the last good poll's
+    lists after that. A failed poll (`lastPoll.ok: false`) and a failed
+    meaning check (`invalid`, which leaves `lastPoll` as it was) leave them
+    unchanged, so they can be older than `lastPoll.at`, `lastError.at` and
+    `invalid.at`.
+  - **Arrays versus counts.** In `trigger test`'s `source` (`ok: true`) and
+    in `trigger poll`'s answer, `events`, `invalidEvents` and `skipped` are
+    arrays and `filtered` is a count. In `lastPoll` (`ok: true`) and in the
+    tick's `polled` row, all four are counts.
 - `test <id>` → `{triggerApi, id, ok, placement: {runsOn, owner, host,
   runsHere, reason, detail?, enabledHere}, gh: {ok, account,
   credentialSource, reachesHostTimer, note, detail}, repo: {key, readable,
