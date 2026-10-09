@@ -1091,6 +1091,42 @@ recovery are in no commit: a retained worktree or the source may still hold
 them, or the recovery may be the only copy, so inspect them before you
 remove it.
 
+`oats doctor` lists them all. It prints one `retained-recovery:` line per
+recovery copy in each instances directory of the deployment, and one
+`retained-worktree:` line per retained worktree. Each kind starts with a line
+that gives its total. At most 50 items follow, then `… and N more`. The lines
+are also in `oats doctor --json`, in `information[]`. They are read-only: doctor
+runs Git without helpers or optional locks, refreshes no index and follows no
+link. A fact doctor can't read is said on its line.
+
+- A recovery line gives the path, the instance, `phase` and `classes` from
+  `recovery.json`, the size, and whether `after-hooks/` is there. A recovery
+  whose `recovery.json` is missing or unreadable is listed and says so, with
+  the instance taken from the directory's name. A dot-named entry is the
+  staging of a copy that a retire could not remove (`unfinished copy`).
+- A retained worktree line gives the path, the repository, the branch (or
+  `detached at <commit>`), and `clean` or `not clean; uncommitted: <classes>`
+  (staged or unstaged changes, conflicts, untracked or ignored files, an
+  operation in progress). Doctor doesn't ask Git for the status of a
+  repository whose configuration names a content filter (`filter.<driver>.clean`
+  or `.process`), because the status would run it: the line says `clean:
+  unknown` and names the filter. The status never enters a submodule: it
+  compares only the commit each one is at. A tree with a submodule is then
+  `clean: unknown (submodule work trees not read)`, or `not clean` when the
+  rest of it is, with `submodule work trees not read` after it. An entry that isn't a registered worktree is listed and
+  says why.
+- Both end with the reachability fact for the HEAD commit. It is checked in the
+  source repository against every ref but the tree's own branch:
+  `commits: all reachable from <ref>`, `commits: <n> not reachable from any
+  other ref`, `commits: HEAD <commit> is not in the source repository`, or
+  `commits: unknown (<why>)`. For a recovery, the HEAD is that of its `repo/`
+  clone, and the source repository is the one its copied home's
+  `instance.json` records. That path is only a hint: it is used only when it
+  is a Git repository's top level. A recovery with no `repo/` says `commits:
+  no repository copy`. When a retained worktree of the same repository is on
+  the recovery's branch, the recovery line names it: the uncommitted bytes
+  may be in both.
+
 **Recovery copies** are at
 `<instances>/.oats-retirement/recovery/<instance>-<random>/`, beside the
 homes of the agent the instance belonged to. The retire summary prints the

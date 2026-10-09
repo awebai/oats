@@ -1130,6 +1130,12 @@ capabilities | package <id>'s capabilities> were not checked …`, never an
 empty list read as "no warning". Older kernels answer no such `warnings` key
 (inspect, readiness, show, doctor) and refuse the capability instead.
 
+`oats doctor --json` also lists what retires left behind in `information[]`:
+one `retained-recovery:` and one `retained-worktree:` line per item, after a
+line that gives each kind's total, and at most 50 items per kind
+([After a retire](souls-and-instances.md#after-a-retire-inspect-restore-dispose)).
+Each element is one line of text with no newline. The answer has no new key.
+
 ### Desktop facts
 
 Feature `desktop-facts`: facts the kernel reports so the Desktop never derives
