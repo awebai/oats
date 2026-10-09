@@ -373,9 +373,9 @@ test('E_TRIGGER_SOURCE_RUN is not a failure of the trigger: a neutral notice, th
   assert.equal(u.argvs.some(argv => argv.includes(TRIGGER_RUN_SOURCE_FLAG)), false, 'and still nothing carried the flag');
 });
 
-test('a one-press Test whose answer is a capability source\'s, on a row the list still shows as a pull request: the result is kept and the row re-read once', async t => {
+test('a one-press Test answered about a capability source, on a row the list still shows as a pull request: treated as the refusal', async t => {
   // The list on screen says github.pull_request; the kernel's definition is a capability source's whose meaning check
-  // fails, so its answer is the normal one (source.ok: false), not the refusal: no capability code ran to say so.
+  // fails, so its answer is the normal one (source.ok: false), not E_TRIGGER_SOURCE_RUN. No capability code ran either way.
   const stale = doc('trigger-list'); stale.result.triggers.find(r => r.id === 'ws/trusted').on = { source: 'github.pull_request', repo: 'github.com/acme/kb', events: ['opened'], labels: [], poll: '2m' };
   let list = stale;
   const u = await mount(t, { list: () => list, status: () => doc('trigger-status-invalid'), tested: () => doc('trigger-test-invalid-unconfirmed') }); await u.open('ws/trusted');
@@ -386,72 +386,17 @@ test('a one-press Test whose answer is a capability source\'s, on a row the list
   assert.deepEqual(u.requests.slice(before).map(([, b]) => [b.action, b.key, b.runSource]), [['test', 'ws/trusted', undefined], ['list', undefined, undefined], ['status', 'ws/trusted', undefined]],
     'the one test, then the list once, then the status of the row whose source changed; never a second test');
   assert.deepEqual(u.argvs.filter(argv => argv[1] === 'test'), [['trigger', 'test', 'ws/trusted', '--dir', DEPLOYMENT, '--json']]);
-  assert.equal(u.argvs.some(argv => argv.includes(TRIGGER_RUN_SOURCE_FLAG)), false);
-  assert.equal(u.$('.page-card[data-card="On"] dd').textContent, 'acme.graph · harvest-branches', 'the page is the capability source\'s now');
-  const card = u.$('.page-card[data-card="Test result"]');
-  assert.ok(card, 'the kernel gave this answer for this trigger: it is kept across the re-read');
-  assert.equal(card.querySelector('.auto-test-line').textContent, 'The source check failed');
-  assert.equal(u.$('.auto-ran-nothing'), null, 'not the refusal\'s notice'); assert.equal(u.confirm(), null);
-  assert.equal(u.d.activeElement, u.testButton(), 'focus is back on Test, which the press disabled; not on the result');
-  // Test on the row as it is now opens the confirm, like any capability source's.
+  assert.equal(u.$('.page-card[data-card="Test result"]'), null, 'no result card: the answer is not kept');
+  assert.equal(u.el.textContent.includes('The source check failed'), false); assert.equal(u.el.textContent.includes('Not ready'), false);
+  const notice = u.$('.auto-page .auto-ran-nothing');
+  assert.equal(notice.textContent, "Nothing ran. Testing this trigger runs a capability's source command and needs your confirmation.");
+  assert.equal(notice.getAttribute('role'), 'status'); assert.equal(notice.classList.contains('error'), false, 'no warning tone');
+  assert.equal(u.d.activeElement, u.testButton(), 'left at Test');
+  assert.equal(u.$('.page-card[data-card="On"] dd').textContent, 'acme.graph · harvest-branches', 'the row as it is now');
   u.testButton().click(); await settle();
-  assert.ok(u.confirm()); assert.equal(u.requests.length, before + 3);
-  u.key(u.d.activeElement, 'Escape'); await settle();
-  // The kept answer is the answer about that source: a later source change drops it, like any other result.
-  assert.ok(u.$('.page-card[data-card="Test result"]'));
-  list = doc('trigger-list-invalid'); list.result.triggers.find(r => r.id === 'ws/trusted').on.source = 'other.cap:new-source';
-  await u.page.refresh(); await settle();
-  assert.equal(u.$('.page-card[data-card="Test result"]'), null, 'a later source change still drops it');
-});
-
-/** The stale one-press Test above, with the list read it triggers held open: `u.settleRecovery(answer)` answers it. */
-async function staleOnePress(t) {
-  const stale = doc('trigger-list'); stale.result.triggers.find(r => r.id === 'ws/trusted').on = { source: 'github.pull_request', repo: 'github.com/acme/kb', events: ['opened'], labels: [], poll: '2m' };
-  // The kernel's definition after a further edit: another capability's source, which its status names too.
-  let moved = false;
-  const other = () => { moved = true; const l = doc('trigger-list-invalid'); l.result.triggers.find(r => r.id === 'ws/trusted').on.source = 'other.cap:new-source'; return l; };
-  const status = () => { const s = doc('trigger-status-invalid'); if (moved) s.result.triggers.find(r => r.id === 'ws/trusted').source = { capability: 'other.cap', name: 'new-source' }; return s; };
-  let list = () => stale, settleRecovery;
-  const u = await mount(t, { list: () => list(), status, tested: () => doc('trigger-test-invalid-unconfirmed') }); await u.open('ws/trusted');
-  const recovery = new Promise(resolve => { settleRecovery = resolve; });
-  list = () => { list = other; return recovery; };
-  u.testButton().focus(); u.testButton().click(); await settle();
-  assert.equal(u.automations().filter(b => b.action === 'list').length, 2, 'the re-read is out, unanswered');
-  assert.equal(u.$('.page-card[data-card="Test result"] .auto-test-line').textContent, 'The source check failed', 'the answer shows meanwhile');
-  return Object.assign(u, { other, settleRecovery: async answer => { settleRecovery(answer); await settle(); await settle(); } });
-}
-const sourceOnScreen = u => u.$('.page-card[data-card="On"] dd').textContent;
-
-for (const [how, answer] of [['answers', () => doc('trigger-list-invalid')], ['fails', () => ({ killed: true })]]) {
-  test(`a stale one-press Test whose re-read ${how} after a newer refresh moved the row to another source: the old answer does not come back`, async t => {
-    const u = await staleOnePress(t);
-    await u.page.refresh(); await settle();
-    assert.equal(u.$('.page-card[data-card="Test result"]'), null, 'the newer read found another source: the answer about acme.graph is dropped');
-    assert.equal(sourceOnScreen(u), 'other.cap · new-source');
-    const tests = u.automations().filter(b => b.action === 'test').length;
-    await u.settleRecovery(answer());
-    assert.equal(u.$('.page-card[data-card="Test result"]'), null, 'the superseded re-read keeps nothing');
-    assert.equal(u.el.textContent.includes('The source check failed'), false);
-    assert.equal(sourceOnScreen(u), 'other.cap · new-source', 'and the row stays as the newer read left it');
-    assert.equal(u.automations().filter(b => b.action === 'test').length, tests, 'no test is sent');
-  });
-}
-
-test('a stale one-press Test whose re-read finds the row at another source than the answer names: the answer is dropped', async t => {
-  const u = await staleOnePress(t);
-  await u.settleRecovery(u.other());
-  assert.equal(u.$('.page-card[data-card="Test result"]'), null, 'acme.graph\'s answer is not other.cap\'s');
-  assert.equal(sourceOnScreen(u), 'other.cap · new-source');
-  assert.equal(u.d.activeElement, u.testButton(), 'focus is back on Test all the same');
-});
-
-test('a stale one-press Test: focus is not taken back from an operator who moved on during the re-read', async t => {
-  const u = await staleOnePress(t);
-  assert.equal(u.d.activeElement, u.testButton(), 'back on Test as soon as it is enabled again');
-  const search = u.$('.auto-toolbar input'); search.focus();
-  await u.settleRecovery(doc('trigger-list-invalid'));
-  assert.ok(u.$('.page-card[data-card="Test result"]'), 'the re-read applied and kept the answer');
-  assert.equal(u.d.activeElement, search, 'focus stays where the operator put it');
+  assert.ok(u.confirm(), 'Test now opens the confirm'); assert.equal(u.$('.auto-ran-nothing'), null);
+  assert.equal(u.requests.length, before + 3, 'and opening it sends nothing');
+  assert.equal(u.argvs.some(argv => argv.includes(TRIGGER_RUN_SOURCE_FLAG)), false, 'nothing carried the flag');
 });
 
 test('a trigger whose source changed: its status is read again and a kept Test result is dropped', async t => {

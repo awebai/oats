@@ -241,20 +241,15 @@ never one click:
   answers after the operator left the page keeps its result and moves no
   focus. The page is rebuilt whole on each render, so these targets carry a
   `data-auto-focus` key and focus is found again by it.
-- If the kernel answers `E_TRIGGER_SOURCE_RUN` to a one-click test (the row
-  became a capability source's since the list was read), that is not a
-  failure of the trigger: a neutral notice of the Desktop's own says nothing
-  ran (the kernel's message names a CLI command and is not shown), the list
-  is read again, and Test now opens the confirm. No result card.
-- A one-click test of such a stale row can also get the kernel's normal
-  answer about the source (a failed check: no capability code runs to say
-  so). The list is read again once so the page is the capability source's; no
-  second test is sent. That read keeps the result when it is the read that is
-  applied and it finds the row at the source the answer names, as the first
-  source change since the press. A read that was superseded or that failed
-  keeps nothing, and a later source change drops the result like any other.
-  Focus returns to Test, which the press disabled, unless the operator moved
-  on; it never goes to the result.
+- A one-click test carries no confirmation. When its row became a capability
+  source's since the list was read, the kernel runs no capability code and
+  answers one of two ways: `E_TRIGGER_SOURCE_RUN`, or its normal answer about
+  the source (a check that failed before the gate). Neither is a failure of
+  the trigger, and both are treated alike: a neutral notice of the Desktop's
+  own says nothing ran (the kernel's message names a CLI command and is not
+  shown), no result is kept, the list is read again once, and focus returns
+  to Test unless the operator moved on. Test now opens the confirm, and Run
+  test gives the source's answer.
 
 **The Test result card** of a capability source (`testResult` adds `source`)
 leads the side column and speaks of the source first: "The source answered:

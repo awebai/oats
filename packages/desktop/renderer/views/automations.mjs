@@ -261,9 +261,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
   const notices = node('div'), listHost = node('div');
   body.append(notices, toolbar, listHost);
 
-  // `keep` ({ id, gen, read }): a Test answer that outlives the source change THIS read reconciles (see perform). It is
-  // put back only here, where this read is the one applied: a read that was superseded, or that failed, keeps nothing.
-  async function refresh({ keep = null } = {}) {
+  async function refresh() {
     const id = ++serial; loading = true; failure = ''; render();
     let reread = null;
     try {
@@ -274,12 +272,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
       // so its status is read again and a Test result kept for it is dropped.
       if (sources) for (const row of next.rows) {
         const source = typeof row.on?.source === 'string' ? row.on.source : null;
-        if (lastSources.has(row.id) && lastSources.get(row.id) !== source) {
-          // The answer is this row's again when this is the first change since it was asked for, and to the source it names.
-          const now = capabilitySource(row.on), kept = keep?.id === row.id && keep.gen === genOf(row.id) && !!now && now.capability === keep.read.source.capability && now.name === keep.read.source.name;
-          statuses.delete(row.id); tests.delete(row.id); sourceGens.set(row.id, genOf(row.id) + 1); statusTickets.set(row.id, (statusTickets.get(row.id) || 0) + 1); if (openId === row.id) reread = row.id;
-          if (kept) tests.set(row.id, keep.read);
-        }
+        if (lastSources.has(row.id) && lastSources.get(row.id) !== source) { statuses.delete(row.id); tests.delete(row.id); sourceGens.set(row.id, genOf(row.id) + 1); statusTickets.set(row.id, (statusTickets.get(row.id) || 0) + 1); if (openId === row.id) reread = row.id; }
         lastSources.set(row.id, source);
       }
       data = next;
@@ -290,41 +283,33 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     if (!act || busy) return;
     // A capability source's Test is never one click: it goes through its confirm (runConfirmed), from every entry.
     if (verb === 'test' && sourceOf(row)) { openConfirm(row); return; }
-    // The press disables Test while it runs, which drops focus: where the row is re-read below, it goes back to Test
-    // when the press came from there and the operator has not moved on.
-    const fromTest = doc.activeElement?.dataset?.autoFocus === 'test' && openId === row.id;
-    const backToTest = () => { if (alive && fromTest && openId === row.id && (!doc.activeElement || doc.activeElement === doc.body)) focusKey('test'); };
     busy = true; ranNothing = null; render();
     // A test's answer is the answer about the source it was asked for: one that lands after the row's source
     // changed (success or failure) leaves no result.
-    let unconfirmed = false, stale = null; const gen = genOf(row.id), current = () => genOf(row.id) === gen;
+    let unconfirmed = false; const gen = genOf(row.id), current = () => genOf(row.id) === gen;
+    // This press carried no confirmation and the row turned out to be a capability source's (it became one since the
+    // list was read), so no capability code ran. That is not a failure of the trigger: say so, without a result card
+    // or a warning, re-read the row, and leave the operator at Test, which now opens the confirm. The kernel says it
+    // two ways, and both end here: E_TRIGGER_SOURCE_RUN, or an answer about the source (a check that failed before
+    // the gate), which the confirmed test will give again.
+    const ranNoSource = () => { unconfirmed = true; tests.delete(row.id); ranNothing = row.id; };
     try {
       const result = await act(verb, row);
       if (!alive) return;
       if (verb === 'test') {
-        if (current()) {
-          const read = testResult(result, kind, { source: row.on?.source }) || { ok: false, error: `This OATS did not answer a ${noun} test.` };
-          tests.set(row.id, read);
-          // The kernel answered about a capability source (a check that failed: no capability code ran), yet the row on
-          // screen is not one: the list is older than the definition. The row is read again below, and that read
-          // keeps this answer, which the kernel gave for this trigger, when it finds the row at the source it names.
-          if (sources && read.source && !sourceOf(row)) stale = read;
-        }
+        const read = testResult(result, kind, { source: row.on?.source }) || { ok: false, error: `This OATS did not answer a ${noun} test.` };
+        if (sources && read.source && !sourceOf(row)) ranNoSource();
+        else if (current()) tests.set(row.id, read);
       } else { onResult?.(verb, row, result); await refresh(); }
     } catch (error) {
       if (!alive) return;
-      // E_TRIGGER_SOURCE_RUN is not a failure of the trigger: the kernel ran nothing, because this press carried no
-      // confirmation (the row became a capability source's since the list was read). Say so, without a result card or
-      // a warning, re-read the row, and leave the operator at Test, which now opens the confirm.
-      if (verb === 'test' && error?.code === 'E_TRIGGER_SOURCE_RUN') { unconfirmed = true; tests.delete(row.id); ranNothing = row.id; }
+      if (verb === 'test' && error?.code === 'E_TRIGGER_SOURCE_RUN') ranNoSource();
       else if (verb === 'test') { if (current()) tests.set(row.id, { ok: false, error: error?.message || String(error) }); }
       else failure = error?.message || String(error);
     } finally {
       if (alive) {
         busy = false; render();
         if (unconfirmed) { await refresh(); if (alive && openId === row.id && (!doc.activeElement || doc.activeElement === doc.body)) focusKey('test'); }
-        // One re-read of the list, never a second test. Focus goes back to Test, never to the result.
-        else if (stale) { backToTest(); await refresh({ keep: { id: row.id, gen, read: stale } }); backToTest(); }
       }
     }
   }
