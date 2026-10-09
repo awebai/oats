@@ -765,3 +765,61 @@ test("a url is stored raw, so it must be printable ASCII; a field value never ca
   assert.deepEqual([r.events.map((e) => e.key), r.invalidEvents.map((e) => e.rule)], [["c:1"], ["url", "fields"]]);
   for (const x of r.invalidEvents) assert.doesNotMatch(x.text, REFUSED_TEXT);
 });
+
+test("a trigger moved to another capability source shows none of the old source's state: lists, invalid, last poll and last error go, before any poll and after a failed first one; fired keys stay", (t) => {
+  const other = (extra = {}) => capDef({ on: { ...capDef().on, source: "acme.graph:other-branches" }, ...extra });
+  const edit = (def) => writeFileSync(join(s.ws, "oats-schedules.json"), JSON.stringify({ version: 1, jobs: { harvest: def } }, null, 2));
+  const row = () => T.triggerStatus(s.ws, "local/harvest").triggers[0];
+  const s = scope(t, [capDef()]);
+  // Source A: a good poll with an invalid event and a skipped item, then a refusal in its own words.
+  const lists = { invalidEvents: [{ text: '{"key":"bad key"}', rule: "key" }], skipped: [{ subject: "harvest/s", why: "A says: not judged yet" }] };
+  s.tick("2026-10-01T12:00:00Z", { pollSource: () => answer(["harvest/a:h1"], lists) });
+  s.tick("2026-10-01T12:01:00Z", { pollSource: () => { throw W.pollFailure("refused", "acme.graph:harvest-branches refused the poll", { code: "E_A", message: "A says: log in again" }); } });
+  const a = row();
+  assert.deepEqual([a.source.name, a.invalidEvents, a.skipped, a.lastPoll.source, a.lastError.source, s.ts().source],
+    ["harvest-branches", lists.invalidEvents, lists.skipped, { code: "E_A", message: "A says: log in again" }, { code: "E_A", message: "A says: log in again" }, "acme.graph:harvest-branches"]);
+  const fired = Object.keys(s.ts().fired);
+  assert.equal(fired.length, 1);
+  // A's meaning fails at its next poll: `invalid` is A's too.
+  s.tick("2026-10-01T12:02:00Z", { pollSource: () => { throw T.triggerError("E_TRIGGER_SOURCE", "acme.graph:harvest-branches: capability acme.graph declares no trigger source \"harvest-branches\"", { details: { capability: "acme.graph", source: "harvest-branches" } }); } });
+  assert.equal(row().invalid.code, "E_TRIGGER_SOURCE");
+  assert.equal(T.describeTrigger(s.ws, "local/harvest").invalid.code, "E_TRIGGER_SOURCE");
+
+  // The trigger is edited to source B, with an event of A's still pending. Before any tick, the
+  // reports already show none of A's state…
+  s.writeState({ version: 1, triggers: { "local/harvest": { ...s.ts(), pending: { "local/harvest:harvest/p:h1": { trigger: "local/harvest", source: "acme.graph:harvest-branches", subject: "harvest/p", event: "opened", key: "local/harvest:harvest/p:h1", fields: {}, observedAt: "2026-10-01T12:02:00.000Z" } } } } });
+  assert.deepEqual(row().pending.map((p) => p.subject), ["harvest/p"]);
+  edit(other());
+  const clean = (r, what) => {
+    assert.deepEqual([r.source, r.invalidEvents, r.skipped, r.invalid], [{ capability: "acme.graph", name: "other-branches" }, [], [], undefined], what);
+    assert.doesNotMatch(JSON.stringify(r), /A says|E_A|harvest-branches/, `${what}: nothing of the old source's`);
+    assert.deepEqual([r.pending, r.firedTotal], [[], 1], `${what}: the old source's pending events go, fired keys stay`);
+  };
+  clean(row(), "before the new source's first poll");
+  assert.deepEqual([row().lastPoll, row().lastError], [null, null]);
+  assert.equal(T.describeTrigger(s.ws, "local/harvest").invalid, undefined);
+  assert.equal(s.ts().source, "acme.graph:harvest-branches", "a report writes nothing");
+  // …and B's FAILED first poll records only its own failure.
+  let rows = s.tick("2026-10-01T12:03:00Z", { pollSource: () => { throw W.pollFailure("exit", "acme.graph:other-branches: the source exited 2"); } });
+  assert.deepEqual(actions(rows), [["local/harvest", "poll-failed"]]);
+  const ts = s.ts();
+  assert.deepEqual([ts.source, ts.listed, ts.invalidEvents, ts.skipped, ts.invalid, ts.pending, Object.keys(ts.fired)], ["acme.graph:other-branches", undefined, undefined, undefined, undefined, {}, fired]);
+  assert.equal(s.spawns().length, 1, "the old source's pending event is never spawned");
+  const b = row();
+  clean(b, "after the new source's failed first poll");
+  assert.deepEqual([b.lastPoll.cause, b.lastError.code], ["exit", "E_TRIGGER_POLL"]);
+  // And back to A, on a state B's good poll wrote: A's row shows none of B's, and a failed meaning
+  // check of A records only that.
+  edit(capDef());
+  s.writeState({ version: 1, triggers: { "local/harvest": { ...ts, ...lists, listed: ["local/harvest:harvest/a:h1"], lastPoll: { at: "2026-10-01T12:03:00.000Z", ok: true, events: 1, invalidEvents: 1, skipped: 1, filtered: 0 } } } });
+  assert.deepEqual([row().source.name, row().invalidEvents, row().skipped, row().lastPoll, row().lastError], ["harvest-branches", [], [], null, null]);
+  rows = s.tick("2026-10-01T12:04:00Z", { pollSource: () => { throw T.triggerError("E_TRIGGER_INVALID", "on.params.graph: acme.graph:harvest-branches requires parameter graph", { field: "on.params.graph", details: { field: "on.params.graph" } }); } });
+  assert.deepEqual(actions(rows), [["local/harvest", "invalid"]]);
+  assert.deepEqual([row().invalidEvents, row().skipped, row().lastPoll, row().invalid.code, s.ts().source], [[], [], null, "E_TRIGGER_INVALID", "acme.graph:harvest-branches"]);
+  // A state that records no source (none was ever released) is taken as the current source's: nothing is dropped.
+  const { source: _recorded, invalid: _invalid, ...unrecorded } = s.ts();
+  s.writeState({ version: 1, triggers: { "local/harvest": { ...unrecorded, ...lists } } });
+  assert.deepEqual([row().invalidEvents, row().skipped], [lists.invalidEvents, lists.skipped]);
+  s.tick("2026-10-01T12:05:00Z", { pollSource: () => { throw W.pollFailure("timeout", "acme.graph:harvest-branches: killed"); } });
+  assert.deepEqual([s.ts().invalidEvents, s.ts().skipped, s.ts().source], [lists.invalidEvents, lists.skipped, "acme.graph:harvest-branches"]);
+});

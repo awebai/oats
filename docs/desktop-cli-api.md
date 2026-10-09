@@ -3651,7 +3651,10 @@ capability declares ([schedules.md](schedules.md#capability-sources)).
     lists after that. A failed poll (`lastPoll.ok: false`) and a failed
     meaning check (`invalid`, which leaves `lastPoll` as it was) leave them
     unchanged, so they can be older than `lastPoll.at`, `lastError.at` and
-    `invalid.at`.
+    `invalid.at`. The lists are the current source's: changing a trigger's
+    `on.source` empties them and `pending`, and clears `invalid`, `lastPoll`
+    and `lastError` (`fired` stays), in what `status` and `list` answer at
+    once and in the state at the next tick.
   - **Arrays versus counts.** In `trigger test`'s `source` (`ok: true`) and
     in `trigger poll`'s answer, `events`, `invalidEvents` and `skipped` are
     arrays and `filtered` is a count. In `lastPoll` (`ok: true`) and in the

@@ -334,8 +334,13 @@ keeps everything after the list.
   key made of a state and the time it was entered fires once per occurrence,
   and again when the subject re-enters the state.
 - **A trigger whose source changes** (a workspace trigger file edited in Git
-  keeps its id) keeps its fired keys and drops the old source's pending
-  events and state at the next host tick.
+  keeps its id), to another capability source or to or from
+  `github.pull_request`, keeps its fired keys and drops the old source's
+  pending events and state at the next host tick: its listed keys, invalid
+  events, skipped items, meaning failure, last poll and last error. `trigger
+  status` and `trigger list` stop showing all of it at once, so one source's
+  text never appears under another's name. A kept fired key can only keep an
+  event from firing again.
 - **Retention** is the built-in's: at most 500 fired keys per trigger, oldest
   fires evicted first, except that **a key the last good poll listed is never
   evicted**, so an event the source still lists never fires twice.
