@@ -14,8 +14,14 @@
  * found again by `data-focus-key`, and the open file stays open while it is still listed.
  *
  * Capability warnings (OATS 0.49.0, capability-warnings.mjs) sit above the card, full width: every one is
- * about this capability, so no name and no Open capability. They never change the section's ready state. */
-import { capabilityShowSupported, capabilitySelector, capabilityShowData, capabilityFileData, listedFiles, skillFilePath, skillRelativePath, CAPABILITY_SHOW_UNREADABLE } from './capability-show-contract.mjs';
+ * about this capability, so no name and no Open capability. They never change the section's ready state.
+ *
+ * Trigger sources (feature `trigger-sources`) come in the same answer but belong to the page's Provides card:
+ * the controller owns that row too (`triggerSources`, a second long-lived element the page appends into its
+ * card on every rebuild) and tells the host when it appears or disappears (`onProvidesChange`). Neither the
+ * declaration nor the kernel's problems with it change the section's state, its problems or its warnings. */
+import { capabilityShowSupported, capabilitySelector, capabilityShowData, capabilityFileData, listedFiles, skillFilePath, skillRelativePath, triggerSourcesView, CAPABILITY_SHOW_UNREADABLE } from './capability-show-contract.mjs';
+import { fillTriggerSourcesRow } from './capability-page.mjs';
 import { contentsCardCSS, sizeText, firstSentence, createContentsTree, createContentsReader } from './contents-reader.mjs';
 import { createDataState, skeleton, captureFocusState } from './loading.mjs';
 import { createWarningsList, capabilityWarningsCSS, WARNINGS_COPY } from './capability-warnings.mjs';
@@ -82,8 +88,10 @@ export function defaultSelection(show) {
  * @param {(url: string) => void} [o.openExternal]  an https: link
  * @param {() => void} [o.onCatalogStale]  what was read disagrees with the catalog row (E_CAPABILITY_UNKNOWN, or an answer
  *   at another commit than the row's): re-read the catalog; the page's next update() brings the new row
+ * @param {() => void} [o.onProvidesChange]  the Trigger sources row (`triggerSources`) now has content, or no longer
+ *   has: rebuild the page's Provides card around it. Called once the controller has settled, never mid-update
  */
-export function createCapabilityContents(doc, { request, openExternal = null, onCatalogStale = null } = {}) {
+export function createCapabilityContents(doc, { request, openExternal = null, onCatalogStale = null, onProvidesChange = null } = {}) {
   const node = (tag, cls, text) => { const el = doc.createElement(tag); if (cls) el.className = cls; if (text !== undefined && text !== null) el.textContent = text; return el; };
   const element = node('section', 'page-section cap-contents-section'); element.dataset.section = 'Contents';
   const heading = node('h3', 'page-section-title'); heading.append(node('span', null, CONTENTS_COPY.title));
@@ -99,9 +107,12 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
   nav.append(navNotice, navBody); reader.append(head, body); card.append(nav, reader);
   const warnings = node('div', 'cap-contents-warnings'); warnings.hidden = true;
   element.append(heading, gate, warnings, card);
+  // Not in `element`: the page's Provides card holds it (capability-page.mjs `fillTriggerSourcesRow`); empty until an answer declares sources.
+  const triggerSources = node('div'); fillTriggerSourcesRow(triggerSources, null);
 
   let alive = true, subjectKey = null, identityKey = null, selector = null, rowCommit = null, show = null, files = new Map();
   let selected = null, readerPath = null, expanded = new Set(), showTicket = 0, fileTicket = 0, rendered = null, renderedWarnings = null;
+  let renderedSources = null, providesShown = false;
 
   const navState = createDataState({ doc, noun: 'contents', region: nav, skeletonHost: navBody, indicatorHost: navNotice,
     skeleton: () => { const block = node('div', 'cap-nav-skeleton'); block.setAttribute('aria-hidden', 'true'); for (let i = 0; i < 6; i++) block.append(skeleton(doc, 'line')); return block; },
@@ -123,27 +134,27 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
 
   function showGate(text) {
     subjectKey = identityKey = null; selector = show = null; files = new Map(); showTicket++; fileTicket++;
-    navState.reset(); fileState.reset(); clearWarnings();
+    navState.reset(); fileState.reset(); clearWarnings(); clearTriggerSources();
     gate.textContent = text; gate.hidden = false; card.hidden = true; lead.hidden = true;
   }
 
   /** The page's subject now. Unchanged → nothing (a background repaint never touches what is open). */
-  function update({ row, cli, remote = false, catalogPending = false, deployment = null }) {
-    if (!alive) return;
+  function update(page) { if (!alive) return; setSubject(page); syncProvides(); }
+  function setSubject({ row, cli, remote = false, catalogPending = false, deployment = null }) {
     const subject = contentsSubject({ row, cli, remote, catalogPending });
     if (subject.gate) { if (gate.textContent !== subject.gate || gate.hidden) showGate(subject.gate); return; }
     gate.hidden = true; card.hidden = false;
     reader.setAttribute('aria-label', `File of ${row?.name || 'this capability'}`);
     if (subject.pending) {
       // The selector comes from the catalog row, which is not read yet: the navigation's skeleton stands.
-      if (subjectKey !== 'pending') { subjectKey = identityKey = null; selector = show = null; files = new Map(); rendered = null; showTicket++; navState.reset(); navBody.replaceChildren(); clearReader(); clearWarnings(); lead.hidden = true; subjectKey = 'pending'; navState.begin(); }
+      if (subjectKey !== 'pending') { subjectKey = identityKey = null; selector = show = null; files = new Map(); rendered = null; showTicket++; navState.reset(); navBody.replaceChildren(); clearReader(); clearWarnings(); clearTriggerSources(); lead.hidden = true; subjectKey = 'pending'; navState.begin(); }
       return;
     }
     const identity = JSON.stringify([deployment, subject.selector]);
     const key = JSON.stringify([identity, typeof row?.commit === 'string' ? row.commit : null]);
     if (key === subjectKey) return;
     // Another capability (or deployment) starts afresh; the same one at a moved commit keeps the open path when it is still listed.
-    if (identity !== identityKey) { selected = null; expanded = new Set(); show = null; files = new Map(); rendered = null; navState.reset(); navBody.replaceChildren(); clearReader(); clearWarnings(); lead.hidden = true; }
+    if (identity !== identityKey) { selected = null; expanded = new Set(); show = null; files = new Map(); rendered = null; navState.reset(); navBody.replaceChildren(); clearReader(); clearWarnings(); clearTriggerSources(); lead.hidden = true; }
     subjectKey = key; identityKey = identity; selector = subject.selector; rowCommit = typeof row?.commit === 'string' ? row.commit : null;
     readShow();
   }
@@ -181,12 +192,26 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
     const parent = selected ? files.get(selected) : null;
     if (parent?.kind === 'skill') expanded.add(parent.skill.path);
     // An unchanged answer (a re-read at the same commit) never rebuilds the tree, or the warnings, under focus.
-    const signature = JSON.stringify({ ...data, warnings: null });
+    // Each part is drawn from its own keys: trigger sources and their problems repaint neither of the two.
+    const signature = JSON.stringify({ ...data, warnings: null, triggerSources: null, triggerSourceProblems: null });
     if (signature !== rendered) { rendered = signature; paintNav(); }
     const warned = JSON.stringify(data.warnings);
     if (warned !== renderedWarnings) { renderedWarnings = warned; paintWarnings(); }
+    const sources = triggerSourcesView(data), sourced = JSON.stringify(sources);
+    if (sourced !== renderedSources) { renderedSources = sourced; fillTriggerSourcesRow(triggerSources, sources); }
     const moved = !!previous && previous.commit !== data.commit;
     if (!previous || moved || readerPath !== selected) open(selected, { force: moved });
+    syncProvides();
+  }
+
+  /* ── trigger sources (the Provides card's row) ───────────────────────── */
+  function clearTriggerSources() { renderedSources = null; triggerSources.replaceChildren(); }
+  /** The row appeared or disappeared: the host builds its Provides card with or without it. A change of what the
+   * row says needs no host: the row is repainted in place. */
+  function syncProvides() {
+    const shown = triggerSources.childElementCount > 0;
+    if (shown === providesShown) return;
+    providesShown = shown; onProvidesChange?.();
   }
 
   /* ── warnings ────────────────────────────────────────────────────────── */
@@ -322,6 +347,8 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
 
   return {
     element, update,
+    /** The Provides card's "Trigger sources" row: empty (no children) while the answer declares none. */
+    triggerSources,
     /** Re-read the show answer (the page's catalog was refreshed by the user). */
     refresh() { if (selector) readShow({ user: true }); },
     /** Before the host moves `element` (a page rebuild re-appends it): detaching drops focus and the panes'

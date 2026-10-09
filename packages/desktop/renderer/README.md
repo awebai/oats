@@ -775,6 +775,59 @@ a soul, Commands and Settings) with every name its own code chip, wrapping.
 `paintCapabilityPage` renders the page's facts and Contents from the same
 current catalog row (`contentsRow`), so a refresh moves them together.
 
+**Trigger sources on the capability page (kernel feature `trigger-sources`).**
+`capabilities show` answers `triggerSources` only when the manifest declares
+the key, exactly as written and whatever its shape, and
+`triggerSourceProblems` (`[{source, pointer, message}]`; `source: null` is a
+top-level problem, which disables every source) only when the declaration has
+problems. Both are tolerant fields of `capabilityShowData`, like `warnings`:
+an answer without them projects without them, and nothing about them refuses
+the answer. `triggerSourcesOf` keeps the first 16 sources in the kernel's
+order (a name cut at 128 characters), each as `{ events, description? }`
+(the string events only, at most 16 of 64 characters; a description of at
+most 1024) or `null` when its value is not a source's shape; a declaration
+that is not an object is `null` and its raw value is not relayed.
+`triggerSourceProblemsOf` keeps at most 64 problems (source 128, pointer
+1024, message 4096 characters), skipping an entry without a message. A
+source's `command`, `parameters`, `fields` and `urlHosts` are not shown, so
+they are not relayed. The projection is idempotent (the server projects
+before it relays and holds the answer, the renderer projects the relayed
+answer again) and built from entries, never by assignment: a manifest key may
+be `__proto__`. The problems are the kernel's text about the declaration:
+they never join `problems`, never change the Contents section's state or its
+warnings, and never mark the capability as failed. `triggerSourcesView`
+(DOM-free) is what the page says: nothing, `{ unreadable }` (not an object,
+or a top-level problem) or `{ sources }`, each with the kernel's messages
+about it; a source with a message, or whose value is not a source's shape,
+is declared but not usable, and a source only a problem names is listed too.
+`fillTriggerSourcesRow` (`capability-page.mjs`) draws it as the Provides
+card's last row, in both forms of the page. A source's name, events and
+description are the manifest's words, neither the kernel's nor the Desktop's,
+so they are shown only through `sourceQuote` (`source-quote.mjs`) under
+"From the capability's manifest:": text, one `displayLine` each, never
+markup, a link, a button or a tooltip. The kernel's message is a note of its
+line, outside the quote ("declared, but not usable: …"); a declaration that
+can't be read is the Desktop's plain line and then the kernel's messages, no
+quote. The answer is the Contents controller's, so the row is too: a second
+long-lived element (`contents.triggerSources`), repainted only when its view
+changed and empty while nothing is declared. `renderCapabilityPage({
+triggerSources })` appends it while it has content (building the card for it
+alone when the page has no other row), and the controller calls
+`onProvidesChange` when it gains or loses content, which
+`paintCapabilityPage` holds in its signature so the page is rebuilt around
+it with focus kept.
+
+**Opening a capability by name.** `preselectCapability(name, { onMiss })`
+(`views/spawn.mjs`) selects the Capabilities subtab and opens the page of the
+ONE catalog row whose `name` is exactly `name`, as its table row does; with
+none or several nothing opens and `onMiss(count)` says so. It follows the
+selection-handoff rules of `preselectSoul`: held until the view is mounted
+and the catalog of the current workspace has been read (applied on the spot
+when both already are; a failed read keeps it waiting for the retry),
+consumed once, and superseded by a workspace switch or any newer selection.
+The discovery mints a selection intent for every tab change, its own
+projections included, so the handoff adopts the intent its tab change mints.
+
 **Capability warnings (OATS 0.49.0, `hook-event-unsupported`).** A capability
 that declares a hook event the kernel does not run still composes; the answers
 that show it carry `warnings[]` (`{code, capability, path, message}`; strings in
@@ -793,7 +846,7 @@ are joined by `\n`). `capability-warnings.mjs` (`createWarningsList`,
 then "and N more"; the host owns the heading and the repaint barrier, and the
 controls carry `data-focus-key` `<prefix>:<i>:details|open`. Surfaces: the
 capability page's Contents (a block above the card, no Open capability:
-`capabilityShowData`'s one tolerant field), the soul page (below the problems,
+a tolerant field of `capabilityShowData`), the soul page (below the problems,
 **Open capability** through the inspector's `capabilityTargets`, the composed
 instructions' path; prefix `soul-warning`), readiness (`readinessData.warnings`,
 after the four checks, apart from a provider's own `result.warnings`;

@@ -1425,10 +1425,12 @@ for (const [name] of palettes) test(`${name}: the remote reconnect strip and its
 // row on --surface-2) and the reader (the Markdown viewer's own ground, --bg) with its header and front-matter table.
 import { createCapabilityContents, capabilityContentsCSS } from '../renderer/capability-contents.mjs';
 import { MARKDOWN_CSS } from '../renderer/views/markdown.mjs';
+import { fillTriggerSourcesRow } from '../renderer/capability-page.mjs';
+import { sourceQuoteCSS as capabilityQuoteCSS } from '../renderer/source-quote.mjs';
 for (const [name] of palettes) test(`${name}: capability Contents navigation, reader header, notes and front matter meet computed AA`, async () => {
   const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><section class="host"></section></div></body></html>`, { pretendToBeVisual: true });
   const doc = dom.window.document;
-  for (const source of [css, pageCardCSS, capabilityPageCSS, capabilityContentsCSS, MARKDOWN_CSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  for (const source of [css, pageCardCSS, capabilityPageCSS, capabilityQuoteCSS, capabilityContentsCSS, MARKDOWN_CSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
   const commit = 'a'.repeat(40);
   const show = { capabilityShowApi: 1, name: 'oats.aweb', kind: 'package', repoKey: null, package: 'oats.aweb', version: '1', commit, path: 'p',
     inject: { path: 'inject.md', bytes: 300000, text: '---\nname: x\n---\n# T\n\n[a](https://example.com)\n', binary: false, truncated: true },
@@ -1480,6 +1482,26 @@ for (const [name] of palettes) test(`${name}: capability Contents navigation, re
     assert.ok(color === `var(--${fg})` || (fg === 'fg' && ['', 'var(--fg)'].includes(color)), `${selector}: ${color}`);
     assert.equal(dom.window.getComputedStyle(surface).background.replace(/^.*(var\(--[\w-]+\)).*$/, '$1'), `var(--${bg})`, painted);
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${name} ${selector}`);
+  }
+  // Provides › Trigger sources (feature trigger-sources): the manifest's words quoted (the lead-in, the text, the kernel's
+  // note under it), and the plain lines of a declaration that can't be read (the Desktop's, then the kernel's).
+  const quoted = doc.createElement('div'), unreadable = doc.createElement('div');
+  fillTriggerSourcesRow(quoted, { sources: [{ name: 'harvest-branches', events: ['opened', 'updated'], description: 'Ready harvest branches', problems: [] },
+    { name: 'Bad Name', events: null, description: null, problems: ['trigger source "Bad Name": must be an object'] }] });
+  fillTriggerSourcesRow(unreadable, { unreadable: ['triggerSources must be an object of named trigger sources'] });
+  for (const [sources, inventory] of [
+    [quoted, [['.provides-kind', '.provides-card', 'muted', 'surface'], ['.source-quote-lead', '.provides-card', 'muted', 'surface'], ['.source-quote-text', '.provides-card', 'fg', 'surface'], ['.source-quote-note', '.provides-card', 'muted', 'surface']]],
+    [unreadable, [['.provides-unreadable', '.provides-card', 'fg', 'surface'], ['.provides-unreadable-why', '.provides-card', 'muted', 'surface']]],
+  ]) {
+    renderCapabilityPage(page, { row: { name: 'oats.aweb', kind: 'package', package: 'oats.aweb' }, status: null, instances: [], root: '/ws', onBack() {}, triggerSources: sources });
+    for (const [selector, painted, fg, bg] of inventory) {
+      const el = page.querySelector(`[data-provides="trigger-sources"] ${selector}`), surface = page.querySelector(painted); assert.ok(el && surface, selector);
+      const color = dom.window.getComputedStyle(el).color;
+      assert.ok(color === `var(--${fg})` || (fg === 'fg' && ['', 'var(--fg)'].includes(color)), `${selector}: ${color}`);
+      assert.equal(dom.window.getComputedStyle(surface).background.replace(/^.*(var\(--[\w-]+\)).*$/, '$1'), `var(--${bg})`, painted);
+      assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${name} ${selector}`);
+      for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+    }
   }
   // The facts table drops the viewer's Markdown-table chrome: its cells sit on the reader's own ground.
   for (const cell of doc.querySelectorAll('.cap-fm th, .cap-fm td')) assert.match(dom.window.getComputedStyle(cell).background, /none|rgba\(0, 0, 0, 0\)/, 'no tinted head');
@@ -1660,4 +1682,78 @@ for (const [name] of palettes) test(`${name}: the capability warnings list meets
     assert.equal(doc.querySelector('.cap-warning-head svg').getAttribute('aria-hidden'), 'true');
     dom.window.close();
   }
+});
+
+// Capability trigger sources (feature trigger-sources): the quote treatment wherever the Triggers page uses it
+// (the On card's parameters, the refused and skipped lists, a refusal's own words, the Test confirm, the Test
+// result), the confirm card, the failed source check's tag, the neutral "Nothing ran" notice, and the focus
+// indicator of the page's programmatic focus targets. Rendered from the captured kernel answers
+// (fixtures/trigger-sources). Each text must name its colour token, sit on a surface that names its own, meet
+// 4.5:1 there, and have no opacity over it.
+import { automationsCSS } from '../renderer/views/automations.mjs';
+for (const [name] of palettes) test(`${name}: a capability trigger source's quotes, Test confirm, result and focus indicators meet computed AA`, async t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="a"></div><div class="b"></div><div class="c"></div><div class="d"></div></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document;
+  const style = doc.createElement('style'); style.textContent = css; doc.head.append(style);
+  t.after(() => dom.window.close());
+  const fx = file => JSON.parse(readFileSync(new URL(`fixtures/trigger-sources/${file}.json`, new URL('./', import.meta.url)), 'utf8')).result;
+  const now = () => Date.parse('2026-10-08T12:20:00.000Z'), settle = async () => { for (let i = 0; i < 6; i++) await new Promise(r => setTimeout(r, 0)); };
+  const view = (host, list, status, act) => createAutomationsView(doc.querySelector(host), { kind: 'trigger', sources: true, read: async () => (typeof list === 'function' ? list() : fx(list)), status: async () => fx(status), act, now });
+  // a: the list with a failed source check. b: a good poll's page, then the confirm. c: a refused poll's page, then a result. d: the neutral notice.
+  view('.a', 'trigger-list-invalid', 'trigger-status-invalid');
+  const good = view('.b', 'trigger-list', 'trigger-status-good', async () => fx('trigger-test-trusted'));
+  const refused = view('.c', 'trigger-list', 'trigger-status-refused', async () => fx('trigger-test-trusted'));
+  const stale = fx('trigger-list'); stale.triggers.find(r => r.id === 'ws/trusted').on = { source: 'github.pull_request', repo: 'github.com/acme/kb', events: ['opened'], labels: [], poll: '2m' };
+  let listed = stale;
+  const unconfirmed = view('.d', () => listed, 'trigger-status-good', async () => { throw Object.assign(new Error('nothing ran'), { code: 'E_TRIGGER_SOURCE_RUN' }); });
+  await settle();
+  good.open('ws/trusted'); refused.open('ws/trusted'); unconfirmed.open('ws/trusted'); await settle();
+  doc.querySelector('.b .page-bar-actions button[data-verb=test]').click();
+  doc.querySelector('.c .page-bar-actions button[data-verb=test]').click(); await settle();
+  doc.querySelector('.c button[data-verb=run-test]').click();
+  listed = fx('trigger-list'); doc.querySelector('.d .page-bar-actions button[data-verb=test]').click(); await settle();
+
+  const root = dom.window.getComputedStyle(doc.documentElement), token = value => /var\(--([\w-]+)\)/.exec(value || '')?.[1] ?? null;
+  const ratio = (fg, bg) => contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim()));
+  /** The token of the nearest element, from `el` up, that sets `property`. */
+  const nearest = (el, property) => { for (let at = el; at; at = at.parentElement) { const found = token(dom.window.getComputedStyle(at)[property]); if (found) return found; } return null; };
+  let seen = 0;
+  for (const [selector, fg, bg, least = 1] of [
+    ['.a .auto-tag.auto-source-check', 'fg', 'attn-bg'],
+    ['.b .page-card[data-card="On"] .source-quote-lead', 'muted', 'surface'], ['.b .page-card[data-card="On"] .source-quote-text', 'fg', 'surface', 2],
+    ['.b .auto-source-lists .source-quote-lead', 'muted', null, 2], ['.b .auto-source-lists .source-quote-text', 'fg', null, 5],
+    ['.b .auto-source-lists .source-quote-label', 'fg', null, 2], ['.b .auto-source-lists .source-quote-note', 'muted', null, 3],
+    ['.b .auto-source-lists .auto-list-head', 'muted', null, 2], ['.b .auto-lists-from', 'muted', null],
+    ['.b .auto-confirm .page-card-title', 'muted', 'surface'], ['.b .auto-confirm .auto-test-line', 'fg', 'surface', 2], ['.b .auto-confirm .auto-test-line code', 'fg', 'surface'],
+    ['.b .auto-confirm .auto-confirm-status', 'muted', 'surface'], ['.b .auto-confirm .source-quote-lead', 'muted', 'surface'], ['.b .auto-confirm .source-quote-text', 'fg', 'surface', 2],
+    ['.c .auto-poll-error', 'warn', null], ['.c .auto-poll-error code', 'warn', null], ['.c .auto-history .source-quote-lead, .c .auto-poll-error ~ .source-quote .source-quote-lead', 'muted', null],
+    ['.c .auto-poll-error ~ .source-quote .source-quote-text', 'fg', null, 2],
+    ['.c .page-card[data-card="Test result"] .page-card-title', 'muted', 'surface'], ['.c .page-card[data-card="Test result"] .auto-test-line', 'fg', 'surface'],
+    ['.c .page-card[data-card="Test result"] .source-quote-text', 'fg', 'surface'], ['.c .page-card[data-card="Test result"] .source-quote-note', 'muted', 'surface'],
+    ['.c .page-card[data-card="Test result"] .auto-fire-url', 'muted', 'surface'],
+    ['.d .auto-page .auto-ran-nothing', 'muted', null],
+  ]) {
+    const found = [...doc.querySelectorAll(selector)]; assert.ok(found.length >= least, `${selector}: ${found.length} of ${least}`);
+    for (const el of found) {
+      const painted = nearest(el, 'background'); assert.ok(painted, `${selector}: a surface that names its token`);
+      if (bg) assert.equal(painted, bg, selector);
+      assert.equal(nearest(el, 'color'), fg, selector);
+      assert.ok(ratio(fg, painted) >= 4.5, `${name} ${selector}: --${fg} on --${painted} ${ratio(fg, painted).toFixed(2)}:1`);
+      for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1', selector);
+      seen++;
+    }
+  }
+  assert.ok(seen >= 40, `the inventory was rendered: ${seen}`);
+  // The failed source check is said in text and an icon: the icon (non-text, 3:1) is --warn on the tag's ground.
+  const icon = doc.querySelector('.a .auto-source-check .shell-icon'); assert.ok(icon);
+  assert.equal(token(dom.window.getComputedStyle(icon).color), 'warn'); assert.ok(ratio('warn', 'attn-bg') >= 3, `${name}: --warn on --attn-bg`);
+  // Focus lands on headings and a status line that are not controls: their indicator is an --accent outline (3:1 on the card).
+  const focus = /\.auto-confirm-status:focus-visible, \.page-card-title:focus-visible \{([^}]*)\}/.exec(automationsCSS)?.[1];
+  assert.match(focus || '', /outline:1px solid var\(--accent\)/);
+  for (const target of ['.b .auto-confirm .page-card-title', '.b .auto-confirm-status', '.c .page-card[data-card="Test result"] .page-card-title']) {
+    const el = doc.querySelector(target); assert.equal(el.tabIndex, -1, target);
+    assert.ok(ratio('accent', nearest(el, 'background')) >= 3, `${name} ${target}: --accent on --${nearest(el, 'background')}`);
+  }
+  // The quote's side rule is not what tells a quote apart (the lead-in and the typeface do): it carries no text.
+  assert.match(/\.source-quote-text \{([^}]*)\}/.exec(capabilityQuoteCSS)[1], /font:12px\/1\.5 var\(--mono,monospace\)/);
 });

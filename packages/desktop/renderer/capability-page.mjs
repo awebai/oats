@@ -9,6 +9,8 @@ import { iconElement } from './shell-icons.mjs';
 import { capabilitySource, capabilityUse, capabilityRow, memberNames, layerLabel, sourceChip, soulsUsing, rosterAgentName } from './workspace-catalog.mjs';
 import { skeleton, noticeElement, updateNotice, failedElement, updateFailed, isOldObservation, ROSTER_STALE_TITLE, SOULS_STALE_TITLE } from './loading.mjs';
 import { createDeploymentScopeLine } from './deployment-scope-line.mjs';
+import { displayLine } from './display-text.mjs';
+import { sourceQuote, LEAD_INS } from './source-quote.mjs';
 
 /** Each host's "On <deployment>" line (#482): a re-render replaces it. */
 const scopeLines = new WeakMap();
@@ -104,6 +106,10 @@ export const capabilityPageCSS = `
 .capability-page .provides-row + .provides-row > * { border-top:1px solid var(--tag-bg); }
 .capability-page .provides-chip { display:inline-block; max-width:100%; padding:2px 7px; border-radius:5px; background:var(--tag-bg); color:var(--fg); font:12px/1.5 var(--mono,monospace); overflow-wrap:anywhere; }
 .capability-page .provides-items .page-note { padding:2px 0; }
+/* Trigger sources: the manifest's own words, quoted (source-quote.mjs), or the plain lines that say they can't be read. */
+.capability-page .provides-items.provides-sources { flex-direction:column; flex-wrap:nowrap; align-items:stretch; gap:3px; padding:8px 0; }
+.capability-page .provides-unreadable { margin:0; color:var(--fg); font:12px/1.5 var(--sans,system-ui); }
+.capability-page .provides-unreadable-why { margin:0; color:var(--muted); font:11.5px/1.45 var(--sans,system-ui); overflow-wrap:anywhere; }
 .capability-page pre { margin:0; padding:10px; border:1px solid var(--border); border-radius:7px; background:var(--surface-2); color:var(--fg); overflow:auto; font-size:11.5px; }
 `;
 
@@ -234,8 +240,10 @@ function failedFacts({ cause = null, busy = false } = {}) {
  * skeletons the host fills in place when it arrives. The catalog's age line lives in `.page-notice`
  * under the bar: the host paints it (`catalogNotice` / `updateCatalogNotice`), optionally seeded here
  * with `observation` ({ state, settled, busy, observedAt, cause, onRetry }). `contents`: the Contents section's
- * element (createCapabilityContents), placed after Provides and before Used by. */
-export function renderCapabilityPage(host, { row, status, instances, souls = [], composition = false, root, rosterState = 'ready', backLabel = 'Capabilities', onBack, openSoul = null, from = null, openExternal = null, catalogPending = false, observation = null, contents = null }) {
+ * element (createCapabilityContents), placed after Provides and before Used by. `triggerSources`: the same
+ * controller's "Trigger sources" row (`contents.triggerSources`), the Provides card's last row while it has
+ * content (alone when the page has no other row; empty: no row, and no card for it). */
+export function renderCapabilityPage(host, { row, status, instances, souls = [], composition = false, root, rosterState = 'ready', backLabel = 'Capabilities', onBack, openSoul = null, from = null, openExternal = null, catalogPending = false, observation = null, contents = null, triggerSources = null }) {
   const doc = host.ownerDocument;
   const node = (tag, value, cls) => el(doc, tag, value, cls);
   host.replaceChildren();
@@ -262,15 +270,16 @@ export function renderCapabilityPage(host, { row, status, instances, souls = [],
   else if (catalogPending) { const lede = skeleton(doc, 'line', { width: '55%' }); lede.classList.add('page-lede'); copy.append(lede); }
   identity.append(glyph, copy); main.append(identity);
   // Kernel #217: what it provides, by name (the manifest's skills, commands and hooks).
-  const named = [['Skills', row.skills], ['Commands', row.commands], ['Hooks', row.hooks]].filter(([, v]) => v !== undefined);
-  if (!(from && resolved) && named.length) main.append(providesSection(doc, named));
+  let kinds = [['Skills', row.skills], ['Commands', row.commands], ['Hooks', row.hooks]].filter(([, v]) => v !== undefined);
   // Provides: the commands the resolved capability declares (inspect operations), when opened from a soul.
   if (from && resolved) {
     const commands = list(resolved.operations).map(op => list(op.argv).filter(part => typeof part === 'string' && part).join(' ') || op.name).filter(Boolean);
     const declared = list(resolved.declares);
-    const kinds = [...(commands.length ? [['Commands', commands]] : []), ...(declared.length ? [['Settings', declared]] : [])];
-    if (kinds.length) main.append(providesSection(doc, kinds));
+    kinds = [...(commands.length ? [['Commands', commands]] : []), ...(declared.length ? [['Settings', declared]] : [])];
   }
+  // Trigger sources (feature `trigger-sources`): the host's long-lived row, in both forms, only while it has content.
+  const sources = triggerSources?.childElementCount ? triggerSources : null;
+  if (kinds.length || sources) main.append(providesSection(doc, kinds, sources));
   // Contents (spec C): the host's long-lived section (capability-contents.mjs), re-appended on every rebuild so
   // what is open in its reader survives a catalog repaint. In both forms: the catalog's and a soul's.
   if (contents) main.append(contents);
@@ -358,8 +367,9 @@ export function renderCapabilityPage(host, { row, status, instances, souls = [],
 }
 /** "Provides": one compact card, a row per kind (its label and count, then every name as its own code chip,
  * wrapping), so a capability with many commands takes a few lines, not a column each. `kinds`: [[label, names]],
- * names null when not listable (a spawn of it would refuse) or [] for none. */
-function providesSection(doc, kinds) {
+ * names null when not listable (a spawn of it would refuse) or [] for none. `last`: a row built elsewhere
+ * (the Trigger sources row), appended after them. */
+function providesSection(doc, kinds, last = null) {
   const section = pageSection(doc, 'Provides');
   const card = el(doc, 'dl', null, 'page-card provides-card');
   for (const [label, names] of kinds) {
@@ -372,8 +382,44 @@ function providesSection(doc, kinds) {
     else for (const name of names) value.append(el(doc, 'code', name, 'provides-chip'));
     row.append(term, value); card.append(row);
   }
+  if (last) card.append(last);
   section.append(card);
   return section;
+}
+/** The Desktop's own words in the Trigger sources row. */
+export const TRIGGER_SOURCES_COPY = Object.freeze({
+  title: 'Trigger sources',
+  none: 'None',
+  unusable: 'declared, but not usable',
+  unreadable: 'Trigger sources are declared, but not readable here',
+});
+/** One source as one quote line. Its name, events and description are the manifest's: quoted text only. A source
+ * that is not usable shows just its name; why is the kernel's message, a note outside the quote. */
+function triggerSourceLine({ name, events, description, problems }) {
+  if (Array.isArray(events) && !problems.length) return { text: [events.length ? `${name}: ${events.join(', ')}` : name, ...(description ? [description] : [])] };
+  const why = problems.map(displayLine).filter(Boolean);
+  return { text: name, note: why.length ? why.map(message => `${TRIGGER_SOURCES_COPY.unusable}: ${message}`) : TRIGGER_SOURCES_COPY.unusable };
+}
+/** Fill the Provides card's "Trigger sources" row (an element its owner keeps, capability-contents.mjs) from
+ * `triggerSourcesView()`: the label and the number of sources, then one quote group under "From the capability's
+ * manifest:" (source-quote.mjs: text only, no markup, link, button or tooltip is made from a manifest's string).
+ * A declaration that can't be read is the Desktop's plain line, then each of the kernel's messages as its own.
+ * Nothing declared (`view` null) empties the row: the page then builds no row. Nothing in it takes focus. */
+export function fillTriggerSourcesRow(row, view) {
+  const doc = row.ownerDocument;
+  row.className = 'provides-row'; row.dataset.provides = 'trigger-sources';
+  if (!view) { row.replaceChildren(); return; }
+  const term = el(doc, 'dt', null, 'provides-kind'); term.append(el(doc, 'span', TRIGGER_SOURCES_COPY.title));
+  const value = el(doc, 'dd', null, 'provides-items provides-sources');
+  if (view.unreadable) {
+    value.append(el(doc, 'p', TRIGGER_SOURCES_COPY.unreadable, 'provides-unreadable'));
+    for (const message of view.unreadable.map(displayLine).filter(Boolean)) value.append(el(doc, 'p', message, 'provides-unreadable-why'));
+  } else {
+    term.append(el(doc, 'span', String(view.sources.length), 'provides-count'));
+    const quote = sourceQuote(doc, { leadIn: LEAD_INS.manifest, lines: view.sources.map(triggerSourceLine) });
+    value.append(quote || el(doc, 'span', TRIGGER_SOURCES_COPY.none, 'page-note'));
+  }
+  row.replaceChildren(term, value);
 }
 /** sha256-<64 hex> → sha256:9f2c…a71e (the full value stays in the title). */
 export function fingerprint(integrity) {

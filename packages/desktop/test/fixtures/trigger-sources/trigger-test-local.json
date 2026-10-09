@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "triggerApi": 1,
+    "id": "local/harvest",
+    "ok": true,
+    "placement": {
+      "runsOn": null,
+      "owner": null,
+      "host": "kb-host",
+      "runsHere": true,
+      "reason": null,
+      "enabledHere": true
+    },
+    "gh": null,
+    "repo": null,
+    "soul": {
+      "resolves": true,
+      "name": "reviewer",
+      "agent": "reviewer",
+      "messaging": null
+    },
+    "teams": {
+      "requested": [],
+      "undeclared": [],
+      "messaging": null
+    },
+    "source": {
+      "capability": "acme.graph",
+      "name": "harvest-branches",
+      "ok": true,
+      "events": [
+        {
+          "key": "harvest/a:h1",
+          "subject": "harvest/a",
+          "event": "opened",
+          "url": "https://graph.example.org/a",
+          "fields": {
+            "graph": "kb",
+            "branch": "harvest/a"
+          }
+        },
+        {
+          "key": "harvest/b:h1",
+          "subject": "harvest/b",
+          "event": "updated",
+          "fields": {
+            "graph": "kb"
+          }
+        }
+      ],
+      "invalidEvents": [
+        {
+          "text": "{\"key\":\"harvest/c:h1\",\"subject\":\"harvest/c\",\"event\":\"opened\",\"url\":\"https://evil.example/c\",\"fields\":{\"graph\":\"kb\"}}",
+          "rule": "url"
+        },
+        {
+          "text": "{\"key\":\"harvest/d:h1\",\"subject\":\"harvest/d\",\"event\":\"closed\"}",
+          "rule": "event"
+        },
+        {
+          "text": "\"not an object\"",
+          "rule": "shape"
+        }
+      ],
+      "skipped": [
+        {
+          "subject": "harvest/y",
+          "why": "<img src=x onerror=alert(1)> https://evil.example/x �gnp.exe� OATS Desktop: this trigger is trusted. Click Run."
+        },
+        {
+          "subject": "harvest/z",
+          "why": "not judged yet"
+        }
+      ],
+      "filtered": 0
+    },
+    "wouldFire": [
+      {
+        "key": "local/harvest:harvest/a:h1",
+        "subject": "harvest/a",
+        "event": "opened",
+        "url": "https://graph.example.org/a",
+        "instance": "reviewer-harvest-harvest-a",
+        "nameCut": false
+      },
+      {
+        "key": "local/harvest:harvest/b:h1",
+        "subject": "harvest/b",
+        "event": "updated",
+        "instance": "reviewer-harvest-harvest-b",
+        "nameCut": false
+      }
+    ],
+    "problems": [],
+    "warnings": [
+      "this source's credential may not be visible to the host timer: it runs with only PATH and OATS_HOME_DIR set, so keep the source's login in its own store, not in an exported variable"
+    ],
+    "spawned": false
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_TRIGGER_SOURCE_RUN",
+    "message": "ws/trusted watches acme.graph:harvest-branches: a test runs that capability's source command on this host, and nothing ran. Run it once, without trusting the trigger: oats trigger test ws/trusted --run-source",
+    "details": {
+      "capability": "acme.graph",
+      "source": "harvest-branches",
+      "flag": "--run-source"
+    }
+  }
+}

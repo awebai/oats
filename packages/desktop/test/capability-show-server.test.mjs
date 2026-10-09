@@ -5,9 +5,10 @@
 // `invoke` is a fake, except in the last test, which drives the real cliWorkspace with a fake exec.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { capabilityShowRequest, createCapabilityShowCache, capabilityShowKey } from '../server/capability-show.mjs';
 import { cliWorkspace, WORKSPACE_READ_TIMEOUT } from '../workspace-cli.mjs';
-import { CAPABILITY_SHOW_UNREADABLE } from '../renderer/capability-show-contract.mjs';
+import { CAPABILITY_SHOW_UNREADABLE, capabilityShowData } from '../renderer/capability-show-contract.mjs';
 import { startLoadPathServer } from './helpers/load-path-server.mjs';
 
 const deployment = '/fixture/base/northwind-workspace';
@@ -320,4 +321,42 @@ test('cache: an answer about another commit than the held row (or than its listi
   await capabilityShowRequest({ action: 'file', capability: member, path: 'inject.md' }, { ...ctx, invoke: steady.invoke });
   await capabilityShowRequest({ action: 'file', capability: member, path: 'inject.md' }, { ...ctx, invoke: steady.invoke });
   assert.deepEqual(steady.calls.map(c => c.path ?? null), ['inject.md'], 'the listing was already held; the file is held now');
+});
+
+// Feature `trigger-sources`: the kernel's recorded answers (test/fixtures/trigger-sources/capability-show.json,
+// capability-show-problems.json and capability-show-not-object.json; the answer is the envelope's `.result`).
+test('trigger sources: both keys reach the relayed answer and the held copy, projected, for the three recorded answers', async () => {
+  const graph = { name: 'acme.graph', kind: 'member', repoKey: 'local//fixture/base/remotes/ws.git' };
+  const DESCRIPTION = 'Ready harvest branches, one event per judged head';
+  const usable = { events: ['opened', 'updated'], description: DESCRIPTION };
+  for (const [name, sources, problems] of [
+    ['capability-show', { 'harvest-branches': usable }, undefined],
+    ['capability-show-problems', { 'harvest-branches': usable, good: usable, 'Bad Name': null }, 3],
+    ['capability-show-not-object', null, 1],
+  ]) {
+    const envelope = JSON.parse(readFileSync(new URL(`./fixtures/trigger-sources/${name}.json`, import.meta.url), 'utf8'));
+    const f = fake(() => ({ ok: true, document: structuredClone(envelope) })), cache = createCapabilityShowCache();
+    const ctx = { workspace, cli: cli({ features: [...cli().features, 'trigger-sources'] }), catalog: [{ ...graph, commit: envelope.result.commit }], invoke: f.invoke, cache };
+    const first = await capabilityShowRequest({ action: 'show', capability: graph }, ctx);
+    assert.deepEqual(first.triggerSources, sources, name);
+    assert.deepEqual(first.triggerSourceProblems, problems === undefined ? undefined : envelope.result.triggerSourceProblems, name);
+    assert.equal(first.triggerSourceProblems?.length, problems, name);
+    assert.deepEqual(first.problems, [], `${name}: never the capability's problems`);
+    assert.doesNotMatch(JSON.stringify({ ...first, triggerSourceProblems: null }), /review-source|urlHosts|parameters|fields|<script>/, `${name}: only what the page shows is relayed`);
+    // Held at the row's commit: the second read runs no kernel and carries the same two keys.
+    const held = await capabilityShowRequest({ action: 'show', capability: graph }, ctx);
+    assert.equal(f.calls.length, 1, name); assert.equal(cache.size, 1, name);
+    assert.deepEqual(held, first, name); assert.notEqual(held, first, 'a copy');
+    assert.equal(Object.hasOwn(held, 'triggerSources'), true); assert.equal(Object.hasOwn(held, 'triggerSourceProblems'), problems !== undefined);
+    // What the renderer does with the relayed answer (JSON over HTTP, then the same decoder): itself.
+    assert.deepEqual(capabilityShowData(JSON.parse(JSON.stringify(held)), { selector: graph }), held, `${name}: idempotent across the relay`);
+  }
+  // An older kernel's answer still has neither key, relayed or held.
+  const older = answering(), cache = createCapabilityShowCache();
+  const ctx = { workspace, cli: cli(), catalog: rows(), invoke: older.invoke, cache };
+  for (let i = 0; i < 2; i++) {
+    const answer = await capabilityShowRequest({ action: 'show', capability: member }, ctx);
+    assert.equal(Object.hasOwn(answer, 'triggerSources'), false); assert.equal(Object.hasOwn(answer, 'triggerSourceProblems'), false);
+  }
+  assert.equal(older.calls.length, 1);
 });
