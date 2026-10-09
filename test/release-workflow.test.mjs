@@ -8,6 +8,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { parseConfigData } from "../lib/config-data.mjs";
 
 const yml = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
 const desktopPkg = JSON.parse(readFileSync(new URL("../packages/desktop/package.json", import.meta.url), "utf8"));
@@ -295,6 +296,63 @@ test("release and build-only installer smoke are consistent build-verify gates",
   // builder command and postdist owns clean-dist.
   assert.equal(desktopPkg.scripts.dist, "electron-builder --config electron-builder.config.cjs");
   assert.equal(desktopPkg.scripts.postdist, "node scripts/clean-dist.mjs");
+});
+
+test("the Linux leg launches the packaged window under xvfb, by the identical step in both workflows; no macOS leg does", () => {
+  // The page imports the shared home (packages/client, beside app.asar) from app.asar/renderer.
+  // Only a launched window shows that it loads, so the Linux leg runs the smoke once more with
+  // its launch phase. The two workflows must not diverge on it, and the build-verify run of
+  // the smoke (every leg, launch skipped) stays as it is.
+  const jobs = {
+    "release.yml": parseConfigData(yml).value.jobs["desktop-build"],
+    "build-installers.yml": parseConfigData(readFileSync(new URL("../.github/workflows/build-installers.yml", import.meta.url))).value.jobs["build-installers"],
+  };
+  const launches = {};
+  for (const [name, job] of Object.entries(jobs)) {
+    const smokes = job.steps.filter((step) => /\bnpm run dist:smoke\b/.test(step.run ?? ""));
+    assert.equal(smokes.length, 2, `${name}: the build-verify smoke, then the launch`);
+    const [verify, launch] = smokes;
+    // Every leg: launch skipped, marked as build-verify.
+    assert.equal(verify.if, undefined, `${name}: the build-verify smoke runs on every leg`);
+    assert.equal(verify.env.OATS_SMOKE_SKIP_LAUNCH, "1");
+    assert.equal(verify.env.OATS_SMOKE_BUILD_VERIFY, "1");
+    // Linux only: the same smoke with nothing that skips its launch phase, on a virtual display.
+    assert.equal(launch.if, "runner.os == 'Linux'", `${name}: the launch runs on the Linux leg only`);
+    assert.deepEqual(Object.keys(launch.env), ["OATS_SMOKE_TARGET_ARCH"], `${name}: no OATS_SMOKE_SKIP_LAUNCH, no OATS_SMOKE_BUILD_VERIFY`);
+    assert.equal(launch.env.OATS_SMOKE_TARGET_ARCH, "${{ matrix.arch }}");
+    assert.equal(launch["working-directory"], "packages/desktop");
+    assert.equal(launch["continue-on-error"], undefined, `${name}: a red launch fails the leg`);
+    const lines = launch.run.split("\n").map((line) => line.trim()).filter(Boolean);
+    assert.equal(lines.at(-1), "xvfb-run -a npm run dist:smoke", `${name}: the smoke, launch phase included, under xvfb`);
+    assert.match(lines[0], /^command -v xvfb-run >\/dev\/null \|\| \{ sudo apt-get update && sudo apt-get install -y xvfb; \}$/, `${name}: xvfb is there before it is used`);
+    // After the build-verify smoke and the upload: a red launch leaves that evidence and the artifacts.
+    const at = (step) => job.steps.indexOf(step), upload = job.steps.find((step) => step.uses?.startsWith("actions/upload-artifact@"));
+    assert.ok(at(verify) < at(upload) && at(upload) < at(launch), `${name}: build-verify smoke, upload, then the launch`);
+    assert.equal(at(launch), job.steps.length - 1, `${name}: the launch is the last step`);
+    // No other step starts a display or the window, and none is conditioned on macOS to launch.
+    assert.deepEqual(job.steps.filter((step) => /xvfb/.test(step.run ?? "")), [launch], `${name}: one step uses a virtual display`);
+    for (const step of job.steps.filter((entry) => /macOS/.test(entry.if ?? ""))) {
+      assert.doesNotMatch(step.run ?? "", /dist:smoke/, `${name}: no macOS step runs the smoke's launch`);
+    }
+    launches[name] = launch;
+  }
+  assert.deepEqual(launches["release.yml"], launches["build-installers.yml"], "release and build-only workflows must launch by the IDENTICAL step");
+  // In release.yml the step is in desktop-build, which publication needs: a window that does not come up publishes nothing.
+  assert.ok(parseConfigData(yml).value.jobs.publish.needs.includes("desktop-build"));
+  // Each workflow says why macOS has no launch step.
+  const bi = readFileSync(new URL("../.github/workflows/build-installers.yml", import.meta.url), "utf8");
+  for (const [name, text] of [["release.yml", yml], ["build-installers.yml", bi]]) {
+    assert.match(text, /macOS has no launch step: a runner gives an ad-hoc signed\s+# app without Developer ID trust no interactive windowserver/, `${name}: says why macOS has no launch step`);
+  }
+});
+
+test("build-installers runs for a change to the shared home, which every installer carries", () => {
+  // The app imports packages/client by relative path and the builder places it beside app.asar:
+  // a pull request that touches only that directory changes every installer.
+  const workflow = parseConfigData(readFileSync(new URL("../.github/workflows/build-installers.yml", import.meta.url))).value;
+  assert.deepEqual(workflow.on.pull_request.paths, ["packages/desktop/**", "packages/client/**", ".github/workflows/**"]);
+  const builder = readFileSync(new URL("../packages/desktop/electron-builder.config.cjs", import.meta.url), "utf8");
+  assert.match(builder, /extraResources: \[\{ from: "\.\.\/client", to: "client", filter: \["\*\*\/\*\.mjs"\] \}\]/, "the directory the filter names is the one the builder ships");
 });
 
 test("build-installers workflow: own concurrency group (never release.yml's), no tag-push trigger", () => {
