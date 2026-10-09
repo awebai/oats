@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "capabilityShowApi": 1,
+    "name": "acme.graph",
+    "kind": "member",
+    "repoKey": "local//fixture/base/remotes/ws.git",
+    "package": null,
+    "version": null,
+    "commit": "03da00318f782a10e73a67bb2d62e10c847c1ca1",
+    "path": "capabilities/acme.graph",
+    "inject": null,
+    "skills": [],
+    "problems": [],
+    "warnings": [],
+    "triggerSources": {
+      "harvest-branches": {
+        "command": "review-source",
+        "description": "Ready harvest branches, one event per judged head",
+        "events": [
+          "opened",
+          "updated"
+        ],
+        "parameters": {
+          "prefix": {
+            "default": "harvest/",
+            "pattern": "^[A-Za-z0-9._/-]{1,80}$"
+          },
+          "graph": {
+            "required": false
+          }
+        },
+        "fields": {
+          "graph": {
+            "pattern": "^[a-z0-9-]{1,40}$"
+          },
+          "branch": {
+            "pattern": "^[A-Za-z0-9._/-]{1,200}$"
+          }
+        },
+        "urlHosts": [
+          "graph.example.org"
+        ]
+      }
+    }
+  }
+}

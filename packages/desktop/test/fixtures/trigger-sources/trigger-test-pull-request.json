@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "triggerApi": 1,
+    "id": "local/prs",
+    "ok": false,
+    "placement": {
+      "runsOn": null,
+      "owner": null,
+      "host": "kb-host",
+      "runsHere": true,
+      "reason": null,
+      "enabledHere": true
+    },
+    "gh": {
+      "ok": true,
+      "account": "kb-bot",
+      "credentialSource": "keyring",
+      "reachesHostTimer": true,
+      "note": "gh uses the system keyring; the host timer runs in your user session and reaches it",
+      "detail": "github.com ·   ✓ Logged in to github.com account kb-bot (keyring) ·   - Active account: true"
+    },
+    "repo": {
+      "key": "github.com/acme/kb",
+      "readable": false,
+      "permissions": null,
+      "error": "unexpected gh api repos/acme/kb"
+    },
+    "soul": {
+      "resolves": true,
+      "name": "reviewer",
+      "agent": "reviewer",
+      "messaging": null
+    },
+    "teams": {
+      "requested": [],
+      "undeclared": [],
+      "messaging": null
+    },
+    "wouldFire": [],
+    "problems": [
+      "github.com/acme/kb is not readable with this host's gh"
+    ],
+    "warnings": [],
+    "spawned": false
+  }
+}

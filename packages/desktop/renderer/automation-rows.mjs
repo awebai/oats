@@ -5,7 +5,7 @@
  * grows (docs/desktop-cli-api.md "Workspace triggers and schedules"), only this
  * file changes. */
 
-import { displayLine, DETAIL_WITHHELD } from './display-text.mjs';
+import { displayLine, DETAIL_WITHHELD, MAX_DISPLAY_LINE } from './display-text.mjs';
 
 const text = v => typeof v === 'string' && v ? v : null;
 const list = v => Array.isArray(v) ? v : [];
@@ -14,6 +14,55 @@ const record = v => !!v && typeof v === 'object' && !Array.isArray(v);
 const REASONS = new Set(['host-unnamed', 'assigned-elsewhere', 'owner-mismatch', 'untrusted']);
 /** The whitelisted template fields (§2.3): the only ones the kernel substitutes. */
 export const TASK_FIELDS = Object.freeze(['repo', 'number', 'url', 'event', 'headSha']);
+/** With feature `trigger-sources`: a github.pull_request trigger's fields, and a capability source's (which
+ * also takes `{fields.<name>}`, any field the source declares). */
+export const PULL_REQUEST_TASK_FIELDS = Object.freeze([...TASK_FIELDS, 'trigger', 'subject', 'key']);
+export const SOURCE_TASK_FIELDS = Object.freeze(['trigger', 'source', 'subject', 'event', 'key', 'url']);
+
+export const PULL_REQUEST = 'github.pull_request';
+/** Capability trigger sources (#669 2b): everything about them is gated on the CLI declaring this feature. */
+export const TRIGGER_SOURCES_FEATURE = 'trigger-sources';
+export const triggerSourcesSupported = cli => Array.isArray(cli?.features) && cli.features.includes(TRIGGER_SOURCES_FEATURE);
+// The kernel's capability-name grammar: only such a name is ever looked up (Open capability).
+const CAPABILITY_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+/** A capability source, from a trigger's `on`: `on.source` is `<capability>:<source>`, an open string (anything
+ * that is not github.pull_request). → { id, capability, name, lookup } for display (`lookup`: the capability's
+ * name when it is one, for the catalog; else null), or null for a pull-request trigger and for a definition
+ * with no readable `on.source`. `status`: the status row's own `source: { capability, name }`, preferred. */
+export function capabilitySource(on, status = null) {
+  const id = record(on) ? text(on.source) : null;
+  if (!id || id === PULL_REQUEST) return null;
+  const at = id.indexOf(':'), split = at > 0 ? [id.slice(0, at), id.slice(at + 1)] : [id, ''];
+  const capability = text(status?.capability) || split[0], name = text(status?.name) || split[1];
+  return { id: displayLine(id), capability: displayLine(capability), name: displayLine(name), lookup: CAPABILITY_NAME.test(capability) ? capability : null };
+}
+/** "acme.graph · harvest-branches": how a capability source is named everywhere. */
+export const sourceLabel = source => [source?.capability, source?.name].filter(Boolean).join(' · ') || null;
+
+/** A poll failure's `cause`, in the Desktop's words; an unknown cause shows its code as is. */
+const CAUSES = Object.freeze({ exit: "the source's command failed", result: "the source's answer was not valid", 'too-many-events': 'the source returned too many events',
+  timeout: "the source's command timed out", refused: 'the source refused', resolution: 'the source could not be found' });
+export const causeWords = cause => typeof cause === 'string' && Object.hasOwn(CAUSES, cause) ? CAUSES[cause] : displayLine(cause);
+/** Why OATS refused an event (`invalidEvents[].rule`), in the Desktop's words; an unknown rule shows its code. */
+const RULES = Object.freeze({ shape: 'not an event object', 'unknown-key': 'an unknown key', key: 'a bad key', subject: 'a bad subject', event: "an event this source doesn't declare",
+  url: "a URL that isn't allowed", fields: "a field that isn't allowed", 'duplicate-key': 'a repeated key' });
+export const ruleWords = rule => typeof rule === 'string' && Object.hasOwn(RULES, rule) ? RULES[rule] : displayLine(rule);
+
+/** At most this many parameters, refused events and skipped items are listed; the rest are counted. */
+export const PARAMS_SHOWN = 16, EVENTS_SHOWN = 10;
+/** A capability-source trigger's `on.params`, as display-only lines for the quote treatment ("From the trigger
+ * file:"): `name = value`, as written, through displayLine; nothing is substituted, linked or interpreted.
+ * A value cut to fit a display line says so, as does an empty one and one that is not text.
+ * → { count, lines: [{ text, note }], more } (count 0: no parameters). */
+export function sourceParams(on) {
+  const entries = record(on) && record(on.params) ? Object.entries(on.params) : [];
+  const lines = entries.slice(0, PARAMS_SHOWN).map(([name, value]) => {
+    if (typeof value !== 'string') return { text: displayLine(name), note: 'Its value is not text: not shown.' };
+    const whole = `${name} = ${value}`;
+    return { text: displayLine(whole), note: value === '' ? 'Its value is empty.' : whole.length > MAX_DISPLAY_LINE ? `Cut at ${MAX_DISPLAY_LINE} characters: the end is not shown.` : null };
+  });
+  return { count: entries.length, lines, more: Math.max(0, entries.length - PARAMS_SHOWN) };
+}
 
 /** Which group a row belongs to, from the kernel's placement:
  * here: this computer runs it, or would but it is off / invalid here;
@@ -191,11 +240,18 @@ export function placementText(row, host) {
   return { label: 'This computer', tone: row.enabledHere ? 'ok' : 'muted', detail: host?.name ? `This computer is ${host.name}` : null };
 }
 
-/** The task template split into text and whitelisted field tokens, for highlighting. */
-export function taskParts(task) {
+/** The fields a trigger's templates take, by its source: today's five without feature trigger-sources; with it,
+ * a pull-request trigger's (plus `trigger`, `subject`, `key`) or a capability source's (plus `fields.<name>`). */
+export function taskFields(on, { sources = false } = {}) {
+  if (!sources) return { fields: TASK_FIELDS, named: false };
+  return capabilitySource(on) ? { fields: SOURCE_TASK_FIELDS, named: true } : { fields: PULL_REQUEST_TASK_FIELDS, named: false };
+}
+/** The task template split into text and whitelisted field tokens, for highlighting. `named`: also
+ * `{fields.<name>}`, a field a capability source declares (the kernel's field-name grammar). */
+export function taskParts(task, { fields = TASK_FIELDS, named = false } = {}) {
   const out = [];
   if (typeof task !== 'string') return out;
-  const re = new RegExp(`\\{(${TASK_FIELDS.join('|')})\\}`, 'g');
+  const re = new RegExp(`\\{(${[...fields, ...(named ? ['fields\\.[A-Za-z][A-Za-z0-9_]{0,39}'] : [])].join('|')})\\}`, 'g');
   let at = 0;
   for (const m of task.matchAll(re)) {
     if (m.index > at) out.push({ text: task.slice(at, m.index) });
@@ -224,9 +280,16 @@ export function cronInWords(cron) {
 }
 
 const SOURCES = { 'github.pull_request': 'Pull request' };
-/** A trigger's event in words: "Pull request opened, reopened" + repo + labels + base. */
-export function onSummary(on) {
+/** A trigger's event in words: "Pull request opened, reopened" + repo + labels + base. With `sources`
+ * (feature trigger-sources) a capability source's is "<capability> · <name>: <events>", its event names as the
+ * source declares them, with `source` and `events` for the On card. */
+export function onSummary(on, { sources = false } = {}) {
   if (!record(on)) return null;
+  const source = sources ? capabilitySource(on) : null;
+  if (source) {
+    const events = list(on.events).map(displayLine).filter(Boolean);
+    return { title: [sourceLabel(source), events.join(', ')].filter(Boolean).join(': '), repo: null, labels: [], base: null, poll: displayLine(on.poll), source, events };
+  }
   const events = list(on.events).filter(text).map(e => e.replace(/_/g, ' '));
   return {
     title: [SOURCES[on.source] || text(on.source) || 'Event', events.join(', ')].filter(Boolean).join(' '),
@@ -260,7 +323,6 @@ export function soulOriginText(origin) {
   return { short: String(origin.kind), long: String(origin.kind) };
 }
 
-const PULL_REQUEST = 'github.pull_request';
 /** A trigger event's name for display (0.49 `subject`): its `subject` (a string), else its `number`, as
  * `#42` only for a `github.pull_request` source (`source`: the list row's `on.source`; status rows carry no
  * `on`); else its `key`; else null. Never "#null": a null number is absent. Display-only (displayLine). */
@@ -273,21 +335,64 @@ export function eventLabel(entry, source) {
 /** An event kind in words ("ready for review"), filtered for display. */
 const eventWords = v => displayLine(v)?.replace(/_/g, ' ') ?? null;
 
+/** What a trigger source itself said (`source: { code, message? }` of a failed poll): its untrusted words,
+ * for the quote treatment. → { code, message } (either may be null) | null. */
+function sourceSays(raw) {
+  if (!record(raw)) return null;
+  const says = { code: displayLine(raw.code), message: displayLine(raw.message) };
+  return says.code || says.message ? says : null;
+}
+/** The events OATS refused (`invalidEvents: [{ text, rule }]`) and the items the source skipped (`skipped:
+ * [{ subject, why }]`): `text` and `why` are the source's (quoted), `rule` the kernel's code, `subject` a
+ * kernel-validated identifier. Absent means empty; a malformed entry is skipped. */
+const refusedEvents = v => list(v).filter(record).map(e => ({ text: displayLine(e.text), rule: displayLine(e.rule) })).filter(e => e.text || e.rule);
+const skippedItems = v => list(v).filter(record).map(e => ({ subject: displayLine(e.subject), why: displayLine(e.why) })).filter(e => e.subject || e.why);
+/** A failed meaning check (`invalid: { code, message, field?, at }`): the kernel's text. `at` is null unless
+ * it is a time: only an `invalid` with one is a check that failed at a poll (else the stored definition no
+ * longer validates, as before). */
+export function sourceCheck(raw) {
+  if (!record(raw)) return null;
+  const at = text(raw.at);
+  return { code: displayLine(raw.code), message: displayLine(raw.message), field: displayLine(raw.field), at: at && Number.isFinite(Date.parse(at)) ? at : null };
+}
+
+/** `test.source` of a capability source's trigger → what its Test card says first:
+ * { capability, name, ok: true, events (a count), filtered, refused: [{ text, rule }], skipped: [{ subject, why }] }
+ * | { …, ok: false, invalid: { code, message, field, at } } (its meaning fails)
+ * | { …, ok: false, cause, error, code, says } (the poll failed; `says`: the source's own refusal).
+ * Here the kernel sends arrays (unlike `lastPoll`'s counts); `filtered` is a count. */
+function testSource(raw) {
+  if (!record(raw)) return null;
+  const named = { capability: displayLine(raw.capability), name: displayLine(raw.name) };
+  if (raw.ok === true) return { ...named, ok: true, events: list(raw.events).length, filtered: count(raw.filtered) ? raw.filtered : 0, refused: refusedEvents(raw.invalidEvents), skipped: skippedItems(raw.skipped) };
+  if (record(raw.invalid)) return { ...named, ok: false, invalid: sourceCheck(raw.invalid) };
+  const e = raw.error;
+  return { ...named, ok: false, cause: text(raw.cause), error: displayLine(record(e) ? e.message : e), code: record(e) ? displayLine(e.code) : null, says: sourceSays(raw.source) };
+}
+
 /** `oats trigger test --json` or `oats schedule test --json` → one shape for the Test result card:
  * { ok, problems: [string], warnings: [string], wouldFire: [{ key, label, instance, nameCut, held }] | null, nextDue, soul, account }.
  * wouldFire (0.49): `instance` is the name the spawn would be asked to derive (null when unknown), `nameCut`
- * whether its purpose was cut to fit; an entry with nothing to name it by is skipped. */
+ * whether its purpose was cut to fit; an entry with nothing to name it by is skipped.
+ * A capability source's answer (feature trigger-sources; it carries `source`) adds `source` (testSource), each
+ * would-fire entry's `url` (the source's: text, never a link), and `problems` without the source failure
+ * `source` already says (the kernel lists that message there too); every string is a display line. */
 export function testResult(json, kind, { source = null } = {}) {
   const t = kind === 'schedule' && record(json?.test) ? json.test : json;
   if (!record(t)) return null;
+  const ran = kind === 'trigger' ? testSource(t.source) : null;
   const strings = v => list(v).map(p => typeof p === 'string' ? p : text(p?.message) || text(p?.code)).filter(Boolean);
   const soulOk = record(t.soul) ? { resolves: t.soul.resolves !== false, error: text(t.soul.error?.message) || text(t.soul.error) } : null;
-  const fire = f => { const label = eventLabel(f, source), instance = record(f) ? displayLine(f.instance) : null; return label ? { key: text(f.key), label, instance, nameCut: !!instance && f.nameCut === true, held: f.held === true } : null; };
+  const fire = f => { const label = eventLabel(f, source), instance = record(f) ? displayLine(f.instance) : null; return label ? { key: text(f.key), label, instance, nameCut: !!instance && f.nameCut === true, held: f.held === true, ...(ran ? { url: displayLine(f.url) } : {}) } : null; };
+  // The source's failure is in `problems` as well, word for word: said once, by `source`.
+  const failure = ran && !ran.ok ? text(t.source.invalid?.message) || text(t.source.error?.message) : null;
+  const lines = v => ran ? strings(v).filter(p => p !== failure).map(displayLine).filter(Boolean) : strings(v);
   return {
-    ok: t.ok === true, problems: strings(t.problems), warnings: strings(t.warnings),
+    ok: t.ok === true, problems: lines(t.problems), warnings: lines(t.warnings),
     wouldFire: Array.isArray(t.wouldFire) ? t.wouldFire.map(fire).filter(Boolean) : null,
     nextDue: text(t.nextDue), soul: soulOk,
     account: text(t.gh?.account),
+    ...(ran ? { source: ran } : {}),
   };
 }
 
@@ -297,13 +402,20 @@ export function firedEntry(raw, source = null) {
   return { key: text(raw.key), at: text(raw.at), outcome: text(raw.outcome), event: eventWords(raw.event), label: eventLabel(raw, source), instance: displayLine(raw.instance) };
 }
 const count = v => Number.isSafeInteger(v) && v >= 0;
-/** `lastPoll` → { at, ok: true, prs, matching } | { at, ok: false, error } | null (absent or malformed). */
+/** `lastPoll` → { at, ok: true, prs, matching } | { at, ok: false, error } | null (absent or malformed).
+ * A capability source's (feature trigger-sources) is { at, ok: true, events, filtered, skipped, refused } (four
+ * counts: `refused` is the kernel's `invalidEvents`; one it does not send counts 0) or, failed,
+ * { at, ok: false, error, cause, says } (`cause`: the kernel's code; `says`: the source's own refusal). */
 function lastPoll(raw) {
   if (!record(raw) || !Number.isFinite(Date.parse(text(raw.at) || ''))) return null;
-  if (raw.ok === true) return count(raw.prs) && count(raw.matching) ? { at: raw.at, ok: true, prs: raw.prs, matching: raw.matching } : null;
+  const n = v => count(v) ? v : 0;
+  if (raw.ok === true) {
+    if (count(raw.prs) && count(raw.matching)) return { at: raw.at, ok: true, prs: raw.prs, matching: raw.matching };
+    return count(raw.events) ? { at: raw.at, ok: true, events: raw.events, filtered: n(raw.filtered), skipped: n(raw.skipped), refused: n(raw.invalidEvents) } : null;
+  }
   if (raw.ok !== false) return null;
-  const e = raw.error;
-  return { at: raw.at, ok: false, error: displayLine(typeof e === 'string' ? e : record(e) ? e.message : null) ?? (record(e) ? displayLine(e.code) : null) };
+  const e = raw.error, cause = text(raw.cause), says = sourceSays(raw.source);
+  return { at: raw.at, ok: false, error: displayLine(typeof e === 'string' ? e : record(e) ? e.message : null) ?? (record(e) ? displayLine(e.code) : null), ...(cause ? { cause } : {}), ...(says ? { says } : {}) };
 }
 /** The time an event was observed, for sorting: unparseable sorts last. */
 const observed = e => { const t = Date.parse(e.observedAt || ''); return Number.isFinite(t) ? t : -Infinity; };
@@ -312,20 +424,27 @@ const observed = e => { const t = Date.parse(e.observedAt || ''); return Number.
  * filtered for display and every malformed entry skipped (an older kernel's fields are simply absent):
  * fired: [firedEntry], live: [{ instance, label, event }], pending: [{ key, label, event, observedAt }]
  * newest observed first (kernel order among ties), lastPoll (see above), lastError: { at, code, message, key } | null.
- * `source` (the list row's `on.source`) decides the `#` of a label. */
+ * `source` (the list row's `on.source`) decides the `#` of a label.
+ * A capability source's row (feature trigger-sources: it carries `source: { capability, name }`) adds `source`
+ * (as the kernel names it), `refused` (its `invalidEvents`) and `skipped` (the last GOOD poll's lists: read as
+ * empty when absent), `invalid` (sourceCheck, or null) and, on `lastError`, `says` (the source's own refusal).
+ * None of these keys exists for a pull-request row. */
 export function triggerStatus(json, id, { source = null } = {}) {
   const row = list(json?.triggers).find(r => record(r) && (r.id === id || r.qualifiedId === id));
   if (!row) return null;
   const live = list(row.live).filter(record).map(e => ({ instance: displayLine(e.instance), label: eventLabel(e, source), event: eventWords(e.event) })).filter(e => e.instance || e.label);
   const pending = list(row.pending).filter(record).map(e => ({ key: text(e.key), label: eventLabel(e, source), event: eventWords(e.event), observedAt: text(e.observedAt) }))
     .filter(e => e.label).sort((a, b) => observed(b) - observed(a) || 0);
-  const err = record(row.lastError) ? { at: text(row.lastError.at), code: displayLine(row.lastError.code), message: displayLine(row.lastError.message), key: text(row.lastError.key) } : null;
+  const named = record(row.source) ? { capability: displayLine(row.source.capability), name: displayLine(row.source.name) } : null;
+  const says = named && record(row.lastError) ? sourceSays(row.lastError.source) : null;
+  const err = record(row.lastError) ? { at: text(row.lastError.at), code: displayLine(row.lastError.code), message: displayLine(row.lastError.message), key: text(row.lastError.key), ...(says ? { says } : {}) } : null;
   return {
     fired: list(row.fired).map(e => firedEntry(e, source)).filter(Boolean), firedTotal: Number.isInteger(row.firedTotal) ? row.firedTotal : null,
     live, liveCount: Number.isInteger(row.liveCount) ? row.liveCount : null,
     max: Number.isInteger(row.concurrency?.max) ? row.concurrency.max : null,
     pending, lastPoll: lastPoll(row.lastPoll),
     lastError: err && (err.code || err.message) ? err : null,
+    ...(named ? { source: named, refused: refusedEvents(row.invalidEvents), skipped: skippedItems(row.skipped), invalid: sourceCheck(row.invalid) } : {}),
   };
 }
 

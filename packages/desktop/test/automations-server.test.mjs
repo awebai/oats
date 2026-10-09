@@ -226,3 +226,44 @@ test('describe: kernel refusals keep their code and message; a success of the wr
     assert.equal((await automationsRequest({ kind, action: 'describe', key: 'local/x', description: 'Fine' }, { workspace, cli: describeCli, invoke })).reason.code, 'E_CLI_PROTOCOL', `${kind} ${JSON.stringify(result)}`);
   }
 });
+
+// ── runSource (feature trigger-sources, #669 2b item 7): the one request key that lets the kernel run a capability
+// source's command for a test. Only the strict boolean `true`, only a trigger's test, only a CLI that declares the
+// feature; the flag is composed in cliAutomation, from one constant. ──
+test('runSource: refused everywhere but a trigger test on a CLI with trigger-sources, before any CLI runs', async () => {
+  const { TRIGGER_RUN_SOURCE_FLAG, automationRunSourceValid } = await import('../cli-adapter.mjs');
+  const { triggerSourcesSupported } = await import('../server/automations.mjs');
+  const sources = { ...cli, features: [...cli.features, 'trigger-sources'] };
+  assert.equal(TRIGGER_RUN_SOURCE_FLAG, '--run-source');
+  assert.deepEqual([triggerSourcesSupported(sources), triggerSourcesSupported(cli), triggerSourcesSupported({ ...sources, automationsApi: 2 })], [true, false, false]);
+  const never = () => assert.fail('must not execute');
+  const refused = async (request, withCli = sources) => assert.deepEqual((await automationsRequest(request, { workspace, cli: withCli, invoke: never })).reason, { code: 'E_BAD_ARGS', message: 'Invalid automation request.' }, JSON.stringify(request));
+  // Not the strict boolean true.
+  for (const runSource of [false, 'true', 1, null, 'yes', {}, [true], undefined]) await refused({ kind: 'trigger', action: 'test', key: 'agents/pr-review', runSource });
+  // Any action but test, and any kind but trigger.
+  for (const action of ['list', 'status', 'enable', 'disable', 'describe']) await refused({ kind: 'trigger', action, ...(action === 'list' ? {} : { key: 'local/hotfix-watch' }), ...(action === 'describe' ? { description: 'x' } : {}), runSource: true });
+  for (const action of ['list', 'test', 'run', 'enable', 'disable', 'reconcile']) await refused({ kind: 'schedule', action, ...(action === 'list' ? {} : { key: 'digest' }), runSource: true });
+  // A CLI that does not declare trigger-sources.
+  await refused({ kind: 'trigger', action: 'test', key: 'agents/pr-review', runSource: true }, cli);
+  // The adapter refuses the same on its own, with nothing executed.
+  const adapter = async o => assert.equal((await cliAutomation('/fixture/oats', { workspaceDir: DEPLOYMENT, ...o }, { exec: never })).error.code, 'E_BAD_ARGS', JSON.stringify(o));
+  for (const runSource of [false, 'true', 1, null]) await adapter({ kind: 'trigger', action: 'test', id: 'agents/pr-review', runSource });
+  for (const o of [{ kind: 'trigger', action: 'status', id: 'agents/pr-review' }, { kind: 'trigger', action: 'list' }, { kind: 'trigger', action: 'enable', id: 'agents/pr-review' },
+    { kind: 'schedule', action: 'test', id: 'digest' }, { kind: 'schedule', action: 'run', id: 'digest' }]) await adapter({ ...o, runSource: true });
+  assert.deepEqual([automationRunSourceValid('trigger', 'test', true), automationRunSourceValid('trigger', 'test', undefined), automationRunSourceValid('schedule', 'run', undefined)], [true, true, true]);
+});
+
+test('runSource: true reaches the argv as the flag, once; without it a test\'s argv is as before', async () => {
+  const sources = { ...cli, features: [...cli.features, 'trigger-sources'] }, calls = [];
+  const invoke = (bin, opts) => cliAutomation(bin, opts, { exec: (b, argv, o, done) => { calls.push({ argv, shell: o.shell }); done(null, JSON.stringify(doc('trigger-test'))); } });
+  const confirmed = await automationsRequest({ kind: 'trigger', action: 'test', key: 'agents/pr-review', runSource: true }, { workspace, cli: sources, invoke });
+  assert.equal(confirmed.status, 'ok');
+  assert.deepEqual(calls[0], { argv: ['trigger', 'test', 'agents/pr-review', '--run-source', '--dir', DEPLOYMENT, '--json'], shell: false });
+  assert.equal(calls[0].argv.filter(a => a === '--run-source').length, 1);
+  await automationsRequest({ kind: 'trigger', action: 'test', key: 'agents/pr-review' }, { workspace, cli: sources, invoke });
+  assert.deepEqual(calls[1].argv, ['trigger', 'test', 'agents/pr-review', '--dir', DEPLOYMENT, '--json'], 'no flag unless the request carries runSource');
+  // The kernel's refusal of an unconfirmed run keeps its code for the renderer (the message is not parsed).
+  const unconfirmed = JSON.parse(readFileSync(new URL('./fixtures/trigger-sources/trigger-test-unconfirmed.json', import.meta.url), 'utf8'));
+  const answer = await automationsRequest({ kind: 'trigger', action: 'test', key: 'agents/pr-review' }, { workspace, cli: sources, invoke: async () => unconfirmed });
+  assert.deepEqual([answer.status, answer.reason.code, answer.result], ['unavailable', 'E_TRIGGER_SOURCE_RUN', null]);
+});

@@ -8,6 +8,7 @@ import { createWorkspaceDiscovery, discoveryCSS, workspaceTabs } from "../worksp
 import { capabilityRow } from "../workspace-catalog.mjs";
 import { renderCapabilityPage, renderSoulCapabilities, renderSoulCore, capabilityPageCSS, pageCardCSS, soulCapabilitiesCSS, desktopFacts, catalogNotice, catalogNoticeKind, updateCatalogNotice } from "../capability-page.mjs";
 import { createCapabilityContents, capabilityContentsCSS } from "../capability-contents.mjs";
+import { sourceQuoteCSS } from "../source-quote.mjs";
 import { soulInstructionsCSS } from "../soul-instructions.mjs";
 import { capabilitySelector, sameSelector } from "../capability-show-contract.mjs";
 import { MARKDOWN_CSS } from "./markdown.mjs";
@@ -134,6 +135,7 @@ let state = null;
 /* Quick Open selects a soul for inspection; launch remains explicit. */
 let pendingPreselect = null;
 let pendingHome = null;
+let pendingCapability = null;
 let pendingWorkspaceTab = null;
 // Selection handoffs compete with each other, NOT with the roster request
 // that supplies their data. Explicit tabs (including reselecting Souls) win
@@ -253,6 +255,37 @@ function applyPreselect(s) {
   }
 }
 
+/** Open the page of the workspace's capability of this name, on the Capabilities subtab, as its table row
+ * does: an inspection intent, never a launch. Held until the Workspace view is mounted and the capabilities
+ * catalog of the current workspace has been read (at once when both already are), consumed once, and
+ * superseded by a workspace switch or a newer selection. The name must be exactly ONE catalog row's: with
+ * none or several nothing opens and `onMiss(count)` says so. */
+export function preselectCapability(name, { onMiss } = {}) {
+  const intent = nextSelectionIntent();
+  pendingCapability = typeof name === "string" && name ? { name, onMiss: typeof onMiss === "function" ? onMiss : null, ...intent } : null;
+  if (state?.alive) applyCapability(state);
+}
+function applyCapability(s) {
+  const ref = pendingCapability; if (!ref || !s.discovery) return;
+  // A workspace switch OR newer selection supersedes this handoff.
+  if (!ownsSelection(s, ref)) { pendingCapability = null; return; }
+  if (s.discovery.tab !== "capabilities") {
+    // Its tab, before the catalog lands. The change is this handoff's own, yet the discovery mints an intent for
+    // every tab change (and may call back here as the catalog read begins): the handoff adopts that intent, so it
+    // is not superseded by itself.
+    s.discovery.setTab("capabilities");
+    pendingCapability = { ...ref, intent: selectionIntent };
+  }
+  const { catalog } = s.discovery.context();
+  // Not read yet (the discovery forgets another workspace's table): the read that lands calls back here (onCatalog).
+  if (!Array.isArray(catalog)) return;
+  pendingCapability = null; // consumed-once, match or not
+  // A bare name must not pick between a member's capability and a package's of the same name.
+  const matches = catalog.filter(row => row?.name === ref.name);
+  if (matches.length !== 1) { ref.onMiss?.(matches.length); return; }
+  openCapability(s, matches[0], null);
+}
+
 /** A page (a soul's or a capability's) replaces the list it was opened from
  * while it is open: mode null | "soul" | "capability". */
 function showPage(s, mode) {
@@ -281,6 +314,8 @@ function openCapability(s, row, from = null, why = null) {
     openExternal: url => s.ctx.openExternal?.(url),
     // The kernel no longer knows it, or it moved since the catalog was read: re-read the catalog, the page follows.
     onCatalogStale: () => { if (s.alive && s.capOpen?.contents === contents) s.discovery.reload(); },
+    // Its Trigger sources row appeared or left: the Provides card is rebuilt around it (the signature below holds it).
+    onProvidesChange: () => { if (s.alive && s.capOpen?.contents === contents) paintCapabilityPage(s); },
   });
   s.capOpen = { row, from, why: from ? why : null, gen: workspaceGeneration(), scrollTop: from ? null : list?.scrollTop ?? null, signature: null, contents };
   paintCapabilityPage(s);
@@ -308,13 +343,15 @@ function paintCapabilityPage(s) {
   const shown = from ? (current && current !== row ? { ...current, ...row } : row) : current || row;
   // The page itself follows the catalog's content; its age line (below) follows the controller's state, on its own.
   // "Used by" reads the souls' composition (souls-capabilities) and marks, or the roster's module rows.
+  // Whether the Contents controller's Trigger sources row has content decides the Provides card's shape (what the row says does not).
   const signature = JSON.stringify([current === row ? null : current, catalogPending, context.instances, context.root, context.rosterState, context.composition,
-    context.composition ? context.souls.map(a => [a.name, a.key, a.color, a.agentsRoot, a.soulKind, a.package, a.capabilities]) : null]);
+    context.composition ? context.souls.map(a => [a.name, a.key, a.color, a.agentsRoot, a.soulKind, a.package, a.capabilities]) : null,
+    open.contents.triggerSources.childElementCount > 0]);
   const host = s.q("workspace-cap-page");
   if (signature !== open.signature) { // an unchanged catalog never rebuilds the page under focus
     open.signature = signature; open.noticeSignature = null;
     const restore = captureFocusState(host, { fallback: () => host.querySelector(".page-back") }), keep = open.contents.hold();
-    renderCapabilityPage(host, { row: shown, ...context, catalogPending, contents: open.contents.element,
+    renderCapabilityPage(host, { row: shown, ...context, catalogPending, contents: open.contents.element, triggerSources: open.contents.triggerSources,
       openExternal: url => s.ctx.openExternal?.(url),
       backLabel: from ? from.name : "Capabilities", from: from ? { label: from.name, why } : null,
       onBack: () => closeCapability(s, { restoreFocus: true }),
@@ -394,6 +431,7 @@ export function mount(el, ctx) {
 ${inspectorCSS}
 ${pageCardCSS}
 ${capabilityPageCSS}
+${sourceQuoteCSS}
 ${capabilityContentsCSS}
 ${soulInstructionsCSS}
 ${MARKDOWN_CSS}
@@ -490,7 +528,9 @@ ${spawnDialogCSS}</style>
     },
   });
   s.discovery = createWorkspaceDiscovery(s.q("workspace-header"), s.q("workspace-discovery"), {
-    ctx, soulsPanel: s.q("souls-grid"), onIntent: () => nextSelectionIntent(), onCatalog: () => syncCapabilityPage(s),
+    ctx, soulsPanel: s.q("souls-grid"), onIntent: () => nextSelectionIntent(),
+    // A catalog read settled (or began, or was reset): the open page follows, and a capability handoff waiting for it opens.
+    onCatalog: () => { syncCapabilityPage(s); applyCapability(s); },
     rosterState: () => rosterSettledState(s), // "Used by" claims are roster-derived: none while the roster is not settled-good
     onOpenCapability: row => openCapability(s, row, null),
     onTeamMember: (action, member) => void teamMemberAction(s, action, member),
@@ -512,6 +552,7 @@ ${spawnDialogCSS}</style>
   }, true);
   s.q("workspace-header").append(s.q("wssel")); // standalone switcher stays reachable on every subtab
   applyWorkspaceTab(s);
+  applyCapability(s); // a handoff made before the mount: its tab now, its page when the catalog lands
   s.q("filter").addEventListener("input", (e) => { s.filterText = e.target.value; renderGrid(s); });
   s.q("filter").before(iconElement(el.ownerDocument, "search", { size: 14 }));
   for (const button of s.q("souls-group-by").querySelectorAll("button")) button.addEventListener("click", () => {
@@ -610,6 +651,7 @@ export function unmount() {
   // (review 04584f9 — the consumed-once/stale-intent contract).
   pendingPreselect = null;
   pendingHome = null;
+  pendingCapability = null;
   pendingWorkspaceTab = null;
   selectionIntent++;
   state.alive = false;

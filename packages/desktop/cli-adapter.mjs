@@ -338,14 +338,21 @@ export const automationIdValid = (kind, id) => typeof id === "string" && (kind =
 export const automationKeyLocal = id => typeof id === "string" && (!id.includes("/") || id.startsWith("local/"));
 // The kernel's summary rule (and renderer/schedule-read-data.mjs's): "" clears, else one line of 1-200 code points.
 export const automationDescriptionValid = v => typeof v === "string" && [...v].length <= 200 && !/[\p{Cc}\u2028\u2029]/u.test(v);
-export function cliAutomation(bin, { kind, action, id, description, workspaceDir }, io = {}) {
+/** `oats trigger test <id> --run-source` (feature trigger-sources): the kernel runs a capability source's
+ * command for a test only with this flag; without it, it executes nothing and answers E_TRIGGER_SOURCE_RUN.
+ * The one place the flag is spelled: it is composed here, from `runSource: true`, never passed in by a caller. */
+export const TRIGGER_RUN_SOURCE_FLAG = "--run-source";
+/** `runSource` is an operator's confirmed press and nothing else: the strict boolean `true`, a trigger's test. */
+export const automationRunSourceValid = (kind, action, runSource) => runSource === undefined || (runSource === true && kind === "trigger" && action === "test");
+export function cliAutomation(bin, { kind, action, id, description, workspaceDir, runSource }, io = {}) {
   if (!Object.hasOwn(AUTOMATION_VERBS, kind) || !AUTOMATION_VERBS[kind].includes(action)
     || (action === "list" ? id !== undefined : id === undefined ? !ID_OPTIONAL.has(action) : !automationIdValid(kind, id))
     || (action === "describe" ? !automationKeyLocal(id) || !automationDescriptionValid(description) : description !== undefined)
+    || !automationRunSourceValid(kind, action, runSource)
     || typeof workspaceDir !== "string" || !isAbsolute(workspaceDir) || workspaceDir.includes("\0")) {
     return Promise.resolve({ schemaVersion: 1, ok: false, error: { code: "E_BAD_ARGS", message: "Invalid automation request" } });
   }
-  const verb = action === "describe" ? ["update", id, `--description=${description}`] : [action, ...(id === undefined ? [] : [id])];
+  const verb = action === "describe" ? ["update", id, `--description=${description}`] : [action, ...(id === undefined ? [] : [id]), ...(runSource === true ? [TRIGGER_RUN_SOURCE_FLAG] : [])];
   const argv = [kind, ...verb, "--dir", workspaceDir, "--json"];
   return runJson(bin, argv, { cwd: workspaceDir, exec: io.exec, timeout: io.timeout || (action === "test" ? 60_000 : 30_000) });
 }

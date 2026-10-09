@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_TRIGGER_SOURCE_RUN",
+    "message": "ws/trusted takes its events from acme.graph:harvest-branches; testing it runs that capability's source command: pass --run-source to run it",
+    "details": {
+      "capability": "acme.graph",
+      "source": "harvest-branches",
+      "flag": "--run-source"
+    }
+  }
+}

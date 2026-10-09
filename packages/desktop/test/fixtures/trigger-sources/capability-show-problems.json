@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "capabilityShowApi": 1,
+    "name": "acme.graph",
+    "kind": "member",
+    "repoKey": "local//fixture/base/remotes/ws.git",
+    "package": null,
+    "version": null,
+    "commit": "180b621b7c171595168c598da9504c43941b2d62",
+    "path": "capabilities/acme.graph",
+    "inject": null,
+    "skills": [],
+    "problems": [],
+    "warnings": [],
+    "triggerSources": {
+      "harvest-branches": {
+        "command": "missing",
+        "description": "Ready harvest branches, one event per judged head",
+        "events": [
+          "opened",
+          "updated"
+        ],
+        "parameters": {
+          "prefix": {
+            "default": "harvest/",
+            "pattern": "^[A-Za-z0-9._/-]{1,80}$"
+          },
+          "graph": {
+            "required": false
+          }
+        },
+        "fields": {
+          "graph": {
+            "pattern": "^[a-z0-9-]{1,40}$"
+          },
+          "branch": {
+            "pattern": "^[A-Za-z0-9._/-]{1,200}$"
+          }
+        },
+        "urlHosts": [
+          "graph.example.org"
+        ]
+      },
+      "good": {
+        "command": "review-source",
+        "description": "Ready harvest branches, one event per judged head",
+        "events": [
+          "opened",
+          "updated"
+        ],
+        "parameters": {
+          "prefix": {
+            "default": "harvest/",
+            "pattern": "^[A-Za-z0-9._/-]{1,80}$"
+          },
+          "graph": {
+            "required": false
+          }
+        },
+        "fields": {
+          "graph": {
+            "pattern": "^[a-z0-9-]{1,40}$"
+          },
+          "branch": {
+            "pattern": "^[A-Za-z0-9._/-]{1,200}$"
+          }
+        },
+        "urlHosts": [
+          "graph.example.org"
+        ]
+      },
+      "Bad Name": 7
+    },
+    "triggerSourceProblems": [
+      {
+        "source": "harvest-branches",
+        "pointer": "/triggerSources/harvest-branches/command",
+        "message": "trigger source \"harvest-branches\": command \"missing\" is not one of the manifest's commands"
+      },
+      {
+        "source": "Bad Name",
+        "pointer": "/triggerSources/Bad Name",
+        "message": "trigger source \"Bad Name\": the name must be 1 to 40 lowercase letters, digits and dashes, starting with a letter or digit"
+      },
+      {
+        "source": "Bad Name",
+        "pointer": "/triggerSources/Bad Name",
+        "message": "trigger source \"Bad Name\": must be an object { command, events, description?, parameters?, fields?, urlHosts? }"
+      }
+    ]
+  }
+}

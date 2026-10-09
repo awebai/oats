@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "capabilityShowApi": 1,
+    "name": "acme.graph",
+    "kind": "member",
+    "repoKey": "local//fixture/base/remotes/ws.git",
+    "package": null,
+    "version": null,
+    "commit": "15dde91364cecfb76f023c10c5a116036dd64b18",
+    "path": "capabilities/acme.graph",
+    "inject": null,
+    "skills": [],
+    "problems": [],
+    "warnings": [],
+    "triggerSources": "<script>not an object</script>",
+    "triggerSourceProblems": [
+      {
+        "source": null,
+        "pointer": "/triggerSources",
+        "message": "triggerSources must be an object of named trigger sources"
+      }
+    ]
+  }
+}

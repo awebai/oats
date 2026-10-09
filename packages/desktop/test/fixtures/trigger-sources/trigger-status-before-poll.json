@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "triggerApi": 1,
+    "scope": "/fixture/base/deployment",
+    "triggers": [
+      {
+        "id": "local/harvest",
+        "name": "harvest",
+        "enabled": true,
+        "runsHere": true,
+        "reason": null,
+        "enabledHere": true,
+        "repo": null,
+        "soul": "reviewer",
+        "concurrency": {
+          "max": 5,
+          "perKey": 1
+        },
+        "lastPoll": null,
+        "nextPollAt": null,
+        "nextDue": null,
+        "pending": [],
+        "fired": [],
+        "firedTotal": 0,
+        "live": [],
+        "liveCount": 0,
+        "lastError": null,
+        "source": {
+          "capability": "acme.graph",
+          "name": "harvest-branches"
+        },
+        "invalidEvents": [],
+        "skipped": []
+      },
+      {
+        "id": "local/prs",
+        "name": "prs",
+        "enabled": true,
+        "runsHere": true,
+        "reason": null,
+        "enabledHere": true,
+        "repo": "github.com/acme/kb",
+        "soul": "reviewer",
+        "concurrency": {
+          "max": 1,
+          "perKey": 1
+        },
+        "lastPoll": null,
+        "nextPollAt": null,
+        "nextDue": null,
+        "pending": [],
+        "fired": [],
+        "firedTotal": 0,
+        "live": [],
+        "liveCount": 0,
+        "lastError": null
+      },
+      {
+        "id": "ws/elsewhere",
+        "name": "elsewhere",
+        "enabled": true,
+        "runsHere": false,
+        "reason": "assigned-elsewhere",
+        "enabledHere": true,
+        "repo": null,
+        "soul": "reviewer",
+        "concurrency": {
+          "max": 1,
+          "perKey": 1
+        },
+        "lastPoll": null,
+        "nextPollAt": null,
+        "nextDue": null,
+        "pending": [],
+        "fired": [],
+        "firedTotal": 0,
+        "live": [],
+        "liveCount": 0,
+        "lastError": null,
+        "source": {
+          "capability": "acme.graph",
+          "name": "harvest-branches"
+        },
+        "invalidEvents": [],
+        "skipped": []
+      },
+      {
+        "id": "ws/trusted",
+        "name": "trusted",
+        "enabled": true,
+        "runsHere": true,
+        "reason": null,
+        "enabledHere": true,
+        "repo": null,
+        "soul": "reviewer",
+        "concurrency": {
+          "max": 1,
+          "perKey": 1
+        },
+        "lastPoll": null,
+        "nextPollAt": null,
+        "nextDue": null,
+        "pending": [],
+        "fired": [],
+        "firedTotal": 0,
+        "live": [],
+        "liveCount": 0,
+        "lastError": null,
+        "source": {
+          "capability": "acme.graph",
+          "name": "harvest-branches"
+        },
+        "invalidEvents": [],
+        "skipped": []
+      },
+      {
+        "id": "ws/untrusted",
+        "name": "untrusted",
+        "enabled": true,
+        "runsHere": false,
+        "reason": "untrusted",
+        "enabledHere": true,
+        "repo": null,
+        "soul": "reviewer",
+        "concurrency": {
+          "max": 1,
+          "perKey": 1
+        },
+        "lastPoll": null,
+        "nextPollAt": null,
+        "nextDue": null,
+        "pending": [],
+        "fired": [],
+        "firedTotal": 0,
+        "live": [],
+        "liveCount": 0,
+        "lastError": null,
+        "source": {
+          "capability": "acme.graph",
+          "name": "harvest-branches"
+        },
+        "invalidEvents": [],
+        "skipped": []
+      }
+    ]
+  }
+}
