@@ -93,7 +93,7 @@ const flag = (name) => {
 const flagAll = (name) => args.flatMap((a, i) => (a === `--${name}` && args[i + 1] && !args[i + 1].startsWith("--") ? [args[i + 1]] : []));
 
 // "collect" is retired: the kernel owns roster collection and the CLI read is
-// asynchronous. Terminal liveness runs in server/liveness-main.mjs children.
+// asynchronous. Terminal liveness runs in packages/client/liveness-main.mjs children.
 if (sub !== "start") {
   console.error("usage: oats-web.mjs start [--port <n>] [--dir <deployment>]...  (repeat --dir for multiple deployments)");
   process.exit(1);
@@ -101,9 +101,11 @@ if (sub !== "start") {
 
 // The packaged app never imports the framework checkout's kernel module and
 // accepts no framework-root override; reads and mutations use the installed CLI.
-const locator = await import(pathToFileURL(join(HERE, "..", "cli-locator.mjs")).href);
-const adapter = await import(pathToFileURL(join(HERE, "..", "cli-adapter.mjs")).href);
-const remote = await import(pathToFileURL(join(HERE, "remote-roster.mjs")).href);
+// These three are in the shared home (packages/client), which the package places beside app.asar
+// (electron-builder.config.cjs: extraResources), at the same relative position as here.
+const locator = await import(pathToFileURL(join(HERE, "..", "..", "client", "cli-locator.mjs")).href);
+const adapter = await import(pathToFileURL(join(HERE, "..", "..", "client", "cli-adapter.mjs")).href);
+const remote = await import(pathToFileURL(join(HERE, "..", "..", "client", "remote-roster.mjs")).href);
 let remoteGroups = [];
 let remoteCollecting = false;
 
@@ -777,7 +779,7 @@ const servedCliStatus = () => ({ ...cliStatus(), probePath: process.env.PATH || 
    Every local deployment fact is one bounded `oats status --json` plus one
    `oats workspace status --json` (deployment-observer.mjs). Terminal liveness for
    the kernel-reported targets is observed in a separate short-lived child
-   (server/liveness-main.mjs) so tmux latency cannot stall request handling.
+   (packages/client/liveness-main.mjs) so tmux latency cannot stall request handling.
    Local roster Git is null; only the on-demand K1 route observes Git.
 
    Observation reuse (kernel feature observe-max-age): a background cycle lets the kernel reuse
@@ -786,7 +788,8 @@ const servedCliStatus = () => ({ ...cliStatus(), probePath: process.env.PATH || 
    pass no flag at all to a kernel that does not declare the feature. */
 let snapshot = { at: 0, byWs: new Map() };   // wsId -> { deployment, instances, generatedAt, observedAt } | remote panel
 const BACKGROUND_MAX_AGE = 60;
-const LIVENESS = join(HERE, "liveness-main.mjs");
+// The collector's entry is in the shared home too, beside app.asar in the package.
+const LIVENESS = join(HERE, "..", "..", "client", "liveness-main.mjs");
 const soulCatalog = createSoulCatalog();
 const capabilityCatalog = createCapabilityCatalog();
 const inspectCache = createInspectCache();
