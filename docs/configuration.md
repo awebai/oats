@@ -78,6 +78,98 @@ Which teams a soul may join, and its default, are committed in the workspace's
 commit instead). How teams are resolved, and what a messaging provider does
 with them, is in [workspaces.md](workspaces.md#teams).
 
+## Claude channel delivery: the approved route
+
+Claude seats on aweb channel delivery start without Claude's “WARNING:
+Loading development channels” prompt through the **approved route**: the
+`oats.aweb` setting `claudeChannelMode: approved` starts Claude with
+`--channels plugin:aweb-channel@awebai-marketplace`, and Claude shows no
+development prompt. Claude admits the plugin when a root-owned machine
+managed-settings file lists it. The route does not depend on the Claude
+version and needs no OATS mechanism beyond these settings. The operator's
+ordered procedure is the `oats.setup` host step “Claude channel delivery
+(approved route)” in `/oats-workspace-config`, which `/oats-onboarding` card 4
+calls; the provider's side is `/oats-aweb` §4.
+
+**The managed-settings file** is a host change made by a human admin with
+sudo. OATS never writes it.
+
+| | |
+|---|---|
+| Location | Linux: `/etc/claude-code/managed-settings.json`; macOS: `/Library/Application Support/ClaudeCode/managed-settings.json` |
+| Owner and mode | root, `0644` |
+| Content | exactly `{"channelsEnabled": true, "allowedChannelPlugins": [{"plugin": "aweb-channel", "marketplace": "awebai-marketplace"}]}` |
+| Existing file | merge these two keys into it; never overwrite other keys |
+| Drop-ins | Claude also reads `managed-settings.d/*.json` beside the file |
+
+Setting `allowedChannelPlugins` **replaces Anthropic's default channel
+allowlist** on that host. That list is the official discord, telegram,
+fakechat and imessage plugins; a host that uses any of them must list them
+too.
+
+**Precedence.** Claude reads its managed policy from the first source
+present: server-managed settings (a claude.ai Team/Enterprise organization's
+admin console), then an MDM profile (`com.anthropic.claudecode` on macOS), then
+the file. On an account governed by server-managed settings or MDM the file is
+ignored, and the organization admin sets the same two keys there instead.
+Pro/Max accounts and plain API-key use have no server-managed settings, so the
+file applies. `channelsEnabled: true` is required for API-key users whenever
+any managed policy exists, and for Team/Enterprise subscribers; Pro/Max ignore
+it. It is harmless there: always include it.
+
+**OATS side**, in this host's `oats-local.yaml` under `settings.oats.aweb`:
+
+```yaml
+settings:
+  oats.aweb:
+    claudeChannelMode: approved   # host-only
+    delivery: channel             # host-wide; or per spawn: --provider oats.aweb delivery=channel
+```
+
+With channel delivery, pi uses its `@awebai/pi` extension and Codex always
+uses the host broker.
+
+**The plugin.** `aweb-channel` must be installed from the marketplace named
+`awebai-marketplace` (GitHub `awebai/claude-plugins`) and enabled, in the
+Claude config directory the host's Claude launch configuration uses (its
+`CLAUDE_CONFIG_DIR`, else `~/.claude`).
+
+**Existing homes** keep the delivery and channel mode recorded at their spawn.
+Respawn a home to adopt the route. Setup never restarts running agents
+without the operator's word.
+
+**No launch-prompt opt-in** is needed in approved mode: the
+[exact-home consent](#exact-home-launch-prompt-consent) applies only to
+development mode, and qualifies only Claude 2.1.289 on `darwin-arm64`.
+
+**Verify:**
+
+1. `oats spawn <soul> --preview` shows `settings.oats.aweb.claudeChannelMode:
+   approved` and `delivery: channel`.
+2. The started session shows no development prompt, and its banner shows
+   “Channels (experimental) messages from plugin:aweb-channel@awebai-marketplace
+   inject directly in this session”, followed by “restart without --channels
+   to stop”. At normal terminal widths the banner wraps over two rows: look
+   for each part, not for one string.
+3. The banner says none of `not on the approved channels allowlist`,
+   `not on your org's approved channels list`, `blocked by org policy` or
+   `plugin not installed`.
+4. Receive is proven only by the `/oats-aweb` nonce exchange.
+
+**Failure banners**, their cause and remedy:
+
+| What the session shows | Cause | Remedy |
+|---|---|---|
+| `not on the approved channels allowlist` | the effective managed policy has no `allowedChannelPlugins` (no file, the file not read, or the key missing), so Anthropic's default list applied | write or fix the file |
+| `not on your org's approved channels list` | the effective policy has an `allowedChannelPlugins` without this plugin and marketplace pair: the names in the file are wrong, or a higher source (server-managed settings or MDM) supplies its own list | fix the entry, or have the organization admin add it |
+| `blocked by org policy` (then “Inbound messages will be silently dropped”) | the effective policy lacks `channelsEnabled: true`, which Team/Enterprise subscribers need, and API-key use whenever any managed policy exists | add the key, or have the organization admin set it |
+| `plugin:aweb-channel@awebai-marketplace · plugin not installed` | the plugin is not installed in the launch's Claude config directory | install and enable it there |
+| the development prompt still appears | the home started in development mode, not approved: the host setting is missing, or the home was spawned before the change | set `claudeChannelMode: approved`, then respawn the home |
+
+**Limits.** Channels are an Anthropic research preview. Anthropic's
+account-level feature flag gates channels on every route. The allowlist
+matches the marketplace by name.
+
 ## Exact-home launch prompt consent
 
 `launchPromptAnswers` belongs only in the host's `oats-local.yaml`. It is
@@ -114,6 +206,8 @@ selects arguments; it does not grant consent. Approved-mode arguments, another
 plugin, multiple plugins or contradictory channel arguments cannot qualify.
 Environment values, spawn flags and saved launch recipes cannot enable consent.
 Existing harness folder-trust configuration remains independent.
+The version-independent route, with no prompt to answer, is
+[the approved route](#claude-channel-delivery-the-approved-route).
 
 Preview reports effective `launchPromptAnswers.awebDevelopmentChannel` and
 `consentSource` without terminal capture or input. `--no-launch` never answers.
@@ -398,6 +492,9 @@ is safe to delete.
 - **Per-instance provider facts:** `oats spawn <soul> --provider <cap> key=value`,
   recorded in the instance's `instance.json`.
 - **Shared teams, stores and defaults:** the workspace file.
+- **Claude's channel admission:** Claude's own managed policy (server-managed
+  settings, an MDM profile or the root-owned managed-settings file; see
+  [the approved route](#claude-channel-delivery-the-approved-route)).
 
 ## Inspecting the effective configuration
 

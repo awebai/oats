@@ -7,7 +7,9 @@ description: >-
   member, a team, a soul's teams or a default capability; deciding whether a
   fact belongs in a shared file or on one machine; or explaining a refusal
   like "why can't I
-  spawn X" or an E_* code. For package pins use `/oats-package-pins`, for
+  spawn X" or an E_* code; or setting up Claude channel delivery on a host
+  (the approved route: Claude's managed settings, `claudeChannelMode:
+  approved`). For package pins use `/oats-package-pins`, for
   teams (shared or local, and which souls may join them) `/oats-teams`, for
   triggers and schedules `/oats-automations`.
   Part of the setup and config of an OATS workspace (oats.setup); day-to-day
@@ -46,6 +48,7 @@ which, what every soul gets by default.
 | workspace triggers and schedules | `oats-triggers/`, `oats-schedules/` in a member (kernel 0.29.0; see `/oats-automations`) | shared (Git) |
 | host paths, custody, settings a manifest marks host-owned, clones, launch configurations and launch preferences (`souls.launch`), souls disabled here; local teams and a local default team, only when the workspace says `localTeams: true` (`oats teams`) | `oats-local.yaml` in the deployment directory | **this machine** |
 | exact package commits and integrity | `oats-lock.json` | this machine, written by `oats sync` only |
+| Claude's channel admission for aweb channel delivery (`channelsEnabled`, `allowedChannelPlugins`) | Claude's managed-settings file, outside `oats-local.yaml`: `/etc/claude-code/managed-settings.json` (Linux), `/Library/Application Support/ClaudeCode/managed-settings.json` (macOS) | this machine, owned by the OS admin (root, sudo); OATS never writes it. See [Claude channel delivery (approved route)](#claude-channel-delivery-approved-route) below |
 | a fact about one spawn (a retained seat, a team to join now) | `oats spawn … --provider <cap> key=value` | one instance |
 
 Never put an absolute path, an account or a host name in a shared file (the
@@ -114,6 +117,121 @@ this machine → `settings`; this spawn → `--provider`. A key the manifest mar
 `hostOnly` is accepted only from `settings`. `oats spawn <soul> --preview`
 shows the merged `settings.<cap>` and where each key came from
 (`settingsOrigins`); check it after every payload change.
+
+## Claude channel delivery (approved route)
+
+A host step of `/oats-onboarding` card 4, for Claude seats on aweb channel
+delivery. With `claudeChannelMode: approved`, oats.aweb starts Claude with
+`--channels plugin:aweb-channel@awebai-marketplace` and Claude shows no
+“WARNING: Loading development channels” prompt: it admits the plugin when a
+root-owned managed-settings file on the machine lists it. The route does not
+depend on the Claude version and needs no launch-prompt consent
+(`launchPromptAnswers` applies only to development mode). Contract:
+`docs/configuration.md`, “Claude channel delivery: the approved route”;
+provider behaviour and receive proof: `/oats-aweb` §4.
+
+**Prerequisites:** the intake selects Claude seats with channel delivery on
+this host; a human admin with sudo on this machine, because OATS never writes
+the managed-settings file; and which managed-policy source governs the
+account. Claude reads its managed policy from the **first source present**:
+server-managed settings (a claude.ai Team/Enterprise organization's admin
+console), then an MDM profile (`com.anthropic.claudecode` on macOS), then the
+file. On an account governed by server-managed settings or MDM the file is
+ignored: the organization admin sets the same two keys there instead, and
+steps 1–2 do not apply. Pro/Max accounts and plain API-key use have no
+server-managed settings, so the file applies.
+
+1. **Read what is there.** The file is `/etc/claude-code/managed-settings.json`
+   on Linux and `/Library/Application Support/ClaudeCode/managed-settings.json`
+   on macOS. Claude also reads drop-ins in `managed-settings.d/*.json` beside
+   it. Read the file and any drop-ins before changing anything.
+2. **The admin sets two keys**, in a file owned by root, mode 0644. The content
+   is exactly:
+
+   ```json
+   {"channelsEnabled": true, "allowedChannelPlugins": [{"plugin": "aweb-channel", "marketplace": "awebai-marketplace"}]}
+   ```
+
+   If the file exists, merge these two keys into it and never overwrite its
+   other keys (to an existing `allowedChannelPlugins`, add the aweb-channel
+   entry). **Setting `allowedChannelPlugins` replaces Anthropic's default
+   channel allowlist on this host** (the official discord, telegram, fakechat
+   and imessage plugins): if the host uses any of them, list them too. Always
+   include `channelsEnabled: true`: API-key users need it whenever any managed
+   policy exists, and so do Team/Enterprise subscribers; Pro/Max ignore it.
+   When no file exists yet, on Linux:
+
+   ```bash
+   sudo install -d -m 0755 /etc/claude-code
+   echo '{"channelsEnabled": true, "allowedChannelPlugins": [{"plugin": "aweb-channel", "marketplace": "awebai-marketplace"}]}' \
+     | sudo tee /etc/claude-code/managed-settings.json >/dev/null
+   sudo chown root /etc/claude-code/managed-settings.json
+   sudo chmod 0644 /etc/claude-code/managed-settings.json
+   ```
+
+   On macOS:
+
+   ```bash
+   sudo install -d -m 0755 "/Library/Application Support/ClaudeCode"
+   echo '{"channelsEnabled": true, "allowedChannelPlugins": [{"plugin": "aweb-channel", "marketplace": "awebai-marketplace"}]}' \
+     | sudo tee "/Library/Application Support/ClaudeCode/managed-settings.json" >/dev/null
+   sudo chown root "/Library/Application Support/ClaudeCode/managed-settings.json"
+   sudo chmod 0644 "/Library/Application Support/ClaudeCode/managed-settings.json"
+   ```
+
+   Read it back: `ls -l` shows owner root and `-rw-r--r--`, and the file is
+   valid JSON with both keys.
+3. **The plugin.** `aweb-channel` is installed from the marketplace named
+   `awebai-marketplace` (GitHub `awebai/claude-plugins`) and enabled, in the
+   Claude config directory the host's Claude launch configuration uses (its
+   `CLAUDE_CONFIG_DIR`, else `~/.claude`). The allowlist matches the
+   marketplace by name.
+4. **OATS settings**, in this host's `oats-local.yaml` under
+   `settings.oats.aweb`: `claudeChannelMode: approved` (host-only), and
+   `delivery: channel` for the whole host, or per spawn with
+   `--provider oats.aweb delivery=channel`. With channel delivery, pi uses its
+   `@awebai/pi` extension and Codex always uses the host broker.
+
+**Effects:** a machine-wide Claude policy file and host settings; no home
+changes. **Existing homes** keep the delivery and channel mode recorded at
+their spawn: respawn a home to adopt this route. Never restart running agents
+as part of setup without the operator's word.
+
+**Success** (read at `/oats-onboarding` cards 6 and 8):
+
+1. The spawn preview shows `settings.oats.aweb.claudeChannelMode: approved`
+   and `delivery: channel`.
+2. The started session shows no development prompt, and its banner shows
+   “Channels (experimental) messages from plugin:aweb-channel@awebai-marketplace
+   inject directly in this session”, followed by “restart without --channels
+   to stop”. At normal terminal widths the banner wraps over two rows: look
+   for each part, not for one string.
+3. The banner says none of `not on the approved channels allowlist`,
+   `not on your org's approved channels list`, `blocked by org policy` or
+   `plugin not installed`.
+4. Receive is proven only by the `/oats-aweb` nonce exchange.
+
+**Next:** return to `/oats-onboarding` card 4's sync.
+
+**Failure → cause → remedy:**
+
+| What the session shows | Cause | Remedy |
+|---|---|---|
+| `not on the approved channels allowlist` | the effective managed policy has no `allowedChannelPlugins` (no file, the file not read, or the key missing), so Anthropic's default list applied | write or fix the file (steps 1–2) |
+| `not on your org's approved channels list` | the effective policy has an `allowedChannelPlugins` without this plugin and marketplace pair: the names in the file are wrong, or a higher source (server-managed settings or MDM) supplies its own list | fix the entry, or have the organization admin add it |
+| `blocked by org policy` (then “Inbound messages will be silently dropped”) | the effective policy lacks `channelsEnabled: true`, which Team/Enterprise subscribers need, and API-key use whenever any managed policy exists | add the key, or have the organization admin set it |
+| `plugin:aweb-channel@awebai-marketplace · plugin not installed` | the plugin is not installed in the launch's Claude config directory | step 3 |
+| the development prompt still appears | the home started in development mode, not approved: the host setting is missing, or the home was spawned before the change | step 4, then respawn the home |
+
+When unsure, check in order: the preview's mode; which managed-policy source
+governs the account; the file (the OS's path, root, 0644, valid JSON, both
+keys, exact plugin and marketplace names); the plugin in the launch's config
+directory. The admitted banner without a completed nonce exchange is not
+receive: `/oats-aweb` §4.
+
+**Limits:** channels are an Anthropic research preview, and Anthropic's
+account-level feature flag gates them on every route; neither is an OATS
+setting.
 
 ## Change a shared file
 

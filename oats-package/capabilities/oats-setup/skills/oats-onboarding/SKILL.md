@@ -147,6 +147,9 @@ aliases; never substitute a central base owner or copy a running home.
 Use `/oats-workspace-config` for the selected host launch configuration. Clone selected work targets with
 the owner's Git credentials only for `worktree`/`checkout` souls: the kernel
 uses `--repo`, then the local `clones` map, then `D/<repo name>`.
+When the intake selects Claude seats with aweb channel delivery, do the host
+step “Claude channel delivery (approved route)” in `/oats-workspace-config` as
+part of these edits: it has a human admin's step outside `oats-local.yaml`.
 
 **Commands (after the authorized edits):**
 
@@ -223,7 +226,9 @@ Provider/native support boundaries (retain the named owner on a blocker):
   organization membership invitation are different acts.
 
 Claude/Pi primary delivery uses its configured native channel/extension when
-selected; Claude enrollment acceptance is not assumed. Codex has **no native
+selected. Claude's aweb channel needs the card 4 host step “Claude channel
+delivery (approved route)” (`/oats-workspace-config`) done and its banner
+check passed; do not assume admission. Codex has **no native
 channel**: its automatic receive path is the host broker everywhere. Joined
 `receive: native` denotes the joined-identity **broker**, not a Claude/Pi
 native channel; `receive: poll` is manual. If mandatory native enrollment is
