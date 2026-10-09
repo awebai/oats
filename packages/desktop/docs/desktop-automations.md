@@ -32,9 +32,10 @@ run a capability source's command for a test: `oats trigger test <key>
 --run-source`. The server accepts it only as the strict boolean `true`, only
 for a trigger's `test`, and only when the CLI declares `trigger-sources`;
 anything else is `E_BAD_ARGS` before any CLI runs, in the server and again in
-`cliAutomation`. The flag is spelled in one place (`TRIGGER_RUN_SOURCE_FLAG`
-in `cli-adapter.mjs`) and composed there from the boolean: the renderer never
-passes argv. Without the flag the kernel executes nothing for a capability
+`cliAutomation`, which is told the probe's `features` by its caller (it never
+probes) and refuses the key without the feature. The flag is spelled in one
+place (`TRIGGER_RUN_SOURCE_FLAG` in `cli-adapter.mjs`) and composed there from
+the boolean: the renderer never passes argv. Without the flag the kernel executes nothing for a capability
 source and answers `E_TRIGGER_SOURCE_RUN`. Only the confirm's **Run test**
 sets the key ([Capability trigger sources](#capability-trigger-sources-feature-trigger-sources)).
 
@@ -210,8 +211,11 @@ never one click:
   placement and parameters stay in view). From a row's menu, Test opens that
   trigger's page with the confirm showing.
 - **Opening the confirm sends nothing.** It is built from the row on screen.
-  A page opened by the menu's Test holds back its own status read until the
-  confirm is gone, so no request at all leaves while it shows.
+  A page opened by the menu's Test holds back its own status read, so no
+  request at all leaves while the confirm shows. That read goes out when the
+  confirm closes without a test, with a later refresh, or when the operator
+  presses **Read history** (the page says its history is unread until then);
+  never as a consequence of Run test.
 - The confirm says what runs and where, that an untrusted trigger stays
   untrusted, that the test runs here when another host runs the trigger, and
   the parameters the command receives. It offers **Cancel** and **Run test**,
@@ -223,6 +227,15 @@ never one click:
   only by its disabled buttons.
 - A confirm belongs to the row it was opened on, as that row was: a refresh
   that changes the row, another page or a row that left the list closes it.
+- A confirm is one identity (`confirmToken`), and its Cancel and Run test are
+  bound to it: a control kept from a confirm that was cancelled, replaced or
+  disposed does nothing, and the page's transport refuses to act for any
+  workspace but the one the view was built for.
+- A test answers for the source it was asked about. Each change of a row's
+  `on.source` moves that row's generation (`sourceGens`); an answer or a
+  failure that lands in another generation leaves no result, in the one-click
+  path and the confirmed one, even when the source changed back. Leaving the
+  page is not a change: that result is kept.
 - Focus: the confirm's heading on open (not Run test, so a second Enter runs
   nothing), its status line while the test runs, the result card's heading on
   the answer, the Test button on Cancel, Escape and a failure. A test that
@@ -246,10 +259,13 @@ reader drops that one line, and when nothing else remains neither placement
 line shows. What would fire, or "Nothing would fire now.", is said only for a
 source that answered; an event's `url` is the source's and shows as text. A
 test the CLI did not answer in time shows "The test did not answer in time.
-Nothing was recorded." and no result.
+Nothing was recorded." and no result. A test the kernel refuses as a whole (a
+definition that no longer validates) shows the kernel's message and its code,
+each through `displayLine`.
 
 A row whose `on.source` changes gets its status read again and loses a kept
-Test result: the kernel drops the old source's lists at once.
+Test result: the kernel drops the old source's lists at once. A test still in
+flight across that change leaves no result either (its generation is gone).
 
 ## Opening a definition
 
@@ -274,9 +290,10 @@ the gate, the form's Summary), `trigger-subject-rows.test.mjs` and
 `trigger-subject-view.test.mjs` (the 0.49 status and test fields),
 `trigger-sources-rows.test.mjs` (the readers over the captured answers),
 `trigger-sources-view.test.mjs` (the page, attribution, the result card, an
-older kernel) and `trigger-sources-confirm.test.mjs` (the confirm, over the
+older kernel), `trigger-sources-confirm.test.mjs` (the confirm, over the
 real server boundary and CLI adapter with a recording exec: what the
-transport saw, and the argv),
+transport saw, and the argv) and `trigger-sources-shell.test.mjs` (Open
+capability through the shell's own `ctx.openCapability` and the real page),
 `schedule-draft.test.mjs`,
 `normalized-api-guards.test.mjs`; fixtures `test/fixtures/automations/kernel/`
 and `test/fixtures/automation-descriptions/` (kernel captures,

@@ -245,12 +245,22 @@ test('runSource: refused everywhere but a trigger test on a CLI with trigger-sou
   for (const action of ['list', 'test', 'run', 'enable', 'disable', 'reconcile']) await refused({ kind: 'schedule', action, ...(action === 'list' ? {} : { key: 'digest' }), runSource: true });
   // A CLI that does not declare trigger-sources.
   await refused({ kind: 'trigger', action: 'test', key: 'agents/pr-review', runSource: true }, cli);
-  // The adapter refuses the same on its own, with nothing executed.
-  const adapter = async o => assert.equal((await cliAutomation('/fixture/oats', { workspaceDir: DEPLOYMENT, ...o }, { exec: never })).error.code, 'E_BAD_ARGS', JSON.stringify(o));
+  // The adapter refuses the same on its own, with nothing executed. It is told the probe's features by its
+  // caller (it never probes): each case below has them, so what refuses it is the value, the action or the kind.
+  const adapter = async o => assert.equal((await cliAutomation('/fixture/oats', { workspaceDir: DEPLOYMENT, features: sources.features, ...o }, { exec: never })).error.code, 'E_BAD_ARGS', JSON.stringify(o));
   for (const runSource of [false, 'true', 1, null]) await adapter({ kind: 'trigger', action: 'test', id: 'agents/pr-review', runSource });
   for (const o of [{ kind: 'trigger', action: 'status', id: 'agents/pr-review' }, { kind: 'trigger', action: 'list' }, { kind: 'trigger', action: 'enable', id: 'agents/pr-review' },
     { kind: 'schedule', action: 'test', id: 'digest' }, { kind: 'schedule', action: 'run', id: 'digest' }]) await adapter({ ...o, runSource: true });
-  assert.deepEqual([automationRunSourceValid('trigger', 'test', true), automationRunSourceValid('trigger', 'test', undefined), automationRunSourceValid('schedule', 'run', undefined)], [true, true, true]);
+  // And without the feature in the probe it was told, whatever else is right: no features, another list, not a list.
+  for (const features of [undefined, null, [], cli.features, 'trigger-sources', { 'trigger-sources': true }, ['Trigger-Sources']]) await adapter({ kind: 'trigger', action: 'test', id: 'agents/pr-review', runSource: true, features });
+  assert.deepEqual([automationRunSourceValid('trigger', 'test', true, sources.features), automationRunSourceValid('trigger', 'test', true), automationRunSourceValid('trigger', 'test', true, cli.features),
+    automationRunSourceValid('trigger', 'test', undefined), automationRunSourceValid('schedule', 'run', undefined)], [true, false, false, true, true]);
+  // The features alone change nothing: a test without runSource has the argv it always had, on either CLI.
+  for (const features of [undefined, cli.features, sources.features]) {
+    const calls = [];
+    await cliAutomation('/fixture/oats', { kind: 'trigger', action: 'test', id: 'agents/pr-review', workspaceDir: DEPLOYMENT, features }, { exec: (b, argv, o, done) => { calls.push(argv); done(null, JSON.stringify(doc('trigger-test'))); } });
+    assert.deepEqual(calls, [['trigger', 'test', 'agents/pr-review', '--dir', DEPLOYMENT, '--json']]);
+  }
 });
 
 test('runSource: true reaches the argv as the flag, once; without it a test\'s argv is as before', async () => {

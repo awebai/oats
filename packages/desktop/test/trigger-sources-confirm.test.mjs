@@ -144,7 +144,7 @@ test('Enter twice from Test does not run it', async t => {
   assert.equal(u.requests.length, before, 'Enter on the heading does nothing');
 });
 
-test('Test from a row\'s menu opens that trigger\'s page with the confirm, and sends nothing until it is gone', async t => {
+test('Test from a row\'s menu opens that trigger\'s page with the confirm, and sends nothing while it shows; Run test there is one request too', async t => {
   const u = await mount(t), before = u.requests.length;
   const row = u.$('.auto-row[data-id="ws/elsewhere"]'); row.querySelector('.auto-menu summary').click(); row.querySelector('.auto-menu button[data-verb=test]').click(); await settle();
   assert.equal(u.$('.page-title').textContent, 'elsewhere'); assert.ok(u.confirm());
@@ -153,12 +153,105 @@ test('Test from a row\'s menu opens that trigger\'s page with the confirm, and s
   u.confirm().querySelector('[data-auto-focus=confirm-cancel]').click(); await settle();
   assert.deepEqual(u.requests.slice(before).map(([, b]) => [b.action, b.key, b.runSource]), [['status', 'ws/elsewhere', undefined]], 'then the page\'s own status read, and never a test');
   assert.equal(u.argvs.some(argv => argv.includes(TRIGGER_RUN_SOURCE_FLAG)), false);
-  // Run from the menu's confirm: one test with the flag, then that same deferred read; only one request carries runSource.
+  // Run from the menu's confirm: the ONE test request and nothing else. The status read the page held back is not
+  // sent by the test's completion: the page says its history is unread, and reads it on the operator's request.
   u.key(u.d.activeElement, 'Escape'); await settle();
   const again = u.requests.length, other = u.$('.auto-row[data-id="ws/untrusted"]'); other.querySelector('.auto-menu summary').click(); other.querySelector('.auto-menu button[data-verb=test]').click(); await settle();
+  assert.equal(u.requests.length, again); assert.equal(u.$('[data-verb=read-history]'), null, 'nothing but the confirm is offered while it shows');
+  u.confirm().querySelector('[data-verb=run-test]').click(); await settle(); await settle();
+  assert.deepEqual(u.requests.slice(again), [['/api/automations', { kind: 'trigger', action: 'test', key: 'ws/untrusted', runSource: true }]], 'the whole transport history of this entry: exactly the test');
+  assert.deepEqual(u.argvs.slice(-1), [['trigger', 'test', 'ws/untrusted', '--run-source', '--dir', DEPLOYMENT, '--json']]); assert.equal(u.argvs.filter(argv => argv[1] === 'test').length, 1);
+  assert.ok(u.$('.page-card[data-card="Test result"]'));
+  assert.equal(u.$('.auto-history-unread').textContent, "This trigger's history has not been read yet. Read history");
+  u.$('[data-verb=read-history]').click(); await settle();
+  assert.deepEqual(u.requests.slice(again + 1).map(([, b]) => [b.action, b.key, b.runSource]), [['status', 'ws/untrusted', undefined]], 'the operator\'s own read');
+  assert.equal(u.$('.auto-history-unread'), null); assert.ok(u.$('.page-card[data-card="Test result"]'), 'the result stays');
+});
+
+test('a held-back status is also read by a later refresh, never while the confirm shows or the test runs', async t => {
+  let release; const hold = { test: new Promise(resolve => { release = resolve; }) };
+  const u = await mount(t, { hold }), row = u.$('.auto-row[data-id="ws/trusted"]');
+  row.querySelector('.auto-menu summary').click(); row.querySelector('.auto-menu button[data-verb=test]').click(); await settle();
+  const before = u.requests.length;
+  await u.page.refresh(); await settle();
+  assert.deepEqual(u.requests.slice(before).map(([, b]) => [b.action, b.key]), [['list', undefined]], 'a refresh under the open confirm reads the list, not the status');
   u.confirm().querySelector('[data-verb=run-test]').click(); await settle();
-  assert.deepEqual(u.requests.slice(again).map(([, b]) => [b.action, b.key, b.runSource]), [['test', 'ws/untrusted', true], ['status', 'ws/untrusted', undefined]]);
-  assert.equal(u.argvs.filter(argv => argv[1] === 'test').length, 1);
+  await u.page.refresh(); await settle();
+  assert.deepEqual(u.requests.slice(before).map(([, b]) => [b.action, b.key]), [['list', undefined], ['test', 'ws/trusted'], ['list', undefined]], 'nor while the test runs');
+  release(); await settle();
+  assert.equal(u.requests.length, before + 3, 'the answer sends nothing');
+  await u.page.refresh(); await settle();
+  assert.deepEqual(u.requests.slice(before + 3).map(([, b]) => [b.action, b.key]), [['list', undefined], ['status', 'ws/trusted']], 'the next refresh reads it');
+});
+
+test('a control kept from a confirm that was cancelled, replaced, disposed or left for another workspace sends nothing', async t => {
+  const u = await mount(t); await u.open('ws/trusted');
+  const flagged = () => u.requests.filter(([, b]) => b.runSource !== undefined).length + u.argvs.filter(argv => argv.includes(TRIGGER_RUN_SOURCE_FLAG)).length;
+  u.testButton().click(); await settle();
+  const first = { run: u.confirm().querySelector('[data-verb=run-test]'), cancel: u.confirm().querySelector('[data-auto-focus=confirm-cancel]') };
+  // Cancelled: its Run test is spent.
+  first.cancel.click(); await settle();
+  const before = u.requests.length;
+  first.run.click(); await settle();
+  assert.equal(u.requests.length, before, 'a cancelled confirm\'s Run test'); assert.equal(u.confirm(), null);
+  // Reopened: the new confirm is another one. The old controls neither run it nor close it.
+  u.testButton().click(); await settle();
+  first.run.click(); first.cancel.click(); await settle();
+  assert.equal(u.requests.length, before, 'the old Run test does not run the new confirm'); assert.ok(u.confirm(), 'and the old Cancel does not close it');
+  // Replaced by another row's confirm (the page changed): the kept control of ws/trusted runs nothing for ws/untrusted.
+  const second = u.confirm().querySelector('[data-verb=run-test]');
+  u.key(u.d.activeElement, 'Escape'); await settle(); u.key(u.testButton(), 'Escape'); await settle();
+  await u.open('ws/untrusted'); u.testButton().click(); await settle();
+  const reads = u.requests.length;
+  second.click(); first.run.click(); await settle();
+  assert.equal(u.requests.length, reads); assert.ok(u.confirm());
+  // Another workspace: the view is rebuilt for it, and the control of the old one sends nothing there.
+  const third = u.confirm().querySelector('[data-verb=run-test]');
+  setWorkspace('/other'); await settle();
+  const after = u.requests.length;
+  third.click(); second.click(); first.run.click(); await settle();
+  assert.deepEqual(u.requests.slice(after), [], 'no request to the workspace shown now');
+  // Disposed.
+  setWorkspace('/team'); await settle(); await u.open('ws/trusted'); u.testButton().click(); await settle();
+  const last = u.confirm().querySelector('[data-verb=run-test]'), disposedAt = u.requests.length;
+  u.page.dispose(); last.click(); third.click(); await settle();
+  assert.equal(u.requests.length, disposedAt, 'a disposed view');
+  assert.equal(flagged(), 0, 'across all of it, nothing ever carried runSource');
+});
+
+test('a test answers for the source it was asked about: one that lands after the row\'s source changed leaves no result', async t => {
+  const other = () => { const l = doc('trigger-list'); l.result.triggers.find(r => r.id === 'ws/trusted').on.source = 'acme.graph:other-source'; return l; };
+  const pull = () => { const l = doc('trigger-list'); l.result.triggers.find(r => r.id === 'ws/trusted').on = { source: 'github.pull_request', repo: 'github.com/acme/kb', events: ['opened'], labels: [], poll: '2m' }; return l; };
+  const refusal = { schemaVersion: 1, ok: false, error: { code: 'E_TRIGGER_INVALID', message: 'ws/trusted: on.poll must be a duration' } };
+  for (const outcome of ['success', 'rejection']) {
+    // A one-click pull-request test in flight; the row becomes a capability source's; the old answer lands.
+    {
+      let release, list = pull(); const hold = { test: new Promise(resolve => { release = resolve; }) };
+      const u = await mount(t, { hold, list: () => list, tested: () => outcome === 'success' ? doc('trigger-test-pull-request') : refusal }); await u.open('ws/trusted');
+      u.testButton().click(); await settle();
+      list = doc('trigger-list'); await u.page.refresh(); await settle();
+      release(); await settle();
+      assert.equal(u.$('.page-card[data-card="Test result"]'), null, `one click, ${outcome}: no result about another source`);
+      assert.equal(u.el.textContent.includes('did not answer about the source'), false);
+      assert.equal(u.argvs.filter(argv => argv[1] === 'test').length, 1, 'and no second test');
+    }
+    // A confirmed test in flight; the source changes and changes back (A → B → A); the old answer lands.
+    {
+      let release, list = doc('trigger-list'); const hold = { test: new Promise(resolve => { release = resolve; }) };
+      const u = await mount(t, { hold, list: () => list, tested: () => outcome === 'success' ? doc('trigger-test-trusted') : refusal }); await u.open('ws/trusted');
+      u.testButton().click(); await settle(); u.confirm().querySelector('[data-verb=run-test]').click(); await settle();
+      list = other(); await u.page.refresh(); await settle();
+      list = doc('trigger-list'); await u.page.refresh(); await settle();
+      release(); await settle();
+      assert.equal(u.$('.page-card[data-card="Test result"]'), null, `confirmed, ${outcome}, A → B → A: the result of the test asked before the change is not kept`);
+      assert.equal(u.confirm(), null); assert.equal(u.d.activeElement, u.testButton(), 'focus is not dropped: back at Test');
+      assert.deepEqual(u.argvs.filter(argv => argv[1] === 'test'), [['trigger', 'test', 'ws/trusted', '--run-source', '--dir', DEPLOYMENT, '--json']], 'one test, never repeated');
+      // The same change with no test in flight keeps working: a new test of the row as it is now has its result.
+      u.testButton().click(); await settle(); u.confirm().querySelector('[data-verb=run-test]').click(); await settle();
+      assert.ok(u.$('.page-card[data-card="Test result"]'));
+    }
+  }
+  // Leaving the page is not a source change: the result is kept (the spec's edge case), as the test above shows.
 });
 
 test('a github.pull_request trigger tests on one click, without the flag', async t => {
@@ -215,6 +308,17 @@ test('a test the CLI refuses shows the kernel\'s message and code and returns fo
   assert.equal(card.querySelector('code.auto-mono').textContent, 'E_TRIGGER_INVALID');
   assert.equal(u.confirm(), null); assert.equal(u.d.activeElement, u.testButton(), 'a recoverable failure: back at Test');
   assert.equal(u.argvs.filter(argv => argv[1] === 'test').length, 1, 'no retry');
+  // The refusal's text can repeat a trigger file's own key: it is one display line like every other string
+  // (bidi controls replaced), and text the display filter withholds is withheld here too.
+  const hostile = { schemaVersion: 1, ok: false, error: { code: 'E_TRIGGER_INVALID', message: 'ws/trusted: on: unknown key "x\u202Eevil\u2066"' } };
+  const w = await mount(t, { tested: () => hostile }); await w.open('ws/trusted');
+  w.testButton().click(); await settle(); w.confirm().querySelector('[data-verb=run-test]').click(); await settle();
+  assert.deepEqual([...w.$('.page-card[data-card="Test result"]').querySelectorAll('.auto-test-line')].map(p => p.textContent), ['ws/trusted: on: unknown key "x\uFFFDevil\uFFFD" E_TRIGGER_INVALID']);
+  const secret = { schemaVersion: 1, ok: false, error: { code: 'E_TRIGGER_INVALID', message: 'ws/trusted: on: unknown key "token=abcd1234efgh5678"' } };
+  const x = await mount(t, { tested: () => secret }); await x.open('ws/trusted');
+  x.testButton().click(); await settle(); x.confirm().querySelector('[data-verb=run-test]').click(); await settle();
+  const shown = x.$('.page-card[data-card="Test result"]').textContent;
+  assert.equal(shown.includes('abcd1234efgh5678'), false, shown); assert.match(shown, /Detail withheld/);
   const v = await mount(t, { tested: () => ({ killed: true }) }); await v.open('ws/trusted');
   v.testButton().click(); await settle(); v.confirm().querySelector('[data-verb=run-test]').click(); await settle();
   card = v.$('.page-card[data-card="Test result"]');

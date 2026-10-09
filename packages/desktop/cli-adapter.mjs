@@ -342,13 +342,17 @@ export const automationDescriptionValid = v => typeof v === "string" && [...v].l
  * command for a test only with this flag; without it, it executes nothing and answers E_TRIGGER_SOURCE_RUN.
  * The one place the flag is spelled: it is composed here, from `runSource: true`, never passed in by a caller. */
 export const TRIGGER_RUN_SOURCE_FLAG = "--run-source";
-/** `runSource` is an operator's confirmed press and nothing else: the strict boolean `true`, a trigger's test. */
-export const automationRunSourceValid = (kind, action, runSource) => runSource === undefined || (runSource === true && kind === "trigger" && action === "test");
-export function cliAutomation(bin, { kind, action, id, description, workspaceDir, runSource }, io = {}) {
+export const TRIGGER_SOURCES_FEATURE = "trigger-sources";
+/** `runSource` is an operator's confirmed press and nothing else: the strict boolean `true`, a trigger's test, on a
+ * CLI whose probe declares the feature (`features`: the negotiated probe's list, passed by the caller; never probed
+ * here). */
+export const automationRunSourceValid = (kind, action, runSource, features) => runSource === undefined
+  || (runSource === true && kind === "trigger" && action === "test" && Array.isArray(features) && features.includes(TRIGGER_SOURCES_FEATURE));
+export function cliAutomation(bin, { kind, action, id, description, workspaceDir, runSource, features }, io = {}) {
   if (!Object.hasOwn(AUTOMATION_VERBS, kind) || !AUTOMATION_VERBS[kind].includes(action)
     || (action === "list" ? id !== undefined : id === undefined ? !ID_OPTIONAL.has(action) : !automationIdValid(kind, id))
     || (action === "describe" ? !automationKeyLocal(id) || !automationDescriptionValid(description) : description !== undefined)
-    || !automationRunSourceValid(kind, action, runSource)
+    || !automationRunSourceValid(kind, action, runSource, features)
     || typeof workspaceDir !== "string" || !isAbsolute(workspaceDir) || workspaceDir.includes("\0")) {
     return Promise.resolve({ schemaVersion: 1, ok: false, error: { code: "E_BAD_ARGS", message: "Invalid automation request" } });
   }

@@ -194,17 +194,6 @@ const spawnJobs = createSpawnJobs({
     mod.preselectSpawn({ name: job.soul?.name, agentsRoot: job.soul?.agentsRoot, server: job.soul?.server, draft: job.draft });
     showStage("spawn");
   },
-  // A trigger's capability source (Automations) opens its capability's page in Workspace. The handoff waits there
-  // for the catalog; a name the catalog does not list exactly once opens nothing, and says so.
-  openCapability: async (name) => {
-    const owns = tabOpenIntents.begin(), workspace = currentWorkspace();
-    let mod;
-    try { mod = await import("./views/spawn.mjs"); }
-    catch (e) { if (owns()) ctx.notify(`Could not open the capability: ${e.message || e}`); return; }
-    if (!owns() || currentWorkspace() !== workspace) return;
-    mod.preselectCapability(name, { onMiss: count => ctx.notify(count ? `This workspace lists more than one capability named ${name}. Open it from Workspace.` : `${name} is not in this workspace's capability list.`) });
-    await showStage("spawn");
-  },
   viewSchedules: async () => {
     const mod = await import("./views/automations.mjs");
     mod.preselectAutomationsTab("schedule");
@@ -255,6 +244,18 @@ function followSpawns() {
   }, 700);
 }
 ctx.spawnJobs = spawnJobs;
+// A trigger's capability source (Automations) opens its capability's page in Workspace. The handoff waits there
+// for the catalog; a name the catalog does not list exactly once opens nothing, and says so. A newer tab or view
+// choice, or another workspace, made while the Workspace module loads supersedes it, whether the load succeeds or fails.
+ctx.openCapability = async (name) => {
+  const owns = tabOpenIntents.begin(), workspace = currentWorkspace();
+  let mod;
+  try { mod = await import("./views/spawn.mjs"); }
+  catch (e) { if (owns() && currentWorkspace() === workspace) ctx.notify(`Could not open the capability: ${e.message || e}`); return; }
+  if (!owns() || currentWorkspace() !== workspace) return;
+  mod.preselectCapability(name, { onMiss: count => ctx.notify(count ? `This workspace lists more than one capability named ${name}. Open it from Workspace.` : `${name} is not in this workspace's capability list.`) });
+  await showStage("spawn");
+};
 ctx.showPendingSpawn = (id) => showPendingSpawn(id);
 // Spec E: the press closed the dialog; reveal its pending row (no focus taken) and follow it to its instance.
 ctx.followSpawn = (id) => { spawnFollow.follow(id); revealPendingSpawn(id); };

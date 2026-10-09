@@ -13,6 +13,7 @@ import {
   triggerSourcesSupported, capabilitySource, sourceLabel, sourceParams, sourceCheck, taskFields, causeWords, ruleWords, EVENTS_SHOWN,
 } from '../automation-rows.mjs';
 import { sourceQuote, sourceQuoteCSS, LEAD_INS } from '../source-quote.mjs';
+import { displayLine } from '../display-text.mjs';
 import { descriptionValid, DESCRIPTION_MAX } from '../schedule-read-data.mjs';
 import { pageCardCSS, pageBar, pageCard, pageFacts, pageSection } from '../capability-page.mjs';
 import { iconElement } from '../shell-icons.mjs';
@@ -172,6 +173,8 @@ export const automationsCSS = `
 .auto-confirm-status:focus-visible, .page-card-title:focus-visible { outline:1px solid var(--accent); outline-offset:2px; border-radius:3px; }
 .auto-confirm-status { margin:0; color:var(--muted); font-size:12px; }
 .auto-confirm-status:empty { display:none; }
+.auto-history-unread { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.oats-view .auto-history-unread button.act { height:24px; min-height:24px; padding:0 8px; border-radius:6px; font-size:11.5px; font-weight:600; }
 .auto-fire .auto-fire-url { display:block; color:var(--muted); font:11.5px var(--mono,monospace); overflow-wrap:anywhere; }
 `;
 
@@ -221,7 +224,12 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
   // Capability sources. `confirming`: the row whose Test confirm shows (with that row as it was: confirmSig);
   // `testing`: the row whose confirmed test runs; `statusDeferred`: a page opened by a row menu's Test reads its
   // status only once the confirm is gone, so that opening a confirm makes no call at all.
-  let confirming = null, confirmSig = null, testing = null, statusDeferred = null;
+  // `confirmToken`: the one confirm that is open, as an identity. Its Cancel and Run test are bound to it, so a
+  // control kept from a confirm that was closed, replaced or disposed does nothing. `sourceGens`: a row's source
+  // generation, moved on every change of its `on.source`: a test answers for the generation it was asked in.
+  let confirming = null, confirmSig = null, confirmToken = null, testing = null, statusDeferred = null;
+  const sourceGens = new Map(), genOf = id => sourceGens.get(id) || 0;
+  const revokeConfirm = () => { confirming = null; confirmSig = null; confirmToken = null; };
   // The row whose one-click Test the kernel answered with E_TRIGGER_SOURCE_RUN: a neutral notice, until the next action.
   let ranNothing = null;
   const NOTHING_RAN = "Nothing ran. Testing this trigger runs a capability's source command and needs your confirmation.";
@@ -267,23 +275,32 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
       // so its status is read again and a Test result kept for it is dropped.
       if (sources) for (const row of next.rows) {
         const source = typeof row.on?.source === 'string' ? row.on.source : null;
-        if (lastSources.has(row.id) && lastSources.get(row.id) !== source) { statuses.delete(row.id); tests.delete(row.id); statusTickets.set(row.id, (statusTickets.get(row.id) || 0) + 1); if (openId === row.id) reread = row.id; }
+        if (lastSources.has(row.id) && lastSources.get(row.id) !== source) { statuses.delete(row.id); tests.delete(row.id); sourceGens.set(row.id, genOf(row.id) + 1); statusTickets.set(row.id, (statusTickets.get(row.id) || 0) + 1); if (openId === row.id) reread = row.id; }
         lastSources.set(row.id, source);
       }
       data = next;
     } catch (error) { if (alive && id === serial) failure = error?.message || String(error); }
-    finally { if (alive && id === serial) { loading = false; render(); if (reread && openId === reread && statusDeferred !== reread) void loadStatus(reread); } }
+    finally {
+      if (alive && id === serial) {
+        loading = false; render();
+        if (reread && openId === reread && statusDeferred !== reread) void loadStatus(reread);
+        // A status read held back for a confirm is read with a later refresh, once no confirm shows and no test runs.
+        if (openId && statusDeferred === openId && confirming !== openId && !testing) settleDeferred(openId);
+      }
+    }
   }
   async function perform(verb, row) {
     if (!act || busy) return;
     // A capability source's Test is never one click: it goes through its confirm (runConfirmed), from every entry.
     if (verb === 'test' && sourceOf(row)) { openConfirm(row); return; }
     busy = true; ranNothing = null; render();
-    let unconfirmed = false;
+    // A test's answer is the answer about the source it was asked for: one that lands after the row's source
+    // changed (success or failure) leaves no result.
+    let unconfirmed = false; const gen = genOf(row.id), current = () => genOf(row.id) === gen;
     try {
       const result = await act(verb, row);
       if (!alive) return;
-      if (verb === 'test') tests.set(row.id, testResult(result, kind, { source: row.on?.source }) || { ok: false, error: `This OATS did not answer a ${noun} test.` });
+      if (verb === 'test') { if (current()) tests.set(row.id, testResult(result, kind, { source: row.on?.source }) || { ok: false, error: `This OATS did not answer a ${noun} test.` }); }
       else { onResult?.(verb, row, result); await refresh(); }
     } catch (error) {
       if (!alive) return;
@@ -291,7 +308,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
       // confirmation (the row became a capability source's since the list was read). Say so, without a result card or
       // a warning, re-read the row, and leave the operator at Test, which now opens the confirm.
       if (verb === 'test' && error?.code === 'E_TRIGGER_SOURCE_RUN') { unconfirmed = true; tests.delete(row.id); ranNothing = row.id; }
-      else if (verb === 'test') tests.set(row.id, { ok: false, error: error?.message || String(error) });
+      else if (verb === 'test') { if (current()) tests.set(row.id, { ok: false, error: error?.message || String(error) }); }
       else failure = error?.message || String(error);
     } finally {
       if (alive) {
@@ -304,26 +321,32 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
   // ── a capability source's Test: an informed second press (the confirm is consent to ONE manual run) ──
   const TIMED_OUT = 'The test did not answer in time. Nothing was recorded.';
   const timedOut = error => error?.code === 'E_CLI_TIMEOUT' || error?.name === 'TimeoutError' || /TimeoutError/.test(error?.message || '');
-  /** The page's own status read, held back while a confirm opened from a row's menu showed. */
-  function settleDeferred(id) { if (statusDeferred !== id) return; statusDeferred = null; if (openId === id) void loadStatus(id); }
+  /** The page's own status read, held back while a confirm opened from a row's menu showed. It is read when the
+   * confirm closes without a test, on the operator's own "Read history", or with the next refresh; never as a
+   * consequence of Run test, which sends its one request and nothing else. */
+  function settleDeferred(id) { if (!alive || statusDeferred !== id) return; statusDeferred = null; if (openId === id) void loadStatus(id); }
   /** Opens the confirm on this row's page. It runs nothing and reads nothing: it is built from the row on screen. */
   function openConfirm(row) {
-    if (busy || testing || !act || !sourceOf(row)) return;
+    if (!alive || busy || testing || !act || !sourceOf(row)) return;
     if (openId !== row.id) { openId = row.id; statusDeferred = row.id; }
-    confirming = row.id; confirmSig = rowSignature(row); ranNothing = null; render(); focusKey('confirm-title');
+    confirming = row.id; confirmSig = rowSignature(row); confirmToken = {}; ranNothing = null; render(); focusKey('confirm-title');
   }
-  function closeConfirm() {
-    const id = confirming; if (!id || testing) return;
-    confirming = null; render(); focusKey('test'); settleDeferred(id);
+  /** Cancel and Escape. `token`: the confirm the pressed control belongs to (omitted: the open one). */
+  function closeConfirm(token = confirmToken) {
+    const id = confirming; if (!alive || !id || testing || !token || token !== confirmToken) return;
+    revokeConfirm(); render(); focusKey('test'); settleDeferred(id);
   }
-  /** Run test: exactly one `trigger test` of the confirmed row, and nothing else: no retry, no re-test on a refresh.
-   * Guarded against a second entry here, not only by the disabled buttons. */
-  async function runConfirmed() {
+  /** Run test: exactly one `trigger test` of the confirmed row, and nothing else: no retry, no re-read, no re-test on
+   * a refresh. `token`: the confirm the pressed control belongs to; only the confirm that is open, on a view that is
+   * alive, may run. Guarded against a second entry here, not only by the disabled buttons. */
+  async function runConfirmed(token) {
+    if (!alive || !token || token !== confirmToken) return;
     const row = confirming && !busy && !testing ? rowById(confirming) : null;
     if (!row || !act || openId !== row.id || rowSignature(row) !== confirmSig || !sourceOf(row)) return;
-    const source = row.on.source; let failed = false;
-    // The answer is this source's: a row whose source changed meanwhile keeps no result of the old one.
-    const keep = result => { if (rowById(row.id)?.on?.source === source) tests.set(row.id, result); };
+    const source = row.on.source, gen = genOf(row.id); let failed = false, kept = false;
+    // The answer is the one about this source as it was confirmed: a row whose source changed meanwhile (even
+    // back again) keeps no result of the test asked before the change.
+    const keep = result => { if (genOf(row.id) === gen) { tests.set(row.id, result); kept = true; } };
     testing = row.id; busy = true; render(); focusKey('confirm-status');
     try {
       const result = testResult(await act('test', row, { runSource: true }), kind, { source });
@@ -336,9 +359,8 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
       if (alive) {
         // Focus follows the answer only where the operator still is: on this page, in the confirm (or nowhere).
         const at = doc.activeElement, here = openId === row.id && (!at || at === doc.body || !!page.querySelector('.auto-confirm')?.contains(at));
-        testing = null; busy = false; if (confirming === row.id) confirming = null; render();
-        if (here) focusKey(failed ? 'test' : 'result-title');
-        settleDeferred(row.id);
+        testing = null; busy = false; if (confirming === row.id) revokeConfirm(); render();
+        if (here) focusKey(failed || !kept ? 'test' : 'result-title');
       }
     }
   }
@@ -515,7 +537,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
   }
 
   // ── detail page ──
-  function openRow(id) { if (confirming && !testing) confirming = null; statusDeferred = null; ranNothing = null; openId = id; render(); page.querySelector('.page-back')?.focus(); void loadStatus(id); }
+  function openRow(id) { if (confirming && !testing) revokeConfirm(); statusDeferred = null; ranNothing = null; openId = id; render(); page.querySelector('.page-back')?.focus(); void loadStatus(id); }
   /** A trigger's fire history, read once per open; a stale answer never lands on another page, nor on a row
    * whose source changed since it was asked (the ticket, checked on the answer). */
   async function loadStatus(id) {
@@ -530,7 +552,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     } catch { /* the row's last fire still shows */ }
   }
   function closeRow() {
-    const id = openId; openId = null; statusDeferred = null; if (!testing) confirming = null; render();
+    const id = openId; openId = null; statusDeferred = null; if (!testing) revokeConfirm(); render();
     [...body.querySelectorAll('.auto-row')].find(r => r.dataset.id === id)?.querySelector('.auto-open')?.focus();
   }
   function renderPage(row) {
@@ -591,6 +613,14 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     const lead = st ? [st.liveCount !== null ? `${st.liveCount}${st.max !== null ? ` of ${st.max}` : ''} live now` : null, st.firedTotal ? `${st.firedTotal} fired in all` : null, st.pending.length ? `${st.pending.length} waiting` : null].filter(Boolean).join(' · ') : '';
     const runs = pageSection(doc, kind === 'trigger' ? 'Recent fires' : 'Recent runs', ['on this computer', lead].filter(Boolean).join(' · '));
     const history = node('div', undefined, 'auto-runs');
+    // The status of a page opened by a row menu's Test is not read while its confirm shows, nor by Run test: until
+    // it is, the page says so and offers the read (the operator's own request, the confirm's never).
+    if (statusDeferred === row.id && confirming !== row.id) {
+      const unread = node('p', undefined, 'page-note auto-history-unread'), read = node('button', 'Read history', 'act');
+      read.type = 'button'; read.dataset.verb = 'read-history'; read.disabled = busy || !!testing;
+      read.addEventListener('click', () => { settleDeferred(row.id); render(); page.querySelector('.page-back')?.focus({ preventScroll: true }); });
+      unread.append("This trigger's history has not been read yet. ", read); history.append(unread);
+    }
     const timeEl = iso => { const at = relativeTime(iso, now()), el = node('time', at?.label || '—'); if (at) el.title = at.title; return el; };
     // Status (0.49 fields; each absent on an older kernel): the last poll, the last error (message, then its
     // code), the events waiting (newest first, at most 10), the instances live now, then what fired.
@@ -790,7 +820,9 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     const cancel = node('button', 'Cancel', 'act'), run = node('button', 'Run test', 'act primary');
     cancel.type = run.type = 'button'; cancel.dataset.autoFocus = 'confirm-cancel'; run.dataset.autoFocus = 'confirm-run'; run.dataset.verb = 'run-test';
     cancel.disabled = run.disabled = busy || !!testing;
-    cancel.addEventListener('click', () => closeConfirm()); run.addEventListener('click', () => void runConfirmed());
+    // Bound to THIS confirm: a control kept from one that closed, was replaced or was disposed does nothing.
+    const token = confirmToken;
+    cancel.addEventListener('click', () => closeConfirm(token)); run.addEventListener('click', () => void runConfirmed(token));
     actions.append(cancel, run); card.append(state, actions);
     return card;
   }
@@ -803,7 +835,9 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     const ran = tested.source;
     if (tested.error || !ran) {
       // The CLI refused or never answered: the kernel's message and its code. There is no result.
-      const p = line(tested.error || 'This OATS did not answer about the source.', true); if (tested.code) p.append(' ', node('code', tested.code, 'auto-mono'));
+      // The kernel's refusal of the test itself (a definition that no longer validates): its text can repeat a
+      // trigger file's own key, so it is one display line like every other string here.
+      const code = displayLine(tested.code), p = line(displayLine(tested.error) || 'This OATS did not answer about the source.', true); if (code) p.append(' ', node('code', code, 'auto-mono'));
       return card.card;
     }
     const named = { capability: ran.capability || source.capability, name: ran.name || source.name };
@@ -976,7 +1010,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     // (a refresh) or left the list closes it. It is never applied to another row. (A running test keeps its own.)
     if (confirming && !testing) {
       const confirmed = rowById(confirming);
-      if (openId !== confirming || !confirmed || rowSignature(confirmed) !== confirmSig || !sourceOf(confirmed)) { const id = confirming; confirming = null; queueMicrotask(() => settleDeferred(id)); }
+      if (openId !== confirming || !confirmed || rowSignature(confirmed) !== confirmSig || !sourceOf(confirmed)) { const id = confirming; revokeConfirm(); queueMicrotask(() => settleDeferred(id)); }
     }
     // The page is rebuilt whole: focus on one of the confirm's or the result's targets is found again by its key
     // (a confirm that closed under it hands focus to Test), never dropped to <body>.
@@ -998,7 +1032,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
   const closeMenus = e => { for (const m of root.querySelectorAll('.auto-menu[open]')) if (!m.contains(e.target)) m.open = false; };
   doc.addEventListener('click', closeMenus);
   render(); void refresh();
-  return { refresh, open: openRow, describe: id => { const row = rowById(id); if (row) openDescribe(row); }, repaint() { render(); }, setNotice(text) { notice = text || ''; render(); }, setBusy(v) { busy = !!v; render(); }, dispose() { alive = false; serial++; describeSerial++; scope.dispose(); doc.removeEventListener('click', closeMenus); root.remove(); } };
+  return { refresh, open: openRow, describe: id => { const row = rowById(id); if (row) openDescribe(row); }, repaint() { render(); }, setNotice(text) { notice = text || ''; render(); }, setBusy(v) { busy = !!v; render(); }, dispose() { alive = false; revokeConfirm(); serial++; describeSerial++; scope.dispose(); doc.removeEventListener('click', closeMenus); root.remove(); } };
 }
 
 /** The Desktop shows these pages only for an OATS that reports them (kernel 0.29.0). */
@@ -1067,7 +1101,12 @@ export function mountAutomationsPage(el, ctx, kind, extend = () => ({}), { cli: 
       read: () => call({ kind, action: 'list' }),
       // `runSource` travels only from the confirm's Run test (createAutomationsView.runConfirmed): the one press
       // that lets the kernel run a capability source's command. The server composes the flag.
-      act: (verb, row, { runSource = false } = {}) => call({ kind, action: verb, key: row.key, ...(runSource === true ? { runSource: true } : {}) }),
+      // A view acts only in the workspace it was built for: one that outlived it (a kept control, a late callback)
+      // sends nothing to the workspace shown now.
+      act: (verb, row, { runSource = false } = {}) => {
+        if (!alive || built !== builds || ws !== currentWorkspace()) return Promise.reject(Object.assign(new Error(`${title} changed workspace.`), { code: 'E_WORKSPACE_CHANGED' }));
+        return call({ kind, action: verb, key: row.key, ...(runSource === true ? { runSource: true } : {}) });
+      },
       status: kind === 'trigger' ? row => call({ kind, action: 'status', key: row.key }) : null,
       describe: describes ? (row, description) => call({ kind, action: 'describe', key: row.key, description }) : null,
       // Read-only through the contained /api/file; a member without a clone opens its web page.
