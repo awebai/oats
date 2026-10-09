@@ -216,3 +216,40 @@ re-checks a published inventory against the source and its origin; it attests
 what the remote advertised when queried, so released tags must never move.
 `--generate --source <clone>` captures a working tree for development and
 always records `release.status: pending`.
+
+## Releasing `oats.framework`
+
+The distribution package in `oats-package/` (`oats.core`, `oats.setup`,
+`oats.support`, `oats.knowledge-theory`) is not published by `release.yml` or
+by this lane. A deployment takes it from this repository at the tag
+`oats-framework/v<version>`, through the catalog ref or its workspace pin. A
+skill changed under `oats-package/` therefore reaches deployments only when
+that tag moves, whatever kernel version carried the change.
+
+**A kernel release whose pull requests touched `oats-package/` ships a
+framework release with it.** To see whether one is owed:
+
+```bash
+git diff --stat "$(git describe --tags --abbrev=0 --match 'oats-framework/v*' origin/main)" origin/main -- oats-package
+```
+
+When the diff is not empty:
+
+1. **The framework prep PR.** Bump `version` in the `oats.json` of each
+   changed capability and in `oats-package/oats-package.json`, and add the
+   release-notes entry. Read the skill lines added since the last tag: a
+   command or behaviour that an older kernel the capability still admits does
+   not have names the version it starts in. Guidance text alone does not
+   raise a capability's `compatibility.oats`.
+2. **The tag.** After the PR merges, put the annotated tag
+   `oats-framework/v<version>` on its merge commit and push it. No workflow
+   runs on this tag.
+3. **The pin**, in the kernel release-prep PR: `package-catalog.json`
+   (`ref`), `oats-workspace.yaml`, and the version literals in
+   `docs/official-catalog.md`, `docs/packages.md`, `docs/workspaces.md`,
+   `skills/oats-getting-started/SKILL.md` and
+   `test/release-packaging.test.mjs`. The pin does not ride the first PR: no
+   check in CI resolves the catalog's ref (the clean-room smoke tags its own
+   copy of `oats-package/`), so the pin's reviewer confirms that the tag
+   exists on the remote and names the first PR's merge commit, and the tag
+   needs the bumped manifest on `main` first.

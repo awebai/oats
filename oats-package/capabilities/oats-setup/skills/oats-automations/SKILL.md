@@ -82,8 +82,8 @@ oats schedule update <id> --description=<text>   # the description only, even wh
 oats trigger update <id> --description=<text>    # the description only (local triggers)
 oats trigger list
 oats trigger test <id>                       # dry run: gh auth, repo permissions, soul resolves, teams declared, what would fire
-oats trigger test <id> --run-source          # a capability source's trigger: the same, RUNNING its source command on this host
-oats trigger poll <id> --run-source          # a capability source's trigger: run its source once, record nothing
+oats trigger test <id> --run-source          # a capability source's trigger (OATS 0.50.0): the same, RUNNING its source command on this host
+oats trigger poll <id> --run-source          # a capability source's trigger (OATS 0.50.0): run its source once, record nothing
 oats trigger status <id>                     # last poll, pending events, fired keys, live instances, last error
 ```
 
@@ -109,12 +109,12 @@ running.
   `opened`, `reopened`, `ready_for_review`, `labeled`, `synchronize`. (A
   capability's source: see below.)
 - **Templates substitute only** `{repo} {number} {url} {event} {headSha}
-  {trigger} {subject} {key}`. A PR's title and body are untrusted and never
+  {trigger} {subject} {key}` (`{subject}` from OATS 0.49.0). A PR's title and body are untrusted and never
   reach the task; the instance reads them from GitHub.
 - **Delivery is at least once.** A fired key is recorded only after a
   successful spawn, so a crash can spawn an event twice; `perKey: 1` holds the
   second until the first instance retires. The soul must tolerate a second
-  run on the same event. `perKey` counts by the event's `subject` (a PR's
+  run on the same event. From OATS 0.49.0, `perKey` counts by the event's `subject` (a PR's
   number), so an `opened` and a later `synchronize` of one PR share a slot.
 - **Instance names** are `<stem>-<purpose>` (stem: the soul's agent name as
   a slug). From OATS 0.49.0, a name over 61 characters gets a cut purpose
