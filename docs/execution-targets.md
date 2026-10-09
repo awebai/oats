@@ -777,6 +777,7 @@ stopped ([missing socket file](#missing-socket)).
 oats session inspect --home /abs/home --json
 oats session input --home /abs/home --text-file message.txt --json
 oats session attach --home /abs/home
+oats session attach --home /abs/home --detach-key 'C-\'
 ```
 
 - **inspect** reports `backend`, `present` and `state`: `unknown` for a live
@@ -825,6 +826,87 @@ oats session attach --home /abs/home
 - **attach** is interactive and takes no `--json`. It opens a temporary tmux
   session linked to the agent's window alone.
   Closing the viewer leaves the agent running.
+
+  **Leaving the viewer.** Without `--detach-key` there is no keyboard exit:
+  every key goes to the agent, the tmux prefix included. Close the terminal.
+  With `--detach-key <key>` (`--detach-key=<key>` is the same; feature
+  `session-attach-detach-key`, OATS 0.51.0), pressing `<key>` detaches that
+  viewer's client. The agent's window and every other viewer are untouched.
+  The key is taken from the agent's input: the agent never receives it while
+  this viewer is attached. A keyed viewer reads a tmux key table of its own,
+  named as its temporary session and removed with it, so the key is bound
+  for that viewer alone. Check the feature in `oats version --json` before
+  passing the flag: a kernel without it ignores the flag and opens a viewer
+  with no exit.
+
+  The key is one of these, spelled exactly (case-sensitive):
+
+  ```
+  key      = control / meta / function
+  control  = "C-" ( "a"-"h" / "j"-"l" / "n"-"z" / "\" / "]" / "^" / "_" )
+  meta     = "M-" ( "a"-"z" / "0"-"9" )
+  function = [ "C-" / "M-" / "S-" ] "F" ( "1" … "12" )
+  ```
+
+  Anything else is `E_BAD_ARGS`, before any tmux or ssh call: a missing
+  value, a plain character, `C-i` and `C-m` (Tab and Enter on tmux before
+  3.5), `C-[` (Escape), `M-[`, `M-]`, `M-\`, `M-O` and the other ESC + C1
+  introducers (a terminal reply can arrive as that key), `Any`, mouse key
+  names, two keys, upper case, and anything with a space, `;` or a control
+  character. The kernel does not judge whether a harness reads the key: that
+  is the caller's choice.
+
+  **While the pane is scrolled back.** The viewer's wheel and drag bindings
+  put the pane in tmux's copy mode, and there copy mode's key table is read
+  before the viewer's. A detach key that copy mode binds acts in copy mode
+  and does not detach; it detaches once the mode is left (`q`, or scrolling
+  back to the bottom). The grammar does not exclude those keys. The
+  copy-mode tables are the tmux server's, shared by every session and
+  changed by the operator's `~/.tmux.conf`, so no grammar can promise a key
+  is free there, and the kernel never binds a detach key in a table other
+  sessions read. With tmux's default tables (3.7c), 36 of the 112 keys are
+  taken in emacs or vi copy mode (for example `C-e`, `C-c`, `M-w`, `C-u`);
+  `C-\` and `F12` are bound in neither and detach from copy mode. Detaching
+  while scrolled back leaves the agent's pane in copy mode for the next
+  viewer, as closing a viewer mid-scroll does.
+
+  **The suggested key is `C-\`**, written `--detach-key 'C-\'` (quoted: an
+  unquoted trailing backslash continues the line). The kernel fixes no key.
+  What was checked:
+
+  - It has no default binding in Claude Code 2.1.288 (which refuses to let
+    a user bind it: "terminal quit signal"), Codex CLI 0.160.0 or pi 1.0.2.
+    It is unbound in bash 5.3 (`bind -p`) and in zsh's and fish's documented
+    defaults. It is the default detach key of dtach and abduco.
+  - A viewer with this key gives up: in a fallback shell, the tty's QUIT (no
+    SIGQUIT from the keyboard); in vim and nvim, the `C-\ C-n` prefix; in
+    nano, Replace (also on `M-r`).
+  - On a layout where `\` needs AltGr, use `F12`: it has no default binding
+    in the same three harnesses, bash, nvim or less. Some terminals and
+    laptops keep F12 for themselves.
+  - `C-]`, `C-_`, `C-g`, `C-t` and `C-b` are each bound by all three
+    harnesses.
+
+  **Exit status.**
+
+  | How the command ended | Status |
+  |---|---|
+  | Left by the detach key (the agent keeps running) | 20 |
+  | The viewer ended without the key: the agent's window ended, or `oats` itself was stopped by SIGHUP, SIGTERM or SIGINT and closed the viewer (as today) | 0 |
+  | A refusal (bad arguments, not launched, session gone), or tmux failing under the viewer (its server exited) | 1 |
+
+  20 is answered only when the key's own binding ran, and only by a kernel
+  with the feature. No status an existing caller sees changes meaning. 20 is
+  nonzero, so `set -e`, an `&&` chain and tmux's `remain-on-exit failed`
+  treat a leave by the key as a failure. The routed form (`--server`) relays
+  these statuses and adds ssh's own 255 ([servers.md](servers.md#run-there)).
+
+  With `--detach-key`, `oats` handles SIGQUIT. `C-\` is also the terminal's
+  QUIT character: pressed before the viewer has the terminal, or again once
+  the viewer has given it back, it would otherwise end `oats` with status 131
+  and leave the viewer's session and key table on the tmux server. A QUIT
+  that arrives before the key was used stops the attach, with status 1;
+  after a leave by the key it changes nothing, and the status is 20.
 
 ### Attachments
 

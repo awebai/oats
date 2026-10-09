@@ -180,12 +180,16 @@ Every routed ssh call carries these options, before `--` and the host:
 - When ssh fails under an attached viewer (a lost link, or one never made),
   `session attach --server` exits 255 and says that, if the link was lost,
   the instance keeps running on the server, with the command to reattach.
+  When `--detach-key` was given, that command carries it (` --detach-key
+  <key>`, shell-quoted); without one the line is as before.
   When ssh fails before the viewer opens (the version probe, or a name
   resolved through the host's roster), it also exits 255, with `oats: ssh to
   <host> failed: …` (`--json`: the `E_SSH` envelope). Every other refusal
   (an incompatible host, an unknown or ambiguous name, bad arguments) exits 1,
   and so does an ssh that cannot be run on this machine at all: no link can
-  come back.
+  come back. Otherwise the host's own status is relayed through ssh: 20 when
+  the viewer was left by its detach key (`--detach-key`, below), 0 when it
+  ended without the key, 1 for a refusal or a tmux failure there.
 - Every routed command reports ssh's own failure as `E_SSH` (`ssh to <host>
   failed: …`). When ssh never started on this machine, the `--json` envelope
   says so with `error.details: {"sshStarted": false}`; without details, ssh
@@ -210,7 +214,7 @@ sent as text or on stdin, never as paths.
 | `spawn` | registered workspace | the requested harness, backend and yolo option; `launch-config` for `--launch-config`; `schedule` for a wake schedule |
 | `status` | registered workspace | |
 | `retire` | the instance's home | `retire-home` to retire by exact home |
-| `session inspect`, `session attach` | the instance's home | `session` |
+| `session inspect`, `session attach` | the instance's home | `session`; `session-attach-detach-key` for `attach --detach-key` |
 | `session start`, `session restart` | the instance's home | `session-start`; `session-restart`; `launch-config` when `--launch-config`, `--harness` or `--yolo` is given |
 | `session upload` | the instance's home | `session-upload` |
 | `okf harvest --instance <name>` | the saved home | `harvest` |
@@ -270,6 +274,21 @@ closed. The host's stdout, stderr and exit status are relayed; with
 side answers one envelope (`E_SSH`, or `E_REMOTE_ENVELOPE`). Wherever this
 side prints the argv, `--invite` values are replaced by `<redacted>`.
 Kernel commands keep the table above.
+
+**A detach key on a routed attach.** `session attach --server <id>
+--detach-key <key>` names the key that leaves the viewer, as on the host
+itself ([execution-targets.md](execution-targets.md#inspect-input-and-attach):
+the grammar, the suggested `'C-\'`, exit status 20). The key is checked here
+first, before any ssh call (`E_BAD_ARGS`). The flag travels only to a host
+that advertises `session-attach-detach-key`: a kernel without the feature
+would ignore it and open a viewer with no exit. Such a host is refused on
+this machine after the version probe, with nothing else sent, exit 1:
+`E_REMOTE_INCOMPATIBLE`, `remote oats <version> at <host> does not advertise
+session-attach-detach-key; upgrade it there, or attach without --detach-key;
+nothing was sent`. Under `--json` the envelope's `error.details` is
+`{"feature":"session-attach-detach-key"}`. With a key the probe also runs
+under `--print`, which otherwise skips it: a printed command must not carry
+a flag its host would ignore.
 
 **Not routed.** `session input` runs on the execution host, where schedules
 and messaging capabilities call it. `session restart --stop-grace` is refused

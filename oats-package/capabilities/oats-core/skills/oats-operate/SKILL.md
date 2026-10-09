@@ -188,6 +188,10 @@ change, never model acceptance. Unchanged/unreadable display (`verified: false`)
 does not authorize retry. Settling offers no guaranteed busy-pane submission or
 exactly-once delivery; command errors may be uncertain after partial effects.
 
+`oats session attach --home <abs-home>` has no keyboard exit (close the
+terminal); when `oats version --json` lists `session-attach-detach-key`, add
+`--detach-key <key>` (`'C-\'` is the suggested one) and that key leaves it.
+
 
 These act on **other** instances — typically children you spawned — and only
 when your task or your human says so. Retirement runs every module's retire

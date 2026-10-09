@@ -98,7 +98,7 @@ const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental"]
  *  probe) and in `status --json`, which a remote roster relays as the host's (feature
  *  server-probe-features, lib/servers.mjs hostFeatures). ONE list for both, emitted at output
  *  time, never stored. A name must pass hostFeatures's check (test/cli-json-contract.test.mjs). */
-const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources"];
+const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key"];
 /** Commands `--server <id>` runs on a registered server. */
 const ROUTED_COMMANDS = new Set(["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "launch-config", "readiness", "instance"]);
 const flag = (name) => {
@@ -3224,7 +3224,9 @@ async function sessionCmd() {
     let result;
     if (args[1] === "attach") {
       if (JSON_MODE) throw Object.assign(new Error("session attach is interactive; omit --json"), { code: "E_BAD_ARGS" });
-      process.exitCode = await attachInstanceSession(home);
+      // --detach-key (feature session-attach-detach-key): the one key that leaves this viewer, with
+      // status 20. Without it every key reaches the agent and there is no keyboard exit.
+      process.exitCode = await attachInstanceSession(home, { detachKey: valueFlag("detach-key") });
       return;
     }
     if (args[1] === "inspect") result = inspectInstanceSession(home);
@@ -3264,7 +3266,7 @@ async function sessionCmd() {
       const file = flag("file");
       if (!file || file === true) throw Object.assign(new Error("session upload needs --file <local path>"), { code: "E_BAD_ARGS" });
       result = uploadAttachment({ file, home: home === true ? undefined : home });
-    } else throw Object.assign(new Error("usage: oats session inspect|input|attach|start|restart|receive|upload --home /absolute/home [--text-file path] [--model id] [--launch-config name|none | --reselect-launch] [--harness pi|claude|codex] [--yolo|--no-yolo] [--stop-grace seconds] [--name file] [--file path] [--json]"), { code: "E_BAD_ARGS" });
+    } else throw Object.assign(new Error("usage: oats session inspect|input|attach|start|restart|receive|upload --home /absolute/home [--text-file path] [--detach-key key] [--model id] [--launch-config name|none | --reselect-launch] [--harness pi|claude|codex] [--yolo|--no-yolo] [--stop-grace seconds] [--name file] [--file path] [--json]"), { code: "E_BAD_ARGS" });
     if (JSON_MODE) jsonOk(result);
     else {
       console.log(JSON.stringify(result, null, 2));
@@ -4091,8 +4093,14 @@ async function serverRouteCmd() {
       return;
     }
     if (args[1] !== "attach") bail("E_USAGE", "--server routes `session inspect`, `session start`, `session restart`, `session upload` and `session attach`; input runs on the execution host (the wake broker calls it there)");
+    // --detach-key travels only to a host that advertises session-attach-detach-key (attachArgv
+    // probes for it, under --print too). The key may be C-\, the tty's QUIT character: pressed
+    // once ssh has given the tty back, it reaches this process as SIGQUIT, whose default action
+    // would replace the relayed status with 131. Held from here until this process exits.
+    const detachKey = valueFlag("detach-key");
+    if (detachKey !== undefined) process.on("SIGQUIT", () => {});
     let route;
-    try { route = attachArgv(id, addr, { skipVersionCheck: args.includes("--print") }); }
+    try { route = attachArgv(id, { ...addr, detachKey }, { skipVersionCheck: args.includes("--print") }); }
     // ssh failing before the viewer (the version probe, a name resolved through the host's roster)
     // is the failure ssh has under it: exit 255, on which a caller reconnects. Every other refusal,
     // and an ssh that never started (no link can come back), exits 1.
@@ -4102,7 +4110,7 @@ async function serverRouteCmd() {
     // ssh exits 255 for its own failures: a link that died under the viewer
     // (keepalives unanswered, the master or the host's sshd gone), or one
     // never made. Say what is known rather than ending silently.
-    if (r.status === 255) console.error(`\noats: ssh to ${route.target.sshHost} ended with an error (exit 255); if the link was lost, the instance keeps running on ${id}. Reattach with: oats session attach --server ${id} --home ${shellQuote(route.home)}`);
+    if (r.status === 255) console.error(`\noats: ssh to ${route.target.sshHost} ended with an error (exit 255); if the link was lost, the instance keeps running on ${id}. Reattach with: oats session attach --server ${id} --home ${shellQuote(route.home)}${detachKey !== undefined ? ` --detach-key ${shellQuote(detachKey)}` : ""}`);
     process.exit(r.status ?? 1);
   }
   // A spawn's argv is checked here, before the server is contacted.
@@ -4386,7 +4394,9 @@ Usage:
       --instance <name> [--json]            saved home on its host
   oats session inspect|attach --server <id>  inspect (envelope) or attach a viewer (ssh PTY) for a
       --instance <name> | --home <abs>       remote instance, by its saved route or the server's
-                                            roster (--print shows attach); oats 0.22.2 or later
+      [--detach-key <key>]                   roster (--print shows attach); oats 0.22.2 or later.
+                                            attach --detach-key: as below; the server must
+                                            advertise session-attach-detach-key
   oats session start --server <id>           start a stopped remote instance in its existing home
       --instance <name> | --home <abs>       by its saved route or the server's roster; it must advertise
       [--model <m>] [--json]                 session-start (oats 0.22.9 or later)
@@ -4409,6 +4419,11 @@ Usage:
       [--check]                             --check: write nothing; report <dir> (~ = this home),
                                             its state and whether Git reads the workspace remote
   oats session inspect|input|attach --home <absolute-home> [--text-file <path>] [--json]
+  oats session attach --home <absolute-home> [--detach-key <key>]
+                                            a viewer of one instance. <key> (C-<letter>, M-<letter
+                                            or digit>, F1 to F12; 'C-\\' is the suggested one)
+                                            leaves it with exit status 20; without one no key
+                                            leaves it: every key goes to the agent
   oats schedule list|show <id>|test <id>|add <id> --file <spec.json>|update <id> --file <spec.json>
       enable|disable|run|remove|reconcile <id>   workspace-scoped, host-owned schedules (spawn,
       tick [--dry-run] [--host]                  command or wake jobs on a five-field cron with an
