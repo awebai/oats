@@ -10,7 +10,17 @@ reference pages ([workspaces](workspaces.md), [souls and instances](souls-and-in
 - **`@awebai/oats`**: the runtime-neutral kernel (`lib/`), the `oats` CLI
   (`bin/oats.mjs`), the kernel and work-mode instruction sources
   (`injects/`), the bootstrap skills, the docs and the official package
-  catalog (`package-catalog.json`). It has no runtime dependencies.
+  catalog (`package-catalog.json`). The same tarball carries three
+  dependency-free packages of this repository: the turn record
+  (`packages/record/`, behind `oats capture`, `recall` and `setup`), the
+  terminal client (`packages/tui/`, behind `oats tui`, a preview:
+  [tui.md](tui.md)) and the readers the terminal client shares with the
+  Desktop (`packages/client/`). None of their tests is packed. The package's
+  manifest declares three runtime dependencies: `yaml` (the kernel reads and
+  writes the configuration files with it), `croner` (schedule expressions) and
+  `@awebai/pi` (pi's aweb messaging extension). The terminal client adds none
+  and may never add one: with a dependency it could no longer ship in this
+  tarball.
 - **`@awebai/oats-pi`** (`packages/pi/`): a thin pi adapter that exposes an
   instance's own resources. It registers no agent tools.
 - **`oats.framework`** (`oats-package/`): the `oats.core`, `oats.setup`,
@@ -38,7 +48,7 @@ published to npm. Its developer docs are in
 | `oats-package/` | the `oats.framework` package |
 | `souls/` | this repository's own souls (a workspace member) |
 | `docs/` | the reference pages, schemas, design records and release notes |
-| `packages/` | the pi adapter, the Desktop, the turn-record package and experiments |
+| `packages/` | the pi adapter, the Desktop, the terminal client (`tui/`), the readers both clients share (`client/`), the turn-record package and experiments |
 | `scripts/` | the test runner, validators, packaging checks and the release lane |
 | `test/` | the kernel and CLI suites, with their fixtures |
 
@@ -387,6 +397,15 @@ and acts on every existing session through its recorded socket
   `list-windows`, `new-window` (a window id) and `set-option`.
 - A server a test starts is killed by its socket, never by name and never
   with a bare `tmux kill-server`.
+- A test of a full-screen program (`oats tui`) uses a pane of a private
+  server as its terminal (`test/tui-terminal.test.mjs`): the real CLI is typed
+  at an interactive shell in the pane, keys go in with `send-keys`, the screen
+  is read with `capture-pane`, and what the program did to the terminal is
+  read from the pane's flags (`#{alternate_on}`, `#{cursor_flag}`,
+  `#{wrap_flag}`) and from `stty -g`. Every wait is on what the pane shows,
+  with a message that names it. A process is signalled by the pid it wrote
+  itself, never by name or command line: other agents' processes run on the
+  same machine.
 
 Nor does a test depend on where or how the suite runs:
 

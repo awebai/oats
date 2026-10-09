@@ -14,7 +14,11 @@ coordinates the surface experts.
 | Kernel & CLI | `lib/`, `bin/`, `docs/*.schema.json` | `oats-kernel-developer` | `oats-kernel-expert` |
 | Desktop | `packages/desktop/` (incl. renderer views, styles, copy) | `oats-desktop-developer` | `oats-desktop-expert` |
 | Provider packages | `oats-aweb`, `oats-okf`, and the other package repos | `oats-integrations-developer` | `integrations-expert` (and the package's own expert) |
+| Terminal UI (provisional) | `packages/tui/` | `oats-kernel-developer` | `oats-expert` |
 | Docs & skills | `docs/`, `oats-package/`, `skills/` | the developer of the surface they document | the owning expert |
+
+The Terminal UI row is provisional while `oats tui` is a preview: its ownership is settled when it
+leaves preview. The readers it shares with the Desktop (`packages/client/`) belong to the Desktop row.
 
 **Your own worktrees.** You may drive a piece of work in your own session instead of
 launching a developer, when that's the better call (a small cross-cutting change, a spike,
