@@ -171,13 +171,13 @@ test(`the tmux these tests run against: ${TMUX_VERSION}`, (t) => {
 
 /** Every key of the grammar, built from its three productions and not from the kernel's expression. */
 const GRAMMAR = [
-  ..."abcdefghjklnopqrstuvwxyz".split("").map((c) => `C-${c}`), "C-\\", "C-]", "C-^", "C-_",
+  ..."abcdefgjklnopqrstuvwxyz".split("").map((c) => `C-${c}`), "C-\\", "C-]", "C-^", "C-_",
   ..."abcdefghijklmnopqrstuvwxyz0123456789".split("").map((c) => `M-${c}`),
   ...["", "C-", "M-", "S-"].flatMap((modifier) => Array.from({ length: 12 }, (_, i) => `${modifier}F${i + 1}`)),
 ];
 
 test("every key the grammar accepts is a key to this tmux: bound with the viewer's own command, each is listed back as one binding, and no two are the same key", () => {
-  assert.equal(GRAMMAR.length, 112);
+  assert.equal(GRAMMAR.length, 111);
   for (const key of GRAMMAR) assert.equal(isDetachKey(key), true, key);
   const table = "grammar-scratch";
   try {
@@ -390,10 +390,10 @@ test("a keyed attach that cannot go on leaves nothing: a refused key makes no tm
   const cli = (args, front = logging) => { writeFileSync(log, ""); return spawnSync(process.execPath, [CLI, "session", "attach", "--home", a.home, ...args], { encoding: "utf8", env: { ...process.env, PATH: `${front}:${process.env.PATH}` } }); };
   const calls = () => lines(readFileSync(log, "utf8"));
 
-  for (const bad of ["C-i", "C-m", "C-[", "M-[", "Any", "WheelUpPane", "a", "C-A", "C-b d", "C-]; kill-server", "F13", "true"]) {
+  for (const bad of ["C-h", "C-i", "C-m", "C-[", "M-[", "Any", "WheelUpPane", "a", "C-A", "C-b d", "C-]; kill-server", "F13", "true"]) {
     const r = cli(["--detach-key", bad]);
     assert.equal(r.status, 1, bad);
-    assert.equal(r.stderr, `oats: --detach-key must be one key: C-<a letter except i and m, or one of \\ ] ^ _>, M-<a lowercase letter or digit>, or F1 to F12 with at most one of C-, M-, S- (got ${JSON.stringify(bad)})\n`);
+    assert.equal(r.stderr, `oats: --detach-key must be one key: C-<a letter except h, i and m, or one of \\ ] ^ _>, M-<a lowercase letter or digit>, or F1 to F12 with at most one of C-, M-, S- (got ${JSON.stringify(bad)})\n`);
     assert.deepEqual(calls(), [], `${bad}: refused before any tmux call`);
   }
   for (const args of [["--detach-key"], ["--detach-key", "--verbose"], ["--detach-key="]]) {

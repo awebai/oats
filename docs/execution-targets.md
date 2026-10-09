@@ -843,18 +843,20 @@ oats session attach --home /abs/home --detach-key 'C-\'
 
   ```
   key      = control / meta / function
-  control  = "C-" ( "a"-"h" / "j"-"l" / "n"-"z" / "\" / "]" / "^" / "_" )
+  control  = "C-" ( "a"-"g" / "j"-"l" / "n"-"z" / "\" / "]" / "^" / "_" )
   meta     = "M-" ( "a"-"z" / "0"-"9" )
   function = [ "C-" / "M-" / "S-" ] "F" ( "1" … "12" )
   ```
 
   Anything else is `E_BAD_ARGS`, before any tmux or ssh call: a missing
   value, a plain character, `C-i` and `C-m` (Tab and Enter on tmux before
-  3.5), `C-[` (Escape), `M-[`, `M-]`, `M-\`, `M-O` and the other ESC + C1
-  introducers (a terminal reply can arrive as that key), `Any`, mouse key
-  names, two keys, upper case, and anything with a space, `;` or a control
-  character. The kernel does not judge whether a harness reads the key: that
-  is the caller's choice.
+  3.5), `C-h` (the byte, 0x08, that many terminals send for Ctrl+Backspace
+  and some for Backspace, so the name is not one key everywhere), `C-[`
+  (Escape), `M-[`, `M-]`, `M-\`, `M-O` and the other ESC + C1 introducers (a
+  terminal reply can arrive as that key), `Any`, mouse key names, two keys,
+  upper case, and anything with a space, `;` or a control character. The
+  kernel does not judge whether a harness reads the key: that is the
+  caller's choice.
 
   **While the pane is scrolled back.** The viewer's wheel and drag bindings
   put the pane in tmux's copy mode, and there copy mode's key table is read
@@ -864,7 +866,7 @@ oats session attach --home /abs/home --detach-key 'C-\'
   copy-mode tables are the tmux server's, shared by every session and
   changed by the operator's `~/.tmux.conf`, so no grammar can promise a key
   is free there, and the kernel never binds a detach key in a table other
-  sessions read. With tmux's default tables (3.7c), 36 of the 112 keys are
+  sessions read. With tmux's default tables (3.7c), 35 of the 111 keys are
   taken in emacs or vi copy mode (for example `C-e`, `C-c`, `M-w`, `C-u`);
   `C-\` and `F12` are bound in neither and detach from copy mode. Detaching
   while scrolled back leaves the agent's pane in copy mode for the next

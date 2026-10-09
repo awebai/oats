@@ -147,19 +147,19 @@ test("whether the key was used is the viewer session's @oats-detached option: tr
 
 test("the detach key grammar is closed: what it accepts and what it refuses, and a refusal makes no tmux call", () => {
   const accepted = [
-    ..."abcdefghjklnopqrstuvwxyz".split("").map((c) => `C-${c}`), "C-\\", "C-]", "C-^", "C-_",
+    ..."abcdefgjklnopqrstuvwxyz".split("").map((c) => `C-${c}`), "C-\\", "C-]", "C-^", "C-_",
     ..."abcdefghijklmnopqrstuvwxyz0123456789".split("").map((c) => `M-${c}`),
     ...["", "C-", "M-", "S-"].flatMap((m) => Array.from({ length: 12 }, (_, i) => `${m}F${i + 1}`)),
   ];
-  assert.equal(accepted.length, 112);
-  assert.equal(new Set(accepted).size, 112);
+  assert.equal(accepted.length, 111);
+  assert.equal(new Set(accepted).size, 111);
   for (const key of accepted) {
     assert.equal(isDetachKey(key), true, key);
     assert.equal(requireDetachKey(key), key);
   }
   const refused = [
     ["a plain character", "a"], ["a plain character", "q"], ["a digit", "1"], ["a symbol", "\\"],
-    ["Tab on tmux before 3.5", "C-i"], ["Enter on tmux before 3.5", "C-m"], ["Escape", "C-["],
+    ["the byte of Ctrl+Backspace on many terminals", "C-h"], ["Tab on tmux before 3.5", "C-i"], ["Enter on tmux before 3.5", "C-m"], ["Escape", "C-["],
     ["an ESC + C1 introducer", "M-["], ["an ESC + C1 introducer", "M-]"], ["an ESC + C1 introducer", "M-\\"], ["an ESC + C1 introducer", "M-O"],
     ["an ESC + C1 introducer", "M-P"], ["an ESC + C1 introducer", "M-N"], ["an ESC + C1 introducer", "M-X"], ["an ESC + C1 introducer", "M-^"], ["an ESC + C1 introducer", "M-_"],
     ["Any", "Any"], ["a mouse key", "WheelUpPane"], ["a mouse key", "MouseDown1Pane"], ["a mouse key", "MouseDrag1Pane"], ["a mouse key", "M-MouseDown1Pane"],
@@ -179,7 +179,7 @@ test("the detach key grammar is closed: what it accepts and what it refuses, and
     const io = fixture();
     assert.throws(() => prepareSessionViewer(target, { ...io, detachKey: value }), (e) => {
       assert.equal(e.code, "E_BAD_ARGS", JSON.stringify(value));
-      assert.equal(e.message, `--detach-key must be one key: C-<a letter except i and m, or one of \\ ] ^ _>, M-<a lowercase letter or digit>, or F1 to F12 with at most one of C-, M-, S- (got ${JSON.stringify(value)})`);
+      assert.equal(e.message, `--detach-key must be one key: C-<a letter except h, i and m, or one of \\ ] ^ _>, M-<a lowercase letter or digit>, or F1 to F12 with at most one of C-, M-, S- (got ${JSON.stringify(value)})`);
       return true;
     }, `${why}: ${JSON.stringify(value)}`);
     assert.deepEqual(io.calls, [], `${why}: refused before any tmux call`);

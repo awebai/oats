@@ -928,7 +928,8 @@ test("routed session attach --detach-key: the key travels, one quoted word, only
     // ---- a bad key: refused here, before any ssh, also when the name would be resolved through the host's roster
     const addresses = [["--home", home], ["--instance", "dev-dk"], ["--instance", "no-saved-route"]];
     const badKeys = [
-      [["--detach-key", "C-i"], /^--detach-key must be one key: .* \(got "C-i"\)$/],
+      [["--detach-key", "C-i"], /^--detach-key must be one key: C-<a letter except h, i and m, or one of .* \(got "C-i"\)$/],
+      [["--detach-key", "C-h"], /^--detach-key must be one key: .* \(got "C-h"\)$/],
       [["--detach-key", "C-]; kill-server"], /^--detach-key must be one key: .* \(got "C-\]; kill-server"\)$/],
       [["--detach-key", "C-b d"], /\(got "C-b d"\)$/],
       [["--detach-key"], /^--detach-key needs a value$/],
@@ -1049,7 +1050,7 @@ test("attachArgv with a detach key: validated before anything is asked of the ho
 
   // A value outside the grammar: E_BAD_ARGS, and the host is never called, with a home or with a
   // name that only the host's roster could resolve.
-  for (const bad of ["C-i", "C-m", "C-[", "C-]; kill-server", "C-b d", "C-a\n", "c-a", "Any", "", true, null, 12]) {
+  for (const bad of ["C-h", "C-i", "C-m", "C-[", "C-]; kill-server", "C-b d", "C-a\n", "c-a", "Any", "", true, null, 12]) {
     for (const address of [{ home }, { instance: "no-saved-route" }]) for (const skipVersionCheck of [false, true]) {
       const h = host([DETACH_FEATURE]);
       assert.throws(() => attachArgv("build", { ...address, detachKey: bad }, { ...h.io, skipVersionCheck }),
