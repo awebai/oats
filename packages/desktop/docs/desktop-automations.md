@@ -210,12 +210,11 @@ never one click:
 - Test opens a confirm, a card in the side column (no modal: the row's
   placement and parameters stay in view). From a row's menu, Test opens that
   trigger's page with the confirm showing.
-- **Opening the confirm sends nothing.** It is built from the row on screen.
-  A page opened by the menu's Test holds back its own status read, so no
-  request at all leaves while the confirm shows. That read goes out when the
-  confirm closes without a test, with a later refresh, or when the operator
-  presses **Read history** (the page says its history is unread until then);
-  never as a consequence of Run test.
+- **Opening the confirm runs nothing.** It is built from the row on screen
+  and waits for nothing: no test, no source command, no poll, no read to
+  fill it. On a page that is already open it sends no request at all. From a
+  row's menu the page opens first and reads its own status, as every page
+  open does: recorded state, which executes nothing.
 - The confirm says what runs and where, that an untrusted trigger stays
   untrusted, that the test runs here when another host runs the trigger, and
   the parameters the command receives. It offers **Cancel** and **Run test**,

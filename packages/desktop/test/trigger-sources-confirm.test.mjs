@@ -31,7 +31,7 @@ async function mount(t, { cli = CLI, list = () => doc('trigger-list'), status = 
     argvs.push(argv);
     const answer = async () => {
       if (argv[1] === 'test' && hold.test) await hold.test;
-      const out = argv[1] === 'list' ? list() : argv[1] === 'status' ? status() : tested(argv[2]);
+      const out = await (argv[1] === 'list' ? list() : argv[1] === 'status' ? status() : tested(argv[2]));
       if (out?.killed) return done(Object.assign(new Error('killed'), { killed: true }), '');
       done(out.ok === false ? Object.assign(new Error('exit 1'), { code: 1 }) : null, JSON.stringify(out));
     };
@@ -144,44 +144,54 @@ test('Enter twice from Test does not run it', async t => {
   assert.equal(u.requests.length, before, 'Enter on the heading does nothing');
 });
 
-test('Test from a row\'s menu opens that trigger\'s page with the confirm, and sends nothing while it shows; Run test there is one request too', async t => {
+test('Test from a row\'s menu opens that trigger\'s page with the confirm: the page reads its own status, and nothing is tested until Run test', async t => {
   const u = await mount(t), before = u.requests.length;
+  const tested = () => u.requests.slice(before).filter(([, b]) => b.action === 'test' || b.runSource !== undefined);
   const row = u.$('.auto-row[data-id="ws/elsewhere"]'); row.querySelector('.auto-menu summary').click(); row.querySelector('.auto-menu button[data-verb=test]').click(); await settle();
   assert.equal(u.$('.page-title').textContent, 'elsewhere'); assert.ok(u.confirm());
-  assert.equal(u.d.activeElement, u.confirm().querySelector('.page-card-title'));
-  assert.equal(u.requests.length, before, 'no request at all while the confirm shows: not a test, and not the page\'s status read');
+  assert.equal(u.d.activeElement, u.confirm().querySelector('.page-card-title'), 'focus stays on the confirm\'s heading when the status lands');
+  // The page's own status read, as on every page open: recorded state, nothing executed. No test, nothing with runSource.
+  assert.deepEqual(u.requests.slice(before).map(([, b]) => [b.action, b.key, b.runSource]), [['status', 'ws/elsewhere', undefined]]);
+  assert.ok(u.$('.auto-runs').textContent.length > 0, 'the page has its history under the confirm');
   u.confirm().querySelector('[data-auto-focus=confirm-cancel]').click(); await settle();
-  assert.deepEqual(u.requests.slice(before).map(([, b]) => [b.action, b.key, b.runSource]), [['status', 'ws/elsewhere', undefined]], 'then the page\'s own status read, and never a test');
-  assert.equal(u.argvs.some(argv => argv.includes(TRIGGER_RUN_SOURCE_FLAG)), false);
-  // Run from the menu's confirm: the ONE test request and nothing else. The status read the page held back is not
-  // sent by the test's completion: the page says its history is unread, and reads it on the operator's request.
+  assert.equal(u.requests.length, before + 1, 'Cancel sends nothing'); assert.equal(u.d.activeElement, u.testButton());
+  // On the page that is open now, the confirm opens and closes with no request at all.
+  u.testButton().click(); await settle(); assert.ok(u.confirm());
+  u.key(u.d.activeElement, 'Escape'); await settle();
+  assert.equal(u.requests.length, before + 1, 'opening the confirm on an open page, and Escape, send nothing');
+  assert.deepEqual(tested(), []); assert.equal(u.argvs.some(argv => argv[1] === 'test' || argv.includes(TRIGGER_RUN_SOURCE_FLAG)), false);
+  // Run test from a menu's confirm: the ONE test request, and nothing follows it.
   u.key(u.d.activeElement, 'Escape'); await settle();
   const again = u.requests.length, other = u.$('.auto-row[data-id="ws/untrusted"]'); other.querySelector('.auto-menu summary').click(); other.querySelector('.auto-menu button[data-verb=test]').click(); await settle();
-  assert.equal(u.requests.length, again); assert.equal(u.$('[data-verb=read-history]'), null, 'nothing but the confirm is offered while it shows');
+  assert.deepEqual(u.requests.slice(again).map(([, b]) => [b.action, b.key, b.runSource]), [['status', 'ws/untrusted', undefined]], 'that page\'s own status read');
+  const pressed = u.requests.length;
   u.confirm().querySelector('[data-verb=run-test]').click(); await settle(); await settle();
-  assert.deepEqual(u.requests.slice(again), [['/api/automations', { kind: 'trigger', action: 'test', key: 'ws/untrusted', runSource: true }]], 'the whole transport history of this entry: exactly the test');
+  assert.deepEqual(u.requests.slice(pressed), [['/api/automations', { kind: 'trigger', action: 'test', key: 'ws/untrusted', runSource: true }]], 'everything the transport saw from the press on: exactly the test');
   assert.deepEqual(u.argvs.slice(-1), [['trigger', 'test', 'ws/untrusted', '--run-source', '--dir', DEPLOYMENT, '--json']]); assert.equal(u.argvs.filter(argv => argv[1] === 'test').length, 1);
   assert.ok(u.$('.page-card[data-card="Test result"]'));
-  assert.equal(u.$('.auto-history-unread').textContent, "This trigger's history has not been read yet. Read history");
-  u.$('[data-verb=read-history]').click(); await settle();
-  assert.deepEqual(u.requests.slice(again + 1).map(([, b]) => [b.action, b.key, b.runSource]), [['status', 'ws/untrusted', undefined]], 'the operator\'s own read');
-  assert.equal(u.$('.auto-history-unread'), null); assert.ok(u.$('.page-card[data-card="Test result"]'), 'the result stays');
 });
 
-test('a held-back status is also read by a later refresh, never while the confirm shows or the test runs', async t => {
-  let release; const hold = { test: new Promise(resolve => { release = resolve; }) };
-  const u = await mount(t, { hold }), row = u.$('.auto-row[data-id="ws/trusted"]');
+test('a status that answers late, and a refresh, leave an open confirm and a running test alone', async t => {
+  let release, answer; const hold = { test: new Promise(resolve => { release = resolve; }) }, late = new Promise(resolve => { answer = resolve; });
+  const u = await mount(t, { hold, status: () => late.then(() => doc('trigger-status-good')) }), row = u.$('.auto-row[data-id="ws/trusted"]');
+  // The confirm does not wait for the page's status: it shows, complete, while that read is still out.
   row.querySelector('.auto-menu summary').click(); row.querySelector('.auto-menu button[data-verb=test]').click(); await settle();
+  assert.ok(u.confirm()); assert.deepEqual([...u.confirm().querySelectorAll('button')].map(b => b.disabled), [false, false]);
+  assert.equal(u.d.activeElement, u.confirm().querySelector('.page-card-title'));
+  assert.equal(u.$('.auto-runs .auto-test-line'), null, 'no status yet');
+  answer(); await settle();
+  assert.match(u.$('.auto-runs .auto-test-line').textContent, /^Last poll /, 'the status lands under the confirm');
+  assert.ok(u.confirm()); assert.equal(u.d.activeElement, u.confirm().querySelector('.page-card-title'), 'and takes neither the confirm nor its focus');
   const before = u.requests.length;
   await u.page.refresh(); await settle();
-  assert.deepEqual(u.requests.slice(before).map(([, b]) => [b.action, b.key]), [['list', undefined]], 'a refresh under the open confirm reads the list, not the status');
+  assert.deepEqual(u.requests.slice(before).map(([, b]) => [b.action, b.key]), [['list', undefined]], 'a refresh under the open confirm reads the list');
+  assert.ok(u.confirm(), 'an unchanged row keeps its confirm');
   u.confirm().querySelector('[data-verb=run-test]').click(); await settle();
   await u.page.refresh(); await settle();
-  assert.deepEqual(u.requests.slice(before).map(([, b]) => [b.action, b.key]), [['list', undefined], ['test', 'ws/trusted'], ['list', undefined]], 'nor while the test runs');
+  assert.deepEqual(u.requests.slice(before).map(([, b]) => [b.action, b.key]), [['list', undefined], ['test', 'ws/trusted'], ['list', undefined]], 'and under the running test; never a second test');
   release(); await settle();
   assert.equal(u.requests.length, before + 3, 'the answer sends nothing');
-  await u.page.refresh(); await settle();
-  assert.deepEqual(u.requests.slice(before + 3).map(([, b]) => [b.action, b.key]), [['list', undefined], ['status', 'ws/trusted']], 'the next refresh reads it');
+  assert.equal(u.d.activeElement, u.$('.page-card[data-card="Test result"] .page-card-title'));
 });
 
 test('a control kept from a confirm that was cancelled, replaced, disposed or left for another workspace sends nothing', async t => {

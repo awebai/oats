@@ -173,8 +173,6 @@ export const automationsCSS = `
 .auto-confirm-status:focus-visible, .page-card-title:focus-visible { outline:1px solid var(--accent); outline-offset:2px; border-radius:3px; }
 .auto-confirm-status { margin:0; color:var(--muted); font-size:12px; }
 .auto-confirm-status:empty { display:none; }
-.auto-history-unread { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
-.oats-view .auto-history-unread button.act { height:24px; min-height:24px; padding:0 8px; border-radius:6px; font-size:11.5px; font-weight:600; }
 .auto-fire .auto-fire-url { display:block; color:var(--muted); font:11.5px var(--mono,monospace); overflow-wrap:anywhere; }
 `;
 
@@ -222,12 +220,11 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
   let alive = true, serial = 0, data = null, failure = '', loading = false, origin = 'all', query = '', openId = null, busy = false, notice = '';
   const tests = new Map(), statuses = new Map();
   // Capability sources. `confirming`: the row whose Test confirm shows (with that row as it was: confirmSig);
-  // `testing`: the row whose confirmed test runs; `statusDeferred`: a page opened by a row menu's Test reads its
-  // status only once the confirm is gone, so that opening a confirm makes no call at all.
+  // `testing`: the row whose confirmed test runs.
   // `confirmToken`: the one confirm that is open, as an identity. Its Cancel and Run test are bound to it, so a
   // control kept from a confirm that was closed, replaced or disposed does nothing. `sourceGens`: a row's source
   // generation, moved on every change of its `on.source`: a test answers for the generation it was asked in.
-  let confirming = null, confirmSig = null, confirmToken = null, testing = null, statusDeferred = null;
+  let confirming = null, confirmSig = null, confirmToken = null, testing = null;
   const sourceGens = new Map(), genOf = id => sourceGens.get(id) || 0;
   const revokeConfirm = () => { confirming = null; confirmSig = null; confirmToken = null; };
   // The row whose one-click Test the kernel answered with E_TRIGGER_SOURCE_RUN: a neutral notice, until the next action.
@@ -280,14 +277,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
       }
       data = next;
     } catch (error) { if (alive && id === serial) failure = error?.message || String(error); }
-    finally {
-      if (alive && id === serial) {
-        loading = false; render();
-        if (reread && openId === reread && statusDeferred !== reread) void loadStatus(reread);
-        // A status read held back for a confirm is read with a later refresh, once no confirm shows and no test runs.
-        if (openId && statusDeferred === openId && confirming !== openId && !testing) settleDeferred(openId);
-      }
-    }
+    finally { if (alive && id === serial) { loading = false; render(); if (reread && openId === reread) void loadStatus(reread); } }
   }
   async function perform(verb, row) {
     if (!act || busy) return;
@@ -321,20 +311,19 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
   // ── a capability source's Test: an informed second press (the confirm is consent to ONE manual run) ──
   const TIMED_OUT = 'The test did not answer in time. Nothing was recorded.';
   const timedOut = error => error?.code === 'E_CLI_TIMEOUT' || error?.name === 'TimeoutError' || /TimeoutError/.test(error?.message || '');
-  /** The page's own status read, held back while a confirm opened from a row's menu showed. It is read when the
-   * confirm closes without a test, on the operator's own "Read history", or with the next refresh; never as a
-   * consequence of Run test, which sends its one request and nothing else. */
-  function settleDeferred(id) { if (!alive || statusDeferred !== id) return; statusDeferred = null; if (openId === id) void loadStatus(id); }
-  /** Opens the confirm on this row's page. It runs nothing and reads nothing: it is built from the row on screen. */
+  /** Opens the confirm on this row's page. The confirm itself runs nothing, reads nothing and waits for nothing: it
+   * is built from the row on screen. From a row's menu the page opens first, and reads its own status as every
+   * page open does (recorded state; it executes nothing). */
   function openConfirm(row) {
     if (!alive || busy || testing || !act || !sourceOf(row)) return;
-    if (openId !== row.id) { openId = row.id; statusDeferred = row.id; }
+    const opens = openId !== row.id; if (opens) openId = row.id;
     confirming = row.id; confirmSig = rowSignature(row); confirmToken = {}; ranNothing = null; render(); focusKey('confirm-title');
+    if (opens) void loadStatus(row.id);
   }
   /** Cancel and Escape. `token`: the confirm the pressed control belongs to (omitted: the open one). */
   function closeConfirm(token = confirmToken) {
     const id = confirming; if (!alive || !id || testing || !token || token !== confirmToken) return;
-    revokeConfirm(); render(); focusKey('test'); settleDeferred(id);
+    revokeConfirm(); render(); focusKey('test');
   }
   /** Run test: exactly one `trigger test` of the confirmed row, and nothing else: no retry, no re-read, no re-test on
    * a refresh. `token`: the confirm the pressed control belongs to; only the confirm that is open, on a view that is
@@ -537,7 +526,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
   }
 
   // ── detail page ──
-  function openRow(id) { if (confirming && !testing) revokeConfirm(); statusDeferred = null; ranNothing = null; openId = id; render(); page.querySelector('.page-back')?.focus(); void loadStatus(id); }
+  function openRow(id) { if (confirming && !testing) revokeConfirm(); ranNothing = null; openId = id; render(); page.querySelector('.page-back')?.focus(); void loadStatus(id); }
   /** A trigger's fire history, read once per open; a stale answer never lands on another page, nor on a row
    * whose source changed since it was asked (the ticket, checked on the answer). */
   async function loadStatus(id) {
@@ -552,7 +541,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     } catch { /* the row's last fire still shows */ }
   }
   function closeRow() {
-    const id = openId; openId = null; statusDeferred = null; if (!testing) revokeConfirm(); render();
+    const id = openId; openId = null; if (!testing) revokeConfirm(); render();
     [...body.querySelectorAll('.auto-row')].find(r => r.dataset.id === id)?.querySelector('.auto-open')?.focus();
   }
   function renderPage(row) {
@@ -613,14 +602,6 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     const lead = st ? [st.liveCount !== null ? `${st.liveCount}${st.max !== null ? ` of ${st.max}` : ''} live now` : null, st.firedTotal ? `${st.firedTotal} fired in all` : null, st.pending.length ? `${st.pending.length} waiting` : null].filter(Boolean).join(' · ') : '';
     const runs = pageSection(doc, kind === 'trigger' ? 'Recent fires' : 'Recent runs', ['on this computer', lead].filter(Boolean).join(' · '));
     const history = node('div', undefined, 'auto-runs');
-    // The status of a page opened by a row menu's Test is not read while its confirm shows, nor by Run test: until
-    // it is, the page says so and offers the read (the operator's own request, the confirm's never).
-    if (statusDeferred === row.id && confirming !== row.id) {
-      const unread = node('p', undefined, 'page-note auto-history-unread'), read = node('button', 'Read history', 'act');
-      read.type = 'button'; read.dataset.verb = 'read-history'; read.disabled = busy || !!testing;
-      read.addEventListener('click', () => { settleDeferred(row.id); render(); page.querySelector('.page-back')?.focus({ preventScroll: true }); });
-      unread.append("This trigger's history has not been read yet. ", read); history.append(unread);
-    }
     const timeEl = iso => { const at = relativeTime(iso, now()), el = node('time', at?.label || '—'); if (at) el.title = at.title; return el; };
     // Status (0.49 fields; each absent on an older kernel): the last poll, the last error (message, then its
     // code), the events waiting (newest first, at most 10), the instances live now, then what fired.
@@ -1010,7 +991,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     // (a refresh) or left the list closes it. It is never applied to another row. (A running test keeps its own.)
     if (confirming && !testing) {
       const confirmed = rowById(confirming);
-      if (openId !== confirming || !confirmed || rowSignature(confirmed) !== confirmSig || !sourceOf(confirmed)) { const id = confirming; revokeConfirm(); queueMicrotask(() => settleDeferred(id)); }
+      if (openId !== confirming || !confirmed || rowSignature(confirmed) !== confirmSig || !sourceOf(confirmed)) revokeConfirm();
     }
     // The page is rebuilt whole: focus on one of the confirm's or the result's targets is found again by its key
     // (a confirm that closed under it hands focus to Test), never dropped to <body>.

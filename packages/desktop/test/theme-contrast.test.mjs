@@ -1692,7 +1692,7 @@ for (const [name] of palettes) test(`${name}: the capability warnings list meets
 // 4.5:1 there, and have no opacity over it.
 import { automationsCSS } from '../renderer/views/automations.mjs';
 for (const [name] of palettes) test(`${name}: a capability trigger source's quotes, Test confirm, result and focus indicators meet computed AA`, async t => {
-  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="a"></div><div class="b"></div><div class="c"></div><div class="d"></div><div class="e"></div></body></html>`, { pretendToBeVisual: true });
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="a"></div><div class="b"></div><div class="c"></div><div class="d"></div></body></html>`, { pretendToBeVisual: true });
   const doc = dom.window.document;
   const style = doc.createElement('style'); style.textContent = css; doc.head.append(style);
   t.after(() => dom.window.close());
@@ -1700,17 +1700,13 @@ for (const [name] of palettes) test(`${name}: a capability trigger source's quot
   const now = () => Date.parse('2026-10-08T12:20:00.000Z'), settle = async () => { for (let i = 0; i < 6; i++) await new Promise(r => setTimeout(r, 0)); };
   const view = (host, list, status, act) => createAutomationsView(doc.querySelector(host), { kind: 'trigger', sources: true, read: async () => (typeof list === 'function' ? list() : fx(list)), status: async () => fx(status), act, now });
   // a: the list with a failed source check. b: a good poll's page, then the confirm. c: a refused poll's page, then a result. d: the neutral notice.
-  // e: a page opened by a row menu's Test, after its test: the history is unread, and says so.
   view('.a', 'trigger-list-invalid', 'trigger-status-invalid');
   const good = view('.b', 'trigger-list', 'trigger-status-good', async () => fx('trigger-test-trusted'));
   const refused = view('.c', 'trigger-list', 'trigger-status-refused', async () => fx('trigger-test-trusted'));
   const stale = fx('trigger-list'); stale.triggers.find(r => r.id === 'ws/trusted').on = { source: 'github.pull_request', repo: 'github.com/acme/kb', events: ['opened'], labels: [], poll: '2m' };
   let listed = stale;
   const unconfirmed = view('.d', () => listed, 'trigger-status-good', async () => { throw Object.assign(new Error('nothing ran'), { code: 'E_TRIGGER_SOURCE_RUN' }); });
-  view('.e', 'trigger-list', 'trigger-status-good', async () => fx('trigger-test-trusted'));
   await settle();
-  doc.querySelector('.e .auto-row[data-id="ws/trusted"] .auto-menu button[data-verb=test]').click(); await settle();
-  doc.querySelector('.e button[data-verb=run-test]').click(); await settle();
   good.open('ws/trusted'); refused.open('ws/trusted'); unconfirmed.open('ws/trusted'); await settle();
   doc.querySelector('.b .page-bar-actions button[data-verb=test]').click();
   doc.querySelector('.c .page-bar-actions button[data-verb=test]').click(); await settle();
@@ -1735,7 +1731,7 @@ for (const [name] of palettes) test(`${name}: a capability trigger source's quot
     ['.c .page-card[data-card="Test result"] .page-card-title', 'muted', 'surface'], ['.c .page-card[data-card="Test result"] .auto-test-line', 'fg', 'surface'],
     ['.c .page-card[data-card="Test result"] .source-quote-text', 'fg', 'surface'], ['.c .page-card[data-card="Test result"] .source-quote-note', 'muted', 'surface'],
     ['.c .page-card[data-card="Test result"] .auto-fire-url', 'muted', 'surface'],
-    ['.d .auto-page .auto-ran-nothing', 'muted', null], ['.e .auto-history-unread', 'muted', null],
+    ['.d .auto-page .auto-ran-nothing', 'muted', null],
   ]) {
     const found = [...doc.querySelectorAll(selector)]; assert.ok(found.length >= least, `${selector}: ${found.length} of ${least}`);
     for (const el of found) {
