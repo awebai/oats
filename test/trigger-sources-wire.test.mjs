@@ -823,3 +823,34 @@ test("a trigger moved to another capability source shows none of the old source'
   s.tick("2026-10-01T12:05:00Z", { pollSource: () => { throw W.pollFailure("timeout", "acme.graph:harvest-branches: killed"); } });
   assert.deepEqual([s.ts().invalidEvents, s.ts().skipped, s.ts().source], [lists.invalidEvents, lists.skipped, "acme.graph:harvest-branches"]);
 });
+
+test("a source change made with an unrelated mistake: the invalid row names the new source and shows none of the old one's text, though no tick reconciles an invalid trigger", (t) => {
+  const s = scope(t, [capDef()]);
+  const edit = (on) => writeFileSync(join(s.ws, "oats-schedules.json"), JSON.stringify({ version: 1, jobs: { harvest: capDef({ on: { ...capDef().on, ...on } }) } }, null, 2));
+  const row = () => T.triggerStatus(s.ws, "local/harvest").triggers[0];
+  const said = { code: "E_A", message: "A says: log in again" };
+  const skipped = [{ subject: "harvest/s", why: "A says: not judged yet" }];
+  s.tick("2026-10-01T12:00:00Z", { pollSource: () => answer(["harvest/a:h1"], { skipped }) });
+  s.tick("2026-10-01T12:01:00Z", { pollSource: () => { throw W.pollFailure("refused", "acme.graph:harvest-branches refused the poll", said); } });
+  // The same source with a mistake elsewhere: the row is invalid, and its state is still its own.
+  edit({ events: [] });
+  assert.equal(T.describeTrigger(s.ws, "local/harvest").invalid.field, "on.events");
+  assert.deepEqual([row().source.name, row().skipped, row().lastPoll.source, row().lastError.source], ["harvest-branches", skipped, said, said]);
+  // Another source, with the same mistake.
+  edit({ source: "acme.graph:other-branches", events: [] });
+  assert.equal(T.describeTrigger(s.ws, "local/harvest").invalid.field, "on.events");
+  const stored = JSON.stringify(s.ts());
+  for (const read of [row, () => T.describeTrigger(s.ws, "local/harvest"), () => T.listTriggers(s.ws).triggers.find((x) => x.qualifiedId === "local/harvest")]) {
+    const answered = read();
+    assert.equal(answered.id, "local/harvest");
+    assert.doesNotMatch(JSON.stringify(answered), /A says|E_A/);
+  }
+  assert.deepEqual([row().source, row().invalidEvents, row().skipped, row().lastPoll, row().lastError, row().firedTotal], [{ capability: "acme.graph", name: "other-branches" }, [], [], null, null, 1]);
+  // The tick skips an invalid trigger, so the stored state is untouched: only the reports project it.
+  assert.deepEqual(actions(s.tick("2026-10-01T12:02:00Z", { pollSource: () => assert.fail("an invalid trigger is not polled") })), [["local/harvest", "invalid"]]);
+  assert.equal(JSON.stringify(s.ts()), stored);
+  assert.deepEqual([row().skipped, row().lastPoll], [[], null]);
+  // A source that cannot be told (misspelt) names no source: the row has no source keys at all.
+  edit({ source: "acme.graph", events: [] });
+  assert.deepEqual([row().source, row().skipped, row().invalidEvents], [undefined, undefined, undefined]);
+});
