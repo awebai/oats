@@ -434,6 +434,25 @@ takes a final capture of notes and the session record into durable custody; an
 incomplete capture keeps the home for a retry. Retirement never waits for a
 model or GitHub: processing continues after the home is gone.
 
+One retire of an instance runs at a time. A retire holds the instance's claim
+from the moment it has resolved the home until it ends: the file
+`.oats-retirement/claims/<instance>.lock` in the agent's instances directory,
+beside the homes, which names its holder by pid and start time. Any other
+retire of that instance (plain, guarded, `--self`, a self-retire's
+completion, `--force` included) is refused at once with `E_LIFECYCLE_BUSY`,
+before it stops anything, copies anything or runs a hook: a retire hook
+releases things that exist once, such as a messaging identity or a scheduled
+job. A self-retire that is scheduled counts from the moment it is scheduled,
+while its completion lives. A retire killed while it holds the claim leaves
+the file behind until that name is retired again: the next retire takes the
+claim over, because its holder is verifiably gone, and the file is safe to
+remove by hand once its pid is gone. A holder whose start time cannot be
+read is never taken for gone; the refusal names the pid, the file and the
+way out. The claim orders retires only: `oats instance stop`, `oats session
+start` and `oats worktree add` do not take it, and `oats status` does not
+show it (#866). The refusals are in
+[desktop-cli-api.md](desktop-cli-api.md#retire).
+
 Recorded children (the instances whose recorded parent chain reaches this
 one) are stopped first, never escalated, and kept: their homes stay. If one is
 still running after the grace, or its stop cannot be established, retire
@@ -939,7 +958,7 @@ can be inspected, and it is the process the scan exists to find.
 or briefing says it is done. A live harness cannot give a stable final
 inspection of its own work, so the calling process inspects, runs, and removes
 nothing: it records the intent beside its home as
-`.oats-retire-pending-<instance>.json` and starts a detached completion, then returns so the instance can report final
+`.oats-retire-pending-<instance>.json`, which names the completion process, and starts a detached completion, then returns so the instance can report final
 status before its tmux window dies a few seconds later. The completion then
 retires the instance exactly as an external `oats retire` would: quiesce the
 harness, preserve uncommitted work, run retire hooks, repair lineage, remove

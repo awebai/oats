@@ -3266,6 +3266,72 @@ retry}` to `resultPath`. Before 0.48.0 only a guarded apply stopped children.
 - A first guarded retire prints the raw receipt with `planRevision`,
   `idempotencyKey` and `replayed: false`.
 
+**One retire of a home at a time** (0.51.0, #863). Every retire that applies (plain,
+guarded, `--self` and its detached completion; with `--server`, on the host)
+holds the home's claim,
+`<instances>/.oats-retirement/claims/<instance>.lock`, from the moment it
+has resolved the home until it ends, by success or by any refusal or failure.
+The claim is a file that names its holder by pid and start time. It lies
+beside the homes, never inside one: a home's bytes are what its retire
+observes, copies and removes. A second retire of that home does not wait: it
+answers `E_LIFECYCLE_BUSY` at once (exit 1; the text form prints the
+message), before it stops a session or a child, writes a recovery, runs a
+hook or changes a file of the home. **`--force` does not bypass it**, and
+`--plan` takes no claim and refuses nothing new. A claim whose holder has
+died, for example a retire killed while its hooks ran, is taken over by the
+next retire of that name. So a killed retire can always be run again. Until
+that name is retired again its claim file stays where it is, and it is safe
+to remove once its pid is gone.
+
+`details` is `{instance, home, lock, pid, since}`: `lock` is the file that
+names the holder, `since` when the holder took it. Every message is one
+line and says that nothing was done:
+
+- A live holder: `a retire of <name> is already running (pid <pid>, since
+  <at>); nothing was done — wait for it to finish`.
+- A holder whose start time cannot be read (where `ps` fails, or a claim
+  that records none) is never taken for gone, and its claim is never taken
+  over. `details.unknown` is the reason. The message names the pid, its
+  recorded start, the reason and the way out: check that pid by hand, and if
+  it is not an `oats retire`, remove `<lock>`, then retry.
+- A claim file that is not a readable claim is never removed. `details` is
+  `{instance, home, lock}`; the message names the file and says to inspect
+  it and remove it if no `oats retire` holds it.
+- The retire's own start time cannot be read, so it could not hold the claim
+  verifiably: `details` is `{instance, home, lock}`, and the message gives
+  the reader's own reason (the `/proc` read, or what `ps` answered).
+
+A scheduled self-retire counts from the moment it is scheduled. Its pending
+marker (`pendingMarker`) records the completion process as `completionPid`
+and `completionStart` (`null` when the start could not be read). While that
+process lives, every other retire of the instance is refused the same way,
+`--self --keep-dir` included: `a retire of <name> is already scheduled (its
+completion, pid <pid>, requested at <requestedAt>); nothing was done — wait
+for it to finish`, with `details.lock` the pending marker, `details.pid` the
+completion and `details.since` the marker's `requestedAt`. A completion
+whose start cannot be read is refused as a holder's is (`details.unknown`),
+the file to remove being the pending marker. A second `--self` still answers
+`alreadyScheduled: true`. The marker refuses nothing once its completion has
+left its outcome at `resultPath` (it failed) or is gone (it died), nor when
+it names no completion (a marker written before 0.51.0): `oats retire
+<instance>` then retries the retirement, as before. The completion waits up
+to 3 s for the retire that scheduled it to release the claim, then takes it
+as any retire does; one that meets another retire still running is refused,
+and records that at `resultPath` like any failed completion.
+
+The home is resolved again once the claim is held. One that another retire
+removed in between answers `E_SESSION_UNKNOWN`, as a retire of a retired
+instance does. If the name is by then the home of another agent, the retire
+starts over on that home, under that home's claim; after two such changes it
+answers `E_LIFECYCLE_BUSY` (`the home of <name> changed while its claim was
+being taken …; nothing was done — retry`, `details: {instance, home, lock}`).
+A retire of a name that has no home also removes a claim of that name whose
+holder is gone, left by a retire that was killed after it removed the home.
+
+The claim orders retires only. `oats instance stop`, `oats session start`
+and `oats worktree add` do not take it and are not refused by it, and `oats
+status` does not show a held claim (#866).
+
 Refusals (envelopes): `E_PLAN_STALE`, `E_CHILDREN_RUNNING`,
 `E_WORK_PRESERVATION_FAILED` (the home is kept; retry, or
 `--discard-worktree` when it is `work/` that could not be re-homed: it does
@@ -3274,7 +3340,9 @@ message names the entry or the state that could not be read, or the directory
 Git reads as the top level of a `work/` whose `core.worktree` names another
 one),
 `E_SESSION_UNKNOWN`, `E_AMBIGUOUS_INSTANCE`,
-`E_NO_ROOT`, `E_LIFECYCLE_FAILED`, `E_LIFECYCLE_BUSY` (feature
+`E_NO_ROOT`, `E_LIFECYCLE_FAILED`, `E_LIFECYCLE_BUSY` (another retire of the
+home is running or scheduled, `--force` included: one retire of a home at a
+time, above; or, feature
 `worktree-event`: the home is a spawn still running its `worktree` hooks, a
 row with `spawnInProgress: true`, `--force` included; or one whose start time
 cannot be read, a `rollbackIncomplete` row, until `--force`; or a hook or git

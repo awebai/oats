@@ -13,6 +13,7 @@ import { inertHarnessPath } from "./helpers/runtime-stub.mjs";
 import { DISPOSABLE_HOME_ACCEPTED, DISPOSABLE_HOME_REFUSED, disposableHomeRefusal } from "./helpers/disposable-home.mjs";
 import { capabilityFiles, soulFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { packageRepo } from "./helpers/package-repo.mjs";
+import { killAndReap } from "./helpers/host-fixture.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 /** Parse a `--json` CLI success envelope (Desktop CLI API v1): stdout must be
@@ -3752,7 +3753,8 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
     const listed = listInstances(root, "oats-test-nosuch").find((a) => a.name === "dev").instances.find((i) => i.instance === "dev-self");
     assert.equal(listed.retirePending.instance, "dev-self");
     assert.equal(existsSync(home), true, "status is read-only: the home is still there");
-    try { process.kill(r.completionPid, "SIGKILL"); } catch { /* already gone */ }
+    // The completion is run here instead: the scheduled one, which the marker names, is gone first.
+    await killAndReap(r.completionPid);
 
     // The completion is an ORDINARY retirement: the hook runs, reports it did
     // not finish, and the home is retained under quarantine with an explicit

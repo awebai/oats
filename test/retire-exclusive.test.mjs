@@ -1,0 +1,478 @@
+// One retire per instance at a time (awebai/oats#863). A retire holds its home's claim
+// (<instances>/.oats-retirement/claims/<name>.lock, lib/claim.mjs) from the moment the home is
+// resolved; any other retire of that home is refused as E_LIFECYCLE_BUSY before it stops, copies or
+// runs anything. No outcome here rests on a sleep or on which process is faster: the fixture's
+// retire hook says when it has been entered and then waits for a gate file, so "the first retire is
+// in flight" is established before the second one starts.
+import test from "node:test";
+import assert from "node:assert/strict";
+import { spawn as spawnChild, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { deferredRetireResultPath, retireInstance, retirePendingMarkerPath } from "../lib/core.mjs";
+import { processStartToken } from "../lib/worktree-hooks.mjs";
+import { CLI, v2Deployment } from "./helpers/v2-deployment.mjs";
+import { killAndReap, waitUntil } from "./helpers/host-fixture.mjs";
+
+const CORE = pathToFileURL(new URL("../lib/core.mjs", import.meta.url).pathname).href;
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const kill = (pid) => { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } };
+const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
+const NONCE = "a".repeat(32);
+/** A real pid whose process has exited and been reaped. */
+const exitedPid = () => spawnSync(process.execPath, ["-e", ""]).pid;
+
+/** Every entry of `dir`, with what a change to it would change: its type, mode, size, mtime and
+ *  (a file's) bytes or (a link's) target. */
+function digest(dir) {
+  const rows = [];
+  const walk = (abs, rel) => {
+    const st = lstatSync(abs);
+    const kind = st.isDirectory() ? "dir" : st.isSymbolicLink() ? "link" : "file";
+    rows.push([rel, kind, st.mode, kind === "dir" ? 0 : st.size, st.mtimeMs,
+      kind === "file" ? createHash("sha256").update(readFileSync(abs)).digest("hex") : kind === "link" ? readlinkSync(abs) : ""].join(" "));
+    if (kind === "dir") for (const name of readdirSync(abs).sort()) walk(join(abs, name), join(rel, name));
+  };
+  walk(dir, ".");
+  return rows.join("\n");
+}
+
+/** A deployment whose soul `worker` works in a directory and has a capability whose retire hook
+ *  appends `<pid> entered` to a log outside the home, then waits for the gate file (90 s at most,
+ *  under the 120 s a hook gets). Its spawn hook leaves bytes in work/, so a retire has something to
+ *  copy to recovery. Every process a test starts is ended before the fixture's leftover check. */
+function fixture(t) {
+  const fx = v2Deployment({ t,
+    souls: { worker: { soul: { work: "directory", capabilities: { "example.worker": { from: "here" } } }, agents: "# Worker\n" } },
+    capabilities: { "example.worker": { manifest: { description: "fixture", hooks: { spawn: "spawn.mjs", retire: "retire.mjs" } }, files: { "spawn.mjs": "console.log('{}')\n", "retire.mjs": "console.log('{}')\n" } } },
+  });
+  const runs = join(fx.base, "hook-runs.log"), gate = join(fx.base, "release");
+  fx.commit({
+    "capabilities/example.worker/spawn.mjs": `import { writeFileSync } from 'node:fs';
+writeFileSync(process.env.OATS_INSTANCE_HOME + '/work/from-hook.txt', 'spawn bytes');
+console.log(JSON.stringify({ meta: { made: true } }));\n`,
+    "capabilities/example.worker/retire.mjs": `import { appendFileSync, existsSync } from 'node:fs';
+appendFileSync(${JSON.stringify(runs)}, process.pid + ' entered\\n');
+const end = Date.now() + 90000;
+while (!existsSync(${JSON.stringify(gate)}) && Date.now() < end) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+console.log(JSON.stringify({ meta: { retired: true } }));\n`,
+  });
+  const hookPids = () => existsSync(runs) ? readFileSync(runs, "utf8").split("\n").filter((l) => l.endsWith(" entered")).map((l) => Number(l.split(" ")[0])) : [];
+  const started = [];
+  /** A child process → { pid, done: Promise<{ code, out, err }>, ended() }. */
+  const start = (argv, env = {}) => {
+    const c = spawnChild(process.execPath, argv, { cwd: fx.dep, env: { ...fx.env, ...env }, stdio: ["ignore", "pipe", "pipe"] });
+    started.push(c.pid);
+    let out = "", err = "", ended = false;
+    c.stdout.on("data", (d) => { out += d; }); c.stderr.on("data", (d) => { err += d; });
+    const done = new Promise((res) => c.on("close", (code, signal) => { ended = true; res({ code, signal, out, err }); }));
+    return { pid: c.pid, done, ended: () => ended };
+  };
+  const f = {
+    fx, gate,
+    hookPids, hookRuns: () => hookPids().length,
+    open: () => writeFileSync(gate, ""),
+    /** `oats retire <instance> --json <extra>` as a child process. */
+    retire: (instance, extra = [], env) => start([CLI, "retire", instance, "--json", ...extra], env),
+    /** A deferred self-retire's completion, as the detached script runs it (delaySec 0). */
+    completion: (inst, options) => start(["--input-type=module", "-e", `import { completeDeferredRetirement } from ${JSON.stringify(CORE)};
+process.exitCode = completeDeferredRetirement(JSON.parse(process.env.OATS_RETIRE_INTENT), { delaySec: 0 }) ? 0 : 1;`],
+    { OATS_RETIRE_INTENT: JSON.stringify(f.intent(inst, options)) }),
+    intent: (inst, options = { home: inst.home }) => ({ instance: inst.instance, agent: "worker", root: fx.root, requestedAt: "2026-10-10T00:00:00.000Z", delaySec: 0, options, resultPath: deferredRetireResultPath(inst.home) }),
+    planRevision: (instance) => fx.cli(["retire", instance, "--plan", "--json"]).json().result.planRevision,
+    track: (pid) => { started.push(pid); return pid; },
+  };
+  fx.beforeCleanup(() => { f.open(); for (const pid of [...started, ...hookPids()]) kill(pid); });
+  return f;
+}
+const claimsDir = (home) => join(dirname(home), ".oats-retirement", "claims");
+const claimOf = (home) => join(claimsDir(home), `${home.split("/").pop()}.lock`);
+const claimFiles = (home) => existsSync(claimsDir(home)) ? readdirSync(claimsDir(home)) : [];
+const recoveries = (inst) => { const d = join(dirname(inst.home), ".oats-retirement", "recovery"); return existsSync(d) ? readdirSync(d).filter((n) => n.startsWith(`${inst.instance}-`)) : []; };
+/** What a retire printed with --json: a refusal's or a replay's envelope, or the receipt itself. */
+const envelope = (r) => JSON.parse(r.out.trim());
+/** A claim as the protocol writes it, held by `pid` (this process unless given). */
+const writeClaim = (home, holder = {}) => {
+  mkdirSync(claimsDir(home), { recursive: true });
+  writeFileSync(claimOf(home), JSON.stringify({ pid: process.pid, processStart: processStartToken(process.pid), nonce: NONCE, at: "2026-10-10T00:00:00.000Z", ...holder }) + "\n");
+};
+const waitingForClaim = (home, pid) => claimFiles(home).some((n) => n.startsWith(`${home.split("/").pop()}.lock.tmp-${pid}-`));
+
+/** Start `first` on a new instance and wait until it is inside its retire hook: it holds the claim,
+ *  has stopped its session and copied its recovery, and stays there until the gate opens. */
+async function inFlight(f, first) {
+  const inst = await f.fx.spawn("worker");
+  const a = await first(inst);
+  await waitUntil(() => f.hookRuns() === 1, "the first retire to be inside its retire hook", 60000);
+  return { inst, a, lock: claimOf(inst.home), before: digest(inst.home) };
+}
+/** `r` (the answer of a retire started while `h` was in flight) is the busy refusal that names the
+ *  holder, and nothing was done: one hook run, one recovery, the home as it was. */
+function assertRefused(f, h, r, what) {
+  assert.equal(h.a.ended(), false, `${what}: the first retire is still in flight`);
+  assert.equal(r.code, 1, `${what}: exit 1 (${r.out}${r.err})`);
+  const e = envelope(r);
+  assert.deepEqual({ schemaVersion: e.schemaVersion, ok: e.ok, code: e.error.code }, { schemaVersion: 1, ok: false, code: "E_LIFECYCLE_BUSY" }, what);
+  assert.deepEqual(e.error.details, { instance: h.inst.instance, home: h.inst.home, lock: h.lock, pid: h.a.pid, since: readJson(h.lock).at }, what);
+  assert.equal(e.error.message, `a retire of ${h.inst.instance} is already running (pid ${h.a.pid}, since ${e.error.details.since}); nothing was done — wait for it to finish`, what);
+  assertUntouched(f, h, what);
+  return e;
+}
+function assertUntouched(f, h, what) {
+  assert.equal(f.hookRuns(), 1, `${what}: no second hook run`);
+  assert.equal(recoveries(h.inst).length, 1, `${what}: no second recovery`);
+  assert.equal(digest(h.inst.home), h.before, `${what}: no file of the home changed`);
+  assert.equal(readJson(h.lock).pid, h.a.pid, `${what}: the claim is still the first retire's`);
+}
+/** Open the gate: the first retire finishes, having done all the work once and left no claim. */
+async function finish(f, h) {
+  f.open();
+  const r = await h.a.done;
+  assert.equal(r.code, 0, `${r.out}${r.err}`);
+  assert.equal(existsSync(h.inst.home), false, "the home is removed");
+  assert.equal(f.hookRuns(), 1, "one hook run in total");
+  assert.equal(recoveries(h.inst).length, 1, "one recovery in total");
+  assert.deepEqual(claimFiles(h.inst.home), [], "no claim is left");
+  return r;
+}
+
+test("plain x plain: the second retire is refused while the first is in its hook; afterwards a retire answers E_SESSION_UNKNOWN", async (t) => {
+  const f = fixture(t);
+  const h = await inFlight(f, (inst) => f.retire(inst.instance));
+  assertRefused(f, h, await f.retire(h.inst.instance).done, "plain");
+  const first = envelope(await finish(f, h));
+  assert.equal(first.retired, h.inst.instance);
+  const after = await f.retire(h.inst.instance).done;
+  assert.equal(after.code, 1);
+  assert.equal(envelope(after).error.code, "E_SESSION_UNKNOWN");
+  assert.deepEqual(claimFiles(h.inst.home), [], "a retire of a retired instance leaves no claim either");
+});
+
+test("every other form of retire is refused while one is in flight: --force, text mode, --self, --self --keep-dir, recorded children", async (t) => {
+  const f = fixture(t);
+  const h = await inFlight(f, (inst) => f.retire(inst.instance));
+  const name = h.inst.instance;
+  assertRefused(f, h, await f.retire(name, ["--force"]).done, "--force");
+  assertRefused(f, h, await f.retire(name, ["--home", h.inst.home, "--discard-worktree", "--keep-dir"]).done, "--home --keep-dir");
+  // Text mode prints the message and exits 1.
+  const text = f.fx.cli(["retire", name]);
+  assert.equal(text.status, 1);
+  assert.match(text.stderr, new RegExp(`a retire of ${name} is already running \\(pid ${h.a.pid}, since .*nothing was done`));
+  // The forms the CLI reaches only from inside the instance, as the kernel takes them.
+  const other = await f.fx.spawn("worker");
+  for (const [what, o] of [["--self (a scheduling)", { self: true, selfKillDelaySec: 600 }], ["--self --keep-dir", { self: true, keepDir: true, selfKillDelaySec: 600 }],
+    ["recorded children", { children: [{ instance: other.instance, home: other.home }] }], ["a guarded apply's options", { plannedExtraWorktrees: [], children: [] }]]) {
+    await assert.rejects(f.fx.inEnv(() => retireInstance(f.fx.root, name, o)), (e) => {
+      assert.equal(e.code, "E_LIFECYCLE_BUSY", what);
+      assert.deepEqual(e.details, { instance: name, home: h.inst.home, lock: h.lock, pid: h.a.pid, since: readJson(h.lock).at }, what);
+      return true;
+    });
+    assertUntouched(f, h, what);
+  }
+  assert.equal(existsSync(retirePendingMarkerPath(h.inst.home)), false, "the refused --self scheduled nothing");
+  assert.equal(existsSync(join(other.home, "instance.json")), true, "the recorded child is as it was");
+  await finish(f, h);
+});
+
+test("guarded x guarded, two idempotency keys: the second is refused, and records no receipt", async (t) => {
+  const f = fixture(t);
+  let rev;
+  const h = await inFlight(f, (inst) => { rev = f.planRevision(inst.instance); return f.retire(inst.instance, ["--plan-revision", rev, "--idempotency-key", "key-a"]); });
+  assertRefused(f, h, await f.retire(h.inst.instance, ["--plan-revision", rev, "--idempotency-key", "key-b"]).done, "guarded, another key");
+  const first = envelope(await finish(f, h));
+  assert.deepEqual({ retired: first.retired, replayed: first.replayed, key: first.idempotencyKey }, { retired: h.inst.instance, replayed: false, key: "key-a" });
+  assert.equal(existsSync(join(dirname(h.inst.home), ".oats-retire-receipt.key-b.json")), false, "the refused apply recorded nothing");
+});
+
+test("guarded x guarded, the same idempotency key: the second is refused, and afterwards the key replays the first receipt", async (t) => {
+  const f = fixture(t);
+  let rev;
+  const guarded = (inst) => f.retire(inst.instance, ["--plan-revision", rev, "--idempotency-key", "key-same"]);
+  const h = await inFlight(f, (inst) => { rev = f.planRevision(inst.instance); return guarded(inst); });
+  assertRefused(f, h, await guarded(h.inst).done, "guarded, the same key");
+  const first = envelope(await finish(f, h));
+  assert.equal(first.replayed, false);
+  const again = await guarded(h.inst).done;
+  assert.equal(again.code, 0, again.out + again.err);
+  assert.deepEqual(envelope(again).result, { ...first, replayed: true }, "the key replays the first retire's receipt");
+  assert.equal(f.hookRuns(), 1);
+});
+
+test("a deferred --self completion in flight: a plain retire is refused, naming the completion's pid", async (t) => {
+  const f = fixture(t);
+  const h = await inFlight(f, (inst) => f.completion(inst));
+  assertRefused(f, h, await f.retire(h.inst.instance).done, "plain against the completion");
+  await finish(f, h);
+  assert.equal(existsSync(deferredRetireResultPath(h.inst.home)), false, "the completion succeeded: it left no outcome");
+});
+
+test("a plain retire in flight: a deferred --self completion waits for the claim, is refused, and records its failure as any failed completion does", async (t) => {
+  const f = fixture(t);
+  const h = await inFlight(f, (inst) => f.retire(inst.instance));
+  const c = await f.completion(h.inst).done;
+  assert.equal(h.a.ended(), false, "the first retire is still in flight");
+  assert.equal(c.code, 1, c.out + c.err);
+  const outcome = readJson(deferredRetireResultPath(h.inst.home));
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.error.code, "E_LIFECYCLE_BUSY");
+  assert.match(outcome.error.message, new RegExp(`a retire of ${h.inst.instance} is already running \\(pid ${h.a.pid},`));
+  assertUntouched(f, h, "the refused completion");
+  await finish(f, h);
+});
+
+test("a retire killed while it holds the claim does not block the next one: the claim is taken over", async (t) => {
+  const f = fixture(t);
+  const h = await inFlight(f, (inst) => f.retire(inst.instance));
+  kill(h.a.pid);
+  assert.equal((await h.a.done).signal, "SIGKILL");
+  // Its hook outlives it (awebai/oats#865): ended here, so the fixture leaves no process.
+  const [hook] = f.hookPids();
+  kill(hook);
+  await waitUntil(() => !alive(hook), "the killed retire's hook to be gone");
+  assert.equal(readJson(h.lock).pid, h.a.pid, "the killed retire left its claim");
+  assert.equal(existsSync(h.inst.home), true);
+  f.open();
+  const next = await f.retire(h.inst.instance).done;
+  assert.equal(next.code, 0, next.out + next.err);
+  assert.equal(envelope(next).retired, h.inst.instance);
+  assert.equal(existsSync(h.inst.home), false, "the next retire ran");
+  assert.deepEqual(claimFiles(h.inst.home), [], "no claim and no reclaim file is left");
+});
+
+test("the --self window: between the scheduling and its completion every other retire is refused, naming the pending marker and the completion", async (t) => {
+  const f = fixture(t);
+  const inst = await f.fx.spawn("worker");
+  const name = inst.instance, marker = retirePendingMarkerPath(inst.home);
+  // A long delay: the completion sleeps for the whole test, and is ended before the cleanup.
+  const scheduled = await f.fx.inEnv(() => retireInstance(f.fx.root, name, { self: true, selfKillDelaySec: 600 }));
+  f.track(scheduled.completionPid);
+  assert.equal(scheduled.deferred, true);
+  const pending = readJson(marker);
+  assert.equal(pending.completionPid, scheduled.completionPid, "the marker names its completion");
+  assert.equal(pending.completionStart, processStartToken(scheduled.completionPid), "and when it started");
+  assert.deepEqual(claimFiles(inst.home), [], "the scheduling released its claim");
+  const before = digest(inst.home), markerBytes = readFileSync(marker, "utf8");
+  const details = { instance: name, home: inst.home, lock: marker, pid: scheduled.completionPid, since: pending.requestedAt };
+  const untouched = (what) => {
+    assert.equal(digest(inst.home), before, `${what}: nothing of the home changed`);
+    assert.equal(readFileSync(marker, "utf8"), markerBytes, `${what}: the marker is as it was`);
+    assert.deepEqual(recoveries(inst), [], `${what}: no recovery`);
+    assert.equal(f.hookRuns(), 0, `${what}: no hook run`);
+    assert.deepEqual(claimFiles(inst.home), [], `${what}: no claim is left`);
+  };
+  const rev = f.planRevision(name);
+  for (const [what, extra] of [["plain", []], ["guarded", ["--plan-revision", rev, "--idempotency-key", "key-w"]], ["--force", ["--force"]]]) {
+    const r = await f.retire(name, extra).done;
+    assert.equal(r.code, 1, `${what}: ${r.out}${r.err}`);
+    const e = envelope(r).error;
+    assert.equal(e.code, "E_LIFECYCLE_BUSY", what);
+    assert.deepEqual(e.details, details, what);
+    assert.equal(e.message, `a retire of ${name} is already scheduled (its completion, pid ${scheduled.completionPid}, requested at ${pending.requestedAt}); nothing was done — wait for it to finish`, what);
+    untouched(what);
+  }
+  // --self --keep-dir runs in this process, not in a completion: refused as well.
+  await assert.rejects(f.fx.inEnv(() => retireInstance(f.fx.root, name, { self: true, keepDir: true, selfKillDelaySec: 600 })), (e) => {
+    assert.equal(e.code, "E_LIFECYCLE_BUSY");
+    assert.deepEqual(e.details, details);
+    return true;
+  });
+  untouched("--self --keep-dir");
+  // A second --self only schedules, and one is scheduled already: its present answer.
+  const second = await f.fx.inEnv(() => retireInstance(f.fx.root, name, { self: true, selfKillDelaySec: 600 }));
+  assert.equal(second.alreadyScheduled, true);
+  assert.equal(second.completionPid, undefined, "no second completion was started");
+  untouched("a second --self");
+
+  // The completion died: the marker no longer refuses, and the retire does what it owed.
+  await killAndReap(scheduled.completionPid);
+  f.open();
+  const r = await f.retire(name).done;
+  assert.equal(r.code, 0, r.out + r.err);
+  assert.equal(existsSync(inst.home), false);
+  assert.equal(existsSync(marker), false, "the owed retirement is paid: the marker is gone");
+  assert.equal(f.hookRuns(), 1);
+});
+
+test("a pending marker refuses only for a completion that lives: its outcome, an older kernel's marker and a start that cannot be compared", async (t) => {
+  const f = fixture(t);
+  f.open();
+  // A live process that is not a completion stands in for one: this test's own.
+  const live = { completionPid: process.pid, completionStart: processStartToken(process.pid) };
+  const withMarker = async (extra) => {
+    const inst = await f.fx.spawn("worker");
+    writeFileSync(retirePendingMarkerPath(inst.home), JSON.stringify({ ...f.intent(inst), ...extra }, null, 2) + "\n");
+    return inst;
+  };
+  // The control: this marker, with no outcome beside it, refuses.
+  const refused = await withMarker(live);
+  const busy = await f.retire(refused.instance).done;
+  assert.equal(envelope(busy).error.code, "E_LIFECYCLE_BUSY", busy.out);
+  assert.equal(envelope(busy).error.details.pid, process.pid);
+  // The same marker with its completion's outcome (it failed): the retire retries it.
+  writeFileSync(deferredRetireResultPath(refused.home), JSON.stringify({ ok: false }) + "\n");
+  const retried = await f.retire(refused.instance).done;
+  assert.equal(retried.code, 0, retried.out + retried.err);
+  assert.equal(existsSync(refused.home), false);
+  assert.equal(existsSync(deferredRetireResultPath(refused.home)), false, "the failed outcome is cleared with the home");
+  // A marker an older kernel wrote names no completion: as today.
+  const older = await withMarker({});
+  const went = await f.retire(older.instance).done;
+  assert.equal(went.code, 0, went.out + went.err);
+  assert.equal(existsSync(older.home), false);
+  // A completion whose pid runs and whose start was not recorded: never taken for gone.
+  const unknown = await withMarker({ completionPid: process.pid, completionStart: null });
+  const marker = retirePendingMarkerPath(unknown.home), before = digest(unknown.home), runs = f.hookRuns();
+  const r = await f.retire(unknown.instance, ["--force"]).done;
+  assert.equal(r.code, 1, r.out + r.err);
+  const e = envelope(r).error;
+  assert.equal(e.code, "E_LIFECYCLE_BUSY");
+  assert.deepEqual(e.details, { instance: unknown.instance, home: unknown.home, lock: marker, pid: process.pid, since: "2026-10-10T00:00:00.000Z", unknown: e.details.unknown });
+  assert.match(e.details.unknown, /names no start time/);
+  assert.ok(e.message.includes(`pid ${process.pid}, recorded start none`) && e.message.includes(e.details.unknown) && e.message.includes("nothing was done") && e.message.includes(`remove ${marker}, then retry`), e.message);
+  assert.equal(digest(unknown.home), before, "nothing of the home changed");
+  assert.equal(f.hookRuns(), runs, "no hook ran");
+  assert.equal(existsSync(marker), true, "the marker is kept");
+});
+
+test("a completion waits for the claim of the retire that scheduled it, and is not refused by its own marker", async (t) => {
+  const f = fixture(t);
+  f.open();
+  const inst = await f.fx.spawn("worker");
+  const marker = retirePendingMarkerPath(inst.home);
+  // The scheduler, standing still between starting its completion and writing the marker: this
+  // process holds the claim, and there is no marker yet.
+  writeClaim(inst.home);
+  const before = digest(inst.home);
+  const c = f.completion(inst);
+  await waitUntil(() => waitingForClaim(inst.home, c.pid), "the completion to be waiting for the claim", 60000);
+  assert.equal(c.ended(), false, "a live holder is waited for, not refused at once");
+  assert.equal(digest(inst.home), before, "it read and changed nothing of the home meanwhile");
+  assert.equal(f.hookRuns(), 0);
+  // The scheduler writes the marker under its claim, then releases.
+  writeFileSync(marker, JSON.stringify({ ...f.intent(inst), completionPid: c.pid, completionStart: processStartToken(c.pid) }, null, 2) + "\n");
+  rmSync(claimOf(inst.home));
+  const r = await c.done;
+  assert.equal(r.code, 0, r.out + r.err);
+  assert.equal(existsSync(inst.home), false, "the completion retired the home");
+  assert.equal(f.hookRuns(), 1);
+  assert.equal(existsSync(marker), false);
+  assert.equal(existsSync(deferredRetireResultPath(inst.home)), false, "no failure was recorded");
+  assert.deepEqual(claimFiles(inst.home), []);
+});
+
+test("the home is resolved again under the claim: removed meanwhile it is E_SESSION_UNKNOWN, another agent's same-named home is retired under its own claim", async (t) => {
+  const f = fixture(t);
+  f.open();
+  // A retire that waits for the claim is past its first resolution: the completion is the one that waits.
+  const waiting = async (inst, options) => {
+    writeClaim(inst.home);
+    const c = f.completion(inst, options);
+    await waitUntil(() => waitingForClaim(inst.home, c.pid), "the completion to be waiting for the claim", 60000);
+    return c;
+  };
+  // Removed while it waited: what a retire of a retired instance answers, and no claim is left.
+  const gone = await f.fx.spawn("worker");
+  const c1 = await waiting(gone);
+  rmSync(gone.home, { recursive: true });
+  rmSync(claimOf(gone.home));
+  assert.equal((await c1.done).code, 1);
+  assert.equal(readJson(deferredRetireResultPath(gone.home)).error.code, "E_SESSION_UNKNOWN");
+  assert.deepEqual(claimFiles(gone.home), [], "the claim it took for a home that was gone is released");
+  assert.equal(f.hookRuns(), 0);
+  rmSync(deferredRetireResultPath(gone.home));
+
+  // Removed, and the name is now a home of another agent (no --home was given): the retire starts
+  // over on that home, under that home's claim. It is no instance OATS made, so it is refused as
+  // unidentified, by name: the retire reached it.
+  const moved = await f.fx.spawn("worker");
+  const twin = join(f.fx.root, "zz-other", "instances", moved.instance);
+  const c2 = await waiting(moved, {});
+  rmSync(moved.home, { recursive: true });
+  mkdirSync(twin, { recursive: true });
+  rmSync(claimOf(moved.home));
+  assert.equal((await c2.done).code, 1);
+  const outcome = readJson(deferredRetireResultPath(moved.home));
+  assert.equal(outcome.error.code, "E_UNIDENTIFIED_INSTANCE_HOME", JSON.stringify(outcome));
+  assert.ok(outcome.error.message.startsWith(`${twin} has no instance.json`), outcome.error.message);
+  assert.deepEqual([claimFiles(moved.home), claimFiles(twin)], [[], []], "no claim is left, of the first home or of the second");
+});
+
+test("a claim nobody comes back for: with no home of that name, a gone holder's claim is removed and a live, unknown or unreadable one is left", async (t) => {
+  const f = fixture(t);
+  const inst = await f.fx.spawn("worker"); // the agent, and so its instances directory, exists
+  const ghost = join(dirname(inst.home), "worker-gone"), lock = claimOf(ghost);
+  const unknownSession = () => {
+    const r = f.fx.cli(["retire", "worker-gone", "--json"]);
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.deepEqual(r.json().error, { code: "E_SESSION_UNKNOWN", message: 'no instance named "worker-gone"' });
+  };
+  writeClaim(ghost, { pid: exitedPid(), processStart: "proc:1" });
+  unknownSession();
+  assert.deepEqual(claimFiles(ghost), [], "the gone holder's claim is removed, and no reclaim file is left");
+  for (const [what, bytes] of [["a live holder", null], ["a holder with no recorded start", { processStart: undefined }], ["a file that is not a claim", "{not json"]]) {
+    if (typeof bytes === "string") writeFileSync(lock, bytes); else writeClaim(ghost, bytes ?? {});
+    const held = readFileSync(lock, "utf8");
+    unknownSession();
+    assert.equal(readFileSync(lock, "utf8"), held, `${what}: left as it is`);
+    assert.deepEqual(claimFiles(ghost), ["worker-gone.lock"], what);
+  }
+  // A name that is no instance name builds no path.
+  const r = f.fx.cli(["retire", "../worker-gone", "--json"]);
+  assert.equal(r.json().error.code, "E_SESSION_UNKNOWN");
+  assert.equal(existsSync(inst.home), true);
+});
+
+test("a process whose own start cannot be read: retire is refused, saying what could not be read, and nothing of the home changed", async (t) => {
+  const f = fixture(t);
+  const inst = await f.fx.spawn("worker");
+  const before = digest(inst.home);
+  const dir = join(f.fx.base, "ps-fails"); mkdirSync(dir);
+  writeFileSync(join(dir, "ps"), '#!/bin/sh\necho "ps: simulated failure" >&2\nexit 2\n', { mode: 0o755 });
+  const r = await f.retire(inst.instance, ["--force"], { OATS_TEST_PROCESS_START_PS: "1", PATH: `${dir}:${f.fx.env.PATH}` }).done;
+  assert.equal(r.code, 1, r.out + r.err);
+  const e = envelope(r).error, lock = claimOf(inst.home);
+  assert.equal(e.code, "E_LIFECYCLE_BUSY");
+  assert.match(e.message, /^this process's start time cannot be read \(ps -o lstart= -p \d+ answered exit 2: ps: simulated failure\), so oats retire cannot hold /);
+  assert.ok(e.message.endsWith(`cannot hold ${lock} verifiably; nothing was done`), e.message);
+  assert.deepEqual(e.details, { instance: inst.instance, home: inst.home, lock });
+  assert.equal(digest(inst.home), before, "nothing of the home changed");
+  assert.deepEqual([claimFiles(inst.home), recoveries(inst), f.hookRuns()], [[], [], 0], "no claim, no recovery, no hook run");
+});
+
+test("a holder that cannot be established alive or gone is never taken over; a claim file that is not a claim is never removed", async (t) => {
+  const f = fixture(t);
+  const inst = await f.fx.spawn("worker");
+  const name = inst.instance, lock = claimOf(inst.home), before = digest(inst.home);
+  const refused = async (o, check) => {
+    const held = readFileSync(lock, "utf8");
+    await assert.rejects(f.fx.inEnv(() => retireInstance(f.fx.root, name, o)), (e) => {
+      assert.equal(e.code, "E_LIFECYCLE_BUSY");
+      assert.ok(!e.message.includes("\n") && e.message.includes("nothing was done"), e.message);
+      check(e);
+      return true;
+    });
+    assert.equal(readFileSync(lock, "utf8"), held, "the claim file is still there, as it was");
+    assert.equal(digest(inst.home), before, "nothing of the home changed");
+    assert.deepEqual([claimFiles(inst.home), recoveries(inst), f.hookRuns()], [[`${name}.lock`], [], 0]);
+  };
+  // A live pid with no recorded start: whether it is that retire cannot be compared.
+  writeClaim(inst.home, { processStart: undefined });
+  for (const o of [{}, { force: true }]) await refused(o, (e) => {
+    assert.deepEqual(e.details, { instance: name, home: inst.home, lock, pid: process.pid, since: "2026-10-10T00:00:00.000Z", unknown: e.details.unknown });
+    assert.match(e.details.unknown, /names no start time/);
+    assert.ok(e.message.includes(`pid ${process.pid}, recorded start none`) && e.message.includes(e.details.unknown) && e.message.includes(`if it is not an oats retire, remove ${lock}, then retry`), e.message);
+  });
+  writeFileSync(lock, "{not json");
+  await refused({}, (e) => {
+    assert.deepEqual(e.details, { instance: name, home: inst.home, lock });
+    assert.equal(e.message, `${lock} is not a readable claim; inspect it and remove it if no oats retire holds it; nothing was done`);
+  });
+  // The way out the refusals name: once the file is removed, the retire runs.
+  rmSync(lock);
+  f.open();
+  const r = await f.fx.inEnv(() => retireInstance(f.fx.root, name, {}));
+  assert.equal(r.retired, name);
+  assert.deepEqual(claimFiles(inst.home), []);
+});

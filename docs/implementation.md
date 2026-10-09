@@ -65,6 +65,7 @@ published to npm. Its developer docs are in
 | `operator-coverage.mjs` | whether a soul the workspace offers composes `oats.setup`, for the workspace and each team (readiness and doctor warnings), and the cache-only remote offline doctor resolves through |
 | `instance-*.mjs` | inspection, lifecycle, events and Git views of an instance |
 | `worktree.mjs` | `oats worktree add\|remove`: an instance's extra trees (`.work-<purpose>`), their records (`.oats/trees/`), argument checks before any write, and the rollback of an interrupted add |
+| `claim.mjs` | the claim: one file naming, by pid and start time, the process doing something that happens once at a time; taken over when its holder is verifiably gone, never when that cannot be read. Synchronous. Held by `oats worktree add\|remove` per purpose (`worktree.mjs`) and by `oats retire` per home (`core.mjs`, `retireInstance`) |
 | `worktree-hooks.mjs` | the `worktree` event's runner (cwd the tree, detached process group, log under `.oats/logs/`, fixed timeout, interrupt handling), process identity by pid and start time, and the credential-free `origin` URL |
 | `tmux-config.mjs`, `session-*.mjs` | the tmux session backend and terminal input |
 | `login-environment.mjs` | the user's login environment a server OATS starts gets: the login shell's answer as one nonce-framed block on its stdout, bounded and accepted only whole ([execution targets](execution-targets.md#the-servers-start-environment)) |
