@@ -42,7 +42,7 @@ Matching deployments into workspace views needs `workspace-identity`; without
 it each deployment keeps a view of its own under its deployment id, the switcher
 lists them as before (not under "Not matched to a workspace"), and the
 deployment list says why.
-`ACCEPT_RANGE` is `>=0.25.8 <0.49.0`: the floor admits main's kernel before
+`ACCEPT_RANGE` is `>=0.25.8 <0.50.0`: the floor admits main's kernel before
 0.26.0 was tagged, the ceiling admits 0.27 (the harness rename, gated on feature
 `harness`) through 0.30 (team model v2, gated on feature `team-model-2`; the
 0.29 team shapes are still read), 0.31 (Herdr removed; per-instance reads and
@@ -64,7 +64,7 @@ trigger rows carry `description`, and `<kind> update <id> --description`
 sets one, feature `automation-descriptions`, which gates the summary
 writes) and 0.44 (launch-prompt answers: the spawn preview's optional
 `launchPromptAnswers`, `E_SPAWN_INCOMPLETE` details' optional `launchPrompts`
-and the `launch-prompt` instance event, all read as optional, no new gate), 0.45 (`capabilities` on `oats souls --json` rows, feature `souls-capabilities`, which gates Capabilities' "Used by") and 0.46 (opt-in `oats inspect --soul --instructions` and `composedInstructions`, feature `soul-composed-instructions`, not read by the Desktop yet; no new gate), 0.47 (Desktop lifecycle interaction improvements with unchanged kernel contracts), 0.48 (conditional team default and `--no-default`, feature `teams-conditional-default`, not read by the Desktop yet; no new gate), and the `packages-no-approval` fence is the real
+and the `launch-prompt` instance event, all read as optional, no new gate), 0.45 (`capabilities` on `oats souls --json` rows, feature `souls-capabilities`, which gates Capabilities' "Used by") and 0.46 (opt-in `oats inspect --soul --instructions` and `composedInstructions`, feature `soul-composed-instructions`, not read by the Desktop yet; no new gate), 0.47 (Desktop lifecycle interaction improvements with unchanged kernel contracts), 0.48 (conditional team default and `--no-default`, feature `teams-conditional-default`, not read by the Desktop yet; no new gate), 0.49 (the `worktree` hook event, feature `worktree-event`, and each host's kernel features on roster groups, feature `server-probe-features`, read where present; capability warnings and the new trigger fields are read as optional; no new gate on the band), and the `packages-no-approval` fence is the real
 gate.
 
 ## Projection and ownership
