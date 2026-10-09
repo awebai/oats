@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "triggerApi": 1,
+    "id": "ws/trusted",
+    "ok": false,
+    "placement": {
+      "runsOn": "kb-host",
+      "owner": "github.com/kb-bot",
+      "host": "kb-host",
+      "runsHere": true,
+      "reason": null,
+      "enabledHere": true
+    },
+    "gh": {
+      "ok": true,
+      "account": "kb-bot",
+      "credentialSource": "keyring",
+      "reachesHostTimer": true,
+      "note": "gh uses the system keyring; the host timer runs in your user session and reaches it",
+      "detail": "github.com ·   ✓ Logged in to github.com account kb-bot (keyring) ·   - Active account: true"
+    },
+    "repo": null,
+    "soul": {
+      "resolves": true,
+      "name": "reviewer",
+      "agent": "reviewer",
+      "messaging": null
+    },
+    "teams": {
+      "requested": [],
+      "undeclared": [],
+      "messaging": null
+    },
+    "source": {
+      "capability": "acme.graph",
+      "name": "harvest-branches",
+      "ok": false,
+      "filtered": 0,
+      "invalid": {
+        "code": "E_TRIGGER_SOURCE",
+        "message": "acme.graph:harvest-branches: the source's command review-source (bin/source.mjs) is not a file inside capability acme.graph's directory",
+        "at": "2026-10-09T14:11:48.874Z"
+      },
+      "events": [],
+      "invalidEvents": [],
+      "skipped": []
+    },
+    "wouldFire": [],
+    "problems": [
+      "acme.graph:harvest-branches: the source's command review-source (bin/source.mjs) is not a file inside capability acme.graph's directory"
+    ],
+    "warnings": [
+      "this source's credential may not be visible to the host timer: it runs with only PATH and OATS_HOME_DIR set, so keep the source's login in its own store, not in an exported variable"
+    ],
+    "spawned": false
+  }
+}

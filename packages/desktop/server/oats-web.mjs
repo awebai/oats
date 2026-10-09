@@ -1537,7 +1537,7 @@ const server = createServer(async (req, res) => {
       } catch (e) { const { status, body } = spawnErrorPayload(e); return send(res, status, body); }
     }
     if (path === '/api/automations') {
-      // Triggers and schedules (feature automations): one local workspace, the kernel's lists and verbs ({ kind, action, key? }).
+      // Triggers and schedules (feature automations): one local workspace, the kernel's lists and verbs ({ kind, action, key?, runSource? }).
       if (req.method !== 'POST') return send(res, 405, automationsFailure('E_BAD_ARGS'));
       let request;
       try { ({ body: request } = await readStrictBody(req, 4096, true)); } catch { return send(res, 400, automationsFailure('E_BAD_ARGS')); }

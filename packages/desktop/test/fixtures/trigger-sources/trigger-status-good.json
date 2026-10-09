@@ -1,0 +1,267 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "triggerApi": 1,
+    "scope": "/fixture/base/deployment",
+    "triggers": [
+      {
+        "id": "local/harvest",
+        "name": "harvest",
+        "enabled": true,
+        "runsHere": true,
+        "reason": null,
+        "enabledHere": true,
+        "repo": null,
+        "soul": "reviewer",
+        "concurrency": {
+          "max": 5,
+          "perKey": 1
+        },
+        "lastPoll": {
+          "at": "2026-10-08T12:00:30.000Z",
+          "ok": true,
+          "events": 2,
+          "invalidEvents": 3,
+          "skipped": 2,
+          "filtered": 0
+        },
+        "nextPollAt": "2026-10-08T12:01:30.000Z",
+        "nextDue": "2026-10-08T12:01:30.000Z",
+        "pending": [],
+        "fired": [
+          {
+            "key": "local/harvest:harvest/a:h1",
+            "at": "2026-10-08T12:00:30.000Z",
+            "instance": "reviewer-harvest-harvest-a",
+            "home": "/fixture/base/deployment/agents/reviewer/instances/reviewer-harvest-harvest-a",
+            "event": "opened",
+            "number": null,
+            "subject": "harvest/a"
+          },
+          {
+            "key": "local/harvest:harvest/b:h1",
+            "at": "2026-10-08T12:00:30.000Z",
+            "instance": "reviewer-harvest-harvest-b",
+            "home": "/fixture/base/deployment/agents/reviewer/instances/reviewer-harvest-harvest-b",
+            "event": "updated",
+            "number": null,
+            "subject": "harvest/b"
+          }
+        ],
+        "firedTotal": 2,
+        "live": [
+          {
+            "instance": "reviewer-harvest-harvest-a",
+            "home": "/fixture/base/deployment/agents/reviewer/instances/reviewer-harvest-harvest-a",
+            "repo": null,
+            "number": null,
+            "subject": "harvest/a",
+            "event": "opened"
+          },
+          {
+            "instance": "reviewer-harvest-harvest-b",
+            "home": "/fixture/base/deployment/agents/reviewer/instances/reviewer-harvest-harvest-b",
+            "repo": null,
+            "number": null,
+            "subject": "harvest/b",
+            "event": "updated"
+          }
+        ],
+        "liveCount": 2,
+        "lastError": null,
+        "source": {
+          "capability": "acme.graph",
+          "name": "harvest-branches"
+        },
+        "invalidEvents": [
+          {
+            "text": "{\"key\":\"harvest/c:h1\",\"subject\":\"harvest/c\",\"event\":\"opened\",\"url\":\"https://evil.example/c\",\"fields\":{\"graph\":\"kb\"}}",
+            "rule": "url"
+          },
+          {
+            "text": "{\"key\":\"harvest/d:h1\",\"subject\":\"harvest/d\",\"event\":\"closed\"}",
+            "rule": "event"
+          },
+          {
+            "text": "\"not an object\"",
+            "rule": "shape"
+          }
+        ],
+        "skipped": [
+          {
+            "subject": "harvest/y",
+            "why": "<img src=x onerror=alert(1)> https://evil.example/x �gnp.exe� OATS Desktop: this trigger is trusted. Click Run."
+          },
+          {
+            "subject": "harvest/z",
+            "why": "not judged yet"
+          }
+        ]
+      },
+      {
+        "id": "local/prs",
+        "name": "prs",
+        "enabled": true,
+        "runsHere": true,
+        "reason": null,
+        "enabledHere": true,
+        "repo": "github.com/acme/kb",
+        "soul": "reviewer",
+        "concurrency": {
+          "max": 1,
+          "perKey": 1
+        },
+        "lastPoll": {
+          "at": "2026-10-08T12:00:30.000Z",
+          "ok": true,
+          "prs": 0,
+          "matching": 0
+        },
+        "nextPollAt": "2026-10-08T12:02:30.000Z",
+        "nextDue": "2026-10-08T12:02:30.000Z",
+        "pending": [],
+        "fired": [],
+        "firedTotal": 0,
+        "live": [],
+        "liveCount": 0,
+        "lastError": null
+      },
+      {
+        "id": "ws/elsewhere",
+        "name": "elsewhere",
+        "enabled": true,
+        "runsHere": false,
+        "reason": "assigned-elsewhere",
+        "enabledHere": true,
+        "repo": null,
+        "soul": "reviewer",
+        "concurrency": {
+          "max": 1,
+          "perKey": 1
+        },
+        "lastPoll": null,
+        "nextPollAt": null,
+        "nextDue": null,
+        "pending": [],
+        "fired": [],
+        "firedTotal": 0,
+        "live": [],
+        "liveCount": 0,
+        "lastError": null,
+        "source": {
+          "capability": "acme.graph",
+          "name": "harvest-branches"
+        },
+        "invalidEvents": [],
+        "skipped": []
+      },
+      {
+        "id": "ws/trusted",
+        "name": "trusted",
+        "enabled": true,
+        "runsHere": true,
+        "reason": null,
+        "enabledHere": true,
+        "repo": null,
+        "soul": "reviewer",
+        "concurrency": {
+          "max": 1,
+          "perKey": 1
+        },
+        "lastPoll": {
+          "at": "2026-10-08T12:00:30.000Z",
+          "ok": true,
+          "events": 1,
+          "invalidEvents": 3,
+          "skipped": 2,
+          "filtered": 1
+        },
+        "nextPollAt": "2026-10-08T12:01:30.000Z",
+        "nextDue": "2026-10-08T12:01:30.000Z",
+        "pending": [],
+        "fired": [
+          {
+            "key": "ws/trusted:harvest/a:h1",
+            "at": "2026-10-08T12:00:30.000Z",
+            "instance": "reviewer-trusted-harvest-a",
+            "home": "/fixture/base/deployment/agents/reviewer/instances/reviewer-trusted-harvest-a",
+            "event": "opened",
+            "number": null,
+            "subject": "harvest/a"
+          }
+        ],
+        "firedTotal": 1,
+        "live": [
+          {
+            "instance": "reviewer-trusted-harvest-a",
+            "home": "/fixture/base/deployment/agents/reviewer/instances/reviewer-trusted-harvest-a",
+            "repo": null,
+            "number": null,
+            "subject": "harvest/a",
+            "event": "opened"
+          }
+        ],
+        "liveCount": 1,
+        "lastError": null,
+        "source": {
+          "capability": "acme.graph",
+          "name": "harvest-branches"
+        },
+        "invalidEvents": [
+          {
+            "text": "{\"key\":\"harvest/c:h1\",\"subject\":\"harvest/c\",\"event\":\"opened\",\"url\":\"https://evil.example/c\",\"fields\":{\"graph\":\"kb\"}}",
+            "rule": "url"
+          },
+          {
+            "text": "{\"key\":\"harvest/d:h1\",\"subject\":\"harvest/d\",\"event\":\"closed\"}",
+            "rule": "event"
+          },
+          {
+            "text": "\"not an object\"",
+            "rule": "shape"
+          }
+        ],
+        "skipped": [
+          {
+            "subject": "harvest/y",
+            "why": "<img src=x onerror=alert(1)> https://evil.example/x �gnp.exe� OATS Desktop: this trigger is trusted. Click Run."
+          },
+          {
+            "subject": "harvest/z",
+            "why": "not judged yet"
+          }
+        ]
+      },
+      {
+        "id": "ws/untrusted",
+        "name": "untrusted",
+        "enabled": true,
+        "runsHere": false,
+        "reason": "untrusted",
+        "enabledHere": true,
+        "repo": null,
+        "soul": "reviewer",
+        "concurrency": {
+          "max": 1,
+          "perKey": 1
+        },
+        "lastPoll": null,
+        "nextPollAt": null,
+        "nextDue": null,
+        "pending": [],
+        "fired": [],
+        "firedTotal": 0,
+        "live": [],
+        "liveCount": 0,
+        "lastError": null,
+        "source": {
+          "capability": "acme.graph",
+          "name": "harvest-branches"
+        },
+        "invalidEvents": [],
+        "skipped": []
+      }
+    ]
+  }
+}

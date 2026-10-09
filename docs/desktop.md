@@ -288,6 +288,19 @@ arguments as written, an operation and its home), its run state and where it
 comes from. Writing summaries needs OATS 0.43 or later; an older OATS still
 shows the ones it reports.
 
+A trigger can take its events from a source a capability declares instead of
+GitHub pull requests (OATS 0.50.0 or later). Its page shows the source and
+what the trigger passes to it, what the source's last poll found or why it
+failed, and which events OATS refused or the source skipped. Text that comes
+from the source, from the trigger's file or from the capability's manifest is
+shown as a quote with a line saying whose it is; it is never a link or a
+button. **Test** on a pull-request trigger reads GitHub and reports what would
+fire. **Test** on such a capability trigger runs the capability's source
+command on this computer, so it first shows what will run and with which
+parameters, and runs it once only when you press **Run test**. Nothing is
+recorded or spawned, and testing does not trust or start a trigger that this
+computer doesn't trust.
+
 The Spawn dialog also has an optional **Recurring wake-up** setting. It binds
 the schedule to the newly created home, preserving that agent's identity and
 work. A wake starts that same home if it is stopped, then sends the saved

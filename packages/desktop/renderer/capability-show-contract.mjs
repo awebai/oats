@@ -6,8 +6,9 @@
  * The decoder is strict and bounded: an unknown API version, a field of the wrong type, an
  * oversize string or list, or a path that is not a plain relative POSIX path inside the
  * capability refuses the WHOLE answer (null), never a partial render. Presentation-only: nothing
- * here infers a file the kernel did not list. The one tolerant field is `warnings` (OATS 0.49.0): projected by
- * capability-warnings-contract.mjs, never a reason to refuse the answer (an older kernel sends none). */
+ * here infers a file the kernel did not list. The tolerant fields: `warnings` (OATS 0.49.0), projected by
+ * capability-warnings-contract.mjs, and `triggerSources` / `triggerSourceProblems` (feature `trigger-sources`),
+ * projected below: never a reason to refuse the answer (an older kernel sends none). */
 import { warningsOf } from './capability-warnings-contract.mjs';
 
 export const CAPABILITY_SHOW_API = 1;
@@ -17,7 +18,8 @@ export const CAPABILITY_SHOW_UNREADABLE = "This Desktop can't read what this OAT
 
 /** Bounds. A file's text is at most 256 KiB (the kernel truncates there, `truncated: true`). */
 export const FILE_TEXT_MAX_BYTES = 256 * 1024;
-export const LIMITS = Object.freeze({ path: 1024, skills: 256, files: 200, description: 1024, problems: 64, message: 4096, code: 128, name: 128 });
+export const LIMITS = Object.freeze({ path: 1024, skills: 256, files: 200, description: 1024, problems: 64, message: 4096, code: 128, name: 128,
+  sources: 16, events: 16, event: 64 });
 
 const record = v => !!v && typeof v === 'object' && !Array.isArray(v);
 const CONTROL = /[\u0000-\u001f\u007f]/;
@@ -113,6 +115,66 @@ function head(v, name) {
   if (typeof v.commit !== 'string' || !COMMIT.test(v.commit)) refuse();
 }
 
+/* ── trigger sources (feature `trigger-sources`) ─────────────────────────── */
+/** A string held to `max` UTF-16 units, cut there (never inside a surrogate pair): cutting twice equals cutting once. */
+function cut(s, max) {
+  if (s.length <= max) return s;
+  const last = s.charCodeAt(max - 1);
+  return s.slice(0, last >= 0xD800 && last <= 0xDBFF ? max - 1 : max);
+}
+/** One declared source as far as the page shows it: { events, description? }, or null when the value is not that
+ * shape. `command`, `parameters`, `fields` and `urlHosts` are not shown, so they are not relayed. */
+function triggerSourceOf(v) {
+  if (!record(v) || !Array.isArray(v.events)) return null;
+  const events = v.events.filter(e => typeof e === 'string').slice(0, LIMITS.events).map(e => cut(e, LIMITS.event));
+  return { events, ...(typeof v.description === 'string' ? { description: cut(v.description, LIMITS.description) } : {}) };
+}
+/** The manifest's `triggerSources`, which the kernel answers exactly as written, whatever its shape: null when it
+ * is not an object (declared, not readable; the raw value is not relayed), else its first LIMITS.sources entries in
+ * the kernel's order, each name bounded and each value a `triggerSourceOf`. Every string is the manifest's:
+ * untrusted, shown only as quoted text (source-quote.mjs). Built from entries, never by assignment: a manifest key
+ * may be `__proto__`. Tolerant, bounded and idempotent, like `warningsOf`. */
+export function triggerSourcesOf(v) {
+  if (!record(v)) return null;
+  return Object.fromEntries(Object.entries(v).slice(0, LIMITS.sources).map(([name, value]) => [cut(name, LIMITS.name), triggerSourceOf(value)]));
+}
+/** `triggerSourceProblems`: [{ source, pointer, message }], the kernel's text (what a trigger naming the source
+ * gets as E_TRIGGER_SOURCE). `source: null` is a top-level problem; `pointer` a JSON pointer into the manifest.
+ * An entry that is not an object or has no message is skipped; at most LIMITS.problems are kept. They are never
+ * `problems`: a malformed declaration does not fail the capability. */
+export function triggerSourceProblemsOf(v) {
+  const out = [];
+  for (const entry of Array.isArray(v) ? v : []) {
+    if (!record(entry) || typeof entry.message !== 'string') continue;
+    out.push({ source: typeof entry.source === 'string' ? cut(entry.source, LIMITS.name) : null,
+      pointer: typeof entry.pointer === 'string' ? cut(entry.pointer, LIMITS.path) : null, message: cut(entry.message, LIMITS.message) });
+    if (out.length === LIMITS.problems) break;
+  }
+  return out;
+}
+/** What the capability page says about the declaration, from a projected answer (presentation-free):
+ * null — the manifest declares none (or an older kernel answered);
+ * { unreadable: [the kernel's messages] } — it is not an object, or a top-level problem (`source: null`) disables
+ *   every source; the messages may be none;
+ * { sources: [{ name, events: [..] | null, description: string | null, problems: [the kernel's messages] }] } —
+ *   the listed sources in the kernel's order, then every source a problem names that the listing does not hold,
+ *   at most LIMITS.sources. A source with a problem, or with `events: null` (its value is not a source's shape),
+ *   is declared but not usable. */
+export function triggerSourcesView(show) {
+  if (!record(show) || !Object.hasOwn(show, 'triggerSources')) return null;
+  const declared = show.triggerSources, problems = Array.isArray(show.triggerSourceProblems) ? show.triggerSourceProblems.filter(record) : [];
+  const top = problems.filter(p => p.source === null);
+  if (!record(declared) || top.length) return { unreadable: (record(declared) ? top : problems).map(p => p.message) };
+  const sources = Object.entries(declared).map(([name, value]) => ({ name, events: Array.isArray(value?.events) ? value.events : null,
+    description: typeof value?.description === 'string' ? value.description : null, problems: [] }));
+  const named = new Map(sources.map(source => [source.name, source]));
+  for (const p of problems) {
+    if (!named.has(p.source)) { const source = { name: p.source, events: null, description: null, problems: [] }; named.set(p.source, source); sources.push(source); }
+    named.get(p.source).problems.push(p.message);
+  }
+  return { sources: sources.slice(0, LIMITS.sources) };
+}
+
 /** The show answer, normalized, or null when this Desktop cannot read it. `name` / `selector`: the capability
  * asked for (an answer about another capability, or the same name from another member or package, is refused). Every path — the inject's, a skill's, a skill file's — is
  * relative to the capability directory: what `--file` takes, verbatim. */
@@ -131,6 +193,10 @@ export function capabilityShowData(v, { selector, name = selector?.name } = {}) 
       inject: v.inject === null ? null : file(v.inject, { inject: true }), skills, problems,
       // Tolerant and idempotent: the server's projection, relayed, projects to itself in the renderer.
       warnings: warningsOf(v.warnings),
+      // Only when the kernel answers them (feature `trigger-sources`: the manifest declares the key; the problems
+      // follow only when it has some), so an older kernel's answer projects as before. Never `problems`.
+      ...(Object.hasOwn(v, 'triggerSources') ? { triggerSources: triggerSourcesOf(v.triggerSources) } : {}),
+      ...(Array.isArray(v.triggerSourceProblems) ? { triggerSourceProblems: triggerSourceProblemsOf(v.triggerSourceProblems) } : {}),
     };
   } catch (error) { if (error instanceof Unreadable) return null; throw error; }
 }

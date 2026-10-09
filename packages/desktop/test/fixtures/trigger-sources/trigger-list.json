@@ -1,0 +1,345 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "triggerApi": 1,
+    "scope": "/fixture/base/deployment",
+    "host": {
+      "name": "kb-host",
+      "ghUser": {
+        "github.com": "kb-bot"
+      }
+    },
+    "triggers": [
+      {
+        "kind": "trigger",
+        "id": "local/harvest",
+        "name": "harvest",
+        "origin": {
+          "kind": "local",
+          "path": "oats-schedules.json",
+          "url": null,
+          "localPath": "/fixture/base/deployment/oats-schedules.json"
+        },
+        "description": null,
+        "owner": null,
+        "runsOn": null,
+        "runsHere": true,
+        "reason": null,
+        "enabledHere": true,
+        "qualifiedId": "local/harvest",
+        "soul": {
+          "name": "reviewer",
+          "origin": {
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "member": "ws"
+          }
+        },
+        "task": "Review {subject} on {fields.graph} ({url}).",
+        "on": {
+          "source": "acme.graph:harvest-branches",
+          "params": {
+            "prefix": "harvest/",
+            "graph": "kb"
+          },
+          "events": [
+            "opened",
+            "updated"
+          ],
+          "poll": "1m"
+        },
+        "teams": [],
+        "launchConfig": null,
+        "harness": null,
+        "model": null,
+        "concurrency": {
+          "max": 5,
+          "perKey": 1
+        },
+        "lastRun": {
+          "at": "2026-10-08T12:00:30.000Z",
+          "instance": "reviewer-harvest-harvest-a",
+          "home": "/fixture/base/deployment/agents/reviewer/instances/reviewer-harvest-harvest-a",
+          "event": "opened",
+          "number": null,
+          "subject": "harvest/a",
+          "key": "local/harvest:harvest/a:h1"
+        },
+        "nextDue": "2026-10-08T12:01:30.000Z",
+        "enabled": true,
+        "spawn": {
+          "soul": "reviewer",
+          "purpose": "{trigger}-{subject}",
+          "task": "Review {subject} on {fields.graph} ({url}).",
+          "teams": []
+        },
+        "triggerApi": 1,
+        "scope": "/fixture/base/deployment",
+        "createdAt": "2026-10-09T14:11:42.183Z",
+        "updatedAt": "2026-10-09T14:11:42.183Z"
+      },
+      {
+        "kind": "trigger",
+        "id": "local/prs",
+        "name": "prs",
+        "origin": {
+          "kind": "local",
+          "path": "oats-schedules.json",
+          "url": null,
+          "localPath": "/fixture/base/deployment/oats-schedules.json"
+        },
+        "description": null,
+        "owner": null,
+        "runsOn": null,
+        "runsHere": true,
+        "reason": null,
+        "enabledHere": true,
+        "qualifiedId": "local/prs",
+        "soul": {
+          "name": "reviewer",
+          "origin": {
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "member": "ws"
+          }
+        },
+        "task": "Review {url}.",
+        "on": {
+          "source": "github.pull_request",
+          "repo": "github.com/acme/kb",
+          "events": [
+            "opened"
+          ],
+          "labels": [],
+          "poll": "2m"
+        },
+        "teams": [],
+        "launchConfig": null,
+        "harness": null,
+        "model": null,
+        "concurrency": {
+          "max": 1,
+          "perKey": 1
+        },
+        "lastRun": null,
+        "nextDue": "2026-10-08T12:02:30.000Z",
+        "enabled": true,
+        "spawn": {
+          "soul": "reviewer",
+          "purpose": "{trigger}-{number}",
+          "task": "Review {url}.",
+          "teams": []
+        },
+        "triggerApi": 1,
+        "scope": "/fixture/base/deployment",
+        "createdAt": "2026-10-09T14:11:42.296Z",
+        "updatedAt": "2026-10-09T14:11:42.296Z"
+      },
+      {
+        "kind": "trigger",
+        "id": "ws/elsewhere",
+        "name": "elsewhere",
+        "origin": {
+          "kind": "workspace",
+          "repoKey": "local//fixture/base/remotes/ws.git",
+          "path": "oats-triggers/elsewhere.yaml",
+          "commit": "214f665dbd3f92c04e9e6813ac923abc017a967f",
+          "url": null,
+          "localPath": "/fixture/base/deployment/ws/oats-triggers/elsewhere.yaml"
+        },
+        "description": "Review harvest branches",
+        "owner": "github.com/kb-bot",
+        "runsOn": "other-host",
+        "runsHere": false,
+        "reason": "assigned-elsewhere",
+        "reasonDetail": "runs on other-host; this host is kb-host",
+        "enabledHere": true,
+        "qualifiedId": "ws/elsewhere",
+        "soul": {
+          "name": "reviewer",
+          "origin": {
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "member": "ws"
+          }
+        },
+        "task": "Review {subject} on {fields.graph} ({url}).",
+        "on": {
+          "source": "acme.graph:harvest-branches",
+          "params": {
+            "prefix": "harvest/",
+            "graph": "kb"
+          },
+          "events": [
+            "opened"
+          ],
+          "poll": "1m"
+        },
+        "teams": [],
+        "launchConfig": null,
+        "harness": null,
+        "model": null,
+        "concurrency": {
+          "max": 1,
+          "perKey": 1
+        },
+        "lastRun": null,
+        "nextDue": null,
+        "enabled": true,
+        "spawn": {
+          "soul": "reviewer",
+          "purpose": "{trigger}-{subject}",
+          "task": "Review {subject} on {fields.graph} ({url}).",
+          "teams": []
+        },
+        "triggerApi": 1,
+        "scope": "/fixture/base/deployment"
+      },
+      {
+        "kind": "trigger",
+        "id": "ws/trusted",
+        "name": "trusted",
+        "origin": {
+          "kind": "workspace",
+          "repoKey": "local//fixture/base/remotes/ws.git",
+          "path": "oats-triggers/trusted.yaml",
+          "commit": "214f665dbd3f92c04e9e6813ac923abc017a967f",
+          "url": null,
+          "localPath": "/fixture/base/deployment/ws/oats-triggers/trusted.yaml"
+        },
+        "description": "Review harvest branches",
+        "owner": "github.com/kb-bot",
+        "runsOn": "kb-host",
+        "runsHere": true,
+        "reason": null,
+        "enabledHere": true,
+        "qualifiedId": "ws/trusted",
+        "soul": {
+          "name": "reviewer",
+          "origin": {
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "member": "ws"
+          }
+        },
+        "task": "Review {subject} on {fields.graph} ({url}).",
+        "on": {
+          "source": "acme.graph:harvest-branches",
+          "params": {
+            "prefix": "harvest/",
+            "graph": "kb"
+          },
+          "events": [
+            "opened"
+          ],
+          "poll": "1m"
+        },
+        "teams": [],
+        "launchConfig": null,
+        "harness": null,
+        "model": null,
+        "concurrency": {
+          "max": 1,
+          "perKey": 1
+        },
+        "lastRun": {
+          "at": "2026-10-08T12:00:30.000Z",
+          "instance": "reviewer-trusted-harvest-a",
+          "home": "/fixture/base/deployment/agents/reviewer/instances/reviewer-trusted-harvest-a",
+          "event": "opened",
+          "number": null,
+          "subject": "harvest/a",
+          "key": "ws/trusted:harvest/a:h1"
+        },
+        "nextDue": "2026-10-08T12:01:30.000Z",
+        "enabled": true,
+        "spawn": {
+          "soul": "reviewer",
+          "purpose": "{trigger}-{subject}",
+          "task": "Review {subject} on {fields.graph} ({url}).",
+          "teams": []
+        },
+        "triggerApi": 1,
+        "scope": "/fixture/base/deployment"
+      },
+      {
+        "kind": "trigger",
+        "id": "ws/untrusted",
+        "name": "untrusted",
+        "origin": {
+          "kind": "workspace",
+          "repoKey": "local//fixture/base/remotes/ws.git",
+          "path": "oats-triggers/untrusted.yaml",
+          "commit": "214f665dbd3f92c04e9e6813ac923abc017a967f",
+          "url": null,
+          "localPath": "/fixture/base/deployment/ws/oats-triggers/untrusted.yaml"
+        },
+        "description": "Review harvest branches",
+        "owner": "github.com/kb-bot",
+        "runsOn": "kb-host",
+        "runsHere": false,
+        "reason": "untrusted",
+        "reasonDetail": "declared for this host, not trusted here; to run it, add the line \"- ws/untrusted\" under automations: trust: in oats-local.yaml",
+        "enabledHere": true,
+        "qualifiedId": "ws/untrusted",
+        "soul": {
+          "name": "reviewer",
+          "origin": {
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "member": "ws"
+          }
+        },
+        "task": "Review {subject} on {fields.graph} ({url}).",
+        "on": {
+          "source": "acme.graph:harvest-branches",
+          "params": {
+            "prefix": "harvest/",
+            "graph": "kb"
+          },
+          "events": [
+            "opened"
+          ],
+          "poll": "1m"
+        },
+        "teams": [],
+        "launchConfig": null,
+        "harness": null,
+        "model": null,
+        "concurrency": {
+          "max": 1,
+          "perKey": 1
+        },
+        "lastRun": null,
+        "nextDue": null,
+        "enabled": true,
+        "spawn": {
+          "soul": "reviewer",
+          "purpose": "{trigger}-{subject}",
+          "task": "Review {subject} on {fields.graph} ({url}).",
+          "teams": []
+        },
+        "triggerApi": 1,
+        "scope": "/fixture/base/deployment"
+      }
+    ],
+    "snapshot": {
+      "takenAt": "2026-10-09T14:11:41.909Z",
+      "problems": 0
+    },
+    "scheduler": {
+      "installed": false,
+      "active": false,
+      "unit": "/fixture/base/home/.config/systemd/user/oats-schedule-tick.timer",
+      "lastTick": null,
+      "maxConcurrent": 5,
+      "triggersMaxConcurrent": null,
+      "tickIntervalSec": 60,
+      "workspace": "/fixture/base/deployment",
+      "registered": false,
+      "workspaces": [],
+      "live": 0
+    }
+  }
+}

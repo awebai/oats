@@ -10,7 +10,10 @@
 import {
   automationRows, groupRows, filterRows, placementText, ownerParts, taskParts, cronInWords, onSummary, relativeTime,
   hostLogin, templateLabel, soulOriginText, testResult, triggerStatus, summaryLine, runState, reconcileCommand, templateProvenance, eventLabel, firedEntry,
+  triggerSourcesSupported, capabilitySource, sourceLabel, sourceParams, sourceCheck, taskFields, causeWords, ruleWords, EVENTS_SHOWN,
 } from '../automation-rows.mjs';
+import { sourceQuote, sourceQuoteCSS, LEAD_INS } from '../source-quote.mjs';
+import { displayLine } from '../display-text.mjs';
 import { descriptionValid, DESCRIPTION_MAX } from '../schedule-read-data.mjs';
 import { pageCardCSS, pageBar, pageCard, pageFacts, pageSection } from '../capability-page.mjs';
 import { iconElement } from '../shell-icons.mjs';
@@ -158,6 +161,19 @@ export const automationsCSS = `
 .auto-describe-error:empty, .auto-describe-status:empty { display:none; }
 .auto-describe-status { margin:0; color:var(--muted); font-size:12px; outline:none; }
 .auto-describe-actions { display:flex; flex-wrap:wrap; gap:8px; }
+/* A capability source (feature trigger-sources): its parameters and its own words sit in the quote treatment
+   (source-quote.mjs); the Test confirm is a side card whose heading and status line take programmatic focus. */
+.auto-on-source { display:flex; flex-direction:column; gap:8px; min-width:0; }
+.auto-on-source .page-note { overflow-wrap:anywhere; }
+.auto-tag.warn .shell-icon { color:var(--warn); }
+.auto-source-lists { display:flex; flex-direction:column; gap:8px; min-width:0; margin-top:8px; }
+.auto-source-lists .auto-list-head { margin:0; }
+.auto-confirm { gap:8px; border-color:var(--attn-border); }
+.auto-confirm .auto-test-line code, .auto-test-line code.auto-mono { font:12px var(--mono,monospace); overflow-wrap:anywhere; }
+.auto-confirm-status:focus-visible, .page-card-title:focus-visible { outline:1px solid var(--accent); outline-offset:2px; border-radius:3px; }
+.auto-confirm-status { margin:0; color:var(--muted); font-size:12px; }
+.auto-confirm-status:empty { display:none; }
+.auto-fire .auto-fire-url { display:block; color:var(--muted); font:11.5px var(--mono,monospace); overflow-wrap:anywhere; }
 `;
 
 /** "14:05" today, else "6 Oct, 14:05": when a run state began (its title keeps the full date). */
@@ -170,19 +186,25 @@ const TITLES = { schedule: 'Schedules', trigger: 'Triggers' };
 const NAME_CUT = 'The purpose was cut and a hash added so the name fits 64 characters.';
 const OUTCOMES = { launched: 'agent launched', active: 'agent active', running: 'agent active', ended: 'run ended', stopped: 'agent stopped', unknown: 'launch state unknown', 'launch-failed': 'launch failed', skipped: 'skipped', delivered: 'wake delivered' };
 
-/** read(): the list JSON · act(verb, row): enable|disable|test|run → kernel JSON · status(row): a trigger's
+/** read(): the list JSON · act(verb, row, { runSource }?): enable|disable|test|run → kernel JSON (`runSource: true`
+ * only from a capability source's confirmed Run test) · status(row): a trigger's
  * `oats trigger status` JSON (fire history, live instances) · openFile(row): open its defining file. */
 /** verbs: the act verbs this server serves (default all) · headerActions(doc): extra header controls ·
  * rowActions(row): extra { label, run, enabled } for a row's menu and page · onEnableScheduler: the banner's action. */
 /** heading: the Automations title + subtabs, in place of the page's own title (its count then goes to `onCount(n)`). */
 /** describe(row, text): set (or, with "", clear) a local row's summary (feature automation-descriptions); null hides Edit summary. */
+/** sources: the CLI declares `trigger-sources` (#669 2b). Only then is a trigger whose `on.source` is not
+ * github.pull_request a capability-source row: its On card, last poll, refused and skipped events, source check and
+ * the informed Test (a confirm first: its Test runs a capability's command on this computer). Without it nothing
+ * changes. canOpenCapability(name) / openCapability(name): the source's capability page, when the catalog lists it. */
 export function createAutomationsView(host, { kind, read, act = null, status = null, openFile = null, now = () => Date.now(),
-  verbs = null, headerActions = null, rowActions = null, onEnableScheduler = null, onResult = null, heading = null, onCount = null, describe = null } = {}) {
+  verbs = null, headerActions = null, rowActions = null, onEnableScheduler = null, onResult = null, heading = null, onCount = null, describe = null,
+  sources = false, canOpenCapability = () => false, openCapability = null } = {}) {
   const doc = host.ownerDocument;
   const node = (tag, value, cls) => { const el = doc.createElement(tag); if (value !== undefined && value !== null) el.textContent = value; if (cls) el.className = cls; return el; };
   const title = TITLES[kind], noun = kind === 'trigger' ? 'trigger' : 'schedule';
   const root = node('section', undefined, 'oats-view automations'); root.dataset.kind = kind;
-  const style = node('style'); style.textContent = pageCardCSS + automationsCSS;
+  const style = node('style'); style.textContent = pageCardCSS + automationsCSS + sourceQuoteCSS;
   const header = node('header', undefined, 'auto-header'), h2 = node('h2'), count = node('span', '', 'auto-count');
   h2.append(node('span', title), count);
   const scheduler = node('span', '', 'auto-scheduler'); scheduler.hidden = true;
@@ -197,6 +219,21 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
 
   let alive = true, serial = 0, data = null, failure = '', loading = false, origin = 'all', query = '', openId = null, busy = false, notice = '';
   const tests = new Map(), statuses = new Map();
+  // Capability sources. `confirming`: the row whose Test confirm shows (with that row as it was: confirmSig);
+  // `testing`: the row whose confirmed test runs.
+  // `confirmToken`: the one confirm that is open, as an identity. Its Cancel and Run test are bound to it, so a
+  // control kept from a confirm that was closed, replaced or disposed does nothing. `sourceGens`: a row's source
+  // generation, moved on every change of its `on.source`: a test answers for the generation it was asked in.
+  let confirming = null, confirmSig = null, confirmToken = null, testing = null;
+  const sourceGens = new Map(), genOf = id => sourceGens.get(id) || 0;
+  const revokeConfirm = () => { confirming = null; confirmSig = null; confirmToken = null; };
+  // The row whose one-click Test the kernel answered with E_TRIGGER_SOURCE_RUN: a neutral notice, until the next action.
+  let ranNothing = null;
+  const NOTHING_RAN = "Nothing ran. Testing this trigger runs a capability's source command and needs your confirmation.";
+  const lastSources = new Map(), statusTickets = new Map();
+  const sourceOf = row => sources && row?.kind === 'trigger' ? capabilitySource(row.on, statuses.get(row.id)?.source) : null;
+  const rowSignature = row => JSON.stringify(row.raw);
+  const focusKey = key => page.querySelector(`[data-auto-focus="${key}"]`)?.focus({ preventScroll: true });
   // An item's defining file opens read-only from this machine (a local item, a cloned member),
   // else as its web page; the kernel reports both, the Desktop never builds a path.
   const canOpen = row => !!openFile && !!(row.origin.localPath || row.origin.url);
@@ -226,24 +263,101 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
 
   async function refresh() {
     const id = ++serial; loading = true; failure = ''; render();
+    let reread = null;
     try {
       const next = automationRows(await read(), kind);
       if (!alive || id !== serial) return;
       if (!next) throw new Error(`This OATS did not answer a ${noun} list.`);
+      // A trigger whose source changed has another source's state: the kernel drops the old one's lists at once,
+      // so its status is read again and a Test result kept for it is dropped.
+      if (sources) for (const row of next.rows) {
+        const source = typeof row.on?.source === 'string' ? row.on.source : null;
+        if (lastSources.has(row.id) && lastSources.get(row.id) !== source) { statuses.delete(row.id); tests.delete(row.id); sourceGens.set(row.id, genOf(row.id) + 1); statusTickets.set(row.id, (statusTickets.get(row.id) || 0) + 1); if (openId === row.id) reread = row.id; }
+        lastSources.set(row.id, source);
+      }
       data = next;
     } catch (error) { if (alive && id === serial) failure = error?.message || String(error); }
-    finally { if (alive && id === serial) { loading = false; render(); } }
+    finally { if (alive && id === serial) { loading = false; render(); if (reread && openId === reread) void loadStatus(reread); } }
   }
   async function perform(verb, row) {
     if (!act || busy) return;
-    busy = true; render();
+    // A capability source's Test is never one click: it goes through its confirm (runConfirmed), from every entry.
+    if (verb === 'test' && sourceOf(row)) { openConfirm(row); return; }
+    busy = true; ranNothing = null; render();
+    // A test's answer is the answer about the source it was asked for: one that lands after the row's source
+    // changed (success or failure) leaves no result.
+    let unconfirmed = false; const gen = genOf(row.id), current = () => genOf(row.id) === gen;
+    // This press carried no confirmation and the row turned out to be a capability source's (it became one since the
+    // list was read), so no capability code ran. That is not a failure of the trigger: say so, without a result card
+    // or a warning, re-read the row, and leave the operator at Test, which now opens the confirm. The kernel says it
+    // two ways, and both end here: E_TRIGGER_SOURCE_RUN, or an answer about the source (a check that failed before
+    // the gate), which the confirmed test will give again.
+    const ranNoSource = () => { unconfirmed = true; tests.delete(row.id); ranNothing = row.id; };
     try {
       const result = await act(verb, row);
       if (!alive) return;
-      if (verb === 'test') tests.set(row.id, testResult(result, kind, { source: row.on?.source }) || { ok: false, error: `This OATS did not answer a ${noun} test.` });
-      else { onResult?.(verb, row, result); await refresh(); }
-    } catch (error) { if (alive) { if (verb === 'test') tests.set(row.id, { ok: false, error: error?.message || String(error) }); else failure = error?.message || String(error); } }
-    finally { if (alive) { busy = false; render(); } }
+      if (verb === 'test') {
+        const read = testResult(result, kind, { source: row.on?.source }) || { ok: false, error: `This OATS did not answer a ${noun} test.` };
+        if (sources && read.source && !sourceOf(row)) ranNoSource();
+        else if (current()) tests.set(row.id, read);
+      } else { onResult?.(verb, row, result); await refresh(); }
+    } catch (error) {
+      if (!alive) return;
+      if (verb === 'test' && error?.code === 'E_TRIGGER_SOURCE_RUN') ranNoSource();
+      else if (verb === 'test') { if (current()) tests.set(row.id, { ok: false, error: error?.message || String(error) }); }
+      else failure = error?.message || String(error);
+    } finally {
+      if (alive) {
+        busy = false; render();
+        if (unconfirmed) { await refresh(); if (alive && openId === row.id && (!doc.activeElement || doc.activeElement === doc.body)) focusKey('test'); }
+      }
+    }
+  }
+
+  // ── a capability source's Test: an informed second press (the confirm is consent to ONE manual run) ──
+  const TIMED_OUT = 'The test did not answer in time. Nothing was recorded.';
+  const timedOut = error => error?.code === 'E_CLI_TIMEOUT' || error?.name === 'TimeoutError' || /TimeoutError/.test(error?.message || '');
+  /** Opens the confirm on this row's page. The confirm itself runs nothing, reads nothing and waits for nothing: it
+   * is built from the row on screen. From a row's menu the page opens first, and reads its own status as every
+   * page open does (recorded state; it executes nothing). */
+  function openConfirm(row) {
+    if (!alive || busy || testing || !act || !sourceOf(row)) return;
+    const opens = openId !== row.id; if (opens) openId = row.id;
+    confirming = row.id; confirmSig = rowSignature(row); confirmToken = {}; ranNothing = null; render(); focusKey('confirm-title');
+    if (opens) void loadStatus(row.id);
+  }
+  /** Cancel and Escape. `token`: the confirm the pressed control belongs to (omitted: the open one). */
+  function closeConfirm(token = confirmToken) {
+    const id = confirming; if (!alive || !id || testing || !token || token !== confirmToken) return;
+    revokeConfirm(); render(); focusKey('test');
+  }
+  /** Run test: exactly one `trigger test` of the confirmed row, and nothing else: no retry, no re-read, no re-test on
+   * a refresh. `token`: the confirm the pressed control belongs to; only the confirm that is open, on a view that is
+   * alive, may run. Guarded against a second entry here, not only by the disabled buttons. */
+  async function runConfirmed(token) {
+    if (!alive || !token || token !== confirmToken) return;
+    const row = confirming && !busy && !testing ? rowById(confirming) : null;
+    if (!row || !act || openId !== row.id || rowSignature(row) !== confirmSig || !sourceOf(row)) return;
+    const source = row.on.source, gen = genOf(row.id); let failed = false, kept = false;
+    // The answer is the one about this source as it was confirmed: a row whose source changed meanwhile (even
+    // back again) keeps no result of the test asked before the change.
+    const keep = result => { if (genOf(row.id) === gen) { tests.set(row.id, result); kept = true; } };
+    testing = row.id; busy = true; render(); focusKey('confirm-status');
+    try {
+      const result = testResult(await act('test', row, { runSource: true }), kind, { source });
+      if (!alive) return;
+      failed = !result; keep(result || { ok: false, error: `This OATS did not answer a ${noun} test.` });
+    } catch (error) {
+      if (!alive) return;
+      failed = true; keep(timedOut(error) ? { ok: false, error: TIMED_OUT } : { ok: false, error: error?.message || String(error), code: typeof error?.code === 'string' ? error.code : null });
+    } finally {
+      if (alive) {
+        // Focus follows the answer only where the operator still is: on this page, in the confirm (or nowhere).
+        const at = doc.activeElement, here = openId === row.id && (!at || at === doc.body || !!page.querySelector('.auto-confirm')?.contains(at));
+        testing = null; busy = false; if (confirming === row.id) revokeConfirm(); render();
+        if (here) focusKey(failed || !kept ? 'test' : 'result-title');
+      }
+    }
   }
 
   // ── pieces ──
@@ -266,7 +380,11 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
   function stateTags(row, tags) {
     if (!row.enabledHere && row.group !== 'elsewhere') tags.append(node('span', 'Off here', 'auto-tag muted'));
     const bad = row.invalid || row.unreadable;
-    if (bad) { const t = node('span', row.unreadable ? 'Unreadable' : 'Invalid', 'auto-tag warn'); t.title = bad.message || bad.code || ''; tags.append(t); }
+    // A capability source's meaning check that failed at a poll (`invalid` with `at`) is a state of its own, in text
+    // and an icon: the definition is as written, its source no longer answers to it.
+    const check = !row.unreadable && sourceOf(row) ? sourceCheck(row.invalid) : null;
+    if (check?.at) { const t = node('span', undefined, 'auto-tag warn auto-source-check'); t.append(iconElement(doc, 'warning', { size: 11 }), node('span', 'Source check failed')); t.title = check.message || check.code || ''; tags.append(t); }
+    else if (bad) { const t = node('span', row.unreadable ? 'Unreadable' : 'Invalid', 'auto-tag warn'); t.title = bad.message || bad.code || ''; tags.append(t); }
     const template = templateLabel(row.template);
     if (template) { const t = node('span', undefined, 'auto-tag muted'); t.append(iconElement(doc, 'package', { size: 11 }), node('span', template)); t.title = `From the package template ${template}${row.template.version ? ` ${row.template.version}` : ''}`; tags.append(t); }
   }
@@ -294,7 +412,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
       // The cron itself goes under its words; with no words, the main line is already the cron.
       cell.append(node('span', [cronInWords(row.cron) ? row.cron : null, row.tz].filter(Boolean).join(' · '), 'auto-sub auto-mono'));
     } else {
-      const on = onSummary(row.on);
+      const on = onSummary(row.on, { sources });
       const main = node('span', on?.title || 'Not reported', 'auto-main-line auto-wrap'); main.title = main.textContent;
       cell.append(main);
       if (on) cell.append(node('span', [on.repo, ...on.labels.map(l => `#${l}`)].filter(Boolean).join(' · '), 'auto-sub'));
@@ -370,6 +488,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     renderScheduler();
     if (failure) notices.append(node('p', failure, 'auto-status error'));
     if (notice) { const n = node('p', notice, 'auto-status auto-notice'); n.setAttribute('role', 'status'); notices.append(n); }
+    if (ranNothing) { const n = node('p', NOTHING_RAN, 'auto-status auto-ran-nothing'); n.setAttribute('role', 'status'); notices.append(n); }
     if (!data) { if (loading) notices.append(node('p', `Reading ${title.toLowerCase()}…`, 'auto-status')); return; }
     if (!data.host.name && rows.some(r => r.reason === 'host-unnamed')) banner(`This computer has no host name, so it runs none of the workspace's ${title.toLowerCase()}. Name it in this deployment's local settings to take on the ones assigned to it.`);
     if (data.scheduler && !schedulerOn(data.scheduler) && rows.some(r => r.runsHere)) banner('The scheduler is not running on this computer, so nothing here runs until it is enabled.', onEnableScheduler && ['Enable scheduler', onEnableScheduler]);
@@ -413,20 +532,22 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
   }
 
   // ── detail page ──
-  function openRow(id) { openId = id; render(); page.querySelector('.page-back')?.focus(); void loadStatus(id); }
-  /** A trigger's fire history, read once per open; a stale answer never lands on another page. */
+  function openRow(id) { if (confirming && !testing) revokeConfirm(); ranNothing = null; openId = id; render(); page.querySelector('.page-back')?.focus(); void loadStatus(id); }
+  /** A trigger's fire history, read once per open; a stale answer never lands on another page, nor on a row
+   * whose source changed since it was asked (the ticket, checked on the answer). */
   async function loadStatus(id) {
     const row = rowById(id);
     if (kind !== 'trigger' || !status || !row) return;
+    const ticket = (statusTickets.get(id) || 0) + 1; statusTickets.set(id, ticket);
     try {
       const st = triggerStatus(await status(row), row.id, { source: row.on?.source });
-      if (!alive || !st) return;
+      if (!alive || !st || statusTickets.get(id) !== ticket) return;
       statuses.set(row.id, st);
       if (openId === id) { const back = doc.activeElement === page.querySelector('.page-back'); render(); if (back) page.querySelector('.page-back')?.focus(); }
     } catch { /* the row's last fire still shows */ }
   }
   function closeRow() {
-    const id = openId; openId = null; render();
+    const id = openId; openId = null; if (!testing) revokeConfirm(); render();
     [...body.querySelectorAll('.auto-row')].find(r => r.dataset.id === id)?.querySelector('.auto-open')?.focus();
   }
   function renderPage(row) {
@@ -442,7 +563,8 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     if (canDescribe(row)) { const b = node('button', 'Edit summary', 'act'); b.type = 'button'; b.dataset.verb = 'describe'; b.disabled = busy; b.addEventListener('click', () => openDescribe(row)); actions.append(b); }
     for (const extra of extras) if (!inCard(extra)) extraButton(extra, actions);
     if (row.kind === 'schedule' && row.runsHere && supports('run')) button('Run now', 'run');
-    if (supports('test')) button('Test', 'test', true);
+    if (supports('test')) button('Test', 'test', true).dataset.autoFocus = 'test';
+    const source = sourceOf(row);
     const pageBody = node('div', undefined, 'page-body'), main = node('div', undefined, 'page-main'), side = node('div', undefined, 'page-side');
     // Identity: the name, with the qualified id (the address) under it; then the summary.
     const identity = node('div', undefined, 'page-identity'), glyph = node('span', undefined, 'page-glyph');
@@ -458,13 +580,15 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     }
     identity.append(glyph, copy);
     if (row.group !== 'elsewhere') identity.append(switchFor(row));
+    if (ranNothing === row.id) { const n = node('p', NOTHING_RAN, 'auto-status auto-ran-nothing'); n.setAttribute('role', 'status'); main.append(n); }
     main.append(identity);
     // What it sends: shown whole, never summarized.
     main.append(sendsSection(row));
     // When / On, and Spawns (a spawn schedule and every trigger).
     const cards = node('div', undefined, 'auto-cards');
     const when = pageCard(doc, kind === 'trigger' ? 'On' : 'When', { icon: kind === 'trigger' ? 'triggers' : 'schedules' });
-    if (kind === 'trigger') { const on = onSummary(row.on); when.body.append(pageFacts(doc, [['Event', on?.title], ['Repo', on?.repo], ['Labels', on?.labels.join(', ')], ['Base', on?.base], ['Polls', on?.poll ? `every ${on.poll}` : null]])); }
+    if (kind === 'trigger' && source) when.body.append(onSource(row, source));
+    else if (kind === 'trigger') { const on = onSummary(row.on); when.body.append(pageFacts(doc, [['Event', on?.title], ['Repo', on?.repo], ['Labels', on?.labels.join(', ')], ['Base', on?.base], ['Polls', on?.poll ? `every ${on.poll}` : null]])); }
     else when.body.append(pageFacts(doc, [['Runs', cronInWords(row.cron)], ['Cron', row.cron], ['Time zone', row.tz], ['Next', row.runsHere ? relativeTime(row.nextDue, now())?.label : null]]));
     cards.append(when.card);
     if (row.run === 'spawn') {
@@ -488,15 +612,32 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     // Status (0.49 fields; each absent on an older kernel): the last poll, the last error (message, then its
     // code), the events waiting (newest first, at most 10), the instances live now, then what fired.
     const poll = st?.lastPoll;
-    if (poll) {
+    // A capability source's failure is said once. After a failed poll the kernel's `lastError` is that same
+    // failure (its time and message), and after a failed source check it repeats `invalid`: the Last error line
+    // is then left out, and its code goes beside the kernel's text of the failure.
+    const check = source ? (st?.invalid?.at ? st.invalid : sourceCheck(row.invalid)) : null, err = st?.lastError;
+    const pollFailure = !!source && !!poll && !poll.ok && !!poll.cause;
+    const samePoll = pollFailure && !!err && err.at === poll.at && err.message === poll.error;
+    const sameCheck = !!check?.at && !!err && err.at === check.at && err.message === check.message;
+    const says = v => v ? sourceQuote(doc, { leadIn: LEAD_INS.source(source.capability, source.name), lines: [{ text: [v.code, v.message] }] }) : null;
+    if (poll && source && (pollFailure || poll.events !== undefined)) {
+      const p = node('p', undefined, `auto-test-line${poll.ok ? '' : ' warn'}`);
+      p.append('Last poll ', timeEl(poll.at), poll.ok ? `: ${[events(poll.events), tally(poll)].filter(Boolean).join(', ')}` : ` failed: ${causeWords(poll.cause)}`);
+      history.append(p);
+      if (!poll.ok) {
+        if (poll.error) { const e = node('p', poll.error, 'auto-test-line warn auto-poll-error'); if (samePoll && err.code) e.append(' ', node('code', err.code, 'auto-mono')); history.append(e); }
+        const quote = says(poll.says || (samePoll ? err.says : null)); if (quote) history.append(quote);
+      }
+    } else if (poll) {
       const p = node('p', undefined, `auto-test-line${poll.ok ? '' : ' warn'}`), n = v => `${v} ${v === 1 ? 'pull request' : 'pull requests'}`;
       p.append('Last poll ', timeEl(poll.at), poll.ok ? `: ${n(poll.prs)}, ${poll.matching} matching` : ` failed${poll.error ? `: ${poll.error}` : ''}`);
       history.append(p);
     }
-    if (st?.lastError) {
-      const p = node('p', `Last error: ${st.lastError.message || ''}`, 'auto-test-line warn');
-      if (st.lastError.code) p.append(st.lastError.message ? ' ' : '', node('code', st.lastError.code, 'auto-mono'));
+    if (err && !samePoll && !sameCheck) {
+      const p = node('p', `Last error: ${err.message || ''}`, 'auto-test-line warn');
+      if (err.code) p.append(err.message ? ' ' : '', node('code', err.code, 'auto-mono'));
       history.append(p);
+      const quote = source ? says(err.says) : null; if (quote) history.append(quote);
     }
     // One order in every list of the section: the event's label, its kind, then the instance (Waiting has none).
     const eventText = e => [e.label, e.event].filter(Boolean).join(' · ');
@@ -524,10 +665,23 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
       history.append(line);
     }
     if (!items.length) history.append(node('p', row.runsHere ? 'Not run yet on this computer.' : 'Runs are recorded on the computer that runs it.', 'page-note'));
+    // What the source's last GOOD poll refused or skipped. A failed poll leaves the lists as they were, so they
+    // can be older than the failure above: the line over them says which poll they are from.
+    if (source && st?.source) {
+      const from = node('p', undefined, 'page-note auto-lists-from');
+      if (poll?.ok) from.append('At the last poll, ', timeEl(poll.at)); else from.textContent = poll ? 'From the last successful poll, before the failure above' : 'From the last successful poll';
+      const lists = sourceLists(st, source, from); if (lists) history.append(lists);
+    }
     runs.append(history); main.append(runs);
     // Side: what is wrong with it, its run state, where it runs, where it comes from, the test result.
     const bad = row.unreadable || row.invalid;
-    if (bad) {
+    if (!row.unreadable && check?.at) {
+      // The last source check failed at a poll: the kernel's message, code and field, and when. (An `invalid`
+      // without a time is a definition that no longer validates, below, as before.)
+      const card = pageCard(doc, 'Source check failed', { icon: 'warning' }), when = relativeTime(check.at, now());
+      card.body.append(pageFacts(doc, [['Message', check.message, null, 'wrap'], ['Code', check.code], ['Field', check.field], ['Checked', when?.label, when?.title]]));
+      side.append(card.card);
+    } else if (bad) {
       const card = pageCard(doc, row.unreadable ? 'Unreadable' : 'Invalid', { icon: 'warning' });
       const fact = v => typeof v === 'string' ? v : null;
       card.body.append(pageFacts(doc, [['Code', fact(bad.code)], ['Field', fact(bad.field)], ['Message', fact(bad.message), null, 'wrap']]));
@@ -548,32 +702,154 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
       f.addEventListener('click', () => { if (canOpen(row)) openFile(row); }); from.body.append(f);
     }
     side.append(where.card, from.card);
+    // A capability source: the confirm, then its result, lead the side column (where the operator is looking);
+    // a pull-request trigger's and a schedule's result closes it, as before.
     const tested = tests.get(row.id);
-    if (tested) {
-      const card = pageCard(doc, 'Test result', { icon: 'test' });
-      card.body.append(node('p', tested.error || (tested.ok ? 'Ready: it would run here.' : 'Not ready on this computer.'), `auto-test-line${tested.ok ? '' : ' warn'}`));
-      for (const problem of tested.problems || []) card.body.append(node('p', problem, 'auto-test-line warn'));
-      for (const warning of tested.warnings || []) card.body.append(node('p', warning, 'auto-test-line'));
-      // The soul's own error, unless a problem already says it.
-      if (tested.soul && !tested.soul.resolves && !(tested.problems || []).length) card.body.append(node('p', `The soul does not resolve${tested.soul.error ? `: ${tested.soul.error}` : ''}`, 'auto-test-line warn'));
-      if (tested.account) card.body.append(node('p', `gh acts as ${tested.account}`, 'auto-test-line'));
-      // Each event that would fire, with the instance name its spawn would be asked to derive (0.49).
-      if (tested.wouldFire?.length) {
-        const fires = node('ul', undefined, 'auto-list auto-fire'); fires.setAttribute('aria-label', 'Would fire now');
-        for (const f of tested.wouldFire) {
-          const li = node('li', f.label);
-          if (f.instance) li.append(' → ', node('span', f.instance, 'auto-mono'));
-          if (f.held) li.append(' (held)');
-          if (f.nameCut) { li.append(' · name shortened to fit'); li.setAttribute('aria-description', NAME_CUT); li.title = NAME_CUT; }
-          fires.append(li);
-        }
-        card.body.append(node('p', 'Would fire now:', 'auto-test-line'), fires);
-      } else if (tested.wouldFire) card.body.append(node('p', 'Nothing would fire now.', 'auto-test-line'));
-      const due = relativeTime(tested.nextDue, now());
-      if (due) card.body.append(node('p', `Next due ${due.label}`, 'auto-test-line'));
-      side.append(card.card);
-    }
+    if (source) { if (tested) side.prepend(testCard(row, tested, source)); if (confirming === row.id) side.prepend(confirmCard(row, source)); }
+    else if (tested) side.append(testCard(row, tested, null));
     pageBody.append(main, side); page.append(bar, pageBody);
+  }
+  /** The Test result card. A capability source's (sourceTestCard) speaks of the source first. */
+  function testCard(row, tested, source) {
+    const card = pageCard(doc, 'Test result', { icon: 'test' });
+    // An answer that carries `source` is a capability source's, whatever the row on screen says of itself.
+    if (source || tested.source) return sourceTestCard(card, tested, source || {});
+    card.body.append(node('p', tested.error || (tested.ok ? 'Ready: it would run here.' : 'Not ready on this computer.'), `auto-test-line${tested.ok ? '' : ' warn'}`));
+    for (const problem of tested.problems || []) card.body.append(node('p', problem, 'auto-test-line warn'));
+    for (const warning of tested.warnings || []) card.body.append(node('p', warning, 'auto-test-line'));
+    // The soul's own error, unless a problem already says it.
+    if (tested.soul && !tested.soul.resolves && !(tested.problems || []).length) card.body.append(node('p', `The soul does not resolve${tested.soul.error ? `: ${tested.soul.error}` : ''}`, 'auto-test-line warn'));
+    if (tested.account) card.body.append(node('p', `gh acts as ${tested.account}`, 'auto-test-line'));
+    fireList(card, tested);
+    const due = relativeTime(tested.nextDue, now());
+    if (due) card.body.append(node('p', `Next due ${due.label}`, 'auto-test-line'));
+    return card.card;
+  }
+  /** Each event that would fire, with the instance name its spawn would be asked to derive (0.49). A capability
+   * source's event may carry a URL: the source's, shown as text, never a link. */
+  function fireList(card, tested) {
+    if (tested.wouldFire?.length) {
+      const fires = node('ul', undefined, 'auto-list auto-fire'); fires.setAttribute('aria-label', 'Would fire now');
+      for (const f of tested.wouldFire) {
+        const li = node('li', f.label);
+        if (f.instance) li.append(' → ', node('span', f.instance, 'auto-mono'));
+        if (f.held) li.append(' (held)');
+        if (f.nameCut) { li.append(' · name shortened to fit'); li.setAttribute('aria-description', NAME_CUT); li.title = NAME_CUT; }
+        if (f.url) li.append(node('span', f.url, 'auto-fire-url'));
+        fires.append(li);
+      }
+      card.body.append(node('p', 'Would fire now:', 'auto-test-line'), fires);
+    } else if (tested.wouldFire) card.body.append(node('p', 'Nothing would fire now.', 'auto-test-line'));
+  }
+
+  // ── a capability source (feature trigger-sources) ──
+  const events = n => `${n} ${n === 1 ? 'event' : 'events'}`;
+  /** The non-zero counts of what a poll left out: "1 filtered, 2 skipped, 3 refused". */
+  const tally = ({ filtered = 0, skipped = 0, refused = 0 }) => [[filtered, 'filtered'], [skipped, 'skipped'], [refused, 'refused']].filter(([n]) => n > 0).map(([n, word]) => `${n} ${word}`).join(', ');
+  /** The trigger file's parameters, as display-only text in the quote treatment, or null when it gives none. */
+  function paramsQuote(row) {
+    const params = sourceParams(row.on);
+    const quote = params.count ? sourceQuote(doc, { leadIn: LEAD_INS.triggerFile, lines: params.lines }) : null;
+    if (!quote) return null;
+    const box = node('div', undefined, 'auto-params'); box.append(quote);
+    if (params.more) box.append(node('p', `and ${params.more} more`, 'page-note'));
+    return box;
+  }
+  /** The On card of a capability-source trigger: its source (and its capability's page, when the catalog lists
+   * it), the events it selects, how often it polls, and what the trigger file passes to the source. */
+  function onSource(row, source) {
+    const box = node('div', undefined, 'auto-on-source'), on = onSummary(row.on, { sources });
+    box.append(pageFacts(doc, [['Source', sourceLabel(source) || source.id], ['Events', on?.events.join(', ')], ['Polls', on?.poll ? `every ${on.poll}` : null]]));
+    if (source.lookup && typeof openCapability === 'function' && canOpenCapability(source.lookup)) {
+      const actions = node('div', undefined, 'auto-card-actions'), open = node('button', 'Open capability', 'act'); open.type = 'button'; open.dataset.verb = 'capability';
+      open.setAttribute('aria-label', `Open capability ${source.lookup}`); open.addEventListener('click', () => openCapability(source.lookup));
+      actions.append(open); box.append(actions);
+    }
+    const params = paramsQuote(row);
+    if (params) box.append(node('p', 'Parameters', 'auto-list-head'), params);
+    return box;
+  }
+  /** The events OATS refused and the items the source skipped, each list only when it has entries, at most
+   * EVENTS_SHOWN then "and N more". The event's text and the reason for a skip are the source's words (quoted);
+   * the rule is said in the Desktop's, the subject is the kernel's identifier. `from`: which poll they are from. */
+  function sourceLists({ refused, skipped }, source, from = null) {
+    if (!refused.length && !skipped.length) return null;
+    const box = node('div', undefined, 'auto-source-lists'), leadIn = LEAD_INS.source(source.capability, source.name);
+    if (from) box.append(from);
+    const part = (title, name, all, lines) => {
+      if (!all.length) return;
+      const group = node('div', undefined, `auto-source-list ${name}`), quote = sourceQuote(doc, { leadIn, lines });
+      group.append(node('p', title, 'auto-list-head')); if (quote) group.append(quote);
+      if (all.length > EVENTS_SHOWN) group.append(node('p', `and ${all.length - EVENTS_SHOWN} more`, 'page-note'));
+      box.append(group);
+    };
+    part('Refused by OATS', 'auto-refused', refused, refused.slice(0, EVENTS_SHOWN).map(e => ({ text: e.text, note: `Refused: ${ruleWords(e.rule) || 'no rule reported'}.` })));
+    part('Skipped by the source', 'auto-skipped', skipped, skipped.slice(0, EVENTS_SHOWN).map(e => ({ label: e.subject, text: e.why })));
+    return box;
+  }
+  /** The Test confirm: what pressing Run test does, said before it does it. Built from the row on screen; it
+   * offers Run test and Cancel and nothing that trusts, enables, starts or schedules the trigger. */
+  function confirmCard(row, source) {
+    const { card, head } = pageCard(doc, 'Test this trigger', { icon: 'test' }), running = testing === row.id;
+    card.classList.add('auto-confirm'); card.setAttribute('role', 'group');
+    head.id = `auto-confirm-title-${kind}`; head.tabIndex = -1; head.dataset.autoFocus = 'confirm-title'; card.setAttribute('aria-labelledby', head.id);
+    const line = (...parts) => { const p = node('p', undefined, 'auto-test-line'); p.append(...parts); card.append(p); };
+    const code = v => node('code', v, 'auto-mono');
+    line('This runs ', source.capability ? code(source.capability) : 'the capability', "'s source command on this computer, now, once. Nothing is recorded and nothing is spawned.");
+    if (row.reason === 'untrusted') line("This trigger isn't trusted on this computer. Testing doesn't trust it or start it.");
+    const elsewhere = row.reason === 'assigned-elsewhere' || (!!row.runsOn && row.runsOn !== data.host.name);
+    if (elsewhere) line('The test runs here, not on ', row.runsOn ? code(row.runsOn) : 'the host that runs it', '.');
+    const params = paramsQuote(row);
+    if (params) { line('The command receives these parameters.'); card.append(params); } else line('It receives no parameters.');
+    // While the test runs, focus parks here (a disabled button cannot hold it).
+    const state = node('p', running ? 'Testing…' : '', 'auto-confirm-status'); state.tabIndex = -1; state.setAttribute('role', 'status'); state.dataset.autoFocus = 'confirm-status';
+    const actions = node('div', undefined, 'auto-card-actions');
+    const cancel = node('button', 'Cancel', 'act'), run = node('button', 'Run test', 'act primary');
+    cancel.type = run.type = 'button'; cancel.dataset.autoFocus = 'confirm-cancel'; run.dataset.autoFocus = 'confirm-run'; run.dataset.verb = 'run-test';
+    cancel.disabled = run.disabled = busy || !!testing;
+    // Bound to THIS confirm: a control kept from one that closed, was replaced or was disposed does nothing.
+    const token = confirmToken;
+    cancel.addEventListener('click', () => closeConfirm(token)); run.addEventListener('click', () => void runConfirmed(token));
+    actions.append(cancel, run); card.append(state, actions);
+    return card;
+  }
+  /** A capability source's Test result: first what the source did (not whether this computer is ready), then
+   * the placement as the kernel reports it, its warnings, and what would fire when the source answered. */
+  function sourceTestCard(card, tested, source) {
+    // Its heading takes focus when a confirmed test answers.
+    card.head.tabIndex = -1; card.head.dataset.autoFocus = 'result-title';
+    const line = (value, warn = false) => { const p = node('p', value, `auto-test-line${warn ? ' warn' : ''}`); card.body.append(p); return p; };
+    const ran = tested.source;
+    if (tested.error || !ran) {
+      // The CLI refused or never answered: the kernel's message and its code. There is no result.
+      // The kernel's refusal of the test itself (a definition that no longer validates): its text can repeat a
+      // trigger file's own key, so it is one display line like every other string here.
+      const code = displayLine(tested.code), p = line(displayLine(tested.error) || 'This OATS did not answer about the source.', true); if (code) p.append(' ', node('code', code, 'auto-mono'));
+      return card.card;
+    }
+    const named = { capability: ran.capability || source.capability, name: ran.name || source.name };
+    if (ran.ok) {
+      line(`The source answered: ${[events(ran.events), tally({ filtered: ran.filtered, skipped: ran.skipped.length, refused: ran.refused.length })].filter(Boolean).join(', ')}`);
+      const lists = sourceLists(ran, named); if (lists) card.body.append(lists);
+    } else if (ran.invalid) {
+      line('The source check failed', true);
+      card.body.append(pageFacts(doc, [['Message', ran.invalid.message, null, 'wrap'], ['Code', ran.invalid.code], ['Field', ran.invalid.field]]));
+    } else {
+      line(`The poll failed: ${causeWords(ran.cause) || 'no cause reported'}`, true);
+      if (ran.error) { const p = line(ran.error, true); if (ran.code) p.append(' ', node('code', ran.code, 'auto-mono')); }
+      const quote = ran.says ? sourceQuote(doc, { leadIn: LEAD_INS.source(named.capability, named.name), lines: [{ text: [ran.says.code, ran.says.message] }] }) : null;
+      if (quote) card.body.append(quote);
+    }
+    // Placement, as the kernel reports it: a manual test runs the source whatever this computer's trust and the
+    // trigger's host say, so "would run here" is said only when the kernel found nothing against it.
+    if (tested.ok && !tested.problems.length) line('Would run here on its own');
+    else if (tested.problems.length) { line('Tested by hand'); for (const problem of tested.problems) line(problem, true); }
+    for (const warning of tested.warnings) line(warning);
+    if (tested.soul && !tested.soul.resolves && !tested.problems.length) line(`The soul does not resolve${tested.soul.error ? `: ${tested.soul.error}` : ''}`, true);
+    if (tested.account) line(`gh acts as ${tested.account}`);
+    // Only a source that answered says what would fire, or that nothing would.
+    if (ran.ok) fireList(card, tested);
+    return card.card;
   }
   /** What a run sends, whole: a spawn's or trigger's task, a wake's message and the home it wakes,
    * a command's argv (verbatim, one chip per argument) and cwd, an operation and its home. */
@@ -598,9 +874,10 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     const section = pageSection(doc, 'Prompt', kind === 'trigger' ? 'highlighted fields are filled from the event' : '');
     if (row.task) {
       const pre = node('pre', undefined, 'auto-prompt');
-      for (const part of taskParts(row.task)) pre.append(part.field ? node('span', `{${part.field}}`, 'auto-token') : doc.createTextNode(part.text));
+      for (const part of taskParts(row.task, kind === 'trigger' ? taskFields(row.on, { sources }) : undefined)) pre.append(part.field ? node('span', `{${part.field}}`, 'auto-token') : doc.createTextNode(part.text));
       section.append(pre);
-      if (kind === 'trigger') section.append(node('p', 'Pull request titles and bodies are never inserted: the instance reads them from its event file.', 'page-note'));
+      if (kind === 'trigger') section.append(node('p', sourceOf(row) ? "The highlighted fields are filled from the source's event after OATS checks them. They are still the source's data, and the instance is told so."
+        : 'Pull request titles and bodies are never inserted: the instance reads them from its event file.', 'page-note'));
     } else section.append(node('p', row.run && row.run !== 'spawn' ? `Nothing to show for a ${row.run} run.` : 'No prompt reported.', 'page-note'));
     return section;
   }
@@ -716,17 +993,33 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     refreshButton.disabled = loading;
     const row = openId ? rowById(openId) : null;
     if (openId && !row && data) openId = null;
+    // A confirm belongs to the row it was opened on, as that row was: another page, a row that changed under it
+    // (a refresh) or left the list closes it. It is never applied to another row. (A running test keeps its own.)
+    if (confirming && !testing) {
+      const confirmed = rowById(confirming);
+      if (openId !== confirming || !confirmed || rowSignature(confirmed) !== confirmSig || !sourceOf(confirmed)) revokeConfirm();
+    }
+    // The page is rebuilt whole: focus on one of the confirm's or the result's targets is found again by its key
+    // (a confirm that closed under it hands focus to Test), never dropped to <body>.
+    const held = page.contains(doc.activeElement) ? doc.activeElement.closest('[data-auto-focus]')?.dataset.autoFocus : null;
     page.hidden = !row; body.hidden = !!row; header.hidden = !!row;
     if (row) renderPage(row); else renderList();
+    if (row && held && !page.contains(doc.activeElement)) (page.querySelector(`[data-auto-focus="${held}"]`) || (held.startsWith('confirm') ? page.querySelector('[data-auto-focus="test"]') : null))?.focus({ preventScroll: true });
   }
   const setText = (el, value) => { if (el.textContent !== value) el.textContent = value; };
   refreshButton.addEventListener('click', () => void refresh());
-  root.addEventListener('keydown', e => { if (e.key === 'Escape' && openId && !e.defaultPrevented) { e.preventDefault(); closeRow(); } });
+  root.addEventListener('keydown', e => {
+    if (e.key !== 'Escape' || !openId || e.defaultPrevented) return;
+    e.preventDefault();
+    // Escape closes the confirm first (focus back on Test), never the page under it; a running test is not dismissed.
+    if (confirming === openId) { if (!testing) closeConfirm(); return; }
+    closeRow();
+  });
   // One menu open at a time; a click elsewhere closes it.
   const closeMenus = e => { for (const m of root.querySelectorAll('.auto-menu[open]')) if (!m.contains(e.target)) m.open = false; };
   doc.addEventListener('click', closeMenus);
   render(); void refresh();
-  return { refresh, open: openRow, describe: id => { const row = rowById(id); if (row) openDescribe(row); }, setNotice(text) { notice = text || ''; render(); }, setBusy(v) { busy = !!v; render(); }, dispose() { alive = false; serial++; describeSerial++; scope.dispose(); doc.removeEventListener('click', closeMenus); root.remove(); } };
+  return { refresh, open: openRow, describe: id => { const row = rowById(id); if (row) openDescribe(row); }, repaint() { render(); }, setNotice(text) { notice = text || ''; render(); }, setBusy(v) { busy = !!v; render(); }, dispose() { alive = false; revokeConfirm(); serial++; describeSerial++; scope.dispose(); doc.removeEventListener('click', closeMenus); root.remove(); } };
 }
 
 /** The Desktop shows these pages only for an OATS that reports them (kernel 0.29.0). */
@@ -748,7 +1041,7 @@ export function mountAutomationsPage(el, ctx, kind, extend = () => ({}), { cli: 
   const title = TITLES[kind];
   const root = doc.createElement('div'); root.className = 'automations-stage'; root.style.height = '100%';
   el.append(root);
-  let view = null, card = null, shown = null, alive = true;
+  let view = null, card = null, shown = null, alive = true, builds = 0;
   async function call(body) {
     const r = await postJson(ctx, `/api/automations${wsQuery()}`, body);
     if (r?.status !== 'ok') { const e = new Error(r?.reason?.message || `${title} are unavailable.`); e.code = r?.reason?.code; throw e; }
@@ -770,7 +1063,9 @@ export function mountAutomationsPage(el, ctx, kind, extend = () => ({}), { cli: 
   function build() {
     if (!alive) return;
     const cli = readCli(), ok = automationsSupported(cli), ws = currentWorkspace(), describes = automationDescriptionsSupported(cli);
-    const key = JSON.stringify([ok, describes, ws, cliKnownUnavailable()]);
+    // Capability trigger sources (feature trigger-sources): a trigger page's gate, and nothing of a schedule's.
+    const sources = kind === 'trigger' && ok && triggerSourcesSupported(cli);
+    const key = JSON.stringify([ok, describes, sources, ws, cliKnownUnavailable()]);
     if (key === shown) return; // CLI polls re-emit; rebuild only when the gate changes
     shown = key; view?.dispose(); view = null; card?.dispose?.(); card = null;
     if (cliKnownUnavailable()) { const body = gate(`${title} need the OATS CLI`); card = cliCard(doc, ctx); body.append(card.el); return; }
@@ -778,11 +1073,27 @@ export function mountAutomationsPage(el, ctx, kind, extend = () => ({}), { cli: 
     if (!ok) { gate(`${title} need OATS 0.29 or later`, `Update OATS to see the workspace's ${title.toLowerCase()} and this computer's own, and where each one runs.`); return; }
     if (!ws) { gate('Choose a workspace', `${title} are read for one local workspace.`); return; }
     root.replaceChildren();
+    // A source's "Open capability" resolves against this workspace's catalog (the held `oats capabilities` table,
+    // read once per build): exactly one row of that name, or the source stays text.
+    const catalog = new Map(), built = ++builds;
+    if (sources && typeof ctx.openCapability === 'function') void postJson(ctx, `/api/workspace-sync${wsQuery()}`, { action: 'read' }).then(r => {
+      if (!alive || built !== builds || ws !== currentWorkspace()) return;
+      for (const row of r?.capabilities?.capabilities || r?.lastGood?.capabilities?.capabilities || []) if (typeof row?.name === 'string') catalog.set(row.name, (catalog.get(row.name) || 0) + 1);
+      view?.repaint(); // the open page gains its Open capability
+    }).catch(() => { /* the source stays text */ });
     view = createAutomationsView(root, {
-      kind, now: () => Date.now(), verbs: AUTOMATION_VERBS[kind],
+      kind, now: () => Date.now(), verbs: AUTOMATION_VERBS[kind], sources,
+      canOpenCapability: name => catalog.get(name) === 1, openCapability: sources && typeof ctx.openCapability === 'function' ? name => ctx.openCapability(name) : null,
       heading: frame ? frame.heading(doc) : null, onCount: frame ? n => frame.onCount(kind, n) : null,
       read: () => call({ kind, action: 'list' }),
-      act: (verb, row) => call({ kind, action: verb, key: row.key }),
+      // `runSource` travels only from the confirm's Run test (createAutomationsView.runConfirmed): the one press
+      // that lets the kernel run a capability source's command. The server composes the flag.
+      // A view acts only in the workspace it was built for: one that outlived it (a kept control, a late callback)
+      // sends nothing to the workspace shown now.
+      act: (verb, row, { runSource = false } = {}) => {
+        if (!alive || built !== builds || ws !== currentWorkspace()) return Promise.reject(Object.assign(new Error(`${title} changed workspace.`), { code: 'E_WORKSPACE_CHANGED' }));
+        return call({ kind, action: verb, key: row.key, ...(runSource === true ? { runSource: true } : {}) });
+      },
       status: kind === 'trigger' ? row => call({ kind, action: 'status', key: row.key }) : null,
       describe: describes ? (row, description) => call({ kind, action: 'describe', key: row.key, description }) : null,
       // Read-only through the contained /api/file; a member without a clone opens its web page.
