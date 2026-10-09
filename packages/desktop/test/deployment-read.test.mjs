@@ -179,28 +179,45 @@ test('the locator carries only an integer workspaceApi 2 from the probe into the
   }
 });
 
-test('every package-root module the bundled server imports (transitively) is in the packaged file list', () => {
+test('every package-root module the bundled server imports (transitively) is in the packaged file list, and what it reaches outside the package is a module of the shared home', () => {
   const pkg = new URL('../', import.meta.url);
+  const home = new URL('../client/', pkg);
   const config = readFileSync(new URL('electron-builder.config.cjs', pkg), 'utf8');
-  const seen = new Set(), rootModules = new Set();
+  const seen = new Set(), rootModules = new Set(), shared = new Set();
   const visit = url => {
     if (seen.has(url.href)) return; seen.add(url.href);
     const source = readFileSync(url, 'utf8');
     for (const [, spec] of source.matchAll(/^import[^'"]*['"](\.{1,2}\/[^'"]+)['"]/gm)) {
       const next = new URL(spec, url);
-      const rel = next.href.slice(pkg.href.length);
-      if (!rel.includes('/')) rootModules.add(rel);
-      if (rel.endsWith('.mjs')) visit(next);
+      if (next.href.startsWith(home.href)) shared.add(next.href.slice(home.href.length));
+      else {
+        assert.ok(next.href.startsWith(pkg.href), `${spec} (from ${url.pathname}) is in the package or in the shared home`);
+        const rel = next.href.slice(pkg.href.length);
+        if (!rel.includes('/')) rootModules.add(rel);
+      }
+      if (next.pathname.endsWith('.mjs')) visit(next);
     }
   };
+  const backend = readFileSync(new URL('server/oats-web.mjs', pkg), 'utf8');
   visit(new URL('server/oats-web.mjs', pkg));
-  // The collector's entry module is started by a path, not imported: the walk above cannot reach it.
-  assert.ok(/^const LIVENESS = join\(HERE, "liveness-main\.mjs"\);$/m.test(readFileSync(new URL('server/oats-web.mjs', pkg), 'utf8')), 'the backend starts server/liveness-main.mjs');
-  visit(new URL('server/liveness-main.mjs', pkg));
-  assert.ok(rootModules.has('deployment-read-cli.mjs') && rootModules.has('deployment-data.mjs') && rootModules.has('cli-environment.mjs'));
+  // What the backend loads by a path, not by an import statement, the walk above cannot reach: the
+  // collector's entry module, which it starts, and three modules of the shared home.
+  assert.ok(/^const LIVENESS = join\(HERE, "\.\.", "\.\.", "client", "liveness-main\.mjs"\);$/m.test(backend), 'the backend starts ../client/liveness-main.mjs');
+  for (const file of ['liveness-main.mjs', 'cli-locator.mjs', 'cli-adapter.mjs', 'remote-roster.mjs']) {
+    assert.ok(backend.includes(`join(HERE, "..", "..", "client", "${file}")`), `the backend names ../client/${file} by a path`);
+    shared.add(file);
+    visit(new URL(file, home));
+  }
+  assert.ok(rootModules.has('forge-cli.mjs') && rootModules.has('readiness-cli.mjs') && rootModules.has('instance-events-cli.mjs'));
   for (const file of rootModules) assert.ok(config.includes(`"${file}"`), `${file} is packaged`);
-  // server/ ships by its pattern: the entry and the module that cleans a Node-mode process's environment are under it, and no exclusion names them.
-  for (const file of ['server/liveness-main.mjs', 'server/own-environment.mjs']) assert.ok(seen.has(new URL(file, pkg).href), `${file} exists and is loaded`);
+  // The shared home ships whole, flat, beside the asar (test/inventory.test.mjs pins where and how): what
+  // the server reaches there, the modules that were package-root ones among it, is a module directly in it.
+  assert.ok(shared.has('deployment-read-cli.mjs') && shared.has('deployment-data.mjs') && shared.has('cli-environment.mjs'));
+  for (const file of shared) assert.ok(!file.includes('/') && file.endsWith('.mjs'), `${file} is a module directly in the shared home`);
+  assert.deepEqual(builder.extraResources, [{ from: '../client', to: 'client', filter: ['**/*.mjs'] }]);
+  // The collector's entry and the module that cleans a Node-mode process's environment are there, and are loaded.
+  for (const file of ['liveness-main.mjs', 'own-environment.mjs']) assert.ok(seen.has(new URL(file, home).href), `../client/${file} exists and is loaded`);
+  // server/ ships by its pattern, and no exclusion names a file of it.
   assert.ok(builder.files.includes('server/**/*'));
   assert.deepEqual(builder.files.filter(pattern => pattern.startsWith('!') && pattern.includes('server/')), []);
 });
