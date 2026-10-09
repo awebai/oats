@@ -82,7 +82,8 @@ oats schedule update <id> --description=<text>   # the description only, even wh
 oats trigger update <id> --description=<text>    # the description only (local triggers)
 oats trigger list
 oats trigger test <id>                       # dry run: gh auth, repo permissions, soul resolves, teams declared, what would fire
-oats trigger poll <id>                       # a capability source's trigger: run its source once, record nothing
+oats trigger test <id> --run-source          # a capability source's trigger: the same, RUNNING its source command on this host
+oats trigger poll <id> --run-source          # a capability source's trigger: run its source once, record nothing
 oats trigger status <id>                     # last poll, pending events, fired keys, live instances, last error
 ```
 
@@ -149,15 +150,20 @@ contract is `docs/schedules.md`, "Capability sources".
   capability, and the source, params, events and fields must be the ones it
   declares (`E_TRIGGER_SOURCE`, `E_TRIGGER_INVALID`). A later poll that finds
   them no longer valid shows the trigger as `invalid` in `list` and `status`.
-- **`trigger poll` and `trigger test` execute the capability's source
-  command**, by hand, even on a host that does not trust the trigger or is
-  not its `runsOn`: use them to try a source before trusting it. They record
-  and spawn nothing. The tick alone is gated by trust and placement.
+- **`trigger poll <id> --run-source` and `trigger test <id> --run-source`
+  execute the capability's source command**, by hand, even on a host that
+  does not trust the trigger or is not its `runsOn`: use them to try a
+  source before trusting it. They record and spawn nothing. Without
+  `--run-source` both are refused (`E_TRIGGER_SOURCE_RUN`; nothing ran,
+  nothing was written) and the message gives the command to run again. The
+  flag is your intent to run provider code here, never trust consent: the
+  tick alone is gated by trust and placement, exactly as before. Pass it
+  only when the task or your human asked for the source to run.
 - A pending event the source stops listing is dropped; a failed poll drops
   nothing (`status` shows `lastPoll.cause` and what the source said).
 - The source runs under the host timer with only `PATH` and `OATS_HOME_DIR`:
   its login must live in its own store under `HOME`, not in an exported
-  variable (`trigger test` warns every time).
+  variable (`trigger test --run-source` warns every time).
 
 ## Workspace automations
 

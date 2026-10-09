@@ -249,7 +249,7 @@
       }
     },
     "triggerSources": {
-      "description": "Trigger sources (#669): each a command of this capability that, at each poll, lists the events due now; a trigger names one as on.source \"<capability>:<source>\". Validated only where a source is used (trigger add, a poll, trigger test and trigger poll), never when the capability loads: a malformed declaration fails the triggers naming it (E_TRIGGER_SOURCE) and nothing else. Checked at use only, not by this schema: every pattern compiles; command names a key of commands; a parameter default matches its pattern. A pattern is ECMA-262 with the u flag, matched anchored as ^(?:…)$; the default parameter value pattern is ^[A-Za-z0-9._/:@ ,*-]{0,200}$ and the default field pattern ^[A-Za-z0-9._/:@-]{1,200}$.",
+      "description": "Trigger sources (#669): each a command of this capability that, at each poll, lists the events due now; a trigger names one as on.source \"<capability>:<source>\". Validated only where a source is used (trigger add, a poll, trigger test and trigger poll), never when the capability loads: a malformed declaration fails the triggers naming it (E_TRIGGER_SOURCE) and nothing else. Checked at use only, not by this schema: every pattern compiles; command names a key of commands; a parameter default matches its pattern. A pattern is ECMA-262 with the u flag, matched anchored as ^(?:…)$; the default parameter value pattern is ^[A-Za-z0-9._/:@ ,*-]{0,200}$ and the default field pattern ^[A-Za-z0-9._/:@-]{1,200}$. Whatever its pattern admits, an event's field value is at most 200 code points and carries no control, bidi, invisible or tag character.",
       "type": "object",
       "maxProperties": 16,
       "propertyNames": { "pattern": "^[a-z0-9][a-z0-9-]{0,39}$" },

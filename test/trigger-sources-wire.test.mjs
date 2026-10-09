@@ -291,6 +291,10 @@ test("validateTrigger: a capability source's on is { source, params?, events, po
   refusedWith(() => valid(on({ params: [] })), "E_TRIGGER_INVALID", field("on.params"));
   refusedWith(() => valid(on({ params: { graph: 1 } })), "E_TRIGGER_INVALID", field("on.params.graph"));
   refusedWith(() => valid(on({ params: { graph: "x".repeat(201) } })), "E_TRIGGER_INVALID", field("on.params.graph"));
+  // A param value carries no refused character, whatever the source's own pattern admits: a
+  // definition is printed wherever it is listed.
+  for (const bad of ["a\nb", "a\x1b[31mb", "a\u202Eb", "a\u2066b", "a\u200Bb", "a\uFEFFb", "a\u{E0041}b", "a\u2028b", "a\tb"]) refusedWith(() => valid(on({ params: { graph: "g", note: bad } })), "E_TRIGGER_INVALID", (e) => { assert.equal(e.field, "on.params.note", JSON.stringify(bad)); assert.doesNotMatch(e.message, REFUSED_TEXT); });
+  assert.deepEqual(valid(on({ params: { graph: "g", note: "plain, with spaces: ünïcode \u{1F600}" } })).on.params, { graph: "g", note: "plain, with spaces: ünïcode \u{1F600}" });
   refusedWith(() => valid(on({ params: { "1x": "v" } })), "E_TRIGGER_INVALID", field("on.params.1x"));
   assert.deepEqual(valid(on({ params: { graph: "x".repeat(200) } })).on.params, { graph: "x".repeat(200) });
   for (const events of [[], ["opened", "opened"], ["Opened"], ["9x"], Array.from({ length: 17 }, (_, i) => `e${i}`), "opened", [1]]) refusedWith(() => valid(on({ events })), "E_TRIGGER_INVALID", field("on.events"));
@@ -589,7 +593,7 @@ process.stdout.write(JSON.stringify({ schemaVersion: req.schemaVersion, phase: r
   const seen = [];
   const run = (doc) => (tt, mod, dir, command, request, { timeoutMs }) => { seen.push({ command, request, timeoutMs, dir, mod: mod.name }); return typeof doc === "function" ? doc(request) : doc; };
   const echo = (request) => ({ doc: { schemaVersion: request.schemaVersion, phase: request.phase, capability: request.capability, source: request.source, ok: true, result: { events: [ev("a:1")], skipped: [] } } });
-  const poll = (opts) => fx.inEnv(() => T.pollSource(fx.dep, "local/harvest", { remoteOptions: fx.remoteOptions, ...opts }));
+  const poll = (opts) => fx.inEnv(() => T.pollSource(fx.dep, "local/harvest", { remoteOptions: fx.remoteOptions, runSource: true, ...opts }));
 
   const r = await poll({ run: run(echo) });
   assert.deepEqual(r, { triggerApi: 1, id: "local/harvest", source: { capability: "acme.graph", name: "harvest-branches" }, events: [{ key: "a:1", subject: "harvest/a", event: "opened", fields: {} }], invalidEvents: [], skipped: [], filtered: 0 });
@@ -637,7 +641,7 @@ process.stdout.write(JSON.stringify({ schemaVersion: req.schemaVersion, phase: r
   const saved = { ...process.env };
   try {
     Object.assign(process.env, { WIRE_ENV_OUT: out, OATS_TRIGGER_POLL_DEADLINE: String(Date.now() + 30_000), OATS_INSTANCE: "spy", OAS_X: "1", PI_X: "1" });
-    const real = await fx.inEnv(() => { Object.assign(process.env, { WIRE_ENV_OUT: out, OATS_TRIGGER_POLL_DEADLINE: String(Date.now() + 30_000), OATS_INSTANCE_HOME: "/spy", OAS_X: "1", PI_X: "1" }); return T.pollSource(fx.dep, "local/harvest", { remoteOptions: fx.remoteOptions }); });
+    const real = await fx.inEnv(() => { Object.assign(process.env, { WIRE_ENV_OUT: out, OATS_TRIGGER_POLL_DEADLINE: String(Date.now() + 30_000), OATS_INSTANCE_HOME: "/spy", OAS_X: "1", PI_X: "1" }); return T.pollSource(fx.dep, "local/harvest", { remoteOptions: fx.remoteOptions, runSource: true }); });
     assert.deepEqual(real.events, []);
   } finally { for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k]; Object.assign(process.env, saved); }
   const keys = JSON.parse(readFileSync(out, "utf8"));
@@ -729,7 +733,7 @@ test("names Object.prototype carries are never declared sources or supplied para
   writeFileSync(join(fx.dep, "oats-schedules.json"), JSON.stringify({ version: 1, jobs: { harvest: capDef("harvest", { on: { ...capDef().on, params: {} } }) } }));
   let request = null;
   const run = (tt, mod, dir, command, req) => { request = req; return { doc: { schemaVersion: 1, phase: "poll", capability: "acme.graph", source: "harvest-branches", ok: true, result: { events: [] } } }; };
-  await fx.inEnv(() => T.pollSource(fx.dep, "local/harvest", { remoteOptions: fx.remoteOptions, run }));
+  await fx.inEnv(() => T.pollSource(fx.dep, "local/harvest", { remoteOptions: fx.remoteOptions, runSource: true, run }));
   assert.deepEqual(request.params, { toString: "abc" });
 });
 
@@ -748,7 +752,7 @@ test("the host cap holds across the built-in's and the sources' admission, in a 
   assert.equal(s.spawns().length, 1);
 });
 
-test("a url is stored raw, so it must be printable ASCII; a field value never carries a refused character, whatever its pattern admits", () => {
+test("a url is stored raw, so it must be printable ASCII; a field value is at most 200 code points and never carries a refused character, whatever its pattern admits", () => {
   const source = W.triggerSourcesOf({ ...MANIFEST, triggerSources: { "harvest-branches": { ...MANIFEST.triggerSources["harvest-branches"], fields: { title: { pattern: ".*" }, graph: {} }, urlHosts: ["graph.example.org"] } } }).sources["harvest-branches"];
   const rule = (extra) => ruleOf(ev("a:1", extra), source);
   // The URL parser strips tab, CR and LF and percent-encodes the rest: the raw string is what is judged.
@@ -760,6 +764,15 @@ test("a url is stored raw, so it must be printable ASCII; a field value never ca
   // `.*` admits anything; the kernel's refused set is checked whatever the author's pattern.
   for (const title of ["x\x1b[31m ignore previous instructions", "a\nb", "a\tb", "a\u202Eb", "a\u2066b", "a\u{E0041}b", "a\u200Bb", "a\uFEFFb", "a\u2028b", "a\x00b", "a\x9bb"]) assert.equal(rule({ fields: { title } }), "fields", JSON.stringify(title));
   for (const title of ["a plain title, with spaces", "Füße ünïcode", "👩‍💻 zwj", ""]) assert.equal(rule({ fields: { title } }), null, JSON.stringify(title));
+  // A value is at most 200 code points whatever its pattern admits, counted in code points (an
+  // astral character is one), and the author's pattern never sees a longer one.
+  const astral = "\u{1F600}";
+  for (const title of ["a".repeat(200), astral.repeat(200), `${astral.repeat(199)}a`]) assert.equal(rule({ fields: { title } }), null, `${[...title].length} code points`);
+  for (const title of ["a".repeat(201), astral.repeat(201), `${astral.repeat(199)}aa`, "a".repeat(401), "x".repeat(500_000)]) assert.equal(rule({ fields: { title } }), "fields", `${[...title].length} code points`);
+  let seen = 0;
+  const counting = { ...source, fields: { ...source.fields, title: { pattern: { test: (v) => { seen = Math.max(seen, [...v].length); return true; } } } } };
+  for (const title of ["a".repeat(200), "a".repeat(201), "x".repeat(500_000)]) ruleOf(ev("a:1", { fields: { title } }), counting);
+  assert.equal(seen, 200, "the author's pattern is never run on more than 200 code points");
   // The valid ones of the same answer still pass.
   const r = W.judgeAnswer(envelope({ events: [ev("a:1", { url: "https://graph.example.org/x\ny" }), ev("b:1", { fields: { title: "t\x1b" } }), ev("c:1", { url: "https://graph.example.org/c", fields: { title: "fine" } })] }), REQUEST, source, ["opened"]);
   assert.deepEqual([r.events.map((e) => e.key), r.invalidEvents.map((e) => e.rule)], [["c:1"], ["url", "fields"]]);

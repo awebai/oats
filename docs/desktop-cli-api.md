@@ -117,7 +117,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `soul-composed-instructions` | `oats inspect --soul <soul> --instructions` and its `souls[].composedInstructions`: the AGENTS.md a spawn of the soul here would write, with the soul body and each composed block as ranges, OATS 0.46.0 ([`oats inspect`](#oats-inspect---home-----soul----dir----json--operationsapi-2)) | |
 | `teams-conditional-default` | `oats teams default <label> --if-absent \| --expect <label>` and `E_TEAM_DEFAULT_MISMATCH`; `oats teams add … --no-default` and its `reused` answer; `E_TEAM_EXISTS` `observed`; unknown flags on `oats teams` refused, OATS 0.48.0 ([`oats teams`](#oats-teams)). A kernel without it ignores the flags: `--if-absent` there is an unconditional set, so check the feature before passing them | |
 | `worktree-event` | the `worktree` hook event; `oats worktree add\|remove` ([`oats worktree`](#oats-worktree)); `worktreeHooks` on `spawn --preview` and on the spawn result and `spawned` event; `spawnInProgress` on `oats status --json` instance rows; the `worktree-added` event kind; `E_INTERRUPTED` and `E_WORKTREE_DIRTY`, OATS 0.49.0 | |
-| `trigger-sources` | capability-declared trigger sources: `on.source: "<capability>:<source>"` triggers and their added row keys, `oats trigger poll`, `E_TRIGGER_SOURCE`, `E_TRIGGER_POLL` `details.cause`, and `triggerSources`/`triggerSourceProblems` on `oats capabilities show`, OATS 0.50.0 ([`oats trigger`](#oats-trigger)) | `triggerApi: 1` (payload only) |
+| `trigger-sources` | capability-declared trigger sources: `on.source: "<capability>:<source>"` triggers and their added row keys, `oats trigger poll`, `--run-source` on `trigger test` and `trigger poll` (`E_TRIGGER_SOURCE_RUN` without it), `E_TRIGGER_SOURCE`, `E_TRIGGER_POLL` `details.cause`, and `triggerSources`/`triggerSourceProblems` on `oats capabilities show`, OATS 0.50.0 ([`oats trigger`](#oats-trigger)) | `triggerApi: 1` (payload only) |
 | `server-probe-features` | `features` on `oats status --json` (this kernel's own list, as `version --json` answers it), and each `oats server roster --json` group's `probe.features`: the host's list, relayed from that status answer after validation, `null` when unknown, OATS 0.49.0 ([The remote roster](#the-remote-roster-oats-server-roster---json)) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
@@ -221,7 +221,7 @@ oats status | workspace status | souls | capabilities | inspect --soul|--home
      | teams | soul teams <soul>   … --max-age <seconds> --json
 oats spawn <soul> … --preview --max-age <seconds> --json    (feature spawn-preview-max-age)
 oats capabilities show <name> … --max-age <seconds> --json  (feature capability-show)
-oats trigger poll <id> … --max-age <seconds> --json         (feature trigger-sources)
+oats trigger poll <id> --run-source … --max-age <seconds> --json   (feature trigger-sources)
 ```
 
 - **Values:** whole seconds, `0` to `86400`. `0` is live: it reuses nothing.
@@ -3578,7 +3578,7 @@ oats schedule update <id> --description=<text> [--dir <d>] --json
 ### `oats trigger`
 
 ```text
-oats trigger list | show <id> | status [<id>] | test <id> | poll <id> [--max-age <s>] | add (--file <json> | --from <package>:<template> [--set k=v]) [--description=<text>] | update <id> --description=<text> | enable <id> | disable <id> | remove <id> --json
+oats trigger list | show <id> | status [<id>] | test <id> [--run-source] | poll <id> --run-source [--max-age <s>] | add (--file <json> | --from <package>:<template> [--set k=v]) [--description=<text>] | update <id> --description=<text> | enable <id> | disable <id> | remove <id> --json
 ```
 
 Event-driven spawns. Local definitions live in `oats-schedules.json` (`kind:
@@ -3673,9 +3673,10 @@ capability declares ([schedules.md](schedules.md#capability-sources)).
   purpose was cut to fit ([schedules.md](schedules.md#triggers)); both are
   `null` when the soul does not resolve or its name is too long for a
   triggered spawn (that error is then in `problems`).
-- **`test <id>` of a capability source's trigger** runs the source (it
-  executes the capability's source command, whatever the host's trust and
-  `runsOn` say) and answers `{triggerApi, id, ok, placement, gh, repo: null,
+- **`test <id> --run-source` of a capability source's trigger** runs the
+  source (it executes the capability's source command, whatever the host's
+  trust and `runsOn` say, and so only with the flag: see **`--run-source`**
+  below) and answers `{triggerApi, id, ok, placement, gh, repo: null,
   soul, teams, source, wouldFire, problems, warnings, spawned: false}`, no
   `pollError`. `gh` is `null` unless the trigger has an `owner` (then as
   above, for the owner's host). `source` is `{capability, name, ok: true,
@@ -3683,15 +3684,19 @@ capability declares ([schedules.md](schedules.md#capability-sources)).
   filtered: 0, invalid: {code, message, field?, at}, events: [],
   invalidEvents: [], skipped: []}` when its meaning fails, or `{capability,
   name, ok: false, filtered: 0, cause, error: {code, message}, source?,
-  events: [], invalidEvents: [], skipped: []}` when the poll fails. `wouldFire` rows are `{key, subject,
+  events: [], invalidEvents: [], skipped: []}` when the poll fails.
+  Without `--run-source`, `test` answers a trigger whose meaning or
+  resolution fails as above (exit 0, `source.ok: false`: no capability code
+  runs to say so), and a trigger whose meaning holds with
+  `E_TRIGGER_SOURCE_RUN`. `wouldFire` rows are `{key, subject,
   event, url?, instance, nameCut, held?}`. When the tick would not run the
-  trigger here, `problems` holds `run manually; the tick will not run it
-  here: <reason>` (with the placement's detail). `warnings` always holds
+  trigger here, `problems` holds `run manually with --run-source; the tick
+  will not run it here: <reason>` (with the placement's detail). `warnings` always holds
   "this source's credential may not be visible to the host timer: it runs
   with only PATH and OATS_HOME_DIR set, so keep the source's login in its
   own store, not in an exported variable".
-- **`poll <id>`** (feature `trigger-sources`) runs a capability source's
-  trigger's source once, its meaning checked first, and answers
+- **`poll <id> --run-source`** (feature `trigger-sources`) runs a capability
+  source's trigger's source once, its meaning checked first, and answers
   `{triggerApi, id, source: {capability, name}, events: [{key, subject,
   event, url?, fields}], invalidEvents: [{text, rule}], skipped: [{subject,
   why}], filtered}`, plus `observation` with `--max-age`. `events` are the
@@ -3700,9 +3705,26 @@ capability declares ([schedules.md](schedules.md#capability-sources)).
   the trigger does not select. It records nothing and spawns nothing, but it
   executes the capability's source command. A failed poll is `E_TRIGGER_POLL`
   with `details: {cause, source?}`; a meaning failure is `E_TRIGGER_SOURCE`
-  `{capability, source, pointer?}` or `E_TRIGGER_INVALID {field}`; a
-  `github.pull_request` trigger is `E_BAD_ARGS`. Without `--max-age` it
-  observes the members live.
+  `{capability, source, pointer?}` or `E_TRIGGER_INVALID {field}`; without
+  the flag it is `E_TRIGGER_SOURCE_RUN`; a `github.pull_request` trigger is
+  `E_BAD_ARGS`, with or without the flag. Without `--max-age` it observes
+  the members live.
+- **`--run-source`** (feature `trigger-sources`): by hand, `test` and `poll`
+  run a capability source's command only with this switch (it takes no
+  value). It is caller intent, never trust consent: with it they run the
+  source whatever the host's `automations.trust` and the trigger's `runsOn`
+  say, and trust, `runsOn` and `owner` gate the tick exactly as before (the
+  tick passes the flag to its own child). Without it, on a capability
+  source's trigger: `E_TRIGGER_SOURCE_RUN`, `ok: false`, a non-zero exit,
+  `details: {capability, source, flag: "--run-source"}`, and a message
+  naming the command to run again (`oats trigger test|poll <id>
+  --run-source`). Nothing of the capability has executed and nothing has
+  been written, the capability's directory in the module store included. The
+  order is fixed: a valid definition (`E_TRIGGER_INVALID`), then its meaning
+  and the soul's resolution (`E_TRIGGER_SOURCE`, `E_TRIGGER_INVALID
+  {field}`, `E_TRIGGER_POLL` `cause: "resolution"`), then this gate, then
+  the run. On a `github.pull_request` trigger the flag is accepted and
+  inert: `test` answers byte for byte the same.
 - **What a `triggerApi: 1` reader sees.** `triggerApi` stays 1. `on.source`
   is an open string: tell rows apart by it, and gate on `trigger-sources`.
   The keys above (`source`, `invalidEvents`, `skipped`, a meaning failure's
@@ -3735,7 +3757,9 @@ capability declares ([schedules.md](schedules.md#capability-sources)).
   whose capability the soul does not compose, or whose command is not a file
   inside the capability; `pointer` is a JSON pointer into the manifest),
   `E_TRIGGER_POLL` (`details.cause` and `details.source` for a capability
-  source), `E_TRIGGER_FAILED`, `E_BAD_ARGS`, `E_PACKAGE_MISSING`,
+  source), `E_TRIGGER_SOURCE_RUN {capability, source, flag}` (`test` or
+  `poll` of a capability source's trigger without `--run-source`: nothing
+  ran, nothing was written), `E_TRIGGER_FAILED`, `E_BAD_ARGS`, `E_PACKAGE_MISSING`,
   `E_PACKAGE_MANIFEST`, `E_LOCAL_MISSING`.
 
 <a id="automations-shared-rows"></a>

@@ -1306,9 +1306,10 @@ instance name, the event file and the spawn.
 - **`fields`** (optional, at most 16, named as parameters): `{ pattern? }`, by
   default `^[A-Za-z0-9._/:@-]{1,200}$`. A trigger's template may name a
   declared field as `{fields.<name>}`; the value is the event's, validated.
-  Whatever the pattern admits (`.*` included), a value carrying a control
-  character, a line or paragraph separator, a bidi control, U+200B, U+2060,
-  U+FEFF or a tag character makes its event invalid.
+  Whatever the pattern admits (`.*` included), a value longer than 200
+  characters (code points), or carrying a control character, a line or
+  paragraph separator, a bidi control, U+200B, U+2060, U+FEFF or a tag
+  character, makes its event invalid, and the pattern is never run on one.
 - **Patterns** are JavaScript regular expressions with the `u` flag (the flag
   JSON Schema's `pattern` uses), compiled once and always matched whole: the
   kernel wraps each as `^(?:…)$`. One that does not compile makes the source
@@ -1351,10 +1352,13 @@ capability's directory in the deployment's verified module store (the
 capability at its resolved commit, digest-verified, for a member capability
 as for a package one), with the command's words after the script as
 arguments and no shell. The host tick runs it through a child `oats trigger
-poll <id> --max-age 600`; a person, through `oats trigger poll` or `oats
-trigger test` (which **execute the capability's source command** whatever the
-host's trust and the trigger's `runsOn` say: see
-[schedules.md](schedules.md#capability-sources)). A poll records nothing on
+poll <id> --run-source --max-age 600`; a person, through `oats trigger poll
+<id> --run-source` or `oats trigger test <id> --run-source`. Those
+**execute the capability's source command** whatever the host's trust and
+the trigger's `runsOn` say, and so only with `--run-source`: without it they
+are refused (`E_TRIGGER_SOURCE_RUN`) before anything of the capability runs
+or is written. The flag is caller intent, never trust consent: see
+[schedules.md](schedules.md#capability-sources). A poll records nothing on
 its own; the tick records what it folds.
 
 **Request** — one JSON document on stdin, with exactly these keys:
@@ -1421,8 +1425,8 @@ control character, line or paragraph separator, bidi control, U+200B,
 U+2060, U+FEFF and tag character replaced by U+FFFD. What a task may carry
 (`{subject}`, `{key}`, `{url}`, `{fields.<name>}`) is refused rather than
 replaced: an event whose `url` is not printable ASCII, or whose field value
-carries one of those characters whatever its pattern admits, is an invalid
-event.
+is longer than 200 characters or carries one of those characters whatever
+its pattern admits, is an invalid event.
 
 **Time.** A source gets at most 30 s and is killed after that; the tick's
 whole poll, resolution included, gets 35 s, and polls run only while they can

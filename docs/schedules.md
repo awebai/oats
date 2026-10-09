@@ -227,7 +227,8 @@ oats trigger add --from oats.okf:harvest-review --set repo=github.com/acme/knowl
 oats trigger update <id> --description=<text>   # the description only; --description= clears it
 oats trigger list | show <id> | enable <id> | disable <id> | remove <id>
 oats trigger test <id>      # dry run: gh credentials, repo permissions, the soul, what WOULD fire
-oats trigger poll <id> [--max-age <s>]   # a capability source's trigger: run its source once, record nothing
+oats trigger test <id> --run-source      # a capability source's trigger: the same, running its source command here
+oats trigger poll <id> --run-source [--max-age <s>]   # a capability source's trigger: run its source once, record nothing
 oats trigger status [<id>]  # last poll, next due, pending and fired events, live vs max, last error
 ```
 
@@ -239,7 +240,7 @@ are. A workspace trigger is changed in Git (`E_AUTOMATION_WORKSPACE`). `oats sch
 them (`triggers: { count, command: "oats trigger list" }`, and a line in text
 mode). Errors: `E_TRIGGER_INVALID { field }`, `E_TRIGGER_EXISTS`,
 `E_TRIGGER_UNKNOWN`, `E_TRIGGER_TEAMS`, `E_TRIGGER_SOURCE`, `E_TRIGGER_POLL`,
-`E_BAD_ARGS`.
+`E_TRIGGER_SOURCE_RUN`, `E_BAD_ARGS`.
 
 **Package trigger templates.** A package may declare `triggers: [{ id, file }]`
 in `oats-package.json`, each file `{ parameters: { <name>: { path, required?,
@@ -271,8 +272,12 @@ keeps everything after the list.
 - **The definition.** `on` is `{ source, params?, events, poll? }`. `repo`,
   `labels` and `base` are refused (`E_TRIGGER_INVALID`, naming the field).
   `params` maps parameter names to strings of at most 200 characters; they go
-  to the source only, never into a task. `events` lists 1 to 16 distinct event
-  names of the source.
+  to the source only, never into a task. A value carrying a control
+  character, a line or paragraph separator, a bidi control, U+200B, U+2060,
+  U+FEFF or a tag character is refused (`E_TRIGGER_INVALID`,
+  `on.params.<name>`) whatever the source's pattern admits, so a definition
+  is safe to print wherever it is listed. `events` lists 1 to 16 distinct
+  event names of the source.
 - **Templates** may name `{trigger} {source} {subject} {event} {key} {url}
   {fields.<name>}` (a field the source declares). `{key}` is the stored key,
   `<trigger>:<key>`; `{url}` is empty when the event has none. The default
@@ -297,8 +302,8 @@ keeps everything after the list.
   Found at a poll, the failure becomes the trigger's `invalid: { code,
   message, field?, at }` in `list`, `show` and `status` on the host that
   polls it, the tick's row is `invalid`, and it stays until a good poll.
-- **A poll** is a child `oats trigger poll <id> --max-age 600` that the tick
-  runs, killed at 35 s. The child resolves the soul as `oats readiness --soul`
+- **A poll** is a child `oats trigger poll <id> --run-source --max-age 600`
+  that the tick runs, killed at 35 s. The child resolves the soul as `oats readiness --soul`
   does, reusing member observations up to ten minutes old, the age the tick
   keeps the [automations snapshot](#workspace-triggers-and-schedules) at, so a
   poll reads cached commits in steady state. It gets the capability's tree
@@ -319,9 +324,10 @@ keeps everything after the list.
   invalid); the string itself must be printable ASCII with no space
   (`0x21`–`0x7e`), since it is stored and rendered as written. `fields`
   (optional): declared names only, each a string matching its pattern; a
-  value carrying a control character, a line or paragraph separator, a bidi
-  control, U+200B, U+2060, U+FEFF or a tag character is invalid whatever its
-  pattern admits. Any other key makes the event invalid, and so does a key the
+  value longer than 200 characters (code points), or carrying a control
+  character, a line or paragraph separator, a bidi control, U+200B, U+2060,
+  U+FEFF or a tag character, is invalid whatever its pattern admits, and the
+  pattern is never run on one. Any other key makes the event invalid, and so does a key the
   same answer already listed (the first is kept). An **invalid event** is
   dropped alone and the others go on; the poll lists it in `invalidEvents` as
   `{ text, rule }` (its JSON, at most 200 characters, cut with `…`), and `status` keeps
@@ -364,16 +370,33 @@ keeps everything after the list.
   get a deadline inside the minute, with 10 s of margin, and no schedule is
   ever missed because of them. Spawns are not bounded by it (each keeps its
   five minutes), nor are the built-in's polls.
-- **Running a source by hand.** `oats trigger poll <id>` and `oats trigger
-  test <id>` **execute the capability's source command**. They record nothing
-  and spawn nothing, but provider code runs: a read verb means *records
-  nothing*, not *runs no provider code*. They run it whatever this host's
-  `automations.trust` and the trigger's `runsOn` say, the same trust as
-  running the capability's own command (`oats <namespace> <command>`): a
-  person ran it. Trust, `runsOn` and `owner` are consent to automatic runs on
-  the host timer and gate only the tick. `test` still reports the placement:
-  when the tick will not run the trigger here, `problems` says `run manually;
-  the tick will not run it here: <reason>` (`untrusted`, `assigned-elsewhere`,
+- **Running a source by hand takes `--run-source`.** `oats trigger poll <id>
+  --run-source` and `oats trigger test <id> --run-source` **execute the
+  capability's source command**. They record nothing and spawn nothing, but
+  provider code runs: a read verb means *records nothing*, not *runs no
+  provider code*. So neither runs it unless asked in so many words:
+  - **Without the flag** both are refused with `E_TRIGGER_SOURCE_RUN`
+    (`details: { capability, source, flag: "--run-source" }`, a non-zero
+    exit), and the message names the command to run again. Nothing of the
+    capability has executed and nothing has been written, not even the
+    capability's directory in the module store. The definition and its
+    meaning are checked first, so a trigger that is invalid or whose meaning
+    fails answers that, with or without the flag: `trigger poll` as its
+    error, `trigger test` inside its answer (`source.ok: false`).
+  - **The flag is caller intent, never trust consent.** With it, they run
+    the source whatever this host's `automations.trust` and the trigger's
+    `runsOn` say, the same trust as running the capability's own command
+    (`oats <namespace> <command>`): a person ran it ("test before you
+    trust"). Trust, `runsOn` and `owner` are consent to automatic runs on
+    the host timer and gate only the tick, exactly as before; the tick
+    passes the flag to its own child.
+  - **A `github.pull_request` trigger** runs no capability code: `trigger
+    test` takes the flag and answers the same with or without it, and
+    `trigger poll` is refused (`E_BAD_ARGS`) either way.
+
+  `test` still reports the placement: when the tick will not run the trigger
+  here, `problems` says `run manually with --run-source; the tick will not
+  run it here: <reason>` (`untrusted`, `assigned-elsewhere`,
   `owner-mismatch`, …). By hand, both observe the members live (no
   `--max-age`), so a source change you just pushed is what runs; pass
   `--max-age <s>` to `trigger poll` to reuse observations as the tick does.
@@ -394,7 +417,7 @@ keeps everything after the list.
   U+200B, U+2060, U+FEFF and tag character is replaced with U+FFFD.
 - **The credential.** The host timer runs the tick with only `PATH` and
   `OATS_HOME_DIR` set, and the source inherits the tick's environment. `oats
-  trigger test` warns for every capability source: "this source's credential
+  trigger test --run-source` warns for every capability source: "this source's credential
   may not be visible to the host timer: it runs with only PATH and
   OATS_HOME_DIR set, so keep the source's login in its own store, not in an
   exported variable". `gh` is asked only for a workspace trigger's `owner`.

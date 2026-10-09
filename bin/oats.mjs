@@ -62,7 +62,7 @@ import { readEvents, setWaiting, incarnationOf } from "../lib/instance-events.mj
 
 const rawArgs = process.argv.slice(2);
 /** The kernel's switches: a value never rides one (`--yolo=false` must not turn yolo on). */
-const KERNEL_SWITCHES = new Set(["allow-child-spawns", "apply", "check", "clear", "delete-branch", "discard-worktree", "dry-run", "ephemeral", "force", "help", "host", "if-absent", "install-oats", "instructions", "json", "keep-dir", "keep-env", "no-child-spawns", "no-default", "no-launch", "no-recursive", "no-yolo", "plan", "policy", "preview", "print", "replace", "self", "verbose", "yes", "yolo"]);
+const KERNEL_SWITCHES = new Set(["allow-child-spawns", "apply", "check", "clear", "delete-branch", "discard-worktree", "dry-run", "ephemeral", "force", "help", "host", "if-absent", "install-oats", "instructions", "json", "keep-dir", "keep-env", "no-child-spawns", "no-default", "no-launch", "no-recursive", "no-yolo", "plan", "policy", "preview", "print", "replace", "run-source", "self", "verbose", "yes", "yolo"]);
 /** `--flag=value` is `--flag value`: every kernel reader (flag(), valueFlag(), the onboard and
  *  routed-command loops) then applies the spaced form's validation to it. `problem` is an empty
  *  `--flag=`, a switch given a value, or a value that is itself an option (`--model=--yolo`):
@@ -2648,10 +2648,13 @@ async function spawnCmd() {
     if (f !== undefined) {
       if (!existsSync(f)) bail("E_BAD_ARGS", `--trigger-event not found: ${f}`);
       try { triggerEvent = JSON.parse(readFileSync(f, "utf8")); } catch (e) { bail("E_BAD_ARGS", `--trigger-event is not valid JSON: ${e.message}`); }
-      // A pull-request event names its repo and number; a capability source's, its subject and key.
+      // A pull-request event names its repo and number; a capability source's, its subject and key,
+      // and its fields, recorded in instance.json, are a plain object of strings.
+      const stringMap = (v) => v !== null && typeof v === "object" && !Array.isArray(v) && Object.values(v).every((x) => typeof x === "string");
       const ok = triggerEvent && typeof triggerEvent === "object" && !Array.isArray(triggerEvent) && typeof triggerEvent.trigger === "string" && typeof triggerEvent.source === "string" && typeof triggerEvent.event === "string"
-        && (triggerEvent.source === "github.pull_request" ? typeof triggerEvent.repo === "string" && Number.isInteger(triggerEvent.number) : typeof triggerEvent.subject === "string" && typeof triggerEvent.key === "string");
-      if (!ok) bail("E_BAD_ARGS", "--trigger-event must hold { trigger, source, repo, number, url, event, headSha, labels, observedAt } (github.pull_request) or { trigger, source, subject, event, key, url?, fields, observedAt } (a capability source)");
+        && (triggerEvent.source === "github.pull_request" ? typeof triggerEvent.repo === "string" && Number.isInteger(triggerEvent.number)
+          : typeof triggerEvent.subject === "string" && typeof triggerEvent.key === "string" && (triggerEvent.fields === undefined || stringMap(triggerEvent.fields)));
+      if (!ok) bail("E_BAD_ARGS", "--trigger-event must hold { trigger, source, repo, number, url, event, headSha, labels, observedAt } (github.pull_request) or { trigger, source, subject, event, key, url?, fields, observedAt } (a capability source; fields an object of strings)");
     } }
   const relativeRoot = flag("relative-root");
   if (relativeRoot !== undefined && (relativeRoot === true || !String(relativeRoot).trim())) bail("E_BAD_ARGS", "--relative-root needs an agents-root path");
@@ -3062,7 +3065,7 @@ async function triggerCmd() {
   const ws = () => (scope ??= scheduleScopeOf(dirFlag()));
   const out = (result, text) => { if (JSON_MODE) jsonOk(result); else console.log(text ? text(result) : JSON.stringify(result, null, 2)); };
   const needId = () => { if (!id) throw T.triggerError("E_BAD_ARGS", `oats trigger ${sub} <id>`); return id; };
-  const usage = "usage: oats trigger add (--file <trigger.json> | --from <package>:<template> [--set <name>=<value>]… [--id <id>]) [--description=<text>] [--workspace <member> --runs-on <host> --owner <host>/<login>] | update <id> --description=<text> | list | show <id> | enable <id> | disable <id> | remove <id> | test <id> | poll <id> [--max-age <s>] | status [<id>]  [--dir <deployment>] [--json]   (<id>: local/<id> or <member>/<id>)";
+  const usage = "usage: oats trigger add (--file <trigger.json> | --from <package>:<template> [--set <name>=<value>]… [--id <id>]) [--description=<text>] [--workspace <member> --runs-on <host> --owner <host>/<login>] | update <id> --description=<text> | list | show <id> | enable <id> | disable <id> | remove <id> | test <id> [--run-source] | poll <id> --run-source [--max-age <s>] | status [<id>]  [--dir <deployment>] [--json]   (<id>: local/<id> or <member>/<id>; --run-source: run a capability source's command on this host, which test and poll do only when asked)";
   const where = (t) => (t.origin?.kind === "workspace" ? (t.runsHere ? `runs here as ${t.owner}` : `${t.reason === "assigned-elsewhere" ? `runs on ${t.runsOn}` : t.reason ?? "disabled here"}`) : t.enabledHere ? "local" : "local, disabled");
   // A capability source names its params where the built-in names its repository.
   const watched = (on) => (T.isCapabilitySource(on?.source) ? `${on.source}${Object.keys(on.params || {}).length ? ` ${Object.entries(on.params).map(([k, v]) => `${k}=${v}`).join(" ")}` : ""}` : `${on?.source ?? "?"} ${on?.repo ?? "?"}`);
@@ -3107,12 +3110,13 @@ async function triggerCmd() {
           ...(t.lastError && !t.invalid ? [`    last error ${t.lastError.at}: ${t.lastError.message}`] : [])].join("\n");
       }).join("\n") || "(no triggers)");
       case "poll": {
-        // Runs the capability's source command now (records nothing, spawns nothing). The tick's own
+        // Runs the capability's source command now (records nothing, spawns nothing), and so only with
+        // --run-source: the caller's intent, never trust consent (the tick's child passes it). The tick's own
         // child gets OATS_TRIGGER_POLL_DEADLINE (epoch ms; internal between the tick and its child,
         // not a contract): its source gets only what is left before it (lib/triggers.mjs pollViaChild).
         const raw = process.env.OATS_TRIGGER_POLL_DEADLINE;
         const deadline = raw && /^\d+$/.test(raw) ? Number(raw) : null;
-        const r = await T.pollSource(ws(), needId(), { ctx: ctx(), remoteOptions: remoteOptionsFromEnv(), deadline });
+        const r = await T.pollSource(ws(), needId(), { ctx: ctx(), remoteOptions: remoteOptionsFromEnv(), deadline, runSource: args.includes(T.RUN_SOURCE_FLAG) });
         if (JSON_MODE) { jsonOk(withObservation(r)); return; }
         return out(r, (x) => [`trigger ${x.id}: ${x.source.capability}:${x.source.name} listed ${x.events.length} event(s) (nothing recorded, nothing spawned)`,
           ...x.events.map((ev) => `  ${ev.event} ${ev.subject}  ${ev.key}`),
@@ -3129,9 +3133,10 @@ async function triggerCmd() {
           const shared = typeof local.workspace === "string" && !local.standalone ? (await observeWorkspace(local.workspace, { remoteOptions: remoteOptionsFromEnv() })).workspace : null;
           workspaceTeams = [...teamModel(shared, local).labels.keys()];
         } catch { /* reported as unknown (null) */ }
-        const tested = await T.testTrigger(ws(), needId(), { workspaceTeams, ctx: ctx(), remoteOptions: remoteOptionsFromEnv() });
+        // --run-source: a capability source's command runs only when asked (inert for the built-in).
+        const tested = await T.testTrigger(ws(), needId(), { workspaceTeams, ctx: ctx(), remoteOptions: remoteOptionsFromEnv(), runSource: args.includes(T.RUN_SOURCE_FLAG) });
         if (tested.source) return out(tested, (r) => [
-          `trigger ${r.id}: ${r.ok ? "ready" : "NOT ready"} (the source ran; nothing was recorded or spawned)`,
+          `trigger ${r.id}: ${r.ok ? "ready" : "NOT ready"} (${r.source.invalid || r.source.cause === "resolution" ? "the source did not run" : "the source ran"}; nothing was recorded or spawned)`,
           `  placement  ${r.placement.runsOn ? `runs on ${r.placement.runsOn} as ${r.placement.owner}; this host is ${r.placement.host ?? "(unnamed)"} — ${r.placement.runsHere ? "runs here" : r.placement.reason ?? "disabled here"}` : "local (this host)"}`,
           ...(r.gh ? [`  gh auth    ${r.gh.ok ? `ok — ${r.gh.account ?? "?"} via ${r.gh.credentialSource}` : `FAILED${r.gh.detail ? ` — ${r.gh.detail}` : ""}`}`] : []),
           `  source     ${r.source.capability}:${r.source.name} ${r.source.ok ? `listed ${r.source.events.length} event(s), ${r.source.invalidEvents.length} invalid, ${r.source.skipped.length} skipped, ${r.source.filtered} filtered` : r.source.invalid ? `INVALID: ${r.source.invalid.message}` : `FAILED (${r.source.cause ?? "?"}): ${r.source.error.message}`}`,
@@ -3189,7 +3194,7 @@ async function triggerCmd() {
         if (spec === undefined) spec = await triggerFromPackage(T, String(from), sets, idFlag);
         // A capability source's meaning needs the soul's resolution (asynchronous, so here, before the write).
         await T.checkAddMeaning(ws(), T.validateTrigger({ ...spec, kind: spec?.kind ?? "trigger" }), { remoteOptions: remoteOptionsFromEnv() });
-        return out({ trigger: T.addTrigger(ws(), withDescription(spec, description)) }, (r) => `added ${line(r.trigger)}\n(\`oats trigger test ${r.trigger.id}\` ${T.isCapabilitySource(r.trigger.on?.source) ? `runs ${r.trigger.on.source}'s source command on this host and checks the soul and the teams` : "checks gh, the repository, the soul and the teams on this host"})`);
+        return out({ trigger: T.addTrigger(ws(), withDescription(spec, description)) }, (r) => `added ${line(r.trigger)}\n(\`oats trigger test ${r.trigger.id}${T.isCapabilitySource(r.trigger.on?.source) ? ` ${T.RUN_SOURCE_FLAG}\` runs ${r.trigger.on.source}'s source command on this host and checks the soul and the teams)` : "` checks gh, the repository, the soul and the teams on this host)"}`);
       }
       default: throw T.triggerError("E_BAD_ARGS", usage);
     }
@@ -4410,6 +4415,8 @@ Usage:
                                                 by the schedule tick: github.pull_request (the
                                                 host's gh) or a capability's <capability>:<source>;
                                                 see docs/schedules.md#triggers
+  oats trigger test|poll <id> --run-source   run a capability source's command on this host: by
+                                                hand, test and poll do it only when asked
   oats trigger add … --description=<text>    a one-line summary (1-200 characters)
   oats trigger update <id> --description=<text>   change only it (--description= clears it)
   oats trigger|schedule add … --workspace <member> --runs-on <host> --owner <host>/<login>
