@@ -34,15 +34,16 @@ Codex, which has no aweb channel, is woken by the host wake broker
 (`Notification delivery: external`). Under `delivery: session` the host wake
 broker wakes every runtime. One path per session, never both.
 
-New Claude/channel compositions select development mode to avoid a silent missing receiver. Explicit approved mode registers no aweb
-channel unless applicable managed `allowedChannelPlugins` for this identity lists
-the plugin and marketplace, or a future approval exists: aweb-channel is currently
-not on the default approved list. Installation or a trusted marketplace is not
-approval. Effective admission remains unverified. Frozen homes retain their
-captured mode; no automatic flip-back occurs, and a future default change requires
-an explicit reviewed release. An operator may choose supported session delivery
-for unattended use where authorized, without overriding an explicit native-channel
-requirement. Never switch to development as an automatic fallback.
+New Claude/channel compositions select development mode. The recommended
+unattended route is explicit approved mode: Claude admits aweb-channel, with no
+development prompt, when the host's managed policy sets `channelsEnabled` and
+lists the plugin in `allowedChannelPlugins` (a root-owned machine file a human
+admin writes once, unless server-managed settings or MDM take precedence); see
+/oats-aweb section 4. Frozen homes retain their captured mode; no automatic
+flip-back occurs, and a future default change requires an explicit reviewed
+release. An operator may choose supported session delivery for unattended use
+where authorized, without overriding an explicit native-channel requirement.
+Never switch to development as an automatic fallback.
 
 Development selection may stop at confirmation; nothing in this provider answers
 it. For future support, a compatible kernel may answer it at launch under explicit
