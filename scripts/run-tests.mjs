@@ -9,8 +9,9 @@
 // clone — which made a red root suite the normal, and therefore ignored, result.
 //
 // So: run them when they can load, and when they cannot, say so loudly and run
-// the rest. The root/Desktop integration file is explicitly included in the
-// same group; its .integration.mjs suffix keeps it out of the root-only globs.
+// the rest. The root files that load Desktop modules are explicitly included in
+// the same group; their .integration.mjs suffix keeps them out of the root-only
+// globs.
 // Absence of an optional package's node_modules is a property of the
 // checkout, not a defect in the code under test, so this exits 0 in that case;
 // nothing is skipped silently. Both CI lanes (.github/workflows/pull-request.yml
@@ -46,14 +47,16 @@ const packageGlobs = desktopReady
       .filter((e) => e.isDirectory() && e.name !== "desktop")
       .map((e) => `packages/${e.name}/**/*.test.mjs`);
 
-const DESKTOP_INTEGRATION = "test/desktop-schedule-roundtrip.integration.mjs";
-const desktopIntegration = desktopReady ? [DESKTOP_INTEGRATION] : [];
+// Root files that load Desktop modules (and so the desktop dependencies): run
+// with the Desktop suites, omitted with them.
+const DESKTOP_INTEGRATION = ["test/desktop-schedule-roundtrip.integration.mjs", "tests/desktop-views.integration.mjs"];
+const desktopIntegration = desktopReady ? DESKTOP_INTEGRATION : [];
 
 const RULE = "=".repeat(78);
 const notice = [
   RULE,
   "NOTICE: Desktop suites and root/Desktop integration coverage were SKIPPED — this run does NOT cover them.",
-  `Root integration omitted: ${DESKTOP_INTEGRATION}`,
+  `Root integration omitted: ${DESKTOP_INTEGRATION.join(", ")}`,
   `Reason: packages/desktop dependencies are not installed (missing: ${missing.join(", ")}).`,
   `To run them: ${DESKTOP_TEST_DEPS_INSTALL}`,
   RULE,
