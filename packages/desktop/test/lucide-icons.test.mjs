@@ -42,6 +42,8 @@ test('renderer chrome uses icons, not the replaced text glyphs', () => {
   const files = [];
   const walk = dir => { for (const entry of readdirSync(dir)) { const path = join(dir, entry); statSync(path).isDirectory() ? walk(path) : /\.(mjs|html)$/.test(entry) && files.push(path); } };
   walk(join(PKG, 'renderer'));
+  // The renderer modules that moved to the shared home (packages/client) still build what the page shows.
+  walk(join(PKG, '..', 'client'));
   for (const path of files) {
     if (/vendor|lucide-icons\.mjs$/.test(path)) continue;
     // Code only: strip comments so documentation may still name a glyph.
