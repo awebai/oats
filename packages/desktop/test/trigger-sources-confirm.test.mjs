@@ -11,8 +11,8 @@ import { cliAutomation, TRIGGER_RUN_SOURCE_FLAG } from '../cli-adapter.mjs';
 // path is under test: the Triggers page (mountAutomationsPage) posts through `ctx.api`, which here answers with the
 // real server boundary (server/automations.mjs) over the real CLI adapter (cliAutomation) and an exec that records
 // every argv. So "the transport saw nothing" and "the flag is in the argv once" are asserted where they happen.
-// The kernel's answers are REAL (fixtures/trigger-sources, the #845 kernel at f9b91a9c; provenance.json), except
-// the refusal of an unconfirmed run, hand-built from the decided shape until the kernel that answers it is captured.
+// The kernel's answers are REAL, the refusal of an unconfirmed run included (fixtures/trigger-sources;
+// provenance.json names each command and the kernel head).
 const doc = name => JSON.parse(readFileSync(new URL(`./fixtures/trigger-sources/${name}.json`, import.meta.url), 'utf8'));
 const DEPLOYMENT = '/fixture/base/deployment';
 const CLI = { ok: true, bin: '/fixture/oats', features: ['schedule', 'triggers', 'automations', 'trigger-sources'], automationsApi: 1 };
@@ -335,6 +335,20 @@ test('a test the CLI refuses shows the kernel\'s message and code and returns fo
   assert.deepEqual([...card.querySelectorAll('.auto-test-line')].map(p => p.textContent), ['The test did not answer in time. Nothing was recorded.']);
   assert.equal(card.querySelector('.auto-fire, .source-quote, code'), null, 'no result');
   assert.equal(v.d.activeElement, v.testButton()); assert.equal(v.argvs.filter(argv => argv[1] === 'test').length, 1, 'no retry');
+});
+
+test('a confirmed Run test can come back with the source check failed (the script is gone): said as that, once, with no placement line', async t => {
+  const u = await mount(t, { tested: () => doc('trigger-test-missing-script') }); await u.open('ws/trusted');
+  const before = u.requests.length;
+  u.testButton().click(); await settle(); u.confirm().querySelector('[data-verb=run-test]').click(); await settle();
+  const card = u.$('.page-card[data-card="Test result"]');
+  assert.equal(card.querySelector('.auto-test-line').textContent, 'The source check failed');
+  const facts = Object.fromEntries([...card.querySelectorAll('.page-kv')].map(kv => [kv.querySelector('dt').textContent, kv.querySelector('dd').textContent]));
+  assert.match(facts.Message, /the source's command review-source \(bin\/source\.mjs\) is not a file inside capability acme\.graph's directory$/); assert.equal(facts.Code, 'E_TRIGGER_SOURCE');
+  assert.equal(card.textContent.includes('Tested by hand'), false); assert.equal(card.textContent.includes('Would run here'), false); assert.equal(card.textContent.includes('fire'), false);
+  assert.equal(card.textContent.split('is not a file inside').length, 2, 'the kernel says it twice (source and problems): shown once');
+  assert.equal(u.d.activeElement, card.querySelector('.page-card-title'), 'an answer: focus on the result');
+  assert.deepEqual(u.requests.slice(before), [['/api/automations', { kind: 'trigger', action: 'test', key: 'ws/trusted', runSource: true }]]);
 });
 
 test('E_TRIGGER_SOURCE_RUN is not a failure of the trigger: a neutral notice, the row re-read, the operator left at Test', async t => {

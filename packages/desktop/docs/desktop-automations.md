@@ -243,14 +243,17 @@ never one click:
   `data-auto-focus` key and focus is found again by it.
 - If the kernel answers `E_TRIGGER_SOURCE_RUN` to a one-click test (the row
   became a capability source's since the list was read), that is not a
-  failure of the trigger: a neutral notice says nothing ran, the list is read
-  again, and Test now opens the confirm. No result card.
+  failure of the trigger: a neutral notice of the Desktop's own says nothing
+  ran (the kernel's message names a CLI command and is not shown), the list
+  is read again, and Test now opens the confirm. No result card.
 
 **The Test result card** of a capability source (`testResult` adds `source`)
 leads the side column and speaks of the source first: "The source answered:
 N events" with the same counts and lists; or "The source check failed" with
 the kernel's message, code and field; or "The source did not answer: `<cause
-in words>`" with the kernel's error and the source's refusal quoted. Then
+in words>`" with the kernel's error and the source's refusal quoted. A
+confirmed test can itself come back with the check failed: a source whose
+script is gone still declares well, so the kernel finds it only when it runs. Then
 placement as the kernel reports it: "Would run here on its own" only when
 `ok` is true and no problem remains; "Tested by hand" before the problems
 otherwise. The kernel lists the source's failure among `problems` too: the

@@ -21,11 +21,13 @@ const [kernel] = process.argv.slice(2);
 if (typeof kernel !== 'string' || !kernel.startsWith('/')) throw new Error('One explicit absolute kernel checkout required');
 const target = fileURLToPath(new URL('.', import.meta.url));
 const head = execFileSync('git', ['-C', kernel, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
-const { sourceDeployment, inFixture, HARVEST, capabilityManifest } = await import(`${kernel}/test/helpers/trigger-source-fixture.mjs`);
+const { sourceDeployment, inFixture, HARVEST, capabilityManifest, sourceScript } = await import(`${kernel}/test/helpers/trigger-source-fixture.mjs`);
 const T = await import(`${kernel}/lib/triggers.mjs`);
 const S = await import(`${kernel}/lib/schedule.mjs`);
 
 const SOURCE = 'acme.graph:harvest-branches';
+// A manual test runs a capability source's command only with this flag; without it the kernel executes nothing.
+const RUN = '--run-source';
 const on = { source: SOURCE, params: { prefix: 'harvest/', graph: 'kb' }, events: ['opened'], poll: '1m' };
 const spawn = { soul: 'reviewer', task: 'Review {subject} on {fields.graph} ({url}).' };
 const wsTrigger = (extra = {}) => ({ yaml: { kind: 'oats-trigger', schemaVersion: 1, description: 'Review harvest branches', runsOn: 'kb-host', owner: 'github.com/kb-bot', on, spawn, ...extra } });
@@ -77,10 +79,13 @@ try {
   capture('capability-show', show, 'a well-formed triggerSources');
 
   fx.control({ result: GOOD });
-  capture('trigger-test-untrusted', ['trigger', 'test', 'ws/untrusted', '--dir', fx.dep], 'a good source answer; this host does not trust the trigger');
-  capture('trigger-test-elsewhere', ['trigger', 'test', 'ws/elsewhere', '--dir', fx.dep], 'a good source answer; another host runs the trigger');
-  capture('trigger-test-trusted', ['trigger', 'test', 'ws/trusted', '--dir', fx.dep], 'a good source answer; runs here, trusted');
-  capture('trigger-test-local', ['trigger', 'test', 'local/harvest', '--dir', fx.dep], 'a good source answer; a local trigger (no owner: gh is null)');
+  // Without the flag: the refusal, and no run of the source (checked on its run log).
+  const unconfirmed = capture('trigger-test-unconfirmed', ['trigger', 'test', 'ws/trusted', '--dir', fx.dep], 'a capability source\'s test without --run-source: nothing runs');
+  if (unconfirmed.error?.code !== 'E_TRIGGER_SOURCE_RUN' || fx.runs().length) throw new Error(`${kernel} does not gate a capability source's test on ${RUN}: ${JSON.stringify(unconfirmed).slice(0, 300)} (${fx.runs().length} runs)`);
+  capture('trigger-test-untrusted', ['trigger', 'test', 'ws/untrusted', RUN, '--dir', fx.dep], 'a good source answer; this host does not trust the trigger');
+  capture('trigger-test-elsewhere', ['trigger', 'test', 'ws/elsewhere', RUN, '--dir', fx.dep], 'a good source answer; another host runs the trigger');
+  capture('trigger-test-trusted', ['trigger', 'test', 'ws/trusted', RUN, '--dir', fx.dep], 'a good source answer; runs here, trusted');
+  capture('trigger-test-local', ['trigger', 'test', 'local/harvest', RUN, '--dir', fx.dep], 'a good source answer; a local trigger (no owner: gh is null)');
   capture('trigger-test-pull-request', ['trigger', 'test', 'local/prs', '--dir', fx.dep], 'a github.pull_request trigger, for contrast');
   tick();
   capture('trigger-list', ['trigger', 'list', '--dir', fx.dep], 'after one good poll');
@@ -89,12 +94,24 @@ try {
   fx.control({ mode: 'refuse', error: { code: 'E_GRAPH_<b>DOWN</b>', message: HOSTILE } });
   tick();
   capture('trigger-status-refused', ['trigger', 'status', '--dir', fx.dep], 'the source refused the next poll: the lists are the last good poll\'s');
-  capture('trigger-test-refused', ['trigger', 'test', 'ws/trusted', '--dir', fx.dep], 'the source refuses');
+  capture('trigger-test-refused', ['trigger', 'test', 'ws/trusted', RUN, '--dir', fx.dep], 'the source refuses');
 
   fx.control({ mode: 'exit' });
   tick();
   capture('trigger-status-exit', ['trigger', 'status', '--dir', fx.dep], 'the source exited nonzero');
-  capture('trigger-test-exit', ['trigger', 'test', 'ws/untrusted', '--dir', fx.dep], 'the source exits nonzero; this host does not trust the trigger');
+  capture('trigger-test-exit', ['trigger', 'test', 'ws/untrusted', RUN, '--dir', fx.dep], 'the source exits nonzero; this host does not trust the trigger');
+
+  // The source's script is gone from the capability: the declaration still reads well, so without the flag the
+  // gate answers first, and only a confirmed run finds it.
+  fx.control({ result: GOOD });
+  fx.commit({ 'capabilities/acme.graph/bin/source.mjs': null }, 'the script is gone');
+  must(fx.cli(['sync', '--json']), 'sync');
+  const before = fx.runs().length;
+  capture('trigger-test-missing-script-unconfirmed', ['trigger', 'test', 'ws/trusted', '--dir', fx.dep], 'the source\'s script is missing, no flag: the gate answers, nothing ran');
+  capture('trigger-test-missing-script', ['trigger', 'test', 'ws/trusted', RUN, '--dir', fx.dep], 'the source\'s script is missing, confirmed: found only now');
+  if (fx.runs().length !== before) throw new Error('a missing script ran');
+  fx.commit({ 'capabilities/acme.graph/bin/source.mjs': { text: sourceScript() } }, 'the script is back');
+  must(fx.cli(['sync', '--json']), 'sync');
 
   // The meaning fails: the manifest's source names a command it does not have; a sibling entry is not a source.
   fx.control({ result: { events: [] } });
@@ -105,7 +122,8 @@ try {
   tick();
   capture('trigger-list-invalid', ['trigger', 'list', '--dir', fx.dep], 'the last meaning check failed at a poll');
   capture('trigger-status-invalid', ['trigger', 'status', '--dir', fx.dep], 'the last meaning check failed at a poll');
-  capture('trigger-test-invalid', ['trigger', 'test', 'ws/trusted', '--dir', fx.dep], 'the meaning check fails');
+  capture('trigger-test-invalid', ['trigger', 'test', 'ws/trusted', RUN, '--dir', fx.dep], 'the meaning check fails');
+  capture('trigger-test-invalid-unconfirmed', ['trigger', 'test', 'ws/trusted', '--dir', fx.dep], 'the meaning check fails, no flag: the same normal answer (no capability code runs to say so)');
   capture('capability-show-problems', show, 'a source with a problem, a well-formed one, and an entry that is not a source');
 
   fx.commit({ 'capabilities/acme.graph/oats.json': manifest({ commands: { 'review-source': 'bin/source.mjs review-source' }, triggerSources: '<script>not an object</script>' }) }, 'not an object');

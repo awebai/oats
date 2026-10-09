@@ -8,8 +8,8 @@ import {
 import { MAX_DISPLAY_LINE, DETAIL_WITHHELD } from '../renderer/display-text.mjs';
 
 // Capability trigger sources (feature `trigger-sources`, #669 2b), read by the Desktop's readers. Every fixture is
-// a REAL answer of the kernel of awebai/oats#845 at f9b91a9c: fixtures/trigger-sources/provenance.json names the
-// command and the head of each (capture.mjs made them). The contract: docs/desktop-cli-api.md § "`oats trigger`".
+// a REAL answer of a kernel that declares the feature: fixtures/trigger-sources/provenance.json names the
+// command and the kernel head of each (capture.mjs made them). The contract: docs/desktop-cli-api.md § "`oats trigger`".
 const fx = name => JSON.parse(readFileSync(new URL(`./fixtures/trigger-sources/${name}.json`, import.meta.url), 'utf8')).result;
 const SOURCE = 'acme.graph:harvest-branches';
 const row = (name, id) => fx(name).triggers.find(t => t.id === id);
@@ -166,8 +166,8 @@ test('testResult, the source answered: counts from arrays, the lists, would-fire
 test('testResult, placement as the kernel reports it (trigger-test-untrusted, -elsewhere)', () => {
   const untrusted = testResult(fx('trigger-test-untrusted'), 'trigger', { source: SOURCE });
   assert.deepEqual([untrusted.ok, untrusted.source.ok, untrusted.wouldFire.length], [false, true, 1], 'the source ran by hand whatever this host trusts');
-  assert.match(untrusted.problems[0], /^run manually; the tick will not run it here: untrusted \(/);
-  assert.match(testResult(fx('trigger-test-elsewhere'), 'trigger', { source: SOURCE }).problems[0], /^run manually; the tick will not run it here: assigned-elsewhere \(runs on other-host; this host is kb-host\)$/);
+  assert.match(untrusted.problems[0], /^run manually with --run-source; the tick will not run it here: untrusted \(/);
+  assert.match(testResult(fx('trigger-test-elsewhere'), 'trigger', { source: SOURCE }).problems[0], /^run manually with --run-source; the tick will not run it here: assigned-elsewhere \(runs on other-host; this host is kb-host\)$/);
 });
 
 test('testResult, the source failed: said once, by `source`; the kernel repeats it in problems (trigger-test-refused, -exit, -invalid)', () => {
@@ -178,9 +178,26 @@ test('testResult, the source failed: said once, by `source`; the kernel repeats 
   assert.deepEqual([refused.ok, refused.problems, refused.wouldFire], [false, [], []], 'not repeated: no problem is left on a row that runs here');
   const exit = testResult(fx('trigger-test-exit'), 'trigger', { source: SOURCE });
   assert.deepEqual([exit.source.cause, exit.source.says, exit.problems.length], ['exit', null, 1]);
-  assert.match(exit.problems[0], /^run manually; the tick will not run it here: untrusted/, 'the placement problem stays');
+  assert.match(exit.problems[0], /^run manually with --run-source; the tick will not run it here: untrusted/, 'the placement problem stays');
   const invalid = testResult(fx('trigger-test-invalid'), 'trigger', { source: SOURCE });
   assert.deepEqual([invalid.source.ok, invalid.source.invalid.code, invalid.source.invalid.field, invalid.problems], [false, 'E_TRIGGER_SOURCE', null, []]);
   assert.match(invalid.source.invalid.message, /command "missing"/);
   assert.equal(invalid.source.filtered, undefined, 'the failed forms\' `filtered: 0` is ignored');
+});
+
+test('testResult, a source whose script is gone: the gate answers without the flag; a confirmed run finds the failed check (trigger-test-missing-script)', () => {
+  const doc = name => JSON.parse(readFileSync(new URL(`./fixtures/trigger-sources/${name}.json`, import.meta.url), 'utf8'));
+  // Without the flag the declaration still reads well, so the kernel refuses to run: an error envelope, no result.
+  for (const name of ['trigger-test-unconfirmed', 'trigger-test-missing-script-unconfirmed']) {
+    const refusal = doc(name);
+    assert.deepEqual([refusal.ok, refusal.error.code, refusal.error.details], [false, 'E_TRIGGER_SOURCE_RUN', { capability: 'acme.graph', source: 'harvest-branches', flag: '--run-source' }], name);
+    assert.equal(refusal.result, undefined);
+  }
+  const found = testResult(fx('trigger-test-missing-script'), 'trigger', { source: SOURCE });
+  assert.deepEqual([found.ok, found.source.ok, found.source.invalid.code, found.source.invalid.field, found.problems, found.wouldFire], [false, false, 'E_TRIGGER_SOURCE', null, [], []]);
+  assert.match(found.source.invalid.message, /the source's command review-source \(bin\/source\.mjs\) is not a file inside capability acme\.graph's directory$/);
+  // A meaning that fails is said inside the normal answer with or without the flag: the same reading.
+  const flagged = testResult(fx('trigger-test-invalid'), 'trigger', { source: SOURCE }), bare = testResult(fx('trigger-test-invalid-unconfirmed'), 'trigger', { source: SOURCE });
+  assert.deepEqual({ ...bare.source, invalid: { ...bare.source.invalid, at: null } }, { ...flagged.source, invalid: { ...flagged.source.invalid, at: null } });
+  assert.deepEqual([bare.ok, bare.problems], [false, []]);
 });

@@ -1,6 +1,6 @@
 {
   "source": "packages/desktop/test/fixtures/trigger-sources/capture.mjs; the kernel checkout's test/helpers/trigger-source-fixture.mjs",
-  "head": "f9b91a9cdbd5d2fba70ddf28632e8f51d7995018",
+  "head": "d0d809065ef3b3743c5827756324a3f333482265",
   "kernel": "0.48.0",
   "redactions": [
     "<the fixture's mkdtemp base> → /fixture/base"
@@ -13,7 +13,7 @@
         "--json"
       ],
       "exit": 0,
-      "head": "f9b91a9cdbd5d2fba70ddf28632e8f51d7995018",
+      "head": "d0d809065ef3b3743c5827756324a3f333482265",
       "scenario": "the probe",
       "sourceSha256": "1225a9260f889a447e7ec7ce0010b366c7461b779a5b8a930252a124698dbf3f",
       "fixtureSha256": "00f49771e4235734079a1026fda75eac4ccb61a2f90c02ed285207460edd05d0"
@@ -28,9 +28,9 @@
         "--json"
       ],
       "exit": 0,
-      "head": "f9b91a9cdbd5d2fba70ddf28632e8f51d7995018",
+      "head": "d0d809065ef3b3743c5827756324a3f333482265",
       "scenario": "before any poll",
-      "sourceSha256": "13dbf4a1c00c61589010cf0531cd5524a45df091d823545470138f5d880e70f1",
+      "sourceSha256": "dd239e083edce6d8fc3ceea1acd8b7423242693d46eb08cfc2c25d66651244a4",
       "fixtureSha256": "5c120b3034bb77c3992bc95db4e7ec2a9a0aec2761bff745ec757724ba75dc89"
     },
     "capability-show": {
@@ -46,44 +46,12 @@
         "--json"
       ],
       "exit": 0,
-      "head": "f9b91a9cdbd5d2fba70ddf28632e8f51d7995018",
+      "head": "d0d809065ef3b3743c5827756324a3f333482265",
       "scenario": "a well-formed triggerSources",
-      "sourceSha256": "a2585fda328e5b331663dcf04aac5478b3661663d262fc9583b514f04c18b8ef",
-      "fixtureSha256": "2437f774fb4df409085a6594c9287e43825cddbd6004b06ac89efe240c13e02d"
+      "sourceSha256": "51af3dd42568b37ffa6fdad871860e8c41a99c30b9ade64cec8c2293ab89cbfd",
+      "fixtureSha256": "dd20573ca50a4e7b54470f8ba5ed98ad329bab5ad2f69ca200f0d9bf5e0c105a"
     },
-    "trigger-test-untrusted": {
-      "argv": [
-        "oats",
-        "trigger",
-        "test",
-        "ws/untrusted",
-        "--dir",
-        "/fixture/base/deployment",
-        "--json"
-      ],
-      "exit": 0,
-      "head": "f9b91a9cdbd5d2fba70ddf28632e8f51d7995018",
-      "scenario": "a good source answer; this host does not trust the trigger",
-      "sourceSha256": "b68630154d23446856cbacc281c2ea45298426b1276a5a287c87a31cc85a2910",
-      "fixtureSha256": "2d90ccc4025aa8f0f867572ebec22d43c53c92870f1d51fb5f9ff5c98eff606c"
-    },
-    "trigger-test-elsewhere": {
-      "argv": [
-        "oats",
-        "trigger",
-        "test",
-        "ws/elsewhere",
-        "--dir",
-        "/fixture/base/deployment",
-        "--json"
-      ],
-      "exit": 0,
-      "head": "f9b91a9cdbd5d2fba70ddf28632e8f51d7995018",
-      "scenario": "a good source answer; another host runs the trigger",
-      "sourceSha256": "c64ec023b1f74a19f6c27979d03665115924fb7016dbc4322002f470b2f9b201",
-      "fixtureSha256": "af4fa09c1ce1d54648709583ed9dd6bc44580fd742891e6b4cd922372b08e854"
-    },
-    "trigger-test-trusted": {
+    "trigger-test-unconfirmed": {
       "argv": [
         "oats",
         "trigger",
@@ -93,8 +61,59 @@
         "/fixture/base/deployment",
         "--json"
       ],
+      "exit": 1,
+      "head": "d0d809065ef3b3743c5827756324a3f333482265",
+      "scenario": "a capability source's test without --run-source: nothing runs",
+      "sourceSha256": "1f6291dc41090b173980d0d0dcd4cced689daf9e1a033877e75b7d18bb69774c",
+      "fixtureSha256": "64532dd37b5a046e243d6e971c1c117e585f3a982bf3a07f4538465891370765"
+    },
+    "trigger-test-untrusted": {
+      "argv": [
+        "oats",
+        "trigger",
+        "test",
+        "ws/untrusted",
+        "--run-source",
+        "--dir",
+        "/fixture/base/deployment",
+        "--json"
+      ],
       "exit": 0,
-      "head": "f9b91a9cdbd5d2fba70ddf28632e8f51d7995018",
+      "head": "d0d809065ef3b3743c5827756324a3f333482265",
+      "scenario": "a good source answer; this host does not trust the trigger",
+      "sourceSha256": "af5a6d00add9d00a5cd68bd6ba779b6883649d0ec9e92a6811204b8205c77580",
+      "fixtureSha256": "22c0e2f9153325642a3e219991a351974e257cf82e922785a26eb0e290f248ab"
+    },
+    "trigger-test-elsewhere": {
+      "argv": [
+        "oats",
+        "trigger",
+        "test",
+        "ws/elsewhere",
+        "--run-source",
+        "--dir",
+        "/fixture/base/deployment",
+        "--json"
+      ],
+      "exit": 0,
+      "head": "d0d809065ef3b3743c5827756324a3f333482265",
+      "scenario": "a good source answer; another host runs the trigger",
+      "sourceSha256": "761432e46eeeb182b8ed3a27d1e0b99abce2c41aefd8beb80ec022cb38ce8452",
+      "fixtureSha256": "d38c9b50bd028156bb34ad424a704a0d6cfa7d20a7ac44b1eff32ea02f59cc52"
+    },
+    "trigger-test-trusted": {
+      "argv": [
+        "oats",
+        "trigger",
+        "test",
+        "ws/trusted",
+        "--run-source",
+        "--dir",
+        "/fixture/base/deployment",
+        "--json"
+      ],
+      "exit": 0,
+      "head": "d0d809065ef3b3743c5827756324a3f333482265",
       "scenario": "a good source answer; runs here, trusted",
       "sourceSha256": "26e4398f0b484da342ae0dbd33e199cc4d78fa30b4d19975f9afc16cfaed15be",
       "fixtureSha256": "9598449d5cbf193d2c748621aa5f3eae050b347e297a3d132c030f1ae031b8e6"
@@ -105,12 +124,13 @@
         "trigger",
         "test",
         "local/harvest",
+        "--run-source",
         "--dir",
         "/fixture/base/deployment",
         "--json"
       ],
       "exit": 0,
-      "head": "f9b91a9cdbd5d2fba70ddf28632e8f51d7995018",
+      "head": "d0d809065ef3b3743c5827756324a3f333482265",
       "scenario": "a good source answer; a local trigger (no owner: gh is null)",
       "sourceSha256": "ce1e58836973aba83dfca8d0ed5248be3db8cf978d301057e69abeb11813a39c",
       "fixtureSha256": "f19448e1664da971d9887b8fb503cd910061be894d8fb2dfca498cc03cae3484"
@@ -126,7 +146,7 @@
         "--json"
       ],
       "exit": 0,
-      "head": "f9b91a9cdbd5d2fba70ddf28632e8f51d7995018",
+      "head": "d0d809065ef3b3743c5827756324a3f333482265",
       "scenario": "a github.pull_request trigger, for contrast",
       "sourceSha256": "878524f480ebe004c1f5400e3ef4b1fee8abdf741c53e997bea625370f893576",
       "fixtureSha256": "01c71a600160f6799f52b9afb12529b560f48cf83e76b6e5f61ec4cc9ae7873c"
@@ -141,10 +161,10 @@
         "--json"
       ],
       "exit": 0,
-      "head": "f9b91a9cdbd5d2fba70ddf28632e8f51d7995018",
+      "head": "d0d809065ef3b3743c5827756324a3f333482265",
       "scenario": "after one good poll",
-      "sourceSha256": "dc696d27fce8613aab1f0f3139fec7f8a82af951b7b968f488474b34915dc330",
-      "fixtureSha256": "697ea4546554eeb091c1f1b2d2029c87ecc19baa90a469fe98608b5e25666c46"
+      "sourceSha256": "bedcaa92eeab80fb1aa826d6594845520ea3929ceabcb00d5df72a96eceb191a",
+      "fixtureSha256": "2abba2c23f298121a43de342ff8bd704ff94bb2d901c35e43ddc4dfb2fa3aaca"
     },
     "trigger-status-good": {
       "argv": [
@@ -156,9 +176,9 @@
         "--json"
       ],
       "exit": 0,
-      "head": "f9b91a9cdbd5d2fba70ddf28632e8f51d7995018",
+      "head": "d0d809065ef3b3743c5827756324a3f333482265",
       "scenario": "after one good poll: 1 fired, 1 filtered, 3 refused, 2 skipped",
-      "sourceSha256": "367339a36c8f479d492da8f3cc0fc8ef16745a966a649f8c190aec3fbe61d702",
+      "sourceSha256": "d471c05b57d9df67027288811d2e5cd350c043e9a37dece0fc38660b2d1010a8",
       "fixtureSha256": "492c4b999d90f0378d5f4a086d0c6667927a816f5688ce174c995f1ee866cb00"
     },
     "trigger-status-refused": {
@@ -171,9 +191,9 @@
         "--json"
       ],
       "exit": 0,
-      "head": "f9b91a9cdbd5d2fba70ddf28632e8f51d7995018",
+      "head": "d0d809065ef3b3743c5827756324a3f333482265",
       "scenario": "the source refused the next poll: the lists are the last good poll's",
-      "sourceSha256": "9663a0601a24824708373596966a5870a9dcbff436ca13e23b19b76cd08eaacf",
+      "sourceSha256": "8e422a6f37d85e242d8a7442f08038b4ab04c4f4e8682206d67f9e5b75bce7fd",
       "fixtureSha256": "ae88148649ddf2a51e62b08a022a1b97daf863111d2d3fbf63c9b489b3ca1c96"
     },
     "trigger-test-refused": {
@@ -182,12 +202,13 @@
         "trigger",
         "test",
         "ws/trusted",
+        "--run-source",
         "--dir",
         "/fixture/base/deployment",
         "--json"
       ],
       "exit": 0,
-      "head": "f9b91a9cdbd5d2fba70ddf28632e8f51d7995018",
+      "head": "d0d809065ef3b3743c5827756324a3f333482265",
       "scenario": "the source refuses",
       "sourceSha256": "06c8ce8822fd1a2d63bebb6f5a8fb8c82b947553a11e3177f8a66002d9f077ba",
       "fixtureSha256": "d2d2272aaf02ba0aa9a5e9a4487f3a1ee2c681fa339d4b64ea7087d66970957b"
@@ -202,9 +223,9 @@
         "--json"
       ],
       "exit": 0,
-      "head": "f9b91a9cdbd5d2fba70ddf28632e8f51d7995018",
+      "head": "d0d809065ef3b3743c5827756324a3f333482265",
       "scenario": "the source exited nonzero",
-      "sourceSha256": "dd6b1298b0d4a87279bc20062ec17f9a58143c83e2096a5fcb72c60f4ed1b477",
+      "sourceSha256": "162f2898e76a60082b38cfca132ba07bfadf961e6ede725bc2077bfaa92e3450",
       "fixtureSha256": "1fd72aa47511fff92a7c6b5286112ca76f5b333b6a054877ab06cc5bc673ca0c"
     },
     "trigger-test-exit": {
@@ -213,15 +234,49 @@
         "trigger",
         "test",
         "ws/untrusted",
+        "--run-source",
         "--dir",
         "/fixture/base/deployment",
         "--json"
       ],
       "exit": 0,
-      "head": "f9b91a9cdbd5d2fba70ddf28632e8f51d7995018",
+      "head": "d0d809065ef3b3743c5827756324a3f333482265",
       "scenario": "the source exits nonzero; this host does not trust the trigger",
-      "sourceSha256": "6a846d62c6048a316390128613d97e106c1d76271d55b61eff3520b7df421fea",
-      "fixtureSha256": "99019b4139e54fc2bf02be84ee77470b5372929f67ab2957b31efd9cdd3dedbe"
+      "sourceSha256": "3e3fbb2c322f393840469e47b5cca3800cb960a202841005dc707d124ba58c16",
+      "fixtureSha256": "536d6aa0c6c131cc2c35dbd57f148e0c7b118ec1cb9bf1f6ed836b7ca1dfd7d9"
+    },
+    "trigger-test-missing-script-unconfirmed": {
+      "argv": [
+        "oats",
+        "trigger",
+        "test",
+        "ws/trusted",
+        "--dir",
+        "/fixture/base/deployment",
+        "--json"
+      ],
+      "exit": 1,
+      "head": "d0d809065ef3b3743c5827756324a3f333482265",
+      "scenario": "the source's script is missing, no flag: the gate answers, nothing ran",
+      "sourceSha256": "1f6291dc41090b173980d0d0dcd4cced689daf9e1a033877e75b7d18bb69774c",
+      "fixtureSha256": "64532dd37b5a046e243d6e971c1c117e585f3a982bf3a07f4538465891370765"
+    },
+    "trigger-test-missing-script": {
+      "argv": [
+        "oats",
+        "trigger",
+        "test",
+        "ws/trusted",
+        "--run-source",
+        "--dir",
+        "/fixture/base/deployment",
+        "--json"
+      ],
+      "exit": 0,
+      "head": "d0d809065ef3b3743c5827756324a3f333482265",
+      "scenario": "the source's script is missing, confirmed: found only now",
+      "sourceSha256": "1853abf61cc3fd330357c74888d6353bd8bf57790b033b51f08342bc6c553141",
+      "fixtureSha256": "b85434873be8a5c58a09042da6d513da271afdfef3c46d61a88a5d238a1aab32"
     },
     "trigger-list-invalid": {
       "argv": [
@@ -233,10 +288,10 @@
         "--json"
       ],
       "exit": 0,
-      "head": "f9b91a9cdbd5d2fba70ddf28632e8f51d7995018",
+      "head": "d0d809065ef3b3743c5827756324a3f333482265",
       "scenario": "the last meaning check failed at a poll",
-      "sourceSha256": "2c5a4478824c755914c69cb4fa575bbce260df1357e3a48d0313929965227b31",
-      "fixtureSha256": "c816a39990f4008f8987846b54799cb13627538455f7abe3dcd649f5913d754f"
+      "sourceSha256": "c7a337ee27a3809a7c6f908e0bbe1d33bb73a400620eb6f0cb555848ee097a0d",
+      "fixtureSha256": "bb1eaffb7b43ee24d75239e7286b0112a8adefdb007ccdc32a27fcdebdb99589"
     },
     "trigger-status-invalid": {
       "argv": [
@@ -248,12 +303,29 @@
         "--json"
       ],
       "exit": 0,
-      "head": "f9b91a9cdbd5d2fba70ddf28632e8f51d7995018",
+      "head": "d0d809065ef3b3743c5827756324a3f333482265",
       "scenario": "the last meaning check failed at a poll",
-      "sourceSha256": "e4e7bd32afd793e828c8655d8161be08bafa497e0a39b675916dc3f02a382e08",
+      "sourceSha256": "470c1a31a568b8511bb5a221f9c431ce6fb2e8cd126b4935726c5fbae08d4017",
       "fixtureSha256": "bc340f244afdb774c1d3b7d49116a64e9fd2e2590e086fecba3ddc86753ff893"
     },
     "trigger-test-invalid": {
+      "argv": [
+        "oats",
+        "trigger",
+        "test",
+        "ws/trusted",
+        "--run-source",
+        "--dir",
+        "/fixture/base/deployment",
+        "--json"
+      ],
+      "exit": 0,
+      "head": "d0d809065ef3b3743c5827756324a3f333482265",
+      "scenario": "the meaning check fails",
+      "sourceSha256": "85d3819431a8b52859a839d2c863999009ab07b23a668fb5e8dbb2702f6c67f4",
+      "fixtureSha256": "aa999a4adc619501ea1e0407d3ecf59dab56e3891223cea1589e0e92f8ca9936"
+    },
+    "trigger-test-invalid-unconfirmed": {
       "argv": [
         "oats",
         "trigger",
@@ -264,10 +336,10 @@
         "--json"
       ],
       "exit": 0,
-      "head": "f9b91a9cdbd5d2fba70ddf28632e8f51d7995018",
-      "scenario": "the meaning check fails",
-      "sourceSha256": "c5404fc4e271f365fbd6e76130f8a4f44627d70974fa847a091accbea936d383",
-      "fixtureSha256": "e43b6aa37eebcfed61723b2559417f1ecda7ddb23234950599b87bef63edacb3"
+      "head": "d0d809065ef3b3743c5827756324a3f333482265",
+      "scenario": "the meaning check fails, no flag: the same normal answer (no capability code runs to say so)",
+      "sourceSha256": "db380ecb07722a93ed63bb24360f6d970ff2645a5beb475716c2056c808fb22f",
+      "fixtureSha256": "3eab98143f127870471b48a10f7e01af015752688884f660286262e65f7e6c68"
     },
     "capability-show-problems": {
       "argv": [
@@ -282,10 +354,10 @@
         "--json"
       ],
       "exit": 0,
-      "head": "f9b91a9cdbd5d2fba70ddf28632e8f51d7995018",
+      "head": "d0d809065ef3b3743c5827756324a3f333482265",
       "scenario": "a source with a problem, a well-formed one, and an entry that is not a source",
-      "sourceSha256": "9d4f3f12fb608b956b295f171706bad1cfab8302f8f10ae944a9291916834afa",
-      "fixtureSha256": "e6fe5abe5af8c8741792d49a7a4873204da3899367e7c77c3bd6b898ce33ecf4"
+      "sourceSha256": "6ea0bedac46e017440bdde5d17689e84e105fba29cf1fbd5e8ad8d96aceb77f3",
+      "fixtureSha256": "c8774fffbc4edb5eea855de40bab78072f49709466fdcc05071f3f3584024d9f"
     },
     "capability-show-not-object": {
       "argv": [
@@ -300,10 +372,10 @@
         "--json"
       ],
       "exit": 0,
-      "head": "f9b91a9cdbd5d2fba70ddf28632e8f51d7995018",
+      "head": "d0d809065ef3b3743c5827756324a3f333482265",
       "scenario": "triggerSources is not an object",
-      "sourceSha256": "c5156bd80e0c1f978fbccdf94d99c35dd7b3db1eeb91c875aeef066a0d98fbf9",
-      "fixtureSha256": "e9ba4283d551110e5d2deacf2c891f02c6206ef5a88eb2638a935b1879e98ba9"
+      "sourceSha256": "aaaccb9d8a1a80610f0267947cfef81567d554b8feef6252721eb2327cce284c",
+      "fixtureSha256": "5b64736104864b975c3d06c85bde3880e866ba24fb99a23474ece8ddf836712d"
     }
   }
 }

@@ -3,15 +3,14 @@
   "ok": true,
   "result": {
     "triggerApi": 1,
-    "id": "ws/untrusted",
+    "id": "ws/trusted",
     "ok": false,
     "placement": {
       "runsOn": "kb-host",
       "owner": "github.com/kb-bot",
       "host": "kb-host",
-      "runsHere": false,
-      "reason": "untrusted",
-      "detail": "declared for this host, not trusted here; to run it, add the line \"- ws/untrusted\" under automations: trust: in oats-local.yaml",
+      "runsHere": true,
+      "reason": null,
       "enabledHere": true
     },
     "gh": {
@@ -39,10 +38,10 @@
       "name": "harvest-branches",
       "ok": false,
       "filtered": 0,
-      "cause": "exit",
-      "error": {
-        "code": "E_TRIGGER_POLL",
-        "message": "acme.graph:harvest-branches: the source exited 3"
+      "invalid": {
+        "code": "E_TRIGGER_SOURCE",
+        "message": "acme.graph:harvest-branches: capability acme.graph declares it malformed: trigger source \"harvest-branches\": command \"missing\" is not one of the manifest's commands (at /triggerSources/harvest-branches/command)",
+        "at": "2026-10-09T14:11:50.630Z"
       },
       "events": [],
       "invalidEvents": [],
@@ -50,8 +49,7 @@
     },
     "wouldFire": [],
     "problems": [
-      "run manually with --run-source; the tick will not run it here: untrusted (declared for this host, not trusted here; to run it, add the line \"- ws/untrusted\" under automations: trust: in oats-local.yaml)",
-      "acme.graph:harvest-branches: the source exited 3"
+      "acme.graph:harvest-branches: capability acme.graph declares it malformed: trigger source \"harvest-branches\": command \"missing\" is not one of the manifest's commands (at /triggerSources/harvest-branches/command)"
     ],
     "warnings": [
       "this source's credential may not be visible to the host timer: it runs with only PATH and OATS_HOME_DIR set, so keep the source's login in its own store, not in an exported variable"

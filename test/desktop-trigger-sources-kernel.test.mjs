@@ -48,7 +48,7 @@ const GOOD = { events: [
 ], skipped: [{ subject: 'harvest/y', why: HOSTILE }] };
 
 test(`a capability trigger source through the Desktop's readers (feature ${TRIGGER_SOURCES_FEATURE})`, { skip }, async t => {
-  const { sourceDeployment, inFixture, HARVEST, capabilityManifest } = await import('./helpers/trigger-source-fixture.mjs');
+  const { sourceDeployment, inFixture, HARVEST, capabilityManifest, sourceScript } = await import('./helpers/trigger-source-fixture.mjs');
   const T = await import('../lib/triggers.mjs'), S = await import('../lib/schedule.mjs');
   const on = { source: SOURCE, params: { prefix: 'harvest/', graph: 'kb' }, events: ['opened'], poll: '1m' };
   const trigger = { yaml: { kind: 'oats-trigger', schemaVersion: 1, description: 'Review harvest branches', runsOn: 'kb-host', owner: 'github.com/kb-bot', on,
@@ -113,7 +113,7 @@ test(`a capability trigger source through the Desktop's readers (feature ${TRIGG
     assert.deepEqual(tested.source.refused.map(e => e.rule), ['url', 'shape']);
     assert.deepEqual(tested.source.skipped, [{ subject: 'harvest/y', why: HOSTILE }], 'the source\'s words arrive as data');
     assert.deepEqual(tested.wouldFire.map(f => [f.label, f.url]), [['harvest/a', 'https://graph.example.org/a']]);
-    assert.equal(tested.ok, false); assert.match(tested.problems[0], /^run manually; the tick will not run it here: untrusted/);
+    assert.equal(tested.ok, false); assert.match(tested.problems[0], /^run manually with --run-source; the tick will not run it here: untrusted/);
     assert.equal(result.spawned, false);
     // The definition is as it was: testing trusted, enabled and started nothing.
     const rows = automationRows(await answered({ kind: 'trigger', action: 'list' }), 'trigger').rows;
@@ -153,6 +153,19 @@ test(`a capability trigger source through the Desktop's readers (feature ${TRIGG
     const tested = testResult(await answered({ kind: 'trigger', action: 'test', key: 'ws/trusted', runSource: true }), 'trigger', { source: SOURCE });
     assert.deepEqual([tested.source.ok, tested.source.cause, tested.source.says, tested.problems, tested.wouldFire], [false, 'refused', { code: 'E_GRAPH_DOWN', message: HOSTILE }, [], []]);
     assert.equal(ran().length, before + 1);
+  });
+
+  await t.test('a source whose script is gone: the gate answers without the flag; only a confirmed test finds the failed check, and nothing runs', async () => {
+    fx.control({ result: GOOD });
+    fx.commit({ [`capabilities/${CAPABILITY}/bin/source.mjs`]: null }, 'the script is gone'); must(fx.cli(['sync', '--json']), 'sync');
+    const before = ran().length;
+    const bare = await auto({ kind: 'trigger', action: 'test', key: 'ws/trusted' });
+    assert.deepEqual([bare.status, bare.reason?.code], ['unavailable', 'E_TRIGGER_SOURCE_RUN'], JSON.stringify(bare));
+    const tested = testResult(await answered({ kind: 'trigger', action: 'test', key: 'ws/trusted', runSource: true }), 'trigger', { source: SOURCE });
+    assert.deepEqual([tested.ok, tested.source.ok, tested.source.invalid.code, tested.problems, tested.wouldFire], [false, false, 'E_TRIGGER_SOURCE', [], []]);
+    assert.match(tested.source.invalid.message, /is not a file inside capability acme\.graph's directory$/);
+    assert.equal(ran().length, before, 'no source ran: there is none to run');
+    fx.commit({ [`capabilities/${CAPABILITY}/bin/source.mjs`]: { text: sourceScript() } }, 'the script is back'); must(fx.cli(['sync', '--json']), 'sync');
   });
 
   await t.test('capabilities show: the declared sources, then a declaration with problems, through the server\'s projection', async () => {

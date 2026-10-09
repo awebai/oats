@@ -7,8 +7,8 @@ import { createAutomationsView } from '../renderer/views/automations.mjs';
 // A capability source's trigger on the Triggers page (feature `trigger-sources`, #669 2b): its On card, the last
 // poll, the events OATS refused and the items the source skipped, the source check, the prompt's fields. The
 // rule under test everywhere: text that is neither the kernel's nor the Desktop's is data in the quote treatment
-// (source-quote.mjs), never a sentence of the Desktop's. Fixtures: REAL answers of the #845 kernel at f9b91a9c
-// (fixtures/trigger-sources/provenance.json names each command).
+// (source-quote.mjs), never a sentence of the Desktop's. Fixtures: REAL answers of a kernel that declares the
+// feature (fixtures/trigger-sources/provenance.json names each command and the kernel head).
 const fx = name => JSON.parse(readFileSync(new URL(`./fixtures/trigger-sources/${name}.json`, import.meta.url), 'utf8')).result;
 const NOW = Date.parse('2026-10-08T12:20:00.000Z');
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -254,10 +254,10 @@ test('Test result, a local trigger (gh null): no "gh acts as" line; nothing woul
 test('Test result, placement: an untrusted row and one another host runs were "Tested by hand", with the kernel\'s problems', async t => {
   const u = await tested(t, 'ws/untrusted', 'trigger-test-untrusted');
   assert.deepEqual(u.lines.slice(0, 3), ['The source answered: 1 event, 1 filtered, 2 skipped, 3 refused', 'Tested by hand',
-    'run manually; the tick will not run it here: untrusted (declared for this host, not trusted here; to run it, add the line "- ws/untrusted" under automations: trust: in oats-local.yaml)']);
+    'run manually with --run-source; the tick will not run it here: untrusted (declared for this host, not trusted here; to run it, add the line "- ws/untrusted" under automations: trust: in oats-local.yaml)']);
   assert.equal(u.card.textContent.includes('Would run here on its own'), false);
   const v = await tested(t, 'ws/elsewhere', 'trigger-test-elsewhere');
-  assert.deepEqual(v.lines.slice(1, 3), ['Tested by hand', 'run manually; the tick will not run it here: assigned-elsewhere (runs on other-host; this host is kb-host)']);
+  assert.deepEqual(v.lines.slice(1, 3), ['Tested by hand', 'run manually with --run-source; the tick will not run it here: assigned-elsewhere (runs on other-host; this host is kb-host)']);
 });
 
 test('Test result, the source did not answer: the cause, the kernel\'s error once, the source\'s own words quoted; nothing about what would fire', async t => {
@@ -269,7 +269,7 @@ test('Test result, the source did not answer: the cause, the kernel\'s error onc
   assertInert(u.host);
   const v = await tested(t, 'ws/untrusted', 'trigger-test-exit');
   assert.deepEqual(v.lines.slice(0, 4), ["The source did not answer: the source's command failed", 'acme.graph:harvest-branches: the source exited 3 E_TRIGGER_POLL', 'Tested by hand',
-    'run manually; the tick will not run it here: untrusted (declared for this host, not trusted here; to run it, add the line "- ws/untrusted" under automations: trust: in oats-local.yaml)']);
+    'run manually with --run-source; the tick will not run it here: untrusted (declared for this host, not trusted here; to run it, add the line "- ws/untrusted" under automations: trust: in oats-local.yaml)']);
   assert.equal(v.card.querySelector('.source-quote'), null, 'the source said nothing of its own');
 });
 

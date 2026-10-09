@@ -76,8 +76,8 @@
         },
         "triggerApi": 1,
         "scope": "/fixture/base/deployment",
-        "createdAt": "2026-10-09T12:35:14.558Z",
-        "updatedAt": "2026-10-09T12:35:14.558Z",
+        "createdAt": "2026-10-09T14:11:42.183Z",
+        "updatedAt": "2026-10-09T14:11:42.183Z",
         "invalid": {
           "code": "E_TRIGGER_SOURCE",
           "message": "acme.graph:harvest-branches: capability acme.graph declares it malformed: trigger source \"harvest-branches\": command \"missing\" is not one of the manifest's commands (at /triggerSources/harvest-branches/command)",
@@ -138,8 +138,8 @@
         },
         "triggerApi": 1,
         "scope": "/fixture/base/deployment",
-        "createdAt": "2026-10-09T12:35:14.667Z",
-        "updatedAt": "2026-10-09T12:35:14.667Z"
+        "createdAt": "2026-10-09T14:11:42.296Z",
+        "updatedAt": "2026-10-09T14:11:42.296Z"
       },
       {
         "kind": "trigger",
@@ -149,7 +149,7 @@
           "kind": "workspace",
           "repoKey": "local//fixture/base/remotes/ws.git",
           "path": "oats-triggers/elsewhere.yaml",
-          "commit": "180b621b7c171595168c598da9504c43941b2d62",
+          "commit": "6d6f2a1f3eb54e1202173f1126782701e9028866",
           "url": null,
           "localPath": "/fixture/base/deployment/ws/oats-triggers/elsewhere.yaml"
         },
@@ -209,7 +209,7 @@
           "kind": "workspace",
           "repoKey": "local//fixture/base/remotes/ws.git",
           "path": "oats-triggers/trusted.yaml",
-          "commit": "180b621b7c171595168c598da9504c43941b2d62",
+          "commit": "6d6f2a1f3eb54e1202173f1126782701e9028866",
           "url": null,
           "localPath": "/fixture/base/deployment/ws/oats-triggers/trusted.yaml"
         },
@@ -281,7 +281,7 @@
           "kind": "workspace",
           "repoKey": "local//fixture/base/remotes/ws.git",
           "path": "oats-triggers/untrusted.yaml",
-          "commit": "180b621b7c171595168c598da9504c43941b2d62",
+          "commit": "6d6f2a1f3eb54e1202173f1126782701e9028866",
           "url": null,
           "localPath": "/fixture/base/deployment/ws/oats-triggers/untrusted.yaml"
         },
@@ -335,7 +335,7 @@
       }
     ],
     "snapshot": {
-      "takenAt": "2026-10-09T12:35:20.286Z",
+      "takenAt": "2026-10-09T14:11:49.491Z",
       "problems": 0
     },
     "scheduler": {

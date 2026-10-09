@@ -8,7 +8,7 @@
     "repoKey": "local//fixture/base/remotes/ws.git",
     "package": null,
     "version": null,
-    "commit": "15dde91364cecfb76f023c10c5a116036dd64b18",
+    "commit": "e31391bfab771ec084f81ebdf5e23f43d0479e60",
     "path": "capabilities/acme.graph",
     "inject": null,
     "skills": [],

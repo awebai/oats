@@ -87,7 +87,7 @@
       }
     ],
     "problems": [
-      "run manually; the tick will not run it here: assigned-elsewhere (runs on other-host; this host is kb-host)"
+      "run manually with --run-source; the tick will not run it here: assigned-elsewhere (runs on other-host; this host is kb-host)"
     ],
     "warnings": [
       "this source's credential may not be visible to the host timer: it runs with only PATH and OATS_HOME_DIR set, so keep the source's login in its own store, not in an exported variable"

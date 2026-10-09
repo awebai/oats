@@ -41,7 +41,7 @@
       "invalid": {
         "code": "E_TRIGGER_SOURCE",
         "message": "acme.graph:harvest-branches: capability acme.graph declares it malformed: trigger source \"harvest-branches\": command \"missing\" is not one of the manifest's commands (at /triggerSources/harvest-branches/command)",
-        "at": "2026-10-09T12:35:21.257Z"
+        "at": "2026-10-09T14:11:50.272Z"
       },
       "events": [],
       "invalidEvents": [],

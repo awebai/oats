@@ -87,7 +87,7 @@
       }
     ],
     "problems": [
-      "run manually; the tick will not run it here: untrusted (declared for this host, not trusted here; to run it, add the line \"- ws/untrusted\" under automations: trust: in oats-local.yaml)"
+      "run manually with --run-source; the tick will not run it here: untrusted (declared for this host, not trusted here; to run it, add the line \"- ws/untrusted\" under automations: trust: in oats-local.yaml)"
     ],
     "warnings": [
       "this source's credential may not be visible to the host timer: it runs with only PATH and OATS_HOME_DIR set, so keep the source's login in its own store, not in an exported variable"
