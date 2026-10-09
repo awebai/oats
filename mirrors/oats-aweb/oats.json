@@ -1,9 +1,9 @@
 {
   "capability": "oats.aweb",
   "command": "aweb",
-  "version": "1.23.2",
+  "version": "1.24.0",
   "compatibility": {
-    "oats": ">=0.30.0"
+    "oats": ">=0.42.0"
   },
   "layer": "messaging",
   "launchPreview": true,
@@ -144,7 +144,7 @@
       "hostOnly": true,
       "values": ["approved", "development"],
       "default": "development",
-      "description": "Host-selected Claude/channel request, only in oats-local.yaml. Development is the default for new compositions; it selects the fixed plugin argument, never launch consent. Approved is explicit and requires applicable managed allowedChannelPlugins or future approval; installation/trusted marketplace is not approval. No automatic fallback, migration or flip-back; a future default change requires an explicit reviewed release. Pi, Codex and session routes are unchanged."
+      "description": "Host-selected Claude/channel request, only in oats-local.yaml. Development is the default for new compositions; it selects the fixed plugin argument, never launch consent. Approved (the recommended unattended route) passes --channels and is admitted when the host's managed policy sets channelsEnabled and lists aweb-channel@awebai-marketplace in allowedChannelPlugins (see the oats-aweb skill, section 4). No automatic fallback, migration or flip-back; a future default change requires an explicit reviewed release. Pi, Codex and session routes are unchanged."
     },
     "root": {
       "hostOnly": true,
@@ -166,6 +166,11 @@
     },
     "join": {
       "description": "comma-separated eligible team labels to join at spawn; values are workspace-defined labels and the default is absent. Joined teams receive live through the host wake broker where the runtime supports it, else by polling."
+    }
+  },
+  "retirement": {
+    "disposable": {
+      "home": [".aw", ".aweb-identity", ".aweb-identity-*", ".oats-aweb"]
     }
   },
   "environmentNamespaces": [

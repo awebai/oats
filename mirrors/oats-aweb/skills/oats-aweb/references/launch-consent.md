@@ -9,15 +9,15 @@ installation, adoption, operator authorization or receive acceptance.
 
 ## Selection and authorization
 
-New Claude/channel compositions default to development; frozen homes retain
-their captured mode. Explicit approved mode registers no aweb channel by default:
-applicable managed `allowedChannelPlugins` must list the plugin and marketplace,
-or a future approval must exist. Installation/trusted marketplace is not approval.
-Admission remains unverified; Claude may run with no wake and no diagnostic.
-There is no automatic flip-back, migration or approved-to-development fallback;
-a future default change requires an explicit reviewed release. Authorized session
-delivery may be selected for unattended use, preserving any explicit native
-requirement. Source changes do not enroll a channel or recover a runtime.
+This reference covers only the development fallback. The recommended unattended
+route is approved mode with the host's managed policy admitting the plugin
+(section 4's approved route), which shows no development prompt and needs no
+consent. New Claude/channel compositions still default to development; frozen
+homes retain their captured mode. There is no automatic flip-back, migration or
+approved-to-development fallback; a future default change requires an explicit
+reviewed release. Authorized session delivery may be selected for unattended use,
+preserving any explicit native requirement. Source changes do not enroll a
+channel or recover a runtime.
 
 The section 4 recipe belongs only in the HOST's `oats-local.yaml`, after explicit
 authorization for that exact home. The key is a strict boolean, absent/false OFF.
