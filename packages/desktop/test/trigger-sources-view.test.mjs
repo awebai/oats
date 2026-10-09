@@ -260,15 +260,15 @@ test('Test result, placement: an untrusted row and one another host runs were "T
   assert.deepEqual(v.lines.slice(1, 3), ['Tested by hand', 'run manually with --run-source; the tick will not run it here: assigned-elsewhere (runs on other-host; this host is kb-host)']);
 });
 
-test('Test result, the source did not answer: the cause, the kernel\'s error once, the source\'s own words quoted; nothing about what would fire', async t => {
+test('Test result, the poll failed: the cause, the kernel\'s error once, the source\'s own words quoted; nothing about what would fire', async t => {
   const u = await tested(t, 'ws/trusted', 'trigger-test-refused');
-  assert.deepEqual(u.lines, ['The source did not answer: the source refused', 'acme.graph:harvest-branches refused the poll E_TRIGGER_POLL', CREDENTIAL, 'gh acts as kb-bot'],
+  assert.deepEqual(u.lines, ['The poll failed: the source refused', 'acme.graph:harvest-branches refused the poll E_TRIGGER_POLL', CREDENTIAL, 'gh acts as kb-bot'],
     'no placement line: the only "problem" was the failure itself; and nothing about firing');
   assert.equal(u.card.textContent.includes('fire'), false); assert.equal(u.card.textContent.includes('Tested by hand'), false);
   assert.deepEqual(quote(u.card.querySelector('.source-quote')), { lead: LEAD, labelledBy: true, role: 'group', lines: [[['text', 'E_GRAPH_<b>DOWN</b>'], ['text', HOSTILE]]] });
   assertInert(u.host);
   const v = await tested(t, 'ws/untrusted', 'trigger-test-exit');
-  assert.deepEqual(v.lines.slice(0, 4), ["The source did not answer: the source's command failed", 'acme.graph:harvest-branches: the source exited 3 E_TRIGGER_POLL', 'Tested by hand',
+  assert.deepEqual(v.lines.slice(0, 4), ["The poll failed: the source's command failed", 'acme.graph:harvest-branches: the source exited 3 E_TRIGGER_POLL', 'Tested by hand',
     'run manually with --run-source; the tick will not run it here: untrusted (declared for this host, not trusted here; to run it, add the line "- ws/untrusted" under automations: trust: in oats-local.yaml)']);
   assert.equal(v.card.querySelector('.source-quote'), null, 'the source said nothing of its own');
 });

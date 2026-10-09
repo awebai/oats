@@ -246,12 +246,17 @@ never one click:
   failure of the trigger: a neutral notice of the Desktop's own says nothing
   ran (the kernel's message names a CLI command and is not shown), the list
   is read again, and Test now opens the confirm. No result card.
+- A one-click test of such a stale row can also get the kernel's normal
+  answer about the source (a failed check: no capability code runs to say
+  so). The result is kept, and the list is read again once so the page is the
+  capability source's; no second test is sent.
 
 **The Test result card** of a capability source (`testResult` adds `source`)
 leads the side column and speaks of the source first: "The source answered:
 N events" with the same counts and lists; or "The source check failed" with
-the kernel's message, code and field; or "The source did not answer: `<cause
-in words>`" with the kernel's error and the source's refusal quoted. A
+the kernel's message, code and field; or "The poll failed: `<cause in
+words>`" (the history's words for a failed poll) with the kernel's error and
+the source's refusal quoted. A
 confirmed test can itself come back with the check failed: a source whose
 script is gone still declares well, so the kernel finds it only when it runs. Then
 placement as the kernel reports it: "Would run here on its own" only when

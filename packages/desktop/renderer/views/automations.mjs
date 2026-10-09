@@ -286,12 +286,20 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     busy = true; ranNothing = null; render();
     // A test's answer is the answer about the source it was asked for: one that lands after the row's source
     // changed (success or failure) leaves no result.
-    let unconfirmed = false; const gen = genOf(row.id), current = () => genOf(row.id) === gen;
+    let unconfirmed = false, stale = null; const gen = genOf(row.id), current = () => genOf(row.id) === gen;
     try {
       const result = await act(verb, row);
       if (!alive) return;
-      if (verb === 'test') { if (current()) tests.set(row.id, testResult(result, kind, { source: row.on?.source }) || { ok: false, error: `This OATS did not answer a ${noun} test.` }); }
-      else { onResult?.(verb, row, result); await refresh(); }
+      if (verb === 'test') {
+        if (current()) {
+          const read = testResult(result, kind, { source: row.on?.source }) || { ok: false, error: `This OATS did not answer a ${noun} test.` };
+          tests.set(row.id, read);
+          // The kernel answered about a capability source (a check that failed: no capability code ran), yet the row on
+          // screen is not one: the list is older than the definition. The row is read again below, and this answer,
+          // which the kernel gave for this trigger, is kept.
+          if (sources && read.source && !sourceOf(row)) stale = read;
+        }
+      } else { onResult?.(verb, row, result); await refresh(); }
     } catch (error) {
       if (!alive) return;
       // E_TRIGGER_SOURCE_RUN is not a failure of the trigger: the kernel ran nothing, because this press carried no
@@ -304,6 +312,9 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
       if (alive) {
         busy = false; render();
         if (unconfirmed) { await refresh(); if (alive && openId === row.id && (!doc.activeElement || doc.activeElement === doc.body)) focusKey('test'); }
+        // One re-read of the list, never a second test. The refresh drops what it held for the row's old source; the
+        // answer just given is about the row as it is now, so it goes back. Focus is left where it was.
+        else if (stale) { await refresh(); if (alive && rowById(row.id) && !tests.has(row.id)) { tests.set(row.id, stale); render(); } }
       }
     }
   }
@@ -829,7 +840,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
       line('The source check failed', true);
       card.body.append(pageFacts(doc, [['Message', ran.invalid.message, null, 'wrap'], ['Code', ran.invalid.code], ['Field', ran.invalid.field]]));
     } else {
-      line(`The source did not answer: ${causeWords(ran.cause) || 'no cause reported'}`, true);
+      line(`The poll failed: ${causeWords(ran.cause) || 'no cause reported'}`, true);
       if (ran.error) { const p = line(ran.error, true); if (ran.code) p.append(' ', node('code', ran.code, 'auto-mono')); }
       const quote = ran.says ? sourceQuote(doc, { leadIn: LEAD_INS.source(named.capability, named.name), lines: [{ text: [ran.says.code, ran.says.message] }] }) : null;
       if (quote) card.body.append(quote);

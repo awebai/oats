@@ -373,6 +373,31 @@ test('E_TRIGGER_SOURCE_RUN is not a failure of the trigger: a neutral notice, th
   assert.equal(u.argvs.some(argv => argv.includes(TRIGGER_RUN_SOURCE_FLAG)), false, 'and still nothing carried the flag');
 });
 
+test('a one-press Test whose answer is a capability source\'s, on a row the list still shows as a pull request: the result is kept and the row re-read once', async t => {
+  // The list on screen says github.pull_request; the kernel's definition is a capability source's whose meaning check
+  // fails, so its answer is the normal one (source.ok: false), not the refusal: no capability code ran to say so.
+  const stale = doc('trigger-list'); stale.result.triggers.find(r => r.id === 'ws/trusted').on = { source: 'github.pull_request', repo: 'github.com/acme/kb', events: ['opened'], labels: [], poll: '2m' };
+  let list = stale;
+  const u = await mount(t, { list: () => list, status: () => doc('trigger-status-invalid'), tested: () => doc('trigger-test-invalid-unconfirmed') }); await u.open('ws/trusted');
+  assert.equal(u.$('.page-card[data-card="On"] dd').textContent, 'Pull request opened');
+  list = doc('trigger-list-invalid');
+  const before = u.requests.length;
+  u.testButton().focus(); u.testButton().click(); await settle(); await settle();
+  assert.deepEqual(u.requests.slice(before).map(([, b]) => [b.action, b.key, b.runSource]), [['test', 'ws/trusted', undefined], ['list', undefined, undefined], ['status', 'ws/trusted', undefined]],
+    'the one test, then the list once, then the status of the row whose source changed; never a second test');
+  assert.deepEqual(u.argvs.filter(argv => argv[1] === 'test'), [['trigger', 'test', 'ws/trusted', '--dir', DEPLOYMENT, '--json']]);
+  assert.equal(u.argvs.some(argv => argv.includes(TRIGGER_RUN_SOURCE_FLAG)), false);
+  assert.equal(u.$('.page-card[data-card="On"] dd').textContent, 'acme.graph · harvest-branches', 'the page is the capability source\'s now');
+  const card = u.$('.page-card[data-card="Test result"]');
+  assert.ok(card, 'the kernel gave this answer for this trigger: it is kept across the re-read');
+  assert.equal(card.querySelector('.auto-test-line').textContent, 'The source check failed');
+  assert.equal(u.$('.auto-ran-nothing'), null, 'not the refusal\'s notice'); assert.equal(u.confirm(), null);
+  assert.equal(u.d.activeElement.closest('.auto-confirm, .page-card[data-card="Test result"]'), null, 'focus is not moved to the result');
+  // Test on the row as it is now opens the confirm, like any capability source's.
+  u.testButton().click(); await settle();
+  assert.ok(u.confirm()); assert.equal(u.requests.length, before + 3);
+});
+
 test('a trigger whose source changed: its status is read again and a kept Test result is dropped', async t => {
   let list = doc('trigger-list');
   const u = await mount(t, { list: () => list }); await u.open('ws/trusted');
