@@ -15,7 +15,9 @@ import { fileURLToPath } from 'node:url';
 
 const HELP = `oats.okf-harvest 5.0 has no commands of its own: a harvester follows the
 knowledge-harvest skill (read the proposal and the named source's records,
-judge, publish one labelled PR with git and gh, hand over, retire).
+judge, publish one labelled PR with git and gh, hand over and retire on success
+or nothing promotable; publication failure retains the live home and reports
+the error without retiring).
 oats okf-harvest complete | harvest-status   removed in 5.0 (E_REMOVED)
 `;
 export const REMOVED = 'was removed in oats.okf 5.0: there are no harvest runs, custody or delivery to complete. A 5.0 harvester judges the proposal in its TASK.md and opens the PR itself (skill knowledge-harvest). A 4.x TASK (one naming a source descriptor and a run) cannot be processed by 5.0: report it to your operator and retire; nothing was delivered';
