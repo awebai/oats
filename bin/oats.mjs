@@ -25,7 +25,7 @@ import { constants as osConstants, homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runtimeNameWarning, noteRuntimeName } from "../lib/deprecation.mjs";
-import { herdrSettingRemoved } from "../lib/errors.mjs";
+import { defectOf, errorCause, herdrSettingRemoved, isKernelCode, kernelCode } from "../lib/errors.mjs";
 import {
   LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
@@ -177,6 +177,21 @@ const withLocalWarnings = (envelope) => {
   return { ...envelope, warnings: theirs.map((w) => (w === same ? { ...mine, sources, message: mine.message.replace(/\(.*\)/, `(${sources.join("; ")})`) } : w)) };
 };
 const jsonFail = (code, message, details, exit = 1) => { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code, message: String(message), ...(details !== undefined ? { details } : {}) }, ...envelopeWarnings() })); process.exit(exit); };
+/** The door of the lifecycle verbs (retire, instance stop, session, worktree; awebai/oats#892): the
+ *  answer to an error `e` of one of them. Its code is the error's own only when that is a kernel
+ *  code (lib/errors.mjs isKernelCode); any other error (the system's, Node's, an exception without
+ *  a code) is answered as `fallback`, with `details.cause` beside the command's `details`. The
+ *  stack of an exception without a code goes to stderr, in both modes: it is a defect, and the
+ *  answer must not swallow it. A typed failure that is not a code (TYPED_CLI_FAILURES) keeps its
+ *  name, as before. Text mode prints the same message, with the same exit status. */
+const lifecycleFail = (e, fallback, details, exit) => {
+  const message = String(e?.message ?? e);
+  if (TYPED_CLI_FAILURES.has(e?.code)) return JSON_MODE ? jsonFail(e.code, message, details, exit) : die(message, exit);
+  const defect = defectOf(e);
+  if (defect) console.error(defect.stack || String(defect));
+  const all = isKernelCode(e?.code) ? details : { ...details, cause: errorCause(e) };
+  return JSON_MODE ? jsonFail(kernelCode(e, fallback), message, all, exit) : die(message, exit);
+};
 const jsonOk = (result) => { console.log(JSON.stringify({ schemaVersion: 1, ok: true, result, ...envelopeWarnings() })); };
 // Text mode (or a JSON answer printed before the read): the warning goes to stderr, never stdout.
 process.on("exit", () => { const w = runtimeNameWarning(); if (w && !warningDelivered) process.stderr.write(`oats: warning: ${w.message}\n`); });
@@ -1163,8 +1178,8 @@ async function worktreeCmd() {
     console.log(r.resumed ? `${r.path} is already made (branch ${r.branch} from ${r.base} @ ${String(r.baseOid).slice(0, 12)}); nothing was run` : `made ${r.path}: branch ${r.branch} from origin's ${r.base} @ ${String(r.baseOid).slice(0, 12)}${r.hooks.length ? `; worktree hooks: ${r.hooks.map((h) => `${h.capability} ${h.ok ? "ok" : "FAILED"}`).join(", ")}` : ""}`);
     for (const w of r.warnings || []) console.error(`oats: warning: ${w}`);
   } catch (e) {
-    if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details, e.exitStatus);
-    throw e;
+    if (TYPED_CLI_FAILURES.has(e?.code)) throw e;
+    return lifecycleFail(e, "E_LIFECYCLE_FAILED", e.details, e.exitStatus);
   }
 }
 
@@ -1244,7 +1259,7 @@ function instanceCmd() {
     // its revision back and refuses if reality moved.
     const homeOpt = flag("home");
     if (homeOpt === true || (homeOpt !== undefined && !isAbsolute(homeOpt))) return bail("E_BAD_ARGS", "--home needs an absolute instance home");
-    let root; try { root = ensureRoot(dirFlag()); } catch (e) { return bail(e.code || "E_NO_ROOT", e.message); }
+    let root; try { root = ensureRoot(dirFlag()); } catch (e) { return lifecycleFail(e, "E_NO_ROOT"); }
     const recursive = !args.includes("--no-recursive");
     const wantPlan = args.includes("--plan"), wantApply = args.includes("--apply");
     if (wantPlan === wantApply) return bail("E_BAD_ARGS", "stop needs exactly one of --plan or --apply");
@@ -1266,7 +1281,7 @@ function instanceCmd() {
       console.log(receipt.ok ? `stopped${receipt.replayed ? " (replayed receipt)" : ""}; home, work, transcript and launch configuration retained — restart with \`oats session restart\`` : "some targets are still running; nothing was escalated");
       if (!receipt.ok) process.exit(1);
       return;
-    } catch (e) { return bail(e.code || "E_LIFECYCLE_FAILED", e.message, e.plan ? { plan: e.plan } : e.candidates ? { candidates: e.candidates } : undefined); }
+    } catch (e) { return lifecycleFail(e, "E_LIFECYCLE_FAILED", e.plan ? { plan: e.plan } : e.candidates ? { candidates: e.candidates } : undefined); }
   }
   let home = flag("home");
   if (home === true) return bail("E_BAD_ARGS", "--home needs an absolute instance home");
@@ -2844,7 +2859,7 @@ function retireCmd() {
   if (args.includes("--plan")) {
     // K3: what retirement would touch, with the design's defaults — read-only.
     dropAmbientRoot();
-    let root; try { root = ensureRoot(dirFlag()); } catch (e) { return args.includes("--json") ? jsonFail(e.code || "E_NO_ROOT", e.message) : die(e.message); }
+    let root; try { root = ensureRoot(dirFlag()); } catch (e) { return lifecycleFail(e, "E_NO_ROOT"); }
     try {
       const plan = planRetire(dirFlag(), root, name, { home: homeFlag });
       if (args.includes("--json")) { jsonOk(plan); return; }
@@ -2853,7 +2868,7 @@ function retireCmd() {
       console.log(`  defaults: retain worktree ${plan.defaults.retainWorktree}, delete branch ${plan.defaults.deleteBranch}, stop children ${plan.defaults.stopChildren}`);
       for (const n of plan.notes) console.log(`  note: ${n}`);
       return;
-    } catch (e) { return args.includes("--json") ? jsonFail(e.code || "E_LIFECYCLE_FAILED", e.message, e.candidates ? { ...e.details, candidates: e.candidates } : e.details) : die(e.message); }
+    } catch (e) { return lifecycleFail(e, "E_LIFECYCLE_FAILED", e.candidates ? { ...e.details, candidates: e.candidates } : e.details); }
   }
   // The calling instance knows its own home: self-retire never needs to
   // disambiguate a same-named twin by hand.
@@ -2884,7 +2899,7 @@ function retireCmd() {
     // Before the claim, only the home: where the receipt goes, and the answers of a name that
     // resolves to no home, to several or to another one.
     let target;
-    try { target = resolveInstanceForCli(dirFlag(), root, name, { home: homeFlag }); } catch (e) { return args.includes("--json") ? jsonFail(e.code || "E_LIFECYCLE_FAILED", e.message, e.details) : die(e.message); }
+    try { target = resolveInstanceForCli(dirFlag(), root, name, { home: homeFlag }); } catch (e) { return lifecycleFail(e, "E_LIFECYCLE_FAILED", e.details); }
     replayPath = join(dirname(target.home), `.oats-retire-receipt.${idemKey}.json`);
     // The plan the revision is checked against is read once, by retireInstance, when it holds the
     // home's claim (RETIRE_UNDER_CLAIM): nobody else is retiring the home by then, so the plan is
@@ -2908,16 +2923,17 @@ function retireCmd() {
   try { r = retireInstance(root, name, { home: homeFlag, self: isSelf, discardWorktree: args.includes("--discard-worktree"), keepDir: args.includes("--keep-dir"), force: args.includes("--force"), [RETIRE_UNDER_CLAIM]: revalidate }); }
   catch (e) {
     // The plan could not be read, or its revision is not the one shown: the answers they always had.
-    if (e === planFailure) return args.includes("--json") ? jsonFail(e.code || "E_LIFECYCLE_FAILED", e.message, e.details) : die(e.message);
+    if (e === planFailure) return lifecycleFail(e, "E_LIFECYCLE_FAILED", e.details);
     if (e === stalePlan) return args.includes("--json") ? jsonFail(e.code, e.message, e.details) : die(`the retire plan changed since it was shown; re-run oats retire ${name} --plan`);
-    if (!e?.code) throw e;
     // A child still running (or whose stop could not be established) refused the retirement: the
     // guarded apply returns the plan it acted on, and the text names each child's reason.
-    if (e.code === "E_CHILDREN_RUNNING") {
+    if (e?.code === "E_CHILDREN_RUNNING") {
       const running = e.details.childrenStopped.filter((k) => !k.ok);
       return args.includes("--json") ? jsonFail(e.code, e.message, { ...e.details, ...(planRev !== undefined ? { plan: fresh } : {}) }) : die(`children still running: ${running.map((k) => `${k.instance} (${k.code})`).join(", ")}; nothing retired`);
     }
-    return args.includes("--json") ? jsonFail(e.code, e.message, e.candidates ? { ...e.details, candidates: e.candidates } : e.details) : die(e.message);
+    // Whatever else the retire answers: retireInstance gives every error a kernel code, and what the
+    // retire had done by then (`details.reached`).
+    return lifecycleFail(e, "E_LIFECYCLE_FAILED", e.candidates ? { ...e.details, candidates: e.candidates } : e.details);
   }
   if (replayPath) { r.planRevision = planRev; r.idempotencyKey = idemKey; r.replayed = false; try { writeFileAtomic(replayPath, JSON.stringify(r, null, 2)); } catch { /* receipt is evidence, not authority */ } }
   // A retired home's wake jobs are forgotten (definitions only; nothing is
@@ -3288,7 +3304,7 @@ async function sessionCmd() {
       // A start's launch-hook warnings, as spawn prints its own (stderr keeps stdout one JSON document).
       for (const w of result?.warnings || []) console.error(`  WARNING: ${w}`);
     }
-  } catch (e) { cmdFail(e.code || "E_SESSION_FAILED", e.message, e.details); }
+  } catch (e) { lifecycleFail(e, "E_SESSION_FAILED", e.details); }
 }
 
 async function paneCmd() {
@@ -4326,7 +4342,8 @@ else if (cmd === "schedule") await scheduleCmd();
 else if (cmd === "trigger") await triggerCmd();
 else if (cmd === "automations") await automationsCmd();
 else if (cmd === "spawn") { try { await spawnCmd(); } catch (e) { if (TYPED_CLI_FAILURES.has(e?.code)) throw e; if (JSON_MODE) jsonFail("E_SPAWN_FAILED", e.message || e, e.details?.unconfirmed === true ? e.details : undefined); throw e; } }
-else if (cmd === "retire") retireCmd();
+// What a retire throws outside its own answers (the root, a replay's read) goes through the same door.
+else if (cmd === "retire") { try { retireCmd(); } catch (e) { if (TYPED_CLI_FAILURES.has(e?.code)) throw e; lifecycleFail(e, "E_LIFECYCLE_FAILED", e.details); } }
 else if (cmd === "capture" || cmd === "recall" || cmd === "setup") await recordCmd(cmd);
 else if (cmd === "experimental") await experimentalCmd();
 // `!HELP_WORDS.has(cmd)`: usage NEVER depends on deployment state. `help` is a
