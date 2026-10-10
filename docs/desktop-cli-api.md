@@ -3420,16 +3420,19 @@ message and never parses it; this is the same statement as data.
  "recovery":{"path":"/w/agents/dev/instances/.oats-retirement/recovery/dev-1-Ab12Cd","phase":"before-hooks"}}
 ```
 
-- `phase`: how far the retire got. `"before-effects"`: until the retire
-  first signals a process, so nothing happened (the first inspection is
-  usually here). `"before-hooks"`: from that first signal on, until the hook
-  runner is called. The first signal is the stop of its recorded children
-  (then the stop of its own session, the second inspection, the copy made
-  before the hooks), with one earlier case: a home whose interrupted spawn
-  left a worktree hook process group that the retire can prove is that
-  spawn's has that group ended before the first inspection, and `phase` is
-  `"before-hooks"` from then on. So `"before-hooks"` does not say that the
-  children step was reached; `sessionStopAttempted` does. `"after-hooks"`: from
+- `phase`: how far the retire got. `"before-effects"`: nothing of the
+  instance was touched and no process was signalled (the first inspection
+  is usually here).
+  `"before-hooks"`: from the step that stops its recorded children on,
+  whether or not that step had anything to signal (then the stop of its own
+  session, the second inspection, the copy made before the hooks), until the
+  hook runner is called. It begins earlier in one case: a home whose
+  interrupted spawn left a worktree hook process group that the retire can
+  prove is that spawn's has that group ended before the first inspection, and
+  `phase` is `"before-hooks"` from the moment the retire may have signalled
+  it. So `"before-hooks"` says neither that a process was signalled nor that
+  the children step was reached; `"before-effects"` is never answered after
+  a signal. `"after-hooks"`: from
   the call of the retire hooks on (the third inspection, the copy's
   conclusion, the extra trees and the worktree). `"removal"`: from the
   removal of the home on.
