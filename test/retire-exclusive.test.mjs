@@ -1,7 +1,10 @@
 // One retire per instance at a time (awebai/oats#863). A retire holds its home's claim
 // (<instances>/.oats-retirement/claims/<name>.lock, lib/claim.mjs) from the moment the home is
 // resolved; any other retire of that home is refused as E_LIFECYCLE_BUSY before it stops, copies or
-// runs anything. No outcome here rests on a sleep or on which process is faster: the fixture's
+// runs anything. Every such refusal says who holds the home: `details.action` is the holder's verb
+// (`oats instance stop` takes the same claim) and `details.holder` whether a command is known to
+// run ("running"), cannot be read ("unknown") or does not ("none": the message names the step that
+// ends it). No outcome here rests on a sleep or on which process is faster: the fixture's
 // retire hook says when it has been entered and then waits for a gate file, so "the first retire is
 // in flight" is established before the second one starts.
 import test from "node:test";
@@ -155,7 +158,7 @@ function assertRefused(f, h, r, what) {
   assert.equal(r.code, 1, `${what}: exit 1 (${r.out}${r.err})`);
   const e = envelope(r);
   assert.deepEqual({ schemaVersion: e.schemaVersion, ok: e.ok, code: e.error.code }, { schemaVersion: 1, ok: false, code: "E_LIFECYCLE_BUSY" }, what);
-  assert.deepEqual(e.error.details, { instance: h.inst.instance, home: h.inst.home, lock: h.lock, pid: h.a.pid, since: readJson(h.lock).at }, what);
+  assert.deepEqual(e.error.details, { instance: h.inst.instance, home: h.inst.home, lock: h.lock, pid: h.a.pid, since: readJson(h.lock).at, action: "retire", holder: "running" }, what);
   assert.equal(e.error.message, `a retire of ${h.inst.instance} is already running (pid ${h.a.pid}, since ${e.error.details.since}); nothing was done — wait for it to finish`, what);
   assertUntouched(f, h, what);
   return e;
@@ -211,7 +214,7 @@ test("every other form of retire is refused while one is in flight: --force, tex
     ["recorded children", { children: [{ instance: other.instance, home: other.home }] }], ["a guarded apply's options", { plannedExtraWorktrees: [], children: [] }]]) {
     await assert.rejects(f.fx.inEnv(() => retireInstance(f.fx.root, name, o)), (e) => {
       assert.equal(e.code, "E_LIFECYCLE_BUSY", what);
-      assert.deepEqual(e.details, { instance: name, home: h.inst.home, lock: h.lock, pid: h.a.pid, since: readJson(h.lock).at }, what);
+      assert.deepEqual(e.details, { instance: name, home: h.inst.home, lock: h.lock, pid: h.a.pid, since: readJson(h.lock).at, action: "retire", holder: "running" }, what);
       return true;
     });
     assertUntouched(f, h, what);
@@ -358,7 +361,7 @@ test("a deferred --self completion in flight: a plain retire and a second --self
   // the completion holds the claim it is refused like any other retire, and schedules nothing.
   await assert.rejects(f.fx.inEnv(() => retireInstance(f.fx.root, h.inst.instance, { self: true, selfKillDelaySec: 600 })), (e) => {
     assert.equal(e.code, "E_LIFECYCLE_BUSY");
-    assert.deepEqual(e.details, { instance: h.inst.instance, home: h.inst.home, lock: h.lock, pid: h.a.pid, since: readJson(h.lock).at });
+    assert.deepEqual(e.details, { instance: h.inst.instance, home: h.inst.home, lock: h.lock, pid: h.a.pid, since: readJson(h.lock).at, action: "retire", holder: "running" });
     return true;
   });
   assert.equal(existsSync(retirePendingMarkerPath(h.inst.home)), false, "the refused --self scheduled nothing");
@@ -438,7 +441,7 @@ test("the --self window: between the scheduling and its completion every other r
   assert.equal(pending.completionStart, processStartToken(scheduled.completionPid), "and when it started");
   assert.deepEqual(claimFiles(inst.home), [], "the scheduling released its claim");
   const before = digest(inst.home), markerBytes = readFileSync(marker, "utf8");
-  const details = { instance: name, home: inst.home, lock: marker, pid: scheduled.completionPid, since: pending.requestedAt };
+  const details = { instance: name, home: inst.home, lock: marker, pid: scheduled.completionPid, since: pending.requestedAt, action: "retire", holder: "running" };
   const untouched = (what) => {
     assert.equal(digest(inst.home), before, `${what}: nothing of the home changed`);
     assert.equal(readFileSync(marker, "utf8"), markerBytes, `${what}: the marker is as it was`);
@@ -496,7 +499,7 @@ test("a pending marker whose completion is a zombie refuses no longer: the retir
   assert.equal(busy.status, 1, busy.stdout + busy.stderr);
   assert.deepEqual(busy.json().error, { code: "E_LIFECYCLE_BUSY",
     message: `a retire of ${name} is already scheduled (its completion, pid ${pid}, requested at ${pending.requestedAt}); nothing was done — wait for it to finish`,
-    details: { instance: name, home: inst.home, lock: marker, pid, since: pending.requestedAt } });
+    details: { instance: name, home: inst.home, lock: marker, pid, since: pending.requestedAt, action: "retire", holder: "running" } });
   assert.doesNotMatch(String(hostProcessState(pid)), /^Z/, "the completion that refused it was running");
   assert.equal(digest(inst.home), before, "the refused retire changed nothing of the home");
   assert.deepEqual([recoveries(inst), f.hookRuns(), claimFiles(inst.home)], [[], 0, []], "no recovery, no hook run, no claim left");
@@ -549,7 +552,7 @@ test("a pending marker refuses only for a completion that lives: its outcome, an
   assert.equal(r.code, 1, r.out + r.err);
   const e = envelope(r).error;
   assert.equal(e.code, "E_LIFECYCLE_BUSY");
-  assert.deepEqual(e.details, { instance: unknown.instance, home: unknown.home, lock: marker, pid: process.pid, since: "2026-10-10T00:00:00.000Z", unknown: e.details.unknown });
+  assert.deepEqual(e.details, { instance: unknown.instance, home: unknown.home, lock: marker, pid: process.pid, since: "2026-10-10T00:00:00.000Z", action: "retire", unknown: e.details.unknown, holder: "unknown" });
   assert.match(e.details.unknown, /names no start time/);
   assert.ok(e.message.includes(`pid ${process.pid}, recorded start none`) && e.message.includes(e.details.unknown) && e.message.includes("nothing was done") && e.message.includes(`remove ${marker}, then retry`), e.message);
   assert.equal(digest(unknown.home), before, "nothing of the home changed");
@@ -658,8 +661,9 @@ test("a process whose own start cannot be read: retire is refused, saying what c
   const e = envelope(r).error, lock = claimOf(inst.home);
   assert.equal(e.code, "E_LIFECYCLE_BUSY");
   assert.match(e.message, /^this process's start time cannot be read \(ps -o lstart= -o stat= -p \d+ answered exit 2: ps: simulated failure\), so oats retire cannot hold /);
-  assert.ok(e.message.endsWith(`cannot hold ${lock} verifiably; nothing was done`), e.message);
-  assert.deepEqual(e.details, { instance: inst.instance, home: inst.home, lock });
+  assert.ok(e.message.endsWith(`cannot hold ${lock} verifiably; nothing was done — check by hand, in a shell on this host, the read that the reason names (\`cat /proc/$$/stat\` where there is a /proc; elsewhere \`PATH=/usr/bin:/bin ps -o lstart= -o stat= -p $$\`, which must print a start time and a state), then run the command again`), e.message);
+  assert.doesNotMatch(e.message, /already running|wait for it to finish/, "nobody is said to be running");
+  assert.deepEqual(e.details, { instance: inst.instance, home: inst.home, lock, holder: "none" });
   assert.equal(digest(inst.home), before, "nothing of the home changed");
   assert.deepEqual([claimFiles(inst.home), recoveries(inst), f.hookRuns()], [[], [], 0], "no claim, no recovery, no hook run");
 });
@@ -701,14 +705,14 @@ test("a holder that cannot be established alive or gone is never taken over; a c
   // A live pid with no recorded start: whether it is that retire cannot be compared.
   writeClaim(inst.home, { processStart: undefined });
   for (const o of [{}, { force: true }]) await refused(o, (e) => {
-    assert.deepEqual(e.details, { instance: name, home: inst.home, lock, pid: process.pid, since: "2026-10-10T00:00:00.000Z", unknown: e.details.unknown });
+    assert.deepEqual(e.details, { instance: name, home: inst.home, lock, pid: process.pid, since: "2026-10-10T00:00:00.000Z", action: "retire", unknown: e.details.unknown, holder: "unknown" });
     assert.match(e.details.unknown, /names no start time/);
     assert.ok(e.message.includes(`pid ${process.pid}, recorded start none`) && e.message.includes(e.details.unknown) && e.message.includes(`if it is not an oats retire, remove ${lock}, then retry`), e.message);
   });
   writeFileSync(lock, "{not json");
   await refused({}, (e) => {
-    assert.deepEqual(e.details, { instance: name, home: inst.home, lock });
-    assert.equal(e.message, `${lock} is not a readable claim; inspect it and remove it if no oats retire holds it; nothing was done`);
+    assert.deepEqual(e.details, { instance: name, home: inst.home, lock, holder: "unknown" });
+    assert.equal(e.message, `${lock} is not a readable claim; nothing was done — inspect it and remove it if no oats retire or oats instance stop holds it, then retry`);
   });
   // The way out the refusals name: once the file is removed, the retire runs.
   rmSync(lock);
@@ -736,8 +740,8 @@ test("a dangling symbolic link where the claim belongs: the retire is refused in
   assert.deepEqual([r.status, r.stderr], [1, ""], r.stdout + r.stderr);
   const e = JSON.parse(r.stdout);
   assert.deepEqual({ schemaVersion: e.schemaVersion, ok: e.ok }, { schemaVersion: 1, ok: false });
-  assert.deepEqual(e.error, { code: "E_LIFECYCLE_BUSY", message: `${lock} is not a readable claim; inspect it and remove it if no oats retire holds it; nothing was done`,
-    details: { instance: name, home: inst.home, lock } });
+  assert.deepEqual(e.error, { code: "E_LIFECYCLE_BUSY", message: `${lock} is not a readable claim; nothing was done — inspect it and remove it if no oats retire or oats instance stop holds it, then retry`,
+    details: { instance: name, home: inst.home, lock, holder: "unknown" } });
   assert.doesNotMatch(e.error.message, /already running|wait for it to finish/, "nobody is said to be running");
   assert.equal(lstatSync(lock).isSymbolicLink(), true, "the link is still there");
   assert.deepEqual([readlinkSync(lock), existsSync(nowhere)], [nowhere, false], "as it was, and nothing was written through it");
@@ -768,8 +772,8 @@ test("a claim whose holder is gone and that cannot be taken over (its nonce is n
       assert.equal(r.status, 1, `${what}: ${r.stdout}${r.stderr}`);
       const e = r.json().error;
       assert.deepEqual(e, { code: "E_LIFECYCLE_BUSY",
-        message: `the process that held ${lock} (pid ${pid}) is gone, and this file is not a claim this kernel can take over (its nonce is not the 32 hexadecimal digits a claim carries); nothing was done — inspect ${lock} and remove it if no oats retire holds it, then retry`,
-        details: { instance: name, home: inst.home, lock, pid, since: "2026-10-10T00:00:00.000Z" } }, what);
+        message: `the process that held ${lock} (pid ${pid}) is gone, and this file is not a claim this kernel can take over (its nonce is not the 32 hexadecimal digits a claim carries); nothing was done — inspect ${lock} and remove it if no oats retire or oats instance stop holds it, then retry`,
+        details: { instance: name, home: inst.home, lock, pid, since: "2026-10-10T00:00:00.000Z", action: "retire", holder: "none" } }, what);
       assert.doesNotMatch(e.message, /already running|wait for it to finish/, `${what}: nobody is said to be running`);
       assert.equal(readFileSync(lock, "utf8"), held, `${what}: the file is byte for byte as it was`);
       assert.equal(digest(inst.home), before, `${what}: nothing of the home changed`);

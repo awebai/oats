@@ -10,7 +10,10 @@
 //     is E_LIFECYCLE_FAILED, and nothing was done;
 //   - awebai/oats#891: a stop whose target fails for a reason of the system's is that target's
 //     E_SESSION_STOP_FAILED in the receipt, with what is true of its harness;
-//   - awebai/oats#866: a home whose removal fails is E_LIFECYCLE_FAILED, with what is left on disk.
+//   - awebai/oats#866: a home whose removal fails is E_LIFECYCLE_FAILED, with what is left on disk;
+//   - awebai/oats#895: a code that says nothing happened (lib/errors.mjs BEFORE_EFFECT_CODES) is a
+//     retire's answer at "before-effects" only; past it the answer is E_LIFECYCLE_FAILED, a defect
+//     that names the code and the phase (units of lib/core.mjs retireFailure).
 //
 // Every case runs the real CLI against a file shape that fails the same way each time: no pause, no
 // second process. Each `reached` is compared with what is on disk in the same test.
@@ -26,14 +29,15 @@ import { pathToFileURL } from "node:url";
 import { CLI, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { ensureOatsSocketDir, waitUntil } from "./helpers/host-fixture.mjs";
 import { retireFailure, stopInstanceSession } from "../lib/core.mjs";
-import { oatsError, reportDefect } from "../lib/errors.mjs";
+import { BEFORE_EFFECT_CODES, oatsError, reportDefect } from "../lib/errors.mjs";
 
 /** A mode no longer keeps root out: the shapes that rest on one are skipped for root. */
 const ROOT = process.getuid?.() === 0;
 const SKIP_FOR_ROOT = "root reads, writes and empties whatever the mode says: this shape cannot fail";
 /** Codes that say nothing happened, or that the caller asked for the wrong thing: never the answer
- *  to a system error (case 6). */
-const NOTHING_HAPPENED = ["E_LIFECYCLE_BUSY", "E_PLAN_STALE", "E_INSTANCE_RETIRING", "E_SESSION_UNKNOWN", "E_UNIDENTIFIED_INSTANCE_HOME"];
+ *  to a system error (case 7). The kernel's own list, not a second one kept here: the codes a verb
+ *  answers only before any effect (lib/errors.mjs BEFORE_EFFECT_CODES), of every verb that has one. */
+const NOTHING_HAPPENED = [...new Set(Object.values(BEFORE_EFFECT_CODES).flat())];
 /** Every error this file was answered, for the last test. */
 const answered = [];
 
@@ -554,6 +558,9 @@ test("retire of a home whose removal the system refuses: E_LIFECYCLE_FAILED at t
 test("retireFailure never answers without reached: when the sentence throws, when the error cannot carry details, and when the disk cannot be read, the answer is the error's own message with reached", () => {
   const tracker = (more = {}) => ({ phase: "after-hooks", sessionTouched: true, hooksStarted: true, removing: false, recoveryPath: null, said: () => "The retire hooks have run", lead: null, ...more });
   const REACHED = { phase: "after-hooks", sessionStopAttempted: true, hooksStarted: true, home: "kept", recovery: null };
+  // A retire that has done nothing yet, and what it reached.
+  const UNTOUCHED = { phase: "before-effects", sessionTouched: false, hooksStarted: false };
+  const BEFORE = { phase: "before-effects", sessionStopAttempted: false, hooksStarted: false, home: "kept", recovery: null };
   const systemError = () => Object.assign(new Error("EACCES: permission denied, open '/x'"), { code: "EACCES", syscall: "open" });
   const gone = join(tmpdir(), `oats-door-no-such-home-${process.pid}`);
   /** What `fn` returns, and what it wrote on stderr. */
@@ -581,13 +588,24 @@ test("retireFailure never answers without reached: when the sentence throws, whe
     assert.match(stderr, /^TypeError: /, "what broke the sentence is reported");
   }
 
-  // A kernel error that cannot carry details (frozen): its code, its message, its details, and reached.
+  // A kernel error that cannot carry details (frozen): its code, its message, its details, and
+  // reached; what stopped the ordinary answer is a defect, and its stack is printed. A refusal
+  // whose code a retire answers only before any effect is raised at "before-effects" (past it the
+  // answer is never that code: the next test); any other of the kernel's, at any phase.
   const frozen = Object.freeze(Object.assign(oatsError("E_PLAN_STALE", "the plan changed"), { details: { plan: { planRevision: "abc" } } }));
-  const [stale] = withStderr(() => retireFailure(frozen, tracker(), gone));
+  const [stale, staleStderr] = withStderr(() => retireFailure(frozen, tracker(UNTOUCHED), gone));
   assert.notEqual(stale, frozen);
   assert.equal(stale.code, "E_PLAN_STALE");
   assert.equal(stale.message, "the plan changed");
-  assert.deepEqual(stale.details, { plan: { planRevision: "abc" }, reached: REACHED });
+  assert.deepEqual(stale.details, { plan: { planRevision: "abc" }, reached: BEFORE });
+  assert.match(staleStderr, /^TypeError: /, "what kept the error from carrying details is reported");
+  const frozenLate = Object.freeze(Object.assign(oatsError("E_WORK_PRESERVATION_FAILED", "the work was kept"), { details: { kept: ["work"] } }));
+  const [kept, keptStderr] = withStderr(() => retireFailure(frozenLate, tracker(), gone));
+  assert.notEqual(kept, frozenLate);
+  assert.equal(kept.code, "E_WORK_PRESERVATION_FAILED");
+  assert.equal(kept.message, "the work was kept");
+  assert.deepEqual(kept.details, { kept: ["work"], reached: REACHED });
+  assert.match(keptStderr, /^TypeError: /, "what kept the error from carrying details is reported");
 
   // The disk cannot be read: the conservative value. No recovery is named; a home whose removal
   // began and that cannot be looked at is "partial", never "kept" and never "removed".
@@ -613,6 +631,97 @@ test("retireFailure never answers without reached: when the sentence throws, whe
   assert.equal(reported, "A value that is no Error was thrown: undefined\n");
 });
 
+// A retire answers some codes only BEFORE any effect: a client reads each as "refused, nothing
+// happened" (lib/errors.mjs BEFORE_EFFECT_CODES, awebai/oats#895). retireFailure knows how far the
+// retire got (`reached.phase`), so it is where the rule holds by construction: at "before-effects"
+// such an error is the answer, as it is; past it the answer is E_LIFECYCLE_FAILED, which names the
+// code and the phase, keeps the error's details and is a defect (`details.cause`, its stack for
+// the door). No place of the kernel is known to raise one late: the test hands retireFailure each.
+test("a code a retire answers only before any effect is its answer at before-effects only: past it retireFailure answers E_LIFECYCLE_FAILED, a LateRefusal that names the code and the phase, in the fallback too, and never without reached", () => {
+  const tracker = (more = {}) => ({ phase: "after-hooks", sessionTouched: true, hooksStarted: true, removing: false, recoveryPath: null, said: () => "The retire hooks have run", lead: null, ...more });
+  const REACHED = { phase: "after-hooks", sessionStopAttempted: true, hooksStarted: true, home: "kept", recovery: null };
+  const UNTOUCHED = { phase: "before-effects", sessionTouched: false, hooksStarted: false };
+  const BEFORE = { phase: "before-effects", sessionStopAttempted: false, hooksStarted: false, home: "kept", recovery: null };
+  /** Every phase a retire is at once it has left "before-effects" (lib/core.mjs retireSteps). */
+  const LATE_PHASES = ["before-hooks", "after-hooks", "removal"];
+  const gone = join(tmpdir(), `oats-door-no-such-home-${process.pid}`);
+  const withStderr = (fn) => {
+    const write = process.stderr.write;
+    let written = "";
+    process.stderr.write = (chunk) => { written += String(chunk); return true; };
+    try { return [fn(), written]; } finally { process.stderr.write = write; }
+  };
+  const SAID = "the plan changed; nothing was done";
+  const refusalOf = (code) => Object.assign(oatsError(code, SAID), { details: { plan: { planRevision: "abc" } } });
+  const DETAILS = { plan: { planRevision: "abc" } };
+
+  assert.ok(BEFORE_EFFECT_CODES.retire.length > 0, "the list of a retire holds codes");
+  assert.ok(BEFORE_EFFECT_CODES.retire.includes("E_PLAN_STALE") && BEFORE_EFFECT_CODES.retire.includes("E_LIFECYCLE_BUSY"), "E_PLAN_STALE and E_LIFECYCLE_BUSY among them");
+  for (const code of BEFORE_EFFECT_CODES.retire) {
+    // Before any effect: the refusal itself, with what the retire reached, and nothing on stderr.
+    const early = refusalOf(code);
+    const [same, quiet] = withStderr(() => retireFailure(early, tracker(UNTOUCHED), gone));
+    assert.equal(same, early, `${code} at before-effects: the error itself`);
+    assert.deepEqual([same.code, same.message, same.details], [code, SAID, { ...DETAILS, reached: BEFORE }], `${code} at before-effects`);
+    assert.equal(quiet, "", `${code} at before-effects: a refusal is no defect`);
+
+    // Past it: never that code. E_LIFECYCLE_FAILED, the code it had and the phase in its message,
+    // the refusal's details, a defect named LateRefusal as its cause, and reached.
+    for (const phase of LATE_PHASES) {
+      const what = `${code} at ${phase}`;
+      for (const original of [refusalOf(code), Object.freeze(refusalOf(code))]) {
+        const [late, silent] = withStderr(() => retireFailure(original, tracker({ phase }), gone));
+        assert.notEqual(late, original, what);
+        assert.equal(late.code, "E_LIFECYCLE_FAILED", what);
+        assert.equal(late.message, `oats retire answered ${code} after its first effect (phase ${phase}): ${SAID}`, what);
+        assert.deepEqual(late.details, { ...DETAILS, cause: { name: "LateRefusal" }, reached: { ...REACHED, phase } }, what);
+        assert.equal(silent, "", `${what}: retireFailure prints nothing itself`);
+        // The door that answers it prints the defect: its name, the same sentence, a stack.
+        const [, reported] = withStderr(() => reportDefect(late));
+        assert.ok(reported.startsWith(`LateRefusal: oats retire answered ${code} after its first effect (phase ${phase}): ${SAID}\n    at `), `${what}: ${reported}`);
+        assert.deepEqual([original.code, original.message, original.details], [code, SAID, DETAILS], `${what}: the refusal it was handed is as it was`);
+      }
+    }
+
+    // The fallback (the catch of retireFailure), before any effect: a refusal that cannot carry
+    // details keeps its code.
+    const [fallbackEarly, earlyStderr] = withStderr(() => retireFailure(Object.freeze(refusalOf(code)), tracker(UNTOUCHED), gone));
+    assert.deepEqual([fallbackEarly.code, fallbackEarly.message, fallbackEarly.details], [code, SAID, { ...DETAILS, reached: BEFORE }], `${code}, frozen, at before-effects`);
+    assert.match(earlyStderr, /^TypeError: /, `${code}, frozen, at before-effects: what kept it from carrying details is reported`);
+
+    // The fallback past it: the late answer's own sentence cannot be made (the refusal's message
+    // is no string). The answer is the plain one, with reached: still not the refusal's code, and
+    // never its words alone, which say that nothing happened.
+    for (const phase of LATE_PHASES) {
+      const unsayable = Object.assign(refusalOf(code), { message: Symbol(SAID) });
+      const [fallback, stderr] = withStderr(() => retireFailure(unsayable, tracker({ phase }), gone));
+      assert.notEqual(fallback, unsayable);
+      assert.equal(fallback.code, "E_LIFECYCLE_FAILED", `${code}, its sentence unmakeable, at ${phase}`);
+      assert.equal(fallback.message, `oats retire answered ${code} after its first effect (phase ${phase}): Symbol(${SAID})`, `${code}, its sentence unmakeable, at ${phase}`);
+      assert.deepEqual(fallback.details, { ...DETAILS, reached: { ...REACHED, phase } }, `${code}, its sentence unmakeable, at ${phase}`);
+      assert.match(stderr, /^TypeError: /, `${code}, its sentence unmakeable, at ${phase}: what broke the sentence is reported`);
+    }
+    // The same error before any effect needs no sentence: it is the answer, with its code.
+    const quietSymbol = Object.assign(refusalOf(code), { message: Symbol(SAID) });
+    const [asItIs] = withStderr(() => retireFailure(quietSymbol, tracker(UNTOUCHED), gone));
+    assert.equal(asItIs, quietSymbol);
+    assert.deepEqual([asItIs.code, asItIs.details], [code, { ...DETAILS, reached: BEFORE }], `${code}, its sentence unmakeable, at before-effects`);
+  }
+
+  // A code of the kernel's that is not on the list is a retire's answer at any phase, as it is:
+  // the two that were E_PLAN_STALE and E_LIFECYCLE_BUSY after effects among them.
+  for (const code of ["E_WORK_PRESERVATION_FAILED", "E_RUNTIME_QUIESCE_FAILED", "E_CHILDREN_RUNNING", "E_LIFECYCLE_FAILED"]) {
+    assert.equal(BEFORE_EFFECT_CODES.retire.includes(code), false, `${code} is not a code a retire answers only before any effect`);
+    for (const phase of LATE_PHASES) {
+      const original = refusalOf(code);
+      const [answer, quiet] = withStderr(() => retireFailure(original, tracker({ phase }), gone));
+      assert.equal(answer, original, `${code} at ${phase}: the error itself`);
+      assert.deepEqual([answer.code, answer.message, answer.details], [code, SAID, { ...DETAILS, reached: { ...REACHED, phase } }], `${code} at ${phase}`);
+      assert.equal(quiet, "", `${code} at ${phase}`);
+    }
+  }
+});
+
 // ---- 7. the wrapping never answers a code that says nothing happened ----
 
 test("no answer to a system error carries a code that says nothing happened, and every code is a kernel code", async (t) => {
@@ -629,6 +738,8 @@ test("no answer to a system error carries a code that says nothing happened, and
     assert.equal(refusal(unread.retire("--json")).code, "E_WORK_INSPECTION_FAILED");
   }
   assert.ok(answered.length >= 1);
+  // The kernel's list holds, at least, the codes this test has always held out.
+  for (const code of ["E_LIFECYCLE_BUSY", "E_PLAN_STALE", "E_INSTANCE_RETIRING", "E_SESSION_UNKNOWN", "E_UNIDENTIFIED_INSTANCE_HOME"]) assert.ok(NOTHING_HAPPENED.includes(code), `${code} says that nothing happened`);
   for (const error of answered) {
     assert.match(error.code, /^E_[A-Z0-9_]+$/, JSON.stringify(error));
     assert.equal(NOTHING_HAPPENED.includes(error.code), false, JSON.stringify(error));

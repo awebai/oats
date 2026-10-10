@@ -13,6 +13,12 @@
 // succeeds, under the same rules. One more test breaks the kernel itself (an exception without a
 // code, thrown from inside the retire's walk of the home) and reads the one envelope and the stack.
 //
+// The walk also holds the two verbs that have effects to one more rule (awebai/oats#895): an answer
+// of a retire apply or of a stop apply whose code the kernel lists as answered only before any
+// effect (lib/errors.mjs BEFORE_EFFECT_CODES, by verb) says that nothing was reached: it carries no
+// `error.details.reached`, or one whose `phase` is "before-effects". The list itself, and the docs
+// table that shows it, are pinned by test/lifecycle-before-effect-codes.test.mjs.
+//
 // The one answer that is not an envelope is documented (docs/desktop-cli-api.md, "Not an envelope"):
 // a first `oats retire --json` that retires prints the raw retire receipt, one JSON document on
 // several lines. The walk admits it for that command alone and holds it to the same rules.
@@ -29,6 +35,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { appendFileSync, chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { BEFORE_EFFECT_CODES } from "../lib/errors.mjs";
 import { CLI, v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const KERNEL_CODE = /^E_[A-Z0-9_]+$/;
@@ -99,10 +106,12 @@ function withoutCausesAndMessages(value) {
 /** Hold one answer of the CLI (`r`, a spawnSync result) to the rules of the door. `where` names the
  *  command and the shape; every failure message starts with it and ends with what the CLI said.
  *    - `retires: <name>`: the command is a retire apply, which answers the raw receipt when it retires;
+ *    - `applies: <verb>`: the command is an apply of that verb ("retire", "instance stop"), so an error
+ *      whose code the kernel lists for it as answered only before any effect has reached nothing;
  *    - `defect: true`: the test made the kernel throw an exception without a code, so a stack on stderr
  *      is the contract and not a finding.
  *  Returns `{ ok, code, doc }`: `code` is the error's code, `"ok"`, or `"receipt"`. */
-function doorAnswer(r, where, { retires, defect = false } = {}) {
+function doorAnswer(r, where, { retires, applies, defect = false } = {}) {
   const said = `${where}\n  exit status: ${r.status}${r.signal ? ` (signal ${r.signal})` : ""}\n  stdout: ${r.stdout}\n  stderr: ${r.stderr}`;
   assert.equal(r.error, undefined, `the CLI could not be run (${r.error?.message}): ${said}`);
   assert.equal(r.signal, null, `the CLI was ended by a signal: ${said}`);
@@ -130,6 +139,12 @@ function doorAnswer(r, where, { retires, defect = false } = {}) {
       assert.equal(typeof doc.error.message, "string", `error.message is a string: ${said}`);
       const cause = doc.error.details?.cause;
       if (cause !== undefined) assert.ok(isCause(cause), `error.details.cause is { code, syscall? } or { name } and nothing else: ${said}`);
+      if (applies !== undefined) {
+        const listed = BEFORE_EFFECT_CODES[applies];
+        assert.ok(Array.isArray(listed), `lib/errors.mjs BEFORE_EFFECT_CODES has a list for the verb ${JSON.stringify(applies)}`);
+        const reached = doc.error.details?.reached;
+        if (listed.includes(doc.error.code)) assert.ok(reached === undefined || reached?.phase === "before-effects", `${doc.error.code} is a code \`oats ${applies}\` answers only before any effect, so its answer carries no details.reached, or one whose phase is "before-effects": ${said}`);
+      }
     }
   }
   assert.deepEqual(codeProblems(doc), [], `no system code in the answer outside a cause: ${said}`);
@@ -162,15 +177,16 @@ const treeAdd = (i) => ["worktree", "add", "--purpose", "p", "--branch", `agents
 
 /** Every lifecycle command. `key` goes into the instance's name; `argv` is the whole command line
  *  after `oats`; `before` runs on the intact home, before it is broken; `needsTmux` marks a command
- *  that succeeds over an intact home only where tmux is installed. */
+ *  that succeeds over an intact home only where tmux is installed; `applies` names the verb of a
+ *  command that has effects (a retire, a stop apply), as lib/errors.mjs BEFORE_EFFECT_CODES keys it. */
 const COMMANDS = [
-  { id: "retire", key: "retire", retires: true, argv: (i) => ["retire", i.name, "--json"] },
+  { id: "retire", key: "retire", retires: true, applies: "retire", argv: (i) => ["retire", i.name, "--json"] },
   { id: "retire --plan", key: "retire-plan", argv: (i) => ["retire", i.name, "--plan", "--json"] },
   { id: "instance stop --plan", key: "stop-plan", argv: (i) => ["instance", "stop", i.name, "--plan", "--json"] },
   // The revision is of a plan made before the home was broken: the Desktop's case, a plan shown and
   // then confirmed. When the break changed the plan the kernel answers E_PLAN_STALE, which is right;
   // the walk then applies the revision of a plan made after the break too (walkPair).
-  { id: "instance stop --apply", key: "stop-apply", before: (fx, i) => { i.revision = stopPlanRevision(fx, i, "before the home is broken"); }, argv: (i) => stopApply(i, i.revision, "k1") },
+  { id: "instance stop --apply", key: "stop-apply", applies: "instance stop", before: (fx, i) => { i.revision = stopPlanRevision(fx, i, "before the home is broken"); }, argv: (i) => stopApply(i, i.revision, "k1") },
   { id: "session inspect", key: "inspect", argv: (i) => ["session", "inspect", "--home", i.home, "--json"] },
   { id: "session start", key: "start", needsTmux: true, argv: (i) => ["session", "start", "--home", i.home, "--json"] },
   { id: "session restart", key: "restart", needsTmux: true, argv: (i) => ["session", "restart", "--home", i.home, "--json"] },
@@ -221,7 +237,7 @@ function walkPair(fx, shape, command, i) {
   const answers = [];
   const answer = (label, argv) => {
     const where = `\`oats ${argv.join(" ")}\` (${label}) over ${shape.id}`;
-    const a = doorAnswer(fx.cli(argv, command.options?.(i)), where, command.retires ? { retires: i.name } : {});
+    const a = doorAnswer(fx.cli(argv, command.options?.(i)), where, { ...(command.retires ? { retires: i.name } : {}), applies: command.applies });
     answers.push([label, a]);
     return a;
   };
@@ -253,6 +269,9 @@ function makeRemovable(path) {
 test("every lifecycle command, in JSON mode, answers a broken home with exactly one JSON answer on stdout: a kernel code, exit 0 or 1, no stack, and no system code outside details.cause (awebai/oats#892)", async (t) => {
   const fx = v2Deployment({ t, souls: { dev: { soul: { work: "worktree" } }, ops: { soul: { work: "worktree" } } } });
   fx.beforeCleanup(() => makeRemovable(fx.base));
+  // The verbs for which the walk met an answer whose code is answered only before any effect: the
+  // rule doorAnswer holds such an answer to is then known to have been tried.
+  const refusedBeforeEffects = new Set();
 
   for (const shape of SHAPES) {
     await t.test(`over ${shape.id}`, async (st) => {
@@ -277,8 +296,11 @@ test("every lifecycle command, in JSON mode, answers a broken home with exactly 
       // The walk means something only when the shape was felt, and the control only when nothing failed.
       if (shape.control) assert.deepEqual(all.filter(([, a, command]) => !a.ok && (HAS_TMUX || !command.needsTmux)).map(([label, a]) => `${label}: ${a.code}`), [], "over an intact home every command succeeds");
       else if (walked === COMMANDS.length) assert.ok(all.some(([, a]) => !a.ok), `fixture premise: at least one command is refused over ${shape.id}`);
+      for (const [, a, command] of all) if (command.applies && BEFORE_EFFECT_CODES[command.applies].includes(a.code)) refusedBeforeEffects.add(command.applies);
     });
   }
+  // Without the shapes a root process cannot make, the walk may meet no such answer.
+  if (!isRoot()) assert.deepEqual([...refusedBeforeEffects].sort(), ["instance stop", "retire"], "fixture premise: over these homes a retire and a stop apply were each answered, at least once, with a code they answer only before any effect, so the rule on details.reached was tried for both");
 });
 
 // ---- an exception without a code ----
@@ -340,7 +362,7 @@ syncBuiltinESMExports();
   const json = oats(["retire", name, "--json"]);
   const where = `\`oats retire ${name} --json\` with a walk that throws a TypeError`;
   const said = `${where}\n  exit status: ${json.status}\n  stdout: ${json.stdout}\n  stderr: ${json.stderr}`;
-  const answer = doorAnswer(json, where, { defect: true });
+  const answer = doorAnswer(json, where, { applies: "retire", defect: true });
   assert.equal(json.status, 1, said);
   assert.equal(json.stdout.trim().split("\n").length, 1, `exactly one envelope on stdout: ${said}`);
   assert.equal(answer.doc.schemaVersion, 1, said);
@@ -365,7 +387,7 @@ syncBuiltinESMExports();
   untouched("text mode");
 
   // The preload is the whole defect: without it the same retire retires the same home.
-  const plain = doorAnswer(fx.cli(["retire", name, "--json"]), `\`oats retire ${name} --json\` without the preload`, { retires: name });
+  const plain = doorAnswer(fx.cli(["retire", name, "--json"]), `\`oats retire ${name} --json\` without the preload`, { retires: name, applies: "retire" });
   assert.equal(plain.code, "receipt", JSON.stringify(plain.doc));
   assert.equal(existsSync(home), false, "the home is removed");
 });

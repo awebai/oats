@@ -1246,6 +1246,7 @@ test("a killed recovery's git step whose start cannot be read: the next add refu
   for (const part of [`git process group ${oldGit} (leader pid ${oldGit}, recorded start ${JSON.parse(held).gitStart})`, "ps: simulated failure", "was not signalled", `${lock} is kept`, `kill -TERM -- -${oldGit}`, `remove ${lock} and retry`]) assert.ok(e.message.includes(part), `${part}: ${e.message}`);
   assert.equal(e.details.gitPid, oldGit);
   assert.equal(e.details.lock, lock);
+  assert.equal(e.details.holder, "none", "the claim's holder is gone: waiting ends nothing, and the message names the step that does");
   assert.equal(readFileSync(lock, "utf8"), held, "the claim is kept");
   assert.equal(alive(oldGit), true, "that git is not signalled");
   assert.ok(existsSync(join(home, ".work-feat")) && registered(fx, join(home, ".work-feat")), "nothing was rolled back");
@@ -1374,7 +1375,7 @@ test("a recovery that is a zombie while it holds the purpose's claim: the next a
   const busy = add(fx, home);
   assert.equal(busy.json().error.code, "E_LIFECYCLE_BUSY", busy.stdout);
   assert.match(busy.json().error.message, /is running \(pid \d+ holds .*feat\.lock\)/);
-  assert.deepEqual(busy.json().error.details, { purpose: "feat", lock, pid: recovering.child.pid });
+  assert.deepEqual(busy.json().error.details, { purpose: "feat", lock, pid: recovering.child.pid, holder: "running" });
   assert.equal(readFileSync(lock, "utf8"), held, "a live holder's claim is kept");
   // Killed, and a zombie from here on: nothing below waits, so nothing reaps it.
   const state = zombieSync(recovering.child.pid);
@@ -1515,9 +1516,9 @@ test("a dangling symbolic link where the purpose's claim belongs: add and remove
     assert.equal(r.status, 1, `${args[0]}: ${r.stderr}${r.stdout}`);
     const e = JSON.parse(r.stdout.trim().split("\n").pop()).error;
     assert.equal(e.code, "E_LIFECYCLE_BUSY", r.stdout);
-    assert.equal(e.message, `${lock} is not a readable claim; inspect it and remove it if no oats worktree command holds it; nothing was done`);
+    assert.equal(e.message, `${lock} is not a readable claim; nothing was done — inspect it and remove it if no oats worktree command holds it, then retry`);
     assert.doesNotMatch(e.message, /is running|retry when it has finished/, `${args[0]}: nobody holds it, so never the live holder's sentence`);
-    assert.deepEqual(e.details, { purpose: "p", lock });
+    assert.deepEqual(e.details, { purpose: "p", lock, holder: "unknown" });
     assert.ok(lstatSync(lock).isSymbolicLink(), `${args[0]}: the link is still there`);
     assert.equal(readlinkSync(lock), nowhere, `${args[0]}: and still names what it named`);
     assert.equal(existsSync(nowhere), false, `${args[0]}: nothing was written through it: it still dangles`);
@@ -1560,7 +1561,7 @@ test("a purpose claim whose holder is gone and whose nonce no takeover can be se
     assert.equal(e.code, "E_LIFECYCLE_BUSY", r.stdout);
     assert.equal(e.message, `the process that held ${lock} (pid ${pid}) is gone, and this file is not a claim this kernel can take over (its nonce is not the 32 hexadecimal digits a claim carries); nothing was done — inspect ${lock} and remove it if no oats worktree command holds it, then retry`);
     assert.doesNotMatch(e.message, /is running|retry when it has finished/, `${args[0]}: nobody is running, so never the live holder's sentence`);
-    assert.deepEqual(e.details, { purpose: "p", lock, pid });
+    assert.deepEqual(e.details, { purpose: "p", lock, pid, holder: "none" });
     assert.equal(readFileSync(lock, "utf8"), claim, `${args[0]}: the file is byte for byte as it was`);
   };
   mkdirSync(trees, { recursive: true });

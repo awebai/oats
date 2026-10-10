@@ -12,7 +12,7 @@ import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CLAIM_WAIT_MS, acquireClaim, readClaim, releaseClaim, removeGoneClaim } from "../lib/claim.mjs";
-import { defectOf } from "../lib/errors.mjs";
+import { BUSY_HOLDERS, defectOf } from "../lib/errors.mjs";
 import { retireClaimRefusals } from "../lib/core.mjs";
 import { purposeClaimBusy, withClaim, worktreeClaimRefusals } from "../lib/worktree.mjs";
 import { processStartToken, selfIdentity } from "../lib/worktree-hooks.mjs";
@@ -318,14 +318,14 @@ test("an acquisition whose takeover ended the dead holder's step and that is the
   await t.test("held again and again by a process that is gone, until the retries are spent", async (st) => {
     const { c, step, error } = await refusedAfterEnding(st, (lock, n) => heldBy(lock, { pid: gone, processStart: "proc:gone", nonce: String(n % 10).repeat(32) }));
     assert.equal(error.message, `${said(step)}; after that: the process that held ${c.lock} (pid ${gone}) is gone, and this file is not a claim this kernel can take over (this command found it without a live holder 5 times, and it is held again by a process that is gone); nothing else was done — inspect ${c.lock} and remove it if no oats worktree command holds it, then retry`);
-    assert.deepEqual(error.details, { purpose: "p", lock: c.lock, pid: gone }, "the refusal's own details");
+    assert.deepEqual(error.details, { purpose: "p", lock: c.lock, pid: gone, holder: "none" }, "the refusal's own details: nobody runs, and the file has to be dealt with");
     assert.equal(error.cause, undefined, "a refusal of the kernel's has no cause");
     assert.deepEqual(c.entries(), ["p.lock"], "no takeover claim is left");
   });
   await t.test("taken first by another command that runs", async (st) => {
     const { c, step, error } = await refusedAfterEnding(st, (lock) => heldBy(lock, { ...selfIdentity(), nonce: N2 }));
     assert.equal(error.message, `${said(step)}; after that: another oats worktree add or remove of purpose p is running (pid ${process.pid} holds ${c.lock}); nothing else was done — retry when it has finished`);
-    assert.deepEqual(error.details, { purpose: "p", lock: c.lock, pid: process.pid });
+    assert.deepEqual(error.details, { purpose: "p", lock: c.lock, pid: process.pid, holder: "running" });
     assert.equal(readClaim(c.lock).nonce, N2, "the live holder's claim is untouched");
   });
   await t.test("an error of the system's", async (st) => {
@@ -359,32 +359,64 @@ test("an acquisition whose takeover ended the dead holder's step and that is the
   });
 });
 
-test("every refusal of a claim, of both callers, says that nothing was done exactly once: the words an answer after an ended step turns into nothing else was done", () => {
+test("every refusal of a claim, of both callers, says that nothing was done exactly once: the words an answer after an ended step turns into nothing else was done; and says who holds it (details.holder), with the step that ends it when nobody is known to run", () => {
   const holder = { pid: 4242, processStart: "proc:1", nonce: N1, at: "2026-10-10T00:00:00.000Z" };
   const callers = {
     "oats retire": [retireClaimRefusals("worker-1", "/agents/worker/instances/worker-1", "/claims/worker-1.lock"), "/claims/worker-1.lock"],
     "oats worktree": [worktreeClaimRefusals(purposeClaimBusy("p", "/trees/p.lock")), "/trees/p.lock"],
   };
+  assert.deepEqual([...BUSY_HOLDERS], ["running", "unknown", "none"], "the closed list of details.holder");
   for (const [caller, [r, lock]] of Object.entries(callers)) {
     // The refusals lib/claim.mjs asks a caller for, and no other.
     assert.deepEqual(Object.keys(r).sort(), ["busy", "cannotTakeOver", "ownStartUnreadable", "unreadableClaim"], caller);
     for (const at of [lock, `${lock}.reclaim-${N1}`]) {
+      // Each refusal, and what its details.holder is: the same for both callers.
       const refusals = {
-        "busy, a holder that runs": r.busy(holder, null, at),
-        "busy, a holder whose start cannot be read": r.busy(holder, "ps: simulated failure", at),
-        ownStartUnreadable: r.ownStartUnreadable("ps: simulated failure", at),
-        unreadableClaim: r.unreadableClaim(at),
-        cannotTakeOver: r.cannotTakeOver(holder, at, "its nonce is not the 32 hexadecimal digits a claim carries"),
+        "busy, a holder that runs": [r.busy(holder, null, at), "running"],
+        "busy, a holder whose start cannot be read": [r.busy(holder, "ps: simulated failure", at), "unknown"],
+        ownStartUnreadable: [r.ownStartUnreadable("ps: simulated failure", at), "none"],
+        unreadableClaim: [r.unreadableClaim(at), "unknown"],
+        cannotTakeOver: [r.cannotTakeOver(holder, at, "its nonce is not the 32 hexadecimal digits a claim carries"), "none"],
       };
-      for (const [which, e] of Object.entries(refusals)) {
+      for (const [which, [e, who]] of Object.entries(refusals)) {
         const what = `${caller}, ${which}: ${e.message}`;
         assert.equal(e.code, "E_LIFECYCLE_BUSY", what);
         assert.equal(e.message.split("nothing was done").length - 1, 1, what);
         assert.ok(!e.message.includes("\n"), what);
         assert.equal(e.details.lock, at, what);
+        assert.equal(e.details.holder, who, what);
+        assert.ok(BUSY_HOLDERS.includes(e.details.holder), what);
+        // The message is `<what was refused> — <the step that ends it>`: the refusal states its
+        // effects before the dash, once, and never after it.
+        const dash = e.message.indexOf(" — ");
+        assert.ok(dash > 0, `${what}: the refusal and the step that ends it, one dash between them`);
+        const said = e.message.slice(0, dash), remedy = e.message.slice(dash + " — ".length);
+        assert.ok(said.endsWith("; nothing was done"), `${what}: what was refused ends by saying that nothing was done`);
+        assert.ok(remedy.trim().length > 0 && !remedy.includes("nothing was done"), `${what}: a step that ends it follows the dash`);
+        // Waiting ends nothing unless a command is known to run: only that refusal says to wait.
+        assert.equal(/wait for it to finish|retry when it has finished/.test(e.message), who === "running", what);
       }
     }
   }
+  // The refusal without a pid to name carries none; a retire's names the holder's verb where a
+  // holder was read (a record without `action` is a retire's).
+  const [retire, at] = callers["oats retire"], [worktree, tree] = callers["oats worktree"];
+  const own = { instance: "worker-1", home: "/agents/worker/instances/worker-1", lock: at };
+  assert.deepEqual([retire.busy(holder, null, at).details, retire.busy(holder, "ps: simulated failure", at).details, retire.ownStartUnreadable("ps: simulated failure", at).details, retire.unreadableClaim(at).details, retire.cannotTakeOver(holder, at, "why").details], [
+    { ...own, pid: 4242, since: holder.at, action: "retire", holder: "running" },
+    { ...own, pid: 4242, since: holder.at, action: "retire", unknown: "ps: simulated failure", holder: "unknown" },
+    { ...own, holder: "none" },
+    { ...own, holder: "unknown" },
+    { ...own, pid: 4242, since: holder.at, action: "retire", holder: "none" },
+  ], "oats retire: the details of each refusal");
+  assert.deepEqual(retire.busy({ ...holder, action: "stop" }, null, at).details, { ...own, pid: 4242, since: holder.at, action: "stop", holder: "running" }, "oats retire: details.action is the verb the holder recorded");
+  assert.deepEqual([worktree.busy(holder, null, tree).details, worktree.busy(holder, "ps: simulated failure", tree).details, worktree.ownStartUnreadable("ps: simulated failure", tree).details, worktree.unreadableClaim(tree).details, worktree.cannotTakeOver(holder, tree, "why").details], [
+    { purpose: "p", lock: tree, pid: 4242, holder: "running" },
+    { purpose: "p", lock: tree, pid: 4242, unknown: "ps: simulated failure", holder: "unknown" },
+    { purpose: "p", lock: tree, holder: "none" },
+    { purpose: "p", lock: tree, holder: "unknown" },
+    { purpose: "p", lock: tree, pid: 4242, holder: "none" },
+  ], "oats worktree: the details of each refusal");
 });
 
 test("a claim's record is open: what its holder recorded beside the protocol's own fields is kept and handed to the refusals", (t) => {

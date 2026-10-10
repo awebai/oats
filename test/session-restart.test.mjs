@@ -409,7 +409,7 @@ test("a captured provider with no contribution at spawn still takes part (launch
 
 // ---- K3: stop plan → apply (recursive, retained, bounded, idempotent) and the retire plan ----
 import { planStop, applyStop, planRetire, descendantsOf } from "../lib/instance-lifecycle.mjs";
-import { stopInstanceSession } from "../lib/core.mjs";
+import { retireClaimPath, stopInstanceSession } from "../lib/core.mjs";
 
 test("K3 stop: plan reports real session/work facts and recorded children deepest-first; apply stops children before the parent, retains everything, records an idempotent receipt; stale revision refuses with the fresh plan", async () => {
   const root = fx.root;
@@ -439,7 +439,7 @@ test("K3 stop: plan reports real session/work facts and recorded children deepes
   // Apply with a stale revision refuses and carries the fresh plan.
   assert.throws(() => applyStop(repo, root, "k3-parent", { planRevision: "0".repeat(24), idempotencyKey: "k1" }), (e) => e.code === "E_PLAN_STALE" && e.plan.planRevision === plan.planRevision);
   assert.throws(() => applyStop(repo, root, "k3-parent", { planRevision: plan.planRevision, idempotencyKey: "bad key!" }), (e) => e.code === "E_BAD_ARGS");
-  for (const h of [parent.home, child.home, grandchild.home]) assert.notEqual(runningPid(h), null, "refusals stopped nothing");
+  for (const h of [parent.home, child.home, grandchild.home]) { assert.notEqual(runningPid(h), null, "refusals stopped nothing"); assert.equal(existsSync(retireClaimPath(h)), false, "and the stale apply, which took every target's claim to read its plan again, released it"); }
   const receipt = applyStop(repo, root, "k3-parent", { planRevision: plan.planRevision, idempotencyKey: "k3-once", graceMs: 5000 });
   assert.equal(receipt.ok, true); assert.equal(receipt.replayed, false);
   assert.deepEqual(receipt.results.map((r) => [r.instance, r.stopped]), [["k3-grandchild", true], ["k3-child", true], ["k3-parent", true]], "children first");
@@ -447,7 +447,10 @@ test("K3 stop: plan reports real session/work facts and recorded children deepes
   // applyStop returns only once stopHarness has seen every signalled pid gone, so a harness still running here was
   // never signalled: the timeout names the pid, its process and the stop receipt (awebai/oats#526).
   const stopEvidence = (h) => { const pid = runningPid(h); let ps = null; try { ps = execFileSync("ps", ["-o", "pid=,ppid=,stat=,comm=", "-p", String(pid)], { encoding: "utf8" }).trim(); } catch { /* gone */ } let stop = null; try { stop = readJson(join(h, ".oats-stop.json")).stop; } catch { /* none */ } return JSON.stringify({ pid, ps, requested: stop?.requested?.map((r) => r.pid) ?? null, waitedMs: stop?.waitedMs ?? null, state: stop?.state ?? null }); };
-  for (const h of [parent.home, child.home, grandchild.home]) { try { await waitFor(() => runningPid(h) === null, "harness gone"); } catch (e) { e.message += ` ${stopEvidence(h)}`; throw e; } assert.ok(existsSync(join(h, "instance.json")) && existsSync(join(h, "TASK.md")), "home retained"); assert.equal(existsSync(join(h, ".oats-stop-pending.json")), false, "marker released"); }
+  for (const h of [parent.home, child.home, grandchild.home]) { try { await waitFor(() => runningPid(h) === null, "harness gone"); } catch (e) { e.message += ` ${stopEvidence(h)}`; throw e; } assert.ok(existsSync(join(h, "instance.json")) && existsSync(join(h, "TASK.md")), "home retained"); }
+  // A stop holds the home's lifecycle claim (beside the homes, the file a retire takes) for the span of the apply, and
+  // writes no marker of its own into the home: `.oats-stop-pending.json` was an older kernel's.
+  for (const h of [parent.home, child.home, grandchild.home]) { assert.equal(existsSync(join(h, ".oats-stop-pending.json")), false, "no stop marker is written into the home"); assert.equal(existsSync(dirname(retireClaimPath(h))), true, "the apply took the home's claim: its directory is there"); assert.equal(existsSync(retireClaimPath(h)), false, "and released it once the receipt was written"); }
   // Retry with the same key replays the receipt; a new plan says everything is idle.
   const replay = applyStop(repo, root, "k3-parent", { planRevision: "whatever", idempotencyKey: "k3-once" });
   assert.equal(replay.replayed, true); assert.deepEqual(replay.results, receipt.results);
