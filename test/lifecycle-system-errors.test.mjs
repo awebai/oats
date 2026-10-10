@@ -476,6 +476,37 @@ test("retire whose stop of a recorded child meets an exception without a code: E
   assert.equal(existsSync(kid.home), true, "the child is kept");
 });
 
+// A kernel that lists feature `lifecycle-kernel-codes` promises kernel codes in every answer of these
+// commands, and a replay is one: of a receipt that an older kernel may have stored with the system's
+// own code in a failed target's row.
+test("instance stop --apply replaying a receipt an older kernel stored with a system code: the probe lists lifecycle-kernel-codes, the replay answers E_SESSION_STOP_FAILED, and the stored receipt is not rewritten", async (t) => {
+  const w = await instance(t, "a10");
+  const { fx, home, name } = w;
+  const probe = fx.cli(["version", "--json"]);
+  assert.equal(probe.status, 0, probe.stderr);
+  assert.ok(probe.json().features.includes("lifecycle-kernel-codes"), "the kernel announces the rule");
+  const plan = fx.cli(["instance", "stop", name, "--plan", "--json"]).json().result;
+  // The receipt as the kernel before this feature stored it: the thrown error's own code in the row.
+  const row = { instance: name, home, ok: false, code: "ENOENT", message: `ENOENT: no such file or directory, open '${join(home, ".oats-stop.json")}'`, stillRunning: null };
+  const stored = { lifecycleApi: plan.lifecycleApi, action: "stop", instance: name, home, idempotencyKey: "old-key", planRevision: plan.planRevision, at: "2026-10-01T00:00:00.000Z",
+    ok: false, results: [row], retained: ["home", "work", "transcript", "launch"], replayed: false };
+  const receiptPath = join(home, ".oats-stop-receipt.old-key.json");
+  const bytes = JSON.stringify(stored, null, 2) + "\n";
+  writeFileSync(receiptPath, bytes);
+  const before = listing(home);
+
+  const r = fx.cli(["instance", "stop", name, "--apply", "--plan-revision", plan.planRevision, "--idempotency-key", "old-key", "--json"]);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  const lines = r.stdout.trim().split("\n");
+  assert.equal(lines.length, 1, `exactly one envelope on stdout: ${r.stdout}`);
+  const receipt = JSON.parse(lines[0]).result;
+  // The stored receipt, field for field, but for the two things a replay changes.
+  assert.deepEqual(receipt, { ...stored, replayed: true, results: [{ ...row, code: "E_SESSION_STOP_FAILED" }] });
+  assert.ok(receipt.results[0].message.includes("ENOENT"), "the system's text stays in the message");
+  assert.equal(readFileSync(receiptPath, "utf8"), bytes, "the stored receipt is evidence: not rewritten");
+  assert.deepEqual(listing(home), before, "a replay acts on nothing");
+});
+
 // ---- 5. the removal of the home fails (the code path of the ENOTEMPTY of awebai/oats#866) ----
 
 // This shape, a read-only directory that still holds a file, is awebai/oats#894 item 3, which a later
