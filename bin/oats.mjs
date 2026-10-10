@@ -24,6 +24,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { constants as osConstants, homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { performance } from "node:perf_hooks";
 import { runtimeNameWarning, noteRuntimeName } from "../lib/deprecation.mjs";
 import { errorCause, herdrSettingRemoved, isAnswerCode, kernelCode, OWN_NAME_FAILURES, reportDefect } from "../lib/errors.mjs";
 import {
@@ -3070,10 +3071,12 @@ async function scheduleCmd() {
       case "reconcile": return out(reconcileSchedule(ws(), needId(), { io, clear: args.includes("--clear"), ctx: ctx() }));
       case "tick": {
         const dryRun = args.includes("--dry-run");
-        if (args.includes("--host")) return out(tickHost({ io, dryRun }));
+        // The minute the timer fired this tick for: this process's start, read before any work.
+        const firedAt = new Date(Math.floor(performance.timeOrigin));
+        if (args.includes("--host")) return out(tickHost({ firedAt, io, dryRun }));
         const reg = readRegistry();
         const tctx = scopeAutomations(ws(), { io, refresh: !dryRun });
-        const considered = withHostLock(() => [...(tctx.refresh && !tctx.refresh.ok ? [{ workspace: ws(), action: "error", error: `automations refresh: ${tctx.refresh.error}` }] : []), ...tickWorkspace(ws(), { io, reg, wsList: reg.workspaces.includes(ws()) ? reg.workspaces : [...reg.workspaces, ws()], dryRun, ctx: tctx }), ...tickTriggers(ws(), { io, dryRun, ctx: tctx, reg, wsList: reg.workspaces.includes(ws()) ? reg.workspaces : [...reg.workspaces, ws()] })]);
+        const considered = withHostLock(() => [...(tctx.refresh && !tctx.refresh.ok ? [{ workspace: ws(), action: "error", error: `automations refresh: ${tctx.refresh.error}` }] : []), ...tickWorkspace(ws(), { firedAt, io, reg, wsList: reg.workspaces.includes(ws()) ? reg.workspaces : [...reg.workspaces, ws()], dryRun, ctx: tctx }), ...tickTriggers(ws(), { io, dryRun, ctx: tctx, reg, wsList: reg.workspaces.includes(ws()) ? reg.workspaces : [...reg.workspaces, ws()] })]);
         return out({ tickedAt: new Date().toISOString(), considered, scheduler: schedulerStatus(ws(), io) });
       }
       case "host": {
