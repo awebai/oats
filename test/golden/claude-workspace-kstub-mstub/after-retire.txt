@@ -7,6 +7,7 @@ instances/.oats-native-record/<history-dev-claude-workspace-kstub-mstub>/history
 instances/.oats-retirement/
 instances/.oats-retirement/baselines/
 instances/.oats-retirement/baselines/<retirement-key>.json
+instances/.oats-retirement/claims/
 soul -> <base>/deployment/agents/dev/souls/<commit12>
 souls/
 souls/<commit12>/

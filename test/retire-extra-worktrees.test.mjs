@@ -12,6 +12,7 @@ import { basename, dirname, join } from "node:path";
 import { RETAINED_LEAF_MAX, completeDeferredRetirement, retireInstance } from "../lib/core.mjs";
 import { pathLimitSkip } from "./helpers/path-limit.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { killAndReap } from "./helpers/host-fixture.mjs";
 
 /** A capability whose retire hook records that it ran (`<root>/retire-hook-ran`) and, when the home holds
  *  `.lock-on-retire`, locks every `.work-*` tree in it: a lock that appears while the hooks run. */
@@ -353,7 +354,8 @@ test("a planned self-retire carries the plan's trees to its deferred completion,
   assert.deepEqual(planned, []);
   const scheduled = await w.fx.inEnv(() => retireInstance(w.fx.root, "dev-self", { self: true, selfKillDelaySec: 600, tmuxSession: "oats-test-nosuch", plannedExtraWorktrees: planned }));
   assert.equal(scheduled.deferred, true);
-  try { process.kill(scheduled.completionPid, "SIGKILL"); } catch { /* already gone */ }
+  // The completion is run here instead: the scheduled one, which the marker names, is gone first.
+  await killAndReap(scheduled.completionPid);
   const intent = JSON.parse(readFileSync(scheduled.pendingMarker, "utf8"));
   assert.deepEqual(intent.options.plannedExtraWorktrees, [], "the intent carries the binding, empty included");
   const late = w.tree("late", "agents/late");

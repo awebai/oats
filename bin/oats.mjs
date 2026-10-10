@@ -30,7 +30,7 @@ import {
   LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
   officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, isCapturedHome, capturedHomeRefusal, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
-  findInstanceHome, findInstanceHomes, processScanInformation, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, stableSoulId, preparedSoulIdOf, recordedKernelBin, launchConfigsAt, launchPromptPolicyAt, LAUNCH_PROMPT_UPDATE_WARNING, launchReportFor, explicitInstanceName, retireInstance, RETIRE_SELECTED_HOME, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
+  findInstanceHome, findInstanceHomes, processScanInformation, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, stableSoulId, preparedSoulIdOf, recordedKernelBin, launchConfigsAt, launchPromptPolicyAt, LAUNCH_PROMPT_UPDATE_WARNING, launchReportFor, explicitInstanceName, retireInstance, RETIRE_SELECTED_HOME, RETIRE_UNDER_CLAIM, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
   FAILED_SPAWN_BRANCH_LEFT, RETIRE_DELETE_BRANCH_REFUSED,
 } from "../lib/core.mjs";
 import {
@@ -2874,27 +2874,42 @@ function retireCmd() {
   // resolved the home). A guarded apply acts on the children of the plan it
   // revalidated; a plain or --self retire computes them as the plan does, and
   // passes none when there are none.
-  let replayPath = null, plannedExtraWorktrees, fresh, children;
+  let replayPath = null, fresh, revalidate, stalePlan, planFailure;
   if (planRev !== undefined) {
     if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(idemKey)) die("--idempotency-key: 1-128 chars of [A-Za-z0-9._:-]");
     // Replay first: after a successful retire the home is gone, so the receipt
     // (beside the instances dir, keyed by the idempotency key) is the answer.
     const replay = (dir) => { const p = join(dir, `.oats-retire-receipt.${idemKey}.json`); if (!existsSync(p)) return false; try { const prior = JSON.parse(readFileSync(p, "utf8")); if (prior.retired !== name) return false; if (args.includes("--json")) jsonOk({ ...prior, replayed: true }); else console.log(`retire ${name}: replayed receipt for key ${idemKey}`); return true; } catch { return false; } };
     for (const a of listAgents(root)) if (replay(join(a._dir, "instances"))) return;
-    try { fresh = planRetire(dirFlag(), root, name, { home: homeFlag }); } catch (e) { return args.includes("--json") ? jsonFail(e.code || "E_LIFECYCLE_FAILED", e.message, e.details) : die(e.message); }
-    replayPath = join(dirname(fresh.home), `.oats-retire-receipt.${idemKey}.json`);
-    // The extra trees the confirmed plan names, as it names them: the retire refuses as stale rather than
-    // move or remove one that no longer reads that way when it gets to them.
-    plannedExtraWorktrees = fresh.facts.extraWorktrees;
-    if (fresh.planRevision !== planRev) return args.includes("--json") ? jsonFail("E_PLAN_STALE", `the retire plan changed since it was shown (${planRev} → ${fresh.planRevision}); review the fresh plan`, { plan: fresh }) : die(`the retire plan changed since it was shown; re-run oats retire ${name} --plan`);
-    children = fresh.facts.children;
+    // Before the claim, only the home: where the receipt goes, and the answers of a name that
+    // resolves to no home, to several or to another one.
+    let target;
+    try { target = resolveInstanceForCli(dirFlag(), root, name, { home: homeFlag }); } catch (e) { return args.includes("--json") ? jsonFail(e.code || "E_LIFECYCLE_FAILED", e.message, e.details) : die(e.message); }
+    replayPath = join(dirname(target.home), `.oats-retire-receipt.${idemKey}.json`);
+    // The plan the revision is checked against is read once, by retireInstance, when it holds the
+    // home's claim (RETIRE_UNDER_CLAIM): nobody else is retiring the home by then, so the plan is
+    // the state the retire starts from. Against another retire of this home the answer is that one
+    // is running (E_LIFECYCLE_BUSY), and no plan is read. A revision that no longer matches is
+    // refused there, and nothing was done. What the retire takes from the plan: its children, and
+    // its extra trees as it names them (the retire refuses as stale rather than move or remove one
+    // that no longer reads that way when it gets to them).
+    revalidate = () => {
+      try { fresh = planRetire(dirFlag(), root, name, { home: homeFlag }); } catch (e) { planFailure = e; throw e; }
+      if (fresh.planRevision !== planRev) throw (stalePlan = Object.assign(new Error(`the retire plan changed since it was shown (${planRev} → ${fresh.planRevision}); review the fresh plan`), { code: "E_PLAN_STALE", details: { plan: fresh } }));
+      return { plannedExtraWorktrees: fresh.facts.extraWorktrees, children: fresh.facts.children };
+    };
   } else {
-    const recorded = descendantsOf(root, name);
-    if (recorded.length) children = recorded;
+    // A plain or --self retire reads its recorded children the same way: under the claim, as they
+    // are when the retire starts (an earlier retire that kept the home has repaired lineage by
+    // then), and none when there are none.
+    revalidate = () => { const recorded = descendantsOf(root, name); return recorded.length ? { children: recorded } : {}; };
   }
   let r;
-  try { r = retireInstance(root, name, { home: homeFlag, self: isSelf, discardWorktree: args.includes("--discard-worktree"), keepDir: args.includes("--keep-dir"), force: args.includes("--force"), ...(plannedExtraWorktrees ? { plannedExtraWorktrees } : {}), ...(children ? { children } : {}) }); }
+  try { r = retireInstance(root, name, { home: homeFlag, self: isSelf, discardWorktree: args.includes("--discard-worktree"), keepDir: args.includes("--keep-dir"), force: args.includes("--force"), [RETIRE_UNDER_CLAIM]: revalidate }); }
   catch (e) {
+    // The plan could not be read, or its revision is not the one shown: the answers they always had.
+    if (e === planFailure) return args.includes("--json") ? jsonFail(e.code || "E_LIFECYCLE_FAILED", e.message, e.details) : die(e.message);
+    if (e === stalePlan) return args.includes("--json") ? jsonFail(e.code, e.message, e.details) : die(`the retire plan changed since it was shown; re-run oats retire ${name} --plan`);
     if (!e?.code) throw e;
     // A child still running (or whose stop could not be established) refused the retirement: the
     // guarded apply returns the plan it acted on, and the text names each child's reason.

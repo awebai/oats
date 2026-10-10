@@ -282,3 +282,11 @@ export async function waitUntil(predicate, description, timeoutMs = 10000) {
   }
   return true;
 }
+
+/** End the process `pid` (SIGKILL) and wait until it is gone. A killed child of this process is a
+ *  zombie until this event loop has reaped it, and until then it reads as running, with its start
+ *  time: a record that names it (a claim, a retire's pending marker) still names a live process. */
+export async function killAndReap(pid, timeoutMs = 10000) {
+  try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ }
+  await waitUntil(() => { try { process.kill(pid, 0); return false; } catch (e) { return e.code === "ESRCH"; } }, `pid ${pid} to be gone`, timeoutMs);
+}
