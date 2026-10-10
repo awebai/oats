@@ -752,6 +752,49 @@ test("killed parent, spawn: a retire that ended the orphaned hook group and then
   assert.equal(existsSync(home), false);
 });
 
+test("killed parent, spawn: a record that becomes unreadable under the retire's claim refuses the retire before it signals the orphaned hook group: E_UNIDENTIFIED_INSTANCE_HOME, nothing was done (awebai/oats#896)", async (t) => {
+  const fx = deployment(t, { work: "worktree", lifecycle: true });
+  const { home, orphan } = await killedSpawn(fx, "dev-ur");
+  const pgid = JSON.parse(readFileSync(join(home, ".oats-rollback-incomplete.json"), "utf8")).inProgress.hookPgid;
+  endGroupAfter(fx, pgid, orphan);
+  assert.equal(alive(orphan), true, "fixture premise: the hook outlived its parent");
+  const record = join(home, "instance.json");
+  const original = readFileSync(record, "utf8");
+  // What the retire's caller confirms under the claim runs after the retire has resolved its home
+  // and before the retire reads anything of it: the record is cut off there.
+  const { RETIRE_UNDER_CLAIM } = await import("../lib/core.mjs");
+  const { readlinkSync } = await import("node:fs");
+  /** Every entry under `dir`, one row each: its path, its mode, and a file's bytes or a link's target. */
+  const homeEntries = (dir, rel = "") => readdirSync(join(dir, rel)).sort().flatMap((name) => {
+    const at = join(rel, name), abs = join(dir, at), st = lstatSync(abs);
+    const mode = (st.mode & 0o7777).toString(8);
+    if (st.isSymbolicLink()) return [`${at} -> ${readlinkSync(abs)}`];
+    if (st.isDirectory()) return [`${at}/ ${mode}`, ...homeEntries(dir, at)];
+    return [`${at} ${mode} ${readFileSync(abs).toString("base64")}`];
+  });
+  let before;
+  const error = await fx.inEnv(() => {
+    try { retireInstance(fx.root, "dev-ur", { tmuxSession: "oats-test-nosuch", [RETIRE_UNDER_CLAIM]: () => { writeFileSync(record, "{"); before = homeEntries(home); return {}; } }); } catch (e) { return e; }
+    return null;
+  });
+  assert.ok(error, "the retire is refused");
+  assert.equal(error.code, "E_UNIDENTIFIED_INSTANCE_HOME", `${error.code}: ${error.message}`);
+  assert.ok(error.message.startsWith(`${record} cannot be read (`) && error.message.includes("; nothing was done. "), error.message);
+  // The code says "refused, nothing happened": nothing was signalled, and `reached` is untouched.
+  assert.deepEqual(error.details, { reached: { phase: "before-effects", sessionStopAttempted: false, hooksStarted: false, home: "kept", recovery: null } });
+  assert.equal(alive(orphan), true, "the orphaned hook group was not signalled: it is alive after the refusal");
+  assert.equal(existsSync(join(fx.root, "retire-ran")), false, "no retire hook ran");
+  assert.ok(before.some((row) => row.startsWith(".oats-rollback-incomplete.json ")), "fixture premise: the home holds the spawn's marker");
+  assert.deepEqual(homeEntries(home), before, "the home is byte-identical: its marker, its record as it was cut off, its work");
+
+  // With the record restored from a copy, the same retire ends the group and completes the rollback.
+  writeFileSync(record, original);
+  const again = fx.cli(["retire", "dev-ur", "--json"]);
+  assert.equal(again.status, 0, again.stderr + again.stdout);
+  assert.ok(await waitFor(() => !alive(orphan), 5000), "the retire ended the orphaned hook group");
+  assert.equal(existsSync(home), false);
+});
+
 test("killed parent, spawn: a branch that moved, or is checked out elsewhere, is kept and named; the home is retained", async (t) => {
   const fx = deployment(t, { work: "worktree", lifecycle: true });
   const moved = await killedSpawn(fx, "dev-mv");

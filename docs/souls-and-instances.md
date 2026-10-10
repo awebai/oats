@@ -461,7 +461,11 @@ one) are stopped first, never escalated, and kept: their homes stay. If one is
 still running after the grace, or its stop cannot be established, retire
 refuses with `E_CHILDREN_RUNNING` and retires nothing; `--force` does not
 bypass it. This holds for plain, guarded and `--self` retires alike
-([desktop-cli-api.md](desktop-cli-api.md)).
+([desktop-cli-api.md](desktop-cli-api.md)). Who is a child is read from each
+home's `instance.json`: a home whose record cannot be read is never stopped
+as anyone's child, by a retire or by `oats instance stop`. Its session may go
+on running after its parent is retired, and the retire's answer does not name
+it; `oats status` is where it shows.
 
 Before any retire hook runs, retire preserves the instance's uncommitted and
 unmerged work: a verified recovery under `.oats-retirement/recovery/`, named in
@@ -833,8 +837,10 @@ remove one whose record cannot be read, which may be a whole instance with
 work. Restoring the file from a copy makes the home usable again; removing
 such a home through OATS is not possible yet. A parent whose record cannot be
 read has no recorded children for a stop or a retire: the lineage is read
-from records, so its children are listed and act on their own. The answers
-are in [desktop-cli-api.md](desktop-cli-api.md#unreadable-record).
+from records, so its children are listed and act on their own. In the other
+direction, such a home is never stopped as anyone's child: stop it, once its
+record is restored, on its own. The answers are in
+[desktop-cli-api.md](desktop-cli-api.md#unreadable-record).
 
 **An entry of the home that cannot be read, or that is gone when it is
 read.** Each inspection walks the home: it lists a directory, then reads each

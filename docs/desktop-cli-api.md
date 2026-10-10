@@ -2957,7 +2957,12 @@ reality moved it refuses `E_PLAN_STALE` with the fresh `details.plan`. An
 idempotency key (`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`) makes a retried apply
 return the first receipt. Recorded parentage (`parentInstance`) is the only
 relation followed; a child whose parent name matches several homes is listed
-under `ambiguous` and never acted on.
+under `ambiguous` and never acted on. Parentage is read from each home's
+`instance.json`: a home whose record cannot be read is never stopped as
+anyone's child. It is in no plan's `targets`, `children` or `ambiguous`, and
+no stop or retire of its parent names it, so its session may go on running
+under a parent that was stopped or retired. `oats status` is where it shows
+([its row](#unreadable-record-row)).
 
 <a id="unreadable-record"></a>
 **A home whose `instance.json` is there and cannot be read** as a JSON object
@@ -2980,9 +2985,11 @@ that is not an object; OATS 0.52.0) decides only for itself.
   read may be a whole instance with work, and is never removed blind.
 - The lineage is read from records. A parent whose record cannot be read has
   no recorded children for a stop or a retire: they are listed, and each is
-  stopped and retired on its own. A child whose record cannot be read is not
-  a target of its parent's stop or retire, and a retire does not repair its
-  lineage.
+  stopped and retired on its own. A home whose record cannot be read is never
+  stopped as anyone's child: it is not a target of its parent's stop or
+  retire, no plan and no answer of either names it, and a retire does not
+  repair its lineage. Its session may go on running under a parent that was
+  retired; `oats status` is where it shows.
 - A spawn that names such a home as its parent or anchor is refused
   (`E_SPAWN_FAILED`, the same sentence with `nothing was spawned`): the
   parent's child-spawn policy and the lineage are in that record.
@@ -2990,9 +2997,15 @@ that is not an object; OATS 0.52.0) decides only for itself.
   `E_RUNTIME_ENDPOINT_UNKNOWN`, and `oats instance events` still reads its
   logs.
 
-A record that becomes unreadable after a retire has taken the home's claim is
-refused the same way, with [`details.reached`](#retire-reached) and the
-sentence of that point in place of `nothing was done`.
+`E_UNIDENTIFIED_INSTANCE_HOME` for a record that cannot be read is answered
+only before any effect: nothing was signalled, run, copied or removed. A
+record that becomes unreadable after a retire has taken the home's claim is
+refused with the same sentence, before the retire's first signal (the end of
+the hook group an interrupted spawn left). That answer alone carries
+[`details.reached`](#retire-reached), untouched: `{phase: "before-effects",
+sessionStopAttempted: false, hooksStarted: false, home: "kept", recovery:
+null}`. A plan refuses the same way when the record became unreadable after
+the home was resolved.
 
 ### Stop
 
@@ -3024,7 +3037,8 @@ oats instance stop <instance> --plan [--no-recursive] [--home <abs>] [--dir <d>]
   renamed, copied and unmerged rows), or `{observed: false, reason}`:
   `"no-worktree"`, or the kernel code of what failed (`E_GIT_FAILED` for an
   error that has none; `E_WORK_INSPECTION_FAILED` for a home the kernel
-  cannot look into, where whether it has a `work/` cannot be told).
+  cannot look into, where whether it has a `work/` cannot be told; OATS
+  0.52.0).
 - `midTask`: `true`, `false` or `"unknown"`.
 
 ```text
@@ -3096,6 +3110,12 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
  "planRevision":"4e5f6a7b8c9d0e1f2a3b4c5d","notes":["the worktree is on feat/x, not the recorded agents/dev-1; …"]}
 ```
 
+- `facts.session` and `facts.work` read as a [stop plan](#stop)'s
+  `session` and `work`. Work that was not observed is `{observed: false,
+  reason}`: `"no-worktree"`, or the kernel code of what failed
+  (`E_GIT_FAILED` for an error that has none; `E_WORK_INSPECTION_FAILED` for
+  a home the kernel cannot look into, where whether it has a `work/` cannot be
+  told; OATS 0.52.0).
 - The plan changes nothing except appending a `retire-planned` event to the
   workspace log. `pullRequest` is always `"unknown"`. Branch actions use the
   worktree's branch, never `recordedBranch`.
@@ -3364,7 +3384,11 @@ A first retire prints the **raw receipt**, not an envelope:
 **Recorded children**, on every apply (plain, guarded and `--self`), as the
 plan says: each child the plan lists is stopped first (bounded SIGTERM,
 never escalated) and kept, once the retire has resolved the home and before
-the instance's own session is stopped. `childrenStopped[]` lists them,
+the instance's own session is stopped. A home whose `instance.json`
+[cannot be read](#unreadable-record) is never stopped as anyone's child: the
+plan does not list it, `childrenStopped[]` does not name it, and its session
+may go on running after its parent is retired; `oats status` is where it
+shows. `childrenStopped[]` lists the children stopped,
 deepest first, as `{instance, home, ok: true, stopped, alreadyIdle}` or
 `{instance, home, ok: false, code, message, stillRunning}`. A plain or
 `--self` receipt carries it only when there are children; a guarded receipt
