@@ -855,8 +855,11 @@ test("#691 a completed start's receipt is never recorded again: no write, no hoo
   // Q2: a receipt naming the recorded start on another target is ambiguous. The kernel never writes this
   // state; it is constructed here only to pin the refusal: nothing written, the way out named.
   // A stray window running under the receipt's target name makes it ambiguous while it runs.
+  // Its command is two arguments, so tmux execs it with no shell: given as one ("sleep 600") the pane
+  // is `sh -c` for an instant on its way to `sleep`, and a pane of only shells under a receipt with no
+  // completion marker reads as a start still in progress (E_SESSION_START_BUSY), not as a running target (#908).
   provider({ meta: { grant: { id: "grant-7" } }, warning: "provider hook ran" });
-  tmux("new-window", "-d", "-t", `${session}:`, "-n", "stray", "-c", home, "sleep 600");
+  tmux("new-window", "-d", "-t", `${session}:`, "-n", "stray", "-c", home, "sleep", "600");
   write(pendingPath, JSON.stringify({ ...readJson(pendingPath), id: readJson(metaPath).startId, target: { ...readJson(pendingPath).target, window: "stray" } }));
   const ambiguous = { meta: readFileSync(metaPath, "utf8"), metaIno: ino(metaPath), pending: readFileSync(pendingPath, "utf8"), runs: hookRuns() };
   const refusedAmbiguous = (e) => e.code === "E_SESSION_UNKNOWN" && /receipt is kept and nothing was started/.test(e.message) && /oats session inspect --home/.test(e.message) && /kill-window -t '=r:=stray'/.test(e.message) && /oats session restart --home/.test(e.message);
