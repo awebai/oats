@@ -8,7 +8,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn as spawnChild, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import YAML from "yaml";
@@ -590,7 +590,7 @@ test("a process whose own start cannot be read: retire is refused, saying what c
   const before = digest(inst.home);
   const dir = join(f.fx.base, "ps-fails"); mkdirSync(dir);
   writeFileSync(join(dir, "ps"), '#!/bin/sh\necho "ps: simulated failure" >&2\nexit 2\n', { mode: 0o755 });
-  const r = await f.retire(inst.instance, ["--force"], { OATS_TEST_PROCESS_START_PS: "1", PATH: `${dir}:${f.fx.env.PATH}` }).done;
+  const r = await f.retire(inst.instance, ["--force"], { OATS_TEST_PROCESS_START_PS: join(dir, "ps") }).done;
   assert.equal(r.code, 1, r.out + r.err);
   const e = envelope(r).error, lock = claimOf(inst.home);
   assert.equal(e.code, "E_LIFECYCLE_BUSY");
@@ -599,6 +599,23 @@ test("a process whose own start cannot be read: retire is refused, saying what c
   assert.deepEqual(e.details, { instance: inst.instance, home: inst.home, lock });
   assert.equal(digest(inst.home), before, "nothing of the home changed");
   assert.deepEqual([claimFiles(inst.home), recoveries(inst), f.hookRuns()], [[], [], 0], "no claim, no recovery, no hook run");
+});
+
+test("a retire whose PATH holds no ps still reads its own start on the ps path, and retires (#878)", async (t) => {
+  const f = fixture(t);
+  const inst = await f.spawn();
+  // The fixture's PATH, every program of it but `ps`, in one directory.
+  const dir = join(f.fx.base, "path-without-ps"), linked = new Set(["ps"]); mkdirSync(dir);
+  for (const from of f.fx.env.PATH.split(":").filter((d) => d && existsSync(d))) {
+    for (const name of readdirSync(from)) if (!linked.has(name)) { linked.add(name); symlinkSync(join(from, name), join(dir, name)); }
+  }
+  assert.equal(spawnSync("sh", ["-c", "command -v ps"], { env: { PATH: dir } }).status, 1, "no ps on that PATH");
+  f.open();
+  const r = await f.retire(inst.instance, [], { OATS_TEST_PROCESS_START_PS: "1", PATH: dir }).done;
+  assert.equal(r.code, 0, r.out + r.err);
+  assert.equal(envelope(r).retired, inst.instance);
+  assert.equal(existsSync(inst.home), false, "the home is retired");
+  assert.deepEqual(claimFiles(inst.home), [], "no claim left");
 });
 
 test("a holder that cannot be established alive or gone is never taken over; a claim file that is not a claim is never removed", async (t) => {

@@ -597,7 +597,7 @@ test("spawn: when its own start time cannot be read it refuses before any worktr
   const real = execFileSync("sh", ["-c", "command -v ps"], { encoding: "utf8" }).trim();
   const dir = join(fx.base, "ps-unreadable-self"); mkdirSync(dir);
   writeFileSync(join(dir, "ps"), `#!/bin/sh\nfor a in "$@"; do [ "$a" = "$PPID" ] && { echo "ps: simulated failure" >&2; exit 2; }; done\nexec ${JSON.stringify(real)} "$@"\n`, { mode: 0o755 });
-  const r = fx.cli(spawnArgs("dev-self"), { env: { OATS_TEST_PROCESS_START_PS: "1", PATH: `${dir}:${fx.env.PATH}` } });
+  const r = fx.cli(spawnArgs("dev-self"), { env: { OATS_TEST_PROCESS_START_PS: join(dir, "ps") } });
   assert.notEqual(r.status, 0);
   const err = r.json().error;
   assert.equal(err.code, "E_SPAWN_FAILED", r.stdout);
@@ -828,12 +828,13 @@ function asKilledAdd(home, purpose, drop = [], pid = 2147483647) {
   writeFileSync(p, JSON.stringify({ ...rec, state: "creating", pid, processStart: "proc:gone", startedAt: "earlier" }));
 }
 /** A `ps` in macOS's shape: for a pid that does not exist it prints an error and exits 1 (procps exits 1
- *  silently); for any other pid it is the real `ps`. → the environment that reads start times through it. */
+ *  silently); for any other pid it is the real `ps`. It leaves `<base>/ps-mac/ran` once it has run.
+ *  → the environment that reads start times through it (the test seam names it). */
 function macPsEnv(fx) {
   const real = execFileSync("sh", ["-c", "command -v ps"], { encoding: "utf8" }).trim();
   const dir = join(fx.base, "ps-mac"); mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "ps"), `#!/bin/sh\nout=$(${JSON.stringify(real)} "$@" 2>/dev/null) || { echo "ps: process id not found (simulated macOS)" >&2; exit 1; }\nprintf '%s\\n' "$out"\n`, { mode: 0o755 });
-  return { OATS_TEST_PROCESS_START_PS: "1", PATH: `${dir}:${fx.env.PATH}` };
+  writeFileSync(join(dir, "ps"), `#!/bin/sh\n: > ${JSON.stringify(join(dir, "ran"))}\nout=$(${JSON.stringify(real)} "$@" 2>/dev/null) || { echo "ps: process id not found (simulated macOS)" >&2; exit 1; }\nprintf '%s\\n' "$out"\n`, { mode: 0o755 });
+  return { OATS_TEST_PROCESS_START_PS: join(dir, "ps") };
 }
 /** A real pid whose process has exited and been reaped. */
 const exitedPid = () => spawnSync(process.execPath, ["-e", ""], { env: { PATH: process.env.PATH } }).pid;
@@ -923,6 +924,7 @@ for (const shape of ["this host's reader", "a ps in macOS's shape"]) test(`an in
   assert.equal(out.status, 0, out.stderr);
   assert.match(out.stdout, /branch agents\/shared kept \(it is checked out in a worktree\)/);
   assert.equal(tipOf(fx, "agents/shared"), originMain(fx));
+  if (shape !== "this host's reader") assert.ok(existsSync(join(fx.base, "ps-mac", "ran")), "the ps in macOS's shape is the one that was read");
 });
 
 test("a killed add whose hook leader exited: the group left behind is never signalled, the warning names it, the rollback completes", async (t) => {
@@ -1037,13 +1039,13 @@ test("a git step that fails on its own answers E_GIT_FAILED, not a clone or bran
 
 // ---------- a process whose start cannot be read is never taken for gone ----------
 
-/** A `ps` on PATH that cannot read `pid` (exit 2, an error on stderr) and is the real `ps` for any other
- *  pid. With OATS_TEST_PROCESS_START_PS=1 the kernel reads start times through it. */
+/** A `ps` that cannot read `pid` (exit 2, an error on stderr) and is the real `ps` for any other
+ *  pid. → its absolute path: with OATS_TEST_PROCESS_START_PS set to it the kernel reads start times through it. */
 function unreadablePs(fx, pid) {
   const real = execFileSync("sh", ["-c", "command -v ps"], { encoding: "utf8" }).trim();
   const dir = join(fx.base, `ps-unreadable-${pid}`); mkdirSync(dir);
   writeFileSync(join(dir, "ps"), `#!/bin/sh\nfor a in "$@"; do [ "$a" = "${pid}" ] && { echo "ps: simulated failure" >&2; exit 2; }; done\nexec ${JSON.stringify(real)} "$@"\n`, { mode: 0o755 });
-  return `${dir}:${fx.env.PATH}`;
+  return join(dir, "ps");
 }
 /** A live process that is no oats command, standing in for a holder whose start cannot be read; ended by the test. */
 function bystander(fx) {
@@ -1061,7 +1063,7 @@ test("an adder or claim holder whose start cannot be read: add and remove refuse
   const recPath = join(home, ".oats", "trees", "feat.json");
   const lock = join(home, ".oats", "trees", "feat.lock");
   const pid = bystander(fx);
-  const env = { OATS_TEST_PROCESS_START_PS: "1", PATH: unreadablePs(fx, pid) };
+  const env = { OATS_TEST_PROCESS_START_PS: unreadablePs(fx, pid) };
   const commands = [["add", "--purpose", "feat", "--branch", "agents/feat", "--base", "main", "--json"], ["remove", "--purpose", "feat", "--json"]];
   const ready = readFileSync(recPath, "utf8");
   // A `creating` record naming it: never rolled back.
@@ -1103,8 +1105,8 @@ test("a spawn whose start cannot be read: status shows the quarantine, not in pr
   const marker = JSON.parse(readFileSync(markerPath, "utf8"));
   writeFileSync(markerPath, JSON.stringify({ ...marker, inProgress: { ...marker.inProgress, pid, processStart: SOME_START } }));
   const saved = { PATH: process.env.PATH, seam: process.env.OATS_TEST_PROCESS_START_PS };
-  process.env.PATH = unreadablePs(fx, pid);
-  process.env.OATS_TEST_PROCESS_START_PS = "1";
+  process.env.PATH = fx.env.PATH;
+  process.env.OATS_TEST_PROCESS_START_PS = unreadablePs(fx, pid);
   try {
     const row = (await fx.inEnv(() => listInstances(fx.root, "oats-test-nosuch"))).flatMap((a) => a.instances).find((i) => i.instance === "dev-unk");
     // Not shown in progress (a host that never reads it would say "setting up" forever): the quarantine, naming the pid.
@@ -1155,7 +1157,7 @@ test("a killed recovery's git step whose start cannot be read: the next add refu
   assert.equal(JSON.parse(held).gitPid, oldGit);
   execFileSync("rm", [join(fx.root, "hook-sleep")]);
   // The claim's holder is gone (read normally); only its git step's start cannot be read.
-  const env = { OATS_TEST_PROCESS_START_PS: "1", PATH: unreadablePs(fx, oldGit) };
+  const env = { OATS_TEST_PROCESS_START_PS: unreadablePs(fx, oldGit) };
   const r = wt(fx, home, argv.slice(1), env);
   const e = r.json().error;
   assert.equal(e.code, "E_LIFECYCLE_BUSY", r.stdout);
@@ -1192,7 +1194,7 @@ test("an interrupted add's git step or hook group whose start cannot be read: ad
   killed.child.kill("SIGKILL");
   await killed.done;
   const swRec = readFileSync(recPath("sw"), "utf8");
-  let env = { OATS_TEST_PROCESS_START_PS: "1", PATH: unreadablePs(fx, switchGit) };
+  let env = { OATS_TEST_PROCESS_START_PS: unreadablePs(fx, switchGit) };
   for (const args of [["add", "--purpose", "sw", "--branch", "agents/sw", "--base", "main", "--json"], ["remove", "--purpose", "sw", "--json"]]) {
     check(wt(fx, home, args, env), { pgid: switchGit, start: JSON.parse(swRec).gitStart, what: "git", purpose: "sw" });
     assert.equal(readFileSync(recPath("sw"), "utf8"), swRec, `${args[0]}: the record is kept`);
@@ -1216,7 +1218,7 @@ test("an interrupted add's git step or hook group whose start cannot be read: ad
   const { hookPgid, hookStart } = JSON.parse(hkRec);
   endGroupAfter(fx, hookPgid);
   execFileSync("rm", [join(fx.root, "hook-sleep")]);
-  env = { OATS_TEST_PROCESS_START_PS: "1", PATH: unreadablePs(fx, hookPgid) };
+  env = { OATS_TEST_PROCESS_START_PS: unreadablePs(fx, hookPgid) };
   for (const args of [["add", "--purpose", "hk", "--branch", "agents/hk", "--base", "main", "--json"], ["remove", "--purpose", "hk", "--json"]]) {
     check(wt(fx, home, args, env), { pgid: hookPgid, start: hookStart, what: "hook", purpose: "hk" });
     assert.equal(readFileSync(recPath("hk"), "utf8"), hkRec, `${args[0]}: the record is kept`);
@@ -1236,8 +1238,8 @@ test("a killed spawn's hook group whose start cannot be read: retire refuses nam
   endGroupAfter(fx, group);
   const { hookStart } = JSON.parse(readFileSync(join(home, ".oats-rollback-incomplete.json"), "utf8")).inProgress;
   const saved = { PATH: process.env.PATH, seam: process.env.OATS_TEST_PROCESS_START_PS };
-  process.env.PATH = unreadablePs(fx, group);
-  process.env.OATS_TEST_PROCESS_START_PS = "1";
+  process.env.PATH = fx.env.PATH;
+  process.env.OATS_TEST_PROCESS_START_PS = unreadablePs(fx, group);
   try {
     await assert.rejects(fx.inEnv(() => retireInstance(fx.root, "dev-unkhook", { tmuxSession: "oats-test-nosuch" })), (e) => {
       assert.equal(e.code, "E_LIFECYCLE_BUSY");

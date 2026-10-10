@@ -346,8 +346,9 @@ positive whole number of milliseconds replaces the fixed 30-minute timeout of
 tests can reach it. `OATS_TEST_WORKTREE_FETCH_TIMEOUT_MS` does the same for the
 10-minute fetch of `oats worktree add`. `OATS_TEST_PROCESS_START_PS=1` makes
 the kernel read a process's start time with `ps`, as on a host without
-`/proc` (macOS), on a host that has it. A launch configuration cannot set
-any of them. Do not set them in a deployment.
+`/proc` (macOS), on a host that has it; an absolute path instead runs that
+file as `ps`, directly and in the same fixed environment; any other value
+reads no start at all. A launch configuration cannot set any of them. Do not set them in a deployment.
 
 **An instance creates an agents' session or window without its own
 environment.** Nothing of an instance's environment reaches a server or a
