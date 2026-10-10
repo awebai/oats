@@ -727,12 +727,13 @@ test("a dangling symbolic link where the claim belongs: the retire is refused in
   mkdirSync(claimsDir(inst.home), { recursive: true });
   symlinkSync(nowhere, lock);
   // Before awebai/oats#874 this retire never returned: the time it is given makes that a failure.
+  // That time is the one bound, and it only ends a retire that hangs: how long a retire that
+  // answers took is the host's (shown, not asserted). That the claim pauses a fixed number of
+  // times is pinned where it can be counted, in test/claim.test.mjs.
   const started = Date.now();
   const r = spawnSync(process.execPath, [CLI, "retire", name, "--json"], { cwd: f.fx.dep, env: f.fx.env, encoding: "utf8", timeout: 30000 });
-  const took = Date.now() - started;
-  t.diagnostic(`refused after ${took} ms`);
+  t.diagnostic(`refused after ${Date.now() - started} ms`);
   assert.equal(r.error, undefined, `the retire returned by itself (${r.error?.code}, signal ${r.signal})`);
-  assert.ok(took < 10000, `it was refused in a bounded time (${took} ms)`);
   assert.deepEqual([r.status, r.stderr], [1, ""], r.stdout + r.stderr);
   const e = JSON.parse(r.stdout);
   assert.deepEqual({ schemaVersion: e.schemaVersion, ok: e.ok }, { schemaVersion: 1, ok: false });

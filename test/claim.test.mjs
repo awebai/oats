@@ -72,6 +72,33 @@ function countLinks(t, path) {
   return seen;
 }
 
+/** The pauses lib/claim.mjs takes until `t` ends, each by its length in ms. It pauses with
+ *  Atomics.wait; nothing else does in a test that ends no recorded step. What a test says about
+ *  waiting is this list and the attempts (countLinks), never how long the host took: where every
+ *  liveness read is a `ps`, an upper bound in ms is a bound on the host, not on the claim. */
+function countPauses(t) {
+  const original = Atomics.wait, seen = [];
+  Atomics.wait = function (array, index, value, ms) { seen.push(ms); return original.call(this, array, index, value, ms); };
+  t.after(() => { Atomics.wait = original; });
+  return seen;
+}
+/** Run `fn` on a clock that only those pauses move: Date.now() stands still but for the length of
+ *  each pause, which takes no time. For what holds at an exact moment of the wait, on any host.
+ *  → { result, pauses }. Synchronous, as the claim is: nothing else runs on that clock. A loop
+ *  that reads it again and again without pausing would never see its wait end: that is an error
+ *  here, not a test that hangs. */
+function onPausedClock(fn) {
+  const now = Date.now, wait = Atomics.wait, pauses = [];
+  let at = Date.now(), reads = 0;
+  Date.now = () => {
+    if (++reads > 1000) throw new Error(`the clock was read ${reads} times with no pause between: a loop that does not pause`);
+    return at;
+  };
+  Atomics.wait = (array, index, value, ms) => { pauses.push(ms); at += ms; reads = 0; return "timed-out"; };
+  try { return { result: fn(), pauses }; }
+  finally { Date.now = now; Atomics.wait = wait; }
+}
+
 test("a claim whose holder is a zombie with the recorded start is taken over, as any gone holder's, without waiting for the reap", async (t) => {
   const c = claimDir(t);
   const holder = spawn("sleep", ["60"], { stdio: "ignore" });
@@ -102,17 +129,29 @@ for (const [what, waitMs] of [["no wait", 0], ["the default wait", undefined]]) 
     const target = join(c.dir, "nowhere");
     symlinkSync(target, c.lock);
     const links = countLinks(t, c.lock);
-    const t0 = Date.now();
-    const e = thrown(() => acquireClaim(c.lock, c.opts(waitMs === undefined ? {} : { waitMs })));
-    const took = Date.now() - t0;
+    const acquire = () => thrown(() => acquireClaim(c.lock, c.opts(waitMs === undefined ? {} : { waitMs })));
+    // Bounded by what it does, never by how long this host takes: the attempts its wait has room
+    // for at 50 ms apart, then five more and the one that refuses. And never hot: one pause of
+    // 50 ms after each attempt but the last.
+    let e, pauses;
+    if (waitMs === 0) {
+      // With no wait, on the host's own clock: the pauses are real, so it cannot have taken less
+      // than they add up to. A lower bound only; how much longer it took is the host's.
+      pauses = countPauses(t);
+      const t0 = Date.now();
+      e = acquire();
+      const took = Date.now() - t0;
+      assert.ok(took >= 5 * 50, `it took ${took} ms`);
+      assert.equal(links.n, 6, "the first attempt and five retries");
+    } else {
+      // The default wait, on a clock that only its pauses move: every attempt of that wait is
+      // made, and the refusal comes five pauses after it is over.
+      ({ result: e, pauses } = onPausedClock(acquire));
+      assert.equal(links.n, CLAIM_WAIT_MS / 50 + 6, `${links.n} attempts for a wait of ${CLAIM_WAIT_MS} ms`);
+    }
     // The refusal for a path that is no readable claim, never the one that says somebody is running.
     assert.deepEqual([e.code, e.kind, e.at], ["E_LIFECYCLE_BUSY", "unreadableClaim", c.lock]);
-    // Bounded: the wait, then five more passes, 50 ms apart; and never hot: one pause after each pass.
-    const wait = waitMs ?? CLAIM_WAIT_MS;
-    assert.ok(took >= wait + 5 * 50 && took < wait + 5000, `it took ${took} ms`);
-    if (waitMs === 0) assert.equal(links.n, 6, "the first attempt and five retries");
-    assert.ok(links.n >= 2 && links.n <= Math.ceil(took / 50) + 1, `${links.n} attempts in ${took} ms: at least 50 ms apart`);
-    assert.ok(took >= (links.n - 1) * 50, `${links.n} attempts in ${took} ms: it paused between them`);
+    assert.deepEqual(pauses, Array(links.n - 1).fill(50), "one pause of 50 ms after each attempt but the last");
     assert.deepEqual([lstatSync(c.lock).isSymbolicLink(), readlinkSync(c.lock), existsSync(target)], [true, target, false], "the link is as it was, and nothing was written through it");
     assert.deepEqual(c.entries(), ["p.lock"], "no private file is left");
   });
@@ -124,11 +163,10 @@ test("a dangling symbolic link where a takeover's own claim belongs: the same bo
   writeFileSync(c.lock, held);
   const reclaim = `${c.lock}.reclaim-${N1}`;
   symlinkSync(join(c.dir, "nowhere"), reclaim);
-  const links = countLinks(t, reclaim);
-  const t0 = Date.now();
+  const links = countLinks(t, reclaim), pauses = countPauses(t);
   const e = thrown(() => acquireClaim(c.lock, c.opts({ waitMs: 0 })));
   assert.deepEqual([e.kind, e.at], ["unreadableClaim", reclaim]);
-  assert.ok(Date.now() - t0 < 5000 && links.n === 6, `${links.n} attempts in ${Date.now() - t0} ms`);
+  assert.deepEqual([links.n, pauses], [6, Array(5).fill(50)], "six attempts at the takeover's claim, a pause after each but the last, and no more");
   assert.equal(readFileSync(c.lock, "utf8"), held, "the claim it could not take over is as it was");
   assert.deepEqual(c.entries(), ["p.lock", `p.lock.reclaim-${N1}`]);
 });
@@ -159,16 +197,17 @@ test("a claim released between the failed link and the read is taken on the next
 test("a gone holder whose claim cannot be taken over is refused as that, never as a holder that runs: a nonce that is not 32 hex, and a takeover nested 8 deep", (t) => {
   const c = claimDir(t);
   const gone = exitedPid();
+  const links = countLinks(t, c.lock), pauses = countPauses(t);
   // A hand-written or damaged claim: it parses, its holder is gone, and no takeover can be serialized on it.
   for (const nonce of ["short", "A".repeat(32), 7, undefined]) {
     const record = { pid: gone, processStart: "proc:gone", ...(nonce === undefined ? {} : { nonce }), at: "2026-10-10T00:00:00.000Z" };
     const held = JSON.stringify(record) + "\n";
     writeFileSync(c.lock, held);
     for (const waitMs of [0, 200]) {
-      const t0 = Date.now();
+      links.n = 0; pauses.length = 0;
       const e = thrown(() => acquireClaim(c.lock, c.opts({ waitMs })));
       assert.deepEqual([e.code, e.kind, e.holder, e.at, e.why], ["E_LIFECYCLE_BUSY", "cannotTakeOver", record, c.lock, "its nonce is not the 32 hexadecimal digits a claim carries"], JSON.stringify(nonce));
-      assert.ok(Date.now() - t0 < 150, "at once: nobody is waited for");
+      assert.deepEqual([links.n, pauses], [1, []], `at once, whatever the wait (${waitMs} ms): one attempt and no pause, nobody is waited for`);
     }
     assert.equal(removeGoneClaim(c.lock, c.opts({ waitMs: 0 })), false, "the abandoned-claim removal skips it");
     assert.equal(readFileSync(c.lock, "utf8"), held, "the file is as it was");
@@ -231,11 +270,11 @@ test("a claim that is held again by a gone process after every takeover ends in 
     if (!existsSync(c.lock)) writeFileSync(c.lock, dead(links % 10));
     throw eexist();
   });
-  const t0 = Date.now();
+  const pauses = countPauses(t);
   const e = thrown(() => acquireClaim(c.lock, c.opts({ waitMs: 0 })));
   assert.deepEqual([e.kind, e.at, e.why], ["cannotTakeOver", c.lock, "this command found it without a live holder 5 times, and it is held again by a process that is gone"]);
   assert.equal(links, 6, "the first attempt and five retries");
-  assert.ok(Date.now() - t0 >= 250 && Date.now() - t0 < 5000, "it paused between them");
+  assert.deepEqual(pauses, Array(5).fill(50), "it paused between them, once after each takeover");
   assert.equal(readClaim(c.lock).nonce, e.holder.nonce, "the refusal is about the claim that is there");
   assert.deepEqual(c.entries(), ["p.lock"], "no takeover claim is left");
 });
@@ -276,17 +315,19 @@ test("passes that find nobody holding the claim before the wait is over do not s
   const c = claimDir(t);
   const waitMs = 300;
   // The claim is there at every link and released before every read, until one pass has come after
-  // the wait was over; the next link finds it free.
-  let early = 0, late = 0;
-  const started = Date.now();
+  // the wait was over; the next link finds it free. On a clock that only the claim's pauses move,
+  // so that "before the wait was over" is the loop's own moment, on any host: the wait starts when
+  // the acquisition does, and nothing but a pause comes between.
+  let early = 0, late = 0, started;
   wrapFs(t, "linkSync", (linkSync) => function (from, to) {
     if (to !== c.lock || late) return linkSync.call(this, from, to);
-    if (Date.now() >= started + waitMs + 10) late++; else early++;
+    if (Date.now() >= started + waitMs) late++; else early++;
     throw eexist();
   });
-  const me = acquireClaim(c.lock, c.opts({ waitMs }));
-  assert.ok(early >= 5, `${early} passes found it released before the wait was over: more than the retries there are after it`);
+  const { result: me, pauses } = onPausedClock(() => { started = Date.now(); return acquireClaim(c.lock, c.opts({ waitMs })); });
+  assert.equal(early, waitMs / 50, `${early} passes found it released before the wait was over: more than the retries there are after it`);
   assert.equal(late, 1, "and one more at the deadline, which is retried");
+  assert.deepEqual(pauses, Array(early + late).fill(50), "a pause after each of them");
   assert.equal(readClaim(c.lock).nonce, me.nonce, "the next pass took it");
   releaseClaim(c.lock, me);
   assert.deepEqual(c.entries(), []);
