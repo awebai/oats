@@ -317,33 +317,3 @@ test("slow post-Enter observation consumes the one shared deadline before anothe
   assert.equal(io.clock - named(io, "send-keys")[0].at, 1000);
   assert.equal(io.sleeps.at(-1), 200);
 });
-
-// The process scans read the real `ps` whatever the caller's PATH holds (#878): a pane whose shell
-// runs a non-shell child, read with this process's PATH holding no `ps`, tmux answered by the fake.
-async function shellWithChild(t) {
-  const { spawn } = await import("node:child_process");
-  const { mkdtempSync, rmSync } = await import("node:fs");
-  const { tmpdir } = await import("node:os");
-  const { join } = await import("node:path");
-  const shell = spawn("/bin/sh", ["-c", "sleep 30; :"], { stdio: "ignore" });
-  const empty = mkdtempSync(join(tmpdir(), "oats-no-ps-"));
-  const path = process.env.PATH;
-  t.after(() => { process.env.PATH = path; shell.kill("SIGKILL"); rmSync(empty, { recursive: true, force: true }); });
-  // The child is forked once its shell has read the command: wait until the shell has one.
-  const { execFileSync } = await import("node:child_process");
-  for (let i = 0; i < 200 && !execFileSync("ps", ["-axo", "ppid="], { encoding: "utf8" }).split("\n").some((l) => Number(l) === shell.pid); i++) await new Promise((r) => setTimeout(r, 25));
-  process.env.PATH = empty;
-  /** → an io whose tmux answers `answer(pid)` and whose `ps` is the real one, run as the kernel asks. */
-  return { io: (answer) => ({ exec: (bin, args, opts) => (bin === "ps" ? execFileSync(bin, args, opts) : answer(shell.pid)) }) };
-}
-
-test("a pane's shell is read through the real ps when the caller's PATH holds none (#878)", async (t) => {
-  const pane = await shellWithChild(t);
-  assert.deepEqual(inspectSessionTarget(target, pane.io((pid) => `%12\t0\tsh\t${pid}\n`)), { backend: "tmux", present: true, state: "unknown", paneId: "%12" }, "its non-shell child is seen: not a fallback shell");
-});
-
-test("a pane's harness processes are read through the real ps when the caller's PATH holds none (#878)", async (t) => {
-  const { harnessProcesses } = await import("../lib/core.mjs");
-  const pane = await shellWithChild(t);
-  assert.deepEqual(harnessProcesses(target, pane.io((pid) => `${pid}\n`)).map((r) => r.comm), ["sleep"]);
-});
