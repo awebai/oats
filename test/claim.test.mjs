@@ -12,7 +12,8 @@ import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CLAIM_WAIT_MS, acquireClaim, readClaim, releaseClaim, removeGoneClaim } from "../lib/claim.mjs";
-import { withClaim } from "../lib/worktree.mjs";
+import { retireClaimRefusals } from "../lib/core.mjs";
+import { purposeClaimBusy, withClaim, worktreeClaimRefusals } from "../lib/worktree.mjs";
 import { processStartToken, selfIdentity } from "../lib/worktree-hooks.mjs";
 import { hostProcessState, zombieSync } from "./helpers/host-fixture.mjs";
 
@@ -51,6 +52,18 @@ function wrapFs(t, name, wrap) {
   syncBuiltinESMExports();
   t.after(() => { fs[name] = original; syncBuiltinESMExports(); });
 }
+/** A process group of its own that runs until it is ended, standing in for the git step a dead
+ *  holder recorded: not this process's child (as at a recovery, where its parent was the killed
+ *  command), so that it is reaped when it ends. → its id, which is its leader's pid. */
+function runningStep(t) {
+  const middle = spawnSync(process.execPath, ["-e", 'const c = require("node:child_process").spawn("sleep", ["60"], { detached: true, stdio: "ignore" }); c.unref(); console.log(c.pid);'], { encoding: "utf8" });
+  const step = Number(middle.stdout.trim());
+  assert.ok(Number.isSafeInteger(step) && alive(step), `the step runs: ${JSON.stringify(middle)}`);
+  t.after(() => { try { process.kill(-step, "SIGKILL"); } catch { /* gone */ } });
+  return step;
+}
+/** An error as the system gives it for a claim that is already there. */
+const eexist = () => Object.assign(new Error("EEXIST: file already exists, link"), { code: "EEXIST" });
 /** Count the attempts to link a claim into place at `path` (each pass of the loop makes one). */
 function countLinks(t, path) {
   const seen = { n: 0 };
@@ -93,9 +106,9 @@ for (const [what, waitMs] of [["no wait", 0], ["the default wait", undefined]]) 
     const took = Date.now() - t0;
     // The refusal for a path that is no readable claim, never the one that says somebody is running.
     assert.deepEqual([e.code, e.kind, e.at], ["E_LIFECYCLE_BUSY", "unreadableClaim", c.lock]);
-    // Bounded: the wait, then five more passes; and never hot: one 50 ms pause after each pass.
+    // Bounded: the wait, then five more passes, 50 ms apart; and never hot: one pause after each pass.
     const wait = waitMs ?? CLAIM_WAIT_MS;
-    assert.ok(took >= wait && took < wait + 5000, `it took ${took} ms`);
+    assert.ok(took >= wait + 5 * 50 && took < wait + 5000, `it took ${took} ms`);
     if (waitMs === 0) assert.equal(links.n, 6, "the first attempt and five retries");
     assert.ok(links.n >= 2 && links.n <= Math.ceil(took / 50) + 1, `${links.n} attempts in ${took} ms: at least 50 ms apart`);
     assert.ok(took >= (links.n - 1) * 50, `${links.n} attempts in ${took} ms: it paused between them`);
@@ -133,7 +146,7 @@ test("a claim released between the failed link and the read is taken on the next
   // The first link meets a claim that its holder releases before this process reads it.
   let first = true;
   wrapFs(t, "linkSync", (linkSync) => function (from, to) {
-    if (to === c.lock && first) { first = false; throw Object.assign(new Error("EEXIST: file already exists, link"), { code: "EEXIST" }); }
+    if (to === c.lock && first) { first = false; throw eexist(); }
     return linkSync.call(this, from, to);
   });
   const me = acquireClaim(c.lock, c.opts({ waitMs: 0 }));
@@ -215,7 +228,7 @@ test("a claim that is held again by a gone process after every takeover ends in 
     if (to !== c.lock) return linkSync.call(this, from, to);
     links++;
     if (!existsSync(c.lock)) writeFileSync(c.lock, dead(links % 10));
-    throw Object.assign(new Error("EEXIST: file already exists, link"), { code: "EEXIST" });
+    throw eexist();
   });
   const t0 = Date.now();
   const e = thrown(() => acquireClaim(c.lock, c.opts({ waitMs: 0 })));
@@ -229,12 +242,8 @@ test("a claim that is held again by a gone process after every takeover ends in 
 test("a takeover that cannot remove the gone holder's claim after it ended that holder's step says so: the step was ended and the claim is kept, never that nothing was done", async (t) => {
   const c = claimDir(t);
   const gone = exitedPid();
-  // The step a dead holder recorded: a group of its own, still running, and not this process's child
-  // (as at a recovery, where its parent was the killed command), so that it is reaped when it ends.
-  const middle = spawnSync(process.execPath, ["-e", 'const c = require("node:child_process").spawn("sleep", ["60"], { detached: true, stdio: "ignore" }); c.unref(); console.log(c.pid);'], { encoding: "utf8" });
-  const step = Number(middle.stdout.trim());
-  assert.ok(Number.isSafeInteger(step) && alive(step), `the step runs: ${JSON.stringify(middle)}`);
-  t.after(() => { try { process.kill(-step, "SIGKILL"); } catch { /* gone */ } });
+  // The step a dead holder recorded: a group of its own, still running.
+  const step = runningStep(t);
   const record = { pid: gone, processStart: "proc:gone", nonce: N1, gitPid: step, gitStart: processStartToken(step) };
   writeFileSync(c.lock, JSON.stringify(record) + "\n");
   // The system refuses the removal of that claim, and of that claim only.
@@ -260,6 +269,106 @@ test("a takeover that cannot remove the gone holder's claim after it ended that 
   assert.equal(e2.code, "E_LIFECYCLE_FAILED");
   assert.equal(e2.message, `the claim ${c.lock} could not be taken (EACCES: permission denied, unlink '${c.lock}'); nothing was done`);
   assert.deepEqual([readClaim(c.lock), c.entries()], [plain, ["p.lock"]]);
+});
+
+test("passes that find nobody holding the claim before the wait is over do not spend its retries: a claim released at the deadline is still taken", (t) => {
+  const c = claimDir(t);
+  const waitMs = 300;
+  // The claim is there at every link and released before every read, until one pass has come after
+  // the wait was over; the next link finds it free.
+  let early = 0, late = 0;
+  const started = Date.now();
+  wrapFs(t, "linkSync", (linkSync) => function (from, to) {
+    if (to !== c.lock || late) return linkSync.call(this, from, to);
+    if (Date.now() >= started + waitMs + 10) late++; else early++;
+    throw eexist();
+  });
+  const me = acquireClaim(c.lock, c.opts({ waitMs }));
+  assert.ok(early >= 5, `${early} passes found it released before the wait was over: more than the retries there are after it`);
+  assert.equal(late, 1, "and one more at the deadline, which is retried");
+  assert.equal(readClaim(c.lock).nonce, me.nonce, "the next pass took it");
+  releaseClaim(c.lock, me);
+  assert.deepEqual(c.entries(), []);
+});
+
+test("an acquisition whose takeover ended the dead holder's step and that is then refused answers E_LIFECYCLE_FAILED, the ended step first: never that nothing was done", async (t) => {
+  const gone = exitedPid();
+  const said = (step) => `git process group ${step}, left running by a killed oats worktree command, was ended`;
+  /** A claim whose dead holder recorded a step that still runs; every later link of it meets what
+   *  `then(lock, n)` does (the nth one, from 1) in place of taking it. → { c, step, error }. */
+  const refusedAfterEnding = async (st, then, busyOf = (c) => purposeClaimBusy("p", c.lock)) => {
+    const c = claimDir(st), step = runningStep(st);
+    writeFileSync(c.lock, JSON.stringify({ pid: gone, processStart: "proc:gone", nonce: N1, gitPid: step, gitStart: processStartToken(step) }) + "\n");
+    let links = 0;
+    wrapFs(st, "linkSync", (linkSync) => function (from, to) {
+      if (to !== c.lock) return linkSync.call(this, from, to);
+      if (++links === 1) throw eexist(); // the dead holder's own claim
+      return then(c.lock, links - 1);
+    });
+    const error = await withClaim(c.lock, () => assert.fail("the claim was not taken"), { busy: busyOf(c), waitMs: 0 }).then(() => assert.fail("it did not throw"), (e) => e);
+    assert.equal(alive(step), false, "the recorded step was ended");
+    assert.equal(error.code, "E_LIFECYCLE_FAILED", error.message);
+    assert.ok(error.message.startsWith(`${said(step)}; after that: `), error.message);
+    assert.ok(!/nothing was done/.test(error.message), `it does not say that nothing was done: ${error.message}`);
+    return { c, step, error };
+  };
+  const heldBy = (lock, record) => { if (!existsSync(lock)) writeFileSync(lock, JSON.stringify(record) + "\n"); throw eexist(); };
+
+  await t.test("held again and again by a process that is gone, until the retries are spent", async (st) => {
+    const { c, step, error } = await refusedAfterEnding(st, (lock, n) => heldBy(lock, { pid: gone, processStart: "proc:gone", nonce: String(n % 10).repeat(32) }));
+    assert.equal(error.message, `${said(step)}; after that: the process that held ${c.lock} (pid ${gone}) is gone, and this file is not a claim this kernel can take over (this command found it without a live holder 5 times, and it is held again by a process that is gone); nothing else was done — inspect ${c.lock} and remove it if no oats worktree command holds it, then retry`);
+    assert.deepEqual(error.details, { purpose: "p", lock: c.lock, pid: gone }, "the refusal's own details");
+    assert.equal(error.cause, undefined, "a refusal of the kernel's has no cause");
+    assert.deepEqual(c.entries(), ["p.lock"], "no takeover claim is left");
+  });
+  await t.test("taken first by another command that runs", async (st) => {
+    const { c, step, error } = await refusedAfterEnding(st, (lock) => heldBy(lock, { ...selfIdentity(), nonce: N2 }));
+    assert.equal(error.message, `${said(step)}; after that: another oats worktree add or remove of purpose p is running (pid ${process.pid} holds ${c.lock}); nothing else was done — retry when it has finished`);
+    assert.deepEqual(error.details, { purpose: "p", lock: c.lock, pid: process.pid });
+    assert.equal(readClaim(c.lock).nonce, N2, "the live holder's claim is untouched");
+  });
+  await t.test("an error of the system's", async (st) => {
+    const denied = Object.assign(new Error("EACCES: permission denied, link"), { code: "EACCES", syscall: "link" });
+    const { c, step, error } = await refusedAfterEnding(st, () => { throw denied; });
+    assert.equal(error.message, `${said(step)}; after that: the claim ${c.lock} could not be taken (EACCES: permission denied, link); nothing else was done`);
+    assert.deepEqual(error.details, { cause: { code: "EACCES", syscall: "link" } }, "the system's code stays in details.cause");
+    assert.equal(error.cause, denied);
+    assert.deepEqual(c.entries(), []);
+  });
+  await t.test("a refusal that does not hold the words is passed as it is after what was ended", async (st) => {
+    const plain = () => (holder) => Object.assign(new Error(`held by ${holder?.pid ?? "?"}`), { code: "E_LIFECYCLE_BUSY", details: { held: true } });
+    const { step, error } = await refusedAfterEnding(st, (lock) => heldBy(lock, { ...selfIdentity(), nonce: N2 }), plain);
+    assert.equal(error.message, `${said(step)}; after that: held by ${process.pid}`);
+    assert.deepEqual(error.details, { held: true });
+  });
+});
+
+test("every refusal of a claim, of both callers, says that nothing was done exactly once: the words an answer after an ended step turns into nothing else was done", () => {
+  const holder = { pid: 4242, processStart: "proc:1", nonce: N1, at: "2026-10-10T00:00:00.000Z" };
+  const callers = {
+    "oats retire": [retireClaimRefusals("worker-1", "/agents/worker/instances/worker-1", "/claims/worker-1.lock"), "/claims/worker-1.lock"],
+    "oats worktree": [worktreeClaimRefusals(purposeClaimBusy("p", "/trees/p.lock")), "/trees/p.lock"],
+  };
+  for (const [caller, [r, lock]] of Object.entries(callers)) {
+    // The refusals lib/claim.mjs asks a caller for, and no other.
+    assert.deepEqual(Object.keys(r).sort(), ["busy", "cannotTakeOver", "ownStartUnreadable", "unreadableClaim"], caller);
+    for (const at of [lock, `${lock}.reclaim-${N1}`]) {
+      const refusals = {
+        "busy, a holder that runs": r.busy(holder, null, at),
+        "busy, a holder whose start cannot be read": r.busy(holder, "ps: simulated failure", at),
+        ownStartUnreadable: r.ownStartUnreadable("ps: simulated failure", at),
+        unreadableClaim: r.unreadableClaim(at),
+        cannotTakeOver: r.cannotTakeOver(holder, at, "its nonce is not the 32 hexadecimal digits a claim carries"),
+      };
+      for (const [which, e] of Object.entries(refusals)) {
+        const what = `${caller}, ${which}: ${e.message}`;
+        assert.equal(e.code, "E_LIFECYCLE_BUSY", what);
+        assert.equal(e.message.split("nothing was done").length - 1, 1, what);
+        assert.ok(!e.message.includes("\n"), what);
+        assert.equal(e.details.lock, at, what);
+      }
+    }
+  }
 });
 
 test("a claim's record is open: what its holder recorded beside the protocol's own fields is kept and handed to the refusals", (t) => {

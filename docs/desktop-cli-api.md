@@ -2138,9 +2138,10 @@ over, and a `creating` record whose adder is a zombie is recovered, without
 waiting for that reap (0.52.0, #870).
 
 Two files at the claim's path are never taken over and never removed
-(0.52.0, #874). The command answers `E_LIFECYCLE_BUSY` once its wait is
-over, in one line that names the file, says that nothing was done and
-never says that a command is running; `details.lock` is the file the
+(0.52.0, #874). The command answers `E_LIFECYCLE_BUSY`, in one line that
+names the file, says that nothing was done and never says that a command is
+running: at once for a file it has read, and for a path that exists and
+reads as absent after its 3 s wait and five more attempts, 50 ms apart; `details.lock` is the file the
 message names (for the claim of a takeover, `<lock>.reclaim-<nonce>`):
 
 - A path that is no readable claim: a file that does not parse, a directory,
@@ -2169,6 +2170,16 @@ command's git never finishes late on a tree or branch made after it. A git
 step that times out is cleared from the record only once its whole process
 group is gone. A git step that cannot be ended keeps the claim, or the
 record, and the command answers `E_LIFECYCLE_BUSY`.
+
+`E_LIFECYCLE_BUSY` says that nothing was done, so it is never answered once
+a takeover has ended a dead command's git step (0.52.0). A command that
+ends such a step and is then refused the claim (another command took it
+first, it is held again by a process that is gone, or the system refuses
+it) answers `E_LIFECYCLE_FAILED`. Its message names the group it ended
+first, then the refusal it met, with "nothing else was done": `git process
+group <pgid>, left running by a killed oats worktree command, was ended;
+after that: <the refusal>`. `details` are that refusal's own. Run the
+command again: nothing of that step is left to end.
 
 A recorded hook group or git step that still has members while its leader's
 start cannot be read (where `ps` fails) is never signalled and never passed
@@ -2199,7 +2210,7 @@ A failed `add` reports the same facts about its rollback in `details`:
 | `E_INTERRUPTED` | SIGINT, SIGTERM or SIGHUP while the hooks ran; the tree is removed and the process exits 128 + the signal number (`details.signal`) |
 | `E_WORKTREE_DIRTY` | `remove`: Git refused a tree with uncommitted or untracked work (`details.git` is Git's message); the record is kept. Commit and push, or discard, then retry |
 | `E_WORK_PRESERVATION_FAILED` | `remove`: Git refused for another reason, or the tree is still there; the record is kept |
-| `E_LIFECYCLE_FAILED` | an error that is not the kernel's, with [`details.cause`](#kernel-codes). When it is the purpose's claim that could not be taken (`<home>/.oats/trees` cannot be made, the claim's file cannot be written), the message is `the claim <path> could not be taken (…); nothing was done` |
+| `E_LIFECYCLE_FAILED` | an error that is not the kernel's, with [`details.cause`](#kernel-codes). When it is the purpose's claim that could not be taken (`<home>/.oats/trees` cannot be made, the claim's file cannot be written), the message is `the claim <path> could not be taken (…); nothing was done`. Also a command that was refused the claim after its takeover had ended a dead command's git step: the message names the group it ended first, then the refusal, and `details` are that refusal's (no `details.cause` unless the system refused it) |
 
 A rollback that cannot finish keeps the record and says so in the message
 (`details.rolledBack: false`, `details.owed`); the next `add` or `remove` of
