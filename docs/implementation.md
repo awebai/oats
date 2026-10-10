@@ -338,6 +338,14 @@ location and error, then gives bounded stdout and stderr tails, and its size
 is capped. It is built only when the run failed, and it never throws: if
 reading the failures fails, the message says so and still carries the tails.
 
+A test never races the wall clock for a window between two steps of the
+kernel. Where an answer needs a second writer at an exact moment (an entry
+that vanishes between a walk's listing and its read), the test runs the CLI
+as a child held at one named `node:fs` call with
+`test/helpers/fs-gate-preload.mjs` (`startGated`), does what the second writer
+does, and releases it. The helper only pauses: it changes no argument and no
+result.
+
 Cross-package tests that import both the kernel and Desktop belong under root
 `test/`; install dependencies at the root and in `packages/desktop` before
 running those tests. The schedule
