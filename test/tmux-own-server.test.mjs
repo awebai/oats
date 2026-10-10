@@ -87,6 +87,9 @@ const probe = join(probeBin, "claude");
 writeFileSync(probe, `#!/bin/sh\nenv > "$OATS_INSTANCE_HOME/pane-env.txt"\necho $$ > "$OATS_INSTANCE_HOME/harness-ready"\nexec sleep 600\n`);
 chmodSync(probe, 0o755);
 const fx = v2Deployment();
+// The servers the panes run on end before the fixture's leftover check, each even if another fails.
+for (const socket of [OTHER, DEFAULT]) fx.beforeCleanup(() => { try { execFileSync(REAL_TMUX, ["-S", socket, "kill-server"], { stdio: "ignore", timeout: 10000 }); } catch { /* not running */ } });
+fx.beforeCleanup(restoreEnvironment); // kills the fixture's `oats` server, by socket
 writeFileSync(join(fx.env.HOME, ".tmux.conf"), USER_TMUX_CONF); // the CLI runs with the deployment fixture's HOME
 const spawnPath = `${probeBin}:${fx.env.PATH}`;
 const harnessPid = (home) => {
@@ -125,10 +128,7 @@ function tmuxInFront(name, body) {
 }
 
 test.after(() => {
-  for (const socket of [OTHER, DEFAULT]) { try { execFileSync(REAL_TMUX, ["-S", socket, "kill-server"], { stdio: "ignore", timeout: 10000 }); } catch { /* not running */ } }
-  restoreEnvironment(); // kills the fixture's `oats` server, by socket
-  rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
-  fx.cleanup();
+  try { fx.cleanup(); } finally { rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }
 });
 
 // The version is in the test's name so that the run's log names the tmux these tests exercised.
