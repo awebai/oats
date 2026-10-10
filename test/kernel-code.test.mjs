@@ -240,14 +240,29 @@ test("asKernelError wraps a thrown string: the string is the message and the cau
 
 test("defectOf: a TypeError without a code is the defect itself", () => {
   const typeError = new TypeError("x");
-  assert.equal(defectOf(typeError), typeError);
+  assert.deepEqual(defectOf(typeError), { thrown: typeError });
+  assert.equal(defectOf(typeError).thrown, typeError);
 });
 
 test("defectOf: wrapped by asKernelError, the defect is the original exception, with its stack", () => {
   const typeError = new TypeError("x");
   const defect = defectOf(asKernelError(typeError, "E_X"));
-  assert.equal(defect, typeError);
-  assert.match(defect.stack, /^TypeError: x\n\s+at /);
+  assert.equal(defect.thrown, typeError);
+  assert.match(defect.thrown.stack, /^TypeError: x\n\s+at /);
+});
+
+// Anything can be thrown. A value that is falsy is a defect like any other: whether there is one is
+// not whether its value is truthy, alone or wrapped (a wrapper's `cause` is then `undefined`, and
+// still its own).
+const FALSY_THROWN = [undefined, null, false, 0, ""];
+test("defectOf: a thrown value that is falsy (undefined, null, false, 0, the empty string) is a defect, alone or wrapped", () => {
+  for (const value of FALSY_THROWN) {
+    const thrown = thrownBy(() => { throw value; });
+    assert.deepEqual(defectOf(thrown), { thrown: value }, `thrown ${JSON.stringify(value) ?? String(value)}`);
+    const wrapped = asKernelError(thrown, "E_X");
+    assert.equal(Object.hasOwn(wrapped, "cause"), true);
+    assert.deepEqual(defectOf(wrapped), { thrown: value }, `wrapped ${JSON.stringify(value) ?? String(value)}`);
+  }
 });
 
 test("defectOf: a plain Error without a code is no defect, alone or wrapped", () => {
@@ -286,6 +301,17 @@ test("reportDefect prints the stack of a defect, alone or wrapped, on stderr", (
   const typeError = new TypeError("x");
   assert.equal(stderrOf(() => reportDefect(typeError)), `${typeError.stack}\n`);
   assert.equal(stderrOf(() => reportDefect(asKernelError(typeError, "E_X"))), `${typeError.stack}\n`);
+});
+
+test("reportDefect prints a thrown value that is no Error, which has no stack, as one line that shows it: a falsy one too, alone or wrapped", () => {
+  const SHOWN = new Map([[undefined, "undefined"], [null, "null"], [false, "false"], [0, "0"], ["", '""'], ["a thrown string", '"a thrown string"'], [42, "42"]]);
+  for (const [value, shown] of SHOWN) {
+    const thrown = thrownBy(() => { throw value; });
+    const line = `A value that is no Error was thrown: ${shown}\n`;
+    assert.equal(stderrOf(() => reportDefect(thrown)), line);
+    assert.equal(stderrOf(() => reportDefect(asKernelError(thrown, "E_X"))), line);
+  }
+  assert.equal(stderrOf(() => reportDefect(asKernelError({ message: "an object" }, "E_X"))), "A value that is no Error was thrown: [object Object]\n");
 });
 
 test("reportDefect prints nothing for a kernel error, a system error, a Node ERR_ error or a plain Error without a code, wrapped or not", () => {

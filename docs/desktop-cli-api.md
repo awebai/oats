@@ -172,8 +172,9 @@ stdout (progress goes to stderr):
     goes to stderr, in JSON and in text mode. A defect is an error without a
     code that is one of the language's own kinds, whose `name` is not
     `"Error"` (`TypeError`, `ReferenceError`, `RangeError`, `SyntaxError`, …),
-    or a thrown value that is no error at all (`name` is then `"Error"`). It
-    is answered as one envelope like the rest.
+    or a thrown value that is no error at all (`name` is then `"Error"`; it
+    has no stack, and one line on stderr shows the value instead). It is
+    answered as one envelope like the rest.
   - **A refusal without a code** (the kernel words some of its refusals that
     way, and a `tmux` or `git` command that fails is reported that way) gets
     neither: the general code and its message alone, no `details.cause`, no
@@ -3417,8 +3418,12 @@ stays true after the answer: a completion this command had started is not
 running when it answers (it is ended, unless it had gone by itself; a
 completion does nothing to the instance before it holds the home's claim,
 which the retire that scheduled it holds until it has answered), and its
-result and its log are removed. The instance is still live and can be
-retired externally.
+log and any result it had recorded are removed. One leftover is possible and
+is not a debt of the instance: a completion that was kept waiting for the
+claim until it gave up may write its result (`E_LIFECYCLE_BUSY`) at the
+moment it is ended, after that removal. The next `oats retire` of the
+instance removes it. The instance is still live and can be retired
+externally.
 
 The home is resolved again once the claim is held. One that another retire
 removed in between answers `E_SESSION_UNKNOWN`, as a retire of a retired
