@@ -199,7 +199,7 @@ missing provider procedure.
 | Existing LOCAL deployment root admission | `/oats-aweb` §8 “LOCAL team join and resume”: labelled join with private token input, selected service and root alias |
 | Interrupted LOCAL root join | `/oats-aweb` §8 “LOCAL team join and resume”: accepted-state resume without another token; read back uncertain effects first |
 | LOCAL or existing GLOBAL member invitation | `/oats-aweb` §8 “Invitations and certificate ownership”: external-home invite issuance is blocked pending supported owner context; `id team accept-invite` remains supported. Distinguish admission from spawn authority |
-| Fresh/reused GLOBAL resident and grant seat | `/oats-aweb` §8 “GLOBAL residents and grant seats”, linking its `references/existing-team-global-resident.md` (“A GLOBAL resident in an existing hosted team”); owner custody first, then selected grant settings for card 7 |
+| Fresh/reused GLOBAL resident and grant seat | oats.aweb 1.26.0+ (aw >=1.36.33): the dashboard's line in D, `AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create <name> [--team-label <label>]`, creates or adopts the resident, installs its per-user custody unit and records `residents.<name>`; `--plan` first changes nothing. `/oats-aweb` §8 “GLOBAL residents and grant seats” and its `references/existing-team-global-resident.md` (“A GLOBAL resident in an existing hosted team”) carry the card; plain-aw users keep the dashboard's plain command and start custody themselves. Then the selected grant settings for card 7 |
 | LOCAL wider-team join/leave | `/oats-aweb` §5 “5. Teams: join and leave”; run in target home, eligibility from `/oats-teams` |
 | Remove a label | `/oats-teams`, configuration removal; it does not revoke an identity |
 | Retire an OATS seat | `/oats-operate`, retirement plan/apply under intake authority; provider owns grant/membership outcome |
@@ -248,7 +248,9 @@ oats spawn S --dir D --name N --harness HARNESS --task-file F --preview --json
 
 Include the intake's selected model/launch and provider options in the preview
 and carry those exact options into card 7. GLOBAL options come from the
-provider's resident/grant card, not a guessed `setup --global` flag.
+provider's resident/grant card (`--provider oats.aweb identity.mode=global
+--provider oats.aweb identity.resident=<name>`, as `oats aweb resident create`
+prints them), not a guessed `setup --global` flag.
 
 **Effects:** read-only checks and preview. **Success:** enumerate resolved
 modules, merged host settings, selected launch, mapped default and eligible
