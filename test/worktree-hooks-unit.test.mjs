@@ -136,7 +136,7 @@ test("whether a pid exists is the kernel's answer (kill 0), the same on /proc an
     // Another user's process: kill 0 answers EPERM, which is "exists", never gone.
     if (!isRoot) assert.equal(processStart(1).state, "alive", `${shape}: pid 1 (EPERM) is alive`);
   };
-  if (existsSync("/proc/self/stat") && process.env.OATS_TEST_PROCESS_START_PS !== "1") check("/proc");
+  if (existsSync("/proc/self/stat") && process.env.OATS_TEST_PROCESS_START_PS === undefined) check("/proc");
   const mac = await macPs(t);
   assert.match(processStart(process.pid).token, /^ps:/, "the ps path is the one read");
   check("macOS ps");
