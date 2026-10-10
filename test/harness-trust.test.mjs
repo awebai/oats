@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { claudeTrusts, codexTrustsRoot, harnessTrustWarning } from "../lib/harness-trust.mjs";
+import { claudeTrusts, codexTrustsRoot, harnessConfigFile, harnessTrustWarning, launchConfigDir } from "../lib/harness-trust.mjs";
 
 function room() {
   const base = realpathSync(mkdtempSync(join(tmpdir(), "htrust-")));
@@ -74,16 +74,38 @@ test("codexTrustsRoot: the deployment root or an ancestor trusted in config.toml
   } finally { rmSync(r.base, { recursive: true, force: true }); }
 });
 
-test("harnessTrustWarning: the exact sentence for an uncovered claude or codex home; null when covered or for pi", () => {
-  assert.equal(harnessTrustWarning({ harness: "claude", root: "/dep", covered: false }),
-    "the claude session will stop at its folder-trust prompt: trust /dep once (preview with `oats harness trust --dir '/dep' --harness claude --plan`, then apply with `oats harness trust --dir '/dep' --harness claude`; a nested Git boundary may still require operator inspection)");
-  assert.equal(harnessTrustWarning({ harness: "codex", root: "/dep", covered: false }),
-    "the codex session will stop at its folder-trust prompt: trust /dep once (preview with `oats harness trust --dir '/dep' --harness codex --plan`, then apply with `oats harness trust --dir '/dep' --harness codex`; a nested Git boundary may still require operator inspection)");
-  assert.equal(harnessTrustWarning({ harness: "claude", root: "/dep", covered: true }), null);
-  assert.equal(harnessTrustWarning({ harness: "pi", root: "/dep", covered: false }), null);
+test("harnessTrustWarning: the exact sentence for an uncovered claude or codex home, naming the file read; null when covered or for pi", () => {
+  assert.equal(harnessTrustWarning({ harness: "claude", root: "/dep", file: "/u/.claude.json", covered: false }),
+    "claude folder trust is not established in /u/.claude.json: oats harness trust --dir /dep");
+  assert.equal(harnessTrustWarning({ harness: "codex", root: "/dep", file: "/c/config.toml", covered: false }),
+    "codex folder trust is not established in /c/config.toml: oats harness trust --dir /dep");
+  assert.equal(harnessTrustWarning({ harness: "claude", root: "/dep", file: "/u/.claude.json", covered: true }), null);
+  assert.equal(harnessTrustWarning({ harness: "pi", root: "/dep", file: null, covered: false }), null);
+  // A launch whose config directory cannot be resolved names the problem instead of a file.
+  assert.equal(harnessTrustWarning({ harness: "claude", root: "/dep", problem: "launch configuration work: CLAUDE_CONFIG_DIR references WORK_DIR, not set on this host", covered: false }),
+    "claude folder trust is not established: launch configuration work: CLAUDE_CONFIG_DIR references WORK_DIR, not set on this host");
 });
 
-test('harness trust remedy shell-quotes apostrophes without executing path content', () => {
- const warning = harnessTrustWarning({ harness: 'claude', root: "/tmp/operator's deployment", covered: false });
- assert.ok(warning.includes("--dir '/tmp/operator'\"'\"'s deployment' --harness claude --plan"));
+test("harness trust remedy shell-quotes a deployment path only when it needs it, without executing path content", () => {
+  const warning = harnessTrustWarning({ harness: "claude", root: "/tmp/operator's deployment", file: "/u/.claude.json", covered: false });
+  assert.ok(warning.endsWith("oats harness trust --dir '/tmp/operator'\"'\"'s deployment'"), warning);
+});
+
+test("harnessConfigFile: the file each harness reads under an env", () => {
+  assert.equal(harnessConfigFile("claude", { HOME: "/u" }), "/u/.claude.json");
+  assert.equal(harnessConfigFile("claude", { HOME: "/u", CLAUDE_CONFIG_DIR: "/cc" }), "/cc/.claude.json");
+  assert.equal(harnessConfigFile("codex", { HOME: "/u" }), "/u/.codex/config.toml");
+  assert.equal(harnessConfigFile("codex", { HOME: "/u", CODEX_HOME: "/cx" }), "/cx/config.toml");
+});
+
+test("launchConfigDir: a launch configuration's config directory, a literal or a host reference; a problem when unresolvable or relative", () => {
+  const host = { WORK: "/w/claude", REL: "rel/dir" };
+  assert.equal(launchConfigDir("claude", {}, host), null, "unset: the launch reads the ambient file");
+  assert.equal(launchConfigDir("claude", { CODEX_HOME: "/x" }, host), null, "another harness's variable is not this harness's");
+  assert.deepEqual(launchConfigDir("claude", { CLAUDE_CONFIG_DIR: "/lit" }, host), { dir: "/lit" });
+  assert.deepEqual(launchConfigDir("claude", { CLAUDE_CONFIG_DIR: { fromEnv: "WORK" } }, host), { dir: "/w/claude" });
+  assert.deepEqual(launchConfigDir("codex", { CODEX_HOME: { fromEnv: "MISSING" } }, host), { problem: "CODEX_HOME references MISSING, not set on this host" });
+  assert.deepEqual(launchConfigDir("claude", { CLAUDE_CONFIG_DIR: { fromEnv: "REL" } }, host), { problem: 'CLAUDE_CONFIG_DIR "rel/dir" is not an absolute path' });
+  assert.deepEqual(launchConfigDir("claude", { CLAUDE_CONFIG_DIR: "" }, host), { problem: 'CLAUDE_CONFIG_DIR "" is not an absolute path' });
+  assert.equal(launchConfigDir("pi", { CLAUDE_CONFIG_DIR: "/lit" }, host), null);
 });
