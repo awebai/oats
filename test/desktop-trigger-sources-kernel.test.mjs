@@ -17,12 +17,12 @@ import assert from 'node:assert/strict';
 import { execFile, spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { cliAutomation, TRIGGER_RUN_SOURCE_FLAG } from '../packages/desktop/cli-adapter.mjs';
-import { cliWorkspace } from '../packages/desktop/workspace-cli.mjs';
+import { cliAutomation, TRIGGER_RUN_SOURCE_FLAG } from '../packages/client/cli-adapter.mjs';
+import { cliWorkspace } from '../packages/client/workspace-cli.mjs';
 import { automationsRequest } from '../packages/desktop/server/automations.mjs';
 import { capabilityShowRequest } from '../packages/desktop/server/capability-show.mjs';
 import { automationRows, triggerStatus, testResult, capabilitySource, onSummary, sourceParams, triggerSourcesSupported, TRIGGER_SOURCES_FEATURE } from '../packages/desktop/renderer/automation-rows.mjs';
-import { triggerSourcesView } from '../packages/desktop/renderer/capability-show-contract.mjs';
+import { triggerSourcesView } from '../packages/client/capability-show-contract.mjs';
 import { CLI } from './helpers/v2-deployment.mjs';
 
 const probe = spawnSync(process.execPath, [CLI, 'version', '--json'], { encoding: 'utf8' });

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cliInstanceGit } from '../cli-adapter.mjs';
+import { cliInstanceGit } from '../../client/cli-adapter.mjs';
 import { createInstanceGitBoundary } from '../server/instance-git.mjs';
 import { createForgeBoundary } from '../server/forge.mjs';
 

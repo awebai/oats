@@ -1,7 +1,7 @@
 // What a rendered Details line must be (remote-address.mjs codeLineNodes), for every view that shows a
 // host's own message: one display line, alone in its <bdi>, with Desktop's own text outside it.
 import assert from 'node:assert/strict';
-import { NOT_NOTE_TEXT, cleanLine } from '../../renderer/display-text.mjs';
+import { NOT_NOTE_TEXT, cleanLine } from '../../../client/display-text.mjs';
 
 /** A host message as a kernel error can carry it: a line break, a tab, both Unicode line separators and a
  * character of the set. */

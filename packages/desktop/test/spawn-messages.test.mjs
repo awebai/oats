@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { spawnProblem, catalogProblem } from '../renderer/spawn-messages.mjs';
+import { spawnProblem, catalogProblem } from '../../client/spawn-messages.mjs';
 
 // Every code the preview and apply contracts can report, read from their tables.
 const codes = file => {

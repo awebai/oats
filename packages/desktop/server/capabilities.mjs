@@ -1,11 +1,11 @@
 /** Provider inspection and mutations use the kernel's resolver, never a GUI copy. */
 import { dirname, isAbsolute } from 'node:path';
-import { cliCapability, operationArgs } from '../cli-adapter.mjs';
+import { cliCapability, operationArgs } from '../../client/cli-adapter.mjs';
 import { inspectKey } from './inspect-cache.mjs';
-import { observationData } from '../deployment-data.mjs';
-import { OBSERVE_MAX_AGE_FEATURE } from '../renderer/deployment-contract.mjs';
+import { observationData } from '../../client/deployment-data.mjs';
+import { OBSERVE_MAX_AGE_FEATURE } from '../../client/deployment-contract.mjs';
 import { hostComposes } from '../renderer/composed-gate.mjs';
-import { canAddressRemote, unaddressableSentence, hostReason, shownLabel, unroutableReason } from '../renderer/remote-address.mjs';
+import { canAddressRemote, unaddressableSentence, hostReason, shownLabel, unroutableReason } from '../../client/remote-address.mjs';
 
 const fail = (message, code = 'E_BAD_ARGS') => { throw Object.assign(new Error(message), { code }); };
 

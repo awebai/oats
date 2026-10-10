@@ -15,9 +15,9 @@ import { instanceActionTarget, sameInstanceActionTarget } from "./instance-actio
 import { createInstancePrAction } from "./instance-pr-action.mjs";
 import { instanceSplitPlan, instanceSplitIdentity } from "./instance-split.mjs";
 import { createInstanceStarter } from "./start-instance.mjs";
-import { runtimeState, unsupportedSession } from "./instance-presentation.mjs";
+import { runtimeState, unsupportedSession } from "../../client/instance-presentation.mjs";
 import { deploymentUnavailableText, NOT_SERVED_CODE, NO_ANSWER_CODE, unservedError, createPendingWatch } from "./deployment-header.mjs";
-import { panelErrorCause } from "./deployment-contract.mjs";
+import { panelErrorCause } from "../../client/deployment-contract.mjs";
 import {
   initTheme, toggleTheme, setTheme, currentTheme, refreshHostTheme, THEMES, xtermTheme, terminalFontWeight, onThemeChange,
   terminalTypography, setTerminalFontSize, setTerminalFontFamily, resetTerminalTypography, onTerminalTypographyChange,
@@ -55,7 +55,7 @@ import { createContextPanel, contextPanelCSS } from "./context-panel.mjs";
 import { createInstanceTeamsSection, teamsCSS } from "./instance-teams.mjs";
 import { createInstanceSoulSection, instanceSoulCSS } from "./instance-soul.mjs";
 import { createInstanceGitPanel, instanceGitCSS } from "./instance-git.mjs";
-import { canAddressRemote, rowReason } from "./remote-address.mjs";
+import { canAddressRemote, rowReason } from "../../client/remote-address.mjs";
 import { createNotificationCenter, notificationCSS } from "./notifications.mjs";
 import { createHostTheme } from "./host-theme.mjs";
 import { createSpawnJobs } from "./spawn-jobs.mjs";
@@ -63,7 +63,7 @@ import { createSpawnFollow, watchOperator } from "./spawn-follow.mjs";
 import { registerSpawnDialogKeys } from "./spawn-dialog-keys.mjs";
 import { revealInScrollport } from "./reveal-in-scrollport.mjs";
 import { createRosterTip, rosterTipFacts, rosterTipCSS } from "./roster-tip.mjs";
-import { waitingClaim, waitingSentence, waitingLabel, waitingClock } from "./waiting-on-you.mjs";
+import { waitingClaim, waitingSentence, waitingLabel, waitingClock } from "../../client/waiting-on-you.mjs";
 import { createRosterPrs, prChip, prText, rosterPrCSS } from "./roster-pr.mjs";
 import { createPanelOwner } from "./panel-owner.mjs";
 import {

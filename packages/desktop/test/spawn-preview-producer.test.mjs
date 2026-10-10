@@ -4,11 +4,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { cliSpawnPreview } from '../spawn-preview-cli.mjs';
+import { cliSpawnPreview } from '../../client/spawn-preview-cli.mjs';
 import { createSpawnPreviewBoundary } from '../server/spawn-preview.mjs';
-import { previewData, INSTANCE_NAME_MAX } from '../renderer/spawn-preview-contract.mjs';
+import { previewData, INSTANCE_NAME_MAX } from '../../client/spawn-preview-contract.mjs';
 import { cli, kernel, DEPLOYMENT, ROOT } from './helpers/spawn-preview-fixture.mjs';
-import { harnessOf } from '../renderer/harness-names.mjs';
+import { harnessOf } from '../../client/harness-names.mjs';
 const provenance = JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/f3/provenance.json', import.meta.url), 'utf8'));
 const souls = { 'release-manager': 'worktree', 'platform-reviewer': 'checkout', 'support-triager': 'directory', 'no-such-soul': 'worktree' };
 const purpose = p => ({ purpose: p });

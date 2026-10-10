@@ -6,7 +6,7 @@
  * re-derives placement. Domain results resolve (never reject) with stable codes; a
  * kernel refusal (E_AUTOMATION_WORKSPACE, E_AUTOMATION_NOT_HERE, …) keeps its own code
  * and a bounded message. */
-import { cliAutomation, AUTOMATION_VERBS, automationIdValid, automationKeyLocal, automationDescriptionValid, automationRunSourceValid, TRIGGER_SOURCES_FEATURE } from "../cli-adapter.mjs";
+import { cliAutomation, AUTOMATION_VERBS, automationIdValid, automationKeyLocal, automationDescriptionValid, automationRunSourceValid, TRIGGER_SOURCES_FEATURE } from "../../client/cli-adapter.mjs";
 
 export const AUTOMATIONS_VIEW_API = 1;
 const KERNEL_CODE = /^E_[A-Z0-9_]{1,63}$/;

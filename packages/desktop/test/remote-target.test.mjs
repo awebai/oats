@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { prepareRemoteTerm, remoteTargetKey, createTerminalPrepareGate, remoteTerminalEnvironment } from "../remote-target.mjs";
 import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
-import { HERDR_REMOVED } from "../renderer/terminal-contract.mjs";
+import { HERDR_REMOVED } from "../../client/terminal-contract.mjs";
 import { runTerminalCommand } from "../terminal-exec.mjs";
 
 /** The real runner over an exec double that exits `code` after printing `stdout`, as the CLI does for a JSON refusal. */

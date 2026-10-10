@@ -20,12 +20,12 @@ import {
 import { apiUrl, apiInit, classifyApiRoute, unservedWorkspace, createUnservedRefusal, servedSelectors } from '../api-url.mjs';
 import { forgeProxyOptions, trustedForgeFrame, FORGE_EPOCH_HEADER } from '../forge-proxy.mjs';
 import { forgeFailure } from '../renderer/forge-contract.mjs';
-import { lifecycleFailure } from '../renderer/lifecycle-contract.mjs';
+import { lifecycleFailure } from '../../client/lifecycle-contract.mjs';
 import {
   workspaceNotServed, unservedText, unservedError, createPendingWatch, PENDING_LIMIT_MS, NOT_SERVED_CODE, NO_ANSWER_CODE,
 } from '../renderer/deployment-header.mjs';
-import { DEPLOYMENT_READ_TIMEOUT } from '../deployment-read-cli.mjs';
-import { mapBounded, MAX_DEPLOYMENT_OBSERVATIONS } from '../server/deployment-observer.mjs';
+import { DEPLOYMENT_READ_TIMEOUT } from '../../client/deployment-read-cli.mjs';
+import { mapBounded, MAX_DEPLOYMENT_OBSERVATIONS } from '../../client/deployment-observer.mjs';
 import { createDataState, failedElement } from '../renderer/loading.mjs';
 
 const DEPLOYMENTS = new Set(['/d/oats-v2', '/d/Agents/aweb', '/d/third']);

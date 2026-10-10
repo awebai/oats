@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { cliReadiness } from '../readiness-cli.mjs';
 import { createReadinessBoundary } from '../server/readiness.mjs';
-import { readinessData, readinessFailure } from '../renderer/readiness-contract.mjs';
-import { discover } from '../cli-locator.mjs';
+import { readinessData, readinessFailure } from '../../client/readiness-contract.mjs';
+import { discover } from '../../client/cli-locator.mjs';
 import { context, cli, selector, target, instanceTarget, data, item, envelope, deferred, tick } from './helpers/readiness-fixture.mjs';
 const request = s => ({ action: 'read', selector: s || selector });
 test('installed probe forwards only exact readiness API integer, never fabricates missing support', async () => {

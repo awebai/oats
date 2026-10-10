@@ -4,7 +4,7 @@ import test from "node:test";
 import { viewContext } from "./helpers/view-context.mjs";
 import assert from "node:assert/strict";
 import { opened, confirmed, ready as terminalReady } from './helpers/terminal-wire.mjs';
-import { terminalFailure } from '../renderer/terminal-contract.mjs';
+import { terminalFailure } from '../../client/terminal-contract.mjs';
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { withShellWindowGlobals } from './helpers/shell-window-globals.mjs';
@@ -27,7 +27,7 @@ import { instanceSplitPlan, instanceSplitIdentity } from '../renderer/instance-s
 import { instanceActionTarget, sameInstanceActionTarget } from '../renderer/instance-action-target.mjs';
 import * as layout from "../renderer/split-layout.mjs";
 import * as workspaceTabs from "../renderer/workspace-tabs.mjs";
-import { canAddressRemote, rowReason } from "../renderer/remote-address.mjs";
+import { canAddressRemote, rowReason } from "../../client/remote-address.mjs";
 import { revealInStrip } from "../renderer/reveal-in-scrollport.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");

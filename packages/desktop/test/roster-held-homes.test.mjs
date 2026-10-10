@@ -14,13 +14,13 @@ import * as tree from "../renderer/instance-tree.mjs";
 import { instanceActions, captureInstanceActionMenu } from "../renderer/instance-actions.mjs";
 import { instanceActionTarget, sameInstanceActionTarget } from "../renderer/instance-action-target.mjs";
 import { instanceSplitPlan } from "../renderer/instance-split.mjs";
-import { runtimeState, unsupportedSession } from "../renderer/instance-presentation.mjs";
-import { canAddressRemote, rowReason } from "../renderer/remote-address.mjs";
+import { runtimeState, unsupportedSession } from "../../client/instance-presentation.mjs";
+import { canAddressRemote, rowReason } from "../../client/remote-address.mjs";
 import { createRuntimeBadge } from "../renderer/identity-marks.mjs";
 import { rosterTipFacts } from "../renderer/roster-tip.mjs";
-import { waitingClock } from "../renderer/waiting-on-you.mjs";
+import { waitingClock } from "../../client/waiting-on-you.mjs";
 import { projectActivePanel } from "../renderer/active-observation.mjs";
-import { deploymentStatusData } from "../deployment-data.mjs";
+import { deploymentStatusData } from "../../client/deployment-data.mjs";
 
 const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), "utf8");
 const css = read("shell.css"), html = read("index.html"), shell = read("shell.mjs");

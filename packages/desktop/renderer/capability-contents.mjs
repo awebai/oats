@@ -20,7 +20,7 @@
  * the controller owns that row too (`triggerSources`, a second long-lived element the page appends into its
  * card on every rebuild) and tells the host when it appears or disappears (`onProvidesChange`). Neither the
  * declaration nor the kernel's problems with it change the section's state, its problems or its warnings. */
-import { capabilityShowSupported, capabilitySelector, capabilityShowData, capabilityFileData, listedFiles, skillFilePath, skillRelativePath, triggerSourcesView, CAPABILITY_SHOW_UNREADABLE } from './capability-show-contract.mjs';
+import { capabilityShowSupported, capabilitySelector, capabilityShowData, capabilityFileData, listedFiles, skillFilePath, skillRelativePath, triggerSourcesView, CAPABILITY_SHOW_UNREADABLE } from '../../client/capability-show-contract.mjs';
 import { fillTriggerSourcesRow } from './capability-page.mjs';
 import { contentsCardCSS, sizeText, firstSentence, createContentsTree, createContentsReader } from './contents-reader.mjs';
 import { createDataState, skeleton, captureFocusState } from './loading.mjs';

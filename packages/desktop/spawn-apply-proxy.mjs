@@ -2,8 +2,8 @@
  * cannot be bypassed by an alias or by omitting the transaction discriminator. */
 import { apiUrl, apiInit } from './api-url.mjs';
 import { trustedForgeFrame } from './forge-proxy.mjs';
-import { record, absolute } from './renderer/spawn-preview-contract.mjs';
-import { spawnPrepareInput, spawnRefInput, spawnApplyView, spawnApplyFailure } from './renderer/spawn-apply-contract.mjs';
+import { record, absolute } from '../client/spawn-preview-contract.mjs';
+import { spawnPrepareInput, spawnRefInput, spawnApplyView, spawnApplyFailure } from '../client/spawn-apply-contract.mjs';
 export async function proxySpawnApply(event, pathname, opts, { rendererURL, connection, fetch: fetcher = globalThis.fetch } = {}) {
   let frame, start, dispatched = false, mutation = false, legacy = false, input;
   const owns = () => { try { return trustedForgeFrame(event, rendererURL) && event.sender.mainFrame === frame; } catch { return false; } };

@@ -6,14 +6,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { createWarningsList, WARNINGS_COPY } from '../renderer/capability-warnings.mjs';
-import { warningsOf } from '../renderer/capability-warnings-contract.mjs';
+import { warningsOf } from '../../client/capability-warnings-contract.mjs';
 import { createCapabilityContents, capabilityContentsCSS } from '../renderer/capability-contents.mjs';
 import { capabilityWarningsCSS } from '../renderer/capability-warnings.mjs';
 import { discoveryCSS, setupAttention } from '../renderer/workspace-discovery.mjs';
 import * as spawn from '../renderer/views/spawn.mjs';
 import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 import { refreshCli } from '../renderer/views/cli-status.mjs';
-import { workspaceStatusData, deploymentStatusData } from '../deployment-data.mjs';
+import { workspaceStatusData, deploymentStatusData } from '../../client/deployment-data.mjs';
 
 const KERNEL = { code: 'hook-event-unsupported', capability: 'acme.tool', path: 'github.com/acme/agents:capabilities/acme-tool/oats.json#/hooks/on-merge',
   message: 'capability acme.tool declares hook "on-merge", which this kernel does not run; it is ignored (this kernel runs soul-scaffold, spawn, retire, launch)' };

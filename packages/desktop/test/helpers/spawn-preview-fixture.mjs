@@ -3,7 +3,7 @@
 // The CLI facts are the captured `oats version --json`; the preview and the
 // creation receipt are the captured `spawn … --preview --json` and
 // `spawn … --expect-decision … --json` documents. Tests mutate copies.
-import { harnessList } from '../../renderer/harness-names.mjs';
+import { harnessList } from '../../../client/harness-names.mjs';
 import { readFileSync } from 'node:fs';
 export const kernel = name => JSON.parse(readFileSync(new URL(`../fixtures/workspace-v2/f3/${name}.json`, import.meta.url), 'utf8'));
 const version = kernel('version');

@@ -10,7 +10,7 @@
 
 const mounts = new Set();
 let nextMountId = 0;
-import { runtimeState } from "../instance-presentation.mjs";
+import { runtimeState } from "../../../client/instance-presentation.mjs";
 import { wsQuery, onWorkspaceChange, escapeHtml } from "./common.mjs";
 import { icon } from "../shell-icons.mjs";
 import { createDeploymentScopeLine } from "../deployment-scope-line.mjs";

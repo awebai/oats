@@ -32,11 +32,11 @@ test("remote instance API references preserve the server and canonical home", ()
 });
 
 test("the same absolute home on two servers stays two instances for every routed read, plan and terminal", async () => {
-  const { admitInstance } = await import("../server/instance-admission.mjs");
-  const { lifecycleArgv } = await import("../lifecycle-cli.mjs");
+  const { admitInstance } = await import("../../client/instance-admission.mjs");
+  const { lifecycleArgv } = await import("../../client/lifecycle-cli.mjs");
   const { cliReadiness } = await import("../readiness-cli.mjs");
   const { cliInstanceEvents } = await import("../instance-events-cli.mjs");
-  const { cliInstanceGit } = await import("../cli-adapter.mjs");
+  const { cliInstanceGit } = await import("../../client/cli-adapter.mjs");
   const { remoteTargetKey } = await import("../remote-target.mjs");
   const home = "/work/agents/dev/instances/dev-one", cwd = "/Users/me/work";
   const cli = { ok: true, bin: "/installed/oats", eventsApi: 2, features: ["instance-events-2"],

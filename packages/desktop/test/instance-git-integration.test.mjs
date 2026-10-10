@@ -7,7 +7,7 @@ import { EventEmitter } from 'node:events';
 import { runInNewContext } from 'node:vm';
 import { JSDOM } from 'jsdom';
 import { apiUrl } from '../api-url.mjs';
-import { cliInstanceGit } from '../cli-adapter.mjs';
+import { cliInstanceGit } from '../../client/cli-adapter.mjs';
 import { createInstanceGitBoundary } from '../server/instance-git.mjs';
 import { createContextPanel, contextPanelCSS } from '../renderer/context-panel.mjs';
 import { createInstanceGitPanel, instanceGitCSS } from '../renderer/instance-git.mjs';

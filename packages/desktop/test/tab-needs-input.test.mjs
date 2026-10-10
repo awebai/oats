@@ -8,9 +8,9 @@ import { JSDOM } from "jsdom";
 import { createTabChrome, tabNameTailStart } from "../renderer/tab-a11y.mjs";
 import { terminalKey } from "../renderer/instance-tree.mjs";
 import { iconElement } from "../renderer/shell-icons.mjs";
-import { waitingClaim, waitingLabel, waitingClock } from "../renderer/waiting-on-you.mjs";
+import { waitingClaim, waitingLabel, waitingClock } from "../../client/waiting-on-you.mjs";
 import { rowStale } from "../renderer/view-deployments.mjs";
-import { remotePanel, unavailableGroups } from "../server/remote-roster.mjs";
+import { remotePanel, unavailableGroups } from "../../client/remote-roster.mjs";
 import { kernelRemoteRow, kernelRemoteGroup, remoteRows } from "./helpers/kernel-remote-row.mjs";
 
 const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), "utf8");

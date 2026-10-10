@@ -2,10 +2,10 @@
 // server/oats-web.mjs extracted with its real helpers, and Juan's deployments as fixtures.
 import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
-import * as remote from '../../server/remote-roster.mjs';
-import { readIdentity, attachment, buildViews, deploymentReason, deploymentReasonParts, viewId } from '../../server/workspace-views.mjs';
+import * as remote from '../../../client/remote-roster.mjs';
+import { readIdentity, attachment, buildViews, deploymentReason, deploymentReasonParts, viewId } from '../../../client/workspace-views.mjs';
 import { createRemoteIdentityStore } from '../../server/remote-identity.mjs';
-import { THIS_MACHINE, shortPath, deploymentLabel } from '../../renderer/deployment-label.mjs';
+import { THIS_MACHINE, shortPath, deploymentLabel } from '../../../client/deployment-label.mjs';
 import { deploymentUnavailableText } from '../../renderer/deployment-header.mjs';
 import { teamMembers } from '../../server/team-members.mjs';
 

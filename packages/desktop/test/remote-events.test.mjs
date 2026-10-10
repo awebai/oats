@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createInstanceEventsBoundary } from '../server/instance-events.mjs';
 import { cliInstanceEvents } from '../instance-events-cli.mjs';
 import { proxyInstanceEvents } from '../instance-events-proxy.mjs';
-import { eventsFailure, eventsSelector } from '../renderer/instance-events-contract.mjs';
+import { eventsFailure, eventsSelector } from '../../client/instance-events-contract.mjs';
 import { cli, birth, data, envelope } from './helpers/instance-events-fixture.mjs';
 
 const home = '/srv/agents/dev/instances/dev-a';

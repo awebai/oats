@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ROSTER_POLL_FOCUSED_MS, ROSTER_POLL_BLURRED_MS, rosterPollDue } from '../renderer/roster-cadence.mjs';
-import { REFRESH_BLURRED_MS } from '../server/refresh-loop.mjs';
+import { REFRESH_BLURRED_MS } from '../../client/refresh-loop.mjs';
 
 test('the blurred roster cadence is the server\'s blurred refresh interval', () => {
   assert.equal(ROSTER_POLL_FOCUSED_MS, 4000);

@@ -9,7 +9,7 @@
     entry is served for at most `ttlMs` after it was stored, then re-read: it
     bounds what no key can see (teams changed on the messaging side, the
     launch choice this machine would make now). */
-import { observationData } from '../deployment-data.mjs';
+import { observationData } from '../../client/deployment-data.mjs';
 import { HELD_TTL_MS } from './keyed-catalog.mjs';
 
 export const INSPECT_CACHE_LIMIT = 256;

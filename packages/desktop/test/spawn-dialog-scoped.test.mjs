@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { createSpawnDialog, spawnDialogCSS, composePreviewModules, soulOriginText, worksInText, moduleSourceText } from '../renderer/spawn-dialog.mjs';
 import { identityCSS } from '../renderer/identity-marks.mjs';
-import { spawnProblem } from '../renderer/spawn-messages.mjs';
+import { spawnProblem } from '../../client/spawn-messages.mjs';
 import { cli as CLI, kernel, ROOT, target, view, deferred } from './helpers/spawn-preview-fixture.mjs';
 
 const themeCSS = readFileSync(new URL('../renderer/theme.css', import.meta.url), 'utf8');

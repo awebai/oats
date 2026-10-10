@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serverCompatible, selectServer, ensureServerOnPort } from "../packages/desktop/server-compat.mjs";
 import { matchWorkspaceDirs } from "../packages/desktop/workspace-registry.mjs";
-import { buildViews } from "../packages/desktop/server/workspace-views.mjs";
+import { buildViews } from "../packages/client/workspace-views.mjs";
 import { spawn } from "node:child_process";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");

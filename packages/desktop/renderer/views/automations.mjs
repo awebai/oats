@@ -13,7 +13,7 @@ import {
   triggerSourcesSupported, capabilitySource, sourceLabel, sourceParams, sourceCheck, taskFields, causeWords, ruleWords, EVENTS_SHOWN,
 } from '../automation-rows.mjs';
 import { sourceQuote, sourceQuoteCSS, LEAD_INS } from '../source-quote.mjs';
-import { displayLine } from '../display-text.mjs';
+import { displayLine } from '../../../client/display-text.mjs';
 import { descriptionValid, DESCRIPTION_MAX } from '../schedule-read-data.mjs';
 import { pageCardCSS, pageBar, pageCard, pageFacts, pageSection } from '../capability-page.mjs';
 import { iconElement } from '../shell-icons.mjs';

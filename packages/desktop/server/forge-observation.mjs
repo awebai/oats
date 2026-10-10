@@ -1,7 +1,7 @@
 /** Private K1 routing projection. The URL may contain credentials: it is ONLY
  * fed into a keyed fingerprint, never returned, persisted, or logged. */
 import { createHmac, randomBytes } from 'node:crypto';
-import { gitTargetKey } from '../renderer/instance-git-contract.mjs';
+import { gitTargetKey } from '../../client/instance-git-contract.mjs';
 import { object, hostName, repoPath, branchName } from '../renderer/forge-contract.mjs';
 const key = randomBytes(32);
 const bounded = (v, size) => typeof v === 'string' && v.length <= size && !/[\x00-\x1f\x7f]/.test(v);
