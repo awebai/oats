@@ -188,3 +188,37 @@ test("schedulerStatus carries the unit's problems as warnings, always as an arra
   assert.deepEqual(S.schedulerStatus(undefined, { hostStatus: () => { throw new Error("launchctl is gone"); } }).problems, []);
   assert.deepEqual(S.schedulerStatus(undefined).problems, []);
 });
+
+test("install --print shows exactly what install would write and changes nothing", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const { existsSync, readdirSync } = await import("node:fs");
+  const cli = join(import.meta.dirname, "..", "bin", "oats.mjs");
+  const home = dir(`print-home-${++n}`), cwd = dir(`print-cwd-${++n}`), oatsHome = join(base, `print-oats-${++n}`);
+  // launchctl and systemctl that record any call: --print makes none.
+  const calls = join(base, `print-calls-${n}`), stubs = dir(`print-stubs-${n}`);
+  for (const name of ["launchctl", "systemctl"]) { writeFileSync(join(stubs, name), `#!/bin/sh\necho "${name} $*" >> '${calls}'\n`); chmodSync(join(stubs, name), 0o755); }
+  const env = { PATH: `${stubs}:${process.env.PATH}`, HOME: home, OATS_HOME_DIR: oatsHome, LANG: "C" };
+  const saved = { OATS_HOME_DIR: process.env.OATS_HOME_DIR, HOME: process.env.HOME };
+  for (const [os, unitDir] of [["darwin", join(home, "Library", "LaunchAgents")], ["linux", join(home, ".config", "systemd", "user")]]) {
+    const json = JSON.parse(execFileSync(process.execPath, [cli, "schedule", "host", "install", "--print", "--os", os, "--json"], { cwd, env, encoding: "utf8" })).result;
+    let expected;
+    try { Object.assign(process.env, { OATS_HOME_DIR: oatsHome, HOME: home }); expected = H.hostUnitFiles({ os, unitDir, envPath: env.PATH, instanceHome: undefined }); }
+    finally { Object.assign(process.env, saved); }
+    assert.deepEqual(json, expected, `${os}: the files install would write, at its paths`);
+    assert.equal(json.kind, os === "darwin" ? "launchd" : "systemd");
+    assert.deepEqual(Object.keys(json.files).sort(), os === "darwin" ? [join(unitDir, "ai.oats.schedule-tick.plist")] : [join(unitDir, "oats-schedule-tick.service"), join(unitDir, "oats-schedule-tick.timer")]);
+    assert.ok(Array.isArray(json.warnings));
+    // Text: each file under its own delimiter line, byte for byte.
+    const text = execFileSync(process.execPath, [cli, "schedule", "host", "install", "--print", "--os", os], { cwd, env, encoding: "utf8" });
+    for (const [path, content] of Object.entries(json.files)) assert.ok(text.includes(`==> ${path} <==\n${content}`), `${os}: ${path} in the text output`);
+  }
+  assert.equal(existsSync(oatsHome), false, "no registry and no log dir");
+  assert.deepEqual(readdirSync(home), [], "no unit file");
+  assert.equal(existsSync(calls), false, "no launchctl or systemctl call");
+  // --os is --print's only, and names a supported OS.
+  const refused = (args) => { try { execFileSync(process.execPath, [cli, "schedule", "host", "install", ...args, "--json"], { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }); } catch (e) { return JSON.parse(String(e.stdout).trim()).error; } return null; };
+  assert.equal(refused(["--print", "--os", "win32"])?.code, "E_BAD_ARGS");
+  assert.equal(refused(["--os", "linux"])?.code, "E_BAD_ARGS");
+  assert.equal(refused(["--print", "--max-concurrent", "2"])?.code, "E_BAD_ARGS", "--print writes no cap");
+  assert.equal(existsSync(oatsHome), false); assert.equal(existsSync(calls), false);
+});
