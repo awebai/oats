@@ -132,7 +132,7 @@ function triggerSourceOf(v) {
 /** The manifest's `triggerSources`, which the kernel answers exactly as written, whatever its shape: null when it
  * is not an object (declared, not readable; the raw value is not relayed), else its first LIMITS.sources entries in
  * the kernel's order, each name bounded and each value a `triggerSourceOf`. Every string is the manifest's:
- * untrusted, shown only as quoted text (source-quote.mjs). Built from entries, never by assignment: a manifest key
+ * untrusted, shown only as quoted text (packages/desktop/renderer/source-quote.mjs). Built from entries, never by assignment: a manifest key
  * may be `__proto__`. Tolerant, bounded and idempotent, like `warningsOf`. */
 export function triggerSourcesOf(v) {
   if (!record(v)) return null;

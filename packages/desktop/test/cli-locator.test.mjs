@@ -1,4 +1,4 @@
-// CLI locator (packages/desktop/cli-locator.mjs) — Desktop CLI API v1
+// CLI locator (packages/client/cli-locator.mjs) — Desktop CLI API v1
 // discovery order, canonicalization, acceptance, and stable diagnostics.
 import { requireRemoteSupport } from "../../client/cli-locator.mjs";
 import { test } from "node:test";

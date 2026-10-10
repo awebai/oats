@@ -5,7 +5,7 @@
 // every run), two workspace triggers on it (one this host trusts, one it does not) and a local
 // `github.pull_request` trigger. Each answer is read the way the Desktop reads it: the server's request
 // handler (server/automations.mjs, server/capability-show.mjs) over the same exec owner that builds the argv
-// (cli-adapter.mjs, workspace-cli.mjs), then the renderer's own reader. The run log is asserted beside the
+// (packages/client: cli-adapter.mjs, workspace-cli.mjs), then the reader the renderer uses. The run log is asserted beside the
 // answers: what the Desktop's requests made the kernel EXECUTE, not only what it said.
 //
 // The whole file needs a kernel that declares the feature `trigger-sources`. On one that does not, it skips

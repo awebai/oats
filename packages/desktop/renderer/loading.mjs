@@ -28,7 +28,7 @@ export const AGE_TICK_MS = 30_000;
 
 const capitalise = s => s ? s[0].toUpperCase() + s.slice(1) : s;
 /** Why a roster-derived action or claim waits while the roster is not settled-good (the sidebar's rule, shared by
- * every surface that derives from the roster: instance-tree.mjs re-exports it). */
+ * every surface that derives from the roster: instance-tree-view.mjs re-exports it). */
 export const ROSTER_STALE_TITLE = 'Unavailable: roster is not current';
 /** The same rule for a claim derived from the souls list (`oats souls`): Capabilities' "Used by" when the
  * kernel reports each soul's composition (souls-capabilities). */

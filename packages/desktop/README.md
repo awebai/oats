@@ -107,6 +107,12 @@ backend and the page import them by a plain relative path (`../client/`,
 `../../client/` from `server/` and `renderer/`, `../../../client/` from
 `renderer/views/`). Nothing copies, builds or installs them.
 
+Beside the readers it holds what a client decides from the kernel's rows
+alone, with no document to draw in: the roster as a tree
+(`instance-tree.mjs`), its sections by deployment (`roster-sections.mjs`),
+which acts a row offers and why (`instance-acts.mjs`), and whether a directory
+is a deployment (`workspace-admission.mjs`).
+
 - **What it holds.** `.mjs` modules and nothing else, in one flat directory:
   no test, fixture, script or manifest, and no subdirectory. A module there
   imports `node:` builtins and its own siblings only: no third-party package
@@ -115,6 +121,28 @@ backend and the page import them by a plain relative path (`../client/`,
   `own-environment.mjs` is its first import
   ([below](#the-environment-of-the-programs-desktop-starts)); no other module
   there imports either.
+- **What goes there, and what stays here.** A function belongs in the shared
+  home when it answers a question from the kernel's rows alone: who is who,
+  who relates to whom, which groups, what order, what is visible, who waits,
+  what holds a home, which acts apply. It stays in this package when it takes
+  a document or an element, or belongs to one of the Desktop's own surfaces:
+  terminal tabs, drawn connectors, loading state, the `/api/panel` wire, its
+  stores. A file that mixes the two is cut in two, and nothing is re-exported:
+  an importer names the module that has the export
+  (`renderer/instance-tree-view.mjs` is the Desktop's half of the tree,
+  `renderer/view-deployments.mjs` of the sections, `workspace-registry.mjs` of
+  admission). A decision is made there and drawn here: `instanceActs` returns
+  verbs and reasons, never a label, an icon or a key, and
+  `renderer/instance-actions.mjs` builds the menu from them.
+- **Who may import what.** `test/client-boundary.test.mjs`, a root test that
+  reads sources and imports none, holds the rules: the shared home imports
+  only itself and `node:` builtins; `lib/` and `bin/` import nothing from it
+  or from this package; a second client (`packages/tui/`) imports from it only
+  the **stable surface**, by name. The surface is the list in that test, module
+  by module and export by export: changing a listed export changes its other
+  client in the same change, and anything not listed is this package's own
+  composition. `test/client-loading.test.mjs` loads every module of the home
+  under plain Node, which is the proof that none needs a DOM to load.
 - **Where it is in the installed app.** The builder places it beside
   `app.asar`, as `client/` in the resources directory (`extraResources` in
   `electron-builder.config.cjs`): `Contents/Resources/client/` in the macOS

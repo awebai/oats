@@ -127,7 +127,7 @@ let rosterFailure = null;    // the roster read's failure while no answer has ar
    test/workspace-views-server.test.mjs (deps: ctxs, snapshot, remoteGroups, remote, cliState,
    observing, remoteCollecting, remoteIdentities, rosterAnswered, rosterFailure, homedir, basename and
    the imported view, label and team-member helpers).
-   ── Workspace views (#482, server/workspace-views.mjs) ──
+   ── Workspace views (#482, packages/client/workspace-views.mjs) ──
    A view is what the switcher lists and a window shows: one per matched workspace identity, plus
    one per unattached deployment under that deployment's own id. Built per request from the held
    observations and the remembered remote identities; never a CLI read. */
@@ -665,7 +665,7 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
 let cliState = { ok: false, probedAt: 0, tried: [] };
 // The revision every deployment read is admitted under: pending reads are revoked (E_DEPLOYMENT_STALE)
 // when it moves, so it moves ONLY when the accepted CLI actually changed in a gate-relevant field
-// (bin, version, features, API integers, remote support: renderer/cli-probe-contract.mjs). A focus
+// (bin, version, features, API integers, remote support: packages/client/cli-probe-contract.mjs). A focus
 // reprobe of the same binary is a no-op here: it neither cancels the observation in flight nor
 // wipes the held catalogs, and cliState keeps its identity (the remote roster compares by it).
 let cliProbeGeneration = 0;

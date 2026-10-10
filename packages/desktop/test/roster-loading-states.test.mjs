@@ -62,7 +62,7 @@ const row = (name, extra = {}) => ({ instance: name, home: `/synthetic/${name}`,
 const roster = [row('alpha'), row('beta', { running: false }), row('gamma', { parentInstance: 'alpha' })];
 const panelOf = (ws, instances, extra = {}) => ({ workspace: { id: ws, name: ws }, workspaces: [{ id: 'A', name: 'A' }, { id: 'B', name: 'B' }], deployment: { status: 'observed' }, instances, ...extra });
 
-/* ── the helpers in instance-tree.mjs ─────────────────────────────────────── */
+/* ── the helpers in instance-tree-view.mjs ─────────────────────────────────────── */
 function rosterDom(t, html = read('index.html')) {
   const dom = new JSDOM(html, { pretendToBeVisual: true }); t.after(() => dom.window.close());
   return { dom, doc: dom.window.document, rosterEl: dom.window.document.getElementById('instance-roster') };

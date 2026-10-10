@@ -72,7 +72,7 @@ export function deploymentReasonParts(d) {
   const updateHere = ['Update OATS on this computer.'];
   if (d.local) {
     if (d.unavailable) return { short: 'Not observed', detail: d.unavailable, fix: [] };
-    // A re-read failed and the last observation was kept (oats-web.mjs observeDeployment): the kernel's message.
+    // A re-read failed and the last observation was kept (packages/desktop/server/oats-web.mjs observeDeployment): the kernel's message.
     if (d.readError) return { short: 'Last read failed', detail: `This deployment's last read failed: ${d.readError}. It shows what was last observed.`, fix: [] };
     if (d.identityStatus === 'feature') return { short: 'OATS here too old to report workspaces', detail: 'This computer\'s OATS is too old to report its workspace; update OATS here.', fix: updateHere };
     if (d.identityStatus === 'old' || d.identityStatus === 'none') return { short: 'Reports no workspace', detail: 'This deployment reports no workspace identity.', fix: [] };

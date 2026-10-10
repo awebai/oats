@@ -5,7 +5,7 @@
  * The renderer's selector is never trusted: it must name exactly ONE row of the capabilities
  * table this server holds for the workspace (the same kernel answer the renderer listed from), and
  * the verb runs with that row's coordinates. A refusal is the kernel's code and message verbatim;
- * an answer this Desktop cannot decode (renderer/capability-show-contract.mjs, strict) is
+ * an answer this Desktop cannot decode (packages/client/capability-show-contract.mjs, strict) is
  * E_CLI_PROTOCOL. Nothing here reads a capability file itself or infers one the kernel did not list:
  * a `file` request is answered only for a path the show listing names (E_CAPABILITY_FILE_UNKNOWN
  * otherwise, before any `--file` run).

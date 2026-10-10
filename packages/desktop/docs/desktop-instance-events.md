@@ -115,7 +115,7 @@ validates the field and never synthesizes it.
   `packages/client/deployment-data.mjs` and `remotePanel` both validate through it. The
   module is the claim contract only: the server imports it, so it imports
   contract modules and nothing else (a test pins its imports). The tree
-  roll-up lives in `renderer/instance-tree.mjs`.
+  roll-up lives in `packages/client/instance-tree.mjs`.
 - **One gate.** Every surface reads a claim through `waitingClaim(row,
   {stale})`. It returns the claim only when the row is running (`running ===
   true`, and `runtimeState` is `running` or not reported), the remote server
@@ -150,7 +150,7 @@ validates the field and never synthesizes it.
   time.
 - **Collapsed parents.** A waiting row hidden by a collapse is counted on its
   nearest visible ancestor as "N below" (`waitingRollup` in
-  `renderer/instance-tree.mjs`, beside `instanceVisibleInTree`, which it mirrors), following the parent relation only
+  `packages/client/instance-tree.mjs`, beside `instanceVisibleInTree`, which it mirrors), following the parent relation only
   (never across a remote server), and never outside the deployment section the
   waiting row is painted in. A collapse hides only rows of its own section
   (`instanceVisibleInTree` with the same `section`), so a row whose parent name

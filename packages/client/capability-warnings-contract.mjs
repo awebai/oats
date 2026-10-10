@@ -7,7 +7,7 @@
  * skipped, never refusing the document around it (an older kernel answers no `warnings` key). Every
  * string is already a display line (display-text.mjs), so projecting twice equals projecting once: the
  * server projects before it relays and the renderer projects the relayed answer again. Pure, no DOM: the
- * server imports it. The list's presentation is capability-warnings.mjs. */
+ * server imports it. The list's presentation is packages/desktop/renderer/capability-warnings.mjs. */
 import { displayLine } from './display-text.mjs';
 
 /** Warnings shown per surface; the rest are counted ("and N more"). */

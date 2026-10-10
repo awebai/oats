@@ -87,7 +87,7 @@ export function stepCommands(remedy) {
   return [...remedy.matchAll(/`([^`\n]+)`/g)].map(m => m[1].trim()).filter(Boolean);
 }
 
-/** Why a window offers no remote machine (`machineScope` in server/oats-web.mjs), one line each. */
+/** Why a window offers no remote machine (`machineScope` in packages/desktop/server/oats-web.mjs), one line each. */
 export const MACHINE_SCOPE_REASONS = Object.freeze({
   'no-key': 'This deployment reports no workspace key, so no other machine can be matched to it.',
   'no-local': 'This workspace has no deployment on this computer, so machines are added from one that does.',
@@ -99,7 +99,7 @@ export const BACKFILL_POLL_MS = 2000;
 export const BACKFILL_POLL_MAX_MS = 15_000;
 /** Consecutive failed reads after which a consumer stops following (the server is gone or refusing). */
 export const BACKFILL_READ_FAILURES = 5;
-/** Read the list again while the server's answers say `backfilling` (server/machines.mjs): `read()` answers
+/** Read the list again while the server's answers say `backfilling` (packages/desktop/server/machines.mjs): `read()` answers
  * the list, `use(answer)` takes each, `owns()` is the consumer's latest intent (false: stop, nothing used).
  * It follows until an answer is settled: the backfill itself is bounded (each check has its own deadline),
  * so the follow ends with it, at most one read per BACKFILL_POLL_MAX_MS. It stops early when the owner

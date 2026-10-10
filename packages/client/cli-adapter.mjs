@@ -21,7 +21,7 @@
 //     values passed as separate argv entries (no interpolation). Anything
 //     else the renderer sends is dropped, never forwarded.
 //   * A provider operation names its instance by --home: the home of
-//     exactly one row the server reports (server/capabilities.mjs), never
+//     exactly one row the server reports (packages/desktop/server/capabilities.mjs), never
 //     a caller path.
 import { execFile } from "node:child_process";
 import { mkdtempSync, openSync, writeSync, closeSync, rmSync } from "node:fs";
@@ -336,7 +336,7 @@ const SCHEDULE_AUTOMATION_ID = /^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,63}\/)?[A-Za-z0-
 export const automationIdValid = (kind, id) => typeof id === "string" && (kind === "schedule" ? SCHEDULE_AUTOMATION_ID : AUTOMATION_ID).test(id);
 // A local item's key: bare or `local/`; a member's (workspace) item is edited in Git, never here.
 export const automationKeyLocal = id => typeof id === "string" && (!id.includes("/") || id.startsWith("local/"));
-// The kernel's summary rule (and renderer/schedule-read-data.mjs's): "" clears, else one line of 1-200 code points.
+// The kernel's summary rule (and packages/desktop/renderer/schedule-read-data.mjs's): "" clears, else one line of 1-200 code points.
 export const automationDescriptionValid = v => typeof v === "string" && [...v].length <= 200 && !/[\p{Cc}\u2028\u2029]/u.test(v);
 /** `oats trigger test <id> --run-source` (feature trigger-sources): the kernel runs a capability source's
  * command for a test only with this flag; without it, it executes nothing and answers E_TRIGGER_SOURCE_RUN.
@@ -532,7 +532,7 @@ export async function cliCapability(bin, { action, context, server, soul, agents
   if (!validMaxAge(maxAge)) bad('Invalid observation age');
   // --instructions (feature soul-composed-instructions) composes a soul's AGENTS.md: inspect --soul only; a CLI that
   // does not advertise it gets the flagless argv. Routed with --server, the caller asks only for a host whose roster
-  // row names the feature (server/capabilities.mjs, composed-gate.mjs): a host without it refuses the flag.
+  // row names the feature (packages/desktop: server/capabilities.mjs, renderer/composed-gate.mjs): a host without it refuses the flag.
   if (instructions && (action !== 'inspect' || !soul || home)) bad('Composed instructions belong to a soul inspection');
   const composed = instructions && Array.isArray(features) && features.includes('soul-composed-instructions') ? ['--instructions'] : [];
   return await runJson(bin, [...argv, ...target, ...composed, ...maxAgeArgv(features, maxAge), '--json'], {
