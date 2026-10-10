@@ -3,10 +3,10 @@
 // and the workspace status rows that may name a capability and a path. No DOM.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { warningsOf, warningOf, previewWarningsOf, warningsShown, WARNINGS_SHOWN, WARNING_LINES } from '../renderer/capability-warnings-contract.mjs';
-import { capabilityShowData, capabilityFileData } from '../renderer/capability-show-contract.mjs';
-import { workspaceStatusData } from '../deployment-data.mjs';
-import { DETAIL_WITHHELD } from '../renderer/display-text.mjs';
+import { warningsOf, warningOf, previewWarningsOf, warningsShown, WARNINGS_SHOWN, WARNING_LINES } from '../../client/capability-warnings-contract.mjs';
+import { capabilityShowData, capabilityFileData } from '../../client/capability-show-contract.mjs';
+import { workspaceStatusData } from '../../client/deployment-data.mjs';
+import { DETAIL_WITHHELD } from '../../client/display-text.mjs';
 
 const KERNEL = { code: 'hook-event-unsupported', capability: 'acme.tool', path: 'github.com/acme/agents:capabilities/acme-tool/oats.json#/hooks/on-merge',
   message: 'capability acme.tool declares hook "on-merge", which this kernel does not run; it is ignored (this kernel runs soul-scaffold, spawn, retire, launch)' };

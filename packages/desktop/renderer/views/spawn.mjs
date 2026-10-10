@@ -10,17 +10,17 @@ import { renderCapabilityPage, renderSoulCapabilities, renderSoulCore, capabilit
 import { createCapabilityContents, capabilityContentsCSS } from "../capability-contents.mjs";
 import { sourceQuoteCSS } from "../source-quote.mjs";
 import { soulInstructionsCSS } from "../soul-instructions.mjs";
-import { capabilitySelector, sameSelector } from "../capability-show-contract.mjs";
+import { capabilitySelector, sameSelector } from "../../../client/capability-show-contract.mjs";
 import { MARKDOWN_CSS } from "./markdown.mjs";
-import { runtimeState } from "../instance-presentation.mjs";
+import { runtimeState } from "../../../client/instance-presentation.mjs";
 import { deploymentUnavailableText } from "../deployment-header.mjs";
 import { createSpawnDialog, spawnDialogCSS } from "../spawn-dialog.mjs";
 import { SPAWN_DIALOG_KEYS, SPAWN_JUMPS, registerSpawnDialogKeys, ariaKeyShortcuts } from "../spawn-dialog-keys.mjs";
 import { pendingPlacement } from "../spawn-jobs.mjs";
-import { spawnProblem, catalogProblem } from "../spawn-messages.mjs";
+import { spawnProblem, catalogProblem } from "../../../client/spawn-messages.mjs";
 import { createSoulMark, createRuntimeBadge, identityCSS } from "../identity-marks.mjs";
 import { shownLaunch, launchHarnessName } from "../launch-view.mjs";
-import { harnessOf } from "../harness-names.mjs";
+import { harnessOf } from "../../../client/harness-names.mjs";
 import { memberState } from "../workspace-catalog.mjs";
 import { iconElement } from "../shell-icons.mjs";
 import { groupHeading, groupHeadingCSS } from "../group-heading.mjs";
@@ -33,9 +33,9 @@ import { resolveViewKey } from "../view-keys.mjs";
 import { cliAvailable, cliKnownUnavailable, cliStatus, refreshCli, onCliChange, cliCard } from "./cli-status.mjs";
 import { preselectSchedule } from "./schedules.mjs";
 import { preselectAutomationsTab } from "./automations.mjs";
-import { inspectSupported } from "../inspect-contract.mjs";
+import { inspectSupported } from "../../../client/inspect-contract.mjs";
 import { createDataState, skeleton, statusLine, captureFocusState } from "../loading.mjs";
-import { canAddressRemote } from "../remote-address.mjs";
+import { canAddressRemote } from "../../../client/remote-address.mjs";
 import { instanceActionTarget } from "../instance-action-target.mjs";
 
 /** True while the CLI probe has never SETTLED (no response classified yet).

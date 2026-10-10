@@ -26,7 +26,7 @@
  * souls: alone (`teamAudience`; packages/desktop/docs/desktop-teams.md "The Teams board"). */
 import { iconElement } from './shell-icons.mjs';
 import { createSoulMark } from './identity-marks.mjs';
-import { deploymentLabel, shortPath, THIS_MACHINE } from './deployment-label.mjs';
+import { deploymentLabel, shortPath, THIS_MACHINE } from '../../client/deployment-label.mjs';
 
 /** The Desktop's teams routes (#269, packages/desktop/docs/desktop-teams.md): `{status: 'ok',
  * teams}` (/api/workspace-teams) or `{status: 'ok', soulTeams}` (/api/workspace-soul-teams) answer

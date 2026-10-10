@@ -9,7 +9,7 @@
 // in source order, each one completely before the next. This module and the leaf it imports must
 // have no other imports, so that nothing can load ahead of the step. A library must never import
 // this: it changes the environment of whoever does.
-import { cliEnvironment } from "../cli-environment.mjs";
+import { cliEnvironment } from "./cli-environment.mjs";
 
 /** The environment this process was started with. Its one use: the backend starts the collector with it. */
 export const launchEnvironment = Object.freeze({ ...process.env });

@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { remoteWorkspace, remotePanel, remoteAgents, unavailableGroups, spawnedWorkspace } from "../server/remote-roster.mjs";
-import { HERDR_REMOVED } from "../renderer/terminal-contract.mjs";
-import { waitingClaim } from "../renderer/waiting-on-you.mjs";
+import { remoteWorkspace, remotePanel, remoteAgents, unavailableGroups, spawnedWorkspace } from "../../client/remote-roster.mjs";
+import { HERDR_REMOVED } from "../../client/terminal-contract.mjs";
+import { waitingClaim } from "../../client/waiting-on-you.mjs";
 import { kernelRemoteRow, kernelGoneRow, kernelRemoteGroup } from "./helpers/kernel-remote-row.mjs";
 
 const group = {

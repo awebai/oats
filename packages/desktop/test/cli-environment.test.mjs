@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { readFileSync, readdirSync } from "node:fs";
 import { runInNewContext } from "node:vm";
-import { cliEnvironment } from "../cli-environment.mjs";
+import { cliEnvironment } from "../../client/cli-environment.mjs";
 import { forgeEnvironment } from "../forge-cli.mjs";
 import { PATH_BEGIN, PATH_END, resolveLoginPath } from "../login-path.mjs";
 import { desktopEnvironment, assertUserEnvironment, mountEntries, LAUNCHER_DATA_DIRS, USER_PATH } from "./helpers/desktop-environment.mjs";

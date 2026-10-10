@@ -11,7 +11,7 @@ import { fixtureBase, fixtureEnv, linkExecutables, waitUntil as waitFor } from "
 import { pathLimitSkip } from "./helpers/path-limit.mjs";
 import { fingerprintTree, processScanAvailability, statusDisagreement, storedTreeDigest } from "../lib/core.mjs";
 import { workRecoveryLines } from "../lib/retire-output.mjs";
-import { lifecyclePlan } from "../packages/desktop/renderer/lifecycle-contract.mjs";
+import { lifecyclePlan } from "../packages/client/lifecycle-contract.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const temporaryDirectories = [];

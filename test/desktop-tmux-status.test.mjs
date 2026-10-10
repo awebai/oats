@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createTmuxStatusReader } from "../packages/desktop/server/tmux-status.mjs";
-import { observeLiveness } from "../packages/desktop/server/liveness.mjs";
+import { createTmuxStatusReader } from "../packages/client/tmux-status.mjs";
+import { observeLiveness } from "../packages/client/liveness.mjs";
 
 test("saved socket and session determine status, with one query per socket", () => {
   const calls = [];

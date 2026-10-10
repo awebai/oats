@@ -1,8 +1,8 @@
 /** K7 exact local read admission. No kernel import, filesystem or log reader. */
-import { admitInstance } from './instance-admission.mjs';
+import { admitInstance } from '../../client/instance-admission.mjs';
 import { cliInstanceEvents } from '../instance-events-cli.mjs';
-import { eventsRequest, eventsTarget, eventsSupported, eventsFailure, eventsMessage } from '../renderer/instance-events-contract.mjs';
-import { hostReason } from '../renderer/remote-address.mjs';
+import { eventsRequest, eventsTarget, eventsSupported, eventsFailure, eventsMessage } from '../../client/instance-events-contract.mjs';
+import { hostReason } from '../../client/remote-address.mjs';
 import { eventsData } from '../renderer/instance-events-data.mjs';
 const flights = new Set(); // process-wide, not per window/workspace/factory
 const byInvoker = new WeakMap();

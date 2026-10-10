@@ -10,7 +10,7 @@
    active row down (Shift + the chord: up), skipping context rows.
    Overlay chrome + fuzzy machinery live in overlay-picker.mjs (shared with
    Quick Open); this module owns only the palette's row semantics. */
-import { runtimeState } from "./instance-presentation.mjs";
+import { runtimeState } from "../../client/instance-presentation.mjs";
 import { filterInstanceTree } from "./instance-tree.mjs";
 import { rosterSections, splitByDeployment, isMultiDeployment } from "./view-deployments.mjs";
 import { createOverlayPicker, subsequenceScore } from "./overlay-picker.mjs";

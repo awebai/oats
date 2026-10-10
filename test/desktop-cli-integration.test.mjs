@@ -156,7 +156,7 @@ test("desktop server: /api/cli reports discovery status; compatible fake CLI acc
     // never a hand-pinned version that rots below a feature floor.
     const desktopVersion = JSON.parse(readFileSync(new URL("../packages/desktop/package.json", import.meta.url), "utf8")).version;
     assert.equal(s.install, `npm install -g @awebai/oats@${desktopVersion}`);
-    const { acceptProbe } = await import("../packages/desktop/cli-locator.mjs");
+    const { acceptProbe } = await import("../packages/client/cli-locator.mjs");
     assert.equal(acceptProbe({ schemaVersion: 1, name: "@awebai/oats", version: desktopVersion, desktopApi: 1 }).ok, true,
       `the served install command pins ${desktopVersion}, which this Desktop would reject`);
     const g = await (await fetch(`http://127.0.0.1:${port}/api/cli`)).json();

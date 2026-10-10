@@ -7,14 +7,14 @@
  * request answers within ANSWER_WITHIN_MS: with the outcome if the CLI settled, else `pending`;
  * the CLI keeps running here and `result` reads its outcome. Up to MAX_APPLIES applies run at
  * once backend-wide, one per workspace and soul. */
-import { retainedSpawnDetails, LAUNCH_DIAGNOSTIC_BYTES } from '../renderer/launch-prompt-outcome.mjs';
+import { retainedSpawnDetails, LAUNCH_DIAGNOSTIC_BYTES } from '../../client/launch-prompt-outcome.mjs';
 import { randomBytes } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
-import { cliSpawnApply } from '../spawn-apply-cli.mjs';
+import { cliSpawnApply } from '../../client/spawn-apply-cli.mjs';
 import { admitSpawnSelection, spawnPreviewPrepareRequest } from './spawn-preview.mjs';
-import { record } from '../renderer/spawn-preview-contract.mjs';
+import { record } from '../../client/spawn-preview-contract.mjs';
 import { spawnApplySupported, spawnApplyChoicesSupported, spawnPrepareInput, spawnRefInput, spawnPreparedData, spawnReference,
-  spawnCreationReceipt, spawnApplyFailure, spawnApplyDeadlineMs, ROLLED_BACK_CODES, WAKE_OUTCOME_UNKNOWN } from '../renderer/spawn-apply-contract.mjs';
+  spawnCreationReceipt, spawnApplyFailure, spawnApplyDeadlineMs, ROLLED_BACK_CODES, WAKE_OUTCOME_UNKNOWN } from '../../client/spawn-apply-contract.mjs';
 /** The apply request answers within this; the proxy's own 65 s timeout then never fires on a healthy spawn. */
 export const ANSWER_WITHIN_MS = 50000;
 export const MAX_APPLIES = 4;

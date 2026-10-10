@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { createTerminalTab } from "../renderer/terminal-tab.mjs";
 import { handle, opened, ready, confirmed } from "./helpers/terminal-wire.mjs";
-import { terminalFailure, terminalMessage } from "../renderer/terminal-contract.mjs";
+import { terminalFailure, terminalMessage } from "../../client/terminal-contract.mjs";
 
 const flush = () => new Promise(setImmediate);
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };

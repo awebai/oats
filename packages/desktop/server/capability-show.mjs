@@ -16,11 +16,11 @@
  * without a commit (nothing would tell its content moved) and an answer about another commit than
  * the row's (the head moved between the two reads) are returned but never held, only coalesced.
  * Identical concurrent requests share one kernel run; failures are never held. */
-import { cliWorkspace, workspaceFailure } from '../workspace-cli.mjs';
+import { cliWorkspace, workspaceFailure } from '../../client/workspace-cli.mjs';
 import {
   CAPABILITY_SHOW_UNREADABLE, capabilityFileData, capabilitySelector, capabilityShowData, capabilityShowSupported,
   listedFiles, sameSelector, selectorOf, validRelativePath,
-} from '../renderer/capability-show-contract.mjs';
+} from '../../client/capability-show-contract.mjs';
 
 export const CAPABILITY_SHOW_CACHE_MAX = 48;
 const MESSAGE_MAX = 4096;

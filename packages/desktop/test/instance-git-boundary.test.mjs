@@ -1,7 +1,7 @@
 // Inert adapter/admission tests. No HTTP route, CLI, Git or native app is run.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cliInstanceGit } from '../cli-adapter.mjs';
+import { cliInstanceGit } from '../../client/cli-adapter.mjs';
 import { createInstanceGitBoundary } from '../server/instance-git.mjs';
 const rev = 'a'.repeat(40), idx = 'b'.repeat(40), id = 'c'.repeat(24);
 const cli = { ok: true, bin: '/installed/oats', version: '0.24.7' };

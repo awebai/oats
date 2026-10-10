@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { JSDOM } from 'jsdom';
-import { memberLabel, servedIdentityText } from '../renderer/deployment-facts.mjs';
+import { memberLabel, servedIdentityText } from '../../client/deployment-facts.mjs';
 import { deploymentUnavailableText } from '../renderer/deployment-header.mjs';
 import { deploymentNotes, lockNotes } from '../renderer/workspace-catalog.mjs';
-import { deploymentStatusData, workspaceStatusData } from '../deployment-data.mjs';
+import { deploymentStatusData, workspaceStatusData } from '../../client/deployment-data.mjs';
 
 const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/${name}.json`, import.meta.url), 'utf8'));
 const status = fixture('status'), header = fixture('workspace-status');

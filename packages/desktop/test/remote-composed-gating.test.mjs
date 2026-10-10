@@ -6,10 +6,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { cliCapability } from '../cli-adapter.mjs';
+import { cliCapability } from '../../client/cli-adapter.mjs';
 import { capabilityRequest } from '../server/capabilities.mjs';
 import { createInspectCache } from '../server/inspect-cache.mjs';
-import { remoteWorkspace, remoteAgents } from '../server/remote-roster.mjs';
+import { remoteWorkspace, remoteAgents } from '../../client/remote-roster.mjs';
 import { composedSupported, routedComposedSupported, hostComposes, COMPOSED_FEATURE, PROBE_FEATURES_FEATURE } from '../renderer/composed-gate.mjs';
 
 const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/remote-composed/${name}`, import.meta.url), 'utf8'));

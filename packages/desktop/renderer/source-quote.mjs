@@ -6,7 +6,7 @@
  *
  * Every text is set with textContent: no markup, no link, no button, no tooltip is ever made from it.
  * Presentation only: what is shown here is never evidence of identity nor authority for an action. */
-import { displayLine, MAX_DISPLAY_LINE } from './display-text.mjs';
+import { displayLine, MAX_DISPLAY_LINE } from '../../client/display-text.mjs';
 
 /** The three provenances and their lead-ins. */
 export const LEAD_INS = Object.freeze({

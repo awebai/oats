@@ -5,7 +5,7 @@
 // pure and shared the same way, with the tab sync's last-painted-roster state (#558).
 import { rosterSections, deploymentHeading, notePanel, panelDeployments, rowStale, splitByDeployment } from "../../renderer/view-deployments.mjs";
 import { createViewMembership, rehomeMap } from "../../renderer/workspace-rehome.mjs";
-import { waitingClaim, waitingSentence, waitingLabel, waitingClock } from "../../renderer/waiting-on-you.mjs";
+import { waitingClaim, waitingSentence, waitingLabel, waitingClock } from "../../../client/waiting-on-you.mjs";
 import { waitingRollup } from "../../renderer/instance-tree.mjs";
 
 export const viewContext = () => ({

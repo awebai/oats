@@ -3,7 +3,7 @@
 // a fresh probedAt and re-describes the locator's path every time.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PROBE_DIAGNOSTIC_FIELDS, probeChanged, probeSignature } from '../renderer/cli-probe-contract.mjs';
+import { PROBE_DIAGNOSTIC_FIELDS, probeChanged, probeSignature } from '../../client/cli-probe-contract.mjs';
 
 const payload = (extra = {}) => ({
   ok: true, bin: '/current/oats', version: '0.22.19', source: 'path',

@@ -3,9 +3,9 @@
  * operation run`. Gated on what the provider DECLARES (the operation rows in the
  * home's inspection), never on a provider name or version. The provider's teams
  * document is decoded strictly and bounded; its refusals are shown verbatim. */
-import { teamRow } from './team-rows.mjs';
+import { teamRow } from '../../client/team-rows.mjs';
 import { iconElement } from './shell-icons.mjs';
-import { codeLineNodes } from './remote-address.mjs';
+import { codeLineNodes } from '../../client/remote-address.mjs';
 
 /** One card, the same in the Workspace inspector and the context panel:
  * tokens only (computed-AA inventory in theme-contrast), no opacity.

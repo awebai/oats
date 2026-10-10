@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { cliAutomation, AUTOMATION_ID } from '../cli-adapter.mjs';
+import { cliAutomation, AUTOMATION_ID } from '../../client/cli-adapter.mjs';
 import { automationsRequest, automationsSupported, automationDescriptionsSupported } from '../server/automations.mjs';
 
 const doc = name => JSON.parse(readFileSync(new URL(`./fixtures/automations/kernel/${name}.json`, import.meta.url), 'utf8'));
@@ -231,7 +231,7 @@ test('describe: kernel refusals keep their code and message; a success of the wr
 // source's command for a test. Only the strict boolean `true`, only a trigger's test, only a CLI that declares the
 // feature; the flag is composed in cliAutomation, from one constant. ──
 test('runSource: refused everywhere but a trigger test on a CLI with trigger-sources, before any CLI runs', async () => {
-  const { TRIGGER_RUN_SOURCE_FLAG, automationRunSourceValid } = await import('../cli-adapter.mjs');
+  const { TRIGGER_RUN_SOURCE_FLAG, automationRunSourceValid } = await import('../../client/cli-adapter.mjs');
   const { triggerSourcesSupported } = await import('../server/automations.mjs');
   const sources = { ...cli, features: [...cli.features, 'trigger-sources'] };
   assert.equal(TRIGGER_RUN_SOURCE_FLAG, '--run-source');

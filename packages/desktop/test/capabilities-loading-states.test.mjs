@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import * as spawn from '../renderer/views/spawn.mjs';
 import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 import { refreshCli } from '../renderer/views/cli-status.mjs';
-import { workspaceStatusData, deploymentStatusData, soulsData } from '../deployment-data.mjs';
+import { workspaceStatusData, deploymentStatusData, soulsData } from '../../client/deployment-data.mjs';
 import { PENDING_DELAY_MS, REFRESHING_DELAY_MS, SOULS_STALE_TITLE } from '../renderer/loading.mjs';
 import { soulInspection } from './helpers/inspect-fixture.mjs';
 

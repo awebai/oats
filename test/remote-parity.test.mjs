@@ -11,7 +11,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writ
 import { dirname, join } from "node:path";
 
 import { checkRemote, dropRemoteProbes, rosterGroups, routeCommand, runRemote, sshArgv, writeServers } from "../lib/servers.mjs";
-import { remotePanel } from "../packages/desktop/server/remote-roster.mjs";
+import { remotePanel } from "../packages/client/remote-roster.mjs";
 
 // ssh binds the control socket at `<ControlPath>.<16 random>`: a short
 // OATS_HOME_DIR keeps it inside the 104-byte socket path limit (macOS).

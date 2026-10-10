@@ -1,8 +1,8 @@
 /** The local schedule editor's draft: a stored definition (views/schedules.mjs gets it from
  * automation-rows' localScheduleDefinition), read back into the form's exact inputs. The
  * History API3 read projection that lived here left with the old Schedules read path (§3b). */
-import { harnessOf, HARNESSES } from './harness-names.mjs';
-import { record } from './readiness-contract.mjs';
+import { harnessOf, HARNESSES } from '../../client/harness-names.mjs';
+import { record } from '../../client/readiness-contract.mjs';
 const scheduleId = v => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(v);
 const policyKeys = ['definitionVersion', 'recurrencePolicy', 'execution', 'preparation', 'executionBinding', 'responsibleHuman'];
 /** The kernel's summary rule (lib/automations.mjs validateDescription): one line of 1 to 200

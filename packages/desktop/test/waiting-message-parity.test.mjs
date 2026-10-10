@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { waitingMessage } from '../renderer/waiting-on-you.mjs';
+import { waitingMessage } from '../../client/waiting-on-you.mjs';
 
 const raw = readFileSync(new URL('../../../test/fixtures/waiting-message-parity.json', import.meta.url), 'utf8');
 const cases = JSON.parse(raw);

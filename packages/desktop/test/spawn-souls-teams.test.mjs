@@ -8,9 +8,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { JSDOM } from "jsdom";
-import * as remote from "../server/remote-roster.mjs";
+import * as remote from "../../client/remote-roster.mjs";
 import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
-import { soulsData, deploymentStatusData } from "../deployment-data.mjs";
+import { soulsData, deploymentStatusData } from "../../client/deployment-data.mjs";
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const v2 = (name) => JSON.parse(readFileSync(new URL(`./fixtures/team-model-v2/${name}.json`, import.meta.url), "utf8"));

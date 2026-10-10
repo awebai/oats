@@ -1,6 +1,6 @@
 import { hashWorkspace, workspaceHash } from "../window-binding.mjs";
 import { validWorkspaceId } from "../workspace-id.mjs";
-import { remoteReason } from "../remote-address.mjs";
+import { remoteReason } from "../../../client/remote-address.mjs";
 
 /* oats desktop — shared helpers for renderer views.
    Plain ES module, DOM-only, no frameworks (contract). Views import from

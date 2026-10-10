@@ -5,7 +5,7 @@
  * grows (docs/desktop-cli-api.md "Workspace triggers and schedules"), only this
  * file changes. */
 
-import { displayLine, DETAIL_WITHHELD, MAX_DISPLAY_LINE } from './display-text.mjs';
+import { displayLine, DETAIL_WITHHELD, MAX_DISPLAY_LINE } from '../../client/display-text.mjs';
 
 const text = v => typeof v === 'string' && v ? v : null;
 const list = v => Array.isArray(v) ? v : [];

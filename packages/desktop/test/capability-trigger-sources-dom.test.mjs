@@ -12,12 +12,12 @@ import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { createCapabilityContents } from '../renderer/capability-contents.mjs';
 import { renderCapabilityPage, fillTriggerSourcesRow, capabilityPageCSS, TRIGGER_SOURCES_COPY } from '../renderer/capability-page.mjs';
-import { capabilityShowData, triggerSourcesView } from '../renderer/capability-show-contract.mjs';
+import { capabilityShowData, triggerSourcesView } from '../../client/capability-show-contract.mjs';
 import { LEAD_INS, sourceQuoteCSS } from '../renderer/source-quote.mjs';
 import * as spawn from '../renderer/views/spawn.mjs';
 import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 import { refreshCli } from '../renderer/views/cli-status.mjs';
-import { workspaceStatusData, deploymentStatusData } from '../deployment-data.mjs';
+import { workspaceStatusData, deploymentStatusData } from '../../client/deployment-data.mjs';
 
 const recorded = name => JSON.parse(readFileSync(new URL(`./fixtures/trigger-sources/${name}.json`, import.meta.url), 'utf8')).result;
 const GOOD = recorded('capability-show'), PROBLEMS = recorded('capability-show-problems'), NOT_OBJECT = recorded('capability-show-not-object');

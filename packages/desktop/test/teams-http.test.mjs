@@ -6,7 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
-import { cliTeams, cliSoulTeams } from '../cli-adapter.mjs';
+import { cliTeams, cliSoulTeams } from '../../client/cli-adapter.mjs';
 import { apiUrl, classifyApiRoute } from '../api-url.mjs';
 import { createTeamsBoundary, teamsFailure } from '../server/teams.mjs';
 import { deploymentDoubles } from './helpers/deployment-doubles.mjs';

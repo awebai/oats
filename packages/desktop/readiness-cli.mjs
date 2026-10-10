@@ -1,7 +1,7 @@
 /** Offline K5 only. No verification, remediation, fallback or kernel import. */
 import { execFile } from 'node:child_process';
-import { parseEnvelope } from './cli-adapter.mjs';
-import { absolute, readinessFailure, readinessTarget } from './renderer/readiness-contract.mjs';
+import { parseEnvelope } from '../client/cli-adapter.mjs';
+import { absolute, readinessFailure, readinessTarget } from '../client/readiness-contract.mjs';
 const error = code => ({ schemaVersion: 1, ok: false, error: readinessFailure(code).reason });
 /** Remote reads: ssh's ConnectTimeout (15 s) plus the command. */
 export const REMOTE_READINESS_TIMEOUT = 45_000;

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { terminalFailure, terminalMessage } from '../renderer/terminal-contract.mjs';
+import { terminalFailure, terminalMessage } from '../../client/terminal-contract.mjs';
 
 test('the remote transport and gone codes are contract codes, not folded into E_TERM_OPEN_FAILED', () => {
   assert.equal(terminalFailure('E_TERM_REMOTE_UNREACHABLE').code, 'E_TERM_REMOTE_UNREACHABLE');

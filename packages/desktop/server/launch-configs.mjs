@@ -1,8 +1,8 @@
 /** The CLI resolves launch definitions; the server admits workspace targets. */
 import { dirname } from "node:path";
-import { cliLaunchConfig } from "../cli-adapter.mjs";
-import { harnessFlag, harnessKey } from "../renderer/harness-names.mjs";
-import { canAddressRemote, unaddressableSentence } from "../renderer/remote-address.mjs";
+import { cliLaunchConfig } from "../../client/cli-adapter.mjs";
+import { harnessFlag, harnessKey } from "../../client/harness-names.mjs";
+import { canAddressRemote, unaddressableSentence } from "../../client/remote-address.mjs";
 
 const fail = (message, code = "E_BAD_ARGS") => { throw Object.assign(new Error(message), { code }); };
 

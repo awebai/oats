@@ -1,7 +1,7 @@
 /** Presentation of the existing /api/panel roster, not an activity/Git resolver. */
 import { instanceId, distinguishingRootTags } from './instance-tree.mjs';
-import { eventsTimestamp } from './instance-events-contract.mjs';
-import { canAddressRemote } from './remote-address.mjs';
+import { eventsTimestamp } from '../../client/instance-events-contract.mjs';
+import { canAddressRemote } from '../../client/remote-address.mjs';
 
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const text = value => typeof value === 'string' ? value : typeof value === 'number' && Number.isFinite(value) ? String(value) : '';

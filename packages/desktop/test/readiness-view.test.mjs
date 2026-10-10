@@ -6,7 +6,7 @@ import { createReadinessView, declaredIn } from '../renderer/readiness-view.mjs'
 import { createSoulInspector } from '../renderer/soul-inspector.mjs';
 import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 import { refreshCli, resetCliStateForTests } from '../renderer/views/cli-status.mjs';
-import { readinessFailure } from '../renderer/readiness-contract.mjs';
+import { readinessFailure } from '../../client/readiness-contract.mjs';
 import { cli, workspace, selector, target, instanceTarget, data, view, deferred, tick } from './helpers/readiness-fixture.mjs';
 function setup(t, api = () => view()) {
   const dom = new JSDOM('<!doctype html><body><button id="other">Other</button><main></main>', { pretendToBeVisual: true }), doc = dom.window.document, host = doc.querySelector('main');
