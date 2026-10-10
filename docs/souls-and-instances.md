@@ -461,7 +461,11 @@ one) are stopped first, never escalated, and kept: their homes stay. If one is
 still running after the grace, or its stop cannot be established, retire
 refuses with `E_CHILDREN_RUNNING` and retires nothing; `--force` does not
 bypass it. This holds for plain, guarded and `--self` retires alike
-([desktop-cli-api.md](desktop-cli-api.md)).
+([desktop-cli-api.md](desktop-cli-api.md)). Who is a child is read from each
+home's `instance.json`: a home whose record cannot be read is never stopped
+as anyone's child, by a retire or by `oats instance stop`. Its session may go
+on running after its parent is retired, and the retire's answer does not name
+it; `oats status` is where it shows.
 
 Before any retire hook runs, retire preserves the instance's uncommitted and
 unmerged work: a verified recovery under `.oats-retirement/recovery/`, named in
@@ -817,6 +821,40 @@ a file over 2 GiB it gives the size, and `find <work> -type f -size
 +2147483647c` finds the file. To continue, move the file out of the worktree
 or make it readable, then run `oats retire <instance>` again. With nothing to
 preserve, the files are not read and the retire goes through.
+
+**A home whose `instance.json` cannot be read.** The record is what
+identifies a home: its soul, its work mode, its session, its lineage. One
+that is there and gives no JSON object (a write cut off, an empty file, a
+file kept from the user, a directory or a dangling link in its place, JSON
+that is not an object) decides only for that home. `oats status` lists the
+home with `unknown` and `E_UNIDENTIFIED_INSTANCE_HOME: <home>/instance.json
+cannot be read (<reason>)`, and every other instance is listed, stopped,
+started and retired as if that home were not there. The home's own retire
+(`--plan` and `--force` included), its stop and its session start are refused
+with `E_UNIDENTIFIED_INSTANCE_HOME` before anything is read, stopped, run or
+removed. `--force` removes a home that has no `instance.json`; it does not
+remove one whose record cannot be read, which may be a whole instance with
+work. Restoring the file from a copy makes the home usable again; removing
+such a home through OATS is not possible yet. A parent whose record cannot be
+read has no recorded children for a stop or a retire: the lineage is read
+from records, so its children are listed and act on their own. In the other
+direction, such a home is never stopped as anyone's child: stop it, once its
+record is restored, on its own. The answers are in
+[desktop-cli-api.md](desktop-cli-api.md#unreadable-record).
+
+**An entry of the home that cannot be read, or that is gone when it is
+read.** Each inspection walks the home: it lists a directory, then reads each
+entry. A file or a directory without permission, and an entry that another
+process removed or renamed between the listing and the read, refuse the
+retire with `E_WORK_INSPECTION_FAILED` at the inspection that met it. The
+message names the entry and the system's reason, and ends with what the
+retire had done by then, as the other refusals at that point do: nothing was
+stopped, run or removed at the first inspection; no hook has run and nothing
+was deleted at the one before the hooks; the hooks have run, and the home, its
+work and the pre-hook recovery are kept at the one after them. The home is
+kept in each case. Make the entry readable, or let the process that writes in
+the home end, then run `oats retire <instance>` again. The answer says the
+same as data: [`error.details.reached`](desktop-cli-api.md#retire-reached).
 
 The home is not copied again because the work is, and the work is not copied
 again because the home is. The home's comparison after the hooks holds every

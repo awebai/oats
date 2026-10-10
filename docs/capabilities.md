@@ -244,7 +244,11 @@ A self-contained package has an `oats.json`:
   and nothing is silently dropped. Without `--force` that state fails closed with
   `E_UNIDENTIFIED_INSTANCE_HOME` rather than deleting whatever credentials the
   directory still holds; `--force` removes it and leaves any external state for
-  the operator to clean up by hand. Home entries declared in
+  the operator to clean up by hand. One home is the exception for now: a home
+  whose `instance.json` is there and cannot be read is refused by every
+  retire, `--force` included, until the file is restored from a copy
+  ([souls-and-instances.md](souls-and-instances.md#retire); awebai/oats#896).
+  Home entries declared in
   `retirement.disposable.home` (below) go with the home: recovery holds no
   copy of them.
 - `retirement.disposable` declares what retirement treats as the provider's

@@ -43,7 +43,8 @@ see the [official catalog](official-catalog.md) for current pins.
              "preview-composed-from","observe-max-age","spawn-preview-max-age","launch-config-default","capability-show","capture-file",
              "workspace-identity","server-connect","capability-route","servers-per-workspace","operator-default-soul","waiting-on-you",
              "automation-descriptions","souls-capabilities","soul-composed-instructions","teams-conditional-default",
-             "server-probe-features","worktree-event","session-attach-detach-key"],
+             "server-probe-features","worktree-event","trigger-sources","session-attach-detach-key",
+             "lifecycle-kernel-codes"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
@@ -120,6 +121,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `trigger-sources` | capability-declared trigger sources: `on.source: "<capability>:<source>"` triggers and their added row keys, `oats trigger poll`, `--run-source` on `trigger test` and `trigger poll` (`E_TRIGGER_SOURCE_RUN` without it), `E_TRIGGER_SOURCE`, `E_TRIGGER_POLL` `details.cause`, and `triggerSources`/`triggerSourceProblems` on `oats capabilities show`, OATS 0.50.0 ([`oats trigger`](#oats-trigger)) | `triggerApi: 1` (payload only) |
 | `server-probe-features` | `features` on `oats status --json` (this kernel's own list, as `version --json` answers it), and each `oats server roster --json` group's `probe.features`: the host's list, relayed from that status answer after validation, `null` when unknown, OATS 0.49.0 ([The remote roster](#the-remote-roster-oats-server-roster---json)) | |
 | `session-attach-detach-key` | `oats session attach … --detach-key <key>`, local and `--server`: the one key that detaches that viewer, and exit status 20 when it did, OATS 0.51.0 ([execution-targets.md](execution-targets.md#inspect-input-and-attach)). Gate on the probe and never try: a kernel without it ignores the flag and opens a viewer with no exit. A routed attach refuses a host without it (`E_REMOTE_INCOMPATIBLE`, `details: {"feature":"session-attach-detach-key"}`) | |
+| `lifecycle-kernel-codes` | `oats retire`, `oats instance stop`, `oats session …` and `oats worktree add\|remove` answer kernel codes only (`^E_[A-Z0-9_]+$`), in `error.code` and in the codes inside their results, with one exception: a document with an unsafe mapping key or value is refused under its own name, `unsafe-config-key` or `unsafe-config-value`, by these commands as by every other; `error.details.cause` on an error that has a code which is not a kernel code (`{code, syscall}`) and on a defect of the kernel (`{name}`), and none on a refusal that has no code, which is answered with the command's general code and its message alone ([The envelope](#kernel-codes)); `error.details.reached` on every error of a retire apply once the retire of the home has begun, and its absence before that ([`error.details.reached`](#retire-reached)), OATS 0.52.0. Gate on the probe: a kernel without it can answer one of these commands with a system code (`ENOENT`, `EACCES`), and an absent `reached` there says nothing | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -143,6 +145,50 @@ stdout (progress goes to stderr):
 
 - Success exits 0, failure nonzero. `error.details` is present only when the
   command has details.
+- <a id="kernel-codes"></a>**The lifecycle commands answer kernel codes only**
+  (`oats retire`, `oats instance stop`, `oats session …`, `oats worktree
+  add|remove`; feature `lifecycle-kernel-codes`, OATS 0.52.0). A kernel
+  whose probe does not list the feature can answer one of these commands with
+  the system's own code (`ENOENT`, `EACCES`, `ENOTEMPTY`) and has no
+  `details.cause`: a client keeps its guard for such a code there. Routed
+  with `--server`, one of these commands is answered by the host's kernel:
+  gate on that host's list (`probe.features` of
+  [`oats server roster --json`](#the-remote-roster-oats-server-roster---json)).
+  A kernel code is `E_` followed by upper-case letters, digits
+  and underscores (`^E_[A-Z0-9_]+$`). The kernel tests that shape, not a list
+  of known codes, and the shape is enough: the kernel has no dependency, and
+  neither the system (`ENOENT`) nor Node (`ERR_…`) gives a code of that shape.
+  An error that is not the kernel's is answered with the command's general
+  code (`E_LIFECYCLE_FAILED`, `E_SESSION_FAILED`, or the one its section
+  names). What the answer adds depends on the error:
+  - **One that has a code which is not a kernel code** gets
+    **`error.details.cause`**, beside the command's other details:
+    `{code, syscall}`. `code` is the system's (`ENOENT`), Node's (`ERR_…`),
+    or one of the kernel's own lower-case names, which these commands wrap
+    like the rest (`invalid-declaration`, `resource-limit`,
+    `integrity-drift`, `invalid-source`); `syscall` only when the error has
+    one.
+  - **A defect of the kernel** gets `details.cause: {name}`, and its stack
+    goes to stderr, in JSON and in text mode. A defect is an error without a
+    code that is one of the language's own kinds, whose `name` is not
+    `"Error"` (`TypeError`, `ReferenceError`, `RangeError`, `SyntaxError`, …),
+    or a thrown value that is no error at all (`name` is then `"Error"`; it
+    has no stack, and one line on stderr shows the value instead). It is
+    answered as one envelope like the rest.
+  - **A refusal without a code** (the kernel words some of its refusals that
+    way, and a `tmux` or `git` command that fails is reported that way) gets
+    neither: the general code and its message alone, no `details.cause`, no
+    stack. Text mode prints `oats: <message>`, as a kernel without the
+    feature does.
+
+  `cause` holds nothing else: no message, no path, no stack. The same rule
+  holds for a `code` inside a result of these commands (a stop receipt's
+  `results[].code`, a retire's `childrenStopped[].code`, a plan's
+  `session.reason` and `work.reason`). **The one exception:** an OATS
+  document with an unsafe mapping key or value is refused under its own name,
+  `unsafe-config-key` or `unsafe-config-value`, by these commands as by every
+  other; neither is wrapped. Elsewhere an `error.code` may still be the
+  system's.
 - Either envelope may carry `warnings: [ … ]`, only when there is something
   to say. The one warning is `deprecated-runtime-name`
   ([Harness input spellings](#the-harness-rename-feature-harness-oats-0270));
@@ -2129,6 +2175,7 @@ A failed `add` reports the same facts about its rollback in `details`:
 | `E_INTERRUPTED` | SIGINT, SIGTERM or SIGHUP while the hooks ran; the tree is removed and the process exits 128 + the signal number (`details.signal`) |
 | `E_WORKTREE_DIRTY` | `remove`: Git refused a tree with uncommitted or untracked work (`details.git` is Git's message); the record is kept. Commit and push, or discard, then retry |
 | `E_WORK_PRESERVATION_FAILED` | `remove`: Git refused for another reason, or the tree is still there; the record is kept |
+| `E_LIFECYCLE_FAILED` | an error that is not the kernel's, with [`details.cause`](#kernel-codes). When it is the purpose's claim that could not be taken (`<home>/.oats/trees` cannot be made, the claim's file cannot be written), the message is `the claim <path> could not be taken (…); nothing was done` |
 
 A rollback that cannot finish keeps the record and says so in the message
 (`details.rolledBack: false`, `details.owed`); the next `add` or `remove` of
@@ -2249,6 +2296,20 @@ its absence.
   in the row),
   `identity` when a provider recorded one, `rollbackIncomplete` and
   `retirePending` when present, and the Desktop facts below.
+- <a id="unreadable-record-row"></a>**A home whose `instance.json` cannot be
+  read** (OATS 0.52.0) is listed like every other, and one such home never
+  fails the listing. Its row has the fields of a home with no `instance.json`
+  and nothing from the record: `instance`, `home`, the Desktop facts
+  (`startedAt`, `identityAddress`, `modelFrom`, each `null`), `waitingOnYou:
+  null`, `rollbackIncomplete` and `retirePending` when present, and `running:
+  null` with `runtimeState: "unreachable"` and `runtimeError:
+  "E_UNIDENTIFIED_INSTANCE_HOME: <home>/instance.json cannot be read
+  (<reason>)"`. The reason is the system's (`EACCES: permission denied`), the
+  parser's (a file cut off, or empty), or what the file is instead: a
+  directory, a symbolic link to nothing, JSON that is not an object. A home
+  with no `instance.json` keeps its row: the same fields, `running: false`
+  and no `runtimeState`. What the lifecycle commands answer for such a home:
+  [below](#unreadable-record).
 - **`spawnInProgress`** (feature `worktree-event`, OATS 0.49.0): `true` only
   while a spawn that is running its `worktree` hooks is verifiably alive (its
   pid runs with the recorded start time). Such a home holds the quarantine marker
@@ -2896,7 +2957,55 @@ reality moved it refuses `E_PLAN_STALE` with the fresh `details.plan`. An
 idempotency key (`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`) makes a retried apply
 return the first receipt. Recorded parentage (`parentInstance`) is the only
 relation followed; a child whose parent name matches several homes is listed
-under `ambiguous` and never acted on.
+under `ambiguous` and never acted on. Parentage is read from each home's
+`instance.json`: a home whose record cannot be read is never stopped as
+anyone's child. It is in no plan's `targets`, `children` or `ambiguous`, and
+no stop or retire of its parent names it, so its session may go on running
+under a parent that was stopped or retired. `oats status` is where it shows
+([its row](#unreadable-record-row)).
+
+<a id="unreadable-record"></a>
+**A home whose `instance.json` is there and cannot be read** as a JSON object
+(cut off, empty, kept from the user, a directory, a link to nothing, JSON
+that is not an object; OATS 0.52.0) decides only for itself.
+
+- Every command about another instance answers as if that home were not
+  there: its stop and retire plans and applies, `oats session`, `oats
+  instance events`, a spawn, the roster.
+- Every lifecycle command about that home is refused with
+  `E_UNIDENTIFIED_INSTANCE_HOME` before it takes a claim, reads the home or
+  touches anything: `oats retire` (plain, `--plan`, guarded, `--self`), `oats
+  instance stop --plan` and `--apply`, `oats session start` and `restart`.
+  The answer has no `details`, and the message is `<home>/instance.json
+  cannot be read (<reason>); nothing was done. Restoring the file from a copy
+  makes the home usable again; removing such a home through OATS is not
+  possible yet.`
+- `oats retire --force` is refused the same way. `--force` removes a home
+  that has no `instance.json`; a home whose record is there and cannot be
+  read may be a whole instance with work, and is never removed blind.
+- The lineage is read from records. A parent whose record cannot be read has
+  no recorded children for a stop or a retire: they are listed, and each is
+  stopped and retired on its own. A home whose record cannot be read is never
+  stopped as anyone's child: it is not a target of its parent's stop or
+  retire, no plan and no answer of either names it, and a retire does not
+  repair its lineage. Its session may go on running under a parent that was
+  retired; `oats status` is where it shows.
+- A spawn that names such a home as its parent or anchor is refused
+  (`E_SPAWN_FAILED`, the same sentence with `nothing was spawned`): the
+  parent's child-spawn policy and the lineage are in that record.
+- `oats session inspect`, `input` and `attach` on that home answer
+  `E_RUNTIME_ENDPOINT_UNKNOWN`, and `oats instance events` still reads its
+  logs.
+
+`E_UNIDENTIFIED_INSTANCE_HOME` for a record that cannot be read is answered
+only before any effect: nothing was signalled, run, copied or removed. A
+record that becomes unreadable after a retire has taken the home's claim is
+refused with the same sentence, before the retire's first signal (the end of
+the hook group an interrupted spawn left). That answer alone carries
+[`details.reached`](#retire-reached), untouched: `{phase: "before-effects",
+sessionStopAttempted: false, hooksStarted: false, home: "kept", recovery:
+null}`. A plan refuses the same way when the record became unreadable after
+the home was resolved.
 
 ### Stop
 
@@ -2922,9 +3031,14 @@ oats instance stop <instance> --plan [--no-recursive] [--home <abs>] [--dir <d>]
   `not-launched` are idle; `unknown` is a running process tmux cannot name
   (the normal state of a harness). Not established: `{state:
   "unestablished", present: null, backend: null, established: false,
-  reason}`; render it as unknown, never idle.
+  reason}`; render it as unknown, never idle. `reason` is the kernel code of
+  what failed (`E_SESSION_UNAVAILABLE` for an error that has none).
 - `work` is the Git observation summarized (`changed` counts changed,
-  renamed, copied and unmerged rows), or `{observed: false, reason}`.
+  renamed, copied and unmerged rows), or `{observed: false, reason}`:
+  `"no-worktree"`, or the kernel code of what failed (`E_GIT_FAILED` for an
+  error that has none; `E_WORK_INSPECTION_FAILED` for a home the kernel
+  cannot look into, where whether it has a `work/` cannot be told; OATS
+  0.52.0).
 - `midTask`: `true`, `false` or `"unknown"`.
 
 ```text
@@ -2944,13 +3058,36 @@ the instance back.
   whether the instance runs cannot be established, among them a recorded
   tmux socket file that is missing while a process works in the home
   ([#624](execution-targets.md#missing-socket)): never `alreadyIdle`.
+- `code` is always a [kernel code](#kernel-codes). A stop that fails for a
+  reason of the system's (the home removed under it, a write refused) is
+  `E_SESSION_STOP_FAILED`, as one whose harness still runs after the wait is.
+  Its `message` then holds the system's text and ends with what is true of
+  the harness: `its harness was signalled (SIGTERM) and has exited`, `… and
+  is still running`, `no signal reached its harness, which had already
+  exited` (the stop found it idle, or its processes gone, when it came to
+  signal), `… which was not seen to exit`, `whether its harness was signalled
+  is not known`, or `its harness was not signalled`. `stillRunning` is what
+  the stop established by then: the pids still alive, `[]` when it
+  established that none is, `null` when it established nothing. A stop that
+  fails on a [defect of the kernel](#kernel-codes) is that same row, and the
+  defect's stack is printed on stderr; a stop that fails on a refusal without
+  a code (a `tmux` command that failed) is that row and prints no stack. The
+  same holds for a child's stop in a retire's `childrenStopped`.
 - `ok: false`: at least one target still runs (text mode exits 1).
 - A replay is the stored receipt (`<home>/.oats-stop-receipt.<key>.json`)
-  with `replayed: true`.
+  with `replayed: true`. A receipt stored by a kernel from before feature
+  `lifecycle-kernel-codes` can hold the system's code in a failed target's
+  `code`; a replay answers `E_SESSION_STOP_FAILED` there (the `message` keeps
+  the system's text), so the rule holds for a replay too. The stored file is
+  not rewritten.
 - Refusals: `E_BAD_ARGS` (no `--plan-revision`, a bad key, not exactly one of
   `--plan`/`--apply`), `E_PLAN_STALE`, `E_INSTANCE_RETIRING` and
   `E_LIFECYCLE_BUSY` (each with `details.plan`), `E_SESSION_UNKNOWN`,
-  `E_AMBIGUOUS_INSTANCE`, `E_HOME_MISMATCH`, `E_LIFECYCLE_FAILED`.
+  `E_AMBIGUOUS_INSTANCE`, `E_HOME_MISMATCH`, `E_UNIDENTIFIED_INSTANCE_HOME`
+  (the home's `instance.json` [cannot be read](#unreadable-record); `--plan`
+  and `--apply`, nothing was done), `E_LIFECYCLE_FAILED` (any error
+  that is not the kernel's, with [`details.cause`](#kernel-codes)). A stop
+  never answers `E_WORK_INSPECTION_FAILED`.
 
 <a id="retire"></a>
 ### Retire
@@ -2973,6 +3110,12 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
  "planRevision":"4e5f6a7b8c9d0e1f2a3b4c5d","notes":["the worktree is on feat/x, not the recorded agents/dev-1; …"]}
 ```
 
+- `facts.session` and `facts.work` read as a [stop plan](#stop)'s
+  `session` and `work`. Work that was not observed is `{observed: false,
+  reason}`: `"no-worktree"`, or the kernel code of what failed
+  (`E_GIT_FAILED` for an error that has none; `E_WORK_INSPECTION_FAILED` for
+  a home the kernel cannot look into, where whether it has a `work/` cannot be
+  told; OATS 0.52.0).
 - The plan changes nothing except appending a `retire-planned` event to the
   workspace log. `pullRequest` is always `"unknown"`. Branch actions use the
   worktree's branch, never `recordedBranch`.
@@ -3149,9 +3292,9 @@ A first retire prints the **raw receipt**, not an envelope:
   not removed. The home and the worktree are kept, and so is any recovery the
   retire wrote; retry the retire.`), and a HEAD that cannot be read with
   `E_WORK_INSPECTION_FAILED`. Either may follow earlier effects of the same
-  retire (hooks run, a recovery copied), and neither says that one happened:
-  an error here is not proof that nothing happened, nor that a recovery
-  exists.
+  retire (hooks run, a recovery copied): an error here is not proof that
+  nothing happened, nor that a recovery exists. Read
+  [`error.details.reached`](#retire-reached), which says both.
 - `extraWorktrees` (0.42.1): the extra trees the retire handled, present only
   when it handled at least one. Each row is the plan's row (`{path, repo,
   branch, detachedAt, disposition, movedTo, reason}`) plus `outcome`:
@@ -3241,7 +3384,11 @@ A first retire prints the **raw receipt**, not an envelope:
 **Recorded children**, on every apply (plain, guarded and `--self`), as the
 plan says: each child the plan lists is stopped first (bounded SIGTERM,
 never escalated) and kept, once the retire has resolved the home and before
-the instance's own session is stopped. `childrenStopped[]` lists them,
+the instance's own session is stopped. A home whose `instance.json`
+[cannot be read](#unreadable-record) is never stopped as anyone's child: the
+plan does not list it, `childrenStopped[]` does not name it, and its session
+may go on running after its parent is retired; `oats status` is where it
+shows. `childrenStopped[]` lists the children stopped,
 deepest first, as `{instance, home, ok: true, stopped, alreadyIdle}` or
 `{instance, home, ok: false, code, message, stillRunning}`. A plain or
 `--self` receipt carries it only when there are children; a guarded receipt
@@ -3249,7 +3396,7 @@ always does (`[]` when there are none). One child still running after the
 grace, or whose stop could not be established (`E_SESSION_UNAVAILABLE`,
 `E_INSTANCE_RETIRING`, …), refuses everything: nothing is retired, exit 1,
 `E_CHILDREN_RUNNING {childrenStopped}` (the text form names each child and its
-`code`). **`--force` does not bypass it**: `--force` covers incomplete
+`code`, always a [kernel code](#kernel-codes)). **`--force` does not bypass it**: `--force` covers incomplete
 cleanup, not a running child. A `--self` retirement stops the children
 recorded when it was scheduled that are still instances (a child retired in
 between is skipped), in its detached completion before it stops the caller;
@@ -3269,7 +3416,9 @@ retry}` to `resultPath`. Before 0.48.0 only a guarded apply stopped children.
   the plan would read by then: a retire in flight has usually changed it (it
   stops the session of a launched instance before its hooks run). Before the
   claim an apply only replays a used key and resolves the home
-  (`E_SESSION_UNKNOWN`, `E_AMBIGUOUS_INSTANCE`, `E_HOME_MISMATCH`).
+  (`E_SESSION_UNKNOWN`, `E_AMBIGUOUS_INSTANCE`, `E_HOME_MISMATCH`,
+  `E_UNIDENTIFIED_INSTANCE_HOME` for a home whose `instance.json`
+  [cannot be read](#unreadable-record)).
 - The children stopped are those of the revalidated plan, and a refusal
   carries it: `E_CHILDREN_RUNNING {childrenStopped, plan}`.
 - A first guarded retire prints the raw receipt with `planRevision`,
@@ -3336,7 +3485,23 @@ it names no completion (a marker written before 0.51.0): `oats retire
 <instance>` then retries the retirement, as before. The completion waits up
 to 3 s for the retire that scheduled it to release the claim, then takes it
 as any retire does; one that meets another retire still running is refused,
-and records that at `resultPath` like any failed completion.
+and records that at `resultPath` like any failed completion. The `error`
+recorded there has the code and the message the same failure has as an
+envelope: a kernel code, and what the retire had done by then.
+
+A `--self` that cannot finish scheduling (the completion's log cannot be
+opened, no process is created, the marker cannot be written) answers
+`E_SELF_RETIRE_SCHEDULE_FAILED`, with `reached.phase: "before-effects"`. That
+stays true after the answer: a completion this command had started is not
+running when it answers (it is ended, unless it had gone by itself; a
+completion does nothing to the instance before it holds the home's claim,
+which the retire that scheduled it holds until it has answered), and its
+log and any result it had recorded are removed. One leftover is possible and
+is not a debt of the instance: a completion that was kept waiting for the
+claim until it gave up may write its result (`E_LIFECYCLE_BUSY`) at the
+moment it is ended, after that removal. The next `oats retire` of the
+instance removes it. The instance is still live and can be retired
+externally.
 
 The home is resolved again once the claim is held. One that another retire
 removed in between answers `E_SESSION_UNKNOWN`, as a retire of a retired
@@ -3359,6 +3524,10 @@ message names the entry or the state that could not be read, or the directory
 Git reads as the top level of a `work/` whose `core.worktree` names another
 one),
 `E_SESSION_UNKNOWN`, `E_AMBIGUOUS_INSTANCE`,
+`E_UNIDENTIFIED_INSTANCE_HOME` (a home with no `instance.json` and no cleanup
+descriptor, or a rollback marker that cannot drive a retry, until `--force`;
+a home whose `instance.json` [cannot be read](#unreadable-record), `--plan`
+and `--force` included),
 `E_NO_ROOT`, `E_LIFECYCLE_FAILED`, `E_LIFECYCLE_BUSY` (another retire of the
 home is running or scheduled, `--force` included: one retire of a home at a
 time, above; or, feature
@@ -3369,6 +3538,86 @@ group whose leader's start cannot be read, until `--force`). A recovery whose Gi
 the source's carries `details: {home, statusDisagreement: {repo, rows: [{path,
 source, recovery}], total}}` (the first 10 paths). Usage errors are text on
 stderr, not envelopes.
+
+<a id="retire-reached"></a>
+**What a failed retire had done: `error.details.reached`** (feature
+`lifecycle-kernel-codes`, OATS 0.52.0). Every error a
+retire apply answers once it has resolved the home and holds its claim, a
+typed refusal or not, carries it beside its other details. A client shows the
+message and never parses it; this is the same statement as data. Gate on the
+probe, never on the field: from a kernel that lists the feature an absent
+`reached` means the error was answered before the retire of the home began
+and nothing was done (below); from a kernel without it an absent `reached`
+says nothing.
+
+```json
+{"phase":"after-hooks","sessionStopAttempted":true,"hooksStarted":true,"home":"kept",
+ "recovery":{"path":"/w/agents/dev/instances/.oats-retirement/recovery/dev-1-Ab12Cd","phase":"before-hooks"}}
+```
+
+- `phase`: how far the retire got. `"before-effects"`: nothing of the
+  instance was touched and no process was signalled (the first inspection
+  is usually here).
+  `"before-hooks"`: from the step that stops its recorded children on,
+  whether or not that step had anything to signal (then the stop of its own
+  session, the second inspection, the copy made before the hooks), until the
+  hook runner is called. It begins earlier in one case: a home whose
+  interrupted spawn left a worktree hook process group that the retire can
+  prove is that spawn's has that group ended before the first inspection, and
+  `phase` is `"before-hooks"` from the moment the retire may have signalled
+  it. So `"before-hooks"` says neither that a process was signalled nor that
+  the children step was reached; `"before-effects"` is never answered after
+  a signal. `"after-hooks"`: from
+  the call of the retire hooks on (the third inspection, the copy's
+  conclusion, the extra trees and the worktree). `"removal"`: from the
+  removal of the home on.
+- **In the other four fields the untouched value is a guarantee, and the
+  other value means only that the retire reached that step, which may not
+  have completed.**
+  - `sessionStopAttempted`: `false` = this retire sent no signal to the
+    instance's session nor to any child's harness. `true` = it began to.
+  - `hooksStarted`: `false` = no retire hook was started. `true` = the hook
+    runner was called.
+  - `home`: `"kept"` = the removal has not begun. Otherwise what is on disk
+    when the error is answered: `"partial"` (the removal began and the
+    directory is still there: it is no longer guaranteed to be a whole
+    instance home) or `"removed"` (it is not there).
+  - `recovery`: `null` = no copy of this retire whose manifest can be read.
+    Otherwise `{path, phase}`: the absolute path of the copy, and the `phase`
+    its `recovery.json` holds on disk when the error is answered
+    (`"before-hooks"` or `"complete"`). A removal that fails after a complete
+    recovery therefore names where the work is.
+- Three points where a step was reached and its outcome is not established:
+  the kill of the session's window was sent and the check that the window is
+  gone failed (`E_RUNTIME_QUIESCE_FAILED`; `sessionStopAttempted: true`, and
+  the harness may still run); a child's stop that signalled its harness and
+  then failed, or failed while signalling (`sessionStopAttempted: true`); the
+  hook runner throwing part-way (`hooksStarted: true`, and some hooks may not
+  have run).
+- `phase`, `home` and `recovery.phase` are closed lists. A reader treats a
+  value it does not know as "effects may have happened".
+- It is absent from the answers given before the retire of the home begins,
+  where nothing was done: a name that resolves to no home, to several or to
+  another one, the claim, a scheduled self-retire, a guarded apply's plan
+  (`E_PLAN_STALE` with `details.plan`). It is not part of a plan.
+
+**An error that is not the kernel's** (a file the system refuses to read, a
+directory that cannot be removed) is answered with a
+[kernel code](#kernel-codes), [`details.cause`](#kernel-codes), `reached`, and
+a message that ends with the sentence the typed refusals at that point carry:
+
+| Where it fails | Code | The message ends with |
+|---|---|---|
+| before the home's retire begins (the resolution, the plan a guarded apply reads) | `E_LIFECYCLE_FAILED`, no `reached` | `Nothing was done: <instance> is not retired.` |
+| the claim cannot be taken (its directory cannot be made, its file cannot be written) | `E_LIFECYCLE_FAILED`, no `reached` | `the claim <path> could not be taken (…); nothing was done` |
+| an inspection of the home or the work meets an entry it cannot read, or one that is gone when it is read | `E_WORK_INSPECTION_FAILED` | the sentence of its phase: `Nothing was stopped, run or removed.` (or, once it has signalled the hook group an interrupted spawn left, `The worktree hook process group <pgid> that an interrupted spawn left was ended; no session was stopped, no retire hook was run and nothing was removed.`, with `was signalled and may still run` when it is not seen to have ended); `No retire hook has run and nothing was deleted: <instance> is not retired and its home and work are kept; …`; `The retire hooks have run; the home, its work and the pre-hook recovery (if any) are kept; …` |
+| anything else before the removal | `E_LIFECYCLE_FAILED` | the sentence of its phase; once the retire has begun to remove or re-home trees, `The retire hooks have run; the home is kept, and so is any recovery the retire wrote; …` and what it has already done with them |
+| the removal of the home (a directory that is written into while it is removed, or that cannot be emptied) | `E_LIFECYCLE_FAILED`, `reached.home: "partial"` | `<instance>: the directory at <home> could not be removed: … The retire hooks have run; its recovery (complete) is at <path>; its retired event is recorded; what is left at <home> may not be a whole instance home; …` |
+
+`E_WORK_INSPECTION_FAILED` is answered only by a retire, only before the
+removal begins, and only with the home kept (`reached.home: "kept"`). A
+typed refusal keeps its code, its details and its own words; the inspections'
+and the recovery's refusals end with the sentence of their phase, once.
 
 ## Sessions and launch configurations
 
@@ -3462,9 +3711,14 @@ selection flags. See [the start workflow](desktop-instance-start.md).
 - A lost response does not mean the launch failed: check status before a
   retry. A remote home's saved route names its execution host.
 - Errors: `E_BAD_ARGS`, `E_SESSION_UNKNOWN`, `E_UNSUPPORTED_MODE`,
+  `E_UNIDENTIFIED_INSTANCE_HOME` (the home's `instance.json`
+  [cannot be read](#unreadable-record): nothing was started, `start` and
+  `restart`),
   `E_SESSION_START_BUSY`, `E_INSTANCE_RETIRING`, `E_LAUNCH_*` (among them
   `E_LAUNCH_SHIM`: the home's `oats` link cannot be written, nothing was
-  started), `E_MODEL_UNKNOWN`, `E_UNSUPPORTED_HARNESS`, `E_SESSION_FAILED`.
+  started), `E_MODEL_UNKNOWN`, `E_UNSUPPORTED_HARNESS`, `E_SESSION_FAILED`
+  (any error that is not the kernel's, with
+  [`details.cause`](#kernel-codes)).
 
 ### Upload
 
