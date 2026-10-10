@@ -380,7 +380,7 @@ for (const shape of SHAPES) {
   });
 }
 
-test("a record that becomes unreadable after the retire resolved its home, under its claim: the retire's own read refuses the same way, with what the retire had done by then, and no stack", async (t) => {
+test("a record that becomes unreadable after the retire resolved its home, under its claim: the retire's own read refuses the same way, nothing was done, and `reached` is untouched", async (t) => {
   const d = await deployment(t, ["bad"]);
   const { fx } = d;
   let broken, before;
@@ -392,7 +392,7 @@ test("a record that becomes unreadable after the retire resolved its home, under
   });
   assert.ok(error, "the retire is refused");
   assert.equal(error.code, "E_UNIDENTIFIED_INSTANCE_HOME");
-  assert.equal(error.message, refused(broken.record, broken.reason, "nothing was stopped, run or removed"));
+  assert.equal(error.message, refused(broken.record, broken.reason));
   assert.deepEqual(error.details, { reached: { phase: "before-effects", sessionStopAttempted: false, hooksStarted: false, home: "kept", recovery: null } });
   assert.deepEqual(listing(d.homes.bad), before, "the home is as the retire found it");
   assert.equal(existsSync(d.claim("bad")), false, "the claim is released");
