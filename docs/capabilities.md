@@ -207,7 +207,10 @@ A self-contained package has an `oats.json`:
   every host. Only then is its start time read: from `/proc`, or with `ps`
   where there is no `/proc`, as on macOS: the system `ps`, from
   `/usr/bin:/bin` whatever the caller's `PATH` holds, in a fixed `LC_ALL=C`,
-  `TZ=UTC` environment. A start that cannot be read is never taken to mean the process is
+  `TZ=UTC` environment. A spawning process that has exited or was killed and
+  that its parent has not reaped (a zombie) is gone, although it still has
+  its pid and its start: the row shows the quarantine and `oats retire`
+  completes it. A start that cannot be read is never taken to mean the process is
   gone, nor shown as alive: `oats status` shows the quarantine
   (`rollbackIncomplete`, whose `inProgress` names the pid), and `oats retire`
   refuses with `E_LIFECYCLE_BUSY`, naming the recorded pid and start for a

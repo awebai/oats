@@ -2132,7 +2132,31 @@ that names its holder by pid and start time. A second command waits up to
 3 s for a live holder, then answers `E_LIFECYCLE_BUSY` (`details.lock`,
 `details.pid`). A claim whose holder has died, for example one killed in the
 middle of a recovery, is taken over by the next command. So a killed `add`
-or `remove` can always be run again.
+or `remove` can always be run again. A holder that has exited or was killed
+and that its parent has not reaped (a zombie) has died: its claim is taken
+over, and a `creating` record whose adder is a zombie is recovered, without
+waiting for that reap (0.52.0, #870).
+
+Two files at the claim's path are never taken over and never removed
+(0.52.0, #874). The command answers `E_LIFECYCLE_BUSY` once its wait is
+over, in one line that names the file, says that nothing was done and
+never says that a command is running; `details.lock` is the file the
+message names (for the claim of a takeover, `<lock>.reclaim-<nonce>`):
+
+- A path that is no readable claim: a file that does not parse, a directory,
+  or a path that exists and cannot be read, such as a dangling symbolic link.
+  `<file> is not a readable claim; inspect it and remove it if no oats
+  worktree command holds it; nothing was done`.
+- A claim whose holder is gone and that this kernel cannot take over: its
+  `nonce` is not the 32 hexadecimal digits a claim carries (a file written
+  or damaged by hand); or it is the claim of a takeover that died, at the
+  end of a chain of them so long that the system will not name the claim of
+  one more (each adds 41 bytes to the file's name: four or five on a file
+  system whose names are 255 bytes at most). `the process that held <file>
+  (pid <pid>) is gone, and this file is not a claim this kernel can take
+  over (<why>); nothing was done — inspect <file> and remove it if no oats
+  worktree command holds it, then retry`. Removing that one file lets the
+  next command take the rest over.
 
 A killed parent does not take its running git with it. So every git step
 that changes a tree, a ref or the worktree list runs in its own process
@@ -2168,7 +2192,7 @@ A failed `add` reports the same facts about its rollback in `details`:
 | `E_BRANCH_EXISTS` | the branch exists in the clone (before the tree is made, or made by another `add` at the same moment); `details.remedy` is `<instance>/<branch>` |
 | `E_GIT_FAILED` | a Git step failed on its own (`git worktree add`, or `git switch` while the branch does not exist), with Git's message: `git <sub> failed in <dir>: …`; the tree is removed |
 | `E_PLACEMENT_TAKEN` | a `ready` record with another clone, branch or base (`details.differ`); `.work-<p>` with no record, or a file or symbolic link there; an unreadable record |
-| `E_LIFECYCLE_BUSY` | an add of that purpose is still running (pid and start time verified); another add or remove of that purpose holds its claim (`details.lock`); or an interrupted add's rollback could not be completed (`details.owed`) |
+| `E_LIFECYCLE_BUSY` | an add of that purpose is still running (pid and start time verified); another add or remove of that purpose holds its claim (`details.lock`); a file at the claim's path is no claim this kernel can read or take over (`details.lock`); or an interrupted add's rollback could not be completed (`details.owed`) |
 | `E_REMOTE_UNREADABLE` | the fetch of `<base>` from `origin` failed; the tree is removed |
 | `E_BASE_UNKNOWN` | the new HEAD is not the fetched commit; the message names both |
 | `E_REQUIRED_HOOK_FAILED`, `E_HOOK_ENVIRONMENT_CONTRACT` | a required `worktree` hook failed or timed out, or a hook answered `env`; the tree is removed (`details.hooks`, `details.rolledBack`) |
@@ -2305,7 +2329,11 @@ its absence.
   gone, or when its start time cannot be read (where `ps` fails), the row
   carries `rollbackIncomplete` as for any quarantine, its `inProgress` naming
   the pid; retire still refuses an unreadable one with `E_LIFECYCLE_BUSY`
-  until `--force`. Absent otherwise, and from older kernels.
+  until `--force`. A spawn whose process has exited or was killed and that
+  its parent has not reaped (a zombie) is gone (0.52.0, #870): its row
+  carries `rollbackIncomplete`, where before it read `spawnInProgress: true`
+  until the reap, and retire completes it. Absent otherwise, and from older
+  kernels.
 - **`waitingOnYou`** (feature `waiting-on-you`): `{since, producer, reason,
   message}` when the row is `running: true` and a producer holds a live claim
   that the instance needs input from a human, else `null` (unknown, not "not
@@ -3346,6 +3374,7 @@ retry}` to `resultPath`. Before 0.48.0 only a guarded apply stopped children.
 - A first guarded retire prints the raw receipt with `planRevision`,
   `idempotencyKey` and `replayed: false`.
 
+<a id="retire-one-at-a-time"></a>
 **One retire of a home at a time** (0.51.0, #863). Every retire that applies (plain,
 guarded, `--self` and its detached completion; with `--server`, on the host)
 holds the home's claim,
@@ -3362,7 +3391,10 @@ before `E_PLAN_STALE`: under the claim the answers come in this order: the
 home is gone (`E_SESSION_UNKNOWN`), a self-retire is scheduled
 (`E_LIFECYCLE_BUSY`), the plan is stale (`E_PLAN_STALE`), then the retire. A claim whose holder has
 died, for example a retire killed while its hooks ran, is taken over by the
-next retire of that name. So a killed retire can always be run again. The
+next retire of that name. So a killed retire can always be run again. A
+holder that has exited or was killed and that its parent has not reaped (a
+zombie) has died: its claim is taken over without waiting for that reap
+(0.52.0, #870; before, the retire was refused as running until the reap). The
 claim does not end what the killed retire left running: one of its retire
 hooks may still be running when the next retire takes the claim over and
 runs the hooks again (#865). Until
@@ -3381,9 +3413,29 @@ line and says that nothing was done:
   over. `details.unknown` is the reason. The message names the pid, its
   recorded start, the reason and the way out: check that pid by hand, and if
   it is not an `oats retire`, remove `<lock>`, then retry.
-- A claim file that is not a readable claim is never removed. `details` is
-  `{instance, home, lock}`; the message names the file and says to inspect
-  it and remove it if no `oats retire` holds it.
+- A claim file that is not a readable claim is never removed: a file that
+  does not parse, a directory, or a path that exists and cannot be read, such
+  as a dangling symbolic link (0.52.0, #874: that one made the retire spin
+  without end; it is now refused once its retries are spent, a quarter of a
+  second for a retire, which does not wait).
+  `details` is `{instance, home, lock}`; the message names the file and says
+  to inspect it and remove it if no `oats retire` holds it.
+- A claim whose holder is gone and that this kernel cannot take over is
+  never removed either: its `nonce` is not the 32 hexadecimal digits a claim
+  carries (a file written or damaged by hand); or it is the claim of a
+  takeover that died (`<lock>.reclaim-<nonce>`), at the end of a chain of
+  them so long that the system will not name the claim of one more (each
+  adds 41 bytes to the file's name: three to five on a file system whose
+  names are 255 bytes at most). `details` is `{instance, home, lock, pid,
+  since}`, `lock` being the file the message names. The message is `the
+  process that held <lock> (pid <pid>) is gone, and this file is not a claim
+  this kernel can take over (<why>); nothing was done — inspect <lock> and
+  remove it if no oats retire holds it, then retry` (0.52.0, #874; before,
+  the first was answered as a live holder, to wait for, and the second as
+  `E_LIFECYCLE_FAILED` with the system's `ENAMETOOLONG` about a file that
+  does not exist). Removing that one file lets the next retire take the
+  rest over. A retire of a name that has no home leaves a file whose nonce
+  is not a claim's as it is.
 - The retire's own start time cannot be read, so it could not hold the claim
   verifiably: `details` is `{instance, home, lock}`, and the message gives
   the reader's own reason (the `/proc` read, or what `ps` answered).
@@ -3402,7 +3454,9 @@ the file to remove being the pending marker. A second `--self` answers
 the first `--self` is still scheduling, or once the completion holds the
 claim, it is refused the claim and answers `E_LIFECYCLE_BUSY` like any other
 retire, where it answered `alreadyScheduled: true` before 0.51.0. The marker refuses nothing once its completion has
-left its outcome at `resultPath` (it failed) or is gone (it died), nor when
+left its outcome at `resultPath` (it failed) or is gone (it died; a
+completion that is a zombie, not reaped by its parent, has died: 0.52.0,
+#870), nor when
 it names no completion (a marker written before 0.51.0): `oats retire
 <instance>` then retries the retirement, as before. The completion waits up
 to 3 s for the retire that scheduled it to release the claim, then takes it
