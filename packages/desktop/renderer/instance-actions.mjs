@@ -1,8 +1,11 @@
-/** Keyboard-accessible lifecycle actions, independent of terminal liveness. */
-import { instanceId, heldHome } from "../../client/instance-tree.mjs";
+/** Keyboard-accessible lifecycle actions, independent of terminal liveness. Which acts a row offers, and
+ * why it offers none or fewer, is decided by packages/client/instance-acts.mjs; this module draws that answer
+ * as the Desktop's menu: its labels and icons, the caller's own items in front, its pending and stale marking. */
+import { instanceId } from "../../client/instance-tree.mjs";
+import { instanceActs } from "../../client/instance-acts.mjs";
 import { iconElement } from "./shell-icons.mjs";
-import { unsupportedSession } from "../../client/instance-presentation.mjs";
-import { canAddressRemote, rowReason } from "../../client/remote-address.mjs";
+/** The menu's words for each act instanceActs can list. */
+const LABELS = Object.freeze({ inspect: 'Knowledge & capabilities…', start: 'Start…', restart: 'Restart with…', stop: 'Stop…', retire: 'Retire instance…' });
 /** Decorative menu icons (the Redesign's context menu), keyed by action. */
 const MENU_ICONS = Object.freeze({ 'open-split': 'splitRight', 'open-pr': 'pullRequest', inspect: 'knowledge', start: 'start', restart: 'refresh', stop: 'stop', retire: 'remove' });
 
@@ -70,10 +73,11 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
     }
     const first = items.find(item => !item.disabled); if (first) first.autofocus = true;
   };
+  const offer = instanceActs(instance);
   // A remote row the kernel does not report addressable has no actions here; the trigger says why.
-  const unrouted = !canAddressRemote(instance);
+  const unrouted = offer.blocked?.code === 'unaddressable';
   trigger.disabled = unrouted;
-  if (unrouted) trigger.title = rowReason(instance).sentence;
+  if (unrouted) trigger.title = offer.blocked.sentence;
   else if (pending.has(key)) { const { reason, controls } = pending.get(key); markPending(trigger, reason); controls.push({ trigger, owns }); }
   const close = (restoreFocus = false) => {
     menu.hidePopover();
@@ -85,7 +89,7 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
     menu.style.left = `${Math.max(8, Math.min(anchor.right - size.width, win.innerWidth - size.width - 8))}px`;
     menu.style.top = `${Math.max(8, anchor.bottom + size.height + 8 <= win.innerHeight ? anchor.bottom + 4 : anchor.top - size.height - 4)}px`;
   };
-  // A stale roster (instance-tree.mjs markStaleControl) or a pending action marks the trigger aria-disabled: blocked like `disabled`, focus kept.
+  // A stale roster (instance-tree-view.mjs markStaleControl) or a pending action marks the trigger aria-disabled: blocked like `disabled`, focus kept.
   const blocked = () => trigger.disabled || trigger.getAttribute("aria-disabled") === "true";
   const open = (action) => {
     if (blocked() || !visible(trigger) || !owns()) return;
@@ -130,10 +134,6 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
       : (current + (event.key === "ArrowDown" ? 1 : -1) + available.length) % available.length;
     available[index]?.focus();
   });
-  // A Herdr-recorded row cannot start or restart: Start stays visible, disabled, with the kernel's reason.
-  const unsupported = unsupportedSession(instance);
-  const launchAction = unsupported ? [["start", "Start…", unsupported]]
-    : instance.running === true ? [["restart", "Restart with…"]] : instance.running === false ? [["start", "Start…"]] : [];
   async function execute(action) {
     const item = items.find(row => row.dataset.action === action);
     if (!item || !owns() || !visible(trigger) || !item.isConnected || blocked() || item.disabled || reasonFor(action) || pending.has(key)) return;
@@ -155,12 +155,11 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
       }
     }
   }
-  // #802: a home the kernel holds offers no Start, Stop or split: Retire only when a spawn or a retire left it
-  // half cleaned (the kernel's retire completes it), nothing while its spawn sets up the worktree.
-  const held = heldHome(instance);
-  const descriptors = held ? (held.retire ? [{ action: 'retire', label: 'Retire instance…' }] : [])
-    : [...extra, ...[["inspect", "Knowledge & capabilities…"], ...launchAction, ['stop', 'Stop…'], ["retire", "Retire instance…"]]
-      .map(([action, label, reason]) => ({ action, label, ...(reason ? { reason } : {}) }))];
+  // The caller's own items go in front only on a row that offers everything a home normally does: a blocked
+  // row has no menu, and a limited one (#802: a home a spawn or a retire left half cleaned) offers Retire alone.
+  // An act listed with a reason (Start on a row whose session backend is gone) stays visible, disabled, with it.
+  const descriptors = [...(offer.blocked || offer.limited ? [] : extra),
+    ...offer.acts.map(({ verb, reason }) => ({ action: verb, label: LABELS[verb], ...(reason ? { reason: reason.sentence } : {}) }))];
   for (const descriptor of descriptors) {
     const { action, label, reason, actionId } = descriptor;
     const item = doc.createElement("button"); item.type = "button"; item.tabIndex = -1;
@@ -178,8 +177,8 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
     items.push(item); menu.append(item);
   }
   syncOptions();
-  // A spawning home has no actions at all: the trigger says why instead of opening an empty menu.
-  if (!descriptors.length && !unrouted) { trigger.disabled = true; trigger.title = held.sentence(instance.instance); }
+  // A blocked row has no actions at all: the trigger says why instead of opening an empty menu.
+  if (offer.blocked) { trigger.disabled = true; trigger.title = offer.blocked.sentence; }
   wrapper.append(trigger, menu);
   return wrapper;
 }
