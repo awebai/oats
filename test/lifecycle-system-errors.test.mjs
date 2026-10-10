@@ -16,12 +16,15 @@
 // second process. Each `reached` is compared with what is on disk in the same test.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import cp, { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { dirname, join } from "node:path";
-import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { pathToFileURL } from "node:url";
+import { CLI, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { ensureOatsSocketDir, waitUntil } from "./helpers/host-fixture.mjs";
+import { stopInstanceSession } from "../lib/core.mjs";
 
 /** A mode no longer keeps root out: the shapes that rest on one are skipped for root. */
 const ROOT = process.getuid?.() === 0;
@@ -264,17 +267,17 @@ for (const { what, root, code, make } of TREE_CLAIM_SHAPES) {
 
 // ---- 4. a stop whose target fails for a reason of the system's (awebai/oats#891) ----
 
-test("instance stop --apply in a home that cannot be written: the receipt's target is E_SESSION_STOP_FAILED with the system's text, and says its harness was signalled and has exited", async (t) => {
-  if (ROOT) { t.skip(SKIP_FOR_ROOT); return; }
-  const w = await instance(t, "a5");
+/** Run a stand-in harness for the instance `w` in a window of the fixture's own `oats` tmux server
+ *  (its private TMUX_TMPDIR, which its cleanup kills by socket), and record the home as launched
+ *  there. → the harness's pid. */
+async function launchHarness(w) {
   const { fx, home, name } = w;
-  // The fixture's own `oats` tmux server (its private TMUX_TMPDIR), which its cleanup kills by socket.
   const socket = ensureOatsSocketDir(fx.env.TMUX_TMPDIR);
   const session = "door";
   const tmux = (...args) => execFileSync("tmux", ["-f", "/dev/null", "-u", "-S", socket, ...args], { encoding: "utf8", timeout: 10000, env: { ...fx.env, SHELL: "/bin/sh" }, stdio: ["ignore", "pipe", "pipe"] }).trim();
   // A stand-in harness that says which process it is, then idles and ends on SIGTERM; and the pane's
   // launcher, which runs it and stays as the pane's shell once it has ended.
-  const pidFile = join(fx.base, "harness.pid"), harness = join(fx.base, "harness"), launcher = join(fx.base, "launcher");
+  const pidFile = join(fx.base, `harness-${name}.pid`), harness = join(fx.base, `harness-${name}`), launcher = join(fx.base, `launcher-${name}`);
   writeFileSync(harness, `#!/bin/sh\necho $$ > '${pidFile}'\nexec sleep 86400\n`);
   writeFileSync(launcher, `#!/bin/sh\n'${harness}'\nexec /bin/sh\n`);
   for (const script of [harness, launcher]) chmodSync(script, 0o755);
@@ -285,11 +288,21 @@ test("instance stop --apply in a home that cannot be written: the receipt's targ
   writeFileSync(metaPath, JSON.stringify({ ...readJson(metaPath), launched: true, tmux: endpoint }, null, 2) + "\n");
   const baselinePath = join(w.retirement, "baselines", `${sha(home)}.json`);
   writeFileSync(baselinePath, JSON.stringify({ ...readJson(baselinePath), runtime: { launched: true, tmux: endpoint } }, null, 2) + "\n");
-  tmux("new-session", "-d", "-s", session, "-n", "keeper", "-c", fx.base, "sleep 600");
+  let hasSession = true;
+  try { tmux("has-session", "-t", `=${session}`); } catch { hasSession = false; }
+  if (!hasSession) tmux("new-session", "-d", "-s", session, "-n", "keeper", "-c", fx.base, "sleep 600");
   tmux("new-window", "-d", "-t", `${session}:`, "-n", name, "-c", home, launcher);
   const harnessPid = () => { try { const text = readFileSync(pidFile, "utf8").trim(); return /^\d+$/.test(text) && Number(text) > 1 ? Number(text) : null; } catch { return null; } };
   await waitUntil(() => harnessPid() !== null && alive(harnessPid()), "the stand-in harness to run");
-  const pid = harnessPid();
+  return harnessPid();
+}
+
+
+test("instance stop --apply in a home that cannot be written: the receipt's target is E_SESSION_STOP_FAILED with the system's text, and says its harness was signalled and has exited", async (t) => {
+  if (ROOT) { t.skip(SKIP_FOR_ROOT); return; }
+  const w = await instance(t, "a5");
+  const { fx, home, name } = w;
+  const pid = await launchHarness(w);
 
   // From here on nothing can be written in the home: the stop signals the harness, sees it gone,
   // and then cannot write its own record (<home>/.oats-stop.json).
@@ -329,6 +342,138 @@ test("instance stop --apply in a home that cannot be written: the receipt's targ
   // What the stop's own receipt established: it signalled the harness and saw it gone, so none is
   // still running. `null` is for a stop that has no receipt.
   assert.deepEqual(result.stillRunning, []);
+});
+
+test("a stop that finds the harness already idle when it comes to signal it, and then cannot write its record: no signal reached the harness, and the answer says so", async (t) => {
+  if (ROOT) { t.skip(SKIP_FOR_ROOT); return; }
+  const w = await instance(t, "a7");
+  const { fx, home, name } = w;
+  // The home recorded as launched in a window of a server that does not exist: what its pane reads as
+  // is given below, one answer for each time the stop asks. No process is started and none is signalled.
+  const endpoint = { session: "door", window: name, socket: join(fx.base, "no-server.sock") };
+  const metaPath = join(home, "instance.json");
+  writeFileSync(metaPath, JSON.stringify({ ...readJson(metaPath), launched: true, tmux: endpoint }, null, 2) + "\n");
+  const baselinePath = join(w.retirement, "baselines", `${sha(home)}.json`);
+  writeFileSync(baselinePath, JSON.stringify({ ...readJson(baselinePath), runtime: { launched: true, tmux: endpoint } }, null, 2) + "\n");
+  // The harness exits between the stop's own look at the session and the look of the step that
+  // signals: a running command the first time, a dead pane from then on.
+  const PANES = ["%1\t0\tsleep\t111\n", "%1\t1\tsleep\t111\n", "%1\t1\tsleep\t111\n"];
+  let asked = 0, signals = 0;
+  const original = cp.execFileSync;
+  cp.execFileSync = function (command, args, ...rest) {
+    if (command === "tmux" && Array.isArray(args) && args.includes("list-panes")) {
+      assert.ok(asked < PANES.length, "fixture premise: the stop reads the pane three times");
+      return PANES[asked++];
+    }
+    return original.call(this, command, args, ...rest);
+  };
+  syncBuiltinESMExports();
+  chmodSync(home, 0o555); // the stop's record cannot be written
+  let thrown;
+  try {
+    await fx.inEnv(() => {
+      try { stopInstanceSession(home, { io: { sleep() {}, kill() { signals++; } } }); } catch (e) { thrown = e; }
+    });
+  } finally {
+    cp.execFileSync = original;
+    syncBuiltinESMExports();
+    chmodSync(home, 0o755);
+  }
+  assert.ok(thrown, "the stop failed: its record could not be written");
+  assert.equal(asked, PANES.length, "fixture premise: the stop read the pane three times");
+  assert.equal(signals, 0, "no signal was sent");
+  assert.equal(thrown.code, "E_SESSION_STOP_FAILED");
+  assert.deepEqual(thrown.details, { cause: { code: "EACCES", syscall: "open" } });
+  assert.ok(thrown.message.startsWith(`${name}: `) && thrown.message.includes("EACCES"), thrown.message);
+  assert.ok(thrown.message.endsWith("; no signal reached its harness, which had already exited"), thrown.message);
+  assert.doesNotMatch(thrown.message, /was signalled/);
+  // The step's own answer goes with the error: it signalled no process and saw none running.
+  assert.equal(thrown.receipt.sentAt, null);
+  assert.deepEqual(thrown.receipt.requested, []);
+  assert.deepEqual(thrown.receipt.stillRunning, []);
+});
+
+// An exception without a code (a defect) inside a stop. The stop's error does not travel up to the
+// CLI's door: an applied stop, and a retire that stops its recorded children, turn it into a row of
+// results. Its stack is printed there, on stderr, and never in the answer.
+
+/** A preload for a CLI child that makes the write of a stop's own record (`<home>/.oats-stop.json`)
+ *  throw a TypeError, which has no code: a kernel defect on demand. Every other call is the original.
+ *  → the CLI run with it, as fx.cli runs the CLI. */
+function cliWithStopDefect(fx, args) {
+  const preload = join(fx.base, "stop-record-defect.mjs");
+  writeFileSync(preload, `// Written by test/lifecycle-system-errors.test.mjs.
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const writeFileSync = fs.writeFileSync;
+fs.writeFileSync = function (path, ...rest) {
+  if (String(path).includes("/.oats-stop.json")) throw new TypeError("boom from the test preload");
+  return writeFileSync.call(this, path, ...rest);
+};
+syncBuiltinESMExports();
+`);
+  return spawnSync(process.execPath, ["--import", pathToFileURL(preload).href, CLI, ...args], { cwd: fx.dep, env: fx.env, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+}
+const DEFECT_STACK = /^TypeError: boom from the test preload\n(?: {4}at .+\n)+/m;
+/** Nothing of a stack in what the CLI answered on stdout. */
+const noStackIn = (stdout) => assert.doesNotMatch(stdout, /\bat .*:\d+:\d+|stop-record-defect|core\.mjs|"stack"/, `the answer carries no stack: ${stdout}`);
+
+test("instance stop --apply whose stop meets an exception without a code: the target is E_SESSION_STOP_FAILED in the receipt, and the exception's stack is on stderr", async (t) => {
+  const w = await instance(t, "a8");
+  const { fx, home, name } = w;
+  const pid = await launchHarness(w);
+  const stop = (...flags) => fx.cli(["instance", "stop", name, ...flags, "--json"]);
+  let plan;
+  await waitUntil(() => { const r = stop("--plan"); assert.equal(r.status, 0, r.stderr + r.stdout); plan = r.json().result; const s = plan.targets[0].session; return s.present === true && s.state !== "shell"; }, "the session to read as running");
+
+  const r = cliWithStopDefect(fx, ["instance", "stop", name, "--apply", "--plan-revision", plan.planRevision, "--idempotency-key", "k1", "--json"]);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  const lines = r.stdout.trim().split("\n");
+  assert.equal(lines.length, 1, `exactly one envelope on stdout: ${r.stdout}`);
+  const receipt = JSON.parse(lines[0]).result;
+  assert.equal(receipt.ok, false);
+  const [result] = receipt.results;
+  assert.deepEqual(Object.keys(result).sort(), ["code", "home", "instance", "message", "ok", "stillRunning"], "no new field in a target's result");
+  assert.equal(result.code, "E_SESSION_STOP_FAILED");
+  assert.equal(result.message, `${name}: boom from the test preload; its harness was signalled (SIGTERM) and has exited`);
+  assert.deepEqual(result.stillRunning, []);
+  assert.match(r.stderr, DEFECT_STACK, `the stack of the exception is on stderr: ${r.stderr}`);
+  noStackIn(r.stdout);
+  assert.equal(alive(pid), false, "the harness the stop signalled has exited");
+  assert.equal(existsSync(join(home, ".oats-stop.json")), false, "the record the stop could not write is not there");
+});
+
+test("retire whose stop of a recorded child meets an exception without a code: E_CHILDREN_RUNNING with that child's E_SESSION_STOP_FAILED, the stack on stderr, and reached says a stop was attempted", async (t) => {
+  const w = await instance(t, "a9");
+  const { fx, name } = w;
+  // A second instance of the same agent, recorded as the first one's child and launched.
+  const hostPath = process.env.PATH;
+  process.env.PATH = fx.env.PATH;
+  let kidHome;
+  try { ({ home: kidHome } = await fx.spawn("dev", { name: "a9-kid", work: "directory" })); } finally { process.env.PATH = hostPath; }
+  const kid = { fx, name: "a9-kid", home: kidHome, retirement: w.retirement };
+  const kidMeta = join(kid.home, "instance.json");
+  writeFileSync(kidMeta, JSON.stringify({ ...readJson(kidMeta), parentInstance: name }, null, 2) + "\n");
+  const pid = await launchHarness(kid);
+  await waitUntil(() => { const r = fx.cli(["instance", "stop", kid.name, "--plan", "--json"]); assert.equal(r.status, 0, r.stderr + r.stdout); const s = r.json().result.targets[0].session; return s.present === true && s.state !== "shell"; }, "the child's session to read as running");
+  const before = listing(w.home);
+
+  const r = cliWithStopDefect(fx, ["retire", name, "--json"]);
+  const error = refusal(r);
+  assert.equal(error.code, "E_CHILDREN_RUNNING");
+  assert.deepEqual(error.details.childrenStopped, [{ instance: kid.name, home: kid.home, ok: false, code: "E_SESSION_STOP_FAILED",
+    message: `${kid.name}: boom from the test preload; its harness was signalled (SIGTERM) and has exited`, stillRunning: [] }]);
+  // The child's harness was signalled: the untouched value is no longer true, and nothing else was reached.
+  assert.deepEqual(error.details.reached, { phase: "before-hooks", sessionStopAttempted: true, hooksStarted: false, home: "kept", recovery: null });
+  assert.match(r.stderr, DEFECT_STACK, `the stack of the exception is on stderr: ${r.stderr}`);
+  noStackIn(r.stdout);
+
+  // What `reached` says, on disk.
+  assert.equal(alive(pid), false, "sessionStopAttempted: true, and the child's harness has exited");
+  assert.deepEqual(listing(w.home), before, "home: kept, byte for byte");
+  assert.equal(w.hookRuns(), 0, "hooksStarted: false, and no retire hook ran");
+  assert.deepEqual(w.recoveries(), [], "recovery: null, and none was written");
+  assert.equal(existsSync(kid.home), true, "the child is kept");
 });
 
 // ---- 5. the removal of the home fails (the code path of the ENOTEMPTY of awebai/oats#866) ----

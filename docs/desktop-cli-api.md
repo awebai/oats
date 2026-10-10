@@ -2970,10 +2970,15 @@ the instance back.
   `E_SESSION_STOP_FAILED`, as one whose harness still runs after the wait is.
   Its `message` then holds the system's text and ends with what is true of
   the harness: `its harness was signalled (SIGTERM) and has exited`, `… and
-  is still running`, `whether its harness was signalled is not known`, or
-  `its harness was not signalled`. `stillRunning` is what the stop
-  established by then: the pids still alive, `[]` once the signalled
-  processes are gone.
+  is still running`, `no signal reached its harness, which had already
+  exited` (the stop found it idle, or its processes gone, when it came to
+  signal), `… which was not seen to exit`, `whether its harness was signalled
+  is not known`, or `its harness was not signalled`. `stillRunning` is what
+  the stop established by then: the pids still alive, `[]` when it
+  established that none is, `null` when it established nothing. A stop that
+  fails on an exception without a code (a defect of the kernel) is that same
+  row, and the exception's stack is printed on stderr; the same holds for a
+  child's stop in a retire's `childrenStopped`.
 - `ok: false`: at least one target still runs (text mode exits 1).
 - A replay is the stored receipt (`<home>/.oats-stop-receipt.<key>.json`)
   with `replayed: true`.
@@ -3415,10 +3420,16 @@ message and never parses it; this is the same statement as data.
  "recovery":{"path":"/w/agents/dev/instances/.oats-retirement/recovery/dev-1-Ab12Cd","phase":"before-hooks"}}
 ```
 
-- `phase`: how far the retire got. `"before-effects"`: nothing of the
-  instance was touched (the first inspection is here). `"before-hooks"`: from
-  the stop of its recorded children on (the stop of its own session, the
-  second inspection, the copy made before the hooks). `"after-hooks"`: from
+- `phase`: how far the retire got. `"before-effects"`: until the retire
+  first signals a process, so nothing happened (the first inspection is
+  usually here). `"before-hooks"`: from that first signal on, until the hook
+  runner is called. The first signal is the stop of its recorded children
+  (then the stop of its own session, the second inspection, the copy made
+  before the hooks), with one earlier case: a home whose interrupted spawn
+  left a worktree hook process group that the retire can prove is that
+  spawn's has that group ended before the first inspection, and `phase` is
+  `"before-hooks"` from then on. So `"before-hooks"` does not say that the
+  children step was reached; `sessionStopAttempted` does. `"after-hooks"`: from
   the call of the retire hooks on (the third inspection, the copy's
   conclusion, the extra trees and the worktree). `"removal"`: from the
   removal of the home on.
@@ -3461,7 +3472,7 @@ a message that ends with the sentence the typed refusals at that point carry:
 |---|---|---|
 | before the home's retire begins (the resolution, the plan a guarded apply reads) | `E_LIFECYCLE_FAILED`, no `reached` | `Nothing was done: <instance> is not retired.` |
 | the claim cannot be taken (its directory cannot be made, its file cannot be written) | `E_LIFECYCLE_FAILED`, no `reached` | `the claim <path> could not be taken (…); nothing was done` |
-| an inspection of the home or the work meets an entry it cannot read, or one that is gone when it is read | `E_WORK_INSPECTION_FAILED` | the sentence of its phase: `Nothing was stopped, run or removed.`; `No retire hook has run and nothing was deleted: <instance> is not retired and its home and work are kept; …`; `The retire hooks have run; the home, its work and the pre-hook recovery (if any) are kept; …` |
+| an inspection of the home or the work meets an entry it cannot read, or one that is gone when it is read | `E_WORK_INSPECTION_FAILED` | the sentence of its phase: `Nothing was stopped, run or removed.` (or, once it has signalled the hook group an interrupted spawn left, `The worktree hook process group <pgid> that an interrupted spawn left was ended; no session was stopped, no retire hook was run and nothing was removed.`, with `was signalled and may still run` when it is not seen to have ended); `No retire hook has run and nothing was deleted: <instance> is not retired and its home and work are kept; …`; `The retire hooks have run; the home, its work and the pre-hook recovery (if any) are kept; …` |
 | anything else before the removal | `E_LIFECYCLE_FAILED` | the sentence of its phase; once the retire has begun to remove or re-home trees, `The retire hooks have run; the home is kept, and so is any recovery the retire wrote; …` and what it has already done with them |
 | the removal of the home (a directory that is written into while it is removed, or that cannot be emptied) | `E_LIFECYCLE_FAILED`, `reached.home: "partial"` | `<instance>: the directory at <home> could not be removed: … The retire hooks have run; its recovery (complete) is at <path>; its retired event is recorded; what is left at <home> may not be a whole instance home; …` |
 
