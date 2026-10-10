@@ -5,9 +5,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync, spawn as spawnChild } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CLI, v2Deployment } from "./helpers/v2-deployment.mjs";
+import { hostProcessState, zombieSync } from "./helpers/host-fixture.mjs";
 import { listInstances, retireInstance } from "../lib/core.mjs";
 
 /** The hook: appends one JSON line of facts to <OATS_ROOT>/hook-runs.jsonl, then acts on files in
@@ -715,6 +716,86 @@ async function killedSpawn(fx, name) {
   return { home: join(fx.root, "dev", "instances", name), orphan };
 }
 
+test("killed parent, spawn: a retire that ended the orphaned hook group and then cannot inspect the home says what it ended, and its phase is no longer before-effects (awebai/oats#892)", async (t) => {
+  if (process.getuid?.() === 0) { t.skip("root reads whatever the mode says: this shape cannot fail"); return; }
+  const fx = deployment(t, { work: "worktree", lifecycle: true });
+  const { home, orphan } = await killedSpawn(fx, "dev-ui");
+  const pgid = JSON.parse(readFileSync(join(home, ".oats-rollback-incomplete.json"), "utf8")).inProgress.hookPgid;
+  endGroupAfter(fx, pgid, orphan);
+  assert.equal(alive(orphan), true, "fixture premise: the hook outlived its parent");
+  // An entry of the home the retire's first inspection cannot read. That inspection comes after the
+  // retire has ended the group the spawn left: the one signal a retire sends before it inspects.
+  const unreadable = join(home, "unreadable");
+  writeFileSync(unreadable, "kept from everyone\n");
+  chmodSync(unreadable, 0o000);
+  fx.beforeCleanup(() => { if (existsSync(unreadable)) chmodSync(unreadable, 0o600); });
+
+  const r = fx.cli(["retire", "dev-ui", "--json"]);
+  assert.equal(r.status, 1, r.stderr + r.stdout);
+  assert.equal(r.stdout.trim().split("\n").length, 1, `exactly one envelope on stdout: ${r.stdout}`);
+  const error = r.json().error;
+  assert.equal(error.code, "E_WORK_INSPECTION_FAILED", JSON.stringify(error));
+  assert.ok(error.message.endsWith(`The worktree hook process group ${pgid} that an interrupted spawn left was ended; no session was stopped, no retire hook was run and nothing was removed.`), error.message);
+  assert.doesNotMatch(error.message, /Nothing was stopped/);
+  assert.deepEqual(error.details.cause, { code: "EACCES", syscall: "open" });
+  // `before-hooks`, not `before-effects`: a process was ended. No session and no child's harness was
+  // signalled, no retire hook was started, and the home is whole.
+  assert.deepEqual(error.details.reached, { phase: "before-hooks", sessionStopAttempted: false, hooksStarted: false, home: "kept", recovery: null });
+  assert.ok(await waitFor(() => !alive(orphan), 5000), "the retire ended the orphaned hook group");
+  assert.equal(existsSync(join(fx.root, "retire-ran")), false, "no retire hook ran");
+  assert.equal(existsSync(join(home, ".oats-rollback-incomplete.json")), true, "the home and its marker are kept");
+
+  // Once the entry can be read, the same retire completes the rollback: there is no group left to
+  // end, so a failure of this second retire's first inspection would be before any effect again.
+  chmodSync(unreadable, 0o600);
+  const again = fx.cli(["retire", "dev-ui", "--json"]);
+  assert.equal(again.status, 0, again.stderr + again.stdout);
+  assert.equal(existsSync(home), false);
+});
+
+test("killed parent, spawn: a record that becomes unreadable under the retire's claim refuses the retire before it signals the orphaned hook group: E_UNIDENTIFIED_INSTANCE_HOME, nothing was done (awebai/oats#896)", async (t) => {
+  const fx = deployment(t, { work: "worktree", lifecycle: true });
+  const { home, orphan } = await killedSpawn(fx, "dev-ur");
+  const pgid = JSON.parse(readFileSync(join(home, ".oats-rollback-incomplete.json"), "utf8")).inProgress.hookPgid;
+  endGroupAfter(fx, pgid, orphan);
+  assert.equal(alive(orphan), true, "fixture premise: the hook outlived its parent");
+  const record = join(home, "instance.json");
+  const original = readFileSync(record, "utf8");
+  // What the retire's caller confirms under the claim runs after the retire has resolved its home
+  // and before the retire reads anything of it: the record is cut off there.
+  const { RETIRE_UNDER_CLAIM } = await import("../lib/core.mjs");
+  const { readlinkSync } = await import("node:fs");
+  /** Every entry under `dir`, one row each: its path, its mode, and a file's bytes or a link's target. */
+  const homeEntries = (dir, rel = "") => readdirSync(join(dir, rel)).sort().flatMap((name) => {
+    const at = join(rel, name), abs = join(dir, at), st = lstatSync(abs);
+    const mode = (st.mode & 0o7777).toString(8);
+    if (st.isSymbolicLink()) return [`${at} -> ${readlinkSync(abs)}`];
+    if (st.isDirectory()) return [`${at}/ ${mode}`, ...homeEntries(dir, at)];
+    return [`${at} ${mode} ${readFileSync(abs).toString("base64")}`];
+  });
+  let before;
+  const error = await fx.inEnv(() => {
+    try { retireInstance(fx.root, "dev-ur", { tmuxSession: "oats-test-nosuch", [RETIRE_UNDER_CLAIM]: () => { writeFileSync(record, "{"); before = homeEntries(home); return {}; } }); } catch (e) { return e; }
+    return null;
+  });
+  assert.ok(error, "the retire is refused");
+  assert.equal(error.code, "E_UNIDENTIFIED_INSTANCE_HOME", `${error.code}: ${error.message}`);
+  assert.ok(error.message.startsWith(`${record} cannot be read (`) && error.message.includes("; nothing was done. "), error.message);
+  // The code says "refused, nothing happened": nothing was signalled, and `reached` is untouched.
+  assert.deepEqual(error.details, { reached: { phase: "before-effects", sessionStopAttempted: false, hooksStarted: false, home: "kept", recovery: null } });
+  assert.equal(alive(orphan), true, "the orphaned hook group was not signalled: it is alive after the refusal");
+  assert.equal(existsSync(join(fx.root, "retire-ran")), false, "no retire hook ran");
+  assert.ok(before.some((row) => row.startsWith(".oats-rollback-incomplete.json ")), "fixture premise: the home holds the spawn's marker");
+  assert.deepEqual(homeEntries(home), before, "the home is byte-identical: its marker, its record as it was cut off, its work");
+
+  // With the record restored from a copy, the same retire ends the group and completes the rollback.
+  writeFileSync(record, original);
+  const again = fx.cli(["retire", "dev-ur", "--json"]);
+  assert.equal(again.status, 0, again.stderr + again.stdout);
+  assert.ok(await waitFor(() => !alive(orphan), 5000), "the retire ended the orphaned hook group");
+  assert.equal(existsSync(home), false);
+});
+
 test("killed parent, spawn: a branch that moved, or is checked out elsewhere, is kept and named; the home is retained", async (t) => {
   const fx = deployment(t, { work: "worktree", lifecycle: true });
   const moved = await killedSpawn(fx, "dev-mv");
@@ -820,12 +901,13 @@ process.exit(r.status ?? 1);
 `, { mode: 0o700 });
   return `${dir}:${fx.env.PATH}`;
 }
-/** A dead adder's record, as a SIGKILL leaves it: the ready record turned back into `creating`. */
-function asKilledAdd(home, purpose, drop = [], pid = 2147483647) {
+/** A dead adder's record, as a SIGKILL leaves it: the ready record turned back into `creating`. It names
+ *  `pid` with a start no process has, unless `processStart` gives the real start of a process that runs. */
+function asKilledAdd(home, purpose, drop = [], pid = 2147483647, processStart = "proc:gone") {
   const p = join(home, ".oats", "trees", `${purpose}.json`);
   const rec = JSON.parse(readFileSync(p, "utf8"));
   for (const k of drop) delete rec[k];
-  writeFileSync(p, JSON.stringify({ ...rec, state: "creating", pid, processStart: "proc:gone", startedAt: "earlier" }));
+  writeFileSync(p, JSON.stringify({ ...rec, state: "creating", pid, processStart, startedAt: "earlier" }));
 }
 /** A `ps` in macOS's shape: for a pid that does not exist it prints an error and exits 1 (procps exits 1
  *  silently); for any other pid it is the real `ps`. It leaves `<base>/ps-mac/ran` once it has run.
@@ -1164,6 +1246,7 @@ test("a killed recovery's git step whose start cannot be read: the next add refu
   for (const part of [`git process group ${oldGit} (leader pid ${oldGit}, recorded start ${JSON.parse(held).gitStart})`, "ps: simulated failure", "was not signalled", `${lock} is kept`, `kill -TERM -- -${oldGit}`, `remove ${lock} and retry`]) assert.ok(e.message.includes(part), `${part}: ${e.message}`);
   assert.equal(e.details.gitPid, oldGit);
   assert.equal(e.details.lock, lock);
+  assert.equal(e.details.holder, "none", "the claim's holder is gone: waiting ends nothing, and the message names the step that does");
   assert.equal(readFileSync(lock, "utf8"), held, "the claim is kept");
   assert.equal(alive(oldGit), true, "that git is not signalled");
   assert.ok(existsSync(join(home, ".work-feat")) && registered(fx, join(home, ".work-feat")), "nothing was rolled back");
@@ -1260,4 +1343,246 @@ test("a killed spawn's hook group whose start cannot be read: retire refuses nam
     process.env.PATH = saved.PATH;
     if (saved.seam === undefined) delete process.env.OATS_TEST_PROCESS_START_PS; else process.env.OATS_TEST_PROCESS_START_PS = saved.seam;
   }
+});
+
+// ---------- the claim's own edges: a holder that is a zombie, a path that is no claim (awebai/oats#870, #874) ----------
+// A process killed and not yet reaped by its parent is a zombie: it still has its pid and its start, and it
+// will never act again. Here the parent is the test, and Node reaps its children from its event loop: from
+// zombieSync to the last read of the host's state there is no `await`, and every command in between runs
+// through the synchronous CLI. That state, read after each command returned, is what says it met a zombie.
+
+test("a recovery that is a zombie while it holds the purpose's claim: the next add takes the claim over and completes, with nobody reaping it first", async (t) => {
+  const fx = deployment(t);
+  const { home } = await fx.spawn("dev", { instance: "dev-zclaim", work: "checkout" });
+  writeFileSync(join(fx.root, "hook-sleep"), "60");
+  const argv = ["worktree", "add", "--purpose", "feat", "--branch", "agents/feat", "--base", "main", "--json"];
+  const first = cliChild(fx, argv, { cwd: home, env: { OATS_INSTANCE_HOME: home } });
+  assert.ok(await waitFor(() => existsSync(join(fx.root, "hook-sleeping"))));
+  first.child.kill("SIGKILL");
+  await first.done;
+  execFileSync("rm", [join(fx.root, "hook-sleep")]);
+  // The recovering add holds the claim inside its rollback's git step.
+  const path = gatedGit(fx, "zclaim", { gate: `a.includes("worktree") && a.includes("remove") && a.includes("--force")`, entered: `"recovering"`, release: `"release-old-git"` });
+  const recovering = cliChild(fx, argv, { cwd: home, env: { OATS_INSTANCE_HOME: home, PATH: path } });
+  assert.ok(await waitFor(() => existsSync(join(fx.base, "recovering"))));
+  const lock = join(home, ".oats", "trees", "feat.lock");
+  const oldGit = Number(readFileSync(join(fx.base, "recovering"), "utf8"));
+  endGroupAfter(fx, oldGit);
+  const held = readFileSync(lock, "utf8");
+  assert.equal(JSON.parse(held).pid, recovering.child.pid, "the recovering add holds the claim");
+  assert.equal(JSON.parse(held).gitPid, oldGit, "and the claim records its running git step");
+  // Control: while that holder runs, the same add is refused and the claim is its holder's.
+  const busy = add(fx, home);
+  assert.equal(busy.json().error.code, "E_LIFECYCLE_BUSY", busy.stdout);
+  assert.match(busy.json().error.message, /is running \(pid \d+ holds .*feat\.lock\)/);
+  assert.deepEqual(busy.json().error.details, { purpose: "feat", lock, pid: recovering.child.pid, holder: "running" });
+  assert.equal(readFileSync(lock, "utf8"), held, "a live holder's claim is kept");
+  // Killed, and a zombie from here on: nothing below waits, so nothing reaps it.
+  const state = zombieSync(recovering.child.pid);
+  t.diagnostic(`the claim's holder (pid ${recovering.child.pid}) is a zombie: the host reports its state as ${state}`);
+  assert.equal(readFileSync(lock, "utf8"), held, "the killed recovery left its claim");
+  assert.equal(alive(oldGit), true, "its git step outlived it");
+  const again = add(fx, home);
+  const stateAfter = hostProcessState(recovering.child.pid);
+  assert.equal(again.status, 0, again.stderr + again.stdout);
+  assert.ok(stateAfter?.startsWith("Z"), `the holder was still a zombie when the next add returned (the host reports ${stateAfter})`);
+  assert.equal(alive(oldGit), false, "the old git step was ended before the takeover");
+  assert.equal(again.json().result.state, "ready");
+  assert.equal(again.json().result.resumed, false, "the interrupted add was rolled back and the tree made afresh");
+  assert.equal(JSON.parse(readFileSync(join(home, ".oats", "trees", "feat.json"), "utf8")).state, "ready");
+  assert.ok(existsSync(join(home, ".work-feat")) && registered(fx, join(home, ".work-feat")), "the tree exists");
+  assert.deepEqual(readdirSync(join(home, ".oats", "trees")).sort(), ["feat.json"], "no claim or takeover claim is left");
+  assert.equal((await recovering.done).signal, "SIGKILL");
+});
+
+test("a creating record whose adder is a zombie is recovered, by add and by remove; while that process runs both refuse", async (t) => {
+  const fx = deployment(t, { hookless: true });
+  const { home } = await fx.spawn("dev", { instance: "dev-zrec", work: "checkout" });
+  const { processStartToken } = await import("../lib/worktree-hooks.mjs");
+  // A child of this test stands in for a running add: the records name it by its pid and its real start.
+  const adder = spawnChild("sleep", ["60"], { stdio: "ignore" });
+  fx.beforeCleanup(() => { adder.kill("SIGKILL"); }); // only while this test has not reaped it: never a pid reused since
+  const start = processStartToken(adder.pid);
+  assert.ok(start, "fixture premise: the stand-in's start can be read");
+  const recPath = (p) => join(home, ".oats", "trees", `${p}.json`);
+  const commands = { byadd: ["add", "--purpose", "byadd", "--branch", "agents/byadd", "--base", "main", "--json"], byremove: ["remove", "--purpose", "byremove", "--json"] };
+  const creating = {};
+  for (const p of Object.keys(commands)) {
+    assert.equal(add(fx, home, p).status, 0);
+    asKilledAdd(home, p, [], adder.pid, start);
+    creating[p] = readFileSync(recPath(p), "utf8");
+  }
+  // Control: while that process runs, each command leaves the record to it.
+  for (const [p, args] of Object.entries(commands)) {
+    const r = wt(fx, home, args);
+    const e = r.json().error;
+    assert.equal(e.code, "E_LIFECYCLE_BUSY", r.stdout);
+    assert.ok(e.message.includes(`an oats worktree add of purpose ${p} is still running (pid ${adder.pid}`), e.message);
+    assert.equal(e.details.pid, adder.pid);
+    assert.equal(readFileSync(recPath(p), "utf8"), creating[p], `${args[0]}: a running adder's record is kept`);
+    assert.ok(existsSync(join(home, `.work-${p}`)) && registered(fx, join(home, `.work-${p}`)), `${args[0]}: its tree is kept`);
+  }
+  // Killed, and a zombie from here on: nothing below waits, so nothing reaps it.
+  const state = zombieSync(adder.pid);
+  t.diagnostic(`the adder both records name (pid ${adder.pid}) is a zombie: the host reports its state as ${state}`);
+  const added = wt(fx, home, commands.byadd);
+  const stateAfterAdd = hostProcessState(adder.pid);
+  const removed = wt(fx, home, commands.byremove);
+  const stateAfterRemove = hostProcessState(adder.pid);
+  // add: the interrupted add is rolled back, and the tree is made afresh.
+  assert.equal(added.status, 0, added.stderr + added.stdout);
+  assert.ok(stateAfterAdd?.startsWith("Z"), `the adder was still a zombie when add returned (the host reports ${stateAfterAdd})`);
+  assert.equal(added.json().result.state, "ready");
+  assert.equal(added.json().result.resumed, false);
+  assert.equal(JSON.parse(readFileSync(recPath("byadd"), "utf8")).state, "ready");
+  assert.ok(existsSync(join(home, ".work-byadd")) && registered(fx, join(home, ".work-byadd")));
+  // remove: the interrupted add is rolled back, with the branch it made.
+  assert.equal(removed.status, 0, removed.stderr + removed.stdout);
+  assert.ok(stateAfterRemove?.startsWith("Z"), `the adder was still a zombie when remove returned (the host reports ${stateAfterRemove})`);
+  assert.equal(removed.json().result.rolledBack, true);
+  assert.equal(removed.json().result.branchKept, false);
+  assert.equal(existsSync(join(home, ".work-byremove")) || registered(fx, join(home, ".work-byremove")), false);
+  assert.equal(tipOf(fx, "agents/byremove"), null);
+  assert.deepEqual(readdirSync(join(home, ".oats", "trees")).sort(), ["byadd.json"], "one ready record; no record of the removed tree, no claim");
+});
+
+test("a spawn that is a zombie mid-hook: its status row reads as the quarantine, not as a spawn in progress, and retire completes it, with nobody reaping it first", async (t) => {
+  const fx = deployment(t, { work: "worktree", lifecycle: true });
+  writeFileSync(join(fx.root, "hook-sleep"), "60");
+  const sp = cliChild(fx, spawnArgs("dev-zsp"), { cwd: fx.dep });
+  assert.ok(await waitFor(() => existsSync(join(fx.root, "hook-sleeping"))));
+  const orphan = Number(readFileSync(join(fx.root, "hook-sleeping"), "utf8"));
+  endGroupAfter(fx, pgidOf(orphan), orphan);
+  const home = join(fx.root, "dev", "instances", "dev-zsp");
+  const marker = JSON.parse(readFileSync(join(home, ".oats-rollback-incomplete.json"), "utf8"));
+  assert.equal(marker.inProgress.pid, sp.child.pid, "the marker names the spawn");
+  assert.equal(marker.inProgress.hookPgid, pgidOf(orphan));
+  // The instance's row as `oats status --json` answers it, and retire: both through the synchronous CLI.
+  const rowOf = () => {
+    const r = fx.cli(["status", "--json"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    return JSON.parse(r.stdout).agents.flatMap((a) => a.instances).find((i) => i.instance === "dev-zsp");
+  };
+  const retire = () => fx.cli(["retire", "dev-zsp", "--json"]);
+  // Control: while the spawn runs, the row is a spawn in progress and retire refuses.
+  const live = rowOf();
+  assert.equal(live.spawnInProgress, true);
+  assert.equal(live.rollbackIncomplete, undefined);
+  const refused = retire();
+  assert.equal(refused.status, 1, refused.stderr + refused.stdout);
+  assert.equal(refused.json().error.code, "E_LIFECYCLE_BUSY", refused.stdout);
+  assert.ok(refused.json().error.message.includes(`dev-zsp is still being spawned (pid ${sp.child.pid},`), refused.stdout);
+  assert.ok(existsSync(home), "nothing was retired");
+  // Killed, and a zombie from here on: nothing below waits, so nothing reaps it.
+  const state = zombieSync(sp.child.pid);
+  t.diagnostic(`the spawn its marker names (pid ${sp.child.pid}) is a zombie: the host reports its state as ${state}`);
+  assert.equal(alive(orphan), true, "the hook outlived its parent");
+  const row = rowOf();
+  const stateAfterStatus = hostProcessState(sp.child.pid);
+  const r = retire();
+  const stateAfterRetire = hostProcessState(sp.child.pid);
+  assert.ok(stateAfterStatus?.startsWith("Z"), `the spawn was still a zombie when status returned (the host reports ${stateAfterStatus})`);
+  assert.equal(row.spawnInProgress, undefined, "a zombie is not a spawn in progress");
+  assert.equal(row.rollbackIncomplete?.inProgress?.pid, sp.child.pid, "the row shows the quarantine, its inProgress naming the spawn");
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.ok(stateAfterRetire?.startsWith("Z"), `the spawn was still a zombie when retire returned (the host reports ${stateAfterRetire})`);
+  assert.equal(alive(orphan), false, "retire ended the orphaned hook group");
+  assert.match(readFileSync(join(fx.root, "retire-ran"), "utf8"), /dev-zsp/, "the retire hooks compensated");
+  assert.equal(registered(fx, join(home, "work")), false, "the worktree is removed");
+  assert.equal(existsSync(home), false, "the home is gone");
+  assert.equal(tipOf(fx, "agents/dev-zsp"), null, "the branch, still at its creation commit, is deleted");
+  assert.equal((await sp.done).signal, "SIGKILL");
+});
+
+test("a dangling symbolic link where the purpose's claim belongs: add and remove are each refused in a bounded time, naming the path, and nothing is done", async (t) => {
+  const fx = deployment(t, { hookless: true });
+  const { home } = await fx.spawn("dev", { instance: "dev-dangling", work: "checkout" });
+  const trees = join(home, ".oats", "trees");
+  const lock = join(trees, "p.lock");
+  const nowhere = join(fx.base, "no-such-claim");
+  const tree = join(home, ".work-p");
+  const commands = [["add", "--purpose", "p", "--branch", "agents/p", "--base", "main", "--json"], ["remove", "--purpose", "p", "--json"]];
+  // Ended by SIGKILL at 15 s (the claim is waited for 3 s): a command that never answers, as each of these
+  // did before awebai/oats#874, fails this test instead of hanging it.
+  const bounded = (args) => {
+    const started = Date.now();
+    const r = spawnSync(process.execPath, [CLI, "worktree", ...args], { cwd: home, env: { ...fx.env, OATS_INSTANCE_HOME: home }, encoding: "utf8", timeout: 15000, killSignal: "SIGKILL" });
+    return { ...r, ms: Date.now() - started };
+  };
+  const refused = (args) => {
+    const r = bounded(args);
+    assert.equal(r.error, undefined, `${args[0]}: it answered within 15 s (${r.error?.code}, ${r.ms} ms)`);
+    assert.ok(r.ms < 15000, `${args[0]}: ${r.ms} ms`);
+    assert.equal(r.status, 1, `${args[0]}: ${r.stderr}${r.stdout}`);
+    const e = JSON.parse(r.stdout.trim().split("\n").pop()).error;
+    assert.equal(e.code, "E_LIFECYCLE_BUSY", r.stdout);
+    assert.equal(e.message, `${lock} is not a readable claim; nothing was done — inspect it and remove it if no oats worktree command holds it, then retry`);
+    assert.doesNotMatch(e.message, /is running|retry when it has finished/, `${args[0]}: nobody holds it, so never the live holder's sentence`);
+    assert.deepEqual(e.details, { purpose: "p", lock, holder: "unknown" });
+    assert.ok(lstatSync(lock).isSymbolicLink(), `${args[0]}: the link is still there`);
+    assert.equal(readlinkSync(lock), nowhere, `${args[0]}: and still names what it named`);
+    assert.equal(existsSync(nowhere), false, `${args[0]}: nothing was written through it: it still dangles`);
+  };
+  mkdirSync(trees, { recursive: true });
+  symlinkSync(nowhere, lock);
+  for (const args of commands) {
+    refused(args);
+    assert.deepEqual(readdirSync(trees), ["p.lock"], `${args[0]}: no record, and no private file of the attempt is left`);
+    assert.equal(existsSync(tree) || registered(fx, tree), false, `${args[0]}: no tree was made`);
+    assert.equal(tipOf(fx, "agents/p"), null, `${args[0]}: no branch was made`);
+  }
+  // The way out the refusal names: once the link is removed, the same add runs.
+  rmSync(lock);
+  assert.equal(wt(fx, home, commands[0]).status, 0);
+  // A tree that exists is as safe behind the link: remove is refused, and the tree, its record and its branch stay.
+  const record = readFileSync(join(trees, "p.json"), "utf8");
+  symlinkSync(nowhere, lock);
+  refused(commands[1]);
+  assert.deepEqual(readdirSync(trees).sort(), ["p.json", "p.lock"], "no private file of the attempt is left");
+  assert.equal(readFileSync(join(trees, "p.json"), "utf8"), record, "the record is kept");
+  assert.ok(existsSync(tree) && registered(fx, tree), "the tree is kept");
+  assert.equal(tipOf(fx, "agents/p"), originMain(fx), "the branch is kept");
+});
+
+test("a purpose claim whose holder is gone and whose nonce no takeover can be serialized on: add and remove say the holder is gone and what to do with the file, never that a command is running", async (t) => {
+  const fx = deployment(t, { hookless: true });
+  const { home } = await fx.spawn("dev", { instance: "dev-nonce", work: "checkout" });
+  const trees = join(home, ".oats", "trees");
+  const lock = join(trees, "p.lock");
+  const tree = join(home, ".work-p");
+  const commands = [["add", "--purpose", "p", "--branch", "agents/p", "--base", "main", "--json"], ["remove", "--purpose", "p", "--json"]];
+  // A claim file that parses and names a process that has exited, with a nonce that is not a claim's.
+  const pid = exitedPid();
+  const claim = JSON.stringify({ pid, processStart: "proc:1", nonce: "short", at: new Date().toISOString() }) + "\n";
+  const refused = (args) => {
+    const r = wt(fx, home, args);
+    assert.equal(r.status, 1, `${args[0]}: ${r.stderr}${r.stdout}`);
+    const e = r.json().error;
+    assert.equal(e.code, "E_LIFECYCLE_BUSY", r.stdout);
+    assert.equal(e.message, `the process that held ${lock} (pid ${pid}) is gone, and this file is not a claim this kernel can take over (its nonce is not the 32 hexadecimal digits a claim carries); nothing was done — inspect ${lock} and remove it if no oats worktree command holds it, then retry`);
+    assert.doesNotMatch(e.message, /is running|retry when it has finished/, `${args[0]}: nobody is running, so never the live holder's sentence`);
+    assert.deepEqual(e.details, { purpose: "p", lock, pid, holder: "none" });
+    assert.equal(readFileSync(lock, "utf8"), claim, `${args[0]}: the file is byte for byte as it was`);
+  };
+  mkdirSync(trees, { recursive: true });
+  writeFileSync(lock, claim);
+  for (const args of commands) {
+    refused(args);
+    assert.deepEqual(readdirSync(trees), ["p.lock"], `${args[0]}: no record, no takeover claim and no private file of the attempt is left`);
+    assert.equal(existsSync(tree) || registered(fx, tree), false, `${args[0]}: no tree was made`);
+    assert.equal(tipOf(fx, "agents/p"), null, `${args[0]}: no branch was made`);
+  }
+  // The way out the refusal names: once the file is removed, the same add runs.
+  rmSync(lock);
+  const added = wt(fx, home, commands[0]);
+  assert.equal(added.status, 0, added.stderr + added.stdout);
+  assert.equal(added.json().result.state, "ready");
+  // A tree that exists is as safe behind that file: remove is refused, and the tree, its record and its branch stay.
+  const record = readFileSync(join(trees, "p.json"), "utf8");
+  writeFileSync(lock, claim);
+  refused(commands[1]);
+  assert.deepEqual(readdirSync(trees).sort(), ["p.json", "p.lock"]);
+  assert.equal(readFileSync(join(trees, "p.json"), "utf8"), record, "the record is kept");
+  assert.ok(existsSync(tree) && registered(fx, tree), "the tree is kept");
+  assert.equal(tipOf(fx, "agents/p"), originMain(fx), "the branch is kept");
 });

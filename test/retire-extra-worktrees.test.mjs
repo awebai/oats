@@ -337,18 +337,26 @@ test("the retire plan lists each tree's disposition and target and binds them: a
   assert.equal(done.extraWorktrees.find((x) => x.path === dirty).movedTo, w.retained("agents-plan-dirty-2"));
 });
 
-test("a retire given a plan's rows refuses as stale when the trees no longer read that way, before touching any", async (t) => {
+// The trees are compared with the plan's rows after the retire hooks have run: the answer is not
+// E_PLAN_STALE, which a retire answers only before any effect (awebai/oats#895).
+const EXTRA_TREES_CHANGED = (name) => `${name}: the home's extra worktrees changed since the retire plan was shown, so none of them was moved or removed. The retire hooks have run; the home and its work are kept. Review the fresh plan (\`oats retire ${name} --plan\`) and apply it again.`;
+test("a retire given a plan's rows refuses when the trees no longer read that way, before touching any: E_WORK_PRESERVATION_FAILED, since its hooks have run by then", async (t) => {
   const w = await instance(t, "dev-bound");
   const path = w.tree("bound", "agents/bound");
   const planned = w.plan().facts.extraWorktrees;
   writeFileSync(join(path, "x.txt"), "x\n");
-  await assert.rejects(() => w.retire({ plannedExtraWorktrees: planned }), (e) => e.code === "E_PLAN_STALE");
+  await assert.rejects(() => w.retire({ plannedExtraWorktrees: planned }), (e) => {
+    assert.equal(e.code, "E_WORK_PRESERVATION_FAILED");
+    assert.equal(e.message, EXTRA_TREES_CHANGED("dev-bound"));
+    assert.deepEqual(e.details, { reached: { phase: "after-hooks", sessionStopAttempted: false, hooksStarted: true, home: "kept", recovery: null } });
+    return true;
+  });
   assert.equal(existsSync(w.home), true);
   assert.equal(w.registered(path), true);
   assert.equal(w.registered(join(w.home, "work")), true, "work/ is untouched");
 });
 
-test("a planned self-retire carries the plan's trees to its deferred completion, which refuses as stale on a tree the plan did not name", async (t) => {
+test("a planned self-retire carries the plan's trees to its deferred completion, which refuses on a tree the plan did not name: E_WORK_PRESERVATION_FAILED, since its hooks have run by then", async (t) => {
   const w = await instance(t, "dev-self");
   const planned = w.plan().facts.extraWorktrees;
   assert.deepEqual(planned, []);
@@ -362,7 +370,8 @@ test("a planned self-retire carries the plan's trees to its deferred completion,
   writeFileSync(join(late, "x.txt"), "x\n");
   const ok = await w.fx.inEnv(() => completeDeferredRetirement(intent, { delaySec: 0, quiesce: false }));
   assert.equal(ok, false);
-  assert.equal(JSON.parse(readFileSync(intent.resultPath, "utf8")).error.code, "E_PLAN_STALE");
+  const outcome = JSON.parse(readFileSync(intent.resultPath, "utf8"));
+  assert.deepEqual(outcome.error, { code: "E_WORK_PRESERVATION_FAILED", message: EXTRA_TREES_CHANGED("dev-self") });
   assert.equal(existsSync(w.home), true, "the home is kept");
   assert.equal(w.registered(late), true, "the unplanned tree was not moved");
 });

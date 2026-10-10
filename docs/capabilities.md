@@ -207,7 +207,10 @@ A self-contained package has an `oats.json`:
   every host. Only then is its start time read: from `/proc`, or with `ps`
   where there is no `/proc`, as on macOS: the system `ps`, from
   `/usr/bin:/bin` whatever the caller's `PATH` holds, in a fixed `LC_ALL=C`,
-  `TZ=UTC` environment. A start that cannot be read is never taken to mean the process is
+  `TZ=UTC` environment. A spawning process that has exited or was killed and
+  that its parent has not reaped (a zombie) is gone, although it still has
+  its pid and its start: the row shows the quarantine and `oats retire`
+  completes it. A start that cannot be read is never taken to mean the process is
   gone, nor shown as alive: `oats status` shows the quarantine
   (`rollbackIncomplete`, whose `inProgress` names the pid), and `oats retire`
   refuses with `E_LIFECYCLE_BUSY`, naming the recorded pid and start for a
@@ -244,7 +247,11 @@ A self-contained package has an `oats.json`:
   and nothing is silently dropped. Without `--force` that state fails closed with
   `E_UNIDENTIFIED_INSTANCE_HOME` rather than deleting whatever credentials the
   directory still holds; `--force` removes it and leaves any external state for
-  the operator to clean up by hand. Home entries declared in
+  the operator to clean up by hand. One home is the exception for now: a home
+  whose `instance.json` is there and cannot be read is refused by every
+  retire, `--force` included, until the file is restored from a copy
+  ([souls-and-instances.md](souls-and-instances.md#retire); awebai/oats#896).
+  Home entries declared in
   `retirement.disposable.home` (below) go with the home: recovery holds no
   copy of them.
 - `retirement.disposable` declares what retirement treats as the provider's

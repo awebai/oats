@@ -348,7 +348,9 @@ tests can reach it. `OATS_TEST_WORKTREE_FETCH_TIMEOUT_MS` does the same for the
 the kernel read a process's start time with `ps`, as on a host without
 `/proc` (macOS), on a host that has it; an absolute path instead runs that
 file as `ps`, directly and in the same fixed environment; any other value
-reads no start at all. A launch configuration cannot set any of them. Do not set them in a deployment.
+reads no start at all. That `ps` is asked for the start and the state in one
+call (`-o lstart= -o stat= -p <pid>`); a file that answers the start alone
+is read as a process that is not a zombie, never as an error. A launch configuration cannot set any of them. Do not set them in a deployment.
 
 **An instance creates an agents' session or window without its own
 environment.** Nothing of an instance's environment reaches a server or a
@@ -770,7 +772,11 @@ SIGTERM. Restart the instance later with `oats session start` or
 `oats session restart`. An instance whose recorded tmux socket file is
 missing while a process works in its home, or the process scan cannot run,
 is not reported idle: its result is `E_SESSION_UNAVAILABLE` and nothing is
-stopped ([missing socket file](#missing-socket)).
+stopped ([missing socket file](#missing-socket)). A stop apply holds the
+claim of every instance it stops, the one a retire holds (OATS 0.52.0): one
+that meets a retire of any of them answers `E_INSTANCE_RETIRING`, one that
+meets another stop `E_LIFECYCLE_BUSY`, before anything is stopped
+([the table](desktop-cli-api.md#lifecycle-pairs)).
 
 ### Inspect, input and attach
 
