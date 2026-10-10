@@ -1458,13 +1458,18 @@ function harnessTrustCmd() {
   const context = workspaceContext(cmdFail);
   const show = (result, log = console.log) => {
     log(`${result.mode}: native harness trust for ${result.root}`);
-    for (const entry of result.entries) log(`${entry.harness}: ${entry.status} ${entry.file ?? "unresolved file"} ${JSON.stringify(entry.key)} ${JSON.stringify(entry.current)} -> ${JSON.stringify(entry.desired)} (${entry.beforeDigest ?? "missing"} -> ${entry.afterDigest ?? "unknown/absent"})`);
+    const used = (entry) => [...(entry.ambient ? ["ambient"] : []), ...entry.launchConfigs.map((n) => `launch configuration ${n}`)].join(", ");
+    for (const entry of result.entries) {
+      log(`${entry.harness}: ${entry.status} ${entry.file ?? "unresolved file"} ${JSON.stringify(entry.key)} ${JSON.stringify(entry.current)} -> ${JSON.stringify(entry.desired)} (${entry.beforeDigest ?? "missing"} -> ${entry.afterDigest ?? "unknown/absent"}) (${used(entry)})`);
+      if (entry.problem) log(`problem: ${entry.problem}`);
+    }
     if (result.audit) log(`audit: ${result.audit.status} ${result.audit.path} ${result.audit.operationId}`);
     for (const warning of result.warnings) log(`warning: ${warning}`);
     if (result.reason) log(`reason: ${result.reason}; native configuration may have changed: ${result.mayHaveChanged}`);
   };
   try {
-    const result = harnessTrust(context.deploymentDir, { harness: selected, plan: args.includes("--plan") });
+    // Every configuration file a launch of this deployment reads: its launch configurations' too.
+    const result = harnessTrust(context.deploymentDir, { harness: selected, plan: args.includes("--plan"), launchConfigs: launchConfigsAt(context.deploymentDir) });
     if (JSON_MODE) jsonOk(result);
     else show(result);
   } catch (e) {
@@ -4574,8 +4579,10 @@ Usage:
                                             own command run in the home or scope, envelope
                                             relayed; a view answers {documents: [...]}
   oats harness trust [--dir <deployment>]  explicitly trust one canonical deployment root
-      [--harness claude|codex|all]         in native host configuration; --plan reads only,
-      [--plan] [--json]                   bare command applies with a durable audit
+      [--harness claude|codex|all]         in every native configuration file a launch reads
+      [--plan] [--json]                   (the ambient one and each launch configuration's
+                                            CLAUDE_CONFIG_DIR / CODEX_HOME); --plan reads only,
+                                            bare command applies with a durable audit
   oats launch-config list [--dir <scope>     named launch configurations effective at a scope,
       | --home <abs> | --soul <name>]       a home's recorded context or a soul's own scope:
       [--agents-root <abs>] [--json]        harness, executable, args, env (values redacted,

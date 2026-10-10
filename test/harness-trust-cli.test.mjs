@@ -45,3 +45,17 @@ test('explicit deployment alias reports and writes only the native canonical roo
  const rows=fs.readFileSync(join(actual,'.agents/harness-trust.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
  assert.ok(rows.every(row=>row.root===canonical));
 });
+
+test('trust CLI targets every launch configuration config directory of the deployment and names each problem', t => {
+ const f=fixture(t);fs.mkdirSync(f.env.HOME);const work=join(f.base,'claude-work');fs.mkdirSync(work);
+ const local=yaml=>fs.writeFileSync(join(f.deployment,'oats-local.yaml'),`schemaVersion: 2\nworkspace: ${JSON.stringify(join(f.base,'workspace'))}\nlaunch-configs:\n${yaml}`);
+ local(`  work:\n    harness: claude\n    env:\n      CLAUDE_CONFIG_DIR: ${JSON.stringify(work)}\n`);
+ const p=f.run(['harness','trust','--harness','claude','--plan']);assert.equal(p.status,0,JSON.stringify(p.value));
+ assert.deepEqual(p.value.result.entries.map(e=>[e.file,e.ambient,e.launchConfigs]),[[join(fs.realpathSync.native(f.env.HOME),'.claude.json'),true,[]],[join(fs.realpathSync.native(work),'.claude.json'),false,['work']]]);
+ const human=spawnSync(process.execPath,[CLI,'harness','trust','--harness','claude','--plan'],{cwd:f.deployment,env:f.env,encoding:'utf8'});
+ assert.equal(human.status,0,human.stderr);assert.match(human.stdout,/claude: change .*claude-work\/\.claude\.json .* \(launch configuration work\)/);assert.match(human.stdout,/claude: change .*native\/\.claude\.json .* \(ambient\)/);
+ const a=f.run(['harness','trust','--harness','claude']);assert.equal(a.status,0,JSON.stringify(a.value));assert.deepEqual(a.value.result.entries.map(e=>e.status),['applied','applied']);
+ local(`  gone:\n    harness: claude\n    env:\n      CLAUDE_CONFIG_DIR: ${JSON.stringify(join(f.base,'missing'))}\n`);
+ const r=spawnSync(process.execPath,[CLI,'harness','trust','--harness','claude'],{cwd:f.deployment,env:f.env,encoding:'utf8'});
+ assert.notEqual(r.status,0);assert.match(r.stderr,/problem: launch configuration gone: CLAUDE_CONFIG_DIR .*missing does not exist/);assert.equal(fs.existsSync(join(f.base,'missing')),false);
+});
