@@ -3260,7 +3260,15 @@ retry}` to `resultPath`. Before 0.48.0 only a guarded apply stopped children.
 `--idempotency-key` together.
 - A used key replays its receipt as an **envelope** with `replayed: true`
   (receipts live beside the instances directory and outlive the home).
-- The revision is checked against a fresh plan: `E_PLAN_STALE {plan}`.
+- The revision is checked against a fresh plan: `E_PLAN_STALE {plan}`. That
+  plan is read once, when the retire holds the home's claim (below): it is
+  the state the retire starts from, and one apply appends one
+  `retire-planned` event. Against a retire in flight or a scheduled
+  self-retire the answer is `E_LIFECYCLE_BUSY` and no plan is read, whatever
+  the plan would read by then: a retire in flight has usually changed it (it
+  stops the session of a launched instance before its hooks run). Before the
+  claim an apply only replays a used key and resolves the home
+  (`E_SESSION_UNKNOWN`, `E_AMBIGUOUS_INSTANCE`, `E_HOME_MISMATCH`).
 - The children stopped are those of the revalidated plan, and a refusal
   carries it: `E_CHILDREN_RUNNING {childrenStopped, plan}`.
 - A first guarded retire prints the raw receipt with `planRevision`,
@@ -3277,7 +3285,10 @@ observes, copies and removes. A second retire of that home does not wait: it
 answers `E_LIFECYCLE_BUSY` at once (exit 1; the text form prints the
 message), before it stops a session or a child, writes a recovery, runs a
 hook or changes a file of the home. **`--force` does not bypass it**, and
-`--plan` takes no claim and refuses nothing new. A claim whose holder has
+`--plan` takes no claim and refuses nothing new. A guarded apply answers it
+before `E_PLAN_STALE`: under the claim the answers come in this order: the
+home is gone (`E_SESSION_UNKNOWN`), a self-retire is scheduled
+(`E_LIFECYCLE_BUSY`), the plan is stale (`E_PLAN_STALE`), then the retire. A claim whose holder has
 died, for example a retire killed while its hooks ran, is taken over by the
 next retire of that name. So a killed retire can always be run again. Until
 that name is retired again its claim file stays where it is, and it is safe

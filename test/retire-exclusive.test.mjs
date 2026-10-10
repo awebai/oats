@@ -12,6 +12,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSy
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { deferredRetireResultPath, retireInstance, retirePendingMarkerPath } from "../lib/core.mjs";
+import { readEvents } from "../lib/instance-events.mjs";
 import { processStartToken } from "../lib/worktree-hooks.mjs";
 import { CLI, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { killAndReap, waitUntil } from "./helpers/host-fixture.mjs";
@@ -21,6 +22,9 @@ const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { retu
 const kill = (pid) => { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } };
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 const NONCE = "a".repeat(32);
+/** A plan revision no plan has: a guarded apply with it is stale. */
+const STALE = "0".repeat(24);
+const hasTmux = !spawnSync("tmux", ["-V"], { stdio: "ignore" }).error;
 /** A real pid whose process has exited and been reaped. */
 const exitedPid = () => spawnSync(process.execPath, ["-e", ""]).pid;
 
@@ -48,7 +52,7 @@ function fixture(t) {
     souls: { worker: { soul: { work: "directory", capabilities: { "example.worker": { from: "here" } } }, agents: "# Worker\n" } },
     capabilities: { "example.worker": { manifest: { description: "fixture", hooks: { spawn: "spawn.mjs", retire: "retire.mjs" } }, files: { "spawn.mjs": "console.log('{}')\n", "retire.mjs": "console.log('{}')\n" } } },
   });
-  const runs = join(fx.base, "hook-runs.log"), gate = join(fx.base, "release");
+  const runs = join(fx.base, "hook-runs.log"), gate = join(fx.base, "release"), fails = join(fx.base, "hook-fails");
   fx.commit({
     "capabilities/example.worker/spawn.mjs": `import { writeFileSync } from 'node:fs';
 writeFileSync(process.env.OATS_INSTANCE_HOME + '/work/from-hook.txt', 'spawn bytes');
@@ -57,6 +61,7 @@ console.log(JSON.stringify({ meta: { made: true } }));\n`,
 appendFileSync(${JSON.stringify(runs)}, process.pid + ' entered\\n');
 const end = Date.now() + 90000;
 while (!existsSync(${JSON.stringify(gate)}) && Date.now() < end) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+if (existsSync(${JSON.stringify(fails)})) { console.log(JSON.stringify({ meta: { retired: false, reason: 'the fixture refuses' } })); process.exit(1); }
 console.log(JSON.stringify({ meta: { retired: true } }));\n`,
   });
   const hookPids = () => existsSync(runs) ? readFileSync(runs, "utf8").split("\n").filter((l) => l.endsWith(" entered")).map((l) => Number(l.split(" ")[0])) : [];
@@ -74,6 +79,10 @@ console.log(JSON.stringify({ meta: { retired: true } }));\n`,
     fx, gate,
     hookPids, hookRuns: () => hookPids().length,
     open: () => writeFileSync(gate, ""),
+    /** From now on the retire hook reports that its cleanup did not finish: the retire keeps the home. */
+    failHook: () => writeFileSync(fails, ""),
+    /** How many `retire-planned` events the workspace log holds for the home. */
+    plansRead: (home) => fx.inEnv(() => readEvents(home).events.filter((e) => e.kind === "retire-planned").length),
     /** `oats retire <instance> --json <extra>` as a child process. */
     retire: (instance, extra = [], env) => start([CLI, "retire", instance, "--json", ...extra], env),
     /** A deferred self-retire's completion, as the detached script runs it (delaySec 0). */
@@ -83,6 +92,13 @@ process.exitCode = completeDeferredRetirement(JSON.parse(process.env.OATS_RETIRE
     intent: (inst, options = { home: inst.home }) => ({ instance: inst.instance, agent: "worker", root: fx.root, requestedAt: "2026-10-10T00:00:00.000Z", delaySec: 0, options, resultPath: deferredRetireResultPath(inst.home) }),
     planRevision: (instance) => fx.cli(["retire", instance, "--plan", "--json"]).json().result.planRevision,
     track: (pid) => { started.push(pid); return pid; },
+    /** An instance launched on the fixture's own tmux server, a sleeping process standing in for
+     *  its harness: a retire stops that session before its hooks run. The fixture's cleanup kills
+     *  the server, and fails on a process left working in the base. */
+    spawnLaunched: () => {
+      writeFileSync(join(fx.base, "runtime-stub", "claude"), "#!/bin/sh\nexec sleep 600\n", { mode: 0o755 });
+      return fx.spawn("worker", { launch: true, harness: "claude" });
+    },
   };
   fx.beforeCleanup(() => { f.open(); for (const pid of [...started, ...hookPids()]) kill(pid); });
   return f;
@@ -102,8 +118,8 @@ const waitingForClaim = (home, pid) => claimFiles(home).some((n) => n.startsWith
 
 /** Start `first` on a new instance and wait until it is inside its retire hook: it holds the claim,
  *  has stopped its session and copied its recovery, and stays there until the gate opens. */
-async function inFlight(f, first) {
-  const inst = await f.fx.spawn("worker");
+async function inFlight(f, first, spawn = () => f.fx.spawn("worker")) {
+  const inst = await spawn();
   const a = await first(inst);
   await waitUntil(() => f.hookRuns() === 1, "the first retire to be inside its retire hook", 60000);
   return { inst, a, lock: claimOf(inst.home), before: digest(inst.home) };
@@ -155,6 +171,7 @@ test("every other form of retire is refused while one is in flight: --force, tex
   const h = await inFlight(f, (inst) => f.retire(inst.instance));
   const name = h.inst.instance;
   assertRefused(f, h, await f.retire(name, ["--force"]).done, "--force");
+  assertRefused(f, h, await f.retire(name, ["--plan-revision", STALE, "--idempotency-key", "key-stale"]).done, "guarded, a stale revision");
   assertRefused(f, h, await f.retire(name, ["--home", h.inst.home, "--discard-worktree", "--keep-dir"]).done, "--home --keep-dir");
   // Text mode prints the message and exits 1.
   const text = f.fx.cli(["retire", name]);
@@ -176,12 +193,16 @@ test("every other form of retire is refused while one is in flight: --force, tex
   await finish(f, h);
 });
 
-test("guarded x guarded, two idempotency keys: the second is refused, and records no receipt", async (t) => {
+test("guarded x guarded, two idempotency keys: the second is refused, reads no plan and records no receipt", async (t) => {
   const f = fixture(t);
   let rev;
   const h = await inFlight(f, (inst) => { rev = f.planRevision(inst.instance); return f.retire(inst.instance, ["--plan-revision", rev, "--idempotency-key", "key-a"]); });
+  // A guarded apply reads its plan once, under the claim: the --plan above and the first apply.
+  assert.equal(await f.plansRead(h.inst.home), 2, "the apply that holds the claim read one plan");
   assertRefused(f, h, await f.retire(h.inst.instance, ["--plan-revision", rev, "--idempotency-key", "key-b"]).done, "guarded, another key");
+  assert.equal(await f.plansRead(h.inst.home), 2, "the refused apply read no plan: it never held the claim");
   const first = envelope(await finish(f, h));
+  assert.equal(await f.plansRead(h.inst.home), 2, "one plan per guarded apply");
   assert.deepEqual({ retired: first.retired, replayed: first.replayed, key: first.idempotencyKey }, { retired: h.inst.instance, replayed: false, key: "key-a" });
   assert.equal(existsSync(join(dirname(h.inst.home), ".oats-retire-receipt.key-b.json")), false, "the refused apply recorded nothing");
 });
@@ -198,6 +219,76 @@ test("guarded x guarded, the same idempotency key: the second is refused, and af
   assert.equal(again.code, 0, again.out + again.err);
   assert.deepEqual(envelope(again).result, { ...first, replayed: true }, "the key replays the first retire's receipt");
   assert.equal(f.hookRuns(), 1);
+});
+
+test("a launched instance: the first retire stopped its session, which changes the plan; a guarded apply with the plan it was shown, and a plain retire, are still refused as busy", { skip: !hasTmux && "tmux is not installed" }, async (t) => {
+  const f = fixture(t);
+  let rev;
+  const guarded = (inst, key) => f.retire(inst.instance, ["--plan-revision", rev, "--idempotency-key", key]);
+  const h = await inFlight(f, (inst) => { rev = f.planRevision(inst.instance); return guarded(inst, "key-a"); }, f.spawnLaunched);
+  const plan = f.fx.cli(["retire", h.inst.instance, "--plan", "--json"]).json().result;
+  assert.equal(plan.facts.session.present, false, "the first retire has stopped the session");
+  assert.notEqual(plan.planRevision, rev, "so the plan no longer reads as it was shown");
+  assertRefused(f, h, await guarded(h.inst, "key-b").done, "guarded, with the revision it was shown");
+  assertRefused(f, h, await f.retire(h.inst.instance, ["--plan-revision", plan.planRevision, "--idempotency-key", "key-c"]).done, "guarded, with the revision the plan has now");
+  assertRefused(f, h, await f.retire(h.inst.instance).done, "plain");
+  const first = envelope(await finish(f, h));
+  assert.deepEqual({ retired: first.retired, replayed: first.replayed, key: first.idempotencyKey }, { retired: h.inst.instance, replayed: false, key: "key-a" });
+  for (const key of ["key-b", "key-c"]) assert.equal(existsSync(join(dirname(h.inst.home), `.oats-retire-receipt.${key}.json`)), false, `${key}: the refused apply recorded nothing`);
+});
+
+test("a retire that stopped the session and then failed: an apply with the plan shown before it answers E_PLAN_STALE with the fresh plan, and does nothing more", { skip: !hasTmux && "tmux is not installed" }, async (t) => {
+  const f = fixture(t);
+  f.open();
+  const inst = await f.spawnLaunched();
+  const name = inst.instance, readPlan = () => f.fx.cli(["retire", name, "--plan", "--json"]).json().result;
+  const shown = readPlan();
+  assert.equal(shown.facts.session.present, true, "the plan the caller was shown: the session runs");
+  // A retire stops the session, its hook reports that cleanup did not finish, and it ends: the home is kept.
+  f.failHook();
+  const failed = await f.retire(name).done;
+  assert.equal(failed.code, 1, failed.out + failed.err);
+  assert.equal(envelope(failed).retainedHome, inst.home, "the failed retire kept the home");
+  assert.deepEqual(claimFiles(inst.home), [], "and released its claim");
+  const now = readPlan();
+  assert.equal(now.facts.session.present, false);
+  assert.notEqual(now.planRevision, shown.planRevision);
+  const before = digest(inst.home), plans = await f.plansRead(inst.home);
+  const r = await f.retire(name, ["--plan-revision", shown.planRevision, "--idempotency-key", "key-r"]).done;
+  assert.equal(r.code, 1, r.out + r.err);
+  const e = envelope(r).error;
+  assert.equal(e.code, "E_PLAN_STALE");
+  assert.equal(e.message, `the retire plan changed since it was shown (${shown.planRevision} → ${now.planRevision}); review the fresh plan`);
+  assert.deepEqual({ ...e.details.plan, at: now.at }, now, "details.plan is the plan as it reads now");
+  assert.equal(await f.plansRead(inst.home), plans + 1, "it read one plan");
+  assert.equal(f.hookRuns(), 1, "no second hook run");
+  assert.equal(digest(inst.home), before, "nothing of the home changed");
+  assert.deepEqual(claimFiles(inst.home), [], "no claim is left");
+  assert.equal(existsSync(join(dirname(inst.home), ".oats-retire-receipt.key-r.json")), false, "no receipt");
+});
+
+test("a stale guarded apply with nobody else retiring answers E_PLAN_STALE as it did, in both modes, and nothing was done", async (t) => {
+  const f = fixture(t);
+  const inst = await f.fx.spawn("worker");
+  const name = inst.instance, before = digest(inst.home);
+  const shown = f.fx.cli(["retire", name, "--plan", "--json"]).json().result;
+  const untouched = (what) => {
+    assert.equal(digest(inst.home), before, `${what}: nothing of the home changed`);
+    assert.deepEqual([claimFiles(inst.home), recoveries(inst), f.hookRuns()], [[], [], 0], `${what}: no claim left, no recovery, no hook run`);
+    assert.equal(existsSync(join(dirname(inst.home), ".oats-retire-receipt.key-s.json")), false, `${what}: no receipt`);
+  };
+  const args = ["retire", name, "--plan-revision", STALE, "--idempotency-key", "key-s"];
+  const json = f.fx.cli([...args, "--json"]);
+  assert.equal(json.status, 1);
+  assert.equal(json.stderr, "");
+  const plan = JSON.parse(json.stdout).error.details.plan;
+  assert.deepEqual({ ...plan, at: shown.at }, shown, "details.plan is the fresh plan");
+  assert.equal(json.stdout, JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_PLAN_STALE",
+    message: `the retire plan changed since it was shown (${STALE} → ${shown.planRevision}); review the fresh plan`, details: { plan } } }) + "\n");
+  untouched("--json");
+  const text = f.fx.cli(args);
+  assert.deepEqual([text.status, text.stdout, text.stderr], [1, "", `oats: the retire plan changed since it was shown; re-run oats retire ${name} --plan\n`]);
+  untouched("text");
 });
 
 test("a deferred --self completion in flight: a plain retire is refused, naming the completion's pid", async (t) => {
@@ -263,7 +354,8 @@ test("the --self window: between the scheduling and its completion every other r
     assert.deepEqual(claimFiles(inst.home), [], `${what}: no claim is left`);
   };
   const rev = f.planRevision(name);
-  for (const [what, extra] of [["plain", []], ["guarded", ["--plan-revision", rev, "--idempotency-key", "key-w"]], ["--force", ["--force"]]]) {
+  for (const [what, extra] of [["plain", []], ["guarded", ["--plan-revision", rev, "--idempotency-key", "key-w"]],
+    ["guarded, a stale revision", ["--plan-revision", STALE, "--idempotency-key", "key-s"]], ["--force", ["--force"]]]) {
     const r = await f.retire(name, extra).done;
     assert.equal(r.code, 1, `${what}: ${r.out}${r.err}`);
     const e = envelope(r).error;
