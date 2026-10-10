@@ -3,7 +3,7 @@
 // Desktop offers Remove for local teams still in oats-local.yaml only because the kernel accepts
 // `oats teams remove` there (the last step of committing them in the workspace); `add` and `default`
 // are refused before anything is written. The calls go through the Desktop's own argv builder
-// (packages/desktop/cli-adapter.mjs cliTeams / cliSoulTeams), never a fake binary.
+// (packages/client/cli-adapter.mjs cliTeams / cliSoulTeams), never a fake binary.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";

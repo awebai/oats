@@ -231,7 +231,7 @@ export function deploymentStatusData(document, deployment) {
     out.workspace = fields(document.workspace, ['code', 'reason', 'message']);
     flags(document.workspace, ['reachable'], out.workspace);
     // Workspace identity (feature workspace-identity, #482): kept as reported for matching this deployment
-    // to its workspace across machines (server/workspace-views.mjs). A shape the contract does not allow
+    // to its workspace across machines (workspace-views.mjs). A shape the contract does not allow
     // never fails the roster: it is marked, and the deployment is shown unmatched.
     if (own(document.workspace, 'key')) {
       const read = readIdentity(document.workspace);

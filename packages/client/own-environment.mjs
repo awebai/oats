@@ -5,7 +5,7 @@
 //
 // This must happen before anything else is loaded, because modules take their environment when
 // they are loaded. So it is not a statement in a body: it is the FIRST import of the program's
-// entry module (server/oats-web.mjs, server/liveness-main.mjs). A module's imports are evaluated
+// entry module (packages/desktop/server/oats-web.mjs, liveness-main.mjs). A module's imports are evaluated
 // in source order, each one completely before the next. This module and the leaf it imports must
 // have no other imports, so that nothing can load ahead of the step. A library must never import
 // this: it changes the environment of whoever does.

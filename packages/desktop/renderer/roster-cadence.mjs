@@ -1,5 +1,5 @@
 /** How often a window re-reads its roster (#481): every ROSTER_POLL_FOCUSED_MS while it is focused,
- * and at the server's blurred cadence (server/refresh-loop.mjs REFRESH_BLURRED_MS) while it is not:
+ * and at the server's blurred cadence (packages/client/refresh-loop.mjs REFRESH_BLURRED_MS) while it is not:
  * the server observes no faster then, so an unfocused window's extra reads would show nothing new. */
 export const ROSTER_POLL_FOCUSED_MS = 4000;
 export const ROSTER_POLL_BLURRED_MS = 30000;

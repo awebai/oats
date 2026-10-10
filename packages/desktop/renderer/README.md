@@ -366,7 +366,8 @@ A window shows a workspace **view**: one matched workspace identity across machi
 (`ws:…`), or one unattached deployment under its own id. `/api/panel` names the view's
 `deployments` and tags every row with its `deployment`; `view-deployments.mjs` reads them
 (validated, text only) and keeps the last deployments seen per view for surfaces that do
-not read the panel.
+not read the panel. What they say (a deployment's state in words, the primary, the roster
+split into sections) is `packages/client/roster-sections.mjs`.
 
 - **Nothing above the navigation.** The sidebar lists no deployments; the Deployments
   page and the roster headings say where things run (UI spec, after the operator rejected a
@@ -681,13 +682,13 @@ the effective colours. One live region per surface: where a surface has no
 visible status line (the sidebar roster, the hierarchy), `statusLine(doc,
 { visuallyHidden: true })` speaks and the visible notice is a `role=note`.
 
-Where each surface wires it: the sidebar roster in `instance-tree.mjs`
+Where each surface wires it: the sidebar roster in `instance-tree-view.mjs`
 (`createRosterLoading`, `rosterSignature`, the pending count pill,
 `markStaleControl` / `staleBlocked`) and `shell.mjs` (`refreshContextRoster`;
 while stale, Start…, the actions menu and a *stopped* row's own activation are
 held — a stale `running:false` may be running by now — while a running row
 still opens its terminal; a row of a `stale` deployment, `rowStale` in
-`view-deployments.mjs`, is held the same way, and so are its actions in the
+`packages/client/roster-sections.mjs`, is held the same way, and so are its actions in the
 overview); the hierarchy in `views/hierarchy.mjs` (the summary
 pill, its own notice keeps the stale copy with the observation's age); the soul
 inspector in `soul-inspector.mjs` (while `loading.settled === 'stale'` — the settled state, so a Retry in flight over stale content keeps the hold — every
@@ -989,7 +990,7 @@ and makes no claim (no count) while failed or stale; the Capabilities table's
 "Used by" cell (`renderCapabilities`'s `rosterState`, through the discovery's
 `syncRoster()` and render key) and the capability page's "Used by" section
 show a muted "—" carrying `ROSTER_STALE_TITLE` (`loading.mjs`, re-exported by
-`instance-tree.mjs`) as their accessible description instead of "Not used" /
+`instance-tree-view.mjs`) as their accessible description instead of "Not used" /
 "No instance carries it yet." while the roster is not settled-good. With
 `souls-capabilities` the claim derives from the souls list (the same read, the
 same state) and the "—" carries `SOULS_STALE_TITLE` instead. A
@@ -1285,7 +1286,12 @@ the shell's projection guard, a surviving next control or a visible same-scope
 return target. The polite live region is independent of roster repaints and
 continues to work without a roster. Primary foreground/background pairs and
 existing popover shadows adapt to White/Solarized/Dark without raw colors.
-The roster row's actions menu (`instance-actions.mjs`) reports here, never with
+The roster row's actions menu (`instance-actions.mjs`) draws what
+`instanceActs` (`packages/client/instance-acts.mjs`) decides: the acts in its
+order under the menu's own labels and icons, the shell's items (Open in split,
+Open pull request…) in front unless the row is `blocked` or `limited`, an act
+with a reason disabled with it, and for a `blocked` row a disabled trigger
+titled with the reason and no menu. It decides nothing itself. It reports here, never with
 `alert`: an action that fails says "<Action> didn't finish for <name>." with its
 error in Details. While one of its actions runs, the menu trigger is
 `aria-disabled` (focus kept, as `markStaleControl`) and says "Waiting for

@@ -3,7 +3,7 @@
 // program that creates it, so whatever leaks here ends up in every agent's pane.
 //
 // This module is a leaf and must stay one: a Desktop process that runs as Node cleans its own
-// environment with it before any other module is loaded (server/own-environment.mjs).
+// environment with it before any other module is loaded (own-environment.mjs).
 
 /** Set by main for its Node-mode children, and by Electron at startup on Linux. */
 const DESKTOP_NAMES = ["ELECTRON_RUN_AS_NODE", "CHROME_DESKTOP"];

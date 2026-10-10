@@ -1,4 +1,4 @@
-// CLI adapter (packages/desktop/cli-adapter.mjs) — Desktop CLI API v1
+// CLI adapter (packages/client/cli-adapter.mjs) — Desktop CLI API v1
 // mutation path: envelope parsing, argv allowlist, 0600 task tempfiles,
 // fixed harvest cwd, and resolve-never-reject domain results.
 import { test } from "node:test";

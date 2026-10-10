@@ -1,4 +1,4 @@
-// The display filter (renderer/display-text.mjs): pure, no DOM. Characters of the set are code points or
+// The display filter (packages/client/display-text.mjs): pure, no DOM. Characters of the set are code points or
 // escapes here, never literal characters.
 import test from 'node:test';
 import assert from 'node:assert/strict';

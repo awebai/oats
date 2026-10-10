@@ -424,6 +424,9 @@ test("fixture: a surface entry the home does not have fails", () => {
   assert.deepEqual(surfaceProblems(tree, { ...surface, "cli-locator.mjs": ["PROBE_NAME", "acceptProbe"] }), ["cli-locator.mjs: acceptProbe is on the stable surface, and the module does not export it"]);
   assert.deepEqual(surfaceProblems(tree, { ...surface, "own-environment.mjs": [] }), ["own-environment.mjs: on the stable surface, and it is never importable"]);
   assert.deepEqual(surfaceProblems(tree, { ...surface, "liveness-main.mjs": [] }), ["liveness-main.mjs: on the stable surface, and it is never importable"]);
+  // The reader of exports sees every form the home uses: a function, a class, one `const` that declares two names, a list.
+  assert.deepEqual([...exportsOf('export async function a() {}\nexport class B {}\nexport const c = (x, y = [1, 2]) => ({ x, y }), d = "e, f = 1";\nconst g = 1, h = 2;\nexport { g, h as i };\nexport const j = 1\nconst k = 2;\n')].sort(),
+    ["B", "a", "c", "d", "g", "i", "j"]);
   // A TUI held to a surface is held to that surface: the export the fixture's home has is refused when the list does not name it.
   assert.deepEqual(tuiProblems(tree, { "display-text.mjs": ["displayLine"], "cli-locator.mjs": ["PROBE_NAME"] }), ["packages/tui/main.mjs: imports cleanLine from display-text.mjs, which is not on the stable surface"]);
 });

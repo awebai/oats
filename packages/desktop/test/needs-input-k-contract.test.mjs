@@ -15,7 +15,7 @@ import { eventsData } from '../renderer/instance-events-data.mjs';
 const fx = name => JSON.parse(readFileSync(new URL(`./fixtures/needs-input-k/${name}.json`, import.meta.url), 'utf8'));
 const ME = 'oats-desktop-developer-needs-input', DEPLOYMENT = '/ws';
 const CLAIM = { since: '2026-10-03T12:43:21.896Z', producer: 'agent', reason: 'attention', message: 'e2e: needs input check' };
-// What Desktop liveness (server/liveness.mjs, tmux) merged over the row during the capture.
+// What Desktop liveness (packages/client/liveness.mjs, tmux) merged over the row during the capture.
 const live = { running: true, runtimeState: 'running' };
 const row = doc => deploymentStatusData(doc, DEPLOYMENT).agents.flatMap(a => a.instances).find(i => i.instance === ME);
 const target = (doc, events) => ({ workspace: 'oats', context: DEPLOYMENT, home: row(doc).home, incarnation: events.incarnation,

@@ -3,7 +3,7 @@
 // shows the capability carries the warning `hook-event-unsupported` (capabilities show, inspect, doctor,
 // readiness, spawn --preview and the spawn itself). The same event declared `required: true` is refused
 // as before, and a malformed declaration of it is refused as for a known event. Each JSON answer that
-// gains `warnings` is read by the Desktop's current reader for it (packages/desktop, unchanged).
+// gains `warnings` is read by the Desktop's current reader for it (packages/client, unchanged).
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";

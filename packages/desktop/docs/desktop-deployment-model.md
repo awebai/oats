@@ -98,7 +98,7 @@ only deployments that validate now. The **persisted** open set is
 it validates at this moment, plus what was opened since. A deployment is a
 directory holding a regular (lstat, non-following) `oats-local.yaml`; nothing
 else counts (`wsValidate` in `main.mjs`, `validateWorkspace` in
-`workspace-registry.mjs`).
+`packages/client/workspace-admission.mjs`).
 
 The persisted set can therefore hold entries that are not served: a deployment
 on a volume that is not mounted yet, or a folder that stopped being a

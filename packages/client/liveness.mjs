@@ -1,7 +1,7 @@
 /** Terminal-target liveness for kernel-reported rows. This is unchanged,
  * v2-agnostic terminal observation: it consults tmux for the exact recorded
  * target, never deployment files. A library only: the program that runs it out
- * of the serving process is liveness-main.mjs (see oats-web.mjs), so a slow
+ * of the serving process is liveness-main.mjs (see packages/desktop/server/oats-web.mjs), so a slow
  * terminal server cannot stall request handling. */
 import { createTmuxStatusReader, DEFAULT_TMUX_SESSION } from './tmux-status.mjs';
 import { unsupportedSession } from './instance-presentation.mjs';

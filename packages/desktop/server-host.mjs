@@ -62,7 +62,7 @@ export function serverSpawnSpec(o) {
       // one child that gets main's whole environment: the executable starts as
       // it always did (on an AppImage that includes the library path into the
       // mount), and the backend then drops what the Desktop and its packaging
-      // added before it loads anything else (server/own-environment.mjs).
+      // added before it loads anything else (packages/client/own-environment.mjs).
       // Every other program main starts gets cliEnvironment(process.env),
       // computed when it starts.
       env: { ...o.env, ELECTRON_RUN_AS_NODE: "1" },

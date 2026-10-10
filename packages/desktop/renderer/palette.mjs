@@ -4,7 +4,7 @@
    commands (also matched by name — ">" prefix restricts to commands).
    Instances are listed like the sidebar roster (spec F): the same deployment
    sections, relation groups, order and depth, from the sidebar's own builders
-   (rosterSections, view-deployments.mjs; rosterGroups, instance-tree.mjs);
+   (packages/client: rosterSections, roster-sections.mjs; rosterGroups, instance-tree.mjs);
    a query keeps tree order, showing each match with its non-matching ancestors
    as disabled context rows. While open, the palette's own chord moves the
    active row down (Shift + the chord: up), skipping context rows.
