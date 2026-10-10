@@ -14,8 +14,9 @@
 // What the reader sees, wherever it stands in the code: `import … from`, `export … from`, `import "x"`,
 // `import("literal")`, `require("literal")` and `new URL("literal", import.meta.url)`. In packages/client
 // and packages/tui anything else that loads a module is refused, not skipped: a load with anything but
-// one string literal (a concatenation, a template with a `${…}`, a second argument), `createRequire`, and
-// an import the reader cannot read. In lib/ and bin/, which load hooks and subcommands by computed
+// one string literal (a concatenation, a template with a `${…}`, a second argument), `createRequire`,
+// an import the reader cannot read, and a `/ … /` it cannot tell for a regular expression or two divisions
+// where one reading would hide code from the other. In lib/ and bin/, which load hooks and subcommands by computed
 // paths, a quoted relative path that leads into packages/client or packages/desktop is refused wherever
 // it stands in the text. What that leaves unseen there: a path put together from pieces that do not
 // spell the directory. And everywhere: the test reads, it does not run, so a loader built out of strings
@@ -107,8 +108,10 @@ const isRelative = (spec) => spec.startsWith("./") || spec.startsWith("../");
 // minified file, the `${…}` of a template) and never in a comment or a string. What is not one of the
 // forms a rule can judge is reported as a form of its own, so a rule refuses it instead of not seeing it.
 
-/** A `/` after one of these words starts a regular expression, not a division. */
-const BEFORE_A_REGEX = new Set(["return", "typeof", "instanceof", "in", "of", "new", "delete", "void", "throw", "case", "do", "else", "yield", "await"]);
+/** After one of these words comes an expression, not an operator: a `/` starts a regular expression and a `{` an object. */
+const BEFORE_AN_EXPRESSION = new Set(["return", "typeof", "instanceof", "in", "of", "new", "delete", "void", "throw", "case", "do", "else", "yield", "await", "default"]);
+/** The statements whose `( … )` is a condition, after which a statement starts. */
+const CONDITION = new Set(["if", "while", "for", "with"]);
 
 /**
  * The code of a source as tokens `{ t, v, nl }`; `nl` says a line break stood before the token.
@@ -116,10 +119,18 @@ const BEFORE_A_REGEX = new Set(["return", "typeof", "instanceof", "in", "of", "n
  *   num  a number                     tpl  a template; `plain` when it has no `${…}`, and then `v` is its text
  *   p    one punctuation character    re   a regular expression
  * The code inside a template's `${…}` is tokens like any other. Comments are not tokens.
+ *
+ * A `/` is a division after a value and starts a regular expression anywhere else. That is known from the token
+ * before it (and, after a `)`, from what its `(` followed: `if (x) /re/` against `f(x) / 2`), except in three
+ * places, where it is a guess: after a `}` (a block's, or an object's), after `x++`, and after `of`. A guess is
+ * recorded, not hidden: the tokens carry `guesses`, one `{ regex, text }` per place where both were possible, and
+ * `choices` makes the n-th one the other way. readingsOf gives every reading; who reads tokens reads them all.
  */
-function tokensOf(source) {
+function tokensOf(source, choices = []) {
   const out = [], substitutions = []; // the brace depth inside each open `${…}`
-  let i = 0, nl = false;
+  out.guesses = [];
+  const conditions = [], blocks = [];  // for each open `(`: is it a statement's condition; for each open `{`: is it a block
+  let i = source.startsWith("#!") ? Math.max(source.indexOf("\n"), 0) : 0, nl = false;
   const push = (t, v, more) => { out.push({ t, v, nl, ...more }); nl = false; };
   /** From inside a template: to its closing backtick (false) or to the next `${` (true), which is left open. */
   const templateText = () => {
@@ -156,27 +167,61 @@ function tokensOf(source) {
       else if (substitutions.at(-1) > 0) substitutions[substitutions.length - 1]--;
       else { substitutions.pop(); i++; if (templateText().open) substitutions.push(0); continue; } // the `}` that closes a `${`: back in the template's text
     }
+    const before = out.at(-1), earlier = out.at(-2), punctuation = (token, v) => token?.t === "p" && token.v === v;
     if (c === "/") {
-      // Division after a value (a name, a number, a closing bracket, `x++`); a regular expression after anything else.
-      const before = out.at(-1), postfix = before?.t === "p" && "+-".includes(before.v) && out.at(-2)?.t === "p" && out.at(-2).v === before.v;
-      if (!before || (before.t === "p" && !")]}".includes(before.v) && !postfix) || (before.t === "id" && BEFORE_A_REGEX.has(before.v))) {
-        // A regular expression ends on its line; a `/` inside [ ] or after a backslash does not end it.
-        let j = i + 1, inClass = false;
-        for (; j < source.length && source[j] !== "\n"; j++) {
-          if (source[j] === "\\") j++;
-          else if (inClass) inClass = source[j] !== "]";
-          else if (source[j] === "[") inClass = true;
-          else if (source[j] === "/") break;
-        }
-        if (source[j] === "/") { j++; while (/[a-z]/.test(source[j] ?? "")) j++; push("re", source.slice(i, j)); i = j; continue; }
+      const property = punctuation(earlier, ".");
+      // [is it a regular expression, is that known]
+      const [regex, known] = !before ? [true, true]
+        : before.t === "id" ? (property || !BEFORE_AN_EXPRESSION.has(before.v) ? [false, true] : [true, before.v !== "of"])
+        : before.t !== "p" ? [false, true] // a number, a string, a template, a regular expression: a value
+        : before.v === ")" ? [before.condition, true]
+        : before.v === "]" ? [false, true]
+        : before.v === "}" ? [before.block, false]
+        : "+-".includes(before.v) && punctuation(earlier, before.v) ? [false, false]
+        : [true, true];
+      // A regular expression ends on its line; a `/` inside [ ] or after a backslash does not end it.
+      let j = i + 1, inClass = false;
+      for (; j < source.length && source[j] !== "\n"; j++) {
+        if (source[j] === "\\") j++;
+        else if (inClass) inClass = source[j] !== "]";
+        else if (source[j] === "[") inClass = true;
+        else if (source[j] === "/") break;
       }
+      // Without a second `/` on the line it is a division whatever stood before it.
+      const closes = source[j] === "/", taken = closes && !known ? choices[out.guesses.length] ?? regex : regex;
+      if (closes && !known) out.guesses.push({ regex: taken, text: source.slice(i, j + 1) });
+      // The flags are every word character that follows, valid or not, as the language reads them.
+      if (closes && taken) { j++; while (/[\w$]/.test(source[j] ?? "")) j++; push("re", source.slice(i, j)); i = j; continue; }
     }
     name.lastIndex = number.lastIndex = i;
     const word = name.exec(source) ?? number.exec(source);
     if (word) { push(/\d/.test(c) ? "num" : "id", word[0]); i += word[0].length; continue; }
-    push("p", c); i++;
+    if (c === "(") conditions.push((before?.t === "id" && CONDITION.has(before.v) && !punctuation(earlier, ".")) || (before?.t === "id" && before.v === "await" && earlier?.t === "id" && earlier.v === "for"));
+    // A `{` is an object where an expression is expected (after an operator or a word like `return`), and a block
+    // anywhere else: after `)`, `=>`, `;`, another brace, a name (`else`, `try`, a class's).
+    if (c === "{") blocks.push(!before || (before.t === "id" ? !BEFORE_AN_EXPRESSION.has(before.v) : before.t !== "p" || ");{}".includes(before.v) || (before.v === ">" && punctuation(earlier, "="))));
+    push("p", c, c === ")" ? { condition: conditions.pop() === true } : c === "}" ? { block: blocks.pop() !== false } : undefined); i++;
   }
   return out;
+}
+/** The words that load a module, or carry one out. */
+const LOADS = /\b(import|export|require|createRequire)\b/;
+/** Every reading of a source: its tokens with each guess taken each way (the first is the reader's own guesses). Null when
+ * there are more readings than anyone would check, which is itself a reason not to judge the file. */
+const read = new Map();
+function readingsOf(source) {
+  if (!read.has(source)) read.set(source, everyReading(source));
+  return read.get(source);
+}
+function everyReading(source) {
+  const done = [], waiting = [[]];
+  while (waiting.length) {
+    const choices = waiting.pop(), T = tokensOf(source, choices);
+    done.push(T);
+    for (let n = choices.length; n < T.guesses.length; n++) waiting.push([...T.guesses.slice(0, n).map((guess) => guess.regex), !T.guesses[n].regex]);
+    if (done.length + waiting.length > 64) return null;
+  }
+  return done;
 }
 
 /** Helpers over a token list: is token k this, is the name at k a property (`x.import`), and the text of a string that is one literal. */
@@ -209,10 +254,18 @@ function reading(T) {
  *   computed    import(…) or require(…) with anything but one string literal (a concatenation, a template with a
  *               `${…}`, a second argument), and `createRequire`, which makes a loader this reader cannot follow
  *   unreadable  an `import` or `export … from` that is none of the forms above, a specifier written with an escape,
- *               and a regular expression that spells `import` or `require` (see below)
+ *               and a regular expression that spells a load
+ *   ambiguous   a `/ … /` (its `text`) that may be a regular expression or two divisions, where the two readings do
+ *               not ask for the same: one of them hides code from the other
  */
 function requestsOf(source) {
-  const T = tokensOf(source), { is, property, literal, oneLiteral } = reading(T), found = [];
+  const readings = readingsOf(source), own = requestsIn(readings ? readings[0] : tokensOf(source));
+  // Where the reader had to guess between a regular expression and two divisions, every reading must ask for the same.
+  if (readings?.every((T) => JSON.stringify(requestsIn(T)) === JSON.stringify(own))) return own;
+  return [...own, { spec: null, form: "ambiguous", names: [], text: (readings ? readings[0] : tokensOf(source)).guesses[0].text }];
+}
+function requestsIn(T) {
+  const { is, property, literal, oneLiteral } = reading(T), found = [];
   // A specifier written with an escape is not the text it loads: not read, so not judged.
   const add = (form, spec = null, names = []) => found.push(spec?.includes("\\") ? { spec: null, form: "unreadable", names: [] } : { spec, form, names });
   const fromAt = (k) => is(k, "id", "from") && is(k + 1, "str");
@@ -228,9 +281,9 @@ function requestsOf(source) {
     return names;
   };
   for (let k = 0; k < T.length; k++) {
-    // Telling a regular expression from a division is the one guess the tokens rest on. Where the guess would decide
-    // whether a load is seen (the word stands inside what was taken for a regular expression), nothing is decided.
-    if (T[k].t === "re" && /\b(import|require|createRequire)\b/.test(T[k].v)) { add("unreadable"); continue; }
+    // A load spelled inside a regular expression: read as two divisions the same text would be a load, so even where
+    // the tokens are sure it is a regular expression, nothing is decided.
+    if (T[k].t === "re" && LOADS.test(T[k].v)) { add("unreadable"); continue; }
     if (T[k].t !== "id" || property(k)) continue;
     const word = T[k].v;
     if (word === "import") {
@@ -275,19 +328,34 @@ function requestsOf(source) {
 }
 
 /** Electron as a module or as a runtime, in the code: the string "electron" (or a subpath of it), `process.versions.electron`,
- * `process.resourcesPath` and `process.type`, however spaced and with or without `?.`. A comment may say any of them, and
- * the names Electron's variables carry in the environment (ELECTRON_RUN_AS_NODE) are data, not a dependency. */
+ * `process.resourcesPath` and `process.type`, by `.name`, `?.name` or `["name"]`, wherever they stand. A comment may say any of
+ * them, and the names Electron's variables carry in the environment (ELECTRON_RUN_AS_NODE) are data, not a dependency. */
 function namesElectron(source) {
-  const T = tokensOf(source);
-  if (T.some((t) => (t.t === "str" || (t.t === "tpl" && t.plain)) && /^electron(\/|$)/.test(t.v))) return true;
-  if (T.some((t) => t.t === "id" && t.v === "resourcesPath")) return true;
-  const chain = T.map((t, k) => (t.t === "id" ? t.v : t.t !== "p" ? " " : t.v === "." ? "." : t.v === "?" && T[k + 1]?.v === "." ? "" : " ")).join("");
-  return /(^|[ .])process\.(versions\.electron|type)(?![\w$])/.test(chain);
+  return (readingsOf(source) ?? [tokensOf(source)]).some(namesElectronIn); // in any reading
+}
+function namesElectronIn(tokens) {
+  const at = (token, v) => token?.t === "p" && token.v === v;
+  // `?.name` reads what `.name` does, and `?.[` what `[` does.
+  const T = tokens.filter((t, k, all) => !(at(t, "?") && at(all[k + 1], ".")) && !(at(t, ".") && at(all[k - 1], "?") && at(all[k + 1], "[")));
+  const text = (k) => (T[k]?.t === "str" || (T[k]?.t === "tpl" && T[k].plain) ? T[k].v : null);
+  /** The property read at k and where the next read would start, or null. */
+  const read = (k) => (T[k]?.t !== "p" ? null : T[k].v === "." && T[k + 1]?.t === "id" ? [T[k + 1].v, k + 2]
+    : T[k].v === "[" && text(k + 1) !== null && T[k + 2]?.t === "p" && T[k + 2].v === "]" ? [text(k + 1), k + 3] : null);
+  return T.some((t, k) => {
+    if (/^electron(\/|$)/.test(text(k) ?? "") || (t.t === "id" && t.v === "resourcesPath")) return true;
+    if (t.t !== "id" || t.v !== "process") return false;
+    const first = read(k + 1);
+    return !!first && (first[0] === "type" || first[0] === "resourcesPath" || (first[0] === "versions" && read(first[1])?.[0] === "electron"));
+  });
 }
 
 /** The names a module exports, read from its code: declarations (`const a = …, b = …` declares two) and `export { … }` lists. */
 function exportsOf(source) {
-  const T = tokensOf(source), { is, property } = reading(T), out = new Set();
+  const [own, ...others] = (readingsOf(source) ?? [tokensOf(source)]).map(exportsIn);
+  return new Set([...own].filter((name) => others.every((names) => names.has(name)))); // in every reading
+}
+function exportsIn(T) {
+  const { is, property } = reading(T), out = new Set();
   /** Whether the statement runs on from `before` to `after` across a line break: an operator ends the one or starts the other. */
   const runsOn = (before, after) => (before.t === "p" && ",=?:&|+-*/<>.(![{%^~".includes(before.v)) || (after.t === "p" && ".?:&|+-*/,=<>)]}%^".includes(after.v));
   for (let k = 0; k < T.length; k++) {
@@ -327,8 +395,10 @@ const filesIn = (tree, dir) => [...tree.keys()].filter((path) => under(path, dir
 
 /** What reading cannot judge, said once per file: a load that is not one string literal, an import that is no form the reader knows. */
 function unjudged(path, asked) {
+  const ambiguous = asked.find((request) => request.form === "ambiguous");
   return [...(asked.some((request) => request.form === "computed") ? [`${path}: loads a module by something other than one string literal`] : []),
-    ...(asked.some((request) => request.form === "unreadable") ? [`${path}: has an import or an export … from that this reader cannot read`] : [])];
+    ...(asked.some((request) => request.form === "unreadable") ? [`${path}: has an import or an export … from that this reader cannot read`] : []),
+    ...(ambiguous ? [`${path}: ${ambiguous.text} may be a regular expression or two divisions, and one reading would hide code from this reader`] : [])];
 }
 
 /** packages/client: its own files and node: builtins, no Electron, one importer of own-environment.mjs, modules only. */
@@ -384,8 +454,8 @@ function kernelProblems(tree) {
   const problems = [];
   for (const path of [...filesIn(tree, "lib"), ...filesIn(tree, "bin")].filter(isModule)) {
     const source = tree.get(path), asked = requestsOf(source), found = new Set();
-    // The kernel loads hooks and subcommands by computed paths, and may: only an import that cannot be read at all is refused.
-    problems.push(...unjudged(path, asked.filter((request) => request.form === "unreadable")));
+    // The kernel loads hooks and subcommands by computed paths, and may; what cannot be read at all is refused here too.
+    problems.push(...unjudged(path, asked.filter((request) => request.form !== "computed")));
     for (const { spec } of asked.filter((request) => request.spec !== null && isRelative(request.spec))) {
       const target = resolve(path, spec);
       for (const dir of [HOME, DESKTOP]) if (target === dir || under(target, dir)) found.add(`${path}: "${spec}" is ${target}: the kernel imports nothing from ${dir}`);
@@ -537,20 +607,32 @@ test("fixture, packages/client: an import is found wherever it stands, and a loa
   home('import{displayLine}from"./display-text.mjs";import{skeleton}from"../desktop/renderer/loading.mjs";export const collect=[displayLine,skeleton];', /leaves the shared home \(packages\/desktop\/renderer\/loading\.mjs\)$/);
   home('export const collect = async () => `${(await import("../desktop/main.mjs")).name}`;\n', /leaves the shared home \(packages\/desktop\/main\.mjs\)$/);
   home('export const collect = 1; export * from "../tui/frame.mjs";\n', /leaves the shared home \(packages\/tui\/frame\.mjs\)$/);
+  // After a regular expression that holds a quote: where a statement starts after a condition's `)`, a `/` is not a division.
+  home('if (ready) /"/.test(value); import YAML from "yaml"; export const collect = YAML;\n', /imports "yaml", which is not a Node builtin/);
+  home("export const collect = (o) => { while (o) /'/.test(o); return import('../desktop/main.mjs'); };\n", /leaves the shared home \(packages\/desktop\/main\.mjs\)$/);
+  home('export const collect = (o) => { for await (const k of o) /"/.test(k); return import("../desktop/main.mjs"); };\n', /leaves the shared home \(packages\/desktop\/main\.mjs\)$/);
   // Anything but one string literal: a string that only starts the path, a second argument, a template with a ${…}, a name.
   for (const load of ['import("../desktop/" + name + ".mjs")', 'import("../desktop/main.mjs", {})', 'import("./display-text.mjs", { with: { type: "json" } })', "import(`../desktop/${name}.mjs`)",
     "import(name)", 'import(/* a comment is not an argument */ name)', 'require("../desktop/" + name)', "require(name)", 'createRequire(import.meta.url)("yaml")'])
     home(`export const collect = (name) => ${load};\n`, /^packages\/client\/liveness\.mjs: loads a module by something other than one string literal$/);
-  // An import that is no form the reader knows, a specifier that is not the text it loads, and the one place the reader guesses.
+  // An import that is no form the reader knows, a specifier that is not the text it loads, and a regular expression that spells a load.
   const unreadable = /^packages\/client\/liveness\.mjs: has an import or an export … from that this reader cannot read$/;
   home('import collect, = from "./display-text.mjs";\nexport { collect };\n', unreadable);
   home('import { displayLine as collect } from "\\x2e/display-text.mjs";\nexport { collect };\n', unreadable);
   home('export const collect = (name) => /import\\(name\\)/.test(name);\n', unreadable);
-  home('export const collect = (name) => name++ / import("../desktop/main.mjs") / 2;\n', /leaves the shared home \(packages\/desktop\/main\.mjs\)$/);
+  assert.deepEqual(homeProblems(fixture({ "packages/client/liveness.mjs": 'export const collect = (name) => name++ / import("../desktop/main.mjs") / 2;\n' })),
+    ['packages/client/liveness.mjs: / import("../ may be a regular expression or two divisions, and one reading would hide code from this reader', 'packages/client/liveness.mjs: "../desktop/main.mjs" leaves the shared home (packages/desktop/main.mjs)']);
+  // Where a `/` may be either (after a `}`, after `x++`, after `of`), both are read. One reading hiding a load the other shows is refused,
+  // whichever of them is the code: here it is a regular expression and a string, and read as divisions it would be a load.
+  home("export const collect = (o) => { for (const k of /'/.exec(o) ?? []) return 'import(\"../desktop/main.mjs\")'; };\n",
+    /^packages\/client\/liveness\.mjs: \/'\/ may be a regular expression or two divisions, and one reading would hide code from this reader$/);
+  home("export const collect = (o) => { if (o) {} /'/.test(o); return 'require(\"yaml\")'; };\n", /: \/'\/ may be a regular expression or two divisions/);
+  home("export const collect = (n) => n++ / 2 + '/' + 'import(\"yaml\")';\n", /: \/ 2 \+ '\/ may be a regular expression or two divisions/);
   // And what is not a load is not taken for one: spacing, a trailing comma, a template with nothing in it, a comment, a string, a property.
   for (const fine of ['import( "./display-text.mjs")', 'import (\n  "./display-text.mjs"\n)', 'import("./display-text.mjs",)', "import(`./display-text.mjs`)", 'import(/* which */ "./display-text.mjs")',
     '"import(name) and require(name) in a string"', "`import YAML from \"yaml\" in a template`", "import.meta.url", "({ import: 1, require: 2 }).import", "/[\"'`/]+|\\/\\*/.test(name) // import(name)", "name++ / 2 / name.length",
-    "1 / 2 / (() => import('./display-text.mjs'))"])
+    "1 / 2 / (() => import('./display-text.mjs'))", "(name.end - name.start) / 1000 / 60", "{ if (name) /x/.test(name); for (const part of /,/g[Symbol.split](name)) return part; }",
+    "{ const half = { n: 1 }.n / 2 / name.length; return function () {} / 2 / half; }", "{ if (name) {} /[\"']/.test(name); return \"nothing\"; }"])
     assert.deepEqual(allProblems(fixture({ "packages/client/liveness.mjs": `/* import x from "yaml" */\nexport const collect = (name) => ${fine};\n` })), [], fine);
   assert.deepEqual(requestsOf('const a = import( "./x.mjs" ), b = import("./y.mjs" + z), c = require("./w.cjs");'),
     [{ spec: "./x.mjs", form: "dynamic", names: [] }, { spec: null, form: "computed", names: [] }, { spec: "./w.cjs", form: "require", names: [] }]);
@@ -562,6 +644,13 @@ test("fixture, packages/client: each Electron name fails", () => {
     assert.deepEqual(homeProblems(fixture({ "packages/client/liveness.mjs": `${line}\nexport const collect = 1;\n` })).filter((problem) => /names Electron$/.test(problem)),
       ["packages/client/liveness.mjs: names Electron"], line);
   breaks(homeProblems, { "packages/client/liveness.mjs": "export const collect = () => process.versions.electron;\n" }, /^packages\/client\/liveness\.mjs: names Electron$/);
+  // After a word, which is not part of the name: return, typeof, and the rest of the words an expression follows.
+  for (const code of ["return process.versions.electron;", "return process.type;", "return typeof process.versions.electron;", "return void process.resourcesPath;", "if (0) throw process.type; else return process.type;",
+    "for (const k in process.versions.electron) return k;", "return new process.type();", "return process['type'];", 'return process["versions"]["electron"];', "return process?.[`versions`]?.electron;"])
+    breaks(homeProblems, { "packages/client/liveness.mjs": `export function collect() { ${code} }\n` }, /^packages\/client\/liveness\.mjs: names Electron$/);
+  breaks(homeProblems, { "packages/client/liveness.mjs": "export const collect = () => typeof process.versions.electron;\n" }, /^packages\/client\/liveness\.mjs: names Electron$/);
+  // Where a `/` may be either, in either reading: here the reader's own takes the name into a regular expression.
+  breaks(homeProblems, { "packages/client/liveness.mjs": "export const collect = (n) => n++ / process.type / 2;\n" }, /^packages\/client\/liveness\.mjs: names Electron$/);
   // However it is spaced or reached, and by the one name only Electron's `process` has.
   for (const code of ["process ?. versions ?. electron", "process\n  .type", "globalThis.process.type", "(({ resourcesPath }) => resourcesPath)(process)", 'require.resolve("electron")'])
     assert.ok(homeProblems(fixture({ "packages/client/liveness.mjs": `export const collect = () => ${code};\n` })).includes("packages/client/liveness.mjs: names Electron"), code);
