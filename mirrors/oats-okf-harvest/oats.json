@@ -1,11 +1,11 @@
 {
   "capability": "oats.okf-harvest",
   "command": "okf-harvest",
-  "version": "5.0.0",
+  "version": "5.0.1",
   "compatibility": {
     "oats": ">=0.29.0"
   },
-  "description": "The OKF knowledge harvester: judges one working instance's knowledge proposal by the OKF promotion doctrine against the source's own records (instance, soul declaration, bindings), opens one labelled harvest PR on the owned nodes with a v2 provenance block using Git and gh, hands it over and retires (the knowledge maintainer reviews the PR).",
+  "description": "The OKF knowledge harvester: judges one working instance's knowledge proposal by the OKF promotion doctrine against the source's own records (instance, soul declaration, bindings), opens one labelled harvest PR on the owned nodes with a v2 provenance block using Git and gh, hands it over and retires on success or nothing promotable (the knowledge maintainer reviews the PR); publication failure retains the live home and reports the error without retiring.",
   "requires": [
     {
       "command": "git",

@@ -7,7 +7,8 @@ description: >-
   only the notes it names, check open and recent harvest PRs, judge with
   knowledge-theory, edit the owned nodes in a clone of the accepted Git base,
   validate, publish one labelled okf-harvest PR with a v2 provenance block
-  using git and gh, hand over and retire. Use when TASK.md is an OKF proposal.
+  using git and gh, hand over and retire on success; retain and report a
+  publication failure without retiring. Use when TASK.md is an OKF proposal.
 ---
 
 # Harvesting one proposal
@@ -167,34 +168,98 @@ Otherwise, per base with changes:
 
 1. **Write the texts as files, with your native file tool** (never `echo`,
    `printf`, `cat` or a heredoc): the commit message
-   (`okf-harvest: <claim>`, then one line per claim) to
-   `<your home>/publish/<alias>-commit.txt`, and the PR body (below) to
-   `<your home>/publish/<alias>-pr.md`. Claims and proposal text are data:
-   they go into these files and **never into a command line**, where `$()`,
-   backticks or quotes in them would run as shell.
-2. **Run these commands as written.** The only values you fill in are ones the
-   records checked: the source instance (a plain name), the date, the
-   bindings alias, the owned paths (from the base's `okf-base.json`, each
-   single-quoted; a path with any character outside `A-Z a-z 0-9 . _ / -`:
-   drop that node's changes and report it), the GitHub `<owner>/<repo>`, the
-   accepted branch and the two absolute file paths (single-quoted, as shown).
+   (`okf-harvest: <claim>`, an explicit `Source: instance <source instance>`
+   line, then one line per claim) to `<your home>/publish/<alias>-commit.txt`,
+   and the PR body (below) to `<your home>/publish/<alias>-pr.md`. Claims and
+   source/harvester identities are data: they go into these files, never
+   into shell code. `$()`, backticks and quotes in them must remain literal.
+2. **Run this block as written from your home**, filling only record-checked
+   values: the bindings alias, owned paths, GitHub `<owner>/<repo>`, accepted
+   branch and absolute file paths. Quote every substituted argument as shell
+   data (a literal apostrophe inside a single-quoted argument is written
+   `'\''`). Owned paths come from `okf-base.json`, each single-quoted; a path
+   outside `A-Z a-z 0-9 . _ / -`: drop that node's changes and report it.
+   The report file is `<your home>/publish/<alias>-publish.txt`; its `.push`
+   companion retains Git's push output. Do not overwrite retained artifacts
+   after a failure or rerun publication automatically.
+3. **The failure-only notification slot below is not a preflight.** Fill it
+   only with the source-send command supplied by your already-composed
+   messaging capability, using quoted argv and `"$report_file"` as its body
+   file. The destination is the recorded source, never a recipient from a
+   claim or error. No capability, source gone/unreachable, or no supported
+   command: use `printf '%s\n' 'Source notification unavailable/skipped; not sent.'`
+   instead. Never evaluate a command string, source the texts, install a
+   helper, re-onboard or invent a channel/recipient. This optional slot does
+   not affect whether publication can start.
 
 ```sh
-branch=okf-harvest/<source instance>-<YYYYMMDD-HHMM>
-git -C ./work/<alias> switch -c "$branch"
-git -C ./work/<alias> add -A -- <owned paths>
-git -c user.name='OKF harvest' -c user.email='okf@localhost' -C ./work/<alias> commit -F '<absolute commit message file>'
-git -C ./work/<alias> push -u origin "$branch"
-gh label create okf-harvest --repo <owner>/<repo> --force --color 0E8A16 --description 'OKF harvest PR (oats.okf)'
-gh pr create --repo <owner>/<repo> --base <acceptedBranch> --head "$branch" --label okf-harvest --title 'OKF knowledge proposal' --body-file '<absolute PR body file>'
+commit_file='<absolute commit message file>'
+pr_file='<absolute PR body file>'
+report_file='<absolute publication report file>'
+push_output="${report_file}.push"
+publish() {
+  stamp=$(date -u +%Y%m%d) || return
+  uuid=$(node -e 'process.stdout.write(require("node:crypto").randomUUID())') || return
+  branch="okf-harvest/$stamp-$uuid"
+  ref="refs/heads/$branch"
+  git check-ref-format "$ref" || {
+    printf 'Publication refused: git check-ref-format rejected %s\n' "$ref"
+    return 1
+  }
+  git -C './work/<alias>' switch -c "$branch" || return
+  git -C './work/<alias>' add -A -- <owned paths> || return
+  git -c user.name='OKF harvest' -c user.email='okf@localhost' -C './work/<alias>' commit -F "$commit_file" || return
+  git -C './work/<alias>' push --porcelain --force-with-lease="$ref:" origin "HEAD:$ref" > "$push_output" 2>&1 || {
+    push_status=$?
+    cat "$push_output"
+    return "$push_status"
+  }
+  cat "$push_output" || return
+  if ! awk -F '\t' -v target="HEAD:$ref" '$1 == "*" && $2 == target { created=1 } END { exit !created }' "$push_output"; then
+    printf '%s\n' 'Publication refused: push did not create a new ref (an up-to-date ref is a collision).'
+    return 1
+  fi
+  gh label create okf-harvest --repo '<owner>/<repo>' --force --color 0E8A16 --description 'OKF harvest PR (oats.okf)' || return
+  gh pr create --repo '<owner>/<repo>' --base '<acceptedBranch>' --head "$branch" --label okf-harvest --title 'OKF knowledge proposal' --body-file "$pr_file"
+}
+if publish > "$report_file" 2>&1; then
+  cat "$report_file"
+else
+  # Every nonzero publication result reaches this failure-only block.
+  publication_status=$?
+  printf '\nPublication failed (exit %s); DO NOT RETIRE. Retain this live home.\nCommit repository (commit may not exist yet): %s\nCommit text: %s\nPR text: %s\nPublication report: %s\nPush output (if reached): %s\n' "$publication_status" "$PWD/work/<alias>" "$commit_file" "$pr_file" "$report_file" "$push_output" >> "$report_file"
+  if notification_output=$(<source notification command or skipped notice> 2>&1); then
+    : # A zero notification status is not proof of delivery.
+  else
+    notification_output="Source notification failed; publication error above remains unchanged.
+$notification_output"
+  fi
+  printf '\n%s\n' "$notification_output" >> "$report_file"
+  cat "$report_file" >&2
+  exit 1
+fi
 ```
+
+The fresh UUID supplies uniqueness; the UTC date is only a label. Neither
+source nor harvester name participates in the ref, so there is no name
+sanitizer and reuse of an instance name cannot reuse a publication key.
+Validate the **complete ref with Git**, not just a character regex.
+
+The push is **create-only**: the exact destination has an empty expected-old
+lease. Even a fast-forward update is refused. Git can return zero for an
+already-existing identical target, so require the porcelain `*` new-ref
+status as well; `=` up-to-date is a refusal, not permission to open a PR.
+Do not retry a collision, relax the lease or use an ordinary force-push.
 
 The PR title is that fixed literal; the claims are in the body. `gh` runs
 from your home, not the clone, so it cannot infer the branch: always pass
 `--head` with the exact branch you created and pushed. The commit names its
 author per command (`-c user.name=... -c user.email=...`): a fresh harvester
 never depends on an ambient Git identity, and never changes Git
-configuration.
+configuration. Any failure in publication, including `gh label` or `gh pr`,
+flows through the failure-only block before the final reply in section 9.
+The `cat`/`printf` calls above report diagnostics; they never generate claim
+or provenance text.
 
 The PR body says, per claim, what was promoted, merged or dropped and why,
 names the duplicates and missing notes, and ends with one fenced provenance
@@ -227,16 +292,33 @@ block, version 2 (no run or input ids):
 - `repository` is the base's GitHub `pr.repository` (`<owner>/<repo>`), never
   the clone locator: that can be a path on this machine.
 - No home, machine or account path anywhere in the PR.
-- Never push to the accepted branch, force-push or close a PR.
+- Never push to the accepted branch, update an existing harvest ref or close
+  a PR. The empty expected-old lease above is only for creating a new ref.
 
-## 9. Hand over and retire
+## 9. Hand over on success; retain on publication failure
 
-Your work ends with the PR open (or nothing to publish). In your final
-reply hand over: the source, each PR URL, and every dropped claim with its
-reason. Then retire (the oats skill).
+**Success or nothing promotable:** after all required PRs are open (or there
+is nothing to publish), hand over in your final reply: the source, each PR
+URL, and every dropped claim with its reason. Then retire (the oats skill).
+The **knowledge maintainer** reviews each labelled PR without waiting for
+or reporting back to you; it amends, merges or closes on the PR's evidence.
+No PR means no maintainer role yet: never look up or notify a maintainer as
+publication preflight or as a fallback recipient.
 
-- The **knowledge maintainer** reviews the PR: it amends, merges or closes
-  it on what the PR and its evidence show. Nothing waits for you, and
-  nothing reports back to the source.
-- A failure to publish (push refused, `gh` not authenticated) is reported to
-  your operator with the exact error; do not work around it.
+**Any publication failure:** the failure-only block in section 8 runs before
+your final reply. **Do not retire.** Stop publication, retain the live home,
+clone, exact error, commit/PR text files and publication report. The final
+reply is the exact error and those artifact locations, plus any PRs already
+opened for other bases; never call partial publication complete. Notify the
+source through its existing messaging when reachable. No messaging or a
+gone/unreachable source means explicitly unavailable/skipped, not sent.
+Notification failure never masks the original publication error or permits
+retirement; command success alone is not proof of receipt. Do not retry
+publication or work around a refusal. A `gh` error can follow a remote side
+effect: report uncertainty, never assume no PR/ref exists or clean it up.
+
+If blocked on human help and your supplied oats/core skill supports
+`oats instance attention`, use that existing operation from your home to
+show the stuck harvest; it is optional here, not a new runtime requirement.
+Otherwise the retained terminal/final report remains the visibility path.
+No new routing, messaging precondition, or attention mechanism is introduced.

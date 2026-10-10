@@ -6,18 +6,23 @@ description: >-
   nodes, neighbours, duplicates, supersession), read the source's tickets
   through your tasks capability when you can, judge by knowledge-theory, then
   merge, amend and merge, or close — never superseding a human-accepted
-  decision silently. The harvester has retired once its PR is delivered: the
-  review never depends on it. Use when TASK.md names a knowledge-base PR, or
-  when a trigger re-runs you on a PR you may already have reviewed.
+  decision silently. The harvester normally retires after successful
+  handover; publication failure may retain it, but review never depends on
+  it. Use when TASK.md names a knowledge-base PR, or when a trigger re-runs
+  you on a PR you may already have reviewed.
 ---
 
 # Reviewing one harvest PR
 
 You were spawned for ONE pull request on a knowledge-base repository, usually
 by the `harvest-review` trigger. You review it, settle it and retire. The
-harvester that opened it retired once the PR was opened (oats.okf 5.0) or
-delivered (4.2): everything you need is the PR, its provenance and the evidence it cites. You hold no knowledge slot: you do not consult with `oats okf`;
-you read the base from your own checkout.
+harvester normally retires after successful handover (oats.okf 5.0) or
+delivery (4.2). Partial multi-base publication or an uncertain `gh` outcome
+may leave a 5.0 harvester live after publication failure. Review never waits
+for it and grants no permission to retry or clean up its publication work:
+everything you need is your PR, its provenance and the evidence it cites.
+You hold no knowledge slot: you do not consult with `oats okf`; you read the
+base from your own checkout.
 
 Load **knowledge-theory** (the doctrine) and **okf-authoring** (the craft).
 
@@ -138,8 +143,9 @@ The verdicts:
   the PR head and push to the PR branch, then merge. Never rewrite or
   force-push the branch: a 4.x `complete` accepts only a head that contains
   the delivered commit. Never rewrite the harvester's evidence citations.
-- **request-changes**: never wait for the harvester; it has retired. Put the
-  question in the verdict comment for the record, then decide on what the PR
+- **request-changes**: never wait for the harvester, whether retired or
+  retained after publication failure. Put the question in the verdict
+  comment for the record, then decide on what the PR
   and its cited evidence show: amend and merge what the evidence supports, or
   close what it does not. A closed PR is never rejudged automatically; the
   source may propose again with new evidence.

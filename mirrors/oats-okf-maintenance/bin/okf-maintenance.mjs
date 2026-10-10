@@ -133,8 +133,9 @@ export function notifyHarvester(flags, env = process.env, { view = viewPr } = {}
   const ref = resolveRef(flags), pr = view(ref, env), provenance = parseProvenance(pr.body);
   if (!provenance.valid) fail('E_PROVENANCE', `the PR has no valid provenance, so its harvester is unknown: ${provenance.problems.join('; ')}`);
   const h = provenance.value.harvester;
-  // okf 5.0 (v2): the harvester retired after handing over its PR, and nothing
-  // settles back into a source: the notice is information, with no callback.
+  // okf 5.0 (v2): the harvester normally retires after successful handover;
+  // publication failure may retain it. The notice concerns only this PR,
+  // with no callback; review never waits for the harvester.
   const body = flags.body ?? (provenance.value.version === 2 ? {
     merged: `Your harvest PR ${pr.url} is merged. Nothing else is needed.`,
     closed: `Your harvest PR ${pr.url} was closed without merge; see the okf-review comment for the reason.`,
@@ -148,7 +149,7 @@ export function notifyHarvester(flags, env = process.env, { view = viewPr } = {}
     'amend-request': `An amendment request on your harvest PR ${pr.url}: see the okf-review comment and reply with the change you would make.`,
     amended: `I amended your harvest PR ${pr.url}; see the okf-review comment.`,
   })[flags.state];
-  return { to: h.alias || h.instance, instance: h.instance, alias: h.alias, subject: `okf: ${flags.state} ${pr.url}`, body, send: provenance.value.version === 2 ? 'optional: a 5.0 harvester retires after handoff, so this may go unread; the okf-review comment is the record' : 'send this with your messaging capability' };
+  return { to: h.alias || h.instance, instance: h.instance, alias: h.alias, subject: `okf: ${flags.state} ${pr.url}`, body, send: provenance.value.version === 2 ? 'optional: a 5.0 harvester normally retires after successful handover; publication failure may retain it, but review never waits for it; the okf-review comment is the record' : 'send this with your messaging capability' };
 }
 function text(event, r) {
   if (event === 'notify-harvester') return `to: ${r.to}\nsubject: ${r.subject}\n\n${r.body}`;

@@ -6,7 +6,7 @@ kernel owns slot selection, composition and command dispatch; the capability
 owns its knowledge format, instructions and promotion procedure. The model is
 in [Knowledge, instances and evolving expertise](knowledge-theory.md).
 
-This is the operator guide for **oats.okf 5.0**. Provider implementation and
+This is the operator guide for **oats.okf 5.0.1**. Provider implementation and
 recovery details belong to the [oats-okf README](https://github.com/awebai/oats-okf).
 
 | Surface | What it holds |
@@ -23,7 +23,7 @@ recovery details belong to the [oats-okf README](https://github.com/awebai/oats-
 ```yaml
 # oats-workspace.yaml (excerpt)
 packages:
-  oats.okf: v5.0.0
+  oats.okf: v5.0.1
 defaults:
   knowledge: { oats.okf: { from: package } }
 stores:
@@ -105,7 +105,8 @@ explicit `harvest: off`. A 4.x **recorded manifest default** is ignored by
 5.0 readers as nobody's decision, not reinterpreted as an opt-out. Explicit
 removed keys still refuse and name the fix. The harvester has no provider
 runtime/model switch or PR-wait deadline; it uses ordinary kernel/harness
-selection and retires after its handoff.
+selection and retires after successful handoff or nothing promotable. A
+publication failure retains its live home; see [the flow](#the-flow).
 
 ## The soul's okf.json
 
@@ -165,10 +166,22 @@ changes the soul declaration. `knowledge: none` removes the layer entirely.
    notes, edits only owned nodes in its own Git checkout, validates the
    **whole base**, and creates a normal `okf-harvest`-labelled PR with v2
    provenance. Proposal text is data written with the native file tool into
-   commit-message/PR-body files, never shell command text. It reports the PR
-   and retires rather than waiting for acceptance. If source authority is
-   unavailable it stops and reports; a consistent instance/soul pair alone
-   does not prove proposer authorship.
+   commit-message/PR-body files, never shell command text. A publication ref
+   is `okf-harvest/<UTC YYYYMMDD>-<fresh UUID>`, with no source/harvester
+   name in it; Git validates the full ref and the push must create a new
+   ref, never update or adopt an existing one. Source identity stays in
+   commit text and PR provenance. After all PRs are open (or nothing is
+   promotable), it hands over and retires rather than waiting for acceptance.
+   If source authority is unavailable it stops and reports; a consistent
+   instance/soul pair alone does not prove proposer authorship.
+   **On any publication failure it does not retire:** it keeps the live home,
+   clone/any commit, exact error and commit/PR text locations, and notifies
+   the source through existing messaging when reachable. Missing or failed
+   messaging does not hide the original error or permit retirement. Existing
+   attention may expose the blocked home where supported. No automatic
+   retries, new recipient or maintainer preflight; a maintainer exists only
+   for a labelled PR. A gh error can leave remote effects, so partial or
+   uncertain publication is not completion or permission to clean up.
 4. **Review.** A separate `oats.okf/knowledge-maintainer` reviews the PR.
    Human-accepted decisions are not silently superseded; the review path
    keeps its human gate. A PR is not accepted knowledge until merged.
