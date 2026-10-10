@@ -25,7 +25,7 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { CLI, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { ensureOatsSocketDir, waitUntil } from "./helpers/host-fixture.mjs";
-import { retireFailure, stopInstanceSession } from "../lib/core.mjs";
+import { retireFailure, stillRunningOf, stopInstanceSession } from "../lib/core.mjs";
 import { oatsError, reportDefect } from "../lib/errors.mjs";
 
 /** A mode no longer keeps root out: the shapes that rest on one are skipped for root. */
@@ -443,6 +443,98 @@ test("instance stop --apply whose stop meets an exception without a code: the ta
   noStackIn(r.stdout);
   assert.equal(alive(pid), false, "the harness the stop signalled has exited");
   assert.equal(existsSync(join(home, ".oats-stop.json")), false, "the record the stop could not write is not there");
+
+  // The receipt this kernel stored says, in a field of the FILE alone, that its rows follow the
+  // feature's rules; its replay is the receipt as stored: this `[]` is "the harness exited" and
+  // stays `[]`, and the answer has no field the first answer had not.
+  const receiptPath = join(home, ".oats-stop-receipt.k1.json");
+  const bytes = readFileSync(receiptPath, "utf8");
+  assert.deepEqual(JSON.parse(bytes), { ...receipt, [STORED_FIELD]: true });
+  const again = fx.cli(["instance", "stop", name, "--apply", "--plan-revision", plan.planRevision, "--idempotency-key", "k1", "--json"]);
+  assert.equal(again.status, 0, again.stderr + again.stdout);
+  assert.deepEqual(again.json().result, { ...receipt, replayed: true });
+  assert.deepEqual(again.json().result.results[0].stillRunning, []);
+  assert.equal(STORED_FIELD in again.json().result, false, "a replay never answers the file's own field");
+  assert.equal(readFileSync(receiptPath, "utf8"), bytes, "the stored receipt is not rewritten");
+});
+
+// ---- 4b. `stillRunning` of a failed row: `[]` only when the harness exited ----
+
+/** The field of a stop receipt FILE that says its rows follow the rules of feature
+ *  lifecycle-kernel-codes (lib/instance-lifecycle.mjs). Never part of an answer. */
+const STORED_FIELD = "lifecycleKernelCodes";
+
+test("stillRunningOf: [] only when the receipt says the harness exited, the pids it names as alive, and null when nothing is established (no receipt, or not exited and no pid alive)", () => {
+  assert.equal(stillRunningOf(new Error("no receipt")), null);
+  assert.equal(stillRunningOf(undefined), null);
+  assert.deepEqual(stillRunningOf({ receipt: { exited: true } }), []);
+  assert.deepEqual(stillRunningOf({ receipt: { exited: true, stillRunning: [] } }), []);
+  assert.deepEqual(stillRunningOf({ receipt: { exited: false, stillRunning: [41, 42] } }), [41, 42]);
+  assert.equal(stillRunningOf({ receipt: { exited: false, stillRunning: [] } }), null);
+  assert.equal(stillRunningOf({ receipt: { exited: false } }), null);
+});
+
+/** A preload for a CLI child in which a SIGTERM reaches no process and every process it was sent to
+ *  then reads as gone (`kill(pid, 0)` answers ESRCH), while the process itself goes on: what a stop
+ *  sees when each process it signalled has exited and something else keeps the session busy. Every
+ *  other call is the original. → the CLI run with it. */
+function cliWithSignalledGone(fx, args) {
+  const preload = join(fx.base, "signalled-gone.mjs");
+  writeFileSync(preload, `// Written by test/lifecycle-system-errors.test.mjs.
+const kill = process.kill;
+const signalled = new Set();
+process.kill = function (pid, signal) {
+  if (signal === "SIGTERM") { signalled.add(pid); return true; }
+  if ((signal === 0 || signal === undefined) && signalled.has(pid)) throw Object.assign(new Error("kill ESRCH"), { code: "ESRCH", errno: -3, syscall: "kill" });
+  return kill.call(process, pid, signal);
+};
+`);
+  return spawnSync(process.execPath, ["--import", pathToFileURL(preload).href, CLI, ...args], { cwd: fx.dep, env: fx.env, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+}
+
+test("instance stop --apply whose signalled processes are all gone while the session does not read as idle: the target says it is still running, and its stillRunning is null, not []; the stop's own record and its event keep []; the replay answers the same", async (t) => {
+  const w = await instance(t, "a11");
+  const { fx, home, name } = w;
+  const pid = await launchHarness(w);
+  const stop = (...flags) => fx.cli(["instance", "stop", name, ...flags, "--json"]);
+  let plan;
+  await waitUntil(() => { const r = stop("--plan"); assert.equal(r.status, 0, r.stderr + r.stdout); plan = r.json().result; const s = plan.targets[0].session; return s.present === true && s.state !== "shell"; }, "the session to read as running");
+
+  const apply = ["instance", "stop", name, "--apply", "--plan-revision", plan.planRevision, "--idempotency-key", "k1", "--grace-ms", "700", "--json"];
+  const r = cliWithSignalledGone(fx, apply);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.equal(r.stderr, "", "a stop that did not stop is no defect: no stack");
+  const lines = r.stdout.trim().split("\n");
+  assert.equal(lines.length, 1, `exactly one envelope on stdout: ${r.stdout}`);
+  const receipt = JSON.parse(lines[0]).result;
+  assert.equal(receipt.ok, false);
+  const [result] = receipt.results;
+  assert.deepEqual(Object.keys(result).sort(), ["code", "home", "instance", "message", "ok", "stillRunning"], "no new field in a target's result");
+  assert.equal(result.code, "E_SESSION_STOP_FAILED");
+  assert.match(result.message, new RegExp(`^${escapeRegExp(name)} was asked to stop \\(SIGTERM to sleep pid ${pid}\\) and is still running after \\d+ ms; nothing was escalated$`));
+  // Nothing is established: no pid to name, and the session is not idle. `[]` would read as "stopped".
+  assert.equal(result.stillRunning, null);
+  assert.equal(alive(pid), true, "fixture premise: the harness goes on, so the session did not read as idle");
+
+  // The stop's own record of that step, and its event, are what they were: the step's answer as it is.
+  const record = readJson(join(home, ".oats-stop.json")).stop;
+  assert.equal(record.exited, false);
+  assert.deepEqual(record.stillRunning, []);
+  assert.deepEqual(record.requested.map((q) => q.pid), [pid]);
+  const refused = readFileSync(join(home, ".oats-events.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line)).filter((event) => event.kind === "stop-refused");
+  assert.equal(refused.length, 1, "one stop-refused event");
+  assert.deepEqual(refused[0].data.stillRunning, []);
+
+  // The stored receipt carries the file's own field; its replay is the receipt as answered, without it.
+  const receiptPath = join(home, ".oats-stop-receipt.k1.json");
+  const bytes = readFileSync(receiptPath, "utf8");
+  assert.deepEqual(JSON.parse(bytes), { ...receipt, [STORED_FIELD]: true });
+  const again = fx.cli(apply);
+  assert.equal(again.status, 0, again.stderr + again.stdout);
+  assert.deepEqual(again.json().result, { ...receipt, replayed: true });
+  assert.equal(again.json().result.results[0].stillRunning, null);
+  assert.equal(readFileSync(receiptPath, "utf8"), bytes, "the stored receipt is not rewritten");
+  assert.equal(alive(pid), true, "a replay signals nothing");
 });
 
 test("retire whose stop of a recorded child meets an exception without a code: E_CHILDREN_RUNNING with that child's E_SESSION_STOP_FAILED, the stack on stderr, and reached says a stop was attempted", async (t) => {
@@ -481,7 +573,7 @@ test("retire whose stop of a recorded child meets an exception without a code: E
 // A kernel that lists feature `lifecycle-kernel-codes` promises kernel codes in every answer of these
 // commands, and a replay is one: of a receipt that an older kernel may have stored with the system's
 // own code in a failed target's row.
-test("instance stop --apply replaying a receipt an older kernel stored with a system code: the probe lists lifecycle-kernel-codes, the replay answers E_SESSION_STOP_FAILED, and the stored receipt is not rewritten", async (t) => {
+test("instance stop --apply replaying a receipt an older kernel stored, with a system code in one failed row and stillRunning [] in another: the probe lists lifecycle-kernel-codes, the replay answers E_SESSION_STOP_FAILED and null there, and the stored receipt is not rewritten", async (t) => {
   const w = await instance(t, "a10");
   const { fx, home, name } = w;
   const probe = fx.cli(["version", "--json"]);
@@ -490,8 +582,14 @@ test("instance stop --apply replaying a receipt an older kernel stored with a sy
   const plan = fx.cli(["instance", "stop", name, "--plan", "--json"]).json().result;
   // The receipt as the kernel before this feature stored it: the thrown error's own code in the row.
   const row = { instance: name, home, ok: false, code: "ENOENT", message: `ENOENT: no such file or directory, open '${join(home, ".oats-stop.json")}'`, stillRunning: null };
+  // And the row that kernel wrote for a stop whose signalled processes were gone while the session
+  // did not read as idle: `[]`, which from this feature on says "the harness exited". A row that is
+  // not a failed one, and a failed row that names a pid, are replayed as stored.
+  const still = { instance: `${name}-kid`, home: `${home}-kid`, ok: false, code: "E_SESSION_STOP_FAILED", message: `${name}-kid was asked to stop (SIGTERM to sleep pid 4242) and is still running after 20012 ms; nothing was escalated`, stillRunning: [] };
+  const named = { ...still, instance: `${name}-kid2`, home: `${home}-kid2`, stillRunning: [4243] };
+  const fine = { instance: `${name}-kid3`, home: `${home}-kid3`, ok: true, stopped: true, alreadyIdle: false, state: "shell" };
   const stored = { lifecycleApi: plan.lifecycleApi, action: "stop", instance: name, home, idempotencyKey: "old-key", planRevision: plan.planRevision, at: "2026-10-01T00:00:00.000Z",
-    ok: false, results: [row], retained: ["home", "work", "transcript", "launch"], replayed: false };
+    ok: false, results: [row, still, named, fine], retained: ["home", "work", "transcript", "launch"], replayed: false };
   const receiptPath = join(home, ".oats-stop-receipt.old-key.json");
   const bytes = JSON.stringify(stored, null, 2) + "\n";
   writeFileSync(receiptPath, bytes);
@@ -503,7 +601,8 @@ test("instance stop --apply replaying a receipt an older kernel stored with a sy
   assert.equal(lines.length, 1, `exactly one envelope on stdout: ${r.stdout}`);
   const receipt = JSON.parse(lines[0]).result;
   // The stored receipt, field for field, but for the two things a replay changes.
-  assert.deepEqual(receipt, { ...stored, replayed: true, results: [{ ...row, code: "E_SESSION_STOP_FAILED" }] });
+  assert.deepEqual(receipt, { ...stored, replayed: true, results: [{ ...row, code: "E_SESSION_STOP_FAILED" }, { ...still, stillRunning: null }, named, fine] });
+  assert.equal("lifecycleKernelCodes" in receipt, false, "a replay never answers the field of this kernel's own receipt files");
   assert.ok(receipt.results[0].message.includes("ENOENT"), "the system's text stays in the message");
   assert.equal(readFileSync(receiptPath, "utf8"), bytes, "the stored receipt is evidence: not rewritten");
   assert.deepEqual(listing(home), before, "a replay acts on nothing");

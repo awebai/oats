@@ -2175,7 +2175,7 @@ A failed `add` reports the same facts about its rollback in `details`:
 | `E_INTERRUPTED` | SIGINT, SIGTERM or SIGHUP while the hooks ran; the tree is removed and the process exits 128 + the signal number (`details.signal`) |
 | `E_WORKTREE_DIRTY` | `remove`: Git refused a tree with uncommitted or untracked work (`details.git` is Git's message); the record is kept. Commit and push, or discard, then retry |
 | `E_WORK_PRESERVATION_FAILED` | `remove`: Git refused for another reason, or the tree is still there; the record is kept |
-| `E_LIFECYCLE_FAILED` | an error that is not the kernel's, with [`details.cause`](#kernel-codes). When it is the purpose's claim that could not be taken (`<home>/.oats/trees` cannot be made, the claim's file cannot be written), the message is `the claim <path> could not be taken (…); nothing was done` |
+| `E_LIFECYCLE_FAILED` | an error that is not the kernel's; with [`details.cause`](#kernel-codes) when it has a code of its own or is a defect, and without it when it is a refusal without a code. When it is the purpose's claim that could not be taken (`<home>/.oats/trees` cannot be made, the claim's file cannot be written), the message is `the claim <path> could not be taken (…); nothing was done` |
 
 A rollback that cannot finish keeps the record and says so in the message
 (`details.rolledBack: false`, `details.owed`); the next `add` or `remove` of
@@ -3002,25 +3002,42 @@ the instance back.
   is still running`, `no signal reached its harness, which had already
   exited` (the stop found it idle, or its processes gone, when it came to
   signal), `… which was not seen to exit`, `whether its harness was signalled
-  is not known`, or `its harness was not signalled`. `stillRunning` is what
-  the stop established by then: the pids still alive, `[]` when it
-  established that none is, `null` when it established nothing. A stop that
+  is not known`, or `its harness was not signalled`. <a id="still-running"></a>`stillRunning`
+  is what the stop established of the processes it signalled, one of three
+  values: the pids still alive; `[]` only when the harness exited (its
+  processes are gone and the session read as idle); `null` when it
+  established nothing, which is a stop that has no answer of its signalling
+  step, and one whose signalled processes are all gone while the session
+  still does not read as idle (its message says `is still running after <n>
+  ms; nothing was escalated`): something runs there that the stop cannot
+  name. Only `[]` says stopped. The three values hold from feature
+  `lifecycle-kernel-codes`. A kernel without it answers `[]` in a failed row
+  for that last case only (all signalled processes gone, the session not
+  idle), so there `[]` establishes nothing, and it answers `null` for a
+  harness that exited before something else failed. A stop that
   fails on a [defect of the kernel](#kernel-codes) is that same row, and the
   defect's stack is printed on stderr; a stop that fails on a refusal without
   a code (a `tmux` command that failed) is that row and prints no stack. The
   same holds for a child's stop in a retire's `childrenStopped`.
 - `ok: false`: at least one target still runs (text mode exits 1).
 - A replay is the stored receipt (`<home>/.oats-stop-receipt.<key>.json`)
-  with `replayed: true`. A receipt stored by a kernel from before feature
-  `lifecycle-kernel-codes` can hold the system's code in a failed target's
-  `code`; a replay answers `E_SESSION_STOP_FAILED` there (the `message` keeps
-  the system's text), so the rule holds for a replay too. The stored file is
-  not rewritten.
+  with `replayed: true`, and it follows the same rules as a first answer. The
+  file a kernel with feature `lifecycle-kernel-codes` stores says so in a
+  field of its own, `lifecycleKernelCodes: true`, which is part of the file
+  and never of an answer: a replay leaves it out, so a replayed receipt has
+  the fields of the first one. A file without that field was stored by a
+  kernel from before the feature, and its failed rows are answered under the
+  feature's rules: a system's code in `code` becomes `E_SESSION_STOP_FAILED`
+  (the `message` keeps the system's text), and `stillRunning: []` becomes
+  `null`, which is what that kernel's `[]` established. The stored file is
+  never rewritten.
 - Refusals: `E_BAD_ARGS` (no `--plan-revision`, a bad key, not exactly one of
   `--plan`/`--apply`), `E_PLAN_STALE`, `E_INSTANCE_RETIRING` and
   `E_LIFECYCLE_BUSY` (each with `details.plan`), `E_SESSION_UNKNOWN`,
   `E_AMBIGUOUS_INSTANCE`, `E_HOME_MISMATCH`, `E_LIFECYCLE_FAILED` (any error
-  that is not the kernel's, with [`details.cause`](#kernel-codes)). A stop
+  that is not the kernel's; with [`details.cause`](#kernel-codes) when it has
+  a code of its own or is a defect, and without it when it is a refusal
+  without a code). A stop
   never answers `E_WORK_INSPECTION_FAILED`.
 
 <a id="retire"></a>
@@ -3314,7 +3331,10 @@ plan says: each child the plan lists is stopped first (bounded SIGTERM,
 never escalated) and kept, once the retire has resolved the home and before
 the instance's own session is stopped. `childrenStopped[]` lists them,
 deepest first, as `{instance, home, ok: true, stopped, alreadyIdle}` or
-`{instance, home, ok: false, code, message, stillRunning}`. A plain or
+`{instance, home, ok: false, code, message, stillRunning}`, where
+`stillRunning` has the three values of [a stop's result](#still-running): the
+pids still alive, `[]` only when the child's harness exited, `null` when
+nothing is established. A plain or
 `--self` receipt carries it only when there are children; a guarded receipt
 always does (`[]` when there are none). One child still running after the
 grace, or whose stop could not be established (`E_SESSION_UNAVAILABLE`,
@@ -3521,8 +3541,9 @@ says nothing.
 
 **An error that is not the kernel's** (a file the system refuses to read, a
 directory that cannot be removed) is answered with a
-[kernel code](#kernel-codes), [`details.cause`](#kernel-codes), `reached`, and
-a message that ends with the sentence the typed refusals at that point carry:
+[kernel code](#kernel-codes), [`details.cause`](#kernel-codes) (when the
+error has a code of its own or is a defect; a refusal without a code has
+none), `reached`, and a message that ends with the sentence the typed refusals at that point carry:
 
 | Where it fails | Code | The message ends with |
 |---|---|---|
@@ -3632,8 +3653,9 @@ selection flags. See [the start workflow](desktop-instance-start.md).
   `E_SESSION_START_BUSY`, `E_INSTANCE_RETIRING`, `E_LAUNCH_*` (among them
   `E_LAUNCH_SHIM`: the home's `oats` link cannot be written, nothing was
   started), `E_MODEL_UNKNOWN`, `E_UNSUPPORTED_HARNESS`, `E_SESSION_FAILED`
-  (any error that is not the kernel's, with
-  [`details.cause`](#kernel-codes)).
+  (any error that is not the kernel's; with
+  [`details.cause`](#kernel-codes) when it has a code of its own or is a
+  defect, and without it when it is a refusal without a code).
 
 ### Upload
 
