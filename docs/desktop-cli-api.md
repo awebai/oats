@@ -150,8 +150,11 @@ stdout (progress goes to stderr):
   add|remove`; feature `lifecycle-kernel-codes`, OATS 0.52.0). A kernel
   whose probe does not list the feature can answer one of these commands with
   the system's own code (`ENOENT`, `EACCES`, `ENOTEMPTY`) and has no
-  `details.cause`: a client keeps its guard for such a code there. A kernel
-  code is `E_` followed by upper-case letters, digits
+  `details.cause`: a client keeps its guard for such a code there. Routed
+  with `--server`, one of these commands is answered by the host's kernel:
+  gate on that host's list (`probe.features` of
+  [`oats server roster --json`](#the-remote-roster-oats-server-roster---json)).
+  A kernel code is `E_` followed by upper-case letters, digits
   and underscores (`^E_[A-Z0-9_]+$`). The kernel tests that shape, not a list
   of known codes, and the shape is enough: the kernel has no dependency, and
   neither the system (`ENOENT`) nor Node (`ERR_…`) gives a code of that shape.
@@ -2987,7 +2990,11 @@ the instance back.
   child's stop in a retire's `childrenStopped`.
 - `ok: false`: at least one target still runs (text mode exits 1).
 - A replay is the stored receipt (`<home>/.oats-stop-receipt.<key>.json`)
-  with `replayed: true`.
+  with `replayed: true`. A receipt stored by a kernel from before feature
+  `lifecycle-kernel-codes` can hold the system's code in a failed target's
+  `code`; a replay answers `E_SESSION_STOP_FAILED` there (the `message` keeps
+  the system's text), so the rule holds for a replay too. The stored file is
+  not rewritten.
 - Refusals: `E_BAD_ARGS` (no `--plan-revision`, a bad key, not exactly one of
   `--plan`/`--apply`), `E_PLAN_STALE`, `E_INSTANCE_RETIRING` and
   `E_LIFECYCLE_BUSY` (each with `details.plan`), `E_SESSION_UNKNOWN`,
