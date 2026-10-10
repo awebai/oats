@@ -11,6 +11,7 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
+import YAML from "yaml";
 import { deferredRetireResultPath, retireInstance, retirePendingMarkerPath } from "../lib/core.mjs";
 import { readEvents } from "../lib/instance-events.mjs";
 import { processStartToken } from "../lib/worktree-hooks.mjs";
@@ -93,11 +94,24 @@ process.exitCode = completeDeferredRetirement(JSON.parse(process.env.OATS_RETIRE
     planRevision: (instance) => fx.cli(["retire", instance, "--plan", "--json"]).json().result.planRevision,
     track: (pid) => { started.push(pid); return pid; },
     /** An instance launched on the fixture's own tmux server, a sleeping process standing in for
-     *  its harness: a retire stops that session before its hooks run. The fixture's cleanup kills
-     *  the server, and fails on a process left working in the base. */
+     *  its harness: a retire stops that session before its hooks run. The stand-in is the
+     *  fixture's own file, named by its absolute path in a launch configuration, so the launch
+     *  finds no harness of the host and needs none. The fixture's cleanup kills the server, and
+     *  fails on a process left working in the base. */
     spawnLaunched: () => {
-      writeFileSync(join(fx.base, "runtime-stub", "claude"), "#!/bin/sh\nexec sleep 600\n", { mode: 0o755 });
-      return fx.spawn("worker", { launch: true, harness: "claude" });
+      const executable = join(fx.base, "harness-stand-in");
+      writeFileSync(executable, "#!/bin/sh\nexec sleep 600\n", { mode: 0o755 });
+      const localFile = join(fx.dep, "oats-local.yaml");
+      writeFileSync(localFile, YAML.stringify({ ...YAML.parse(readFileSync(localFile, "utf8")), "launch-configs": { "stand-in": { harness: "pi", executable } } }, { lineWidth: 0 }));
+      return f.spawn({ launch: true, launchConfig: "stand-in" });
+    },
+    /** A new `worker` instance, not launched unless asked. The spawn runs in this process, so it
+     *  is given the fixture's PATH for its duration: the harness it finds is the fixture's inert
+     *  one, never one of the host's (there may be none). */
+    spawn: async (opts) => {
+      const path = process.env.PATH;
+      process.env.PATH = fx.env.PATH;
+      try { return await fx.spawn("worker", opts); } finally { process.env.PATH = path; }
     },
   };
   fx.beforeCleanup(() => { f.open(); for (const pid of [...started, ...hookPids()]) kill(pid); });
@@ -118,7 +132,7 @@ const waitingForClaim = (home, pid) => claimFiles(home).some((n) => n.startsWith
 
 /** Start `first` on a new instance and wait until it is inside its retire hook: it holds the claim,
  *  has stopped its session and copied its recovery, and stays there until the gate opens. */
-async function inFlight(f, first, spawn = () => f.fx.spawn("worker")) {
+async function inFlight(f, first, spawn = () => f.spawn()) {
   const inst = await spawn();
   const a = await first(inst);
   await waitUntil(() => f.hookRuns() === 1, "the first retire to be inside its retire hook", 60000);
@@ -178,7 +192,7 @@ test("every other form of retire is refused while one is in flight: --force, tex
   assert.equal(text.status, 1);
   assert.match(text.stderr, new RegExp(`a retire of ${name} is already running \\(pid ${h.a.pid}, since .*nothing was done`));
   // The forms the CLI reaches only from inside the instance, as the kernel takes them.
-  const other = await f.fx.spawn("worker");
+  const other = await f.spawn();
   for (const [what, o] of [["--self (a scheduling)", { self: true, selfKillDelaySec: 600 }], ["--self --keep-dir", { self: true, keepDir: true, selfKillDelaySec: 600 }],
     ["recorded children", { children: [{ instance: other.instance, home: other.home }] }], ["a guarded apply's options", { plannedExtraWorktrees: [], children: [] }]]) {
     await assert.rejects(f.fx.inEnv(() => retireInstance(f.fx.root, name, o)), (e) => {
@@ -269,7 +283,7 @@ test("a retire that stopped the session and then failed: an apply with the plan 
 
 test("a stale guarded apply with nobody else retiring answers E_PLAN_STALE as it did, in both modes, and nothing was done", async (t) => {
   const f = fixture(t);
-  const inst = await f.fx.spawn("worker");
+  const inst = await f.spawn();
   const name = inst.instance, before = digest(inst.home);
   const shown = f.fx.cli(["retire", name, "--plan", "--json"]).json().result;
   const untouched = (what) => {
@@ -334,7 +348,7 @@ test("a retire killed while it holds the claim does not block the next one: the 
 
 test("the --self window: between the scheduling and its completion every other retire is refused, naming the pending marker and the completion", async (t) => {
   const f = fixture(t);
-  const inst = await f.fx.spawn("worker");
+  const inst = await f.spawn();
   const name = inst.instance, marker = retirePendingMarkerPath(inst.home);
   // A long delay: the completion sleeps for the whole test, and is ended before the cleanup.
   const scheduled = await f.fx.inEnv(() => retireInstance(f.fx.root, name, { self: true, selfKillDelaySec: 600 }));
@@ -393,7 +407,7 @@ test("a pending marker refuses only for a completion that lives: its outcome, an
   // A live process that is not a completion stands in for one: this test's own.
   const live = { completionPid: process.pid, completionStart: processStartToken(process.pid) };
   const withMarker = async (extra) => {
-    const inst = await f.fx.spawn("worker");
+    const inst = await f.spawn();
     writeFileSync(retirePendingMarkerPath(inst.home), JSON.stringify({ ...f.intent(inst), ...extra }, null, 2) + "\n");
     return inst;
   };
@@ -431,7 +445,7 @@ test("a pending marker refuses only for a completion that lives: its outcome, an
 test("a completion waits for the claim of the retire that scheduled it, and is not refused by its own marker", async (t) => {
   const f = fixture(t);
   f.open();
-  const inst = await f.fx.spawn("worker");
+  const inst = await f.spawn();
   const marker = retirePendingMarkerPath(inst.home);
   // The scheduler, standing still between starting its completion and writing the marker: this
   // process holds the claim, and there is no marker yet.
@@ -465,7 +479,7 @@ test("the home is resolved again under the claim: removed meanwhile it is E_SESS
     return c;
   };
   // Removed while it waited: what a retire of a retired instance answers, and no claim is left.
-  const gone = await f.fx.spawn("worker");
+  const gone = await f.spawn();
   const c1 = await waiting(gone);
   rmSync(gone.home, { recursive: true });
   rmSync(claimOf(gone.home));
@@ -478,7 +492,7 @@ test("the home is resolved again under the claim: removed meanwhile it is E_SESS
   // Removed, and the name is now a home of another agent (no --home was given): the retire starts
   // over on that home, under that home's claim. It is no instance OATS made, so it is refused as
   // unidentified, by name: the retire reached it.
-  const moved = await f.fx.spawn("worker");
+  const moved = await f.spawn();
   const twin = join(f.fx.root, "zz-other", "instances", moved.instance);
   const c2 = await waiting(moved, {});
   rmSync(moved.home, { recursive: true });
@@ -493,7 +507,7 @@ test("the home is resolved again under the claim: removed meanwhile it is E_SESS
 
 test("a claim nobody comes back for: with no home of that name, a gone holder's claim is removed and a live, unknown or unreadable one is left", async (t) => {
   const f = fixture(t);
-  const inst = await f.fx.spawn("worker"); // the agent, and so its instances directory, exists
+  const inst = await f.spawn(); // the agent, and so its instances directory, exists
   const ghost = join(dirname(inst.home), "worker-gone"), lock = claimOf(ghost);
   const unknownSession = () => {
     const r = f.fx.cli(["retire", "worker-gone", "--json"]);
@@ -518,7 +532,7 @@ test("a claim nobody comes back for: with no home of that name, a gone holder's 
 
 test("a process whose own start cannot be read: retire is refused, saying what could not be read, and nothing of the home changed", async (t) => {
   const f = fixture(t);
-  const inst = await f.fx.spawn("worker");
+  const inst = await f.spawn();
   const before = digest(inst.home);
   const dir = join(f.fx.base, "ps-fails"); mkdirSync(dir);
   writeFileSync(join(dir, "ps"), '#!/bin/sh\necho "ps: simulated failure" >&2\nexit 2\n', { mode: 0o755 });
@@ -535,7 +549,7 @@ test("a process whose own start cannot be read: retire is refused, saying what c
 
 test("a holder that cannot be established alive or gone is never taken over; a claim file that is not a claim is never removed", async (t) => {
   const f = fixture(t);
-  const inst = await f.fx.spawn("worker");
+  const inst = await f.spawn();
   const name = inst.instance, lock = claimOf(inst.home), before = digest(inst.home);
   const refused = async (o, check) => {
     const held = readFileSync(lock, "utf8");

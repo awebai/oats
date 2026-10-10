@@ -3292,7 +3292,8 @@ home is gone (`E_SESSION_UNKNOWN`), a self-retire is scheduled
 died, for example a retire killed while its hooks ran, is taken over by the
 next retire of that name. So a killed retire can always be run again. Until
 that name is retired again its claim file stays where it is, and it is safe
-to remove once its pid is gone.
+to remove once its pid is gone. A retire that ends removes its claim file;
+the `claims/` directory itself stays, empty.
 
 `details` is `{instance, home, lock, pid, since}`: `lock` is the file that
 names the holder, `since` when the holder took it. Every message is one
