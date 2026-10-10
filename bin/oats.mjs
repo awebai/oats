@@ -25,7 +25,7 @@ import { constants as osConstants, homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runtimeNameWarning, noteRuntimeName } from "../lib/deprecation.mjs";
-import { defectOf, errorCause, herdrSettingRemoved, isKernelCode, kernelCode } from "../lib/errors.mjs";
+import { errorCause, herdrSettingRemoved, isKernelCode, kernelCode, reportDefect } from "../lib/errors.mjs";
 import {
   LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
@@ -187,8 +187,7 @@ const jsonFail = (code, message, details, exit = 1) => { console.log(JSON.string
 const lifecycleFail = (e, fallback, details, exit) => {
   const message = String(e?.message ?? e);
   if (TYPED_CLI_FAILURES.has(e?.code)) return JSON_MODE ? jsonFail(e.code, message, details, exit) : die(message, exit);
-  const defect = defectOf(e);
-  if (defect) console.error(defect.stack || String(defect));
+  reportDefect(e);
   const all = isKernelCode(e?.code) ? details : { ...details, cause: errorCause(e) };
   return JSON_MODE ? jsonFail(kernelCode(e, fallback), message, all, exit) : die(message, exit);
 };

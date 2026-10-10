@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { asKernelError, defectOf, errorCause, isKernelCode, kernelCode, oatsError } from "../lib/errors.mjs";
+import { asKernelError, defectOf, errorCause, isKernelCode, kernelCode, oatsError, reportDefect } from "../lib/errors.mjs";
 
 /** What `fn` throws. */
 function thrownBy(fn) {
@@ -215,4 +215,27 @@ test("defectOf: a Node error that has a code (ERR_…) is no defect, alone or wr
   assert.ok(url instanceof TypeError);
   assert.equal(defectOf(url), undefined);
   assert.equal(defectOf(asKernelError(url, "E_X")), undefined);
+});
+
+// ---- reportDefect ----
+
+/** What `fn` writes on this process's stderr. */
+function stderrOf(fn) {
+  const write = process.stderr.write;
+  let written = "";
+  process.stderr.write = (chunk) => { written += String(chunk); return true; };
+  try { fn(); } finally { process.stderr.write = write; }
+  return written;
+}
+
+test("reportDefect prints the stack of an exception without a code, alone or wrapped, on stderr", () => {
+  const typeError = new TypeError("x");
+  assert.equal(stderrOf(() => reportDefect(typeError)), `${typeError.stack}\n`);
+  assert.equal(stderrOf(() => reportDefect(asKernelError(typeError, "E_X"))), `${typeError.stack}\n`);
+});
+
+test("reportDefect prints nothing for a kernel error, a system error, a Node ERR_ error, wrapped or not", () => {
+  for (const e of [oatsError("E_BAD_ARGS", "usage"), missingFile(), asKernelError(missingFile(), "E_X"), invalidUrl(), asKernelError(invalidUrl(), "E_X"), undefined]) {
+    assert.equal(stderrOf(() => reportDefect(e)), "");
+  }
 });
