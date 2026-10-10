@@ -53,7 +53,7 @@ import { hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/sched
 import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } from "../lib/attachments.mjs";
 
 import { observeInstanceGit, diffInstanceFile } from "../lib/instance-git.mjs";
-import { planStop, applyStop, planRetire, descendantsOf, resolveInstance as resolveInstanceForCli } from "../lib/instance-lifecycle.mjs";
+import { planStop, applyStop, planRetire, descendantsOf, resolveInstance as resolveInstanceForCli, STOP_WARNINGS } from "../lib/instance-lifecycle.mjs";
 import { extraWorktreeLines, formatBytes, workRecoveryLines } from "../lib/retire-output.mjs";
 import { retainedRecoveryLines, retainedWorktreeLines, retainedWorktrees } from "../lib/retained-after-retire.mjs";
 const await_import_lifecycle = () => ({ resolveInstance: resolveInstanceForCli });
@@ -98,7 +98,7 @@ const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental"]
  *  probe) and in `status --json`, which a remote roster relays as the host's (feature
  *  server-probe-features, lib/servers.mjs hostFeatures). ONE list for both, emitted at output
  *  time, never stored. A name must pass hostFeatures's check (test/cli-json-contract.test.mjs). */
-const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes"];
+const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "lifecycle-claim-stop"];
 /** Commands `--server <id>` runs on a registered server. */
 const ROUTED_COMMANDS = new Set(["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "launch-config", "readiness", "instance"]);
 const flag = (name) => {
@@ -1278,12 +1278,18 @@ function instanceCmd() {
       const rev = flag("plan-revision"), key = flag("idempotency-key"), grace = flag("grace-ms");
       if (rev === true || key === true || grace === true) return bail("E_BAD_ARGS", usage);
       const receipt = applyStop(dirFlag(), root, name, { home: homeOpt, recursive, planRevision: rev, idempotencyKey: key, ...(grace !== undefined ? { graceMs: Number(grace) } : {}) });
+      // Not part of the receipt, whose shape is contract: on stderr in both modes.
+      for (const w of receipt[STOP_WARNINGS] || []) console.error(`oats: warning: ${w}`);
       if (JSON_MODE) { jsonOk(receipt); return; }
       for (const r of receipt.results) console.log(`  ${r.instance}: ${r.ok ? (r.stopped ? "stopped" : `already ${r.state}`) : `${r.code} — ${r.message}`}`);
       console.log(receipt.ok ? `stopped${receipt.replayed ? " (replayed receipt)" : ""}; home, work, transcript and launch configuration retained — restart with \`oats session restart\`` : "some targets are still running; nothing was escalated");
       if (!receipt.ok) process.exit(1);
       return;
-    } catch (e) { return lifecycleFail(e, "E_LIFECYCLE_FAILED", e.plan ? { plan: e.plan } : e.candidates ? { candidates: e.candidates } : undefined); }
+    } catch (e) {
+      // The error's own details (a claim's holder; a defect's cause) beside the plan it was refused with.
+      const details = { ...e.details, ...(e.plan ? { plan: e.plan } : {}), ...(e.candidates ? { candidates: e.candidates } : {}) };
+      return lifecycleFail(e, "E_LIFECYCLE_FAILED", Object.keys(details).length ? details : undefined);
+    }
   }
   let home = flag("home");
   if (home === true) return bail("E_BAD_ARGS", "--home needs an absolute instance home");
