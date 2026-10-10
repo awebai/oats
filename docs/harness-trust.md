@@ -24,6 +24,27 @@ The command writes only the canonical deployment root's native trust leaf:
 - Codex: `projects[root].trust_level = "trusted"` in
   `$CODEX_HOME/config.toml`, or `~/.codex/config.toml`.
 
+It writes that leaf into every configuration file a launch of the deployment
+reads. The targets of each selected harness are:
+
+- the ambient file, selected by the operator's own `CLAUDE_CONFIG_DIR` or
+  `CODEX_HOME`, else the default above;
+- one file for each launch configuration (`launch-configs:` in the
+  deployment's `oats-local.yaml`) of that harness whose `env` sets
+  `CLAUDE_CONFIG_DIR` (claude) or `CODEX_HOME` (codex), as a literal or a
+  `{fromEnv: NAME}` reference resolved from the environment the command runs
+  in.
+
+Targets with the same canonical directory are one file. Each plan entry says
+whether it is the ambient file (`ambient`) and which launch configurations
+use it (`launchConfigs`). A launch configuration whose reference is not set,
+whose path is not absolute, or whose directory does not exist is a named
+`problem` on its entry. OATS never creates a launch configuration's
+directory: create it, or start the harness with it once, then rerun. Any
+problem refuses the whole plan before a write, as an unsupported file does.
+Each file is verified through the reader under the environment that selects
+it.
+
 Nonempty override directories must be absolute. Directory aliases are resolved;
 symlink/nonregular/hardlinked leaves, foreign ownership and ACLs refuse. On Linux, GNU ls's single `.` security-context marker is accepted;
 the context must be readable, match the same-directory candidate before replacement,
@@ -36,7 +57,8 @@ On macOS, any extended-attribute (`@`) or ACL (`+`) marker deliberately refuses,
 including `com.apple.provenance`. This v1 writer does not copy or remove those
 attributes. Inspect the selected file; a refusal never authorizes stripping its
 metadata automatically. Existing file permissions are preserved.
-New config directories use 0700 and files 0600. The plan shows the effective file,
+A missing ambient config directory is created with 0700, and new files use
+0600; a launch configuration's directory is never created. The plan shows the effective file,
 semantic key, current/desired trust scalar, byte digests and override provenance;
 it never returns other config values or credentials.
 
@@ -89,6 +111,29 @@ A Claude root entry cannot cover a home behind an intervening Git boundary.
 Readiness may still warn after an unchanged root apply. Inspect that boundary;
 do not automatically write a second root or answer a trust dialog.
 
+## Launch-time checks and readiness
+
+Spawn, `session start|restart`, `launch-config preview` and `oats readiness`
+read folder trust from the file the launch's own environment selects: the
+host's environment plus the launch configuration's `env`. Codex's
+per-invocation home trust follows the same file. They never write it.
+
+Readiness reports one `harness-trust` item (in `checks.configured`, never
+required) for the launch a home recorded, or for the launch a soul selects.
+It passes, naming the file, when that file trusts the deployment root or an
+ancestor (for Claude, up to a Git boundary; a yolo Codex launch always
+passes). Otherwise it warns, and the spawn warns with the same text:
+
+```text
+<harness> folder trust is not established in <file>: oats harness trust --dir <deployment>
+```
+
+A missing root entry does not prove that the harness will prompt (a native
+gate can skip the question), so neither says the session will stop. A launch
+configuration whose reference is not set on this host is named instead of a
+file. OATS never answers a folder-trust prompt, and launch consent authorizes
+no trust write.
+
 ## Durability, audit and recovery
 
 All selected configs are preflighted before any native write. Cooperating OATS
@@ -110,7 +155,7 @@ or mtime. Plan creates no audit, directory, lock or temporary file. Invalid or
 truncated existing JSONL refuses until operator inspection.
 
 `all` is not a transaction. Failure stops later work, retains earlier changes and
-reports unattempted entries. Trust may already have been consumed, so no rollback
+reports unattempted entries; the error message names the failed files. Trust may already have been consumed, so no rollback
 is simulated. Inspect the native files and audit before rerunning; a correct
 existing entry converges as a no-op. `E_HARNESS_TRUST_INCOMPLETE` has closed reasons
 `locked|changed|audit|write|verify` and a conservative `mayHaveChanged` flag.

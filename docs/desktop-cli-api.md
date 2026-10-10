@@ -4740,6 +4740,7 @@ It uses the existing success/error JSON envelope. Result:
   "root": "/canonical/deployment",
   "entries": [{
     "harness": "claude", "file": "/native/.claude.json",
+    "ambient": true, "launchConfigs": [],
     "key": ["projects", "/canonical/deployment", "hasTrustDialogAccepted"],
     "current": null, "desired": true,
     "beforeDigest": null, "afterDigest": "sha256-hex", "status": "change"
@@ -4748,6 +4749,15 @@ It uses the existing success/error JSON envelope. Result:
   "warnings": []
 }
 ```
+
+There is one entry per target file: the ambient file of each selected harness,
+then one per launch configuration whose `env` sets `CLAUDE_CONFIG_DIR` or
+`CODEX_HOME`, deduplicated by canonical directory. `ambient` says whether the
+operator's own environment selects the file; `launchConfigs` names the launch
+configurations that do (sorted). A launch configuration whose directory cannot
+be resolved (an unset reference, a relative path) or does not exist is a
+`refused` entry with a `problem` string naming it; `file` is null when the path
+is unresolved. The directory is never created.
 
 Entry statuses are `change|unchanged|refused|applied|failed|incomplete|not-attempted`.
 `current` contains only the known trust scalar, or null when missing. Codex's key
@@ -4759,9 +4769,11 @@ unverifiable observations). The intent retains the candidate digest. Apply's aud
 `{path,operationId,status:"recorded"|"incomplete"}`. Override provenance is conveyed
 in warnings, without native configuration contents.
 
-Preflight failures use `E_CONFIG_BROKEN` with the result in details. Apply failures
+Preflight failures, including any entry `problem`, use `E_CONFIG_BROKEN` with the
+result in details; the message names each problem. Apply failures
 use `E_HARNESS_TRUST_INCOMPLETE`, details `{...result,reason,mayHaveChanged}`;
-reason is the closed set `locked|changed|audit|write|verify`. Partial writes are
+reason is the closed set `locked|changed|audit|write|verify`; the message names the
+failed files. Partial writes are
 retained. No existing instance-event envelope or lifecycle DTO changes.
 
 Audit JSONL rows have `version: 1`, `kind: "harness-trust"`, ISO `at`,

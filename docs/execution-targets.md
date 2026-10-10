@@ -1031,7 +1031,10 @@ Unattended execution never implies yolo.
 ### Explicit deployment trust
 
 Use `oats harness trust --dir <deployment> --harness claude|codex|all --plan`,
-then the same command without `--plan`, on the execution host. This is the explicit
+then the same command without `--plan`, on the execution host. It covers the ambient
+configuration file and each launch configuration's `CLAUDE_CONFIG_DIR` /
+`CODEX_HOME`; launch-time checks read the file the launch's own environment
+selects. This is the explicit
 operator-only native-config write path; spawn/start/retire remain read-only with
 respect to native trust. See [native trust](harness-trust.md) for qualified formats,
 Git-boundary limits, audit evidence and partial-failure recovery. Root trust does
