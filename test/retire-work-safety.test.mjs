@@ -682,7 +682,9 @@ test("E_WORK_PRESERVATION_FAILED names the differing status rows (the first 10, 
   let error = JSON.parse(retired.stdout).error;
   assert.equal(error.code, "E_WORK_PRESERVATION_FAILED");
   assert.match(error.message, new RegExp(String.raw`recovered Git index\/status disagreed with the source: f00\.txt \(source  M, recovery absent\); f01\.txt .*; f09\.txt \(source  M, recovery absent\); and 1 more${refusedBeforeHooks("dev-diffrows")}`));
-  assert.deepEqual(error.details, { home: spawned.home, statusDisagreement: { repo: ".", rows: names.slice(0, 10).map((path) => ({ path, source: " M", recovery: null })), total: 11 } });
+  // `reached` (awebai/oats#892): the copy before the hooks failed, so no hook was started and no recovery is left.
+  assert.deepEqual(error.details, { home: spawned.home, statusDisagreement: { repo: ".", rows: names.slice(0, 10).map((path) => ({ path, source: " M", recovery: null })), total: 11 },
+    reached: { phase: "before-hooks", sessionStopAttempted: false, hooksStarted: false, home: "kept", recovery: null } });
   assert.equal(existsSync(spawned.home), true, "the home is kept");
 
   // A nested repository's disagreement names that repository.
