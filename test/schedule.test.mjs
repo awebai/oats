@@ -836,6 +836,74 @@ test("a wake slot is released when its started harness is proven stopped, and ke
   assert.match(S.describe(ws, "one", io).lastRun.reason, /host busy/, "one is not restarted while two holds the only slot");
 });
 
+test("a tick evaluates the minute it was fired for; its timestamps stay real", () => {
+  const ws = workspace();
+  const reg = { maxConcurrent: 5 };
+  S.addSchedule(ws, { id: "at1359", cron: "59 13 * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "a" });
+  S.addSchedule(ws, { id: "at1400", cron: "0 14 * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "b" });
+  const realStart = Date.now();
+  let wallClock;
+  const spawn = fakeSpawn(ws);
+  const io = { spawn: (root, agent, opts) => { wallClock ??= readJson(join(ws, ".agents", "schedules", "state.json")).jobs.at1359?.attempt?.wallClock; return spawn(root, agent, opts); } };
+  // launchd fired the tick at 13:59:59.4; the process got to its first clock read at 14:00:11.
+  const now = at("2026-10-10T14:00:11Z"), firedAt = at("2026-10-10T13:59:59.400Z");
+  const c = S.tickWorkspace(ws, { now, firedAt, io, reg });
+  const by = Object.fromEntries(c.map((x) => [x.id, x]));
+  assert.equal(by.at1359.action, "launched"); assert.equal(by.at1359.minute, "2026-10-10T13:59");
+  assert.equal(by.at1400, undefined, "14:00 is the next tick's minute");
+  const run = S.describe(ws, "at1359", io).lastRun;
+  assert.equal(run.scheduledFor, "2026-10-10T13:59:00.000Z");
+  assert.equal(run.startedAt, now.toISOString(), "startedAt is the tick's clock, not the fired minute");
+  assert.ok(Date.parse(wallClock) >= realStart, `wallClock is the real time (got ${wallClock})`);
+  assert.match(run.instance, /-202610101359$/, "the run is named for the minute it was due");
+  // Without firedAt the minute is now's, as before.
+  assert.equal(S.tickWorkspace(ws, { now: at("2026-10-10T14:00:30Z"), io, reg }).find((x) => x.id === "at1400").action, "launched");
+});
+
+test("oats schedule tick takes its minute from the process start, not from the clock it reads later", () => {
+  const ws = workspace();
+  S.addSchedule(ws, { id: "every", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "a" });
+  // Every Date the CLI makes is two hours ahead; performance.timeOrigin is not.
+  const preload = join(base, "date-ahead.mjs");
+  writeFileSync(preload, "const Real = Date, ahead = 2 * 3600 * 1000;\nglobalThis.Date = class extends Real { constructor(...a) { super(...(a.length ? a : [Real.now() + ahead])); } static now() { return Real.now() + ahead; } };\n");
+  const before = S.readRegistry();
+  S.writeRegistry({ ...before, workspaces: [ws] });
+  try {
+    for (const host of [false, true]) {
+      const from = S.minuteStart(new Date()).getTime();
+      const out = execFileSync(process.execPath, ["--import", preload, bin, "schedule", "tick", ...(host ? ["--host"] : []), "--dry-run", "--dir", ws, "--json"], { encoding: "utf8", env: { ...process.env } });
+      const to = S.minuteStart(new Date()).getTime();
+      const row = JSON.parse(out.trim()).result.considered.find((x) => x.id === "every");
+      assert.equal(row.action, "due");
+      const minute = Date.parse(`${row.minute}:00Z`);
+      assert.ok(minute >= from && minute <= to, `${host ? "--host" : "scope"}: evaluated ${row.minute}, the real minute, not two hours ahead`);
+    }
+  } finally { S.writeRegistry(before); }
+});
+
+test("the host tick evaluates its fired minute, and the host's minute never goes backwards", () => {
+  const ws = workspace();
+  const before = S.readRegistry(), hostBefore = S.readHostState();
+  S.writeRegistry({ ...before, workspaces: [ws] });
+  try {
+    S.addSchedule(ws, { id: "at1359", cron: "59 13 * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "a" });
+    const io = { spawn: fakeSpawn(ws) };
+    let r = S.tickHost({ now: at("2026-10-10T14:00:11Z"), firedAt: at("2026-10-10T13:59:59.400Z"), io });
+    assert.equal(r.minute, "2026-10-10T13:59"); assert.equal(r.tickedAt, "2026-10-10T14:00:11.000Z");
+    assert.equal(r.considered.find((x) => x.id === "at1359").action, "launched");
+    assert.deepEqual([S.readHostState().minute, S.readHostState().lastTick], ["2026-10-10T13:59", "2026-10-10T14:00:11.000Z"]);
+    // The 14:00 tick finishes, then a slow 13:59 tick: the host's minute stays 14:00; lastTick is the last write's real time.
+    S.tickHost({ now: at("2026-10-10T14:00:20Z"), firedAt: at("2026-10-10T14:00:00.100Z"), io });
+    r = S.tickHost({ now: at("2026-10-10T14:00:40Z"), firedAt: at("2026-10-10T13:59:59.900Z"), io });
+    assert.equal(r.minute, "2026-10-10T13:59", "the tick still reports the minute it evaluated");
+    assert.deepEqual([S.readHostState().minute, S.readHostState().lastTick], ["2026-10-10T14:00", "2026-10-10T14:00:40.000Z"]);
+    // An unreadable stored minute counts as absent.
+    S.writeHostState({ ...S.readHostState(), minute: "not a minute" });
+    S.tickHost({ now: at("2026-10-10T14:01:05Z"), firedAt: at("2026-10-10T13:59:59Z"), io });
+    assert.equal(S.readHostState().minute, "2026-10-10T13:59");
+  } finally { S.writeRegistry(before); S.writeHostState(hostBefore); }
+});
+
 test("the host tick observes every registered scope before admitting, in one host-wide least-recently-launched order", () => {
   const ws1 = workspace(), ws2 = workspace();
   const io = { spawn: (root, agent, opts) => { const ws = root.startsWith(ws1) ? ws1 : ws2; const name = `${agent.name}-${opts.purpose}`; return { instance: name, home: home(ws, name), launched: true }; }, inspect: () => ({ present: true, state: "unknown" }) };
