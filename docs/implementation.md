@@ -53,7 +53,7 @@ published to npm. Its developer docs are in
 | `packages.mjs` | `packages:`, the catalog, `oats sync`, `oats-lock.json` |
 | `capability-show.mjs` | `oats capabilities show`: one catalog row's inject and skill files, read at its commit |
 | `materialize.mjs` | copying modules into a home and composing it |
-| `core.mjs` | spawn, retire, sessions, hooks, launch recipes, instance metadata |
+| `core.mjs` | spawn, retire, sessions, hooks, launch recipes, instance metadata. A home's record (`instance.json`) is read with `readHomeRecord`, which never throws: a record, an absent one, or one that is there and cannot be read, with the reason. Code that walks other homes (the listing, a retire's lineage repair) uses it, so that one home's record decides only for that home; `identifiedHomeRecord` is the one refusal (`E_UNIDENTIFIED_INSTANCE_HOME`) a lifecycle verb makes when it has resolved its home: `resolveRetireHome`, `startInstanceSession`, and `resolveTarget` in `instance-lifecycle.mjs` for the stop and retire plans |
 | `instruction-composition.mjs` | the generated `AGENTS.md`; `renderInstructionParts` is the span-reporting renderer (`renderInstructionText` is its text) |
 | `soul-composition.mjs` | the instructions a spawn of a soul would write, composed without a spawn (kernel half + materialize into a scratch home): the one path behind `doctor --soul` and `inspect --soul --instructions` |
 | `teams.mjs`, `teams-verbs.mjs` | the team model and the `oats teams` verbs |

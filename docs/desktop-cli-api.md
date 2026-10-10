@@ -2296,6 +2296,20 @@ its absence.
   in the row),
   `identity` when a provider recorded one, `rollbackIncomplete` and
   `retirePending` when present, and the Desktop facts below.
+- <a id="unreadable-record-row"></a>**A home whose `instance.json` cannot be
+  read** (OATS 0.52.0) is listed like every other, and one such home never
+  fails the listing. Its row has the fields of a home with no `instance.json`
+  and nothing from the record: `instance`, `home`, the Desktop facts
+  (`startedAt`, `identityAddress`, `modelFrom`, each `null`), `waitingOnYou:
+  null`, `rollbackIncomplete` and `retirePending` when present, and `running:
+  null` with `runtimeState: "unreachable"` and `runtimeError:
+  "E_UNIDENTIFIED_INSTANCE_HOME: <home>/instance.json cannot be read
+  (<reason>)"`. The reason is the system's (`EACCES: permission denied`), the
+  parser's (a file cut off, or empty), or what the file is instead: a
+  directory, a symbolic link to nothing, JSON that is not an object. A home
+  with no `instance.json` keeps its row: the same fields, `running: false`
+  and no `runtimeState`. What the lifecycle commands answer for such a home:
+  [below](#unreadable-record).
 - **`spawnInProgress`** (feature `worktree-event`, OATS 0.49.0): `true` only
   while a spawn that is running its `worktree` hooks is verifiably alive (its
   pid runs with the recorded start time). Such a home holds the quarantine marker
@@ -2945,6 +2959,41 @@ return the first receipt. Recorded parentage (`parentInstance`) is the only
 relation followed; a child whose parent name matches several homes is listed
 under `ambiguous` and never acted on.
 
+<a id="unreadable-record"></a>
+**A home whose `instance.json` is there and cannot be read** as a JSON object
+(cut off, empty, kept from the user, a directory, a link to nothing, JSON
+that is not an object; OATS 0.52.0) decides only for itself.
+
+- Every command about another instance answers as if that home were not
+  there: its stop and retire plans and applies, `oats session`, `oats
+  instance events`, a spawn, the roster.
+- Every lifecycle command about that home is refused with
+  `E_UNIDENTIFIED_INSTANCE_HOME` before it takes a claim, reads the home or
+  touches anything: `oats retire` (plain, `--plan`, guarded, `--self`), `oats
+  instance stop --plan` and `--apply`, `oats session start` and `restart`.
+  The answer has no `details`, and the message is `<home>/instance.json
+  cannot be read (<reason>); nothing was done. Restoring the file from a copy
+  makes the home usable again; removing such a home through OATS is not
+  possible yet.`
+- `oats retire --force` is refused the same way. `--force` removes a home
+  that has no `instance.json`; a home whose record is there and cannot be
+  read may be a whole instance with work, and is never removed blind.
+- The lineage is read from records. A parent whose record cannot be read has
+  no recorded children for a stop or a retire: they are listed, and each is
+  stopped and retired on its own. A child whose record cannot be read is not
+  a target of its parent's stop or retire, and a retire does not repair its
+  lineage.
+- A spawn that names such a home as its parent or anchor is refused
+  (`E_SPAWN_FAILED`, the same sentence with `nothing was spawned`): the
+  parent's child-spawn policy and the lineage are in that record.
+- `oats session inspect`, `input` and `attach` on that home answer
+  `E_RUNTIME_ENDPOINT_UNKNOWN`, and `oats instance events` still reads its
+  logs.
+
+A record that becomes unreadable after a retire has taken the home's claim is
+refused the same way, with [`details.reached`](#retire-reached) and the
+sentence of that point in place of `nothing was done`.
+
 ### Stop
 
 ```text
@@ -2974,7 +3023,8 @@ oats instance stop <instance> --plan [--no-recursive] [--home <abs>] [--dir <d>]
 - `work` is the Git observation summarized (`changed` counts changed,
   renamed, copied and unmerged rows), or `{observed: false, reason}`:
   `"no-worktree"`, or the kernel code of what failed (`E_GIT_FAILED` for an
-  error that has none).
+  error that has none; `E_WORK_INSPECTION_FAILED` for a home the kernel
+  cannot look into, where whether it has a `work/` cannot be told).
 - `midTask`: `true`, `false` or `"unknown"`.
 
 ```text
@@ -3019,7 +3069,9 @@ the instance back.
 - Refusals: `E_BAD_ARGS` (no `--plan-revision`, a bad key, not exactly one of
   `--plan`/`--apply`), `E_PLAN_STALE`, `E_INSTANCE_RETIRING` and
   `E_LIFECYCLE_BUSY` (each with `details.plan`), `E_SESSION_UNKNOWN`,
-  `E_AMBIGUOUS_INSTANCE`, `E_HOME_MISMATCH`, `E_LIFECYCLE_FAILED` (any error
+  `E_AMBIGUOUS_INSTANCE`, `E_HOME_MISMATCH`, `E_UNIDENTIFIED_INSTANCE_HOME`
+  (the home's `instance.json` [cannot be read](#unreadable-record); `--plan`
+  and `--apply`, nothing was done), `E_LIFECYCLE_FAILED` (any error
   that is not the kernel's, with [`details.cause`](#kernel-codes)). A stop
   never answers `E_WORK_INSPECTION_FAILED`.
 
@@ -3340,7 +3392,9 @@ retry}` to `resultPath`. Before 0.48.0 only a guarded apply stopped children.
   the plan would read by then: a retire in flight has usually changed it (it
   stops the session of a launched instance before its hooks run). Before the
   claim an apply only replays a used key and resolves the home
-  (`E_SESSION_UNKNOWN`, `E_AMBIGUOUS_INSTANCE`, `E_HOME_MISMATCH`).
+  (`E_SESSION_UNKNOWN`, `E_AMBIGUOUS_INSTANCE`, `E_HOME_MISMATCH`,
+  `E_UNIDENTIFIED_INSTANCE_HOME` for a home whose `instance.json`
+  [cannot be read](#unreadable-record)).
 - The children stopped are those of the revalidated plan, and a refusal
   carries it: `E_CHILDREN_RUNNING {childrenStopped, plan}`.
 - A first guarded retire prints the raw receipt with `planRevision`,
@@ -3446,6 +3500,10 @@ message names the entry or the state that could not be read, or the directory
 Git reads as the top level of a `work/` whose `core.worktree` names another
 one),
 `E_SESSION_UNKNOWN`, `E_AMBIGUOUS_INSTANCE`,
+`E_UNIDENTIFIED_INSTANCE_HOME` (a home with no `instance.json` and no cleanup
+descriptor, or a rollback marker that cannot drive a retry, until `--force`;
+a home whose `instance.json` [cannot be read](#unreadable-record), `--plan`
+and `--force` included),
 `E_NO_ROOT`, `E_LIFECYCLE_FAILED`, `E_LIFECYCLE_BUSY` (another retire of the
 home is running or scheduled, `--force` included: one retire of a home at a
 time, above; or, feature
@@ -3629,6 +3687,9 @@ selection flags. See [the start workflow](desktop-instance-start.md).
 - A lost response does not mean the launch failed: check status before a
   retry. A remote home's saved route names its execution host.
 - Errors: `E_BAD_ARGS`, `E_SESSION_UNKNOWN`, `E_UNSUPPORTED_MODE`,
+  `E_UNIDENTIFIED_INSTANCE_HOME` (the home's `instance.json`
+  [cannot be read](#unreadable-record): nothing was started, `start` and
+  `restart`),
   `E_SESSION_START_BUSY`, `E_INSTANCE_RETIRING`, `E_LAUNCH_*` (among them
   `E_LAUNCH_SHIM`: the home's `oats` link cannot be written, nothing was
   started), `E_MODEL_UNKNOWN`, `E_UNSUPPORTED_HARNESS`, `E_SESSION_FAILED`
