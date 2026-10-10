@@ -246,7 +246,9 @@ test("retire of a Herdr home that a process still works in refuses and names the
     const r = fx.cli(["retire", name, "--json"]);
     assert.equal(r.status, 1);
     assert.deepEqual(JSON.parse(r.stdout).error, { code: "E_HERDR_REMOVED",
-      message: `${STEM} ${name} was opened in Herdr. A process still works in this home (pid ${child.pid}); stop its Herdr pane (for example \`herdr --session oats server stop\`), then retire.` });
+      message: `${STEM} ${name} was opened in Herdr. A process still works in this home (pid ${child.pid}); stop its Herdr pane (for example \`herdr --session oats server stop\`), then retire.`,
+      // What the retire had done by then (awebai/oats#892): nothing.
+      details: { reached: { phase: "before-effects", sessionStopAttempted: false, hooksStarted: false, home: "kept", recovery: null } } });
     assert.equal(existsSync(home), true, "nothing was removed");
   } finally { child.kill(); }
   await new Promise((resolve) => child.once("exit", resolve));

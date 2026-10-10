@@ -818,6 +818,20 @@ a file over 2 GiB it gives the size, and `find <work> -type f -size
 or make it readable, then run `oats retire <instance>` again. With nothing to
 preserve, the files are not read and the retire goes through.
 
+**An entry of the home that cannot be read, or that is gone when it is
+read.** Each inspection walks the home: it lists a directory, then reads each
+entry. A file or a directory without permission, and an entry that another
+process removed or renamed between the listing and the read, refuse the
+retire with `E_WORK_INSPECTION_FAILED` at the inspection that met it. The
+message names the entry and the system's reason, and ends with what the
+retire had done by then, as the other refusals at that point do: nothing was
+stopped, run or removed at the first inspection; no hook has run and nothing
+was deleted at the one before the hooks; the hooks have run, and the home, its
+work and the pre-hook recovery are kept at the one after them. The home is
+kept in each case. Make the entry readable, or let the process that writes in
+the home end, then run `oats retire <instance>` again. The answer says the
+same as data: [`error.details.reached`](desktop-cli-api.md#retire-reached).
+
 The home is not copied again because the work is, and the work is not copied
 again because the home is. The home's comparison after the hooks holds every
 entry the home copy carries, as its bytes and permission bits, the kernel's
