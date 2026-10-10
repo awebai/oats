@@ -17,11 +17,13 @@
 // Every case runs the real CLI against a file shape that fails the same way each time.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { pathToFileURL } from "node:url";
+import { fakeBin } from "./helpers/fake-ssh.mjs";
+import { CLI, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { readHomeRecord, retireInstance, RETIRE_UNDER_CLAIM } from "../lib/core.mjs";
 
 /** A mode no longer keeps root out: the shapes that rest on one are skipped for root. */
@@ -76,9 +78,10 @@ const SHAPES = [
 
 /** A deployment with the instances `names` of the soul `dev` (no launch), whose capability has a
  *  retire hook that logs each run outside every home. Modes are given back before the base is removed. */
-async function deployment(t, names) {
+async function deployment(t, names, { otherSoul = false } = {}) {
+  const soul = { soul: { work: "directory", capabilities: { "test.retire": { from: "here" } } } };
   const fx = v2Deployment({ t,
-    souls: { dev: { soul: { work: "directory", capabilities: { "test.retire": { from: "here" } } } } },
+    souls: { dev: soul, ...(otherSoul ? { ops: soul } : {}) },
     capabilities: { "test.retire": { manifest: { hooks: { retire: "hook.mjs" } }, files: { "hook.mjs": `import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 appendFileSync(join(process.env.OATS_ROOT, "retire-hook.log"), process.env.OATS_INSTANCE + "\\n");
@@ -255,6 +258,74 @@ test("a parent whose record cannot be read has no recorded children for a stop o
   assert.deepEqual(plan("parent").targets.map((target) => target.instance), ["parent"]);
 });
 
+for (const shape of SHAPES.filter((s) => !s.edge)) {
+  test(`a home of the same name under another soul whose record is ${shape.id} is not a second parent: the healthy parent's stop and retire keep their recorded child`, async (t) => {
+    if (shape.root && ROOT) { t.skip(SKIP_FOR_ROOT); return; }
+    const d = await deployment(t, ["parent"], { otherSoul: true });
+    const { fx } = d;
+    answered(fx.cli(["spawn", "dev", "--name", "kid", "--parent", "parent", "--no-launch", "--json"]), "spawn of the child");
+    // Two homes of one name: what a deployment from before 0.26.0 can hold, and `--home` tells apart.
+    answered(fx.cli(["spawn", "ops", "--name", "twin", "--no-launch", "--json"]), "spawn of the other soul's instance");
+    const twin = join(fx.root, "ops", "instances", "parent");
+    renameSync(join(fx.root, "ops", "instances", "twin"), twin);
+    const plan = (verb) => answered(fx.cli([...verb, "parent", "--home", d.homes.parent, "--plan", "--json"]), `${verb.join(" ")} --plan of the healthy parent`).json().result;
+    // Both records readable: the child's parent name resolves to two homes, and the edge is not followed.
+    const both = plan(["instance", "stop"]);
+    assert.deepEqual(both.targets.map((target) => target.instance), ["parent"], "fixture premise: with two readable parents the child is not a target");
+    assert.deepEqual(both.ambiguous.map((c) => c.instance), ["kid"], "fixture premise: and it is listed as ambiguous");
+
+    breakRecord(twin, shape);
+    const stop = plan(["instance", "stop"]);
+    assert.deepEqual(stop.targets.map((target) => target.instance), ["kid", "parent"], "the home whose record cannot be read is nobody's parent");
+    assert.deepEqual(stop.ambiguous, []);
+    const retire = plan(["retire"]);
+    assert.deepEqual(retire.facts.children.map((c) => c.instance), ["kid"]);
+    assert.deepEqual(retire.facts.ambiguous, []);
+  });
+
+  test(`the roster through --server with one record ${shape.id} on the host: the group is answered, every instance is listed, and that home's row is unreachable with the file and the reason`, async (t) => {
+    if (shape.root && ROOT) { t.skip(SKIP_FOR_ROOT); return; }
+    const d = await deployment(t, ["bad", "good"]);
+    const { fx } = d;
+    // The SSH contract exercised locally (helpers/fake-ssh.mjs): a fake ssh runs the host's command
+    // through `sh -c`, against the real kernel in this fixture's deployment.
+    const client = join(fx.base, "client");
+    const { bin, tools } = fakeBin(client);
+    const env = { ...fx.env, PATH: bin, HOME: join(client, "home"), OATS_HOME_DIR: join(client, "oats-home") };
+    mkdirSync(env.HOME, { recursive: true }); mkdirSync(env.OATS_HOME_DIR, { recursive: true });
+    const oats = (args) => {
+      const r = spawnSync(process.execPath, [CLI, ...args], { cwd: env.HOME, env, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+      return { ...r, json: () => JSON.parse(r.stdout.trim().split("\n").pop()) };
+    };
+    answered(oats(["server", "add", "build", "--ssh", "build-host", "--workspace", fx.dep, "--oats", CLI, "--path", tools, "--json"]), "server add");
+    const { record, reason } = breakRecord(d.homes.bad, shape);
+    const runtimeError = `E_UNIDENTIFIED_INSTANCE_HOME: ${record} cannot be read (${reason})`;
+
+    const roster = answered(oats(["server", "roster", "--json"]), "oats server roster").json();
+    assert.equal(roster.ok, true);
+    assert.equal(roster.result.groups.length, 1);
+    const group = roster.result.groups[0];
+    assert.equal(group.server, "build");
+    assert.equal(group.probe.ok, true, `the host answered: ${JSON.stringify(group.probe)}`);
+    const rows = Object.fromEntries(group.instances.map((i) => [i.instance, i]));
+    assert.deepEqual(Object.keys(rows).sort(), ["bad", "good"], "every instance of the host is listed");
+    assert.equal(rows.bad.home, d.homes.bad);
+    assert.equal(rows.bad.running, null);
+    assert.equal(rows.bad.runtimeState, "unreachable");
+    assert.equal(rows.bad.runtimeError, runtimeError);
+    assert.equal(rows.good.agent, "dev");
+    assert.equal(rows.good.running, false);
+    assert.equal(rows.good.runtimeError, undefined);
+
+    // The host's own status through the route, and the roster's text.
+    const status = answered(oats(["status", "--server", "build", "--json"]), "oats status --server");
+    assert.ok(status.stdout.includes(JSON.stringify(runtimeError).slice(1, -1)), status.stdout);
+    const text = answered(oats(["server", "roster"]), "oats server roster (text)");
+    assert.ok(text.stdout.includes(runtimeError), text.stdout);
+    assert.match(text.stdout, /\bgood\b/);
+  });
+}
+
 // ---- 3. every lifecycle command about THAT home ----
 
 /** The lifecycle commands about the instance `bad`, each with `--json`. */
@@ -328,6 +399,47 @@ test("a record that becomes unreadable after the retire resolved its home, under
   assert.deepEqual(d.hookRuns(), []);
   assert.deepEqual(d.recoveries(), []);
 });
+
+/** The CLI with a preload that lets the listing read `record` once more as it is, and cuts the file
+ *  off right after that read: the record becomes unreadable between the listing and the verb's own
+ *  read of it. Every other call is the original. → the CLI run, as fx.cli runs it. */
+function cliWithRecordCutAfterListing(fx, record, args) {
+  const preload = join(fx.base, "record-cut-after-listing.mjs");
+  writeFileSync(preload, `// Written by test/unreadable-record.test.mjs.
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const readFileSync = fs.readFileSync;
+let cut = false;
+fs.readFileSync = function (path, ...rest) {
+  const bytes = readFileSync.call(this, path, ...rest);
+  if (!cut && String(path) === ${JSON.stringify(record)} && new Error().stack.includes("listInstances")) { cut = true; fs.writeFileSync(path, "{"); }
+  return bytes;
+};
+syncBuiltinESMExports();
+`);
+  return spawnSync(process.execPath, ["--import", pathToFileURL(preload).href, CLI, ...args], { cwd: fx.dep, env: fx.env, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+}
+for (const { id, argv } of [
+  { id: "instance stop --plan", argv: ["instance", "stop", "bad", "--plan", "--json"] },
+  { id: "retire --plan", argv: ["retire", "bad", "--plan", "--json"] },
+]) {
+  test(`${id} of a home whose record becomes unreadable between the listing and the plan's own read of it: refused with E_UNIDENTIFIED_INSTANCE_HOME, never a plan with empty facts`, async (t) => {
+    const d = await deployment(t, ["bad", "good"]);
+    const record = join(d.homes.bad, "instance.json");
+    const original = readFileSync(record, "utf8");
+    const error = refusal(cliWithRecordCutAfterListing(d.fx, record, argv), id);
+    assert.equal(readFileSync(record, "utf8"), "{", "fixture premise: the listing read the record, and it was cut off after that read");
+    assert.equal(error.code, "E_UNIDENTIFIED_INSTANCE_HOME", JSON.stringify(error));
+    assert.equal(error.message, refused(record, parserSays("{")));
+    assert.deepEqual(d.recoveries(), []);
+    assert.deepEqual(d.hookRuns(), []);
+    // The control: with the record as it was, the same command answers a plan.
+    writeFileSync(record, original);
+    const plan = answered(d.fx.cli(argv), `${id} of the intact home`).json();
+    assert.equal(plan.result.instance, "bad");
+    assert.equal(plan.ok, true);
+  });
+}
 
 test("a spawn whose parent's record cannot be read is refused and spawns nothing: the parent's child-spawn policy is in that record", async (t) => {
   const d = await deployment(t, ["bad"]);
