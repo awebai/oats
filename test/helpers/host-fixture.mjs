@@ -1,7 +1,7 @@
 // Host-independent executables and shells for real, temporary process fixtures.
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { accessSync, chmodSync, constants, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { accessSync, chmodSync, constants, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, sep } from "node:path";
@@ -283,10 +283,40 @@ export async function waitUntil(predicate, description, timeoutMs = 10000) {
   return true;
 }
 
-/** End the process `pid` (SIGKILL) and wait until it is gone. A killed child of this process is a
- *  zombie until this event loop has reaped it, and until then it reads as running, with its start
- *  time: a record that names it (a claim, a retire's pending marker) still names a live process. */
+/** End the process `pid` (SIGKILL) and wait until it is gone: reaped, for a child of this process,
+ *  which is a zombie until this event loop has reaped it. For a test that needs the pid itself to
+ *  be gone (`kill(pid, 0)` answering ESRCH). A record that names a zombie (a claim, a retire's
+ *  pending marker) already names a holder that is gone (awebai/oats#870: zombieSync, below). */
 export async function killAndReap(pid, timeoutMs = 10000) {
   try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ }
   await waitUntil(() => { try { process.kill(pid, 0); return false; } catch (e) { return e.code === "ESRCH"; } }, `pid ${pid} to be gone`, timeoutMs);
+}
+
+/** The state of the process `pid` as this host reports it, read without the kernel's reader: field 3
+ *  of /proc/<pid>/stat where there is procfs, else what `ps -o stat=` prints (`Z`, `Z+` on macOS).
+ *  null when it cannot be read (the pid is gone). Synchronous. */
+export function hostProcessState(pid) {
+  if (existsSync("/proc/self/stat")) {
+    try { const stat = readFileSync(`/proc/${pid}/stat`, "utf8"); return stat.slice(stat.lastIndexOf(")") + 2).split(" ")[0]; }
+    catch { return null; }
+  }
+  const r = spawnSync("ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf8", env: { PATH: "/usr/bin:/bin", LC_ALL: "C" } });
+  return r.status === 0 && r.stdout.trim() ? r.stdout.trim() : null;
+}
+
+/** End `pid`, a CHILD OF THIS PROCESS (SIGKILL unless it has exited by itself: `signal: null`), and
+ *  wait, synchronously, until the host reports it as a zombie (awebai/oats#870) → that state.
+ *  It stays a zombie for as long as the caller stays synchronous: Node reaps its children from its
+ *  event loop, so everything that must meet the zombie (a kernel call in this process, a CLI run
+ *  with spawnSync) comes before the next `await`. No delay is assumed: the state is observed. */
+export function zombieSync(pid, { signal = "SIGKILL", timeoutMs = 10000 } = {}) {
+  if (signal) process.kill(pid, signal);
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const state = hostProcessState(pid);
+    if (state?.startsWith("Z")) return state;
+    assert.ok(state !== null, `pid ${pid} is gone, not a zombie: it is not a child of this process, or it was reaped`);
+    assert.ok(Date.now() < deadline, `timed out waiting for pid ${pid} to be a zombie (its state is ${state})`);
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+  }
 }

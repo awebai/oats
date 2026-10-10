@@ -16,7 +16,7 @@ import { deferredRetireResultPath, retireInstance, retirePendingMarkerPath } fro
 import { readEvents } from "../lib/instance-events.mjs";
 import { processStartToken } from "../lib/worktree-hooks.mjs";
 import { CLI, v2Deployment } from "./helpers/v2-deployment.mjs";
-import { killAndReap, waitUntil } from "./helpers/host-fixture.mjs";
+import { hostProcessState, killAndReap, waitUntil, zombieSync } from "./helpers/host-fixture.mjs";
 
 const CORE = pathToFileURL(new URL("../lib/core.mjs", import.meta.url).pathname).href;
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
@@ -400,6 +400,31 @@ test("a retire killed while it holds the claim does not block the next one: the 
   assert.deepEqual(claimFiles(h.inst.home), [], "no claim and no reclaim file is left");
 });
 
+test("a retire that is a zombie (killed, and not reaped by its parent) does not block the next one either: its claim is taken over", async (t) => {
+  const f = fixture(t);
+  const h = await inFlight(f, (inst) => f.retire(inst.instance));
+  const [hook] = f.hookPids();
+  // The first retire is a child of this process, and Node reaps its children from its event loop:
+  // killed, it stays a zombie until the next await (awebai/oats#870). So nothing is awaited from
+  // here to the assertion on its state, and the second retire is the synchronous CLI.
+  const state = zombieSync(h.a.pid);
+  t.diagnostic(`the killed retire (pid ${h.a.pid}) is a zombie: the host reports its state as ${JSON.stringify(state)}`);
+  kill(hook); // its hook outlives it (awebai/oats#865)
+  assert.equal(readJson(h.lock).pid, h.a.pid, "the killed retire left its claim");
+  assert.equal(existsSync(h.inst.home), true);
+  f.open();
+  const next = f.fx.cli(["retire", h.inst.instance, "--json"]);
+  assert.match(String(hostProcessState(h.a.pid)), /^Z/, "the first retire was still a zombie when the second returned: a zombie is what it met");
+  assert.equal(next.status, 0, next.stdout + next.stderr);
+  assert.equal(JSON.parse(next.stdout).retired, h.inst.instance);
+  assert.equal(existsSync(h.inst.home), false, "the next retire ran");
+  assert.equal(f.hookRuns(), 2, "with its own hook run");
+  assert.deepEqual(claimFiles(h.inst.home), [], "no claim and no reclaim file is left");
+  // Reaped only now.
+  assert.equal((await h.a.done).signal, "SIGKILL");
+  await waitUntil(() => !alive(hook), "the killed retire's hook to be gone");
+});
+
 test("the --self window: between the scheduling and its completion every other retire is refused, naming the pending marker and the completion", async (t) => {
   const f = fixture(t);
   const inst = await f.spawn();
@@ -453,6 +478,42 @@ test("the --self window: between the scheduling and its completion every other r
   assert.equal(existsSync(inst.home), false);
   assert.equal(existsSync(marker), false, "the owed retirement is paid: the marker is gone");
   assert.equal(f.hookRuns(), 1);
+});
+
+test("a pending marker whose completion is a zombie refuses no longer: the retire does what the completion owed", async (t) => {
+  const f = fixture(t);
+  const inst = await f.spawn();
+  const name = inst.instance, marker = retirePendingMarkerPath(inst.home);
+  // The completion is a detached child of this process, asleep for the whole test.
+  const scheduled = await f.fx.inEnv(() => retireInstance(f.fx.root, name, { self: true, selfKillDelaySec: 600 }));
+  const pid = f.track(scheduled.completionPid);
+  const pending = readJson(marker), markerBytes = readFileSync(marker, "utf8"), before = digest(inst.home);
+  assert.deepEqual([pending.completionPid, pending.completionStart], [pid, processStartToken(pid)], "the marker names its completion, and when it started");
+  // Nothing is awaited from here to the assertion on the zombie's state: this process reaps its
+  // children from its event loop, so the completion stays a zombie only while the test is synchronous.
+  // The control: the completion lives, and the retire is refused.
+  const busy = f.fx.cli(["retire", name, "--json"]);
+  assert.equal(busy.status, 1, busy.stdout + busy.stderr);
+  assert.deepEqual(busy.json().error, { code: "E_LIFECYCLE_BUSY",
+    message: `a retire of ${name} is already scheduled (its completion, pid ${pid}, requested at ${pending.requestedAt}); nothing was done — wait for it to finish`,
+    details: { instance: name, home: inst.home, lock: marker, pid, since: pending.requestedAt } });
+  assert.doesNotMatch(String(hostProcessState(pid)), /^Z/, "the completion that refused it was running");
+  assert.equal(digest(inst.home), before, "the refused retire changed nothing of the home");
+  assert.deepEqual([recoveries(inst), f.hookRuns(), claimFiles(inst.home)], [[], 0, []], "no recovery, no hook run, no claim left");
+  // The completion is killed and nobody reaps it: the same marker, naming the same pid and start.
+  const state = zombieSync(pid);
+  t.diagnostic(`the killed completion (pid ${pid}) is a zombie: the host reports its state as ${JSON.stringify(state)}`);
+  assert.equal(readFileSync(marker, "utf8"), markerBytes, "the marker is as it was");
+  f.open();
+  const r = f.fx.cli(["retire", name, "--json"]);
+  assert.match(String(hostProcessState(pid)), /^Z/, "the completion was still a zombie when the retire returned: a zombie is what it met");
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(JSON.parse(r.stdout).retired, name);
+  assert.equal(existsSync(inst.home), false, "the home is retired");
+  assert.equal(existsSync(marker), false, "the owed retirement is paid: the marker is gone");
+  assert.equal(f.hookRuns(), 1);
+  assert.deepEqual(claimFiles(inst.home), [], "no claim is left");
+  await killAndReap(pid);
 });
 
 test("a pending marker refuses only for a completion that lives: its outcome, an older kernel's marker and a start that cannot be compared", async (t) => {
@@ -559,7 +620,7 @@ test("the home is resolved again under the claim: removed meanwhile it is E_SESS
   assert.deepEqual([claimFiles(moved.home), claimFiles(twin)], [[], []], "no claim is left, of the first home or of the second");
 });
 
-test("a claim nobody comes back for: with no home of that name, a gone holder's claim is removed and a live, unknown or unreadable one is left", async (t) => {
+test("a claim nobody comes back for: with no home of that name, a gone holder's claim is removed, and a live, unknown or unreadable one, or one that cannot be taken over, is left", async (t) => {
   const f = fixture(t);
   const inst = await f.spawn(); // the agent, and so its instances directory, exists
   const ghost = join(dirname(inst.home), "worker-gone"), lock = claimOf(ghost);
@@ -571,7 +632,9 @@ test("a claim nobody comes back for: with no home of that name, a gone holder's 
   writeClaim(ghost, { pid: exitedPid(), processStart: "proc:1" });
   unknownSession();
   assert.deepEqual(claimFiles(ghost), [], "the gone holder's claim is removed, and no reclaim file is left");
-  for (const [what, bytes] of [["a live holder", null], ["a holder with no recorded start", { processStart: undefined }], ["a file that is not a claim", "{not json"]]) {
+  // A gone holder whose nonce is not a claim's: no takeover can be serialized on it (lib/claim.mjs).
+  for (const [what, bytes] of [["a live holder", null], ["a holder with no recorded start", { processStart: undefined }], ["a file that is not a claim", "{not json"],
+    ["a gone holder whose claim cannot be taken over", { pid: exitedPid(), processStart: "proc:1", nonce: "short" }]]) {
     if (typeof bytes === "string") writeFileSync(lock, bytes); else writeClaim(ghost, bytes ?? {});
     const held = readFileSync(lock, "utf8");
     unknownSession();
@@ -594,7 +657,7 @@ test("a process whose own start cannot be read: retire is refused, saying what c
   assert.equal(r.code, 1, r.out + r.err);
   const e = envelope(r).error, lock = claimOf(inst.home);
   assert.equal(e.code, "E_LIFECYCLE_BUSY");
-  assert.match(e.message, /^this process's start time cannot be read \(ps -o lstart= -p \d+ answered exit 2: ps: simulated failure\), so oats retire cannot hold /);
+  assert.match(e.message, /^this process's start time cannot be read \(ps -o lstart= -o stat= -p \d+ answered exit 2: ps: simulated failure\), so oats retire cannot hold /);
   assert.ok(e.message.endsWith(`cannot hold ${lock} verifiably; nothing was done`), e.message);
   assert.deepEqual(e.details, { instance: inst.instance, home: inst.home, lock });
   assert.equal(digest(inst.home), before, "nothing of the home changed");
@@ -652,5 +715,73 @@ test("a holder that cannot be established alive or gone is never taken over; a c
   f.open();
   const r = await f.fx.inEnv(() => retireInstance(f.fx.root, name, {}));
   assert.equal(r.retired, name);
+  assert.deepEqual(claimFiles(inst.home), []);
+});
+
+test("a dangling symbolic link where the claim belongs: the retire is refused in a bounded time, naming the path, and nothing was done", async (t) => {
+  const f = fixture(t);
+  const inst = await f.spawn();
+  const name = inst.instance, lock = claimOf(inst.home), before = digest(inst.home);
+  // A path that exists (a claim cannot be linked there) and reads as absent, for as long as it is there.
+  const nowhere = join(f.fx.base, "no-such-file");
+  mkdirSync(claimsDir(inst.home), { recursive: true });
+  symlinkSync(nowhere, lock);
+  // Before awebai/oats#874 this retire never returned: the time it is given makes that a failure.
+  const started = Date.now();
+  const r = spawnSync(process.execPath, [CLI, "retire", name, "--json"], { cwd: f.fx.dep, env: f.fx.env, encoding: "utf8", timeout: 30000 });
+  const took = Date.now() - started;
+  t.diagnostic(`refused after ${took} ms`);
+  assert.equal(r.error, undefined, `the retire returned by itself (${r.error?.code}, signal ${r.signal})`);
+  assert.ok(took < 10000, `it was refused in a bounded time (${took} ms)`);
+  assert.deepEqual([r.status, r.stderr], [1, ""], r.stdout + r.stderr);
+  const e = JSON.parse(r.stdout);
+  assert.deepEqual({ schemaVersion: e.schemaVersion, ok: e.ok }, { schemaVersion: 1, ok: false });
+  assert.deepEqual(e.error, { code: "E_LIFECYCLE_BUSY", message: `${lock} is not a readable claim; inspect it and remove it if no oats retire holds it; nothing was done`,
+    details: { instance: name, home: inst.home, lock } });
+  assert.doesNotMatch(e.error.message, /already running|wait for it to finish/, "nobody is said to be running");
+  assert.equal(lstatSync(lock).isSymbolicLink(), true, "the link is still there");
+  assert.deepEqual([readlinkSync(lock), existsSync(nowhere)], [nowhere, false], "as it was, and nothing was written through it");
+  assert.equal(digest(inst.home), before, "nothing of the home changed");
+  assert.deepEqual([claimFiles(inst.home), recoveries(inst), f.hookRuns()], [[`${name}.lock`], [], 0], "no private file left beside it, no recovery, no hook run");
+  // The way out the refusal names: once the link is removed, the retire runs.
+  rmSync(lock);
+  f.open();
+  const went = f.fx.cli(["retire", name, "--json"]);
+  assert.equal(went.status, 0, went.stdout + went.stderr);
+  assert.equal(JSON.parse(went.stdout).retired, name);
+  assert.equal(existsSync(inst.home), false);
+  assert.deepEqual(claimFiles(inst.home), []);
+});
+
+test("a claim whose holder is gone and that cannot be taken over (its nonce is not 32 hexadecimal digits) has its own refusal, never the one that says a retire is running", async (t) => {
+  const f = fixture(t);
+  const inst = await f.spawn();
+  const name = inst.instance, lock = claimOf(inst.home), before = digest(inst.home);
+  for (const [which, nonce] of [["a short nonce", "short"], ["no nonce", undefined]]) {
+    const pid = exitedPid();
+    writeClaim(inst.home, { pid, processStart: "proc:1", nonce });
+    const held = readFileSync(lock, "utf8");
+    // --force does not take it over either.
+    for (const extra of [[], ["--force"]]) {
+      const what = `${which}${extra.length ? `, ${extra}` : ""}`;
+      const r = f.fx.cli(["retire", name, "--json", ...extra]);
+      assert.equal(r.status, 1, `${what}: ${r.stdout}${r.stderr}`);
+      const e = r.json().error;
+      assert.deepEqual(e, { code: "E_LIFECYCLE_BUSY",
+        message: `the process that held ${lock} (pid ${pid}) is gone, and this file is not a claim this kernel can take over (its nonce is not the 32 hexadecimal digits a claim carries); nothing was done — inspect ${lock} and remove it if no oats retire holds it, then retry`,
+        details: { instance: name, home: inst.home, lock, pid, since: "2026-10-10T00:00:00.000Z" } }, what);
+      assert.doesNotMatch(e.message, /already running|wait for it to finish/, `${what}: nobody is said to be running`);
+      assert.equal(readFileSync(lock, "utf8"), held, `${what}: the file is byte for byte as it was`);
+      assert.equal(digest(inst.home), before, `${what}: nothing of the home changed`);
+      assert.deepEqual([claimFiles(inst.home), recoveries(inst), f.hookRuns()], [[`${name}.lock`], [], 0], `${what}: no reclaim file, no recovery, no hook run`);
+    }
+  }
+  // The way out the refusal names: once the file is removed, the retire runs.
+  rmSync(lock);
+  f.open();
+  const went = f.fx.cli(["retire", name, "--json"]);
+  assert.equal(went.status, 0, went.stdout + went.stderr);
+  assert.equal(JSON.parse(went.stdout).retired, name);
+  assert.equal(existsSync(inst.home), false);
   assert.deepEqual(claimFiles(inst.home), []);
 });
