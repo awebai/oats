@@ -613,6 +613,89 @@ test("the plan read again under the claims meets a home that changed: the target
   assert.deepEqual(claimFiles(gone.home), [], "the claim of a home that is gone is released");
 });
 
+test("a child that is in the plan read under the claims and was not in the one read before them (its record unreadable then, whole again since) is claimed before anything is done: beside a stop that holds it the apply is refused whole and writes nothing into the child; with nobody on it the apply holds the child's claim while it stops it", async (t) => {
+  // Before 5642fd2f: an apply took no claim. With claims taken for the first plan's targets alone,
+  // the apply stopped the child under the parent's claim only: it removed the child's marker and
+  // answered an ok row for it beside another stop of that child, whose claim it never asked for.
+  const d = deployment(t);
+  const p = await d.add("p"), kid = await d.add("kid", { parent: p });
+  const shown = d.plan(p.name);
+  assert.deepEqual(shown.targets.map((target) => target.instance), ["kid", "p"], "fixture premise: the plan the caller was shown");
+  const record = readFileSync(kid.record);
+  const cutOff = () => writeFileSync(kid.record, record.subarray(0, record.length >> 1));
+  // A marker an older kernel left: its removal is the first thing an apply does to a target.
+  const marker = join(kid.home, ".oats-stop-pending.json");
+  writeFileSync(marker, "{}\n");
+
+  // Beside a stop of the child. The apply reads its first plan while the child's record is cut
+  // off (the parent alone), and is held once it has the parent's claim.
+  cutOff();
+  const refused = d.heldApply(p.name, shown.planRevision, "k1", claimTaken(p.lock));
+  try {
+    await refused.waitGate("held");
+    assert.deepEqual(claimFiles(p.home), ["p.lock"], "the apply holds the parent's claim, the one target of the plan it read");
+    writeFileSync(kid.record, record);
+    writeClaim(kid.home, { action: "stop" }); // a live holder: this test's own process
+    const before = { home: listing(kid.home), claim: readFileSync(kid.lock, "utf8") };
+    refused.release("held");
+    refusedByHolder(await ended(refused), { target: kid, action: "stop", pid: process.pid, planned: p }, "the child is back, and a stop holds it");
+    assert.deepEqual([listing(kid.home), readFileSync(kid.lock, "utf8")], [before.home, before.claim], "nothing was written into the child (its marker is still there), and its claim is its holder's, as it was");
+    assert.deepEqual([claimFiles(p.home), stopFiles(p.home)], [["kid.lock"], []], "the parent's claim is released, and no receipt was written");
+  } finally { await refused.finish(); }
+  rmSync(kid.lock);
+
+  // With nobody on the child: the apply takes its claim too, and holds both when it reaches its first target.
+  cutOff();
+  const run = startGated([CLI, ...d.applyArgs(p.name, shown.planRevision, "k2")], { cwd: d.fx.dep, env: d.fx.env, gateDir: join(d.fx.base, "gates", "back"),
+    gates: [{ name: "held", ...claimTaken(p.lock) }, { name: "stopping", ...beforeFirstStop(kid.home) }] });
+  try {
+    await run.waitGate("held");
+    writeFileSync(kid.record, record);
+    run.release("held");
+    await run.waitGate("stopping");
+    for (const i of [kid, p]) heldClaim(i, "stop", run.child.pid, `before its first target is stopped, the apply holds the claim of ${i.name}`);
+    assert.equal(existsSync(marker), true, "and has not touched the child yet");
+    run.release("stopping");
+    const receipt = result(await ended(run), "the apply, released");
+    assert.deepEqual([receipt.ok, receipt.replayed, receipt.results.map(row)], [true, false, [idleRow(kid), idleRow(p)]], "it stopped both, the child first");
+    assert.deepEqual([existsSync(marker), claimFiles(p.home)], [false, []], "the marker is gone and every claim is released");
+  } finally { await run.finish(); }
+});
+
+test("a stop whose targets are others under each read of its plan gives up after three passes, before any effect: E_LIFECYCLE_BUSY with holder none, which says to run it again; nothing was stopped and no claim is left", async (t) => {
+  // Before 5642fd2f: an apply read its plan once and acted on it.
+  const d = deployment(t);
+  const p = await d.add("p");
+  const kids = [await d.add("k1", { parent: p }), await d.add("k2", { parent: p }), await d.add("k3", { parent: p })];
+  const shown = d.plan(p.name);
+  // Each child's record is cut off, and made whole again right after the apply has taken the
+  // parent's claim for the Nth time: every plan it reads under its claims names one more target.
+  const records = kids.map((kid) => readFileSync(kid.record));
+  kids.forEach((kid, n) => writeFileSync(kid.record, records[n].subarray(0, records[n].length >> 1)));
+  const before = listing(p.home);
+  const run = startGated([CLI, ...d.applyArgs(p.name, shown.planRevision, "k1")], { cwd: d.fx.dep, env: d.fx.env, gateDir: join(d.fx.base, "gates", "moving"),
+    gates: kids.map((kid, n) => ({ name: `pass-${n + 1}`, ...claimTaken(p.lock), nth: n + 1 })) });
+  let answer;
+  try {
+    for (const [n, kid] of kids.entries()) {
+      await run.waitGate(`pass-${n + 1}`);
+      assert.deepEqual(claimFiles(p.home), [...kids.slice(0, n).map((held) => `${held.name}.lock`), "p.lock"], `pass ${n + 1}: the apply holds the claims of the targets it read`);
+      writeFileSync(kid.record, records[n]);
+      run.release(`pass-${n + 1}`);
+    }
+    answer = await ended(run);
+  } finally { await run.finish(); }
+  const error = refusal(answer, "E_LIFECYCLE_BUSY", "the apply whose targets changed under each read");
+  const { plan, ...details } = error.details;
+  assert.equal(error.message, `the instances a stop of ${p.name} would stop changed each of the 3 times their claims were taken; nothing was stopped — run the command again`);
+  assert.deepEqual(details, { instance: p.name, home: p.home, holder: "none" });
+  assert.deepEqual(plan.targets.map((target) => target.instance), ["k1", "k2", "k3", "p"], "details.plan is the last plan it read");
+  assert.deepEqual([claimFiles(p.home), listing(p.home), kids.map((kid) => stopFiles(kid.home))], [[], before, [[], [], []]], "no claim is left, and nothing was written into any home");
+  // Nothing is owed and no key was used: the same apply, on homes that hold still, stops all four.
+  const receipt = result(d.apply(p.name, d.plan(p.name).planRevision, "k1"), "the same key, once the homes hold still");
+  assert.deepEqual([receipt.replayed, receipt.results.map(row)], [false, [...kids, p].map(idleRow)]);
+});
+
 test("a claim that cannot be taken for a reason of the system's refuses the stop as E_LIFECYCLE_FAILED, naming the claim and the system's error: nothing was stopped", TMUX, async (t) => {
   // Before: a stop took no claim, and went on.
   const d = deployment(t);

@@ -32,6 +32,7 @@ import { lifecycleClaimRefusals } from "../lib/core.mjs";
 import { BUSY_HOLDERS, lifecycleBusy } from "../lib/errors.mjs";
 import { purposeClaimBusy, worktreeClaimRefusals } from "../lib/worktree.mjs";
 import { fixtureBase } from "./helpers/host-fixture.mjs";
+import { tableAfter } from "./helpers/docs-table.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const DOC = join(ROOT, "docs", "desktop-cli-api.md");
@@ -471,37 +472,8 @@ test("the refusal for a process whose own start cannot be read adds no pid of th
 
 // ---- 4. the docs ----
 
-/** The one Markdown table between `<a id="<anchor>"></a>` and the next anchor of
- *  docs/desktop-cli-api.md → { header: [cell], body: [[cell]] }, every cell trimmed. Fails when
- *  the anchor is missing or there twice, when its section has no table or more than one, and when a
- *  row has not the header's number of cells. (As test/lifecycle-pair-table.test.mjs reads its own.) */
-function tableAfter(anchor) {
-  const doc = readFileSync(DOC, "utf8");
-  const marker = `<a id="${anchor}"></a>`;
-  const at = doc.indexOf(marker);
-  assert.notEqual(at, -1, `docs/desktop-cli-api.md has the anchor ${marker}`);
-  assert.equal(doc.indexOf(marker, at + 1), -1, `docs/desktop-cli-api.md has the anchor ${marker} once`);
-  const rest = doc.slice(at + marker.length);
-  const next = rest.indexOf('<a id="');
-  const lines = (next === -1 ? rest : rest.slice(0, next)).split("\n");
-  const start = lines.findIndex((line) => line.startsWith("|"));
-  assert.notEqual(start, -1, `the section of ${marker} has a table`);
-  let end = start;
-  while (end < lines.length && lines[end].startsWith("|")) end++;
-  assert.equal(lines.slice(end).some((line) => line.startsWith("|")), false, `the section of ${marker} has one table, not several: this test reads the first`);
-  const cells = (line) => {
-    assert.ok(line.trimEnd().endsWith("|"), `a table row of ${marker} ends with |: ${line}`);
-    return line.trimEnd().slice(1, -1).split("|").map((cell) => cell.trim());
-  };
-  const [header, rule, ...body] = lines.slice(start, end).map(cells);
-  assert.ok(rule && rule.every((cell) => /^:?-+:?$/.test(cell)), `the second line of the table of ${marker} is its rule`);
-  assert.ok(body.length > 0, `the table of ${marker} has rows`);
-  for (const row of body) assert.equal(row.length, header.length, `a row of the table of ${marker} has ${header.length} cells: ${row.join(" | ")}`);
-  return { header, body };
-}
-
 test("the table of docs/desktop-cli-api.md for error.details.holder lists exactly the values of the kernel's closed list, each once, and says of each what it means and what ends it", () => {
-  const { header, body } = tableAfter("busy-holder");
+  const { header, body } = tableAfter(DOC, "busy-holder");
   assert.equal(header[0], "`details.holder`", "the first column is the value of details.holder");
   assert.equal(header.length, 3, "the value, what it means, what ends it");
   const values = body.map(([cell]) => {

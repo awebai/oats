@@ -20,7 +20,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn as spawnChild, spawnSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { processStartToken } from "../lib/worktree-hooks.mjs";
 import { startGated } from "./helpers/fs-gate-preload.mjs";
@@ -211,6 +211,29 @@ test("oats worktree add beside a claim file that does not read as a claim is ref
       assert.equal(readFileSync(lock, "utf8"), bytes, `${where}: the file is byte for byte what it was`);
     }
   }
+});
+
+test("oats worktree add beside a dangling symbolic link where the home's claim belongs is refused as beside any file that is no claim (E_LIFECYCLE_BUSY, holder unknown), as an add and as a preview: no tree was made and the link is left as it is", async (t) => {
+  // A path that is there and never reads. It reads as absent (ENOENT through the link), and is no
+  // claim anybody can read: a retire and a stop, which take the claim, refuse on it with these words.
+  const w = await instance(t, "dangling");
+  const { name, home, lock } = w;
+  const nowhere = join(w.fx.base, "nowhere", "claim.lock");
+  mkdirSync(dirname(lock), { recursive: true });
+  symlinkSync(nowhere, lock);
+  const before = snapshot(home);
+  for (const [what, more] of [["add", []], ["add --preview", ["--preview"]]]) {
+    const error = refusal(w.add("p", [...more, "--json"]), `\`oats worktree ${what}\` beside a dangling link at the claim's path`);
+    assert.deepEqual(error, { code: "E_LIFECYCLE_BUSY",
+      message: `${lock} is not a readable claim; no tree was made — inspect it and remove it if no oats retire or oats instance stop holds it, then retry`,
+      details: { instance: name, home, lock, holder: "unknown" } }, what);
+    w.assertNothingMade("p", before, what);
+    assert.ok(lstatSync(lock).isSymbolicLink() && readlinkSync(lock) === nowhere, `${what}: the link is still there, and names what it named`);
+    assert.equal(existsSync(nowhere), false, `${what}: nothing was written through it`);
+  }
+  // The control: with the link gone, the same add makes its tree.
+  rmSync(lock);
+  w.assertMade(w.add("p", ["--json"]), "p", "once the link is removed");
 });
 
 test("oats worktree add is not refused by a claim whose holder is gone, by a claim a stop holds (a record of a live stop, a stop whose liveness cannot be read, and a stop apply in flight), or with no claim: each add makes its tree and writes nothing to the claim", async (t) => {

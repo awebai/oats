@@ -19,48 +19,19 @@
 // test/lifecycle-pair-table.test.mjs for every cell of the pair table.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { BEFORE_EFFECT_CODES, isKernelCode } from "../lib/errors.mjs";
+import { tableAfter } from "./helpers/docs-table.mjs";
 
 const DOC = fileURLToPath(new URL("../docs/desktop-cli-api.md", import.meta.url));
 const VERBS = ["instance stop", "retire"];
 /** The Desktop's module that turns a lifecycle command's answer into "refused" or "failed". */
 const DESKTOP_MODULE = "packages/desktop/server/instance-lifecycle.mjs";
 
-/** The one Markdown table between `<a id="<anchor>"></a>` and the next anchor of
- *  docs/desktop-cli-api.md → { header: [cell], body: [[cell]] }, every cell trimmed. Fails when
- *  the anchor is missing or there twice, when its section has no table or more than one, and when a
- *  row has not the header's number of cells. (As test/lifecycle-pair-table.test.mjs reads its own.) */
-function tableAfter(anchor) {
-  const doc = readFileSync(DOC, "utf8");
-  const marker = `<a id="${anchor}"></a>`;
-  const at = doc.indexOf(marker);
-  assert.notEqual(at, -1, `docs/desktop-cli-api.md has the anchor ${marker}`);
-  assert.equal(doc.indexOf(marker, at + 1), -1, `docs/desktop-cli-api.md has the anchor ${marker} once`);
-  const rest = doc.slice(at + marker.length);
-  const next = rest.indexOf('<a id="');
-  const lines = (next === -1 ? rest : rest.slice(0, next)).split("\n");
-  const start = lines.findIndex((line) => line.startsWith("|"));
-  assert.notEqual(start, -1, `the section of ${marker} has a table`);
-  let end = start;
-  while (end < lines.length && lines[end].startsWith("|")) end++;
-  assert.equal(lines.slice(end).some((line) => line.startsWith("|")), false, `the section of ${marker} has one table, not several: this test reads the first`);
-  const cells = (line) => {
-    assert.ok(line.trimEnd().endsWith("|"), `a table row of ${marker} ends with |: ${line}`);
-    return line.trimEnd().slice(1, -1).split("|").map((cell) => cell.trim());
-  };
-  const [header, rule, ...body] = lines.slice(start, end).map(cells);
-  assert.ok(rule && rule.every((cell) => /^:?-+:?$/.test(cell)), `the second line of the table of ${marker} is its rule`);
-  assert.ok(body.length > 0, `the table of ${marker} has rows`);
-  for (const row of body) assert.equal(row.length, header.length, `a row of the table of ${marker} has ${header.length} cells: ${row.join(" | ")}`);
-  return { header, body };
-}
-
 /** The docs table → { <verb>: [code, in the table's order] }, the codes marked `yes` for the verb. A
  *  row is a code in backticks and, for each verb, `yes` or an empty cell: anything else fails. */
 function documentedCodes() {
-  const { header, body } = tableAfter("before-effect-codes");
+  const { header, body } = tableAfter(DOC, "before-effect-codes");
   assert.deepEqual(header, ["Code", ...VERBS.map((verb) => `\`oats ${verb}\``)], "the table's columns are the code and one column for each verb of the kernel's list, named as the command is typed");
   const listed = Object.fromEntries(VERBS.map((verb) => [verb, []]));
   const seen = [];

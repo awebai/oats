@@ -45,6 +45,7 @@ import { BEFORE_EFFECT_CODES, BUSY_HOLDERS } from "../lib/errors.mjs";
 import { CLI, git, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { hostProcessState, killAndReap, waitUntil } from "./helpers/host-fixture.mjs";
 import { startGated } from "./helpers/fs-gate-preload.mjs";
+import { tableAfter } from "./helpers/docs-table.mjs";
 
 const DOC = fileURLToPath(new URL("../docs/desktop-cli-api.md", import.meta.url));
 const KERNEL_CODE = /^E_[A-Z0-9_]+$/;
@@ -63,41 +64,12 @@ const hasStack = (stderr) => /^\s+at .*\(.*:\d+:\d+\)/m.test(stderr) || stderr.i
 
 // ---- the table, read out of the docs page ----
 
-/** The one Markdown table between `<a id="<anchor>"></a>` and the next anchor of
- *  docs/desktop-cli-api.md → { header: [cell], body: [[cell]] }, every cell trimmed. Fails when
- *  the anchor is missing or there twice, when its section has no table or more than one, and when a
- *  row has not the header's number of cells (a `|` inside a cell would split it). */
-function tableAfter(anchor) {
-  const doc = readFileSync(DOC, "utf8");
-  const marker = `<a id="${anchor}"></a>`;
-  const at = doc.indexOf(marker);
-  assert.notEqual(at, -1, `docs/desktop-cli-api.md has the anchor ${marker}`);
-  assert.equal(doc.indexOf(marker, at + 1), -1, `docs/desktop-cli-api.md has the anchor ${marker} once`);
-  const rest = doc.slice(at + marker.length);
-  const next = rest.indexOf('<a id="');
-  const lines = (next === -1 ? rest : rest.slice(0, next)).split("\n");
-  const start = lines.findIndex((line) => line.startsWith("|"));
-  assert.notEqual(start, -1, `the section of ${marker} has a table`);
-  let end = start;
-  while (end < lines.length && lines[end].startsWith("|")) end++;
-  assert.equal(lines.slice(end).some((line) => line.startsWith("|")), false, `the section of ${marker} has one table, not several: this test reads the first`);
-  const cells = (line) => {
-    assert.ok(line.trimEnd().endsWith("|"), `a table row of ${marker} ends with |: ${line}`);
-    return line.trimEnd().slice(1, -1).split("|").map((cell) => cell.trim());
-  };
-  const [header, rule, ...body] = lines.slice(start, end).map(cells);
-  assert.ok(rule && rule.every((cell) => /^:?-+:?$/.test(cell)), `the second line of the table of ${marker} is its rule`);
-  assert.ok(body.length > 0, `the table of ${marker} has rows`);
-  for (const row of body) assert.equal(row.length, header.length, `a row of the table of ${marker} has ${header.length} cells: ${row.join(" | ")}`);
-  return { header, body };
-}
-
 const CORNER = "On the home ↓ / arrives →";
 /** The pair table → { columns: [arriving command], rows: [{ state, cells: { <command>: code | null } }] }:
  *  a cell is the kernel code the arriving command is refused with, or null for `not refused`. Any
  *  other cell fails. */
 function pairTable() {
-  const { header, body } = tableAfter("lifecycle-pairs");
+  const { header, body } = tableAfter(DOC, "lifecycle-pairs");
   assert.equal(header[0], CORNER, "the first header cell of the pair table says which way it reads");
   const columns = header.slice(1).map((cell) => {
     const m = /^`([^`]+)`$/.exec(cell);
