@@ -3235,7 +3235,8 @@ A first retire prints the **raw receipt**, not an envelope:
   `capabilityMeta`, `warnings`, `wakeSchedulesRemoved`.
 - A deferred self-retire (`--self`) prints `{retired, agent, deferred: true,
   pendingMarker, resultPath, logPath, completesInSec, completionPid}`, or
-  `{…, alreadyScheduled: true, requestedAt}`.
+  `{…, alreadyScheduled: true, requestedAt}` while one is scheduled and its
+  completion has not started (below).
 
 **Recorded children**, on every apply (plain, guarded and `--self`), as the
 plan says: each child the plan lists is stopped first (bounded SIGTERM,
@@ -3290,7 +3291,10 @@ before `E_PLAN_STALE`: under the claim the answers come in this order: the
 home is gone (`E_SESSION_UNKNOWN`), a self-retire is scheduled
 (`E_LIFECYCLE_BUSY`), the plan is stale (`E_PLAN_STALE`), then the retire. A claim whose holder has
 died, for example a retire killed while its hooks ran, is taken over by the
-next retire of that name. So a killed retire can always be run again. Until
+next retire of that name. So a killed retire can always be run again. The
+claim does not end what the killed retire left running: one of its retire
+hooks may still be running when the next retire takes the claim over and
+runs the hooks again (#865). Until
 that name is retired again its claim file stays where it is, and it is safe
 to remove once its pid is gone. A retire that ends removes its claim file;
 the `claims/` directory itself stays, empty.
@@ -3322,8 +3326,11 @@ completion, pid <pid>, requested at <requestedAt>); nothing was done — wait
 for it to finish`, with `details.lock` the pending marker, `details.pid` the
 completion and `details.since` the marker's `requestedAt`. A completion
 whose start cannot be read is refused as a holder's is (`details.unknown`),
-the file to remove being the pending marker. A second `--self` still answers
-`alreadyScheduled: true`. The marker refuses nothing once its completion has
+the file to remove being the pending marker. A second `--self` answers
+`alreadyScheduled: true` only while the completion has not started. While
+the first `--self` is still scheduling, or once the completion holds the
+claim, it is refused the claim and answers `E_LIFECYCLE_BUSY` like any other
+retire, where it answered `alreadyScheduled: true` before 0.51.0. The marker refuses nothing once its completion has
 left its outcome at `resultPath` (it failed) or is gone (it died), nor when
 it names no completion (a marker written before 0.51.0): `oats retire
 <instance>` then retries the retirement, as before. The completion waits up

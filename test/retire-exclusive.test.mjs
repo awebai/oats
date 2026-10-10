@@ -82,6 +82,16 @@ console.log(JSON.stringify({ meta: { retired: true } }));\n`,
     open: () => writeFileSync(gate, ""),
     /** From now on the retire hook reports that its cleanup did not finish: the retire keeps the home. */
     failHook: () => writeFileSync(fails, ""),
+    passHook: () => rmSync(fails, { force: true }),
+    /** A `tmux` that records how it was called and answers nothing, first on the PATH of a retire
+     *  given `env`: what that retire asked about any session. A retire lists instances, and reads
+     *  a plan, by asking tmux; one that asked nothing read neither. */
+    watchedTmux: () => {
+      const dir = join(fx.base, `tmux-watched-${started.length}`), log = join(dir, "calls.log");
+      mkdirSync(dir);
+      writeFileSync(join(dir, "tmux"), `#!/bin/sh\necho "$@" >> ${JSON.stringify(log)}\nexit 1\n`, { mode: 0o755 });
+      return { env: { PATH: `${dir}:${fx.env.PATH}` }, calls: () => existsSync(log) ? readFileSync(log, "utf8").split("\n").filter(Boolean) : [] };
+    },
     /** How many `retire-planned` events the workspace log holds for the home. */
     plansRead: (home) => fx.inEnv(() => readEvents(home).events.filter((e) => e.kind === "retire-planned").length),
     /** `oats retire <instance> --json <extra>` as a child process. */
@@ -172,6 +182,10 @@ test("plain x plain: the second retire is refused while the first is in its hook
   const f = fixture(t);
   const h = await inFlight(f, (inst) => f.retire(inst.instance));
   assertRefused(f, h, await f.retire(h.inst.instance).done, "plain");
+  // What a retire acts on is read under the claim: one that never held it listed no instance.
+  const tmux = f.watchedTmux();
+  assertRefused(f, h, await f.retire(h.inst.instance, [], tmux.env).done, "plain, its tmux watched");
+  assert.deepEqual(tmux.calls(), [], "the refused retire asked tmux nothing: it did not read its children");
   const first = envelope(await finish(f, h));
   assert.equal(first.retired, h.inst.instance);
   const after = await f.retire(h.inst.instance).done;
@@ -215,6 +229,9 @@ test("guarded x guarded, two idempotency keys: the second is refused, reads no p
   assert.equal(await f.plansRead(h.inst.home), 2, "the apply that holds the claim read one plan");
   assertRefused(f, h, await f.retire(h.inst.instance, ["--plan-revision", rev, "--idempotency-key", "key-b"]).done, "guarded, another key");
   assert.equal(await f.plansRead(h.inst.home), 2, "the refused apply read no plan: it never held the claim");
+  const tmux = f.watchedTmux();
+  assertRefused(f, h, await f.retire(h.inst.instance, ["--plan-revision", rev, "--idempotency-key", "key-c"], tmux.env).done, "guarded, its tmux watched");
+  assert.deepEqual(tmux.calls(), [], "and asked tmux nothing");
   const first = envelope(await finish(f, h));
   assert.equal(await f.plansRead(h.inst.home), 2, "one plan per guarded apply");
   assert.deepEqual({ retired: first.retired, replayed: first.replayed, key: first.idempotencyKey }, { retired: h.inst.instance, replayed: false, key: "key-a" });
@@ -305,10 +322,47 @@ test("a stale guarded apply with nobody else retiring answers E_PLAN_STALE as it
   untouched("text");
 });
 
-test("a deferred --self completion in flight: a plain retire is refused, naming the completion's pid", async (t) => {
+test("a retire reads its children when it holds the claim: after a retire that kept the home and repaired lineage, the next one acts on the children as they are then", async (t) => {
+  const f = fixture(t);
+  f.open();
+  const parent = await f.spawn();
+  const child = await f.spawn({ relativeTo: parent.instance, relation: "child" });
+  const recordedParent = () => readJson(join(child.home, "instance.json")).parentInstance;
+  assert.equal(recordedParent(), parent.instance);
+  // The first retire stops the child, its hook reports that cleanup did not finish, and it ends with
+  // the home kept. It has spliced the parent out of the lineage by then: the child records it no more.
+  f.failHook();
+  const failed = await f.retire(parent.instance).done;
+  assert.equal(failed.code, 1, failed.out + failed.err);
+  const kept = envelope(failed);
+  assert.equal(kept.retainedHome, parent.home);
+  assert.deepEqual(kept.childrenStopped.map((k) => k.instance), [child.instance], "the first retire acted on the child it had");
+  assert.equal(recordedParent(), undefined, "and repaired lineage: the child is no longer this parent's");
+  // The second retire has no children, and says so by naming none.
+  f.passHook();
+  const before = digest(child.home);
+  const second = await f.retire(parent.instance).done;
+  assert.equal(second.code, 0, second.out + second.err);
+  const receipt = envelope(second);
+  assert.equal(receipt.retired, parent.instance);
+  assert.equal(receipt.childrenStopped, undefined, "it stopped no child: it has none now");
+  assert.equal(existsSync(parent.home), false);
+  assert.equal(digest(child.home), before, "the former child is as it was");
+});
+
+test("a deferred --self completion in flight: a plain retire and a second --self are refused, naming the completion's pid", async (t) => {
   const f = fixture(t);
   const h = await inFlight(f, (inst) => f.completion(inst));
   assertRefused(f, h, await f.retire(h.inst.instance).done, "plain against the completion");
+  // A second --self answers that one is already scheduled only until the completion starts: once
+  // the completion holds the claim it is refused like any other retire, and schedules nothing.
+  await assert.rejects(f.fx.inEnv(() => retireInstance(f.fx.root, h.inst.instance, { self: true, selfKillDelaySec: 600 })), (e) => {
+    assert.equal(e.code, "E_LIFECYCLE_BUSY");
+    assert.deepEqual(e.details, { instance: h.inst.instance, home: h.inst.home, lock: h.lock, pid: h.a.pid, since: readJson(h.lock).at });
+    return true;
+  });
+  assert.equal(existsSync(retirePendingMarkerPath(h.inst.home)), false, "the refused --self scheduled nothing");
+  assertUntouched(f, h, "--self against the completion");
   await finish(f, h);
   assert.equal(existsSync(deferredRetireResultPath(h.inst.home)), false, "the completion succeeded: it left no outcome");
 });

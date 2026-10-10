@@ -438,15 +438,18 @@ One retire of an instance runs at a time. A retire holds the instance's claim
 from the moment it has resolved the home until it ends: the file
 `.oats-retirement/claims/<instance>.lock` in the agent's instances directory,
 beside the homes, which names its holder by pid and start time. Any other
-retire of that instance (plain, guarded, `--self`, a self-retire's
-completion, `--force` included) is refused at once with `E_LIFECYCLE_BUSY`,
-before it stops anything, copies anything or runs a hook: a retire hook
-releases things that exist once, such as a messaging identity or a scheduled
-job. A self-retire that is scheduled counts from the moment it is scheduled,
+retire of that instance (plain, guarded or `--self`, `--force` included) is
+refused at once with `E_LIFECYCLE_BUSY`, before it stops anything, copies
+anything or runs a hook: a retire hook releases things that exist once, such
+as a messaging identity or a scheduled job. A self-retire's completion is
+refused the same way, after it has waited up to 3 s for the retire that
+scheduled it to release the claim. A self-retire that is scheduled counts from the moment it is scheduled,
 while its completion lives. A retire killed while it holds the claim leaves
 the file behind until that name is retired again: the next retire takes the
 claim over, because its holder is verifiably gone, and the file is safe to
-remove by hand once its pid is gone. A holder whose start time cannot be
+remove by hand once its pid is gone. The claim does not end what the killed
+retire left running: one of its retire hooks may still be running when the
+next retire takes the claim over and runs the hooks again (#865). A holder whose start time cannot be
 read is never taken for gone; the refusal names the pid, the file and the
 way out. The claim orders retires only: `oats instance stop`, `oats session
 start` and `oats worktree add` do not take it, and `oats status` does not

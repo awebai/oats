@@ -2874,7 +2874,7 @@ function retireCmd() {
   // resolved the home). A guarded apply acts on the children of the plan it
   // revalidated; a plain or --self retire computes them as the plan does, and
   // passes none when there are none.
-  let replayPath = null, fresh, children, revalidate, stalePlan, planFailure;
+  let replayPath = null, fresh, revalidate, stalePlan, planFailure;
   if (planRev !== undefined) {
     if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(idemKey)) die("--idempotency-key: 1-128 chars of [A-Za-z0-9._:-]");
     // Replay first: after a successful retire the home is gone, so the receipt
@@ -2899,11 +2899,13 @@ function retireCmd() {
       return { plannedExtraWorktrees: fresh.facts.extraWorktrees, children: fresh.facts.children };
     };
   } else {
-    const recorded = descendantsOf(root, name);
-    if (recorded.length) children = recorded;
+    // A plain or --self retire reads its recorded children the same way: under the claim, as they
+    // are when the retire starts (an earlier retire that kept the home has repaired lineage by
+    // then), and none when there are none.
+    revalidate = () => { const recorded = descendantsOf(root, name); return recorded.length ? { children: recorded } : {}; };
   }
   let r;
-  try { r = retireInstance(root, name, { home: homeFlag, self: isSelf, discardWorktree: args.includes("--discard-worktree"), keepDir: args.includes("--keep-dir"), force: args.includes("--force"), ...(children ? { children } : {}), ...(revalidate ? { [RETIRE_UNDER_CLAIM]: revalidate } : {}) }); }
+  try { r = retireInstance(root, name, { home: homeFlag, self: isSelf, discardWorktree: args.includes("--discard-worktree"), keepDir: args.includes("--keep-dir"), force: args.includes("--force"), [RETIRE_UNDER_CLAIM]: revalidate }); }
   catch (e) {
     // The plan could not be read, or its revision is not the one shown: the answers they always had.
     if (e === planFailure) return args.includes("--json") ? jsonFail(e.code || "E_LIFECYCLE_FAILED", e.message, e.details) : die(e.message);
