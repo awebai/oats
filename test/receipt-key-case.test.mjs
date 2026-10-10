@@ -141,10 +141,11 @@ async function startableHome(name) {
   const harness = join(base, "fakeharness");
   if (!existsSync(harness)) {
     writeFileSync(harness, `#!/usr/bin/env node
-const { existsSync, writeFileSync } = require("node:fs");
+const { existsSync, renameSync, writeFileSync } = require("node:fs");
 const { join } = require("node:path");
 const home = process.env.OATS_INSTANCE_HOME;
-writeFileSync(join(home, "harness-ready"), String(process.pid));
+const ready = join(home, "harness-ready");
+writeFileSync(ready + ".tmp", String(process.pid)); renameSync(ready + ".tmp", ready);
 setInterval(() => { if (existsSync(join(home, "release-" + process.pid))) process.exit(0); }, 25);
 `);
     chmodSync(harness, 0o755);

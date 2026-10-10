@@ -36,9 +36,9 @@ test("output is bounded and overflow terminates a producer even if it ignores SI
 test("a detached descendant retaining stdout cannot prevent the exited command from returning", { skip: process.platform === "win32" }, () => {
   const dir = mkdtempSync(join(tmpdir(), "oats-command-pipe-")), pidFile = join(dir, "pid");
   try {
-    const r = run(`import { spawn } from "node:child_process"; import { writeFileSync } from "node:fs";
+    const r = run(`import { spawn } from "node:child_process"; import { renameSync, writeFileSync } from "node:fs";
       const child = spawn(process.execPath, ["-e", 'process.on("SIGTERM",()=>{}); setInterval(()=>{}, 100);'], { detached: true, stdio: ["ignore", "inherit", "inherit"] });
-      writeFileSync(${JSON.stringify(pidFile)}, String(child.pid)); child.unref();`, { timeout: 300 });
+      writeFileSync(${JSON.stringify(pidFile + ".tmp")}, String(child.pid)); renameSync(${JSON.stringify(pidFile + ".tmp")}, ${JSON.stringify(pidFile)}); child.unref();`, { timeout: 300 });
     assert.equal(r.error.code, "ETIMEDOUT"); assert.equal(r.status, 0); assert.equal(r.signal, null);
   } finally {
     try { process.kill(Number(readFileSync(pidFile, "utf8")), "SIGKILL"); } catch { /* gone */ }
