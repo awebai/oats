@@ -12,7 +12,8 @@
 // store (path-validated on read-back — never trusted blindly), and the
 // caller replaces only an app-OWNED backend server.
 import { mkdirSync, writeFileSync, renameSync, rmSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname } from "node:path";
+import { deploymentCheck, deploymentsInside, PICK_SCAN_LIMIT } from "../client/workspace-admission.mjs";
 
 /** Restore explicitly opened workspaces, independently of recent suggestions.
  * Re-validate on startup: moved/deleted deployments are skipped and
@@ -102,7 +103,6 @@ export function startupOpenSet(raw, served, validate) {
    PICK_SCAN_LIMIT of them; nothing is parsed. Only with no choice is the
    onboarding offer (decision 9) made, as a secondary action. */
 export const NOT_A_DEPLOYMENT_REASON = "This folder isn't an OATS deployment: it has no oats-local.yaml. Choose the deployment folder itself, the one that contains oats-local.yaml.";
-export const PICK_SCAN_LIMIT = 200;
 export const PICK_CHOICE_LIMIT = 20;
 export const PICK_ANCESTOR_LIMIT = 8;
 
@@ -125,22 +125,6 @@ export function pickedFolderChoices(dir, io) {
     if (is(path)) { choices.push({ path, name: basename(path) || path, kind: "ancestor" }); break; }
   }
   return { choices, more: Math.max(0, found.length - PICK_CHOICE_LIMIT), limited, ...(limited ? { scanLimit: PICK_SCAN_LIMIT } : {}) };
-}
-
-const deploymentCheck = (io) => (p) => { try { return io.isDeployment(p) === true; } catch { return false; } };
-
-/** The deployments directly inside `dir`, sorted by name: at most PICK_SCAN_LIMIT entries read, a
- * link never followed, nothing parsed. An unreadable or missing `dir` holds none. Used for a picked
- * parent folder, and for ~/Agents, whose deployments the switcher offers unasked (#518).
- * @param {string} dir
- * @param {object} io  `list` and `isDeployment`, as pickedFolderChoices takes them
- * @returns {{ paths: string[], limited: boolean }} */
-export function deploymentsInside(dir, io) {
-  let listed = { entries: [], limited: false };
-  try { listed = io.list(dir, PICK_SCAN_LIMIT) || listed; } catch { /* unreadable: no children offered */ }
-  const paths = listed.entries.filter((e) => e?.isDirectory && typeof e.name === "string" && !e.name.includes("/"))
-    .map((e) => e.name).sort((a, b) => a.localeCompare(b)).map((name) => join(dir, name)).filter(deploymentCheck(io));
-  return { paths, limited: !!listed.limited };
 }
 
 /**
@@ -214,23 +198,6 @@ export function writeJsonAtomic(file, value) {
 /** Commit the open set atomically, so interrupted writes retain the last set. */
 export function saveWorkspaceDirs(file, dirs) {
   writeJsonAtomic(file, dirs);
-}
-
-/**
- * Validate a directory as a workspace-model v2 deployment and derive its
- * identity: the canonical deployment directory itself.
- * @param {string} path       canonicalized absolute path
- * @param {object} io
- * @param {(p: string) => boolean} io.isDeployment  the directory holds its
- *        deployment file (a regular, non-symlink oats-local.yaml); existence
- *        only — the kernel reads and validates it
- * @returns {{ id: string, name: string, team: null, path: string } | null}
- */
-export function validateWorkspace(path, io) {
-  if (typeof path !== "string" || !path.startsWith("/")) return null;
-  let deployment = false;
-  try { deployment = io.isDeployment(path) === true; } catch { return null; }
-  return deployment ? { id: path, name: path.split("/").pop() || path, team: null, path } : null;
 }
 
 /**

@@ -2,7 +2,8 @@
 // that hold a regular oats-local.yaml, read once per suggestion list, bounded and never parsed.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { deploymentsInside, workspaceSuggestions, pickedFolderChoices, PICK_SCAN_LIMIT } from '../workspace-registry.mjs';
+import { deploymentsInside, PICK_SCAN_LIMIT } from '../../client/workspace-admission.mjs';
+import { workspaceSuggestions, pickedFolderChoices } from '../workspace-registry.mjs';
 
 const listing = (names, { links = [] } = {}) => (_dir, limit) => {
   const entries = [...names.map((name) => ({ name, isDirectory: true })), ...links.map((name) => ({ name, isDirectory: false }))];

@@ -4,10 +4,8 @@
 // and latest-intent generations (reverse completion).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-  validateWorkspace, workspaceSuggestions, parseRecents, pushRecent,
-  decideAdd, createGenerations,
-} from "../packages/desktop/workspace-registry.mjs";
+import { validateWorkspace } from "../packages/client/workspace-admission.mjs";
+import { workspaceSuggestions, parseRecents, pushRecent, decideAdd, createGenerations } from "../packages/desktop/workspace-registry.mjs";
 
 const mkValidate = (deployments) => (p) => validateWorkspace(p, {
   // existence of the deployment file only; the registry never parses it

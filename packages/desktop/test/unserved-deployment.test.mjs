@@ -13,10 +13,8 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { withWindowGlobals } from './helpers/main-window-globals.mjs';
 import { JSDOM } from 'jsdom';
-import {
-  persistableDirs, stageDirs, savedWorkspacePaths, restoreWorkspaceDirs, createAddExecutor, decideAdd, createGenerations,
-  pickedFolderChoices, createPerformAdd, NOT_A_DEPLOYMENT_REASON, PICK_SCAN_LIMIT, PICK_CHOICE_LIMIT, PICK_ANCESTOR_LIMIT,
-} from '../workspace-registry.mjs';
+import { persistableDirs, stageDirs, savedWorkspacePaths, restoreWorkspaceDirs, createAddExecutor, decideAdd, createGenerations, pickedFolderChoices, createPerformAdd, NOT_A_DEPLOYMENT_REASON, PICK_CHOICE_LIMIT, PICK_ANCESTOR_LIMIT } from '../workspace-registry.mjs';
+import { PICK_SCAN_LIMIT } from '../../client/workspace-admission.mjs';
 import { apiUrl, apiInit, classifyApiRoute, unservedWorkspace, createUnservedRefusal, servedSelectors } from '../api-url.mjs';
 import { forgeProxyOptions, trustedForgeFrame, FORGE_EPOCH_HEADER } from '../forge-proxy.mjs';
 import { forgeFailure } from '../renderer/forge-contract.mjs';
