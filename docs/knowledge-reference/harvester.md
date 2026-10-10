@@ -54,9 +54,11 @@ claims and concurrent destination updates are different coordination problems.
    durable result/receipt exists. A partial edit, launched worker or opened
    process is not a completed harvest.
 
-Never promote secrets, credentials, third-party messages verbatim, tool noise,
-readily re-derived code descriptions or task-only plans. Generalize a lesson
-without losing scope; do not turn a deployment fact into universal expertise.
+Never promote secrets, credentials, personal data about people outside the team
+(clients, correspondents, any other third party), third-party messages
+verbatim, tool noise, readily re-derived code descriptions or task-only plans.
+Generalize a lesson without losing scope; do not turn a deployment fact into
+universal expertise.
 
 ## Delivery is separate from judgment
 
