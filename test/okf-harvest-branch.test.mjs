@@ -38,13 +38,16 @@ function stage(f) {
 }
 function publishTemplate(f, staged) {
   const skill = fs.readFileSync(join(staged.run.home, '.agents/skills/knowledge-harvest/SKILL.md'), 'utf8');
-  const block = /^```sh\n(branch=[\s\S]*?)\n```$/m.exec(skill)?.[1]; assert.ok(block);
-  const message = join(staged.run.home, 'commit.txt'), body = join(staged.run.home, 'pr.md');
-  // Native file writes, not shell interpolation of claims.
-  write(message, 'okf-harvest: file based claims\n'); write(body, 'Fixture proposal; review is required.\n');
-  const command = block.replace('<source instance>', f.source.instance).replace('<YYYYMMDD-HHMM>', '20261008-0000')
-    .replaceAll('<alias>', 'project').replace('<owned paths>', "'knowledge/expert'")
-    .replace('<absolute commit message file>', message).replace('<absolute PR body file>', body)
+  const block = /^```sh\n(commit_file=[\s\S]*?)\n```$/m.exec(skill)?.[1]; assert.ok(block, 'materialized publication block including failure handling');
+  const message = join(staged.run.home, 'commit.txt'), body = join(staged.run.home, 'pr.md'), report = join(staged.run.home, 'publication.txt');
+  // Native file writes, not shell interpolation of claims or source identity.
+  write(message, `okf-harvest: file based claims\n\nSource: instance ${f.source.instance}\n`);
+  write(body, 'Fixture proposal; review is required.\n');
+  const shellData = value => value.replaceAll("'", "'\\''");
+  const command = block.replaceAll('<alias>', 'project').replace('<owned paths>', "'knowledge/expert'")
+    .replace('<absolute commit message file>', () => shellData(message)).replace('<absolute PR body file>', () => shellData(body))
+    .replace('<absolute publication report file>', () => shellData(report))
+    .replace('<source notification command or skipped notice>', () => "printf '%s\\n' 'Source notification unavailable/skipped; not sent.'")
     .replaceAll('<owner>/<repo>', 'fixture/knowledge').replaceAll('<acceptedBranch>', 'main');
   assert.doesNotMatch(command, /<[^<>]+>/);
   const env = { ...f.env, PATH: `${f.bin}:${process.env.PATH}` };
@@ -52,7 +55,11 @@ function publishTemplate(f, staged) {
   assert.equal(validator.status, 0, validator.stdout + validator.stderr);
   const published = spawnSync('bash', ['-e', '-c', command], { cwd: staged.run.home, env, encoding: 'utf8' });
   assert.equal(published.status, 0, published.stdout + published.stderr);
-  return `okf-harvest/${f.source.instance}-20261008-0000`;
+  const branch = f.git('-C', staged.clone, 'branch', '--show-current');
+  f.git('check-ref-format', `refs/heads/${branch}`);
+  assert.match(branch, /^okf-harvest\/\d{8}-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/);
+  assert.ok(f.git('-C', staged.clone, 'log', '-1', '--format=%B').includes(`Source: instance ${f.source.instance}`));
+  return branch;
 }
 
 test('materialized 5.0 publishing commands create a Git proposal without changing accepted HEAD or reclaiming old branches', t => {
