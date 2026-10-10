@@ -289,6 +289,18 @@ account directory (`CLAUDE_CONFIG_DIR`), a wrapper `executable`, an argument.
 - **One per harness.** A second `default: true` for the same harness is
   refused (`E_LAUNCH_CONFIG_INVALID`, naming both); move it by clearing the
   old one first.
+- **Several configurations and no default is ambiguous for a spawn.** When a
+  spawn's harness has more than one configuration here, none of them
+  `default: true`, and the spawn names none, it is refused in preview and
+  apply alike (`E_LAUNCH_CONFIG_AMBIGUOUS`, naming the harness and its
+  configurations) instead of starting the bare harness. Naming one decides
+  it: `--launch-config <name>`, `--launch-config none` (the bare harness) or
+  a `souls.launch` name (`none` included). An inline `souls.launch`
+  preference, the soul's `launch:` and `--harness` alone name no
+  configuration. One configuration for the harness is not ambiguous (without
+  `default: true` it is not used). `oats souls` and `oats inspect --soul`
+  show the refusal as the launch's `problem`. A start or restart of an
+  existing home, with `--harness` or `--reselect-launch` too, is not refused.
 - **Existing homes keep their launch** until `--reselect-launch` or a
   respawn, like any change of preference. Declaring a default is such a
   change: `oats readiness --home` warns `launch-changed` on each existing
@@ -335,7 +347,9 @@ souls:
   **inline or soul preference** runs its harness the way this host starts it
   without a configuration: [the harness default](#the-harness-default) if
   one is declared, else the executable on `PATH` with no args and no env,
-  with the preference's `model`. A preference without `model` uses the
+  with the preference's `model`. A spawn is refused instead when the harness
+  has several configurations and none is its default
+  (`E_LAUNCH_CONFIG_AMBIGUOUS`). A preference without `model` uses the
   harness default's model, else the harness's own; it never borrows a lower
   layer's.
 - **A missing harness is refused**, never replaced: `E_HARNESS_UNAVAILABLE`

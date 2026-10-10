@@ -1686,6 +1686,15 @@ shows the drift as `launch-changed`.
   choose another --harness / --launch-config" (from a flag).
 - `E_LAUNCH_CONFIG_UNKNOWN {name, from, at}`: `souls.launch` names a launch
   configuration this `oats-local.yaml` does not declare.
+- `E_LAUNCH_CONFIG_AMBIGUOUS {harness, configurations, fix}` (spawn and its
+  preview only, 0.52): the chosen harness has more than one launch
+  configuration here (`configurations`, their names sorted), none is
+  `default: true`, and the spawn named none. Named means `--launch-config
+  <name>`, `--launch-config none`, or a `souls.launch` string; an inline or
+  soul preference and `--harness` alone are not. `fix` is "name one with
+  --launch-config <name> (or souls.launch in oats-local.yaml), or mark one
+  default: true (oats launch-config set)". A start or restart of an existing
+  home, `--reselect-launch` included, is never refused this way.
 - `E_WORKSPACE_SCHEMA`: a malformed `launch` or `souls.launch`, path named.
 
 ### The launch report (`Launch`)
@@ -1709,8 +1718,9 @@ shows the drift as `launch-changed`.
   `"oats-local.yaml#/souls/launch/*"`, `"<repoKey>:<path>/soul.yaml#/launch"`,
   or `"package:<id>:<path>/soul.yaml#/launch"`.
 - `problem`: `null`, or `{code, message, fix}` when a spawn would refuse
-  (`E_HARNESS_UNAVAILABLE`, `E_LAUNCH_CONFIG_UNKNOWN`, or `E_LAUNCH_EXECUTABLE`
-  for a configuration whose own executable is missing). Only reports carry it;
+  (`E_HARNESS_UNAVAILABLE`, `E_LAUNCH_CONFIG_UNKNOWN`,
+  `E_LAUNCH_CONFIG_AMBIGUOUS` with `effective.launchConfig` `null`, or
+  `E_LAUNCH_EXECUTABLE` for a configuration whose own executable is missing). Only reports carry it;
   spawn and preview refuse instead. With `E_LAUNCH_CONFIG_UNKNOWN`,
   `effective` is the host default (`pi`, `null`, `null`): the named
   configuration launches nothing here.
