@@ -3092,7 +3092,9 @@ oats instance stop <instance> --plan [--no-recursive] [--home <abs>] [--dir <d>]
   claim. A holder counts while it is not known to be gone: alive, or of a
   liveness that cannot be read. `retiring` is one of the facts
   `planRevision` is hashed from, as it was; `stopPending` is not. The
-  plan's `notes` say in a line that an apply will refuse either. Before
+  plan's `notes` say in a line that an apply will refuse either: a note is
+  a sentence for a person, and no client keys on its text (`retiring` and
+  `stopPending` are the data). Before
   0.52.0 `retiring` read the pending marker alone and `stopPending` read a
   file inside the home ([below](#stop-claim)).
 
@@ -3131,7 +3133,8 @@ this order:
    anything.** A target it does not hold yet (a child recorded, or readable
    again, since step 2) sends it back to step 4 with this plan's targets,
    every claim released first so that the order of step 4 holds. A stop
-   whose targets are others under each of three such reads gives up:
+   whose targets are others under each of three such reads (a constant of
+   the kernel: there is no setting for it) gives up:
    `E_LIFECYCLE_BUSY`, `holder: "none"`, `… nothing was stopped — run the
    command again`. It then compares the plan's revision with the one sent,
    once: `E_PLAN_STALE` with the fresh `details.plan` (the claims this
@@ -3259,7 +3262,10 @@ nothing, and the command already on the home is not disturbed.
   [cannot take over](#retire-one-at-a-time) (a `nonce` that is not a
   claim's, written or damaged by hand) answers `E_LIFECYCLE_BUSY`, `holder:
   "none"`, to a retire and to a stop; a `worktree add` reads the same file
-  as a holder that is gone, and runs.
+  as a holder that is gone, and runs. So does a file that parses and names
+  no pid (`{}`, `[]`, a verb alone): a claim
+  [always carries its pid](#retire-one-at-a-time), so no kernel wrote that
+  file as one.
 - **A stop does not refuse a `worktree add`:** a tree does not depend on the
   session.
 - `--plan` of either verb takes no claim and is never refused by one; a
@@ -3334,7 +3340,10 @@ ends the refusal:
 A reader treats a value it does not know, or the field's absence (a kernel
 without the feature), as **do not promise that waiting ends it**. For
 `"unknown"` and `"none"` the message always names the step that ends it,
-after ` — `.
+after ` — `. The field has a meaning only under `E_LIFECYCLE_BUSY`: under
+any other code a reader ignores it (an `E_LIFECYCLE_FAILED` made after a
+takeover ended a dead holder's step carries the details of the refusal it
+then met, `holder` among them).
 
 <a id="before-effect-codes"></a>
 **The codes a stop and a retire answer only before any effect.** The kernel
@@ -3697,7 +3706,9 @@ always does (`[]` when there are none). One child still running after the
 grace, or whose stop could not be established (`E_SESSION_UNAVAILABLE`,
 `E_INSTANCE_RETIRING`, `E_LIFECYCLE_BUSY`, …), refuses everything: nothing is retired, exit 1,
 `E_CHILDREN_RUNNING {childrenStopped}` (the text form names each child and its
-`code`, always a [kernel code](#kernel-codes)). **`--force` does not bypass it**: `--force` covers incomplete
+`code`, always a [kernel code](#kernel-codes); the message says `still running after a bounded stop`
+only of a child whose row lists processes in `stillRunning`, and `<child> could not be stopped
+(<code>)` of any other, OATS 0.52.0). **`--force` does not bypass it**: `--force` covers incomplete
 cleanup, not a running child. A `--self` retirement stops the children
 recorded when it was scheduled that are still instances (a child retired in
 between is skipped), in its detached completion before it stops the caller;
@@ -3734,7 +3745,11 @@ holds the home's claim,
 `<instances>/.oats-retirement/claims/<instance>.lock`, from the moment it
 has resolved the home until it ends, by success or by any refusal or failure.
 The claim is a file that names its holder by pid and start time, and by its
-verb (`action`: `"retire"` or `"stop"`; 0.52.0). It lies
+verb (`action`: `"retire"` or `"stop"`; 0.52.0). It is written whole to a
+private file and linked into place, so a kernel's claim is never seen
+without its `pid`: a file there that parses and names no pid was not
+written by a kernel as a claim, and a kernel that wrote one without it would
+be changing the lock format, which is a contract decision. It lies
 beside the homes, never inside one: a home's bytes are what its retire
 observes, copies and removes. A second retire of that home, or a retire that
 meets a stop of it, does not wait: it

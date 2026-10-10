@@ -204,10 +204,12 @@ will not stop, retire refuses with `E_CHILDREN_RUNNING` and retires nothing
 From OATS 0.52.0 one stop or retire of an instance runs at a time. A stop
 that meets a retire of that instance answers `E_INSTANCE_RETIRING`; a stop or
 a retire that meets a stop, or a retire that meets a retire, answers
-`E_LIFECYCLE_BUSY`. Nothing happened: read the message (it names the other
-command's pid, or the step to take when nobody is running), and run yours
-again once the other has ended. `oats worktree add` in a home that is being
-retired is refused the same way.
+`E_LIFECYCLE_BUSY`. Nothing happened either way, and what to do differs.
+After `E_INSTANCE_RETIRING` the instance is on its way out: do not run the
+command again (`oats worktree add` in a home that is being retired is
+refused the same way). After `E_LIFECYCLE_BUSY` read the message: beside a
+running stop or retire, run yours again once that one has ended; when nobody
+is running, the message names the step to take first.
 
 ## Asking for a human's attention
 
