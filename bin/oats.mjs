@@ -3091,8 +3091,8 @@ async function scheduleCmd() {
           };
           const caps = { maxConcurrent: cap("max-concurrent", "default"), triggersMaxConcurrent: cap("triggers-max-concurrent", "none") };
           registerWorkspace(ws(), caps);
-          installHostUnit();
-          return out({ scheduler: schedulerStatus(ws(), io) });
+          const { warnings } = installHostUnit();
+          return out({ scheduler: schedulerStatus(ws(), io), warnings });
         }
         if (op === "uninstall") { unregisterWorkspace(ws()); if (!readRegistry().workspaces.length) uninstallHostUnit(); return out({ scheduler: schedulerStatus(ws(), io) }); }
         if (op === "status") return out({ scheduler: schedulerStatus(ws(), io) });

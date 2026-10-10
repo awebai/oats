@@ -1,0 +1,190 @@
+// The host timer's unit files (lib/schedule-host.mjs): wall-clock firing, the PATH and node they
+// carry, and what status says about an installed unit. Unit files live in a fixture `unitDir` and
+// the OS is a stub `exec`: the real ai.oats.schedule-tick / oats-schedule-tick is never touched.
+import test from "node:test";
+import assert from "node:assert/strict";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-schedule-host-")));
+process.env.OATS_HOME_DIR = join(base, "oats-home");
+delete process.env.OATS_INSTANCE_HOME;
+const H = await import("../lib/schedule-host.mjs");
+test.after(() => rmSync(base, { recursive: true, force: true }));
+
+let n = 0;
+const dir = (...parts) => { const d = join(base, ...parts); mkdirSync(d, { recursive: true }); return d; };
+function executable(path) { mkdirSync(join(path, ".."), { recursive: true }); writeFileSync(path, "#!/bin/sh\nexit 0\n"); chmodSync(path, 0o755); return path; }
+/** A Homebrew-shaped prefix: <prefix>/Cellar/node/<version>/bin/node, and opt/node -> that keg. */
+function brew({ opt = true } = {}) {
+  const prefix = dir(`brew-${++n}`);
+  const node = executable(join(prefix, "Cellar", "node", "22.1.0", "bin", "node"));
+  if (opt) { mkdirSync(join(prefix, "opt"), { recursive: true }); symlinkSync(join("..", "Cellar", "node", "22.1.0"), join(prefix, "opt", "node")); }
+  return { prefix, node };
+}
+const loaded = (b, argv) => (argv[1] === "is-active" ? "active\n" : "");
+const notLoaded = () => { throw Object.assign(new Error("not loaded"), { status: 113 }); };
+
+test("the launchd unit fires at second 0 of every minute and never on an interval", () => {
+  const plist = H.renderLaunchdPlist({ node: "/usr/local/bin/node", oatsBin: "/opt/oats/bin/oats.mjs", path: "/usr/bin:/bin" });
+  assert.match(plist, /<key>StartCalendarInterval<\/key><dict\/>/);
+  assert.doesNotMatch(plist, /StartInterval<\/key><integer>/);
+  assert.match(plist, /<key>RunAtLoad<\/key><false\/>/);
+  assert.match(plist, /<key>ProcessType<\/key><string>Background<\/string>/);
+  assert.match(plist, /<key>StandardOutPath<\/key>/); assert.match(plist, /<key>StandardErrorPath<\/key>/);
+});
+
+test("the systemd timer is a calendar timer at second 0, accurate to a second, never caught up", () => {
+  const { timer } = H.renderSystemdUnits({ node: "/usr/bin/node", oatsBin: "/opt/oats/bin/oats.mjs", path: "/usr/bin:/bin" });
+  assert.match(timer, /^OnCalendar=\*-\*-\* \*:\*:00$/m);
+  assert.match(timer, /^AccuracySec=1s$/m);
+  assert.match(timer, /^Persistent=false$/m);
+  assert.doesNotMatch(timer, /OnBootSec|OnUnitActiveSec/);
+  assert.doesNotMatch(timer, /every \d+s/, "a calendar timer has no interval to describe");
+});
+
+test("the unit PATH drops instance homes, Homebrew kegs, relative and empty entries, and keeps missing ones", () => {
+  const instanceHome = "/w/agents/dev/instances/dev-1";
+  const kept = H.unitPathEntries([
+    "/w/agents/dev/instances/dev-2/.oats/bin", // another instance's .oats/bin
+    `${instanceHome}/work/node_modules/.bin`, // under $OATS_INSTANCE_HOME
+    instanceHome,
+    "/usr/local/Cellar/node/17.7.2/bin", // a versioned keg
+    "/opt/homebrew/Cellar/git/2.50.0/libexec",
+    "relative/bin", "", ".",
+    "/does/not/exist/bin", // missing today: may exist when the tick runs
+    "/x/.oats/binaries", "/x/.oatsbin/bin", "/opt/homebrew/Cellar", // not hazards
+    "/Users/u/.local/bin",
+  ].join(":"), { instanceHome });
+  assert.deepEqual(kept, ["/does/not/exist/bin", "/x/.oats/binaries", "/x/.oatsbin/bin", "/opt/homebrew/Cellar", "/Users/u/.local/bin"]);
+  // Without an instance home, only the `.oats/bin` shape identifies one.
+  assert.deepEqual(H.unitPathEntries(`${instanceHome}/work/bin:/a/.oats/bin`, { instanceHome: undefined }), [`${instanceHome}/work/bin`]);
+});
+
+test("neither unit names an instance path or a keg, given an installer PATH and node that hold both", () => {
+  const { prefix, node } = brew();
+  const envPath = ["/w/agents/dev/instances/dev-1/.oats/bin", join(prefix, "Cellar", "node", "22.1.0", "bin"), "/w/agents/dev/instances/dev-1/work/bin", "/Users/u/.local/bin", "/usr/bin"].join(":");
+  const plan = H.hostUnitPlan({ execPath: node, envPath, instanceHome: "/w/agents/dev/instances/dev-1" });
+  assert.equal(plan.node, join(prefix, "opt", "node", "bin", "node"));
+  assert.deepEqual(plan.warnings, []);
+  const plist = H.renderLaunchdPlist({ node: plan.node, path: plan.path, oatsBin: "/opt/oats/bin/oats.mjs" });
+  const units = H.renderSystemdUnits({ node: plan.node, path: plan.path, oatsBin: "/opt/oats/bin/oats.mjs" });
+  for (const text of [plist, units.service, units.timer]) {
+    assert.doesNotMatch(text, /\/Cellar\//); assert.doesNotMatch(text, /\/instances\//); assert.doesNotMatch(text, /\.oats\/bin/);
+  }
+  assert.equal(plan.path.split(":")[0], join(prefix, "opt", "node", "bin"), "the stable node's dir comes first");
+  assert.ok(plan.path.split(":").includes("/Users/u/.local/bin"), "the installer's tool dirs are kept");
+});
+
+test("stableNode: a keg's opt link, else the same node on PATH, else execPath with a warning", () => {
+  const keg = brew();
+  assert.deepEqual(H.stableNode({ execPath: keg.node, envPath: "/usr/bin" }), { node: join(keg.prefix, "opt", "node", "bin", "node") });
+  // No opt link: the first node on the filtered PATH that is the same file.
+  const noOpt = brew({ opt: false });
+  const links = dir(`links-${++n}`), other = dir(`other-${++n}`);
+  executable(join(other, "node")); // a different node earlier on PATH is not the one running
+  symlinkSync(noOpt.node, join(links, "node"));
+  assert.deepEqual(H.stableNode({ execPath: noOpt.node, envPath: `${other}:${join(noOpt.prefix, "Cellar", "node", "22.1.0", "bin")}:${links}` }), { node: join(links, "node") });
+  // An opt link that resolves to another version is not this node.
+  const moved = brew();
+  rmSync(join(moved.prefix, "opt", "node")); symlinkSync(other, join(moved.prefix, "opt", "node"));
+  const fallback = H.stableNode({ execPath: moved.node, envPath: other });
+  assert.equal(fallback.node, moved.node, "nothing stable: execPath as it is");
+  assert.match(fallback.warning, /not stable/); assert.ok(fallback.warning.includes(moved.node));
+  // The fallback keeps the node's own dir first, so a job finds the same node; the warning says so.
+  const plan = H.hostUnitPlan({ execPath: moved.node, envPath: other });
+  assert.equal(plan.node, moved.node); assert.equal(plan.path.split(":")[0], join(moved.prefix, "Cellar", "node", "22.1.0", "bin"));
+  assert.equal(plan.warnings.length, 1); assert.match(plan.warnings[0], /not stable/);
+});
+
+test("install answers the not-stable warning, and writes the unit into the fixture dir only", () => {
+  const unitDir = dir(`unit-${++n}`);
+  const moved = brew({ opt: false });
+  const calls = [];
+  const exec = (b, argv) => { calls.push([b, ...argv].join(" ")); if (argv[0] === "print") return notLoaded(); return ""; };
+  const st = H.installHostUnit({ exec, os: "darwin", unitDir, execPath: moved.node, envPath: "/usr/bin" });
+  assert.equal(st.warnings.length, 1); assert.match(st.warnings[0], /not stable/);
+  const plist = readFileSync(H.hostUnitPaths("darwin", { unitDir }).plist, "utf8");
+  assert.ok(plist.includes(`<string>${moved.node}</string>`));
+  assert.ok(calls.some((c) => c.startsWith("launchctl bootstrap")), "bootstrap is the stub's");
+  const lin = H.installHostUnit({ exec: () => "", os: "linux", unitDir, execPath: brew().node, envPath: "/usr/bin" });
+  assert.deepEqual(lin.warnings, []);
+});
+
+/** Status of a crafted unit: `files` are written into a fresh unit dir. */
+function statusOf(os, files, exec = loaded) {
+  const unitDir = dir(`status-${++n}`);
+  const p = H.hostUnitPaths(os, { unitDir });
+  for (const [k, text] of Object.entries(files)) writeFileSync(p[k], text);
+  return H.hostUnitStatus({ exec, os, unitDir });
+}
+const codes = (st) => st.problems.map((p) => p.code);
+
+test("status reports a missing node, each missing PATH entry and an outdated unit, and nothing for a fresh one", () => {
+  const tools = dir("tools"), more = dir("more-tools");
+  const fresh = { node: process.execPath, oatsBin: executable(join(dir("oats", "bin"), "oats.mjs")), path: `${tools}:${more}:/usr/bin`, logDir: dir("log") };
+  for (const os of ["darwin", "linux"]) {
+    const render = (o) => os === "darwin" ? { plist: H.renderLaunchdPlist({ ...fresh, ...o }) } : H.renderSystemdUnits({ ...fresh, ...o });
+    const ok = statusOf(os, render({}));
+    assert.deepEqual(ok.problems, [], `${os}: a freshly rendered unit has no problems`);
+    assert.equal(ok.installed, true); assert.equal(ok.active, true);
+    const node = statusOf(os, render({ node: join(base, "gone", "node") }));
+    assert.deepEqual(codes(node), ["node-missing"]); assert.ok(node.problems[0].message.includes(join(base, "gone", "node")));
+    const oats = statusOf(os, render({ oatsBin: join(base, "gone", "oats.mjs") }));
+    assert.deepEqual(codes(oats), ["oats-bin-missing"]); assert.ok(oats.problems[0].message.includes(join(base, "gone", "oats.mjs")));
+    const path = statusOf(os, render({ path: `${tools}:${join(base, "gone-a")}:${join(base, "gone-b")}:/usr/bin` }));
+    assert.deepEqual(codes(path), ["path-entry-missing", "path-entry-missing"]);
+    assert.ok(path.problems[0].message.includes(join(base, "gone-a"))); assert.ok(path.problems[1].message.includes(join(base, "gone-b")));
+    for (const p of [...node.problems, ...oats.problems, ...path.problems]) assert.ok(p.fix, `${p.code} names its fix`);
+    // The fallback prefixes every unit carries are not this host's PATH: absent ones are not reported.
+    assert.deepEqual(statusOf(os, render({ path: `${tools}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin` })).problems, []);
+    // A changed byte, and the interval units this kernel no longer renders.
+    const changed = render({});
+    if (os === "darwin") changed.plist = changed.plist.replace("<key>RunAtLoad</key><false/>", "<key>RunAtLoad</key><true/>");
+    else changed.timer = changed.timer.replace("AccuracySec=1s", "AccuracySec=5");
+    assert.deepEqual(codes(statusOf(os, changed)), ["unit-outdated"]);
+    const legacy = render({});
+    if (os === "darwin") legacy.plist = legacy.plist.replace("<key>StartCalendarInterval</key><dict/>", "<key>StartInterval</key><integer>60</integer>");
+    else legacy.timer = legacy.timer.replace(/^OnCalendar=.*$/m, "OnBootSec=60\nOnUnitActiveSec=60");
+    const old = statusOf(os, legacy);
+    assert.deepEqual(codes(old), ["unit-outdated"]); assert.match(old.problems[0].fix, /oats schedule host install/);
+    // Problems are warnings: they never change installed/active.
+    assert.equal(old.installed, true); assert.equal(old.active, true);
+    assert.deepEqual(codes(statusOf(os, os === "darwin" ? { plist: "<plist>not ours</plist>" } : { service: "[Service]\n", timer: "[Timer]\n" })), ["unit-outdated"]);
+  }
+  // No unit installed: nothing to report.
+  assert.deepEqual(H.hostUnitStatus({ exec: notLoaded, os: "darwin", unitDir: dir("empty") }).problems, []);
+  assert.deepEqual(H.hostUnitStatus({ os: "win32" }).problems, []);
+});
+
+test("status reads only the unit: callers with another PATH, OATS_HOME_DIR or oats get the same answer", () => {
+  const tools = dir("caller-tools");
+  for (const os of ["darwin", "linux"]) {
+    const unit = { node: process.execPath, oatsBin: executable(join(dir("elsewhere", "oats", "bin"), "oats.mjs")), path: `${tools}:/usr/bin`, oatsHomeDir: join(base, "operator-oats"), logDir: dir("operator-log") };
+    const files = os === "darwin" ? { plist: H.renderLaunchdPlist(unit) } : H.renderSystemdUnits(unit);
+    const unitDir = dir(`callers-${++n}`);
+    const p = H.hostUnitPaths(os, { unitDir });
+    for (const [k, text] of Object.entries(files)) writeFileSync(p[k], text);
+    const saved = { PATH: process.env.PATH, OATS_HOME_DIR: process.env.OATS_HOME_DIR };
+    const answers = [];
+    try {
+      for (const [path, home] of [["/usr/bin:/bin", join(base, "desktop-oats")], [`${dir("other-shell")}:/usr/bin`, join(base, "shell-oats")]]) {
+        process.env.PATH = path; process.env.OATS_HOME_DIR = home;
+        answers.push(H.hostUnitStatus({ exec: loaded, os, unitDir }).problems);
+      }
+    } finally { process.env.PATH = saved.PATH; process.env.OATS_HOME_DIR = saved.OATS_HOME_DIR; }
+    assert.deepEqual(answers[0], []); assert.deepEqual(answers[1], answers[0], `${os}: the caller's environment never enters status`);
+  }
+});
+
+test("schedulerStatus carries the unit's problems as warnings, always as an array", async () => {
+  const S = await import("../lib/schedule.mjs");
+  const problem = { code: "node-missing", message: "the unit runs node at /gone/node, which does not exist", fix: "run `oats schedule host install`" };
+  const st = S.schedulerStatus(undefined, { hostStatus: () => ({ installed: true, active: true, unit: "/u.plist", problems: [problem] }) });
+  assert.deepEqual(st.problems, [problem]);
+  assert.equal(st.installed, true); assert.equal(st.active, true);
+  assert.deepEqual(S.schedulerStatus(undefined, { hostStatus: () => ({ installed: false, active: false }) }).problems, []);
+  assert.deepEqual(S.schedulerStatus(undefined, { hostStatus: () => { throw new Error("launchctl is gone"); } }).problems, []);
+  assert.deepEqual(S.schedulerStatus(undefined).problems, []);
+});

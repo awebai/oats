@@ -418,13 +418,13 @@ test("host units render the single tick and status reports what the OS says", ()
   const plist = H.renderLaunchdPlist({ node: "/usr/local/bin/node", oatsBin: "/opt/oats/bin/oats.mjs", oatsHomeDir: "/home/x/.oats" });
   assert.match(plist, /<string>ai\.oats\.schedule-tick<\/string>/);
   assert.match(plist, /<string>schedule<\/string>\s*<string>tick<\/string>\s*<string>--host<\/string>\s*<string>--json<\/string>/);
-  assert.match(plist, /<integer>60<\/integer>/); assert.match(plist, /OATS_HOME_DIR/);
+  assert.match(plist, /<key>StartCalendarInterval<\/key><dict\/>/); assert.match(plist, /OATS_HOME_DIR/);
   assert.match(plist, /<key>PATH<\/key><string>\/usr\/local\/bin:/, "the unit carries an explicit PATH starting with the node's dir");
   const units = H.renderSystemdUnits({ node: "/usr/bin/node", oatsBin: "/opt/oats/bin/oats.mjs" });
   assert.match(units.service, /ExecStart="\/usr\/bin\/node" "\/opt\/oats\/bin\/oats\.mjs" schedule tick --host --json/);
   assert.match(units.service, /Environment="PATH=/);
   assert.equal(H.systemdQuote("/opt/my apps/100%/oats"), '"/opt/my apps/100%%/oats"');
-  assert.match(units.timer, /OnUnitActiveSec=60/);
+  assert.match(units.timer, /^OnCalendar=\*-\*-\* \*:\*:00$/m);
   const exec = (b, argv) => { if (argv[0] === "print" || argv[1] === "is-active") throw Object.assign(new Error("not loaded"), { status: 113 }); return ""; };
   const st = H.hostUnitStatus({ exec, os: "darwin" });
   assert.equal(st.active, false, "a unit file alone is never active");
@@ -439,14 +439,15 @@ test("host units render the single tick and status reports what the OS says", ()
   const calls = [];
   const activeExec = (b, argv) => { calls.push(argv.join(" ")); return ""; };
   mkdirSync(unitDir, { recursive: true });
-  writeFileSync(plistPath, H.renderLaunchdPlist({ intervalSec: 60 }));
-  const st2 = H.installHostUnit({ exec: activeExec, os: "darwin", intervalSec: 60, unitDir });
+  writeFileSync(plistPath, H.renderLaunchdPlist());
+  const st2 = H.installHostUnit({ exec: activeExec, os: "darwin", unitDir });
   assert.equal(st2.active, true);
   assert.equal(calls.some((c) => c.startsWith("bootout") || c.startsWith("bootstrap")), false, "identical active unit: no bootout, no bootstrap");
-  // A changed unit is replaced through bootout + bootstrap, in the fixture dir.
-  H.installHostUnit({ exec: activeExec, os: "darwin", intervalSec: 120, unitDir });
+  // A changed unit (here one that fires on an interval) is replaced through bootout + bootstrap, in the fixture dir.
+  writeFileSync(plistPath, H.renderLaunchdPlist().replace("<key>StartCalendarInterval</key><dict/>", "<key>StartInterval</key><integer>60</integer>"));
+  H.installHostUnit({ exec: activeExec, os: "darwin", unitDir });
   assert.ok(calls.some((c) => c.startsWith("bootout")) && calls.some((c) => c.startsWith("bootstrap")));
-  assert.match(readFileSync(plistPath, "utf8"), /<integer>120<\/integer>/);
+  assert.equal(readFileSync(plistPath, "utf8"), H.renderLaunchdPlist());
 });
 
 test("remote schedules route to the server workspace only when the host advertises the feature", () => {
