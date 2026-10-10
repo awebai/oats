@@ -71,28 +71,32 @@ export function teamConfigurationPlan(doc, label, team, deployment, { preserveDe
     ['oats', 'teams', 'add', label, '--team', team, '--dir', deployment],
     ['oats', 'teams', 'default', label, '--dir', deployment],
   ];
-  if (doc.localTeams === false || doc.problems.some(p => p?.condition === 'local-teams-closed')) {
-    throw setupFailure('E_SETUP_POLICY', 'local-teams-closed: selected workspace forbids local team writes; operator must reconcile policy before using the manual commands', { commands });
-  }
+  // A workspace that forbids local team writes refuses only a plan that needs one (below):
+  // a team the workspace itself commits, already mapped and already the default, needs none.
+  const closed = doc.localTeams === false || doc.problems.some(p => p?.condition === 'local-teams-closed');
   const existing = doc.teams.find(row => row.label === label);
   if (existing && existing.team !== team) {
     throw setupFailure('E_SETUP_TEAM_CONFLICT', 'selected label is already declared for a different or unmapped team; choose another label or have its owner reconcile the declaration; no overwrite', { commands });
   }
   // An unconfigured/unmapped default is what this act repairs. Unrelated
   // warnings are advisory; other failures are not reclassified as closed policy.
-  if (doc.problems.some(p => p.label === label || (p.severity === 'failure' && !['E_TEAM_UNCONFIGURED', 'team-unmapped'].includes(p.code)))) {
+  if (doc.problems.some(p => p?.condition !== 'local-teams-closed' && (p.label === label || (p.severity === 'failure' && !['E_TEAM_UNCONFIGURED', 'team-unmapped'].includes(p.code))))) {
     throw setupFailure('E_SETUP_CONFIGURATION', 'selected kernel reports unresolved team configuration problems; no configuration write attempted at this step', { commands });
   }
   const mapped = !!existing;
+  const isDefault = doc.defaultTeam?.label === label && doc.defaultTeam?.team === team;
+  const needed = [...(mapped ? [] : [commands[0]]), ...(isDefault ? [] : [commands[1]])];
+  if (closed && needed.length) {
+    throw setupFailure('E_SETUP_POLICY', 'local-teams-closed: selected workspace forbids local team writes; operator must reconcile policy before using the manual commands', { commands });
+  }
   if (preserveDefault && !mapped && doc.defaultTeam && doc.defaultTeam.from !== 'deployment') {
     throw setupFailure('E_SETUP_DEFAULT_PRESERVE', 'mapping was not written because the deployment already has an effective default from the workspace; the supplied teams add command deliberately sets a local default over it', {
       commands: [['oats', 'teams', 'add', label, '--team', team, '--dir', deployment]],
       note: 'do not run this add as a harmless mapping-only step: it can override the effective workspace default',
     });
   }
-  const isDefault = doc.defaultTeam?.label === label && doc.defaultTeam?.team === team;
   return { label, team, mapping: mapped ? 'reuse' : 'add', default: isDefault ? 'reuse' : 'set',
-    commands: [...(mapped ? [] : [commands[0]]), ...(isDefault ? [] : [commands[1]])],
+    commands: needed,
     note: 'teams add may also set the local default; readback determines whether the default command is still required' };
 }
 
