@@ -789,3 +789,328 @@ test("routed inspect --instructions needs a remote that advertises soul-composed
   assert.equal(current.sent.length, 1);
   assert.match(current.sent[0], /(^| )oats inspect --soul dev --instructions --dir \/w --json$/);
 });
+
+// ---- session attach --detach-key (feature session-attach-detach-key, awebai/oats#856) -----------
+const DETACH_KEY = "C-\\"; // C-\ : one backslash on argv
+const DETACH_FEATURE = "session-attach-detach-key";
+const detachRefusal = (version, sshHost) => `remote oats ${version} at ${sshHost} does not advertise ${DETACH_FEATURE}; upgrade it there, or attach without --detach-key; nothing was sent`;
+/** The fake ssh's log, one entry per ssh call: its options (everything before `--`), the host and
+ *  the one command word the remote shell is given. */
+function sshCalls(log) {
+  const chunks = readFileSync(log, "utf8").split("\n--\n");
+  const calls = [];
+  for (let i = 0; i + 1 < chunks.length; i += 2) {
+    const [host, ...word] = chunks[i + 1].split("\n");
+    calls.push({ opts: chunks[i].split("\n"), host, word: word.join("\n") });
+  }
+  return calls;
+}
+/** A registered fake host that runs this kernel (`build`), and its environment. */
+function detachKeyHost(base) {
+  const { bin, log, tools } = fakeBin(base);
+  const { dep: repo } = remoteDeployment();
+  const env = { ...process.env, PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
+  mkdirSync(env.HOME, { recursive: true }); mkdirSync(env.OATS_HOME_DIR, { recursive: true });
+  for (const k of Object.keys(env)) if (/^(OATS_INSTANCE|PI_AGENT)/.test(k)) delete env[k];
+  const r = oats(env, ["server", "add", "build", "--ssh", "build-host", "--workspace", repo, "--oats", CLI, "--path", tools, "--json"]);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  return { bin, log, tools, repo, env };
+}
+
+test("routed session attach --detach-key: the key travels, one quoted word, only to a host that advertises session-attach-detach-key; a host without it gets the probe alone and the refusal, --print included; a bad key makes no ssh call", () => {
+  const base = mkdtempSync("/tmp/oats-servers-dk-"); // short: the control socket path must fit in 104 bytes
+  try {
+    const { log, tools, repo, env } = detachKeyHost(base);
+    const version = oats(env, ["version", "--json"]).json().version;
+    assert.ok(KERNEL_FEATURES.includes(DETACH_FEATURE), "this kernel advertises the feature");
+    let r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "dk", "--no-launch", "--json"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    const home = r.json().result.home;
+    const prefix = `PATH=${remoteQuote(tools)}:"$PATH" `;
+    const attachWord = (oatsPath, ...flags) => prefix + [oatsPath, "session", "attach", "--home", home, ...flags].map(remoteQuote).join(" ");
+    const probeWord = (oatsPath) => `${prefix}${remoteQuote(oatsPath)} version --json`;
+    const words = () => sshCalls(log).map((c) => c.word);
+    const reset = () => writeFileSync(log, "");
+    /** What a shell makes of a printed command line: its words. */
+    const shellWords = (line) => execFileSync("/bin/sh", ["-c", `for word in ${line}; do printf '%s\\n' "$word"; done`], { encoding: "utf8" }).split("\n").filter(Boolean);
+    assert.equal(remoteQuote(DETACH_KEY), "'C-\\'", "C-\\ travels single-quoted");
+    assert.ok(attachWord(CLI, "--detach-key", DETACH_KEY).endsWith(` session attach --home ${remoteQuote(home)} --detach-key 'C-\\'`));
+
+    // ---- a host that advertises the feature: this kernel
+    // Without a key, --print asks the host nothing (as before this flag existed).
+    reset();
+    r = oats(env, ["session", "attach", "--server", "build", "--instance", "dev-dk", "--print"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(words(), [], "--print without a key makes no ssh call");
+    assert.deepEqual(shellWords(r.stdout.trim()).at(-1), attachWord(CLI), "and prints the attach without the flag");
+    // With a key the probe runs under --print too, and the printed word carries the key.
+    reset();
+    r = oats(env, ["session", "attach", "--server", "build", "--instance", "dev-dk", "--detach-key", DETACH_KEY, "--print"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(words(), [probeWord(CLI)], "with a key, --print probes the host: the version probe, nothing else");
+    let printed = shellWords(r.stdout.trim());
+    assert.deepEqual(printed.slice(0, 2), ["ssh", "-t"]);
+    assert.deepEqual(printed.slice(-3), ["--", "build-host", attachWord(CLI, "--detach-key", DETACH_KEY)]);
+    // --detach-key=<key> is the same.
+    reset();
+    r = oats(env, ["session", "attach", "--server", "build", "--home", home, "--detach-key=F12", "--print"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(words(), [probeWord(CLI)]);
+    assert.equal(shellWords(r.stdout.trim()).at(-1), attachWord(CLI, "--detach-key", "F12"));
+    // Run: the host gets the probe, then the attach with the key, through ssh -t. The host's own
+    // attach reads the flag and goes on to its own refusal (this home was never launched), relayed.
+    reset();
+    r = oats(env, ["session", "attach", "--server", "build", "--instance", "dev-dk", "--detach-key", DETACH_KEY]);
+    assert.equal(r.status, 1, r.stderr + r.stdout);
+    assert.match(r.stderr, /instance was not launched/, "the host's attach took the key and answered for the home");
+    const sent = sshCalls(log);
+    assert.deepEqual(sent.map((c) => c.word), [probeWord(CLI), attachWord(CLI, "--detach-key", DETACH_KEY)]);
+    assert.equal(sent[1].opts[0], "-t", "the attach is the interactive ssh");
+    assert.equal(sent[1].host, "build-host");
+
+    // ---- a host without the feature: this kernel, its version probe answered without the name
+    const oldOats = join(base, "old-oats");
+    write(oldOats, `#!/bin/sh\nif [ "$1" = version ] && [ "$2" = --json ]; then ${remoteQuote(process.execPath)} ${remoteQuote(CLI)} version --json | sed 's/,"${DETACH_FEATURE}"//'; exit $?; fi\nexec ${remoteQuote(process.execPath)} ${remoteQuote(CLI)} "$@"\n`);
+    chmodSync(oldOats, 0o755);
+    r = oats(env, ["server", "add", "old", "--ssh", "old-host", "--workspace", repo, "--oats", oldOats, "--path", tools, "--json"]); assert.equal(r.status, 0, r.stderr);
+    r = oats(env, ["server", "check", "old", "--json"]);
+    assert.deepEqual(r.json().result.remote.features, KERNEL_FEATURES.filter((f) => f !== DETACH_FEATURE), "the old host advertises everything but the detach key");
+    const message = detachRefusal(version, "old-host");
+    for (const print of [[], ["--print"]]) {
+      const what = print.length ? "with --print" : "without --print";
+      reset();
+      r = oats(env, ["session", "attach", "--server", "old", "--home", home, "--detach-key", DETACH_KEY, ...print, "--json"]);
+      assert.equal(r.status, 1, `${what}: ${r.stderr}${r.stdout}`);
+      assert.deepEqual(r.json(), { schemaVersion: 1, ok: false, error: { code: "E_REMOTE_INCOMPATIBLE", message, details: { feature: DETACH_FEATURE } } }, what);
+      assert.deepEqual(words(), [probeWord(oldOats)], `${what}: the host was sent the version probe and nothing else`);
+      reset();
+      r = oats(env, ["session", "attach", "--server", "old", "--home", home, "--detach-key", DETACH_KEY, ...print]);
+      assert.equal(r.status, 1, what);
+      assert.equal(r.stderr, `oats: ${message}\n`, what);
+      assert.equal(r.stdout, "", `${what}: no argv is printed for a host that would ignore the flag`);
+      assert.deepEqual(words(), [probeWord(oldOats)], what);
+    }
+    // A name with no saved route here is resolved through the host's roster. With a key the
+    // feature is asked first: the host without it gets the probe alone, whether its roster holds
+    // the name (dev-dk, whose saved route belongs to the other registration) or not.
+    for (const name of ["dev-dk", "not-on-the-roster"]) for (const print of [[], ["--print"]]) {
+      const what = `--instance ${name} ${print.join(" ")}`;
+      reset();
+      r = oats(env, ["session", "attach", "--server", "old", "--instance", name, "--detach-key", DETACH_KEY, ...print, "--json"]);
+      assert.equal(r.status, 1, `${what}: ${r.stderr}${r.stdout}`);
+      assert.deepEqual(r.json(), { schemaVersion: 1, ok: false, error: { code: "E_REMOTE_INCOMPATIBLE", message, details: { feature: DETACH_FEATURE } } }, what);
+      assert.deepEqual(words(), [probeWord(oldOats)], `${what}: the version probe and nothing else, the roster was not read`);
+    }
+    // Without a key that name is resolved as before, the roster read first and no probe under --print.
+    reset();
+    r = oats(env, ["session", "attach", "--server", "old", "--instance", "dev-dk", "--print"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(words().length, 1);
+    assert.match(words()[0], / status --json --dir /);
+    assert.equal(shellWords(r.stdout.trim()).at(-1), attachWord(oldOats));
+    // On the advertising host: the probe, then the roster, then the attach with the key.
+    reset();
+    r = oats(env, ["server", "forget", "build", "--instance", "dev-dk", "--json"]); assert.equal(r.status, 0, r.stderr + r.stdout);
+    reset();
+    r = oats(env, ["session", "attach", "--server", "build", "--instance", "dev-dk", "--detach-key", DETACH_KEY, "--print"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(words().length, 2, words().join(" | "));
+    assert.equal(words()[0], probeWord(CLI));
+    assert.match(words()[1], / status --json --dir /);
+    assert.equal(shellWords(r.stdout.trim()).at(-1), attachWord(CLI, "--detach-key", DETACH_KEY));
+    // Without a key that host is attached as before: nothing is asked of it under --print.
+    reset();
+    r = oats(env, ["session", "attach", "--server", "old", "--home", home, "--print"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(words(), []);
+    assert.equal(shellWords(r.stdout.trim()).at(-1), attachWord(oldOats));
+
+    // ---- a bad key: refused here, before any ssh, also when the name would be resolved through the host's roster
+    const addresses = [["--home", home], ["--instance", "dev-dk"], ["--instance", "no-saved-route"]];
+    const badKeys = [
+      [["--detach-key", "C-i"], /^--detach-key must be one key: C-<a letter except h, i and m, or one of .* \(got "C-i"\)$/],
+      [["--detach-key", "C-h"], /^--detach-key must be one key: .* \(got "C-h"\)$/],
+      [["--detach-key", "C-]; kill-server"], /^--detach-key must be one key: .* \(got "C-\]; kill-server"\)$/],
+      [["--detach-key", "C-b d"], /\(got "C-b d"\)$/],
+      [["--detach-key"], /^--detach-key needs a value$/],
+      [["--detach-key", "--print"], /^--detach-key needs a value$/],
+      [["--detach-key="], /^--detach-key= needs a value$/],
+    ];
+    for (const address of addresses) for (const [flags, expected] of badKeys) for (const print of [[], ["--print"]]) {
+      const argv = ["session", "attach", "--server", "build", ...address, ...flags, ...(flags.includes("--print") ? [] : print)];
+      reset();
+      r = oats(env, [...argv, "--json"]);
+      assert.equal(r.status, 1, argv.join(" "));
+      assert.equal(r.json().error.code, "E_BAD_ARGS", argv.join(" "));
+      assert.match(r.json().error.message, expected, argv.join(" "));
+      assert.deepEqual(words(), [], `no ssh call: ${argv.join(" ")}`);
+    }
+    reset();
+    r = oats(env, ["session", "attach", "--server", "build", "--instance", "no-saved-route", "--detach-key", "C-m"]);
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /^oats: --detach-key must be one key: /);
+    assert.deepEqual(words(), []);
+    // The same name with a key the grammar admits is resolved through the roster, as without a key.
+    r = oats(env, ["session", "attach", "--server", "build", "--instance", "no-saved-route", "--detach-key", DETACH_KEY, "--json"]);
+    assert.equal(r.json().error.code, "E_SNAPSHOT_UNKNOWN");
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("routed session attach relays the host's status: 20 (left by the detach key), also when SIGQUIT reaches this process while ssh is ending; on ssh's own 255 the reattach line carries the key, and without a key it is the line it always was", () => {
+  const base = mkdtempSync("/tmp/oats-servers-dk-");
+  try {
+    const { bin, log, env: hostEnv } = detachKeyHost(base);
+    // An ssh in front of the fixture's: it answers every command as the fixture does (this kernel
+    // is the host), except the attach, which it ends itself with $FAKE_ATTACH_STATUS. With
+    // $FAKE_QUIT_SENT it first sends SIGQUIT to its parent, the routed `oats`, and records that
+    // the signal was sent: the QUIT a second press of C-\ raises once ssh has given the tty back.
+    const front = join(base, "front");
+    write(join(front, "ssh"), `#!/bin/sh
+printf '%s\\n' "$@" >> ${remoteQuote(log)}
+printf -- '--\\n' >> ${remoteQuote(log)}
+while [ "$1" != "--" ]; do shift; done
+shift; shift
+case "$1" in
+  *" session attach "*)
+    if [ -n "$FAKE_QUIT_SENT" ]; then kill -QUIT "$PPID" && : > "$FAKE_QUIT_SENT"; fi
+    exit "$FAKE_ATTACH_STATUS" ;;
+esac
+exec sh -c "$1"
+`);
+    chmodSync(join(front, "ssh"), 0o755);
+    const home = "/srv/team/agents/dev/instances/dev-dk";
+    const attach = (extra, more = {}) => {
+      writeFileSync(log, "");
+      const r = spawnSync(process.execPath, [CLI, "session", "attach", "--server", "build", "--home", home, ...extra], { encoding: "utf8", cwd: hostEnv.HOME, env: { ...hostEnv, PATH: `${front}:${bin}`, ...more } });
+      if (r.error) throw r.error;
+      const sent = sshCalls(log).map((c) => c.word);
+      assert.equal(sent.length, 2, `the probe, then the attach: ${sent.join(" | ")}`);
+      assert.match(sent[0], / version --json$/);
+      return { ...r, attachWord: sent[1] };
+    };
+    const keyed = ["--detach-key", DETACH_KEY];
+
+    // The host's attach ended by its detach key: 20, relayed.
+    let r = attach(keyed, { FAKE_ATTACH_STATUS: "20" });
+    assert.ok(r.attachWord.endsWith(` session attach --home ${home} --detach-key 'C-\\'`), r.attachWord);
+    assert.equal(r.status, 20, r.stderr);
+    assert.equal(r.signal, null);
+    assert.equal(r.stderr, "", "a relayed 20 is not an ssh failure: nothing is said");
+    // The same, with SIGQUIT sent to this `oats` by the ssh under it just before that ssh exits 20.
+    // With a key the routed CLI holds SIGQUIT, so the host's status is still what it answers.
+    // (Without a key nothing listens and the same signal ends Node by its default action, 131 in a
+    // shell: not run here, it would leave a core dump on a host configured to keep them.)
+    const quitSent = join(base, "quit-sent");
+    r = attach(keyed, { FAKE_ATTACH_STATUS: "20", FAKE_QUIT_SENT: quitSent });
+    assert.equal(existsSync(quitSent), true, "the fake ssh sent SIGQUIT to the routed oats");
+    assert.equal(r.signal, null, "SIGQUIT did not end the routed oats");
+    assert.equal(r.status, 20, r.stderr);
+    // A status other than 20 is relayed as it is, QUIT or not: the listener decides nothing.
+    r = attach(keyed, { FAKE_ATTACH_STATUS: "0", FAKE_QUIT_SENT: quitSent });
+    assert.equal(r.status, 0, r.stderr); assert.equal(r.signal, null);
+    r = attach(keyed, { FAKE_ATTACH_STATUS: "1" });
+    assert.equal(r.status, 1, r.stderr);
+
+    // ssh's own failure under the viewer: 255, and the line that says how to reattach.
+    const lost = `\noats: ssh to build-host ended with an error (exit 255); if the link was lost, the instance keeps running on build. Reattach with: oats session attach --server build --home ${home}`;
+    r = attach([], { FAKE_ATTACH_STATUS: "255" });
+    assert.ok(r.attachWord.endsWith(` session attach --home ${home}`), r.attachWord);
+    assert.equal(r.status, 255);
+    assert.equal(r.stderr, `${lost}\n`, "without a key: the line as it was before the flag existed");
+    r = attach(keyed, { FAKE_ATTACH_STATUS: "255" });
+    assert.equal(r.status, 255);
+    assert.equal(r.stderr, `${lost} --detach-key 'C-\\'\n`, "with a key: the reattach command keeps it, quoted for a shell");
+    r = attach(["--detach-key", "F12"], { FAKE_ATTACH_STATUS: "255" });
+    assert.equal(r.status, 255);
+    assert.equal(r.stderr, `${lost} --detach-key F12\n`);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("attachArgv with a detach key: validated before anything is asked of the host; the probe runs even where the version check is skipped; a host without the feature is refused on the probe alone, also one without the session commands", () => {
+  const server = { id: "build", sshHost: "h", workspace: "/w", oatsPath: "oats" };
+  const home = "/srv/dk/agents/dev/instances/dev-dk";
+  const probe = (features, remote) => ({ schemaVersion: 1, name: "@awebai/oats", version: "0.50.0", desktopApi: 1, harnesses: ["pi"], sessionBackends: ["tmux"], launchOptions: [], remote, features });
+  /** A host: every remote command word it was sent, the version probe included. Its roster, when
+   *  it has one, holds the instance dev-dk at `home`. */
+  const host = (features, remote = ["spawn", "status", "session"], { roster = false } = {}) => {
+    const sent = [];
+    const exec = (bin, argv) => {
+      const word = String(argv.at(-1));
+      sent.push(word);
+      if (word.includes("version --json")) return JSON.stringify(probe(features, remote));
+      if (roster && word.includes("status --json")) return JSON.stringify({ root: "/srv/dk/agents", agents: [{ name: "dev", instances: [{ instance: "dev-dk", home }] }] });
+      throw new Error(`unexpected remote call: ${word}`);
+    };
+    return { sent, io: { server, execFileSync: exec } };
+  };
+  const ROSTER = "oats status --json --dir /w";
+  const PROBE = "oats version --json";
+  const plainWord = `oats session attach --home ${home}`;
+  const keyedWord = `${plainWord} --detach-key 'C-\\'`;
+
+  // A value outside the grammar: E_BAD_ARGS, and the host is never called, with a home or with a
+  // name that only the host's roster could resolve.
+  for (const bad of ["C-h", "C-i", "C-m", "C-[", "C-]; kill-server", "C-b d", "C-a\n", "c-a", "Any", "", true, null, 12]) {
+    for (const address of [{ home }, { instance: "no-saved-route" }]) for (const skipVersionCheck of [false, true]) {
+      const h = host([DETACH_FEATURE]);
+      assert.throws(() => attachArgv("build", { ...address, detachKey: bad }, { ...h.io, skipVersionCheck }),
+        (e) => e.code === "E_BAD_ARGS" && e.message.startsWith("--detach-key must be one key: ") && e.message.endsWith(`(got ${JSON.stringify(bad)})`), JSON.stringify(bad));
+      assert.deepEqual(h.sent, [], `no call for ${JSON.stringify(bad)}`);
+    }
+  }
+  // A host that advertises the feature: the key is appended, quoted with the rest; one probe.
+  for (const skipVersionCheck of [false, true]) {
+    const h = host(["operations", DETACH_FEATURE]);
+    const att = attachArgv("build", { home, detachKey: DETACH_KEY }, { ...h.io, skipVersionCheck });
+    assert.deepEqual(att.argv.slice(0, 2), ["ssh", "-t"]);
+    assert.equal(att.argv.at(-1), keyedWord);
+    assert.equal(att.home, home);
+    assert.deepEqual(h.sent, [PROBE], `skipVersionCheck ${skipVersionCheck}: the probe always runs with a key`);
+    const f12 = attachArgv("build", { home, detachKey: "S-F12" }, { ...h.io, skipVersionCheck });
+    assert.equal(f12.argv.at(-1), `${plainWord} --detach-key S-F12`);
+  }
+  // Without a key nothing changes: no probe where the version check is skipped, the same word.
+  let h = host(["operations", DETACH_FEATURE]);
+  assert.equal(attachArgv("build", { home }, { ...h.io, skipVersionCheck: true }).argv.at(-1), plainWord);
+  assert.deepEqual(h.sent, []);
+  h = host(["operations"]);
+  assert.equal(attachArgv("build", { home }, h.io).argv.at(-1), plainWord, "a host without the feature is attached without a key as before");
+  assert.deepEqual(h.sent, [PROBE]);
+  // A host without the feature: refused on the probe, nothing else sent.
+  const refused = (e) => {
+    assert.equal(e.code, "E_REMOTE_INCOMPATIBLE");
+    assert.equal(e.message, detachRefusal("0.50.0", "h"));
+    assert.deepEqual(e.details, { feature: DETACH_FEATURE });
+    return true;
+  };
+  for (const skipVersionCheck of [false, true]) {
+    h = host(["operations", "session-attach"]);
+    assert.throws(() => attachArgv("build", { home, detachKey: DETACH_KEY }, { ...h.io, skipVersionCheck }), refused);
+    assert.deepEqual(h.sent, [PROBE], `skipVersionCheck ${skipVersionCheck}`);
+    // A name with no saved route here would be resolved through the host's roster: with a key the
+    // feature is asked first, so the host without it is sent the probe and never the roster read,
+    // whether or not its roster holds the name.
+    for (const name of ["dev-dk", "not-on-the-roster"]) {
+      h = host(["operations"], undefined, { roster: true });
+      assert.throws(() => attachArgv("build", { instance: name, detachKey: DETACH_KEY }, { ...h.io, skipVersionCheck }), refused, name);
+      assert.deepEqual(h.sent, [PROBE], `${name}, skipVersionCheck ${skipVersionCheck}`);
+    }
+    // A host with the feature: the probe, once, then the roster; the name it holds is attached
+    // with the key, and one it does not hold is unknown as it is without a key.
+    h = host([DETACH_FEATURE], undefined, { roster: true });
+    assert.equal(attachArgv("build", { instance: "dev-dk", detachKey: DETACH_KEY }, { ...h.io, skipVersionCheck }).argv.at(-1), keyedWord);
+    assert.deepEqual(h.sent, [PROBE, ROSTER], `skipVersionCheck ${skipVersionCheck}`);
+    h = host([DETACH_FEATURE], undefined, { roster: true });
+    assert.throws(() => attachArgv("build", { instance: "not-on-the-roster", detachKey: DETACH_KEY }, { ...h.io, skipVersionCheck }), (e) => e.code === "E_SNAPSHOT_UNKNOWN");
+    assert.deepEqual(h.sent, [PROBE, ROSTER]);
+    // Without a key the roster is read first, as before, and the probe only where it always was.
+    h = host(["operations"], undefined, { roster: true });
+    assert.equal(attachArgv("build", { instance: "dev-dk" }, { ...h.io, skipVersionCheck }).argv.at(-1), plainWord);
+    assert.deepEqual(h.sent, skipVersionCheck ? [ROSTER] : [ROSTER, PROBE]);
+    // A host that has neither the feature nor the session commands gets the same refusal: the
+    // roster read behind the older refusal's hint is not sent.
+    h = host([], ["spawn", "status"]);
+    assert.throws(() => attachArgv("build", { home, detachKey: DETACH_KEY }, { ...h.io, skipVersionCheck }), refused);
+    assert.deepEqual(h.sent, [PROBE], `no session commands, skipVersionCheck ${skipVersionCheck}`);
+  }
+});
