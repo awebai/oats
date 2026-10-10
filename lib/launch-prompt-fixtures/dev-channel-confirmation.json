@@ -1,0 +1,29 @@
+{
+  "entries": [
+    {
+      "id": "aweb-dev-channel-confirmation-1",
+      "text": "WARNING: Loading development channels --dangerously-load-development-channels is for local channel development only. Do not use this option to run channels you have downloaded off the internet. Please use --channels to run a list of approved channels. Channels: plugin:aweb-channel@awebai-marketplace ❯ 1. I am using this for local development 2. Exit Enter to confirm · Esc to cancel",
+      "selected": "❯ 1. I am using this for local development",
+      "provenance": [
+        {
+          "claudeVersion": "2.1.289",
+          "platform": "darwin-arm64",
+          "capturedAt": "2026-10-07T03:52:47Z",
+          "source": "test/fixtures/launch-prompts/claude-2.1.289-darwin-arm64-110.txt (oats#708 private throwaway capture)"
+        },
+        {
+          "claudeVersion": "2.1.296",
+          "platform": "darwin-arm64",
+          "capturedAt": "2026-10-10T18:35:17Z",
+          "source": "test/fixtures/launch-prompts/claude-2.1.296-darwin-arm64-194.txt (oats#886 comment 6100871837)"
+        },
+        {
+          "claudeVersion": "2.1.296",
+          "platform": "linux-arm64",
+          "capturedAt": "2026-10-10T23:26:08.284Z",
+          "source": "test/fixtures/launch-prompts/claude-2.1.296-linux-arm64-*.txt (oats#886 A6 capture: 194x50, 110x35, 80x35, 60x35)"
+        }
+      ]
+    }
+  ]
+}

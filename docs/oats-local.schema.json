@@ -36,13 +36,14 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
-              "awebDevelopmentChannel": { "type": "boolean" }
+              "awebDevelopmentChannel": { "type": "boolean" },
+              "workspaceTrust": { "type": "boolean" }
             }
           },
-          "description": "Exact absolute canonical instance-home paths only; no wildcard or ancestor inheritance. Runtime validation resolves existing ancestors for homes not yet created."
+          "description": "Instance-home paths. An entry awebDevelopmentChannel: false is refused (removed-key); every other entry is ignored."
         }
       },
-      "description": "Host-only consent to the bounded exact aweb development-channel confirmation. Missing awebDevelopmentChannel is false; provider settings and captured recipes do not grant consent."
+      "description": "Ignored, kept so it can be judged: OATS confirms Claude's development-channel prompt whenever it launches Claude with --dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace. A home entry awebDevelopmentChannel: false is refused; remove the block."
     },
     "settings": {
       "type": "object",

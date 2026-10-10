@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto';
 import { retainLaunchPromptFrame, launchPromptEvidenceRecognition } from '../lib/launch-prompt-evidence.mjs';
 import { createLaunchPromptController } from '../lib/launch-prompts.mjs';
 import { appendEvent } from '../lib/instance-events.mjs';
+import { linux296 } from './helpers/dev-channel-screens.mjs';
 const hash = value => createHash('sha256').update(value).digest('hex');
 const target = { socket: '/private/synthetic.sock', windowId: '@4', paneId: '%7', pid: '42' };
 const frame = text => text + '\n'.repeat(35);
@@ -28,16 +29,17 @@ function mock(t, method, handler) {
   t.after(() => { stub.mock.restore(); syncBuiltinESMExports(); });
 }
 
-test('private receipt reader keeps historical v1 readable and accepts only the two v2 pairs', () => {
+test('private receipt reader keeps historical v1 and structural receipts readable and accepts only the three v2 pairs', () => {
   const old = { version: 1, kind: 'launch-prompt-unmatched', captureTime: null };
   const bytes = JSON.stringify(old);
   assert.deepEqual(launchPromptEvidenceRecognition(old), { outcome: 'blocked', recognition: 'unmatched' });
   assert.equal(JSON.stringify(old), bytes, 'reading does not migrate historical evidence');
-  for (const [outcome, recognition] of [['blocked', 'unmatched'], ['completed', 'structural']]) {
+  for (const [outcome, recognition] of [['blocked', 'unmatched'], ['completed', 'stable-screen'], ['completed', 'structural']]) {
     assert.deepEqual(launchPromptEvidenceRecognition({ version: 2, kind: 'launch-prompt-frame', outcome, recognition }), { outcome, recognition });
   }
   for (const wrong of [null, {}, { ...old, outcome: 'completed' }, { ...old, version: 2 },
     { version: 2, kind: 'launch-prompt-frame', outcome: 'blocked', recognition: 'structural' },
+    { version: 2, kind: 'launch-prompt-frame', outcome: 'blocked', recognition: 'stable-screen' },
     { version: 2, kind: 'launch-prompt-frame', outcome: 'completed', recognition: 'unmatched' },
     { version: 3, kind: 'launch-prompt-frame', outcome: 'completed', recognition: 'structural' }]) {
     assert.equal(launchPromptEvidenceRecognition(wrong), null);
@@ -69,21 +71,23 @@ test('private evidence retains exact compared bytes, target and receipt-last ide
   assert.deepEqual(fs.readFileSync(join(dir, 'receipt.json')), before);
 });
 
-test('structural evidence binds the proposed completion without asserting the final public outcome', t => {
+test('stable-screen evidence binds the proposed completion without asserting the final public outcome', t => {
   const { args, dir } = setup(t);
-  assert.deepEqual(retainLaunchPromptFrame({ ...args, outcome: 'completed', recognition: 'structural' }), { ok: true });
+  assert.deepEqual(retainLaunchPromptFrame({ ...args, outcome: 'completed', recognition: 'stable-screen' }), { ok: true });
   const receipt = JSON.parse(fs.readFileSync(join(dir, 'receipt.json')));
   assert.equal(receipt.version, 2);
   assert.equal(receipt.kind, 'launch-prompt-frame');
   assert.equal(receipt.outcome, 'completed');
-  assert.equal(receipt.recognition, 'structural');
+  assert.equal(receipt.recognition, 'stable-screen');
+  assert.equal(receipt.width, 110);
+  assert.equal(receipt.height, 35);
   assert.equal(receipt.signatureDigest, hash(args.screen.text));
   assert.equal(fs.readFileSync(join(dir, 'frame.txt'), 'utf8'), args.screen.text);
   assert.equal(Object.hasOwn(receipt, 'ready'), false);
   assert.equal(Object.hasOwn(receipt, 'audit'), false);
 });
 
-for (const [outcome, recognition] of [['completed', 'unmatched'], ['blocked', 'structural'],
+for (const [outcome, recognition] of [['completed', 'unmatched'], ['blocked', 'structural'], ['completed', 'structural'],
   ['incomplete', 'structural'], ['completed', 'exact'], ['unknown', 'unmatched'], [null, null]]) {
   test(`private receipt refuses unsupported pair ${outcome}/${recognition} before any publication`, t => {
     const { args, home } = setup(t);
@@ -96,7 +100,7 @@ for (const mode of ['width', 'height', 'rows', 'oversized', 'start', 'target', '
   test(`evidence refuses unsafe ${mode} without writing through it`, t => {
     const { args, home, base, dir } = setup(t);
     const outside = join(base, 'outside'); fs.mkdirSync(outside);
-    if (mode === 'width') args.screen.width++;
+    if (mode === 'width') args.screen.width = 0;
     if (mode === 'height') args.screen.height++;
     if (mode === 'rows') args.screen.text += '\n';
     if (mode === 'oversized') args.screen.text = frame('x'.repeat(65536));
@@ -155,29 +159,34 @@ for (const mode of ['write', 'fsync', 'receipt-write', 'publication', 'readback'
   });
 }
 
-for (const mode of ['saved', 'write-failed', 'throw', 'audit-failed', 'no-consent', 'no-answer', 'send-failed', 'send-uncertain', 'completed', 'geometry', 'replaced-home']) {
+test('evidence keeps any pane geometry, with rows matching its height', t => {
+  const { args, dir } = setup(t);
+  args.screen = { text: frame('PRIVATE wide').replace('\n'.repeat(35), '\n'.repeat(50)), width: 194, height: 50 };
+  assert.deepEqual(retainLaunchPromptFrame(args), { ok: true });
+  const receipt = JSON.parse(fs.readFileSync(join(dir, 'receipt.json')));
+  assert.deepEqual([receipt.width, receipt.height], [194, 50]);
+});
+
+// `question` is a private post-answer screen carrying a question marker: it
+// blocks after the Enter. Before the Enter it is an unknown screen that holds still.
+for (const mode of ['saved', 'write-failed', 'throw', 'audit-failed', 'no-answer', 'send-failed', 'send-uncertain', 'completed', 'replaced-home']) {
  test(`controller retention trigger and permanent closure: ${mode}`, t => {
-  const { args, home, dir } = setup(t), prompt = frame('SYNTHETIC channel'), done = frame('SYNTHETIC complete');
-  let text = mode === 'no-answer' ? args.screen.text : prompt, time = 0, calls = 0, captures = 0, sends = 0, restored = 0;
+  const { args, home, dir } = setup(t), prompt = linux296['110x35'], done = frame('SYNTHETIC complete');
+  // Longer than differed's 40-character snippet: its tail must never reach a row.
+  args.screen.text = frame('PRIVATE question  Enter to confirm, and a tail past forty characters: SECRET-TAIL');
+  let text = mode === 'no-answer' ? args.screen.text : prompt, time = 0, calls = 0, captures = 0, sends = 0;
   const rows = [];
-  const controller = createLaunchPromptController({ home, startId: args.startId,
-    harness: { name: 'claude', version: 'test', platform: 'test', developmentChannelEligible: true },
-    policy: { awebDevelopmentChannel: mode !== 'no-consent' }, geometry: { width: 110, height: 35 },
-    fixtures: [{ home, id: 'synthetic', harness: 'claude', version: 'test', platform: 'test', frames: [
-      { text: prompt, width: 110, height: 35, kind: 'prompt', class: 'awebDevelopmentChannel', after: [] },
-      { text: done, width: 110, height: 35, kind: 'completed', after: ['awebDevelopmentChannel'] },
-    ] }], now: () => time, sleep: ms => { time += ms; },
+  const controller = createLaunchPromptController({ home, startId: args.startId, now: () => time, sleep: ms => { time += ms; },
     audit(data) { rows.push(data); return mode === 'audit-failed' && data.status === 'blocked' ? { ok: false, results: [] } : appendEvent(home, { kind: 'launch-prompt', data }); },
     retainFrame(input) {
-      calls++; assert.equal(input.screen.text, args.screen.text);
+      calls++; assert.equal(input.screen.text, mode === 'completed' ? done : args.screen.text);
       text = 'A NEWER SCREEN MUST NOT BE CAPTURED';
       if (mode === 'write-failed') return { ok: false };
       if (mode === 'throw') throw new Error('PRIVATE secret error');
       return retainLaunchPromptFrame(input);
     },
     transport: {
-      snapshot: () => { captures++; return { ...target, text, width: sends && mode === 'geometry' ? 111 : 110, height: 35 }; },
-      pin: () => ({ previous: { width: 80, height: 24 } }), restore: () => { restored++; return { status: 'restored' }; },
+      snapshot: () => { captures++; return { ...target, text, width: 110, height: 35 }; },
       send: () => {
         sends++; text = mode === 'completed' ? done : args.screen.text;
         if (mode === 'replaced-home') { fs.renameSync(home, home + '-old'); fs.mkdirSync(home); }
@@ -186,33 +195,34 @@ for (const mode of ['saved', 'write-failed', 'throw', 'audit-failed', 'no-consen
     },
   });
   const result = controller.observeNew(target);
-  const wanted = ['saved', 'write-failed', 'throw', 'audit-failed'].includes(mode);
+  const wanted = ['saved', 'write-failed', 'throw', 'audit-failed', 'no-answer', 'completed'].includes(mode);
   assert.equal(calls, wanted ? 1 : 0);
-  assert.equal(sends, ['no-consent', 'no-answer'].includes(mode) ? 0 : 1);
-  assert.equal(restored, mode === 'no-consent' ? 0 : 1);
+  assert.equal(sends, mode === 'no-answer' ? 0 : 1);
   assert.equal(result.status, mode === 'completed' ? 'completed' : ['audit-failed', 'send-failed', 'send-uncertain', 'replaced-home'].includes(mode) ? 'incomplete' : 'blocked');
-  if (wanted) {
-    assert.equal(result.answers[0].status, 'submitted');
+  if (wanted && mode !== 'completed') {
+    assert.equal(result.answers[0]?.status, mode === 'no-answer' ? undefined : 'submitted');
     if (['write-failed', 'throw'].includes(mode)) assert.equal(result.reason, 'blocked: unexpected prompt; private launch evidence retention failed');
-    else if (mode === 'saved') assert.equal(result.reason, 'blocked: unexpected prompt');
+    else if (['saved', 'no-answer'].includes(mode)) assert.equal(result.reason, 'blocked: unexpected prompt');
     else assert.equal(result.reason, 'launch prompt audit failed');
   }
-  if (['saved', 'audit-failed'].includes(mode)) {
+  if (['saved', 'audit-failed', 'no-answer', 'completed'].includes(mode)) {
     const receipt = JSON.parse(fs.readFileSync(join(dir, 'receipt.json')));
-    const blocked = rows.find(row => row.status === 'blocked');
-    assert.equal(receipt.startId, blocked.startId); assert.equal(receipt.signatureDigest, blocked.signatureDigest);
-    assert.equal(fs.readFileSync(join(dir, 'frame.txt'), 'utf8'), args.screen.text);
-    assert.equal(captures, 5, 'only existing controller captures, no evidence recapture');
+    const terminal = rows.find(row => row.status === (mode === 'completed' ? 'completed' : 'blocked'));
+    assert.deepEqual([receipt.outcome, receipt.recognition], mode === 'completed' ? ['completed', 'stable-screen'] : ['blocked', 'unmatched']);
+    assert.equal(receipt.startId, terminal.startId); assert.equal(receipt.signatureDigest, terminal.signatureDigest);
+    assert.equal(fs.readFileSync(join(dir, 'frame.txt'), 'utf8'), mode === 'completed' ? done : args.screen.text);
+    assert.equal(captures, mode === 'no-answer' ? 3 : mode === 'completed' ? 6 : 4, 'only existing controller captures, no evidence recapture');
     if (mode === 'saved') {
       const eventRows = fs.readFileSync(join(home, '.oats-events.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
       const event = eventRows.find(row => row.kind === 'launch-prompt' && row.data.status === 'blocked');
       assert.equal(event.data.startId, receipt.startId);
       assert.equal(event.data.signatureDigest, receipt.signatureDigest);
       assert.equal(event.data.paneId, receipt.target.paneId);
-      assert.ok(!JSON.stringify(eventRows).includes('PRIVATE'));
+      assert.ok(!JSON.stringify(eventRows).includes('SECRET-TAIL'));
     }
   } else assert.equal(fs.existsSync(join(dir, 'receipt.json')), false);
-  assert.ok(!JSON.stringify({ result, rows }).includes('PRIVATE'));
+  assert.ok(!JSON.stringify({ result, rows }).includes('SECRET-TAIL'));
+  assert.ok(!JSON.stringify({ reason: result.reason, answers: result.answers }).includes('PRIVATE'), 'outside the bounded differed snippet, no screen text');
   const before = captures; text = prompt;
   assert.equal(controller.observeNew(target), result); assert.equal(captures, before); assert.equal(calls, wanted ? 1 : 0);
  });
