@@ -16,6 +16,8 @@ import { join } from "node:path";
 import { isolateSessionEnvironment, oatsSocket, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
+// The probe's rename tool, found on the caller's PATH: the isolated PATH links only the fixture's own tools.
+const MV = systemExecutable("mv");
 const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-pane-path-")));
 const restoreEnvironment = isolateSessionEnvironment(base);
 const OATS = oatsSocket();
@@ -33,8 +35,9 @@ const bin = (name, files) => {
   for (const [file, body] of Object.entries(files)) { writeFileSync(join(dir, file), body); chmodSync(join(dir, file), 0o755); }
   return dir;
 };
-// The harness: records the environment it started with, then idles.
-const PROBE = `#!/bin/sh\n${ENV} > "$OATS_INSTANCE_HOME/pane-env.txt"\necho $$ > "$OATS_INSTANCE_HOME/harness-ready"\nexec ${SLEEP} 600\n`;
+// The harness: records the environment it started with, then idles. Its pid file appears whole
+// (written beside it, then renamed): a test reads it as soon as it exists.
+const PROBE = `#!/bin/sh\n${ENV} > "$OATS_INSTANCE_HOME/pane-env.txt"\necho $$ > "$OATS_INSTANCE_HOME/harness-ready.tmp"\n${MV} "$OATS_INSTANCE_HOME/harness-ready.tmp" "$OATS_INSTANCE_HOME/harness-ready"\nexec ${SLEEP} 600\n`;
 const probeBin = bin("probe-bin", { claude: PROBE });
 // A claude only a creator has: it must never run.
 const decoyBin = bin("decoy-bin", { claude: `#!/bin/sh\necho ran > "$OATS_INSTANCE_HOME/decoy-ran"\nexit 1\n` });
@@ -320,6 +323,7 @@ test("a restart of a running instance under a new selection whose harness is not
   const running = spawned(spawn("restart-running", { path: SERVER_PATH }));
   await ready(running.home);
   const pid = Number(readFileSync(join(running.home, "harness-ready"), "utf8").trim());
+  assert.ok(Number.isSafeInteger(pid) && pid > 1, `the harness's pid: ${pid}`);
   tmuxOn("set-environment", "-g", "PATH", SYSTEM);
   const r = fx.cli(["session", "restart", "--home", running.home, "--harness", "claude", "--json"], { env: { LANG: "C.UTF-8", PATH: SERVER_PATH } });
   assert.notEqual(r.status, 0, r.stdout);
