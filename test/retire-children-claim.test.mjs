@@ -79,6 +79,11 @@ function family(t) {
   const idleBin = join(fx.base, "idle-bin");
   mkdirSync(idleBin);
   writeFileSync(join(idleBin, "pi"), `#!/bin/sh\necho $$ > "$OATS_INSTANCE_HOME/harness.pid"\nexec sleep 600\n`, { mode: 0o755 });
+  // One that does not end on SIGTERM: a stop of it waits out its grace and finds it running. One
+  // process, so that the row's `stillRunning` is that pid; the fixture's cleanup ends it.
+  const stubbornBin = join(fx.base, "stubborn-bin");
+  mkdirSync(stubbornBin);
+  writeFileSync(join(stubbornBin, "pi"), `#!${process.execPath}\nprocess.on("SIGTERM", () => {});\nrequire("node:fs").writeFileSync(process.env.OATS_INSTANCE_HOME + "/harness.pid", String(process.pid));\nsetInterval(() => {}, 1000);\n`, { mode: 0o755 });
   const socket = oatsSocket(fx.env.TMUX_TMPDIR);
   const harnesses = [];
   // Whatever a failed assertion leaves: the harnesses and the server end before the fixture looks
@@ -100,9 +105,10 @@ function family(t) {
     },
     /** A recorded child of `parent`, not launched: its session reads as not-launched, and a stop of it signals nothing. */
     child: (name, parent) => f.spawn(name, { relativeTo: parent.name, relation: "child" }),
-    /** A recorded child of `parent` whose stand-in harness runs → the child, with `harness`, that process's pid. */
-    runningChild: async (name, parent) => {
-      const kid = await f.spawn(name, { relativeTo: parent.name, relation: "child" }, `${idleBin}:${fx.env.PATH}`);
+    /** A recorded child of `parent` whose stand-in harness runs → the child, with `harness`, that
+     *  process's pid. `stubborn`: one that a stop does not end. */
+    runningChild: async (name, parent, { stubborn = false } = {}) => {
+      const kid = await f.spawn(name, { relativeTo: parent.name, relation: "child" }, `${stubborn ? stubbornBin : idleBin}:${fx.env.PATH}`);
       const started = f.cli(["session", "start", "--home", kid.home, "--json"]);
       assert.equal(started.status, 0, `fixture premise: \`oats session start\` starts ${name}\n${started.stdout}\n${started.stderr}`);
       const harness = () => { try { const text = readFileSync(join(kid.home, "harness.pid"), "utf8").trim(); return /^\d+$/.test(text) && Number(text) > 1 ? Number(text) : null; } catch { return null; } };
@@ -276,7 +282,9 @@ for (const holder of HOLDERS) {
       for (const [what, extra] of [["plain", []], ["guarded", ["--plan-revision", plan.planRevision, "--idempotency-key", "k-retire"]]]) {
         const error = refusal(f.cli(["retire", parent.name, "--json", ...extra]), `\`oats retire parent\` (${what}) while ${holder.id} holds the claim of c2`);
         assert.equal(error.code, "E_CHILDREN_RUNNING", `${what}: ${JSON.stringify(error)}`);
-        assert.ok(error.message.startsWith("c2 "), `${what}: the message names the child that refused, and no other: ${error.message}`);
+        // No stop of that child ran: it is not said to be still running (before, every child that
+        // did not stop was "still running after a bounded stop").
+        assert.equal(error.message, `c2 could not be stopped (${holder.code}); nothing was retired and nothing was escalated`, `${what}: the message names the child that refused, why, and no other`);
         assert.deepEqual(Object.keys(error.details).sort(), what === "guarded" ? ["childrenStopped", "plan", "reached"] : ["childrenStopped", "reached"], what);
         assert.deepEqual(error.details.childrenStopped, rows, `${what}: one row per child of the plan, in the plan's order`);
         // `stillRunning: null` is not `[]`: the stop never ran, so nothing was established about the child's processes.
@@ -331,6 +339,7 @@ test("a parent's retire that stops one child's harness and meets another child w
       : { instance: "c2", home: kids.c2.home, ok: false, code: "E_LIFECYCLE_BUSY", message: `a stop of c2 is already running (pid ${claim.pid}, since ${claim.at}); nothing was stopped — wait for it to finish`, stillRunning: null })),
     "one row per child of the plan, in the plan's order: the one it stopped, and the one whose claim was held");
     assert.deepEqual(error.details.reached, { ...NOTHING_SIGNALLED, sessionStopAttempted: true }, "a signal was sent to a child's harness: the answer says so");
+    assert.equal(error.message, "c2 could not be stopped (E_LIFECYCLE_BUSY); nothing was retired and nothing was escalated", "the message names the child that did not stop, and not the one that did");
     await waitUntil(() => !alive(kids.c1.harness), "the harness the retire stopped to have exited");
     assert.deepEqual(snapshot(parent.home), before, "the parent's home is byte for byte what it was");
     assert.deepEqual(f.hookRuns(), [], "no retire hook ran");
@@ -342,6 +351,33 @@ test("a parent's retire that stops one child's harness and meets another child w
     assert.equal(done.code, 0, done.stdout + done.stderr);
     assert.equal(JSON.parse(done.stdout).result.ok, true, done.stdout);
     assert.deepEqual(f.claimFiles(parent.home), [], "no claim is left");
+  } finally { await run.finish(); }
+});
+
+test("a parent's retire that meets a child still running after its bounded stop and a child whose claim a stop holds says each as it is: the first \"is still running after a bounded stop\", the second \"could not be stopped (E_LIFECYCLE_BUSY)\"; the rows carry the pid that runs, and null", { skip: NO_TMUX }, async (t) => {
+  // The stop of the stubborn child waits out the default grace (20 s): a retire stops its children
+  // with no grace of the caller's.
+  const f = family(t);
+  const parent = await f.spawn("parent");
+  const kids = { c1: await f.runningChild("c1", parent, { stubborn: true }), c2: await f.child("c2", parent) };
+  const order = f.retirePlan(parent).facts.children.map((kid) => kid.instance);
+  assert.deepEqual([...order].sort(), ["c1", "c2"], "fixture premise: the retire plan lists both recorded children");
+  const run = f.heldAfterClaim(["instance", "stop", "c2", "--apply", "--plan-revision", f.stopPlan(kids.c2).planRevision, "--idempotency-key", "k-stop", "--json"], kids.c2.lock);
+  try {
+    await run.waitGate("claimed");
+    assertHolds(run, kids.c2.lock, "stop");
+    const error = refusal(f.cli(["retire", parent.name, "--json"]), "`oats retire parent` while c1 does not end on SIGTERM and a stop holds the claim of c2");
+    assert.equal(error.code, "E_CHILDREN_RUNNING", JSON.stringify(error));
+    assert.equal(error.message, "c1 is still running after a bounded stop; c2 could not be stopped (E_LIFECYCLE_BUSY); nothing was retired and nothing was escalated");
+    const rows = Object.fromEntries(error.details.childrenStopped.map((row) => [row.instance, row]));
+    assert.deepEqual(error.details.childrenStopped.map((row) => row.instance), order, "one row per child of the plan, in the plan's order");
+    assert.deepEqual([rows.c1.ok, rows.c1.stillRunning, rows.c2.ok, rows.c2.code, rows.c2.stillRunning], [false, [kids.c1.harness], false, "E_LIFECYCLE_BUSY", null], "the pid that still runs, and null for the child on which no stop ran");
+    assert.equal(error.details.reached.sessionStopAttempted, true, "a signal was sent to the child that did not end");
+    assert.equal(alive(kids.c1.harness), true, "nothing was escalated: the child that ignored SIGTERM runs");
+    assert.equal(existsSync(join(parent.home, "instance.json")), true, "the parent's home is kept");
+    assert.deepEqual(f.hookRuns(), [], "no retire hook ran");
+    const done = await released(run);
+    assert.equal(done.code, 0, done.stdout + done.stderr);
   } finally { await run.finish(); }
 });
 

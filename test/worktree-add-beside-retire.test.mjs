@@ -282,6 +282,27 @@ test("oats worktree add is not refused by a claim whose holder is gone, by a cla
   } finally { await run.finish(); }
 });
 
+test("oats worktree add is not refused by a file at the claim's path that parses and names no process ({}, [], a verb and no pid): no kernel wrote it as a claim, it reads as a holder that is gone, the tree is made and the file is left as it is", async (t) => {
+  // A claim is written whole to a private file and hard-linked: one that parses and names no pid was
+  // never a kernel's claim. A retire and a stop, which must take the claim, refuse on it
+  // (E_LIFECYCLE_BUSY, holder "none": it cannot be taken over); an add takes nothing.
+  const w = await instance(t, "nobody");
+  const { name, lock } = w;
+  for (const [purpose, what, bytes] of [["empty", "an empty object", "{}\n"], ["list", "an empty list", "[]\n"], ["verb", "an object with a verb and no pid", '{"action":"retire"}\n']]) {
+    assert.equal(w.writeClaim(bytes), bytes, "fixture premise: the file as written");
+    w.assertMade(w.add(purpose, ["--json"]), purpose, what);
+    assert.equal(readFileSync(lock, "utf8"), bytes, `${what}: the file is byte for byte what it was`);
+    assert.deepEqual(readdirSync(dirname(lock)), [`${name}.lock`], `${what}: no takeover file beside it`);
+  }
+  // What the verbs that take the claim say of the same file: nobody is running, and it is to be inspected.
+  const plan = w.fx.cli(["instance", "stop", name, "--plan", "--json"]);
+  assert.equal(plan.status, 0, plan.stdout + plan.stderr);
+  for (const [what, argv] of [["a stop apply", ["instance", "stop", name, "--apply", "--plan-revision", plan.json().result.planRevision, "--idempotency-key", "k1", "--json"]], ["a retire", ["retire", name, "--json"]]]) {
+    const error = refusal(w.fx.cli(argv), `${what} beside the last of those files`);
+    assert.deepEqual([error.code, error.details.holder, error.details.lock], ["E_LIFECYCLE_BUSY", "none", lock], `${what}: ${JSON.stringify(error)}`);
+  }
+});
+
 test("oats worktree remove beside a live retire of its home is unchanged: it does not read the lifecycle claim, removes a recorded tree and answers a purpose without a tree as before; released, the retire completes", async (t) => {
   const w = await instance(t, "pruning");
   const { name, home, lock } = w;
