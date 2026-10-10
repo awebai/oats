@@ -12,6 +12,7 @@ import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CLAIM_WAIT_MS, acquireClaim, readClaim, releaseClaim, removeGoneClaim } from "../lib/claim.mjs";
+import { defectOf } from "../lib/errors.mjs";
 import { retireClaimRefusals } from "../lib/core.mjs";
 import { purposeClaimBusy, withClaim, worktreeClaimRefusals } from "../lib/worktree.mjs";
 import { processStartToken, selfIdentity } from "../lib/worktree-hooks.mjs";
@@ -334,6 +335,21 @@ test("an acquisition whose takeover ended the dead holder's step and that is the
     assert.deepEqual(error.details, { cause: { code: "EACCES", syscall: "link" } }, "the system's code stays in details.cause");
     assert.equal(error.cause, denied);
     assert.deepEqual(c.entries(), []);
+  });
+  await t.test("a refusal written as a plain Error without a code: no cause in its details", async (st) => {
+    const refused = new Error("the file system said no");
+    const { c, step, error } = await refusedAfterEnding(st, () => { throw refused; });
+    assert.equal(error.message, `${said(step)}; after that: the claim ${c.lock} could not be taken (the file system said no); nothing else was done`);
+    assert.equal(error.details, undefined, "a refusal has no cause to name");
+    assert.equal(defectOf(error), undefined, "and it is no defect");
+  });
+  await t.test("a defect, a thrown value that is falsy included, is still the defect the answer wraps", async (st) => {
+    for (const thrown of [new TypeError("x is not a function"), undefined, 0]) {
+      const { error } = await refusedAfterEnding(st, () => { throw thrown; });
+      assert.deepEqual(error.details, { cause: { name: thrown instanceof Error ? "TypeError" : "Error" } }, String(thrown));
+      assert.ok(Object.hasOwn(error, "cause"), `the answer holds what it wrapped: ${String(thrown)}`);
+      assert.deepEqual(defectOf(error), { thrown }, `whoever answers it can still report it: ${String(thrown)}`);
+    }
   });
   await t.test("a refusal that does not hold the words is passed as it is after what was ended", async (st) => {
     const plain = () => (holder) => Object.assign(new Error(`held by ${holder?.pid ?? "?"}`), { code: "E_LIFECYCLE_BUSY", details: { held: true } });
