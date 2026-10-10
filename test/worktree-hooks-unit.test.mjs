@@ -103,8 +103,9 @@ test("a recorded hook group whose leader exited is never signalled: unverified, 
 });
 
 /** A `ps` in macOS's shape: for a pid that does not exist it prints an error and exits 1 (procps exits 1
- *  with nothing on stdout or stderr); for any other pid it is the real `ps`. Put on PATH with
- *  OATS_TEST_PROCESS_START_PS=1 (the kernel reads start times through it) until `t` ends. */
+ *  with nothing on stdout or stderr); for any other pid it is the real `ps`. Named by the test seam
+ *  OATS_TEST_PROCESS_START_PS (the kernel reads start times through it) until `t` ends.
+ *  → ran(): whether it has been run. */
 async function macPs(t) {
   const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
@@ -112,10 +113,13 @@ async function macPs(t) {
   const { execFileSync } = await import("node:child_process");
   const dir = mkdtempSync(join(tmpdir(), "oats-mac-ps-"));
   const real = execFileSync("sh", ["-c", "command -v ps"], { encoding: "utf8" }).trim();
-  writeFileSync(join(dir, "ps"), `#!/bin/sh\nout=$(${JSON.stringify(real)} "$@" 2>/dev/null) || { echo "ps: process id not found (simulated macOS)" >&2; exit 1; }\nprintf '%s\\n' "$out"\n`, { mode: 0o755 });
-  const saved = { PATH: process.env.PATH, seam: process.env.OATS_TEST_PROCESS_START_PS };
-  process.env.PATH = `${dir}:${saved.PATH}`; process.env.OATS_TEST_PROCESS_START_PS = "1";
-  t.after(() => { process.env.PATH = saved.PATH; if (saved.seam === undefined) delete process.env.OATS_TEST_PROCESS_START_PS; else process.env.OATS_TEST_PROCESS_START_PS = saved.seam; rmSync(dir, { recursive: true, force: true }); });
+  const ran = join(dir, "ran");
+  writeFileSync(join(dir, "ps"), `#!/bin/sh\n: > ${JSON.stringify(ran)}\nout=$(${JSON.stringify(real)} "$@" 2>/dev/null) || { echo "ps: process id not found (simulated macOS)" >&2; exit 1; }\nprintf '%s\\n' "$out"\n`, { mode: 0o755 });
+  const saved = { seam: process.env.OATS_TEST_PROCESS_START_PS };
+  process.env.OATS_TEST_PROCESS_START_PS = join(dir, "ps");
+  t.after(() => { if (saved.seam === undefined) delete process.env.OATS_TEST_PROCESS_START_PS; else process.env.OATS_TEST_PROCESS_START_PS = saved.seam; rmSync(dir, { recursive: true, force: true }); });
+  const { existsSync } = await import("node:fs");
+  return { ran: () => existsSync(ran) };
 }
 /** A real pid whose process has exited and been reaped. */
 const exitedPid = async () => { const { spawnSync } = await import("node:child_process"); return spawnSync(process.execPath, ["-e", ""], { env: { PATH: process.env.PATH } }).pid; };
@@ -132,14 +136,15 @@ test("whether a pid exists is the kernel's answer (kill 0), the same on /proc an
     // Another user's process: kill 0 answers EPERM, which is "exists", never gone.
     if (!isRoot) assert.equal(processStart(1).state, "alive", `${shape}: pid 1 (EPERM) is alive`);
   };
-  if (existsSync("/proc/self/stat") && process.env.OATS_TEST_PROCESS_START_PS !== "1") check("/proc");
-  await macPs(t);
+  if (existsSync("/proc/self/stat") && process.env.OATS_TEST_PROCESS_START_PS === undefined) check("/proc");
+  const mac = await macPs(t);
   assert.match(processStart(process.pid).token, /^ps:/, "the ps path is the one read");
   check("macOS ps");
+  assert.ok(mac.ran(), "the ps in macOS's shape is the one that was read");
 });
 
 for (const shape of ["this host's reader", "a ps in macOS's shape"]) test(`the purpose claim (${shape}): taken over from a dead holder (and from a dead takeover), waited for and refused while its holder lives, never removed when unreadable`, async (t) => {
-  if (shape !== "this host's reader") await macPs(t);
+  const mac = shape !== "this host's reader" ? await macPs(t) : null;
   const { withClaim } = await import("../lib/worktree.mjs");
   const { mkdtempSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
@@ -173,6 +178,7 @@ for (const shape of ["this host's reader", "a ps in macOS's shape"]) test(`the p
   writeFileSync(lock, "{not json");
   await assert.rejects(withClaim(lock, () => "ran", { busy }), (e) => e.code === "E_LIFECYCLE_BUSY" && /not a readable claim/.test(e.message));
   assert.equal(readFileSync(lock, "utf8"), "{not json", "an unreadable claim is never removed");
+  if (mac) assert.ok(mac.ran(), "the ps in macOS's shape is the one that was read");
 });
 
 test("a timed-out git step: its whole group, a SIGTERM-ignoring member without pipes included, is ended before its identity is cleared", async (t) => {
@@ -269,9 +275,9 @@ test("a start that cannot be read is unknown, never gone: liveness says so, and 
   const dir = mkdtempSync(join(tmpdir(), "oats-ps-stub-"));
   const realPs = execFileSync("sh", ["-c", "command -v ps"], { encoding: "utf8" }).trim();
   writeFileSync(join(dir, "ps"), `#!/bin/sh\nfor a in "$@"; do [ "$a" = "${own.pgid}" ] && { echo "ps: simulated failure" >&2; exit 2; }; done\nexec ${JSON.stringify(realPs)} "$@"\n`, { mode: 0o755 });
-  const saved = { PATH: process.env.PATH, seam: process.env.OATS_TEST_PROCESS_START_PS };
-  process.env.PATH = `${dir}:${saved.PATH}`; process.env.OATS_TEST_PROCESS_START_PS = "1";
-  t.after(() => { process.env.PATH = saved.PATH; if (saved.seam === undefined) delete process.env.OATS_TEST_PROCESS_START_PS; else process.env.OATS_TEST_PROCESS_START_PS = saved.seam; rmSync(dir, { recursive: true, force: true }); });
+  const saved = { seam: process.env.OATS_TEST_PROCESS_START_PS };
+  process.env.OATS_TEST_PROCESS_START_PS = join(dir, "ps");
+  t.after(() => { if (saved.seam === undefined) delete process.env.OATS_TEST_PROCESS_START_PS; else process.env.OATS_TEST_PROCESS_START_PS = saved.seam; rmSync(dir, { recursive: true, force: true }); });
   assert.equal(processStart(own.pgid).state, "unknown");
   assert.equal(processStart(2147483646).state, "gone", "a pid kill 0 does not find is gone, whatever ps says");
   assert.equal(processLiveness({ pid: own.pgid, processStart: own.leaderStart }).state, "unknown");
@@ -283,6 +289,120 @@ test("a start that cannot be read is unknown, never gone: liveness says so, and 
   assert.ok(!note.includes("exited"), "it never says the leader exited");
   // An empty group is "none" whatever its leader reads as: nothing is left to end.
   assert.equal(terminateRecordedGroup({ hookPgid: 2147483646, hookStart: "ps:x" }), "none");
+});
+
+/** Set OATS_TEST_PROCESS_START_PS (and PATH, when given) on this process until `t` ends. */
+function withSeam(t, seam, path) {
+  const saved = { PATH: process.env.PATH, seam: process.env.OATS_TEST_PROCESS_START_PS };
+  process.env.OATS_TEST_PROCESS_START_PS = seam;
+  if (path !== undefined) process.env.PATH = path;
+  t.after(() => { process.env.PATH = saved.PATH; if (saved.seam === undefined) delete process.env.OATS_TEST_PROCESS_START_PS; else process.env.OATS_TEST_PROCESS_START_PS = saved.seam; });
+}
+
+test("the caller's PATH never chooses the ps a start is read with: a ps first on it is not run (#878)", async (t) => {
+  const { processStart } = await import("../lib/worktree-hooks.mjs");
+  const { mkdtempSync, writeFileSync, existsSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "oats-path-ps-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const ran = join(dir, "ran");
+  writeFileSync(join(dir, "ps"), `#!/bin/sh\n: > ${JSON.stringify(ran)}\necho "Thu Jan  1 00:00:00 2026"\n`, { mode: 0o755 });
+  withSeam(t, "1", `${dir}:${process.env.PATH}`);
+  const start = processStart(process.pid);
+  assert.equal(start.state, "alive", JSON.stringify(start));
+  assert.match(start.token, /^ps:/);
+  assert.equal(existsSync(ran), false, "the ps on the caller's PATH was not run");
+});
+
+test("the ps the test seam names runs with the fixed environment, never the caller's (#878)", async (t) => {
+  const { processStart } = await import("../lib/worktree-hooks.mjs");
+  const { mkdtempSync, writeFileSync, readFileSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "oats-seam-ps-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const seen = join(dir, "env");
+  writeFileSync(join(dir, "ps"), `#!/bin/sh\nprintf 'PATH=%s\\nLC_ALL=%s\\nTZ=%s\\nLANG=%s\\nSENTINEL=%s\\n' "$PATH" "$LC_ALL" "$TZ" "$LANG" "$OATS_SEAM_SENTINEL" > ${JSON.stringify(seen)}\necho "Thu Jan  1 00:00:00 2026"\n`, { mode: 0o755 });
+  withSeam(t, join(dir, "ps"));
+  const saved = { LANG: process.env.LANG, TZ: process.env.TZ };
+  process.env.LANG = "de_DE.UTF-8"; process.env.TZ = "Asia/Tokyo"; process.env.OATS_SEAM_SENTINEL = "inherited";
+  t.after(() => { for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } delete process.env.OATS_SEAM_SENTINEL; });
+  assert.deepEqual(processStart(process.pid), { state: "alive", token: "ps:Thu Jan  1 00:00:00 2026" }, "the named ps answered");
+  assert.equal(readFileSync(seen, "utf8"), "PATH=/usr/bin:/bin\nLC_ALL=C\nTZ=UTC\nLANG=\nSENTINEL=\n");
+});
+
+test("a test seam that is neither 1 nor an absolute path reads no start: unknown, naming the seam, never a ps found on PATH (#878)", async (t) => {
+  const { processStart, processLiveness } = await import("../lib/worktree-hooks.mjs");
+  for (const value of ["0", "ps", "./ps", "bin/ps", ""]) {
+    await t.test(JSON.stringify(value), (st) => {
+      withSeam(st, value);
+      const start = processStart(process.pid);
+      assert.equal(start.state, "unknown", JSON.stringify(start));
+      assert.equal(start.reason, `OATS_TEST_PROCESS_START_PS is ${JSON.stringify(value)}, neither 1 nor an absolute path`);
+      assert.equal(processLiveness({ pid: process.pid, processStart: "ps:x" }).state, "unknown");
+      assert.deepEqual(processStart(2147483646), { state: "gone" }, "a pid kill 0 does not find is gone, whatever the seam says");
+    });
+  }
+});
+
+test("a ps the test seam names that cannot be run reads no start: unknown, naming the seam, never /proc or a ps found on PATH (#878)", async (t) => {
+  const { processStart } = await import("../lib/worktree-hooks.mjs");
+  const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "oats-seam-unrunnable-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const notExecutable = join(dir, "ps-not-executable");
+  writeFileSync(notExecutable, "#!/bin/sh\necho \"Thu Jan  1 00:00:00 2026\"\n", { mode: 0o644 });
+  for (const [what, file, code] of [["a missing file", join(dir, "no-such-ps"), "ENOENT"], ["a file that is not executable", notExecutable, "EACCES"]]) {
+    await t.test(what, (st) => {
+      withSeam(st, file);
+      assert.deepEqual(processStart(process.pid), { state: "unknown", reason: `the ps OATS_TEST_PROCESS_START_PS names (${file}) could not be run (${code})` });
+    });
+  }
+});
+
+test("the ps the test seam names is run directly, never through a shell (#878)", async (t) => {
+  const { processStart } = await import("../lib/worktree-hooks.mjs");
+  const { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "oats-seam-direct-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  // A directory whose name a shell would split and run: run directly, it is only a name.
+  const named = join(dir, "a b;touch shell-ran;$(touch shell-ran)");
+  mkdirSync(named);
+  writeFileSync(join(named, "ps"), "#!/bin/sh\necho \"Thu Jan  1 00:00:00 2026\"\n", { mode: 0o755 });
+  withSeam(t, join(named, "ps"));
+  const cwd = process.cwd();
+  process.chdir(dir);
+  t.after(() => process.chdir(cwd));
+  assert.deepEqual(processStart(process.pid), { state: "alive", token: "ps:Thu Jan  1 00:00:00 2026" });
+  assert.equal(existsSync(join(dir, "shell-ran")), false, "no shell ran");
+});
+
+test("both readers of the test seam agree: 1 and an absolute path each take the ps path on any host, procfs or not (#878)", async (t) => {
+  const { processStart } = await import("../lib/worktree-hooks.mjs");
+  const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "oats-seam-readers-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(join(dir, "ps"), "#!/bin/sh\necho \"Thu Jan  1 00:00:00 2026\"\n", { mode: 0o755 });
+  for (const seam of ["1", join(dir, "ps")]) {
+    await t.test(seam === "1" ? "1" : "an absolute path", (st) => {
+      withSeam(st, seam);
+      assert.match(processStart(process.pid).token, /^ps:/, "the ps path, not /proc");
+    });
+  }
+});
+
+test("a launch configuration cannot set the ps test seam: it is reserved, so no instance's launch can choose the ps its claims are verified with", async () => {
+  const { validateLaunchConfig } = await import("../lib/core.mjs");
+  for (const value of ["1", "/fixture/ps"]) {
+    assert.throws(() => validateLaunchConfig("seam", { harness: "claude", env: { OATS_TEST_PROCESS_START_PS: value } }), (e) => e.code === "E_LAUNCH_CONFIG_INVALID" && /OATS_TEST_PROCESS_START_PS/.test(e.message));
+  }
 });
 
 // A caller that closes its end of stderr while the hooks stream to it: the copy stops, the hook runs

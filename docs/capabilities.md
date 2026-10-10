@@ -205,8 +205,9 @@ A self-contained package has an `oats.json`:
   Whether the process exists is the operating system's answer (`kill -0`:
   "no such process" is gone, another user's process exists), the same on
   every host. Only then is its start time read: from `/proc`, or with `ps`
-  (in a fixed `LC_ALL=C`, `TZ=UTC` environment) where there is no `/proc`,
-  as on macOS. A start that cannot be read is never taken to mean the process is
+  where there is no `/proc`, as on macOS: the system `ps`, from
+  `/usr/bin:/bin` whatever the caller's `PATH` holds, in a fixed `LC_ALL=C`,
+  `TZ=UTC` environment. A start that cannot be read is never taken to mean the process is
   gone, nor shown as alive: `oats status` shows the quarantine
   (`rollbackIncomplete`, whose `inProgress` names the pid), and `oats retire`
   refuses with `E_LIFECYCLE_BUSY`, naming the recorded pid and start for a
