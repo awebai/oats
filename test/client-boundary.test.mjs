@@ -11,11 +11,15 @@
 //
 // Each rule is proved to fail on the break it names, on fixtures built here (the last tests).
 //
-// What a static reader sees: `import … from`, `export … from`, `import "x"`, `import("literal")`,
-// `require("literal")` and `new URL("literal", import.meta.url)`. A module loaded by a computed path is
-// refused in packages/client and packages/tui, where nothing needs one. In lib/ and bin/, which load
-// hooks and subcommands by computed paths, a relative path literal that leads into packages/client or
-// packages/desktop is refused wherever it stands in the code.
+// What the reader sees, wherever it stands in the code: `import … from`, `export … from`, `import "x"`,
+// `import("literal")`, `require("literal")` and `new URL("literal", import.meta.url)`. In packages/client
+// and packages/tui anything else that loads a module is refused, not skipped: a load with anything but
+// one string literal (a concatenation, a template with a `${…}`, a second argument), `createRequire`, and
+// an import the reader cannot read. In lib/ and bin/, which load hooks and subcommands by computed
+// paths, a quoted relative path that leads into packages/client or packages/desktop is refused wherever
+// it stands in the text. What that leaves unseen there: a path put together from pieces that do not
+// spell the directory. And everywhere: the test reads, it does not run, so a loader built out of strings
+// (`eval`, `new Function`) is outside what it can see.
 //
 // Two things this test does not prove, and what does:
 //   * that a module of the home uses no DOM global (the modules use `window` and `document` as ordinary
@@ -99,70 +103,233 @@ const COLLECTOR = "liveness-main.mjs";     // a program: started as a child, nev
 const isModule = (path) => /\.(mjs|cjs|js|jsx|ts|mts|cts|tsx)$/.test(path);
 const under = (path, dir) => path.startsWith(`${dir}/`);
 const isRelative = (spec) => spec.startsWith("./") || spec.startsWith("../");
-const names = (list) => list.split(",").map((entry) => entry.trim()).filter(Boolean);
+// Tokens, not lines. An import is found wherever it stands in the code (a second statement on a line, a
+// minified file, the `${…}` of a template) and never in a comment or a string. What is not one of the
+// forms a rule can judge is reported as a form of its own, so a rule refuses it instead of not seeing it.
+
+/** A `/` after one of these words starts a regular expression, not a division. */
+const BEFORE_A_REGEX = new Set(["return", "typeof", "instanceof", "in", "of", "new", "delete", "void", "throw", "case", "do", "else", "yield", "await"]);
 
 /**
- * What a source asks for: `{ spec, form, names }`. `names` are the exported names it takes from `spec`
- * (the left of an `as`), for the two forms that list them.
+ * The code of a source as tokens `{ t, v, nl }`; `nl` says a line break stood before the token.
+ *   id   a name or a keyword          str  a quoted string; `v` is its text as written
+ *   num  a number                     tpl  a template; `plain` when it has no `${…}`, and then `v` is its text
+ *   p    one punctuation character    re   a regular expression
+ * The code inside a template's `${…}` is tokens like any other. Comments are not tokens.
+ */
+function tokensOf(source) {
+  const out = [], substitutions = []; // the brace depth inside each open `${…}`
+  let i = 0, nl = false;
+  const push = (t, v, more) => { out.push({ t, v, nl, ...more }); nl = false; };
+  /** From inside a template: to its closing backtick (false) or to the next `${` (true), which is left open. */
+  const templateText = () => {
+    let text = "";
+    for (; i < source.length; i++) {
+      if (source[i] === "\\") text += source.slice(i, ++i + 1);
+      else if (source[i] === "`") { i++; return { text, open: false }; }
+      else if (source[i] === "$" && source[i + 1] === "{") { i += 2; return { text, open: true }; }
+      else text += source[i];
+    }
+    return { text, open: false };
+  };
+  const name = /[A-Za-z_$][\w$]*/y, number = /\d[\w.]*/y;
+  while (i < source.length) {
+    const c = source[i], next = source[i + 1];
+    if (c === "\n") { nl = true; i++; continue; }
+    if (/\s/.test(c)) { i++; continue; }
+    if (c === "/" && next === "/") { while (i < source.length && source[i] !== "\n") i++; continue; }
+    if (c === "/" && next === "*") { const end = source.indexOf("*/", i + 2), stop = end < 0 ? source.length : end + 2; if (source.slice(i, stop).includes("\n")) nl = true; i = stop; continue; }
+    if (c === '"' || c === "'") {
+      let j = i + 1;
+      while (j < source.length && source[j] !== c && source[j] !== "\n") j += source[j] === "\\" ? 2 : 1;
+      push("str", source.slice(i + 1, j)); i = j + 1; continue;
+    }
+    if (c === "`") {
+      i++;
+      const part = templateText();
+      push("tpl", part.open ? null : part.text, { plain: !part.open });
+      if (part.open) substitutions.push(0);
+      continue;
+    }
+    if (substitutions.length && (c === "{" || c === "}")) {
+      if (c === "{") substitutions[substitutions.length - 1]++;
+      else if (substitutions.at(-1) > 0) substitutions[substitutions.length - 1]--;
+      else { substitutions.pop(); i++; if (templateText().open) substitutions.push(0); continue; } // the `}` that closes a `${`: back in the template's text
+    }
+    if (c === "/") {
+      // Division after a value (a name, a number, a closing bracket, `x++`); a regular expression after anything else.
+      const before = out.at(-1), postfix = before?.t === "p" && "+-".includes(before.v) && out.at(-2)?.t === "p" && out.at(-2).v === before.v;
+      if (!before || (before.t === "p" && !")]}".includes(before.v) && !postfix) || (before.t === "id" && BEFORE_A_REGEX.has(before.v))) {
+        // A regular expression ends on its line; a `/` inside [ ] or after a backslash does not end it.
+        let j = i + 1, inClass = false;
+        for (; j < source.length && source[j] !== "\n"; j++) {
+          if (source[j] === "\\") j++;
+          else if (inClass) inClass = source[j] !== "]";
+          else if (source[j] === "[") inClass = true;
+          else if (source[j] === "/") break;
+        }
+        if (source[j] === "/") { j++; while (/[a-z]/.test(source[j] ?? "")) j++; push("re", source.slice(i, j)); i = j; continue; }
+      }
+    }
+    name.lastIndex = number.lastIndex = i;
+    const word = name.exec(source) ?? number.exec(source);
+    if (word) { push(/\d/.test(c) ? "num" : "id", word[0]); i += word[0].length; continue; }
+    push("p", c); i++;
+  }
+  return out;
+}
+
+/** Helpers over a token list: is token k this, is the name at k a property (`x.import`), and the text of a string that is one literal. */
+function reading(T) {
+  const is = (k, t, v) => T[k]?.t === t && (v === undefined || T[k].v === v);
+  const property = (k) => is(k - 1, "p", ".") && !is(k - 2, "p", ".");
+  const literal = (k) => ((is(k, "str") || (is(k, "tpl") && T[k].plain)) && !T[k].v.includes("\\") ? T[k].v : null);
+  /** A call whose `(` is at k: its one string-literal argument, or null when it is called with anything else. */
+  const oneLiteral = (k) => {
+    let depth = 0, end = -1;
+    for (let j = k; j < T.length && end < 0; j++) {
+      if (T[j].t === "p" && "([{".includes(T[j].v)) depth++;
+      else if (T[j].t === "p" && ")]}".includes(T[j].v) && --depth === 0) end = j;
+    }
+    const count = end - k - 1;
+    return literal(k + 1) !== null && (count === 1 || (count === 2 && is(k + 2, "p", ","))) ? literal(k + 1) : null;
+  };
+  return { is, property, literal, oneLiteral };
+}
+
+/**
+ * What a source asks for, in the order it asks: `{ spec, form, names }`. `names` are the exported names it
+ * takes from `spec` (the left of an `as`), for the two forms that list them.
  *   named       import { a, b as c } from "x"        reexport   export { a } from "x"
  *   default     import a from "x"                    star       export * from "x"
  *   namespace   import * as a from "x"               dynamic    import("x")
  *   bare        import "x"                           require    require("x")
- *                                                    url        new URL("x", import.meta.url)
+ *                                                    url        new URL("./x", import.meta.url)
+ * And two with no `spec`, for what cannot be judged by reading:
+ *   computed    import(…) or require(…) with anything but one string literal (a concatenation, a template with a
+ *               `${…}`, a second argument), and `createRequire`, which makes a loader this reader cannot follow
+ *   unreadable  an `import` or `export … from` that is none of the forms above, a specifier written with an escape,
+ *               and a regular expression that spells `import` or `require` (see below)
  */
 function requestsOf(source) {
-  const found = [];
-  const add = (match, spec, form, taken = []) => found.push({ at: match.index, spec, form, names: taken });
-  for (const m of source.matchAll(/^[ \t]*import\s+(?:type\s+)?([^;'"`]*?)\s*\bfrom\s*["']([^"']+)["']/gm)) {
-    const [, clause, spec] = m, braces = /\{([^}]*)\}/.exec(clause);
-    if (braces) add(m, spec, "named", names(braces[1]).map((entry) => entry.split(/\s+as\s+/)[0].replace(/^type\s+/, "")));
-    for (const part of names(clause.replace(/\{[^}]*\}/, ""))) add(m, spec, part.startsWith("*") ? "namespace" : "default");
+  const T = tokensOf(source), { is, property, literal, oneLiteral } = reading(T), found = [];
+  // A specifier written with an escape is not the text it loads: not read, so not judged.
+  const add = (form, spec = null, names = []) => found.push(spec?.includes("\\") ? { spec: null, form: "unreadable", names: [] } : { spec, form, names });
+  const fromAt = (k) => is(k, "id", "from") && is(k + 1, "str");
+  /** The exported names of a `{ a, b as c }` list whose tokens are these: the first of each entry (`type a` in a TypeScript file: the second). */
+  const listed = (tokens) => {
+    const names = [];
+    for (let n = 0; n < tokens.length; n++) {
+      if (tokens[n].t === "p") continue;
+      if (tokens[n].v === "type" && tokens[n + 1] && tokens[n + 1].t !== "p" && tokens[n + 1].v !== "as") n++;
+      names.push(tokens[n].v);
+      while (tokens[n + 1] && tokens[n + 1].t !== "p") n++;
+    }
+    return names;
+  };
+  for (let k = 0; k < T.length; k++) {
+    // Telling a regular expression from a division is the one guess the tokens rest on. Where the guess would decide
+    // whether a load is seen (the word stands inside what was taken for a regular expression), nothing is decided.
+    if (T[k].t === "re" && /\b(import|require|createRequire)\b/.test(T[k].v)) { add("unreadable"); continue; }
+    if (T[k].t !== "id" || property(k)) continue;
+    const word = T[k].v;
+    if (word === "import") {
+      if (is(k + 1, "p", ".") || is(k + 1, "p", ":")) continue; // import.meta, and a property named import
+      if (is(k + 1, "p", "(")) { const spec = oneLiteral(k + 1); add(spec === null ? "computed" : "dynamic", spec); continue; }
+      if (is(k + 1, "str")) { add("bare", T[k + 1].v); continue; }
+      // A declaration: names, braces, commas and a star, up to `from "x"`.
+      let j = k + 1;
+      if (is(j, "id", "type") && !fromAt(j + 1) && !is(j + 1, "p", ",")) j++; // `import type …` in a TypeScript file
+      const start = j;
+      while (j < T.length && !fromAt(j) && (T[j].t === "id" || T[j].t === "str" || (T[j].t === "p" && "{},*".includes(T[j].v)))) j++;
+      if (!fromAt(j) || j === start) { add("unreadable"); continue; }
+      const clause = T.slice(start, j), spec = T[j + 1].v, open = clause.findIndex((t) => t.t === "p" && t.v === "{"), close = clause.findIndex((t) => t.t === "p" && t.v === "}");
+      if (open >= 0) add("named", spec, listed(clause.slice(open + 1, close < 0 ? clause.length : close)));
+      const rest = open < 0 ? clause : [...clause.slice(0, open), ...clause.slice(close < 0 ? clause.length : close + 1)];
+      for (let n = 0; n < rest.length; n++) {
+        if (rest[n].t === "p" && rest[n].v === ",") continue;
+        add(rest[n].t === "p" && rest[n].v === "*" ? "namespace" : "default", spec);
+        while (rest[n + 1] && rest[n + 1].t !== "p") n++;
+      }
+      k = j + 1;
+    } else if (word === "export") {
+      let j = k + 1;
+      if (is(j, "id", "type") && is(j + 1, "p", "{")) j++;
+      if (is(j, "p", "*")) {
+        j += is(j + 1, "id", "as") ? 3 : 1;
+        if (fromAt(j)) add("star", T[j + 1].v); else add("unreadable");
+      } else if (is(j, "p", "{")) {
+        let end = j + 1;
+        while (end < T.length && !is(end, "p", "}")) end++;
+        if (fromAt(end + 1)) add("reexport", T[end + 2].v, listed(T.slice(j + 1, end)));
+      }
+    } else if (word === "require" && is(k + 1, "p", "(")) {
+      const spec = oneLiteral(k + 1); add(spec === null ? "computed" : "require", spec);
+    } else if (word === "createRequire") add("computed");
+    else if (word === "URL" && is(k - 1, "id", "new") && is(k + 1, "p", "(")) {
+      const spec = literal(k + 2);
+      if (spec !== null && isRelative(spec) && is(k + 3, "p", ",") && is(k + 4, "id", "import") && is(k + 5, "p", ".") && is(k + 6, "id", "meta") && is(k + 7, "p", ".") && is(k + 8, "id", "url") && is(k + 9, "p", ")")) add("url", spec);
+    }
   }
-  for (const m of source.matchAll(/^[ \t]*import\s*["']([^"']+)["']/gm)) add(m, m[1], "bare");
-  for (const m of source.matchAll(/^[ \t]*export\s*(?:type\s+)?\{([^}]*)\}\s*from\s*["']([^"']+)["']/gm)) add(m, m[2], "reexport", names(m[1]).map((entry) => entry.split(/\s+as\s+/)[0]));
-  for (const m of source.matchAll(/^[ \t]*export\s*\*\s*(?:as\s+[\w$]+\s*)?from\s*["']([^"']+)["']/gm)) add(m, m[1], "star");
-  for (const m of source.matchAll(/\bimport\s*\(\s*["']([^"']+)["']\s*\)/g)) add(m, m[1], "dynamic");
-  for (const m of source.matchAll(/\brequire\s*\(\s*["']([^"']+)["']\s*\)/g)) add(m, m[1], "require");
-  for (const m of source.matchAll(/\bnew URL\(\s*["'](\.{1,2}\/[^"']+)["']\s*,\s*import\.meta\.url\s*\)/g)) add(m, m[1], "url");
-  // In the order the source has them: the first import of a program's entry is a rule of its own.
-  return found.sort((a, b) => a.at - b.at).map(({ spec, form, names: taken }) => ({ spec, form, names: taken }));
+  return found;
 }
-/** A module loaded by a path that is not one string literal. `require()` with nothing in it is prose in a comment. */
-const COMPUTED_LOAD = /\bimport\s*\(\s*(?!["'])|\brequire\s*\(\s*(?!["')])/;
-/** Electron as a module or as a runtime. The names its variables carry in the environment (ELECTRON_RUN_AS_NODE) are data, not a dependency. */
-const ELECTRON = /["']electron(?:\/[^"']*)?["']|\bprocess\.versions\.electron\b|\bprocess\.resourcesPath\b|\bprocess\.type\b/;
-/** The names a module exports, read from its text: declarations and `export { … }` lists. */
+
+/** Electron as a module or as a runtime, in the code: the string "electron" (or a subpath of it), `process.versions.electron`,
+ * `process.resourcesPath` and `process.type`, however spaced and with or without `?.`. A comment may say any of them, and
+ * the names Electron's variables carry in the environment (ELECTRON_RUN_AS_NODE) are data, not a dependency. */
+function namesElectron(source) {
+  const T = tokensOf(source);
+  if (T.some((t) => (t.t === "str" || (t.t === "tpl" && t.plain)) && /^electron(\/|$)/.test(t.v))) return true;
+  if (T.some((t) => t.t === "id" && t.v === "resourcesPath")) return true;
+  const chain = T.map((t, k) => (t.t === "id" ? t.v : t.t !== "p" ? " " : t.v === "." ? "." : t.v === "?" && T[k + 1]?.v === "." ? "" : " ")).join("");
+  return /(^|[ .])process\.(versions\.electron|type)(?![\w$])/.test(chain);
+}
+
+/** The names a module exports, read from its code: declarations (`const a = …, b = …` declares two) and `export { … }` lists. */
 function exportsOf(source) {
-  const out = new Set();
-  for (const [, name] of source.matchAll(/^export\s+(?:async\s+)?(?:function\s*\*?|class)\s+([\w$]+)/gm)) out.add(name);
-  for (const m of source.matchAll(/^export\s+(?:const|let|var)\s+/gm)) for (const name of declaredNames(source, m.index + m[0].length)) out.add(name);
-  for (const [, list] of source.matchAll(/^export\s*\{([^}]*)\}/gm)) for (const entry of names(list)) out.add(entry.split(/\s+as\s+/).at(-1));
-  return out;
-}
-/** The names one `const a = …, b = …` declares, from the first name's position: a name follows the keyword and every
- * comma outside brackets and strings, until the statement ends (a `;`, or a line break that nothing continues). */
-function declaredNames(source, from) {
-  const out = [], name = /[\w$]+/y;
-  const take = (at) => { name.lastIndex = at; const m = name.exec(source); if (m) out.push(m[0]); };
-  take(from);
-  let depth = 0;
-  for (let i = from; i < source.length; i++) {
-    const c = source[i];
-    if (c === '"' || c === "'" || c === "`") { for (i++; i < source.length && source[i] !== c; i++) if (source[i] === "\\") i++; continue; }
-    if ("([{".includes(c)) depth++;
-    else if (")]}".includes(c)) depth--;
-    if (depth > 0) continue;
-    if (depth < 0 || c === ";") break;
-    if (c === ",") take(i + 1 + /^\s*/.exec(source.slice(i + 1))[0].length);
-    if (c === "\n") {
-      const before = source.slice(from, i).trimEnd().at(-1), after = source.slice(i).trimStart();
-      if (!",=?:&|+-*<>".includes(before) && !/^[.?:&|+\-*,=<>]/.test(after)) break;
+  const T = tokensOf(source), { is, property } = reading(T), out = new Set();
+  /** Whether the statement runs on from `before` to `after` across a line break: an operator ends the one or starts the other. */
+  const runsOn = (before, after) => (before.t === "p" && ",=?:&|+-*/<>.(![{%^~".includes(before.v)) || (after.t === "p" && ".?:&|+-*/,=<>)]}%^".includes(after.v));
+  for (let k = 0; k < T.length; k++) {
+    if (!is(k, "id", "export") || property(k)) continue;
+    let j = k + 1;
+    if (is(j, "p", "{")) {
+      for (j++; j < T.length && !is(j, "p", "}"); j++) if (T[j].t !== "p" && (is(j + 1, "p", ",") || is(j + 1, "p", "}"))) out.add(T[j].v);
+      continue;
+    }
+    if (is(j, "id", "async")) j++;
+    if (is(j, "id", "function")) { j += is(j + 1, "p", "*") ? 2 : 1; if (is(j, "id")) out.add(T[j].v); continue; }
+    if (is(j, "id", "class")) { if (is(j + 1, "id")) out.add(T[j + 1].v); continue; }
+    if (!["const", "let", "var"].some((keyword) => is(j, "id", keyword))) continue;
+    // A name follows the keyword and every comma outside every bracket, until the statement ends: a `;`, or a line
+    // break nothing runs across. `const { a, b: c } = x` declares what its braces bind: a and c.
+    const declare = (m) => {
+      if (is(m, "id")) return out.add(T[m].v);
+      if (!is(m, "p", "{")) return;
+      for (let n = m + 1; n < T.length && !is(n, "p", "}"); n++) if (is(n, "id") && !is(n + 1, "p", ":") && (is(n - 1, "p", "{") || is(n - 1, "p", ",") || is(n - 1, "p", ":"))) out.add(T[n].v);
+    };
+    declare(j + 1);
+    let depth = 0;
+    for (let m = j + 1; m < T.length; m++) {
+      const t = T[m];
+      if (m > j + 1 && depth === 0 && t.nl && !runsOn(T[m - 1], t)) break;
+      if (t.t !== "p") continue;
+      if ("([{".includes(t.v)) depth++;
+      else if (")]}".includes(t.v)) { if (--depth < 0) break; }
+      else if (depth === 0 && t.v === ";") break;
+      else if (depth === 0 && t.v === ",") declare(m + 1);
     }
   }
   return out;
 }
 const resolve = (from, spec) => posix.normalize(posix.join(posix.dirname(from), spec));
 const filesIn = (tree, dir) => [...tree.keys()].filter((path) => under(path, dir)).sort();
+
+/** What reading cannot judge, said once per file: a load that is not one string literal, an import that is no form the reader knows. */
+function unjudged(path, asked) {
+  return [...(asked.some((request) => request.form === "computed") ? [`${path}: loads a module by something other than one string literal`] : []),
+    ...(asked.some((request) => request.form === "unreadable") ? [`${path}: has an import or an export … from that this reader cannot read`] : [])];
+}
 
 /** packages/client: its own files and node: builtins, no Electron, one importer of own-environment.mjs, modules only. */
 function homeProblems(tree) {
@@ -172,8 +339,9 @@ function homeProblems(tree) {
     if (name.includes("/")) { problems.push(`${path}: the shared home is flat, and this is in a directory of it`); continue; }
     if (!name.endsWith(".mjs")) { problems.push(`${path}: not a .mjs module; the shared home holds modules and nothing else`); continue; }
     if (name.endsWith(".test.mjs")) problems.push(`${path}: a test does not go in the shared home`);
-    const source = tree.get(path);
-    for (const { spec } of requestsOf(source)) {
+    const source = tree.get(path), asked = requestsOf(source);
+    problems.push(...unjudged(path, asked));
+    for (const { spec } of asked.filter((request) => request.spec !== null)) {
       if (spec.startsWith("node:")) continue;
       if (!isRelative(spec)) { problems.push(`${path}: imports "${spec}", which is not a Node builtin (node:…) or a file of the shared home`); continue; }
       const target = resolve(path, spec);
@@ -182,8 +350,7 @@ function homeProblems(tree) {
       else if (target === `${HOME}/${ENVIRONMENT}` && name !== COLLECTOR) problems.push(`${path}: imports ${ENVIRONMENT}, which changes the environment of whoever imports it; only ${COLLECTOR} does`);
       else if (target === `${HOME}/${COLLECTOR}`) problems.push(`${path}: imports ${COLLECTOR}, which is a program`);
     }
-    if (COMPUTED_LOAD.test(source)) problems.push(`${path}: loads a module by a computed path`);
-    if (ELECTRON.test(source)) problems.push(`${path}: names Electron`);
+    if (namesElectron(source)) problems.push(`${path}: names Electron`);
   }
   return problems;
 }
@@ -192,8 +359,9 @@ function homeProblems(tree) {
 function tuiProblems(tree, surface = SURFACE) {
   const problems = [];
   for (const path of filesIn(tree, TUI).filter(isModule)) {
-    const source = tree.get(path);
-    for (const { spec, form, names: taken } of requestsOf(source)) {
+    const asked = requestsOf(tree.get(path));
+    problems.push(...unjudged(path, asked));
+    for (const { spec, form, names: taken } of asked.filter((request) => request.spec !== null)) {
       if (spec.startsWith("node:")) continue;
       if (!isRelative(spec)) { problems.push(`${path}: imports "${spec}", which is not a Node builtin (node:…), a file of its own or the shared home`); continue; }
       const target = resolve(path, spec);
@@ -207,7 +375,6 @@ function tuiProblems(tree, surface = SURFACE) {
       if (form !== "named" && form !== "reexport") { problems.push(`${path}: takes ${module} by a ${form} import; the stable surface is imported by name (import { a } from …)`); continue; }
       for (const name of taken) if (!surface[module].includes(name)) problems.push(`${path}: imports ${name} from ${module}, which is not on the stable surface`);
     }
-    if (COMPUTED_LOAD.test(source)) problems.push(`${path}: loads a module by a computed path`);
   }
   return problems;
 }
@@ -216,8 +383,10 @@ function tuiProblems(tree, surface = SURFACE) {
 function kernelProblems(tree) {
   const problems = [];
   for (const path of [...filesIn(tree, "lib"), ...filesIn(tree, "bin")].filter(isModule)) {
-    const source = tree.get(path), found = new Set();
-    for (const { spec } of requestsOf(source).filter((request) => isRelative(request.spec))) {
+    const source = tree.get(path), asked = requestsOf(source), found = new Set();
+    // The kernel loads hooks and subcommands by computed paths, and may: only an import that cannot be read at all is refused.
+    problems.push(...unjudged(path, asked.filter((request) => request.form === "unreadable")));
+    for (const { spec } of asked.filter((request) => request.spec !== null && isRelative(request.spec))) {
       const target = resolve(path, spec);
       for (const dir of [HOME, DESKTOP]) if (target === dir || under(target, dir)) found.add(`${path}: "${spec}" is ${target}: the kernel imports nothing from ${dir}`);
     }
@@ -357,8 +526,34 @@ test("fixture, packages/client: an import that leaves the home fails (the Deskto
   breaks(homeProblems, { "packages/client/liveness.mjs": 'export { frame as collect } from "../tui/frame.mjs";\n' }, /leaves the shared home \(packages\/tui\/frame\.mjs\)$/);
   breaks(homeProblems, { "packages/client/liveness.mjs": 'export const collect = () => import("../../lib/core.mjs");\n' }, /leaves the shared home \(lib\/core\.mjs\)$/);
   breaks(homeProblems, { "packages/client/liveness.mjs": 'export const collect = new URL("../desktop/main.mjs", import.meta.url);\n' }, /leaves the shared home \(packages\/desktop\/main\.mjs\)$/);
-  breaks(homeProblems, { "packages/client/liveness.mjs": 'export const collect = (name) => import(`../desktop/${name}.mjs`);\n' }, /loads a module by a computed path$/);
+  breaks(homeProblems, { "packages/client/liveness.mjs": 'export const collect = (name) => import(`../desktop/${name}.mjs`);\n' }, /loads a module by something other than one string literal$/);
   breaks(homeProblems, { "packages/client/liveness.mjs": 'import { gone } from "./gone.mjs";\nexport const collect = gone;\n' }, /is packages\/client\/gone\.mjs, which does not exist$/);
+});
+
+test("fixture, packages/client: an import is found wherever it stands, and a load the reader cannot judge is refused, not skipped", () => {
+  const home = (source, pattern) => breaks(homeProblems, { "packages/client/liveness.mjs": source }, pattern);
+  // Not at the start of a line: after another statement, in a file on one line, inside a template's ${…}.
+  home('export const collect = 1; import YAML from "yaml";\n', /imports "yaml", which is not a Node builtin/);
+  home('import{displayLine}from"./display-text.mjs";import{skeleton}from"../desktop/renderer/loading.mjs";export const collect=[displayLine,skeleton];', /leaves the shared home \(packages\/desktop\/renderer\/loading\.mjs\)$/);
+  home('export const collect = async () => `${(await import("../desktop/main.mjs")).name}`;\n', /leaves the shared home \(packages\/desktop\/main\.mjs\)$/);
+  home('export const collect = 1; export * from "../tui/frame.mjs";\n', /leaves the shared home \(packages\/tui\/frame\.mjs\)$/);
+  // Anything but one string literal: a string that only starts the path, a second argument, a template with a ${…}, a name.
+  for (const load of ['import("../desktop/" + name + ".mjs")', 'import("../desktop/main.mjs", {})', 'import("./display-text.mjs", { with: { type: "json" } })', "import(`../desktop/${name}.mjs`)",
+    "import(name)", 'import(/* a comment is not an argument */ name)', 'require("../desktop/" + name)', "require(name)", 'createRequire(import.meta.url)("yaml")'])
+    home(`export const collect = (name) => ${load};\n`, /^packages\/client\/liveness\.mjs: loads a module by something other than one string literal$/);
+  // An import that is no form the reader knows, a specifier that is not the text it loads, and the one place the reader guesses.
+  const unreadable = /^packages\/client\/liveness\.mjs: has an import or an export … from that this reader cannot read$/;
+  home('import collect, = from "./display-text.mjs";\nexport { collect };\n', unreadable);
+  home('import { displayLine as collect } from "\\x2e/display-text.mjs";\nexport { collect };\n', unreadable);
+  home('export const collect = (name) => /import\\(name\\)/.test(name);\n', unreadable);
+  home('export const collect = (name) => name++ / import("../desktop/main.mjs") / 2;\n', /leaves the shared home \(packages\/desktop\/main\.mjs\)$/);
+  // And what is not a load is not taken for one: spacing, a trailing comma, a template with nothing in it, a comment, a string, a property.
+  for (const fine of ['import( "./display-text.mjs")', 'import (\n  "./display-text.mjs"\n)', 'import("./display-text.mjs",)', "import(`./display-text.mjs`)", 'import(/* which */ "./display-text.mjs")',
+    '"import(name) and require(name) in a string"', "`import YAML from \"yaml\" in a template`", "import.meta.url", "({ import: 1, require: 2 }).import", "/[\"'`/]+|\\/\\*/.test(name) // import(name)", "name++ / 2 / name.length",
+    "1 / 2 / (() => import('./display-text.mjs'))"])
+    assert.deepEqual(allProblems(fixture({ "packages/client/liveness.mjs": `/* import x from "yaml" */\nexport const collect = (name) => ${fine};\n` })), [], fine);
+  assert.deepEqual(requestsOf('const a = import( "./x.mjs" ), b = import("./y.mjs" + z), c = require("./w.cjs");'),
+    [{ spec: "./x.mjs", form: "dynamic", names: [] }, { spec: null, form: "computed", names: [] }, { spec: "./w.cjs", form: "require", names: [] }]);
 });
 
 test("fixture, packages/client: each Electron name fails", () => {
@@ -367,6 +562,11 @@ test("fixture, packages/client: each Electron name fails", () => {
     assert.deepEqual(homeProblems(fixture({ "packages/client/liveness.mjs": `${line}\nexport const collect = 1;\n` })).filter((problem) => /names Electron$/.test(problem)),
       ["packages/client/liveness.mjs: names Electron"], line);
   breaks(homeProblems, { "packages/client/liveness.mjs": "export const collect = () => process.versions.electron;\n" }, /^packages\/client\/liveness\.mjs: names Electron$/);
+  // However it is spaced or reached, and by the one name only Electron's `process` has.
+  for (const code of ["process ?. versions ?. electron", "process\n  .type", "globalThis.process.type", "(({ resourcesPath }) => resourcesPath)(process)", 'require.resolve("electron")'])
+    assert.ok(homeProblems(fixture({ "packages/client/liveness.mjs": `export const collect = () => ${code};\n` })).includes("packages/client/liveness.mjs: names Electron"), code);
+  // A comment may say any of them, and other properties of `process` are not Electron's.
+  assert.deepEqual(allProblems(fixture({ "packages/client/liveness.mjs": '// Never process.type, process.resourcesPath or "electron" here.\nexport const collect = () => [process.title, process.versions.node, process.env.ELECTRON_RUN_AS_NODE, { type: 1 }.type];\n' })), []);
 });
 
 test("fixture, packages/client: a library that imports own-environment.mjs fails, and so does importing the collector", () => {
@@ -399,11 +599,21 @@ test("fixture, packages/tui: an import of an export that is not on the surface, 
     breaks(tuiProblems, { "packages/tui/frame.mjs": source }, new RegExp(`takes cli-locator\\.mjs by a ${form} import; the stable surface is imported by name`));
 });
 
+test("fixture, packages/tui: a second import on a line is read like the first", () => {
+  breaks(tuiProblems, { "packages/tui/frame.mjs": 'import { displayLine } from "../client/display-text.mjs"; import { discover } from "../client/cli-locator.mjs";\nexport const frame = () => [displayLine, discover];\n' },
+    /^packages\/tui\/frame\.mjs: imports discover from cli-locator\.mjs, which is not on the stable surface$/);
+  breaks(tuiProblems, { "packages/tui/frame.mjs": 'export const frame = (t) => t; export { discover } from "../client/cli-locator.mjs"\n' }, /imports discover from cli-locator\.mjs/);
+  breaks(tuiProblems, { "packages/tui/frame.mjs": 'export const frame = (name) => import("../client/" + name);\n' }, /loads a module by something other than one string literal$/);
+  breaks(tuiProblems, { "packages/tui/frame.mjs": 'export const frame = () => import("../client/display-text.mjs", {});\n' }, /loads a module by something other than one string literal$/);
+  // Named, on one line, with what the surface lists: nothing to say.
+  assert.deepEqual(allProblems(fixture({ "packages/tui/frame.mjs": 'import{displayLine}from"../client/display-text.mjs";import{PROBE_NAME as name}from"../client/cli-locator.mjs";export const frame=()=>[displayLine,name];' })), []);
+});
+
 test("fixture, packages/tui: anything else it imports fails (a package, the Desktop, the kernel, a computed path)", () => {
   breaks(tuiProblems, { "packages/tui/frame.mjs": 'import blessed from "blessed";\nexport const frame = blessed;\n' }, /^packages\/tui\/frame\.mjs: imports "blessed", which is not a Node builtin/);
   breaks(tuiProblems, { "packages/tui/frame.mjs": 'import { skeleton } from "../desktop/renderer/loading.mjs";\nexport const frame = skeleton;\n' }, /leaves packages\/tui for packages\/desktop\/renderer\/loading\.mjs, which is not the shared home$/);
   breaks(tuiProblems, { "packages/tui/frame.mjs": 'import { core } from "../../lib/core.mjs";\nexport const frame = core;\n' }, /leaves packages\/tui for lib\/core\.mjs/);
-  breaks(tuiProblems, { "packages/tui/frame.mjs": 'export const frame = (name) => import(`../client/${name}.mjs`);\n' }, /loads a module by a computed path$/);
+  breaks(tuiProblems, { "packages/tui/frame.mjs": 'export const frame = (name) => import(`../client/${name}.mjs`);\n' }, /loads a module by something other than one string literal$/);
   breaks(tuiProblems, { "packages/tui/frame.mjs": 'import { gone } from "./gone.mjs";\nexport const frame = gone;\n' }, /is packages\/tui\/gone\.mjs, which does not exist$/);
 });
 
@@ -412,6 +622,7 @@ test("fixture, lib/ and bin/: an import of the home or of the Desktop fails", ()
   breaks(kernelProblems, { "lib/helper.mjs": 'export const helper = () => import("../packages/desktop/server-compat.mjs");\n' }, /the kernel imports nothing from packages\/desktop$/);
   breaks(kernelProblems, { "bin/oats.mjs": 'import { core } from "../lib/core.mjs";\nexport { displayLine } from "../packages/client/display-text.mjs";\nconsole.log(core);\n' }, /^bin\/oats\.mjs: .* the kernel imports nothing from packages\/client$/);
   breaks(kernelProblems, { "lib/sub/deep.mjs": 'const collector = new URL("../../packages/client/liveness-main.mjs", import.meta.url);\nexport default collector;\n' }, /^lib\/sub\/deep\.mjs: .* the kernel imports nothing from packages\/client$/);
+  breaks(kernelProblems, { "lib/helper.mjs": 'export const helper = 1; import { displayLine } from "../packages/client/display-text.mjs";\n' }, /^lib\/helper\.mjs: "\.\.\/packages\/client\/display-text\.mjs" is packages\/client\/display-text\.mjs/);
   // A computed load still spells the directory it leads into.
   breaks(kernelProblems, { "bin/oats.mjs": 'const name = process.argv[2];\nawait import(new URL(`../packages/client/${name}.mjs`, import.meta.url));\n' }, /^bin\/oats\.mjs: a relative path into packages\/client/);
   breaks(kernelProblems, { "lib/helper.mjs": 'import { join } from "node:path";\nexport const helper = (root) => import(join(root, "../packages/desktop", "main.mjs"));\n' }, /^lib\/helper\.mjs: a relative path into packages\/desktop/);
@@ -425,8 +636,8 @@ test("fixture: a surface entry the home does not have fails", () => {
   assert.deepEqual(surfaceProblems(tree, { ...surface, "own-environment.mjs": [] }), ["own-environment.mjs: on the stable surface, and it is never importable"]);
   assert.deepEqual(surfaceProblems(tree, { ...surface, "liveness-main.mjs": [] }), ["liveness-main.mjs: on the stable surface, and it is never importable"]);
   // The reader of exports sees every form the home uses: a function, a class, one `const` that declares two names, a list.
-  assert.deepEqual([...exportsOf('export async function a() {}\nexport class B {}\nexport const c = (x, y = [1, 2]) => ({ x, y }), d = "e, f = 1";\nconst g = 1, h = 2;\nexport { g, h as i };\nexport const j = 1\nconst k = 2;\n')].sort(),
-    ["B", "a", "c", "d", "g", "i", "j"]);
+  assert.deepEqual([...exportsOf('export async function a() {}\nexport class B {}\nexport const c = (x, y = [1, 2]) => ({ x, y }), d = "e, f = 1";\nconst g = 1, h = 2;\nexport { g, h as i };\nexport const j = 1\nconst k = 2;\nexport const { l, m: n } = g, o = `${h}`; export function* p() {}\n')].sort(),
+    ["B", "a", "c", "d", "g", "i", "j", "l", "n", "o", "p"]);
   // A TUI held to a surface is held to that surface: the export the fixture's home has is refused when the list does not name it.
   assert.deepEqual(tuiProblems(tree, { "display-text.mjs": ["displayLine"], "cli-locator.mjs": ["PROBE_NAME"] }), ["packages/tui/main.mjs: imports cleanLine from display-text.mjs, which is not on the stable surface"]);
 });
