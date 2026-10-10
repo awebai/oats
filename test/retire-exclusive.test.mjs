@@ -609,7 +609,8 @@ test("a retire whose PATH holds no ps still reads its own start on the ps path, 
   for (const from of f.fx.env.PATH.split(":").filter((d) => d && existsSync(d))) {
     for (const name of readdirSync(from)) if (!linked.has(name)) { linked.add(name); symlinkSync(join(from, name), join(dir, name)); }
   }
-  assert.equal(spawnSync("sh", ["-c", "command -v ps"], { env: { PATH: dir } }).status, 1, "no ps on that PATH");
+  const lookup = spawnSync("sh", ["-c", "command -v ps"], { env: { PATH: dir }, encoding: "utf8" });
+  assert.ok(lookup.status !== 0 && lookup.stdout === "", `no ps on that PATH: ${JSON.stringify(lookup)}`);
   f.open();
   const r = await f.retire(inst.instance, [], { OATS_TEST_PROCESS_START_PS: "1", PATH: dir }).done;
   assert.equal(r.code, 0, r.out + r.err);
