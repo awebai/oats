@@ -32,8 +32,9 @@ import { ensureServerOnPort, serverCompatible } from "./server-compat.mjs";
 import { createServerHost, createServerAdapter, serverSpawnSpec } from "./server-host.mjs";
 import { cliWorkspace, validWorkspaceRef } from "../client/workspace-cli.mjs";
 import { onboardData } from "../client/deployment-data.mjs";
-import { validateWorkspace, workspaceSuggestions, parseRecents, pushRecent, decideAdd, createGenerations, createAddExecutor, restoreWorkspaceDirs, saveWorkspaceDirs, commitOpenSet, startupOpenSet, matchWorkspaceDirs, createOnboardOffers, createOnboardExecutor,
-  savedWorkspacePaths, persistableDirs, stageDirs, pickedFolderChoices, deploymentsInside, createPerformAdd, createSuggestionCalls } from "./workspace-registry.mjs";
+import { validateWorkspace, deploymentsInside } from "../client/workspace-admission.mjs";
+import { workspaceSuggestions, parseRecents, pushRecent, decideAdd, createGenerations, createAddExecutor, restoreWorkspaceDirs, saveWorkspaceDirs, commitOpenSet, startupOpenSet, matchWorkspaceDirs, createOnboardOffers, createOnboardExecutor,
+  savedWorkspacePaths, persistableDirs, stageDirs, pickedFolderChoices, createPerformAdd, createSuggestionCalls } from "./workspace-registry.mjs";
 import { workspaceNotServed } from "./renderer/deployment-header.mjs";
 import { appMenuTemplate } from "./app-menu.mjs";
 import { resolveLoginPath } from "./login-path.mjs";
