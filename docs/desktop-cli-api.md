@@ -3126,13 +3126,19 @@ this order:
    `E_LIFECYCLE_BUSY` beside another stop
    ([Commands that meet on one home](#lifecycle-pairs)). A stop never waits
    for a holder.
-5. It reads the plan again, under the claims, and compares its revision
-   with the one sent, once: `E_PLAN_STALE` with the fresh `details.plan`
-   (the claims this apply holds are not reported in it as `stopPending`). A
-   home that was retired since the plan was shown answers
-   `E_SESSION_UNKNOWN`; one whose `instance.json` can no longer be read,
-   `E_UNIDENTIFIED_INSTANCE_HOME`; a child in that state is no longer a
-   target, which is a changed plan.
+5. It reads the plan again, under the claims: this is the plan it acts on.
+   **It holds the claim of every target of this plan before it does
+   anything.** A target it does not hold yet (a child recorded, or readable
+   again, since step 2) sends it back to step 4 with this plan's targets,
+   every claim released first so that the order of step 4 holds. A stop
+   whose targets are others under each of three such reads gives up:
+   `E_LIFECYCLE_BUSY`, `holder: "none"`, `… nothing was stopped — run the
+   command again`. It then compares the plan's revision with the one sent,
+   once: `E_PLAN_STALE` with the fresh `details.plan` (the claims this
+   apply holds are not reported in it as `stopPending`). A home that was
+   retired since the plan was shown answers `E_SESSION_UNKNOWN`; one whose
+   `instance.json` can no longer be read, `E_UNIDENTIFIED_INSTANCE_HOME`; a
+   child in that state is no longer a target, which is a changed plan.
 6. It refuses a target for which a self-retire is scheduled
    (`E_INSTANCE_RETIRING`, with `details.plan`).
 7. It stops each target, writes the receipt and releases the claims.
@@ -3242,6 +3248,10 @@ nothing, and the command already on the home is not disturbed.
   showed `retiring: true` is answered `E_INSTANCE_RETIRING`, and an apply
   whose plan was shown before the retire was scheduled is answered
   `E_PLAN_STALE` first, with the fresh plan.
+- **A claim file that is no readable claim** is one that does not parse as
+  a claim, a directory, or a path that is there and cannot be read, such as
+  a dangling symbolic link. All three commands read it the same way, and
+  none removes it.
 - **A holder that is gone** (it exited or was killed, a zombie too) refuses
   nothing: a retire or a stop takes its claim over and runs, and a `worktree
   add` takes nothing and runs. One file of a gone holder still refuses the
